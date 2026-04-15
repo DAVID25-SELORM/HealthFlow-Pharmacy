@@ -123,7 +123,7 @@ const Receipt = forwardRef(({ saleData, pharmacyInfo }, ref) => {
           <div className="payment-section">
             <div className="total-row">
               <span>Payment:</span>
-              <span className="payment-method">{paymentMethod.toUpperCase()}</span>
+              <span className="payment-method">{paymentMethod ? paymentMethod.toUpperCase() : 'N/A'}</span>
             </div>
             <div className="total-row">
               <span>Paid:</span>

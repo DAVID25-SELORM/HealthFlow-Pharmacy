@@ -176,7 +176,8 @@ export const generateReceiptPDF = (saleData, pharmacyInfo) => {
 
   // Payment
   doc.setFont('courier', 'normal')
-  doc.text(`Payment: ${saleData.paymentMethod.toUpperCase()}`, margin, y)
+  const paymentMethodText = saleData.paymentMethod ? saleData.paymentMethod.toUpperCase() : 'N/A'
+  doc.text(`Payment: ${paymentMethodText}`, margin, y)
   y += 4
 
   addTotal('Paid:', saleData.amountPaid)
@@ -236,7 +237,7 @@ export const formatSaleForReceipt = (sale, items, patient = null, soldByName = n
     totalAmount: sale.total_amount,
     discount: sale.discount || 0,
     netAmount: sale.net_amount,
-    paymentMethod: sale.payment_method,
+    paymentMethod: sale.payment_method || 'cash',
     amountPaid: sale.amount_paid,
     change: sale.change_given || 0,
     patient: patient,
