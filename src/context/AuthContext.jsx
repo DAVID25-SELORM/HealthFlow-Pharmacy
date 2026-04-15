@@ -32,6 +32,15 @@ const resolveRole = (profile, authUser) =>
 const resolveDisplayName = (profile, authUser) =>
   profile?.full_name || authUser?.user_metadata?.full_name || authUser?.email || 'Authenticated User'
 
+const scheduleAuthResolution = (callback) => {
+  if (typeof queueMicrotask === 'function') {
+    queueMicrotask(callback)
+    return
+  }
+
+  Promise.resolve().then(callback)
+}
+
 export const AuthProvider = ({ children }) => {
   const [session, setSession] = useState(null)
   const [user, setUser] = useState(null)
@@ -53,7 +62,7 @@ export const AuthProvider = ({ children }) => {
       setLoading(false)
     }
 
-    const resetInvalidSession = async (reason) => {
+    const resetInvalidSession = (reason) => {
       if (handledInvalidSession) {
         clearAuthState()
         return
@@ -84,7 +93,9 @@ export const AuthProvider = ({ children }) => {
     }
 
     const resolveSessionState = async (activeSession) => {
-      if (handledInvalidSession) {
+      if (activeSession) {
+        handledInvalidSession = false
+      } else if (handledInvalidSession) {
         clearAuthState()
         return
       }
@@ -104,7 +115,7 @@ export const AuthProvider = ({ children }) => {
         } = await supabase.auth.getUser()
 
         if (validateError && isSupabaseAuthFailure(validateError)) {
-          await resetInvalidSession(validateError)
+          resetInvalidSession(validateError)
           return
         }
 
@@ -120,7 +131,7 @@ export const AuthProvider = ({ children }) => {
           activeProfile = await fetchProfile(activeUser)
         } catch (profileError) {
           if (isSupabaseAuthFailure(profileError)) {
-            await resetInvalidSession(profileError)
+            resetInvalidSession(profileError)
             return
           }
           console.error('Unable to load user profile:', profileError)
@@ -177,7 +188,9 @@ export const AuthProvider = ({ children }) => {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, activeSession) => {
-      void resolveSessionState(activeSession)
+      scheduleAuthResolution(() => {
+        void resolveSessionState(activeSession)
+      })
     })
 
     return () => {

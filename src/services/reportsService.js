@@ -38,6 +38,16 @@ export const getReportBundle = async (startDate, endDate) => {
     metrics: {
       salesCount: sales.length,
       salesAmount: sales.reduce((sum, sale) => sum + Number.parseFloat(sale.net_amount || 0), 0),
+      soldLineItems: sales.reduce((sum, sale) => sum + (sale.sale_items?.length || 0), 0),
+      unitsSold: sales.reduce(
+        (sum, sale) =>
+          sum +
+          (sale.sale_items || []).reduce(
+            (itemSum, item) => itemSum + Number.parseFloat(item.quantity || 0),
+            0
+          ),
+        0
+      ),
       claimsCount: claims.length,
       approvedClaims: claims.filter((claim) => claim.claim_status === 'approved').length,
       rejectedClaims: claims.filter((claim) => claim.claim_status === 'rejected').length,

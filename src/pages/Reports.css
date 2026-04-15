@@ -142,6 +142,40 @@
   margin-bottom: 0.75rem;
 }
 
+.report-table-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.report-table-header h3 {
+  margin: 0 0 0.25rem;
+}
+
+.report-table-header p {
+  margin: 0;
+  color: var(--gray-600);
+  font-size: 0.9rem;
+}
+
+.report-table-count {
+  display: inline-flex;
+  align-items: center;
+  background: var(--gray-100);
+  color: var(--gray-700);
+  border-radius: 999px;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.report-table-wrap {
+  overflow-x: auto;
+}
+
 .report-table {
   width: 100%;
   border-collapse: collapse;
@@ -152,6 +186,14 @@
   text-align: left;
   border-bottom: 1px solid var(--gray-200);
   padding: 0.65rem;
+}
+
+.report-empty-state {
+  padding: 1rem;
+  border: 1px dashed var(--gray-300);
+  border-radius: var(--radius);
+  color: var(--gray-600);
+  background: var(--gray-50);
 }
 
 .report-actions .btn {
@@ -179,6 +221,10 @@
   }
 
   .reports-export {
+    flex-direction: column;
+  }
+
+  .report-table-header {
     flex-direction: column;
   }
 }

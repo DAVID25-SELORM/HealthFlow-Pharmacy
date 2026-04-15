@@ -4,7 +4,7 @@ import { getAllDrugs } from '../services/drugService'
 import { createSale } from '../services/salesService'
 import { getAllPatients } from '../services/patientService'
 import { getPharmacySettings } from '../services/settingsService'
-import { printReceipt, downloadReceiptPDF, formatSaleForReceipt } from '../services/receiptService'
+import { printReceipt, downloadReceiptPDF } from '../services/receiptService'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
@@ -200,14 +200,26 @@ const Sales = () => {
         soldBy: user?.id || null,
       })
 
-      // Prepare receipt data
+      // Prepare receipt data with full sale details
       const selectedPatient = patientId ? patients.find((p) => p.id === patientId) : null
-      const receiptData = formatSaleForReceipt(
-        saleResult,
-        cart,
-        selectedPatient,
-        user?.full_name || user?.email
-      )
+      const receiptData = {
+        saleNumber: saleResult.saleNumber,
+        saleDate: new Date().toISOString(),
+        items: cart.map((item) => ({
+          drug_name: item.name,
+          quantity: item.quantity,
+          unit_price: item.price,
+          total_price: item.quantity * item.price,
+        })),
+        totalAmount: total,
+        discount: 0,
+        netAmount: total,
+        paymentMethod: paymentMethod,
+        amountPaid: paymentMethod === 'cash' ? amountPaid : total,
+        change: paymentMethod === 'cash' ? calculateChange() : 0,
+        patient: selectedPatient,
+        soldBy: user?.full_name || user?.email,
+      }
       setLastSale(receiptData)
 
       // Clear cart

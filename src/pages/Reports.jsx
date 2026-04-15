@@ -46,7 +46,39 @@ const Reports = () => {
         description: `Patients: ${bundle.metrics.patientCount}, Active drugs: ${bundle.metrics.inventoryCount}`,
         color: 'secondary',
       },
+      {
+        key: 'sold-items',
+        title: 'Sold Items',
+        description: `Line items: ${bundle.metrics.soldLineItems}, Units dispensed: ${bundle.metrics.unitsSold}`,
+        color: 'success',
+      },
     ]
+  }, [bundle])
+
+  const soldItemRows = useMemo(() => {
+    if (!bundle) {
+      return []
+    }
+
+    return bundle.sales.flatMap((sale) =>
+      (sale.sale_items || []).map((item) => {
+        const quantity = Number.parseFloat(item.quantity || 0)
+        const unitPrice = Number.parseFloat(item.unit_price || 0)
+        const totalPrice = Number.parseFloat(item.total_price || 0)
+
+        return {
+          id: item.id,
+          saleNumber: sale.sale_number,
+          saleDate: sale.sale_date,
+          patientName: sale.patients?.full_name || 'Walk-in Customer',
+          paymentMethod: sale.payment_method,
+          drugName: item.drug_name || item.drugs?.name || 'Unknown Item',
+          quantity,
+          unitPrice,
+          totalPrice,
+        }
+      })
+    )
   }, [bundle])
 
   const generateReports = async () => {
@@ -108,6 +140,29 @@ const Reports = () => {
     downloadCsv('claims-report.csv', ['Claim Number', 'Patient', 'Insurance Provider', 'Status', 'Total Amount', 'Service Date'], rows)
   }
 
+  const exportSoldItemsCsv = () => {
+    if (!soldItemRows.length) {
+      return
+    }
+
+    const rows = soldItemRows.map((item) => [
+      item.saleNumber,
+      item.saleDate,
+      item.patientName,
+      item.drugName,
+      item.quantity,
+      item.unitPrice,
+      item.totalPrice,
+      item.paymentMethod,
+    ])
+
+    downloadCsv(
+      'sold-items-report.csv',
+      ['Sale Number', 'Sale Date', 'Patient', 'Drug', 'Quantity', 'Unit Price', 'Line Total', 'Payment Method'],
+      rows
+    )
+  }
+
   return (
     <div className="reports-page">
       <div className="page-header">
@@ -148,6 +203,10 @@ const Reports = () => {
           <Download size={16} />
           Export Sales CSV
         </button>
+        <button className="btn btn-outline" onClick={exportSoldItemsCsv} disabled={!soldItemRows.length}>
+          <Download size={16} />
+          Export Sold Items CSV
+        </button>
         <button className="btn btn-outline" onClick={exportClaimsCsv} disabled={!bundle}>
           <Download size={16} />
           Export Claims CSV
@@ -175,6 +234,53 @@ const Reports = () => {
                 ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {bundle && (
+        <div className="report-table-card">
+          <div className="report-table-header">
+            <div>
+              <h3>Sold Items Ledger</h3>
+              <p>Every dispensed item in the selected date range, linked back to the sale record.</p>
+            </div>
+            <span className="report-table-count">{soldItemRows.length} rows</span>
+          </div>
+
+          {soldItemRows.length === 0 ? (
+            <div className="report-empty-state">No sold items found for the selected date range.</div>
+          ) : (
+            <div className="report-table-wrap">
+              <table className="report-table">
+                <thead>
+                  <tr>
+                    <th>Sale No.</th>
+                    <th>Date</th>
+                    <th>Patient</th>
+                    <th>Item</th>
+                    <th>Qty</th>
+                    <th>Unit Price (GHS)</th>
+                    <th>Line Total (GHS)</th>
+                    <th>Payment</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {soldItemRows.map((item) => (
+                    <tr key={item.id}>
+                      <td>{item.saleNumber}</td>
+                      <td>{new Date(item.saleDate).toLocaleString()}</td>
+                      <td>{item.patientName}</td>
+                      <td>{item.drugName}</td>
+                      <td>{item.quantity}</td>
+                      <td>{item.unitPrice.toFixed(2)}</td>
+                      <td>{item.totalPrice.toFixed(2)}</td>
+                      <td>{item.paymentMethod}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
     </div>
