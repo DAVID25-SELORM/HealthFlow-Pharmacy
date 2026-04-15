@@ -5,6 +5,7 @@ A modern pharmacy management system for efficient drug inventory, sales, patient
 ## Features
 
 - 💊 **Drug Inventory Management** - Track stock levels, batch numbers, and expiry dates
+- 📤 **Excel Import** - Bulk import drugs from Excel files ([See Guide](DRUG_IMPORT_GUIDE.md))
 - 🧾 **Sales & POS** - Quick dispensing with cash, mobile money, and insurance support
 - 🏥 **Insurance Claims** - Automated claim tracking and submission
 - 👥 **Patient Records** - Manage patient information and prescription history
@@ -19,6 +20,8 @@ A modern pharmacy management system for efficient drug inventory, sales, patient
 - Lucide Icons
 
 ## Getting Started
+
+### Development
 
 1. Install dependencies:
 ```bash
@@ -39,6 +42,15 @@ npm run build
 ```bash
 npm run test
 ```
+
+### Production Deployment
+
+📋 **See [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md)** for complete deployment guide including:
+- Supabase database setup
+- First admin user creation
+- Edge function deployment
+- Environment variable configuration
+- Production smoke tests
 
 ## Quality Gates
 

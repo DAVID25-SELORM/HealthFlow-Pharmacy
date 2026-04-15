@@ -64,14 +64,15 @@ export const updatePharmacySettings = async (id, settings) => {
   }
 
   await tryLogAuditEvent({
-    eventType: 'user.status_updated',
-    entityType: 'users',
+    eventType: 'settings.updated',
+    entityType: 'pharmacy_settings',
     entityId: data.id,
     action: 'update',
     details: {
-      email: data.email,
-      is_active: data.is_active,
-      role: data.role,
+      pharmacy_name: data.pharmacy_name,
+      currency: data.currency,
+      low_stock_threshold: data.low_stock_threshold,
+      expiry_alert_days: data.expiry_alert_days,
     },
   })
 

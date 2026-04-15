@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Plus, Search, Filter, Edit2, Trash2 } from 'lucide-react'
+import { Plus, Search, Filter, Edit2, Trash2, Upload, Download } from 'lucide-react'
 import { getAllDrugs, addDrug, updateDrug, deleteDrug, calculateDrugStatus } from '../services/drugService'
+import { parseExcelFile, validateImportData, importDrugs, generateTemplate } from '../services/drugImportService'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { useNotification } from '../context/NotificationContext'
 import './Inventory.css'
@@ -34,13 +35,17 @@ const mapDrugToForm = (drug) => ({
 const Inventory = () => {
   const { notify } = useNotification()
   const [showDrugModal, setShowDrugModal] = useState(false)
+  const [showImportModal, setShowImportModal] = useState(false)
   const [editingDrugId, setEditingDrugId] = useState(null)
   const [drugs, setDrugs] = useState([])
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
+  const [importing, setImporting] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [activeFilter, setActiveFilter] = useState('all')
   const [formData, setFormData] = useState(emptyDrugForm)
+  const [importFile, setImportFile] = useState(null)
+  const [importPreview, setImportPreview] = useState(null)
 
   useEffect(() => {
     void loadDrugs()
@@ -200,6 +205,88 @@ const Inventory = () => {
     return statusConfig[status] || statusConfig.good
   }
 
+  const handleDownloadTemplate = () => {
+    try {
+      generateTemplate()
+      notify('Template downloaded successfully!', 'success')
+    } catch (error) {
+      notify(`Error downloading template: ${error.message}`, 'error')
+    }
+  }
+
+  const handleFileSelect = async (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
+      notify('Please select an Excel file (.xlsx or .xls)', 'error')
+      return
+    }
+
+    try {
+      setImporting(true)
+      const data = await parseExcelFile(file)
+      const validation = validateImportData(data)
+
+      setImportFile(file)
+      setImportPreview(validation)
+      setShowImportModal(true)
+    } catch (error) {
+      notify(`Error reading file: ${error.message}`, 'error')
+    } finally {
+      setImporting(false)
+      // Reset file input
+      event.target.value = ''
+    }
+  }
+
+  const handleImport = async () => {
+    if (!importPreview || importPreview.validCount === 0) {
+      notify('No valid drugs to import', 'warning')
+      return
+    }
+
+    if (!isSupabaseConfigured()) {
+      notify('Supabase not configured. Please update your .env file.', 'warning')
+      return
+    }
+
+    try {
+      setImporting(true)
+      const results = await importDrugs(importPreview.validRows)
+
+      if (results.successful.length > 0) {
+        notify(
+          `Successfully imported ${results.successful.length} drug(s)!`,
+          'success'
+        )
+      }
+
+      if (results.failed.length > 0) {
+        notify(
+          `Failed to import ${results.failed.length} drug(s). Check for duplicates.`,
+          'warning',
+          5000
+        )
+      }
+
+      setShowImportModal(false)
+      setImportFile(null)
+      setImportPreview(null)
+      await loadDrugs()
+    } catch (error) {
+      notify(`Import error: ${error.message}`, 'error')
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  const closeImportModal = () => {
+    setShowImportModal(false)
+    setImportFile(null)
+    setImportPreview(null)
+  }
+
   if (loading) {
     return (
       <div className="inventory-page">
@@ -217,10 +304,27 @@ const Inventory = () => {
           <h1>Inventory Management</h1>
           <p>Manage your drug stock, track expiry dates, and monitor low stock items</p>
         </div>
-        <button className="btn btn-primary" type="button" onClick={openAddModal}>
-          <Plus size={20} />
-          Add Drug
-        </button>
+        <div className="header-actions">
+          <button className="btn btn-secondary" type="button" onClick={handleDownloadTemplate}>
+            <Download size={20} />
+            Download Template
+          </button>
+          <label className="btn btn-secondary">
+            <Upload size={20} />
+            Import Excel
+            <input
+              type="file"
+              accept=".xlsx,.xls"
+              onChange={handleFileSelect}
+              style={{ display: 'none' }}
+              disabled={importing}
+            />
+          </label>
+          <button className="btn btn-primary" type="button" onClick={openAddModal}>
+            <Plus size={20} />
+            Add Drug
+          </button>
+        </div>
       </div>
 
       <div className="inventory-controls">
@@ -420,6 +524,114 @@ const Inventory = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {showImportModal && importPreview && (
+        <div className="modal-overlay" onClick={closeImportModal}>
+          <div className="modal-content import-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Import Drugs from Excel</h2>
+              <button className="close-btn" type="button" onClick={closeImportModal}>
+                x
+              </button>
+            </div>
+            
+            <div className="import-preview">
+              <div className="import-stats">
+                <div className="stat-card success">
+                  <h3>{importPreview.validCount}</h3>
+                  <p>Valid Rows</p>
+                </div>
+                <div className="stat-card danger">
+                  <h3>{importPreview.invalidCount}</h3>
+                  <p>Invalid Rows</p>
+                </div>
+                <div className="stat-card">
+                  <h3>{importPreview.totalRows}</h3>
+                  <p>Total Rows</p>
+                </div>
+              </div>
+
+              {importPreview.invalidCount > 0 && (
+                <div className="import-errors">
+                  <h4>❌ Errors Found:</h4>
+                  <div className="error-list">
+                    {importPreview.invalidRows.slice(0, 5).map((invalid, idx) => (
+                      <div key={idx} className="error-item">
+                        <strong>Row {invalid.row}:</strong>
+                        <ul>
+                          {invalid.errors.map((err, errIdx) => (
+                            <li key={errIdx}>{err}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))}
+                    {importPreview.invalidCount > 5 && (
+                      <p className="more-errors">
+                        ...and {importPreview.invalidCount - 5} more error(s). 
+                        Invalid rows will be skipped.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {importPreview.validCount > 0 && (
+                <div className="valid-preview">
+                  <h4>✅ Valid Drugs to Import:</h4>
+                  <div className="preview-table-wrapper">
+                    <table className="preview-table">
+                      <thead>
+                        <tr>
+                          <th>Name</th>
+                          <th>Batch</th>
+                          <th>Expiry</th>
+                          <th>Qty</th>
+                          <th>Price</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {importPreview.validRows.slice(0, 5).map((drug, idx) => (
+                          <tr key={idx}>
+                            <td>{drug.name}</td>
+                            <td>{drug.batch_number}</td>
+                            <td>{drug.expiry_date}</td>
+                            <td>{drug.quantity}</td>
+                            <td>GHS {drug.price}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {importPreview.validCount > 5 && (
+                      <p className="more-rows">
+                        ...and {importPreview.validCount - 5} more drug(s)
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="form-actions">
+              <button 
+                type="button" 
+                className="btn btn-outline" 
+                onClick={closeImportModal}
+                disabled={importing}
+              >
+                Cancel
+              </button>
+              <button 
+                type="button" 
+                className="btn btn-primary" 
+                onClick={handleImport}
+                disabled={importing || importPreview.validCount === 0}
+              >
+                {importing ? 'Importing...' : `Import ${importPreview.validCount} Drug(s)`}
+              </button>
+            </div>
           </div>
         </div>
       )}
