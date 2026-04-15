@@ -3,6 +3,10 @@
   display: none;
 }
 
+.receipt-container.receipt-preview-mode {
+  display: block;
+}
+
 /* Print Styles */
 @media print {
   /* Hide everything except receipt */
@@ -10,12 +14,12 @@
     visibility: hidden;
   }
 
-  .receipt-container,
-  .receipt-container * {
+  .receipt-container.receipt-print-mode,
+  .receipt-container.receipt-print-mode * {
     visibility: visible;
   }
 
-  .receipt-container {
+  .receipt-container.receipt-print-mode {
     display: block;
     position: absolute;
     left: 0;
@@ -55,6 +59,10 @@
   background: white;
   border: 1px solid #ddd;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.receipt-preview .receipt-container {
+  display: block;
 }
 
 .receipt-preview .receipt-content {

@@ -1,7 +1,7 @@
 import { forwardRef } from 'react'
 import './Receipt.css'
 
-const Receipt = forwardRef(({ saleData, pharmacyInfo }, ref) => {
+const Receipt = forwardRef(({ saleData, pharmacyInfo, mode = 'preview' }, ref) => {
   const {
     saleNumber,
     saleDate,
@@ -34,7 +34,7 @@ const Receipt = forwardRef(({ saleData, pharmacyInfo }, ref) => {
   }
 
   return (
-    <div ref={ref} className="receipt-container">
+    <div ref={ref} className={`receipt-container receipt-${mode}-mode`}>
       <div className="receipt-content">
         {/* Header */}
         <div className="receipt-header">

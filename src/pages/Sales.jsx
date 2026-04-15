@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Search, Trash2, Plus, Minus, ShoppingCart, Printer, Download, X } from 'lucide-react'
 import { getAllDrugs } from '../services/drugService'
 import { createSale } from '../services/salesService'
@@ -12,7 +12,7 @@ import Receipt from '../components/Receipt/Receipt'
 import './Sales.css'
 
 const Sales = () => {
-  const { user } = useAuth()
+  const { user, displayName } = useAuth()
   const { notify } = useNotification()
   const [drugs, setDrugs] = useState([])
   const [patients, setPatients] = useState([])
@@ -27,8 +27,6 @@ const Sales = () => {
   const [lastSale, setLastSale] = useState(null)
   const [showReceipt, setShowReceipt] = useState(false)
   const [pharmacyInfo, setPharmacyInfo] = useState(null)
-  const receiptRef = useRef()
-
   useEffect(() => {
     const loadData = async () => {
       try {
@@ -218,7 +216,7 @@ const Sales = () => {
         amountPaid: paymentMethod === 'cash' ? amountPaid : total,
         change: paymentMethod === 'cash' ? calculateChange() : 0,
         patient: selectedPatient,
-        soldBy: user?.full_name || user?.email,
+        soldBy: displayName || user?.email,
       }
       setLastSale(receiptData)
 
@@ -272,7 +270,7 @@ const Sales = () => {
   return (
     <div className="sales-page">
       {/* Hidden Receipt for Printing */}
-      {lastSale && <Receipt ref={receiptRef} saleData={lastSale} pharmacyInfo={pharmacyInfo} />}
+      {lastSale && <Receipt mode="print" saleData={lastSale} pharmacyInfo={pharmacyInfo} />}
 
       {/* Receipt Modal */}
       {showReceipt && lastSale && (
@@ -285,7 +283,7 @@ const Sales = () => {
               </button>
             </div>
             <div className="receipt-preview">
-              <Receipt saleData={lastSale} pharmacyInfo={pharmacyInfo} />
+              <Receipt mode="preview" saleData={lastSale} pharmacyInfo={pharmacyInfo} />
             </div>
             <div className="receipt-modal-actions">
               <button onClick={handlePrintReceipt} className="btn-print">
