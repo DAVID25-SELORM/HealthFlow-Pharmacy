@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
-import { supabase, isSupabaseConfigured } from '../lib/supabase'
+import { clearSupabaseStoredSession, supabase, isSupabaseConfigured } from '../lib/supabase'
 
 const AuthContext = createContext(null)
 const FALLBACK_ROLE = 'assistant'
@@ -40,6 +40,7 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     let mounted = true
+    let handledInvalidSession = false
 
     const clearAuthState = () => {
       if (!mounted) {
@@ -53,13 +54,15 @@ export const AuthProvider = ({ children }) => {
     }
 
     const resetInvalidSession = async (reason) => {
-      console.warn('Clearing invalid Supabase session.', reason)
-      clearAuthState()
-
-      const { error: signOutError } = await supabase.auth.signOut()
-      if (signOutError) {
-        console.error('Unable to clear invalid session:', signOutError)
+      if (handledInvalidSession) {
+        clearAuthState()
+        return
       }
+
+      handledInvalidSession = true
+      console.warn('Clearing invalid Supabase session.', reason)
+      clearSupabaseStoredSession()
+      clearAuthState()
     }
 
     const fetchProfile = async (activeUser) => {
@@ -81,6 +84,11 @@ export const AuthProvider = ({ children }) => {
     }
 
     const resolveSessionState = async (activeSession) => {
+      if (handledInvalidSession) {
+        clearAuthState()
+        return
+      }
+
       let resolvedSession = activeSession
       let activeUser = activeSession?.user ?? null
       let activeProfile = null
