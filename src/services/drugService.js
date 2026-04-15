@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase'
+import { assertNonNegativeNumber, assertRequiredText, normalizeText, sanitizeSearchTerm } from '../utils/validation'
 
 /**
  * Drug/Inventory Service
@@ -31,21 +32,24 @@ export const getDrugById = async (id) => {
 
 // Add new drug
 export const addDrug = async (drugData) => {
+  const name = assertRequiredText(drugData.name, 'Drug name')
+  const batchNumber = assertRequiredText(drugData.batchNumber, 'Batch number')
+
   const { data, error } = await supabase
     .from('drugs')
     .insert([
       {
-        name: drugData.name,
-        batch_number: drugData.batchNumber,
+        name,
+        batch_number: batchNumber,
         expiry_date: drugData.expiryDate,
-        quantity: parseFloat(drugData.quantity),
-        price: parseFloat(drugData.price),
-        cost_price: parseFloat(drugData.costPrice || 0),
-        supplier: drugData.supplier,
-        category: drugData.category,
-        description: drugData.description,
-        reorder_level: parseFloat(drugData.reorderLevel || 10),
-        unit: drugData.unit || 'tablets',
+        quantity: assertNonNegativeNumber(drugData.quantity, 'Quantity'),
+        price: assertNonNegativeNumber(drugData.price, 'Price'),
+        cost_price: assertNonNegativeNumber(drugData.costPrice || 0, 'Cost price'),
+        supplier: normalizeText(drugData.supplier) || null,
+        category: normalizeText(drugData.category) || null,
+        description: normalizeText(drugData.description) || null,
+        reorder_level: assertNonNegativeNumber(drugData.reorderLevel || 10, 'Reorder level'),
+        unit: normalizeText(drugData.unit) || 'tablets',
       }
     ])
     .select()
@@ -56,16 +60,19 @@ export const addDrug = async (drugData) => {
 
 // Update drug
 export const updateDrug = async (id, drugData) => {
+  const name = assertRequiredText(drugData.name, 'Drug name')
+  const batchNumber = assertRequiredText(drugData.batchNumber, 'Batch number')
+
   const { data, error } = await supabase
     .from('drugs')
     .update({
-      name: drugData.name,
-      batch_number: drugData.batchNumber,
+      name,
+      batch_number: batchNumber,
       expiry_date: drugData.expiryDate,
-      quantity: parseFloat(drugData.quantity),
-      price: parseFloat(drugData.price),
-      cost_price: parseFloat(drugData.costPrice || 0),
-      supplier: drugData.supplier,
+      quantity: assertNonNegativeNumber(drugData.quantity, 'Quantity'),
+      price: assertNonNegativeNumber(drugData.price, 'Price'),
+      cost_price: assertNonNegativeNumber(drugData.costPrice || 0, 'Cost price'),
+      supplier: normalizeText(drugData.supplier) || null,
       updated_at: new Date().toISOString()
     })
     .eq('id', id)
@@ -89,11 +96,16 @@ export const deleteDrug = async (id) => {
 
 // Search drugs
 export const searchDrugs = async (searchTerm) => {
+  const term = sanitizeSearchTerm(searchTerm)
+  if (!term) {
+    return getAllDrugs()
+  }
+
   const { data, error } = await supabase
     .from('drugs')
     .select('*')
     .eq('status', 'active')
-    .or(`name.ilike.%${searchTerm}%,batch_number.ilike.%${searchTerm}%`)
+    .or(`name.ilike.%${term}%,batch_number.ilike.%${term}%`)
     .order('name')
   
   if (error) throw error

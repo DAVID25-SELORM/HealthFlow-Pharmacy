@@ -1,5 +1,7 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/Layout/Layout'
+import ProtectedRoute from './components/Auth/ProtectedRoute'
+import RoleRoute from './components/Auth/RoleRoute'
 import Dashboard from './pages/Dashboard'
 import Inventory from './pages/Inventory'
 import Sales from './pages/Sales'
@@ -7,22 +9,60 @@ import Patients from './pages/Patients'
 import Claims from './pages/Claims'
 import Reports from './pages/Reports'
 import Settings from './pages/Settings'
+import Login from './pages/Login'
 import './App.css'
 
 function App() {
   return (
     <Router>
       <Routes>
-        <Route path="/" element={<Layout />}>
+        <Route path="/login" element={<Login />} />
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <Layout />
+            </ProtectedRoute>
+          }
+        >
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard />} />
-          <Route path="inventory" element={<Inventory />} />
+          <Route
+            path="inventory"
+            element={
+              <RoleRoute allowedRoles={['admin', 'pharmacist']}>
+                <Inventory />
+              </RoleRoute>
+            }
+          />
           <Route path="sales" element={<Sales />} />
           <Route path="patients" element={<Patients />} />
-          <Route path="claims" element={<Claims />} />
-          <Route path="reports" element={<Reports />} />
-          <Route path="settings" element={<Settings />} />
+          <Route
+            path="claims"
+            element={
+              <RoleRoute allowedRoles={['admin', 'pharmacist']}>
+                <Claims />
+              </RoleRoute>
+            }
+          />
+          <Route
+            path="reports"
+            element={
+              <RoleRoute allowedRoles={['admin', 'pharmacist']}>
+                <Reports />
+              </RoleRoute>
+            }
+          />
+          <Route
+            path="settings"
+            element={
+              <RoleRoute allowedRoles={['admin']}>
+                <Settings />
+              </RoleRoute>
+            }
+          />
         </Route>
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </Router>
   )

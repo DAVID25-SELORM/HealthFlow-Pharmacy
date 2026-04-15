@@ -5,6 +5,15 @@
   flex-direction: column;
 }
 
+.pos-alert {
+  margin-bottom: 1rem;
+  border: 1px solid #ffd4ce;
+  background: #fff3f1;
+  color: #9f3020;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius);
+}
+
 .pos-layout {
   display: grid;
   grid-template-columns: 1fr 450px;
@@ -53,6 +62,28 @@
   box-shadow: var(--shadow);
 }
 
+.patient-select-card {
+  background: white;
+  padding: 1rem 1.25rem;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.patient-select-card label {
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: var(--gray-700);
+}
+
+.patient-select-card select {
+  border: 1px solid var(--gray-300);
+  border-radius: var(--radius);
+  padding: 0.65rem 0.75rem;
+}
+
 .quick-add h3 {
   font-size: 1rem;
   margin-bottom: 1rem;
@@ -78,6 +109,12 @@
   gap: 0.5rem;
 }
 
+.drug-card:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
 .drug-card:hover {
   border-color: var(--primary);
   background: rgba(22, 160, 133, 0.05);
@@ -94,6 +131,16 @@
   color: var(--primary);
   font-weight: 700;
   font-size: 1.125rem;
+}
+
+.drug-stock {
+  color: var(--gray-600);
+  font-size: 0.8rem;
+}
+
+.drug-stock.sold-out {
+  color: var(--danger);
+  font-weight: 600;
 }
 
 /* Checkout Section */

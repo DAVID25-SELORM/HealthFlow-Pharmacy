@@ -35,6 +35,17 @@ npm run dev
 npm run build
 ```
 
+4. Run tests:
+```bash
+npm run test
+```
+
+## Quality Gates
+
+- Unit tests: `npm run test`
+- Coverage: `npm run test:coverage`
+- CI workflow: `.github/workflows/ci.yml` runs tests and build on push/PR to `main`
+
 ## Developer
 
 Built by **David Gabion Selorm**

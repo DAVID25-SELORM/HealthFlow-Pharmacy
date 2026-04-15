@@ -1,24 +1,47 @@
-import { useState, useEffect } from 'react'
-import { Plus, FileText, Download, Eye } from 'lucide-react'
-import { getAllClaims, createClaim, getClaimsStatistics } from '../services/claimsService'
+import { useEffect, useMemo, useState } from 'react'
+import { Plus, Download, Eye, CheckCircle2, XCircle } from 'lucide-react'
+import {
+  approveClaim,
+  createClaim,
+  getAllClaims,
+  getClaimsStatistics,
+  rejectClaim,
+} from '../services/claimsService'
+import { getAllPatients } from '../services/patientService'
+import { getAllDrugs } from '../services/drugService'
 import { isSupabaseConfigured } from '../lib/supabase'
+import { useAuth } from '../context/AuthContext'
+import { useNotification } from '../context/NotificationContext'
 import './Claims.css'
 
+const blankForm = {
+  patientId: '',
+  insuranceProvider: '',
+  insuranceId: '',
+  serviceDate: new Date().toISOString().split('T')[0],
+  notes: '',
+}
+
 const Claims = () => {
+  const { user, role } = useAuth()
+  const { notify } = useNotification()
+  const canProcess = ['admin', 'pharmacist'].includes(role)
+
   const [showNewClaimModal, setShowNewClaimModal] = useState(false)
   const [activeTab, setActiveTab] = useState('all')
   const [claims, setClaims] = useState([])
   const [stats, setStats] = useState({ total: 0, pending: 0, approved: 0, rejected: 0 })
+  const [patients, setPatients] = useState([])
+  const [drugs, setDrugs] = useState([])
   const [loading, setLoading] = useState(true)
-  const [formData, setFormData] = useState({
-    patientName: '',
-    insuranceProvider: '',
-    insuranceId: '',
-    drugs: '',
-    totalAmount: '',
-    serviceDate: new Date().toISOString().split('T')[0],
-    notes: ''
-  })
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
+  const [formData, setFormData] = useState(blankForm)
+  const [claimItems, setClaimItems] = useState([])
+  const [selectedDrugId, setSelectedDrugId] = useState('')
+  const [selectedQty, setSelectedQty] = useState('1')
+  const [claimToReject, setClaimToReject] = useState(null)
+  const [rejectionReason, setRejectionReason] = useState('')
 
   useEffect(() => {
     loadClaims()
@@ -27,133 +50,170 @@ const Claims = () => {
   const loadClaims = async () => {
     try {
       setLoading(true)
-      
+      setError('')
+
       if (!isSupabaseConfigured()) {
-        console.warn('Supabase not configured, using sample data')
-        setSampleData()
+        setClaims([])
+        setStats({ total: 0, pending: 0, approved: 0, rejected: 0 })
+        setError('Supabase is not configured. Update .env to enable claims.')
         return
       }
-      
-      const [claimsData, statistics] = await Promise.all([
+
+      const [claimsData, statistics, patientData, drugData] = await Promise.all([
         getAllClaims(),
-        getClaimsStatistics()
+        getClaimsStatistics(),
+        getAllPatients(),
+        getAllDrugs(),
       ])
-      
+
       setClaims(claimsData)
       setStats(statistics)
-      
-    } catch (error) {
-      console.error('Error loading claims:', error)
-      setSampleData()
+      setPatients(patientData)
+      setDrugs(drugData)
+    } catch (loadError) {
+      console.error('Error loading claims:', loadError)
+      setError(loadError.message || 'Unable to load claims.')
     } finally {
       setLoading(false)
     }
   }
 
-  const setSampleData = () => {
-    const sampleClaims = [
-      {
-        id: 'CLM001',
-        claim_number: 'CLM001',
-        patient_name: 'Adjoa Kwakye',
-        insurance_provider: 'NHIS',
-        total_amount: 400,
-        claim_status: 'approved',
-        service_date: '2026-03-28',
-        notes: 'Paracetamol, Vitamin C'
-      },
-      {
-        id: 'CLM002',
-        claim_number: 'CLM002',
-        patient_name: 'Kojo Owusu',
-        insurance_provider: 'Glico Health',
-        total_amount: 220,
-        claim_status: 'pending',
-        service_date: '2026-04-01',
-        notes: 'Ibuprofen, Amoxicillin'
-      },
-      {
-        id: 'CLM003',
-        claim_number: 'CLM003',
-        patient_name: 'Yaw Sarpong',
-        insurance_provider: 'Enterprise Insurance',
-        total_amount: 150,
-        claim_status: 'rejected',
-        service_date: '2026-03-25',
-        notes: 'Vitamin C'
-      },
-      {
-        id: 'CLM004',
-        claim_number: 'CLM004',
-        patient_name: 'Ama Boateng',
-        insurance_provider: 'NHIS',
-        total_amount: 380,
-        claim_status: 'pending',
-        service_date: '2026-04-03',
-        notes: 'Paracetamol, Ibuprofen, Multivitamin'
+  const selectedPatient = useMemo(
+    () => patients.find((patient) => patient.id === formData.patientId),
+    [patients, formData.patientId]
+  )
+
+  const claimTotal = useMemo(
+    () => claimItems.reduce((sum, item) => sum + item.price * item.quantity, 0),
+    [claimItems]
+  )
+
+  const addClaimItem = () => {
+    const drug = drugs.find((d) => d.id === selectedDrugId)
+    const qty = Number.parseFloat(selectedQty)
+
+    if (!drug || !Number.isFinite(qty) || qty <= 0) {
+      return
+    }
+
+    setClaimItems((current) => {
+      const existing = current.find((item) => item.drugId === drug.id)
+      if (existing) {
+        return current.map((item) =>
+          item.drugId === drug.id ? { ...item, quantity: item.quantity + qty } : item
+        )
       }
-    ]
-    setClaims(sampleClaims)
-    setStats({ total: 4, pending: 2, approved: 1, rejected: 1 })
-    setLoading(false)
+      return [
+        ...current,
+        {
+          drugId: drug.id,
+          name: drug.name,
+          quantity: qty,
+          price: Number.parseFloat(drug.price),
+        },
+      ]
+    })
+
+    setSelectedDrugId('')
+    setSelectedQty('1')
   }
 
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-    
+  const removeClaimItem = (drugId) => {
+    setClaimItems((current) => current.filter((item) => item.drugId !== drugId))
+  }
+
+  const handleSubmit = async (event) => {
+    event.preventDefault()
+
+    if (!selectedPatient) {
+      setError('Select a patient before submitting a claim.')
+      return
+    }
+
+    if (!claimItems.length) {
+      setError('Add at least one drug item to submit a claim.')
+      return
+    }
+
     try {
-      if (!isSupabaseConfigured()) {
-        alert('⚠️ Supabase not configured. Please update your .env file.')
-        return
-      }
-      
+      setSubmitting(true)
+      setError('')
+
       await createClaim({
-        patientName: formData.patientName,
-        insuranceProvider: formData.insuranceProvider,
-        insuranceId: formData.insuranceId,
-        totalAmount: formData.totalAmount,
+        patientId: selectedPatient.id,
+        patientName: selectedPatient.full_name,
+        insuranceProvider: formData.insuranceProvider || selectedPatient.insurance_provider,
+        insuranceId: formData.insuranceId || selectedPatient.insurance_id,
         serviceDate: formData.serviceDate,
-        notes: formData.drugs + (formData.notes ? '\n\n' + formData.notes : '')
+        notes: formData.notes,
+        items: claimItems,
+        submittedBy: user?.id || null,
       })
-      
+
       setShowNewClaimModal(false)
-      setFormData({
-        patientName: '',
-        insuranceProvider: '',
-        insuranceId: '',
-        drugs: '',
-        totalAmount: '',
-        serviceDate: new Date().toISOString().split('T')[0],
-        notes: ''
-      })
-      loadClaims()
-      alert('✅ Claim submitted successfully!')
-      
-    } catch (error) {
-      console.error('Error creating claim:', error)
-      alert('❌ Error creating claim: ' + error.message)
+      setFormData(blankForm)
+      setClaimItems([])
+      await loadClaims()
+    } catch (submitError) {
+      console.error('Error creating claim:', submitError)
+      setError(submitError.message || 'Unable to create claim.')
+    } finally {
+      setSubmitting(false)
     }
   }
 
-  const filterClaims = () => {
-    if (activeTab === 'all') return claims
-    return claims.filter(claim => claim.claim_status === activeTab)
+  const handleApprove = async (claim) => {
+    try {
+      await approveClaim(claim.id, claim.total_amount)
+      notify(`Claim ${claim.claim_number} approved.`, 'success')
+      await loadClaims()
+    } catch (actionError) {
+      setError(actionError.message || 'Unable to approve claim.')
+    }
   }
+
+  const openRejectModal = (claim) => {
+    setClaimToReject(claim)
+    setRejectionReason('')
+  }
+
+  const handleReject = async () => {
+    if (!claimToReject) {
+      return
+    }
+
+    if (!rejectionReason.trim()) {
+      notify('Rejection reason is required.', 'warning')
+      return
+    }
+
+    try {
+      await rejectClaim(claimToReject.id, rejectionReason.trim())
+      notify(`Claim ${claimToReject.claim_number} rejected.`, 'info')
+      setClaimToReject(null)
+      setRejectionReason('')
+      await loadClaims()
+    } catch (actionError) {
+      setError(actionError.message || 'Unable to reject claim.')
+    }
+  }
+
+  const filteredClaims = useMemo(() => {
+    if (activeTab === 'all') {
+      return claims
+    }
+    return claims.filter((claim) => claim.claim_status === activeTab)
+  }, [claims, activeTab])
 
   const getStatusClass = (status) => {
     const classes = {
       approved: 'status-approved',
       pending: 'status-pending',
-      rejected: 'status-rejected'
+      rejected: 'status-rejected',
+      processing: 'status-processing',
     }
-    return classes[status]
+    return classes[status] || 'status-pending'
   }
-
-  const getStatusLabel = (status) => {
-    return status.charAt(0).toUpperCase() + status.slice(1)
-  }
-
-  const filteredClaims = filterClaims()
 
   if (loading) {
     return (
@@ -172,16 +232,14 @@ const Claims = () => {
           <h1>Insurance Claims</h1>
           <p>Manage and track insurance claims submissions</p>
         </div>
-        <button 
-          className="btn btn-primary"
-          onClick={() => setShowNewClaimModal(true)}
-        >
+        <button className="btn btn-primary" onClick={() => setShowNewClaimModal(true)}>
           <Plus size={20} />
           New Claim
         </button>
       </div>
 
-      {/* Stats Cards */}
+      {error && <div className="claims-alert">{error}</div>}
+
       <div className="claims-stats">
         <div className="stat-box">
           <span className="stat-label">Total Claims</span>
@@ -201,33 +259,28 @@ const Claims = () => {
         </div>
       </div>
 
-      {/* Filter Tabs */}
       <div className="claims-tabs">
-        {['all', 'pending', 'approved', 'rejected'].map(tab => (
+        {['all', 'pending', 'approved', 'rejected'].map((tab) => (
           <button
             key={tab}
             className={`tab-btn ${activeTab === tab ? 'active' : ''}`}
             onClick={() => setActiveTab(tab)}
           >
             {tab.charAt(0).toUpperCase() + tab.slice(1)}
-            <span className="tab-count">
-              {tab === 'all' ? stats.total : stats[tab]}
-            </span>
+            <span className="tab-count">{tab === 'all' ? stats.total : stats[tab] || 0}</span>
           </button>
         ))}
       </div>
 
-      {/* Claims Table */}
       <div className="table-container">
         <table className="claims-table">
           <thead>
             <tr>
               <th>Claim ID</th>
-              <th>Patient Name</th>
-              <th>Insurance Provider</th>
-              <th>Drugs Dispensed</th>
+              <th>Patient</th>
+              <th>Insurance</th>
               <th>Amount (GHS)</th>
-              <th>Date Submitted</th>
+              <th>Service Date</th>
               <th>Status</th>
               <th>Actions</th>
             </tr>
@@ -235,8 +288,8 @@ const Claims = () => {
           <tbody>
             {filteredClaims.length === 0 ? (
               <tr>
-                <td colSpan="8" style={{ textAlign: 'center', padding: '2rem' }}>
-                  {activeTab === 'all' ? 'No claims yet. Click "New Claim" to submit one.' : `No ${activeTab} claims`}
+                <td colSpan="7" style={{ textAlign: 'center', padding: '2rem' }}>
+                  No claims found for this filter.
                 </td>
               </tr>
             ) : (
@@ -245,22 +298,39 @@ const Claims = () => {
                   <td className="claim-id">{claim.claim_number}</td>
                   <td>{claim.patient_name}</td>
                   <td>{claim.insurance_provider}</td>
-                  <td className="drugs-cell">{claim.notes}</td>
-                  <td className="amount-cell">GHS {claim.total_amount}</td>
+                  <td className="amount-cell">GHS {Number.parseFloat(claim.total_amount || 0).toFixed(2)}</td>
                   <td>{new Date(claim.service_date).toLocaleDateString()}</td>
                   <td>
                     <span className={`status-badge ${getStatusClass(claim.claim_status)}`}>
-                      {getStatusLabel(claim.claim_status)}
+                      {claim.claim_status}
                     </span>
                   </td>
                   <td>
                     <div className="action-buttons">
-                      <button className="icon-btn" title="View Details">
+                      <button
+                        className="icon-btn"
+                        title="View Notes"
+                        onClick={() => notify(claim.notes || 'No notes recorded for this claim.', 'info')}
+                      >
                         <Eye size={16} />
                       </button>
-                      <button className="icon-btn" title="Download">
+                      <button
+                        className="icon-btn"
+                        title="Export"
+                        onClick={() => notify('Export claim document is in next backlog step.', 'info')}
+                      >
                         <Download size={16} />
                       </button>
+                      {canProcess && claim.claim_status === 'pending' && (
+                        <>
+                          <button className="icon-btn success" title="Approve" onClick={() => handleApprove(claim)}>
+                            <CheckCircle2 size={16} />
+                          </button>
+                          <button className="icon-btn danger" title="Reject" onClick={() => openRejectModal(claim)}>
+                            <XCircle size={16} />
+                          </button>
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -270,124 +340,163 @@ const Claims = () => {
         </table>
       </div>
 
-      {/* New Claim Modal */}
       {showNewClaimModal && (
         <div className="modal-overlay" onClick={() => setShowNewClaimModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2>Submit New Claim</h2>
-              <button 
-                className="close-btn"
-                onClick={() => setShowNewClaimModal(false)}
-              >
+              <button className="close-btn" onClick={() => setShowNewClaimModal(false)}>
                 ×
               </button>
             </div>
             <form className="claim-form" onSubmit={handleSubmit}>
-              <div className="form-group">
-                <label>Patient Name *</label>
-                <input 
-                  type="text" 
-                  placeholder="Enter patient name" 
-                  required
-                  value={formData.patientName}
-                  onChange={(e) => setFormData({...formData, patientName: e.target.value})}
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Insurance Provider *</label>
-                <select 
-                  required
-                  value={formData.insuranceProvider}
-                  onChange={(e) => setFormData({...formData, insuranceProvider: e.target.value})}
-                >
-                  <option value="">Select provider</option>
-                  <option value="nhis">NHIS</option>
-                  <option value="glico">Glico Health</option>
-                  <option value="enterprise">Enterprise Insurance</option>
-                  <option value="metropolitan">Metropolitan Health</option>
-                  <option value="other">Other</option>
-                </select>
-              </div>
-
-              <div className="form-group">
-                <label>Insurance ID Number *</label>
-                <input 
-                  type="text" 
-                  placeholder="Enter insurance ID" 
-                  required
-                  value={formData.insuranceId}
-                  onChange={(e) => setFormData({...formData, insuranceId: e.target.value})}
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Drugs Dispensed *</label>
-                <textarea 
-                  rows="3" 
-                  placeholder="List all drugs dispensed (one per line)"
-                  required
-                  value={formData.drugs}
-                  onChange={(e) => setFormData({...formData, drugs: e.target.value})}
-                ></textarea>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Patient *</label>
+                  <select
+                    required
+                    value={formData.patientId}
+                    onChange={(e) => {
+                      const nextPatientId = e.target.value
+                      const nextPatient = patients.find((patient) => patient.id === nextPatientId)
+                      setFormData({
+                        ...formData,
+                        patientId: nextPatientId,
+                        insuranceProvider: nextPatient?.insurance_provider || formData.insuranceProvider,
+                        insuranceId: nextPatient?.insurance_id || formData.insuranceId,
+                      })
+                    }}
+                  >
+                    <option value="">Select patient</option>
+                    {patients.map((patient) => (
+                      <option key={patient.id} value={patient.id}>
+                        {patient.full_name} ({patient.phone})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>Date of Service *</label>
+                  <input
+                    type="date"
+                    required
+                    value={formData.serviceDate}
+                    onChange={(e) => setFormData({ ...formData, serviceDate: e.target.value })}
+                  />
+                </div>
               </div>
 
               <div className="form-row">
                 <div className="form-group">
-                  <label>Total Cost (GHS) *</label>
-                  <input 
-                    type="number" 
-                    step="0.01" 
-                    placeholder="0.00" 
+                  <label>Insurance Provider *</label>
+                  <input
+                    type="text"
                     required
-                    value={formData.totalAmount}
-                    onChange={(e) => setFormData({...formData, totalAmount: e.target.value})}
+                    value={formData.insuranceProvider}
+                    onChange={(e) => setFormData({ ...formData, insuranceProvider: e.target.value })}
                   />
                 </div>
                 <div className="form-group">
-                  <label>Date of Service *</label>
-                  <input 
-                    type="date" 
+                  <label>Insurance ID *</label>
+                  <input
+                    type="text"
                     required
-                    value={formData.serviceDate}
-                    onChange={(e) => setFormData({...formData, serviceDate: e.target.value})}
+                    value={formData.insuranceId}
+                    onChange={(e) => setFormData({ ...formData, insuranceId: e.target.value })}
                   />
                 </div>
               </div>
 
-              <div className="form-group">
-                <label>Prescription Upload (Optional)</label>
-                <div className="file-upload">
-                  <FileText size={24} />
-                  <span>Click to upload or drag prescription</span>
-                  <input type="file" accept="image/*,application/pdf" />
+              <div className="claim-items-box">
+                <h4>Claim Items</h4>
+                <div className="item-inputs">
+                  <select value={selectedDrugId} onChange={(e) => setSelectedDrugId(e.target.value)}>
+                    <option value="">Select drug</option>
+                    {drugs.map((drug) => (
+                      <option key={drug.id} value={drug.id}>
+                        {drug.name} - GHS {Number.parseFloat(drug.price).toFixed(2)}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={selectedQty}
+                    onChange={(e) => setSelectedQty(e.target.value)}
+                  />
+                  <button type="button" className="btn btn-outline" onClick={addClaimItem}>
+                    Add Item
+                  </button>
                 </div>
+
+                <div className="claim-item-list">
+                  {claimItems.map((item) => (
+                    <div key={item.drugId} className="claim-item-row">
+                      <span>{item.name}</span>
+                      <span>
+                        {item.quantity} x GHS {item.price.toFixed(2)} = GHS {(item.quantity * item.price).toFixed(2)}
+                      </span>
+                      <button type="button" className="icon-btn danger" onClick={() => removeClaimItem(item.drugId)}>
+                        <XCircle size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="claim-total">Total Claim: GHS {claimTotal.toFixed(2)}</div>
               </div>
 
               <div className="form-group">
                 <label>Additional Notes</label>
-                <textarea 
-                  rows="2" 
-                  placeholder="Any additional information..."
+                <textarea
+                  rows="2"
                   value={formData.notes}
-                  onChange={(e) => setFormData({...formData, notes: e.target.value})}
-                ></textarea>
+                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                />
               </div>
 
               <div className="form-actions">
-                <button 
-                  type="button" 
-                  className="btn btn-outline"
-                  onClick={() => setShowNewClaimModal(false)}
-                >
+                <button type="button" className="btn btn-outline" onClick={() => setShowNewClaimModal(false)}>
                   Cancel
                 </button>
-                <button type="submit" className="btn btn-primary">
-                  Submit Claim
+                <button type="submit" className="btn btn-primary" disabled={submitting}>
+                  {submitting ? 'Submitting...' : 'Submit Claim'}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {claimToReject && (
+        <div className="modal-overlay" onClick={() => setClaimToReject(null)}>
+          <div className="modal-content reject-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Reject Claim {claimToReject.claim_number}</h2>
+              <button className="close-btn" onClick={() => setClaimToReject(null)}>
+                ×
+              </button>
+            </div>
+            <div className="claim-form">
+              <div className="form-group">
+                <label>Reason for rejection *</label>
+                <textarea
+                  rows="3"
+                  value={rejectionReason}
+                  onChange={(e) => setRejectionReason(e.target.value)}
+                  placeholder="Provide a clear reason for rejection"
+                />
+              </div>
+              <div className="form-actions">
+                <button type="button" className="btn btn-outline" onClick={() => setClaimToReject(null)}>
+                  Cancel
+                </button>
+                <button type="button" className="btn btn-primary" onClick={handleReject}>
+                  Confirm Rejection
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

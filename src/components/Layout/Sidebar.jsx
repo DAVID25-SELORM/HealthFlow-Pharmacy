@@ -8,18 +8,23 @@ import {
   BarChart3, 
   Settings 
 } from 'lucide-react'
+import { useAuth } from '../../context/AuthContext'
 import './Sidebar.css'
 
 const Sidebar = () => {
+  const { role } = useAuth()
+
   const menuItems = [
-    { path: '/dashboard', icon: Home, label: 'Dashboard' },
-    { path: '/inventory', icon: Package, label: 'Inventory' },
-    { path: '/sales', icon: ShoppingCart, label: 'Sales (POS)' },
-    { path: '/patients', icon: Users, label: 'Patients' },
-    { path: '/claims', icon: ClipboardList, label: 'Claims' },
-    { path: '/reports', icon: BarChart3, label: 'Reports' },
-    { path: '/settings', icon: Settings, label: 'Settings' },
+    { path: '/dashboard', icon: Home, label: 'Dashboard', roles: ['admin', 'pharmacist', 'assistant'] },
+    { path: '/inventory', icon: Package, label: 'Inventory', roles: ['admin', 'pharmacist'] },
+    { path: '/sales', icon: ShoppingCart, label: 'Sales (POS)', roles: ['admin', 'pharmacist', 'assistant'] },
+    { path: '/patients', icon: Users, label: 'Patients', roles: ['admin', 'pharmacist', 'assistant'] },
+    { path: '/claims', icon: ClipboardList, label: 'Claims', roles: ['admin', 'pharmacist'] },
+    { path: '/reports', icon: BarChart3, label: 'Reports', roles: ['admin', 'pharmacist'] },
+    { path: '/settings', icon: Settings, label: 'Settings', roles: ['admin'] },
   ]
+
+  const visibleItems = menuItems.filter((item) => item.roles.includes(role))
 
   return (
     <aside className="sidebar">
@@ -37,7 +42,7 @@ const Sidebar = () => {
       </div>
 
       <nav className="sidebar-nav">
-        {menuItems.map((item) => (
+        {visibleItems.map((item) => (
           <NavLink
             key={item.path}
             to={item.path}

@@ -1,40 +1,207 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Search, Trash2, Plus, Minus, ShoppingCart } from 'lucide-react'
+import { getAllDrugs } from '../services/drugService'
+import { createSale } from '../services/salesService'
+import { getAllPatients } from '../services/patientService'
+import { isSupabaseConfigured } from '../lib/supabase'
+import { useAuth } from '../context/AuthContext'
+import { useNotification } from '../context/NotificationContext'
 import './Sales.css'
 
 const Sales = () => {
-  const [cart, setCart] = useState([
-    { id: 1, name: 'Ibuprofen 200mg', price: 4.00, quantity: 3 },
-    { id: 2, name: 'Ibuprofen 200mg', price: 4.00, quantity: 2 },
-    { id: 3, name: 'Vitamin C 1000mg', price: 15.00, quantity: 1 }
-  ])
+  const { user } = useAuth()
+  const { notify } = useNotification()
+  const [drugs, setDrugs] = useState([])
+  const [patients, setPatients] = useState([])
+  const [cart, setCart] = useState([])
+  const [searchTerm, setSearchTerm] = useState('')
+  const [patientId, setPatientId] = useState('')
   const [paymentMethod, setPaymentMethod] = useState('cash')
-  const [received, setReceived] = useState('25.27')
+  const [received, setReceived] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [processing, setProcessing] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        setLoading(true)
+        setError('')
+
+        if (!isSupabaseConfigured()) {
+          setError('Supabase is not configured. Update .env to enable sales.')
+          return
+        }
+
+        const [drugsData, patientsData] = await Promise.all([getAllDrugs(), getAllPatients()])
+        setDrugs(drugsData)
+        setPatients(patientsData)
+      } catch (loadError) {
+        console.error('Error loading POS data:', loadError)
+        setError(loadError.message || 'Unable to load POS data.')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadData()
+  }, [])
+
+  const filteredDrugs = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase()
+    if (!term) {
+      return drugs
+    }
+    return drugs.filter((drug) => {
+      return (
+        drug.name.toLowerCase().includes(term) ||
+        String(drug.batch_number || '').toLowerCase().includes(term)
+      )
+    })
+  }, [drugs, searchTerm])
+
+  const cartCount = useMemo(
+    () => cart.reduce((sum, item) => sum + item.quantity, 0),
+    [cart]
+  )
 
   const calculateTotal = () => {
-    return cart.reduce((sum, item) => sum + (item.price * item.quantity), 0)
+    return cart.reduce((sum, item) => sum + item.price * item.quantity, 0)
   }
 
   const calculateChange = () => {
     const total = calculateTotal()
-    const receivedAmount = parseFloat(received) || 0
+    const receivedAmount = Number.parseFloat(received) || 0
     return Math.max(0, receivedAmount - total)
   }
 
+  const getReservedQty = (drugId) => {
+    const row = cart.find((item) => item.id === drugId)
+    return row?.quantity || 0
+  }
+
+  const addToCart = (drug) => {
+    setCart((current) => {
+      const existing = current.find((item) => item.id === drug.id)
+      const maxQty = Number.parseFloat(drug.quantity) || 0
+
+      if (existing) {
+        if (existing.quantity >= maxQty) {
+          return current
+        }
+        return current.map((item) =>
+          item.id === drug.id ? { ...item, quantity: item.quantity + 1 } : item
+        )
+      }
+
+      if (maxQty <= 0) {
+        return current
+      }
+
+      return [
+        ...current,
+        {
+          id: drug.id,
+          drugId: drug.id,
+          name: drug.name,
+          price: Number.parseFloat(drug.price),
+          quantity: 1,
+          available: maxQty,
+        },
+      ]
+    })
+  }
+
   const updateQuantity = (id, change) => {
-    setCart(cart.map(item => 
-      item.id === id 
-        ? { ...item, quantity: Math.max(1, item.quantity + change) }
-        : item
-    ))
+    setCart((current) =>
+      current
+        .map((item) => {
+          if (item.id !== id) {
+            return item
+          }
+          const nextQty = item.quantity + change
+          if (nextQty <= 0) {
+            return null
+          }
+          if (nextQty > item.available) {
+            return item
+          }
+          return { ...item, quantity: nextQty }
+        })
+        .filter(Boolean)
+    )
   }
 
   const removeItem = (id) => {
-    setCart(cart.filter(item => item.id !== id))
+    setCart((current) => current.filter((item) => item.id !== id))
+  }
+
+  const refreshDrugs = async () => {
+    try {
+      const latestDrugs = await getAllDrugs()
+      setDrugs(latestDrugs)
+    } catch (refreshError) {
+      console.error('Failed to refresh inventory:', refreshError)
+    }
+  }
+
+  const handleCompleteSale = async () => {
+    if (!cart.length) {
+      return
+    }
+
+    const total = calculateTotal()
+    const amountPaid = Number.parseFloat(received) || 0
+
+    if (paymentMethod === 'cash' && amountPaid < total) {
+      notify('Received amount must be at least the total for cash payments.', 'warning')
+      return
+    }
+
+    try {
+      setProcessing(true)
+      setError('')
+
+      await createSale({
+        items: cart.map((item) => ({
+          drugId: item.drugId,
+          name: item.name,
+          quantity: item.quantity,
+          price: item.price,
+        })),
+        patientId: patientId || null,
+        paymentMethod,
+        amountPaid: paymentMethod === 'cash' ? amountPaid : total,
+        change: paymentMethod === 'cash' ? calculateChange() : 0,
+        soldBy: user?.id || null,
+      })
+
+      setCart([])
+      setSearchTerm('')
+      setReceived('')
+      setPatientId('')
+      await refreshDrugs()
+      notify('Sale completed successfully.', 'success')
+    } catch (saleError) {
+      console.error('Error completing sale:', saleError)
+      setError(saleError.message || 'Unable to complete sale.')
+    } finally {
+      setProcessing(false)
+    }
   }
 
   const total = calculateTotal()
   const change = calculateChange()
+
+  if (loading) {
+    return (
+      <div className="sales-page">
+        <div className="page-header">
+          <h1>Loading POS...</h1>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="sales-page">
@@ -43,40 +210,67 @@ const Sales = () => {
         <p>Quick drug dispensing and checkout</p>
       </div>
 
+      {error && <div className="pos-alert">{error}</div>}
+
       <div className="pos-layout">
-        {/* Left Side - Product Selection */}
         <div className="product-section">
           <div className="search-drug">
             <Search size={20} />
-            <input 
-              type="text" 
-              placeholder="Search drug or scan barcode..." 
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search drug or batch number..."
             />
           </div>
 
-          <div className="quick-add">
-            <h3>Or Quick Add</h3>
-            <div className="drug-grid">
-              {[
-                { name: 'Paracetamol', price: 5 },
-                { name: 'Ibuprofen', price: 4 },
-                { name: 'Amoxicillin', price: 37 },
-                { name: 'Vitamin C', price: 15 }
-              ].map((drug, index) => (
-                <button key={index} className="drug-card">
-                  <span className="drug-name">{drug.name}</span>
-                  <span className="drug-price">GHS {drug.price}</span>
-                </button>
+          <div className="patient-select-card">
+            <label htmlFor="sale-patient">Linked Patient (optional)</label>
+            <select
+              id="sale-patient"
+              value={patientId}
+              onChange={(e) => setPatientId(e.target.value)}
+            >
+              <option value="">Walk-in customer</option>
+              {patients.map((patient) => (
+                <option key={patient.id} value={patient.id}>
+                  {patient.full_name} ({patient.phone})
+                </option>
               ))}
+            </select>
+          </div>
+
+          <div className="quick-add">
+            <h3>Select Drugs</h3>
+            <div className="drug-grid">
+              {filteredDrugs.map((drug) => {
+                const reserved = getReservedQty(drug.id)
+                const remaining = Math.max(0, Number.parseFloat(drug.quantity || 0) - reserved)
+                const soldOut = remaining <= 0
+
+                return (
+                  <button
+                    key={drug.id}
+                    className="drug-card"
+                    onClick={() => addToCart(drug)}
+                    disabled={soldOut}
+                  >
+                    <span className="drug-name">{drug.name}</span>
+                    <span className="drug-price">GHS {Number.parseFloat(drug.price).toFixed(2)}</span>
+                    <span className={`drug-stock ${soldOut ? 'sold-out' : ''}`}>
+                      {soldOut ? 'Out of stock' : `${remaining} in stock`}
+                    </span>
+                  </button>
+                )
+              })}
             </div>
           </div>
         </div>
 
-        {/* Right Side - Cart & Checkout */}
         <div className="checkout-section">
           <div className="cart-header">
             <h3>Selected Items</h3>
-            <span className="item-count">{cart.length} items</span>
+            <span className="item-count">{cartCount} items</span>
           </div>
 
           <div className="cart-items">
@@ -103,13 +297,8 @@ const Sales = () => {
                         <Plus size={14} />
                       </button>
                     </div>
-                    <span className="item-total">
-                      GHS {(item.price * item.quantity).toFixed(2)}
-                    </span>
-                    <button 
-                      className="remove-btn"
-                      onClick={() => removeItem(item.id)}
-                    >
+                    <span className="item-total">GHS {(item.price * item.quantity).toFixed(2)}</span>
+                    <button className="remove-btn" onClick={() => removeItem(item.id)}>
                       <Trash2 size={16} />
                     </button>
                   </div>
@@ -125,19 +314,19 @@ const Sales = () => {
             </div>
 
             <div className="payment-methods">
-              <button 
+              <button
                 className={`payment-btn ${paymentMethod === 'cash' ? 'active' : ''}`}
                 onClick={() => setPaymentMethod('cash')}
               >
                 Cash
               </button>
-              <button 
+              <button
                 className={`payment-btn ${paymentMethod === 'momo' ? 'active' : ''}`}
                 onClick={() => setPaymentMethod('momo')}
               >
                 Mobile Money
               </button>
-              <button 
+              <button
                 className={`payment-btn ${paymentMethod === 'insurance' ? 'active' : ''}`}
                 onClick={() => setPaymentMethod('insurance')}
               >
@@ -150,11 +339,12 @@ const Sales = () => {
                 <div className="input-group">
                   <label>Received (GHS)</label>
                   <div className="input-wrapper">
-                    <input 
-                      type="number" 
+                    <input
+                      type="number"
                       value={received}
                       onChange={(e) => setReceived(e.target.value)}
                       step="0.01"
+                      min="0"
                     />
                   </div>
                 </div>
@@ -165,11 +355,12 @@ const Sales = () => {
               </div>
             )}
 
-            <button 
+            <button
               className="complete-sale-btn"
-              disabled={cart.length === 0}
+              disabled={cart.length === 0 || processing}
+              onClick={handleCompleteSale}
             >
-              Complete Sale
+              {processing ? 'Completing Sale...' : 'Complete Sale'}
             </button>
           </div>
         </div>

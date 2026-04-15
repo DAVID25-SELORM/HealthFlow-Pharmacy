@@ -21,14 +21,16 @@
 2. Go to "API" section
 3. Copy these two values:
    - **Project URL** (looks like: `https://xxxxx.supabase.co`)
-   - **anon public key** (long string starting with `eyJhbGci...`)
+   - **Publishable key** (preferred) or **anon public key**
 
 ### Step 4: Configure Your App
 1. Open the `.env` file in HealthFlow Pharmacy folder
 2. Replace the placeholder values:
 ```env
 VITE_SUPABASE_URL=https://your-project-id.supabase.co
-VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_xxxxx
+# Optional legacy support:
+# VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 ```
 
 ### Step 5: Create Database Tables
@@ -39,6 +41,17 @@ VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 5. Paste it into the Supabase SQL Editor
 6. Click "Run" (or press F5)
 7. Wait for success message ✅
+
+### Existing Project Upgrade (Important)
+
+If your project already has tables from an earlier setup, do not rerun the full schema blindly.
+
+1. Open `supabase-migration-2026-04-14.sql`
+2. Run it in SQL Editor
+3. This migration adds:
+   - RLS policies and numeric constraints (idempotent checks)
+   - Atomic transaction RPCs (`create_sale_transaction`, `create_claim_transaction`)
+   - Execute grants for authenticated role
 
 ### Step 6: Verify Tables Created
 1. Click "Table Editor" in Supabase sidebar

@@ -1,4 +1,11 @@
 import { supabase } from '../lib/supabase'
+import {
+  assertNonNegativeNumber,
+  assertRequiredText,
+  normalizeText,
+  sanitizeSearchTerm,
+} from '../utils/validation'
+import { tryLogAuditEvent } from './auditService'
 
 /**
  * Claims Service
@@ -18,60 +25,141 @@ const generateClaimNumber = async () => {
   return data
 }
 
+const buildValidatedClaimPayload = (claimData) => {
+  const patientName = assertRequiredText(claimData.patientName, 'Patient name')
+  const insuranceProvider = assertRequiredText(claimData.insuranceProvider, 'Insurance provider')
+  const insuranceId = assertRequiredText(claimData.insuranceId, 'Insurance ID')
+
+  const totalAmount =
+    claimData.items?.reduce((sum, item) => {
+      const quantity = assertNonNegativeNumber(item.quantity, 'Item quantity')
+      const price = assertNonNegativeNumber(item.price, 'Item price')
+      return sum + (price * quantity)
+    }, 0) || assertNonNegativeNumber(claimData.totalAmount, 'Total amount')
+
+  return {
+    patientName,
+    insuranceProvider,
+    insuranceId,
+    totalAmount,
+  }
+}
+
+const createClaimLegacy = async (claimData) => {
+  const claimNumber = await generateClaimNumber()
+  const validated = buildValidatedClaimPayload(claimData)
+
+  const { data: claim, error: claimError } = await supabase
+    .from('claims')
+    .insert([
+      {
+        claim_number: claimNumber,
+        patient_id: claimData.patientId || null,
+        patient_name: validated.patientName,
+        insurance_provider: validated.insuranceProvider,
+        insurance_id: validated.insuranceId,
+        service_date: claimData.serviceDate || new Date().toISOString().split('T')[0],
+        total_amount: validated.totalAmount,
+        claim_status: 'pending',
+        prescription_url: claimData.prescriptionUrl,
+        notes: normalizeText(claimData.notes) || null,
+        submitted_by: claimData.submittedBy,
+        submitted_at: new Date().toISOString(),
+      },
+    ])
+    .select()
+
+  if (claimError) throw claimError
+
+  if (claimData.items && claimData.items.length > 0) {
+    const claimItems = claimData.items.map((item) => ({
+      claim_id: claim[0].id,
+      drug_id: item.drugId,
+      drug_name: item.name,
+      quantity: assertNonNegativeNumber(item.quantity, 'Item quantity'),
+      unit_price: assertNonNegativeNumber(item.price, 'Item price'),
+      total_price:
+        assertNonNegativeNumber(item.price, 'Item price') *
+        assertNonNegativeNumber(item.quantity, 'Item quantity'),
+    }))
+
+    const { error: itemsError } = await supabase.from('claim_items').insert(claimItems)
+    if (itemsError) throw itemsError
+  }
+
+  await tryLogAuditEvent({
+    eventType: 'claim.submitted',
+    entityType: 'claims',
+    entityId: claim[0].id,
+    action: 'create',
+    details: {
+      claim_number: claim[0].claim_number,
+      insurance_provider: validated.insuranceProvider,
+      total_amount: validated.totalAmount,
+      item_count: claimData.items?.length || 0,
+    },
+  })
+
+  return { claim: claim[0], claimNumber: claim[0].claim_number }
+}
+
 // Create new claim
 export const createClaim = async (claimData) => {
   try {
-    // Generate claim number
-    const claimNumber = await generateClaimNumber()
-    
-    // Calculate total amount from items
-    const totalAmount = claimData.items?.reduce(
-      (sum, item) => sum + (item.price * item.quantity),
-      0
-    ) || parseFloat(claimData.totalAmount)
-    
-    // Create claim record
-    const { data: claim, error: claimError } = await supabase
-      .from('claims')
-      .insert([
-        {
-          claim_number: claimNumber,
-          patient_id: claimData.patientId || null,
-          patient_name: claimData.patientName,
-          insurance_provider: claimData.insuranceProvider,
-          insurance_id: claimData.insuranceId,
-          service_date: claimData.serviceDate || new Date().toISOString().split('T')[0],
-          total_amount: totalAmount,
-          claim_status: 'pending',
-          prescription_url: claimData.prescriptionUrl,
-          notes: claimData.notes,
-          submitted_by: claimData.submittedBy,
-          submitted_at: new Date().toISOString()
-        }
-      ])
-      .select()
-    
-    if (claimError) throw claimError
-    
-    // If items are provided, create claim items
-    if (claimData.items && claimData.items.length > 0) {
-      const claimItems = claimData.items.map(item => ({
-        claim_id: claim[0].id,
-        drug_id: item.drugId,
-        drug_name: item.name,
-        quantity: parseFloat(item.quantity),
-        unit_price: parseFloat(item.price),
-        total_price: parseFloat(item.price * item.quantity)
-      }))
-      
-      const { error: itemsError } = await supabase
-        .from('claim_items')
-        .insert(claimItems)
-      
-      if (itemsError) throw itemsError
+    if (!claimData?.items?.length) {
+      throw new Error('At least one claim item is required.')
     }
-    
-    return { claim: claim[0], claimNumber }
+
+    const validated = buildValidatedClaimPayload(claimData)
+
+    const { data: txData, error: txError } = await supabase.rpc('create_claim_transaction', {
+      claim_payload: {
+        patient_id: claimData.patientId || null,
+        patient_name: validated.patientName,
+        insurance_provider: validated.insuranceProvider,
+        insurance_id: validated.insuranceId,
+        service_date: claimData.serviceDate || new Date().toISOString().split('T')[0],
+        claim_status: 'pending',
+        prescription_url: claimData.prescriptionUrl || null,
+        notes: normalizeText(claimData.notes) || null,
+        submitted_by: claimData.submittedBy || null,
+        submitted_at: new Date().toISOString(),
+        items: claimData.items.map((item) => ({
+          drugId: item.drugId,
+          name: item.name,
+          quantity: assertNonNegativeNumber(item.quantity, 'Item quantity'),
+          price: assertNonNegativeNumber(item.price, 'Item price'),
+        })),
+      },
+    })
+
+    if (txError) {
+      console.warn('create_claim_transaction RPC unavailable, falling back to legacy path:', txError.message)
+      return createClaimLegacy(claimData)
+    }
+
+    const txPayload = txData || {}
+
+    await tryLogAuditEvent({
+      eventType: 'claim.submitted',
+      entityType: 'claims',
+      entityId: txPayload.claim_id,
+      action: 'create',
+      details: {
+        claim_number: txPayload.claim_number,
+        insurance_provider: validated.insuranceProvider,
+        total_amount: validated.totalAmount,
+        item_count: claimData.items.length,
+      },
+    })
+
+    return {
+      claim: {
+        id: txPayload.claim_id,
+        claim_number: txPayload.claim_number,
+      },
+      claimNumber: txPayload.claim_number,
+    }
   } catch (error) {
     console.error('Error creating claim:', error)
     throw error
@@ -146,6 +234,18 @@ export const updateClaimStatus = async (id, status, additionalData = {}) => {
     .select()
   
   if (error) throw error
+
+  await tryLogAuditEvent({
+    eventType: 'claim.status_updated',
+    entityType: 'claims',
+    entityId: id,
+    action: 'update_status',
+    details: {
+      status,
+      ...additionalData,
+    },
+  })
+
   return data[0]
 }
 
@@ -200,10 +300,15 @@ export const getRecentClaims = async (limit = 10) => {
 
 // Search claims
 export const searchClaims = async (searchTerm) => {
+  const term = sanitizeSearchTerm(searchTerm)
+  if (!term) {
+    return getAllClaims()
+  }
+
   const { data, error } = await supabase
     .from('claims')
     .select('*')
-    .or(`patient_name.ilike.%${searchTerm}%,claim_number.ilike.%${searchTerm}%,insurance_id.ilike.%${searchTerm}%`)
+    .or(`patient_name.ilike.%${term}%,claim_number.ilike.%${term}%,insurance_id.ilike.%${term}%`)
     .order('submitted_at', { ascending: false })
   
   if (error) throw error

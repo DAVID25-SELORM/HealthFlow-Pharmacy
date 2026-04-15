@@ -2,9 +2,11 @@ import { useState, useEffect } from 'react'
 import { Plus, Search, Filter, Edit2, Trash2 } from 'lucide-react'
 import { getAllDrugs, addDrug, deleteDrug, searchDrugs, calculateDrugStatus } from '../services/drugService'
 import { isSupabaseConfigured } from '../lib/supabase'
+import { useNotification } from '../context/NotificationContext'
 import './Inventory.css'
 
 const Inventory = () => {
+  const { notify } = useNotification()
   const [showAddModal, setShowAddModal] = useState(false)
   const [drugs, setDrugs] = useState([])
   const [loading, setLoading] = useState(true)
@@ -103,7 +105,7 @@ const Inventory = () => {
     
     try {
       if (!isSupabaseConfigured()) {
-        alert('⚠️ Supabase not configured. Please update your .env file.')
+        notify('Supabase not configured. Please update your .env file.', 'warning')
         return
       }
       
@@ -118,10 +120,10 @@ const Inventory = () => {
         supplier: ''
       })
       loadDrugs()
-      alert('✅ Drug added successfully!')
+      notify('Drug added successfully!', 'success')
     } catch (error) {
       console.error('Error adding drug:', error)
-      alert('❌ Error adding drug: ' + error.message)
+      notify(`Error adding drug: ${error.message}`, 'error')
     }
   }
 
@@ -130,16 +132,16 @@ const Inventory = () => {
     
     try {
       if (!isSupabaseConfigured()) {
-        alert('⚠️ Supabase not configured')
+        notify('Supabase not configured.', 'warning')
         return
       }
       
       await deleteDrug(id)
       loadDrugs()
-      alert('✅ Drug deleted successfully!')
+      notify('Drug deleted successfully!', 'success')
     } catch (error) {
       console.error('Error deleting drug:', error)
-      alert('❌ Error deleting drug: ' + error.message)
+      notify(`Error deleting drug: ${error.message}`, 'error')
     }
   }
 
