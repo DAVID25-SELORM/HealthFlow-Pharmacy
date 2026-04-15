@@ -58,10 +58,24 @@ body {
   background-color: var(--gray-50);
   color: var(--gray-800);
   line-height: 1.6;
+  overflow-x: hidden;
 }
 
 #root {
   min-height: 100vh;
+}
+
+img,
+svg,
+canvas {
+  max-width: 100%;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
 }
 
 /* Scrollbar Styles */
@@ -168,4 +182,22 @@ h6 { font-size: 0.875rem; }
 
 .toast-error {
   background: var(--danger);
+}
+
+@media (max-width: 768px) {
+  h1 { font-size: 1.65rem; }
+  h2 { font-size: 1.35rem; }
+  h3 { font-size: 1.1rem; }
+
+  .toast-stack {
+    left: 0.75rem;
+    right: 0.75rem;
+    top: 0.75rem;
+  }
+
+  .toast-item {
+    min-width: 0;
+    max-width: none;
+    width: 100%;
+  }
 }

@@ -159,6 +159,12 @@
   justify-content: center;
 }
 
+@media (max-width: 1024px) {
+  .date-range {
+    flex-wrap: wrap;
+  }
+}
+
 @media (max-width: 768px) {
   .reports-grid {
     grid-template-columns: 1fr;

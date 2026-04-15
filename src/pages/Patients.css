@@ -207,7 +207,20 @@
 }
 
 @media (max-width: 768px) {
+  .search-container {
+    padding: 0.85rem 1rem;
+    margin-bottom: 1rem;
+  }
+
   .patients-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .patient-card {
+    padding: 1rem;
+  }
+
+  .patient-stats {
     grid-template-columns: 1fr;
   }
 }

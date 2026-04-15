@@ -132,6 +132,18 @@ const Sales = () => {
     )
   }
 
+  const setItemQuantity = (id, rawValue, available) => {
+    const value = parseInt(rawValue, 10)
+    if (Number.isNaN(value) || value <= 0) {
+      setCart((current) => current.filter((item) => item.id !== id))
+      return
+    }
+    const clamped = Math.min(value, available)
+    setCart((current) =>
+      current.map((item) => (item.id === id ? { ...item, quantity: clamped } : item))
+    )
+  }
+
   const removeItem = (id) => {
     setCart((current) => current.filter((item) => item.id !== id))
   }
@@ -289,17 +301,25 @@ const Sales = () => {
                   </div>
                   <div className="item-controls">
                     <div className="quantity-controls">
-                      <button onClick={() => updateQuantity(item.id, -1)}>
-                        <Minus size={14} />
+                      <button type="button" onClick={() => updateQuantity(item.id, -1)} aria-label="Decrease quantity">
+                        <Minus size={18} />
                       </button>
-                      <span className="quantity">{item.quantity}</span>
-                      <button onClick={() => updateQuantity(item.id, 1)}>
-                        <Plus size={14} />
+                      <input
+                        type="number"
+                        className="quantity-input"
+                        value={item.quantity}
+                        min="1"
+                        max={item.available}
+                        onChange={(e) => setItemQuantity(item.id, e.target.value, item.available)}
+                        aria-label={`Quantity for ${item.name}`}
+                      />
+                      <button type="button" onClick={() => updateQuantity(item.id, 1)} aria-label="Increase quantity">
+                        <Plus size={18} />
                       </button>
                     </div>
                     <span className="item-total">GHS {(item.price * item.quantity).toFixed(2)}</span>
                     <button className="remove-btn" onClick={() => removeItem(item.id)}>
-                      <Trash2 size={16} />
+                      <Trash2 size={18} />
                     </button>
                   </div>
                 </div>
@@ -335,21 +355,24 @@ const Sales = () => {
             </div>
 
             {paymentMethod === 'cash' && (
-              <div className="cash-inputs">
-                <div className="input-group">
-                  <label>Received (GHS)</label>
-                  <div className="input-wrapper">
+              <div className="cash-panel">
+                <div className="cash-field cash-field-input">
+                  <label htmlFor="cash-received">Cash Received</label>
+                  <div className="cash-input-shell">
+                    <span className="cash-prefix">GHS</span>
                     <input
+                      id="cash-received"
                       type="number"
                       value={received}
                       onChange={(e) => setReceived(e.target.value)}
                       step="0.01"
                       min="0"
+                      placeholder="0.00"
                     />
                   </div>
                 </div>
-                <div className="change-display">
-                  <span>Change</span>
+                <div className="cash-field cash-field-change">
+                  <span className="cash-field-label">Change Due</span>
                   <span className="change-amount">GHS {change.toFixed(2)}</span>
                 </div>
               </div>

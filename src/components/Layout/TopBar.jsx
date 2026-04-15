@@ -1,10 +1,10 @@
 import { useState } from 'react'
-import { Search, Bell, LogOut } from 'lucide-react'
+import { Menu, Search, Bell, LogOut } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useNotification } from '../../context/NotificationContext'
 import './TopBar.css'
 
-const TopBar = () => {
+const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
   const [notifications] = useState(3)
   const { displayName, role, signOut } = useAuth()
   const { notify } = useNotification()
@@ -22,17 +22,28 @@ const TopBar = () => {
 
   return (
     <header className="topbar">
-      <div className="search-container">
-        <Search size={20} className="search-icon" />
-        <input 
-          type="text" 
-          placeholder="Search drugs or scan barcode..." 
-          className="search-input"
-        />
+      <div className="topbar-leading">
+        <button
+          type="button"
+          className="topbar-menu-btn"
+          aria-label={isSidebarOpen ? 'Close navigation menu' : 'Open navigation menu'}
+          onClick={onMenuToggle}
+        >
+          <Menu size={20} />
+        </button>
+
+        <div className="topbar-search-container">
+          <Search size={20} className="topbar-search-icon" />
+          <input 
+            type="text" 
+            placeholder="Search drugs or scan barcode..." 
+            className="topbar-search-input"
+          />
+        </div>
       </div>
 
       <div className="topbar-actions">
-        <button className="notification-btn">
+        <button className="notification-btn" type="button">
           <Bell size={20} />
           {notifications > 0 && (
             <span className="notification-badge">{notifications}</span>
@@ -49,7 +60,7 @@ const TopBar = () => {
             <span className="user-name">{displayName}</span>
             <span className="user-role">{role}</span>
           </div>
-          <button className="notification-btn" onClick={handleLogout} title="Sign out">
+          <button className="notification-btn" type="button" onClick={handleLogout} title="Sign out">
             <LogOut size={16} />
           </button>
         </div>

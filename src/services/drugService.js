@@ -62,19 +62,39 @@ export const addDrug = async (drugData) => {
 export const updateDrug = async (id, drugData) => {
   const name = assertRequiredText(drugData.name, 'Drug name')
   const batchNumber = assertRequiredText(drugData.batchNumber, 'Batch number')
+  const payload = {
+    name,
+    batch_number: batchNumber,
+    expiry_date: drugData.expiryDate,
+    quantity: assertNonNegativeNumber(drugData.quantity, 'Quantity'),
+    price: assertNonNegativeNumber(drugData.price, 'Price'),
+    supplier: normalizeText(drugData.supplier) || null,
+    updated_at: new Date().toISOString()
+  }
+
+  if (Object.prototype.hasOwnProperty.call(drugData, 'costPrice')) {
+    payload.cost_price = assertNonNegativeNumber(drugData.costPrice || 0, 'Cost price')
+  }
+
+  if (Object.prototype.hasOwnProperty.call(drugData, 'category')) {
+    payload.category = normalizeText(drugData.category) || null
+  }
+
+  if (Object.prototype.hasOwnProperty.call(drugData, 'description')) {
+    payload.description = normalizeText(drugData.description) || null
+  }
+
+  if (Object.prototype.hasOwnProperty.call(drugData, 'reorderLevel')) {
+    payload.reorder_level = assertNonNegativeNumber(drugData.reorderLevel || 10, 'Reorder level')
+  }
+
+  if (Object.prototype.hasOwnProperty.call(drugData, 'unit')) {
+    payload.unit = normalizeText(drugData.unit) || 'tablets'
+  }
 
   const { data, error } = await supabase
     .from('drugs')
-    .update({
-      name,
-      batch_number: batchNumber,
-      expiry_date: drugData.expiryDate,
-      quantity: assertNonNegativeNumber(drugData.quantity, 'Quantity'),
-      price: assertNonNegativeNumber(drugData.price, 'Price'),
-      cost_price: assertNonNegativeNumber(drugData.costPrice || 0, 'Cost price'),
-      supplier: normalizeText(drugData.supplier) || null,
-      updated_at: new Date().toISOString()
-    })
+    .update(payload)
     .eq('id', id)
     .select()
   

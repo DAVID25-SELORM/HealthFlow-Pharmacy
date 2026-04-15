@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import { 
+  X,
   Home, 
   Package, 
   ShoppingCart, 
@@ -11,7 +12,7 @@ import {
 import { useAuth } from '../../context/AuthContext'
 import './Sidebar.css'
 
-const Sidebar = () => {
+const Sidebar = ({ isOpen, onClose }) => {
   const { role } = useAuth()
 
   const menuItems = [
@@ -27,7 +28,7 @@ const Sidebar = () => {
   const visibleItems = menuItems.filter((item) => item.roles.includes(role))
 
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar ${isOpen ? 'open' : ''}`}>
       <div className="sidebar-logo">
         <div className="logo-icon">
           <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
@@ -39,6 +40,9 @@ const Sidebar = () => {
           <h2>HealthFlow</h2>
           <p>Pharmacy</p>
         </div>
+        <button type="button" className="sidebar-close" onClick={onClose} aria-label="Close menu">
+          <X size={18} />
+        </button>
       </div>
 
       <nav className="sidebar-nav">
@@ -46,6 +50,7 @@ const Sidebar = () => {
           <NavLink
             key={item.path}
             to={item.path}
+            onClick={onClose}
             className={({ isActive }) => 
               `nav-item ${isActive ? 'active' : ''}`
             }

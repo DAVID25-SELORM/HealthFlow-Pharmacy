@@ -1,28 +1,49 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Plus, Search, Filter, Edit2, Trash2 } from 'lucide-react'
-import { getAllDrugs, addDrug, deleteDrug, searchDrugs, calculateDrugStatus } from '../services/drugService'
+import { getAllDrugs, addDrug, updateDrug, deleteDrug, calculateDrugStatus } from '../services/drugService'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { useNotification } from '../context/NotificationContext'
 import './Inventory.css'
 
+const emptyDrugForm = {
+  name: '',
+  batchNumber: '',
+  expiryDate: '',
+  quantity: '',
+  price: '',
+  supplier: '',
+}
+
+const filterOptions = [
+  { value: 'all', label: 'All Medicines' },
+  { value: 'good', label: 'Good Stock' },
+  { value: 'low', label: 'Low Stock' },
+  { value: 'expiring', label: 'Expiring Soon' },
+  { value: 'expired', label: 'Expired' },
+]
+
+const mapDrugToForm = (drug) => ({
+  name: drug.name || '',
+  batchNumber: drug.batch_number || drug.batch || '',
+  expiryDate: drug.expiry_date || drug.expiry || '',
+  quantity: String(drug.quantity ?? ''),
+  price: String(drug.price ?? ''),
+  supplier: drug.supplier || '',
+})
+
 const Inventory = () => {
   const { notify } = useNotification()
-  const [showAddModal, setShowAddModal] = useState(false)
+  const [showDrugModal, setShowDrugModal] = useState(false)
+  const [editingDrugId, setEditingDrugId] = useState(null)
   const [drugs, setDrugs] = useState([])
   const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
-  const [formData, setFormData] = useState({
-    name: '',
-    batchNumber: '',
-    expiryDate: '',
-    quantity: '',
-    price: '',
-    supplier: ''
-  })
+  const [activeFilter, setActiveFilter] = useState('all')
+  const [formData, setFormData] = useState(emptyDrugForm)
 
-  // Load drugs on mount
   useEffect(() => {
-    loadDrugs()
+    void loadDrugs()
   }, [])
 
   const loadDrugs = async () => {
@@ -33,6 +54,7 @@ const Inventory = () => {
         setSampleData()
         return
       }
+
       const data = await getAllDrugs()
       setDrugs(data)
     } catch (error) {
@@ -51,7 +73,7 @@ const Inventory = () => {
         batch_number: 'BT001',
         expiry_date: '2026-08-15',
         quantity: 12,
-        price: 37
+        price: 37,
       },
       {
         id: '2',
@@ -59,7 +81,7 @@ const Inventory = () => {
         batch_number: 'BT002',
         expiry_date: '2025-12-20',
         quantity: 4,
-        price: 5
+        price: 5,
       },
       {
         id: '3',
@@ -67,7 +89,7 @@ const Inventory = () => {
         batch_number: 'BT003',
         expiry_date: '2024-06-30',
         quantity: 15,
-        price: 1
+        price: 1,
       },
       {
         id: '4',
@@ -75,69 +97,90 @@ const Inventory = () => {
         batch_number: 'BT004',
         expiry_date: '2026-11-10',
         quantity: 1.8,
-        price: 1
-      }
+        price: 1,
+      },
     ])
     setLoading(false)
   }
 
-  const handleSearch = async (e) => {
-    const term = e.target.value
-    setSearchTerm(term)
-    
-    if (!term.trim()) {
-      loadDrugs()
-      return
-    }
-    
-    try {
-      if (isSupabaseConfigured()) {
-        const results = await searchDrugs(term)
-        setDrugs(results)
-      }
-    } catch (error) {
-      console.error('Error searching:', error)
-    }
+  const visibleDrugs = useMemo(() => {
+    const normalizedTerm = searchTerm.trim().toLowerCase()
+
+    return drugs.filter((drug) => {
+      const name = String(drug.name || '').toLowerCase()
+      const batchNumber = String(drug.batch_number || drug.batch || '').toLowerCase()
+      const matchesSearch =
+        !normalizedTerm || name.includes(normalizedTerm) || batchNumber.includes(normalizedTerm)
+      const matchesFilter =
+        activeFilter === 'all' || calculateDrugStatus(drug) === activeFilter
+
+      return matchesSearch && matchesFilter
+    })
+  }, [activeFilter, drugs, searchTerm])
+
+  const resetForm = () => {
+    setEditingDrugId(null)
+    setFormData(emptyDrugForm)
   }
 
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-    
+  const closeDrugModal = () => {
+    setShowDrugModal(false)
+    resetForm()
+  }
+
+  const openAddModal = () => {
+    resetForm()
+    setShowDrugModal(true)
+  }
+
+  const openEditModal = (drug) => {
+    setEditingDrugId(drug.id)
+    setFormData(mapDrugToForm(drug))
+    setShowDrugModal(true)
+  }
+
+  const handleSubmit = async (event) => {
+    event.preventDefault()
+
     try {
+      setSubmitting(true)
+
       if (!isSupabaseConfigured()) {
         notify('Supabase not configured. Please update your .env file.', 'warning')
         return
       }
-      
-      await addDrug(formData)
-      setShowAddModal(false)
-      setFormData({
-        name: '',
-        batchNumber: '',
-        expiryDate: '',
-        quantity: '',
-        price: '',
-        supplier: ''
-      })
-      loadDrugs()
-      notify('Drug added successfully!', 'success')
+
+      if (editingDrugId) {
+        await updateDrug(editingDrugId, formData)
+        notify('Medicine updated successfully!', 'success')
+      } else {
+        await addDrug(formData)
+        notify('Drug added successfully!', 'success')
+      }
+
+      closeDrugModal()
+      await loadDrugs()
     } catch (error) {
-      console.error('Error adding drug:', error)
-      notify(`Error adding drug: ${error.message}`, 'error')
+      console.error('Error saving drug:', error)
+      notify(`Error saving drug: ${error.message}`, 'error')
+    } finally {
+      setSubmitting(false)
     }
   }
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this drug?')) return
-    
+    if (!window.confirm('Are you sure you want to delete this drug?')) {
+      return
+    }
+
     try {
       if (!isSupabaseConfigured()) {
         notify('Supabase not configured.', 'warning')
         return
       }
-      
+
       await deleteDrug(id)
-      loadDrugs()
+      await loadDrugs()
       notify('Drug deleted successfully!', 'success')
     } catch (error) {
       console.error('Error deleting drug:', error)
@@ -151,8 +194,9 @@ const Inventory = () => {
       good: { label: 'Good Stock', class: 'status-good' },
       low: { label: 'Low Stock', class: 'status-low' },
       expiring: { label: 'Expiring Soon', class: 'status-expiring' },
-      expired: { label: 'Expired', class: 'status-expired' }
+      expired: { label: 'Expired', class: 'status-expired' },
     }
+
     return statusConfig[status] || statusConfig.good
   }
 
@@ -173,33 +217,38 @@ const Inventory = () => {
           <h1>Inventory Management</h1>
           <p>Manage your drug stock, track expiry dates, and monitor low stock items</p>
         </div>
-        <button 
-          className="btn btn-primary"
-          onClick={() => setShowAddModal(true)}
-        >
+        <button className="btn btn-primary" type="button" onClick={openAddModal}>
           <Plus size={20} />
           Add Drug
         </button>
       </div>
 
-      {/* Search and Filter */}
       <div className="inventory-controls">
         <div className="search-box">
           <Search size={18} />
-          <input 
-            type="text" 
+          <input
+            type="text"
             placeholder="Search by name, batch number..."
             value={searchTerm}
-            onChange={handleSearch}
+            onChange={(event) => setSearchTerm(event.target.value)}
           />
         </div>
-        <button className="btn btn-outline">
+        <div className="filter-box">
           <Filter size={18} />
-          Filter
-        </button>
+          <select
+            value={activeFilter}
+            onChange={(event) => setActiveFilter(event.target.value)}
+            aria-label="Filter medicines"
+          >
+            {filterOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
-      {/* Inventory Table */}
       <div className="table-container">
         <table className="inventory-table">
           <thead>
@@ -215,39 +264,48 @@ const Inventory = () => {
             </tr>
           </thead>
           <tbody>
-            {drugs.length === 0 ? (
+            {visibleDrugs.length === 0 ? (
               <tr>
                 <td colSpan="8" style={{ textAlign: 'center', padding: '2rem' }}>
-                  {searchTerm ? 'No drugs found' : 'No drugs in inventory. Click "Add Drug" to get started.'}
+                  {searchTerm || activeFilter !== 'all'
+                    ? 'No medicines match the current search or filter.'
+                    : 'No drugs in inventory. Click "Add Drug" to get started.'}
                 </td>
               </tr>
             ) : (
-              drugs.map((drug) => {
+              visibleDrugs.map((drug) => {
                 const status = getStatusBadge(drug)
-                const total = (drug.quantity * drug.price).toFixed(2)
-                const batchNumber = drug.batch_number || drug.batch
+                const quantity = Number.parseFloat(drug.quantity ?? 0) || 0
+                const price = Number.parseFloat(drug.price ?? 0) || 0
+                const total = (quantity * price).toFixed(2)
+                const batchNumber = drug.batch_number || drug.batch || 'N/A'
                 const expiryDate = drug.expiry_date || drug.expiry
+
                 return (
                   <tr key={drug.id}>
                     <td className="drug-name">{drug.name}</td>
                     <td>{batchNumber}</td>
-                    <td>{new Date(expiryDate).toLocaleDateString()}</td>
-                    <td>{drug.quantity}</td>
-                    <td>GHS {drug.price.toFixed(2)}</td>
+                    <td>{expiryDate ? new Date(expiryDate).toLocaleDateString() : 'N/A'}</td>
+                    <td>{quantity}</td>
+                    <td>GHS {price.toFixed(2)}</td>
                     <td className="total-cell">GHS {total}</td>
                     <td>
-                      <span className={`status-badge ${status.class}`}>
-                        {status.label}
-                      </span>
+                      <span className={`status-badge ${status.class}`}>{status.label}</span>
                     </td>
                     <td>
                       <div className="action-buttons">
-                        <button className="icon-btn edit-btn" title="Edit">
+                        <button
+                          className="icon-btn edit-btn"
+                          title={`Edit ${drug.name}`}
+                          type="button"
+                          onClick={() => openEditModal(drug)}
+                        >
                           <Edit2 size={16} />
                         </button>
-                        <button 
-                          className="icon-btn delete-btn" 
-                          title="Delete"
+                        <button
+                          className="icon-btn delete-btn"
+                          title={`Delete ${drug.name}`}
+                          type="button"
                           onClick={() => handleDelete(drug.id)}
                         >
                           <Trash2 size={16} />
@@ -262,47 +320,46 @@ const Inventory = () => {
         </table>
       </div>
 
-      {/* Pagination */}
       <div className="pagination">
-        <span className="page-info">Showing 1-{drugs.length} of {drugs.length} items</span>
+        <span className="page-info">
+          Showing {visibleDrugs.length === 0 ? 0 : 1}-{visibleDrugs.length} of {drugs.length} items
+        </span>
         <div className="page-buttons">
-          <button className="page-btn" disabled>1</button>
+          <button className="page-btn" disabled>
+            1
+          </button>
         </div>
       </div>
 
-      {/* Add Drug Modal */}
-      {showAddModal && (
-        <div className="modal-overlay" onClick={() => setShowAddModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+      {showDrugModal && (
+        <div className="modal-overlay" onClick={closeDrugModal}>
+          <div className="modal-content" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
-              <h2>Add New Drug</h2>
-              <button 
-                className="close-btn"
-                onClick={() => setShowAddModal(false)}
-              >
-                ×
+              <h2>{editingDrugId ? 'Edit Medicine' : 'Add New Drug'}</h2>
+              <button className="close-btn" type="button" onClick={closeDrugModal}>
+                x
               </button>
             </div>
             <form className="drug-form" onSubmit={handleSubmit}>
               <div className="form-row">
                 <div className="form-group">
                   <label>Drug Name *</label>
-                  <input 
-                    type="text" 
-                    placeholder="e.g., Paracetamol 500mg" 
+                  <input
+                    type="text"
+                    placeholder="e.g., Paracetamol 500mg"
                     required
                     value={formData.name}
-                    onChange={(e) => setFormData({...formData, name: e.target.value})}
+                    onChange={(event) => setFormData({ ...formData, name: event.target.value })}
                   />
                 </div>
                 <div className="form-group">
                   <label>Batch Number *</label>
-                  <input 
-                    type="text" 
-                    placeholder="e.g., BT001" 
+                  <input
+                    type="text"
+                    placeholder="e.g., BT001"
                     required
                     value={formData.batchNumber}
-                    onChange={(e) => setFormData({...formData, batchNumber: e.target.value})}
+                    onChange={(event) => setFormData({ ...formData, batchNumber: event.target.value })}
                   />
                 </div>
               </div>
@@ -310,21 +367,22 @@ const Inventory = () => {
               <div className="form-row">
                 <div className="form-group">
                   <label>Expiry Date *</label>
-                  <input 
-                    type="date" 
+                  <input
+                    type="date"
                     required
                     value={formData.expiryDate}
-                    onChange={(e) => setFormData({...formData, expiryDate: e.target.value})}
+                    onChange={(event) => setFormData({ ...formData, expiryDate: event.target.value })}
                   />
                 </div>
                 <div className="form-group">
                   <label>Quantity *</label>
-                  <input 
-                    type="number" 
-                    placeholder="0" 
+                  <input
+                    type="number"
+                    placeholder="0"
                     required
+                    min="0"
                     value={formData.quantity}
-                    onChange={(e) => setFormData({...formData, quantity: e.target.value})}
+                    onChange={(event) => setFormData({ ...formData, quantity: event.target.value })}
                   />
                 </div>
               </div>
@@ -332,36 +390,33 @@ const Inventory = () => {
               <div className="form-row">
                 <div className="form-group">
                   <label>Price (GHS) *</label>
-                  <input 
-                    type="number" 
-                    step="0.01" 
-                    placeholder="0.00" 
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="0.00"
                     required
+                    min="0"
                     value={formData.price}
-                    onChange={(e) => setFormData({...formData, price: e.target.value})}
+                    onChange={(event) => setFormData({ ...formData, price: event.target.value })}
                   />
                 </div>
                 <div className="form-group">
                   <label>Supplier</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     placeholder="Supplier name"
                     value={formData.supplier}
-                    onChange={(e) => setFormData({...formData, supplier: e.target.value})}
+                    onChange={(event) => setFormData({ ...formData, supplier: event.target.value })}
                   />
                 </div>
               </div>
 
               <div className="form-actions">
-                <button 
-                  type="button" 
-                  className="btn btn-outline"
-                  onClick={() => setShowAddModal(false)}
-                >
+                <button type="button" className="btn btn-outline" onClick={closeDrugModal}>
                   Cancel
                 </button>
-                <button type="submit" className="btn btn-primary">
-                  Save Drug
+                <button type="submit" className="btn btn-primary" disabled={submitting}>
+                  {submitting ? 'Saving...' : editingDrugId ? 'Update Medicine' : 'Save Drug'}
                 </button>
               </div>
             </form>

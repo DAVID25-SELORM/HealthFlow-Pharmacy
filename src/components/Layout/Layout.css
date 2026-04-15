@@ -1,11 +1,13 @@
 .app-layout {
   display: flex;
   min-height: 100vh;
+  position: relative;
 }
 
 .main-content {
   flex: 1;
   margin-left: 250px;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   background: var(--gray-50);
@@ -13,17 +15,44 @@
 
 .page-content {
   flex: 1;
-  padding: 2rem;
+  min-width: 0;
+  padding: clamp(1rem, 2vw, 2rem);
   overflow-y: auto;
 }
 
-/* Mobile Responsive */
-@media (max-width: 768px) {
+.sidebar-backdrop {
+  display: none;
+}
+
+@media (max-width: 1024px) {
   .main-content {
-    margin-left: 70px;
+    margin-left: 0;
   }
 
   .page-content {
     padding: 1rem;
+  }
+
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    border: none;
+    background: rgba(15, 23, 42, 0.42);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+    z-index: 998;
+  }
+
+  .sidebar-backdrop.visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+@media (max-width: 640px) {
+  .page-content {
+    padding: 0.85rem;
   }
 }
