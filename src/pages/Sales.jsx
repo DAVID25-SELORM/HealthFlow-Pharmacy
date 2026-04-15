@@ -1,11 +1,14 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Search, Trash2, Plus, Minus, ShoppingCart } from 'lucide-react'
+import { useEffect, useMemo, useState, useRef } from 'react'
+import { Search, Trash2, Plus, Minus, ShoppingCart, Printer, Download, X } from 'lucide-react'
 import { getAllDrugs } from '../services/drugService'
 import { createSale } from '../services/salesService'
 import { getAllPatients } from '../services/patientService'
+import { getPharmacySettings } from '../services/settingsService'
+import { printReceipt, downloadReceiptPDF, formatSaleForReceipt } from '../services/receiptService'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
+import Receipt from '../components/Receipt/Receipt'
 import './Sales.css'
 
 const Sales = () => {
@@ -21,6 +24,10 @@ const Sales = () => {
   const [loading, setLoading] = useState(true)
   const [processing, setProcessing] = useState(false)
   const [error, setError] = useState('')
+  const [lastSale, setLastSale] = useState(null)
+  const [showReceipt, setShowReceipt] = useState(false)
+  const [pharmacyInfo, setPharmacyInfo] = useState(null)
+  const receiptRef = useRef()
 
   useEffect(() => {
     const loadData = async () => {
@@ -33,9 +40,14 @@ const Sales = () => {
           return
         }
 
-        const [drugsData, patientsData] = await Promise.all([getAllDrugs(), getAllPatients()])
+        const [drugsData, patientsData, pharmacySettings] = await Promise.all([
+          getAllDrugs(),
+          getAllPatients(),
+          getPharmacySettings().catch(() => null),
+        ])
         setDrugs(drugsData)
         setPatients(patientsData)
+        setPharmacyInfo(pharmacySettings)
       } catch (loadError) {
         console.error('Error loading POS data:', loadError)
         setError(loadError.message || 'Unable to load POS data.')
@@ -174,7 +186,7 @@ const Sales = () => {
       setProcessing(true)
       setError('')
 
-      await createSale({
+      const saleResult = await createSale({
         items: cart.map((item) => ({
           drugId: item.drugId,
           name: item.name,
@@ -188,18 +200,48 @@ const Sales = () => {
         soldBy: user?.id || null,
       })
 
+      // Prepare receipt data
+      const selectedPatient = patientId ? patients.find((p) => p.id === patientId) : null
+      const receiptData = formatSaleForReceipt(
+        saleResult,
+        cart,
+        selectedPatient,
+        user?.full_name || user?.email
+      )
+      setLastSale(receiptData)
+
+      // Clear cart
       setCart([])
       setSearchTerm('')
       setReceived('')
       setPatientId('')
       await refreshDrugs()
+      
       notify('Sale completed successfully.', 'success')
+      
+      // Show receipt modal
+      setShowReceipt(true)
     } catch (saleError) {
       console.error('Error completing sale:', saleError)
       setError(saleError.message || 'Unable to complete sale.')
     } finally {
       setProcessing(false)
     }
+  }
+
+  const handlePrintReceipt = () => {
+    printReceipt()
+  }
+
+  const handleDownloadPDF = () => {
+    if (lastSale) {
+      downloadReceiptPDF(lastSale, pharmacyInfo)
+      notify('Receipt PDF downloaded successfully.', 'success')
+    }
+  }
+
+  const closeReceiptModal = () => {
+    setShowReceipt(false)
   }
 
   const total = calculateTotal()
@@ -217,6 +259,39 @@ const Sales = () => {
 
   return (
     <div className="sales-page">
+      {/* Hidden Receipt for Printing */}
+      {lastSale && <Receipt ref={receiptRef} saleData={lastSale} pharmacyInfo={pharmacyInfo} />}
+
+      {/* Receipt Modal */}
+      {showReceipt && lastSale && (
+        <div className="receipt-modal-overlay">
+          <div className="receipt-modal">
+            <div className="receipt-modal-header">
+              <h3>Receipt - {lastSale.saleNumber}</h3>
+              <button onClick={closeReceiptModal} className="close-btn" aria-label="Close">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="receipt-preview">
+              <Receipt saleData={lastSale} pharmacyInfo={pharmacyInfo} />
+            </div>
+            <div className="receipt-modal-actions">
+              <button onClick={handlePrintReceipt} className="btn-print">
+                <Printer size={18} />
+                Print Receipt
+              </button>
+              <button onClick={handleDownloadPDF} className="btn-pdf">
+                <Download size={18} />
+                Download PDF
+              </button>
+              <button onClick={closeReceiptModal} className="btn-close-modal">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="page-header">
         <h1>Sales (POS)</h1>
         <p>Quick drug dispensing and checkout</p>

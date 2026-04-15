@@ -49,6 +49,7 @@ export const updatePharmacySettings = async (id, settings) => {
     currency: normalizeText(settings.currency) || 'GHS',
     low_stock_threshold: Number.parseFloat(settings.lowStockThreshold || 10),
     expiry_alert_days: Number.parseInt(settings.expiryAlertDays || 30, 10),
+    receipt_footer: normalizeText(settings.receiptFooter) || null,
     updated_at: new Date().toISOString(),
   }
 

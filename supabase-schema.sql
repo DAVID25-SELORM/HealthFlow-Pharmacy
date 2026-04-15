@@ -211,6 +211,7 @@ CREATE TABLE pharmacy_settings (
     currency VARCHAR(10) DEFAULT 'GHS',
     low_stock_threshold DECIMAL(10, 2) DEFAULT 10,
     expiry_alert_days INTEGER DEFAULT 30,
+    receipt_footer TEXT,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 

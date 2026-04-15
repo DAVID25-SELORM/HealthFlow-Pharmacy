@@ -7,6 +7,7 @@ A modern pharmacy management system for efficient drug inventory, sales, patient
 - 💊 **Drug Inventory Management** - Track stock levels, batch numbers, and expiry dates
 - 📤 **Excel Import** - Bulk import drugs from Excel files ([See Guide](DRUG_IMPORT_GUIDE.md))
 - 🧾 **Sales & POS** - Quick dispensing with cash, mobile money, and insurance support
+- 🖨️ **Receipt Printing** - Professional receipts with browser print & PDF export ([See Guide](RECEIPT_PRINTING_GUIDE.md))
 - 🏥 **Insurance Claims** - Automated claim tracking and submission
 - 👥 **Patient Records** - Manage patient information and prescription history
 - 📊 **Reports & Analytics** - Daily sales, monthly trends, and insights

@@ -24,6 +24,7 @@ const toForm = (row) => ({
   currency: row?.currency || 'GHS',
   lowStockThreshold: row?.low_stock_threshold ?? 10,
   expiryAlertDays: row?.expiry_alert_days ?? 30,
+  receiptFooter: row?.receipt_footer || '',
 })
 
 const blankStaffForm = {
@@ -236,6 +237,14 @@ const Settings = () => {
               value={formData.expiryAlertDays}
               onChange={(e) => setFormData({ ...formData, expiryAlertDays: e.target.value })}
               disabled={!isAdmin}
+            />
+            <textarea
+              placeholder="Receipt footer message (optional)"
+              value={formData.receiptFooter}
+              onChange={(e) => setFormData({ ...formData, receiptFooter: e.target.value })}
+              disabled={!isAdmin}
+              rows={3}
+              style={{ resize: 'vertical', fontFamily: 'inherit' }}
             />
             {isAdmin && (
               <button className="btn btn-primary" type="submit" disabled={saving}>
