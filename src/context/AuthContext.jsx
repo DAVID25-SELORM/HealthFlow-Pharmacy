@@ -4,6 +4,28 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase'
 const AuthContext = createContext(null)
 const FALLBACK_ROLE = 'assistant'
 
+const isSupabaseAuthFailure = (error) => {
+  const status = Number(error?.status || error?.statusCode || 0)
+  const code = String(error?.code || '').toUpperCase()
+  const name = String(error?.name || '')
+  const message = String(error?.message || '').toLowerCase()
+
+  return (
+    status === 401 ||
+    status === 403 ||
+    code === 'PGRST301' ||
+    name === 'AuthApiError' ||
+    name === 'AuthSessionMissingError' ||
+    message.includes('invalid jwt') ||
+    message.includes('jwt expired') ||
+    message.includes('session missing') ||
+    message.includes('session not found') ||
+    message.includes('refresh token') ||
+    message.includes('unauthorized') ||
+    message.includes('forbidden')
+  )
+}
+
 const resolveRole = (profile, authUser) =>
   profile?.role || authUser?.app_metadata?.role || authUser?.user_metadata?.role || FALLBACK_ROLE
 
@@ -18,6 +40,27 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     let mounted = true
+
+    const clearAuthState = () => {
+      if (!mounted) {
+        return
+      }
+
+      setSession(null)
+      setUser(null)
+      setProfile(null)
+      setLoading(false)
+    }
+
+    const resetInvalidSession = async (reason) => {
+      console.warn('Clearing invalid Supabase session.', reason)
+      clearAuthState()
+
+      const { error: signOutError } = await supabase.auth.signOut()
+      if (signOutError) {
+        console.error('Unable to clear invalid session:', signOutError)
+      }
+    }
 
     const fetchProfile = async (activeUser) => {
       if (!activeUser) {
@@ -38,7 +81,8 @@ export const AuthProvider = ({ children }) => {
     }
 
     const resolveSessionState = async (activeSession) => {
-      const activeUser = activeSession?.user ?? null
+      let resolvedSession = activeSession
+      let activeUser = activeSession?.user ?? null
       let activeProfile = null
 
       if (mounted) {
@@ -46,9 +90,31 @@ export const AuthProvider = ({ children }) => {
       }
 
       if (activeUser) {
+        const {
+          data: { user: validatedUser },
+          error: validateError,
+        } = await supabase.auth.getUser()
+
+        if (validateError && isSupabaseAuthFailure(validateError)) {
+          await resetInvalidSession(validateError)
+          return
+        }
+
+        if (validatedUser) {
+          activeUser = validatedUser
+          resolvedSession = {
+            ...activeSession,
+            user: validatedUser,
+          }
+        }
+
         try {
           activeProfile = await fetchProfile(activeUser)
         } catch (profileError) {
+          if (isSupabaseAuthFailure(profileError)) {
+            await resetInvalidSession(profileError)
+            return
+          }
           console.error('Unable to load user profile:', profileError)
         }
       }
@@ -69,7 +135,7 @@ export const AuthProvider = ({ children }) => {
       }
 
       if (mounted) {
-        setSession(activeSession)
+        setSession(resolvedSession)
         setUser(activeUser)
         setProfile(activeProfile)
         setLoading(false)
