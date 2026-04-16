@@ -438,6 +438,16 @@
   flex: 1;
 }
 
+.edit-modal--sm {
+  width: min(480px, 95vw);
+}
+
+.input-disabled {
+  background: var(--gray-50);
+  color: var(--gray-400);
+  cursor: not-allowed;
+}
+
 .edit-modal-footer {
   display: flex;
   justify-content: flex-end;

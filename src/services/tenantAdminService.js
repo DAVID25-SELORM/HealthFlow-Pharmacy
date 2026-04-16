@@ -206,3 +206,23 @@ export const updateOrganizationDetails = async (orgId, fields) => {
   if (error) throw error
   return data
 }
+
+/**
+ * Update a user's details (name, role, active status)
+ */
+export const updateOrganizationUser = async (userId, fields) => {
+  const payload = {
+    full_name: fields.fullName?.trim() || undefined,
+    role: fields.role || undefined,
+    is_active: typeof fields.isActive === 'boolean' ? fields.isActive : undefined,
+  }
+
+  Object.keys(payload).forEach((k) => payload[k] === undefined && delete payload[k])
+
+  const { error } = await supabase
+    .from('users')
+    .update(payload)
+    .eq('id', userId)
+
+  if (error) throw error
+}

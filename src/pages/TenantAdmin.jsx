@@ -8,6 +8,7 @@ import {
   updateOrganizationStatus,
   updateSubscriptionTier,
   updateOrganizationDetails,
+  updateOrganizationUser,
   getOrganizationUsers,
   checkSubdomainAvailable,
 } from '../services/tenantAdminService'
@@ -59,10 +60,15 @@ const TenantAdmin = () => {
   const [expandedOrgId, setExpandedOrgId] = useState(null)
   const [orgUsers, setOrgUsers] = useState({})
 
-  // Edit modal
-  const [editOrg, setEditOrg] = useState(null)  // the org being edited
+  // Edit pharmacy modal
+  const [editOrg, setEditOrg] = useState(null)
   const [editForm, setEditForm] = useState({})
   const [saving, setSaving] = useState(false)
+
+  // Edit user modal
+  const [editUser, setEditUser] = useState(null)
+  const [editUserForm, setEditUserForm] = useState({})
+  const [savingUser, setSavingUser] = useState(false)
 
   useEffect(() => {
     void load()
@@ -183,6 +189,40 @@ const TenantAdmin = () => {
   const closeEdit = () => {
     setEditOrg(null)
     setEditForm({})
+  }
+
+  const openEditUser = (user) => {
+    setEditUser(user)
+    setEditUserForm({
+      fullName: user.full_name || '',
+      role: user.role || 'pharmacist',
+      isActive: user.is_active !== false,
+    })
+  }
+
+  const closeEditUser = () => {
+    setEditUser(null)
+    setEditUserForm({})
+  }
+
+  const handleSaveUser = async (e) => {
+    e.preventDefault()
+    if (!editUserForm.fullName.trim()) return setError('Full name is required')
+    setSavingUser(true)
+    setError('')
+    try {
+      await updateOrganizationUser(editUser.id, editUserForm)
+      // Refresh the expanded org's user list
+      const orgId = editUser.organization_id
+      const updated = await getOrganizationUsers(orgId)
+      setOrgUsers((prev) => ({ ...prev, [orgId]: updated }))
+      notify(`${editUserForm.fullName} updated successfully`, 'success')
+      closeEditUser()
+    } catch (err) {
+      setError(err.message || 'Failed to save user')
+    } finally {
+      setSavingUser(false)
+    }
   }
 
   const handleSaveEdit = async (e) => {
@@ -495,6 +535,7 @@ const TenantAdmin = () => {
                                       <th>Role</th>
                                       <th>Status</th>
                                       <th>Joined</th>
+                                      <th></th>
                                     </tr>
                                   </thead>
                                   <tbody>
@@ -509,6 +550,15 @@ const TenantAdmin = () => {
                                           </span>
                                         </td>
                                         <td>{new Date(u.created_at).toLocaleDateString()}</td>
+                                        <td>
+                                          <button
+                                            className="btn-icon"
+                                            title="Edit user"
+                                            onClick={() => openEditUser({ ...u, organization_id: org.id })}
+                                          >
+                                            <Pencil size={13} />
+                                          </button>
+                                        </td>
                                       </tr>
                                     ))}
                                   </tbody>
@@ -529,7 +579,70 @@ const TenantAdmin = () => {
         )}
       </div>
 
-      {/* ── Edit Modal ── */}
+      {/* ── Edit User Modal ── */}
+      {editUser && (
+        <div className="modal-backdrop" onClick={closeEditUser}>
+          <div className="edit-modal edit-modal--sm" onClick={(e) => e.stopPropagation()}>
+            <div className="edit-modal-header">
+              <h3>Edit User</h3>
+              <button className="modal-close" onClick={closeEditUser}>✕</button>
+            </div>
+
+            {error && <div className="tenant-alert">{error}</div>}
+
+            <form onSubmit={handleSaveUser} className="edit-modal-body">
+              <div className="tenant-form-section">
+                <div className="tenant-form-grid">
+                  <div className="tenant-form-group full-width">
+                    <label>Full Name *</label>
+                    <input
+                      value={editUserForm.fullName}
+                      onChange={(e) => setEditUserForm({ ...editUserForm, fullName: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div className="tenant-form-group full-width">
+                    <label>Email (read-only)</label>
+                    <input value={editUser.email} disabled className="input-disabled" />
+                  </div>
+                  <div className="tenant-form-group">
+                    <label>Role</label>
+                    <select
+                      value={editUserForm.role}
+                      onChange={(e) => setEditUserForm({ ...editUserForm, role: e.target.value })}
+                    >
+                      <option value="admin">Admin</option>
+                      <option value="pharmacist">Pharmacist</option>
+                      <option value="assistant">Assistant</option>
+                    </select>
+                  </div>
+                  <div className="tenant-form-group">
+                    <label>Status</label>
+                    <select
+                      value={editUserForm.isActive ? 'active' : 'inactive'}
+                      onChange={(e) => setEditUserForm({ ...editUserForm, isActive: e.target.value === 'active' })}
+                    >
+                      <option value="active">Active</option>
+                      <option value="inactive">Inactive</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div className="edit-modal-footer">
+                <button type="button" className="btn btn-outline" onClick={closeEditUser} disabled={savingUser}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={savingUser}>
+                  {savingUser ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Edit Pharmacy Modal ── */}
       {editOrg && (
         <div className="modal-backdrop" onClick={closeEdit}>
           <div className="edit-modal" onClick={(e) => e.stopPropagation()}>
