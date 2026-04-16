@@ -13,7 +13,7 @@ const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
   const [quickSearch, setQuickSearch] = useState('')
   const [alertsOpen, setAlertsOpen] = useState(false)
   const [alerts, setAlerts] = useState([])
-  const { displayName, role, signOut } = useAuth()
+  const { displayName, role, branch, signOut } = useAuth()
   const { notify } = useNotification()
   const navigate = useNavigate()
   const location = useLocation()
@@ -228,6 +228,7 @@ const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
           <div className="user-info">
             <span className="user-name">{displayName}</span>
             <span className="user-role">{role}</span>
+            {branch && <span className="branch-topbar-badge">{branch.name}</span>}
           </div>
           <button className="notification-btn" type="button" onClick={handleLogout} title="Sign out">
             <LogOut size={16} />

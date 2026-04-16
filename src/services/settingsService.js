@@ -185,3 +185,12 @@ export const updateUserStatus = async (id, isActive) => {
 
   return response.user
 }
+
+export const updateUserBranch = async (userId, branchId) => {
+  const { error } = await supabase
+    .from('users')
+    .update({ branch_id: branchId || null })
+    .eq('id', userId)
+
+  if (error) throw error
+}

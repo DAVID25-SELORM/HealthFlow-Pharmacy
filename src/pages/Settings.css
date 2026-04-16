@@ -260,6 +260,105 @@
   margin-top: 0.25rem;
 }
 
+/* ── Branch Management ── */
+.branch-card {
+  grid-column: 1 / -1;
+}
+
+.branch-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-bottom: 0.75rem;
+}
+
+.branch-row {
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  padding: 0.75rem;
+}
+
+.branch-inactive {
+  opacity: 0.55;
+}
+
+.branch-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.branch-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.branch-name {
+  font-weight: 600;
+  font-size: 0.925rem;
+}
+
+.branch-badge-main {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: 20px;
+  background: rgba(22, 160, 133, 0.12);
+  color: var(--primary);
+}
+
+.branch-badge-inactive {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  border-radius: 20px;
+  background: var(--gray-100);
+  color: var(--gray-500);
+}
+
+.branch-meta {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.78rem;
+  color: var(--gray-500);
+}
+
+.branch-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.btn-sm {
+  padding: 0.3rem 0.65rem !important;
+  font-size: 0.8rem !important;
+}
+
+.branch-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.branch-form-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.branch-add-form {
+  border-top: 1px solid var(--gray-100);
+  padding-top: 0.75rem;
+}
+
+.branch-empty {
+  font-size: 0.85rem;
+  color: var(--gray-400);
+  margin: 0;
+}
+
 .about-section {
   background: white;
   padding: 2rem;

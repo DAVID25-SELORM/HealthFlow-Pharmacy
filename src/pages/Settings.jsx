@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { User, UserPlus, Lock, Bell, Building, Palette, Globe } from 'lucide-react'
+import { User, UserPlus, Lock, Bell, Building, Palette, Globe, GitBranch, Plus } from 'lucide-react'
 import { isSupabaseConfigured } from '../lib/supabase'
 import UpgradeGate from '../components/UpgradeGate'
 import {
@@ -8,7 +8,9 @@ import {
   getUsers,
   updatePharmacySettings,
   updateUserStatus,
+  updateUserBranch,
 } from '../services/settingsService'
+import { getBranches, createBranch, updateBranch, deactivateBranch } from '../services/branchService'
 import { updateOrganization, getOrganizationStats } from '../services/organizationService'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
@@ -36,6 +38,11 @@ const blankStaffForm = {
   phone: '',
   role: 'assistant',
   temporaryPassword: '',
+  branchId: '',
+}
+
+const blankBranchForm = {
+  name: '', code: '', phone: '', email: '', address: '', city: '', region: '',
 }
 
 const Settings = () => {
@@ -56,6 +63,15 @@ const Settings = () => {
   const [statusUpdatingId, setStatusUpdatingId] = useState('')
   const [error, setError] = useState('')
 
+  // Branch state
+  const [branches, setBranches] = useState([])
+  const [showBranchForm, setShowBranchForm] = useState(false)
+  const [branchForm, setBranchForm] = useState(blankBranchForm)
+  const [creatingBranch, setCreatingBranch] = useState(false)
+  const [editingBranchId, setEditingBranchId] = useState(null)
+  const [editBranchForm, setEditBranchForm] = useState({})
+  const [savingBranch, setSavingBranch] = useState(false)
+
   useEffect(() => {
     void loadSettings()
   }, [])
@@ -75,8 +91,9 @@ const Settings = () => {
       setFormData(toForm(settings))
 
       if (isAdmin) {
-        const usersData = await getUsers()
+        const [usersData, branchesData] = await Promise.all([getUsers(), getBranches()])
         setUsers(usersData)
+        setBranches(branchesData)
 
         // Load organization stats
         if (organization?.id) {
@@ -137,6 +154,9 @@ const Settings = () => {
       setCreatingStaff(true)
       setError('')
       const createdUser = await createStaffUser(staffForm)
+      if (staffForm.branchId && createdUser?.id) {
+        await updateUserBranch(createdUser.id, staffForm.branchId)
+      }
       notify(
         `Staff account ready for ${createdUser.email}. Share the temporary password securely.`,
         'success',
@@ -148,6 +168,65 @@ const Settings = () => {
       setError(createError.message || 'Unable to create staff account.')
     } finally {
       setCreatingStaff(false)
+    }
+  }
+
+  const handleCreateBranch = async (e) => {
+    e.preventDefault()
+    if (!branchForm.name.trim()) return setError('Branch name is required')
+    setCreatingBranch(true)
+    setError('')
+    try {
+      await createBranch(branchForm)
+      notify(`Branch "${branchForm.name}" created`, 'success')
+      setBranchForm(blankBranchForm)
+      setShowBranchForm(false)
+      await loadSettings()
+    } catch (err) {
+      setError(err.message || 'Failed to create branch')
+    } finally {
+      setCreatingBranch(false)
+    }
+  }
+
+  const openEditBranch = (br) => {
+    setEditingBranchId(br.id)
+    setEditBranchForm({
+      name: br.name || '',
+      code: br.code || '',
+      phone: br.phone || '',
+      email: br.email || '',
+      address: br.address || '',
+      city: br.city || '',
+      region: br.region || '',
+    })
+  }
+
+  const handleSaveBranch = async (e, branchId) => {
+    e.preventDefault()
+    if (!editBranchForm.name.trim()) return setError('Branch name is required')
+    setSavingBranch(true)
+    setError('')
+    try {
+      await updateBranch(branchId, editBranchForm)
+      notify('Branch updated', 'success')
+      setEditingBranchId(null)
+      await loadSettings()
+    } catch (err) {
+      setError(err.message || 'Failed to update branch')
+    } finally {
+      setSavingBranch(false)
+    }
+  }
+
+  const handleDeactivateBranch = async (branchId) => {
+    setError('')
+    try {
+      await deactivateBranch(branchId)
+      notify('Branch deactivated', 'info')
+      await loadSettings()
+    } catch (err) {
+      setError(err.message || 'Failed to deactivate branch')
     }
   }
 
@@ -354,6 +433,176 @@ const Settings = () => {
         )}
 
         {isAdmin && (
+          <div className="settings-card branch-card">
+            <div className="card-icon">
+              <GitBranch size={24} />
+            </div>
+            <h3>Branch Locations</h3>
+            <p className="settings-note">
+              Manage all physical locations. Staff can be assigned to a specific branch at onboarding.
+            </p>
+            <div className="branch-list">
+              {branches.map((br) => (
+                <div key={br.id} className={`branch-row${!br.is_active ? ' branch-inactive' : ''}`}>
+                  {editingBranchId === br.id ? (
+                    <form onSubmit={(e) => handleSaveBranch(e, br.id)} className="branch-edit-form">
+                      <div className="settings-form-row">
+                        <input
+                          placeholder="Branch name *"
+                          value={editBranchForm.name}
+                          onChange={(e) => setEditBranchForm({ ...editBranchForm, name: e.target.value })}
+                          required
+                        />
+                        <input
+                          placeholder="Code (e.g. EAST)"
+                          value={editBranchForm.code}
+                          onChange={(e) => setEditBranchForm({ ...editBranchForm, code: e.target.value })}
+                        />
+                      </div>
+                      <div className="settings-form-row">
+                        <input
+                          placeholder="Phone"
+                          value={editBranchForm.phone}
+                          onChange={(e) => setEditBranchForm({ ...editBranchForm, phone: e.target.value })}
+                        />
+                        <input
+                          type="email"
+                          placeholder="Email"
+                          value={editBranchForm.email}
+                          onChange={(e) => setEditBranchForm({ ...editBranchForm, email: e.target.value })}
+                        />
+                      </div>
+                      <input
+                        placeholder="Address"
+                        value={editBranchForm.address}
+                        onChange={(e) => setEditBranchForm({ ...editBranchForm, address: e.target.value })}
+                      />
+                      <div className="settings-form-row">
+                        <input
+                          placeholder="City"
+                          value={editBranchForm.city}
+                          onChange={(e) => setEditBranchForm({ ...editBranchForm, city: e.target.value })}
+                        />
+                        <input
+                          placeholder="Region"
+                          value={editBranchForm.region}
+                          onChange={(e) => setEditBranchForm({ ...editBranchForm, region: e.target.value })}
+                        />
+                      </div>
+                      <div className="branch-form-actions">
+                        <button type="submit" className="btn btn-primary btn-sm" disabled={savingBranch}>
+                          {savingBranch ? 'Saving...' : 'Save'}
+                        </button>
+                        <button type="button" className="btn btn-outline btn-sm" onClick={() => setEditingBranchId(null)}>
+                          Cancel
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    <div className="branch-info">
+                      <div className="branch-header">
+                        <span className="branch-name">{br.name}</span>
+                        {br.is_main && <span className="branch-badge-main">Main</span>}
+                        {!br.is_active && <span className="branch-badge-inactive">Inactive</span>}
+                      </div>
+                      {(br.code || br.city) && (
+                        <div className="branch-meta">
+                          {br.code && <span>Code: {br.code}</span>}
+                          {br.city && <span>{br.city}{br.region ? `, ${br.region}` : ''}</span>}
+                        </div>
+                      )}
+                      <div className="branch-actions">
+                        <button type="button" className="btn btn-outline btn-sm" onClick={() => openEditBranch(br)}>
+                          Edit
+                        </button>
+                        {!br.is_main && br.is_active && (
+                          <button
+                            type="button"
+                            className="btn btn-outline btn-sm"
+                            onClick={() => handleDeactivateBranch(br.id)}
+                          >
+                            Deactivate
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+              {branches.length === 0 && <p className="branch-empty">No branches yet.</p>}
+            </div>
+
+            {showBranchForm ? (
+              <form className="settings-form branch-add-form" onSubmit={handleCreateBranch}>
+                <div className="settings-form-row">
+                  <input
+                    placeholder="Branch name *"
+                    value={branchForm.name}
+                    onChange={(e) => setBranchForm({ ...branchForm, name: e.target.value })}
+                    required
+                    disabled={creatingBranch}
+                  />
+                  <input
+                    placeholder="Code (e.g. EAST)"
+                    value={branchForm.code}
+                    onChange={(e) => setBranchForm({ ...branchForm, code: e.target.value })}
+                    disabled={creatingBranch}
+                  />
+                </div>
+                <div className="settings-form-row">
+                  <input
+                    placeholder="Phone"
+                    value={branchForm.phone}
+                    onChange={(e) => setBranchForm({ ...branchForm, phone: e.target.value })}
+                    disabled={creatingBranch}
+                  />
+                  <input
+                    type="email"
+                    placeholder="Email"
+                    value={branchForm.email}
+                    onChange={(e) => setBranchForm({ ...branchForm, email: e.target.value })}
+                    disabled={creatingBranch}
+                  />
+                </div>
+                <input
+                  placeholder="Address"
+                  value={branchForm.address}
+                  onChange={(e) => setBranchForm({ ...branchForm, address: e.target.value })}
+                  disabled={creatingBranch}
+                />
+                <div className="settings-form-row">
+                  <input
+                    placeholder="City"
+                    value={branchForm.city}
+                    onChange={(e) => setBranchForm({ ...branchForm, city: e.target.value })}
+                    disabled={creatingBranch}
+                  />
+                  <input
+                    placeholder="Region"
+                    value={branchForm.region}
+                    onChange={(e) => setBranchForm({ ...branchForm, region: e.target.value })}
+                    disabled={creatingBranch}
+                  />
+                </div>
+                <div className="branch-form-actions">
+                  <button type="submit" className="btn btn-primary" disabled={creatingBranch}>
+                    {creatingBranch ? 'Creating...' : 'Create Branch'}
+                  </button>
+                  <button type="button" className="btn btn-outline" onClick={() => setShowBranchForm(false)}>
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <button type="button" className="btn btn-primary" onClick={() => setShowBranchForm(true)}>
+                <Plus size={14} />
+                Add Branch
+              </button>
+            )}
+          </div>
+        )}
+
+        {isAdmin && (
           <div className="settings-card">
             <div className="card-icon">
               <UserPlus size={24} />
@@ -422,6 +671,20 @@ const Settings = () => {
                 }
                 disabled={creatingStaff}
               />
+              {branches.length > 0 && (
+                <select
+                  value={staffForm.branchId}
+                  onChange={(event) => setStaffForm({ ...staffForm, branchId: event.target.value })}
+                  disabled={creatingStaff}
+                >
+                  <option value="">No branch assigned</option>
+                  {branches.filter((b) => b.is_active).map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}{b.code ? ` (${b.code})` : ''}
+                    </option>
+                  ))}
+                </select>
+              )}
               <p className="settings-helper">
                 Share the temporary password securely, then ask the staff member to use the
                 password reset link after first sign-in.

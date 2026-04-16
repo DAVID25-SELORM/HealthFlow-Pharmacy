@@ -228,6 +228,15 @@
   color: var(--gray-600);
 }
 
+.branch-topbar-badge {
+  font-size: 0.65rem;
+  color: var(--gray-400);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+
 @media (max-width: 1024px) {
   .topbar {
     padding: 0.9rem 1rem;

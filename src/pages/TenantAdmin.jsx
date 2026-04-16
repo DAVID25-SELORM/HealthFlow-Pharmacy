@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Building2, Plus, Users, CheckCircle, PauseCircle, XCircle, ChevronDown, ChevronUp, Eye, Pencil } from 'lucide-react'
+import { Building2, GitBranch, Plus, Users, CheckCircle, PauseCircle, XCircle, ChevronDown, ChevronUp, Eye, Pencil } from 'lucide-react'
 import { useNotification } from '../context/NotificationContext'
 import {
   getAllOrganizations,
@@ -12,6 +12,7 @@ import {
   getOrganizationUsers,
   checkSubdomainAvailable,
 } from '../services/tenantAdminService'
+import { getBranchCountsByOrgIds } from '../services/branchService'
 import './TenantAdmin.css'
 
 const STATUS_ICONS = {
@@ -45,6 +46,7 @@ const TenantAdmin = () => {
 
   const [orgs, setOrgs] = useState([])
   const [userCounts, setUserCounts] = useState({})
+  const [branchCounts, setBranchCounts] = useState({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -81,8 +83,12 @@ const TenantAdmin = () => {
       const data = await getAllOrganizations()
       setOrgs(data)
       const ids = data.map((o) => o.id)
-      const counts = await getOrganizationUserCounts(ids)
+      const [counts, bCounts] = await Promise.all([
+        getOrganizationUserCounts(ids),
+        getBranchCountsByOrgIds(ids),
+      ])
       setUserCounts(counts)
+      setBranchCounts(bCounts)
     } catch (err) {
       setError(err.message || 'Failed to load organizations')
     } finally {
@@ -446,6 +452,7 @@ const TenantAdmin = () => {
                   <th>Status</th>
                   <th>Tier</th>
                   <th>Users</th>
+                  <th>Branches</th>
                   <th>Registered</th>
                   <th>Actions</th>
                 </tr>
@@ -490,6 +497,12 @@ const TenantAdmin = () => {
                         <span className="user-count">
                           <Users size={13} />
                           {userCounts[org.id] || 0}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="user-count">
+                          <GitBranch size={13} />
+                          {branchCounts[org.id] || 0}
                         </span>
                       </td>
                       <td>

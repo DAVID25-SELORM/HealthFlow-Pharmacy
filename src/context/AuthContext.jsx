@@ -46,6 +46,7 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null)
   const [profile, setProfile] = useState(null)
   const [organization, setOrganization] = useState(null)
+  const [branch, setBranch] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -61,6 +62,7 @@ export const AuthProvider = ({ children }) => {
       setUser(null)
       setProfile(null)
       setOrganization(null)
+      setBranch(null)
       setLoading(false)
     }
 
@@ -90,6 +92,8 @@ export const AuthProvider = ({ children }) => {
           role, 
           is_active,
           organization_id,
+          branch_id,
+          branches (id, name, code, is_main),
           organizations (
             id,
             name,
@@ -116,6 +120,7 @@ export const AuthProvider = ({ children }) => {
       return {
         profile: data,
         organization: data?.organizations || null,
+        branch: data?.branches || null,
       }
     }
 
@@ -131,6 +136,7 @@ export const AuthProvider = ({ children }) => {
       let activeUser = activeSession?.user ?? null
       let activeProfile = null
       let activeOrganization = null
+      let activeBranch = null
 
       if (mounted) {
         setLoading(true)
@@ -159,6 +165,7 @@ export const AuthProvider = ({ children }) => {
           const profileData = await fetchProfile(activeUser)
           activeProfile = profileData.profile
           activeOrganization = profileData.organization
+          activeBranch = profileData.branch
         } catch (profileError) {
           if (isSupabaseAuthFailure(profileError)) {
             resetInvalidSession(profileError)
@@ -174,6 +181,7 @@ export const AuthProvider = ({ children }) => {
           setUser(null)
           setProfile(null)
           setOrganization(null)
+          setBranch(null)
           setLoading(false)
         }
 
@@ -189,6 +197,7 @@ export const AuthProvider = ({ children }) => {
         setUser(activeUser)
         setProfile(activeProfile)
         setOrganization(activeOrganization)
+        setBranch(activeBranch)
         setLoading(false)
       }
     }
@@ -282,6 +291,7 @@ export const AuthProvider = ({ children }) => {
       user,
       profile,
       organization,
+      branch,
       loading,
       role: resolveRole(profile, user),
       displayName: resolveDisplayName(profile, user),
@@ -291,7 +301,7 @@ export const AuthProvider = ({ children }) => {
       requestPasswordReset,
       isConfigured: isSupabaseConfigured(),
     }),
-    [session, user, profile, organization, loading]
+    [session, user, profile, organization, branch, loading]
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
