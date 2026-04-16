@@ -100,8 +100,19 @@
 .stat-trend {
   display: block;
   font-size: 0.75rem;
-  color: var(--success);
   margin-top: 0.5rem;
+}
+
+.stat-trend.positive {
+  color: var(--success);
+}
+
+.stat-trend.negative {
+  color: var(--danger);
+}
+
+.stat-trend.neutral {
+  color: var(--gray-600);
 }
 
 /* Chart Section */
@@ -192,6 +203,12 @@
   font-size: 0.75rem;
   color: var(--gray-600);
   font-weight: 500;
+}
+
+.bar-value {
+  font-size: 0.72rem;
+  color: var(--gray-500);
+  font-weight: 600;
 }
 
 /* Activity Grid */

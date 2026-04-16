@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Plus, Download, Eye, CheckCircle2, XCircle } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
+import { dispatchHealthflowDataChanged } from '../lib/appEvents'
 import {
   approveClaim,
   createClaim,
@@ -22,7 +24,10 @@ const blankForm = {
   notes: '',
 }
 
+const validClaimTabs = ['all', 'pending', 'approved', 'rejected']
+
 const Claims = () => {
+  const [searchParams, setSearchParams] = useSearchParams()
   const { user, role } = useAuth()
   const { notify } = useNotification()
   const canProcess = ['admin', 'pharmacist'].includes(role)
@@ -44,8 +49,27 @@ const Claims = () => {
   const [rejectionReason, setRejectionReason] = useState('')
 
   useEffect(() => {
-    loadClaims()
+    void loadClaims()
   }, [])
+
+  useEffect(() => {
+    const routeTab = searchParams.get('tab')
+    const nextTab = validClaimTabs.includes(routeTab) ? routeTab : 'all'
+    setActiveTab((current) => (current === nextTab ? current : nextTab))
+  }, [searchParams])
+
+  const setTabAndRoute = (tab) => {
+    setActiveTab(tab)
+
+    const params = new URLSearchParams(searchParams)
+    if (tab === 'all') {
+      params.delete('tab')
+    } else {
+      params.set('tab', tab)
+    }
+
+    setSearchParams(params, { replace: true })
+  }
 
   const loadClaims = async () => {
     try {
@@ -89,7 +113,7 @@ const Claims = () => {
   )
 
   const addClaimItem = () => {
-    const drug = drugs.find((d) => d.id === selectedDrugId)
+    const drug = drugs.find((row) => row.id === selectedDrugId)
     const qty = Number.parseFloat(selectedQty)
 
     if (!drug || !Number.isFinite(qty) || qty <= 0) {
@@ -103,6 +127,7 @@ const Claims = () => {
           item.drugId === drug.id ? { ...item, quantity: item.quantity + qty } : item
         )
       }
+
       return [
         ...current,
         {
@@ -154,6 +179,7 @@ const Claims = () => {
       setFormData(blankForm)
       setClaimItems([])
       await loadClaims()
+      dispatchHealthflowDataChanged()
     } catch (submitError) {
       console.error('Error creating claim:', submitError)
       setError(submitError.message || 'Unable to create claim.')
@@ -167,6 +193,7 @@ const Claims = () => {
       await approveClaim(claim.id, claim.total_amount)
       notify(`Claim ${claim.claim_number} approved.`, 'success')
       await loadClaims()
+      dispatchHealthflowDataChanged()
     } catch (actionError) {
       setError(actionError.message || 'Unable to approve claim.')
     }
@@ -193,8 +220,51 @@ const Claims = () => {
       setClaimToReject(null)
       setRejectionReason('')
       await loadClaims()
+      dispatchHealthflowDataChanged()
     } catch (actionError) {
       setError(actionError.message || 'Unable to reject claim.')
+    }
+  }
+
+  const downloadClaimCsv = (claim) => {
+    const itemSummary =
+      claim.claim_items?.map((item) => `${item.drug_name} x${item.quantity}`).join(' | ') ||
+      'No claim items recorded'
+
+    const rows = [
+      ['Claim Number', claim.claim_number],
+      ['Patient', claim.patient_name],
+      ['Insurance Provider', claim.insurance_provider],
+      ['Insurance ID', claim.insurance_id],
+      ['Service Date', claim.service_date],
+      ['Status', claim.claim_status],
+      ['Total Amount', Number.parseFloat(claim.total_amount || 0).toFixed(2)],
+      ['Items', itemSummary],
+      ['Notes', claim.notes || ''],
+    ]
+
+    const csv = rows
+      .map(([label, value]) => `"${label}","${String(value ?? '').replace(/"/g, '""')}"`)
+      .join('\n')
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `${claim.claim_number}.csv`
+    document.body.appendChild(anchor)
+    anchor.click()
+    document.body.removeChild(anchor)
+    URL.revokeObjectURL(url)
+  }
+
+  const handleExport = (claim) => {
+    try {
+      downloadClaimCsv(claim)
+      notify(`Claim ${claim.claim_number} exported successfully.`, 'success')
+    } catch (exportError) {
+      console.error('Unable to export claim:', exportError)
+      notify('Unable to export this claim right now.', 'error')
     }
   }
 
@@ -202,6 +272,7 @@ const Claims = () => {
     if (activeTab === 'all') {
       return claims
     }
+
     return claims.filter((claim) => claim.claim_status === activeTab)
   }, [claims, activeTab])
 
@@ -212,6 +283,7 @@ const Claims = () => {
       rejected: 'status-rejected',
       processing: 'status-processing',
     }
+
     return classes[status] || 'status-pending'
   }
 
@@ -260,11 +332,12 @@ const Claims = () => {
       </div>
 
       <div className="claims-tabs">
-        {['all', 'pending', 'approved', 'rejected'].map((tab) => (
+        {validClaimTabs.map((tab) => (
           <button
             key={tab}
+            type="button"
             className={`tab-btn ${activeTab === tab ? 'active' : ''}`}
-            onClick={() => setActiveTab(tab)}
+            onClick={() => setTabAndRoute(tab)}
           >
             {tab.charAt(0).toUpperCase() + tab.slice(1)}
             <span className="tab-count">{tab === 'all' ? stats.total : stats[tab] || 0}</span>
@@ -298,7 +371,9 @@ const Claims = () => {
                   <td className="claim-id">{claim.claim_number}</td>
                   <td>{claim.patient_name}</td>
                   <td>{claim.insurance_provider}</td>
-                  <td className="amount-cell">GHS {Number.parseFloat(claim.total_amount || 0).toFixed(2)}</td>
+                  <td className="amount-cell">
+                    GHS {Number.parseFloat(claim.total_amount || 0).toFixed(2)}
+                  </td>
                   <td>{new Date(claim.service_date).toLocaleDateString()}</td>
                   <td>
                     <span className={`status-badge ${getStatusClass(claim.claim_status)}`}>
@@ -308,25 +383,39 @@ const Claims = () => {
                   <td>
                     <div className="action-buttons">
                       <button
+                        type="button"
                         className="icon-btn"
                         title="View Notes"
-                        onClick={() => notify(claim.notes || 'No notes recorded for this claim.', 'info')}
+                        onClick={() =>
+                          notify(claim.notes || 'No notes recorded for this claim.', 'info')
+                        }
                       >
                         <Eye size={16} />
                       </button>
                       <button
+                        type="button"
                         className="icon-btn"
                         title="Export"
-                        onClick={() => notify('Export claim document is in next backlog step.', 'info')}
+                        onClick={() => handleExport(claim)}
                       >
                         <Download size={16} />
                       </button>
                       {canProcess && claim.claim_status === 'pending' && (
                         <>
-                          <button className="icon-btn success" title="Approve" onClick={() => handleApprove(claim)}>
+                          <button
+                            type="button"
+                            className="icon-btn success"
+                            title="Approve"
+                            onClick={() => handleApprove(claim)}
+                          >
                             <CheckCircle2 size={16} />
                           </button>
-                          <button className="icon-btn danger" title="Reject" onClick={() => openRejectModal(claim)}>
+                          <button
+                            type="button"
+                            className="icon-btn danger"
+                            title="Reject"
+                            onClick={() => openRejectModal(claim)}
+                          >
                             <XCircle size={16} />
                           </button>
                         </>
@@ -342,11 +431,11 @@ const Claims = () => {
 
       {showNewClaimModal && (
         <div className="modal-overlay" onClick={() => setShowNewClaimModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-content" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
               <h2>Submit New Claim</h2>
               <button className="close-btn" onClick={() => setShowNewClaimModal(false)}>
-                ×
+                x
               </button>
             </div>
             <form className="claim-form" onSubmit={handleSubmit}>
@@ -356,13 +445,14 @@ const Claims = () => {
                   <select
                     required
                     value={formData.patientId}
-                    onChange={(e) => {
-                      const nextPatientId = e.target.value
+                    onChange={(event) => {
+                      const nextPatientId = event.target.value
                       const nextPatient = patients.find((patient) => patient.id === nextPatientId)
                       setFormData({
                         ...formData,
                         patientId: nextPatientId,
-                        insuranceProvider: nextPatient?.insurance_provider || formData.insuranceProvider,
+                        insuranceProvider:
+                          nextPatient?.insurance_provider || formData.insuranceProvider,
                         insuranceId: nextPatient?.insurance_id || formData.insuranceId,
                       })
                     }}
@@ -381,7 +471,9 @@ const Claims = () => {
                     type="date"
                     required
                     value={formData.serviceDate}
-                    onChange={(e) => setFormData({ ...formData, serviceDate: e.target.value })}
+                    onChange={(event) =>
+                      setFormData({ ...formData, serviceDate: event.target.value })
+                    }
                   />
                 </div>
               </div>
@@ -393,7 +485,9 @@ const Claims = () => {
                     type="text"
                     required
                     value={formData.insuranceProvider}
-                    onChange={(e) => setFormData({ ...formData, insuranceProvider: e.target.value })}
+                    onChange={(event) =>
+                      setFormData({ ...formData, insuranceProvider: event.target.value })
+                    }
                   />
                 </div>
                 <div className="form-group">
@@ -402,7 +496,9 @@ const Claims = () => {
                     type="text"
                     required
                     value={formData.insuranceId}
-                    onChange={(e) => setFormData({ ...formData, insuranceId: e.target.value })}
+                    onChange={(event) =>
+                      setFormData({ ...formData, insuranceId: event.target.value })
+                    }
                   />
                 </div>
               </div>
@@ -410,7 +506,10 @@ const Claims = () => {
               <div className="claim-items-box">
                 <h4>Claim Items</h4>
                 <div className="item-inputs">
-                  <select value={selectedDrugId} onChange={(e) => setSelectedDrugId(e.target.value)}>
+                  <select
+                    value={selectedDrugId}
+                    onChange={(event) => setSelectedDrugId(event.target.value)}
+                  >
                     <option value="">Select drug</option>
                     {drugs.map((drug) => (
                       <option key={drug.id} value={drug.id}>
@@ -423,7 +522,7 @@ const Claims = () => {
                     min="1"
                     step="1"
                     value={selectedQty}
-                    onChange={(e) => setSelectedQty(e.target.value)}
+                    onChange={(event) => setSelectedQty(event.target.value)}
                   />
                   <button type="button" className="btn btn-outline" onClick={addClaimItem}>
                     Add Item
@@ -435,9 +534,14 @@ const Claims = () => {
                     <div key={item.drugId} className="claim-item-row">
                       <span>{item.name}</span>
                       <span>
-                        {item.quantity} x GHS {item.price.toFixed(2)} = GHS {(item.quantity * item.price).toFixed(2)}
+                        {item.quantity} x GHS {item.price.toFixed(2)} = GHS{' '}
+                        {(item.quantity * item.price).toFixed(2)}
                       </span>
-                      <button type="button" className="icon-btn danger" onClick={() => removeClaimItem(item.drugId)}>
+                      <button
+                        type="button"
+                        className="icon-btn danger"
+                        onClick={() => removeClaimItem(item.drugId)}
+                      >
                         <XCircle size={14} />
                       </button>
                     </div>
@@ -452,12 +556,18 @@ const Claims = () => {
                 <textarea
                   rows="2"
                   value={formData.notes}
-                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                  onChange={(event) =>
+                    setFormData({ ...formData, notes: event.target.value })
+                  }
                 />
               </div>
 
               <div className="form-actions">
-                <button type="button" className="btn btn-outline" onClick={() => setShowNewClaimModal(false)}>
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={() => setShowNewClaimModal(false)}
+                >
                   Cancel
                 </button>
                 <button type="submit" className="btn btn-primary" disabled={submitting}>
@@ -471,11 +581,11 @@ const Claims = () => {
 
       {claimToReject && (
         <div className="modal-overlay" onClick={() => setClaimToReject(null)}>
-          <div className="modal-content reject-modal" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-content reject-modal" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
               <h2>Reject Claim {claimToReject.claim_number}</h2>
               <button className="close-btn" onClick={() => setClaimToReject(null)}>
-                ×
+                x
               </button>
             </div>
             <div className="claim-form">
@@ -484,12 +594,16 @@ const Claims = () => {
                 <textarea
                   rows="3"
                   value={rejectionReason}
-                  onChange={(e) => setRejectionReason(e.target.value)}
+                  onChange={(event) => setRejectionReason(event.target.value)}
                   placeholder="Provide a clear reason for rejection"
                 />
               </div>
               <div className="form-actions">
-                <button type="button" className="btn btn-outline" onClick={() => setClaimToReject(null)}>
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={() => setClaimToReject(null)}
+                >
                   Cancel
                 </button>
                 <button type="button" className="btn btn-primary" onClick={handleReject}>

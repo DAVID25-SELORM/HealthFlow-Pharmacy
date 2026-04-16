@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { FileText, Download, Calendar, RefreshCcw } from 'lucide-react'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { downloadCsv, getReportBundle } from '../services/reportsService'
@@ -81,7 +81,7 @@ const Reports = () => {
     )
   }, [bundle])
 
-  const generateReports = async () => {
+  const runReports = async (rangeStart, rangeEnd) => {
     try {
       setLoading(true)
       setError('')
@@ -91,12 +91,12 @@ const Reports = () => {
         return
       }
 
-      if (startDate > endDate) {
+      if (rangeStart > rangeEnd) {
         setError('Start date must be before or equal to end date.')
         return
       }
 
-      const data = await getReportBundle(startDate, endDate)
+      const data = await getReportBundle(rangeStart, rangeEnd)
       setBundle(data)
     } catch (reportError) {
       console.error('Error generating reports:', reportError)
@@ -104,6 +104,14 @@ const Reports = () => {
     } finally {
       setLoading(false)
     }
+  }
+
+  useEffect(() => {
+    void runReports(firstOfMonth, today)
+  }, [])
+
+  const generateReports = async () => {
+    await runReports(startDate, endDate)
   }
 
   const exportSalesCsv = () => {

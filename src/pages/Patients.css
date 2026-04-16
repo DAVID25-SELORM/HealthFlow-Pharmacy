@@ -170,6 +170,158 @@
   gap: 0.9rem;
 }
 
+.patient-history-panel {
+  gap: 1.25rem;
+}
+
+.patient-history-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.9rem;
+}
+
+.patient-history-card {
+  background: var(--gray-50);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  padding: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.patient-history-label {
+  font-size: 0.75rem;
+  color: var(--gray-600);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.patient-history-details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.patient-history-details .form-group {
+  background: white;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  padding: 0.9rem;
+}
+
+.patient-history-details .form-group p {
+  margin: 0;
+  color: var(--gray-700);
+  line-height: 1.5;
+}
+
+.patient-history-loading,
+.patient-history-empty {
+  margin: 0;
+  padding: 1rem;
+  border: 1px dashed var(--gray-300);
+  border-radius: var(--radius);
+  color: var(--gray-600);
+  background: var(--gray-50);
+}
+
+.patient-history-sections {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.patient-history-section {
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  padding: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.patient-history-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.patient-history-section-header h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.patient-history-section-header span {
+  font-size: 0.8rem;
+  color: var(--gray-600);
+}
+
+.patient-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.patient-history-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem;
+  border-radius: var(--radius);
+  background: var(--gray-50);
+}
+
+.patient-history-row strong,
+.patient-history-row p {
+  margin: 0;
+}
+
+.patient-history-row p {
+  margin-top: 0.25rem;
+  color: var(--gray-600);
+  font-size: 0.85rem;
+}
+
+.patient-history-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.35rem;
+  text-align: right;
+}
+
+.patient-history-meta span {
+  font-size: 0.8rem;
+  color: var(--gray-600);
+  text-transform: capitalize;
+}
+
+.patient-history-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.2rem 0.6rem;
+  border-radius: var(--radius-lg);
+  font-weight: 600;
+}
+
+.patient-history-status.status-approved {
+  background: rgba(39, 174, 96, 0.1);
+  color: var(--success);
+}
+
+.patient-history-status.status-pending {
+  background: rgba(243, 156, 18, 0.1);
+  color: var(--warning);
+}
+
+.patient-history-status.status-rejected {
+  background: rgba(231, 76, 60, 0.1);
+  color: var(--danger);
+}
+
 .form-row {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -202,6 +354,14 @@
 
 @media (max-width: 900px) {
   .form-row {
+    grid-template-columns: 1fr;
+  }
+
+  .patient-history-details {
+    grid-template-columns: 1fr;
+  }
+
+  .patient-history-sections {
     grid-template-columns: 1fr;
   }
 }

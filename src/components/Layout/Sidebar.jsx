@@ -1,13 +1,13 @@
 import { NavLink } from 'react-router-dom'
-import { 
+import {
   X,
-  Home, 
-  Package, 
-  ShoppingCart, 
-  Users, 
-  ClipboardList, 
-  BarChart3, 
-  Settings 
+  Home,
+  Package,
+  ShoppingCart,
+  Users,
+  ClipboardList,
+  BarChart3,
+  Settings,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import './Sidebar.css'
@@ -32,8 +32,8 @@ const Sidebar = ({ isOpen, onClose }) => {
       <div className="sidebar-logo">
         <div className="logo-icon">
           <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-            <rect width="32" height="32" rx="8" fill="white"/>
-            <path d="M16 8V24M8 16H24" stroke="#16a085" strokeWidth="3" strokeLinecap="round"/>
+            <rect width="32" height="32" rx="8" fill="white" />
+            <path d="M16 8V24M8 16H24" stroke="#16a085" strokeWidth="3" strokeLinecap="round" />
           </svg>
         </div>
         <div className="logo-text">
@@ -51,9 +51,7 @@ const Sidebar = ({ isOpen, onClose }) => {
             key={item.path}
             to={item.path}
             onClick={onClose}
-            className={({ isActive }) => 
-              `nav-item ${isActive ? 'active' : ''}`
-            }
+            className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
           >
             <item.icon size={20} />
             <span>{item.label}</span>
@@ -62,7 +60,7 @@ const Sidebar = ({ isOpen, onClose }) => {
       </nav>
 
       <div className="sidebar-footer">
-        <p>© 2026 HealthFlow</p>
+        <p>Copyright 2026 HealthFlow</p>
         <p className="developer">Built by David Gabion Selorm</p>
       </div>
     </aside>

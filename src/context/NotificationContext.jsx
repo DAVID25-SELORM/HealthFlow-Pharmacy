@@ -11,14 +11,17 @@ export const NotificationProvider = ({ children }) => {
     setToasts((current) => current.filter((toast) => toast.id !== id))
   }, [])
 
-  const notify = useCallback((message, type = 'info', duration = 3500) => {
-    const id = nextToastId++
-    setToasts((current) => [...current, { id, message, type }])
+  const notify = useCallback(
+    (message, type = 'info', duration = 3500) => {
+      const id = nextToastId++
+      setToasts((current) => [...current, { id, message, type }])
 
-    window.setTimeout(() => {
-      removeToast(id)
-    }, duration)
-  }, [removeToast])
+      window.setTimeout(() => {
+        removeToast(id)
+      }, duration)
+    },
+    [removeToast]
+  )
 
   const value = useMemo(
     () => ({
@@ -35,8 +38,12 @@ export const NotificationProvider = ({ children }) => {
         {toasts.map((toast) => (
           <div key={toast.id} className={`toast-item toast-${toast.type}`}>
             <span>{toast.message}</span>
-            <button type="button" onClick={() => removeToast(toast.id)} aria-label="Dismiss notification">
-              ×
+            <button
+              type="button"
+              onClick={() => removeToast(toast.id)}
+              aria-label="Dismiss notification"
+            >
+              x
             </button>
           </div>
         ))}

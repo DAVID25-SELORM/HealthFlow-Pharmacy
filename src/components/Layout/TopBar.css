@@ -36,6 +36,8 @@
 
 .topbar-search-container {
   position: relative;
+  display: flex;
+  align-items: center;
   flex: 1;
   max-width: 500px;
   min-width: 0;
@@ -51,7 +53,7 @@
 
 .topbar-search-input {
   width: 100%;
-  padding: 0.75rem 1rem 0.75rem 3rem;
+  padding: 0.75rem 5.75rem 0.75rem 3rem;
   border: 1px solid var(--gray-300);
   border-radius: var(--radius-lg);
   font-size: 0.875rem;
@@ -62,6 +64,20 @@
   outline: none;
   border-color: var(--primary);
   box-shadow: 0 0 0 3px rgba(22, 160, 133, 0.1);
+}
+
+.topbar-search-submit {
+  position: absolute;
+  right: 0.45rem;
+  top: 50%;
+  transform: translateY(-50%);
+  border: none;
+  border-radius: var(--radius);
+  background: var(--primary);
+  color: white;
+  font-weight: 600;
+  padding: 0.45rem 0.8rem;
+  cursor: pointer;
 }
 
 .topbar-actions {
@@ -99,6 +115,76 @@
   border-radius: 10px;
   min-width: 18px;
   text-align: center;
+}
+
+.topbar-alerts {
+  position: relative;
+}
+
+.alerts-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.75rem);
+  width: min(360px, calc(100vw - 2rem));
+  background: white;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 0.85rem;
+  z-index: 200;
+}
+
+.alerts-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+  color: var(--gray-700);
+  font-size: 0.85rem;
+}
+
+.alerts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.alerts-item {
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  background: var(--gray-50);
+  padding: 0.8rem;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  transition: var(--transition);
+}
+
+.alerts-item:hover {
+  border-color: rgba(22, 160, 133, 0.35);
+  background: rgba(22, 160, 133, 0.06);
+}
+
+.alerts-item-title {
+  font-weight: 700;
+  color: var(--gray-800);
+  font-size: 0.9rem;
+}
+
+.alerts-item-description {
+  color: var(--gray-600);
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.alerts-empty {
+  margin: 0;
+  padding: 0.5rem 0;
+  color: var(--gray-600);
+  font-size: 0.85rem;
 }
 
 .user-profile {
@@ -188,5 +274,14 @@
 
   .topbar-search-input {
     font-size: 0.85rem;
+  }
+
+  .topbar-search-submit {
+    padding: 0.4rem 0.7rem;
+    font-size: 0.8rem;
+  }
+
+  .alerts-panel {
+    right: -0.5rem;
   }
 }

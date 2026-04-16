@@ -51,7 +51,7 @@ const Settings = () => {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    loadSettings()
+    void loadSettings()
   }, [])
 
   const loadSettings = async () => {
@@ -106,7 +106,10 @@ const Settings = () => {
       setStatusUpdatingId(id)
       setError('')
       await updateUserStatus(id, !currentStatus)
-      notify(`User ${!currentStatus ? 'enabled' : 'disabled'} successfully.`, !currentStatus ? 'success' : 'info')
+      notify(
+        `User ${!currentStatus ? 'enabled' : 'disabled'} successfully.`,
+        !currentStatus ? 'success' : 'info'
+      )
       await loadSettings()
     } catch (statusError) {
       setError(statusError.message || 'Unable to update user status.')
@@ -165,38 +168,42 @@ const Settings = () => {
             <input
               placeholder="Pharmacy name"
               value={formData.pharmacyName}
-              onChange={(e) => setFormData({ ...formData, pharmacyName: e.target.value })}
+              onChange={(event) =>
+                setFormData({ ...formData, pharmacyName: event.target.value })
+              }
               disabled={!isAdmin}
             />
             <input
               placeholder="Phone"
               value={formData.phone}
-              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+              onChange={(event) => setFormData({ ...formData, phone: event.target.value })}
               disabled={!isAdmin}
             />
             <input
               placeholder="Email"
               value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              onChange={(event) => setFormData({ ...formData, email: event.target.value })}
               disabled={!isAdmin}
             />
             <input
               placeholder="Address"
               value={formData.address}
-              onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+              onChange={(event) =>
+                setFormData({ ...formData, address: event.target.value })
+              }
               disabled={!isAdmin}
             />
             <div className="settings-form-row">
               <input
                 placeholder="City"
                 value={formData.city}
-                onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                onChange={(event) => setFormData({ ...formData, city: event.target.value })}
                 disabled={!isAdmin}
               />
               <input
                 placeholder="Region"
                 value={formData.region}
-                onChange={(e) => setFormData({ ...formData, region: e.target.value })}
+                onChange={(event) => setFormData({ ...formData, region: event.target.value })}
                 disabled={!isAdmin}
               />
             </div>
@@ -204,13 +211,17 @@ const Settings = () => {
               <input
                 placeholder="License number"
                 value={formData.licenseNumber}
-                onChange={(e) => setFormData({ ...formData, licenseNumber: e.target.value })}
+                onChange={(event) =>
+                  setFormData({ ...formData, licenseNumber: event.target.value })
+                }
                 disabled={!isAdmin}
               />
               <input
                 placeholder="Currency"
                 value={formData.currency}
-                onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
+                onChange={(event) =>
+                  setFormData({ ...formData, currency: event.target.value })
+                }
                 disabled={!isAdmin}
               />
             </div>
@@ -220,14 +231,21 @@ const Settings = () => {
                 step="0.01"
                 placeholder="Tax rate"
                 value={formData.taxRate}
-                onChange={(e) => setFormData({ ...formData, taxRate: e.target.value })}
+                onChange={(event) =>
+                  setFormData({ ...formData, taxRate: event.target.value })
+                }
                 disabled={!isAdmin}
               />
               <input
                 type="number"
                 placeholder="Low stock threshold"
                 value={formData.lowStockThreshold}
-                onChange={(e) => setFormData({ ...formData, lowStockThreshold: e.target.value })}
+                onChange={(event) =>
+                  setFormData({
+                    ...formData,
+                    lowStockThreshold: event.target.value,
+                  })
+                }
                 disabled={!isAdmin}
               />
             </div>
@@ -235,13 +253,17 @@ const Settings = () => {
               type="number"
               placeholder="Expiry alert days"
               value={formData.expiryAlertDays}
-              onChange={(e) => setFormData({ ...formData, expiryAlertDays: e.target.value })}
+              onChange={(event) =>
+                setFormData({ ...formData, expiryAlertDays: event.target.value })
+              }
               disabled={!isAdmin}
             />
             <textarea
               placeholder="Receipt footer message (optional)"
               value={formData.receiptFooter}
-              onChange={(e) => setFormData({ ...formData, receiptFooter: e.target.value })}
+              onChange={(event) =>
+                setFormData({ ...formData, receiptFooter: event.target.value })
+              }
               disabled={!isAdmin}
               rows={3}
               style={{ resize: 'vertical', fontFamily: 'inherit' }}
@@ -261,32 +283,41 @@ const Settings = () => {
             </div>
             <h3>Staff Onboarding</h3>
             <p className="settings-note">
-              Create pharmacist or assistant logins without leaving the app. New staff can sign in immediately with the temporary password below.
+              Create pharmacist or assistant logins without leaving the app. New staff can sign
+              in immediately with the temporary password below.
             </p>
             <form className="settings-form" onSubmit={handleCreateStaff}>
               <input
                 placeholder="Full name"
                 value={staffForm.fullName}
-                onChange={(e) => setStaffForm({ ...staffForm, fullName: e.target.value })}
+                onChange={(event) =>
+                  setStaffForm({ ...staffForm, fullName: event.target.value })
+                }
                 disabled={creatingStaff}
               />
               <input
                 type="email"
                 placeholder="Email address"
                 value={staffForm.email}
-                onChange={(e) => setStaffForm({ ...staffForm, email: e.target.value })}
+                onChange={(event) =>
+                  setStaffForm({ ...staffForm, email: event.target.value })
+                }
                 disabled={creatingStaff}
               />
               <div className="settings-form-row">
                 <input
                   placeholder="Phone (optional)"
                   value={staffForm.phone}
-                  onChange={(e) => setStaffForm({ ...staffForm, phone: e.target.value })}
+                  onChange={(event) =>
+                    setStaffForm({ ...staffForm, phone: event.target.value })
+                  }
                   disabled={creatingStaff}
                 />
                 <select
                   value={staffForm.role}
-                  onChange={(e) => setStaffForm({ ...staffForm, role: e.target.value })}
+                  onChange={(event) =>
+                    setStaffForm({ ...staffForm, role: event.target.value })
+                  }
                   disabled={creatingStaff}
                 >
                   <option value="assistant">Assistant</option>
@@ -299,11 +330,17 @@ const Settings = () => {
                 minLength={8}
                 placeholder="Temporary password"
                 value={staffForm.temporaryPassword}
-                onChange={(e) => setStaffForm({ ...staffForm, temporaryPassword: e.target.value })}
+                onChange={(event) =>
+                  setStaffForm({
+                    ...staffForm,
+                    temporaryPassword: event.target.value,
+                  })
+                }
                 disabled={creatingStaff}
               />
               <p className="settings-helper">
-                Share the temporary password securely, then ask the staff member to use the password reset link after first sign-in.
+                Share the temporary password securely, then ask the staff member to use the
+                password reset link after first sign-in.
               </p>
               <button className="btn btn-primary" type="submit" disabled={creatingStaff}>
                 {creatingStaff ? 'Creating Account...' : 'Create Staff Account'}
@@ -326,7 +363,9 @@ const Settings = () => {
                     <p>{row.email}</p>
                     <div className="user-meta">
                       <small>{row.role}</small>
-                      <span className={`user-status-badge ${row.is_active ? 'active' : 'inactive'}`}>
+                      <span
+                        className={`user-status-badge ${row.is_active ? 'active' : 'inactive'}`}
+                      >
                         {row.is_active ? 'Active' : 'Disabled'}
                       </span>
                     </div>
@@ -358,7 +397,10 @@ const Settings = () => {
             <Bell size={24} />
           </div>
           <h3>Notifications</h3>
-          <p>Notification engine is queued for the next phase. Threshold values are already captured in pharmacy settings.</p>
+          <p>
+            Operational alerts are available from the top bar and use low stock, expiring stock,
+            and pending claims data.
+          </p>
         </div>
 
         <div className="settings-card">
@@ -366,7 +408,9 @@ const Settings = () => {
             <Lock size={24} />
           </div>
           <h3>Security</h3>
-          <p>Role-based routing and RLS are active. Password reset flow is the next item to add.</p>
+          <p>
+            Role-based routing, RLS, and password reset are active for current production users.
+          </p>
         </div>
 
         <div className="settings-card">
@@ -374,7 +418,10 @@ const Settings = () => {
             <Palette size={24} />
           </div>
           <h3>Appearance</h3>
-          <p>Theme customization module is planned after operational feature completion.</p>
+          <p>
+            The interface uses the current HealthFlow brand palette for consistency across pharmacy
+            workstations.
+          </p>
         </div>
       </div>
 
@@ -385,7 +432,7 @@ const Settings = () => {
           Developed by <strong>David Gabion Selorm</strong>
         </p>
         <p className="contact">Email: gabiondavidselorm@gmail.com | Business: zittechgh@gmail.com</p>
-        <p className="copyright">© 2026 HealthFlow Pharmacy. All rights reserved.</p>
+        <p className="copyright">Copyright 2026 HealthFlow Pharmacy. All rights reserved.</p>
       </div>
     </div>
   )

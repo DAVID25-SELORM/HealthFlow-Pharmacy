@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Plus, Search, Filter, Edit2, Trash2, Upload, Download } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
+import { dispatchHealthflowDataChanged } from '../lib/appEvents'
 import { getAllDrugs, addDrug, updateDrug, deleteDrug, calculateDrugStatus } from '../services/drugService'
 import { parseExcelFile, validateImportData, importDrugs, generateTemplate } from '../services/drugImportService'
 import { isSupabaseConfigured } from '../lib/supabase'
@@ -34,6 +36,7 @@ const mapDrugToForm = (drug) => ({
 
 const Inventory = () => {
   const { notify } = useNotification()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [showDrugModal, setShowDrugModal] = useState(false)
   const [showImportModal, setShowImportModal] = useState(false)
   const [editingDrugId, setEditingDrugId] = useState(null)
@@ -50,6 +53,35 @@ const Inventory = () => {
   useEffect(() => {
     void loadDrugs()
   }, [])
+
+  useEffect(() => {
+    const routeSearch = searchParams.get('search') || ''
+    const routeFilter = searchParams.get('filter')
+    const validRouteFilter = filterOptions.some((option) => option.value === routeFilter)
+      ? routeFilter
+      : 'all'
+
+    setSearchTerm((current) => (current === routeSearch ? current : routeSearch))
+    setActiveFilter((current) => (current === validRouteFilter ? current : validRouteFilter))
+  }, [searchParams])
+
+  const updateQueryParams = (nextSearch, nextFilter) => {
+    const params = new URLSearchParams(searchParams)
+
+    if (nextSearch) {
+      params.set('search', nextSearch)
+    } else {
+      params.delete('search')
+    }
+
+    if (nextFilter && nextFilter !== 'all') {
+      params.set('filter', nextFilter)
+    } else {
+      params.delete('filter')
+    }
+
+    setSearchParams(params, { replace: true })
+  }
 
   const loadDrugs = async () => {
     try {
@@ -165,6 +197,7 @@ const Inventory = () => {
 
       closeDrugModal()
       await loadDrugs()
+      dispatchHealthflowDataChanged()
     } catch (error) {
       console.error('Error saving drug:', error)
       notify(`Error saving drug: ${error.message}`, 'error')
@@ -186,6 +219,7 @@ const Inventory = () => {
 
       await deleteDrug(id)
       await loadDrugs()
+      dispatchHealthflowDataChanged()
       notify('Drug deleted successfully!', 'success')
     } catch (error) {
       console.error('Error deleting drug:', error)
@@ -274,6 +308,7 @@ const Inventory = () => {
       setImportFile(null)
       setImportPreview(null)
       await loadDrugs()
+      dispatchHealthflowDataChanged()
     } catch (error) {
       notify(`Import error: ${error.message}`, 'error')
     } finally {
@@ -285,6 +320,16 @@ const Inventory = () => {
     setShowImportModal(false)
     setImportFile(null)
     setImportPreview(null)
+  }
+
+  const handleSearchChange = (value) => {
+    setSearchTerm(value)
+    updateQueryParams(value.trim(), activeFilter)
+  }
+
+  const handleFilterChange = (value) => {
+    setActiveFilter(value)
+    updateQueryParams(searchTerm.trim(), value)
   }
 
   if (loading) {
@@ -330,20 +375,20 @@ const Inventory = () => {
       <div className="inventory-controls">
         <div className="search-box">
           <Search size={18} />
-          <input
-            type="text"
-            placeholder="Search by name, batch number..."
-            value={searchTerm}
-            onChange={(event) => setSearchTerm(event.target.value)}
-          />
+            <input
+              type="text"
+              placeholder="Search by name, batch number..."
+              value={searchTerm}
+              onChange={(event) => handleSearchChange(event.target.value)}
+            />
         </div>
         <div className="filter-box">
           <Filter size={18} />
-          <select
-            value={activeFilter}
-            onChange={(event) => setActiveFilter(event.target.value)}
-            aria-label="Filter medicines"
-          >
+            <select
+              value={activeFilter}
+              onChange={(event) => handleFilterChange(event.target.value)}
+              aria-label="Filter medicines"
+            >
             {filterOptions.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
@@ -556,7 +601,7 @@ const Inventory = () => {
 
               {importPreview.invalidCount > 0 && (
                 <div className="import-errors">
-                  <h4>❌ Errors Found:</h4>
+                  <h4>Import Errors</h4>
                   <div className="error-list">
                     {importPreview.invalidRows.slice(0, 5).map((invalid, idx) => (
                       <div key={idx} className="error-item">
@@ -580,7 +625,7 @@ const Inventory = () => {
 
               {importPreview.validCount > 0 && (
                 <div className="valid-preview">
-                  <h4>✅ Valid Drugs to Import:</h4>
+                  <h4>Valid Drugs to Import</h4>
                   <div className="preview-table-wrapper">
                     <table className="preview-table">
                       <thead>

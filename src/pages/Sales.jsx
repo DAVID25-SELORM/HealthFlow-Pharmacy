@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Search, Trash2, Plus, Minus, ShoppingCart, Printer, Download, X } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
+import { dispatchHealthflowDataChanged } from '../lib/appEvents'
 import { getAllDrugs } from '../services/drugService'
 import { createSale } from '../services/salesService'
 import { getAllPatients } from '../services/patientService'
@@ -12,6 +14,7 @@ import Receipt from '../components/Receipt/Receipt'
 import './Sales.css'
 
 const Sales = () => {
+  const [searchParams, setSearchParams] = useSearchParams()
   const { user, displayName } = useAuth()
   const { notify } = useNotification()
   const [drugs, setDrugs] = useState([])
@@ -27,6 +30,7 @@ const Sales = () => {
   const [lastSale, setLastSale] = useState(null)
   const [showReceipt, setShowReceipt] = useState(false)
   const [pharmacyInfo, setPharmacyInfo] = useState(null)
+
   useEffect(() => {
     const loadData = async () => {
       try {
@@ -56,6 +60,24 @@ const Sales = () => {
 
     loadData()
   }, [])
+
+  useEffect(() => {
+    const routeSearch = searchParams.get('search') || ''
+    setSearchTerm((current) => (current === routeSearch ? current : routeSearch))
+  }, [searchParams])
+
+  const handleSearchChange = (value) => {
+    setSearchTerm(value)
+
+    const params = new URLSearchParams(searchParams)
+    if (value.trim()) {
+      params.set('search', value.trim())
+    } else {
+      params.delete('search')
+    }
+
+    setSearchParams(params, { replace: true })
+  }
 
   const filteredDrugs = useMemo(() => {
     const term = searchTerm.trim().toLowerCase()
@@ -226,6 +248,7 @@ const Sales = () => {
       setReceived('')
       setPatientId('')
       await refreshDrugs()
+      dispatchHealthflowDataChanged()
       
       notify('Sale completed successfully.', 'success')
       
@@ -313,12 +336,12 @@ const Sales = () => {
         <div className="product-section">
           <div className="search-drug">
             <Search size={20} />
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search drug or batch number..."
-            />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => handleSearchChange(e.target.value)}
+                placeholder="Search drug or batch number..."
+              />
           </div>
 
           <div className="patient-select-card">

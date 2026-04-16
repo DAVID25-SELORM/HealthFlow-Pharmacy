@@ -17,10 +17,10 @@ const getDefaultStorageKey = (url) => {
 }
 
 // Check if credentials are properly configured
-const hasValidCredentials = 
-  supabaseUrl && 
-  supabaseKey && 
-  !supabaseUrl.includes('your_supabase') && 
+const hasValidCredentials =
+  supabaseUrl &&
+  supabaseKey &&
+  !supabaseUrl.includes('your_supabase') &&
   !supabaseKey.includes('your_supabase') &&
   supabaseUrl.startsWith('http')
 
@@ -29,13 +29,13 @@ export const supabaseAuthStorageKey = hasValidCredentials
   : ''
 
 // Create Supabase client only if credentials are valid
-export const supabase = hasValidCredentials 
+export const supabase = hasValidCredentials
   ? createClient(supabaseUrl, supabaseKey, {
       auth: {
         persistSession: true,
         autoRefreshToken: true,
         storageKey: supabaseAuthStorageKey,
-      }
+      },
     })
   : null
 
@@ -62,7 +62,9 @@ export const clearSupabaseStoredSession = () => {
 
 // Warning message in development
 if (!hasValidCredentials && import.meta.env.DEV) {
-  console.warn('⚠️ Supabase credentials not configured. Using sample data. Update your .env file to enable database features.')
+  console.warn(
+    'Supabase credentials not configured. Using sample data. Update your .env file to enable database features.'
+  )
 }
 
 // Helper function to check if Supabase is configured
