@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { User, UserPlus, Lock, Bell, Building, Palette } from 'lucide-react'
+import { User, UserPlus, Lock, Bell, Building, Palette, Globe } from 'lucide-react'
 import { isSupabaseConfigured } from '../lib/supabase'
 import {
   createStaffUser,
@@ -8,8 +8,10 @@ import {
   updatePharmacySettings,
   updateUserStatus,
 } from '../services/settingsService'
+import { updateOrganization, getOrganizationStats } from '../services/organizationService'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
+import { useTenant } from '../context/TenantContext'
 import './Settings.css'
 
 const toForm = (row) => ({
@@ -36,14 +38,16 @@ const blankStaffForm = {
 }
 
 const Settings = () => {
-  const { user, role } = useAuth()
+  const { user, role, organization } = useAuth()
   const { notify } = useNotification()
+  const { isTrialActive, isSubscriptionActive, daysUntilTrialExpires } = useTenant()
   const isAdmin = role === 'admin'
 
   const [settingsId, setSettingsId] = useState('')
   const [formData, setFormData] = useState(toForm(null))
   const [staffForm, setStaffForm] = useState(blankStaffForm)
   const [users, setUsers] = useState([])
+  const [orgStats, setOrgStats] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [creatingStaff, setCreatingStaff] = useState(false)
@@ -71,6 +75,12 @@ const Settings = () => {
       if (isAdmin) {
         const usersData = await getUsers()
         setUsers(usersData)
+
+        // Load organization stats
+        if (organization?.id) {
+          const stats = await getOrganizationStats(organization.id)
+          setOrgStats(stats)
+        }
       }
     } catch (loadError) {
       console.error('Error loading settings:', loadError)
@@ -275,6 +285,71 @@ const Settings = () => {
             )}
           </form>
         </div>
+
+        {isAdmin && organization && (
+          <div className="settings-card">
+            <div className="card-icon">
+              <Globe size={24} />
+            </div>
+            <h3>Organization</h3>
+            <div className="org-info">
+              <div className="org-info-row">
+                <span className="org-label">Organization Name:</span>
+                <span className="org-value">{organization.name}</span>
+              </div>
+              <div className="org-info-row">
+                <span className="org-label">Subdomain:</span>
+                <span className="org-value">{organization.subdomain}.healthflow.app</span>
+              </div>
+              <div className="org-info-row">
+                <span className="org-label">Status:</span>
+                <span className={`org-status-badge ${organization.status}`}>
+                  {organization.status === 'trial' && isTrialActive
+                    ? `Trial (${daysUntilTrialExpires} days left)`
+                    : organization.status === 'active' && isSubscriptionActive
+                      ? 'Active Subscription'
+                      : organization.status === 'suspended'
+                        ? 'Suspended'
+                        : 'Inactive'}
+                </span>
+              </div>
+              <div className="org-info-row">
+                <span className="org-label">Subscription Tier:</span>
+                <span className="org-value">{organization.subscription_tier}</span>
+              </div>
+              {organization.license_number && (
+                <div className="org-info-row">
+                  <span className="org-label">License Number:</span>
+                  <span className="org-value">{organization.license_number}</span>
+                </div>
+              )}
+              {orgStats && (
+                <>
+                  <div className="org-divider"></div>
+                  <h4 className="org-stats-title">Usage Statistics</h4>
+                  <div className="org-stats-grid">
+                    <div className="org-stat">
+                      <span className="org-stat-value">{orgStats.totalUsers}</span>
+                      <span className="org-stat-label">Users</span>
+                    </div>
+                    <div className="org-stat">
+                      <span className="org-stat-value">{orgStats.totalDrugs}</span>
+                      <span className="org-stat-label">Drugs</span>
+                    </div>
+                    <div className="org-stat">
+                      <span className="org-stat-value">{orgStats.totalPatients}</span>
+                      <span className="org-stat-label">Patients</span>
+                    </div>
+                    <div className="org-stat">
+                      <span className="org-stat-value">{orgStats.totalSales}</span>
+                      <span className="org-stat-label">Sales</span>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
 
         {isAdmin && (
           <div className="settings-card">

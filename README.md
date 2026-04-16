@@ -1,9 +1,11 @@
 # HealthFlow Pharmacy Management System
 
-A modern pharmacy management system for efficient drug inventory, sales, patient records, and insurance claims management.
+A modern **multi-tenant SaaS** pharmacy management system for efficient drug inventory, sales, patient records, and insurance claims management. Each pharmacy operates as an isolated organization with its own data and users.
 
 ## Features
 
+- 🏢 **Multi-Tenant Architecture** - Serve multiple pharmacies with complete data isolation ([See Migration Guide](MULTI_TENANT_MIGRATION_GUIDE.md))
+- 📝 **Pharmacy Onboarding** - Self-service signup with 30-day free trial
 - 💊 **Drug Inventory Management** - Track stock levels, batch numbers, and expiry dates
 - 📤 **Excel Import** - Bulk import drugs from Excel files ([See Guide](DRUG_IMPORT_GUIDE.md))
 - 🧾 **Sales & POS** - Quick dispensing with cash, mobile money, and insurance support
@@ -12,6 +14,7 @@ A modern pharmacy management system for efficient drug inventory, sales, patient
 - 👥 **Patient Records** - Manage patient information and prescription history
 - 📊 **Reports & Analytics** - Daily sales, monthly trends, and insights
 - 🔐 **User Roles** - Admin, Pharmacist, and Assistant access levels
+- 🌐 **Organization Management** - Subdomain support, subscription tiers, usage tracking
 
 ## Tech Stack
 
@@ -46,12 +49,24 @@ npm run test
 
 ### Production Deployment
 
-📋 **See [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md)** for complete deployment guide including:
-- Supabase database setup
-- First admin user creation
-- Edge function deployment
-- Environment variable configuration
-- Production smoke tests
+📋 **Multi-Tenant Deployment**:
+- [MULTI_TENANT_MIGRATION_GUIDE.md](MULTI_TENANT_MIGRATION_GUIDE.md) - Complete guide for transforming to multi-tenant
+- [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md) - Vercel deployment guide
+- [SUPABASE_SETUP.md](SUPABASE_SETUP.md) - Database setup instructions
+
+**Quick Start for Multi-Tenant**:
+1. Run database migrations in order:
+   - `supabase-migration-multi-tenant-step1.sql` (schema changes)
+   - `supabase-migration-multi-tenant-step2-rls.sql` (RLS policies)
+2. Deploy frontend to Vercel
+3. Test with existing account (migrated to default 'healthflow' organization)
+4. Create new pharmacy via `/signup` route
+
+**Architecture**:
+- **Shared Database**: All tenants in one PostgreSQL database
+- **RLS Isolation**: Row-Level Security ensures perfect data separation
+- **Organization-Based**: Every table has `organization_id` for tenant filtering
+- **Automatic Filtering**: All queries automatically scoped to user's organization
 
 ## Quality Gates
 

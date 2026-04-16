@@ -45,6 +45,7 @@ export const AuthProvider = ({ children }) => {
   const [session, setSession] = useState(null)
   const [user, setUser] = useState(null)
   const [profile, setProfile] = useState(null)
+  const [organization, setOrganization] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -59,6 +60,7 @@ export const AuthProvider = ({ children }) => {
       setSession(null)
       setUser(null)
       setProfile(null)
+      setOrganization(null)
       setLoading(false)
     }
 
@@ -76,12 +78,34 @@ export const AuthProvider = ({ children }) => {
 
     const fetchProfile = async (activeUser) => {
       if (!activeUser) {
-        return null
+        return { profile: null, organization: null }
       }
 
       const { data, error } = await supabase
         .from('users')
-        .select('id, email, full_name, role, is_active')
+        .select(`
+          id, 
+          email, 
+          full_name, 
+          role, 
+          is_active,
+          organization_id,
+          organizations (
+            id,
+            name,
+            subdomain,
+            status,
+            subscription_tier,
+            trial_ends_at,
+            subscription_ends_at,
+            phone,
+            email,
+            address,
+            city,
+            region,
+            license_number
+          )
+        `)
         .eq('id', activeUser.id)
         .maybeSingle()
 
@@ -89,7 +113,10 @@ export const AuthProvider = ({ children }) => {
         throw error
       }
 
-      return data
+      return {
+        profile: data,
+        organization: data?.organizations || null,
+      }
     }
 
     const resolveSessionState = async (activeSession) => {
@@ -103,6 +130,7 @@ export const AuthProvider = ({ children }) => {
       let resolvedSession = activeSession
       let activeUser = activeSession?.user ?? null
       let activeProfile = null
+      let activeOrganization = null
 
       if (mounted) {
         setLoading(true)
@@ -128,7 +156,9 @@ export const AuthProvider = ({ children }) => {
         }
 
         try {
-          activeProfile = await fetchProfile(activeUser)
+          const profileData = await fetchProfile(activeUser)
+          activeProfile = profileData.profile
+          activeOrganization = profileData.organization
         } catch (profileError) {
           if (isSupabaseAuthFailure(profileError)) {
             resetInvalidSession(profileError)
@@ -143,6 +173,7 @@ export const AuthProvider = ({ children }) => {
           setSession(null)
           setUser(null)
           setProfile(null)
+          setOrganization(null)
           setLoading(false)
         }
 
@@ -157,6 +188,7 @@ export const AuthProvider = ({ children }) => {
         setSession(resolvedSession)
         setUser(activeUser)
         setProfile(activeProfile)
+        setOrganization(activeOrganization)
         setLoading(false)
       }
     }
@@ -167,6 +199,7 @@ export const AuthProvider = ({ children }) => {
           setSession(null)
           setUser(null)
           setProfile(null)
+          setOrganization(null)
           setLoading(false)
         }
         return
@@ -248,6 +281,7 @@ export const AuthProvider = ({ children }) => {
       session,
       user,
       profile,
+      organization,
       loading,
       role: resolveRole(profile, user),
       displayName: resolveDisplayName(profile, user),
@@ -257,7 +291,7 @@ export const AuthProvider = ({ children }) => {
       requestPasswordReset,
       isConfigured: isSupabaseConfigured(),
     }),
-    [session, user, profile, loading]
+    [session, user, profile, organization, loading]
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

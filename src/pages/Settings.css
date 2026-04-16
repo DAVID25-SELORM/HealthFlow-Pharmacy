@@ -154,6 +154,101 @@
   justify-content: center;
 }
 
+/* Organization Card Styles */
+.org-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.org-info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--gray-200);
+}
+
+.org-info-row:last-child {
+  border-bottom: none;
+}
+
+.org-label {
+  font-weight: 600;
+  color: var(--gray-700);
+  font-size: 0.875rem;
+}
+
+.org-value {
+  color: var(--gray-600);
+  font-size: 0.875rem;
+  text-align: right;
+}
+
+.org-status-badge {
+  padding: 0.25rem 0.75rem;
+  border-radius: var(--radius);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.org-status-badge.trial {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.org-status-badge.active {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.org-status-badge.suspended {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.org-divider {
+  height: 1px;
+  background: var(--gray-200);
+  margin: 1rem 0;
+}
+
+.org-stats-title {
+  font-size: 0.95rem;
+  color: var(--gray-700);
+  margin: 0.5rem 0;
+}
+
+.org-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.org-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.75rem;
+  background: rgba(22, 160, 133, 0.05);
+  border-radius: var(--radius);
+}
+
+.org-stat-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.org-stat-label {
+  font-size: 0.75rem;
+  color: var(--gray-600);
+  text-transform: uppercase;
+  margin-top: 0.25rem;
+}
+
 .about-section {
   background: white;
   padding: 2rem;
@@ -218,5 +313,9 @@
   .user-actions {
     width: 100%;
     min-width: 0;
+  }
+
+  .org-stats-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
 }
