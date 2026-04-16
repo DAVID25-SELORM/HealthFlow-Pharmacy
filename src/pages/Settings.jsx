@@ -789,11 +789,9 @@ const Settings = () => {
         <h2>About HealthFlow Pharmacy</h2>
         <p>Version 1.0.0</p>
         <p className="developer-credit">
-          Developed by <strong>David Gabion Selorm</strong>
+          Developed by <strong>Neon Digital Technologies</strong>
         </p>
-        <p className="contact">Email: gabiondavidselorm@gmail.com | Business: zittechgh@gmail.com</p>
-        <p className="company">Developed by <strong>Neon Digital Technologies</strong></p>
-        <p className="website">Website: <a href="https://www.neondigitaltechnologies.com" target="_blank" rel="noopener noreferrer">www.neondigitaltechnologies.com</a></p>
+        <p className="contact">Email: <a href="mailto:neondigitaltechnologies@gmail.com">neondigitaltechnologies@gmail.com</a> | Website: <a href="https://www.neondigitaltechnologies.com" target="_blank" rel="noopener noreferrer">www.neondigitaltechnologies.com</a></p>
         <p className="copyright">Copyright 2026 HealthFlow Pharmacy. All rights reserved.</p>
       </div>
     </div>
