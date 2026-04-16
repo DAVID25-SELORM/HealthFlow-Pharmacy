@@ -507,6 +507,8 @@ const Settings = () => {
           Developed by <strong>David Gabion Selorm</strong>
         </p>
         <p className="contact">Email: gabiondavidselorm@gmail.com | Business: zittechgh@gmail.com</p>
+        <p className="company">Developed by <strong>Neon Digital Technologies</strong></p>
+        <p className="website">🌐 <a href="https://www.neondigitaltechnologies.com" target="_blank" rel="noopener noreferrer">www.neondigitaltechnologies.com</a></p>
         <p className="copyright">Copyright 2026 HealthFlow Pharmacy. All rights reserved.</p>
       </div>
     </div>

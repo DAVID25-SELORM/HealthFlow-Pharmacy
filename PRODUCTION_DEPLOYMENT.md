@@ -257,7 +257,9 @@ Before announcing to users:
 
 **Developer**: David Gabion Selorm  
 **Email**: gabiondavidselorm@gmail.com  
-**Business**: zittechgh@gmail.com  
+**Company**: Neon Digital Technologies  
+**Website**: https://www.neondigitaltechnologies.com  
+**Business Email**: zittechgh@gmail.com  
 **Phone**: +233247654381
 
 ---

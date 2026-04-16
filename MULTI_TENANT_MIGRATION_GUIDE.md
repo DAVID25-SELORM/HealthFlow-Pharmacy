@@ -313,6 +313,8 @@ DROP TABLE organizations;
 For issues or questions:
 - **Developer**: David Gabion Selorm
 - **Email**: gabiondavidselorm@gmail.com
+- **Company**: Neon Digital Technologies
+- **Website**: https://www.neondigitaltechnologies.com
 - **Business Email**: zittechgh@gmail.com
 
 ---

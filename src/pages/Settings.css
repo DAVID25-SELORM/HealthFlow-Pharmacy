@@ -283,6 +283,33 @@
   margin-top: 0.5rem !important;
 }
 
+.company {
+  font-size: 1rem;
+  margin-top: 1rem !important;
+  color: var(--gray-700);
+}
+
+.company strong {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.website {
+  font-size: 0.875rem;
+  margin-top: 0.5rem !important;
+  color: var(--gray-600);
+}
+
+.website a {
+  color: var(--primary);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.website a:hover {
+  text-decoration: underline;
+}
+
 .copyright {
   margin-top: 2rem !important;
   padding-top: 1.5rem;

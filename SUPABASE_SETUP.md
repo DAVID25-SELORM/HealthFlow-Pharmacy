@@ -144,4 +144,6 @@ Perfect for testing and 5-10 pharmacies!
 
 **Need help?** Contact David Gabion Selorm
 - Email: gabiondavidselorm@gmail.com
-- Business: zittechgh@gmail.com
+- Company: Neon Digital Technologies
+- Website: https://www.neondigitaltechnologies.com
+- Business Email: zittechgh@gmail.com

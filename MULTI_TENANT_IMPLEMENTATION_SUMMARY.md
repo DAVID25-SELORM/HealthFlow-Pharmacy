@@ -349,5 +349,7 @@ Each pharmacy now operates as an isolated organization with complete data separa
 
 **Developer**: David Gabion Selorm  
 **Email**: gabiondavidselorm@gmail.com  
-**Business**: zittechgh@gmail.com  
-**Date**: 2026-01-14
+**Company**: Neon Digital Technologies  
+**Website**: https://www.neondigitaltechnologies.com  
+**Business Email**: zittechgh@gmail.com  
+**Date**: 2026-04-16

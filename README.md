@@ -78,7 +78,9 @@ npm run test
 
 Built by **David Gabion Selorm**
 - Email: gabiondavidselorm@gmail.com
-- Business: zittechgh@gmail.com
+- Business: Neon Digital Technologies
+- Website: https://www.neondigitaltechnologies.com
+- Business Email: zittechgh@gmail.com
 
 ---
 © 2026 HealthFlow Pharmacy. All rights reserved.
