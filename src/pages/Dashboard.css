@@ -16,6 +16,15 @@
   font-size: 0.875rem;
 }
 
+.dashboard-alert {
+  margin-bottom: 1rem;
+  border: 1px solid #ffd4ce;
+  background: #fff3f1;
+  color: #9f3020;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius);
+}
+
 /* Stats Grid */
 .stats-grid {
   display: grid;

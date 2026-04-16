@@ -46,7 +46,13 @@ const getWeekStart = (value) => {
   return date
 }
 
-const toDayKey = (value) => startOfDay(value).toISOString().split('T')[0]
+const toLocalDayKey = (value) => {
+  const date = startOfDay(value)
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
 
 const sumNetAmount = (sales) =>
   sales.reduce((sum, sale) => sum + Number.parseFloat(sale.net_amount || 0), 0)
@@ -88,7 +94,7 @@ const buildTrend = (current, previous, comparisonLabel) => {
 
 const buildDailyChart = (sales, anchorDate) => {
   const totalsByDay = sales.reduce((accumulator, sale) => {
-    const key = toDayKey(sale.sale_date)
+    const key = toLocalDayKey(sale.sale_date)
     accumulator[key] = (accumulator[key] || 0) + Number.parseFloat(sale.net_amount || 0)
     return accumulator
   }, {})
@@ -98,7 +104,7 @@ const buildDailyChart = (sales, anchorDate) => {
     return {
       label: shortDayFormatter.format(date),
       title: shortDateFormatter.format(date),
-      amount: totalsByDay[toDayKey(date)] || 0,
+      amount: totalsByDay[toLocalDayKey(date)] || 0,
     }
   })
 }
@@ -112,29 +118,34 @@ const buildWeeklyChart = (sales, anchorDate) => {
 
     return {
       label: shortDateFormatter.format(weekStart),
-      title: `${shortDateFormatter.format(weekStart)} - ${shortDateFormatter.format(addDays(weekStart, 6))}`,
+      title: `${shortDateFormatter.format(weekStart)} - ${shortDateFormatter.format(
+        addDays(weekStart, 6)
+      )}`,
       amount: sumNetAmount(filterSalesBetween(sales, weekStart, weekEnd)),
     }
   })
 }
 
+const createEmptyStats = (anchorDate = new Date()) => ({
+  todaysSales: 0,
+  todaysSalesTrend: 'No change vs yesterday',
+  todaysSalesTrendTone: 'neutral',
+  lowStock: 0,
+  expiring: 0,
+  monthlySales: 0,
+  monthlySalesTrend: 'No change vs last month',
+  monthlySalesTrendTone: 'neutral',
+  dailyChart: buildDailyChart([], anchorDate),
+  weeklyChart: buildWeeklyChart([], anchorDate),
+})
+
 const Dashboard = () => {
   const navigate = useNavigate()
   const { role } = useAuth()
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
   const [chartMode, setChartMode] = useState('daily')
-  const [stats, setStats] = useState({
-    todaysSales: 0,
-    todaysSalesTrend: 'No change vs yesterday',
-    todaysSalesTrendTone: 'neutral',
-    lowStock: 0,
-    expiring: 0,
-    monthlySales: 0,
-    monthlySalesTrend: 'No change vs last month',
-    monthlySalesTrendTone: 'neutral',
-    dailyChart: [],
-    weeklyChart: [],
-  })
+  const [stats, setStats] = useState(() => createEmptyStats())
   const [recentSales, setRecentSales] = useState([])
   const [recentClaims, setRecentClaims] = useState([])
 
@@ -145,20 +156,24 @@ const Dashboard = () => {
   }, [role])
 
   const loadDashboardData = async () => {
+    const today = new Date()
+
     try {
       setLoading(true)
+      setError('')
 
       if (!isSupabaseConfigured()) {
-        console.warn('Supabase not configured, using sample data')
-        setSampleData()
+        setStats(createEmptyStats(today))
+        setRecentSales([])
+        setRecentClaims([])
+        setError('Supabase is not configured. Update .env to enable dashboard analytics.')
         return
       }
 
-      const today = new Date()
       const previousMonthStart = startOfMonth(
         new Date(today.getFullYear(), today.getMonth() - 1, 1)
       )
-      const [salesHistory, sales, lowStock, expiring, claims] = await Promise.all([
+      const results = await Promise.allSettled([
         getAllSales({
           startDate: previousMonthStart.toISOString(),
           endDate: today.toISOString(),
@@ -169,6 +184,23 @@ const Dashboard = () => {
         canViewOperationalMetrics ? getExpiringDrugs() : Promise.resolve([]),
         canViewOperationalMetrics ? getRecentClaims(5) : Promise.resolve([]),
       ])
+
+      const failures = []
+      const collectValue = (result, label, fallbackValue) => {
+        if (result.status === 'fulfilled') {
+          return result.value
+        }
+
+        console.error(`Unable to load dashboard ${label}:`, result.reason)
+        failures.push(label)
+        return fallbackValue
+      }
+
+      const salesHistory = collectValue(results[0], 'sales history', [])
+      const sales = collectValue(results[1], 'recent sales', [])
+      const lowStock = collectValue(results[2], 'low stock alerts', [])
+      const expiring = collectValue(results[3], 'expiring alerts', [])
+      const claims = collectValue(results[4], 'recent claims', [])
 
       const yesterday = addDays(today, -1)
       const currentMonthStart = startOfMonth(today)
@@ -201,54 +233,21 @@ const Dashboard = () => {
         dailyChart: buildDailyChart(salesHistory, today),
         weeklyChart: buildWeeklyChart(salesHistory, today),
       })
-
       setRecentSales(sales)
       setRecentClaims(claims)
-    } catch (error) {
-      console.error('Error loading dashboard:', error)
-      setSampleData()
+
+      if (failures.length > 0) {
+        setError('Some dashboard data could not be loaded. Showing available live records only.')
+      }
+    } catch (loadError) {
+      console.error('Error loading dashboard:', loadError)
+      setStats(createEmptyStats(today))
+      setRecentSales([])
+      setRecentClaims([])
+      setError('Unable to load dashboard data right now.')
     } finally {
       setLoading(false)
     }
-  }
-
-  const setSampleData = () => {
-    setStats({
-      todaysSales: 1850,
-      todaysSalesTrend: '+12% vs yesterday',
-      todaysSalesTrendTone: 'positive',
-      lowStock: 5,
-      expiring: 3,
-      monthlySales: 45230,
-      monthlySalesTrend: '+8% vs last month',
-      monthlySalesTrendTone: 'positive',
-      dailyChart: [
-        { label: 'Mon', title: 'Mon', amount: 650 },
-        { label: 'Tue', title: 'Tue', amount: 750 },
-        { label: 'Wed', title: 'Wed', amount: 850 },
-        { label: 'Thu', title: 'Thu', amount: 600 },
-        { label: 'Fri', title: 'Fri', amount: 800 },
-        { label: 'Sat', title: 'Sat', amount: 550 },
-        { label: 'Sun', title: 'Sun', amount: 700 },
-      ],
-      weeklyChart: [
-        { label: 'Mar 24', title: 'Week of Mar 24', amount: 5800 },
-        { label: 'Mar 31', title: 'Week of Mar 31', amount: 7200 },
-        { label: 'Apr 7', title: 'Week of Apr 7', amount: 8100 },
-        { label: 'Apr 14', title: 'Week of Apr 14', amount: 6700 },
-      ],
-    })
-    setRecentSales([
-      { id: '1', patients: { full_name: 'Kwame Boateng' }, net_amount: 250 },
-      { id: '2', patients: { full_name: 'Ama Mensah' }, net_amount: 120 },
-      { id: '3', patients: null, net_amount: 80 },
-    ])
-    setRecentClaims([
-      { id: '1', patient_name: 'Adjoa K.', claim_status: 'approved', total_amount: 400 },
-      { id: '2', patient_name: 'Kojo O.', claim_status: 'pending', total_amount: 220 },
-      { id: '3', patient_name: 'Yaw S.', claim_status: 'rejected', total_amount: 150 },
-    ])
-    setLoading(false)
   }
 
   const statsCards = useMemo(() => {
@@ -324,6 +323,8 @@ const Dashboard = () => {
         <h1>Dashboard</h1>
         <p>Welcome back! Here's what's happening today.</p>
       </div>
+
+      {error && <div className="dashboard-alert">{error}</div>}
 
       <div className="stats-grid">
         {statsCards.map((stat, index) => (

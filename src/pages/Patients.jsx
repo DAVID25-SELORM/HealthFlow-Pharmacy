@@ -34,6 +34,7 @@ const Patients = () => {
   const [historyLoading, setHistoryLoading] = useState(false)
   const [error, setError] = useState('')
   const [formData, setFormData] = useState(initialForm)
+  const patientsRequestRef = useRef(0)
   const historyRequestRef = useRef(0)
 
   useEffect(() => {
@@ -60,31 +61,49 @@ const Patients = () => {
   }
 
   const loadPatients = async (term = '') => {
+    const requestId = patientsRequestRef.current + 1
+    patientsRequestRef.current = requestId
+
     try {
       setLoading(true)
-      setError('')
+      if (patientsRequestRef.current === requestId) {
+        setError('')
+      }
 
       if (!isSupabaseConfigured()) {
-        setPatients([])
-        setError('Supabase is not configured. Update .env to enable patient records.')
+        if (patientsRequestRef.current === requestId) {
+          setPatients([])
+          setError('Supabase is not configured. Update .env to enable patient records.')
+        }
         return
       }
 
       const rows = term.trim() ? await searchPatients(term) : await getAllPatients()
       const enriched = await enrichPatients(rows)
+
+      if (patientsRequestRef.current !== requestId) {
+        return
+      }
+
       setPatients(enriched)
     } catch (loadError) {
+      if (patientsRequestRef.current !== requestId) {
+        return
+      }
+
       console.error('Error loading patients:', loadError)
       setError(loadError.message || 'Unable to load patient records.')
     } finally {
-      setLoading(false)
+      if (patientsRequestRef.current === requestId) {
+        setLoading(false)
+      }
     }
   }
 
-  const handleSearch = async (event) => {
+  const handleSearch = (event) => {
     const term = event.target.value
     setSearchTerm(term)
-    await loadPatients(term)
+    void loadPatients(term)
   }
 
   const handleSubmit = async (event) => {
