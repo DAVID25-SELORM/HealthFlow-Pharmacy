@@ -173,3 +173,36 @@ export const checkSubdomainAvailable = async (subdomain) => {
   if (error) throw error
   return !data
 }
+
+/**
+ * Update full organization details (name, contact, address, license, tier, status, trial end)
+ */
+export const updateOrganizationDetails = async (orgId, fields) => {
+  const payload = {
+    name: fields.name?.trim() || undefined,
+    phone: fields.phone?.trim() || null,
+    email: fields.email?.trim() || null,
+    address: fields.address?.trim() || null,
+    city: fields.city?.trim() || null,
+    region: fields.region?.trim() || null,
+    license_number: fields.licenseNumber?.trim() || null,
+    status: fields.status || undefined,
+    subscription_tier: fields.subscriptionTier || undefined,
+    trial_ends_at: fields.trialEndsAt || null,
+    subscription_ends_at: fields.subscriptionEndsAt || null,
+    updated_at: new Date().toISOString(),
+  }
+
+  // Remove undefined keys so we don't overwrite with undefined
+  Object.keys(payload).forEach((k) => payload[k] === undefined && delete payload[k])
+
+  const { data, error } = await supabase
+    .from('organizations')
+    .update(payload)
+    .eq('id', orgId)
+    .select()
+    .single()
+
+  if (error) throw error
+  return data
+}

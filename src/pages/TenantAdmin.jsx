@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Building2, Plus, Users, CheckCircle, PauseCircle, XCircle, ChevronDown, ChevronUp, Eye } from 'lucide-react'
+import { Building2, Plus, Users, CheckCircle, PauseCircle, XCircle, ChevronDown, ChevronUp, Eye, Pencil } from 'lucide-react'
 import { useNotification } from '../context/NotificationContext'
 import {
   getAllOrganizations,
@@ -7,6 +7,7 @@ import {
   createPharmacyTenant,
   updateOrganizationStatus,
   updateSubscriptionTier,
+  updateOrganizationDetails,
   getOrganizationUsers,
   checkSubdomainAvailable,
 } from '../services/tenantAdminService'
@@ -57,6 +58,11 @@ const TenantAdmin = () => {
   // Expanded org detail
   const [expandedOrgId, setExpandedOrgId] = useState(null)
   const [orgUsers, setOrgUsers] = useState({})
+
+  // Edit modal
+  const [editOrg, setEditOrg] = useState(null)  // the org being edited
+  const [editForm, setEditForm] = useState({})
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     void load()
@@ -154,6 +160,49 @@ const TenantAdmin = () => {
       } catch {
         // silently fail
       }
+    }
+  }
+
+  const openEdit = (org) => {
+    setEditOrg(org)
+    setEditForm({
+      name: org.name || '',
+      phone: org.phone || '',
+      email: org.email || '',
+      address: org.address || '',
+      city: org.city || '',
+      region: org.region || '',
+      licenseNumber: org.license_number || '',
+      status: org.status || 'trial',
+      subscriptionTier: org.subscription_tier || 'basic',
+      trialEndsAt: org.trial_ends_at ? org.trial_ends_at.split('T')[0] : '',
+      subscriptionEndsAt: org.subscription_ends_at ? org.subscription_ends_at.split('T')[0] : '',
+    })
+  }
+
+  const closeEdit = () => {
+    setEditOrg(null)
+    setEditForm({})
+  }
+
+  const handleSaveEdit = async (e) => {
+    e.preventDefault()
+    if (!editForm.name.trim()) return setError('Pharmacy name is required')
+    setSaving(true)
+    setError('')
+    try {
+      await updateOrganizationDetails(editOrg.id, {
+        ...editForm,
+        trialEndsAt: editForm.trialEndsAt ? new Date(editForm.trialEndsAt).toISOString() : null,
+        subscriptionEndsAt: editForm.subscriptionEndsAt ? new Date(editForm.subscriptionEndsAt).toISOString() : null,
+      })
+      notify(`${editForm.name} updated successfully`, 'success')
+      closeEdit()
+      await load()
+    } catch (err) {
+      setError(err.message || 'Failed to save changes')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -408,14 +457,23 @@ const TenantAdmin = () => {
                         </span>
                       </td>
                       <td>
-                        <button
-                          className="btn-icon"
-                          title="View users"
-                          onClick={() => toggleExpand(org.id)}
-                        >
-                          <Eye size={15} />
-                          {expandedOrgId === org.id ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-                        </button>
+                        <div className="table-actions">
+                          <button
+                            className="btn-icon"
+                            title="Edit pharmacy"
+                            onClick={() => openEdit(org)}
+                          >
+                            <Pencil size={14} />
+                          </button>
+                          <button
+                            className="btn-icon"
+                            title="View users"
+                            onClick={() => toggleExpand(org.id)}
+                          >
+                            <Eye size={15} />
+                            {expandedOrgId === org.id ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                          </button>
+                        </div>
                       </td>
                     </tr>
 
@@ -470,6 +528,139 @@ const TenantAdmin = () => {
           </div>
         )}
       </div>
+
+      {/* ── Edit Modal ── */}
+      {editOrg && (
+        <div className="modal-backdrop" onClick={closeEdit}>
+          <div className="edit-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="edit-modal-header">
+              <h3>Edit Pharmacy</h3>
+              <button className="modal-close" onClick={closeEdit}>✕</button>
+            </div>
+
+            {error && <div className="tenant-alert">{error}</div>}
+
+            <form onSubmit={handleSaveEdit} className="edit-modal-body">
+              <div className="tenant-form-section">
+                <h4>Pharmacy Details</h4>
+                <div className="tenant-form-grid">
+                  <div className="tenant-form-group full-width">
+                    <label>Pharmacy Name *</label>
+                    <input
+                      value={editForm.name}
+                      onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div className="tenant-form-group">
+                    <label>Phone</label>
+                    <input
+                      value={editForm.phone}
+                      onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                      placeholder="+233 123 456 789"
+                    />
+                  </div>
+                  <div className="tenant-form-group">
+                    <label>Email</label>
+                    <input
+                      type="email"
+                      value={editForm.email}
+                      onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                      placeholder="info@pharmacy.com"
+                    />
+                  </div>
+                  <div className="tenant-form-group full-width">
+                    <label>Address</label>
+                    <input
+                      value={editForm.address}
+                      onChange={(e) => setEditForm({ ...editForm, address: e.target.value })}
+                      placeholder="123 Main Street"
+                    />
+                  </div>
+                  <div className="tenant-form-group">
+                    <label>City</label>
+                    <input
+                      value={editForm.city}
+                      onChange={(e) => setEditForm({ ...editForm, city: e.target.value })}
+                      placeholder="Accra"
+                    />
+                  </div>
+                  <div className="tenant-form-group">
+                    <label>Region</label>
+                    <input
+                      value={editForm.region}
+                      onChange={(e) => setEditForm({ ...editForm, region: e.target.value })}
+                      placeholder="Greater Accra"
+                    />
+                  </div>
+                  <div className="tenant-form-group">
+                    <label>License Number</label>
+                    <input
+                      value={editForm.licenseNumber}
+                      onChange={(e) => setEditForm({ ...editForm, licenseNumber: e.target.value })}
+                      placeholder="PL-12345"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="tenant-form-section">
+                <h4>Subscription</h4>
+                <div className="tenant-form-grid">
+                  <div className="tenant-form-group">
+                    <label>Status</label>
+                    <select
+                      value={editForm.status}
+                      onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
+                    >
+                      <option value="trial">Trial</option>
+                      <option value="active">Active</option>
+                      <option value="suspended">Suspended</option>
+                      <option value="inactive">Inactive</option>
+                    </select>
+                  </div>
+                  <div className="tenant-form-group">
+                    <label>Subscription Tier</label>
+                    <select
+                      value={editForm.subscriptionTier}
+                      onChange={(e) => setEditForm({ ...editForm, subscriptionTier: e.target.value })}
+                    >
+                      <option value="basic">Basic</option>
+                      <option value="standard">Standard</option>
+                      <option value="enterprise">Enterprise</option>
+                    </select>
+                  </div>
+                  <div className="tenant-form-group">
+                    <label>Trial Ends</label>
+                    <input
+                      type="date"
+                      value={editForm.trialEndsAt}
+                      onChange={(e) => setEditForm({ ...editForm, trialEndsAt: e.target.value })}
+                    />
+                  </div>
+                  <div className="tenant-form-group">
+                    <label>Subscription Ends</label>
+                    <input
+                      type="date"
+                      value={editForm.subscriptionEndsAt}
+                      onChange={(e) => setEditForm({ ...editForm, subscriptionEndsAt: e.target.value })}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="edit-modal-footer">
+                <button type="button" className="btn btn-outline" onClick={closeEdit} disabled={saving}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={saving}>
+                  {saving ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
