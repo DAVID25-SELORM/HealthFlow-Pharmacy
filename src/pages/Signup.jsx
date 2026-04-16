@@ -1,19 +1,25 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
-import { createOrganization, checkSubdomainAvailability } from '../services/organizationService'
-import { createSettings } from '../services/settingsService'
+import { useAuth } from '../context/AuthContext'
+import {
+  checkSubdomainAvailability,
+  registerOrganizationSignup,
+} from '../services/organizationService'
 import './Signup.css'
 
 const Signup = () => {
   const navigate = useNavigate()
-  const [step, setStep] = useState(1) // 1: Pharmacy Info, 2: Account Info, 3: Success
+  const { isConfigured, signIn } = useAuth()
+  const [step, setStep] = useState(1)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [successMessage, setSuccessMessage] = useState(
+    'Your pharmacy has been registered and your 30-day free trial has started.'
+  )
+  const [dashboardReady, setDashboardReady] = useState(false)
   const [subdomainStatus, setSubdomainStatus] = useState(null)
   const [checkingSubdomain, setCheckingSubdomain] = useState(false)
 
-  // Pharmacy Info (Step 1)
   const [pharmacyName, setPharmacyName] = useState('')
   const [subdomain, setSubdomain] = useState('')
   const [pharmacyPhone, setPharmacyPhone] = useState('')
@@ -23,31 +29,42 @@ const Signup = () => {
   const [region, setRegion] = useState('')
   const [licenseNumber, setLicenseNumber] = useState('')
 
-  // Account Info (Step 2)
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
 
-  const handleSubdomainBlur = async () => {
-    if (!subdomain || subdomain.length < 3) {
+  const runSubdomainCheck = async (candidate = subdomain) => {
+    const normalized = candidate.trim().toLowerCase()
+
+    if (!normalized || normalized.length < 3) {
       setSubdomainStatus(null)
-      return
+      return null
     }
 
     setCheckingSubdomain(true)
     setSubdomainStatus(null)
 
     try {
-      const result = await checkSubdomainAvailability(subdomain)
+      const result = await checkSubdomainAvailability(normalized)
       setSubdomainStatus(result)
-    } catch (err) {
-      console.error('Error checking subdomain:', err)
-      setSubdomainStatus({ available: false, message: 'Error checking availability' })
+      return result
+    } catch (availabilityError) {
+      console.error('Error checking subdomain:', availabilityError)
+      const result = {
+        available: false,
+        message: 'Unable to check availability right now.',
+      }
+      setSubdomainStatus(result)
+      return result
     } finally {
       setCheckingSubdomain(false)
     }
+  }
+
+  const handleSubdomainBlur = async () => {
+    await runSubdomainCheck()
   }
 
   const validateStep1 = () => {
@@ -55,14 +72,12 @@ const Signup = () => {
       setError('Pharmacy name is required')
       return false
     }
+
     if (!subdomain.trim() || subdomain.length < 3) {
       setError('Subdomain must be at least 3 characters')
       return false
     }
-    if (subdomainStatus && !subdomainStatus.available) {
-      setError('Please choose an available subdomain')
-      return false
-    }
+
     return true
   }
 
@@ -71,116 +86,95 @@ const Signup = () => {
       setError('Full name is required')
       return false
     }
+
     if (!email.trim() || !email.includes('@')) {
       setError('Valid email is required')
       return false
     }
+
     if (!password || password.length < 6) {
       setError('Password must be at least 6 characters')
       return false
     }
+
     if (password !== confirmPassword) {
       setError('Passwords do not match')
       return false
     }
+
     return true
   }
 
-  const handleStep1Next = () => {
+  const handleStep1Next = async () => {
     setError('')
-    if (validateStep1()) {
-      setStep(2)
+
+    if (!validateStep1()) {
+      return
     }
+
+    const availability = await runSubdomainCheck()
+    if (!availability?.available) {
+      setError(availability?.message || 'Please choose an available subdomain')
+      return
+    }
+
+    setStep(2)
   }
 
-  const handleStep2Submit = async (e) => {
-    e.preventDefault()
+  const handleStep2Submit = async (event) => {
+    event.preventDefault()
     setError('')
+    setDashboardReady(false)
+    setSuccessMessage('Your pharmacy has been registered and your 30-day free trial has started.')
 
     if (!validateStep2()) {
+      return
+    }
+
+    if (!isConfigured) {
+      setError('Supabase credentials are not configured.')
       return
     }
 
     setLoading(true)
 
     try {
-      // Step 1: Create organization
-      const organization = await createOrganization({
-        name: pharmacyName,
-        subdomain: subdomain,
-        phone: pharmacyPhone,
-        email: pharmacyEmail,
-        address: address,
-        city: city,
-        region: region,
-        licenseNumber: licenseNumber,
+      await registerOrganizationSignup({
+        pharmacyName,
+        subdomain,
+        pharmacyPhone,
+        pharmacyEmail,
+        address,
+        city,
+        region,
+        licenseNumber,
+        fullName,
+        email,
+        phone,
+        password,
       })
 
-      // Step 2: Create admin user account
-      const { data: authData, error: signUpError } = await supabase.auth.signUp({
-        email: email.trim(),
-        password: password,
-        options: {
-          data: {
-            full_name: fullName.trim(),
-            role: 'admin',
-          },
-        },
-      })
-
-      if (signUpError) throw signUpError
-
-      if (!authData.user) {
-        throw new Error('User creation failed')
+      try {
+        await signIn(email, password)
+        setDashboardReady(true)
+      } catch (signInError) {
+        console.warn('Automatic sign-in after signup failed:', signInError)
+        setSuccessMessage(
+          'Your pharmacy has been registered. Sign in with your new admin account to access the dashboard.'
+        )
       }
 
-      // Step 3: Insert user into users table with organization
-      const { error: userError } = await supabase.from('users').insert([
-        {
-          id: authData.user.id,
-          email: email.trim(),
-          full_name: fullName.trim(),
-          phone: phone.trim() || null,
-          role: 'admin',
-          organization_id: organization.id,
-          is_active: true,
-        },
-      ])
-
-      if (userError) throw userError
-
-      // Step 4: Update organization owner
-      const { error: ownerError } = await supabase
-        .from('organizations')
-        .update({ owner_user_id: authData.user.id })
-        .eq('id', organization.id)
-
-      if (ownerError) throw ownerError
-
-      // Step 5: Create default pharmacy settings
-      await createSettings({
-        organization_id: organization.id,
-        pharmacy_name: pharmacyName,
-        phone: pharmacyPhone,
-        email: pharmacyEmail,
-        address: address,
-        city: city,
-        region: region,
-        license_number: licenseNumber,
-      })
-
-      // Success! Move to step 3
       setStep(3)
-    } catch (err) {
-      console.error('Signup error:', err)
-      setError(err.message || 'Failed to create account. Please try again.')
+    } catch (signupError) {
+      console.error('Signup error:', signupError)
+      setError(signupError.message || 'Failed to create account. Please try again.')
     } finally {
       setLoading(false)
     }
   }
 
   const handleGoToDashboard = () => {
-    navigate('/')
+    navigate(dashboardReady ? '/dashboard' : '/login')
   }
 
   return (
@@ -191,15 +185,26 @@ const Signup = () => {
           <p>Start your 30-day free trial</p>
         </div>
 
-        {error && (
+        {!isConfigured && (
           <div className="error-message">
-            <span>⚠️ {error}</span>
+            <span>Error: Supabase credentials are not configured.</span>
           </div>
         )}
 
-        {/* Step 1: Pharmacy Information */}
+        {error && (
+          <div className="error-message">
+            <span>Error: {error}</span>
+          </div>
+        )}
+
         {step === 1 && (
-          <form className="signup-form" onSubmit={(e) => { e.preventDefault(); handleStep1Next(); }}>
+          <form
+            className="signup-form"
+            onSubmit={(event) => {
+              event.preventDefault()
+              void handleStep1Next()
+            }}
+          >
             <div className="step-indicator">Step 1 of 2: Pharmacy Information</div>
 
             <div className="form-group">
@@ -208,7 +213,7 @@ const Signup = () => {
                 type="text"
                 id="pharmacyName"
                 value={pharmacyName}
-                onChange={(e) => setPharmacyName(e.target.value)}
+                onChange={(event) => setPharmacyName(event.target.value)}
                 placeholder="ABC Pharmacy"
                 required
               />
@@ -221,19 +226,27 @@ const Signup = () => {
                   type="text"
                   id="subdomain"
                   value={subdomain}
-                  onChange={(e) => {
-                    setSubdomain(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))
+                  onChange={(event) => {
+                    setSubdomain(event.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))
                     setSubdomainStatus(null)
                   }}
-                  onBlur={handleSubdomainBlur}
+                  onBlur={() => {
+                    void handleSubdomainBlur()
+                  }}
                   placeholder="abc-pharmacy"
                   required
                 />
                 <span className="subdomain-suffix">.healthflow.app</span>
               </div>
-              {checkingSubdomain && <p className="subdomain-status checking">Checking availability...</p>}
+              {checkingSubdomain && (
+                <p className="subdomain-status checking">Checking availability...</p>
+              )}
               {subdomainStatus && (
-                <p className={`subdomain-status ${subdomainStatus.available ? 'available' : 'unavailable'}`}>
+                <p
+                  className={`subdomain-status ${
+                    subdomainStatus.available ? 'available' : 'unavailable'
+                  }`}
+                >
                   {subdomainStatus.message}
                 </p>
               )}
@@ -246,7 +259,7 @@ const Signup = () => {
                   type="tel"
                   id="pharmacyPhone"
                   value={pharmacyPhone}
-                  onChange={(e) => setPharmacyPhone(e.target.value)}
+                  onChange={(event) => setPharmacyPhone(event.target.value)}
                   placeholder="+233 123 456 789"
                 />
               </div>
@@ -257,7 +270,7 @@ const Signup = () => {
                   type="email"
                   id="pharmacyEmail"
                   value={pharmacyEmail}
-                  onChange={(e) => setPharmacyEmail(e.target.value)}
+                  onChange={(event) => setPharmacyEmail(event.target.value)}
                   placeholder="info@pharmacy.com"
                 />
               </div>
@@ -269,7 +282,7 @@ const Signup = () => {
                 type="text"
                 id="address"
                 value={address}
-                onChange={(e) => setAddress(e.target.value)}
+                onChange={(event) => setAddress(event.target.value)}
                 placeholder="123 Main Street"
               />
             </div>
@@ -281,7 +294,7 @@ const Signup = () => {
                   type="text"
                   id="city"
                   value={city}
-                  onChange={(e) => setCity(e.target.value)}
+                  onChange={(event) => setCity(event.target.value)}
                   placeholder="Accra"
                 />
               </div>
@@ -292,7 +305,7 @@ const Signup = () => {
                   type="text"
                   id="region"
                   value={region}
-                  onChange={(e) => setRegion(e.target.value)}
+                  onChange={(event) => setRegion(event.target.value)}
                   placeholder="Greater Accra"
                 />
               </div>
@@ -304,18 +317,18 @@ const Signup = () => {
                 type="text"
                 id="licenseNumber"
                 value={licenseNumber}
-                onChange={(e) => setLicenseNumber(e.target.value)}
+                onChange={(event) => setLicenseNumber(event.target.value)}
                 placeholder="PL-12345"
               />
             </div>
 
             <div className="form-actions">
-              <button type="submit" className="btn-primary" disabled={loading}>
+              <button type="submit" className="btn-primary" disabled={loading || !isConfigured}>
                 Next Step
               </button>
-              <button 
-                type="button" 
-                className="btn-link" 
+              <button
+                type="button"
+                className="btn-link"
                 onClick={() => navigate('/login')}
               >
                 Already have an account? Login
@@ -324,7 +337,6 @@ const Signup = () => {
           </form>
         )}
 
-        {/* Step 2: Account Information */}
         {step === 2 && (
           <form className="signup-form" onSubmit={handleStep2Submit}>
             <div className="step-indicator">Step 2 of 2: Admin Account</div>
@@ -335,7 +347,7 @@ const Signup = () => {
                 type="text"
                 id="fullName"
                 value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
+                onChange={(event) => setFullName(event.target.value)}
                 placeholder="John Doe"
                 required
               />
@@ -347,7 +359,7 @@ const Signup = () => {
                 type="email"
                 id="email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(event) => setEmail(event.target.value)}
                 placeholder="john@example.com"
                 required
               />
@@ -359,7 +371,7 @@ const Signup = () => {
                 type="tel"
                 id="phone"
                 value={phone}
-                onChange={(e) => setPhone(e.target.value)}
+                onChange={(event) => setPhone(event.target.value)}
                 placeholder="+233 123 456 789"
               />
             </div>
@@ -370,7 +382,7 @@ const Signup = () => {
                 type="password"
                 id="password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(event) => setPassword(event.target.value)}
                 placeholder="At least 6 characters"
                 required
                 minLength={6}
@@ -383,41 +395,46 @@ const Signup = () => {
                 type="password"
                 id="confirmPassword"
                 value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
+                onChange={(event) => setConfirmPassword(event.target.value)}
                 placeholder="Re-enter password"
                 required
               />
             </div>
 
             <div className="form-actions">
-              <button 
-                type="button" 
-                className="btn-secondary" 
+              <button
+                type="button"
+                className="btn-secondary"
                 onClick={() => setStep(1)}
-                disabled={loading}
+                disabled={loading || !isConfigured}
               >
                 Back
               </button>
-              <button type="submit" className="btn-primary" disabled={loading}>
+              <button type="submit" className="btn-primary" disabled={loading || !isConfigured}>
                 {loading ? 'Creating Account...' : 'Create Account'}
               </button>
             </div>
           </form>
         )}
 
-        {/* Step 3: Success */}
         {step === 3 && (
           <div className="signup-success">
-            <div className="success-icon">✓</div>
+            <div className="success-icon">OK</div>
             <h2>Account Created Successfully!</h2>
-            <p>Your pharmacy has been registered and your 30-day free trial has started.</p>
+            <p>{successMessage}</p>
             <div className="success-details">
-              <p><strong>Pharmacy:</strong> {pharmacyName}</p>
-              <p><strong>Subdomain:</strong> {subdomain}.healthflow.app</p>
-              <p><strong>Admin Email:</strong> {email}</p>
+              <p>
+                <strong>Pharmacy:</strong> {pharmacyName}
+              </p>
+              <p>
+                <strong>Subdomain:</strong> {subdomain}.healthflow.app
+              </p>
+              <p>
+                <strong>Admin Email:</strong> {email}
+              </p>
             </div>
             <button className="btn-primary" onClick={handleGoToDashboard}>
-              Go to Dashboard
+              {dashboardReady ? 'Go to Dashboard' : 'Go to Login'}
             </button>
           </div>
         )}
