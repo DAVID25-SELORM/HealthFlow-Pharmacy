@@ -6,6 +6,24 @@ import { assertRequiredText, normalizeText } from '../utils/validation'
  * Handles multi-tenant organization management
  */
 
+const TENANT_SIGNUP_FUNCTION = 'tenant-signup'
+
+const invokeTenantSignup = async (payload) => {
+  const { data, error } = await supabase.functions.invoke(TENANT_SIGNUP_FUNCTION, {
+    body: payload,
+  })
+
+  if (error) {
+    throw error
+  }
+
+  if (data?.error) {
+    throw new Error(data.error)
+  }
+
+  return data
+}
+
 /**
  * Get current user's organization
  */
@@ -43,7 +61,7 @@ export const getOrganizationById = async (orgId) => {
  * Get organization by subdomain
  */
 export const getOrganizationBySubdomain = async (subdomain) => {
-  const { data, error} = await supabase
+  const { data, error } = await supabase
     .from('organizations')
     .select('*')
     .eq('subdomain', normalizeText(subdomain))
@@ -58,6 +76,32 @@ export const getOrganizationBySubdomain = async (subdomain) => {
   }
 
   return data
+}
+
+export const registerOrganizationSignup = async (payload) => {
+  const organization = {
+    name: assertRequiredText(payload.pharmacyName, 'Pharmacy name'),
+    subdomain: assertRequiredText(payload.subdomain, 'Subdomain').toLowerCase(),
+    phone: normalizeText(payload.pharmacyPhone) || null,
+    email: normalizeText(payload.pharmacyEmail) || null,
+    address: normalizeText(payload.address) || null,
+    city: normalizeText(payload.city) || null,
+    region: normalizeText(payload.region) || null,
+    licenseNumber: normalizeText(payload.licenseNumber) || null,
+  }
+
+  const adminUser = {
+    fullName: assertRequiredText(payload.fullName, 'Full name'),
+    email: assertRequiredText(payload.email, 'Email').toLowerCase(),
+    phone: normalizeText(payload.phone) || null,
+    password: assertRequiredText(payload.password, 'Password'),
+  }
+
+  return invokeTenantSignup({
+    action: 'register_signup',
+    organization,
+    adminUser,
+  })
 }
 
 /**
@@ -201,13 +245,10 @@ export const checkSubdomainAvailability = async (subdomain) => {
     return { available: false, message: 'Subdomain must be 3-50 characters long.' }
   }
 
-  const existing = await getOrganizationBySubdomain(normalized)
-  
-  if (existing) {
-    return { available: false, message: 'This subdomain is already taken.' }
-  }
-
-  return { available: true, message: 'Subdomain is available!' }
+  return invokeTenantSignup({
+    action: 'check_subdomain',
+    subdomain: normalized,
+  })
 }
 
 /**

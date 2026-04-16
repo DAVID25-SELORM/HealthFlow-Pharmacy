@@ -58,9 +58,13 @@ npm run test
 1. Run database migrations in order:
    - `supabase-migration-multi-tenant-step1.sql` (schema changes)
    - `supabase-migration-multi-tenant-step2-rls.sql` (RLS policies)
-2. Deploy frontend to Vercel
-3. Test with existing account (migrated to default 'healthflow' organization)
-4. Create new pharmacy via `/signup` route
+   - `supabase-migration-multi-tenant-step3-fixes.sql` (tenant bootstrap and org defaults)
+2. Deploy Supabase Edge Functions:
+   - `staff-admin`
+   - `tenant-signup`
+3. Deploy frontend to Vercel
+4. Test with existing account (migrated to default 'healthflow' organization)
+5. Create new pharmacy via `/signup` route
 
 **Architecture**:
 - **Shared Database**: All tenants in one PostgreSQL database

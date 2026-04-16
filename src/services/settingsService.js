@@ -80,6 +80,61 @@ export const updatePharmacySettings = async (id, settings) => {
   return data
 }
 
+export const createSettings = async (settings) => {
+  const payload = {
+    pharmacy_name:
+      normalizeText(settings.pharmacy_name ?? settings.pharmacyName) || 'HealthFlow Pharmacy',
+    phone: normalizeText(settings.phone) || null,
+    email: normalizeText(settings.email) || null,
+    address: normalizeText(settings.address) || null,
+    city: normalizeText(settings.city) || null,
+    region: normalizeText(settings.region) || null,
+    license_number: normalizeText(settings.license_number ?? settings.licenseNumber) || null,
+    tax_rate: Number.parseFloat(settings.tax_rate ?? settings.taxRate ?? 0),
+    currency: normalizeText(settings.currency) || 'GHS',
+    low_stock_threshold: Number.parseFloat(
+      settings.low_stock_threshold ?? settings.lowStockThreshold ?? 10
+    ),
+    expiry_alert_days: Number.parseInt(
+      settings.expiry_alert_days ?? settings.expiryAlertDays ?? 30,
+      10
+    ),
+    receipt_footer: normalizeText(settings.receipt_footer ?? settings.receiptFooter) || null,
+  }
+
+  const organizationId =
+    normalizeText(settings.organization_id ?? settings.organizationId) || null
+
+  if (organizationId) {
+    payload.organization_id = organizationId
+  }
+
+  const { data, error } = await supabase
+    .from('pharmacy_settings')
+    .insert([payload])
+    .select()
+    .single()
+
+  if (error) {
+    throw error
+  }
+
+  await tryLogAuditEvent({
+    eventType: 'settings.created',
+    entityType: 'pharmacy_settings',
+    entityId: data.id,
+    action: 'create',
+    details: {
+      pharmacy_name: data.pharmacy_name,
+      currency: data.currency,
+      low_stock_threshold: data.low_stock_threshold,
+      expiry_alert_days: data.expiry_alert_days,
+    },
+  })
+
+  return data
+}
+
 export const getUsers = async () => {
   const { data, error } = await supabase
     .from('users')

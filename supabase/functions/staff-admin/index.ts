@@ -119,6 +119,33 @@ const findAuthUserByEmail = async (
   return null
 }
 
+const getRequesterProfile = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  userId: string
+) => {
+  const { data, error } = await adminClient
+    .from('users')
+    .select('id, role, organization_id')
+    .eq('id', userId)
+    .maybeSingle()
+
+  if (error) {
+    throw error
+  }
+
+  if (!data) {
+    return null
+  }
+
+  const roleCandidate = normalizeText(data.role).toLowerCase()
+
+  return {
+    id: data.id,
+    role: isValidRole(roleCandidate) ? roleCandidate : 'assistant',
+    organization_id: normalizeText(data.organization_id) || null,
+  }
+}
+
 const syncPublicUser = async (
   adminClient: ReturnType<typeof createAdminClient>,
   authUser: {
@@ -134,6 +161,7 @@ const syncPublicUser = async (
     phone?: string | null
     role?: StaffRole
     isActive?: boolean
+    organizationId?: string | null
   } = {}
 ) => {
   const email = normalizeText(authUser.email).toLowerCase()
@@ -141,10 +169,11 @@ const syncPublicUser = async (
   const phone = normalizeText(overrides.phone ?? authUser.user_metadata?.phone ?? authUser.phone) || null
   const role = overrides.role || getRoleFromUser(authUser)
   const isActive = overrides.isActive ?? userIsActive(authUser)
+  const requestedOrganizationId = normalizeText(overrides.organizationId)
 
   const { data: conflictingUser, error: conflictingUserError } = await adminClient
     .from('users')
-    .select('id, email')
+    .select('id, email, organization_id')
     .eq('email', email)
     .maybeSingle()
 
@@ -156,6 +185,38 @@ const syncPublicUser = async (
     throw new Error(`public.users already contains ${email} under a different account id.`)
   }
 
+  const { data: existingProfile, error: existingProfileError } = await adminClient
+    .from('users')
+    .select('id, organization_id')
+    .eq('id', authUser.id)
+    .maybeSingle()
+
+  if (existingProfileError) {
+    throw existingProfileError
+  }
+
+  const existingOrganizationId = normalizeText(existingProfile?.organization_id)
+  const conflictingOrganizationId = normalizeText(conflictingUser?.organization_id)
+
+  if (
+    requestedOrganizationId &&
+    existingOrganizationId &&
+    existingOrganizationId !== requestedOrganizationId
+  ) {
+    throw new Error('This user already belongs to another organization.')
+  }
+
+  if (
+    requestedOrganizationId &&
+    conflictingOrganizationId &&
+    conflictingOrganizationId !== requestedOrganizationId
+  ) {
+    throw new Error('This email is already assigned to another organization.')
+  }
+
+  const organizationId =
+    requestedOrganizationId || existingOrganizationId || conflictingOrganizationId || null
+
   const { error: syncError } = await adminClient.from('users').upsert(
     {
       id: authUser.id,
@@ -164,6 +225,7 @@ const syncPublicUser = async (
       phone,
       role,
       is_active: isActive,
+      organization_id: organizationId,
       updated_at: new Date().toISOString(),
     },
     { onConflict: 'id' }
@@ -180,11 +242,13 @@ const syncPublicUser = async (
     phone,
     role,
     is_active: isActive,
+    organization_id: organizationId,
   }
 }
 
 const upsertStaffUser = async (
   adminClient: ReturnType<typeof createAdminClient>,
+  organizationId: string,
   payload: Record<string, unknown>
 ) => {
   const email = normalizeText(payload.email).toLowerCase()
@@ -232,16 +296,16 @@ const upsertStaffUser = async (
       },
     })
 
-    if (error) {
-      throw error
+    if (error || !data.user) {
+      throw error || new Error('Unable to update the staff user.')
     }
 
-    const user = data.user
-    const syncedProfile = await syncPublicUser(adminClient, user, {
+    const syncedProfile = await syncPublicUser(adminClient, data.user, {
       fullName,
       phone,
       role: roleCandidate,
       isActive: true,
+      organizationId,
     })
 
     return {
@@ -260,16 +324,16 @@ const upsertStaffUser = async (
     },
   })
 
-  if (error) {
-    throw error
+  if (error || !data.user) {
+    throw error || new Error('Unable to create the staff user.')
   }
 
-  const user = data.user
-  const syncedProfile = await syncPublicUser(adminClient, user, {
+  const syncedProfile = await syncPublicUser(adminClient, data.user, {
     fullName,
     phone,
     role: roleCandidate,
     isActive: true,
+    organizationId,
   })
 
   return {
@@ -281,6 +345,7 @@ const upsertStaffUser = async (
 const setStaffStatus = async (
   adminClient: ReturnType<typeof createAdminClient>,
   requesterId: string,
+  organizationId: string,
   payload: Record<string, unknown>
 ) => {
   const userId = normalizeText(payload.userId)
@@ -292,6 +357,20 @@ const setStaffStatus = async (
 
   if (!isActive && requesterId === userId) {
     throw new Error('You cannot disable your own admin account.')
+  }
+
+  const { data: targetProfile, error: targetProfileError } = await adminClient
+    .from('users')
+    .select('id, organization_id')
+    .eq('id', userId)
+    .maybeSingle()
+
+  if (targetProfileError) {
+    throw targetProfileError
+  }
+
+  if (!targetProfile || normalizeText(targetProfile.organization_id) !== organizationId) {
+    throw new Error('You can only manage staff accounts in your own organization.')
   }
 
   const { data, error } = await adminClient.auth.admin.getUserById(userId)
@@ -314,6 +393,7 @@ const setStaffStatus = async (
 
   const syncedProfile = await syncPublicUser(adminClient, updatedUserData.user || authUser, {
     isActive,
+    organizationId,
   })
 
   return {
@@ -349,19 +429,26 @@ Deno.serve(async (request) => {
       return json({ error: 'You must be signed in to manage staff accounts.' }, 401)
     }
 
-    if (getRoleFromUser(user) !== 'admin') {
+    const requesterProfile = await getRequesterProfile(adminClient, user.id)
+    if (!requesterProfile || requesterProfile.role !== 'admin') {
       return json({ error: 'Only admin users can manage staff accounts.' }, 403)
+    }
+
+    if (!requesterProfile.organization_id) {
+      return json({ error: 'Admin account is missing organization context.' }, 400)
     }
 
     const payload = (await request.json()) as Record<string, unknown>
     const action = normalizeText(payload.action) as StaffAction
 
     if (action === 'upsert_staff_user') {
-      return json(await upsertStaffUser(adminClient, payload))
+      return json(await upsertStaffUser(adminClient, requesterProfile.organization_id, payload))
     }
 
     if (action === 'set_staff_status') {
-      return json(await setStaffStatus(adminClient, user.id, payload))
+      return json(
+        await setStaffStatus(adminClient, user.id, requesterProfile.organization_id, payload)
+      )
     }
 
     return json({ error: 'Unsupported staff action.' }, 400)

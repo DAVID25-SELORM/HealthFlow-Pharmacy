@@ -93,9 +93,38 @@ SELECT public.user_organization_id();
 - All tables should have new policies with `_same_org` or `_own` suffixes
 - The helper function should return your organization ID when called as authenticated user
 
+#### C. Run Step 3 Migration (Bootstrap & Insert Fixes)
+
+1. After Step 2 completes successfully, run `supabase-migration-multi-tenant-step3-fixes.sql`
+2. This will:
+   - Fix the organization update policy so only org admins can update their organization
+   - Add `organization_id` defaults for normal authenticated inserts
+   - Keep existing client-side drug, patient, sales, claim, and settings inserts working under tenant RLS
+
+3. Verify with:
+
+```sql
+SELECT table_name, column_default
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND column_name = 'organization_id'
+ORDER BY table_name;
+```
+
+**Expected Results**:
+- Tenant tables should show `public.user_organization_id()` as the `organization_id` default
+- The `organizations_update_admin_same_org` policy should exist in `pg_policies`
+
 ### Step 2: Deploy Frontend Code
 
-The frontend changes are already implemented. Deploy to Vercel:
+Deploy the Supabase Edge Functions before the frontend:
+
+```powershell
+supabase functions deploy staff-admin
+supabase functions deploy tenant-signup
+```
+
+Then deploy the frontend to Vercel:
 
 ```powershell
 npm run build
