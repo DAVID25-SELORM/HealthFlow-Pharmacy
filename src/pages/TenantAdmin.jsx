@@ -195,6 +195,7 @@ const TenantAdmin = () => {
     setEditUser(user)
     setEditUserForm({
       fullName: user.full_name || '',
+      email: user.email || '',
       role: user.role || 'pharmacist',
       isActive: user.is_active !== false,
     })
@@ -602,8 +603,13 @@ const TenantAdmin = () => {
                     />
                   </div>
                   <div className="tenant-form-group full-width">
-                    <label>Email (read-only)</label>
-                    <input value={editUser.email} disabled className="input-disabled" />
+                    <label>Email</label>
+                    <input
+                      type="email"
+                      value={editUserForm.email}
+                      onChange={(e) => setEditUserForm({ ...editUserForm, email: e.target.value })}
+                      placeholder="user@example.com"
+                    />
                   </div>
                   <div className="tenant-form-group">
                     <label>Role</label>

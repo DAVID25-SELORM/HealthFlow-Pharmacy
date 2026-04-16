@@ -213,6 +213,7 @@ export const updateOrganizationDetails = async (orgId, fields) => {
 export const updateOrganizationUser = async (userId, fields) => {
   const payload = {
     full_name: fields.fullName?.trim() || undefined,
+    email: fields.email?.trim() || undefined,
     role: fields.role || undefined,
     is_active: typeof fields.isActive === 'boolean' ? fields.isActive : undefined,
   }
