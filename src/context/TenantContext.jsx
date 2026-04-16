@@ -6,6 +6,42 @@ import { useAuth } from './AuthContext'
  * Wraps the app to ensure all operations are scoped to the user's organization
  */
 
+// ─── Tier Feature Definitions ───────────────────────────────────────────────
+export const TIER_LIMITS = {
+  basic: {
+    maxUsers: 3,
+    maxDrugs: 200,
+    hasReports: false,
+    hasClaims: false,
+    hasAdvancedInventory: false,
+    label: 'Basic',
+  },
+  standard: {
+    maxUsers: 10,
+    maxDrugs: 1000,
+    hasReports: true,
+    hasClaims: false,
+    hasAdvancedInventory: true,
+    label: 'Standard',
+  },
+  enterprise: {
+    maxUsers: Infinity,
+    maxDrugs: Infinity,
+    hasReports: true,
+    hasClaims: true,
+    hasAdvancedInventory: true,
+    label: 'Enterprise',
+  },
+}
+
+// During trial, grant standard-level access
+const TRIAL_LIMITS = TIER_LIMITS.standard
+
+const getTierLimits = (tier, isTrialActive) => {
+  if (isTrialActive) return TRIAL_LIMITS
+  return TIER_LIMITS[tier] || TIER_LIMITS.basic
+}
+
 const TenantContext = createContext(null)
 
 export const TenantProvider = ({ children }) => {
@@ -20,6 +56,7 @@ export const TenantProvider = ({ children }) => {
         isSubscriptionActive: false,
         isSuspended: false,
         daysUntilTrialExpires: null,
+        tierLimits: TIER_LIMITS.basic,
         loading: true,
       }
     }
@@ -32,6 +69,7 @@ export const TenantProvider = ({ children }) => {
         isSubscriptionActive: false,
         isSuspended: false,
         daysUntilTrialExpires: null,
+        tierLimits: TIER_LIMITS.basic,
         loading: false,
       }
     }
@@ -59,6 +97,8 @@ export const TenantProvider = ({ children }) => {
 
     const isSuspended = organization.status === 'suspended'
 
+    const tierLimits = getTierLimits(organization.subscription_tier, isTrialActive)
+
     return {
       organization,
       organizationId: organization.id,
@@ -66,6 +106,7 @@ export const TenantProvider = ({ children }) => {
       isSubscriptionActive,
       isSuspended,
       daysUntilTrialExpires,
+      tierLimits,
       loading: false,
     }
   }, [organization, loading])

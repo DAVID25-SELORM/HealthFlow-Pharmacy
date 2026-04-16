@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { User, UserPlus, Lock, Bell, Building, Palette, Globe } from 'lucide-react'
 import { isSupabaseConfigured } from '../lib/supabase'
+import UpgradeGate from '../components/UpgradeGate'
 import {
   createStaffUser,
   getPharmacySettings,
@@ -40,8 +41,9 @@ const blankStaffForm = {
 const Settings = () => {
   const { user, role, organization } = useAuth()
   const { notify } = useNotification()
-  const { isTrialActive, isSubscriptionActive, daysUntilTrialExpires } = useTenant()
+  const { isTrialActive, isSubscriptionActive, daysUntilTrialExpires, tierLimits } = useTenant()
   const isAdmin = role === 'admin'
+  const atUserLimit = tierLimits.maxUsers !== Infinity && users.length >= tierLimits.maxUsers
 
   const [settingsId, setSettingsId] = useState('')
   const [formData, setFormData] = useState(toForm(null))
@@ -361,6 +363,13 @@ const Settings = () => {
               Create pharmacist or assistant logins without leaving the app. New staff can sign
               in immediately with the temporary password below.
             </p>
+            {tierLimits.maxUsers !== Infinity && (
+              <p className={`settings-user-limit ${atUserLimit ? 'at-limit' : ''}`}>
+                {users.length} / {tierLimits.maxUsers} users used
+                {atUserLimit && ' — upgrade to add more'}
+              </p>
+            )}
+            <UpgradeGate locked={atUserLimit} feature={`More than ${tierLimits.maxUsers} users`} requiredTier="standard">
             <form className="settings-form" onSubmit={handleCreateStaff}>
               <input
                 placeholder="Full name"
@@ -421,6 +430,7 @@ const Settings = () => {
                 {creatingStaff ? 'Creating Account...' : 'Create Staff Account'}
               </button>
             </form>
+            </UpgradeGate>
           </div>
         )}
 

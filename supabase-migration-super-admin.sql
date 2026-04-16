@@ -7,13 +7,15 @@
 -- ================================================
 
 -- ================================================
--- 1. ADD super_admin TO ROLE ENUM (if using enum type)
+-- 1. EXPAND THE ROLE CHECK CONSTRAINT TO INCLUDE super_admin
 -- ================================================
--- If role is a text column, skip this block.
--- Run only if you get an error about invalid enum value.
-/*
-ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'super_admin';
-*/
+
+ALTER TABLE public.users
+DROP CONSTRAINT IF EXISTS users_role_check;
+
+ALTER TABLE public.users
+ADD CONSTRAINT users_role_check
+CHECK (role IN ('admin', 'pharmacist', 'assistant', 'super_admin'));
 
 -- ================================================
 -- 2. ALLOW super_admin TO READ ALL ORGANIZATIONS

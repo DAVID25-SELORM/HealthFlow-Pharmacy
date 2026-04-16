@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { FileText, Download, Calendar, RefreshCcw } from 'lucide-react'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { downloadCsv, getReportBundle } from '../services/reportsService'
+import { useTenant } from '../context/TenantContext'
+import UpgradeGate from '../components/UpgradeGate'
 import './Reports.css'
 
 const today = new Date().toISOString().split('T')[0]
@@ -10,6 +12,7 @@ const firstOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1
   .split('T')[0]
 
 const Reports = () => {
+  const { tierLimits } = useTenant()
   const [startDate, setStartDate] = useState(firstOfMonth)
   const [endDate, setEndDate] = useState(today)
   const [loading, setLoading] = useState(false)
@@ -172,6 +175,7 @@ const Reports = () => {
   }
 
   return (
+    <UpgradeGate locked={!tierLimits.hasReports} feature="Reports" requiredTier="standard">
     <div className="reports-page">
       <div className="page-header">
         <div>
@@ -292,6 +296,7 @@ const Reports = () => {
         </div>
       )}
     </div>
+    </UpgradeGate>
   )
 }
 

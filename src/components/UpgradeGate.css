@@ -1,0 +1,68 @@
+.upgrade-gate-wrap {
+  position: relative;
+  min-height: 300px;
+}
+
+.upgrade-gate-blur {
+  filter: blur(4px);
+  pointer-events: none;
+  user-select: none;
+  opacity: 0.4;
+}
+
+.upgrade-gate-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.upgrade-gate-box {
+  background: white;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+  padding: 2rem 2.5rem;
+  text-align: center;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+  max-width: 360px;
+  width: 90%;
+}
+
+.upgrade-gate-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: #fef3c7;
+  color: #d97706;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 1rem;
+}
+
+.upgrade-gate-box h3 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--gray-900);
+  margin: 0 0 0.5rem;
+}
+
+.upgrade-gate-box p {
+  font-size: 0.9rem;
+  color: var(--gray-600);
+  margin: 0 0 1.25rem;
+  line-height: 1.5;
+}
+
+.upgrade-gate-badge {
+  display: inline-block;
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fcd34d;
+  border-radius: 999px;
+  padding: 0.3rem 0.9rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+}

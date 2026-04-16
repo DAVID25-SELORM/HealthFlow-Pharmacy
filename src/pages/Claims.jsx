@@ -14,6 +14,8 @@ import { getAllDrugs } from '../services/drugService'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
+import { useTenant } from '../context/TenantContext'
+import UpgradeGate from '../components/UpgradeGate'
 import './Claims.css'
 
 const blankForm = {
@@ -30,6 +32,7 @@ const Claims = () => {
   const [searchParams, setSearchParams] = useSearchParams()
   const { user, role } = useAuth()
   const { notify } = useNotification()
+  const { tierLimits } = useTenant()
   const canProcess = ['admin', 'pharmacist'].includes(role)
 
   const [showNewClaimModal, setShowNewClaimModal] = useState(false)
@@ -298,6 +301,7 @@ const Claims = () => {
   }
 
   return (
+    <UpgradeGate locked={!tierLimits.hasClaims} feature="Insurance Claims" requiredTier="enterprise">
     <div className="claims-page">
       <div className="page-header">
         <div>
@@ -615,6 +619,7 @@ const Claims = () => {
         </div>
       )}
     </div>
+    </UpgradeGate>
   )
 }
 

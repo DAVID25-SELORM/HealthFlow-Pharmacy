@@ -2,6 +2,17 @@
   max-width: 1200px;
 }
 
+.settings-user-limit {
+  font-size: 0.82rem;
+  color: var(--gray-500);
+  margin: 0 0 0.75rem;
+}
+
+.settings-user-limit.at-limit {
+  color: #d97706;
+  font-weight: 600;
+}
+
 .settings-alert {
   margin-bottom: 1rem;
   border: 1px solid #ffd4ce;
