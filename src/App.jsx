@@ -9,6 +9,7 @@ import Patients from './pages/Patients'
 import Claims from './pages/Claims'
 import Reports from './pages/Reports'
 import Settings from './pages/Settings'
+import TenantAdmin from './pages/TenantAdmin'
 import Login from './pages/Login'
 import Signup from './pages/Signup'
 import './App.css'
@@ -60,6 +61,14 @@ function App() {
             element={
               <RoleRoute allowedRoles={['admin']}>
                 <Settings />
+              </RoleRoute>
+            }
+          />
+          <Route
+            path="tenant-admin"
+            element={
+              <RoleRoute allowedRoles={['super_admin']}>
+                <TenantAdmin />
               </RoleRoute>
             }
           />

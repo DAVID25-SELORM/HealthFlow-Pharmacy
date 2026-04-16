@@ -8,6 +8,7 @@ import {
   ClipboardList,
   BarChart3,
   Settings,
+  ShieldCheck,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import './Sidebar.css'
@@ -23,6 +24,7 @@ const Sidebar = ({ isOpen, onClose }) => {
     { path: '/claims', icon: ClipboardList, label: 'Claims', roles: ['admin', 'pharmacist'] },
     { path: '/reports', icon: BarChart3, label: 'Reports', roles: ['admin', 'pharmacist'] },
     { path: '/settings', icon: Settings, label: 'Settings', roles: ['admin'] },
+    { path: '/tenant-admin', icon: ShieldCheck, label: 'Tenant Admin', roles: ['super_admin'] },
   ]
 
   const visibleItems = menuItems.filter((item) => item.roles.includes(role))
