@@ -88,6 +88,28 @@ USING (
 );
 
 -- ================================================
+-- 5b. ALLOW super_admin TO UPDATE ANY USER ACROSS TENANTS
+-- ================================================
+
+DROP POLICY IF EXISTS users_update_super_admin ON users;
+
+CREATE POLICY users_update_super_admin ON users
+FOR UPDATE
+TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM public.users u2
+    WHERE u2.id = auth.uid() AND u2.role = 'super_admin'
+  )
+)
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM public.users u2
+    WHERE u2.id = auth.uid() AND u2.role = 'super_admin'
+  )
+);
+
+-- ================================================
 -- 6. PROMOTE YOUR ACCOUNT TO super_admin
 -- ================================================
 -- Replace with your email before running

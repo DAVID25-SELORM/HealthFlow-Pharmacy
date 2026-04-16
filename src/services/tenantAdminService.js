@@ -220,10 +220,12 @@ export const updateOrganizationUser = async (userId, fields) => {
 
   Object.keys(payload).forEach((k) => payload[k] === undefined && delete payload[k])
 
-  const { error } = await supabase
+  const { error, count } = await supabase
     .from('users')
     .update(payload)
     .eq('id', userId)
+    .select('id', { count: 'exact', head: true })
 
   if (error) throw error
+  if (count === 0) throw new Error('Update blocked — check RLS policies for super_admin on users table')
 }
