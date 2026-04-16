@@ -1,6 +1,8 @@
 import { supabase } from '../lib/supabase'
 import { assertNonNegativeNumber, toNumber } from '../utils/validation'
 import { tryLogAuditEvent } from './auditService'
+import { getUserBranchIdsByUserIds } from './branchService'
+import { recordCashbookMovementIfSessionOpen } from './cashbookService'
 
 /**
  * Sales Service
@@ -42,6 +44,33 @@ const buildValidatedSaleTotals = (saleData) => {
     netAmount,
     amountPaid,
     change,
+  }
+}
+
+const syncCashSaleToCashbook = async ({ saleId, saleNumber, paymentMethod, soldBy, netAmount }) => {
+  if (paymentMethod !== 'cash' || !soldBy || Number(netAmount) <= 0) {
+    return
+  }
+
+  const branchMap = await getUserBranchIdsByUserIds([soldBy])
+  const branchId = branchMap[soldBy]
+  if (!branchId) {
+    return
+  }
+
+  try {
+    await recordCashbookMovementIfSessionOpen({
+      branchId,
+      entryType: 'sale_cash',
+      sourceType: 'sale',
+      sourceId: saleId,
+      amount: netAmount,
+      direction: 'in',
+      description: `Cash sale ${saleNumber}`,
+      createdBy: soldBy,
+    })
+  } catch (cashbookError) {
+    console.warn('Unable to sync cash sale to cashbook:', cashbookError)
   }
 }
 
@@ -98,6 +127,14 @@ const createSaleLegacy = async (saleData) => {
     },
   })
 
+  await syncCashSaleToCashbook({
+    saleId: sale[0].id,
+    saleNumber: sale[0].sale_number,
+    paymentMethod: saleData.paymentMethod,
+    soldBy: saleData.soldBy,
+    netAmount: totals.netAmount,
+  })
+
   return { sale: sale[0], saleNumber: sale[0].sale_number }
 }
 
@@ -148,6 +185,14 @@ export const createSale = async (saleData) => {
         total_amount: totals.netAmount,
         payment_method: saleData.paymentMethod,
       },
+    })
+
+    await syncCashSaleToCashbook({
+      saleId: txPayload.sale_id,
+      saleNumber: txPayload.sale_number,
+      paymentMethod: saleData.paymentMethod,
+      soldBy: saleData.soldBy,
+      netAmount: totals.netAmount,
     })
 
     return {

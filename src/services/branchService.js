@@ -2,7 +2,7 @@ import { supabase } from '../lib/supabase'
 
 const normalizeText = (value) => (typeof value === 'string' ? value.trim() : '')
 
-const getCurrentOrganizationId = async () => {
+export const getCurrentOrganizationId = async () => {
   const {
     data: { user },
     error: userError,
@@ -32,6 +32,27 @@ const getCurrentOrganizationId = async () => {
   }
 
   return organizationId
+}
+
+export const getUserBranchIdsByUserIds = async (userIds = []) => {
+  const ids = [...new Set((userIds || []).filter(Boolean))]
+  if (!ids.length) {
+    return {}
+  }
+
+  const { data, error } = await supabase
+    .from('users')
+    .select('id, branch_id')
+    .in('id', ids)
+
+  if (error) {
+    throw error
+  }
+
+  return (data || []).reduce((acc, row) => {
+    acc[row.id] = row.branch_id || null
+    return acc
+  }, {})
 }
 
 /**

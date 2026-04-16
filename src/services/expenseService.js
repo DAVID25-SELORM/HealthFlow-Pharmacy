@@ -1,8 +1,8 @@
 import { supabase } from '../lib/supabase'
+import { formatLocalDate } from '../utils/date'
 import { assertNonNegativeNumber, assertRequiredText, normalizeText } from '../utils/validation'
 import { tryLogAuditEvent } from './auditService'
-
-// ── Categories ────────────────────────────────────────────────────────────────
+import { recordCashbookMovementIfSessionOpen } from './cashbookService'
 
 export const getExpenseCategories = async () => {
   const { data, error } = await supabase
@@ -18,10 +18,12 @@ export const getExpenseCategories = async () => {
 export const createExpenseCategory = async ({ name, code }) => {
   const { data, error } = await supabase
     .from('expense_categories')
-    .insert([{
-      name: assertRequiredText(name, 'Category name'),
-      code: assertRequiredText(code, 'Category code').toUpperCase(),
-    }])
+    .insert([
+      {
+        name: assertRequiredText(name, 'Category name'),
+        code: assertRequiredText(code, 'Category code').toUpperCase(),
+      },
+    ])
     .select()
     .single()
 
@@ -38,8 +40,6 @@ export const deactivateExpenseCategory = async (id) => {
   if (error) throw error
 }
 
-// ── Expenses ──────────────────────────────────────────────────────────────────
-
 export const getExpenses = async (filters = {}) => {
   let query = supabase
     .from('expenses')
@@ -52,9 +52,9 @@ export const getExpenses = async (filters = {}) => {
     .order('created_at', { ascending: false })
 
   if (filters.startDate) query = query.gte('expense_date', filters.startDate)
-  if (filters.endDate)   query = query.lte('expense_date', filters.endDate)
-  if (filters.status)    query = query.eq('status', filters.status)
-  if (filters.branchId)  query = query.eq('branch_id', filters.branchId)
+  if (filters.endDate) query = query.lte('expense_date', filters.endDate)
+  if (filters.status) query = query.eq('status', filters.status)
+  if (filters.branchId) query = query.eq('branch_id', filters.branchId)
   if (filters.categoryId) query = query.eq('category_id', filters.categoryId)
   if (filters.paymentMethod) query = query.eq('payment_method', filters.paymentMethod)
 
@@ -65,24 +65,24 @@ export const getExpenses = async (filters = {}) => {
 
 export const createExpense = async (expenseData) => {
   const payload = {
-    expense_date:     expenseData.expenseDate   || new Date().toISOString().split('T')[0],
-    description:      assertRequiredText(expenseData.description, 'Description'),
-    amount:           assertNonNegativeNumber(expenseData.amount, 'Amount'),
-    payment_method:   expenseData.paymentMethod || 'cash',
-    vendor_name:      normalizeText(expenseData.vendorName)     || null,
+    expense_date: expenseData.expenseDate || formatLocalDate(),
+    description: assertRequiredText(expenseData.description, 'Description'),
+    amount: assertNonNegativeNumber(expenseData.amount, 'Amount'),
+    payment_method: expenseData.paymentMethod || 'cash',
+    vendor_name: normalizeText(expenseData.vendorName) || null,
     reference_number: normalizeText(expenseData.referenceNumber) || null,
-    receipt_url:      normalizeText(expenseData.receiptUrl)     || null,
-    notes:            normalizeText(expenseData.notes)          || null,
-    status:           expenseData.status        || 'posted',
-    category_id:      expenseData.categoryId    || null,
-    branch_id:        expenseData.branchId      || null,
-    created_by:       expenseData.createdBy     || null,
+    receipt_url: normalizeText(expenseData.receiptUrl) || null,
+    notes: normalizeText(expenseData.notes) || null,
+    status: expenseData.status || 'posted',
+    category_id: expenseData.categoryId || null,
+    branch_id: expenseData.branchId || null,
+    created_by: expenseData.createdBy || null,
   }
 
   const { data, error } = await supabase
     .from('expenses')
     .insert([payload])
-    .select(`*, expense_categories(id,name,code), branches(id,name,code)`)
+    .select('*, expense_categories(id,name,code), branches(id,name,code)')
     .single()
 
   if (error) throw error
@@ -95,29 +95,46 @@ export const createExpense = async (expenseData) => {
     details: { amount: data.amount, description: data.description, status: data.status },
   })
 
+  if (data.status === 'posted' && data.payment_method === 'cash' && data.branch_id) {
+    try {
+      await recordCashbookMovementIfSessionOpen({
+        branchId: data.branch_id,
+        entryType: 'expense_cash',
+        sourceType: 'expense',
+        sourceId: data.id,
+        amount: data.amount,
+        direction: 'out',
+        description: data.description,
+        createdBy: data.created_by,
+      })
+    } catch (cashbookError) {
+      console.warn('Unable to sync expense to cashbook:', cashbookError)
+    }
+  }
+
   return data
 }
 
 export const updateExpense = async (id, updates) => {
   const payload = { updated_at: new Date().toISOString() }
 
-  if (updates.expenseDate)     payload.expense_date     = updates.expenseDate
-  if (updates.description)     payload.description      = assertRequiredText(updates.description, 'Description')
-  if (updates.amount !== undefined) payload.amount      = assertNonNegativeNumber(updates.amount, 'Amount')
-  if (updates.paymentMethod)   payload.payment_method   = updates.paymentMethod
-  if (updates.vendorName !== undefined)     payload.vendor_name      = normalizeText(updates.vendorName) || null
+  if (updates.expenseDate) payload.expense_date = updates.expenseDate
+  if (updates.description) payload.description = assertRequiredText(updates.description, 'Description')
+  if (updates.amount !== undefined) payload.amount = assertNonNegativeNumber(updates.amount, 'Amount')
+  if (updates.paymentMethod) payload.payment_method = updates.paymentMethod
+  if (updates.vendorName !== undefined) payload.vendor_name = normalizeText(updates.vendorName) || null
   if (updates.referenceNumber !== undefined) payload.reference_number = normalizeText(updates.referenceNumber) || null
-  if (updates.receiptUrl !== undefined)     payload.receipt_url      = normalizeText(updates.receiptUrl) || null
-  if (updates.notes !== undefined)          payload.notes            = normalizeText(updates.notes) || null
-  if (updates.status)          payload.status           = updates.status
-  if (updates.categoryId !== undefined)     payload.category_id      = updates.categoryId || null
-  if (updates.branchId !== undefined)       payload.branch_id        = updates.branchId || null
+  if (updates.receiptUrl !== undefined) payload.receipt_url = normalizeText(updates.receiptUrl) || null
+  if (updates.notes !== undefined) payload.notes = normalizeText(updates.notes) || null
+  if (updates.status) payload.status = updates.status
+  if (updates.categoryId !== undefined) payload.category_id = updates.categoryId || null
+  if (updates.branchId !== undefined) payload.branch_id = updates.branchId || null
 
   const { data, error } = await supabase
     .from('expenses')
     .update(payload)
     .eq('id', id)
-    .select(`*, expense_categories(id,name,code), branches(id,name,code)`)
+    .select('*, expense_categories(id,name,code), branches(id,name,code)')
     .single()
 
   if (error) throw error
@@ -125,7 +142,34 @@ export const updateExpense = async (id, updates) => {
 }
 
 export const cancelExpense = async (id) => {
-  return updateExpense(id, { status: 'cancelled' })
+  const { data: existing, error: fetchError } = await supabase
+    .from('expenses')
+    .select('id, amount, description, status, payment_method, branch_id, created_by')
+    .eq('id', id)
+    .single()
+
+  if (fetchError) throw fetchError
+
+  const updatedExpense = await updateExpense(id, { status: 'cancelled' })
+
+  if (existing.status === 'posted' && existing.payment_method === 'cash' && existing.branch_id) {
+    try {
+      await recordCashbookMovementIfSessionOpen({
+        branchId: existing.branch_id,
+        entryType: 'adjustment',
+        sourceType: 'expense',
+        sourceId: existing.id,
+        amount: existing.amount,
+        direction: 'in',
+        description: `Expense cancellation ${existing.description}`,
+        createdBy: existing.created_by,
+      })
+    } catch (cashbookError) {
+      console.warn('Unable to sync expense cancellation to cashbook:', cashbookError)
+    }
+  }
+
+  return updatedExpense
 }
 
 export const getExpenseSummary = async (startDate, endDate, branchId = null) => {

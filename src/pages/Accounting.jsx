@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  DollarSign, TrendingUp, TrendingDown, CreditCard, RefreshCcw,
-  Plus, X, Calendar, Download, BookOpen, Wallet, ReceiptText,
-  ChevronDown, ChevronUp, AlertTriangle
+  DollarSign, TrendingDown, RefreshCcw,
+  Plus, X, Calendar, Download, BookOpen, ReceiptText,
+  AlertTriangle
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
 import { isSupabaseConfigured } from '../lib/supabase'
+import { formatLocalDate, getFirstDayOfLocalMonth } from '../utils/date'
 import { getBranches } from '../services/branchService'
 import {
   getExpenses, createExpense, cancelExpense,
-  getExpenseCategories, createExpenseCategory,
+  getExpenseCategories,
 } from '../services/expenseService'
 import {
   getCashbookSessions, getTodaySession,
@@ -23,11 +24,10 @@ import { getAccountingOverview } from '../services/accountingService'
 import { downloadCsv } from '../services/reportsService'
 import './Accounting.css'
 
-// ── helpers ───────────────────────────────────────────────────────────────────
+// â”€â”€ helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-const today      = new Date().toISOString().split('T')[0]
-const firstOfMth = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
-  .toISOString().split('T')[0]
+const today = formatLocalDate()
+const firstOfMth = getFirstDayOfLocalMonth()
 
 const fmt = (n) =>
   `GHS ${Number(n || 0).toLocaleString('en-GH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -51,7 +51,7 @@ const blankPaymentForm = {
   paymentReference: '', notes: '',
 }
 
-// ── page ──────────────────────────────────────────────────────────────────────
+// â”€â”€ page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const Accounting = () => {
   const { user } = useAuth()
@@ -64,6 +64,7 @@ const Accounting = () => {
   const [branches, setBranches]     = useState([])
   const [loading, setLoading]       = useState(false)
   const [error, setError]           = useState('')
+  const [overviewWarning, setOverviewWarning] = useState('')
 
   // Overview
   const [overview, setOverview]     = useState(null)
@@ -96,7 +97,7 @@ const Accounting = () => {
   const [paymentForm, setPaymentForm]       = useState(blankPaymentForm)
   const [savingPayment, setSavingPayment]   = useState(false)
 
-  // ── load functions ────────────────────────────────────────────────────────
+  // â”€â”€ load functions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const loadBranches = useCallback(async () => {
     if (!isSupabaseConfigured()) return
@@ -114,7 +115,13 @@ const Accounting = () => {
       const branchId = branchFilter !== 'all' ? branchFilter : null
       const data = await getAccountingOverview(startDate, endDate, branchId)
       setOverview(data)
+      setOverviewWarning(
+        data.warnings?.length
+          ? `Some overview sections could not be loaded: ${data.warnings.join(', ')}. Showing available live data only.`
+          : ''
+      )
     } catch (err) {
+      setOverviewWarning('')
       setError(err.message || 'Failed to load accounting overview.')
     } finally {
       setLoading(false)
@@ -126,6 +133,7 @@ const Accounting = () => {
     try {
       setLoading(true)
       setError('')
+      setOverviewWarning('')
       const branchId = branchFilter !== 'all' ? branchFilter : null
       const [expData, catData] = await Promise.all([
         getExpenses({ startDate, endDate, branchId }),
@@ -145,6 +153,7 @@ const Accounting = () => {
     try {
       setLoading(true)
       setError('')
+      setOverviewWarning('')
       const branchId = branchFilter !== 'all' ? branchFilter : null
       const [sessData, todaySess] = await Promise.all([
         getCashbookSessions({ startDate, endDate, branchId }),
@@ -164,10 +173,11 @@ const Accounting = () => {
     try {
       setLoading(true)
       setError('')
+      setOverviewWarning('')
       const branchId = branchFilter !== 'all' ? branchFilter : null
       const [recv, summary] = await Promise.all([
         getReceivables(branchId),
-        getReceivablesSummary(),
+        getReceivablesSummary(branchId),
       ])
       setReceivables(recv)
       setReceivablesSummary(summary)
@@ -178,7 +188,7 @@ const Accounting = () => {
     }
   }, [branchFilter])
 
-  // ── tab routing ───────────────────────────────────────────────────────────
+  // â”€â”€ tab routing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   useEffect(() => { void loadBranches() }, [loadBranches])
 
@@ -196,7 +206,7 @@ const Accounting = () => {
     if (activeTab === 'receivables') void loadReceivables()
   }
 
-  // ── expense handlers ──────────────────────────────────────────────────────
+  // â”€â”€ expense handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const handleCreateExpense = async (e) => {
     e.preventDefault()
@@ -252,7 +262,7 @@ const Accounting = () => {
     )
   }
 
-  // ── cashbook handlers ─────────────────────────────────────────────────────
+  // â”€â”€ cashbook handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const handleOpenSession = async (e) => {
     e.preventDefault()
@@ -328,7 +338,7 @@ const Accounting = () => {
     }
   }
 
-  // ── receivables handlers ──────────────────────────────────────────────────
+  // â”€â”€ receivables handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const openPaymentModal = (claim) => {
     setPayingClaim(claim)
@@ -369,19 +379,19 @@ const Accounting = () => {
     }
   }
 
-  // ── derived ───────────────────────────────────────────────────────────────
+  // â”€â”€ derived â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const expenseTotal = useMemo(
     () => expenses.filter((e) => e.status === 'posted').reduce((sum, e) => sum + Number(e.amount), 0),
     [expenses]
   )
 
-  // ── render helpers ────────────────────────────────────────────────────────
+  // â”€â”€ render helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const renderOverview = () => (
     <div className="acc-overview">
       {!overview ? (
-        <p className="acc-empty">No data loaded yet. Click Generate above.</p>
+        <p className="acc-empty">No data available for the selected period.</p>
       ) : (
         <>
           <div className="acc-kpi-grid">
@@ -511,7 +521,7 @@ const Accounting = () => {
               Category
               <select value={expenseForm.categoryId}
                 onChange={(e) => setExpenseForm({ ...expenseForm, categoryId: e.target.value })}>
-                <option value="">— Select category —</option>
+                <option value="">Select category</option>
                 {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </label>
@@ -555,7 +565,7 @@ const Accounting = () => {
           </div>
           <div className="acc-form-actions">
             <button type="submit" className="btn btn-primary" disabled={savingExpense}>
-              {savingExpense ? 'Saving…' : 'Save Expense'}
+              {savingExpense ? 'Saving...' : 'Save Expense'}
             </button>
             <button type="button" className="btn btn-outline" onClick={() => setShowExpenseForm(false)}>
               Cancel
@@ -588,12 +598,12 @@ const Accounting = () => {
               {expenses.map((exp) => (
                 <tr key={exp.id} className={exp.status === 'cancelled' ? 'cancelled-row' : ''}>
                   <td>{exp.expense_date}</td>
-                  <td>{exp.expense_categories?.name || '—'}</td>
+                  <td>{exp.expense_categories?.name || '--'}</td>
                   <td>{exp.description}</td>
-                  <td>{exp.vendor_name || '—'}</td>
+                  <td>{exp.vendor_name || '--'}</td>
                   <td className="amount-cell">{Number(exp.amount).toFixed(2)}</td>
                   <td>{exp.payment_method.replace('_',' ')}</td>
-                  <td>{exp.branches?.name || '—'}</td>
+                  <td>{exp.branches?.name || '--'}</td>
                   <td>
                     <span className={`acc-badge acc-badge-${exp.status}`}>{exp.status}</span>
                   </td>
@@ -649,7 +659,7 @@ const Accounting = () => {
                   </label>
                 </div>
                 <button type="submit" className="btn btn-primary" disabled={openingSession}>
-                  {openingSession ? 'Opening…' : 'Open Cashbook'}
+                  {openingSession ? 'Opening...' : 'Open Cashbook'}
                 </button>
               </form>
             )}
@@ -683,7 +693,7 @@ const Accounting = () => {
                   {(currentSession.cashbook_entries || []).map((entry) => (
                     <div key={entry.id} className={`acc-entry-row ${entry.direction}`}>
                       <span className="acc-entry-type">{entry.entry_type.replace('_',' ')}</span>
-                      <span className="acc-entry-desc">{entry.description || '—'}</span>
+                      <span className="acc-entry-desc">{entry.description || '--'}</span>
                       <span className="acc-entry-amount">
                         {entry.direction === 'in' ? '+' : '-'} {Number(entry.amount).toFixed(2)}
                       </span>
@@ -716,7 +726,7 @@ const Accounting = () => {
                       </label>
                     </div>
                     <button type="submit" className="btn btn-outline btn-sm" disabled={addingEntry}>
-                      {addingEntry ? 'Adding…' : 'Add Entry'}
+                      {addingEntry ? 'Adding...' : 'Add Entry'}
                     </button>
                   </form>
                 </div>
@@ -739,7 +749,7 @@ const Accounting = () => {
                       </label>
                     </div>
                     <button type="submit" className="btn btn-danger btn-sm" disabled={closingSession}>
-                      {closingSession ? 'Closing…' : 'Close Session'}
+                      {closingSession ? 'Closing...' : 'Close Session'}
                     </button>
                   </form>
                 </div>
@@ -790,12 +800,12 @@ const Accounting = () => {
                 {sessions.map((s) => (
                   <tr key={s.id}>
                     <td>{s.business_date}</td>
-                    <td>{s.branches?.name || '—'}</td>
+                    <td>{s.branches?.name || '--'}</td>
                     <td className="amount-cell">{Number(s.opening_cash).toFixed(2)}</td>
                     <td className="amount-cell">{Number(s.expected_cash).toFixed(2)}</td>
-                    <td className="amount-cell">{s.counted_cash !== null ? Number(s.counted_cash).toFixed(2) : '—'}</td>
+                    <td className="amount-cell">{s.counted_cash !== null ? Number(s.counted_cash).toFixed(2) : '--'}</td>
                     <td className={`amount-cell ${Number(s.cash_variance) < 0 ? 'text-danger' : Number(s.cash_variance) > 0 ? 'text-success' : ''}`}>
-                      {s.cash_variance !== null ? Number(s.cash_variance).toFixed(2) : '—'}
+                      {s.cash_variance !== null ? Number(s.cash_variance).toFixed(2) : '--'}
                     </td>
                     <td><span className={`acc-badge acc-badge-${s.status}`}>{s.status}</span></td>
                   </tr>
@@ -828,11 +838,11 @@ const Accounting = () => {
         </div>
       )}
 
-      {receivablesSummary && Object.keys(receivablesSummary.byAgeBucket).length > 0 && (
+      {receivablesSummary && receivablesSummary.count > 0 && (
         <div className="acc-aging">
           <h4>Receivables Aging</h4>
           <div className="acc-aging-grid">
-            {['0–30','31–60','61–90','90+'].map((bucket) => (
+            {['0-30','31-60','61-90','90+'].map((bucket) => (
               <div key={bucket} className={`acc-aging-bucket${bucket === '90+' ? ' overdue' : ''}`}>
                 <span className="aging-days">{bucket} days</span>
                 <span className="aging-amount">{fmt(receivablesSummary.byAgeBucket[bucket] || 0)}</span>
@@ -869,11 +879,11 @@ const Accounting = () => {
                   <td>{r.patient_name}</td>
                   <td>{r.insurance_provider}</td>
                   <td>{r.service_date}</td>
-                  <td className="amount-cell">{Number(r.total_amount).toFixed(2)}</td>
+                  <td className="amount-cell">{Number(r.approved_amount).toFixed(2)}</td>
                   <td className="amount-cell">{r.totalPaid.toFixed(2)}</td>
                   <td className="amount-cell text-danger">{r.outstanding.toFixed(2)}</td>
                   <td>
-                    <span className={`acc-badge ${r.ageBucket === '90+' ? 'acc-badge-danger' : r.ageBucket === '61–90' ? 'acc-badge-warning' : 'acc-badge-info'}`}>
+                    <span className={`acc-badge ${r.ageBucket === '90+' ? 'acc-badge-danger' : r.ageBucket === '61-90' ? 'acc-badge-warning' : 'acc-badge-info'}`}>
                       {r.ageDays}d
                     </span>
                   </td>
@@ -894,7 +904,7 @@ const Accounting = () => {
         <div className="acc-modal-backdrop" onClick={() => { setPayingClaimId(null); setPayingClaim(null) }}>
           <div className="acc-modal" onClick={(e) => e.stopPropagation()}>
             <div className="acc-modal-header">
-              <h4>Record Payment — {payingClaim.claim_number}</h4>
+              <h4>Record Payment - {payingClaim.claim_number}</h4>
               <button type="button" className="btn-icon-sm" onClick={() => { setPayingClaimId(null); setPayingClaim(null) }}>
                 <X size={16} />
               </button>
@@ -938,7 +948,7 @@ const Accounting = () => {
               {error && <p className="acc-form-error">{error}</p>}
               <div className="acc-form-actions">
                 <button type="submit" className="btn btn-primary" disabled={savingPayment}>
-                  {savingPayment ? 'Saving…' : 'Save Payment'}
+                  {savingPayment ? 'Saving...' : 'Save Payment'}
                 </button>
                 <button type="button" className="btn btn-outline"
                   onClick={() => { setPayingClaimId(null); setPayingClaim(null) }}>
@@ -952,7 +962,7 @@ const Accounting = () => {
     </div>
   )
 
-  // ── main render ───────────────────────────────────────────────────────────
+  // â”€â”€ main render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   return (
     <div className="accounting-page">
@@ -978,12 +988,18 @@ const Accounting = () => {
           )}
           <button className="btn btn-primary" onClick={refresh} disabled={loading}>
             <RefreshCcw size={15} />
-            {loading ? 'Loading…' : 'Generate'}
+            {loading ? 'Loading...' : 'Generate'}
           </button>
         </div>
       </div>
 
       {error && <div className="acc-alert">{error}</div>}
+      {!error && activeTab === 'overview' && overviewWarning && (
+        <div className="acc-info-banner">
+          <AlertTriangle size={16} />
+          {overviewWarning}
+        </div>
+      )}
 
       <div className="acc-tabs">
         {TABS.map((tab) => (
@@ -1000,7 +1016,7 @@ const Accounting = () => {
       </div>
 
       <div className="acc-tab-content">
-        {loading && <p className="acc-loading">Loading…</p>}
+        {loading && <p className="acc-loading">Loading...</p>}
         {!loading && activeTab === 'overview'    && renderOverview()}
         {!loading && activeTab === 'expenses'    && renderExpenses()}
         {!loading && activeTab === 'cashbook'    && renderCashbook()}
