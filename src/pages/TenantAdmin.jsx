@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Building2, GitBranch, Plus, Users, CheckCircle, PauseCircle, XCircle, ChevronDown, ChevronUp, Eye, Pencil } from 'lucide-react'
+import { Fragment, useEffect, useState } from 'react'
+import { Building2, GitBranch, Plus, Users, ChevronDown, ChevronUp, Eye, Pencil } from 'lucide-react'
 import { useNotification } from '../context/NotificationContext'
 import {
   getAllOrganizations,
@@ -14,13 +14,6 @@ import {
 } from '../services/tenantAdminService'
 import { getBranchCountsByOrgIds } from '../services/branchService'
 import './TenantAdmin.css'
-
-const STATUS_ICONS = {
-  trial: <PauseCircle size={14} />,
-  active: <CheckCircle size={14} />,
-  suspended: <XCircle size={14} />,
-  inactive: <XCircle size={14} />,
-}
 
 const blankPharmacy = {
   name: '',
@@ -311,8 +304,8 @@ const TenantAdmin = () => {
                     <span className="subdomain-suffix">.healthflow.app</span>
                   </div>
                   {checkingSubdomain && <p className="field-hint">Checking...</p>}
-                  {subdomainOk === true && <p className="field-hint available">✓ Available</p>}
-                  {subdomainOk === false && <p className="field-hint taken">✗ Already taken</p>}
+                  {subdomainOk === true && <p className="field-hint available">Available</p>}
+                  {subdomainOk === false && <p className="field-hint taken">Already taken</p>}
                 </div>
                 <div className="tenant-form-group">
                   <label>Phone</label>
@@ -370,7 +363,7 @@ const TenantAdmin = () => {
                     onChange={(e) => setPharmacy({ ...pharmacy, subscriptionTier: e.target.value })}
                   >
                     <option value="basic">Basic</option>
-                    <option value="standard">Standard</option>
+                    <option value="pro">Professional</option>
                     <option value="enterprise">Enterprise</option>
                   </select>
                 </div>
@@ -459,8 +452,8 @@ const TenantAdmin = () => {
               </thead>
               <tbody>
                 {orgs.map((org) => (
-                  <>
-                    <tr key={org.id} className={expandedOrgId === org.id ? 'expanded' : ''}>
+                  <Fragment key={org.id}>
+                    <tr className={expandedOrgId === org.id ? 'expanded' : ''}>
                       <td>
                         <div className="org-name-cell">
                           <strong>{org.name}</strong>
@@ -479,7 +472,7 @@ const TenantAdmin = () => {
                           <option value="trial">Trial</option>
                           <option value="active">Active</option>
                           <option value="suspended">Suspended</option>
-                          <option value="inactive">Inactive</option>
+                          <option value="cancelled">Cancelled</option>
                         </select>
                       </td>
                       <td>
@@ -488,8 +481,9 @@ const TenantAdmin = () => {
                           value={org.subscription_tier}
                           onChange={(e) => handleTierChange(org.id, e.target.value)}
                         >
+                          <option value="trial">Trial</option>
                           <option value="basic">Basic</option>
-                          <option value="standard">Standard</option>
+                          <option value="pro">Professional</option>
                           <option value="enterprise">Enterprise</option>
                         </select>
                       </td>
@@ -533,8 +527,8 @@ const TenantAdmin = () => {
 
                     {/* Expanded users row */}
                     {expandedOrgId === org.id && (
-                      <tr key={`${org.id}-users`} className="users-expand-row">
-                        <td colSpan={7}>
+                      <tr className="users-expand-row">
+                        <td colSpan={8}>
                           <div className="users-expand">
                             <h5>Users in {org.name}</h5>
                             {orgUsers[org.id] ? (
@@ -585,7 +579,7 @@ const TenantAdmin = () => {
                         </td>
                       </tr>
                     )}
-                  </>
+                  </Fragment>
                 ))}
               </tbody>
             </table>
@@ -593,13 +587,15 @@ const TenantAdmin = () => {
         )}
       </div>
 
-      {/* ── Edit User Modal ── */}
+      {/* Edit User Modal */}
       {editUser && (
         <div className="modal-backdrop" onClick={closeEditUser}>
           <div className="edit-modal edit-modal--sm" onClick={(e) => e.stopPropagation()}>
             <div className="edit-modal-header">
               <h3>Edit User</h3>
-              <button className="modal-close" onClick={closeEditUser}>✕</button>
+              <button type="button" className="modal-close" onClick={closeEditUser}>
+                x
+              </button>
             </div>
 
             {error && <div className="tenant-alert">{error}</div>}
@@ -661,13 +657,15 @@ const TenantAdmin = () => {
         </div>
       )}
 
-      {/* ── Edit Pharmacy Modal ── */}
+      {/* Edit Pharmacy Modal */}
       {editOrg && (
         <div className="modal-backdrop" onClick={closeEdit}>
           <div className="edit-modal" onClick={(e) => e.stopPropagation()}>
             <div className="edit-modal-header">
               <h3>Edit Pharmacy</h3>
-              <button className="modal-close" onClick={closeEdit}>✕</button>
+              <button type="button" className="modal-close" onClick={closeEdit}>
+                x
+              </button>
             </div>
 
             {error && <div className="tenant-alert">{error}</div>}
@@ -748,7 +746,7 @@ const TenantAdmin = () => {
                       <option value="trial">Trial</option>
                       <option value="active">Active</option>
                       <option value="suspended">Suspended</option>
-                      <option value="inactive">Inactive</option>
+                      <option value="cancelled">Cancelled</option>
                     </select>
                   </div>
                   <div className="tenant-form-group">
@@ -757,8 +755,9 @@ const TenantAdmin = () => {
                       value={editForm.subscriptionTier}
                       onChange={(e) => setEditForm({ ...editForm, subscriptionTier: e.target.value })}
                     >
+                      <option value="trial">Trial</option>
                       <option value="basic">Basic</option>
-                      <option value="standard">Standard</option>
+                      <option value="pro">Professional</option>
                       <option value="enterprise">Enterprise</option>
                     </select>
                   </div>

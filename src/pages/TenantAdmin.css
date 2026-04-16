@@ -256,7 +256,7 @@
   color: #b91c1c;
 }
 
-.status-select.status-inactive {
+.status-select.status-cancelled {
   background: var(--gray-100);
   color: var(--gray-600);
 }
@@ -377,7 +377,7 @@
   gap: 0.35rem;
 }
 
-/* ── Edit Modal ── */
+/* Edit Modal */
 .modal-backdrop {
   position: fixed;
   inset: 0;

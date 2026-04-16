@@ -14,7 +14,7 @@ import { getBranches, createBranch, updateBranch, deactivateBranch } from '../se
 import { updateOrganization, getOrganizationStats } from '../services/organizationService'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
-import { useTenant } from '../context/TenantContext'
+import { normalizeSubscriptionTier, useTenant } from '../context/TenantContext'
 import './Settings.css'
 
 const toForm = (row) => ({
@@ -43,6 +43,16 @@ const blankStaffForm = {
 
 const blankBranchForm = {
   name: '', code: '', phone: '', email: '', address: '', city: '', region: '',
+}
+
+const formatSubscriptionTier = (tier) => {
+  const normalizedTier = normalizeSubscriptionTier(tier)
+
+  if (normalizedTier === 'pro') {
+    return 'Professional'
+  }
+
+  return normalizedTier.charAt(0).toUpperCase() + normalizedTier.slice(1)
 }
 
 const Settings = () => {
@@ -391,12 +401,14 @@ const Settings = () => {
                       ? 'Active Subscription'
                       : organization.status === 'suspended'
                         ? 'Suspended'
-                        : 'Inactive'}
+                        : organization.status === 'cancelled'
+                          ? 'Cancelled'
+                          : organization.status}
                 </span>
               </div>
               <div className="org-info-row">
                 <span className="org-label">Subscription Tier:</span>
-                <span className="org-value">{organization.subscription_tier}</span>
+                <span className="org-value">{formatSubscriptionTier(organization.subscription_tier)}</span>
               </div>
               {organization.license_number && (
                 <div className="org-info-row">
@@ -618,7 +630,7 @@ const Settings = () => {
                 {atUserLimit && ' — upgrade to add more'}
               </p>
             )}
-            <UpgradeGate locked={atUserLimit} feature={`More than ${tierLimits.maxUsers} users`} requiredTier="standard">
+            <UpgradeGate locked={atUserLimit} feature={`More than ${tierLimits.maxUsers} users`} requiredTier="pro">
             <form className="settings-form" onSubmit={handleCreateStaff}>
               <input
                 placeholder="Full name"
@@ -781,7 +793,7 @@ const Settings = () => {
         </p>
         <p className="contact">Email: gabiondavidselorm@gmail.com | Business: zittechgh@gmail.com</p>
         <p className="company">Developed by <strong>Neon Digital Technologies</strong></p>
-        <p className="website">🌐 <a href="https://www.neondigitaltechnologies.com" target="_blank" rel="noopener noreferrer">www.neondigitaltechnologies.com</a></p>
+        <p className="website">Website: <a href="https://www.neondigitaltechnologies.com" target="_blank" rel="noopener noreferrer">www.neondigitaltechnologies.com</a></p>
         <p className="copyright">Copyright 2026 HealthFlow Pharmacy. All rights reserved.</p>
       </div>
     </div>

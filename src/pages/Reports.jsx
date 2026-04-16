@@ -175,7 +175,7 @@ const Reports = () => {
   }
 
   return (
-    <UpgradeGate locked={!tierLimits.hasReports} feature="Reports" requiredTier="standard">
+    <UpgradeGate locked={!tierLimits.hasReports} feature="Reports" requiredTier="pro">
     <div className="reports-page">
       <div className="page-header">
         <div>

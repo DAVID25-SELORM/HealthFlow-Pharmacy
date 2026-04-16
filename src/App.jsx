@@ -8,6 +8,7 @@ import Sales from './pages/Sales'
 import Patients from './pages/Patients'
 import Claims from './pages/Claims'
 import Reports from './pages/Reports'
+import Accounting from './pages/Accounting'
 import Settings from './pages/Settings'
 import TenantAdmin from './pages/TenantAdmin'
 import Login from './pages/Login'
@@ -53,6 +54,14 @@ function App() {
             element={
               <RoleRoute allowedRoles={['admin', 'pharmacist']}>
                 <Reports />
+              </RoleRoute>
+            }
+          />
+          <Route
+            path="accounting"
+            element={
+              <RoleRoute allowedRoles={['admin']}>
+                <Accounting />
               </RoleRoute>
             }
           />

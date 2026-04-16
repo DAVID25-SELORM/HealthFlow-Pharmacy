@@ -1,9 +1,76 @@
 import { supabase } from '../lib/supabase'
 
-/**
- * Tenant Admin Service
- * Super-admin only: manage all pharmacies across the platform
- */
+const TENANT_SIGNUP_FUNCTION = 'tenant-signup'
+const STAFF_ADMIN_FUNCTION = 'staff-admin'
+const VALID_STATUSES = ['trial', 'active', 'suspended', 'cancelled']
+const VALID_TIERS = ['trial', 'basic', 'pro', 'enterprise']
+
+const normalizeText = (value) => (typeof value === 'string' ? value.trim() : '')
+
+const normalizeOrganizationStatus = (status, fallback = 'trial') => {
+  const normalized = normalizeText(status).toLowerCase()
+  const mapped = normalized === 'inactive' ? 'cancelled' : normalized
+
+  if (!mapped) {
+    return fallback
+  }
+
+  if (!VALID_STATUSES.includes(mapped)) {
+    throw new Error('Select a valid organization status.')
+  }
+
+  return mapped
+}
+
+const normalizeSubscriptionTier = (tier, fallback = 'basic') => {
+  const normalized = normalizeText(tier).toLowerCase()
+  const mapped =
+    normalized === 'standard' || normalized === 'professional'
+      ? 'pro'
+      : normalized === 'free'
+        ? 'basic'
+        : normalized
+
+  if (!mapped) {
+    return fallback
+  }
+
+  if (!VALID_TIERS.includes(mapped)) {
+    throw new Error('Select a valid subscription tier.')
+  }
+
+  return mapped
+}
+
+const normalizeOptionalIsoDate = (value) => {
+  const normalized = normalizeText(value)
+  if (!normalized) {
+    return null
+  }
+
+  const parsed = new Date(normalized)
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error('Enter a valid date.')
+  }
+
+  return parsed.toISOString()
+}
+
+const invokeFunction = async (name, payload) => {
+  const { data, error } = await supabase.functions.invoke(name, {
+    body: payload,
+  })
+
+  if (error) {
+    throw error
+  }
+
+  if (data?.error) {
+    throw new Error(data.error)
+  }
+
+  return data
+}
 
 /**
  * Get all organizations with their user counts
@@ -30,7 +97,14 @@ export const getAllOrganizations = async () => {
     .order('created_at', { ascending: false })
 
   if (error) throw error
-  return data || []
+  return (data || []).map((organization) => ({
+    ...organization,
+    status: normalizeOrganizationStatus(organization.status),
+    subscription_tier: normalizeSubscriptionTier(
+      organization.subscription_tier,
+      organization.status === 'trial' ? 'trial' : 'basic'
+    ),
+  }))
 }
 
 /**
@@ -55,74 +129,39 @@ export const getOrganizationUserCounts = async (orgIds) => {
 /**
  * Create a new pharmacy organization + admin account
  */
-export const createPharmacyTenant = async ({ pharmacy, admin }) => {
-  // 1. Create the organization
-  const { data: org, error: orgError } = await supabase
-    .from('organizations')
-    .insert([{
-      name: pharmacy.name.trim(),
-      subdomain: pharmacy.subdomain.trim().toLowerCase(),
+export const createPharmacyTenant = async ({ pharmacy, admin }) =>
+  invokeFunction(TENANT_SIGNUP_FUNCTION, {
+    action: 'create_tenant',
+    organization: {
+      name: normalizeText(pharmacy.name),
+      subdomain: normalizeText(pharmacy.subdomain).toLowerCase(),
+      phone: normalizeText(pharmacy.phone) || null,
+      email: normalizeText(pharmacy.email) || null,
+      address: normalizeText(pharmacy.address) || null,
+      city: normalizeText(pharmacy.city) || null,
+      region: normalizeText(pharmacy.region) || null,
+      licenseNumber: normalizeText(pharmacy.licenseNumber) || null,
       status: 'trial',
-      subscription_tier: pharmacy.subscriptionTier || 'basic',
-      phone: pharmacy.phone?.trim() || null,
-      email: pharmacy.email?.trim() || null,
-      address: pharmacy.address?.trim() || null,
-      city: pharmacy.city?.trim() || null,
-      region: pharmacy.region?.trim() || null,
-      license_number: pharmacy.licenseNumber?.trim() || null,
-      trial_ends_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-    }])
-    .select()
-    .single()
-
-  if (orgError) throw orgError
-
-  // 2. Create the admin auth user via Supabase Admin API (via Edge Function)
-  // Falls back to instructing user to create manually if edge function not available
-  const { data: fn, error: fnError } = await supabase.functions.invoke('staff-admin', {
-    body: {
-      action: 'create',
-      email: admin.email.trim(),
-      full_name: admin.fullName.trim(),
-      phone: admin.phone?.trim() || null,
-      role: 'admin',
-      organization_id: org.id,
-      temporary_password: admin.temporaryPassword,
+      subscriptionTier: normalizeSubscriptionTier(pharmacy.subscriptionTier, 'basic'),
+    },
+    adminUser: {
+      fullName: normalizeText(admin.fullName),
+      email: normalizeText(admin.email).toLowerCase(),
+      phone: normalizeText(admin.phone) || null,
+      password: normalizeText(admin.temporaryPassword),
     },
   })
 
-  if (fnError || fn?.error) {
-    // Rollback org creation on auth failure
-    await supabase.from('organizations').delete().eq('id', org.id)
-    throw new Error(fn?.error || fnError?.message || 'Failed to create admin account')
-  }
-
-  // 3. Create default pharmacy settings
-  await supabase.from('pharmacy_settings').insert([{
-    organization_id: org.id,
-    pharmacy_name: pharmacy.name.trim(),
-    phone: pharmacy.phone?.trim() || null,
-    email: pharmacy.email?.trim() || null,
-    address: pharmacy.address?.trim() || null,
-    city: pharmacy.city?.trim() || null,
-    region: pharmacy.region?.trim() || null,
-    license_number: pharmacy.licenseNumber?.trim() || null,
-    currency: 'GHS',
-    low_stock_threshold: 10,
-    expiry_alert_days: 30,
-    tax_rate: 0,
-  }])
-
-  return { organization: org, admin: fn }
-}
-
 /**
- * Update organization status (activate / suspend / set trial)
+ * Update organization status (activate / suspend / cancel / set trial)
  */
 export const updateOrganizationStatus = async (orgId, status) => {
   const { data, error } = await supabase
     .from('organizations')
-    .update({ status, updated_at: new Date().toISOString() })
+    .update({
+      status: normalizeOrganizationStatus(status),
+      updated_at: new Date().toISOString(),
+    })
     .eq('id', orgId)
     .select()
     .single()
@@ -137,7 +176,10 @@ export const updateOrganizationStatus = async (orgId, status) => {
 export const updateSubscriptionTier = async (orgId, tier) => {
   const { data, error } = await supabase
     .from('organizations')
-    .update({ subscription_tier: tier, updated_at: new Date().toISOString() })
+    .update({
+      subscription_tier: normalizeSubscriptionTier(tier),
+      updated_at: new Date().toISOString(),
+    })
     .eq('id', orgId)
     .select()
     .single()
@@ -164,14 +206,22 @@ export const getOrganizationUsers = async (orgId) => {
  * Check subdomain availability
  */
 export const checkSubdomainAvailable = async (subdomain) => {
-  const { data, error } = await supabase
-    .from('organizations')
-    .select('id')
-    .eq('subdomain', subdomain.toLowerCase().trim())
-    .maybeSingle()
+  const normalized = normalizeText(subdomain).toLowerCase()
 
-  if (error) throw error
-  return !data
+  if (!/^[a-z0-9-]+$/.test(normalized)) {
+    return false
+  }
+
+  if (normalized.length < 3 || normalized.length > 50) {
+    return false
+  }
+
+  const result = await invokeFunction(TENANT_SIGNUP_FUNCTION, {
+    action: 'check_subdomain',
+    subdomain: normalized,
+  })
+
+  return Boolean(result?.available)
 }
 
 /**
@@ -179,22 +229,30 @@ export const checkSubdomainAvailable = async (subdomain) => {
  */
 export const updateOrganizationDetails = async (orgId, fields) => {
   const payload = {
-    name: fields.name?.trim() || undefined,
-    phone: fields.phone?.trim() || null,
-    email: fields.email?.trim() || null,
-    address: fields.address?.trim() || null,
-    city: fields.city?.trim() || null,
-    region: fields.region?.trim() || null,
-    license_number: fields.licenseNumber?.trim() || null,
-    status: fields.status || undefined,
-    subscription_tier: fields.subscriptionTier || undefined,
-    trial_ends_at: fields.trialEndsAt || null,
-    subscription_ends_at: fields.subscriptionEndsAt || null,
+    name: normalizeText(fields.name) || undefined,
+    phone: fields.phone !== undefined ? normalizeText(fields.phone) || null : undefined,
+    email: fields.email !== undefined ? normalizeText(fields.email) || null : undefined,
+    address: fields.address !== undefined ? normalizeText(fields.address) || null : undefined,
+    city: fields.city !== undefined ? normalizeText(fields.city) || null : undefined,
+    region: fields.region !== undefined ? normalizeText(fields.region) || null : undefined,
+    license_number:
+      fields.licenseNumber !== undefined ? normalizeText(fields.licenseNumber) || null : undefined,
+    status:
+      fields.status !== undefined ? normalizeOrganizationStatus(fields.status) : undefined,
+    subscription_tier:
+      fields.subscriptionTier !== undefined
+        ? normalizeSubscriptionTier(fields.subscriptionTier)
+        : undefined,
+    trial_ends_at:
+      fields.trialEndsAt !== undefined ? normalizeOptionalIsoDate(fields.trialEndsAt) : undefined,
+    subscription_ends_at:
+      fields.subscriptionEndsAt !== undefined
+        ? normalizeOptionalIsoDate(fields.subscriptionEndsAt)
+        : undefined,
     updated_at: new Date().toISOString(),
   }
 
-  // Remove undefined keys so we don't overwrite with undefined
-  Object.keys(payload).forEach((k) => payload[k] === undefined && delete payload[k])
+  Object.keys(payload).forEach((key) => payload[key] === undefined && delete payload[key])
 
   const { data, error } = await supabase
     .from('organizations')
@@ -208,24 +266,17 @@ export const updateOrganizationDetails = async (orgId, fields) => {
 }
 
 /**
- * Update a user's details (name, role, active status)
+ * Update a user's details and sync Supabase Auth + public.users
  */
 export const updateOrganizationUser = async (userId, fields) => {
-  const payload = {
-    full_name: fields.fullName?.trim() || undefined,
-    email: fields.email?.trim() || undefined,
-    role: fields.role || undefined,
-    is_active: typeof fields.isActive === 'boolean' ? fields.isActive : undefined,
-  }
+  const response = await invokeFunction(STAFF_ADMIN_FUNCTION, {
+    action: 'update_staff_user',
+    userId,
+    fullName: normalizeText(fields.fullName),
+    email: normalizeText(fields.email).toLowerCase(),
+    role: normalizeText(fields.role).toLowerCase(),
+    isActive: Boolean(fields.isActive),
+  })
 
-  Object.keys(payload).forEach((k) => payload[k] === undefined && delete payload[k])
-
-  const { error, count } = await supabase
-    .from('users')
-    .update(payload)
-    .eq('id', userId)
-    .select('id', { count: 'exact', head: true })
-
-  if (error) throw error
-  if (count === 0) throw new Error('Update blocked — check RLS policies for super_admin on users table')
+  return response.user
 }

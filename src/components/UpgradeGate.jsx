@@ -6,15 +6,15 @@ import './UpgradeGate.css'
  * Renders a locked overlay when a feature is not available on the current tier.
  *
  * Props:
- *   feature   – short name of the locked feature, e.g. "Reports"
- *   requiredTier – "standard" | "enterprise"
- *   children  – the content to show when unlocked
- *   locked    – boolean; when true the overlay is shown
+ *   feature: short name of the locked feature, e.g. "Reports"
+ *   requiredTier: "pro" | "enterprise"
+ *   children: the content to show when unlocked
+ *   locked: boolean; when true the overlay is shown
  */
-const UpgradeGate = ({ locked, feature, requiredTier = 'standard', children }) => {
+const UpgradeGate = ({ locked, feature, requiredTier = 'pro', children }) => {
   if (!locked) return children
 
-  const tierLabel = requiredTier === 'enterprise' ? 'Enterprise' : 'Standard or Enterprise'
+  const tierLabel = requiredTier === 'enterprise' ? 'Enterprise' : 'Professional or Enterprise'
 
   return (
     <div className="upgrade-gate-wrap">
@@ -26,8 +26,8 @@ const UpgradeGate = ({ locked, feature, requiredTier = 'standard', children }) =
           </div>
           <h3>{feature} is locked</h3>
           <p>
-            This feature requires the <strong>{tierLabel}</strong> plan.
-            Contact your platform admin to upgrade.
+            This feature requires the <strong>{tierLabel}</strong> plan. Contact your
+            platform admin to upgrade.
           </p>
           <span className="upgrade-gate-badge">Upgrade Required</span>
         </div>

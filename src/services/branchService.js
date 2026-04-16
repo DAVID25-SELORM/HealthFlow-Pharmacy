@@ -1,5 +1,39 @@
 import { supabase } from '../lib/supabase'
 
+const normalizeText = (value) => (typeof value === 'string' ? value.trim() : '')
+
+const getCurrentOrganizationId = async () => {
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser()
+
+  if (userError) {
+    throw userError
+  }
+
+  if (!user) {
+    throw new Error('You must be signed in to manage branches.')
+  }
+
+  const { data, error } = await supabase
+    .from('users')
+    .select('organization_id')
+    .eq('id', user.id)
+    .maybeSingle()
+
+  if (error) {
+    throw error
+  }
+
+  const organizationId = normalizeText(data?.organization_id)
+  if (!organizationId) {
+    throw new Error('Current account is missing organization context.')
+  }
+
+  return organizationId
+}
+
 /**
  * Get all branches for the current user's organization.
  * Main branch is always first, others sorted by name.
@@ -38,18 +72,23 @@ export const getBranchCountsByOrgIds = async (orgIds) => {
  * Create a new (non-main) branch in the current user's organization.
  */
 export const createBranch = async (fields) => {
+  const organizationId = await getCurrentOrganizationId()
+
   const { data, error } = await supabase
     .from('branches')
-    .insert([{
-      name: fields.name.trim(),
-      code: fields.code?.trim() || null,
-      phone: fields.phone?.trim() || null,
-      email: fields.email?.trim() || null,
-      address: fields.address?.trim() || null,
-      city: fields.city?.trim() || null,
-      region: fields.region?.trim() || null,
-      is_main: false,
-    }])
+    .insert([
+      {
+        organization_id: organizationId,
+        name: normalizeText(fields.name),
+        code: normalizeText(fields.code) || null,
+        phone: normalizeText(fields.phone) || null,
+        email: normalizeText(fields.email) || null,
+        address: normalizeText(fields.address) || null,
+        city: normalizeText(fields.city) || null,
+        region: normalizeText(fields.region) || null,
+        is_main: false,
+      },
+    ])
     .select()
     .single()
 
@@ -62,17 +101,17 @@ export const createBranch = async (fields) => {
  */
 export const updateBranch = async (id, fields) => {
   const payload = {
-    name: fields.name?.trim() || undefined,
-    code: fields.code?.trim() || null,
-    phone: fields.phone?.trim() || null,
-    email: fields.email?.trim() || null,
-    address: fields.address?.trim() || null,
-    city: fields.city?.trim() || null,
-    region: fields.region?.trim() || null,
+    name: normalizeText(fields.name) || undefined,
+    code: fields.code !== undefined ? normalizeText(fields.code) || null : undefined,
+    phone: fields.phone !== undefined ? normalizeText(fields.phone) || null : undefined,
+    email: fields.email !== undefined ? normalizeText(fields.email) || null : undefined,
+    address: fields.address !== undefined ? normalizeText(fields.address) || null : undefined,
+    city: fields.city !== undefined ? normalizeText(fields.city) || null : undefined,
+    region: fields.region !== undefined ? normalizeText(fields.region) || null : undefined,
     updated_at: new Date().toISOString(),
   }
 
-  Object.keys(payload).forEach((k) => payload[k] === undefined && delete payload[k])
+  Object.keys(payload).forEach((key) => payload[key] === undefined && delete payload[key])
 
   const { data, error } = await supabase
     .from('branches')

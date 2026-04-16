@@ -1,13 +1,13 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
 
-const USER_ROLES = ['admin', 'pharmacist', 'assistant'] as const
+const STAFF_ROLES = ['admin', 'pharmacist', 'assistant'] as const
 const DISABLE_DURATION = '876000h'
 const USERS_PER_PAGE = 200
 const MAX_USER_PAGES = 10
 
-type StaffRole = (typeof USER_ROLES)[number]
-type StaffAction = 'upsert_staff_user' | 'set_staff_status'
+type StaffRole = (typeof STAFF_ROLES)[number]
+type StaffAction = 'upsert_staff_user' | 'set_staff_status' | 'update_staff_user'
 
 const json = (body: Record<string, unknown>, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -21,7 +21,7 @@ const json = (body: Record<string, unknown>, status = 200) =>
 const normalizeText = (value: unknown) => (typeof value === 'string' ? value.trim() : '')
 
 const isValidRole = (value: string): value is StaffRole =>
-  USER_ROLES.includes(value as StaffRole)
+  STAFF_ROLES.includes(value as StaffRole)
 
 const deriveDisplayName = (email: string, fullName?: string | null) => {
   const normalizedName = normalizeText(fullName)
@@ -137,11 +137,9 @@ const getRequesterProfile = async (
     return null
   }
 
-  const roleCandidate = normalizeText(data.role).toLowerCase()
-
   return {
     id: data.id,
-    role: isValidRole(roleCandidate) ? roleCandidate : 'assistant',
+    role: normalizeText(data.role).toLowerCase(),
     organization_id: normalizeText(data.organization_id) || null,
   }
 }
@@ -165,7 +163,10 @@ const syncPublicUser = async (
   } = {}
 ) => {
   const email = normalizeText(authUser.email).toLowerCase()
-  const fullName = deriveDisplayName(email, overrides.fullName ?? normalizeText(authUser.user_metadata?.full_name))
+  const fullName = deriveDisplayName(
+    email,
+    overrides.fullName ?? normalizeText(authUser.user_metadata?.full_name)
+  )
   const phone = normalizeText(overrides.phone ?? authUser.user_metadata?.phone ?? authUser.phone) || null
   const role = overrides.role || getRoleFromUser(authUser)
   const isActive = overrides.isActive ?? userIsActive(authUser)
@@ -374,11 +375,9 @@ const setStaffStatus = async (
   }
 
   const { data, error } = await adminClient.auth.admin.getUserById(userId)
-  if (error) {
-    throw error
+  if (error || !data.user) {
+    throw error || new Error('Unable to load the target user.')
   }
-
-  const authUser = data.user
 
   const { data: updatedUserData, error: updateError } = await adminClient.auth.admin.updateUserById(
     userId,
@@ -391,9 +390,117 @@ const setStaffStatus = async (
     throw updateError
   }
 
-  const syncedProfile = await syncPublicUser(adminClient, updatedUserData.user || authUser, {
+  const syncedProfile = await syncPublicUser(adminClient, updatedUserData.user || data.user, {
     isActive,
     organizationId,
+  })
+
+  return {
+    user: syncedProfile,
+  }
+}
+
+const updateStaffUser = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  requesterProfile: { role: string; organization_id: string | null },
+  payload: Record<string, unknown>
+) => {
+  const userId = normalizeText(payload.userId)
+  const email = normalizeText(payload.email).toLowerCase()
+  const fullName = normalizeText(payload.fullName)
+  const roleCandidate = normalizeText(payload.role).toLowerCase()
+  const phone = normalizeText(payload.phone) || null
+  const isActive =
+    typeof payload.isActive === 'boolean' ? Boolean(payload.isActive) : undefined
+
+  if (!userId) {
+    throw new Error('User id is required.')
+  }
+
+  if (!email) {
+    throw new Error('Email is required.')
+  }
+
+  if (!fullName) {
+    throw new Error('Full name is required.')
+  }
+
+  if (!isValidRole(roleCandidate)) {
+    throw new Error('Role must be admin, pharmacist, or assistant.')
+  }
+
+  const { data: targetProfile, error: targetProfileError } = await adminClient
+    .from('users')
+    .select('id, organization_id')
+    .eq('id', userId)
+    .maybeSingle()
+
+  if (targetProfileError) {
+    throw targetProfileError
+  }
+
+  if (!targetProfile) {
+    throw new Error('User record not found.')
+  }
+
+  const targetOrganizationId = normalizeText(targetProfile.organization_id)
+  if (!targetOrganizationId) {
+    throw new Error('Target user is missing organization context.')
+  }
+
+  if (
+    requesterProfile.role !== 'super_admin' &&
+    requesterProfile.organization_id !== targetOrganizationId
+  ) {
+    throw new Error('You can only manage staff accounts in your own organization.')
+  }
+
+  const conflictingAuthUser = await findAuthUserByEmail(adminClient, email)
+  if (conflictingAuthUser && conflictingAuthUser.id !== userId) {
+    throw new Error('Another auth account already uses this email address.')
+  }
+
+  const { data: currentUserData, error: currentUserError } = await adminClient.auth.admin.getUserById(
+    userId
+  )
+
+  if (currentUserError || !currentUserData.user) {
+    throw currentUserError || new Error('Unable to load the target user.')
+  }
+
+  const currentUser = currentUserData.user
+  const nextIsActive = isActive ?? userIsActive(currentUser)
+  const nextPhone =
+    phone || normalizeText(currentUser.user_metadata?.phone ?? currentUser.phone) || null
+
+  const { data: updatedUserData, error: updateError } = await adminClient.auth.admin.updateUserById(
+    userId,
+    {
+      email,
+      email_confirm: true,
+      ban_duration: nextIsActive ? 'none' : DISABLE_DURATION,
+      user_metadata: {
+        ...(currentUser.user_metadata || {}),
+        full_name: fullName,
+        phone: nextPhone,
+      },
+      app_metadata: {
+        ...(currentUser.app_metadata || {}),
+        role: roleCandidate,
+      },
+    }
+  )
+
+  if (updateError || !updatedUserData.user) {
+    throw updateError || new Error('Unable to update the staff user.')
+  }
+
+  const syncedProfile = await syncPublicUser(adminClient, updatedUserData.user, {
+    fullName,
+    phone: nextPhone,
+    role: roleCandidate,
+    isActive: nextIsActive,
+    organizationId: targetOrganizationId,
   })
 
   return {
@@ -430,16 +537,28 @@ Deno.serve(async (request) => {
     }
 
     const requesterProfile = await getRequesterProfile(adminClient, user.id)
-    if (!requesterProfile || requesterProfile.role !== 'admin') {
+    if (!requesterProfile) {
+      return json({ error: 'Unable to determine your staff permissions.' }, 403)
+    }
+
+    const payload = (await request.json()) as Record<string, unknown>
+    const action = normalizeText(payload.action) as StaffAction
+
+    if (action === 'update_staff_user') {
+      if (!['admin', 'super_admin'].includes(requesterProfile.role)) {
+        return json({ error: 'Only admin users can update staff accounts.' }, 403)
+      }
+
+      return json(await updateStaffUser(adminClient, requesterProfile, payload))
+    }
+
+    if (requesterProfile.role !== 'admin') {
       return json({ error: 'Only admin users can manage staff accounts.' }, 403)
     }
 
     if (!requesterProfile.organization_id) {
       return json({ error: 'Admin account is missing organization context.' }, 400)
     }
-
-    const payload = (await request.json()) as Record<string, unknown>
-    const action = normalizeText(payload.action) as StaffAction
 
     if (action === 'upsert_staff_user') {
       return json(await upsertStaffUser(adminClient, requesterProfile.organization_id, payload))

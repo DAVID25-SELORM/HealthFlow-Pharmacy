@@ -3,10 +3,27 @@ import { useAuth } from './AuthContext'
 
 /**
  * TenantContext provides organization-level utilities
- * Wraps the app to ensure all operations are scoped to the user's organization
+ * and normalizes subscription tiers for feature gating.
  */
 
-// ─── Tier Feature Definitions ───────────────────────────────────────────────
+export const normalizeSubscriptionTier = (tier) => {
+  const normalized = String(tier || '').trim().toLowerCase()
+
+  if (normalized === 'standard' || normalized === 'professional' || normalized === 'pro') {
+    return 'pro'
+  }
+
+  if (normalized === 'free') {
+    return 'basic'
+  }
+
+  if (normalized === 'trial' || normalized === 'basic' || normalized === 'enterprise') {
+    return normalized
+  }
+
+  return 'basic'
+}
+
 export const TIER_LIMITS = {
   basic: {
     maxUsers: 3,
@@ -16,13 +33,13 @@ export const TIER_LIMITS = {
     hasAdvancedInventory: false,
     label: 'Basic',
   },
-  standard: {
+  pro: {
     maxUsers: 10,
     maxDrugs: 1000,
     hasReports: true,
     hasClaims: false,
     hasAdvancedInventory: true,
-    label: 'Standard',
+    label: 'Professional',
   },
   enterprise: {
     maxUsers: Infinity,
@@ -34,12 +51,12 @@ export const TIER_LIMITS = {
   },
 }
 
-// During trial, grant standard-level access
-const TRIAL_LIMITS = TIER_LIMITS.standard
+// During trial, grant professional-level access.
+const TRIAL_LIMITS = TIER_LIMITS.pro
 
 const getTierLimits = (tier, isTrialActive) => {
   if (isTrialActive) return TRIAL_LIMITS
-  return TIER_LIMITS[tier] || TIER_LIMITS.basic
+  return TIER_LIMITS[normalizeSubscriptionTier(tier)] || TIER_LIMITS.basic
 }
 
 const TenantContext = createContext(null)
@@ -74,30 +91,25 @@ export const TenantProvider = ({ children }) => {
       }
     }
 
-    // Calculate trial status
     const now = new Date()
     const trialEnds = organization.trial_ends_at ? new Date(organization.trial_ends_at) : null
-    const isTrialActive = 
-      organization.status === 'trial' && 
-      trialEnds && 
-      trialEnds > now
+    const normalizedTier = normalizeSubscriptionTier(organization.subscription_tier)
+    const isTrialActive = organization.status === 'trial' && trialEnds && trialEnds > now
 
-    const daysUntilTrialExpires = trialEnds 
+    const daysUntilTrialExpires = trialEnds
       ? Math.ceil((trialEnds - now) / (1000 * 60 * 60 * 24))
       : null
 
-    // Calculate subscription status
-    const subscriptionEnds = organization.subscription_ends_at 
-      ? new Date(organization.subscription_ends_at) 
+    const subscriptionEnds = organization.subscription_ends_at
+      ? new Date(organization.subscription_ends_at)
       : null
-    const isSubscriptionActive = 
-      organization.status === 'active' && 
-      organization.subscription_tier !== 'trial' &&
+    const isSubscriptionActive =
+      organization.status === 'active' &&
+      normalizedTier !== 'trial' &&
       (!subscriptionEnds || subscriptionEnds > now)
 
     const isSuspended = organization.status === 'suspended'
-
-    const tierLimits = getTierLimits(organization.subscription_tier, isTrialActive)
+    const tierLimits = getTierLimits(normalizedTier, isTrialActive)
 
     return {
       organization,
@@ -123,8 +135,7 @@ export const useTenant = () => {
 }
 
 /**
- * Hook to get organization ID
- * Useful for ensuring all operations include organization_id
+ * Hook to get organization ID.
  */
 export const useOrganizationId = () => {
   const { organizationId } = useTenant()
@@ -132,11 +143,11 @@ export const useOrganizationId = () => {
 }
 
 /**
- * Hook to check if organization subscription is valid
+ * Hook to check whether the organization subscription is valid.
  */
 export const useSubscriptionStatus = () => {
   const { isTrialActive, isSubscriptionActive, isSuspended, daysUntilTrialExpires } = useTenant()
-  
+
   return {
     isActive: isTrialActive || isSubscriptionActive,
     isTrial: isTrialActive,

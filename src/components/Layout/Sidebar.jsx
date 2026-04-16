@@ -7,6 +7,7 @@ import {
   Users,
   ClipboardList,
   BarChart3,
+  Wallet,
   Settings,
   ShieldCheck,
 } from 'lucide-react'
@@ -23,6 +24,7 @@ const Sidebar = ({ isOpen, onClose }) => {
     { path: '/patients', icon: Users, label: 'Patients', roles: ['admin', 'pharmacist', 'assistant'] },
     { path: '/claims', icon: ClipboardList, label: 'Claims', roles: ['admin', 'pharmacist'] },
     { path: '/reports', icon: BarChart3, label: 'Reports', roles: ['admin', 'pharmacist'] },
+    { path: '/accounting', icon: Wallet, label: 'Accounting', roles: ['admin'] },
     { path: '/settings', icon: Settings, label: 'Settings', roles: ['admin'] },
     { path: '/tenant-admin', icon: ShieldCheck, label: 'Tenant Admin', roles: ['super_admin'] },
   ]
