@@ -60,7 +60,6 @@ const Settings = () => {
   const { notify } = useNotification()
   const { isTrialActive, isSubscriptionActive, daysUntilTrialExpires, tierLimits } = useTenant()
   const isAdmin = role === 'admin'
-  const atUserLimit = tierLimits.maxUsers !== Infinity && users.length >= tierLimits.maxUsers
 
   const [settingsId, setSettingsId] = useState('')
   const [formData, setFormData] = useState(toForm(null))
@@ -81,6 +80,7 @@ const Settings = () => {
   const [editingBranchId, setEditingBranchId] = useState(null)
   const [editBranchForm, setEditBranchForm] = useState({})
   const [savingBranch, setSavingBranch] = useState(false)
+  const atUserLimit = tierLimits.maxUsers !== Infinity && users.length >= tierLimits.maxUsers
 
   useEffect(() => {
     void loadSettings()
