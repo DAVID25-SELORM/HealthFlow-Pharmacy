@@ -6,8 +6,23 @@ const MAX_USER_PAGES = 10
 const SUBDOMAIN_PATTERN = /^[a-z0-9-]+$/
 const VALID_TIERS = ['trial', 'basic', 'pro', 'enterprise'] as const
 const VALID_STATUSES = ['trial', 'active', 'suspended', 'cancelled'] as const
+const ORGANIZATION_SELECT_FIELDS =
+  'id, name, subdomain, status, subscription_tier, trial_ends_at, subscription_ends_at, phone, email, address, city, region, license_number, created_at, updated_at'
+const TENANT_USER_SELECT_FIELDS = 'id, email, full_name, role, is_active, created_at'
 
-type TenantSignupAction = 'check_subdomain' | 'register_signup' | 'create_tenant'
+type TenantSignupAction =
+  | 'check_subdomain'
+  | 'register_signup'
+  | 'create_tenant'
+  | 'get_tenant_admin_dashboard'
+  | 'get_tenant_users'
+  | 'update_tenant_organization'
+
+type RequesterProfile = {
+  id: string
+  role: string
+  organization_id: string | null
+}
 
 const json = (body: Record<string, unknown>, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -192,7 +207,7 @@ const getOrganizationBySubdomain = async (
 const getRequesterProfile = async (
   adminClient: ReturnType<typeof createAdminClient>,
   userId: string
-) => {
+): Promise<RequesterProfile | null> => {
   const { data, error } = await adminClient
     .from('users')
     .select('id, role, organization_id')
@@ -241,6 +256,333 @@ const requireSuperAdmin = async (
   }
 
   return { requesterProfile }
+}
+
+const buildCountsByOrganization = (
+  rows: Array<{
+    organization_id?: string | null
+  }>
+) =>
+  rows.reduce<Record<string, number>>((acc, row) => {
+    const organizationId = normalizeText(row.organization_id)
+    if (!organizationId) {
+      return acc
+    }
+
+    acc[organizationId] = (acc[organizationId] || 0) + 1
+    return acc
+  }, {})
+
+const syncPharmacySettingsFromOrganization = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  organization: {
+    id: string
+    name: string
+    phone?: string | null
+    email?: string | null
+    address?: string | null
+    city?: string | null
+    region?: string | null
+    license_number?: string | null
+  }
+) => {
+  const payload = {
+    pharmacy_name: organization.name,
+    phone: normalizeText(organization.phone) || null,
+    email: normalizeText(organization.email) || null,
+    address: normalizeText(organization.address) || null,
+    city: normalizeText(organization.city) || null,
+    region: normalizeText(organization.region) || null,
+    license_number: normalizeText(organization.license_number) || null,
+    updated_at: new Date().toISOString(),
+  }
+
+  const { data: existingSettings, error: existingSettingsError } = await adminClient
+    .from('pharmacy_settings')
+    .select('id')
+    .eq('organization_id', organization.id)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+
+  if (existingSettingsError) {
+    throw existingSettingsError
+  }
+
+  const existingSettingsId = existingSettings?.[0]?.id
+  if (existingSettingsId) {
+    const { error: updateSettingsError } = await adminClient
+      .from('pharmacy_settings')
+      .update(payload)
+      .eq('id', existingSettingsId)
+
+    if (updateSettingsError) {
+      throw updateSettingsError
+    }
+
+    return
+  }
+
+  const { error: insertSettingsError } = await adminClient.from('pharmacy_settings').insert([
+    {
+      organization_id: organization.id,
+      ...payload,
+    },
+  ])
+
+  if (insertSettingsError) {
+    throw insertSettingsError
+  }
+}
+
+const getTenantAdminDashboard = async (adminClient: ReturnType<typeof createAdminClient>) => {
+  const { data: organizations, error: organizationsError } = await adminClient
+    .from('organizations')
+    .select(ORGANIZATION_SELECT_FIELDS)
+    .order('created_at', { ascending: false })
+
+  if (organizationsError) {
+    throw organizationsError
+  }
+
+  const organizationIds = (organizations || [])
+    .map((organization) => normalizeText(organization.id))
+    .filter(Boolean)
+
+  let userCounts: Record<string, number> = {}
+  let branchCounts: Record<string, number> = {}
+
+  if (organizationIds.length > 0) {
+    const [{ data: userRows, error: usersError }, { data: branchRows, error: branchesError }] =
+      await Promise.all([
+        adminClient.from('users').select('organization_id').in('organization_id', organizationIds),
+        adminClient.from('branches').select('organization_id').in('organization_id', organizationIds),
+      ])
+
+    if (usersError) {
+      throw usersError
+    }
+
+    if (branchesError) {
+      throw branchesError
+    }
+
+    userCounts = buildCountsByOrganization(userRows || [])
+    branchCounts = buildCountsByOrganization(branchRows || [])
+  }
+
+  return {
+    organizations: organizations || [],
+    userCounts,
+    branchCounts,
+  }
+}
+
+const getTenantUsers = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  payload: Record<string, unknown>
+) => {
+  const organizationId = normalizeText(payload.orgId)
+  if (!organizationId) {
+    throw new Error('Organization id is required.')
+  }
+
+  const { data: organization, error: organizationError } = await adminClient
+    .from('organizations')
+    .select('id')
+    .eq('id', organizationId)
+    .maybeSingle()
+
+  if (organizationError) {
+    throw organizationError
+  }
+
+  if (!organization) {
+    throw new Error('Organization not found.')
+  }
+
+  const { data: users, error: usersError } = await adminClient
+    .from('users')
+    .select(TENANT_USER_SELECT_FIELDS)
+    .eq('organization_id', organizationId)
+    .order('created_at', { ascending: false })
+
+  if (usersError) {
+    throw usersError
+  }
+
+  return {
+    users: users || [],
+  }
+}
+
+const updateTenantOrganization = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  payload: Record<string, unknown>
+) => {
+  const organizationId = normalizeText(payload.orgId)
+  if (!organizationId) {
+    throw new Error('Organization id is required.')
+  }
+
+  const organizationInput = (payload.organization || {}) as Record<string, unknown>
+  const { data: existingOrganization, error: existingOrganizationError } = await adminClient
+    .from('organizations')
+    .select('id, subdomain')
+    .eq('id', organizationId)
+    .maybeSingle()
+
+  if (existingOrganizationError) {
+    throw existingOrganizationError
+  }
+
+  if (!existingOrganization) {
+    throw new Error('Organization not found.')
+  }
+
+  const nextName =
+    organizationInput.name !== undefined ? normalizeText(organizationInput.name) : undefined
+  if (organizationInput.name !== undefined && !nextName) {
+    throw new Error('Organization name is required.')
+  }
+
+  const nextEmail =
+    organizationInput.email !== undefined
+      ? normalizeText(organizationInput.email)
+        ? validateEmail(String(organizationInput.email), 'Organization email')
+        : null
+      : undefined
+
+  const nextSubdomain =
+    organizationInput.subdomain !== undefined
+      ? validateSubdomain(organizationInput.subdomain)
+      : undefined
+
+  if (nextSubdomain && nextSubdomain !== normalizeText(existingOrganization.subdomain)) {
+    const conflictingOrganization = await getOrganizationBySubdomain(adminClient, nextSubdomain)
+    if (conflictingOrganization && normalizeText(conflictingOrganization.id) !== organizationId) {
+      throw new Error('This subdomain is already taken.')
+    }
+  }
+
+  const updatePayload: Record<string, string | null> = {
+    name: nextName ?? null,
+    subdomain: nextSubdomain ?? null,
+    phone: organizationInput.phone !== undefined ? normalizeText(organizationInput.phone) || null : null,
+    email: nextEmail ?? null,
+    address:
+      organizationInput.address !== undefined ? normalizeText(organizationInput.address) || null : null,
+    city: organizationInput.city !== undefined ? normalizeText(organizationInput.city) || null : null,
+    region: organizationInput.region !== undefined ? normalizeText(organizationInput.region) || null : null,
+    license_number:
+      organizationInput.licenseNumber !== undefined
+        ? normalizeText(organizationInput.licenseNumber) || null
+        : null,
+    status:
+      organizationInput.status !== undefined
+        ? normalizeOrganizationStatus(organizationInput.status, 'trial')
+        : null,
+    subscription_tier:
+      organizationInput.subscriptionTier !== undefined
+        ? normalizeSubscriptionTier(organizationInput.subscriptionTier, 'basic')
+        : null,
+    trial_ends_at:
+      organizationInput.trialEndsAt !== undefined
+        ? normalizeOptionalIsoDate(organizationInput.trialEndsAt)
+        : null,
+    subscription_ends_at:
+      organizationInput.subscriptionEndsAt !== undefined
+        ? normalizeOptionalIsoDate(organizationInput.subscriptionEndsAt)
+        : null,
+    updated_at: new Date().toISOString(),
+  }
+
+  Object.keys(updatePayload).forEach((key) => {
+    if (key === 'updated_at') {
+      return
+    }
+
+    if (organizationInput[key] === undefined && key !== 'license_number' && key !== 'subscription_tier') {
+      delete updatePayload[key]
+    }
+  })
+
+  if (organizationInput.licenseNumber === undefined) {
+    delete updatePayload.license_number
+  }
+
+  if (organizationInput.subscriptionTier === undefined) {
+    delete updatePayload.subscription_tier
+  }
+
+  if (organizationInput.trialEndsAt === undefined) {
+    delete updatePayload.trial_ends_at
+  }
+
+  if (organizationInput.subscriptionEndsAt === undefined) {
+    delete updatePayload.subscription_ends_at
+  }
+
+  if (organizationInput.subdomain === undefined) {
+    delete updatePayload.subdomain
+  }
+
+  if (organizationInput.name === undefined) {
+    delete updatePayload.name
+  }
+
+  if (organizationInput.phone === undefined) {
+    delete updatePayload.phone
+  }
+
+  if (organizationInput.email === undefined) {
+    delete updatePayload.email
+  }
+
+  if (organizationInput.address === undefined) {
+    delete updatePayload.address
+  }
+
+  if (organizationInput.city === undefined) {
+    delete updatePayload.city
+  }
+
+  if (organizationInput.region === undefined) {
+    delete updatePayload.region
+  }
+
+  if (organizationInput.status === undefined) {
+    delete updatePayload.status
+  }
+
+  const { data: updatedOrganization, error: updateOrganizationError } = await adminClient
+    .from('organizations')
+    .update(updatePayload)
+    .eq('id', organizationId)
+    .select(ORGANIZATION_SELECT_FIELDS)
+    .maybeSingle()
+
+  if (updateOrganizationError) {
+    throw updateOrganizationError
+  }
+
+  if (!updatedOrganization) {
+    throw new Error('Organization could not be updated.')
+  }
+
+  await syncPharmacySettingsFromOrganization(adminClient, {
+    id: updatedOrganization.id,
+    name: updatedOrganization.name,
+    phone: updatedOrganization.phone,
+    email: updatedOrganization.email,
+    address: updatedOrganization.address,
+    city: updatedOrganization.city,
+    region: updatedOrganization.region,
+    license_number: updatedOrganization.license_number,
+  })
+
+  return {
+    organization: updatedOrganization,
+  }
 }
 
 const checkSubdomain = async (
@@ -292,8 +634,8 @@ const bootstrapOrganization = async (
     throw new Error('Admin full name is required.')
   }
 
-  if (!adminPassword || adminPassword.length < 6) {
-    throw new Error('Admin password must be at least 6 characters.')
+  if (!adminPassword || adminPassword.length < 8) {
+    throw new Error('Admin password must be at least 8 characters.')
   }
 
   const organizationStatus = defaults.allowCustomStatus
@@ -531,6 +873,35 @@ Deno.serve(async (request) => {
       }
 
       return json(await createTenant(adminClient, payload))
+    }
+
+    if (
+      action === 'get_tenant_admin_dashboard' ||
+      action === 'get_tenant_users' ||
+      action === 'update_tenant_organization'
+    ) {
+      const { supabaseUrl, supabaseAnonKey, serviceRoleKey } = getFunctionEnv(true)
+      const adminClient = createAdminClient(supabaseUrl, serviceRoleKey)
+      const authorizationResult = await requireSuperAdmin(
+        request,
+        adminClient,
+        supabaseUrl,
+        supabaseAnonKey
+      )
+
+      if ('error' in authorizationResult) {
+        return authorizationResult.error
+      }
+
+      if (action === 'get_tenant_admin_dashboard') {
+        return json(await getTenantAdminDashboard(adminClient))
+      }
+
+      if (action === 'get_tenant_users') {
+        return json(await getTenantUsers(adminClient, payload))
+      }
+
+      return json(await updateTenantOrganization(adminClient, payload))
     }
 
     return json({ error: 'Unsupported tenant signup action.' }, 400)

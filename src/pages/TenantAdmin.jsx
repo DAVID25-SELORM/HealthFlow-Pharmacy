@@ -2,8 +2,7 @@ import { Fragment, useEffect, useState } from 'react'
 import { Building2, GitBranch, Plus, Users, ChevronDown, ChevronUp, Eye, Pencil } from 'lucide-react'
 import { useNotification } from '../context/NotificationContext'
 import {
-  getAllOrganizations,
-  getOrganizationUserCounts,
+  getTenantAdminDashboard,
   createPharmacyTenant,
   updateOrganizationStatus,
   updateSubscriptionTier,
@@ -12,7 +11,6 @@ import {
   getOrganizationUsers,
   checkSubdomainAvailable,
 } from '../services/tenantAdminService'
-import { getBranchCountsByOrgIds } from '../services/branchService'
 import './TenantAdmin.css'
 
 const blankPharmacy = {
@@ -73,15 +71,10 @@ const TenantAdmin = () => {
     try {
       setLoading(true)
       setError('')
-      const data = await getAllOrganizations()
-      setOrgs(data)
-      const ids = data.map((o) => o.id)
-      const [counts, bCounts] = await Promise.all([
-        getOrganizationUserCounts(ids),
-        getBranchCountsByOrgIds(ids),
-      ])
-      setUserCounts(counts)
-      setBranchCounts(bCounts)
+      const dashboard = await getTenantAdminDashboard()
+      setOrgs(dashboard.organizations)
+      setUserCounts(dashboard.userCounts)
+      setBranchCounts(dashboard.branchCounts)
     } catch (err) {
       setError(err.message || 'Failed to load organizations')
     } finally {

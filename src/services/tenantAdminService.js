@@ -1,4 +1,4 @@
-import { invokeSupabaseFunction, supabase } from '../lib/supabase'
+import { invokeSupabaseFunction } from '../lib/supabase'
 
 const TENANT_SIGNUP_FUNCTION = 'tenant-signup'
 const STAFF_ADMIN_FUNCTION = 'staff-admin'
@@ -72,32 +72,8 @@ const invokeFunction = async (name, payload) => {
   return data
 }
 
-/**
- * Get all organizations with their user counts
- */
-export const getAllOrganizations = async () => {
-  const { data, error } = await supabase
-    .from('organizations')
-    .select(`
-      id,
-      name,
-      subdomain,
-      status,
-      subscription_tier,
-      trial_ends_at,
-      subscription_ends_at,
-      phone,
-      email,
-      address,
-      city,
-      region,
-      license_number,
-      created_at
-    `)
-    .order('created_at', { ascending: false })
-
-  if (error) throw error
-  return (data || []).map((organization) => ({
+const normalizeOrganizations = (organizations = []) =>
+  organizations.map((organization) => ({
     ...organization,
     status: normalizeOrganizationStatus(organization.status),
     subscription_tier: normalizeSubscriptionTier(
@@ -105,23 +81,32 @@ export const getAllOrganizations = async () => {
       organization.status === 'trial' ? 'trial' : 'basic'
     ),
   }))
+
+export const getTenantAdminDashboard = async () => {
+  const response = await invokeFunction(TENANT_SIGNUP_FUNCTION, {
+    action: 'get_tenant_admin_dashboard',
+  })
+
+  return {
+    organizations: normalizeOrganizations(response.organizations || []),
+    userCounts: response.userCounts || {},
+    branchCounts: response.branchCounts || {},
+  }
 }
+
+/**
+ * Get all organizations with their user counts
+ */
+export const getAllOrganizations = async () => (await getTenantAdminDashboard()).organizations
 
 /**
  * Get user count per organization
  */
 export const getOrganizationUserCounts = async (orgIds) => {
   if (!orgIds.length) return {}
-
-  const { data, error } = await supabase
-    .from('users')
-    .select('organization_id')
-    .in('organization_id', orgIds)
-
-  if (error) throw error
-
-  return (data || []).reduce((acc, row) => {
-    acc[row.organization_id] = (acc[row.organization_id] || 0) + 1
+  const { userCounts } = await getTenantAdminDashboard()
+  return orgIds.reduce((acc, orgId) => {
+    acc[orgId] = userCounts[orgId] || 0
     return acc
   }, {})
 }
@@ -156,50 +141,42 @@ export const createPharmacyTenant = async ({ pharmacy, admin }) =>
  * Update organization status (activate / suspend / cancel / set trial)
  */
 export const updateOrganizationStatus = async (orgId, status) => {
-  const { data, error } = await supabase
-    .from('organizations')
-    .update({
+  const response = await invokeFunction(TENANT_SIGNUP_FUNCTION, {
+    action: 'update_tenant_organization',
+    orgId,
+    organization: {
       status: normalizeOrganizationStatus(status),
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', orgId)
-    .select()
-    .single()
+    },
+  })
 
-  if (error) throw error
-  return data
+  return response.organization
 }
 
 /**
  * Update subscription tier
  */
 export const updateSubscriptionTier = async (orgId, tier) => {
-  const { data, error } = await supabase
-    .from('organizations')
-    .update({
-      subscription_tier: normalizeSubscriptionTier(tier),
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', orgId)
-    .select()
-    .single()
+  const response = await invokeFunction(TENANT_SIGNUP_FUNCTION, {
+    action: 'update_tenant_organization',
+    orgId,
+    organization: {
+      subscriptionTier: normalizeSubscriptionTier(tier),
+    },
+  })
 
-  if (error) throw error
-  return data
+  return response.organization
 }
 
 /**
  * Get all users for a specific organization
  */
 export const getOrganizationUsers = async (orgId) => {
-  const { data, error } = await supabase
-    .from('users')
-    .select('id, email, full_name, role, is_active, created_at')
-    .eq('organization_id', orgId)
-    .order('created_at', { ascending: false })
+  const response = await invokeFunction(TENANT_SIGNUP_FUNCTION, {
+    action: 'get_tenant_users',
+    orgId,
+  })
 
-  if (error) throw error
-  return data || []
+  return response.users || []
 }
 
 /**
@@ -228,41 +205,38 @@ export const checkSubdomainAvailable = async (subdomain) => {
  * Update full organization details (name, contact, address, license, tier, status, trial end)
  */
 export const updateOrganizationDetails = async (orgId, fields) => {
-  const payload = {
+  const organization = {
     name: normalizeText(fields.name) || undefined,
     phone: fields.phone !== undefined ? normalizeText(fields.phone) || null : undefined,
     email: fields.email !== undefined ? normalizeText(fields.email) || null : undefined,
     address: fields.address !== undefined ? normalizeText(fields.address) || null : undefined,
     city: fields.city !== undefined ? normalizeText(fields.city) || null : undefined,
     region: fields.region !== undefined ? normalizeText(fields.region) || null : undefined,
-    license_number:
+    licenseNumber:
       fields.licenseNumber !== undefined ? normalizeText(fields.licenseNumber) || null : undefined,
     status:
       fields.status !== undefined ? normalizeOrganizationStatus(fields.status) : undefined,
-    subscription_tier:
+    subscriptionTier:
       fields.subscriptionTier !== undefined
         ? normalizeSubscriptionTier(fields.subscriptionTier)
         : undefined,
-    trial_ends_at:
+    trialEndsAt:
       fields.trialEndsAt !== undefined ? normalizeOptionalIsoDate(fields.trialEndsAt) : undefined,
-    subscription_ends_at:
+    subscriptionEndsAt:
       fields.subscriptionEndsAt !== undefined
         ? normalizeOptionalIsoDate(fields.subscriptionEndsAt)
         : undefined,
-    updated_at: new Date().toISOString(),
   }
 
-  Object.keys(payload).forEach((key) => payload[key] === undefined && delete payload[key])
+  Object.keys(organization).forEach((key) => organization[key] === undefined && delete organization[key])
 
-  const { data, error } = await supabase
-    .from('organizations')
-    .update(payload)
-    .eq('id', orgId)
-    .select()
-    .single()
+  const response = await invokeFunction(TENANT_SIGNUP_FUNCTION, {
+    action: 'update_tenant_organization',
+    orgId,
+    organization,
+  })
 
-  if (error) throw error
-  return data
+  return response.organization
 }
 
 /**
