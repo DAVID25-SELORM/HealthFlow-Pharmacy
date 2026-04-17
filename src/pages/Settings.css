@@ -378,46 +378,16 @@
   color: var(--gray-600);
 }
 
-.developer-credit {
-  font-size: 1rem;
-  margin-top: 1.5rem !important;
-}
-
-.developer-credit strong {
-  color: var(--primary);
-  font-weight: 700;
-}
-
-.contact {
-  font-size: 0.875rem;
-  margin-top: 0.5rem !important;
-}
-
-.company {
-  font-size: 1rem;
-  margin-top: 1rem !important;
-  color: var(--gray-700);
-}
-
-.company strong {
-  color: var(--primary);
+.about-version {
+  font-size: 0.95rem;
   font-weight: 600;
+  color: var(--primary) !important;
 }
 
-.website {
-  font-size: 0.875rem;
-  margin-top: 0.5rem !important;
-  color: var(--gray-600);
-}
-
-.website a {
-  color: var(--primary);
-  text-decoration: none;
-  font-weight: 500;
-}
-
-.website a:hover {
-  text-decoration: underline;
+.about-summary {
+  max-width: 40rem;
+  margin: 0.75rem auto 0 !important;
+  line-height: 1.6;
 }
 
 .copyright {
