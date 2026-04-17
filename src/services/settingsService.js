@@ -1,4 +1,4 @@
-import { supabase } from '../lib/supabase'
+import { invokeSupabaseFunction, supabase } from '../lib/supabase'
 import { assertRequiredText, normalizeText } from '../utils/validation'
 import { tryLogAuditEvent } from './auditService'
 
@@ -6,7 +6,7 @@ const STAFF_ADMIN_FUNCTION = 'staff-admin'
 const USER_ROLES = ['admin', 'pharmacist', 'assistant']
 
 const invokeStaffAdmin = async (payload) => {
-  const { data, error } = await supabase.functions.invoke(STAFF_ADMIN_FUNCTION, {
+  const { data, error } = await invokeSupabaseFunction(STAFF_ADMIN_FUNCTION, {
     body: payload,
   })
 

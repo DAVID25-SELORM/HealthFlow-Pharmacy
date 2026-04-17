@@ -1,4 +1,4 @@
-import { supabase } from '../lib/supabase'
+import { invokeSupabaseFunction, supabase } from '../lib/supabase'
 import { assertRequiredText, normalizeText } from '../utils/validation'
 
 /**
@@ -9,7 +9,7 @@ import { assertRequiredText, normalizeText } from '../utils/validation'
 const TENANT_SIGNUP_FUNCTION = 'tenant-signup'
 
 const invokeTenantSignup = async (payload) => {
-  const { data, error } = await supabase.functions.invoke(TENANT_SIGNUP_FUNCTION, {
+  const { data, error } = await invokeSupabaseFunction(TENANT_SIGNUP_FUNCTION, {
     body: payload,
   })
 

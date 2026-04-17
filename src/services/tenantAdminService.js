@@ -1,4 +1,4 @@
-import { supabase } from '../lib/supabase'
+import { invokeSupabaseFunction, supabase } from '../lib/supabase'
 
 const TENANT_SIGNUP_FUNCTION = 'tenant-signup'
 const STAFF_ADMIN_FUNCTION = 'staff-admin'
@@ -57,7 +57,7 @@ const normalizeOptionalIsoDate = (value) => {
 }
 
 const invokeFunction = async (name, payload) => {
-  const { data, error } = await supabase.functions.invoke(name, {
+  const { data, error } = await invokeSupabaseFunction(name, {
     body: payload,
   })
 

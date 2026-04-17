@@ -60,6 +60,33 @@ export const clearSupabaseStoredSession = () => {
   }
 }
 
+export const invokeSupabaseFunction = async (name, options = {}) => {
+  if (!supabase) {
+    throw new Error('Supabase credentials are not configured.')
+  }
+
+  const {
+    data: { session },
+    error: sessionError,
+  } = await supabase.auth.getSession()
+
+  if (sessionError) {
+    throw sessionError
+  }
+
+  if (!session?.access_token) {
+    throw new Error('Your session has expired. Please sign in again.')
+  }
+
+  return supabase.functions.invoke(name, {
+    ...options,
+    headers: {
+      ...(options.headers || {}),
+      Authorization: `Bearer ${session.access_token}`,
+    },
+  })
+}
+
 // Warning message in development
 if (!hasValidCredentials && import.meta.env.DEV) {
   console.warn(

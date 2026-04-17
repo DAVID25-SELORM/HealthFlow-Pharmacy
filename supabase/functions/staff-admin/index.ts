@@ -8,6 +8,11 @@ const MAX_USER_PAGES = 10
 
 type StaffRole = (typeof STAFF_ROLES)[number]
 type StaffAction = 'upsert_staff_user' | 'set_staff_status' | 'update_staff_user'
+type RequesterProfile = {
+  id: string
+  role: string
+  organization_id: string | null
+}
 
 const json = (body: Record<string, unknown>, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -122,7 +127,7 @@ const findAuthUserByEmail = async (
 const getRequesterProfile = async (
   adminClient: ReturnType<typeof createAdminClient>,
   userId: string
-) => {
+): Promise<RequesterProfile | null> => {
   const { data, error } = await adminClient
     .from('users')
     .select('id, role, organization_id')
@@ -249,7 +254,7 @@ const syncPublicUser = async (
 
 const upsertStaffUser = async (
   adminClient: ReturnType<typeof createAdminClient>,
-  organizationId: string,
+  requesterProfile: RequesterProfile,
   payload: Record<string, unknown>
 ) => {
   const email = normalizeText(payload.email).toLowerCase()
@@ -257,6 +262,7 @@ const upsertStaffUser = async (
   const phone = normalizeText(payload.phone) || null
   const password = normalizeText(payload.password)
   const roleCandidate = normalizeText(payload.role).toLowerCase()
+  const requestedOrganizationId = normalizeText(payload.organizationId)
 
   if (!email) {
     throw new Error('Email is required.')
@@ -272,6 +278,19 @@ const upsertStaffUser = async (
 
   if (!isValidRole(roleCandidate)) {
     throw new Error('Role must be admin, pharmacist, or assistant.')
+  }
+
+  const organizationId =
+    requesterProfile.role === 'super_admin'
+      ? requestedOrganizationId
+      : requesterProfile.organization_id
+
+  if (!organizationId) {
+    throw new Error(
+      requesterProfile.role === 'super_admin'
+        ? 'Organization id is required when creating staff as a super admin.'
+        : 'Admin account is missing organization context.'
+    )
   }
 
   const metadata = {
@@ -345,8 +364,7 @@ const upsertStaffUser = async (
 
 const setStaffStatus = async (
   adminClient: ReturnType<typeof createAdminClient>,
-  requesterId: string,
-  organizationId: string,
+  requesterProfile: RequesterProfile,
   payload: Record<string, unknown>
 ) => {
   const userId = normalizeText(payload.userId)
@@ -356,7 +374,7 @@ const setStaffStatus = async (
     throw new Error('User id is required.')
   }
 
-  if (!isActive && requesterId === userId) {
+  if (!isActive && requesterProfile.id === userId) {
     throw new Error('You cannot disable your own admin account.')
   }
 
@@ -370,7 +388,15 @@ const setStaffStatus = async (
     throw targetProfileError
   }
 
-  if (!targetProfile || normalizeText(targetProfile.organization_id) !== organizationId) {
+  const targetOrganizationId = normalizeText(targetProfile?.organization_id)
+  if (!targetProfile || !targetOrganizationId) {
+    throw new Error('Target user is missing organization context.')
+  }
+
+  if (
+    requesterProfile.role !== 'super_admin' &&
+    targetOrganizationId !== requesterProfile.organization_id
+  ) {
     throw new Error('You can only manage staff accounts in your own organization.')
   }
 
@@ -392,7 +418,7 @@ const setStaffStatus = async (
 
   const syncedProfile = await syncPublicUser(adminClient, updatedUserData.user || data.user, {
     isActive,
-    organizationId,
+    organizationId: targetOrganizationId,
   })
 
   return {
@@ -402,7 +428,7 @@ const setStaffStatus = async (
 
 const updateStaffUser = async (
   adminClient: ReturnType<typeof createAdminClient>,
-  requesterProfile: { role: string; organization_id: string | null },
+  requesterProfile: RequesterProfile,
   payload: Record<string, unknown>
 ) => {
   const userId = normalizeText(payload.userId)
@@ -546,28 +572,26 @@ Deno.serve(async (request) => {
 
     if (action === 'update_staff_user') {
       if (!['admin', 'super_admin'].includes(requesterProfile.role)) {
-        return json({ error: 'Only admin users can update staff accounts.' }, 403)
+        return json({ error: 'Only admin or super admin users can update staff accounts.' }, 403)
       }
 
       return json(await updateStaffUser(adminClient, requesterProfile, payload))
     }
 
-    if (requesterProfile.role !== 'admin') {
-      return json({ error: 'Only admin users can manage staff accounts.' }, 403)
+    if (!['admin', 'super_admin'].includes(requesterProfile.role)) {
+      return json({ error: 'Only admin or super admin users can manage staff accounts.' }, 403)
     }
 
-    if (!requesterProfile.organization_id) {
+    if (requesterProfile.role === 'admin' && !requesterProfile.organization_id) {
       return json({ error: 'Admin account is missing organization context.' }, 400)
     }
 
     if (action === 'upsert_staff_user') {
-      return json(await upsertStaffUser(adminClient, requesterProfile.organization_id, payload))
+      return json(await upsertStaffUser(adminClient, requesterProfile, payload))
     }
 
     if (action === 'set_staff_status') {
-      return json(
-        await setStaffStatus(adminClient, user.id, requesterProfile.organization_id, payload)
-      )
+      return json(await setStaffStatus(adminClient, requesterProfile, payload))
     }
 
     return json({ error: 'Unsupported staff action.' }, 400)
