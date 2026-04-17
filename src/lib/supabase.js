@@ -60,9 +60,48 @@ export const clearSupabaseStoredSession = () => {
   }
 }
 
-export const invokeSupabaseFunction = async (name, options = {}) => {
-  if (!supabase) {
-    throw new Error('Supabase credentials are not configured.')
+const FUNCTION_TOKEN_REFRESH_WINDOW_SECONDS = 60
+
+const invokeFunctionWithToken = (name, options, accessToken) =>
+  supabase.functions.invoke(name, {
+    ...options,
+    headers: {
+      ...(options.headers || {}),
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+
+const isUnauthorizedFunctionError = (error) =>
+  error?.name === 'FunctionsHttpError' && Number(error?.context?.status || 0) === 401
+
+const getFunctionErrorMessage = async (error) => {
+  const response = error?.context
+  if (!response || typeof response.clone !== 'function') {
+    return ''
+  }
+
+  try {
+    const cloned = response.clone()
+    const contentType = String(cloned.headers.get('Content-Type') || '').toLowerCase()
+
+    if (contentType.includes('application/json')) {
+      const body = await cloned.json()
+      return body?.error || body?.message || ''
+    }
+
+    return (await cloned.text()) || ''
+  } catch {
+    return ''
+  }
+}
+
+const getValidFunctionSession = async (forceRefresh = false) => {
+  if (forceRefresh) {
+    const { data, error } = await supabase.auth.refreshSession()
+    if (error) {
+      throw error
+    }
+    return data?.session || null
   }
 
   const {
@@ -75,16 +114,65 @@ export const invokeSupabaseFunction = async (name, options = {}) => {
   }
 
   if (!session?.access_token) {
+    return null
+  }
+
+  const expiresAt = Number(session.expires_at || 0)
+  const now = Math.floor(Date.now() / 1000)
+  if (expiresAt && expiresAt - now <= FUNCTION_TOKEN_REFRESH_WINDOW_SECONDS) {
+    const { data, error } = await supabase.auth.refreshSession()
+    if (error) {
+      throw error
+    }
+    return data?.session || null
+  }
+
+  return session
+}
+
+export const invokeSupabaseFunction = async (name, options = {}) => {
+  if (!supabase) {
+    throw new Error('Supabase credentials are not configured.')
+  }
+
+  const session = await getValidFunctionSession()
+  if (!session?.access_token) {
+    clearSupabaseStoredSession()
     throw new Error('Your session has expired. Please sign in again.')
   }
 
-  return supabase.functions.invoke(name, {
-    ...options,
-    headers: {
-      ...(options.headers || {}),
-      Authorization: `Bearer ${session.access_token}`,
-    },
-  })
+  let result = await invokeFunctionWithToken(name, options, session.access_token)
+  if (!result.error) {
+    return result
+  }
+
+  if (isUnauthorizedFunctionError(result.error)) {
+    const refreshedSession = await getValidFunctionSession(true).catch(() => null)
+    if (!refreshedSession?.access_token) {
+      clearSupabaseStoredSession()
+      throw new Error('Your session has expired. Please sign in again.')
+    }
+
+    result = await invokeFunctionWithToken(name, options, refreshedSession.access_token)
+    if (!result.error) {
+      return result
+    }
+
+    if (isUnauthorizedFunctionError(result.error)) {
+      clearSupabaseStoredSession()
+      throw new Error('Your session has expired. Please sign in again.')
+    }
+  }
+
+  const functionErrorMessage = await getFunctionErrorMessage(result.error)
+  if (functionErrorMessage) {
+    return {
+      ...result,
+      error: new Error(functionErrorMessage),
+    }
+  }
+
+  return result
 }
 
 // Warning message in development
