@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import { getAllSales, getRecentSales } from '../services/salesService'
 import { getLowStockDrugs, getExpiringDrugs } from '../services/drugService'
 import { getRecentClaims } from '../services/claimsService'
+import { useTenant } from '../context/TenantContext'
 import { isSupabaseConfigured } from '../lib/supabase'
 import './Dashboard.css'
 
@@ -142,6 +143,7 @@ const createEmptyStats = (anchorDate = new Date()) => ({
 const Dashboard = () => {
   const navigate = useNavigate()
   const { role } = useAuth()
+  const { tierLimits } = useTenant()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [chartMode, setChartMode] = useState('daily')
@@ -150,10 +152,11 @@ const Dashboard = () => {
   const [recentClaims, setRecentClaims] = useState([])
 
   const canViewOperationalMetrics = ['admin', 'pharmacist'].includes(role)
+  const canViewClaimsMetrics = canViewOperationalMetrics && tierLimits.hasClaims
 
   useEffect(() => {
     void loadDashboardData()
-  }, [role])
+  }, [role, tierLimits.hasClaims])
 
   const loadDashboardData = async () => {
     const today = new Date()
@@ -182,7 +185,7 @@ const Dashboard = () => {
         getRecentSales(5),
         canViewOperationalMetrics ? getLowStockDrugs() : Promise.resolve([]),
         canViewOperationalMetrics ? getExpiringDrugs() : Promise.resolve([]),
-        canViewOperationalMetrics ? getRecentClaims(5) : Promise.resolve([]),
+        canViewClaimsMetrics ? getRecentClaims(5) : Promise.resolve([]),
       ])
 
       const failures = []
@@ -407,7 +410,7 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {canViewOperationalMetrics && (
+        {canViewClaimsMetrics && (
           <div className="activity-card">
             <div className="card-header">
               <h3>Recent Insurance Claims</h3>

@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase'
 import { assertNonNegativeNumber, assertRequiredText, normalizeText, sanitizeSearchTerm } from '../utils/validation'
+import { invokeTierAccess } from './tierAccessService'
 
 /**
  * Drug/Inventory Service
@@ -35,27 +36,24 @@ export const addDrug = async (drugData) => {
   const name = assertRequiredText(drugData.name, 'Drug name')
   const batchNumber = assertRequiredText(drugData.batchNumber, 'Batch number')
 
-  const { data, error } = await supabase
-    .from('drugs')
-    .insert([
-      {
-        name,
-        batch_number: batchNumber,
-        expiry_date: drugData.expiryDate,
-        quantity: assertNonNegativeNumber(drugData.quantity, 'Quantity'),
-        price: assertNonNegativeNumber(drugData.price, 'Price'),
-        cost_price: assertNonNegativeNumber(drugData.costPrice || 0, 'Cost price'),
-        supplier: normalizeText(drugData.supplier) || null,
-        category: normalizeText(drugData.category) || null,
-        description: normalizeText(drugData.description) || null,
-        reorder_level: assertNonNegativeNumber(drugData.reorderLevel || 10, 'Reorder level'),
-        unit: normalizeText(drugData.unit) || 'tablets',
-      }
-    ])
-    .select()
-  
-  if (error) throw error
-  return data[0]
+  const response = await invokeTierAccess({
+    action: 'create_drug',
+    drug: {
+      name,
+      batchNumber,
+      expiryDate: drugData.expiryDate,
+      quantity: assertNonNegativeNumber(drugData.quantity, 'Quantity'),
+      price: assertNonNegativeNumber(drugData.price, 'Price'),
+      costPrice: assertNonNegativeNumber(drugData.costPrice || 0, 'Cost price'),
+      supplier: normalizeText(drugData.supplier) || null,
+      category: normalizeText(drugData.category) || null,
+      description: normalizeText(drugData.description) || null,
+      reorderLevel: assertNonNegativeNumber(drugData.reorderLevel || 10, 'Reorder level'),
+      unit: normalizeText(drugData.unit) || 'tablets',
+    },
+  })
+
+  return response.drug
 }
 
 // Update drug

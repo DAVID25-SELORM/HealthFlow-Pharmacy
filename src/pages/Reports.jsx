@@ -24,18 +24,12 @@ const Reports = () => {
       return []
     }
 
-    return [
+    const nextCards = [
       {
         key: 'daily-sales',
         title: 'Sales Summary',
         description: `Transactions: ${bundle.metrics.salesCount} | Revenue: GHS ${bundle.metrics.salesAmount.toFixed(2)}`,
         color: 'primary',
-      },
-      {
-        key: 'claims',
-        title: 'Claims Summary',
-        description: `Total: ${bundle.metrics.claimsCount}, Approved: ${bundle.metrics.approvedClaims}, Rejected: ${bundle.metrics.rejectedClaims}`,
-        color: 'info',
       },
       {
         key: 'stock',
@@ -56,7 +50,18 @@ const Reports = () => {
         color: 'success',
       },
     ]
-  }, [bundle])
+
+    if (tierLimits.hasClaims) {
+      nextCards.splice(1, 0, {
+        key: 'claims',
+        title: 'Claims Summary',
+        description: `Total: ${bundle.metrics.claimsCount}, Approved: ${bundle.metrics.approvedClaims}, Rejected: ${bundle.metrics.rejectedClaims}`,
+        color: 'info',
+      })
+    }
+
+    return nextCards
+  }, [bundle, tierLimits.hasClaims])
 
   const soldItemRows = useMemo(() => {
     if (!bundle) {
@@ -89,6 +94,11 @@ const Reports = () => {
       setLoading(true)
       setError('')
 
+      if (!tierLimits.hasReports) {
+        setBundle(null)
+        return
+      }
+
       if (!isSupabaseConfigured()) {
         setError('Supabase is not configured. Update .env to enable reports.')
         return
@@ -110,8 +120,15 @@ const Reports = () => {
   }
 
   useEffect(() => {
+    if (!tierLimits.hasReports) {
+      setBundle(null)
+      setError('')
+      setLoading(false)
+      return
+    }
+
     void runReports(firstOfMonth, today)
-  }, [])
+  }, [tierLimits.hasReports])
 
   const generateReports = async () => {
     await runReports(startDate, endDate)
@@ -219,10 +236,12 @@ const Reports = () => {
           <Download size={16} />
           Export Sold Items CSV
         </button>
-        <button className="btn btn-outline" onClick={exportClaimsCsv} disabled={!bundle}>
-          <Download size={16} />
-          Export Claims CSV
-        </button>
+        {tierLimits.hasClaims && (
+          <button className="btn btn-outline" onClick={exportClaimsCsv} disabled={!bundle}>
+            <Download size={16} />
+            Export Claims CSV
+          </button>
+        )}
       </div>
 
       {bundle && (

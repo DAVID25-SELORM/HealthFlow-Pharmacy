@@ -1,64 +1,11 @@
-import { getAllSales } from './salesService'
-import { getAllClaims } from './claimsService'
-import { getAllPatients } from './patientService'
-import { getAllDrugs, getExpiredDrugs, getExpiringDrugs, getLowStockDrugs } from './drugService'
-
-const toDateOnly = (value) => new Date(value).toISOString().split('T')[0]
+import { invokeTierAccess } from './tierAccessService'
 
 export const getReportBundle = async (startDate, endDate) => {
-  const filters = {
-    startDate: `${startDate}T00:00:00`,
-    endDate: `${endDate}T23:59:59`,
-  }
-
-  const [sales, claims, lowStock, expired, expiring, patients, drugs] = await Promise.all([
-    getAllSales(filters),
-    getAllClaims({ startDate, endDate }),
-    getLowStockDrugs(),
-    getExpiredDrugs(),
-    getExpiringDrugs(),
-    getAllPatients(),
-    getAllDrugs(),
-  ])
-
-  const dailySales = sales.reduce((acc, sale) => {
-    const key = toDateOnly(sale.sale_date)
-    acc[key] = (acc[key] || 0) + Number.parseFloat(sale.net_amount || 0)
-    return acc
-  }, {})
-
-  return {
-    sales,
-    claims,
-    lowStock,
-    expired,
-    expiring,
-    patients,
-    drugs,
-    metrics: {
-      salesCount: sales.length,
-      salesAmount: sales.reduce((sum, sale) => sum + Number.parseFloat(sale.net_amount || 0), 0),
-      soldLineItems: sales.reduce((sum, sale) => sum + (sale.sale_items?.length || 0), 0),
-      unitsSold: sales.reduce(
-        (sum, sale) =>
-          sum +
-          (sale.sale_items || []).reduce(
-            (itemSum, item) => itemSum + Number.parseFloat(item.quantity || 0),
-            0
-          ),
-        0
-      ),
-      claimsCount: claims.length,
-      approvedClaims: claims.filter((claim) => claim.claim_status === 'approved').length,
-      rejectedClaims: claims.filter((claim) => claim.claim_status === 'rejected').length,
-      lowStockCount: lowStock.length,
-      expiredCount: expired.length,
-      expiringCount: expiring.length,
-      patientCount: patients.length,
-      inventoryCount: drugs.length,
-      dailySales,
-    },
-  }
+  return await invokeTierAccess({
+    action: 'get_report_bundle',
+    startDate,
+    endDate,
+  })
 }
 
 export const downloadCsv = (filename, headers, rows) => {

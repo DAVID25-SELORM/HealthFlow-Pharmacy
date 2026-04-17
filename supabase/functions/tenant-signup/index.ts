@@ -115,6 +115,36 @@ const normalizeOptionalIsoDate = (value: unknown) => {
   return parsed.toISOString()
 }
 
+const assertValidSubscriptionLifecycle = (input: {
+  status: (typeof VALID_STATUSES)[number]
+  subscriptionTier: (typeof VALID_TIERS)[number]
+  trialEndsAt: string | null
+  subscriptionEndsAt: string | null
+}) => {
+  const { status, subscriptionTier, trialEndsAt, subscriptionEndsAt } = input
+
+  if (status === 'trial' && !trialEndsAt) {
+    throw new Error('Trial organizations must include a trial end date.')
+  }
+
+  if (status !== 'trial' && subscriptionTier === 'trial') {
+    throw new Error('Only organizations in trial status can use the trial tier.')
+  }
+
+  if (trialEndsAt && subscriptionEndsAt) {
+    const trialEndTime = new Date(trialEndsAt).getTime()
+    const subscriptionEndTime = new Date(subscriptionEndsAt).getTime()
+
+    if (
+      Number.isFinite(trialEndTime) &&
+      Number.isFinite(subscriptionEndTime) &&
+      subscriptionEndTime < trialEndTime
+    ) {
+      throw new Error('Subscription end date cannot be earlier than the trial end date.')
+    }
+  }
+}
+
 const getFunctionEnv = (requireAnonKey = false) => {
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
   const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')
@@ -427,7 +457,7 @@ const updateTenantOrganization = async (
   const organizationInput = (payload.organization || {}) as Record<string, unknown>
   const { data: existingOrganization, error: existingOrganizationError } = await adminClient
     .from('organizations')
-    .select('id, subdomain')
+    .select('id, subdomain, status, subscription_tier, trial_ends_at, subscription_ends_at')
     .eq('id', organizationId)
     .maybeSingle()
 
@@ -554,6 +584,30 @@ const updateTenantOrganization = async (
     delete updatePayload.status
   }
 
+  const nextLifecycleStatus =
+    updatePayload.status !== undefined
+      ? normalizeOrganizationStatus(updatePayload.status, 'trial')
+      : normalizeOrganizationStatus(existingOrganization.status, 'trial')
+  const nextLifecycleTier =
+    updatePayload.subscription_tier !== undefined
+      ? normalizeSubscriptionTier(updatePayload.subscription_tier, 'basic')
+      : normalizeSubscriptionTier(existingOrganization.subscription_tier, 'basic')
+  const nextTrialEndsAt =
+    updatePayload.trial_ends_at !== undefined
+      ? updatePayload.trial_ends_at
+      : normalizeOptionalIsoDate(existingOrganization.trial_ends_at)
+  const nextSubscriptionEndsAt =
+    updatePayload.subscription_ends_at !== undefined
+      ? updatePayload.subscription_ends_at
+      : normalizeOptionalIsoDate(existingOrganization.subscription_ends_at)
+
+  assertValidSubscriptionLifecycle({
+    status: nextLifecycleStatus,
+    subscriptionTier: nextLifecycleTier,
+    trialEndsAt: nextTrialEndsAt,
+    subscriptionEndsAt: nextSubscriptionEndsAt,
+  })
+
   const { data: updatedOrganization, error: updateOrganizationError } = await adminClient
     .from('organizations')
     .update(updatePayload)
@@ -652,6 +706,13 @@ const bootstrapOrganization = async (
     normalizeOptionalIsoDate(organizationInput.subscriptionEndsAt) ??
     defaults.defaultSubscriptionEndsAt ??
     null
+
+  assertValidSubscriptionLifecycle({
+    status: organizationStatus,
+    subscriptionTier,
+    trialEndsAt,
+    subscriptionEndsAt,
+  })
 
   const subdomainCheck = await checkSubdomain(adminClient, { subdomain })
   if (!subdomainCheck.available) {

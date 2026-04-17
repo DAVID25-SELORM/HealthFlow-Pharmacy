@@ -1,5 +1,6 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
+import { resolveTierAccess } from '../_shared/tier.ts'
 
 const STAFF_ROLES = ['admin', 'pharmacist', 'assistant'] as const
 const DISABLE_DURATION = '876000h'
@@ -12,6 +13,14 @@ type RequesterProfile = {
   id: string
   role: string
   organization_id: string | null
+}
+
+const formatTierLabel = (tier: string) => {
+  if (tier === 'pro') {
+    return 'Professional'
+  }
+
+  return tier.charAt(0).toUpperCase() + tier.slice(1)
 }
 
 const json = (body: Record<string, unknown>, status = 200) =>
@@ -146,6 +155,56 @@ const getRequesterProfile = async (
     id: data.id,
     role: normalizeText(data.role).toLowerCase(),
     organization_id: normalizeText(data.organization_id) || null,
+  }
+}
+
+const getOrganizationTierContext = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  organizationId: string
+) => {
+  const { data: organization, error } = await adminClient
+    .from('organizations')
+    .select('id, status, subscription_tier, trial_ends_at, subscription_ends_at')
+    .eq('id', organizationId)
+    .maybeSingle()
+
+  if (error) {
+    throw error
+  }
+
+  if (!organization) {
+    throw new Error('Organization not found.')
+  }
+
+  return resolveTierAccess(organization)
+}
+
+const assertOrganizationCanAddUsers = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+  additionalUsers = 1
+) => {
+  const tierContext = await getOrganizationTierContext(adminClient, organizationId)
+  const maxUsers = tierContext.tierLimits.maxUsers
+  if (!Number.isFinite(maxUsers)) {
+    return
+  }
+
+  const { count, error } = await adminClient
+    .from('users')
+    .select('id', { count: 'exact', head: true })
+    .eq('organization_id', organizationId)
+
+  if (error) {
+    throw error
+  }
+
+  if ((count || 0) + additionalUsers > maxUsers) {
+    throw new Error(
+      `This organization has reached the ${maxUsers}-user limit for its ${formatTierLabel(
+        tierContext.effectiveTier
+      )} plan.`
+    )
   }
 }
 
@@ -302,6 +361,25 @@ const upsertStaffUser = async (
   const existingUser = await findAuthUserByEmail(adminClient, email)
 
   if (existingUser) {
+    const { data: existingProfile, error: existingProfileError } = await adminClient
+      .from('users')
+      .select('id, organization_id')
+      .eq('id', existingUser.id)
+      .maybeSingle()
+
+    if (existingProfileError) {
+      throw existingProfileError
+    }
+
+    const existingOrganizationId = normalizeText(existingProfile?.organization_id)
+    if (existingOrganizationId && existingOrganizationId !== organizationId) {
+      throw new Error('This user already belongs to another organization.')
+    }
+
+    if (!existingOrganizationId) {
+      await assertOrganizationCanAddUsers(adminClient, organizationId)
+    }
+
     const { data, error } = await adminClient.auth.admin.updateUserById(existingUser.id, {
       password,
       email_confirm: true,
@@ -333,6 +411,8 @@ const upsertStaffUser = async (
       user: syncedProfile,
     }
   }
+
+  await assertOrganizationCanAddUsers(adminClient, organizationId)
 
   const { data, error } = await adminClient.auth.admin.createUser({
     email,

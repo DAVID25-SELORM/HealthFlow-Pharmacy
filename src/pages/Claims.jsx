@@ -52,8 +52,18 @@ const Claims = () => {
   const [rejectionReason, setRejectionReason] = useState('')
 
   useEffect(() => {
+    if (!tierLimits.hasClaims) {
+      setClaims([])
+      setStats({ total: 0, pending: 0, approved: 0, rejected: 0 })
+      setPatients([])
+      setDrugs([])
+      setError('')
+      setLoading(false)
+      return
+    }
+
     void loadClaims()
-  }, [])
+  }, [tierLimits.hasClaims])
 
   useEffect(() => {
     const routeTab = searchParams.get('tab')

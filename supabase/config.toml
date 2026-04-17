@@ -384,6 +384,9 @@ verify_jwt = false
 [functions.tenant-signup]
 verify_jwt = false
 
+[functions.tier-access]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

@@ -6,6 +6,7 @@ import { getAllDrugs, addDrug, updateDrug, deleteDrug, calculateDrugStatus } fro
 import { parseExcelFile, validateImportData, importDrugs, generateTemplate } from '../services/drugImportService'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { useNotification } from '../context/NotificationContext'
+import { useTenant } from '../context/TenantContext'
 import './Inventory.css'
 
 const emptyDrugForm = {
@@ -36,6 +37,7 @@ const mapDrugToForm = (drug) => ({
 
 const Inventory = () => {
   const { notify } = useNotification()
+  const { tierLimits } = useTenant()
   const [searchParams, setSearchParams] = useSearchParams()
   const [showDrugModal, setShowDrugModal] = useState(false)
   const [showImportModal, setShowImportModal] = useState(false)
@@ -252,6 +254,12 @@ const Inventory = () => {
     const file = event.target.files?.[0]
     if (!file) return
 
+    if (!tierLimits.hasAdvancedInventory) {
+      notify('Bulk inventory import is available on Professional or Enterprise plans.', 'info')
+      event.target.value = ''
+      return
+    }
+
     if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
       notify('Please select an Excel file (.xlsx or .xls)', 'error')
       return
@@ -277,6 +285,11 @@ const Inventory = () => {
   const handleImport = async () => {
     if (!importPreview || importPreview.validCount === 0) {
       notify('No valid drugs to import', 'warning')
+      return
+    }
+
+    if (!tierLimits.hasAdvancedInventory) {
+      notify('Bulk inventory import is available on Professional or Enterprise plans.', 'info')
       return
     }
 
@@ -362,7 +375,7 @@ const Inventory = () => {
               accept=".xlsx,.xls"
               onChange={handleFileSelect}
               style={{ display: 'none' }}
-              disabled={importing}
+              disabled={importing || !tierLimits.hasAdvancedInventory}
             />
           </label>
           <button className="btn btn-primary" type="button" onClick={openAddModal}>

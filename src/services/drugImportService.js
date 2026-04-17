@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx'
-import { supabase } from '../lib/supabase'
 import { assertNonNegativeNumber, assertRequiredText, normalizeText } from '../utils/validation'
+import { invokeTierAccess } from './tierAccessService'
 
 /**
  * Drug Import Service
@@ -175,76 +175,12 @@ export const validateImportData = (data) => {
  * Import drugs to database in batches
  */
 export const importDrugs = async (drugs, batchSize = 50) => {
-  const results = {
-    successful: [],
-    failed: []
-  }
-  
-  // Process in batches to avoid overwhelming the database
-  for (let i = 0; i < drugs.length; i += batchSize) {
-    const batch = drugs.slice(i, i + batchSize)
-    
-    try {
-      const { data, error } = await supabase
-        .from('drugs')
-        .insert(batch)
-        .select()
-      
-      if (error) {
-        // If batch fails, try inserting one by one to identify problematic rows
-        for (const drug of batch) {
-          try {
-            const { data: singleData, error: singleError } = await supabase
-              .from('drugs')
-              .insert([drug])
-              .select()
-            
-            if (singleError) {
-              results.failed.push({
-                drug,
-                error: singleError.message
-              })
-            } else {
-              results.successful.push(singleData[0])
-            }
-          } catch (singleErr) {
-            results.failed.push({
-              drug,
-              error: singleErr.message
-            })
-          }
-        }
-      } else {
-        results.successful.push(...data)
-      }
-    } catch (batchError) {
-      // Batch failed completely, try one by one
-      for (const drug of batch) {
-        try {
-          const { data: singleData, error: singleError } = await supabase
-            .from('drugs')
-            .insert([drug])
-            .select()
-          
-          if (singleError) {
-            results.failed.push({
-              drug,
-              error: singleError.message
-            })
-          } else {
-            results.successful.push(singleData[0])
-          }
-        } catch (singleErr) {
-          results.failed.push({
-            drug,
-            error: singleErr.message
-          })
-        }
-      }
-    }
-  }
-  
-  return results
+  void batchSize
+
+  return await invokeTierAccess({
+    action: 'bulk_import_drugs',
+    drugs,
+  })
 }
 
 /**

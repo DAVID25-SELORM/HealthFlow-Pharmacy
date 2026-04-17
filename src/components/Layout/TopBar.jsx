@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { subscribeToHealthflowDataChanged } from '../../lib/appEvents'
 import { useNotification } from '../../context/NotificationContext'
+import { useTenant } from '../../context/TenantContext'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { getClaimsStatistics } from '../../services/claimsService'
 import { getExpiringDrugs, getLowStockDrugs } from '../../services/drugService'
@@ -14,6 +15,7 @@ const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
   const [alertsOpen, setAlertsOpen] = useState(false)
   const [alerts, setAlerts] = useState([])
   const { displayName, role, branch, signOut } = useAuth()
+  const { tierLimits } = useTenant()
   const { notify } = useNotification()
   const navigate = useNavigate()
   const location = useLocation()
@@ -34,13 +36,14 @@ const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
     }
 
     try {
+      const canViewClaimAlerts = tierLimits.hasClaims
       const [lowStock, expiring, claimStats] = await Promise.all([
         getLowStockDrugs(),
         getExpiringDrugs(),
-        getClaimsStatistics(),
+        canViewClaimAlerts ? getClaimsStatistics() : Promise.resolve({ pending: 0 }),
       ])
 
-      setAlerts([
+      const nextAlerts = [
         {
           id: 'low-stock',
           title: 'Low stock medicines',
@@ -55,19 +58,24 @@ const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
           count: expiring.length,
           path: '/inventory?filter=expiring',
         },
-        {
+      ]
+
+      if (canViewClaimAlerts) {
+        nextAlerts.push({
           id: 'pending-claims',
           title: 'Pending claims',
           description: `${claimStats.pending} claim(s) are waiting for review.`,
           count: claimStats.pending,
           path: '/claims?tab=pending',
-        },
-      ])
+        })
+      }
+
+      setAlerts(nextAlerts)
     } catch (error) {
       console.error('Unable to load top bar alerts:', error)
       setAlerts([])
     }
-  }, [role])
+  }, [role, tierLimits.hasClaims])
 
   useEffect(() => {
     const params = new URLSearchParams(location.search)

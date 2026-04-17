@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   isSupabaseConfigured: vi.fn(),
   navigate: vi.fn(),
   useAuth: vi.fn(),
+  useTenant: vi.fn(),
 }))
 
 vi.mock('react-router-dom', () => ({
@@ -19,6 +20,10 @@ vi.mock('react-router-dom', () => ({
 
 vi.mock('../context/AuthContext', () => ({
   useAuth: mocks.useAuth,
+}))
+
+vi.mock('../context/TenantContext', () => ({
+  useTenant: mocks.useTenant,
 }))
 
 vi.mock('../services/salesService', () => ({
@@ -47,6 +52,7 @@ describe('Dashboard', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
 
     mocks.useAuth.mockReturnValue({ role: 'admin' })
+    mocks.useTenant.mockReturnValue({ tierLimits: { hasClaims: true } })
     mocks.isSupabaseConfigured.mockReturnValue(true)
     mocks.getLowStockDrugs.mockResolvedValue([])
     mocks.getExpiringDrugs.mockResolvedValue([])

@@ -1,63 +1,12 @@
 import { createContext, useContext, useMemo } from 'react'
 import { useAuth } from './AuthContext'
+import {
+  normalizeSubscriptionTier,
+  resolveTierAccess,
+  TIER_LIMITS,
+} from '../utils/subscription'
 
-/**
- * TenantContext provides organization-level utilities
- * and normalizes subscription tiers for feature gating.
- */
-
-export const normalizeSubscriptionTier = (tier) => {
-  const normalized = String(tier || '').trim().toLowerCase()
-
-  if (normalized === 'standard' || normalized === 'professional' || normalized === 'pro') {
-    return 'pro'
-  }
-
-  if (normalized === 'free') {
-    return 'basic'
-  }
-
-  if (normalized === 'trial' || normalized === 'basic' || normalized === 'enterprise') {
-    return normalized
-  }
-
-  return 'basic'
-}
-
-export const TIER_LIMITS = {
-  basic: {
-    maxUsers: 3,
-    maxDrugs: 200,
-    hasReports: false,
-    hasClaims: false,
-    hasAdvancedInventory: false,
-    label: 'Basic',
-  },
-  pro: {
-    maxUsers: 10,
-    maxDrugs: 1000,
-    hasReports: true,
-    hasClaims: false,
-    hasAdvancedInventory: true,
-    label: 'Professional',
-  },
-  enterprise: {
-    maxUsers: Infinity,
-    maxDrugs: Infinity,
-    hasReports: true,
-    hasClaims: true,
-    hasAdvancedInventory: true,
-    label: 'Enterprise',
-  },
-}
-
-// During trial, grant professional-level access.
-const TRIAL_LIMITS = TIER_LIMITS.pro
-
-const getTierLimits = (tier, isTrialActive) => {
-  if (isTrialActive) return TRIAL_LIMITS
-  return TIER_LIMITS[normalizeSubscriptionTier(tier)] || TIER_LIMITS.basic
-}
+export { normalizeSubscriptionTier, TIER_LIMITS }
 
 const TenantContext = createContext(null)
 
@@ -91,25 +40,13 @@ export const TenantProvider = ({ children }) => {
       }
     }
 
-    const now = new Date()
-    const trialEnds = organization.trial_ends_at ? new Date(organization.trial_ends_at) : null
-    const normalizedTier = normalizeSubscriptionTier(organization.subscription_tier)
-    const isTrialActive = organization.status === 'trial' && trialEnds && trialEnds > now
-
-    const daysUntilTrialExpires = trialEnds
-      ? Math.ceil((trialEnds - now) / (1000 * 60 * 60 * 24))
-      : null
-
-    const subscriptionEnds = organization.subscription_ends_at
-      ? new Date(organization.subscription_ends_at)
-      : null
-    const isSubscriptionActive =
-      organization.status === 'active' &&
-      normalizedTier !== 'trial' &&
-      (!subscriptionEnds || subscriptionEnds > now)
-
-    const isSuspended = organization.status === 'suspended'
-    const tierLimits = getTierLimits(normalizedTier, isTrialActive)
+    const {
+      isTrialActive,
+      isSubscriptionActive,
+      isSuspended,
+      daysUntilTrialExpires,
+      tierLimits,
+    } = resolveTierAccess(organization)
 
     return {
       organization,
