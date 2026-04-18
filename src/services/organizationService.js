@@ -7,6 +7,7 @@ import { assertRequiredText, normalizeText } from '../utils/validation'
  */
 
 const TENANT_SIGNUP_FUNCTION = 'tenant-signup'
+const DEFAULT_MEDICATION_BATCH_PREFIX = 'PDF-IMP-'
 
 const invokeTenantSignup = async (payload) => {
   const { data, error } = await invokeSupabaseFunction(TENANT_SIGNUP_FUNCTION, {
@@ -218,7 +219,12 @@ export const getOrganizationUsers = async (orgId) => {
 export const getOrganizationStats = async (orgId) => {
   const [usersCount, drugsCount, patientsCount, salesCount] = await Promise.all([
     supabase.from('users').select('id', { count: 'exact', head: true }).eq('organization_id', orgId),
-    supabase.from('drugs').select('id', { count: 'exact', head: true }).eq('organization_id', orgId),
+    supabase
+      .from('drugs')
+      .select('id', { count: 'exact', head: true })
+      .eq('organization_id', orgId)
+      .eq('status', 'active')
+      .not('batch_number', 'ilike', `${DEFAULT_MEDICATION_BATCH_PREFIX}%`),
     supabase.from('patients').select('id', { count: 'exact', head: true }).eq('organization_id', orgId),
     supabase.from('sales').select('id', { count: 'exact', head: true }).eq('organization_id', orgId),
   ])

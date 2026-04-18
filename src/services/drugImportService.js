@@ -10,6 +10,7 @@ import { invokeTierAccess } from './tierAccessService'
 const REQUIRED_COLUMNS = ['name', 'batch_number', 'expiry_date', 'quantity', 'price']
 const OPTIONAL_COLUMNS = ['supplier', 'category', 'description', 'cost_price', 'reorder_level', 'unit']
 const ALL_COLUMNS = [...REQUIRED_COLUMNS, ...OPTIONAL_COLUMNS]
+const RESERVED_DEFAULT_BATCH_PREFIX = 'PDF-IMP-'
 
 /**
  * Validate Excel column headers
@@ -35,6 +36,12 @@ const validateDrugRow = (row, rowIndex) => {
     // Required fields
     const name = assertRequiredText(row.name, 'Drug name')
     const batchNumber = assertRequiredText(row.batch_number, 'Batch number')
+
+    if (batchNumber.toUpperCase().startsWith(RESERVED_DEFAULT_BATCH_PREFIX)) {
+      errors.push(
+        `Batch numbers starting with ${RESERVED_DEFAULT_BATCH_PREFIX} are reserved for the default medicine catalog`
+      )
+    }
     
     if (!row.expiry_date) {
       errors.push('Expiry date is required')

@@ -2,7 +2,14 @@ import { useEffect, useMemo, useState } from 'react'
 import { Plus, Search, Filter, Edit2, Trash2, Upload, Download } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { dispatchHealthflowDataChanged } from '../lib/appEvents'
-import { getAllDrugs, addDrug, updateDrug, deleteDrug, calculateDrugStatus } from '../services/drugService'
+import {
+  getAllDrugs,
+  addDrug,
+  updateDrug,
+  deleteDrug,
+  calculateDrugStatus,
+  isDefaultCatalogDrug,
+} from '../services/drugService'
 import { parseExcelFile, validateImportData, importDrugs, generateTemplate } from '../services/drugImportService'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { useNotification } from '../context/NotificationContext'
@@ -94,7 +101,7 @@ const Inventory = () => {
         return
       }
 
-      const data = await getAllDrugs()
+      const data = await getAllDrugs({ includeCatalog: true })
       setDrugs(data)
     } catch (error) {
       console.error('Error loading drugs:', error)
@@ -157,6 +164,9 @@ const Inventory = () => {
     })
   }, [activeFilter, drugs, searchTerm])
 
+  const editingCatalogItem =
+    Boolean(editingDrugId) && isDefaultCatalogDrug({ batch_number: formData.batchNumber })
+
   const resetForm = () => {
     setEditingDrugId(null)
     setFormData(emptyDrugForm)
@@ -209,6 +219,12 @@ const Inventory = () => {
   }
 
   const handleDelete = async (id) => {
+    const targetDrug = drugs.find((drug) => drug.id === id)
+    if (targetDrug && isDefaultCatalogDrug(targetDrug)) {
+      notify('Default catalog medicines stay available to all pharmacies and cannot be deleted.', 'info')
+      return
+    }
+
     if (!window.confirm('Are you sure you want to delete this drug?')) {
       return
     }
@@ -232,6 +248,7 @@ const Inventory = () => {
   const getStatusBadge = (drug) => {
     const status = calculateDrugStatus(drug)
     const statusConfig = {
+      catalog: { label: 'Catalog Item', class: 'status-good' },
       good: { label: 'Good Stock', class: 'status-good' },
       low: { label: 'Low Stock', class: 'status-low' },
       expiring: { label: 'Expiring Soon', class: 'status-expiring' },
@@ -469,6 +486,7 @@ const Inventory = () => {
                           title={`Delete ${drug.name}`}
                           type="button"
                           onClick={() => handleDelete(drug.id)}
+                          disabled={isDefaultCatalogDrug(drug)}
                         >
                           <Trash2 size={16} />
                         </button>
@@ -503,6 +521,12 @@ const Inventory = () => {
               </button>
             </div>
             <form className="drug-form" onSubmit={handleSubmit}>
+              {editingCatalogItem && (
+                <p className="settings-note">
+                  This is a shared catalog medicine. You can update stock values for this pharmacy,
+                  but the medicine name and catalog code stay fixed.
+                </p>
+              )}
               <div className="form-row">
                 <div className="form-group">
                   <label>Drug Name *</label>
@@ -512,6 +536,7 @@ const Inventory = () => {
                     required
                     value={formData.name}
                     onChange={(event) => setFormData({ ...formData, name: event.target.value })}
+                    disabled={editingCatalogItem}
                   />
                 </div>
                 <div className="form-group">
@@ -522,6 +547,7 @@ const Inventory = () => {
                     required
                     value={formData.batchNumber}
                     onChange={(event) => setFormData({ ...formData, batchNumber: event.target.value })}
+                    disabled={editingCatalogItem}
                   />
                 </div>
               </div>

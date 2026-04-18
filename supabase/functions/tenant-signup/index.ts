@@ -1,9 +1,11 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
+import { buildDefaultMedicationRowsForOrganization } from '../_shared/defaultMedicationCatalog.ts'
 
 const USERS_PER_PAGE = 200
 const MAX_USER_PAGES = 10
 const SUBDOMAIN_PATTERN = /^[a-z0-9-]+$/
+const DEFAULT_CATALOG_SYNC_BATCH_SIZE = 200
 const VALID_TIERS = ['trial', 'basic', 'pro', 'enterprise'] as const
 const VALID_STATUSES = ['trial', 'active', 'suspended', 'cancelled'] as const
 const ORGANIZATION_SELECT_FIELDS =
@@ -361,6 +363,36 @@ const syncPharmacySettingsFromOrganization = async (
 
   if (insertSettingsError) {
     throw insertSettingsError
+  }
+}
+
+const seedDefaultMedicationCatalog = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  organizationId: string
+) => {
+  const { data: existingDrugs, error } = await adminClient
+    .from('drugs')
+    .select('batch_number')
+    .eq('organization_id', organizationId)
+
+  if (error) {
+    throw error
+  }
+
+  const existingBatchNumbers = new Set(
+    (existingDrugs || [])
+      .map((row) => normalizeText(row.batch_number).toUpperCase())
+      .filter(Boolean)
+  )
+
+  const missingRows = buildDefaultMedicationRowsForOrganization(organizationId, existingBatchNumbers)
+  for (let index = 0; index < missingRows.length; index += DEFAULT_CATALOG_SYNC_BATCH_SIZE) {
+    const batch = missingRows.slice(index, index + DEFAULT_CATALOG_SYNC_BATCH_SIZE)
+    const { error: insertError } = await adminClient.from('drugs').insert(batch)
+
+    if (insertError) {
+      throw insertError
+    }
   }
 }
 
@@ -835,6 +867,8 @@ const bootstrapOrganization = async (
     if (settingsError) {
       throw settingsError
     }
+
+    await seedDefaultMedicationCatalog(adminClient, organizationId)
 
     return {
       organization,

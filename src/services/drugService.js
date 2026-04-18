@@ -7,16 +7,30 @@ import { invokeTierAccess } from './tierAccessService'
  * Handles all drug inventory operations
  */
 
+export const DEFAULT_MEDICATION_BATCH_PREFIX = 'PDF-IMP-'
+
+export const isDefaultCatalogDrug = (drug) =>
+  String(drug?.batch_number || drug?.batch || '').toUpperCase().startsWith(DEFAULT_MEDICATION_BATCH_PREFIX)
+
+const shouldShowDrugOutsideInventory = (drug) =>
+  !isDefaultCatalogDrug(drug) || Number.parseFloat(drug?.quantity ?? 0) > 0
+
+const shouldAlertForDrug = (drug) =>
+  !isDefaultCatalogDrug(drug) || Number.parseFloat(drug?.quantity ?? 0) > 0
+
 // Get all drugs
-export const getAllDrugs = async () => {
-  const { data, error } = await supabase
-    .from('drugs')
-    .select('*')
-    .eq('status', 'active')
-    .order('created_at', { ascending: false })
-  
-  if (error) throw error
-  return data
+export const getAllDrugs = async (options = {}) => {
+  const response = await invokeTierAccess({
+    action: 'get_drugs',
+    includeCatalog: Boolean(options.includeCatalog),
+  })
+
+  const drugs = response.drugs || []
+  if (options.includeCatalog) {
+    return drugs
+  }
+
+  return drugs.filter(shouldShowDrugOutsideInventory)
 }
 
 // Get drug by ID
@@ -62,16 +76,15 @@ export const updateDrug = async (id, drugData) => {
   const batchNumber = assertRequiredText(drugData.batchNumber, 'Batch number')
   const payload = {
     name,
-    batch_number: batchNumber,
-    expiry_date: drugData.expiryDate,
+    batchNumber,
+    expiryDate: drugData.expiryDate,
     quantity: assertNonNegativeNumber(drugData.quantity, 'Quantity'),
     price: assertNonNegativeNumber(drugData.price, 'Price'),
     supplier: normalizeText(drugData.supplier) || null,
-    updated_at: new Date().toISOString()
   }
 
   if (Object.prototype.hasOwnProperty.call(drugData, 'costPrice')) {
-    payload.cost_price = assertNonNegativeNumber(drugData.costPrice || 0, 'Cost price')
+    payload.costPrice = assertNonNegativeNumber(drugData.costPrice || 0, 'Cost price')
   }
 
   if (Object.prototype.hasOwnProperty.call(drugData, 'category')) {
@@ -83,33 +96,30 @@ export const updateDrug = async (id, drugData) => {
   }
 
   if (Object.prototype.hasOwnProperty.call(drugData, 'reorderLevel')) {
-    payload.reorder_level = assertNonNegativeNumber(drugData.reorderLevel || 10, 'Reorder level')
+    payload.reorderLevel = assertNonNegativeNumber(drugData.reorderLevel || 10, 'Reorder level')
   }
 
   if (Object.prototype.hasOwnProperty.call(drugData, 'unit')) {
     payload.unit = normalizeText(drugData.unit) || 'tablets'
   }
 
-  const { data, error } = await supabase
-    .from('drugs')
-    .update(payload)
-    .eq('id', id)
-    .select()
-  
-  if (error) throw error
-  return data[0]
+  const response = await invokeTierAccess({
+    action: 'update_drug',
+    drugId: id,
+    drug: payload,
+  })
+
+  return response.drug
 }
 
 // Delete drug (soft delete by setting status to inactive)
 export const deleteDrug = async (id) => {
-  const { data, error } = await supabase
-    .from('drugs')
-    .update({ status: 'inactive' })
-    .eq('id', id)
-    .select()
-  
-  if (error) throw error
-  return data[0]
+  const response = await invokeTierAccess({
+    action: 'delete_drug',
+    drugId: id,
+  })
+
+  return response.drug
 }
 
 // Search drugs
@@ -119,15 +129,12 @@ export const searchDrugs = async (searchTerm) => {
     return getAllDrugs()
   }
 
-  const { data, error } = await supabase
-    .from('drugs')
-    .select('*')
-    .eq('status', 'active')
-    .or(`name.ilike.%${term}%,batch_number.ilike.%${term}%`)
-    .order('name')
-  
-  if (error) throw error
-  return data
+  const drugs = await getAllDrugs()
+  return drugs.filter((drug) => {
+    const name = String(drug.name || '').toLowerCase()
+    const batchNumber = String(drug.batch_number || '').toLowerCase()
+    return name.includes(term) || batchNumber.includes(term)
+  })
 }
 
 // Get low stock drugs
@@ -137,7 +144,7 @@ export const getLowStockDrugs = async () => {
     .select('*')
   
   if (error) throw error
-  return data
+  return (data || []).filter(shouldAlertForDrug)
 }
 
 // Get expiring drugs (within 30 days)
@@ -147,7 +154,7 @@ export const getExpiringDrugs = async () => {
     .select('*')
   
   if (error) throw error
-  return data
+  return (data || []).filter(shouldAlertForDrug)
 }
 
 // Get expired drugs
@@ -157,11 +164,15 @@ export const getExpiredDrugs = async () => {
     .select('*')
   
   if (error) throw error
-  return data
+  return (data || []).filter(shouldAlertForDrug)
 }
 
 // Calculate drug status based on quantity and expiry
 export const calculateDrugStatus = (drug) => {
+  if (isDefaultCatalogDrug(drug) && Number.parseFloat(drug.quantity ?? 0) <= 0) {
+    return 'catalog'
+  }
+
   const today = new Date()
   const expiryDate = new Date(drug.expiry_date)
   const daysUntilExpiry = Math.ceil((expiryDate - today) / (1000 * 60 * 60 * 24))

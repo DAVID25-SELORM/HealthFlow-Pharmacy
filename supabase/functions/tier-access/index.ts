@@ -1,10 +1,16 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
+import {
+  buildDefaultMedicationRowsForOrganization,
+  DEFAULT_MEDICATION_BATCH_PREFIX,
+  isDefaultMedicationBatchNumber,
+} from '../_shared/defaultMedicationCatalog.ts'
 import { resolveTierAccess } from '../_shared/tier.ts'
 
 const USERS_PER_PAGE = 200
 const MAX_USER_PAGES = 10
 const DRUG_IMPORT_BATCH_SIZE = 50
+const CATALOG_SYNC_BATCH_SIZE = 200
 const CLAIM_SELECT_FIELDS = `
   *,
   claim_items (*),
@@ -21,6 +27,7 @@ const SALES_SELECT_FIELDS = `
 `
 
 type TierAccessAction =
+  | 'get_drugs'
   | 'get_claims'
   | 'get_recent_claims'
   | 'get_claims_statistics'
@@ -29,6 +36,8 @@ type TierAccessAction =
   | 'reject_claim'
   | 'get_report_bundle'
   | 'create_drug'
+  | 'update_drug'
+  | 'delete_drug'
   | 'bulk_import_drugs'
 
 type RequesterProfile = {
@@ -47,6 +56,13 @@ const json = (body: Record<string, unknown>, status = 200) =>
   })
 
 const normalizeText = (value: unknown) => (typeof value === 'string' ? value.trim() : '')
+
+const DEFAULT_CATALOG_BATCH_ERROR =
+  'Batch numbers starting with PDF-IMP- are reserved for the shared default medicine catalog.'
+const DEFAULT_CATALOG_DELETE_ERROR =
+  'Default catalog medicines stay available to all pharmacies and cannot be deleted.'
+const DEFAULT_CATALOG_IDENTITY_ERROR =
+  'Default catalog medicines keep their shared name and catalog code. Update quantity or pricing instead.'
 
 const parseOptionalDate = (value: unknown) => {
   const normalized = normalizeText(value)
@@ -248,12 +264,91 @@ const getDrugCount = async (
     .select('id', { count: 'exact', head: true })
     .eq('organization_id', organizationId)
     .eq('status', 'active')
+    .not('batch_number', 'ilike', `${DEFAULT_MEDICATION_BATCH_PREFIX}%`)
 
   if (error) {
     throw error
   }
 
   return count || 0
+}
+
+const syncDefaultMedicationCatalog = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  organizationId: string
+) => {
+  const { data: existingCatalogRows, error } = await adminClient
+    .from('drugs')
+    .select('id, batch_number, status')
+    .eq('organization_id', organizationId)
+    .ilike('batch_number', `${DEFAULT_MEDICATION_BATCH_PREFIX}%`)
+
+  if (error) {
+    throw error
+  }
+
+  const existingBatchNumbers = new Set(
+    (existingCatalogRows || [])
+      .map((row) => normalizeText(row.batch_number).toUpperCase())
+      .filter(Boolean)
+  )
+
+  const inactiveCatalogIds = (existingCatalogRows || [])
+    .filter((row) => normalizeText(row.status).toLowerCase() !== 'active')
+    .map((row) => row.id)
+
+  if (inactiveCatalogIds.length > 0) {
+    const { error: reactivateError } = await adminClient
+      .from('drugs')
+      .update({
+        status: 'active',
+        updated_at: new Date().toISOString(),
+      })
+      .in('id', inactiveCatalogIds)
+
+    if (reactivateError) {
+      throw reactivateError
+    }
+  }
+
+  const missingRows = buildDefaultMedicationRowsForOrganization(organizationId, existingBatchNumbers)
+  for (let index = 0; index < missingRows.length; index += CATALOG_SYNC_BATCH_SIZE) {
+    const batch = missingRows.slice(index, index + CATALOG_SYNC_BATCH_SIZE)
+    const { error: insertError } = await adminClient.from('drugs').insert(batch)
+
+    if (insertError) {
+      throw insertError
+    }
+  }
+}
+
+const getDrugs = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+  payload: Record<string, unknown>
+) => {
+  await syncDefaultMedicationCatalog(adminClient, organizationId)
+
+  const includeCatalog = Boolean(payload.includeCatalog)
+  const { data, error } = await adminClient
+    .from('drugs')
+    .select('*')
+    .eq('organization_id', organizationId)
+    .eq('status', 'active')
+    .order('name')
+
+  if (error) {
+    throw error
+  }
+
+  const rows = data || []
+  if (includeCatalog) {
+    return rows
+  }
+
+  return rows.filter(
+    (row) => !isDefaultMedicationBatchNumber(row.batch_number) || Number(row.quantity || 0) > 0
+  )
 }
 
 const assertCanAddDrugs = async (
@@ -273,6 +368,35 @@ const assertCanAddDrugs = async (
       `This organization has reached the ${maxDrugs}-drug limit for its ${tierContext.effectiveTier === 'pro' ? 'Professional' : 'Basic'} plan.`
     )
   }
+}
+
+const assertCustomBatchNumberAllowed = (batchNumber: string) => {
+  if (isDefaultMedicationBatchNumber(batchNumber)) {
+    throw new Error(DEFAULT_CATALOG_BATCH_ERROR)
+  }
+}
+
+const getDrugForOrganization = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+  drugId: string
+) => {
+  const { data, error } = await adminClient
+    .from('drugs')
+    .select('*')
+    .eq('id', drugId)
+    .eq('organization_id', organizationId)
+    .maybeSingle()
+
+  if (error) {
+    throw error
+  }
+
+  if (!data) {
+    throw new Error('Drug not found.')
+  }
+
+  return data
 }
 
 const generateClaimNumber = async (adminClient: ReturnType<typeof createAdminClient>) => {
@@ -528,13 +652,16 @@ const createDrug = async (
   await assertCanAddDrugs(adminClient, organizationId, 1)
 
   const drugData = (payload.drug || {}) as Record<string, unknown>
+  const batchNumber = assertRequiredText(drugData.batchNumber, 'Batch number')
+  assertCustomBatchNumberAllowed(batchNumber)
+
   const { data, error } = await adminClient
     .from('drugs')
     .insert([
       {
         organization_id: organizationId,
         name: assertRequiredText(drugData.name, 'Drug name'),
-        batch_number: assertRequiredText(drugData.batchNumber, 'Batch number'),
+        batch_number: batchNumber,
         expiry_date: assertRequiredText(drugData.expiryDate, 'Expiry date'),
         quantity: parseNonNegativeNumber(drugData.quantity, 'Quantity'),
         price: parseNonNegativeNumber(drugData.price, 'Price'),
@@ -547,6 +674,118 @@ const createDrug = async (
         status: 'active',
       },
     ])
+    .select()
+    .single()
+
+  if (error) {
+    throw error
+  }
+
+  return data
+}
+
+const updateDrug = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  requesterProfile: RequesterProfile,
+  organizationId: string,
+  payload: Record<string, unknown>
+) => {
+  requireRole(
+    requesterProfile,
+    ['admin', 'pharmacist'],
+    'Only admins and pharmacists can update inventory items.'
+  )
+
+  const drugId = assertRequiredText(payload.drugId, 'Drug ID')
+  const existingDrug = await getDrugForOrganization(adminClient, organizationId, drugId)
+  const drugData = (payload.drug || {}) as Record<string, unknown>
+  const name = assertRequiredText(drugData.name, 'Drug name')
+  const batchNumber = assertRequiredText(drugData.batchNumber, 'Batch number')
+  const isDefaultCatalogDrug = isDefaultMedicationBatchNumber(existingDrug.batch_number)
+
+  if (isDefaultCatalogDrug) {
+    if (
+      normalizeText(name) !== normalizeText(existingDrug.name) ||
+      normalizeText(batchNumber).toUpperCase() !== normalizeText(existingDrug.batch_number).toUpperCase()
+    ) {
+      throw new Error(DEFAULT_CATALOG_IDENTITY_ERROR)
+    }
+  } else {
+    assertCustomBatchNumberAllowed(batchNumber)
+  }
+
+  const updatePayload: Record<string, unknown> = {
+    name: isDefaultCatalogDrug ? existingDrug.name : name,
+    batch_number: isDefaultCatalogDrug ? existingDrug.batch_number : batchNumber,
+    expiry_date: assertRequiredText(drugData.expiryDate, 'Expiry date'),
+    quantity: parseNonNegativeNumber(drugData.quantity, 'Quantity'),
+    price: parseNonNegativeNumber(drugData.price, 'Price'),
+    supplier: normalizeText(drugData.supplier) || null,
+    updated_at: new Date().toISOString(),
+  }
+
+  if (Object.prototype.hasOwnProperty.call(drugData, 'costPrice')) {
+    updatePayload.cost_price = parseNonNegativeNumber(drugData.costPrice ?? 0, 'Cost price')
+  }
+
+  if (Object.prototype.hasOwnProperty.call(drugData, 'category')) {
+    updatePayload.category = normalizeText(drugData.category) || null
+  }
+
+  if (Object.prototype.hasOwnProperty.call(drugData, 'description')) {
+    updatePayload.description = normalizeText(drugData.description) || null
+  }
+
+  if (Object.prototype.hasOwnProperty.call(drugData, 'reorderLevel')) {
+    updatePayload.reorder_level = parseNonNegativeNumber(drugData.reorderLevel ?? 10, 'Reorder level')
+  }
+
+  if (Object.prototype.hasOwnProperty.call(drugData, 'unit')) {
+    updatePayload.unit = normalizeText(drugData.unit) || 'tablets'
+  }
+
+  const { data, error } = await adminClient
+    .from('drugs')
+    .update(updatePayload)
+    .eq('id', drugId)
+    .eq('organization_id', organizationId)
+    .select()
+    .single()
+
+  if (error) {
+    throw error
+  }
+
+  return data
+}
+
+const deleteDrug = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  requesterProfile: RequesterProfile,
+  organizationId: string,
+  payload: Record<string, unknown>
+) => {
+  requireRole(
+    requesterProfile,
+    ['admin', 'pharmacist'],
+    'Only admins and pharmacists can remove inventory items.'
+  )
+
+  const drugId = assertRequiredText(payload.drugId, 'Drug ID')
+  const existingDrug = await getDrugForOrganization(adminClient, organizationId, drugId)
+
+  if (isDefaultMedicationBatchNumber(existingDrug.batch_number)) {
+    throw new Error(DEFAULT_CATALOG_DELETE_ERROR)
+  }
+
+  const { data, error } = await adminClient
+    .from('drugs')
+    .update({
+      status: 'inactive',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', drugId)
+    .eq('organization_id', organizationId)
     .select()
     .single()
 
@@ -589,11 +828,13 @@ const bulkImportDrugs = async (
 
   const normalizedRows = drugs.map((item) => {
     const row = item as Record<string, unknown>
+    const batchNumber = assertRequiredText(row.batch_number, 'Batch number')
+    assertCustomBatchNumberAllowed(batchNumber)
 
     return {
       organization_id: organizationId,
       name: assertRequiredText(row.name, 'Drug name'),
-      batch_number: assertRequiredText(row.batch_number, 'Batch number'),
+      batch_number: batchNumber,
       expiry_date: assertRequiredText(row.expiry_date, 'Expiry date'),
       quantity: parseNonNegativeNumber(row.quantity, 'Quantity'),
       price: parseNonNegativeNumber(row.price, 'Price'),
@@ -738,16 +979,24 @@ const getReportBundle = async (
   const patientRows = patients || []
   const activeDrugRows = activeDrugs || []
   const allDrugRows = allDrugs || []
+  const reportVisibleActiveDrugRows = activeDrugRows.filter(
+    (drug) => !isDefaultMedicationBatchNumber(drug.batch_number) || Number(drug.quantity || 0) > 0
+  )
+  const reportVisibleAllDrugRows = allDrugRows.filter(
+    (drug) => !isDefaultMedicationBatchNumber(drug.batch_number) || Number(drug.quantity || 0) > 0
+  )
 
   const now = new Date()
   const thirtyDaysAhead = new Date(now)
   thirtyDaysAhead.setDate(thirtyDaysAhead.getDate() + 30)
 
-  const lowStock = activeDrugRows.filter(
+  const lowStock = reportVisibleActiveDrugRows.filter(
     (drug) => Number(drug.quantity || 0) <= Number(drug.reorder_level || 0)
   )
-  const expired = allDrugRows.filter((drug) => new Date(drug.expiry_date).getTime() < now.getTime())
-  const expiring = activeDrugRows.filter((drug) => {
+  const expired = reportVisibleAllDrugRows.filter(
+    (drug) => new Date(drug.expiry_date).getTime() < now.getTime()
+  )
+  const expiring = reportVisibleActiveDrugRows.filter((drug) => {
     const expiryTime = new Date(drug.expiry_date).getTime()
     return expiryTime >= now.getTime() && expiryTime <= thirtyDaysAhead.getTime()
   })
@@ -765,7 +1014,7 @@ const getReportBundle = async (
     expired,
     expiring,
     patients: patientRows,
-    drugs: activeDrugRows,
+    drugs: reportVisibleActiveDrugRows,
     metrics: {
       salesCount: salesRows.length,
       salesAmount: salesRows.reduce(
@@ -790,7 +1039,7 @@ const getReportBundle = async (
       expiredCount: expired.length,
       expiringCount: expiring.length,
       patientCount: patientRows.length,
-      inventoryCount: activeDrugRows.length,
+      inventoryCount: reportVisibleActiveDrugRows.length,
       dailySales,
     },
   }
@@ -822,6 +1071,10 @@ Deno.serve(async (request) => {
     }
 
     const { requesterProfile, organizationId } = requesterResult
+
+    if (action === 'get_drugs') {
+      return json({ drugs: await getDrugs(adminClient, organizationId, payload) })
+    }
 
     if (
       action === 'get_claims' ||
@@ -897,6 +1150,18 @@ Deno.serve(async (request) => {
     if (action === 'create_drug') {
       return json({
         drug: await createDrug(adminClient, requesterProfile, organizationId, payload),
+      })
+    }
+
+    if (action === 'update_drug') {
+      return json({
+        drug: await updateDrug(adminClient, requesterProfile, organizationId, payload),
+      })
+    }
+
+    if (action === 'delete_drug') {
+      return json({
+        drug: await deleteDrug(adminClient, requesterProfile, organizationId, payload),
       })
     }
 

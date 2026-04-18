@@ -121,4 +121,22 @@ describe('Drug Import Validation', () => {
     expect(result.invalidCount).toBe(1)
     expect(result.totalRows).toBe(3)
   })
+
+  it('rejects reserved default catalog batch numbers during import validation', () => {
+    const data = [
+      {
+        name: 'Catalog Override Attempt',
+        batch_number: 'PDF-IMP-00001',
+        expiry_date: '2026-12-31',
+        quantity: 100,
+        price: 10.0,
+      },
+    ]
+
+    const result = validateImportData(data)
+
+    expect(result.validCount).toBe(0)
+    expect(result.invalidCount).toBe(1)
+    expect(result.invalidRows[0].errors[0]).toContain('reserved for the default medicine catalog')
+  })
 })
