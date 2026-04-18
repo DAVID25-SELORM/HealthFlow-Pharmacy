@@ -1,5 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
-import { DollarSign, AlertTriangle, Clock, TrendingUp } from 'lucide-react'
+import {
+  AlertTriangle,
+  ArrowRight,
+  BarChart3,
+  ClipboardList,
+  Clock,
+  DollarSign,
+  Package,
+  Settings,
+  ShoppingCart,
+  Sparkles,
+  TrendingUp,
+  Users,
+} from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { getAllSales, getRecentSales } from '../services/salesService'
@@ -12,6 +25,12 @@ import './Dashboard.css'
 const currencyFormatter = new Intl.NumberFormat('en-GH', {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
+})
+const fullDateFormatter = new Intl.DateTimeFormat('en-GB', {
+  weekday: 'long',
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric',
 })
 const shortDayFormatter = new Intl.DateTimeFormat('en-US', { weekday: 'short' })
 const shortDateFormatter = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' })
@@ -93,6 +112,43 @@ const buildTrend = (current, previous, comparisonLabel) => {
   }
 }
 
+const formatRoleLabel = (value) =>
+  String(value || 'assistant')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (character) => character.toUpperCase())
+
+const resolveWelcomeName = (value) => {
+  const normalized = String(value || '').trim()
+  if (!normalized || normalized.includes('@')) {
+    return 'there'
+  }
+
+  return normalized.split(/\s+/)[0]
+}
+
+const formatTrialLabel = (daysUntilTrialExpires) => {
+  if (!Number.isFinite(daysUntilTrialExpires)) {
+    return 'Trial active'
+  }
+
+  return `${daysUntilTrialExpires} day${daysUntilTrialExpires === 1 ? '' : 's'} left in trial`
+}
+
+const formatCountLabel = (count, noun) => `${count} ${noun}${count === 1 ? '' : 's'}`
+
+const formatActivityTimestamp = (value) => {
+  if (!value) {
+    return 'Recently updated'
+  }
+
+  return new Intl.DateTimeFormat('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value))
+}
+
 const buildDailyChart = (sales, anchorDate) => {
   const totalsByDay = sales.reduce((accumulator, sale) => {
     const key = toLocalDayKey(sale.sale_date)
@@ -142,8 +198,8 @@ const createEmptyStats = (anchorDate = new Date()) => ({
 
 const Dashboard = () => {
   const navigate = useNavigate()
-  const { role } = useAuth()
-  const { tierLimits } = useTenant()
+  const { role, displayName } = useAuth()
+  const { tierLimits, organization, isTrialActive, daysUntilTrialExpires, isSuspended } = useTenant()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [chartMode, setChartMode] = useState('daily')
@@ -153,6 +209,15 @@ const Dashboard = () => {
 
   const canViewOperationalMetrics = ['admin', 'pharmacist'].includes(role)
   const canViewClaimsMetrics = canViewOperationalMetrics && tierLimits.hasClaims
+  const pharmacyName = organization?.name || 'Your Pharmacy'
+  const welcomeName = resolveWelcomeName(displayName)
+  const roleLabel = formatRoleLabel(role)
+  const planLabel = tierLimits?.label || 'Basic'
+  const subscriptionSummary = isSuspended
+    ? 'Access is currently paused. Re-enable the subscription to resume full daily operations.'
+    : isTrialActive
+      ? `${pharmacyName} is in a guided trial period so you can set up stock, patients, and workflow before go-live.`
+      : `${pharmacyName} is ready for day-to-day pharmacy operations on the ${planLabel} plan.`
 
   useEffect(() => {
     void loadDashboardData()
@@ -310,6 +375,126 @@ const Dashboard = () => {
     }))
   }, [chartMode, stats.dailyChart, stats.weeklyChart])
 
+  const hasChartActivity = useMemo(
+    () => chartData.some((item) => item.amount > 0),
+    [chartData]
+  )
+
+  const quickActions = useMemo(() => {
+    const actions = [
+      {
+        label: 'Start Sale',
+        description: 'Open POS and record the next checkout.',
+        icon: ShoppingCart,
+        path: '/sales',
+        tone: 'primary',
+      },
+      {
+        label: 'Add Patient',
+        description: 'Register a new patient or walk-in profile.',
+        icon: Users,
+        path: '/patients',
+        tone: 'secondary',
+      },
+    ]
+
+    if (canViewOperationalMetrics) {
+      actions.push({
+        label: 'Update Stock',
+        description: 'Set quantities, pricing, and expiry dates.',
+        icon: Package,
+        path: '/inventory',
+        tone: 'secondary',
+      })
+    }
+
+    if (canViewClaimsMetrics) {
+      actions.push({
+        label: 'Review Claims',
+        description: 'Check the latest insurance submissions.',
+        icon: ClipboardList,
+        path: '/claims?tab=pending',
+        tone: 'secondary',
+      })
+    } else if (tierLimits.hasReports && canViewOperationalMetrics) {
+      actions.push({
+        label: 'Open Reports',
+        description: 'See revenue and inventory performance.',
+        icon: BarChart3,
+        path: '/reports',
+        tone: 'secondary',
+      })
+    } else if (role === 'admin') {
+      actions.push({
+        label: 'Pharmacy Settings',
+        description: 'Update pharmacy profile and staff access.',
+        icon: Settings,
+        path: '/settings',
+        tone: 'secondary',
+      })
+    }
+
+    return actions
+  }, [canViewClaimsMetrics, canViewOperationalMetrics, role, tierLimits.hasReports])
+
+  const focusItems = useMemo(() => {
+    if (canViewOperationalMetrics) {
+      return [
+        {
+          label: 'Low stock',
+          value: formatCountLabel(stats.lowStock, 'item'),
+          hint: stats.lowStock > 0 ? 'Needs reorder attention' : 'Shelves look healthy',
+        },
+        {
+          label: 'Expiring soon',
+          value: formatCountLabel(stats.expiring, 'item'),
+          hint: 'Within the next 30 days',
+        },
+        {
+          label: 'Month to date',
+          value: `GHS ${currencyFormatter.format(stats.monthlySales)}`,
+          hint: stats.monthlySalesTrend,
+        },
+      ]
+    }
+
+    return [
+      {
+        label: "Today's sales",
+        value: `GHS ${currencyFormatter.format(stats.todaysSales)}`,
+        hint: stats.todaysSalesTrend,
+      },
+      {
+        label: 'Month to date',
+        value: `GHS ${currencyFormatter.format(stats.monthlySales)}`,
+        hint: stats.monthlySalesTrend,
+      },
+      {
+        label: 'Recent checkouts',
+        value: formatCountLabel(recentSales.length, 'sale'),
+        hint: 'Latest completed transactions',
+      },
+    ]
+  }, [
+    canViewOperationalMetrics,
+    recentSales.length,
+    stats.expiring,
+    stats.lowStock,
+    stats.monthlySales,
+    stats.monthlySalesTrend,
+    stats.todaysSales,
+    stats.todaysSalesTrend,
+  ])
+
+  const featurePills = useMemo(
+    () => [
+      { label: 'Reports', enabled: tierLimits.hasReports },
+      { label: 'Claims', enabled: tierLimits.hasClaims },
+      { label: 'Bulk Import', enabled: tierLimits.hasAdvancedInventory },
+    ],
+    [tierLimits.hasAdvancedInventory, tierLimits.hasClaims, tierLimits.hasReports]
+  )
+
   if (loading) {
     return (
       <div className="dashboard">
@@ -322,10 +507,73 @@ const Dashboard = () => {
 
   return (
     <div className="dashboard">
-      <div className="page-header">
-        <h1>Dashboard</h1>
-        <p>Welcome back! Here's what's happening today.</p>
-      </div>
+      <section className="dashboard-hero">
+        <div className="hero-copy">
+          <div className="hero-eyebrow">
+            <Sparkles size={14} />
+            Pharmacy command center
+          </div>
+          <h1>{`Welcome back, ${welcomeName}.`}</h1>
+          <p className="hero-subtitle">{subscriptionSummary}</p>
+
+          <div className="hero-meta">
+            <span className="hero-chip hero-chip-strong">{pharmacyName}</span>
+            <span className="hero-chip">{fullDateFormatter.format(new Date())}</span>
+            <span className="hero-chip">{roleLabel}</span>
+            <span className="hero-chip">{planLabel} Plan</span>
+            {isTrialActive && <span className="hero-chip">{formatTrialLabel(daysUntilTrialExpires)}</span>}
+            {isSuspended && <span className="hero-chip hero-chip-danger">Suspended</span>}
+          </div>
+
+          <div className="hero-actions">
+            {quickActions.map((action) => (
+              <button
+                key={action.label}
+                type="button"
+                className={`hero-action hero-action-${action.tone}`}
+                onClick={() => navigate(action.path)}
+              >
+                <div className="hero-action-icon">
+                  <action.icon size={18} />
+                </div>
+                <div className="hero-action-copy">
+                  <span className="hero-action-label">{action.label}</span>
+                  <span className="hero-action-description">{action.description}</span>
+                </div>
+                <ArrowRight size={16} className="hero-action-arrow" />
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <aside className="hero-panel">
+          <div className="hero-panel-header">
+            <span className="hero-panel-label">Today&apos;s focus</span>
+            <span className="hero-panel-caption">What deserves attention first</span>
+          </div>
+
+          <div className="hero-panel-grid">
+            {focusItems.map((item) => (
+              <div key={item.label} className="hero-panel-card">
+                <span className="hero-panel-card-label">{item.label}</span>
+                <strong className="hero-panel-card-value">{item.value}</strong>
+                <span className="hero-panel-card-hint">{item.hint}</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="hero-feature-pills">
+            {featurePills.map((feature) => (
+              <span
+                key={feature.label}
+                className={`feature-pill ${feature.enabled ? 'enabled' : 'locked'}`}
+              >
+                {feature.label} {feature.enabled ? 'On' : 'Locked'}
+              </span>
+            ))}
+          </div>
+        </aside>
+      </section>
 
       {error && <div className="dashboard-alert">{error}</div>}
 
@@ -368,19 +616,35 @@ const Dashboard = () => {
           </div>
         </div>
         <div className="chart-container">
-          <div className="bar-chart">
-            {chartData.map((item, index) => (
-              <div key={index} className="bar-wrapper">
-                <div
-                  className="bar"
-                  style={{ height: `${item.height}%` }}
-                  title={`${item.title}: ${item.amountLabel}`}
-                />
-                <span className="bar-value">{item.amountLabel}</span>
-                <span className="bar-label">{item.label}</span>
+          {hasChartActivity ? (
+            <div className="bar-chart">
+              {chartData.map((item, index) => (
+                <div key={index} className="bar-wrapper">
+                  <div
+                    className="bar"
+                    style={{ height: `${item.height}%` }}
+                    title={`${item.title}: ${item.amountLabel}`}
+                  />
+                  <span className="bar-value">{item.amountLabel}</span>
+                  <span className="bar-label">{item.label}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="chart-empty-state">
+              <div className="chart-empty-icon">
+                <TrendingUp size={22} />
               </div>
-            ))}
-          </div>
+              <h3>No completed sales yet</h3>
+              <p>
+                Once this pharmacy starts recording checkouts, the {chartMode} trend will appear
+                here automatically.
+              </p>
+              <button type="button" className="inline-action-btn" onClick={() => navigate('/sales')}>
+                Open POS
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -394,14 +658,32 @@ const Dashboard = () => {
           </div>
           <div className="activity-list">
             {recentSales.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '1rem', color: 'var(--gray-500)' }}>
-                No sales yet
+              <div className="activity-empty-state">
+                <div className="activity-empty-icon">
+                  <ShoppingCart size={20} />
+                </div>
+                <p className="activity-empty-title">No sales yet</p>
+                <p className="activity-empty-copy">
+                  Start with a walk-in or registered patient sale to populate this feed.
+                </p>
+                <button
+                  type="button"
+                  className="inline-action-btn"
+                  onClick={() => navigate('/sales')}
+                >
+                  Start Sale
+                </button>
               </div>
             ) : (
               recentSales.map((sale) => (
                 <div key={sale.id} className="activity-item">
                   <div className="activity-info">
-                    <p className="activity-title">{sale.patients?.full_name || 'Walk-in Customer'}</p>
+                    <div>
+                      <p className="activity-title">{sale.patients?.full_name || 'Walk-in Customer'}</p>
+                      <p className="activity-meta">
+                        {sale.sale_number || 'Completed sale'} • {formatActivityTimestamp(sale.sale_date)}
+                      </p>
+                    </div>
                   </div>
                   <span className="activity-amount">GHS {sale.net_amount}</span>
                 </div>
@@ -424,14 +706,34 @@ const Dashboard = () => {
             </div>
             <div className="activity-list">
               {recentClaims.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '1rem', color: 'var(--gray-500)' }}>
-                  No claims yet
+                <div className="activity-empty-state">
+                  <div className="activity-empty-icon">
+                    <ClipboardList size={20} />
+                  </div>
+                  <p className="activity-empty-title">No claims yet</p>
+                  <p className="activity-empty-copy">
+                    Claims will appear here once insurance-based prescriptions start moving through
+                    the pharmacy.
+                  </p>
+                  <button
+                    type="button"
+                    className="inline-action-btn"
+                    onClick={() => navigate('/claims')}
+                  >
+                    Open Claims
+                  </button>
                 </div>
               ) : (
                 recentClaims.map((claim) => (
                   <div key={claim.id} className="activity-item">
                     <div className="activity-info">
-                      <p className="activity-title">{claim.patient_name}</p>
+                      <div>
+                        <p className="activity-title">{claim.patient_name}</p>
+                        <p className="activity-meta">
+                          {claim.claim_number || 'Insurance claim'} •{' '}
+                          {formatActivityTimestamp(claim.submitted_at || claim.service_date)}
+                        </p>
+                      </div>
                       <span className={`status-badge status-${claim.claim_status}`}>
                         {claim.claim_status.charAt(0).toUpperCase() + claim.claim_status.slice(1)}
                       </span>
