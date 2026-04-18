@@ -1,0 +1,441 @@
+.super-admin-dashboard {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.platform-hero {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1.9fr) minmax(280px, 1fr);
+  gap: 1.25rem;
+  padding: 1.75rem;
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at top left, rgba(26, 188, 156, 0.18), transparent 32%),
+    linear-gradient(135deg, #f7fffc 0%, #eef6ff 52%, #ffffff 100%);
+  border: 1px solid rgba(22, 160, 133, 0.14);
+  box-shadow: 0 20px 45px rgba(44, 62, 80, 0.08);
+  overflow: hidden;
+}
+
+.platform-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.85rem;
+  padding: 0.45rem 0.8rem;
+  border-radius: 999px;
+  background: rgba(22, 160, 133, 0.1);
+  color: var(--primary-dark);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.platform-hero-copy h1 {
+  margin-bottom: 0.75rem;
+  font-size: clamp(2rem, 3vw, 2.8rem);
+}
+
+.platform-hero-copy p {
+  max-width: 64ch;
+  color: var(--gray-700);
+  font-size: 1rem;
+}
+
+.platform-hero-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-top: 1.25rem;
+}
+
+.platform-hero-chips span {
+  padding: 0.55rem 0.9rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.75);
+  border: 1px solid rgba(52, 73, 94, 0.09);
+  color: var(--gray-700);
+  font-weight: 600;
+}
+
+.platform-hero-actions {
+  margin-top: 1.4rem;
+}
+
+.platform-hero-panel {
+  display: grid;
+  gap: 1rem;
+  padding: 1.25rem;
+  border-radius: 22px;
+  background: linear-gradient(180deg, rgba(44, 62, 80, 0.96), rgba(52, 73, 94, 0.94));
+  color: white;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.platform-panel-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.platform-panel-label {
+  display: block;
+  margin-bottom: 0.2rem;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.platform-panel-heading strong {
+  font-size: 1.15rem;
+  color: white;
+}
+
+.platform-panel-metrics {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.platform-panel-metric {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.8rem 0.9rem;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.platform-panel-metric span {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.92rem;
+}
+
+.platform-panel-metric strong {
+  color: white;
+  font-size: 1.45rem;
+}
+
+.platform-panel-note {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.92rem;
+  line-height: 1.7;
+}
+
+.platform-alert {
+  padding: 0.9rem 1rem;
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(231, 76, 60, 0.18);
+  background: rgba(231, 76, 60, 0.08);
+  color: #b33a2b;
+}
+
+.platform-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.platform-stat-card,
+.platform-section,
+.platform-status-card {
+  background: white;
+  border: 1px solid rgba(52, 73, 94, 0.08);
+  box-shadow: var(--shadow);
+}
+
+.platform-stat-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.95rem;
+  padding: 1.15rem;
+  border-radius: 22px;
+}
+
+.platform-stat-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.8rem;
+  height: 2.8rem;
+  border-radius: 18px;
+  flex-shrink: 0;
+}
+
+.tone-primary .platform-stat-icon {
+  background: rgba(22, 160, 133, 0.12);
+  color: var(--primary-dark);
+}
+
+.tone-secondary .platform-stat-icon {
+  background: rgba(44, 62, 80, 0.12);
+  color: var(--secondary);
+}
+
+.tone-info .platform-stat-icon {
+  background: rgba(52, 152, 219, 0.12);
+  color: var(--info);
+}
+
+.tone-warning .platform-stat-icon {
+  background: rgba(243, 156, 18, 0.15);
+  color: #c87d0a;
+}
+
+.platform-stat-copy {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.platform-stat-title {
+  color: var(--gray-600);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.platform-stat-value {
+  font-size: clamp(1.8rem, 2vw, 2.4rem);
+  line-height: 1;
+}
+
+.platform-stat-subtitle {
+  color: var(--gray-600);
+  font-size: 0.9rem;
+}
+
+.platform-section {
+  padding: 1.25rem;
+  border-radius: 24px;
+}
+
+.platform-section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.platform-section-header p {
+  margin-top: 0.2rem;
+  color: var(--gray-600);
+}
+
+.platform-status-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.platform-status-card {
+  display: grid;
+  gap: 0.3rem;
+  padding: 1rem 1.1rem;
+  border-radius: 20px;
+}
+
+.platform-status-card.status-active {
+  background: linear-gradient(180deg, rgba(39, 174, 96, 0.09), white);
+}
+
+.platform-status-card.status-trial {
+  background: linear-gradient(180deg, rgba(52, 152, 219, 0.1), white);
+}
+
+.platform-status-card.status-suspended {
+  background: linear-gradient(180deg, rgba(243, 156, 18, 0.12), white);
+}
+
+.platform-status-card.status-cancelled {
+  background: linear-gradient(180deg, rgba(231, 76, 60, 0.1), white);
+}
+
+.platform-status-label {
+  color: var(--gray-600);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.77rem;
+}
+
+.platform-status-value {
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.platform-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.platform-card-list {
+  min-height: 100%;
+}
+
+.platform-list {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.platform-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1rem;
+  border-radius: 18px;
+  background: linear-gradient(180deg, var(--gray-50), white);
+  border: 1px solid rgba(52, 73, 94, 0.08);
+}
+
+.platform-list-item strong,
+.platform-list-item p {
+  display: block;
+}
+
+.platform-list-item p {
+  margin-top: 0.2rem;
+  color: var(--gray-600);
+}
+
+.platform-list-meta {
+  display: grid;
+  justify-items: end;
+  gap: 0.35rem;
+  color: var(--gray-600);
+  font-size: 0.88rem;
+  text-align: right;
+}
+
+.platform-list-item-alert {
+  background: linear-gradient(180deg, rgba(243, 156, 18, 0.08), white);
+}
+
+.platform-empty-state {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem;
+  border-radius: 18px;
+  background: var(--gray-50);
+  color: var(--gray-600);
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.3rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.status-pill.status-active {
+  background: rgba(39, 174, 96, 0.12);
+  color: var(--success);
+}
+
+.status-pill.status-trial {
+  background: rgba(52, 152, 219, 0.12);
+  color: var(--info);
+}
+
+.status-pill.status-suspended {
+  background: rgba(243, 156, 18, 0.14);
+  color: #c87d0a;
+}
+
+.status-pill.status-cancelled {
+  background: rgba(231, 76, 60, 0.12);
+  color: var(--danger);
+}
+
+.platform-table-wrap {
+  overflow-x: auto;
+}
+
+.platform-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.platform-table th,
+.platform-table td {
+  padding: 0.95rem 0.8rem;
+  border-bottom: 1px solid var(--gray-200);
+  text-align: left;
+}
+
+.platform-table th {
+  color: var(--gray-600);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.platform-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+@media (max-width: 1180px) {
+  .platform-hero,
+  .platform-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .platform-stats-grid,
+  .platform-status-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .super-admin-dashboard {
+    gap: 1rem;
+  }
+
+  .platform-hero,
+  .platform-section {
+    padding: 1rem;
+    border-radius: 22px;
+  }
+
+  .platform-stats-grid,
+  .platform-status-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .platform-hero-chips {
+    gap: 0.5rem;
+  }
+
+  .platform-hero-chips span,
+  .platform-list-item,
+  .platform-panel-metric {
+    width: 100%;
+  }
+
+  .platform-list-item,
+  .platform-section-header,
+  .platform-panel-metric {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .platform-list-meta {
+    justify-items: start;
+    text-align: left;
+  }
+
+  .platform-table th,
+  .platform-table td {
+    padding: 0.75rem 0.55rem;
+  }
+}

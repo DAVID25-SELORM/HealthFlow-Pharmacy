@@ -18,7 +18,12 @@ const Sidebar = ({ isOpen, onClose }) => {
   const { role } = useAuth()
 
   const menuItems = [
-    { path: '/dashboard', icon: Home, label: 'Dashboard', roles: ['admin', 'pharmacist', 'assistant'] },
+    {
+      path: '/dashboard',
+      icon: Home,
+      label: role === 'super_admin' ? 'Platform Dashboard' : 'Dashboard',
+      roles: ['admin', 'pharmacist', 'assistant', 'super_admin'],
+    },
     { path: '/inventory', icon: Package, label: 'Inventory', roles: ['admin', 'pharmacist'] },
     { path: '/sales', icon: ShoppingCart, label: 'Sales (POS)', roles: ['admin', 'pharmacist', 'assistant'] },
     { path: '/patients', icon: Users, label: 'Patients', roles: ['admin', 'pharmacist', 'assistant'] },

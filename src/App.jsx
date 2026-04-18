@@ -2,7 +2,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import Layout from './components/Layout/Layout'
 import ProtectedRoute from './components/Auth/ProtectedRoute'
 import RoleRoute from './components/Auth/RoleRoute'
-import Dashboard from './pages/Dashboard'
+import DashboardHome from './pages/DashboardHome'
 import Inventory from './pages/Inventory'
 import Sales from './pages/Sales'
 import Patients from './pages/Patients'
@@ -30,7 +30,7 @@ function App() {
           }
         >
           <Route index element={<Navigate to="/dashboard" replace />} />
-          <Route path="dashboard" element={<Dashboard />} />
+          <Route path="dashboard" element={<DashboardHome />} />
           <Route
             path="inventory"
             element={
@@ -39,8 +39,22 @@ function App() {
               </RoleRoute>
             }
           />
-          <Route path="sales" element={<Sales />} />
-          <Route path="patients" element={<Patients />} />
+          <Route
+            path="sales"
+            element={
+              <RoleRoute allowedRoles={['admin', 'pharmacist', 'assistant']}>
+                <Sales />
+              </RoleRoute>
+            }
+          />
+          <Route
+            path="patients"
+            element={
+              <RoleRoute allowedRoles={['admin', 'pharmacist', 'assistant']}>
+                <Patients />
+              </RoleRoute>
+            }
+          />
           <Route
             path="claims"
             element={
