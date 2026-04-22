@@ -66,17 +66,22 @@ const Sales = () => {
     setSearchTerm((current) => (current === routeSearch ? current : routeSearch))
   }, [searchParams])
 
-  const handleSearchChange = (value) => {
-    setSearchTerm(value)
-
+  const syncSearchParam = (value) => {
     const params = new URLSearchParams(searchParams)
-    if (value.trim()) {
-      params.set('search', value.trim())
+    const normalizedValue = value.trim()
+
+    if (normalizedValue) {
+      params.set('search', normalizedValue)
     } else {
       params.delete('search')
     }
 
     setSearchParams(params, { replace: true })
+  }
+
+  const handleSearchChange = (value) => {
+    setSearchTerm(value)
+    syncSearchParam(value)
   }
 
   const filteredDrugs = useMemo(() => {
@@ -189,6 +194,14 @@ const Sales = () => {
     }
   }
 
+  const handlePaymentMethodChange = (method) => {
+    setPaymentMethod(method)
+
+    if (method !== 'cash') {
+      setReceived('')
+    }
+  }
+
   const handleCompleteSale = async () => {
     if (!cart.length) {
       return
@@ -245,6 +258,7 @@ const Sales = () => {
       // Clear cart
       setCart([])
       setSearchTerm('')
+      syncSearchParam('')
       setReceived('')
       setPatientId('')
       await refreshDrugs()
@@ -443,22 +457,32 @@ const Sales = () => {
 
             <div className="payment-methods">
               <button
+                type="button"
                 className={`payment-btn ${paymentMethod === 'cash' ? 'active' : ''}`}
-                onClick={() => setPaymentMethod('cash')}
+                onClick={() => handlePaymentMethodChange('cash')}
               >
                 Cash
               </button>
               <button
+                type="button"
                 className={`payment-btn ${paymentMethod === 'momo' ? 'active' : ''}`}
-                onClick={() => setPaymentMethod('momo')}
+                onClick={() => handlePaymentMethodChange('momo')}
               >
                 Mobile Money
               </button>
               <button
+                type="button"
                 className={`payment-btn ${paymentMethod === 'insurance' ? 'active' : ''}`}
-                onClick={() => setPaymentMethod('insurance')}
+                onClick={() => handlePaymentMethodChange('insurance')}
               >
                 Insurance
+              </button>
+              <button
+                type="button"
+                className={`payment-btn ${paymentMethod === 'card' ? 'active' : ''}`}
+                onClick={() => handlePaymentMethodChange('card')}
+              >
+                Card
               </button>
             </div>
 

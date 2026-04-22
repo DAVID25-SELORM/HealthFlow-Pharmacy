@@ -1,3 +1,46 @@
 .App {
   min-height: 100vh;
 }
+
+.route-fallback {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  gap: 1rem;
+  padding: 2rem;
+  background:
+    radial-gradient(circle at top, rgba(22, 160, 133, 0.12), transparent 36%),
+    linear-gradient(180deg, #f8fffd 0%, #eef7f4 100%);
+  color: var(--gray-800);
+  text-align: center;
+}
+
+.route-fallback-spinner {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 999px;
+  border: 4px solid rgba(22, 160, 133, 0.2);
+  border-top-color: var(--primary);
+  animation: route-fallback-spin 0.9s linear infinite;
+  justify-self: center;
+}
+
+.route-fallback-copy {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.route-fallback-copy strong {
+  font-size: 1.1rem;
+}
+
+.route-fallback-copy p {
+  margin: 0;
+  color: var(--gray-600);
+}
+
+@keyframes route-fallback-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

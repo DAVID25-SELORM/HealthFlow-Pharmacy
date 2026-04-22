@@ -203,9 +203,19 @@ RETURNS JSONB AS $$
 DECLARE
     sale_record sales%ROWTYPE;
     item JSONB;
-    total_amount NUMERIC(10, 2);
+    total_amount NUMERIC(10, 2) := 0;
     discount_amount NUMERIC(10, 2);
     net_amount NUMERIC(10, 2);
+    amount_paid_value NUMERIC(10, 2);
+    change_given_value NUMERIC(10, 2);
+    payment_method_value TEXT;
+    payment_status_value TEXT;
+    patient_id_value UUID;
+    sold_by_value UUID;
+    item_drug_id UUID;
+    item_name TEXT;
+    item_quantity NUMERIC(10, 2);
+    item_price NUMERIC(10, 2);
 BEGIN
     IF sale_payload IS NULL OR jsonb_typeof(sale_payload) <> 'object' THEN
         RAISE EXCEPTION 'Invalid sale payload';
@@ -215,15 +225,97 @@ BEGIN
         RAISE EXCEPTION 'At least one sale item is required';
     END IF;
 
-    SELECT COALESCE(SUM((item_row->>'price')::NUMERIC * (item_row->>'quantity')::NUMERIC), 0)
-      INTO total_amount
-      FROM jsonb_array_elements(sale_payload->'items') AS item_row;
+    payment_method_value := LOWER(COALESCE(NULLIF(sale_payload->>'payment_method', ''), ''));
+    IF payment_method_value NOT IN ('cash', 'momo', 'insurance', 'card') THEN
+        RAISE EXCEPTION 'Invalid payment method';
+    END IF;
+
+    payment_status_value := LOWER(
+        COALESCE(NULLIF(sale_payload->>'payment_status', ''), 'completed')
+    );
+    IF payment_status_value NOT IN ('pending', 'completed', 'cancelled', 'refunded') THEN
+        RAISE EXCEPTION 'Invalid payment status';
+    END IF;
+
+    patient_id_value := NULLIF(sale_payload->>'patient_id', '')::UUID;
+    IF patient_id_value IS NOT NULL AND NOT EXISTS (
+        SELECT 1
+        FROM patients
+        WHERE id = patient_id_value
+    ) THEN
+        RAISE EXCEPTION 'Selected patient could not be found';
+    END IF;
+
+    sold_by_value := COALESCE(NULLIF(sale_payload->>'sold_by', '')::UUID, auth.uid());
+    IF sold_by_value IS NOT NULL AND NOT EXISTS (
+        SELECT 1
+        FROM users
+        WHERE id = sold_by_value
+    ) THEN
+        RAISE EXCEPTION 'Sold by user could not be found';
+    END IF;
+
+    FOR item IN SELECT * FROM jsonb_array_elements(sale_payload->'items') LOOP
+        item_drug_id := NULLIF(item->>'drugId', '')::UUID;
+        item_name := NULLIF(item->>'name', '');
+        item_quantity := COALESCE(NULLIF(item->>'quantity', '')::NUMERIC, -1);
+        item_price := COALESCE(NULLIF(item->>'price', '')::NUMERIC, -1);
+
+        IF item_drug_id IS NULL THEN
+            RAISE EXCEPTION 'Each sale item must reference a drug';
+        END IF;
+
+        IF NOT EXISTS (
+            SELECT 1
+            FROM drugs
+            WHERE id = item_drug_id
+        ) THEN
+            RAISE EXCEPTION 'Selected drug could not be found for this sale';
+        END IF;
+
+        IF item_name IS NULL THEN
+            SELECT name
+            INTO item_name
+            FROM drugs
+            WHERE id = item_drug_id;
+        END IF;
+
+        IF item_name IS NULL THEN
+            RAISE EXCEPTION 'Each sale item must include a drug name';
+        END IF;
+
+        IF item_quantity <= 0 THEN
+            RAISE EXCEPTION 'Sale item quantity must be greater than zero';
+        END IF;
+
+        IF item_price < 0 THEN
+            RAISE EXCEPTION 'Sale item price must be a non-negative number';
+        END IF;
+
+        total_amount := total_amount + (item_quantity * item_price);
+    END LOOP;
 
     discount_amount := COALESCE((sale_payload->>'discount')::NUMERIC, 0);
     net_amount := total_amount - discount_amount;
 
     IF discount_amount < 0 OR net_amount < 0 THEN
       RAISE EXCEPTION 'Invalid discount amount';
+    END IF;
+
+    amount_paid_value := COALESCE((sale_payload->>'amount_paid')::NUMERIC, net_amount);
+    change_given_value := COALESCE((sale_payload->>'change_given')::NUMERIC, 0);
+
+    IF amount_paid_value < 0 OR change_given_value < 0 THEN
+        RAISE EXCEPTION 'Amount paid and change must be non-negative';
+    END IF;
+
+    IF payment_method_value = 'cash' AND amount_paid_value < net_amount THEN
+        RAISE EXCEPTION 'Amount paid cannot be less than the sale total for cash payments';
+    END IF;
+
+    IF payment_method_value <> 'cash' THEN
+        amount_paid_value := net_amount;
+        change_given_value := 0;
     END IF;
 
     INSERT INTO sales (
@@ -242,21 +334,33 @@ BEGIN
     )
     VALUES (
         generate_sale_number(),
-        NULLIF(sale_payload->>'patient_id', '')::UUID,
+        patient_id_value,
         total_amount,
         discount_amount,
         net_amount,
-        sale_payload->>'payment_method',
-        COALESCE(sale_payload->>'payment_status', 'completed'),
-        COALESCE((sale_payload->>'amount_paid')::NUMERIC, net_amount),
-        COALESCE((sale_payload->>'change_given')::NUMERIC, 0),
+        payment_method_value,
+        payment_status_value,
+        amount_paid_value,
+        change_given_value,
         NULLIF(sale_payload->>'notes', ''),
-        NULLIF(sale_payload->>'sold_by', '')::UUID,
+        sold_by_value,
         COALESCE((sale_payload->>'sale_date')::TIMESTAMPTZ, NOW())
     )
     RETURNING * INTO sale_record;
 
     FOR item IN SELECT * FROM jsonb_array_elements(sale_payload->'items') LOOP
+        item_drug_id := NULLIF(item->>'drugId', '')::UUID;
+        item_name := NULLIF(item->>'name', '');
+        item_quantity := COALESCE(NULLIF(item->>'quantity', '')::NUMERIC, 0);
+        item_price := COALESCE(NULLIF(item->>'price', '')::NUMERIC, 0);
+
+        IF item_name IS NULL THEN
+            SELECT name
+            INTO item_name
+            FROM drugs
+            WHERE id = item_drug_id;
+        END IF;
+
         INSERT INTO sale_items (
             sale_id,
             drug_id,
@@ -267,11 +371,11 @@ BEGIN
         )
         VALUES (
             sale_record.id,
-            (item->>'drugId')::UUID,
-            item->>'name',
-            (item->>'quantity')::NUMERIC,
-            (item->>'price')::NUMERIC,
-            ((item->>'quantity')::NUMERIC * (item->>'price')::NUMERIC)
+            item_drug_id,
+            item_name,
+            item_quantity,
+            item_price,
+            (item_quantity * item_price)
         );
     END LOOP;
 
