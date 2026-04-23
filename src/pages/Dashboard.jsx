@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { useSessionStorageState } from '../hooks/useSessionStorageState'
 import { getAllSales, getRecentSales } from '../services/salesService'
 import { getLowStockDrugs, getExpiringDrugs } from '../services/drugService'
 import { getRecentClaims } from '../services/claimsService'
@@ -34,6 +35,8 @@ const fullDateFormatter = new Intl.DateTimeFormat('en-GB', {
 })
 const shortDayFormatter = new Intl.DateTimeFormat('en-US', { weekday: 'short' })
 const shortDateFormatter = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' })
+const DASHBOARD_CHART_MODE_KEY = 'healthflow.dashboard.chartMode'
+const validChartModes = ['daily', 'weekly']
 
 const startOfDay = (value) => {
   const date = new Date(value)
@@ -202,7 +205,13 @@ const Dashboard = () => {
   const { tierLimits, organization, isTrialActive, daysUntilTrialExpires, isSuspended } = useTenant()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [chartMode, setChartMode] = useState('daily')
+  const [chartMode, setChartMode] = useSessionStorageState(
+    DASHBOARD_CHART_MODE_KEY,
+    'daily',
+    {
+      validate: (value) => validChartModes.includes(value),
+    }
+  )
   const [stats, setStats] = useState(() => createEmptyStats())
   const [recentSales, setRecentSales] = useState([])
   const [recentClaims, setRecentClaims] = useState([])

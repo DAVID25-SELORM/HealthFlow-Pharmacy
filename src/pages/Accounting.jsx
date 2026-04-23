@@ -21,6 +21,7 @@ import {
   getReceivables, recordClaimPayment, getReceivablesSummary,
 } from '../services/receivablesService'
 import { getAccountingOverview } from '../services/accountingService'
+import { useSessionStorageState } from '../hooks/useSessionStorageState'
 import { downloadCsv } from '../services/reportsService'
 import './Accounting.css'
 
@@ -28,6 +29,12 @@ import './Accounting.css'
 
 const today = formatLocalDate()
 const firstOfMth = getFirstDayOfLocalMonth()
+const ACCOUNTING_STORAGE_KEYS = {
+  activeTab: 'healthflow.accounting.activeTab',
+  branchFilter: 'healthflow.accounting.branchFilter',
+  startDate: 'healthflow.accounting.startDate',
+  endDate: 'healthflow.accounting.endDate',
+}
 
 const fmt = (n) =>
   `GHS ${Number(n || 0).toLocaleString('en-GH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -40,6 +47,9 @@ const TABS = [
   { key: 'cashbook',     label: 'Cashbook',    icon: BookOpen     },
   { key: 'receivables',  label: 'Receivables', icon: ReceiptText  },
 ]
+
+const isValidDateInput = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+const isValidAccountingTab = (value) => TABS.some((tab) => tab.key === value)
 
 const blankExpenseForm = {
   expenseDate: today, description: '', amount: '', categoryId: '',
@@ -57,10 +67,34 @@ const Accounting = () => {
   const { user } = useAuth()
   const { notify } = useNotification()
 
-  const [activeTab, setActiveTab]   = useState('overview')
-  const [startDate, setStartDate]   = useState(firstOfMth)
-  const [endDate, setEndDate]       = useState(today)
-  const [branchFilter, setBranchFilter] = useState('all')
+  const [activeTab, setActiveTab] = useSessionStorageState(
+    ACCOUNTING_STORAGE_KEYS.activeTab,
+    'overview',
+    {
+      validate: isValidAccountingTab,
+    }
+  )
+  const [startDate, setStartDate] = useSessionStorageState(
+    ACCOUNTING_STORAGE_KEYS.startDate,
+    firstOfMth,
+    {
+      validate: isValidDateInput,
+    }
+  )
+  const [endDate, setEndDate] = useSessionStorageState(
+    ACCOUNTING_STORAGE_KEYS.endDate,
+    today,
+    {
+      validate: isValidDateInput,
+    }
+  )
+  const [branchFilter, setBranchFilter] = useSessionStorageState(
+    ACCOUNTING_STORAGE_KEYS.branchFilter,
+    'all',
+    {
+      validate: (value) => typeof value === 'string' && value.length > 0,
+    }
+  )
   const [branches, setBranches]     = useState([])
   const [loading, setLoading]       = useState(false)
   const [error, setError]           = useState('')
@@ -191,6 +225,16 @@ const Accounting = () => {
   // â”€â”€ tab routing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   useEffect(() => { void loadBranches() }, [loadBranches])
+
+  useEffect(() => {
+    if (branchFilter === 'all' || branches.length === 0) {
+      return
+    }
+
+    if (!branches.some((branch) => branch.id === branchFilter)) {
+      setBranchFilter('all')
+    }
+  }, [branchFilter, branches, setBranchFilter])
 
   useEffect(() => {
     if (activeTab === 'overview')    void loadOverview()

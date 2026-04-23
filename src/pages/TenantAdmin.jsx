@@ -1,6 +1,7 @@
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useState } from 'react'
 import { Building2, GitBranch, Plus, Users, ChevronDown, ChevronUp, Eye, Pencil } from 'lucide-react'
 import { useNotification } from '../context/NotificationContext'
+import { useSessionStorageState } from '../hooks/useSessionStorageState'
 import {
   getTenantAdminDashboard,
   createPharmacyTenant,
@@ -32,6 +33,8 @@ const blankAdmin = {
   temporaryPassword: '',
 }
 
+const TENANT_ADMIN_EXPANDED_ORG_KEY = 'healthflow.tenantAdmin.expandedOrgId'
+
 const TenantAdmin = () => {
   const { notify } = useNotification()
 
@@ -50,7 +53,13 @@ const TenantAdmin = () => {
   const [checkingSubdomain, setCheckingSubdomain] = useState(false)
 
   // Expanded org detail
-  const [expandedOrgId, setExpandedOrgId] = useState(null)
+  const [expandedOrgId, setExpandedOrgId] = useSessionStorageState(
+    TENANT_ADMIN_EXPANDED_ORG_KEY,
+    null,
+    {
+      validate: (value) => value === null || typeof value === 'string',
+    }
+  )
   const [orgUsers, setOrgUsers] = useState({})
 
   // Edit pharmacy modal
@@ -65,6 +74,19 @@ const TenantAdmin = () => {
 
   useEffect(() => {
     void load()
+  }, [])
+
+  const loadOrganizationUsers = useCallback(async (orgId) => {
+    if (!orgId) {
+      return
+    }
+
+    try {
+      const users = await getOrganizationUsers(orgId)
+      setOrgUsers((prev) => ({ ...prev, [orgId]: users }))
+    } catch {
+      // silently fail
+    }
   }, [])
 
   const load = async () => {
@@ -152,14 +174,24 @@ const TenantAdmin = () => {
     }
     setExpandedOrgId(orgId)
     if (!orgUsers[orgId]) {
-      try {
-        const users = await getOrganizationUsers(orgId)
-        setOrgUsers((prev) => ({ ...prev, [orgId]: users }))
-      } catch {
-        // silently fail
-      }
+      await loadOrganizationUsers(orgId)
     }
   }
+
+  useEffect(() => {
+    if (!expandedOrgId || orgs.length === 0) {
+      return
+    }
+
+    if (!orgs.some((org) => org.id === expandedOrgId)) {
+      setExpandedOrgId(null)
+      return
+    }
+
+    if (!orgUsers[expandedOrgId]) {
+      void loadOrganizationUsers(expandedOrgId)
+    }
+  }, [expandedOrgId, loadOrganizationUsers, orgUsers, orgs, setExpandedOrgId])
 
   const openEdit = (org) => {
     setEditOrg(org)
