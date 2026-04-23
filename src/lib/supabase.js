@@ -95,15 +95,7 @@ const getFunctionErrorMessage = async (error) => {
   }
 }
 
-const getValidFunctionSession = async (forceRefresh = false) => {
-  if (forceRefresh) {
-    const { data, error } = await supabase.auth.refreshSession()
-    if (error) {
-      throw error
-    }
-    return data?.session || null
-  }
-
+const getCurrentAuthSession = async () => {
   const {
     data: { session },
     error: sessionError,
@@ -113,6 +105,34 @@ const getValidFunctionSession = async (forceRefresh = false) => {
     throw sessionError
   }
 
+  return session || null
+}
+
+const refreshFunctionSession = async (fallbackSession = null) => {
+  const { data, error } = await supabase.auth.refreshSession()
+  if (!error) {
+    return data?.session || fallbackSession || null
+  }
+
+  const currentSession = await getCurrentAuthSession().catch(() => null)
+  if (currentSession?.access_token) {
+    return currentSession
+  }
+
+  if (fallbackSession?.access_token) {
+    return fallbackSession
+  }
+
+  throw error
+}
+
+const getValidFunctionSession = async (forceRefresh = false) => {
+  const session = await getCurrentAuthSession()
+
+  if (forceRefresh) {
+    return refreshFunctionSession(session)
+  }
+
   if (!session?.access_token) {
     return null
   }
@@ -120,11 +140,7 @@ const getValidFunctionSession = async (forceRefresh = false) => {
   const expiresAt = Number(session.expires_at || 0)
   const now = Math.floor(Date.now() / 1000)
   if (expiresAt && expiresAt - now <= FUNCTION_TOKEN_REFRESH_WINDOW_SECONDS) {
-    const { data, error } = await supabase.auth.refreshSession()
-    if (error) {
-      throw error
-    }
-    return data?.session || null
+    return refreshFunctionSession(session)
   }
 
   return session
@@ -137,7 +153,6 @@ export const invokeSupabaseFunction = async (name, options = {}) => {
 
   const session = await getValidFunctionSession()
   if (!session?.access_token) {
-    clearSupabaseStoredSession()
     throw new Error('Your session has expired. Please sign in again.')
   }
 
@@ -149,7 +164,6 @@ export const invokeSupabaseFunction = async (name, options = {}) => {
   if (isUnauthorizedFunctionError(result.error)) {
     const refreshedSession = await getValidFunctionSession(true).catch(() => null)
     if (!refreshedSession?.access_token) {
-      clearSupabaseStoredSession()
       throw new Error('Your session has expired. Please sign in again.')
     }
 
@@ -159,7 +173,6 @@ export const invokeSupabaseFunction = async (name, options = {}) => {
     }
 
     if (isUnauthorizedFunctionError(result.error)) {
-      clearSupabaseStoredSession()
       throw new Error('Your session has expired. Please sign in again.')
     }
   }

@@ -107,6 +107,19 @@ export const AuthProvider = ({ children }) => {
       }
     }
 
+    const recoverStoredSession = async (event) => {
+      const storedSession = await getStoredSession()
+      if (!storedSession?.access_token) {
+        return null
+      }
+
+      await resolveSessionState(storedSession, {
+        event: `${event || 'UNKNOWN'}_RECOVERED`,
+      })
+
+      return storedSession
+    }
+
     const resetInvalidSession = async (
       reason,
       resolutionId,
@@ -176,23 +189,46 @@ export const AuthProvider = ({ children }) => {
       }
     }
 
+    const reconcileMissingSession = async (resolutionId, event) => {
+      const shouldAttemptRecovery =
+        event === 'BOOTSTRAP' ||
+        event === 'INITIAL_SESSION' ||
+        event === 'SIGNED_OUT' ||
+        !sessionRef.current
+
+      if (!shouldAttemptRecovery && event !== 'SIGNED_OUT') {
+        keepCurrentAuthState(resolutionId)
+        return
+      }
+
+      const recoveredSession = await recoverStoredSession(event)
+      if (recoveredSession?.access_token) {
+        return
+      }
+
+      if (event === 'SIGNED_OUT') {
+        handledInvalidSession = false
+      }
+
+      if (
+        event !== 'BOOTSTRAP' &&
+        event !== 'INITIAL_SESSION' &&
+        event !== 'SIGNED_OUT' &&
+        sessionRef.current
+      ) {
+        keepCurrentAuthState(resolutionId)
+        return
+      }
+
+      clearAuthState(resolutionId)
+    }
+
     const resolveSessionState = async (activeSession, options = {}) => {
       const resolutionId = ++latestResolutionId
       const event = options.event || 'UNKNOWN'
 
       if (!activeSession) {
-        if (event === 'SIGNED_OUT') {
-          handledInvalidSession = false
-          clearAuthState(resolutionId)
-          return
-        }
-
-        if (event !== 'BOOTSTRAP' && sessionRef.current) {
-          keepCurrentAuthState(resolutionId)
-          return
-        }
-
-        clearAuthState(resolutionId)
+        await reconcileMissingSession(resolutionId, event)
         return
       }
 

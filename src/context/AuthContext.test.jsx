@@ -245,4 +245,124 @@ describe('AuthProvider', () => {
     })
     expect(mocks.clearSupabaseStoredSession).not.toHaveBeenCalled()
   })
+
+  it('revalidates a stray sign-out event before clearing the current session', async () => {
+    const validUser = {
+      id: 'admin-user',
+      email: 'admin@example.com',
+      app_metadata: { role: 'admin' },
+      user_metadata: { full_name: 'Admin User' },
+    }
+    const validSession = {
+      access_token: 'fresh-token',
+      user: validUser,
+    }
+
+    mocks.auth.getSession.mockResolvedValue({
+      data: { session: validSession },
+      error: null,
+    })
+    mocks.auth.getUser.mockResolvedValue({
+      data: { user: validUser },
+      error: null,
+    })
+    mocks.queryBuilder.maybeSingle.mockResolvedValue({
+      data: {
+        id: validUser.id,
+        email: validUser.email,
+        full_name: 'Admin User',
+        role: 'admin',
+        is_active: true,
+      },
+      error: null,
+    })
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId('auth-state')).toHaveTextContent('signed-in:Admin User')
+    })
+
+    await act(async () => {
+      mocks.getAuthStateChangeCallback()?.('SIGNED_OUT', null)
+      await Promise.resolve()
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('auth-state')).toHaveTextContent('signed-in:Admin User')
+    })
+    expect(mocks.clearSupabaseStoredSession).not.toHaveBeenCalled()
+  })
+
+  it('restores the stored session when INITIAL_SESSION is temporarily empty during bootstrap', async () => {
+    const validUser = {
+      id: 'admin-user',
+      email: 'admin@example.com',
+      app_metadata: { role: 'admin' },
+      user_metadata: { full_name: 'Admin User' },
+    }
+    const validSession = {
+      access_token: 'fresh-token',
+      user: validUser,
+    }
+
+    let resolveBootstrapSession
+    const bootstrapSessionPromise = new Promise((resolve) => {
+      resolveBootstrapSession = resolve
+    })
+
+    mocks.auth.getSession
+      .mockReturnValueOnce(bootstrapSessionPromise)
+      .mockResolvedValueOnce({
+        data: { session: validSession },
+        error: null,
+      })
+      .mockResolvedValue({
+        data: { session: validSession },
+        error: null,
+      })
+    mocks.auth.getUser.mockResolvedValue({
+      data: { user: validUser },
+      error: null,
+    })
+    mocks.queryBuilder.maybeSingle.mockResolvedValue({
+      data: {
+        id: validUser.id,
+        email: validUser.email,
+        full_name: 'Admin User',
+        role: 'admin',
+        is_active: true,
+      },
+      error: null,
+    })
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    )
+
+    await waitFor(() => {
+      expect(mocks.auth.onAuthStateChange).toHaveBeenCalledTimes(1)
+    })
+
+    await act(async () => {
+      mocks.getAuthStateChangeCallback()?.('INITIAL_SESSION', null)
+      await Promise.resolve()
+    })
+
+    resolveBootstrapSession({
+      data: { session: validSession },
+      error: null,
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('auth-state')).toHaveTextContent('signed-in:Admin User')
+    })
+    expect(mocks.clearSupabaseStoredSession).not.toHaveBeenCalled()
+  })
 })
