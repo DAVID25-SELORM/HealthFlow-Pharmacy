@@ -57,6 +57,21 @@ const json = (body: Record<string, unknown>, status = 200) =>
 
 const normalizeText = (value: unknown) => (typeof value === 'string' ? value.trim() : '')
 
+const getErrorMessage = (error: unknown) => {
+  if (error instanceof Error) {
+    return error.message
+  }
+
+  if (error && typeof error === 'object') {
+    const message = normalizeText((error as Record<string, unknown>).message)
+    const details = normalizeText((error as Record<string, unknown>).details)
+    const hint = normalizeText((error as Record<string, unknown>).hint)
+    return [message, details, hint].filter(Boolean).join(' ') || 'Unexpected tier access error.'
+  }
+
+  return 'Unexpected tier access error.'
+}
+
 const DEFAULT_CATALOG_BATCH_ERROR =
   'Batch numbers starting with PDF-IMP- are reserved for the shared default medicine catalog.'
 const DEFAULT_CATALOG_DELETE_ERROR =
@@ -1175,7 +1190,7 @@ Deno.serve(async (request) => {
     console.error('tier-access error:', error)
     return json(
       {
-        error: error instanceof Error ? error.message : 'Unexpected tier access error.',
+        error: getErrorMessage(error),
       },
       400
     )

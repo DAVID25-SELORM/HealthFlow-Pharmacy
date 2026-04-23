@@ -59,6 +59,58 @@ describe('drugService catalog handling', () => {
     ])
   })
 
+  it('falls back to a direct drugs query when tier-access read fails', async () => {
+    const queryBuilder = {
+      select: vi.fn(),
+      order: vi.fn(),
+    }
+
+    queryBuilder.select.mockReturnValue(queryBuilder)
+    queryBuilder.order.mockResolvedValue({
+      data: [
+        {
+          id: 'inactive-drug',
+          name: 'Inactive Drug',
+          batch_number: 'BT-000',
+          quantity: 3,
+          status: 'inactive',
+        },
+        {
+          id: 'catalog-hidden',
+          name: 'Catalog Hidden',
+          batch_number: 'PDF-IMP-00001',
+          quantity: 0,
+          status: 'active',
+        },
+        {
+          id: 'custom-drug',
+          name: 'Custom Drug',
+          batch_number: 'BT-001',
+          quantity: 5,
+          status: 'active',
+        },
+      ],
+      error: null,
+    })
+
+    invokeTierAccess.mockRejectedValue(new Error('Unexpected tier access error.'))
+    fromMock.mockReturnValue(queryBuilder)
+
+    await expect(getAllDrugs()).resolves.toEqual([
+      {
+        id: 'custom-drug',
+        name: 'Custom Drug',
+        batch_number: 'BT-001',
+        quantity: 5,
+        status: 'active',
+      },
+    ])
+
+    expect(fromMock).toHaveBeenCalledWith('drugs')
+    expect(queryBuilder.select).toHaveBeenCalledWith('*')
+    expect(queryBuilder.order).toHaveBeenCalledWith('name')
+  })
+
   it('routes updates and deletes through tier-access actions', async () => {
     invokeTierAccess
       .mockResolvedValueOnce({ drug: { id: 'drug-1', quantity: 5 } })

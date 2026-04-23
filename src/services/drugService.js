@@ -18,14 +18,36 @@ const shouldShowDrugOutsideInventory = (drug) =>
 const shouldAlertForDrug = (drug) =>
   !isDefaultCatalogDrug(drug) || Number.parseFloat(drug?.quantity ?? 0) > 0
 
+const isInactiveDrug = (drug) => String(drug?.status || 'active').toLowerCase() === 'inactive'
+
+const getAllDrugsDirectly = async () => {
+  const { data, error } = await supabase.from('drugs').select('*').order('name')
+
+  if (error) {
+    throw error
+  }
+
+  return (data || []).filter((drug) => !isInactiveDrug(drug))
+}
+
 // Get all drugs
 export const getAllDrugs = async (options = {}) => {
-  const response = await invokeTierAccess({
-    action: 'get_drugs',
-    includeCatalog: Boolean(options.includeCatalog),
-  })
+  let drugs = []
 
-  const drugs = response.drugs || []
+  try {
+    const response = await invokeTierAccess({
+      action: 'get_drugs',
+      includeCatalog: Boolean(options.includeCatalog),
+    })
+    drugs = response.drugs || []
+  } catch (tierAccessError) {
+    console.warn(
+      'Tier access drug lookup failed; falling back to direct inventory query.',
+      tierAccessError
+    )
+    drugs = await getAllDrugsDirectly()
+  }
+
   if (options.includeCatalog) {
     return drugs
   }
