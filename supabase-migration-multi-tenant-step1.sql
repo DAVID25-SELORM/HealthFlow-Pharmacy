@@ -74,6 +74,27 @@ ADD COLUMN IF NOT EXISTS organization_id UUID REFERENCES organizations(id) ON DE
 
 CREATE INDEX IF NOT EXISTS idx_drugs_org ON drugs(organization_id);
 
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'drugs_name_batch_number_key'
+    ) THEN
+        ALTER TABLE drugs DROP CONSTRAINT drugs_name_batch_number_key;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'drugs_organization_name_batch_number_key'
+    ) THEN
+        ALTER TABLE drugs
+        ADD CONSTRAINT drugs_organization_name_batch_number_key
+        UNIQUE (organization_id, name, batch_number);
+    END IF;
+END $$;
+
 -- Patients table
 ALTER TABLE patients
 ADD COLUMN IF NOT EXISTS organization_id UUID REFERENCES organizations(id) ON DELETE CASCADE;

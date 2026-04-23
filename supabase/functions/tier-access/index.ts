@@ -294,21 +294,52 @@ const syncDefaultMedicationCatalog = async (
 ) => {
   const { data: existingCatalogRows, error } = await adminClient
     .from('drugs')
-    .select('id, batch_number, status')
-    .eq('organization_id', organizationId)
+    .select('id, organization_id, batch_number, status')
     .ilike('batch_number', `${DEFAULT_MEDICATION_BATCH_PREFIX}%`)
 
   if (error) {
     throw error
   }
 
+  const currentOrganizationCatalogRows = (existingCatalogRows || []).filter(
+    (row) => normalizeText(row.organization_id) === organizationId
+  )
+
   const existingBatchNumbers = new Set(
+    currentOrganizationCatalogRows
+      .map((row) => normalizeText(row.batch_number).toUpperCase())
+      .filter(Boolean)
+  )
+
+  const globallyReservedBatchNumbers = new Set(
     (existingCatalogRows || [])
       .map((row) => normalizeText(row.batch_number).toUpperCase())
       .filter(Boolean)
   )
 
-  const inactiveCatalogIds = (existingCatalogRows || [])
+  const claimableCatalogIds = (existingCatalogRows || [])
+    .filter((row) => {
+      const batchNumber = normalizeText(row.batch_number).toUpperCase()
+      return !normalizeText(row.organization_id) && batchNumber && !existingBatchNumbers.has(batchNumber)
+    })
+    .map((row) => row.id)
+
+  if (claimableCatalogIds.length > 0) {
+    const { error: claimError } = await adminClient
+      .from('drugs')
+      .update({
+        organization_id: organizationId,
+        status: 'active',
+        updated_at: new Date().toISOString(),
+      })
+      .in('id', claimableCatalogIds)
+
+    if (claimError) {
+      throw claimError
+    }
+  }
+
+  const inactiveCatalogIds = currentOrganizationCatalogRows
     .filter((row) => normalizeText(row.status).toLowerCase() !== 'active')
     .map((row) => row.id)
 
@@ -326,10 +357,16 @@ const syncDefaultMedicationCatalog = async (
     }
   }
 
-  const missingRows = buildDefaultMedicationRowsForOrganization(organizationId, existingBatchNumbers)
+  const missingRows = buildDefaultMedicationRowsForOrganization(organizationId, existingBatchNumbers).filter(
+    (row) => !globallyReservedBatchNumbers.has(normalizeText(row.batch_number).toUpperCase())
+  )
+
   for (let index = 0; index < missingRows.length; index += CATALOG_SYNC_BATCH_SIZE) {
     const batch = missingRows.slice(index, index + CATALOG_SYNC_BATCH_SIZE)
-    const { error: insertError } = await adminClient.from('drugs').insert(batch)
+    const { error: insertError } = await adminClient.from('drugs').upsert(batch, {
+      onConflict: 'name,batch_number',
+      ignoreDuplicates: true,
+    })
 
     if (insertError) {
       throw insertError

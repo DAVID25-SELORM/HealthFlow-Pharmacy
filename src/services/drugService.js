@@ -30,27 +30,30 @@ const getAllDrugsDirectly = async () => {
   return (data || []).filter((drug) => !isInactiveDrug(drug))
 }
 
+const getAllDrugsViaTierAccess = async (includeCatalog = false) => {
+  const response = await invokeTierAccess({
+    action: 'get_drugs',
+    includeCatalog,
+  })
+
+  return (response.drugs || []).filter((drug) => !isInactiveDrug(drug))
+}
+
 // Get all drugs
 export const getAllDrugs = async (options = {}) => {
-  let drugs = []
-
-  try {
-    const response = await invokeTierAccess({
-      action: 'get_drugs',
-      includeCatalog: Boolean(options.includeCatalog),
-    })
-    drugs = response.drugs || []
-  } catch (tierAccessError) {
-    console.warn(
-      'Tier access drug lookup failed; falling back to direct inventory query.',
-      tierAccessError
-    )
-    drugs = await getAllDrugsDirectly()
-  }
-
   if (options.includeCatalog) {
-    return drugs
+    try {
+      return await getAllDrugsViaTierAccess(true)
+    } catch (error) {
+      console.warn(
+        'Tier access catalog lookup failed; falling back to direct inventory query.',
+        error
+      )
+      return getAllDrugsDirectly()
+    }
   }
+
+  const drugs = await getAllDrugsDirectly()
 
   return drugs.filter(shouldShowDrugOutsideInventory)
 }

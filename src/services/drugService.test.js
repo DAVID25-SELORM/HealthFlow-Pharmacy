@@ -29,6 +29,22 @@ describe('drugService catalog handling', () => {
     fromMock.mockReset()
   })
 
+  const createDirectDrugQuery = (rows) => {
+    const queryBuilder = {
+      select: vi.fn(),
+      order: vi.fn(),
+    }
+
+    queryBuilder.select.mockReturnValue(queryBuilder)
+    queryBuilder.order.mockResolvedValue({
+      data: rows,
+      error: null,
+    })
+
+    fromMock.mockReturnValue(queryBuilder)
+    return queryBuilder
+  }
+
   it('identifies shared catalog medicines by reserved batch prefix', () => {
     expect(isDefaultCatalogDrug({ batch_number: 'PDF-IMP-00001' })).toBe(true)
     expect(isDefaultCatalogDrug({ batch_number: 'BT-001' })).toBe(false)
@@ -45,13 +61,11 @@ describe('drugService catalog handling', () => {
   })
 
   it('filters out zero-quantity catalog medicines outside inventory views', async () => {
-    invokeTierAccess.mockResolvedValue({
-      drugs: [
-        { id: 'catalog-hidden', name: 'Catalog Hidden', batch_number: 'PDF-IMP-00001', quantity: 0 },
-        { id: 'catalog-stocked', name: 'Catalog Stocked', batch_number: 'PDF-IMP-00002', quantity: 6 },
-        { id: 'custom-drug', name: 'Custom Drug', batch_number: 'BT-001', quantity: 0 },
-      ],
-    })
+    createDirectDrugQuery([
+      { id: 'catalog-hidden', name: 'Catalog Hidden', batch_number: 'PDF-IMP-00001', quantity: 0 },
+      { id: 'catalog-stocked', name: 'Catalog Stocked', batch_number: 'PDF-IMP-00002', quantity: 6 },
+      { id: 'custom-drug', name: 'Custom Drug', batch_number: 'BT-001', quantity: 0 },
+    ])
 
     await expect(getAllDrugs()).resolves.toEqual([
       { id: 'catalog-stocked', name: 'Catalog Stocked', batch_number: 'PDF-IMP-00002', quantity: 6 },
@@ -59,42 +73,30 @@ describe('drugService catalog handling', () => {
     ])
   })
 
-  it('falls back to a direct drugs query when tier-access read fails', async () => {
-    const queryBuilder = {
-      select: vi.fn(),
-      order: vi.fn(),
-    }
-
-    queryBuilder.select.mockReturnValue(queryBuilder)
-    queryBuilder.order.mockResolvedValue({
-      data: [
-        {
-          id: 'inactive-drug',
-          name: 'Inactive Drug',
-          batch_number: 'BT-000',
-          quantity: 3,
-          status: 'inactive',
-        },
-        {
-          id: 'catalog-hidden',
-          name: 'Catalog Hidden',
-          batch_number: 'PDF-IMP-00001',
-          quantity: 0,
-          status: 'active',
-        },
-        {
-          id: 'custom-drug',
-          name: 'Custom Drug',
-          batch_number: 'BT-001',
-          quantity: 5,
-          status: 'active',
-        },
-      ],
-      error: null,
-    })
-
-    invokeTierAccess.mockRejectedValue(new Error('Unexpected tier access error.'))
-    fromMock.mockReturnValue(queryBuilder)
+  it('loads drugs directly without invoking tier-access for read-only listings', async () => {
+    const queryBuilder = createDirectDrugQuery([
+      {
+        id: 'inactive-drug',
+        name: 'Inactive Drug',
+        batch_number: 'BT-000',
+        quantity: 3,
+        status: 'inactive',
+      },
+      {
+        id: 'catalog-hidden',
+        name: 'Catalog Hidden',
+        batch_number: 'PDF-IMP-00001',
+        quantity: 0,
+        status: 'active',
+      },
+      {
+        id: 'custom-drug',
+        name: 'Custom Drug',
+        batch_number: 'BT-001',
+        quantity: 5,
+        status: 'active',
+      },
+    ])
 
     await expect(getAllDrugs()).resolves.toEqual([
       {
@@ -109,6 +111,71 @@ describe('drugService catalog handling', () => {
     expect(fromMock).toHaveBeenCalledWith('drugs')
     expect(queryBuilder.select).toHaveBeenCalledWith('*')
     expect(queryBuilder.order).toHaveBeenCalledWith('name')
+    expect(invokeTierAccess).not.toHaveBeenCalled()
+  })
+
+  it('uses tier-access for catalog-aware inventory loads', async () => {
+    invokeTierAccess.mockResolvedValue({
+      drugs: [
+        {
+          id: 'catalog-stocked',
+          name: 'Catalog Stocked',
+          batch_number: 'PDF-IMP-00001',
+          quantity: 0,
+          status: 'active',
+        },
+      ],
+    })
+
+    await expect(getAllDrugs({ includeCatalog: true })).resolves.toEqual([
+      {
+        id: 'catalog-stocked',
+        name: 'Catalog Stocked',
+        batch_number: 'PDF-IMP-00001',
+        quantity: 0,
+        status: 'active',
+      },
+    ])
+
+    expect(invokeTierAccess).toHaveBeenCalledWith({
+      action: 'get_drugs',
+      includeCatalog: true,
+    })
+    expect(fromMock).not.toHaveBeenCalled()
+  })
+
+  it('falls back to direct inventory queries when catalog sync fails', async () => {
+    const warningSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    invokeTierAccess.mockRejectedValue(
+      new Error('duplicate key value violates unique constraint "drugs_name_batch_number_key"')
+    )
+    createDirectDrugQuery([
+      {
+        id: 'custom-drug',
+        name: 'Custom Drug',
+        batch_number: 'BT-001',
+        quantity: 5,
+        status: 'active',
+      },
+    ])
+
+    await expect(getAllDrugs({ includeCatalog: true })).resolves.toEqual([
+      {
+        id: 'custom-drug',
+        name: 'Custom Drug',
+        batch_number: 'BT-001',
+        quantity: 5,
+        status: 'active',
+      },
+    ])
+
+    expect(invokeTierAccess).toHaveBeenCalledWith({
+      action: 'get_drugs',
+      includeCatalog: true,
+    })
+    expect(fromMock).toHaveBeenCalledWith('drugs')
+    expect(warningSpy).toHaveBeenCalled()
+    warningSpy.mockRestore()
   })
 
   it('routes updates and deletes through tier-access actions', async () => {
