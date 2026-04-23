@@ -16,6 +16,7 @@ const Settings = lazy(() => import('./pages/Settings'))
 const TenantAdmin = lazy(() => import('./pages/TenantAdmin'))
 const Login = lazy(() => import('./pages/Login'))
 const Signup = lazy(() => import('./pages/Signup'))
+const ActivityLog = lazy(() => import('./pages/ActivityLog'))
 
 const RouteFallback = () => (
   <div className="route-fallback" role="status" aria-live="polite">
@@ -105,6 +106,14 @@ function App() {
               element={
                 <RoleRoute allowedRoles={['super_admin']}>
                   <TenantAdmin />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="activity-log"
+              element={
+                <RoleRoute allowedRoles={['admin', 'pharmacist', 'assistant', 'super_admin']}>
+                  <ActivityLog />
                 </RoleRoute>
               }
             />

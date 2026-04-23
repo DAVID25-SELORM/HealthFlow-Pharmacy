@@ -10,6 +10,7 @@ import {
   Wallet,
   Settings,
   ShieldCheck,
+  List,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import './Sidebar.css'
@@ -32,6 +33,7 @@ const Sidebar = ({ isOpen, onClose }) => {
     { path: '/accounting', icon: Wallet, label: 'Accounting', roles: ['admin'] },
     { path: '/settings', icon: Settings, label: 'Settings', roles: ['admin'] },
     { path: '/tenant-admin', icon: ShieldCheck, label: 'Tenant Admin', roles: ['super_admin'] },
+    { path: '/activity-log', icon: List, label: 'Activity Log', roles: ['admin', 'pharmacist', 'assistant', 'super_admin'] },
   ]
 
   const visibleItems = menuItems.filter((item) => item.roles.includes(role))

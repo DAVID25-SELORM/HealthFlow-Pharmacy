@@ -1,0 +1,27 @@
+.activity-log {
+  padding: 2rem;
+}
+.activity-log h2 {
+  margin-bottom: 1rem;
+}
+.activity-log table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+}
+.activity-log th, .activity-log td {
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid #eee;
+  text-align: left;
+}
+.activity-log th {
+  background: #f8f8f8;
+}
+.activity-log tr:hover {
+  background: #f3f6fa;
+}
+.activity-log.error {
+  color: #b00020;
+  font-weight: bold;
+}
