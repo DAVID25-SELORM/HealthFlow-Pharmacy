@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { clearSupabaseStoredSession, supabase, isSupabaseConfigured } from '../lib/supabase'
 
 const AuthContext = createContext(null)
@@ -12,7 +12,6 @@ const isSupabaseAuthFailure = (error) => {
 
   return (
     status === 401 ||
-    status === 403 ||
     code === 'PGRST301' ||
     name === 'AuthApiError' ||
     name === 'AuthSessionMissingError' ||
@@ -21,8 +20,7 @@ const isSupabaseAuthFailure = (error) => {
     message.includes('session missing') ||
     message.includes('session not found') ||
     message.includes('refresh token') ||
-    message.includes('unauthorized') ||
-    message.includes('forbidden')
+    message.includes('unauthorized')
   )
 }
 
@@ -48,16 +46,30 @@ export const AuthProvider = ({ children }) => {
   const [organization, setOrganization] = useState(null)
   const [branch, setBranch] = useState(null)
   const [loading, setLoading] = useState(true)
+  const sessionRef = useRef(null)
 
   useEffect(() => {
     let mounted = true
     let handledInvalidSession = false
+    let latestResolutionId = 0
 
-    const clearAuthState = () => {
-      if (!mounted) {
+    const isCurrentResolution = (resolutionId) =>
+      mounted && resolutionId === latestResolutionId
+
+    const setLoadingForCurrentResolution = (resolutionId, value) => {
+      if (!isCurrentResolution(resolutionId)) {
         return
       }
 
+      setLoading(value)
+    }
+
+    const clearAuthState = (resolutionId) => {
+      if (!isCurrentResolution(resolutionId)) {
+        return
+      }
+
+      sessionRef.current = null
       setSession(null)
       setUser(null)
       setProfile(null)
@@ -66,16 +78,56 @@ export const AuthProvider = ({ children }) => {
       setLoading(false)
     }
 
-    const resetInvalidSession = (reason) => {
+    const keepCurrentAuthState = (resolutionId) => {
+      if (!isCurrentResolution(resolutionId)) {
+        return
+      }
+
+      setLoading(false)
+    }
+
+    const getStoredSession = async () => {
+      try {
+        const {
+          data: { session: storedSession },
+          error,
+        } = await supabase.auth.getSession()
+
+        if (error) {
+          throw error
+        }
+
+        return storedSession || null
+      } catch (sessionError) {
+        if (!isSupabaseAuthFailure(sessionError)) {
+          console.warn('Unable to re-check Supabase session:', sessionError)
+        }
+
+        return null
+      }
+    }
+
+    const resetInvalidSession = async (
+      reason,
+      resolutionId,
+      { preserveExistingSession = true } = {}
+    ) => {
+      const storedSession = await getStoredSession()
+      if (preserveExistingSession && sessionRef.current && storedSession?.access_token) {
+        console.warn('Supabase session check failed transiently; keeping current session.', reason)
+        keepCurrentAuthState(resolutionId)
+        return
+      }
+
       if (handledInvalidSession) {
-        clearAuthState()
+        clearAuthState(resolutionId)
         return
       }
 
       handledInvalidSession = true
       console.warn('Clearing invalid Supabase session.', reason)
       clearSupabaseStoredSession()
-      clearAuthState()
+      clearAuthState(resolutionId)
     }
 
     const fetchProfile = async (activeUser) => {
@@ -124,13 +176,27 @@ export const AuthProvider = ({ children }) => {
       }
     }
 
-    const resolveSessionState = async (activeSession) => {
-      if (activeSession) {
-        handledInvalidSession = false
-      } else if (handledInvalidSession) {
-        clearAuthState()
+    const resolveSessionState = async (activeSession, options = {}) => {
+      const resolutionId = ++latestResolutionId
+      const event = options.event || 'UNKNOWN'
+
+      if (!activeSession) {
+        if (event === 'SIGNED_OUT') {
+          handledInvalidSession = false
+          clearAuthState(resolutionId)
+          return
+        }
+
+        if (event !== 'BOOTSTRAP' && sessionRef.current) {
+          keepCurrentAuthState(resolutionId)
+          return
+        }
+
+        clearAuthState(resolutionId)
         return
       }
+
+      handledInvalidSession = false
 
       let resolvedSession = activeSession
       let activeUser = activeSession?.user ?? null
@@ -138,9 +204,7 @@ export const AuthProvider = ({ children }) => {
       let activeOrganization = null
       let activeBranch = null
 
-      if (mounted) {
-        setLoading(true)
-      }
+      setLoadingForCurrentResolution(resolutionId, true)
 
       if (activeUser) {
         const {
@@ -149,7 +213,9 @@ export const AuthProvider = ({ children }) => {
         } = await supabase.auth.getUser()
 
         if (validateError && isSupabaseAuthFailure(validateError)) {
-          resetInvalidSession(validateError)
+          await resetInvalidSession(validateError, resolutionId, {
+            preserveExistingSession: event !== 'BOOTSTRAP',
+          })
           return
         }
 
@@ -168,7 +234,9 @@ export const AuthProvider = ({ children }) => {
           activeBranch = profileData.branch
         } catch (profileError) {
           if (isSupabaseAuthFailure(profileError)) {
-            resetInvalidSession(profileError)
+            await resetInvalidSession(profileError, resolutionId, {
+              preserveExistingSession: event !== 'BOOTSTRAP',
+            })
             return
           }
           console.error('Unable to load user profile:', profileError)
@@ -176,14 +244,7 @@ export const AuthProvider = ({ children }) => {
       }
 
       if (activeUser && activeProfile?.is_active === false) {
-        if (mounted) {
-          setSession(null)
-          setUser(null)
-          setProfile(null)
-          setOrganization(null)
-          setBranch(null)
-          setLoading(false)
-        }
+        clearAuthState(resolutionId)
 
         const { error: signOutError } = await supabase.auth.signOut()
         if (signOutError) {
@@ -192,7 +253,8 @@ export const AuthProvider = ({ children }) => {
         return
       }
 
-      if (mounted) {
+      if (isCurrentResolution(resolutionId)) {
+        sessionRef.current = resolvedSession
         setSession(resolvedSession)
         setUser(activeUser)
         setProfile(activeProfile)
@@ -205,6 +267,7 @@ export const AuthProvider = ({ children }) => {
     const bootstrap = async () => {
       if (!isSupabaseConfigured()) {
         if (mounted) {
+          sessionRef.current = null
           setSession(null)
           setUser(null)
           setProfile(null)
@@ -218,7 +281,7 @@ export const AuthProvider = ({ children }) => {
         data: { session: activeSession },
       } = await supabase.auth.getSession()
 
-      await resolveSessionState(activeSession)
+      await resolveSessionState(activeSession, { event: 'BOOTSTRAP' })
     }
 
     void bootstrap()
@@ -229,9 +292,9 @@ export const AuthProvider = ({ children }) => {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, activeSession) => {
+    } = supabase.auth.onAuthStateChange((event, activeSession) => {
       scheduleAuthResolution(() => {
-        void resolveSessionState(activeSession)
+        void resolveSessionState(activeSession, { event })
       })
     })
 
