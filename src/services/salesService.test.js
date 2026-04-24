@@ -81,6 +81,62 @@ describe('salesService.createSale', () => {
     expect(mocks.from).not.toHaveBeenCalled()
   })
 
+  it('falls back to the legacy flow when RPC fails with duplicate sales_sale_number_key', async () => {
+    const salesSelect = vi.fn().mockResolvedValue({
+      data: [{ id: 'sale-rpc-dup', sale_number: 'SAL-000200' }],
+      error: null,
+    })
+    const salesInsert = vi.fn(() => ({
+      select: salesSelect,
+    }))
+    const saleItemsInsert = vi.fn().mockResolvedValue({
+      error: null,
+    })
+
+    mocks.rpc
+      .mockResolvedValueOnce({
+        data: null,
+        error: {
+          code: '23505',
+          message: 'duplicate key value violates unique constraint "sales_sale_number_key"',
+        },
+      })
+      .mockResolvedValueOnce({
+        data: 'SAL-000200',
+        error: null,
+      })
+
+    mocks.from.mockImplementation((table) => {
+      if (table === 'sales') {
+        return { insert: salesInsert }
+      }
+
+      if (table === 'sale_items') {
+        return { insert: saleItemsInsert }
+      }
+
+      throw new Error(`Unexpected table: ${table}`)
+    })
+
+    await expect(
+      createSale({
+        items: [{ drugId: 'drug-1', name: 'Paracetamol 500mg', quantity: 1, price: 10 }],
+        paymentMethod: 'cash',
+        amountPaid: 10,
+        soldBy: 'user-1',
+      })
+    ).resolves.toEqual({
+      sale: {
+        id: 'sale-rpc-dup',
+        sale_number: 'SAL-000200',
+      },
+      saleNumber: 'SAL-000200',
+    })
+
+    expect(salesInsert).toHaveBeenCalledTimes(1)
+    expect(saleItemsInsert).toHaveBeenCalledTimes(1)
+  })
+
   it('falls back to the legacy sale flow only when the sale RPC is missing', async () => {
     const salesSelect = vi.fn().mockResolvedValue({
       data: [{ id: 'sale-1', sale_number: 'SAL-000123' }],

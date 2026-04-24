@@ -275,12 +275,15 @@ export const createSale = async (saleData) => {
     })
 
     if (txError) {
-      if (!canFallbackToLegacyCreateSale(txError)) {
+      const shouldFallbackToLegacy =
+        canFallbackToLegacyCreateSale(txError) || isSaleNumberDuplicateError(txError)
+
+      if (!shouldFallbackToLegacy) {
         throw txError
       }
 
       console.warn(
-        'create_sale_transaction RPC is unavailable, falling back to legacy path:',
+        'create_sale_transaction RPC failed, falling back to legacy path:',
         txError.message
       )
       return createSaleLegacy(saleData)
