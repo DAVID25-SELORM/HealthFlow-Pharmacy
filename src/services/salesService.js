@@ -51,14 +51,27 @@ const canFallbackToLegacyCreateSale = (error) => {
   )
 }
 
+const isSaleNumberDuplicateError = (error) => {
+  const code = String(error?.code || '').toUpperCase()
+  const message = [error?.message, error?.details, error?.hint]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+
+  return code === '23505' && message.includes('sales_sale_number_key')
+}
+
 // Generate sale number
 const generateSaleNumber = async () => {
   const { data, error } = await supabase.rpc('generate_sale_number')
   
   if (error) {
     // Fallback if function doesn't exist
-    const timestamp = Date.now()
-    return `SAL-${timestamp.toString().slice(-8)}`
+    const timestamp = Date.now().toString().slice(-8)
+    const randomSuffix = Math.floor(Math.random() * 10000)
+      .toString()
+      .padStart(4, '0')
+    return `SAL-${timestamp}${randomSuffix}`
   }
   
   return data
@@ -148,30 +161,48 @@ const rollbackLegacySale = async (saleId) => {
 }
 
 const createSaleLegacy = async (saleData) => {
-  const saleNumber = await generateSaleNumber()
   const totals = buildValidatedSaleTotals(saleData)
+  const maxInsertAttempts = 5
+  let sale = null
+  let lastInsertError = null
 
-  const { data: sale, error: saleError } = await supabase
-    .from('sales')
-    .insert([
-      {
-        sale_number: saleNumber,
-        patient_id: saleData.patientId || null,
-        total_amount: totals.totalAmount,
-        discount: totals.discount,
-        net_amount: totals.netAmount,
-        payment_method: totals.paymentMethod,
-        payment_status: 'completed',
-        amount_paid: totals.amountPaid,
-        change_given: totals.change,
-        notes: saleData.notes,
-        sold_by: saleData.soldBy,
-        sale_date: new Date().toISOString(),
-      },
-    ])
-    .select()
+  for (let attempt = 1; attempt <= maxInsertAttempts; attempt += 1) {
+    const saleNumber = await generateSaleNumber()
+    const { data: insertedSale, error: saleError } = await supabase
+      .from('sales')
+      .insert([
+        {
+          sale_number: saleNumber,
+          patient_id: saleData.patientId || null,
+          total_amount: totals.totalAmount,
+          discount: totals.discount,
+          net_amount: totals.netAmount,
+          payment_method: totals.paymentMethod,
+          payment_status: 'completed',
+          amount_paid: totals.amountPaid,
+          change_given: totals.change,
+          notes: saleData.notes,
+          sold_by: saleData.soldBy,
+          sale_date: new Date().toISOString(),
+        },
+      ])
+      .select()
 
-  if (saleError) throw saleError
+    if (!saleError) {
+      sale = insertedSale
+      lastInsertError = null
+      break
+    }
+
+    lastInsertError = saleError
+    if (!isSaleNumberDuplicateError(saleError) || attempt === maxInsertAttempts) {
+      throw saleError
+    }
+  }
+
+  if (!sale || !sale[0]) {
+    throw lastInsertError || new Error('Unable to create sale. Please try again.')
+  }
 
   const saleItems = saleData.items.map((item) => ({
     sale_id: sale[0].id,
