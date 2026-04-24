@@ -42,15 +42,7 @@ const getAllDrugsViaTierAccess = async (includeCatalog = false) => {
 // Get all drugs
 export const getAllDrugs = async (options = {}) => {
   if (options.includeCatalog) {
-    try {
-      return await getAllDrugsViaTierAccess(true)
-    } catch (error) {
-      console.warn(
-        'Tier access catalog lookup failed; falling back to direct inventory query.',
-        error
-      )
-      return getAllDrugsDirectly()
-    }
+    return getAllDrugsViaTierAccess(true)
   }
 
   const drugs = await getAllDrugsDirectly()

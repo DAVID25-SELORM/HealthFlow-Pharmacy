@@ -144,38 +144,19 @@ describe('drugService catalog handling', () => {
     expect(fromMock).not.toHaveBeenCalled()
   })
 
-  it('falls back to direct inventory queries when catalog sync fails', async () => {
-    const warningSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    invokeTierAccess.mockRejectedValue(
-      new Error('duplicate key value violates unique constraint "drugs_name_batch_number_key"')
+  it('surfaces tier-access failures for catalog-aware inventory loads', async () => {
+    const tierAccessError = new Error(
+      'duplicate key value violates unique constraint "drugs_name_batch_number_key"'
     )
-    createDirectDrugQuery([
-      {
-        id: 'custom-drug',
-        name: 'Custom Drug',
-        batch_number: 'BT-001',
-        quantity: 5,
-        status: 'active',
-      },
-    ])
+    invokeTierAccess.mockRejectedValue(tierAccessError)
 
-    await expect(getAllDrugs({ includeCatalog: true })).resolves.toEqual([
-      {
-        id: 'custom-drug',
-        name: 'Custom Drug',
-        batch_number: 'BT-001',
-        quantity: 5,
-        status: 'active',
-      },
-    ])
+    await expect(getAllDrugs({ includeCatalog: true })).rejects.toThrow(tierAccessError.message)
 
     expect(invokeTierAccess).toHaveBeenCalledWith({
       action: 'get_drugs',
       includeCatalog: true,
     })
-    expect(fromMock).toHaveBeenCalledWith('drugs')
-    expect(warningSpy).toHaveBeenCalled()
-    warningSpy.mockRestore()
+    expect(fromMock).not.toHaveBeenCalled()
   })
 
   it('routes updates and deletes through tier-access actions', async () => {
