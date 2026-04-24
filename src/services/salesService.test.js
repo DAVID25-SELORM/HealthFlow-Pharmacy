@@ -27,7 +27,7 @@ vi.mock('./cashbookService', () => ({
   recordCashbookMovementIfSessionOpen: mocks.recordCashbookMovementIfSessionOpen,
 }))
 
-import { createSale } from './salesService'
+import { createSale, refundSale } from './salesService'
 
 describe('salesService.createSale', () => {
   let errorSpy
@@ -290,5 +290,51 @@ describe('salesService.createSale', () => {
 
     expect(salesInsert).toHaveBeenCalledTimes(2)
     expect(saleItemsInsert).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('salesService.refundSale', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.tryLogAuditEvent.mockResolvedValue(undefined)
+  })
+
+  it('rejects refunds for non-admin/non-pharmacist roles', async () => {
+    await expect(
+      refundSale({
+        saleId: 'sale-1',
+        role: 'assistant',
+      })
+    ).rejects.toThrow('Only pharmacy admins and pharmacists can process refunds.')
+
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
+  it('calls refund_sale_transaction for pharmacy admin roles', async () => {
+    mocks.rpc.mockResolvedValue({
+      data: {
+        sale_id: 'sale-1',
+        sale_number: 'SAL-000321',
+        payment_status: 'refunded',
+      },
+      error: null,
+    })
+
+    await expect(
+      refundSale({
+        saleId: 'sale-1',
+        reason: 'Wrong bill',
+        role: 'admin',
+      })
+    ).resolves.toEqual({
+      sale_id: 'sale-1',
+      sale_number: 'SAL-000321',
+      payment_status: 'refunded',
+    })
+
+    expect(mocks.rpc).toHaveBeenCalledWith('refund_sale_transaction', {
+      p_sale_id: 'sale-1',
+      p_reason: 'Wrong bill',
+    })
   })
 })

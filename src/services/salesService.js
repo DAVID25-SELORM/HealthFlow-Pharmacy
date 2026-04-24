@@ -10,6 +10,7 @@ import { recordCashbookMovementIfSessionOpen } from './cashbookService'
  */
 
 const VALID_PAYMENT_METHODS = ['cash', 'momo', 'insurance', 'card']
+const REFUND_ALLOWED_ROLES = ['admin', 'pharmacist']
 
 const assertPositiveSaleQuantity = (value, label) => {
   const parsed = assertNonNegativeNumber(value, label)
@@ -323,6 +324,40 @@ export const createSale = async (saleData) => {
     console.error('Error creating sale:', error)
     throw error
   }
+}
+
+// Refund an existing sale and restore stock quantities
+export const refundSale = async ({ saleId, reason, role }) => {
+  const normalizedRole = String(role || '').trim().toLowerCase()
+  if (!REFUND_ALLOWED_ROLES.includes(normalizedRole)) {
+    throw new Error('Only pharmacy admins and pharmacists can process refunds.')
+  }
+
+  if (!saleId) {
+    throw new Error('Sale ID is required.')
+  }
+
+  const { data, error } = await supabase.rpc('refund_sale_transaction', {
+    p_sale_id: saleId,
+    p_reason: reason || null,
+  })
+
+  if (error) {
+    throw error
+  }
+
+  await tryLogAuditEvent({
+    eventType: 'sale.refunded',
+    entityType: 'sales',
+    entityId: data?.sale_id || saleId,
+    action: 'refund',
+    details: {
+      sale_number: data?.sale_number || null,
+      reason: reason || null,
+    },
+  })
+
+  return data
 }
 
 // Get all sales
