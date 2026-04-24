@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { getTenantAdminDashboard } from '../services/tenantAdminService'
+import { APP_TIME_ZONE } from '../utils/date'
 import './SuperAdminDashboard.css'
 
 const STATUS_LABELS = {
@@ -26,6 +27,7 @@ const fullDateFormatter = new Intl.DateTimeFormat('en-GB', {
   day: 'numeric',
   month: 'short',
   year: 'numeric',
+  timeZone: APP_TIME_ZONE,
 })
 
 const shortDateTimeFormatter = new Intl.DateTimeFormat('en-GB', {
@@ -33,6 +35,7 @@ const shortDateTimeFormatter = new Intl.DateTimeFormat('en-GB', {
   month: 'short',
   hour: '2-digit',
   minute: '2-digit',
+  timeZone: APP_TIME_ZONE,
 })
 
 const normalizeDate = (value) => {

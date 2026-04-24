@@ -15,6 +15,7 @@ import { isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
 import { useTenant } from '../context/TenantContext'
+import { formatAppDate } from '../utils/date'
 import UpgradeGate from '../components/UpgradeGate'
 import './Claims.css'
 
@@ -388,7 +389,7 @@ const Claims = () => {
                   <td className="amount-cell">
                     GHS {Number.parseFloat(claim.total_amount || 0).toFixed(2)}
                   </td>
-                  <td>{new Date(claim.service_date).toLocaleDateString()}</td>
+                  <td>{formatAppDate(claim.service_date)}</td>
                   <td>
                     <span className={`status-badge ${getStatusClass(claim.claim_status)}`}>
                       {claim.claim_status}

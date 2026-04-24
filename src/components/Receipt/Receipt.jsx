@@ -1,4 +1,5 @@
 import { forwardRef } from 'react'
+import { formatAppDateTime } from '../../utils/date'
 import './Receipt.css'
 
 const Receipt = forwardRef(({ saleData, pharmacyInfo, mode = 'preview' }, ref) => {
@@ -22,15 +23,7 @@ const Receipt = forwardRef(({ saleData, pharmacyInfo, mode = 'preview' }, ref) =
   }
 
   const formatDate = (dateString) => {
-    const date = new Date(dateString)
-    return date.toLocaleString('en-GB', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true,
-    })
+    return formatAppDateTime(dateString, { hour12: true })
   }
 
   return (
@@ -151,7 +144,7 @@ const Receipt = forwardRef(({ saleData, pharmacyInfo, mode = 'preview' }, ref) =
 
         {/* Print timestamp */}
         <div className="print-timestamp">
-          <p>Printed: {new Date().toLocaleString('en-GB')}</p>
+          <p>Printed: {formatAppDateTime(new Date(), { hour12: true })}</p>
         </div>
       </div>
     </div>

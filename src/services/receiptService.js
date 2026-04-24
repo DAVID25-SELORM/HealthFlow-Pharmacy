@@ -1,4 +1,5 @@
 import { jsPDF } from 'jspdf'
+import { formatAppDateTime } from '../utils/date'
 
 /**
  * Receipt Service
@@ -16,15 +17,7 @@ const formatCurrency = (amount, currency = 'GHS') => {
  * Format date for receipt
  */
 const formatDate = (dateString) => {
-  const date = new Date(dateString)
-  return date.toLocaleString('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true,
-  })
+  return formatAppDateTime(dateString, { hour12: true })
 }
 
 /**
@@ -202,7 +195,7 @@ export const generateReceiptPDF = (saleData, pharmacyInfo) => {
   }
 
   y += 2
-  addCenteredText(`Printed: ${new Date().toLocaleString('en-GB')}`, y, 6)
+  addCenteredText(`Printed: ${formatAppDateTime(new Date(), { hour12: true })}`, y, 6)
 
   return doc
 }

@@ -2,6 +2,14 @@ import { useEffect, useMemo, useState } from 'react'
 import { isSupabaseConfigured, supabase } from '../lib/supabase'
 import './ActivityLog.css'
 
+const ACTIVITY_LOG_TIMEZONE = 'Africa/Accra'
+const activityLogDateTimeFormatter = new Intl.DateTimeFormat('en-GB', {
+  dateStyle: 'medium',
+  timeStyle: 'medium',
+  hour12: false,
+  timeZone: ACTIVITY_LOG_TIMEZONE,
+})
+
 const formatTimestamp = (value) => {
   if (!value) {
     return '-'
@@ -12,7 +20,7 @@ const formatTimestamp = (value) => {
     return '-'
   }
 
-  return date.toLocaleString()
+  return activityLogDateTimeFormatter.format(date)
 }
 
 const humanizeKey = (value) =>

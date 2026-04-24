@@ -14,6 +14,7 @@ import { parseExcelFile, validateImportData, importDrugs, generateTemplate } fro
 import { isSupabaseConfigured } from '../lib/supabase'
 import { useNotification } from '../context/NotificationContext'
 import { useTenant } from '../context/TenantContext'
+import { formatAppDate } from '../utils/date'
 import './Inventory.css'
 
 const emptyDrugForm = {
@@ -464,7 +465,7 @@ const Inventory = () => {
                   <tr key={drug.id}>
                     <td className="drug-name">{drug.name}</td>
                     <td>{batchNumber}</td>
-                    <td>{expiryDate ? new Date(expiryDate).toLocaleDateString() : 'N/A'}</td>
+                    <td>{expiryDate ? formatAppDate(expiryDate) : 'N/A'}</td>
                     <td>{quantity}</td>
                     <td>GHS {price.toFixed(2)}</td>
                     <td className="total-cell">GHS {total}</td>

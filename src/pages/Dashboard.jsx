@@ -16,6 +16,7 @@ import {
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useSessionStorageState } from '../hooks/useSessionStorageState'
+import { APP_TIME_ZONE } from '../utils/date'
 import { getAllSales, getRecentSales } from '../services/salesService'
 import { getLowStockDrugs, getExpiringDrugs } from '../services/drugService'
 import { getRecentClaims } from '../services/claimsService'
@@ -32,6 +33,7 @@ const fullDateFormatter = new Intl.DateTimeFormat('en-GB', {
   day: 'numeric',
   month: 'long',
   year: 'numeric',
+  timeZone: APP_TIME_ZONE,
 })
 const shortDayFormatter = new Intl.DateTimeFormat('en-US', { weekday: 'short' })
 const shortDateFormatter = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' })
@@ -149,6 +151,7 @@ const formatActivityTimestamp = (value) => {
     month: 'short',
     hour: '2-digit',
     minute: '2-digit',
+    timeZone: APP_TIME_ZONE,
   }).format(new Date(value))
 }
 

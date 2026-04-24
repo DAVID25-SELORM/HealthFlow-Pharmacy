@@ -3,6 +3,7 @@ import { FileText, Download, Calendar, RefreshCcw } from 'lucide-react'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { downloadCsv, getReportBundle } from '../services/reportsService'
 import { useTenant } from '../context/TenantContext'
+import { formatAppDateTime } from '../utils/date'
 import UpgradeGate from '../components/UpgradeGate'
 import './Reports.css'
 
@@ -299,7 +300,7 @@ const Reports = () => {
                   {soldItemRows.map((item) => (
                     <tr key={item.id}>
                       <td>{item.saleNumber}</td>
-                      <td>{new Date(item.saleDate).toLocaleString()}</td>
+                      <td>{formatAppDateTime(item.saleDate)}</td>
                       <td>{item.patientName}</td>
                       <td>{item.drugName}</td>
                       <td>{item.quantity}</td>

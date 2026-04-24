@@ -9,6 +9,7 @@ import {
   searchPatients,
 } from '../services/patientService'
 import { isSupabaseConfigured } from '../lib/supabase'
+import { formatAppDate, formatAppDateTime } from '../utils/date'
 import './Patients.css'
 
 const initialForm = {
@@ -241,9 +242,7 @@ const Patients = () => {
                 <div className="stat">
                   <span className="stat-label">Last Visit</span>
                   <span className="stat-value">
-                    {patient.lastVisit
-                      ? new Date(patient.lastVisit).toLocaleDateString()
-                      : 'No visits yet'}
+                    {patient.lastVisit ? formatAppDate(patient.lastVisit) : 'No visits yet'}
                   </span>
                 </div>
                 <div className="stat">
@@ -419,7 +418,7 @@ const Patients = () => {
                       <span className="patient-history-label">Last Visit</span>
                       <strong>
                         {selectedPatient.lastVisit
-                          ? new Date(selectedPatient.lastVisit).toLocaleDateString()
+                          ? formatAppDate(selectedPatient.lastVisit)
                           : 'No visits yet'}
                       </strong>
                     </div>
@@ -472,7 +471,7 @@ const Patients = () => {
                             <div key={sale.id} className="patient-history-row">
                               <div>
                                 <strong>{sale.sale_number}</strong>
-                                <p>{new Date(sale.sale_date).toLocaleString()}</p>
+                                <p>{formatAppDateTime(sale.sale_date)}</p>
                               </div>
                               <div className="patient-history-meta">
                                 <span>{sale.payment_method}</span>
@@ -501,7 +500,7 @@ const Patients = () => {
                             <div key={claim.id} className="patient-history-row">
                               <div>
                                 <strong>{claim.claim_number}</strong>
-                                <p>{new Date(claim.service_date).toLocaleDateString()}</p>
+                                <p>{formatAppDate(claim.service_date)}</p>
                               </div>
                               <div className="patient-history-meta">
                                 <span

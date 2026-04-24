@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useState } from 'react'
 import { Building2, GitBranch, Plus, Users, ChevronDown, ChevronUp, Eye, Pencil } from 'lucide-react'
 import { useNotification } from '../context/NotificationContext'
 import { useSessionStorageState } from '../hooks/useSessionStorageState'
+import { formatAppDate } from '../utils/date'
 import {
   getTenantAdminDashboard,
   createPharmacyTenant,
@@ -526,7 +527,7 @@ const TenantAdmin = () => {
                       </td>
                       <td>
                         <span className="date-cell">
-                          {new Date(org.created_at).toLocaleDateString()}
+                          {formatAppDate(org.created_at)}
                         </span>
                       </td>
                       <td>
@@ -582,7 +583,7 @@ const TenantAdmin = () => {
                                             {u.is_active ? 'Active' : 'Inactive'}
                                           </span>
                                         </td>
-                                        <td>{new Date(u.created_at).toLocaleDateString()}</td>
+                                        <td>{formatAppDate(u.created_at)}</td>
                                         <td>
                                           <button
                                             className="btn-icon"
