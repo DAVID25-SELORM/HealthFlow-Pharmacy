@@ -56,6 +56,7 @@ const Inventory = () => {
   const [importing, setImporting] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [activeFilter, setActiveFilter] = useState('all')
+  const [error, setError] = useState('')
   const [formData, setFormData] = useState(emptyDrugForm)
   const [importFile, setImportFile] = useState(null)
   const [importPreview, setImportPreview] = useState(null)
@@ -96,6 +97,7 @@ const Inventory = () => {
   const loadDrugs = async () => {
     try {
       setLoading(true)
+      setError('')
       if (!isSupabaseConfigured()) {
         console.warn('Supabase not configured, using sample data')
         setSampleData()
@@ -106,7 +108,8 @@ const Inventory = () => {
       setDrugs(data)
     } catch (error) {
       console.error('Error loading drugs:', error)
-      setSampleData()
+      setError(error.message || 'Unable to load inventory right now.')
+      notify(error.message || 'Unable to load inventory right now.', 'error')
     } finally {
       setLoading(false)
     }
@@ -201,11 +204,18 @@ const Inventory = () => {
       }
 
       if (editingDrugId) {
-        await updateDrug(editingDrugId, formData)
+        const updatedDrug = await updateDrug(editingDrugId, formData)
+        setDrugs((current) => current.map((drug) => (drug.id === updatedDrug?.id ? updatedDrug : drug)))
         notify('Medicine updated successfully!', 'success')
       } else {
-        await addDrug(formData)
+        const createdDrug = await addDrug(formData)
+        if (createdDrug?.id) {
+          setDrugs((current) => [createdDrug, ...current.filter((drug) => drug.id !== createdDrug.id)])
+        }
         notify('Drug added successfully!', 'success')
+        setActiveFilter('all')
+        setSearchTerm('')
+        updateQueryParams('', 'all')
       }
 
       closeDrugModal()
@@ -428,6 +438,12 @@ const Inventory = () => {
           </select>
         </div>
       </div>
+
+      {error && (
+        <div className="error-message" role="alert" style={{ marginBottom: '1rem' }}>
+          {error}
+        </div>
+      )}
 
       <div className="table-container">
         <table className="inventory-table">
