@@ -3,7 +3,7 @@ import { Search, Trash2, Plus, Minus, ShoppingCart, Printer, Download, X } from 
 import { useSearchParams } from 'react-router-dom'
 import { dispatchHealthflowDataChanged } from '../lib/appEvents'
 import { getAllDrugs } from '../services/drugService'
-import { createSale } from '../services/salesService'
+import { createSale, getRecentSales, refundSale } from '../services/salesService'
 import { getAllPatients } from '../services/patientService'
 import { getPharmacySettings } from '../services/settingsService'
 import { printReceipt, downloadReceiptPDF } from '../services/receiptService'
@@ -15,7 +15,7 @@ import './Sales.css'
 
 const Sales = () => {
   const [searchParams, setSearchParams] = useSearchParams()
-  const { user, displayName } = useAuth()
+  const { user, displayName, role } = useAuth()
   const { notify } = useNotification()
   const [drugs, setDrugs] = useState([])
   const [patients, setPatients] = useState([])
@@ -30,6 +30,10 @@ const Sales = () => {
   const [lastSale, setLastSale] = useState(null)
   const [showReceipt, setShowReceipt] = useState(false)
   const [pharmacyInfo, setPharmacyInfo] = useState(null)
+  const [recentSales, setRecentSales] = useState([])
+  const [loadingRecentSales, setLoadingRecentSales] = useState(false)
+  const [refundingSaleId, setRefundingSaleId] = useState(null)
+  const canProcessRefund = ['admin', 'pharmacist'].includes(String(role || '').toLowerCase())
 
   useEffect(() => {
     const loadData = async () => {
@@ -50,6 +54,12 @@ const Sales = () => {
         setDrugs(drugsData)
         setPatients(patientsData)
         setPharmacyInfo(pharmacySettings)
+        if (canProcessRefund) {
+          const recent = await getRecentSales(8)
+          setRecentSales(recent || [])
+        } else {
+          setRecentSales([])
+        }
       } catch (loadError) {
         console.error('Error loading POS data:', loadError)
         setError(loadError.message || 'Unable to load POS data.')
@@ -59,7 +69,7 @@ const Sales = () => {
     }
 
     loadData()
-  }, [])
+  }, [canProcessRefund])
 
   useEffect(() => {
     const routeSearch = searchParams.get('search') || ''
@@ -194,6 +204,22 @@ const Sales = () => {
     }
   }
 
+  const refreshRecentSales = async () => {
+    if (!canProcessRefund) {
+      return
+    }
+
+    try {
+      setLoadingRecentSales(true)
+      const recent = await getRecentSales(8)
+      setRecentSales(recent || [])
+    } catch (refreshError) {
+      console.error('Failed to refresh recent sales:', refreshError)
+    } finally {
+      setLoadingRecentSales(false)
+    }
+  }
+
   const handlePaymentMethodChange = (method) => {
     setPaymentMethod(method)
 
@@ -262,6 +288,7 @@ const Sales = () => {
       setReceived('')
       setPatientId('')
       await refreshDrugs()
+      await refreshRecentSales()
       dispatchHealthflowDataChanged()
       
       notify('Sale completed successfully.', 'success')
@@ -273,6 +300,39 @@ const Sales = () => {
       setError(saleError.message || 'Unable to complete sale.')
     } finally {
       setProcessing(false)
+    }
+  }
+
+  const handleRefundSale = async (sale) => {
+    if (!canProcessRefund || !sale?.id) {
+      return
+    }
+
+    if (!window.confirm(`Refund sale ${sale.sale_number}?`)) {
+      return
+    }
+
+    const reasonInput = window.prompt('Refund reason (optional):', '')
+    if (reasonInput === null) {
+      return
+    }
+
+    try {
+      setRefundingSaleId(sale.id)
+      setError('')
+      await refundSale({
+        saleId: sale.id,
+        reason: reasonInput.trim() || null,
+        role,
+      })
+      notify(`Sale ${sale.sale_number} refunded successfully.`, 'success')
+      await Promise.all([refreshDrugs(), refreshRecentSales()])
+      dispatchHealthflowDataChanged()
+    } catch (refundError) {
+      console.error('Error refunding sale:', refundError)
+      setError(refundError.message || 'Unable to refund sale.')
+    } finally {
+      setRefundingSaleId(null)
     }
   }
 
@@ -399,6 +459,41 @@ const Sales = () => {
               })}
             </div>
           </div>
+
+          {canProcessRefund && (
+            <div className="refund-panel">
+              <div className="refund-panel-header">
+                <h3>Recent Sales (Refund)</h3>
+                {loadingRecentSales && <span>Refreshing...</span>}
+              </div>
+              <div className="refund-sales-list">
+                {recentSales.length === 0 ? (
+                  <p className="refund-empty">No recent completed sales available.</p>
+                ) : (
+                  recentSales.map((sale) => (
+                    <div key={sale.id} className="refund-sale-row">
+                      <div className="refund-sale-main">
+                        <strong>{sale.sale_number}</strong>
+                        <span>{sale.patients?.full_name || 'Walk-in customer'}</span>
+                      </div>
+                      <div className="refund-sale-meta">
+                        <span>GHS {Number.parseFloat(sale.net_amount || 0).toFixed(2)}</span>
+                        <span>{new Date(sale.sale_date).toLocaleString()}</span>
+                      </div>
+                      <button
+                        type="button"
+                        className="refund-btn"
+                        disabled={processing || refundingSaleId === sale.id}
+                        onClick={() => handleRefundSale(sale)}
+                      >
+                        {refundingSaleId === sale.id ? 'Refunding...' : 'Refund'}
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="checkout-section">

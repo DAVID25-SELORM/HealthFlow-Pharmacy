@@ -90,6 +90,95 @@
   color: var(--gray-700);
 }
 
+.refund-panel {
+  background: white;
+  padding: 1.25rem;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.refund-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.refund-panel-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--gray-800);
+}
+
+.refund-panel-header span {
+  font-size: 0.8rem;
+  color: var(--gray-500);
+}
+
+.refund-sales-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.refund-empty {
+  margin: 0;
+  color: var(--gray-500);
+  font-size: 0.9rem;
+}
+
+.refund-sale-row {
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  padding: 0.75rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.refund-sale-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.refund-sale-main strong {
+  color: var(--gray-900);
+  font-size: 0.9rem;
+}
+
+.refund-sale-main span {
+  color: var(--gray-600);
+  font-size: 0.82rem;
+}
+
+.refund-sale-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  text-align: right;
+  color: var(--gray-600);
+  font-size: 0.78rem;
+}
+
+.refund-btn {
+  border: 1px solid #e8b8b2;
+  background: #fff1ef;
+  color: #9f3020;
+  border-radius: var(--radius-sm);
+  padding: 0.45rem 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.refund-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
 .drug-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
