@@ -92,6 +92,10 @@ export const addDrug = async (drugData) => {
     },
   })
 
+  if (!response?.drug?.id) {
+    throw new Error('Drug was not created correctly. Please try again.')
+  }
+
   return response.drug
 }
 
