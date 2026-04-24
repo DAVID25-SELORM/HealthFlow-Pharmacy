@@ -364,7 +364,7 @@ const syncDefaultMedicationCatalog = async (
   for (let index = 0; index < missingRows.length; index += CATALOG_SYNC_BATCH_SIZE) {
     const batch = missingRows.slice(index, index + CATALOG_SYNC_BATCH_SIZE)
     const { error: insertError } = await adminClient.from('drugs').upsert(batch, {
-      onConflict: 'name,batch_number',
+      onConflict: 'organization_id,name,batch_number',
       ignoreDuplicates: true,
     })
 
