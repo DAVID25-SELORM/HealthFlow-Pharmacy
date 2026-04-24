@@ -379,7 +379,12 @@ const getDrugs = async (
   organizationId: string,
   payload: Record<string, unknown>
 ) => {
-  await syncDefaultMedicationCatalog(adminClient, organizationId)
+  try {
+    await syncDefaultMedicationCatalog(adminClient, organizationId)
+  } catch (error) {
+    // Never block core inventory visibility when catalog sync hits legacy-data issues.
+    console.error('tier-access catalog sync warning:', error)
+  }
 
   const includeCatalog = Boolean(payload.includeCatalog)
   const { data, error } = await adminClient
