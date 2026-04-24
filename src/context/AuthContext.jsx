@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { clearSupabaseStoredSession, supabase, isSupabaseConfigured } from '../lib/supabase'
+import { tryLogAuditEvent } from '../services/auditService'
 
 const AuthContext = createContext(null)
 const FALLBACK_ROLE = 'assistant'
@@ -345,20 +346,42 @@ export const AuthProvider = ({ children }) => {
       throw new Error('Supabase credentials are not configured.')
     }
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
+    const normalizedEmail = email.trim()
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: normalizedEmail,
       password,
     })
 
     if (error) {
       throw error
     }
+
+    await tryLogAuditEvent({
+      eventType: 'auth',
+      entityType: 'session',
+      entityId: null,
+      action: 'sign_in',
+      details: {
+        email: data?.user?.email || normalizedEmail,
+      },
+    })
   }
 
   const signOut = async () => {
     if (!isSupabaseConfigured()) {
       return
     }
+
+    await tryLogAuditEvent({
+      eventType: 'auth',
+      entityType: 'session',
+      entityId: null,
+      action: 'sign_out',
+      details: {
+        email: user?.email || null,
+      },
+    })
+
     const { error } = await supabase.auth.signOut()
     if (error) {
       throw error
