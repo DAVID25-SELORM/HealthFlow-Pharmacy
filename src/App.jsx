@@ -112,7 +112,7 @@ function App() {
             <Route
               path="activity-log"
               element={
-                <RoleRoute allowedRoles={['admin']}>
+                <RoleRoute allowedRoles={['admin', 'super_admin']}>
                   <ActivityLog />
                 </RoleRoute>
               }

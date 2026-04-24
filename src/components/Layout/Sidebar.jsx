@@ -33,7 +33,7 @@ const Sidebar = ({ isOpen, onClose }) => {
     { path: '/accounting', icon: Wallet, label: 'Accounting', roles: ['admin'] },
     { path: '/settings', icon: Settings, label: 'Settings', roles: ['admin'] },
     { path: '/tenant-admin', icon: ShieldCheck, label: 'Tenant Admin', roles: ['super_admin'] },
-    { path: '/activity-log', icon: List, label: 'Activity Log', roles: ['admin'] },
+    { path: '/activity-log', icon: List, label: 'Activity Log', roles: ['admin', 'super_admin'] },
   ]
 
   const visibleItems = menuItems.filter((item) => item.roles.includes(role))
