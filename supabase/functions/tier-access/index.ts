@@ -988,7 +988,6 @@ const getReportBundle = async (
     .from('sales')
     .select(SALES_SELECT_FIELDS)
     .eq('organization_id', organizationId)
-    .eq('payment_status', 'completed')
     .order('sale_date', { ascending: false })
 
   let claimsQuery = adminClient

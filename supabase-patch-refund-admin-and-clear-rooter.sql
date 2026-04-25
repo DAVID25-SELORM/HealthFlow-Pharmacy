@@ -5,8 +5,6 @@
 
 BEGIN;
 
-DROP FUNCTION IF EXISTS public.refund_sale_transaction(TEXT, UUID);
-
 CREATE OR REPLACE FUNCTION public.refund_sale_transaction(
   p_sale_id UUID,
   p_reason TEXT DEFAULT NULL
@@ -132,6 +130,5 @@ WHERE LOWER(BTRIM(name)) IN (
   'rooter tonic'
 );
 
-NOTIFY pgrst, 'reload schema';
-
 COMMIT;
+
