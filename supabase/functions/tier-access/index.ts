@@ -5,11 +5,14 @@ import {
   DEFAULT_MEDICATION_BATCH_PREFIX,
   isDefaultMedicationBatchNumber,
 } from '../_shared/defaultMedicationCatalog.ts'
+import {
+  ACTIVE_DRUG_DUPLICATE_ERROR,
+  getExistingDrugSaveAction,
+} from '../_shared/drugInventory.ts'
 import { resolveTierAccess } from '../_shared/tier.ts'
 
 const USERS_PER_PAGE = 200
 const MAX_USER_PAGES = 10
-const DRUG_IMPORT_BATCH_SIZE = 50
 const CATALOG_SYNC_BATCH_SIZE = 200
 const CLAIM_SELECT_FIELDS = `
   *,
@@ -433,6 +436,107 @@ const assertCustomBatchNumberAllowed = (batchNumber: string) => {
   }
 }
 
+const buildDrugCreatePayload = (
+  organizationId: string,
+  drugData: Record<string, unknown>,
+  batchNumber: string
+) => ({
+  organization_id: organizationId,
+  name: assertRequiredText(drugData.name, 'Drug name'),
+  batch_number: batchNumber,
+  expiry_date: assertRequiredText(drugData.expiryDate, 'Expiry date'),
+  quantity: parseNonNegativeNumber(drugData.quantity, 'Quantity'),
+  price: parseNonNegativeNumber(drugData.price, 'Price'),
+  cost_price: parseNonNegativeNumber(drugData.costPrice ?? 0, 'Cost price'),
+  supplier: normalizeText(drugData.supplier) || null,
+  category: normalizeText(drugData.category) || null,
+  description: normalizeText(drugData.description) || null,
+  reorder_level: parseNonNegativeNumber(drugData.reorderLevel ?? 10, 'Reorder level'),
+  unit: normalizeText(drugData.unit) || 'tablets',
+})
+
+const findDrugByIdentity = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+  name: string,
+  batchNumber: string
+) => {
+  const { data, error } = await adminClient
+    .from('drugs')
+    .select('*')
+    .eq('organization_id', organizationId)
+    .eq('name', name)
+    .eq('batch_number', batchNumber)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+
+  if (error) {
+    throw error
+  }
+
+  return data?.[0] || null
+}
+
+const saveDrugForOrganization = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+  drugPayload: Record<string, unknown>
+) => {
+  const name = assertRequiredText(drugPayload.name, 'Drug name')
+  const batchNumber = assertRequiredText(drugPayload.batch_number, 'Batch number')
+  const existingDrug = await findDrugByIdentity(adminClient, organizationId, name, batchNumber)
+  const action = getExistingDrugSaveAction(existingDrug)
+
+  if (action === 'duplicate_active') {
+    throw new Error(ACTIVE_DRUG_DUPLICATE_ERROR)
+  }
+
+  await assertCanAddDrugs(adminClient, organizationId, 1)
+
+  if (action === 'reactivate') {
+    const { data, error } = await adminClient
+      .from('drugs')
+      .update({
+        ...drugPayload,
+        status: 'active',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', existingDrug?.id)
+      .eq('organization_id', organizationId)
+      .select()
+      .single()
+
+    if (error) {
+      throw error
+    }
+
+    return {
+      action,
+      drug: data,
+    }
+  }
+
+  const { data, error } = await adminClient
+    .from('drugs')
+    .insert([
+      {
+        ...drugPayload,
+        status: 'active',
+      },
+    ])
+    .select()
+    .single()
+
+  if (error) {
+    throw error
+  }
+
+  return {
+    action,
+    drug: data,
+  }
+}
+
 const getDrugForOrganization = async (
   adminClient: ReturnType<typeof createAdminClient>,
   organizationId: string,
@@ -706,39 +810,12 @@ const createDrug = async (
     'Only admins and pharmacists can add inventory items.'
   )
 
-  await assertCanAddDrugs(adminClient, organizationId, 1)
-
   const drugData = (payload.drug || {}) as Record<string, unknown>
   const batchNumber = assertRequiredText(drugData.batchNumber, 'Batch number')
   assertCustomBatchNumberAllowed(batchNumber)
-
-  const { data, error } = await adminClient
-    .from('drugs')
-    .insert([
-      {
-        organization_id: organizationId,
-        name: assertRequiredText(drugData.name, 'Drug name'),
-        batch_number: batchNumber,
-        expiry_date: assertRequiredText(drugData.expiryDate, 'Expiry date'),
-        quantity: parseNonNegativeNumber(drugData.quantity, 'Quantity'),
-        price: parseNonNegativeNumber(drugData.price, 'Price'),
-        cost_price: parseNonNegativeNumber(drugData.costPrice ?? 0, 'Cost price'),
-        supplier: normalizeText(drugData.supplier) || null,
-        category: normalizeText(drugData.category) || null,
-        description: normalizeText(drugData.description) || null,
-        reorder_level: parseNonNegativeNumber(drugData.reorderLevel ?? 10, 'Reorder level'),
-        unit: normalizeText(drugData.unit) || 'tablets',
-        status: 'active',
-      },
-    ])
-    .select()
-    .single()
-
-  if (error) {
-    throw error
-  }
-
-  return data
+  const drugPayload = buildDrugCreatePayload(organizationId, drugData, batchNumber)
+  const { drug } = await saveDrugForOrganization(adminClient, organizationId, drugPayload)
+  return drug
 }
 
 const updateDrug = async (
@@ -868,17 +945,21 @@ const bulkImportDrugs = async (
   const drugs = Array.isArray(payload.drugs) ? payload.drugs : []
   if (drugs.length === 0) {
     return {
+      created: [],
+      reactivated: [],
       successful: [],
       failed: [],
     }
   }
 
-  await assertCanAddDrugs(adminClient, organizationId, drugs.length)
-
   const results: {
+    created: Array<Record<string, unknown>>
+    reactivated: Array<Record<string, unknown>>
     successful: Array<Record<string, unknown>>
     failed: Array<Record<string, unknown>>
   } = {
+    created: [],
+    reactivated: [],
     successful: [],
     failed: [],
   }
@@ -901,65 +982,24 @@ const bulkImportDrugs = async (
       description: normalizeText(row.description) || null,
       reorder_level: parseNonNegativeNumber(row.reorder_level ?? 10, 'Reorder level'),
       unit: normalizeText(row.unit) || 'tablets',
-      status: normalizeText(row.status) || 'active',
-    }
-  })
+      }
+    })
 
-  for (let index = 0; index < normalizedRows.length; index += DRUG_IMPORT_BATCH_SIZE) {
-    const batch = normalizedRows.slice(index, index + DRUG_IMPORT_BATCH_SIZE)
-
+  for (const drug of normalizedRows) {
     try {
-      const { data, error } = await adminClient.from('drugs').insert(batch).select()
+      const { action, drug: savedDrug } = await saveDrugForOrganization(adminClient, organizationId, drug)
+      results.successful.push(savedDrug)
 
-      if (error) {
-        for (const drug of batch) {
-          try {
-            const { data: singleData, error: singleError } = await adminClient
-              .from('drugs')
-              .insert([drug])
-              .select()
-
-            if (singleError) {
-              results.failed.push({
-                drug,
-                error: singleError.message,
-              })
-            } else if (singleData?.[0]) {
-              results.successful.push(singleData[0])
-            }
-          } catch (singleError) {
-            results.failed.push({
-              drug,
-              error: singleError instanceof Error ? singleError.message : 'Unable to import drug.',
-            })
-          }
-        }
+      if (action === 'reactivate') {
+        results.reactivated.push(savedDrug)
       } else {
-        results.successful.push(...(data || []))
+        results.created.push(savedDrug)
       }
-    } catch (batchError) {
-      for (const drug of batch) {
-        try {
-          const { data: singleData, error: singleError } = await adminClient
-            .from('drugs')
-            .insert([drug])
-            .select()
-
-          if (singleError) {
-            results.failed.push({
-              drug,
-              error: singleError.message,
-            })
-          } else if (singleData?.[0]) {
-            results.successful.push(singleData[0])
-          }
-        } catch (singleError) {
-          results.failed.push({
-            drug,
-            error: singleError instanceof Error ? singleError.message : 'Unable to import drug.',
-          })
-        }
-      }
+    } catch (error) {
+      results.failed.push({
+        drug,
+        error: getErrorMessage(error),
+      })
     }
   }
 

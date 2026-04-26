@@ -41,8 +41,11 @@ const getAllDrugsViaTierAccess = async (includeCatalog = false) => {
 
 // Get all drugs
 export const getAllDrugs = async (options = {}) => {
-  if (options.includeCatalog) {
-    return getAllDrugsViaTierAccess(true)
+  const includeCatalog = Boolean(options.includeCatalog)
+  const useTierAccess = Boolean(options.useTierAccess)
+
+  if (includeCatalog || useTierAccess) {
+    return getAllDrugsViaTierAccess(includeCatalog)
   }
 
   const drugs = await getAllDrugsDirectly()

@@ -47,7 +47,7 @@ const Sales = () => {
         }
 
         const [drugsData, patientsData, pharmacySettings] = await Promise.all([
-          getAllDrugs(),
+          getAllDrugs({ useTierAccess: true }),
           getAllPatients(),
           getPharmacySettings().catch(() => null),
         ])
@@ -197,7 +197,7 @@ const Sales = () => {
 
   const refreshDrugs = async () => {
     try {
-      const latestDrugs = await getAllDrugs()
+      const latestDrugs = await getAllDrugs({ useTierAccess: true })
       setDrugs(latestDrugs)
     } catch (refreshError) {
       console.error('Failed to refresh inventory:', refreshError)

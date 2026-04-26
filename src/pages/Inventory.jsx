@@ -329,17 +329,36 @@ const Inventory = () => {
     try {
       setImporting(true)
       const results = await importDrugs(importPreview.validRows)
+      const createdCount = Array.isArray(results.created) ? results.created.length : results.successful.length
+      const reactivatedCount = Array.isArray(results.reactivated) ? results.reactivated.length : 0
 
       if (results.successful.length > 0) {
+        const successMessage =
+          reactivatedCount > 0
+            ? createdCount > 0
+              ? `Imported ${createdCount} new drug(s) and restored ${reactivatedCount} previously removed drug(s).`
+              : `Restored ${reactivatedCount} previously removed drug(s).`
+            : `Successfully imported ${results.successful.length} drug(s)!`
+
         notify(
-          `Successfully imported ${results.successful.length} drug(s)!`,
+          successMessage,
           'success'
         )
       }
 
       if (results.failed.length > 0) {
+        const duplicateActiveCount = results.failed.filter((item) =>
+          String(item?.error || '').toLowerCase().includes('already exists in inventory')
+        ).length
+        const warningMessage =
+          duplicateActiveCount === results.failed.length
+            ? `Skipped ${duplicateActiveCount} row(s) that already exist in active inventory.`
+            : duplicateActiveCount > 0
+              ? `Import completed with ${results.failed.length} issue(s). ${duplicateActiveCount} row(s) were skipped because they already exist in active inventory.`
+              : `Failed to import ${results.failed.length} drug(s). Review the upload rows and try again.`
+
         notify(
-          `Failed to import ${results.failed.length} drug(s). Check for duplicates.`,
+          warningMessage,
           'warning',
           5000
         )

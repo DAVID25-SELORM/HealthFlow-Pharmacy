@@ -144,6 +144,36 @@ describe('drugService catalog handling', () => {
     expect(fromMock).not.toHaveBeenCalled()
   })
 
+  it('uses tier-access for POS-friendly reads when requested', async () => {
+    invokeTierAccess.mockResolvedValue({
+      drugs: [
+        {
+          id: 'tier-drug',
+          name: 'Tier Drug',
+          batch_number: 'BT-777',
+          quantity: 9,
+          status: 'active',
+        },
+      ],
+    })
+
+    await expect(getAllDrugs({ useTierAccess: true })).resolves.toEqual([
+      {
+        id: 'tier-drug',
+        name: 'Tier Drug',
+        batch_number: 'BT-777',
+        quantity: 9,
+        status: 'active',
+      },
+    ])
+
+    expect(invokeTierAccess).toHaveBeenCalledWith({
+      action: 'get_drugs',
+      includeCatalog: false,
+    })
+    expect(fromMock).not.toHaveBeenCalled()
+  })
+
   it('surfaces tier-access failures for catalog-aware inventory loads', async () => {
     const tierAccessError = new Error(
       'duplicate key value violates unique constraint "drugs_name_batch_number_key"'

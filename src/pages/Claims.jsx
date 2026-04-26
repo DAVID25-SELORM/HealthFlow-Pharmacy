@@ -101,7 +101,7 @@ const Claims = () => {
         getAllClaims(),
         getClaimsStatistics(),
         getAllPatients(),
-        getAllDrugs(),
+        getAllDrugs({ useTierAccess: true }),
       ])
 
       setClaims(claimsData)
