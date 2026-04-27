@@ -72,6 +72,7 @@ const Settings = () => {
   const [creatingStaff, setCreatingStaff] = useState(false)
   const [statusUpdatingId, setStatusUpdatingId] = useState('')
   const [refundPermissionUpdatingId, setRefundPermissionUpdatingId] = useState('')
+  const [branchUpdatingId, setBranchUpdatingId] = useState('')
   const [error, setError] = useState('')
 
   // Branch state
@@ -185,6 +186,9 @@ const Settings = () => {
     try {
       setCreatingStaff(true)
       setError('')
+      if (branches.length > 0 && !staffForm.branchId) {
+        throw new Error('Select the staff member branch before creating the account.')
+      }
       const createdUser = await createStaffUser(staffForm)
       if (staffForm.branchId && createdUser?.id) {
         await updateUserBranch(createdUser.id, staffForm.branchId)
@@ -200,6 +204,20 @@ const Settings = () => {
       setError(createError.message || 'Unable to create staff account.')
     } finally {
       setCreatingStaff(false)
+    }
+  }
+
+  const handleUserBranchChange = async (row, branchId) => {
+    try {
+      setBranchUpdatingId(row.id)
+      setError('')
+      await updateUserBranch(row.id, branchId)
+      notify(`${row.full_name} branch updated.`, 'success')
+      await loadSettings()
+    } catch (branchError) {
+      setError(branchError.message || 'Unable to update user branch.')
+    } finally {
+      setBranchUpdatingId('')
     }
   }
 
@@ -710,8 +728,9 @@ const Settings = () => {
                   value={staffForm.branchId}
                   onChange={(event) => setStaffForm({ ...staffForm, branchId: event.target.value })}
                   disabled={creatingStaff}
+                  required
                 >
-                  <option value="">No branch assigned</option>
+                  <option value="">Select branch</option>
                   {branches.filter((b) => b.is_active).map((b) => (
                     <option key={b.id} value={b.id}>
                       {b.name}{b.code ? ` (${b.code})` : ''}
@@ -745,6 +764,9 @@ const Settings = () => {
                     <p>{row.email}</p>
                     <div className="user-meta">
                       <small>{row.role}</small>
+                      <span className={`user-status-badge ${row.branch_id ? 'active' : 'inactive'}`}>
+                        Branch: {row.branches?.name || 'Not assigned'}
+                      </span>
                       {row.role === 'admin' ? (
                         <span className="user-status-badge active">Refunds: Admin</span>
                       ) : (
@@ -762,6 +784,21 @@ const Settings = () => {
                     </div>
                   </div>
                   <div className="user-actions">
+                    {branches.length > 0 && (
+                      <select
+                        className="user-branch-select"
+                        value={row.branch_id || ''}
+                        onChange={(event) => handleUserBranchChange(row, event.target.value)}
+                        disabled={branchUpdatingId === row.id}
+                      >
+                        <option value="">Select branch</option>
+                        {branches.filter((b) => b.is_active).map((b) => (
+                          <option key={b.id} value={b.id}>
+                            {b.name}{b.code ? ` (${b.code})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    )}
                     {row.role !== 'admin' && (
                       <button
                         className={`btn ${row.can_refund ? 'btn-outline' : 'btn-primary'}`}

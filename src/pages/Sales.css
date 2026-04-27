@@ -144,6 +144,33 @@
   padding: 0.65rem 0.75rem;
 }
 
+.assigned-branch-field {
+  border: 1px solid var(--gray-300);
+  border-radius: var(--radius);
+  padding: 0.55rem 0.75rem;
+  min-height: 45px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.assigned-branch-field span {
+  color: var(--gray-500);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.assigned-branch-field strong {
+  color: var(--gray-900);
+  font-size: 0.95rem;
+}
+
+.assigned-branch-field.warning {
+  border-color: #f4c430;
+  background: #fff9e6;
+}
+
 .refund-panel {
   background: white;
   padding: 1.25rem;

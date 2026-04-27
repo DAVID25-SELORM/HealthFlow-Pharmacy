@@ -138,7 +138,7 @@ export const createSettings = async (settings) => {
 export const getUsers = async () => {
   const { data, error } = await supabase
     .from('users')
-    .select('id, email, full_name, role, can_refund, is_active, created_at')
+    .select('id, email, full_name, role, can_refund, is_active, branch_id, created_at, branches (id, name, code)')
     .order('created_at', { ascending: false })
 
   if (error) {

@@ -159,6 +159,15 @@
   gap: 0.5rem;
 }
 
+.user-branch-select {
+  width: 100%;
+  border: 1px solid var(--gray-300);
+  border-radius: var(--radius);
+  padding: 0.55rem 0.65rem;
+  background: white;
+  color: var(--gray-700);
+}
+
 .user-row .btn {
   width: 100%;
 }

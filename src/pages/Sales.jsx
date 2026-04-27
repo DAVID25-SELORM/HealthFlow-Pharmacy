@@ -45,6 +45,11 @@ const Sales = () => {
   const [reprintingSaleId, setReprintingSaleId] = useState(null)
   const canProcessRefund =
     String(role || '').toLowerCase() === 'admin' || Boolean(profile?.can_refund)
+  const isAdmin = String(role || '').toLowerCase() === 'admin'
+  const assignedBranch = profile?.branch_id
+    ? branches.find((branch) => branch.id === profile.branch_id) || profile?.branches || null
+    : null
+  const canChooseShiftBranch = isAdmin && !profile?.branch_id
 
   useEffect(() => {
     const loadData = async () => {
@@ -70,7 +75,11 @@ const Sales = () => {
         setBranches(branchesData)
         setActiveShift(openShiftData)
         setShiftBranchId(
-          openShiftData?.branch_id || profile?.branch_id || branchesData.find((branch) => branch.is_main)?.id || branchesData[0]?.id || ''
+          openShiftData?.branch_id ||
+            profile?.branch_id ||
+            (String(role || '').toLowerCase() === 'admin'
+              ? branchesData.find((branch) => branch.is_main)?.id || branchesData[0]?.id || ''
+              : '')
         )
         const recent = await getRecentSales(8)
         setRecentSales(recent || [])
@@ -83,7 +92,7 @@ const Sales = () => {
     }
 
     loadData()
-  }, [canProcessRefund, profile?.branch_id, user?.id])
+  }, [canProcessRefund, profile?.branch_id, role, user?.id])
 
   useEffect(() => {
     const routeSearch = searchParams.get('search') || ''
@@ -370,6 +379,9 @@ const Sales = () => {
     try {
       setShiftBusy(true)
       setError('')
+      if (!profile?.branch_id && !isAdmin) {
+        throw new Error('Ask an admin to assign your branch before opening a shift.')
+      }
       const shift = await openShift({
         organizationId: profile?.organization_id,
         branchId: shiftBranchId,
@@ -527,7 +539,7 @@ const Sales = () => {
                 type="number"
                 min="0"
                 step="0.01"
-                placeholder="Counted cash"
+                placeholder="Cash at hand / counted cash"
                 value={countedCash}
                 onChange={(event) => setCountedCash(event.target.value)}
                 required
@@ -546,19 +558,31 @@ const Sales = () => {
         ) : (
           <form className="shift-open-form" onSubmit={handleOpenShift}>
             <strong>Open a shift to begin sales</strong>
-            <select
-              value={shiftBranchId}
-              onChange={(event) => setShiftBranchId(event.target.value)}
-              required
-              disabled={shiftBusy || Boolean(profile?.branch_id)}
-            >
-              <option value="">Select branch</option>
-              {branches.filter((branch) => branch.is_active !== false).map((branch) => (
-                <option key={branch.id} value={branch.id}>
-                  {branch.name}{branch.code ? ` (${branch.code})` : ''}
-                </option>
-              ))}
-            </select>
+            {profile?.branch_id ? (
+              <div className="assigned-branch-field">
+                <span>Assigned branch</span>
+                <strong>{assignedBranch?.name || 'Assigned branch'}</strong>
+              </div>
+            ) : canChooseShiftBranch ? (
+              <select
+                value={shiftBranchId}
+                onChange={(event) => setShiftBranchId(event.target.value)}
+                required
+                disabled={shiftBusy}
+              >
+                <option value="">Select branch</option>
+                {branches.filter((branch) => branch.is_active !== false).map((branch) => (
+                  <option key={branch.id} value={branch.id}>
+                    {branch.name}{branch.code ? ` (${branch.code})` : ''}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div className="assigned-branch-field warning">
+                <span>Branch required</span>
+                <strong>Ask admin to assign your branch</strong>
+              </div>
+            )}
             <input
               type="number"
               min="0"
@@ -567,7 +591,11 @@ const Sales = () => {
               value={openingCash}
               onChange={(event) => setOpeningCash(event.target.value)}
             />
-            <button type="submit" className="btn btn-primary" disabled={shiftBusy}>
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={shiftBusy || (!profile?.branch_id && !canChooseShiftBranch)}
+            >
               {shiftBusy ? 'Opening...' : 'Open Shift'}
             </button>
           </form>
