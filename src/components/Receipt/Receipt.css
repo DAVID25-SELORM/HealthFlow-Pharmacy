@@ -350,6 +350,18 @@
   font-weight: 700;
 }
 
+.receipt-developer-credit {
+  padding: 10px 24px 14px;
+  text-align: center;
+  color: #66758a;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.receipt-developer-credit p {
+  margin: 0;
+}
+
 @media print {
   body * {
     visibility: hidden;

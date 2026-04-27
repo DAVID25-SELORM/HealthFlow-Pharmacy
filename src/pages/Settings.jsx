@@ -84,6 +84,8 @@ const Settings = () => {
   const [editBranchForm, setEditBranchForm] = useState({})
   const [savingBranch, setSavingBranch] = useState(false)
   const atUserLimit = tierLimits.maxUsers !== Infinity && users.length >= tierLimits.maxUsers
+  const activeBranches = branches.filter((branch) => branch.is_active !== false)
+  const singleActiveBranch = activeBranches.length === 1 ? activeBranches[0] : null
 
   useEffect(() => {
     void loadSettings()
@@ -186,12 +188,13 @@ const Settings = () => {
     try {
       setCreatingStaff(true)
       setError('')
-      if (branches.length > 0 && !staffForm.branchId) {
+      const selectedBranchId = staffForm.branchId || singleActiveBranch?.id || ''
+      if (activeBranches.length > 1 && !selectedBranchId) {
         throw new Error('Select the staff member branch before creating the account.')
       }
       const createdUser = await createStaffUser(staffForm)
-      if (staffForm.branchId && createdUser?.id) {
-        await updateUserBranch(createdUser.id, staffForm.branchId)
+      if (selectedBranchId && createdUser?.id) {
+        await updateUserBranch(createdUser.id, selectedBranchId)
       }
       notify(
         `Staff account ready for ${createdUser.email}. Share the temporary password securely.`,
@@ -723,7 +726,7 @@ const Settings = () => {
                 }
                 disabled={creatingStaff}
               />
-              {branches.length > 0 && (
+              {activeBranches.length > 1 ? (
                 <select
                   value={staffForm.branchId}
                   onChange={(event) => setStaffForm({ ...staffForm, branchId: event.target.value })}
@@ -731,13 +734,17 @@ const Settings = () => {
                   required
                 >
                   <option value="">Select branch</option>
-                  {branches.filter((b) => b.is_active).map((b) => (
+                  {activeBranches.map((b) => (
                     <option key={b.id} value={b.id}>
                       {b.name}{b.code ? ` (${b.code})` : ''}
                     </option>
                   ))}
                 </select>
-              )}
+              ) : singleActiveBranch ? (
+                <p className="settings-helper">
+                  Branch: {singleActiveBranch.name}{singleActiveBranch.code ? ` (${singleActiveBranch.code})` : ''}
+                </p>
+              ) : null}
               <p className="settings-helper">
                 Share the temporary password securely, then ask the staff member to use the
                 password reset link after first sign-in.

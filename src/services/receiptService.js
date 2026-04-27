@@ -209,6 +209,15 @@ export const generateReceiptPDF = (saleData, pharmacyInfo) => {
   doc.text(`Printed: ${formatAppDateTime(new Date(), { hour12: true })}`, pageWidth / 2, y, {
     align: 'center',
   })
+  y += 8
+  doc.setFontSize(8)
+  doc.text('Software developed by Neon Digital Technologies Ltd.', pageWidth / 2, y, {
+    align: 'center',
+  })
+  y += 4
+  doc.text('neondigitaltechnologies@gmail.com', pageWidth / 2, y, {
+    align: 'center',
+  })
 
   doc.setFillColor(...green)
   doc.rect(0, pageHeight - 18, pageWidth, 18, 'F')

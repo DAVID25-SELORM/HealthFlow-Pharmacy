@@ -217,6 +217,11 @@ const Receipt = forwardRef(({ saleData, pharmacyInfo, mode = 'preview' }, ref) =
           <span>Your health is our priority.</span>
           <HeartPulse size={26} />
         </div>
+
+        <div className="receipt-developer-credit">
+          <p>Software developed by Neon Digital Technologies Ltd.</p>
+          <p>neondigitaltechnologies@gmail.com</p>
+        </div>
       </div>
     </div>
   )
