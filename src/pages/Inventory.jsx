@@ -212,10 +212,17 @@ const Inventory = () => {
         if (createdDrug?.id) {
           setDrugs((current) => [createdDrug, ...current.filter((drug) => drug.id !== createdDrug.id)])
         }
-        notify('Drug added successfully!', 'success')
+        const revealedExisting = createdDrug?._saveAction === 'duplicate_active'
+        notify(
+          revealedExisting
+            ? 'This medicine already exists. Showing the existing inventory item so you can update stock.'
+            : 'Drug added successfully!',
+          revealedExisting ? 'info' : 'success',
+          revealedExisting ? 6000 : undefined
+        )
         setActiveFilter('all')
-        setSearchTerm('')
-        updateQueryParams('', 'all')
+        setSearchTerm(revealedExisting ? createdDrug.name || '' : '')
+        updateQueryParams(revealedExisting ? createdDrug.name || '' : '', 'all')
       }
 
       closeDrugModal()

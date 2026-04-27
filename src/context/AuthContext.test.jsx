@@ -28,6 +28,7 @@ const mocks = vi.hoisted(() => {
     signInWithPassword: vi.fn(),
     signOut: vi.fn(),
     resetPasswordForEmail: vi.fn(),
+    updateUser: vi.fn(),
   }
 
   const supabase = {

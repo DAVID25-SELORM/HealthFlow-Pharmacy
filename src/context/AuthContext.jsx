@@ -399,8 +399,20 @@ export const AuthProvider = ({ children }) => {
     }
 
     const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
-      redirectTo: `${window.location.origin}/login`,
+      redirectTo: `${window.location.origin}/login?mode=recovery`,
     })
+
+    if (error) {
+      throw error
+    }
+  }
+
+  const updatePassword = async (password) => {
+    if (!isSupabaseConfigured()) {
+      throw new Error('Supabase credentials are not configured.')
+    }
+
+    const { error } = await supabase.auth.updateUser({ password })
 
     if (error) {
       throw error
@@ -421,6 +433,7 @@ export const AuthProvider = ({ children }) => {
       signIn,
       signOut,
       requestPasswordReset,
+      updatePassword,
       isConfigured: isSupabaseConfigured(),
     }),
     [session, user, profile, organization, branch, loading]

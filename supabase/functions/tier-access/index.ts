@@ -480,7 +480,8 @@ const findDrugByIdentity = async (
 const saveDrugForOrganization = async (
   adminClient: ReturnType<typeof createAdminClient>,
   organizationId: string,
-  drugPayload: Record<string, unknown>
+  drugPayload: Record<string, unknown>,
+  options: { returnExistingOnDuplicate?: boolean } = {}
 ) => {
   const name = assertRequiredText(drugPayload.name, 'Drug name')
   const batchNumber = assertRequiredText(drugPayload.batch_number, 'Batch number')
@@ -488,6 +489,13 @@ const saveDrugForOrganization = async (
   const action = getExistingDrugSaveAction(existingDrug)
 
   if (action === 'duplicate_active') {
+    if (options.returnExistingOnDuplicate) {
+      return {
+        action,
+        drug: existingDrug,
+      }
+    }
+
     throw new Error(ACTIVE_DRUG_DUPLICATE_ERROR)
   }
 
@@ -814,8 +822,9 @@ const createDrug = async (
   const batchNumber = assertRequiredText(drugData.batchNumber, 'Batch number')
   assertCustomBatchNumberAllowed(batchNumber)
   const drugPayload = buildDrugCreatePayload(organizationId, drugData, batchNumber)
-  const { drug } = await saveDrugForOrganization(adminClient, organizationId, drugPayload)
-  return drug
+  return await saveDrugForOrganization(adminClient, organizationId, drugPayload, {
+    returnExistingOnDuplicate: true,
+  })
 }
 
 const updateDrug = async (
@@ -1245,9 +1254,7 @@ Deno.serve(async (request) => {
     }
 
     if (action === 'create_drug') {
-      return json({
-        drug: await createDrug(adminClient, requesterProfile, organizationId, payload),
-      })
+      return json(await createDrug(adminClient, requesterProfile, organizationId, payload))
     }
 
     if (action === 'update_drug') {

@@ -17,6 +17,7 @@ vi.mock('../lib/supabase', () => ({
 
 import {
   calculateDrugStatus,
+  addDrug,
   getAllDrugs,
   isDefaultCatalogDrug,
   updateDrug,
@@ -172,6 +173,36 @@ describe('drugService catalog handling', () => {
       includeCatalog: false,
     })
     expect(fromMock).not.toHaveBeenCalled()
+  })
+
+  it('returns the existing active drug when add resolves a duplicate', async () => {
+    invokeTierAccess.mockResolvedValue({
+      action: 'duplicate_active',
+      drug: {
+        id: 'existing-drug',
+        name: 'Paracetamol 500mg',
+        batch_number: 'BT-001',
+        quantity: 12,
+        status: 'active',
+      },
+    })
+
+    await expect(
+      addDrug({
+        name: 'Paracetamol 500mg',
+        batchNumber: 'BT-001',
+        expiryDate: '2028-12-31',
+        quantity: 12,
+        price: 5,
+      })
+    ).resolves.toEqual({
+      id: 'existing-drug',
+      name: 'Paracetamol 500mg',
+      batch_number: 'BT-001',
+      quantity: 12,
+      status: 'active',
+      _saveAction: 'duplicate_active',
+    })
   })
 
   it('surfaces tier-access failures for catalog-aware inventory loads', async () => {

@@ -26,176 +26,195 @@ const formatDate = (dateString) => {
 export const generateReceiptPDF = (saleData, pharmacyInfo) => {
   const doc = new jsPDF({
     unit: 'mm',
-    format: [80, 297], // 80mm wide (thermal printer standard), auto height
+    format: 'a4',
   })
 
-  const pageWidth = 80
-  const margin = 5
-  const contentWidth = pageWidth - 2 * margin
-  let y = 10
+  const pageWidth = doc.internal.pageSize.getWidth()
+  const pageHeight = doc.internal.pageSize.getHeight()
+  const margin = 20
+  const currency = pharmacyInfo?.currency || 'GHS'
+  let y = 18
 
-  // Set default font
-  doc.setFont('courier', 'normal')
+  const green = [8, 119, 92]
+  const dark = [16, 32, 51]
+  const gray = [93, 108, 128]
+  const mint = [234, 248, 244]
+
+  const setColor = (value) => doc.setTextColor(value[0], value[1], value[2])
+  const money = (amount) => formatCurrency(amount, currency)
+  const rightText = (text, x, yPos) => {
+    doc.text(text, x - doc.getTextWidth(text), yPos)
+  }
+  const labelValue = (label, value, x, yPos, width = 55) => {
+    doc.setFont('helvetica', 'normal')
+    setColor(gray)
+    doc.text(label, x, yPos)
+    doc.setFont('helvetica', 'bold')
+    setColor(dark)
+    doc.text(String(value || ''), x + width, yPos)
+  }
+
+  doc.setFont('helvetica', 'bold')
+  setColor(green)
+  doc.setFontSize(28)
+  doc.text('HealthFlow', margin + 18, y + 10)
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(13)
+  doc.text('Pharmacy', margin + 18, y + 18)
+  doc.setFillColor(...green)
+  doc.roundedRect(margin, y, 14, 14, 3, 3, 'F')
+  doc.setTextColor(255, 255, 255)
+  doc.setFontSize(14)
+  doc.text('+', margin + 4.7, y + 9.9)
+  setColor(green)
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(11)
+  rightText('THANK YOU', pageWidth - margin, y + 8)
+  doc.setFont('helvetica', 'normal')
+  setColor(gray)
+  rightText('For choosing us!', pageWidth - margin, y + 15)
+  y += 30
+  doc.setDrawColor(215, 227, 223)
+  doc.line(margin, y, pageWidth - margin, y)
+
+  y += 14
+  setColor(green)
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(16)
+  doc.text(pharmacyInfo?.pharmacy_name || 'HealthFlow Pharmacy', pageWidth / 2, y, {
+    align: 'center',
+  })
+  y += 8
+  setColor(dark)
+  doc.setFont('helvetica', 'normal')
   doc.setFontSize(10)
+  const contactLines = [
+    [pharmacyInfo?.address, pharmacyInfo?.city, pharmacyInfo?.region].filter(Boolean).join(', '),
+    pharmacyInfo?.phone,
+    pharmacyInfo?.email,
+    pharmacyInfo?.license_number ? `License No: ${pharmacyInfo.license_number}` : '',
+  ].filter(Boolean)
+  contactLines.forEach((line) => {
+    doc.text(line, pageWidth / 2, y, { align: 'center' })
+    y += 6
+  })
 
-  // Helper to add centered text
-  const addCenteredText = (text, yPos, fontSize = 10, style = 'normal') => {
-    doc.setFontSize(fontSize)
-    doc.setFont('courier', style)
-    const textWidth = doc.getTextWidth(text)
-    doc.text(text, (pageWidth - textWidth) / 2, yPos)
-  }
+  y += 6
+  doc.setDrawColor(196, 211, 207)
+  doc.setLineDashPattern([2, 2], 0)
+  doc.line(margin, y, pageWidth - margin, y)
+  doc.setLineDashPattern([], 0)
 
-  // Helper to add line
-  const addLine = (char = '=', yPos) => {
-    const line = char.repeat(Math.floor(contentWidth / 1.5))
-    addCenteredText(line, yPos, 8)
-  }
-
-  // Header
-  addCenteredText(pharmacyInfo?.pharmacy_name || 'HealthFlow Pharmacy', y, 12, 'bold')
-  y += 5
-
-  if (pharmacyInfo?.address) {
-    addCenteredText(pharmacyInfo.address, y, 8)
-    y += 4
-  }
-
-  if (pharmacyInfo?.city && pharmacyInfo?.region) {
-    addCenteredText(`${pharmacyInfo.city}, ${pharmacyInfo.region}`, y, 8)
-    y += 4
-  }
-
-  if (pharmacyInfo?.phone) {
-    addCenteredText(`Phone: ${pharmacyInfo.phone}`, y, 8)
-    y += 4
-  }
-
-  if (pharmacyInfo?.email) {
-    addCenteredText(`Email: ${pharmacyInfo.email}`, y, 8)
-    y += 4
-  }
-
-  if (pharmacyInfo?.license_number) {
-    addCenteredText(`License: ${pharmacyInfo.license_number}`, y, 7, 'italic')
-    y += 4
-  }
-
-  y += 2
-  addLine('=', y)
-  y += 5
-
-  // Sale Info
-  doc.setFontSize(9)
-  doc.setFont('courier', 'normal')
-  doc.text(`Sale #: ${saleData.saleNumber}`, margin, y)
-  y += 4
-  doc.text(`Date: ${formatDate(saleData.saleDate)}`, margin, y)
-  y += 4
-
+  y += 14
+  labelValue('Receipt / Sale #:', saleData.saleNumber, margin, y, 42)
+  labelValue('Date:', formatDate(saleData.saleDate), margin, y + 9, 42)
   if (saleData.soldBy) {
-    doc.text(`Cashier: ${saleData.soldBy}`, margin, y)
-    y += 4
+    labelValue('Cashier:', saleData.soldBy, margin, y + 18, 42)
   }
-
   if (saleData.patient) {
-    const patientText = `Patient: ${saleData.patient.full_name}`
-    doc.text(patientText, margin, y)
-    y += 4
-    if (saleData.patient.phone) {
-      doc.text(`  ${saleData.patient.phone}`, margin, y)
-      y += 4
-    }
+    labelValue('Patient:', saleData.patient.full_name, margin, y + 27, 42)
   }
+  doc.setDrawColor(215, 227, 223)
+  doc.line(pageWidth - 68, y - 3, pageWidth - 68, y + 28)
+  doc.setFillColor(...mint)
+  doc.roundedRect(pageWidth - 54, y, 18, 18, 3, 3, 'F')
+  setColor(green)
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(9)
+  doc.text('Sales Receipt', pageWidth - 58, y + 28)
 
-  y += 1
-  addLine('-', y)
-  y += 5
+  y += 43
+  setColor(green)
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(12)
+  doc.text('ITEMS', margin, y)
+  y += 8
+  doc.setFillColor(...mint)
+  doc.roundedRect(margin, y, pageWidth - margin * 2, 11, 2, 2, 'F')
+  setColor(green)
+  doc.setFontSize(9)
+  doc.text('#', margin + 5, y + 7)
+  doc.text('Item', margin + 18, y + 7)
+  doc.text('Qty', pageWidth - 76, y + 7)
+  doc.text('Unit Price', pageWidth - 56, y + 7)
+  rightText('Total', pageWidth - margin - 4, y + 7)
+  y += 18
 
-  // Items header
-  addCenteredText('ITEMS', y, 10, 'bold')
-  y += 5
-
-  // Items
-  doc.setFontSize(8)
-  saleData.items.forEach((item) => {
+  setColor(dark)
+  doc.setFontSize(9)
+  saleData.items.forEach((item, index) => {
     const itemName = item.drug_name || item.name
     const unitPrice = item.unit_price || item.price
     const totalPrice = item.total_price || item.quantity * item.price
-
-    // Item name
-    doc.setFont('courier', 'bold')
-    doc.text(itemName, margin, y)
-    y += 3.5
-
-    // Quantity and price
-    doc.setFont('courier', 'normal')
-    const qtyText = `Qty: ${item.quantity} x ${formatCurrency(unitPrice, pharmacyInfo?.currency || 'GHS')}`
-    doc.text(qtyText, margin + 2, y)
-
-    const totalText = formatCurrency(totalPrice, pharmacyInfo?.currency || 'GHS')
-    const totalWidth = doc.getTextWidth(totalText)
-    doc.text(totalText, pageWidth - margin - totalWidth, y)
-    y += 5
+    doc.setFont('helvetica', 'normal')
+    doc.text(String(index + 1), margin + 5, y)
+    doc.setFont('helvetica', 'bold')
+    doc.text(doc.splitTextToSize(itemName, 76), margin + 18, y)
+    doc.text(String(item.quantity), pageWidth - 76, y)
+    doc.text(money(unitPrice), pageWidth - 56, y)
+    setColor(green)
+    rightText(money(totalPrice), pageWidth - margin - 4, y)
+    setColor(dark)
+    y += Math.max(10, doc.splitTextToSize(itemName, 76).length * 5)
+    doc.setDrawColor(230, 236, 233)
+    doc.line(margin, y - 4, pageWidth - margin, y - 4)
   })
 
-  addLine('-', y)
-  y += 5
-
-  // Totals
-  doc.setFontSize(9)
-  const currency = pharmacyInfo?.currency || 'GHS'
-
-  const addTotal = (label, amount, bold = false) => {
-    doc.setFont('courier', bold ? 'bold' : 'normal')
-    doc.text(label, margin, y)
-    const amountText = formatCurrency(amount, currency)
-    const amountWidth = doc.getTextWidth(amountText)
-    doc.text(amountText, pageWidth - margin - amountWidth, y)
-    y += 4
-  }
-
-  addTotal('Subtotal:', saleData.totalAmount)
-  
-  if (saleData.discount > 0) {
-    addTotal('Discount:', -saleData.discount)
-  }
-
-  addLine('-', y)
-  y += 4
-
-  addTotal('TOTAL:', saleData.netAmount, true)
+  const totalsX = pageWidth - 82
   y += 2
+  labelValue('Subtotal', money(saleData.totalAmount), totalsX, y, 36)
+  labelValue('Discount', money(saleData.discount || 0), totalsX, y + 8, 36)
+  labelValue('Tax', money(0), totalsX, y + 16, 36)
+  y += 25
+  doc.setFillColor(...mint)
+  doc.roundedRect(margin, y, pageWidth - margin * 2, 14, 2, 2, 'F')
+  setColor(green)
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(11)
+  doc.text('TOTAL COST', margin + 4, y + 9)
+  doc.setFontSize(14)
+  rightText(money(saleData.netAmount), pageWidth - margin - 4, y + 9)
 
-  // Payment
-  doc.setFont('courier', 'normal')
-  const paymentMethodText = saleData.paymentMethod ? saleData.paymentMethod.toUpperCase() : 'N/A'
-  doc.text(`Payment: ${paymentMethodText}`, margin, y)
-  y += 4
+  y += 27
+  doc.setFontSize(12)
+  doc.text('PAYMENT DETAILS', margin, y)
+  y += 7
+  doc.setDrawColor(184, 222, 211)
+  doc.roundedRect(margin, y, pageWidth - margin * 2, 34, 2, 2)
+  labelValue('Payment Mode', saleData.paymentMethod?.toUpperCase() || 'N/A', margin + 34, y + 11, 62)
+  labelValue('Amount Paid', money(saleData.amountPaid), margin + 34, y + 20, 62)
+  labelValue('Change', money(saleData.change || 0), margin + 34, y + 29, 62)
 
-  addTotal('Paid:', saleData.amountPaid)
-  
-  if (saleData.change > 0) {
-    addTotal('Change:', saleData.change, true)
-  }
+  y += 48
+  doc.setDrawColor(196, 211, 207)
+  doc.setLineDashPattern([2, 2], 0)
+  doc.line(margin, y, pageWidth - margin, y)
+  doc.setLineDashPattern([], 0)
 
-  y += 1
-  addLine('=', y)
-  y += 5
-
-  // Footer
-  addCenteredText('Thank you for your patronage!', y, 9, 'bold')
-  y += 5
-  addCenteredText('Please keep this receipt', y, 7, 'italic')
-  y += 4
-
+  y += 18
+  setColor(green)
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(13)
+  doc.text('Thank you for your patronage!', pageWidth / 2, y, { align: 'center' })
+  y += 8
+  setColor(gray)
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(10)
+  doc.text('Please keep this receipt for your records.', pageWidth / 2, y, { align: 'center' })
   if (pharmacyInfo?.receipt_footer) {
-    addCenteredText(pharmacyInfo.receipt_footer, y, 7)
-    y += 4
+    y += 7
+    doc.text(pharmacyInfo.receipt_footer, pageWidth / 2, y, { align: 'center' })
   }
+  y += 12
+  doc.text(`Printed: ${formatAppDateTime(new Date(), { hour12: true })}`, pageWidth / 2, y, {
+    align: 'center',
+  })
 
-  y += 2
-  addCenteredText(`Printed: ${formatAppDateTime(new Date(), { hour12: true })}`, y, 6)
+  doc.setFillColor(...green)
+  doc.rect(0, pageHeight - 18, pageWidth, 18, 'F')
+  doc.setTextColor(255, 255, 255)
+  doc.setFont('helvetica', 'bold')
+  doc.text('Your health is our priority.', pageWidth / 2, pageHeight - 7, { align: 'center' })
 
   return doc
 }

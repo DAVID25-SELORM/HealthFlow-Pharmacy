@@ -91,7 +91,10 @@ export const addDrug = async (drugData) => {
     throw new Error('Drug was not created correctly. Please try again.')
   }
 
-  return response.drug
+  return {
+    ...response.drug,
+    _saveAction: response.action || 'create',
+  }
 }
 
 // Update drug

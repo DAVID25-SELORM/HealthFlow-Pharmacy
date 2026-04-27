@@ -1,4 +1,5 @@
 import { forwardRef } from 'react'
+import { Briefcase, CreditCard, HeartPulse, Mail, MapPin, Phone, Printer, ReceiptText, ShoppingBag } from 'lucide-react'
 import { formatAppDateTime } from '../../utils/date'
 import './Receipt.css'
 
@@ -26,125 +27,195 @@ const Receipt = forwardRef(({ saleData, pharmacyInfo, mode = 'preview' }, ref) =
     return formatAppDateTime(dateString, { hour12: true })
   }
 
+  const printedAt = formatAppDateTime(new Date(), { hour12: true })
+  const receiptQrValue = encodeURIComponent(`${saleNumber || 'receipt'}-${netAmount || 0}`)
+  const receiptQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=110x110&data=${receiptQrValue}`
+
   return (
     <div ref={ref} className={`receipt-container receipt-${mode}-mode`}>
       <div className="receipt-content">
-        {/* Header */}
-        <div className="receipt-header">
-          <h2>{pharmacyInfo?.pharmacy_name || 'HealthFlow Pharmacy'}</h2>
-          {pharmacyInfo?.address && <p>{pharmacyInfo.address}</p>}
-          {pharmacyInfo?.city && pharmacyInfo?.region && (
-            <p>
-              {pharmacyInfo.city}, {pharmacyInfo.region}
-            </p>
-          )}
-          {pharmacyInfo?.phone && <p>Phone: {pharmacyInfo.phone}</p>}
-          {pharmacyInfo?.email && <p>Email: {pharmacyInfo.email}</p>}
-          {pharmacyInfo?.license_number && (
-            <p className="license">License No: {pharmacyInfo.license_number}</p>
-          )}
-        </div>
-
-        <div className="receipt-divider">{'='.repeat(45)}</div>
-
-        {/* Sale Info */}
-        <div className="receipt-info">
-          <div className="info-row">
-            <span>Sale #:</span>
-            <span className="bold">{saleNumber}</span>
-          </div>
-          <div className="info-row">
-            <span>Date:</span>
-            <span>{formatDate(saleDate)}</span>
-          </div>
-          {soldBy && (
-            <div className="info-row">
-              <span>Cashier:</span>
-              <span>{soldBy}</span>
+        <header className="receipt-brand">
+          <div className="brand-left">
+            <div className="brand-mark" aria-hidden="true">
+              <HeartPulse size={34} />
             </div>
-          )}
-          {patient && (
-            <div className="info-row">
-              <span>Patient:</span>
+            <div>
+              <h2>HealthFlow</h2>
+              <p>Pharmacy</p>
+            </div>
+          </div>
+          <div className="brand-thanks">
+            <Briefcase size={34} />
+            <strong>THANK YOU</strong>
+            <span>For choosing us!</span>
+          </div>
+        </header>
+
+        <section className="receipt-pharmacy-card">
+          <h3>{pharmacyInfo?.pharmacy_name || 'HealthFlow Pharmacy'}</h3>
+          <div className="pharmacy-contact">
+            {pharmacyInfo?.address && (
               <span>
-                {patient.full_name} {patient.phone && `(${patient.phone})`}
+                <MapPin size={15} />
+                {pharmacyInfo.address}
+                {pharmacyInfo?.city || pharmacyInfo?.region
+                  ? `, ${[pharmacyInfo.city, pharmacyInfo.region].filter(Boolean).join(', ')}`
+                  : ''}
               </span>
+            )}
+            {pharmacyInfo?.phone && (
+              <span>
+                <Phone size={15} />
+                {pharmacyInfo.phone}
+              </span>
+            )}
+            {pharmacyInfo?.email && (
+              <span>
+                <Mail size={15} />
+                {pharmacyInfo.email}
+              </span>
+            )}
+            {pharmacyInfo?.license_number && <span>License No: {pharmacyInfo.license_number}</span>}
+          </div>
+        </section>
+
+        <div className="receipt-dashed" />
+
+        <section className="receipt-sale-strip">
+          <div className="sale-meta">
+            <div>
+              <span>Receipt / Sale #:</span>
+              <strong>{saleNumber}</strong>
             </div>
-          )}
-        </div>
-
-        <div className="receipt-divider">{'-'.repeat(45)}</div>
-
-        {/* Items */}
-        <div className="receipt-items">
-          <div className="items-header">ITEMS</div>
-          {items.map((item, index) => (
-            <div key={index} className="receipt-item">
-              <div className="item-name">{item.drug_name || item.name}</div>
-              <div className="item-details">
-                <span>
-                  Qty: {item.quantity} x {formatCurrency(item.unit_price || item.price)}
-                </span>
-                <span className="item-total">
-                  {formatCurrency(item.total_price || item.quantity * item.price)}
-                </span>
+            <div>
+              <span>Date:</span>
+              <strong>{formatDate(saleDate)}</strong>
+            </div>
+            {soldBy && (
+              <div>
+                <span>Cashier:</span>
+                <strong>{soldBy}</strong>
               </div>
-            </div>
-          ))}
-        </div>
-
-        <div className="receipt-divider">{'-'.repeat(45)}</div>
-
-        {/* Totals */}
-        <div className="receipt-totals">
-          <div className="total-row">
-            <span>Subtotal:</span>
-            <span>{formatCurrency(totalAmount)}</span>
-          </div>
-          {discount > 0 && (
-            <div className="total-row">
-              <span>Discount:</span>
-              <span>-{formatCurrency(discount)}</span>
-            </div>
-          )}
-          <div className="receipt-divider">{'-'.repeat(45)}</div>
-          <div className="total-row grand-total">
-            <span>TOTAL:</span>
-            <span>{formatCurrency(netAmount)}</span>
-          </div>
-
-          <div className="payment-section">
-            <div className="total-row">
-              <span>Payment:</span>
-              <span className="payment-method">{paymentMethod ? paymentMethod.toUpperCase() : 'N/A'}</span>
-            </div>
-            <div className="total-row">
-              <span>Paid:</span>
-              <span>{formatCurrency(amountPaid)}</span>
-            </div>
-            {change > 0 && (
-              <div className="total-row change-row">
-                <span>Change:</span>
-                <span>{formatCurrency(change)}</span>
+            )}
+            {patient && (
+              <div>
+                <span>Patient:</span>
+                <strong>
+                  {patient.full_name} {patient.phone && `(${patient.phone})`}
+                </strong>
               </div>
             )}
           </div>
-        </div>
+          <div className="sale-type">
+            <ReceiptText size={38} />
+            <span>Sales Receipt</span>
+          </div>
+        </section>
 
-        <div className="receipt-divider">{'='.repeat(45)}</div>
+        <section className="receipt-items">
+          <div className="section-title">
+            <ShoppingBag size={22} />
+            <span>ITEMS</span>
+          </div>
+          <table className="receipt-items-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Item</th>
+                <th>Qty</th>
+                <th>Unit Price</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((item, index) => {
+                const name = item.drug_name || item.name
+                const unitPrice = item.unit_price || item.price
+                const totalPrice = item.total_price || item.quantity * item.price
+                return (
+                  <tr key={`${name}-${index}`}>
+                    <td>{index + 1}</td>
+                    <td>
+                      <strong>{name}</strong>
+                      {item.unit && <span>{item.unit}</span>}
+                    </td>
+                    <td>{item.quantity}</td>
+                    <td>{formatCurrency(unitPrice)}</td>
+                    <td>
+                      <strong>{formatCurrency(totalPrice)}</strong>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </section>
 
-        {/* Footer */}
-        <div className="receipt-footer">
-          <p className="thank-you">Thank you for your patronage!</p>
-          <p className="footer-note">Please keep this receipt for your records</p>
-          {pharmacyInfo?.receipt_footer && (
-            <p className="custom-footer">{pharmacyInfo.receipt_footer}</p>
-          )}
-        </div>
+        <section className="receipt-summary">
+          <div className="receipt-total-lines">
+            <div>
+              <span>Subtotal</span>
+              <strong>{formatCurrency(totalAmount)}</strong>
+            </div>
+            <div>
+              <span>Discount</span>
+              <strong>{formatCurrency(discount || 0)}</strong>
+            </div>
+            <div>
+              <span>Tax</span>
+              <strong>{formatCurrency(0)}</strong>
+            </div>
+          </div>
+          <div className="receipt-grand-total">
+            <span>TOTAL COST</span>
+            <strong>{formatCurrency(netAmount)}</strong>
+          </div>
+        </section>
 
-        {/* Print timestamp */}
-        <div className="print-timestamp">
-          <p>Printed: {formatAppDateTime(new Date(), { hour12: true })}</p>
+        <section className="receipt-payment">
+          <div className="section-title">
+            <CreditCard size={22} />
+            <span>PAYMENT DETAILS</span>
+          </div>
+          <div className="payment-card">
+            <div className="payment-icon" aria-hidden="true">
+              <CreditCard size={42} />
+            </div>
+            <div className="payment-lines">
+              <div>
+                <span>Payment Mode</span>
+                <strong>{paymentMethod ? paymentMethod.toUpperCase() : 'N/A'}</strong>
+              </div>
+              <div>
+                <span>Amount Paid</span>
+                <strong>{formatCurrency(amountPaid)}</strong>
+              </div>
+              <div>
+                <span>Change</span>
+                <strong>{formatCurrency(change || 0)}</strong>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <div className="receipt-dashed" />
+
+        <footer className="receipt-footer">
+          <img className="receipt-qr" src={receiptQrUrl} alt="" />
+          <div className="footer-message">
+            <p className="thank-you">Thank you for your patronage!</p>
+            <p className="footer-note">Please keep this receipt for your records.</p>
+            {pharmacyInfo?.receipt_footer && <p className="custom-footer">{pharmacyInfo.receipt_footer}</p>}
+            <p className="print-timestamp">
+              <Printer size={14} />
+              Printed: {printedAt}
+            </p>
+          </div>
+        </footer>
+
+        <div className="receipt-bottom-bar">
+          <span>Your health is our priority.</span>
+          <HeartPulse size={26} />
         </div>
       </div>
     </div>

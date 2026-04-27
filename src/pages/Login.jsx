@@ -1,20 +1,32 @@
 import { useState } from 'react'
-import { Navigate } from 'react-router-dom'
+import { Navigate, useNavigate } from 'react-router-dom'
 import { Lock, Mail } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
 import './Login.css'
 
+const hasRecoveryHint = () => {
+  if (typeof window === 'undefined') {
+    return false
+  }
+
+  const params = new URLSearchParams(window.location.search)
+  const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''))
+  return params.get('mode') === 'recovery' || hash.get('type') === 'recovery'
+}
+
 const Login = () => {
-  const { signIn, requestPasswordReset, isAuthenticated, isConfigured } = useAuth()
+  const { signIn, signOut, requestPasswordReset, updatePassword, isAuthenticated, isConfigured, loading } = useAuth()
   const { notify } = useNotification()
+  const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
-  const [mode, setMode] = useState('sign-in')
+  const [mode, setMode] = useState(() => (hasRecoveryHint() ? 'new-password' : 'sign-in'))
 
-  if (isAuthenticated) {
+  if (isAuthenticated && mode !== 'new-password') {
     return <Navigate to="/dashboard" replace />
   }
 
@@ -31,8 +43,38 @@ const Login = () => {
           return
         }
         await requestPasswordReset(email)
-        notify('Password reset email sent. Check your inbox.', 'success')
+        notify(
+          'Password reset email sent. Open the link in your inbox or spam folder, then create a new password.',
+          'success',
+          6000
+        )
         setMode('sign-in')
+        return
+      }
+
+      if (mode === 'new-password') {
+        if (loading || !isAuthenticated) {
+          setError('Your reset link is still being verified. Please wait a moment and try again.')
+          return
+        }
+
+        if (password.length < 6) {
+          setError('New password must be at least 6 characters.')
+          return
+        }
+
+        if (password !== confirmPassword) {
+          setError('The two password entries do not match.')
+          return
+        }
+
+        await updatePassword(password)
+        notify('Password updated successfully. Please sign in with your new password.', 'success')
+        await signOut().catch(() => null)
+        setPassword('')
+        setConfirmPassword('')
+        setMode('sign-in')
+        navigate('/login', { replace: true })
         return
       }
 
@@ -53,7 +95,13 @@ const Login = () => {
     <div className="login-page">
       <div className="login-card">
         <h1>HealthFlow Pharmacy</h1>
-        <p className="subtitle">{mode === 'reset' ? 'Reset your password' : 'Sign in to continue'}</p>
+        <p className="subtitle">
+          {mode === 'reset'
+            ? 'Enter your email to receive a reset link'
+            : mode === 'new-password'
+              ? 'Create a new password for your account'
+              : 'Sign in to continue'}
+        </p>
 
         {!isConfigured && (
           <div className="login-alert">Supabase credentials are not configured in your .env file.</div>
@@ -62,52 +110,86 @@ const Login = () => {
         {error && <div className="login-alert">{error}</div>}
 
         <form onSubmit={handleSubmit} className="login-form">
-          <label>
-            Email
-            <div className="input-wrap">
-              <Mail size={16} />
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                autoComplete="email"
-                required
-              />
-            </div>
-          </label>
+          {mode === 'new-password' && loading && (
+            <div className="login-info">Verifying your password reset link...</div>
+          )}
 
-          {mode === 'sign-in' && (
+          {mode !== 'new-password' && (
             <label>
-              Password
+              Email
               <div className="input-wrap">
-                <Lock size={16} />
+                <Mail size={16} />
                 <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Enter password"
-                  autoComplete="current-password"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  autoComplete="email"
                   required
                 />
               </div>
             </label>
           )}
 
-          <button type="submit" disabled={submitting || !isConfigured}>
-            {submitting ? 'Please wait...' : mode === 'reset' ? 'Send Reset Email' : 'Sign in'}
-          </button>
+          {mode !== 'reset' && (
+            <label>
+              {mode === 'new-password' ? 'New Password' : 'Password'}
+              <div className="input-wrap">
+                <Lock size={16} />
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder={mode === 'new-password' ? 'Enter new password' : 'Enter password'}
+                  autoComplete={mode === 'new-password' ? 'new-password' : 'current-password'}
+                  required
+                />
+              </div>
+            </label>
+          )}
+
+          {mode === 'new-password' && (
+            <label>
+              Confirm New Password
+              <div className="input-wrap">
+                <Lock size={16} />
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Re-enter new password"
+                  autoComplete="new-password"
+                  required
+                />
+              </div>
+            </label>
+          )}
 
           <button
-            type="button"
-            className="text-btn"
-            onClick={() => {
-              setError('')
-              setMode((current) => (current === 'sign-in' ? 'reset' : 'sign-in'))
-            }}
+            type="submit"
+            disabled={submitting || !isConfigured || (mode === 'new-password' && loading)}
           >
-            {mode === 'sign-in' ? 'Forgot password?' : 'Back to sign in'}
+            {submitting
+              ? 'Please wait...'
+              : mode === 'reset'
+                ? 'Send Password Reset Link'
+                : mode === 'new-password'
+                  ? 'Update Password'
+                  : 'Sign in'}
           </button>
+
+          {mode !== 'new-password' && (
+            <button
+              type="button"
+              className="text-btn"
+              onClick={() => {
+                setError('')
+                setMode((current) => (current === 'sign-in' ? 'reset' : 'sign-in'))
+              }}
+            >
+              {mode === 'sign-in' ? 'Forgot password?' : 'Back to sign in'}
+            </button>
+          )}
         </form>
       </div>
     </div>
