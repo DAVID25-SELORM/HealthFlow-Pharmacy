@@ -6,6 +6,8 @@ import { getAllDrugs } from '../services/drugService'
 import { createSale, getRecentSales, getSaleById, refundSale } from '../services/salesService'
 import { getAllPatients } from '../services/patientService'
 import { getPharmacySettings } from '../services/settingsService'
+import { getBranches } from '../services/branchService'
+import { closeShift, getOpenShiftForUser, openShift } from '../services/shiftService'
 import { printReceipt, downloadReceiptPDF, formatSaleForReceipt } from '../services/receiptService'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
@@ -30,6 +32,13 @@ const Sales = () => {
   const [lastSale, setLastSale] = useState(null)
   const [showReceipt, setShowReceipt] = useState(false)
   const [pharmacyInfo, setPharmacyInfo] = useState(null)
+  const [branches, setBranches] = useState([])
+  const [activeShift, setActiveShift] = useState(null)
+  const [shiftBranchId, setShiftBranchId] = useState('')
+  const [openingCash, setOpeningCash] = useState('')
+  const [countedCash, setCountedCash] = useState('')
+  const [shiftNotes, setShiftNotes] = useState('')
+  const [shiftBusy, setShiftBusy] = useState(false)
   const [recentSales, setRecentSales] = useState([])
   const [loadingRecentSales, setLoadingRecentSales] = useState(false)
   const [refundingSaleId, setRefundingSaleId] = useState(null)
@@ -48,14 +57,21 @@ const Sales = () => {
           return
         }
 
-        const [drugsData, patientsData, pharmacySettings] = await Promise.all([
+        const [drugsData, patientsData, pharmacySettings, branchesData, openShiftData] = await Promise.all([
           getAllDrugs({ useTierAccess: true }),
           getAllPatients(),
           getPharmacySettings().catch(() => null),
+          getBranches(),
+          getOpenShiftForUser(user?.id),
         ])
         setDrugs(drugsData)
         setPatients(patientsData)
         setPharmacyInfo(pharmacySettings)
+        setBranches(branchesData)
+        setActiveShift(openShiftData)
+        setShiftBranchId(
+          openShiftData?.branch_id || profile?.branch_id || branchesData.find((branch) => branch.is_main)?.id || branchesData[0]?.id || ''
+        )
         const recent = await getRecentSales(8)
         setRecentSales(recent || [])
       } catch (loadError) {
@@ -67,7 +83,7 @@ const Sales = () => {
     }
 
     loadData()
-  }, [canProcessRefund])
+  }, [canProcessRefund, profile?.branch_id, user?.id])
 
   useEffect(() => {
     const routeSearch = searchParams.get('search') || ''
@@ -227,6 +243,11 @@ const Sales = () => {
       return
     }
 
+    if (!activeShift?.id) {
+      notify('Open a shift before completing sales.', 'warning')
+      return
+    }
+
     const total = calculateTotal()
     const amountPaid = Number.parseFloat(received) || 0
 
@@ -251,6 +272,9 @@ const Sales = () => {
         amountPaid: paymentMethod === 'cash' ? amountPaid : total,
         change: paymentMethod === 'cash' ? calculateChange() : 0,
         soldBy: user?.id || null,
+        shiftId: activeShift.id,
+        organizationId: profile?.organization_id,
+        branchId: activeShift.branch_id,
       })
 
       // Prepare receipt data with full sale details
@@ -282,6 +306,8 @@ const Sales = () => {
       setReceived('')
       setPatientId('')
       await refreshDrugs()
+      const refreshedShift = await getOpenShiftForUser(user?.id)
+      setActiveShift(refreshedShift)
       await refreshRecentSales()
       dispatchHealthflowDataChanged()
       
@@ -299,6 +325,11 @@ const Sales = () => {
 
   const handleRefundSale = async (sale) => {
     if (!canProcessRefund || !sale?.id) {
+      return
+    }
+
+    if (!activeShift?.id) {
+      notify('Open a shift before processing refunds.', 'warning')
       return
     }
 
@@ -321,6 +352,8 @@ const Sales = () => {
         canRefund: Boolean(profile?.can_refund),
       })
       notify(`Sale ${sale.sale_number} refunded successfully.`, 'success')
+      const refreshedShift = await getOpenShiftForUser(user?.id)
+      setActiveShift(refreshedShift)
       await Promise.all([refreshDrugs(), refreshRecentSales()])
       dispatchHealthflowDataChanged()
     } catch (refundError) {
@@ -328,6 +361,52 @@ const Sales = () => {
       setError(refundError.message || 'Unable to refund sale.')
     } finally {
       setRefundingSaleId(null)
+    }
+  }
+
+  const handleOpenShift = async (event) => {
+    event.preventDefault()
+
+    try {
+      setShiftBusy(true)
+      setError('')
+      const shift = await openShift({
+        organizationId: profile?.organization_id,
+        branchId: shiftBranchId,
+        openingCash: Number(openingCash || 0),
+        openedBy: user?.id,
+      })
+      setActiveShift(shift)
+      setOpeningCash('')
+      notify('Shift opened. Sales can now be processed.', 'success')
+    } catch (shiftError) {
+      setError(shiftError.message || 'Unable to open shift.')
+    } finally {
+      setShiftBusy(false)
+    }
+  }
+
+  const handleCloseShift = async (event) => {
+    event.preventDefault()
+    if (!activeShift?.id) return
+
+    try {
+      setShiftBusy(true)
+      setError('')
+      await closeShift({
+        shiftId: activeShift.id,
+        countedCash: Number(countedCash || 0),
+        notes: shiftNotes,
+        closedBy: user?.id,
+      })
+      setActiveShift(null)
+      setCountedCash('')
+      setShiftNotes('')
+      notify('Shift closed successfully.', 'success')
+    } catch (shiftError) {
+      setError(shiftError.message || 'Unable to close shift.')
+    } finally {
+      setShiftBusy(false)
     }
   }
 
@@ -425,6 +504,75 @@ const Sales = () => {
       </div>
 
       {error && <div className="pos-alert">{error}</div>}
+
+      <div className="shift-panel">
+        {activeShift ? (
+          <>
+            <div className="shift-summary">
+              <div>
+                <span>Open Shift</span>
+                <strong>{activeShift.branches?.name || 'Assigned branch'}</strong>
+              </div>
+              <div>
+                <span>Opening Cash</span>
+                <strong>GHS {Number(activeShift.opening_cash || 0).toFixed(2)}</strong>
+              </div>
+              <div>
+                <span>Expected Cash</span>
+                <strong>GHS {Number(activeShift.expected_cash || 0).toFixed(2)}</strong>
+              </div>
+            </div>
+            <form className="shift-close-form" onSubmit={handleCloseShift}>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="Counted cash"
+                value={countedCash}
+                onChange={(event) => setCountedCash(event.target.value)}
+                required
+              />
+              <input
+                type="text"
+                placeholder="Closing note"
+                value={shiftNotes}
+                onChange={(event) => setShiftNotes(event.target.value)}
+              />
+              <button type="submit" className="btn btn-outline" disabled={shiftBusy}>
+                {shiftBusy ? 'Closing...' : 'Close Shift'}
+              </button>
+            </form>
+          </>
+        ) : (
+          <form className="shift-open-form" onSubmit={handleOpenShift}>
+            <strong>Open a shift to begin sales</strong>
+            <select
+              value={shiftBranchId}
+              onChange={(event) => setShiftBranchId(event.target.value)}
+              required
+              disabled={shiftBusy || Boolean(profile?.branch_id)}
+            >
+              <option value="">Select branch</option>
+              {branches.filter((branch) => branch.is_active !== false).map((branch) => (
+                <option key={branch.id} value={branch.id}>
+                  {branch.name}{branch.code ? ` (${branch.code})` : ''}
+                </option>
+              ))}
+            </select>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="Opening cash"
+              value={openingCash}
+              onChange={(event) => setOpeningCash(event.target.value)}
+            />
+            <button type="submit" className="btn btn-primary" disabled={shiftBusy}>
+              {shiftBusy ? 'Opening...' : 'Open Shift'}
+            </button>
+          </form>
+        )}
+      </div>
 
       <div className="pos-layout">
         <div className="product-section">
@@ -637,10 +785,10 @@ const Sales = () => {
 
             <button
               className="complete-sale-btn"
-              disabled={cart.length === 0 || processing}
+              disabled={cart.length === 0 || processing || !activeShift}
               onClick={handleCompleteSale}
             >
-              {processing ? 'Completing Sale...' : 'Complete Sale'}
+              {!activeShift ? 'Open Shift to Sell' : processing ? 'Completing Sale...' : 'Complete Sale'}
             </button>
           </div>
         </div>

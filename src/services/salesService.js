@@ -3,6 +3,7 @@ import { assertNonNegativeNumber, toNumber } from '../utils/validation'
 import { tryLogAuditEvent } from './auditService'
 import { getUserBranchIdsByUserIds } from './branchService'
 import { recordCashbookMovementIfSessionOpen } from './cashbookService'
+import { addShiftMovement } from './shiftService'
 
 /**
  * Sales Service
@@ -181,9 +182,10 @@ const createSaleLegacy = async (saleData) => {
           amount_paid: totals.amountPaid,
           change_given: totals.change,
           notes: saleData.notes,
-          sold_by: saleData.soldBy,
-          sale_date: new Date().toISOString(),
-        },
+        sold_by: saleData.soldBy,
+        sale_date: new Date().toISOString(),
+        shift_id: saleData.shiftId,
+      },
       ])
       .select()
 
@@ -241,6 +243,21 @@ const createSaleLegacy = async (saleData) => {
     netAmount: totals.netAmount,
   })
 
+  if (totals.paymentMethod === 'cash' && saleData.shiftId && saleData.organizationId && saleData.branchId) {
+    await addShiftMovement({
+      shiftId: saleData.shiftId,
+      organizationId: saleData.organizationId,
+      branchId: saleData.branchId,
+      movementType: 'sale_cash',
+      sourceType: 'sale',
+      sourceId: sale[0].id,
+      amount: totals.netAmount,
+      direction: 'in',
+      description: `Cash sale ${sale[0].sale_number}`,
+      createdBy: saleData.soldBy,
+    })
+  }
+
   return { sale: sale[0], saleNumber: sale[0].sale_number }
 }
 
@@ -249,6 +266,10 @@ export const createSale = async (saleData) => {
   try {
     if (!saleData?.items?.length) {
       throw new Error('At least one sale item is required.')
+    }
+
+    if (!saleData.shiftId) {
+      throw new Error('Open a shift before completing sales.')
     }
 
     const totals = buildValidatedSaleTotals(saleData)
@@ -264,6 +285,7 @@ export const createSale = async (saleData) => {
         sold_by: saleData.soldBy || null,
         sale_date: new Date().toISOString(),
         discount: totals.discount,
+        shift_id: saleData.shiftId,
         items: saleData.items.map((item) => ({
           drugId: item.drugId,
           name: item.name,

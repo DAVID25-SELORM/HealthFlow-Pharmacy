@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   DollarSign, TrendingDown, RefreshCcw,
   Plus, X, Calendar, Download, BookOpen, ReceiptText,
-  AlertTriangle
+  AlertTriangle, Clock
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
@@ -17,6 +17,7 @@ import {
   getCashbookSessions, getTodaySession,
   openCashbookSession, closeCashbookSession, addCashbookEntry,
 } from '../services/cashbookService'
+import { getShifts } from '../services/shiftService'
 import {
   getReceivables, recordClaimPayment, getReceivablesSummary,
 } from '../services/receivablesService'
@@ -45,6 +46,7 @@ const TABS = [
   { key: 'overview',     label: 'Overview',    icon: DollarSign   },
   { key: 'expenses',     label: 'Expenses',    icon: TrendingDown },
   { key: 'cashbook',     label: 'Cashbook',    icon: BookOpen     },
+  { key: 'shifts',       label: 'Shifts',      icon: Clock        },
   { key: 'receivables',  label: 'Receivables', icon: ReceiptText  },
 ]
 
@@ -122,6 +124,7 @@ const Accounting = () => {
   const [adjDirection, setAdjDirection]   = useState('in')
   const [adjDesc, setAdjDesc]             = useState('')
   const [addingEntry, setAddingEntry]     = useState(false)
+  const [shifts, setShifts]               = useState([])
 
   // Receivables
   const [receivables, setReceivables]       = useState([])
@@ -202,6 +205,22 @@ const Accounting = () => {
     }
   }, [startDate, endDate, branchFilter])
 
+  const loadShifts = useCallback(async () => {
+    if (!isSupabaseConfigured()) return
+    try {
+      setLoading(true)
+      setError('')
+      setOverviewWarning('')
+      const branchId = branchFilter !== 'all' ? branchFilter : null
+      const data = await getShifts({ startDate, endDate, branchId })
+      setShifts(data)
+    } catch (err) {
+      setError(err.message || 'Failed to load shifts.')
+    } finally {
+      setLoading(false)
+    }
+  }, [startDate, endDate, branchFilter])
+
   const loadReceivables = useCallback(async () => {
     if (!isSupabaseConfigured()) return
     try {
@@ -240,13 +259,15 @@ const Accounting = () => {
     if (activeTab === 'overview')    void loadOverview()
     if (activeTab === 'expenses')    void loadExpenses()
     if (activeTab === 'cashbook')    void loadCashbook()
+    if (activeTab === 'shifts')      void loadShifts()
     if (activeTab === 'receivables') void loadReceivables()
-  }, [activeTab, loadOverview, loadExpenses, loadCashbook, loadReceivables])
+  }, [activeTab, loadOverview, loadExpenses, loadCashbook, loadShifts, loadReceivables])
 
   const refresh = () => {
     if (activeTab === 'overview')    void loadOverview()
     if (activeTab === 'expenses')    void loadExpenses()
     if (activeTab === 'cashbook')    void loadCashbook()
+    if (activeTab === 'shifts')      void loadShifts()
     if (activeTab === 'receivables') void loadReceivables()
   }
 
@@ -1006,6 +1027,71 @@ const Accounting = () => {
     </div>
   )
 
+  const renderShifts = () => {
+    const closed = shifts.filter((shift) => shift.status === 'closed')
+    const open = shifts.filter((shift) => shift.status === 'open')
+    const totalVariance = closed.reduce((sum, shift) => sum + Number(shift.cash_variance || 0), 0)
+
+    return (
+      <div className="acc-shifts">
+        <div className="acc-kpi-grid">
+          <div className="acc-kpi primary">
+            <span className="acc-kpi-label">Open Shifts</span>
+            <span className="acc-kpi-value">{open.length}</span>
+          </div>
+          <div className="acc-kpi success">
+            <span className="acc-kpi-label">Closed Shifts</span>
+            <span className="acc-kpi-value">{closed.length}</span>
+          </div>
+          <div className={`acc-kpi ${totalVariance < 0 ? 'danger' : 'warning'}`}>
+            <span className="acc-kpi-label">Total Variance</span>
+            <span className="acc-kpi-value">{fmt(totalVariance)}</span>
+          </div>
+        </div>
+
+        {shifts.length === 0 ? (
+          <p className="acc-empty">No shifts found for the selected range.</p>
+        ) : (
+          <div className="acc-table-wrap">
+            <h4>Shift Register</h4>
+            <table className="acc-table">
+              <thead>
+                <tr>
+                  <th>Opened</th>
+                  <th>Closed</th>
+                  <th>Staff</th>
+                  <th>Branch</th>
+                  <th>Opening</th>
+                  <th>Expected</th>
+                  <th>Counted</th>
+                  <th>Variance</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {shifts.map((shift) => (
+                  <tr key={shift.id}>
+                    <td>{new Date(shift.opened_at).toLocaleString()}</td>
+                    <td>{shift.closed_at ? new Date(shift.closed_at).toLocaleString() : '--'}</td>
+                    <td>{shift.opener?.full_name || shift.opener?.email || '--'}</td>
+                    <td>{shift.branches?.name || '--'}</td>
+                    <td className="amount-cell">{Number(shift.opening_cash || 0).toFixed(2)}</td>
+                    <td className="amount-cell">{Number(shift.expected_cash || 0).toFixed(2)}</td>
+                    <td className="amount-cell">{shift.counted_cash !== null ? Number(shift.counted_cash).toFixed(2) : '--'}</td>
+                    <td className={`amount-cell ${Number(shift.cash_variance) < 0 ? 'text-danger' : Number(shift.cash_variance) > 0 ? 'text-success' : ''}`}>
+                      {shift.cash_variance !== null ? Number(shift.cash_variance).toFixed(2) : '--'}
+                    </td>
+                    <td><span className={`acc-badge acc-badge-${shift.status}`}>{shift.status}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    )
+  }
+
   // â”€â”€ main render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   return (
@@ -1064,6 +1150,7 @@ const Accounting = () => {
         {!loading && activeTab === 'overview'    && renderOverview()}
         {!loading && activeTab === 'expenses'    && renderExpenses()}
         {!loading && activeTab === 'cashbook'    && renderCashbook()}
+        {!loading && activeTab === 'shifts'      && renderShifts()}
         {!loading && activeTab === 'receivables' && renderReceivables()}
       </div>
     </div>

@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   from: vi.fn(),
   getUserBranchIdsByUserIds: vi.fn(),
   recordCashbookMovementIfSessionOpen: vi.fn(),
+  addShiftMovement: vi.fn(),
   rpc: vi.fn(),
   tryLogAuditEvent: vi.fn(),
 }))
@@ -25,6 +26,10 @@ vi.mock('./branchService', () => ({
 
 vi.mock('./cashbookService', () => ({
   recordCashbookMovementIfSessionOpen: mocks.recordCashbookMovementIfSessionOpen,
+}))
+
+vi.mock('./shiftService', () => ({
+  addShiftMovement: mocks.addShiftMovement,
 }))
 
 import { createSale, refundSale } from './salesService'
@@ -52,6 +57,7 @@ describe('salesService.createSale', () => {
       createSale({
         items: [{ drugId: 'drug-1', name: 'Paracetamol', quantity: 1, price: 12 }],
         paymentMethod: 'crypto',
+        shiftId: 'shift-1',
       })
     ).rejects.toThrow('Payment method must be one of: cash, momo, insurance, card.')
 
@@ -75,6 +81,7 @@ describe('salesService.createSale', () => {
         items: [{ drugId: 'drug-1', name: 'Paracetamol 500mg', quantity: 2, price: 12 }],
         paymentMethod: 'cash',
         amountPaid: 24,
+        shiftId: 'shift-1',
       })
     ).rejects.toEqual(rpcError)
 
@@ -124,6 +131,7 @@ describe('salesService.createSale', () => {
         paymentMethod: 'cash',
         amountPaid: 10,
         soldBy: 'user-1',
+        shiftId: 'shift-1',
       })
     ).resolves.toEqual({
       sale: {
@@ -186,6 +194,7 @@ describe('salesService.createSale', () => {
         paymentMethod: 'card',
         amountPaid: 0,
         soldBy: 'user-1',
+        shiftId: 'shift-1',
       })
     ).resolves.toEqual({
       sale: {
@@ -279,6 +288,7 @@ describe('salesService.createSale', () => {
         paymentMethod: 'cash',
         amountPaid: 15,
         soldBy: 'user-1',
+        shiftId: 'shift-1',
       })
     ).resolves.toEqual({
       sale: {
