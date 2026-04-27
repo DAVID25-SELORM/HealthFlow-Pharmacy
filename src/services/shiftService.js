@@ -5,10 +5,43 @@ import { tryLogAuditEvent } from './auditService'
 const SHIFT_SELECT = `
   *,
   branches (id, name, code),
-  opener:opened_by (id, full_name, email),
-  closer:closed_by (id, full_name, email),
   shift_cash_movements (*)
 `
+
+const attachShiftUsers = async (shifts) => {
+  const rows = Array.isArray(shifts) ? shifts : shifts ? [shifts] : []
+  if (rows.length === 0) return shifts
+
+  const userIds = [
+    ...new Set(
+      rows
+        .flatMap((shift) => [shift.opened_by, shift.closed_by])
+        .filter(Boolean)
+    ),
+  ]
+
+  if (userIds.length === 0) {
+    return Array.isArray(shifts)
+      ? rows.map((shift) => ({ ...shift, opener: null, closer: null }))
+      : { ...rows[0], opener: null, closer: null }
+  }
+
+  const { data, error } = await supabase
+    .from('users')
+    .select('id, full_name, email')
+    .in('id', userIds)
+
+  if (error) throw error
+
+  const usersById = new Map((data || []).map((profile) => [profile.id, profile]))
+  const hydrated = rows.map((shift) => ({
+    ...shift,
+    opener: usersById.get(shift.opened_by) || null,
+    closer: usersById.get(shift.closed_by) || null,
+  }))
+
+  return Array.isArray(shifts) ? hydrated : hydrated[0]
+}
 
 export const getOpenShiftForUser = async (userId) => {
   if (!userId) {
@@ -26,7 +59,7 @@ export const getOpenShiftForUser = async (userId) => {
     throw error
   }
 
-  return data || null
+  return data ? attachShiftUsers(data) : null
 }
 
 export const getShifts = async (filters = {}) => {
@@ -43,7 +76,7 @@ export const getShifts = async (filters = {}) => {
 
   const { data, error } = await query
   if (error) throw error
-  return data || []
+  return attachShiftUsers(data || [])
 }
 
 export const openShift = async ({ organizationId, branchId, openingCash, openedBy }) => {
@@ -142,7 +175,7 @@ export const closeShift = async ({ shiftId, countedCash, notes, closedBy }) => {
     },
   })
 
-  return data
+  return attachShiftUsers(data)
 }
 
 export const addShiftMovement = async ({
