@@ -11,6 +11,7 @@
   top: 0;
   z-index: 100;
   box-shadow: var(--shadow-sm);
+  width: 100%;
 }
 
 .topbar-leading {
@@ -58,6 +59,7 @@
   border-radius: var(--radius-lg);
   font-size: 0.875rem;
   transition: var(--transition);
+  min-width: 0;
 }
 
 .topbar-search-input:focus {
@@ -78,6 +80,7 @@
   font-weight: 600;
   padding: 0.45rem 0.8rem;
   cursor: pointer;
+  min-height: 0;
 }
 
 .topbar-actions {
@@ -195,6 +198,7 @@
   border-radius: var(--radius-lg);
   cursor: pointer;
   transition: var(--transition);
+  min-width: 0;
 }
 
 .user-profile:hover {
@@ -264,6 +268,7 @@
     flex-wrap: wrap;
     align-items: stretch;
     gap: 0.75rem;
+    padding: 0.75rem;
   }
 
   .topbar-leading,
@@ -273,6 +278,8 @@
 
   .topbar-actions {
     justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
   }
 
   .user-profile {
@@ -283,6 +290,7 @@
 
   .topbar-search-input {
     font-size: 0.85rem;
+    padding-right: 4.9rem;
   }
 
   .topbar-search-submit {
@@ -292,5 +300,36 @@
 
   .alerts-panel {
     right: -0.5rem;
+  }
+}
+
+@media (max-width: 430px) {
+  .topbar-leading {
+    gap: 0.5rem;
+  }
+
+  .topbar-menu-btn {
+    width: 40px;
+    height: 40px;
+    flex: 0 0 40px;
+  }
+
+  .topbar-search-icon {
+    left: 0.75rem;
+  }
+
+  .topbar-search-input {
+    padding: 0.7rem 4.55rem 0.7rem 2.35rem;
+  }
+
+  .topbar-search-submit {
+    right: 0.35rem;
+    padding: 0.35rem 0.55rem;
+    font-size: 0.75rem;
+  }
+
+  .user-avatar {
+    width: 36px;
+    height: 36px;
   }
 }

@@ -105,7 +105,7 @@
 
 @media (max-width: 1024px) {
   .sidebar {
-    width: min(82vw, 320px);
+    width: min(86vw, 320px);
     transform: translateX(-100%);
   }
 
@@ -127,6 +127,10 @@
 }
 
 @media (max-width: 640px) {
+  .sidebar {
+    width: min(88vw, 300px);
+  }
+
   .nav-item {
     padding: 0.9rem 1rem;
   }

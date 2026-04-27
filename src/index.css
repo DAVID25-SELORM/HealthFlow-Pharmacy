@@ -49,6 +49,13 @@
   box-sizing: border-box;
 }
 
+html {
+  width: 100%;
+  min-width: 320px;
+  text-size-adjust: 100%;
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
@@ -76,6 +83,32 @@ input,
 select,
 textarea {
   font: inherit;
+  max-width: 100%;
+}
+
+button,
+select,
+input[type="button"],
+input[type="submit"] {
+  min-height: 44px;
+}
+
+table {
+  max-width: 100%;
+}
+
+.page-header,
+.header-actions,
+.form-actions,
+.modal-header,
+.card-header {
+  min-width: 0;
+}
+
+.page-header h1,
+.page-header p,
+.card-header h3 {
+  overflow-wrap: anywhere;
 }
 
 /* Scrollbar Styles */
@@ -199,5 +232,15 @@ h6 { font-size: 0.875rem; }
     min-width: 0;
     max-width: none;
     width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  h1 { font-size: 1.45rem; }
+  h2 { font-size: 1.25rem; }
+
+  .btn,
+  button {
+    max-width: 100%;
   }
 }

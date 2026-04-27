@@ -1,5 +1,7 @@
 .patients-page {
   max-width: 1400px;
+  width: 100%;
+  min-width: 0;
 }
 
 .patient-alert {
@@ -38,6 +40,7 @@
 
 .search-container input {
   flex: 1;
+  min-width: 0;
   border: none;
   font-size: 0.875rem;
 }
@@ -50,6 +53,7 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
   gap: 1.5rem;
+  min-width: 0;
 }
 
 .patient-card {
@@ -61,6 +65,7 @@
   flex-direction: column;
   gap: 1rem;
   transition: var(--transition);
+  min-width: 0;
 }
 
 .patient-card:hover {
@@ -98,6 +103,7 @@
   gap: 0.5rem;
   font-size: 0.875rem;
   color: var(--gray-600);
+  overflow-wrap: anywhere;
 }
 
 .patient-stats {
@@ -145,6 +151,7 @@
   max-height: 90vh;
   overflow-y: auto;
   box-shadow: var(--shadow-lg);
+  min-width: 0;
 }
 
 .modal-header {
@@ -271,6 +278,7 @@
   padding: 0.75rem;
   border-radius: var(--radius);
   background: var(--gray-50);
+  min-width: 0;
 }
 
 .patient-history-row strong,
@@ -382,5 +390,32 @@
 
   .patient-stats {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .patients-grid {
+    gap: 1rem;
+  }
+
+  .modal-overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .modal-content {
+    max-height: 92vh;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  }
+
+  .patient-history-row,
+  .patient-history-section-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .patient-history-meta {
+    align-items: flex-start;
+    text-align: left;
   }
 }

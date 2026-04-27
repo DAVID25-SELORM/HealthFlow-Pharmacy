@@ -1,6 +1,8 @@
 /* ── Page ──────────────────────────────────────────────────────────────────── */
 .accounting-page {
   max-width: 1400px;
+  width: 100%;
+  min-width: 0;
 }
 
 .acc-alert {
@@ -35,6 +37,7 @@
   border-bottom: 2px solid var(--gray-200);
   margin-bottom: 1.5rem;
   overflow-x: auto;
+  max-width: 100%;
 }
 
 .acc-tab {
@@ -91,6 +94,7 @@
   justify-content: space-between;
   gap: 1rem;
   margin-bottom: 1rem;
+  min-width: 0;
 }
 
 .acc-section-header h3 {
@@ -124,6 +128,7 @@
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 1rem;
   margin-bottom: 1.5rem;
+  min-width: 0;
 }
 
 .acc-kpi {
@@ -136,6 +141,7 @@
   gap: 0.2rem;
   border-left: 4px solid var(--gray-300);
   transition: var(--transition);
+  min-width: 0;
 }
 
 .acc-kpi:hover {
@@ -174,6 +180,7 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 1.25rem;
+  min-width: 0;
 }
 
 .acc-panel {
@@ -184,6 +191,7 @@
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  min-width: 0;
 }
 
 .acc-panel h3 {
@@ -251,6 +259,7 @@
 .acc-toolbar-actions {
   display: flex;
   gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
 .acc-summary-pill {
@@ -270,6 +279,7 @@
   box-shadow: var(--shadow);
   padding: 1.25rem 1.5rem;
   margin-bottom: 1.25rem;
+  min-width: 0;
 }
 
 .acc-form h4,
@@ -333,6 +343,7 @@
   box-shadow: var(--shadow);
   background: white;
   margin-top: 1rem;
+  max-width: 100%;
 }
 
 .acc-table-wrap h4 {
@@ -346,6 +357,7 @@
   width: 100%;
   border-collapse: collapse;
   font-size: 0.82rem;
+  min-width: 760px;
 }
 
 .acc-table thead th {
@@ -421,6 +433,7 @@
   box-shadow: var(--shadow);
   padding: 1.5rem;
   margin-bottom: 1.25rem;
+  min-width: 0;
 }
 
 .acc-session-card h4 {
@@ -487,6 +500,7 @@
   padding: 0.4rem 0;
   border-bottom: 1px solid var(--gray-100);
   font-size: 0.8rem;
+  min-width: 0;
 }
 
 .acc-entry-row.in  .acc-entry-amount { color: var(--success); }
@@ -504,6 +518,8 @@
 .acc-entry-desc {
   flex: 1;
   color: var(--gray-700);
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .acc-entry-amount {
@@ -535,6 +551,7 @@
   box-shadow: var(--shadow);
   padding: 1.25rem 1.5rem;
   margin-bottom: 1.25rem;
+  min-width: 0;
 }
 
 .acc-aging h4 {
@@ -602,6 +619,8 @@
   width: 100%;
   max-width: 540px;
   padding: 1.5rem;
+  max-height: 90vh;
+  overflow-y: auto;
 }
 
 .acc-modal-header {
@@ -691,5 +710,34 @@
   .acc-tab-toolbar {
     flex-direction: column;
     align-items: stretch;
+  }
+}
+
+@media (max-width: 480px) {
+  .acc-section-header,
+  .acc-entry-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .acc-aging-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .acc-form,
+  .acc-panel,
+  .acc-session-card,
+  .acc-aging {
+    padding: 1rem;
+  }
+
+  .acc-modal-backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .acc-modal {
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    max-height: 92vh;
   }
 }

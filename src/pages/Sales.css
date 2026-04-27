@@ -3,6 +3,8 @@
   height: calc(100vh - 140px);
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  width: 100%;
 }
 
 .pos-alert {
@@ -20,6 +22,7 @@
   gap: 1.5rem;
   flex: 1;
   overflow: hidden;
+  min-width: 0;
 }
 
 /* Product Section */
@@ -28,6 +31,7 @@
   flex-direction: column;
   gap: 1.5rem;
   overflow-y: auto;
+  min-width: 0;
 }
 
 .search-drug {
@@ -47,6 +51,7 @@
 
 .search-drug input {
   flex: 1;
+  min-width: 0;
   border: none;
   font-size: 1rem;
 }
@@ -130,6 +135,7 @@
   grid-template-columns: 1.2fr minmax(150px, 220px) minmax(150px, 220px) auto;
   gap: 0.75rem;
   align-items: center;
+  min-width: 0;
 }
 
 .shift-close-form {
@@ -185,6 +191,8 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
 }
 
 .refund-panel-header h3 {
@@ -224,6 +232,7 @@
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
+  min-width: 0;
 }
 
 .refund-sale-main strong {
@@ -288,6 +297,7 @@
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  min-width: 0;
 }
 
 .drug-card:disabled {
@@ -306,6 +316,7 @@
   font-weight: 600;
   color: var(--gray-800);
   display: block;
+  overflow-wrap: anywhere;
 }
 
 .drug-price {
@@ -332,6 +343,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  min-width: 0;
 }
 
 .cart-header {
@@ -341,6 +353,7 @@
   justify-content: space-between;
   align-items: center;
   flex-shrink: 0;
+  gap: 0.75rem;
 }
 
 .cart-header h3 {
@@ -393,6 +406,7 @@
   margin-bottom: 0.85rem;
   display: grid;
   gap: 0.85rem;
+  min-width: 0;
 }
 
 .item-info {
@@ -419,6 +433,7 @@
   grid-template-columns: minmax(280px, 320px) auto auto;
   align-items: center;
   gap: 1rem;
+  min-width: 0;
 }
 
 .quantity-controls {
@@ -431,6 +446,7 @@
   border-radius: var(--radius);
   padding: 0.5rem;
   min-width: 280px;
+  max-width: 100%;
 }
 
 .quantity-controls button {
@@ -550,6 +566,7 @@
   font-weight: 600;
   transition: var(--transition);
   font-size: 0.82rem;
+  white-space: normal;
 }
 
 .payment-btn:hover {
@@ -698,6 +715,7 @@
 
   .drug-grid {
     grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
   }
 
   .payment-methods {
@@ -741,6 +759,16 @@
     grid-template-columns: 44px minmax(0, 1fr) 44px;
   }
 
+  .quantity-controls button {
+    width: 44px;
+    height: 44px;
+  }
+
+  .quantity-input {
+    min-width: 0;
+    font-size: 1rem;
+  }
+
   .item-total,
   .remove-btn {
     justify-self: start;
@@ -761,7 +789,45 @@
     grid-template-columns: 1fr;
   }
 
+  .pos-layout {
+    gap: 1rem;
+  }
+
+  .drug-card {
+    padding: 1rem 0.85rem;
+  }
+
+  .cart-items {
+    padding: 0.7rem 0.75rem 0.9rem;
+  }
+
+  .item-info {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .total-section {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+
   .cash-panel {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 380px) {
+  .search-drug,
+  .quick-add,
+  .patient-select-card,
+  .refund-panel,
+  .shift-panel,
+  .checkout-section {
+    border-radius: var(--radius);
+  }
+
+  .payment-methods {
+    gap: 0.35rem;
   }
 }

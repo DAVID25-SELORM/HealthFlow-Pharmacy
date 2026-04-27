@@ -2,6 +2,8 @@
   padding: 1.5rem;
   max-width: 1200px;
   margin: 0 auto;
+  width: 100%;
+  min-width: 0;
 }
 
 .tenant-admin-page .page-header {
@@ -10,6 +12,7 @@
   align-items: flex-start;
   margin-bottom: 1.5rem;
   gap: 1rem;
+  min-width: 0;
 }
 
 .tenant-admin-page .page-header h1 {
@@ -44,6 +47,7 @@
   padding: 1.5rem;
   margin-bottom: 1.5rem;
   box-shadow: var(--shadow-sm);
+  min-width: 0;
 }
 
 .tenant-create-card h3 {
@@ -72,6 +76,7 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 0.75rem;
+  min-width: 0;
 }
 
 .tenant-form-group {
@@ -117,6 +122,7 @@
 
 .subdomain-row input {
   flex: 1;
+  min-width: 0;
 }
 
 .subdomain-suffix {
@@ -159,6 +165,7 @@
   border-radius: var(--radius-lg);
   overflow: hidden;
   box-shadow: var(--shadow-sm);
+  min-width: 0;
 }
 
 .tenant-table-header {
@@ -178,12 +185,14 @@
 
 .tenant-table-wrap {
   overflow-x: auto;
+  max-width: 100%;
 }
 
 .tenant-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.875rem;
+  min-width: 900px;
 }
 
 .tenant-table th {
@@ -312,6 +321,8 @@
 .users-expand {
   padding: 1rem 1.25rem;
   border-top: 1px solid var(--gray-100);
+  min-width: 0;
+  overflow-x: auto;
 }
 
 .users-expand h5 {
@@ -325,6 +336,7 @@
   width: 100%;
   border-collapse: collapse;
   font-size: 0.82rem;
+  min-width: 620px;
 }
 
 .users-inner-table th {
@@ -375,6 +387,7 @@
   display: flex;
   align-items: center;
   gap: 0.35rem;
+  flex-wrap: nowrap;
 }
 
 .tenant-logo-preview {
@@ -408,6 +421,7 @@
   flex-direction: column;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
   overflow: hidden;
+  min-width: 0;
 }
 
 .edit-modal-header {
@@ -483,5 +497,38 @@
 
   .tenant-admin-page .page-header {
     flex-direction: column;
+  }
+
+  .tenant-admin-page {
+    padding: 0.75rem;
+  }
+
+  .tenant-admin-page .page-header .btn,
+  .tenant-form-actions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .tenant-create-card {
+    padding: 1rem;
+  }
+
+  .subdomain-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .modal-backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .edit-modal {
+    max-height: 92vh;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  }
+
+  .edit-modal-footer {
+    flex-direction: column-reverse;
   }
 }
