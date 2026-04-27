@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   DollarSign, TrendingDown, RefreshCcw,
   Plus, X, Calendar, Download, BookOpen, ReceiptText,
-  AlertTriangle, Clock
+  AlertTriangle, Clock, Play
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
@@ -68,6 +69,7 @@ const blankPaymentForm = {
 const Accounting = () => {
   const { user } = useAuth()
   const { notify } = useNotification()
+  const navigate = useNavigate()
 
   const [activeTab, setActiveTab] = useSessionStorageState(
     ACCOUNTING_STORAGE_KEYS.activeTab,
@@ -1034,6 +1036,17 @@ const Accounting = () => {
 
     return (
       <div className="acc-shifts">
+        <div className="acc-section-header">
+          <div>
+            <h3>Shift Register</h3>
+            <p>Start shifts from Sales POS, then review cash counts and variances here.</p>
+          </div>
+          <button type="button" className="btn btn-primary btn-sm" onClick={() => navigate('/sales')}>
+            <Play size={14} />
+            Start Shift
+          </button>
+        </div>
+
         <div className="acc-kpi-grid">
           <div className="acc-kpi primary">
             <span className="acc-kpi-label">Open Shifts</span>
@@ -1050,7 +1063,13 @@ const Accounting = () => {
         </div>
 
         {shifts.length === 0 ? (
-          <p className="acc-empty">No shifts found for the selected range.</p>
+          <div className="acc-empty-action">
+            <p>No shifts found for the selected range.</p>
+            <button type="button" className="btn btn-primary btn-sm" onClick={() => navigate('/sales')}>
+              <Play size={14} />
+              Start Shift
+            </button>
+          </div>
         ) : (
           <div className="acc-table-wrap">
             <h4>Shift Register</h4>

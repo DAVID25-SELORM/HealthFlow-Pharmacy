@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Accounting from './Accounting'
 
@@ -15,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   getExpenses: vi.fn(),
   getReceivables: vi.fn(),
   getReceivablesSummary: vi.fn(),
+  getShifts: vi.fn(),
   getTodaySession: vi.fn(),
   isSupabaseConfigured: vi.fn(),
   notify: vi.fn(),
@@ -64,6 +66,10 @@ vi.mock('../services/accountingService', () => ({
   getAccountingOverview: mocks.getAccountingOverview,
 }))
 
+vi.mock('../services/shiftService', () => ({
+  getShifts: mocks.getShifts,
+}))
+
 vi.mock('../services/reportsService', () => ({
   downloadCsv: mocks.downloadCsv,
 }))
@@ -81,7 +87,11 @@ describe('Accounting', () => {
   it('restores and persists the selected accounting tab for the current browser tab', () => {
     window.sessionStorage.setItem('healthflow.accounting.activeTab', JSON.stringify('cashbook'))
 
-    render(<Accounting />)
+    render(
+      <MemoryRouter>
+        <Accounting />
+      </MemoryRouter>
+    )
 
     expect(
       screen.getByText(/select a specific branch to open or manage today's cashbook session/i)
