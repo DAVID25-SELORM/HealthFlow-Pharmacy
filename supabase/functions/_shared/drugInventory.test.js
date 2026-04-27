@@ -15,8 +15,8 @@ describe('drug inventory save behavior', () => {
     expect(getExistingDrugSaveAction({ id: 'drug-2', status: 'expired' })).toBe('reactivate')
   })
 
-  it('treats active rows as hard duplicates', () => {
-    expect(getExistingDrugSaveAction({ id: 'drug-3', status: 'active' })).toBe('duplicate_active')
+  it('treats active rows as existing inventory to update and reveal', () => {
+    expect(getExistingDrugSaveAction({ id: 'drug-3', status: 'active' })).toBe('update_existing')
     expect(ACTIVE_DRUG_DUPLICATE_ERROR).toContain('already exists in inventory')
   })
 

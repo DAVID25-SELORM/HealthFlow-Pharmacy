@@ -175,9 +175,9 @@ describe('drugService catalog handling', () => {
     expect(fromMock).not.toHaveBeenCalled()
   })
 
-  it('returns the existing active drug when add resolves a duplicate', async () => {
+  it('returns the updated existing active drug when add resolves a duplicate', async () => {
     invokeTierAccess.mockResolvedValue({
-      action: 'duplicate_active',
+      action: 'update_existing',
       drug: {
         id: 'existing-drug',
         name: 'Paracetamol 500mg',
@@ -201,7 +201,7 @@ describe('drugService catalog handling', () => {
       batch_number: 'BT-001',
       quantity: 12,
       status: 'active',
-      _saveAction: 'duplicate_active',
+      _saveAction: 'update_existing',
     })
   })
 

@@ -164,6 +164,11 @@
   background: var(--gray-50);
 }
 
+.inventory-table tbody tr.highlighted-drug-row {
+  background: rgba(22, 160, 133, 0.12);
+  box-shadow: inset 4px 0 0 var(--primary);
+}
+
 .drug-name {
   font-weight: 600;
   color: var(--gray-900);

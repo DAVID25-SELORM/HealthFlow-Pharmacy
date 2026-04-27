@@ -8,10 +8,10 @@ export const isActiveDrugRecord = (drug: Record<string, unknown> | null | undefi
 
 export const getExistingDrugSaveAction = (
   drug: Record<string, unknown> | null | undefined
-): 'create' | 'reactivate' | 'duplicate_active' => {
+): 'create' | 'reactivate' | 'update_existing' => {
   if (!drug) {
     return 'create'
   }
 
-  return isActiveDrugRecord(drug) ? 'duplicate_active' : 'reactivate'
+  return isActiveDrugRecord(drug) ? 'update_existing' : 'reactivate'
 }

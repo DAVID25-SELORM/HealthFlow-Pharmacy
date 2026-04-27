@@ -6,7 +6,6 @@ import {
   isDefaultMedicationBatchNumber,
 } from '../_shared/defaultMedicationCatalog.ts'
 import {
-  ACTIVE_DRUG_DUPLICATE_ERROR,
   getExistingDrugSaveAction,
 } from '../_shared/drugInventory.ts'
 import { resolveTierAccess } from '../_shared/tier.ts'
@@ -480,28 +479,14 @@ const findDrugByIdentity = async (
 const saveDrugForOrganization = async (
   adminClient: ReturnType<typeof createAdminClient>,
   organizationId: string,
-  drugPayload: Record<string, unknown>,
-  options: { returnExistingOnDuplicate?: boolean } = {}
+  drugPayload: Record<string, unknown>
 ) => {
   const name = assertRequiredText(drugPayload.name, 'Drug name')
   const batchNumber = assertRequiredText(drugPayload.batch_number, 'Batch number')
   const existingDrug = await findDrugByIdentity(adminClient, organizationId, name, batchNumber)
   const action = getExistingDrugSaveAction(existingDrug)
 
-  if (action === 'duplicate_active') {
-    if (options.returnExistingOnDuplicate) {
-      return {
-        action,
-        drug: existingDrug,
-      }
-    }
-
-    throw new Error(ACTIVE_DRUG_DUPLICATE_ERROR)
-  }
-
-  await assertCanAddDrugs(adminClient, organizationId, 1)
-
-  if (action === 'reactivate') {
+  if (action === 'reactivate' || action === 'update_existing') {
     const { data, error } = await adminClient
       .from('drugs')
       .update({
@@ -523,6 +508,8 @@ const saveDrugForOrganization = async (
       drug: data,
     }
   }
+
+  await assertCanAddDrugs(adminClient, organizationId, 1)
 
   const { data, error } = await adminClient
     .from('drugs')
@@ -822,9 +809,7 @@ const createDrug = async (
   const batchNumber = assertRequiredText(drugData.batchNumber, 'Batch number')
   assertCustomBatchNumberAllowed(batchNumber)
   const drugPayload = buildDrugCreatePayload(organizationId, drugData, batchNumber)
-  return await saveDrugForOrganization(adminClient, organizationId, drugPayload, {
-    returnExistingOnDuplicate: true,
-  })
+  return await saveDrugForOrganization(adminClient, organizationId, drugPayload)
 }
 
 const updateDrug = async (
@@ -956,6 +941,7 @@ const bulkImportDrugs = async (
     return {
       created: [],
       reactivated: [],
+      updated: [],
       successful: [],
       failed: [],
     }
@@ -964,11 +950,13 @@ const bulkImportDrugs = async (
   const results: {
     created: Array<Record<string, unknown>>
     reactivated: Array<Record<string, unknown>>
+    updated: Array<Record<string, unknown>>
     successful: Array<Record<string, unknown>>
     failed: Array<Record<string, unknown>>
   } = {
     created: [],
     reactivated: [],
+    updated: [],
     successful: [],
     failed: [],
   }
@@ -1001,6 +989,8 @@ const bulkImportDrugs = async (
 
       if (action === 'reactivate') {
         results.reactivated.push(savedDrug)
+      } else if (action === 'update_existing') {
+        results.updated.push(savedDrug)
       } else {
         results.created.push(savedDrug)
       }

@@ -56,6 +56,7 @@ const Inventory = () => {
   const [importing, setImporting] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [activeFilter, setActiveFilter] = useState('all')
+  const [highlightedDrugId, setHighlightedDrugId] = useState('')
   const [error, setError] = useState('')
   const [formData, setFormData] = useState(emptyDrugForm)
   const [importFile, setImportFile] = useState(null)
@@ -156,7 +157,7 @@ const Inventory = () => {
   const visibleDrugs = useMemo(() => {
     const normalizedTerm = searchTerm.trim().toLowerCase()
 
-    return drugs.filter((drug) => {
+    const filtered = drugs.filter((drug) => {
       const name = String(drug.name || '').toLowerCase()
       const batchNumber = String(drug.batch_number || drug.batch || '').toLowerCase()
       const matchesSearch =
@@ -166,7 +167,17 @@ const Inventory = () => {
 
       return matchesSearch && matchesFilter
     })
-  }, [activeFilter, drugs, searchTerm])
+
+    if (!highlightedDrugId) {
+      return filtered
+    }
+
+    return [...filtered].sort((left, right) => {
+      if (left.id === highlightedDrugId) return -1
+      if (right.id === highlightedDrugId) return 1
+      return 0
+    })
+  }, [activeFilter, drugs, highlightedDrugId, searchTerm])
 
   const editingCatalogItem =
     Boolean(editingDrugId) && isDefaultCatalogDrug({ batch_number: formData.batchNumber })
@@ -212,10 +223,11 @@ const Inventory = () => {
         if (createdDrug?.id) {
           setDrugs((current) => [createdDrug, ...current.filter((drug) => drug.id !== createdDrug.id)])
         }
-        const revealedExisting = createdDrug?._saveAction === 'duplicate_active'
+        const revealedExisting = createdDrug?._saveAction === 'update_existing'
+        setHighlightedDrugId(createdDrug?.id || '')
         notify(
           revealedExisting
-            ? 'This medicine already exists. Showing the existing inventory item so you can update stock.'
+            ? 'This medicine already existed, so we updated it and moved it to the top of the list.'
             : 'Drug added successfully!',
           revealedExisting ? 'info' : 'success',
           revealedExisting ? 6000 : undefined
@@ -338,14 +350,16 @@ const Inventory = () => {
       const results = await importDrugs(importPreview.validRows)
       const createdCount = Array.isArray(results.created) ? results.created.length : results.successful.length
       const reactivatedCount = Array.isArray(results.reactivated) ? results.reactivated.length : 0
+      const updatedCount = Array.isArray(results.updated) ? results.updated.length : 0
 
       if (results.successful.length > 0) {
-        const successMessage =
-          reactivatedCount > 0
-            ? createdCount > 0
-              ? `Imported ${createdCount} new drug(s) and restored ${reactivatedCount} previously removed drug(s).`
-              : `Restored ${reactivatedCount} previously removed drug(s).`
-            : `Successfully imported ${results.successful.length} drug(s)!`
+        const parts = []
+        if (createdCount > 0) parts.push(`${createdCount} new`)
+        if (reactivatedCount > 0) parts.push(`${reactivatedCount} restored`)
+        if (updatedCount > 0) parts.push(`${updatedCount} updated`)
+        const successMessage = parts.length
+          ? `Import complete: ${parts.join(', ')} drug(s).`
+          : `Successfully imported ${results.successful.length} drug(s)!`
 
         notify(
           successMessage,
@@ -504,7 +518,7 @@ const Inventory = () => {
                 const expiryDate = drug.expiry_date || drug.expiry
 
                 return (
-                  <tr key={drug.id}>
+                  <tr key={drug.id} className={drug.id === highlightedDrugId ? 'highlighted-drug-row' : ''}>
                     <td className="drug-name">{drug.name}</td>
                     <td>{batchNumber}</td>
                     <td>{expiryDate ? formatAppDate(expiryDate) : 'N/A'}</td>
