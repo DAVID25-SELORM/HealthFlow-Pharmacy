@@ -46,10 +46,16 @@ const Sales = () => {
   const canProcessRefund =
     String(role || '').toLowerCase() === 'admin' || Boolean(profile?.can_refund)
   const isAdmin = String(role || '').toLowerCase() === 'admin'
+  const activeBranches = branches.filter((branch) => branch.is_active !== false)
+  const fallbackBranch =
+    activeBranches.find((branch) => branch.is_main) || activeBranches[0] || null
   const assignedBranch = profile?.branch_id
-    ? branches.find((branch) => branch.id === profile.branch_id) || profile?.branches || null
-    : null
-  const canChooseShiftBranch = isAdmin && !profile?.branch_id
+    ? activeBranches.find((branch) => branch.id === profile.branch_id) || profile?.branches || null
+    : !isAdmin && activeBranches.length === 1
+      ? activeBranches[0]
+      : null
+  const effectiveBranchId = profile?.branch_id || assignedBranch?.id || shiftBranchId
+  const canChooseShiftBranch = isAdmin && !profile?.branch_id && activeBranches.length > 1
 
   useEffect(() => {
     const loadData = async () => {
@@ -77,9 +83,9 @@ const Sales = () => {
         setShiftBranchId(
           openShiftData?.branch_id ||
             profile?.branch_id ||
-            (String(role || '').toLowerCase() === 'admin'
-              ? branchesData.find((branch) => branch.is_main)?.id || branchesData[0]?.id || ''
-              : '')
+            branchesData.find((branch) => branch.is_active !== false && branch.is_main)?.id ||
+            branchesData.find((branch) => branch.is_active !== false)?.id ||
+            ''
         )
         const recent = await getRecentSales(8)
         setRecentSales(recent || [])
@@ -379,12 +385,12 @@ const Sales = () => {
     try {
       setShiftBusy(true)
       setError('')
-      if (!profile?.branch_id && !isAdmin) {
+      if (!effectiveBranchId && !isAdmin) {
         throw new Error('Ask an admin to assign your branch before opening a shift.')
       }
       const shift = await openShift({
         organizationId: profile?.organization_id,
-        branchId: shiftBranchId,
+        branchId: effectiveBranchId,
         openingCash: Number(openingCash || 0),
         openedBy: user?.id,
       })
@@ -558,7 +564,7 @@ const Sales = () => {
         ) : (
           <form className="shift-open-form" onSubmit={handleOpenShift}>
             <strong>Open a shift to begin sales</strong>
-            {profile?.branch_id ? (
+            {assignedBranch ? (
               <div className="assigned-branch-field">
                 <span>Assigned branch</span>
                 <strong>{assignedBranch?.name || 'Assigned branch'}</strong>
@@ -571,16 +577,21 @@ const Sales = () => {
                 disabled={shiftBusy}
               >
                 <option value="">Select branch</option>
-                {branches.filter((branch) => branch.is_active !== false).map((branch) => (
+                {activeBranches.map((branch) => (
                   <option key={branch.id} value={branch.id}>
                     {branch.name}{branch.code ? ` (${branch.code})` : ''}
                   </option>
                 ))}
               </select>
+            ) : isAdmin && fallbackBranch ? (
+              <div className="assigned-branch-field">
+                <span>Branch</span>
+                <strong>{fallbackBranch.name || 'Main branch'}</strong>
+              </div>
             ) : (
               <div className="assigned-branch-field warning">
                 <span>Branch required</span>
-                <strong>Ask admin to assign your branch</strong>
+                <strong>{isAdmin ? 'Create a branch in Settings' : 'Ask admin to assign your branch'}</strong>
               </div>
             )}
             <input
@@ -594,7 +605,7 @@ const Sales = () => {
             <button
               type="submit"
               className="btn btn-primary"
-              disabled={shiftBusy || (!profile?.branch_id && !canChooseShiftBranch)}
+              disabled={shiftBusy || !effectiveBranchId}
             >
               {shiftBusy ? 'Opening...' : 'Open Shift'}
             </button>
