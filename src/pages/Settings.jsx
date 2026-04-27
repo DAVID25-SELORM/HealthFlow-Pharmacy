@@ -16,6 +16,7 @@ import { updateOrganization, getOrganizationStats } from '../services/organizati
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
 import { normalizeSubscriptionTier, useTenant } from '../context/TenantContext'
+import { readLogoFileAsDataUrl } from '../utils/imageUpload'
 import './Settings.css'
 
 const toForm = (row) => ({
@@ -25,6 +26,7 @@ const toForm = (row) => ({
   address: row?.address || '',
   city: row?.city || '',
   region: row?.region || '',
+  logoUrl: row?.logo_url || '',
   licenseNumber: row?.license_number || '',
   taxRate: row?.tax_rate ?? 0,
   currency: row?.currency || 'GHS',
@@ -137,6 +139,21 @@ const Settings = () => {
       setError(saveError.message || 'Unable to save settings.')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleLogoChange = async (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    try {
+      setError('')
+      const logoUrl = await readLogoFileAsDataUrl(file)
+      setFormData((current) => ({ ...current, logoUrl }))
+    } catch (logoError) {
+      setError(logoError.message || 'Unable to upload logo.')
+    } finally {
+      event.target.value = ''
     }
   }
 
@@ -368,6 +385,28 @@ const Settings = () => {
                 }
                 disabled={!isAdmin}
               />
+            </div>
+            <div className="logo-upload-field">
+              {formData.logoUrl && (
+                <img src={formData.logoUrl} alt="Pharmacy logo preview" className="settings-logo-preview" />
+              )}
+              <label htmlFor="pharmacyLogo">Pharmacy logo</label>
+              <input
+                id="pharmacyLogo"
+                type="file"
+                accept="image/*"
+                onChange={handleLogoChange}
+                disabled={!isAdmin}
+              />
+              {isAdmin && formData.logoUrl && (
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={() => setFormData({ ...formData, logoUrl: '' })}
+                >
+                  Remove Logo
+                </button>
+              )}
             </div>
             <div className="settings-form-row">
               <input

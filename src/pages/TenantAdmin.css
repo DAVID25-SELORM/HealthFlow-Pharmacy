@@ -377,6 +377,15 @@
   gap: 0.35rem;
 }
 
+.tenant-logo-preview {
+  width: 86px;
+  height: 86px;
+  object-fit: contain;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  background: white;
+}
+
 /* Edit Modal */
 .modal-backdrop {
   position: fixed;

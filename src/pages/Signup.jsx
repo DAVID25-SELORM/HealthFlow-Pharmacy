@@ -5,6 +5,7 @@ import {
   checkSubdomainAvailability,
   registerOrganizationSignup,
 } from '../services/organizationService'
+import { readLogoFileAsDataUrl } from '../utils/imageUpload'
 import './Signup.css'
 
 const Signup = () => {
@@ -27,6 +28,7 @@ const Signup = () => {
   const [address, setAddress] = useState('')
   const [city, setCity] = useState('')
   const [region, setRegion] = useState('')
+  const [logoUrl, setLogoUrl] = useState('')
   const [licenseNumber, setLicenseNumber] = useState('')
 
   const [fullName, setFullName] = useState('')
@@ -147,6 +149,7 @@ const Signup = () => {
         address,
         city,
         region,
+        logoUrl,
         licenseNumber,
         fullName,
         email,
@@ -175,6 +178,20 @@ const Signup = () => {
 
   const handleGoToDashboard = () => {
     navigate(dashboardReady ? '/dashboard' : '/login')
+  }
+
+  const handleLogoChange = async (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    try {
+      setError('')
+      setLogoUrl(await readLogoFileAsDataUrl(file))
+    } catch (logoError) {
+      setError(logoError.message || 'Unable to upload logo.')
+    } finally {
+      event.target.value = ''
+    }
   }
 
   return (
@@ -320,6 +337,22 @@ const Signup = () => {
                 onChange={(event) => setLicenseNumber(event.target.value)}
                 placeholder="PL-12345"
               />
+            </div>
+
+            <div className="form-group logo-upload-field">
+              {logoUrl && <img src={logoUrl} alt="Pharmacy logo preview" className="signup-logo-preview" />}
+              <label htmlFor="pharmacyLogo">Pharmacy Logo</label>
+              <input
+                type="file"
+                id="pharmacyLogo"
+                accept="image/*"
+                onChange={handleLogoChange}
+              />
+              {logoUrl && (
+                <button type="button" className="btn-link" onClick={() => setLogoUrl('')}>
+                  Remove Logo
+                </button>
+              )}
             </div>
 
             <div className="form-actions">

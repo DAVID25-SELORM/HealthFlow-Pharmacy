@@ -20,6 +20,28 @@ const formatDate = (dateString) => {
   return formatAppDateTime(dateString, { hour12: true })
 }
 
+const getLogoImageFormat = (logoUrl) => {
+  const match = String(logoUrl || '').match(/^data:image\/(png|jpe?g|webp);/i)
+  if (!match) return null
+  const format = match[1].toLowerCase()
+  if (format === 'jpg' || format === 'jpeg') return 'JPEG'
+  if (format === 'webp') return 'WEBP'
+  return 'PNG'
+}
+
+const addReceiptLogo = (doc, logoUrl, x, y, size) => {
+  const format = getLogoImageFormat(logoUrl)
+  if (!format) return false
+
+  try {
+    doc.addImage(logoUrl, format, x, y, size, size)
+    return true
+  } catch (error) {
+    console.warn('Unable to add pharmacy logo to receipt PDF:', error)
+    return false
+  }
+}
+
 /**
  * Generate PDF receipt
  */
@@ -78,6 +100,9 @@ export const generateReceiptPDF = (saleData, pharmacyInfo) => {
   doc.line(margin, y, pageWidth - margin, y)
 
   y += 14
+  if (addReceiptLogo(doc, pharmacyInfo?.logo_url, pageWidth / 2 - 10, y - 4, 20)) {
+    y += 22
+  }
   setColor(green)
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(16)
@@ -92,7 +117,6 @@ export const generateReceiptPDF = (saleData, pharmacyInfo) => {
     [pharmacyInfo?.address, pharmacyInfo?.city, pharmacyInfo?.region].filter(Boolean).join(', '),
     pharmacyInfo?.phone,
     pharmacyInfo?.email,
-    pharmacyInfo?.license_number ? `License No: ${pharmacyInfo.license_number}` : '',
   ].filter(Boolean)
   contactLines.forEach((line) => {
     doc.text(line, pageWidth / 2, y, { align: 'center' })

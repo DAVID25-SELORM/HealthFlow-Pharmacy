@@ -371,6 +371,20 @@
   margin: 0;
 }
 
+.logo-upload-field {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.settings-logo-preview {
+  width: 86px;
+  height: 86px;
+  object-fit: contain;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  background: white;
+}
+
 .about-section {
   background: white;
   padding: 2rem;

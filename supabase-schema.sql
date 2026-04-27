@@ -207,6 +207,7 @@ CREATE TABLE pharmacy_settings (
     address TEXT,
     city VARCHAR(100),
     region VARCHAR(100),
+    logo_url TEXT,
     license_number VARCHAR(100),
     tax_rate DECIMAL(5, 2) DEFAULT 0,
     currency VARCHAR(10) DEFAULT 'GHS',

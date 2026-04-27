@@ -212,6 +212,19 @@
   text-decoration: underline;
 }
 
+.logo-upload-field {
+  align-items: flex-start;
+}
+
+.signup-logo-preview {
+  width: 86px;
+  height: 86px;
+  object-fit: contain;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: white;
+}
+
 .signup-success {
   text-align: center;
   padding: 2rem 0;

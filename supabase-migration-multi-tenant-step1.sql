@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS organizations (
     region VARCHAR(100),
     phone VARCHAR(20),
     email VARCHAR(255),
+    logo_url TEXT,
     license_number VARCHAR(100),
     
     -- Subscription & Status

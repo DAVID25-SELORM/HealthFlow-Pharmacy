@@ -13,6 +13,7 @@ import {
   getOrganizationUsers,
   checkSubdomainAvailable,
 } from '../services/tenantAdminService'
+import { readLogoFileAsDataUrl } from '../utils/imageUpload'
 import './TenantAdmin.css'
 
 const blankPharmacy = {
@@ -23,6 +24,7 @@ const blankPharmacy = {
   address: '',
   city: '',
   region: '',
+  logoUrl: '',
   licenseNumber: '',
   subscriptionTier: 'basic',
 }
@@ -203,6 +205,7 @@ const TenantAdmin = () => {
       address: org.address || '',
       city: org.city || '',
       region: org.region || '',
+      logoUrl: org.logo_url || '',
       licenseNumber: org.license_number || '',
       status: org.status || 'trial',
       subscriptionTier: org.subscription_tier || 'basic',
@@ -269,6 +272,36 @@ const TenantAdmin = () => {
       setError(err.message || 'Failed to save changes')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleCreateLogoChange = async (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    try {
+      setError('')
+      const logoUrl = await readLogoFileAsDataUrl(file)
+      setPharmacy((current) => ({ ...current, logoUrl }))
+    } catch (logoError) {
+      setError(logoError.message || 'Unable to upload logo.')
+    } finally {
+      event.target.value = ''
+    }
+  }
+
+  const handleEditLogoChange = async (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    try {
+      setError('')
+      const logoUrl = await readLogoFileAsDataUrl(file)
+      setEditForm((current) => ({ ...current, logoUrl }))
+    } catch (logoError) {
+      setError(logoError.message || 'Unable to upload logo.')
+    } finally {
+      event.target.value = ''
     }
   }
 
@@ -381,6 +414,22 @@ const TenantAdmin = () => {
                     value={pharmacy.licenseNumber}
                     onChange={(e) => setPharmacy({ ...pharmacy, licenseNumber: e.target.value })}
                   />
+                </div>
+                <div className="tenant-form-group">
+                  <label>Pharmacy Logo</label>
+                  {pharmacy.logoUrl && (
+                    <img src={pharmacy.logoUrl} alt="Pharmacy logo preview" className="tenant-logo-preview" />
+                  )}
+                  <input type="file" accept="image/*" onChange={handleCreateLogoChange} />
+                  {pharmacy.logoUrl && (
+                    <button
+                      type="button"
+                      className="btn btn-outline"
+                      onClick={() => setPharmacy({ ...pharmacy, logoUrl: '' })}
+                    >
+                      Remove Logo
+                    </button>
+                  )}
                 </div>
                 <div className="tenant-form-group">
                   <label>Subscription Tier</label>
@@ -756,6 +805,22 @@ const TenantAdmin = () => {
                       onChange={(e) => setEditForm({ ...editForm, licenseNumber: e.target.value })}
                       placeholder="PL-12345"
                     />
+                  </div>
+                  <div className="tenant-form-group">
+                    <label>Pharmacy Logo</label>
+                    {editForm.logoUrl && (
+                      <img src={editForm.logoUrl} alt="Pharmacy logo preview" className="tenant-logo-preview" />
+                    )}
+                    <input type="file" accept="image/*" onChange={handleEditLogoChange} />
+                    {editForm.logoUrl && (
+                      <button
+                        type="button"
+                        className="btn btn-outline"
+                        onClick={() => setEditForm({ ...editForm, logoUrl: '' })}
+                      >
+                        Remove Logo
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

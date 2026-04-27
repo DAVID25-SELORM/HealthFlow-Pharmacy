@@ -174,6 +174,7 @@ export const AuthProvider = ({ children }) => {
             address,
             city,
             region,
+            logo_url,
             license_number
           )
         `)
