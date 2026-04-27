@@ -10,8 +10,6 @@ import { recordCashbookMovementIfSessionOpen } from './cashbookService'
  */
 
 const VALID_PAYMENT_METHODS = ['cash', 'momo', 'insurance', 'card']
-const REFUND_ALLOWED_ROLES = ['admin', 'pharmacist']
-
 const assertPositiveSaleQuantity = (value, label) => {
   const parsed = assertNonNegativeNumber(value, label)
   if (parsed <= 0) {
@@ -327,10 +325,10 @@ export const createSale = async (saleData) => {
 }
 
 // Refund an existing sale and restore stock quantities
-export const refundSale = async ({ saleId, reason, role }) => {
+export const refundSale = async ({ saleId, reason, role, canRefund = false }) => {
   const normalizedRole = String(role || '').trim().toLowerCase()
-  if (!REFUND_ALLOWED_ROLES.includes(normalizedRole)) {
-    throw new Error('Only pharmacy admins and pharmacists can process refunds.')
+  if (normalizedRole !== 'admin' && !canRefund) {
+    throw new Error('Only admins or staff granted refund permission can process refunds.')
   }
 
   if (!saleId) {

@@ -7,6 +7,7 @@ import {
   getPharmacySettings,
   getUsers,
   updatePharmacySettings,
+  updateUserRefundPermission,
   updateUserStatus,
   updateUserBranch,
 } from '../services/settingsService'
@@ -70,6 +71,7 @@ const Settings = () => {
   const [saving, setSaving] = useState(false)
   const [creatingStaff, setCreatingStaff] = useState(false)
   const [statusUpdatingId, setStatusUpdatingId] = useState('')
+  const [refundPermissionUpdatingId, setRefundPermissionUpdatingId] = useState('')
   const [error, setError] = useState('')
 
   // Branch state
@@ -154,6 +156,26 @@ const Settings = () => {
       setError(statusError.message || 'Unable to update user status.')
     } finally {
       setStatusUpdatingId('')
+    }
+  }
+
+  const toggleRefundPermission = async (row) => {
+    try {
+      setRefundPermissionUpdatingId(row.id)
+      setError('')
+      const nextValue = !row.can_refund
+      await updateUserRefundPermission(row.id, nextValue)
+      notify(
+        nextValue
+          ? `${row.full_name} can now process refunds.`
+          : `${row.full_name} can no longer process refunds.`,
+        nextValue ? 'success' : 'info'
+      )
+      await loadSettings()
+    } catch (permissionError) {
+      setError(permissionError.message || 'Unable to update refund permission.')
+    } finally {
+      setRefundPermissionUpdatingId('')
     }
   }
 
@@ -723,6 +745,15 @@ const Settings = () => {
                     <p>{row.email}</p>
                     <div className="user-meta">
                       <small>{row.role}</small>
+                      {row.role === 'admin' ? (
+                        <span className="user-status-badge active">Refunds: Admin</span>
+                      ) : (
+                        <span
+                          className={`user-status-badge ${row.can_refund ? 'active' : 'inactive'}`}
+                        >
+                          Refunds: {row.can_refund ? 'Allowed' : 'Not allowed'}
+                        </span>
+                      )}
                       <span
                         className={`user-status-badge ${row.is_active ? 'active' : 'inactive'}`}
                       >
@@ -731,6 +762,20 @@ const Settings = () => {
                     </div>
                   </div>
                   <div className="user-actions">
+                    {row.role !== 'admin' && (
+                      <button
+                        className={`btn ${row.can_refund ? 'btn-outline' : 'btn-primary'}`}
+                        onClick={() => toggleRefundPermission(row)}
+                        type="button"
+                        disabled={refundPermissionUpdatingId === row.id}
+                      >
+                        {refundPermissionUpdatingId === row.id
+                          ? 'Updating...'
+                          : row.can_refund
+                            ? 'Remove Refund Access'
+                            : 'Allow Refunds'}
+                      </button>
+                    )}
                     <button
                       className={`btn ${row.is_active ? 'btn-outline' : 'btn-primary'}`}
                       onClick={() => toggleUserStatus(row.id, row.is_active)}

@@ -299,13 +299,14 @@ describe('salesService.refundSale', () => {
     mocks.tryLogAuditEvent.mockResolvedValue(undefined)
   })
 
-  it('rejects refunds for non-admin/non-pharmacist roles', async () => {
+  it('rejects refunds for staff without refund permission', async () => {
     await expect(
       refundSale({
         saleId: 'sale-1',
-        role: 'assistant',
+        role: 'pharmacist',
+        canRefund: false,
       })
-    ).rejects.toThrow('Only pharmacy admins and pharmacists can process refunds.')
+    ).rejects.toThrow('Only admins or staff granted refund permission can process refunds.')
 
     expect(mocks.rpc).not.toHaveBeenCalled()
   })
@@ -335,6 +336,29 @@ describe('salesService.refundSale', () => {
     expect(mocks.rpc).toHaveBeenCalledWith('refund_sale_transaction', {
       p_sale_id: 'sale-1',
       p_reason: 'Wrong bill',
+    })
+  })
+
+  it('calls refund_sale_transaction for staff with refund permission', async () => {
+    mocks.rpc.mockResolvedValue({
+      data: {
+        sale_id: 'sale-2',
+        sale_number: 'SAL-000322',
+        payment_status: 'refunded',
+      },
+      error: null,
+    })
+
+    await expect(
+      refundSale({
+        saleId: 'sale-2',
+        role: 'assistant',
+        canRefund: true,
+      })
+    ).resolves.toEqual({
+      sale_id: 'sale-2',
+      sale_number: 'SAL-000322',
+      payment_status: 'refunded',
     })
   })
 })

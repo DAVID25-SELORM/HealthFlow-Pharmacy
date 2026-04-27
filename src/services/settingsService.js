@@ -138,7 +138,7 @@ export const createSettings = async (settings) => {
 export const getUsers = async () => {
   const { data, error } = await supabase
     .from('users')
-    .select('id, email, full_name, role, is_active, created_at')
+    .select('id, email, full_name, role, can_refund, is_active, created_at')
     .order('created_at', { ascending: false })
 
   if (error) {
@@ -181,6 +181,17 @@ export const updateUserStatus = async (id, isActive) => {
     action: 'set_staff_status',
     userId,
     isActive: Boolean(isActive),
+  })
+
+  return response.user
+}
+
+export const updateUserRefundPermission = async (id, canRefund) => {
+  const userId = assertRequiredText(id, 'User id')
+  const response = await invokeStaffAdmin({
+    action: 'set_refund_permission',
+    userId,
+    canRefund: Boolean(canRefund),
   })
 
   return response.user

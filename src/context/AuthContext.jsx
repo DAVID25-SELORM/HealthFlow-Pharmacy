@@ -156,6 +156,7 @@ export const AuthProvider = ({ children }) => {
           email, 
           full_name, 
           role, 
+          can_refund,
           is_active,
           organization_id,
           branch_id,

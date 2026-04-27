@@ -154,6 +154,9 @@
 
 .user-actions {
   min-width: 140px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
 .user-row .btn {

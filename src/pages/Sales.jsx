@@ -3,10 +3,10 @@ import { Search, Trash2, Plus, Minus, ShoppingCart, Printer, Download, X } from 
 import { useSearchParams } from 'react-router-dom'
 import { dispatchHealthflowDataChanged } from '../lib/appEvents'
 import { getAllDrugs } from '../services/drugService'
-import { createSale, getRecentSales, refundSale } from '../services/salesService'
+import { createSale, getRecentSales, getSaleById, refundSale } from '../services/salesService'
 import { getAllPatients } from '../services/patientService'
 import { getPharmacySettings } from '../services/settingsService'
-import { printReceipt, downloadReceiptPDF } from '../services/receiptService'
+import { printReceipt, downloadReceiptPDF, formatSaleForReceipt } from '../services/receiptService'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
@@ -15,7 +15,7 @@ import './Sales.css'
 
 const Sales = () => {
   const [searchParams, setSearchParams] = useSearchParams()
-  const { user, displayName, role } = useAuth()
+  const { user, displayName, role, profile } = useAuth()
   const { notify } = useNotification()
   const [drugs, setDrugs] = useState([])
   const [patients, setPatients] = useState([])
@@ -33,7 +33,9 @@ const Sales = () => {
   const [recentSales, setRecentSales] = useState([])
   const [loadingRecentSales, setLoadingRecentSales] = useState(false)
   const [refundingSaleId, setRefundingSaleId] = useState(null)
-  const canProcessRefund = ['admin', 'pharmacist'].includes(String(role || '').toLowerCase())
+  const [reprintingSaleId, setReprintingSaleId] = useState(null)
+  const canProcessRefund =
+    String(role || '').toLowerCase() === 'admin' || Boolean(profile?.can_refund)
 
   useEffect(() => {
     const loadData = async () => {
@@ -54,12 +56,8 @@ const Sales = () => {
         setDrugs(drugsData)
         setPatients(patientsData)
         setPharmacyInfo(pharmacySettings)
-        if (canProcessRefund) {
-          const recent = await getRecentSales(8)
-          setRecentSales(recent || [])
-        } else {
-          setRecentSales([])
-        }
+        const recent = await getRecentSales(8)
+        setRecentSales(recent || [])
       } catch (loadError) {
         console.error('Error loading POS data:', loadError)
         setError(loadError.message || 'Unable to load POS data.')
@@ -205,10 +203,6 @@ const Sales = () => {
   }
 
   const refreshRecentSales = async () => {
-    if (!canProcessRefund) {
-      return
-    }
-
     try {
       setLoadingRecentSales(true)
       const recent = await getRecentSales(8)
@@ -324,6 +318,7 @@ const Sales = () => {
         saleId: sale.id,
         reason: reasonInput.trim() || null,
         role,
+        canRefund: Boolean(profile?.can_refund),
       })
       notify(`Sale ${sale.sale_number} refunded successfully.`, 'success')
       await Promise.all([refreshDrugs(), refreshRecentSales()])
@@ -333,6 +328,31 @@ const Sales = () => {
       setError(refundError.message || 'Unable to refund sale.')
     } finally {
       setRefundingSaleId(null)
+    }
+  }
+
+  const handleReprintSale = async (sale) => {
+    if (!sale?.id) {
+      return
+    }
+
+    try {
+      setReprintingSaleId(sale.id)
+      setError('')
+      const fullSale = await getSaleById(sale.id)
+      const receiptData = formatSaleForReceipt(
+        fullSale,
+        fullSale.sale_items || [],
+        fullSale.patients || null,
+        fullSale.users?.full_name || fullSale.sold_by || 'Staff User'
+      )
+      setLastSale(receiptData)
+      setShowReceipt(true)
+    } catch (reprintError) {
+      console.error('Error loading receipt:', reprintError)
+      setError(reprintError.message || 'Unable to load receipt for this sale.')
+    } finally {
+      setReprintingSaleId(null)
     }
   }
 
@@ -460,10 +480,10 @@ const Sales = () => {
             </div>
           </div>
 
-          {canProcessRefund && (
+          {recentSales.length > 0 && (
             <div className="refund-panel">
               <div className="refund-panel-header">
-                <h3>Recent Sales (Refund)</h3>
+                <h3>Recent Sales</h3>
                 {loadingRecentSales && <span>Refreshing...</span>}
               </div>
               <div className="refund-sales-list">
@@ -482,12 +502,22 @@ const Sales = () => {
                       </div>
                       <button
                         type="button"
-                        className="refund-btn"
-                        disabled={processing || refundingSaleId === sale.id}
-                        onClick={() => handleRefundSale(sale)}
+                        className="receipt-reprint-btn"
+                        disabled={processing || reprintingSaleId === sale.id}
+                        onClick={() => handleReprintSale(sale)}
                       >
-                        {refundingSaleId === sale.id ? 'Refunding...' : 'Refund'}
+                        {reprintingSaleId === sale.id ? 'Loading...' : 'Reprint'}
                       </button>
+                      {canProcessRefund && (
+                        <button
+                          type="button"
+                          className="refund-btn"
+                          disabled={processing || refundingSaleId === sale.id}
+                          onClick={() => handleRefundSale(sale)}
+                        >
+                          {refundingSaleId === sale.id ? 'Refunding...' : 'Refund'}
+                        </button>
+                      )}
                     </div>
                   ))
                 )}

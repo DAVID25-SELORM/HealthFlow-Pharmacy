@@ -18,6 +18,7 @@ CREATE TABLE users (
     full_name VARCHAR(255) NOT NULL,
     phone VARCHAR(20),
     role VARCHAR(20) NOT NULL CHECK (role IN ('admin', 'pharmacist', 'assistant')),
+    can_refund BOOLEAN DEFAULT false,
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()

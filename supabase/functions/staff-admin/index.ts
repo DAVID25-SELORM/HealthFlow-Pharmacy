@@ -8,7 +8,11 @@ const USERS_PER_PAGE = 200
 const MAX_USER_PAGES = 10
 
 type StaffRole = (typeof STAFF_ROLES)[number]
-type StaffAction = 'upsert_staff_user' | 'set_staff_status' | 'update_staff_user'
+type StaffAction =
+  | 'upsert_staff_user'
+  | 'set_staff_status'
+  | 'set_refund_permission'
+  | 'update_staff_user'
 type RequesterProfile = {
   id: string
   role: string
@@ -506,6 +510,60 @@ const setStaffStatus = async (
   }
 }
 
+const setRefundPermission = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  requesterProfile: RequesterProfile,
+  payload: Record<string, unknown>
+) => {
+  const userId = normalizeText(payload.userId)
+  const canRefund = Boolean(payload.canRefund)
+
+  if (!userId) {
+    throw new Error('User id is required.')
+  }
+
+  const { data: targetProfile, error: targetProfileError } = await adminClient
+    .from('users')
+    .select('id, role, organization_id')
+    .eq('id', userId)
+    .maybeSingle()
+
+  if (targetProfileError) {
+    throw targetProfileError
+  }
+
+  const targetOrganizationId = normalizeText(targetProfile?.organization_id)
+  if (!targetProfile || !targetOrganizationId) {
+    throw new Error('Target user is missing organization context.')
+  }
+
+  if (
+    requesterProfile.role !== 'super_admin' &&
+    targetOrganizationId !== requesterProfile.organization_id
+  ) {
+    throw new Error('You can only manage staff accounts in your own organization.')
+  }
+
+  const { data, error } = await adminClient
+    .from('users')
+    .update({
+      can_refund: canRefund,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', userId)
+    .eq('organization_id', targetOrganizationId)
+    .select('id, email, full_name, phone, role, can_refund, is_active, organization_id')
+    .single()
+
+  if (error) {
+    throw error
+  }
+
+  return {
+    user: data,
+  }
+}
+
 const updateStaffUser = async (
   adminClient: ReturnType<typeof createAdminClient>,
   requesterProfile: RequesterProfile,
@@ -672,6 +730,10 @@ Deno.serve(async (request) => {
 
     if (action === 'set_staff_status') {
       return json(await setStaffStatus(adminClient, requesterProfile, payload))
+    }
+
+    if (action === 'set_refund_permission') {
+      return json(await setRefundPermission(adminClient, requesterProfile, payload))
     }
 
     return json({ error: 'Unsupported staff action.' }, 400)
