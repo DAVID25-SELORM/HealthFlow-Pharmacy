@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { clearSupabaseStoredSession, supabase, isSupabaseConfigured } from '../lib/supabase'
 import { tryLogAuditEvent } from '../services/auditService'
+import { getPasswordRecoveryRedirectUrl } from '../config/appUrl'
 
 const AuthContext = createContext(null)
 const FALLBACK_ROLE = 'assistant'
@@ -401,7 +402,7 @@ export const AuthProvider = ({ children }) => {
     }
 
     const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
-      redirectTo: `${window.location.origin}/login?mode=recovery`,
+      redirectTo: getPasswordRecoveryRedirectUrl(),
     })
 
     if (error) {

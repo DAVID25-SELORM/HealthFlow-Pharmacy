@@ -15,6 +15,28 @@ const hasRecoveryHint = () => {
   return params.get('mode') === 'recovery' || hash.get('type') === 'recovery'
 }
 
+const getRecoveryLinkError = () => {
+  if (typeof window === 'undefined') {
+    return ''
+  }
+
+  const params = new URLSearchParams(window.location.search)
+  const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''))
+  const code = params.get('error_code') || hash.get('error_code')
+  const description = params.get('error_description') || hash.get('error_description')
+
+  if (!code && !description) {
+    return ''
+  }
+
+  const readableDescription = description?.replace(/\+/g, ' ')
+  if (code === 'otp_expired' || /expired|invalid/i.test(readableDescription || '')) {
+    return 'This reset link has expired or has already been used. Request a fresh password reset link below.'
+  }
+
+  return readableDescription || 'This password reset link could not be verified. Request a fresh password reset link below.'
+}
+
 const Login = () => {
   const { signIn, signOut, requestPasswordReset, updatePassword, isAuthenticated, isConfigured, loading } = useAuth()
   const { notify } = useNotification()
@@ -23,8 +45,10 @@ const Login = () => {
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState('')
-  const [mode, setMode] = useState(() => (hasRecoveryHint() ? 'new-password' : 'sign-in'))
+  const [error, setError] = useState(() => getRecoveryLinkError())
+  const [mode, setMode] = useState(() =>
+    getRecoveryLinkError() ? 'reset' : hasRecoveryHint() ? 'new-password' : 'sign-in'
+  )
 
   if (isAuthenticated && mode !== 'new-password') {
     return <Navigate to="/dashboard" replace />
