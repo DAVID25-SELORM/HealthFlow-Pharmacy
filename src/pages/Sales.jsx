@@ -58,6 +58,8 @@ const Sales = () => {
   const canChooseShiftBranch = isAdmin && !profile?.branch_id && activeBranches.length > 1
 
   useEffect(() => {
+    let cancelled = false
+
     const loadData = async () => {
       try {
         setLoading(true)
@@ -75,6 +77,10 @@ const Sales = () => {
           getBranches(),
           getOpenShiftForUser(user?.id),
         ])
+        if (cancelled) {
+          return
+        }
+
         setDrugs(drugsData)
         setPatients(patientsData)
         setPharmacyInfo(pharmacySettings)
@@ -87,17 +93,29 @@ const Sales = () => {
             branchesData.find((branch) => branch.is_active !== false)?.id ||
             ''
         )
-        const recent = await getRecentSales(8)
-        setRecentSales(recent || [])
+        setLoading(false)
+
+        getRecentSales(8)
+          .then((recent) => {
+            if (!cancelled) {
+              setRecentSales(recent || [])
+            }
+          })
+          .catch((recentError) => {
+            console.error('Failed to load recent sales:', recentError)
+          })
       } catch (loadError) {
         console.error('Error loading POS data:', loadError)
         setError(loadError.message || 'Unable to load POS data.')
-      } finally {
         setLoading(false)
       }
     }
 
     loadData()
+
+    return () => {
+      cancelled = true
+    }
   }, [canProcessRefund, profile?.branch_id, role, user?.id])
 
   useEffect(() => {
@@ -233,6 +251,27 @@ const Sales = () => {
     }
   }
 
+  const reduceSoldDrugQuantities = (soldItems) => {
+    const soldQuantityByDrugId = new Map(
+      soldItems.map((item) => [item.drugId, item.quantity])
+    )
+
+    setDrugs((currentDrugs) =>
+      currentDrugs.map((drug) => {
+        const soldQuantity = soldQuantityByDrugId.get(drug.id)
+        if (!soldQuantity) {
+          return drug
+        }
+
+        const currentQuantity = Number.parseFloat(drug.quantity ?? 0) || 0
+        return {
+          ...drug,
+          quantity: Math.max(0, currentQuantity - soldQuantity),
+        }
+      })
+    )
+  }
+
   const refreshRecentSales = async () => {
     try {
       setLoadingRecentSales(true)
@@ -274,14 +313,15 @@ const Sales = () => {
     try {
       setProcessing(true)
       setError('')
+      const soldItems = cart.map((item) => ({
+        drugId: item.drugId,
+        name: item.name,
+        quantity: item.quantity,
+        price: item.price,
+      }))
 
       const saleResult = await createSale({
-        items: cart.map((item) => ({
-          drugId: item.drugId,
-          name: item.name,
-          quantity: item.quantity,
-          price: item.price,
-        })),
+        items: soldItems,
         patientId: patientId || null,
         paymentMethod,
         amountPaid: paymentMethod === 'cash' ? amountPaid : total,
@@ -315,21 +355,28 @@ const Sales = () => {
       setLastSale(receiptData)
 
       // Clear cart
+      reduceSoldDrugQuantities(soldItems)
       setCart([])
       setSearchTerm('')
       syncSearchParam('')
       setReceived('')
       setPatientId('')
-      await refreshDrugs()
-      const refreshedShift = await getOpenShiftForUser(user?.id)
-      setActiveShift(refreshedShift)
-      await refreshRecentSales()
-      dispatchHealthflowDataChanged()
       
       notify('Sale completed successfully.', 'success')
       
       // Show receipt modal
       setShowReceipt(true)
+      void Promise.all([
+        refreshDrugs(),
+        getOpenShiftForUser(user?.id)
+          .then((refreshedShift) => setActiveShift(refreshedShift))
+          .catch((shiftRefreshError) => {
+            console.error('Failed to refresh active shift:', shiftRefreshError)
+          }),
+        refreshRecentSales(),
+      ]).finally(() => {
+        dispatchHealthflowDataChanged()
+      })
     } catch (saleError) {
       console.error('Error completing sale:', saleError)
       setError(saleError.message || 'Unable to complete sale.')

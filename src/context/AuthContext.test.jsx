@@ -65,6 +65,7 @@ const Probe = () => {
 describe('AuthProvider', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    window.history.replaceState({}, '', '/')
     mocks.queryBuilder.select.mockImplementation(() => mocks.queryBuilder)
     mocks.queryBuilder.eq.mockImplementation(() => mocks.queryBuilder)
   })
@@ -398,6 +399,39 @@ describe('AuthProvider', () => {
       mocks.getAuthStateChangeCallback()?.('PASSWORD_RECOVERY', recoverySession)
       await Promise.resolve()
     })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('auth-state')).toHaveTextContent('signed-in:recovery@example.com')
+    })
+    expect(mocks.auth.getUser).not.toHaveBeenCalled()
+    expect(mocks.queryBuilder.maybeSingle).not.toHaveBeenCalled()
+    expect(mocks.auth.signOut).not.toHaveBeenCalled()
+    expect(mocks.clearSupabaseStoredSession).not.toHaveBeenCalled()
+  })
+
+  it('preserves a recovery session restored from the recovery redirect URL', async () => {
+    window.history.replaceState({}, '', '/login?mode=recovery')
+    const recoveryUser = {
+      id: 'recovery-user',
+      email: 'recovery@example.com',
+      app_metadata: {},
+      user_metadata: {},
+    }
+    const recoverySession = {
+      access_token: 'recovery-token',
+      user: recoveryUser,
+    }
+
+    mocks.auth.getSession.mockResolvedValue({
+      data: { session: recoverySession },
+      error: null,
+    })
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    )
 
     await waitFor(() => {
       expect(screen.getByTestId('auth-state')).toHaveTextContent('signed-in:recovery@example.com')
