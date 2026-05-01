@@ -215,3 +215,154 @@ SELECT
 FROM public.audit_logs
 ORDER BY created_at DESC
 LIMIT 20;
+
+-- 10) Final executive summary.
+-- Supabase SQL Editor shows the last result most prominently, so this
+-- summary is placed last on purpose.
+WITH expected_tables(table_name) AS (
+    VALUES
+        ('organizations'),
+        ('users'),
+        ('branches'),
+        ('drugs'),
+        ('patients'),
+        ('sales'),
+        ('sale_items'),
+        ('claims'),
+        ('claim_items'),
+        ('stock_movements'),
+        ('audit_logs'),
+        ('pharmacy_settings'),
+        ('shifts'),
+        ('shift_cash_movements'),
+        ('expense_categories'),
+        ('expenses'),
+        ('cashbook_sessions'),
+        ('cashbook_entries'),
+        ('claim_payments')
+),
+table_status AS (
+    SELECT
+        expected_tables.table_name,
+        pg_class.oid IS NOT NULL AS table_exists,
+        COALESCE(pg_class.relrowsecurity, false) AS rls_enabled
+    FROM expected_tables
+    LEFT JOIN pg_class
+        ON pg_class.relname = expected_tables.table_name
+    LEFT JOIN pg_namespace
+        ON pg_namespace.oid = pg_class.relnamespace
+        AND pg_namespace.nspname = 'public'
+),
+required_functions(function_name) AS (
+    VALUES
+        ('create_sale_transaction'),
+        ('refund_sale_transaction'),
+        ('log_audit_event'),
+        ('generate_sale_number')
+),
+function_status AS (
+    SELECT
+        required_functions.function_name,
+        COUNT(pg_proc.oid) AS function_count,
+        BOOL_OR(pg_proc.prosecdef) AS has_security_definer
+    FROM required_functions
+    LEFT JOIN pg_proc
+        ON pg_proc.proname = required_functions.function_name
+    LEFT JOIN pg_namespace
+        ON pg_namespace.oid = pg_proc.pronamespace
+        AND pg_namespace.nspname = 'public'
+    GROUP BY required_functions.function_name
+),
+issue_rows AS (
+    SELECT
+        'RLS disabled or table missing' AS check_name,
+        table_name AS object_name,
+        CASE
+            WHEN NOT table_exists THEN 'MISSING TABLE'
+            WHEN NOT rls_enabled THEN 'RISK: RLS DISABLED'
+            ELSE 'OK'
+        END AS status
+    FROM table_status
+    WHERE NOT table_exists OR NOT rls_enabled
+
+    UNION ALL
+
+    SELECT
+        'Required security function missing or not SECURITY DEFINER',
+        function_name,
+        CASE
+            WHEN function_count = 0 THEN 'MISSING FUNCTION'
+            WHEN NOT has_security_definer THEN 'RISK: NOT SECURITY DEFINER'
+            ELSE 'OK'
+        END
+    FROM function_status
+    WHERE function_count = 0 OR NOT has_security_definer
+
+    UNION ALL
+
+    SELECT
+        'Rows missing organization_id',
+        'drugs',
+        COUNT(*)::TEXT
+    FROM public.drugs
+    WHERE organization_id IS NULL
+    HAVING COUNT(*) > 0
+
+    UNION ALL
+
+    SELECT
+        'Rows missing organization_id',
+        'sales',
+        COUNT(*)::TEXT
+    FROM public.sales
+    WHERE organization_id IS NULL
+    HAVING COUNT(*) > 0
+
+    UNION ALL
+
+    SELECT
+        'Rows missing organization_id',
+        'sale_items',
+        COUNT(*)::TEXT
+    FROM public.sale_items
+    WHERE organization_id IS NULL
+    HAVING COUNT(*) > 0
+
+    UNION ALL
+
+    SELECT
+        'Rows missing organization_id',
+        'patients',
+        COUNT(*)::TEXT
+    FROM public.patients
+    WHERE organization_id IS NULL
+    HAVING COUNT(*) > 0
+
+    UNION ALL
+
+    SELECT
+        'Non-super-admin users missing organization_id',
+        'users',
+        COUNT(*)::TEXT
+    FROM public.users
+    WHERE organization_id IS NULL
+      AND COALESCE(role, '') <> 'super_admin'
+    HAVING COUNT(*) > 0
+)
+SELECT
+    CASE
+        WHEN EXISTS (SELECT 1 FROM issue_rows) THEN 'REVIEW_REQUIRED'
+        ELSE 'PASS'
+    END AS overall_status,
+    check_name,
+    object_name,
+    status
+FROM issue_rows
+UNION ALL
+SELECT
+    'PASS',
+    'No blocking RLS/function/data-isolation issues found by this summary',
+    'production_security_audit',
+    'OK'
+WHERE NOT EXISTS (SELECT 1 FROM issue_rows)
+ORDER BY overall_status DESC, check_name, object_name;
