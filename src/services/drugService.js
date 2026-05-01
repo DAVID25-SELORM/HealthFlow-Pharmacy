@@ -9,6 +9,8 @@ import { invokeTierAccess } from './tierAccessService'
 
 export const DEFAULT_MEDICATION_BATCH_PREFIX = 'PDF-IMP-'
 const DRUGS_PER_PAGE = 1000
+const DEFAULT_SEARCH_LIMIT = 30
+const MAX_SEARCH_LIMIT = 100
 
 export const isDefaultCatalogDrug = (drug) =>
   String(drug?.batch_number || drug?.batch || '').toUpperCase().startsWith(DEFAULT_MEDICATION_BATCH_PREFIX)
@@ -71,6 +73,15 @@ export const getAllDrugs = async (options = {}) => {
   const drugs = await getAllDrugsDirectly()
 
   return drugs.filter(shouldShowDrugOutsideInventory)
+}
+
+const getSearchLimit = (value) => {
+  const parsed = Number.parseInt(String(value ?? ''), 10)
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_SEARCH_LIMIT
+  }
+
+  return Math.min(parsed, MAX_SEARCH_LIMIT)
 }
 
 // Get drug by ID
@@ -170,18 +181,50 @@ export const deleteDrug = async (id) => {
 }
 
 // Search drugs
-export const searchDrugs = async (searchTerm) => {
+export const searchDrugs = async (searchTerm, options = {}) => {
   const term = sanitizeSearchTerm(searchTerm)
-  if (!term) {
-    return getAllDrugs()
+  const limit = getSearchLimit(options.limit)
+  const includeCatalog = Boolean(options.includeCatalog)
+  const useTierAccess = Boolean(options.useTierAccess)
+  const inStockOnly = Boolean(options.inStockOnly)
+
+  if (useTierAccess) {
+    const response = await invokeTierAccess({
+      action: 'get_drugs',
+      includeCatalog,
+      searchTerm: term,
+      limit,
+      inStockOnly,
+    })
+
+    return (response.drugs || []).filter((drug) => !isInactiveDrug(drug))
   }
 
-  const drugs = await getAllDrugs()
-  return drugs.filter((drug) => {
-    const name = String(drug.name || '').toLowerCase()
-    const batchNumber = String(drug.batch_number || '').toLowerCase()
-    return name.includes(term) || batchNumber.includes(term)
-  })
+  let query = supabase
+    .from('drugs')
+    .select('*')
+    .eq('status', 'active')
+    .order('name')
+    .order('id')
+    .limit(limit)
+
+  if (term) {
+    const escapedTerm = term.replace(/[%_,]/g, '')
+    query = query.or(`name.ilike.%${escapedTerm}%,batch_number.ilike.%${escapedTerm}%`)
+  }
+
+  if (inStockOnly) {
+    query = query.gt('quantity', 0)
+  }
+
+  const { data, error } = await query
+
+  if (error) {
+    throw error
+  }
+
+  const drugs = (data || []).filter((drug) => !isInactiveDrug(drug))
+  return includeCatalog ? drugs : drugs.filter(shouldShowDrugOutsideInventory)
 }
 
 // Get low stock drugs

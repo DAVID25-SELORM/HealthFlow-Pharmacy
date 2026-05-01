@@ -20,6 +20,7 @@ import {
   addDrug,
   getAllDrugs,
   isDefaultCatalogDrug,
+  searchDrugs,
   updateDrug,
   deleteDrug,
 } from './drugService'
@@ -175,6 +176,45 @@ describe('drugService catalog handling', () => {
     expect(invokeTierAccess).toHaveBeenCalledWith({
       action: 'get_drugs',
       includeCatalog: false,
+    })
+    expect(fromMock).not.toHaveBeenCalled()
+  })
+
+  it('uses tier-access for bounded POS search results', async () => {
+    invokeTierAccess.mockResolvedValue({
+      drugs: [
+        {
+          id: 'match-1',
+          name: 'Amoxicillin',
+          batch_number: 'AMX-001',
+          quantity: 12,
+          status: 'active',
+        },
+      ],
+    })
+
+    await expect(
+      searchDrugs('amox', {
+        useTierAccess: true,
+        inStockOnly: true,
+        limit: 30,
+      })
+    ).resolves.toEqual([
+      {
+        id: 'match-1',
+        name: 'Amoxicillin',
+        batch_number: 'AMX-001',
+        quantity: 12,
+        status: 'active',
+      },
+    ])
+
+    expect(invokeTierAccess).toHaveBeenCalledWith({
+      action: 'get_drugs',
+      includeCatalog: false,
+      searchTerm: 'amox',
+      limit: 30,
+      inStockOnly: true,
     })
     expect(fromMock).not.toHaveBeenCalled()
   })

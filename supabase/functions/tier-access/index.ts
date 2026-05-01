@@ -108,6 +108,9 @@ const parsePositiveInteger = (value: unknown, fallback: number) => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
 }
 
+const clampPositiveInteger = (value: unknown, fallback: number, max: number) =>
+  Math.min(parsePositiveInteger(value, fallback), max)
+
 const parseNonNegativeNumber = (value: unknown, label: string) => {
   const parsed = Number.parseFloat(String(value ?? ''))
   if (!Number.isFinite(parsed) || parsed < 0) {
@@ -418,31 +421,53 @@ const getDrugs = async (
   }
 
   const includeCatalog = Boolean(payload.includeCatalog)
+  const searchTerm = normalizeText(payload.searchTerm)
+  const limit = clampPositiveInteger(payload.limit, 0, 100)
+  const inStockOnly = Boolean(payload.inStockOnly)
   const rows = []
   let from = 0
+  let query = adminClient
+    .from('drugs')
+    .select('*')
+    .eq('organization_id', organizationId)
+    .eq('status', 'active')
 
-  while (true) {
-    const to = from + DRUGS_PER_PAGE - 1
-    const { data, error } = await adminClient
-      .from('drugs')
-      .select('*')
-      .eq('organization_id', organizationId)
-      .eq('status', 'active')
-      .order('name')
-      .order('id')
-      .range(from, to)
+  if (searchTerm) {
+    const escapedTerm = searchTerm.replace(/[%_,]/g, '')
+    query = query.or(`name.ilike.%${escapedTerm}%,batch_number.ilike.%${escapedTerm}%`)
+  }
+
+  if (inStockOnly) {
+    query = query.gt('quantity', 0)
+  }
+
+  query = query.order('name').order('id')
+
+  if (limit > 0) {
+    const { data, error } = await query.limit(limit)
 
     if (error) {
       throw error
     }
 
     rows.push(...(data || []))
+  } else {
+    while (true) {
+      const to = from + DRUGS_PER_PAGE - 1
+      const { data, error } = await query.range(from, to)
 
-    if (!data || data.length < DRUGS_PER_PAGE) {
-      break
+      if (error) {
+        throw error
+      }
+
+      rows.push(...(data || []))
+
+      if (!data || data.length < DRUGS_PER_PAGE) {
+        break
+      }
+
+      from += DRUGS_PER_PAGE
     }
-
-    from += DRUGS_PER_PAGE
   }
 
   if (includeCatalog) {

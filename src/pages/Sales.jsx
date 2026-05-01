@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Search, Trash2, Plus, Minus, ShoppingCart, Printer, Download, X } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { dispatchHealthflowDataChanged } from '../lib/appEvents'
-import { getAllDrugs } from '../services/drugService'
+import { searchDrugs } from '../services/drugService'
 import { createSale, getRecentSales, getSaleById, refundSale } from '../services/salesService'
 import { getAllPatients } from '../services/patientService'
 import { getPharmacySettings } from '../services/settingsService'
@@ -16,11 +16,16 @@ import { hasRole } from '../utils/roles'
 import Receipt from '../components/Receipt/Receipt'
 import './Sales.css'
 
+const POS_DRUG_SEARCH_LIMIT = 30
+const RECENT_SALES_LIMIT = 8
+
 const Sales = () => {
   const [searchParams, setSearchParams] = useSearchParams()
   const { user, displayName, role, profile } = useAuth()
   const { notify } = useNotification()
   const [drugs, setDrugs] = useState([])
+  const [drugSearchLoading, setDrugSearchLoading] = useState(false)
+  const [drugSearchMessage, setDrugSearchMessage] = useState('')
   const [patients, setPatients] = useState([])
   const [cart, setCart] = useState([])
   const [searchTerm, setSearchTerm] = useState('')
@@ -71,8 +76,7 @@ const Sales = () => {
           return
         }
 
-        const [drugsData, patientsData, pharmacySettings, branchesData, openShiftData] = await Promise.all([
-          getAllDrugs({ useTierAccess: true }),
+        const [patientsData, pharmacySettings, branchesData, openShiftData] = await Promise.all([
           getAllPatients(),
           getPharmacySettings().catch(() => null),
           getBranches(),
@@ -82,7 +86,6 @@ const Sales = () => {
           return
         }
 
-        setDrugs(drugsData)
         setPatients(patientsData)
         setPharmacyInfo(pharmacySettings)
         setBranches(branchesData)
@@ -96,7 +99,7 @@ const Sales = () => {
         )
         setLoading(false)
 
-        getRecentSales(8)
+        getRecentSales(RECENT_SALES_LIMIT)
           .then((recent) => {
             if (!cancelled) {
               setRecentSales(recent || [])
@@ -120,6 +123,53 @@ const Sales = () => {
   }, [canProcessRefund, profile?.branch_id, role, user?.id])
 
   useEffect(() => {
+    if (loading || !isSupabaseConfigured()) {
+      return undefined
+    }
+
+    let cancelled = false
+    const term = searchTerm.trim()
+
+    const searchInventory = async () => {
+      try {
+        setDrugSearchLoading(true)
+        setDrugSearchMessage('')
+        const results = await searchDrugs(term, {
+          useTierAccess: true,
+          inStockOnly: true,
+          limit: POS_DRUG_SEARCH_LIMIT,
+        })
+
+        if (cancelled) {
+          return
+        }
+
+        setDrugs(results)
+        if (results.length === 0) {
+          setDrugSearchMessage(term ? 'No matching in-stock drugs found.' : 'No in-stock drugs available.')
+        }
+      } catch (searchError) {
+        if (!cancelled) {
+          console.error('Failed to search inventory:', searchError)
+          setDrugs([])
+          setDrugSearchMessage(searchError.message || 'Unable to search inventory.')
+        }
+      } finally {
+        if (!cancelled) {
+          setDrugSearchLoading(false)
+        }
+      }
+    }
+
+    const timeout = window.setTimeout(searchInventory, term ? 250 : 0)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timeout)
+    }
+  }, [loading, searchTerm])
+
+  useEffect(() => {
     const routeSearch = searchParams.get('search') || ''
     setSearchTerm((current) => (current === routeSearch ? current : routeSearch))
   }, [searchParams])
@@ -141,19 +191,6 @@ const Sales = () => {
     setSearchTerm(value)
     syncSearchParam(value)
   }
-
-  const filteredDrugs = useMemo(() => {
-    const term = searchTerm.trim().toLowerCase()
-    if (!term) {
-      return drugs
-    }
-    return drugs.filter((drug) => {
-      return (
-        drug.name.toLowerCase().includes(term) ||
-        String(drug.batch_number || '').toLowerCase().includes(term)
-      )
-    })
-  }, [drugs, searchTerm])
 
   const cartCount = useMemo(
     () => cart.reduce((sum, item) => sum + item.quantity, 0),
@@ -245,7 +282,11 @@ const Sales = () => {
 
   const refreshDrugs = async () => {
     try {
-      const latestDrugs = await getAllDrugs({ useTierAccess: true })
+      const latestDrugs = await searchDrugs(searchTerm, {
+        useTierAccess: true,
+        inStockOnly: true,
+        limit: POS_DRUG_SEARCH_LIMIT,
+      })
       setDrugs(latestDrugs)
     } catch (refreshError) {
       console.error('Failed to refresh inventory:', refreshError)
@@ -276,7 +317,7 @@ const Sales = () => {
   const refreshRecentSales = async () => {
     try {
       setLoadingRecentSales(true)
-      const recent = await getRecentSales(8)
+      const recent = await getRecentSales(RECENT_SALES_LIMIT)
       setRecentSales(recent || [])
     } catch (refreshError) {
       console.error('Failed to refresh recent sales:', refreshError)
@@ -669,7 +710,7 @@ const Sales = () => {
                 type="text"
                 value={searchTerm}
                 onChange={(e) => handleSearchChange(e.target.value)}
-                placeholder="Search drug or batch number..."
+                placeholder="Search drug, batch number, or scan barcode..."
               />
           </div>
 
@@ -690,28 +731,46 @@ const Sales = () => {
           </div>
 
           <div className="quick-add">
-            <h3>Select Drugs</h3>
-            <div className="drug-grid">
-              {filteredDrugs.map((drug) => {
-                const reserved = getReservedQty(drug.id)
-                const remaining = Math.max(0, Number.parseFloat(drug.quantity || 0) - reserved)
-                const soldOut = remaining <= 0
+            <div className="drug-results-header">
+              <div>
+                <h3>Drug Results</h3>
+                <span>
+                  {drugSearchLoading
+                    ? 'Searching...'
+                    : `${drugs.length} result${drugs.length === 1 ? '' : 's'}`}
+                </span>
+              </div>
+              <span className="drug-results-limit">Top {POS_DRUG_SEARCH_LIMIT}</span>
+            </div>
+            {drugSearchMessage && !drugSearchLoading ? (
+              <p className="drug-results-empty">{drugSearchMessage}</p>
+            ) : null}
+            <div className="drug-grid" aria-busy={drugSearchLoading}>
+              {drugSearchLoading && drugs.length === 0 ? (
+                <div className="drug-results-loading">Searching inventory...</div>
+              ) : (
+                drugs.map((drug) => {
+                  const reserved = getReservedQty(drug.id)
+                  const remaining = Math.max(0, Number.parseFloat(drug.quantity || 0) - reserved)
+                  const soldOut = remaining <= 0
 
-                return (
-                  <button
-                    key={drug.id}
-                    className="drug-card"
-                    onClick={() => addToCart(drug)}
-                    disabled={soldOut}
-                  >
-                    <span className="drug-name">{drug.name}</span>
-                    <span className="drug-price">GHS {Number.parseFloat(drug.price).toFixed(2)}</span>
-                    <span className={`drug-stock ${soldOut ? 'sold-out' : ''}`}>
-                      {soldOut ? 'Out of stock' : `${remaining} in stock`}
-                    </span>
-                  </button>
-                )
-              })}
+                  return (
+                    <button
+                      key={drug.id}
+                      className="drug-card"
+                      onClick={() => addToCart(drug)}
+                      disabled={soldOut}
+                    >
+                      <span className="drug-name">{drug.name}</span>
+                      <span className="drug-batch">{drug.batch_number || 'No batch'}</span>
+                      <span className="drug-price">GHS {Number.parseFloat(drug.price).toFixed(2)}</span>
+                      <span className={`drug-stock ${soldOut ? 'sold-out' : ''}`}>
+                        {soldOut ? 'Out of stock' : `${remaining} in stock`}
+                      </span>
+                    </button>
+                  )
+                })
+              )}
             </div>
           </div>
 
