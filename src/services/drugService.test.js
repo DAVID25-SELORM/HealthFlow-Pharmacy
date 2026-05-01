@@ -34,10 +34,12 @@ describe('drugService catalog handling', () => {
     const queryBuilder = {
       select: vi.fn(),
       order: vi.fn(),
+      range: vi.fn(),
     }
 
     queryBuilder.select.mockReturnValue(queryBuilder)
-    queryBuilder.order.mockResolvedValue({
+    queryBuilder.order.mockReturnValue(queryBuilder)
+    queryBuilder.range.mockResolvedValue({
       data: rows,
       error: null,
     })
@@ -112,6 +114,8 @@ describe('drugService catalog handling', () => {
     expect(fromMock).toHaveBeenCalledWith('drugs')
     expect(queryBuilder.select).toHaveBeenCalledWith('*')
     expect(queryBuilder.order).toHaveBeenCalledWith('name')
+    expect(queryBuilder.order).toHaveBeenCalledWith('id')
+    expect(queryBuilder.range).toHaveBeenCalledWith(0, 999)
     expect(invokeTierAccess).not.toHaveBeenCalled()
   })
 
