@@ -911,8 +911,8 @@ const deleteDrug = async (
 ) => {
   requireRole(
     requesterProfile,
-    ['admin', 'pharmacist'],
-    'Only admins and pharmacists can remove inventory items.'
+    ['admin'],
+    'Only admins can delete inventory items.'
   )
 
   const drugId = assertRequiredText(payload.drugId, 'Drug ID')

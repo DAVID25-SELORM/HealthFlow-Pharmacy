@@ -12,6 +12,7 @@ import {
 } from '../services/drugService'
 import { parseExcelFile, validateImportData, importDrugs, generateTemplate } from '../services/drugImportService'
 import { isSupabaseConfigured } from '../lib/supabase'
+import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
 import { useTenant } from '../context/TenantContext'
 import { formatAppDate } from '../utils/date'
@@ -44,6 +45,7 @@ const mapDrugToForm = (drug) => ({
 })
 
 const Inventory = () => {
+  const { role } = useAuth()
   const { notify } = useNotification()
   const { tierLimits } = useTenant()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -538,15 +540,17 @@ const Inventory = () => {
                         >
                           <Edit2 size={16} />
                         </button>
-                        <button
-                          className="icon-btn delete-btn"
-                          title={`Delete ${drug.name}`}
-                          type="button"
-                          onClick={() => handleDelete(drug.id)}
-                          disabled={isDefaultCatalogDrug(drug)}
-                        >
-                          <Trash2 size={16} />
-                        </button>
+                        {role === 'admin' && (
+                          <button
+                            className="icon-btn delete-btn"
+                            title={`Delete ${drug.name}`}
+                            type="button"
+                            onClick={() => handleDelete(drug.id)}
+                            disabled={isDefaultCatalogDrug(drug)}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
