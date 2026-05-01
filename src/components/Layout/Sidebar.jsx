@@ -52,16 +52,7 @@ const Sidebar = ({ isOpen, onClose }) => {
   return (
     <aside className={`sidebar ${isOpen ? 'open' : ''}`}>
       <div className="sidebar-logo">
-        <div className="logo-icon">
-          <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-            <rect width="32" height="32" rx="8" fill="white" />
-            <path d="M16 8V24M8 16H24" stroke="#16a085" strokeWidth="3" strokeLinecap="round" />
-          </svg>
-        </div>
-        <div className="logo-text">
-          <h2>HealthFlow</h2>
-          <p>Pharmacy</p>
-        </div>
+        <img src="/app-logo.png" alt="HealthFlow Pharmacy" className="sidebar-brand-logo" />
         <button type="button" className="sidebar-close" onClick={onClose} aria-label="Close menu">
           <X size={18} />
         </button>

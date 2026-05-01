@@ -29,6 +29,7 @@ const toForm = (row) => ({
   city: row?.city || '',
   region: row?.region || '',
   logoUrl: row?.logo_url || '',
+  slogan: row?.slogan || '',
   licenseNumber: row?.license_number || '',
   taxRate: row?.tax_rate ?? 0,
   currency: row?.currency || 'GHS',
@@ -139,6 +140,19 @@ const Settings = () => {
       setSaving(true)
       setError('')
       await updatePharmacySettings(settingsId, formData)
+      if (organization?.id) {
+        await updateOrganization(organization.id, {
+          name: formData.pharmacyName,
+          phone: formData.phone,
+          email: formData.email,
+          address: formData.address,
+          city: formData.city,
+          region: formData.region,
+          logoUrl: formData.logoUrl,
+          slogan: formData.slogan,
+          licenseNumber: formData.licenseNumber,
+        })
+      }
       await loadSettings()
     } catch (saveError) {
       console.error('Error saving settings:', saveError)
@@ -376,6 +390,15 @@ const Settings = () => {
             </div>
             <div className="settings-form-row">
               <input
+                placeholder="Pharmacy slogan"
+                value={formData.slogan}
+                onChange={(event) =>
+                  setFormData({ ...formData, slogan: event.target.value })
+                }
+                disabled={!isAdmin}
+                maxLength={120}
+              />
+              <input
                 placeholder="License number"
                 value={formData.licenseNumber}
                 onChange={(event) =>
@@ -383,15 +406,15 @@ const Settings = () => {
                 }
                 disabled={!isAdmin}
               />
-              <input
-                placeholder="Currency"
-                value={formData.currency}
-                onChange={(event) =>
-                  setFormData({ ...formData, currency: event.target.value })
-                }
-                disabled={!isAdmin}
-              />
             </div>
+            <input
+              placeholder="Currency"
+              value={formData.currency}
+              onChange={(event) =>
+                setFormData({ ...formData, currency: event.target.value })
+              }
+              disabled={!isAdmin}
+            />
             <div className="logo-upload-field">
               {formData.logoUrl && (
                 <img src={formData.logoUrl} alt="Pharmacy logo preview" className="settings-logo-preview" />

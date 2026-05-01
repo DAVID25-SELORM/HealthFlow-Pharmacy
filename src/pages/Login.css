@@ -16,6 +16,14 @@
   padding: 2rem;
 }
 
+.auth-brand-logo {
+  display: block;
+  width: 112px;
+  height: 92px;
+  object-fit: contain;
+  margin: 0 auto 1rem;
+}
+
 .login-card h1 {
   font-size: 1.6rem;
   margin-bottom: 0.25rem;

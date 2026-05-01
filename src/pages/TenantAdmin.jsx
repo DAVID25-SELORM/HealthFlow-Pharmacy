@@ -27,6 +27,7 @@ const blankPharmacy = {
   city: '',
   region: '',
   logoUrl: '',
+  slogan: '',
   licenseNumber: '',
   subscriptionTier: 'basic',
 }
@@ -208,6 +209,7 @@ const TenantAdmin = () => {
       city: org.city || '',
       region: org.region || '',
       logoUrl: org.logo_url || '',
+      slogan: org.slogan || '',
       licenseNumber: org.license_number || '',
       status: org.status || 'trial',
       subscriptionTier: org.subscription_tier || 'basic',
@@ -407,6 +409,15 @@ const TenantAdmin = () => {
                     placeholder="Greater Accra"
                     value={pharmacy.region}
                     onChange={(e) => setPharmacy({ ...pharmacy, region: e.target.value })}
+                  />
+                </div>
+                <div className="tenant-form-group">
+                  <label>Pharmacy Slogan</label>
+                  <input
+                    placeholder="Smart Pharmacy. Better Health."
+                    value={pharmacy.slogan}
+                    onChange={(e) => setPharmacy({ ...pharmacy, slogan: e.target.value })}
+                    maxLength={120}
                   />
                 </div>
                 <div className="tenant-form-group">
@@ -810,6 +821,15 @@ const TenantAdmin = () => {
                       value={editForm.region}
                       onChange={(e) => setEditForm({ ...editForm, region: e.target.value })}
                       placeholder="Greater Accra"
+                    />
+                  </div>
+                  <div className="tenant-form-group">
+                    <label>Pharmacy Slogan</label>
+                    <input
+                      value={editForm.slogan}
+                      onChange={(e) => setEditForm({ ...editForm, slogan: e.target.value })}
+                      placeholder="Smart Pharmacy. Better Health."
+                      maxLength={120}
                     />
                   </div>
                   <div className="tenant-form-group">

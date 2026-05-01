@@ -9,7 +9,7 @@ const DEFAULT_CATALOG_SYNC_BATCH_SIZE = 200
 const VALID_TIERS = ['trial', 'basic', 'pro', 'enterprise'] as const
 const VALID_STATUSES = ['trial', 'active', 'suspended', 'cancelled'] as const
 const ORGANIZATION_SELECT_FIELDS =
-  'id, name, subdomain, status, subscription_tier, trial_ends_at, subscription_ends_at, phone, email, address, city, region, logo_url, license_number, created_at, updated_at'
+  'id, name, subdomain, status, subscription_tier, trial_ends_at, subscription_ends_at, phone, email, address, city, region, logo_url, slogan, license_number, created_at, updated_at'
 const TENANT_USER_SELECT_FIELDS = 'id, email, full_name, role, is_active, created_at'
 
 type TenantSignupAction =
@@ -316,6 +316,7 @@ const syncPharmacySettingsFromOrganization = async (
     city?: string | null
     region?: string | null
     logo_url?: string | null
+    slogan?: string | null
     license_number?: string | null
   }
 ) => {
@@ -327,6 +328,7 @@ const syncPharmacySettingsFromOrganization = async (
     city: normalizeText(organization.city) || null,
     region: normalizeText(organization.region) || null,
     logo_url: normalizeText(organization.logo_url) || null,
+    slogan: normalizeText(organization.slogan) || null,
     license_number: normalizeText(organization.license_number) || null,
     updated_at: new Date().toISOString(),
   }
@@ -541,6 +543,7 @@ const updateTenantOrganization = async (
       organizationInput.logoUrl !== undefined
         ? normalizeText(organizationInput.logoUrl) || null
         : null,
+    slogan: organizationInput.slogan !== undefined ? normalizeText(organizationInput.slogan) || null : null,
     license_number:
       organizationInput.licenseNumber !== undefined
         ? normalizeText(organizationInput.licenseNumber) || null
@@ -572,6 +575,7 @@ const updateTenantOrganization = async (
     if (
       organizationInput[key] === undefined &&
       key !== 'logo_url' &&
+      key !== 'slogan' &&
       key !== 'license_number' &&
       key !== 'subscription_tier'
     ) {
@@ -581,6 +585,10 @@ const updateTenantOrganization = async (
 
   if (organizationInput.logoUrl === undefined) {
     delete updatePayload.logo_url
+  }
+
+  if (organizationInput.slogan === undefined) {
+    delete updatePayload.slogan
   }
 
   if (organizationInput.licenseNumber === undefined) {
@@ -679,6 +687,7 @@ const updateTenantOrganization = async (
     city: updatedOrganization.city,
     region: updatedOrganization.region,
     logo_url: updatedOrganization.logo_url,
+    slogan: updatedOrganization.slogan,
     license_number: updatedOrganization.license_number,
   })
 
@@ -802,6 +811,7 @@ const bootstrapOrganization = async (
           phone: normalizeText(organizationInput.phone) || null,
           email: normalizeText(organizationInput.email) || adminEmail,
           logo_url: normalizeText(organizationInput.logoUrl) || null,
+          slogan: normalizeText(organizationInput.slogan) || null,
           license_number: normalizeText(organizationInput.licenseNumber) || null,
           status: organizationStatus,
           subscription_tier: subscriptionTier,
@@ -810,7 +820,7 @@ const bootstrapOrganization = async (
         },
       ])
       .select(
-        'id, name, subdomain, status, subscription_tier, trial_ends_at, subscription_ends_at, logo_url'
+        'id, name, subdomain, status, subscription_tier, trial_ends_at, subscription_ends_at, logo_url, slogan'
       )
       .single()
 
@@ -878,6 +888,7 @@ const bootstrapOrganization = async (
         city: normalizeText(organizationInput.city) || null,
         region: normalizeText(organizationInput.region) || null,
         logo_url: normalizeText(organizationInput.logoUrl) || null,
+        slogan: normalizeText(organizationInput.slogan) || null,
         license_number: normalizeText(organizationInput.licenseNumber) || null,
       },
     ])

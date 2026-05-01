@@ -89,6 +89,7 @@ export const registerOrganizationSignup = async (payload) => {
     city: normalizeText(payload.city) || null,
     region: normalizeText(payload.region) || null,
     logoUrl: normalizeText(payload.logoUrl) || null,
+    slogan: normalizeText(payload.slogan) || null,
     licenseNumber: normalizeText(payload.licenseNumber) || null,
   }
 
@@ -137,6 +138,7 @@ export const createOrganization = async (orgData) => {
     phone: normalizeText(orgData.phone) || null,
     email: normalizeText(orgData.email) || null,
     logo_url: normalizeText(orgData.logoUrl ?? orgData.logo_url) || null,
+    slogan: normalizeText(orgData.slogan) || null,
     license_number: normalizeText(orgData.licenseNumber) || null,
     status: 'trial', // Start with trial
     subscription_tier: 'trial',
@@ -166,6 +168,7 @@ export const updateOrganization = async (orgId, updates) => {
     phone: updates.phone !== undefined ? normalizeText(updates.phone) || null : undefined,
     email: updates.email !== undefined ? normalizeText(updates.email) || null : undefined,
     logo_url: updates.logoUrl !== undefined ? normalizeText(updates.logoUrl) || null : undefined,
+    slogan: updates.slogan !== undefined ? normalizeText(updates.slogan) || null : undefined,
     license_number: updates.licenseNumber !== undefined ? normalizeText(updates.licenseNumber) || null : undefined,
     updated_at: new Date().toISOString(),
   }

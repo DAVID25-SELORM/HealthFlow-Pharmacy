@@ -193,6 +193,7 @@ export const AuthProvider = ({ children }) => {
             city,
             region,
             logo_url,
+            slogan,
             license_number
           )
         `)

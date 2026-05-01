@@ -118,6 +118,7 @@ const Login = () => {
   return (
     <div className="login-page">
       <div className="login-card">
+        <img src="/app-logo.png" alt="HealthFlow Pharmacy logo" className="auth-brand-logo" />
         <h1>HealthFlow Pharmacy</h1>
         <p className="subtitle">
           {mode === 'reset'

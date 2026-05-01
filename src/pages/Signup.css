@@ -21,6 +21,13 @@
   margin-bottom: 2rem;
 }
 
+.signup-brand-logo {
+  width: 132px;
+  height: 108px;
+  object-fit: contain;
+  margin-bottom: 0.85rem;
+}
+
 .signup-header h1 {
   color: #2d3748;
   font-size: 2rem;

@@ -73,6 +73,14 @@
   font-size: 1.05rem;
 }
 
+.receipt-slogan {
+  margin: 0.35rem 0 0.75rem;
+  color: #66758a;
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-align: center;
+}
+
 .brand-thanks {
   display: grid;
   gap: 4px;

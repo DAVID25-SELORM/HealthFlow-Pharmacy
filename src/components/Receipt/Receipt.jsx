@@ -41,6 +41,7 @@ const Receipt = forwardRef(({ saleData, pharmacyInfo, mode = 'preview' }, ref) =
             </div>
             <div>
               <h2>{pharmacyInfo?.pharmacy_name || 'HealthFlow Pharmacy'}</h2>
+              {pharmacyInfo?.slogan && <p>{pharmacyInfo.slogan}</p>}
             </div>
           </div>
           <div className="brand-thanks">
@@ -55,6 +56,7 @@ const Receipt = forwardRef(({ saleData, pharmacyInfo, mode = 'preview' }, ref) =
             <img src={pharmacyInfo.logo_url} alt="" className="receipt-pharmacy-logo" />
           )}
           <h3>{pharmacyInfo?.pharmacy_name || 'HealthFlow Pharmacy'}</h3>
+          {pharmacyInfo?.slogan && <p className="receipt-slogan">{pharmacyInfo.slogan}</p>}
           <div className="pharmacy-contact">
             {pharmacyInfo?.address && (
               <span>

@@ -222,6 +222,7 @@ const Dashboard = () => {
   const canViewClaimsMetrics = (canManageClaims || hasRole(role, CLAIMS_ROLES)) && tierLimits.hasClaims
   const pharmacyName = organization?.name || 'Your Pharmacy'
   const pharmacyLogoUrl = organization?.logo_url || ''
+  const pharmacySlogan = organization?.slogan || ''
   const welcomeName = resolveWelcomeName(displayName)
   const roleLabel = formatRoleLabel(role)
   const planLabel = tierLimits?.label || 'Basic'
@@ -537,6 +538,7 @@ const Dashboard = () => {
             <div className="hero-pharmacy-copy">
               <span className="hero-pharmacy-label">Current pharmacy</span>
               <strong>{pharmacyName}</strong>
+              {pharmacySlogan && <span className="hero-pharmacy-slogan">{pharmacySlogan}</span>}
             </div>
           </div>
 

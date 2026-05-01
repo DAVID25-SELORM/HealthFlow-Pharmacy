@@ -29,6 +29,7 @@ const Signup = () => {
   const [city, setCity] = useState('')
   const [region, setRegion] = useState('')
   const [logoUrl, setLogoUrl] = useState('')
+  const [slogan, setSlogan] = useState('')
   const [licenseNumber, setLicenseNumber] = useState('')
 
   const [fullName, setFullName] = useState('')
@@ -150,6 +151,7 @@ const Signup = () => {
         city,
         region,
         logoUrl,
+        slogan,
         licenseNumber,
         fullName,
         email,
@@ -198,6 +200,7 @@ const Signup = () => {
     <div className="signup-page">
       <div className="signup-container">
         <div className="signup-header">
+          <img src="/app-logo.png" alt="HealthFlow Pharmacy logo" className="signup-brand-logo" />
           <h1>HealthFlow Pharmacy</h1>
           <p>Start your 30-day free trial</p>
         </div>
@@ -326,6 +329,18 @@ const Signup = () => {
                   placeholder="Greater Accra"
                 />
               </div>
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="slogan">Pharmacy Slogan</label>
+              <input
+                type="text"
+                id="slogan"
+                value={slogan}
+                onChange={(event) => setSlogan(event.target.value)}
+                placeholder="Smart Pharmacy. Better Health."
+                maxLength={120}
+              />
             </div>
 
             <div className="form-group">
@@ -474,6 +489,11 @@ const Signup = () => {
               <p>
                 <strong>Pharmacy:</strong> {pharmacyName}
               </p>
+              {slogan && (
+                <p>
+                  <strong>Slogan:</strong> {slogan}
+                </p>
+              )}
               <p>
                 <strong>Subdomain:</strong> {subdomain}.healthflow.app
               </p>

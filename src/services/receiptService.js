@@ -80,6 +80,12 @@ export const generateReceiptPDF = (saleData, pharmacyInfo) => {
   setColor(green)
   doc.setFontSize(22)
   doc.text(pharmacyInfo?.pharmacy_name || 'HealthFlow Pharmacy', margin + 18, y + 10)
+  if (pharmacyInfo?.slogan) {
+    doc.setFont('helvetica', 'normal')
+    setColor(gray)
+    doc.setFontSize(9)
+    doc.text(String(pharmacyInfo.slogan), margin + 18, y + 16)
+  }
   doc.setFillColor(...green)
   doc.roundedRect(margin, y, 14, 14, 3, 3, 'F')
   doc.setTextColor(255, 255, 255)
@@ -107,6 +113,13 @@ export const generateReceiptPDF = (saleData, pharmacyInfo) => {
     align: 'center',
   })
   y += 8
+  if (pharmacyInfo?.slogan) {
+    setColor(gray)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(10)
+    doc.text(String(pharmacyInfo.slogan), pageWidth / 2, y, { align: 'center' })
+    y += 6
+  }
   setColor(dark)
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(10)

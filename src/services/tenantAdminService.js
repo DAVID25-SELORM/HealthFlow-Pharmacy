@@ -126,6 +126,7 @@ export const createPharmacyTenant = async ({ pharmacy, admin }) =>
       city: normalizeText(pharmacy.city) || null,
       region: normalizeText(pharmacy.region) || null,
       logoUrl: normalizeText(pharmacy.logoUrl) || null,
+      slogan: normalizeText(pharmacy.slogan) || null,
       licenseNumber: normalizeText(pharmacy.licenseNumber) || null,
       status: 'trial',
       subscriptionTier: normalizeSubscriptionTier(pharmacy.subscriptionTier, 'basic'),
@@ -214,6 +215,7 @@ export const updateOrganizationDetails = async (orgId, fields) => {
     city: fields.city !== undefined ? normalizeText(fields.city) || null : undefined,
     region: fields.region !== undefined ? normalizeText(fields.region) || null : undefined,
     logoUrl: fields.logoUrl !== undefined ? normalizeText(fields.logoUrl) || null : undefined,
+    slogan: fields.slogan !== undefined ? normalizeText(fields.slogan) || null : undefined,
     licenseNumber:
       fields.licenseNumber !== undefined ? normalizeText(fields.licenseNumber) || null : undefined,
     status:
