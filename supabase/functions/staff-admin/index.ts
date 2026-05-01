@@ -228,6 +228,7 @@ const syncPublicUser = async (
     role?: StaffRole
     isActive?: boolean
     organizationId?: string | null
+    canRefund?: boolean
   } = {}
 ) => {
   const email = normalizeText(authUser.email).toLowerCase()
@@ -295,6 +296,7 @@ const syncPublicUser = async (
       role,
       is_active: isActive,
       organization_id: organizationId,
+      ...(typeof overrides.canRefund === 'boolean' ? { can_refund: overrides.canRefund } : {}),
       updated_at: new Date().toISOString(),
     },
     { onConflict: 'id' }
@@ -326,6 +328,7 @@ const upsertStaffUser = async (
   const password = normalizeText(payload.password)
   const roleCandidate = normalizeText(payload.role).toLowerCase()
   const requestedOrganizationId = normalizeText(payload.organizationId)
+  const canRefund = typeof payload.canRefund === 'boolean' ? payload.canRefund : undefined
 
   if (!email) {
     throw new Error('Email is required.')
@@ -408,6 +411,7 @@ const upsertStaffUser = async (
       role: roleCandidate,
       isActive: true,
       organizationId,
+      canRefund,
     })
 
     return {
@@ -438,6 +442,7 @@ const upsertStaffUser = async (
     role: roleCandidate,
     isActive: true,
     organizationId,
+    canRefund,
   })
 
   return {

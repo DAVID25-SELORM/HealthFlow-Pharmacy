@@ -40,6 +40,7 @@ const blankStaffForm = {
   email: '',
   phone: '',
   role: 'assistant',
+  canRefund: false,
   temporaryPassword: '',
   branchId: '',
 }
@@ -743,7 +744,7 @@ const Settings = () => {
                 <select
                   value={staffForm.role}
                   onChange={(event) =>
-                    setStaffForm({ ...staffForm, role: event.target.value })
+                    setStaffForm({ ...staffForm, role: event.target.value, canRefund: false })
                   }
                   disabled={creatingStaff}
                 >
@@ -752,6 +753,19 @@ const Settings = () => {
                   <option value="admin">Admin</option>
                 </select>
               </div>
+              {staffForm.role !== 'admin' && (
+                <label className="settings-checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={staffForm.canRefund}
+                    onChange={(event) =>
+                      setStaffForm({ ...staffForm, canRefund: event.target.checked })
+                    }
+                    disabled={creatingStaff}
+                  />
+                  Allow refunds
+                </label>
+              )}
               <input
                 type="password"
                 minLength={8}

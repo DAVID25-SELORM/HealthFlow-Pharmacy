@@ -44,7 +44,7 @@ const Sales = () => {
   const [refundingSaleId, setRefundingSaleId] = useState(null)
   const [reprintingSaleId, setReprintingSaleId] = useState(null)
   const canProcessRefund =
-    String(role || '').toLowerCase() === 'admin' || Boolean(profile?.can_refund)
+    ['admin', 'pharmacist'].includes(String(role || '').toLowerCase()) || Boolean(profile?.can_refund)
   const isAdmin = String(role || '').toLowerCase() === 'admin'
   const activeBranches = branches.filter((branch) => branch.is_active !== false)
   const fallbackBranch =

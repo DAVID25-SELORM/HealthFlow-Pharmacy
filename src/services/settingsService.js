@@ -171,6 +171,7 @@ export const createStaffUser = async (staff) => {
     fullName,
     phone,
     role,
+    canRefund: Boolean(staff.canRefund),
     password: temporaryPassword,
   })
 
