@@ -78,11 +78,8 @@ export const generateReceiptPDF = (saleData, pharmacyInfo) => {
 
   doc.setFont('helvetica', 'bold')
   setColor(green)
-  doc.setFontSize(28)
-  doc.text('HealthFlow', margin + 18, y + 10)
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(13)
-  doc.text('Pharmacy', margin + 18, y + 18)
+  doc.setFontSize(22)
+  doc.text(pharmacyInfo?.pharmacy_name || 'HealthFlow Pharmacy', margin + 18, y + 10)
   doc.setFillColor(...green)
   doc.roundedRect(margin, y, 14, 14, 3, 3, 'F')
   doc.setTextColor(255, 255, 255)

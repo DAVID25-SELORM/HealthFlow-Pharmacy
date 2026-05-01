@@ -372,22 +372,22 @@
 }
 
 @media print {
-  body * {
-    visibility: hidden;
-  }
-
-  .receipt-container.receipt-print-mode,
-  .receipt-container.receipt-print-mode * {
-    visibility: visible;
+  body > * {
+    display: none !important;
   }
 
   .receipt-container.receipt-print-mode {
-    display: block;
-    position: absolute;
-    inset: 0 auto auto 0;
+    display: block !important;
+    position: fixed;
+    inset: 0;
     width: 100%;
     margin: 0;
     background: white;
+    z-index: 9999;
+  }
+
+  .receipt-container.receipt-print-mode * {
+    visibility: visible;
   }
 
   .receipt-content {

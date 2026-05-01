@@ -40,8 +40,7 @@ const Receipt = forwardRef(({ saleData, pharmacyInfo, mode = 'preview' }, ref) =
               <HeartPulse size={34} />
             </div>
             <div>
-              <h2>HealthFlow</h2>
-              <p>Pharmacy</p>
+              <h2>{pharmacyInfo?.pharmacy_name || 'HealthFlow Pharmacy'}</h2>
             </div>
           </div>
           <div className="brand-thanks">
