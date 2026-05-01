@@ -2,6 +2,7 @@ import { Suspense, lazy } from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import ProtectedRoute from './components/Auth/ProtectedRoute'
 import RoleRoute from './components/Auth/RoleRoute'
+import { useAuth } from './context/AuthContext'
 import './App.css'
 
 const Layout = lazy(() => import('./components/Layout/Layout'))
@@ -29,6 +30,7 @@ const RouteFallback = () => (
 )
 
 function App() {
+  const { canManageInventory, canViewReports, canManageClaims } = useAuth()
   return (
     <Router>
       <Suspense fallback={<RouteFallback />}>
@@ -48,7 +50,7 @@ function App() {
             <Route
               path="inventory"
               element={
-                <RoleRoute allowedRoles={['admin', 'pharmacist']}>
+                <RoleRoute allowedRoles={['admin', 'pharmacist']} allow={canManageInventory}>
                   <Inventory />
                 </RoleRoute>
               }
@@ -72,7 +74,7 @@ function App() {
             <Route
               path="claims"
               element={
-                <RoleRoute allowedRoles={['admin', 'pharmacist']}>
+                <RoleRoute allowedRoles={['admin', 'pharmacist']} allow={canManageClaims}>
                   <Claims />
                 </RoleRoute>
               }
@@ -80,7 +82,7 @@ function App() {
             <Route
               path="reports"
               element={
-                <RoleRoute allowedRoles={['admin', 'pharmacist']}>
+                <RoleRoute allowedRoles={['admin', 'pharmacist']} allow={canViewReports}>
                   <Reports />
                 </RoleRoute>
               }

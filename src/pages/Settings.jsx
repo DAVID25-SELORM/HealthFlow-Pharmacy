@@ -41,6 +41,9 @@ const blankStaffForm = {
   phone: '',
   role: 'assistant',
   canRefund: false,
+  canManageInventory: false,
+  canViewReports: false,
+  canManageClaims: false,
   temporaryPassword: '',
   branchId: '',
 }
@@ -744,7 +747,7 @@ const Settings = () => {
                 <select
                   value={staffForm.role}
                   onChange={(event) =>
-                    setStaffForm({ ...staffForm, role: event.target.value, canRefund: false })
+                    setStaffForm({ ...staffForm, role: event.target.value, canRefund: false, canManageInventory: false, canViewReports: false, canManageClaims: false })
                   }
                   disabled={creatingStaff}
                 >
@@ -753,18 +756,54 @@ const Settings = () => {
                   <option value="admin">Admin</option>
                 </select>
               </div>
-              {staffForm.role !== 'admin' && (
-                <label className="settings-checkbox-label">
-                  <input
-                    type="checkbox"
-                    checked={staffForm.canRefund}
-                    onChange={(event) =>
-                      setStaffForm({ ...staffForm, canRefund: event.target.checked })
-                    }
-                    disabled={creatingStaff}
-                  />
-                  Allow refunds
-                </label>
+              {staffForm.role === 'assistant' && (
+                <div className="settings-privileges-group">
+                  <p className="settings-helper">Privileges</p>
+                  <label className="settings-checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={staffForm.canRefund}
+                      onChange={(event) =>
+                        setStaffForm({ ...staffForm, canRefund: event.target.checked })
+                      }
+                      disabled={creatingStaff}
+                    />
+                    Process refunds
+                  </label>
+                  <label className="settings-checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={staffForm.canManageInventory}
+                      onChange={(event) =>
+                        setStaffForm({ ...staffForm, canManageInventory: event.target.checked })
+                      }
+                      disabled={creatingStaff}
+                    />
+                    Manage inventory
+                  </label>
+                  <label className="settings-checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={staffForm.canViewReports}
+                      onChange={(event) =>
+                        setStaffForm({ ...staffForm, canViewReports: event.target.checked })
+                      }
+                      disabled={creatingStaff}
+                    />
+                    View reports
+                  </label>
+                  <label className="settings-checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={staffForm.canManageClaims}
+                      onChange={(event) =>
+                        setStaffForm({ ...staffForm, canManageClaims: event.target.checked })
+                      }
+                      disabled={creatingStaff}
+                    />
+                    Submit insurance claims
+                  </label>
+                </div>
               )}
               <input
                 type="password"

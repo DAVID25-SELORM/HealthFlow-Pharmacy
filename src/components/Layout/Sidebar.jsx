@@ -16,7 +16,7 @@ import { useAuth } from '../../context/AuthContext'
 import './Sidebar.css'
 
 const Sidebar = ({ isOpen, onClose }) => {
-  const { role } = useAuth()
+  const { role, canManageInventory, canViewReports, canManageClaims } = useAuth()
 
   const menuItems = [
     {
@@ -25,18 +25,18 @@ const Sidebar = ({ isOpen, onClose }) => {
       label: role === 'super_admin' ? 'Platform Dashboard' : 'Dashboard',
       roles: ['admin', 'pharmacist', 'assistant', 'super_admin'],
     },
-    { path: '/inventory', icon: Package, label: 'Inventory', roles: ['admin', 'pharmacist'] },
+    { path: '/inventory', icon: Package, label: 'Inventory', roles: ['admin', 'pharmacist'], allow: canManageInventory },
     { path: '/sales', icon: ShoppingCart, label: 'Sales (POS)', roles: ['admin', 'pharmacist', 'assistant'] },
     { path: '/patients', icon: Users, label: 'Patients', roles: ['admin', 'pharmacist', 'assistant'] },
-    { path: '/claims', icon: ClipboardList, label: 'Claims', roles: ['admin', 'pharmacist'] },
-    { path: '/reports', icon: BarChart3, label: 'Reports', roles: ['admin', 'pharmacist'] },
+    { path: '/claims', icon: ClipboardList, label: 'Claims', roles: ['admin', 'pharmacist'], allow: canManageClaims },
+    { path: '/reports', icon: BarChart3, label: 'Reports', roles: ['admin', 'pharmacist'], allow: canViewReports },
     { path: '/accounting', icon: Wallet, label: 'Accounting', roles: ['admin'] },
     { path: '/settings', icon: Settings, label: 'Settings', roles: ['admin'] },
     { path: '/tenant-admin', icon: ShieldCheck, label: 'Tenant Admin', roles: ['super_admin'] },
     { path: '/activity-log', icon: List, label: 'Activity Log', roles: ['admin', 'super_admin'] },
   ]
 
-  const visibleItems = menuItems.filter((item) => item.roles.includes(role))
+  const visibleItems = menuItems.filter((item) => item.roles.includes(role) || item.allow)
 
   return (
     <aside className={`sidebar ${isOpen ? 'open' : ''}`}>

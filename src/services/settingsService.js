@@ -172,6 +172,9 @@ export const createStaffUser = async (staff) => {
     phone,
     role,
     canRefund: Boolean(staff.canRefund),
+    canManageInventory: Boolean(staff.canManageInventory),
+    canViewReports: Boolean(staff.canViewReports),
+    canManageClaims: Boolean(staff.canManageClaims),
     password: temporaryPassword,
   })
 

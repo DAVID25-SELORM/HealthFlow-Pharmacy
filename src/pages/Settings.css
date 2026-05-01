@@ -115,6 +115,22 @@
   cursor: pointer;
 }
 
+.settings-privileges-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background: var(--gray-50, #f9fafb);
+  border: 1px solid var(--gray-200, #e5e7eb);
+  border-radius: 8px;
+}
+
+.settings-privileges-group .settings-helper {
+  margin-bottom: 0.25rem;
+  font-weight: 600;
+  color: var(--gray-700);
+}
+
 .settings-form-row {
   display: grid;
   grid-template-columns: 1fr 1fr;

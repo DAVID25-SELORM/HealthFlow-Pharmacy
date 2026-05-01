@@ -229,6 +229,9 @@ const syncPublicUser = async (
     isActive?: boolean
     organizationId?: string | null
     canRefund?: boolean
+    canManageInventory?: boolean
+    canViewReports?: boolean
+    canManageClaims?: boolean
   } = {}
 ) => {
   const email = normalizeText(authUser.email).toLowerCase()
@@ -297,6 +300,9 @@ const syncPublicUser = async (
       is_active: isActive,
       organization_id: organizationId,
       ...(typeof overrides.canRefund === 'boolean' ? { can_refund: overrides.canRefund } : {}),
+      ...(typeof overrides.canManageInventory === 'boolean' ? { can_manage_inventory: overrides.canManageInventory } : {}),
+      ...(typeof overrides.canViewReports === 'boolean' ? { can_view_reports: overrides.canViewReports } : {}),
+      ...(typeof overrides.canManageClaims === 'boolean' ? { can_manage_claims: overrides.canManageClaims } : {}),
       updated_at: new Date().toISOString(),
     },
     { onConflict: 'id' }
@@ -329,6 +335,9 @@ const upsertStaffUser = async (
   const roleCandidate = normalizeText(payload.role).toLowerCase()
   const requestedOrganizationId = normalizeText(payload.organizationId)
   const canRefund = typeof payload.canRefund === 'boolean' ? payload.canRefund : undefined
+  const canManageInventory = typeof payload.canManageInventory === 'boolean' ? payload.canManageInventory : undefined
+  const canViewReports = typeof payload.canViewReports === 'boolean' ? payload.canViewReports : undefined
+  const canManageClaims = typeof payload.canManageClaims === 'boolean' ? payload.canManageClaims : undefined
 
   if (!email) {
     throw new Error('Email is required.')
@@ -412,6 +421,9 @@ const upsertStaffUser = async (
       isActive: true,
       organizationId,
       canRefund,
+      canManageInventory,
+      canViewReports,
+      canManageClaims,
     })
 
     return {
@@ -443,6 +455,9 @@ const upsertStaffUser = async (
     isActive: true,
     organizationId,
     canRefund,
+    canManageInventory,
+    canViewReports,
+    canManageClaims,
   })
 
   return {

@@ -31,10 +31,10 @@ const validClaimTabs = ['all', 'pending', 'approved', 'rejected']
 
 const Claims = () => {
   const [searchParams, setSearchParams] = useSearchParams()
-  const { user, role } = useAuth()
+  const { user, role, profile } = useAuth()
   const { notify } = useNotification()
   const { tierLimits } = useTenant()
-  const canProcess = ['admin', 'pharmacist'].includes(role)
+  const canProcess = ['admin', 'pharmacist'].includes(role) || Boolean(profile?.can_manage_claims)
 
   const [showNewClaimModal, setShowNewClaimModal] = useState(false)
   const [activeTab, setActiveTab] = useState('all')
