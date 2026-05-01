@@ -366,4 +366,45 @@ describe('AuthProvider', () => {
     })
     expect(mocks.clearSupabaseStoredSession).not.toHaveBeenCalled()
   })
+
+  it('keeps password recovery sessions available for password updates without profile checks', async () => {
+    const recoveryUser = {
+      id: 'recovery-user',
+      email: 'recovery@example.com',
+      app_metadata: {},
+      user_metadata: {},
+    }
+    const recoverySession = {
+      access_token: 'recovery-token',
+      user: recoveryUser,
+    }
+
+    mocks.auth.getSession.mockResolvedValue({
+      data: { session: null },
+      error: null,
+    })
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId('auth-state')).toHaveTextContent('signed-out')
+    })
+
+    await act(async () => {
+      mocks.getAuthStateChangeCallback()?.('PASSWORD_RECOVERY', recoverySession)
+      await Promise.resolve()
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('auth-state')).toHaveTextContent('signed-in:recovery@example.com')
+    })
+    expect(mocks.auth.getUser).not.toHaveBeenCalled()
+    expect(mocks.queryBuilder.maybeSingle).not.toHaveBeenCalled()
+    expect(mocks.auth.signOut).not.toHaveBeenCalled()
+    expect(mocks.clearSupabaseStoredSession).not.toHaveBeenCalled()
+  })
 })

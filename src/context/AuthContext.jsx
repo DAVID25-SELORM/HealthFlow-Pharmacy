@@ -41,6 +41,19 @@ const scheduleAuthResolution = (callback) => {
   Promise.resolve().then(callback)
 }
 
+const hasPasswordRecoveryHint = () => {
+  if (typeof window === 'undefined') {
+    return false
+  }
+
+  const params = new URLSearchParams(window.location.search)
+  const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''))
+  return params.get('mode') === 'recovery' || hash.get('type') === 'recovery'
+}
+
+const isPasswordRecoveryEvent = (event) =>
+  event === 'PASSWORD_RECOVERY' || (hasPasswordRecoveryHint() && event === 'BOOTSTRAP')
+
 export const AuthProvider = ({ children }) => {
   const [session, setSession] = useState(null)
   const [user, setUser] = useState(null)
@@ -243,8 +256,22 @@ export const AuthProvider = ({ children }) => {
       let activeProfile = null
       let activeOrganization = null
       let activeBranch = null
+      const isRecoverySession = isPasswordRecoveryEvent(event)
 
       setLoadingForCurrentResolution(resolutionId, true)
+
+      if (activeUser && isRecoverySession) {
+        if (isCurrentResolution(resolutionId)) {
+          sessionRef.current = resolvedSession
+          setSession(resolvedSession)
+          setUser(activeUser)
+          setProfile(null)
+          setOrganization(null)
+          setBranch(null)
+          setLoading(false)
+        }
+        return
+      }
 
       if (activeUser) {
         const {
