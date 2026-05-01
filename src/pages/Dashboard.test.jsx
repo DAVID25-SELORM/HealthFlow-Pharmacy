@@ -92,7 +92,7 @@ describe('Dashboard', () => {
       ).toBeInTheDocument()
     })
 
-    expect(screen.getByText("Today's Sales")).toBeInTheDocument()
+    expect(screen.getByText("Today's Dispensing Sales")).toBeInTheDocument()
     expect(screen.getAllByText('GHS 42.50').length).toBeGreaterThan(0)
     expect(screen.getByText('Alice Mensah')).toBeInTheDocument()
     expect(screen.getByText('No claims yet')).toBeInTheDocument()

@@ -1,9 +1,9 @@
 import { invokeSupabaseFunction, supabase } from '../lib/supabase'
 import { assertRequiredText, normalizeText } from '../utils/validation'
+import { STAFF_ROLE_VALUES } from '../utils/roles'
 import { tryLogAuditEvent } from './auditService'
 
 const STAFF_ADMIN_FUNCTION = 'staff-admin'
-const USER_ROLES = ['admin', 'pharmacist', 'assistant']
 
 const invokeStaffAdmin = async (payload) => {
   const { data, error } = await invokeSupabaseFunction(STAFF_ADMIN_FUNCTION, {
@@ -157,7 +157,7 @@ export const createStaffUser = async (staff) => {
   const role = normalizeText(staff.role || 'assistant').toLowerCase()
   const phone = normalizeText(staff.phone) || null
 
-  if (!USER_ROLES.includes(role)) {
+  if (!STAFF_ROLE_VALUES.includes(role)) {
     throw new Error('Select a valid staff role.')
   }
 

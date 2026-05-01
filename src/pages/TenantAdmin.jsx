@@ -4,6 +4,7 @@ import { Building2, GitBranch, Plus, Users, ChevronDown, ChevronUp, Eye, Pencil 
 import { useNotification } from '../context/NotificationContext'
 import { useSessionStorageState } from '../hooks/useSessionStorageState'
 import { formatAppDate } from '../utils/date'
+import { ROLE_OPTIONS } from '../utils/roles'
 import {
   getTenantAdminDashboard,
   createPharmacyTenant,
@@ -702,9 +703,11 @@ const TenantAdmin = () => {
                       value={editUserForm.role}
                       onChange={(e) => setEditUserForm({ ...editUserForm, role: e.target.value })}
                     >
-                      <option value="admin">Admin</option>
-                      <option value="pharmacist">Pharmacist</option>
-                      <option value="assistant">Medicine Counter Assistant</option>
+                      {ROLE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
                     </select>
                   </div>
                   <div className="tenant-form-group">

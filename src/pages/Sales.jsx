@@ -12,6 +12,7 @@ import { printReceipt, downloadReceiptPDF, formatSaleForReceipt } from '../servi
 import { isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
+import { hasRole } from '../utils/roles'
 import Receipt from '../components/Receipt/Receipt'
 import './Sales.css'
 
@@ -44,7 +45,7 @@ const Sales = () => {
   const [refundingSaleId, setRefundingSaleId] = useState(null)
   const [reprintingSaleId, setReprintingSaleId] = useState(null)
   const canProcessRefund =
-    ['admin', 'pharmacist'].includes(String(role || '').toLowerCase()) || Boolean(profile?.can_refund)
+    hasRole(role, ['admin', 'pharmacist']) || Boolean(profile?.can_refund)
   const isAdmin = String(role || '').toLowerCase() === 'admin'
   const activeBranches = branches.filter((branch) => branch.is_active !== false)
   const fallbackBranch =

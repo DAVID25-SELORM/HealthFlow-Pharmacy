@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 import { clearSupabaseStoredSession, supabase, isSupabaseConfigured } from '../lib/supabase'
 import { tryLogAuditEvent } from '../services/auditService'
 import { getPasswordRecoveryRedirectUrl } from '../config/appUrl'
+import { CLAIMS_ROLES, INVENTORY_ROLES, REPORT_ROLES, hasRole } from '../utils/roles'
 
 const AuthContext = createContext(null)
 const FALLBACK_ROLE = 'assistant'
@@ -463,9 +464,9 @@ export const AuthProvider = ({ children }) => {
       role: resolveRole(profile, user),
       displayName: resolveDisplayName(profile, user),
       isAuthenticated: Boolean(session),
-      canManageInventory: ['admin', 'pharmacist'].includes(resolveRole(profile, user)) || Boolean(profile?.can_manage_inventory),
-      canViewReports: ['admin', 'pharmacist'].includes(resolveRole(profile, user)) || Boolean(profile?.can_view_reports),
-      canManageClaims: ['admin', 'pharmacist'].includes(resolveRole(profile, user)) || Boolean(profile?.can_manage_claims),
+      canManageInventory: hasRole(resolveRole(profile, user), INVENTORY_ROLES) || Boolean(profile?.can_manage_inventory),
+      canViewReports: hasRole(resolveRole(profile, user), REPORT_ROLES) || Boolean(profile?.can_view_reports),
+      canManageClaims: hasRole(resolveRole(profile, user), CLAIMS_ROLES) || Boolean(profile?.can_manage_claims),
       signIn,
       signOut,
       requestPasswordReset,

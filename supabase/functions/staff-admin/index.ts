@@ -2,7 +2,17 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
 import { resolveTierAccess } from '../_shared/tier.ts'
 
-const STAFF_ROLES = ['admin', 'pharmacist', 'assistant'] as const
+const STAFF_ROLES = [
+  'admin',
+  'pharmacist',
+  'assistant',
+  'technician',
+  'cashier',
+  'branch_manager',
+  'procurement',
+  'billing',
+  'delivery',
+] as const
 const DISABLE_DURATION = '876000h'
 const USERS_PER_PAGE = 200
 const MAX_USER_PAGES = 10
@@ -40,6 +50,8 @@ const normalizeText = (value: unknown) => (typeof value === 'string' ? value.tri
 
 const isValidRole = (value: string): value is StaffRole =>
   STAFF_ROLES.includes(value as StaffRole)
+
+const staffRoleMessage = () => `Role must be one of: ${STAFF_ROLES.join(', ')}.`
 
 const deriveDisplayName = (email: string, fullName?: string | null) => {
   const normalizedName = normalizeText(fullName)
@@ -352,7 +364,7 @@ const upsertStaffUser = async (
   }
 
   if (!isValidRole(roleCandidate)) {
-    throw new Error('Role must be admin, pharmacist, or assistant.')
+    throw new Error(staffRoleMessage())
   }
 
   const organizationId =
@@ -610,7 +622,7 @@ const updateStaffUser = async (
   }
 
   if (!isValidRole(roleCandidate)) {
-    throw new Error('Role must be admin, pharmacist, or assistant.')
+    throw new Error(staffRoleMessage())
   }
 
   const { data: targetProfile, error: targetProfileError } = await adminClient

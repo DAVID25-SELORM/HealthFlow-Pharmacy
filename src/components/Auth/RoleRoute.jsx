@@ -3,8 +3,9 @@ import { useAuth } from '../../context/AuthContext'
 
 const RoleRoute = ({ allowedRoles, allow, children }) => {
   const { role } = useAuth()
+  const normalizedRole = String(role || '').toLowerCase()
 
-  if (allowedRoles.includes(role) || allow) {
+  if (allowedRoles.includes(normalizedRole) || allow) {
     return children
   }
 

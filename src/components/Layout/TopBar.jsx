@@ -8,13 +8,14 @@ import { useTenant } from '../../context/TenantContext'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { getClaimsStatistics } from '../../services/claimsService'
 import { getExpiringDrugs, getLowStockDrugs } from '../../services/drugService'
+import { INVENTORY_ROLES, hasRole } from '../../utils/roles'
 import './TopBar.css'
 
 const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
   const [quickSearch, setQuickSearch] = useState('')
   const [alertsOpen, setAlertsOpen] = useState(false)
   const [alerts, setAlerts] = useState([])
-  const { displayName, role, branch, signOut } = useAuth()
+  const { displayName, role, branch, canManageInventory, canManageClaims, signOut } = useAuth()
   const { tierLimits } = useTenant()
   const { notify } = useNotification()
   const navigate = useNavigate()
@@ -22,7 +23,8 @@ const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
   const alertsRef = useRef(null)
 
   const avatarName = encodeURIComponent(displayName)
-  const searchTarget = ['admin', 'pharmacist'].includes(role) ? '/inventory' : '/sales'
+  const canUseInventorySearch = canManageInventory || hasRole(role, INVENTORY_ROLES)
+  const searchTarget = canUseInventorySearch ? '/inventory' : '/sales'
 
   const notificationCount = useMemo(
     () => alerts.filter((alert) => alert.count > 0).length,
@@ -30,13 +32,13 @@ const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
   )
 
   const loadAlerts = useCallback(async () => {
-    if (!isSupabaseConfigured() || !['admin', 'pharmacist'].includes(role)) {
+    if (!isSupabaseConfigured() || !canUseInventorySearch) {
       setAlerts([])
       return
     }
 
     try {
-      const canViewClaimAlerts = tierLimits.hasClaims
+      const canViewClaimAlerts = tierLimits.hasClaims && canManageClaims
       const [lowStock, expiring, claimStats] = await Promise.all([
         getLowStockDrugs(),
         getExpiringDrugs(),
@@ -75,7 +77,7 @@ const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
       console.error('Unable to load top bar alerts:', error)
       setAlerts([])
     }
-  }, [role, tierLimits.hasClaims])
+  }, [canManageClaims, canUseInventorySearch, tierLimits.hasClaims])
 
   useEffect(() => {
     const params = new URLSearchParams(location.search)

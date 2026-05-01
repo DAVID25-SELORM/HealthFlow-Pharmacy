@@ -13,6 +13,17 @@ import {
   List,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
+import {
+  ACCOUNTING_ROLES,
+  ACTIVITY_LOG_ROLES,
+  CLAIMS_ROLES,
+  DASHBOARD_ROLES,
+  INVENTORY_ROLES,
+  PATIENT_ROLES,
+  REPORT_ROLES,
+  SALES_ROLES,
+  SETTINGS_ROLES,
+} from '../../utils/roles'
 import './Sidebar.css'
 
 const Sidebar = ({ isOpen, onClose }) => {
@@ -23,17 +34,17 @@ const Sidebar = ({ isOpen, onClose }) => {
       path: '/dashboard',
       icon: Home,
       label: role === 'super_admin' ? 'Platform Dashboard' : 'Dashboard',
-      roles: ['admin', 'pharmacist', 'assistant', 'super_admin'],
+      roles: DASHBOARD_ROLES,
     },
-    { path: '/inventory', icon: Package, label: 'Inventory', roles: ['admin', 'pharmacist'], allow: canManageInventory },
-    { path: '/sales', icon: ShoppingCart, label: 'Sales (POS)', roles: ['admin', 'pharmacist', 'assistant'] },
-    { path: '/patients', icon: Users, label: 'Patients', roles: ['admin', 'pharmacist', 'assistant'] },
-    { path: '/claims', icon: ClipboardList, label: 'Claims', roles: ['admin', 'pharmacist'], allow: canManageClaims },
-    { path: '/reports', icon: BarChart3, label: 'Reports', roles: ['admin', 'pharmacist'], allow: canViewReports },
-    { path: '/accounting', icon: Wallet, label: 'Accounting', roles: ['admin'] },
-    { path: '/settings', icon: Settings, label: 'Settings', roles: ['admin'] },
+    { path: '/inventory', icon: Package, label: 'Inventory', roles: INVENTORY_ROLES, allow: canManageInventory },
+    { path: '/sales', icon: ShoppingCart, label: 'Sales (POS)', roles: SALES_ROLES },
+    { path: '/patients', icon: Users, label: 'Patients', roles: PATIENT_ROLES },
+    { path: '/claims', icon: ClipboardList, label: 'Claims', roles: CLAIMS_ROLES, allow: canManageClaims },
+    { path: '/reports', icon: BarChart3, label: 'Reports', roles: REPORT_ROLES, allow: canViewReports },
+    { path: '/accounting', icon: Wallet, label: 'Accounting', roles: ACCOUNTING_ROLES },
+    { path: '/settings', icon: Settings, label: 'Settings', roles: SETTINGS_ROLES },
     { path: '/tenant-admin', icon: ShieldCheck, label: 'Tenant Admin', roles: ['super_admin'] },
-    { path: '/activity-log', icon: List, label: 'Activity Log', roles: ['admin', 'super_admin'] },
+    { path: '/activity-log', icon: List, label: 'Activity Log', roles: ACTIVITY_LOG_ROLES },
   ]
 
   const visibleItems = menuItems.filter((item) => item.roles.includes(role) || item.allow)

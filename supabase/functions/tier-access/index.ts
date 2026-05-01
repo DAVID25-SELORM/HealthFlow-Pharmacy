@@ -47,7 +47,14 @@ type RequesterProfile = {
   id: string
   role: string
   organization_id: string | null
+  can_manage_inventory: boolean
+  can_view_reports: boolean
+  can_manage_claims: boolean
 }
+
+const INVENTORY_ROLES = ['admin', 'pharmacist', 'technician', 'procurement', 'branch_manager']
+const CLAIMS_ROLES = ['admin', 'pharmacist', 'billing']
+const REPORT_ROLES = ['admin', 'pharmacist', 'branch_manager']
 
 const json = (body: Record<string, unknown>, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -165,7 +172,7 @@ const getRequesterProfile = async (
 ): Promise<RequesterProfile | null> => {
   const { data, error } = await adminClient
     .from('users')
-    .select('id, role, organization_id')
+    .select('id, role, organization_id, can_manage_inventory, can_view_reports, can_manage_claims')
     .eq('id', userId)
     .maybeSingle()
 
@@ -181,6 +188,9 @@ const getRequesterProfile = async (
     id: data.id,
     role: normalizeText(data.role).toLowerCase(),
     organization_id: normalizeText(data.organization_id) || null,
+    can_manage_inventory: Boolean(data.can_manage_inventory),
+    can_view_reports: Boolean(data.can_view_reports),
+    can_manage_claims: Boolean(data.can_manage_claims),
   }
 }
 
@@ -269,6 +279,24 @@ const requireRole = (
   message: string
 ) => {
   if (!allowedRoles.includes(requesterProfile.role)) {
+    throw new Error(message)
+  }
+}
+
+const requireInventoryAccess = (requesterProfile: RequesterProfile, message: string) => {
+  if (!INVENTORY_ROLES.includes(requesterProfile.role) && !requesterProfile.can_manage_inventory) {
+    throw new Error(message)
+  }
+}
+
+const requireClaimsAccess = (requesterProfile: RequesterProfile, message: string) => {
+  if (!CLAIMS_ROLES.includes(requesterProfile.role) && !requesterProfile.can_manage_claims) {
+    throw new Error(message)
+  }
+}
+
+const requireReportsAccess = (requesterProfile: RequesterProfile, message: string) => {
+  if (!REPORT_ROLES.includes(requesterProfile.role) && !requesterProfile.can_view_reports) {
     throw new Error(message)
   }
 }
@@ -673,11 +701,7 @@ const createClaim = async (
   organizationId: string,
   payload: Record<string, unknown>
 ) => {
-  requireRole(
-    requesterProfile,
-    ['admin', 'pharmacist'],
-    'Only admins and pharmacists can create claims.'
-  )
+  requireClaimsAccess(requesterProfile, 'Only claims staff can create claims.')
 
   const claimData = (payload.claimData || {}) as Record<string, unknown>
   const itemsInput = Array.isArray(claimData.items) ? claimData.items : []
@@ -759,11 +783,7 @@ const updateClaimStatus = async (
   nextStatus: 'approved' | 'rejected',
   payload: Record<string, unknown>
 ) => {
-  requireRole(
-    requesterProfile,
-    ['admin', 'pharmacist'],
-    'Only admins and pharmacists can update claim status.'
-  )
+  requireClaimsAccess(requesterProfile, 'Only claims staff can update claim status.')
 
   const { data: existingClaim, error: existingClaimError } = await adminClient
     .from('claims')
@@ -815,11 +835,7 @@ const createDrug = async (
   organizationId: string,
   payload: Record<string, unknown>
 ) => {
-  requireRole(
-    requesterProfile,
-    ['admin', 'pharmacist'],
-    'Only admins and pharmacists can add inventory items.'
-  )
+  requireInventoryAccess(requesterProfile, 'Only inventory staff can add inventory items.')
 
   const drugData = (payload.drug || {}) as Record<string, unknown>
   const batchNumber = assertRequiredText(drugData.batchNumber, 'Batch number')
@@ -834,11 +850,7 @@ const updateDrug = async (
   organizationId: string,
   payload: Record<string, unknown>
 ) => {
-  requireRole(
-    requesterProfile,
-    ['admin', 'pharmacist'],
-    'Only admins and pharmacists can update inventory items.'
-  )
+  requireInventoryAccess(requesterProfile, 'Only inventory staff can update inventory items.')
 
   const drugId = assertRequiredText(payload.drugId, 'Drug ID')
   const existingDrug = await getDrugForOrganization(adminClient, organizationId, drugId)
@@ -946,11 +958,7 @@ const bulkImportDrugs = async (
   organizationId: string,
   payload: Record<string, unknown>
 ) => {
-  requireRole(
-    requesterProfile,
-    ['admin', 'pharmacist'],
-    'Only admins and pharmacists can import inventory items.'
-  )
+  requireInventoryAccess(requesterProfile, 'Only inventory staff can import inventory items.')
 
   const drugs = Array.isArray(payload.drugs) ? payload.drugs : []
   if (drugs.length === 0) {
@@ -1030,11 +1038,7 @@ const getReportBundle = async (
   payload: Record<string, unknown>,
   includeClaims: boolean
 ) => {
-  requireRole(
-    requesterProfile,
-    ['admin', 'pharmacist'],
-    'Only admins and pharmacists can access reports.'
-  )
+  requireReportsAccess(requesterProfile, 'Only report staff can access reports.')
 
   const startDate = normalizeText(payload.startDate)
   const endDate = normalizeText(payload.endDate)
@@ -1197,6 +1201,7 @@ Deno.serve(async (request) => {
       action === 'reject_claim'
     ) {
       await requireTierFeature(adminClient, organizationId, 'claims')
+      requireClaimsAccess(requesterProfile, 'Only claims staff can access claims.')
 
       if (action === 'get_claims') {
         return json({ claims: await getClaims(adminClient, organizationId, payload) })

@@ -18,6 +18,7 @@ import { useNotification } from '../context/NotificationContext'
 import { normalizeSubscriptionTier, useTenant } from '../context/TenantContext'
 import { readLogoFileAsDataUrl } from '../utils/imageUpload'
 import { getRoleLabel } from '../utils/roleLabels'
+import { ROLE_OPTIONS } from '../utils/roles'
 import './Settings.css'
 
 const toForm = (row) => ({
@@ -708,7 +709,7 @@ const Settings = () => {
             </div>
             <h3>Staff Onboarding</h3>
             <p className="settings-note">
-              Create pharmacist or assistant logins without leaving the app. New staff can sign
+              Create staff logins without leaving the app. New staff can sign
               in immediately with the temporary password below.
             </p>
             {tierLimits.maxUsers !== Infinity && (
@@ -752,12 +753,14 @@ const Settings = () => {
                   }
                   disabled={creatingStaff}
                 >
-                  <option value="assistant">Medicine Counter Assistant</option>
-                  <option value="pharmacist">Pharmacist</option>
-                  <option value="admin">Admin</option>
+                  {ROLE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
                 </select>
               </div>
-              {staffForm.role === 'assistant' && (
+              {!['admin', 'pharmacist'].includes(staffForm.role) && (
                 <div className="settings-privileges-group">
                   <p className="settings-helper">Privileges</p>
                   <label className="settings-checkbox-label">

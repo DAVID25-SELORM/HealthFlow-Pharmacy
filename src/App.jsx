@@ -3,6 +3,16 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import ProtectedRoute from './components/Auth/ProtectedRoute'
 import RoleRoute from './components/Auth/RoleRoute'
 import { useAuth } from './context/AuthContext'
+import {
+  ACCOUNTING_ROLES,
+  ACTIVITY_LOG_ROLES,
+  CLAIMS_ROLES,
+  INVENTORY_ROLES,
+  PATIENT_ROLES,
+  REPORT_ROLES,
+  SALES_ROLES,
+  SETTINGS_ROLES,
+} from './utils/roles'
 import './App.css'
 
 const Layout = lazy(() => import('./components/Layout/Layout'))
@@ -50,7 +60,7 @@ function App() {
             <Route
               path="inventory"
               element={
-                <RoleRoute allowedRoles={['admin', 'pharmacist']} allow={canManageInventory}>
+                <RoleRoute allowedRoles={INVENTORY_ROLES} allow={canManageInventory}>
                   <Inventory />
                 </RoleRoute>
               }
@@ -58,7 +68,7 @@ function App() {
             <Route
               path="sales"
               element={
-                <RoleRoute allowedRoles={['admin', 'pharmacist', 'assistant']}>
+                <RoleRoute allowedRoles={SALES_ROLES}>
                   <Sales />
                 </RoleRoute>
               }
@@ -66,7 +76,7 @@ function App() {
             <Route
               path="patients"
               element={
-                <RoleRoute allowedRoles={['admin', 'pharmacist', 'assistant']}>
+                <RoleRoute allowedRoles={PATIENT_ROLES}>
                   <Patients />
                 </RoleRoute>
               }
@@ -74,7 +84,7 @@ function App() {
             <Route
               path="claims"
               element={
-                <RoleRoute allowedRoles={['admin', 'pharmacist']} allow={canManageClaims}>
+                <RoleRoute allowedRoles={CLAIMS_ROLES} allow={canManageClaims}>
                   <Claims />
                 </RoleRoute>
               }
@@ -82,7 +92,7 @@ function App() {
             <Route
               path="reports"
               element={
-                <RoleRoute allowedRoles={['admin', 'pharmacist']} allow={canViewReports}>
+                <RoleRoute allowedRoles={REPORT_ROLES} allow={canViewReports}>
                   <Reports />
                 </RoleRoute>
               }
@@ -90,7 +100,7 @@ function App() {
             <Route
               path="accounting"
               element={
-                <RoleRoute allowedRoles={['admin']}>
+                <RoleRoute allowedRoles={ACCOUNTING_ROLES}>
                   <Accounting />
                 </RoleRoute>
               }
@@ -98,7 +108,7 @@ function App() {
             <Route
               path="settings"
               element={
-                <RoleRoute allowedRoles={['admin']}>
+                <RoleRoute allowedRoles={SETTINGS_ROLES}>
                   <Settings />
                 </RoleRoute>
               }
@@ -114,7 +124,7 @@ function App() {
             <Route
               path="activity-log"
               element={
-                <RoleRoute allowedRoles={['admin', 'super_admin']}>
+                <RoleRoute allowedRoles={ACTIVITY_LOG_ROLES}>
                   <ActivityLog />
                 </RoleRoute>
               }

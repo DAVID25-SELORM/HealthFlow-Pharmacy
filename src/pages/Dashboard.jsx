@@ -23,6 +23,7 @@ import { getLowStockDrugs, getExpiringDrugs } from '../services/drugService'
 import { getRecentClaims } from '../services/claimsService'
 import { useTenant } from '../context/TenantContext'
 import { isSupabaseConfigured } from '../lib/supabase'
+import { CLAIMS_ROLES, INVENTORY_ROLES, hasRole } from '../utils/roles'
 import './Dashboard.css'
 
 const currencyFormatter = new Intl.NumberFormat('en-GH', {
@@ -202,7 +203,7 @@ const createEmptyStats = (anchorDate = new Date()) => ({
 
 const Dashboard = () => {
   const navigate = useNavigate()
-  const { role, displayName } = useAuth()
+  const { role, displayName, canManageInventory, canManageClaims } = useAuth()
   const { tierLimits, organization, isTrialActive, daysUntilTrialExpires, isSuspended } = useTenant()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -217,8 +218,8 @@ const Dashboard = () => {
   const [recentSales, setRecentSales] = useState([])
   const [recentClaims, setRecentClaims] = useState([])
 
-  const canViewOperationalMetrics = ['admin', 'pharmacist'].includes(role)
-  const canViewClaimsMetrics = canViewOperationalMetrics && tierLimits.hasClaims
+  const canViewOperationalMetrics = canManageInventory || hasRole(role, INVENTORY_ROLES)
+  const canViewClaimsMetrics = (canManageClaims || hasRole(role, CLAIMS_ROLES)) && tierLimits.hasClaims
   const pharmacyName = organization?.name || 'Your Pharmacy'
   const welcomeName = resolveWelcomeName(displayName)
   const roleLabel = formatRoleLabel(role)
@@ -226,12 +227,12 @@ const Dashboard = () => {
   const subscriptionSummary = isSuspended
     ? 'Access is currently paused. Re-enable the subscription to resume full daily operations.'
     : isTrialActive
-      ? `${pharmacyName} is in a guided trial period so you can set up stock, patients, and workflow before go-live.`
-      : `${pharmacyName} is ready for day-to-day pharmacy operations on the ${planLabel} plan.`
+      ? `${pharmacyName} is in a guided trial period for medicine stock, patient records, dispensing, and claims setup.`
+      : `${pharmacyName} is ready for dispensing, stock control, expiry monitoring, and checkout work on the ${planLabel} plan.`
 
   useEffect(() => {
     void loadDashboardData()
-  }, [role, tierLimits.hasClaims])
+  }, [role, canManageInventory, canManageClaims, tierLimits.hasClaims])
 
   const loadDashboardData = async () => {
     const today = new Date()
@@ -331,7 +332,7 @@ const Dashboard = () => {
   const statsCards = useMemo(() => {
     const cards = [
       {
-        title: "Today's Sales",
+        title: "Today's Dispensing Sales",
         value: `GHS ${currencyFormatter.format(stats.todaysSales)}`,
         icon: DollarSign,
         color: 'primary',
@@ -343,24 +344,24 @@ const Dashboard = () => {
     if (canViewOperationalMetrics) {
       cards.push(
         {
-          title: 'Low Stock Alerts',
+          title: 'Reorder Watch',
           value: `${stats.lowStock} Items`,
           icon: AlertTriangle,
           color: 'warning',
-          subtitle: 'Below reorder level',
+          subtitle: 'Medicines below reorder level',
         },
         {
-          title: 'Expiring Soon',
+          title: 'Expiry Watch',
           value: `${stats.expiring} Items`,
           icon: Clock,
           color: 'info',
-          subtitle: '+30 Days',
+          subtitle: 'Medicines within 30 days',
         }
       )
     }
 
     cards.push({
-      title: 'Monthly Sales',
+      title: 'Month-to-Date Pharmacy Sales',
       value: `GHS ${currencyFormatter.format(stats.monthlySales)}`,
       icon: TrendingUp,
       color: 'success',
@@ -393,15 +394,15 @@ const Dashboard = () => {
   const quickActions = useMemo(() => {
     const actions = [
       {
-        label: 'Start Sale',
-        description: 'Open POS and record the next checkout.',
+        label: 'Dispense / Sell',
+        description: 'Open POS for prescriptions, OTC sales, and walk-ins.',
         icon: ShoppingCart,
         path: '/sales',
         tone: 'primary',
       },
       {
-        label: 'Add Patient',
-        description: 'Register a new patient or walk-in profile.',
+        label: 'Register Patient',
+        description: 'Create a patient profile for prescriptions and claims.',
         icon: Users,
         path: '/patients',
         tone: 'secondary',
@@ -410,8 +411,8 @@ const Dashboard = () => {
 
     if (canViewOperationalMetrics) {
       actions.push({
-        label: 'Update Stock',
-        description: 'Set quantities, pricing, and expiry dates.',
+        label: 'Receive Stock',
+        description: 'Update medicine quantities, batch prices, and expiry dates.',
         icon: Package,
         path: '/inventory',
         tone: 'secondary',
@@ -420,16 +421,16 @@ const Dashboard = () => {
 
     if (canViewClaimsMetrics) {
       actions.push({
-        label: 'Review Claims',
-        description: 'Check the latest insurance submissions.',
+        label: 'Process Claims',
+        description: 'Review NHIA/HMO prescription claim submissions.',
         icon: ClipboardList,
         path: '/claims?tab=pending',
         tone: 'secondary',
       })
     } else if (tierLimits.hasReports && canViewOperationalMetrics) {
       actions.push({
-        label: 'Open Reports',
-        description: 'See revenue and inventory performance.',
+        label: 'Pharmacy Reports',
+        description: 'Review dispensing revenue and inventory movement.',
         icon: BarChart3,
         path: '/reports',
         tone: 'secondary',
@@ -451,17 +452,17 @@ const Dashboard = () => {
     if (canViewOperationalMetrics) {
       return [
         {
-          label: 'Low stock',
+          label: 'Reorder watch',
           value: formatCountLabel(stats.lowStock, 'item'),
-          hint: stats.lowStock > 0 ? 'Needs reorder attention' : 'Shelves look healthy',
+          hint: stats.lowStock > 0 ? 'Needs procurement attention' : 'Reorder levels are healthy',
         },
         {
-          label: 'Expiring soon',
+          label: 'Expiry watch',
           value: formatCountLabel(stats.expiring, 'item'),
-          hint: 'Within the next 30 days',
+          hint: 'Medicines within the next 30 days',
         },
         {
-          label: 'Month to date',
+          label: 'MTD pharmacy sales',
           value: `GHS ${currencyFormatter.format(stats.monthlySales)}`,
           hint: stats.monthlySalesTrend,
         },
@@ -470,17 +471,17 @@ const Dashboard = () => {
 
     return [
       {
-        label: "Today's sales",
+        label: "Today's dispensing",
         value: `GHS ${currencyFormatter.format(stats.todaysSales)}`,
         hint: stats.todaysSalesTrend,
       },
       {
-        label: 'Month to date',
+        label: 'MTD pharmacy sales',
         value: `GHS ${currencyFormatter.format(stats.monthlySales)}`,
         hint: stats.monthlySalesTrend,
       },
       {
-        label: 'Recent checkouts',
+        label: 'Recent dispensary sales',
         value: formatCountLabel(recentSales.length, 'sale'),
         hint: 'Latest completed transactions',
       },
@@ -498,9 +499,9 @@ const Dashboard = () => {
 
   const featurePills = useMemo(
     () => [
-      { label: 'Reports', enabled: tierLimits.hasReports },
-      { label: 'Claims', enabled: tierLimits.hasClaims },
-      { label: 'Bulk Import', enabled: tierLimits.hasAdvancedInventory },
+      { label: 'Reports module', enabled: tierLimits.hasReports },
+      { label: 'Insurance claims', enabled: tierLimits.hasClaims },
+      { label: 'Bulk medicine import', enabled: tierLimits.hasAdvancedInventory },
     ],
     [tierLimits.hasAdvancedInventory, tierLimits.hasClaims, tierLimits.hasReports]
   )
@@ -521,7 +522,7 @@ const Dashboard = () => {
         <div className="hero-copy">
           <div className="hero-eyebrow">
             <Sparkles size={14} />
-            Pharmacy command center
+            Dispensary operations dashboard
           </div>
           <h1>{`Welcome back, ${welcomeName}.`}</h1>
           <p className="hero-subtitle">{subscriptionSummary}</p>
@@ -558,8 +559,8 @@ const Dashboard = () => {
 
         <aside className="hero-panel">
           <div className="hero-panel-header">
-            <span className="hero-panel-label">Today&apos;s focus</span>
-            <span className="hero-panel-caption">What deserves attention first</span>
+            <span className="hero-panel-label">Dispensary priorities</span>
+            <span className="hero-panel-caption">Stock, expiry, claims, and checkout signals</span>
           </div>
 
           <div className="hero-panel-grid">
@@ -607,7 +608,7 @@ const Dashboard = () => {
 
       <div className="chart-section">
         <div className="section-header">
-          <h2>Sales Overview</h2>
+          <h2>Dispensing Sales Trend</h2>
           <div className="chart-tabs">
             <button
               type="button"
@@ -647,11 +648,11 @@ const Dashboard = () => {
               </div>
               <h3>No completed sales yet</h3>
               <p>
-                Once this pharmacy starts recording checkouts, the {chartMode} trend will appear
+                Once this pharmacy starts recording dispensing sales, the {chartMode} trend will appear
                 here automatically.
               </p>
               <button type="button" className="inline-action-btn" onClick={() => navigate('/sales')}>
-                Open POS
+                Open Pharmacy POS
               </button>
             </div>
           )}
@@ -661,7 +662,7 @@ const Dashboard = () => {
       <div className="activity-grid">
         <div className="activity-card">
           <div className="card-header">
-            <h3>Recent Sales</h3>
+              <h3>Recent Dispensing Sales</h3>
             <button className="view-all-btn" type="button" onClick={() => navigate('/sales')}>
               View All
             </button>
@@ -674,14 +675,14 @@ const Dashboard = () => {
                 </div>
                 <p className="activity-empty-title">No sales yet</p>
                 <p className="activity-empty-copy">
-                  Start with a walk-in or registered patient sale to populate this feed.
+                  Start with a prescription, OTC, walk-in, or registered patient sale to populate this feed.
                 </p>
                 <button
                   type="button"
                   className="inline-action-btn"
                   onClick={() => navigate('/sales')}
                 >
-                  Start Sale
+                  Open Pharmacy POS
                 </button>
               </div>
             ) : (
@@ -705,7 +706,7 @@ const Dashboard = () => {
         {canViewClaimsMetrics && (
           <div className="activity-card">
             <div className="card-header">
-              <h3>Recent Insurance Claims</h3>
+              <h3>Recent Prescription Claims</h3>
               <button
                 className="view-all-btn"
                 type="button"

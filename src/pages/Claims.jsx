@@ -16,6 +16,7 @@ import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
 import { useTenant } from '../context/TenantContext'
 import { formatAppDate } from '../utils/date'
+import { CLAIMS_ROLES, hasRole } from '../utils/roles'
 import UpgradeGate from '../components/UpgradeGate'
 import './Claims.css'
 
@@ -31,10 +32,10 @@ const validClaimTabs = ['all', 'pending', 'approved', 'rejected']
 
 const Claims = () => {
   const [searchParams, setSearchParams] = useSearchParams()
-  const { user, role, profile } = useAuth()
+  const { user, role, canManageClaims } = useAuth()
   const { notify } = useNotification()
   const { tierLimits } = useTenant()
-  const canProcess = ['admin', 'pharmacist'].includes(role) || Boolean(profile?.can_manage_claims)
+  const canProcess = canManageClaims || hasRole(role, CLAIMS_ROLES)
 
   const [showNewClaimModal, setShowNewClaimModal] = useState(false)
   const [activeTab, setActiveTab] = useState('all')
