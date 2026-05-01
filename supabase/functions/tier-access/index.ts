@@ -13,6 +13,7 @@ import { resolveTierAccess } from '../_shared/tier.ts'
 const USERS_PER_PAGE = 200
 const MAX_USER_PAGES = 10
 const CATALOG_SYNC_BATCH_SIZE = 200
+const DRUGS_PER_PAGE = 1000
 const CLAIM_SELECT_FIELDS = `
   *,
   claim_items (*),
@@ -389,18 +390,33 @@ const getDrugs = async (
   }
 
   const includeCatalog = Boolean(payload.includeCatalog)
-  const { data, error } = await adminClient
-    .from('drugs')
-    .select('*')
-    .eq('organization_id', organizationId)
-    .eq('status', 'active')
-    .order('name')
+  const rows = []
+  let from = 0
 
-  if (error) {
-    throw error
+  while (true) {
+    const to = from + DRUGS_PER_PAGE - 1
+    const { data, error } = await adminClient
+      .from('drugs')
+      .select('*')
+      .eq('organization_id', organizationId)
+      .eq('status', 'active')
+      .order('name')
+      .order('id')
+      .range(from, to)
+
+    if (error) {
+      throw error
+    }
+
+    rows.push(...(data || []))
+
+    if (!data || data.length < DRUGS_PER_PAGE) {
+      break
+    }
+
+    from += DRUGS_PER_PAGE
   }
 
-  const rows = data || []
   if (includeCatalog) {
     return rows
   }

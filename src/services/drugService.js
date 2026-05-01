@@ -8,6 +8,7 @@ import { invokeTierAccess } from './tierAccessService'
  */
 
 export const DEFAULT_MEDICATION_BATCH_PREFIX = 'PDF-IMP-'
+const DRUGS_PER_PAGE = 1000
 
 export const isDefaultCatalogDrug = (drug) =>
   String(drug?.batch_number || drug?.batch || '').toUpperCase().startsWith(DEFAULT_MEDICATION_BATCH_PREFIX)
@@ -21,13 +22,32 @@ const shouldAlertForDrug = (drug) =>
 const isInactiveDrug = (drug) => String(drug?.status || 'active').toLowerCase() === 'inactive'
 
 const getAllDrugsDirectly = async () => {
-  const { data, error } = await supabase.from('drugs').select('*').order('name')
+  const rows = []
+  let from = 0
 
-  if (error) {
-    throw error
+  while (true) {
+    const to = from + DRUGS_PER_PAGE - 1
+    const { data, error } = await supabase
+      .from('drugs')
+      .select('*')
+      .order('name')
+      .order('id')
+      .range(from, to)
+
+    if (error) {
+      throw error
+    }
+
+    rows.push(...(data || []))
+
+    if (!data || data.length < DRUGS_PER_PAGE) {
+      break
+    }
+
+    from += DRUGS_PER_PAGE
   }
 
-  return (data || []).filter((drug) => !isInactiveDrug(drug))
+  return rows.filter((drug) => !isInactiveDrug(drug))
 }
 
 const getAllDrugsViaTierAccess = async (includeCatalog = false) => {
