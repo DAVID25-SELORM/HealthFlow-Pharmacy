@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { getRoleLabel } from '../utils/roleLabels'
 import {
   AlertTriangle,
   ArrowRight,
@@ -117,10 +118,7 @@ const buildTrend = (current, previous, comparisonLabel) => {
   }
 }
 
-const formatRoleLabel = (value) =>
-  String(value || 'assistant')
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (character) => character.toUpperCase())
+const formatRoleLabel = (value) => getRoleLabel(value || 'assistant')
 
 const resolveWelcomeName = (value) => {
   const normalized = String(value || '').trim()

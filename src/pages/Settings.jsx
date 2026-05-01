@@ -17,6 +17,7 @@ import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
 import { normalizeSubscriptionTier, useTenant } from '../context/TenantContext'
 import { readLogoFileAsDataUrl } from '../utils/imageUpload'
+import { getRoleLabel } from '../utils/roleLabels'
 import './Settings.css'
 
 const toForm = (row) => ({
@@ -751,7 +752,7 @@ const Settings = () => {
                   }
                   disabled={creatingStaff}
                 >
-                  <option value="assistant">Assistant</option>
+                  <option value="assistant">Medicine Counter Assistant</option>
                   <option value="pharmacist">Pharmacist</option>
                   <option value="admin">Admin</option>
                 </select>
@@ -862,7 +863,7 @@ const Settings = () => {
                     <strong>{row.full_name}</strong>
                     <p>{row.email}</p>
                     <div className="user-meta">
-                      <small>{row.role}</small>
+                      <small>{getRoleLabel(row.role)}</small>
                       <span className={`user-status-badge ${row.branch_id ? 'active' : 'inactive'}`}>
                         Branch: {row.branches?.name || 'Not assigned'}
                       </span>

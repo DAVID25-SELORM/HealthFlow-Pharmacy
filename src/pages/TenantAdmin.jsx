@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
+import { getRoleLabel } from '../utils/roleLabels'
 import { Building2, GitBranch, Plus, Users, ChevronDown, ChevronUp, Eye, Pencil } from 'lucide-react'
 import { useNotification } from '../context/NotificationContext'
 import { useSessionStorageState } from '../hooks/useSessionStorageState'
@@ -626,7 +627,7 @@ const TenantAdmin = () => {
                                       <tr key={u.id}>
                                         <td>{u.full_name}</td>
                                         <td>{u.email}</td>
-                                        <td><span className={`role-badge role-${u.role}`}>{u.role}</span></td>
+                                        <td><span className={`role-badge role-${u.role}`}>{getRoleLabel(u.role)}</span></td>
                                         <td>
                                           <span className={`active-badge ${u.is_active ? 'active' : 'inactive'}`}>
                                             {u.is_active ? 'Active' : 'Inactive'}
@@ -703,7 +704,7 @@ const TenantAdmin = () => {
                     >
                       <option value="admin">Admin</option>
                       <option value="pharmacist">Pharmacist</option>
-                      <option value="assistant">Assistant</option>
+                      <option value="assistant">Medicine Counter Assistant</option>
                     </select>
                   </div>
                   <div className="tenant-form-group">
