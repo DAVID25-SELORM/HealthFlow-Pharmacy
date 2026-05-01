@@ -69,9 +69,69 @@
   text-transform: uppercase;
 }
 
+.hero-pharmacy-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  width: fit-content;
+  max-width: 100%;
+  margin-top: 1rem;
+  padding: 0.85rem 1rem;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(22, 160, 133, 0.16);
+  box-shadow: 0 12px 28px rgba(20, 63, 55, 0.08);
+}
+
+.hero-pharmacy-logo,
+.hero-pharmacy-logo-placeholder {
+  width: 58px;
+  height: 58px;
+  border-radius: 16px;
+  flex-shrink: 0;
+}
+
+.hero-pharmacy-logo {
+  object-fit: contain;
+  background: #fff;
+  border: 1px solid rgba(17, 24, 39, 0.08);
+}
+
+.hero-pharmacy-logo-placeholder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #179b82 0%, #106c62 100%);
+  color: #fff;
+  font-size: 1.4rem;
+  font-weight: 800;
+}
+
+.hero-pharmacy-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.hero-pharmacy-label {
+  color: var(--gray-500);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.hero-pharmacy-copy strong {
+  color: #16332e;
+  font-size: clamp(1.35rem, 3vw, 2.2rem);
+  line-height: 1.05;
+  word-break: break-word;
+}
+
 .hero-copy h1 {
-  margin: 1rem 0 0.65rem;
-  font-size: clamp(2rem, 4vw, 2.85rem);
+  margin: 1.05rem 0 0.65rem;
+  font-size: clamp(1.75rem, 3vw, 2.35rem);
   line-height: 1.05;
   color: #16332e;
 }

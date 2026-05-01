@@ -340,14 +340,26 @@ const Signup = () => {
             </div>
 
             <div className="form-group logo-upload-field">
-              {logoUrl && <img src={logoUrl} alt="Pharmacy logo preview" className="signup-logo-preview" />}
               <label htmlFor="pharmacyLogo">Pharmacy Logo</label>
-              <input
-                type="file"
-                id="pharmacyLogo"
-                accept="image/*"
-                onChange={handleLogoChange}
-              />
+              <div className="logo-upload-card">
+                {logoUrl ? (
+                  <img src={logoUrl} alt="Pharmacy logo preview" className="signup-logo-preview" />
+                ) : (
+                  <div className="signup-logo-placeholder" aria-hidden="true">
+                    {pharmacyName.trim().charAt(0).toUpperCase() || '+'}
+                  </div>
+                )}
+                <div className="logo-upload-copy">
+                  <strong>{logoUrl ? 'Logo selected' : 'Add pharmacy logo'}</strong>
+                  <span>PNG, JPG, or WebP. Max 750KB.</span>
+                  <input
+                    type="file"
+                    id="pharmacyLogo"
+                    accept="image/*"
+                    onChange={handleLogoChange}
+                  />
+                </div>
+              </div>
               {logoUrl && (
                 <button type="button" className="btn-link" onClick={() => setLogoUrl('')}>
                   Remove Logo
@@ -456,6 +468,9 @@ const Signup = () => {
             <h2>Account Created Successfully!</h2>
             <p>{successMessage}</p>
             <div className="success-details">
+              {logoUrl && (
+                <img src={logoUrl} alt={`${pharmacyName} logo`} className="signup-success-logo" />
+              )}
               <p>
                 <strong>Pharmacy:</strong> {pharmacyName}
               </p>

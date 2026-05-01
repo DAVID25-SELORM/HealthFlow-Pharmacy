@@ -221,6 +221,7 @@ const Dashboard = () => {
   const canViewOperationalMetrics = canManageInventory || hasRole(role, INVENTORY_ROLES)
   const canViewClaimsMetrics = (canManageClaims || hasRole(role, CLAIMS_ROLES)) && tierLimits.hasClaims
   const pharmacyName = organization?.name || 'Your Pharmacy'
+  const pharmacyLogoUrl = organization?.logo_url || ''
   const welcomeName = resolveWelcomeName(displayName)
   const roleLabel = formatRoleLabel(role)
   const planLabel = tierLimits?.label || 'Basic'
@@ -524,11 +525,25 @@ const Dashboard = () => {
             <Sparkles size={14} />
             Dispensary operations dashboard
           </div>
+
+          <div className="hero-pharmacy-brand">
+            {pharmacyLogoUrl ? (
+              <img src={pharmacyLogoUrl} alt={`${pharmacyName} logo`} className="hero-pharmacy-logo" />
+            ) : (
+              <div className="hero-pharmacy-logo-placeholder" aria-hidden="true">
+                {pharmacyName.charAt(0).toUpperCase()}
+              </div>
+            )}
+            <div className="hero-pharmacy-copy">
+              <span className="hero-pharmacy-label">Current pharmacy</span>
+              <strong>{pharmacyName}</strong>
+            </div>
+          </div>
+
           <h1>{`Welcome back, ${welcomeName}.`}</h1>
           <p className="hero-subtitle">{subscriptionSummary}</p>
 
           <div className="hero-meta">
-            <span className="hero-chip hero-chip-strong">{pharmacyName}</span>
             <span className="hero-chip">{fullDateFormatter.format(new Date())}</span>
             <span className="hero-chip">{roleLabel}</span>
             <span className="hero-chip">{planLabel} Plan</span>

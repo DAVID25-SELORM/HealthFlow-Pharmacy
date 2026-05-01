@@ -216,6 +216,17 @@
   align-items: flex-start;
 }
 
+.logo-upload-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
+  padding: 1rem;
+  border: 1px dashed #16a085;
+  border-radius: 12px;
+  background: #f6fbf8;
+}
+
 .signup-logo-preview {
   width: 86px;
   height: 86px;
@@ -223,6 +234,56 @@
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   background: white;
+  flex-shrink: 0;
+}
+
+.signup-logo-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 86px;
+  height: 86px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: #16a085;
+  color: #fff;
+  font-size: 2rem;
+  font-weight: 800;
+}
+
+.logo-upload-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.logo-upload-copy strong {
+  color: #2d3748;
+}
+
+.logo-upload-copy span {
+  color: #718096;
+  font-size: 0.85rem;
+}
+
+.logo-upload-copy input {
+  margin-top: 0.25rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.signup-success-logo {
+  display: block;
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+  margin: 0 auto 1rem;
+  border-radius: 10px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
 }
 
 .signup-success {

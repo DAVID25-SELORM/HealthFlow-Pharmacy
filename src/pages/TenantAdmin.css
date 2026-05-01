@@ -397,6 +397,55 @@
   border: 1px solid var(--gray-200);
   border-radius: var(--radius);
   background: white;
+  flex-shrink: 0;
+}
+
+.tenant-logo-upload-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
+  padding: 0.9rem;
+  border: 1px dashed var(--primary);
+  border-radius: var(--radius);
+  background: rgba(22, 160, 133, 0.06);
+}
+
+.tenant-logo-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 86px;
+  height: 86px;
+  flex-shrink: 0;
+  border-radius: var(--radius);
+  background: var(--primary);
+  color: #fff;
+  font-size: 2rem;
+  font-weight: 800;
+}
+
+.tenant-logo-upload-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.tenant-logo-upload-copy strong {
+  color: var(--gray-900);
+}
+
+.tenant-logo-upload-copy span {
+  color: var(--gray-500);
+  font-size: 0.85rem;
+}
+
+.tenant-logo-upload-copy input {
+  margin-top: 0.25rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 
 /* Edit Modal */

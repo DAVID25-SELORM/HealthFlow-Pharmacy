@@ -419,10 +419,20 @@ const TenantAdmin = () => {
                 </div>
                 <div className="tenant-form-group">
                   <label>Pharmacy Logo</label>
-                  {pharmacy.logoUrl && (
-                    <img src={pharmacy.logoUrl} alt="Pharmacy logo preview" className="tenant-logo-preview" />
-                  )}
-                  <input type="file" accept="image/*" onChange={handleCreateLogoChange} />
+                  <div className="tenant-logo-upload-card">
+                    {pharmacy.logoUrl ? (
+                      <img src={pharmacy.logoUrl} alt="Pharmacy logo preview" className="tenant-logo-preview" />
+                    ) : (
+                      <div className="tenant-logo-placeholder" aria-hidden="true">
+                        {pharmacy.name.trim().charAt(0).toUpperCase() || '+'}
+                      </div>
+                    )}
+                    <div className="tenant-logo-upload-copy">
+                      <strong>{pharmacy.logoUrl ? 'Logo selected' : 'Add pharmacy logo'}</strong>
+                      <span>Shown on dashboard and receipts. Max 750KB.</span>
+                      <input type="file" accept="image/*" onChange={handleCreateLogoChange} />
+                    </div>
+                  </div>
                   {pharmacy.logoUrl && (
                     <button
                       type="button"
@@ -812,10 +822,20 @@ const TenantAdmin = () => {
                   </div>
                   <div className="tenant-form-group">
                     <label>Pharmacy Logo</label>
-                    {editForm.logoUrl && (
-                      <img src={editForm.logoUrl} alt="Pharmacy logo preview" className="tenant-logo-preview" />
-                    )}
-                    <input type="file" accept="image/*" onChange={handleEditLogoChange} />
+                    <div className="tenant-logo-upload-card">
+                      {editForm.logoUrl ? (
+                        <img src={editForm.logoUrl} alt="Pharmacy logo preview" className="tenant-logo-preview" />
+                      ) : (
+                        <div className="tenant-logo-placeholder" aria-hidden="true">
+                          {editForm.name?.trim().charAt(0).toUpperCase() || '+'}
+                        </div>
+                      )}
+                      <div className="tenant-logo-upload-copy">
+                        <strong>{editForm.logoUrl ? 'Logo selected' : 'Add pharmacy logo'}</strong>
+                        <span>Shown on dashboard and receipts. Max 750KB.</span>
+                        <input type="file" accept="image/*" onChange={handleEditLogoChange} />
+                      </div>
+                    </div>
                     {editForm.logoUrl && (
                       <button
                         type="button"
