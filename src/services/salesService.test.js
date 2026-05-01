@@ -88,41 +88,38 @@ describe('salesService.createSale', () => {
     expect(mocks.from).not.toHaveBeenCalled()
   })
 
-  it('falls back to the legacy flow when RPC fails with duplicate sales_sale_number_key', async () => {
-    const salesSelect = vi.fn().mockResolvedValue({
-      data: [{ id: 'sale-rpc-dup', sale_number: 'SAL-000200' }],
-      error: null,
+  it('does not write sales directly when the secure sale RPC is missing', async () => {
+    const rpcError = {
+      code: 'PGRST202',
+      message: 'Could not find the function public.create_sale_transaction(jsonb).',
+    }
+
+    mocks.rpc.mockResolvedValue({
+      data: null,
+      error: rpcError,
     })
-    const salesInsert = vi.fn(() => ({
-      select: salesSelect,
-    }))
-    const saleItemsInsert = vi.fn().mockResolvedValue({
-      error: null,
-    })
 
-    mocks.rpc
-      .mockResolvedValueOnce({
-        data: null,
-        error: {
-          code: '23505',
-          message: 'duplicate key value violates unique constraint "sales_sale_number_key"',
-        },
+    await expect(
+      createSale({
+        items: [{ drugId: 'drug-1', name: 'Paracetamol 500mg', quantity: 2, price: 12.5 }],
+        paymentMethod: 'card',
+        amountPaid: 0,
+        soldBy: 'user-1',
+        shiftId: 'shift-1',
       })
-      .mockResolvedValueOnce({
-        data: 'SAL-000200',
-        error: null,
-      })
+    ).rejects.toEqual(rpcError)
 
-    mocks.from.mockImplementation((table) => {
-      if (table === 'sales') {
-        return { insert: salesInsert }
-      }
+    expect(mocks.from).not.toHaveBeenCalled()
+    expect(mocks.tryLogAuditEvent).not.toHaveBeenCalled()
+  })
 
-      if (table === 'sale_items') {
-        return { insert: saleItemsInsert }
-      }
-
-      throw new Error(`Unexpected table: ${table}`)
+  it('does not write sales directly when the secure sale RPC hits a sale number conflict', async () => {
+    mocks.rpc.mockResolvedValue({
+      data: null,
+      error: {
+        code: '23505',
+        message: 'duplicate key value violates unique constraint "sales_sale_number_key"',
+      },
     })
 
     await expect(
@@ -133,173 +130,10 @@ describe('salesService.createSale', () => {
         soldBy: 'user-1',
         shiftId: 'shift-1',
       })
-    ).resolves.toEqual({
-      sale: {
-        id: 'sale-rpc-dup',
-        sale_number: 'SAL-000200',
-      },
-      saleNumber: 'SAL-000200',
-    })
+    ).rejects.toThrow('Sale number conflict. Please try completing the sale again.')
 
-    expect(salesInsert).toHaveBeenCalledTimes(1)
-    expect(saleItemsInsert).toHaveBeenCalledTimes(1)
-  })
-
-  it('falls back to the legacy sale flow only when the sale RPC is missing', async () => {
-    const salesSelect = vi.fn().mockResolvedValue({
-      data: [{ id: 'sale-1', sale_number: 'SAL-000123' }],
-      error: null,
-    })
-    const salesInsert = vi.fn(() => ({
-      select: salesSelect,
-    }))
-    const saleItemsInsert = vi.fn().mockResolvedValue({
-      error: null,
-    })
-
-    mocks.rpc
-      .mockResolvedValueOnce({
-        data: null,
-        error: {
-          code: 'PGRST202',
-          message: 'Could not find the function public.create_sale_transaction(jsonb).',
-        },
-      })
-      .mockResolvedValueOnce({
-        data: 'SAL-000123',
-        error: null,
-      })
-
-    mocks.from.mockImplementation((table) => {
-      if (table === 'sales') {
-        return {
-          insert: salesInsert,
-        }
-      }
-
-      if (table === 'sale_items') {
-        return {
-          insert: saleItemsInsert,
-        }
-      }
-
-      throw new Error(`Unexpected table: ${table}`)
-    })
-
-    await expect(
-      createSale({
-        items: [
-          { drugId: 'drug-1', name: 'Paracetamol 500mg', quantity: 2, price: 12.5 },
-        ],
-        paymentMethod: 'card',
-        amountPaid: 0,
-        soldBy: 'user-1',
-        shiftId: 'shift-1',
-      })
-    ).resolves.toEqual({
-      sale: {
-        id: 'sale-1',
-        sale_number: 'SAL-000123',
-      },
-      saleNumber: 'SAL-000123',
-    })
-
-    expect(salesInsert).toHaveBeenCalledWith([
-      expect.objectContaining({
-        payment_method: 'card',
-        amount_paid: 25,
-        change_given: 0,
-      }),
-    ])
-    expect(saleItemsInsert).toHaveBeenCalledWith([
-      expect.objectContaining({
-        quantity: 2,
-        unit_price: 12.5,
-        total_price: 25,
-      }),
-    ])
-    expect(mocks.tryLogAuditEvent).toHaveBeenCalledWith(
-      expect.objectContaining({
-        eventType: 'sale.completed',
-      })
-    )
-  })
-
-  it('retries legacy insert when sale_number hits sales_sale_number_key', async () => {
-    const duplicateError = {
-      code: '23505',
-      message: 'duplicate key value violates unique constraint "sales_sale_number_key"',
-      details: null,
-      hint: null,
-    }
-    const salesSelect = vi
-      .fn()
-      .mockResolvedValueOnce({
-        data: null,
-        error: duplicateError,
-      })
-      .mockResolvedValueOnce({
-        data: [{ id: 'sale-2', sale_number: 'SAL-000124' }],
-        error: null,
-      })
-    const salesInsert = vi.fn(() => ({
-      select: salesSelect,
-    }))
-    const saleItemsInsert = vi.fn().mockResolvedValue({
-      error: null,
-    })
-
-    mocks.rpc
-      .mockResolvedValueOnce({
-        data: null,
-        error: {
-          code: 'PGRST202',
-          message: 'Could not find the function public.create_sale_transaction(jsonb).',
-        },
-      })
-      .mockResolvedValueOnce({
-        data: 'SAL-000123',
-        error: null,
-      })
-      .mockResolvedValueOnce({
-        data: 'SAL-000124',
-        error: null,
-      })
-
-    mocks.from.mockImplementation((table) => {
-      if (table === 'sales') {
-        return {
-          insert: salesInsert,
-        }
-      }
-
-      if (table === 'sale_items') {
-        return {
-          insert: saleItemsInsert,
-        }
-      }
-
-      throw new Error(`Unexpected table: ${table}`)
-    })
-
-    await expect(
-      createSale({
-        items: [{ drugId: 'drug-1', name: 'Paracetamol 500mg', quantity: 1, price: 15 }],
-        paymentMethod: 'cash',
-        amountPaid: 15,
-        soldBy: 'user-1',
-        shiftId: 'shift-1',
-      })
-    ).resolves.toEqual({
-      sale: {
-        id: 'sale-2',
-        sale_number: 'SAL-000124',
-      },
-      saleNumber: 'SAL-000124',
-    })
-
-    expect(salesInsert).toHaveBeenCalledTimes(2)
-    expect(saleItemsInsert).toHaveBeenCalledTimes(1)
+    expect(mocks.from).not.toHaveBeenCalled()
+    expect(mocks.tryLogAuditEvent).not.toHaveBeenCalled()
   })
 })
 

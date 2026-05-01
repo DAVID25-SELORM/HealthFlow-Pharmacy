@@ -3,7 +3,6 @@ import { assertNonNegativeNumber, toNumber } from '../utils/validation'
 import { tryLogAuditEvent } from './auditService'
 import { getUserBranchIdsByUserIds } from './branchService'
 import { recordCashbookMovementIfSessionOpen } from './cashbookService'
-import { addShiftMovement } from './shiftService'
 
 /**
  * Sales Service
@@ -30,27 +29,6 @@ const normalizePaymentMethod = (value) => {
   return normalized
 }
 
-const canFallbackToLegacyCreateSale = (error) => {
-  const code = String(error?.code || '').toUpperCase()
-  const message = [
-    error?.message,
-    error?.details,
-    error?.hint,
-  ]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase()
-
-  return (
-    code === 'PGRST202' ||
-    code === '42883' ||
-    (message.includes('create_sale_transaction') &&
-      (message.includes('could not find') ||
-        message.includes('does not exist') ||
-        message.includes('not found')))
-  )
-}
-
 const isSaleNumberDuplicateError = (error) => {
   const code = String(error?.code || '').toUpperCase()
   const message = [error?.message, error?.details, error?.hint]
@@ -59,22 +37,6 @@ const isSaleNumberDuplicateError = (error) => {
     .toLowerCase()
 
   return code === '23505' && message.includes('sales_sale_number_key')
-}
-
-// Generate sale number
-const generateSaleNumber = async () => {
-  const { data, error } = await supabase.rpc('generate_sale_number')
-  
-  if (error) {
-    // Fallback if function doesn't exist
-    const timestamp = Date.now().toString().slice(-8)
-    const randomSuffix = Math.floor(Math.random() * 10000)
-      .toString()
-      .padStart(4, '0')
-    return `SAL-${timestamp}${randomSuffix}`
-  }
-  
-  return data
 }
 
 const buildValidatedSaleTotals = (saleData) => {
@@ -144,123 +106,6 @@ const syncCashSaleToCashbook = async ({ saleId, saleNumber, paymentMethod, soldB
   }
 }
 
-const rollbackLegacySale = async (saleId) => {
-  try {
-    const salesTable = supabase.from('sales')
-    if (typeof salesTable.delete !== 'function') {
-      return
-    }
-
-    const { error } = await salesTable.delete().eq('id', saleId)
-    if (error) {
-      console.warn('Unable to roll back legacy sale after item failure:', error)
-    }
-  } catch (rollbackError) {
-    console.warn('Unable to roll back legacy sale after item failure:', rollbackError)
-  }
-}
-
-const createSaleLegacy = async (saleData) => {
-  const totals = buildValidatedSaleTotals(saleData)
-  const maxInsertAttempts = 5
-  let sale = null
-  let lastInsertError = null
-
-  for (let attempt = 1; attempt <= maxInsertAttempts; attempt += 1) {
-    const saleNumber = await generateSaleNumber()
-    const { data: insertedSale, error: saleError } = await supabase
-      .from('sales')
-      .insert([
-        {
-          sale_number: saleNumber,
-          patient_id: saleData.patientId || null,
-          total_amount: totals.totalAmount,
-          discount: totals.discount,
-          net_amount: totals.netAmount,
-          payment_method: totals.paymentMethod,
-          payment_status: 'completed',
-          amount_paid: totals.amountPaid,
-          change_given: totals.change,
-          notes: saleData.notes,
-        sold_by: saleData.soldBy,
-        sale_date: new Date().toISOString(),
-        shift_id: saleData.shiftId,
-      },
-      ])
-      .select()
-
-    if (!saleError) {
-      sale = insertedSale
-      lastInsertError = null
-      break
-    }
-
-    lastInsertError = saleError
-    if (!isSaleNumberDuplicateError(saleError) || attempt === maxInsertAttempts) {
-      throw saleError
-    }
-  }
-
-  if (!sale || !sale[0]) {
-    throw lastInsertError || new Error('Unable to create sale. Please try again.')
-  }
-
-  const saleItems = saleData.items.map((item) => ({
-    sale_id: sale[0].id,
-    drug_id: item.drugId,
-    drug_name: item.name,
-    quantity: assertPositiveSaleQuantity(item.quantity, 'Item quantity'),
-    unit_price: assertNonNegativeNumber(item.price, 'Item price'),
-    total_price:
-      assertNonNegativeNumber(item.price, 'Item price') *
-      assertPositiveSaleQuantity(item.quantity, 'Item quantity'),
-  }))
-
-  const { error: itemsError } = await supabase.from('sale_items').insert(saleItems)
-  if (itemsError) {
-    await rollbackLegacySale(sale[0].id)
-    throw itemsError
-  }
-
-  await tryLogAuditEvent({
-    eventType: 'sale.completed',
-    entityType: 'sales',
-    entityId: sale[0].id,
-    action: 'create',
-    details: {
-      sale_number: sale[0].sale_number,
-      item_count: saleItems.length,
-      total_amount: totals.netAmount,
-      payment_method: totals.paymentMethod,
-    },
-  })
-
-  await syncCashSaleToCashbook({
-    saleId: sale[0].id,
-    saleNumber: sale[0].sale_number,
-    paymentMethod: totals.paymentMethod,
-    soldBy: saleData.soldBy,
-    netAmount: totals.netAmount,
-  })
-
-  if (totals.paymentMethod === 'cash' && saleData.shiftId && saleData.organizationId && saleData.branchId) {
-    await addShiftMovement({
-      shiftId: saleData.shiftId,
-      organizationId: saleData.organizationId,
-      branchId: saleData.branchId,
-      movementType: 'sale_cash',
-      sourceType: 'sale',
-      sourceId: sale[0].id,
-      amount: totals.netAmount,
-      direction: 'in',
-      description: `Cash sale ${sale[0].sale_number}`,
-      createdBy: saleData.soldBy,
-    })
-  }
-
-  return { sale: sale[0], saleNumber: sale[0].sale_number }
-}
-
 // Create new sale
 export const createSale = async (saleData) => {
   try {
@@ -296,18 +141,11 @@ export const createSale = async (saleData) => {
     })
 
     if (txError) {
-      const shouldFallbackToLegacy =
-        canFallbackToLegacyCreateSale(txError) || isSaleNumberDuplicateError(txError)
-
-      if (!shouldFallbackToLegacy) {
-        throw txError
+      if (isSaleNumberDuplicateError(txError)) {
+        throw new Error('Sale number conflict. Please try completing the sale again.')
       }
 
-      console.warn(
-        'create_sale_transaction RPC failed, falling back to legacy path:',
-        txError.message
-      )
-      return createSaleLegacy(saleData)
+      throw txError
     }
 
     const txPayload = txData || {}
