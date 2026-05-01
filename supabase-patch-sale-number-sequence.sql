@@ -39,14 +39,18 @@ BEGIN
 END $$;
 
 CREATE OR REPLACE FUNCTION public.generate_sale_number()
-RETURNS TEXT AS $$
+RETURNS TEXT
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
 DECLARE
   next_id BIGINT;
 BEGIN
   next_id := nextval('public.sales_sale_number_seq');
   RETURN 'SAL-' || LPAD(next_id::TEXT, 6, '0');
 END;
-$$ LANGUAGE plpgsql;
+$$;
 
 CREATE OR REPLACE FUNCTION public.create_sale_transaction(sale_payload JSONB)
 RETURNS JSONB AS $$
@@ -257,4 +261,3 @@ GRANT EXECUTE ON FUNCTION public.generate_sale_number() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.create_sale_transaction(JSONB) TO authenticated;
 
 COMMIT;
-
