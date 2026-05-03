@@ -92,6 +92,23 @@
   padding: 0.6rem 0.7rem;
 }
 
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.settings-field span {
+  color: var(--gray-700);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.settings-field input {
+  width: 100%;
+}
+
 .settings-save-bar {
   position: sticky;
   bottom: 0.75rem;

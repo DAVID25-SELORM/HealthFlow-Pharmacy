@@ -409,14 +409,17 @@ const Settings = () => {
                 disabled={!isAdmin}
               />
             </div>
-            <input
-              placeholder="Currency"
-              value={formData.currency}
-              onChange={(event) =>
-                setFormData({ ...formData, currency: event.target.value })
-              }
-              disabled={!isAdmin}
-            />
+            <label className="settings-field">
+              <span>Currency</span>
+              <input
+                placeholder="Currency"
+                value={formData.currency}
+                onChange={(event) =>
+                  setFormData({ ...formData, currency: event.target.value })
+                }
+                disabled={!isAdmin}
+              />
+            </label>
             <div className="logo-upload-field">
               {formData.logoUrl && (
                 <img src={formData.logoUrl} alt="Pharmacy logo preview" className="settings-logo-preview" />
@@ -440,54 +443,66 @@ const Settings = () => {
               )}
             </div>
             <div className="settings-form-row">
-              <input
-                type="number"
-                step="0.01"
-                placeholder="Tax rate"
-                value={formData.taxRate}
-                onChange={(event) =>
-                  setFormData({ ...formData, taxRate: event.target.value })
-                }
-                disabled={!isAdmin}
-              />
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                placeholder="Default markup (%)"
-                value={formData.defaultMarkupPercent}
-                onChange={(event) =>
-                  setFormData({
-                    ...formData,
-                    defaultMarkupPercent: event.target.value,
-                  })
-                }
-                disabled={!isAdmin}
-              />
+              <label className="settings-field">
+                <span>Tax rate (%)</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  placeholder="0"
+                  value={formData.taxRate}
+                  onChange={(event) =>
+                    setFormData({ ...formData, taxRate: event.target.value })
+                  }
+                  disabled={!isAdmin}
+                />
+              </label>
+              <label className="settings-field">
+                <span>Default markup (%)</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="0"
+                  value={formData.defaultMarkupPercent}
+                  onChange={(event) =>
+                    setFormData({
+                      ...formData,
+                      defaultMarkupPercent: event.target.value,
+                    })
+                  }
+                  disabled={!isAdmin}
+                />
+              </label>
             </div>
             <div className="settings-form-row">
-              <input
-                type="number"
-                placeholder="Low stock threshold"
-                value={formData.lowStockThreshold}
-                onChange={(event) =>
-                  setFormData({
-                    ...formData,
-                    lowStockThreshold: event.target.value,
-                  })
-                }
-                disabled={!isAdmin}
-              />
+              <label className="settings-field">
+                <span>Low stock threshold</span>
+                <input
+                  type="number"
+                  placeholder="10"
+                  value={formData.lowStockThreshold}
+                  onChange={(event) =>
+                    setFormData({
+                      ...formData,
+                      lowStockThreshold: event.target.value,
+                    })
+                  }
+                  disabled={!isAdmin}
+                />
+              </label>
+              <label className="settings-field">
+                <span>Expiry alert days</span>
+                <input
+                  type="number"
+                  placeholder="30"
+                  value={formData.expiryAlertDays}
+                  onChange={(event) =>
+                    setFormData({ ...formData, expiryAlertDays: event.target.value })
+                  }
+                  disabled={!isAdmin}
+                />
+              </label>
             </div>
-            <input
-              type="number"
-              placeholder="Expiry alert days"
-              value={formData.expiryAlertDays}
-              onChange={(event) =>
-                setFormData({ ...formData, expiryAlertDays: event.target.value })
-              }
-              disabled={!isAdmin}
-            />
             <textarea
               placeholder="Receipt footer message (optional)"
               value={formData.receiptFooter}
