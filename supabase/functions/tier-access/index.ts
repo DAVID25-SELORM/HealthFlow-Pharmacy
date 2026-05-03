@@ -67,6 +67,13 @@ const json = (body: Record<string, unknown>, status = 200) =>
 
 const normalizeText = (value: unknown) => (typeof value === 'string' ? value.trim() : '')
 
+const normalizeSearchTokens = (value: unknown) =>
+  normalizeText(value)
+    .toLowerCase()
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter(Boolean)
+
 const getErrorMessage = (error: unknown) => {
   if (error instanceof Error) {
     return error.message
@@ -433,8 +440,18 @@ const getDrugs = async (
     .eq('status', 'active')
 
   if (searchTerm) {
-    const escapedTerm = searchTerm.replace(/[%_,]/g, '')
-    query = query.or(`name.ilike.%${escapedTerm}%,batch_number.ilike.%${escapedTerm}%`)
+    const searchParts = [searchTerm, ...normalizeSearchTokens(searchTerm)]
+      .map((part) => normalizeText(part).replace(/[%_,]/g, ''))
+      .filter(Boolean)
+      .flatMap((part) => [
+        `name.ilike.%${part}%`,
+        `batch_number.ilike.%${part}%`,
+        `category.ilike.%${part}%`,
+        `description.ilike.%${part}%`,
+        `supplier.ilike.%${part}%`,
+      ])
+
+    query = query.or([...new Set(searchParts)].join(','))
   }
 
   if (inStockOnly) {

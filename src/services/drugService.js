@@ -23,6 +23,47 @@ const shouldAlertForDrug = (drug) =>
 
 const isInactiveDrug = (drug) => String(drug?.status || 'active').toLowerCase() === 'inactive'
 
+const normalizeDrugSearchTokens = (value) =>
+  sanitizeSearchTerm(value)
+    .toLowerCase()
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter(Boolean)
+
+const drugMatchesSearch = (drug, term) => {
+  const normalizedTerm = sanitizeSearchTerm(term)
+  if (!normalizedTerm) {
+    return true
+  }
+
+  const haystack = [
+    drug?.name,
+    drug?.batch_number,
+    drug?.batch,
+    drug?.category,
+    drug?.description,
+    drug?.supplier,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+
+  if (haystack.includes(normalizedTerm)) {
+    return true
+  }
+
+  const tokens = normalizeDrugSearchTokens(normalizedTerm)
+  return tokens.some((token) => haystack.includes(token))
+}
+
+const filterSearchRows = (rows, { term = '', includeCatalog = false, inStockOnly = false, limit = DEFAULT_SEARCH_LIMIT } = {}) =>
+  (rows || [])
+    .filter((drug) => !isInactiveDrug(drug))
+    .filter((drug) => includeCatalog || shouldShowDrugOutsideInventory(drug))
+    .filter((drug) => !inStockOnly || Number.parseFloat(drug?.quantity ?? 0) > 0)
+    .filter((drug) => drugMatchesSearch(drug, term))
+    .slice(0, limit)
+
 const getAllDrugsDirectly = async () => {
   const rows = []
   let from = 0
@@ -187,17 +228,32 @@ export const searchDrugs = async (searchTerm, options = {}) => {
   const includeCatalog = Boolean(options.includeCatalog)
   const useTierAccess = Boolean(options.useTierAccess)
   const inStockOnly = Boolean(options.inStockOnly)
+  const tokens = normalizeDrugSearchTokens(term)
 
   if (useTierAccess) {
-    const response = await invokeTierAccess({
-      action: 'get_drugs',
-      includeCatalog,
-      searchTerm: term,
-      limit,
-      inStockOnly,
-    })
+    const loadMatches = async (queryTerm) => {
+      const response = await invokeTierAccess({
+        action: 'get_drugs',
+        includeCatalog,
+        searchTerm: queryTerm,
+        limit,
+        inStockOnly,
+      })
 
-    return (response.drugs || []).filter((drug) => !isInactiveDrug(drug))
+      return filterSearchRows(response.drugs || [], {
+        term,
+        includeCatalog,
+        inStockOnly,
+        limit,
+      })
+    }
+
+    const matches = await loadMatches(term)
+    if (matches.length > 0 || tokens.length <= 1) {
+      return matches
+    }
+
+    return loadMatches(tokens[0])
   }
 
   let query = supabase
@@ -209,8 +265,18 @@ export const searchDrugs = async (searchTerm, options = {}) => {
     .limit(limit)
 
   if (term) {
-    const escapedTerm = term.replace(/[%_,]/g, '')
-    query = query.or(`name.ilike.%${escapedTerm}%,batch_number.ilike.%${escapedTerm}%`)
+    const searchParts = [term, ...tokens]
+      .map((part) => part.replace(/[%_,]/g, ''))
+      .filter(Boolean)
+      .flatMap((part) => [
+        `name.ilike.%${part}%`,
+        `batch_number.ilike.%${part}%`,
+        `category.ilike.%${part}%`,
+        `description.ilike.%${part}%`,
+        `supplier.ilike.%${part}%`,
+      ])
+
+    query = query.or([...new Set(searchParts)].join(','))
   }
 
   if (inStockOnly) {
@@ -223,8 +289,12 @@ export const searchDrugs = async (searchTerm, options = {}) => {
     throw error
   }
 
-  const drugs = (data || []).filter((drug) => !isInactiveDrug(drug))
-  return includeCatalog ? drugs : drugs.filter(shouldShowDrugOutsideInventory)
+  return filterSearchRows(data || [], {
+    term,
+    includeCatalog,
+    inStockOnly,
+    limit,
+  })
 }
 
 // Get low stock drugs

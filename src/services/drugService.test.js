@@ -219,6 +219,82 @@ describe('drugService catalog handling', () => {
     expect(fromMock).not.toHaveBeenCalled()
   })
 
+  it('filters tier-access search results on the client for old deployed functions', async () => {
+    invokeTierAccess.mockResolvedValue({
+      drugs: [
+        {
+          id: 'match-1',
+          name: 'Lydia Emergency Contraceptive',
+          batch_number: 'LYD-001',
+          quantity: 5,
+          status: 'active',
+        },
+        {
+          id: 'other-1',
+          name: 'Paracetamol',
+          batch_number: 'PAR-001',
+          quantity: 20,
+          status: 'active',
+        },
+      ],
+    })
+
+    await expect(
+      searchDrugs('Lydia pill', {
+        useTierAccess: true,
+        inStockOnly: true,
+        limit: 30,
+      })
+    ).resolves.toEqual([
+      {
+        id: 'match-1',
+        name: 'Lydia Emergency Contraceptive',
+        batch_number: 'LYD-001',
+        quantity: 5,
+        status: 'active',
+      },
+    ])
+  })
+
+  it('retries multi-word tier-access search with the first token when exact search returns nothing', async () => {
+    invokeTierAccess
+      .mockResolvedValueOnce({ drugs: [] })
+      .mockResolvedValueOnce({
+        drugs: [
+          {
+            id: 'match-1',
+            name: 'Lydia Emergency Contraceptive',
+            batch_number: 'LYD-001',
+            quantity: 5,
+            status: 'active',
+          },
+        ],
+      })
+
+    await expect(
+      searchDrugs('Lydia pill', {
+        useTierAccess: true,
+        inStockOnly: true,
+        limit: 30,
+      })
+    ).resolves.toEqual([
+      {
+        id: 'match-1',
+        name: 'Lydia Emergency Contraceptive',
+        batch_number: 'LYD-001',
+        quantity: 5,
+        status: 'active',
+      },
+    ])
+
+    expect(invokeTierAccess).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        searchTerm: 'lydia',
+      })
+    )
+  })
+
   it('returns the updated existing active drug when add resolves a duplicate', async () => {
     invokeTierAccess.mockResolvedValue({
       action: 'update_existing',

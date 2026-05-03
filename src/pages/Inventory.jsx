@@ -181,6 +181,34 @@ const Inventory = () => {
     })
   }, [activeFilter, drugs, highlightedDrugId, searchTerm])
 
+  const stockSummary = useMemo(() => {
+    const activeStockRows = drugs.filter((drug) => {
+      const quantity = Number.parseFloat(drug.quantity ?? 0) || 0
+      return quantity > 0
+    })
+
+    return activeStockRows.reduce(
+      (summary, drug) => {
+        const quantity = Number.parseFloat(drug.quantity ?? 0) || 0
+        const price = Number.parseFloat(drug.price ?? 0) || 0
+        const costPrice = Number.parseFloat(drug.cost_price ?? 0) || 0
+
+        return {
+          itemCount: summary.itemCount + 1,
+          unitCount: summary.unitCount + quantity,
+          retailValue: summary.retailValue + quantity * price,
+          costValue: summary.costValue + quantity * costPrice,
+        }
+      },
+      {
+        itemCount: 0,
+        unitCount: 0,
+        retailValue: 0,
+        costValue: 0,
+      }
+    )
+  }, [drugs])
+
   const editingCatalogItem =
     Boolean(editingDrugId) && isDefaultCatalogDrug({ batch_number: formData.batchNumber })
 
@@ -486,6 +514,24 @@ const Inventory = () => {
           {error}
         </div>
       )}
+
+      <div className="inventory-summary-grid">
+        <div className="inventory-summary-card">
+          <span>Total Stock Value</span>
+          <strong>GHS {stockSummary.retailValue.toFixed(2)}</strong>
+          <small>Based on current selling prices</small>
+        </div>
+        <div className="inventory-summary-card">
+          <span>Total Cost Value</span>
+          <strong>GHS {stockSummary.costValue.toFixed(2)}</strong>
+          <small>Based on recorded cost prices</small>
+        </div>
+        <div className="inventory-summary-card">
+          <span>Stocked Medicines</span>
+          <strong>{stockSummary.itemCount}</strong>
+          <small>{stockSummary.unitCount.toLocaleString()} units available</small>
+        </div>
+      </div>
 
       <div className="table-container">
         <table className="inventory-table">
