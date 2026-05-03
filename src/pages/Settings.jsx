@@ -154,6 +154,7 @@ const Settings = () => {
         })
       }
       await loadSettings()
+      notify('Pharmacy settings saved.', 'success')
     } catch (saveError) {
       console.error('Error saving settings:', saveError)
       setError(saveError.message || 'Unable to save settings.')
@@ -481,9 +482,12 @@ const Settings = () => {
               style={{ resize: 'vertical', fontFamily: 'inherit' }}
             />
             {isAdmin && (
-              <button className="btn btn-primary" type="submit" disabled={saving}>
-                {saving ? 'Saving...' : 'Save Settings'}
-              </button>
+              <div className="settings-save-bar">
+                <span>Save pharmacy details, slogan, logo, and receipt footer.</span>
+                <button className="btn btn-primary" type="submit" disabled={saving}>
+                  {saving ? 'Saving...' : 'Save Settings'}
+                </button>
+              </div>
             )}
           </form>
         </div>

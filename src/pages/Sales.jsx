@@ -19,9 +19,22 @@ import './Sales.css'
 const POS_DRUG_SEARCH_LIMIT = 30
 const RECENT_SALES_LIMIT = 8
 
+const mergePharmacySettingsWithOrganization = (settings, organization) => ({
+  ...(settings || {}),
+  pharmacy_name: settings?.pharmacy_name || organization?.name || 'HealthFlow Pharmacy',
+  phone: settings?.phone || organization?.phone || null,
+  email: settings?.email || organization?.email || null,
+  address: settings?.address || organization?.address || null,
+  city: settings?.city || organization?.city || null,
+  region: settings?.region || organization?.region || null,
+  logo_url: settings?.logo_url || organization?.logo_url || null,
+  slogan: settings?.slogan || organization?.slogan || null,
+  license_number: settings?.license_number || organization?.license_number || null,
+})
+
 const Sales = () => {
   const [searchParams, setSearchParams] = useSearchParams()
-  const { user, displayName, role, profile } = useAuth()
+  const { user, displayName, role, profile, organization } = useAuth()
   const { notify } = useNotification()
   const [drugs, setDrugs] = useState([])
   const [drugSearchLoading, setDrugSearchLoading] = useState(false)
@@ -87,7 +100,7 @@ const Sales = () => {
         }
 
         setPatients(patientsData)
-        setPharmacyInfo(pharmacySettings)
+        setPharmacyInfo(mergePharmacySettingsWithOrganization(pharmacySettings, organization))
         setBranches(branchesData)
         setActiveShift(openShiftData)
         setShiftBranchId(
@@ -120,7 +133,7 @@ const Sales = () => {
     return () => {
       cancelled = true
     }
-  }, [canProcessRefund, profile?.branch_id, role, user?.id])
+  }, [canProcessRefund, organization, profile?.branch_id, role, user?.id])
 
   useEffect(() => {
     if (loading || !isSupabaseConfigured()) {

@@ -85,10 +85,31 @@
 }
 
 .settings-form input,
-.settings-form select {
+.settings-form select,
+.settings-form textarea {
   border: 1px solid var(--gray-300);
   border-radius: var(--radius);
   padding: 0.6rem 0.7rem;
+}
+
+.settings-save-bar {
+  position: sticky;
+  bottom: 0.75rem;
+  z-index: 2;
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.75rem;
+  border: 1px solid rgba(22, 160, 133, 0.18);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(8px);
+}
+
+.settings-save-bar span {
+  color: var(--gray-600);
+  font-size: 0.78rem;
+  line-height: 1.4;
 }
 
 .settings-helper {

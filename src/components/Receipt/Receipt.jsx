@@ -30,6 +30,7 @@ const Receipt = forwardRef(({ saleData, pharmacyInfo, mode = 'preview' }, ref) =
   const printedAt = formatAppDateTime(new Date(), { hour12: true })
   const receiptQrValue = encodeURIComponent(`${saleNumber || 'receipt'}-${netAmount || 0}`)
   const receiptQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=110x110&data=${receiptQrValue}`
+  const pharmacySlogan = String(pharmacyInfo?.slogan || '').trim()
 
   return (
     <div ref={ref} className={`receipt-container receipt-${mode}-mode`}>
@@ -41,7 +42,7 @@ const Receipt = forwardRef(({ saleData, pharmacyInfo, mode = 'preview' }, ref) =
             </div>
             <div>
               <h2>{pharmacyInfo?.pharmacy_name || 'HealthFlow Pharmacy'}</h2>
-              {pharmacyInfo?.slogan && <p>{pharmacyInfo.slogan}</p>}
+              {pharmacySlogan && <p>{pharmacySlogan}</p>}
             </div>
           </div>
           <div className="brand-thanks">
@@ -56,7 +57,7 @@ const Receipt = forwardRef(({ saleData, pharmacyInfo, mode = 'preview' }, ref) =
             <img src={pharmacyInfo.logo_url} alt="" className="receipt-pharmacy-logo" />
           )}
           <h3>{pharmacyInfo?.pharmacy_name || 'HealthFlow Pharmacy'}</h3>
-          {pharmacyInfo?.slogan && <p className="receipt-slogan">{pharmacyInfo.slogan}</p>}
+          {pharmacySlogan && <p className="receipt-slogan">{pharmacySlogan}</p>}
           <div className="pharmacy-contact">
             {pharmacyInfo?.address && (
               <span>

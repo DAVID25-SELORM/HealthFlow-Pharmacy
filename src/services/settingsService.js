@@ -21,19 +21,59 @@ const invokeStaffAdmin = async (payload) => {
   return data
 }
 
-export const getPharmacySettings = async () => {
+const getCurrentOrganizationId = async () => {
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser()
+
+  if (userError) {
+    throw userError
+  }
+
+  if (!user?.id) {
+    return null
+  }
+
   const { data, error } = await supabase
-    .from('pharmacy_settings')
-    .select('*')
-    .order('updated_at', { ascending: false })
-    .limit(1)
-    .single()
+    .from('users')
+    .select('organization_id')
+    .eq('id', user.id)
+    .maybeSingle()
 
   if (error) {
     throw error
   }
 
-  return data
+  return normalizeText(data?.organization_id) || null
+}
+
+export const getPharmacySettings = async () => {
+  const organizationId = await getCurrentOrganizationId()
+  let query = supabase
+    .from('pharmacy_settings')
+    .select('*')
+    .order('updated_at', { ascending: false })
+    .limit(1)
+
+  if (organizationId) {
+    query = query.eq('organization_id', organizationId)
+  }
+
+  let { data, error } = await query.maybeSingle()
+
+  if (error) {
+    throw error
+  }
+
+  if (data) {
+    return data
+  }
+
+  return createSettings({
+    organizationId,
+    pharmacyName: 'HealthFlow Pharmacy',
+  })
 }
 
 export const updatePharmacySettings = async (id, settings) => {
@@ -55,12 +95,25 @@ export const updatePharmacySettings = async (id, settings) => {
     updated_at: new Date().toISOString(),
   }
 
-  const { data, error } = await supabase
+  const organizationId = await getCurrentOrganizationId()
+  if (organizationId) {
+    payload.organization_id = organizationId
+  }
+
+  let query = supabase
     .from('pharmacy_settings')
     .update(payload)
-    .eq('id', id)
     .select()
-    .single()
+
+  if (id) {
+    query = query.eq('id', id)
+  } else if (organizationId) {
+    query = query.eq('organization_id', organizationId)
+  } else {
+    throw new Error('Unable to determine which pharmacy settings to update.')
+  }
+
+  const { data, error } = await query.single()
 
   if (error) {
     throw error
