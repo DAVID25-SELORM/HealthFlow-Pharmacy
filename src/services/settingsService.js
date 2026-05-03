@@ -89,6 +89,7 @@ export const updatePharmacySettings = async (id, settings) => {
     license_number: normalizeText(settings.licenseNumber) || null,
     tax_rate: Number.parseFloat(settings.taxRate || 0),
     currency: normalizeText(settings.currency) || 'GHS',
+    default_markup_percent: Number.parseFloat(settings.defaultMarkupPercent || 0),
     low_stock_threshold: Number.parseFloat(settings.lowStockThreshold || 10),
     expiry_alert_days: Number.parseInt(settings.expiryAlertDays || 30, 10),
     receipt_footer: normalizeText(settings.receiptFooter) || null,
@@ -127,6 +128,7 @@ export const updatePharmacySettings = async (id, settings) => {
     details: {
       pharmacy_name: data.pharmacy_name,
       currency: data.currency,
+      default_markup_percent: data.default_markup_percent,
       low_stock_threshold: data.low_stock_threshold,
       expiry_alert_days: data.expiry_alert_days,
     },
@@ -149,6 +151,9 @@ export const createSettings = async (settings) => {
     license_number: normalizeText(settings.license_number ?? settings.licenseNumber) || null,
     tax_rate: Number.parseFloat(settings.tax_rate ?? settings.taxRate ?? 0),
     currency: normalizeText(settings.currency) || 'GHS',
+    default_markup_percent: Number.parseFloat(
+      settings.default_markup_percent ?? settings.defaultMarkupPercent ?? 0
+    ),
     low_stock_threshold: Number.parseFloat(
       settings.low_stock_threshold ?? settings.lowStockThreshold ?? 10
     ),
@@ -184,6 +189,7 @@ export const createSettings = async (settings) => {
     details: {
       pharmacy_name: data.pharmacy_name,
       currency: data.currency,
+      default_markup_percent: data.default_markup_percent,
       low_stock_threshold: data.low_stock_threshold,
       expiry_alert_days: data.expiry_alert_days,
     },

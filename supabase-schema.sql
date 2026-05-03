@@ -211,6 +211,7 @@ CREATE TABLE pharmacy_settings (
     license_number VARCHAR(100),
     tax_rate DECIMAL(5, 2) DEFAULT 0,
     currency VARCHAR(10) DEFAULT 'GHS',
+    default_markup_percent DECIMAL(7, 2) DEFAULT 0 CHECK (default_markup_percent >= 0),
     low_stock_threshold DECIMAL(10, 2) DEFAULT 10,
     expiry_alert_days INTEGER DEFAULT 30,
     receipt_footer TEXT,

@@ -16,6 +16,7 @@ import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
 import { useTenant } from '../context/TenantContext'
 import { formatAppDate } from '../utils/date'
+import { getPharmacySettings } from '../services/settingsService'
 import './Inventory.css'
 
 const emptyDrugForm = {
@@ -23,6 +24,7 @@ const emptyDrugForm = {
   batchNumber: '',
   expiryDate: '',
   quantity: '',
+  costPrice: '',
   price: '',
   supplier: '',
 }
@@ -40,9 +42,22 @@ const mapDrugToForm = (drug) => ({
   batchNumber: drug.batch_number || drug.batch || '',
   expiryDate: drug.expiry_date || drug.expiry || '',
   quantity: String(drug.quantity ?? ''),
+  costPrice: String(drug.cost_price ?? ''),
   price: String(drug.price ?? ''),
   supplier: drug.supplier || '',
 })
+
+const getMarkupPercent = (value) => {
+  const number = Number.parseFloat(value)
+  return Number.isFinite(number) && number > 0 ? number : 0
+}
+
+const calculateMarkedUpPrice = (costPrice, markupPercent) => {
+  const cost = Number.parseFloat(costPrice)
+  if (!Number.isFinite(cost) || cost <= 0) return ''
+
+  return (cost * (1 + getMarkupPercent(markupPercent) / 100)).toFixed(2)
+}
 
 const Inventory = () => {
   const { role } = useAuth()
@@ -61,6 +76,8 @@ const Inventory = () => {
   const [highlightedDrugId, setHighlightedDrugId] = useState('')
   const [error, setError] = useState('')
   const [formData, setFormData] = useState(emptyDrugForm)
+  const [defaultMarkupPercent, setDefaultMarkupPercent] = useState(0)
+  const [priceEditedManually, setPriceEditedManually] = useState(false)
   const [importFile, setImportFile] = useState(null)
   const [importPreview, setImportPreview] = useState(null)
 
@@ -109,6 +126,14 @@ const Inventory = () => {
 
       const data = await getAllDrugs({ includeCatalog: true })
       setDrugs(data)
+
+      try {
+        const settings = await getPharmacySettings()
+        setDefaultMarkupPercent(getMarkupPercent(settings?.default_markup_percent))
+      } catch (settingsError) {
+        console.warn('Unable to load default markup setting:', settingsError)
+        setDefaultMarkupPercent(0)
+      }
     } catch (error) {
       console.error('Error loading drugs:', error)
       setError(error.message || 'Unable to load inventory right now.')
@@ -215,6 +240,7 @@ const Inventory = () => {
   const resetForm = () => {
     setEditingDrugId(null)
     setFormData(emptyDrugForm)
+    setPriceEditedManually(false)
   }
 
   const closeDrugModal = () => {
@@ -230,7 +256,23 @@ const Inventory = () => {
   const openEditModal = (drug) => {
     setEditingDrugId(drug.id)
     setFormData(mapDrugToForm(drug))
+    setPriceEditedManually(false)
     setShowDrugModal(true)
+  }
+
+  const handleCostPriceChange = (value) => {
+    setFormData((current) => ({
+      ...current,
+      costPrice: value,
+      price: priceEditedManually
+        ? current.price
+        : calculateMarkedUpPrice(value, defaultMarkupPercent),
+    }))
+  }
+
+  const handleSellingPriceChange = (value) => {
+    setPriceEditedManually(true)
+    setFormData((current) => ({ ...current, price: value }))
   }
 
   const handleSubmit = async (event) => {
@@ -684,7 +726,18 @@ const Inventory = () => {
 
               <div className="form-row">
                 <div className="form-group">
-                  <label>Price (GHS) *</label>
+                  <label>Cost Price (GHS)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="0.00"
+                    min="0"
+                    value={formData.costPrice}
+                    onChange={(event) => handleCostPriceChange(event.target.value)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Selling Price (GHS) *</label>
                   <input
                     type="number"
                     step="0.01"
@@ -692,9 +745,12 @@ const Inventory = () => {
                     required
                     min="0"
                     value={formData.price}
-                    onChange={(event) => setFormData({ ...formData, price: event.target.value })}
+                    onChange={(event) => handleSellingPriceChange(event.target.value)}
                   />
                 </div>
+              </div>
+
+              <div className="form-row">
                 <div className="form-group">
                   <label>Supplier</label>
                   <input

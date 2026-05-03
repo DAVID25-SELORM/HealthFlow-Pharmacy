@@ -33,6 +33,7 @@ const toForm = (row) => ({
   licenseNumber: row?.license_number || '',
   taxRate: row?.tax_rate ?? 0,
   currency: row?.currency || 'GHS',
+  defaultMarkupPercent: row?.default_markup_percent ?? 0,
   lowStockThreshold: row?.low_stock_threshold ?? 10,
   expiryAlertDays: row?.expiry_alert_days ?? 30,
   receiptFooter: row?.receipt_footer || '',
@@ -449,6 +450,22 @@ const Settings = () => {
                 }
                 disabled={!isAdmin}
               />
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="Default markup (%)"
+                value={formData.defaultMarkupPercent}
+                onChange={(event) =>
+                  setFormData({
+                    ...formData,
+                    defaultMarkupPercent: event.target.value,
+                  })
+                }
+                disabled={!isAdmin}
+              />
+            </div>
+            <div className="settings-form-row">
               <input
                 type="number"
                 placeholder="Low stock threshold"
