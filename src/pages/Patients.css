@@ -49,6 +49,13 @@
   outline: none;
 }
 
+.search-status {
+  color: var(--gray-500);
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .patients-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));

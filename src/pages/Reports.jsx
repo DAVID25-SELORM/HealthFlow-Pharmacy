@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { FileText, Download, Calendar, RefreshCcw } from 'lucide-react'
+import { FileText, Download, Calendar, RefreshCcw, Search } from 'lucide-react'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { downloadCsv, getReportBundle } from '../services/reportsService'
 import { useTenant } from '../context/TenantContext'
@@ -12,6 +12,12 @@ const firstOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1
   .toISOString()
   .split('T')[0]
 
+const getSaleInsuranceName = (sale) =>
+  sale.patients?.insurance_provider ||
+  sale.receipt_data?.insurance?.provider ||
+  sale.insurance_provider ||
+  ''
+
 const Reports = () => {
   const { tierLimits } = useTenant()
   const [startDate, setStartDate] = useState(firstOfMonth)
@@ -19,6 +25,7 @@ const Reports = () => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [bundle, setBundle] = useState(null)
+  const [insuranceFilter, setInsuranceFilter] = useState('')
 
   const cards = useMemo(() => {
     if (!bundle) {
@@ -80,6 +87,7 @@ const Reports = () => {
           saleNumber: sale.sale_number,
           saleDate: sale.sale_date,
           patientName: sale.patients?.full_name || 'Walk-in Customer',
+          insuranceName: getSaleInsuranceName(sale),
           paymentMethod: sale.payment_method,
           drugName: item.drug_name || item.drugs?.name || 'Unknown Item',
           quantity,
@@ -89,6 +97,30 @@ const Reports = () => {
       })
     )
   }, [bundle])
+
+  const insuranceOptions = useMemo(() => {
+    const options = new Set()
+
+    soldItemRows.forEach((item) => {
+      if (item.insuranceName) {
+        options.add(item.insuranceName)
+      }
+    })
+
+    return [...options].sort((left, right) => left.localeCompare(right))
+  }, [soldItemRows])
+
+  const filteredSoldItemRows = useMemo(() => {
+    const term = insuranceFilter.trim().toLowerCase()
+
+    if (!term) {
+      return soldItemRows
+    }
+
+    return soldItemRows.filter((item) =>
+      item.insuranceName.toLowerCase().includes(term)
+    )
+  }, [insuranceFilter, soldItemRows])
 
   const runReports = async (rangeStart, rangeEnd) => {
     try {
@@ -170,14 +202,15 @@ const Reports = () => {
   }
 
   const exportSoldItemsCsv = () => {
-    if (!soldItemRows.length) {
+    if (!filteredSoldItemRows.length) {
       return
     }
 
-    const rows = soldItemRows.map((item) => [
+    const rows = filteredSoldItemRows.map((item) => [
       item.saleNumber,
       item.saleDate,
       item.patientName,
+      item.insuranceName || 'No insurance',
       item.drugName,
       item.quantity,
       item.unitPrice,
@@ -187,7 +220,7 @@ const Reports = () => {
 
     downloadCsv(
       'sold-items-report.csv',
-      ['Sale Number', 'Sale Date', 'Patient', 'Drug', 'Quantity', 'Unit Price', 'Line Total', 'Payment Method'],
+      ['Sale Number', 'Sale Date', 'Patient', 'Insurance', 'Drug', 'Quantity', 'Unit Price', 'Line Total', 'Payment Method'],
       rows
     )
   }
@@ -233,7 +266,7 @@ const Reports = () => {
           <Download size={16} />
           Export Sales CSV
         </button>
-        <button className="btn btn-outline" onClick={exportSoldItemsCsv} disabled={!soldItemRows.length}>
+        <button className="btn btn-outline" onClick={exportSoldItemsCsv} disabled={!filteredSoldItemRows.length}>
           <Download size={16} />
           Export Sold Items CSV
         </button>
@@ -276,10 +309,37 @@ const Reports = () => {
               <h3>Sold Items Ledger</h3>
               <p>Every dispensed item in the selected date range, linked back to the sale record.</p>
             </div>
-            <span className="report-table-count">{soldItemRows.length} rows</span>
+            <span className="report-table-count">{filteredSoldItemRows.length} rows</span>
           </div>
 
-          {soldItemRows.length === 0 ? (
+          <div className="report-ledger-filters">
+            <label className="report-filter-field">
+              <Search size={16} />
+              <input
+                type="search"
+                list="report-insurance-options"
+                placeholder="Filter by insurance type or name"
+                value={insuranceFilter}
+                onChange={(event) => setInsuranceFilter(event.target.value)}
+              />
+            </label>
+            <datalist id="report-insurance-options">
+              {insuranceOptions.map((option) => (
+                <option key={option} value={option} />
+              ))}
+            </datalist>
+            {insuranceFilter && (
+              <button
+                type="button"
+                className="btn btn-outline btn-sm"
+                onClick={() => setInsuranceFilter('')}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+
+          {filteredSoldItemRows.length === 0 ? (
             <div className="report-empty-state">No sold items found for the selected date range.</div>
           ) : (
             <div className="report-table-wrap">
@@ -289,6 +349,7 @@ const Reports = () => {
                     <th>Sale No.</th>
                     <th>Date</th>
                     <th>Patient</th>
+                    <th>Insurance</th>
                     <th>Item</th>
                     <th>Qty</th>
                     <th>Unit Price (GHS)</th>
@@ -297,11 +358,12 @@ const Reports = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {soldItemRows.map((item) => (
+                  {filteredSoldItemRows.map((item) => (
                     <tr key={item.id}>
                       <td>{item.saleNumber}</td>
                       <td>{formatAppDateTime(item.saleDate)}</td>
                       <td>{item.patientName}</td>
+                      <td>{item.insuranceName || 'No insurance'}</td>
                       <td>{item.drugName}</td>
                       <td>{item.quantity}</td>
                       <td>{item.unitPrice.toFixed(2)}</td>

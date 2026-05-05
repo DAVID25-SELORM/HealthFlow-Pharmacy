@@ -26,7 +26,7 @@ const SALES_SELECT_FIELDS = `
     *,
     drugs (name)
   ),
-  patients (full_name)
+  patients (full_name, insurance_provider, insurance_id)
 `
 
 type TierAccessAction =

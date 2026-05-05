@@ -12,6 +12,8 @@ import { isSupabaseConfigured } from '../lib/supabase'
 import { formatAppDate, formatAppDateTime } from '../utils/date'
 import './Patients.css'
 
+const SEARCH_DEBOUNCE_MS = 350
+
 const initialForm = {
   fullName: '',
   phone: '',
@@ -29,6 +31,7 @@ const Patients = () => {
   const [patients, setPatients] = useState([])
   const [searchTerm, setSearchTerm] = useState('')
   const [loading, setLoading] = useState(true)
+  const [searchLoading, setSearchLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [selectedPatient, setSelectedPatient] = useState(null)
@@ -37,10 +40,24 @@ const Patients = () => {
   const [formData, setFormData] = useState(initialForm)
   const patientsRequestRef = useRef(0)
   const historyRequestRef = useRef(0)
+  const skipFirstSearchEffectRef = useRef(true)
 
   useEffect(() => {
     void loadPatients()
   }, [])
+
+  useEffect(() => {
+    if (skipFirstSearchEffectRef.current) {
+      skipFirstSearchEffectRef.current = false
+      return undefined
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      void loadPatients(searchTerm, { showFullPageLoader: false })
+    }, SEARCH_DEBOUNCE_MS)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [searchTerm])
 
   const enrichPatients = async (records) => {
     const enriched = await Promise.all(
@@ -61,12 +78,17 @@ const Patients = () => {
     return enriched
   }
 
-  const loadPatients = async (term = '') => {
+  const loadPatients = async (term = '', options = {}) => {
+    const { showFullPageLoader = true } = options
     const requestId = patientsRequestRef.current + 1
     patientsRequestRef.current = requestId
 
     try {
-      setLoading(true)
+      if (showFullPageLoader) {
+        setLoading(true)
+      } else {
+        setSearchLoading(true)
+      }
       if (patientsRequestRef.current === requestId) {
         setError('')
       }
@@ -97,14 +119,13 @@ const Patients = () => {
     } finally {
       if (patientsRequestRef.current === requestId) {
         setLoading(false)
+        setSearchLoading(false)
       }
     }
   }
 
   const handleSearch = (event) => {
-    const term = event.target.value
-    setSearchTerm(term)
-    void loadPatients(term)
+    setSearchTerm(event.target.value)
   }
 
   const handleSubmit = async (event) => {
@@ -205,10 +226,11 @@ const Patients = () => {
         <Search size={18} />
         <input
           type="text"
-          placeholder="Search patients by name, phone, or email..."
+          placeholder="Search patients by name, phone, email, or insurance..."
           value={searchTerm}
           onChange={handleSearch}
         />
+        {searchLoading && <span className="search-status">Searching...</span>}
       </div>
 
       <div className="patients-grid">
