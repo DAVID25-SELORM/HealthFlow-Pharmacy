@@ -113,11 +113,13 @@ export const getReceivables = async (branchId = null) => {
       claim_number,
       claim_status,
       insurance_provider,
+      insurance_id,
       total_amount,
       approval_amount,
       service_date,
       patient_name,
       submitted_by,
+      patients (phone, insurance_id),
       claim_payments (id, paid_amount, payment_date)
     `)
     .eq('claim_status', 'approved')

@@ -107,6 +107,41 @@
   background: rgba(255, 255, 255, 0.2);
 }
 
+.claims-search,
+.claim-patient-search {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  border: 1px solid var(--gray-300);
+  border-radius: var(--radius);
+  background: white;
+  min-width: 0;
+}
+
+.claims-search {
+  margin-bottom: 1rem;
+  padding: 0.75rem 0.9rem;
+}
+
+.claim-patient-search {
+  padding: 0.65rem 0.75rem;
+}
+
+.claims-search svg,
+.claim-patient-search svg {
+  color: var(--gray-500);
+  flex-shrink: 0;
+}
+
+.claims-search input,
+.claim-patient-search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  font: inherit;
+}
+
 /* Claims Table */
 .claims-table {
   width: 100%;
@@ -139,6 +174,13 @@
   font-weight: 700;
   color: var(--primary);
   font-family: monospace;
+}
+
+.claim-insurance-id {
+  display: block;
+  color: var(--gray-500);
+  font-size: 0.78rem;
+  margin-top: 0.2rem;
 }
 
 .drugs-cell {

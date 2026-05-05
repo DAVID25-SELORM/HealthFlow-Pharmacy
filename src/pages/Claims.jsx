@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Plus, Download, Eye, CheckCircle2, XCircle } from 'lucide-react'
+import { Plus, Download, Eye, CheckCircle2, XCircle, Search } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { dispatchHealthflowDataChanged } from '../lib/appEvents'
 import {
@@ -30,6 +30,17 @@ const blankForm = {
 
 const validClaimTabs = ['all', 'pending', 'approved', 'rejected']
 
+const matchesSearch = (values, term) => {
+  const normalizedTerm = term.trim().toLowerCase()
+  if (!normalizedTerm) {
+    return true
+  }
+
+  return values
+    .filter(Boolean)
+    .some((value) => String(value).toLowerCase().includes(normalizedTerm))
+}
+
 const Claims = () => {
   const [searchParams, setSearchParams] = useSearchParams()
   const { user, role, canManageClaims } = useAuth()
@@ -52,6 +63,8 @@ const Claims = () => {
   const [selectedQty, setSelectedQty] = useState('1')
   const [claimToReject, setClaimToReject] = useState(null)
   const [rejectionReason, setRejectionReason] = useState('')
+  const [claimSearchTerm, setClaimSearchTerm] = useState('')
+  const [patientLookupTerm, setPatientLookupTerm] = useState('')
 
   useEffect(() => {
     if (!tierLimits.hasClaims) {
@@ -120,6 +133,23 @@ const Claims = () => {
   const selectedPatient = useMemo(
     () => patients.find((patient) => patient.id === formData.patientId),
     [patients, formData.patientId]
+  )
+
+  const filteredPatientsForClaim = useMemo(
+    () =>
+      patients.filter((patient) =>
+        matchesSearch(
+          [
+            patient.full_name,
+            patient.phone,
+            patient.email,
+            patient.insurance_provider,
+            patient.insurance_id,
+          ],
+          patientLookupTerm
+        )
+      ),
+    [patients, patientLookupTerm]
   )
 
   const claimTotal = useMemo(
@@ -284,12 +314,24 @@ const Claims = () => {
   }
 
   const filteredClaims = useMemo(() => {
-    if (activeTab === 'all') {
-      return claims
-    }
+    const tabbedClaims =
+      activeTab === 'all'
+        ? claims
+        : claims.filter((claim) => claim.claim_status === activeTab)
 
-    return claims.filter((claim) => claim.claim_status === activeTab)
-  }, [claims, activeTab])
+    return tabbedClaims.filter((claim) =>
+      matchesSearch(
+        [
+          claim.claim_number,
+          claim.patient_name,
+          claim.insurance_provider,
+          claim.insurance_id,
+          claim.patients?.phone,
+        ],
+        claimSearchTerm
+      )
+    )
+  }, [claims, activeTab, claimSearchTerm])
 
   const getStatusClass = (status) => {
     const classes = {
@@ -361,6 +403,16 @@ const Claims = () => {
         ))}
       </div>
 
+      <label className="claims-search">
+        <Search size={18} />
+        <input
+          type="search"
+          placeholder="Search claims by patient, phone, insurer, claim no., or insurance no."
+          value={claimSearchTerm}
+          onChange={(event) => setClaimSearchTerm(event.target.value)}
+        />
+      </label>
+
       <div className="table-container">
         <table className="claims-table">
           <thead>
@@ -386,7 +438,10 @@ const Claims = () => {
                 <tr key={claim.id}>
                   <td className="claim-id">{claim.claim_number}</td>
                   <td>{claim.patient_name}</td>
-                  <td>{claim.insurance_provider}</td>
+                  <td>
+                    {claim.insurance_provider}
+                    <span className="claim-insurance-id">{claim.insurance_id}</span>
+                  </td>
                   <td className="amount-cell">
                     GHS {Number.parseFloat(claim.total_amount || 0).toFixed(2)}
                   </td>
@@ -458,6 +513,15 @@ const Claims = () => {
               <div className="form-row">
                 <div className="form-group">
                   <label>Patient *</label>
+                  <label className="claim-patient-search">
+                    <Search size={16} />
+                    <input
+                      type="search"
+                      placeholder="Find by name, phone, insurer, or insurance no."
+                      value={patientLookupTerm}
+                      onChange={(event) => setPatientLookupTerm(event.target.value)}
+                    />
+                  </label>
                   <select
                     required
                     value={formData.patientId}
@@ -474,9 +538,10 @@ const Claims = () => {
                     }}
                   >
                     <option value="">Select patient</option>
-                    {patients.map((patient) => (
+                    {filteredPatientsForClaim.map((patient) => (
                       <option key={patient.id} value={patient.id}>
-                        {patient.full_name} ({patient.phone})
+                        {patient.full_name} ({patient.phone || 'No phone'})
+                        {patient.insurance_id ? ` - ${patient.insurance_id}` : ''}
                       </option>
                     ))}
                   </select>

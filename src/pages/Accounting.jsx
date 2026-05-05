@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   DollarSign, TrendingDown, RefreshCcw,
   Plus, X, Calendar, Download, BookOpen, ReceiptText,
-  AlertTriangle, Clock, Play
+  AlertTriangle, Clock, Play, Search
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
@@ -135,6 +135,7 @@ const Accounting = () => {
   const [payingClaim, setPayingClaim]       = useState(null)
   const [paymentForm, setPaymentForm]       = useState(blankPaymentForm)
   const [savingPayment, setSavingPayment]   = useState(false)
+  const [receivablesSearchTerm, setReceivablesSearchTerm] = useState('')
 
   // â”€â”€ load functions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -452,6 +453,26 @@ const Accounting = () => {
     () => expenses.filter((e) => e.status === 'posted').reduce((sum, e) => sum + Number(e.amount), 0),
     [expenses]
   )
+
+  const filteredReceivables = useMemo(() => {
+    const term = receivablesSearchTerm.trim().toLowerCase()
+    if (!term) {
+      return receivables
+    }
+
+    return receivables.filter((receivable) =>
+      [
+        receivable.claim_number,
+        receivable.patient_name,
+        receivable.insurance_provider,
+        receivable.insurance_id,
+        receivable.patients?.phone,
+        receivable.patients?.insurance_id,
+      ]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(term))
+    )
+  }, [receivables, receivablesSearchTerm])
 
   // â”€â”€ render helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -919,11 +940,21 @@ const Accounting = () => {
         </div>
       )}
 
-      {receivables.length === 0 && !loading && (
+      <label className="acc-search-field">
+        <Search size={16} />
+        <input
+          type="search"
+          placeholder="Search receivables by patient, phone, insurer, claim no., or insurance no."
+          value={receivablesSearchTerm}
+          onChange={(event) => setReceivablesSearchTerm(event.target.value)}
+        />
+      </label>
+
+      {filteredReceivables.length === 0 && !loading && (
         <p className="acc-empty">No outstanding receivables. All approved claims are fully paid.</p>
       )}
 
-      {receivables.length > 0 && (
+      {filteredReceivables.length > 0 && (
         <div className="acc-table-wrap">
           <table className="acc-table">
             <thead>
@@ -940,11 +971,16 @@ const Accounting = () => {
               </tr>
             </thead>
             <tbody>
-              {receivables.map((r) => (
+              {filteredReceivables.map((r) => (
                 <tr key={r.id}>
                   <td><code>{r.claim_number}</code></td>
                   <td>{r.patient_name}</td>
-                  <td>{r.insurance_provider}</td>
+                  <td>
+                    {r.insurance_provider}
+                    <span className="acc-muted-block">
+                      {r.insurance_id || r.patients?.insurance_id || 'No insurance no.'}
+                    </span>
+                  </td>
                   <td>{r.service_date}</td>
                   <td className="amount-cell">{Number(r.approved_amount).toFixed(2)}</td>
                   <td className="amount-cell">{r.totalPaid.toFixed(2)}</td>

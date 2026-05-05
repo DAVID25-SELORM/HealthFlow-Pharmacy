@@ -24,7 +24,13 @@ export const getPatientById = async (id) => {
     .from('patients')
     .select(`
       *,
-      sales (*),
+      sales (
+        *,
+        sale_items (
+          *,
+          drugs (name)
+        )
+      ),
       claims (*)
     `)
     .eq('id', id)

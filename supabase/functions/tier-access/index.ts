@@ -26,7 +26,7 @@ const SALES_SELECT_FIELDS = `
     *,
     drugs (name)
   ),
-  patients (full_name, insurance_provider, insurance_id)
+  patients (full_name, phone, insurance_provider, insurance_id)
 `
 
 type TierAccessAction =
@@ -701,14 +701,7 @@ const getClaims = async (
     query = query.lte('service_date', String(filters.endDate))
   }
 
-  if (searchTerm) {
-    const escaped = searchTerm.replace(/[%_,]/g, '')
-    query = query.or(
-      `patient_name.ilike.%${escaped}%,claim_number.ilike.%${escaped}%,insurance_id.ilike.%${escaped}%`
-    )
-  }
-
-  if (limit > 0) {
+  if (limit > 0 && !searchTerm) {
     query = query.limit(limit)
   }
 
@@ -717,7 +710,26 @@ const getClaims = async (
     throw error
   }
 
-  return data || []
+  const rows = data || []
+  if (!searchTerm) {
+    return rows
+  }
+
+  const term = searchTerm.toLowerCase()
+  const filteredRows = rows.filter((claim) => {
+    const patient = claim.patients as Record<string, unknown> | null
+    return [
+      claim.patient_name,
+      claim.claim_number,
+      claim.insurance_provider,
+      claim.insurance_id,
+      patient?.phone,
+    ]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(term))
+  })
+
+  return limit > 0 ? filteredRows.slice(0, limit) : filteredRows
 }
 
 const getClaimsStatistics = async (

@@ -14,6 +14,23 @@ import './Patients.css'
 
 const SEARCH_DEBOUNCE_MS = 350
 
+const getSaleMedicineSummary = (sale) => {
+  const names = (sale.sale_items || [])
+    .map((item) => item.drug_name || item.drugs?.name)
+    .filter(Boolean)
+
+  if (!names.length) {
+    return sale.sale_number || 'Sale'
+  }
+
+  const [firstName, ...otherNames] = names
+  if (!otherNames.length) {
+    return firstName
+  }
+
+  return `${firstName} + ${otherNames.length} more`
+}
+
 const initialForm = {
   fullName: '',
   phone: '',
@@ -496,7 +513,10 @@ const Patients = () => {
                           {selectedPatient.sales.map((sale) => (
                             <div key={sale.id} className="patient-history-row">
                               <div>
-                                <strong>{sale.sale_number}</strong>
+                                <strong>{getSaleMedicineSummary(sale)}</strong>
+                                <span className="patient-history-sale-number">
+                                  {sale.sale_number}
+                                </span>
                                 <p>{formatAppDateTime(sale.sale_date)}</p>
                               </div>
                               <div className="patient-history-meta">

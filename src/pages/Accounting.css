@@ -262,6 +262,38 @@
   flex-wrap: wrap;
 }
 
+.acc-search-field {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0 0 1rem;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid var(--gray-300);
+  border-radius: var(--radius);
+  background: white;
+  min-width: 0;
+}
+
+.acc-search-field svg {
+  color: var(--gray-500);
+  flex-shrink: 0;
+}
+
+.acc-search-field input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  font: inherit;
+}
+
+.acc-muted-block {
+  display: block;
+  margin-top: 0.2rem;
+  color: var(--gray-500);
+  font-size: 0.78rem;
+}
+
 .acc-summary-pill {
   background: white;
   border: 1px solid var(--gray-200);

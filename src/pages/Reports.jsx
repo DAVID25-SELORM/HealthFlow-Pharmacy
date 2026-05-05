@@ -12,11 +12,36 @@ const firstOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1
   .toISOString()
   .split('T')[0]
 
-const getSaleInsuranceName = (sale) =>
-  sale.patients?.insurance_provider ||
-  sale.receipt_data?.insurance?.provider ||
-  sale.insurance_provider ||
-  ''
+const getNoteValue = (notes, label) => {
+  if (!notes) {
+    return ''
+  }
+
+  const match = String(notes).match(new RegExp(`^${label}:\\s*(.+)$`, 'im'))
+  return match?.[1]?.trim() || ''
+}
+
+const getSaleInsuranceDetails = (sale) => {
+  const provider =
+    sale.patients?.insurance_provider ||
+    sale.receipt_data?.insurance?.provider ||
+    sale.receipt_data?.insuranceDetails?.provider ||
+    sale.insurance_provider ||
+    getNoteValue(sale.notes, 'Provider')
+
+  const insuranceId =
+    sale.patients?.insurance_id ||
+    sale.receipt_data?.insurance?.insuranceId ||
+    sale.receipt_data?.insuranceDetails?.insuranceId ||
+    sale.insurance_id ||
+    getNoteValue(sale.notes, 'Insurance ID')
+
+  return {
+    provider: provider || '',
+    insuranceId: insuranceId || '',
+    patientPhone: sale.patients?.phone || sale.receipt_data?.patient?.phone || '',
+  }
+}
 
 const Reports = () => {
   const { tierLimits } = useTenant()
@@ -82,12 +107,16 @@ const Reports = () => {
         const unitPrice = Number.parseFloat(item.unit_price || 0)
         const totalPrice = Number.parseFloat(item.total_price || 0)
 
+        const insuranceDetails = getSaleInsuranceDetails(sale)
+
         return {
           id: item.id,
           saleNumber: sale.sale_number,
           saleDate: sale.sale_date,
           patientName: sale.patients?.full_name || 'Walk-in Customer',
-          insuranceName: getSaleInsuranceName(sale),
+          patientPhone: insuranceDetails.patientPhone,
+          insuranceName: insuranceDetails.provider,
+          insuranceId: insuranceDetails.insuranceId,
           paymentMethod: sale.payment_method,
           drugName: item.drug_name || item.drugs?.name || 'Unknown Item',
           quantity,
@@ -105,6 +134,9 @@ const Reports = () => {
       if (item.insuranceName) {
         options.add(item.insuranceName)
       }
+      if (item.insuranceId) {
+        options.add(item.insuranceId)
+      }
     })
 
     return [...options].sort((left, right) => left.localeCompare(right))
@@ -117,9 +149,18 @@ const Reports = () => {
       return soldItemRows
     }
 
-    return soldItemRows.filter((item) =>
-      item.insuranceName.toLowerCase().includes(term)
-    )
+    return soldItemRows.filter((item) => {
+      const searchable = [
+        item.insuranceName,
+        item.insuranceId,
+        item.patientPhone,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+
+      return searchable.includes(term)
+    })
   }, [insuranceFilter, soldItemRows])
 
   const runReports = async (rangeStart, rangeEnd) => {
@@ -210,7 +251,9 @@ const Reports = () => {
       item.saleNumber,
       item.saleDate,
       item.patientName,
-      item.insuranceName || 'No insurance',
+      item.insuranceId
+        ? `${item.insuranceName || 'No insurance'} (${item.insuranceId})`
+        : item.insuranceName || 'No insurance',
       item.drugName,
       item.quantity,
       item.unitPrice,
@@ -318,7 +361,7 @@ const Reports = () => {
               <input
                 type="search"
                 list="report-insurance-options"
-                placeholder="Filter by insurance type or name"
+                placeholder="Filter by insurance type, name, phone, or insurance no."
                 value={insuranceFilter}
                 onChange={(event) => setInsuranceFilter(event.target.value)}
               />
@@ -363,7 +406,10 @@ const Reports = () => {
                       <td>{item.saleNumber}</td>
                       <td>{formatAppDateTime(item.saleDate)}</td>
                       <td>{item.patientName}</td>
-                      <td>{item.insuranceName || 'No insurance'}</td>
+                      <td>
+                        {item.insuranceName || 'No insurance'}
+                        {item.insuranceId ? ` (${item.insuranceId})` : ''}
+                      </td>
                       <td>{item.drugName}</td>
                       <td>{item.quantity}</td>
                       <td>{item.unitPrice.toFixed(2)}</td>

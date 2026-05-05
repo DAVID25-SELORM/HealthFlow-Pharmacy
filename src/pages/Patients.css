@@ -293,9 +293,26 @@
   min-width: 0;
 }
 
+.patient-history-row > div:first-child {
+  min-width: 0;
+}
+
 .patient-history-row strong,
 .patient-history-row p {
   margin: 0;
+}
+
+.patient-history-row strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.patient-history-sale-number {
+  display: block;
+  margin-top: 0.2rem;
+  color: var(--gray-500);
+  font-size: 0.78rem;
+  font-weight: 600;
 }
 
 .patient-history-row p {
