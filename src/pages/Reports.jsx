@@ -21,9 +21,22 @@ const getNoteValue = (notes, label) => {
   return match?.[1]?.trim() || ''
 }
 
-const getSaleInsuranceDetails = (sale) => {
+const normalizeSearchValue = (value) => String(value || '').toLowerCase()
+const compactSearchValue = (value) => normalizeSearchValue(value).replace(/[^a-z0-9]/g, '')
+
+const searchIncludes = (value, term) => {
+  if (!value) {
+    return false
+  }
+
+  return normalizeSearchValue(value).includes(term) ||
+    compactSearchValue(value).includes(compactSearchValue(term))
+}
+
+const getSaleInsuranceDetails = (sale, linkedPatient = null) => {
   const provider =
     sale.patients?.insurance_provider ||
+    linkedPatient?.insurance_provider ||
     sale.receipt_data?.insurance?.provider ||
     sale.receipt_data?.insuranceDetails?.provider ||
     sale.insurance_provider ||
@@ -31,6 +44,7 @@ const getSaleInsuranceDetails = (sale) => {
 
   const insuranceId =
     sale.patients?.insurance_id ||
+    linkedPatient?.insurance_id ||
     sale.receipt_data?.insurance?.insuranceId ||
     sale.receipt_data?.insuranceDetails?.insuranceId ||
     sale.insurance_id ||
@@ -39,7 +53,7 @@ const getSaleInsuranceDetails = (sale) => {
   return {
     provider: provider || '',
     insuranceId: insuranceId || '',
-    patientPhone: sale.patients?.phone || sale.receipt_data?.patient?.phone || '',
+    patientPhone: sale.patients?.phone || linkedPatient?.phone || sale.receipt_data?.patient?.phone || '',
   }
 }
 
@@ -101,19 +115,22 @@ const Reports = () => {
       return []
     }
 
+    const patientById = new Map((bundle.patients || []).map((patient) => [patient.id, patient]))
+
     return bundle.sales.flatMap((sale) =>
       (sale.sale_items || []).map((item) => {
         const quantity = Number.parseFloat(item.quantity || 0)
         const unitPrice = Number.parseFloat(item.unit_price || 0)
         const totalPrice = Number.parseFloat(item.total_price || 0)
 
-        const insuranceDetails = getSaleInsuranceDetails(sale)
+        const linkedPatient = patientById.get(sale.patient_id) || null
+        const insuranceDetails = getSaleInsuranceDetails(sale, linkedPatient)
 
         return {
           id: item.id,
           saleNumber: sale.sale_number,
           saleDate: sale.sale_date,
-          patientName: sale.patients?.full_name || 'Walk-in Customer',
+          patientName: sale.patients?.full_name || linkedPatient?.full_name || 'Walk-in Customer',
           patientPhone: insuranceDetails.patientPhone,
           insuranceName: insuranceDetails.provider,
           insuranceId: insuranceDetails.insuranceId,
@@ -137,6 +154,9 @@ const Reports = () => {
       if (item.insuranceId) {
         options.add(item.insuranceId)
       }
+      if (item.patientPhone) {
+        options.add(item.patientPhone)
+      }
     })
 
     return [...options].sort((left, right) => left.localeCompare(right))
@@ -150,16 +170,11 @@ const Reports = () => {
     }
 
     return soldItemRows.filter((item) => {
-      const searchable = [
+      return [
         item.insuranceName,
         item.insuranceId,
         item.patientPhone,
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-
-      return searchable.includes(term)
+      ].some((value) => searchIncludes(value, term))
     })
   }, [insuranceFilter, soldItemRows])
 
