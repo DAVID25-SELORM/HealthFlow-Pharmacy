@@ -18,6 +18,10 @@ import './Sales.css'
 
 const POS_DRUG_SEARCH_LIMIT = 30
 const RECENT_SALES_LIMIT = 8
+const POS_PATIENT_SEARCH_LIMIT = 8
+
+const formatPatientOption = (patient) =>
+  [patient?.full_name, patient?.phone ? `(${patient.phone})` : null].filter(Boolean).join(' ')
 
 const mergePharmacySettingsWithOrganization = (settings, organization) => ({
   ...(settings || {}),
@@ -43,6 +47,9 @@ const Sales = () => {
   const [cart, setCart] = useState([])
   const [searchTerm, setSearchTerm] = useState('')
   const [patientId, setPatientId] = useState('')
+  const [patientSearchTerm, setPatientSearchTerm] = useState('')
+  const [isPatientSearchOpen, setIsPatientSearchOpen] = useState(false)
+  const [highlightedPatientIndex, setHighlightedPatientIndex] = useState(0)
   const [paymentMethod, setPaymentMethod] = useState('cash')
   const [received, setReceived] = useState('')
   const [loading, setLoading] = useState(true)
@@ -75,6 +82,22 @@ const Sales = () => {
       : null
   const effectiveBranchId = profile?.branch_id || assignedBranch?.id || shiftBranchId
   const canChooseShiftBranch = isAdmin && !profile?.branch_id && activeBranches.length > 1
+  const selectedPatientForSale = useMemo(
+    () => patients.find((patient) => patient.id === patientId) || null,
+    [patients, patientId]
+  )
+  const filteredPatients = useMemo(() => {
+    const term = patientSearchTerm.trim().toLowerCase()
+    const matches = term
+      ? patients.filter((patient) =>
+          [patient.full_name, patient.phone, patient.email]
+            .filter(Boolean)
+            .some((value) => String(value).toLowerCase().includes(term))
+        )
+      : patients
+
+    return matches.slice(0, POS_PATIENT_SEARCH_LIMIT)
+  }, [patientSearchTerm, patients])
 
   useEffect(() => {
     let cancelled = false
@@ -134,6 +157,10 @@ const Sales = () => {
       cancelled = true
     }
   }, [canProcessRefund, organization, profile?.branch_id, role, user?.id])
+
+  useEffect(() => {
+    setHighlightedPatientIndex(0)
+  }, [patientSearchTerm])
 
   useEffect(() => {
     if (loading || !isSupabaseConfigured()) {
@@ -203,6 +230,52 @@ const Sales = () => {
   const handleSearchChange = (value) => {
     setSearchTerm(value)
     syncSearchParam(value)
+  }
+
+  const selectPatientForSale = (patient) => {
+    if (!patient) {
+      setPatientId('')
+      setPatientSearchTerm('')
+      setIsPatientSearchOpen(false)
+      return
+    }
+
+    setPatientId(patient.id)
+    setPatientSearchTerm(formatPatientOption(patient))
+    setIsPatientSearchOpen(false)
+  }
+
+  const handlePatientSearchChange = (value) => {
+    setPatientSearchTerm(value)
+    setPatientId('')
+    setIsPatientSearchOpen(true)
+  }
+
+  const handlePatientSearchKeyDown = (event) => {
+    if (event.key === 'Escape') {
+      setIsPatientSearchOpen(false)
+      return
+    }
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      setIsPatientSearchOpen(true)
+      setHighlightedPatientIndex((current) =>
+        Math.min(current + 1, Math.max(filteredPatients.length - 1, 0))
+      )
+      return
+    }
+
+    if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      setHighlightedPatientIndex((current) => Math.max(current - 1, 0))
+      return
+    }
+
+    if (event.key === 'Enter' && isPatientSearchOpen) {
+      event.preventDefault()
+      selectPatientForSale(filteredPatients[highlightedPatientIndex] || null)
+    }
   }
 
   const cartCount = useMemo(
@@ -388,7 +461,6 @@ const Sales = () => {
       })
 
       // Prepare receipt data with full sale details
-      const selectedPatient = patientId ? patients.find((p) => p.id === patientId) : null
       const receiptData = {
         saleNumber: saleResult.saleNumber,
         saleDate: new Date().toISOString(),
@@ -404,7 +476,7 @@ const Sales = () => {
         paymentMethod: paymentMethod,
         amountPaid: paymentMethod === 'cash' ? amountPaid : total,
         change: paymentMethod === 'cash' ? calculateChange() : 0,
-        patient: selectedPatient,
+        patient: selectedPatientForSale,
         soldBy: displayName || user?.email,
       }
       setLastSale(receiptData)
@@ -415,7 +487,7 @@ const Sales = () => {
       setSearchTerm('')
       syncSearchParam('')
       setReceived('')
-      setPatientId('')
+      selectPatientForSale(null)
       
       notify('Sale completed successfully.', 'success')
       
@@ -729,18 +801,81 @@ const Sales = () => {
 
           <div className="patient-select-card">
             <label htmlFor="sale-patient">Linked Patient (optional)</label>
-            <select
-              id="sale-patient"
-              value={patientId}
-              onChange={(e) => setPatientId(e.target.value)}
+            <div
+              className="patient-combobox"
+              onBlur={() => {
+                window.setTimeout(() => setIsPatientSearchOpen(false), 120)
+              }}
             >
-              <option value="">Walk-in customer</option>
-              {patients.map((patient) => (
-                <option key={patient.id} value={patient.id}>
-                  {patient.full_name} ({patient.phone})
-                </option>
-              ))}
-            </select>
+              <input
+                id="sale-patient"
+                type="text"
+                role="combobox"
+                aria-autocomplete="list"
+                aria-expanded={isPatientSearchOpen}
+                aria-controls="sale-patient-options"
+                aria-activedescendant={
+                  filteredPatients[highlightedPatientIndex]
+                    ? `sale-patient-option-${filteredPatients[highlightedPatientIndex].id}`
+                    : undefined
+                }
+                value={patientSearchTerm}
+                placeholder="Walk-in customer"
+                onFocus={() => setIsPatientSearchOpen(true)}
+                onChange={(event) => handlePatientSearchChange(event.target.value)}
+                onKeyDown={handlePatientSearchKeyDown}
+              />
+              {patientId && (
+                <button
+                  type="button"
+                  className="patient-clear-btn"
+                  onClick={() => selectPatientForSale(null)}
+                  aria-label="Clear linked patient"
+                  title="Clear linked patient"
+                >
+                  <X size={16} />
+                </button>
+              )}
+              {isPatientSearchOpen && (
+                <div id="sale-patient-options" className="patient-options" role="listbox">
+                  <button
+                    type="button"
+                    className={`patient-option ${!patientId && !patientSearchTerm ? 'selected' : ''}`}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => selectPatientForSale(null)}
+                    role="option"
+                    aria-selected={!patientId}
+                  >
+                    <strong>Walk-in customer</strong>
+                    <span>No patient record linked</span>
+                  </button>
+                  {filteredPatients.length ? (
+                    filteredPatients.map((patient, index) => (
+                      <button
+                        key={patient.id}
+                        id={`sale-patient-option-${patient.id}`}
+                        type="button"
+                        className={`patient-option ${
+                          patient.id === patientId || index === highlightedPatientIndex
+                            ? 'selected'
+                            : ''
+                        }`}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onMouseEnter={() => setHighlightedPatientIndex(index)}
+                        onClick={() => selectPatientForSale(patient)}
+                        role="option"
+                        aria-selected={patient.id === patientId}
+                      >
+                        <strong>{patient.full_name}</strong>
+                        <span>{[patient.phone, patient.email].filter(Boolean).join(' | ')}</span>
+                      </button>
+                    ))
+                  ) : (
+                    <div className="patient-option-empty">No matching patients found.</div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="quick-add">

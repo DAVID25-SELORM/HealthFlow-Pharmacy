@@ -83,10 +83,94 @@
   color: var(--gray-700);
 }
 
-.patient-select-card select {
+.patient-combobox {
+  position: relative;
+}
+
+.patient-combobox input {
+  width: 100%;
   border: 1px solid var(--gray-300);
   border-radius: var(--radius);
+  padding: 0.65rem 2.45rem 0.65rem 0.75rem;
+  font-size: 1rem;
+}
+
+.patient-combobox input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 4px rgba(22, 160, 133, 0.14);
+}
+
+.patient-clear-btn {
+  position: absolute;
+  top: 50%;
+  right: 0.55rem;
+  transform: translateY(-50%);
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--gray-500);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.patient-clear-btn:hover {
+  background: var(--gray-100);
+  color: var(--gray-800);
+}
+
+.patient-options {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 0.35rem);
+  left: 0;
+  right: 0;
+  max-height: 280px;
+  overflow-y: auto;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  background: white;
+  box-shadow: var(--shadow-lg);
+  padding: 0.35rem;
+}
+
+.patient-option {
+  width: 100%;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--gray-800);
   padding: 0.65rem 0.75rem;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  cursor: pointer;
+}
+
+.patient-option strong {
+  font-size: 0.95rem;
+  line-height: 1.25;
+}
+
+.patient-option span,
+.patient-option-empty {
+  color: var(--gray-500);
+  font-size: 0.82rem;
+}
+
+.patient-option:hover,
+.patient-option.selected {
+  background: rgba(22, 160, 133, 0.1);
+  color: var(--gray-900);
+}
+
+.patient-option-empty {
+  padding: 0.75rem;
 }
 
 .drug-results-header {

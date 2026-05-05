@@ -62,6 +62,12 @@ const Probe = () => {
   )
 }
 
+const StateRecorder = ({ states }) => {
+  const { displayName, isAuthenticated, loading } = useAuth()
+  states.push(loading ? 'loading' : isAuthenticated ? `signed-in:${displayName}` : 'signed-out')
+  return null
+}
+
 describe('AuthProvider', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -246,6 +252,60 @@ describe('AuthProvider', () => {
       expect(screen.getByTestId('auth-state')).toHaveTextContent('signed-in:Admin User')
     })
     expect(mocks.clearSupabaseStoredSession).not.toHaveBeenCalled()
+  })
+
+  it('does not remount protected content for a background token refresh', async () => {
+    const states = []
+    const validUser = {
+      id: 'admin-user',
+      email: 'admin@example.com',
+      app_metadata: { role: 'admin' },
+      user_metadata: { full_name: 'Admin User' },
+    }
+    const validSession = {
+      access_token: 'fresh-token',
+      user: validUser,
+    }
+
+    mocks.auth.getSession.mockResolvedValue({
+      data: { session: validSession },
+      error: null,
+    })
+    mocks.auth.getUser.mockResolvedValue({
+      data: { user: validUser },
+      error: null,
+    })
+    mocks.queryBuilder.maybeSingle.mockResolvedValue({
+      data: {
+        id: validUser.id,
+        email: validUser.email,
+        full_name: 'Admin User',
+        role: 'admin',
+        is_active: true,
+      },
+      error: null,
+    })
+
+    render(
+      <AuthProvider>
+        <StateRecorder states={states} />
+      </AuthProvider>
+    )
+
+    await waitFor(() => {
+      expect(states.at(-1)).toBe('signed-in:Admin User')
+    })
+    states.length = 0
+
+    await act(async () => {
+      mocks.getAuthStateChangeCallback()?.('TOKEN_REFRESHED', validSession)
+      await Promise.resolve()
+    })
+
+    await waitFor(() => {
+      expect(states.at(-1)).toBe('signed-in:Admin User')
+    })
+    expect(states).not.toContain('loading')
   })
 
   it('revalidates a stray sign-out event before clearing the current session', async () => {

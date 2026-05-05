@@ -262,8 +262,16 @@ export const AuthProvider = ({ children }) => {
       let activeOrganization = null
       let activeBranch = null
       const isRecoverySession = isPasswordRecoveryEvent(event)
+      const hasExistingSession = Boolean(sessionRef.current?.access_token)
+      const isSwitchingUsers =
+        Boolean(activeUser?.id && sessionRef.current?.user?.id) &&
+        activeUser.id !== sessionRef.current.user.id
+      const shouldShowBlockingLoading =
+        !hasExistingSession || isSwitchingUsers || event === 'BOOTSTRAP'
 
-      setLoadingForCurrentResolution(resolutionId, true)
+      if (shouldShowBlockingLoading) {
+        setLoadingForCurrentResolution(resolutionId, true)
+      }
 
       if (activeUser && isRecoverySession) {
         if (isCurrentResolution(resolutionId)) {
