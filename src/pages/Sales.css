@@ -163,6 +163,11 @@
   font-size: 0.82rem;
 }
 
+.patient-option-insurance {
+  color: var(--primary) !important;
+  font-weight: 600;
+}
+
 .patient-option:hover,
 .patient-option.selected {
   background: rgba(22, 160, 133, 0.1);

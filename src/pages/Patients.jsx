@@ -236,6 +236,10 @@ const Patients = () => {
                     <Mail size={14} />
                     {patient.email || 'No email provided'}
                   </span>
+                  <span className="insurance-info">
+                    Insurance: {patient.insurance_provider || 'Not provided'}
+                    {patient.insurance_id ? ` (${patient.insurance_id})` : ''}
+                  </span>
                 </div>
               </div>
               <div className="patient-stats">

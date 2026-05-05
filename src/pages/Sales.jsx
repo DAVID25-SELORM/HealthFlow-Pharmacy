@@ -96,7 +96,13 @@ const Sales = () => {
     const term = patientSearchTerm.trim().toLowerCase()
     const matches = term
       ? patients.filter((patient) =>
-          [patient.full_name, patient.phone, patient.email]
+          [
+            patient.full_name,
+            patient.phone,
+            patient.email,
+            patient.insurance_provider,
+            patient.insurance_id,
+          ]
             .filter(Boolean)
             .some((value) => String(value).toLowerCase().includes(term))
         )
@@ -1068,6 +1074,12 @@ const Sales = () => {
                       >
                         <strong>{patient.full_name}</strong>
                         <span>{[patient.phone, patient.email].filter(Boolean).join(' | ')}</span>
+                        {(patient.insurance_provider || patient.insurance_id) && (
+                          <span className="patient-option-insurance">
+                            Insurance: {patient.insurance_provider || 'No provider'}
+                            {patient.insurance_id ? ` (${patient.insurance_id})` : ''}
+                          </span>
+                        )}
                       </button>
                     ))
                   ) : (

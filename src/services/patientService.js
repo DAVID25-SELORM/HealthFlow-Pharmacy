@@ -124,7 +124,9 @@ export const searchPatients = async (searchTerm) => {
   const { data, error } = await supabase
     .from('patients')
     .select('*')
-    .or(`full_name.ilike.%${term}%,phone.ilike.%${term}%,email.ilike.%${term}%`)
+    .or(
+      `full_name.ilike.%${term}%,phone.ilike.%${term}%,email.ilike.%${term}%,insurance_provider.ilike.%${term}%,insurance_id.ilike.%${term}%`
+    )
     .order('full_name')
   
   if (error) throw error
