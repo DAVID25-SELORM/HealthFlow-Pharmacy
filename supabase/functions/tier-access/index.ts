@@ -53,6 +53,7 @@ type RequesterProfile = {
 }
 
 const INVENTORY_ROLES = ['admin', 'pharmacist', 'technician', 'procurement', 'branch_manager']
+const SALES_ROLES = ['admin', 'pharmacist', 'assistant', 'cashier', 'technician', 'branch_manager']
 const CLAIMS_ROLES = ['admin', 'pharmacist', 'billing']
 const REPORT_ROLES = ['admin', 'pharmacist', 'branch_manager']
 
@@ -301,6 +302,16 @@ const requireInventoryAccess = (requesterProfile: RequesterProfile, message: str
 
 const requireClaimsAccess = (requesterProfile: RequesterProfile, message: string) => {
   if (!CLAIMS_ROLES.includes(requesterProfile.role) && !requesterProfile.can_manage_claims) {
+    throw new Error(message)
+  }
+}
+
+const requireClaimCreateAccess = (requesterProfile: RequesterProfile, message: string) => {
+  if (
+    !CLAIMS_ROLES.includes(requesterProfile.role) &&
+    !requesterProfile.can_manage_claims &&
+    !SALES_ROLES.includes(requesterProfile.role)
+  ) {
     throw new Error(message)
   }
 }
@@ -743,7 +754,7 @@ const createClaim = async (
   organizationId: string,
   payload: Record<string, unknown>
 ) => {
-  requireClaimsAccess(requesterProfile, 'Only claims staff can create claims.')
+  requireClaimCreateAccess(requesterProfile, 'Only sales or claims staff can create claims.')
 
   const claimData = (payload.claimData || {}) as Record<string, unknown>
   const itemsInput = Array.isArray(claimData.items) ? claimData.items : []
@@ -1243,6 +1254,11 @@ Deno.serve(async (request) => {
       action === 'reject_claim'
     ) {
       await requireTierFeature(adminClient, organizationId, 'claims')
+
+      if (action === 'create_claim') {
+        return json(await createClaim(adminClient, requesterProfile, organizationId, payload))
+      }
+
       requireClaimsAccess(requesterProfile, 'Only claims staff can access claims.')
 
       if (action === 'get_claims') {
@@ -1261,10 +1277,6 @@ Deno.serve(async (request) => {
 
       if (action === 'get_claims_statistics') {
         return json(await getClaimsStatistics(adminClient, organizationId))
-      }
-
-      if (action === 'create_claim') {
-        return json(await createClaim(adminClient, requesterProfile, organizationId, payload))
       }
 
       const claimId = assertRequiredText(payload.id, 'Claim id')

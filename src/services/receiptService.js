@@ -215,12 +215,26 @@ export const generateReceiptPDF = (saleData, pharmacyInfo) => {
   doc.text('PAYMENT DETAILS', margin, y)
   y += 7
   doc.setDrawColor(184, 222, 211)
-  doc.roundedRect(margin, y, pageWidth - margin * 2, 34, 2, 2)
+  const paymentDetailsHeight = saleData.insuranceDetails
+    ? saleData.insuranceDetails.patientTopUpMethod
+      ? 78
+      : 70
+    : 34
+  doc.roundedRect(margin, y, pageWidth - margin * 2, paymentDetailsHeight, 2, 2)
   labelValue('Payment Mode', saleData.paymentMethod?.toUpperCase() || 'N/A', margin + 34, y + 11, 62)
   labelValue('Amount Paid', money(saleData.amountPaid), margin + 34, y + 20, 62)
   labelValue('Change', money(saleData.change || 0), margin + 34, y + 29, 62)
+  if (saleData.insuranceDetails) {
+    labelValue('Insurance Provider', saleData.insuranceDetails.provider || 'N/A', margin + 34, y + 38, 62)
+    labelValue('Insurance ID', saleData.insuranceDetails.insuranceId || 'N/A', margin + 34, y + 47, 62)
+    labelValue('Insurance Covered', money(saleData.insuranceDetails.coveredAmount || 0), margin + 34, y + 56, 62)
+    labelValue('Patient Top-Up', money(saleData.insuranceDetails.patientTopUp || 0), margin + 34, y + 65, 62)
+    if (saleData.insuranceDetails.patientTopUpMethod) {
+      labelValue('Top-Up Paid By', saleData.insuranceDetails.patientTopUpMethod.toUpperCase(), margin + 34, y + 74, 62)
+    }
+  }
 
-  y += 48
+  y += paymentDetailsHeight + 14
   doc.setDrawColor(196, 211, 207)
   doc.setLineDashPattern([2, 2], 0)
   doc.line(margin, y, pageWidth - margin, y)

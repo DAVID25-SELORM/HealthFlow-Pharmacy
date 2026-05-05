@@ -3,6 +3,7 @@ import { assertNonNegativeNumber, toNumber } from '../utils/validation'
 import { tryLogAuditEvent } from './auditService'
 import { getUserBranchIdsByUserIds } from './branchService'
 import { recordCashbookMovementIfSessionOpen } from './cashbookService'
+import { addShiftMovement } from './shiftService'
 
 /**
  * Sales Service
@@ -10,6 +11,7 @@ import { recordCashbookMovementIfSessionOpen } from './cashbookService'
  */
 
 const VALID_PAYMENT_METHODS = ['cash', 'momo', 'insurance', 'card']
+const VALID_PATIENT_TOP_UP_METHODS = ['cash', 'momo', 'card']
 const assertPositiveSaleQuantity = (value, label) => {
   const parsed = assertNonNegativeNumber(value, label)
   if (parsed <= 0) {
@@ -24,6 +26,19 @@ const normalizePaymentMethod = (value) => {
 
   if (!VALID_PAYMENT_METHODS.includes(normalized)) {
     throw new Error(`Payment method must be one of: ${VALID_PAYMENT_METHODS.join(', ')}.`)
+  }
+
+  return normalized
+}
+
+const normalizePatientTopUpMethod = (value) => {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (!normalized) {
+    return null
+  }
+
+  if (!VALID_PATIENT_TOP_UP_METHODS.includes(normalized)) {
+    throw new Error(`Patient top-up method must be one of: ${VALID_PATIENT_TOP_UP_METHODS.join(', ')}.`)
   }
 
   return normalized
@@ -106,6 +121,78 @@ const syncCashSaleToCashbook = async ({ saleId, saleNumber, paymentMethod, soldB
   }
 }
 
+const syncInsuranceCashTopUpToCashbook = async ({
+  saleId,
+  saleNumber,
+  topUpPaymentMethod,
+  soldBy,
+  topUpAmount,
+}) => {
+  if (topUpPaymentMethod !== 'cash' || !soldBy || Number(topUpAmount) <= 0) {
+    return
+  }
+
+  const branchMap = await getUserBranchIdsByUserIds([soldBy])
+  const branchId = branchMap[soldBy]
+  if (!branchId) {
+    return
+  }
+
+  try {
+    await recordCashbookMovementIfSessionOpen({
+      branchId,
+      entryType: 'sale_cash',
+      sourceType: 'sale',
+      sourceId: saleId,
+      amount: topUpAmount,
+      direction: 'in',
+      description: `Insurance cash top-up ${saleNumber}`,
+      createdBy: soldBy,
+    })
+  } catch (cashbookError) {
+    console.warn('Unable to sync insurance cash top-up to cashbook:', cashbookError)
+  }
+}
+
+const syncInsuranceCashTopUpToShift = async ({
+  shiftId,
+  organizationId,
+  branchId,
+  saleId,
+  saleNumber,
+  topUpPaymentMethod,
+  soldBy,
+  topUpAmount,
+}) => {
+  if (
+    topUpPaymentMethod !== 'cash' ||
+    !shiftId ||
+    !organizationId ||
+    !branchId ||
+    !soldBy ||
+    Number(topUpAmount) <= 0
+  ) {
+    return
+  }
+
+  try {
+    await addShiftMovement({
+      shiftId,
+      organizationId,
+      branchId,
+      movementType: 'sale_cash',
+      sourceType: 'sale',
+      sourceId: saleId,
+      amount: topUpAmount,
+      direction: 'in',
+      description: `Insurance cash top-up ${saleNumber}`,
+      createdBy: soldBy,
+    })
+  } catch (shiftError) {
+    console.warn('Unable to sync insurance cash top-up to shift:', shiftError)
+  }
+}
+
 // Create new sale
 export const createSale = async (saleData) => {
   try {
@@ -118,6 +205,17 @@ export const createSale = async (saleData) => {
     }
 
     const totals = buildValidatedSaleTotals(saleData)
+    const insuranceCoveredAmount = assertNonNegativeNumber(
+      saleData.insuranceCoveredAmount ?? 0,
+      'Insurance covered amount'
+    )
+    const insuranceTopUpAmount = assertNonNegativeNumber(
+      saleData.insuranceTopUpAmount ?? 0,
+      'Insurance top-up amount'
+    )
+    const insuranceTopUpPaymentMethod = normalizePatientTopUpMethod(
+      saleData.insuranceTopUpPaymentMethod
+    )
 
     const { data: txData, error: txError } = await supabase.rpc('create_sale_transaction', {
       sale_payload: {
@@ -131,6 +229,9 @@ export const createSale = async (saleData) => {
         sale_date: new Date().toISOString(),
         discount: totals.discount,
         shift_id: saleData.shiftId,
+        insurance_covered_amount: insuranceCoveredAmount,
+        insurance_top_up_amount: insuranceTopUpAmount,
+        insurance_top_up_payment_method: insuranceTopUpPaymentMethod,
         items: saleData.items.map((item) => ({
           drugId: item.drugId,
           name: item.name,
@@ -169,6 +270,25 @@ export const createSale = async (saleData) => {
       paymentMethod: totals.paymentMethod,
       soldBy: saleData.soldBy,
       netAmount: totals.netAmount,
+    })
+
+    await syncInsuranceCashTopUpToCashbook({
+      saleId: txPayload.sale_id,
+      saleNumber: txPayload.sale_number,
+      topUpPaymentMethod: insuranceTopUpPaymentMethod,
+      soldBy: saleData.soldBy,
+      topUpAmount: insuranceTopUpAmount,
+    })
+
+    await syncInsuranceCashTopUpToShift({
+      shiftId: saleData.shiftId,
+      organizationId: saleData.organizationId,
+      branchId: saleData.branchId,
+      saleId: txPayload.sale_id,
+      saleNumber: txPayload.sale_number,
+      topUpPaymentMethod: insuranceTopUpPaymentMethod,
+      soldBy: saleData.soldBy,
+      topUpAmount: insuranceTopUpAmount,
     })
 
     return {

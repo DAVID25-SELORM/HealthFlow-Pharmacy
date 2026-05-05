@@ -135,6 +135,73 @@ describe('salesService.createSale', () => {
     expect(mocks.from).not.toHaveBeenCalled()
     expect(mocks.tryLogAuditEvent).not.toHaveBeenCalled()
   })
+
+  it('syncs cash patient top-ups from insurance sales to shift and cashbook', async () => {
+    mocks.rpc.mockResolvedValue({
+      data: {
+        sale_id: 'sale-ins-1',
+        sale_number: 'SAL-000555',
+      },
+      error: null,
+    })
+    mocks.getUserBranchIdsByUserIds.mockResolvedValue({
+      'user-1': 'branch-1',
+    })
+
+    await expect(
+      createSale({
+        items: [{ drugId: 'drug-1', name: 'Insured Drug', quantity: 1, price: 100 }],
+        patientId: 'patient-1',
+        paymentMethod: 'insurance',
+        soldBy: 'user-1',
+        shiftId: 'shift-1',
+        organizationId: 'org-1',
+        branchId: 'branch-1',
+        insuranceCoveredAmount: 70,
+        insuranceTopUpAmount: 30,
+        insuranceTopUpPaymentMethod: 'cash',
+      })
+    ).resolves.toEqual({
+      sale: {
+        id: 'sale-ins-1',
+        sale_number: 'SAL-000555',
+      },
+      saleNumber: 'SAL-000555',
+    })
+
+    expect(mocks.rpc).toHaveBeenCalledWith('create_sale_transaction', {
+      sale_payload: expect.objectContaining({
+        payment_method: 'insurance',
+        insurance_covered_amount: 70,
+        insurance_top_up_amount: 30,
+        insurance_top_up_payment_method: 'cash',
+      }),
+    })
+    expect(mocks.recordCashbookMovementIfSessionOpen).toHaveBeenCalledWith(
+      expect.objectContaining({
+        branchId: 'branch-1',
+        entryType: 'sale_cash',
+        sourceType: 'sale',
+        sourceId: 'sale-ins-1',
+        amount: 30,
+        direction: 'in',
+        description: 'Insurance cash top-up SAL-000555',
+      })
+    )
+    expect(mocks.addShiftMovement).toHaveBeenCalledWith(
+      expect.objectContaining({
+        shiftId: 'shift-1',
+        organizationId: 'org-1',
+        branchId: 'branch-1',
+        movementType: 'sale_cash',
+        sourceType: 'sale',
+        sourceId: 'sale-ins-1',
+        amount: 30,
+        direction: 'in',
+        description: 'Insurance cash top-up SAL-000555',
+      })
+    )
+  })
 })
 
 describe('salesService.refundSale', () => {

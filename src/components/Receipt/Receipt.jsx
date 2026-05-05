@@ -15,6 +15,7 @@ const Receipt = forwardRef(({ saleData, pharmacyInfo, mode = 'preview' }, ref) =
     amountPaid,
     change,
     patient,
+    insuranceDetails,
     soldBy,
   } = saleData
 
@@ -198,6 +199,32 @@ const Receipt = forwardRef(({ saleData, pharmacyInfo, mode = 'preview' }, ref) =
                 <span>Change</span>
                 <strong>{formatCurrency(change || 0)}</strong>
               </div>
+              {insuranceDetails && (
+                <>
+                  <div>
+                    <span>Insurance Provider</span>
+                    <strong>{insuranceDetails.provider}</strong>
+                  </div>
+                  <div>
+                    <span>Insurance ID</span>
+                    <strong>{insuranceDetails.insuranceId}</strong>
+                  </div>
+                  <div>
+                    <span>Insurance Covered</span>
+                    <strong>{formatCurrency(insuranceDetails.coveredAmount || 0)}</strong>
+                  </div>
+                  <div>
+                    <span>Patient Top-Up</span>
+                    <strong>{formatCurrency(insuranceDetails.patientTopUp || 0)}</strong>
+                  </div>
+                  {insuranceDetails.patientTopUpMethod && (
+                    <div>
+                      <span>Top-Up Paid By</span>
+                      <strong>{insuranceDetails.patientTopUpMethod.toUpperCase()}</strong>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           </div>
         </section>

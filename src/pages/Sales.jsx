@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom'
 import { dispatchHealthflowDataChanged } from '../lib/appEvents'
 import { searchDrugs } from '../services/drugService'
 import { createSale, getRecentSales, getSaleById, refundSale } from '../services/salesService'
+import { createClaim } from '../services/claimsService'
 import { getAllPatients } from '../services/patientService'
 import { getPharmacySettings } from '../services/settingsService'
 import { getBranches } from '../services/branchService'
@@ -22,6 +23,8 @@ const POS_PATIENT_SEARCH_LIMIT = 8
 
 const formatPatientOption = (patient) =>
   [patient?.full_name, patient?.phone ? `(${patient.phone})` : null].filter(Boolean).join(' ')
+
+const formatAmountInput = (value) => Number(value || 0).toFixed(2)
 
 const mergePharmacySettingsWithOrganization = (settings, organization) => ({
   ...(settings || {}),
@@ -52,6 +55,9 @@ const Sales = () => {
   const [highlightedPatientIndex, setHighlightedPatientIndex] = useState(0)
   const [paymentMethod, setPaymentMethod] = useState('cash')
   const [received, setReceived] = useState('')
+  const [insuranceCoverage, setInsuranceCoverage] = useState('')
+  const [patientTopUp, setPatientTopUp] = useState('')
+  const [patientTopUpMethod, setPatientTopUpMethod] = useState('cash')
   const [loading, setLoading] = useState(true)
   const [processing, setProcessing] = useState(false)
   const [error, setError] = useState('')
@@ -418,6 +424,92 @@ const Sales = () => {
     if (method !== 'cash') {
       setReceived('')
     }
+
+    if (method !== 'insurance') {
+      setInsuranceCoverage('')
+      setPatientTopUp('')
+      setPatientTopUpMethod('cash')
+      return
+    }
+
+    const total = calculateTotal()
+    setInsuranceCoverage(formatAmountInput(total))
+    setPatientTopUp('0.00')
+    setPatientTopUpMethod('cash')
+  }
+
+  const handleInsuranceCoverageChange = (value) => {
+    const total = calculateTotal()
+    const coverage = Math.min(Math.max(Number.parseFloat(value) || 0, 0), total)
+    setInsuranceCoverage(value)
+    setPatientTopUp(formatAmountInput(Math.max(total - coverage, 0)))
+  }
+
+  const handlePatientTopUpChange = (value) => {
+    const total = calculateTotal()
+    const topUp = Math.min(Math.max(Number.parseFloat(value) || 0, 0), total)
+    setPatientTopUp(value)
+    setInsuranceCoverage(formatAmountInput(Math.max(total - topUp, 0)))
+  }
+
+  const buildInsuranceSaleNotes = ({ saleNumber, total, coverage, topUp, topUpMethod }) =>
+    [
+      `Insurance sale ${saleNumber || ''}`.trim(),
+      `Provider: ${selectedPatientForSale?.insurance_provider}`,
+      `Insurance ID: ${selectedPatientForSale?.insurance_id}`,
+      `Insurance covered: GHS ${coverage.toFixed(2)}`,
+      `Patient top-up: GHS ${topUp.toFixed(2)}`,
+      topUp > 0 ? `Top-up method: ${topUpMethod.toUpperCase()}` : null,
+    ]
+      .filter(Boolean)
+      .join('\n')
+
+  const buildInsuranceClaimItems = (soldItems, coverage, total) => {
+    if (coverage >= total - 0.01) {
+      return soldItems
+    }
+
+    const scale = total > 0 ? coverage / total : 0
+    return soldItems.map((item) => ({
+      ...item,
+      price: item.price * scale,
+    }))
+  }
+
+  const createInsuranceClaimForSale = async ({
+    saleNumber,
+    soldItems,
+    total,
+    coverage,
+    topUp,
+    topUpMethod,
+  }) => {
+    if (paymentMethod !== 'insurance' || coverage <= 0) {
+      return null
+    }
+
+    const claimItems = buildInsuranceClaimItems(soldItems, coverage, total)
+    return await createClaim({
+      patientId: selectedPatientForSale.id,
+      patientName: selectedPatientForSale.full_name,
+      insuranceProvider: selectedPatientForSale.insurance_provider,
+      insuranceId: selectedPatientForSale.insurance_id,
+      serviceDate: new Date().toISOString().split('T')[0],
+      notes: [
+        `Auto-created from POS sale ${saleNumber}.`,
+        coverage < total - 0.01
+          ? 'Claim item values were prorated to match the insurance-covered amount.'
+          : null,
+        `Sale total: GHS ${total.toFixed(2)}`,
+        `Insurance covered: GHS ${coverage.toFixed(2)}`,
+        `Patient top-up: GHS ${topUp.toFixed(2)}`,
+        topUp > 0 ? `Top-up method: ${topUpMethod.toUpperCase()}` : null,
+      ]
+        .filter(Boolean)
+        .join('\n'),
+      items: claimItems,
+      submittedBy: user?.id || null,
+    })
   }
 
   const handleCompleteSale = async () => {
@@ -432,10 +524,34 @@ const Sales = () => {
 
     const total = calculateTotal()
     const amountPaid = Number.parseFloat(received) || 0
+    const insuranceCoveredAmount = Number.parseFloat(insuranceCoverage) || 0
+    const patientTopUpAmount = Number.parseFloat(patientTopUp) || 0
 
     if (paymentMethod === 'cash' && amountPaid < total) {
       notify('Received amount must be at least the total for cash payments.', 'warning')
       return
+    }
+
+    if (paymentMethod === 'insurance') {
+      if (!selectedPatientForSale) {
+        notify('Select a patient before completing an insurance sale.', 'warning')
+        return
+      }
+
+      if (!selectedPatientForSale.insurance_provider || !selectedPatientForSale.insurance_id) {
+        notify('The selected patient does not have insurance details on file.', 'warning')
+        return
+      }
+
+      if (insuranceCoveredAmount <= 0) {
+        notify('Enter how much the insurance is covering.', 'warning')
+        return
+      }
+
+      if (Math.abs(insuranceCoveredAmount + patientTopUpAmount - total) > 0.01) {
+        notify('Insurance cover and patient top-up must add up to the sale total.', 'warning')
+        return
+      }
     }
 
     try {
@@ -454,6 +570,21 @@ const Sales = () => {
         paymentMethod,
         amountPaid: paymentMethod === 'cash' ? amountPaid : total,
         change: paymentMethod === 'cash' ? calculateChange() : 0,
+        notes:
+          paymentMethod === 'insurance'
+            ? buildInsuranceSaleNotes({
+                total,
+                coverage: insuranceCoveredAmount,
+                topUp: patientTopUpAmount,
+                topUpMethod: patientTopUpMethod,
+              })
+            : null,
+        insuranceCoveredAmount:
+          paymentMethod === 'insurance' ? insuranceCoveredAmount : null,
+        insuranceTopUpAmount:
+          paymentMethod === 'insurance' ? patientTopUpAmount : null,
+        insuranceTopUpPaymentMethod:
+          paymentMethod === 'insurance' && patientTopUpAmount > 0 ? patientTopUpMethod : null,
         soldBy: user?.id || null,
         shiftId: activeShift.id,
         organizationId: profile?.organization_id,
@@ -477,9 +608,41 @@ const Sales = () => {
         amountPaid: paymentMethod === 'cash' ? amountPaid : total,
         change: paymentMethod === 'cash' ? calculateChange() : 0,
         patient: selectedPatientForSale,
+        insuranceDetails:
+          paymentMethod === 'insurance'
+            ? {
+                provider: selectedPatientForSale.insurance_provider,
+                insuranceId: selectedPatientForSale.insurance_id,
+                coveredAmount: insuranceCoveredAmount,
+                patientTopUp: patientTopUpAmount,
+                patientTopUpMethod: patientTopUpAmount > 0 ? patientTopUpMethod : null,
+              }
+            : null,
         soldBy: displayName || user?.email,
       }
       setLastSale(receiptData)
+
+      let claimMessage = ''
+      if (paymentMethod === 'insurance') {
+        try {
+          const claimResult = await createInsuranceClaimForSale({
+            saleNumber: saleResult.saleNumber,
+            soldItems,
+            total,
+            coverage: insuranceCoveredAmount,
+            topUp: patientTopUpAmount,
+            topUpMethod: patientTopUpMethod,
+          })
+          if (claimResult?.claimNumber) {
+            claimMessage = ` Claim ${claimResult.claimNumber} was submitted.`
+          }
+        } catch (claimError) {
+          console.warn('Sale completed but insurance claim was not created:', claimError)
+          claimMessage = ` Claim was not auto-submitted: ${
+            claimError.message || 'submit it from Claims when ready.'
+          }`
+        }
+      }
 
       // Clear cart
       reduceSoldDrugQuantities(soldItems)
@@ -487,9 +650,12 @@ const Sales = () => {
       setSearchTerm('')
       syncSearchParam('')
       setReceived('')
+      setInsuranceCoverage('')
+      setPatientTopUp('')
+      setPatientTopUpMethod('cash')
       selectPatientForSale(null)
       
-      notify('Sale completed successfully.', 'success')
+      notify(`Sale completed successfully.${claimMessage}`, 'success')
       
       // Show receipt modal
       setShowReceipt(true)
@@ -644,6 +810,40 @@ const Sales = () => {
 
   const total = calculateTotal()
   const change = calculateChange()
+  const insuranceHasPatientDetails =
+    paymentMethod !== 'insurance' ||
+    Boolean(
+      selectedPatientForSale?.insurance_provider &&
+        selectedPatientForSale?.insurance_id
+    )
+
+  useEffect(() => {
+    if (paymentMethod !== 'insurance') {
+      return
+    }
+
+    if (!cart.length) {
+      if (insuranceCoverage || patientTopUp) {
+        setInsuranceCoverage('')
+        setPatientTopUp('')
+      }
+      return
+    }
+
+    const coverageInput = Number.parseFloat(insuranceCoverage)
+    const coverage = insuranceCoverage ? Math.min(Math.max(coverageInput || 0, 0), total) : total
+    const nextCoverage =
+      insuranceCoverage && coverage < total ? insuranceCoverage : formatAmountInput(coverage)
+    const nextTopUp = formatAmountInput(Math.max(total - coverage, 0))
+
+    if (insuranceCoverage !== nextCoverage) {
+      setInsuranceCoverage(nextCoverage)
+    }
+
+    if (patientTopUp !== nextTopUp) {
+      setPatientTopUp(nextTopUp)
+    }
+  }, [cart.length, paymentMethod, total])
 
   if (loading) {
     return (
@@ -1077,9 +1277,91 @@ const Sales = () => {
               </div>
             )}
 
+            {paymentMethod === 'insurance' && (
+              <div className="insurance-panel">
+                {selectedPatientForSale ? (
+                  <div
+                    className={`insurance-card ${
+                      insuranceHasPatientDetails ? '' : 'insurance-card-warning'
+                    }`}
+                  >
+                    <span className="insurance-label">Patient Insurance</span>
+                    <strong>
+                      {selectedPatientForSale.insurance_provider || 'No insurance provider saved'}
+                    </strong>
+                    <span>
+                      {selectedPatientForSale.insurance_id
+                        ? `ID: ${selectedPatientForSale.insurance_id}`
+                        : 'No insurance ID saved'}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="insurance-card insurance-card-warning">
+                    <span className="insurance-label">Patient Insurance</span>
+                    <strong>Select a linked patient</strong>
+                    <span>Insurance sales need a patient with insurance details.</span>
+                  </div>
+                )}
+
+                <div className="insurance-split-grid">
+                  <div className="cash-field cash-field-input">
+                    <label htmlFor="insurance-covered">Insurance Cover</label>
+                    <div className="cash-input-shell">
+                      <span className="cash-prefix">GHS</span>
+                      <input
+                        id="insurance-covered"
+                        type="number"
+                        value={insuranceCoverage}
+                        onChange={(event) => handleInsuranceCoverageChange(event.target.value)}
+                        step="0.01"
+                        min="0"
+                        max={total}
+                        placeholder="0.00"
+                      />
+                    </div>
+                  </div>
+                  <div className="cash-field cash-field-input">
+                    <label htmlFor="patient-top-up">Patient Top-Up</label>
+                    <div className="cash-input-shell">
+                      <span className="cash-prefix">GHS</span>
+                      <input
+                        id="patient-top-up"
+                        type="number"
+                        value={patientTopUp}
+                        onChange={(event) => handlePatientTopUpChange(event.target.value)}
+                        step="0.01"
+                        min="0"
+                        max={total}
+                        placeholder="0.00"
+                      />
+                    </div>
+                  </div>
+                  {Number.parseFloat(patientTopUp) > 0 && (
+                    <div className="cash-field cash-field-input insurance-top-up-method">
+                      <label htmlFor="patient-top-up-method">Top-Up Paid By</label>
+                      <select
+                        id="patient-top-up-method"
+                        value={patientTopUpMethod}
+                        onChange={(event) => setPatientTopUpMethod(event.target.value)}
+                      >
+                        <option value="cash">Cash</option>
+                        <option value="momo">Mobile Money</option>
+                        <option value="card">Card</option>
+                      </select>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             <button
               className="complete-sale-btn"
-              disabled={cart.length === 0 || processing || !activeShift}
+              disabled={
+                cart.length === 0 ||
+                processing ||
+                !activeShift ||
+                (paymentMethod === 'insurance' && !insuranceHasPatientDetails)
+              }
               onClick={handleCompleteSale}
             >
               {!activeShift ? 'Open Shift to Sell' : processing ? 'Completing Sale...' : 'Complete Sale'}
