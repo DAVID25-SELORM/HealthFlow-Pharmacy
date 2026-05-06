@@ -132,10 +132,8 @@ CREATE TABLE IF NOT EXISTS public.nhis_claims (
   status              TEXT          NOT NULL DEFAULT 'served'
                                     CHECK (status IN ('served', 'submitted', 'paid', 'rejected')),
   rejection_reason    TEXT,
-  -- Used for monthly batch exports (YYYY-MM)
-  submission_month    TEXT          GENERATED ALWAYS AS (
-                                      TO_CHAR(COALESCE(service_date_from, created_at::DATE), 'YYYY-MM')
-                                    ) STORED,
+  -- Used for monthly batch exports (YYYY-MM). Maintained by trigger below.
+  submission_month    TEXT,
   notes               TEXT,
   created_by          UUID          REFERENCES public.users(id),
   created_at          TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
@@ -144,6 +142,28 @@ CREATE TABLE IF NOT EXISTS public.nhis_claims (
 
 ALTER TABLE public.nhis_claims
   ALTER COLUMN organization_id SET DEFAULT public.user_organization_id();
+
+CREATE OR REPLACE FUNCTION public.set_nhis_claim_submission_month()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = public
+AS $$
+BEGIN
+  NEW.submission_month := SUBSTRING(COALESCE(NEW.service_date_from, CURRENT_DATE)::TEXT FROM 1 FOR 7);
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS set_nhis_claim_submission_month_trigger ON public.nhis_claims;
+CREATE TRIGGER set_nhis_claim_submission_month_trigger
+  BEFORE INSERT OR UPDATE OF service_date_from
+  ON public.nhis_claims
+  FOR EACH ROW
+  EXECUTE FUNCTION public.set_nhis_claim_submission_month();
+
+UPDATE public.nhis_claims
+SET submission_month = SUBSTRING(COALESCE(service_date_from, created_at::DATE, CURRENT_DATE)::TEXT FROM 1 FOR 7)
+WHERE submission_month IS NULL;
 
 CREATE INDEX IF NOT EXISTS idx_nhis_claims_org     ON public.nhis_claims(organization_id);
 CREATE INDEX IF NOT EXISTS idx_nhis_claims_patient ON public.nhis_claims(patient_id);
