@@ -8,7 +8,9 @@ import {
   ACTIVITY_LOG_ROLES,
   CLAIMS_ROLES,
   INVENTORY_ROLES,
+  NHIS_ROLES,
   PATIENT_ROLES,
+  PURCHASES_ROLES,
   REPORT_ROLES,
   SALES_ROLES,
   SETTINGS_ROLES,
@@ -28,6 +30,8 @@ const TenantAdmin = lazy(() => import('./pages/TenantAdmin'))
 const Login = lazy(() => import('./pages/Login'))
 const Signup = lazy(() => import('./pages/Signup'))
 const ActivityLog = lazy(() => import('./pages/ActivityLog'))
+const Purchases = lazy(() => import('./pages/Purchases'))
+const Nhis = lazy(() => import('./pages/Nhis'))
 
 const RouteFallback = () => (
   <div className="route-fallback" role="status" aria-live="polite">
@@ -86,6 +90,22 @@ function App() {
               element={
                 <RoleRoute allowedRoles={CLAIMS_ROLES} allow={canManageClaims}>
                   <Claims />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="purchases"
+              element={
+                <RoleRoute allowedRoles={PURCHASES_ROLES}>
+                  <Purchases />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="nhis"
+              element={
+                <RoleRoute allowedRoles={NHIS_ROLES}>
+                  <Nhis />
                 </RoleRoute>
               }
             />

@@ -21,5 +21,7 @@ export const REPORT_ROLES = ['admin', 'pharmacist', 'branch_manager']
 export const ACCOUNTING_ROLES = ['admin']
 export const SETTINGS_ROLES = ['admin']
 export const ACTIVITY_LOG_ROLES = ['admin', 'branch_manager', 'super_admin']
+export const PURCHASES_ROLES = ['admin', 'pharmacist', 'procurement', 'branch_manager']
+export const NHIS_ROLES = ['admin', 'pharmacist', 'billing']
 
 export const hasRole = (role, roles) => roles.includes(String(role || '').toLowerCase())

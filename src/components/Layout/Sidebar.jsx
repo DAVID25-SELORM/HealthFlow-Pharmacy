@@ -11,6 +11,8 @@ import {
   Settings,
   ShieldCheck,
   List,
+  Truck,
+  HeartPulse,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import {
@@ -19,7 +21,9 @@ import {
   CLAIMS_ROLES,
   DASHBOARD_ROLES,
   INVENTORY_ROLES,
+  NHIS_ROLES,
   PATIENT_ROLES,
+  PURCHASES_ROLES,
   REPORT_ROLES,
   SALES_ROLES,
   SETTINGS_ROLES,
@@ -40,6 +44,8 @@ const Sidebar = ({ isOpen, onClose }) => {
     { path: '/sales', icon: ShoppingCart, label: 'Sales (POS)', roles: SALES_ROLES },
     { path: '/patients', icon: Users, label: 'Patients', roles: PATIENT_ROLES },
     { path: '/claims', icon: ClipboardList, label: 'Claims', roles: CLAIMS_ROLES, allow: canManageClaims },
+    { path: '/purchases', icon: Truck, label: 'Purchases', roles: PURCHASES_ROLES },
+    { path: '/nhis', icon: HeartPulse, label: 'NHIS', roles: NHIS_ROLES },
     { path: '/reports', icon: BarChart3, label: 'Reports', roles: REPORT_ROLES, allow: canViewReports },
     { path: '/accounting', icon: Wallet, label: 'Accounting', roles: ACCOUNTING_ROLES },
     { path: '/settings', icon: Settings, label: 'Settings', roles: SETTINGS_ROLES },
