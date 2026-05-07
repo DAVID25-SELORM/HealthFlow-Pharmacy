@@ -14,7 +14,12 @@ import './UpgradeGate.css'
 const UpgradeGate = ({ locked, feature, requiredTier = 'pro', children }) => {
   if (!locked) return children
 
-  const tierLabel = requiredTier === 'enterprise' ? 'Enterprise' : 'Professional or Enterprise'
+  const tierLabel =
+    requiredTier === 'module'
+      ? 'enabled module'
+      : requiredTier === 'enterprise'
+        ? 'Enterprise'
+        : 'Professional or Enterprise'
 
   return (
     <div className="upgrade-gate-wrap">
@@ -26,8 +31,8 @@ const UpgradeGate = ({ locked, feature, requiredTier = 'pro', children }) => {
           </div>
           <h3>{feature} is locked</h3>
           <p>
-            This feature requires the <strong>{tierLabel}</strong> plan. Contact your
-            platform admin to upgrade.
+            This feature requires the <strong>{tierLabel}</strong>. Contact your platform
+            admin to unlock access.
           </p>
           <span className="upgrade-gate-badge">Upgrade Required</span>
         </div>

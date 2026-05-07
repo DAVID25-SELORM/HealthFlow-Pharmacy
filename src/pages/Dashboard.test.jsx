@@ -53,7 +53,7 @@ describe('Dashboard', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
 
     mocks.useAuth.mockReturnValue({ role: 'admin' })
-    mocks.useTenant.mockReturnValue({ tierLimits: { hasClaims: true } })
+    mocks.useTenant.mockReturnValue({ canUseClaims: true, tierLimits: { hasClaims: true } })
     mocks.isSupabaseConfigured.mockReturnValue(true)
     mocks.getLowStockDrugs.mockResolvedValue([])
     mocks.getExpiringDrugs.mockResolvedValue([])

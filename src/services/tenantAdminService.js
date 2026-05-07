@@ -162,6 +162,7 @@ export const createPharmacyTenant = async ({ pharmacy, admin }) =>
       planCode: normalizeChoice(pharmacy.planCode, VALID_PLAN_CODES, 'starter', 'plan'),
       billingStatus: normalizeChoice(pharmacy.billingStatus, VALID_BILLING_STATUSES, 'trial', 'billing status'),
       supportLevel: normalizeChoice(pharmacy.supportLevel, VALID_SUPPORT_LEVELS, 'standard', 'support level'),
+      canUseClaims: Boolean(pharmacy.canUseClaims),
       canUsePurchases: Boolean(pharmacy.canUsePurchases),
       canUseNhis: Boolean(pharmacy.canUseNhis),
       canUseAccounting: Boolean(pharmacy.canUseAccounting),
@@ -274,6 +275,8 @@ export const updateOrganizationDetails = async (orgId, fields) => {
       fields.supportLevel !== undefined
         ? normalizeChoice(fields.supportLevel, VALID_SUPPORT_LEVELS, 'standard', 'support level')
         : undefined,
+    canUseClaims:
+      fields.canUseClaims !== undefined ? Boolean(fields.canUseClaims) : undefined,
     canUsePurchases:
       fields.canUsePurchases !== undefined ? Boolean(fields.canUsePurchases) : undefined,
     canUseNhis:

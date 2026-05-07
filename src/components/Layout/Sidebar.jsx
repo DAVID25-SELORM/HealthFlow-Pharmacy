@@ -33,7 +33,7 @@ import './Sidebar.css'
 
 const Sidebar = ({ isOpen, onClose }) => {
   const { role, canManageInventory, canViewReports, canManageClaims } = useAuth()
-  const { canUsePurchases, canUseNhis, canUseAccounting } = useTenant()
+  const { canUseClaims, canUsePurchases, canUseNhis, canUseAccounting } = useTenant()
 
   const menuItems = [
     {
@@ -45,7 +45,7 @@ const Sidebar = ({ isOpen, onClose }) => {
     { path: '/inventory', icon: Package, label: 'Inventory', roles: INVENTORY_ROLES, allow: canManageInventory },
     { path: '/sales', icon: ShoppingCart, label: 'Sales (POS)', roles: SALES_ROLES },
     { path: '/patients', icon: Users, label: 'Patients', roles: PATIENT_ROLES },
-    { path: '/claims', icon: ClipboardList, label: 'Claims', roles: CLAIMS_ROLES, allow: canManageClaims },
+    { path: '/claims', icon: ClipboardList, label: 'Claims', roles: CLAIMS_ROLES, allow: canManageClaims, featureAllowed: canUseClaims },
     { path: '/purchases', icon: Truck, label: 'Purchases', roles: PURCHASES_ROLES, featureAllowed: canUsePurchases },
     { path: '/nhis', icon: HeartPulse, label: 'NHIS', roles: NHIS_ROLES, featureAllowed: canUseNhis },
     { path: '/reports', icon: BarChart3, label: 'Reports', roles: REPORT_ROLES, allow: canViewReports },

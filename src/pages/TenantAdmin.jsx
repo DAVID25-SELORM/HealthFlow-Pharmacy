@@ -34,6 +34,7 @@ const blankPharmacy = {
   planCode: 'starter',
   billingStatus: 'trial',
   supportLevel: 'standard',
+  canUseClaims: false,
   canUsePurchases: false,
   canUseNhis: false,
   canUseAccounting: false,
@@ -239,6 +240,7 @@ const TenantAdmin = () => {
       planCode: org.plan_code || 'starter',
       billingStatus: org.billing_status || org.status || 'trial',
       supportLevel: org.support_level || 'standard',
+      canUseClaims: Boolean(org.can_use_claims),
       canUsePurchases: Boolean(org.can_use_purchases),
       canUseNhis: Boolean(org.can_use_nhis),
       canUseAccounting: Boolean(org.can_use_accounting),
@@ -305,6 +307,7 @@ const TenantAdmin = () => {
         nextPaymentDueAt: editForm.nextPaymentDueAt ? new Date(editForm.nextPaymentDueAt).toISOString() : null,
       })
       if (
+        Boolean(updatedOrganization?.can_use_claims) !== Boolean(editForm.canUseClaims) ||
         Boolean(updatedOrganization?.can_use_purchases) !== Boolean(editForm.canUsePurchases) ||
         Boolean(updatedOrganization?.can_use_nhis) !== Boolean(editForm.canUseNhis) ||
         Boolean(updatedOrganization?.can_use_accounting) !== Boolean(editForm.canUseAccounting) ||
@@ -588,6 +591,14 @@ const TenantAdmin = () => {
                 </div>
                 <div className="tenant-form-group">
                   <label>Module Privileges</label>
+                  <label className="tenant-checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={pharmacy.canUseClaims}
+                      onChange={(e) => setPharmacy({ ...pharmacy, canUseClaims: e.target.checked })}
+                    />
+                    Claims
+                  </label>
                   <label className="tenant-checkbox-label">
                     <input
                       type="checkbox"
@@ -1146,6 +1157,14 @@ const TenantAdmin = () => {
                   </div>
                   <div className="tenant-form-group">
                     <label>Module Privileges</label>
+                    <label className="tenant-checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(editForm.canUseClaims)}
+                        onChange={(e) => setEditForm({ ...editForm, canUseClaims: e.target.checked })}
+                      />
+                      Claims
+                    </label>
                     <label className="tenant-checkbox-label">
                       <input
                         type="checkbox"

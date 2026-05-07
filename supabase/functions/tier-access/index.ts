@@ -213,7 +213,7 @@ const getOrganizationTierContext = async (
 ) => {
   const { data: organization, error } = await adminClient
     .from('organizations')
-    .select('id, status, billing_status, subscription_tier, trial_ends_at, subscription_ends_at')
+    .select('id, status, billing_status, subscription_tier, trial_ends_at, subscription_ends_at, can_use_claims')
     .eq('id', organizationId)
     .maybeSingle()
 
@@ -276,7 +276,7 @@ const requireTierFeature = async (
   }
 
   if (feature === 'claims' && !tierContext.tierLimits.hasClaims) {
-    throw new Error('Insurance claims are available on the Enterprise plan.')
+    throw new Error('Claims are locked for this pharmacy. Enable the Claims module from Tenant Admin.')
   }
 
   if (feature === 'reports' && !tierContext.tierLimits.hasReports) {

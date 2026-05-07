@@ -201,6 +201,7 @@ export const AuthProvider = ({ children }) => {
             logo_url,
             slogan,
             license_number,
+            can_use_claims,
             can_use_purchases,
             can_use_nhis,
             can_use_accounting,

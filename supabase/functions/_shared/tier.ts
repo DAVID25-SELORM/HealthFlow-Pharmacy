@@ -66,6 +66,7 @@ export const resolveTierAccess = (organization: {
   subscription_tier?: unknown
   trial_ends_at?: unknown
   subscription_ends_at?: unknown
+  can_use_claims?: unknown
 }) => {
   const now = new Date()
   const normalizedTier = normalizeSubscriptionTier(organization.subscription_tier)
@@ -107,6 +108,9 @@ export const resolveTierAccess = (organization: {
     isTrialActive,
     isSubscriptionActive,
     isSuspended,
-    tierLimits: TIER_LIMITS[allowedTier],
+    tierLimits: {
+      ...TIER_LIMITS[allowedTier],
+      hasClaims: !isSuspended && Boolean(organization.can_use_claims),
+    },
   }
 }

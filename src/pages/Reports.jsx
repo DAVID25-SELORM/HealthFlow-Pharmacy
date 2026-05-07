@@ -58,7 +58,7 @@ const getSaleInsuranceDetails = (sale, linkedPatient = null) => {
 }
 
 const Reports = () => {
-  const { tierLimits } = useTenant()
+  const { canUseClaims, tierLimits } = useTenant()
   const [startDate, setStartDate] = useState(firstOfMonth)
   const [endDate, setEndDate] = useState(today)
   const [loading, setLoading] = useState(false)
@@ -98,7 +98,7 @@ const Reports = () => {
       },
     ]
 
-    if (tierLimits.hasClaims) {
+    if (canUseClaims && tierLimits.hasClaims) {
       nextCards.splice(1, 0, {
         key: 'claims',
         title: 'Claims Summary',
@@ -108,7 +108,7 @@ const Reports = () => {
     }
 
     return nextCards
-  }, [bundle, tierLimits.hasClaims])
+  }, [bundle, canUseClaims, tierLimits.hasClaims])
 
   const soldItemRows = useMemo(() => {
     if (!bundle) {
@@ -328,7 +328,7 @@ const Reports = () => {
           <Download size={16} />
           Export Sold Items CSV
         </button>
-        {tierLimits.hasClaims && (
+        {canUseClaims && tierLimits.hasClaims && (
           <button className="btn btn-outline" onClick={exportClaimsCsv} disabled={!bundle}>
             <Download size={16} />
             Export Claims CSV

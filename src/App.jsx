@@ -46,7 +46,7 @@ const RouteFallback = () => (
 
 function App() {
   const { canManageInventory, canViewReports, canManageClaims } = useAuth()
-  const { canUsePurchases, canUseNhis, canUseAccounting } = useTenant()
+  const { canUseClaims, canUsePurchases, canUseNhis, canUseAccounting } = useTenant()
   return (
     <Router>
       <Suspense fallback={<RouteFallback />}>
@@ -90,7 +90,7 @@ function App() {
             <Route
               path="claims"
               element={
-                <RoleRoute allowedRoles={CLAIMS_ROLES} allow={canManageClaims}>
+                <RoleRoute allowedRoles={CLAIMS_ROLES} allow={canManageClaims} featureAllowed={canUseClaims}>
                   <Claims />
                 </RoleRoute>
               }

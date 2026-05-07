@@ -31,6 +31,7 @@ describe('subscription tier helpers', () => {
       {
         status: 'trial',
         subscription_tier: 'enterprise',
+        can_use_claims: true,
         trial_ends_at: '2026-05-01T00:00:00.000Z',
         subscription_ends_at: null,
       },
@@ -40,6 +41,22 @@ describe('subscription tier helpers', () => {
     expect(result.isTrialActive).toBe(true)
     expect(result.effectiveTier).toBe('enterprise')
     expect(result.tierLimits.hasClaims).toBe(true)
+  })
+
+  it('requires the claims module flag even on enterprise access', () => {
+    const result = resolveTierAccess(
+      {
+        status: 'active',
+        subscription_tier: 'enterprise',
+        can_use_claims: false,
+        trial_ends_at: null,
+        subscription_ends_at: null,
+      },
+      new Date('2026-04-17T00:00:00.000Z')
+    )
+
+    expect(result.effectiveTier).toBe('enterprise')
+    expect(result.tierLimits.hasClaims).toBe(false)
   })
 
   it('falls back to basic access when a trial has expired', () => {

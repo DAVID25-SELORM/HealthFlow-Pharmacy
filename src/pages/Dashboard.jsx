@@ -210,6 +210,7 @@ const Dashboard = () => {
     isTrialActive,
     daysUntilTrialExpires,
     isSuspended,
+    canUseClaims,
     canUsePurchases,
     canUseNhis,
     canUseAccounting,
@@ -229,7 +230,8 @@ const Dashboard = () => {
   const [recentClaims, setRecentClaims] = useState([])
 
   const canViewOperationalMetrics = canManageInventory || hasRole(role, INVENTORY_ROLES)
-  const canViewClaimsMetrics = (canManageClaims || hasRole(role, CLAIMS_ROLES)) && tierLimits.hasClaims
+  const canViewClaimsMetrics =
+    canUseClaims && (canManageClaims || hasRole(role, CLAIMS_ROLES)) && tierLimits.hasClaims
   const pharmacyName = organization?.name || 'Your Pharmacy'
   const pharmacyLogoUrl = organization?.logo_url || ''
   const pharmacySlogan = organization?.slogan || ''
@@ -244,7 +246,7 @@ const Dashboard = () => {
 
   useEffect(() => {
     void loadDashboardData()
-  }, [role, canManageInventory, canManageClaims, tierLimits.hasClaims])
+  }, [role, canManageInventory, canManageClaims, canUseClaims, tierLimits.hasClaims])
 
   const loadDashboardData = async () => {
     const today = new Date()
@@ -477,6 +479,7 @@ const Dashboard = () => {
   }, [
     canUseNhis,
     canUsePurchases,
+    canUseClaims,
     canViewClaimsMetrics,
     canViewOperationalMetrics,
     role,
@@ -535,7 +538,7 @@ const Dashboard = () => {
   const featurePills = useMemo(
     () => [
       { label: 'Reports module', enabled: tierLimits.hasReports },
-      { label: 'Private claims', enabled: tierLimits.hasClaims },
+      { label: 'Claims module', enabled: canUseClaims && tierLimits.hasClaims },
       { label: 'Purchases module', enabled: canUsePurchases },
       { label: 'NHIS module', enabled: canUseNhis },
       { label: 'Accounting module', enabled: canUseAccounting },
@@ -544,6 +547,7 @@ const Dashboard = () => {
     ],
     [
       canUseAccounting,
+      canUseClaims,
       canUseMultiBranch,
       canUseNhis,
       canUsePurchases,

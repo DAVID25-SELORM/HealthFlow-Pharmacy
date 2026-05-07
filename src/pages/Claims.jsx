@@ -45,7 +45,7 @@ const Claims = () => {
   const [searchParams, setSearchParams] = useSearchParams()
   const { user, role, canManageClaims } = useAuth()
   const { notify } = useNotification()
-  const { tierLimits } = useTenant()
+  const { canUseClaims, tierLimits } = useTenant()
   const canProcess = canManageClaims || hasRole(role, CLAIMS_ROLES)
 
   const [showNewClaimModal, setShowNewClaimModal] = useState(false)
@@ -67,7 +67,7 @@ const Claims = () => {
   const [patientLookupTerm, setPatientLookupTerm] = useState('')
 
   useEffect(() => {
-    if (!tierLimits.hasClaims) {
+    if (!canUseClaims || !tierLimits.hasClaims) {
       setClaims([])
       setStats({ total: 0, pending: 0, approved: 0, rejected: 0 })
       setPatients([])
@@ -78,7 +78,7 @@ const Claims = () => {
     }
 
     void loadClaims()
-  }, [tierLimits.hasClaims])
+  }, [canUseClaims, tierLimits.hasClaims])
 
   useEffect(() => {
     const routeTab = searchParams.get('tab')
@@ -355,7 +355,7 @@ const Claims = () => {
   }
 
   return (
-    <UpgradeGate locked={!tierLimits.hasClaims} feature="Insurance Claims" requiredTier="enterprise">
+    <UpgradeGate locked={!canUseClaims || !tierLimits.hasClaims} feature="Insurance Claims" requiredTier="module">
     <div className="claims-page">
       <div className="page-header">
         <div>

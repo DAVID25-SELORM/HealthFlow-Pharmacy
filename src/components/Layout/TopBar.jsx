@@ -16,7 +16,7 @@ const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
   const [alertsOpen, setAlertsOpen] = useState(false)
   const [alerts, setAlerts] = useState([])
   const { displayName, role, branch, canManageInventory, canManageClaims, signOut } = useAuth()
-  const { tierLimits } = useTenant()
+  const { canUseClaims, tierLimits } = useTenant()
   const { notify } = useNotification()
   const navigate = useNavigate()
   const location = useLocation()
@@ -38,7 +38,7 @@ const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
     }
 
     try {
-      const canViewClaimAlerts = tierLimits.hasClaims && canManageClaims
+      const canViewClaimAlerts = canUseClaims && tierLimits.hasClaims && canManageClaims
       const [lowStock, expiring, claimStats] = await Promise.all([
         getLowStockDrugs(),
         getExpiringDrugs(),
@@ -77,7 +77,7 @@ const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
       console.error('Unable to load top bar alerts:', error)
       setAlerts([])
     }
-  }, [canManageClaims, canUseInventorySearch, tierLimits.hasClaims])
+  }, [canManageClaims, canUseClaims, canUseInventorySearch, tierLimits.hasClaims])
 
   useEffect(() => {
     const params = new URLSearchParams(location.search)

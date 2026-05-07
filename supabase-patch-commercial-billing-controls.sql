@@ -13,6 +13,7 @@ ALTER TABLE public.organizations
   ADD COLUMN IF NOT EXISTS plan_code              TEXT NOT NULL DEFAULT 'starter',
   ADD COLUMN IF NOT EXISTS billing_status         TEXT NOT NULL DEFAULT 'trial',
   ADD COLUMN IF NOT EXISTS support_level          TEXT NOT NULL DEFAULT 'standard',
+  ADD COLUMN IF NOT EXISTS can_use_claims         BOOLEAN NOT NULL DEFAULT false,
   ADD COLUMN IF NOT EXISTS can_use_accounting     BOOLEAN NOT NULL DEFAULT false,
   ADD COLUMN IF NOT EXISTS can_use_multi_branch   BOOLEAN NOT NULL DEFAULT false,
   ADD COLUMN IF NOT EXISTS billing_notes          TEXT,

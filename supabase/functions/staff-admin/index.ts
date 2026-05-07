@@ -180,7 +180,7 @@ const getOrganizationTierContext = async (
 ) => {
   const { data: organization, error } = await adminClient
     .from('organizations')
-    .select('id, status, billing_status, subscription_tier, trial_ends_at, subscription_ends_at')
+    .select('id, status, billing_status, subscription_tier, trial_ends_at, subscription_ends_at, can_use_claims')
     .eq('id', organizationId)
     .maybeSingle()
 

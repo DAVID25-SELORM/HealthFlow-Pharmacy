@@ -104,9 +104,10 @@ export const resolveTierAccess = (organization, nowValue = new Date()) => {
           ? 'basic'
           : normalizedTier
 
-  const tierLimits = isSuspended
-    ? TIER_LIMITS.basic
-    : TIER_LIMITS[effectiveTier] || TIER_LIMITS.basic
+  const tierLimits = {
+    ...(isSuspended ? TIER_LIMITS.basic : TIER_LIMITS[effectiveTier] || TIER_LIMITS.basic),
+    hasClaims: !isSuspended && Boolean(organization.can_use_claims),
+  }
 
   return {
     normalizedTier,
