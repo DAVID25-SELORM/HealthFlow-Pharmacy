@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import ProtectedRoute from './components/Auth/ProtectedRoute'
 import RoleRoute from './components/Auth/RoleRoute'
 import { useAuth } from './context/AuthContext'
+import { useTenant } from './context/TenantContext'
 import {
   ACCOUNTING_ROLES,
   ACTIVITY_LOG_ROLES,
@@ -45,6 +46,7 @@ const RouteFallback = () => (
 
 function App() {
   const { canManageInventory, canViewReports, canManageClaims } = useAuth()
+  const { canUsePurchases, canUseNhis } = useTenant()
   return (
     <Router>
       <Suspense fallback={<RouteFallback />}>
@@ -96,7 +98,7 @@ function App() {
             <Route
               path="purchases"
               element={
-                <RoleRoute allowedRoles={PURCHASES_ROLES}>
+                <RoleRoute allowedRoles={PURCHASES_ROLES} featureAllowed={canUsePurchases}>
                   <Purchases />
                 </RoleRoute>
               }
@@ -104,7 +106,7 @@ function App() {
             <Route
               path="nhis"
               element={
-                <RoleRoute allowedRoles={NHIS_ROLES}>
+                <RoleRoute allowedRoles={NHIS_ROLES} featureAllowed={canUseNhis}>
                   <Nhis />
                 </RoleRoute>
               }

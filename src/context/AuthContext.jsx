@@ -194,7 +194,9 @@ export const AuthProvider = ({ children }) => {
             region,
             logo_url,
             slogan,
-            license_number
+            license_number,
+            can_use_purchases,
+            can_use_nhis
           )
         `)
         .eq('id', activeUser.id)

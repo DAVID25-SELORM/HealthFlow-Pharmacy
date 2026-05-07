@@ -130,6 +130,8 @@ export const createPharmacyTenant = async ({ pharmacy, admin }) =>
       licenseNumber: normalizeText(pharmacy.licenseNumber) || null,
       status: 'trial',
       subscriptionTier: normalizeSubscriptionTier(pharmacy.subscriptionTier, 'basic'),
+      canUsePurchases: Boolean(pharmacy.canUsePurchases),
+      canUseNhis: Boolean(pharmacy.canUseNhis),
     },
     adminUser: {
       fullName: normalizeText(admin.fullName),
@@ -224,6 +226,10 @@ export const updateOrganizationDetails = async (orgId, fields) => {
       fields.subscriptionTier !== undefined
         ? normalizeSubscriptionTier(fields.subscriptionTier)
         : undefined,
+    canUsePurchases:
+      fields.canUsePurchases !== undefined ? Boolean(fields.canUsePurchases) : undefined,
+    canUseNhis:
+      fields.canUseNhis !== undefined ? Boolean(fields.canUseNhis) : undefined,
     trialEndsAt:
       fields.trialEndsAt !== undefined ? normalizeOptionalIsoDate(fields.trialEndsAt) : undefined,
     subscriptionEndsAt:

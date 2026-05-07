@@ -23,6 +23,8 @@ export const TenantProvider = ({ children }) => {
         isSuspended: false,
         daysUntilTrialExpires: null,
         tierLimits: TIER_LIMITS.basic,
+        canUsePurchases: false,
+        canUseNhis: false,
         loading: true,
       }
     }
@@ -36,6 +38,8 @@ export const TenantProvider = ({ children }) => {
         isSuspended: false,
         daysUntilTrialExpires: null,
         tierLimits: TIER_LIMITS.basic,
+        canUsePurchases: false,
+        canUseNhis: false,
         loading: false,
       }
     }
@@ -57,6 +61,8 @@ export const TenantProvider = ({ children }) => {
       daysUntilTrialExpires,
       tierLimits,
       loading: false,
+      canUsePurchases: Boolean(organization.can_use_purchases),
+      canUseNhis: Boolean(organization.can_use_nhis),
     }
   }, [organization, loading])
 

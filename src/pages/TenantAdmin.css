@@ -113,6 +113,22 @@
   box-shadow: 0 0 0 3px rgba(22, 160, 133, 0.1);
 }
 
+.tenant-checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2rem;
+  color: var(--gray-700);
+}
+
+.tenant-form-group .tenant-checkbox-label input[type='checkbox'] {
+  width: auto;
+  min-width: 1rem;
+  padding: 0;
+  border-radius: 0.25rem;
+  accent-color: var(--primary);
+}
+
 /* Subdomain row */
 .subdomain-row {
   display: flex;

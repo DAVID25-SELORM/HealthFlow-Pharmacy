@@ -15,6 +15,7 @@ import {
   HeartPulse,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
+import { useTenant } from '../../context/TenantContext'
 import {
   ACCOUNTING_ROLES,
   ACTIVITY_LOG_ROLES,
@@ -32,6 +33,7 @@ import './Sidebar.css'
 
 const Sidebar = ({ isOpen, onClose }) => {
   const { role, canManageInventory, canViewReports, canManageClaims } = useAuth()
+  const { canUsePurchases, canUseNhis } = useTenant()
 
   const menuItems = [
     {
@@ -44,8 +46,8 @@ const Sidebar = ({ isOpen, onClose }) => {
     { path: '/sales', icon: ShoppingCart, label: 'Sales (POS)', roles: SALES_ROLES },
     { path: '/patients', icon: Users, label: 'Patients', roles: PATIENT_ROLES },
     { path: '/claims', icon: ClipboardList, label: 'Claims', roles: CLAIMS_ROLES, allow: canManageClaims },
-    { path: '/purchases', icon: Truck, label: 'Purchases', roles: PURCHASES_ROLES },
-    { path: '/nhis', icon: HeartPulse, label: 'NHIS', roles: NHIS_ROLES },
+    { path: '/purchases', icon: Truck, label: 'Purchases', roles: PURCHASES_ROLES, featureAllowed: canUsePurchases },
+    { path: '/nhis', icon: HeartPulse, label: 'NHIS', roles: NHIS_ROLES, featureAllowed: canUseNhis },
     { path: '/reports', icon: BarChart3, label: 'Reports', roles: REPORT_ROLES, allow: canViewReports },
     { path: '/accounting', icon: Wallet, label: 'Accounting', roles: ACCOUNTING_ROLES },
     { path: '/settings', icon: Settings, label: 'Settings', roles: SETTINGS_ROLES },
@@ -53,7 +55,9 @@ const Sidebar = ({ isOpen, onClose }) => {
     { path: '/activity-log', icon: List, label: 'Activity Log', roles: ACTIVITY_LOG_ROLES },
   ]
 
-  const visibleItems = menuItems.filter((item) => item.roles.includes(role) || item.allow)
+  const visibleItems = menuItems.filter(
+    (item) => item.featureAllowed !== false && (item.roles.includes(role) || item.allow)
+  )
 
   return (
     <aside className={`sidebar ${isOpen ? 'open' : ''}`}>

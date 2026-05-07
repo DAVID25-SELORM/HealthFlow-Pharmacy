@@ -30,6 +30,8 @@ const blankPharmacy = {
   slogan: '',
   licenseNumber: '',
   subscriptionTier: 'basic',
+  canUsePurchases: false,
+  canUseNhis: false,
 }
 
 const blankAdmin = {
@@ -213,6 +215,8 @@ const TenantAdmin = () => {
       licenseNumber: org.license_number || '',
       status: org.status || 'trial',
       subscriptionTier: org.subscription_tier || 'basic',
+      canUsePurchases: Boolean(org.can_use_purchases),
+      canUseNhis: Boolean(org.can_use_nhis),
       trialEndsAt: org.trial_ends_at ? org.trial_ends_at.split('T')[0] : '',
       subscriptionEndsAt: org.subscription_ends_at ? org.subscription_ends_at.split('T')[0] : '',
     })
@@ -464,6 +468,25 @@ const TenantAdmin = () => {
                     <option value="pro">Professional</option>
                     <option value="enterprise">Enterprise</option>
                   </select>
+                </div>
+                <div className="tenant-form-group">
+                  <label>Module Privileges</label>
+                  <label className="tenant-checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={pharmacy.canUsePurchases}
+                      onChange={(e) => setPharmacy({ ...pharmacy, canUsePurchases: e.target.checked })}
+                    />
+                    Purchases
+                  </label>
+                  <label className="tenant-checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={pharmacy.canUseNhis}
+                      onChange={(e) => setPharmacy({ ...pharmacy, canUseNhis: e.target.checked })}
+                    />
+                    NHIS
+                  </label>
                 </div>
               </div>
             </div>
@@ -911,6 +934,25 @@ const TenantAdmin = () => {
                       value={editForm.subscriptionEndsAt}
                       onChange={(e) => setEditForm({ ...editForm, subscriptionEndsAt: e.target.value })}
                     />
+                  </div>
+                  <div className="tenant-form-group">
+                    <label>Module Privileges</label>
+                    <label className="tenant-checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(editForm.canUsePurchases)}
+                        onChange={(e) => setEditForm({ ...editForm, canUsePurchases: e.target.checked })}
+                      />
+                      Purchases
+                    </label>
+                    <label className="tenant-checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(editForm.canUseNhis)}
+                        onChange={(e) => setEditForm({ ...editForm, canUseNhis: e.target.checked })}
+                      />
+                      NHIS
+                    </label>
                   </div>
                 </div>
               </div>

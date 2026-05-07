@@ -9,7 +9,7 @@ const DEFAULT_CATALOG_SYNC_BATCH_SIZE = 200
 const VALID_TIERS = ['trial', 'basic', 'pro', 'enterprise'] as const
 const VALID_STATUSES = ['trial', 'active', 'suspended', 'cancelled'] as const
 const ORGANIZATION_SELECT_FIELDS =
-  'id, name, subdomain, status, subscription_tier, trial_ends_at, subscription_ends_at, phone, email, address, city, region, logo_url, slogan, license_number, created_at, updated_at'
+  'id, name, subdomain, status, subscription_tier, trial_ends_at, subscription_ends_at, phone, email, address, city, region, logo_url, slogan, license_number, can_use_purchases, can_use_nhis, created_at, updated_at'
 const TENANT_USER_SELECT_FIELDS = 'id, email, full_name, role, is_active, created_at'
 
 type TenantSignupAction =
@@ -530,7 +530,7 @@ const updateTenantOrganization = async (
     }
   }
 
-  const updatePayload: Record<string, string | null> = {
+  const updatePayload: Record<string, string | boolean | null> = {
     name: nextName ?? null,
     subdomain: nextSubdomain ?? null,
     phone: organizationInput.phone !== undefined ? normalizeText(organizationInput.phone) || null : null,
@@ -556,6 +556,14 @@ const updateTenantOrganization = async (
       organizationInput.subscriptionTier !== undefined
         ? normalizeSubscriptionTier(organizationInput.subscriptionTier, 'basic')
         : null,
+    can_use_purchases:
+      organizationInput.canUsePurchases !== undefined
+        ? Boolean(organizationInput.canUsePurchases)
+        : null,
+    can_use_nhis:
+      organizationInput.canUseNhis !== undefined
+        ? Boolean(organizationInput.canUseNhis)
+        : null,
     trial_ends_at:
       organizationInput.trialEndsAt !== undefined
         ? normalizeOptionalIsoDate(organizationInput.trialEndsAt)
@@ -577,7 +585,9 @@ const updateTenantOrganization = async (
       key !== 'logo_url' &&
       key !== 'slogan' &&
       key !== 'license_number' &&
-      key !== 'subscription_tier'
+      key !== 'subscription_tier' &&
+      key !== 'can_use_purchases' &&
+      key !== 'can_use_nhis'
     ) {
       delete updatePayload[key]
     }
@@ -597,6 +607,14 @@ const updateTenantOrganization = async (
 
   if (organizationInput.subscriptionTier === undefined) {
     delete updatePayload.subscription_tier
+  }
+
+  if (organizationInput.canUsePurchases === undefined) {
+    delete updatePayload.can_use_purchases
+  }
+
+  if (organizationInput.canUseNhis === undefined) {
+    delete updatePayload.can_use_nhis
   }
 
   if (organizationInput.trialEndsAt === undefined) {
@@ -815,6 +833,8 @@ const bootstrapOrganization = async (
           license_number: normalizeText(organizationInput.licenseNumber) || null,
           status: organizationStatus,
           subscription_tier: subscriptionTier,
+          can_use_purchases: Boolean(organizationInput.canUsePurchases),
+          can_use_nhis: Boolean(organizationInput.canUseNhis),
           trial_ends_at: trialEndsAt,
           subscription_ends_at: subscriptionEndsAt,
         },
