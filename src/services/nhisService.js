@@ -2,6 +2,25 @@ import { supabase } from '../lib/supabase'
 import { assertRequiredText, assertNonNegativeNumber, normalizeText, sanitizeSearchTerm } from '../utils/validation'
 import { tryLogAuditEvent } from './auditService'
 
+const UNIQUE_PATIENT_INSURANCE_INDEXES = [
+  'idx_patients_org_insurance_id_unique',
+  'idx_patients_org_nhis_member_no_unique',
+  'idx_patients_org_nhis_hin_unique',
+]
+
+const throwFriendlyNhisPatientError = (error) => {
+  if (
+    error?.code === '23505' &&
+    UNIQUE_PATIENT_INSURANCE_INDEXES.some((indexName) =>
+      String(error?.message || '').includes(indexName)
+    )
+  ) {
+    throw new Error('This NHIS or insurance ID is already assigned to another patient.')
+  }
+
+  throw error
+}
+
 // ─── NHIS Drug Catalog ────────────────────────────────────────────────────────
 
 export const getAllNhisDrugs = async (searchTerm = '') => {
@@ -247,7 +266,7 @@ export const createNhisClaim = async (claimData, medicines) => {
 
   // Save NHIS member info back to patient record for auto-fill on future visits
   if (claimData.patientId && (claimData.memberNo || claimData.hin)) {
-    await supabase
+    const { error: patientUpdateError } = await supabase
       .from('patients')
       .update({
         nhis_member_no:    normalizeText(claimData.memberNo) || null,
@@ -256,6 +275,8 @@ export const createNhisClaim = async (claimData, medicines) => {
         insurance_id:      normalizeText(claimData.memberNo || claimData.hin) || null,
       })
       .eq('id', claimData.patientId)
+
+    if (patientUpdateError) throwFriendlyNhisPatientError(patientUpdateError)
   }
 
   await tryLogAuditEvent({

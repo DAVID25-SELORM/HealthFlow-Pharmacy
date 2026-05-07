@@ -2,6 +2,19 @@ import { supabase } from '../lib/supabase'
 import { assertRequiredText, normalizeText, sanitizeSearchTerm } from '../utils/validation'
 import { tryLogAuditEvent } from './auditService'
 
+const PATIENT_INSURANCE_ID_UNIQUE_CONSTRAINT = 'idx_patients_org_insurance_id_unique'
+
+const throwFriendlyPatientError = (error) => {
+  if (
+    error?.code === '23505' &&
+    String(error?.message || '').includes(PATIENT_INSURANCE_ID_UNIQUE_CONSTRAINT)
+  ) {
+    throw new Error('This insurance ID is already assigned to another patient.')
+  }
+
+  throw error
+}
+
 /**
  * Patient Service
  * Handles all patient-related operations
@@ -90,7 +103,7 @@ export const addPatient = async (patientData) => {
     ])
     .select()
   
-  if (error) throw error
+  if (error) throwFriendlyPatientError(error)
 
   await tryLogAuditEvent({
     eventType: 'patient.created',
@@ -130,7 +143,7 @@ export const updatePatient = async (id, patientData) => {
     .eq('id', id)
     .select()
   
-  if (error) throw error
+  if (error) throwFriendlyPatientError(error)
 
   await tryLogAuditEvent({
     eventType: 'patient.updated',

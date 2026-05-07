@@ -10,6 +10,7 @@ import {
 } from '../services/patientService'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { formatAppDate, formatAppDateTime } from '../utils/date'
+import { getInsuranceProviderOptions } from '../utils/insuranceProviders'
 import './Patients.css'
 
 const SEARCH_DEBOUNCE_MS = 350
@@ -370,8 +371,7 @@ const Patients = () => {
                 </div>
                 <div className="form-group">
                   <label>Insurance Provider</label>
-                  <input
-                    type="text"
+                  <select
                     value={formData.insuranceProvider}
                     onChange={(event) =>
                       setFormData({
@@ -379,7 +379,14 @@ const Patients = () => {
                         insuranceProvider: event.target.value,
                       })
                     }
-                  />
+                  >
+                    <option value="">Select insurance provider</option>
+                    {getInsuranceProviderOptions(formData.insuranceProvider).map((provider) => (
+                      <option key={provider} value={provider}>
+                        {provider}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 

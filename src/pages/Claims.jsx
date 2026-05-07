@@ -16,6 +16,7 @@ import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
 import { useTenant } from '../context/TenantContext'
 import { formatAppDate } from '../utils/date'
+import { getInsuranceProviderOptions } from '../utils/insuranceProviders'
 import { CLAIMS_ROLES, hasRole } from '../utils/roles'
 import UpgradeGate from '../components/UpgradeGate'
 import './Claims.css'
@@ -562,14 +563,20 @@ const Claims = () => {
               <div className="form-row">
                 <div className="form-group">
                   <label>Insurance Provider *</label>
-                  <input
-                    type="text"
+                  <select
                     required
                     value={formData.insuranceProvider}
                     onChange={(event) =>
                       setFormData({ ...formData, insuranceProvider: event.target.value })
                     }
-                  />
+                  >
+                    <option value="">Select insurance provider</option>
+                    {getInsuranceProviderOptions(formData.insuranceProvider).map((provider) => (
+                      <option key={provider} value={provider}>
+                        {provider}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div className="form-group">
                   <label>Insurance ID *</label>
