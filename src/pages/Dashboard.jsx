@@ -23,7 +23,7 @@ import { getLowStockDrugs, getExpiringDrugs } from '../services/drugService'
 import { getRecentClaims } from '../services/claimsService'
 import { useTenant } from '../context/TenantContext'
 import { isSupabaseConfigured } from '../lib/supabase'
-import { CLAIMS_ROLES, INVENTORY_ROLES, hasRole } from '../utils/roles'
+import { CLAIMS_ROLES, INVENTORY_ROLES, NHIS_ROLES, PURCHASES_ROLES, hasRole } from '../utils/roles'
 import './Dashboard.css'
 
 const currencyFormatter = new Intl.NumberFormat('en-GH', {
@@ -204,7 +204,15 @@ const createEmptyStats = (anchorDate = new Date()) => ({
 const Dashboard = () => {
   const navigate = useNavigate()
   const { role, displayName, canManageInventory, canManageClaims } = useAuth()
-  const { tierLimits, organization, isTrialActive, daysUntilTrialExpires, isSuspended } = useTenant()
+  const {
+    tierLimits,
+    organization,
+    isTrialActive,
+    daysUntilTrialExpires,
+    isSuspended,
+    canUsePurchases,
+    canUseNhis,
+  } = useTenant()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [chartMode, setChartMode] = useSessionStorageState(
@@ -429,6 +437,22 @@ const Dashboard = () => {
         path: '/claims?tab=pending',
         tone: 'secondary',
       })
+    } else if (canUseNhis && hasRole(role, NHIS_ROLES)) {
+      actions.push({
+        label: 'NHIS Claims',
+        description: 'Prepare and export NHIS claim submissions.',
+        icon: ClipboardList,
+        path: '/nhis',
+        tone: 'secondary',
+      })
+    } else if (canUsePurchases && hasRole(role, PURCHASES_ROLES)) {
+      actions.push({
+        label: 'Purchases',
+        description: 'Record supplier orders and update received stock.',
+        icon: Package,
+        path: '/purchases',
+        tone: 'secondary',
+      })
     } else if (tierLimits.hasReports && canViewOperationalMetrics) {
       actions.push({
         label: 'Pharmacy Reports',
@@ -448,7 +472,14 @@ const Dashboard = () => {
     }
 
     return actions
-  }, [canViewClaimsMetrics, canViewOperationalMetrics, role, tierLimits.hasReports])
+  }, [
+    canUseNhis,
+    canUsePurchases,
+    canViewClaimsMetrics,
+    canViewOperationalMetrics,
+    role,
+    tierLimits.hasReports,
+  ])
 
   const focusItems = useMemo(() => {
     if (canViewOperationalMetrics) {
@@ -502,10 +533,18 @@ const Dashboard = () => {
   const featurePills = useMemo(
     () => [
       { label: 'Reports module', enabled: tierLimits.hasReports },
-      { label: 'Insurance claims', enabled: tierLimits.hasClaims },
+      { label: 'Private claims', enabled: tierLimits.hasClaims },
+      { label: 'Purchases module', enabled: canUsePurchases },
+      { label: 'NHIS module', enabled: canUseNhis },
       { label: 'Bulk medicine import', enabled: tierLimits.hasAdvancedInventory },
     ],
-    [tierLimits.hasAdvancedInventory, tierLimits.hasClaims, tierLimits.hasReports]
+    [
+      canUseNhis,
+      canUsePurchases,
+      tierLimits.hasAdvancedInventory,
+      tierLimits.hasClaims,
+      tierLimits.hasReports,
+    ]
   )
 
   if (loading) {
