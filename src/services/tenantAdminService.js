@@ -250,6 +250,19 @@ export const updateOrganizationDetails = async (orgId, fields) => {
 }
 
 /**
+ * Permanently delete a pharmacy tenant and its staff/auth accounts.
+ */
+export const deletePharmacyTenant = async (orgId, confirmationName) => {
+  const response = await invokeFunction(TENANT_SIGNUP_FUNCTION, {
+    action: 'delete_tenant',
+    orgId,
+    confirmationName: normalizeText(confirmationName),
+  })
+
+  return response
+}
+
+/**
  * Update a user's details and sync Supabase Auth + public.users
  */
 export const updateOrganizationUser = async (userId, fields) => {

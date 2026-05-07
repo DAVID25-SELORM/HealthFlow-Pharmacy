@@ -19,6 +19,7 @@ type TenantSignupAction =
   | 'get_tenant_admin_dashboard'
   | 'get_tenant_users'
   | 'update_tenant_organization'
+  | 'delete_tenant'
 
 type RequesterProfile = {
   id: string
@@ -478,6 +479,117 @@ const getTenantUsers = async (
 
   return {
     users: users || [],
+  }
+}
+
+const deleteRowsByOrganization = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  tableName: string,
+  organizationId: string
+) => {
+  const { error } = await adminClient.from(tableName).delete().eq('organization_id', organizationId)
+
+  if (error && error.code !== '42P01') {
+    throw error
+  }
+}
+
+const deleteTenant = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  requesterProfile: RequesterProfile,
+  payload: Record<string, unknown>
+) => {
+  const organizationId = normalizeText(payload.orgId)
+  const confirmationName = normalizeText(payload.confirmationName)
+
+  if (!organizationId) {
+    throw new Error('Organization id is required.')
+  }
+
+  if (requesterProfile.organization_id === organizationId) {
+    throw new Error('You cannot delete your own organization.')
+  }
+
+  const { data: organization, error: organizationError } = await adminClient
+    .from('organizations')
+    .select('id, name, owner_user_id')
+    .eq('id', organizationId)
+    .maybeSingle()
+
+  if (organizationError) {
+    throw organizationError
+  }
+
+  if (!organization) {
+    throw new Error('Organization not found.')
+  }
+
+  if (confirmationName !== normalizeText(organization.name)) {
+    throw new Error('Pharmacy name confirmation did not match.')
+  }
+
+  const { data: users, error: usersError } = await adminClient
+    .from('users')
+    .select('id')
+    .eq('organization_id', organizationId)
+
+  if (usersError) {
+    throw usersError
+  }
+
+  const authUserIds = (users || []).map((user) => normalizeText(user.id)).filter(Boolean)
+
+  const organizationTables = [
+    'shift_cash_movements',
+    'shifts',
+    'claim_payments',
+    'cashbook_entries',
+    'cashbook_sessions',
+    'expenses',
+    'expense_categories',
+    'nhis_claims',
+    'nhis_drugs',
+    'purchases',
+    'suppliers',
+    'claim_items',
+    'claims',
+    'sale_items',
+    'sales',
+    'stock_movements',
+    'audit_logs',
+    'pharmacy_settings',
+    'patients',
+    'drugs',
+    'branches',
+  ]
+
+  for (const tableName of organizationTables) {
+    await deleteRowsByOrganization(adminClient, tableName, organizationId)
+  }
+
+  const { error: deleteOrganizationError } = await adminClient
+    .from('organizations')
+    .delete()
+    .eq('id', organizationId)
+
+  if (deleteOrganizationError) {
+    throw deleteOrganizationError
+  }
+
+  const authDeleteFailures: string[] = []
+  for (const authUserId of authUserIds) {
+    const { error: deleteUserError } = await adminClient.auth.admin.deleteUser(authUserId)
+    if (deleteUserError) {
+      console.error('tenant delete auth cleanup failed:', authUserId, deleteUserError)
+      authDeleteFailures.push(authUserId)
+    }
+  }
+
+  return {
+    success: true,
+    deletedOrganizationId: organizationId,
+    deletedAuthUsers: authUserIds.length - authDeleteFailures.length,
+    authDeleteFailures,
   }
 }
 
@@ -1022,7 +1134,8 @@ Deno.serve(async (request) => {
     if (
       action === 'get_tenant_admin_dashboard' ||
       action === 'get_tenant_users' ||
-      action === 'update_tenant_organization'
+      action === 'update_tenant_organization' ||
+      action === 'delete_tenant'
     ) {
       const { supabaseUrl, supabaseAnonKey, serviceRoleKey } = getFunctionEnv(true)
       const adminClient = createAdminClient(supabaseUrl, serviceRoleKey)
@@ -1043,6 +1156,10 @@ Deno.serve(async (request) => {
 
       if (action === 'get_tenant_users') {
         return json(await getTenantUsers(adminClient, payload))
+      }
+
+      if (action === 'delete_tenant') {
+        return json(await deleteTenant(adminClient, authorizationResult.requesterProfile, payload))
       }
 
       return json(await updateTenantOrganization(adminClient, payload))

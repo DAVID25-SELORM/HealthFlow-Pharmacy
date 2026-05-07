@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import { getRoleLabel } from '../utils/roleLabels'
-import { Building2, GitBranch, Plus, Users, ChevronDown, ChevronUp, Eye, Pencil } from 'lucide-react'
+import { Building2, GitBranch, Plus, Users, ChevronDown, ChevronUp, Eye, Pencil, Trash2 } from 'lucide-react'
 import { useNotification } from '../context/NotificationContext'
 import { useSessionStorageState } from '../hooks/useSessionStorageState'
 import { formatAppDate } from '../utils/date'
@@ -12,6 +12,7 @@ import {
   updateSubscriptionTier,
   updateOrganizationDetails,
   updateOrganizationUser,
+  deletePharmacyTenant,
   getOrganizationUsers,
   checkSubdomainAvailable,
 } from '../services/tenantAdminService'
@@ -79,6 +80,7 @@ const TenantAdmin = () => {
   const [editUser, setEditUser] = useState(null)
   const [editUserForm, setEditUserForm] = useState({})
   const [savingUser, setSavingUser] = useState(false)
+  const [deletingOrgId, setDeletingOrgId] = useState('')
 
   useEffect(() => {
     void load()
@@ -286,6 +288,41 @@ const TenantAdmin = () => {
       setError(err.message || 'Failed to save changes')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleDeletePharmacy = async (org) => {
+    const confirmation = window.prompt(
+      `Permanently delete "${org.name}" and all of its pharmacy data?\n\nType the pharmacy name exactly to confirm.`
+    )
+
+    if (confirmation === null) {
+      return
+    }
+
+    if (confirmation.trim() !== org.name) {
+      notify('Pharmacy name did not match. Delete cancelled.', 'warning')
+      return
+    }
+
+    try {
+      setDeletingOrgId(org.id)
+      setError('')
+      const result = await deletePharmacyTenant(org.id, confirmation)
+      notify(
+        `Deleted ${org.name}. Removed ${result.deletedAuthUsers || 0} auth account(s).`,
+        'success',
+        6000
+      )
+      if (expandedOrgId === org.id) {
+        setExpandedOrgId(null)
+      }
+      await load()
+    } catch (err) {
+      setError(err.message || 'Failed to delete pharmacy')
+      notify(err.message || 'Failed to delete pharmacy', 'error')
+    } finally {
+      setDeletingOrgId('')
     }
   }
 
@@ -647,6 +684,14 @@ const TenantAdmin = () => {
                           >
                             <Eye size={15} />
                             {expandedOrgId === org.id ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                          </button>
+                          <button
+                            className="btn-icon danger"
+                            title="Delete pharmacy"
+                            onClick={() => void handleDeletePharmacy(org)}
+                            disabled={deletingOrgId === org.id}
+                          >
+                            <Trash2 size={14} />
                           </button>
                         </div>
                       </td>

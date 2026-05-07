@@ -328,6 +328,21 @@
   border-color: var(--primary);
 }
 
+.btn-icon.danger {
+  color: #b91c1c;
+}
+
+.btn-icon.danger:hover {
+  background: #fef2f2;
+  color: #991b1b;
+  border-color: #fca5a5;
+}
+
+.btn-icon:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 /* Expanded users row */
 .users-expand-row td {
   padding: 0;
