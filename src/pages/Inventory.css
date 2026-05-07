@@ -20,6 +20,34 @@
   justify-content: flex-end;
 }
 
+.branch-stock-select {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 42px;
+  padding: 0.35rem 0.65rem;
+  background: white;
+  border: 1px solid var(--gray-300);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.branch-stock-select span {
+  color: var(--gray-600);
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.branch-stock-select select {
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--gray-800);
+  font: inherit;
+  font-weight: 700;
+}
+
 .btn-secondary {
   background: var(--gray-100);
   color: var(--gray-700);
@@ -288,6 +316,11 @@
   color: var(--danger);
 }
 
+.transfer-btn:hover {
+  background: rgba(22, 160, 133, 0.12);
+  color: var(--primary);
+}
+
 /* Pagination */
 .pagination {
   display: flex;
@@ -416,15 +449,25 @@
   color: var(--gray-700);
 }
 
-.form-group input {
+.form-group input,
+.form-group select,
+.form-group textarea {
   padding: 0.75rem;
   border: 1px solid var(--gray-300);
   border-radius: var(--radius);
   font-size: 0.875rem;
   transition: var(--transition);
+  background: white;
+  color: var(--gray-900);
 }
 
-.form-group input:focus {
+.form-group textarea {
+  resize: vertical;
+}
+
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
   outline: none;
   border-color: var(--primary);
   box-shadow: 0 0 0 3px rgba(22, 160, 133, 0.1);
@@ -444,6 +487,26 @@
   max-width: 800px;
   max-height: 85vh;
   overflow-y: auto;
+}
+
+.transfer-modal {
+  max-width: 520px;
+}
+
+.transfer-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.9rem 1rem;
+  background: var(--gray-50);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  margin-bottom: 1rem;
+}
+
+.transfer-summary span {
+  color: var(--gray-600);
+  font-size: 0.9rem;
 }
 
 .import-preview {
@@ -630,6 +693,11 @@
 
   .header-actions .btn {
     flex: 1 1 160px;
+  }
+
+  .branch-stock-select {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .inventory-controls {

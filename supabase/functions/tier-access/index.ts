@@ -47,6 +47,7 @@ type RequesterProfile = {
   id: string
   role: string
   organization_id: string | null
+  branch_id: string | null
   can_manage_inventory: boolean
   can_view_reports: boolean
   can_manage_claims: boolean
@@ -183,7 +184,7 @@ const getRequesterProfile = async (
 ): Promise<RequesterProfile | null> => {
   const { data, error } = await adminClient
     .from('users')
-    .select('id, role, organization_id, can_manage_inventory, can_view_reports, can_manage_claims')
+    .select('id, role, organization_id, branch_id, can_manage_inventory, can_view_reports, can_manage_claims')
     .eq('id', userId)
     .maybeSingle()
 
@@ -199,6 +200,7 @@ const getRequesterProfile = async (
     id: data.id,
     role: normalizeText(data.role).toLowerCase(),
     organization_id: normalizeText(data.organization_id) || null,
+    branch_id: normalizeText(data.branch_id) || null,
     can_manage_inventory: Boolean(data.can_manage_inventory),
     can_view_reports: Boolean(data.can_view_reports),
     can_manage_claims: Boolean(data.can_manage_claims),
@@ -324,14 +326,21 @@ const requireReportsAccess = (requesterProfile: RequesterProfile, message: strin
 
 const getDrugCount = async (
   adminClient: ReturnType<typeof createAdminClient>,
-  organizationId: string
+  organizationId: string,
+  branchId: string | null = null
 ) => {
-  const { count, error } = await adminClient
+  let query = adminClient
     .from('drugs')
     .select('id', { count: 'exact', head: true })
     .eq('organization_id', organizationId)
     .eq('status', 'active')
     .not('batch_number', 'ilike', `${DEFAULT_MEDICATION_BATCH_PREFIX}%`)
+
+  if (branchId) {
+    query = query.eq('branch_id', branchId)
+  }
+
+  const { count, error } = await query
 
   if (error) {
     throw error
@@ -342,11 +351,12 @@ const getDrugCount = async (
 
 const syncDefaultMedicationCatalog = async (
   adminClient: ReturnType<typeof createAdminClient>,
-  organizationId: string
+  organizationId: string,
+  branchId: string | null = null
 ) => {
   const { data: existingCatalogRows, error } = await adminClient
     .from('drugs')
-    .select('id, organization_id, batch_number, status')
+    .select('id, organization_id, branch_id, batch_number, status')
     .ilike('batch_number', `${DEFAULT_MEDICATION_BATCH_PREFIX}%`)
 
   if (error) {
@@ -354,7 +364,9 @@ const syncDefaultMedicationCatalog = async (
   }
 
   const currentOrganizationCatalogRows = (existingCatalogRows || []).filter(
-    (row) => normalizeText(row.organization_id) === organizationId
+    (row) =>
+      normalizeText(row.organization_id) === organizationId &&
+      (!branchId || normalizeText(row.branch_id) === branchId)
   )
 
   const existingBatchNumbers = new Set(
@@ -363,13 +375,7 @@ const syncDefaultMedicationCatalog = async (
       .filter(Boolean)
   )
 
-  const globallyReservedBatchNumbers = new Set(
-    (existingCatalogRows || [])
-      .map((row) => normalizeText(row.batch_number).toUpperCase())
-      .filter(Boolean)
-  )
-
-  const claimableCatalogIds = (existingCatalogRows || [])
+  const claimableCatalogIds = branchId ? [] : (existingCatalogRows || [])
     .filter((row) => {
       const batchNumber = normalizeText(row.batch_number).toUpperCase()
       return !normalizeText(row.organization_id) && batchNumber && !existingBatchNumbers.has(batchNumber)
@@ -409,14 +415,16 @@ const syncDefaultMedicationCatalog = async (
     }
   }
 
-  const missingRows = buildDefaultMedicationRowsForOrganization(organizationId, existingBatchNumbers).filter(
-    (row) => !globallyReservedBatchNumbers.has(normalizeText(row.batch_number).toUpperCase())
-  )
+  const missingRows = buildDefaultMedicationRowsForOrganization(organizationId, existingBatchNumbers)
+    .map((row) => ({
+      ...row,
+      branch_id: branchId || null,
+    }))
 
   for (let index = 0; index < missingRows.length; index += CATALOG_SYNC_BATCH_SIZE) {
     const batch = missingRows.slice(index, index + CATALOG_SYNC_BATCH_SIZE)
     const { error: insertError } = await adminClient.from('drugs').upsert(batch, {
-      onConflict: 'organization_id,name,batch_number',
+      onConflict: 'organization_id,branch_id,name,batch_number',
       ignoreDuplicates: true,
     })
 
@@ -426,13 +434,48 @@ const syncDefaultMedicationCatalog = async (
   }
 }
 
+const getBranchIdForInventoryRequest = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+  requesterProfile: RequesterProfile,
+  payload: Record<string, unknown>
+) => {
+  const requestedBranchId = normalizeText(payload.branchId)
+  const branchId = requestedBranchId || requesterProfile.branch_id
+
+  if (!branchId) {
+    return null
+  }
+
+  const { data, error } = await adminClient
+    .from('branches')
+    .select('id')
+    .eq('id', branchId)
+    .eq('organization_id', organizationId)
+    .eq('is_active', true)
+    .maybeSingle()
+
+  if (error) {
+    throw error
+  }
+
+  if (!data) {
+    throw new Error('Selected branch could not be found.')
+  }
+
+  return branchId
+}
+
 const getDrugs = async (
   adminClient: ReturnType<typeof createAdminClient>,
+  requesterProfile: RequesterProfile,
   organizationId: string,
   payload: Record<string, unknown>
 ) => {
+  const branchId = await getBranchIdForInventoryRequest(adminClient, organizationId, requesterProfile, payload)
+
   try {
-    await syncDefaultMedicationCatalog(adminClient, organizationId)
+    await syncDefaultMedicationCatalog(adminClient, organizationId, branchId)
   } catch (error) {
     // Never block core inventory visibility when catalog sync hits legacy-data issues.
     console.error('tier-access catalog sync warning:', error)
@@ -449,6 +492,10 @@ const getDrugs = async (
     .select('*')
     .eq('organization_id', organizationId)
     .eq('status', 'active')
+
+  if (branchId) {
+    query = query.eq('branch_id', branchId)
+  }
 
   if (searchTerm) {
     const searchParts = [searchTerm, ...normalizeSearchTokens(searchTerm)]
@@ -510,6 +557,7 @@ const getDrugs = async (
 const assertCanAddDrugs = async (
   adminClient: ReturnType<typeof createAdminClient>,
   organizationId: string,
+  branchId: string | null,
   additionalCount: number
 ) => {
   const tierContext = await getOrganizationTierContext(adminClient, organizationId)
@@ -518,7 +566,7 @@ const assertCanAddDrugs = async (
     return
   }
 
-  const currentCount = await getDrugCount(adminClient, organizationId)
+  const currentCount = await getDrugCount(adminClient, organizationId, branchId)
   if (currentCount + additionalCount > maxDrugs) {
     throw new Error(
       `This organization has reached the ${maxDrugs}-drug limit for its ${tierContext.effectiveTier === 'pro' ? 'Professional' : 'Basic'} plan.`
@@ -534,10 +582,12 @@ const assertCustomBatchNumberAllowed = (batchNumber: string) => {
 
 const buildDrugCreatePayload = (
   organizationId: string,
+  branchId: string | null,
   drugData: Record<string, unknown>,
   batchNumber: string
 ) => ({
   organization_id: organizationId,
+  branch_id: branchId,
   name: assertRequiredText(drugData.name, 'Drug name'),
   batch_number: batchNumber,
   expiry_date: assertRequiredText(drugData.expiryDate, 'Expiry date'),
@@ -554,17 +604,20 @@ const buildDrugCreatePayload = (
 const findDrugByIdentity = async (
   adminClient: ReturnType<typeof createAdminClient>,
   organizationId: string,
+  branchId: string | null,
   name: string,
   batchNumber: string
 ) => {
-  const { data, error } = await adminClient
+  let query = adminClient
     .from('drugs')
     .select('*')
     .eq('organization_id', organizationId)
     .eq('name', name)
     .eq('batch_number', batchNumber)
-    .order('updated_at', { ascending: false })
-    .limit(1)
+
+  query = branchId ? query.eq('branch_id', branchId) : query.is('branch_id', null)
+
+  const { data, error } = await query.order('updated_at', { ascending: false }).limit(1)
 
   if (error) {
     throw error
@@ -576,11 +629,12 @@ const findDrugByIdentity = async (
 const saveDrugForOrganization = async (
   adminClient: ReturnType<typeof createAdminClient>,
   organizationId: string,
+  branchId: string | null,
   drugPayload: Record<string, unknown>
 ) => {
   const name = assertRequiredText(drugPayload.name, 'Drug name')
   const batchNumber = assertRequiredText(drugPayload.batch_number, 'Batch number')
-  const existingDrug = await findDrugByIdentity(adminClient, organizationId, name, batchNumber)
+  const existingDrug = await findDrugByIdentity(adminClient, organizationId, branchId, name, batchNumber)
   const action = getExistingDrugSaveAction(existingDrug)
 
   if (action === 'reactivate' || action === 'update_existing') {
@@ -606,7 +660,7 @@ const saveDrugForOrganization = async (
     }
   }
 
-  await assertCanAddDrugs(adminClient, organizationId, 1)
+  await assertCanAddDrugs(adminClient, organizationId, branchId, 1)
 
   const { data, error } = await adminClient
     .from('drugs')
@@ -905,8 +959,11 @@ const createDrug = async (
   const drugData = (payload.drug || {}) as Record<string, unknown>
   const batchNumber = assertRequiredText(drugData.batchNumber, 'Batch number')
   assertCustomBatchNumberAllowed(batchNumber)
-  const drugPayload = buildDrugCreatePayload(organizationId, drugData, batchNumber)
-  return await saveDrugForOrganization(adminClient, organizationId, drugPayload)
+  const branchId = await getBranchIdForInventoryRequest(adminClient, organizationId, requesterProfile, {
+    branchId: normalizeText(drugData.branchId),
+  })
+  const drugPayload = buildDrugCreatePayload(organizationId, branchId, drugData, batchNumber)
+  return await saveDrugForOrganization(adminClient, organizationId, branchId, drugPayload)
 }
 
 const updateDrug = async (
@@ -1050,6 +1107,13 @@ const bulkImportDrugs = async (
     failed: [],
   }
 
+  const branchId = await getBranchIdForInventoryRequest(
+    adminClient,
+    organizationId,
+    requesterProfile,
+    payload
+  )
+
   const normalizedRows = drugs.map((item) => {
     const row = item as Record<string, unknown>
     const batchNumber = assertRequiredText(row.batch_number, 'Batch number')
@@ -1057,6 +1121,7 @@ const bulkImportDrugs = async (
 
     return {
       organization_id: organizationId,
+      branch_id: branchId,
       name: assertRequiredText(row.name, 'Drug name'),
       batch_number: batchNumber,
       expiry_date: assertRequiredText(row.expiry_date, 'Expiry date'),
@@ -1073,7 +1138,7 @@ const bulkImportDrugs = async (
 
   for (const drug of normalizedRows) {
     try {
-      const { action, drug: savedDrug } = await saveDrugForOrganization(adminClient, organizationId, drug)
+      const { action, drug: savedDrug } = await saveDrugForOrganization(adminClient, organizationId, branchId, drug)
       results.successful.push(savedDrug)
 
       if (action === 'reactivate') {
@@ -1254,7 +1319,7 @@ Deno.serve(async (request) => {
     const { requesterProfile, organizationId } = requesterResult
 
     if (action === 'get_drugs') {
-      return json({ drugs: await getDrugs(adminClient, organizationId, payload) })
+      return json({ drugs: await getDrugs(adminClient, requesterProfile, organizationId, payload) })
     }
 
     if (

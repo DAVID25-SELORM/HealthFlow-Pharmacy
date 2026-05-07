@@ -139,6 +139,7 @@ export const createPurchase = async (purchaseData, items = []) => {
     .insert([{
       supplier_id:    purchaseData.supplierId   || null,
       supplier_name:  normalizeText(purchaseData.supplierName) || null,
+      branch_id:      normalizeText(purchaseData.branchId) || null,
       invoice_number: normalizeText(purchaseData.invoiceNumber) || null,
       purchase_date:  purchaseDate,
       total_amount:   totalAmount,

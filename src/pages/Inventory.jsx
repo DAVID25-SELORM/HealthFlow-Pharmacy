@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Plus, Search, Filter, Edit2, Trash2, Upload, Download } from 'lucide-react'
+import { Plus, Search, Filter, Edit2, Trash2, Upload, Download, Truck } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { dispatchHealthflowDataChanged } from '../lib/appEvents'
 import {
@@ -9,6 +9,7 @@ import {
   deleteDrug,
   calculateDrugStatus,
   isDefaultCatalogDrug,
+  transferDrugToBranch,
 } from '../services/drugService'
 import { parseExcelFile, validateImportData, importDrugs, generateTemplate } from '../services/drugImportService'
 import { isSupabaseConfigured } from '../lib/supabase'
@@ -17,6 +18,7 @@ import { useNotification } from '../context/NotificationContext'
 import { useTenant } from '../context/TenantContext'
 import { formatAppDate } from '../utils/date'
 import { getPharmacySettings } from '../services/settingsService'
+import { getBranches } from '../services/branchService'
 import './Inventory.css'
 
 const emptyDrugForm = {
@@ -60,7 +62,7 @@ const calculateMarkedUpPrice = (costPrice, markupPercent) => {
 }
 
 const Inventory = () => {
-  const { role } = useAuth()
+  const { role, profile, branch } = useAuth()
   const { notify } = useNotification()
   const { tierLimits } = useTenant()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -80,10 +82,15 @@ const Inventory = () => {
   const [priceEditedManually, setPriceEditedManually] = useState(false)
   const [importFile, setImportFile] = useState(null)
   const [importPreview, setImportPreview] = useState(null)
+  const [branches, setBranches] = useState([])
+  const [selectedBranchId, setSelectedBranchId] = useState('')
+  const [transferDrug, setTransferDrug] = useState(null)
+  const [transferForm, setTransferForm] = useState({ destinationBranchId: '', quantity: '', notes: '' })
+  const [transferSubmitting, setTransferSubmitting] = useState(false)
 
   useEffect(() => {
-    void loadDrugs()
-  }, [])
+    void loadInitialInventory()
+  }, [profile?.branch_id, branch?.id])
 
   useEffect(() => {
     const routeSearch = searchParams.get('search') || ''
@@ -114,9 +121,46 @@ const Inventory = () => {
     setSearchParams(params, { replace: true })
   }
 
-  const loadDrugs = async () => {
+  const getDefaultBranchId = (branchRows = branches) =>
+    profile?.branch_id ||
+    branch?.id ||
+    branchRows.find((row) => row.is_active !== false && row.is_main)?.id ||
+    branchRows.find((row) => row.is_active !== false)?.id ||
+    ''
+
+  const loadInitialInventory = async () => {
     try {
       setLoading(true)
+      setError('')
+
+      if (!isSupabaseConfigured()) {
+        console.warn('Supabase not configured, using sample data')
+        setSampleData()
+        return
+      }
+
+      const branchRows = await getBranches().catch((branchError) => {
+        console.warn('Unable to load branches for inventory:', branchError)
+        return []
+      })
+      const defaultBranchId = getDefaultBranchId(branchRows)
+
+      setBranches(branchRows)
+      setSelectedBranchId(defaultBranchId)
+      await loadDrugs(defaultBranchId, { manageLoading: false })
+    } catch (error) {
+      console.error('Error loading inventory:', error)
+      setError(error.message || 'Unable to load inventory right now.')
+      notify(error.message || 'Unable to load inventory right now.', 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const loadDrugs = async (branchIdOverride = selectedBranchId, options = {}) => {
+    const { manageLoading = true } = options
+    try {
+      if (manageLoading) setLoading(true)
       setError('')
       if (!isSupabaseConfigured()) {
         console.warn('Supabase not configured, using sample data')
@@ -124,7 +168,10 @@ const Inventory = () => {
         return
       }
 
-      const data = await getAllDrugs({ includeCatalog: true })
+      const data = await getAllDrugs({
+        includeCatalog: true,
+        branchId: branchIdOverride || undefined,
+      })
       setDrugs(data)
 
       try {
@@ -139,7 +186,7 @@ const Inventory = () => {
       setError(error.message || 'Unable to load inventory right now.')
       notify(error.message || 'Unable to load inventory right now.', 'error')
     } finally {
-      setLoading(false)
+      if (manageLoading) setLoading(false)
     }
   }
 
@@ -260,6 +307,20 @@ const Inventory = () => {
     setShowDrugModal(true)
   }
 
+  const openTransferModal = (drug) => {
+    setTransferDrug(drug)
+    setTransferForm({ destinationBranchId: '', quantity: '', notes: '' })
+  }
+
+  const closeTransferModal = () => {
+    setTransferDrug(null)
+    setTransferForm({ destinationBranchId: '', quantity: '', notes: '' })
+  }
+
+  const availableDestinationBranches = branches.filter(
+    (row) => row.is_active !== false && row.id !== selectedBranchId
+  )
+
   const handleCostPriceChange = (value) => {
     setFormData((current) => ({
       ...current,
@@ -291,7 +352,7 @@ const Inventory = () => {
         setDrugs((current) => current.map((drug) => (drug.id === updatedDrug?.id ? updatedDrug : drug)))
         notify('Medicine updated successfully!', 'success')
       } else {
-        const createdDrug = await addDrug(formData)
+        const createdDrug = await addDrug({ ...formData, branchId: selectedBranchId || undefined })
         if (createdDrug?.id) {
           setDrugs((current) => [createdDrug, ...current.filter((drug) => drug.id !== createdDrug.id)])
         }
@@ -344,6 +405,35 @@ const Inventory = () => {
     } catch (error) {
       console.error('Error deleting drug:', error)
       notify(`Error deleting drug: ${error.message}`, 'error')
+    }
+  }
+
+  const handleBranchChange = async (branchId) => {
+    setSelectedBranchId(branchId)
+    await loadDrugs(branchId)
+  }
+
+  const handleTransferSubmit = async (event) => {
+    event.preventDefault()
+
+    if (!transferDrug) return
+
+    try {
+      setTransferSubmitting(true)
+      await transferDrugToBranch({
+        drugId: transferDrug.id,
+        destinationBranchId: transferForm.destinationBranchId,
+        quantity: transferForm.quantity,
+        notes: transferForm.notes,
+      })
+      notify(`${transferDrug.name} transferred successfully.`, 'success')
+      closeTransferModal()
+      await loadDrugs(selectedBranchId)
+      dispatchHealthflowDataChanged()
+    } catch (error) {
+      notify(error.message || 'Unable to transfer medicine.', 'error')
+    } finally {
+      setTransferSubmitting(false)
     }
   }
 
@@ -503,6 +593,20 @@ const Inventory = () => {
           <p>Manage your drug stock, track expiry dates, and monitor low stock items</p>
         </div>
         <div className="header-actions">
+          {branches.length > 0 && (
+            <label className="branch-stock-select">
+              <span>Branch stock</span>
+              <select
+                value={selectedBranchId}
+                onChange={(event) => void handleBranchChange(event.target.value)}
+                disabled={Boolean(profile?.branch_id)}
+              >
+                {branches.filter((row) => row.is_active !== false).map((row) => (
+                  <option key={row.id} value={row.id}>{row.name}</option>
+                ))}
+              </select>
+            </label>
+          )}
           <button className="btn btn-secondary" type="button" onClick={handleDownloadTemplate}>
             <Download size={20} />
             Download Template
@@ -628,6 +732,16 @@ const Inventory = () => {
                         >
                           <Edit2 size={16} />
                         </button>
+                        {availableDestinationBranches.length > 0 && Number.parseFloat(drug.quantity ?? 0) > 0 && (
+                          <button
+                            className="icon-btn transfer-btn"
+                            title={`Transfer ${drug.name} to another branch`}
+                            type="button"
+                            onClick={() => openTransferModal(drug)}
+                          >
+                            <Truck size={16} />
+                          </button>
+                        )}
                         {role === 'admin' && (
                           <button
                             className="icon-btn delete-btn"
@@ -768,6 +882,83 @@ const Inventory = () => {
                 </button>
                 <button type="submit" className="btn btn-primary" disabled={submitting}>
                   {submitting ? 'Saving...' : editingDrugId ? 'Update Medicine' : 'Save Drug'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {transferDrug && (
+        <div className="modal-overlay" onClick={closeTransferModal}>
+          <div className="modal-content transfer-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Transfer Medicine</h2>
+              <button className="close-btn" type="button" onClick={closeTransferModal}>
+                x
+              </button>
+            </div>
+            <form className="drug-form" onSubmit={handleTransferSubmit}>
+              <div className="transfer-summary">
+                <strong>{transferDrug.name}</strong>
+                <span>Available: {Number.parseFloat(transferDrug.quantity ?? 0)} {transferDrug.unit || 'unit'}</span>
+              </div>
+
+              <div className="form-group">
+                <label>Destination Branch *</label>
+                <select
+                  required
+                  value={transferForm.destinationBranchId}
+                  onChange={(event) =>
+                    setTransferForm((current) => ({
+                      ...current,
+                      destinationBranchId: event.target.value,
+                    }))
+                  }
+                >
+                  <option value="">Select branch</option>
+                  {availableDestinationBranches.map((row) => (
+                    <option key={row.id} value={row.id}>{row.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>Quantity to Transfer *</label>
+                <input
+                  required
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  max={Number.parseFloat(transferDrug.quantity ?? 0) || undefined}
+                  value={transferForm.quantity}
+                  onChange={(event) =>
+                    setTransferForm((current) => ({ ...current, quantity: event.target.value }))
+                  }
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Notes</label>
+                <textarea
+                  rows="3"
+                  value={transferForm.notes}
+                  onChange={(event) =>
+                    setTransferForm((current) => ({ ...current, notes: event.target.value }))
+                  }
+                />
+              </div>
+
+              <div className="form-actions">
+                <button type="button" className="btn btn-outline" onClick={closeTransferModal}>
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={transferSubmitting || !transferForm.destinationBranchId}
+                >
+                  {transferSubmitting ? 'Transferring...' : 'Transfer Medicine'}
                 </button>
               </div>
             </form>

@@ -40,6 +40,33 @@ export const getPatientById = async (id) => {
   return data
 }
 
+const compactPatientLookup = (value) =>
+  String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '')
+
+const patientMatchesSearch = (patient, term) => {
+  const normalizedTerm = String(term || '').toLowerCase()
+  const compactTerm = compactPatientLookup(term)
+  if (!normalizedTerm && !compactTerm) return true
+
+  return [
+    patient?.full_name,
+    patient?.phone,
+    patient?.email,
+    patient?.insurance_provider,
+    patient?.insurance_id,
+    patient?.nhis_member_no,
+    patient?.nhis_hin,
+  ]
+    .filter(Boolean)
+    .some((value) => {
+      const normalizedValue = String(value).toLowerCase()
+      return normalizedValue.includes(normalizedTerm) ||
+        (compactTerm && compactPatientLookup(value).includes(compactTerm))
+    })
+}
+
 // Add new patient
 export const addPatient = async (patientData) => {
   const fullName = assertRequiredText(patientData.fullName, 'Patient name')
@@ -127,16 +154,40 @@ export const searchPatients = async (searchTerm) => {
     return getAllPatients()
   }
 
+  const compactTerm = compactPatientLookup(term)
+  const searchTerms = [...new Set([term, compactTerm].filter(Boolean))]
+  const searchFilters = searchTerms.flatMap((value) => [
+    `full_name.ilike.%${value}%`,
+    `phone.ilike.%${value}%`,
+    `email.ilike.%${value}%`,
+    `insurance_provider.ilike.%${value}%`,
+    `insurance_id.ilike.%${value}%`,
+    `nhis_member_no.ilike.%${value}%`,
+    `nhis_hin.ilike.%${value}%`,
+  ])
+
   const { data, error } = await supabase
     .from('patients')
     .select('*')
-    .or(
-      `full_name.ilike.%${term}%,phone.ilike.%${term}%,email.ilike.%${term}%,insurance_provider.ilike.%${term}%,insurance_id.ilike.%${term}%`
-    )
+    .or(searchFilters.join(','))
     .order('full_name')
   
   if (error) throw error
-  return data
+
+  const rows = data || []
+  if (compactTerm === term) {
+    return rows
+  }
+
+  const allPatients = await getAllPatients()
+  const merged = new Map(rows.map((patient) => [patient.id, patient]))
+  allPatients
+    .filter((patient) => patientMatchesSearch(patient, term))
+    .forEach((patient) => merged.set(patient.id, patient))
+
+  return [...merged.values()].sort((left, right) =>
+    String(left.full_name || '').localeCompare(String(right.full_name || ''))
+  )
 }
 
 // Get patient visit count

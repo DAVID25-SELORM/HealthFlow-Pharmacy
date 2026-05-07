@@ -4,6 +4,99 @@
   min-width: 0;
 }
 
+.purchases-page .page-header {
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.purchases-page .header-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.purchases-page .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 42px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  padding: 0.62rem 0.9rem;
+  background: white;
+  color: var(--gray-800);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  transition: var(--transition);
+  white-space: nowrap;
+}
+
+.purchases-page .btn-primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: white;
+}
+
+.purchases-page .btn-primary:hover {
+  background: var(--primary-dark);
+  border-color: var(--primary-dark);
+}
+
+.purchases-page .btn-secondary,
+.purchases-page .btn-outline {
+  background: white;
+  border-color: var(--gray-300);
+  color: var(--gray-800);
+}
+
+.purchases-page .btn-secondary:hover,
+.purchases-page .btn-outline:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: rgba(22, 160, 133, 0.06);
+}
+
+.purchases-page .btn-sm {
+  min-height: 34px;
+  padding: 0.45rem 0.7rem;
+  font-size: 0.82rem;
+}
+
+.purchase-branch-select {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 42px;
+  padding: 0.35rem 0.65rem;
+  background: white;
+  border: 1px solid var(--gray-300);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+
+.purchase-branch-select span {
+  color: var(--gray-600);
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.purchase-branch-select select {
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--gray-800);
+  font: inherit;
+  font-weight: 700;
+}
+
 /* Stats */
 .purchases-stats {
   display: grid;
@@ -25,27 +118,57 @@
 .purchases-tabs {
   display: flex;
   gap: 0.25rem;
-  background: var(--gray-100);
+  background: white;
+  border: 1px solid var(--gray-200);
   border-radius: var(--radius-lg);
   padding: 0.25rem;
+  box-shadow: var(--shadow-sm);
 }
 
-.tab-btn {
-  padding: 0.4rem 1rem;
+.purchases-page .tab-btn {
+  min-height: 36px;
+  padding: 0.45rem 0.85rem;
   border: none;
   background: transparent;
   border-radius: var(--radius);
   font-size: 0.875rem;
-  font-weight: 500;
+  font-weight: 700;
   color: var(--gray-600);
   cursor: pointer;
   transition: var(--transition);
 }
 
-.tab-btn.active {
+.purchases-page .tab-btn.active {
+  background: var(--primary);
+  color: white;
+}
+
+.purchases-page .search-box {
+  flex: 1 1 280px;
+  max-width: 460px;
+  min-width: 220px;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  border: 1px solid var(--gray-300);
+  border-radius: var(--radius);
   background: white;
-  color: var(--primary);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  padding: 0.62rem 0.8rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.purchases-page .search-icon {
+  color: var(--gray-500);
+  flex-shrink: 0;
+}
+
+.purchases-page .search-input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  font: inherit;
+  color: var(--gray-800);
 }
 
 /* Alert */
@@ -151,24 +274,25 @@
   align-items: center;
 }
 
-.action-btn {
+.purchases-page .action-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: none;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--gray-200);
   border-radius: var(--radius);
+  background: white;
   cursor: pointer;
   transition: var(--transition);
 }
 
-.action-btn--view     { background: #eff6ff; color: #2563eb; }
-.action-btn--view:hover { background: #dbeafe; }
-.action-btn--complete { background: #f0fdf4; color: #16a34a; }
-.action-btn--complete:hover { background: #dcfce7; }
-.action-btn--cancel   { background: #fef2f2; color: #dc2626; }
-.action-btn--cancel:hover { background: #fee2e2; }
+.purchases-page .action-btn--view { background: #eff6ff; color: #2563eb; }
+.purchases-page .action-btn--view:hover { background: #dbeafe; }
+.purchases-page .action-btn--complete { background: #f0fdf4; color: #16a34a; }
+.purchases-page .action-btn--complete:hover { background: #dcfce7; }
+.purchases-page .action-btn--cancel { background: #fef2f2; color: #dc2626; }
+.purchases-page .action-btn--cancel:hover { background: #fee2e2; }
 
 /* Modal */
 .modal-overlay {

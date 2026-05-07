@@ -16,6 +16,7 @@ import {
   getPurchasesStats,
 } from '../services/purchasesService'
 import { getAllDrugs } from '../services/drugService'
+import { getBranches } from '../services/branchService'
 import './Purchases.css'
 
 const blankPurchaseForm = {
@@ -55,7 +56,7 @@ const StatusBadge = ({ status }) => (
 )
 
 const Purchases = () => {
-  const { role } = useAuth()
+  const { role, profile, branch } = useAuth()
   const { notify } = useNotification()
   const [searchParams, setSearchParams] = useSearchParams()
 
@@ -77,6 +78,8 @@ const Purchases = () => {
   const [submitting, setSubmitting]         = useState(false)
   const [completing, setCompleting]         = useState(null)
   const [cancelling, setCancelling]         = useState(null)
+  const [branches, setBranches]             = useState([])
+  const [selectedBranchId, setSelectedBranchId] = useState('')
 
   // ── new purchase form ────────────────────────────────────────
   const [purchaseForm, setPurchaseForm] = useState(blankPurchaseForm)
@@ -100,7 +103,7 @@ const Purchases = () => {
   }
 
   // ── load data ────────────────────────────────────────────────
-  const loadAll = async () => {
+  const loadAll = async (branchIdOverride = selectedBranchId) => {
     if (!isSupabaseConfigured()) {
       setError('Supabase is not configured.')
       setLoading(false)
@@ -112,7 +115,7 @@ const Purchases = () => {
       const [purchasesData, suppliersData, drugsData, statsData] = await Promise.all([
         getAllPurchases(),
         getAllSuppliers(),
-        getAllDrugs({ useTierAccess: true }),
+        getAllDrugs({ useTierAccess: true, branchId: branchIdOverride || undefined }),
         getPurchasesStats(),
       ])
       setPurchases(purchasesData)
@@ -127,6 +130,33 @@ const Purchases = () => {
   }
 
   useEffect(() => { void loadAll() }, [])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadBranches = async () => {
+      try {
+        const rows = await getBranches()
+        if (cancelled) return
+        const defaultBranchId =
+          profile?.branch_id ||
+          branch?.id ||
+          rows.find((row) => row.is_active !== false && row.is_main)?.id ||
+          rows.find((row) => row.is_active !== false)?.id ||
+          ''
+        setBranches(rows)
+        setSelectedBranchId((current) => current || defaultBranchId)
+        if (defaultBranchId) {
+          await loadAll(defaultBranchId)
+        }
+      } catch (branchError) {
+        console.warn('Unable to load purchase branches:', branchError)
+      }
+    }
+
+    void loadBranches()
+    return () => { cancelled = true }
+  }, [branch?.id, profile?.branch_id])
 
   // ── filtered list ────────────────────────────────────────────
   const filteredPurchases = useMemo(() => {
@@ -237,7 +267,7 @@ const Purchases = () => {
     try {
       setSubmitting(true)
       setError('')
-      await createPurchase(purchaseForm, lineItems)
+      await createPurchase({ ...purchaseForm, branchId: selectedBranchId || undefined }, lineItems)
       setShowNewModal(false)
       setPurchaseForm(blankPurchaseForm)
       setLineItems([])
@@ -298,11 +328,30 @@ const Purchases = () => {
           <h1 className="page-title">Purchases</h1>
           <p className="page-subtitle">Manage supplier orders and update stock</p>
         </div>
-        {canWrite && (
-          <button className="btn btn-primary" onClick={() => setShowNewModal(true)}>
-            <Plus size={16} /> New Purchase
-          </button>
-        )}
+        <div className="header-actions">
+          {branches.length > 0 && (
+            <label className="purchase-branch-select">
+              <span>Branch stock</span>
+              <select
+                value={selectedBranchId}
+                onChange={(event) => {
+                  setSelectedBranchId(event.target.value)
+                  void loadAll(event.target.value)
+                }}
+                disabled={Boolean(profile?.branch_id)}
+              >
+                {branches.filter((row) => row.is_active !== false).map((row) => (
+                  <option key={row.id} value={row.id}>{row.name}</option>
+                ))}
+              </select>
+            </label>
+          )}
+          {canWrite && (
+            <button className="btn btn-primary" onClick={() => setShowNewModal(true)}>
+              <Plus size={16} /> New Purchase
+            </button>
+          )}
+        </div>
       </div>
 
       {error && <div className="purchases-alert" role="alert">{error}</div>}

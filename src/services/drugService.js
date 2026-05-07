@@ -64,18 +64,23 @@ const filterSearchRows = (rows, { term = '', includeCatalog = false, inStockOnly
     .filter((drug) => drugMatchesSearch(drug, term))
     .slice(0, limit)
 
-const getAllDrugsDirectly = async () => {
+const getAllDrugsDirectly = async (branchId = null) => {
   const rows = []
   let from = 0
 
   while (true) {
     const to = from + DRUGS_PER_PAGE - 1
-    const { data, error } = await supabase
+    let query = supabase
       .from('drugs')
       .select('*')
       .order('name')
       .order('id')
-      .range(from, to)
+
+    if (branchId) {
+      query = query.eq('branch_id', branchId)
+    }
+
+    const { data, error } = await query.range(from, to)
 
     if (error) {
       throw error
@@ -93,11 +98,17 @@ const getAllDrugsDirectly = async () => {
   return rows.filter((drug) => !isInactiveDrug(drug))
 }
 
-const getAllDrugsViaTierAccess = async (includeCatalog = false) => {
-  const response = await invokeTierAccess({
+const getAllDrugsViaTierAccess = async (includeCatalog = false, branchId = null) => {
+  const payload = {
     action: 'get_drugs',
     includeCatalog,
-  })
+  }
+
+  if (branchId) {
+    payload.branchId = branchId
+  }
+
+  const response = await invokeTierAccess(payload)
 
   return (response.drugs || []).filter((drug) => !isInactiveDrug(drug))
 }
@@ -106,12 +117,13 @@ const getAllDrugsViaTierAccess = async (includeCatalog = false) => {
 export const getAllDrugs = async (options = {}) => {
   const includeCatalog = Boolean(options.includeCatalog)
   const useTierAccess = Boolean(options.useTierAccess)
+  const branchId = normalizeText(options.branchId) || null
 
-  if (includeCatalog || useTierAccess) {
-    return getAllDrugsViaTierAccess(includeCatalog)
+  if (includeCatalog || useTierAccess || branchId) {
+    return getAllDrugsViaTierAccess(includeCatalog, branchId)
   }
 
-  const drugs = await getAllDrugsDirectly()
+  const drugs = await getAllDrugsDirectly(branchId)
 
   return drugs.filter(shouldShowDrugOutsideInventory)
 }
@@ -156,6 +168,7 @@ export const addDrug = async (drugData) => {
       description: normalizeText(drugData.description) || null,
       reorderLevel: assertNonNegativeNumber(drugData.reorderLevel || 10, 'Reorder level'),
       unit: normalizeText(drugData.unit) || 'tablets',
+      branchId: normalizeText(drugData.branchId) || null,
     },
   })
 
@@ -221,6 +234,30 @@ export const deleteDrug = async (id) => {
   return response.drug
 }
 
+export const transferDrugToBranch = async ({
+  drugId,
+  destinationBranchId,
+  quantity,
+  notes = '',
+}) => {
+  const { data, error } = await supabase.rpc('transfer_drug_to_branch', {
+    p_drug_id: assertRequiredText(drugId, 'Drug'),
+    p_destination_branch_id: assertRequiredText(destinationBranchId, 'Destination branch'),
+    p_quantity: assertNonNegativeNumber(quantity, 'Transfer quantity'),
+    p_notes: normalizeText(notes) || null,
+  })
+
+  if (error) {
+    throw error
+  }
+
+  if (data?.error) {
+    throw new Error(data.error)
+  }
+
+  return data
+}
+
 // Search drugs
 export const searchDrugs = async (searchTerm, options = {}) => {
   const term = sanitizeSearchTerm(searchTerm)
@@ -229,16 +266,23 @@ export const searchDrugs = async (searchTerm, options = {}) => {
   const useTierAccess = Boolean(options.useTierAccess)
   const inStockOnly = Boolean(options.inStockOnly)
   const tokens = normalizeDrugSearchTokens(term)
+  const branchId = normalizeText(options.branchId) || null
 
   if (useTierAccess) {
     const loadMatches = async (queryTerm) => {
-      const response = await invokeTierAccess({
+      const payload = {
         action: 'get_drugs',
         includeCatalog,
         searchTerm: queryTerm,
         limit,
         inStockOnly,
-      })
+      }
+
+      if (branchId) {
+        payload.branchId = branchId
+      }
+
+      const response = await invokeTierAccess(payload)
 
       return filterSearchRows(response.drugs || [], {
         term,
@@ -281,6 +325,10 @@ export const searchDrugs = async (searchTerm, options = {}) => {
 
   if (inStockOnly) {
     query = query.gt('quantity', 0)
+  }
+
+  if (branchId) {
+    query = query.eq('branch_id', branchId)
   }
 
   const { data, error } = await query

@@ -24,6 +24,8 @@ const POS_PATIENT_SEARCH_LIMIT = 8
 const formatPatientOption = (patient) =>
   [patient?.full_name, patient?.phone ? `(${patient.phone})` : null].filter(Boolean).join(' ')
 
+const compactPatientLookup = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+
 const formatAmountInput = (value) => Number(value || 0).toFixed(2)
 
 const mergePharmacySettingsWithOrganization = (settings, organization) => ({
@@ -94,6 +96,7 @@ const Sales = () => {
   )
   const filteredPatients = useMemo(() => {
     const term = patientSearchTerm.trim().toLowerCase()
+    const compactTerm = compactPatientLookup(term)
     const matches = term
       ? patients.filter((patient) =>
           [
@@ -102,9 +105,15 @@ const Sales = () => {
             patient.email,
             patient.insurance_provider,
             patient.insurance_id,
+            patient.nhis_member_no,
+            patient.nhis_hin,
           ]
             .filter(Boolean)
-            .some((value) => String(value).toLowerCase().includes(term))
+            .some((value) => {
+              const normalizedValue = String(value).toLowerCase()
+              return normalizedValue.includes(term) ||
+                (compactTerm && compactPatientLookup(value).includes(compactTerm))
+            })
         )
       : patients
 
@@ -190,6 +199,7 @@ const Sales = () => {
           useTierAccess: true,
           inStockOnly: true,
           limit: POS_DRUG_SEARCH_LIMIT,
+          branchId: effectiveBranchId || undefined,
         })
 
         if (cancelled) {
@@ -219,7 +229,7 @@ const Sales = () => {
       cancelled = true
       window.clearTimeout(timeout)
     }
-  }, [loading, searchTerm])
+  }, [effectiveBranchId, loading, searchTerm])
 
   useEffect(() => {
     const routeSearch = searchParams.get('search') || ''

@@ -243,7 +243,7 @@ const Patients = () => {
         <Search size={18} />
         <input
           type="text"
-          placeholder="Search patients by name, phone, email, or insurance..."
+          placeholder="Search patients by name, phone, email, insurance, or NHIS number..."
           value={searchTerm}
           onChange={handleSearch}
         />
