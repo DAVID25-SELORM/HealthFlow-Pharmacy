@@ -62,6 +62,7 @@ export const normalizeSubscriptionTier = (
 
 export const resolveTierAccess = (organization: {
   status?: unknown
+  billing_status?: unknown
   subscription_tier?: unknown
   trial_ends_at?: unknown
   subscription_ends_at?: unknown
@@ -69,12 +70,22 @@ export const resolveTierAccess = (organization: {
   const now = new Date()
   const normalizedTier = normalizeSubscriptionTier(organization.subscription_tier)
   const status = normalizeText(organization.status).toLowerCase()
+  const billingStatus = normalizeText(organization.billing_status).toLowerCase()
   const trialEndsAt = parseOptionalDate(organization.trial_ends_at)
   const subscriptionEndsAt = parseOptionalDate(organization.subscription_ends_at)
+  const isSuspended =
+    status === 'suspended' ||
+    status === 'cancelled' ||
+    billingStatus === 'suspended' ||
+    billingStatus === 'cancelled'
 
   const isTrialActive =
-    status === 'trial' && Boolean(trialEndsAt) && trialEndsAt.getTime() > now.getTime()
+    !isSuspended &&
+    status === 'trial' &&
+    Boolean(trialEndsAt) &&
+    trialEndsAt.getTime() > now.getTime()
   const isSubscriptionActive =
+    !isSuspended &&
     status === 'active' &&
     normalizedTier !== 'trial' &&
     (!subscriptionEndsAt || subscriptionEndsAt.getTime() > now.getTime())
@@ -88,12 +99,14 @@ export const resolveTierAccess = (organization: {
           ? 'basic'
           : (normalizedTier as EffectiveTierKey)
 
+  const allowedTier = isSuspended ? 'basic' : effectiveTier
+
   return {
     normalizedTier,
-    effectiveTier,
+    effectiveTier: allowedTier,
     isTrialActive,
     isSubscriptionActive,
-    isSuspended: status === 'suspended',
-    tierLimits: TIER_LIMITS[effectiveTier],
+    isSuspended,
+    tierLimits: TIER_LIMITS[allowedTier],
   }
 }

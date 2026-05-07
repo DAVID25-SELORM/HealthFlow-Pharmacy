@@ -213,7 +213,7 @@ const getOrganizationTierContext = async (
 ) => {
   const { data: organization, error } = await adminClient
     .from('organizations')
-    .select('id, status, subscription_tier, trial_ends_at, subscription_ends_at')
+    .select('id, status, billing_status, subscription_tier, trial_ends_at, subscription_ends_at')
     .eq('id', organizationId)
     .maybeSingle()
 
@@ -270,6 +270,10 @@ const requireTierFeature = async (
   feature: 'claims' | 'reports' | 'advanced_inventory'
 ) => {
   const tierContext = await getOrganizationTierContext(adminClient, organizationId)
+
+  if (tierContext.isSuspended) {
+    throw new Error('This pharmacy is locked. Contact platform support to restore access.')
+  }
 
   if (feature === 'claims' && !tierContext.tierLimits.hasClaims) {
     throw new Error('Insurance claims are available on the Enterprise plan.')
@@ -561,6 +565,10 @@ const assertCanAddDrugs = async (
   additionalCount: number
 ) => {
   const tierContext = await getOrganizationTierContext(adminClient, organizationId)
+  if (tierContext.isSuspended) {
+    throw new Error('This pharmacy is locked. Contact platform support to restore access.')
+  }
+
   const maxDrugs = tierContext.tierLimits.maxDrugs
   if (!Number.isFinite(maxDrugs)) {
     return

@@ -69,7 +69,13 @@ const formatSubscriptionTier = (tier) => {
 const Settings = () => {
   const { user, role, organization } = useAuth()
   const { notify } = useNotification()
-  const { isTrialActive, isSubscriptionActive, daysUntilTrialExpires, tierLimits } = useTenant()
+  const {
+    isTrialActive,
+    isSubscriptionActive,
+    daysUntilTrialExpires,
+    tierLimits,
+    canUseMultiBranch,
+  } = useTenant()
   const isAdmin = role === 'admin'
 
   const [settingsId, setSettingsId] = useState('')
@@ -266,6 +272,9 @@ const Settings = () => {
   const handleCreateBranch = async (e) => {
     e.preventDefault()
     if (!branchForm.name.trim()) return setError('Branch name is required')
+    if (!canUseMultiBranch && activeBranches.length >= 1) {
+      return setError('Multi-branch is locked for this pharmacy. Enable it from Tenant Admin before adding another branch.')
+    }
     setCreatingBranch(true)
     setError('')
     try {
@@ -691,6 +700,13 @@ const Settings = () => {
               {branches.length === 0 && <p className="branch-empty">No branches yet.</p>}
             </div>
 
+            {!canUseMultiBranch && activeBranches.length >= 1 && (
+              <p className="settings-note">
+                Multi-branch is locked for this pharmacy. The main branch can be managed, but
+                new branches require the Multi-branch module.
+              </p>
+            )}
+
             {showBranchForm ? (
               <form className="settings-form branch-add-form" onSubmit={handleCreateBranch}>
                 <div className="settings-form-row">
@@ -753,7 +769,12 @@ const Settings = () => {
                 </div>
               </form>
             ) : (
-              <button type="button" className="btn btn-primary" onClick={() => setShowBranchForm(true)}>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => setShowBranchForm(true)}
+                disabled={!canUseMultiBranch && activeBranches.length >= 1}
+              >
                 <Plus size={14} />
                 Add Branch
               </button>

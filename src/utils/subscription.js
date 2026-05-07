@@ -52,6 +52,13 @@ const parseOptionalDate = (value) => {
   return Number.isNaN(parsed.getTime()) ? null : parsed
 }
 
+const normalizeStatus = (value) => String(value || '').trim().toLowerCase()
+
+const isLockedStatus = (value) => {
+  const normalized = normalizeStatus(value)
+  return normalized === 'suspended' || normalized === 'cancelled'
+}
+
 export const resolveTierAccess = (organization, nowValue = new Date()) => {
   if (!organization) {
     return {
@@ -67,10 +74,14 @@ export const resolveTierAccess = (organization, nowValue = new Date()) => {
 
   const now = nowValue instanceof Date ? nowValue : new Date(nowValue)
   const normalizedTier = normalizeSubscriptionTier(organization.subscription_tier)
+  const status = normalizeStatus(organization.status)
+  const billingStatus = normalizeStatus(organization.billing_status)
   const trialEnds = parseOptionalDate(organization.trial_ends_at)
   const subscriptionEnds = parseOptionalDate(organization.subscription_ends_at)
+  const isSuspended = isLockedStatus(status) || isLockedStatus(billingStatus)
   const isTrialActive =
-    organization.status === 'trial' &&
+    !isSuspended &&
+    status === 'trial' &&
     Boolean(trialEnds) &&
     trialEnds.getTime() > now.getTime()
 
@@ -79,7 +90,8 @@ export const resolveTierAccess = (organization, nowValue = new Date()) => {
     : null
 
   const isSubscriptionActive =
-    organization.status === 'active' &&
+    !isSuspended &&
+    status === 'active' &&
     normalizedTier !== 'trial' &&
     (!subscriptionEnds || subscriptionEnds.getTime() > now.getTime())
 
@@ -92,13 +104,17 @@ export const resolveTierAccess = (organization, nowValue = new Date()) => {
           ? 'basic'
           : normalizedTier
 
+  const tierLimits = isSuspended
+    ? TIER_LIMITS.basic
+    : TIER_LIMITS[effectiveTier] || TIER_LIMITS.basic
+
   return {
     normalizedTier,
-    effectiveTier,
+    effectiveTier: isSuspended ? 'basic' : effectiveTier,
     isTrialActive,
     isSubscriptionActive,
-    isSuspended: organization.status === 'suspended',
+    isSuspended,
     daysUntilTrialExpires,
-    tierLimits: TIER_LIMITS[effectiveTier] || TIER_LIMITS.basic,
+    tierLimits,
   }
 }

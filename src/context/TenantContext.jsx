@@ -23,8 +23,13 @@ export const TenantProvider = ({ children }) => {
         isSuspended: false,
         daysUntilTrialExpires: null,
         tierLimits: TIER_LIMITS.basic,
+        planCode: 'starter',
+        billingStatus: 'trial',
+        supportLevel: 'standard',
         canUsePurchases: false,
         canUseNhis: false,
+        canUseAccounting: false,
+        canUseMultiBranch: false,
         loading: true,
       }
     }
@@ -38,8 +43,13 @@ export const TenantProvider = ({ children }) => {
         isSuspended: false,
         daysUntilTrialExpires: null,
         tierLimits: TIER_LIMITS.basic,
+        planCode: 'starter',
+        billingStatus: 'trial',
+        supportLevel: 'standard',
         canUsePurchases: false,
         canUseNhis: false,
+        canUseAccounting: false,
+        canUseMultiBranch: false,
         loading: false,
       }
     }
@@ -60,9 +70,14 @@ export const TenantProvider = ({ children }) => {
       isSuspended,
       daysUntilTrialExpires,
       tierLimits,
+      planCode: organization.plan_code || 'starter',
+      billingStatus: organization.billing_status || organization.status || 'trial',
+      supportLevel: organization.support_level || 'standard',
       loading: false,
       canUsePurchases: Boolean(organization.can_use_purchases),
       canUseNhis: Boolean(organization.can_use_nhis),
+      canUseAccounting: Boolean(organization.can_use_accounting),
+      canUseMultiBranch: Boolean(organization.can_use_multi_branch),
     }
   }, [organization, loading])
 

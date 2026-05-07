@@ -180,7 +180,7 @@ const getOrganizationTierContext = async (
 ) => {
   const { data: organization, error } = await adminClient
     .from('organizations')
-    .select('id, status, subscription_tier, trial_ends_at, subscription_ends_at')
+    .select('id, status, billing_status, subscription_tier, trial_ends_at, subscription_ends_at')
     .eq('id', organizationId)
     .maybeSingle()
 
@@ -201,6 +201,10 @@ const assertOrganizationCanAddUsers = async (
   additionalUsers = 1
 ) => {
   const tierContext = await getOrganizationTierContext(adminClient, organizationId)
+  if (tierContext.isSuspended) {
+    throw new Error('This pharmacy is locked. Contact platform support to restore access.')
+  }
+
   const maxUsers = tierContext.tierLimits.maxUsers
   if (!Number.isFinite(maxUsers)) {
     return

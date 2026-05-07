@@ -31,8 +31,15 @@ const blankPharmacy = {
   slogan: '',
   licenseNumber: '',
   subscriptionTier: 'basic',
+  planCode: 'starter',
+  billingStatus: 'trial',
+  supportLevel: 'standard',
   canUsePurchases: false,
   canUseNhis: false,
+  canUseAccounting: false,
+  canUseMultiBranch: false,
+  nextPaymentDueAt: '',
+  billingNotes: '',
 }
 
 const blankAdmin = {
@@ -43,6 +50,18 @@ const blankAdmin = {
 }
 
 const TENANT_ADMIN_EXPANDED_ORG_KEY = 'healthflow.tenantAdmin.expandedOrgId'
+
+const formatPlanCode = (value) => {
+  const normalized = String(value || 'starter')
+  if (normalized === 'professional') return 'Professional'
+  if (normalized === 'premium') return 'Premium'
+  return 'Starter'
+}
+
+const formatBillingStatus = (value) =>
+  String(value || 'trial')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase())
 
 const TenantAdmin = () => {
   const { notify } = useNotification()
@@ -217,8 +236,16 @@ const TenantAdmin = () => {
       licenseNumber: org.license_number || '',
       status: org.status || 'trial',
       subscriptionTier: org.subscription_tier || 'basic',
+      planCode: org.plan_code || 'starter',
+      billingStatus: org.billing_status || org.status || 'trial',
+      supportLevel: org.support_level || 'standard',
       canUsePurchases: Boolean(org.can_use_purchases),
       canUseNhis: Boolean(org.can_use_nhis),
+      canUseAccounting: Boolean(org.can_use_accounting),
+      canUseMultiBranch: Boolean(org.can_use_multi_branch),
+      billingNotes: org.billing_notes || '',
+      lastPaymentAt: org.last_payment_at ? org.last_payment_at.split('T')[0] : '',
+      nextPaymentDueAt: org.next_payment_due_at ? org.next_payment_due_at.split('T')[0] : '',
       trialEndsAt: org.trial_ends_at ? org.trial_ends_at.split('T')[0] : '',
       subscriptionEndsAt: org.subscription_ends_at ? org.subscription_ends_at.split('T')[0] : '',
     })
@@ -274,10 +301,14 @@ const TenantAdmin = () => {
         ...editForm,
         trialEndsAt: editForm.trialEndsAt ? new Date(editForm.trialEndsAt).toISOString() : null,
         subscriptionEndsAt: editForm.subscriptionEndsAt ? new Date(editForm.subscriptionEndsAt).toISOString() : null,
+        lastPaymentAt: editForm.lastPaymentAt ? new Date(editForm.lastPaymentAt).toISOString() : null,
+        nextPaymentDueAt: editForm.nextPaymentDueAt ? new Date(editForm.nextPaymentDueAt).toISOString() : null,
       })
       if (
         Boolean(updatedOrganization?.can_use_purchases) !== Boolean(editForm.canUsePurchases) ||
-        Boolean(updatedOrganization?.can_use_nhis) !== Boolean(editForm.canUseNhis)
+        Boolean(updatedOrganization?.can_use_nhis) !== Boolean(editForm.canUseNhis) ||
+        Boolean(updatedOrganization?.can_use_accounting) !== Boolean(editForm.canUseAccounting) ||
+        Boolean(updatedOrganization?.can_use_multi_branch) !== Boolean(editForm.canUseMultiBranch)
       ) {
         throw new Error('Module privileges were not saved. Deploy the latest tenant-signup function and try again.')
       }
@@ -513,6 +544,49 @@ const TenantAdmin = () => {
                   </select>
                 </div>
                 <div className="tenant-form-group">
+                  <label>Commercial Plan</label>
+                  <select
+                    value={pharmacy.planCode}
+                    onChange={(e) => setPharmacy({ ...pharmacy, planCode: e.target.value })}
+                  >
+                    <option value="starter">Starter</option>
+                    <option value="professional">Professional</option>
+                    <option value="premium">Premium</option>
+                  </select>
+                </div>
+                <div className="tenant-form-group">
+                  <label>Billing Status</label>
+                  <select
+                    value={pharmacy.billingStatus}
+                    onChange={(e) => setPharmacy({ ...pharmacy, billingStatus: e.target.value })}
+                  >
+                    <option value="trial">Trial</option>
+                    <option value="active">Active</option>
+                    <option value="past_due">Past due</option>
+                    <option value="suspended">Suspended</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
+                </div>
+                <div className="tenant-form-group">
+                  <label>Support Level</label>
+                  <select
+                    value={pharmacy.supportLevel}
+                    onChange={(e) => setPharmacy({ ...pharmacy, supportLevel: e.target.value })}
+                  >
+                    <option value="standard">Standard</option>
+                    <option value="priority">Priority</option>
+                    <option value="premium">Premium</option>
+                  </select>
+                </div>
+                <div className="tenant-form-group">
+                  <label>Next Payment Due</label>
+                  <input
+                    type="date"
+                    value={pharmacy.nextPaymentDueAt}
+                    onChange={(e) => setPharmacy({ ...pharmacy, nextPaymentDueAt: e.target.value })}
+                  />
+                </div>
+                <div className="tenant-form-group">
                   <label>Module Privileges</label>
                   <label className="tenant-checkbox-label">
                     <input
@@ -530,6 +604,31 @@ const TenantAdmin = () => {
                     />
                     NHIS
                   </label>
+                  <label className="tenant-checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={pharmacy.canUseAccounting}
+                      onChange={(e) => setPharmacy({ ...pharmacy, canUseAccounting: e.target.checked })}
+                    />
+                    Accounting
+                  </label>
+                  <label className="tenant-checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={pharmacy.canUseMultiBranch}
+                      onChange={(e) => setPharmacy({ ...pharmacy, canUseMultiBranch: e.target.checked })}
+                    />
+                    Multi-branch
+                  </label>
+                </div>
+                <div className="tenant-form-group full-width">
+                  <label>Billing Notes</label>
+                  <textarea
+                    rows="3"
+                    value={pharmacy.billingNotes}
+                    onChange={(e) => setPharmacy({ ...pharmacy, billingNotes: e.target.value })}
+                    placeholder="Payment method, onboarding notes, support terms..."
+                  />
                 </div>
               </div>
             </div>
@@ -608,6 +707,8 @@ const TenantAdmin = () => {
                   <th>Subdomain</th>
                   <th>Status</th>
                   <th>Tier</th>
+                  <th>Plan</th>
+                  <th>Billing</th>
                   <th>Users</th>
                   <th>Branches</th>
                   <th>Registered</th>
@@ -650,6 +751,12 @@ const TenantAdmin = () => {
                           <option value="pro">Professional</option>
                           <option value="enterprise">Enterprise</option>
                         </select>
+                      </td>
+                      <td>{formatPlanCode(org.plan_code)}</td>
+                      <td>
+                        <span className={`status-pill status-${org.billing_status || 'trial'}`}>
+                          {formatBillingStatus(org.billing_status)}
+                        </span>
                       </td>
                       <td>
                         <span className="user-count">
@@ -700,7 +807,7 @@ const TenantAdmin = () => {
                     {/* Expanded users row */}
                     {expandedOrgId === org.id && (
                       <tr className="users-expand-row">
-                        <td colSpan={8}>
+                        <td colSpan={10}>
                           <div className="users-expand">
                             <h5>Users in {org.name}</h5>
                             {orgUsers[org.id] ? (
@@ -971,6 +1078,41 @@ const TenantAdmin = () => {
                     </select>
                   </div>
                   <div className="tenant-form-group">
+                    <label>Commercial Plan</label>
+                    <select
+                      value={editForm.planCode}
+                      onChange={(e) => setEditForm({ ...editForm, planCode: e.target.value })}
+                    >
+                      <option value="starter">Starter</option>
+                      <option value="professional">Professional</option>
+                      <option value="premium">Premium</option>
+                    </select>
+                  </div>
+                  <div className="tenant-form-group">
+                    <label>Billing Status</label>
+                    <select
+                      value={editForm.billingStatus}
+                      onChange={(e) => setEditForm({ ...editForm, billingStatus: e.target.value })}
+                    >
+                      <option value="trial">Trial</option>
+                      <option value="active">Active</option>
+                      <option value="past_due">Past due</option>
+                      <option value="suspended">Suspended</option>
+                      <option value="cancelled">Cancelled</option>
+                    </select>
+                  </div>
+                  <div className="tenant-form-group">
+                    <label>Support Level</label>
+                    <select
+                      value={editForm.supportLevel}
+                      onChange={(e) => setEditForm({ ...editForm, supportLevel: e.target.value })}
+                    >
+                      <option value="standard">Standard</option>
+                      <option value="priority">Priority</option>
+                      <option value="premium">Premium</option>
+                    </select>
+                  </div>
+                  <div className="tenant-form-group">
                     <label>Trial Ends</label>
                     <input
                       type="date"
@@ -984,6 +1126,22 @@ const TenantAdmin = () => {
                       type="date"
                       value={editForm.subscriptionEndsAt}
                       onChange={(e) => setEditForm({ ...editForm, subscriptionEndsAt: e.target.value })}
+                    />
+                  </div>
+                  <div className="tenant-form-group">
+                    <label>Last Payment</label>
+                    <input
+                      type="date"
+                      value={editForm.lastPaymentAt}
+                      onChange={(e) => setEditForm({ ...editForm, lastPaymentAt: e.target.value })}
+                    />
+                  </div>
+                  <div className="tenant-form-group">
+                    <label>Next Payment Due</label>
+                    <input
+                      type="date"
+                      value={editForm.nextPaymentDueAt}
+                      onChange={(e) => setEditForm({ ...editForm, nextPaymentDueAt: e.target.value })}
                     />
                   </div>
                   <div className="tenant-form-group">
@@ -1004,6 +1162,31 @@ const TenantAdmin = () => {
                       />
                       NHIS
                     </label>
+                    <label className="tenant-checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(editForm.canUseAccounting)}
+                        onChange={(e) => setEditForm({ ...editForm, canUseAccounting: e.target.checked })}
+                      />
+                      Accounting
+                    </label>
+                    <label className="tenant-checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(editForm.canUseMultiBranch)}
+                        onChange={(e) => setEditForm({ ...editForm, canUseMultiBranch: e.target.checked })}
+                      />
+                      Multi-branch
+                    </label>
+                  </div>
+                  <div className="tenant-form-group full-width">
+                    <label>Billing Notes</label>
+                    <textarea
+                      rows="3"
+                      value={editForm.billingNotes}
+                      onChange={(e) => setEditForm({ ...editForm, billingNotes: e.target.value })}
+                      placeholder="Payment method, onboarding notes, support terms..."
+                    />
                   </div>
                 </div>
               </div>

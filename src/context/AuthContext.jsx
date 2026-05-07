@@ -185,8 +185,14 @@ export const AuthProvider = ({ children }) => {
             subdomain,
             status,
             subscription_tier,
+            plan_code,
+            billing_status,
             trial_ends_at,
             subscription_ends_at,
+            last_payment_at,
+            next_payment_due_at,
+            support_level,
+            billing_notes,
             phone,
             email,
             address,
@@ -196,7 +202,9 @@ export const AuthProvider = ({ children }) => {
             slogan,
             license_number,
             can_use_purchases,
-            can_use_nhis
+            can_use_nhis,
+            can_use_accounting,
+            can_use_multi_branch
           )
         `)
         .eq('id', activeUser.id)

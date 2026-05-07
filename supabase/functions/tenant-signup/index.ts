@@ -8,8 +8,11 @@ const SUBDOMAIN_PATTERN = /^[a-z0-9-]+$/
 const DEFAULT_CATALOG_SYNC_BATCH_SIZE = 200
 const VALID_TIERS = ['trial', 'basic', 'pro', 'enterprise'] as const
 const VALID_STATUSES = ['trial', 'active', 'suspended', 'cancelled'] as const
+const VALID_PLAN_CODES = ['starter', 'professional', 'premium'] as const
+const VALID_BILLING_STATUSES = ['trial', 'active', 'past_due', 'suspended', 'cancelled'] as const
+const VALID_SUPPORT_LEVELS = ['standard', 'priority', 'premium'] as const
 const ORGANIZATION_SELECT_FIELDS =
-  'id, name, subdomain, status, subscription_tier, trial_ends_at, subscription_ends_at, phone, email, address, city, region, logo_url, slogan, license_number, can_use_purchases, can_use_nhis, created_at, updated_at'
+  'id, name, subdomain, status, subscription_tier, plan_code, billing_status, trial_ends_at, subscription_ends_at, last_payment_at, next_payment_due_at, support_level, billing_notes, phone, email, address, city, region, logo_url, slogan, license_number, can_use_purchases, can_use_nhis, can_use_accounting, can_use_multi_branch, created_at, updated_at'
 const TENANT_USER_SELECT_FIELDS = 'id, email, full_name, role, is_active, created_at'
 
 type TenantSignupAction =
@@ -102,6 +105,54 @@ const normalizeOrganizationStatus = (
   }
 
   throw new Error('Organization status must be trial, active, suspended, or cancelled.')
+}
+
+const normalizePlanCode = (value: unknown, fallback: (typeof VALID_PLAN_CODES)[number]) => {
+  const normalized = normalizeText(value).toLowerCase()
+
+  if (!normalized) {
+    return fallback
+  }
+
+  if (VALID_PLAN_CODES.includes(normalized as (typeof VALID_PLAN_CODES)[number])) {
+    return normalized as (typeof VALID_PLAN_CODES)[number]
+  }
+
+  throw new Error('Plan must be starter, professional, or premium.')
+}
+
+const normalizeBillingStatus = (
+  value: unknown,
+  fallback: (typeof VALID_BILLING_STATUSES)[number]
+) => {
+  const normalized = normalizeText(value).toLowerCase()
+
+  if (!normalized) {
+    return fallback
+  }
+
+  if (VALID_BILLING_STATUSES.includes(normalized as (typeof VALID_BILLING_STATUSES)[number])) {
+    return normalized as (typeof VALID_BILLING_STATUSES)[number]
+  }
+
+  throw new Error('Billing status must be trial, active, past_due, suspended, or cancelled.')
+}
+
+const normalizeSupportLevel = (
+  value: unknown,
+  fallback: (typeof VALID_SUPPORT_LEVELS)[number]
+) => {
+  const normalized = normalizeText(value).toLowerCase()
+
+  if (!normalized) {
+    return fallback
+  }
+
+  if (VALID_SUPPORT_LEVELS.includes(normalized as (typeof VALID_SUPPORT_LEVELS)[number])) {
+    return normalized as (typeof VALID_SUPPORT_LEVELS)[number]
+  }
+
+  throw new Error('Support level must be standard, priority, or premium.')
 }
 
 const normalizeOptionalIsoDate = (value: unknown) => {
@@ -668,6 +719,18 @@ const updateTenantOrganization = async (
       organizationInput.subscriptionTier !== undefined
         ? normalizeSubscriptionTier(organizationInput.subscriptionTier, 'basic')
         : null,
+    plan_code:
+      organizationInput.planCode !== undefined
+        ? normalizePlanCode(organizationInput.planCode, 'starter')
+        : null,
+    billing_status:
+      organizationInput.billingStatus !== undefined
+        ? normalizeBillingStatus(organizationInput.billingStatus, 'trial')
+        : null,
+    support_level:
+      organizationInput.supportLevel !== undefined
+        ? normalizeSupportLevel(organizationInput.supportLevel, 'standard')
+        : null,
     can_use_purchases:
       organizationInput.canUsePurchases !== undefined
         ? Boolean(organizationInput.canUsePurchases)
@@ -675,6 +738,26 @@ const updateTenantOrganization = async (
     can_use_nhis:
       organizationInput.canUseNhis !== undefined
         ? Boolean(organizationInput.canUseNhis)
+        : null,
+    can_use_accounting:
+      organizationInput.canUseAccounting !== undefined
+        ? Boolean(organizationInput.canUseAccounting)
+        : null,
+    can_use_multi_branch:
+      organizationInput.canUseMultiBranch !== undefined
+        ? Boolean(organizationInput.canUseMultiBranch)
+        : null,
+    billing_notes:
+      organizationInput.billingNotes !== undefined
+        ? normalizeText(organizationInput.billingNotes) || null
+        : null,
+    last_payment_at:
+      organizationInput.lastPaymentAt !== undefined
+        ? normalizeOptionalIsoDate(organizationInput.lastPaymentAt)
+        : null,
+    next_payment_due_at:
+      organizationInput.nextPaymentDueAt !== undefined
+        ? normalizeOptionalIsoDate(organizationInput.nextPaymentDueAt)
         : null,
     trial_ends_at:
       organizationInput.trialEndsAt !== undefined
@@ -698,8 +781,16 @@ const updateTenantOrganization = async (
       key !== 'slogan' &&
       key !== 'license_number' &&
       key !== 'subscription_tier' &&
+      key !== 'plan_code' &&
+      key !== 'billing_status' &&
+      key !== 'support_level' &&
       key !== 'can_use_purchases' &&
-      key !== 'can_use_nhis'
+      key !== 'can_use_nhis' &&
+      key !== 'can_use_accounting' &&
+      key !== 'can_use_multi_branch' &&
+      key !== 'billing_notes' &&
+      key !== 'last_payment_at' &&
+      key !== 'next_payment_due_at'
     ) {
       delete updatePayload[key]
     }
@@ -721,12 +812,44 @@ const updateTenantOrganization = async (
     delete updatePayload.subscription_tier
   }
 
+  if (organizationInput.planCode === undefined) {
+    delete updatePayload.plan_code
+  }
+
+  if (organizationInput.billingStatus === undefined) {
+    delete updatePayload.billing_status
+  }
+
+  if (organizationInput.supportLevel === undefined) {
+    delete updatePayload.support_level
+  }
+
   if (organizationInput.canUsePurchases === undefined) {
     delete updatePayload.can_use_purchases
   }
 
   if (organizationInput.canUseNhis === undefined) {
     delete updatePayload.can_use_nhis
+  }
+
+  if (organizationInput.canUseAccounting === undefined) {
+    delete updatePayload.can_use_accounting
+  }
+
+  if (organizationInput.canUseMultiBranch === undefined) {
+    delete updatePayload.can_use_multi_branch
+  }
+
+  if (organizationInput.billingNotes === undefined) {
+    delete updatePayload.billing_notes
+  }
+
+  if (organizationInput.lastPaymentAt === undefined) {
+    delete updatePayload.last_payment_at
+  }
+
+  if (organizationInput.nextPaymentDueAt === undefined) {
+    delete updatePayload.next_payment_due_at
   }
 
   if (organizationInput.trialEndsAt === undefined) {
@@ -886,6 +1009,9 @@ const bootstrapOrganization = async (
   const subscriptionTier = defaults.allowCustomTier
     ? normalizeSubscriptionTier(organizationInput.subscriptionTier, defaults.defaultTier)
     : defaults.defaultTier
+  const planCode = normalizePlanCode(organizationInput.planCode, 'starter')
+  const billingStatus = normalizeBillingStatus(organizationInput.billingStatus, organizationStatus)
+  const supportLevel = normalizeSupportLevel(organizationInput.supportLevel, 'standard')
 
   const trialEndsAt =
     normalizeOptionalIsoDate(organizationInput.trialEndsAt) ?? defaults.defaultTrialEndsAt ?? null
@@ -893,6 +1019,8 @@ const bootstrapOrganization = async (
     normalizeOptionalIsoDate(organizationInput.subscriptionEndsAt) ??
     defaults.defaultSubscriptionEndsAt ??
     null
+  const lastPaymentAt = normalizeOptionalIsoDate(organizationInput.lastPaymentAt)
+  const nextPaymentDueAt = normalizeOptionalIsoDate(organizationInput.nextPaymentDueAt)
 
   assertValidSubscriptionLifecycle({
     status: organizationStatus,
@@ -945,15 +1073,21 @@ const bootstrapOrganization = async (
           license_number: normalizeText(organizationInput.licenseNumber) || null,
           status: organizationStatus,
           subscription_tier: subscriptionTier,
+          plan_code: planCode,
+          billing_status: billingStatus,
+          support_level: supportLevel,
           can_use_purchases: Boolean(organizationInput.canUsePurchases),
           can_use_nhis: Boolean(organizationInput.canUseNhis),
+          can_use_accounting: Boolean(organizationInput.canUseAccounting),
+          can_use_multi_branch: Boolean(organizationInput.canUseMultiBranch),
+          billing_notes: normalizeText(organizationInput.billingNotes) || null,
+          last_payment_at: lastPaymentAt,
+          next_payment_due_at: nextPaymentDueAt,
           trial_ends_at: trialEndsAt,
           subscription_ends_at: subscriptionEndsAt,
         },
       ])
-      .select(
-        'id, name, subdomain, status, subscription_tier, trial_ends_at, subscription_ends_at, logo_url, slogan'
-      )
+      .select(ORGANIZATION_SELECT_FIELDS)
       .single()
 
     if (organizationError) {

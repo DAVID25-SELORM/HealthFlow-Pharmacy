@@ -57,4 +57,22 @@ describe('subscription tier helpers', () => {
     expect(result.effectiveTier).toBe('basic')
     expect(result.tierLimits.hasReports).toBe(false)
   })
+
+  it('locks paid access when billing is suspended', () => {
+    const result = resolveTierAccess(
+      {
+        status: 'active',
+        billing_status: 'suspended',
+        subscription_tier: 'enterprise',
+        trial_ends_at: null,
+        subscription_ends_at: null,
+      },
+      new Date('2026-04-17T00:00:00.000Z')
+    )
+
+    expect(result.isSuspended).toBe(true)
+    expect(result.isSubscriptionActive).toBe(false)
+    expect(result.effectiveTier).toBe('basic')
+    expect(result.tierLimits.hasClaims).toBe(false)
+  })
 })

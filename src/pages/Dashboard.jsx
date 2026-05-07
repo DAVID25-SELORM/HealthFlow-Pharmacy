@@ -212,6 +212,8 @@ const Dashboard = () => {
     isSuspended,
     canUsePurchases,
     canUseNhis,
+    canUseAccounting,
+    canUseMultiBranch,
   } = useTenant()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -536,9 +538,13 @@ const Dashboard = () => {
       { label: 'Private claims', enabled: tierLimits.hasClaims },
       { label: 'Purchases module', enabled: canUsePurchases },
       { label: 'NHIS module', enabled: canUseNhis },
+      { label: 'Accounting module', enabled: canUseAccounting },
+      { label: 'Multi-branch', enabled: canUseMultiBranch },
       { label: 'Bulk medicine import', enabled: tierLimits.hasAdvancedInventory },
     ],
     [
+      canUseAccounting,
+      canUseMultiBranch,
       canUseNhis,
       canUsePurchases,
       tierLimits.hasAdvancedInventory,

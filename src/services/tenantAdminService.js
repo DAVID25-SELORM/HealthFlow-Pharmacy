@@ -4,6 +4,9 @@ const TENANT_SIGNUP_FUNCTION = 'tenant-signup'
 const STAFF_ADMIN_FUNCTION = 'staff-admin'
 const VALID_STATUSES = ['trial', 'active', 'suspended', 'cancelled']
 const VALID_TIERS = ['trial', 'basic', 'pro', 'enterprise']
+const VALID_PLAN_CODES = ['starter', 'professional', 'premium']
+const VALID_BILLING_STATUSES = ['trial', 'active', 'past_due', 'suspended', 'cancelled']
+const VALID_SUPPORT_LEVELS = ['standard', 'priority', 'premium']
 
 const normalizeText = (value) => (typeof value === 'string' ? value.trim() : '')
 
@@ -40,6 +43,19 @@ const normalizeSubscriptionTier = (tier, fallback = 'basic') => {
   }
 
   return mapped
+}
+
+const normalizeChoice = (value, validValues, fallback, label) => {
+  const normalized = normalizeText(value).toLowerCase()
+  if (!normalized) {
+    return fallback
+  }
+
+  if (!validValues.includes(normalized)) {
+    throw new Error(`Select a valid ${label}.`)
+  }
+
+  return normalized
 }
 
 const normalizeOptionalIsoDate = (value) => {
@@ -79,6 +95,19 @@ const normalizeOrganizations = (organizations = []) =>
     subscription_tier: normalizeSubscriptionTier(
       organization.subscription_tier,
       organization.status === 'trial' ? 'trial' : 'basic'
+    ),
+    plan_code: normalizeChoice(organization.plan_code, VALID_PLAN_CODES, 'starter', 'plan'),
+    billing_status: normalizeChoice(
+      organization.billing_status,
+      VALID_BILLING_STATUSES,
+      organization.status === 'active' ? 'active' : 'trial',
+      'billing status'
+    ),
+    support_level: normalizeChoice(
+      organization.support_level,
+      VALID_SUPPORT_LEVELS,
+      'standard',
+      'support level'
     ),
   }))
 
@@ -130,8 +159,15 @@ export const createPharmacyTenant = async ({ pharmacy, admin }) =>
       licenseNumber: normalizeText(pharmacy.licenseNumber) || null,
       status: 'trial',
       subscriptionTier: normalizeSubscriptionTier(pharmacy.subscriptionTier, 'basic'),
+      planCode: normalizeChoice(pharmacy.planCode, VALID_PLAN_CODES, 'starter', 'plan'),
+      billingStatus: normalizeChoice(pharmacy.billingStatus, VALID_BILLING_STATUSES, 'trial', 'billing status'),
+      supportLevel: normalizeChoice(pharmacy.supportLevel, VALID_SUPPORT_LEVELS, 'standard', 'support level'),
       canUsePurchases: Boolean(pharmacy.canUsePurchases),
       canUseNhis: Boolean(pharmacy.canUseNhis),
+      canUseAccounting: Boolean(pharmacy.canUseAccounting),
+      canUseMultiBranch: Boolean(pharmacy.canUseMultiBranch),
+      nextPaymentDueAt: pharmacy.nextPaymentDueAt || null,
+      billingNotes: normalizeText(pharmacy.billingNotes) || null,
     },
     adminUser: {
       fullName: normalizeText(admin.fullName),
@@ -226,10 +262,32 @@ export const updateOrganizationDetails = async (orgId, fields) => {
       fields.subscriptionTier !== undefined
         ? normalizeSubscriptionTier(fields.subscriptionTier)
         : undefined,
+    planCode:
+      fields.planCode !== undefined
+        ? normalizeChoice(fields.planCode, VALID_PLAN_CODES, 'starter', 'plan')
+        : undefined,
+    billingStatus:
+      fields.billingStatus !== undefined
+        ? normalizeChoice(fields.billingStatus, VALID_BILLING_STATUSES, 'trial', 'billing status')
+        : undefined,
+    supportLevel:
+      fields.supportLevel !== undefined
+        ? normalizeChoice(fields.supportLevel, VALID_SUPPORT_LEVELS, 'standard', 'support level')
+        : undefined,
     canUsePurchases:
       fields.canUsePurchases !== undefined ? Boolean(fields.canUsePurchases) : undefined,
     canUseNhis:
       fields.canUseNhis !== undefined ? Boolean(fields.canUseNhis) : undefined,
+    canUseAccounting:
+      fields.canUseAccounting !== undefined ? Boolean(fields.canUseAccounting) : undefined,
+    canUseMultiBranch:
+      fields.canUseMultiBranch !== undefined ? Boolean(fields.canUseMultiBranch) : undefined,
+    billingNotes:
+      fields.billingNotes !== undefined ? normalizeText(fields.billingNotes) || null : undefined,
+    lastPaymentAt:
+      fields.lastPaymentAt !== undefined ? normalizeOptionalIsoDate(fields.lastPaymentAt) : undefined,
+    nextPaymentDueAt:
+      fields.nextPaymentDueAt !== undefined ? normalizeOptionalIsoDate(fields.nextPaymentDueAt) : undefined,
     trialEndsAt:
       fields.trialEndsAt !== undefined ? normalizeOptionalIsoDate(fields.trialEndsAt) : undefined,
     subscriptionEndsAt:

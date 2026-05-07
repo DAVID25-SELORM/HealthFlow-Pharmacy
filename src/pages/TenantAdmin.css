@@ -96,7 +96,8 @@
 }
 
 .tenant-form-group input,
-.tenant-form-group select {
+.tenant-form-group select,
+.tenant-form-group textarea {
   border: 1px solid var(--gray-300);
   border-radius: var(--radius);
   padding: 0.55rem 0.75rem;
@@ -107,10 +108,16 @@
 }
 
 .tenant-form-group input:focus,
-.tenant-form-group select:focus {
+.tenant-form-group select:focus,
+.tenant-form-group textarea:focus {
   outline: none;
   border-color: var(--primary);
   box-shadow: 0 0 0 3px rgba(22, 160, 133, 0.1);
+}
+
+.tenant-form-group textarea {
+  min-height: 5rem;
+  resize: vertical;
 }
 
 .tenant-checkbox-label {
@@ -208,7 +215,7 @@
   width: 100%;
   border-collapse: collapse;
   font-size: 0.875rem;
-  min-width: 900px;
+  min-width: 1080px;
 }
 
 .tenant-table th {
@@ -407,6 +414,23 @@
 
 .active-badge.active { background: #dcfce7; color: #15803d; }
 .active-badge.inactive { background: #fee2e2; color: #b91c1c; }
+
+.status-pill {
+  display: inline-block;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--gray-700);
+  background: var(--gray-100);
+  white-space: nowrap;
+}
+
+.status-pill.status-active { background: #dcfce7; color: #15803d; }
+.status-pill.status-trial { background: #e0f2fe; color: #0369a1; }
+.status-pill.status-past_due { background: #fef3c7; color: #92400e; }
+.status-pill.status-suspended,
+.status-pill.status-cancelled { background: #fee2e2; color: #b91c1c; }
 
 .no-users {
   color: var(--gray-500);

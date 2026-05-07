@@ -33,7 +33,7 @@ import './Sidebar.css'
 
 const Sidebar = ({ isOpen, onClose }) => {
   const { role, canManageInventory, canViewReports, canManageClaims } = useAuth()
-  const { canUsePurchases, canUseNhis } = useTenant()
+  const { canUsePurchases, canUseNhis, canUseAccounting } = useTenant()
 
   const menuItems = [
     {
@@ -49,7 +49,7 @@ const Sidebar = ({ isOpen, onClose }) => {
     { path: '/purchases', icon: Truck, label: 'Purchases', roles: PURCHASES_ROLES, featureAllowed: canUsePurchases },
     { path: '/nhis', icon: HeartPulse, label: 'NHIS', roles: NHIS_ROLES, featureAllowed: canUseNhis },
     { path: '/reports', icon: BarChart3, label: 'Reports', roles: REPORT_ROLES, allow: canViewReports },
-    { path: '/accounting', icon: Wallet, label: 'Accounting', roles: ACCOUNTING_ROLES },
+    { path: '/accounting', icon: Wallet, label: 'Accounting', roles: ACCOUNTING_ROLES, featureAllowed: canUseAccounting },
     { path: '/settings', icon: Settings, label: 'Settings', roles: SETTINGS_ROLES },
     { path: '/tenant-admin', icon: ShieldCheck, label: 'Tenant Admin', roles: ['super_admin'] },
     { path: '/activity-log', icon: List, label: 'Activity Log', roles: ACTIVITY_LOG_ROLES },
