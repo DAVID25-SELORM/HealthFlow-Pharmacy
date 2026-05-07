@@ -146,6 +146,16 @@ const Patients = () => {
     setSearchTerm(event.target.value)
   }
 
+  const openAddPatientModal = () => {
+    setError('')
+    setShowModal(true)
+  }
+
+  const closeAddPatientModal = () => {
+    setError('')
+    setShowModal(false)
+  }
+
   const handleSubmit = async (event) => {
     event.preventDefault()
 
@@ -232,7 +242,7 @@ const Patients = () => {
           <h1>Patient Records</h1>
           <p>Manage patient information and prescription history</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+        <button className="btn btn-primary" onClick={openAddPatientModal}>
           <Plus size={20} />
           Add Patient
         </button>
@@ -303,15 +313,20 @@ const Patients = () => {
       </div>
 
       {showModal && (
-        <div className="modal-overlay" onClick={() => setShowModal(false)}>
+        <div className="modal-overlay" onClick={closeAddPatientModal}>
           <div className="modal-content" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
               <h2>Add Patient</h2>
-              <button className="close-btn" onClick={() => setShowModal(false)}>
+              <button className="close-btn" onClick={closeAddPatientModal}>
                 x
               </button>
             </div>
             <form className="patient-form" onSubmit={handleSubmit}>
+              {error && (
+                <div className="patient-alert patient-alert-modal" role="alert">
+                  {error}
+                </div>
+              )}
               <div className="form-row">
                 <div className="form-group">
                   <label>Full Name *</label>

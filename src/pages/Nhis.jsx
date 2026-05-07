@@ -1161,11 +1161,6 @@ const Nhis = () => {
                 </div>
               </div>
 
-              {medForm.unitPrice && medForm.dispensedQty && (
-                <div className="med-line-total">
-                  Line Total: <strong>{fmtCurrency(Number(medForm.unitPrice) * Number(medForm.dispensedQty))}</strong>
-                </div>
-              )}
             </div>
 
             <div className="modal-footer">

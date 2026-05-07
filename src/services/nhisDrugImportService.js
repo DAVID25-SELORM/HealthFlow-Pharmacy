@@ -4,13 +4,21 @@ import { normalizeText } from '../utils/validation'
 // Expected column names (case-insensitive aliases)
 const COLUMN_ALIASES = {
   code:         ['code', 'drug code', 'item code', 'nhis code', 'drug_code', 'item_code'],
-  description:  ['description', 'name', 'drug name', 'item name', 'medicine', 'drug_name'],
+  description:  [
+    'description',
+    'name',
+    'drug name',
+    'item name',
+    'medicine',
+    'drug_name',
+    'generic name, dosage form, strength',
+  ],
   generic_name: ['generic name', 'generic', 'generic_name', 'inn'],
   strength:     ['strength', 'dosage strength', 'concentration'],
   dosage_form:  ['dosage form', 'form', 'dosage_form', 'formulation', 'type'],
-  category:     ['category', 'class', 'group', 'therapeutic class'],
+  category:     ['category', 'class', 'group', 'therapeutic class', 'level of prescribing'],
   unit:         ['unit', 'pack unit', 'dispensing unit', 'uom'],
-  unit_price:   ['unit price', 'price', 'tariff', 'cost', 'amount', 'rate', 'unit_price'],
+  unit_price:   ['unit price', 'price', 'price (ghc)', 'tariff', 'cost', 'amount', 'rate', 'unit_price'],
 }
 
 const resolveHeader = (header) => {

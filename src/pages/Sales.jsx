@@ -28,6 +28,9 @@ const compactPatientLookup = (value) => String(value || '').toLowerCase().replac
 
 const formatAmountInput = (value) => Number(value || 0).toFixed(2)
 
+const isNhisPatient = (patient) =>
+  String(patient?.insurance_provider || '').trim().toLowerCase() === 'nhis'
+
 const mergePharmacySettingsWithOrganization = (settings, organization) => ({
   ...(settings || {}),
   pharmacy_name: settings?.pharmacy_name || organization?.name || 'HealthFlow Pharmacy',
@@ -309,6 +312,16 @@ const Sales = () => {
     return cart.reduce((sum, item) => sum + item.price * item.quantity, 0)
   }
 
+  const calculateNhisCoveredTotal = () => {
+    return cart.reduce((sum, item) => {
+      const nhisPrice = Number.parseFloat(item.nhisPrice)
+      const coveredUnitPrice = Number.isFinite(nhisPrice) && nhisPrice > 0
+        ? Math.min(nhisPrice, item.price)
+        : item.price
+      return sum + coveredUnitPrice * item.quantity
+    }, 0)
+  }
+
   const calculateChange = () => {
     const total = calculateTotal()
     const receivedAmount = Number.parseFloat(received) || 0
@@ -345,6 +358,11 @@ const Sales = () => {
           drugId: drug.id,
           name: drug.name,
           price: Number.parseFloat(drug.price),
+          nhisPrice:
+            drug.nhis_price === undefined || drug.nhis_price === null
+              ? null
+              : Number.parseFloat(drug.nhis_price),
+          nhisCode: drug.nhis_code || null,
           quantity: 1,
           available: maxQty,
         },
@@ -449,8 +467,9 @@ const Sales = () => {
     }
 
     const total = calculateTotal()
-    setInsuranceCoverage(formatAmountInput(total))
-    setPatientTopUp('0.00')
+    const coveredAmount = isNhisPatient(selectedPatientForSale) ? calculateNhisCoveredTotal() : total
+    setInsuranceCoverage(formatAmountInput(Math.min(coveredAmount, total)))
+    setPatientTopUp(formatAmountInput(Math.max(total - coveredAmount, 0)))
     setPatientTopUpMethod('cash')
   }
 
@@ -826,6 +845,8 @@ const Sales = () => {
 
   const total = calculateTotal()
   const change = calculateChange()
+  const nhisCoveredTotal = calculateNhisCoveredTotal()
+  const servingNhisPatient = paymentMethod === 'insurance' && isNhisPatient(selectedPatientForSale)
   const insuranceHasPatientDetails =
     paymentMethod !== 'insurance' ||
     Boolean(
@@ -846,10 +867,15 @@ const Sales = () => {
       return
     }
 
+    const defaultCoverage = servingNhisPatient ? Math.min(nhisCoveredTotal, total) : total
     const coverageInput = Number.parseFloat(insuranceCoverage)
-    const coverage = insuranceCoverage ? Math.min(Math.max(coverageInput || 0, 0), total) : total
+    const coverage = insuranceCoverage
+      ? Math.min(Math.max(coverageInput || 0, 0), total)
+      : defaultCoverage
     const nextCoverage =
-      insuranceCoverage && coverage < total ? insuranceCoverage : formatAmountInput(coverage)
+      insuranceCoverage && !servingNhisPatient && coverage < total
+        ? insuranceCoverage
+        : formatAmountInput(coverage)
     const nextTopUp = formatAmountInput(Math.max(total - coverage, 0))
 
     if (insuranceCoverage !== nextCoverage) {
@@ -859,7 +885,7 @@ const Sales = () => {
     if (patientTopUp !== nextTopUp) {
       setPatientTopUp(nextTopUp)
     }
-  }, [cart.length, paymentMethod, total])
+  }, [cart, insuranceCoverage, nhisCoveredTotal, patientTopUp, paymentMethod, servingNhisPatient, total])
 
   if (loading) {
     return (
@@ -1123,6 +1149,7 @@ const Sales = () => {
                   const reserved = getReservedQty(drug.id)
                   const remaining = Math.max(0, Number.parseFloat(drug.quantity || 0) - reserved)
                   const soldOut = remaining <= 0
+                  const nhisPrice = Number.parseFloat(drug.nhis_price)
 
                   return (
                     <button
@@ -1134,6 +1161,9 @@ const Sales = () => {
                       <span className="drug-name">{drug.name}</span>
                       <span className="drug-batch">{drug.batch_number || 'No batch'}</span>
                       <span className="drug-price">GHS {Number.parseFloat(drug.price).toFixed(2)}</span>
+                      {Number.isFinite(nhisPrice) && nhisPrice > 0 && (
+                        <span className="drug-nhis-price">NHIS GHS {nhisPrice.toFixed(2)}</span>
+                      )}
                       <span className={`drug-stock ${soldOut ? 'sold-out' : ''}`}>
                         {soldOut ? 'Out of stock' : `${remaining} in stock`}
                       </span>
@@ -1209,6 +1239,11 @@ const Sales = () => {
                   <div className="item-info">
                     <span className="item-name">{item.name}</span>
                     <span className="item-price">GHS {item.price.toFixed(2)}</span>
+                    {servingNhisPatient && Number.parseFloat(item.nhisPrice) > 0 && (
+                      <span className="item-nhis-price">
+                        NHIS GHS {Number.parseFloat(item.nhisPrice).toFixed(2)}
+                      </span>
+                    )}
                   </div>
                   <div className="item-controls">
                     <div className="quantity-controls">
@@ -1326,6 +1361,13 @@ const Sales = () => {
                 )}
 
                 <div className="insurance-split-grid">
+                  {servingNhisPatient && (
+                    <div className="nhis-price-summary">
+                      <span>Normal total: GHS {total.toFixed(2)}</span>
+                      <span>NHIS total: GHS {Math.min(nhisCoveredTotal, total).toFixed(2)}</span>
+                      <strong>Top-up: GHS {Math.max(total - nhisCoveredTotal, 0).toFixed(2)}</strong>
+                    </div>
+                  )}
                   <div className="cash-field cash-field-input">
                     <label htmlFor="insurance-covered">Insurance Cover</label>
                     <div className="cash-input-shell">

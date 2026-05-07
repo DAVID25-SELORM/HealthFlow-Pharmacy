@@ -458,6 +458,13 @@
   font-size: 1rem;
 }
 
+.drug-nhis-price,
+.item-nhis-price {
+  color: #0f766e;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
 .drug-batch {
   color: var(--gray-500);
   font-size: 0.76rem;
@@ -565,6 +572,12 @@
 .item-price {
   color: var(--gray-600);
   font-size: 0.95rem;
+}
+
+.item-nhis-price {
+  background: rgba(15, 118, 110, 0.08);
+  border-radius: var(--radius);
+  padding: 0.15rem 0.4rem;
 }
 
 .item-controls {
@@ -839,6 +852,22 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 0.55rem;
+}
+
+.nhis-price-summary {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 0.25rem;
+  border: 1px solid rgba(15, 118, 110, 0.2);
+  border-radius: var(--radius);
+  background: rgba(15, 118, 110, 0.06);
+  padding: 0.7rem 0.8rem;
+  color: var(--gray-700);
+  font-size: 0.9rem;
+}
+
+.nhis-price-summary strong {
+  color: #0f766e;
 }
 
 .insurance-top-up-method select {

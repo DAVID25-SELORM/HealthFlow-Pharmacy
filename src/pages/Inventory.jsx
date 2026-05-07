@@ -28,6 +28,10 @@ const emptyDrugForm = {
   quantity: '',
   costPrice: '',
   price: '',
+  nhisPrice: '',
+  nhisCode: '',
+  nhisUnit: '',
+  isNhisListed: false,
   supplier: '',
 }
 
@@ -46,6 +50,10 @@ const mapDrugToForm = (drug) => ({
   quantity: String(drug.quantity ?? ''),
   costPrice: String(drug.cost_price ?? ''),
   price: String(drug.price ?? ''),
+  nhisPrice: String(drug.nhis_price ?? ''),
+  nhisCode: drug.nhis_code || '',
+  nhisUnit: drug.nhis_unit || '',
+  isNhisListed: Boolean(drug.is_nhis_listed || drug.nhis_price),
   supplier: drug.supplier || '',
 })
 
@@ -688,6 +696,7 @@ const Inventory = () => {
               <th>Expiry Date</th>
               <th>Quantity</th>
               <th>Price (GHS)</th>
+              <th>NHIS (GHS)</th>
               <th>Total (GHS)</th>
               <th>Status</th>
               <th>Actions</th>
@@ -696,7 +705,7 @@ const Inventory = () => {
           <tbody>
             {visibleDrugs.length === 0 ? (
               <tr>
-                <td colSpan="8" style={{ textAlign: 'center', padding: '2rem' }}>
+                <td colSpan="9" style={{ textAlign: 'center', padding: '2rem' }}>
                   {searchTerm || activeFilter !== 'all'
                     ? 'No medicines match the current search or filter.'
                     : 'No drugs in inventory. Click "Add Drug" to get started.'}
@@ -707,6 +716,7 @@ const Inventory = () => {
                 const status = getStatusBadge(drug)
                 const quantity = Number.parseFloat(drug.quantity ?? 0) || 0
                 const price = Number.parseFloat(drug.price ?? 0) || 0
+                const nhisPrice = Number.parseFloat(drug.nhis_price ?? 0) || 0
                 const total = (quantity * price).toFixed(2)
                 const batchNumber = drug.batch_number || drug.batch || 'N/A'
                 const expiryDate = drug.expiry_date || drug.expiry
@@ -718,6 +728,7 @@ const Inventory = () => {
                     <td>{expiryDate ? formatAppDate(expiryDate) : 'N/A'}</td>
                     <td>{quantity}</td>
                     <td>GHS {price.toFixed(2)}</td>
+                    <td>{nhisPrice > 0 ? `GHS ${nhisPrice.toFixed(2)}` : '-'}</td>
                     <td className="total-cell">GHS {total}</td>
                     <td>
                       <span className={`status-badge ${status.class}`}>{status.label}</span>
@@ -872,6 +883,33 @@ const Inventory = () => {
                     placeholder="Supplier name"
                     value={formData.supplier}
                     onChange={(event) => setFormData({ ...formData, supplier: event.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div className="form-row">
+                <div className="form-group">
+                  <label>NHIS Code</label>
+                  <input
+                    type="text"
+                    placeholder="e.g., ACETAZTA1"
+                    value={formData.nhisCode}
+                    onChange={(event) =>
+                      setFormData({ ...formData, nhisCode: event.target.value, isNhisListed: true })
+                    }
+                  />
+                </div>
+                <div className="form-group">
+                  <label>NHIS Price (GHS)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="0.00"
+                    value={formData.nhisPrice}
+                    onChange={(event) =>
+                      setFormData({ ...formData, nhisPrice: event.target.value, isNhisListed: true })
+                    }
                   />
                 </div>
               </div>

@@ -42,6 +42,7 @@ type TierAccessAction =
   | 'update_drug'
   | 'delete_drug'
   | 'bulk_import_drugs'
+  | 'sync_nhis_drugs_to_inventory'
 
 type RequesterProfile = {
   id: string
@@ -56,6 +57,7 @@ type RequesterProfile = {
 const INVENTORY_ROLES = ['admin', 'pharmacist', 'technician', 'procurement', 'branch_manager']
 const SALES_ROLES = ['admin', 'pharmacist', 'assistant', 'cashier', 'technician', 'branch_manager']
 const CLAIMS_ROLES = ['admin', 'pharmacist', 'billing']
+const NHIS_ROLES = ['admin', 'pharmacist', 'billing']
 const REPORT_ROLES = ['admin', 'pharmacist', 'branch_manager']
 
 const json = (body: Record<string, unknown>, status = 200) =>
@@ -312,6 +314,17 @@ const requireClaimsAccess = (requesterProfile: RequesterProfile, message: string
   }
 }
 
+const requireNhisCatalogAccess = (requesterProfile: RequesterProfile, message: string) => {
+  if (
+    !NHIS_ROLES.includes(requesterProfile.role) &&
+    !INVENTORY_ROLES.includes(requesterProfile.role) &&
+    !requesterProfile.can_manage_inventory &&
+    !requesterProfile.can_manage_claims
+  ) {
+    throw new Error(message)
+  }
+}
+
 const requireClaimCreateAccess = (requesterProfile: RequesterProfile, message: string) => {
   if (
     !CLAIMS_ROLES.includes(requesterProfile.role) &&
@@ -470,6 +483,39 @@ const getBranchIdForInventoryRequest = async (
   return branchId
 }
 
+const getBranchIdsForInventorySync = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+  requesterProfile: RequesterProfile,
+  payload: Record<string, unknown>
+) => {
+  const explicitBranchId = normalizeText(payload.branchId) || requesterProfile.branch_id
+  if (explicitBranchId) {
+    return [
+      await getBranchIdForInventoryRequest(adminClient, organizationId, requesterProfile, payload),
+    ].filter(Boolean) as string[]
+  }
+
+  const { data, error } = await adminClient
+    .from('branches')
+    .select('id')
+    .eq('organization_id', organizationId)
+    .eq('is_active', true)
+    .order('is_main', { ascending: false })
+    .order('name')
+
+  if (error) {
+    throw error
+  }
+
+  const branchIds = (data || []).map((branch) => normalizeText(branch.id)).filter(Boolean)
+  if (branchIds.length > 0) {
+    return branchIds
+  }
+
+  return [null]
+}
+
 const getDrugs = async (
   adminClient: ReturnType<typeof createAdminClient>,
   requesterProfile: RequesterProfile,
@@ -602,6 +648,12 @@ const buildDrugCreatePayload = (
   quantity: parseNonNegativeNumber(drugData.quantity, 'Quantity'),
   price: parseNonNegativeNumber(drugData.price, 'Price'),
   cost_price: parseNonNegativeNumber(drugData.costPrice ?? 0, 'Cost price'),
+  nhis_code: normalizeText(drugData.nhisCode) || null,
+  nhis_price: drugData.nhisPrice === undefined || drugData.nhisPrice === null || normalizeText(drugData.nhisPrice) === ''
+    ? null
+    : parseNonNegativeNumber(drugData.nhisPrice, 'NHIS price'),
+  nhis_unit: normalizeText(drugData.nhisUnit) || null,
+  is_nhis_listed: Boolean(drugData.isNhisListed),
   supplier: normalizeText(drugData.supplier) || null,
   category: normalizeText(drugData.category) || null,
   description: normalizeText(drugData.description) || null,
@@ -626,6 +678,60 @@ const findDrugByIdentity = async (
   query = branchId ? query.eq('branch_id', branchId) : query.is('branch_id', null)
 
   const { data, error } = await query.order('updated_at', { ascending: false }).limit(1)
+
+  if (error) {
+    throw error
+  }
+
+  return data?.[0] || null
+}
+
+const findActiveDrugByNhisCode = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+  branchId: string | null,
+  nhisCode: string
+) => {
+  let query = adminClient
+    .from('drugs')
+    .select('*')
+    .eq('organization_id', organizationId)
+    .eq('nhis_code', nhisCode)
+    .eq('status', 'active')
+
+  query = branchId ? query.eq('branch_id', branchId) : query.is('branch_id', null)
+
+  const { data, error } = await query
+    .order('quantity', { ascending: false })
+    .order('updated_at', { ascending: false })
+    .limit(1)
+
+  if (error) {
+    throw error
+  }
+
+  return data?.[0] || null
+}
+
+const findActiveDrugByName = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+  branchId: string | null,
+  name: string
+) => {
+  let query = adminClient
+    .from('drugs')
+    .select('*')
+    .eq('organization_id', organizationId)
+    .eq('name', name)
+    .eq('status', 'active')
+
+  query = branchId ? query.eq('branch_id', branchId) : query.is('branch_id', null)
+
+  const { data, error } = await query
+    .order('quantity', { ascending: false })
+    .order('updated_at', { ascending: false })
+    .limit(1)
 
   if (error) {
     throw error
@@ -1030,6 +1136,27 @@ const updateDrug = async (
     updatePayload.unit = normalizeText(drugData.unit) || 'tablets'
   }
 
+  if (Object.prototype.hasOwnProperty.call(drugData, 'nhisCode')) {
+    updatePayload.nhis_code = normalizeText(drugData.nhisCode) || null
+  }
+
+  if (Object.prototype.hasOwnProperty.call(drugData, 'nhisPrice')) {
+    updatePayload.nhis_price =
+      drugData.nhisPrice === undefined ||
+      drugData.nhisPrice === null ||
+      normalizeText(drugData.nhisPrice) === ''
+        ? null
+        : parseNonNegativeNumber(drugData.nhisPrice, 'NHIS price')
+  }
+
+  if (Object.prototype.hasOwnProperty.call(drugData, 'nhisUnit')) {
+    updatePayload.nhis_unit = normalizeText(drugData.nhisUnit) || null
+  }
+
+  if (Object.prototype.hasOwnProperty.call(drugData, 'isNhisListed')) {
+    updatePayload.is_nhis_listed = Boolean(drugData.isNhisListed)
+  }
+
   const { data, error } = await adminClient
     .from('drugs')
     .update(updatePayload)
@@ -1136,6 +1263,13 @@ const bulkImportDrugs = async (
       quantity: parseNonNegativeNumber(row.quantity, 'Quantity'),
       price: parseNonNegativeNumber(row.price, 'Price'),
       cost_price: parseNonNegativeNumber(row.cost_price ?? 0, 'Cost price'),
+      nhis_code: normalizeText(row.nhis_code) || null,
+      nhis_price:
+        row.nhis_price === undefined || row.nhis_price === null || normalizeText(row.nhis_price) === ''
+          ? null
+          : parseNonNegativeNumber(row.nhis_price, 'NHIS price'),
+      nhis_unit: normalizeText(row.nhis_unit) || null,
+      is_nhis_listed: Boolean(row.is_nhis_listed),
       supplier: normalizeText(row.supplier) || null,
       category: normalizeText(row.category) || null,
       description: normalizeText(row.description) || null,
@@ -1165,6 +1299,129 @@ const bulkImportDrugs = async (
   }
 
   return results
+}
+
+const syncNhisDrugsToInventory = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  requesterProfile: RequesterProfile,
+  organizationId: string,
+  payload: Record<string, unknown>
+) => {
+  requireNhisCatalogAccess(requesterProfile, 'Only NHIS or inventory staff can sync NHIS medicines to inventory.')
+
+  const drugs = Array.isArray(payload.drugs) ? payload.drugs : []
+  if (drugs.length === 0) {
+    return { upserted: 0 }
+  }
+
+  const branchIds = await getBranchIdsForInventorySync(
+    adminClient,
+    organizationId,
+    requesterProfile,
+    payload
+  )
+
+  const expiryDate = new Date()
+  expiryDate.setFullYear(expiryDate.getFullYear() + 5)
+  const fallbackExpiryDate = expiryDate.toISOString().split('T')[0]
+
+  const sourceRows = drugs
+    .map((item) => {
+      const row = item as Record<string, unknown>
+      const code = assertRequiredText(row.code, 'NHIS code').toUpperCase()
+      const description = assertRequiredText(row.description, 'NHIS medicine')
+      const unitPrice = parseNonNegativeNumber(row.unit_price ?? row.unitPrice ?? 0, 'NHIS price')
+
+      return {
+        organization_id: organizationId,
+        name: description,
+        batch_number: `NHIS-${code}`,
+        expiry_date: fallbackExpiryDate,
+        quantity: 0,
+        unit: normalizeText(row.unit) || 'unit',
+        price: unitPrice,
+        cost_price: 0,
+        supplier: 'NHIS',
+        category: normalizeText(row.category) || normalizeText(row.dosage_form) || 'NHIS',
+        description: [
+          normalizeText(row.generic_name),
+          normalizeText(row.strength),
+          normalizeText(row.dosage_form),
+        ].filter(Boolean).join(' | ') || null,
+        reorder_level: 0,
+        status: 'active',
+        nhis_code: code,
+        nhis_price: unitPrice,
+        nhis_unit: normalizeText(row.unit) || 'unit',
+        is_nhis_listed: true,
+        updated_at: new Date().toISOString(),
+      }
+    })
+    .filter((row) => row.nhis_code && row.name)
+
+  const rows = branchIds.flatMap((branchId) =>
+    sourceRows.map((row) => ({
+      ...row,
+      branch_id: branchId,
+    }))
+  )
+
+  let upserted = 0
+  for (const row of rows) {
+    const branchId = normalizeText(row.branch_id) || null
+    const existingDrug =
+      (await findActiveDrugByNhisCode(adminClient, organizationId, branchId, String(row.nhis_code))) ||
+      (await findActiveDrugByName(adminClient, organizationId, branchId, String(row.name))) ||
+      (await findDrugByIdentity(
+        adminClient,
+        organizationId,
+        branchId,
+        String(row.name),
+        String(row.batch_number)
+      ))
+
+    if (existingDrug) {
+      const { error } = await adminClient
+        .from('drugs')
+        .update({
+          nhis_code: row.nhis_code,
+          nhis_price: row.nhis_price,
+          nhis_unit: row.nhis_unit,
+          is_nhis_listed: true,
+          name: normalizeText(existingDrug.name) || row.name,
+          batch_number: normalizeText(existingDrug.batch_number) || row.batch_number,
+          expiry_date: existingDrug.expiry_date || row.expiry_date,
+          quantity: existingDrug.quantity ?? row.quantity,
+          unit: normalizeText(existingDrug.unit) || row.unit,
+          price: existingDrug.price ?? row.price,
+          cost_price: existingDrug.cost_price ?? row.cost_price,
+          supplier: normalizeText(existingDrug.supplier) || row.supplier,
+          category: normalizeText(existingDrug.category) || row.category,
+          description: normalizeText(existingDrug.description) || row.description,
+          status: 'active',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existingDrug.id)
+        .eq('organization_id', organizationId)
+
+      if (error) {
+        throw error
+      }
+
+      upserted += 1
+      continue
+    }
+
+    const { error } = await adminClient.from('drugs').insert([row])
+
+    if (error) {
+      throw error
+    }
+
+    upserted += 1
+  }
+
+  return { upserted, branches: branchIds.length }
 }
 
 const toDateOnly = (value: string) => new Date(value).toISOString().split('T')[0]
@@ -1422,6 +1679,10 @@ Deno.serve(async (request) => {
     if (action === 'bulk_import_drugs') {
       await requireTierFeature(adminClient, organizationId, 'advanced_inventory')
       return json(await bulkImportDrugs(adminClient, requesterProfile, organizationId, payload))
+    }
+
+    if (action === 'sync_nhis_drugs_to_inventory') {
+      return json(await syncNhisDrugsToInventory(adminClient, requesterProfile, organizationId, payload))
     }
 
     return json({ error: 'Unsupported tier access action.' }, 400)

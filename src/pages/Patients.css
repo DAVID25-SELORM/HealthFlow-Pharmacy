@@ -62,6 +62,10 @@
   border-radius: var(--radius);
 }
 
+.patient-alert-modal {
+  margin-bottom: 0;
+}
+
 .empty-patients {
   background: white;
   border-radius: var(--radius-lg);

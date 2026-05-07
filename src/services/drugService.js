@@ -163,6 +163,13 @@ export const addDrug = async (drugData) => {
       quantity: assertNonNegativeNumber(drugData.quantity, 'Quantity'),
       price: assertNonNegativeNumber(drugData.price, 'Price'),
       costPrice: assertNonNegativeNumber(drugData.costPrice || 0, 'Cost price'),
+      nhisCode: normalizeText(drugData.nhisCode) || null,
+      nhisPrice:
+        drugData.nhisPrice === undefined || drugData.nhisPrice === null || drugData.nhisPrice === ''
+          ? null
+          : assertNonNegativeNumber(drugData.nhisPrice, 'NHIS price'),
+      nhisUnit: normalizeText(drugData.nhisUnit) || null,
+      isNhisListed: Boolean(drugData.isNhisListed),
       supplier: normalizeText(drugData.supplier) || null,
       category: normalizeText(drugData.category) || null,
       description: normalizeText(drugData.description) || null,
@@ -213,6 +220,25 @@ export const updateDrug = async (id, drugData) => {
 
   if (Object.prototype.hasOwnProperty.call(drugData, 'unit')) {
     payload.unit = normalizeText(drugData.unit) || 'tablets'
+  }
+
+  if (Object.prototype.hasOwnProperty.call(drugData, 'nhisCode')) {
+    payload.nhisCode = normalizeText(drugData.nhisCode) || null
+  }
+
+  if (Object.prototype.hasOwnProperty.call(drugData, 'nhisPrice')) {
+    payload.nhisPrice =
+      drugData.nhisPrice === undefined || drugData.nhisPrice === null || drugData.nhisPrice === ''
+        ? null
+        : assertNonNegativeNumber(drugData.nhisPrice, 'NHIS price')
+  }
+
+  if (Object.prototype.hasOwnProperty.call(drugData, 'nhisUnit')) {
+    payload.nhisUnit = normalizeText(drugData.nhisUnit) || null
+  }
+
+  if (Object.prototype.hasOwnProperty.call(drugData, 'isNhisListed')) {
+    payload.isNhisListed = Boolean(drugData.isNhisListed)
   }
 
   const response = await invokeTierAccess({

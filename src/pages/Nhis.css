@@ -507,10 +507,44 @@
 .modal-footer {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 0.75rem;
   padding: 1rem 1.5rem;
   border-top: 1px solid var(--gray-200);
   flex-shrink: 0;
+  background: white;
+  box-shadow: 0 -10px 24px rgba(15, 23, 42, 0.06);
+}
+
+.claim-footer-total,
+.medicine-footer-total {
+  margin-right: auto;
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  border: 1px solid rgba(5, 150, 105, 0.28);
+  border-radius: var(--radius);
+  background: #ecfdf5;
+  color: #064e3b;
+  padding: 0.5rem 0.7rem;
+  min-width: 180px;
+}
+
+.claim-footer-total span,
+.medicine-footer-total span {
+  color: #047857;
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.claim-footer-total strong,
+.medicine-footer-total strong {
+  color: #022c22;
+  font-size: 1.05rem;
+  font-weight: 900;
+  white-space: nowrap;
 }
 
 /* NHIS claim two-column layout */
@@ -534,8 +568,9 @@
   display: flex;
   flex-direction: column;
   padding: 1.25rem;
-  overflow-y: auto;
+  overflow: hidden;
   gap: 0.75rem;
+  min-height: 0;
 }
 
 /* Sections inside claim form */
@@ -593,6 +628,7 @@
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  min-height: 0;
 }
 
 .medicine-card {
@@ -638,15 +674,27 @@
 
 .medicine-total {
   font-weight: 700;
-  font-size: 0.85rem;
+  font-size: 0.95rem;
+  color: #064e3b;
+  white-space: nowrap;
 }
 
 .medicines-total {
   margin-top: auto;
-  padding-top: 0.75rem;
-  border-top: 2px solid var(--gray-200);
-  font-size: 0.9rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid rgba(5, 150, 105, 0.28);
+  border-radius: var(--radius);
+  background: #ecfdf5;
+  color: #064e3b;
+  font-size: 1rem;
   text-align: right;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+  flex-shrink: 0;
+}
+
+.medicines-total strong {
+  color: #022c22;
+  font-weight: 800;
 }
 
 /* Medicine modal */
@@ -657,6 +705,7 @@
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  min-height: 0;
 }
 
 .med-code-row {
@@ -666,17 +715,39 @@
 }
 
 .unit-price-hint {
-  font-size: 0.75rem;
-  color: var(--gray-500);
+  display: inline-flex;
+  width: fit-content;
+  margin-top: 0.45rem;
+  border-radius: var(--radius);
+  background: #f1f5f9;
+  color: #334155;
+  padding: 0.25rem 0.45rem;
+  font-size: 0.8rem;
+  font-weight: 700;
 }
 
 .med-line-total {
-  background: var(--primary-light, #eff6ff);
-  color: var(--primary);
-  padding: 0.5rem 0.75rem;
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  background: #022c22;
+  color: white;
+  padding: 0.9rem 1rem;
   border-radius: var(--radius);
-  font-size: 0.875rem;
-  text-align: right;
+  font-size: 1rem;
+  font-weight: 700;
+  box-shadow: 0 12px 26px rgba(2, 44, 34, 0.22);
+}
+
+.med-line-total strong {
+  color: white;
+  font-size: 1.15rem;
+  font-weight: 900;
+  white-space: nowrap;
 }
 
 /* View claim grid */
@@ -874,5 +945,16 @@
 
   .form-row--3 {
     grid-template-columns: 1fr;
+  }
+
+  .modal-footer {
+    flex-wrap: wrap;
+  }
+
+  .claim-footer-total,
+  .medicine-footer-total {
+    width: 100%;
+    justify-content: space-between;
+    margin-right: 0;
   }
 }

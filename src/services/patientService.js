@@ -2,14 +2,39 @@ import { supabase } from '../lib/supabase'
 import { assertRequiredText, normalizeText, sanitizeSearchTerm } from '../utils/validation'
 import { tryLogAuditEvent } from './auditService'
 
-const PATIENT_INSURANCE_ID_UNIQUE_CONSTRAINT = 'idx_patients_org_insurance_id_unique'
+const PATIENT_INSURANCE_ID_UNIQUE_CONSTRAINTS = [
+  'idx_patients_org_insurance_id_unique',
+  'idx_patients_org_nhis_member_no_unique',
+  'idx_patients_org_nhis_hin_unique',
+]
+
+const PATIENT_INSURANCE_ID_FIELDS = ['insurance_id', 'nhis_member_no', 'nhis_hin']
+
+const getErrorText = (error) =>
+  [
+    error?.message,
+    error?.details,
+    error?.hint,
+    error?.constraint,
+    error?.code,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
 
 const throwFriendlyPatientError = (error) => {
-  if (
+  const errorText = getErrorText(error)
+  const isDuplicateInsuranceIdentifier =
     error?.code === '23505' &&
-    String(error?.message || '').includes(PATIENT_INSURANCE_ID_UNIQUE_CONSTRAINT)
-  ) {
-    throw new Error('This insurance ID is already assigned to another patient.')
+    (
+      PATIENT_INSURANCE_ID_UNIQUE_CONSTRAINTS.some((constraint) =>
+        errorText.includes(constraint)
+      ) ||
+      PATIENT_INSURANCE_ID_FIELDS.some((field) => errorText.includes(field))
+    )
+
+  if (isDuplicateInsuranceIdentifier) {
+    throw new Error('This member ID already exists for another patient.')
   }
 
   throw error
