@@ -268,11 +268,17 @@ const TenantAdmin = () => {
     setSaving(true)
     setError('')
     try {
-      await updateOrganizationDetails(editOrg.id, {
+      const updatedOrganization = await updateOrganizationDetails(editOrg.id, {
         ...editForm,
         trialEndsAt: editForm.trialEndsAt ? new Date(editForm.trialEndsAt).toISOString() : null,
         subscriptionEndsAt: editForm.subscriptionEndsAt ? new Date(editForm.subscriptionEndsAt).toISOString() : null,
       })
+      if (
+        Boolean(updatedOrganization?.can_use_purchases) !== Boolean(editForm.canUsePurchases) ||
+        Boolean(updatedOrganization?.can_use_nhis) !== Boolean(editForm.canUseNhis)
+      ) {
+        throw new Error('Module privileges were not saved. Deploy the latest tenant-signup function and try again.')
+      }
       notify(`${editForm.name} updated successfully`, 'success')
       closeEdit()
       await load()
