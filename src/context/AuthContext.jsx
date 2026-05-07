@@ -55,6 +55,15 @@ const hasPasswordRecoveryHint = () => {
 const isPasswordRecoveryEvent = (event) =>
   event === 'PASSWORD_RECOVERY' || (hasPasswordRecoveryHint() && event === 'BOOTSTRAP')
 
+const isExpiredSession = (activeSession, windowSeconds = 30) => {
+  const expiresAt = Number(activeSession?.expires_at || 0)
+  if (!expiresAt) {
+    return false
+  }
+
+  return expiresAt - Math.floor(Date.now() / 1000) <= windowSeconds
+}
+
 export const AuthProvider = ({ children }) => {
   const [session, setSession] = useState(null)
   const [user, setUser] = useState(null)
@@ -134,6 +143,32 @@ export const AuthProvider = ({ children }) => {
       })
 
       return storedSession
+    }
+
+    const refreshStoredSession = async (fallbackSession = null) => {
+      try {
+        const { data, error } = await supabase.auth.refreshSession()
+        if (error) {
+          throw error
+        }
+
+        return data?.session || null
+      } catch (refreshError) {
+        if (!isSupabaseAuthFailure(refreshError)) {
+          console.warn('Unable to refresh Supabase session:', refreshError)
+        }
+
+        const storedSession = await getStoredSession()
+        if (
+          storedSession?.access_token &&
+          storedSession.access_token !== fallbackSession?.access_token &&
+          !isExpiredSession(storedSession, 0)
+        ) {
+          return storedSession
+        }
+
+        return null
+      }
     }
 
     const resetInvalidSession = async (
@@ -298,10 +333,35 @@ export const AuthProvider = ({ children }) => {
       }
 
       if (activeUser) {
-        const {
+        if (isExpiredSession(resolvedSession)) {
+          const refreshedSession = await refreshStoredSession(resolvedSession)
+          if (refreshedSession?.access_token) {
+            resolvedSession = refreshedSession
+            activeUser = refreshedSession.user || activeUser
+          }
+        }
+
+        let {
           data: { user: validatedUser },
           error: validateError,
         } = await supabase.auth.getUser()
+
+        if (validateError && isSupabaseAuthFailure(validateError)) {
+          const refreshedSession = await refreshStoredSession(resolvedSession)
+          if (refreshedSession?.access_token) {
+            resolvedSession = refreshedSession
+            activeUser = refreshedSession.user || activeUser
+
+            const retryResult = await supabase.auth.getUser()
+            validatedUser = retryResult.data?.user || null
+            validateError = retryResult.error
+          } else {
+            await resetInvalidSession(validateError, resolutionId, {
+              preserveExistingSession: event !== 'BOOTSTRAP',
+            })
+            return
+          }
+        }
 
         if (validateError && isSupabaseAuthFailure(validateError)) {
           await resetInvalidSession(validateError, resolutionId, {
@@ -310,10 +370,14 @@ export const AuthProvider = ({ children }) => {
           return
         }
 
-        if (validatedUser) {
+        if (validateError) {
+          console.error('Unable to validate Supabase user:', validateError)
+        }
+
+        if (!validateError && validatedUser) {
           activeUser = validatedUser
           resolvedSession = {
-            ...activeSession,
+            ...resolvedSession,
             user: validatedUser,
           }
         }
@@ -368,10 +432,7 @@ export const AuthProvider = ({ children }) => {
         return
       }
 
-      const {
-        data: { session: activeSession },
-      } = await supabase.auth.getSession()
-
+      const activeSession = await getStoredSession()
       await resolveSessionState(activeSession, { event: 'BOOTSTRAP' })
     }
 

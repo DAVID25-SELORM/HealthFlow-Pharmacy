@@ -61,6 +61,38 @@ export const clearSupabaseStoredSession = () => {
 }
 
 const FUNCTION_TOKEN_REFRESH_WINDOW_SECONDS = 60
+const USER_TOKEN_REFRESH_WINDOW_SECONDS = 30
+
+const isExpiredSession = (session, windowSeconds = 0) => {
+  const expiresAt = Number(session?.expires_at || 0)
+  if (!expiresAt) {
+    return false
+  }
+
+  return expiresAt - Math.floor(Date.now() / 1000) <= windowSeconds
+}
+
+const isSupabaseAuthFailure = (error) => {
+  const status = Number(error?.status || error?.statusCode || 0)
+  const code = String(error?.code || '').toUpperCase()
+  const name = String(error?.name || '')
+  const message = String(error?.message || '').toLowerCase()
+
+  return (
+    status === 401 ||
+    status === 403 ||
+    code === 'PGRST301' ||
+    name === 'AuthApiError' ||
+    name === 'AuthSessionMissingError' ||
+    message.includes('invalid jwt') ||
+    message.includes('jwt expired') ||
+    message.includes('token is expired') ||
+    message.includes('session missing') ||
+    message.includes('session not found') ||
+    message.includes('refresh token') ||
+    message.includes('unauthorized')
+  )
+}
 
 const invokeFunctionWithToken = (name, options, accessToken) =>
   supabase.functions.invoke(name, {
@@ -111,15 +143,23 @@ const getCurrentAuthSession = async () => {
 const refreshFunctionSession = async (fallbackSession = null) => {
   const { data, error } = await supabase.auth.refreshSession()
   if (!error) {
-    return data?.session || fallbackSession || null
+    if (data?.session?.access_token) {
+      return data.session
+    }
+
+    if (fallbackSession?.access_token && !isExpiredSession(fallbackSession)) {
+      return fallbackSession
+    }
+
+    return null
   }
 
   const currentSession = await getCurrentAuthSession().catch(() => null)
-  if (currentSession?.access_token) {
+  if (currentSession?.access_token && !isExpiredSession(currentSession)) {
     return currentSession
   }
 
-  if (fallbackSession?.access_token) {
+  if (fallbackSession?.access_token && !isExpiredSession(fallbackSession)) {
     return fallbackSession
   }
 
@@ -144,6 +184,52 @@ const getValidFunctionSession = async (forceRefresh = false) => {
   }
 
   return session
+}
+
+const getValidUserSession = async () => {
+  const session = await getCurrentAuthSession()
+  if (!session?.access_token) {
+    return null
+  }
+
+  if (isExpiredSession(session, USER_TOKEN_REFRESH_WINDOW_SECONDS)) {
+    return refreshFunctionSession(session)
+  }
+
+  return session
+}
+
+export const getCurrentSupabaseUser = async () => {
+  if (!supabase) {
+    throw new Error('Supabase credentials are not configured.')
+  }
+
+  const session = await getValidUserSession()
+  if (!session?.access_token) {
+    return null
+  }
+
+  let {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser()
+
+  if (error && isSupabaseAuthFailure(error)) {
+    const refreshedSession = await refreshFunctionSession(session).catch(() => null)
+    if (!refreshedSession?.access_token) {
+      throw error
+    }
+
+    const retryResult = await supabase.auth.getUser()
+    user = retryResult.data?.user || null
+    error = retryResult.error
+  }
+
+  if (error) {
+    throw error
+  }
+
+  return user || null
 }
 
 export const invokeSupabaseFunction = async (name, options = {}) => {

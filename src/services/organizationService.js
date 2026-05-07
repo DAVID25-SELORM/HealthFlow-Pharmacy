@@ -1,4 +1,4 @@
-import { invokeSupabaseFunction, supabase } from '../lib/supabase'
+import { getCurrentSupabaseUser, invokeSupabaseFunction, supabase } from '../lib/supabase'
 import { assertRequiredText, normalizeText } from '../utils/validation'
 
 /**
@@ -29,14 +29,19 @@ const invokeTenantSignup = async (payload) => {
  * Get current user's organization
  */
 export const getCurrentOrganization = async () => {
+  const user = await getCurrentSupabaseUser()
+  if (!user?.id) {
+    return null
+  }
+
   const { data, error } = await supabase
     .from('users')
     .select(`
       organization_id,
       organizations (*)
     `)
-    .eq('id', (await supabase.auth.getUser()).data.user?.id)
-    .single()
+    .eq('id', user.id)
+    .maybeSingle()
 
   if (error) throw error
 

@@ -53,6 +53,7 @@ describe('invokeSupabaseFunction', () => {
     const createClient = vi.fn(() => ({
       auth: {
         getSession,
+        getUser: vi.fn(),
         refreshSession,
       },
       functions: {
@@ -84,5 +85,111 @@ describe('invokeSupabaseFunction', () => {
         }),
       })
     )
+  })
+
+  it('refreshes before reading the current user when the stored session is expired', async () => {
+    const expiredSession = {
+      access_token: 'expired-token',
+      expires_at: Math.floor(NOW.getTime() / 1000) - 60,
+    }
+    const refreshedSession = {
+      access_token: 'fresh-token',
+      expires_at: Math.floor(NOW.getTime() / 1000) + 3600,
+    }
+    const user = {
+      id: 'user-1',
+      email: 'admin@example.com',
+    }
+
+    const getSession = vi.fn().mockResolvedValue({
+      data: { session: expiredSession },
+      error: null,
+    })
+    const getUser = vi.fn().mockResolvedValue({
+      data: { user },
+      error: null,
+    })
+    const refreshSession = vi.fn().mockResolvedValue({
+      data: { session: refreshedSession },
+      error: null,
+    })
+    const createClient = vi.fn(() => ({
+      auth: {
+        getSession,
+        getUser,
+        refreshSession,
+      },
+      functions: {
+        invoke: vi.fn(),
+      },
+    }))
+
+    vi.doMock('@supabase/supabase-js', () => ({
+      createClient,
+    }))
+
+    const { getCurrentSupabaseUser } = await import('./supabase')
+
+    await expect(getCurrentSupabaseUser()).resolves.toEqual(user)
+    expect(refreshSession).toHaveBeenCalledTimes(1)
+    expect(getUser).toHaveBeenCalledTimes(1)
+  })
+
+  it('retries reading the current user after refreshing an invalid JWT', async () => {
+    const staleSession = {
+      access_token: 'stale-token',
+      expires_at: Math.floor(NOW.getTime() / 1000) + 3600,
+    }
+    const refreshedSession = {
+      access_token: 'fresh-token',
+      expires_at: Math.floor(NOW.getTime() / 1000) + 3600,
+    }
+    const user = {
+      id: 'user-1',
+      email: 'admin@example.com',
+    }
+
+    const getSession = vi.fn().mockResolvedValue({
+      data: { session: staleSession },
+      error: null,
+    })
+    const getUser = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: { user: null },
+        error: {
+          status: 403,
+          name: 'AuthApiError',
+          message: 'invalid JWT: token has invalid claims: token is expired',
+        },
+      })
+      .mockResolvedValueOnce({
+        data: { user },
+        error: null,
+      })
+    const refreshSession = vi.fn().mockResolvedValue({
+      data: { session: refreshedSession },
+      error: null,
+    })
+    const createClient = vi.fn(() => ({
+      auth: {
+        getSession,
+        getUser,
+        refreshSession,
+      },
+      functions: {
+        invoke: vi.fn(),
+      },
+    }))
+
+    vi.doMock('@supabase/supabase-js', () => ({
+      createClient,
+    }))
+
+    const { getCurrentSupabaseUser } = await import('./supabase')
+
+    await expect(getCurrentSupabaseUser()).resolves.toEqual(user)
+    expect(refreshSession).toHaveBeenCalledTimes(1)
+    expect(getUser).toHaveBeenCalledTimes(2)
   })
 })

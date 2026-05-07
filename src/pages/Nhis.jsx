@@ -29,6 +29,25 @@ import './Nhis.css'
 // ─── constants ────────────────────────────────────────────────────────────────
 
 const CLAIM_STATUS_TABS = ['all', 'served', 'submitted', 'paid', 'rejected']
+const FREQUENCY_OPTIONS = [
+  'OD',
+  'BD',
+  'BID',
+  'TDS',
+  'TID',
+  'QID',
+  'QD',
+  'STAT',
+  'PRN',
+  ...Array.from({ length: 12 }, (_, index) => `${index + 1} hourly`),
+]
+const DURATION_OPTIONS = [
+  ...Array.from({ length: 14 }, (_, index) => `${index + 1} day${index === 0 ? '' : 's'}`),
+  '1 week',
+  '2 weeks',
+  '3 weeks',
+  '1 month',
+]
 
 const BLANK_CLAIM = {
   patientId:         '',
@@ -40,8 +59,7 @@ const BLANK_CLAIM = {
   gender:            '',
   dateOfBirth:       '',
   cccNo:             '',
-  serviceDateFrom:   new Date().toISOString().split('T')[0],
-  serviceDateTo:     new Date().toISOString().split('T')[0],
+  serviceDate:       new Date().toISOString().split('T')[0],
   referringFacility: '',
   referralCode:      '',
   physicianName:     '',
@@ -352,6 +370,7 @@ const Nhis = () => {
     e.preventDefault()
     if (!claimMedicines.length) { setClaimError('Add at least one medicine.'); return }
     if (!claimForm.surname.trim())    { setClaimError('Surname is required.'); return }
+    if (!claimForm.memberNo.trim())   { setClaimError('NHIS member number is required.'); return }
     try {
       setClaimSubmitting(true)
       setClaimError('')
@@ -842,8 +861,9 @@ const Nhis = () => {
 
                   <div className="form-row">
                     <div className="form-group">
-                      <label>Member No / HIN</label>
+                      <label>NHIS Member No *</label>
                       <input className="form-input" value={claimForm.memberNo}
+                        required
                         onChange={(e) => setClaimForm((p) => ({ ...p, memberNo: e.target.value }))} />
                     </div>
                     <div className="form-group">
@@ -898,17 +918,12 @@ const Nhis = () => {
 
                 {/* Dates of service */}
                 <section className="nhis-section">
-                  <h3 className="nhis-section-title">Dates of Service</h3>
+                  <h3 className="nhis-section-title">Date of Service</h3>
                   <div className="form-row">
                     <div className="form-group">
-                      <label>From</label>
-                      <input type="date" className="form-input" value={claimForm.serviceDateFrom}
-                        onChange={(e) => setClaimForm((p) => ({ ...p, serviceDateFrom: e.target.value }))} />
-                    </div>
-                    <div className="form-group">
-                      <label>To</label>
-                      <input type="date" className="form-input" value={claimForm.serviceDateTo}
-                        onChange={(e) => setClaimForm((p) => ({ ...p, serviceDateTo: e.target.value }))} />
+                      <label>Date</label>
+                      <input type="date" className="form-input" value={claimForm.serviceDate}
+                        onChange={(e) => setClaimForm((p) => ({ ...p, serviceDate: e.target.value }))} />
                     </div>
                   </div>
                 </section>
@@ -995,6 +1010,10 @@ const Nhis = () => {
             </div>
 
             <div className="modal-footer">
+              <div className="claim-footer-total">
+                <span>Claim Total</span>
+                <strong>{fmtCurrency(claimTotal)}</strong>
+              </div>
               <button className="btn btn-secondary" onClick={() => { setShowNewClaimModal(false); resetClaimModal() }}>
                 Cancel
               </button>
@@ -1116,21 +1135,29 @@ const Nhis = () => {
                 </div>
                 <div className="form-group">
                   <label>Frequency</label>
-                  <input
+                  <select
                     className="form-input"
-                    placeholder="e.g. TDS"
                     value={medForm.frequency}
                     onChange={(e) => setMedForm((p) => ({ ...p, frequency: e.target.value }))}
-                  />
+                  >
+                    <option value="">Select frequency</option>
+                    {FREQUENCY_OPTIONS.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
                 </div>
                 <div className="form-group">
                   <label>Duration</label>
-                  <input
+                  <select
                     className="form-input"
-                    placeholder="e.g. 7 days"
                     value={medForm.duration}
                     onChange={(e) => setMedForm((p) => ({ ...p, duration: e.target.value }))}
-                  />
+                  >
+                    <option value="">Select duration</option>
+                    {DURATION_OPTIONS.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
@@ -1142,6 +1169,14 @@ const Nhis = () => {
             </div>
 
             <div className="modal-footer">
+              <div className="medicine-footer-total">
+                <span>Line Total</span>
+                <strong>
+                  {fmtCurrency(
+                    (Number(medForm.unitPrice) || 0) * (Number(medForm.dispensedQty) || 0)
+                  )}
+                </strong>
+              </div>
               <button className="btn btn-secondary" onClick={() => { setMedForm(BLANK_MEDICINE); setMedCodeSearch('') }}>Clear</button>
               <button className="btn btn-primary" onClick={addMedicineToList}>+ Add</button>
             </div>
@@ -1167,7 +1202,7 @@ const Nhis = () => {
               <div><strong>Gender:</strong> {viewClaim.gender || '—'}</div>
               <div><strong>DOB:</strong> {viewClaim.date_of_birth ? formatAppDate(viewClaim.date_of_birth) : '—'}</div>
               <div><strong>CCC No:</strong> {viewClaim.ccc_no || '—'}</div>
-              <div><strong>Service Dates:</strong> {viewClaim.service_date_from ? `${formatAppDate(viewClaim.service_date_from)} – ${formatAppDate(viewClaim.service_date_to)}` : '—'}</div>
+              <div><strong>Date of Service:</strong> {viewClaim.service_date_from ? formatAppDate(viewClaim.service_date_from) : '—'}</div>
               <div><strong>Referring Facility:</strong> {viewClaim.referring_facility || '—'}</div>
               <div><strong>Referral Code:</strong> {viewClaim.referral_code || '—'}</div>
               <div><strong>Physician:</strong> {viewClaim.physician_name || '—'}</div>

@@ -1,4 +1,4 @@
-import { supabase } from '../lib/supabase'
+import { getCurrentSupabaseUser, supabase } from '../lib/supabase'
 
 const isMissingRpcFunctionError = (error) => {
   const code = String(error?.code || '').toUpperCase()
@@ -14,9 +14,7 @@ const insertAuditEventDirectly = async ({
   action,
   details = {},
 }) => {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const user = await getCurrentSupabaseUser()
 
   const { error } = await supabase.from('audit_logs').insert({
     actor_user_id: user?.id || null,

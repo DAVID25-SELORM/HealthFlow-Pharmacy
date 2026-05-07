@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabase'
 import { assertRequiredText, assertNonNegativeNumber, normalizeText, sanitizeSearchTerm } from '../utils/validation'
 import { tryLogAuditEvent } from './auditService'
+import { invokeTierAccess } from './tierAccessService'
 
 const UNIQUE_PATIENT_INSURANCE_INDEXES = [
   'idx_patients_org_insurance_id_unique',
@@ -137,6 +138,19 @@ export const upsertNhisDrugs = async (drugs) => {
 
   if (error) throw error
 
+  try {
+    await invokeTierAccess({
+      action: 'sync_nhis_drugs_to_inventory',
+      drugs: rows,
+    })
+  } catch (inventoryError) {
+    throw new Error(
+      `NHIS catalog imported, but inventory sync failed: ${
+        inventoryError.message || 'Please apply the NHIS inventory pricing patch and try again.'
+      }`
+    )
+  }
+
   await tryLogAuditEvent({
     eventType: 'nhis_drugs.imported',
     entityType: 'nhis_drugs',
@@ -212,6 +226,8 @@ export const getNhisClaimStats = async () => {
 export const createNhisClaim = async (claimData, medicines) => {
   if (!medicines?.length) throw new Error('Add at least one medicine to the claim.')
   assertRequiredText(claimData.surname, 'Surname')
+  const memberNo = assertRequiredText(claimData.memberNo, 'NHIS member number')
+  const serviceDate = normalizeText(claimData.serviceDate || claimData.serviceDateFrom)
 
   const totalAmount = medicines.reduce((s, m) => s + Number(m.totalAmount || 0), 0)
 
@@ -219,7 +235,7 @@ export const createNhisClaim = async (claimData, medicines) => {
     .from('nhis_claims')
     .insert([{
       patient_id:         claimData.patientId         || null,
-      member_no:          normalizeText(claimData.memberNo)          || null,
+      member_no:          memberNo,
       hin:                normalizeText(claimData.hin)               || null,
       surname:            normalizeText(claimData.surname),
       other_names:        normalizeText(claimData.otherNames)        || null,
@@ -227,8 +243,8 @@ export const createNhisClaim = async (claimData, medicines) => {
       gender:             normalizeText(claimData.gender)            || null,
       date_of_birth:      claimData.dateOfBirth                      || null,
       ccc_no:             normalizeText(claimData.cccNo)             || null,
-      service_date_from:  claimData.serviceDateFrom                  || null,
-      service_date_to:    claimData.serviceDateTo                    || null,
+      service_date_from:  serviceDate                                || null,
+      service_date_to:    serviceDate                                || null,
       referring_facility: normalizeText(claimData.referringFacility) || null,
       referral_code:      normalizeText(claimData.referralCode)      || null,
       physician_name:     normalizeText(claimData.physicianName)     || null,
@@ -363,7 +379,7 @@ export const exportNhisMonthlyCSV = async (yearMonth) => {
   const headerRow = [
     'Claim Number', 'Status', 'Surname', 'Other Names', 'Member No', 'HIN',
     'Folder No', 'Gender', 'Date of Birth', 'CCC No',
-    'Service Date From', 'Service Date To',
+    'Date of Service',
     'Referring Facility', 'Referral Code',
     'Physician Name', 'Pre-Auth Codes',
     'Drug Code', 'Description', 'Unit', 'Unit Price',
@@ -381,7 +397,7 @@ export const exportNhisMonthlyCSV = async (yearMonth) => {
         claim.member_no || '', claim.hin || '',
         claim.folder_no || '', claim.gender || '',
         claim.date_of_birth || '', claim.ccc_no || '',
-        claim.service_date_from || '', claim.service_date_to || '',
+        claim.service_date_from || '',
         claim.referring_facility || '', claim.referral_code || '',
         claim.physician_name || '', claim.pre_auth_codes || '',
         '', '', '', '', '', '', '', '', '', '', claim.total_amount,
@@ -394,7 +410,7 @@ export const exportNhisMonthlyCSV = async (yearMonth) => {
           claim.member_no || '', claim.hin || '',
           claim.folder_no || '', claim.gender || '',
           claim.date_of_birth || '', claim.ccc_no || '',
-          claim.service_date_from || '', claim.service_date_to || '',
+          claim.service_date_from || '',
           claim.referring_facility || '', claim.referral_code || '',
           claim.physician_name || '', claim.pre_auth_codes || '',
           med.drug_code || '', med.description,

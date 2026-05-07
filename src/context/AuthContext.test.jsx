@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => {
   const auth = {
     getSession: vi.fn(),
     getUser: vi.fn(),
+    refreshSession: vi.fn(),
     onAuthStateChange: vi.fn((callback) => {
       authStateChangeCallback = callback
       return { data: { subscription } }
@@ -74,6 +75,14 @@ describe('AuthProvider', () => {
     window.history.replaceState({}, '', '/')
     mocks.queryBuilder.select.mockImplementation(() => mocks.queryBuilder)
     mocks.queryBuilder.eq.mockImplementation(() => mocks.queryBuilder)
+    mocks.auth.refreshSession.mockResolvedValue({
+      data: { session: null },
+      error: {
+        status: 400,
+        name: 'AuthApiError',
+        message: 'refresh token is invalid',
+      },
+    })
   })
 
   it('accepts a fresh sign-in after clearing an invalid stored session', async () => {
@@ -141,6 +150,26 @@ describe('AuthProvider', () => {
     expect(mocks.auth.getUser).toHaveBeenCalledTimes(2)
   })
 
+  it('finishes bootstrap as signed out when the stored session cannot be read', async () => {
+    mocks.auth.getSession.mockRejectedValue({
+      status: 401,
+      name: 'AuthSessionMissingError',
+      message: 'session missing',
+    })
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId('auth-state')).toHaveTextContent('signed-out')
+    })
+    expect(mocks.auth.getUser).not.toHaveBeenCalled()
+    expect(mocks.clearSupabaseStoredSession).not.toHaveBeenCalled()
+  })
+
   it('keeps the user signed in when a non-signout auth event temporarily has no session', async () => {
     const validUser = {
       id: 'admin-user',
@@ -190,6 +219,123 @@ describe('AuthProvider', () => {
     await waitFor(() => {
       expect(screen.getByTestId('auth-state')).toHaveTextContent('signed-in:Admin User')
     })
+    expect(mocks.clearSupabaseStoredSession).not.toHaveBeenCalled()
+  })
+
+  it('refreshes an expired bootstrap session before validating the user', async () => {
+    const now = Math.floor(Date.now() / 1000)
+    const expiredUser = {
+      id: 'admin-user',
+      email: 'admin@example.com',
+      app_metadata: { role: 'admin' },
+      user_metadata: { full_name: 'Admin User' },
+    }
+    const expiredSession = {
+      access_token: 'expired-token',
+      expires_at: now - 60,
+      user: expiredUser,
+    }
+    const refreshedSession = {
+      access_token: 'fresh-token',
+      expires_at: now + 3600,
+      user: expiredUser,
+    }
+
+    mocks.auth.getSession.mockResolvedValue({
+      data: { session: expiredSession },
+      error: null,
+    })
+    mocks.auth.refreshSession.mockResolvedValue({
+      data: { session: refreshedSession },
+      error: null,
+    })
+    mocks.auth.getUser.mockResolvedValue({
+      data: { user: expiredUser },
+      error: null,
+    })
+    mocks.queryBuilder.maybeSingle.mockResolvedValue({
+      data: {
+        id: expiredUser.id,
+        email: expiredUser.email,
+        full_name: 'Admin User',
+        role: 'admin',
+        is_active: true,
+      },
+      error: null,
+    })
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId('auth-state')).toHaveTextContent('signed-in:Admin User')
+    })
+    expect(mocks.auth.refreshSession).toHaveBeenCalledTimes(1)
+    expect(mocks.clearSupabaseStoredSession).not.toHaveBeenCalled()
+  })
+
+  it('retries user validation after refreshing an invalid JWT', async () => {
+    const validUser = {
+      id: 'admin-user',
+      email: 'admin@example.com',
+      app_metadata: { role: 'admin' },
+      user_metadata: { full_name: 'Admin User' },
+    }
+    const staleSession = {
+      access_token: 'stale-token',
+      user: validUser,
+    }
+    const refreshedSession = {
+      access_token: 'fresh-token',
+      user: validUser,
+    }
+
+    mocks.auth.getSession.mockResolvedValue({
+      data: { session: staleSession },
+      error: null,
+    })
+    mocks.auth.refreshSession.mockResolvedValue({
+      data: { session: refreshedSession },
+      error: null,
+    })
+    mocks.auth.getUser
+      .mockResolvedValueOnce({
+        data: { user: null },
+        error: {
+          status: 403,
+          name: 'AuthApiError',
+          message: 'invalid JWT: token has invalid claims: token is expired',
+        },
+      })
+      .mockResolvedValueOnce({
+        data: { user: validUser },
+        error: null,
+      })
+    mocks.queryBuilder.maybeSingle.mockResolvedValue({
+      data: {
+        id: validUser.id,
+        email: validUser.email,
+        full_name: 'Admin User',
+        role: 'admin',
+        is_active: true,
+      },
+      error: null,
+    })
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId('auth-state')).toHaveTextContent('signed-in:Admin User')
+    })
+    expect(mocks.auth.getUser).toHaveBeenCalledTimes(2)
+    expect(mocks.auth.refreshSession).toHaveBeenCalledTimes(1)
     expect(mocks.clearSupabaseStoredSession).not.toHaveBeenCalled()
   })
 

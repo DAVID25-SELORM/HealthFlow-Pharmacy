@@ -1,4 +1,4 @@
-import { invokeSupabaseFunction, supabase } from '../lib/supabase'
+import { getCurrentSupabaseUser, invokeSupabaseFunction, supabase } from '../lib/supabase'
 import { assertRequiredText, normalizeText } from '../utils/validation'
 import { STAFF_ROLE_VALUES } from '../utils/roles'
 import { tryLogAuditEvent } from './auditService'
@@ -22,14 +22,7 @@ const invokeStaffAdmin = async (payload) => {
 }
 
 const getCurrentOrganizationId = async () => {
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser()
-
-  if (userError) {
-    throw userError
-  }
+  const user = await getCurrentSupabaseUser()
 
   if (!user?.id) {
     return null

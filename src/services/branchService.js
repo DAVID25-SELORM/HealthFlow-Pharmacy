@@ -1,16 +1,9 @@
-import { supabase } from '../lib/supabase'
+import { getCurrentSupabaseUser, supabase } from '../lib/supabase'
 
 const normalizeText = (value) => (typeof value === 'string' ? value.trim() : '')
 
 export const getCurrentOrganizationId = async () => {
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser()
-
-  if (userError) {
-    throw userError
-  }
+  const user = await getCurrentSupabaseUser()
 
   if (!user) {
     throw new Error('You must be signed in to manage branches.')
