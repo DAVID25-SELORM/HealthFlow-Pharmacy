@@ -22,7 +22,6 @@ import {
   updateNhisClaimStatus,
   exportNhisMonthlyCSV,
   assessNhisClaimReadiness,
-  validateNhisClaimReadiness,
 } from '../services/nhisService'
 import { getAllPatients } from '../services/patientService'
 import { parseNhisDrugFile, generateNhisDrugTemplate } from '../services/nhisDrugImportService'
@@ -338,9 +337,9 @@ const Nhis = () => {
   const addMedicineToList = () => {
     const qty   = Number.parseFloat(medForm.dispensedQty) || 0
     const price = Number.parseFloat(medForm.unitPrice)    || 0
-    const medicineIssues = getMedicineReadinessIssues()
-    if (medicineIssues.length) {
-      notify(medicineIssues[0], 'warning')
+    const medicineBlockers = getMedicineReadinessBlockers()
+    if (medicineBlockers.length) {
+      notify(medicineBlockers[0], 'warning')
       return
     }
 
@@ -413,7 +412,7 @@ const Nhis = () => {
     setMedForm(BLANK_MEDICINE)
   }
 
-  const getMedicineReadinessIssues = () => validateNhisClaimReadiness(
+  const getMedicineReadinessBlockers = () => assessNhisClaimReadiness(
     {
       ...claimForm,
       memberNo: claimForm.memberNo || 'pending',
@@ -429,7 +428,7 @@ const Nhis = () => {
       ...medForm,
       totalAmount: (Number(medForm.unitPrice) || 0) * (Number(medForm.dispensedQty) || 0),
     }]
-  )
+  ).blockers
 
   // ── status updates ────────────────────────────────────────────
   const handleStatusUpdate = async (claim, newStatus) => {
@@ -1222,29 +1221,33 @@ const Nhis = () => {
                 </div>
                 <div className="form-group">
                   <label>Frequency</label>
-                  <select
+                  <input
+                    list="nhis-frequency-options"
                     className="form-input"
                     value={medForm.frequency}
                     onChange={(e) => setMedForm((p) => ({ ...p, frequency: e.target.value }))}
-                  >
-                    <option value="">Select frequency</option>
+                    placeholder="Select or type frequency"
+                  />
+                  <datalist id="nhis-frequency-options">
                     {FREQUENCY_OPTIONS.map((option) => (
                       <option key={option} value={option}>{option}</option>
                     ))}
-                  </select>
+                  </datalist>
                 </div>
                 <div className="form-group">
                   <label>Duration</label>
-                  <select
+                  <input
+                    list="nhis-duration-options"
                     className="form-input"
                     value={medForm.duration}
                     onChange={(e) => setMedForm((p) => ({ ...p, duration: e.target.value }))}
-                  >
-                    <option value="">Select duration</option>
+                    placeholder="Select or type duration"
+                  />
+                  <datalist id="nhis-duration-options">
                     {DURATION_OPTIONS.map((option) => (
                       <option key={option} value={option}>{option}</option>
                     ))}
-                  </select>
+                  </datalist>
                 </div>
               </div>
 
