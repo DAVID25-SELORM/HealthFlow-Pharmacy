@@ -316,17 +316,32 @@
 }
 
 .btn-icon {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 0.2rem;
-  background: none;
+  justify-content: center;
+  gap: 0.15rem;
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  background: white;
   border: 1px solid var(--gray-200);
   border-radius: var(--radius);
-  padding: 0.3rem 0.5rem;
+  padding: 0;
   cursor: pointer;
   color: var(--gray-600);
   font-size: 0.82rem;
   transition: all 0.15s;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.btn-icon svg {
+  display: block;
+  width: 15px;
+  height: 15px;
+  color: currentColor;
+  stroke: currentColor;
+  flex-shrink: 0;
 }
 
 .btn-icon:hover {
