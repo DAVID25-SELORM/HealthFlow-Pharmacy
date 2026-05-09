@@ -21,6 +21,8 @@ import {
   createNhisClaim,
   updateNhisClaimStatus,
   exportNhisMonthlyCSV,
+  assessNhisClaimReadiness,
+  validateNhisClaimReadiness,
 } from '../services/nhisService'
 import { getAllPatients } from '../services/patientService'
 import { parseNhisDrugFile, generateNhisDrugTemplate } from '../services/nhisDrugImportService'
@@ -58,7 +60,10 @@ const BLANK_CLAIM = {
   folderNo:          '',
   gender:            '',
   dateOfBirth:       '',
+  patientAddress:    '',
+  childWeightKg:     '',
   cccNo:             '',
+  diagnosis:         '',
   serviceDate:       new Date().toISOString().split('T')[0],
   referringFacility: '',
   referralCode:      '',
@@ -267,6 +272,7 @@ const Nhis = () => {
       otherNames:  (patient.full_name || '').split(' ').slice(1).join(' '),
       gender:      patient.gender     || '',
       dateOfBirth: patient.date_of_birth || '',
+      patientAddress: patient.address || '',
       memberNo:    patient.nhis_member_no || patient.insurance_id || '',
       hin:         patient.nhis_hin       || '',
     }))
@@ -330,10 +336,13 @@ const Nhis = () => {
 
   // ── add medicine to claim ─────────────────────────────────────
   const addMedicineToList = () => {
-    if (!medForm.description.trim()) { notify('Select a drug first.', 'warning'); return }
     const qty   = Number.parseFloat(medForm.dispensedQty) || 0
     const price = Number.parseFloat(medForm.unitPrice)    || 0
-    if (qty <= 0) { notify('Dispensed quantity must be > 0.', 'warning'); return }
+    const medicineIssues = getMedicineReadinessIssues()
+    if (medicineIssues.length) {
+      notify(medicineIssues[0], 'warning')
+      return
+    }
 
     setClaimMedicines((prev) => [
       ...prev,
@@ -365,12 +374,22 @@ const Nhis = () => {
     [claimMedicines]
   )
 
+  const readiness = useMemo(
+    () => assessNhisClaimReadiness(claimForm, claimMedicines),
+    [claimForm, claimMedicines]
+  )
+
+  const readinessIssues = readiness.issues
+  const readinessPassed = readiness.issues.length === 0
+  const canSaveCommunityPharmacyClaim = readiness.blockers.length === 0
+
   // ── submit claim ──────────────────────────────────────────────
   const handleSubmitClaim = async (e) => {
     e.preventDefault()
-    if (!claimMedicines.length) { setClaimError('Add at least one medicine.'); return }
-    if (!claimForm.surname.trim())    { setClaimError('Surname is required.'); return }
-    if (!claimForm.memberNo.trim())   { setClaimError('NHIS member number is required.'); return }
+    if (readiness.blockers.length) {
+      setClaimError(`NHIS pharmacy dispensing check failed: ${readiness.blockers.slice(0, 5).join(' ')}`)
+      return
+    }
     try {
       setClaimSubmitting(true)
       setClaimError('')
@@ -393,6 +412,24 @@ const Nhis = () => {
     setPatientSearch('')
     setMedForm(BLANK_MEDICINE)
   }
+
+  const getMedicineReadinessIssues = () => validateNhisClaimReadiness(
+    {
+      ...claimForm,
+      memberNo: claimForm.memberNo || 'pending',
+      surname: claimForm.surname || 'pending',
+      otherNames: claimForm.otherNames || 'pending',
+      patientAddress: claimForm.patientAddress || 'pending',
+      dateOfBirth: claimForm.dateOfBirth || '2000-01-01',
+      diagnosis: claimForm.diagnosis || 'pending',
+      serviceDate: claimForm.serviceDate || new Date().toISOString().split('T')[0],
+      physicianName: claimForm.physicianName || 'pending',
+    },
+    [{
+      ...medForm,
+      totalAmount: (Number(medForm.unitPrice) || 0) * (Number(medForm.dispensedQty) || 0),
+    }]
+  )
 
   // ── status updates ────────────────────────────────────────────
   const handleStatusUpdate = async (claim, newStatus) => {
@@ -546,7 +583,7 @@ const Nhis = () => {
       <div className="page-header">
         <div>
           <h1 className="page-title">NHIS</h1>
-          <p className="page-subtitle">National Health Insurance Scheme claims and drug catalog</p>
+          <p className="page-subtitle">NHIS prescription dispensing claims and medicines catalog for pharmacies</p>
         </div>
         <div className="header-actions">
           {pageTab === 'claims' && canWrite && (
@@ -909,10 +946,30 @@ const Nhis = () => {
                     </div>
                   </div>
 
-                  <div className="form-group">
-                    <label>CCC No</label>
-                    <input className="form-input" value={claimForm.cccNo}
-                      onChange={(e) => setClaimForm((p) => ({ ...p, cccNo: e.target.value }))} />
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Patient Address *</label>
+                      <input className="form-input" value={claimForm.patientAddress}
+                        onChange={(e) => setClaimForm((p) => ({ ...p, patientAddress: e.target.value }))} />
+                    </div>
+                    <div className="form-group">
+                      <label>Child Weight (kg)</label>
+                      <input type="number" min="0" step="0.1" className="form-input" value={claimForm.childWeightKg}
+                        onChange={(e) => setClaimForm((p) => ({ ...p, childWeightKg: e.target.value }))} />
+                    </div>
+                  </div>
+
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>CCC No</label>
+                      <input className="form-input" value={claimForm.cccNo}
+                        onChange={(e) => setClaimForm((p) => ({ ...p, cccNo: e.target.value }))} />
+                    </div>
+                    <div className="form-group">
+                      <label>Diagnosis *</label>
+                      <input className="form-input" value={claimForm.diagnosis}
+                        onChange={(e) => setClaimForm((p) => ({ ...p, diagnosis: e.target.value }))} />
+                    </div>
                   </div>
                 </section>
 
@@ -930,10 +987,10 @@ const Nhis = () => {
 
                 {/* Referral */}
                 <section className="nhis-section">
-                  <h3 className="nhis-section-title">Referral Info</h3>
+                  <h3 className="nhis-section-title">Prescription Source</h3>
                   <div className="form-row">
                     <div className="form-group">
-                      <label>Referring Facility Name</label>
+                      <label>Prescribing Facility</label>
                       <input className="form-input" value={claimForm.referringFacility}
                         onChange={(e) => setClaimForm((p) => ({ ...p, referringFacility: e.target.value }))} />
                     </div>
@@ -947,10 +1004,10 @@ const Nhis = () => {
 
                 {/* Authorization */}
                 <section className="nhis-section">
-                  <h3 className="nhis-section-title">Authorization Codes</h3>
+                  <h3 className="nhis-section-title">Prescription Authorization</h3>
                   <div className="form-row">
                     <div className="form-group">
-                      <label>Physician Name / ID</label>
+                      <label>Prescriber Name / ID *</label>
                       <input className="form-input" value={claimForm.physicianName}
                         onChange={(e) => setClaimForm((p) => ({ ...p, physicianName: e.target.value }))} />
                     </div>
@@ -1006,6 +1063,36 @@ const Nhis = () => {
                 <div className="medicines-total">
                   <strong>Total:</strong> {fmtCurrency(claimTotal)}
                 </div>
+
+                <div className={`nhia-readiness ${readinessPassed ? 'nhia-readiness--pass' : 'nhia-readiness--fail'}`}>
+                  <div className="nhia-readiness-header">
+                    {readinessPassed ? <CheckCircle2 size={16} /> : <XCircle size={16} />}
+                    <strong>NHIS Pharmacy Check</strong>
+                  </div>
+                  {readinessPassed ? (
+                    <p>Ready for NHIS pharmacy claim submission.</p>
+                  ) : (
+                    <>
+                      {readiness.blockers.length > 0 && (
+                        <ul>
+                          {readiness.blockers.slice(0, 4).map((issue) => (
+                            <li key={issue}>{issue}</li>
+                          ))}
+                        </ul>
+                      )}
+                      {readiness.warnings.length > 0 && (
+                        <ul className="nhia-readiness-warnings">
+                          {readiness.warnings.slice(0, 4).map((issue) => (
+                            <li key={issue}>{issue}</li>
+                          ))}
+                        </ul>
+                      )}
+                      {readinessIssues.length > 8 && (
+                        <p>{readinessIssues.length - 8} more item(s) to complete before export.</p>
+                      )}
+                    </>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -1019,7 +1106,7 @@ const Nhis = () => {
               </button>
               <button
                 className="btn btn-primary"
-                disabled={claimSubmitting}
+                disabled={claimSubmitting || !canSaveCommunityPharmacyClaim}
                 onClick={handleSubmitClaim}
               >
                 {claimSubmitting ? 'Saving...' : 'Save Claim'}
@@ -1196,11 +1283,14 @@ const Nhis = () => {
               <div><strong>Folder No:</strong> {viewClaim.folder_no || '—'}</div>
               <div><strong>Gender:</strong> {viewClaim.gender || '—'}</div>
               <div><strong>DOB:</strong> {viewClaim.date_of_birth ? formatAppDate(viewClaim.date_of_birth) : '—'}</div>
+              <div><strong>Address:</strong> {viewClaim.patient_address || '—'}</div>
+              <div><strong>Child Weight:</strong> {viewClaim.child_weight_kg ? `${viewClaim.child_weight_kg} kg` : '—'}</div>
               <div><strong>CCC No:</strong> {viewClaim.ccc_no || '—'}</div>
+              <div><strong>Diagnosis:</strong> {viewClaim.diagnosis || '—'}</div>
               <div><strong>Date of Service:</strong> {viewClaim.service_date_from ? formatAppDate(viewClaim.service_date_from) : '—'}</div>
-              <div><strong>Referring Facility:</strong> {viewClaim.referring_facility || '—'}</div>
+              <div><strong>Prescribing Facility:</strong> {viewClaim.referring_facility || '—'}</div>
               <div><strong>Referral Code:</strong> {viewClaim.referral_code || '—'}</div>
-              <div><strong>Physician:</strong> {viewClaim.physician_name || '—'}</div>
+              <div><strong>Prescriber:</strong> {viewClaim.physician_name || '—'}</div>
               <div><strong>Pre-auth Codes:</strong> {viewClaim.pre_auth_codes || '—'}</div>
             </div>
             <table className="nhis-table" style={{ marginTop: '1rem' }}>
@@ -1384,7 +1474,7 @@ const Nhis = () => {
             </div>
             <div className="export-body">
               <p className="export-info">
-                Exports all claims for the selected month as a CSV file ready for NHIA submission.
+                Exports all pharmacy dispensing claims for the selected month as a CSV file ready for NHIA submission.
                 All <strong>Served</strong> claims in that month will be automatically marked as <strong>Submitted</strong>.
               </p>
               <div className="form-group">

@@ -13,6 +13,16 @@ WHERE table_schema = 'public'
 ORDER BY column_name;
 
 SELECT
+  column_name,
+  data_type,
+  is_nullable
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND table_name = 'nhis_claims'
+  AND column_name IN ('diagnosis', 'patient_address', 'child_weight_kg')
+ORDER BY column_name;
+
+SELECT
   o.name,
   COUNT(nd.id) AS catalog_count,
   COUNT(DISTINCT nd.code) AS distinct_codes,
@@ -76,3 +86,27 @@ WITH mismatches AS (
 )
 SELECT COUNT(*) AS mismatch_count
 FROM mismatches;
+
+SELECT
+  COUNT(*) FILTER (WHERE NULLIF(BTRIM(member_no), '') IS NULL) AS missing_member_no,
+  COUNT(*) FILTER (WHERE NULLIF(BTRIM(surname), '') IS NULL) AS missing_surname,
+  COUNT(*) FILTER (WHERE NULLIF(BTRIM(other_names), '') IS NULL) AS missing_other_names,
+  COUNT(*) FILTER (WHERE date_of_birth IS NULL) AS missing_date_of_birth,
+  COUNT(*) FILTER (WHERE NULLIF(BTRIM(patient_address), '') IS NULL) AS missing_patient_address,
+  COUNT(*) FILTER (WHERE NULLIF(BTRIM(diagnosis), '') IS NULL) AS missing_diagnosis,
+  COUNT(*) FILTER (WHERE NULLIF(BTRIM(physician_name), '') IS NULL) AS missing_prescriber,
+  COUNT(*) FILTER (WHERE service_date_from IS NULL) AS missing_service_date
+FROM public.nhis_claims
+WHERE status IN ('served', 'submitted');
+
+SELECT
+  COUNT(*) FILTER (WHERE nhis_drug_id IS NULL OR NULLIF(BTRIM(drug_code), '') IS NULL) AS medicines_not_catalog_selected,
+  COUNT(*) FILTER (WHERE NULLIF(BTRIM(unit), '') IS NULL) AS missing_unit,
+  COUNT(*) FILTER (WHERE dispensed_qty IS NULL OR dispensed_qty <= 0) AS missing_exact_quantity,
+  COUNT(*) FILTER (WHERE NULLIF(BTRIM(dose), '') IS NULL) AS missing_dose,
+  COUNT(*) FILTER (WHERE NULLIF(BTRIM(frequency), '') IS NULL) AS missing_frequency,
+  COUNT(*) FILTER (WHERE NULLIF(BTRIM(duration), '') IS NULL) AS missing_duration
+FROM public.nhis_claim_medicines m
+JOIN public.nhis_claims c
+  ON c.id = m.claim_id
+WHERE c.status IN ('served', 'submitted');

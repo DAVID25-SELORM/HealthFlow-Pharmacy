@@ -22,6 +22,74 @@ const throwFriendlyNhisPatientError = (error) => {
   throw error
 }
 
+const asText = (value) => String(value ?? '').trim()
+const asNumber = (value) => Number.parseFloat(value)
+const getClaimField = (claim, camelKey, snakeKey = camelKey) =>
+  asText(claim?.[camelKey] ?? claim?.[snakeKey])
+
+const calculateAge = (dateOfBirth) => {
+  if (!dateOfBirth) return null
+  const dob = new Date(dateOfBirth)
+  if (Number.isNaN(dob.getTime())) return null
+  const today = new Date()
+  let age = today.getFullYear() - dob.getFullYear()
+  const monthDelta = today.getMonth() - dob.getMonth()
+  if (monthDelta < 0 || (monthDelta === 0 && today.getDate() < dob.getDate())) age -= 1
+  return age
+}
+
+export const assessNhisClaimReadiness = (claimData, medicines = []) => {
+  const blockers = []
+  const warnings = []
+  const dateOfBirth = getClaimField(claimData, 'dateOfBirth', 'date_of_birth')
+  const childWeight = getClaimField(claimData, 'childWeightKg', 'child_weight_kg')
+  const patientAge = calculateAge(dateOfBirth)
+
+  if (!getClaimField(claimData, 'memberNo', 'member_no')) blockers.push('NHIS member number is required.')
+  if (!getClaimField(claimData, 'surname')) blockers.push('Patient surname is required.')
+  if (!getClaimField(claimData, 'otherNames', 'other_names')) warnings.push('Patient other names are missing on the claim.')
+  if (!getClaimField(claimData, 'patientAddress', 'patient_address')) warnings.push('Patient address is missing on the claim.')
+  if (!dateOfBirth) warnings.push('Patient date of birth is missing on the claim.')
+  if (patientAge !== null && patientAge < 12 && !(asNumber(childWeight) > 0)) {
+    warnings.push('Child weight is missing for a child patient.')
+  }
+  if (!getClaimField(claimData, 'diagnosis')) warnings.push('Diagnosis is missing from the prescription/claim.')
+  if (!getClaimField(claimData, 'serviceDate', 'service_date_from')) blockers.push('Date of dispensing/service is required.')
+  if (!getClaimField(claimData, 'physicianName', 'physician_name')) {
+    warnings.push('Prescriber name or ID is missing from the prescription.')
+  }
+
+  if (!medicines?.length) {
+    blockers.push('Add at least one medicine to the claim.')
+  } else {
+    medicines.forEach((medicine, index) => {
+      const label = `Medicine ${index + 1}`
+      const quantity = asNumber(medicine?.dispensedQty ?? medicine?.dispensed_qty)
+      const unitPrice = asNumber(medicine?.unitPrice ?? medicine?.unit_price)
+
+      if (!asText(medicine?.nhisDrugId ?? medicine?.nhis_drug_id) || !asText(medicine?.drugCode ?? medicine?.drug_code)) {
+        blockers.push(`${label}: select a medicine from the NHIS catalog.`)
+      }
+      if (!asText(medicine?.description)) blockers.push(`${label}: generic medicine name/description is required.`)
+      if (!asText(medicine?.unit)) blockers.push(`${label}: unit of pricing is required.`)
+      if (!(quantity > 0)) blockers.push(`${label}: exact dispensed quantity must be greater than zero.`)
+      if (!(unitPrice >= 0)) blockers.push(`${label}: NHIS unit price is required.`)
+      if (!asText(medicine?.dose)) warnings.push(`${label}: dose is missing from the prescription.`)
+      if (!asText(medicine?.frequency)) warnings.push(`${label}: dosage schedule/frequency is missing from the prescription.`)
+      if (!asText(medicine?.duration)) warnings.push(`${label}: duration is missing from the prescription.`)
+    })
+  }
+
+  return {
+    blockers,
+    warnings,
+    issues: [...blockers, ...warnings],
+  }
+}
+
+export const validateNhisClaimReadiness = (claimData, medicines = []) =>
+  assessNhisClaimReadiness(claimData, medicines).issues
+
 // ─── NHIS Drug Catalog ────────────────────────────────────────────────────────
 
 export const getAllNhisDrugs = async (searchTerm = '') => {
@@ -224,7 +292,11 @@ export const getNhisClaimStats = async () => {
  * Also saves HIN/member_no back to the patient record if patient_id is provided.
  */
 export const createNhisClaim = async (claimData, medicines) => {
-  if (!medicines?.length) throw new Error('Add at least one medicine to the claim.')
+  const readiness = assessNhisClaimReadiness(claimData, medicines)
+  if (readiness.blockers.length) {
+    throw new Error(`NHIS pharmacy dispensing check failed: ${readiness.blockers.slice(0, 5).join(' ')}`)
+  }
+
   assertRequiredText(claimData.surname, 'Surname')
   const memberNo = assertRequiredText(claimData.memberNo, 'NHIS member number')
   const serviceDate = normalizeText(claimData.serviceDate || claimData.serviceDateFrom)
@@ -242,7 +314,12 @@ export const createNhisClaim = async (claimData, medicines) => {
       folder_no:          normalizeText(claimData.folderNo)          || null,
       gender:             normalizeText(claimData.gender)            || null,
       date_of_birth:      claimData.dateOfBirth                      || null,
+      patient_address:    normalizeText(claimData.patientAddress)    || null,
+      child_weight_kg:    claimData.childWeightKg
+        ? assertNonNegativeNumber(claimData.childWeightKg, 'Child weight')
+        : null,
       ccc_no:             normalizeText(claimData.cccNo)             || null,
+      diagnosis:          normalizeText(claimData.diagnosis)         || null,
       service_date_from:  serviceDate                                || null,
       service_date_to:    serviceDate                                || null,
       referring_facility: normalizeText(claimData.referringFacility) || null,
@@ -355,10 +432,10 @@ export const getNhisClaimsForMonth = async (yearMonth) => {
     .from('nhis_claims')
     .select(`
       *,
-      nhis_claim_medicines (
-        drug_code, description, unit, unit_price,
-        dispensed_qty, dispensary_date, dose, frequency, duration, total_amount
-      )
+        nhis_claim_medicines (
+          nhis_drug_id, drug_code, description, unit, unit_price,
+          dispensed_qty, dispensary_date, dose, frequency, duration, total_amount
+        )
     `)
     .eq('submission_month', yearMonth)
     .order('created_at')
@@ -374,14 +451,30 @@ export const exportNhisMonthlyCSV = async (yearMonth) => {
   const claims = await getNhisClaimsForMonth(yearMonth)
   if (!claims.length) throw new Error(`No claims found for ${yearMonth}.`)
 
+  const incompleteClaims = claims
+    .map((claim) => ({
+      claim,
+      issues: validateNhisClaimReadiness(claim, claim.nhis_claim_medicines || []),
+    }))
+    .filter((item) => item.issues.length)
+
+  if (incompleteClaims.length) {
+    const first = incompleteClaims[0]
+    throw new Error(
+      `NHIA readiness checklist failed for ${incompleteClaims.length} claim(s). ` +
+      `${first.claim.claim_number || 'First claim'}: ${first.issues.slice(0, 3).join(' ')}`
+    )
+  }
+
   const escapeCell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`
 
   const headerRow = [
     'Claim Number', 'Status', 'Surname', 'Other Names', 'Member No', 'HIN',
-    'Folder No', 'Gender', 'Date of Birth', 'CCC No',
+    'Folder No', 'Gender', 'Date of Birth', 'Address', 'Child Weight Kg', 'CCC No',
+    'Diagnosis',
     'Date of Service',
     'Referring Facility', 'Referral Code',
-    'Physician Name', 'Pre-Auth Codes',
+    'Prescriber Name/ID', 'Pre-Auth Codes',
     'Drug Code', 'Description', 'Unit', 'Unit Price',
     'Dispensed Qty', 'Dispensary Date', 'Dose', 'Frequency', 'Duration', 'Line Total',
     'Claim Total',
@@ -396,7 +489,8 @@ export const exportNhisMonthlyCSV = async (yearMonth) => {
         claim.surname, claim.other_names || '',
         claim.member_no || '', claim.hin || '',
         claim.folder_no || '', claim.gender || '',
-        claim.date_of_birth || '', claim.ccc_no || '',
+        claim.date_of_birth || '', claim.patient_address || '', claim.child_weight_kg || '', claim.ccc_no || '',
+        claim.diagnosis || '',
         claim.service_date_from || '',
         claim.referring_facility || '', claim.referral_code || '',
         claim.physician_name || '', claim.pre_auth_codes || '',
@@ -409,7 +503,8 @@ export const exportNhisMonthlyCSV = async (yearMonth) => {
           claim.surname, claim.other_names || '',
           claim.member_no || '', claim.hin || '',
           claim.folder_no || '', claim.gender || '',
-          claim.date_of_birth || '', claim.ccc_no || '',
+          claim.date_of_birth || '', claim.patient_address || '', claim.child_weight_kg || '', claim.ccc_no || '',
+          claim.diagnosis || '',
           claim.service_date_from || '',
           claim.referring_facility || '', claim.referral_code || '',
           claim.physician_name || '', claim.pre_auth_codes || '',

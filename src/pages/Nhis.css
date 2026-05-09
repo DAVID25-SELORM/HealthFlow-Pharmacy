@@ -697,6 +697,51 @@
   font-weight: 800;
 }
 
+.nhia-readiness {
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  padding: 0.75rem;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+
+.nhia-readiness--pass {
+  border-color: rgba(22, 163, 74, 0.3);
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.nhia-readiness--fail {
+  border-color: rgba(220, 38, 38, 0.22);
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.nhia-readiness-header {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.4rem;
+}
+
+.nhia-readiness p,
+.nhia-readiness ul {
+  margin: 0;
+}
+
+.nhia-readiness ul {
+  padding-left: 1rem;
+}
+
+.nhia-readiness-warnings {
+  color: #92400e;
+}
+
+.nhia-readiness li + li {
+  margin-top: 0.25rem;
+}
+
 /* Medicine modal */
 .medicine-modal-body {
   padding: 1.25rem 1.5rem;
@@ -944,6 +989,10 @@
   }
 
   .form-row--3 {
+    grid-template-columns: 1fr;
+  }
+
+  .form-row {
     grid-template-columns: 1fr;
   }
 

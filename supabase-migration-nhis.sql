@@ -117,7 +117,10 @@ CREATE TABLE IF NOT EXISTS public.nhis_claims (
   folder_no           TEXT,
   gender              TEXT          CHECK (gender IN ('male', 'female', 'other', NULL)),
   date_of_birth       DATE,
+  patient_address     TEXT,
+  child_weight_kg     DECIMAL(6,2),
   ccc_no              TEXT,
+  diagnosis           TEXT,
   -- Service dates
   service_date_from   DATE,
   service_date_to     DATE,
