@@ -15,8 +15,8 @@ A service worker/PWA can cache the app shell, but it does not solve transactiona
 ## Offline-Capable Modules
 
 Start with:
-- Sales / POS
-- Inventory lookup
+- Sales / POS (Started: browser queue saves offline sales and syncs them when online.)
+- Inventory lookup (Started: POS keeps a cached in-stock search list for offline use.)
 - Stock reduction after sale
 - Patients
 - Basic purchases / stock receiving
@@ -56,11 +56,20 @@ Cloud:
 ## Suggested Rollout
 
 1. Make the app installable/cacheable as a PWA. (Done: app shell cache, manifest, and online/offline status.)
-2. Refactor service calls behind app-owned APIs, starting with Sales.
-3. Add local database and sync queue for sales, inventory, and patients.
-4. Add conflict handling, audit trails, and sync monitoring.
-5. Move to a local branch server for pharmacies with multiple offline computers.
+2. Add first POS offline queue. (Done: offline sales are stored locally, sync on reconnect, and shift closing is blocked while sales are pending.)
+3. Refactor service calls behind app-owned APIs, starting with Sales.
+4. Add a stronger local database and sync queue for inventory, patients, purchases, claims, and full shift close support.
+5. Add conflict handling, audit trails, and sync monitoring.
+6. Move to a local branch server for pharmacies with multiple offline computers.
 
 ## Next Practical Step
 
-Refactor the Sales module so the page does not depend directly on Supabase calls. Make it call a `salesApi` abstraction that can later choose between Supabase and a local backend.
+Refactor the Sales module so the page does not depend directly on Supabase calls. Make it call a `salesApi` abstraction that can later choose between Supabase, the browser queue, or a local branch backend.
+
+## Current POS Offline Behavior
+
+- If internet drops while the POS has cached data and an open shift, the cashier can save sales offline.
+- The checkout button changes to `Save Offline Sale`.
+- Offline sales are stored on the device with an `OFF-...` reference and a printable receipt.
+- When internet returns, pending sales sync automatically. The cashier can also click `Sync Now`.
+- The app blocks shift closing while offline sales remain unsynced, because the server-side shift must stay open for accurate cash and inventory posting.

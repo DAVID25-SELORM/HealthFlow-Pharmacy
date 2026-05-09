@@ -245,7 +245,7 @@ export const createSale = async (saleData) => {
         change_given: totals.change,
         notes: saleData.notes || null,
         sold_by: saleData.soldBy || null,
-        sale_date: new Date().toISOString(),
+        sale_date: saleData.saleDate || new Date().toISOString(),
         discount: totals.discount,
         shift_id: saleData.shiftId,
         insurance_covered_amount: insuranceCoveredAmount,

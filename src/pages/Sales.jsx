@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Search, Trash2, Plus, Minus, ShoppingCart, Printer, Download, X } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { dispatchHealthflowDataChanged } from '../lib/appEvents'
@@ -10,9 +10,22 @@ import { getPharmacySettings } from '../services/settingsService'
 import { getBranches } from '../services/branchService'
 import { closeShift, getOpenShiftForUser, openShift } from '../services/shiftService'
 import { printReceipt, downloadReceiptPDF, formatSaleForReceipt } from '../services/receiptService'
+import {
+  createOfflineSaleNumber,
+  getOfflineSalesSummary,
+  queueOfflineSale,
+  subscribeOfflineSalesQueue,
+  syncOfflineSales,
+} from '../services/offlineSalesQueue'
+import {
+  filterCachedDrugs,
+  loadOfflinePosSnapshot,
+  saveOfflinePosSnapshot,
+} from '../services/offlinePosCache'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
+import { useOnlineStatus } from '../hooks/useOnlineStatus'
 import { hasRole } from '../utils/roles'
 import Receipt from '../components/Receipt/Receipt'
 import './Sales.css'
@@ -48,6 +61,7 @@ const Sales = () => {
   const [searchParams, setSearchParams] = useSearchParams()
   const { user, displayName, role, profile, organization } = useAuth()
   const { notify } = useNotification()
+  const isOnline = useOnlineStatus()
   const [drugs, setDrugs] = useState([])
   const [drugSearchLoading, setDrugSearchLoading] = useState(false)
   const [drugSearchMessage, setDrugSearchMessage] = useState('')
@@ -80,6 +94,15 @@ const Sales = () => {
   const [loadingRecentSales, setLoadingRecentSales] = useState(false)
   const [refundingSaleId, setRefundingSaleId] = useState(null)
   const [reprintingSaleId, setReprintingSaleId] = useState(null)
+  const [offlineSalesSummary, setOfflineSalesSummary] = useState({
+    pending: 0,
+    syncing: 0,
+    failed: 0,
+    synced: 0,
+    unsynced: 0,
+    total: 0,
+  })
+  const [syncingOfflineSales, setSyncingOfflineSales] = useState(false)
   const canProcessRefund =
     hasRole(role, ['admin', 'pharmacist']) || Boolean(profile?.can_refund)
   const isAdmin = String(role || '').toLowerCase() === 'admin'
@@ -93,6 +116,7 @@ const Sales = () => {
       : null
   const effectiveBranchId = profile?.branch_id || assignedBranch?.id || shiftBranchId
   const canChooseShiftBranch = isAdmin && !profile?.branch_id && activeBranches.length > 1
+  const unsyncedOfflineSales = Number(offlineSalesSummary.unsynced || 0)
   const selectedPatientForSale = useMemo(
     () => patients.find((patient) => patient.id === patientId) || null,
     [patients, patientId]
@@ -133,6 +157,7 @@ const Sales = () => {
 
         if (!isSupabaseConfigured()) {
           setError('Supabase is not configured. Update .env to enable sales.')
+          setLoading(false)
           return
         }
 
@@ -146,17 +171,31 @@ const Sales = () => {
           return
         }
 
+        const mergedPharmacyInfo = mergePharmacySettingsWithOrganization(pharmacySettings, organization)
+        const nextShiftBranchId =
+          openShiftData?.branch_id ||
+          profile?.branch_id ||
+          branchesData.find((branch) => branch.is_active !== false && branch.is_main)?.id ||
+          branchesData.find((branch) => branch.is_active !== false)?.id ||
+          ''
+
         setPatients(patientsData)
-        setPharmacyInfo(mergePharmacySettingsWithOrganization(pharmacySettings, organization))
+        setPharmacyInfo(mergedPharmacyInfo)
         setBranches(branchesData)
         setActiveShift(openShiftData)
-        setShiftBranchId(
-          openShiftData?.branch_id ||
-            profile?.branch_id ||
-            branchesData.find((branch) => branch.is_active !== false && branch.is_main)?.id ||
-            branchesData.find((branch) => branch.is_active !== false)?.id ||
-            ''
-        )
+        setShiftBranchId(nextShiftBranchId)
+        void saveOfflinePosSnapshot(user?.id, {
+          patients: patientsData,
+          pharmacyInfo: mergedPharmacyInfo,
+          branches: branchesData,
+          activeShift: openShiftData,
+          shiftBranchId: nextShiftBranchId,
+          organization,
+          profile: {
+            branch_id: profile?.branch_id || null,
+            organization_id: profile?.organization_id || null,
+          },
+        })
         setLoading(false)
 
         getRecentSales(RECENT_SALES_LIMIT)
@@ -170,6 +209,20 @@ const Sales = () => {
           })
       } catch (loadError) {
         console.error('Error loading POS data:', loadError)
+        if (!isOnline) {
+          const snapshot = await loadOfflinePosSnapshot(user?.id)
+          if (snapshot && !cancelled) {
+            setPatients(snapshot.patients || [])
+            setPharmacyInfo(snapshot.pharmacyInfo || mergePharmacySettingsWithOrganization(null, organization))
+            setBranches(snapshot.branches || [])
+            setActiveShift(snapshot.activeShift || null)
+            setShiftBranchId(snapshot.shiftBranchId || snapshot.activeShift?.branch_id || '')
+            setDrugs(snapshot.drugs || [])
+            setError('')
+            setLoading(false)
+            return
+          }
+        }
         setError(loadError.message || 'Unable to load POS data.')
         setLoading(false)
       }
@@ -180,7 +233,7 @@ const Sales = () => {
     return () => {
       cancelled = true
     }
-  }, [canProcessRefund, organization, profile?.branch_id, role, user?.id])
+  }, [canProcessRefund, isOnline, organization, profile?.branch_id, profile?.organization_id, role, user?.id])
 
   useEffect(() => {
     setHighlightedPatientIndex(0)
@@ -198,6 +251,28 @@ const Sales = () => {
       try {
         setDrugSearchLoading(true)
         setDrugSearchMessage('')
+
+        if (!isOnline) {
+          const snapshot = await loadOfflinePosSnapshot(user?.id)
+          const cachedResults = filterCachedDrugs(
+            snapshot?.drugs?.length ? snapshot.drugs : drugs,
+            term,
+            POS_DRUG_SEARCH_LIMIT
+          )
+
+          if (cancelled) {
+            return
+          }
+
+          setDrugs(cachedResults)
+          setDrugSearchMessage(
+            cachedResults.length
+              ? 'Showing cached inventory while offline.'
+              : 'No cached in-stock drugs found while offline.'
+          )
+          return
+        }
+
         const results = await searchDrugs(term, {
           useTierAccess: true,
           inStockOnly: true,
@@ -210,6 +285,7 @@ const Sales = () => {
         }
 
         setDrugs(results)
+        void saveOfflinePosSnapshot(user?.id, { drugs: results })
         if (results.length === 0) {
           setDrugSearchMessage(term ? 'No matching in-stock drugs found.' : 'No in-stock drugs available.')
         }
@@ -232,7 +308,7 @@ const Sales = () => {
       cancelled = true
       window.clearTimeout(timeout)
     }
-  }, [effectiveBranchId, loading, searchTerm])
+  }, [effectiveBranchId, isOnline, loading, searchTerm, user?.id])
 
   useEffect(() => {
     const routeSearch = searchParams.get('search') || ''
@@ -412,8 +488,10 @@ const Sales = () => {
         useTierAccess: true,
         inStockOnly: true,
         limit: POS_DRUG_SEARCH_LIMIT,
+        branchId: effectiveBranchId || undefined,
       })
       setDrugs(latestDrugs)
+      void saveOfflinePosSnapshot(user?.id, { drugs: latestDrugs })
     } catch (refreshError) {
       console.error('Failed to refresh inventory:', refreshError)
     }
@@ -424,8 +502,8 @@ const Sales = () => {
       soldItems.map((item) => [item.drugId, item.quantity])
     )
 
-    setDrugs((currentDrugs) =>
-      currentDrugs.map((drug) => {
+    const applySoldQuantities = (drugList = []) =>
+      drugList.map((drug) => {
         const soldQuantity = soldQuantityByDrugId.get(drug.id)
         if (!soldQuantity) {
           return drug
@@ -437,7 +515,20 @@ const Sales = () => {
           quantity: Math.max(0, currentQuantity - soldQuantity),
         }
       })
-    )
+
+    setDrugs((currentDrugs) => {
+      const updatedDrugs = applySoldQuantities(currentDrugs)
+      void loadOfflinePosSnapshot(user?.id)
+        .then((snapshot) =>
+          saveOfflinePosSnapshot(user?.id, {
+            drugs: applySoldQuantities(snapshot?.drugs?.length ? snapshot.drugs : updatedDrugs),
+          })
+        )
+        .catch((cacheError) => {
+          console.warn('Unable to update offline inventory cache:', cacheError)
+        })
+      return updatedDrugs
+    })
   }
 
   const refreshRecentSales = async () => {
@@ -451,6 +542,66 @@ const Sales = () => {
       setLoadingRecentSales(false)
     }
   }
+
+  const refreshOfflineSalesSummary = useCallback(async () => {
+    const summary = await getOfflineSalesSummary()
+    setOfflineSalesSummary(summary)
+  }, [])
+
+  const syncPendingOfflineSales = useCallback(
+    async ({ silent = false } = {}) => {
+      if (!isOnline) {
+        if (!silent) {
+          notify('Offline sales will sync when the internet connection returns.', 'info')
+        }
+        return
+      }
+
+      try {
+        setSyncingOfflineSales(true)
+        const result = await syncOfflineSales()
+        await refreshOfflineSalesSummary()
+
+        if (result.synced > 0) {
+          if (!silent) {
+            notify(`${result.synced} offline sale${result.synced === 1 ? '' : 's'} synced.`, 'success')
+          }
+
+          void Promise.all([refreshRecentSales(), refreshDrugs()]).finally(() => {
+            dispatchHealthflowDataChanged()
+          })
+        }
+
+        if (result.failed > 0 && !silent) {
+          notify(
+            `${result.failed} offline sale${result.failed === 1 ? '' : 's'} could not sync. Keep the shift open and try again.`,
+            'warning'
+          )
+        }
+      } catch (syncError) {
+        console.error('Unable to sync offline sales:', syncError)
+        if (!silent) {
+          notify(syncError.message || 'Unable to sync offline sales.', 'error')
+        }
+      } finally {
+        setSyncingOfflineSales(false)
+      }
+    },
+    [effectiveBranchId, isOnline, notify, refreshOfflineSalesSummary, searchTerm, user?.id]
+  )
+
+  useEffect(() => {
+    void refreshOfflineSalesSummary()
+    return subscribeOfflineSalesQueue(() => {
+      void refreshOfflineSalesSummary()
+    })
+  }, [refreshOfflineSalesSummary])
+
+  useEffect(() => {
+    if (isOnline && offlineSalesSummary.pending > 0 && !syncingOfflineSales) {
+      void syncPendingOfflineSales({ silent: true })
+    }
+  }, [isOnline, offlineSalesSummary.pending, syncingOfflineSales, syncPendingOfflineSales])
 
   const handlePaymentMethodChange = (method) => {
     setPaymentMethod(method)
@@ -511,7 +662,7 @@ const Sales = () => {
     }))
   }
 
-  const createInsuranceClaimForSale = async ({
+  const buildInsuranceClaimPayload = ({
     saleNumber,
     soldItems,
     total,
@@ -519,18 +670,19 @@ const Sales = () => {
     topUp,
     topUpMethod,
     branchId,
+    saleDate,
   }) => {
     if (paymentMethod !== 'insurance' || coverage <= 0) {
       return null
     }
 
     const claimItems = buildInsuranceClaimItems(soldItems, coverage, total)
-    return await createClaim({
+    return {
       patientId: selectedPatientForSale.id,
       patientName: selectedPatientForSale.full_name,
       insuranceProvider: selectedPatientForSale.insurance_provider,
       insuranceId: selectedPatientForSale.insurance_id,
-      serviceDate: new Date().toISOString().split('T')[0],
+      serviceDate: (saleDate || new Date().toISOString()).split('T')[0],
       notes: [
         `Auto-created from POS sale ${saleNumber}.`,
         coverage < total - 0.01
@@ -546,7 +698,12 @@ const Sales = () => {
       items: claimItems,
       submittedBy: user?.id || null,
       branchId,
-    })
+    }
+  }
+
+  const createInsuranceClaimForSale = async (claimArgs) => {
+    const claimPayload = buildInsuranceClaimPayload(claimArgs)
+    return claimPayload ? await createClaim(claimPayload) : null
   }
 
   const handleCompleteSale = async () => {
@@ -594,6 +751,7 @@ const Sales = () => {
     try {
       setProcessing(true)
       setError('')
+      const saleTimestamp = new Date().toISOString()
       const soldItems = cart.map((item) => ({
         drugId: item.drugId,
         name: item.name,
@@ -601,7 +759,7 @@ const Sales = () => {
         price: item.price,
       }))
 
-      const saleResult = await createSale({
+      const salePayload = {
         items: soldItems,
         patientId: patientId || null,
         paymentMethod,
@@ -626,12 +784,12 @@ const Sales = () => {
         shiftId: activeShift.id,
         organizationId: profile?.organization_id,
         branchId: activeShift.branch_id,
-      })
+        saleDate: saleTimestamp,
+      }
 
-      // Prepare receipt data with full sale details
-      const receiptData = {
-        saleNumber: saleResult.saleNumber,
-        saleDate: new Date().toISOString(),
+      const buildReceiptData = (saleNumber) => ({
+        saleNumber,
+        saleDate: saleTimestamp,
         items: cart.map((item) => ({
           drug_name: item.name,
           quantity: item.quantity,
@@ -656,7 +814,52 @@ const Sales = () => {
               }
             : null,
         soldBy: displayName || user?.email,
+      })
+
+      if (!isOnline) {
+        const offlineSaleNumber = createOfflineSaleNumber()
+        const receiptData = buildReceiptData(offlineSaleNumber)
+        const claimPayload =
+          paymentMethod === 'insurance'
+            ? buildInsuranceClaimPayload({
+                saleNumber: offlineSaleNumber,
+                soldItems,
+                total,
+                coverage: insuranceCoveredAmount,
+                topUp: patientTopUpAmount,
+                topUpMethod: patientTopUpMethod,
+                branchId: activeShift.branch_id,
+                saleDate: saleTimestamp,
+              })
+            : null
+
+        await queueOfflineSale({
+          salePayload,
+          claimPayload,
+          receiptData,
+          organizationId: profile?.organization_id,
+          branchId: activeShift.branch_id,
+          createdBy: user?.id || null,
+        })
+
+        setLastSale({ ...receiptData, offline: true })
+        reduceSoldDrugQuantities(soldItems)
+        setCart([])
+        setSearchTerm('')
+        syncSearchParam('')
+        setReceived('')
+        setInsuranceCoverage('')
+        setPatientTopUp('')
+        setPatientTopUpMethod('cash')
+        selectPatientForSale(null)
+        await refreshOfflineSalesSummary()
+        notify('Sale saved offline. Keep this shift open until it syncs when internet returns.', 'success')
+        setShowReceipt(true)
+        return
       }
+
+      const saleResult = await createSale(salePayload)
+      const receiptData = buildReceiptData(saleResult.saleNumber)
       setLastSale(receiptData)
 
       let claimMessage = ''
@@ -670,6 +873,7 @@ const Sales = () => {
             topUp: patientTopUpAmount,
             topUpMethod: patientTopUpMethod,
             branchId: activeShift.branch_id,
+            saleDate: saleTimestamp,
           })
           if (claimResult?.claimNumber) {
             claimMessage = ` Claim ${claimResult.claimNumber} was submitted.`
@@ -785,6 +989,11 @@ const Sales = () => {
   const handleCloseShift = async (event) => {
     event.preventDefault()
     if (!activeShift?.id) return
+
+    if (unsyncedOfflineSales > 0) {
+      notify('Sync pending offline sales before closing this shift.', 'warning')
+      return
+    }
 
     try {
       setShiftBusy(true)
@@ -941,6 +1150,34 @@ const Sales = () => {
       </div>
 
       {error && <div className="pos-alert">{error}</div>}
+
+      {(!isOnline || unsyncedOfflineSales > 0) && (
+        <div className={`offline-pos-banner ${isOnline ? 'sync-ready' : 'offline'}`}>
+          <div>
+            <strong>{isOnline ? 'Offline sales waiting to sync' : 'Offline sales mode'}</strong>
+            <span>
+              {isOnline
+                ? `${unsyncedOfflineSales} sale${unsyncedOfflineSales === 1 ? '' : 's'} pending. Sync before closing the shift.`
+                : 'Sales will be saved on this device and synced when the internet returns.'}
+            </span>
+            {offlineSalesSummary.failed > 0 && (
+              <span className="offline-pos-warning">
+                {offlineSalesSummary.failed} sale{offlineSalesSummary.failed === 1 ? '' : 's'} need retry.
+              </span>
+            )}
+          </div>
+          {isOnline && unsyncedOfflineSales > 0 && (
+            <button
+              type="button"
+              className="btn btn-outline"
+              onClick={() => syncPendingOfflineSales()}
+              disabled={syncingOfflineSales}
+            >
+              {syncingOfflineSales ? 'Syncing...' : 'Sync Now'}
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="shift-panel">
         {activeShift ? (
@@ -1431,7 +1668,15 @@ const Sales = () => {
               }
               onClick={handleCompleteSale}
             >
-              {!activeShift ? 'Open Shift to Sell' : processing ? 'Completing Sale...' : 'Complete Sale'}
+              {!activeShift
+                ? 'Open Shift to Sell'
+                : processing
+                  ? isOnline
+                    ? 'Completing Sale...'
+                    : 'Saving Offline...'
+                  : isOnline
+                    ? 'Complete Sale'
+                    : 'Save Offline Sale'}
             </button>
           </div>
         </div>

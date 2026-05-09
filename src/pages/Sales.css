@@ -16,6 +16,45 @@
   border-radius: var(--radius);
 }
 
+.offline-pos-banner {
+  margin-bottom: 1rem;
+  border: 1px solid #b9ded4;
+  background: #eefbf7;
+  color: var(--gray-800);
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.offline-pos-banner.offline {
+  border-color: #f2d27a;
+  background: #fff9e8;
+}
+
+.offline-pos-banner div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.offline-pos-banner strong {
+  color: var(--gray-900);
+}
+
+.offline-pos-banner span {
+  color: var(--gray-600);
+  font-size: 0.9rem;
+}
+
+.offline-pos-warning {
+  color: #9f3020 !important;
+  font-weight: 700;
+}
+
 .pos-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(440px, 540px);
@@ -951,6 +990,15 @@
 @media (max-width: 768px) {
   .page-header {
     gap: 0.35rem;
+  }
+
+  .offline-pos-banner {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .offline-pos-banner .btn {
+    width: 100%;
   }
 
   .drug-grid {
