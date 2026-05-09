@@ -441,6 +441,55 @@
   padding: 0.65rem 0.75rem;
 }
 
+.nhis-verify-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border: 1px solid #bfdbfe;
+  border-radius: var(--radius);
+  background: #eff6ff;
+  padding: 0.65rem 0.75rem;
+  color: #1e3a8a;
+}
+
+.nhis-verify-note div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.nhis-verify-note strong {
+  font-size: 0.85rem;
+}
+
+.nhis-verify-note span {
+  color: #1e40af;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.nhis-verify-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-height: 34px;
+  border-radius: var(--radius);
+  background: #2563eb;
+  color: white;
+  padding: 0.45rem 0.65rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.nhis-verify-link:hover {
+  background: #1d4ed8;
+}
+
 .form-group textarea {
   resize: vertical;
 }
@@ -502,5 +551,10 @@
   .patient-history-meta {
     align-items: flex-start;
     text-align: left;
+  }
+
+  .nhis-verify-note {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }

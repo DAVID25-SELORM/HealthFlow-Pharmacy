@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Plus, Search, Phone, Mail } from 'lucide-react'
+import { Plus, Search, Phone, Mail, ShieldCheck } from 'lucide-react'
 import {
   addPatient,
   getAllPatients,
@@ -44,6 +44,12 @@ const initialForm = {
   allergies: '',
   medicalNotes: '',
 }
+
+const NHIS_USSD_CODE = '*929#'
+const NHIS_USSD_TEL_LINK = 'tel:*929%23'
+
+const isNhisProvider = (provider) =>
+  String(provider || '').trim().toLowerCase().includes('nhis')
 
 const Patients = () => {
   const [patients, setPatients] = useState([])
@@ -155,6 +161,8 @@ const Patients = () => {
     setError('')
     setShowModal(false)
   }
+
+  const showNhisCheckPrompt = isNhisProvider(formData.insuranceProvider)
 
   const handleSubmit = async (event) => {
     event.preventDefault()
@@ -407,14 +415,28 @@ const Patients = () => {
 
               <div className="form-row">
                 <div className="form-group">
-                  <label>Insurance ID</label>
+                  <label>{showNhisCheckPrompt ? 'NHIS ID' : 'Insurance ID'}</label>
                   <input
                     type="text"
+                    inputMode={showNhisCheckPrompt ? 'numeric' : 'text'}
                     value={formData.insuranceId}
+                    placeholder={showNhisCheckPrompt ? 'Enter NHIS membership number' : ''}
                     onChange={(event) =>
                       setFormData({ ...formData, insuranceId: event.target.value })
                     }
                   />
+                  {showNhisCheckPrompt && (
+                    <div className="nhis-verify-note">
+                      <div>
+                        <strong>Verify with {NHIS_USSD_CODE}</strong>
+                        <span>Confirm the card status on the NHIS menu before saving.</span>
+                      </div>
+                      <a className="nhis-verify-link" href={NHIS_USSD_TEL_LINK}>
+                        <ShieldCheck size={16} />
+                        Dial
+                      </a>
+                    </div>
+                  )}
                 </div>
                 <div className="form-group">
                   <label>Address</label>
