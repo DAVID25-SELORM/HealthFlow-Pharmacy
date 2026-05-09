@@ -477,6 +477,7 @@ export const AuthProvider = ({ children }) => {
       entityId: null,
       action: 'sign_in',
       details: {
+        actor_user_id: data?.user?.id || null,
         email: data?.user?.email || normalizedEmail,
       },
     })

@@ -85,4 +85,31 @@ describe('ActivityLog', () => {
       expect(screen.getByText(/showing 1 of 2 records/i)).toBeInTheDocument()
     })
   })
+
+  it('uses details email when actor columns are empty', async () => {
+    mocks.isSupabaseConfigured.mockReturnValue(true)
+    mocks.queryBuilder.limit.mockResolvedValue({
+      data: [
+        {
+          id: 'log-1',
+          actor_user_id: null,
+          actor_email: null,
+          event_type: 'auth',
+          entity_type: 'session',
+          action: 'sign_in',
+          details: { email: 'staff@healthflow.test' },
+          created_at: '2026-05-09T17:49:41.000Z',
+        },
+      ],
+      error: null,
+    })
+
+    render(<ActivityLog />)
+
+    await waitFor(() => {
+      expect(screen.getByText('staff@healthflow.test')).toBeInTheDocument()
+    })
+
+    expect(screen.queryByText('Unknown')).not.toBeInTheDocument()
+  })
 })

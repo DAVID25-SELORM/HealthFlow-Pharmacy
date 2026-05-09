@@ -65,12 +65,26 @@ const formatDetails = (details) => {
   return detailText || ''
 }
 
+const getLogActor = (log) => {
+  const detailActorEmail = formatDetailValue(log.details?.actor_email)
+  const detailEmail = formatDetailValue(log.details?.email)
+  const detailActorUserId = formatDetailValue(log.details?.actor_user_id)
+
+  return (
+    log.actor_email ||
+    detailActorEmail ||
+    detailEmail ||
+    log.actor_user_id ||
+    detailActorUserId ||
+    'Unknown'
+  )
+}
+
 const toSearchBlob = (log) => {
   const details = formatDetails(log.details)
 
   return [
-    log.actor_email,
-    log.actor_user_id,
+    getLogActor(log),
     log.event_type,
     log.entity_type,
     log.action,
@@ -195,7 +209,7 @@ export default function ActivityLog() {
               return (
                 <tr key={log.id}>
                   <td>{formatTimestamp(log.created_at)}</td>
-                  <td>{log.actor_email || log.actor_user_id || 'Unknown'}</td>
+                  <td>{getLogActor(log)}</td>
                   <td>{log.event_type || '-'}</td>
                   <td>{log.entity_type || '-'}</td>
                   <td>{log.action || '-'}</td>
