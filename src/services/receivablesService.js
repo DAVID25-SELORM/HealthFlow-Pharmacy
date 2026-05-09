@@ -14,8 +14,20 @@ const getAgeBucket = (ageDays) => {
   return '90+'
 }
 
-const buildReceivablesRows = async (claims, branchId = null) => {
-  const branchMap = await getUserBranchIdsByUserIds(claims.map((claim) => claim.submitted_by))
+const getAgeDays = (dateValue) => {
+  const parsed = new Date(dateValue)
+  if (Number.isNaN(parsed.getTime())) {
+    return 0
+  }
+
+  return Math.max(0, Math.floor((Date.now() - parsed.getTime()) / 86_400_000))
+}
+
+const buildGeneralReceivablesRows = async (claims, branchId = null) => {
+  const claimsWithoutBranch = claims.filter((claim) => !claim.branch_id)
+  const branchMap = await getUserBranchIdsByUserIds(
+    claimsWithoutBranch.map((claim) => claim.submitted_by)
+  )
 
   return claims
     .map((claim) => {
@@ -25,15 +37,57 @@ const buildReceivablesRows = async (claims, branchId = null) => {
         0
       )
       const outstanding = Math.max(0, approvedAmount - totalPaid)
-      const ageDays = Math.max(
-        0,
-        Math.floor((Date.now() - new Date(claim.service_date).getTime()) / 86_400_000)
-      )
+      const ageDays = getAgeDays(claim.service_date)
 
       return {
         ...claim,
+        source_type: 'claim',
+        source_id: claim.id,
         approved_amount: approvedAmount,
-        branch_id: branchMap[claim.submitted_by] || null,
+        branch_id: claim.branch_id || branchMap[claim.submitted_by] || null,
+        totalPaid,
+        outstanding,
+        ageDays,
+        ageBucket: getAgeBucket(ageDays),
+      }
+    })
+    .filter((claim) => claim.outstanding > 0)
+    .filter((claim) => !branchId || claim.branch_id === branchId)
+}
+
+const buildNhisReceivablesRows = async (claims, branchId = null) => {
+  const claimsWithoutBranch = claims.filter((claim) => !claim.branch_id)
+  const branchMap = await getUserBranchIdsByUserIds(
+    claimsWithoutBranch.map((claim) => claim.created_by)
+  )
+
+  return claims
+    .map((claim) => {
+      const approvedAmount = Number(claim.total_amount || 0)
+      const totalPaid = (claim.nhis_claim_payments || []).reduce(
+        (sum, payment) => sum + Number(payment.paid_amount),
+        0
+      )
+      const outstanding = Math.max(0, approvedAmount - totalPaid)
+      const serviceDate = claim.service_date_from || claim.created_at?.slice(0, 10) || formatLocalDate()
+      const ageDays = getAgeDays(serviceDate)
+      const patientName = [claim.surname, claim.other_names].filter(Boolean).join(' ').trim()
+
+      return {
+        ...claim,
+        source_type: 'nhis_claim',
+        source_id: claim.id,
+        claim_status: claim.status,
+        insurance_provider: 'NHIS',
+        insurance_id: claim.member_no || claim.hin || '',
+        patient_name: patientName || 'NHIS patient',
+        service_date: serviceDate,
+        approved_amount: approvedAmount,
+        branch_id: claim.branch_id || branchMap[claim.created_by] || null,
+        patients: {
+          phone: null,
+          insurance_id: claim.member_no || claim.hin || '',
+        },
         totalPaid,
         outstanding,
         ageDays,
@@ -54,6 +108,7 @@ const getClaimPaymentContext = async (claimId) => {
       total_amount,
       approval_amount,
       submitted_by,
+      branch_id,
       claim_payments (paid_amount)
     `)
     .eq('id', claimId)
@@ -70,11 +125,56 @@ const getClaimPaymentContext = async (claimId) => {
 
   return {
     claimId: claim.id,
+    sourceType: 'claim',
     claimNumber: claim.claim_number,
     insurerName: claim.insurance_provider,
     approvedAmount,
     outstanding: Math.max(0, approvedAmount - totalPaid),
-    branchId: branchMap[claim.submitted_by] || null,
+    branchId: claim.branch_id || branchMap[claim.submitted_by] || null,
+  }
+}
+
+const getNhisClaimPaymentContext = async (claimId) => {
+  const { data: claim, error } = await supabase
+    .from('nhis_claims')
+    .select(`
+      id,
+      organization_id,
+      branch_id,
+      claim_number,
+      total_amount,
+      status,
+      surname,
+      other_names,
+      member_no,
+      hin,
+      created_by,
+      nhis_claim_payments (paid_amount)
+    `)
+    .eq('id', claimId)
+    .single()
+
+  if (error) throw error
+  if (claim.status === 'rejected') {
+    throw new Error('Rejected NHIS claims cannot receive payments.')
+  }
+
+  const branchMap = claim.branch_id ? {} : await getUserBranchIdsByUserIds([claim.created_by])
+  const approvedAmount = Number(claim.total_amount || 0)
+  const totalPaid = (claim.nhis_claim_payments || []).reduce(
+    (sum, payment) => sum + Number(payment.paid_amount),
+    0
+  )
+
+  return {
+    claimId: claim.id,
+    sourceType: 'nhis_claim',
+    organizationId: claim.organization_id,
+    claimNumber: claim.claim_number,
+    insurerName: 'NHIS',
+    approvedAmount,
+    outstanding: Math.max(0, approvedAmount - totalPaid),
+    branchId: claim.branch_id || branchMap[claim.created_by] || null,
   }
 }
 
@@ -105,7 +205,7 @@ export const getClaimPayments = async (filters = {}) => {
   return data
 }
 
-export const getReceivables = async (branchId = null) => {
+const getGeneralReceivables = async (branchId = null) => {
   const { data, error } = await supabase
     .from('claims')
     .select(`
@@ -119,6 +219,7 @@ export const getReceivables = async (branchId = null) => {
       service_date,
       patient_name,
       submitted_by,
+      branch_id,
       patients (phone, insurance_id),
       claim_payments (id, paid_amount, payment_date)
     `)
@@ -126,11 +227,58 @@ export const getReceivables = async (branchId = null) => {
     .order('service_date', { ascending: true })
 
   if (error) throw error
-  return buildReceivablesRows(data || [], branchId)
+  return buildGeneralReceivablesRows(data || [], branchId)
+}
+
+const getNhisReceivables = async (branchId = null) => {
+  let query = supabase
+    .from('nhis_claims')
+    .select(`
+      id,
+      branch_id,
+      claim_number,
+      status,
+      total_amount,
+      service_date_from,
+      surname,
+      other_names,
+      member_no,
+      hin,
+      created_by,
+      created_at,
+      nhis_claim_payments (id, paid_amount, payment_date)
+    `)
+    .eq('status', 'submitted')
+    .order('service_date_from', { ascending: true, nullsFirst: false })
+
+  if (branchId) query = query.eq('branch_id', branchId)
+
+  const { data, error } = await query
+  if (error) throw error
+  return buildNhisReceivablesRows(data || [], branchId)
+}
+
+export const getReceivables = async (branchId = null) => {
+  const [generalResult, nhisResult] = await Promise.allSettled([
+    getGeneralReceivables(branchId),
+    getNhisReceivables(branchId),
+  ])
+
+  const receivables = []
+  if (generalResult.status === 'fulfilled') receivables.push(...generalResult.value)
+  else console.warn('Unable to load insurance receivables:', generalResult.reason)
+
+  if (nhisResult.status === 'fulfilled') receivables.push(...nhisResult.value)
+  else console.warn('Unable to load NHIS receivables:', nhisResult.reason)
+
+  return receivables.sort((a, b) => new Date(a.service_date) - new Date(b.service_date))
 }
 
 export const recordClaimPayment = async (paymentData) => {
-  const claimContext = await getClaimPaymentContext(paymentData.claimId)
+  const isNhisClaim = paymentData.sourceType === 'nhis_claim'
+  const claimContext = isNhisClaim
+    ? await getNhisClaimPaymentContext(paymentData.claimId)
+    : await getClaimPaymentContext(paymentData.claimId)
   const paidAmount = assertNonNegativeNumber(paymentData.paidAmount, 'Paid amount')
 
   if (paidAmount > claimContext.outstanding) {
@@ -138,7 +286,6 @@ export const recordClaimPayment = async (paymentData) => {
   }
 
   const payload = {
-    claim_id: paymentData.claimId,
     insurer_name: assertRequiredText(paymentData.insurerName || claimContext.insurerName, 'Insurer name'),
     approved_amount: claimContext.approvedAmount,
     paid_amount: paidAmount,
@@ -150,21 +297,46 @@ export const recordClaimPayment = async (paymentData) => {
     created_by: paymentData.createdBy || null,
   }
 
+  const tableName = isNhisClaim ? 'nhis_claim_payments' : 'claim_payments'
+  const insertPayload = isNhisClaim
+    ? {
+        ...payload,
+        organization_id: claimContext.organizationId,
+        nhis_claim_id: paymentData.claimId,
+      }
+    : {
+        ...payload,
+        claim_id: paymentData.claimId,
+      }
+
+  const selectFields = isNhisClaim
+    ? '*, nhis_claims(claim_number)'
+    : '*, claims(claim_number, insurance_provider)'
+
   const { data, error } = await supabase
-    .from('claim_payments')
-    .insert([payload])
-    .select('*, claims(claim_number, insurance_provider)')
+    .from(tableName)
+    .insert([insertPayload])
+    .select(selectFields)
     .single()
 
   if (error) throw error
 
+  if (isNhisClaim && paidAmount >= claimContext.outstanding - 0.01) {
+    const { error: statusError } = await supabase
+      .from('nhis_claims')
+      .update({ status: 'paid', updated_at: new Date().toISOString() })
+      .eq('id', paymentData.claimId)
+
+    if (statusError) throw statusError
+  }
+
   await tryLogAuditEvent({
-    eventType: 'claim.payment_recorded',
-    entityType: 'claim_payments',
+    eventType: isNhisClaim ? 'nhis_claim.payment_recorded' : 'claim.payment_recorded',
+    entityType: tableName,
     entityId: data.id,
     action: 'create',
     details: {
-      claim_id: payload.claim_id,
+      claim_id: paymentData.claimId,
       insurer_name: payload.insurer_name,
       paid_amount: payload.paid_amount,
     },
@@ -175,11 +347,13 @@ export const recordClaimPayment = async (paymentData) => {
       await recordCashbookMovementIfSessionOpen({
         branchId: data.branch_id,
         entryType: 'deposit',
-        sourceType: 'claim_payment',
+        sourceType: isNhisClaim ? 'nhis_claim_payment' : 'claim_payment',
         sourceId: data.id,
         amount: data.paid_amount,
         direction: 'in',
-        description: `Claim payment ${data.claims?.claim_number || claimContext.claimNumber}`,
+        description: `${
+          isNhisClaim ? 'NHIS claim payment' : 'Claim payment'
+        } ${data.claims?.claim_number || data.nhis_claims?.claim_number || claimContext.claimNumber}`,
         createdBy: data.created_by,
       })
     } catch (cashbookError) {

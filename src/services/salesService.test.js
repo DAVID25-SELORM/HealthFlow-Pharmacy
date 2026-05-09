@@ -208,6 +208,7 @@ describe('salesService.refundSale', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.tryLogAuditEvent.mockResolvedValue(undefined)
+    mocks.recordCashbookMovementIfSessionOpen.mockResolvedValue(undefined)
   })
 
   it('rejects refunds for staff without refund permission', async () => {
@@ -271,5 +272,38 @@ describe('salesService.refundSale', () => {
       sale_number: 'SAL-000322',
       payment_status: 'refunded',
     })
+  })
+
+  it('syncs cash refunds to the cashbook when the refund RPC returns a cash amount', async () => {
+    mocks.rpc.mockResolvedValue({
+      data: {
+        sale_id: 'sale-3',
+        sale_number: 'SAL-000323',
+        payment_status: 'refunded',
+        branch_id: 'branch-1',
+        refund_cash_amount: 45,
+        refunded_by: 'user-1',
+      },
+      error: null,
+    })
+
+    await refundSale({
+      saleId: 'sale-3',
+      reason: 'Returned item',
+      role: 'admin',
+    })
+
+    expect(mocks.recordCashbookMovementIfSessionOpen).toHaveBeenCalledWith(
+      expect.objectContaining({
+        branchId: 'branch-1',
+        entryType: 'refund_cash',
+        sourceType: 'refund',
+        sourceId: 'sale-3',
+        amount: 45,
+        direction: 'out',
+        description: 'Cash refund SAL-000323',
+        createdBy: 'user-1',
+      })
+    )
   })
 })

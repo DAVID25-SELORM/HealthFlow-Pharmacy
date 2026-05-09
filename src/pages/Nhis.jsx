@@ -108,7 +108,7 @@ const StatusBadge = ({ status }) => (
 // ─── component ────────────────────────────────────────────────────────────────
 
 const Nhis = () => {
-  const { role, user } = useAuth()
+  const { role, user, profile, branch } = useAuth()
   const { notify } = useNotification()
   const [searchParams, setSearchParams] = useSearchParams()
   const fileInputRef = useRef(null)
@@ -392,7 +392,14 @@ const Nhis = () => {
     try {
       setClaimSubmitting(true)
       setClaimError('')
-      await createNhisClaim(claimForm, claimMedicines)
+      await createNhisClaim(
+        {
+          ...claimForm,
+          branchId: profile?.branch_id || branch?.id || null,
+          createdBy: user?.id || null,
+        },
+        claimMedicines
+      )
       setShowNewClaimModal(false)
       resetClaimModal()
       await loadAll()
@@ -434,7 +441,7 @@ const Nhis = () => {
   const handleStatusUpdate = async (claim, newStatus) => {
     try {
       setUpdatingStatus(claim.id)
-      await updateNhisClaimStatus(claim.id, newStatus)
+      await updateNhisClaimStatus(claim.id, newStatus, '', user?.id || null)
       await loadAll()
       notify(`Claim ${claim.claim_number} marked as ${newStatus}.`, 'success')
     } catch (err) {
@@ -448,7 +455,7 @@ const Nhis = () => {
     if (!rejectReason.trim()) { notify('Rejection reason is required.', 'warning'); return }
     try {
       setUpdatingStatus(rejectTarget.id)
-      await updateNhisClaimStatus(rejectTarget.id, 'rejected', rejectReason.trim())
+      await updateNhisClaimStatus(rejectTarget.id, 'rejected', rejectReason.trim(), user?.id || null)
       setRejectTarget(null)
       setRejectReason('')
       await loadAll()

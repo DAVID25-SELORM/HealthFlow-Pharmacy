@@ -44,7 +44,7 @@ const matchesSearch = (values, term) => {
 
 const Claims = () => {
   const [searchParams, setSearchParams] = useSearchParams()
-  const { user, role, canManageClaims } = useAuth()
+  const { user, role, profile, branch, canManageClaims } = useAuth()
   const { notify } = useNotification()
   const { canUseClaims, tierLimits } = useTenant()
   const canProcess = canManageClaims || hasRole(role, CLAIMS_ROLES)
@@ -219,6 +219,7 @@ const Claims = () => {
         notes: formData.notes,
         items: claimItems,
         submittedBy: user?.id || null,
+        branchId: profile?.branch_id || branch?.id || null,
       })
 
       setShowNewClaimModal(false)

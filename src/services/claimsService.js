@@ -43,6 +43,7 @@ export const createClaim = async (claimData) => {
       serviceDate: claimData.serviceDate || new Date().toISOString().split('T')[0],
       prescriptionUrl: claimData.prescriptionUrl || null,
       notes: normalizeText(claimData.notes) || null,
+      branchId: normalizeText(claimData.branchId) || null,
       items: claimData.items.map((item) => ({
         drugId: item.drugId,
         name: item.name,
@@ -77,6 +78,7 @@ export const getAllClaims = async (filters = {}) => {
       startDate: filters.startDate,
       endDate: filters.endDate,
       searchTerm: filters.searchTerm,
+      branchId: filters.branchId,
       id: filters.id,
       limit: filters.limit,
     },

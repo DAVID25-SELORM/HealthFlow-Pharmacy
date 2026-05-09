@@ -425,6 +425,7 @@ const Accounting = () => {
       setError('')
       await recordClaimPayment({
         claimId:          payingClaimId,
+        sourceType:       payingClaim.source_type,
         insurerName:      payingClaim.insurance_provider,
         approvedAmount:   Number(payingClaim.total_amount),
         paidAmount:       Number(paymentForm.paidAmount),
@@ -978,7 +979,9 @@ const Accounting = () => {
                   <td>
                     {r.insurance_provider}
                     <span className="acc-muted-block">
-                      {r.insurance_id || r.patients?.insurance_id || 'No insurance no.'}
+                      {r.source_type === 'nhis_claim'
+                        ? 'NHIS claim'
+                        : r.insurance_id || r.patients?.insurance_id || 'No insurance no.'}
                     </span>
                   </td>
                   <td>{r.service_date}</td>

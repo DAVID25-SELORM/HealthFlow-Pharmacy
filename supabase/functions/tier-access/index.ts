@@ -18,6 +18,7 @@ const CLAIM_SELECT_FIELDS = `
   *,
   claim_items (*),
   patients (full_name, phone, insurance_provider),
+  branches (id, name, code),
   users:submitted_by (full_name)
 `
 const SALES_SELECT_FIELDS = `
@@ -847,6 +848,7 @@ const getClaims = async (
   const insuranceProvider = normalizeText(filters.insuranceProvider)
   const searchTerm = normalizeText(filters.searchTerm)
   const claimId = normalizeText(filters.id)
+  const branchId = normalizeText(filters.branchId)
   const limit = parsePositiveInteger(filters.limit, 0)
 
   if (claimId) {
@@ -859,6 +861,10 @@ const getClaims = async (
 
   if (insuranceProvider) {
     query = query.eq('insurance_provider', insuranceProvider)
+  }
+
+  if (branchId) {
+    query = query.eq('branch_id', branchId)
   }
 
   if (filters.startDate) {
@@ -963,6 +969,9 @@ const createClaim = async (
   const totalAmount = items.reduce((sum, item) => sum + item.total_price, 0)
   const claimNumber = await generateClaimNumber(adminClient)
   const submittedAt = new Date().toISOString()
+  const branchId = await getBranchIdForInventoryRequest(adminClient, organizationId, requesterProfile, {
+    branchId: normalizeText(claimData.branchId),
+  })
 
   const { data: insertedClaim, error: claimError } = await adminClient
     .from('claims')
@@ -974,6 +983,7 @@ const createClaim = async (
         patient_name: patientName,
         insurance_provider: insuranceProvider,
         insurance_id: insuranceId,
+        branch_id: branchId,
         service_date: normalizeText(claimData.serviceDate) || new Date().toISOString().split('T')[0],
         total_amount: totalAmount,
         claim_status: 'pending',

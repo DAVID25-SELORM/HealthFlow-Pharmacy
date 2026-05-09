@@ -94,13 +94,32 @@ const buildValidatedSaleTotals = (saleData) => {
   }
 }
 
-const syncCashSaleToCashbook = async ({ saleId, saleNumber, paymentMethod, soldBy, netAmount }) => {
+const resolveSaleBranchId = async (branchId, soldBy) => {
+  if (branchId) {
+    return branchId
+  }
+
+  if (!soldBy) {
+    return null
+  }
+
+  const branchMap = await getUserBranchIdsByUserIds([soldBy])
+  return branchMap[soldBy] || null
+}
+
+const syncCashSaleToCashbook = async ({
+  saleId,
+  saleNumber,
+  paymentMethod,
+  soldBy,
+  branchId: saleBranchId,
+  netAmount,
+}) => {
   if (paymentMethod !== 'cash' || !soldBy || Number(netAmount) <= 0) {
     return
   }
 
-  const branchMap = await getUserBranchIdsByUserIds([soldBy])
-  const branchId = branchMap[soldBy]
+  const branchId = await resolveSaleBranchId(saleBranchId, soldBy)
   if (!branchId) {
     return
   }
@@ -126,14 +145,14 @@ const syncInsuranceCashTopUpToCashbook = async ({
   saleNumber,
   topUpPaymentMethod,
   soldBy,
+  branchId: saleBranchId,
   topUpAmount,
 }) => {
   if (topUpPaymentMethod !== 'cash' || !soldBy || Number(topUpAmount) <= 0) {
     return
   }
 
-  const branchMap = await getUserBranchIdsByUserIds([soldBy])
-  const branchId = branchMap[soldBy]
+  const branchId = await resolveSaleBranchId(saleBranchId, soldBy)
   if (!branchId) {
     return
   }
@@ -269,6 +288,7 @@ export const createSale = async (saleData) => {
       saleNumber: txPayload.sale_number,
       paymentMethod: totals.paymentMethod,
       soldBy: saleData.soldBy,
+      branchId: saleData.branchId || txPayload.branch_id,
       netAmount: totals.netAmount,
     })
 
@@ -277,6 +297,7 @@ export const createSale = async (saleData) => {
       saleNumber: txPayload.sale_number,
       topUpPaymentMethod: insuranceTopUpPaymentMethod,
       soldBy: saleData.soldBy,
+      branchId: saleData.branchId || txPayload.branch_id,
       topUpAmount: insuranceTopUpAmount,
     })
 
@@ -334,6 +355,24 @@ export const refundSale = async ({ saleId, reason, role, canRefund = false }) =>
       reason: reason || null,
     },
   })
+
+  const cashRefundAmount = Number(data?.refund_cash_amount || 0)
+  if (cashRefundAmount > 0 && data?.branch_id) {
+    try {
+      await recordCashbookMovementIfSessionOpen({
+        branchId: data.branch_id,
+        entryType: 'refund_cash',
+        sourceType: 'refund',
+        sourceId: data?.sale_id || saleId,
+        amount: cashRefundAmount,
+        direction: 'out',
+        description: `Cash refund ${data?.sale_number || ''}`.trim(),
+        createdBy: data?.refunded_by || null,
+      })
+    } catch (cashbookError) {
+      console.warn('Unable to sync cash refund to cashbook:', cashbookError)
+    }
+  }
 
   return data
 }

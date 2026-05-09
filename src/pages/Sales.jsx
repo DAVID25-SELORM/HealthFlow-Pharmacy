@@ -518,6 +518,7 @@ const Sales = () => {
     coverage,
     topUp,
     topUpMethod,
+    branchId,
   }) => {
     if (paymentMethod !== 'insurance' || coverage <= 0) {
       return null
@@ -544,6 +545,7 @@ const Sales = () => {
         .join('\n'),
       items: claimItems,
       submittedBy: user?.id || null,
+      branchId,
     })
   }
 
@@ -667,6 +669,7 @@ const Sales = () => {
             coverage: insuranceCoveredAmount,
             topUp: patientTopUpAmount,
             topUpMethod: patientTopUpMethod,
+            branchId: activeShift.branch_id,
           })
           if (claimResult?.claimNumber) {
             claimMessage = ` Claim ${claimResult.claimNumber} was submitted.`

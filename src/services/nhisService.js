@@ -322,6 +322,7 @@ export const createNhisClaim = async (claimData, medicines) => {
       diagnosis:          normalizeText(claimData.diagnosis)         || null,
       service_date_from:  serviceDate                                || null,
       service_date_to:    serviceDate                                || null,
+      branch_id:          claimData.branchId                         || null,
       referring_facility: normalizeText(claimData.referringFacility) || null,
       referral_code:      normalizeText(claimData.referralCode)      || null,
       physician_name:     normalizeText(claimData.physicianName)     || null,
@@ -329,6 +330,7 @@ export const createNhisClaim = async (claimData, medicines) => {
       total_amount:       totalAmount,
       status:             'served',
       notes:              normalizeText(claimData.notes)             || null,
+      created_by:         claimData.createdBy                        || null,
     }])
     .select()
     .single()
@@ -388,9 +390,57 @@ export const createNhisClaim = async (claimData, medicines) => {
   return claim
 }
 
-export const updateNhisClaimStatus = async (id, status, rejectionReason = '') => {
+const recordNhisPaidLedgerEntry = async (id, actorId = null) => {
+  const { data: claim, error } = await supabase
+    .from('nhis_claims')
+    .select(`
+      id,
+      organization_id,
+      branch_id,
+      total_amount,
+      created_by,
+      nhis_claim_payments (paid_amount)
+    `)
+    .eq('id', id)
+    .single()
+
+  if (error) throw error
+
+  const approvedAmount = Number(claim.total_amount || 0)
+  const totalPaid = (claim.nhis_claim_payments || []).reduce(
+    (sum, payment) => sum + Number(payment.paid_amount || 0),
+    0
+  )
+  const outstanding = Math.max(0, approvedAmount - totalPaid)
+  if (outstanding <= 0) {
+    return
+  }
+
+  const { error: paymentError } = await supabase
+    .from('nhis_claim_payments')
+    .insert([{
+      organization_id: claim.organization_id,
+      branch_id: claim.branch_id || null,
+      nhis_claim_id: claim.id,
+      insurer_name: 'NHIS',
+      approved_amount: approvedAmount,
+      paid_amount: outstanding,
+      payment_date: new Date().toISOString().split('T')[0],
+      payment_method: 'bank_transfer',
+      notes: 'Marked paid from NHIS claims.',
+      created_by: actorId || claim.created_by || null,
+    }])
+
+  if (paymentError) throw paymentError
+}
+
+export const updateNhisClaimStatus = async (id, status, rejectionReason = '', actorId = null) => {
   const validStatuses = ['served', 'submitted', 'paid', 'rejected']
   if (!validStatuses.includes(status)) throw new Error('Invalid claim status.')
+
+  if (status === 'paid') {
+    await recordNhisPaidLedgerEntry(id, actorId)
+  }
 
   const updates = {
     status,

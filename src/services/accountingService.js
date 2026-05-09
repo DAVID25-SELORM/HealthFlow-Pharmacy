@@ -30,8 +30,19 @@ const filterRowsByUserBranch = async (rows, userIdField, branchId) => {
     return rows
   }
 
+  const rowsWithStoredBranch = rows.filter((row) => row.branch_id)
+  const rowsWithoutStoredBranch = rows.filter((row) => !row.branch_id)
+  const branchScopedRows = rowsWithStoredBranch.filter((row) => row.branch_id === branchId)
+
+  if (!rowsWithoutStoredBranch.length) {
+    return branchScopedRows
+  }
+
   const branchMap = await getUserBranchIdsByUserIds(rows.map((row) => row[userIdField]))
-  return rows.filter((row) => branchMap[row[userIdField]] === branchId)
+  return [
+    ...branchScopedRows,
+    ...rowsWithoutStoredBranch.filter((row) => branchMap[row[userIdField]] === branchId),
+  ]
 }
 
 export const getAccountingOverview = async (startDate, endDate, branchId = null) => {
@@ -72,9 +83,12 @@ const fetchSalesSummary = async (startDate, endDate, branchId) => {
       net_amount,
       payment_method,
       sold_by,
+      branch_id,
       sale_items (
         quantity,
         unit_price,
+        unit_cost_at_sale,
+        line_cost,
         drug_id,
         drugs (cost_price)
       )
@@ -90,8 +104,21 @@ const fetchSalesSummary = async (startDate, endDate, branchId) => {
   const revenue = scopedSales.reduce((sum, sale) => sum + Number(sale.net_amount), 0)
   const cogs = scopedSales.reduce((sum, sale) => {
     const itemCogs = (sale.sale_items || []).reduce((itemSum, item) => {
-      const cost = Number(item.drugs?.cost_price || 0)
-      return itemSum + cost * Number(item.quantity)
+      const hasStoredLineCost = item.line_cost !== null && item.line_cost !== undefined
+      const storedLineCost = Number(item.line_cost)
+      if (hasStoredLineCost && Number.isFinite(storedLineCost)) {
+        return itemSum + storedLineCost
+      }
+
+      const hasStoredUnitCost =
+        item.unit_cost_at_sale !== null && item.unit_cost_at_sale !== undefined
+      const storedUnitCost = Number(item.unit_cost_at_sale)
+      if (hasStoredUnitCost && Number.isFinite(storedUnitCost)) {
+        return itemSum + (storedUnitCost * Number(item.quantity || 0))
+      }
+
+      const currentCost = Number(item.drugs?.cost_price || 0)
+      return itemSum + currentCost * Number(item.quantity)
     }, 0)
 
     return sum + itemCogs
