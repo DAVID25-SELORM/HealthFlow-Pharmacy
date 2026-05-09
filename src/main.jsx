@@ -4,6 +4,7 @@ import App from './App.jsx'
 import { AuthProvider } from './context/AuthContext'
 import { TenantProvider } from './context/TenantContext'
 import { NotificationProvider } from './context/NotificationContext'
+import registerServiceWorker from './registerServiceWorker'
 import './index.css'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
@@ -17,3 +18,5 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     </NotificationProvider>
   </React.StrictMode>,
 )
+
+registerServiceWorker()

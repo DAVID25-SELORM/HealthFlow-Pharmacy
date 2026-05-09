@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Menu, Search, Bell, LogOut } from 'lucide-react'
+import { Menu, Search, Bell, LogOut, Wifi, WifiOff } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { subscribeToHealthflowDataChanged } from '../../lib/appEvents'
 import { useNotification } from '../../context/NotificationContext'
 import { useTenant } from '../../context/TenantContext'
+import { useOnlineStatus } from '../../hooks/useOnlineStatus'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { getClaimsStatistics } from '../../services/claimsService'
 import { getExpiringDrugs, getLowStockDrugs } from '../../services/drugService'
@@ -18,6 +19,7 @@ const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
   const { displayName, role, branch, canManageInventory, canManageClaims, signOut } = useAuth()
   const { canUseClaims, tierLimits } = useTenant()
   const { notify } = useNotification()
+  const isOnline = useOnlineStatus()
   const navigate = useNavigate()
   const location = useLocation()
   const alertsRef = useRef(null)
@@ -187,6 +189,14 @@ const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
       </div>
 
       <div className="topbar-actions">
+        <span
+          className={`connection-status ${isOnline ? 'online' : 'offline'}`}
+          title={isOnline ? 'Connected' : 'Offline'}
+        >
+          {isOnline ? <Wifi size={16} /> : <WifiOff size={16} />}
+          {isOnline ? 'Online' : 'Offline'}
+        </span>
+
         <div className="topbar-alerts" ref={alertsRef}>
           <button
             className="notification-btn"

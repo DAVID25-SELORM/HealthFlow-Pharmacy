@@ -55,12 +55,12 @@ Cloud:
 
 ## Suggested Rollout
 
-1. Make the app installable/cacheable as a PWA.
+1. Make the app installable/cacheable as a PWA. (Done: app shell cache, manifest, and online/offline status.)
 2. Refactor service calls behind app-owned APIs, starting with Sales.
 3. Add local database and sync queue for sales, inventory, and patients.
 4. Add conflict handling, audit trails, and sync monitoring.
 5. Move to a local branch server for pharmacies with multiple offline computers.
 
-## First Practical Step Later
+## Next Practical Step
 
 Refactor the Sales module so the page does not depend directly on Supabase calls. Make it call a `salesApi` abstraction that can later choose between Supabase and a local backend.
