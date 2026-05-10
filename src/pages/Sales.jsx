@@ -8,6 +8,15 @@ import { createClaim } from '../services/claimsService'
 import { getAllPatients } from '../services/patientService'
 import { getPharmacySettings } from '../services/settingsService'
 import { getBranches } from '../services/branchService'
+import {
+  createBranchSale,
+  getBranchServerConfig,
+  getBranchServerHealth,
+  isBranchServerEnabled,
+  pullBranchInventory,
+  saveBranchServerConfig,
+  searchBranchInventory,
+} from '../services/branchServerApi'
 import { closeShift, getOpenShiftForUser, openShift } from '../services/shiftService'
 import { printReceipt, downloadReceiptPDF, formatSaleForReceipt } from '../services/receiptService'
 import {
@@ -103,6 +112,14 @@ const Sales = () => {
     total: 0,
   })
   const [syncingOfflineSales, setSyncingOfflineSales] = useState(false)
+  const [branchServerConfig, setBranchServerConfig] = useState(() => getBranchServerConfig())
+  const [branchServerStatus, setBranchServerStatus] = useState({
+    checked: false,
+    online: false,
+    message: 'Not checked',
+    health: null,
+  })
+  const [branchServerBusy, setBranchServerBusy] = useState(false)
   const canProcessRefund =
     hasRole(role, ['admin', 'pharmacist']) || Boolean(profile?.can_refund)
   const isAdmin = String(role || '').toLowerCase() === 'admin'
@@ -117,6 +134,7 @@ const Sales = () => {
   const effectiveBranchId = profile?.branch_id || assignedBranch?.id || shiftBranchId
   const canChooseShiftBranch = isAdmin && !profile?.branch_id && activeBranches.length > 1
   const unsyncedOfflineSales = Number(offlineSalesSummary.unsynced || 0)
+  const branchServerModeEnabled = isBranchServerEnabled()
   const selectedPatientForSale = useMemo(
     () => patients.find((patient) => patient.id === patientId) || null,
     [patients, patientId]
@@ -253,6 +271,29 @@ const Sales = () => {
         setDrugSearchMessage('')
 
         if (!isOnline) {
+          if (branchServerModeEnabled) {
+            try {
+              const localResults = await searchBranchInventory({
+                term,
+                limit: POS_DRUG_SEARCH_LIMIT,
+              })
+
+              if (cancelled) {
+                return
+              }
+
+              setDrugs(localResults)
+              setDrugSearchMessage(
+                localResults.length
+                  ? 'Showing local branch inventory while offline.'
+                  : 'No matching in-stock drugs found in the local branch server.'
+              )
+              return
+            } catch (branchSearchError) {
+              console.warn('Local branch inventory search failed:', branchSearchError)
+            }
+          }
+
           const snapshot = await loadOfflinePosSnapshot(user?.id)
           const cachedResults = filterCachedDrugs(
             snapshot?.drugs?.length ? snapshot.drugs : drugs,
@@ -308,7 +349,7 @@ const Sales = () => {
       cancelled = true
       window.clearTimeout(timeout)
     }
-  }, [effectiveBranchId, isOnline, loading, searchTerm, user?.id])
+  }, [branchServerModeEnabled, effectiveBranchId, isOnline, loading, searchTerm, user?.id])
 
   useEffect(() => {
     const routeSearch = searchParams.get('search') || ''
@@ -484,6 +525,15 @@ const Sales = () => {
 
   const refreshDrugs = async () => {
     try {
+      if (!isOnline && branchServerModeEnabled) {
+        const latestLocalDrugs = await searchBranchInventory({
+          term: searchTerm,
+          limit: POS_DRUG_SEARCH_LIMIT,
+        })
+        setDrugs(latestLocalDrugs)
+        return
+      }
+
       const latestDrugs = await searchDrugs(searchTerm, {
         useTierAccess: true,
         inStockOnly: true,
@@ -603,6 +653,82 @@ const Sales = () => {
     }
   }, [isOnline, offlineSalesSummary.pending, syncingOfflineSales, syncPendingOfflineSales])
 
+  const refreshBranchServerStatus = useCallback(async () => {
+    const config = getBranchServerConfig()
+    setBranchServerConfig(config)
+
+    if (!config.enabled || !config.token) {
+      setBranchServerStatus({
+        checked: true,
+        online: false,
+        message: 'Not configured',
+        health: null,
+      })
+      return
+    }
+
+    try {
+      const health = await getBranchServerHealth()
+      setBranchServerStatus({
+        checked: true,
+        online: true,
+        message: 'Connected',
+        health,
+      })
+    } catch (statusError) {
+      setBranchServerStatus({
+        checked: true,
+        online: false,
+        message: statusError.message || 'Unavailable',
+        health: null,
+      })
+    }
+  }, [])
+
+  useEffect(() => {
+    void refreshBranchServerStatus()
+    const interval = window.setInterval(() => {
+      void refreshBranchServerStatus()
+    }, 30000)
+
+    return () => window.clearInterval(interval)
+  }, [refreshBranchServerStatus])
+
+  const configureBranchServer = async () => {
+    const currentConfig = getBranchServerConfig()
+    const url = window.prompt('Local branch server URL:', currentConfig.url || 'http://localhost:4780')
+    if (url === null) {
+      return
+    }
+
+    const token = window.prompt('Local branch server token:', currentConfig.token || '')
+    if (token === null) {
+      return
+    }
+
+    const nextConfig = saveBranchServerConfig({
+      enabled: true,
+      url: url.trim() || 'http://localhost:4780',
+      token: token.trim(),
+    })
+    setBranchServerConfig(nextConfig)
+    await refreshBranchServerStatus()
+    notify('Local branch server settings saved for this browser.', 'success')
+  }
+
+  const pullInventoryToBranchServer = async () => {
+    try {
+      setBranchServerBusy(true)
+      const result = await pullBranchInventory()
+      await refreshBranchServerStatus()
+      notify(`Imported ${result.imported || 0} drug${result.imported === 1 ? '' : 's'} into local inventory.`, 'success')
+    } catch (pullError) {
+      notify(pullError.message || 'Unable to pull branch inventory.', 'error')
+    } finally {
+      setBranchServerBusy(false)
+    }
+  }
+
   const handlePaymentMethodChange = (method) => {
     setPaymentMethod(method)
 
@@ -684,7 +810,9 @@ const Sales = () => {
       insuranceId: selectedPatientForSale.insurance_id,
       serviceDate: (saleDate || new Date().toISOString()).split('T')[0],
       notes: [
-        `Auto-created from POS sale ${saleNumber}.`,
+        saleNumber
+          ? `Auto-created from POS sale ${saleNumber}.`
+          : 'Auto-created from local branch POS sale.',
         coverage < total - 0.01
           ? 'Claim item values were prorated to match the insurance-covered amount.'
           : null,
@@ -817,6 +945,56 @@ const Sales = () => {
       })
 
       if (!isOnline) {
+        if (branchServerModeEnabled) {
+          try {
+            const localClaimPayload =
+              paymentMethod === 'insurance'
+                ? buildInsuranceClaimPayload({
+                    saleNumber: null,
+                    soldItems,
+                    total,
+                    coverage: insuranceCoveredAmount,
+                    topUp: patientTopUpAmount,
+                    topUpMethod: patientTopUpMethod,
+                    branchId: activeShift.branch_id,
+                    saleDate: saleTimestamp,
+                  })
+                : null
+            const saleResult = await createBranchSale({
+              ...salePayload,
+              claimPayload: localClaimPayload,
+            })
+            const receiptData = buildReceiptData(saleResult.saleNumber)
+            const claimMessage = saleResult.claimNumber
+              ? ` Claim ${saleResult.claimNumber} was saved locally.`
+              : ''
+
+            setLastSale({ ...receiptData, offline: true, branchServer: true })
+            reduceSoldDrugQuantities(soldItems)
+            setCart([])
+            setSearchTerm('')
+            syncSearchParam('')
+            setReceived('')
+            setInsuranceCoverage('')
+            setPatientTopUp('')
+            setPatientTopUpMethod('cash')
+            selectPatientForSale(null)
+            notify(
+              `Sale saved to the local branch server.${claimMessage} It will sync to Supabase when internet returns.`,
+              'success'
+            )
+            setShowReceipt(true)
+            return
+          } catch (branchSaleError) {
+            console.warn('Local branch sale failed; falling back to browser queue:', branchSaleError)
+            notify(
+              branchSaleError.message ||
+                'Local branch server is unavailable. Saving in this browser instead.',
+              'warning'
+            )
+          }
+        }
+
         const offlineSaleNumber = createOfflineSaleNumber()
         const receiptData = buildReceiptData(offlineSaleNumber)
         const claimPayload =
@@ -1178,6 +1356,47 @@ const Sales = () => {
           )}
         </div>
       )}
+
+      <div className={`branch-server-panel ${branchServerStatus.online ? 'connected' : 'disconnected'}`}>
+        <div>
+          <strong>Local Branch Server</strong>
+          <span>
+            {branchServerStatus.online
+              ? `Connected to ${branchServerConfig.url}`
+              : branchServerConfig.enabled
+                ? `Unavailable: ${branchServerStatus.message}`
+                : 'Configure this browser to use the pharmacy local server.'}
+          </span>
+          {branchServerStatus.health?.sync?.inventory?.lastInventoryImportAt && (
+            <span>
+              Inventory: {branchServerStatus.health.sync.inventory.lastInventoryImportCount || 0} item
+              {branchServerStatus.health.sync.inventory.lastInventoryImportCount === 1 ? '' : 's'} imported at{' '}
+              {new Date(branchServerStatus.health.sync.inventory.lastInventoryImportAt).toLocaleString()}
+            </span>
+          )}
+        </div>
+        <div className="branch-server-actions">
+          <button type="button" className="btn btn-outline" onClick={configureBranchServer}>
+            Configure
+          </button>
+          <button
+            type="button"
+            className="btn btn-outline"
+            onClick={refreshBranchServerStatus}
+            disabled={branchServerBusy}
+          >
+            Check
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={pullInventoryToBranchServer}
+            disabled={!branchServerStatus.online || branchServerBusy}
+          >
+            {branchServerBusy ? 'Importing...' : 'Pull Inventory'}
+          </button>
+        </div>
+      </div>
 
       <div className="shift-panel">
         {activeShift ? (
@@ -1676,7 +1895,9 @@ const Sales = () => {
                     : 'Saving Offline...'
                   : isOnline
                     ? 'Complete Sale'
-                    : 'Save Offline Sale'}
+                    : branchServerModeEnabled
+                      ? 'Save to Branch Server'
+                      : 'Save Offline Sale'}
             </button>
           </div>
         </div>

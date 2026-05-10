@@ -55,6 +55,53 @@
   font-weight: 700;
 }
 
+.branch-server-panel {
+  margin-bottom: 1rem;
+  border: 1px solid var(--gray-200);
+  background: white;
+  color: var(--gray-800);
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.branch-server-panel.connected {
+  border-color: #b9ded4;
+  background: #f5fffb;
+}
+
+.branch-server-panel.disconnected {
+  border-color: #f2d27a;
+  background: #fffdf5;
+}
+
+.branch-server-panel > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.branch-server-panel strong {
+  color: var(--gray-900);
+}
+
+.branch-server-panel span {
+  color: var(--gray-600);
+  font-size: 0.88rem;
+}
+
+.branch-server-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
 .pos-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(440px, 540px);

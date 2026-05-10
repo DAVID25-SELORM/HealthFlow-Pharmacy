@@ -1,0 +1,21 @@
+{
+  "name": "healthflow-local-branch-server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Local branch server for HealthFlow Pharmacy offline operations and Supabase sync.",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "sync": "node src/syncWorker.js",
+    "dev": "node --watch src/server.js",
+    "start:windows": "scripts\\start-branch-server.cmd",
+    "sync:windows": "scripts\\start-sync-worker.cmd"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.101.1",
+    "better-sqlite3": "^11.9.1",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2"
+  }
+}
