@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import WebSocket from 'ws'
 import { config, isSupabaseSyncConfigured } from './config.js'
 import { db, parseJson, nowIso } from './db.js'
 import { getInventoryImportStatus, importInventorySnapshot } from './inventoryRepository.js'
@@ -70,6 +71,9 @@ const createSupabaseClient = () => {
     auth: {
       persistSession: false,
       autoRefreshToken: false,
+    },
+    realtime: {
+      transport: WebSocket,
     },
   })
 }
