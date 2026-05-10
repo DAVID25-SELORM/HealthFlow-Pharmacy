@@ -5,7 +5,12 @@ import { requireBranchToken } from './httpAuth.js'
 import { createLocalClaim } from './claimsRepository.js'
 import { importInventorySnapshot, searchLocalInventory } from './inventoryRepository.js'
 import { createLocalSale, getRecentLocalSales } from './salesRepository.js'
-import { getSyncStatus, pullInventorySnapshot, syncPendingOutbox } from './supabaseSync.js'
+import {
+  getSupabaseDiagnostics,
+  getSyncStatus,
+  pullInventorySnapshot,
+  syncPendingOutbox,
+} from './supabaseSync.js'
 
 assertConfiguredForServer()
 
@@ -97,9 +102,21 @@ app.post('/api/sync/pull-inventory', async (_request, response, next) => {
   }
 })
 
+app.get('/api/sync/diagnostics', async (_request, response, next) => {
+  try {
+    response.json(await getSupabaseDiagnostics())
+  } catch (error) {
+    next(error)
+  }
+})
+
 app.use((error, _request, response, _next) => {
   console.error(error)
-  response.status(400).json({ error: error.message || 'Request failed.' })
+  response.status(400).json({
+    error: error.message || 'Request failed.',
+    cause: error.cause?.message || null,
+    code: error.cause?.code || error.code || null,
+  })
 })
 
 app.listen(config.port, () => {

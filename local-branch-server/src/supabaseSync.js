@@ -74,6 +74,30 @@ const createSupabaseClient = () => {
   })
 }
 
+const getErrorMessage = (error) =>
+  [
+    error?.message,
+    error?.cause?.message,
+    error?.cause?.code,
+    error?.cause?.errno,
+    error?.cause?.syscall,
+    error?.cause?.hostname,
+  ]
+    .filter(Boolean)
+    .join(' | ')
+
+const withSupabaseNetworkContext = async (operation) => {
+  try {
+    return await operation()
+  } catch (error) {
+    if (String(error?.message || '').toLowerCase().includes('fetch failed')) {
+      throw new Error(`Unable to reach Supabase from this branch server: ${getErrorMessage(error)}`)
+    }
+
+    throw error
+  }
+}
+
 const syncSaleCompleted = async (supabase, row) => {
   const payload = parseJson(row.payload_json)
   const { data, error } = await supabase.rpc('branch_sync_create_sale_transaction', {
@@ -189,10 +213,12 @@ export const getSyncStatus = () => {
 
 export const pullInventorySnapshot = async () => {
   const supabase = createSupabaseClient()
-  const { data, error } = await supabase.rpc('branch_sync_get_inventory_snapshot', {
-    p_sync_token: config.branchSyncToken,
-    p_limit: 20000,
-  })
+  const { data, error } = await withSupabaseNetworkContext(() =>
+    supabase.rpc('branch_sync_get_inventory_snapshot', {
+      p_sync_token: config.branchSyncToken,
+      p_limit: 20000,
+    })
+  )
 
   if (error) {
     throw error
@@ -205,4 +231,38 @@ export const pullInventorySnapshot = async () => {
     organizationId: data?.organization_id || null,
     pulledAt: data?.pulled_at || null,
   }
+}
+
+export const getSupabaseDiagnostics = async () => {
+  const startedAt = nowIso()
+  const diagnostics = {
+    startedAt,
+    supabaseUrlConfigured: Boolean(config.supabaseUrl),
+    supabaseSyncKeyConfigured: Boolean(config.supabaseSyncKey),
+    branchSyncTokenConfigured: Boolean(config.branchSyncToken),
+    supabaseUrl: config.supabaseUrl || null,
+    reachable: false,
+    status: null,
+    error: null,
+  }
+
+  if (!config.supabaseUrl) {
+    diagnostics.error = 'SUPABASE_URL is not configured.'
+    return diagnostics
+  }
+
+  try {
+    const response = await fetch(`${config.supabaseUrl.replace(/\/+$/, '')}/rest/v1/`, {
+      headers: {
+        apikey: config.supabaseSyncKey,
+        Authorization: `Bearer ${config.supabaseSyncKey}`,
+      },
+    })
+    diagnostics.reachable = true
+    diagnostics.status = response.status
+  } catch (error) {
+    diagnostics.error = getErrorMessage(error) || 'Unable to reach Supabase.'
+  }
+
+  return diagnostics
 }
