@@ -62,6 +62,7 @@ const Claims = () => {
   const [claimItems, setClaimItems] = useState([])
   const [selectedDrugId, setSelectedDrugId] = useState('')
   const [selectedQty, setSelectedQty] = useState('1')
+  const [drugLookupTerm, setDrugLookupTerm] = useState('')
   const [claimToReject, setClaimToReject] = useState(null)
   const [rejectionReason, setRejectionReason] = useState('')
   const [claimSearchTerm, setClaimSearchTerm] = useState('')
@@ -158,6 +159,26 @@ const Claims = () => {
     [claimItems]
   )
 
+  const filteredDrugsForClaim = useMemo(
+    () =>
+      drugs.filter((drug) =>
+        matchesSearch(
+          [
+            drug.name,
+            drug.generic_name,
+            drug.brand,
+            drug.batch_number,
+            drug.barcode,
+            drug.code,
+            drug.sku,
+            drug.price,
+          ],
+          drugLookupTerm
+        )
+      ),
+    [drugs, drugLookupTerm]
+  )
+
   const addClaimItem = () => {
     const drug = drugs.find((row) => row.id === selectedDrugId)
     const qty = Number.parseFloat(selectedQty)
@@ -187,6 +208,7 @@ const Claims = () => {
 
     setSelectedDrugId('')
     setSelectedQty('1')
+    setDrugLookupTerm('')
   }
 
   const removeClaimItem = (drugId) => {
@@ -594,15 +616,30 @@ const Claims = () => {
 
               <div className="claim-items-box">
                 <h4>Claim Items</h4>
+                <label className="claim-drug-search">
+                  <Search size={16} />
+                  <input
+                    type="search"
+                    placeholder="Search drugs by name, batch, barcode, code, or price"
+                    value={drugLookupTerm}
+                    onChange={(event) => {
+                      setDrugLookupTerm(event.target.value)
+                      setSelectedDrugId('')
+                    }}
+                  />
+                </label>
                 <div className="item-inputs">
                   <select
                     value={selectedDrugId}
                     onChange={(event) => setSelectedDrugId(event.target.value)}
                   >
-                    <option value="">Select drug</option>
-                    {drugs.map((drug) => (
+                    <option value="">
+                      {filteredDrugsForClaim.length ? 'Select drug' : 'No matching drugs'}
+                    </option>
+                    {filteredDrugsForClaim.map((drug) => (
                       <option key={drug.id} value={drug.id}>
                         {drug.name} - GHS {Number.parseFloat(drug.price).toFixed(2)}
+                        {drug.batch_number ? ` - Batch ${drug.batch_number}` : ''}
                       </option>
                     ))}
                   </select>
