@@ -4,10 +4,16 @@ import './db.js'
 import { requireBranchToken } from './httpAuth.js'
 import { createLocalClaim } from './claimsRepository.js'
 import { importInventorySnapshot, searchLocalInventory } from './inventoryRepository.js'
+import {
+  getOfflineRecord,
+  listOfflineRecords,
+  saveOfflineRecord,
+} from './offlineRecordsRepository.js'
 import { createLocalSale, getRecentLocalSales } from './salesRepository.js'
 import {
   getSupabaseDiagnostics,
   getSyncStatus,
+  pullReferenceData,
   pullInventorySnapshot,
   syncPendingOutbox,
 } from './supabaseSync.js'
@@ -54,6 +60,147 @@ app.get('/api/inventory/search', (request, response) => {
   })
 })
 
+app.get('/api/patients', (request, response) => {
+  response.json({ data: listOfflineRecords('patients', request.query) })
+})
+
+app.post('/api/patients', (request, response, next) => {
+  try {
+    response.status(201).json({ data: saveOfflineRecord('patients', request.body || {}) })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.put('/api/patients/:id', (request, response, next) => {
+  try {
+    response.json({ data: saveOfflineRecord('patients', { ...(request.body || {}), id: request.params.id }) })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.get('/api/claims', (request, response) => {
+  response.json({ data: listOfflineRecords('claims', request.query) })
+})
+
+app.post('/api/claims', (request, response, next) => {
+  try {
+    response.status(201).json({ data: saveOfflineRecord('claims', request.body || {}) })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.put('/api/claims/:id', (request, response, next) => {
+  try {
+    const existing = getOfflineRecord('claims', request.params.id)
+    response.json({
+      data: saveOfflineRecord('claims', {
+        ...(existing || {}),
+        ...(request.body || {}),
+        id: request.params.id,
+      }),
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.get('/api/nhis/drugs', (request, response) => {
+  response.json({ data: listOfflineRecords('nhis_drugs', request.query) })
+})
+
+app.post('/api/nhis/drugs', (request, response, next) => {
+  try {
+    response.status(201).json({ data: saveOfflineRecord('nhis_drugs', request.body || {}) })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.put('/api/nhis/drugs/:id', (request, response, next) => {
+  try {
+    response.json({ data: saveOfflineRecord('nhis_drugs', { ...(request.body || {}), id: request.params.id }) })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.get('/api/nhis/claims', (request, response) => {
+  response.json({ data: listOfflineRecords('nhis_claims', request.query) })
+})
+
+app.post('/api/nhis/claims', (request, response, next) => {
+  try {
+    response.status(201).json({ data: saveOfflineRecord('nhis_claims', request.body || {}) })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.put('/api/nhis/claims/:id', (request, response, next) => {
+  try {
+    const existing = getOfflineRecord('nhis_claims', request.params.id)
+    response.json({
+      data: saveOfflineRecord('nhis_claims', {
+        ...(existing || {}),
+        ...(request.body || {}),
+        id: request.params.id,
+      }),
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.get('/api/suppliers', (request, response) => {
+  response.json({ data: listOfflineRecords('suppliers', request.query) })
+})
+
+app.post('/api/suppliers', (request, response, next) => {
+  try {
+    response.status(201).json({ data: saveOfflineRecord('suppliers', request.body || {}) })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.put('/api/suppliers/:id', (request, response, next) => {
+  try {
+    response.json({ data: saveOfflineRecord('suppliers', { ...(request.body || {}), id: request.params.id }) })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.get('/api/purchases', (request, response) => {
+  response.json({ data: listOfflineRecords('purchases', request.query) })
+})
+
+app.post('/api/purchases', (request, response, next) => {
+  try {
+    response.status(201).json({ data: saveOfflineRecord('purchases', request.body || {}) })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.put('/api/purchases/:id', (request, response, next) => {
+  try {
+    const existing = getOfflineRecord('purchases', request.params.id)
+    response.json({
+      data: saveOfflineRecord('purchases', {
+        ...(existing || {}),
+        ...(request.body || {}),
+        id: request.params.id,
+      }),
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
 app.post('/api/inventory/import', (request, response, next) => {
   try {
     response.status(201).json(importInventorySnapshot(request.body?.drugs || []))
@@ -97,6 +244,14 @@ app.post('/api/sync/run', async (_request, response, next) => {
 app.post('/api/sync/pull-inventory', async (_request, response, next) => {
   try {
     response.json(await pullInventorySnapshot())
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.post('/api/sync/pull-reference-data', async (_request, response, next) => {
+  try {
+    response.json(await pullReferenceData())
   } catch (error) {
     next(error)
   }

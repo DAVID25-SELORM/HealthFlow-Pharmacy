@@ -12,8 +12,10 @@ import {
   createBranchSale,
   getBranchServerConfig,
   getBranchServerHealth,
+  getBranchSyncStatus,
   isBranchServerEnabled,
   pullBranchInventory,
+  runBranchSync,
   saveBranchServerConfig,
   searchBranchInventory,
 } from '../services/branchServerApi'
@@ -43,6 +45,16 @@ import './Sales.css'
 const POS_DRUG_SEARCH_LIMIT = 30
 const RECENT_SALES_LIMIT = 8
 const POS_PATIENT_SEARCH_LIMIT = 8
+
+const BRANCH_SYNC_LABELS = {
+  patients: 'Patients',
+  claims: 'Claims',
+  nhis_drugs: 'NHIS Drugs',
+  nhis_claims: 'NHIS Claims',
+  suppliers: 'Suppliers',
+  purchases: 'Purchases',
+  sales: 'Sales',
+}
 
 const formatPatientOption = (patient) =>
   [patient?.full_name, patient?.phone ? `(${patient.phone})` : null].filter(Boolean).join(' ')
@@ -124,6 +136,8 @@ const Sales = () => {
     health: null,
   })
   const [branchServerBusy, setBranchServerBusy] = useState(false)
+  const [branchSyncStatus, setBranchSyncStatus] = useState(null)
+  const [branchSyncBusy, setBranchSyncBusy] = useState(false)
   const canProcessRefund =
     hasRole(role, ['admin', 'pharmacist']) || Boolean(profile?.can_refund)
   const isAdmin = String(role || '').toLowerCase() === 'admin'
@@ -684,17 +698,22 @@ const Sales = () => {
         message: 'Not configured',
         health: null,
       })
+      setBranchSyncStatus(null)
       return
     }
 
     try {
-      const health = await getBranchServerHealth()
+      const [health, syncStatus] = await Promise.all([
+        getBranchServerHealth(),
+        getBranchSyncStatus(),
+      ])
       setBranchServerStatus({
         checked: true,
         online: true,
         message: 'Connected',
         health,
       })
+      setBranchSyncStatus(syncStatus)
     } catch (statusError) {
       setBranchServerStatus({
         checked: true,
@@ -702,6 +721,7 @@ const Sales = () => {
         message: statusError.message || 'Unavailable',
         health: null,
       })
+      setBranchSyncStatus(null)
     }
   }, [])
 
@@ -758,6 +778,30 @@ const Sales = () => {
       setBranchServerBusy(false)
     }
   }
+
+  const runBranchServerSyncNow = async () => {
+    if (!isAdmin) {
+      notify('Only admins can run local branch server sync.', 'warning')
+      return
+    }
+
+    try {
+      setBranchSyncBusy(true)
+      const result = await runBranchSync()
+      await refreshBranchServerStatus()
+      notify(
+        `Branch sync checked ${result.total || 0} event${result.total === 1 ? '' : 's'}: ${result.synced || 0} synced, ${result.failed || 0} failed.`,
+        result.failed ? 'warning' : 'success'
+      )
+    } catch (syncError) {
+      notify(syncError.message || 'Unable to run branch server sync.', 'error')
+    } finally {
+      setBranchSyncBusy(false)
+    }
+  }
+
+  const branchRecordSyncEntries = Object.entries(branchSyncStatus?.recordsByEntity || {})
+  const branchEventSyncEntries = Object.entries(branchSyncStatus?.eventsByType || {})
 
   const handlePaymentMethodChange = (method) => {
     setPaymentMethod(method)
@@ -1449,6 +1493,41 @@ const Sales = () => {
                 {new Date(branchServerStatus.health.sync.inventory.lastInventoryImportAt).toLocaleString()}
               </span>
             )}
+            {branchSyncStatus && (
+              <div className="branch-sync-status">
+                <div className="branch-sync-total">
+                  <span>Outbox</span>
+                  <strong>
+                    {branchSyncStatus.pending || 0} pending · {branchSyncStatus.failed || 0} failed · {branchSyncStatus.synced || 0} synced
+                  </strong>
+                </div>
+                {branchRecordSyncEntries.length > 0 && (
+                  <div className="branch-sync-grid">
+                    {branchRecordSyncEntries.map(([entityType, summary]) => (
+                      <div className="branch-sync-chip" key={entityType}>
+                        <span>{BRANCH_SYNC_LABELS[entityType] || entityType}</span>
+                        <strong>
+                          {summary.pending || 0}/{summary.failed || 0}/{summary.synced || 0}
+                        </strong>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {branchEventSyncEntries.length > 0 && (
+                  <span className="branch-sync-help">Module chips show pending / failed / synced records.</span>
+                )}
+                {branchSyncStatus.recentFailures?.records?.length > 0 && (
+                  <span className="branch-sync-error">
+                    Latest failed record: {BRANCH_SYNC_LABELS[branchSyncStatus.recentFailures.records[0].entity_type] || branchSyncStatus.recentFailures.records[0].entity_type} - {branchSyncStatus.recentFailures.records[0].last_sync_error}
+                  </span>
+                )}
+                {branchSyncStatus.recentFailures?.events?.length > 0 && (
+                  <span className="branch-sync-error">
+                    Latest failed event: {branchSyncStatus.recentFailures.events[0].event_type} - {branchSyncStatus.recentFailures.events[0].last_error}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
           <div className="branch-server-actions">
             <button type="button" className="btn btn-outline" onClick={configureBranchServer}>
@@ -1469,6 +1548,14 @@ const Sales = () => {
               disabled={!branchServerStatus.online || branchServerBusy}
             >
               {branchServerBusy ? 'Importing...' : 'Pull Inventory'}
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={runBranchServerSyncNow}
+              disabled={!branchServerStatus.online || branchSyncBusy}
+            >
+              {branchSyncBusy ? 'Syncing...' : 'Sync Now'}
             </button>
           </div>
         </div>

@@ -100,6 +100,72 @@
   align-items: center;
   gap: 0.5rem;
   flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.branch-sync-status {
+  margin-top: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.branch-sync-total {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.branch-sync-total strong {
+  font-size: 0.88rem;
+}
+
+.branch-sync-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 0.45rem;
+  max-width: 680px;
+}
+
+.branch-sync-chip {
+  border: 1px solid var(--gray-200);
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: var(--radius-sm);
+  padding: 0.45rem 0.55rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.branch-sync-chip span,
+.branch-sync-help,
+.branch-sync-error {
+  font-size: 0.78rem;
+}
+
+.branch-sync-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.branch-sync-chip strong {
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.branch-sync-help {
+  color: var(--gray-500) !important;
+}
+
+.branch-sync-error {
+  color: #9f3020 !important;
+  font-weight: 700;
 }
 
 .pos-layout {

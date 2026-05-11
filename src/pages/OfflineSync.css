@@ -1,0 +1,233 @@
+.offline-sync-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+  padding: 1.5rem;
+}
+
+.offline-sync-header,
+.offline-sync-actions,
+.offline-sync-section-header,
+.sync-record-row,
+.offline-sync-connection {
+  align-items: center;
+  display: flex;
+}
+
+.offline-sync-header {
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.offline-sync-header h1,
+.offline-sync-section h2 {
+  color: var(--gray-900);
+  margin: 0;
+}
+
+.offline-sync-header p,
+.offline-sync-section p,
+.offline-sync-footnote {
+  color: var(--gray-600);
+  margin: 0.25rem 0 0;
+}
+
+.offline-sync-connection {
+  border: 1px solid #f2d27a;
+  background: #fff9e8;
+  border-radius: var(--radius);
+  color: #7a5510;
+  gap: 0.45rem;
+  padding: 0.55rem 0.75rem;
+  white-space: nowrap;
+}
+
+.offline-sync-connection.online {
+  border-color: #b9ded4;
+  background: #eefbf7;
+  color: #116b52;
+}
+
+.offline-sync-alert {
+  border: 1px solid #ffd4ce;
+  background: #fff3f1;
+  border-radius: var(--radius);
+  color: #9f3020;
+  padding: 0.8rem 1rem;
+}
+
+.offline-sync-actions {
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.offline-sync-actions .btn {
+  align-items: center;
+  display: inline-flex;
+  gap: 0.4rem;
+}
+
+.offline-sync-overview {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.sync-metric,
+.offline-sync-section {
+  background: #fff;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+
+.sync-metric {
+  padding: 1rem;
+}
+
+.sync-metric span {
+  color: var(--gray-500);
+  display: block;
+  font-size: 0.84rem;
+}
+
+.sync-metric strong {
+  color: var(--gray-900);
+  display: block;
+  font-size: 1.7rem;
+  margin-top: 0.25rem;
+}
+
+.sync-metric.warning strong {
+  color: #9f3020;
+}
+
+.offline-sync-section {
+  overflow: hidden;
+}
+
+.offline-sync-section-header {
+  border-bottom: 1px solid var(--gray-200);
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.offline-sync-section-header select {
+  border: 1px solid var(--gray-300);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  min-height: 2.35rem;
+  padding: 0.45rem 0.7rem;
+}
+
+.sync-record-grid {
+  display: grid;
+  gap: 0.55rem;
+  padding: 1rem;
+}
+
+.sync-record-row {
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: minmax(160px, 1fr) repeat(4, minmax(90px, auto));
+  min-width: 0;
+  padding: 0.75rem;
+}
+
+.sync-record-row strong {
+  color: var(--gray-900);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sync-record-row span,
+.sync-empty,
+.offline-sync-footnote {
+  font-size: 0.88rem;
+}
+
+.sync-record-row span {
+  color: var(--gray-600);
+  white-space: nowrap;
+}
+
+.sync-empty {
+  color: var(--gray-500);
+  padding: 0.25rem;
+}
+
+.sync-empty.success {
+  color: #116b52;
+  padding: 1rem;
+}
+
+.offline-sync-section.has-failures .offline-sync-section-header {
+  color: #9f3020;
+}
+
+.sync-failure-tables {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.sync-failure-tables table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.sync-failure-tables th,
+.sync-failure-tables td {
+  border-bottom: 1px solid var(--gray-200);
+  font-size: 0.86rem;
+  padding: 0.65rem;
+  text-align: left;
+  vertical-align: top;
+  word-break: break-word;
+}
+
+.sync-failure-tables th {
+  background: var(--gray-50);
+  color: var(--gray-700);
+}
+
+@media (max-width: 900px) {
+  .offline-sync-page {
+    padding: 1rem;
+  }
+
+  .offline-sync-header,
+  .offline-sync-section-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .offline-sync-overview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sync-record-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .sync-record-row strong {
+    grid-column: 1 / -1;
+  }
+
+  .sync-failure-tables {
+    overflow-x: auto;
+  }
+}
+
+@media (max-width: 520px) {
+  .offline-sync-overview,
+  .sync-record-row {
+    grid-template-columns: 1fr;
+  }
+}

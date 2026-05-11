@@ -10,6 +10,7 @@ import {
   CLAIMS_ROLES,
   INVENTORY_ROLES,
   NHIS_ROLES,
+  OFFLINE_SYNC_ROLES,
   PATIENT_ROLES,
   PURCHASES_ROLES,
   REPORT_ROLES,
@@ -31,6 +32,7 @@ const TenantAdmin = lazy(() => import('./pages/TenantAdmin'))
 const Login = lazy(() => import('./pages/Login'))
 const Signup = lazy(() => import('./pages/Signup'))
 const ActivityLog = lazy(() => import('./pages/ActivityLog'))
+const OfflineSync = lazy(() => import('./pages/OfflineSync'))
 const Purchases = lazy(() => import('./pages/Purchases'))
 const Nhis = lazy(() => import('./pages/Nhis'))
 
@@ -148,6 +150,14 @@ function App() {
               element={
                 <RoleRoute allowedRoles={ACTIVITY_LOG_ROLES}>
                   <ActivityLog />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="offline-sync"
+              element={
+                <RoleRoute allowedRoles={OFFLINE_SYNC_ROLES}>
+                  <OfflineSync />
                 </RoleRoute>
               }
             />

@@ -116,7 +116,46 @@ export const runBranchSync = async () =>
     method: 'POST',
   })
 
+export const getBranchSyncStatus = async () => await branchFetch('/api/sync/status')
+
 export const pullBranchInventory = async () =>
   await branchFetch('/api/sync/pull-inventory', {
     method: 'POST',
   })
+
+export const pullBranchReferenceData = async () =>
+  await branchFetch('/api/sync/pull-reference-data', {
+    method: 'POST',
+  })
+
+export const shouldUseBranchServer = () =>
+  isBranchServerEnabled() && typeof navigator !== 'undefined' && navigator.onLine === false
+
+export const listBranchRecords = async (resource, filters = {}) => {
+  const params = new URLSearchParams()
+  Object.entries(filters || {}).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      params.set(key, String(value))
+    }
+  })
+
+  const query = params.toString()
+  const response = await branchFetch(`/api/${resource}${query ? `?${query}` : ''}`)
+  return response.data || []
+}
+
+export const createBranchRecord = async (resource, payload) => {
+  const response = await branchFetch(`/api/${resource}`, {
+    method: 'POST',
+    body: JSON.stringify(payload || {}),
+  })
+  return response.data
+}
+
+export const updateBranchRecord = async (resource, id, payload) => {
+  const response = await branchFetch(`/api/${resource}/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload || {}),
+  })
+  return response.data
+}

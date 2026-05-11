@@ -1,6 +1,12 @@
 import { supabase } from '../lib/supabase'
 import { assertRequiredText, normalizeText, sanitizeSearchTerm } from '../utils/validation'
 import { tryLogAuditEvent } from './auditService'
+import {
+  createBranchRecord,
+  listBranchRecords,
+  shouldUseBranchServer,
+  updateBranchRecord,
+} from './branchServerApi'
 
 const PATIENT_INSURANCE_ID_UNIQUE_CONSTRAINTS = [
   'idx_patients_org_insurance_id_unique',
@@ -47,6 +53,10 @@ const throwFriendlyPatientError = (error) => {
 
 // Get all patients
 export const getAllPatients = async () => {
+  if (shouldUseBranchServer()) {
+    return await listBranchRecords('patients')
+  }
+
   const { data, error } = await supabase
     .from('patients')
     .select('*')
@@ -58,6 +68,14 @@ export const getAllPatients = async () => {
 
 // Get patient by ID
 export const getPatientById = async (id) => {
+  if (shouldUseBranchServer()) {
+    const patients = await listBranchRecords('patients', { id, limit: 1 })
+    if (!patients.length) {
+      throw new Error('Patient not found in local branch server.')
+    }
+    return patients[0]
+  }
+
   const { data, error } = await supabase
     .from('patients')
     .select(`
@@ -110,6 +128,21 @@ export const addPatient = async (patientData) => {
   const fullName = assertRequiredText(patientData.fullName, 'Patient name')
   const phone = assertRequiredText(patientData.phone, 'Phone')
 
+  if (shouldUseBranchServer()) {
+    return await createBranchRecord('patients', {
+      full_name: fullName,
+      phone,
+      email: normalizeText(patientData.email) || null,
+      date_of_birth: patientData.dateOfBirth || null,
+      gender: normalizeText(patientData.gender) || null,
+      address: normalizeText(patientData.address) || null,
+      insurance_provider: normalizeText(patientData.insuranceProvider) || null,
+      insurance_id: normalizeText(patientData.insuranceId) || null,
+      allergies: normalizeText(patientData.allergies) || null,
+      medical_notes: normalizeText(patientData.medicalNotes) || null,
+    })
+  }
+
   const { data, error } = await supabase
     .from('patients')
     .insert([
@@ -150,6 +183,21 @@ export const updatePatient = async (id, patientData) => {
   const fullName = assertRequiredText(patientData.fullName, 'Patient name')
   const phone = assertRequiredText(patientData.phone, 'Phone')
 
+  if (shouldUseBranchServer()) {
+    return await updateBranchRecord('patients', id, {
+      full_name: fullName,
+      phone,
+      email: normalizeText(patientData.email) || null,
+      date_of_birth: patientData.dateOfBirth || null,
+      gender: normalizeText(patientData.gender) || null,
+      address: normalizeText(patientData.address) || null,
+      insurance_provider: normalizeText(patientData.insuranceProvider) || null,
+      insurance_id: normalizeText(patientData.insuranceId) || null,
+      allergies: normalizeText(patientData.allergies) || null,
+      medical_notes: normalizeText(patientData.medicalNotes) || null,
+    })
+  }
+
   const { data, error } = await supabase
     .from('patients')
     .update({
@@ -188,6 +236,10 @@ export const updatePatient = async (id, patientData) => {
 // Search patients
 export const searchPatients = async (searchTerm) => {
   const term = sanitizeSearchTerm(searchTerm)
+  if (shouldUseBranchServer()) {
+    return await listBranchRecords('patients', { searchTerm: term })
+  }
+
   if (!term) {
     return getAllPatients()
   }
@@ -230,6 +282,10 @@ export const searchPatients = async (searchTerm) => {
 
 // Get patient visit count
 export const getPatientVisitCount = async (patientId) => {
+  if (shouldUseBranchServer()) {
+    return 0
+  }
+
   const { count, error } = await supabase
     .from('sales')
     .select('*', { count: 'exact', head: true })
@@ -241,6 +297,10 @@ export const getPatientVisitCount = async (patientId) => {
 
 // Get patient last visit
 export const getPatientLastVisit = async (patientId) => {
+  if (shouldUseBranchServer()) {
+    return null
+  }
+
   const { data, error } = await supabase
     .from('sales')
     .select('sale_date')

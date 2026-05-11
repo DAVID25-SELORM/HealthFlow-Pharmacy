@@ -1,6 +1,12 @@
 import { supabase } from '../lib/supabase'
 import { assertRequiredText, assertNonNegativeNumber, normalizeText, sanitizeSearchTerm } from '../utils/validation'
 import { tryLogAuditEvent } from './auditService'
+import {
+  createBranchRecord,
+  listBranchRecords,
+  shouldUseBranchServer,
+  updateBranchRecord,
+} from './branchServerApi'
 import { invokeTierAccess } from './tierAccessService'
 
 const UNIQUE_PATIENT_INSURANCE_INDEXES = [
@@ -93,6 +99,10 @@ export const validateNhisClaimReadiness = (claimData, medicines = []) =>
 // ─── NHIS Drug Catalog ────────────────────────────────────────────────────────
 
 export const getAllNhisDrugs = async (searchTerm = '') => {
+  if (shouldUseBranchServer()) {
+    return await listBranchRecords('nhis/drugs', { searchTerm })
+  }
+
   let query = supabase
     .from('nhis_drugs')
     .select('*')
@@ -112,6 +122,11 @@ export const getAllNhisDrugs = async (searchTerm = '') => {
 }
 
 export const getNhisDrugByCode = async (code) => {
+  if (shouldUseBranchServer()) {
+    const drugs = await listBranchRecords('nhis/drugs', { searchTerm: code, limit: 1 })
+    return drugs.find((drug) => String(drug.code || '').toUpperCase() === code.trim().toUpperCase()) || null
+  }
+
   const { data, error } = await supabase
     .from('nhis_drugs')
     .select('*')
@@ -126,6 +141,20 @@ export const getNhisDrugByCode = async (code) => {
 export const createNhisDrug = async (drugData) => {
   const code        = assertRequiredText(drugData.code,        'Drug code').toUpperCase()
   const description = assertRequiredText(drugData.description, 'Description')
+
+  if (shouldUseBranchServer()) {
+    return await createBranchRecord('nhis/drugs', {
+      code,
+      description,
+      generic_name: normalizeText(drugData.genericName) || null,
+      strength: normalizeText(drugData.strength) || null,
+      dosage_form: normalizeText(drugData.dosageForm) || null,
+      category: normalizeText(drugData.category) || null,
+      unit: normalizeText(drugData.unit) || 'unit',
+      unit_price: assertNonNegativeNumber(drugData.unitPrice, 'Unit price'),
+      is_active: true,
+    })
+  }
 
   const { data, error } = await supabase
     .from('nhis_drugs')
@@ -147,6 +176,19 @@ export const createNhisDrug = async (drugData) => {
 }
 
 export const updateNhisDrug = async (id, drugData) => {
+  if (shouldUseBranchServer()) {
+    return await updateBranchRecord('nhis/drugs', id, {
+      description: normalizeText(drugData.description),
+      generic_name: normalizeText(drugData.genericName) || null,
+      strength: normalizeText(drugData.strength) || null,
+      dosage_form: normalizeText(drugData.dosageForm) || null,
+      category: normalizeText(drugData.category) || null,
+      unit: normalizeText(drugData.unit) || 'unit',
+      unit_price: assertNonNegativeNumber(drugData.unitPrice, 'Unit price'),
+      updated_at: new Date().toISOString(),
+    })
+  }
+
   const { data, error } = await supabase
     .from('nhis_drugs')
     .update({
@@ -168,6 +210,14 @@ export const updateNhisDrug = async (id, drugData) => {
 }
 
 export const deleteNhisDrug = async (id) => {
+  if (shouldUseBranchServer()) {
+    await updateBranchRecord('nhis/drugs', id, {
+      is_active: false,
+      updated_at: new Date().toISOString(),
+    })
+    return
+  }
+
   const { error } = await supabase
     .from('nhis_drugs')
     .update({ is_active: false, updated_at: new Date().toISOString() })
@@ -199,6 +249,13 @@ export const upsertNhisDrugs = async (drugs) => {
   })).filter((r) => r.code && r.description)
 
   if (!rows.length) throw new Error('No valid rows found to import.')
+
+  if (shouldUseBranchServer()) {
+    for (const row of rows) {
+      await createBranchRecord('nhis/drugs', row)
+    }
+    return rows.length
+  }
 
   const { error } = await supabase
     .from('nhis_drugs')
@@ -233,6 +290,10 @@ export const upsertNhisDrugs = async (drugs) => {
 // ─── NHIS Claims ─────────────────────────────────────────────────────────────
 
 export const getAllNhisClaims = async (filters = {}) => {
+  if (shouldUseBranchServer()) {
+    return await listBranchRecords('nhis/claims', filters)
+  }
+
   let query = supabase
     .from('nhis_claims')
     .select(`
@@ -268,6 +329,20 @@ export const getAllNhisClaims = async (filters = {}) => {
 }
 
 export const getNhisClaimStats = async () => {
+  if (shouldUseBranchServer()) {
+    const rows = await getAllNhisClaims()
+    return {
+      total: rows.length,
+      served: rows.filter((r) => r.status === 'served').length,
+      submitted: rows.filter((r) => r.status === 'submitted').length,
+      paid: rows.filter((r) => r.status === 'paid').length,
+      rejected: rows.filter((r) => r.status === 'rejected').length,
+      totalPaid: rows
+        .filter((r) => r.status === 'paid')
+        .reduce((s, r) => s + Number(r.total_amount || 0), 0),
+    }
+  }
+
   const { data, error } = await supabase
     .from('nhis_claims')
     .select('status, total_amount')
@@ -302,6 +377,49 @@ export const createNhisClaim = async (claimData, medicines) => {
   const serviceDate = normalizeText(claimData.serviceDate || claimData.serviceDateFrom)
 
   const totalAmount = medicines.reduce((s, m) => s + Number(m.totalAmount || 0), 0)
+
+  if (shouldUseBranchServer()) {
+    return await createBranchRecord('nhis/claims', {
+      patient_id: claimData.patientId || null,
+      member_no: memberNo,
+      hin: normalizeText(claimData.hin) || null,
+      surname: normalizeText(claimData.surname),
+      other_names: normalizeText(claimData.otherNames) || null,
+      folder_no: normalizeText(claimData.folderNo) || null,
+      gender: normalizeText(claimData.gender) || null,
+      date_of_birth: claimData.dateOfBirth || null,
+      patient_address: normalizeText(claimData.patientAddress) || null,
+      child_weight_kg: claimData.childWeightKg
+        ? assertNonNegativeNumber(claimData.childWeightKg, 'Child weight')
+        : null,
+      ccc_no: normalizeText(claimData.cccNo) || null,
+      diagnosis: normalizeText(claimData.diagnosis) || null,
+      service_date_from: serviceDate || null,
+      service_date_to: serviceDate || null,
+      branch_id: claimData.branchId || null,
+      referring_facility: normalizeText(claimData.referringFacility) || null,
+      referral_code: normalizeText(claimData.referralCode) || null,
+      physician_name: normalizeText(claimData.physicianName) || null,
+      pre_auth_codes: normalizeText(claimData.preAuthCodes) || null,
+      total_amount: totalAmount,
+      status: 'served',
+      notes: normalizeText(claimData.notes) || null,
+      created_by: claimData.createdBy || null,
+      nhis_claim_medicines: medicines.map((m) => ({
+        nhis_drug_id: m.nhisDrugId || null,
+        drug_code: normalizeText(m.drugCode) || null,
+        description: assertRequiredText(m.description, 'Medicine description'),
+        unit: normalizeText(m.unit) || 'unit',
+        unit_price: assertNonNegativeNumber(m.unitPrice, 'Unit price'),
+        dispensed_qty: assertNonNegativeNumber(m.dispensedQty, 'Dispensed qty'),
+        dispensary_date: m.dispensaryDate || null,
+        dose: normalizeText(m.dose) || null,
+        frequency: normalizeText(m.frequency) || null,
+        duration: normalizeText(m.duration) || null,
+        total_amount: assertNonNegativeNumber(m.totalAmount, 'Total amount'),
+      })),
+    })
+  }
 
   const { data: claim, error: claimError } = await supabase
     .from('nhis_claims')
@@ -438,6 +556,16 @@ export const updateNhisClaimStatus = async (id, status, rejectionReason = '', ac
   const validStatuses = ['served', 'submitted', 'paid', 'rejected']
   if (!validStatuses.includes(status)) throw new Error('Invalid claim status.')
 
+  if (shouldUseBranchServer()) {
+    return await updateBranchRecord('nhis/claims', id, {
+      status,
+      updated_at: new Date().toISOString(),
+      ...(status === 'rejected' && rejectionReason
+        ? { rejection_reason: rejectionReason }
+        : {}),
+    })
+  }
+
   if (status === 'paid') {
     await recordNhisPaidLedgerEntry(id, actorId)
   }
@@ -477,6 +605,10 @@ export const updateNhisClaimStatus = async (id, status, rejectionReason = '', ac
  */
 export const getNhisClaimsForMonth = async (yearMonth) => {
   if (!/^\d{4}-\d{2}$/.test(yearMonth)) throw new Error('Month must be in YYYY-MM format.')
+
+  if (shouldUseBranchServer()) {
+    return await listBranchRecords('nhis/claims', { month: yearMonth })
+  }
 
   const { data, error } = await supabase
     .from('nhis_claims')
@@ -578,6 +710,18 @@ export const exportNhisMonthlyCSV = async (yearMonth) => {
   anchor.click()
   document.body.removeChild(anchor)
   URL.revokeObjectURL(url)
+
+  if (shouldUseBranchServer()) {
+    await Promise.all(
+      claims
+        .filter((claim) => claim.status === 'served')
+        .map((claim) => updateBranchRecord('nhis/claims', claim.id, {
+          status: 'submitted',
+          updated_at: new Date().toISOString(),
+        }))
+    )
+    return claims.length
+  }
 
   // Mark all served claims for this month as submitted
   await supabase

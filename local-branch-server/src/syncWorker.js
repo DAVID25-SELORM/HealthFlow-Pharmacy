@@ -1,6 +1,6 @@
 import { config, isSupabaseSyncConfigured } from './config.js'
 import './db.js'
-import { pullInventorySnapshot, syncPendingOutbox } from './supabaseSync.js'
+import { pullInventorySnapshot, pullReferenceData, syncPendingOutbox } from './supabaseSync.js'
 
 let lastInventoryPullAt = 0
 
@@ -19,10 +19,16 @@ const runOnce = async () => {
 
   const now = Date.now()
   if (now - lastInventoryPullAt >= config.inventoryPullIntervalSeconds * 1000) {
-    const inventoryResult = await pullInventorySnapshot()
+    const [inventoryResult, referenceResult] = await Promise.all([
+      pullInventorySnapshot(),
+      pullReferenceData(),
+    ])
     lastInventoryPullAt = now
     console.log(
       `Inventory snapshot imported ${inventoryResult.imported} drug(s) at ${inventoryResult.importedAt}.`
+    )
+    console.log(
+      `Reference data pulled: ${referenceResult.patients} patient(s), ${referenceResult.claims} claim(s), ${referenceResult.nhisClaims} NHIS claim(s), ${referenceResult.purchases} purchase(s).`
     )
   }
 }

@@ -1,10 +1,20 @@
 import { supabase } from '../lib/supabase'
 import { assertRequiredText, assertNonNegativeNumber, normalizeText } from '../utils/validation'
 import { tryLogAuditEvent } from './auditService'
+import {
+  createBranchRecord,
+  listBranchRecords,
+  shouldUseBranchServer,
+  updateBranchRecord,
+} from './branchServerApi'
 
 // ─── Suppliers ───────────────────────────────────────────────────────────────
 
 export const getAllSuppliers = async () => {
+  if (shouldUseBranchServer()) {
+    return await listBranchRecords('suppliers')
+  }
+
   const { data, error } = await supabase
     .from('suppliers')
     .select('*')
@@ -17,6 +27,18 @@ export const getAllSuppliers = async () => {
 
 export const createSupplier = async (supplierData) => {
   const name = assertRequiredText(supplierData.name, 'Supplier name')
+
+  if (shouldUseBranchServer()) {
+    return await createBranchRecord('suppliers', {
+      name,
+      contact_person: normalizeText(supplierData.contactPerson) || null,
+      phone: normalizeText(supplierData.phone) || null,
+      email: normalizeText(supplierData.email) || null,
+      address: normalizeText(supplierData.address) || null,
+      notes: normalizeText(supplierData.notes) || null,
+      is_active: true,
+    })
+  }
 
   const { data, error } = await supabase
     .from('suppliers')
@@ -47,6 +69,17 @@ export const createSupplier = async (supplierData) => {
 export const updateSupplier = async (id, supplierData) => {
   const name = assertRequiredText(supplierData.name, 'Supplier name')
 
+  if (shouldUseBranchServer()) {
+    return await updateBranchRecord('suppliers', id, {
+      name,
+      contact_person: normalizeText(supplierData.contactPerson) || null,
+      phone: normalizeText(supplierData.phone) || null,
+      email: normalizeText(supplierData.email) || null,
+      address: normalizeText(supplierData.address) || null,
+      notes: normalizeText(supplierData.notes) || null,
+    })
+  }
+
   const { data, error } = await supabase
     .from('suppliers')
     .update({
@@ -69,6 +102,10 @@ export const updateSupplier = async (id, supplierData) => {
 // ─── Purchases ───────────────────────────────────────────────────────────────
 
 export const getAllPurchases = async (filters = {}) => {
+  if (shouldUseBranchServer()) {
+    return await listBranchRecords('purchases', filters)
+  }
+
   let query = supabase
     .from('purchases')
     .select(`
@@ -104,6 +141,14 @@ export const getAllPurchases = async (filters = {}) => {
 }
 
 export const getPurchaseById = async (id) => {
+  if (shouldUseBranchServer()) {
+    const purchases = await listBranchRecords('purchases', { id, limit: 1 })
+    if (!purchases.length) {
+      throw new Error('Purchase not found in local branch server.')
+    }
+    return purchases[0]
+  }
+
   const { data, error } = await supabase
     .from('purchases')
     .select(`
@@ -132,6 +177,30 @@ export const createPurchase = async (purchaseData, items = []) => {
 
   const purchaseDate = purchaseData.purchaseDate || new Date().toISOString().split('T')[0]
   const totalAmount = items.reduce((sum, item) => sum + (item.netTotal || 0), 0)
+
+  if (shouldUseBranchServer()) {
+    return await createBranchRecord('purchases', {
+      supplier_id: purchaseData.supplierId || null,
+      supplier_name: normalizeText(purchaseData.supplierName) || null,
+      branch_id: normalizeText(purchaseData.branchId) || null,
+      invoice_number: normalizeText(purchaseData.invoiceNumber) || null,
+      purchase_date: purchaseDate,
+      total_amount: totalAmount,
+      status: 'draft',
+      notes: normalizeText(purchaseData.notes) || null,
+      purchase_items: items.map((item) => ({
+        drug_id: item.drugId || null,
+        drug_name: assertRequiredText(item.drugName, 'Drug name'),
+        quantity: assertNonNegativeNumber(item.quantity, 'Quantity'),
+        unit: normalizeText(item.unit) || 'unit',
+        unit_cost: assertNonNegativeNumber(item.unitCost, 'Unit cost'),
+        discount_percent: item.discountPercent ? assertNonNegativeNumber(item.discountPercent, 'Discount') : 0,
+        net_total: assertNonNegativeNumber(item.netTotal, 'Net total'),
+        batch_number: normalizeText(item.batchNumber) || null,
+        expiry_date: item.expiryDate || null,
+      })),
+    })
+  }
 
   // Insert the purchase header
   const { data: purchase, error: purchaseError } = await supabase
@@ -192,6 +261,13 @@ export const createPurchase = async (purchaseData, items = []) => {
  * Calls the complete_purchase Postgres RPC to guarantee atomicity.
  */
 export const completePurchase = async (id) => {
+  if (shouldUseBranchServer()) {
+    return await updateBranchRecord('purchases', id, {
+      status: 'completed',
+      completed_at: new Date().toISOString(),
+    })
+  }
+
   const { data, error } = await supabase.rpc('complete_purchase', { p_purchase_id: id })
 
   if (error) throw error
@@ -209,6 +285,13 @@ export const completePurchase = async (id) => {
 }
 
 export const cancelPurchase = async (id) => {
+  if (shouldUseBranchServer()) {
+    return await updateBranchRecord('purchases', id, {
+      status: 'cancelled',
+      updated_at: new Date().toISOString(),
+    })
+  }
+
   const { data, error } = await supabase
     .from('purchases')
     .update({ status: 'cancelled', updated_at: new Date().toISOString() })
@@ -230,6 +313,20 @@ export const cancelPurchase = async (id) => {
 }
 
 export const getPurchasesStats = async () => {
+  if (shouldUseBranchServer()) {
+    const rows = await getAllPurchases()
+    return {
+      totalThisMonth: rows
+        .filter((r) => r.status === 'completed')
+        .reduce((s, r) => s + Number(r.total_amount || 0), 0),
+      totalAllTime: rows
+        .filter((r) => r.status === 'completed')
+        .reduce((s, r) => s + Number(r.total_amount || 0), 0),
+      draftCount: rows.filter((r) => r.status === 'draft').length,
+      completedCount: rows.filter((r) => r.status === 'completed').length,
+    }
+  }
+
   const now = new Date()
   const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
     .toISOString().split('T')[0]

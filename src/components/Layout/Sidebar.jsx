@@ -13,6 +13,7 @@ import {
   List,
   Truck,
   HeartPulse,
+  RefreshCcw,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useTenant } from '../../context/TenantContext'
@@ -23,6 +24,7 @@ import {
   DASHBOARD_ROLES,
   INVENTORY_ROLES,
   NHIS_ROLES,
+  OFFLINE_SYNC_ROLES,
   PATIENT_ROLES,
   PURCHASES_ROLES,
   REPORT_ROLES,
@@ -51,6 +53,7 @@ const Sidebar = ({ isOpen, onClose }) => {
     { path: '/reports', icon: BarChart3, label: 'Reports', roles: REPORT_ROLES, allow: canViewReports },
     { path: '/accounting', icon: Wallet, label: 'Accounting', roles: ACCOUNTING_ROLES, featureAllowed: canUseAccounting },
     { path: '/settings', icon: Settings, label: 'Settings', roles: SETTINGS_ROLES },
+    { path: '/offline-sync', icon: RefreshCcw, label: 'Offline Sync', roles: OFFLINE_SYNC_ROLES },
     { path: '/tenant-admin', icon: ShieldCheck, label: 'Tenant Admin', roles: ['super_admin'] },
     { path: '/activity-log', icon: List, label: 'Activity Log', roles: ACTIVITY_LOG_ROLES },
   ]

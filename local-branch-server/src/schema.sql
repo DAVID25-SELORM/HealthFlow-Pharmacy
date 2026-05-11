@@ -159,3 +159,17 @@ CREATE TABLE IF NOT EXISTS sync_outbox (
 );
 
 CREATE INDEX IF NOT EXISTS idx_sync_outbox_status ON sync_outbox(status, created_at);
+
+CREATE TABLE IF NOT EXISTS offline_records (
+  id TEXT PRIMARY KEY,
+  entity_type TEXT NOT NULL,
+  data_json TEXT NOT NULL,
+  sync_status TEXT NOT NULL DEFAULT 'pending',
+  last_sync_error TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  synced_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_offline_records_entity ON offline_records(entity_type, updated_at);
+CREATE INDEX IF NOT EXISTS idx_offline_records_sync ON offline_records(sync_status, updated_at);
