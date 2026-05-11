@@ -29,6 +29,8 @@ export const supabaseAuthStorageKey = hasValidCredentials
   : ''
 
 const SUPABASE_AUTH_EXPIRED_EVENT = 'healthflow:supabase-auth-expired'
+let authExpired = false
+let refreshSessionPromise = null
 
 const dispatchAuthExpired = () => {
   if (typeof window === 'undefined') {
@@ -63,23 +65,74 @@ const cloneHeadersWithToken = (headers, accessToken) => {
   return nextHeaders
 }
 
+const createExpiredAuthResponse = () =>
+  new Response(JSON.stringify({ message: 'Your session has expired. Please sign in again.' }), {
+    status: 401,
+    statusText: 'Unauthorized',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  })
+
+const markAuthExpired = () => {
+  authExpired = true
+  dispatchAuthExpired()
+}
+
+export const markSupabaseAuthActive = () => {
+  authExpired = false
+}
+
+const refreshSessionOnce = async () => {
+  if (!supabaseClient) {
+    return null
+  }
+
+  if (!refreshSessionPromise) {
+    refreshSessionPromise = supabaseClient.auth
+      .refreshSession()
+      .then(({ data, error }) => {
+        if (error || !data?.session?.access_token) {
+          markAuthExpired()
+          return null
+        }
+
+        authExpired = false
+        return data.session
+      })
+      .catch(() => {
+        markAuthExpired()
+        return null
+      })
+      .finally(() => {
+        refreshSessionPromise = null
+      })
+  }
+
+  return refreshSessionPromise
+}
+
 const authRetryFetch = async (input, init = {}) => {
+  const requestUrl = typeof input === 'string' ? input : input?.url
+  if (authExpired && !isSupabaseAuthRequest(requestUrl)) {
+    return createExpiredAuthResponse()
+  }
+
   const response = await fetch(input, init)
 
   if (
     response.status !== 401 ||
     !supabaseClient ||
-    isSupabaseAuthRequest(typeof input === 'string' ? input : input?.url)
+    isSupabaseAuthRequest(requestUrl)
   ) {
     return response
   }
 
-  const { data, error } = await supabaseClient.auth.refreshSession()
-  const accessToken = data?.session?.access_token
+  const refreshedSession = await refreshSessionOnce()
+  const accessToken = refreshedSession?.access_token
 
-  if (error || !accessToken) {
-    dispatchAuthExpired()
-    return response
+  if (!accessToken) {
+    return createExpiredAuthResponse()
   }
 
   const retryInit = {

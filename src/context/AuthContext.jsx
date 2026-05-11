@@ -3,6 +3,7 @@ import {
   clearSupabaseStoredSession,
   supabase,
   isSupabaseConfigured,
+  markSupabaseAuthActive,
   subscribeSupabaseAuthExpired,
 } from '../lib/supabase'
 import { tryLogAuditEvent } from '../services/auditService'
@@ -305,6 +306,10 @@ export const AuthProvider = ({ children }) => {
       if (!activeSession) {
         await reconcileMissingSession(resolutionId, event)
         return
+      }
+
+      if (activeSession?.access_token) {
+        markSupabaseAuthActive()
       }
 
       handledInvalidSession = false
