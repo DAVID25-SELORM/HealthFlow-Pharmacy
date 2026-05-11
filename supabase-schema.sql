@@ -30,6 +30,8 @@ CREATE TABLE users (
 CREATE TABLE drugs (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name VARCHAR(255) NOT NULL,
+    brand_name TEXT,
+    generic_name TEXT,
     batch_number VARCHAR(100),
     expiry_date DATE NOT NULL,
     quantity DECIMAL(10, 2) NOT NULL DEFAULT 0,

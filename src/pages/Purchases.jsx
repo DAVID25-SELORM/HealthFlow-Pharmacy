@@ -30,12 +30,15 @@ const blankPurchaseForm = {
 const blankItemForm = {
   drugId:          '',
   drugName:        '',
+  brandName:       '',
+  genericName:     '',
   unit:            'tablet',
   quantity:        '',
   unitCost:        '',
   discountType:    'percent',
   discountAmount:  '0',
   discountPercent: '0',
+  saleOnReturn:    false,
   batchNumber:     '',
   expiryDate:      '',
 }
@@ -213,6 +216,8 @@ const Purchases = () => {
     return drugs
       .filter((d) =>
         d.name.toLowerCase().includes(term) ||
+        (d.brand_name || '').toLowerCase().includes(term) ||
+        (d.generic_name || '').toLowerCase().includes(term) ||
         (d.batch_number || '').toLowerCase().includes(term)
       )
       .slice(0, 30)
@@ -223,8 +228,11 @@ const Purchases = () => {
       ...prev,
       drugId:   drug.id,
       drugName: drug.name,
+      brandName: drug.brand_name || '',
+      genericName: drug.generic_name || '',
       unit:     drug.unit || 'tablet',
       unitCost: String(drug.cost_price || drug.price || ''),
+      saleOnReturn: Boolean(drug.sale_on_return),
     }))
     setDrugSearch(drug.name)
   }
@@ -249,6 +257,8 @@ const Purchases = () => {
       {
         drugId:          itemForm.drugId   || null,
         drugName:        itemForm.drugName.trim(),
+        brandName:       itemForm.brandName.trim(),
+        genericName:     itemForm.genericName.trim(),
         unit:            itemForm.unit     || 'tablet',
         quantity:        qty,
         unitCost:        cost,
@@ -256,6 +266,7 @@ const Purchases = () => {
         discountAmount,
         discountPercent,
         netTotal,
+        saleOnReturn:    Boolean(itemForm.saleOnReturn),
         batchNumber:     itemForm.batchNumber.trim() || '',
         expiryDate:      itemForm.expiryDate         || '',
       },
@@ -611,6 +622,9 @@ const Purchases = () => {
                             <td>{idx + 1}</td>
                             <td>
                               <div className="item-name">{item.drugName}</div>
+                              {item.brandName && <div className="item-meta">Brand: {item.brandName}</div>}
+                              {item.genericName && <div className="item-meta">Generic: {item.genericName}</div>}
+                              {item.saleOnReturn && <div className="item-meta item-meta--flag">Sale on return</div>}
                               {item.batchNumber && <div className="item-meta">Batch: {item.batchNumber}</div>}
                               {item.expiryDate  && <div className="item-meta">Exp: {item.expiryDate}</div>}
                             </td>
@@ -669,7 +683,14 @@ const Purchases = () => {
                             className="drug-dropdown-item"
                             onClick={() => selectDrug(d)}
                           >
-                            <span className="drug-name">{d.name}</span>
+                            <span>
+                              <span className="drug-name">{d.name}</span>
+                              {(d.brand_name || d.generic_name) && (
+                                <span className="drug-meta drug-meta--block">
+                                  {[d.brand_name, d.generic_name].filter(Boolean).join(' / ')}
+                                </span>
+                              )}
+                            </span>
                             <span className="drug-meta">{d.unit}</span>
                           </button>
                         ))}
@@ -705,6 +726,27 @@ const Purchases = () => {
 
                 <div className="form-row">
                   <div className="form-group">
+                    <label>Brand Name</label>
+                    <input
+                      className="form-input"
+                      placeholder="e.g. Panadol"
+                      value={itemForm.brandName}
+                      onChange={(e) => setItemForm((prev) => ({ ...prev, brandName: e.target.value }))}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Generic Name</label>
+                    <input
+                      className="form-input"
+                      placeholder="e.g. Paracetamol"
+                      value={itemForm.genericName}
+                      onChange={(e) => setItemForm((prev) => ({ ...prev, genericName: e.target.value }))}
+                    />
+                  </div>
+                </div>
+
+                <div className="form-row">
+                  <div className="form-group">
                     <label>Unit Cost (GHS)</label>
                     <input
                       type="number"
@@ -716,7 +758,7 @@ const Purchases = () => {
                     />
                   </div>
                   <div className="form-group">
-                    <label>Discount</label>
+                    <label>{itemForm.discountType === 'amount' ? 'Discount Value (GHS)' : 'Discount Value (%)'}</label>
                     <div className="discount-input-row">
                       <select
                         className="form-input"
@@ -732,6 +774,8 @@ const Purchases = () => {
                         min="0"
                         max={itemForm.discountType === 'percent' ? '100' : undefined}
                         step="0.01"
+                        placeholder={itemForm.discountType === 'amount' ? 'Amount' : 'Percent'}
+                        aria-label={itemForm.discountType === 'amount' ? 'Discount amount in Ghana cedis' : 'Discount percentage'}
                         value={itemForm.discountType === 'amount' ? itemForm.discountAmount : itemForm.discountPercent}
                         onChange={(e) =>
                           setItemForm((prev) => ({
@@ -743,6 +787,15 @@ const Purchases = () => {
                     </div>
                   </div>
                 </div>
+
+                <label className="checkbox-field">
+                  <input
+                    type="checkbox"
+                    checked={itemForm.saleOnReturn}
+                    onChange={(e) => setItemForm((prev) => ({ ...prev, saleOnReturn: e.target.checked }))}
+                  />
+                  <span>Sale on return</span>
+                </label>
 
                 <div className="form-group net-total-display">
                   <label>Net Total</label>
@@ -844,7 +897,12 @@ const Purchases = () => {
                 {(viewPurchase.purchase_items || []).map((item, idx) => (
                   <tr key={item.id}>
                     <td>{idx + 1}</td>
-                    <td>{item.drug_name}</td>
+                    <td>
+                      <div className="item-name">{item.drug_name}</div>
+                      {item.brand_name && <div className="item-meta">Brand: {item.brand_name}</div>}
+                      {item.generic_name && <div className="item-meta">Generic: {item.generic_name}</div>}
+                      {item.sale_on_return && <div className="item-meta item-meta--flag">Sale on return</div>}
+                    </td>
                     <td>{item.quantity}</td>
                     <td>{item.unit}</td>
                     <td>{fmtCurrency(item.unit_cost)}</td>

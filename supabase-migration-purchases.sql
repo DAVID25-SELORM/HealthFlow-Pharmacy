@@ -140,6 +140,9 @@ CREATE TABLE IF NOT EXISTS public.purchase_items (
   purchase_id      UUID          NOT NULL REFERENCES public.purchases(id) ON DELETE CASCADE,
   drug_id          UUID          REFERENCES public.drugs(id),
   drug_name        TEXT          NOT NULL,
+  brand_name       TEXT,
+  generic_name     TEXT,
+  sale_on_return   BOOLEAN       NOT NULL DEFAULT false,
   quantity         DECIMAL(10,2) NOT NULL,
   unit             TEXT          DEFAULT 'unit',
   unit_cost        DECIMAL(10,2) NOT NULL DEFAULT 0,
@@ -149,6 +152,16 @@ CREATE TABLE IF NOT EXISTS public.purchase_items (
   expiry_date      DATE,
   created_at       TIMESTAMPTZ   NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE public.purchase_items
+  ADD COLUMN IF NOT EXISTS brand_name TEXT,
+  ADD COLUMN IF NOT EXISTS generic_name TEXT,
+  ADD COLUMN IF NOT EXISTS sale_on_return BOOLEAN NOT NULL DEFAULT false;
+
+ALTER TABLE public.drugs
+  ADD COLUMN IF NOT EXISTS brand_name TEXT,
+  ADD COLUMN IF NOT EXISTS generic_name TEXT,
+  ADD COLUMN IF NOT EXISTS sale_on_return BOOLEAN NOT NULL DEFAULT false;
 
 CREATE INDEX IF NOT EXISTS idx_purchase_items_purchase ON public.purchase_items(purchase_id);
 CREATE INDEX IF NOT EXISTS idx_purchase_items_drug     ON public.purchase_items(drug_id);
@@ -245,6 +258,9 @@ BEGIN
       UPDATE public.drugs
       SET
         quantity     = v_new_qty,
+        brand_name   = COALESCE(NULLIF(TRIM(v_item.brand_name), ''), brand_name),
+        generic_name = COALESCE(NULLIF(TRIM(v_item.generic_name), ''), generic_name),
+        sale_on_return = COALESCE(v_item.sale_on_return, sale_on_return),
         batch_number = COALESCE(NULLIF(TRIM(v_item.batch_number), ''), batch_number),
         expiry_date  = COALESCE(v_item.expiry_date, expiry_date),
         cost_price   = CASE WHEN v_item.unit_cost > 0 THEN v_item.unit_cost ELSE cost_price END,

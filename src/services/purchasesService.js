@@ -111,7 +111,7 @@ export const getAllPurchases = async (filters = {}) => {
     .select(`
       *,
       purchase_items (
-        id, drug_id, drug_name, quantity, unit,
+        id, drug_id, drug_name, brand_name, generic_name, sale_on_return, quantity, unit,
         unit_cost, discount_percent, net_total,
         batch_number, expiry_date
       )
@@ -154,7 +154,7 @@ export const getPurchaseById = async (id) => {
     .select(`
       *,
       purchase_items (
-        id, drug_id, drug_name, quantity, unit,
+        id, drug_id, drug_name, brand_name, generic_name, sale_on_return, quantity, unit,
         unit_cost, discount_percent, net_total,
         batch_number, expiry_date
       )
@@ -169,7 +169,7 @@ export const getPurchaseById = async (id) => {
 /**
  * Creates a purchase order with items in a draft state.
  * @param {object} purchaseData - { supplierId, supplierName, invoiceNumber, purchaseDate, notes }
- * @param {Array}  items        - [{ drugId, drugName, quantity, unit, unitCost, discountPercent, batchNumber, expiryDate }]
+ * @param {Array}  items        - [{ drugId, drugName, brandName, genericName, saleOnReturn, quantity, unit, unitCost, discountPercent, batchNumber, expiryDate }]
  * @returns the created purchase record
  */
 export const createPurchase = async (purchaseData, items = []) => {
@@ -191,6 +191,9 @@ export const createPurchase = async (purchaseData, items = []) => {
       purchase_items: items.map((item) => ({
         drug_id: item.drugId || null,
         drug_name: assertRequiredText(item.drugName, 'Drug name'),
+        brand_name: normalizeText(item.brandName) || null,
+        generic_name: normalizeText(item.genericName) || null,
+        sale_on_return: Boolean(item.saleOnReturn),
         quantity: assertNonNegativeNumber(item.quantity, 'Quantity'),
         unit: normalizeText(item.unit) || 'unit',
         unit_cost: assertNonNegativeNumber(item.unitCost, 'Unit cost'),
@@ -225,6 +228,9 @@ export const createPurchase = async (purchaseData, items = []) => {
     purchase_id:      purchase.id,
     drug_id:          item.drugId   || null,
     drug_name:        assertRequiredText(item.drugName, 'Drug name'),
+    brand_name:       normalizeText(item.brandName) || null,
+    generic_name:     normalizeText(item.genericName) || null,
+    sale_on_return:   Boolean(item.saleOnReturn),
     quantity:         assertNonNegativeNumber(item.quantity,  'Quantity'),
     unit:             normalizeText(item.unit) || 'unit',
     unit_cost:        assertNonNegativeNumber(item.unitCost,  'Unit cost'),

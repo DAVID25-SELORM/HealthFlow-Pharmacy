@@ -12,6 +12,17 @@ db.pragma('journal_mode = WAL')
 db.pragma('foreign_keys = ON')
 db.exec(fs.readFileSync(schemaPath, 'utf8'))
 
+const ensureColumn = (table, column, definition) => {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all()
+  if (!columns.some((row) => row.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`)
+  }
+}
+
+ensureColumn('drugs', 'brand_name', 'TEXT')
+ensureColumn('drugs', 'generic_name', 'TEXT')
+ensureColumn('drugs', 'sale_on_return', 'INTEGER NOT NULL DEFAULT 0')
+
 export const nowIso = () => new Date().toISOString()
 
 export const createId = () => crypto.randomUUID()

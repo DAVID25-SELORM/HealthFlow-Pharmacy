@@ -17,6 +17,13 @@ BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 ALTER TABLE public.drugs
+  ADD COLUMN IF NOT EXISTS brand_name TEXT,
+  ADD COLUMN IF NOT EXISTS generic_name TEXT,
+  ADD COLUMN IF NOT EXISTS sale_on_return BOOLEAN NOT NULL DEFAULT false;
+
+ALTER TABLE public.purchase_items
+  ADD COLUMN IF NOT EXISTS brand_name TEXT,
+  ADD COLUMN IF NOT EXISTS generic_name TEXT,
   ADD COLUMN IF NOT EXISTS sale_on_return BOOLEAN NOT NULL DEFAULT false;
 
 CREATE TABLE IF NOT EXISTS public.branch_sync_clients (
@@ -925,7 +932,7 @@ BEGIN
     DELETE FROM public.purchase_items WHERE purchase_id = p_local_id;
     FOR v_item IN SELECT * FROM jsonb_array_elements(COALESCE(v_record->'purchase_items', '[]'::JSONB)) LOOP
       INSERT INTO public.purchase_items (
-        id, purchase_id, drug_id, drug_name, quantity, unit, unit_cost,
+        id, purchase_id, drug_id, drug_name, brand_name, generic_name, sale_on_return, quantity, unit, unit_cost,
         discount_percent, net_total, batch_number, expiry_date
       )
       VALUES (
@@ -933,6 +940,9 @@ BEGIN
         p_local_id,
         NULLIF(v_item->>'drug_id', '')::UUID,
         NULLIF(v_item->>'drug_name', ''),
+        NULLIF(v_item->>'brand_name', ''),
+        NULLIF(v_item->>'generic_name', ''),
+        COALESCE(NULLIF(v_item->>'sale_on_return', '')::BOOLEAN, false),
         COALESCE(NULLIF(v_item->>'quantity', '')::NUMERIC, 0),
         COALESCE(NULLIF(v_item->>'unit', ''), 'unit'),
         COALESCE(NULLIF(v_item->>'unit_cost', '')::NUMERIC, 0),

@@ -7,6 +7,8 @@ const searchStatement = db.prepare(`
     AND (
       @term = ''
       OR lower(name) LIKE @likeTerm
+      OR lower(COALESCE(brand_name, '')) LIKE @likeTerm
+      OR lower(COALESCE(generic_name, '')) LIKE @likeTerm
       OR lower(COALESCE(batch_number, '')) LIKE @likeTerm
       OR lower(COALESCE(nhis_code, '')) LIKE @likeTerm
     )
@@ -16,15 +18,17 @@ const searchStatement = db.prepare(`
 
 const upsertDrug = db.prepare(`
   INSERT INTO drugs (
-    id, name, batch_number, expiry_date, quantity, unit, price, cost_price,
-    nhis_code, nhis_price, is_nhis_listed, branch_id, updated_at, sync_status
+    id, name, brand_name, generic_name, batch_number, expiry_date, quantity, unit, price, cost_price,
+    nhis_code, nhis_price, is_nhis_listed, sale_on_return, branch_id, updated_at, sync_status
   )
   VALUES (
-    @id, @name, @batch_number, @expiry_date, @quantity, @unit, @price, @cost_price,
-    @nhis_code, @nhis_price, @is_nhis_listed, @branch_id, @updated_at, 'synced'
+    @id, @name, @brand_name, @generic_name, @batch_number, @expiry_date, @quantity, @unit, @price, @cost_price,
+    @nhis_code, @nhis_price, @is_nhis_listed, @sale_on_return, @branch_id, @updated_at, 'synced'
   )
   ON CONFLICT(id) DO UPDATE SET
     name = excluded.name,
+    brand_name = excluded.brand_name,
+    generic_name = excluded.generic_name,
     batch_number = excluded.batch_number,
     expiry_date = excluded.expiry_date,
     quantity = CASE
@@ -37,6 +41,7 @@ const upsertDrug = db.prepare(`
     nhis_code = excluded.nhis_code,
     nhis_price = excluded.nhis_price,
     is_nhis_listed = excluded.is_nhis_listed,
+    sale_on_return = excluded.sale_on_return,
     branch_id = excluded.branch_id,
     updated_at = excluded.updated_at,
     sync_status = CASE
@@ -71,6 +76,8 @@ export const importInventorySnapshot = (drugs = []) => {
       upsertDrug.run({
         id: drug.id,
         name: drug.name,
+        brand_name: drug.brand_name || null,
+        generic_name: drug.generic_name || null,
         batch_number: drug.batch_number || null,
         expiry_date: drug.expiry_date || null,
         quantity: Number(drug.quantity || 0),
@@ -80,6 +87,7 @@ export const importInventorySnapshot = (drugs = []) => {
         nhis_code: drug.nhis_code || null,
         nhis_price: drug.nhis_price == null ? null : Number(drug.nhis_price),
         is_nhis_listed: drug.is_nhis_listed ? 1 : 0,
+        sale_on_return: drug.sale_on_return ? 1 : 0,
         branch_id: drug.branch_id || null,
         updated_at: drug.updated_at || timestamp,
       })

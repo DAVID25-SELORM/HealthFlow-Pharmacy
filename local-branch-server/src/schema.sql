@@ -29,6 +29,8 @@ CREATE TABLE IF NOT EXISTS patients (
 CREATE TABLE IF NOT EXISTS drugs (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
+  brand_name TEXT,
+  generic_name TEXT,
   batch_number TEXT,
   expiry_date TEXT,
   quantity REAL NOT NULL DEFAULT 0,
