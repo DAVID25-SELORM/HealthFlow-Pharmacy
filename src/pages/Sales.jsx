@@ -715,6 +715,11 @@ const Sales = () => {
   }, [refreshBranchServerStatus])
 
   const configureBranchServer = async () => {
+    if (!isAdmin) {
+      notify('Only admins can configure the local branch server.', 'warning')
+      return
+    }
+
     const currentConfig = getBranchServerConfig()
     const url = window.prompt('Local branch server URL:', currentConfig.url || 'http://localhost:4780')
     if (url === null) {
@@ -737,6 +742,11 @@ const Sales = () => {
   }
 
   const pullInventoryToBranchServer = async () => {
+    if (!isAdmin) {
+      notify('Only admins can pull inventory into the local branch server.', 'warning')
+      return
+    }
+
     try {
       setBranchServerBusy(true)
       const result = await pullBranchInventory()
@@ -1421,46 +1431,48 @@ const Sales = () => {
         </div>
       )}
 
-      <div className={`branch-server-panel ${branchServerStatus.online ? 'connected' : 'disconnected'}`}>
-        <div>
-          <strong>Local Branch Server</strong>
-          <span>
-            {branchServerStatus.online
-              ? `Connected to ${branchServerConfig.url}`
-              : branchServerConfig.enabled
-                ? `Unavailable: ${branchServerStatus.message}`
-                : 'Configure this browser to use the pharmacy local server.'}
-          </span>
-          {branchServerStatus.health?.sync?.inventory?.lastInventoryImportAt && (
+      {isAdmin && (
+        <div className={`branch-server-panel ${branchServerStatus.online ? 'connected' : 'disconnected'}`}>
+          <div>
+            <strong>Local Branch Server</strong>
             <span>
-              Inventory: {branchServerStatus.health.sync.inventory.lastInventoryImportCount || 0} item
-              {branchServerStatus.health.sync.inventory.lastInventoryImportCount === 1 ? '' : 's'} imported at{' '}
-              {new Date(branchServerStatus.health.sync.inventory.lastInventoryImportAt).toLocaleString()}
+              {branchServerStatus.online
+                ? `Connected to ${branchServerConfig.url}`
+                : branchServerConfig.enabled
+                  ? `Unavailable: ${branchServerStatus.message}`
+                  : 'Configure this browser to use the pharmacy local server.'}
             </span>
-          )}
+            {branchServerStatus.health?.sync?.inventory?.lastInventoryImportAt && (
+              <span>
+                Inventory: {branchServerStatus.health.sync.inventory.lastInventoryImportCount || 0} item
+                {branchServerStatus.health.sync.inventory.lastInventoryImportCount === 1 ? '' : 's'} imported at{' '}
+                {new Date(branchServerStatus.health.sync.inventory.lastInventoryImportAt).toLocaleString()}
+              </span>
+            )}
+          </div>
+          <div className="branch-server-actions">
+            <button type="button" className="btn btn-outline" onClick={configureBranchServer}>
+              Configure
+            </button>
+            <button
+              type="button"
+              className="btn btn-outline"
+              onClick={refreshBranchServerStatus}
+              disabled={branchServerBusy}
+            >
+              Check
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={pullInventoryToBranchServer}
+              disabled={!branchServerStatus.online || branchServerBusy}
+            >
+              {branchServerBusy ? 'Importing...' : 'Pull Inventory'}
+            </button>
+          </div>
         </div>
-        <div className="branch-server-actions">
-          <button type="button" className="btn btn-outline" onClick={configureBranchServer}>
-            Configure
-          </button>
-          <button
-            type="button"
-            className="btn btn-outline"
-            onClick={refreshBranchServerStatus}
-            disabled={branchServerBusy}
-          >
-            Check
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={pullInventoryToBranchServer}
-            disabled={!branchServerStatus.online || branchServerBusy}
-          >
-            {branchServerBusy ? 'Importing...' : 'Pull Inventory'}
-          </button>
-        </div>
-      </div>
+      )}
 
       <div className="shift-panel">
         {activeShift ? (
