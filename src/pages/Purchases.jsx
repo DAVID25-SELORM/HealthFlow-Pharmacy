@@ -984,6 +984,7 @@ const Purchases = () => {
                     </thead>
                     <tbody>
                       {completionDetails.map((detail) => {
+                        const hasExactStockMovement = detail.source === 'stock_movements'
                         const updatedFields = [
                           detail.brand_name ? `Brand: ${detail.brand_name}` : '',
                           detail.generic_name ? `Generic: ${detail.generic_name}` : '',
@@ -997,8 +998,8 @@ const Purchases = () => {
                           <tr key={detail.id}>
                             <td>{detail.drug_name}</td>
                             <td>{detail.quantity_added}</td>
-                            <td>{detail.previous_quantity ?? 'Branch pending'}</td>
-                            <td>{detail.new_quantity ?? 'After sync'}</td>
+                            <td>{hasExactStockMovement ? detail.previous_quantity : 'Not recorded'}</td>
+                            <td>{hasExactStockMovement ? detail.new_quantity : 'After completion'}</td>
                             <td>{updatedFields.join(' | ') || '-'}</td>
                           </tr>
                         )

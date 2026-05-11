@@ -290,6 +290,23 @@ export const completePurchase = async (id) => {
   return data
 }
 
+const buildPurchaseItemCompletionDetails = (purchase, items, source = 'purchase_items') =>
+  items.map((item) => ({
+    id: item.id || `${purchase.id}-${item.drug_id || item.drug_name}`,
+    drug_id: item.drug_id || null,
+    drug_name: item.drug_name || 'Unknown item',
+    quantity_added: Number(item.quantity || 0),
+    previous_quantity: null,
+    new_quantity: null,
+    unit_cost: item.unit_cost,
+    batch_number: item.batch_number,
+    expiry_date: item.expiry_date,
+    brand_name: item.brand_name,
+    generic_name: item.generic_name,
+    sale_on_return: Boolean(item.sale_on_return),
+    source,
+  }))
+
 export const getPurchaseCompletionDetails = async (purchase) => {
   if (!purchase?.id || purchase.status !== 'completed') {
     return []
@@ -298,21 +315,7 @@ export const getPurchaseCompletionDetails = async (purchase) => {
   const items = Array.isArray(purchase.purchase_items) ? purchase.purchase_items : []
 
   if (shouldUseBranchServer()) {
-    return items.map((item) => ({
-      id: item.id || `${purchase.id}-${item.drug_id || item.drug_name}`,
-      drug_id: item.drug_id || null,
-      drug_name: item.drug_name || 'Unknown item',
-      quantity_added: Number(item.quantity || 0),
-      previous_quantity: null,
-      new_quantity: null,
-      unit_cost: item.unit_cost,
-      batch_number: item.batch_number,
-      expiry_date: item.expiry_date,
-      brand_name: item.brand_name,
-      generic_name: item.generic_name,
-      sale_on_return: Boolean(item.sale_on_return),
-      source: 'branch',
-    }))
+    return buildPurchaseItemCompletionDetails(purchase, items, 'branch')
   }
 
   const { data, error } = await supabase
@@ -322,7 +325,13 @@ export const getPurchaseCompletionDetails = async (purchase) => {
     .eq('movement_type', 'purchase')
     .order('created_at', { ascending: true })
 
-  if (error) throw error
+  if (error) {
+    return buildPurchaseItemCompletionDetails(purchase, items, 'purchase_items_fallback')
+  }
+
+  if (!data?.length) {
+    return buildPurchaseItemCompletionDetails(purchase, items, 'purchase_items_fallback')
+  }
 
   return (data || []).map((movement) => {
     const item = items.find((row) => row.drug_id === movement.drug_id) || {}
