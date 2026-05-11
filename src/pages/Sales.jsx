@@ -1498,7 +1498,7 @@ const Sales = () => {
                 <div className="branch-sync-total">
                   <span>Outbox</span>
                   <strong>
-                    {branchSyncStatus.pending || 0} pending · {branchSyncStatus.failed || 0} failed · {branchSyncStatus.synced || 0} synced
+                    {branchSyncStatus.pending || 0} pending / {branchSyncStatus.failed || 0} failed / {branchSyncStatus.synced || 0} synced
                   </strong>
                 </div>
                 {branchRecordSyncEntries.length > 0 && (
