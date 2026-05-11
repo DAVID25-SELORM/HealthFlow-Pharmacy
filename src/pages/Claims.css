@@ -22,7 +22,7 @@
   min-width: 0;
 }
 
-.stat-box {
+.claims-page .stat-box {
   background: white;
   padding: 1.5rem;
   border-radius: var(--radius-lg);
@@ -30,26 +30,26 @@
   border-left: 4px solid var(--gray-400);
 }
 
-.stat-box.approved {
+.claims-page .stat-box.approved {
   border-left-color: var(--success);
 }
 
-.stat-box.pending {
+.claims-page .stat-box.pending {
   border-left-color: var(--warning);
 }
 
-.stat-box.rejected {
+.claims-page .stat-box.rejected {
   border-left-color: var(--danger);
 }
 
-.stat-label {
+.claims-page .stat-label {
   display: block;
   font-size: 0.875rem;
   color: var(--gray-600);
   margin-bottom: 0.5rem;
 }
 
-.stat-value {
+.claims-page .stat-value {
   display: block;
   font-size: 2rem;
   font-weight: 700;
@@ -68,7 +68,7 @@
   min-width: 0;
 }
 
-.tab-btn {
+.claims-page .tab-btn {
   flex: 1;
   padding: 0.75rem 1rem;
   border: none;
@@ -86,16 +86,16 @@
   white-space: normal;
 }
 
-.tab-btn:hover {
+.claims-page .tab-btn:hover {
   background: var(--gray-100);
 }
 
-.tab-btn.active {
+.claims-page .tab-btn.active {
   background: var(--primary);
   color: white;
 }
 
-.tab-count {
+.claims-page .tab-count {
   background: rgba(0, 0, 0, 0.1);
   padding: 0.125rem 0.5rem;
   border-radius: var(--radius-lg);
@@ -103,7 +103,7 @@
   font-weight: 700;
 }
 
-.tab-btn.active .tab-count {
+.claims-page .tab-btn.active .tab-count {
   background: rgba(255, 255, 255, 0.2);
 }
 
@@ -191,12 +191,12 @@
   color: var(--gray-600);
 }
 
-.amount-cell {
+.claims-page .amount-cell {
   font-weight: 700;
   color: var(--gray-900);
 }
 
-.status-badge {
+.claims-page .status-badge {
   display: inline-block;
   padding: 0.375rem 0.75rem;
   border-radius: var(--radius-lg);
@@ -206,27 +206,27 @@
   letter-spacing: 0.5px;
 }
 
-.status-approved {
+.claims-page .status-approved {
   background: rgba(39, 174, 96, 0.1);
   color: var(--success);
 }
 
-.status-pending {
+.claims-page .status-pending {
   background: rgba(243, 156, 18, 0.1);
   color: var(--warning);
 }
 
-.status-rejected {
+.claims-page .status-rejected {
   background: rgba(231, 76, 60, 0.1);
   color: var(--danger);
 }
 
-.status-processing {
+.claims-page .status-processing {
   background: rgba(52, 152, 219, 0.1);
   color: var(--info);
 }
 
-.action-buttons {
+.claims-page .action-buttons {
   display: flex;
   gap: 0.35rem;
   flex-wrap: nowrap;
@@ -247,29 +247,29 @@
   padding: 1.5rem;
 }
 
-.form-row {
+.claims-page .form-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 1rem;
   margin-bottom: 1rem;
 }
 
-.form-group {
+.claims-page .form-group {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
   margin-bottom: 1rem;
 }
 
-.form-group label {
+.claims-page .form-group label {
   font-weight: 600;
   font-size: 0.875rem;
   color: var(--gray-700);
 }
 
-.form-group input,
-.form-group select,
-.form-group textarea {
+.claims-page .form-group input,
+.claims-page .form-group select,
+.claims-page .form-group textarea {
   padding: 0.75rem;
   border: 1px solid var(--gray-300);
   border-radius: var(--radius);
@@ -278,15 +278,15 @@
   font-family: inherit;
 }
 
-.form-group input:focus,
-.form-group select:focus,
-.form-group textarea:focus {
+.claims-page .form-group input:focus,
+.claims-page .form-group select:focus,
+.claims-page .form-group textarea:focus {
   outline: none;
   border-color: var(--primary);
   box-shadow: 0 0 0 3px rgba(22, 160, 133, 0.1);
 }
 
-.form-group textarea {
+.claims-page .form-group textarea {
   resize: vertical;
 }
 
@@ -323,7 +323,7 @@
   font-size: 0.875rem;
 }
 
-.form-actions {
+.claims-page .form-actions {
   display: flex;
   gap: 1rem;
   justify-content: flex-end;
@@ -395,7 +395,7 @@
     flex-wrap: wrap;
   }
 
-  .tab-btn {
+  .claims-page .tab-btn {
     flex: 1 1 calc(50% - 0.5rem);
   }
 
@@ -414,7 +414,7 @@
     flex-direction: column;
   }
 
-  .table-container {
+  .claims-page .table-container {
     overflow-x: auto;
   }
 
@@ -422,7 +422,7 @@
     min-width: 900px;
   }
 
-  .form-row {
+  .claims-page .form-row {
     grid-template-columns: 1fr;
   }
 
@@ -436,7 +436,7 @@
     grid-template-columns: 1fr;
   }
 
-  .tab-btn {
+  .claims-page .tab-btn {
     flex-basis: 100%;
   }
 }

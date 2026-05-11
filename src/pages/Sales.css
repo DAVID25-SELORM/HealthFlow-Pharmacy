@@ -598,7 +598,7 @@
   transform: translateY(-2px);
 }
 
-.drug-name {
+.sales-page .drug-name {
   font-weight: 600;
   color: var(--gray-800);
   display: block;

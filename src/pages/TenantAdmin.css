@@ -148,7 +148,7 @@
   min-width: 0;
 }
 
-.subdomain-suffix {
+.tenant-admin-page .subdomain-suffix {
   font-size: 0.82rem;
   color: var(--gray-500);
   white-space: nowrap;
@@ -264,7 +264,7 @@
   font-family: monospace;
 }
 
-.status-select {
+.tenant-admin-page .status-select {
   border: none;
   border-radius: 999px;
   padding: 0.25rem 0.6rem;
@@ -273,22 +273,22 @@
   cursor: pointer;
 }
 
-.status-select.status-trial {
+.tenant-admin-page .status-select.status-trial {
   background: #fef9c3;
   color: #854d0e;
 }
 
-.status-select.status-active {
+.tenant-admin-page .status-select.status-active {
   background: #dcfce7;
   color: #15803d;
 }
 
-.status-select.status-suspended {
+.tenant-admin-page .status-select.status-suspended {
   background: #fee2e2;
   color: #b91c1c;
 }
 
-.status-select.status-cancelled {
+.tenant-admin-page .status-select.status-cancelled {
   background: var(--gray-100);
   color: var(--gray-600);
 }
@@ -315,7 +315,7 @@
   font-size: 0.82rem;
 }
 
-.btn-icon {
+.tenant-admin-page .btn-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -335,7 +335,7 @@
   flex-shrink: 0;
 }
 
-.btn-icon svg {
+.tenant-admin-page .btn-icon svg {
   display: block;
   width: 15px;
   height: 15px;
@@ -344,23 +344,23 @@
   flex-shrink: 0;
 }
 
-.btn-icon:hover {
+.tenant-admin-page .btn-icon:hover {
   background: var(--gray-50);
   color: var(--primary);
   border-color: var(--primary);
 }
 
-.btn-icon.danger {
+.tenant-admin-page .btn-icon.danger {
   color: #b91c1c;
 }
 
-.btn-icon.danger:hover {
+.tenant-admin-page .btn-icon.danger:hover {
   background: #fef2f2;
   color: #991b1b;
   border-color: #fca5a5;
 }
 
-.btn-icon:disabled {
+.tenant-admin-page .btn-icon:disabled {
   cursor: not-allowed;
   opacity: 0.55;
 }
@@ -419,7 +419,7 @@
 .role-badge.role-pharmacist { background: #dbeafe; color: #1d4ed8; }
 .role-badge.role-assistant { background: var(--gray-100); color: var(--gray-600); }
 
-.active-badge {
+.tenant-admin-page .active-badge {
   display: inline-block;
   padding: 0.15rem 0.5rem;
   border-radius: 999px;
@@ -427,10 +427,10 @@
   font-weight: 600;
 }
 
-.active-badge.active { background: #dcfce7; color: #15803d; }
-.active-badge.inactive { background: #fee2e2; color: #b91c1c; }
+.tenant-admin-page .active-badge.active { background: #dcfce7; color: #15803d; }
+.tenant-admin-page .active-badge.inactive { background: #fee2e2; color: #b91c1c; }
 
-.status-pill {
+.tenant-admin-page .status-pill {
   display: inline-block;
   padding: 0.2rem 0.55rem;
   border-radius: 999px;
@@ -441,11 +441,11 @@
   white-space: nowrap;
 }
 
-.status-pill.status-active { background: #dcfce7; color: #15803d; }
-.status-pill.status-trial { background: #e0f2fe; color: #0369a1; }
-.status-pill.status-past_due { background: #fef3c7; color: #92400e; }
-.status-pill.status-suspended,
-.status-pill.status-cancelled { background: #fee2e2; color: #b91c1c; }
+.tenant-admin-page .status-pill.status-active { background: #dcfce7; color: #15803d; }
+.tenant-admin-page .status-pill.status-trial { background: #e0f2fe; color: #0369a1; }
+.tenant-admin-page .status-pill.status-past_due { background: #fef3c7; color: #92400e; }
+.tenant-admin-page .status-pill.status-suspended,
+.tenant-admin-page .status-pill.status-cancelled { background: #fee2e2; color: #b91c1c; }
 
 .no-users {
   color: var(--gray-500);
@@ -453,7 +453,7 @@
   margin: 0;
 }
 
-.table-actions {
+.tenant-admin-page .table-actions {
   display: flex;
   align-items: center;
   gap: 0.35rem;
@@ -519,7 +519,7 @@
 }
 
 /* Edit Modal */
-.modal-backdrop {
+.tenant-admin-page .modal-backdrop {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.45);
@@ -558,7 +558,7 @@
   margin: 0;
 }
 
-.modal-close {
+.tenant-admin-page .modal-close {
   background: none;
   border: none;
   font-size: 1rem;
@@ -569,7 +569,7 @@
   transition: background 0.15s;
 }
 
-.modal-close:hover {
+.tenant-admin-page .modal-close:hover {
   background: var(--gray-100);
   color: var(--gray-800);
 }
@@ -584,7 +584,7 @@
   width: min(480px, 95vw);
 }
 
-.input-disabled {
+.tenant-admin-page .input-disabled {
   background: var(--gray-50);
   color: var(--gray-400);
   cursor: not-allowed;
@@ -637,7 +637,7 @@
     align-items: stretch;
   }
 
-  .modal-backdrop {
+  .tenant-admin-page .modal-backdrop {
     align-items: flex-end;
     padding: 0;
   }

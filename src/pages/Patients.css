@@ -66,7 +66,7 @@
   margin-bottom: 0;
 }
 
-.empty-patients {
+.patients-page .empty-patients {
   background: white;
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow);
@@ -75,7 +75,7 @@
   color: var(--gray-600);
 }
 
-.search-container {
+.patients-page .search-container {
   display: flex;
   align-items: center;
   gap: 0.75rem;
@@ -87,12 +87,12 @@
   border: 1px solid var(--gray-100);
 }
 
-.search-container svg {
+.patients-page .search-container svg {
   color: var(--gray-500);
   flex-shrink: 0;
 }
 
-.search-container input {
+.patients-page .search-container input {
   flex: 1;
   min-width: 0;
   border: none;
@@ -101,11 +101,11 @@
   color: var(--gray-800);
 }
 
-.search-container input:focus {
+.patients-page .search-container input:focus {
   outline: none;
 }
 
-.search-status {
+.patients-page .search-status {
   color: var(--gray-500);
   font-size: 0.85rem;
   font-weight: 600;
@@ -183,24 +183,24 @@
   border-radius: var(--radius);
 }
 
-.stat {
+.patients-page .stat {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
 }
 
-.stat-label {
+.patients-page .stat-label {
   font-size: 0.75rem;
   color: var(--gray-600);
 }
 
-.stat-value {
+.patients-page .stat-value {
   font-size: 1rem;
   font-weight: 700;
   color: var(--gray-900);
 }
 
-.modal-overlay {
+.patients-page .modal-overlay {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.45);
@@ -211,7 +211,7 @@
   padding: 1rem;
 }
 
-.modal-content {
+.patients-page .modal-content {
   background: white;
   border-radius: var(--radius-lg);
   width: 100%;
@@ -222,7 +222,7 @@
   min-width: 0;
 }
 
-.modal-header {
+.patients-page .modal-header {
   padding: 1rem 1.25rem;
   border-bottom: 1px solid var(--gray-200);
   display: flex;
@@ -230,7 +230,7 @@
   align-items: center;
 }
 
-.close-btn {
+.patients-page .close-btn {
   border: none;
   background: transparent;
   font-size: 1.5rem;
@@ -415,27 +415,27 @@
   color: var(--danger);
 }
 
-.form-row {
+.patients-page .form-row {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.9rem;
 }
 
-.form-group {
+.patients-page .form-group {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
 }
 
-.form-group label {
+.patients-page .form-group label {
   font-size: 0.875rem;
   font-weight: 600;
   color: var(--gray-700);
 }
 
-.form-group input,
-.form-group select,
-.form-group textarea {
+.patients-page .form-group input,
+.patients-page .form-group select,
+.patients-page .form-group textarea {
   border: 1px solid var(--gray-300);
   border-radius: var(--radius);
   padding: 0.65rem 0.75rem;
@@ -490,12 +490,12 @@
   background: #1d4ed8;
 }
 
-.form-group textarea {
+.patients-page .form-group textarea {
   resize: vertical;
 }
 
 @media (max-width: 900px) {
-  .form-row {
+  .patients-page .form-row {
     grid-template-columns: 1fr;
   }
 
@@ -509,7 +509,7 @@
 }
 
 @media (max-width: 768px) {
-  .search-container {
+  .patients-page .search-container {
     padding: 0.85rem 1rem;
     margin-bottom: 1rem;
   }
@@ -532,12 +532,12 @@
     gap: 1rem;
   }
 
-  .modal-overlay {
+  .patients-page .modal-overlay {
     align-items: flex-end;
     padding: 0;
   }
 
-  .modal-content {
+  .patients-page .modal-content {
     max-height: 92vh;
     border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   }

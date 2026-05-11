@@ -678,7 +678,7 @@
 .text-danger  { color: var(--danger) !important; }
 .text-success { color: var(--success) !important; }
 
-.btn-icon-sm {
+.accounting-page .btn-icon-sm {
   padding: 0.3rem;
   background: none;
   border: none;
@@ -688,14 +688,14 @@
   display: inline-flex;
 }
 
-.btn-icon-sm:hover { color: var(--danger); background: var(--gray-100); }
+.accounting-page .btn-icon-sm:hover { color: var(--danger); background: var(--gray-100); }
 
-.btn.btn-sm {
+.accounting-page .btn.btn-sm {
   padding: 0.35rem 0.75rem;
   font-size: 0.8rem;
 }
 
-.btn.btn-danger {
+.accounting-page .btn.btn-danger {
   background: var(--danger);
   color: white;
   border: none;
@@ -708,8 +708,8 @@
   gap: 0.4rem;
 }
 
-.btn.btn-danger:hover { background: #c0392b; }
-.btn.btn-danger:disabled { opacity: 0.6; cursor: not-allowed; }
+.accounting-page .btn.btn-danger:hover { background: #c0392b; }
+.accounting-page .btn.btn-danger:disabled { opacity: 0.6; cursor: not-allowed; }
 
 /* ── Responsive ────────────────────────────────────────────────────────────── */
 @media (max-width: 768px) {

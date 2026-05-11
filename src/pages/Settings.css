@@ -49,7 +49,7 @@
   box-shadow: var(--shadow-md);
 }
 
-.card-icon {
+.settings-page .card-icon {
   width: 50px;
   height: 50px;
   border-radius: var(--radius-lg);
@@ -431,7 +431,7 @@
   flex-wrap: wrap;
 }
 
-.btn-sm {
+.settings-page .btn-sm {
   padding: 0.3rem 0.65rem !important;
   font-size: 0.8rem !important;
 }

@@ -4,7 +4,7 @@
   min-width: 0;
 }
 
-.page-header {
+.inventory-page .page-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
@@ -13,7 +13,7 @@
   min-width: 0;
 }
 
-.header-actions {
+.inventory-page .header-actions {
   display: flex;
   gap: 0.75rem;
   flex-wrap: wrap;
@@ -48,19 +48,19 @@
   font-weight: 700;
 }
 
-.btn-secondary {
+.inventory-page .btn-secondary {
   background: var(--gray-100);
   color: var(--gray-700);
   border: 1px solid var(--gray-300);
 }
 
-.btn-secondary:hover {
+.inventory-page .btn-secondary:hover {
   background: var(--gray-200);
   border-color: var(--gray-400);
 }
 
 /* Buttons */
-.btn {
+.inventory-page .btn {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
@@ -74,22 +74,22 @@
   justify-content: center;
 }
 
-.btn-primary {
+.inventory-page .btn-primary {
   background: var(--primary);
   color: white;
 }
 
-.btn-primary:hover {
+.inventory-page .btn-primary:hover {
   background: var(--primary-dark);
 }
 
-.btn-outline {
+.inventory-page .btn-outline {
   background: white;
   color: var(--gray-700);
   border: 1px solid var(--gray-300);
 }
 
-.btn-outline:hover {
+.inventory-page .btn-outline:hover {
   background: var(--gray-50);
   border-color: var(--gray-400);
 }
@@ -102,7 +102,7 @@
   min-width: 0;
 }
 
-.search-box {
+.inventory-page .search-box {
   flex: 1;
   max-width: 400px;
   position: relative;
@@ -145,12 +145,12 @@
   outline: none;
 }
 
-.search-box svg {
+.inventory-page .search-box svg {
   color: var(--gray-500);
   flex-shrink: 0;
 }
 
-.search-box input {
+.inventory-page .search-box input {
   flex: 1;
   min-width: 0;
   border: none;
@@ -158,7 +158,7 @@
   font-size: 0.875rem;
 }
 
-.search-box input:focus {
+.inventory-page .search-box input:focus {
   outline: none;
 }
 
@@ -202,7 +202,7 @@
 }
 
 /* Table */
-.table-container {
+.inventory-page .table-container {
   background: white;
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow);
@@ -245,7 +245,7 @@
   box-shadow: inset 4px 0 0 var(--primary);
 }
 
-.drug-name {
+.inventory-page .drug-name {
   font-weight: 600;
   color: var(--gray-900);
 }
@@ -255,7 +255,7 @@
   color: var(--gray-900);
 }
 
-.status-badge {
+.inventory-page .status-badge {
   display: inline-block;
   padding: 0.375rem 0.75rem;
   border-radius: var(--radius-lg);
@@ -263,34 +263,34 @@
   font-weight: 600;
 }
 
-.status-good {
+.inventory-page .status-good {
   background: rgba(39, 174, 96, 0.1);
   color: var(--success);
 }
 
-.status-low {
+.inventory-page .status-low {
   background: rgba(243, 156, 18, 0.1);
   color: var(--warning);
 }
 
-.status-expiring {
+.inventory-page .status-expiring {
   background: rgba(52, 152, 219, 0.1);
   color: var(--info);
 }
 
-.status-expired {
+.inventory-page .status-expired {
   background: rgba(231, 76, 60, 0.1);
   color: var(--danger);
 }
 
 /* Action Buttons */
-.action-buttons {
+.inventory-page .action-buttons {
   display: flex;
   gap: 0.5rem;
   flex-wrap: nowrap;
 }
 
-.icon-btn {
+.inventory-page .icon-btn {
   padding: 0.5rem;
   border: none;
   background: var(--gray-100);
@@ -302,7 +302,7 @@
   justify-content: center;
 }
 
-.icon-btn:hover {
+.inventory-page .icon-btn:hover {
   background: var(--gray-200);
 }
 
@@ -332,17 +332,17 @@
   box-shadow: var(--shadow);
 }
 
-.page-info {
+.inventory-page .page-info {
   font-size: 0.875rem;
   color: var(--gray-600);
 }
 
-.page-buttons {
+.inventory-page .page-buttons {
   display: flex;
   gap: 0.5rem;
 }
 
-.page-btn {
+.inventory-page .page-btn {
   padding: 0.5rem 0.75rem;
   border: 1px solid var(--gray-300);
   background: white;
@@ -353,13 +353,13 @@
   min-width: 36px;
 }
 
-.page-btn:hover:not(:disabled) {
+.inventory-page .page-btn:hover:not(:disabled) {
   background: var(--primary);
   color: white;
   border-color: var(--primary);
 }
 
-.page-btn:disabled {
+.inventory-page .page-btn:disabled {
   background: var(--primary);
   color: white;
   border-color: var(--primary);
@@ -367,7 +367,7 @@
 }
 
 /* Modal */
-.modal-overlay {
+.inventory-page .modal-overlay {
   position: fixed;
   top: 0;
   left: 0;
@@ -381,7 +381,7 @@
   padding: 1rem;
 }
 
-.modal-content {
+.inventory-page .modal-content {
   background: white;
   border-radius: var(--radius-xl);
   max-width: 600px;
@@ -390,7 +390,7 @@
   overflow-y: auto;
 }
 
-.modal-header {
+.inventory-page .modal-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -398,12 +398,12 @@
   border-bottom: 1px solid var(--gray-200);
 }
 
-.modal-header h2 {
+.inventory-page .modal-header h2 {
   margin: 0;
   font-size: 1.25rem;
 }
 
-.close-btn {
+.inventory-page .close-btn {
   background: none;
   border: none;
   font-size: 2rem;
@@ -420,38 +420,38 @@
   transition: var(--transition);
 }
 
-.close-btn:hover {
+.inventory-page .close-btn:hover {
   background: var(--gray-100);
   color: var(--gray-800);
 }
 
 /* Form */
-.drug-form {
+.inventory-page .drug-form {
   padding: 1.5rem;
 }
 
-.form-row {
+.inventory-page .form-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 1rem;
   margin-bottom: 1rem;
 }
 
-.form-group {
+.inventory-page .form-group {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
 }
 
-.form-group label {
+.inventory-page .form-group label {
   font-weight: 600;
   font-size: 0.875rem;
   color: var(--gray-700);
 }
 
-.form-group input,
-.form-group select,
-.form-group textarea {
+.inventory-page .form-group input,
+.inventory-page .form-group select,
+.inventory-page .form-group textarea {
   padding: 0.75rem;
   border: 1px solid var(--gray-300);
   border-radius: var(--radius);
@@ -461,13 +461,13 @@
   color: var(--gray-900);
 }
 
-.form-group textarea {
+.inventory-page .form-group textarea {
   resize: vertical;
 }
 
-.form-group input:focus,
-.form-group select:focus,
-.form-group textarea:focus {
+.inventory-page .form-group input:focus,
+.inventory-page .form-group select:focus,
+.inventory-page .form-group textarea:focus {
   outline: none;
   border-color: var(--primary);
   box-shadow: 0 0 0 3px rgba(22, 160, 133, 0.1);
@@ -495,7 +495,7 @@
   font-weight: 500;
 }
 
-.form-actions {
+.inventory-page .form-actions {
   display: flex;
   gap: 1rem;
   justify-content: flex-end;
@@ -542,7 +542,7 @@
   margin-bottom: 1.5rem;
 }
 
-.stat-card {
+.inventory-page .stat-card {
   background: var(--gray-50);
   padding: 1.25rem;
   border-radius: var(--radius-lg);
@@ -550,25 +550,25 @@
   border: 2px solid var(--gray-200);
 }
 
-.stat-card.success {
+.inventory-page .stat-card.success {
   background: #d4edda;
   border-color: var(--success);
   color: #155724;
 }
 
-.stat-card.danger {
+.inventory-page .stat-card.danger {
   background: #f8d7da;
   border-color: var(--danger);
   color: #721c24;
 }
 
-.stat-card h3 {
+.inventory-page .stat-card h3 {
   font-size: 2rem;
   font-weight: 700;
   margin: 0 0 0.25rem 0;
 }
 
-.stat-card p {
+.inventory-page .stat-card p {
   margin: 0;
   font-size: 0.875rem;
   font-weight: 500;
@@ -687,7 +687,7 @@
     grid-template-columns: 1fr;
   }
 
-  .search-box {
+  .inventory-page .search-box {
     max-width: none;
     flex: 1 1 100%;
   }
@@ -703,17 +703,17 @@
 }
 
 @media (max-width: 768px) {
-  .page-header {
+  .inventory-page .page-header {
     flex-direction: column;
     align-items: stretch;
   }
 
-  .header-actions {
+  .inventory-page .header-actions {
     width: 100%;
     justify-content: stretch;
   }
 
-  .header-actions .btn {
+  .inventory-page .header-actions .btn {
     flex: 1 1 160px;
   }
 
@@ -726,7 +726,7 @@
     flex-direction: column;
   }
 
-  .search-box {
+  .inventory-page .search-box {
     max-width: none;
   }
 
@@ -734,7 +734,7 @@
     min-width: 0;
   }
 
-  .table-container {
+  .inventory-page .table-container {
     overflow-x: auto;
   }
 
@@ -742,7 +742,7 @@
     min-width: 900px;
   }
 
-  .form-row {
+  .inventory-page .form-row {
     grid-template-columns: 1fr;
   }
 
@@ -751,30 +751,30 @@
     gap: 1rem;
   }
 
-  .form-actions {
+  .inventory-page .form-actions {
     flex-direction: column-reverse;
   }
 }
 
 @media (max-width: 480px) {
-  .header-actions .btn,
+  .inventory-page .header-actions .btn,
   .pagination .btn,
-  .form-actions .btn {
+  .inventory-page .form-actions .btn {
     width: 100%;
   }
 
-  .page-buttons {
+  .inventory-page .page-buttons {
     width: 100%;
     justify-content: center;
     flex-wrap: wrap;
   }
 
-  .modal-overlay {
+  .inventory-page .modal-overlay {
     align-items: flex-end;
     padding: 0;
   }
 
-  .modal-content {
+  .inventory-page .modal-content {
     max-height: 92vh;
     border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   }

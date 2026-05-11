@@ -230,13 +230,13 @@
   color: var(--primary);
 }
 
-.total-label {
+.purchases-page .total-label {
   text-align: right;
   font-weight: 600;
   color: var(--gray-600);
 }
 
-.total-value {
+.purchases-page .total-value {
   font-weight: 700;
   color: var(--gray-900);
 }
@@ -295,7 +295,7 @@
 .purchases-page .action-btn--cancel:hover { background: #fee2e2; }
 
 /* Modal */
-.modal-overlay {
+.purchases-page .modal-overlay {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.4);
@@ -306,7 +306,7 @@
   padding: 1rem;
 }
 
-.modal-panel {
+.purchases-page .modal-panel {
   background: white;
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
@@ -316,18 +316,18 @@
   overflow: hidden;
 }
 
-.modal-panel--purchase {
+.purchases-page .modal-panel--purchase {
   width: 100%;
   max-width: 1160px;
 }
 
-.modal-panel--view {
+.purchases-page .modal-panel--view {
   width: 100%;
   max-width: 860px;
   overflow-y: auto;
 }
 
-.modal-header {
+.purchases-page .modal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -337,7 +337,7 @@
   flex-shrink: 0;
 }
 
-.modal-header h2 {
+.purchases-page .modal-header h2 {
   font-size: 1.1rem;
   font-weight: 700;
   color: var(--gray-900);
@@ -346,7 +346,7 @@
   gap: 0.75rem;
 }
 
-.modal-close {
+.purchases-page .modal-close {
   background: none;
   border: none;
   cursor: pointer;
@@ -357,9 +357,9 @@
   align-items: center;
 }
 
-.modal-close:hover { color: var(--gray-900); background: var(--gray-100); }
+.purchases-page .modal-close:hover { color: var(--gray-900); background: var(--gray-100); }
 
-.modal-footer {
+.purchases-page .modal-footer {
   display: flex;
   justify-content: flex-end;
   gap: 0.75rem;
@@ -427,17 +427,17 @@
   font-weight: 700;
 }
 
-.empty-row {
+.purchases-page .empty-row {
   text-align: center;
   color: var(--gray-400);
   padding: 2rem !important;
 }
 
-.item-name {
+.purchases-page .item-name {
   font-weight: 500;
 }
 
-.item-meta {
+.purchases-page .item-meta {
   font-size: 0.72rem;
   color: var(--gray-500);
 }
@@ -501,11 +501,11 @@
 }
 
 /* Drug search dropdown */
-.drug-search-wrap {
+.purchases-page .drug-search-wrap {
   position: relative;
 }
 
-.drug-dropdown {
+.purchases-page .drug-dropdown {
   position: absolute;
   top: 100%;
   left: 0;
@@ -519,7 +519,7 @@
   overflow-y: auto;
 }
 
-.drug-dropdown-item {
+.purchases-page .drug-dropdown-item {
   width: 100%;
   text-align: left;
   padding: 0.5rem 0.75rem;
@@ -534,11 +534,11 @@
   gap: 0.5rem;
 }
 
-.drug-dropdown-item:hover { background: var(--gray-50); }
+.purchases-page .drug-dropdown-item:hover { background: var(--gray-50); }
 
-.drug-name { font-weight: 500; }
-.drug-meta { color: var(--gray-400); font-size: 0.72rem; }
-.drug-meta--block {
+.purchases-page .drug-name { font-weight: 500; }
+.purchases-page .drug-meta { color: var(--gray-400); font-size: 0.72rem; }
+.purchases-page .drug-meta--block {
   display: block;
   margin-top: 0.1rem;
 }
@@ -618,19 +618,19 @@
 }
 
 /* Misc form helpers */
-.form-group {
+.purchases-page .form-group {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
 }
 
-.form-group label {
+.purchases-page .form-group label {
   font-size: 0.8rem;
   font-weight: 600;
   color: var(--gray-700);
 }
 
-.form-input {
+.purchases-page .form-input {
   padding: 0.45rem 0.75rem;
   border: 1px solid var(--gray-300);
   border-radius: var(--radius);
@@ -641,7 +641,7 @@
   transition: border-color 0.15s;
 }
 
-.form-input:focus {
+.purchases-page .form-input:focus {
   outline: none;
   border-color: var(--primary);
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
@@ -668,28 +668,28 @@
   accent-color: var(--primary);
 }
 
-.form-row {
+.purchases-page .form-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 0.75rem;
 }
 
-.btn-sm {
+.purchases-page .btn-sm {
   padding: 0.4rem 0.8rem;
   font-size: 0.8rem;
 }
 
-.btn-danger {
+.purchases-page .btn-danger {
   background: var(--danger);
   color: white;
 }
 
-.btn-danger:hover {
+.purchases-page .btn-danger:hover {
   background: #b91c1c;
 }
 
 /* Stat boxes reuse from Inventory/Claims */
-.stat-box {
+.purchases-page .stat-box {
   background: white;
   padding: 1.5rem;
   border-radius: var(--radius-lg);
@@ -697,18 +697,18 @@
   border-left: 4px solid var(--gray-400);
 }
 
-.stat-box.approved { border-left-color: var(--success); }
-.stat-box.pending  { border-left-color: var(--warning); }
-.stat-box.rejected { border-left-color: var(--danger); }
+.purchases-page .stat-box.approved { border-left-color: var(--success); }
+.purchases-page .stat-box.pending  { border-left-color: var(--warning); }
+.purchases-page .stat-box.rejected { border-left-color: var(--danger); }
 
-.stat-label {
+.purchases-page .stat-label {
   display: block;
   font-size: 0.875rem;
   color: var(--gray-600);
   margin-bottom: 0.5rem;
 }
 
-.stat-value {
+.purchases-page .stat-value {
   display: block;
   font-size: 1.75rem;
   font-weight: 700;
