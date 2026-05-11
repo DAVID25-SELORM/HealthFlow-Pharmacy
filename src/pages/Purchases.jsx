@@ -12,6 +12,7 @@ import {
   getAllPurchases,
   createPurchase,
   completePurchase,
+  getPurchaseCompletionDetails,
   cancelPurchase,
   getPurchasesStats,
 } from '../services/purchasesService'
@@ -115,6 +116,9 @@ const Purchases = () => {
   const [submitting, setSubmitting]         = useState(false)
   const [completing, setCompleting]         = useState(null)
   const [cancelling, setCancelling]         = useState(null)
+  const [completionDetails, setCompletionDetails] = useState([])
+  const [completionDetailsLoading, setCompletionDetailsLoading] = useState(false)
+  const [completionDetailsError, setCompletionDetailsError] = useState('')
   const [branches, setBranches]             = useState([])
   const [selectedBranchId, setSelectedBranchId] = useState('')
 
@@ -194,6 +198,41 @@ const Purchases = () => {
     void loadBranches()
     return () => { cancelled = true }
   }, [branch?.id, profile?.branch_id])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadCompletionDetails = async () => {
+      if (!viewPurchase || viewPurchase.status !== 'completed') {
+        setCompletionDetails([])
+        setCompletionDetailsError('')
+        setCompletionDetailsLoading(false)
+        return
+      }
+
+      try {
+        setCompletionDetailsLoading(true)
+        setCompletionDetailsError('')
+        const details = await getPurchaseCompletionDetails(viewPurchase)
+        if (!cancelled) {
+          setCompletionDetails(details)
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setCompletionDetails([])
+          setCompletionDetailsError(err.message || 'Unable to load completion details.')
+        }
+      } finally {
+        if (!cancelled) {
+          setCompletionDetailsLoading(false)
+        }
+      }
+    }
+
+    void loadCompletionDetails()
+
+    return () => { cancelled = true }
+  }, [viewPurchase])
 
   // ── filtered list ────────────────────────────────────────────
   const filteredPurchases = useMemo(() => {
@@ -920,6 +959,55 @@ const Purchases = () => {
                 </tr>
               </tfoot>
             </table>
+            {viewPurchase.status === 'completed' && (
+              <div className="purchase-completion-audit">
+                <div className="purchase-completion-audit__header">
+                  <h3>Inventory Changes</h3>
+                  <span>{completionDetails.length} item{completionDetails.length === 1 ? '' : 's'}</span>
+                </div>
+                {completionDetailsLoading ? (
+                  <div className="purchase-completion-audit__empty">Loading inventory changes...</div>
+                ) : completionDetailsError ? (
+                  <div className="purchase-completion-audit__error">{completionDetailsError}</div>
+                ) : completionDetails.length === 0 ? (
+                  <div className="purchase-completion-audit__empty">No stock movement details found for this purchase.</div>
+                ) : (
+                  <table className="purchase-completion-table">
+                    <thead>
+                      <tr>
+                        <th>Item</th>
+                        <th>Qty Added</th>
+                        <th>Stock Before</th>
+                        <th>Stock After</th>
+                        <th>Fields Updated</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {completionDetails.map((detail) => {
+                        const updatedFields = [
+                          detail.brand_name ? `Brand: ${detail.brand_name}` : '',
+                          detail.generic_name ? `Generic: ${detail.generic_name}` : '',
+                          detail.sale_on_return ? 'Sale on return' : '',
+                          detail.batch_number ? `Batch: ${detail.batch_number}` : '',
+                          detail.expiry_date ? `Exp: ${formatAppDate(detail.expiry_date)}` : '',
+                          detail.unit_cost != null ? `Cost: ${fmtCurrency(detail.unit_cost)}` : '',
+                        ].filter(Boolean)
+
+                        return (
+                          <tr key={detail.id}>
+                            <td>{detail.drug_name}</td>
+                            <td>{detail.quantity_added}</td>
+                            <td>{detail.previous_quantity ?? 'Branch pending'}</td>
+                            <td>{detail.new_quantity ?? 'After sync'}</td>
+                            <td>{updatedFields.join(' | ') || '-'}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            )}
             <div className="modal-footer">
               {viewPurchase.status === 'draft' && canWrite && (
                 <>

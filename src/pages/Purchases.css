@@ -555,6 +555,68 @@
   border-bottom: 1px solid var(--gray-200);
 }
 
+.purchase-completion-audit {
+  padding: 1rem 1.5rem;
+  border-top: 1px solid var(--gray-200);
+}
+
+.purchase-completion-audit__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.purchase-completion-audit__header h3 {
+  font-size: 0.95rem;
+  color: var(--gray-900);
+  margin: 0;
+}
+
+.purchase-completion-audit__header span {
+  font-size: 0.78rem;
+  color: var(--gray-500);
+}
+
+.purchase-completion-audit__empty,
+.purchase-completion-audit__error {
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  padding: 0.75rem;
+  font-size: 0.85rem;
+  color: var(--gray-600);
+  background: var(--gray-50);
+}
+
+.purchase-completion-audit__error {
+  color: var(--danger);
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.purchase-completion-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.purchase-completion-table th {
+  padding: 0.55rem 0.65rem;
+  text-align: left;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  color: var(--gray-500);
+  background: var(--gray-50);
+  border-bottom: 1px solid var(--gray-200);
+}
+
+.purchase-completion-table td {
+  padding: 0.6rem 0.65rem;
+  border-bottom: 1px solid var(--gray-100);
+  vertical-align: top;
+}
+
 /* Misc form helpers */
 .form-group {
   display: flex;

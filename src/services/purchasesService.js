@@ -290,6 +290,61 @@ export const completePurchase = async (id) => {
   return data
 }
 
+export const getPurchaseCompletionDetails = async (purchase) => {
+  if (!purchase?.id || purchase.status !== 'completed') {
+    return []
+  }
+
+  const items = Array.isArray(purchase.purchase_items) ? purchase.purchase_items : []
+
+  if (shouldUseBranchServer()) {
+    return items.map((item) => ({
+      id: item.id || `${purchase.id}-${item.drug_id || item.drug_name}`,
+      drug_id: item.drug_id || null,
+      drug_name: item.drug_name || 'Unknown item',
+      quantity_added: Number(item.quantity || 0),
+      previous_quantity: null,
+      new_quantity: null,
+      unit_cost: item.unit_cost,
+      batch_number: item.batch_number,
+      expiry_date: item.expiry_date,
+      brand_name: item.brand_name,
+      generic_name: item.generic_name,
+      sale_on_return: Boolean(item.sale_on_return),
+      source: 'branch',
+    }))
+  }
+
+  const { data, error } = await supabase
+    .from('stock_movements')
+    .select('id, drug_id, quantity, previous_quantity, new_quantity, notes, created_at')
+    .eq('reference_id', purchase.id)
+    .eq('movement_type', 'purchase')
+    .order('created_at', { ascending: true })
+
+  if (error) throw error
+
+  return (data || []).map((movement) => {
+    const item = items.find((row) => row.drug_id === movement.drug_id) || {}
+    return {
+      id: movement.id,
+      drug_id: movement.drug_id,
+      drug_name: item.drug_name || 'Inventory item',
+      quantity_added: Number(movement.quantity || item.quantity || 0),
+      previous_quantity: movement.previous_quantity,
+      new_quantity: movement.new_quantity,
+      unit_cost: item.unit_cost,
+      batch_number: item.batch_number,
+      expiry_date: item.expiry_date,
+      brand_name: item.brand_name,
+      generic_name: item.generic_name,
+      sale_on_return: Boolean(item.sale_on_return),
+      completed_at: movement.created_at,
+      source: 'stock_movements',
+    }
+  })
+}
+
 export const cancelPurchase = async (id) => {
   if (shouldUseBranchServer()) {
     return await updateBranchRecord('purchases', id, {
