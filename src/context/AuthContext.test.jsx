@@ -50,6 +50,7 @@ const mocks = vi.hoisted(() => {
 vi.mock('../lib/supabase', () => ({
   clearSupabaseStoredSession: mocks.clearSupabaseStoredSession,
   isSupabaseConfigured: () => true,
+  subscribeSupabaseAuthExpired: vi.fn(() => vi.fn()),
   supabase: mocks.supabase,
 }))
 

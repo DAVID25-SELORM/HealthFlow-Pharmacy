@@ -1,5 +1,10 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { clearSupabaseStoredSession, supabase, isSupabaseConfigured } from '../lib/supabase'
+import {
+  clearSupabaseStoredSession,
+  supabase,
+  isSupabaseConfigured,
+  subscribeSupabaseAuthExpired,
+} from '../lib/supabase'
 import { tryLogAuditEvent } from '../services/auditService'
 import { getPasswordRecoveryRedirectUrl } from '../config/appUrl'
 import { CLAIMS_ROLES, INVENTORY_ROLES, REPORT_ROLES, hasRole } from '../utils/roles'
@@ -16,6 +21,7 @@ const isSupabaseAuthFailure = (error) => {
   return (
     status === 401 ||
     code === 'PGRST301' ||
+    code === 'PGRST303' ||
     name === 'AuthApiError' ||
     name === 'AuthSessionMissingError' ||
     message.includes('invalid jwt') ||
@@ -451,8 +457,16 @@ export const AuthProvider = ({ children }) => {
       })
     })
 
+    const unsubscribeAuthExpired = subscribeSupabaseAuthExpired(() => {
+      const resolutionId = ++latestResolutionId
+      void resetInvalidSession('Supabase session expired.', resolutionId, {
+        preserveExistingSession: false,
+      })
+    })
+
     return () => {
       mounted = false
+      unsubscribeAuthExpired()
       subscription.unsubscribe()
     }
   }, [])

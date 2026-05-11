@@ -28,15 +28,80 @@ export const supabaseAuthStorageKey = hasValidCredentials
   ? getDefaultStorageKey(supabaseUrl)
   : ''
 
+const SUPABASE_AUTH_EXPIRED_EVENT = 'healthflow:supabase-auth-expired'
+
+const dispatchAuthExpired = () => {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  window.dispatchEvent(new CustomEvent(SUPABASE_AUTH_EXPIRED_EVENT))
+}
+
+export const subscribeSupabaseAuthExpired = (handler) => {
+  if (typeof window === 'undefined') {
+    return () => {}
+  }
+
+  window.addEventListener(SUPABASE_AUTH_EXPIRED_EVENT, handler)
+  return () => window.removeEventListener(SUPABASE_AUTH_EXPIRED_EVENT, handler)
+}
+
+let supabaseClient = null
+
+const isSupabaseAuthRequest = (url) => {
+  try {
+    return new URL(url).pathname.includes('/auth/v1/')
+  } catch {
+    return false
+  }
+}
+
+const cloneHeadersWithToken = (headers, accessToken) => {
+  const nextHeaders = new Headers(headers || {})
+  nextHeaders.set('Authorization', `Bearer ${accessToken}`)
+  return nextHeaders
+}
+
+const authRetryFetch = async (input, init = {}) => {
+  const response = await fetch(input, init)
+
+  if (
+    response.status !== 401 ||
+    !supabaseClient ||
+    isSupabaseAuthRequest(typeof input === 'string' ? input : input?.url)
+  ) {
+    return response
+  }
+
+  const { data, error } = await supabaseClient.auth.refreshSession()
+  const accessToken = data?.session?.access_token
+
+  if (error || !accessToken) {
+    dispatchAuthExpired()
+    return response
+  }
+
+  const retryInit = {
+    ...init,
+    headers: cloneHeadersWithToken(init.headers || input?.headers, accessToken),
+  }
+
+  return await fetch(input, retryInit)
+}
+
 // Create Supabase client only if credentials are valid
 export const supabase = hasValidCredentials
-  ? createClient(supabaseUrl, supabaseKey, {
+  ? (supabaseClient = createClient(supabaseUrl, supabaseKey, {
       auth: {
         persistSession: true,
         autoRefreshToken: true,
         storageKey: supabaseAuthStorageKey,
       },
-    })
+      global: {
+        fetch: authRetryFetch,
+      },
+    }))
   : null
 
 export const clearSupabaseStoredSession = () => {
@@ -82,6 +147,7 @@ const isSupabaseAuthFailure = (error) => {
     status === 401 ||
     status === 403 ||
     code === 'PGRST301' ||
+    code === 'PGRST303' ||
     name === 'AuthApiError' ||
     name === 'AuthSessionMissingError' ||
     message.includes('invalid jwt') ||
