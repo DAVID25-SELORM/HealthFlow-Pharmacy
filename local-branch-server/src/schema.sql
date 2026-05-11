@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS drugs (
   nhis_code TEXT,
   nhis_price REAL,
   is_nhis_listed INTEGER NOT NULL DEFAULT 0,
+  sale_on_return INTEGER NOT NULL DEFAULT 0,
   branch_id TEXT,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   sync_status TEXT NOT NULL DEFAULT 'synced'

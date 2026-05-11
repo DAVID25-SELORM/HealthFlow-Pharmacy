@@ -26,6 +26,8 @@ const emptyDrugForm = {
   batchNumber: '',
   expiryDate: '',
   quantity: '',
+  unit: 'tablet',
+  category: 'medicine',
   costPrice: '',
   price: '',
   nhisPrice: '',
@@ -33,7 +35,32 @@ const emptyDrugForm = {
   nhisUnit: '',
   isNhisListed: false,
   supplier: '',
+  saleOnReturn: false,
 }
+
+const unitOptions = [
+  { value: 'tablet', label: 'Tablet' },
+  { value: 'capsule', label: 'Capsule' },
+  { value: 'vial', label: 'Vial' },
+  { value: 'bottle', label: 'Bottle' },
+  { value: 'sachet', label: 'Sachet' },
+  { value: 'syrup', label: 'Syrup' },
+  { value: 'cream', label: 'Cream' },
+  { value: 'ointment', label: 'Ointment' },
+  { value: 'drops', label: 'Drops' },
+  { value: 'injection', label: 'Injection' },
+  { value: 'pack', label: 'Pack' },
+  { value: 'unit', label: 'Unit' },
+]
+
+const categoryOptions = [
+  { value: 'medicine', label: 'Medicine' },
+  { value: 'consumable', label: 'Consumable' },
+  { value: 'medical_equipment', label: 'Medical Equipment' },
+  { value: 'non_medical', label: 'Non-Medical' },
+  { value: 'supplement', label: 'Supplement' },
+  { value: 'cosmetic', label: 'Cosmetic' },
+]
 
 const filterOptions = [
   { value: 'all', label: 'All Medicines' },
@@ -48,6 +75,8 @@ const mapDrugToForm = (drug) => ({
   batchNumber: drug.batch_number || drug.batch || '',
   expiryDate: drug.expiry_date || drug.expiry || '',
   quantity: String(drug.quantity ?? ''),
+  unit: drug.unit || 'tablet',
+  category: drug.category || 'medicine',
   costPrice: String(drug.cost_price ?? ''),
   price: String(drug.price ?? ''),
   nhisPrice: String(drug.nhis_price ?? ''),
@@ -55,6 +84,7 @@ const mapDrugToForm = (drug) => ({
   nhisUnit: drug.nhis_unit || '',
   isNhisListed: Boolean(drug.is_nhis_listed || drug.nhis_price),
   supplier: drug.supplier || '',
+  saleOnReturn: Boolean(drug.sale_on_return),
 })
 
 const getMarkupPercent = (value) => {
@@ -72,7 +102,7 @@ const calculateMarkedUpPrice = (costPrice, markupPercent) => {
 const Inventory = () => {
   const { role, profile, branch } = useAuth()
   const { notify } = useNotification()
-  const { canUseNhis, tierLimits } = useTenant()
+  const { canUseNhisTopups, tierLimits } = useTenant()
   const [searchParams, setSearchParams] = useSearchParams()
   const [showDrugModal, setShowDrugModal] = useState(false)
   const [showImportModal, setShowImportModal] = useState(false)
@@ -240,10 +270,19 @@ const Inventory = () => {
     const normalizedTerm = searchTerm.trim().toLowerCase()
 
     const filtered = drugs.filter((drug) => {
-      const name = String(drug.name || '').toLowerCase()
-      const batchNumber = String(drug.batch_number || drug.batch || '').toLowerCase()
+      const searchableText = [
+        drug.name,
+        drug.batch_number || drug.batch,
+        drug.supplier,
+        drug.category,
+        drug.unit,
+        drug.description,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
       const matchesSearch =
-        !normalizedTerm || name.includes(normalizedTerm) || batchNumber.includes(normalizedTerm)
+        !normalizedTerm || searchableText.includes(normalizedTerm)
       const matchesFilter =
         activeFilter === 'all' || calculateDrugStatus(drug) === activeFilter
 
@@ -693,10 +732,11 @@ const Inventory = () => {
             <tr>
               <th>Drug Name</th>
               <th>Batch Number</th>
+              <th>Supplier</th>
               <th>Expiry Date</th>
               <th>Quantity</th>
               <th>Price (GHS)</th>
-              {canUseNhis && <th>NHIS (GHS)</th>}
+              {canUseNhisTopups && <th>NHIS (GHS)</th>}
               <th>Total (GHS)</th>
               <th>Status</th>
               <th>Actions</th>
@@ -705,7 +745,7 @@ const Inventory = () => {
           <tbody>
             {visibleDrugs.length === 0 ? (
               <tr>
-                <td colSpan={canUseNhis ? 9 : 8} style={{ textAlign: 'center', padding: '2rem' }}>
+                <td colSpan={canUseNhisTopups ? 10 : 9} style={{ textAlign: 'center', padding: '2rem' }}>
                   {searchTerm || activeFilter !== 'all'
                     ? 'No medicines match the current search or filter.'
                     : 'No drugs in inventory. Click "Add Drug" to get started.'}
@@ -723,12 +763,16 @@ const Inventory = () => {
 
                 return (
                   <tr key={drug.id} className={drug.id === highlightedDrugId ? 'highlighted-drug-row' : ''}>
-                    <td className="drug-name">{drug.name}</td>
+                    <td className="drug-name">
+                      {drug.name}
+                      {drug.sale_on_return && <div className="drug-subtext">Sale on return</div>}
+                    </td>
                     <td>{batchNumber}</td>
+                    <td>{drug.supplier || '-'}</td>
                     <td>{expiryDate ? formatAppDate(expiryDate) : 'N/A'}</td>
                     <td>{quantity}</td>
                     <td>GHS {price.toFixed(2)}</td>
-                    {canUseNhis && <td>{nhisPrice > 0 ? `GHS ${nhisPrice.toFixed(2)}` : '-'}</td>}
+                    {canUseNhisTopups && <td>{nhisPrice > 0 ? `GHS ${nhisPrice.toFixed(2)}` : '-'}</td>}
                     <td className="total-cell">GHS {total}</td>
                     <td>
                       <span className={`status-badge ${status.class}`}>{status.label}</span>
@@ -814,15 +858,45 @@ const Inventory = () => {
                   />
                 </div>
                 <div className="form-group">
-                  <label>Batch Number *</label>
+                  <label>Batch Number</label>
                   <input
                     type="text"
                     placeholder="e.g., BT001"
-                    required
                     value={formData.batchNumber}
                     onChange={(event) => setFormData({ ...formData, batchNumber: event.target.value })}
                     disabled={editingCatalogItem}
                   />
+                </div>
+              </div>
+
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Unit *</label>
+                  <select
+                    required
+                    value={formData.unit}
+                    onChange={(event) => setFormData({ ...formData, unit: event.target.value })}
+                  >
+                    {unitOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>Category *</label>
+                  <select
+                    required
+                    value={formData.category}
+                    onChange={(event) => setFormData({ ...formData, category: event.target.value })}
+                  >
+                    {categoryOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
@@ -887,7 +961,16 @@ const Inventory = () => {
                 </div>
               </div>
 
-              {canUseNhis && (
+              <label className="checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={formData.saleOnReturn}
+                  onChange={(event) => setFormData({ ...formData, saleOnReturn: event.target.checked })}
+                />
+                <span>Sale on return</span>
+              </label>
+
+              {canUseNhisTopups && (
                 <div className="form-row">
                   <div className="form-group">
                     <label>NHIS Code</label>
@@ -1074,7 +1157,7 @@ const Inventory = () => {
                         {importPreview.validRows.slice(0, 5).map((drug, idx) => (
                           <tr key={idx}>
                             <td>{drug.name}</td>
-                            <td>{drug.batch_number}</td>
+                            <td>{drug.batch_number || '-'}</td>
                             <td>{drug.expiry_date}</td>
                             <td>{drug.quantity}</td>
                             <td>GHS {drug.price}</td>

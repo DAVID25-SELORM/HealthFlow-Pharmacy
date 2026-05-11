@@ -85,6 +85,8 @@ const Sales = () => {
   const [highlightedPatientIndex, setHighlightedPatientIndex] = useState(0)
   const [paymentMethod, setPaymentMethod] = useState('cash')
   const [received, setReceived] = useState('')
+  const [discountType, setDiscountType] = useState('amount')
+  const [discountValue, setDiscountValue] = useState('')
   const [insuranceCoverage, setInsuranceCoverage] = useState('')
   const [patientTopUp, setPatientTopUp] = useState('')
   const [patientTopUpMethod, setPatientTopUpMethod] = useState('cash')
@@ -427,8 +429,24 @@ const Sales = () => {
     [cart]
   )
 
-  const calculateTotal = () => {
+  const calculateSubtotal = () => {
     return cart.reduce((sum, item) => sum + item.price * item.quantity, 0)
+  }
+
+  const calculateSaleDiscount = () => {
+    const subtotal = calculateSubtotal()
+    const value = Number.parseFloat(discountValue) || 0
+    if (value <= 0 || subtotal <= 0) {
+      return 0
+    }
+    if (discountType === 'percent') {
+      return Math.min(subtotal, (subtotal * value) / 100)
+    }
+    return Math.min(subtotal, value)
+  }
+
+  const calculateTotal = () => {
+    return Math.max(0, calculateSubtotal() - calculateSaleDiscount())
   }
 
   const calculateNhisCoveredTotal = () => {
@@ -792,14 +810,12 @@ const Sales = () => {
       .join('\n')
 
   const buildInsuranceClaimItems = (soldItems, coverage, total) => {
-    if (coverage >= total - 0.01) {
-      return soldItems
-    }
-
+    const grossTotal = soldItems.reduce((sum, item) => sum + item.price * item.quantity, 0)
+    const netScale = grossTotal > 0 ? total / grossTotal : 0
     const scale = total > 0 ? coverage / total : 0
     return soldItems.map((item) => ({
       ...item,
-      price: item.price * scale,
+      price: item.price * netScale * Math.min(scale, 1),
     }))
   }
 
@@ -859,6 +875,8 @@ const Sales = () => {
       return
     }
 
+    const subtotal = calculateSubtotal()
+    const saleDiscount = calculateSaleDiscount()
     const total = calculateTotal()
     const amountPaid = Number.parseFloat(received) || 0
     const insuranceSplitAllowed = !servingNhisPatient || canUseNhisTopups
@@ -913,6 +931,7 @@ const Sales = () => {
         items: soldItems,
         patientId: patientId || null,
         paymentMethod,
+        discount: saleDiscount,
         amountPaid: paymentMethod === 'cash' ? amountPaid : total,
         change: paymentMethod === 'cash' ? calculateChange() : 0,
         notes:
@@ -946,8 +965,8 @@ const Sales = () => {
           unit_price: item.price,
           total_price: item.quantity * item.price,
         })),
-        totalAmount: total,
-        discount: 0,
+        totalAmount: subtotal,
+        discount: saleDiscount,
         netAmount: total,
         paymentMethod: paymentMethod,
         amountPaid: paymentMethod === 'cash' ? amountPaid : total,
@@ -997,6 +1016,8 @@ const Sales = () => {
             setSearchTerm('')
             syncSearchParam('')
             setReceived('')
+            setDiscountType('amount')
+            setDiscountValue('')
             setInsuranceCoverage('')
             setPatientTopUp('')
             setPatientTopUpMethod('cash')
@@ -1048,6 +1069,8 @@ const Sales = () => {
         setSearchTerm('')
         syncSearchParam('')
         setReceived('')
+        setDiscountType('amount')
+        setDiscountValue('')
         setInsuranceCoverage('')
         setPatientTopUp('')
         setPatientTopUpMethod('cash')
@@ -1092,6 +1115,8 @@ const Sales = () => {
       setSearchTerm('')
       syncSearchParam('')
       setReceived('')
+      setDiscountType('amount')
+      setDiscountValue('')
       setInsuranceCoverage('')
       setPatientTopUp('')
       setPatientTopUpMethod('cash')
@@ -1255,6 +1280,8 @@ const Sales = () => {
     setShowReceipt(false)
   }
 
+  const subtotal = calculateSubtotal()
+  const saleDiscount = calculateSaleDiscount()
   const total = calculateTotal()
   const change = calculateChange()
   const nhisCoveredTotal = calculateNhisCoveredTotal()
@@ -1770,8 +1797,44 @@ const Sales = () => {
           </div>
 
           <div className="checkout-summary">
+            <div className="summary-lines">
+              <div className="summary-line">
+                <span>Subtotal</span>
+                <strong>GHS {subtotal.toFixed(2)}</strong>
+              </div>
+              <div className="discount-line">
+                <label htmlFor="sale-discount">Discount</label>
+                <div className="discount-controls">
+                  <select
+                    value={discountType}
+                    onChange={(event) => setDiscountType(event.target.value)}
+                    aria-label="Discount type"
+                  >
+                    <option value="amount">GHS</option>
+                    <option value="percent">%</option>
+                  </select>
+                  <input
+                    id="sale-discount"
+                    type="number"
+                    min="0"
+                    max={discountType === 'percent' ? '100' : undefined}
+                    step="0.01"
+                    value={discountValue}
+                    onChange={(event) => setDiscountValue(event.target.value)}
+                    placeholder="0.00"
+                  />
+                </div>
+              </div>
+              {saleDiscount > 0 && (
+                <div className="summary-line summary-line-muted">
+                  <span>Discount applied</span>
+                  <strong>- GHS {saleDiscount.toFixed(2)}</strong>
+                </div>
+              )}
+            </div>
+
             <div className="total-section">
-              <span className="total-label">Total</span>
+              <span className="total-label">Net Total</span>
               <span className="total-amount">GHS {total.toFixed(2)}</span>
             </div>
 

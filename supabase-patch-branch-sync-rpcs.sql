@@ -16,6 +16,9 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
+ALTER TABLE public.drugs
+  ADD COLUMN IF NOT EXISTS sale_on_return BOOLEAN NOT NULL DEFAULT false;
+
 CREATE TABLE IF NOT EXISTS public.branch_sync_clients (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
@@ -589,6 +592,7 @@ BEGIN
       supplier,
       category,
       description,
+      sale_on_return,
       reorder_level,
       status,
       organization_id,

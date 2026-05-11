@@ -629,7 +629,11 @@ const assertCanAddDrugs = async (
   }
 }
 
-const assertCustomBatchNumberAllowed = (batchNumber: string) => {
+const assertCustomBatchNumberAllowed = (batchNumber: string | null | undefined) => {
+  if (!normalizeText(batchNumber)) {
+    return
+  }
+
   if (isDefaultMedicationBatchNumber(batchNumber)) {
     throw new Error(DEFAULT_CATALOG_BATCH_ERROR)
   }
@@ -639,7 +643,7 @@ const buildDrugCreatePayload = (
   organizationId: string,
   branchId: string | null,
   drugData: Record<string, unknown>,
-  batchNumber: string
+  batchNumber: string | null
 ) => ({
   organization_id: organizationId,
   branch_id: branchId,
@@ -659,7 +663,8 @@ const buildDrugCreatePayload = (
   category: normalizeText(drugData.category) || null,
   description: normalizeText(drugData.description) || null,
   reorder_level: parseNonNegativeNumber(drugData.reorderLevel ?? 10, 'Reorder level'),
-  unit: normalizeText(drugData.unit) || 'tablets',
+  unit: normalizeText(drugData.unit) || 'tablet',
+  sale_on_return: Boolean(drugData.saleOnReturn),
 })
 
 const findDrugByIdentity = async (
@@ -667,14 +672,14 @@ const findDrugByIdentity = async (
   organizationId: string,
   branchId: string | null,
   name: string,
-  batchNumber: string
+  batchNumber: string | null
 ) => {
   let query = adminClient
     .from('drugs')
     .select('*')
     .eq('organization_id', organizationId)
     .eq('name', name)
-    .eq('batch_number', batchNumber)
+  query = batchNumber ? query.eq('batch_number', batchNumber) : query.is('batch_number', null)
 
   query = branchId ? query.eq('branch_id', branchId) : query.is('branch_id', null)
 
@@ -748,7 +753,7 @@ const saveDrugForOrganization = async (
   drugPayload: Record<string, unknown>
 ) => {
   const name = assertRequiredText(drugPayload.name, 'Drug name')
-  const batchNumber = assertRequiredText(drugPayload.batch_number, 'Batch number')
+  const batchNumber = normalizeText(drugPayload.batch_number) || null
   const existingDrug = await findDrugByIdentity(adminClient, organizationId, branchId, name, batchNumber)
   const action = getExistingDrugSaveAction(existingDrug)
 
@@ -1081,7 +1086,7 @@ const createDrug = async (
   requireInventoryAccess(requesterProfile, 'Only inventory staff can add inventory items.')
 
   const drugData = (payload.drug || {}) as Record<string, unknown>
-  const batchNumber = assertRequiredText(drugData.batchNumber, 'Batch number')
+  const batchNumber = normalizeText(drugData.batchNumber) || null
   assertCustomBatchNumberAllowed(batchNumber)
   const branchId = await getBranchIdForInventoryRequest(adminClient, organizationId, requesterProfile, {
     branchId: normalizeText(drugData.branchId),
@@ -1102,7 +1107,7 @@ const updateDrug = async (
   const existingDrug = await getDrugForOrganization(adminClient, organizationId, drugId)
   const drugData = (payload.drug || {}) as Record<string, unknown>
   const name = assertRequiredText(drugData.name, 'Drug name')
-  const batchNumber = assertRequiredText(drugData.batchNumber, 'Batch number')
+  const batchNumber = normalizeText(drugData.batchNumber) || null
   const isDefaultCatalogDrug = isDefaultMedicationBatchNumber(existingDrug.batch_number)
 
   if (isDefaultCatalogDrug) {
@@ -1123,6 +1128,7 @@ const updateDrug = async (
     quantity: parseNonNegativeNumber(drugData.quantity, 'Quantity'),
     price: parseNonNegativeNumber(drugData.price, 'Price'),
     supplier: normalizeText(drugData.supplier) || null,
+    sale_on_return: Boolean(drugData.saleOnReturn),
     updated_at: new Date().toISOString(),
   }
 
@@ -1143,7 +1149,7 @@ const updateDrug = async (
   }
 
   if (Object.prototype.hasOwnProperty.call(drugData, 'unit')) {
-    updatePayload.unit = normalizeText(drugData.unit) || 'tablets'
+    updatePayload.unit = normalizeText(drugData.unit) || 'tablet'
   }
 
   if (Object.prototype.hasOwnProperty.call(drugData, 'nhisCode')) {
@@ -1261,7 +1267,7 @@ const bulkImportDrugs = async (
 
   const normalizedRows = drugs.map((item) => {
     const row = item as Record<string, unknown>
-    const batchNumber = assertRequiredText(row.batch_number, 'Batch number')
+    const batchNumber = normalizeText(row.batch_number) || null
     assertCustomBatchNumberAllowed(batchNumber)
 
     return {
@@ -1284,9 +1290,9 @@ const bulkImportDrugs = async (
       category: normalizeText(row.category) || null,
       description: normalizeText(row.description) || null,
       reorder_level: parseNonNegativeNumber(row.reorder_level ?? 10, 'Reorder level'),
-      unit: normalizeText(row.unit) || 'tablets',
-      }
-    })
+      unit: normalizeText(row.unit) || 'tablet',
+    }
+  })
 
   for (const drug of normalizedRows) {
     try {

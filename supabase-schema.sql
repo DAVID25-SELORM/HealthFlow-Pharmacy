@@ -30,7 +30,7 @@ CREATE TABLE users (
 CREATE TABLE drugs (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name VARCHAR(255) NOT NULL,
-    batch_number VARCHAR(100) NOT NULL,
+    batch_number VARCHAR(100),
     expiry_date DATE NOT NULL,
     quantity DECIMAL(10, 2) NOT NULL DEFAULT 0,
     unit VARCHAR(50) DEFAULT 'tablets',
@@ -40,6 +40,7 @@ CREATE TABLE drugs (
     nhis_price DECIMAL(10, 2),
     nhis_unit TEXT,
     is_nhis_listed BOOLEAN DEFAULT false,
+    sale_on_return BOOLEAN DEFAULT false,
     supplier VARCHAR(255),
     category VARCHAR(100),
     description TEXT,

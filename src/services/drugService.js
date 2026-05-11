@@ -152,7 +152,7 @@ export const getDrugById = async (id) => {
 // Add new drug
 export const addDrug = async (drugData) => {
   const name = assertRequiredText(drugData.name, 'Drug name')
-  const batchNumber = assertRequiredText(drugData.batchNumber, 'Batch number')
+  const batchNumber = normalizeText(drugData.batchNumber) || null
 
   const response = await invokeTierAccess({
     action: 'create_drug',
@@ -174,7 +174,8 @@ export const addDrug = async (drugData) => {
       category: normalizeText(drugData.category) || null,
       description: normalizeText(drugData.description) || null,
       reorderLevel: assertNonNegativeNumber(drugData.reorderLevel || 10, 'Reorder level'),
-      unit: normalizeText(drugData.unit) || 'tablets',
+      unit: normalizeText(drugData.unit) || 'tablet',
+      saleOnReturn: Boolean(drugData.saleOnReturn),
       branchId: normalizeText(drugData.branchId) || null,
     },
   })
@@ -192,7 +193,7 @@ export const addDrug = async (drugData) => {
 // Update drug
 export const updateDrug = async (id, drugData) => {
   const name = assertRequiredText(drugData.name, 'Drug name')
-  const batchNumber = assertRequiredText(drugData.batchNumber, 'Batch number')
+  const batchNumber = normalizeText(drugData.batchNumber) || null
   const payload = {
     name,
     batchNumber,
@@ -200,6 +201,7 @@ export const updateDrug = async (id, drugData) => {
     quantity: assertNonNegativeNumber(drugData.quantity, 'Quantity'),
     price: assertNonNegativeNumber(drugData.price, 'Price'),
     supplier: normalizeText(drugData.supplier) || null,
+    saleOnReturn: Boolean(drugData.saleOnReturn),
   }
 
   if (Object.prototype.hasOwnProperty.call(drugData, 'costPrice')) {
@@ -219,7 +221,7 @@ export const updateDrug = async (id, drugData) => {
   }
 
   if (Object.prototype.hasOwnProperty.call(drugData, 'unit')) {
-    payload.unit = normalizeText(drugData.unit) || 'tablets'
+    payload.unit = normalizeText(drugData.unit) || 'tablet'
   }
 
   if (Object.prototype.hasOwnProperty.call(drugData, 'nhisCode')) {

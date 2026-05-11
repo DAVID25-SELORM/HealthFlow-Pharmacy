@@ -473,6 +473,28 @@
   box-shadow: 0 0 0 3px rgba(22, 160, 133, 0.1);
 }
 
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 0 0 1rem;
+  color: var(--gray-700);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.checkbox-row input {
+  width: 16px;
+  height: 16px;
+}
+
+.drug-subtext {
+  margin-top: 0.25rem;
+  color: var(--gray-500);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
 .form-actions {
   display: flex;
   gap: 1rem;

@@ -7,8 +7,8 @@ import { invokeTierAccess } from './tierAccessService'
  * Handles bulk import of drugs from Excel files
  */
 
-const REQUIRED_COLUMNS = ['name', 'batch_number', 'expiry_date', 'quantity', 'price']
-const OPTIONAL_COLUMNS = ['supplier', 'category', 'description', 'cost_price', 'reorder_level', 'unit']
+const REQUIRED_COLUMNS = ['name', 'expiry_date', 'quantity', 'price']
+const OPTIONAL_COLUMNS = ['batch_number', 'supplier', 'category', 'description', 'cost_price', 'reorder_level', 'unit']
 const ALL_COLUMNS = [...REQUIRED_COLUMNS, ...OPTIONAL_COLUMNS]
 const RESERVED_DEFAULT_BATCH_PREFIX = 'PDF-IMP-'
 
@@ -35,9 +35,9 @@ const validateDrugRow = (row, rowIndex) => {
   try {
     // Required fields
     const name = assertRequiredText(row.name, 'Drug name')
-    const batchNumber = assertRequiredText(row.batch_number, 'Batch number')
+    const batchNumber = normalizeText(row.batch_number) || null
 
-    if (batchNumber.toUpperCase().startsWith(RESERVED_DEFAULT_BATCH_PREFIX)) {
+    if (batchNumber && batchNumber.toUpperCase().startsWith(RESERVED_DEFAULT_BATCH_PREFIX)) {
       errors.push(
         `Batch numbers starting with ${RESERVED_DEFAULT_BATCH_PREFIX} are reserved for the default medicine catalog`
       )
@@ -82,7 +82,7 @@ const validateDrugRow = (row, rowIndex) => {
         category: normalizeText(row.category) || null,
         description: normalizeText(row.description) || null,
         reorder_level: row.reorder_level ? assertNonNegativeNumber(row.reorder_level, 'Reorder level') : 10,
-        unit: normalizeText(row.unit) || 'tablets',
+        unit: normalizeText(row.unit) || 'tablet',
         status: 'active'
       }
     }
@@ -206,7 +206,7 @@ export const generateTemplate = () => {
       category: 'Pain Relief',
       description: 'Analgesic and antipyretic',
       reorder_level: 100,
-      unit: 'tablets'
+      unit: 'tablet'
     },
     {
       name: 'Amoxicillin 500mg',
@@ -219,7 +219,7 @@ export const generateTemplate = () => {
       category: 'Antibiotics',
       description: 'Broad spectrum antibiotic',
       reorder_level: 50,
-      unit: 'capsules'
+      unit: 'capsule'
     }
   ]
   

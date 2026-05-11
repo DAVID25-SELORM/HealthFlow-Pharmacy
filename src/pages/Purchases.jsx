@@ -30,22 +30,56 @@ const blankPurchaseForm = {
 const blankItemForm = {
   drugId:          '',
   drugName:        '',
-  unit:            'unit',
+  unit:            'tablet',
   quantity:        '',
   unitCost:        '',
+  discountType:    'percent',
+  discountAmount:  '0',
   discountPercent: '0',
   batchNumber:     '',
   expiryDate:      '',
 }
 
+const unitOptions = [
+  { value: 'tablet', label: 'Tablet' },
+  { value: 'capsule', label: 'Capsule' },
+  { value: 'vial', label: 'Vial' },
+  { value: 'bottle', label: 'Bottle' },
+  { value: 'sachet', label: 'Sachet' },
+  { value: 'syrup', label: 'Syrup' },
+  { value: 'cream', label: 'Cream' },
+  { value: 'ointment', label: 'Ointment' },
+  { value: 'drops', label: 'Drops' },
+  { value: 'injection', label: 'Injection' },
+  { value: 'pack', label: 'Pack' },
+  { value: 'unit', label: 'Unit' },
+]
+
 const STATUS_TABS = ['all', 'draft', 'completed', 'cancelled']
 
-const calcNetTotal = (qty, cost, discount) => {
+const calcGrossTotal = (qty, cost) => {
   const q = Number.parseFloat(qty) || 0
   const c = Number.parseFloat(cost) || 0
-  const d = Number.parseFloat(discount) || 0
-  const gross = q * c
-  return Math.max(0, gross - (gross * d) / 100)
+  return q * c
+}
+
+const calcDiscountValue = (qty, cost, discountType, discountValue) => {
+  const gross = calcGrossTotal(qty, cost)
+  const value = Number.parseFloat(discountValue) || 0
+  if (discountType === 'amount') {
+    return Math.min(Math.max(value, 0), gross)
+  }
+  return Math.min(Math.max((gross * value) / 100, 0), gross)
+}
+
+const calcDiscountPercent = (qty, cost, discountType, discountValue) => {
+  const gross = calcGrossTotal(qty, cost)
+  if (gross <= 0) return 0
+  return (calcDiscountValue(qty, cost, discountType, discountValue) / gross) * 100
+}
+
+const calcNetTotal = (qty, cost, discountType, discountValue) => {
+  return Math.max(0, calcGrossTotal(qty, cost) - calcDiscountValue(qty, cost, discountType, discountValue))
 }
 
 const fmtCurrency = (n) =>
@@ -189,7 +223,7 @@ const Purchases = () => {
       ...prev,
       drugId:   drug.id,
       drugName: drug.name,
-      unit:     drug.unit || 'unit',
+      unit:     drug.unit || 'tablet',
       unitCost: String(drug.cost_price || drug.price || ''),
     }))
     setDrugSearch(drug.name)
@@ -203,34 +237,29 @@ const Purchases = () => {
     if (!Number.isFinite(qty) || qty <= 0) { notify('Enter a valid quantity.', 'warning'); return }
     if (!Number.isFinite(cost) || cost < 0) { notify('Enter a valid unit cost.', 'warning'); return }
 
-    const netTotal = calcNetTotal(qty, cost, itemForm.discountPercent)
+    const discountValue = itemForm.discountType === 'amount'
+      ? itemForm.discountAmount
+      : itemForm.discountPercent
+    const discountAmount = calcDiscountValue(qty, cost, itemForm.discountType, discountValue)
+    const discountPercent = calcDiscountPercent(qty, cost, itemForm.discountType, discountValue)
+    const netTotal = calcNetTotal(qty, cost, itemForm.discountType, discountValue)
 
-    setLineItems((prev) => {
-      const exists = prev.findIndex((i) => i.drugId === itemForm.drugId && itemForm.drugId)
-      if (exists !== -1) {
-        const updated = [...prev]
-        updated[exists] = {
-          ...updated[exists],
-          quantity:   updated[exists].quantity + qty,
-          netTotal:   updated[exists].netTotal  + netTotal,
-        }
-        return updated
-      }
-      return [
-        ...prev,
-        {
-          drugId:          itemForm.drugId   || null,
-          drugName:        itemForm.drugName.trim(),
-          unit:            itemForm.unit     || 'unit',
-          quantity:        qty,
-          unitCost:        cost,
-          discountPercent: Number.parseFloat(itemForm.discountPercent) || 0,
-          netTotal,
-          batchNumber:     itemForm.batchNumber.trim() || '',
-          expiryDate:      itemForm.expiryDate         || '',
-        },
-      ]
-    })
+    setLineItems((prev) => [
+      ...prev,
+      {
+        drugId:          itemForm.drugId   || null,
+        drugName:        itemForm.drugName.trim(),
+        unit:            itemForm.unit     || 'tablet',
+        quantity:        qty,
+        unitCost:        cost,
+        discountType:    itemForm.discountType,
+        discountAmount,
+        discountPercent,
+        netTotal,
+        batchNumber:     itemForm.batchNumber.trim() || '',
+        expiryDate:      itemForm.expiryDate         || '',
+      },
+    ])
 
     setItemForm(blankItemForm)
     setDrugSearch('')
@@ -566,7 +595,7 @@ const Purchases = () => {
                         <th>Qty</th>
                         <th>Unit</th>
                         <th>U/Cost</th>
-                        <th>Disc%</th>
+                        <th>Discount</th>
                         <th>Net Total</th>
                         <th></th>
                       </tr>
@@ -588,7 +617,11 @@ const Purchases = () => {
                             <td>{item.quantity}</td>
                             <td>{item.unit}</td>
                             <td>{fmtCurrency(item.unitCost)}</td>
-                            <td>{item.discountPercent}%</td>
+                            <td>
+                              {item.discountType === 'amount'
+                                ? fmtCurrency(item.discountAmount)
+                                : `${Number(item.discountPercent || 0).toFixed(2)}%`}
+                            </td>
                             <td>{fmtCurrency(item.netTotal)}</td>
                             <td>
                               <button className="action-btn action-btn--cancel" onClick={() => removeLineItem(idx)}>
@@ -648,7 +681,15 @@ const Purchases = () => {
                 <div className="form-row">
                   <div className="form-group">
                     <label>Unit</label>
-                    <input className="form-input" value={itemForm.unit} readOnly />
+                    <select
+                      className="form-input"
+                      value={itemForm.unit}
+                      onChange={(e) => setItemForm((prev) => ({ ...prev, unit: e.target.value }))}
+                    >
+                      {unitOptions.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
                   </div>
                   <div className="form-group">
                     <label>Qty *</label>
@@ -675,21 +716,48 @@ const Purchases = () => {
                     />
                   </div>
                   <div className="form-group">
-                    <label>Discount %</label>
-                    <input
-                      type="number"
-                      className="form-input"
-                      min="0"
-                      max="100"
-                      value={itemForm.discountPercent}
-                      onChange={(e) => setItemForm((prev) => ({ ...prev, discountPercent: e.target.value }))}
-                    />
+                    <label>Discount</label>
+                    <div className="discount-input-row">
+                      <select
+                        className="form-input"
+                        value={itemForm.discountType}
+                        onChange={(e) => setItemForm((prev) => ({ ...prev, discountType: e.target.value }))}
+                      >
+                        <option value="percent">%</option>
+                        <option value="amount">GHS</option>
+                      </select>
+                      <input
+                        type="number"
+                        className="form-input"
+                        min="0"
+                        max={itemForm.discountType === 'percent' ? '100' : undefined}
+                        step="0.01"
+                        value={itemForm.discountType === 'amount' ? itemForm.discountAmount : itemForm.discountPercent}
+                        onChange={(e) =>
+                          setItemForm((prev) => ({
+                            ...prev,
+                            [prev.discountType === 'amount' ? 'discountAmount' : 'discountPercent']: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
                   </div>
                 </div>
 
                 <div className="form-group net-total-display">
                   <label>Net Total</label>
-                  <span>{fmtCurrency(calcNetTotal(itemForm.quantity, itemForm.unitCost, itemForm.discountPercent))}</span>
+                  <span>
+                    {fmtCurrency(
+                      calcNetTotal(
+                        itemForm.quantity,
+                        itemForm.unitCost,
+                        itemForm.discountType,
+                        itemForm.discountType === 'amount'
+                          ? itemForm.discountAmount
+                          : itemForm.discountPercent
+                      )
+                    )}
+                  </span>
                 </div>
 
                 <div className="form-group">
@@ -766,7 +834,7 @@ const Purchases = () => {
                   <th>Qty</th>
                   <th>Unit</th>
                   <th>Unit Cost</th>
-                  <th>Disc%</th>
+                  <th>Discount</th>
                   <th>Net Total</th>
                   <th>Batch</th>
                   <th>Expiry</th>
@@ -780,7 +848,7 @@ const Purchases = () => {
                     <td>{item.quantity}</td>
                     <td>{item.unit}</td>
                     <td>{fmtCurrency(item.unit_cost)}</td>
-                    <td>{item.discount_percent}%</td>
+                    <td>{Number(item.discount_percent || 0).toFixed(2)}%</td>
                     <td>{fmtCurrency(item.net_total)}</td>
                     <td>{item.batch_number || '—'}</td>
                     <td>{item.expiry_date ? formatAppDate(item.expiry_date) : '—'}</td>
