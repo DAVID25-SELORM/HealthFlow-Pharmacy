@@ -179,6 +179,21 @@ const Claims = () => {
     [drugs, drugLookupTerm]
   )
 
+  const visibleDrugMatches = useMemo(
+    () => (drugLookupTerm.trim() ? filteredDrugsForClaim.slice(0, 8) : []),
+    [drugLookupTerm, filteredDrugsForClaim]
+  )
+
+  const selectedDrugForClaim = useMemo(
+    () => drugs.find((drug) => drug.id === selectedDrugId),
+    [drugs, selectedDrugId]
+  )
+
+  const selectDrugForClaim = (drug) => {
+    setSelectedDrugId(drug.id)
+    setDrugLookupTerm(drug.name)
+  }
+
   const addClaimItem = () => {
     const drug = drugs.find((row) => row.id === selectedDrugId)
     const qty = Number.parseFloat(selectedQty)
@@ -628,17 +643,45 @@ const Claims = () => {
                     }}
                   />
                 </label>
+                {visibleDrugMatches.length > 0 && !selectedDrugId && (
+                  <div className="claim-drug-results">
+                    {visibleDrugMatches.map((drug) => (
+                      <button
+                        key={drug.id}
+                        type="button"
+                        className="claim-drug-result"
+                        onClick={() => selectDrugForClaim(drug)}
+                      >
+                        <span>
+                          <strong>{drug.name}</strong>
+                          <small>
+                            {drug.batch_number ? `Batch ${drug.batch_number}` : 'No batch'}
+                            {drug.barcode ? ` / ${drug.barcode}` : ''}
+                          </small>
+                        </span>
+                        <b>GHS {Number.parseFloat(drug.price || 0).toFixed(2)}</b>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {drugLookupTerm.trim() && filteredDrugsForClaim.length === 0 && (
+                  <div className="claim-drug-empty">No matching drugs found.</div>
+                )}
                 <div className="item-inputs">
                   <select
                     value={selectedDrugId}
-                    onChange={(event) => setSelectedDrugId(event.target.value)}
+                    onChange={(event) => {
+                      const nextDrug = drugs.find((drug) => drug.id === event.target.value)
+                      setSelectedDrugId(event.target.value)
+                      setDrugLookupTerm(nextDrug?.name || '')
+                    }}
                   >
                     <option value="">
                       {filteredDrugsForClaim.length ? 'Select drug' : 'No matching drugs'}
                     </option>
                     {filteredDrugsForClaim.map((drug) => (
                       <option key={drug.id} value={drug.id}>
-                        {drug.name} - GHS {Number.parseFloat(drug.price).toFixed(2)}
+                        {drug.name} - GHS {Number.parseFloat(drug.price || 0).toFixed(2)}
                         {drug.batch_number ? ` - Batch ${drug.batch_number}` : ''}
                       </option>
                     ))}
@@ -654,6 +697,11 @@ const Claims = () => {
                     Add Item
                   </button>
                 </div>
+                {selectedDrugForClaim && (
+                  <div className="claim-selected-drug">
+                    Selected: <strong>{selectedDrugForClaim.name}</strong>
+                  </div>
+                )}
 
                 <div className="claim-item-list">
                   {claimItems.map((item) => (

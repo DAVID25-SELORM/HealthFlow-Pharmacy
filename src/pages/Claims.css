@@ -450,6 +450,75 @@
   font-size: 0.95rem;
 }
 
+.claim-drug-results {
+  display: grid;
+  gap: 0.45rem;
+  margin: -0.2rem 0 0.75rem;
+  padding: 0.35rem;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  background: white;
+  box-shadow: var(--shadow-sm);
+}
+
+.claim-drug-result {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  min-height: 48px;
+  padding: 0.6rem 0.7rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--gray-800);
+  text-align: left;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.claim-drug-result:hover {
+  background: rgba(22, 160, 133, 0.08);
+}
+
+.claim-drug-result span {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.claim-drug-result strong,
+.claim-drug-result small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.claim-drug-result small {
+  color: var(--gray-500);
+  font-size: 0.78rem;
+}
+
+.claim-drug-result b {
+  color: var(--primary);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.claim-drug-empty,
+.claim-selected-drug {
+  margin: -0.2rem 0 0.75rem;
+  color: var(--gray-500);
+  font-size: 0.85rem;
+}
+
+.claim-selected-drug {
+  margin-top: -0.25rem;
+  color: var(--gray-700);
+}
+
 .item-inputs {
   display: grid;
   grid-template-columns: 1fr 140px auto;
