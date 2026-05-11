@@ -103,11 +103,8 @@
 
 ### Build Output
 ```
-✓ 1551 modules transformed
-✓ dist/index.html (0.50 kB)
-✓ dist/assets/index-CA7teXGI.css (41.37 kB │ gzip: 7.53 kB)
-✓ dist/assets/index-XI2uxucs.js (879.53 kB │ gzip: 270.94 kB)
-✓ built in 40.92s
+✓ Production build completed successfully
+✓ Generated assets are emitted to ignored dist/ output
 ```
 
 ---
