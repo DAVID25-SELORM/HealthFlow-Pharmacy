@@ -22,11 +22,43 @@ assertConfiguredForServer()
 
 const app = express()
 
+const isAllowedOrigin = (origin) => {
+  if (!origin) {
+    return true
+  }
+
+  if (config.allowedOrigins.length > 0) {
+    return config.allowedOrigins.includes(origin.replace(/\/+$/, ''))
+  }
+
+  try {
+    const url = new URL(origin)
+    return (
+      url.hostname === 'localhost' ||
+      url.hostname === '127.0.0.1' ||
+      url.hostname.startsWith('192.168.') ||
+      url.hostname.startsWith('10.') ||
+      /^172\.(1[6-9]|2\d|3[0-1])\./.test(url.hostname)
+    )
+  } catch {
+    return false
+  }
+}
+
 app.use((request, response, next) => {
-  response.setHeader('Access-Control-Allow-Origin', request.get('Origin') || '*')
+  const origin = request.get('Origin') || ''
+  if (!isAllowedOrigin(origin)) {
+    response.status(403).json({ error: 'Origin is not allowed for this branch server.' })
+    return
+  }
+
+  response.setHeader('Access-Control-Allow-Origin', origin || 'null')
   response.setHeader('Vary', 'Origin')
   response.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
   response.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-branch-token')
+  response.setHeader('X-Content-Type-Options', 'nosniff')
+  response.setHeader('Referrer-Policy', 'no-referrer')
+  response.setHeader('Cache-Control', 'no-store')
 
   if (request.method === 'OPTIONS') {
     response.status(204).end()

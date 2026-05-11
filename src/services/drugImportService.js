@@ -1,4 +1,5 @@
-import * as XLSX from 'xlsx'
+import { readSheet } from 'read-excel-file/browser'
+import writeExcelFile from 'write-excel-file/browser'
 import { assertNonNegativeNumber, assertRequiredText, normalizeText } from '../utils/validation'
 import { invokeTierAccess } from './tierAccessService'
 
@@ -11,6 +12,30 @@ const REQUIRED_COLUMNS = ['name', 'expiry_date', 'quantity', 'price']
 const OPTIONAL_COLUMNS = ['batch_number', 'supplier', 'category', 'description', 'cost_price', 'reorder_level', 'unit']
 const ALL_COLUMNS = [...REQUIRED_COLUMNS, ...OPTIONAL_COLUMNS]
 const RESERVED_DEFAULT_BATCH_PREFIX = 'PDF-IMP-'
+const MAX_IMPORT_FILE_SIZE_BYTES = 2 * 1024 * 1024
+
+const formatDateCell = (value) => {
+  if (value instanceof Date) {
+    return value.toISOString().split('T')[0]
+  }
+
+  return String(value || '')
+}
+
+const rowsToObjects = (rows) => {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return []
+  }
+
+  const headers = rows[0].map((header) => normalizeText(header).toLowerCase())
+  return rows.slice(1).map((row) => {
+    const object = {}
+    headers.forEach((header, index) => {
+      object[header] = row[index] ?? ''
+    })
+    return object
+  })
+}
 
 /**
  * Validate Excel column headers
@@ -51,9 +76,7 @@ const validateDrugRow = (row, rowIndex) => {
     const price = assertNonNegativeNumber(row.price, 'Price')
     
     // Validate date format (YYYY-MM-DD or recognizable date)
-    const expiryDate = row.expiry_date instanceof Date 
-      ? row.expiry_date.toISOString().split('T')[0]
-      : String(row.expiry_date)
+    const expiryDate = formatDateCell(row.expiry_date)
     
     if (!/^\d{4}-\d{2}-\d{2}$/.test(expiryDate)) {
       errors.push('Expiry date must be in YYYY-MM-DD format')
@@ -101,50 +124,24 @@ const validateDrugRow = (row, rowIndex) => {
  */
 export const parseExcelFile = (file) => {
   return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    
-    reader.onload = (e) => {
-      try {
-        const data = new Uint8Array(e.target.result)
-        const workbook = XLSX.read(data, { type: 'array', cellDates: true })
-        
-        // Get first sheet
-        const sheetName = workbook.SheetNames[0]
-        const worksheet = workbook.Sheets[sheetName]
-        
-        // Convert to JSON
-        const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: '' })
-        
+    if (file?.size > MAX_IMPORT_FILE_SIZE_BYTES) {
+      reject(new Error('Excel file is too large. Please upload a file smaller than 2 MB.'))
+      return
+    }
+
+    readSheet(file)
+      .then((rows) => {
+        const jsonData = rowsToObjects(rows)
+
         if (jsonData.length === 0) {
           reject(new Error('Excel file is empty'))
           return
         }
-        
-        // Validate headers
-        const headers = Object.keys(jsonData[0])
-        validateHeaders(headers)
-        
-        // Normalize column names
-        const normalizedData = jsonData.map(row => {
-          const normalized = {}
-          Object.keys(row).forEach(key => {
-            const normalizedKey = normalizeText(key).toLowerCase()
-            normalized[normalizedKey] = row[key]
-          })
-          return normalized
-        })
-        
-        resolve(normalizedData)
-      } catch (error) {
-        reject(error)
-      }
-    }
-    
-    reader.onerror = () => {
-      reject(new Error('Failed to read Excel file'))
-    }
-    
-    reader.readAsArrayBuffer(file)
+
+        validateHeaders(Object.keys(jsonData[0]))
+        resolve(jsonData)
+      })
+      .catch((error) => reject(error))
   })
 }
 
@@ -193,7 +190,7 @@ export const importDrugs = async (drugs, batchSize = 50) => {
 /**
  * Generate sample Excel template
  */
-export const generateTemplate = () => {
+export const generateTemplate = async () => {
   const sampleData = [
     {
       name: 'Paracetamol 500mg',
@@ -223,10 +220,10 @@ export const generateTemplate = () => {
     }
   ]
   
-  const worksheet = XLSX.utils.json_to_sheet(sampleData)
-  const workbook = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(workbook, worksheet, 'Drugs')
-  
-  // Generate and download
-  XLSX.writeFile(workbook, 'drug_import_template.xlsx')
+  const sheetData = [
+    ALL_COLUMNS,
+    ...sampleData.map((row) => ALL_COLUMNS.map((column) => row[column] ?? '')),
+  ]
+
+  await writeExcelFile(sheetData).toFile('drug_import_template.xlsx')
 }

@@ -527,6 +527,10 @@ const Nhis = () => {
     const file = e.target.files?.[0]
     if (!file) return
     e.target.value = ''
+    if (!file.name.toLowerCase().endsWith('.xlsx')) {
+      notify('Please select an Excel file (.xlsx).', 'error')
+      return
+    }
     try {
       const { rows, errors } = await parseNhisDrugFile(file)
       setImportRows(rows)
@@ -555,8 +559,8 @@ const Nhis = () => {
     }
   }
 
-  const handleDownloadTemplate = () => {
-    const blob = generateNhisDrugTemplate()
+  const handleDownloadTemplate = async () => {
+    const blob = await generateNhisDrugTemplate()
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -608,12 +612,12 @@ const Nhis = () => {
                 <FileSpreadsheet size={16} /> Template
               </button>
               <button className="btn btn-secondary" onClick={() => fileInputRef.current?.click()}>
-                <Upload size={16} /> Import CSV/Excel
+                <Upload size={16} /> Import Excel
               </button>
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".csv,.xlsx,.xls"
+                accept=".xlsx"
                 style={{ display: 'none' }}
                 onChange={handleFileSelect}
               />

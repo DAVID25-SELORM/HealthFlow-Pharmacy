@@ -497,9 +497,9 @@ const Inventory = () => {
     return statusConfig[status] || statusConfig.good
   }
 
-  const handleDownloadTemplate = () => {
+  const handleDownloadTemplate = async () => {
     try {
-      generateTemplate()
+      await generateTemplate()
       notify('Template downloaded successfully!', 'success')
     } catch (error) {
       notify(`Error downloading template: ${error.message}`, 'error')
@@ -516,8 +516,8 @@ const Inventory = () => {
       return
     }
 
-    if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
-      notify('Please select an Excel file (.xlsx or .xls)', 'error')
+    if (!file.name.toLowerCase().endsWith('.xlsx')) {
+      notify('Please select an Excel file (.xlsx)', 'error')
       return
     }
 
@@ -663,7 +663,7 @@ const Inventory = () => {
             Import Excel
             <input
               type="file"
-              accept=".xlsx,.xls"
+              accept=".xlsx"
               onChange={handleFileSelect}
               style={{ display: 'none' }}
               disabled={importing || !tierLimits.hasAdvancedInventory}

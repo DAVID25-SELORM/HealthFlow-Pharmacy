@@ -1,4 +1,5 @@
-import * as XLSX from 'xlsx'
+import { readSheet } from 'read-excel-file/browser'
+import writeExcelFile from 'write-excel-file/browser'
 import { normalizeText } from '../utils/validation'
 
 // Expected column names (case-insensitive aliases)
@@ -20,6 +21,7 @@ const COLUMN_ALIASES = {
   unit:         ['unit', 'pack unit', 'dispensing unit', 'uom'],
   unit_price:   ['unit price', 'price', 'price (ghc)', 'tariff', 'cost', 'amount', 'rate', 'unit_price'],
 }
+const MAX_IMPORT_FILE_SIZE_BYTES = 2 * 1024 * 1024
 
 const resolveHeader = (header) => {
   const normalized = normalizeText(header).toLowerCase()
@@ -58,16 +60,13 @@ const mapUnit = (rawUnit) => {
  */
 export const parseNhisDrugFile = async (file) => {
   return new Promise((resolve, reject) => {
-    const reader = new FileReader()
+    if (file?.size > MAX_IMPORT_FILE_SIZE_BYTES) {
+      reject(new Error('Import file is too large. Please upload a file smaller than 2 MB.'))
+      return
+    }
 
-    reader.onload = (event) => {
-      try {
-        const data = new Uint8Array(event.target.result)
-        const workbook = XLSX.read(data, { type: 'array' })
-        const sheetName = workbook.SheetNames[0]
-        const sheet = workbook.Sheets[sheetName]
-        const rawRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' })
-
+    readSheet(file)
+      .then((rawRows) => {
         if (!rawRows.length) {
           return resolve({ rows: [], errors: ['File appears to be empty.'], headerMap: {} })
         }
@@ -136,29 +135,20 @@ export const parseNhisDrugFile = async (file) => {
         }
 
         resolve({ rows, errors, headerMap })
-      } catch (err) {
-        reject(new Error(`Failed to parse file: ${err.message}`))
-      }
-    }
-
-    reader.onerror = () => reject(new Error('Failed to read file.'))
-    reader.readAsArrayBuffer(file)
+      })
+      .catch((err) => reject(new Error(`Failed to parse file: ${err.message}`)))
   })
 }
 
 /**
  * Returns a sample template as a Blob for download.
  */
-export const generateNhisDrugTemplate = () => {
+export const generateNhisDrugTemplate = async () => {
   const headers = ['code', 'description', 'generic_name', 'strength', 'dosage_form', 'category', 'unit', 'unit_price']
   const sample = [
     ['TAMSULCA1', 'Tamsulosin Capsule, 400mcg', 'Tamsulosin', '400mcg', 'Capsule', 'Urology', 'capsule', '2.18'],
     ['AMOX500CA', 'Amoxicillin Capsule, 500mg', 'Amoxicillin', '500mg', 'Capsule', 'Antibiotics', 'capsule', '1.45'],
   ]
 
-  const wb = XLSX.utils.book_new()
-  const ws = XLSX.utils.aoa_to_sheet([headers, ...sample])
-  XLSX.utils.book_append_sheet(wb, ws, 'NHIS Drugs')
-  const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
-  return new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+  return await writeExcelFile([headers, ...sample]).toBlob()
 }

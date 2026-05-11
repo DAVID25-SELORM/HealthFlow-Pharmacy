@@ -12,6 +12,10 @@ const toNumber = (value, fallback) => {
 export const config = {
   port: toNumber(process.env.PORT, 4780),
   branchServerToken: process.env.BRANCH_SERVER_TOKEN || '',
+  allowedOrigins: (process.env.ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((origin) => origin.trim().replace(/\/+$/, ''))
+    .filter(Boolean),
   branchId: process.env.BRANCH_ID || null,
   organizationId: process.env.ORGANIZATION_ID || null,
   sqlitePath: path.resolve(process.env.SQLITE_PATH || './data/healthflow-branch.sqlite'),

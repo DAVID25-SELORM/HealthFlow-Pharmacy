@@ -18,7 +18,8 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.22.0",
-    "xlsx": "^0.18.5"
+    "read-excel-file": "^9.0.9",
+    "write-excel-file": "^4.0.6"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",
