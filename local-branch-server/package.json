@@ -10,7 +10,9 @@
     "sync": "node src/syncWorker.js",
     "dev": "node --watch src/server.js",
     "start:windows": "scripts\\start-branch-server.cmd",
-    "sync:windows": "scripts\\start-sync-worker.cmd"
+    "sync:windows": "scripts\\start-sync-worker.cmd",
+    "install:startup": "powershell -ExecutionPolicy Bypass -File scripts\\install-startup-tasks.ps1",
+    "uninstall:startup": "powershell -ExecutionPolicy Bypass -File scripts\\uninstall-startup-tasks.ps1"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.101.1",

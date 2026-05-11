@@ -58,7 +58,21 @@ On Windows, you can use the helper scripts instead:
 .\scripts\start-healthflow-offline.cmd
 ```
 
-To start the local server and sync worker automatically when the Windows user signs in:
+To start the local server and sync worker automatically when the Windows user signs in without leaving terminal windows open:
+
+```powershell
+npm run install:startup
+```
+
+This creates two Windows Task Scheduler tasks and starts them immediately. Logs are written to `local-branch-server/logs`.
+
+To remove the startup tasks later:
+
+```powershell
+npm run uninstall:startup
+```
+
+If Task Scheduler is blocked on a machine, you can use the older Startup folder shortcut fallback:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\install-startup-shortcut.ps1
