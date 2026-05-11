@@ -16,6 +16,7 @@ ALTER TABLE public.organizations
   ADD COLUMN IF NOT EXISTS can_use_claims         BOOLEAN NOT NULL DEFAULT false,
   ADD COLUMN IF NOT EXISTS can_use_accounting     BOOLEAN NOT NULL DEFAULT false,
   ADD COLUMN IF NOT EXISTS can_use_multi_branch   BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS can_use_nhis_topups    BOOLEAN NOT NULL DEFAULT false,
   ADD COLUMN IF NOT EXISTS billing_notes          TEXT,
   ADD COLUMN IF NOT EXISTS last_payment_at        TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS next_payment_due_at    TIMESTAMPTZ;

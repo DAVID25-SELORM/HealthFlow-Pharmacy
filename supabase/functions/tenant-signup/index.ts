@@ -12,7 +12,7 @@ const VALID_PLAN_CODES = ['starter', 'professional', 'premium'] as const
 const VALID_BILLING_STATUSES = ['trial', 'active', 'past_due', 'suspended', 'cancelled'] as const
 const VALID_SUPPORT_LEVELS = ['standard', 'priority', 'premium'] as const
 const ORGANIZATION_SELECT_FIELDS =
-  'id, name, subdomain, status, subscription_tier, plan_code, billing_status, trial_ends_at, subscription_ends_at, last_payment_at, next_payment_due_at, support_level, billing_notes, phone, email, address, city, region, logo_url, slogan, license_number, can_use_claims, can_use_purchases, can_use_nhis, can_use_accounting, can_use_multi_branch, created_at, updated_at'
+  'id, name, subdomain, status, subscription_tier, plan_code, billing_status, trial_ends_at, subscription_ends_at, last_payment_at, next_payment_due_at, support_level, billing_notes, phone, email, address, city, region, logo_url, slogan, license_number, can_use_claims, can_use_purchases, can_use_nhis, can_use_nhis_topups, can_use_accounting, can_use_multi_branch, created_at, updated_at'
 const TENANT_USER_SELECT_FIELDS = 'id, email, full_name, role, is_active, created_at'
 
 type TenantSignupAction =
@@ -743,6 +743,10 @@ const updateTenantOrganization = async (
       organizationInput.canUseNhis !== undefined
         ? Boolean(organizationInput.canUseNhis)
         : null,
+    can_use_nhis_topups:
+      organizationInput.canUseNhisTopups !== undefined
+        ? Boolean(organizationInput.canUseNhis && organizationInput.canUseNhisTopups)
+        : null,
     can_use_accounting:
       organizationInput.canUseAccounting !== undefined
         ? Boolean(organizationInput.canUseAccounting)
@@ -791,6 +795,7 @@ const updateTenantOrganization = async (
       key !== 'can_use_claims' &&
       key !== 'can_use_purchases' &&
       key !== 'can_use_nhis' &&
+      key !== 'can_use_nhis_topups' &&
       key !== 'can_use_accounting' &&
       key !== 'can_use_multi_branch' &&
       key !== 'billing_notes' &&
@@ -839,6 +844,10 @@ const updateTenantOrganization = async (
 
   if (organizationInput.canUseNhis === undefined) {
     delete updatePayload.can_use_nhis
+  }
+
+  if (organizationInput.canUseNhisTopups === undefined) {
+    delete updatePayload.can_use_nhis_topups
   }
 
   if (organizationInput.canUseAccounting === undefined) {
@@ -1088,6 +1097,9 @@ const bootstrapOrganization = async (
           can_use_claims: Boolean(organizationInput.canUseClaims),
           can_use_purchases: Boolean(organizationInput.canUsePurchases),
           can_use_nhis: Boolean(organizationInput.canUseNhis),
+          can_use_nhis_topups: Boolean(
+            organizationInput.canUseNhis && organizationInput.canUseNhisTopups
+          ),
           can_use_accounting: Boolean(organizationInput.canUseAccounting),
           can_use_multi_branch: Boolean(organizationInput.canUseMultiBranch),
           billing_notes: normalizeText(organizationInput.billingNotes) || null,

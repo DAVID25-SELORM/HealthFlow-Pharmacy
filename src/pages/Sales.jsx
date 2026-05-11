@@ -34,6 +34,7 @@ import {
 import { isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
+import { useTenant } from '../context/TenantContext'
 import { useOnlineStatus } from '../hooks/useOnlineStatus'
 import { hasRole } from '../utils/roles'
 import Receipt from '../components/Receipt/Receipt'
@@ -70,6 +71,7 @@ const Sales = () => {
   const [searchParams, setSearchParams] = useSearchParams()
   const { user, displayName, role, profile, organization } = useAuth()
   const { notify } = useNotification()
+  const { canUseNhisTopups } = useTenant()
   const isOnline = useOnlineStatus()
   const [drugs, setDrugs] = useState([])
   const [drugSearchLoading, setDrugSearchLoading] = useState(false)
@@ -744,9 +746,12 @@ const Sales = () => {
     }
 
     const total = calculateTotal()
-    const coveredAmount = isNhisPatient(selectedPatientForSale) ? calculateNhisCoveredTotal() : total
+    const shouldUseNhisTopUpPricing = isNhisPatient(selectedPatientForSale) && canUseNhisTopups
+    const coveredAmount = shouldUseNhisTopUpPricing ? calculateNhisCoveredTotal() : total
     setInsuranceCoverage(formatAmountInput(Math.min(coveredAmount, total)))
-    setPatientTopUp(formatAmountInput(Math.max(total - coveredAmount, 0)))
+    setPatientTopUp(
+      shouldUseNhisTopUpPricing ? formatAmountInput(Math.max(total - coveredAmount, 0)) : '0.00'
+    )
     setPatientTopUpMethod('cash')
   }
 
@@ -754,10 +759,20 @@ const Sales = () => {
     const total = calculateTotal()
     const coverage = Math.min(Math.max(Number.parseFloat(value) || 0, 0), total)
     setInsuranceCoverage(value)
+    if (servingNhisPatient && !canUseNhisTopups) {
+      setPatientTopUp('0.00')
+      return
+    }
     setPatientTopUp(formatAmountInput(Math.max(total - coverage, 0)))
   }
 
   const handlePatientTopUpChange = (value) => {
+    if (servingNhisPatient && !canUseNhisTopups) {
+      setPatientTopUp('0.00')
+      setInsuranceCoverage(formatAmountInput(calculateTotal()))
+      return
+    }
+
     const total = calculateTotal()
     const topUp = Math.min(Math.max(Number.parseFloat(value) || 0, 0), total)
     setPatientTopUp(value)
@@ -846,8 +861,15 @@ const Sales = () => {
 
     const total = calculateTotal()
     const amountPaid = Number.parseFloat(received) || 0
-    const insuranceCoveredAmount = Number.parseFloat(insuranceCoverage) || 0
-    const patientTopUpAmount = Number.parseFloat(patientTopUp) || 0
+    const insuranceSplitAllowed = !servingNhisPatient || canUseNhisTopups
+    const insuranceCoveredAmount =
+      paymentMethod === 'insurance' && !insuranceSplitAllowed
+        ? total
+        : Number.parseFloat(insuranceCoverage) || 0
+    const patientTopUpAmount =
+      paymentMethod === 'insurance' && !insuranceSplitAllowed
+        ? 0
+        : Number.parseFloat(patientTopUp) || 0
 
     if (paymentMethod === 'cash' && amountPaid < total) {
       notify('Received amount must be at least the total for cash payments.', 'warning')
@@ -1237,6 +1259,7 @@ const Sales = () => {
   const change = calculateChange()
   const nhisCoveredTotal = calculateNhisCoveredTotal()
   const servingNhisPatient = paymentMethod === 'insurance' && isNhisPatient(selectedPatientForSale)
+  const insuranceSplitAllowed = !servingNhisPatient || canUseNhisTopups
   const insuranceHasPatientDetails =
     paymentMethod !== 'insurance' ||
     Boolean(
@@ -1257,16 +1280,20 @@ const Sales = () => {
       return
     }
 
-    const defaultCoverage = servingNhisPatient ? Math.min(nhisCoveredTotal, total) : total
+    const defaultCoverage =
+      servingNhisPatient && canUseNhisTopups ? Math.min(nhisCoveredTotal, total) : total
     const coverageInput = Number.parseFloat(insuranceCoverage)
-    const coverage = insuranceCoverage
-      ? Math.min(Math.max(coverageInput || 0, 0), total)
-      : defaultCoverage
+    const coverage =
+      insuranceCoverage && insuranceSplitAllowed
+        ? Math.min(Math.max(coverageInput || 0, 0), total)
+        : defaultCoverage
     const nextCoverage =
-      insuranceCoverage && !servingNhisPatient && coverage < total
+      insuranceCoverage && insuranceSplitAllowed && !servingNhisPatient && coverage < total
         ? insuranceCoverage
         : formatAmountInput(coverage)
-    const nextTopUp = formatAmountInput(Math.max(total - coverage, 0))
+    const nextTopUp = insuranceSplitAllowed
+      ? formatAmountInput(Math.max(total - coverage, 0))
+      : '0.00'
 
     if (insuranceCoverage !== nextCoverage) {
       setInsuranceCoverage(nextCoverage)
@@ -1275,7 +1302,17 @@ const Sales = () => {
     if (patientTopUp !== nextTopUp) {
       setPatientTopUp(nextTopUp)
     }
-  }, [cart, insuranceCoverage, nhisCoveredTotal, patientTopUp, paymentMethod, servingNhisPatient, total])
+  }, [
+    canUseNhisTopups,
+    cart,
+    insuranceCoverage,
+    insuranceSplitAllowed,
+    nhisCoveredTotal,
+    patientTopUp,
+    paymentMethod,
+    servingNhisPatient,
+    total,
+  ])
 
   if (loading) {
     return (
@@ -1823,8 +1860,14 @@ const Sales = () => {
                   {servingNhisPatient && (
                     <div className="nhis-price-summary">
                       <span>Normal total: GHS {total.toFixed(2)}</span>
-                      <span>NHIS total: GHS {Math.min(nhisCoveredTotal, total).toFixed(2)}</span>
-                      <strong>Top-up: GHS {Math.max(total - nhisCoveredTotal, 0).toFixed(2)}</strong>
+                      {canUseNhisTopups ? (
+                        <>
+                          <span>NHIS total: GHS {Math.min(nhisCoveredTotal, total).toFixed(2)}</span>
+                          <strong>Top-up: GHS {Math.max(total - nhisCoveredTotal, 0).toFixed(2)}</strong>
+                        </>
+                      ) : (
+                        <strong>NHIS top-up disabled</strong>
+                      )}
                     </div>
                   )}
                   <div className="cash-field cash-field-input">
@@ -1836,6 +1879,7 @@ const Sales = () => {
                         type="number"
                         value={insuranceCoverage}
                         onChange={(event) => handleInsuranceCoverageChange(event.target.value)}
+                        disabled={servingNhisPatient && !canUseNhisTopups}
                         step="0.01"
                         min="0"
                         max={total}
@@ -1843,23 +1887,25 @@ const Sales = () => {
                       />
                     </div>
                   </div>
-                  <div className="cash-field cash-field-input">
-                    <label htmlFor="patient-top-up">Patient Top-Up</label>
-                    <div className="cash-input-shell">
-                      <span className="cash-prefix">GHS</span>
-                      <input
-                        id="patient-top-up"
-                        type="number"
-                        value={patientTopUp}
-                        onChange={(event) => handlePatientTopUpChange(event.target.value)}
-                        step="0.01"
-                        min="0"
-                        max={total}
-                        placeholder="0.00"
-                      />
+                  {insuranceSplitAllowed && (
+                    <div className="cash-field cash-field-input">
+                      <label htmlFor="patient-top-up">Patient Top-Up</label>
+                      <div className="cash-input-shell">
+                        <span className="cash-prefix">GHS</span>
+                        <input
+                          id="patient-top-up"
+                          type="number"
+                          value={patientTopUp}
+                          onChange={(event) => handlePatientTopUpChange(event.target.value)}
+                          step="0.01"
+                          min="0"
+                          max={total}
+                          placeholder="0.00"
+                        />
+                      </div>
                     </div>
-                  </div>
-                  {Number.parseFloat(patientTopUp) > 0 && (
+                  )}
+                  {insuranceSplitAllowed && Number.parseFloat(patientTopUp) > 0 && (
                     <div className="cash-field cash-field-input insurance-top-up-method">
                       <label htmlFor="patient-top-up-method">Top-Up Paid By</label>
                       <select

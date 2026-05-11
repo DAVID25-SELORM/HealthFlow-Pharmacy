@@ -239,6 +239,7 @@ export const AuthProvider = ({ children }) => {
             can_use_claims,
             can_use_purchases,
             can_use_nhis,
+            can_use_nhis_topups,
             can_use_accounting,
             can_use_multi_branch
           )

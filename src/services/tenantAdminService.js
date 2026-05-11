@@ -165,6 +165,7 @@ export const createPharmacyTenant = async ({ pharmacy, admin }) =>
       canUseClaims: Boolean(pharmacy.canUseClaims),
       canUsePurchases: Boolean(pharmacy.canUsePurchases),
       canUseNhis: Boolean(pharmacy.canUseNhis),
+      canUseNhisTopups: Boolean(pharmacy.canUseNhis && pharmacy.canUseNhisTopups),
       canUseAccounting: Boolean(pharmacy.canUseAccounting),
       canUseMultiBranch: Boolean(pharmacy.canUseMultiBranch),
       nextPaymentDueAt: pharmacy.nextPaymentDueAt || null,
@@ -281,6 +282,10 @@ export const updateOrganizationDetails = async (orgId, fields) => {
       fields.canUsePurchases !== undefined ? Boolean(fields.canUsePurchases) : undefined,
     canUseNhis:
       fields.canUseNhis !== undefined ? Boolean(fields.canUseNhis) : undefined,
+    canUseNhisTopups:
+      fields.canUseNhisTopups !== undefined
+        ? Boolean(fields.canUseNhis && fields.canUseNhisTopups)
+        : undefined,
     canUseAccounting:
       fields.canUseAccounting !== undefined ? Boolean(fields.canUseAccounting) : undefined,
     canUseMultiBranch:

@@ -37,6 +37,7 @@ const blankPharmacy = {
   canUseClaims: false,
   canUsePurchases: false,
   canUseNhis: false,
+  canUseNhisTopups: false,
   canUseAccounting: false,
   canUseMultiBranch: false,
   nextPaymentDueAt: '',
@@ -243,6 +244,7 @@ const TenantAdmin = () => {
       canUseClaims: Boolean(org.can_use_claims),
       canUsePurchases: Boolean(org.can_use_purchases),
       canUseNhis: Boolean(org.can_use_nhis),
+      canUseNhisTopups: Boolean(org.can_use_nhis_topups),
       canUseAccounting: Boolean(org.can_use_accounting),
       canUseMultiBranch: Boolean(org.can_use_multi_branch),
       billingNotes: org.billing_notes || '',
@@ -310,6 +312,8 @@ const TenantAdmin = () => {
         Boolean(updatedOrganization?.can_use_claims) !== Boolean(editForm.canUseClaims) ||
         Boolean(updatedOrganization?.can_use_purchases) !== Boolean(editForm.canUsePurchases) ||
         Boolean(updatedOrganization?.can_use_nhis) !== Boolean(editForm.canUseNhis) ||
+        Boolean(updatedOrganization?.can_use_nhis_topups) !==
+          Boolean(editForm.canUseNhis && editForm.canUseNhisTopups) ||
         Boolean(updatedOrganization?.can_use_accounting) !== Boolean(editForm.canUseAccounting) ||
         Boolean(updatedOrganization?.can_use_multi_branch) !== Boolean(editForm.canUseMultiBranch)
       ) {
@@ -611,9 +615,24 @@ const TenantAdmin = () => {
                     <input
                       type="checkbox"
                       checked={pharmacy.canUseNhis}
-                      onChange={(e) => setPharmacy({ ...pharmacy, canUseNhis: e.target.checked })}
+                      onChange={(e) =>
+                        setPharmacy({
+                          ...pharmacy,
+                          canUseNhis: e.target.checked,
+                          canUseNhisTopups: e.target.checked ? pharmacy.canUseNhisTopups : false,
+                        })
+                      }
                     />
                     NHIS
+                  </label>
+                  <label className="tenant-checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={pharmacy.canUseNhis && pharmacy.canUseNhisTopups}
+                      disabled={!pharmacy.canUseNhis}
+                      onChange={(e) => setPharmacy({ ...pharmacy, canUseNhisTopups: e.target.checked })}
+                    />
+                    NHIS top-ups
                   </label>
                   <label className="tenant-checkbox-label">
                     <input
@@ -1177,9 +1196,24 @@ const TenantAdmin = () => {
                       <input
                         type="checkbox"
                         checked={Boolean(editForm.canUseNhis)}
-                        onChange={(e) => setEditForm({ ...editForm, canUseNhis: e.target.checked })}
+                        onChange={(e) =>
+                          setEditForm({
+                            ...editForm,
+                            canUseNhis: e.target.checked,
+                            canUseNhisTopups: e.target.checked ? editForm.canUseNhisTopups : false,
+                          })
+                        }
                       />
                       NHIS
+                    </label>
+                    <label className="tenant-checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(editForm.canUseNhis && editForm.canUseNhisTopups)}
+                        disabled={!editForm.canUseNhis}
+                        onChange={(e) => setEditForm({ ...editForm, canUseNhisTopups: e.target.checked })}
+                      />
+                      NHIS top-ups
                     </label>
                     <label className="tenant-checkbox-label">
                       <input

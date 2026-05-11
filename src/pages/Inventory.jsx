@@ -72,7 +72,7 @@ const calculateMarkedUpPrice = (costPrice, markupPercent) => {
 const Inventory = () => {
   const { role, profile, branch } = useAuth()
   const { notify } = useNotification()
-  const { tierLimits } = useTenant()
+  const { canUseNhis, tierLimits } = useTenant()
   const [searchParams, setSearchParams] = useSearchParams()
   const [showDrugModal, setShowDrugModal] = useState(false)
   const [showImportModal, setShowImportModal] = useState(false)
@@ -696,7 +696,7 @@ const Inventory = () => {
               <th>Expiry Date</th>
               <th>Quantity</th>
               <th>Price (GHS)</th>
-              <th>NHIS (GHS)</th>
+              {canUseNhis && <th>NHIS (GHS)</th>}
               <th>Total (GHS)</th>
               <th>Status</th>
               <th>Actions</th>
@@ -705,7 +705,7 @@ const Inventory = () => {
           <tbody>
             {visibleDrugs.length === 0 ? (
               <tr>
-                <td colSpan="9" style={{ textAlign: 'center', padding: '2rem' }}>
+                <td colSpan={canUseNhis ? 9 : 8} style={{ textAlign: 'center', padding: '2rem' }}>
                   {searchTerm || activeFilter !== 'all'
                     ? 'No medicines match the current search or filter.'
                     : 'No drugs in inventory. Click "Add Drug" to get started.'}
@@ -728,7 +728,7 @@ const Inventory = () => {
                     <td>{expiryDate ? formatAppDate(expiryDate) : 'N/A'}</td>
                     <td>{quantity}</td>
                     <td>GHS {price.toFixed(2)}</td>
-                    <td>{nhisPrice > 0 ? `GHS ${nhisPrice.toFixed(2)}` : '-'}</td>
+                    {canUseNhis && <td>{nhisPrice > 0 ? `GHS ${nhisPrice.toFixed(2)}` : '-'}</td>}
                     <td className="total-cell">GHS {total}</td>
                     <td>
                       <span className={`status-badge ${status.class}`}>{status.label}</span>
@@ -887,32 +887,34 @@ const Inventory = () => {
                 </div>
               </div>
 
-              <div className="form-row">
-                <div className="form-group">
-                  <label>NHIS Code</label>
-                  <input
-                    type="text"
-                    placeholder="e.g., ACETAZTA1"
-                    value={formData.nhisCode}
-                    onChange={(event) =>
-                      setFormData({ ...formData, nhisCode: event.target.value, isNhisListed: true })
-                    }
-                  />
+              {canUseNhis && (
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>NHIS Code</label>
+                    <input
+                      type="text"
+                      placeholder="e.g., ACETAZTA1"
+                      value={formData.nhisCode}
+                      onChange={(event) =>
+                        setFormData({ ...formData, nhisCode: event.target.value, isNhisListed: true })
+                      }
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>NHIS Price (GHS)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="0.00"
+                      value={formData.nhisPrice}
+                      onChange={(event) =>
+                        setFormData({ ...formData, nhisPrice: event.target.value, isNhisListed: true })
+                      }
+                    />
+                  </div>
                 </div>
-                <div className="form-group">
-                  <label>NHIS Price (GHS)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    placeholder="0.00"
-                    value={formData.nhisPrice}
-                    onChange={(event) =>
-                      setFormData({ ...formData, nhisPrice: event.target.value, isNhisListed: true })
-                    }
-                  />
-                </div>
-              </div>
+              )}
 
               <div className="form-actions">
                 <button type="button" className="btn btn-outline" onClick={closeDrugModal}>

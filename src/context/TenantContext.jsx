@@ -29,6 +29,7 @@ export const TenantProvider = ({ children }) => {
         canUseClaims: false,
         canUsePurchases: false,
         canUseNhis: false,
+        canUseNhisTopups: false,
         canUseAccounting: false,
         canUseMultiBranch: false,
         loading: true,
@@ -50,6 +51,7 @@ export const TenantProvider = ({ children }) => {
         canUseClaims: false,
         canUsePurchases: false,
         canUseNhis: false,
+        canUseNhisTopups: false,
         canUseAccounting: false,
         canUseMultiBranch: false,
         loading: false,
@@ -79,6 +81,7 @@ export const TenantProvider = ({ children }) => {
       canUseClaims: Boolean(organization.can_use_claims),
       canUsePurchases: Boolean(organization.can_use_purchases),
       canUseNhis: Boolean(organization.can_use_nhis),
+      canUseNhisTopups: Boolean(organization.can_use_nhis_topups),
       canUseAccounting: Boolean(organization.can_use_accounting),
       canUseMultiBranch: Boolean(organization.can_use_multi_branch),
     }
