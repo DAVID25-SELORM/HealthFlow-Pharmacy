@@ -21,6 +21,9 @@ import {
 assertConfiguredForServer()
 
 const app = express()
+const DEFAULT_ALLOWED_WEB_ORIGINS = new Set([
+  'https://health-flow-pharmacy.vercel.app',
+])
 
 const isAllowedOrigin = (origin) => {
   if (!origin) {
@@ -33,6 +36,10 @@ const isAllowedOrigin = (origin) => {
 
   try {
     const url = new URL(origin)
+    if (DEFAULT_ALLOWED_WEB_ORIGINS.has(origin.replace(/\/+$/, ''))) {
+      return true
+    }
+
     return (
       url.hostname === 'localhost' ||
       url.hostname === '127.0.0.1' ||
