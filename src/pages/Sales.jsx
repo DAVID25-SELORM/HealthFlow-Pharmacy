@@ -13,6 +13,7 @@ import {
   getBranchServerConfig,
   getBranchServerHealth,
   getBranchSyncStatus,
+  getNhiaSettings,
   isBranchServerEnabled,
   pullBranchInventory,
   runBranchSync,
@@ -45,6 +46,8 @@ import './Sales.css'
 const POS_DRUG_SEARCH_LIMIT = 30
 const RECENT_SALES_LIMIT = 8
 const POS_PATIENT_SEARCH_LIMIT = 8
+const DEFAULT_NHIS_MEMBER_DIGITS = 8
+const DEFAULT_GHANA_CARD_DIGITS = 10
 
 const BRANCH_SYNC_LABELS = {
   patients: 'Patients',
@@ -65,6 +68,34 @@ const formatAmountInput = (value) => Number(value || 0).toFixed(2)
 
 const isNhisPatient = (patient) =>
   String(patient?.insurance_provider || '').trim().toLowerCase() === 'nhis'
+
+const digitsOnly = (value) => String(value || '').replace(/\D/g, '')
+
+const getNhiaMemberNumber = (patient) =>
+  patient?.insurance_id || patient?.nhis_member_no || patient?.nhis_hin || ''
+
+const validateNhiaMemberNumber = (
+  value,
+  {
+    nhisMemberDigits = DEFAULT_NHIS_MEMBER_DIGITS,
+    ghanaCardDigits = DEFAULT_GHANA_CARD_DIGITS,
+  } = {}
+) => {
+  const memberNumber = String(value || '').trim()
+  if (!memberNumber) {
+    return 'Enter the patient NHIS member number or Ghana Card number.'
+  }
+
+  const isGhanaCard = memberNumber.toUpperCase().startsWith('GHA')
+  const requiredDigits = isGhanaCard ? Number(ghanaCardDigits) || DEFAULT_GHANA_CARD_DIGITS : Number(nhisMemberDigits) || DEFAULT_NHIS_MEMBER_DIGITS
+  const label = isGhanaCard ? 'Ghana Card number' : 'NHIS member number'
+
+  if (digitsOnly(memberNumber).length !== requiredDigits) {
+    return `${label} must contain exactly ${requiredDigits} digits.`
+  }
+
+  return ''
+}
 
 const mergePharmacySettingsWithOrganization = (settings, organization) => ({
   ...(settings || {}),
@@ -135,6 +166,7 @@ const Sales = () => {
     message: 'Not checked',
     health: null,
   })
+  const [nhiaSettings, setNhiaSettings] = useState(null)
   const [branchServerBusy, setBranchServerBusy] = useState(false)
   const [branchSyncStatus, setBranchSyncStatus] = useState(null)
   const [branchSyncBusy, setBranchSyncBusy] = useState(false)
@@ -274,6 +306,30 @@ const Sales = () => {
   useEffect(() => {
     setHighlightedPatientIndex(0)
   }, [patientSearchTerm])
+
+  useEffect(() => {
+    if (!branchServerModeEnabled) {
+      setNhiaSettings(null)
+      return
+    }
+
+    let cancelled = false
+    getNhiaSettings()
+      .then((settings) => {
+        if (!cancelled) {
+          setNhiaSettings(settings)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setNhiaSettings(null)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [branchServerModeEnabled])
 
   useEffect(() => {
     if (loading || !isSupabaseConfigured()) {
@@ -676,6 +732,7 @@ const Sales = () => {
     },
     [effectiveBranchId, isOnline, notify, refreshOfflineSalesSummary, searchTerm, user?.id]
   )
+  const selectedNhiaMemberNumber = getNhiaMemberNumber(selectedPatientForSale)
 
   useEffect(() => {
     void refreshOfflineSalesSummary()
@@ -813,7 +870,7 @@ const Sales = () => {
       setReceived('')
     }
 
-    if (method !== 'insurance') {
+    if (method !== 'insurance' && method !== 'nhia') {
       setInsuranceCoverage('')
       setPatientTopUp('')
       setPatientTopUpMethod('cash')
@@ -821,7 +878,8 @@ const Sales = () => {
     }
 
     const total = calculateTotal()
-    const shouldUseNhisTopUpPricing = isNhisPatient(selectedPatientForSale) && canUseNhisTopups
+    const shouldUseNhisTopUpPricing =
+      method !== 'nhia' && isNhisPatient(selectedPatientForSale) && canUseNhisTopups
     const coveredAmount = shouldUseNhisTopUpPricing ? calculateNhisCoveredTotal() : total
     setInsuranceCoverage(formatAmountInput(Math.min(coveredAmount, total)))
     setPatientTopUp(
@@ -917,6 +975,29 @@ const Sales = () => {
     }
   }
 
+  const buildNhiaClaimPayload = ({ soldItems, branchId, saleDate }) => {
+    if (paymentMethod !== 'nhia') {
+      return null
+    }
+
+    return {
+      patientId: selectedPatientForSale.id,
+      patientName: selectedPatientForSale.full_name,
+      memberNumber: selectedNhiaMemberNumber,
+      hin: selectedPatientForSale.nhis_hin || null,
+      insuranceProvider: selectedPatientForSale.insurance_provider || 'NHIA',
+      serviceDate: (saleDate || new Date().toISOString()).split('T')[0],
+      status: 'ready',
+      items: soldItems.map((item) => ({
+        ...item,
+        nhiaCode: item.nhisCode || null,
+        nhiaPrice: item.nhisPrice || item.price,
+      })),
+      submittedBy: user?.id || null,
+      branchId,
+    }
+  }
+
   const createInsuranceClaimForSale = async (claimArgs) => {
     const claimPayload = buildInsuranceClaimPayload(claimArgs)
     return claimPayload ? await createClaim(claimPayload) : null
@@ -936,13 +1017,17 @@ const Sales = () => {
     const saleDiscount = calculateSaleDiscount()
     const total = calculateTotal()
     const amountPaid = Number.parseFloat(received) || 0
-    const insuranceSplitAllowed = !servingNhisPatient || canUseNhisTopups
+    const saleIsNhiaClaim = paymentMethod === 'nhia'
+    const saleIsInsuranceLike = paymentMethod === 'insurance' || saleIsNhiaClaim
+    const insuranceSplitAllowed = !saleIsNhiaClaim && (!servingNhisPatient || canUseNhisTopups)
     const insuranceCoveredAmount =
-      paymentMethod === 'insurance' && !insuranceSplitAllowed
+      saleIsNhiaClaim
+        ? total
+        : paymentMethod === 'insurance' && !insuranceSplitAllowed
         ? total
         : Number.parseFloat(insuranceCoverage) || 0
     const patientTopUpAmount =
-      paymentMethod === 'insurance' && !insuranceSplitAllowed
+      saleIsNhiaClaim || (paymentMethod === 'insurance' && !insuranceSplitAllowed)
         ? 0
         : Number.parseFloat(patientTopUp) || 0
 
@@ -951,15 +1036,24 @@ const Sales = () => {
       return
     }
 
-    if (paymentMethod === 'insurance') {
+    if (saleIsInsuranceLike) {
       if (!selectedPatientForSale) {
-        notify('Select a patient before completing an insurance sale.', 'warning')
+        notify('Select a patient before completing an insurance/NHIA sale.', 'warning')
         return
       }
 
-      if (!selectedPatientForSale.insurance_provider || !selectedPatientForSale.insurance_id) {
+      const memberNumber = saleIsNhiaClaim ? selectedNhiaMemberNumber : selectedPatientForSale.insurance_id
+      if (!selectedPatientForSale.insurance_provider || !memberNumber) {
         notify('The selected patient does not have insurance details on file.', 'warning')
         return
+      }
+
+      if (saleIsNhiaClaim) {
+        const memberNumberError = validateNhiaMemberNumber(selectedNhiaMemberNumber, nhiaSettings || {})
+        if (memberNumberError) {
+          notify(memberNumberError, 'warning')
+          return
+        }
       }
 
       if (insuranceCoveredAmount <= 0) {
@@ -969,6 +1063,11 @@ const Sales = () => {
 
       if (Math.abs(insuranceCoveredAmount + patientTopUpAmount - total) > 0.01) {
         notify('Insurance cover and patient top-up must add up to the sale total.', 'warning')
+        return
+      }
+
+      if (saleIsNhiaClaim && !branchServerModeEnabled) {
+        notify('NHIA claim sales must be saved through the local branch server.', 'warning')
         return
       }
     }
@@ -982,6 +1081,8 @@ const Sales = () => {
         name: item.name,
         quantity: item.quantity,
         price: item.price,
+        nhisCode: item.nhisCode || null,
+        nhisPrice: item.nhisPrice || null,
       }))
 
       const salePayload = {
@@ -992,7 +1093,7 @@ const Sales = () => {
         amountPaid: paymentMethod === 'cash' ? amountPaid : total,
         change: paymentMethod === 'cash' ? calculateChange() : 0,
         notes:
-          paymentMethod === 'insurance'
+          saleIsInsuranceLike
             ? buildInsuranceSaleNotes({
                 total,
                 coverage: insuranceCoveredAmount,
@@ -1001,11 +1102,11 @@ const Sales = () => {
               })
             : null,
         insuranceCoveredAmount:
-          paymentMethod === 'insurance' ? insuranceCoveredAmount : null,
+          saleIsInsuranceLike ? insuranceCoveredAmount : null,
         insuranceTopUpAmount:
-          paymentMethod === 'insurance' ? patientTopUpAmount : null,
+          saleIsInsuranceLike ? patientTopUpAmount : null,
         insuranceTopUpPaymentMethod:
-          paymentMethod === 'insurance' && patientTopUpAmount > 0 ? patientTopUpMethod : null,
+          saleIsInsuranceLike && patientTopUpAmount > 0 ? patientTopUpMethod : null,
         soldBy: user?.id || null,
         shiftId: activeShift.id,
         organizationId: profile?.organization_id,
@@ -1030,7 +1131,7 @@ const Sales = () => {
         change: paymentMethod === 'cash' ? calculateChange() : 0,
         patient: selectedPatientForSale,
         insuranceDetails:
-          paymentMethod === 'insurance'
+          saleIsInsuranceLike
             ? {
                 provider: selectedPatientForSale.insurance_provider,
                 insuranceId: selectedPatientForSale.insurance_id,
@@ -1041,6 +1142,71 @@ const Sales = () => {
             : null,
         soldBy: displayName || user?.email,
       })
+
+      if (branchServerModeEnabled) {
+        try {
+          const localClaimPayload =
+            paymentMethod === 'insurance'
+              ? buildInsuranceClaimPayload({
+                  saleNumber: null,
+                  soldItems,
+                  total,
+                  coverage: insuranceCoveredAmount,
+                  topUp: patientTopUpAmount,
+                  topUpMethod: patientTopUpMethod,
+                  branchId: activeShift.branch_id,
+                  saleDate: saleTimestamp,
+                })
+              : null
+          const nhiaClaimPayload =
+            paymentMethod === 'nhia'
+              ? buildNhiaClaimPayload({
+                  soldItems,
+                  branchId: activeShift.branch_id,
+                  saleDate: saleTimestamp,
+                })
+              : null
+          const saleResult = await createBranchSale({
+            ...salePayload,
+            claimPayload: localClaimPayload,
+            nhiaClaimPayload,
+          })
+          const receiptData = buildReceiptData(saleResult.saleNumber)
+          const claimMessage = saleResult.nhiaClaimNumber
+            ? ` NHIA claim ${saleResult.nhiaClaimNumber} was saved locally.`
+            : saleResult.claimNumber
+              ? ` Claim ${saleResult.claimNumber} was saved locally.`
+              : ''
+
+          setLastSale({ ...receiptData, offline: true, branchServer: true })
+          reduceSoldDrugQuantities(soldItems)
+          setCart([])
+          setSearchTerm('')
+          syncSearchParam('')
+          setReceived('')
+          setDiscountType('amount')
+          setDiscountValue('')
+          setInsuranceCoverage('')
+          setPatientTopUp('')
+          setPatientTopUpMethod('cash')
+          selectPatientForSale(null)
+          notify(
+            `Sale saved to the local branch server.${claimMessage} It will sync when internet returns.`,
+            'success'
+          )
+          setShowReceipt(true)
+          return
+        } catch (branchSaleError) {
+          console.warn('Local branch sale failed:', branchSaleError)
+          notify(
+            branchSaleError.message || 'Local branch server is unavailable.',
+            paymentMethod === 'nhia' || !isOnline ? 'error' : 'warning'
+          )
+          if (paymentMethod === 'nhia' || !isOnline) {
+            return
+          }
+        }
+      }
 
       if (!isOnline) {
         if (branchServerModeEnabled) {
@@ -1342,17 +1508,19 @@ const Sales = () => {
   const total = calculateTotal()
   const change = calculateChange()
   const nhisCoveredTotal = calculateNhisCoveredTotal()
-  const servingNhisPatient = paymentMethod === 'insurance' && isNhisPatient(selectedPatientForSale)
-  const insuranceSplitAllowed = !servingNhisPatient || canUseNhisTopups
+  const isNhiaClaimSale = paymentMethod === 'nhia'
+  const isInsuranceSale = paymentMethod === 'insurance' || isNhiaClaimSale
+  const servingNhisPatient = isInsuranceSale && isNhisPatient(selectedPatientForSale)
+  const insuranceSplitAllowed = !isNhiaClaimSale && (!servingNhisPatient || canUseNhisTopups)
   const insuranceHasPatientDetails =
-    paymentMethod !== 'insurance' ||
+    !isInsuranceSale ||
     Boolean(
       selectedPatientForSale?.insurance_provider &&
-        selectedPatientForSale?.insurance_id
+        (isNhiaClaimSale ? selectedNhiaMemberNumber : selectedPatientForSale?.insurance_id)
     )
 
   useEffect(() => {
-    if (paymentMethod !== 'insurance') {
+    if (!isInsuranceSale) {
       return
     }
 
@@ -1365,7 +1533,9 @@ const Sales = () => {
     }
 
     const defaultCoverage =
-      servingNhisPatient && canUseNhisTopups ? Math.min(nhisCoveredTotal, total) : total
+      !isNhiaClaimSale && servingNhisPatient && canUseNhisTopups
+        ? Math.min(nhisCoveredTotal, total)
+        : total
     const coverageInput = Number.parseFloat(insuranceCoverage)
     const coverage =
       insuranceCoverage && insuranceSplitAllowed
@@ -1391,6 +1561,8 @@ const Sales = () => {
     cart,
     insuranceCoverage,
     insuranceSplitAllowed,
+    isInsuranceSale,
+    isNhiaClaimSale,
     nhisCoveredTotal,
     patientTopUp,
     paymentMethod,
@@ -1964,6 +2136,13 @@ const Sales = () => {
               </button>
               <button
                 type="button"
+                className={`payment-btn ${paymentMethod === 'nhia' ? 'active' : ''}`}
+                onClick={() => handlePaymentMethodChange('nhia')}
+              >
+                NHIA Claim
+              </button>
+              <button
+                type="button"
                 className={`payment-btn ${paymentMethod === 'card' ? 'active' : ''}`}
                 onClick={() => handlePaymentMethodChange('card')}
               >
@@ -1995,7 +2174,7 @@ const Sales = () => {
               </div>
             )}
 
-            {paymentMethod === 'insurance' && (
+            {isInsuranceSale && (
               <div className="insurance-panel">
                 {selectedPatientForSale ? (
                   <div
@@ -2003,26 +2182,30 @@ const Sales = () => {
                       insuranceHasPatientDetails ? '' : 'insurance-card-warning'
                     }`}
                   >
-                    <span className="insurance-label">Patient Insurance</span>
+                    <span className="insurance-label">
+                      {isNhiaClaimSale ? 'Patient NHIA' : 'Patient Insurance'}
+                    </span>
                     <strong>
                       {selectedPatientForSale.insurance_provider || 'No insurance provider saved'}
                     </strong>
                     <span>
-                      {selectedPatientForSale.insurance_id
-                        ? `ID: ${selectedPatientForSale.insurance_id}`
+                      {(isNhiaClaimSale ? selectedNhiaMemberNumber : selectedPatientForSale.insurance_id)
+                        ? `ID: ${isNhiaClaimSale ? selectedNhiaMemberNumber : selectedPatientForSale.insurance_id}`
                         : 'No insurance ID saved'}
                     </span>
                   </div>
                 ) : (
                   <div className="insurance-card insurance-card-warning">
-                    <span className="insurance-label">Patient Insurance</span>
+                    <span className="insurance-label">
+                      {isNhiaClaimSale ? 'Patient NHIA' : 'Patient Insurance'}
+                    </span>
                     <strong>Select a linked patient</strong>
-                    <span>Insurance sales need a patient with insurance details.</span>
+                    <span>{isNhiaClaimSale ? 'NHIA claim sales' : 'Insurance sales'} need a patient with insurance details.</span>
                   </div>
                 )}
 
                 <div className="insurance-split-grid">
-                  {servingNhisPatient && (
+                  {servingNhisPatient && !isNhiaClaimSale && (
                     <div className="nhis-price-summary">
                       <span>Normal total: GHS {total.toFixed(2)}</span>
                       {canUseNhisTopups ? (
@@ -2044,7 +2227,7 @@ const Sales = () => {
                         type="number"
                         value={insuranceCoverage}
                         onChange={(event) => handleInsuranceCoverageChange(event.target.value)}
-                        disabled={servingNhisPatient && !canUseNhisTopups}
+                        disabled={isNhiaClaimSale || (servingNhisPatient && !canUseNhisTopups)}
                         step="0.01"
                         min="0"
                         max={total}
@@ -2094,7 +2277,7 @@ const Sales = () => {
                 cart.length === 0 ||
                 processing ||
                 !activeShift ||
-                (paymentMethod === 'insurance' && !insuranceHasPatientDetails)
+                (isInsuranceSale && !insuranceHasPatientDetails)
               }
               onClick={handleCompleteSale}
             >

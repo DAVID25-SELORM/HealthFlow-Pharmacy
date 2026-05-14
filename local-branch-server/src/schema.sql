@@ -132,6 +132,116 @@ CREATE TABLE IF NOT EXISTS claim_items (
 
 CREATE INDEX IF NOT EXISTS idx_claim_items_claim ON claim_items(claim_id);
 
+CREATE TABLE IF NOT EXISTS nhia_settings (
+  id TEXT PRIMARY KEY,
+  organization_id TEXT,
+  branch_id TEXT,
+  facility_code TEXT,
+  provider_number TEXT,
+  submitter_id TEXT,
+  api_base_url TEXT,
+  claim_endpoint_path TEXT,
+  direct_api_enabled INTEGER NOT NULL DEFAULT 0,
+  credential_mode TEXT NOT NULL DEFAULT 'api_key',
+  credential_payload TEXT NOT NULL DEFAULT '{}',
+  nhis_member_digits INTEGER NOT NULL DEFAULT 8,
+  ghana_card_digits INTEGER NOT NULL DEFAULT 10,
+  export_format TEXT NOT NULL DEFAULT 'json',
+  max_retry_attempts INTEGER NOT NULL DEFAULT 3,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_nhia_settings_org_branch
+  ON nhia_settings(COALESCE(organization_id, ''), COALESCE(branch_id, ''));
+
+CREATE TABLE IF NOT EXISTS nhia_claims (
+  id TEXT PRIMARY KEY,
+  claim_number TEXT UNIQUE NOT NULL,
+  local_sale_id TEXT REFERENCES sales(id) ON DELETE SET NULL,
+  local_sale_number TEXT,
+  batch_id TEXT,
+  patient_id TEXT,
+  patient_name TEXT NOT NULL,
+  member_number TEXT NOT NULL,
+  hin TEXT,
+  cc_code TEXT,
+  insurance_provider TEXT,
+  service_date TEXT NOT NULL,
+  total_amount REAL NOT NULL,
+  status TEXT NOT NULL DEFAULT 'draft',
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  response_json TEXT,
+  retry_count INTEGER NOT NULL DEFAULT 0,
+  next_retry_at TEXT,
+  last_error TEXT,
+  submitted_at TEXT,
+  accepted_at TEXT,
+  rejected_at TEXT,
+  paid_at TEXT,
+  organization_id TEXT,
+  branch_id TEXT,
+  created_by TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_nhia_claims_status ON nhia_claims(status, next_retry_at, created_at);
+CREATE INDEX IF NOT EXISTS idx_nhia_claims_sale ON nhia_claims(local_sale_id);
+
+CREATE TABLE IF NOT EXISTS nhia_claim_items (
+  id TEXT PRIMARY KEY,
+  nhia_claim_id TEXT NOT NULL REFERENCES nhia_claims(id) ON DELETE CASCADE,
+  drug_id TEXT,
+  drug_name TEXT NOT NULL,
+  nhia_code TEXT,
+  quantity REAL NOT NULL,
+  unit_price REAL NOT NULL,
+  total_price REAL NOT NULL,
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_nhia_claim_items_claim ON nhia_claim_items(nhia_claim_id);
+
+CREATE TABLE IF NOT EXISTS nhia_claim_batches (
+  id TEXT PRIMARY KEY,
+  batch_number TEXT UNIQUE NOT NULL,
+  status TEXT NOT NULL DEFAULT 'draft',
+  export_format TEXT NOT NULL DEFAULT 'json',
+  claim_count INTEGER NOT NULL DEFAULT 0,
+  total_amount REAL NOT NULL DEFAULT 0,
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  response_json TEXT,
+  file_name TEXT,
+  organization_id TEXT,
+  branch_id TEXT,
+  created_by TEXT,
+  submitted_at TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_nhia_claim_batches_status ON nhia_claim_batches(status, created_at);
+
+CREATE TABLE IF NOT EXISTS nhia_submission_logs (
+  id TEXT PRIMARY KEY,
+  nhia_claim_id TEXT REFERENCES nhia_claims(id) ON DELETE SET NULL,
+  batch_id TEXT REFERENCES nhia_claim_batches(id) ON DELETE SET NULL,
+  action TEXT NOT NULL,
+  status TEXT NOT NULL,
+  attempt INTEGER NOT NULL DEFAULT 0,
+  http_status INTEGER,
+  request_json TEXT,
+  response_json TEXT,
+  error_message TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_nhia_submission_logs_claim ON nhia_submission_logs(nhia_claim_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_nhia_submission_logs_batch ON nhia_submission_logs(batch_id, created_at);
+
 CREATE TABLE IF NOT EXISTS stock_movements (
   id TEXT PRIMARY KEY,
   drug_id TEXT NOT NULL,

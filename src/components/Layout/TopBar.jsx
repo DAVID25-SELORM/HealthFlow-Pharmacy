@@ -9,7 +9,7 @@ import { useOnlineStatus } from '../../hooks/useOnlineStatus'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { getClaimsStatistics } from '../../services/claimsService'
 import { getExpiringDrugs, getLowStockDrugs } from '../../services/drugService'
-import { INVENTORY_ROLES, hasRole } from '../../utils/roles'
+import { CLAIMS_ROLES, INVENTORY_ROLES, hasRole } from '../../utils/roles'
 import './TopBar.css'
 
 const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
@@ -26,6 +26,7 @@ const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
 
   const avatarName = encodeURIComponent(displayName)
   const canUseInventorySearch = canManageInventory || hasRole(role, INVENTORY_ROLES)
+  const canUseClaimAlerts = canManageClaims || hasRole(role, CLAIMS_ROLES)
   const searchTarget = canUseInventorySearch ? '/inventory' : '/sales'
 
   const notificationCount = useMemo(
@@ -34,35 +35,37 @@ const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
   )
 
   const loadAlerts = useCallback(async () => {
-    if (!isSupabaseConfigured() || !canUseInventorySearch) {
+    if (!isSupabaseConfigured() || (!canUseInventorySearch && !canUseClaimAlerts)) {
       setAlerts([])
       return
     }
 
     try {
-      const canViewClaimAlerts = canUseClaims && tierLimits.hasClaims && canManageClaims
+      const canViewClaimAlerts = canUseClaims && tierLimits.hasClaims && canUseClaimAlerts
       const [lowStock, expiring, claimStats] = await Promise.all([
-        getLowStockDrugs(),
-        getExpiringDrugs(),
+        canUseInventorySearch ? getLowStockDrugs() : Promise.resolve([]),
+        canUseInventorySearch ? getExpiringDrugs() : Promise.resolve([]),
         canViewClaimAlerts ? getClaimsStatistics() : Promise.resolve({ pending: 0 }),
       ])
 
-      const nextAlerts = [
-        {
-          id: 'low-stock',
-          title: 'Low stock medicines',
-          description: `${lowStock.length} item(s) need attention.`,
-          count: lowStock.length,
-          path: '/inventory?filter=low',
-        },
-        {
-          id: 'expiring',
-          title: 'Expiring soon',
-          description: `${expiring.length} item(s) are approaching expiry.`,
-          count: expiring.length,
-          path: '/inventory?filter=expiring',
-        },
-      ]
+      const nextAlerts = canUseInventorySearch
+        ? [
+            {
+              id: 'low-stock',
+              title: 'Low stock medicines',
+              description: `${lowStock.length} item(s) need attention.`,
+              count: lowStock.length,
+              path: '/inventory?filter=low',
+            },
+            {
+              id: 'expiring',
+              title: 'Expiring soon',
+              description: `${expiring.length} item(s) are approaching expiry.`,
+              count: expiring.length,
+              path: '/inventory?filter=expiring',
+            },
+          ]
+        : []
 
       if (canViewClaimAlerts) {
         nextAlerts.push({
@@ -79,7 +82,7 @@ const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
       console.error('Unable to load top bar alerts:', error)
       setAlerts([])
     }
-  }, [canManageClaims, canUseClaims, canUseInventorySearch, tierLimits.hasClaims])
+  }, [canUseClaimAlerts, canUseClaims, canUseInventorySearch, tierLimits.hasClaims])
 
   useEffect(() => {
     const params = new URLSearchParams(location.search)

@@ -1,10 +1,22 @@
 import { config, isSupabaseSyncConfigured } from './config.js'
 import './db.js'
+import { submitPendingNhiaClaims } from './nhiaRepository.js'
 import { pullInventorySnapshot, pullReferenceData, syncPendingOutbox } from './supabaseSync.js'
 
 let lastInventoryPullAt = 0
 
 const runOnce = async () => {
+  try {
+    const nhiaResult = await submitPendingNhiaClaims()
+    if (nhiaResult.checked > 0 || nhiaResult.failed > 0) {
+      console.log(
+        `NHIA checked ${nhiaResult.checked} claim(s): ${nhiaResult.submitted} submitted, ${nhiaResult.failed} failed.`
+      )
+    }
+  } catch (error) {
+    console.error('NHIA pending submission failed:', error)
+  }
+
   if (!isSupabaseSyncConfigured()) {
     console.warn('Supabase sync is not configured. Set SUPABASE_URL, SUPABASE_SYNC_KEY, and BRANCH_SYNC_TOKEN.')
     return

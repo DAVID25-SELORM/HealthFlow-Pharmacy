@@ -317,6 +317,11 @@
   border-color: rgba(231, 76, 60, 0.35);
 }
 
+.icon-btn.edit {
+  color: var(--info);
+  border-color: rgba(52, 152, 219, 0.35);
+}
+
 .claims-page .modal-overlay {
   position: fixed;
   inset: 0;

@@ -1,0 +1,1053 @@
+import https from 'node:https'
+import { createId, db, json, nowIso, parseJson } from './db.js'
+import { config } from './config.js'
+
+const CLAIM_STATUSES = new Set([
+  'draft',
+  'ready',
+  'submitted',
+  'accepted',
+  'rejected',
+  'paid',
+  'failed',
+])
+
+const CREDENTIAL_MODES = new Set([
+  'api_key',
+  'client_secret',
+  'username_password',
+  'certificate',
+])
+
+const EXPORT_FORMATS = new Set(['json', 'xml'])
+const DEFAULT_NHIS_MEMBER_DIGITS = 8
+const DEFAULT_GHANA_CARD_DIGITS = 10
+const CC_CODE_KEYS = new Set([
+  'cccode',
+  'cc',
+  'claimcode',
+  'claimcertificatecode',
+  'certificatecode',
+  'claimitcode',
+])
+
+const toMoney = (value, fallback = 0) => {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) {
+    return fallback
+  }
+
+  return Math.round(parsed * 100) / 100
+}
+
+const toBool = (value) => (value === true || value === 1 || value === '1' ? 1 : 0)
+
+const normalizeText = (value) => String(value || '').trim()
+
+const digitsOnly = (value) => normalizeText(value).replace(/\D/g, '')
+
+const assertRequiredText = (value, label) => {
+  const normalized = normalizeText(value)
+  if (!normalized) {
+    throw new Error(`${label} is required.`)
+  }
+
+  return normalized
+}
+
+const assertPositiveQuantity = (value, label) => {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`${label} must be greater than zero.`)
+  }
+
+  return parsed
+}
+
+const toDigitLength = (value, fallback) => {
+  const parsed = Number(value)
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 30) {
+    return fallback
+  }
+
+  return parsed
+}
+
+const normalizeMemberNumberType = (value) => {
+  const normalized = normalizeText(value).toUpperCase()
+  return normalized.startsWith('GHA') ? 'ghana_card' : 'nhis'
+}
+
+const assertValidMemberNumber = (value, settings = {}) => {
+  const memberNumber = assertRequiredText(value, 'NHIA member number')
+  const numberType = normalizeMemberNumberType(memberNumber)
+  const digits = digitsOnly(memberNumber)
+  const requiredDigits =
+    numberType === 'ghana_card'
+      ? toDigitLength(settings.ghanaCardDigits, DEFAULT_GHANA_CARD_DIGITS)
+      : toDigitLength(settings.nhisMemberDigits, DEFAULT_NHIS_MEMBER_DIGITS)
+  const label = numberType === 'ghana_card' ? 'Ghana Card number' : 'NHIS member number'
+
+  if (digits.length !== requiredDigits) {
+    throw new Error(`${label} must contain exactly ${requiredDigits} digits.`)
+  }
+
+  return memberNumber
+}
+
+const extractCcCode = (value) => {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+
+  const queue = [value]
+  while (queue.length) {
+    const current = queue.shift()
+    if (!current || typeof current !== 'object') {
+      continue
+    }
+
+    for (const [key, nestedValue] of Object.entries(current)) {
+      const normalizedKey = key.toLowerCase().replace(/[^a-z0-9]/g, '')
+      if (CC_CODE_KEYS.has(normalizedKey) && normalizeText(nestedValue)) {
+        return normalizeText(nestedValue)
+      }
+
+      if (nestedValue && typeof nestedValue === 'object') {
+        queue.push(nestedValue)
+      }
+    }
+  }
+
+  return null
+}
+
+const normalizeStatus = (value, fallback = 'draft') => {
+  const normalized = normalizeText(value || fallback).toLowerCase()
+  if (!CLAIM_STATUSES.has(normalized)) {
+    throw new Error(`NHIA claim status must be one of: ${[...CLAIM_STATUSES].join(', ')}.`)
+  }
+
+  return normalized
+}
+
+const normalizeCredentialMode = (value) => {
+  const mode = normalizeText(value || 'api_key').toLowerCase()
+  if (!CREDENTIAL_MODES.has(mode)) {
+    throw new Error(`NHIA credential mode must be one of: ${[...CREDENTIAL_MODES].join(', ')}.`)
+  }
+
+  return mode
+}
+
+const normalizeExportFormat = (value) => {
+  const format = normalizeText(value || 'json').toLowerCase()
+  if (!EXPORT_FORMATS.has(format)) {
+    throw new Error('NHIA export format must be json or xml.')
+  }
+
+  return format
+}
+
+const createClaimNumber = () => {
+  const datePart = new Date().toISOString().slice(2, 10).replace(/-/g, '')
+  const randomPart = Math.random().toString(36).slice(2, 7).toUpperCase()
+  return `NHIA-${datePart}-${randomPart}`
+}
+
+const createBatchNumber = () => {
+  const datePart = new Date().toISOString().slice(2, 10).replace(/-/g, '')
+  const randomPart = Math.random().toString(36).slice(2, 6).toUpperCase()
+  return `NHIA-BATCH-${datePart}-${randomPart}`
+}
+
+const getDrug = db.prepare('SELECT * FROM drugs WHERE id = ?')
+
+const selectSettings = db.prepare(`
+  SELECT *
+  FROM nhia_settings
+  WHERE is_active = 1
+    AND COALESCE(organization_id, '') = COALESCE(?, '')
+    AND COALESCE(branch_id, '') = COALESCE(?, '')
+  ORDER BY updated_at DESC
+  LIMIT 1
+`)
+
+const selectAnySettings = db.prepare(`
+  SELECT *
+  FROM nhia_settings
+  WHERE is_active = 1
+  ORDER BY updated_at DESC
+  LIMIT 1
+`)
+
+const upsertSettings = db.prepare(`
+  INSERT INTO nhia_settings (
+    id, organization_id, branch_id, facility_code, provider_number, submitter_id,
+    api_base_url, claim_endpoint_path, direct_api_enabled, credential_mode,
+    credential_payload, nhis_member_digits, ghana_card_digits, export_format,
+    max_retry_attempts, is_active, created_at, updated_at
+  )
+  VALUES (
+    @id, @organizationId, @branchId, @facilityCode, @providerNumber, @submitterId,
+    @apiBaseUrl, @claimEndpointPath, @directApiEnabled, @credentialMode,
+    @credentialPayload, @nhisMemberDigits, @ghanaCardDigits, @exportFormat,
+    @maxRetryAttempts, 1, @createdAt, @updatedAt
+  )
+  ON CONFLICT(id) DO UPDATE SET
+    organization_id = excluded.organization_id,
+    branch_id = excluded.branch_id,
+    facility_code = excluded.facility_code,
+    provider_number = excluded.provider_number,
+    submitter_id = excluded.submitter_id,
+    api_base_url = excluded.api_base_url,
+    claim_endpoint_path = excluded.claim_endpoint_path,
+    direct_api_enabled = excluded.direct_api_enabled,
+    credential_mode = excluded.credential_mode,
+    credential_payload = excluded.credential_payload,
+    nhis_member_digits = excluded.nhis_member_digits,
+    ghana_card_digits = excluded.ghana_card_digits,
+    export_format = excluded.export_format,
+    max_retry_attempts = excluded.max_retry_attempts,
+    is_active = 1,
+    updated_at = excluded.updated_at
+`)
+
+const insertClaim = db.prepare(`
+  INSERT INTO nhia_claims (
+    id, claim_number, local_sale_id, local_sale_number, patient_id, patient_name,
+    member_number, hin, cc_code, insurance_provider, service_date, total_amount, status,
+    payload_json, organization_id, branch_id, created_by, created_at, updated_at
+  )
+  VALUES (
+    @id, @claimNumber, @localSaleId, @localSaleNumber, @patientId, @patientName,
+    @memberNumber, @hin, @ccCode, @insuranceProvider, @serviceDate, @totalAmount, @status,
+    @payloadJson, @organizationId, @branchId, @createdBy, @createdAt, @updatedAt
+  )
+`)
+
+const insertClaimItem = db.prepare(`
+  INSERT INTO nhia_claim_items (
+    id, nhia_claim_id, drug_id, drug_name, nhia_code, quantity,
+    unit_price, total_price, payload_json, created_at
+  )
+  VALUES (
+    @id, @claimId, @drugId, @drugName, @nhiaCode, @quantity,
+    @unitPrice, @totalPrice, @payloadJson, @createdAt
+  )
+`)
+
+const selectClaimsBase = `
+  SELECT *
+  FROM nhia_claims
+`
+
+const selectClaimById = db.prepare(`${selectClaimsBase} WHERE id = ?`)
+const selectClaimItems = db.prepare(`
+  SELECT *
+  FROM nhia_claim_items
+  WHERE nhia_claim_id = ?
+  ORDER BY created_at ASC
+`)
+
+const updateClaimStatus = db.prepare(`
+  UPDATE nhia_claims
+  SET status = @status,
+      response_json = @responseJson,
+      cc_code = COALESCE(@ccCode, cc_code),
+      retry_count = @retryCount,
+      next_retry_at = @nextRetryAt,
+      last_error = @lastError,
+      submitted_at = COALESCE(@submittedAt, submitted_at),
+      accepted_at = COALESCE(@acceptedAt, accepted_at),
+      rejected_at = COALESCE(@rejectedAt, rejected_at),
+      paid_at = COALESCE(@paidAt, paid_at),
+      updated_at = @updatedAt
+  WHERE id = @id
+`)
+
+const markClaimReadyStatement = db.prepare(`
+  UPDATE nhia_claims
+  SET status = 'ready',
+      last_error = NULL,
+      next_retry_at = NULL,
+      updated_at = ?
+  WHERE id = ?
+`)
+
+const insertBatch = db.prepare(`
+  INSERT INTO nhia_claim_batches (
+    id, batch_number, status, export_format, claim_count, total_amount,
+    payload_json, file_name, organization_id, branch_id, created_by, created_at, updated_at
+  )
+  VALUES (
+    @id, @batchNumber, @status, @exportFormat, @claimCount, @totalAmount,
+    @payloadJson, @fileName, @organizationId, @branchId, @createdBy, @createdAt, @updatedAt
+  )
+`)
+
+const updateClaimsBatch = db.prepare(`
+  UPDATE nhia_claims
+  SET batch_id = ?, updated_at = ?
+  WHERE id = ?
+`)
+
+const selectBatchById = db.prepare('SELECT * FROM nhia_claim_batches WHERE id = ?')
+
+const insertLog = db.prepare(`
+  INSERT INTO nhia_submission_logs (
+    id, nhia_claim_id, batch_id, action, status, attempt, http_status,
+    request_json, response_json, error_message, created_at
+  )
+  VALUES (
+    @id, @claimId, @batchId, @action, @status, @attempt, @httpStatus,
+    @requestJson, @responseJson, @errorMessage, @createdAt
+  )
+`)
+
+const statusCounts = db.prepare(`
+  SELECT status, COUNT(*) AS count
+  FROM nhia_claims
+  GROUP BY status
+`)
+
+const recentLogs = db.prepare(`
+  SELECT *
+  FROM nhia_submission_logs
+  ORDER BY created_at DESC
+  LIMIT ?
+`)
+
+const pendingClaims = db.prepare(`
+  SELECT *
+  FROM nhia_claims
+  WHERE status IN ('ready', 'failed')
+    AND retry_count < ?
+    AND (next_retry_at IS NULL OR next_retry_at <= ?)
+  ORDER BY created_at ASC
+  LIMIT ?
+`)
+
+const maskCredentials = (payload = {}) =>
+  Object.fromEntries(
+    Object.entries(payload || {}).map(([key, value]) => [
+      key,
+      normalizeText(value) ? true : false,
+    ])
+  )
+
+const mapSettingsRow = (row, { includeCredentials = false } = {}) => {
+  if (!row) {
+    return null
+  }
+
+  const credentials = parseJson(row.credential_payload, {})
+  return {
+    id: row.id,
+    organizationId: row.organization_id || '',
+    branchId: row.branch_id || '',
+    facilityCode: row.facility_code || '',
+    providerNumber: row.provider_number || '',
+    submitterId: row.submitter_id || '',
+    apiBaseUrl: row.api_base_url || '',
+    claimEndpointPath: row.claim_endpoint_path || '/claims',
+    directApiEnabled: Boolean(row.direct_api_enabled),
+    credentialMode: row.credential_mode || 'api_key',
+    credentials: includeCredentials ? credentials : {},
+    credentialSummary: maskCredentials(credentials),
+    nhisMemberDigits: Number(row.nhis_member_digits || DEFAULT_NHIS_MEMBER_DIGITS),
+    ghanaCardDigits: Number(row.ghana_card_digits || DEFAULT_GHANA_CARD_DIGITS),
+    exportFormat: row.export_format || 'json',
+    maxRetryAttempts: Number(row.max_retry_attempts || 3),
+    isActive: Boolean(row.is_active),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+const resolveSettingsRow = () =>
+  selectSettings.get(config.organizationId, config.branchId) || selectAnySettings.get()
+
+export const getNhiaSettings = ({ includeCredentials = false } = {}) =>
+  mapSettingsRow(resolveSettingsRow(), { includeCredentials })
+
+export const saveNhiaSettings = (settings = {}) => {
+  const existing = resolveSettingsRow()
+  const timestamp = nowIso()
+  const credentialMode = normalizeCredentialMode(settings.credentialMode)
+  const incomingCredentials =
+    settings.credentials && typeof settings.credentials === 'object'
+      ? settings.credentials
+      : parseJson(settings.credentialPayload, {})
+  const existingCredentials = parseJson(existing?.credential_payload, {})
+  const credentials = { ...existingCredentials }
+  for (const [key, value] of Object.entries(incomingCredentials || {})) {
+    if (normalizeText(value)) {
+      credentials[key] = value
+    }
+  }
+
+  const organizationId = normalizeText(settings.organizationId) || config.organizationId || null
+  const branchId = normalizeText(settings.branchId) || config.branchId || null
+  const id = settings.id || existing?.id || createId()
+
+  upsertSettings.run({
+    id,
+    organizationId,
+    branchId,
+    facilityCode: normalizeText(settings.facilityCode) || null,
+    providerNumber: normalizeText(settings.providerNumber) || null,
+    submitterId: normalizeText(settings.submitterId) || null,
+    apiBaseUrl: normalizeText(settings.apiBaseUrl).replace(/\/+$/, '') || null,
+    claimEndpointPath: normalizeText(settings.claimEndpointPath) || '/claims',
+    directApiEnabled: toBool(settings.directApiEnabled),
+    credentialMode,
+    credentialPayload: json(credentials),
+    nhisMemberDigits: toDigitLength(settings.nhisMemberDigits, DEFAULT_NHIS_MEMBER_DIGITS),
+    ghanaCardDigits: toDigitLength(settings.ghanaCardDigits, DEFAULT_GHANA_CARD_DIGITS),
+    exportFormat: normalizeExportFormat(settings.exportFormat),
+    maxRetryAttempts: Math.min(Math.max(Number(settings.maxRetryAttempts) || 3, 1), 10),
+    createdAt: existing?.created_at || timestamp,
+    updatedAt: timestamp,
+  })
+
+  logSubmission({
+    action: 'settings.updated',
+    status: 'success',
+    request: {
+      organizationId,
+      branchId,
+      credentialMode,
+      directApiEnabled: Boolean(settings.directApiEnabled),
+    },
+  })
+
+  return getNhiaSettings()
+}
+
+const mapClaimRow = (row) => ({
+  id: row.id,
+  claimNumber: row.claim_number,
+  localSaleId: row.local_sale_id,
+  localSaleNumber: row.local_sale_number,
+  batchId: row.batch_id,
+  patientId: row.patient_id,
+  patientName: row.patient_name,
+  memberNumber: row.member_number,
+  hin: row.hin,
+  ccCode: row.cc_code || '',
+  insuranceProvider: row.insurance_provider,
+  serviceDate: row.service_date,
+  totalAmount: row.total_amount,
+  status: row.status,
+  payload: parseJson(row.payload_json, {}),
+  response: parseJson(row.response_json, null),
+  retryCount: row.retry_count,
+  nextRetryAt: row.next_retry_at,
+  lastError: row.last_error,
+  submittedAt: row.submitted_at,
+  acceptedAt: row.accepted_at,
+  rejectedAt: row.rejected_at,
+  paidAt: row.paid_at,
+  organizationId: row.organization_id,
+  branchId: row.branch_id,
+  createdBy: row.created_by,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+  items: selectClaimItems.all(row.id).map((item) => ({
+    id: item.id,
+    claimId: item.nhia_claim_id,
+    drugId: item.drug_id,
+    drugName: item.drug_name,
+    nhiaCode: item.nhia_code,
+    quantity: item.quantity,
+    unitPrice: item.unit_price,
+    totalPrice: item.total_price,
+    payload: parseJson(item.payload_json, {}),
+    createdAt: item.created_at,
+  })),
+})
+
+export const listNhiaClaims = ({ status = '', limit = 100 } = {}) => {
+  const normalizedStatus = normalizeText(status).toLowerCase()
+  const cappedLimit = Math.min(Math.max(Number(limit) || 100, 1), 500)
+  const rows = normalizedStatus
+    ? db.prepare(`${selectClaimsBase} WHERE status = ? ORDER BY created_at DESC LIMIT ?`).all(normalizedStatus, cappedLimit)
+    : db.prepare(`${selectClaimsBase} ORDER BY created_at DESC LIMIT ?`).all(cappedLimit)
+
+  return rows.map(mapClaimRow)
+}
+
+export const getNhiaClaim = (id) => {
+  const row = selectClaimById.get(id)
+  return row ? mapClaimRow(row) : null
+}
+
+const buildClaimPayload = ({ claim, items, settings }) => ({
+  claimNumber: claim.claimNumber,
+  facilityCode: settings?.facilityCode || '',
+  providerNumber: settings?.providerNumber || '',
+  submitterId: settings?.submitterId || '',
+  patient: {
+    id: claim.patientId || null,
+    name: claim.patientName,
+    memberNumber: claim.memberNumber,
+    hin: claim.hin || null,
+    ccCode: claim.ccCode || null,
+  },
+  ccCode: claim.ccCode || null,
+  serviceDate: claim.serviceDate,
+  totalAmount: claim.totalAmount,
+  localSaleNumber: claim.localSaleNumber || null,
+  items: items.map((item) => ({
+    drugId: item.drugId || null,
+    code: item.nhiaCode || null,
+    name: item.drugName,
+    quantity: item.quantity,
+    unitPrice: item.unitPrice,
+    totalPrice: item.totalPrice,
+  })),
+})
+
+export const createNhiaClaim = db.transaction((claimData = {}, linkedSale = {}) => {
+  if (!Array.isArray(claimData.items) || claimData.items.length === 0) {
+    throw new Error('At least one NHIA claim item is required.')
+  }
+
+  const timestamp = nowIso()
+  const claimId = createId()
+  const claimNumber = claimData.claimNumber || createClaimNumber()
+  const settings = getNhiaSettings()
+  let totalAmount = 0
+
+  const items = claimData.items.map((item) => {
+    const drugId = item.drugId || item.id || null
+    const drug = drugId ? getDrug.get(drugId) : null
+    const quantity = assertPositiveQuantity(item.quantity, 'NHIA claim item quantity')
+    const unitPrice = toMoney(item.nhiaPrice ?? item.price ?? item.unitPrice ?? drug?.nhis_price ?? drug?.price, 0)
+    if (unitPrice < 0) {
+      throw new Error('NHIA claim item price cannot be negative.')
+    }
+
+    const totalPrice = toMoney(quantity * unitPrice)
+    totalAmount = toMoney(totalAmount + totalPrice)
+
+    return {
+      id: createId(),
+      claimId,
+      drugId,
+      drugName: assertRequiredText(item.name || drug?.name, 'NHIA claim item name'),
+      nhiaCode: normalizeText(item.nhiaCode || item.nhisCode || drug?.nhis_code) || null,
+      quantity,
+      unitPrice,
+      totalPrice,
+      payloadJson: json(item),
+      createdAt: timestamp,
+    }
+  })
+
+  const claim = {
+    id: claimId,
+    claimNumber,
+    localSaleId: claimData.localSaleId || linkedSale.id || null,
+    localSaleNumber: claimData.localSaleNumber || linkedSale.saleNumber || null,
+    patientId: claimData.patientId || linkedSale.patientId || null,
+    patientName: assertRequiredText(claimData.patientName, 'NHIA patient name'),
+    memberNumber: assertValidMemberNumber(
+      claimData.memberNumber || claimData.insuranceId || claimData.memberNo,
+      settings
+    ),
+    hin: normalizeText(claimData.hin) || null,
+    ccCode: normalizeText(claimData.ccCode || claimData.cc_code) || null,
+    insuranceProvider: claimData.insuranceProvider || 'NHIA',
+    serviceDate: claimData.serviceDate || linkedSale.saleDate?.slice(0, 10) || timestamp.slice(0, 10),
+    totalAmount,
+    status: normalizeStatus(claimData.status || 'ready'),
+    organizationId: claimData.organizationId || linkedSale.organizationId || config.organizationId,
+    branchId: claimData.branchId || linkedSale.branchId || config.branchId,
+    createdBy: claimData.createdBy || claimData.submittedBy || linkedSale.soldBy || null,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  }
+  claim.payloadJson = json(buildClaimPayload({ claim, items, settings }))
+
+  insertClaim.run(claim)
+  for (const item of items) {
+    insertClaimItem.run(item)
+  }
+
+  logSubmission({
+    claimId,
+    action: 'claim.saved',
+    status: 'success',
+    request: {
+      claimNumber,
+      localSaleNumber: claim.localSaleNumber,
+      itemCount: items.length,
+      totalAmount,
+    },
+  })
+
+  return getNhiaClaim(claimId)
+})
+
+export const markNhiaClaimReady = (id) => {
+  const timestamp = nowIso()
+  markClaimReadyStatement.run(timestamp, id)
+  logSubmission({ claimId: id, action: 'claim.ready', status: 'success' })
+  return getNhiaClaim(id)
+}
+
+const validateSettingsForSubmission = (settings) => {
+  if (!settings) {
+    throw new Error('NHIA settings are required before submitting claims.')
+  }
+
+  assertRequiredText(settings.facilityCode, 'NHIA facility code')
+  assertRequiredText(settings.providerNumber, 'NHIA provider number')
+
+  if (settings.directApiEnabled) {
+    assertRequiredText(settings.apiBaseUrl, 'NHIA API base URL')
+    const credentials = settings.credentials || {}
+    if (settings.credentialMode === 'api_key') {
+      assertRequiredText(credentials.apiKey, 'NHIA API key')
+    } else if (settings.credentialMode === 'client_secret') {
+      assertRequiredText(credentials.clientId, 'NHIA client ID')
+      assertRequiredText(credentials.clientSecret, 'NHIA client secret')
+    } else if (settings.credentialMode === 'username_password') {
+      assertRequiredText(credentials.username, 'NHIA username')
+      assertRequiredText(credentials.password, 'NHIA password')
+    } else if (settings.credentialMode === 'certificate') {
+      assertRequiredText(credentials.certPem, 'NHIA certificate')
+      assertRequiredText(credentials.keyPem, 'NHIA certificate key')
+    }
+  }
+}
+
+const validateSettingsForBatchExport = (settings) => {
+  if (!settings) {
+    throw new Error('NHIA settings are required before exporting claim batches.')
+  }
+
+  assertRequiredText(settings.facilityCode, 'NHIA facility code')
+  assertRequiredText(settings.providerNumber, 'NHIA provider number')
+}
+
+const validateClaimForSubmission = (claim, settings) => {
+  assertRequiredText(claim.patientName, 'NHIA patient name')
+  assertValidMemberNumber(claim.memberNumber, settings)
+  assertRequiredText(claim.serviceDate, 'NHIA service date')
+  if (!claim.items.length) {
+    throw new Error('NHIA claim requires at least one item.')
+  }
+
+  for (const item of claim.items) {
+    assertRequiredText(item.drugName, 'NHIA claim item name')
+    assertPositiveQuantity(item.quantity, 'NHIA claim item quantity')
+    if (toMoney(item.totalPrice, -1) < 0) {
+      throw new Error('NHIA claim item amount cannot be negative.')
+    }
+  }
+
+  return buildClaimPayload({ claim, items: claim.items, settings })
+}
+
+const buildHeaders = (settings) => {
+  const credentials = settings.credentials || {}
+  const headers = {
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+  }
+
+  if (settings.credentialMode === 'api_key') {
+    const headerName = normalizeText(credentials.headerName) || 'Authorization'
+    const prefix = normalizeText(credentials.headerPrefix) || (headerName.toLowerCase() === 'authorization' ? 'Bearer' : '')
+    headers[headerName] = prefix ? `${prefix} ${credentials.apiKey}` : credentials.apiKey
+  } else if (settings.credentialMode === 'client_secret') {
+    headers['x-client-id'] = credentials.clientId
+    headers['x-client-secret'] = credentials.clientSecret
+  } else if (settings.credentialMode === 'username_password') {
+    const token = Buffer.from(`${credentials.username}:${credentials.password}`).toString('base64')
+    headers.Authorization = `Basic ${token}`
+  }
+
+  return headers
+}
+
+const postWithCertificate = (url, body, settings) =>
+  new Promise((resolve, reject) => {
+    const credentials = settings.credentials || {}
+    const parsedUrl = new URL(url)
+    const request = https.request(
+      {
+        method: 'POST',
+        hostname: parsedUrl.hostname,
+        port: parsedUrl.port || 443,
+        path: `${parsedUrl.pathname}${parsedUrl.search}`,
+        cert: credentials.certPem,
+        key: credentials.keyPem,
+        ca: credentials.caPem || undefined,
+        passphrase: credentials.passphrase || undefined,
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'Content-Length': Buffer.byteLength(body),
+        },
+      },
+      (response) => {
+        const chunks = []
+        response.on('data', (chunk) => chunks.push(chunk))
+        response.on('end', () => {
+          const text = Buffer.concat(chunks).toString('utf8')
+          resolve({ ok: response.statusCode >= 200 && response.statusCode < 300, status: response.statusCode, text })
+        })
+      }
+    )
+    request.on('error', reject)
+    request.write(body)
+    request.end()
+  })
+
+const submitPayload = async (settings, payload) => {
+  const endpointPath = settings.claimEndpointPath || '/claims'
+  const url = `${settings.apiBaseUrl.replace(/\/+$/, '')}/${endpointPath.replace(/^\/+/, '')}`
+  const body = JSON.stringify(payload)
+
+  if (settings.credentialMode === 'certificate') {
+    const response = await postWithCertificate(url, body, settings)
+    return {
+      endpoint: url,
+      httpStatus: response.status,
+      ok: response.ok,
+      body: parseJson(response.text, { raw: response.text }),
+    }
+  }
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: buildHeaders(settings),
+    body,
+  })
+  const text = await response.text()
+  return {
+    endpoint: url,
+    httpStatus: response.status,
+    ok: response.ok,
+    body: parseJson(text, { raw: text }),
+  }
+}
+
+const deriveRemoteStatus = (body) => {
+  const value = normalizeText(body?.status || body?.claimStatus || body?.state).toLowerCase()
+  if (value.includes('paid')) return 'paid'
+  if (value.includes('reject')) return 'rejected'
+  if (value.includes('accept') || value.includes('approve')) return 'accepted'
+  return 'submitted'
+}
+
+const updateClaimAfterAttempt = ({ id, status, response = null, error = null, retryCount = 0 }) => {
+  const timestamp = nowIso()
+  updateClaimStatus.run({
+    id,
+    status,
+    responseJson: response ? json(response) : null,
+    ccCode: response ? extractCcCode(response) : null,
+    retryCount,
+    nextRetryAt:
+      status === 'failed'
+        ? new Date(Date.now() + Math.min(60, 2 ** Math.min(retryCount, 6)) * 60000).toISOString()
+        : null,
+    lastError: error,
+    submittedAt:
+      status === 'submitted' || status === 'accepted' || status === 'rejected' || status === 'paid'
+        ? timestamp
+        : null,
+    acceptedAt: status === 'accepted' ? timestamp : null,
+    rejectedAt: status === 'rejected' ? timestamp : null,
+    paidAt: status === 'paid' ? timestamp : null,
+    updatedAt: timestamp,
+  })
+}
+
+export const logSubmission = ({
+  claimId = null,
+  batchId = null,
+  action,
+  status,
+  attempt = 0,
+  httpStatus = null,
+  request = null,
+  response = null,
+  error = null,
+} = {}) => {
+  insertLog.run({
+    id: createId(),
+    claimId,
+    batchId,
+    action: assertRequiredText(action, 'Log action'),
+    status: assertRequiredText(status, 'Log status'),
+    attempt,
+    httpStatus,
+    requestJson: request ? json(request) : null,
+    responseJson: response ? json(response) : null,
+    errorMessage: error ? String(error) : null,
+    createdAt: nowIso(),
+  })
+}
+
+export const submitNhiaClaim = async (id) => {
+  const settings = getNhiaSettings({ includeCredentials: true })
+  validateSettingsForSubmission(settings)
+
+  if (!settings.directApiEnabled) {
+    throw new Error('Direct NHIA API submission is disabled. Export a claim batch instead.')
+  }
+
+  const claim = getNhiaClaim(id)
+  if (!claim) {
+    throw new Error('NHIA claim not found.')
+  }
+
+  const payload = validateClaimForSubmission(claim, settings)
+  const attempt = Number(claim.retryCount || 0) + 1
+  logSubmission({ claimId: id, action: 'claim.submit.start', status: 'pending', attempt, request: payload })
+
+  try {
+    const result = await submitPayload(settings, payload)
+    if (!result.ok) {
+      throw new Error(`NHIA API returned HTTP ${result.httpStatus}.`)
+    }
+
+    const remoteStatus = deriveRemoteStatus(result.body)
+    updateClaimAfterAttempt({
+      id,
+      status: remoteStatus,
+      response: result.body,
+      retryCount: attempt,
+    })
+    logSubmission({
+      claimId: id,
+      action: 'claim.submit.complete',
+      status: remoteStatus,
+      attempt,
+      httpStatus: result.httpStatus,
+      response: result.body,
+    })
+    return getNhiaClaim(id)
+  } catch (error) {
+    const message = error.message || 'NHIA claim submission failed.'
+    updateClaimAfterAttempt({
+      id,
+      status: 'failed',
+      error: message,
+      retryCount: attempt,
+    })
+    logSubmission({
+      claimId: id,
+      action: 'claim.submit.failed',
+      status: 'failed',
+      attempt,
+      error: message,
+    })
+    throw error
+  }
+}
+
+export const submitPendingNhiaClaims = async ({ limit = 10 } = {}) => {
+  const settings = getNhiaSettings({ includeCredentials: true })
+  if (!settings?.directApiEnabled) {
+    return { checked: 0, submitted: 0, failed: 0, skipped: true, reason: 'Direct NHIA API submission is disabled.' }
+  }
+
+  const maxAttempts = Math.max(Number(settings.maxRetryAttempts || 3), 1)
+  const rows = pendingClaims.all(maxAttempts, nowIso(), Math.min(Math.max(Number(limit) || 10, 1), 50))
+  const result = { checked: rows.length, submitted: 0, failed: 0, errors: [] }
+
+  for (const row of rows) {
+    try {
+      await submitNhiaClaim(row.id)
+      result.submitted += 1
+    } catch (error) {
+      result.failed += 1
+      result.errors.push({ id: row.id, claimNumber: row.claim_number, message: error.message })
+    }
+  }
+
+  return result
+}
+
+const buildBatchPayload = (claims, settings) => ({
+  batchNumber: createBatchNumber(),
+  facilityCode: settings?.facilityCode || '',
+  providerNumber: settings?.providerNumber || '',
+  createdAt: nowIso(),
+  claims: claims.map((claim) => validateClaimForSubmission(claim, settings || {})),
+})
+
+const xmlEscape = (value) =>
+  String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
+
+const batchToXml = (payload) => `<?xml version="1.0" encoding="UTF-8"?>
+<NhiaClaimBatch>
+  <BatchNumber>${xmlEscape(payload.batchNumber)}</BatchNumber>
+  <FacilityCode>${xmlEscape(payload.facilityCode)}</FacilityCode>
+  <ProviderNumber>${xmlEscape(payload.providerNumber)}</ProviderNumber>
+  <CreatedAt>${xmlEscape(payload.createdAt)}</CreatedAt>
+  <Claims>
+${payload.claims.map((claim) => `    <Claim>
+      <ClaimNumber>${xmlEscape(claim.claimNumber)}</ClaimNumber>
+      <CcCode>${xmlEscape(claim.ccCode)}</CcCode>
+      <MemberNumber>${xmlEscape(claim.patient.memberNumber)}</MemberNumber>
+      <PatientName>${xmlEscape(claim.patient.name)}</PatientName>
+      <ServiceDate>${xmlEscape(claim.serviceDate)}</ServiceDate>
+      <TotalAmount>${xmlEscape(claim.totalAmount)}</TotalAmount>
+      <Items>
+${claim.items.map((item) => `        <Item>
+          <Code>${xmlEscape(item.code)}</Code>
+          <Name>${xmlEscape(item.name)}</Name>
+          <Quantity>${xmlEscape(item.quantity)}</Quantity>
+          <UnitPrice>${xmlEscape(item.unitPrice)}</UnitPrice>
+          <TotalPrice>${xmlEscape(item.totalPrice)}</TotalPrice>
+        </Item>`).join('\n')}
+      </Items>
+    </Claim>`).join('\n')}
+  </Claims>
+</NhiaClaimBatch>
+`
+
+export const createNhiaBatch = db.transaction(({ claimIds = [], exportFormat = '', createdBy = null } = {}) => {
+  const settings = getNhiaSettings()
+  validateSettingsForBatchExport(settings)
+  const claims = (claimIds.length ? claimIds : listNhiaClaims({ status: 'ready', limit: 500 }).map((claim) => claim.id))
+    .map((id) => getNhiaClaim(id))
+    .filter(Boolean)
+
+  if (!claims.length) {
+    throw new Error('Select at least one NHIA claim for the batch.')
+  }
+
+  const format = normalizeExportFormat(exportFormat || settings?.exportFormat || 'json')
+  const payload = buildBatchPayload(claims, settings)
+  const timestamp = nowIso()
+  const batchId = createId()
+  const batchNumber = payload.batchNumber
+  const totalAmount = toMoney(claims.reduce((sum, claim) => sum + Number(claim.totalAmount || 0), 0))
+  const fileName = `${batchNumber}.${format}`
+
+  insertBatch.run({
+    id: batchId,
+    batchNumber,
+    status: 'ready',
+    exportFormat: format,
+    claimCount: claims.length,
+    totalAmount,
+    payloadJson: json(payload),
+    fileName,
+    organizationId: config.organizationId,
+    branchId: config.branchId,
+    createdBy,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  })
+
+  for (const claim of claims) {
+    updateClaimsBatch.run(batchId, timestamp, claim.id)
+  }
+
+  logSubmission({
+    batchId,
+    action: 'batch.created',
+    status: 'success',
+    request: { batchNumber, claimCount: claims.length, exportFormat: format },
+  })
+
+  return getNhiaBatch(batchId)
+})
+
+export const getNhiaBatch = (id) => {
+  const row = selectBatchById.get(id)
+  if (!row) {
+    return null
+  }
+
+  return {
+    id: row.id,
+    batchNumber: row.batch_number,
+    status: row.status,
+    exportFormat: row.export_format,
+    claimCount: row.claim_count,
+    totalAmount: row.total_amount,
+    payload: parseJson(row.payload_json, {}),
+    response: parseJson(row.response_json, null),
+    fileName: row.file_name,
+    organizationId: row.organization_id,
+    branchId: row.branch_id,
+    createdBy: row.created_by,
+    submittedAt: row.submitted_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+export const exportNhiaBatch = (id, formatOverride = '') => {
+  const batch = getNhiaBatch(id)
+  if (!batch) {
+    throw new Error('NHIA claim batch not found.')
+  }
+
+  const format = normalizeExportFormat(formatOverride || batch.exportFormat)
+  const content =
+    format === 'xml'
+      ? batchToXml(batch.payload)
+      : JSON.stringify(batch.payload, null, 2)
+
+  logSubmission({
+    batchId: id,
+    action: 'batch.exported',
+    status: 'success',
+    request: { format },
+  })
+
+  return {
+    fileName: `${batch.batchNumber}.${format}`,
+    contentType: format === 'xml' ? 'application/xml' : 'application/json',
+    content,
+  }
+}
+
+export const getNhiaSubmissionLogs = ({ limit = 50 } = {}) =>
+  recentLogs.all(Math.min(Math.max(Number(limit) || 50, 1), 200)).map((row) => ({
+    id: row.id,
+    claimId: row.nhia_claim_id,
+    batchId: row.batch_id,
+    action: row.action,
+    status: row.status,
+    attempt: row.attempt,
+    httpStatus: row.http_status,
+    request: parseJson(row.request_json, null),
+    response: parseJson(row.response_json, null),
+    errorMessage: row.error_message,
+    createdAt: row.created_at,
+  }))
+
+export const getNhiaSummary = () => {
+  const counts = statusCounts.all().reduce(
+    (summary, row) => {
+      summary[row.status] = row.count
+      summary.total += row.count
+      return summary
+    },
+    { draft: 0, ready: 0, submitted: 0, accepted: 0, rejected: 0, paid: 0, failed: 0, total: 0 }
+  )
+
+  return {
+    ...counts,
+    settingsConfigured: Boolean(getNhiaSettings()),
+    directApiEnabled: Boolean(getNhiaSettings()?.directApiEnabled),
+  }
+}

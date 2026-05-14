@@ -417,6 +417,7 @@
 
 .role-badge.role-admin { background: #ede9fe; color: #6d28d9; }
 .role-badge.role-pharmacist { background: #dbeafe; color: #1d4ed8; }
+.role-badge.role-claims_officer { background: #dcfce7; color: #15803d; }
 .role-badge.role-assistant { background: var(--gray-100); color: var(--gray-600); }
 
 .tenant-admin-page .active-badge {

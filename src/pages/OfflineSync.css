@@ -122,6 +122,100 @@
   padding: 0.45rem 0.7rem;
 }
 
+.nhia-settings-grid {
+  display: grid;
+  gap: 0.85rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 1rem;
+}
+
+.nhia-settings-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.nhia-settings-grid label span,
+.nhia-settings-footer span {
+  color: var(--gray-700);
+  font-size: 0.86rem;
+}
+
+.nhia-settings-grid input,
+.nhia-settings-grid select,
+.nhia-settings-grid textarea {
+  border: 1px solid var(--gray-300);
+  border-radius: var(--radius-sm);
+  color: var(--gray-900);
+  font: inherit;
+  min-height: 2.35rem;
+  padding: 0.5rem 0.65rem;
+  width: 100%;
+}
+
+.nhia-settings-grid textarea {
+  min-height: 6.5rem;
+  resize: vertical;
+}
+
+.nhia-settings-grid .nhia-wide {
+  grid-column: 1 / -1;
+}
+
+.nhia-settings-grid .nhia-toggle {
+  align-items: center;
+  background: var(--gray-50);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  flex-direction: row;
+  gap: 0.55rem;
+  min-height: 2.35rem;
+  padding: 0.5rem 0.65rem;
+}
+
+.nhia-settings-grid .nhia-toggle input {
+  min-height: auto;
+  width: auto;
+}
+
+.nhia-settings-footer {
+  align-items: center;
+  border-top: 1px solid var(--gray-200);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: space-between;
+  padding: 1rem;
+}
+
+.nhia-claims-table-wrap {
+  border-top: 1px solid var(--gray-200);
+  overflow-x: auto;
+  padding: 1rem;
+}
+
+.nhia-claims-table {
+  border-collapse: collapse;
+  min-width: 760px;
+  width: 100%;
+}
+
+.nhia-claims-table th,
+.nhia-claims-table td {
+  border-bottom: 1px solid var(--gray-200);
+  font-size: 0.86rem;
+  padding: 0.65rem;
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+.nhia-claims-table th {
+  background: var(--gray-50);
+  color: var(--gray-700);
+}
+
 .sync-record-grid {
   display: grid;
   gap: 0.55rem;
@@ -212,6 +306,10 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .nhia-settings-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .sync-record-row {
     grid-template-columns: 1fr 1fr;
   }
@@ -227,6 +325,7 @@
 
 @media (max-width: 520px) {
   .offline-sync-overview,
+  .nhia-settings-grid,
   .sync-record-row {
     grid-template-columns: 1fr;
   }

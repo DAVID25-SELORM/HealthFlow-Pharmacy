@@ -8,6 +8,21 @@ import { requireBranchToken } from './httpAuth.js'
 import { createLocalClaim } from './claimsRepository.js'
 import { importInventorySnapshot, searchLocalInventory } from './inventoryRepository.js'
 import {
+  createNhiaBatch,
+  createNhiaClaim,
+  exportNhiaBatch,
+  getNhiaBatch,
+  getNhiaClaim,
+  getNhiaSettings,
+  getNhiaSubmissionLogs,
+  getNhiaSummary,
+  listNhiaClaims,
+  markNhiaClaimReady,
+  saveNhiaSettings,
+  submitNhiaClaim,
+  submitPendingNhiaClaims,
+} from './nhiaRepository.js'
+import {
   getOfflineRecord,
   listOfflineRecords,
   saveOfflineRecord,
@@ -69,7 +84,7 @@ app.use((request, response, next) => {
 
   response.setHeader('Access-Control-Allow-Origin', origin || 'null')
   response.setHeader('Vary', 'Origin')
-  response.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
+  response.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,OPTIONS')
   response.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-branch-token')
   response.setHeader('X-Content-Type-Options', 'nosniff')
   response.setHeader('Referrer-Policy', 'no-referrer')
@@ -214,6 +229,107 @@ app.put('/api/nhis/claims/:id', (request, response, next) => {
   }
 })
 
+app.get('/api/nhia/settings', (_request, response) => {
+  response.json({ data: getNhiaSettings() })
+})
+
+app.put('/api/nhia/settings', (request, response, next) => {
+  try {
+    response.json({ data: saveNhiaSettings(request.body || {}) })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.get('/api/nhia/summary', (_request, response) => {
+  response.json(getNhiaSummary())
+})
+
+app.get('/api/nhia/claims', (request, response) => {
+  response.json({
+    data: listNhiaClaims({
+      status: request.query.status || '',
+      limit: request.query.limit || 100,
+    }),
+  })
+})
+
+app.post('/api/nhia/claims', (request, response, next) => {
+  try {
+    response.status(201).json({ data: createNhiaClaim(request.body || {}) })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.get('/api/nhia/claims/:id', (request, response) => {
+  const claim = getNhiaClaim(request.params.id)
+  if (!claim) {
+    response.status(404).json({ error: 'NHIA claim not found.' })
+    return
+  }
+
+  response.json({ data: claim })
+})
+
+app.post('/api/nhia/claims/:id/ready', (request, response, next) => {
+  try {
+    response.json({ data: markNhiaClaimReady(request.params.id) })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.post('/api/nhia/claims/:id/submit', async (request, response, next) => {
+  try {
+    response.json({ data: await submitNhiaClaim(request.params.id) })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.post('/api/nhia/submit-pending', async (request, response, next) => {
+  try {
+    response.json(await submitPendingNhiaClaims({ limit: request.body?.limit || 10 }))
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.post('/api/nhia/batches', (request, response, next) => {
+  try {
+    response.status(201).json({ data: createNhiaBatch(request.body || {}) })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.get('/api/nhia/batches/:id', (request, response) => {
+  const batch = getNhiaBatch(request.params.id)
+  if (!batch) {
+    response.status(404).json({ error: 'NHIA batch not found.' })
+    return
+  }
+
+  response.json({ data: batch })
+})
+
+app.get('/api/nhia/batches/:id/export', (request, response, next) => {
+  try {
+    const exported = exportNhiaBatch(request.params.id, request.query.format || '')
+    response
+      .type(exported.contentType)
+      .set('Content-Disposition', `attachment; filename="${exported.fileName}"`)
+      .send(exported.content)
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.get('/api/nhia/submission-logs', (request, response) => {
+  response.json({ data: getNhiaSubmissionLogs({ limit: request.query.limit || 50 }) })
+})
+
 app.get('/api/suppliers', (request, response) => {
   response.json({ data: listOfflineRecords('suppliers', request.query) })
 })
@@ -275,10 +391,15 @@ app.post('/api/sales', (request, response, next) => {
     const claimResult = request.body?.claimPayload
       ? createLocalClaim(request.body.claimPayload, result.sale)
       : null
+    const nhiaClaim = request.body?.nhiaClaimPayload
+      ? createNhiaClaim(request.body.nhiaClaimPayload, result.sale)
+      : null
     response.status(201).json({
       ...result,
       claim: claimResult?.claim || null,
       claimNumber: claimResult?.claimNumber || null,
+      nhiaClaim,
+      nhiaClaimNumber: nhiaClaim?.claimNumber || null,
     })
   } catch (error) {
     next(error)

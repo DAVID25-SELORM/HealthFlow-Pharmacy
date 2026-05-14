@@ -6,6 +6,7 @@ export const ROLE_LABELS = {
   cashier: 'Cashier',
   branch_manager: 'Store / Branch Manager',
   procurement: 'Warehouse / Procurement Officer',
+  claims_officer: 'Claims Officer',
   billing: 'Billing / Insurance Officer',
   delivery: 'Delivery Staff',
   super_admin: 'Super Admin',

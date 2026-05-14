@@ -829,7 +829,14 @@ const Settings = () => {
                 <select
                   value={staffForm.role}
                   onChange={(event) =>
-                    setStaffForm({ ...staffForm, role: event.target.value, canRefund: false, canManageInventory: false, canViewReports: false, canManageClaims: false })
+                    setStaffForm({
+                      ...staffForm,
+                      role: event.target.value,
+                      canRefund: false,
+                      canManageInventory: false,
+                      canViewReports: false,
+                      canManageClaims: event.target.value === 'claims_officer',
+                    })
                   }
                   disabled={creatingStaff}
                 >
@@ -840,7 +847,7 @@ const Settings = () => {
                   ))}
                 </select>
               </div>
-              {!['admin', 'pharmacist'].includes(staffForm.role) && (
+              {!['admin', 'pharmacist', 'claims_officer'].includes(staffForm.role) && (
                 <div className="settings-privileges-group">
                   <p className="settings-helper">Privileges</p>
                   <label className="settings-checkbox-label">

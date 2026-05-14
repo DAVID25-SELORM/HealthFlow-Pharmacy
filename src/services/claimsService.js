@@ -103,6 +103,77 @@ export const createClaim = async (claimData) => {
   return response
 }
 
+export const updateClaim = async (id, claimData) => {
+  if (!claimData?.items?.length) {
+    throw new Error('At least one claim item is required.')
+  }
+
+  const validated = buildValidatedClaimPayload(claimData)
+  const normalizedItems = claimData.items.map((item) => ({
+    drugId: item.drugId,
+    name: item.name,
+    quantity: assertNonNegativeNumber(item.quantity, 'Item quantity'),
+    price: assertNonNegativeNumber(item.price, 'Item price'),
+  }))
+
+  if (shouldUseBranchServer()) {
+    const claim = await updateBranchRecord('claims', id, {
+      patient_id: claimData.patientId || null,
+      patient_name: validated.patientName,
+      insurance_provider: validated.insuranceProvider,
+      insurance_id: validated.insuranceId,
+      service_date: claimData.serviceDate || new Date().toISOString().split('T')[0],
+      total_amount: validated.totalAmount,
+      prescription_url: claimData.prescriptionUrl || null,
+      notes: normalizeText(claimData.notes) || null,
+      branch_id: normalizeText(claimData.branchId) || null,
+      claim_items: normalizedItems.map((item) => ({
+        drug_id: item.drugId,
+        drug_name: item.name,
+        quantity: item.quantity,
+        unit_price: item.price,
+        total_price: item.quantity * item.price,
+      })),
+    })
+
+    return {
+      claim,
+      claimNumber: claim.claim_number,
+    }
+  }
+
+  const response = await invokeTierAccess({
+    action: 'update_claim',
+    id,
+    claimData: {
+      patientId: claimData.patientId || null,
+      patientName: validated.patientName,
+      insuranceProvider: validated.insuranceProvider,
+      insuranceId: validated.insuranceId,
+      serviceDate: claimData.serviceDate || new Date().toISOString().split('T')[0],
+      prescriptionUrl: claimData.prescriptionUrl || null,
+      notes: normalizeText(claimData.notes) || null,
+      branchId: normalizeText(claimData.branchId) || null,
+      items: normalizedItems,
+    },
+  })
+
+  await tryLogAuditEvent({
+    eventType: 'claim.corrected',
+    entityType: 'claims',
+    entityId: id,
+    action: 'update',
+    details: {
+      claim_number: response.claim?.claim_number,
+      insurance_provider: validated.insuranceProvider,
+      total_amount: validated.totalAmount,
+      item_count: normalizedItems.length,
+    },
+  })
+
+  return response
+}
+
 export const getAllClaims = async (filters = {}) => {
   if (shouldUseBranchServer()) {
     return await listBranchRecords('claims', filters)

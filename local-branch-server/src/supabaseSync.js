@@ -3,6 +3,7 @@ import WebSocket from 'ws'
 import { config, isSupabaseSyncConfigured } from './config.js'
 import { db, parseJson, nowIso } from './db.js'
 import { getInventoryImportStatus, importInventorySnapshot } from './inventoryRepository.js'
+import { getNhiaSummary } from './nhiaRepository.js'
 import { importOfflineRecords } from './offlineRecordsRepository.js'
 
 const pendingOutbox = db.prepare(`
@@ -329,6 +330,7 @@ export const getSyncStatus = () => {
       events: failedEvents,
     },
     inventory: getInventoryImportStatus(),
+    nhia: getNhiaSummary(),
   }
 }
 

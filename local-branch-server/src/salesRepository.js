@@ -1,7 +1,7 @@
 import { createId, db, json, nowIso } from './db.js'
 import { config } from './config.js'
 
-const VALID_PAYMENT_METHODS = new Set(['cash', 'momo', 'insurance', 'card'])
+const VALID_PAYMENT_METHODS = new Set(['cash', 'momo', 'insurance', 'nhia', 'card'])
 
 const toMoney = (value, fallback = 0) => {
   const parsed = Number(value)
@@ -98,8 +98,10 @@ export const createLocalSale = db.transaction((saleData) => {
 
   const paymentMethod = String(saleData.paymentMethod || '').trim().toLowerCase()
   if (!VALID_PAYMENT_METHODS.has(paymentMethod)) {
-    throw new Error('Payment method must be cash, momo, insurance, or card.')
+    throw new Error('Payment method must be cash, momo, insurance, nhia, or card.')
   }
+  const syncPaymentMethod = paymentMethod === 'nhia' ? 'insurance' : paymentMethod
+  const isInsuranceLikePayment = paymentMethod === 'insurance' || paymentMethod === 'nhia'
 
   const createdAt = nowIso()
   const saleId = createId()
@@ -154,11 +156,11 @@ export const createLocalSale = db.transaction((saleData) => {
     paymentMethod === 'cash' ? toMoney(saleData.amountPaid, netAmount) : netAmount
   const changeGiven = paymentMethod === 'cash' ? toMoney(saleData.change ?? 0, 0) : 0
   const insuranceCoveredAmount =
-    paymentMethod === 'insurance' ? toMoney(saleData.insuranceCoveredAmount, 0) : 0
+    isInsuranceLikePayment ? toMoney(saleData.insuranceCoveredAmount ?? netAmount, 0) : 0
   const insuranceTopUpAmount =
-    paymentMethod === 'insurance' ? toMoney(saleData.insuranceTopUpAmount, 0) : 0
+    isInsuranceLikePayment ? toMoney(saleData.insuranceTopUpAmount, 0) : 0
   const insuranceTopUpPaymentMethod =
-    paymentMethod === 'insurance' && insuranceTopUpAmount > 0
+    isInsuranceLikePayment && insuranceTopUpAmount > 0
       ? String(saleData.insuranceTopUpPaymentMethod || '').trim().toLowerCase()
       : null
 
@@ -166,9 +168,9 @@ export const createLocalSale = db.transaction((saleData) => {
     throw new Error('Amount paid cannot be less than the sale total for cash payments.')
   }
 
-  if (paymentMethod === 'insurance') {
+  if (isInsuranceLikePayment) {
     if (Math.abs(insuranceCoveredAmount + insuranceTopUpAmount - netAmount) > 0.01) {
-      throw new Error('Insurance cover and patient top-up must add up to the sale total.')
+      throw new Error('Insurance/NHIA cover and patient top-up must add up to the sale total.')
     }
 
     if (
@@ -221,7 +223,7 @@ export const createLocalSale = db.transaction((saleData) => {
     local_sale_number: saleNumber,
     sale_payload: {
       patient_id: sale.patientId,
-      payment_method: paymentMethod,
+      payment_method: syncPaymentMethod,
       payment_status: 'completed',
       amount_paid: amountPaid,
       change_given: changeGiven,

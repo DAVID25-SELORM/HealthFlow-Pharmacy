@@ -127,6 +127,12 @@ export const createBranchSale = async (salePayload) => {
     saleNumber: response.saleNumber || response.sale?.saleNumber || response.sale?.sale_number,
     claim: response.claim || null,
     claimNumber: response.claimNumber || response.claim?.claimNumber || response.claim?.claim_number || null,
+    nhiaClaim: response.nhiaClaim || null,
+    nhiaClaimNumber:
+      response.nhiaClaimNumber ||
+      response.nhiaClaim?.claimNumber ||
+      response.nhiaClaim?.claim_number ||
+      null,
   }
 }
 
@@ -146,6 +152,80 @@ export const pullBranchReferenceData = async () =>
   await branchFetch('/api/sync/pull-reference-data', {
     method: 'POST',
   })
+
+export const getNhiaSettings = async () => {
+  const response = await branchFetch('/api/nhia/settings')
+  return response.data || null
+}
+
+export const saveNhiaSettings = async (settings) => {
+  const response = await branchFetch('/api/nhia/settings', {
+    method: 'PUT',
+    body: JSON.stringify(settings || {}),
+  })
+  return response.data || null
+}
+
+export const getNhiaSummary = async () => await branchFetch('/api/nhia/summary')
+
+export const listNhiaClaims = async (filters = {}) => {
+  const params = new URLSearchParams()
+  Object.entries(filters || {}).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      params.set(key, String(value))
+    }
+  })
+  const response = await branchFetch(`/api/nhia/claims${params.toString() ? `?${params}` : ''}`)
+  return response.data || []
+}
+
+export const submitPendingNhiaClaims = async () =>
+  await branchFetch('/api/nhia/submit-pending', {
+    method: 'POST',
+  })
+
+export const createNhiaBatch = async ({ claimIds = [], exportFormat = 'json' } = {}) => {
+  const response = await branchFetch('/api/nhia/batches', {
+    method: 'POST',
+    body: JSON.stringify({ claimIds, exportFormat }),
+  })
+  return response.data || null
+}
+
+export const downloadNhiaBatchExport = async (batchId, format = '') => {
+  const params = new URLSearchParams()
+  if (format) {
+    params.set('format', format)
+  }
+
+  const response = await fetch(
+    `${getBranchServerUrl()}/api/nhia/batches/${batchId}/export${params.toString() ? `?${params}` : ''}`,
+    {
+      headers: {
+        Accept: '*/*',
+        'x-branch-token': getBranchServerToken(),
+      },
+    }
+  )
+  const content = await response.text()
+  if (!response.ok) {
+    let body = {}
+    try {
+      body = JSON.parse(content || '{}')
+    } catch {
+      body = {}
+    }
+    throw new Error(body?.error || 'Unable to export NHIA batch.')
+  }
+
+  const disposition = response.headers.get('Content-Disposition') || ''
+  const fileNameMatch = disposition.match(/filename="([^"]+)"/)
+  return {
+    content,
+    contentType: response.headers.get('Content-Type') || 'application/octet-stream',
+    fileName: fileNameMatch?.[1] || `nhia-claim-batch.${format || 'json'}`,
+  }
+}
 
 export const shouldUseBranchServer = () =>
   isBranchServerEnabled() && typeof navigator !== 'undefined' && navigator.onLine === false

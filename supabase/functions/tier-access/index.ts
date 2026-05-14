@@ -36,6 +36,7 @@ type TierAccessAction =
   | 'get_recent_claims'
   | 'get_claims_statistics'
   | 'create_claim'
+  | 'update_claim'
   | 'approve_claim'
   | 'reject_claim'
   | 'get_report_bundle'
@@ -57,8 +58,8 @@ type RequesterProfile = {
 
 const INVENTORY_ROLES = ['admin', 'pharmacist', 'technician', 'procurement', 'branch_manager']
 const SALES_ROLES = ['admin', 'pharmacist', 'assistant', 'cashier', 'technician', 'branch_manager']
-const CLAIMS_ROLES = ['admin', 'pharmacist', 'billing']
-const NHIS_ROLES = ['admin', 'pharmacist', 'billing']
+const CLAIMS_ROLES = ['admin', 'pharmacist', 'billing', 'claims_officer']
+const NHIS_ROLES = ['admin', 'pharmacist', 'billing', 'claims_officer']
 const REPORT_ROLES = ['admin', 'pharmacist', 'branch_manager']
 
 const json = (body: Record<string, unknown>, status = 200) =>
@@ -1023,6 +1024,126 @@ const createClaim = async (
   }
 }
 
+const buildClaimItems = (itemsInput: unknown[]) =>
+  itemsInput.map((item) => {
+    const row = item as Record<string, unknown>
+    const quantity = parseNonNegativeNumber(row.quantity, 'Item quantity')
+    const price = parseNonNegativeNumber(row.price, 'Item price')
+
+    return {
+      drug_id: normalizeText(row.drugId) || null,
+      drug_name: assertRequiredText(row.name, 'Drug name'),
+      quantity,
+      unit_price: price,
+      total_price: quantity * price,
+    }
+  })
+
+const updateClaim = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  requesterProfile: RequesterProfile,
+  organizationId: string,
+  claimId: string,
+  payload: Record<string, unknown>
+) => {
+  requireClaimsAccess(requesterProfile, 'Only claims staff can edit claims.')
+
+  const claimData = (payload.claimData || {}) as Record<string, unknown>
+  const itemsInput = Array.isArray(claimData.items) ? claimData.items : []
+  if (itemsInput.length === 0) {
+    throw new Error('At least one claim item is required.')
+  }
+
+  const { data: existingClaim, error: existingClaimError } = await adminClient
+    .from('claims')
+    .select('id, claim_number, claim_status')
+    .eq('id', claimId)
+    .eq('organization_id', organizationId)
+    .maybeSingle()
+
+  if (existingClaimError) {
+    throw existingClaimError
+  }
+
+  if (!existingClaim) {
+    throw new Error('Claim not found.')
+  }
+
+  if (existingClaim.claim_status !== 'pending') {
+    throw new Error('Only pending claims can be edited before approval.')
+  }
+
+  const patientName = assertRequiredText(claimData.patientName, 'Patient name')
+  const insuranceProvider = assertRequiredText(claimData.insuranceProvider, 'Insurance provider')
+  const insuranceId = assertRequiredText(claimData.insuranceId, 'Insurance ID')
+  const items = buildClaimItems(itemsInput)
+  const totalAmount = items.reduce((sum, item) => sum + item.total_price, 0)
+  const branchId = await getBranchIdForInventoryRequest(adminClient, organizationId, requesterProfile, {
+    branchId: normalizeText(claimData.branchId),
+  })
+
+  const updatePayload = {
+    patient_id: normalizeText(claimData.patientId) || null,
+    patient_name: patientName,
+    insurance_provider: insuranceProvider,
+    insurance_id: insuranceId,
+    branch_id: branchId,
+    service_date: normalizeText(claimData.serviceDate) || new Date().toISOString().split('T')[0],
+    total_amount: totalAmount,
+    prescription_url: normalizeText(claimData.prescriptionUrl) || null,
+    notes: normalizeText(claimData.notes) || null,
+    updated_at: new Date().toISOString(),
+  }
+
+  const { error: claimError } = await adminClient
+    .from('claims')
+    .update(updatePayload)
+    .eq('id', claimId)
+    .eq('organization_id', organizationId)
+
+  if (claimError) {
+    throw claimError
+  }
+
+  const { error: deleteItemsError } = await adminClient
+    .from('claim_items')
+    .delete()
+    .eq('claim_id', claimId)
+    .eq('organization_id', organizationId)
+
+  if (deleteItemsError) {
+    throw deleteItemsError
+  }
+
+  const { error: itemsError } = await adminClient.from('claim_items').insert(
+    items.map((item) => ({
+      organization_id: organizationId,
+      claim_id: claimId,
+      ...item,
+    }))
+  )
+
+  if (itemsError) {
+    throw itemsError
+  }
+
+  const { data: updatedClaim, error: fetchError } = await adminClient
+    .from('claims')
+    .select(CLAIM_SELECT_FIELDS)
+    .eq('id', claimId)
+    .eq('organization_id', organizationId)
+    .single()
+
+  if (fetchError) {
+    throw fetchError
+  }
+
+  return {
+    claim: updatedClaim,
+    claimNumber: updatedClaim.claim_number,
+  }
+}
+
 const updateClaimStatus = async (
   adminClient: ReturnType<typeof createAdminClient>,
   requesterProfile: RequesterProfile,
@@ -1608,6 +1729,7 @@ Deno.serve(async (request) => {
       action === 'get_recent_claims' ||
       action === 'get_claims_statistics' ||
       action === 'create_claim' ||
+      action === 'update_claim' ||
       action === 'approve_claim' ||
       action === 'reject_claim'
     ) {
@@ -1615,6 +1737,11 @@ Deno.serve(async (request) => {
 
       if (action === 'create_claim') {
         return json(await createClaim(adminClient, requesterProfile, organizationId, payload))
+      }
+
+      if (action === 'update_claim') {
+        const claimId = assertRequiredText(payload.id, 'Claim id')
+        return json(await updateClaim(adminClient, requesterProfile, organizationId, claimId, payload))
       }
 
       requireClaimsAccess(requesterProfile, 'Only claims staff can access claims.')

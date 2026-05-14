@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Plus, Download, Eye, CheckCircle2, XCircle, Search } from 'lucide-react'
+import { Plus, Download, Eye, CheckCircle2, XCircle, Search, Pencil } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { dispatchHealthflowDataChanged } from '../lib/appEvents'
 import {
@@ -8,6 +8,7 @@ import {
   getAllClaims,
   getClaimsStatistics,
   rejectClaim,
+  updateClaim,
 } from '../services/claimsService'
 import { getAllPatients } from '../services/patientService'
 import { getAllDrugs } from '../services/drugService'
@@ -23,6 +24,7 @@ import './Claims.css'
 
 const blankForm = {
   patientId: '',
+  patientName: '',
   insuranceProvider: '',
   insuranceId: '',
   serviceDate: new Date().toISOString().split('T')[0],
@@ -96,6 +98,7 @@ const Claims = () => {
   const [selectedQty, setSelectedQty] = useState('1')
   const [drugLookupTerm, setDrugLookupTerm] = useState('')
   const [claimToReject, setClaimToReject] = useState(null)
+  const [editingClaim, setEditingClaim] = useState(null)
   const [rejectionReason, setRejectionReason] = useState('')
   const [claimSearchTerm, setClaimSearchTerm] = useState('')
   const [patientLookupTerm, setPatientLookupTerm] = useState('')
@@ -238,10 +241,58 @@ const Claims = () => {
     setFormData((current) => ({
       ...current,
       patientId,
+      patientName: nextPatient?.full_name || '',
       insuranceProvider: nextPatient ? getPatientInsuranceProvider(nextPatient) : '',
       insuranceId: nextPatient ? getPatientInsuranceId(nextPatient) : '',
     }))
     setPatientLookupTerm(nextPatient?.full_name || '')
+  }
+
+  const resetClaimForm = () => {
+    setFormData({ ...blankForm, serviceDate: new Date().toISOString().split('T')[0] })
+    setClaimItems([])
+    setSelectedDrugId('')
+    setSelectedQty('1')
+    setDrugLookupTerm('')
+    setPatientLookupTerm('')
+    setEditingClaim(null)
+  }
+
+  const openNewClaimModal = () => {
+    resetClaimForm()
+    setShowNewClaimModal(true)
+  }
+
+  const closeClaimModal = () => {
+    setShowNewClaimModal(false)
+    resetClaimForm()
+  }
+
+  const openEditClaimModal = (claim) => {
+    const claimPatientName = claim.patient_name || claim.patients?.full_name || ''
+
+    setEditingClaim(claim)
+    setFormData({
+      patientId: claim.patient_id || '',
+      patientName: claimPatientName,
+      insuranceProvider: claim.insurance_provider || '',
+      insuranceId: claim.insurance_id || '',
+      serviceDate: claim.service_date || new Date().toISOString().split('T')[0],
+      notes: claim.notes || '',
+    })
+    setPatientLookupTerm(claimPatientName)
+    setClaimItems(
+      (claim.claim_items || []).map((item) => ({
+        drugId: item.drug_id || item.id,
+        name: item.drug_name,
+        quantity: Number.parseFloat(item.quantity || 0),
+        price: Number.parseFloat(item.unit_price || item.price || 0),
+      }))
+    )
+    setSelectedDrugId('')
+    setSelectedQty('1')
+    setDrugLookupTerm('')
+    setShowNewClaimModal(true)
   }
 
   const addClaimItem = () => {
@@ -283,7 +334,10 @@ const Claims = () => {
   const handleSubmit = async (event) => {
     event.preventDefault()
 
-    if (!selectedPatient) {
+    const patientId = selectedPatient?.id || formData.patientId || null
+    const patientName = selectedPatient?.full_name || formData.patientName || patientLookupTerm.trim()
+
+    if (!patientName) {
       setError('Select a patient before submitting a claim.')
       return
     }
@@ -297,26 +351,33 @@ const Claims = () => {
       setSubmitting(true)
       setError('')
 
-      await createClaim({
-        patientId: selectedPatient.id,
-        patientName: selectedPatient.full_name,
-        insuranceProvider: formData.insuranceProvider || selectedPatient.insurance_provider,
-        insuranceId: formData.insuranceId || selectedPatient.insurance_id,
+      const payload = {
+        patientId,
+        patientName,
+        insuranceProvider:
+          formData.insuranceProvider || selectedPatient?.insurance_provider || '',
+        insuranceId: formData.insuranceId || selectedPatient?.insurance_id || '',
         serviceDate: formData.serviceDate,
         notes: formData.notes,
         items: claimItems,
         submittedBy: user?.id || null,
         branchId: profile?.branch_id || branch?.id || null,
-      })
+      }
 
-      setShowNewClaimModal(false)
-      setFormData(blankForm)
-      setClaimItems([])
+      if (editingClaim) {
+        await updateClaim(editingClaim.id, payload)
+        notify(`Claim ${editingClaim.claim_number} corrected.`, 'success')
+      } else {
+        await createClaim(payload)
+        notify('Claim submitted for review.', 'success')
+      }
+
+      closeClaimModal()
       await loadClaims()
       dispatchHealthflowDataChanged()
     } catch (submitError) {
-      console.error('Error creating claim:', submitError)
-      setError(submitError.message || 'Unable to create claim.')
+      console.error('Error saving claim:', submitError)
+      setError(submitError.message || 'Unable to save claim.')
     } finally {
       setSubmitting(false)
     }
@@ -451,7 +512,7 @@ const Claims = () => {
           <h1>Insurance Claims</h1>
           <p>Manage and track insurance claims submissions</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowNewClaimModal(true)}>
+        <button className="btn btn-primary" onClick={openNewClaimModal}>
           <Plus size={20} />
           New Claim
         </button>
@@ -564,6 +625,14 @@ const Claims = () => {
                         <>
                           <button
                             type="button"
+                            className="icon-btn edit"
+                            title="Edit corrections"
+                            onClick={() => openEditClaimModal(claim)}
+                          >
+                            <Pencil size={16} />
+                          </button>
+                          <button
+                            type="button"
                             className="icon-btn success"
                             title="Approve"
                             onClick={() => handleApprove(claim)}
@@ -590,11 +659,11 @@ const Claims = () => {
       </div>
 
       {showNewClaimModal && (
-        <div className="modal-overlay" onClick={() => setShowNewClaimModal(false)}>
+        <div className="modal-overlay" onClick={closeClaimModal}>
           <div className="modal-content" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
-              <h2>Submit New Claim</h2>
-              <button className="close-btn" onClick={() => setShowNewClaimModal(false)}>
+              <h2>{editingClaim ? `Edit Claim ${editingClaim.claim_number}` : 'Submit New Claim'}</h2>
+              <button className="close-btn" onClick={closeClaimModal}>
                 x
               </button>
             </div>
@@ -648,6 +717,11 @@ const Claims = () => {
                     onChange={(event) => selectPatientForClaim(event.target.value)}
                   >
                     <option value="">Select patient</option>
+                    {formData.patientId &&
+                      formData.patientName &&
+                      !filteredPatientsForClaim.some((patient) => patient.id === formData.patientId) && (
+                        <option value={formData.patientId}>{formData.patientName}</option>
+                      )}
                     {filteredPatientsForClaim.map((patient) => (
                       <option key={patient.id} value={patient.id}>
                         {patient.full_name} ({patient.phone || 'No phone'})
@@ -777,8 +851,8 @@ const Claims = () => {
                 )}
 
                 <div className="claim-item-list">
-                  {claimItems.map((item) => (
-                    <div key={item.drugId} className="claim-item-row">
+                  {claimItems.map((item, index) => (
+                    <div key={`${item.drugId || item.name}-${index}`} className="claim-item-row">
                       <span>{item.name}</span>
                       <span>
                         {item.quantity} x GHS {item.price.toFixed(2)} = GHS{' '}
@@ -813,12 +887,18 @@ const Claims = () => {
                 <button
                   type="button"
                   className="btn btn-outline"
-                  onClick={() => setShowNewClaimModal(false)}
+                  onClick={closeClaimModal}
                 >
                   Cancel
                 </button>
                 <button type="submit" className="btn btn-primary" disabled={submitting}>
-                  {submitting ? 'Submitting...' : 'Submit Claim'}
+                  {submitting
+                    ? editingClaim
+                      ? 'Saving...'
+                      : 'Submitting...'
+                    : editingClaim
+                      ? 'Save Corrections'
+                      : 'Submit Claim'}
                 </button>
               </div>
             </form>

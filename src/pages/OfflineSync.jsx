@@ -1,12 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AlertCircle, CheckCircle2, RefreshCcw, Server, UploadCloud } from 'lucide-react'
 import {
+  createNhiaBatch,
+  downloadNhiaBatchExport,
   getBranchServerConfig,
   getBranchServerHealth,
   getBranchSyncStatus,
+  getNhiaSettings,
+  getNhiaSummary,
+  listNhiaClaims,
   pullBranchInventory,
   pullBranchReferenceData,
   runBranchSync,
+  saveNhiaSettings,
+  submitPendingNhiaClaims,
 } from '../services/branchServerApi'
 import { useNotification } from '../context/NotificationContext'
 import './OfflineSync.css'
@@ -35,6 +42,39 @@ const formatDateTime = (value) => {
 
 const getSummaryTotal = (summary, key) => Number(summary?.[key] || 0)
 
+const blankNhiaForm = {
+  facilityCode: '',
+  providerNumber: '',
+  submitterId: '',
+  apiBaseUrl: '',
+  claimEndpointPath: '/claims',
+  directApiEnabled: false,
+  credentialMode: 'api_key',
+  exportFormat: 'json',
+  nhisMemberDigits: 8,
+  ghanaCardDigits: 10,
+  maxRetryAttempts: 3,
+  credentials: {
+    apiKey: '',
+    headerName: '',
+    headerPrefix: '',
+    clientId: '',
+    clientSecret: '',
+    username: '',
+    password: '',
+    certPem: '',
+    keyPem: '',
+    caPem: '',
+    passphrase: '',
+  },
+}
+
+const buildNhiaForm = (settings) => ({
+  ...blankNhiaForm,
+  ...(settings || {}),
+  credentials: { ...blankNhiaForm.credentials },
+})
+
 export default function OfflineSync() {
   const { notify } = useNotification()
   const [config, setConfig] = useState(() => getBranchServerConfig())
@@ -44,6 +84,10 @@ export default function OfflineSync() {
   const [busyAction, setBusyAction] = useState('')
   const [error, setError] = useState('')
   const [entityFilter, setEntityFilter] = useState('all')
+  const [nhiaSettings, setNhiaSettings] = useState(null)
+  const [nhiaSummary, setNhiaSummary] = useState(null)
+  const [nhiaClaims, setNhiaClaims] = useState([])
+  const [nhiaForm, setNhiaForm] = useState(blankNhiaForm)
 
   const refreshStatus = useCallback(async ({ silent = false } = {}) => {
     const nextConfig = getBranchServerConfig()
@@ -53,6 +97,9 @@ export default function OfflineSync() {
     if (!nextConfig.enabled || !nextConfig.token) {
       setHealth(null)
       setStatus(null)
+      setNhiaSettings(null)
+      setNhiaSummary(null)
+      setNhiaClaims([])
       setLoading(false)
       setError('Local branch server is not configured in this browser.')
       return
@@ -60,18 +107,28 @@ export default function OfflineSync() {
 
     try {
       setLoading(true)
-      const [nextHealth, nextStatus] = await Promise.all([
+      const [nextHealth, nextStatus, nextNhiaSettings, nextNhiaSummary, nextNhiaClaims] = await Promise.all([
         getBranchServerHealth(),
         getBranchSyncStatus(),
+        getNhiaSettings().catch(() => null),
+        getNhiaSummary().catch(() => null),
+        listNhiaClaims({ limit: 8 }).catch(() => []),
       ])
       setHealth(nextHealth)
       setStatus(nextStatus)
+      setNhiaSettings(nextNhiaSettings)
+      setNhiaSummary(nextNhiaSummary)
+      setNhiaClaims(nextNhiaClaims)
+      setNhiaForm(buildNhiaForm(nextNhiaSettings))
       if (!silent) {
         notify('Offline sync status refreshed.', 'success')
       }
     } catch (statusError) {
       setHealth(null)
       setStatus(null)
+      setNhiaSettings(null)
+      setNhiaSummary(null)
+      setNhiaClaims([])
       setError(statusError.message || 'Unable to reach local branch server.')
       if (!silent) {
         notify(statusError.message || 'Unable to reach local branch server.', 'error')
@@ -116,6 +173,51 @@ export default function OfflineSync() {
     } finally {
       setBusyAction('')
     }
+  }
+
+  const updateNhiaForm = (field, value) => {
+    setNhiaForm((current) => ({ ...current, [field]: value }))
+  }
+
+  const updateNhiaCredential = (field, value) => {
+    setNhiaForm((current) => ({
+      ...current,
+      credentials: { ...current.credentials, [field]: value },
+    }))
+  }
+
+  const saveNhiaForm = async () => {
+    await runAction('nhia-settings', 'NHIA settings save', async () => {
+      const saved = await saveNhiaSettings(nhiaForm)
+      setNhiaSettings(saved)
+      setNhiaForm(buildNhiaForm(saved))
+      return saved
+    })
+  }
+
+  const submitNhiaClaims = async () => {
+    await runAction('nhia-submit', 'NHIA pending claims submission', submitPendingNhiaClaims)
+  }
+
+  const downloadTextFile = ({ content, contentType, fileName }) => {
+    const blob = new Blob([content], { type: contentType })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = fileName
+    document.body.appendChild(anchor)
+    anchor.click()
+    document.body.removeChild(anchor)
+    URL.revokeObjectURL(url)
+  }
+
+  const exportNhiaBatch = async (format) => {
+    await runAction('nhia-export', `NHIA ${format.toUpperCase()} export`, async () => {
+      const batch = await createNhiaBatch({ exportFormat: format })
+      const exported = await downloadNhiaBatchExport(batch.id, format)
+      downloadTextFile(exported)
+      return batch
+    })
   }
 
   const recentRecordFailures = status?.recentFailures?.records || []
@@ -186,6 +288,291 @@ export default function OfflineSync() {
         <div className="sync-metric">
           <span>Total Events</span>
           <strong>{getSummaryTotal(status, 'total')}</strong>
+        </div>
+      </section>
+
+      <section className="offline-sync-section">
+        <div className="offline-sync-section-header">
+          <div>
+            <h2>NHIA / CLAIM-it</h2>
+            <p>Local claim settings, submission status, and batch export.</p>
+          </div>
+          <div className="offline-sync-actions">
+            <button
+              className="btn btn-outline"
+              type="button"
+              onClick={submitNhiaClaims}
+              disabled={!isConnected || Boolean(busyAction)}
+            >
+              Submit Pending
+            </button>
+            <button
+              className="btn btn-outline"
+              type="button"
+              onClick={() => exportNhiaBatch('json')}
+              disabled={!isConnected || Boolean(busyAction)}
+            >
+              Export JSON
+            </button>
+            <button
+              className="btn btn-outline"
+              type="button"
+              onClick={() => exportNhiaBatch('xml')}
+              disabled={!isConnected || Boolean(busyAction)}
+            >
+              Export XML
+            </button>
+          </div>
+        </div>
+
+        <div className="nhia-settings-grid">
+          <label>
+            <span>Facility Code</span>
+            <input
+              value={nhiaForm.facilityCode}
+              onChange={(event) => updateNhiaForm('facilityCode', event.target.value)}
+            />
+          </label>
+          <label>
+            <span>Provider Number</span>
+            <input
+              value={nhiaForm.providerNumber}
+              onChange={(event) => updateNhiaForm('providerNumber', event.target.value)}
+            />
+          </label>
+          <label>
+            <span>Submitter ID</span>
+            <input
+              value={nhiaForm.submitterId}
+              onChange={(event) => updateNhiaForm('submitterId', event.target.value)}
+            />
+          </label>
+          <label>
+            <span>API Base URL</span>
+            <input
+              value={nhiaForm.apiBaseUrl}
+              onChange={(event) => updateNhiaForm('apiBaseUrl', event.target.value)}
+            />
+          </label>
+          <label>
+            <span>Claim Endpoint</span>
+            <input
+              value={nhiaForm.claimEndpointPath}
+              onChange={(event) => updateNhiaForm('claimEndpointPath', event.target.value)}
+            />
+          </label>
+          <label>
+            <span>Credential Mode</span>
+            <select
+              value={nhiaForm.credentialMode}
+              onChange={(event) => updateNhiaForm('credentialMode', event.target.value)}
+            >
+              <option value="api_key">API Key</option>
+              <option value="client_secret">Client ID / Secret</option>
+              <option value="username_password">Username / Password</option>
+              <option value="certificate">Certificate</option>
+            </select>
+          </label>
+          <label>
+            <span>Export Format</span>
+            <select
+              value={nhiaForm.exportFormat}
+              onChange={(event) => updateNhiaForm('exportFormat', event.target.value)}
+            >
+              <option value="json">JSON</option>
+              <option value="xml">XML</option>
+            </select>
+          </label>
+          <label>
+            <span>NHIS Digits</span>
+            <input
+              type="number"
+              min="1"
+              max="30"
+              value={nhiaForm.nhisMemberDigits}
+              onChange={(event) => updateNhiaForm('nhisMemberDigits', event.target.value)}
+            />
+          </label>
+          <label>
+            <span>Ghana Card Digits</span>
+            <input
+              type="number"
+              min="1"
+              max="30"
+              value={nhiaForm.ghanaCardDigits}
+              onChange={(event) => updateNhiaForm('ghanaCardDigits', event.target.value)}
+            />
+          </label>
+          <label>
+            <span>Retry Attempts</span>
+            <input
+              type="number"
+              min="1"
+              max="10"
+              value={nhiaForm.maxRetryAttempts}
+              onChange={(event) => updateNhiaForm('maxRetryAttempts', event.target.value)}
+            />
+          </label>
+          <label className="nhia-toggle">
+            <input
+              type="checkbox"
+              checked={Boolean(nhiaForm.directApiEnabled)}
+              onChange={(event) => updateNhiaForm('directApiEnabled', event.target.checked)}
+            />
+            <span>Direct API Enabled</span>
+          </label>
+
+          {nhiaForm.credentialMode === 'api_key' && (
+            <>
+              <label className="nhia-wide">
+                <span>API Key {nhiaSettings?.credentialSummary?.apiKey ? '(saved)' : ''}</span>
+                <input
+                  type="password"
+                  value={nhiaForm.credentials.apiKey}
+                  onChange={(event) => updateNhiaCredential('apiKey', event.target.value)}
+                />
+              </label>
+              <label>
+                <span>API Key Header</span>
+                <input
+                  value={nhiaForm.credentials.headerName}
+                  placeholder="Authorization"
+                  onChange={(event) => updateNhiaCredential('headerName', event.target.value)}
+                />
+              </label>
+              <label>
+                <span>Header Prefix</span>
+                <input
+                  value={nhiaForm.credentials.headerPrefix}
+                  placeholder="Bearer"
+                  onChange={(event) => updateNhiaCredential('headerPrefix', event.target.value)}
+                />
+              </label>
+            </>
+          )}
+
+          {nhiaForm.credentialMode === 'client_secret' && (
+            <>
+              <label>
+                <span>Client ID {nhiaSettings?.credentialSummary?.clientId ? '(saved)' : ''}</span>
+                <input
+                  value={nhiaForm.credentials.clientId}
+                  onChange={(event) => updateNhiaCredential('clientId', event.target.value)}
+                />
+              </label>
+              <label>
+                <span>Client Secret {nhiaSettings?.credentialSummary?.clientSecret ? '(saved)' : ''}</span>
+                <input
+                  type="password"
+                  value={nhiaForm.credentials.clientSecret}
+                  onChange={(event) => updateNhiaCredential('clientSecret', event.target.value)}
+                />
+              </label>
+            </>
+          )}
+
+          {nhiaForm.credentialMode === 'username_password' && (
+            <>
+              <label>
+                <span>Username {nhiaSettings?.credentialSummary?.username ? '(saved)' : ''}</span>
+                <input
+                  value={nhiaForm.credentials.username}
+                  onChange={(event) => updateNhiaCredential('username', event.target.value)}
+                />
+              </label>
+              <label>
+                <span>Password {nhiaSettings?.credentialSummary?.password ? '(saved)' : ''}</span>
+                <input
+                  type="password"
+                  value={nhiaForm.credentials.password}
+                  onChange={(event) => updateNhiaCredential('password', event.target.value)}
+                />
+              </label>
+            </>
+          )}
+
+          {nhiaForm.credentialMode === 'certificate' && (
+            <>
+              <label className="nhia-wide">
+                <span>Certificate PEM {nhiaSettings?.credentialSummary?.certPem ? '(saved)' : ''}</span>
+                <textarea
+                  rows="4"
+                  value={nhiaForm.credentials.certPem}
+                  onChange={(event) => updateNhiaCredential('certPem', event.target.value)}
+                />
+              </label>
+              <label className="nhia-wide">
+                <span>Private Key PEM {nhiaSettings?.credentialSummary?.keyPem ? '(saved)' : ''}</span>
+                <textarea
+                  rows="4"
+                  value={nhiaForm.credentials.keyPem}
+                  onChange={(event) => updateNhiaCredential('keyPem', event.target.value)}
+                />
+              </label>
+              <label>
+                <span>Passphrase {nhiaSettings?.credentialSummary?.passphrase ? '(saved)' : ''}</span>
+                <input
+                  type="password"
+                  value={nhiaForm.credentials.passphrase}
+                  onChange={(event) => updateNhiaCredential('passphrase', event.target.value)}
+                />
+              </label>
+              <label className="nhia-wide">
+                <span>CA PEM {nhiaSettings?.credentialSummary?.caPem ? '(saved)' : ''}</span>
+                <textarea
+                  rows="3"
+                  value={nhiaForm.credentials.caPem}
+                  onChange={(event) => updateNhiaCredential('caPem', event.target.value)}
+                />
+              </label>
+            </>
+          )}
+        </div>
+
+        <div className="nhia-settings-footer">
+          <span>
+            Draft {nhiaSummary?.draft || 0} | Ready {nhiaSummary?.ready || 0} | Submitted{' '}
+            {nhiaSummary?.submitted || 0} | Failed {nhiaSummary?.failed || 0}
+          </span>
+          <button
+            className="btn btn-primary"
+            type="button"
+            onClick={saveNhiaForm}
+            disabled={!isConnected || Boolean(busyAction)}
+          >
+            {busyAction === 'nhia-settings' ? 'Saving...' : 'Save NHIA Settings'}
+          </button>
+        </div>
+
+        <div className="nhia-claims-table-wrap">
+          {nhiaClaims.length === 0 ? (
+            <div className="sync-empty">No local NHIA claims found.</div>
+          ) : (
+            <table className="nhia-claims-table">
+              <thead>
+                <tr>
+                  <th>Claim</th>
+                  <th>Patient</th>
+                  <th>Member No.</th>
+                  <th>Status</th>
+                  <th>CC Code</th>
+                  <th>Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {nhiaClaims.map((claim) => (
+                  <tr key={claim.id}>
+                    <td>{claim.claimNumber}</td>
+                    <td>{claim.patientName}</td>
+                    <td>{claim.memberNumber}</td>
+                    <td>{claim.status}</td>
+                    <td>{claim.ccCode || '-'}</td>
+                    <td>GHS {Number(claim.totalAmount || 0).toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </section>
 

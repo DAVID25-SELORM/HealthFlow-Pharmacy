@@ -10,6 +10,7 @@ const STAFF_ROLES = [
   'cashier',
   'branch_manager',
   'procurement',
+  'claims_officer',
   'billing',
   'delivery',
 ] as const
