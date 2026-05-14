@@ -22,6 +22,7 @@ const Signup = () => {
   const [checkingSubdomain, setCheckingSubdomain] = useState(false)
 
   const [pharmacyName, setPharmacyName] = useState('')
+  const [organizationType, setOrganizationType] = useState('pharmacy')
   const [subdomain, setSubdomain] = useState('')
   const [pharmacyPhone, setPharmacyPhone] = useState('')
   const [pharmacyEmail, setPharmacyEmail] = useState('')
@@ -37,6 +38,12 @@ const Signup = () => {
   const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const facilityLabel = organizationType === 'hospital' ? 'Hospital' : 'Pharmacy'
+  const facilityNamePlaceholder = organizationType === 'hospital' ? 'ABC Hospital' : 'ABC Pharmacy'
+  const facilityEmailPlaceholder = organizationType === 'hospital' ? 'info@hospital.com' : 'info@pharmacy.com'
+  const facilitySloganPlaceholder =
+    organizationType === 'hospital' ? 'Smart Care. Better Health.' : 'Smart Pharmacy. Better Health.'
+  const facilityLicensePlaceholder = organizationType === 'hospital' ? 'HF-12345' : 'PL-12345'
 
   const runSubdomainCheck = async (candidate = subdomain) => {
     const normalized = candidate.trim().toLowerCase()
@@ -72,7 +79,7 @@ const Signup = () => {
 
   const validateStep1 = () => {
     if (!pharmacyName.trim()) {
-      setError('Pharmacy name is required')
+      setError(`${facilityLabel} name is required`)
       return false
     }
 
@@ -128,7 +135,7 @@ const Signup = () => {
     event.preventDefault()
     setError('')
     setDashboardReady(false)
-    setSuccessMessage('Your pharmacy has been registered and your 30-day free trial has started.')
+    setSuccessMessage(`Your ${facilityLabel.toLowerCase()} has been registered and your 30-day free trial has started.`)
 
     if (!validateStep2()) {
       return
@@ -144,6 +151,7 @@ const Signup = () => {
     try {
       await registerOrganizationSignup({
         pharmacyName,
+        organizationType,
         subdomain,
         pharmacyPhone,
         pharmacyEmail,
@@ -165,7 +173,7 @@ const Signup = () => {
       } catch (signInError) {
         console.warn('Automatic sign-in after signup failed:', signInError)
         setSuccessMessage(
-          'Your pharmacy has been registered. Sign in with your new admin account to access the dashboard.'
+          `Your ${facilityLabel.toLowerCase()} has been registered. Sign in with your new admin account to access the dashboard.`
         )
       }
 
@@ -225,16 +233,29 @@ const Signup = () => {
               void handleStep1Next()
             }}
           >
-            <div className="step-indicator">Step 1 of 2: Pharmacy Information</div>
+            <div className="step-indicator">Step 1 of 2: Facility Information</div>
 
             <div className="form-group">
-              <label htmlFor="pharmacyName">Pharmacy Name *</label>
+              <label htmlFor="organizationType">Facility Type *</label>
+              <select
+                id="organizationType"
+                value={organizationType}
+                onChange={(event) => setOrganizationType(event.target.value)}
+                required
+              >
+                <option value="pharmacy">Pharmacy</option>
+                <option value="hospital">Hospital</option>
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="pharmacyName">{facilityLabel} Name *</label>
               <input
                 type="text"
                 id="pharmacyName"
                 value={pharmacyName}
                 onChange={(event) => setPharmacyName(event.target.value)}
-                placeholder="ABC Pharmacy"
+                placeholder={facilityNamePlaceholder}
                 required
               />
             </div>
@@ -291,7 +312,7 @@ const Signup = () => {
                   id="pharmacyEmail"
                   value={pharmacyEmail}
                   onChange={(event) => setPharmacyEmail(event.target.value)}
-                  placeholder="info@pharmacy.com"
+                  placeholder={facilityEmailPlaceholder}
                 />
               </div>
             </div>
@@ -332,40 +353,40 @@ const Signup = () => {
             </div>
 
             <div className="form-group">
-              <label htmlFor="slogan">Pharmacy Slogan</label>
+              <label htmlFor="slogan">{facilityLabel} Slogan</label>
               <input
                 type="text"
                 id="slogan"
                 value={slogan}
                 onChange={(event) => setSlogan(event.target.value)}
-                placeholder="Smart Pharmacy. Better Health."
+                placeholder={facilitySloganPlaceholder}
                 maxLength={120}
               />
             </div>
 
             <div className="form-group">
-              <label htmlFor="licenseNumber">Pharmacy License Number</label>
+              <label htmlFor="licenseNumber">{facilityLabel} License Number</label>
               <input
                 type="text"
                 id="licenseNumber"
                 value={licenseNumber}
                 onChange={(event) => setLicenseNumber(event.target.value)}
-                placeholder="PL-12345"
+                placeholder={facilityLicensePlaceholder}
               />
             </div>
 
             <div className="form-group logo-upload-field">
-              <label htmlFor="pharmacyLogo">Pharmacy Logo</label>
+              <label htmlFor="pharmacyLogo">{facilityLabel} Logo</label>
               <div className="logo-upload-card">
                 {logoUrl ? (
-                  <img src={logoUrl} alt="Pharmacy logo preview" className="signup-logo-preview" />
+                  <img src={logoUrl} alt={`${facilityLabel} logo preview`} className="signup-logo-preview" />
                 ) : (
                   <div className="signup-logo-placeholder" aria-hidden="true">
                     {pharmacyName.trim().charAt(0).toUpperCase() || '+'}
                   </div>
                 )}
                 <div className="logo-upload-copy">
-                  <strong>{logoUrl ? 'Logo selected' : 'Add pharmacy logo'}</strong>
+                  <strong>{logoUrl ? 'Logo selected' : `Add ${facilityLabel.toLowerCase()} logo`}</strong>
                   <span>PNG, JPG, or WebP. Max 750KB.</span>
                   <input
                     type="file"
@@ -487,7 +508,10 @@ const Signup = () => {
                 <img src={logoUrl} alt={`${pharmacyName} logo`} className="signup-success-logo" />
               )}
               <p>
-                <strong>Pharmacy:</strong> {pharmacyName}
+                  <strong>Facility:</strong> {pharmacyName}
+              </p>
+              <p>
+                <strong>Type:</strong> {facilityLabel}
               </p>
               {slogan && (
                 <p>

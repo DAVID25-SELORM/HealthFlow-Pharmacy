@@ -24,6 +24,7 @@ import {
   updateNhisClaimStatus,
   exportNhisMonthlyCSV,
   assessNhisClaimReadiness,
+  normalizeOrganizationType,
 } from '../services/nhisService'
 import { getAllPatients } from '../services/patientService'
 import { parseNhisDrugFile, generateNhisDrugTemplate } from '../services/nhisDrugImportService'
@@ -110,12 +111,14 @@ const StatusBadge = ({ status }) => (
 // ─── component ────────────────────────────────────────────────────────────────
 
 const Nhis = () => {
-  const { role, user, profile, branch } = useAuth()
+  const { role, user, profile, branch, organization } = useAuth()
   const { notify } = useNotification()
   const [searchParams, setSearchParams] = useSearchParams()
   const fileInputRef = useRef(null)
 
   const canWrite = hasRole(role, NHIS_ROLES)
+  const organizationType = normalizeOrganizationType(organization?.organization_type)
+  const isHospital = organizationType === 'hospital'
 
   // ── page sub-tab ─────────────────────────────────────────────
   const [pageTab, setPageTab] = useState('claims') // 'claims' | 'catalog'
@@ -435,8 +438,11 @@ const Nhis = () => {
   )
 
   const readiness = useMemo(
-    () => assessNhisClaimReadiness(claimForm, claimMedicines),
-    [claimForm, claimMedicines]
+    () => assessNhisClaimReadiness(
+      { ...claimForm, organizationType },
+      claimMedicines
+    ),
+    [claimForm, claimMedicines, organizationType]
   )
 
   const readinessIssues = readiness.issues
@@ -455,6 +461,7 @@ const Nhis = () => {
       setClaimError('')
       const payload = {
         ...claimForm,
+        organizationType,
         branchId: profile?.branch_id || branch?.id || null,
         createdBy: user?.id || null,
       }
@@ -494,6 +501,7 @@ const Nhis = () => {
       patientAddress: claimForm.patientAddress || 'pending',
       dateOfBirth: claimForm.dateOfBirth || '2000-01-01',
       diagnosis: claimForm.diagnosis || 'pending',
+      organizationType,
       serviceDate: claimForm.serviceDate || new Date().toISOString().split('T')[0],
       physicianName: claimForm.physicianName || 'pending',
     },
@@ -506,6 +514,22 @@ const Nhis = () => {
   // ── status updates ────────────────────────────────────────────
   const handleStatusUpdate = async (claim, newStatus) => {
     try {
+      if (newStatus === 'submitted') {
+        const finalReadiness = assessNhisClaimReadiness(
+          { ...claim, organizationType },
+          claim.nhis_claim_medicines || [],
+          { finalSubmission: true }
+        )
+
+        if (finalReadiness.blockers.length) {
+          notify(
+            `Final NHIS check failed: ${finalReadiness.blockers.slice(0, 3).join(' ')}`,
+            'error'
+          )
+          return
+        }
+      }
+
       setUpdatingStatus(claim.id)
       await updateNhisClaimStatus(claim.id, newStatus, '', user?.id || null)
       await loadAll()
@@ -641,7 +665,7 @@ const Nhis = () => {
   const handleExport = async () => {
     try {
       setExporting(true)
-      const count = await exportNhisMonthlyCSV(exportMonth)
+      const count = await exportNhisMonthlyCSV(exportMonth, { organizationType })
       setShowExportModal(false)
       await loadAll()
       notify(`${count} claims exported for ${exportMonth}. Served claims marked as Submitted.`, 'success')
@@ -1052,8 +1076,9 @@ const Nhis = () => {
                         onChange={(e) => setClaimForm((p) => ({ ...p, cccNo: e.target.value }))} />
                     </div>
                     <div className="form-group">
-                      <label>Diagnosis *</label>
+                      <label>Diagnosis{isHospital ? ' *' : ''}</label>
                       <input className="form-input" value={claimForm.diagnosis}
+                        placeholder={isHospital ? 'Required for hospital claims' : 'Optional for pharmacy claims'}
                         onChange={(e) => setClaimForm((p) => ({ ...p, diagnosis: e.target.value }))} />
                     </div>
                   </div>

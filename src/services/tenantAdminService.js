@@ -7,6 +7,7 @@ const VALID_TIERS = ['trial', 'basic', 'pro', 'enterprise']
 const VALID_PLAN_CODES = ['starter', 'professional', 'premium']
 const VALID_BILLING_STATUSES = ['trial', 'active', 'past_due', 'suspended', 'cancelled']
 const VALID_SUPPORT_LEVELS = ['standard', 'priority', 'premium']
+const VALID_ORGANIZATION_TYPES = ['pharmacy', 'hospital']
 
 const normalizeText = (value) => (typeof value === 'string' ? value.trim() : '')
 
@@ -58,6 +59,9 @@ const normalizeChoice = (value, validValues, fallback, label) => {
   return normalized
 }
 
+const normalizeOrganizationType = (value, fallback = 'pharmacy') =>
+  normalizeChoice(value, VALID_ORGANIZATION_TYPES, fallback, 'organization type')
+
 const normalizeOptionalIsoDate = (value) => {
   const normalized = normalizeText(value)
   if (!normalized) {
@@ -96,6 +100,7 @@ const normalizeOrganizations = (organizations = []) =>
       organization.subscription_tier,
       organization.status === 'trial' ? 'trial' : 'basic'
     ),
+    organization_type: normalizeOrganizationType(organization.organization_type, 'pharmacy'),
     plan_code: normalizeChoice(organization.plan_code, VALID_PLAN_CODES, 'starter', 'plan'),
     billing_status: normalizeChoice(
       organization.billing_status,
@@ -148,6 +153,7 @@ export const createPharmacyTenant = async ({ pharmacy, admin }) =>
     action: 'create_tenant',
     organization: {
       name: normalizeText(pharmacy.name),
+      organizationType: normalizeOrganizationType(pharmacy.organizationType, 'pharmacy'),
       subdomain: normalizeText(pharmacy.subdomain).toLowerCase(),
       phone: normalizeText(pharmacy.phone) || null,
       email: normalizeText(pharmacy.email) || null,
@@ -249,6 +255,10 @@ export const checkSubdomainAvailable = async (subdomain) => {
 export const updateOrganizationDetails = async (orgId, fields) => {
   const organization = {
     name: normalizeText(fields.name) || undefined,
+    organizationType:
+      fields.organizationType !== undefined
+        ? normalizeOrganizationType(fields.organizationType, 'pharmacy')
+        : undefined,
     phone: fields.phone !== undefined ? normalizeText(fields.phone) || null : undefined,
     email: fields.email !== undefined ? normalizeText(fields.email) || null : undefined,
     address: fields.address !== undefined ? normalizeText(fields.address) || null : undefined,

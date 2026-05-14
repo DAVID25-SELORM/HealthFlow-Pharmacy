@@ -8,6 +8,12 @@ import { assertRequiredText, normalizeText } from '../utils/validation'
 
 const TENANT_SIGNUP_FUNCTION = 'tenant-signup'
 const DEFAULT_MEDICATION_BATCH_PREFIX = 'PDF-IMP-'
+const VALID_ORGANIZATION_TYPES = ['pharmacy', 'hospital']
+
+const normalizeOrganizationType = (value) => {
+  const normalized = normalizeText(value).toLowerCase()
+  return VALID_ORGANIZATION_TYPES.includes(normalized) ? normalized : 'pharmacy'
+}
 
 const invokeTenantSignup = async (payload) => {
   const { data, error } = await invokeSupabaseFunction(TENANT_SIGNUP_FUNCTION, {
@@ -85,8 +91,10 @@ export const getOrganizationBySubdomain = async (subdomain) => {
 }
 
 export const registerOrganizationSignup = async (payload) => {
+  const organizationType = normalizeOrganizationType(payload.organizationType)
   const organization = {
-    name: assertRequiredText(payload.pharmacyName, 'Pharmacy name'),
+    name: assertRequiredText(payload.pharmacyName, `${organizationType === 'hospital' ? 'Hospital' : 'Pharmacy'} name`),
+    organizationType,
     subdomain: assertRequiredText(payload.subdomain, 'Subdomain').toLowerCase(),
     phone: normalizeText(payload.pharmacyPhone) || null,
     email: normalizeText(payload.pharmacyEmail) || null,
@@ -136,6 +144,7 @@ export const createOrganization = async (orgData) => {
 
   const payload = {
     name: normalizeText(name),
+    organization_type: normalizeOrganizationType(orgData.organizationType ?? orgData.organization_type),
     subdomain: subdomain,
     address: normalizeText(orgData.address) || null,
     city: normalizeText(orgData.city) || null,
@@ -167,6 +176,10 @@ export const createOrganization = async (orgData) => {
 export const updateOrganization = async (orgId, updates) => {
   const payload = {
     name: updates.name ? normalizeText(updates.name) : undefined,
+    organization_type:
+      updates.organizationType !== undefined || updates.organization_type !== undefined
+        ? normalizeOrganizationType(updates.organizationType ?? updates.organization_type)
+        : undefined,
     address: updates.address !== undefined ? normalizeText(updates.address) || null : undefined,
     city: updates.city !== undefined ? normalizeText(updates.city) || null : undefined,
     region: updates.region !== undefined ? normalizeText(updates.region) || null : undefined,

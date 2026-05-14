@@ -11,8 +11,8 @@ const VALID_STATUSES = ['trial', 'active', 'suspended', 'cancelled'] as const
 const VALID_PLAN_CODES = ['starter', 'professional', 'premium'] as const
 const VALID_BILLING_STATUSES = ['trial', 'active', 'past_due', 'suspended', 'cancelled'] as const
 const VALID_SUPPORT_LEVELS = ['standard', 'priority', 'premium'] as const
-const ORGANIZATION_SELECT_FIELDS =
-  'id, name, subdomain, status, subscription_tier, plan_code, billing_status, trial_ends_at, subscription_ends_at, last_payment_at, next_payment_due_at, support_level, billing_notes, phone, email, address, city, region, logo_url, slogan, license_number, can_use_claims, can_use_purchases, can_use_nhis, can_use_nhis_topups, can_use_accounting, can_use_multi_branch, created_at, updated_at'
+const VALID_ORGANIZATION_TYPES = ['pharmacy', 'hospital'] as const
+const ORGANIZATION_SELECT_FIELDS = '*'
 const TENANT_USER_SELECT_FIELDS = 'id, email, full_name, role, is_active, created_at'
 
 type TenantSignupAction =
@@ -153,6 +153,23 @@ const normalizeSupportLevel = (
   }
 
   throw new Error('Support level must be standard, priority, or premium.')
+}
+
+const normalizeOrganizationType = (
+  value: unknown,
+  fallback: (typeof VALID_ORGANIZATION_TYPES)[number]
+) => {
+  const normalized = normalizeText(value).toLowerCase()
+
+  if (!normalized) {
+    return fallback
+  }
+
+  if (VALID_ORGANIZATION_TYPES.includes(normalized as (typeof VALID_ORGANIZATION_TYPES)[number])) {
+    return normalized as (typeof VALID_ORGANIZATION_TYPES)[number]
+  }
+
+  throw new Error('Organization type must be pharmacy or hospital.')
 }
 
 const normalizeOptionalIsoDate = (value: unknown) => {
@@ -695,6 +712,10 @@ const updateTenantOrganization = async (
 
   const updatePayload: Record<string, string | boolean | null> = {
     name: nextName ?? null,
+    organization_type:
+      organizationInput.organizationType !== undefined
+        ? normalizeOrganizationType(organizationInput.organizationType, 'pharmacy')
+        : null,
     subdomain: nextSubdomain ?? null,
     phone: organizationInput.phone !== undefined ? normalizeText(organizationInput.phone) || null : null,
     email: nextEmail ?? null,
@@ -786,6 +807,7 @@ const updateTenantOrganization = async (
     if (
       organizationInput[key] === undefined &&
       key !== 'logo_url' &&
+      key !== 'organization_type' &&
       key !== 'slogan' &&
       key !== 'license_number' &&
       key !== 'subscription_tier' &&
@@ -808,6 +830,10 @@ const updateTenantOrganization = async (
 
   if (organizationInput.logoUrl === undefined) {
     delete updatePayload.logo_url
+  }
+
+  if (organizationInput.organizationType === undefined) {
+    delete updatePayload.organization_type
   }
 
   if (organizationInput.slogan === undefined) {
@@ -1027,6 +1053,7 @@ const bootstrapOrganization = async (
   const subscriptionTier = defaults.allowCustomTier
     ? normalizeSubscriptionTier(organizationInput.subscriptionTier, defaults.defaultTier)
     : defaults.defaultTier
+  const organizationType = normalizeOrganizationType(organizationInput.organizationType, 'pharmacy')
   const planCode = normalizePlanCode(organizationInput.planCode, 'starter')
   const billingStatus = normalizeBillingStatus(organizationInput.billingStatus, organizationStatus)
   const supportLevel = normalizeSupportLevel(organizationInput.supportLevel, 'standard')
@@ -1080,6 +1107,7 @@ const bootstrapOrganization = async (
       .insert([
         {
           name: organizationName,
+          organization_type: organizationType,
           subdomain,
           address: normalizeText(organizationInput.address) || null,
           city: normalizeText(organizationInput.city) || null,

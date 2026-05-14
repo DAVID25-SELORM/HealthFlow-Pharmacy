@@ -32,6 +32,89 @@ const asText = (value) => String(value ?? '').trim()
 const asNumber = (value) => Number.parseFloat(value)
 const getClaimField = (claim, camelKey, snakeKey = camelKey) =>
   asText(claim?.[camelKey] ?? claim?.[snakeKey])
+const VALID_ORGANIZATION_TYPES = ['pharmacy', 'hospital']
+
+export const normalizeOrganizationType = (value) => {
+  const normalized = asText(value).toLowerCase()
+  return VALID_ORGANIZATION_TYPES.includes(normalized) ? normalized : 'pharmacy'
+}
+
+const normalizeMatchText = (value) => asText(value).toLowerCase().replace(/[^a-z0-9\s]/g, ' ')
+
+const DIAGNOSIS_TREATMENT_RULES = [
+  {
+    label: 'Malaria',
+    diagnosis: ['malaria'],
+    treatments: ['artem', 'lumefantrine', 'amodiaquine', 'artesunate', 'quinine', 'sulfadoxine', 'pyrimethamine'],
+  },
+  {
+    label: 'Hypertension',
+    diagnosis: ['hypertension', 'blood pressure'],
+    treatments: ['amlodipine', 'nifedipine', 'lisinopril', 'losartan', 'bendro', 'atenolol', 'methyldopa', 'hydrochlorothiazide'],
+  },
+  {
+    label: 'Diabetes',
+    diagnosis: ['diabetes', 'diabetic'],
+    treatments: ['metformin', 'insulin', 'glibenclamide', 'gliclazide'],
+  },
+  {
+    label: 'Asthma',
+    diagnosis: ['asthma', 'wheeze'],
+    treatments: ['salbutamol', 'aminophylline', 'beclometasone', 'prednisolone', 'hydrocortisone'],
+  },
+  {
+    label: 'Infection',
+    diagnosis: ['infection', 'sepsis', 'pneumonia', 'tonsillitis', 'otitis', 'uti', 'urinary'],
+    treatments: ['amoxicillin', 'ampicillin', 'cefuroxime', 'ceftriaxone', 'ciprofloxacin', 'azithromycin', 'metronidazole', 'doxycycline', 'cloxacillin'],
+  },
+  {
+    label: 'Pain or fever',
+    diagnosis: ['pain', 'headache', 'fever'],
+    treatments: ['paracetamol', 'ibuprofen', 'diclofenac', 'aspirin'],
+  },
+  {
+    label: 'Diarrhoea',
+    diagnosis: ['diarrhoea', 'diarrhea', 'gastroenteritis'],
+    treatments: ['ors', 'zinc', 'metronidazole', 'ciprofloxacin'],
+  },
+  {
+    label: 'Gastritis or ulcer',
+    diagnosis: ['ulcer', 'gastritis', 'gerd'],
+    treatments: ['omeprazole', 'ranitidine', 'antacid', 'pantoprazole'],
+  },
+  {
+    label: 'Anaemia',
+    diagnosis: ['anaemia', 'anemia'],
+    treatments: ['ferrous', 'folic', 'iron'],
+  },
+]
+
+const getDiagnosisTreatmentMismatchBlockers = (claimData, medicines = []) => {
+  const diagnosis = normalizeMatchText(getClaimField(claimData, 'diagnosis'))
+  if (!diagnosis) return []
+
+  const matchedRules = DIAGNOSIS_TREATMENT_RULES.filter((rule) =>
+    rule.diagnosis.some((keyword) => diagnosis.includes(keyword))
+  )
+
+  if (!matchedRules.length) return []
+
+  const treatmentText = normalizeMatchText(
+    (medicines || [])
+      .map((medicine) => [
+        medicine?.description,
+        medicine?.genericName,
+        medicine?.generic_name,
+        medicine?.drugCode,
+        medicine?.drug_code,
+      ].filter(Boolean).join(' '))
+      .join(' ')
+  )
+
+  return matchedRules
+    .filter((rule) => !rule.treatments.some((keyword) => treatmentText.includes(keyword)))
+    .map((rule) => `${rule.label}: treatment does not appear to match the diagnosis. Correct the diagnosis or add a matching medicine before final submission/export.`)
+}
 
 const calculateAge = (dateOfBirth) => {
   if (!dateOfBirth) return null
@@ -44,11 +127,16 @@ const calculateAge = (dateOfBirth) => {
   return age
 }
 
-export const assessNhisClaimReadiness = (claimData, medicines = []) => {
+export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}) => {
   const blockers = []
   const warnings = []
   const dateOfBirth = getClaimField(claimData, 'dateOfBirth', 'date_of_birth')
   const childWeight = getClaimField(claimData, 'childWeightKg', 'child_weight_kg')
+  const organizationType = normalizeOrganizationType(
+    claimData?.organizationType ?? claimData?.organization_type ?? claimData?.facilityType
+  )
+  const isHospital = organizationType === 'hospital'
+  const diagnosis = getClaimField(claimData, 'diagnosis')
   const patientAge = calculateAge(dateOfBirth)
 
   if (!getClaimField(claimData, 'memberNo', 'member_no')) blockers.push('NHIS member number is required.')
@@ -59,7 +147,11 @@ export const assessNhisClaimReadiness = (claimData, medicines = []) => {
   if (patientAge !== null && patientAge < 12 && !(asNumber(childWeight) > 0)) {
     warnings.push('Child weight is missing for a child patient.')
   }
-  if (!getClaimField(claimData, 'diagnosis')) warnings.push('Diagnosis is missing from the prescription/claim.')
+  if (!diagnosis && isHospital) {
+    blockers.push('Diagnosis is required for hospital NHIS claims.')
+  } else if (!diagnosis) {
+    warnings.push('Diagnosis is missing from the prescription/claim.')
+  }
   if (!getClaimField(claimData, 'serviceDate', 'service_date_from')) blockers.push('Date of dispensing/service is required.')
   if (!getClaimField(claimData, 'physicianName', 'physician_name')) {
     warnings.push('Prescriber name or ID is missing from the prescription.')
@@ -86,6 +178,10 @@ export const assessNhisClaimReadiness = (claimData, medicines = []) => {
     })
   }
 
+  if (options.finalSubmission) {
+    blockers.push(...getDiagnosisTreatmentMismatchBlockers(claimData, medicines))
+  }
+
   return {
     blockers,
     warnings,
@@ -94,7 +190,7 @@ export const assessNhisClaimReadiness = (claimData, medicines = []) => {
 }
 
 export const validateNhisClaimReadiness = (claimData, medicines = []) =>
-  assessNhisClaimReadiness(claimData, medicines).issues
+  assessNhisClaimReadiness(claimData, medicines, { finalSubmission: true }).blockers
 
 // ─── NHIS Drug Catalog ────────────────────────────────────────────────────────
 
@@ -751,14 +847,20 @@ export const getNhisClaimsForMonth = async (yearMonth) => {
 /**
  * Generates a CSV string for all claims in a given month and triggers download.
  */
-export const exportNhisMonthlyCSV = async (yearMonth) => {
+export const exportNhisMonthlyCSV = async (yearMonth, options = {}) => {
   const claims = await getNhisClaimsForMonth(yearMonth)
   if (!claims.length) throw new Error(`No claims found for ${yearMonth}.`)
 
   const incompleteClaims = claims
     .map((claim) => ({
       claim,
-      issues: validateNhisClaimReadiness(claim, claim.nhis_claim_medicines || []),
+      issues: validateNhisClaimReadiness(
+        {
+          ...claim,
+          organizationType: claim.organization_type || options.organizationType,
+        },
+        claim.nhis_claim_medicines || []
+      ),
     }))
     .filter((item) => item.issues.length)
 

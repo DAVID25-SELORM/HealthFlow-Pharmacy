@@ -75,6 +75,7 @@ export const TenantProvider = ({ children }) => {
       daysUntilTrialExpires,
       tierLimits,
       planCode: organization.plan_code || 'starter',
+      organizationType: organization.organization_type || 'pharmacy',
       billingStatus: organization.billing_status || organization.status || 'trial',
       supportLevel: organization.support_level || 'standard',
       loading: false,

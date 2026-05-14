@@ -20,6 +20,7 @@ import { readLogoFileAsDataUrl } from '../utils/imageUpload'
 import './TenantAdmin.css'
 
 const blankPharmacy = {
+  organizationType: 'pharmacy',
   name: '',
   subdomain: '',
   phone: '',
@@ -64,6 +65,9 @@ const formatBillingStatus = (value) =>
   String(value || 'trial')
     .replace(/_/g, ' ')
     .replace(/\b\w/g, (char) => char.toUpperCase())
+
+const formatOrganizationType = (value) =>
+  String(value || 'pharmacy') === 'hospital' ? 'Hospital' : 'Pharmacy'
 
 const TenantAdmin = () => {
   const { notify } = useNotification()
@@ -154,7 +158,8 @@ const TenantAdmin = () => {
 
   const handleCreate = async (e) => {
     e.preventDefault()
-    if (!pharmacy.name.trim()) return setError('Pharmacy name is required')
+    const facilityLabel = formatOrganizationType(pharmacy.organizationType)
+    if (!pharmacy.name.trim()) return setError(`${facilityLabel} name is required`)
     if (!pharmacy.subdomain.trim() || pharmacy.subdomain.length < 3) return setError('Subdomain must be at least 3 characters')
     if (subdomainOk === false) return setError('That subdomain is already taken')
     if (!admin.email.trim()) return setError('Admin email is required')
@@ -165,7 +170,7 @@ const TenantAdmin = () => {
     setError('')
     try {
       await createPharmacyTenant({ pharmacy, admin })
-      notify(`Pharmacy "${pharmacy.name}" created successfully!`, 'success', 5000)
+      notify(`${facilityLabel} "${pharmacy.name}" created successfully!`, 'success', 5000)
       setPharmacy(blankPharmacy)
       setAdmin(blankAdmin)
       setSubdomainOk(null)
@@ -228,6 +233,7 @@ const TenantAdmin = () => {
     setEditOrg(org)
     setEditForm({
       name: org.name || '',
+      organizationType: org.organization_type || 'pharmacy',
       phone: org.phone || '',
       email: org.email || '',
       address: org.address || '',
@@ -297,7 +303,7 @@ const TenantAdmin = () => {
 
   const handleSaveEdit = async (e) => {
     e.preventDefault()
-    if (!editForm.name.trim()) return setError('Pharmacy name is required')
+    if (!editForm.name.trim()) return setError(`${formatOrganizationType(editForm.organizationType)} name is required`)
     setSaving(true)
     setError('')
     try {
@@ -330,8 +336,9 @@ const TenantAdmin = () => {
   }
 
   const handleDeletePharmacy = async (org) => {
+    const facilityLabel = formatOrganizationType(org.organization_type).toLowerCase()
     const confirmation = window.prompt(
-      `Permanently delete "${org.name}" and all of its pharmacy data?\n\nType the pharmacy name exactly to confirm.`
+      `Permanently delete "${org.name}" and all of its ${facilityLabel} data?\n\nType the facility name exactly to confirm.`
     )
 
     if (confirmation === null) {
@@ -339,7 +346,7 @@ const TenantAdmin = () => {
     }
 
     if (confirmation.trim() !== org.name) {
-      notify('Pharmacy name did not match. Delete cancelled.', 'warning')
+      notify('Facility name did not match. Delete cancelled.', 'warning')
       return
     }
 
@@ -357,8 +364,8 @@ const TenantAdmin = () => {
       }
       await load()
     } catch (err) {
-      setError(err.message || 'Failed to delete pharmacy')
-      notify(err.message || 'Failed to delete pharmacy', 'error')
+      setError(err.message || 'Failed to delete facility')
+      notify(err.message || 'Failed to delete facility', 'error')
     } finally {
       setDeletingOrgId('')
     }
@@ -409,11 +416,11 @@ const TenantAdmin = () => {
       <div className="page-header">
         <div>
           <h1>Tenant Administration</h1>
-          <p>Manage all pharmacy organizations on the platform</p>
+          <p>Manage all pharmacy and hospital organizations on the platform</p>
         </div>
         <button className="btn btn-primary" onClick={() => setShowCreate((v) => !v)}>
           <Plus size={16} />
-          {showCreate ? 'Cancel' : 'Add Pharmacy'}
+          {showCreate ? 'Cancel' : 'Add Facility'}
         </button>
       </div>
 
@@ -422,15 +429,26 @@ const TenantAdmin = () => {
       {/* Create Form */}
       {showCreate && (
         <div className="tenant-create-card">
-          <h3>Register New Pharmacy</h3>
+          <h3>Register New Facility</h3>
           <form onSubmit={handleCreate}>
             <div className="tenant-form-section">
-              <h4>Pharmacy Details</h4>
+              <h4>Facility Details</h4>
               <div className="tenant-form-grid">
                 <div className="tenant-form-group">
-                  <label>Pharmacy Name *</label>
+                  <label>Facility Type *</label>
+                  <select
+                    value={pharmacy.organizationType}
+                    onChange={(e) => setPharmacy({ ...pharmacy, organizationType: e.target.value })}
+                    required
+                  >
+                    <option value="pharmacy">Pharmacy</option>
+                    <option value="hospital">Hospital</option>
+                  </select>
+                </div>
+                <div className="tenant-form-group">
+                  <label>{formatOrganizationType(pharmacy.organizationType)} Name *</label>
                   <input
-                    placeholder="ABC Pharmacy"
+                    placeholder={pharmacy.organizationType === 'hospital' ? 'ABC Hospital' : 'ABC Pharmacy'}
                     value={pharmacy.name}
                     onChange={(e) => setPharmacy({ ...pharmacy, name: e.target.value })}
                     required
@@ -497,9 +515,9 @@ const TenantAdmin = () => {
                   />
                 </div>
                 <div className="tenant-form-group">
-                  <label>Pharmacy Slogan</label>
+                  <label>{formatOrganizationType(pharmacy.organizationType)} Slogan</label>
                   <input
-                    placeholder="Smart Pharmacy. Better Health."
+                    placeholder={pharmacy.organizationType === 'hospital' ? 'Smart Care. Better Health.' : 'Smart Pharmacy. Better Health.'}
                     value={pharmacy.slogan}
                     onChange={(e) => setPharmacy({ ...pharmacy, slogan: e.target.value })}
                     maxLength={120}
@@ -514,17 +532,17 @@ const TenantAdmin = () => {
                   />
                 </div>
                 <div className="tenant-form-group">
-                  <label>Pharmacy Logo</label>
+                  <label>{formatOrganizationType(pharmacy.organizationType)} Logo</label>
                   <div className="tenant-logo-upload-card">
                     {pharmacy.logoUrl ? (
-                      <img src={pharmacy.logoUrl} alt="Pharmacy logo preview" className="tenant-logo-preview" />
+                      <img src={pharmacy.logoUrl} alt={`${formatOrganizationType(pharmacy.organizationType)} logo preview`} className="tenant-logo-preview" />
                     ) : (
                       <div className="tenant-logo-placeholder" aria-hidden="true">
                         {pharmacy.name.trim().charAt(0).toUpperCase() || '+'}
                       </div>
                     )}
                     <div className="tenant-logo-upload-copy">
-                      <strong>{pharmacy.logoUrl ? 'Logo selected' : 'Add pharmacy logo'}</strong>
+                      <strong>{pharmacy.logoUrl ? 'Logo selected' : `Add ${formatOrganizationType(pharmacy.organizationType).toLowerCase()} logo`}</strong>
                       <span>Shown on dashboard and receipts. Max 750KB.</span>
                       <input type="file" accept="image/*" onChange={handleCreateLogoChange} />
                     </div>
@@ -710,7 +728,7 @@ const TenantAdmin = () => {
 
             <div className="tenant-form-actions">
               <button type="submit" className="btn btn-primary" disabled={creating}>
-                {creating ? 'Creating...' : 'Create Pharmacy'}
+                {creating ? 'Creating...' : `Create ${formatOrganizationType(pharmacy.organizationType)}`}
               </button>
             </div>
           </form>
@@ -722,18 +740,19 @@ const TenantAdmin = () => {
         <div className="tenant-table-header">
           <h3>
             <Building2 size={18} />
-            All Pharmacies ({orgs.length})
+            All Facilities ({orgs.length})
           </h3>
         </div>
 
         {orgs.length === 0 ? (
-          <div className="tenant-empty">No pharmacies registered yet.</div>
+          <div className="tenant-empty">No facilities registered yet.</div>
         ) : (
           <div className="tenant-table-wrap">
             <table className="tenant-table">
               <thead>
                 <tr>
-                  <th>Pharmacy</th>
+                  <th>Facility</th>
+                  <th>Type</th>
                   <th>Subdomain</th>
                   <th>Status</th>
                   <th>Tier</th>
@@ -782,6 +801,7 @@ const TenantAdmin = () => {
                           <option value="enterprise">Enterprise</option>
                         </select>
                       </td>
+                      <td>{formatOrganizationType(org.organization_type)}</td>
                       <td>{formatPlanCode(org.plan_code)}</td>
                       <td>
                         <span className={`status-pill status-${org.billing_status || 'trial'}`}>
@@ -809,7 +829,7 @@ const TenantAdmin = () => {
                         <div className="table-actions">
                           <button
                             className="btn-icon"
-                            title="Edit pharmacy"
+                            title="Edit facility"
                             onClick={() => openEdit(org)}
                           >
                             <Pencil size={14} />
@@ -824,7 +844,7 @@ const TenantAdmin = () => {
                           </button>
                           <button
                             className="btn-icon danger"
-                            title="Delete pharmacy"
+                            title="Delete facility"
                             onClick={() => void handleDeletePharmacy(org)}
                             disabled={deletingOrgId === org.id}
                           >
@@ -837,7 +857,7 @@ const TenantAdmin = () => {
                     {/* Expanded users row */}
                     {expandedOrgId === org.id && (
                       <tr className="users-expand-row">
-                        <td colSpan={10}>
+                        <td colSpan={11}>
                           <div className="users-expand">
                             <h5>Users in {org.name}</h5>
                             {orgUsers[org.id] ? (
@@ -968,12 +988,12 @@ const TenantAdmin = () => {
         </div>
       )}
 
-      {/* Edit Pharmacy Modal */}
+      {/* Edit Facility Modal */}
       {editOrg && (
         <div className="modal-backdrop" onClick={closeEdit}>
           <div className="edit-modal" onClick={(e) => e.stopPropagation()}>
             <div className="edit-modal-header">
-              <h3>Edit Pharmacy</h3>
+              <h3>Edit Facility</h3>
               <button type="button" className="modal-close" onClick={closeEdit}>
                 x
               </button>
@@ -983,10 +1003,21 @@ const TenantAdmin = () => {
 
             <form onSubmit={handleSaveEdit} className="edit-modal-body">
               <div className="tenant-form-section">
-                <h4>Pharmacy Details</h4>
+                <h4>Facility Details</h4>
                 <div className="tenant-form-grid">
+                  <div className="tenant-form-group">
+                    <label>Facility Type *</label>
+                    <select
+                      value={editForm.organizationType}
+                      onChange={(e) => setEditForm({ ...editForm, organizationType: e.target.value })}
+                      required
+                    >
+                      <option value="pharmacy">Pharmacy</option>
+                      <option value="hospital">Hospital</option>
+                    </select>
+                  </div>
                   <div className="tenant-form-group full-width">
-                    <label>Pharmacy Name *</label>
+                    <label>{formatOrganizationType(editForm.organizationType)} Name *</label>
                     <input
                       value={editForm.name}
                       onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
@@ -1035,7 +1066,7 @@ const TenantAdmin = () => {
                     />
                   </div>
                   <div className="tenant-form-group">
-                    <label>Pharmacy Slogan</label>
+                    <label>{formatOrganizationType(editForm.organizationType)} Slogan</label>
                     <input
                       value={editForm.slogan}
                       onChange={(e) => setEditForm({ ...editForm, slogan: e.target.value })}
@@ -1052,17 +1083,17 @@ const TenantAdmin = () => {
                     />
                   </div>
                   <div className="tenant-form-group">
-                    <label>Pharmacy Logo</label>
+                    <label>{formatOrganizationType(editForm.organizationType)} Logo</label>
                     <div className="tenant-logo-upload-card">
                       {editForm.logoUrl ? (
-                        <img src={editForm.logoUrl} alt="Pharmacy logo preview" className="tenant-logo-preview" />
+                        <img src={editForm.logoUrl} alt={`${formatOrganizationType(editForm.organizationType)} logo preview`} className="tenant-logo-preview" />
                       ) : (
                         <div className="tenant-logo-placeholder" aria-hidden="true">
                           {editForm.name?.trim().charAt(0).toUpperCase() || '+'}
                         </div>
                       )}
                       <div className="tenant-logo-upload-copy">
-                        <strong>{editForm.logoUrl ? 'Logo selected' : 'Add pharmacy logo'}</strong>
+                        <strong>{editForm.logoUrl ? 'Logo selected' : `Add ${formatOrganizationType(editForm.organizationType).toLowerCase()} logo`}</strong>
                         <span>Shown on dashboard and receipts. Max 750KB.</span>
                         <input type="file" accept="image/*" onChange={handleEditLogoChange} />
                       </div>

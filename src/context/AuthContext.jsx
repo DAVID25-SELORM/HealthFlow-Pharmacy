@@ -221,35 +221,7 @@ export const AuthProvider = ({ children }) => {
           organization_id,
           branch_id,
           branches (id, name, code, is_main),
-          organizations (
-            id,
-            name,
-            subdomain,
-            status,
-            subscription_tier,
-            plan_code,
-            billing_status,
-            trial_ends_at,
-            subscription_ends_at,
-            last_payment_at,
-            next_payment_due_at,
-            support_level,
-            billing_notes,
-            phone,
-            email,
-            address,
-            city,
-            region,
-            logo_url,
-            slogan,
-            license_number,
-            can_use_claims,
-            can_use_purchases,
-            can_use_nhis,
-            can_use_nhis_topups,
-            can_use_accounting,
-            can_use_multi_branch
-          )
+          organizations (*)
         `)
         .eq('id', activeUser.id)
         .maybeSingle()
