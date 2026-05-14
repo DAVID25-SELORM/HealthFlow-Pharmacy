@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Plus, Search, X, Upload, Download, CheckCircle2,
   Send, Banknote, XCircle, Eye, FileSpreadsheet, HeartPulse,
+  Pencil,
 } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { isSupabaseConfigured } from '../lib/supabase'
@@ -19,6 +20,7 @@ import {
   getAllNhisClaims,
   getNhisClaimStats,
   createNhisClaim,
+  updateNhisClaim,
   updateNhisClaimStatus,
   exportNhisMonthlyCSV,
   assessNhisClaimReadiness,
@@ -146,6 +148,7 @@ const Nhis = () => {
   const [claimMedicines, setClaimMedicines] = useState([])
   const [claimSubmitting, setClaimSubmitting] = useState(false)
   const [claimError, setClaimError]           = useState('')
+  const [editingClaim, setEditingClaim]       = useState(null)
 
   // ── patient lookup (for claim form) ──────────────────────────
   const [patientSearch, setPatientSearch] = useState('')
@@ -279,6 +282,64 @@ const Nhis = () => {
   }
 
   // ── medicine code search ──────────────────────────────────────
+  const openNewClaimModal = () => {
+    resetClaimModal()
+    setShowNewClaimModal(true)
+  }
+
+  const closeClaimModal = () => {
+    setShowNewClaimModal(false)
+    resetClaimModal()
+  }
+
+  const openEditClaim = (claim) => {
+    if (claim.status !== 'served') {
+      notify('Only served NHIS claims can be edited before submission/export.', 'warning')
+      return
+    }
+
+    setEditingClaim(claim)
+    setClaimError('')
+    setPatientSearch('')
+    setMedForm(BLANK_MEDICINE)
+    setClaimForm({
+      patientId: claim.patient_id || '',
+      memberNo: claim.member_no || '',
+      hin: claim.hin || '',
+      surname: claim.surname || '',
+      otherNames: claim.other_names || '',
+      folderNo: claim.folder_no || '',
+      gender: claim.gender || '',
+      dateOfBirth: claim.date_of_birth || '',
+      patientAddress: claim.patient_address || '',
+      childWeightKg: claim.child_weight_kg ?? '',
+      cccNo: claim.ccc_no || '',
+      diagnosis: claim.diagnosis || '',
+      serviceDate: claim.service_date_from || new Date().toISOString().split('T')[0],
+      referringFacility: claim.referring_facility || '',
+      referralCode: claim.referral_code || '',
+      physicianName: claim.physician_name || '',
+      preAuthCodes: claim.pre_auth_codes || '',
+      notes: claim.notes || '',
+    })
+    setClaimMedicines(
+      (claim.nhis_claim_medicines || []).map((medicine) => ({
+        nhisDrugId: medicine.nhis_drug_id || '',
+        drugCode: medicine.drug_code || '',
+        description: medicine.description || '',
+        unit: medicine.unit || 'unit',
+        unitPrice: Number.parseFloat(medicine.unit_price || 0),
+        dispensedQty: Number.parseFloat(medicine.dispensed_qty || 0),
+        dispensaryDate: medicine.dispensary_date || null,
+        dose: medicine.dose || '',
+        frequency: medicine.frequency || '',
+        duration: medicine.duration || '',
+        totalAmount: Number.parseFloat(medicine.total_amount || 0),
+      }))
+    )
+    setShowNewClaimModal(true)
+  }
+
   const handleDrugCodeSearch = async () => {
     const code = medForm.drugCode.trim().toUpperCase()
     if (!code) return
@@ -392,18 +453,22 @@ const Nhis = () => {
     try {
       setClaimSubmitting(true)
       setClaimError('')
-      await createNhisClaim(
-        {
-          ...claimForm,
-          branchId: profile?.branch_id || branch?.id || null,
-          createdBy: user?.id || null,
-        },
-        claimMedicines
-      )
+      const payload = {
+        ...claimForm,
+        branchId: profile?.branch_id || branch?.id || null,
+        createdBy: user?.id || null,
+      }
+
+      if (editingClaim) {
+        await updateNhisClaim(editingClaim.id, payload, claimMedicines)
+      } else {
+        await createNhisClaim(payload, claimMedicines)
+      }
+
       setShowNewClaimModal(false)
       resetClaimModal()
       await loadAll()
-      notify('NHIS claim saved.', 'success')
+      notify(editingClaim ? 'NHIS claim corrections saved.' : 'NHIS claim saved.', 'success')
     } catch (err) {
       setClaimError(err.message || 'Unable to save claim.')
     } finally {
@@ -417,6 +482,7 @@ const Nhis = () => {
     setClaimError('')
     setPatientSearch('')
     setMedForm(BLANK_MEDICINE)
+    setEditingClaim(null)
   }
 
   const getMedicineReadinessBlockers = () => assessNhisClaimReadiness(
@@ -601,7 +667,7 @@ const Nhis = () => {
               <button className="btn btn-secondary" onClick={() => setShowExportModal(true)}>
                 <Download size={16} /> Monthly Export
               </button>
-              <button className="btn btn-primary" onClick={() => setShowNewClaimModal(true)}>
+              <button className="btn btn-primary" onClick={openNewClaimModal}>
                 <Plus size={16} /> New Claim
               </button>
             </>
@@ -710,7 +776,7 @@ const Nhis = () => {
                 <HeartPulse size={40} />
                 <p>No claims found.</p>
                 {canWrite && (
-                  <button className="btn btn-primary" onClick={() => setShowNewClaimModal(true)}>
+                  <button className="btn btn-primary" onClick={openNewClaimModal}>
                     <Plus size={16} /> New Claim
                   </button>
                 )}
@@ -754,14 +820,24 @@ const Nhis = () => {
                           <Eye size={14} />
                         </button>
                         {c.status === 'served' && canWrite && (
-                          <button
-                            className="action-btn action-btn--submit"
-                            title="Mark as Submitted"
-                            disabled={updatingStatus === c.id}
-                            onClick={() => handleStatusUpdate(c, 'submitted')}
-                          >
-                            <Send size={14} />
-                          </button>
+                          <>
+                            <button
+                              className="action-btn action-btn--edit"
+                              title="Edit before submission/export"
+                              disabled={updatingStatus === c.id}
+                              onClick={() => openEditClaim(c)}
+                            >
+                              <Pencil size={14} />
+                            </button>
+                            <button
+                              className="action-btn action-btn--submit"
+                              title="Mark as Submitted"
+                              disabled={updatingStatus === c.id}
+                              onClick={() => handleStatusUpdate(c, 'submitted')}
+                            >
+                              <Send size={14} />
+                            </button>
+                          </>
                         )}
                         {c.status === 'submitted' && canWrite && (
                           <>
@@ -864,11 +940,11 @@ const Nhis = () => {
           NEW CLAIM MODAL
       ══════════════════════════════════════════════════════════════ */}
       {showNewClaimModal && (
-        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && (setShowNewClaimModal(false), resetClaimModal())}>
+        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && closeClaimModal()}>
           <div className="modal-panel modal-panel--nhis-claim">
             <div className="modal-header">
-              <h2>Add New NHIS Claim</h2>
-              <button className="modal-close" onClick={() => { setShowNewClaimModal(false); resetClaimModal() }}><X size={18} /></button>
+              <h2>{editingClaim ? `Edit NHIS Claim ${editingClaim.claim_number}` : 'Add New NHIS Claim'}</h2>
+              <button className="modal-close" onClick={closeClaimModal}><X size={18} /></button>
             </div>
 
             {claimError && <div className="nhis-alert nhis-alert--modal" role="alert">{claimError}</div>}
@@ -1111,7 +1187,7 @@ const Nhis = () => {
                 <span>Claim Total</span>
                 <strong>{fmtCurrency(claimTotal)}</strong>
               </div>
-              <button className="btn btn-secondary" onClick={() => { setShowNewClaimModal(false); resetClaimModal() }}>
+              <button className="btn btn-secondary" onClick={closeClaimModal}>
                 Cancel
               </button>
               <button
@@ -1119,7 +1195,11 @@ const Nhis = () => {
                 disabled={claimSubmitting || !canSaveCommunityPharmacyClaim}
                 onClick={handleSubmitClaim}
               >
-                {claimSubmitting ? 'Saving...' : 'Save Claim'}
+                {claimSubmitting
+                  ? 'Saving...'
+                  : editingClaim
+                    ? 'Save Corrections'
+                    : 'Save Claim'}
               </button>
             </div>
           </div>

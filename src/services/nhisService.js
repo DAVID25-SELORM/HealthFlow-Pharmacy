@@ -508,6 +508,128 @@ export const createNhisClaim = async (claimData, medicines) => {
   return claim
 }
 
+export const updateNhisClaim = async (id, claimData, medicines) => {
+  const readiness = assessNhisClaimReadiness(claimData, medicines)
+  if (readiness.blockers.length) {
+    throw new Error(`NHIS pharmacy dispensing check failed: ${readiness.blockers.slice(0, 5).join(' ')}`)
+  }
+
+  assertRequiredText(claimData.surname, 'Surname')
+  const memberNo = assertRequiredText(claimData.memberNo, 'NHIS member number')
+  const serviceDate = normalizeText(claimData.serviceDate || claimData.serviceDateFrom)
+  const totalAmount = medicines.reduce((s, m) => s + Number(m.totalAmount || 0), 0)
+  const medicineRows = medicines.map((m) => ({
+    nhis_drug_id: m.nhisDrugId || null,
+    drug_code: normalizeText(m.drugCode) || null,
+    description: assertRequiredText(m.description, 'Medicine description'),
+    unit: normalizeText(m.unit) || 'unit',
+    unit_price: assertNonNegativeNumber(m.unitPrice, 'Unit price'),
+    dispensed_qty: assertNonNegativeNumber(m.dispensedQty, 'Dispensed qty'),
+    dispensary_date: m.dispensaryDate || null,
+    dose: normalizeText(m.dose) || null,
+    frequency: normalizeText(m.frequency) || null,
+    duration: normalizeText(m.duration) || null,
+    total_amount: assertNonNegativeNumber(m.totalAmount, 'Total amount'),
+  }))
+
+  const claimPayload = {
+    patient_id: claimData.patientId || null,
+    member_no: memberNo,
+    hin: normalizeText(claimData.hin) || null,
+    surname: normalizeText(claimData.surname),
+    other_names: normalizeText(claimData.otherNames) || null,
+    folder_no: normalizeText(claimData.folderNo) || null,
+    gender: normalizeText(claimData.gender) || null,
+    date_of_birth: claimData.dateOfBirth || null,
+    patient_address: normalizeText(claimData.patientAddress) || null,
+    child_weight_kg: claimData.childWeightKg
+      ? assertNonNegativeNumber(claimData.childWeightKg, 'Child weight')
+      : null,
+    ccc_no: normalizeText(claimData.cccNo) || null,
+    diagnosis: normalizeText(claimData.diagnosis) || null,
+    service_date_from: serviceDate || null,
+    service_date_to: serviceDate || null,
+    branch_id: claimData.branchId || null,
+    referring_facility: normalizeText(claimData.referringFacility) || null,
+    referral_code: normalizeText(claimData.referralCode) || null,
+    physician_name: normalizeText(claimData.physicianName) || null,
+    pre_auth_codes: normalizeText(claimData.preAuthCodes) || null,
+    total_amount: totalAmount,
+    notes: normalizeText(claimData.notes) || null,
+    updated_at: new Date().toISOString(),
+  }
+
+  if (shouldUseBranchServer()) {
+    return await updateBranchRecord('nhis/claims', id, {
+      ...claimPayload,
+      nhis_claim_medicines: medicineRows,
+    })
+  }
+
+  const { data: existingClaim, error: existingError } = await supabase
+    .from('nhis_claims')
+    .select('id, claim_number, status')
+    .eq('id', id)
+    .single()
+
+  if (existingError) throw existingError
+  if (existingClaim.status !== 'served') {
+    throw new Error('Only served NHIS claims can be edited before submission/export.')
+  }
+
+  const { data: claim, error: claimError } = await supabase
+    .from('nhis_claims')
+    .update(claimPayload)
+    .eq('id', id)
+    .eq('status', 'served')
+    .select()
+    .single()
+
+  if (claimError) throw claimError
+
+  const { error: deleteError } = await supabase
+    .from('nhis_claim_medicines')
+    .delete()
+    .eq('claim_id', id)
+
+  if (deleteError) throw deleteError
+
+  const { error: medsError } = await supabase
+    .from('nhis_claim_medicines')
+    .insert(medicineRows.map((row) => ({ ...row, claim_id: id })))
+
+  if (medsError) throw medsError
+
+  if (claimData.patientId && (claimData.memberNo || claimData.hin)) {
+    const { error: patientUpdateError } = await supabase
+      .from('patients')
+      .update({
+        nhis_member_no: normalizeText(claimData.memberNo) || null,
+        nhis_hin: normalizeText(claimData.hin) || null,
+        insurance_provider: 'NHIS',
+        insurance_id: normalizeText(claimData.memberNo || claimData.hin) || null,
+      })
+      .eq('id', claimData.patientId)
+
+    if (patientUpdateError) throwFriendlyNhisPatientError(patientUpdateError)
+  }
+
+  await tryLogAuditEvent({
+    eventType: 'nhis_claim.corrected',
+    entityType: 'nhis_claims',
+    entityId: claim.id,
+    action: 'update',
+    details: {
+      claim_number: claim.claim_number,
+      patient_name: `${claimData.surname} ${claimData.otherNames || ''}`.trim(),
+      medicine_count: medicines.length,
+      total_amount: totalAmount,
+    },
+  })
+
+  return claim
+}
+
 const recordNhisPaidLedgerEntry = async (id, actorId = null) => {
   const { data: claim, error } = await supabase
     .from('nhis_claims')

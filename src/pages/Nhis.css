@@ -388,6 +388,8 @@
 
 .nhis-page .action-btn--view { background: #eff6ff; color: #2563eb; }
 .nhis-page .action-btn--view:hover { background: #dbeafe; }
+.nhis-page .action-btn--edit { background: #fff7ed; color: #c2410c; }
+.nhis-page .action-btn--edit:hover { background: #ffedd5; }
 .nhis-page .action-btn--submit { background: #eff6ff; color: #0369a1; }
 .nhis-page .action-btn--submit:hover { background: #dbeafe; }
 .nhis-page .action-btn--complete { background: #f0fdf4; color: #16a34a; }
