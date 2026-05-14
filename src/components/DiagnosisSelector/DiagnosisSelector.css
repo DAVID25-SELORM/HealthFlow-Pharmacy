@@ -1,0 +1,139 @@
+.diagnosis-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  width: 100%;
+}
+
+.diagnosis-selected-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.diagnosis-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  gap: 0.35rem;
+  padding: 0.28rem 0.38rem 0.28rem 0.55rem;
+  border: 1px solid rgba(22, 160, 133, 0.24);
+  border-radius: 999px;
+  background: rgba(22, 160, 133, 0.08);
+  color: var(--gray-900);
+  font-size: 0.78rem;
+  line-height: 1.2;
+}
+
+.diagnosis-chip span {
+  overflow-wrap: anywhere;
+}
+
+.diagnosis-chip button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  color: var(--gray-600);
+  background: transparent;
+  cursor: pointer;
+}
+
+.diagnosis-chip button:hover {
+  color: var(--danger);
+  background: rgba(220, 38, 38, 0.1);
+}
+
+.diagnosis-search-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.diagnosis-search-input {
+  width: 100%;
+}
+
+.diagnosis-options {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 0.25rem);
+  left: 0;
+  right: 0;
+  max-height: 15rem;
+  overflow-y: auto;
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+  background: white;
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.16);
+}
+
+.diagnosis-option {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  gap: 0.15rem;
+  padding: 0.55rem 0.7rem;
+  border: none;
+  border-bottom: 1px solid var(--gray-100);
+  background: white;
+  color: var(--gray-900);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  letter-spacing: 0;
+}
+
+.diagnosis-option:last-child {
+  border-bottom: none;
+}
+
+.diagnosis-option:hover,
+.diagnosis-option:focus {
+  outline: none;
+  background: var(--gray-50);
+}
+
+.diagnosis-option strong {
+  font-size: 0.84rem;
+  line-height: 1.25;
+}
+
+.diagnosis-option span {
+  color: var(--gray-500);
+  font-size: 0.72rem;
+}
+
+.diagnosis-option.muted,
+.diagnosis-option.error {
+  cursor: default;
+}
+
+.diagnosis-option.muted {
+  color: var(--gray-500);
+}
+
+.diagnosis-option.error {
+  color: var(--danger);
+}
+
+.diagnosis-option-custom {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.diagnosis-count {
+  color: var(--gray-500);
+  font-size: 0.72rem;
+  line-height: 1;
+  text-align: right;
+}
+
+@media (max-width: 640px) {
+  .diagnosis-options {
+    max-height: 12rem;
+  }
+}

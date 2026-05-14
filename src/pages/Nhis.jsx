@@ -32,6 +32,7 @@ import {
 import { getAllPatients } from '../services/patientService'
 import { parseNhisDrugFile, generateNhisDrugTemplate } from '../services/nhisDrugImportService'
 import { parseNhisClinicalRuleFile, generateNhisClinicalRuleTemplate } from '../services/nhisClinicalRuleImportService'
+import DiagnosisSelector from '../components/DiagnosisSelector/DiagnosisSelector'
 import './Nhis.css'
 
 // ─── constants ────────────────────────────────────────────────────────────────
@@ -1198,9 +1199,11 @@ const Nhis = () => {
                     {isHospital && (
                       <div className="form-group">
                         <label>Diagnoses *</label>
-                        <textarea className="form-input" rows={3} value={claimForm.diagnosis}
-                          placeholder="Enter up to 10 diagnoses, separated by commas or new lines"
-                          onChange={(e) => setClaimForm((p) => ({ ...p, diagnosis: e.target.value }))} />
+                        <DiagnosisSelector
+                          id="claim-diagnoses"
+                          value={claimForm.diagnosis}
+                          onChange={(diagnosis) => setClaimForm((p) => ({ ...p, diagnosis }))}
+                        />
                       </div>
                     )}
                   </div>

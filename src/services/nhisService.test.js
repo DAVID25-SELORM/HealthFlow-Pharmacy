@@ -83,8 +83,8 @@ describe('assessNhisClaimReadiness', () => {
   })
 
   it('allows up to ten hospital diagnoses and blocks more than ten', () => {
-    const tenDiagnoses = Array.from({ length: 10 }, (_, index) => `Diagnosis ${index + 1}`).join(', ')
-    const elevenDiagnoses = `${tenDiagnoses}, Diagnosis 11`
+    const tenDiagnoses = Array.from({ length: 10 }, (_, index) => `Diagnosis ${index + 1}`).join('\n')
+    const elevenDiagnoses = `${tenDiagnoses}\nDiagnosis 11`
 
     expect(
       assessNhisClaimReadiness(
@@ -99,5 +99,14 @@ describe('assessNhisClaimReadiness', () => {
         [baseMedicine]
       ).blockers
     ).toContain('Enter no more than 10 diagnoses on one NHIS claim.')
+  })
+
+  it('does not split ICD diagnosis names that contain commas', () => {
+    const readiness = assessNhisClaimReadiness(
+      { ...baseClaim, organizationType: 'hospital', diagnosis: 'Cholera, unspecified' },
+      [baseMedicine]
+    )
+
+    expect(readiness.blockers).not.toContain('Enter no more than 10 diagnoses on one NHIS claim.')
   })
 })

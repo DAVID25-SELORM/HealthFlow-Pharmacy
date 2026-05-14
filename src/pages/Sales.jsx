@@ -41,6 +41,7 @@ import { useTenant } from '../context/TenantContext'
 import { useOnlineStatus } from '../hooks/useOnlineStatus'
 import { hasRole } from '../utils/roles'
 import Receipt from '../components/Receipt/Receipt'
+import DiagnosisSelector from '../components/DiagnosisSelector/DiagnosisSelector'
 import './Sales.css'
 
 const POS_DRUG_SEARCH_LIMIT = 30
@@ -2230,12 +2231,10 @@ const Sales = () => {
                 {isNhiaClaimSale && isHospital && (
                   <div className="cash-field cash-field-input nhia-diagnosis-field">
                     <label htmlFor="nhia-diagnosis">Diagnoses</label>
-                    <textarea
+                    <DiagnosisSelector
                       id="nhia-diagnosis"
-                      rows={3}
                       value={nhiaDiagnosis}
-                      onChange={(event) => setNhiaDiagnosis(event.target.value)}
-                      placeholder="Enter up to 10 diagnoses, separated by commas or new lines"
+                      onChange={setNhiaDiagnosis}
                     />
                   </div>
                 )}

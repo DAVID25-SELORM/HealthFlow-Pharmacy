@@ -70,7 +70,7 @@ const validateMemberNumberFormat = (value, options = {}) => {
 
 const splitDiagnoses = (value) =>
   asText(value)
-    .split(/[;\n|,]/)
+    .split(/[;\n|]/)
     .map(asText)
     .filter(Boolean)
 
