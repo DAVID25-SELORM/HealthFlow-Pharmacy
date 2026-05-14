@@ -1,6 +1,14 @@
 const DEFAULT_BRANCH_SERVER_URL = 'http://localhost:4780'
 const RUNTIME_CONFIG_KEY = 'healthflow.branchServer.config.v1'
 
+const readHostedConfig = () => {
+  if (typeof window === 'undefined') {
+    return {}
+  }
+
+  return window.__HEALTHFLOW_BRANCH_SERVER__ || {}
+}
+
 const readRuntimeConfig = () => {
   if (typeof window === 'undefined') {
     return {}
@@ -14,15 +22,26 @@ const readRuntimeConfig = () => {
 }
 
 export const getBranchServerConfig = () => {
+  const hostedConfig = readHostedConfig()
   const runtimeConfig = readRuntimeConfig()
+  const hostedUrl =
+    hostedConfig.enabled === true && typeof window !== 'undefined' ? window.location.origin : ''
+
   return {
     enabled:
+      hostedConfig.enabled === true ||
       runtimeConfig.enabled === true ||
       String(import.meta.env.VITE_BRANCH_SERVER_ENABLED || '').toLowerCase() === 'true',
     url: String(
-      runtimeConfig.url || import.meta.env.VITE_BRANCH_SERVER_URL || DEFAULT_BRANCH_SERVER_URL
+      runtimeConfig.url ||
+        hostedConfig.url ||
+        hostedUrl ||
+        import.meta.env.VITE_BRANCH_SERVER_URL ||
+        DEFAULT_BRANCH_SERVER_URL
     ).replace(/\/+$/, ''),
-    token: String(runtimeConfig.token || import.meta.env.VITE_BRANCH_SERVER_TOKEN || ''),
+    token: String(
+      runtimeConfig.token || hostedConfig.token || import.meta.env.VITE_BRANCH_SERVER_TOKEN || ''
+    ),
     runtimeConfigured: Boolean(runtimeConfig.url && runtimeConfig.token),
   }
 }

@@ -142,6 +142,60 @@
   font: inherit;
 }
 
+.claim-patient-results {
+  display: grid;
+  gap: 0.45rem;
+  margin: -0.2rem 0 0.25rem;
+  padding: 0.35rem;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  background: white;
+  box-shadow: var(--shadow-sm);
+}
+
+.claim-patient-result {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 48px;
+  padding: 0.6rem 0.7rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--gray-800);
+  text-align: left;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.claim-patient-result:hover {
+  background: rgba(22, 160, 133, 0.08);
+}
+
+.claim-patient-result span {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.claim-patient-result strong,
+.claim-patient-result small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.claim-patient-result small,
+.claim-patient-empty {
+  color: var(--gray-500);
+  font-size: 0.78rem;
+}
+
+.claim-patient-empty {
+  margin: -0.2rem 0 0.25rem;
+}
+
 /* Claims Table */
 .claims-table {
   width: 100%;

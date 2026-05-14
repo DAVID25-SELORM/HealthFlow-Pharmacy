@@ -288,30 +288,33 @@ const Sales = () => {
         setDrugSearchLoading(true)
         setDrugSearchMessage('')
 
-        if (!isOnline) {
-          if (branchServerModeEnabled) {
-            try {
-              const localResults = await searchBranchInventory({
-                term,
-                limit: POS_DRUG_SEARCH_LIMIT,
-              })
+        if (branchServerModeEnabled) {
+          try {
+            const localResults = await searchBranchInventory({
+              term,
+              limit: POS_DRUG_SEARCH_LIMIT,
+            })
 
-              if (cancelled) {
-                return
-              }
-
-              setDrugs(localResults)
-              setDrugSearchMessage(
-                localResults.length
-                  ? 'Showing local branch inventory while offline.'
-                  : 'No matching in-stock drugs found in the local branch server.'
-              )
+            if (cancelled) {
               return
-            } catch (branchSearchError) {
-              console.warn('Local branch inventory search failed:', branchSearchError)
+            }
+
+            setDrugs(localResults)
+            setDrugSearchMessage(
+              localResults.length
+                ? 'Showing local branch inventory.'
+                : 'No matching in-stock drugs found in the local branch server.'
+            )
+            return
+          } catch (branchSearchError) {
+            console.warn('Local branch inventory search failed:', branchSearchError)
+            if (isOnline) {
+              setDrugSearchMessage('Local branch inventory is unavailable. Trying cloud inventory.')
             }
           }
+        }
 
+        if (!isOnline) {
           const snapshot = await loadOfflinePosSnapshot(user?.id)
           const cachedResults = filterCachedDrugs(
             snapshot?.drugs?.length ? snapshot.drugs : drugs,
@@ -559,7 +562,7 @@ const Sales = () => {
 
   const refreshDrugs = async () => {
     try {
-      if (!isOnline && branchServerModeEnabled) {
+      if (branchServerModeEnabled) {
         const latestLocalDrugs = await searchBranchInventory({
           term: searchTerm,
           limit: POS_DRUG_SEARCH_LIMIT,

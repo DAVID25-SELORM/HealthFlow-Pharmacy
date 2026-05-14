@@ -1,0 +1,1 @@
+var e=e=>typeof e==`string`?e.trim():``,t=(e,t=0)=>{let n=Number.parseFloat(e);return Number.isFinite(n)?n:t},n=(t,n)=>{let r=e(t);if(!r)throw Error(`${n} is required.`);return r},r=(e,n)=>{let r=t(e,NaN);if(!Number.isFinite(r)||r<0)throw Error(`${n} must be a non-negative number.`);return r},i=t=>e(t).replace(/[%_,]/g,``);export{t as a,i,n,e as r,r as t};

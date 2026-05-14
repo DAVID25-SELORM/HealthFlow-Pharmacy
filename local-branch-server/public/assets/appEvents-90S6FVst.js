@@ -1,0 +1,1 @@
+var e=`healthflow:data-changed`,t=()=>{typeof window>`u`||window.dispatchEvent(new Event(e))},n=t=>typeof window>`u`?()=>{}:(window.addEventListener(e,t),()=>{window.removeEventListener(e,t)});export{n,t};

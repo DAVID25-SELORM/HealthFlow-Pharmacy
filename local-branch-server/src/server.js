@@ -1,4 +1,7 @@
 import express from 'express'
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { assertConfiguredForServer, config, isSupabaseSyncConfigured } from './config.js'
 import './db.js'
 import { requireBranchToken } from './httpAuth.js'
@@ -19,6 +22,11 @@ import {
 } from './supabaseSync.js'
 
 assertConfiguredForServer()
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+const frontendDir = path.resolve(__dirname, '..', 'public')
+const frontendIndex = path.join(frontendDir, 'index.html')
 
 const app = express()
 const DEFAULT_ALLOWED_WEB_ORIGINS = new Set([
@@ -86,6 +94,19 @@ app.get('/health', (_request, response) => {
     supabaseSyncConfigured: isSupabaseSyncConfigured(),
     sync: getSyncStatus(),
   })
+})
+
+app.get('/branch-runtime-config.js', (_request, response) => {
+  response
+    .type('application/javascript')
+    .set('Cache-Control', 'no-store')
+    .send(
+      `window.__HEALTHFLOW_BRANCH_SERVER__ = ${JSON.stringify({
+        enabled: true,
+        url: '',
+        token: config.branchServerToken,
+      })};`
+    )
 })
 
 app.use('/api', requireBranchToken)
@@ -303,6 +324,22 @@ app.get('/api/sync/diagnostics', async (_request, response, next) => {
     next(error)
   }
 })
+
+if (fs.existsSync(frontendIndex)) {
+  app.use(express.static(frontendDir, {
+    index: false,
+    maxAge: '1h',
+  }))
+
+  app.get('*', (request, response, next) => {
+    if (request.path.startsWith('/api/')) {
+      next()
+      return
+    }
+
+    response.sendFile(frontendIndex)
+  })
+}
 
 app.use((error, _request, response, _next) => {
   console.error(error)

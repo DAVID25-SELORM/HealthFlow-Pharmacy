@@ -31,16 +31,48 @@ const blankForm = {
 
 const validClaimTabs = ['all', 'pending', 'approved', 'rejected']
 
+const compactLookupText = (value) =>
+  String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '')
+
 const matchesSearch = (values, term) => {
   const normalizedTerm = term.trim().toLowerCase()
-  if (!normalizedTerm) {
+  const compactTerm = compactLookupText(term)
+  if (!normalizedTerm && !compactTerm) {
     return true
   }
 
   return values
     .filter(Boolean)
-    .some((value) => String(value).toLowerCase().includes(normalizedTerm))
+    .some((value) => {
+      const normalizedValue = String(value).toLowerCase()
+      return (
+        normalizedValue.includes(normalizedTerm) ||
+        (compactTerm && compactLookupText(value).includes(compactTerm))
+      )
+    })
 }
+
+const getPatientInsuranceProvider = (patient) => {
+  const provider = patient?.insurance_provider || patient?.insuranceProvider || ''
+  if (provider) {
+    return provider
+  }
+
+  if (patient?.nhis_member_no || patient?.nhis_hin) {
+    return 'NHIS'
+  }
+
+  return ''
+}
+
+const getPatientInsuranceId = (patient) =>
+  patient?.insurance_id ||
+  patient?.insuranceId ||
+  patient?.nhis_member_no ||
+  patient?.nhis_hin ||
+  ''
 
 const Claims = () => {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -145,13 +177,20 @@ const Claims = () => {
             patient.full_name,
             patient.phone,
             patient.email,
-            patient.insurance_provider,
-            patient.insurance_id,
+            getPatientInsuranceProvider(patient),
+            getPatientInsuranceId(patient),
+            patient.nhis_member_no,
+            patient.nhis_hin,
           ],
           patientLookupTerm
         )
       ),
     [patients, patientLookupTerm]
+  )
+
+  const visiblePatientMatches = useMemo(
+    () => (patientLookupTerm.trim() ? filteredPatientsForClaim.slice(0, 8) : []),
+    [patientLookupTerm, filteredPatientsForClaim]
   )
 
   const claimTotal = useMemo(
@@ -192,6 +231,17 @@ const Claims = () => {
   const selectDrugForClaim = (drug) => {
     setSelectedDrugId(drug.id)
     setDrugLookupTerm(drug.name)
+  }
+
+  const selectPatientForClaim = (patientId) => {
+    const nextPatient = patients.find((patient) => patient.id === patientId)
+    setFormData((current) => ({
+      ...current,
+      patientId,
+      insuranceProvider: nextPatient ? getPatientInsuranceProvider(nextPatient) : '',
+      insuranceId: nextPatient ? getPatientInsuranceId(nextPatient) : '',
+    }))
+    setPatientLookupTerm(nextPatient?.full_name || '')
   }
 
   const addClaimItem = () => {
@@ -558,29 +608,52 @@ const Claims = () => {
                       type="search"
                       placeholder="Find by name, phone, insurer, or insurance no."
                       value={patientLookupTerm}
-                      onChange={(event) => setPatientLookupTerm(event.target.value)}
+                      onChange={(event) => {
+                        setPatientLookupTerm(event.target.value)
+                      }}
                     />
                   </label>
+                  {visiblePatientMatches.length > 0 && (
+                    <div className="claim-patient-results">
+                      {visiblePatientMatches.map((patient) => {
+                        const insuranceId = getPatientInsuranceId(patient)
+                        const insuranceProvider = getPatientInsuranceProvider(patient)
+
+                        return (
+                          <button
+                            key={patient.id}
+                            type="button"
+                            className="claim-patient-result"
+                            onClick={() => selectPatientForClaim(patient.id)}
+                          >
+                            <span>
+                              <strong>{patient.full_name}</strong>
+                              <small>
+                                {patient.phone || 'No phone'}
+                                {insuranceProvider ? ` / ${insuranceProvider}` : ''}
+                                {insuranceId ? ` / ${insuranceId}` : ''}
+                              </small>
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                  {patientLookupTerm.trim() && filteredPatientsForClaim.length === 0 && (
+                    <div className="claim-patient-empty">No matching patients found.</div>
+                  )}
                   <select
                     required
                     value={formData.patientId}
-                    onChange={(event) => {
-                      const nextPatientId = event.target.value
-                      const nextPatient = patients.find((patient) => patient.id === nextPatientId)
-                      setFormData({
-                        ...formData,
-                        patientId: nextPatientId,
-                        insuranceProvider:
-                          nextPatient?.insurance_provider || formData.insuranceProvider,
-                        insuranceId: nextPatient?.insurance_id || formData.insuranceId,
-                      })
-                    }}
+                    onChange={(event) => selectPatientForClaim(event.target.value)}
                   >
                     <option value="">Select patient</option>
                     {filteredPatientsForClaim.map((patient) => (
                       <option key={patient.id} value={patient.id}>
                         {patient.full_name} ({patient.phone || 'No phone'})
-                        {patient.insurance_id ? ` - ${patient.insurance_id}` : ''}
+                        {getPatientInsuranceId(patient)
+                          ? ` - ${getPatientInsuranceId(patient)}`
+                          : ''}
                       </option>
                     ))}
                   </select>
