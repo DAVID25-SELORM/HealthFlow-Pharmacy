@@ -299,7 +299,10 @@ const requireRole = (
   allowedRoles: string[],
   message: string
 ) => {
-  if (!allowedRoles.includes(requesterProfile.role)) {
+  if (
+    requesterProfile.role !== 'admin' &&
+    !allowedRoles.includes(requesterProfile.role)
+  ) {
     throw new Error(message)
   }
 }

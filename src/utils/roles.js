@@ -26,4 +26,13 @@ export const OFFLINE_SYNC_ROLES = ['admin', 'branch_manager', 'super_admin']
 export const PURCHASES_ROLES = ['admin', 'pharmacist', 'procurement', 'branch_manager']
 export const NHIS_ROLES = ['admin', 'pharmacist', 'billing', 'claims_officer']
 
-export const hasRole = (role, roles) => roles.includes(String(role || '').toLowerCase())
+export const hasRole = (role, roles = []) => {
+  const normalizedRole = String(role || '').toLowerCase()
+  const normalizedRoles = roles.map((item) => String(item || '').toLowerCase())
+
+  if (normalizedRole === 'admin' && !normalizedRoles.includes('super_admin')) {
+    return true
+  }
+
+  return normalizedRoles.includes(normalizedRole)
+}

@@ -30,6 +30,7 @@ import {
   REPORT_ROLES,
   SALES_ROLES,
   SETTINGS_ROLES,
+  hasRole,
 } from '../../utils/roles'
 import './Sidebar.css'
 
@@ -59,7 +60,7 @@ const Sidebar = ({ isOpen, onClose }) => {
   ]
 
   const visibleItems = menuItems.filter(
-    (item) => item.featureAllowed !== false && (item.roles.includes(role) || item.allow)
+    (item) => item.featureAllowed !== false && (hasRole(role, item.roles) || item.allow)
   )
 
   return (
