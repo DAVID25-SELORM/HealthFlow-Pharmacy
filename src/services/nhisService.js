@@ -33,6 +33,9 @@ const asNumber = (value) => Number.parseFloat(value)
 const getClaimField = (claim, camelKey, snakeKey = camelKey) =>
   asText(claim?.[camelKey] ?? claim?.[snakeKey])
 const VALID_ORGANIZATION_TYPES = ['pharmacy', 'hospital']
+const DEFAULT_NHIS_MEMBER_DIGITS = 8
+const DEFAULT_GHANA_CARD_DIGITS = 10
+const MAX_DIAGNOSES_PER_CLAIM = 10
 
 export const normalizeOrganizationType = (value) => {
   const normalized = asText(value).toLowerCase()
@@ -45,6 +48,31 @@ const normalizeRuleOrganizationType = (value) => {
 }
 
 const normalizeMatchText = (value) => asText(value).toLowerCase().replace(/[^a-z0-9\s]/g, ' ')
+
+const digitsOnly = (value) => asText(value).replace(/\D/g, '')
+
+const validateMemberNumberFormat = (value, options = {}) => {
+  const memberNumber = asText(value)
+  if (!memberNumber) return 'NHIS member number is required.'
+
+  const isGhanaCard = memberNumber.toUpperCase().startsWith('GHA')
+  const requiredDigits = isGhanaCard
+    ? Number(options.ghanaCardDigits) || DEFAULT_GHANA_CARD_DIGITS
+    : Number(options.nhisMemberDigits) || DEFAULT_NHIS_MEMBER_DIGITS
+  const label = isGhanaCard ? 'Ghana Card number' : 'NHIS member number'
+
+  if (digitsOnly(memberNumber).length !== requiredDigits) {
+    return `${label} must contain exactly ${requiredDigits} digits.`
+  }
+
+  return ''
+}
+
+const splitDiagnoses = (value) =>
+  asText(value)
+    .split(/[;\n|,]/)
+    .map(asText)
+    .filter(Boolean)
 
 const DIAGNOSIS_TREATMENT_RULES = [
   {
@@ -179,9 +207,14 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
   )
   const isHospital = organizationType === 'hospital'
   const diagnosis = getClaimField(claimData, 'diagnosis')
+  const diagnoses = splitDiagnoses(diagnosis)
   const patientAge = calculateAge(dateOfBirth)
+  const memberNumberIssue = validateMemberNumberFormat(
+    getClaimField(claimData, 'memberNo', 'member_no'),
+    options
+  )
 
-  if (!getClaimField(claimData, 'memberNo', 'member_no')) blockers.push('NHIS member number is required.')
+  if (memberNumberIssue) blockers.push(memberNumberIssue)
   if (!getClaimField(claimData, 'surname')) blockers.push('Patient surname is required.')
   if (!getClaimField(claimData, 'otherNames', 'other_names')) warnings.push('Patient other names are missing on the claim.')
   if (!getClaimField(claimData, 'patientAddress', 'patient_address')) warnings.push('Patient address is missing on the claim.')
@@ -191,6 +224,8 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
   }
   if (!diagnosis && isHospital) {
     blockers.push('Diagnosis is required for hospital NHIS claims.')
+  } else if (isHospital && diagnoses.length > MAX_DIAGNOSES_PER_CLAIM) {
+    blockers.push(`Enter no more than ${MAX_DIAGNOSES_PER_CLAIM} diagnoses on one NHIS claim.`)
   }
   if (!getClaimField(claimData, 'serviceDate', 'service_date_from')) blockers.push('Date of dispensing/service is required.')
   if (!getClaimField(claimData, 'physicianName', 'physician_name')) {
@@ -212,9 +247,9 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
       if (!asText(medicine?.unit)) blockers.push(`${label}: unit of pricing is required.`)
       if (!(quantity > 0)) blockers.push(`${label}: exact dispensed quantity must be greater than zero.`)
       if (!(unitPrice >= 0)) blockers.push(`${label}: NHIS unit price is required.`)
-      if (!asText(medicine?.dose)) warnings.push(`${label}: dose is missing from the prescription.`)
-      if (!asText(medicine?.frequency)) warnings.push(`${label}: dosage schedule/frequency is missing from the prescription.`)
-      if (!asText(medicine?.duration)) warnings.push(`${label}: duration is missing from the prescription.`)
+      if (!asText(medicine?.dose)) blockers.push(`${label}: dose is required.`)
+      if (!asText(medicine?.frequency)) blockers.push(`${label}: dosage schedule/frequency is required.`)
+      if (!asText(medicine?.duration)) blockers.push(`${label}: duration is required.`)
     })
   }
 

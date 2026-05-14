@@ -984,6 +984,24 @@
   outline: none;
 }
 
+.cash-field-input textarea {
+  width: 100%;
+  min-height: 5.5rem;
+  resize: vertical;
+  border: 2px solid var(--gray-300);
+  border-radius: var(--radius);
+  padding: 0.62rem 0.7rem;
+  background: var(--gray-50);
+  color: var(--gray-900);
+  font: inherit;
+}
+
+.cash-field-input textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 4px rgba(22, 160, 133, 0.15);
+}
+
 .cash-input-shell:focus-within {
   border-color: var(--primary);
   box-shadow: 0 0 0 4px rgba(22, 160, 133, 0.15);

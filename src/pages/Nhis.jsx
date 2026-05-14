@@ -507,7 +507,7 @@ const Nhis = () => {
   const getMedicineReadinessBlockers = () => assessNhisClaimReadiness(
     {
       ...claimForm,
-      memberNo: claimForm.memberNo || 'pending',
+      memberNo: claimForm.memberNo || '00000000',
       surname: claimForm.surname || 'pending',
       otherNames: claimForm.otherNames || 'pending',
       patientAddress: claimForm.patientAddress || 'pending',
@@ -1197,9 +1197,9 @@ const Nhis = () => {
                     </div>
                     {isHospital && (
                       <div className="form-group">
-                        <label>Diagnosis *</label>
-                        <input className="form-input" value={claimForm.diagnosis}
-                          placeholder="Required for hospital claims"
+                        <label>Diagnoses *</label>
+                        <textarea className="form-input" rows={3} value={claimForm.diagnosis}
+                          placeholder="Enter up to 10 diagnoses, separated by commas or new lines"
                           onChange={(e) => setClaimForm((p) => ({ ...p, diagnosis: e.target.value }))} />
                       </div>
                     )}
@@ -1527,7 +1527,7 @@ const Nhis = () => {
               <div><strong>Address:</strong> {viewClaim.patient_address || '—'}</div>
               <div><strong>Child Weight:</strong> {viewClaim.child_weight_kg ? `${viewClaim.child_weight_kg} kg` : '—'}</div>
               <div><strong>CCC No:</strong> {viewClaim.ccc_no || '—'}</div>
-              {isHospital && <div><strong>Diagnosis:</strong> {viewClaim.diagnosis || '—'}</div>}
+              {isHospital && <div><strong>Diagnoses:</strong> {viewClaim.diagnosis || '—'}</div>}
               <div><strong>Date of Service:</strong> {viewClaim.service_date_from ? formatAppDate(viewClaim.service_date_from) : '—'}</div>
               <div><strong>Prescribing Facility:</strong> {viewClaim.referring_facility || '—'}</div>
               <div><strong>Referral Code:</strong> {viewClaim.referral_code || '—'}</div>

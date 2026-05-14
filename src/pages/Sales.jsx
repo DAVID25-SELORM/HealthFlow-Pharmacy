@@ -2229,13 +2229,13 @@ const Sales = () => {
 
                 {isNhiaClaimSale && isHospital && (
                   <div className="cash-field cash-field-input nhia-diagnosis-field">
-                    <label htmlFor="nhia-diagnosis">Diagnosis</label>
-                    <input
+                    <label htmlFor="nhia-diagnosis">Diagnoses</label>
+                    <textarea
                       id="nhia-diagnosis"
-                      type="text"
+                      rows={3}
                       value={nhiaDiagnosis}
                       onChange={(event) => setNhiaDiagnosis(event.target.value)}
-                      placeholder="e.g. Malaria"
+                      placeholder="Enter up to 10 diagnoses, separated by commas or new lines"
                     />
                   </div>
                 )}

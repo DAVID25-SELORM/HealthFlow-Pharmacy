@@ -31,7 +31,8 @@ CREATE TABLE IF NOT EXISTS public.nhis_clinical_rules (
 ALTER TABLE public.nhis_clinical_rules
   ALTER COLUMN organization_id SET DEFAULT public.user_organization_id();
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_nhis_clinical_rules_org_label
+DROP INDEX IF EXISTS public.idx_nhis_clinical_rules_org_label;
+CREATE UNIQUE INDEX idx_nhis_clinical_rules_org_label
   ON public.nhis_clinical_rules(organization_id, diagnosis_label);
 
 CREATE INDEX IF NOT EXISTS idx_nhis_clinical_rules_org_active
