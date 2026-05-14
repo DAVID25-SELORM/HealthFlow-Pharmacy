@@ -32,6 +32,7 @@ import {
 import { getAllPatients } from '../services/patientService'
 import { parseNhisDrugFile, generateNhisDrugTemplate } from '../services/nhisDrugImportService'
 import { parseNhisClinicalRuleFile, generateNhisClinicalRuleTemplate } from '../services/nhisClinicalRuleImportService'
+import { normalizeNhiaMemberNumber } from '../utils/nhiaMemberNumber'
 import DiagnosisSelector from '../components/DiagnosisSelector/DiagnosisSelector'
 import './Nhis.css'
 
@@ -284,6 +285,7 @@ const Nhis = () => {
 
   // ── select patient for claim ──────────────────────────────────
   const selectPatient = (patient) => {
+    const memberNo = patient.nhis_member_no || patient.insurance_id || ''
     setClaimForm((prev) => ({
       ...prev,
       patientId:   patient.id,
@@ -292,7 +294,7 @@ const Nhis = () => {
       gender:      patient.gender     || '',
       dateOfBirth: patient.date_of_birth || '',
       patientAddress: patient.address || '',
-      memberNo:    patient.nhis_member_no || patient.insurance_id || '',
+      memberNo:    normalizeNhiaMemberNumber(memberNo),
       hin:         patient.nhis_hin       || '',
     }))
     setPatientSearch('')
@@ -1104,7 +1106,7 @@ const Nhis = () => {
                 <section className="nhis-section">
                   <h3 className="nhis-section-title">Member Details</h3>
                   <div className="form-group">
-                    <label>Search existing patient (by name / member no)</label>
+                    <label>Search existing patient (by name / member no / Ghana Card)</label>
                     <div className="patient-search-wrap">
                       <input
                         className="form-input"
@@ -1121,7 +1123,9 @@ const Nhis = () => {
                               onClick={() => selectPatient(p)}
                             >
                               <span className="pd-name">{p.full_name}</span>
-                              {p.nhis_member_no && <span className="pd-meta">Member: {p.nhis_member_no}</span>}
+                              {(p.nhis_member_no || p.insurance_id) && (
+                                <span className="pd-meta">Member: {p.nhis_member_no || p.insurance_id}</span>
+                              )}
                             </button>
                           ))}
                         </div>
@@ -1131,9 +1135,11 @@ const Nhis = () => {
 
                   <div className="form-row">
                     <div className="form-group">
-                      <label>NHIS Member No *</label>
+                      <label>NHIS Member No / Ghana Card *</label>
                       <input className="form-input" value={claimForm.memberNo}
                         required
+                        placeholder="12345678 or GHA-XXXXXXXXX-X"
+                        onBlur={(e) => setClaimForm((p) => ({ ...p, memberNo: normalizeNhiaMemberNumber(e.target.value) }))}
                         onChange={(e) => setClaimForm((p) => ({ ...p, memberNo: e.target.value }))} />
                     </div>
                     <div className="form-group">

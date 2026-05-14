@@ -82,6 +82,27 @@ describe('assessNhisClaimReadiness', () => {
     expect(readiness.blockers).toContain('NHIS member number must contain exactly 8 digits.')
   })
 
+  it('accepts linked Ghana Card format as the NHIS member identifier', () => {
+    const readiness = assessNhisClaimReadiness(
+      { ...baseClaim, memberNo: 'GHA-123456789-0' },
+      [baseMedicine]
+    )
+
+    expect(readiness.blockers).not.toContain('NHIS member number must contain exactly 8 digits.')
+    expect(readiness.blockers).not.toContain('Ghana Card number must contain exactly 10 digits after GHA.')
+  })
+
+  it('rejects non-numeric legacy NHIS values that do not start with GHA', () => {
+    const readiness = assessNhisClaimReadiness(
+      { ...baseClaim, memberNo: 'NHIS12345678' },
+      [baseMedicine]
+    )
+
+    expect(readiness.blockers).toContain(
+      'NHIS member number must contain digits only, or enter a Ghana Card number starting with GHA.'
+    )
+  })
+
   it('allows up to ten hospital diagnoses and blocks more than ten', () => {
     const tenDiagnoses = Array.from({ length: 10 }, (_, index) => `Diagnosis ${index + 1}`).join('\n')
     const elevenDiagnoses = `${tenDiagnoses}\nDiagnosis 11`

@@ -11,6 +11,7 @@ import {
 import { isSupabaseConfigured } from '../lib/supabase'
 import { formatAppDate, formatAppDateTime } from '../utils/date'
 import { getInsuranceProviderOptions } from '../utils/insuranceProviders'
+import { normalizeNhiaMemberNumber } from '../utils/nhiaMemberNumber'
 import './Patients.css'
 
 const SEARCH_DEBOUNCE_MS = 350
@@ -415,12 +416,16 @@ const Patients = () => {
 
               <div className="form-row">
                 <div className="form-group">
-                  <label>{showNhisCheckPrompt ? 'NHIS ID' : 'Insurance ID'}</label>
+                  <label>{showNhisCheckPrompt ? 'NHIS ID / Ghana Card' : 'Insurance ID'}</label>
                   <input
                     type="text"
-                    inputMode={showNhisCheckPrompt ? 'numeric' : 'text'}
+                    inputMode="text"
                     value={formData.insuranceId}
-                    placeholder={showNhisCheckPrompt ? 'Enter NHIS membership number' : ''}
+                    placeholder={showNhisCheckPrompt ? '12345678 or GHA-XXXXXXXXX-X' : ''}
+                    onBlur={(event) =>
+                      showNhisCheckPrompt &&
+                      setFormData({ ...formData, insuranceId: normalizeNhiaMemberNumber(event.target.value) })
+                    }
                     onChange={(event) =>
                       setFormData({ ...formData, insuranceId: event.target.value })
                     }
@@ -429,7 +434,7 @@ const Patients = () => {
                     <div className="nhis-verify-note">
                       <div>
                         <strong>Verify with {NHIS_USSD_CODE}</strong>
-                        <span>Confirm the card status on the NHIS menu before saving.</span>
+                        <span>Confirm active NHIS status or Ghana Card linkage before saving.</span>
                       </div>
                       <a className="nhis-verify-link" href={NHIS_USSD_TEL_LINK}>
                         <ShieldCheck size={16} />

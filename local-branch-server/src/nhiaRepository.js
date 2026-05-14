@@ -98,6 +98,24 @@ const normalizeMatchText = (value) => normalizeText(value).toLowerCase().replace
 
 const digitsOnly = (value) => normalizeText(value).replace(/\D/g, '')
 
+const compactGhanaCardValue = (value) => normalizeText(value).toUpperCase().replace(/[\s-]/g, '')
+
+const isGhanaCardNumber = (value) => compactGhanaCardValue(value).startsWith('GHA')
+
+const normalizeNhiaMemberNumber = (value) => {
+  const memberNumber = normalizeText(value)
+  if (!memberNumber) return ''
+
+  if (!isGhanaCardNumber(memberNumber)) {
+    return /^\d+$/.test(memberNumber) ? memberNumber : memberNumber.toUpperCase()
+  }
+
+  const digits = digitsOnly(compactGhanaCardValue(memberNumber).slice(3))
+  return digits.length === DEFAULT_GHANA_CARD_DIGITS
+    ? `GHA-${digits.slice(0, 9)}-${digits.slice(9)}`
+    : compactGhanaCardValue(memberNumber)
+}
+
 const splitRuleTerms = (value) => {
   if (Array.isArray(value)) {
     return value.map(normalizeText).filter(Boolean)
@@ -149,26 +167,35 @@ const toDigitLength = (value, fallback) => {
   return parsed
 }
 
-const normalizeMemberNumberType = (value) => {
-  const normalized = normalizeText(value).toUpperCase()
-  return normalized.startsWith('GHA') ? 'ghana_card' : 'nhis'
-}
-
 const assertValidMemberNumber = (value, settings = {}) => {
-  const memberNumber = assertRequiredText(value, 'NHIA member number')
-  const numberType = normalizeMemberNumberType(memberNumber)
-  const digits = digitsOnly(memberNumber)
-  const requiredDigits =
-    numberType === 'ghana_card'
-      ? toDigitLength(settings.ghanaCardDigits, DEFAULT_GHANA_CARD_DIGITS)
-      : toDigitLength(settings.nhisMemberDigits, DEFAULT_NHIS_MEMBER_DIGITS)
-  const label = numberType === 'ghana_card' ? 'Ghana Card number' : 'NHIS member number'
+  const memberNumber = assertRequiredText(value, 'NHIA member number or Ghana Card number')
 
-  if (digits.length !== requiredDigits) {
-    throw new Error(`${label} must contain exactly ${requiredDigits} digits.`)
+  if (isGhanaCardNumber(memberNumber)) {
+    const compact = compactGhanaCardValue(memberNumber)
+    const digits = digitsOnly(compact.slice(3))
+    const requiredDigits = toDigitLength(settings.ghanaCardDigits, DEFAULT_GHANA_CARD_DIGITS)
+
+    if (!/^GHA\d+$/.test(compact)) {
+      throw new Error('Ghana Card number must start with GHA and contain only digits after the prefix.')
+    }
+
+    if (digits.length !== requiredDigits) {
+      throw new Error(`Ghana Card number must contain exactly ${requiredDigits} digits after GHA.`)
+    }
+
+    return normalizeNhiaMemberNumber(memberNumber)
   }
 
-  return memberNumber
+  const requiredDigits = toDigitLength(settings.nhisMemberDigits, DEFAULT_NHIS_MEMBER_DIGITS)
+  if (!/^\d+$/.test(memberNumber)) {
+    throw new Error('NHIS member number must contain digits only, or enter a Ghana Card number starting with GHA.')
+  }
+
+  if (memberNumber.length !== requiredDigits) {
+    throw new Error(`NHIS member number must contain exactly ${requiredDigits} digits.`)
+  }
+
+  return normalizeNhiaMemberNumber(memberNumber)
 }
 
 const extractCcCode = (value) => {

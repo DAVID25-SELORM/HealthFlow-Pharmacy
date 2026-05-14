@@ -1,5 +1,9 @@
 import { supabase } from '../lib/supabase'
 import { assertRequiredText, assertNonNegativeNumber, normalizeText, sanitizeSearchTerm } from '../utils/validation'
+import {
+  normalizeNhiaMemberNumber,
+  validateNhiaMemberNumberFormat,
+} from '../utils/nhiaMemberNumber'
 import { tryLogAuditEvent } from './auditService'
 import {
   createBranchRecord,
@@ -33,8 +37,6 @@ const asNumber = (value) => Number.parseFloat(value)
 const getClaimField = (claim, camelKey, snakeKey = camelKey) =>
   asText(claim?.[camelKey] ?? claim?.[snakeKey])
 const VALID_ORGANIZATION_TYPES = ['pharmacy', 'hospital']
-const DEFAULT_NHIS_MEMBER_DIGITS = 8
-const DEFAULT_GHANA_CARD_DIGITS = 10
 const MAX_DIAGNOSES_PER_CLAIM = 10
 
 export const normalizeOrganizationType = (value) => {
@@ -49,23 +51,8 @@ const normalizeRuleOrganizationType = (value) => {
 
 const normalizeMatchText = (value) => asText(value).toLowerCase().replace(/[^a-z0-9\s]/g, ' ')
 
-const digitsOnly = (value) => asText(value).replace(/\D/g, '')
-
 const validateMemberNumberFormat = (value, options = {}) => {
-  const memberNumber = asText(value)
-  if (!memberNumber) return 'NHIS member number is required.'
-
-  const isGhanaCard = memberNumber.toUpperCase().startsWith('GHA')
-  const requiredDigits = isGhanaCard
-    ? Number(options.ghanaCardDigits) || DEFAULT_GHANA_CARD_DIGITS
-    : Number(options.nhisMemberDigits) || DEFAULT_NHIS_MEMBER_DIGITS
-  const label = isGhanaCard ? 'Ghana Card number' : 'NHIS member number'
-
-  if (digitsOnly(memberNumber).length !== requiredDigits) {
-    return `${label} must contain exactly ${requiredDigits} digits.`
-  }
-
-  return ''
+  return validateNhiaMemberNumberFormat(value, options)
 }
 
 const splitDiagnoses = (value) =>
@@ -691,7 +678,9 @@ export const createNhisClaim = async (claimData, medicines) => {
   }
 
   assertRequiredText(claimData.surname, 'Surname')
-  const memberNo = assertRequiredText(claimData.memberNo, 'NHIS member number')
+  const memberNo = normalizeNhiaMemberNumber(
+    assertRequiredText(claimData.memberNo, 'NHIS member number or Ghana Card number')
+  )
   const serviceDate = normalizeText(claimData.serviceDate || claimData.serviceDateFrom)
 
   const totalAmount = medicines.reduce((s, m) => s + Number(m.totalAmount || 0), 0)
@@ -775,10 +764,10 @@ export const createNhisClaim = async (claimData, medicines) => {
     const { error: patientUpdateError } = await supabase
       .from('patients')
       .update({
-        nhis_member_no:    normalizeText(claimData.memberNo) || null,
+        nhis_member_no:    memberNo || null,
         nhis_hin:          normalizeText(claimData.hin)      || null,
         insurance_provider: 'NHIS',
-        insurance_id:      normalizeText(claimData.memberNo || claimData.hin) || null,
+        insurance_id:      normalizeText(memberNo || claimData.hin) || null,
       })
       .eq('id', claimData.patientId)
 
@@ -808,7 +797,9 @@ export const updateNhisClaim = async (id, claimData, medicines) => {
   }
 
   assertRequiredText(claimData.surname, 'Surname')
-  const memberNo = assertRequiredText(claimData.memberNo, 'NHIS member number')
+  const memberNo = normalizeNhiaMemberNumber(
+    assertRequiredText(claimData.memberNo, 'NHIS member number or Ghana Card number')
+  )
   const serviceDate = normalizeText(claimData.serviceDate || claimData.serviceDateFrom)
   const totalAmount = medicines.reduce((s, m) => s + Number(m.totalAmount || 0), 0)
   const diagnosisDetails = getDiagnosisDetailsPayload(claimData)
@@ -893,10 +884,10 @@ export const updateNhisClaim = async (id, claimData, medicines) => {
     const { error: patientUpdateError } = await supabase
       .from('patients')
       .update({
-        nhis_member_no: normalizeText(claimData.memberNo) || null,
+        nhis_member_no: memberNo || null,
         nhis_hin: normalizeText(claimData.hin) || null,
         insurance_provider: 'NHIS',
-        insurance_id: normalizeText(claimData.memberNo || claimData.hin) || null,
+        insurance_id: normalizeText(memberNo || claimData.hin) || null,
       })
       .eq('id', claimData.patientId)
 

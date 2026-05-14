@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase'
 import { assertRequiredText, normalizeText, sanitizeSearchTerm } from '../utils/validation'
+import { normalizeNhiaMemberNumber, validateNhiaMemberNumberFormat } from '../utils/nhiaMemberNumber'
 import { tryLogAuditEvent } from './auditService'
 import {
   createBranchRecord,
@@ -15,6 +16,20 @@ const PATIENT_INSURANCE_ID_UNIQUE_CONSTRAINTS = [
 ]
 
 const PATIENT_INSURANCE_ID_FIELDS = ['insurance_id', 'nhis_member_no', 'nhis_hin']
+
+const normalizeInsuranceId = (provider, value) => {
+  const insuranceId = normalizeText(value)
+  if (normalizeText(provider).toLowerCase() !== 'nhis' || !insuranceId) {
+    return insuranceId
+  }
+
+  const issue = validateNhiaMemberNumberFormat(insuranceId)
+  if (issue) {
+    throw new Error(issue)
+  }
+
+  return normalizeNhiaMemberNumber(insuranceId)
+}
 
 const getErrorText = (error) =>
   [
@@ -127,6 +142,8 @@ const patientMatchesSearch = (patient, term) => {
 export const addPatient = async (patientData) => {
   const fullName = assertRequiredText(patientData.fullName, 'Patient name')
   const phone = assertRequiredText(patientData.phone, 'Phone')
+  const insuranceProvider = normalizeText(patientData.insuranceProvider)
+  const insuranceId = normalizeInsuranceId(insuranceProvider, patientData.insuranceId)
 
   if (shouldUseBranchServer()) {
     return await createBranchRecord('patients', {
@@ -136,8 +153,8 @@ export const addPatient = async (patientData) => {
       date_of_birth: patientData.dateOfBirth || null,
       gender: normalizeText(patientData.gender) || null,
       address: normalizeText(patientData.address) || null,
-      insurance_provider: normalizeText(patientData.insuranceProvider) || null,
-      insurance_id: normalizeText(patientData.insuranceId) || null,
+      insurance_provider: insuranceProvider || null,
+      insurance_id: insuranceId || null,
       allergies: normalizeText(patientData.allergies) || null,
       medical_notes: normalizeText(patientData.medicalNotes) || null,
     })
@@ -153,8 +170,8 @@ export const addPatient = async (patientData) => {
         date_of_birth: patientData.dateOfBirth,
         gender: normalizeText(patientData.gender) || null,
         address: normalizeText(patientData.address) || null,
-        insurance_provider: normalizeText(patientData.insuranceProvider) || null,
-        insurance_id: normalizeText(patientData.insuranceId) || null,
+        insurance_provider: insuranceProvider || null,
+        insurance_id: insuranceId || null,
         allergies: normalizeText(patientData.allergies) || null,
         medical_notes: normalizeText(patientData.medicalNotes) || null
       }
@@ -182,6 +199,8 @@ export const addPatient = async (patientData) => {
 export const updatePatient = async (id, patientData) => {
   const fullName = assertRequiredText(patientData.fullName, 'Patient name')
   const phone = assertRequiredText(patientData.phone, 'Phone')
+  const insuranceProvider = normalizeText(patientData.insuranceProvider)
+  const insuranceId = normalizeInsuranceId(insuranceProvider, patientData.insuranceId)
 
   if (shouldUseBranchServer()) {
     return await updateBranchRecord('patients', id, {
@@ -191,8 +210,8 @@ export const updatePatient = async (id, patientData) => {
       date_of_birth: patientData.dateOfBirth || null,
       gender: normalizeText(patientData.gender) || null,
       address: normalizeText(patientData.address) || null,
-      insurance_provider: normalizeText(patientData.insuranceProvider) || null,
-      insurance_id: normalizeText(patientData.insuranceId) || null,
+      insurance_provider: insuranceProvider || null,
+      insurance_id: insuranceId || null,
       allergies: normalizeText(patientData.allergies) || null,
       medical_notes: normalizeText(patientData.medicalNotes) || null,
     })
@@ -207,8 +226,8 @@ export const updatePatient = async (id, patientData) => {
       date_of_birth: patientData.dateOfBirth,
       gender: normalizeText(patientData.gender) || null,
       address: normalizeText(patientData.address) || null,
-      insurance_provider: normalizeText(patientData.insuranceProvider) || null,
-      insurance_id: normalizeText(patientData.insuranceId) || null,
+      insurance_provider: insuranceProvider || null,
+      insurance_id: insuranceId || null,
       allergies: normalizeText(patientData.allergies) || null,
       medical_notes: normalizeText(patientData.medicalNotes) || null,
       updated_at: new Date().toISOString()

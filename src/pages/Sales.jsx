@@ -40,6 +40,10 @@ import { useNotification } from '../context/NotificationContext'
 import { useTenant } from '../context/TenantContext'
 import { useOnlineStatus } from '../hooks/useOnlineStatus'
 import { hasRole } from '../utils/roles'
+import {
+  normalizeNhiaMemberNumber,
+  validateNhiaMemberNumberFormat,
+} from '../utils/nhiaMemberNumber'
 import Receipt from '../components/Receipt/Receipt'
 import DiagnosisSelector from '../components/DiagnosisSelector/DiagnosisSelector'
 import './Sales.css'
@@ -47,8 +51,6 @@ import './Sales.css'
 const POS_DRUG_SEARCH_LIMIT = 30
 const RECENT_SALES_LIMIT = 8
 const POS_PATIENT_SEARCH_LIMIT = 8
-const DEFAULT_NHIS_MEMBER_DIGITS = 8
-const DEFAULT_GHANA_CARD_DIGITS = 10
 
 const BRANCH_SYNC_LABELS = {
   patients: 'Patients',
@@ -76,33 +78,10 @@ const normalizeOrganizationType = (value) => {
   return normalized === 'hospital' ? 'hospital' : 'pharmacy'
 }
 
-const digitsOnly = (value) => String(value || '').replace(/\D/g, '')
-
 const getNhiaMemberNumber = (patient) =>
   patient?.insurance_id || patient?.nhis_member_no || patient?.nhis_hin || ''
 
-const validateNhiaMemberNumber = (
-  value,
-  {
-    nhisMemberDigits = DEFAULT_NHIS_MEMBER_DIGITS,
-    ghanaCardDigits = DEFAULT_GHANA_CARD_DIGITS,
-  } = {}
-) => {
-  const memberNumber = String(value || '').trim()
-  if (!memberNumber) {
-    return 'Enter the patient NHIS member number or Ghana Card number.'
-  }
-
-  const isGhanaCard = memberNumber.toUpperCase().startsWith('GHA')
-  const requiredDigits = isGhanaCard ? Number(ghanaCardDigits) || DEFAULT_GHANA_CARD_DIGITS : Number(nhisMemberDigits) || DEFAULT_NHIS_MEMBER_DIGITS
-  const label = isGhanaCard ? 'Ghana Card number' : 'NHIS member number'
-
-  if (digitsOnly(memberNumber).length !== requiredDigits) {
-    return `${label} must contain exactly ${requiredDigits} digits.`
-  }
-
-  return ''
-}
+const validateNhiaMemberNumber = validateNhiaMemberNumberFormat
 
 const mergePharmacySettingsWithOrganization = (settings, organization) => ({
   ...(settings || {}),
@@ -997,7 +976,7 @@ const Sales = () => {
     return {
       patientId: selectedPatientForSale.id,
       patientName: selectedPatientForSale.full_name,
-      memberNumber: selectedNhiaMemberNumber,
+      memberNumber: normalizeNhiaMemberNumber(selectedNhiaMemberNumber),
       hin: selectedPatientForSale.nhis_hin || null,
       insuranceProvider: selectedPatientForSale.insurance_provider || 'NHIA',
       organizationType,
