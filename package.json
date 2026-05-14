@@ -8,6 +8,7 @@
     "build": "vite build",
     "build:offline": "vite build --outDir local-branch-server/public --emptyOutDir",
     "preview": "vite preview",
+    "seed:diagnosis-catalog": "node scripts/seed-diagnosis-catalog.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage"

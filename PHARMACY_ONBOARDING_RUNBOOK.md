@@ -91,8 +91,17 @@ supabase-patch-inventory-workflow-controls.sql
 supabase-patch-commercial-billing-controls.sql
 supabase-patch-nhis-topup-controls.sql
 supabase-patch-branch-sync-rpcs.sql
+supabase-patch-diagnosis-catalog.sql
 supabase-patch-accounting-defaults.sql
 supabase-patch-accounting-hardening.sql
+```
+
+After applying `supabase-patch-diagnosis-catalog.sql`, seed the diagnosis dropdown catalog from the app bundle:
+
+```powershell
+$env:SUPABASE_URL="https://your-project-ref.supabase.co"
+$env:SUPABASE_SERVICE_ROLE_KEY="your-service-role-key"
+npm run seed:diagnosis-catalog
 ```
 
 Do not rerun full base schema blindly on an existing production database. Use patch files for existing deployments.
@@ -402,4 +411,3 @@ Check Git status before pushing:
 cd "C:\Users\RealTimeIT\Desktop\APPS\HealthFlow Pharmacy"
 git status
 ```
-

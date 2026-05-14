@@ -26,6 +26,7 @@ ensureColumn('nhia_settings', 'nhis_member_digits', 'INTEGER NOT NULL DEFAULT 8'
 ensureColumn('nhia_settings', 'ghana_card_digits', 'INTEGER NOT NULL DEFAULT 10')
 ensureColumn('nhia_claims', 'cc_code', 'TEXT')
 ensureColumn('nhia_claims', 'diagnosis', 'TEXT')
+ensureColumn('nhia_claims', 'diagnosis_details_json', "TEXT NOT NULL DEFAULT '[]'")
 
 export const nowIso = () => new Date().toISOString()
 

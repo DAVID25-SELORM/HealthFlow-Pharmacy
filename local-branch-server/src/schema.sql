@@ -168,6 +168,7 @@ CREATE TABLE IF NOT EXISTS nhia_claims (
   hin TEXT,
   cc_code TEXT,
   diagnosis TEXT,
+  diagnosis_details_json TEXT NOT NULL DEFAULT '[]',
   insurance_provider TEXT,
   service_date TEXT NOT NULL,
   total_amount REAL NOT NULL,

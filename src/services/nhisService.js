@@ -74,6 +74,88 @@ const splitDiagnoses = (value) =>
     .map(asText)
     .filter(Boolean)
 
+const normalizeDiagnosisDetails = (value) => {
+  const raw = typeof value === 'string'
+    ? (() => {
+        try {
+          return JSON.parse(value)
+        } catch {
+          return []
+        }
+      })()
+    : value
+
+  if (!Array.isArray(raw)) return []
+
+  return raw
+    .map((diagnosis) => ({
+      code: asText(diagnosis?.code) || null,
+      label: asText(diagnosis?.label ?? diagnosis?.diagnosis ?? diagnosis?.name),
+      source: asText(diagnosis?.source ?? diagnosis?.diagnosis_source) || 'Custom',
+      sourceVersion: asText(diagnosis?.sourceVersion ?? diagnosis?.source_version) || null,
+      custom: Boolean(diagnosis?.custom),
+    }))
+    .filter((diagnosis) => diagnosis.label)
+}
+
+const getDiagnosisDetailsPayload = (claimData) => {
+  const details = normalizeDiagnosisDetails(claimData?.diagnosisDetails ?? claimData?.diagnosis_details)
+  return details.length ? details : []
+}
+
+const isMissingDiagnosisDetailsColumn = (error) => {
+  const message = String(error?.message || '').toLowerCase()
+  return (
+    error?.code === 'PGRST204' ||
+    message.includes('diagnosis_details') ||
+    message.includes('schema cache')
+  )
+}
+
+const insertNhisClaimWithSchemaFallback = async (payload) => {
+  const insertPayload = { ...payload }
+  const result = await supabase
+    .from('nhis_claims')
+    .insert([insertPayload])
+    .select()
+    .single()
+
+  if (!result.error || !('diagnosis_details' in insertPayload) || !isMissingDiagnosisDetailsColumn(result.error)) {
+    return result
+  }
+
+  delete insertPayload.diagnosis_details
+  return await supabase
+    .from('nhis_claims')
+    .insert([insertPayload])
+    .select()
+    .single()
+}
+
+const updateNhisClaimWithSchemaFallback = async (id, payload) => {
+  const updatePayload = { ...payload }
+  const result = await supabase
+    .from('nhis_claims')
+    .update(updatePayload)
+    .eq('id', id)
+    .eq('status', 'served')
+    .select()
+    .single()
+
+  if (!result.error || !('diagnosis_details' in updatePayload) || !isMissingDiagnosisDetailsColumn(result.error)) {
+    return result
+  }
+
+  delete updatePayload.diagnosis_details
+  return await supabase
+    .from('nhis_claims')
+    .update(updatePayload)
+    .eq('id', id)
+    .eq('status', 'served')
+    .select()
+    .single()
+}
+
 const DIAGNOSIS_TREATMENT_RULES = [
   {
     label: 'Malaria',
@@ -613,34 +695,39 @@ export const createNhisClaim = async (claimData, medicines) => {
   const serviceDate = normalizeText(claimData.serviceDate || claimData.serviceDateFrom)
 
   const totalAmount = medicines.reduce((s, m) => s + Number(m.totalAmount || 0), 0)
+  const diagnosisDetails = getDiagnosisDetailsPayload(claimData)
+  const claimPayload = {
+    patient_id:         claimData.patientId         || null,
+    member_no:          memberNo,
+    hin:                normalizeText(claimData.hin)               || null,
+    surname:            normalizeText(claimData.surname),
+    other_names:        normalizeText(claimData.otherNames)        || null,
+    folder_no:          normalizeText(claimData.folderNo)          || null,
+    gender:             normalizeText(claimData.gender)            || null,
+    date_of_birth:      claimData.dateOfBirth                      || null,
+    patient_address:    normalizeText(claimData.patientAddress)    || null,
+    child_weight_kg:    claimData.childWeightKg
+      ? assertNonNegativeNumber(claimData.childWeightKg, 'Child weight')
+      : null,
+    ccc_no:             normalizeText(claimData.cccNo)             || null,
+    diagnosis:          normalizeText(claimData.diagnosis)         || null,
+    diagnosis_details:  diagnosisDetails,
+    service_date_from:  serviceDate                                || null,
+    service_date_to:    serviceDate                                || null,
+    branch_id:          claimData.branchId                         || null,
+    referring_facility: normalizeText(claimData.referringFacility) || null,
+    referral_code:      normalizeText(claimData.referralCode)      || null,
+    physician_name:     normalizeText(claimData.physicianName)     || null,
+    pre_auth_codes:     normalizeText(claimData.preAuthCodes)      || null,
+    total_amount:       totalAmount,
+    status:             'served',
+    notes:              normalizeText(claimData.notes)             || null,
+    created_by:         claimData.createdBy                        || null,
+  }
 
   if (shouldUseBranchServer()) {
     return await createBranchRecord('nhis/claims', {
-      patient_id: claimData.patientId || null,
-      member_no: memberNo,
-      hin: normalizeText(claimData.hin) || null,
-      surname: normalizeText(claimData.surname),
-      other_names: normalizeText(claimData.otherNames) || null,
-      folder_no: normalizeText(claimData.folderNo) || null,
-      gender: normalizeText(claimData.gender) || null,
-      date_of_birth: claimData.dateOfBirth || null,
-      patient_address: normalizeText(claimData.patientAddress) || null,
-      child_weight_kg: claimData.childWeightKg
-        ? assertNonNegativeNumber(claimData.childWeightKg, 'Child weight')
-        : null,
-      ccc_no: normalizeText(claimData.cccNo) || null,
-      diagnosis: normalizeText(claimData.diagnosis) || null,
-      service_date_from: serviceDate || null,
-      service_date_to: serviceDate || null,
-      branch_id: claimData.branchId || null,
-      referring_facility: normalizeText(claimData.referringFacility) || null,
-      referral_code: normalizeText(claimData.referralCode) || null,
-      physician_name: normalizeText(claimData.physicianName) || null,
-      pre_auth_codes: normalizeText(claimData.preAuthCodes) || null,
-      total_amount: totalAmount,
-      status: 'served',
-      notes: normalizeText(claimData.notes) || null,
-      created_by: claimData.createdBy || null,
+      ...claimPayload,
       nhis_claim_medicines: medicines.map((m) => ({
         nhis_drug_id: m.nhisDrugId || null,
         drug_code: normalizeText(m.drugCode) || null,
@@ -657,37 +744,7 @@ export const createNhisClaim = async (claimData, medicines) => {
     })
   }
 
-  const { data: claim, error: claimError } = await supabase
-    .from('nhis_claims')
-    .insert([{
-      patient_id:         claimData.patientId         || null,
-      member_no:          memberNo,
-      hin:                normalizeText(claimData.hin)               || null,
-      surname:            normalizeText(claimData.surname),
-      other_names:        normalizeText(claimData.otherNames)        || null,
-      folder_no:          normalizeText(claimData.folderNo)          || null,
-      gender:             normalizeText(claimData.gender)            || null,
-      date_of_birth:      claimData.dateOfBirth                      || null,
-      patient_address:    normalizeText(claimData.patientAddress)    || null,
-      child_weight_kg:    claimData.childWeightKg
-        ? assertNonNegativeNumber(claimData.childWeightKg, 'Child weight')
-        : null,
-      ccc_no:             normalizeText(claimData.cccNo)             || null,
-      diagnosis:          normalizeText(claimData.diagnosis)         || null,
-      service_date_from:  serviceDate                                || null,
-      service_date_to:    serviceDate                                || null,
-      branch_id:          claimData.branchId                         || null,
-      referring_facility: normalizeText(claimData.referringFacility) || null,
-      referral_code:      normalizeText(claimData.referralCode)      || null,
-      physician_name:     normalizeText(claimData.physicianName)     || null,
-      pre_auth_codes:     normalizeText(claimData.preAuthCodes)      || null,
-      total_amount:       totalAmount,
-      status:             'served',
-      notes:              normalizeText(claimData.notes)             || null,
-      created_by:         claimData.createdBy                        || null,
-    }])
-    .select()
-    .single()
+  const { data: claim, error: claimError } = await insertNhisClaimWithSchemaFallback(claimPayload)
 
   if (claimError) throw claimError
 
@@ -754,6 +811,7 @@ export const updateNhisClaim = async (id, claimData, medicines) => {
   const memberNo = assertRequiredText(claimData.memberNo, 'NHIS member number')
   const serviceDate = normalizeText(claimData.serviceDate || claimData.serviceDateFrom)
   const totalAmount = medicines.reduce((s, m) => s + Number(m.totalAmount || 0), 0)
+  const diagnosisDetails = getDiagnosisDetailsPayload(claimData)
   const medicineRows = medicines.map((m) => ({
     nhis_drug_id: m.nhisDrugId || null,
     drug_code: normalizeText(m.drugCode) || null,
@@ -783,6 +841,7 @@ export const updateNhisClaim = async (id, claimData, medicines) => {
       : null,
     ccc_no: normalizeText(claimData.cccNo) || null,
     diagnosis: normalizeText(claimData.diagnosis) || null,
+    diagnosis_details: diagnosisDetails,
     service_date_from: serviceDate || null,
     service_date_to: serviceDate || null,
     branch_id: claimData.branchId || null,
@@ -813,13 +872,7 @@ export const updateNhisClaim = async (id, claimData, medicines) => {
     throw new Error('Only served NHIS claims can be edited before submission/export.')
   }
 
-  const { data: claim, error: claimError } = await supabase
-    .from('nhis_claims')
-    .update(claimPayload)
-    .eq('id', id)
-    .eq('status', 'served')
-    .select()
-    .single()
+  const { data: claim, error: claimError } = await updateNhisClaimWithSchemaFallback(id, claimPayload)
 
   if (claimError) throw claimError
 

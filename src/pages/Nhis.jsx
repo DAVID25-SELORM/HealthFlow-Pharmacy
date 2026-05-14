@@ -71,6 +71,7 @@ const BLANK_CLAIM = {
   childWeightKg:     '',
   cccNo:             '',
   diagnosis:         '',
+  diagnosisDetails:  [],
   serviceDate:       new Date().toISOString().split('T')[0],
   referringFacility: '',
   referralCode:      '',
@@ -331,6 +332,7 @@ const Nhis = () => {
       childWeightKg: claim.child_weight_kg ?? '',
       cccNo: claim.ccc_no || '',
       diagnosis: claim.diagnosis || '',
+      diagnosisDetails: claim.diagnosis_details || [],
       serviceDate: claim.service_date_from || new Date().toISOString().split('T')[0],
       referringFacility: claim.referring_facility || '',
       referralCode: claim.referral_code || '',
@@ -1202,7 +1204,10 @@ const Nhis = () => {
                         <DiagnosisSelector
                           id="claim-diagnoses"
                           value={claimForm.diagnosis}
-                          onChange={(diagnosis) => setClaimForm((p) => ({ ...p, diagnosis }))}
+                          details={claimForm.diagnosisDetails}
+                          onChange={(diagnosis, diagnosisDetails) =>
+                            setClaimForm((p) => ({ ...p, diagnosis, diagnosisDetails }))
+                          }
                         />
                       </div>
                     )}

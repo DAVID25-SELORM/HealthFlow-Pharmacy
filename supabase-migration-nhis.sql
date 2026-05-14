@@ -121,6 +121,7 @@ CREATE TABLE IF NOT EXISTS public.nhis_claims (
   child_weight_kg     DECIMAL(6,2),
   ccc_no              TEXT,
   diagnosis           TEXT,
+  diagnosis_details   JSONB         NOT NULL DEFAULT '[]'::jsonb,
   -- Service dates
   service_date_from   DATE,
   service_date_to     DATE,

@@ -16,6 +16,9 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
+ALTER TABLE public.nhis_claims
+  ADD COLUMN IF NOT EXISTS diagnosis_details JSONB NOT NULL DEFAULT '[]'::jsonb;
+
 ALTER TABLE public.drugs
   ADD COLUMN IF NOT EXISTS brand_name TEXT,
   ADD COLUMN IF NOT EXISTS generic_name TEXT,
@@ -836,7 +839,7 @@ BEGIN
     INSERT INTO public.nhis_claims (
       id, organization_id, branch_id, claim_number, patient_id, member_no, hin,
       surname, other_names, folder_no, gender, date_of_birth, patient_address,
-      child_weight_kg, ccc_no, diagnosis, service_date_from, service_date_to,
+      child_weight_kg, ccc_no, diagnosis, diagnosis_details, service_date_from, service_date_to,
       referring_facility, referral_code, physician_name, pre_auth_codes,
       total_amount, status, rejection_reason, notes, created_by, created_at, updated_at
     )
@@ -857,6 +860,7 @@ BEGIN
       NULLIF(v_record->>'child_weight_kg', '')::NUMERIC,
       NULLIF(v_record->>'ccc_no', ''),
       NULLIF(v_record->>'diagnosis', ''),
+      COALESCE(v_record->'diagnosis_details', '[]'::JSONB),
       NULLIF(v_record->>'service_date_from', '')::DATE,
       NULLIF(v_record->>'service_date_to', '')::DATE,
       NULLIF(v_record->>'referring_facility', ''),
@@ -872,6 +876,8 @@ BEGIN
       COALESCE(NULLIF(v_record->>'updated_at', '')::TIMESTAMPTZ, NOW())
     )
     ON CONFLICT (id) DO UPDATE SET
+      diagnosis = EXCLUDED.diagnosis,
+      diagnosis_details = EXCLUDED.diagnosis_details,
       status = EXCLUDED.status,
       rejection_reason = EXCLUDED.rejection_reason,
       notes = EXCLUDED.notes,

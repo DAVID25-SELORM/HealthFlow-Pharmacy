@@ -292,12 +292,12 @@ const upsertSettings = db.prepare(`
 const insertClaim = db.prepare(`
   INSERT INTO nhia_claims (
     id, claim_number, local_sale_id, local_sale_number, patient_id, patient_name,
-    member_number, hin, cc_code, diagnosis, insurance_provider, service_date, total_amount, status,
+    member_number, hin, cc_code, diagnosis, diagnosis_details_json, insurance_provider, service_date, total_amount, status,
     payload_json, organization_id, branch_id, created_by, created_at, updated_at
   )
   VALUES (
     @id, @claimNumber, @localSaleId, @localSaleNumber, @patientId, @patientName,
-    @memberNumber, @hin, @ccCode, @diagnosis, @insuranceProvider, @serviceDate, @totalAmount, @status,
+    @memberNumber, @hin, @ccCode, @diagnosis, @diagnosisDetailsJson, @insuranceProvider, @serviceDate, @totalAmount, @status,
     @payloadJson, @organizationId, @branchId, @createdBy, @createdAt, @updatedAt
   )
 `)
@@ -411,6 +411,21 @@ const pendingClaims = db.prepare(`
   LIMIT ?
 `)
 
+const normalizeDiagnosisDetails = (value) => {
+  const raw = typeof value === 'string' ? parseJson(value, []) : value
+  if (!Array.isArray(raw)) return []
+
+  return raw
+    .map((diagnosis) => ({
+      code: normalizeText(diagnosis?.code) || null,
+      label: normalizeText(diagnosis?.label || diagnosis?.diagnosis || diagnosis?.name),
+      source: normalizeText(diagnosis?.source || diagnosis?.diagnosis_source) || 'Custom',
+      sourceVersion: normalizeText(diagnosis?.sourceVersion || diagnosis?.source_version) || null,
+      custom: Boolean(diagnosis?.custom),
+    }))
+    .filter((diagnosis) => diagnosis.label)
+}
+
 const maskCredentials = (payload = {}) =>
   Object.fromEntries(
     Object.entries(payload || {}).map(([key, value]) => [
@@ -520,6 +535,7 @@ const mapClaimRow = (row) => ({
   hin: row.hin,
   ccCode: row.cc_code || '',
   diagnosis: row.diagnosis || '',
+  diagnosisDetails: parseJson(row.diagnosis_details_json, []),
   insuranceProvider: row.insurance_provider,
   serviceDate: row.service_date,
   totalAmount: row.total_amount,
@@ -584,6 +600,9 @@ const buildClaimPayload = ({ claim, items, settings }) => ({
   diagnosis: normalizeOrganizationType(claim.organizationType || claim.payload?.organizationType) === 'hospital'
     ? claim.diagnosis || null
     : null,
+  diagnosisDetails: normalizeOrganizationType(claim.organizationType || claim.payload?.organizationType) === 'hospital'
+    ? normalizeDiagnosisDetails(claim.diagnosisDetails || claim.payload?.diagnosisDetails)
+    : [],
   serviceDate: claim.serviceDate,
   totalAmount: claim.totalAmount,
   localSaleNumber: claim.localSaleNumber || null,
@@ -607,6 +626,9 @@ export const createNhiaClaim = db.transaction((claimData = {}, linkedSale = {}) 
   const claimNumber = claimData.claimNumber || createClaimNumber()
   const settings = getNhiaSettings()
   const organizationType = normalizeOrganizationType(claimData.organizationType || claimData.organization_type)
+  const diagnosisDetails = organizationType === 'hospital'
+    ? normalizeDiagnosisDetails(claimData.diagnosisDetails || claimData.diagnosis_details)
+    : []
   let totalAmount = 0
 
   const items = claimData.items.map((item) => {
@@ -649,6 +671,8 @@ export const createNhiaClaim = db.transaction((claimData = {}, linkedSale = {}) 
     hin: normalizeText(claimData.hin) || null,
     ccCode: normalizeText(claimData.ccCode || claimData.cc_code) || null,
     diagnosis: organizationType === 'hospital' ? normalizeText(claimData.diagnosis) || null : null,
+    diagnosisDetails,
+    diagnosisDetailsJson: json(diagnosisDetails),
     insuranceProvider: claimData.insuranceProvider || 'NHIA',
     serviceDate: claimData.serviceDate || linkedSale.saleDate?.slice(0, 10) || timestamp.slice(0, 10),
     totalAmount,

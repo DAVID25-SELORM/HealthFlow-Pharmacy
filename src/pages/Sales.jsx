@@ -141,6 +141,7 @@ const Sales = () => {
   const [patientTopUp, setPatientTopUp] = useState('')
   const [patientTopUpMethod, setPatientTopUpMethod] = useState('cash')
   const [nhiaDiagnosis, setNhiaDiagnosis] = useState('')
+  const [nhiaDiagnosisDetails, setNhiaDiagnosisDetails] = useState([])
   const [loading, setLoading] = useState(true)
   const [processing, setProcessing] = useState(false)
   const [error, setError] = useState('')
@@ -886,6 +887,7 @@ const Sales = () => {
       setPatientTopUp('')
       setPatientTopUpMethod('cash')
       setNhiaDiagnosis('')
+      setNhiaDiagnosisDetails([])
       return
     }
 
@@ -1001,6 +1003,7 @@ const Sales = () => {
       organizationType,
       serviceDate: (saleDate || new Date().toISOString()).split('T')[0],
       diagnosis: isHospital ? nhiaDiagnosis.trim() : '',
+      diagnosisDetails: isHospital ? nhiaDiagnosisDetails : [],
       status: 'ready',
       items: soldItems.map((item) => ({
         ...item,
@@ -1210,6 +1213,7 @@ const Sales = () => {
           setPatientTopUp('')
           setPatientTopUpMethod('cash')
           setNhiaDiagnosis('')
+          setNhiaDiagnosisDetails([])
           selectPatientForSale(null)
           notify(
             `Sale saved to the local branch server.${claimMessage} It will sync when internet returns.`,
@@ -1266,6 +1270,7 @@ const Sales = () => {
             setPatientTopUp('')
             setPatientTopUpMethod('cash')
             setNhiaDiagnosis('')
+            setNhiaDiagnosisDetails([])
             selectPatientForSale(null)
             notify(
               `Sale saved to the local branch server.${claimMessage} It will sync to Supabase when internet returns.`,
@@ -1320,6 +1325,7 @@ const Sales = () => {
         setPatientTopUp('')
         setPatientTopUpMethod('cash')
         setNhiaDiagnosis('')
+        setNhiaDiagnosisDetails([])
         selectPatientForSale(null)
         await refreshOfflineSalesSummary()
         notify('Sale saved offline. Keep this shift open until it syncs when internet returns.', 'success')
@@ -1367,6 +1373,7 @@ const Sales = () => {
       setPatientTopUp('')
       setPatientTopUpMethod('cash')
       setNhiaDiagnosis('')
+      setNhiaDiagnosisDetails([])
       selectPatientForSale(null)
       
       notify(`Sale completed successfully.${claimMessage}`, 'success')
@@ -2234,7 +2241,11 @@ const Sales = () => {
                     <DiagnosisSelector
                       id="nhia-diagnosis"
                       value={nhiaDiagnosis}
-                      onChange={setNhiaDiagnosis}
+                      details={nhiaDiagnosisDetails}
+                      onChange={(diagnosis, diagnosisDetails) => {
+                        setNhiaDiagnosis(diagnosis)
+                        setNhiaDiagnosisDetails(diagnosisDetails)
+                      }}
                     />
                   </div>
                 )}
