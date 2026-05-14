@@ -22,6 +22,7 @@ const ENTITY_LABELS = {
   patients: 'Patients',
   claims: 'Claims',
   nhis_drugs: 'NHIS Drugs',
+  nhis_clinical_rules: 'NHIS Clinical Rules',
   nhis_claims: 'NHIS Claims',
   suppliers: 'Suppliers',
   purchases: 'Purchases',

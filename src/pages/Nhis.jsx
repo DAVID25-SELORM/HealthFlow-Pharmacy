@@ -24,10 +24,14 @@ import {
   updateNhisClaimStatus,
   exportNhisMonthlyCSV,
   assessNhisClaimReadiness,
+  validateNhisClaimFinalReadiness,
+  getAllNhisClinicalRules,
+  upsertNhisClinicalRules,
   normalizeOrganizationType,
 } from '../services/nhisService'
 import { getAllPatients } from '../services/patientService'
 import { parseNhisDrugFile, generateNhisDrugTemplate } from '../services/nhisDrugImportService'
+import { parseNhisClinicalRuleFile, generateNhisClinicalRuleTemplate } from '../services/nhisClinicalRuleImportService'
 import './Nhis.css'
 
 // ─── constants ────────────────────────────────────────────────────────────────
@@ -115,17 +119,19 @@ const Nhis = () => {
   const { notify } = useNotification()
   const [searchParams, setSearchParams] = useSearchParams()
   const fileInputRef = useRef(null)
+  const ruleFileInputRef = useRef(null)
 
   const canWrite = hasRole(role, NHIS_ROLES)
   const organizationType = normalizeOrganizationType(organization?.organization_type)
   const isHospital = organizationType === 'hospital'
 
   // ── page sub-tab ─────────────────────────────────────────────
-  const [pageTab, setPageTab] = useState('claims') // 'claims' | 'catalog'
+  const [pageTab, setPageTab] = useState('claims') // 'claims' | 'catalog' | 'rules'
 
   // ── data ─────────────────────────────────────────────────────
   const [claims, setClaims]       = useState([])
   const [nhisDrugs, setNhisDrugs] = useState([])
+  const [clinicalRules, setClinicalRules] = useState([])
   const [patients, setPatients]   = useState([])
   const [stats, setStats]         = useState({ total: 0, served: 0, submitted: 0, paid: 0, rejected: 0, totalPaid: 0 })
   const [loading, setLoading]     = useState(true)
@@ -143,6 +149,7 @@ const Nhis = () => {
   const [showMedModal, setShowMedModal]             = useState(false)   // new medicine sub-modal
   const [showDrugCatalogModal, setShowDrugCatalogModal] = useState(false)
   const [showImportModal, setShowImportModal]       = useState(false)
+  const [showRuleImportModal, setShowRuleImportModal] = useState(false)
   const [showExportModal, setShowExportModal]       = useState(false)
   const [viewClaim, setViewClaim]                   = useState(null)
 
@@ -171,6 +178,9 @@ const Nhis = () => {
   const [importRows, setImportRows]     = useState([])
   const [importErrors, setImportErrors] = useState([])
   const [importing, setImporting]       = useState(false)
+  const [ruleImportRows, setRuleImportRows] = useState([])
+  const [ruleImportErrors, setRuleImportErrors] = useState([])
+  const [ruleImporting, setRuleImporting] = useState(false)
 
   // ── export modal ──────────────────────────────────────────────
   const [exportMonth, setExportMonth]   = useState(
@@ -206,16 +216,18 @@ const Nhis = () => {
     try {
       setLoading(true)
       setError('')
-      const [claimsData, drugsData, patientsData, statsData] = await Promise.all([
+      const [claimsData, drugsData, patientsData, statsData, rulesData] = await Promise.all([
         getAllNhisClaims(),
         getAllNhisDrugs(),
         getAllPatients(),
         getNhisClaimStats(),
+        getAllNhisClinicalRules(),
       ])
       setClaims(claimsData)
       setNhisDrugs(drugsData)
       setPatients(patientsData)
       setStats(statsData)
+      setClinicalRules(rulesData)
     } catch (err) {
       setError(err.message || 'Unable to load NHIS data.')
     } finally {
@@ -515,15 +527,14 @@ const Nhis = () => {
   const handleStatusUpdate = async (claim, newStatus) => {
     try {
       if (newStatus === 'submitted') {
-        const finalReadiness = assessNhisClaimReadiness(
+        const blockers = await validateNhisClaimFinalReadiness(
           { ...claim, organizationType },
-          claim.nhis_claim_medicines || [],
-          { finalSubmission: true }
+          claim.nhis_claim_medicines || []
         )
 
-        if (finalReadiness.blockers.length) {
+        if (blockers.length) {
           notify(
-            `Final NHIS check failed: ${finalReadiness.blockers.slice(0, 3).join(' ')}`,
+            `Final NHIS check failed: ${blockers.slice(0, 3).join(' ')}`,
             'error'
           )
           return
@@ -661,6 +672,54 @@ const Nhis = () => {
     URL.revokeObjectURL(url)
   }
 
+  const handleRuleFileSelect = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    if (!file.name.toLowerCase().endsWith('.xlsx')) {
+      notify('Please select an Excel file (.xlsx).', 'error')
+      return
+    }
+    try {
+      const { rows, errors } = await parseNhisClinicalRuleFile(file)
+      setRuleImportRows(rows)
+      setRuleImportErrors(errors)
+      setShowRuleImportModal(true)
+    } catch (err) {
+      notify(err.message || 'Unable to parse clinical rules.', 'error')
+    }
+  }
+
+  const handleConfirmRuleImport = async () => {
+    if (!ruleImportRows.length) return
+    try {
+      setRuleImporting(true)
+      const count = await upsertNhisClinicalRules(ruleImportRows, user?.id || null)
+      setShowRuleImportModal(false)
+      setRuleImportRows([])
+      setRuleImportErrors([])
+      const fresh = await getAllNhisClinicalRules()
+      setClinicalRules(fresh)
+      notify(`${count} clinical rules imported/updated.`, 'success')
+    } catch (err) {
+      notify(err.message || 'Clinical rule import failed.', 'error')
+    } finally {
+      setRuleImporting(false)
+    }
+  }
+
+  const handleDownloadRuleTemplate = async () => {
+    const blob = await generateNhisClinicalRuleTemplate()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'nhis-clinical-rule-template.xlsx'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
   // ── export ────────────────────────────────────────────────────
   const handleExport = async () => {
     try {
@@ -716,6 +775,23 @@ const Nhis = () => {
               </button>
             </>
           )}
+          {pageTab === 'rules' && canWrite && isHospital && (
+            <>
+              <button className="btn btn-secondary" onClick={handleDownloadRuleTemplate}>
+                <FileSpreadsheet size={16} /> Template
+              </button>
+              <button className="btn btn-secondary" onClick={() => ruleFileInputRef.current?.click()}>
+                <Upload size={16} /> Import Rules
+              </button>
+              <input
+                ref={ruleFileInputRef}
+                type="file"
+                accept=".xlsx"
+                style={{ display: 'none' }}
+                onChange={handleRuleFileSelect}
+              />
+            </>
+          )}
         </div>
       </div>
 
@@ -735,6 +811,14 @@ const Nhis = () => {
         >
           <FileSpreadsheet size={16} /> Drug Catalog
         </button>
+        {isHospital && (
+          <button
+            className={`nhis-page-tab ${pageTab === 'rules' ? 'active' : ''}`}
+            onClick={() => setPageTab('rules')}
+          >
+            <CheckCircle2 size={16} /> Clinical Rules
+          </button>
+        )}
       </div>
 
       {/* ── CLAIMS TAB ────────────────────────────────────────────── */}
@@ -963,6 +1047,42 @@ const Nhis = () => {
       {/* ══════════════════════════════════════════════════════════════
           NEW CLAIM MODAL
       ══════════════════════════════════════════════════════════════ */}
+      {pageTab === 'rules' && isHospital && (
+        <div className="nhis-table-wrap">
+          {loading ? (
+            <div className="nhis-empty">Loading clinical rules...</div>
+          ) : clinicalRules.length === 0 ? (
+            <div className="nhis-empty">
+              <CheckCircle2 size={40} />
+              <p>No clinical rules found. Import a template to start blocking diagnosis-treatment mismatches.</p>
+            </div>
+          ) : (
+            <table className="nhis-table">
+              <thead>
+                <tr>
+                  <th>Diagnosis</th>
+                  <th>Diagnosis Keywords</th>
+                  <th>Allowed Drug Codes</th>
+                  <th>Allowed Drug Keywords</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {clinicalRules.map((rule, index) => (
+                  <tr key={rule.id || `${rule.label}-${index}`}>
+                    <td>{rule.label}</td>
+                    <td>{(rule.diagnosis || []).join(', ') || '—'}</td>
+                    <td>{(rule.drugCodes || []).join(', ') || '—'}</td>
+                    <td>{(rule.treatments || []).join(', ') || '—'}</td>
+                    <td><StatusBadge status={rule.severity || 'block'} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+
       {showNewClaimModal && (
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && closeClaimModal()}>
           <div className="modal-panel modal-panel--nhis-claim">
@@ -1075,12 +1195,14 @@ const Nhis = () => {
                       <input className="form-input" value={claimForm.cccNo}
                         onChange={(e) => setClaimForm((p) => ({ ...p, cccNo: e.target.value }))} />
                     </div>
-                    <div className="form-group">
-                      <label>Diagnosis{isHospital ? ' *' : ''}</label>
-                      <input className="form-input" value={claimForm.diagnosis}
-                        placeholder={isHospital ? 'Required for hospital claims' : 'Optional for pharmacy claims'}
-                        onChange={(e) => setClaimForm((p) => ({ ...p, diagnosis: e.target.value }))} />
-                    </div>
+                    {isHospital && (
+                      <div className="form-group">
+                        <label>Diagnosis *</label>
+                        <input className="form-input" value={claimForm.diagnosis}
+                          placeholder="Required for hospital claims"
+                          onChange={(e) => setClaimForm((p) => ({ ...p, diagnosis: e.target.value }))} />
+                      </div>
+                    )}
                   </div>
                 </section>
 
@@ -1405,7 +1527,7 @@ const Nhis = () => {
               <div><strong>Address:</strong> {viewClaim.patient_address || '—'}</div>
               <div><strong>Child Weight:</strong> {viewClaim.child_weight_kg ? `${viewClaim.child_weight_kg} kg` : '—'}</div>
               <div><strong>CCC No:</strong> {viewClaim.ccc_no || '—'}</div>
-              <div><strong>Diagnosis:</strong> {viewClaim.diagnosis || '—'}</div>
+              {isHospital && <div><strong>Diagnosis:</strong> {viewClaim.diagnosis || '—'}</div>}
               <div><strong>Date of Service:</strong> {viewClaim.service_date_from ? formatAppDate(viewClaim.service_date_from) : '—'}</div>
               <div><strong>Prescribing Facility:</strong> {viewClaim.referring_facility || '—'}</div>
               <div><strong>Referral Code:</strong> {viewClaim.referral_code || '—'}</div>
@@ -1584,6 +1706,56 @@ const Nhis = () => {
       {/* ══════════════════════════════════════════════════════════════
           MONTHLY EXPORT MODAL
       ══════════════════════════════════════════════════════════════ */}
+      {showRuleImportModal && (
+        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowRuleImportModal(false)}>
+          <div className="modal-panel modal-panel--import">
+            <div className="modal-header">
+              <h2>Clinical Rule Preview — {ruleImportRows.length} rules</h2>
+              <button className="modal-close" onClick={() => setShowRuleImportModal(false)}><X size={18} /></button>
+            </div>
+            {ruleImportErrors.length > 0 && (
+              <div className="nhis-alert">
+                {ruleImportErrors.slice(0, 5).map((e, i) => <div key={i}>{e}</div>)}
+                {ruleImportErrors.length > 5 && <div>...and {ruleImportErrors.length - 5} more warnings</div>}
+              </div>
+            )}
+            <div className="import-table-wrap">
+              <table className="nhis-table">
+                <thead>
+                  <tr>
+                    <th>Diagnosis</th>
+                    <th>Diagnosis Keywords</th>
+                    <th>Drug Codes</th>
+                    <th>Drug Keywords</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ruleImportRows.slice(0, 50).map((rule, i) => (
+                    <tr key={i}>
+                      <td>{rule.diagnosis_label}</td>
+                      <td>{(rule.diagnosis_keywords || []).join(', ')}</td>
+                      <td>{(rule.allowed_drug_codes || []).join(', ') || '—'}</td>
+                      <td>{(rule.allowed_drug_keywords || []).join(', ') || '—'}</td>
+                      <td><StatusBadge status={rule.severity || 'block'} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {ruleImportRows.length > 50 && (
+                <div className="import-more">...and {ruleImportRows.length - 50} more rows</div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setShowRuleImportModal(false)}>Cancel</button>
+              <button className="btn btn-primary" disabled={ruleImporting || !ruleImportRows.length} onClick={handleConfirmRuleImport}>
+                {ruleImporting ? 'Importing...' : `Import ${ruleImportRows.length} Rules`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showExportModal && (
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowExportModal(false)}>
           <div className="modal-panel modal-panel--export">

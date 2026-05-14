@@ -39,6 +39,11 @@ export const normalizeOrganizationType = (value) => {
   return VALID_ORGANIZATION_TYPES.includes(normalized) ? normalized : 'pharmacy'
 }
 
+const normalizeRuleOrganizationType = (value) => {
+  const normalized = asText(value).toLowerCase()
+  return ['hospital', 'pharmacy', 'all'].includes(normalized) ? normalized : 'hospital'
+}
+
 const normalizeMatchText = (value) => asText(value).toLowerCase().replace(/[^a-z0-9\s]/g, ' ')
 
 const DIAGNOSIS_TREATMENT_RULES = [
@@ -89,11 +94,38 @@ const DIAGNOSIS_TREATMENT_RULES = [
   },
 ]
 
-const getDiagnosisTreatmentMismatchBlockers = (claimData, medicines = []) => {
+const splitRuleTerms = (value) => {
+  if (Array.isArray(value)) {
+    return value.map(asText).filter(Boolean)
+  }
+  return asText(value)
+    .split(/[;,|]/)
+    .map(asText)
+    .filter(Boolean)
+}
+
+const normalizeClinicalRule = (rule) => ({
+  id: rule?.id || null,
+  label: asText(rule?.label ?? rule?.diagnosis_label),
+  diagnosis: splitRuleTerms(rule?.diagnosis ?? rule?.diagnosis_keywords),
+  treatments: splitRuleTerms(rule?.treatments ?? rule?.allowed_drug_keywords),
+  drugCodes: splitRuleTerms(rule?.drugCodes ?? rule?.allowed_drug_codes).map((code) => code.toUpperCase()),
+  severity: asText(rule?.severity || 'block').toLowerCase() === 'warn' ? 'warn' : 'block',
+  organizationType: normalizeRuleOrganizationType(rule?.organizationType ?? rule?.organization_type ?? 'hospital'),
+  isActive: rule?.is_active !== false && rule?.isActive !== false,
+})
+
+const normalizeClinicalRules = (rules = []) =>
+  (rules || [])
+    .map(normalizeClinicalRule)
+    .filter((rule) => rule.isActive && rule.label && rule.diagnosis.length && (rule.treatments.length || rule.drugCodes.length))
+
+const getDiagnosisTreatmentMismatchBlockers = (claimData, medicines = [], rules = DIAGNOSIS_TREATMENT_RULES) => {
   const diagnosis = normalizeMatchText(getClaimField(claimData, 'diagnosis'))
   if (!diagnosis) return []
 
-  const matchedRules = DIAGNOSIS_TREATMENT_RULES.filter((rule) =>
+  const normalizedRules = normalizeClinicalRules(rules)
+  const matchedRules = normalizedRules.filter((rule) =>
     rule.diagnosis.some((keyword) => diagnosis.includes(keyword))
   )
 
@@ -110,9 +142,19 @@ const getDiagnosisTreatmentMismatchBlockers = (claimData, medicines = []) => {
       ].filter(Boolean).join(' '))
       .join(' ')
   )
+  const treatmentCodes = new Set(
+    (medicines || [])
+      .map((medicine) => asText(medicine?.drugCode ?? medicine?.drug_code).toUpperCase())
+      .filter(Boolean)
+  )
 
   return matchedRules
-    .filter((rule) => !rule.treatments.some((keyword) => treatmentText.includes(keyword)))
+    .filter((rule) => {
+      if (rule.severity !== 'block') return false
+      const codeMatches = rule.drugCodes.length && rule.drugCodes.some((code) => treatmentCodes.has(code))
+      const keywordMatches = rule.treatments.length && rule.treatments.some((keyword) => treatmentText.includes(normalizeMatchText(keyword)))
+      return !codeMatches && !keywordMatches
+    })
     .map((rule) => `${rule.label}: treatment does not appear to match the diagnosis. Correct the diagnosis or add a matching medicine before final submission/export.`)
 }
 
@@ -149,8 +191,6 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
   }
   if (!diagnosis && isHospital) {
     blockers.push('Diagnosis is required for hospital NHIS claims.')
-  } else if (!diagnosis) {
-    warnings.push('Diagnosis is missing from the prescription/claim.')
   }
   if (!getClaimField(claimData, 'serviceDate', 'service_date_from')) blockers.push('Date of dispensing/service is required.')
   if (!getClaimField(claimData, 'physicianName', 'physician_name')) {
@@ -178,8 +218,8 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
     })
   }
 
-  if (options.finalSubmission) {
-    blockers.push(...getDiagnosisTreatmentMismatchBlockers(claimData, medicines))
+  if (options.finalSubmission && isHospital) {
+    blockers.push(...getDiagnosisTreatmentMismatchBlockers(claimData, medicines, options.clinicalRules || DIAGNOSIS_TREATMENT_RULES))
   }
 
   return {
@@ -191,6 +231,71 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
 
 export const validateNhisClaimReadiness = (claimData, medicines = []) =>
   assessNhisClaimReadiness(claimData, medicines, { finalSubmission: true }).blockers
+
+export const getAllNhisClinicalRules = async () => {
+  if (shouldUseBranchServer()) {
+    return DIAGNOSIS_TREATMENT_RULES.map((rule) => normalizeClinicalRule(rule))
+  }
+
+  const { data, error } = await supabase
+    .from('nhis_clinical_rules')
+    .select('*')
+    .eq('is_active', true)
+    .in('organization_type', ['hospital', 'all'])
+    .order('diagnosis_label')
+
+  if (error) {
+    if (['42P01', 'PGRST205'].includes(error.code)) {
+      return DIAGNOSIS_TREATMENT_RULES.map((rule) => normalizeClinicalRule(rule))
+    }
+    throw error
+  }
+
+  const rules = normalizeClinicalRules(data || [])
+  return rules.length ? rules : DIAGNOSIS_TREATMENT_RULES.map((rule) => normalizeClinicalRule(rule))
+}
+
+export const upsertNhisClinicalRules = async (rules, actorId = null) => {
+  if (!rules?.length) throw new Error('No clinical rules to import.')
+  if (shouldUseBranchServer()) {
+    throw new Error('Clinical rule import requires Supabase access.')
+  }
+
+  const rows = normalizeClinicalRules(rules).map((rule) => ({
+    diagnosis_label: rule.label,
+    diagnosis_keywords: rule.diagnosis,
+    allowed_drug_codes: rule.drugCodes,
+    allowed_drug_keywords: rule.treatments,
+    severity: rule.severity,
+    organization_type: rule.organizationType,
+    is_active: true,
+    created_by: actorId,
+  }))
+
+  if (!rows.length) throw new Error('No valid clinical rules found to import.')
+
+  const { error } = await supabase
+    .from('nhis_clinical_rules')
+    .upsert(rows, { onConflict: 'organization_id,diagnosis_label', ignoreDuplicates: false })
+
+  if (error) throw error
+  return rows.length
+}
+
+export const validateNhisClaimFinalReadiness = async (claimData, medicines = [], options = {}) => {
+  const organizationType = normalizeOrganizationType(
+    claimData?.organizationType ?? claimData?.organization_type ?? options.organizationType
+  )
+  const clinicalRules = organizationType === 'hospital'
+    ? await getAllNhisClinicalRules()
+    : DIAGNOSIS_TREATMENT_RULES
+
+  return assessNhisClaimReadiness(
+    { ...claimData, organizationType },
+    medicines,
+    { finalSubmission: true, clinicalRules }
+  ).blockers
+}
 
 // ─── NHIS Drug Catalog ────────────────────────────────────────────────────────
 
@@ -850,17 +955,20 @@ export const getNhisClaimsForMonth = async (yearMonth) => {
 export const exportNhisMonthlyCSV = async (yearMonth, options = {}) => {
   const claims = await getNhisClaimsForMonth(yearMonth)
   if (!claims.length) throw new Error(`No claims found for ${yearMonth}.`)
+  const organizationType = normalizeOrganizationType(options.organizationType)
+  const clinicalRules = organizationType === 'hospital' ? await getAllNhisClinicalRules() : DIAGNOSIS_TREATMENT_RULES
 
   const incompleteClaims = claims
     .map((claim) => ({
       claim,
-      issues: validateNhisClaimReadiness(
+      issues: assessNhisClaimReadiness(
         {
           ...claim,
-          organizationType: claim.organization_type || options.organizationType,
+          organizationType: claim.organization_type || organizationType,
         },
-        claim.nhis_claim_medicines || []
-      ),
+        claim.nhis_claim_medicines || [],
+        { finalSubmission: true, clinicalRules }
+      ).blockers,
     }))
     .filter((item) => item.issues.length)
 

@@ -53,6 +53,7 @@ const BRANCH_SYNC_LABELS = {
   patients: 'Patients',
   claims: 'Claims',
   nhis_drugs: 'NHIS Drugs',
+  nhis_clinical_rules: 'NHIS Clinical Rules',
   nhis_claims: 'NHIS Claims',
   suppliers: 'Suppliers',
   purchases: 'Purchases',
@@ -68,6 +69,11 @@ const formatAmountInput = (value) => Number(value || 0).toFixed(2)
 
 const isNhisPatient = (patient) =>
   String(patient?.insurance_provider || '').trim().toLowerCase() === 'nhis'
+
+const normalizeOrganizationType = (value) => {
+  const normalized = String(value || '').trim().toLowerCase()
+  return normalized === 'hospital' ? 'hospital' : 'pharmacy'
+}
 
 const digitsOnly = (value) => String(value || '').replace(/\D/g, '')
 
@@ -133,6 +139,7 @@ const Sales = () => {
   const [insuranceCoverage, setInsuranceCoverage] = useState('')
   const [patientTopUp, setPatientTopUp] = useState('')
   const [patientTopUpMethod, setPatientTopUpMethod] = useState('cash')
+  const [nhiaDiagnosis, setNhiaDiagnosis] = useState('')
   const [loading, setLoading] = useState(true)
   const [processing, setProcessing] = useState(false)
   const [error, setError] = useState('')
@@ -173,6 +180,8 @@ const Sales = () => {
   const canProcessRefund =
     hasRole(role, ['admin', 'pharmacist']) || Boolean(profile?.can_refund)
   const isAdmin = String(role || '').toLowerCase() === 'admin'
+  const organizationType = normalizeOrganizationType(organization?.organization_type)
+  const isHospital = organizationType === 'hospital'
   const activeBranches = branches.filter((branch) => branch.is_active !== false)
   const fallbackBranch =
     activeBranches.find((branch) => branch.is_main) || activeBranches[0] || null
@@ -573,6 +582,7 @@ const Sales = () => {
               ? null
               : Number.parseFloat(drug.nhis_price),
           nhisCode: drug.nhis_code || null,
+          genericName: drug.generic_name || null,
           quantity: 1,
           available: maxQty,
         },
@@ -874,6 +884,7 @@ const Sales = () => {
       setInsuranceCoverage('')
       setPatientTopUp('')
       setPatientTopUpMethod('cash')
+      setNhiaDiagnosis('')
       return
     }
 
@@ -986,7 +997,9 @@ const Sales = () => {
       memberNumber: selectedNhiaMemberNumber,
       hin: selectedPatientForSale.nhis_hin || null,
       insuranceProvider: selectedPatientForSale.insurance_provider || 'NHIA',
+      organizationType,
       serviceDate: (saleDate || new Date().toISOString()).split('T')[0],
+      diagnosis: isHospital ? nhiaDiagnosis.trim() : '',
       status: 'ready',
       items: soldItems.map((item) => ({
         ...item,
@@ -1054,6 +1067,11 @@ const Sales = () => {
           notify(memberNumberError, 'warning')
           return
         }
+
+        if (isHospital && !nhiaDiagnosis.trim()) {
+          notify('Enter the NHIA diagnosis before saving this claim sale.', 'warning')
+          return
+        }
       }
 
       if (insuranceCoveredAmount <= 0) {
@@ -1083,6 +1101,7 @@ const Sales = () => {
         price: item.price,
         nhisCode: item.nhisCode || null,
         nhisPrice: item.nhisPrice || null,
+        genericName: item.genericName || null,
       }))
 
       const salePayload = {
@@ -1189,6 +1208,7 @@ const Sales = () => {
           setInsuranceCoverage('')
           setPatientTopUp('')
           setPatientTopUpMethod('cash')
+          setNhiaDiagnosis('')
           selectPatientForSale(null)
           notify(
             `Sale saved to the local branch server.${claimMessage} It will sync when internet returns.`,
@@ -1244,6 +1264,7 @@ const Sales = () => {
             setInsuranceCoverage('')
             setPatientTopUp('')
             setPatientTopUpMethod('cash')
+            setNhiaDiagnosis('')
             selectPatientForSale(null)
             notify(
               `Sale saved to the local branch server.${claimMessage} It will sync to Supabase when internet returns.`,
@@ -1297,6 +1318,7 @@ const Sales = () => {
         setInsuranceCoverage('')
         setPatientTopUp('')
         setPatientTopUpMethod('cash')
+        setNhiaDiagnosis('')
         selectPatientForSale(null)
         await refreshOfflineSalesSummary()
         notify('Sale saved offline. Keep this shift open until it syncs when internet returns.', 'success')
@@ -1343,6 +1365,7 @@ const Sales = () => {
       setInsuranceCoverage('')
       setPatientTopUp('')
       setPatientTopUpMethod('cash')
+      setNhiaDiagnosis('')
       selectPatientForSale(null)
       
       notify(`Sale completed successfully.${claimMessage}`, 'success')
@@ -2201,6 +2224,19 @@ const Sales = () => {
                     </span>
                     <strong>Select a linked patient</strong>
                     <span>{isNhiaClaimSale ? 'NHIA claim sales' : 'Insurance sales'} need a patient with insurance details.</span>
+                  </div>
+                )}
+
+                {isNhiaClaimSale && isHospital && (
+                  <div className="cash-field cash-field-input nhia-diagnosis-field">
+                    <label htmlFor="nhia-diagnosis">Diagnosis</label>
+                    <input
+                      id="nhia-diagnosis"
+                      type="text"
+                      value={nhiaDiagnosis}
+                      onChange={(event) => setNhiaDiagnosis(event.target.value)}
+                      placeholder="e.g. Malaria"
+                    />
                   </div>
                 )}
 

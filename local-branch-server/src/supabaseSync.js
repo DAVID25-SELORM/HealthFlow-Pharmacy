@@ -368,6 +368,17 @@ const selectAll = async (supabase, table, select = '*') => {
   return data || []
 }
 
+const selectOptionalAll = async (supabase, table, select = '*') => {
+  try {
+    return await selectAll(supabase, table, select)
+  } catch (error) {
+    if (['42P01', 'PGRST205'].includes(error?.code)) {
+      return []
+    }
+    throw error
+  }
+}
+
 export const pullReferenceData = async () => {
   const supabase = createSupabaseClient()
   const result = {
@@ -376,17 +387,19 @@ export const pullReferenceData = async () => {
     suppliers: 0,
     claims: 0,
     nhisDrugs: 0,
+    nhisClinicalRules: 0,
     nhisClaims: 0,
     purchases: 0,
   }
 
-  const [patients, suppliers, claims, nhisDrugs, nhisClaims, purchases] =
+  const [patients, suppliers, claims, nhisDrugs, nhisClinicalRules, nhisClaims, purchases] =
     await withSupabaseNetworkContext(() =>
       Promise.all([
         selectAll(supabase, 'patients'),
         selectAll(supabase, 'suppliers'),
         selectAll(supabase, 'claims', '*, claim_items (*)'),
         selectAll(supabase, 'nhis_drugs'),
+        selectOptionalAll(supabase, 'nhis_clinical_rules'),
         selectAll(supabase, 'nhis_claims', '*, nhis_claim_medicines (*)'),
         selectAll(supabase, 'purchases', '*, purchase_items (*)'),
       ])
@@ -396,6 +409,7 @@ export const pullReferenceData = async () => {
   result.suppliers = importOfflineRecords('suppliers', suppliers).imported
   result.claims = importOfflineRecords('claims', claims).imported
   result.nhisDrugs = importOfflineRecords('nhis_drugs', nhisDrugs).imported
+  result.nhisClinicalRules = importOfflineRecords('nhis_clinical_rules', nhisClinicalRules).imported
   result.nhisClaims = importOfflineRecords('nhis_claims', nhisClaims).imported
   result.purchases = importOfflineRecords('purchases', purchases).imported
 

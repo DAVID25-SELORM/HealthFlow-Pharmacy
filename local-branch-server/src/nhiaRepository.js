@@ -22,6 +22,53 @@ const CREDENTIAL_MODES = new Set([
 const EXPORT_FORMATS = new Set(['json', 'xml'])
 const DEFAULT_NHIS_MEMBER_DIGITS = 8
 const DEFAULT_GHANA_CARD_DIGITS = 10
+const DIAGNOSIS_TREATMENT_RULES = [
+  {
+    label: 'Malaria',
+    diagnosis: ['malaria'],
+    treatments: ['artem', 'lumefantrine', 'amodiaquine', 'artesunate', 'quinine', 'sulfadoxine', 'pyrimethamine'],
+  },
+  {
+    label: 'Hypertension',
+    diagnosis: ['hypertension', 'blood pressure'],
+    treatments: ['amlodipine', 'nifedipine', 'lisinopril', 'losartan', 'bendro', 'atenolol', 'methyldopa', 'hydrochlorothiazide'],
+  },
+  {
+    label: 'Diabetes',
+    diagnosis: ['diabetes', 'diabetic'],
+    treatments: ['metformin', 'insulin', 'glibenclamide', 'gliclazide'],
+  },
+  {
+    label: 'Asthma',
+    diagnosis: ['asthma', 'wheeze'],
+    treatments: ['salbutamol', 'aminophylline', 'beclometasone', 'prednisolone', 'hydrocortisone'],
+  },
+  {
+    label: 'Infection',
+    diagnosis: ['infection', 'sepsis', 'pneumonia', 'tonsillitis', 'otitis', 'uti', 'urinary'],
+    treatments: ['amoxicillin', 'ampicillin', 'cefuroxime', 'ceftriaxone', 'ciprofloxacin', 'azithromycin', 'metronidazole', 'doxycycline', 'cloxacillin'],
+  },
+  {
+    label: 'Pain or fever',
+    diagnosis: ['pain', 'headache', 'fever'],
+    treatments: ['paracetamol', 'ibuprofen', 'diclofenac', 'aspirin'],
+  },
+  {
+    label: 'Diarrhoea',
+    diagnosis: ['diarrhoea', 'diarrhea', 'gastroenteritis'],
+    treatments: ['ors', 'zinc', 'metronidazole', 'ciprofloxacin'],
+  },
+  {
+    label: 'Gastritis or ulcer',
+    diagnosis: ['ulcer', 'gastritis', 'gerd'],
+    treatments: ['omeprazole', 'ranitidine', 'antacid', 'pantoprazole'],
+  },
+  {
+    label: 'Anaemia',
+    diagnosis: ['anaemia', 'anemia'],
+    treatments: ['ferrous', 'folic', 'iron'],
+  },
+]
 const CC_CODE_KEYS = new Set([
   'cccode',
   'cc',
@@ -44,7 +91,36 @@ const toBool = (value) => (value === true || value === 1 || value === '1' ? 1 : 
 
 const normalizeText = (value) => String(value || '').trim()
 
+const normalizeOrganizationType = (value) =>
+  normalizeText(value).toLowerCase() === 'hospital' ? 'hospital' : 'pharmacy'
+
+const normalizeMatchText = (value) => normalizeText(value).toLowerCase().replace(/[^a-z0-9\s]/g, ' ')
+
 const digitsOnly = (value) => normalizeText(value).replace(/\D/g, '')
+
+const splitRuleTerms = (value) => {
+  if (Array.isArray(value)) {
+    return value.map(normalizeText).filter(Boolean)
+  }
+  return normalizeText(value)
+    .split(/[;,|]/)
+    .map(normalizeText)
+    .filter(Boolean)
+}
+
+const normalizeClinicalRule = (rule = {}) => ({
+  label: normalizeText(rule.label || rule.diagnosis_label),
+  diagnosis: splitRuleTerms(rule.diagnosis || rule.diagnosis_keywords),
+  treatments: splitRuleTerms(rule.treatments || rule.allowed_drug_keywords),
+  drugCodes: splitRuleTerms(rule.drugCodes || rule.allowed_drug_codes).map((code) => code.toUpperCase()),
+  severity: normalizeText(rule.severity || 'block').toLowerCase() === 'warn' ? 'warn' : 'block',
+  isActive: rule.is_active !== false && rule.isActive !== false,
+})
+
+const normalizeClinicalRules = (rules = []) =>
+  (rules || [])
+    .map(normalizeClinicalRule)
+    .filter((rule) => rule.isActive && rule.label && rule.diagnosis.length && (rule.treatments.length || rule.drugCodes.length))
 
 const assertRequiredText = (value, label) => {
   const normalized = normalizeText(value)
@@ -216,12 +292,12 @@ const upsertSettings = db.prepare(`
 const insertClaim = db.prepare(`
   INSERT INTO nhia_claims (
     id, claim_number, local_sale_id, local_sale_number, patient_id, patient_name,
-    member_number, hin, cc_code, insurance_provider, service_date, total_amount, status,
+    member_number, hin, cc_code, diagnosis, insurance_provider, service_date, total_amount, status,
     payload_json, organization_id, branch_id, created_by, created_at, updated_at
   )
   VALUES (
     @id, @claimNumber, @localSaleId, @localSaleNumber, @patientId, @patientName,
-    @memberNumber, @hin, @ccCode, @insuranceProvider, @serviceDate, @totalAmount, @status,
+    @memberNumber, @hin, @ccCode, @diagnosis, @insuranceProvider, @serviceDate, @totalAmount, @status,
     @payloadJson, @organizationId, @branchId, @createdBy, @createdAt, @updatedAt
   )
 `)
@@ -293,6 +369,13 @@ const updateClaimsBatch = db.prepare(`
 `)
 
 const selectBatchById = db.prepare('SELECT * FROM nhia_claim_batches WHERE id = ?')
+const selectLocalClinicalRules = db.prepare(`
+  SELECT payload_json
+  FROM offline_records
+  WHERE entity_type = 'nhis_clinical_rules'
+    AND sync_status != 'failed'
+  ORDER BY updated_at DESC
+`)
 
 const insertLog = db.prepare(`
   INSERT INTO nhia_submission_logs (
@@ -436,6 +519,7 @@ const mapClaimRow = (row) => ({
   memberNumber: row.member_number,
   hin: row.hin,
   ccCode: row.cc_code || '',
+  diagnosis: row.diagnosis || '',
   insuranceProvider: row.insurance_provider,
   serviceDate: row.service_date,
   totalAmount: row.total_amount,
@@ -488,6 +572,7 @@ const buildClaimPayload = ({ claim, items, settings }) => ({
   facilityCode: settings?.facilityCode || '',
   providerNumber: settings?.providerNumber || '',
   submitterId: settings?.submitterId || '',
+  organizationType: normalizeOrganizationType(claim.organizationType || claim.payload?.organizationType),
   patient: {
     id: claim.patientId || null,
     name: claim.patientName,
@@ -496,6 +581,9 @@ const buildClaimPayload = ({ claim, items, settings }) => ({
     ccCode: claim.ccCode || null,
   },
   ccCode: claim.ccCode || null,
+  diagnosis: normalizeOrganizationType(claim.organizationType || claim.payload?.organizationType) === 'hospital'
+    ? claim.diagnosis || null
+    : null,
   serviceDate: claim.serviceDate,
   totalAmount: claim.totalAmount,
   localSaleNumber: claim.localSaleNumber || null,
@@ -518,6 +606,7 @@ export const createNhiaClaim = db.transaction((claimData = {}, linkedSale = {}) 
   const claimId = createId()
   const claimNumber = claimData.claimNumber || createClaimNumber()
   const settings = getNhiaSettings()
+  const organizationType = normalizeOrganizationType(claimData.organizationType || claimData.organization_type)
   let totalAmount = 0
 
   const items = claimData.items.map((item) => {
@@ -559,6 +648,7 @@ export const createNhiaClaim = db.transaction((claimData = {}, linkedSale = {}) 
     ),
     hin: normalizeText(claimData.hin) || null,
     ccCode: normalizeText(claimData.ccCode || claimData.cc_code) || null,
+    diagnosis: organizationType === 'hospital' ? normalizeText(claimData.diagnosis) || null : null,
     insuranceProvider: claimData.insuranceProvider || 'NHIA',
     serviceDate: claimData.serviceDate || linkedSale.saleDate?.slice(0, 10) || timestamp.slice(0, 10),
     totalAmount,
@@ -569,7 +659,7 @@ export const createNhiaClaim = db.transaction((claimData = {}, linkedSale = {}) 
     createdAt: timestamp,
     updatedAt: timestamp,
   }
-  claim.payloadJson = json(buildClaimPayload({ claim, items, settings }))
+  claim.payloadJson = json(buildClaimPayload({ claim: { ...claim, organizationType }, items, settings }))
 
   insertClaim.run(claim)
   for (const item of items) {
@@ -633,10 +723,67 @@ const validateSettingsForBatchExport = (settings) => {
   assertRequiredText(settings.providerNumber, 'NHIA provider number')
 }
 
+const getClinicalRulesForSubmission = () => {
+  const pulledRules = selectLocalClinicalRules
+    .all()
+    .map((row) => parseJson(row.payload_json, null))
+    .filter(Boolean)
+  const rules = normalizeClinicalRules(pulledRules)
+  return rules.length ? rules : normalizeClinicalRules(DIAGNOSIS_TREATMENT_RULES)
+}
+
+const getDiagnosisTreatmentMismatchBlockers = (claim, items = [], rules = getClinicalRulesForSubmission()) => {
+  const diagnosis = normalizeMatchText(claim.diagnosis || claim.payload?.diagnosis)
+  if (!diagnosis) return []
+
+  const matchedRules = normalizeClinicalRules(rules).filter((rule) =>
+    rule.diagnosis.some((keyword) => diagnosis.includes(keyword))
+  )
+  if (!matchedRules.length) return []
+
+  const treatmentText = normalizeMatchText(
+    (items || [])
+      .map((item) => {
+        const payload = item?.payload || {}
+        return [
+          item?.drugName,
+          item?.nhiaCode,
+          payload.name,
+          payload.description,
+          payload.genericName,
+          payload.generic_name,
+          payload.nhiaCode,
+          payload.nhisCode,
+        ].filter(Boolean).join(' ')
+      })
+      .join(' ')
+  )
+  const treatmentCodes = new Set(
+    (items || [])
+      .map((item) => normalizeText(item?.nhiaCode || item?.payload?.nhiaCode || item?.payload?.nhisCode).toUpperCase())
+      .filter(Boolean)
+  )
+
+  return matchedRules
+    .filter((rule) => {
+      if (rule.severity !== 'block') return false
+      const codeMatches = rule.drugCodes.length && rule.drugCodes.some((code) => treatmentCodes.has(code))
+      const keywordMatches = rule.treatments.length && rule.treatments.some((keyword) => treatmentText.includes(normalizeMatchText(keyword)))
+      return !codeMatches && !keywordMatches
+    })
+    .map((rule) => `${rule.label}: treatment does not appear to match the diagnosis. Correct the diagnosis or add a matching medicine before final submission/export.`)
+}
+
 const validateClaimForSubmission = (claim, settings) => {
+  const organizationType = normalizeOrganizationType(
+    claim.organizationType || claim.payload?.organizationType || claim.payload?.organization_type
+  )
   assertRequiredText(claim.patientName, 'NHIA patient name')
   assertValidMemberNumber(claim.memberNumber, settings)
   assertRequiredText(claim.serviceDate, 'NHIA service date')
+  if (organizationType === 'hospital') {
+    assertRequiredText(claim.diagnosis || claim.payload?.diagnosis, 'NHIA diagnosis')
+  }
   if (!claim.items.length) {
     throw new Error('NHIA claim requires at least one item.')
   }
@@ -646,6 +793,13 @@ const validateClaimForSubmission = (claim, settings) => {
     assertPositiveQuantity(item.quantity, 'NHIA claim item quantity')
     if (toMoney(item.totalPrice, -1) < 0) {
       throw new Error('NHIA claim item amount cannot be negative.')
+    }
+  }
+
+  if (organizationType === 'hospital') {
+    const mismatchBlockers = getDiagnosisTreatmentMismatchBlockers(claim, claim.items)
+    if (mismatchBlockers.length) {
+      throw new Error(`Final NHIA check failed: ${mismatchBlockers.slice(0, 3).join(' ')}`)
     }
   }
 
@@ -904,6 +1058,7 @@ ${payload.claims.map((claim) => `    <Claim>
       <CcCode>${xmlEscape(claim.ccCode)}</CcCode>
       <MemberNumber>${xmlEscape(claim.patient.memberNumber)}</MemberNumber>
       <PatientName>${xmlEscape(claim.patient.name)}</PatientName>
+      <Diagnosis>${xmlEscape(claim.diagnosis)}</Diagnosis>
       <ServiceDate>${xmlEscape(claim.serviceDate)}</ServiceDate>
       <TotalAmount>${xmlEscape(claim.totalAmount)}</TotalAmount>
       <Items>

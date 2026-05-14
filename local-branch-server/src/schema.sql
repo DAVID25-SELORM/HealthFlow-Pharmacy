@@ -167,6 +167,7 @@ CREATE TABLE IF NOT EXISTS nhia_claims (
   member_number TEXT NOT NULL,
   hin TEXT,
   cc_code TEXT,
+  diagnosis TEXT,
   insurance_provider TEXT,
   service_date TEXT NOT NULL,
   total_amount REAL NOT NULL,

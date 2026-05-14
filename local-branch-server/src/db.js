@@ -25,6 +25,7 @@ ensureColumn('drugs', 'sale_on_return', 'INTEGER NOT NULL DEFAULT 0')
 ensureColumn('nhia_settings', 'nhis_member_digits', 'INTEGER NOT NULL DEFAULT 8')
 ensureColumn('nhia_settings', 'ghana_card_digits', 'INTEGER NOT NULL DEFAULT 10')
 ensureColumn('nhia_claims', 'cc_code', 'TEXT')
+ensureColumn('nhia_claims', 'diagnosis', 'TEXT')
 
 export const nowIso = () => new Date().toISOString()
 
