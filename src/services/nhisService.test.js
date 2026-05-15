@@ -21,7 +21,12 @@ vi.mock('./tierAccessService', () => ({
   invokeTierAccess: vi.fn(),
 }))
 
-import { assessNhisClaimReadiness } from './nhisService'
+import {
+  assessNhisClaimReadiness,
+  buildNhisClaimItExportPayload,
+  buildNhisClaimItXml,
+  validateNhisPrescriptionPdfFile,
+} from './nhisService'
 
 const baseClaim = {
   memberNo: '12345678',
@@ -158,5 +163,90 @@ describe('assessNhisClaimReadiness', () => {
     )
 
     expect(readiness.blockers).not.toContain('Enter no more than 10 diagnoses on one NHIS claim.')
+  })
+})
+
+describe('CLAIM-it export helpers', () => {
+  const claim = {
+    id: 'claim-1',
+    claim_number: 'NHIS-000001',
+    status: 'served',
+    organization_type: 'hospital',
+    member_no: 'GHA-123456789-0',
+    hin: 'HIN-1',
+    surname: 'Mensah',
+    other_names: 'Ama',
+    folder_no: 'F001',
+    gender: 'female',
+    date_of_birth: '1990-01-01',
+    patient_address: 'Accra',
+    ccc_no: 'CC-12345',
+    diagnosis: 'Malaria',
+    diagnosis_details: [{ code: 'B50', label: 'Plasmodium falciparum malaria', source: 'ICD-10' }],
+    service_date_from: '2026-05-14',
+    service_date_to: '2026-05-14',
+    physician_name: 'Dr Test',
+    prescription_file_name: 'rx.pdf',
+    prescription_file_path: 'org/2026-05/claim/rx.pdf',
+    prescription_file_type: 'application/pdf',
+    prescription_file_size: 1024,
+    total_amount: 10,
+    nhis_claim_medicines: [
+      {
+        drug_code: 'NH001',
+        description: 'Artemether Lumefantrine Tablet',
+        unit: 'tablet',
+        unit_price: 1,
+        dispensed_qty: 10,
+        dose: '1 tablet',
+        frequency: 'BD',
+        duration: '3 days',
+        total_amount: 10,
+      },
+    ],
+  }
+
+  it('builds a CLAIM-it JSON payload with diagnoses, medicines, and PDF metadata', () => {
+    const payload = buildNhisClaimItExportPayload([claim], {
+      yearMonth: '2026-05',
+      organizationType: 'hospital',
+      generatedAt: '2026-05-15T00:00:00.000Z',
+    })
+
+    expect(payload.targetSystem).toBe('CLAIM-it HMS Toolkit')
+    expect(payload.claimCount).toBe(1)
+    expect(payload.claims[0].diagnoses[0]).toMatchObject({
+      code: 'B50',
+      label: 'Plasmodium falciparum malaria',
+    })
+    expect(payload.claims[0].medicines[0].code).toBe('NH001')
+    expect(payload.claims[0].prescriptionAttachment.fileName).toBe('rx.pdf')
+  })
+
+  it('builds valid XML with escaped patient and medicine text', () => {
+    const payload = buildNhisClaimItExportPayload([
+      { ...claim, surname: 'A & B', nhis_claim_medicines: [{ ...claim.nhis_claim_medicines[0], description: 'Tab <500mg>' }] },
+    ], { yearMonth: '2026-05', organizationType: 'hospital' })
+
+    const xml = buildNhisClaimItXml(payload)
+
+    expect(xml).toContain('<NhiaClaimBatch>')
+    expect(xml).toContain('A &amp; B')
+    expect(xml).toContain('Tab &lt;500mg&gt;')
+  })
+})
+
+describe('validateNhisPrescriptionPdfFile', () => {
+  it('accepts PDF files and rejects other file types', () => {
+    expect(validateNhisPrescriptionPdfFile({ name: 'rx.pdf', type: 'application/pdf', size: 1024 })).toBe('')
+    expect(validateNhisPrescriptionPdfFile({ name: 'rx.jpg', type: 'image/jpeg', size: 1024 })).toBe(
+      'Only scanned prescription files in PDF format can be attached.'
+    )
+  })
+
+  it('enforces the 10 MB PDF limit', () => {
+    expect(validateNhisPrescriptionPdfFile({ name: 'rx.pdf', type: 'application/pdf', size: 11 * 1024 * 1024 })).toBe(
+      'Prescription PDF must be 10 MB or smaller.'
+    )
   })
 })

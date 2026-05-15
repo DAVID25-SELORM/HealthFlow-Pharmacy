@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Plus, Search, X, Upload, Download, CheckCircle2,
   Send, Banknote, XCircle, Eye, FileSpreadsheet, HeartPulse,
-  Pencil,
+  Pencil, Paperclip, FileText,
 } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { isSupabaseConfigured } from '../lib/supabase'
@@ -22,12 +22,15 @@ import {
   createNhisClaim,
   updateNhisClaim,
   updateNhisClaimStatus,
-  exportNhisMonthlyCSV,
+  exportNhisMonthlyFile,
   assessNhisClaimReadiness,
   validateNhisClaimFinalReadiness,
   getAllNhisClinicalRules,
   upsertNhisClinicalRules,
   normalizeOrganizationType,
+  uploadNhisPrescriptionPdf,
+  validateNhisPrescriptionPdfFile,
+  getNhisPrescriptionSignedUrl,
 } from '../services/nhisService'
 import { getAllPatients } from '../services/patientService'
 import { parseNhisDrugFile, generateNhisDrugTemplate } from '../services/nhisDrugImportService'
@@ -78,6 +81,11 @@ const BLANK_CLAIM = {
   referralCode:      '',
   physicianName:     '',
   preAuthCodes:      '',
+  prescriptionFileUrl: '',
+  prescriptionFilePath: '',
+  prescriptionFileName: '',
+  prescriptionFileType: '',
+  prescriptionFileSize: '',
   notes:             '',
 }
 
@@ -101,6 +109,13 @@ const BLANK_NHIS_DRUG = {
 
 const fmtCurrency = (n) =>
   `GHS ${Number(n || 0).toLocaleString('en-GH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+const fmtFileSize = (bytes) => {
+  const size = Number(bytes || 0)
+  if (!Number.isFinite(size) || size <= 0) return ''
+  if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} KB`
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`
+}
 
 const normalizeLookupText = (value) => String(value || '').toLowerCase()
 const compactLookupText = (value) => normalizeLookupText(value).replace(/[^a-z0-9]/g, '')
@@ -162,6 +177,7 @@ const Nhis = () => {
   const [claimSubmitting, setClaimSubmitting] = useState(false)
   const [claimError, setClaimError]           = useState('')
   const [editingClaim, setEditingClaim]       = useState(null)
+  const [prescriptionPdfFile, setPrescriptionPdfFile] = useState(null)
 
   // ── patient lookup (for claim form) ──────────────────────────
   const [patientSearch, setPatientSearch] = useState('')
@@ -189,6 +205,7 @@ const Nhis = () => {
   const [exportMonth, setExportMonth]   = useState(
     new Date().toISOString().slice(0, 7) // YYYY-MM
   )
+  const [exportFormat, setExportFormat] = useState('xml')
   const [exporting, setExporting]       = useState(false)
 
   // ── status update ─────────────────────────────────────────────
@@ -340,8 +357,14 @@ const Nhis = () => {
       referralCode: claim.referral_code || '',
       physicianName: claim.physician_name || '',
       preAuthCodes: claim.pre_auth_codes || '',
+      prescriptionFileUrl: claim.prescription_file_url || '',
+      prescriptionFilePath: claim.prescription_file_path || '',
+      prescriptionFileName: claim.prescription_file_name || '',
+      prescriptionFileType: claim.prescription_file_type || '',
+      prescriptionFileSize: claim.prescription_file_size || '',
       notes: claim.notes || '',
     })
+    setPrescriptionPdfFile(null)
     setClaimMedicines(
       (claim.nhis_claim_medicines || []).map((medicine) => ({
         nhisDrugId: medicine.nhis_drug_id || '',
@@ -466,6 +489,67 @@ const Nhis = () => {
   const readinessPassed = readiness.issues.length === 0
   const canSaveCommunityPharmacyClaim = readiness.blockers.length === 0
 
+  const handlePrescriptionPdfSelect = (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    const validationError = validateNhisPrescriptionPdfFile(file)
+    if (validationError) {
+      setClaimError(validationError)
+      event.target.value = ''
+      return
+    }
+
+    setPrescriptionPdfFile(file)
+    setClaimError('')
+    setClaimForm((prev) => ({
+      ...prev,
+      prescriptionFileUrl: '',
+      prescriptionFilePath: prev.prescriptionFilePath || '',
+      prescriptionFileName: file.name,
+      prescriptionFileType: 'application/pdf',
+      prescriptionFileSize: file.size,
+    }))
+    event.target.value = ''
+  }
+
+  const clearPrescriptionPdf = () => {
+    setPrescriptionPdfFile(null)
+    setClaimForm((prev) => ({
+      ...prev,
+      prescriptionFileUrl: '',
+      prescriptionFilePath: '',
+      prescriptionFileName: '',
+      prescriptionFileType: '',
+      prescriptionFileSize: '',
+    }))
+  }
+
+  const openPrescriptionPdf = async (claim) => {
+    try {
+      const newWindow = window.open('', '_blank')
+      if (newWindow) newWindow.opener = null
+      const path = claim?.prescription_file_path
+      const url = path
+        ? await getNhisPrescriptionSignedUrl(path)
+        : claim?.prescription_file_url
+
+      if (!url) {
+        newWindow?.close()
+        notify('No prescription PDF is attached to this claim.', 'warning')
+        return
+      }
+
+      if (newWindow) {
+        newWindow.location.href = url
+      } else {
+        window.open(url, '_blank', 'noopener,noreferrer')
+      }
+    } catch (err) {
+      notify(err.message || 'Unable to open prescription PDF.', 'error')
+    }
+  }
+
   // ── submit claim ──────────────────────────────────────────────
   const handleSubmitClaim = async (e) => {
     e.preventDefault()
@@ -476,8 +560,16 @@ const Nhis = () => {
     try {
       setClaimSubmitting(true)
       setClaimError('')
+      const uploadedPrescription = prescriptionPdfFile
+        ? await uploadNhisPrescriptionPdf(prescriptionPdfFile, {
+            organizationId: organization?.id,
+            claimId: editingClaim?.id,
+            yearMonth: (claimForm.serviceDate || new Date().toISOString()).slice(0, 7),
+          })
+        : {}
       const payload = {
         ...claimForm,
+        ...uploadedPrescription,
         organizationType,
         branchId: profile?.branch_id || branch?.id || null,
         createdBy: user?.id || null,
@@ -507,6 +599,7 @@ const Nhis = () => {
     setPatientSearch('')
     setMedForm(BLANK_MEDICINE)
     setEditingClaim(null)
+    setPrescriptionPdfFile(null)
   }
 
   const getMedicineReadinessBlockers = () => assessNhisClaimReadiness(
@@ -730,10 +823,16 @@ const Nhis = () => {
   const handleExport = async () => {
     try {
       setExporting(true)
-      const count = await exportNhisMonthlyCSV(exportMonth, { organizationType })
+      const count = await exportNhisMonthlyFile(exportMonth, {
+        organizationType,
+        format: exportFormat,
+        facilityCode: organization?.facility_code || organization?.claimit_facility_code || '',
+        providerNumber: organization?.provider_number || organization?.nhia_provider_number || '',
+        submitterId: user?.id || '',
+      })
       setShowExportModal(false)
       await loadAll()
-      notify(`${count} claims exported for ${exportMonth}. Served claims marked as Submitted.`, 'success')
+      notify(`${count} claims exported as ${exportFormat.toUpperCase()} for ${exportMonth}. Served claims marked as Submitted.`, 'success')
     } catch (err) {
       notify(err.message || 'Export failed.', 'error')
     } finally {
@@ -904,6 +1003,7 @@ const Nhis = () => {
                     <th>Member No / HIN</th>
                     <th>Service Date</th>
                     <th>Medicines</th>
+                    <th>Rx PDF</th>
                     <th>Total</th>
                     <th>Status</th>
                     <th>Actions</th>
@@ -923,6 +1023,20 @@ const Nhis = () => {
                       </td>
                       <td>{c.service_date_from ? formatAppDate(c.service_date_from) : '—'}</td>
                       <td>{c.nhis_claim_medicines?.length || 0}</td>
+                      <td>
+                        {(c.prescription_file_path || c.prescription_file_url) ? (
+                          <button
+                            type="button"
+                            className="action-btn action-btn--view"
+                            title="Open prescription PDF"
+                            onClick={() => openPrescriptionPdf(c)}
+                          >
+                            <FileText size={14} />
+                          </button>
+                        ) : (
+                          <span className="patient-meta">-</span>
+                        )}
+                      </td>
                       <td>{fmtCurrency(c.total_amount)}</td>
                       <td><StatusBadge status={c.status} /></td>
                       <td className="nhis-actions">
@@ -1269,6 +1383,32 @@ const Nhis = () => {
                     </div>
                   </div>
                 </section>
+
+                <section className="nhis-section">
+                  <h3 className="nhis-section-title">Scanned Prescription</h3>
+                  <label className="prescription-upload-box">
+                    <Paperclip size={18} />
+                    <span>{claimForm.prescriptionFileName || 'Attach prescription PDF'}</span>
+                    <small>PDF only, max 10 MB</small>
+                    <input
+                      type="file"
+                      accept="application/pdf,.pdf"
+                      onChange={handlePrescriptionPdfSelect}
+                    />
+                  </label>
+                  {claimForm.prescriptionFileName && (
+                    <div className="prescription-file-chip">
+                      <FileText size={15} />
+                      <span>{claimForm.prescriptionFileName}</span>
+                      {claimForm.prescriptionFileSize && (
+                        <small>{fmtFileSize(claimForm.prescriptionFileSize)}</small>
+                      )}
+                      <button type="button" className="action-btn action-btn--cancel" onClick={clearPrescriptionPdf}>
+                        <X size={12} />
+                      </button>
+                    </div>
+                  )}
+                </section>
               </div>
 
               {/* Right column — medicines */}
@@ -1551,6 +1691,16 @@ const Nhis = () => {
               <div><strong>Referral Code:</strong> {viewClaim.referral_code || '—'}</div>
               <div><strong>Prescriber:</strong> {viewClaim.physician_name || '—'}</div>
               <div><strong>Pre-auth Codes:</strong> {viewClaim.pre_auth_codes || '—'}</div>
+              <div>
+                <strong>Prescription PDF:</strong>{' '}
+                {(viewClaim.prescription_file_path || viewClaim.prescription_file_url) ? (
+                  <button type="button" className="inline-file-button" onClick={() => openPrescriptionPdf(viewClaim)}>
+                    <FileText size={14} /> {viewClaim.prescription_file_name || 'Open PDF'}
+                  </button>
+                ) : (
+                  '—'
+                )}
+              </div>
             </div>
             <table className="nhis-table" style={{ marginTop: '1rem' }}>
               <thead>
@@ -1783,9 +1933,21 @@ const Nhis = () => {
             </div>
             <div className="export-body">
               <p className="export-info">
-                Exports all pharmacy dispensing claims for the selected month as a CSV file ready for NHIA submission.
+                Exports all pharmacy dispensing claims for the selected month as a CLAIM-it HMS Toolkit XML/JSON file.
                 All <strong>Served</strong> claims in that month will be automatically marked as <strong>Submitted</strong>.
               </p>
+              <div className="form-group">
+                <label>Export File Type</label>
+                <select
+                  className="form-input"
+                  value={exportFormat}
+                  onChange={(e) => setExportFormat(e.target.value)}
+                >
+                  <option value="xml">XML for CLAIM-it</option>
+                  <option value="json">JSON for CLAIM-it</option>
+                  <option value="csv">CSV review file</option>
+                </select>
+              </div>
               <div className="form-group">
                 <label>Select Month</label>
                 <input

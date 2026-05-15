@@ -1,4 +1,4 @@
-import{s as e}from"./supabase-k7Thi_9j.js";import{t}from"./auditService-BKhLLfwJ.js";import{n,r,t as i}from"./validation-D6M2be0V.js";import{i as a}from"./date-BdCfPkuO.js";var o=async(t={})=>{let n=e.from(`cashbook_sessions`).select(`
+import{s as e}from"./supabase-k7Thi_9j.js";import{t}from"./auditService-BKhLLfwJ.js";import{n,r,t as i}from"./validation-CBhCWfMF.js";import{i as a}from"./date-BjJLf7Mf.js";var o=async(t={})=>{let n=e.from(`cashbook_sessions`).select(`
       *,
       branches (id, name, code),
       cashbook_entries (id, entry_type, direction, amount, description, source_type, created_at)

@@ -92,6 +92,7 @@ supabase-patch-commercial-billing-controls.sql
 supabase-patch-nhis-topup-controls.sql
 supabase-patch-branch-sync-rpcs.sql
 supabase-patch-diagnosis-catalog.sql
+supabase-patch-nhis-prescription-attachments.sql
 supabase-patch-accounting-defaults.sql
 supabase-patch-accounting-hardening.sql
 ```

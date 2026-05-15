@@ -38,6 +38,17 @@ const getClaimField = (claim, camelKey, snakeKey = camelKey) =>
   asText(claim?.[camelKey] ?? claim?.[snakeKey])
 const VALID_ORGANIZATION_TYPES = ['pharmacy', 'hospital']
 const MAX_DIAGNOSES_PER_CLAIM = 10
+const NHIS_PRESCRIPTION_BUCKET = 'nhis-prescriptions'
+const MAX_PRESCRIPTION_PDF_BYTES = 10 * 1024 * 1024
+const OPTIONAL_CLAIM_SCHEMA_COLUMNS = [
+  'diagnosis_details',
+  'prescription_file_url',
+  'prescription_file_path',
+  'prescription_file_name',
+  'prescription_file_type',
+  'prescription_file_size',
+]
+const CLAIMIT_EXPORT_FORMATS = ['xml', 'json', 'csv']
 
 export const normalizeOrganizationType = (value) => {
   const normalized = asText(value).toLowerCase()
@@ -90,13 +101,21 @@ const getDiagnosisDetailsPayload = (claimData) => {
   return details.length ? details : []
 }
 
-const isMissingDiagnosisDetailsColumn = (error) => {
+const isMissingOptionalClaimColumn = (error) => {
   const message = String(error?.message || '').toLowerCase()
   return (
     error?.code === 'PGRST204' ||
-    message.includes('diagnosis_details') ||
-    message.includes('schema cache')
+    message.includes('schema cache') ||
+    OPTIONAL_CLAIM_SCHEMA_COLUMNS.some((column) => message.includes(column))
   )
+}
+
+const stripOptionalClaimSchemaColumns = (payload) => {
+  const stripped = { ...payload }
+  OPTIONAL_CLAIM_SCHEMA_COLUMNS.forEach((column) => {
+    delete stripped[column]
+  })
+  return stripped
 }
 
 const insertNhisClaimWithSchemaFallback = async (payload) => {
@@ -107,14 +126,13 @@ const insertNhisClaimWithSchemaFallback = async (payload) => {
     .select()
     .single()
 
-  if (!result.error || !('diagnosis_details' in insertPayload) || !isMissingDiagnosisDetailsColumn(result.error)) {
+  if (!result.error || !isMissingOptionalClaimColumn(result.error)) {
     return result
   }
 
-  delete insertPayload.diagnosis_details
   return await supabase
     .from('nhis_claims')
-    .insert([insertPayload])
+    .insert([stripOptionalClaimSchemaColumns(insertPayload)])
     .select()
     .single()
 }
@@ -129,14 +147,13 @@ const updateNhisClaimWithSchemaFallback = async (id, payload) => {
     .select()
     .single()
 
-  if (!result.error || !('diagnosis_details' in updatePayload) || !isMissingDiagnosisDetailsColumn(result.error)) {
+  if (!result.error || !isMissingOptionalClaimColumn(result.error)) {
     return result
   }
 
-  delete updatePayload.diagnosis_details
   return await supabase
     .from('nhis_claims')
-    .update(updatePayload)
+    .update(stripOptionalClaimSchemaColumns(updatePayload))
     .eq('id', id)
     .eq('status', 'served')
     .select()
@@ -404,6 +421,100 @@ export const validateNhisClaimFinalReadiness = async (claimData, medicines = [],
 }
 
 // ─── NHIS Drug Catalog ────────────────────────────────────────────────────────
+
+const normalizePrescriptionFileSize = (value) => {
+  const size = Number(value)
+  return Number.isFinite(size) && size >= 0 ? Math.round(size) : null
+}
+
+const getPrescriptionAttachmentPayload = (claimData = {}) => ({
+  prescription_file_url: normalizeText(claimData.prescriptionFileUrl ?? claimData.prescription_file_url) || null,
+  prescription_file_path: normalizeText(claimData.prescriptionFilePath ?? claimData.prescription_file_path) || null,
+  prescription_file_name: normalizeText(claimData.prescriptionFileName ?? claimData.prescription_file_name) || null,
+  prescription_file_type: normalizeText(claimData.prescriptionFileType ?? claimData.prescription_file_type) || null,
+  prescription_file_size: normalizePrescriptionFileSize(
+    claimData.prescriptionFileSize ?? claimData.prescription_file_size
+  ),
+})
+
+const sanitizeStoragePathSegment = (value, fallback = 'unknown') =>
+  String(value || fallback)
+    .trim()
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '') || fallback
+
+export const validateNhisPrescriptionPdfFile = (file) => {
+  if (!file) return 'Select a scanned prescription PDF.'
+  const fileName = String(file.name || '').toLowerCase()
+  const isPdf = file.type === 'application/pdf' || fileName.endsWith('.pdf')
+  if (!isPdf) return 'Only scanned prescription files in PDF format can be attached.'
+  if (Number(file.size || 0) > MAX_PRESCRIPTION_PDF_BYTES) {
+    return 'Prescription PDF must be 10 MB or smaller.'
+  }
+  return ''
+}
+
+export const uploadNhisPrescriptionPdf = async (file, options = {}) => {
+  const validationError = validateNhisPrescriptionPdfFile(file)
+  if (validationError) throw new Error(validationError)
+  if (shouldUseBranchServer()) {
+    throw new Error('PDF prescription attachment upload requires Supabase storage access.')
+  }
+  if (!supabase?.storage) {
+    throw new Error('Supabase storage is not configured for prescription attachments.')
+  }
+
+  const organizationId = sanitizeStoragePathSegment(options.organizationId, 'unknown-org')
+  const month = sanitizeStoragePathSegment(
+    options.yearMonth || new Date().toISOString().slice(0, 7),
+    'unknown-month'
+  )
+  const randomId =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : String(Date.now())
+  const claimId = sanitizeStoragePathSegment(options.claimId || randomId, 'claim')
+  const fileName = sanitizeStoragePathSegment(file.name || 'prescription.pdf', 'prescription.pdf')
+  const path = `${organizationId}/${month}/${claimId}/${Date.now()}-${fileName}`
+
+  const { data, error } = await supabase.storage
+    .from(NHIS_PRESCRIPTION_BUCKET)
+    .upload(path, file, {
+      contentType: 'application/pdf',
+      cacheControl: '3600',
+      upsert: true,
+    })
+
+  if (error) {
+    const message = String(error.message || '').toLowerCase()
+    if (message.includes('bucket') || message.includes('not found')) {
+      throw new Error('Prescription storage bucket is missing. Run supabase-patch-nhis-prescription-attachments.sql first.')
+    }
+    throw error
+  }
+
+  return {
+    prescriptionFilePath: data?.path || path,
+    prescriptionFileName: file.name || 'prescription.pdf',
+    prescriptionFileType: 'application/pdf',
+    prescriptionFileSize: file.size || 0,
+    prescriptionFileUrl: '',
+  }
+}
+
+export const getNhisPrescriptionSignedUrl = async (path) => {
+  const cleanPath = normalizeText(path)
+  if (!cleanPath) throw new Error('Prescription file path is missing.')
+  if (!supabase?.storage) throw new Error('Supabase storage is not configured.')
+
+  const { data, error } = await supabase.storage
+    .from(NHIS_PRESCRIPTION_BUCKET)
+    .createSignedUrl(cleanPath, 5 * 60)
+
+  if (error) throw error
+  return data?.signedUrl || ''
+}
 
 export const getAllNhisDrugs = async (searchTerm = '') => {
   if (shouldUseBranchServer()) {
@@ -715,6 +826,7 @@ export const createNhisClaim = async (claimData, medicines) => {
     total_amount:       totalAmount,
     status:             'served',
     notes:              normalizeText(claimData.notes)             || null,
+    ...getPrescriptionAttachmentPayload(claimData),
     created_by:         claimData.createdBy                        || null,
   }
 
@@ -848,6 +960,7 @@ export const updateNhisClaim = async (id, claimData, medicines) => {
     pre_auth_codes: normalizeText(claimData.preAuthCodes) || null,
     total_amount: totalAmount,
     notes: normalizeText(claimData.notes) || null,
+    ...getPrescriptionAttachmentPayload(claimData),
     updated_at: new Date().toISOString(),
   }
 
@@ -1034,10 +1147,294 @@ export const getNhisClaimsForMonth = async (yearMonth) => {
   return data || []
 }
 
+const normalizeClaimItExportFormat = (format = 'xml') => {
+  const normalized = normalizeText(format).toLowerCase()
+  return CLAIMIT_EXPORT_FORMATS.includes(normalized) ? normalized : 'xml'
+}
+
+const toClaimItDate = (value) => normalizeText(value).slice(0, 10)
+
+const normalizeClaimMedicineForExport = (medicine = {}) => ({
+  code: normalizeText(medicine.drug_code),
+  description: normalizeText(medicine.description),
+  unit: normalizeText(medicine.unit) || 'unit',
+  unitPrice: Number(medicine.unit_price || 0),
+  quantity: Number(medicine.dispensed_qty || 0),
+  dispensaryDate: toClaimItDate(medicine.dispensary_date),
+  dose: normalizeText(medicine.dose),
+  frequency: normalizeText(medicine.frequency),
+  duration: normalizeText(medicine.duration),
+  totalAmount: Number(medicine.total_amount || 0),
+})
+
+const normalizeClaimDiagnosesForExport = (claim = {}, organizationType = 'pharmacy') => {
+  if (normalizeOrganizationType(claim.organization_type || organizationType) !== 'hospital') return []
+  const details = normalizeDiagnosisDetails(claim.diagnosis_details)
+  if (details.length) {
+    return details.map((diagnosis) => ({
+      code: diagnosis.code || '',
+      label: diagnosis.label,
+      source: diagnosis.source || '',
+      sourceVersion: diagnosis.sourceVersion || '',
+    }))
+  }
+  return splitDiagnoses(claim.diagnosis).map((label) => ({
+    code: '',
+    label,
+    source: 'Custom',
+    sourceVersion: '',
+  }))
+}
+
+export const buildNhisClaimItExportPayload = (claims = [], options = {}) => {
+  const yearMonth = normalizeText(options.yearMonth || options.month || '')
+  const generatedAt = options.generatedAt || new Date().toISOString()
+  const organizationType = normalizeOrganizationType(options.organizationType)
+  const monthTag = yearMonth ? yearMonth.replace(/[^0-9]/g, '') : generatedAt.slice(0, 7).replace(/-/g, '')
+  const batchNumber = normalizeText(options.batchNumber) || `HF-NHIS-${monthTag}-${String(Date.now()).slice(-6)}`
+
+  const normalizedClaims = claims.map((claim) => {
+    const claimOrganizationType = normalizeOrganizationType(claim.organization_type || organizationType)
+    const medicines = (claim.nhis_claim_medicines || []).map(normalizeClaimMedicineForExport)
+    const prescriptionAttachment = normalizeText(claim.prescription_file_path)
+      ? {
+          fileName: normalizeText(claim.prescription_file_name),
+          fileType: normalizeText(claim.prescription_file_type) || 'application/pdf',
+          fileSize: normalizePrescriptionFileSize(claim.prescription_file_size) || 0,
+          storagePath: normalizeText(claim.prescription_file_path),
+          url: normalizeText(claim.prescription_file_url),
+        }
+      : null
+
+    return {
+      claimNumber: normalizeText(claim.claim_number),
+      status: normalizeText(claim.status),
+      organizationType: claimOrganizationType,
+      ccCode: normalizeText(claim.ccc_no),
+      patient: {
+        id: normalizeText(claim.patient_id),
+        memberNumber: normalizeText(claim.member_no),
+        hin: normalizeText(claim.hin),
+        surname: normalizeText(claim.surname),
+        otherNames: normalizeText(claim.other_names),
+        fullName: `${normalizeText(claim.surname)} ${normalizeText(claim.other_names)}`.trim(),
+        folderNumber: normalizeText(claim.folder_no),
+        gender: normalizeText(claim.gender),
+        dateOfBirth: toClaimItDate(claim.date_of_birth),
+        address: normalizeText(claim.patient_address),
+        childWeightKg: claim.child_weight_kg === null || claim.child_weight_kg === undefined
+          ? null
+          : Number(claim.child_weight_kg),
+      },
+      diagnoses: normalizeClaimDiagnosesForExport(claim, claimOrganizationType),
+      diagnosis: claimOrganizationType === 'hospital' ? normalizeText(claim.diagnosis) : '',
+      service: {
+        dateFrom: toClaimItDate(claim.service_date_from),
+        dateTo: toClaimItDate(claim.service_date_to || claim.service_date_from),
+        prescribingFacility: normalizeText(claim.referring_facility),
+        referralCode: normalizeText(claim.referral_code),
+        prescriberNameOrId: normalizeText(claim.physician_name),
+        preAuthCodes: normalizeText(claim.pre_auth_codes),
+      },
+      medicines,
+      prescriptionAttachment,
+      notes: normalizeText(claim.notes),
+      totalAmount: Number(claim.total_amount || 0),
+    }
+  })
+
+  return {
+    sourceSystem: 'HealthFlow',
+    targetSystem: 'CLAIM-it HMS Toolkit',
+    batchNumber,
+    facilityCode: normalizeText(options.facilityCode),
+    providerNumber: normalizeText(options.providerNumber),
+    submitterId: normalizeText(options.submitterId),
+    submissionMonth: yearMonth,
+    organizationType,
+    createdAt: generatedAt,
+    claimCount: normalizedClaims.length,
+    totalAmount: normalizedClaims.reduce((sum, claim) => sum + Number(claim.totalAmount || 0), 0),
+    claims: normalizedClaims,
+  }
+}
+
+const xmlEscape = (value) =>
+  String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
+
+export const buildNhisClaimItXml = (payload) => `<?xml version="1.0" encoding="UTF-8"?>
+<NhiaClaimBatch>
+  <SourceSystem>${xmlEscape(payload.sourceSystem)}</SourceSystem>
+  <TargetSystem>${xmlEscape(payload.targetSystem)}</TargetSystem>
+  <BatchNumber>${xmlEscape(payload.batchNumber)}</BatchNumber>
+  <FacilityCode>${xmlEscape(payload.facilityCode)}</FacilityCode>
+  <ProviderNumber>${xmlEscape(payload.providerNumber)}</ProviderNumber>
+  <SubmitterId>${xmlEscape(payload.submitterId)}</SubmitterId>
+  <SubmissionMonth>${xmlEscape(payload.submissionMonth)}</SubmissionMonth>
+  <OrganizationType>${xmlEscape(payload.organizationType)}</OrganizationType>
+  <CreatedAt>${xmlEscape(payload.createdAt)}</CreatedAt>
+  <ClaimCount>${xmlEscape(payload.claimCount)}</ClaimCount>
+  <TotalAmount>${xmlEscape(payload.totalAmount.toFixed(2))}</TotalAmount>
+  <Claims>
+${payload.claims.map((claim) => `    <Claim>
+      <ClaimNumber>${xmlEscape(claim.claimNumber)}</ClaimNumber>
+      <Status>${xmlEscape(claim.status)}</Status>
+      <OrganizationType>${xmlEscape(claim.organizationType)}</OrganizationType>
+      <CcCode>${xmlEscape(claim.ccCode)}</CcCode>
+      <Patient>
+        <Id>${xmlEscape(claim.patient.id)}</Id>
+        <MemberNumber>${xmlEscape(claim.patient.memberNumber)}</MemberNumber>
+        <HIN>${xmlEscape(claim.patient.hin)}</HIN>
+        <Surname>${xmlEscape(claim.patient.surname)}</Surname>
+        <OtherNames>${xmlEscape(claim.patient.otherNames)}</OtherNames>
+        <FullName>${xmlEscape(claim.patient.fullName)}</FullName>
+        <FolderNumber>${xmlEscape(claim.patient.folderNumber)}</FolderNumber>
+        <Gender>${xmlEscape(claim.patient.gender)}</Gender>
+        <DateOfBirth>${xmlEscape(claim.patient.dateOfBirth)}</DateOfBirth>
+        <Address>${xmlEscape(claim.patient.address)}</Address>
+        <ChildWeightKg>${xmlEscape(claim.patient.childWeightKg ?? '')}</ChildWeightKg>
+      </Patient>
+      <Diagnosis>${xmlEscape(claim.diagnosis)}</Diagnosis>
+      <Diagnoses>
+${claim.diagnoses.map((diagnosis) => `        <DiagnosisItem>
+          <Code>${xmlEscape(diagnosis.code)}</Code>
+          <Label>${xmlEscape(diagnosis.label)}</Label>
+          <Source>${xmlEscape(diagnosis.source)}</Source>
+          <SourceVersion>${xmlEscape(diagnosis.sourceVersion)}</SourceVersion>
+        </DiagnosisItem>`).join('\n')}
+      </Diagnoses>
+      <Service>
+        <DateFrom>${xmlEscape(claim.service.dateFrom)}</DateFrom>
+        <DateTo>${xmlEscape(claim.service.dateTo)}</DateTo>
+        <PrescribingFacility>${xmlEscape(claim.service.prescribingFacility)}</PrescribingFacility>
+        <ReferralCode>${xmlEscape(claim.service.referralCode)}</ReferralCode>
+        <PrescriberNameOrId>${xmlEscape(claim.service.prescriberNameOrId)}</PrescriberNameOrId>
+        <PreAuthCodes>${xmlEscape(claim.service.preAuthCodes)}</PreAuthCodes>
+      </Service>
+      <Medicines>
+${claim.medicines.map((medicine) => `        <Medicine>
+          <Code>${xmlEscape(medicine.code)}</Code>
+          <Description>${xmlEscape(medicine.description)}</Description>
+          <Unit>${xmlEscape(medicine.unit)}</Unit>
+          <UnitPrice>${xmlEscape(medicine.unitPrice.toFixed(2))}</UnitPrice>
+          <Quantity>${xmlEscape(medicine.quantity)}</Quantity>
+          <DispensaryDate>${xmlEscape(medicine.dispensaryDate)}</DispensaryDate>
+          <Dose>${xmlEscape(medicine.dose)}</Dose>
+          <Frequency>${xmlEscape(medicine.frequency)}</Frequency>
+          <Duration>${xmlEscape(medicine.duration)}</Duration>
+          <TotalAmount>${xmlEscape(medicine.totalAmount.toFixed(2))}</TotalAmount>
+        </Medicine>`).join('\n')}
+      </Medicines>
+      <PrescriptionAttachment>
+        <FileName>${xmlEscape(claim.prescriptionAttachment?.fileName || '')}</FileName>
+        <FileType>${xmlEscape(claim.prescriptionAttachment?.fileType || '')}</FileType>
+        <FileSize>${xmlEscape(claim.prescriptionAttachment?.fileSize || '')}</FileSize>
+        <StoragePath>${xmlEscape(claim.prescriptionAttachment?.storagePath || '')}</StoragePath>
+        <Url>${xmlEscape(claim.prescriptionAttachment?.url || '')}</Url>
+      </PrescriptionAttachment>
+      <Notes>${xmlEscape(claim.notes)}</Notes>
+      <TotalAmount>${xmlEscape(claim.totalAmount.toFixed(2))}</TotalAmount>
+    </Claim>`).join('\n')}
+  </Claims>
+</NhiaClaimBatch>
+`
+
+const buildNhisMonthlyCsv = (claims) => {
+  const escapeCell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`
+
+  const headerRow = [
+    'Claim Number', 'Status', 'Surname', 'Other Names', 'Member No', 'HIN',
+    'Folder No', 'Gender', 'Date of Birth', 'Address', 'Child Weight Kg', 'CCC No',
+    'Diagnosis', 'Prescription PDF',
+    'Date of Service',
+    'Referring Facility', 'Referral Code',
+    'Prescriber Name/ID', 'Pre-Auth Codes',
+    'Drug Code', 'Description', 'Unit', 'Unit Price',
+    'Dispensed Qty', 'Dispensary Date', 'Dose', 'Frequency', 'Duration', 'Line Total',
+    'Claim Total',
+  ].map(escapeCell).join(',')
+
+  const dataRows = []
+  for (const claim of claims) {
+    const meds = claim.nhis_claim_medicines || []
+    const prescriptionFile = claim.prescription_file_name || claim.prescription_file_path || ''
+    if (!meds.length) {
+      dataRows.push([
+        claim.claim_number, claim.status,
+        claim.surname, claim.other_names || '',
+        claim.member_no || '', claim.hin || '',
+        claim.folder_no || '', claim.gender || '',
+        claim.date_of_birth || '', claim.patient_address || '', claim.child_weight_kg || '', claim.ccc_no || '',
+        claim.diagnosis || '', prescriptionFile,
+        claim.service_date_from || '',
+        claim.referring_facility || '', claim.referral_code || '',
+        claim.physician_name || '', claim.pre_auth_codes || '',
+        '', '', '', '', '', '', '', '', '', '', claim.total_amount,
+      ].map(escapeCell).join(','))
+    } else {
+      for (const med of meds) {
+        dataRows.push([
+          claim.claim_number, claim.status,
+          claim.surname, claim.other_names || '',
+          claim.member_no || '', claim.hin || '',
+          claim.folder_no || '', claim.gender || '',
+          claim.date_of_birth || '', claim.patient_address || '', claim.child_weight_kg || '', claim.ccc_no || '',
+          claim.diagnosis || '', prescriptionFile,
+          claim.service_date_from || '',
+          claim.referring_facility || '', claim.referral_code || '',
+          claim.physician_name || '', claim.pre_auth_codes || '',
+          med.drug_code || '', med.description,
+          med.unit, med.unit_price,
+          med.dispensed_qty, med.dispensary_date || '',
+          med.dose || '', med.frequency || '', med.duration || '',
+          med.total_amount, claim.total_amount,
+        ].map(escapeCell).join(','))
+      }
+    }
+  }
+
+  return [headerRow, ...dataRows].join('\n')
+}
+
+const createNhisMonthlyExport = (claims, yearMonth, options = {}) => {
+  const format = normalizeClaimItExportFormat(options.format)
+  if (format === 'csv') {
+    return {
+      content: buildNhisMonthlyCsv(claims),
+      contentType: 'text/csv;charset=utf-8;',
+      fileName: `NHIS-Claims-${yearMonth}.csv`,
+    }
+  }
+
+  const payload = buildNhisClaimItExportPayload(claims, { ...options, yearMonth })
+  return {
+    content: format === 'xml' ? buildNhisClaimItXml(payload) : JSON.stringify(payload, null, 2),
+    contentType: format === 'xml' ? 'application/xml;charset=utf-8;' : 'application/json;charset=utf-8;',
+    fileName: `CLAIM-it-HMS-${yearMonth.replace(/[^0-9]/g, '')}.${format}`,
+  }
+}
+
+const downloadTextFile = ({ content, contentType, fileName }) => {
+  const blob = new Blob([content], { type: contentType })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = fileName
+  document.body.appendChild(anchor)
+  anchor.click()
+  document.body.removeChild(anchor)
+  URL.revokeObjectURL(url)
+}
+
 /**
- * Generates a CSV string for all claims in a given month and triggers download.
+ * Generates an XML/JSON CLAIM-it HMS Toolkit batch, or a review CSV, and triggers download.
  */
-export const exportNhisMonthlyCSV = async (yearMonth, options = {}) => {
+export const exportNhisMonthlyFile = async (yearMonth, options = {}) => {
   const claims = await getNhisClaimsForMonth(yearMonth)
   if (!claims.length) throw new Error(`No claims found for ${yearMonth}.`)
   const organizationType = normalizeOrganizationType(options.organizationType)
@@ -1065,68 +1462,7 @@ export const exportNhisMonthlyCSV = async (yearMonth, options = {}) => {
     )
   }
 
-  const escapeCell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`
-
-  const headerRow = [
-    'Claim Number', 'Status', 'Surname', 'Other Names', 'Member No', 'HIN',
-    'Folder No', 'Gender', 'Date of Birth', 'Address', 'Child Weight Kg', 'CCC No',
-    'Diagnosis',
-    'Date of Service',
-    'Referring Facility', 'Referral Code',
-    'Prescriber Name/ID', 'Pre-Auth Codes',
-    'Drug Code', 'Description', 'Unit', 'Unit Price',
-    'Dispensed Qty', 'Dispensary Date', 'Dose', 'Frequency', 'Duration', 'Line Total',
-    'Claim Total',
-  ].map(escapeCell).join(',')
-
-  const dataRows = []
-  for (const claim of claims) {
-    const meds = claim.nhis_claim_medicines || []
-    if (!meds.length) {
-      dataRows.push([
-        claim.claim_number, claim.status,
-        claim.surname, claim.other_names || '',
-        claim.member_no || '', claim.hin || '',
-        claim.folder_no || '', claim.gender || '',
-        claim.date_of_birth || '', claim.patient_address || '', claim.child_weight_kg || '', claim.ccc_no || '',
-        claim.diagnosis || '',
-        claim.service_date_from || '',
-        claim.referring_facility || '', claim.referral_code || '',
-        claim.physician_name || '', claim.pre_auth_codes || '',
-        '', '', '', '', '', '', '', '', '', '', claim.total_amount,
-      ].map(escapeCell).join(','))
-    } else {
-      for (const med of meds) {
-        dataRows.push([
-          claim.claim_number, claim.status,
-          claim.surname, claim.other_names || '',
-          claim.member_no || '', claim.hin || '',
-          claim.folder_no || '', claim.gender || '',
-          claim.date_of_birth || '', claim.patient_address || '', claim.child_weight_kg || '', claim.ccc_no || '',
-          claim.diagnosis || '',
-          claim.service_date_from || '',
-          claim.referring_facility || '', claim.referral_code || '',
-          claim.physician_name || '', claim.pre_auth_codes || '',
-          med.drug_code || '', med.description,
-          med.unit, med.unit_price,
-          med.dispensed_qty, med.dispensary_date || '',
-          med.dose || '', med.frequency || '', med.duration || '',
-          med.total_amount, claim.total_amount,
-        ].map(escapeCell).join(','))
-      }
-    }
-  }
-
-  const csv = [headerRow, ...dataRows].join('\n')
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = `NHIS-Claims-${yearMonth}.csv`
-  document.body.appendChild(anchor)
-  anchor.click()
-  document.body.removeChild(anchor)
-  URL.revokeObjectURL(url)
+  downloadTextFile(createNhisMonthlyExport(claims, yearMonth, { ...options, organizationType }))
 
   if (shouldUseBranchServer()) {
     await Promise.all(
@@ -1149,3 +1485,6 @@ export const exportNhisMonthlyCSV = async (yearMonth, options = {}) => {
 
   return claims.length
 }
+
+export const exportNhisMonthlyCSV = async (yearMonth, options = {}) =>
+  await exportNhisMonthlyFile(yearMonth, { ...options, format: 'csv' })
