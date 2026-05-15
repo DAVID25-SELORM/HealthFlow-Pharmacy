@@ -25,6 +25,7 @@ import {
   assessNhisClaimReadiness,
   buildNhisClaimItExportPayload,
   buildNhisClaimItXml,
+  normalizeNhisExportPeriod,
   validateNhisPrescriptionPdfFile,
 } from './nhisService'
 
@@ -244,6 +245,9 @@ describe('CLAIM-it export helpers', () => {
 
     expect(payload.targetSystem).toBe('CLAIM-it HMS Toolkit')
     expect(payload.claimCount).toBe(1)
+    expect(payload.submissionMonth).toBe('2026-05')
+    expect(payload.periodFrom).toBe('2026-05-01')
+    expect(payload.periodTo).toBe('2026-05-31')
     expect(payload.claims[0].diagnoses[0]).toMatchObject({
       code: 'B50',
       label: 'Plasmodium falciparum malaria',
@@ -262,6 +266,52 @@ describe('CLAIM-it export helpers', () => {
     expect(xml).toContain('<NhiaClaimBatch>')
     expect(xml).toContain('A &amp; B')
     expect(xml).toContain('Tab &lt;500mg&gt;')
+  })
+
+  it('normalizes monthly and custom export periods', () => {
+    expect(normalizeNhisExportPeriod({ mode: 'month', yearMonth: '2026-02' })).toMatchObject({
+      mode: 'month',
+      yearMonth: '2026-02',
+      fromDate: '2026-02-01',
+      toDate: '2026-02-28',
+      fileTag: '202602',
+    })
+
+    expect(normalizeNhisExportPeriod({
+      mode: 'custom',
+      fromDate: '2026-05-01',
+      toDate: '2026-05-15',
+    })).toMatchObject({
+      mode: 'custom',
+      yearMonth: '',
+      label: '2026-05-01 to 2026-05-15',
+      fileTag: '20260501-20260515',
+    })
+  })
+
+  it('blocks invalid custom export periods', () => {
+    expect(() => normalizeNhisExportPeriod({
+      mode: 'custom',
+      fromDate: '2026-05-20',
+      toDate: '2026-05-01',
+    })).toThrow('Custom export From date cannot be after To date.')
+  })
+
+  it('includes custom period metadata in CLAIM-it payload and XML', () => {
+    const payload = buildNhisClaimItExportPayload([claim], {
+      mode: 'custom',
+      fromDate: '2026-05-01',
+      toDate: '2026-05-15',
+      organizationType: 'hospital',
+      generatedAt: '2026-05-15T00:00:00.000Z',
+    })
+    const xml = buildNhisClaimItXml(payload)
+
+    expect(payload.submissionMonth).toBe('')
+    expect(payload.exportMode).toBe('custom')
+    expect(payload.periodLabel).toBe('2026-05-01 to 2026-05-15')
+    expect(xml).toContain('<PeriodFrom>2026-05-01</PeriodFrom>')
+    expect(xml).toContain('<PeriodTo>2026-05-15</PeriodTo>')
   })
 })
 

@@ -40,6 +40,8 @@ const VALID_ORGANIZATION_TYPES = ['pharmacy', 'hospital']
 const MAX_DIAGNOSES_PER_CLAIM = 10
 const NHIS_PRESCRIPTION_BUCKET = 'nhis-prescriptions'
 const MAX_PRESCRIPTION_PDF_BYTES = 10 * 1024 * 1024
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+const YEAR_MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/
 const OPTIONAL_CLAIM_SCHEMA_COLUMNS = [
   'diagnosis_details',
   'prescription_file_url',
@@ -1129,19 +1131,67 @@ export const updateNhisClaimStatus = async (id, status, rejectionReason = '', ac
   return data
 }
 
-// ─── Monthly Batch Export ─────────────────────────────────────────────────────
+// ─── Batch Export ──────────────────────────────────────────────────────────────
 
 /**
- * Returns all claims for a given month (YYYY-MM) ready for NHIA submission.
+ * Normalizes monthly or custom-period export filters for NHIA submission.
  */
-export const getNhisClaimsForMonth = async (yearMonth) => {
-  if (!/^\d{4}-\d{2}$/.test(yearMonth)) throw new Error('Month must be in YYYY-MM format.')
+export const normalizeNhisExportPeriod = (options = {}) => {
+  const mode = normalizeText(options.mode || options.exportMode || '').toLowerCase() === 'custom'
+    ? 'custom'
+    : 'month'
+  const generatedAt = options.generatedAt || new Date().toISOString()
 
-  if (shouldUseBranchServer()) {
-    return await listBranchRecords('nhis/claims', { month: yearMonth })
+  if (mode === 'custom') {
+    const fromDate = normalizeText(options.fromDate || options.dateFrom || options.periodFrom)
+    const toDate = normalizeText(options.toDate || options.dateTo || options.periodTo)
+
+    if (!isValidIsoDate(fromDate) || !isValidIsoDate(toDate)) {
+      throw new Error('Custom export period must include valid From and To dates.')
+    }
+    if (fromDate > toDate) {
+      throw new Error('Custom export From date cannot be after To date.')
+    }
+
+    return {
+      mode,
+      yearMonth: '',
+      fromDate,
+      toDate,
+      label: `${fromDate} to ${toDate}`,
+      fileTag: `${fromDate.replace(/-/g, '')}-${toDate.replace(/-/g, '')}`,
+    }
   }
 
-  const { data, error } = await supabase
+  const yearMonth = normalizeText(options.yearMonth || options.month || generatedAt.slice(0, 7))
+  if (!YEAR_MONTH_RE.test(yearMonth)) throw new Error('Month must be in YYYY-MM format.')
+
+  return {
+    mode,
+    yearMonth,
+    fromDate: `${yearMonth}-01`,
+    toDate: getMonthEndDate(yearMonth),
+    label: yearMonth,
+    fileTag: yearMonth.replace(/-/g, ''),
+  }
+}
+
+export const getNhisClaimsForPeriod = async (periodOptions = {}) => {
+  const period = normalizeNhisExportPeriod(periodOptions)
+
+  if (shouldUseBranchServer()) {
+    const rows = await listBranchRecords(
+      'nhis/claims',
+      period.mode === 'month'
+        ? { month: period.yearMonth, limit: 5000 }
+        : { fromDate: period.fromDate, toDate: period.toDate, limit: 5000 }
+    )
+    return period.mode === 'month'
+      ? rows
+      : rows.filter((claim) => claimMatchesExportPeriod(claim, period))
+  }
+
+  let query = supabase
     .from('nhis_claims')
     .select(`
       *,
@@ -1150,12 +1200,27 @@ export const getNhisClaimsForMonth = async (yearMonth) => {
           dispensed_qty, dispensary_date, dose, frequency, duration, total_amount
         )
     `)
-    .eq('submission_month', yearMonth)
     .order('created_at')
+
+  if (period.mode === 'month') {
+    query = query.eq('submission_month', period.yearMonth)
+  } else {
+    query = query
+      .gte('service_date_from', period.fromDate)
+      .lte('service_date_from', period.toDate)
+  }
+
+  const { data, error } = await query
 
   if (error) throw error
   return data || []
 }
+
+/**
+ * Returns all claims for a given month (YYYY-MM) ready for NHIA submission.
+ */
+export const getNhisClaimsForMonth = async (yearMonth) =>
+  await getNhisClaimsForPeriod({ mode: 'month', yearMonth })
 
 const normalizeClaimItExportFormat = (format = 'xml') => {
   const normalized = normalizeText(format).toLowerCase()
@@ -1163,6 +1228,26 @@ const normalizeClaimItExportFormat = (format = 'xml') => {
 }
 
 const toClaimItDate = (value) => normalizeText(value).slice(0, 10)
+
+const isValidIsoDate = (value) => {
+  const text = normalizeText(value)
+  if (!ISO_DATE_RE.test(text)) return false
+  const date = new Date(`${text}T00:00:00.000Z`)
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === text
+}
+
+const getMonthEndDate = (yearMonth) => {
+  const [year, month] = yearMonth.split('-').map(Number)
+  return new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10)
+}
+
+const getClaimExportServiceDate = (claim = {}) =>
+  toClaimItDate(claim.service_date_from || claim.serviceDate || claim.service_date)
+
+const claimMatchesExportPeriod = (claim = {}, period) => {
+  const serviceDate = getClaimExportServiceDate(claim)
+  return Boolean(serviceDate && serviceDate >= period.fromDate && serviceDate <= period.toDate)
+}
 
 const normalizeClaimMedicineForExport = (medicine = {}) => ({
   code: normalizeText(medicine.drug_code),
@@ -1197,11 +1282,13 @@ const normalizeClaimDiagnosesForExport = (claim = {}, organizationType = 'pharma
 }
 
 export const buildNhisClaimItExportPayload = (claims = [], options = {}) => {
-  const yearMonth = normalizeText(options.yearMonth || options.month || '')
   const generatedAt = options.generatedAt || new Date().toISOString()
+  const exportPeriod = options.exportPeriod || normalizeNhisExportPeriod({
+    ...options,
+    generatedAt,
+  })
   const organizationType = normalizeOrganizationType(options.organizationType)
-  const monthTag = yearMonth ? yearMonth.replace(/[^0-9]/g, '') : generatedAt.slice(0, 7).replace(/-/g, '')
-  const batchNumber = normalizeText(options.batchNumber) || `HF-NHIS-${monthTag}-${String(Date.now()).slice(-6)}`
+  const batchNumber = normalizeText(options.batchNumber) || `HF-NHIS-${exportPeriod.fileTag}-${String(Date.now()).slice(-6)}`
 
   const normalizedClaims = claims.map((claim) => {
     const claimOrganizationType = normalizeOrganizationType(claim.organization_type || organizationType)
@@ -1260,7 +1347,11 @@ export const buildNhisClaimItExportPayload = (claims = [], options = {}) => {
     facilityCode: normalizeText(options.facilityCode),
     providerNumber: normalizeText(options.providerNumber),
     submitterId: normalizeText(options.submitterId),
-    submissionMonth: yearMonth,
+    submissionMonth: exportPeriod.yearMonth,
+    exportMode: exportPeriod.mode,
+    periodLabel: exportPeriod.label,
+    periodFrom: exportPeriod.fromDate,
+    periodTo: exportPeriod.toDate,
     organizationType,
     createdAt: generatedAt,
     claimCount: normalizedClaims.length,
@@ -1286,6 +1377,10 @@ export const buildNhisClaimItXml = (payload) => `<?xml version="1.0" encoding="U
   <ProviderNumber>${xmlEscape(payload.providerNumber)}</ProviderNumber>
   <SubmitterId>${xmlEscape(payload.submitterId)}</SubmitterId>
   <SubmissionMonth>${xmlEscape(payload.submissionMonth)}</SubmissionMonth>
+  <ExportMode>${xmlEscape(payload.exportMode)}</ExportMode>
+  <PeriodLabel>${xmlEscape(payload.periodLabel)}</PeriodLabel>
+  <PeriodFrom>${xmlEscape(payload.periodFrom)}</PeriodFrom>
+  <PeriodTo>${xmlEscape(payload.periodTo)}</PeriodTo>
   <OrganizationType>${xmlEscape(payload.organizationType)}</OrganizationType>
   <CreatedAt>${xmlEscape(payload.createdAt)}</CreatedAt>
   <ClaimCount>${xmlEscape(payload.claimCount)}</ClaimCount>
@@ -1411,21 +1506,21 @@ const buildNhisMonthlyCsv = (claims) => {
   return [headerRow, ...dataRows].join('\n')
 }
 
-const createNhisMonthlyExport = (claims, yearMonth, options = {}) => {
+const createNhisExportFile = (claims, period, options = {}) => {
   const format = normalizeClaimItExportFormat(options.format)
   if (format === 'csv') {
     return {
       content: buildNhisMonthlyCsv(claims),
       contentType: 'text/csv;charset=utf-8;',
-      fileName: `NHIS-Claims-${yearMonth}.csv`,
+      fileName: `NHIS-Claims-${period.fileTag}.csv`,
     }
   }
 
-  const payload = buildNhisClaimItExportPayload(claims, { ...options, yearMonth })
+  const payload = buildNhisClaimItExportPayload(claims, { ...options, exportPeriod: period })
   return {
     content: format === 'xml' ? buildNhisClaimItXml(payload) : JSON.stringify(payload, null, 2),
     contentType: format === 'xml' ? 'application/xml;charset=utf-8;' : 'application/json;charset=utf-8;',
-    fileName: `CLAIM-it-HMS-${yearMonth.replace(/[^0-9]/g, '')}.${format}`,
+    fileName: `CLAIM-it-HMS-${period.fileTag}.${format}`,
   }
 }
 
@@ -1444,9 +1539,10 @@ const downloadTextFile = ({ content, contentType, fileName }) => {
 /**
  * Generates an XML/JSON CLAIM-it HMS Toolkit batch, or a review CSV, and triggers download.
  */
-export const exportNhisMonthlyFile = async (yearMonth, options = {}) => {
-  const claims = await getNhisClaimsForMonth(yearMonth)
-  if (!claims.length) throw new Error(`No claims found for ${yearMonth}.`)
+export const exportNhisClaimsFile = async (options = {}) => {
+  const period = normalizeNhisExportPeriod(options)
+  const claims = await getNhisClaimsForPeriod(period)
+  if (!claims.length) throw new Error(`No claims found for ${period.label}.`)
   const organizationType = normalizeOrganizationType(options.organizationType)
   const clinicalRules = organizationType === 'hospital' ? await getAllNhisClinicalRules() : DIAGNOSIS_TREATMENT_RULES
 
@@ -1472,29 +1568,32 @@ export const exportNhisMonthlyFile = async (yearMonth, options = {}) => {
     )
   }
 
-  downloadTextFile(createNhisMonthlyExport(claims, yearMonth, { ...options, organizationType }))
+  downloadTextFile(createNhisExportFile(claims, period, { ...options, organizationType }))
 
+  const servedClaims = claims.filter((claim) => claim.status === 'served')
   if (shouldUseBranchServer()) {
     await Promise.all(
-      claims
-        .filter((claim) => claim.status === 'served')
-        .map((claim) => updateBranchRecord('nhis/claims', claim.id, {
-          status: 'submitted',
-          updated_at: new Date().toISOString(),
-        }))
+      servedClaims.map((claim) => updateBranchRecord('nhis/claims', claim.id, {
+        status: 'submitted',
+        updated_at: new Date().toISOString(),
+      }))
     )
     return claims.length
   }
 
-  // Mark all served claims for this month as submitted
-  await supabase
-    .from('nhis_claims')
-    .update({ status: 'submitted', updated_at: new Date().toISOString() })
-    .eq('submission_month', yearMonth)
-    .eq('status', 'served')
+  const servedClaimIds = servedClaims.map((claim) => claim.id).filter(Boolean)
+  if (servedClaimIds.length) {
+    await supabase
+      .from('nhis_claims')
+      .update({ status: 'submitted', updated_at: new Date().toISOString() })
+      .in('id', servedClaimIds)
+  }
 
   return claims.length
 }
+
+export const exportNhisMonthlyFile = async (yearMonth, options = {}) =>
+  await exportNhisClaimsFile({ ...options, mode: 'month', yearMonth })
 
 export const exportNhisMonthlyCSV = async (yearMonth, options = {}) =>
   await exportNhisMonthlyFile(yearMonth, { ...options, format: 'csv' })

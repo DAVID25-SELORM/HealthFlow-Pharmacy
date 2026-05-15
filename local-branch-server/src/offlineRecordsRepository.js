@@ -116,6 +116,19 @@ const matchesFilters = (record, filters = {}) => {
     }
   }
 
+  if (filters.fromDate || filters.toDate) {
+    const serviceDate = String(record.service_date_from || record.serviceDate || record.created_at || '').slice(0, 10)
+    if (!serviceDate) {
+      return false
+    }
+    if (filters.fromDate && serviceDate < String(filters.fromDate)) {
+      return false
+    }
+    if (filters.toDate && serviceDate > String(filters.toDate)) {
+      return false
+    }
+  }
+
   if (filters.supplierId && record.supplier_id !== filters.supplierId) {
     return false
   }

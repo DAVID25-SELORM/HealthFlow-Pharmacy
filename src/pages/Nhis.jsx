@@ -22,7 +22,7 @@ import {
   createNhisClaim,
   updateNhisClaim,
   updateNhisClaimStatus,
-  exportNhisMonthlyFile,
+  exportNhisClaimsFile,
   assessNhisClaimReadiness,
   validateNhisClaimFinalReadiness,
   getAllNhisClinicalRules,
@@ -109,6 +109,8 @@ const BLANK_NHIS_DRUG = {
 
 const fmtCurrency = (n) =>
   `GHS ${Number(n || 0).toLocaleString('en-GH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+const todayIsoDate = () => new Date().toISOString().split('T')[0]
 
 const fmtFileSize = (bytes) => {
   const size = Number(bytes || 0)
@@ -205,6 +207,9 @@ const Nhis = () => {
   const [exportMonth, setExportMonth]   = useState(
     new Date().toISOString().slice(0, 7) // YYYY-MM
   )
+  const [exportMode, setExportMode]     = useState('month')
+  const [exportFromDate, setExportFromDate] = useState(todayIsoDate())
+  const [exportToDate, setExportToDate] = useState(todayIsoDate())
   const [exportFormat, setExportFormat] = useState('xml')
   const [exporting, setExporting]       = useState(false)
 
@@ -826,7 +831,14 @@ const Nhis = () => {
   const handleExport = async () => {
     try {
       setExporting(true)
-      const count = await exportNhisMonthlyFile(exportMonth, {
+      const periodOptions = exportMode === 'custom'
+        ? { mode: 'custom', fromDate: exportFromDate, toDate: exportToDate }
+        : { mode: 'month', yearMonth: exportMonth }
+      const periodLabel = exportMode === 'custom'
+        ? `${exportFromDate} to ${exportToDate}`
+        : exportMonth
+      const count = await exportNhisClaimsFile({
+        ...periodOptions,
         organizationType,
         format: exportFormat,
         facilityCode: organization?.facility_code || organization?.claimit_facility_code || '',
@@ -835,7 +847,7 @@ const Nhis = () => {
       })
       setShowExportModal(false)
       await loadAll()
-      notify(`${count} claims exported as ${exportFormat.toUpperCase()} for ${exportMonth}. Served claims marked as Submitted.`, 'success')
+      notify(`${count} claims exported as ${exportFormat.toUpperCase()} for ${periodLabel}. Served claims marked as Submitted.`, 'success')
     } catch (err) {
       notify(err.message || 'Export failed.', 'error')
     } finally {
@@ -844,6 +856,10 @@ const Nhis = () => {
   }
 
   // ─────────────────────────────────────────────────────────────
+  const exportPeriodReady = exportMode === 'custom'
+    ? Boolean(exportFromDate && exportToDate && exportFromDate <= exportToDate)
+    : Boolean(exportMonth)
+
   return (
     <div className="nhis-page">
       {/* Page header */}
@@ -856,7 +872,7 @@ const Nhis = () => {
           {pageTab === 'claims' && canWrite && (
             <>
               <button className="btn btn-secondary" onClick={() => setShowExportModal(true)}>
-                <Download size={16} /> Monthly Export
+                <Download size={16} /> Export Claims
               </button>
               <button className="btn btn-primary" onClick={openNewClaimModal}>
                 <Plus size={16} /> New Claim
@@ -1943,13 +1959,13 @@ const Nhis = () => {
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowExportModal(false)}>
           <div className="modal-panel modal-panel--export">
             <div className="modal-header">
-              <h2>Monthly Batch Export</h2>
+              <h2>Claims Batch Export</h2>
               <button className="modal-close" onClick={() => setShowExportModal(false)}><X size={18} /></button>
             </div>
             <div className="export-body">
               <p className="export-info">
-                Exports all pharmacy dispensing claims for the selected month as a CLAIM-it HMS Toolkit XML/JSON file.
-                All <strong>Served</strong> claims in that month will be automatically marked as <strong>Submitted</strong>.
+                Exports claims for the selected month or custom service-date period as a CLAIM-it HMS Toolkit XML/JSON file.
+                All exported <strong>Served</strong> claims will be automatically marked as <strong>Submitted</strong>.
               </p>
               <div className="form-group">
                 <label>Export File Type</label>
@@ -1964,18 +1980,52 @@ const Nhis = () => {
                 </select>
               </div>
               <div className="form-group">
-                <label>Select Month</label>
-                <input
-                  type="month"
+                <label>Export Period</label>
+                <select
                   className="form-input"
-                  value={exportMonth}
-                  onChange={(e) => setExportMonth(e.target.value)}
-                />
+                  value={exportMode}
+                  onChange={(e) => setExportMode(e.target.value)}
+                >
+                  <option value="month">Monthly batch</option>
+                  <option value="custom">Custom date range</option>
+                </select>
               </div>
+              {exportMode === 'month' ? (
+                <div className="form-group">
+                  <label>Select Month</label>
+                  <input
+                    type="month"
+                    className="form-input"
+                    value={exportMonth}
+                    onChange={(e) => setExportMonth(e.target.value)}
+                  />
+                </div>
+              ) : (
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>From Date</label>
+                    <input
+                      type="date"
+                      className="form-input"
+                      value={exportFromDate}
+                      onChange={(e) => setExportFromDate(e.target.value)}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>To Date</label>
+                    <input
+                      type="date"
+                      className="form-input"
+                      value={exportToDate}
+                      onChange={(e) => setExportToDate(e.target.value)}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setShowExportModal(false)}>Cancel</button>
-              <button className="btn btn-primary" disabled={exporting} onClick={handleExport}>
+              <button className="btn btn-primary" disabled={exporting || !exportPeriodReady} onClick={handleExport}>
                 {exporting ? 'Exporting...' : <><Download size={14} /> Export &amp; Download</>}
               </button>
             </div>
