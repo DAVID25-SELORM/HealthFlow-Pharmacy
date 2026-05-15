@@ -518,6 +518,7 @@ const Nhis = () => {
       patientAddress: claimForm.patientAddress || 'pending',
       dateOfBirth: claimForm.dateOfBirth || '2000-01-01',
       diagnosis: claimForm.diagnosis || 'pending',
+      cccNo: claimForm.cccNo || 'pending',
       organizationType,
       serviceDate: claimForm.serviceDate || new Date().toISOString().split('T')[0],
       physicianName: claimForm.physicianName || 'pending',
@@ -1191,17 +1192,20 @@ const Nhis = () => {
                       <input className="form-input" value={claimForm.patientAddress}
                         onChange={(e) => setClaimForm((p) => ({ ...p, patientAddress: e.target.value }))} />
                     </div>
-                    <div className="form-group">
-                      <label>Child Weight (kg)</label>
-                      <input type="number" min="0" step="0.1" className="form-input" value={claimForm.childWeightKg}
-                        onChange={(e) => setClaimForm((p) => ({ ...p, childWeightKg: e.target.value }))} />
-                    </div>
+                    {isHospital && (
+                      <div className="form-group">
+                        <label>Child Weight (kg)</label>
+                        <input type="number" min="0" step="0.1" className="form-input" value={claimForm.childWeightKg}
+                          onChange={(e) => setClaimForm((p) => ({ ...p, childWeightKg: e.target.value }))} />
+                      </div>
+                    )}
                   </div>
 
                   <div className="form-row">
                     <div className="form-group">
-                      <label>CCC No</label>
+                      <label>CCC / CC Code *</label>
                       <input className="form-input" value={claimForm.cccNo}
+                        required
                         onChange={(e) => setClaimForm((p) => ({ ...p, cccNo: e.target.value }))} />
                     </div>
                     {isHospital && (
@@ -1539,8 +1543,8 @@ const Nhis = () => {
               <div><strong>Gender:</strong> {viewClaim.gender || '—'}</div>
               <div><strong>DOB:</strong> {viewClaim.date_of_birth ? formatAppDate(viewClaim.date_of_birth) : '—'}</div>
               <div><strong>Address:</strong> {viewClaim.patient_address || '—'}</div>
-              <div><strong>Child Weight:</strong> {viewClaim.child_weight_kg ? `${viewClaim.child_weight_kg} kg` : '—'}</div>
-              <div><strong>CCC No:</strong> {viewClaim.ccc_no || '—'}</div>
+              {isHospital && <div><strong>Child Weight:</strong> {viewClaim.child_weight_kg ? `${viewClaim.child_weight_kg} kg` : '—'}</div>}
+              <div><strong>CCC / CC Code:</strong> {viewClaim.ccc_no || '—'}</div>
               {isHospital && <div><strong>Diagnoses:</strong> {viewClaim.diagnosis || '—'}</div>}
               <div><strong>Date of Service:</strong> {viewClaim.service_date_from ? formatAppDate(viewClaim.service_date_from) : '—'}</div>
               <div><strong>Prescribing Facility:</strong> {viewClaim.referring_facility || '—'}</div>

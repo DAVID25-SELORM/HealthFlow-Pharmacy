@@ -832,6 +832,7 @@ const validateClaimForSubmission = (claim, settings) => {
   assertRequiredText(claim.patientName, 'NHIA patient name')
   assertValidMemberNumber(claim.memberNumber, settings)
   assertRequiredText(claim.serviceDate, 'NHIA service date')
+  assertRequiredText(claim.ccCode || claim.payload?.ccCode || claim.payload?.cc_code, 'NHIA CCC/CC code')
   if (organizationType === 'hospital') {
     assertRequiredText(claim.diagnosis || claim.payload?.diagnosis, 'NHIA diagnosis')
   }

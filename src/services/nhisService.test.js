@@ -29,6 +29,7 @@ const baseClaim = {
   otherNames: 'Ama',
   patientAddress: 'Accra',
   dateOfBirth: '1990-01-01',
+  cccNo: 'CC-12345',
   serviceDate: '2026-05-14',
   physicianName: 'Dr Test',
   organizationType: 'pharmacy',
@@ -80,6 +81,34 @@ describe('assessNhisClaimReadiness', () => {
     )
 
     expect(readiness.blockers).toContain('NHIS member number must contain exactly 8 digits.')
+  })
+
+  it('requires CCC/CC code before serving a claim', () => {
+    const readiness = assessNhisClaimReadiness(
+      { ...baseClaim, cccNo: '' },
+      [baseMedicine]
+    )
+
+    expect(readiness.blockers).toContain('CCC/CC code is required before serving this NHIS claim.')
+  })
+
+  it('only asks for child weight on hospital child claims', () => {
+    const childClaim = {
+      ...baseClaim,
+      dateOfBirth: '2020-01-01',
+      childWeightKg: '',
+    }
+
+    expect(
+      assessNhisClaimReadiness(childClaim, [baseMedicine]).warnings
+    ).not.toContain('Child weight is missing for a child patient.')
+
+    expect(
+      assessNhisClaimReadiness(
+        { ...childClaim, organizationType: 'hospital', diagnosis: 'Malaria' },
+        [baseMedicine]
+      ).warnings
+    ).toContain('Child weight is missing for a child patient.')
   })
 
   it('accepts linked Ghana Card format as the NHIS member identifier', () => {

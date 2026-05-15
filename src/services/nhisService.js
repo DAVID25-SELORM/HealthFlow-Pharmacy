@@ -277,6 +277,7 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
   const isHospital = organizationType === 'hospital'
   const diagnosis = getClaimField(claimData, 'diagnosis')
   const diagnoses = splitDiagnoses(diagnosis)
+  const cccNo = getClaimField(claimData, 'cccNo', 'ccc_no') || getClaimField(claimData, 'ccCode', 'cc_code')
   const patientAge = calculateAge(dateOfBirth)
   const memberNumberIssue = validateMemberNumberFormat(
     getClaimField(claimData, 'memberNo', 'member_no'),
@@ -288,9 +289,10 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
   if (!getClaimField(claimData, 'otherNames', 'other_names')) warnings.push('Patient other names are missing on the claim.')
   if (!getClaimField(claimData, 'patientAddress', 'patient_address')) warnings.push('Patient address is missing on the claim.')
   if (!dateOfBirth) warnings.push('Patient date of birth is missing on the claim.')
-  if (patientAge !== null && patientAge < 12 && !(asNumber(childWeight) > 0)) {
+  if (isHospital && patientAge !== null && patientAge < 12 && !(asNumber(childWeight) > 0)) {
     warnings.push('Child weight is missing for a child patient.')
   }
+  if (!cccNo) blockers.push('CCC/CC code is required before serving this NHIS claim.')
   if (!diagnosis && isHospital) {
     blockers.push('Diagnosis is required for hospital NHIS claims.')
   } else if (isHospital && diagnoses.length > MAX_DIAGNOSES_PER_CLAIM) {
@@ -677,6 +679,8 @@ export const createNhisClaim = async (claimData, medicines) => {
     throw new Error(`NHIS pharmacy dispensing check failed: ${readiness.blockers.slice(0, 5).join(' ')}`)
   }
 
+  const organizationType = normalizeOrganizationType(claimData?.organizationType ?? claimData?.organization_type)
+  const isHospital = organizationType === 'hospital'
   assertRequiredText(claimData.surname, 'Surname')
   const memberNo = normalizeNhiaMemberNumber(
     assertRequiredText(claimData.memberNo, 'NHIS member number or Ghana Card number')
@@ -695,7 +699,7 @@ export const createNhisClaim = async (claimData, medicines) => {
     gender:             normalizeText(claimData.gender)            || null,
     date_of_birth:      claimData.dateOfBirth                      || null,
     patient_address:    normalizeText(claimData.patientAddress)    || null,
-    child_weight_kg:    claimData.childWeightKg
+    child_weight_kg:    isHospital && claimData.childWeightKg
       ? assertNonNegativeNumber(claimData.childWeightKg, 'Child weight')
       : null,
     ccc_no:             normalizeText(claimData.cccNo)             || null,
@@ -796,6 +800,8 @@ export const updateNhisClaim = async (id, claimData, medicines) => {
     throw new Error(`NHIS pharmacy dispensing check failed: ${readiness.blockers.slice(0, 5).join(' ')}`)
   }
 
+  const organizationType = normalizeOrganizationType(claimData?.organizationType ?? claimData?.organization_type)
+  const isHospital = organizationType === 'hospital'
   assertRequiredText(claimData.surname, 'Surname')
   const memberNo = normalizeNhiaMemberNumber(
     assertRequiredText(claimData.memberNo, 'NHIS member number or Ghana Card number')
@@ -827,7 +833,7 @@ export const updateNhisClaim = async (id, claimData, medicines) => {
     gender: normalizeText(claimData.gender) || null,
     date_of_birth: claimData.dateOfBirth || null,
     patient_address: normalizeText(claimData.patientAddress) || null,
-    child_weight_kg: claimData.childWeightKg
+    child_weight_kg: isHospital && claimData.childWeightKg
       ? assertNonNegativeNumber(claimData.childWeightKg, 'Child weight')
       : null,
     ccc_no: normalizeText(claimData.cccNo) || null,
