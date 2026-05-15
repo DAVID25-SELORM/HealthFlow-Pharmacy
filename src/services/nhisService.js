@@ -418,6 +418,38 @@ export const upsertNhisClinicalRules = async (rules, actorId = null) => {
   return rows.length
 }
 
+export const getNhiaApiSettings = async () => {
+  if (shouldUseBranchServer()) {
+    return null
+  }
+
+  const response = await invokeTierAccess({ action: 'get_nhia_api_settings' })
+  return response?.settings || null
+}
+
+export const saveNhiaApiSettings = async (settings) => {
+  if (shouldUseBranchServer()) {
+    throw new Error('Hosted NHIA API settings require Supabase access.')
+  }
+
+  const response = await invokeTierAccess({
+    action: 'save_nhia_api_settings',
+    settings,
+  })
+  return response?.settings || null
+}
+
+export const generateHostedNhiaCcCode = async (claimContext = {}) => {
+  if (shouldUseBranchServer()) {
+    throw new Error('Hosted NHIA CCC/CC code generation requires Supabase access.')
+  }
+
+  return await invokeTierAccess({
+    action: 'generate_nhia_cc_code',
+    ...claimContext,
+  })
+}
+
 export const validateNhisClaimFinalReadiness = async (claimData, medicines = [], options = {}) => {
   const organizationType = normalizeOrganizationType(
     claimData?.organizationType ?? claimData?.organization_type ?? options.organizationType

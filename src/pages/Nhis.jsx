@@ -32,11 +32,13 @@ import {
   uploadNhisPrescriptionPdf,
   validateNhisPrescriptionPdfFile,
   getNhisPrescriptionSignedUrl,
+  generateHostedNhiaCcCode,
+  getNhiaApiSettings,
 } from '../services/nhisService'
 import {
-  generateNhiaCcCode,
+  generateNhiaCcCode as generateBranchNhiaCcCode,
   getBranchServerConfig,
-  getNhiaSettings,
+  getNhiaSettings as getBranchNhiaSettings,
 } from '../services/branchServerApi'
 import { getAllPatients } from '../services/patientService'
 import { parseNhisDrugFile, generateNhisDrugTemplate } from '../services/nhisDrugImportService'
@@ -274,14 +276,21 @@ const Nhis = () => {
 
   const refreshDirectNhiaApiStatus = useCallback(async () => {
     const config = getBranchServerConfig()
-    if (!config.enabled || !config.token) {
-      setDirectNhiaSettings(null)
-      return
+    if (config.enabled && config.token) {
+      try {
+        const settings = await getBranchNhiaSettings()
+        if (settings?.directApiEnabled && settings?.apiBaseUrl) {
+          setDirectNhiaSettings({ ...settings, source: 'branch' })
+          return
+        }
+      } catch {
+        // Hosted settings below are the fallback for online Supabase deployments.
+      }
     }
 
     try {
-      const settings = await getNhiaSettings()
-      setDirectNhiaSettings(settings?.directApiEnabled && settings?.apiBaseUrl ? settings : null)
+      const settings = await getNhiaApiSettings()
+      setDirectNhiaSettings(settings?.directApiEnabled && settings?.apiBaseUrl ? { ...settings, source: 'hosted' } : null)
     } catch {
       setDirectNhiaSettings(null)
     }
@@ -509,7 +518,12 @@ const Nhis = () => {
     [claimMedicines]
   )
 
-  const directNhiaApiAvailable = Boolean(directNhiaSettings?.directApiEnabled && directNhiaSettings?.apiBaseUrl)
+  const directNhiaApiAvailable = Boolean(
+    directNhiaSettings?.source === 'branch' &&
+      directNhiaSettings?.directApiEnabled &&
+      directNhiaSettings?.apiBaseUrl
+  )
+  const nhiaCcCodeApiAvailable = Boolean(directNhiaSettings?.directApiEnabled && directNhiaSettings?.apiBaseUrl)
   const getDirectNhiaOptions = () => ({
     organizationType,
     facilityCode: organization?.facility_code || organization?.claimit_facility_code || directNhiaSettings?.facilityCode || '',
@@ -594,14 +608,17 @@ const Nhis = () => {
 
   // ── submit claim ──────────────────────────────────────────────
   const handleGenerateCcCode = async () => {
-    if (!directNhiaApiAvailable) {
+    if (!nhiaCcCodeApiAvailable) {
       notify('Direct NHIA API is not configured. Enter the CCC/CC code manually.', 'warning')
       return
     }
 
     try {
       setGeneratingCcCode(true)
-      const result = await generateNhiaCcCode({
+      const generateCcCode = directNhiaSettings?.source === 'branch'
+        ? generateBranchNhiaCcCode
+        : generateHostedNhiaCcCode
+      const result = await generateCcCode({
         organizationType,
         patientName: `${claimForm.surname} ${claimForm.otherNames || ''}`.trim(),
         memberNumber: claimForm.memberNo,
@@ -1429,7 +1446,7 @@ const Nhis = () => {
                         <input className="form-input" value={claimForm.cccNo}
                           required
                           onChange={(e) => setClaimForm((p) => ({ ...p, cccNo: e.target.value }))} />
-                        {directNhiaApiAvailable && (
+                        {nhiaCcCodeApiAvailable && (
                           <button
                             type="button"
                             className="btn btn-secondary nhis-code-generate"

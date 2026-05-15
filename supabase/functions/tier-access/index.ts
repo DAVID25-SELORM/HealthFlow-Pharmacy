@@ -45,6 +45,9 @@ type TierAccessAction =
   | 'delete_drug'
   | 'bulk_import_drugs'
   | 'sync_nhis_drugs_to_inventory'
+  | 'get_nhia_api_settings'
+  | 'save_nhia_api_settings'
+  | 'generate_nhia_cc_code'
 
 type RequesterProfile = {
   id: string
@@ -61,6 +64,7 @@ const SALES_ROLES = ['admin', 'pharmacist', 'assistant', 'cashier', 'technician'
 const CLAIMS_ROLES = ['admin', 'pharmacist', 'billing', 'claims_officer']
 const NHIS_ROLES = ['admin', 'pharmacist', 'billing', 'claims_officer']
 const REPORT_ROLES = ['admin', 'pharmacist', 'branch_manager']
+const NHIA_SETTINGS_ROLES = ['admin', 'pharmacist', 'branch_manager']
 
 const json = (body: Record<string, unknown>, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -72,6 +76,11 @@ const json = (body: Record<string, unknown>, status = 200) =>
   })
 
 const normalizeText = (value: unknown) => (typeof value === 'string' ? value.trim() : '')
+
+const normalizeOrganizationType = (value: unknown) => {
+  const normalized = normalizeText(value).toLowerCase()
+  return normalized === 'hospital' ? 'hospital' : 'pharmacy'
+}
 
 const normalizeSearchTokens = (value: unknown) =>
   normalizeText(value)
@@ -326,6 +335,22 @@ const requireNhisCatalogAccess = (requesterProfile: RequesterProfile, message: s
     !requesterProfile.can_manage_inventory &&
     !requesterProfile.can_manage_claims
   ) {
+    throw new Error(message)
+  }
+}
+
+const requireNhiaAccess = (requesterProfile: RequesterProfile, message: string) => {
+  if (
+    !NHIS_ROLES.includes(requesterProfile.role) &&
+    !NHIA_SETTINGS_ROLES.includes(requesterProfile.role) &&
+    !requesterProfile.can_manage_claims
+  ) {
+    throw new Error(message)
+  }
+}
+
+const requireNhiaSettingsAccess = (requesterProfile: RequesterProfile, message: string) => {
+  if (!NHIA_SETTINGS_ROLES.includes(requesterProfile.role) && !requesterProfile.can_manage_claims) {
     throw new Error(message)
   }
 }
@@ -1564,6 +1589,212 @@ const syncNhisDrugsToInventory = async (
   return { upserted, branches: branchIds.length }
 }
 
+const normalizeCredentialMode = (value: unknown) => {
+  const normalized = normalizeText(value).toLowerCase()
+  return ['api_key', 'bearer_token', 'basic_auth', 'oauth_client'].includes(normalized)
+    ? normalized
+    : 'api_key'
+}
+
+const normalizeExportFormat = (value: unknown) =>
+  normalizeText(value).toLowerCase() === 'xml' ? 'xml' : 'json'
+
+const maskCredentials = (payload: Record<string, unknown> = {}) =>
+  Object.fromEntries(Object.entries(payload).map(([key, value]) => [key, Boolean(normalizeText(value))]))
+
+const mapNhiaSettingsRow = (row: Record<string, unknown> | null, includeCredentials = false) => {
+  if (!row) return null
+  const credentials = (row.credential_payload && typeof row.credential_payload === 'object'
+    ? row.credential_payload
+    : {}) as Record<string, unknown>
+
+  return {
+    id: row.id,
+    organizationId: row.organization_id || '',
+    facilityCode: row.facility_code || '',
+    providerNumber: row.provider_number || '',
+    submitterId: row.submitter_id || '',
+    apiBaseUrl: row.api_base_url || '',
+    claimEndpointPath: row.claim_endpoint_path || '/claims',
+    ccCodeEndpointPath: row.cc_code_endpoint_path || '',
+    directApiEnabled: Boolean(row.direct_api_enabled),
+    credentialMode: row.credential_mode || 'api_key',
+    credentials: includeCredentials ? credentials : {},
+    credentialSummary: maskCredentials(credentials),
+    nhisMemberDigits: Number(row.nhis_member_digits || 8),
+    ghanaCardDigits: Number(row.ghana_card_digits || 10),
+    exportFormat: row.export_format || 'json',
+    maxRetryAttempts: Number(row.max_retry_attempts || 3),
+    isActive: row.is_active !== false,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+const getNhiaApiSettings = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  requesterProfile: RequesterProfile,
+  organizationId: string,
+  includeCredentials = false
+) => {
+  requireNhiaAccess(requesterProfile, 'Only NHIS staff can access NHIA API settings.')
+
+  const { data, error } = await adminClient
+    .from('organization_nhia_integrations')
+    .select('*')
+    .eq('organization_id', organizationId)
+    .eq('is_active', true)
+    .maybeSingle()
+
+  if (error) throw error
+  return mapNhiaSettingsRow(data as Record<string, unknown> | null, includeCredentials)
+}
+
+const saveNhiaApiSettings = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  requesterProfile: RequesterProfile,
+  organizationId: string,
+  payload: Record<string, unknown>
+) => {
+  requireNhiaSettingsAccess(requesterProfile, 'Only organization admins can update NHIA API settings.')
+
+  const settings = (payload.settings || {}) as Record<string, unknown>
+  const incomingCredentials =
+    settings.credentials && typeof settings.credentials === 'object'
+      ? (settings.credentials as Record<string, unknown>)
+      : {}
+  const existing = await getNhiaApiSettings(adminClient, requesterProfile, organizationId, true)
+  const credentials = { ...(existing?.credentials || {}) } as Record<string, unknown>
+
+  for (const [key, value] of Object.entries(incomingCredentials)) {
+    if (normalizeText(value)) credentials[key] = value
+  }
+
+  const row = {
+    organization_id: organizationId,
+    facility_code: normalizeText(settings.facilityCode) || null,
+    provider_number: normalizeText(settings.providerNumber) || null,
+    submitter_id: normalizeText(settings.submitterId) || null,
+    api_base_url: normalizeText(settings.apiBaseUrl).replace(/\/+$/, '') || null,
+    claim_endpoint_path: normalizeText(settings.claimEndpointPath) || '/claims',
+    cc_code_endpoint_path: normalizeText(settings.ccCodeEndpointPath) || null,
+    direct_api_enabled: Boolean(settings.directApiEnabled),
+    credential_mode: normalizeCredentialMode(settings.credentialMode),
+    credential_payload: credentials,
+    nhis_member_digits: Number(settings.nhisMemberDigits || 8),
+    ghana_card_digits: Number(settings.ghanaCardDigits || 10),
+    export_format: normalizeExportFormat(settings.exportFormat),
+    max_retry_attempts: Math.min(Math.max(Number(settings.maxRetryAttempts || 3), 1), 10),
+    is_active: true,
+    updated_by: requesterProfile.id,
+    updated_at: new Date().toISOString(),
+    ...(existing?.id ? {} : { created_by: requesterProfile.id }),
+  }
+
+  const { data, error } = await adminClient
+    .from('organization_nhia_integrations')
+    .upsert(row, { onConflict: 'organization_id' })
+    .select('*')
+    .single()
+
+  if (error) throw error
+  return { settings: mapNhiaSettingsRow(data as Record<string, unknown>, false) }
+}
+
+const joinUrl = (baseUrl: string, path: string) =>
+  `${baseUrl.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`
+
+const buildNhiaHeaders = (settings: Record<string, unknown>) => {
+  const credentials = (settings.credentials || {}) as Record<string, unknown>
+  const headers: Record<string, string> = { Accept: 'application/json', 'Content-Type': 'application/json' }
+  const mode = normalizeCredentialMode(settings.credentialMode)
+
+  if (mode === 'api_key') {
+    const headerName = normalizeText(credentials.headerName) || 'x-api-key'
+    const prefix = normalizeText(credentials.headerPrefix)
+    const apiKey = normalizeText(credentials.apiKey)
+    if (apiKey) headers[headerName] = prefix ? `${prefix} ${apiKey}` : apiKey
+  } else if (mode === 'bearer_token') {
+    const token = normalizeText(credentials.apiKey || credentials.token)
+    if (token) headers.Authorization = `Bearer ${token}`
+  } else if (mode === 'basic_auth') {
+    const username = normalizeText(credentials.username)
+    const password = normalizeText(credentials.password)
+    if (username || password) headers.Authorization = `Basic ${btoa(`${username}:${password}`)}`
+  } else if (mode === 'oauth_client') {
+    const token = normalizeText(credentials.accessToken || credentials.token || credentials.apiKey)
+    if (token) headers.Authorization = `Bearer ${token}`
+  }
+
+  return headers
+}
+
+const extractCcCode = (body: unknown): string => {
+  if (!body || typeof body !== 'object') return ''
+  const record = body as Record<string, unknown>
+  const direct = normalizeText(record.ccCode || record.cc_code || record.cccNo || record.ccc_no || record.code)
+  if (direct) return direct
+  return record.data && typeof record.data === 'object' ? extractCcCode(record.data) : ''
+}
+
+const createLocalCcCode = () => {
+  const datePart = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+  const random = crypto.getRandomValues(new Uint32Array(1))[0].toString().slice(-6).padStart(6, '0')
+  return `CC-${datePart}-${random}`
+}
+
+const generateNhiaCcCode = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  requesterProfile: RequesterProfile,
+  organizationId: string,
+  payload: Record<string, unknown>
+) => {
+  const settings = await getNhiaApiSettings(adminClient, requesterProfile, organizationId, true)
+  if (!settings?.directApiEnabled || !settings.apiBaseUrl) {
+    throw new Error('Direct NHIA API is not configured. Enter the CCC/CC code manually.')
+  }
+
+  const requestPayload = {
+    action: 'generate_cc_code',
+    facilityCode: settings.facilityCode,
+    providerNumber: settings.providerNumber,
+    submitterId: settings.submitterId || requesterProfile.id,
+    organizationType: normalizeOrganizationType(payload.organizationType || payload.organization_type),
+    patient: {
+      name: normalizeText(payload.patientName),
+      memberNumber: normalizeText(payload.memberNumber || payload.memberNo),
+      hin: normalizeText(payload.hin),
+    },
+    diagnosis: normalizeText(payload.diagnosis),
+    serviceDate: normalizeText(payload.serviceDate),
+    requestedAt: new Date().toISOString(),
+  }
+
+  if (!normalizeText(settings.ccCodeEndpointPath)) {
+    return { ccCode: createLocalCcCode(), source: 'local' }
+  }
+
+  const response = await fetch(joinUrl(String(settings.apiBaseUrl), String(settings.ccCodeEndpointPath)), {
+    method: 'POST',
+    headers: buildNhiaHeaders(settings as unknown as Record<string, unknown>),
+    body: JSON.stringify(requestPayload),
+  })
+  const responseText = await response.text()
+  let body: unknown = {}
+  try {
+    body = responseText ? JSON.parse(responseText) : {}
+  } catch {
+    body = { raw: responseText }
+  }
+
+  if (!response.ok) throw new Error(`NHIA API returned HTTP ${response.status}.`)
+
+  const ccCode = extractCcCode(body)
+  if (!ccCode) throw new Error('NHIA API response did not include a CCC/CC code.')
+
+  return { ccCode, source: 'api', response: body }
+}
+
 const toDateOnly = (value: string) => new Date(value).toISOString().split('T')[0]
 
 const getReportBundle = async (
@@ -1829,6 +2060,18 @@ Deno.serve(async (request) => {
 
     if (action === 'sync_nhis_drugs_to_inventory') {
       return json(await syncNhisDrugsToInventory(adminClient, requesterProfile, organizationId, payload))
+    }
+
+    if (action === 'get_nhia_api_settings') {
+      return json({ settings: await getNhiaApiSettings(adminClient, requesterProfile, organizationId, false) })
+    }
+
+    if (action === 'save_nhia_api_settings') {
+      return json(await saveNhiaApiSettings(adminClient, requesterProfile, organizationId, payload))
+    }
+
+    if (action === 'generate_nhia_cc_code') {
+      return json(await generateNhiaCcCode(adminClient, requesterProfile, organizationId, payload))
     }
 
     return json({ error: 'Unsupported tier access action.' }, 400)

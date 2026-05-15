@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { User, UserPlus, Lock, Bell, Building, Palette, Globe, GitBranch, Plus } from 'lucide-react'
+import { User, UserPlus, Lock, Bell, Building, Palette, Globe, GitBranch, Plus, KeyRound } from 'lucide-react'
 import { isSupabaseConfigured } from '../lib/supabase'
 import UpgradeGate from '../components/UpgradeGate'
 import {
@@ -13,6 +13,7 @@ import {
 } from '../services/settingsService'
 import { getBranches, createBranch, updateBranch, deactivateBranch } from '../services/branchService'
 import { updateOrganization, getOrganizationStats } from '../services/organizationService'
+import { getNhiaApiSettings, saveNhiaApiSettings } from '../services/nhisService'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
 import { normalizeSubscriptionTier, useTenant } from '../context/TenantContext'
@@ -37,6 +38,33 @@ const toForm = (row) => ({
   lowStockThreshold: row?.low_stock_threshold ?? 10,
   expiryAlertDays: row?.expiry_alert_days ?? 30,
   receiptFooter: row?.receipt_footer || '',
+})
+
+const blankNhiaApiForm = {
+  facilityCode: '',
+  providerNumber: '',
+  submitterId: '',
+  apiBaseUrl: '',
+  claimEndpointPath: '/claims',
+  ccCodeEndpointPath: '',
+  directApiEnabled: false,
+  credentialMode: 'api_key',
+  credentials: {
+    apiKey: '',
+    headerName: '',
+    headerPrefix: '',
+    clientId: '',
+    clientSecret: '',
+    username: '',
+    password: '',
+    token: '',
+  },
+}
+
+const toNhiaApiForm = (settings) => ({
+  ...blankNhiaApiForm,
+  ...(settings || {}),
+  credentials: { ...blankNhiaApiForm.credentials },
 })
 
 const blankStaffForm = {
@@ -83,6 +111,8 @@ const Settings = () => {
   const [staffForm, setStaffForm] = useState(blankStaffForm)
   const [users, setUsers] = useState([])
   const [orgStats, setOrgStats] = useState(null)
+  const [nhiaApiForm, setNhiaApiForm] = useState(blankNhiaApiForm)
+  const [savingNhiaApi, setSavingNhiaApi] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [creatingStaff, setCreatingStaff] = useState(false)
@@ -122,9 +152,14 @@ const Settings = () => {
       setFormData(toForm(settings))
 
       if (isAdmin) {
-        const [usersData, branchesData] = await Promise.all([getUsers(), getBranches()])
+        const [usersData, branchesData, nhiaApiSettings] = await Promise.all([
+          getUsers(),
+          getBranches(),
+          getNhiaApiSettings().catch(() => null),
+        ])
         setUsers(usersData)
         setBranches(branchesData)
+        setNhiaApiForm(toNhiaApiForm(nhiaApiSettings))
 
         // Load organization stats
         if (organization?.id) {
@@ -167,6 +202,36 @@ const Settings = () => {
       setError(saveError.message || 'Unable to save settings.')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const updateNhiaApiForm = (field, value) => {
+    setNhiaApiForm((current) => ({ ...current, [field]: value }))
+  }
+
+  const updateNhiaCredential = (field, value) => {
+    setNhiaApiForm((current) => ({
+      ...current,
+      credentials: {
+        ...current.credentials,
+        [field]: value,
+      },
+    }))
+  }
+
+  const handleSaveNhiaApi = async (event) => {
+    event.preventDefault()
+
+    try {
+      setSavingNhiaApi(true)
+      setError('')
+      await saveNhiaApiSettings(nhiaApiForm)
+      await loadSettings()
+      notify('NHIA API settings saved.', 'success')
+    } catch (saveError) {
+      setError(saveError.message || 'Unable to save NHIA API settings.')
+    } finally {
+      setSavingNhiaApi(false)
     }
   }
 
@@ -597,6 +662,109 @@ const Settings = () => {
                 </>
               )}
             </div>
+          </div>
+        )}
+
+        {isAdmin && organization?.can_use_nhis && (
+          <div className="settings-card">
+            <div className="card-icon">
+              <KeyRound size={24} />
+            </div>
+            <h3>NHIA API</h3>
+            <p className="settings-note">
+              Store the facility API details used for CCC/CC code generation.
+            </p>
+            <form className="settings-form" onSubmit={handleSaveNhiaApi}>
+              <label className="settings-checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={Boolean(nhiaApiForm.directApiEnabled)}
+                  onChange={(event) => updateNhiaApiForm('directApiEnabled', event.target.checked)}
+                />
+                Enable direct NHIA API
+              </label>
+              <div className="settings-form-row">
+                <input
+                  placeholder="Facility code"
+                  value={nhiaApiForm.facilityCode}
+                  onChange={(event) => updateNhiaApiForm('facilityCode', event.target.value)}
+                />
+                <input
+                  placeholder="Provider number"
+                  value={nhiaApiForm.providerNumber}
+                  onChange={(event) => updateNhiaApiForm('providerNumber', event.target.value)}
+                />
+              </div>
+              <input
+                placeholder="Submitter ID"
+                value={nhiaApiForm.submitterId}
+                onChange={(event) => updateNhiaApiForm('submitterId', event.target.value)}
+              />
+              <input
+                placeholder="API base URL"
+                value={nhiaApiForm.apiBaseUrl}
+                onChange={(event) => updateNhiaApiForm('apiBaseUrl', event.target.value)}
+              />
+              <div className="settings-form-row">
+                <input
+                  placeholder="Claim endpoint path"
+                  value={nhiaApiForm.claimEndpointPath}
+                  onChange={(event) => updateNhiaApiForm('claimEndpointPath', event.target.value)}
+                />
+                <input
+                  placeholder="CCC/CC endpoint path"
+                  value={nhiaApiForm.ccCodeEndpointPath}
+                  onChange={(event) => updateNhiaApiForm('ccCodeEndpointPath', event.target.value)}
+                />
+              </div>
+              <select
+                value={nhiaApiForm.credentialMode}
+                onChange={(event) => updateNhiaApiForm('credentialMode', event.target.value)}
+              >
+                <option value="api_key">API key</option>
+                <option value="bearer_token">Bearer token</option>
+                <option value="basic_auth">Basic auth</option>
+                <option value="oauth_client">OAuth/client token</option>
+              </select>
+              <div className="settings-form-row">
+                <input
+                  placeholder="API key or token"
+                  type="password"
+                  value={nhiaApiForm.credentials.apiKey}
+                  onChange={(event) => updateNhiaCredential('apiKey', event.target.value)}
+                />
+                <input
+                  placeholder="Header name"
+                  value={nhiaApiForm.credentials.headerName}
+                  onChange={(event) => updateNhiaCredential('headerName', event.target.value)}
+                />
+              </div>
+              <div className="settings-form-row">
+                <input
+                  placeholder="Username or client ID"
+                  value={nhiaApiForm.credentials.username || nhiaApiForm.credentials.clientId}
+                  onChange={(event) => {
+                    updateNhiaCredential('username', event.target.value)
+                    updateNhiaCredential('clientId', event.target.value)
+                  }}
+                />
+                <input
+                  placeholder="Password or client secret"
+                  type="password"
+                  value={nhiaApiForm.credentials.password || nhiaApiForm.credentials.clientSecret}
+                  onChange={(event) => {
+                    updateNhiaCredential('password', event.target.value)
+                    updateNhiaCredential('clientSecret', event.target.value)
+                  }}
+                />
+              </div>
+              <div className="settings-save-bar">
+                <span>Leave secret fields blank to keep the saved values.</span>
+                <button className="btn btn-primary" type="submit" disabled={savingNhiaApi}>
+                  {savingNhiaApi ? 'Saving...' : 'Save NHIA API'}
+                </button>
+              </div>
+            </form>
           </div>
         )}
 
