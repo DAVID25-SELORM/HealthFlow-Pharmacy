@@ -264,6 +264,12 @@ const createBatchNumber = () => {
   return `NHIA-BATCH-${datePart}-${randomPart}`
 }
 
+const createCcCode = () => {
+  const datePart = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+  const randomPart = Math.random().toString(36).slice(2, 8).toUpperCase()
+  return `CC-${datePart}-${randomPart}`
+}
+
 const getDrug = db.prepare('SELECT * FROM drugs WHERE id = ?')
 
 const selectSettings = db.prepare(`
@@ -287,13 +293,13 @@ const selectAnySettings = db.prepare(`
 const upsertSettings = db.prepare(`
   INSERT INTO nhia_settings (
     id, organization_id, branch_id, facility_code, provider_number, submitter_id,
-    api_base_url, claim_endpoint_path, direct_api_enabled, credential_mode,
+    api_base_url, claim_endpoint_path, cc_code_endpoint_path, direct_api_enabled, credential_mode,
     credential_payload, nhis_member_digits, ghana_card_digits, export_format,
     max_retry_attempts, is_active, created_at, updated_at
   )
   VALUES (
     @id, @organizationId, @branchId, @facilityCode, @providerNumber, @submitterId,
-    @apiBaseUrl, @claimEndpointPath, @directApiEnabled, @credentialMode,
+    @apiBaseUrl, @claimEndpointPath, @ccCodeEndpointPath, @directApiEnabled, @credentialMode,
     @credentialPayload, @nhisMemberDigits, @ghanaCardDigits, @exportFormat,
     @maxRetryAttempts, 1, @createdAt, @updatedAt
   )
@@ -305,6 +311,7 @@ const upsertSettings = db.prepare(`
     submitter_id = excluded.submitter_id,
     api_base_url = excluded.api_base_url,
     claim_endpoint_path = excluded.claim_endpoint_path,
+    cc_code_endpoint_path = excluded.cc_code_endpoint_path,
     direct_api_enabled = excluded.direct_api_enabled,
     credential_mode = excluded.credential_mode,
     credential_payload = excluded.credential_payload,
@@ -476,6 +483,7 @@ const mapSettingsRow = (row, { includeCredentials = false } = {}) => {
     submitterId: row.submitter_id || '',
     apiBaseUrl: row.api_base_url || '',
     claimEndpointPath: row.claim_endpoint_path || '/claims',
+    ccCodeEndpointPath: row.cc_code_endpoint_path || '',
     directApiEnabled: Boolean(row.direct_api_enabled),
     credentialMode: row.credential_mode || 'api_key',
     credentials: includeCredentials ? credentials : {},
@@ -525,6 +533,7 @@ export const saveNhiaSettings = (settings = {}) => {
     submitterId: normalizeText(settings.submitterId) || null,
     apiBaseUrl: normalizeText(settings.apiBaseUrl).replace(/\/+$/, '') || null,
     claimEndpointPath: normalizeText(settings.claimEndpointPath) || '/claims',
+    ccCodeEndpointPath: normalizeText(settings.ccCodeEndpointPath) || null,
     directApiEnabled: toBool(settings.directApiEnabled),
     credentialMode,
     credentialPayload: json(credentials),
@@ -914,8 +923,8 @@ const postWithCertificate = (url, body, settings) =>
     request.end()
   })
 
-const submitPayload = async (settings, payload) => {
-  const endpointPath = settings.claimEndpointPath || '/claims'
+const submitPayload = async (settings, payload, endpointPathOverride = '') => {
+  const endpointPath = endpointPathOverride || settings.claimEndpointPath || '/claims'
   const url = `${settings.apiBaseUrl.replace(/\/+$/, '')}/${endpointPath.replace(/^\/+/, '')}`
   const body = JSON.stringify(payload)
 
@@ -949,6 +958,119 @@ const deriveRemoteStatus = (body) => {
   if (value.includes('reject')) return 'rejected'
   if (value.includes('accept') || value.includes('approve')) return 'accepted'
   return 'submitted'
+}
+
+export const generateNhiaCcCode = async (claimContext = {}) => {
+  const settings = getNhiaSettings({ includeCredentials: true })
+  validateSettingsForSubmission(settings)
+
+  if (!settings.directApiEnabled) {
+    throw new Error('Direct NHIA API is disabled. Enter the CCC/CC code manually.')
+  }
+
+  const payload = {
+    action: 'generate_cc_code',
+    facilityCode: settings.facilityCode,
+    providerNumber: settings.providerNumber,
+    submitterId: settings.submitterId,
+    organizationType: normalizeOrganizationType(claimContext.organizationType || claimContext.organization_type),
+    patient: {
+      name: normalizeText(claimContext.patientName),
+      memberNumber: normalizeText(claimContext.memberNumber || claimContext.memberNo),
+      hin: normalizeText(claimContext.hin),
+    },
+    diagnosis: normalizeText(claimContext.diagnosis),
+    serviceDate: normalizeText(claimContext.serviceDate),
+    requestedAt: nowIso(),
+  }
+
+  if (settings.ccCodeEndpointPath) {
+    logSubmission({ action: 'cc_code.generate.start', status: 'pending', request: payload })
+    try {
+      const result = await submitPayload(settings, payload, settings.ccCodeEndpointPath)
+      if (!result.ok) {
+        throw new Error(`NHIA API returned HTTP ${result.httpStatus}.`)
+      }
+      const ccCode = extractCcCode(result.body)
+      if (!ccCode) {
+        throw new Error('NHIA API response did not include a CCC/CC code.')
+      }
+      logSubmission({
+        action: 'cc_code.generate.complete',
+        status: 'success',
+        httpStatus: result.httpStatus,
+        response: result.body,
+      })
+      return { ccCode, source: 'api', response: result.body }
+    } catch (error) {
+      logSubmission({
+        action: 'cc_code.generate.failed',
+        status: 'failed',
+        error: error.message || 'CCC/CC code generation failed.',
+      })
+      throw error
+    }
+  }
+
+  const ccCode = createCcCode()
+  logSubmission({
+    action: 'cc_code.generate.local',
+    status: 'success',
+    request: { ...payload, ccCode },
+  })
+  return { ccCode, source: 'local' }
+}
+
+export const submitNhiaDirectPayload = async ({ payload, claimIds = [], action = 'nhis.direct_submit' } = {}) => {
+  const settings = getNhiaSettings({ includeCredentials: true })
+  validateSettingsForSubmission(settings)
+
+  if (!settings.directApiEnabled) {
+    throw new Error('Direct NHIA API submission is disabled. Export a claim batch instead.')
+  }
+  if (!payload || typeof payload !== 'object') {
+    throw new Error('Direct NHIA submission requires a claim payload.')
+  }
+
+  const startedAt = nowIso()
+  logSubmission({
+    action: action || 'nhis.direct_submit',
+    status: 'pending',
+    request: {
+      claimIds,
+      claimCount: Array.isArray(payload.claims) ? payload.claims.length : null,
+      payload,
+      startedAt,
+    },
+  })
+
+  try {
+    const result = await submitPayload(settings, payload)
+    if (!result.ok) {
+      throw new Error(`NHIA API returned HTTP ${result.httpStatus}.`)
+    }
+    const remoteStatus = deriveRemoteStatus(result.body)
+    logSubmission({
+      action: `${action || 'nhis.direct_submit'}.complete`,
+      status: remoteStatus,
+      httpStatus: result.httpStatus,
+      response: result.body,
+    })
+    return {
+      status: remoteStatus,
+      httpStatus: result.httpStatus,
+      endpoint: result.endpoint,
+      response: result.body,
+      submittedAt: nowIso(),
+    }
+  } catch (error) {
+    logSubmission({
+      action: `${action || 'nhis.direct_submit'}.failed`,
+      status: 'failed',
+      error: error.message || 'Direct NHIA submission failed.',
+    })
+    throw error
+  }
 }
 
 const updateClaimAfterAttempt = ({ id, status, response = null, error = null, retryCount = 0 }) => {

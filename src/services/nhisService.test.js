@@ -14,6 +14,7 @@ vi.mock('./branchServerApi', () => ({
   createBranchRecord: vi.fn(),
   listBranchRecords: vi.fn(),
   shouldUseBranchServer: vi.fn(() => false),
+  submitNhiaDirectPayload: vi.fn(),
   updateBranchRecord: vi.fn(),
 }))
 

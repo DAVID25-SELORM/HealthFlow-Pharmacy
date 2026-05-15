@@ -23,6 +23,7 @@ import {
   updateNhisClaim,
   updateNhisClaimStatus,
   exportNhisClaimsFile,
+  submitNhisClaimDirect,
   assessNhisClaimReadiness,
   validateNhisClaimFinalReadiness,
   getAllNhisClinicalRules,
@@ -32,6 +33,11 @@ import {
   validateNhisPrescriptionPdfFile,
   getNhisPrescriptionSignedUrl,
 } from '../services/nhisService'
+import {
+  generateNhiaCcCode,
+  getBranchServerConfig,
+  getNhiaSettings,
+} from '../services/branchServerApi'
 import { getAllPatients } from '../services/patientService'
 import { parseNhisDrugFile, generateNhisDrugTemplate } from '../services/nhisDrugImportService'
 import { parseNhisClinicalRuleFile, generateNhisClinicalRuleTemplate } from '../services/nhisClinicalRuleImportService'
@@ -203,6 +209,10 @@ const Nhis = () => {
   const [ruleImportErrors, setRuleImportErrors] = useState([])
   const [ruleImporting, setRuleImporting] = useState(false)
 
+  // ─── direct NHIA API ─────────────────────────────────────────
+  const [directNhiaSettings, setDirectNhiaSettings] = useState(null)
+  const [generatingCcCode, setGeneratingCcCode] = useState(false)
+
   // ── export modal ──────────────────────────────────────────────
   const [exportMonth, setExportMonth]   = useState(
     new Date().toISOString().slice(0, 7) // YYYY-MM
@@ -261,6 +271,23 @@ const Nhis = () => {
   }, [])
 
   useEffect(() => { void loadAll() }, [loadAll])
+
+  const refreshDirectNhiaApiStatus = useCallback(async () => {
+    const config = getBranchServerConfig()
+    if (!config.enabled || !config.token) {
+      setDirectNhiaSettings(null)
+      return
+    }
+
+    try {
+      const settings = await getNhiaSettings()
+      setDirectNhiaSettings(settings?.directApiEnabled && settings?.apiBaseUrl ? settings : null)
+    } catch {
+      setDirectNhiaSettings(null)
+    }
+  }, [])
+
+  useEffect(() => { void refreshDirectNhiaApiStatus() }, [refreshDirectNhiaApiStatus])
 
   // ── filtered claims ──────────────────────────────────────────
   const filteredClaims = useMemo(() => {
@@ -482,6 +509,14 @@ const Nhis = () => {
     [claimMedicines]
   )
 
+  const directNhiaApiAvailable = Boolean(directNhiaSettings?.directApiEnabled && directNhiaSettings?.apiBaseUrl)
+  const getDirectNhiaOptions = () => ({
+    organizationType,
+    facilityCode: organization?.facility_code || organization?.claimit_facility_code || directNhiaSettings?.facilityCode || '',
+    providerNumber: organization?.provider_number || organization?.nhia_provider_number || directNhiaSettings?.providerNumber || '',
+    submitterId: directNhiaSettings?.submitterId || user?.id || '',
+  })
+
   const readiness = useMemo(
     () => assessNhisClaimReadiness(
       { ...claimForm, organizationType },
@@ -558,6 +593,39 @@ const Nhis = () => {
   }
 
   // ── submit claim ──────────────────────────────────────────────
+  const handleGenerateCcCode = async () => {
+    if (!directNhiaApiAvailable) {
+      notify('Direct NHIA API is not configured. Enter the CCC/CC code manually.', 'warning')
+      return
+    }
+
+    try {
+      setGeneratingCcCode(true)
+      const result = await generateNhiaCcCode({
+        organizationType,
+        patientName: `${claimForm.surname} ${claimForm.otherNames || ''}`.trim(),
+        memberNumber: claimForm.memberNo,
+        hin: claimForm.hin,
+        diagnosis: claimForm.diagnosis,
+        serviceDate: claimForm.serviceDate,
+      })
+      if (!result?.ccCode) {
+        throw new Error('No CCC/CC code was returned.')
+      }
+      setClaimForm((prev) => ({ ...prev, cccNo: result.ccCode }))
+      notify(
+        result.source === 'api'
+          ? 'CCC/CC code generated from NHIA API.'
+          : 'CCC/CC code generated for direct NHIA submission.',
+        'success'
+      )
+    } catch (err) {
+      notify(err.message || 'Unable to generate CCC/CC code.', 'error')
+    } finally {
+      setGeneratingCcCode(false)
+    }
+  }
+
   const handleSubmitClaim = async (e) => {
     e.preventDefault()
     if (readiness.blockers.length) {
@@ -582,8 +650,13 @@ const Nhis = () => {
         createdBy: user?.id || null,
       }
 
+      let successMessage = editingClaim ? 'NHIS claim corrections saved.' : 'NHIS claim saved.'
       if (editingClaim) {
         await updateNhisClaim(editingClaim.id, payload, claimMedicines)
+        if (directNhiaApiAvailable) {
+          await submitNhisClaimDirect(editingClaim.id, getDirectNhiaOptions())
+          successMessage = 'NHIS claim corrections saved and submitted directly to NHIA.'
+        }
       } else {
         await createNhisClaim(payload, claimMedicines)
       }
@@ -591,7 +664,7 @@ const Nhis = () => {
       setShowNewClaimModal(false)
       resetClaimModal()
       await loadAll()
-      notify(editingClaim ? 'NHIS claim corrections saved.' : 'NHIS claim saved.', 'success')
+      notify(successMessage, 'success')
     } catch (err) {
       setClaimError(err.message || 'Unable to save claim.')
     } finally {
@@ -649,9 +722,21 @@ const Nhis = () => {
       }
 
       setUpdatingStatus(claim.id)
-      await updateNhisClaimStatus(claim.id, newStatus, '', user?.id || null)
+      if (newStatus === 'submitted' && directNhiaApiAvailable) {
+        await submitNhisClaimDirect(claim.id, {
+          ...getDirectNhiaOptions(),
+          claim,
+        })
+      } else {
+        await updateNhisClaimStatus(claim.id, newStatus, '', user?.id || null)
+      }
       await loadAll()
-      notify(`Claim ${claim.claim_number} marked as ${newStatus}.`, 'success')
+      notify(
+        newStatus === 'submitted' && directNhiaApiAvailable
+          ? `Claim ${claim.claim_number} submitted directly to NHIA.`
+          : `Claim ${claim.claim_number} marked as ${newStatus}.`,
+        'success'
+      )
     } catch (err) {
       notify(err.message || 'Update failed.', 'error')
     } finally {
@@ -839,15 +924,18 @@ const Nhis = () => {
         : exportMonth
       const count = await exportNhisClaimsFile({
         ...periodOptions,
-        organizationType,
+        ...getDirectNhiaOptions(),
+        directSubmit: directNhiaApiAvailable,
         format: exportFormat,
-        facilityCode: organization?.facility_code || organization?.claimit_facility_code || '',
-        providerNumber: organization?.provider_number || organization?.nhia_provider_number || '',
-        submitterId: user?.id || '',
       })
       setShowExportModal(false)
       await loadAll()
-      notify(`${count} claims exported as ${exportFormat.toUpperCase()} for ${periodLabel}. Served claims marked as Submitted.`, 'success')
+      notify(
+        directNhiaApiAvailable
+          ? `${count} claims submitted directly to NHIA for ${periodLabel}. Served claims marked as Submitted.`
+          : `${count} claims exported as ${exportFormat.toUpperCase()} for ${periodLabel}. Served claims marked as Submitted.`,
+        'success'
+      )
     } catch (err) {
       notify(err.message || 'Export failed.', 'error')
     } finally {
@@ -872,7 +960,7 @@ const Nhis = () => {
           {pageTab === 'claims' && canWrite && (
             <>
               <button className="btn btn-secondary" onClick={() => setShowExportModal(true)}>
-                <Download size={16} /> Export Claims
+                <Download size={16} /> {directNhiaApiAvailable ? 'Submit Claims' : 'Export Claims'}
               </button>
               <button className="btn btn-primary" onClick={openNewClaimModal}>
                 <Plus size={16} /> New Claim
@@ -1078,7 +1166,7 @@ const Nhis = () => {
                             </button>
                             <button
                               className="action-btn action-btn--submit"
-                              title="Mark as Submitted"
+                              title={directNhiaApiAvailable ? 'Submit directly to NHIA' : 'Mark as Submitted'}
                               disabled={updatingStatus === c.id}
                               onClick={() => handleStatusUpdate(c, 'submitted')}
                             >
@@ -1337,9 +1425,21 @@ const Nhis = () => {
                   <div className="form-row">
                     <div className="form-group">
                       <label>CCC / CC Code *</label>
-                      <input className="form-input" value={claimForm.cccNo}
-                        required
-                        onChange={(e) => setClaimForm((p) => ({ ...p, cccNo: e.target.value }))} />
+                      <div className="nhis-code-field">
+                        <input className="form-input" value={claimForm.cccNo}
+                          required
+                          onChange={(e) => setClaimForm((p) => ({ ...p, cccNo: e.target.value }))} />
+                        {directNhiaApiAvailable && (
+                          <button
+                            type="button"
+                            className="btn btn-secondary nhis-code-generate"
+                            disabled={generatingCcCode}
+                            onClick={handleGenerateCcCode}
+                          >
+                            {generatingCcCode ? 'Generating...' : 'Generate'}
+                          </button>
+                        )}
+                      </div>
                     </div>
                     {isHospital && (
                       <div className="form-group">
@@ -1532,9 +1632,9 @@ const Nhis = () => {
                 onClick={handleSubmitClaim}
               >
                 {claimSubmitting
-                  ? 'Saving...'
+                  ? (editingClaim && directNhiaApiAvailable ? 'Submitting...' : 'Saving...')
                   : editingClaim
-                    ? 'Save Corrections'
+                    ? (directNhiaApiAvailable ? 'Save Corrections & Submit' : 'Save Corrections')
                     : 'Save Claim'}
               </button>
             </div>
@@ -1959,26 +2059,37 @@ const Nhis = () => {
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowExportModal(false)}>
           <div className="modal-panel modal-panel--export">
             <div className="modal-header">
-              <h2>Claims Batch Export</h2>
+              <h2>{directNhiaApiAvailable ? 'Direct NHIA Submission' : 'Claims Batch Export'}</h2>
               <button className="modal-close" onClick={() => setShowExportModal(false)}><X size={18} /></button>
             </div>
             <div className="export-body">
               <p className="export-info">
-                Exports claims for the selected month or custom service-date period as a CLAIM-it HMS Toolkit XML/JSON file.
-                All exported <strong>Served</strong> claims will be automatically marked as <strong>Submitted</strong>.
+                {directNhiaApiAvailable ? (
+                  <>
+                    Direct NHIA API is enabled. Claims in the selected period will be sent to NHIA/CLAIM-it directly.
+                    Successfully sent <strong>Served</strong> claims will be marked as <strong>Submitted</strong>.
+                  </>
+                ) : (
+                  <>
+                    Exports claims for the selected month or custom service-date period as a CLAIM-it HMS Toolkit XML/JSON file.
+                    All exported <strong>Served</strong> claims will be automatically marked as <strong>Submitted</strong>.
+                  </>
+                )}
               </p>
-              <div className="form-group">
-                <label>Export File Type</label>
-                <select
-                  className="form-input"
-                  value={exportFormat}
-                  onChange={(e) => setExportFormat(e.target.value)}
-                >
-                  <option value="xml">XML for CLAIM-it</option>
-                  <option value="json">JSON for CLAIM-it</option>
-                  <option value="csv">CSV review file</option>
-                </select>
-              </div>
+              {!directNhiaApiAvailable && (
+                <div className="form-group">
+                  <label>Export File Type</label>
+                  <select
+                    className="form-input"
+                    value={exportFormat}
+                    onChange={(e) => setExportFormat(e.target.value)}
+                  >
+                    <option value="xml">XML for CLAIM-it</option>
+                    <option value="json">JSON for CLAIM-it</option>
+                    <option value="csv">CSV review file</option>
+                  </select>
+                </div>
+              )}
               <div className="form-group">
                 <label>Export Period</label>
                 <select
@@ -2026,7 +2137,9 @@ const Nhis = () => {
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setShowExportModal(false)}>Cancel</button>
               <button className="btn btn-primary" disabled={exporting || !exportPeriodReady} onClick={handleExport}>
-                {exporting ? 'Exporting...' : <><Download size={14} /> Export &amp; Download</>}
+                {exporting
+                  ? (directNhiaApiAvailable ? 'Submitting...' : 'Exporting...')
+                  : <><Download size={14} /> {directNhiaApiAvailable ? 'Submit Directly' : 'Export & Download'}</>}
               </button>
             </div>
           </div>

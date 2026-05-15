@@ -1041,6 +1041,22 @@
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
 }
 
+.nhis-code-field {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.nhis-code-field .form-input {
+  min-width: 0;
+}
+
+.nhis-code-generate {
+  flex: 0 0 auto;
+  min-height: 2.25rem;
+  padding-inline: 0.75rem;
+}
+
 .nhis-page .form-row {
   display: grid;
   grid-template-columns: 1fr 1fr;

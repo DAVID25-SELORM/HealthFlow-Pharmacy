@@ -166,6 +166,14 @@ export const saveNhiaSettings = async (settings) => {
   return response.data || null
 }
 
+export const generateNhiaCcCode = async (claimContext = {}) => {
+  const response = await branchFetch('/api/nhia/cc-code', {
+    method: 'POST',
+    body: JSON.stringify(claimContext || {}),
+  })
+  return response.data || null
+}
+
 export const getNhiaSummary = async () => await branchFetch('/api/nhia/summary')
 
 export const listNhiaClaims = async (filters = {}) => {
@@ -183,6 +191,14 @@ export const submitPendingNhiaClaims = async () =>
   await branchFetch('/api/nhia/submit-pending', {
     method: 'POST',
   })
+
+export const submitNhiaDirectPayload = async ({ payload, claimIds = [], action = '' } = {}) => {
+  const response = await branchFetch('/api/nhia/direct-submit', {
+    method: 'POST',
+    body: JSON.stringify({ payload, claimIds, action }),
+  })
+  return response.data || null
+}
 
 export const createNhiaBatch = async ({ claimIds = [], exportFormat = 'json' } = {}) => {
   const response = await branchFetch('/api/nhia/batches', {

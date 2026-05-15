@@ -141,6 +141,7 @@ CREATE TABLE IF NOT EXISTS nhia_settings (
   submitter_id TEXT,
   api_base_url TEXT,
   claim_endpoint_path TEXT,
+  cc_code_endpoint_path TEXT,
   direct_api_enabled INTEGER NOT NULL DEFAULT 0,
   credential_mode TEXT NOT NULL DEFAULT 'api_key',
   credential_payload TEXT NOT NULL DEFAULT '{}',

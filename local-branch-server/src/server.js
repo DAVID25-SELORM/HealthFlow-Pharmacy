@@ -11,6 +11,7 @@ import {
   createNhiaBatch,
   createNhiaClaim,
   exportNhiaBatch,
+  generateNhiaCcCode,
   getNhiaBatch,
   getNhiaClaim,
   getNhiaSettings,
@@ -19,6 +20,7 @@ import {
   listNhiaClaims,
   markNhiaClaimReady,
   saveNhiaSettings,
+  submitNhiaDirectPayload,
   submitNhiaClaim,
   submitPendingNhiaClaims,
 } from './nhiaRepository.js'
@@ -241,6 +243,14 @@ app.put('/api/nhia/settings', (request, response, next) => {
   }
 })
 
+app.post('/api/nhia/cc-code', async (request, response, next) => {
+  try {
+    response.json({ data: await generateNhiaCcCode(request.body || {}) })
+  } catch (error) {
+    next(error)
+  }
+})
+
 app.get('/api/nhia/summary', (_request, response) => {
   response.json(getNhiaSummary())
 })
@@ -291,6 +301,20 @@ app.post('/api/nhia/claims/:id/submit', async (request, response, next) => {
 app.post('/api/nhia/submit-pending', async (request, response, next) => {
   try {
     response.json(await submitPendingNhiaClaims({ limit: request.body?.limit || 10 }))
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.post('/api/nhia/direct-submit', async (request, response, next) => {
+  try {
+    response.json({
+      data: await submitNhiaDirectPayload({
+        payload: request.body?.payload,
+        claimIds: request.body?.claimIds || [],
+        action: request.body?.action || 'nhis.direct_submit',
+      }),
+    })
   } catch (error) {
     next(error)
   }

@@ -9,6 +9,7 @@ import {
   createBranchRecord,
   listBranchRecords,
   shouldUseBranchServer,
+  submitNhiaDirectPayload,
   updateBranchRecord,
 } from './branchServerApi'
 import { invokeTierAccess } from './tierAccessService'
@@ -1222,6 +1223,32 @@ export const getNhisClaimsForPeriod = async (periodOptions = {}) => {
 export const getNhisClaimsForMonth = async (yearMonth) =>
   await getNhisClaimsForPeriod({ mode: 'month', yearMonth })
 
+export const getNhisClaimForSubmission = async (id) => {
+  if (!id) throw new Error('NHIS claim ID is required.')
+
+  if (shouldUseBranchServer()) {
+    const rows = await listBranchRecords('nhis/claims', { id, limit: 1 })
+    const claim = rows?.[0]
+    if (!claim) throw new Error('NHIS claim not found.')
+    return claim
+  }
+
+  const { data, error } = await supabase
+    .from('nhis_claims')
+    .select(`
+      *,
+        nhis_claim_medicines (
+          nhis_drug_id, drug_code, description, unit, unit_price,
+          dispensed_qty, dispensary_date, dose, frequency, duration, total_amount
+        )
+    `)
+    .eq('id', id)
+    .single()
+
+  if (error) throw error
+  return data
+}
+
 const normalizeClaimItExportFormat = (format = 'xml') => {
   const normalized = normalizeText(format).toLowerCase()
   return CLAIMIT_EXPORT_FORMATS.includes(normalized) ? normalized : 'xml'
@@ -1536,16 +1563,8 @@ const downloadTextFile = ({ content, contentType, fileName }) => {
   URL.revokeObjectURL(url)
 }
 
-/**
- * Generates an XML/JSON CLAIM-it HMS Toolkit batch, or a review CSV, and triggers download.
- */
-export const exportNhisClaimsFile = async (options = {}) => {
-  const period = normalizeNhisExportPeriod(options)
-  const claims = await getNhisClaimsForPeriod(period)
-  if (!claims.length) throw new Error(`No claims found for ${period.label}.`)
-  const organizationType = normalizeOrganizationType(options.organizationType)
+const assertNhisClaimsReadyForFinalSubmission = async (claims, organizationType) => {
   const clinicalRules = organizationType === 'hospital' ? await getAllNhisClinicalRules() : DIAGNOSIS_TREATMENT_RULES
-
   const incompleteClaims = claims
     .map((claim) => ({
       claim,
@@ -1567,9 +1586,9 @@ export const exportNhisClaimsFile = async (options = {}) => {
       `${first.claim.claim_number || 'First claim'}: ${first.issues.slice(0, 3).join(' ')}`
     )
   }
+}
 
-  downloadTextFile(createNhisExportFile(claims, period, { ...options, organizationType }))
-
+const markNhisServedClaimsSubmitted = async (claims) => {
   const servedClaims = claims.filter((claim) => claim.status === 'served')
   if (shouldUseBranchServer()) {
     await Promise.all(
@@ -1578,7 +1597,7 @@ export const exportNhisClaimsFile = async (options = {}) => {
         updated_at: new Date().toISOString(),
       }))
     )
-    return claims.length
+    return
   }
 
   const servedClaimIds = servedClaims.map((claim) => claim.id).filter(Boolean)
@@ -1588,8 +1607,64 @@ export const exportNhisClaimsFile = async (options = {}) => {
       .update({ status: 'submitted', updated_at: new Date().toISOString() })
       .in('id', servedClaimIds)
   }
+}
+
+const getDirectSubmissionPeriodForClaim = (claim = {}) => {
+  const serviceDate = getClaimExportServiceDate(claim) || new Date().toISOString().slice(0, 10)
+  return normalizeNhisExportPeriod({ mode: 'custom', fromDate: serviceDate, toDate: serviceDate })
+}
+
+const submitNhisClaimsDirect = async (claims, period, options = {}) => {
+  const payload = buildNhisClaimItExportPayload(claims, {
+    ...options,
+    exportPeriod: period,
+  })
+  return await submitNhiaDirectPayload({
+    payload,
+    claimIds: claims.map((claim) => claim.id).filter(Boolean),
+    action: options.action || 'nhis.direct_submit',
+  })
+}
+
+/**
+ * Generates an XML/JSON CLAIM-it HMS Toolkit batch, or a review CSV, and triggers download.
+ */
+export const exportNhisClaimsFile = async (options = {}) => {
+  const period = normalizeNhisExportPeriod(options)
+  const claims = await getNhisClaimsForPeriod(period)
+  if (!claims.length) throw new Error(`No claims found for ${period.label}.`)
+  const organizationType = normalizeOrganizationType(options.organizationType)
+  await assertNhisClaimsReadyForFinalSubmission(claims, organizationType)
+
+  if (options.directSubmit) {
+    await submitNhisClaimsDirect(claims, period, {
+      ...options,
+      organizationType,
+      action: 'nhis.direct_batch_submit',
+    })
+    await markNhisServedClaimsSubmitted(claims)
+    return claims.length
+  }
+
+  downloadTextFile(createNhisExportFile(claims, period, { ...options, organizationType }))
+
+  await markNhisServedClaimsSubmitted(claims)
 
   return claims.length
+}
+
+export const submitNhisClaimDirect = async (id, options = {}) => {
+  const claim = options.claim || await getNhisClaimForSubmission(id)
+  const organizationType = normalizeOrganizationType(options.organizationType || claim.organization_type)
+  await assertNhisClaimsReadyForFinalSubmission([claim], organizationType)
+  const period = getDirectSubmissionPeriodForClaim(claim)
+  const result = await submitNhisClaimsDirect([claim], period, {
+    ...options,
+    organizationType,
+    action: 'nhis.direct_claim_submit',
+  })
+  await markNhisServedClaimsSubmitted([claim])
+  return result
 }
 
 export const exportNhisMonthlyFile = async (yearMonth, options = {}) =>

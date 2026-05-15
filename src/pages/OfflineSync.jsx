@@ -49,6 +49,7 @@ const blankNhiaForm = {
   submitterId: '',
   apiBaseUrl: '',
   claimEndpointPath: '/claims',
+  ccCodeEndpointPath: '',
   directApiEnabled: false,
   credentialMode: 'api_key',
   exportFormat: 'json',
@@ -360,6 +361,14 @@ export default function OfflineSync() {
             <input
               value={nhiaForm.claimEndpointPath}
               onChange={(event) => updateNhiaForm('claimEndpointPath', event.target.value)}
+            />
+          </label>
+          <label>
+            <span>CC Code Endpoint</span>
+            <input
+              value={nhiaForm.ccCodeEndpointPath}
+              placeholder="Optional"
+              onChange={(event) => updateNhiaForm('ccCodeEndpointPath', event.target.value)}
             />
           </label>
           <label>
