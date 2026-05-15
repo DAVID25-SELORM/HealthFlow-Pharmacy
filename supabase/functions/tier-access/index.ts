@@ -48,6 +48,7 @@ type TierAccessAction =
   | 'get_nhia_api_settings'
   | 'save_nhia_api_settings'
   | 'generate_nhia_cc_code'
+  | 'submit_nhia_claims_direct'
 
 type RequesterProfile = {
   id: string
@@ -1614,9 +1615,12 @@ const mapNhiaSettingsRow = (row: Record<string, unknown> | null, includeCredenti
     facilityCode: row.facility_code || '',
     providerNumber: row.provider_number || '',
     submitterId: row.submitter_id || '',
+    apiEnvironment: row.api_environment || 'production',
     apiBaseUrl: row.api_base_url || '',
-    claimEndpointPath: row.claim_endpoint_path || '/claims',
+    claimEndpointPath: row.claim_endpoint_path || '',
     ccCodeEndpointPath: row.cc_code_endpoint_path || '',
+    claimStatusEndpointPath: row.claim_status_endpoint_path || '',
+    memberLookupEndpointPath: row.member_lookup_endpoint_path || '',
     directApiEnabled: Boolean(row.direct_api_enabled),
     credentialMode: row.credential_mode || 'api_key',
     credentials: includeCredentials ? credentials : {},
@@ -1675,9 +1679,12 @@ const saveNhiaApiSettings = async (
     facility_code: normalizeText(settings.facilityCode) || null,
     provider_number: normalizeText(settings.providerNumber) || null,
     submitter_id: normalizeText(settings.submitterId) || null,
+    api_environment: normalizeText(settings.apiEnvironment).toLowerCase() === 'sandbox' ? 'sandbox' : 'production',
     api_base_url: normalizeText(settings.apiBaseUrl).replace(/\/+$/, '') || null,
-    claim_endpoint_path: normalizeText(settings.claimEndpointPath) || '/claims',
+    claim_endpoint_path: normalizeText(settings.claimEndpointPath) || null,
     cc_code_endpoint_path: normalizeText(settings.ccCodeEndpointPath) || null,
+    claim_status_endpoint_path: normalizeText(settings.claimStatusEndpointPath) || null,
+    member_lookup_endpoint_path: normalizeText(settings.memberLookupEndpointPath) || null,
     direct_api_enabled: Boolean(settings.directApiEnabled),
     credential_mode: normalizeCredentialMode(settings.credentialMode),
     credential_payload: credentials,
@@ -1704,9 +1711,9 @@ const saveNhiaApiSettings = async (
 const joinUrl = (baseUrl: string, path: string) =>
   `${baseUrl.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`
 
-const buildNhiaHeaders = (settings: Record<string, unknown>) => {
+const buildNhiaHeaders = (settings: Record<string, unknown>, contentType = 'application/json') => {
   const credentials = (settings.credentials || {}) as Record<string, unknown>
-  const headers: Record<string, string> = { Accept: 'application/json', 'Content-Type': 'application/json' }
+  const headers: Record<string, string> = { Accept: 'application/json', 'Content-Type': contentType }
   const mode = normalizeCredentialMode(settings.credentialMode)
 
   if (mode === 'api_key') {
@@ -1737,12 +1744,6 @@ const extractCcCode = (body: unknown): string => {
   return record.data && typeof record.data === 'object' ? extractCcCode(record.data) : ''
 }
 
-const createLocalCcCode = () => {
-  const datePart = new Date().toISOString().slice(0, 10).replace(/-/g, '')
-  const random = crypto.getRandomValues(new Uint32Array(1))[0].toString().slice(-6).padStart(6, '0')
-  return `CC-${datePart}-${random}`
-}
-
 const generateNhiaCcCode = async (
   adminClient: ReturnType<typeof createAdminClient>,
   requesterProfile: RequesterProfile,
@@ -1771,7 +1772,7 @@ const generateNhiaCcCode = async (
   }
 
   if (!normalizeText(settings.ccCodeEndpointPath)) {
-    return { ccCode: createLocalCcCode(), source: 'local' }
+    throw new Error('NHIA CCC/CC code endpoint is not configured. Enter the official endpoint path from NHIA/CLAIM-it.')
   }
 
   const response = await fetch(joinUrl(String(settings.apiBaseUrl), String(settings.ccCodeEndpointPath)), {
@@ -1793,6 +1794,54 @@ const generateNhiaCcCode = async (
   if (!ccCode) throw new Error('NHIA API response did not include a CCC/CC code.')
 
   return { ccCode, source: 'api', response: body }
+}
+
+const submitNhiaClaimsDirect = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  requesterProfile: RequesterProfile,
+  organizationId: string,
+  payload: Record<string, unknown>
+) => {
+  const settings = await getNhiaApiSettings(adminClient, requesterProfile, organizationId, true)
+  if (!settings?.directApiEnabled || !settings.apiBaseUrl) {
+    throw new Error('Direct NHIA API is not configured. Export a claim batch instead.')
+  }
+
+  const claimPayload = payload.payload
+  if (!claimPayload || typeof claimPayload !== 'object') {
+    throw new Error('Direct NHIA submission requires a claim payload.')
+  }
+
+  const endpointPath = normalizeText(settings.claimEndpointPath)
+  if (!endpointPath) {
+    throw new Error('NHIA claim submission endpoint is not configured. Enter the official endpoint path from NHIA/CLAIM-it.')
+  }
+  const contentType = normalizeText(payload.contentType) || 'application/json'
+  const requestBody = normalizeText(payload.payloadContent) || JSON.stringify(claimPayload)
+  const response = await fetch(joinUrl(String(settings.apiBaseUrl), endpointPath), {
+    method: 'POST',
+    headers: buildNhiaHeaders(settings as unknown as Record<string, unknown>, contentType),
+    body: requestBody,
+  })
+  const responseText = await response.text()
+  let responseBody: unknown = {}
+  try {
+    responseBody = responseText ? JSON.parse(responseText) : {}
+  } catch {
+    responseBody = { raw: responseText }
+  }
+
+  if (!response.ok) {
+    throw new Error(`NHIA API returned HTTP ${response.status}.`)
+  }
+
+  return {
+    source: 'hosted',
+    httpStatus: response.status,
+    response: responseBody,
+    claimIds: Array.isArray(payload.claimIds) ? payload.claimIds : [],
+    action: normalizeText(payload.action) || 'nhis.direct_submit',
+  }
 }
 
 const toDateOnly = (value: string) => new Date(value).toISOString().split('T')[0]
@@ -2072,6 +2121,10 @@ Deno.serve(async (request) => {
 
     if (action === 'generate_nhia_cc_code') {
       return json(await generateNhiaCcCode(adminClient, requesterProfile, organizationId, payload))
+    }
+
+    if (action === 'submit_nhia_claims_direct') {
+      return json(await submitNhiaClaimsDirect(adminClient, requesterProfile, organizationId, payload))
     }
 
     return json({ error: 'Unsupported tier access action.' }, 400)

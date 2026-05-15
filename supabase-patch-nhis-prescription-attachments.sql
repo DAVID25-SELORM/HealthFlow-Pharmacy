@@ -1,9 +1,9 @@
 -- ================================================================
--- PATCH: NHIS scanned prescription PDF attachments
+-- PATCH: NHIS scanned prescription PDF/JPEG attachments
 -- ================================================================
 -- Purpose:
---   Stores scanned prescription PDF metadata on NHIS claims and creates
---   a private Supabase Storage bucket for the PDF files.
+--   Stores scanned prescription PDF/JPEG metadata on NHIS claims and
+--   creates a private Supabase Storage bucket for the files.
 -- ================================================================
 
 BEGIN;
@@ -30,14 +30,14 @@ VALUES (
   'nhis-prescriptions',
   'nhis-prescriptions',
   false,
-  10485760,
-  ARRAY['application/pdf']
+  3145728,
+  ARRAY['application/pdf', 'image/jpeg']
 )
 ON CONFLICT (id) DO UPDATE
 SET
   public = false,
-  file_size_limit = 10485760,
-  allowed_mime_types = ARRAY['application/pdf'];
+  file_size_limit = 3145728,
+  allowed_mime_types = ARRAY['application/pdf', 'image/jpeg'];
 
 DROP POLICY IF EXISTS nhis_prescriptions_select ON storage.objects;
 CREATE POLICY nhis_prescriptions_select

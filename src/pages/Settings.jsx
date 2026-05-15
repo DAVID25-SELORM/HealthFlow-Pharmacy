@@ -44,11 +44,15 @@ const blankNhiaApiForm = {
   facilityCode: '',
   providerNumber: '',
   submitterId: '',
+  apiEnvironment: 'production',
   apiBaseUrl: '',
-  claimEndpointPath: '/claims',
+  claimEndpointPath: '',
   ccCodeEndpointPath: '',
+  claimStatusEndpointPath: '',
+  memberLookupEndpointPath: '',
   directApiEnabled: false,
   credentialMode: 'api_key',
+  exportFormat: 'json',
   credentials: {
     apiKey: '',
     headerName: '',
@@ -672,7 +676,7 @@ const Settings = () => {
             </div>
             <h3>NHIA API</h3>
             <p className="settings-note">
-              Store the facility API details used for CCC/CC code generation.
+              Store the NHIA/CLAIM-it issued API details for CCC/CC generation and direct claim submission.
             </p>
             <form className="settings-form" onSubmit={handleSaveNhiaApi}>
               <label className="settings-checkbox-label">
@@ -700,6 +704,13 @@ const Settings = () => {
                 value={nhiaApiForm.submitterId}
                 onChange={(event) => updateNhiaApiForm('submitterId', event.target.value)}
               />
+              <select
+                value={nhiaApiForm.apiEnvironment}
+                onChange={(event) => updateNhiaApiForm('apiEnvironment', event.target.value)}
+              >
+                <option value="production">Production</option>
+                <option value="sandbox">Sandbox</option>
+              </select>
               <input
                 placeholder="API base URL"
                 value={nhiaApiForm.apiBaseUrl}
@@ -707,7 +718,7 @@ const Settings = () => {
               />
               <div className="settings-form-row">
                 <input
-                  placeholder="Claim endpoint path"
+                  placeholder="Claim submit endpoint path"
                   value={nhiaApiForm.claimEndpointPath}
                   onChange={(event) => updateNhiaApiForm('claimEndpointPath', event.target.value)}
                 />
@@ -715,6 +726,25 @@ const Settings = () => {
                   placeholder="CCC/CC endpoint path"
                   value={nhiaApiForm.ccCodeEndpointPath}
                   onChange={(event) => updateNhiaApiForm('ccCodeEndpointPath', event.target.value)}
+                />
+              </div>
+              <select
+                value={nhiaApiForm.exportFormat}
+                onChange={(event) => updateNhiaApiForm('exportFormat', event.target.value)}
+              >
+                <option value="json">Submit JSON payload</option>
+                <option value="xml">Submit XML payload</option>
+              </select>
+              <div className="settings-form-row">
+                <input
+                  placeholder="Claim status endpoint path"
+                  value={nhiaApiForm.claimStatusEndpointPath}
+                  onChange={(event) => updateNhiaApiForm('claimStatusEndpointPath', event.target.value)}
+                />
+                <input
+                  placeholder="Member lookup endpoint path"
+                  value={nhiaApiForm.memberLookupEndpointPath}
+                  onChange={(event) => updateNhiaApiForm('memberLookupEndpointPath', event.target.value)}
                 />
               </div>
               <select

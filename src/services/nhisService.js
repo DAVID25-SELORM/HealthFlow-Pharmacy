@@ -40,7 +40,9 @@ const getClaimField = (claim, camelKey, snakeKey = camelKey) =>
 const VALID_ORGANIZATION_TYPES = ['pharmacy', 'hospital']
 const MAX_DIAGNOSES_PER_CLAIM = 10
 const NHIS_PRESCRIPTION_BUCKET = 'nhis-prescriptions'
-const MAX_PRESCRIPTION_PDF_BYTES = 10 * 1024 * 1024
+const MAX_PRESCRIPTION_ATTACHMENT_BYTES = 3 * 1024 * 1024
+const PRESCRIPTION_ATTACHMENT_TYPES = ['application/pdf', 'image/jpeg']
+const PRESCRIPTION_ATTACHMENT_EXTENSIONS = ['.pdf', '.jpg', '.jpeg']
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 const YEAR_MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/
 const OPTIONAL_CLAIM_SCHEMA_COLUMNS = [
@@ -450,6 +452,23 @@ export const generateHostedNhiaCcCode = async (claimContext = {}) => {
   })
 }
 
+const submitHostedNhiaDirectPayload = async ({
+  payload,
+  payloadContent = '',
+  contentType = 'application/json',
+  claimIds = [],
+  action = '',
+} = {}) => {
+  return await invokeTierAccess({
+    action: 'submit_nhia_claims_direct',
+    payload,
+    payloadContent,
+    contentType,
+    claimIds,
+    action,
+  })
+}
+
 export const validateNhisClaimFinalReadiness = async (claimData, medicines = [], options = {}) => {
   const organizationType = normalizeOrganizationType(
     claimData?.organizationType ?? claimData?.organization_type ?? options.organizationType
@@ -490,12 +509,14 @@ const sanitizeStoragePathSegment = (value, fallback = 'unknown') =>
     .replace(/^-|-$/g, '') || fallback
 
 export const validateNhisPrescriptionPdfFile = (file) => {
-  if (!file) return 'Select a scanned prescription PDF.'
+  if (!file) return 'Select a scanned prescription PDF or JPEG.'
   const fileName = String(file.name || '').toLowerCase()
-  const isPdf = file.type === 'application/pdf' || fileName.endsWith('.pdf')
-  if (!isPdf) return 'Only scanned prescription files in PDF format can be attached.'
-  if (Number(file.size || 0) > MAX_PRESCRIPTION_PDF_BYTES) {
-    return 'Prescription PDF must be 10 MB or smaller.'
+  const isAllowedType =
+    PRESCRIPTION_ATTACHMENT_TYPES.includes(file.type) ||
+    PRESCRIPTION_ATTACHMENT_EXTENSIONS.some((extension) => fileName.endsWith(extension))
+  if (!isAllowedType) return 'Only scanned prescription files in PDF or JPEG format can be attached.'
+  if (Number(file.size || 0) > MAX_PRESCRIPTION_ATTACHMENT_BYTES) {
+    return 'Prescription attachment must be 3 MB or smaller.'
   }
   return ''
 }
@@ -504,7 +525,7 @@ export const uploadNhisPrescriptionPdf = async (file, options = {}) => {
   const validationError = validateNhisPrescriptionPdfFile(file)
   if (validationError) throw new Error(validationError)
   if (shouldUseBranchServer()) {
-    throw new Error('PDF prescription attachment upload requires Supabase storage access.')
+    throw new Error('Prescription attachment upload requires Supabase storage access.')
   }
   if (!supabase?.storage) {
     throw new Error('Supabase storage is not configured for prescription attachments.')
@@ -520,13 +541,14 @@ export const uploadNhisPrescriptionPdf = async (file, options = {}) => {
       ? crypto.randomUUID()
       : String(Date.now())
   const claimId = sanitizeStoragePathSegment(options.claimId || randomId, 'claim')
-  const fileName = sanitizeStoragePathSegment(file.name || 'prescription.pdf', 'prescription.pdf')
+  const contentType = file.type === 'image/jpeg' ? 'image/jpeg' : 'application/pdf'
+  const fileName = sanitizeStoragePathSegment(file.name || 'prescription', 'prescription')
   const path = `${organizationId}/${month}/${claimId}/${Date.now()}-${fileName}`
 
   const { data, error } = await supabase.storage
     .from(NHIS_PRESCRIPTION_BUCKET)
     .upload(path, file, {
-      contentType: 'application/pdf',
+      contentType,
       cacheControl: '3600',
       upsert: true,
     })
@@ -541,21 +563,21 @@ export const uploadNhisPrescriptionPdf = async (file, options = {}) => {
 
   return {
     prescriptionFilePath: data?.path || path,
-    prescriptionFileName: file.name || 'prescription.pdf',
-    prescriptionFileType: 'application/pdf',
+    prescriptionFileName: file.name || 'prescription',
+    prescriptionFileType: contentType,
     prescriptionFileSize: file.size || 0,
     prescriptionFileUrl: '',
   }
 }
 
-export const getNhisPrescriptionSignedUrl = async (path) => {
+export const getNhisPrescriptionSignedUrl = async (path, expiresInSeconds = 5 * 60) => {
   const cleanPath = normalizeText(path)
   if (!cleanPath) throw new Error('Prescription file path is missing.')
   if (!supabase?.storage) throw new Error('Supabase storage is not configured.')
 
   const { data, error } = await supabase.storage
     .from(NHIS_PRESCRIPTION_BUCKET)
-    .createSignedUrl(cleanPath, 5 * 60)
+    .createSignedUrl(cleanPath, expiresInSeconds)
 
   if (error) throw error
   return data?.signedUrl || ''
@@ -1514,7 +1536,7 @@ const buildNhisMonthlyCsv = (claims) => {
   const headerRow = [
     'Claim Number', 'Status', 'Surname', 'Other Names', 'Member No', 'HIN',
     'Folder No', 'Gender', 'Date of Birth', 'Address', 'Child Weight Kg', 'CCC No',
-    'Diagnosis', 'Prescription PDF',
+    'Diagnosis', 'Prescription File',
     'Date of Service',
     'Referring Facility', 'Referral Code',
     'Prescriber Name/ID', 'Pre-Auth Codes',
@@ -1646,13 +1668,58 @@ const getDirectSubmissionPeriodForClaim = (claim = {}) => {
   return normalizeNhisExportPeriod({ mode: 'custom', fromDate: serviceDate, toDate: serviceDate })
 }
 
+const hydrateNhisPrescriptionUrlsForDirectSubmit = async (claims = []) => {
+  if (shouldUseBranchServer()) return claims
+
+  return await Promise.all(
+    claims.map(async (claim) => {
+      if (!normalizeText(claim.prescription_file_path) || normalizeText(claim.prescription_file_url)) {
+        return claim
+      }
+
+      const signedUrl = await getNhisPrescriptionSignedUrl(claim.prescription_file_path, 60 * 60)
+      return {
+        ...claim,
+        prescription_file_url: signedUrl,
+      }
+    })
+  )
+}
+
+const buildHostedDirectSubmissionPayload = (payload, options = {}) => {
+  const format = normalizeClaimItExportFormat(options.directPayloadFormat || options.exportFormat || 'json')
+  if (format === 'xml') {
+    return {
+      payload,
+      payloadContent: buildNhisClaimItXml(payload),
+      contentType: 'application/xml;charset=utf-8',
+    }
+  }
+
+  return {
+    payload,
+    contentType: 'application/json',
+  }
+}
+
 const submitNhisClaimsDirect = async (claims, period, options = {}) => {
-  const payload = buildNhisClaimItExportPayload(claims, {
+  const directApiSource = options.directApiSource === 'branch' ? 'branch' : 'hosted'
+  const claimsForSubmission = directApiSource === 'hosted'
+    ? await hydrateNhisPrescriptionUrlsForDirectSubmit(claims)
+    : claims
+  const payload = buildNhisClaimItExportPayload(claimsForSubmission, {
     ...options,
     exportPeriod: period,
   })
-  return await submitNhiaDirectPayload({
-    payload,
+  const submitDirectPayload = directApiSource === 'branch'
+    ? submitNhiaDirectPayload
+    : submitHostedNhiaDirectPayload
+  const directPayload = directApiSource === 'hosted'
+    ? buildHostedDirectSubmissionPayload(payload, options)
+    : { payload }
+
+  return await submitDirectPayload({
+    ...directPayload,
     claimIds: claims.map((claim) => claim.id).filter(Boolean),
     action: options.action || 'nhis.direct_submit',
   })

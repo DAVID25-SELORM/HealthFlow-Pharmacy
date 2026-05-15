@@ -519,16 +519,22 @@ const Nhis = () => {
   )
 
   const directNhiaApiAvailable = Boolean(
-    directNhiaSettings?.source === 'branch' &&
-      directNhiaSettings?.directApiEnabled &&
-      directNhiaSettings?.apiBaseUrl
+    directNhiaSettings?.directApiEnabled &&
+      directNhiaSettings?.apiBaseUrl &&
+      directNhiaSettings?.claimEndpointPath
   )
-  const nhiaCcCodeApiAvailable = Boolean(directNhiaSettings?.directApiEnabled && directNhiaSettings?.apiBaseUrl)
+  const nhiaCcCodeApiAvailable = Boolean(
+    directNhiaSettings?.directApiEnabled &&
+      directNhiaSettings?.apiBaseUrl &&
+      directNhiaSettings?.ccCodeEndpointPath
+  )
   const getDirectNhiaOptions = () => ({
     organizationType,
     facilityCode: organization?.facility_code || organization?.claimit_facility_code || directNhiaSettings?.facilityCode || '',
     providerNumber: organization?.provider_number || organization?.nhia_provider_number || directNhiaSettings?.providerNumber || '',
     submitterId: directNhiaSettings?.submitterId || user?.id || '',
+    directApiSource: directNhiaSettings?.source || 'hosted',
+    directPayloadFormat: directNhiaSettings?.exportFormat || 'json',
   })
 
   const readiness = useMemo(
@@ -563,7 +569,7 @@ const Nhis = () => {
       prescriptionFileUrl: '',
       prescriptionFilePath: prev.prescriptionFilePath || '',
       prescriptionFileName: file.name,
-      prescriptionFileType: 'application/pdf',
+      prescriptionFileType: file.type === 'image/jpeg' ? 'image/jpeg' : 'application/pdf',
       prescriptionFileSize: file.size,
     }))
     event.target.value = ''
@@ -592,7 +598,7 @@ const Nhis = () => {
 
       if (!url) {
         newWindow?.close()
-        notify('No prescription PDF is attached to this claim.', 'warning')
+        notify('No prescription file is attached to this claim.', 'warning')
         return
       }
 
@@ -602,7 +608,7 @@ const Nhis = () => {
         window.open(url, '_blank', 'noopener,noreferrer')
       }
     } catch (err) {
-      notify(err.message || 'Unable to open prescription PDF.', 'error')
+      notify(err.message || 'Unable to open prescription file.', 'error')
     }
   }
 
@@ -1127,7 +1133,7 @@ const Nhis = () => {
                     <th>Member No / HIN</th>
                     <th>Service Date</th>
                     <th>Medicines</th>
-                    <th>Rx PDF</th>
+                    <th>Rx File</th>
                     <th>Total</th>
                     <th>Status</th>
                     <th>Actions</th>
@@ -1152,7 +1158,7 @@ const Nhis = () => {
                           <button
                             type="button"
                             className="action-btn action-btn--view"
-                            title="Open prescription PDF"
+                            title="Open prescription file"
                             onClick={() => openPrescriptionPdf(c)}
                           >
                             <FileText size={14} />
@@ -1524,11 +1530,11 @@ const Nhis = () => {
                   <h3 className="nhis-section-title">Scanned Prescription</h3>
                   <label className="prescription-upload-box">
                     <Paperclip size={18} />
-                    <span>{claimForm.prescriptionFileName || 'Attach prescription PDF'}</span>
-                    <small>PDF only, max 10 MB</small>
+                    <span>{claimForm.prescriptionFileName || 'Attach prescription file'}</span>
+                    <small>PDF or JPEG, max 3 MB</small>
                     <input
                       type="file"
-                      accept="application/pdf,.pdf"
+                      accept="application/pdf,image/jpeg,.pdf,.jpg,.jpeg"
                       onChange={handlePrescriptionPdfSelect}
                     />
                   </label>
@@ -1840,10 +1846,10 @@ const Nhis = () => {
               <div><strong>Prescriber:</strong> {viewClaim.physician_name || '—'}</div>
               <div><strong>Pre-auth Codes:</strong> {viewClaim.pre_auth_codes || '—'}</div>
               <div>
-                <strong>Prescription PDF:</strong>{' '}
+                <strong>Prescription File:</strong>{' '}
                 {(viewClaim.prescription_file_path || viewClaim.prescription_file_url) ? (
                   <button type="button" className="inline-file-button" onClick={() => openPrescriptionPdf(viewClaim)}>
-                    <FileText size={14} /> {viewClaim.prescription_file_name || 'Open PDF'}
+                    <FileText size={14} /> {viewClaim.prescription_file_name || 'Open prescription'}
                   </button>
                 ) : (
                   '—'

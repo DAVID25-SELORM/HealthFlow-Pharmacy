@@ -48,7 +48,7 @@ const blankNhiaForm = {
   providerNumber: '',
   submitterId: '',
   apiBaseUrl: '',
-  claimEndpointPath: '/claims',
+  claimEndpointPath: '',
   ccCodeEndpointPath: '',
   directApiEnabled: false,
   credentialMode: 'api_key',

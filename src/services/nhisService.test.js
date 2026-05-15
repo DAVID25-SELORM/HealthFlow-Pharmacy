@@ -237,7 +237,7 @@ describe('CLAIM-it export helpers', () => {
     ],
   }
 
-  it('builds a CLAIM-it JSON payload with diagnoses, medicines, and PDF metadata', () => {
+  it('builds a CLAIM-it JSON payload with diagnoses, medicines, and prescription attachment metadata', () => {
     const payload = buildNhisClaimItExportPayload([claim], {
       yearMonth: '2026-05',
       organizationType: 'hospital',
@@ -317,16 +317,17 @@ describe('CLAIM-it export helpers', () => {
 })
 
 describe('validateNhisPrescriptionPdfFile', () => {
-  it('accepts PDF files and rejects other file types', () => {
+  it('accepts PDF and JPEG files and rejects other file types', () => {
     expect(validateNhisPrescriptionPdfFile({ name: 'rx.pdf', type: 'application/pdf', size: 1024 })).toBe('')
-    expect(validateNhisPrescriptionPdfFile({ name: 'rx.jpg', type: 'image/jpeg', size: 1024 })).toBe(
-      'Only scanned prescription files in PDF format can be attached.'
+    expect(validateNhisPrescriptionPdfFile({ name: 'rx.jpg', type: 'image/jpeg', size: 1024 })).toBe('')
+    expect(validateNhisPrescriptionPdfFile({ name: 'rx.png', type: 'image/png', size: 1024 })).toBe(
+      'Only scanned prescription files in PDF or JPEG format can be attached.'
     )
   })
 
-  it('enforces the 10 MB PDF limit', () => {
-    expect(validateNhisPrescriptionPdfFile({ name: 'rx.pdf', type: 'application/pdf', size: 11 * 1024 * 1024 })).toBe(
-      'Prescription PDF must be 10 MB or smaller.'
+  it('enforces the 3 MB prescription attachment limit', () => {
+    expect(validateNhisPrescriptionPdfFile({ name: 'rx.pdf', type: 'application/pdf', size: 4 * 1024 * 1024 })).toBe(
+      'Prescription attachment must be 3 MB or smaller.'
     )
   })
 })

@@ -16,9 +16,13 @@ CREATE TABLE IF NOT EXISTS public.organization_nhia_integrations (
   facility_code TEXT,
   provider_number TEXT,
   submitter_id TEXT,
+  api_environment TEXT NOT NULL DEFAULT 'production'
+    CHECK (api_environment IN ('sandbox', 'production')),
   api_base_url TEXT,
-  claim_endpoint_path TEXT NOT NULL DEFAULT '/claims',
+  claim_endpoint_path TEXT,
   cc_code_endpoint_path TEXT,
+  claim_status_endpoint_path TEXT,
+  member_lookup_endpoint_path TEXT,
   direct_api_enabled BOOLEAN NOT NULL DEFAULT false,
   credential_mode TEXT NOT NULL DEFAULT 'api_key'
     CHECK (credential_mode IN ('api_key', 'bearer_token', 'basic_auth', 'oauth_client')),
@@ -35,6 +39,27 @@ CREATE TABLE IF NOT EXISTS public.organization_nhia_integrations (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (organization_id)
 );
+
+ALTER TABLE public.organization_nhia_integrations
+  ADD COLUMN IF NOT EXISTS api_environment TEXT NOT NULL DEFAULT 'production',
+  ADD COLUMN IF NOT EXISTS claim_status_endpoint_path TEXT,
+  ADD COLUMN IF NOT EXISTS member_lookup_endpoint_path TEXT,
+  ALTER COLUMN claim_endpoint_path DROP DEFAULT,
+  ALTER COLUMN claim_endpoint_path DROP NOT NULL;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'organization_nhia_integrations_api_environment_check'
+      AND conrelid = 'public.organization_nhia_integrations'::regclass
+  ) THEN
+    ALTER TABLE public.organization_nhia_integrations
+      ADD CONSTRAINT organization_nhia_integrations_api_environment_check
+      CHECK (api_environment IN ('sandbox', 'production'));
+  END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_organization_nhia_integrations_org
   ON public.organization_nhia_integrations(organization_id)

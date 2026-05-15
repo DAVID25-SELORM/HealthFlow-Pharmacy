@@ -264,12 +264,6 @@ const createBatchNumber = () => {
   return `NHIA-BATCH-${datePart}-${randomPart}`
 }
 
-const createCcCode = () => {
-  const datePart = new Date().toISOString().slice(0, 10).replace(/-/g, '')
-  const randomPart = Math.random().toString(36).slice(2, 8).toUpperCase()
-  return `CC-${datePart}-${randomPart}`
-}
-
 const getDrug = db.prepare('SELECT * FROM drugs WHERE id = ?')
 
 const selectSettings = db.prepare(`
@@ -482,7 +476,7 @@ const mapSettingsRow = (row, { includeCredentials = false } = {}) => {
     providerNumber: row.provider_number || '',
     submitterId: row.submitter_id || '',
     apiBaseUrl: row.api_base_url || '',
-    claimEndpointPath: row.claim_endpoint_path || '/claims',
+    claimEndpointPath: row.claim_endpoint_path || '',
     ccCodeEndpointPath: row.cc_code_endpoint_path || '',
     directApiEnabled: Boolean(row.direct_api_enabled),
     credentialMode: row.credential_mode || 'api_key',
@@ -532,7 +526,7 @@ export const saveNhiaSettings = (settings = {}) => {
     providerNumber: normalizeText(settings.providerNumber) || null,
     submitterId: normalizeText(settings.submitterId) || null,
     apiBaseUrl: normalizeText(settings.apiBaseUrl).replace(/\/+$/, '') || null,
-    claimEndpointPath: normalizeText(settings.claimEndpointPath) || '/claims',
+    claimEndpointPath: normalizeText(settings.claimEndpointPath) || null,
     ccCodeEndpointPath: normalizeText(settings.ccCodeEndpointPath) || null,
     directApiEnabled: toBool(settings.directApiEnabled),
     credentialMode,
@@ -924,7 +918,10 @@ const postWithCertificate = (url, body, settings) =>
   })
 
 const submitPayload = async (settings, payload, endpointPathOverride = '') => {
-  const endpointPath = endpointPathOverride || settings.claimEndpointPath || '/claims'
+  const endpointPath = normalizeText(endpointPathOverride || settings.claimEndpointPath)
+  if (!endpointPath) {
+    throw new Error('NHIA endpoint path is required. Enter the official endpoint path from NHIA/CLAIM-it.')
+  }
   const url = `${settings.apiBaseUrl.replace(/\/+$/, '')}/${endpointPath.replace(/^\/+/, '')}`
   const body = JSON.stringify(payload)
 
@@ -984,41 +981,35 @@ export const generateNhiaCcCode = async (claimContext = {}) => {
     requestedAt: nowIso(),
   }
 
-  if (settings.ccCodeEndpointPath) {
-    logSubmission({ action: 'cc_code.generate.start', status: 'pending', request: payload })
-    try {
-      const result = await submitPayload(settings, payload, settings.ccCodeEndpointPath)
-      if (!result.ok) {
-        throw new Error(`NHIA API returned HTTP ${result.httpStatus}.`)
-      }
-      const ccCode = extractCcCode(result.body)
-      if (!ccCode) {
-        throw new Error('NHIA API response did not include a CCC/CC code.')
-      }
-      logSubmission({
-        action: 'cc_code.generate.complete',
-        status: 'success',
-        httpStatus: result.httpStatus,
-        response: result.body,
-      })
-      return { ccCode, source: 'api', response: result.body }
-    } catch (error) {
-      logSubmission({
-        action: 'cc_code.generate.failed',
-        status: 'failed',
-        error: error.message || 'CCC/CC code generation failed.',
-      })
-      throw error
-    }
+  if (!settings.ccCodeEndpointPath) {
+    throw new Error('NHIA CCC/CC code endpoint is not configured. Enter the official endpoint path from NHIA/CLAIM-it.')
   }
 
-  const ccCode = createCcCode()
-  logSubmission({
-    action: 'cc_code.generate.local',
-    status: 'success',
-    request: { ...payload, ccCode },
-  })
-  return { ccCode, source: 'local' }
+  logSubmission({ action: 'cc_code.generate.start', status: 'pending', request: payload })
+  try {
+    const result = await submitPayload(settings, payload, settings.ccCodeEndpointPath)
+    if (!result.ok) {
+      throw new Error(`NHIA API returned HTTP ${result.httpStatus}.`)
+    }
+    const ccCode = extractCcCode(result.body)
+    if (!ccCode) {
+      throw new Error('NHIA API response did not include a CCC/CC code.')
+    }
+    logSubmission({
+      action: 'cc_code.generate.complete',
+      status: 'success',
+      httpStatus: result.httpStatus,
+      response: result.body,
+    })
+    return { ccCode, source: 'api', response: result.body }
+  } catch (error) {
+    logSubmission({
+      action: 'cc_code.generate.failed',
+      status: 'failed',
+      error: error.message || 'CCC/CC code generation failed.',
+    })
+    throw error
+  }
 }
 
 export const submitNhiaDirectPayload = async ({ payload, claimIds = [], action = 'nhis.direct_submit' } = {}) => {
