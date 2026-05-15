@@ -851,9 +851,10 @@ export const getNhisClaimStats = async () => {
  * Creates an NHIS claim with medicines.
  * Also saves HIN/member_no back to the patient record if patient_id is provided.
  */
-export const createNhisClaim = async (claimData, medicines) => {
+export const createNhisClaim = async (claimData, medicines, options = {}) => {
   const readiness = assessNhisClaimReadiness(claimData, medicines)
-  if (readiness.blockers.length) {
+  const allowIncompleteReview = Boolean(claimData?.allowIncompleteReview || claimData?.reviewOnly)
+  if (readiness.blockers.length && !allowIncompleteReview) {
     throw new Error(`NHIS pharmacy dispensing check failed: ${readiness.blockers.slice(0, 5).join(' ')}`)
   }
 
@@ -897,7 +898,7 @@ export const createNhisClaim = async (claimData, medicines) => {
     created_by:         claimData.createdBy                        || null,
   }
 
-  if (shouldUseBranchServer()) {
+  if (options.useBranchServer || shouldUseBranchServer()) {
     return await createBranchRecord('nhis/claims', {
       ...claimPayload,
       nhis_claim_medicines: medicines.map((m) => ({

@@ -58,7 +58,7 @@ WITH CHECK (
   AND EXISTS (
     SELECT 1 FROM public.users
     WHERE id = auth.uid()
-      AND role IN ('admin', 'pharmacist', 'billing', 'branch_manager')
+      AND role IN ('admin', 'pharmacist', 'billing', 'branch_manager', 'claims_officer')
   )
 );
 
@@ -76,7 +76,7 @@ WITH CHECK (
   AND EXISTS (
     SELECT 1 FROM public.users
     WHERE id = auth.uid()
-      AND role IN ('admin', 'pharmacist', 'billing', 'branch_manager')
+      AND role IN ('admin', 'pharmacist', 'billing', 'branch_manager', 'claims_officer')
   )
 );
 
@@ -90,7 +90,7 @@ USING (
   AND EXISTS (
     SELECT 1 FROM public.users
     WHERE id = auth.uid()
-      AND role IN ('admin', 'pharmacist', 'billing', 'branch_manager')
+      AND role IN ('admin', 'pharmacist', 'billing', 'branch_manager', 'claims_officer')
   )
 );
 

@@ -197,6 +197,7 @@ const Nhis = () => {
   const [medCodeSearch, setMedCodeSearch] = useState('')
   const [medSearchResults, setMedSearchResults] = useState([])
   const [medSearching, setMedSearching] = useState(false)
+  const [editingMedicineIndex, setEditingMedicineIndex] = useState(null)
 
   // ── drug catalog modal (add/edit) ─────────────────────────────
   const [editingDrug, setEditingDrug]   = useState(null) // null = add new
@@ -379,6 +380,7 @@ const Nhis = () => {
     setClaimError('')
     setPatientSearch('')
     setMedForm(BLANK_MEDICINE)
+    setEditingMedicineIndex(null)
     setClaimForm({
       patientId: claim.patient_id || '',
       memberNo: claim.member_no || '',
@@ -488,25 +490,53 @@ const Nhis = () => {
       return
     }
 
-    setClaimMedicines((prev) => [
-      ...prev,
-      {
-        nhisDrugId:    medForm.nhisDrugId   || null,
-        drugCode:      medForm.drugCode,
-        description:   medForm.description,
-        unit:          medForm.unit,
-        unitPrice:     price,
-        dispensedQty:  qty,
-        dispensaryDate: medForm.dispensaryDate || null,
-        dose:          medForm.dose,
-        frequency:     medForm.frequency,
-        duration:      medForm.duration,
-        totalAmount:   price * qty,
-      },
-    ])
+    const nextMedicine = {
+      nhisDrugId:    medForm.nhisDrugId   || null,
+      drugCode:      medForm.drugCode,
+      description:   medForm.description,
+      unit:          medForm.unit,
+      unitPrice:     price,
+      dispensedQty:  qty,
+      dispensaryDate: medForm.dispensaryDate || null,
+      dose:          medForm.dose,
+      frequency:     medForm.frequency,
+      duration:      medForm.duration,
+      totalAmount:   price * qty,
+    }
+
+    setClaimMedicines((prev) => {
+      if (editingMedicineIndex === null || editingMedicineIndex < 0 || editingMedicineIndex >= prev.length) {
+        return [...prev, nextMedicine]
+      }
+
+      return prev.map((medicine, index) => index === editingMedicineIndex ? nextMedicine : medicine)
+    })
     setMedForm(BLANK_MEDICINE)
     setMedCodeSearch('')
+    setEditingMedicineIndex(null)
     setShowMedModal(false)
+  }
+
+  const openEditMedicine = (index) => {
+    const medicine = claimMedicines[index]
+    if (!medicine) return
+
+    setMedForm({
+      nhisDrugId: medicine.nhisDrugId || '',
+      drugCode: medicine.drugCode || '',
+      description: medicine.description || '',
+      unit: medicine.unit || 'unit',
+      unitPrice: String(medicine.unitPrice ?? ''),
+      dispensedQty: String(medicine.dispensedQty ?? '1'),
+      dispensaryDate: medicine.dispensaryDate || new Date().toISOString().split('T')[0],
+      dose: medicine.dose || '',
+      frequency: medicine.frequency || '',
+      duration: medicine.duration || '',
+    })
+    setMedCodeSearch('')
+    setMedSearchResults([])
+    setEditingMedicineIndex(index)
+    setShowMedModal(true)
   }
 
   const removeMedicine = (index) => {
@@ -701,6 +731,7 @@ const Nhis = () => {
     setClaimError('')
     setPatientSearch('')
     setMedForm(BLANK_MEDICINE)
+    setEditingMedicineIndex(null)
     setEditingClaim(null)
     setPrescriptionPdfFile(null)
   }
@@ -1560,7 +1591,13 @@ const Nhis = () => {
                   <button
                     type="button"
                     className="btn btn-primary btn-sm"
-                    onClick={() => setShowMedModal(true)}
+                    onClick={() => {
+                      setEditingMedicineIndex(null)
+                      setMedForm(BLANK_MEDICINE)
+                      setMedCodeSearch('')
+                      setMedSearchResults([])
+                      setShowMedModal(true)
+                    }}
                   >
                     <Plus size={14} /> Add Medicine
                   </button>
@@ -1584,6 +1621,14 @@ const Nhis = () => {
                         </div>
                         <div className="medicine-card-right">
                           <div className="medicine-total">{fmtCurrency(m.totalAmount)}</div>
+                          <button
+                            className="action-btn action-btn--edit"
+                            type="button"
+                            title="Edit medicine"
+                            onClick={() => openEditMedicine(idx)}
+                          >
+                            <Pencil size={12} />
+                          </button>
                           <button className="action-btn action-btn--cancel" onClick={() => removeMedicine(idx)}>
                             <X size={12} />
                           </button>
@@ -1669,11 +1714,27 @@ const Nhis = () => {
           NEW MEDICINE SUB-MODAL
       ══════════════════════════════════════════════════════════════ */}
       {showMedModal && (
-        <div className="modal-overlay modal-overlay--top" onClick={(e) => e.target === e.currentTarget && setShowMedModal(false)}>
+        <div
+          className="modal-overlay modal-overlay--top"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowMedModal(false)
+              setEditingMedicineIndex(null)
+            }
+          }}
+        >
           <div className="modal-panel modal-panel--medicine">
             <div className="modal-header">
-              <h2>New Medicine</h2>
-              <button className="modal-close" onClick={() => setShowMedModal(false)}><X size={18} /></button>
+              <h2>{editingMedicineIndex === null ? 'New Medicine' : 'Edit Medicine'}</h2>
+              <button
+                className="modal-close"
+                onClick={() => {
+                  setShowMedModal(false)
+                  setEditingMedicineIndex(null)
+                }}
+              >
+                <X size={18} />
+              </button>
             </div>
 
             <div className="medicine-modal-body">
@@ -1812,8 +1873,20 @@ const Nhis = () => {
                   )}
                 </strong>
               </div>
-              <button className="btn btn-secondary" onClick={() => { setMedForm(BLANK_MEDICINE); setMedCodeSearch('') }}>Clear</button>
-              <button className="btn btn-primary" onClick={addMedicineToList}>+ Add</button>
+              <button
+                className="btn btn-secondary"
+                onClick={() => {
+                  setMedForm(BLANK_MEDICINE)
+                  setMedCodeSearch('')
+                  setMedSearchResults([])
+                  setEditingMedicineIndex(null)
+                }}
+              >
+                Clear
+              </button>
+              <button className="btn btn-primary" onClick={addMedicineToList}>
+                {editingMedicineIndex === null ? '+ Add' : 'Save Medicine'}
+              </button>
             </div>
           </div>
         </div>
