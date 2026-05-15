@@ -53,7 +53,7 @@ const baseMedicine = {
 }
 
 describe('assessNhisClaimReadiness', () => {
-  it('requires dose, frequency, and duration for pharmacy and hospital claims', () => {
+  it('warns about dose, frequency, and duration while serving patients', () => {
     const medicine = {
       ...baseMedicine,
       dose: '',
@@ -67,12 +67,41 @@ describe('assessNhisClaimReadiness', () => {
       [medicine]
     )
 
-    expect(pharmacy.blockers).toEqual(expect.arrayContaining([
+    expect(pharmacy.blockers).not.toContain('Medicine 1: dose is required.')
+    expect(hospital.blockers).not.toContain('Medicine 1: dose is required.')
+    expect(pharmacy.warnings).toEqual(expect.arrayContaining([
+      'Medicine 1: dose is missing; claims officer must complete it before corrections/export.',
+      'Medicine 1: dosage schedule/frequency is missing; claims officer must complete it before corrections/export.',
+      'Medicine 1: duration is missing; claims officer must complete it before corrections/export.',
+    ]))
+    expect(hospital.warnings).toEqual(expect.arrayContaining([
+      'Medicine 1: dose is missing; claims officer must complete it before corrections/export.',
+      'Medicine 1: dosage schedule/frequency is missing; claims officer must complete it before corrections/export.',
+      'Medicine 1: duration is missing; claims officer must complete it before corrections/export.',
+    ]))
+  })
+
+  it('requires dose, frequency, and duration for claims officer corrections and final export', () => {
+    const medicine = {
+      ...baseMedicine,
+      dose: '',
+      frequency: '',
+      duration: '',
+    }
+
+    const corrections = assessNhisClaimReadiness(baseClaim, [medicine], {
+      requireMedicineDirections: true,
+    })
+    const finalSubmission = assessNhisClaimReadiness(baseClaim, [medicine], {
+      finalSubmission: true,
+    })
+
+    expect(corrections.blockers).toEqual(expect.arrayContaining([
       'Medicine 1: dose is required.',
       'Medicine 1: dosage schedule/frequency is required.',
       'Medicine 1: duration is required.',
     ]))
-    expect(hospital.blockers).toEqual(expect.arrayContaining([
+    expect(finalSubmission.blockers).toEqual(expect.arrayContaining([
       'Medicine 1: dose is required.',
       'Medicine 1: dosage schedule/frequency is required.',
       'Medicine 1: duration is required.',

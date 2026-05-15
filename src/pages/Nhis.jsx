@@ -480,13 +480,15 @@ const Nhis = () => {
   const readiness = useMemo(
     () => assessNhisClaimReadiness(
       { ...claimForm, organizationType },
-      claimMedicines
+      claimMedicines,
+      { requireMedicineDirections: Boolean(editingClaim) }
     ),
-    [claimForm, claimMedicines, organizationType]
+    [claimForm, claimMedicines, organizationType, editingClaim]
   )
 
   const readinessIssues = readiness.issues
   const readinessPassed = readiness.issues.length === 0
+  const readinessBlocked = readiness.blockers.length > 0
   const canSaveCommunityPharmacyClaim = readiness.blockers.length === 0
 
   const handlePrescriptionPdfSelect = (event) => {
@@ -619,7 +621,8 @@ const Nhis = () => {
     [{
       ...medForm,
       totalAmount: (Number(medForm.unitPrice) || 0) * (Number(medForm.dispensedQty) || 0),
-    }]
+    }],
+    { requireMedicineDirections: Boolean(editingClaim) }
   ).blockers
 
   // ── status updates ────────────────────────────────────────────
@@ -1455,13 +1458,25 @@ const Nhis = () => {
                   <strong>Total:</strong> {fmtCurrency(claimTotal)}
                 </div>
 
-                <div className={`nhia-readiness ${readinessPassed ? 'nhia-readiness--pass' : 'nhia-readiness--fail'}`}>
+                <div className={`nhia-readiness ${readinessBlocked ? 'nhia-readiness--fail' : 'nhia-readiness--pass'}`}>
                   <div className="nhia-readiness-header">
-                    {readinessPassed ? <CheckCircle2 size={16} /> : <XCircle size={16} />}
+                    {readinessBlocked ? <XCircle size={16} /> : <CheckCircle2 size={16} />}
                     <strong>NHIS Pharmacy Check</strong>
                   </div>
                   {readinessPassed ? (
                     <p>Ready for NHIS pharmacy claim submission.</p>
+                  ) : !readinessBlocked ? (
+                    <>
+                      <p>Can be saved now; claims officer must complete warnings before corrections/export.</p>
+                      <ul className="nhia-readiness-warnings">
+                        {readiness.warnings.slice(0, 4).map((issue) => (
+                          <li key={issue}>{issue}</li>
+                        ))}
+                      </ul>
+                      {readinessIssues.length > 8 && (
+                        <p>{readinessIssues.length - 8} more item(s) to complete before export.</p>
+                      )}
+                    </>
                   ) : (
                     <>
                       {readiness.blockers.length > 0 && (

@@ -296,6 +296,7 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
   const diagnoses = splitDiagnoses(diagnosis)
   const cccNo = getClaimField(claimData, 'cccNo', 'ccc_no') || getClaimField(claimData, 'ccCode', 'cc_code')
   const patientAge = calculateAge(dateOfBirth)
+  const requireMedicineDirections = options.finalSubmission || options.requireMedicineDirections === true
   const memberNumberIssue = validateMemberNumberFormat(
     getClaimField(claimData, 'memberNo', 'member_no'),
     options
@@ -335,9 +336,18 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
       if (!asText(medicine?.unit)) blockers.push(`${label}: unit of pricing is required.`)
       if (!(quantity > 0)) blockers.push(`${label}: exact dispensed quantity must be greater than zero.`)
       if (!(unitPrice >= 0)) blockers.push(`${label}: NHIS unit price is required.`)
-      if (!asText(medicine?.dose)) blockers.push(`${label}: dose is required.`)
-      if (!asText(medicine?.frequency)) blockers.push(`${label}: dosage schedule/frequency is required.`)
-      if (!asText(medicine?.duration)) blockers.push(`${label}: duration is required.`)
+
+      const addDirectionIssue = (message) => {
+        if (requireMedicineDirections) {
+          blockers.push(`${label}: ${message} is required.`)
+        } else {
+          warnings.push(`${label}: ${message} is missing; claims officer must complete it before corrections/export.`)
+        }
+      }
+
+      if (!asText(medicine?.dose)) addDirectionIssue('dose')
+      if (!asText(medicine?.frequency)) addDirectionIssue('dosage schedule/frequency')
+      if (!asText(medicine?.duration)) addDirectionIssue('duration')
     })
   }
 
@@ -907,7 +917,7 @@ export const createNhisClaim = async (claimData, medicines) => {
 }
 
 export const updateNhisClaim = async (id, claimData, medicines) => {
-  const readiness = assessNhisClaimReadiness(claimData, medicines)
+  const readiness = assessNhisClaimReadiness(claimData, medicines, { requireMedicineDirections: true })
   if (readiness.blockers.length) {
     throw new Error(`NHIS pharmacy dispensing check failed: ${readiness.blockers.slice(0, 5).join(' ')}`)
   }
