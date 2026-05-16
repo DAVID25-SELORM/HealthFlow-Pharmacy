@@ -21,4 +21,12 @@ export const assertNonNegativeNumber = (value, label) => {
   return parsed
 }
 
+export const assertPositiveNumber = (value, label) => {
+  const parsed = toNumber(value, Number.NaN)
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`${label} must be greater than zero.`)
+  }
+  return parsed
+}
+
 export const sanitizeSearchTerm = (value) => normalizeText(value).replace(/[%_,]/g, '')

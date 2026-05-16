@@ -1,6 +1,6 @@
 import { supabase } from '../lib/supabase'
 import { formatLocalDate } from '../utils/date'
-import { assertNonNegativeNumber } from '../utils/validation'
+import { assertNonNegativeNumber, assertPositiveNumber } from '../utils/validation'
 import { tryLogAuditEvent } from './auditService'
 
 export const getCashbookSessions = async (filters = {}) => {
@@ -165,7 +165,7 @@ export const addCashbookEntry = async ({
   description,
   createdBy,
 }) => {
-  const numericAmount = assertNonNegativeNumber(amount, 'Amount')
+  const numericAmount = assertPositiveNumber(amount, 'Amount')
 
   const { data, error } = await supabase
     .from('cashbook_entries')

@@ -3,6 +3,10 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
+  build: {
+    // The offline diagnosis catalog is intentionally shipped as a lazy-loaded fallback chunk.
+    chunkSizeWarningLimit: 10000
+  },
   server: {
     port: 3000,
     open: true

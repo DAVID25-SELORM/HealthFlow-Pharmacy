@@ -278,6 +278,7 @@ const Accounting = () => {
 
   const handleCreateExpense = async (e) => {
     e.preventDefault()
+    if (branchFilter === 'all') return setError('Select a branch before recording an expense.')
     if (!expenseForm.description.trim())   return setError('Description is required.')
     if (!expenseForm.amount || Number(expenseForm.amount) <= 0) return setError('Enter a valid amount.')
 

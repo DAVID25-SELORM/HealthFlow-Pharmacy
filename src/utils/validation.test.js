@@ -1,5 +1,6 @@
 import {
   assertNonNegativeNumber,
+  assertPositiveNumber,
   assertRequiredText,
   sanitizeSearchTerm,
   toNumber,
@@ -19,6 +20,12 @@ describe('validation utilities', () => {
   it('validates non-negative numeric values', () => {
     expect(assertNonNegativeNumber('4.2', 'Amount')).toBe(4.2)
     expect(() => assertNonNegativeNumber('-1', 'Amount')).toThrow('Amount must be a non-negative number.')
+  })
+
+  it('validates positive numeric values', () => {
+    expect(assertPositiveNumber('4.2', 'Amount')).toBe(4.2)
+    expect(() => assertPositiveNumber('0', 'Amount')).toThrow('Amount must be greater than zero.')
+    expect(() => assertPositiveNumber('-1', 'Amount')).toThrow('Amount must be greater than zero.')
   })
 
   it('sanitizes wildcard characters from search terms', () => {

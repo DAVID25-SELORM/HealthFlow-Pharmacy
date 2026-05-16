@@ -1,6 +1,6 @@
 import { supabase } from '../lib/supabase'
 import { formatLocalDate } from '../utils/date'
-import { assertNonNegativeNumber, assertRequiredText, normalizeText } from '../utils/validation'
+import { assertPositiveNumber, assertRequiredText, normalizeText } from '../utils/validation'
 import { tryLogAuditEvent } from './auditService'
 import { recordCashbookMovementIfSessionOpen } from './cashbookService'
 
@@ -67,7 +67,7 @@ export const createExpense = async (expenseData) => {
   const payload = {
     expense_date: expenseData.expenseDate || formatLocalDate(),
     description: assertRequiredText(expenseData.description, 'Description'),
-    amount: assertNonNegativeNumber(expenseData.amount, 'Amount'),
+    amount: assertPositiveNumber(expenseData.amount, 'Amount'),
     payment_method: expenseData.paymentMethod || 'cash',
     vendor_name: normalizeText(expenseData.vendorName) || null,
     reference_number: normalizeText(expenseData.referenceNumber) || null,
@@ -120,7 +120,7 @@ export const updateExpense = async (id, updates) => {
 
   if (updates.expenseDate) payload.expense_date = updates.expenseDate
   if (updates.description) payload.description = assertRequiredText(updates.description, 'Description')
-  if (updates.amount !== undefined) payload.amount = assertNonNegativeNumber(updates.amount, 'Amount')
+  if (updates.amount !== undefined) payload.amount = assertPositiveNumber(updates.amount, 'Amount')
   if (updates.paymentMethod) payload.payment_method = updates.paymentMethod
   if (updates.vendorName !== undefined) payload.vendor_name = normalizeText(updates.vendorName) || null
   if (updates.referenceNumber !== undefined) payload.reference_number = normalizeText(updates.referenceNumber) || null

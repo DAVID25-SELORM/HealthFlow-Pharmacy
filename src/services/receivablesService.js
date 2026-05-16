@@ -1,6 +1,6 @@
 import { supabase } from '../lib/supabase'
 import { formatLocalDate } from '../utils/date'
-import { assertNonNegativeNumber, assertRequiredText, normalizeText } from '../utils/validation'
+import { assertPositiveNumber, assertRequiredText, normalizeText } from '../utils/validation'
 import { tryLogAuditEvent } from './auditService'
 import { getUserBranchIdsByUserIds } from './branchService'
 import { recordCashbookMovementIfSessionOpen } from './cashbookService'
@@ -279,7 +279,7 @@ export const recordClaimPayment = async (paymentData) => {
   const claimContext = isNhisClaim
     ? await getNhisClaimPaymentContext(paymentData.claimId)
     : await getClaimPaymentContext(paymentData.claimId)
-  const paidAmount = assertNonNegativeNumber(paymentData.paidAmount, 'Paid amount')
+  const paidAmount = assertPositiveNumber(paymentData.paidAmount, 'Paid amount')
 
   if (paidAmount > claimContext.outstanding) {
     throw new Error('Paid amount cannot exceed the outstanding approved amount.')
@@ -367,7 +367,7 @@ export const recordClaimPayment = async (paymentData) => {
 export const updateClaimPayment = async (id, updates) => {
   const payload = { updated_at: new Date().toISOString() }
 
-  if (updates.paidAmount !== undefined) payload.paid_amount = assertNonNegativeNumber(updates.paidAmount, 'Paid amount')
+  if (updates.paidAmount !== undefined) payload.paid_amount = assertPositiveNumber(updates.paidAmount, 'Paid amount')
   if (updates.paymentDate) payload.payment_date = updates.paymentDate
   if (updates.paymentMethod) payload.payment_method = updates.paymentMethod
   if (updates.paymentReference !== undefined) payload.payment_reference = normalizeText(updates.paymentReference) || null

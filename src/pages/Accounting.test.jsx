@@ -106,4 +106,21 @@ describe('Accounting', () => {
       screen.getByText(/no outstanding receivables\. all approved claims are fully paid/i)
     ).toBeInTheDocument()
   })
+
+  it('requires a branch before recording an expense', () => {
+    render(
+      <MemoryRouter>
+        <Accounting />
+      </MemoryRouter>
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /expenses/i }))
+    fireEvent.click(screen.getByRole('button', { name: /new expense/i }))
+    fireEvent.change(screen.getByLabelText(/description/i), { target: { value: 'Till paper' } })
+    fireEvent.change(screen.getByLabelText(/amount/i), { target: { value: '10' } })
+    fireEvent.click(screen.getByRole('button', { name: /save expense/i }))
+
+    expect(screen.getByText(/select a branch before recording an expense/i)).toBeInTheDocument()
+    expect(mocks.createExpense).not.toHaveBeenCalled()
+  })
 })
