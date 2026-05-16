@@ -1,72 +1,205 @@
 # HealthFlow Pharmacy Onboarding Runbook
 
-Use this document when setting up a new pharmacy on HealthFlow.
+Use this document when setting up a new pharmacy or hospital pharmacy on HealthFlow.
 
 There are two onboarding paths:
 
-- **Cloud pharmacy**: users only use the online HealthFlow app.
+- **Cloud pharmacy**: users only use the hosted HealthFlow app.
 - **Server pharmacy**: one local branch server computer plus other computers on the same LAN.
 
-## 1. Cloud Pharmacy Onboarding
+Most new facilities should be onboarded in the cloud first. Add the local branch server only when the facility needs offline POS, LAN sharing, local inventory cache, local claims, or direct payment initiation from the branch machine.
 
-Use this for a pharmacy that will use the normal online app without a local branch server.
+## 1. Pre-Onboarding Information To Collect
 
-### Process
+Collect these before touching the machine:
+
+```text
+Facility legal/trading name:
+Facility type: Pharmacy/Hospital/Clinic
+Primary admin name:
+Primary admin email:
+Primary admin phone:
+Branch name:
+Branch address:
+Branch phone:
+Subscription plan:
+Enabled modules:
+Staff list and roles:
+Logo available: Yes/No
+Receipt slogan/footer:
+Starting inventory file available: Yes/No
+NHIA/ClaimIT needed: Yes/No
+NHIA facility code:
+NHIA provider number:
+NHIA provider type description:
+NHIA provider class/level:
+Claims officer name:
+Claims officer signature uploaded: Yes/No
+Hubtel needed: Yes/No
+Paystack needed: Yes/No
+Branch server needed: Yes/No
+```
+
+Keep provider secrets, branch tokens, and Supabase sync keys in a password manager or secure admin record. Do not store live secrets in WhatsApp chats, screenshots, public docs, or frontend localStorage.
+
+## 2. Required Software For New Machines
+
+### Branch Server Computer
+
+Install these on the one always-on branch server computer:
+
+```text
+Windows 10/11
+PowerShell
+Node.js ^20.19.0 or >=22.12.0
+npm, installed with Node.js
+Git for Windows
+Google Chrome or Microsoft Edge
+Stable internet
+Stable LAN/Wi-Fi connection
+Admin access for firewall and Windows service setup
+```
+
+Node version is important because this app uses Vite 8, which requires Node `^20.19.0` or `>=22.12.0`.
+
+Optional only if `npm install` fails while building `better-sqlite3`:
+
+```text
+Visual Studio Build Tools with Desktop development with C++
+Python 3
+```
+
+If Windows Package Manager is available, install the basics with:
+
+```powershell
+winget install OpenJS.NodeJS.LTS
+winget install Git.Git
+winget install Google.Chrome
+```
+
+Close and reopen PowerShell after installing Node.js or Git.
+
+NSSM is bundled with the HealthFlow offline deployment and copied automatically by the service installer. Pharmacies should not manually configure NSSM. The bundled Windows x64 binary lives at:
+
+```text
+local-branch-server\deployment\windows\nssm\win64\nssm.exe
+```
+
+Bundled NSSM checksum:
+
+```text
+SHA-256: F689EE9AF94B00E9E3F0BB072B34CAAF207F32DCB4F5782FC9CA351DF9A06C97
+```
+
+During installation, HealthFlow copies it to `C:\HealthFlowPharmacy\nssm\nssm.exe`. If the binary is missing and internet is available, `install-service.ps1` can still download NSSM automatically as a recovery fallback.
+
+### Cashier/Staff Computers
+
+Install these on each cashier/staff computer:
+
+```text
+Google Chrome or Microsoft Edge
+Same LAN/Wi-Fi access as the branch server
+No Node.js required unless the machine will also run the branch server
+```
+
+## 3. Verify Installed Software
+
+Open PowerShell and run:
+
+```powershell
+node -v
+npm -v
+git --version
+```
+
+Expected:
+
+```text
+node should be v20.19.x, v22.12.0 or newer
+npm should print a version
+git should print a version
+```
+
+If `node`, `npm`, or `git` is not recognized, install or repair the missing software and reopen PowerShell.
+
+## 4. Cloud Pharmacy Onboarding
+
+Use this for a facility that will use the normal online app without a local branch server.
 
 1. Create the pharmacy/organization through `/signup` or Super Admin.
-2. Set pharmacy name, owner/admin user, and main branch.
+2. Set facility name, owner/admin user, and main branch.
 3. Assign the subscription plan.
 4. Enable modules based on the plan:
-   - Inventory
-   - Sales POS
-   - Patients
-   - Claims
-   - Purchases
-   - NHIS
-   - Accounting
-   - Reports
+
+```text
+Inventory
+Sales POS
+Patients
+Claims
+Purchases
+NHIS/NHIA
+Accounting
+Reports
+```
+
 5. Configure receipt details:
-   - Pharmacy logo
-   - Address
-   - Phone
-   - Slogan
-   - Receipt footer
+
+```text
+Logo
+Address
+Phone
+Slogan
+Receipt footer
+```
+
 6. Add staff users and assign roles.
 7. Import starting inventory.
-8. Test the workflow:
-   - Add a drug
-   - Search inventory
-   - Make a sale
-   - Print receipt
-   - Add a patient
-   - Submit a claim if Claims is enabled
-   - Check reports
-9. Train users and hand over login details.
+8. Configure NHIA/ClaimIT if required.
+9. Configure payment provider credentials on the backend/local server if required.
+10. Test core workflows:
 
-### Deployment Machine Checks
+```text
+Add/search drug
+Make cash sale
+Print receipt
+Add patient
+Submit insurance/NHIA claim if enabled
+Record purchase if enabled
+Check reports
+```
 
-Run these commands from the project root:
+11. Train users and hand over login details.
+
+## 5. Developer/Deployment Machine Commands
+
+Run these from the project root before deploying updates:
 
 ```powershell
 cd "C:\Users\RealTimeIT\Desktop\APPS\HealthFlow Pharmacy"
-
 npm install
 npm.cmd run build
 npm.cmd run test
+```
+
+Build the offline app bundle used by the local branch server:
+
+```powershell
+cd "C:\Users\RealTimeIT\Desktop\APPS\HealthFlow Pharmacy"
+npm.cmd run build:offline
 ```
 
 If deploying through GitHub/Vercel:
 
 ```powershell
 cd "C:\Users\RealTimeIT\Desktop\APPS\HealthFlow Pharmacy"
-
 git status
 git add -A
 git commit -m "Prepare pharmacy onboarding"
 git push origin main
 ```
 
-### Supabase Setup Checklist
+## 6. Supabase Setup Checklist
 
 For a fresh Supabase project, run the base schema/migrations in SQL Editor.
 
@@ -81,62 +214,118 @@ supabase-migration-branches.sql
 supabase-migration-purchases.sql
 supabase-migration-nhis.sql
 supabase-migration-accounting.sql
-supabase-patch-branch-sync-rpcs.sql
 ```
 
 Then apply current patches used by the live app:
 
 ```text
+supabase-patch-branch-sync-rpcs.sql
 supabase-patch-inventory-workflow-controls.sql
 supabase-patch-commercial-billing-controls.sql
 supabase-patch-nhis-topup-controls.sql
-supabase-patch-branch-sync-rpcs.sql
 supabase-patch-diagnosis-catalog.sql
 supabase-patch-nhis-prescription-attachments.sql
 supabase-patch-accounting-defaults.sql
 supabase-patch-accounting-hardening.sql
+supabase-patch-shift-system.sql
+supabase-patch-sale-transaction-hardening.sql
+supabase-patch-refund-admin-and-clear-rooter.sql
+supabase-patch-refund-permission-and-reprints.sql
+supabase-patch-expanded-staff-roles.sql
+supabase-patch-organization-module-privileges.sql
+supabase-patch-organization-type.sql
+supabase-patch-nhia-readiness-fields.sql
+supabase-patch-nhia-api-integrations.sql
+supabase-patch-nhis-claims-officer-review.sql
 ```
 
-After applying `supabase-patch-diagnosis-catalog.sql`, seed the diagnosis dropdown catalog from the app bundle:
+After applying `supabase-patch-diagnosis-catalog.sql`, seed the diagnosis dropdown catalog:
 
 ```powershell
+cd "C:\Users\RealTimeIT\Desktop\APPS\HealthFlow Pharmacy"
 $env:SUPABASE_URL="https://your-project-ref.supabase.co"
 $env:SUPABASE_SERVICE_ROLE_KEY="your-service-role-key"
 npm run seed:diagnosis-catalog
 ```
 
-Do not rerun full base schema blindly on an existing production database. Use patch files for existing deployments.
+Do not rerun the full base schema blindly on an existing production database. Use patch files for existing deployments.
 
-## 2. Server Pharmacy / Multi-Computer Onboarding
+## 7. Server Pharmacy / Multi-Computer Layout
 
-Use this when the pharmacy has more than one computer and needs a local branch server.
+Use this when the facility has more than one computer or needs reliable offline POS.
 
-### Recommended Network Layout
-
-- One always-on computer is the **Branch Server Computer**.
-- Other computers are **Cashier/Staff Computers**.
-- All computers must be on the same Wi-Fi/LAN.
-- Branch server runs on port `4780`.
-- Staff computers connect to the server using the branch server LAN IP, for example:
+Recommended layout:
 
 ```text
-http://192.168.1.10:4780
+One always-on computer: Branch Server Computer
+Other computers: Cashier/Staff Computers
+Network: Same LAN/Wi-Fi
+Branch server port: 4780
+Example branch server URL: http://192.168.1.10:4780
 ```
 
-## 3. Branch Server Computer Setup
+For Hubtel/Paystack webhooks, the payment provider must also reach the branch server over HTTPS. Use one of these:
 
-Open PowerShell on the branch server computer.
+```text
+Public HTTPS domain/reverse proxy
+Cloudflare Tunnel
+ngrok or another secure tunnel for testing
+Backend-hosted branch payment server
+```
 
-### Install Dependencies
+Do not use `localhost` as a provider webhook URL. Provider webhooks must be reachable from the internet.
+
+## 8. Install The Project On The Branch Server Computer
+
+Open PowerShell.
+
+Create a folder:
 
 ```powershell
-cd "C:\Users\RealTimeIT\Desktop\APPS\HealthFlow Pharmacy\local-branch-server"
-
-npm install
-Copy-Item .env.example .env
+New-Item -ItemType Directory -Force "C:\HealthFlowPharmacy"
+cd "C:\HealthFlowPharmacy"
 ```
 
-### Generate Secure Tokens
+Clone the repo:
+
+```powershell
+git clone https://github.com/DAVID25-SELORM/HealthFlow-Pharmacy.git "."
+cd "C:\HealthFlowPharmacy"
+```
+
+Install and build the frontend:
+
+```powershell
+npm install
+npm.cmd run build
+npm.cmd run build:offline
+```
+
+Install the local branch server dependencies:
+
+```powershell
+cd "C:\HealthFlowPharmacy\local-branch-server"
+npm install
+```
+
+Create the branch server `.env` if it does not already exist:
+
+```powershell
+if (!(Test-Path .env)) { Copy-Item .env.example .env }
+notepad .env
+```
+
+If the facility was installed from a zip instead of Git, extract the zip to:
+
+```text
+C:\HealthFlowPharmacy
+```
+
+Then run the same `npm install`, `npm.cmd run build`, `npm.cmd run build:offline`, and local branch server `npm install` commands.
+
+## 9. Generate Secure Branch Tokens
+
+Run this on the branch server computer:
 
 ```powershell
 $bytes = New-Object byte[] 32
@@ -151,37 +340,121 @@ $branchSyncToken = [Convert]::ToBase64String($bytes2)
 "BRANCH_SYNC_TOKEN=$branchSyncToken"
 ```
 
-Copy both values somewhere secure.
+Copy both values into the secure admin record.
 
-### Configure `.env`
+## 10. Configure `local-branch-server/.env`
+
+Open:
 
 ```powershell
+cd "C:\HealthFlowPharmacy\local-branch-server"
 notepad .env
 ```
 
-Set values like this:
+Set these core values:
 
 ```env
 PORT=4780
 BRANCH_SERVER_TOKEN=<generated-branch-server-token>
-BRANCH_ID=<branch-id-from-supabase>
+ALLOWED_ORIGINS=
 ORGANIZATION_ID=<organization-id-from-supabase>
+BRANCH_ID=<branch-id-from-supabase>
 SQLITE_PATH=./data/healthflow-branch.sqlite
 SYNC_INTERVAL_SECONDS=30
 INVENTORY_PULL_INTERVAL_SECONDS=300
 BRANCH_SYNC_TOKEN=<generated-branch-sync-token>
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SYNC_KEY=your-supabase-publishable-or-anon-key
+SUPABASE_URL=https://your-project-ref.supabase.co
+SUPABASE_SYNC_KEY=your-supabase-anon-or-publishable-key
 ```
 
 Important:
 
-- `BRANCH_SERVER_TOKEN` is used by cashier computers to call the local server.
-- `BRANCH_SYNC_TOKEN` is used by the local server to sync with Supabase.
-- Do not put the Supabase service role key on ordinary cashier laptops.
-- Prefer the Supabase publishable/anon key plus the branch sync token.
+- `BRANCH_SERVER_TOKEN` lets cashier computers call the local server.
+- `BRANCH_SYNC_TOKEN` lets the local server sync with Supabase.
+- `SUPABASE_SYNC_KEY` should normally be the Supabase anon/publishable key.
+- Avoid putting a service role key on ordinary cashier laptops.
+- Do not put `BRANCH_SYNC_TOKEN`, Supabase keys, or payment provider secrets in frontend localStorage, React code, or Vercel public environment variables.
+- Do not set `VITE_BRANCH_SERVER_TOKEN`; it would bake the branch token into a browser bundle. The branch server injects local runtime config for the offline POS, and LAN staff machines use the POS Configure button for the local `BRANCH_SERVER_TOKEN`.
 
-## 4. Register Branch Sync Client In Supabase
+## 11. Payment Provider `.env` Setup
+
+Add or update this block in `local-branch-server/.env`:
+
+```env
+PAYMENT_DEFAULT_PROVIDER=paystack
+PAYMENT_CURRENCY=GHS
+PAYMENT_PUBLIC_BASE_URL=https://CHANGE_ME_BRANCH_SERVER_PUBLIC_DOMAIN
+PAYMENT_RETURN_URL=https://CHANGE_ME_APP_RETURN_URL/sales
+
+PAYSTACK_ENABLED=false
+PAYSTACK_BASE_URL=https://api.paystack.co
+PAYSTACK_SECRET_KEY=CHANGE_ME_PAYSTACK_SECRET_KEY
+PAYSTACK_DEFAULT_EMAIL=payments@CHANGE_ME_FACILITY_DOMAIN
+
+HUBTEL_ENABLED=false
+HUBTEL_BASE_URL=https://CHANGE_ME_HUBTEL_API_BASE_URL
+HUBTEL_CLIENT_ID=CHANGE_ME_HUBTEL_CLIENT_ID
+HUBTEL_CLIENT_SECRET=CHANGE_ME_HUBTEL_CLIENT_SECRET
+HUBTEL_REQUEST_MONEY_PATH=/request-money/{mobileNumber}
+HUBTEL_WEBHOOK_SECRET=CHANGE_ME_HUBTEL_WEBHOOK_SECRET
+```
+
+Enable only the providers the facility will use:
+
+```env
+PAYSTACK_ENABLED=true
+HUBTEL_ENABLED=true
+```
+
+Provider dashboard webhook URLs:
+
+```text
+https://your-branch-server-domain.com/api/payments/webhook/paystack
+https://your-branch-server-domain.com/api/payments/webhook/hubtel
+```
+
+Rules:
+
+- Paystack and Hubtel can both be enabled.
+- Card should normally use Paystack.
+- Mobile Money can use Hubtel or Paystack.
+- Cash works offline.
+- Mobile Money/Card require internet and local branch server access.
+- Payment secrets stay in `.env` or backend environment only.
+
+After changing `.env`, restart the branch server.
+
+## 12. NHIA / ClaimIT Setup
+
+For pharmacies or hospitals using NHIA/ClaimIT:
+
+1. Apply the NHIA SQL patches listed in the Supabase setup.
+2. Open HealthFlow Settings.
+3. Configure NHIA/ClaimIT fields:
+
+```text
+Facility code
+Provider number
+Scheme name
+Provider type description
+Provider class/level
+Claims officer name
+Admission payment option
+ClaimIT validation enabled
+Claims officer signature upload if available
+API environment
+API base URL
+Claim endpoint path
+CC/CCC code endpoint path
+Claim status endpoint path
+Member lookup endpoint path
+Credential mode
+Credential payload through backend/service role only
+```
+
+For pharmacy provider class/level, use the exact class registered for the facility by NHIA/NHIS. If the facility is a pharmacy-only provider, do not choose a hospital class. If unsure, confirm from the provider's NHIA registration certificate or ClaimIT profile.
+
+## 13. Register Branch Sync Client In Supabase
 
 Before sync will work, run this in Supabase SQL Editor:
 
@@ -194,25 +467,27 @@ SELECT public.create_branch_sync_client(
 );
 ```
 
-The token must match the `BRANCH_SYNC_TOKEN` in the local branch server `.env`.
+The token must match `BRANCH_SYNC_TOKEN` in `local-branch-server/.env`.
 
-## 5. Start Branch Server Manually
+## 14. Start Branch Server Manually
 
-Terminal 1:
+Manual startup is only for setup testing and technician recovery. The server process also starts the sync worker loop, so do not start a second long-running sync worker at the same time.
 
 ```powershell
-cd "C:\Users\RealTimeIT\Desktop\APPS\HealthFlow Pharmacy\local-branch-server"
+cd "C:\HealthFlowPharmacy\local-branch-server"
 npm run start
 ```
 
-Terminal 2:
+Optional one-time sync diagnostic:
 
 ```powershell
-cd "C:\Users\RealTimeIT\Desktop\APPS\HealthFlow Pharmacy\local-branch-server"
-npm run sync
+cd "C:\HealthFlowPharmacy\local-branch-server"
+npm run sync -- --once
 ```
 
-## 6. Test The Local Server
+Leave the manual server terminal open only during testing. Production machines should use the NSSM service in section 17.
+
+## 15. Test The Local Server
 
 Health check:
 
@@ -233,7 +508,17 @@ Invoke-WebRequest `
 
 Expected result: HTTP `200`.
 
-## 7. Allow Other Computers On The LAN
+Syntax checks:
+
+```powershell
+cd "C:\HealthFlowPharmacy"
+node --check local-branch-server\src\server.js
+node --check local-branch-server\src\syncWorker.js
+node --check local-branch-server\src\paymentsRepository.js
+node --check local-branch-server\src\salesRepository.js
+```
+
+## 16. Allow Other Computers On The LAN
 
 Find the branch server computer's LAN IP:
 
@@ -249,7 +534,7 @@ Example:
 192.168.1.10
 ```
 
-Open firewall port `4780`:
+Open firewall port `4780`. Run PowerShell as Administrator:
 
 ```powershell
 New-NetFirewallRule `
@@ -267,41 +552,82 @@ Test-NetConnection 192.168.1.10 -Port 4780
 Invoke-WebRequest -Uri "http://192.168.1.10:4780/health" -UseBasicParsing
 ```
 
-## 8. Install Auto Startup
+## 17. Install Production Windows Service
 
-Once manual tests pass, install startup tasks on the branch server computer:
+Once manual tests pass, install the production Windows service on the branch server computer. Run PowerShell as Administrator:
 
 ```powershell
-cd "C:\Users\RealTimeIT\Desktop\APPS\HealthFlow Pharmacy\local-branch-server"
-npm run install:startup
+cd "C:\HealthFlowPharmacy\local-branch-server"
+npm run install:service
 ```
 
 This starts:
 
-- HealthFlow local branch server
-- HealthFlow sync worker
+```text
+HealthFlowOfflineServer
+```
+
+The single service runs `node src/server.js` from `C:\HealthFlowPharmacy\local-branch-server`. The server process starts the local POS/API and the sync worker loop, so pending SQLite data continues to sync when internet returns.
 
 Logs are written to:
 
 ```text
-local-branch-server/logs
+C:\HealthFlowPharmacy\logs
 ```
 
-To remove startup tasks later:
+Data is stored under:
+
+```text
+C:\HealthFlowPharmacy\data
+```
+
+NSSM is stored under:
+
+```text
+C:\HealthFlowPharmacy\nssm
+```
+
+The installer configures automatic startup, crash restart recovery, stdout/stderr logging, and a desktop shortcut named:
+
+```text
+HealthFlow Offline POS
+```
+
+Run a health check:
 
 ```powershell
-cd "C:\Users\RealTimeIT\Desktop\APPS\HealthFlow Pharmacy\local-branch-server"
-npm run uninstall:startup
+cd "C:\HealthFlowPharmacy\local-branch-server"
+npm run health:check
 ```
 
-If Task Scheduler is blocked, use the Startup folder shortcut fallback:
+To remove the service later:
 
 ```powershell
-cd "C:\Users\RealTimeIT\Desktop\APPS\HealthFlow Pharmacy\local-branch-server"
-powershell -ExecutionPolicy Bypass -File .\scripts\install-startup-shortcut.ps1
+cd "C:\HealthFlowPharmacy\local-branch-server"
+npm run uninstall:service
 ```
 
-## 9. Configure Cashier/Staff Computers
+To restart the service after an update or `.env` change:
+
+```powershell
+npm run restart:service
+```
+
+The manual `scripts\start-healthflow-offline.cmd` launcher is only a backup for technician recovery or testing. Cashiers should use the desktop shortcut and should not need PowerShell for daily operation.
+
+Normal cashier flow after installation:
+
+```text
+Laptop turns on
+Windows starts HealthFlowOfflineServer automatically
+HealthFlow offline POS is available at http://localhost:4780
+Cashier opens the HealthFlow Offline POS desktop shortcut
+Sales, local SQLite storage, and background sync work without PowerShell
+```
+
+PowerShell is only needed for technician/admin work: first installation, updates, restart, uninstall, firewall setup, and troubleshooting.
+
+## 18. Configure Cashier/Staff Computers
 
 On each cashier/staff computer:
 
@@ -322,15 +648,31 @@ Token: <BRANCH_SERVER_TOKEN_FROM_ENV>
 
 Use the real LAN IP for the branch server computer.
 
-## 10. Final Acceptance Test
+## 19. Final Acceptance Test
 
-On a cashier computer:
+Run these before handing over:
 
-1. Search for a drug in POS.
-2. Add item to cart.
-3. Complete a sale.
-4. Print receipt.
-5. Check local sync status.
+```text
+Login as admin
+Create or confirm staff accounts
+Open a shift
+Pull inventory to local branch server
+Search for a drug in POS
+Complete a cash sale
+Print receipt
+Confirm local stock reduced
+Run Sync Now
+Confirm sale appears in cloud reports
+Disconnect internet
+Confirm Cash sale can still be saved
+Confirm Mobile Money/Card are disabled while offline
+Reconnect internet
+Confirm sync worker sends pending sales
+If Paystack/Hubtel enabled, run one test payment
+Confirm webhook marks sale paid before cloud sync
+If NHIA enabled, save one NHIA claim sale
+Confirm ClaimIT/NHIA fields are complete
+```
 
 PowerShell sync status check:
 
@@ -343,48 +685,57 @@ Invoke-WebRequest `
   -UseBasicParsing
 ```
 
-Then confirm the sale eventually appears in Supabase/HealthFlow cloud.
+## 20. Updating An Existing Branch Server
 
-## 11. Onboarding Record Template
+Run this on the branch server computer:
 
-Keep this for every pharmacy:
+```powershell
+cd "C:\HealthFlowPharmacy"
+git pull origin main
+npm install
+npm.cmd run build
+npm.cmd run build:offline
 
-```text
-Pharmacy Name:
-Organization ID:
-Main Branch ID:
-Admin Name:
-Admin Email:
-Admin Phone:
-Plan:
-Enabled Modules:
-Number of Branches:
-Number of Staff:
-Branch Server Required: Yes/No
-Branch Server Computer Name:
-Branch Server LAN IP:
-Branch Server URL:
-Setup Date:
-Installed By:
-Training Completed: Yes/No
-Notes:
+cd "C:\HealthFlowPharmacy\local-branch-server"
+npm install
 ```
 
-Keep tokens in a password manager or secure admin record. Do not store live tokens in WhatsApp chats or public documents.
+Restart the service:
 
-## 12. Troubleshooting Commands
+```powershell
+cd "C:\HealthFlowPharmacy\local-branch-server"
+npm run restart:service
+```
+
+If service restart is blocked, reboot the branch server computer.
+
+## 21. Troubleshooting Commands
 
 Check app build:
 
 ```powershell
-cd "C:\Users\RealTimeIT\Desktop\APPS\HealthFlow Pharmacy"
+cd "C:\HealthFlowPharmacy"
 npm.cmd run build
 ```
 
-Check local branch server syntax:
+Check offline bundle build:
 
 ```powershell
-cd "C:\Users\RealTimeIT\Desktop\APPS\HealthFlow Pharmacy"
+cd "C:\HealthFlowPharmacy"
+npm.cmd run build:offline
+```
+
+Check tests:
+
+```powershell
+cd "C:\HealthFlowPharmacy"
+npm.cmd run test
+```
+
+Check branch server syntax:
+
+```powershell
+cd "C:\HealthFlowPharmacy"
 Get-ChildItem local-branch-server\src -Filter *.js | ForEach-Object { node --check $_.FullName }
 ```
 
@@ -406,9 +757,72 @@ Check LAN access:
 Test-NetConnection <branch-server-ip> -Port 4780
 ```
 
+Check branch server logs:
+
+```powershell
+Get-Content "C:\HealthFlowPharmacy\logs\offline-server.log" -Tail 80
+Get-Content "C:\HealthFlowPharmacy\logs\offline-server-error.log" -Tail 80
+```
+
+If `better-sqlite3` fails after changing Node versions:
+
+```powershell
+cd "C:\HealthFlowPharmacy\local-branch-server"
+npm rebuild better-sqlite3
+```
+
 Check Git status before pushing:
 
 ```powershell
-cd "C:\Users\RealTimeIT\Desktop\APPS\HealthFlow Pharmacy"
+cd "C:\HealthFlowPharmacy"
 git status
 ```
+
+## 22. Onboarding Record Template
+
+Keep this for every facility:
+
+```text
+Facility Name:
+Facility Type:
+Organization ID:
+Main Branch ID:
+Admin Name:
+Admin Email:
+Admin Phone:
+Plan:
+Enabled Modules:
+Number of Branches:
+Number of Staff:
+Logo Uploaded: Yes/No
+Receipt Configured: Yes/No
+Starting Inventory Imported: Yes/No
+NHIA Enabled: Yes/No
+NHIA Facility Code:
+NHIA Provider Number:
+NHIA Provider Class/Level:
+Claims Officer Name:
+Claims Officer Signature Uploaded: Yes/No
+Payment Providers Enabled: None/Paystack/Hubtel/Both
+Paystack Webhook Configured: Yes/No
+Hubtel Webhook Configured: Yes/No
+Branch Server Required: Yes/No
+Branch Server Computer Name:
+Branch Server Install Path:
+Branch Server LAN IP:
+Branch Server URL:
+Public Payment Webhook URL:
+Branch Sync Client Registered: Yes/No
+Firewall Opened: Yes/No
+NSSM Service Installed: Yes/No
+Final Cash Sale Test Passed: Yes/No
+Final Offline Cash Test Passed: Yes/No
+Final Online Payment Test Passed: Yes/No
+Final NHIA Test Passed: Yes/No
+Setup Date:
+Installed By:
+Training Completed: Yes/No
+Notes:
+```
+
+Keep tokens and provider credentials in a password manager or secure admin record. Do not store live tokens in public documents.

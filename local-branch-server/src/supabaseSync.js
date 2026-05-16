@@ -83,6 +83,8 @@ const markOfflineRecordFailed = db.prepare(`
     AND entity_type = ?
 `)
 
+let syncPendingOutboxPromise = null
+
 const createSupabaseClient = () => {
   if (!isSupabaseSyncConfigured()) {
     throw new Error('Supabase sync is not configured.')
@@ -222,7 +224,7 @@ const syncRecordUpsert = async (supabase, row) => {
   }
 }
 
-export const syncPendingOutbox = async ({ limit = 25 } = {}) => {
+const runPendingOutboxSync = async ({ limit = 25 } = {}) => {
   const supabase = createSupabaseClient()
   const rows = pendingOutbox.all(Math.min(Math.max(Number(limit) || 25, 1), 100))
   const result = { synced: 0, failed: 0, total: rows.length, errors: [] }
@@ -261,6 +263,19 @@ export const syncPendingOutbox = async ({ limit = 25 } = {}) => {
   }
 
   return result
+}
+
+export const syncPendingOutbox = async (options = {}) => {
+  if (syncPendingOutboxPromise) {
+    return syncPendingOutboxPromise
+  }
+
+  syncPendingOutboxPromise = runPendingOutboxSync(options)
+  try {
+    return await syncPendingOutboxPromise
+  } finally {
+    syncPendingOutboxPromise = null
+  }
 }
 
 export const getSyncStatus = () => {

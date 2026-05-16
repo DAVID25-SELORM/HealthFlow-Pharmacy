@@ -4,8 +4,9 @@ import { submitPendingNhiaClaims } from './nhiaRepository.js'
 import { pullInventorySnapshot, pullReferenceData, syncPendingOutbox } from './supabaseSync.js'
 
 let lastInventoryPullAt = 0
+let syncInterval = null
 
-const runOnce = async () => {
+export const runSyncWorkerOnce = async () => {
   try {
     const nhiaResult = await submitPendingNhiaClaims()
     if (nhiaResult.checked > 0 || nhiaResult.failed > 0) {
@@ -45,15 +46,25 @@ const runOnce = async () => {
   }
 }
 
-if (process.argv.includes('--once')) {
-  runOnce().catch((error) => {
+export const startSyncWorker = () => {
+  if (syncInterval) {
+    return
+  }
+
+  console.log(`HealthFlow branch sync worker running every ${config.syncIntervalSeconds}s.`)
+  runSyncWorkerOnce().catch((error) => console.error(error))
+  syncInterval = setInterval(() => {
+    runSyncWorkerOnce().catch((error) => console.error(error))
+  }, config.syncIntervalSeconds * 1000)
+}
+
+const isCliEntry = process.argv[1] && /(^|\/)syncWorker\.js$/.test(process.argv[1].replace(/\\/g, '/'))
+
+if (isCliEntry && process.argv.includes('--once')) {
+  runSyncWorkerOnce().catch((error) => {
     console.error(error)
     process.exitCode = 1
   })
-} else {
-  console.log(`HealthFlow branch sync worker running every ${config.syncIntervalSeconds}s.`)
-  runOnce().catch((error) => console.error(error))
-  setInterval(() => {
-    runOnce().catch((error) => console.error(error))
-  }, config.syncIntervalSeconds * 1000)
+} else if (isCliEntry) {
+  startSyncWorker()
 }

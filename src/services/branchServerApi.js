@@ -39,9 +39,7 @@ export const getBranchServerConfig = () => {
         import.meta.env.VITE_BRANCH_SERVER_URL ||
         DEFAULT_BRANCH_SERVER_URL
     ).replace(/\/+$/, ''),
-    token: String(
-      runtimeConfig.token || hostedConfig.token || import.meta.env.VITE_BRANCH_SERVER_TOKEN || ''
-    ),
+    token: String(runtimeConfig.token || hostedConfig.token || ''),
     runtimeConfigured: Boolean(runtimeConfig.url && runtimeConfig.token),
   }
 }

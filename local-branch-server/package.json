@@ -11,6 +11,10 @@
     "dev": "node --watch src/server.js",
     "start:windows": "scripts\\start-branch-server.cmd",
     "sync:windows": "scripts\\start-sync-worker.cmd",
+    "install:service": "powershell -ExecutionPolicy Bypass -File scripts\\install-service.ps1",
+    "uninstall:service": "powershell -ExecutionPolicy Bypass -File scripts\\uninstall-service.ps1",
+    "restart:service": "powershell -ExecutionPolicy Bypass -File scripts\\restart-service.ps1",
+    "health:check": "powershell -ExecutionPolicy Bypass -File scripts\\health-check.ps1",
     "install:startup": "powershell -ExecutionPolicy Bypass -File scripts\\install-startup-tasks.ps1",
     "uninstall:startup": "powershell -ExecutionPolicy Bypass -File scripts\\uninstall-startup-tasks.ps1"
   },

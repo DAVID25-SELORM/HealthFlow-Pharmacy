@@ -9,14 +9,16 @@ $tasks = @(
   @{
     Name = 'HealthFlow Branch Server'
     Script = Join-Path $scriptDir 'run-branch-server.ps1'
-    Description = 'Runs the HealthFlow local branch server at Windows sign-in.'
-  },
-  @{
-    Name = 'HealthFlow Branch Sync Worker'
-    Script = Join-Path $scriptDir 'run-sync-worker.ps1'
-    Description = 'Runs the HealthFlow branch sync worker at Windows sign-in.'
+    Description = 'Runs the HealthFlow local branch server and embedded sync worker at Windows sign-in.'
   }
 )
+
+$legacySyncTask = Get-ScheduledTask -TaskName 'HealthFlow Branch Sync Worker' -ErrorAction SilentlyContinue
+if ($legacySyncTask) {
+  Stop-ScheduledTask -TaskName 'HealthFlow Branch Sync Worker' -ErrorAction SilentlyContinue
+  Unregister-ScheduledTask -TaskName 'HealthFlow Branch Sync Worker' -Confirm:$false
+  Write-Host 'Removed legacy task: HealthFlow Branch Sync Worker'
+}
 
 if (-not (Test-Path $envPath)) {
   Write-Warning "No .env file found at $envPath. Create it before relying on these startup tasks."
@@ -47,6 +49,5 @@ foreach ($task in $tasks) {
 }
 
 Write-Host ''
-Write-Host 'HealthFlow offline startup tasks are installed.'
+Write-Host 'HealthFlow offline startup task is installed.'
 Write-Host "Logs will be written to: $(Join-Path $serverDir 'logs')"
-

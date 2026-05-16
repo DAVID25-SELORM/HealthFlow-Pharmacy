@@ -45,20 +45,65 @@ npm install
 npm run start
 ```
 
-In another terminal, run the sync worker:
+`npm run start` starts the local API/POS server and the embedded sync worker loop. Use the standalone sync command only for diagnostics:
 
 ```powershell
 cd local-branch-server
-npm run sync
+npm run sync -- --once
 ```
 
-On Windows, you can use the helper scripts instead:
+## Production Windows Service Setup
+
+For production branch computers, install HealthFlow as a Windows background service. Cashiers should not need PowerShell after this setup.
+
+NSSM is bundled at `local-branch-server\deployment\windows\nssm\win64\nssm.exe` and handled by the installer. If it is missing and internet is available, `install-service.ps1` downloads NSSM automatically as a recovery fallback.
+
+Run PowerShell as Administrator:
+
+```powershell
+cd "C:\HealthFlowPharmacy\local-branch-server"
+npm run install:service
+```
+
+The installer creates:
+
+```text
+HealthFlowOfflineServer -> node src/server.js
+C:\HealthFlowPharmacy\logs
+C:\HealthFlowPharmacy\data
+C:\HealthFlowPharmacy\nssm\nssm.exe
+Public desktop shortcut: HealthFlow Offline POS
+```
+
+The server process also starts the sync worker loop, so SQLite outbox records keep retrying automatically when internet returns.
+
+Run a health check:
+
+```powershell
+npm run health:check
+```
+
+Uninstall the Windows service:
+
+```powershell
+npm run uninstall:service
+```
+
+Restart the service:
+
+```powershell
+npm run restart:service
+```
+
+The uninstall command preserves `.env`, SQLite data, and logs by default. Use the script's `-RemoveFiles` switch only when intentionally decommissioning a branch server.
+
+On Windows, you can use the helper CMD launcher as a backup only:
 
 ```powershell
 .\scripts\start-healthflow-offline.cmd
 ```
 
-To start the local server and sync worker automatically when the Windows user signs in without leaving terminal windows open:
+The older Task Scheduler path is retained for fallback environments where services are blocked. It starts the server task only, because the server starts the sync worker loop internally:
 
 ```powershell
 npm run install:startup

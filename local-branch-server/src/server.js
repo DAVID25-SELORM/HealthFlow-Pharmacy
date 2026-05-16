@@ -43,6 +43,7 @@ import {
   pullInventorySnapshot,
   syncPendingOutbox,
 } from './supabaseSync.js'
+import { startSyncWorker } from './syncWorker.js'
 
 assertConfiguredForServer()
 
@@ -558,4 +559,5 @@ app.use((error, _request, response, _next) => {
 
 app.listen(config.port, () => {
   console.log(`HealthFlow local branch server listening on http://localhost:${config.port}`)
+  startSyncWorker()
 })
