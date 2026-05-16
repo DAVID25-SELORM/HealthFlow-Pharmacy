@@ -1428,6 +1428,13 @@ export const buildNhisClaimItExportPayload = (claims = [], options = {}) => {
     batchNumber,
     facilityCode: normalizeText(options.facilityCode),
     providerNumber: normalizeText(options.providerNumber),
+    schemeName: normalizeText(options.schemeName) || 'National Health Insurance',
+    providerTypeDescription: normalizeText(options.providerTypeDescription),
+    providerClassLevel: normalizeText(options.providerClassLevel),
+    claimsOfficerName: normalizeText(options.claimsOfficerName),
+    admissionPaymentOption: normalizeText(options.admissionPaymentOption) || 'nhis_pays_admission',
+    claimitValidationEnabled: options.claimitValidationEnabled !== false,
+    claimsOfficerSignatureUrl: normalizeText(options.claimsOfficerSignatureUrl),
     submitterId: normalizeText(options.submitterId),
     submissionMonth: exportPeriod.yearMonth,
     exportMode: exportPeriod.mode,
@@ -1457,6 +1464,13 @@ export const buildNhisClaimItXml = (payload) => `<?xml version="1.0" encoding="U
   <BatchNumber>${xmlEscape(payload.batchNumber)}</BatchNumber>
   <FacilityCode>${xmlEscape(payload.facilityCode)}</FacilityCode>
   <ProviderNumber>${xmlEscape(payload.providerNumber)}</ProviderNumber>
+  <SchemeName>${xmlEscape(payload.schemeName)}</SchemeName>
+  <ProviderTypeDescription>${xmlEscape(payload.providerTypeDescription)}</ProviderTypeDescription>
+  <ProviderClassLevel>${xmlEscape(payload.providerClassLevel)}</ProviderClassLevel>
+  <ClaimsOfficerName>${xmlEscape(payload.claimsOfficerName)}</ClaimsOfficerName>
+  <AdmissionPaymentOption>${xmlEscape(payload.admissionPaymentOption)}</AdmissionPaymentOption>
+  <ClaimitValidationEnabled>${xmlEscape(payload.claimitValidationEnabled)}</ClaimitValidationEnabled>
+  <ClaimsOfficerSignatureUrl>${xmlEscape(payload.claimsOfficerSignatureUrl)}</ClaimsOfficerSignatureUrl>
   <SubmitterId>${xmlEscape(payload.submitterId)}</SubmitterId>
   <SubmissionMonth>${xmlEscape(payload.submissionMonth)}</SubmissionMonth>
   <ExportMode>${xmlEscape(payload.exportMode)}</ExportMode>

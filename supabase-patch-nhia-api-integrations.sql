@@ -15,6 +15,14 @@ CREATE TABLE IF NOT EXISTS public.organization_nhia_integrations (
     REFERENCES public.organizations(id) ON DELETE CASCADE,
   facility_code TEXT,
   provider_number TEXT,
+  scheme_name TEXT NOT NULL DEFAULT 'National Health Insurance',
+  provider_type_description TEXT,
+  provider_class_level TEXT,
+  claims_officer_name TEXT,
+  admission_payment_option TEXT NOT NULL DEFAULT 'nhis_pays_admission'
+    CHECK (admission_payment_option IN ('nhis_pays_admission', 'patient_pays_admission', 'not_applicable')),
+  claimit_validation_enabled BOOLEAN NOT NULL DEFAULT true,
+  claims_officer_signature_url TEXT,
   submitter_id TEXT,
   api_environment TEXT NOT NULL DEFAULT 'production'
     CHECK (api_environment IN ('sandbox', 'production')),
@@ -42,6 +50,13 @@ CREATE TABLE IF NOT EXISTS public.organization_nhia_integrations (
 
 ALTER TABLE public.organization_nhia_integrations
   ADD COLUMN IF NOT EXISTS api_environment TEXT NOT NULL DEFAULT 'production',
+  ADD COLUMN IF NOT EXISTS scheme_name TEXT NOT NULL DEFAULT 'National Health Insurance',
+  ADD COLUMN IF NOT EXISTS provider_type_description TEXT,
+  ADD COLUMN IF NOT EXISTS provider_class_level TEXT,
+  ADD COLUMN IF NOT EXISTS claims_officer_name TEXT,
+  ADD COLUMN IF NOT EXISTS admission_payment_option TEXT NOT NULL DEFAULT 'nhis_pays_admission',
+  ADD COLUMN IF NOT EXISTS claimit_validation_enabled BOOLEAN NOT NULL DEFAULT true,
+  ADD COLUMN IF NOT EXISTS claims_officer_signature_url TEXT,
   ADD COLUMN IF NOT EXISTS claim_status_endpoint_path TEXT,
   ADD COLUMN IF NOT EXISTS member_lookup_endpoint_path TEXT,
   ALTER COLUMN claim_endpoint_path DROP DEFAULT,

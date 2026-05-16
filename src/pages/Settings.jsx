@@ -43,6 +43,13 @@ const toForm = (row) => ({
 const blankNhiaApiForm = {
   facilityCode: '',
   providerNumber: '',
+  schemeName: 'National Health Insurance',
+  providerTypeDescription: '',
+  providerClassLevel: '',
+  claimsOfficerName: '',
+  admissionPaymentOption: 'nhis_pays_admission',
+  claimitValidationEnabled: true,
+  claimsOfficerSignatureUrl: '',
   submitterId: '',
   apiEnvironment: 'production',
   apiBaseUrl: '',
@@ -55,7 +62,9 @@ const blankNhiaApiForm = {
   exportFormat: 'json',
   credentials: {
     apiKey: '',
+    apiSecret: '',
     headerName: '',
+    secretHeaderName: '',
     headerPrefix: '',
     clientId: '',
     clientSecret: '',
@@ -689,21 +698,89 @@ const Settings = () => {
               </label>
               <div className="settings-form-row">
                 <input
+                  placeholder="Scheme name"
+                  value={nhiaApiForm.schemeName}
+                  onChange={(event) => updateNhiaApiForm('schemeName', event.target.value)}
+                />
+                <input
                   placeholder="Facility code"
                   value={nhiaApiForm.facilityCode}
                   onChange={(event) => updateNhiaApiForm('facilityCode', event.target.value)}
                 />
+              </div>
+              <div className="settings-form-row">
                 <input
                   placeholder="Provider number"
                   value={nhiaApiForm.providerNumber}
                   onChange={(event) => updateNhiaApiForm('providerNumber', event.target.value)}
                 />
+                <select
+                  value={nhiaApiForm.providerClassLevel}
+                  onChange={(event) => updateNhiaApiForm('providerClassLevel', event.target.value)}
+                >
+                  <option value="">Provider class / level</option>
+                  <option value="B1">B1</option>
+                  <option value="B2">B2</option>
+                  <option value="C">C</option>
+                  <option value="D">D</option>
+                  <option value="M">M</option>
+                  <option value="SM">SM</option>
+                </select>
               </div>
-              <input
-                placeholder="Submitter ID"
-                value={nhiaApiForm.submitterId}
-                onChange={(event) => updateNhiaApiForm('submitterId', event.target.value)}
-              />
+              <div className="settings-form-row">
+                <select
+                  value={nhiaApiForm.providerTypeDescription}
+                  onChange={(event) => updateNhiaApiForm('providerTypeDescription', event.target.value)}
+                >
+                  <option value="">Provider type description</option>
+                  <option value="Tertiary care hospital">Tertiary care hospital</option>
+                  <option value="Secondary care hospital">Secondary care hospital</option>
+                  <option value="Primary care hospital">Primary care hospital</option>
+                  <option value="Health centers (Public, Private, CHAG)">Health centers (Public, Private, CHAG)</option>
+                  <option value="Maternity homes">Maternity homes</option>
+                  <option value="Private clinics">Private clinics</option>
+                  <option value="Dental clinics">Dental clinics</option>
+                  <option value="Eye centers">Eye centers</option>
+                  <option value="Diagnostic centers">Diagnostic centers</option>
+                  <option value="CHPS Compounds">CHPS Compounds</option>
+                  <option value="Pharmacy">Pharmacy</option>
+                </select>
+                <select
+                  value={nhiaApiForm.admissionPaymentOption}
+                  onChange={(event) => updateNhiaApiForm('admissionPaymentOption', event.target.value)}
+                >
+                  <option value="nhis_pays_admission">NHIS pays admission</option>
+                  <option value="patient_pays_admission">Patient pays admission</option>
+                  <option value="not_applicable">Not applicable</option>
+                </select>
+              </div>
+              <div className="settings-form-row">
+                <input
+                  placeholder="Claims officer name"
+                  value={nhiaApiForm.claimsOfficerName}
+                  onChange={(event) => updateNhiaApiForm('claimsOfficerName', event.target.value)}
+                />
+                <input
+                  placeholder="Claims officer signature URL"
+                  value={nhiaApiForm.claimsOfficerSignatureUrl}
+                  onChange={(event) => updateNhiaApiForm('claimsOfficerSignatureUrl', event.target.value)}
+                />
+              </div>
+              <div className="settings-form-row">
+                <input
+                  placeholder="Submitter ID"
+                  value={nhiaApiForm.submitterId}
+                  onChange={(event) => updateNhiaApiForm('submitterId', event.target.value)}
+                />
+                <label className="settings-checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={nhiaApiForm.claimitValidationEnabled !== false}
+                    onChange={(event) => updateNhiaApiForm('claimitValidationEnabled', event.target.checked)}
+                  />
+                  Allow CLAIM-it validation
+                </label>
+              </div>
               <select
                 value={nhiaApiForm.apiEnvironment}
                 onChange={(event) => updateNhiaApiForm('apiEnvironment', event.target.value)}
@@ -767,6 +844,19 @@ const Settings = () => {
                   placeholder="Header name"
                   value={nhiaApiForm.credentials.headerName}
                   onChange={(event) => updateNhiaCredential('headerName', event.target.value)}
+                />
+              </div>
+              <div className="settings-form-row">
+                <input
+                  placeholder="API secret"
+                  type="password"
+                  value={nhiaApiForm.credentials.apiSecret}
+                  onChange={(event) => updateNhiaCredential('apiSecret', event.target.value)}
+                />
+                <input
+                  placeholder="Secret header name"
+                  value={nhiaApiForm.credentials.secretHeaderName}
+                  onChange={(event) => updateNhiaCredential('secretHeaderName', event.target.value)}
                 />
               </div>
               <div className="settings-form-row">

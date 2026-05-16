@@ -46,6 +46,13 @@ const getSummaryTotal = (summary, key) => Number(summary?.[key] || 0)
 const blankNhiaForm = {
   facilityCode: '',
   providerNumber: '',
+  schemeName: 'National Health Insurance',
+  providerTypeDescription: '',
+  providerClassLevel: '',
+  claimsOfficerName: '',
+  admissionPaymentOption: 'nhis_pays_admission',
+  claimitValidationEnabled: true,
+  claimsOfficerSignatureUrl: '',
   submitterId: '',
   apiBaseUrl: '',
   claimEndpointPath: '',
@@ -58,7 +65,9 @@ const blankNhiaForm = {
   maxRetryAttempts: 3,
   credentials: {
     apiKey: '',
+    apiSecret: '',
     headerName: '',
+    secretHeaderName: '',
     headerPrefix: '',
     clientId: '',
     clientSecret: '',
@@ -329,6 +338,13 @@ export default function OfflineSync() {
 
         <div className="nhia-settings-grid">
           <label>
+            <span>Scheme Name</span>
+            <input
+              value={nhiaForm.schemeName}
+              onChange={(event) => updateNhiaForm('schemeName', event.target.value)}
+            />
+          </label>
+          <label>
             <span>Facility Code</span>
             <input
               value={nhiaForm.facilityCode}
@@ -340,6 +356,66 @@ export default function OfflineSync() {
             <input
               value={nhiaForm.providerNumber}
               onChange={(event) => updateNhiaForm('providerNumber', event.target.value)}
+            />
+          </label>
+          <label>
+            <span>Provider Class / Level</span>
+            <select
+              value={nhiaForm.providerClassLevel}
+              onChange={(event) => updateNhiaForm('providerClassLevel', event.target.value)}
+            >
+              <option value="">Select</option>
+              <option value="B1">B1</option>
+              <option value="B2">B2</option>
+              <option value="C">C</option>
+              <option value="D">D</option>
+              <option value="M">M</option>
+              <option value="SM">SM</option>
+            </select>
+          </label>
+          <label>
+            <span>Provider Type</span>
+            <select
+              value={nhiaForm.providerTypeDescription}
+              onChange={(event) => updateNhiaForm('providerTypeDescription', event.target.value)}
+            >
+              <option value="">Select</option>
+              <option value="Tertiary care hospital">Tertiary care hospital</option>
+              <option value="Secondary care hospital">Secondary care hospital</option>
+              <option value="Primary care hospital">Primary care hospital</option>
+              <option value="Health centers (Public, Private, CHAG)">Health centers (Public, Private, CHAG)</option>
+              <option value="Maternity homes">Maternity homes</option>
+              <option value="Private clinics">Private clinics</option>
+              <option value="Dental clinics">Dental clinics</option>
+              <option value="Eye centers">Eye centers</option>
+              <option value="Diagnostic centers">Diagnostic centers</option>
+              <option value="CHPS Compounds">CHPS Compounds</option>
+              <option value="Pharmacy">Pharmacy</option>
+            </select>
+          </label>
+          <label>
+            <span>Admission Option</span>
+            <select
+              value={nhiaForm.admissionPaymentOption}
+              onChange={(event) => updateNhiaForm('admissionPaymentOption', event.target.value)}
+            >
+              <option value="nhis_pays_admission">NHIS pays admission</option>
+              <option value="patient_pays_admission">Patient pays admission</option>
+              <option value="not_applicable">Not applicable</option>
+            </select>
+          </label>
+          <label>
+            <span>Claims Officer</span>
+            <input
+              value={nhiaForm.claimsOfficerName}
+              onChange={(event) => updateNhiaForm('claimsOfficerName', event.target.value)}
+            />
+          </label>
+          <label>
+            <span>Signature URL</span>
+            <input
+              value={nhiaForm.claimsOfficerSignatureUrl}
+              onChange={(event) => updateNhiaForm('claimsOfficerSignatureUrl', event.target.value)}
             />
           </label>
           <label>
@@ -431,6 +507,14 @@ export default function OfflineSync() {
             />
             <span>Direct API Enabled</span>
           </label>
+          <label className="nhia-toggle">
+            <input
+              type="checkbox"
+              checked={nhiaForm.claimitValidationEnabled !== false}
+              onChange={(event) => updateNhiaForm('claimitValidationEnabled', event.target.checked)}
+            />
+            <span>Allow CLAIM-it Validation</span>
+          </label>
 
           {nhiaForm.credentialMode === 'api_key' && (
             <>
@@ -456,6 +540,22 @@ export default function OfflineSync() {
                   value={nhiaForm.credentials.headerPrefix}
                   placeholder="Bearer"
                   onChange={(event) => updateNhiaCredential('headerPrefix', event.target.value)}
+                />
+              </label>
+              <label className="nhia-wide">
+                <span>API Secret {nhiaSettings?.credentialSummary?.apiSecret ? '(saved)' : ''}</span>
+                <input
+                  type="password"
+                  value={nhiaForm.credentials.apiSecret}
+                  onChange={(event) => updateNhiaCredential('apiSecret', event.target.value)}
+                />
+              </label>
+              <label>
+                <span>Secret Header</span>
+                <input
+                  value={nhiaForm.credentials.secretHeaderName}
+                  placeholder="x-api-secret"
+                  onChange={(event) => updateNhiaCredential('secretHeaderName', event.target.value)}
                 />
               </label>
             </>

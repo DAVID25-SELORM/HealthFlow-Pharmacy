@@ -243,6 +243,13 @@ const normalizeCredentialMode = (value) => {
   return mode
 }
 
+const normalizeAdmissionPaymentOption = (value) => {
+  const option = normalizeText(value || 'nhis_pays_admission').toLowerCase()
+  return ['nhis_pays_admission', 'patient_pays_admission', 'not_applicable'].includes(option)
+    ? option
+    : 'nhis_pays_admission'
+}
+
 const normalizeExportFormat = (value) => {
   const format = normalizeText(value || 'json').toLowerCase()
   if (!EXPORT_FORMATS.has(format)) {
@@ -287,12 +294,16 @@ const selectAnySettings = db.prepare(`
 const upsertSettings = db.prepare(`
   INSERT INTO nhia_settings (
     id, organization_id, branch_id, facility_code, provider_number, submitter_id,
+    scheme_name, provider_type_description, provider_class_level, claims_officer_name,
+    admission_payment_option, claimit_validation_enabled, claims_officer_signature_url,
     api_base_url, claim_endpoint_path, cc_code_endpoint_path, direct_api_enabled, credential_mode,
     credential_payload, nhis_member_digits, ghana_card_digits, export_format,
     max_retry_attempts, is_active, created_at, updated_at
   )
   VALUES (
     @id, @organizationId, @branchId, @facilityCode, @providerNumber, @submitterId,
+    @schemeName, @providerTypeDescription, @providerClassLevel, @claimsOfficerName,
+    @admissionPaymentOption, @claimitValidationEnabled, @claimsOfficerSignatureUrl,
     @apiBaseUrl, @claimEndpointPath, @ccCodeEndpointPath, @directApiEnabled, @credentialMode,
     @credentialPayload, @nhisMemberDigits, @ghanaCardDigits, @exportFormat,
     @maxRetryAttempts, 1, @createdAt, @updatedAt
@@ -303,6 +314,13 @@ const upsertSettings = db.prepare(`
     facility_code = excluded.facility_code,
     provider_number = excluded.provider_number,
     submitter_id = excluded.submitter_id,
+    scheme_name = excluded.scheme_name,
+    provider_type_description = excluded.provider_type_description,
+    provider_class_level = excluded.provider_class_level,
+    claims_officer_name = excluded.claims_officer_name,
+    admission_payment_option = excluded.admission_payment_option,
+    claimit_validation_enabled = excluded.claimit_validation_enabled,
+    claims_officer_signature_url = excluded.claims_officer_signature_url,
     api_base_url = excluded.api_base_url,
     claim_endpoint_path = excluded.claim_endpoint_path,
     cc_code_endpoint_path = excluded.cc_code_endpoint_path,
@@ -474,6 +492,13 @@ const mapSettingsRow = (row, { includeCredentials = false } = {}) => {
     branchId: row.branch_id || '',
     facilityCode: row.facility_code || '',
     providerNumber: row.provider_number || '',
+    schemeName: row.scheme_name || 'National Health Insurance',
+    providerTypeDescription: row.provider_type_description || '',
+    providerClassLevel: row.provider_class_level || '',
+    claimsOfficerName: row.claims_officer_name || '',
+    admissionPaymentOption: row.admission_payment_option || 'nhis_pays_admission',
+    claimitValidationEnabled: row.claimit_validation_enabled !== 0,
+    claimsOfficerSignatureUrl: row.claims_officer_signature_url || '',
     submitterId: row.submitter_id || '',
     apiBaseUrl: row.api_base_url || '',
     claimEndpointPath: row.claim_endpoint_path || '',
@@ -524,6 +549,13 @@ export const saveNhiaSettings = (settings = {}) => {
     branchId,
     facilityCode: normalizeText(settings.facilityCode) || null,
     providerNumber: normalizeText(settings.providerNumber) || null,
+    schemeName: normalizeText(settings.schemeName) || 'National Health Insurance',
+    providerTypeDescription: normalizeText(settings.providerTypeDescription) || null,
+    providerClassLevel: normalizeText(settings.providerClassLevel) || null,
+    claimsOfficerName: normalizeText(settings.claimsOfficerName) || null,
+    admissionPaymentOption: normalizeAdmissionPaymentOption(settings.admissionPaymentOption),
+    claimitValidationEnabled: settings.claimitValidationEnabled === false ? 0 : 1,
+    claimsOfficerSignatureUrl: normalizeText(settings.claimsOfficerSignatureUrl) || null,
     submitterId: normalizeText(settings.submitterId) || null,
     apiBaseUrl: normalizeText(settings.apiBaseUrl).replace(/\/+$/, '') || null,
     claimEndpointPath: normalizeText(settings.claimEndpointPath) || null,
@@ -617,6 +649,13 @@ const buildClaimPayload = ({ claim, items, settings }) => ({
   claimNumber: claim.claimNumber,
   facilityCode: settings?.facilityCode || '',
   providerNumber: settings?.providerNumber || '',
+  schemeName: settings?.schemeName || 'National Health Insurance',
+  providerTypeDescription: settings?.providerTypeDescription || '',
+  providerClassLevel: settings?.providerClassLevel || '',
+  claimsOfficerName: settings?.claimsOfficerName || '',
+  admissionPaymentOption: settings?.admissionPaymentOption || 'nhis_pays_admission',
+  claimitValidationEnabled: settings?.claimitValidationEnabled !== false && settings?.claimitValidationEnabled !== 0,
+  claimsOfficerSignatureUrl: settings?.claimsOfficerSignatureUrl || '',
   submitterId: settings?.submitterId || '',
   organizationType: normalizeOrganizationType(claim.organizationType || claim.payload?.organizationType),
   patient: {
@@ -872,6 +911,9 @@ const buildHeaders = (settings) => {
     const headerName = normalizeText(credentials.headerName) || 'Authorization'
     const prefix = normalizeText(credentials.headerPrefix) || (headerName.toLowerCase() === 'authorization' ? 'Bearer' : '')
     headers[headerName] = prefix ? `${prefix} ${credentials.apiKey}` : credentials.apiKey
+    const apiSecret = normalizeText(credentials.apiSecret)
+    const secretHeaderName = normalizeText(credentials.secretHeaderName) || 'x-api-secret'
+    if (apiSecret) headers[secretHeaderName] = apiSecret
   } else if (settings.credentialMode === 'client_secret') {
     headers['x-client-id'] = credentials.clientId
     headers['x-client-secret'] = credentials.clientSecret
@@ -1199,6 +1241,13 @@ const buildBatchPayload = (claims, settings) => ({
   batchNumber: createBatchNumber(),
   facilityCode: settings?.facilityCode || '',
   providerNumber: settings?.providerNumber || '',
+  schemeName: settings?.schemeName || 'National Health Insurance',
+  providerTypeDescription: settings?.providerTypeDescription || '',
+  providerClassLevel: settings?.providerClassLevel || '',
+  claimsOfficerName: settings?.claimsOfficerName || '',
+  admissionPaymentOption: settings?.admissionPaymentOption || 'nhis_pays_admission',
+  claimitValidationEnabled: settings?.claimitValidationEnabled !== false && settings?.claimitValidationEnabled !== 0,
+  claimsOfficerSignatureUrl: settings?.claimsOfficerSignatureUrl || '',
   createdAt: nowIso(),
   claims: claims.map((claim) => validateClaimForSubmission(claim, settings || {})),
 })
@@ -1216,6 +1265,13 @@ const batchToXml = (payload) => `<?xml version="1.0" encoding="UTF-8"?>
   <BatchNumber>${xmlEscape(payload.batchNumber)}</BatchNumber>
   <FacilityCode>${xmlEscape(payload.facilityCode)}</FacilityCode>
   <ProviderNumber>${xmlEscape(payload.providerNumber)}</ProviderNumber>
+  <SchemeName>${xmlEscape(payload.schemeName)}</SchemeName>
+  <ProviderTypeDescription>${xmlEscape(payload.providerTypeDescription)}</ProviderTypeDescription>
+  <ProviderClassLevel>${xmlEscape(payload.providerClassLevel)}</ProviderClassLevel>
+  <ClaimsOfficerName>${xmlEscape(payload.claimsOfficerName)}</ClaimsOfficerName>
+  <AdmissionPaymentOption>${xmlEscape(payload.admissionPaymentOption)}</AdmissionPaymentOption>
+  <ClaimitValidationEnabled>${xmlEscape(payload.claimitValidationEnabled)}</ClaimitValidationEnabled>
+  <ClaimsOfficerSignatureUrl>${xmlEscape(payload.claimsOfficerSignatureUrl)}</ClaimsOfficerSignatureUrl>
   <CreatedAt>${xmlEscape(payload.createdAt)}</CreatedAt>
   <Claims>
 ${payload.claims.map((claim) => `    <Claim>

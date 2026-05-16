@@ -1614,6 +1614,13 @@ const mapNhiaSettingsRow = (row: Record<string, unknown> | null, includeCredenti
     organizationId: row.organization_id || '',
     facilityCode: row.facility_code || '',
     providerNumber: row.provider_number || '',
+    schemeName: row.scheme_name || 'National Health Insurance',
+    providerTypeDescription: row.provider_type_description || '',
+    providerClassLevel: row.provider_class_level || '',
+    claimsOfficerName: row.claims_officer_name || '',
+    admissionPaymentOption: row.admission_payment_option || 'nhis_pays_admission',
+    claimitValidationEnabled: row.claimit_validation_enabled !== false,
+    claimsOfficerSignatureUrl: row.claims_officer_signature_url || '',
     submitterId: row.submitter_id || '',
     apiEnvironment: row.api_environment || 'production',
     apiBaseUrl: row.api_base_url || '',
@@ -1678,6 +1685,17 @@ const saveNhiaApiSettings = async (
     organization_id: organizationId,
     facility_code: normalizeText(settings.facilityCode) || null,
     provider_number: normalizeText(settings.providerNumber) || null,
+    scheme_name: normalizeText(settings.schemeName) || 'National Health Insurance',
+    provider_type_description: normalizeText(settings.providerTypeDescription) || null,
+    provider_class_level: normalizeText(settings.providerClassLevel) || null,
+    claims_officer_name: normalizeText(settings.claimsOfficerName) || null,
+    admission_payment_option: ['nhis_pays_admission', 'patient_pays_admission', 'not_applicable'].includes(
+      normalizeText(settings.admissionPaymentOption)
+    )
+      ? normalizeText(settings.admissionPaymentOption)
+      : 'nhis_pays_admission',
+    claimit_validation_enabled: settings.claimitValidationEnabled !== false,
+    claims_officer_signature_url: normalizeText(settings.claimsOfficerSignatureUrl) || null,
     submitter_id: normalizeText(settings.submitterId) || null,
     api_environment: normalizeText(settings.apiEnvironment).toLowerCase() === 'sandbox' ? 'sandbox' : 'production',
     api_base_url: normalizeText(settings.apiBaseUrl).replace(/\/+$/, '') || null,
@@ -1721,6 +1739,9 @@ const buildNhiaHeaders = (settings: Record<string, unknown>, contentType = 'appl
     const prefix = normalizeText(credentials.headerPrefix)
     const apiKey = normalizeText(credentials.apiKey)
     if (apiKey) headers[headerName] = prefix ? `${prefix} ${apiKey}` : apiKey
+    const apiSecret = normalizeText(credentials.apiSecret)
+    const secretHeaderName = normalizeText(credentials.secretHeaderName) || 'x-api-secret'
+    if (apiSecret) headers[secretHeaderName] = apiSecret
   } else if (mode === 'bearer_token') {
     const token = normalizeText(credentials.apiKey || credentials.token)
     if (token) headers.Authorization = `Bearer ${token}`
