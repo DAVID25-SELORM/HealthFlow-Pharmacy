@@ -717,7 +717,7 @@ export const deleteNhisDrug = async (id) => {
  * @param {Array} drugs - validated drug rows
  * @returns {{ inserted: number, updated: number, errors: string[] }}
  */
-export const upsertNhisDrugs = async (drugs) => {
+export const upsertNhisDrugs = async (drugs, options = {}) => {
   if (!drugs?.length) throw new Error('No drugs to import.')
 
   const rows = drugs.map((d) => ({
@@ -748,17 +748,19 @@ export const upsertNhisDrugs = async (drugs) => {
 
   if (error) throw error
 
-  try {
-    await invokeTierAccess({
-      action: 'sync_nhis_drugs_to_inventory',
-      drugs: rows,
-    })
-  } catch (inventoryError) {
-    throw new Error(
-      `NHIS catalog imported, but inventory sync failed: ${
-        inventoryError.message || 'Please apply the NHIS inventory pricing patch and try again.'
-      }`
-    )
+  if (options.syncInventory !== false) {
+    try {
+      await invokeTierAccess({
+        action: 'sync_nhis_drugs_to_inventory',
+        drugs: rows,
+      })
+    } catch (inventoryError) {
+      throw new Error(
+        `NHIS catalog imported, but inventory sync failed: ${
+          inventoryError.message || 'Please apply the NHIS inventory pricing patch and try again.'
+        }`
+      )
+    }
   }
 
   await tryLogAuditEvent({

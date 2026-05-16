@@ -566,15 +566,18 @@ Syringe', 126.50, 'B2'),
 ('5FLUORIN1', '5-Fluorouracil Injection, 50 mg/mL', '10 mL', 14.47, 'D');
 
 CREATE TEMP TABLE tmp_nhis_orgs (organization_id UUID NOT NULL) ON COMMIT DROP;
-INSERT INTO tmp_nhis_orgs (organization_id) VALUES
-('ddd1f4fe-24f7-4e26-8ab6-5dbcda0917d2'::uuid),
-('542fe9df-3211-4046-bd90-b101d249b7f9'::uuid);
+INSERT INTO tmp_nhis_orgs (organization_id)
+SELECT id
+FROM public.organizations
+WHERE can_use_nhis = true;
 
 CREATE TEMP TABLE tmp_nhis_branches (organization_id UUID NOT NULL, branch_id UUID) ON COMMIT DROP;
-INSERT INTO tmp_nhis_branches (organization_id, branch_id) VALUES
-('ddd1f4fe-24f7-4e26-8ab6-5dbcda0917d2'::uuid, '941ce873-1f19-4cf8-a8de-104a95890f7b'::uuid),
-('542fe9df-3211-4046-bd90-b101d249b7f9'::uuid, 'f5fedb70-9eae-41aa-aadb-a7f213f38eda'::uuid),
-('542fe9df-3211-4046-bd90-b101d249b7f9'::uuid, 'a7eafcd8-c557-47ad-80cc-c3ef3ff64e08'::uuid);
+INSERT INTO tmp_nhis_branches (organization_id, branch_id)
+SELECT org.organization_id, b.id
+FROM tmp_nhis_orgs org
+JOIN public.branches b
+  ON b.organization_id = org.organization_id
+WHERE b.is_active = true;
 
 INSERT INTO public.nhis_drugs (
   organization_id, code, description, category, unit, unit_price, is_active, updated_at

@@ -44,6 +44,7 @@ import { getAllPatients } from '../services/patientService'
 import { parseNhisDrugFile, generateNhisDrugTemplate } from '../services/nhisDrugImportService'
 import { parseNhisClinicalRuleFile, generateNhisClinicalRuleTemplate } from '../services/nhisClinicalRuleImportService'
 import { normalizeNhiaMemberNumber } from '../utils/nhiaMemberNumber'
+import { DEFAULT_NHIS_DRUG_CATALOG } from '../data/nhisDefaultDrugCatalog'
 import DiagnosisSelector from '../components/DiagnosisSelector/DiagnosisSelector'
 import './Nhis.css'
 
@@ -164,6 +165,7 @@ const Nhis = () => {
   const [stats, setStats]         = useState({ total: 0, served: 0, submitted: 0, paid: 0, rejected: 0, totalPaid: 0 })
   const [loading, setLoading]     = useState(true)
   const [error, setError]         = useState('')
+  const [catalogSeeding, setCatalogSeeding] = useState(false)
 
   // ── claims filter ─────────────────────────────────────────────
   const [claimTab, setClaimTab]         = useState('all')
@@ -261,8 +263,31 @@ const Nhis = () => {
         getNhisClaimStats(),
         getAllNhisClinicalRules(),
       ])
+
+      let readyDrugsData = drugsData
+      if (
+        canWrite &&
+        drugsData.length === 0 &&
+        DEFAULT_NHIS_DRUG_CATALOG.length > 0 &&
+        organization?.can_use_nhis !== false
+      ) {
+        try {
+          setCatalogSeeding(true)
+          await upsertNhisDrugs(DEFAULT_NHIS_DRUG_CATALOG, { syncInventory: false })
+          readyDrugsData = await getAllNhisDrugs()
+          notify(`Loaded ${readyDrugsData.length} default NHIS medicines into this facility.`, 'success')
+        } catch (seedError) {
+          notify(
+            seedError.message || 'NHIS medicine catalog is empty. Import the NHIS drug template before adding medicines.',
+            'warning'
+          )
+        } finally {
+          setCatalogSeeding(false)
+        }
+      }
+
       setClaims(claimsData)
-      setNhisDrugs(drugsData)
+      setNhisDrugs(readyDrugsData)
       setPatients(patientsData)
       setStats(statsData)
       setClinicalRules(rulesData)
@@ -271,7 +296,7 @@ const Nhis = () => {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [canWrite, notify, organization?.can_use_nhis])
 
   useEffect(() => { void loadAll() }, [loadAll])
 
@@ -341,6 +366,8 @@ const Nhis = () => {
       )
       .slice(0, 10)
   }, [patients, patientSearch])
+
+  const hasMedicineSearchTerm = medCodeSearch.trim().length > 0
 
   // ── select patient for claim ──────────────────────────────────
   const selectPatient = (patient) => {
@@ -1069,6 +1096,11 @@ const Nhis = () => {
       </div>
 
       {error && <div className="nhis-alert" role="alert">{error}</div>}
+      {catalogSeeding && (
+        <div className="nhis-alert" role="status">
+          Loading default NHIS medicines for this facility...
+        </div>
+      )}
 
       {/* Page sub-tabs */}
       <div className="nhis-page-tabs">
@@ -1759,7 +1791,7 @@ const Nhis = () => {
                         setMedForm((p) => ({ ...p, drugCode: e.target.value.toUpperCase(), nhisDrugId: '' }))
                       }}
                     />
-                    {medSearchResults.length > 0 && (
+                    {medSearchResults.length > 0 ? (
                       <div className="drug-dropdown">
                         {medSearchResults.map((d) => (
                           <button key={d.id} className="drug-dropdown-item" onClick={() => selectMedFromDropdown(d)}>
@@ -1767,6 +1799,14 @@ const Nhis = () => {
                             <span className="drug-meta">{d.description}</span>
                           </button>
                         ))}
+                      </div>
+                    ) : hasMedicineSearchTerm && !medSearching && (
+                      <div className="drug-dropdown drug-dropdown--empty">
+                        <span>
+                          {nhisDrugs.length === 0
+                            ? 'NHIS medicine catalog is still loading or empty.'
+                            : 'No matching NHIS medicine found.'}
+                        </span>
                       </div>
                     )}
                   </div>

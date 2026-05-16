@@ -1011,6 +1011,12 @@
 .nhis-page .drug-name { font-weight: 600; color: #0369a1; font-family: monospace; }
 .nhis-page .drug-meta { color: var(--gray-500); flex: 1; }
 
+.nhis-page .drug-dropdown--empty {
+  padding: 0.65rem 0.75rem;
+  color: var(--gray-500);
+  font-size: 0.8rem;
+}
+
 /* Shared reusables */
 .nhis-page .form-group {
   display: flex;
