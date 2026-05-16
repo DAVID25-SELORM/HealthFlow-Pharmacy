@@ -136,6 +136,20 @@ export const createBranchSale = async (salePayload) => {
   }
 }
 
+export const initiateBranchPayment = async (paymentPayload) => {
+  const response = await branchFetch('/api/payments/initiate', {
+    method: 'POST',
+    body: JSON.stringify(paymentPayload),
+  })
+
+  return response.data || null
+}
+
+export const getBranchPaymentStatus = async (reference) => {
+  const response = await branchFetch(`/api/payments/status/${encodeURIComponent(reference)}`)
+  return response.data || null
+}
+
 export const runBranchSync = async () =>
   await branchFetch('/api/sync/run', {
     method: 'POST',

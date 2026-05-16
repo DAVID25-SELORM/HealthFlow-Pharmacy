@@ -37,8 +37,8 @@ const insertSale = db.prepare(`
   )
   VALUES (
     @id, @saleNumber, @patientId, @totalAmount, @discount, @netAmount,
-    @paymentMethod, 'completed', @amountPaid, @changeGiven, @notes,
-    @soldBy, @shiftId, @organizationId, @branchId, @saleDate, @createdAt, 'pending'
+    @paymentMethod, @paymentStatus, @amountPaid, @changeGiven, @notes,
+    @soldBy, @shiftId, @organizationId, @branchId, @saleDate, @createdAt, @syncStatus
   )
 `)
 
@@ -77,6 +77,28 @@ const insertOutbox = db.prepare(`
   )
 `)
 
+const selectSaleById = db.prepare('SELECT * FROM sales WHERE id = ?')
+
+const updateSalePaid = db.prepare(`
+  UPDATE sales
+  SET payment_status = 'completed',
+      amount_paid = net_amount,
+      change_given = 0,
+      notes = ?,
+      sync_status = 'pending',
+      last_sync_error = NULL
+  WHERE id = ?
+`)
+
+const selectSaleCompletedOutbox = db.prepare(`
+  SELECT id
+  FROM sync_outbox
+  WHERE entity_type = 'sales'
+    AND entity_id = ?
+    AND event_type = 'sale.completed'
+  LIMIT 1
+`)
+
 const getRecentSalesStatement = db.prepare(`
   SELECT *
   FROM sales
@@ -91,6 +113,64 @@ const getSaleItemsStatement = db.prepare(`
   ORDER BY created_at ASC
 `)
 
+const normalizeSaleRow = (row) => row
+  ? {
+      id: row.id,
+      saleNumber: row.sale_number,
+      patientId: row.patient_id,
+      totalAmount: row.total_amount,
+      discount: row.discount,
+      netAmount: row.net_amount,
+      paymentMethod: row.payment_method,
+      paymentStatus: row.payment_status,
+      amountPaid: row.amount_paid,
+      changeGiven: row.change_given,
+      notes: row.notes,
+      soldBy: row.sold_by,
+      shiftId: row.shift_id,
+      organizationId: row.organization_id,
+      branchId: row.branch_id,
+      saleDate: row.sale_date,
+      createdAt: row.created_at,
+      syncStatus: row.sync_status,
+      items: getSaleItemsStatement.all(row.id),
+    }
+  : null
+
+const buildSaleSyncPayload = ({ sale, items, paymentReference = '' }) => {
+  const notes = [sale.notes, paymentReference ? `Payment reference: ${paymentReference}` : '']
+    .filter(Boolean)
+    .join('\n')
+
+  return {
+    local_sale_id: sale.id,
+    local_sale_number: sale.saleNumber,
+    sale_payload: {
+      patient_id: sale.patientId,
+      payment_method: sale.paymentMethod === 'nhia' ? 'insurance' : sale.paymentMethod,
+      payment_status: 'completed',
+      amount_paid: sale.netAmount,
+      change_given: sale.paymentMethod === 'cash' ? sale.changeGiven || 0 : 0,
+      notes: notes ? `${notes}\nLocal reference: ${sale.saleNumber}` : `Local reference: ${sale.saleNumber}`,
+      sold_by: sale.soldBy,
+      sale_date: sale.saleDate,
+      discount: sale.discount,
+      shift_id: sale.shiftId,
+      insurance_covered_amount: 0,
+      insurance_top_up_amount: 0,
+      insurance_top_up_payment_method: null,
+      organization_id: sale.organizationId,
+      branch_id: sale.branchId,
+      items: items.map((item) => ({
+        drugId: item.drug_id || item.drugId,
+        name: item.drug_name || item.drugName,
+        quantity: item.quantity,
+        price: item.unit_price ?? item.unitPrice,
+      })),
+    },
+  }
+}
+
 export const createLocalSale = db.transaction((saleData) => {
   if (!Array.isArray(saleData?.items) || saleData.items.length === 0) {
     throw new Error('At least one sale item is required.')
@@ -102,6 +182,10 @@ export const createLocalSale = db.transaction((saleData) => {
   }
   const syncPaymentMethod = paymentMethod === 'nhia' ? 'insurance' : paymentMethod
   const isInsuranceLikePayment = paymentMethod === 'insurance' || paymentMethod === 'nhia'
+  const paymentStatus =
+    String(saleData.paymentStatus || '').trim().toLowerCase() === 'pending_payment'
+      ? 'pending_payment'
+      : 'completed'
 
   const createdAt = nowIso()
   const saleId = createId()
@@ -152,9 +236,16 @@ export const createLocalSale = db.transaction((saleData) => {
     throw new Error('Discount cannot be negative or greater than the sale total.')
   }
 
-  const amountPaid =
-    paymentMethod === 'cash' ? toMoney(saleData.amountPaid, netAmount) : netAmount
-  const changeGiven = paymentMethod === 'cash' ? toMoney(saleData.change ?? 0, 0) : 0
+  const amountPaid = paymentStatus === 'pending_payment'
+    ? 0
+    : paymentMethod === 'cash'
+    ? toMoney(saleData.amountPaid, netAmount)
+    : netAmount
+  const changeGiven = paymentStatus === 'pending_payment'
+    ? 0
+    : paymentMethod === 'cash'
+    ? toMoney(saleData.change ?? 0, 0)
+    : 0
   const insuranceCoveredAmount =
     isInsuranceLikePayment ? toMoney(saleData.insuranceCoveredAmount ?? netAmount, 0) : 0
   const insuranceTopUpAmount =
@@ -189,6 +280,7 @@ export const createLocalSale = db.transaction((saleData) => {
     discount,
     netAmount,
     paymentMethod,
+    paymentStatus,
     amountPaid,
     changeGiven,
     notes: saleData.notes || null,
@@ -198,6 +290,7 @@ export const createLocalSale = db.transaction((saleData) => {
     branchId: saleData.branchId || config.branchId,
     saleDate: saleData.saleDate || createdAt,
     createdAt,
+    syncStatus: paymentStatus === 'pending_payment' ? 'pending_payment' : 'pending',
   }
 
   insertSale.run(sale)
@@ -218,43 +311,45 @@ export const createLocalSale = db.transaction((saleData) => {
     })
   }
 
-  const syncPayload = {
-    local_sale_id: saleId,
-    local_sale_number: saleNumber,
-    sale_payload: {
-      patient_id: sale.patientId,
-      payment_method: syncPaymentMethod,
-      payment_status: 'completed',
-      amount_paid: amountPaid,
-      change_given: changeGiven,
-      notes: sale.notes ? `${sale.notes}\nLocal reference: ${saleNumber}` : `Local reference: ${saleNumber}`,
-      sold_by: sale.soldBy,
-      sale_date: sale.saleDate,
-      discount,
-      shift_id: sale.shiftId,
-      insurance_covered_amount: insuranceCoveredAmount,
-      insurance_top_up_amount: insuranceTopUpAmount,
-      insurance_top_up_payment_method: insuranceTopUpPaymentMethod,
-      organization_id: sale.organizationId,
-      branch_id: sale.branchId,
-      items: normalizedItems.map((item) => ({
-        drugId: item.drugId,
-        name: item.drugName,
-        quantity: item.quantity,
-        price: item.unitPrice,
-      })),
-    },
-  }
+  if (paymentStatus === 'completed') {
+    const syncPayload = {
+      local_sale_id: saleId,
+      local_sale_number: saleNumber,
+      sale_payload: {
+        patient_id: sale.patientId,
+        payment_method: syncPaymentMethod,
+        payment_status: 'completed',
+        amount_paid: amountPaid,
+        change_given: changeGiven,
+        notes: sale.notes ? `${sale.notes}\nLocal reference: ${saleNumber}` : `Local reference: ${saleNumber}`,
+        sold_by: sale.soldBy,
+        sale_date: sale.saleDate,
+        discount,
+        shift_id: sale.shiftId,
+        insurance_covered_amount: insuranceCoveredAmount,
+        insurance_top_up_amount: insuranceTopUpAmount,
+        insurance_top_up_payment_method: insuranceTopUpPaymentMethod,
+        organization_id: sale.organizationId,
+        branch_id: sale.branchId,
+        items: normalizedItems.map((item) => ({
+          drugId: item.drugId,
+          name: item.drugName,
+          quantity: item.quantity,
+          price: item.unitPrice,
+        })),
+      },
+    }
 
-  insertOutbox.run({
-    id: createId(),
-    eventType: 'sale.completed',
-    entityType: 'sales',
-    entityId: saleId,
-    payloadJson: json(syncPayload),
-    createdAt,
-    updatedAt: createdAt,
-  })
+    insertOutbox.run({
+      id: createId(),
+      eventType: 'sale.completed',
+      entityType: 'sales',
+      entityId: saleId,
+      payloadJson: json(syncPayload),
+      createdAt,
+      updatedAt: createdAt,
+    })
+  }
 
   return {
     sale: { ...sale, items: normalizedItems },
@@ -267,3 +362,39 @@ export const getRecentLocalSales = (limit = 20) =>
     ...sale,
     items: getSaleItemsStatement.all(sale.id),
   }))
+
+export const getLocalSale = (id) => normalizeSaleRow(selectSaleById.get(id))
+
+export const markLocalSalePaidAndQueueSync = db.transaction(({ saleId, paymentReference = '' } = {}) => {
+  const existing = normalizeSaleRow(selectSaleById.get(saleId))
+  if (!existing) {
+    throw new Error('Sale for payment attempt was not found.')
+  }
+
+  if (existing.paymentStatus === 'completed') {
+    return existing
+  }
+
+  const notes = existing.notes || null
+  updateSalePaid.run(notes, saleId)
+  const paidSale = normalizeSaleRow(selectSaleById.get(saleId))
+
+  if (!selectSaleCompletedOutbox.get(saleId)) {
+    const timestamp = nowIso()
+    insertOutbox.run({
+      id: createId(),
+      eventType: 'sale.completed',
+      entityType: 'sales',
+      entityId: saleId,
+      payloadJson: json(buildSaleSyncPayload({
+        sale: paidSale,
+        items: paidSale.items,
+        paymentReference,
+      })),
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    })
+  }
+
+  return paidSale
+})

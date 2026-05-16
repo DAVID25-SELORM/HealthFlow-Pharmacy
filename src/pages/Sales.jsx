@@ -15,6 +15,7 @@ import {
   getBranchServerHealth,
   getBranchSyncStatus,
   getNhiaSettings,
+  initiateBranchPayment,
   isBranchServerEnabled,
   pullBranchInventory,
   runBranchSync,
@@ -140,6 +141,9 @@ const Sales = () => {
   const [isPatientSearchOpen, setIsPatientSearchOpen] = useState(false)
   const [highlightedPatientIndex, setHighlightedPatientIndex] = useState(0)
   const [paymentMethod, setPaymentMethod] = useState('cash')
+  const [paymentProvider, setPaymentProvider] = useState('paystack')
+  const [paymentPhone, setPaymentPhone] = useState('')
+  const [paymentEmail, setPaymentEmail] = useState('')
   const [received, setReceived] = useState('')
   const [discountType, setDiscountType] = useState('amount')
   const [discountValue, setDiscountValue] = useState('')
@@ -472,12 +476,16 @@ const Sales = () => {
     if (!patient) {
       setPatientId('')
       setPatientSearchTerm('')
+      setPaymentPhone('')
+      setPaymentEmail('')
       setIsPatientSearchOpen(false)
       return
     }
 
     setPatientId(patient.id)
     setPatientSearchTerm(formatPatientOption(patient))
+    setPaymentPhone((current) => current || patient.phone || '')
+    setPaymentEmail((current) => current || patient.email || '')
     setIsPatientSearchOpen(false)
   }
 
@@ -880,6 +888,9 @@ const Sales = () => {
 
   const handlePaymentMethodChange = (method) => {
     setPaymentMethod(method)
+    if (method === 'card') {
+      setPaymentProvider('paystack')
+    }
 
     if (method !== 'cash') {
       setReceived('')
@@ -1099,6 +1110,7 @@ const Sales = () => {
     const retailNetTotal = calculateTotal()
     const amountPaid = Number.parseFloat(received) || 0
     const saleIsNhiaClaim = paymentMethod === 'nhia'
+    const saleUsesOnlineProvider = paymentMethod === 'momo' || paymentMethod === 'card'
     const nhiaCoveredAmount = saleIsNhiaClaim
       ? Math.min(calculateNhisCoveredTotal(), retailNetTotal)
       : retailNetTotal
@@ -1123,6 +1135,23 @@ const Sales = () => {
     if (paymentMethod === 'cash' && amountPaid < total) {
       notify('Received amount must be at least the total for cash payments.', 'warning')
       return
+    }
+
+    if (saleUsesOnlineProvider) {
+      if (!isOnline) {
+        notify('Mobile Money and Card payments require internet. Use Cash while offline.', 'warning')
+        return
+      }
+
+      if (!branchServerModeEnabled || !branchServerStatus.online) {
+        notify('Connect the local branch server before taking Mobile Money or Card payments.', 'warning')
+        return
+      }
+
+      if (paymentProvider === 'hubtel' && !paymentPhone.trim()) {
+        notify('Enter the customer mobile number for Hubtel payment.', 'warning')
+        return
+      }
     }
 
     if (saleIsInsuranceLike) {
@@ -1240,6 +1269,52 @@ const Sales = () => {
             : null,
         soldBy: displayName || user?.email,
       })
+
+      if (saleUsesOnlineProvider) {
+        const paymentResult = await initiateBranchPayment({
+          provider: paymentProvider,
+          paymentMethod,
+          salePayload,
+          customerPhone: paymentPhone,
+          customerEmail: paymentEmail,
+          returnUrl: window.location.href,
+        })
+
+        if (paymentResult?.authorizationUrl) {
+          window.open(paymentResult.authorizationUrl, '_blank', 'noopener,noreferrer')
+        }
+
+        const receiptData = buildReceiptData(paymentResult?.saleNumber || paymentResult?.sale?.saleNumber)
+        setLastSale({
+          ...receiptData,
+          offline: true,
+          branchServer: true,
+          paymentStatus: 'pending_payment',
+          paymentReference: paymentResult?.reference,
+        })
+        reduceSoldDrugQuantities(soldItems)
+        setCart([])
+        setSearchTerm('')
+        syncSearchParam('')
+        setReceived('')
+        setDiscountType('amount')
+        setDiscountValue('')
+        setInsuranceCoverage('')
+        setPatientTopUp('')
+        setPatientTopUpMethod('cash')
+        setNhiaDiagnosis('')
+        setNhiaDiagnosisDetails([])
+        setPaymentPhone('')
+        setPaymentEmail('')
+        selectPatientForSale(null)
+        notify(
+          `Payment started. Reference ${paymentResult?.reference || ''}. The sale will sync after the provider confirms payment.`,
+          'success',
+          7000
+        )
+        void refreshBranchServerStatus()
+        return
+      }
 
       if (branchServerModeEnabled) {
         try {
@@ -1647,6 +1722,7 @@ const Sales = () => {
   const checkoutTotal = isNhiaClaimSale ? Math.min(nhisCoveredTotal, total) : total
   const nhiaPricingAdjustment = isNhiaClaimSale ? Math.max(total - checkoutTotal, 0) : 0
   const isInsuranceSale = paymentMethod === 'insurance' || isNhiaClaimSale
+  const onlinePaymentDisabled = !isOnline || !branchServerModeEnabled || !branchServerStatus.online
   const servingNhisPatient = isInsuranceSale && isNhisPatient(selectedPatientForSale)
   const insuranceSplitAllowed = !isNhiaClaimSale && (!servingNhisPatient || canUseNhisTopups)
   const insuranceHasPatientDetails =
@@ -2260,6 +2336,8 @@ const Sales = () => {
               <button
                 type="button"
                 className={`payment-btn ${paymentMethod === 'momo' ? 'active' : ''}`}
+                disabled={onlinePaymentDisabled}
+                title={onlinePaymentDisabled ? 'Mobile Money requires internet and the local branch server.' : ''}
                 onClick={() => handlePaymentMethodChange('momo')}
               >
                 Mobile Money
@@ -2281,11 +2359,50 @@ const Sales = () => {
               <button
                 type="button"
                 className={`payment-btn ${paymentMethod === 'card' ? 'active' : ''}`}
+                disabled={onlinePaymentDisabled}
+                title={onlinePaymentDisabled ? 'Card payments require internet and the local branch server.' : ''}
                 onClick={() => handlePaymentMethodChange('card')}
               >
                 Card
               </button>
             </div>
+
+            {(paymentMethod === 'momo' || paymentMethod === 'card') && (
+              <div className="cash-panel">
+                <div className="cash-field cash-field-input">
+                  <label htmlFor="payment-provider">Provider</label>
+                  <select
+                    id="payment-provider"
+                    value={paymentProvider}
+                    onChange={(event) => setPaymentProvider(event.target.value)}
+                  >
+                    <option value="paystack">Paystack</option>
+                    <option value="hubtel">Hubtel</option>
+                  </select>
+                </div>
+                {(paymentMethod === 'momo' || paymentProvider === 'hubtel') && (
+                  <div className="cash-field cash-field-input">
+                    <label htmlFor="payment-phone">Mobile Number</label>
+                    <input
+                      id="payment-phone"
+                      value={paymentPhone}
+                      onChange={(event) => setPaymentPhone(event.target.value)}
+                      placeholder="024XXXXXXX"
+                    />
+                  </div>
+                )}
+                <div className="cash-field cash-field-input">
+                  <label htmlFor="payment-email">Customer Email</label>
+                  <input
+                    id="payment-email"
+                    type="email"
+                    value={paymentEmail}
+                    onChange={(event) => setPaymentEmail(event.target.value)}
+                    placeholder="Optional for Paystack receipt"
+                  />
+                </div>
+              </div>
+            )}
 
             {paymentMethod === 'cash' && (
               <div className="cash-panel">

@@ -27,6 +27,26 @@ export const config = {
   branchSyncToken: process.env.BRANCH_SYNC_TOKEN || '',
   supabaseUrl: process.env.SUPABASE_URL || '',
   supabaseSyncKey: process.env.SUPABASE_SYNC_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+  payments: {
+    defaultProvider: String(process.env.PAYMENT_DEFAULT_PROVIDER || 'paystack').toLowerCase(),
+    publicBaseUrl: (process.env.PAYMENT_PUBLIC_BASE_URL || '').replace(/\/+$/, ''),
+    currency: process.env.PAYMENT_CURRENCY || 'GHS',
+    returnUrl: process.env.PAYMENT_RETURN_URL || '',
+    hubtel: {
+      enabled: String(process.env.HUBTEL_ENABLED || '').toLowerCase() === 'true',
+      baseUrl: (process.env.HUBTEL_BASE_URL || 'https://devp-sms03726-api.hubtel.com/v1').replace(/\/+$/, ''),
+      clientId: process.env.HUBTEL_CLIENT_ID || '',
+      clientSecret: process.env.HUBTEL_CLIENT_SECRET || '',
+      requestMoneyPath: process.env.HUBTEL_REQUEST_MONEY_PATH || '/request-money/{mobileNumber}',
+      webhookSecret: process.env.HUBTEL_WEBHOOK_SECRET || '',
+    },
+    paystack: {
+      enabled: String(process.env.PAYSTACK_ENABLED || '').toLowerCase() === 'true',
+      baseUrl: (process.env.PAYSTACK_BASE_URL || 'https://api.paystack.co').replace(/\/+$/, ''),
+      secretKey: process.env.PAYSTACK_SECRET_KEY || '',
+      defaultEmail: process.env.PAYSTACK_DEFAULT_EMAIL || '',
+    },
+  },
 }
 
 export const assertConfiguredForServer = () => {

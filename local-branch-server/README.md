@@ -96,6 +96,37 @@ Use `SUPABASE_SYNC_KEY` plus `BRANCH_SYNC_TOKEN` for sync. The recommended sync 
 
 Avoid putting a service role key on ordinary cashier laptops. Never expose any sync token or Supabase service role key in the React frontend, browser storage, Vercel public environment variables, or any client-side file.
 
+Payment provider secrets follow the same rule. Keep `PAYSTACK_SECRET_KEY`, `HUBTEL_CLIENT_ID`, and `HUBTEL_CLIENT_SECRET` in `local-branch-server/.env` or another backend environment only. The POS asks this server to initiate a payment; it never stores provider secrets in browser localStorage.
+
+## Payment Setup
+
+The POS supports Cash, Mobile Money, Card, Insurance, and NHIA Claim. Cash, Insurance, and NHIA keep the existing local-sale behavior. Mobile Money and Card create a local sale as `pending_payment`, create a unique payment reference, and initiate Hubtel or Paystack from the branch server. A verified webhook marks the sale paid and then queues the normal `sale.completed` sync event.
+
+Configure only the providers you use:
+
+```text
+PAYMENT_DEFAULT_PROVIDER=paystack
+PAYMENT_PUBLIC_BASE_URL=https://your-public-branch-server.example.com
+
+PAYSTACK_ENABLED=true
+PAYSTACK_SECRET_KEY=sk_live_xxx
+PAYSTACK_DEFAULT_EMAIL=payments@yourdomain.com
+
+HUBTEL_ENABLED=true
+HUBTEL_CLIENT_ID=xxx
+HUBTEL_CLIENT_SECRET=xxx
+HUBTEL_REQUEST_MONEY_PATH=/request-money/{mobileNumber}
+```
+
+Set provider dashboard webhooks to:
+
+```text
+POST /api/payments/webhook/paystack
+POST /api/payments/webhook/hubtel
+```
+
+If the branch server or internet is offline, use Cash. Mobile Money and Card are disabled in the POS until the local branch server is reachable and the browser is online.
+
 ## API
 
 Health check:

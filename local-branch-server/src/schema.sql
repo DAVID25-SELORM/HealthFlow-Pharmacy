@@ -90,6 +90,31 @@ CREATE TABLE IF NOT EXISTS sale_items (
 
 CREATE INDEX IF NOT EXISTS idx_sale_items_sale ON sale_items(sale_id);
 
+CREATE TABLE IF NOT EXISTS payment_attempts (
+  id TEXT PRIMARY KEY,
+  sale_id TEXT NOT NULL REFERENCES sales(id) ON DELETE CASCADE,
+  provider TEXT NOT NULL,
+  payment_method TEXT NOT NULL,
+  reference TEXT UNIQUE NOT NULL,
+  amount REAL NOT NULL,
+  currency TEXT NOT NULL DEFAULT 'GHS',
+  status TEXT NOT NULL DEFAULT 'pending',
+  provider_payment_id TEXT,
+  authorization_url TEXT,
+  access_code TEXT,
+  request_json TEXT NOT NULL DEFAULT '{}',
+  response_json TEXT,
+  webhook_json TEXT,
+  error_message TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  verified_at TEXT,
+  paid_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_payment_attempts_reference ON payment_attempts(reference);
+CREATE INDEX IF NOT EXISTS idx_payment_attempts_sale ON payment_attempts(sale_id, created_at);
+
 CREATE TABLE IF NOT EXISTS claims (
   id TEXT PRIMARY KEY,
   claim_number TEXT UNIQUE NOT NULL,

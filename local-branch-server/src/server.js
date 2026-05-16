@@ -29,6 +29,12 @@ import {
   listOfflineRecords,
   saveOfflineRecord,
 } from './offlineRecordsRepository.js'
+import {
+  getPaymentStatus,
+  handleHubtelWebhook,
+  handlePaystackWebhook,
+  initiatePayment,
+} from './paymentsRepository.js'
 import { createLocalSale, getRecentLocalSales } from './salesRepository.js'
 import {
   getSupabaseDiagnostics,
@@ -87,7 +93,10 @@ app.use((request, response, next) => {
   response.setHeader('Access-Control-Allow-Origin', origin || 'null')
   response.setHeader('Vary', 'Origin')
   response.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,OPTIONS')
-  response.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-branch-token')
+  response.setHeader(
+    'Access-Control-Allow-Headers',
+    'Content-Type, x-branch-token, x-paystack-signature, x-hubtel-signature, x-hubtel-webhook-signature, x-signature'
+  )
   response.setHeader('X-Content-Type-Options', 'nosniff')
   response.setHeader('Referrer-Policy', 'no-referrer')
   response.setHeader('Cache-Control', 'no-store')
@@ -100,7 +109,12 @@ app.use((request, response, next) => {
   next()
 })
 
-app.use(express.json({ limit: '5mb' }))
+app.use(express.json({
+  limit: '5mb',
+  verify: (request, _response, buffer) => {
+    request.rawBody = buffer.toString('utf8')
+  },
+}))
 
 app.get('/health', (_request, response) => {
   response.json({
@@ -124,6 +138,32 @@ app.get('/branch-runtime-config.js', (_request, response) => {
         token: config.branchServerToken,
       })};`
     )
+})
+
+app.post('/api/payments/webhook/hubtel', async (request, response, next) => {
+  try {
+    await handleHubtelWebhook({
+      rawBody: request.rawBody || '',
+      headers: request.headers,
+      body: request.body || {},
+    })
+    response.status(200).json({ received: true })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.post('/api/payments/webhook/paystack', async (request, response, next) => {
+  try {
+    await handlePaystackWebhook({
+      rawBody: request.rawBody || '',
+      headers: request.headers,
+      body: request.body || {},
+    })
+    response.status(200).json({ received: true })
+  } catch (error) {
+    next(error)
+  }
 })
 
 app.use('/api', requireBranchToken)
@@ -352,6 +392,27 @@ app.get('/api/nhia/batches/:id/export', (request, response, next) => {
 
 app.get('/api/nhia/submission-logs', (request, response) => {
   response.json({ data: getNhiaSubmissionLogs({ limit: request.query.limit || 50 }) })
+})
+
+app.post('/api/payments/initiate', async (request, response, next) => {
+  try {
+    response.status(201).json({ data: await initiatePayment(request.body || {}) })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.get('/api/payments/status/:reference', async (request, response, next) => {
+  try {
+    const payment = await getPaymentStatus(request.params.reference)
+    if (!payment) {
+      response.status(404).json({ error: 'Payment reference not found.' })
+      return
+    }
+    response.json({ data: payment })
+  } catch (error) {
+    next(error)
+  }
 })
 
 app.get('/api/suppliers', (request, response) => {
