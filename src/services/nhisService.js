@@ -1034,7 +1034,7 @@ const submitHostedNhiaDirectPayload = async ({
   payloadContent = '',
   contentType = 'application/json',
   claimIds = [],
-  action = '',
+  submissionAction = '',
 } = {}) => {
   return await invokeTierAccess({
     action: 'submit_nhia_claims_direct',
@@ -1042,7 +1042,7 @@ const submitHostedNhiaDirectPayload = async ({
     payloadContent,
     contentType,
     claimIds,
-    action,
+    submissionAction,
   })
 }
 
@@ -2573,7 +2573,9 @@ const submitNhisClaimsDirect = async (claims, period, options = {}) => {
   return await submitDirectPayload({
     ...directPayload,
     claimIds: claims.map((claim) => claim.id).filter(Boolean),
-    action: options.action || 'nhis.direct_submit',
+    ...(directApiSource === 'hosted'
+      ? { submissionAction: options.action || 'nhis.direct_submit' }
+      : { action: options.action || 'nhis.direct_submit' }),
   })
 }
 

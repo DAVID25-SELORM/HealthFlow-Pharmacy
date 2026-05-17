@@ -1861,7 +1861,7 @@ const submitNhiaClaimsDirect = async (
     httpStatus: response.status,
     response: responseBody,
     claimIds: Array.isArray(payload.claimIds) ? payload.claimIds : [],
-    action: normalizeText(payload.action) || 'nhis.direct_submit',
+    action: normalizeText(payload.submissionAction) || 'nhis.direct_submit',
   }
 }
 

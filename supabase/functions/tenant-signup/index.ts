@@ -13,7 +13,8 @@ const VALID_BILLING_STATUSES = ['trial', 'active', 'past_due', 'suspended', 'can
 const VALID_SUPPORT_LEVELS = ['standard', 'priority', 'premium'] as const
 const VALID_ORGANIZATION_TYPES = ['pharmacy', 'hospital'] as const
 const ORGANIZATION_SELECT_FIELDS = '*'
-const TENANT_USER_SELECT_FIELDS = 'id, email, full_name, role, is_active, created_at'
+const TENANT_USER_SELECT_FIELDS =
+  'id, email, full_name, role, is_active, organization_id, created_at'
 
 type TenantSignupAction =
   | 'check_subdomain'

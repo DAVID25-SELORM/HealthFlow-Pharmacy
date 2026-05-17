@@ -9,6 +9,25 @@
 
 BEGIN;
 
+ALTER TABLE public.users
+  DROP CONSTRAINT IF EXISTS users_role_check;
+
+ALTER TABLE public.users
+  ADD CONSTRAINT users_role_check
+  CHECK (role IN (
+    'admin',
+    'pharmacist',
+    'assistant',
+    'technician',
+    'cashier',
+    'branch_manager',
+    'procurement',
+    'claims_officer',
+    'billing',
+    'delivery',
+    'super_admin'
+  ));
+
 CREATE OR REPLACE FUNCTION public.app_role()
 RETURNS TEXT
 LANGUAGE plpgsql
@@ -31,6 +50,7 @@ BEGIN
     'cashier',
     'branch_manager',
     'procurement',
+    'claims_officer',
     'billing',
     'delivery',
     'super_admin'

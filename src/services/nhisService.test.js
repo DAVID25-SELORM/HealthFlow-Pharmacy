@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../lib/supabase', () => ({
   supabase: {
@@ -27,8 +27,15 @@ import {
   buildNhisClaimItExportPayload,
   buildNhisClaimItXml,
   normalizeNhisExportPeriod,
+  submitNhisClaimDirect,
   validateNhisPrescriptionPdfFile,
 } from './nhisService'
+import { supabase } from '../lib/supabase'
+import { invokeTierAccess } from './tierAccessService'
+
+beforeEach(() => {
+  vi.clearAllMocks()
+})
 
 const baseClaim = {
   memberNo: '12345678',
@@ -606,6 +613,68 @@ describe('CLAIM-it export helpers', () => {
     expect(payload.periodLabel).toBe('2026-05-01 to 2026-05-15')
     expect(xml).toContain('<PeriodFrom>2026-05-01</PeriodFrom>')
     expect(xml).toContain('<PeriodTo>2026-05-15</PeriodTo>')
+  })
+})
+
+describe('direct NHIA submission', () => {
+  it('keeps the tier-access router action separate from the submission audit label', async () => {
+    const updateQuery = {
+      in: vi.fn().mockResolvedValue({ error: null }),
+    }
+    supabase.from.mockReturnValue({
+      update: vi.fn(() => updateQuery),
+    })
+    invokeTierAccess.mockResolvedValue({
+      source: 'hosted',
+      httpStatus: 200,
+      response: { accepted: true },
+      claimIds: ['claim-1'],
+      action: 'nhis.direct_claim_submit',
+    })
+
+    await submitNhisClaimDirect('claim-1', {
+      claim: {
+        id: 'claim-1',
+        claim_number: 'NHIS-000001',
+        status: 'served',
+        organization_type: 'pharmacy',
+        member_no: '12345678',
+        surname: 'Mensah',
+        other_names: 'Ama',
+        patient_address: 'Accra',
+        date_of_birth: '1990-01-01',
+        ccc_no: 'CC-12345',
+        diagnosis: 'Malaria',
+        service_date_from: '2026-05-14',
+        physician_name: 'Dr Test',
+        total_amount: 10,
+        nhis_claim_medicines: [
+          {
+            nhis_drug_id: 'drug-1',
+            drug_code: 'NH001',
+            description: 'Paracetamol Tablet',
+            unit: 'tablet',
+            unit_price: 1,
+            dispensed_qty: 10,
+            dispensary_date: '2026-05-14',
+            dose: '1 tablet',
+            frequency: 'TDS',
+            duration: '5 days',
+            total_amount: 10,
+            category: 'A',
+          },
+        ],
+      },
+      directApiSource: 'hosted',
+      providerClassLevel: 'D',
+      nhisDrugCatalog: [{ code: 'NH001', category: 'A' }],
+    })
+
+    expect(invokeTierAccess).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'submit_nhia_claims_direct',
+      submissionAction: 'nhis.direct_claim_submit',
+      claimIds: ['claim-1'],
+    }))
   })
 })
 
