@@ -14,6 +14,7 @@ const USERS_PER_PAGE = 200
 const MAX_USER_PAGES = 10
 const CATALOG_SYNC_BATCH_SIZE = 200
 const DRUGS_PER_PAGE = 1000
+const NHIS_CATALOG_PAGE_SIZE = 1000
 const CLAIM_SELECT_FIELDS = `
   *,
   claim_items (*),
@@ -89,6 +90,32 @@ const normalizeSearchTokens = (value: unknown) =>
     .split(/\s+/)
     .map((token) => token.trim())
     .filter(Boolean)
+
+const NHIS_CATALOG_TOKEN_ALIASES: Record<string, string> = {
+  aciclovir: 'acyclovir',
+}
+
+const NHIS_CATALOG_STOP_TOKENS = new Set(['a', 'an', 'and', 'for', 'in', 'of', 'or', 'the', 'to', 'with'])
+
+const normalizeNhisCatalogText = (value: unknown) =>
+  normalizeText(value)
+    .toLowerCase()
+    .replace(/%/g, ' percent ')
+    .replace(/&/g, ' and ')
+    .replace(/(\d)([a-z])/g, '$1 $2')
+    .replace(/([a-z])(\d)/g, '$1 $2')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .split(/\s+/)
+    .map((token) => NHIS_CATALOG_TOKEN_ALIASES[token] || token)
+    .filter(Boolean)
+    .join(' ')
+    .trim()
+
+const getNhisCatalogTokens = (value: unknown) =>
+  normalizeNhisCatalogText(value)
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token && !NHIS_CATALOG_STOP_TOKENS.has(token))
 
 const getErrorMessage = (error: unknown) => {
   if (error instanceof Error) {
@@ -547,6 +574,207 @@ const getBranchIdsForInventorySync = async (
   return [null]
 }
 
+type NhisCatalogLookup = {
+  row: Record<string, unknown>
+  code: string
+  description: string
+  unit: string
+  unitPrice: number
+  category: string
+  normalizedDescription: string
+  descriptionTokens: string[]
+}
+
+type NhisCatalogMatch = {
+  lookup: NhisCatalogLookup
+  source: 'code' | 'name'
+  score: number
+}
+
+const loadNhisDrugCatalogRows = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  organizationId: string
+) => {
+  const rows: Record<string, unknown>[] = []
+  let from = 0
+
+  while (true) {
+    const to = from + NHIS_CATALOG_PAGE_SIZE - 1
+    const { data, error } = await adminClient
+      .from('nhis_drugs')
+      .select('id, code, description, generic_name, strength, dosage_form, category, unit, unit_price')
+      .eq('organization_id', organizationId)
+      .eq('is_active', true)
+      .order('description')
+      .range(from, to)
+
+    if (error) {
+      const code = normalizeText((error as Record<string, unknown>).code)
+      if (code === '42P01' || code === 'PGRST205') {
+        return []
+      }
+
+      throw error
+    }
+
+    rows.push(...((data || []) as Record<string, unknown>[]))
+
+    if (!data || data.length < NHIS_CATALOG_PAGE_SIZE) {
+      break
+    }
+
+    from += NHIS_CATALOG_PAGE_SIZE
+  }
+
+  return rows
+}
+
+const buildNhisCatalogLookups = (rows: Record<string, unknown>[]) =>
+  rows
+    .map((row) => {
+      const description = normalizeText(row.description)
+      const code = normalizeText(row.code).toUpperCase()
+      const normalizedDescription = normalizeNhisCatalogText(description)
+      const descriptionTokens = [...new Set(getNhisCatalogTokens(description))]
+
+      return {
+        row,
+        code,
+        description,
+        unit: normalizeText(row.unit) || 'unit',
+        unitPrice: Number(row.unit_price ?? 0) || 0,
+        category: normalizeText(row.category),
+        normalizedDescription,
+        descriptionTokens,
+      }
+    })
+    .filter((lookup) => lookup.code && lookup.description && lookup.normalizedDescription)
+
+const scoreNhisCatalogNameMatch = (
+  normalizedDrugName: string,
+  drugTokens: Set<string>,
+  lookup: NhisCatalogLookup
+) => {
+  if (!normalizedDrugName || lookup.descriptionTokens.length < 2) {
+    return 0
+  }
+
+  if (normalizedDrugName === lookup.normalizedDescription) {
+    return 10000 + lookup.descriptionTokens.length
+  }
+
+  if (normalizedDrugName.includes(lookup.normalizedDescription)) {
+    return 9000 + lookup.descriptionTokens.length
+  }
+
+  const matchedTokenCount = lookup.descriptionTokens.filter((token) => drugTokens.has(token)).length
+  const allCatalogTokensPresent = matchedTokenCount === lookup.descriptionTokens.length
+
+  if (allCatalogTokensPresent) {
+    return 8000 + matchedTokenCount
+  }
+
+  const coverage = matchedTokenCount / lookup.descriptionTokens.length
+  if (lookup.descriptionTokens.length >= 4 && coverage >= 0.9) {
+    return 7000 + matchedTokenCount
+  }
+
+  return 0
+}
+
+const findBestNhisCatalogMatch = (
+  drug: Record<string, unknown>,
+  lookups: NhisCatalogLookup[],
+  lookupsByCode: Map<string, NhisCatalogLookup>
+): NhisCatalogMatch | null => {
+  const existingCode = normalizeText(drug.nhis_code).toUpperCase()
+  if (existingCode && lookupsByCode.has(existingCode)) {
+    return {
+      lookup: lookupsByCode.get(existingCode)!,
+      source: 'code',
+      score: 20000,
+    }
+  }
+
+  let bestMatch: NhisCatalogMatch | null = null
+  const normalizedDrugName = normalizeNhisCatalogText(drug.name)
+  const drugTokens = new Set(getNhisCatalogTokens(drug.name))
+  const drugTokenCount = drugTokens.size
+  for (const lookup of lookups) {
+    const score = scoreNhisCatalogNameMatch(normalizedDrugName, drugTokens, lookup)
+    if (!score) {
+      continue
+    }
+
+    const tokenDelta = Math.abs(drugTokenCount - lookup.descriptionTokens.length)
+    const bestTokenDelta = bestMatch
+      ? Math.abs(drugTokenCount - bestMatch.lookup.descriptionTokens.length)
+      : Number.POSITIVE_INFINITY
+
+    if (!bestMatch || score > bestMatch.score || (score === bestMatch.score && tokenDelta < bestTokenDelta)) {
+      bestMatch = { lookup, source: 'name', score }
+    }
+  }
+
+  return bestMatch
+}
+
+const enrichDrugsWithNhisCatalog = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+  rows: Record<string, unknown>[]
+) => {
+  if (rows.length === 0) {
+    return rows
+  }
+
+  let nhisCatalogRows: Record<string, unknown>[] = []
+  try {
+    nhisCatalogRows = await loadNhisDrugCatalogRows(adminClient, organizationId)
+  } catch (error) {
+    console.error('tier-access NHIS catalog pricing warning:', error)
+    return rows
+  }
+
+  const lookups = buildNhisCatalogLookups(nhisCatalogRows)
+  if (lookups.length === 0) {
+    return rows
+  }
+
+  const lookupsByCode = new Map(lookups.map((lookup) => [lookup.code, lookup]))
+
+  return rows.map((row) => {
+    const match = findBestNhisCatalogMatch(row, lookups, lookupsByCode)
+    if (match) {
+      return {
+        ...row,
+        nhis_code: match.lookup.code,
+        nhis_price: match.lookup.unitPrice,
+        nhis_unit: match.lookup.unit || normalizeText(row.nhis_unit) || null,
+        is_nhis_listed: true,
+        nhis_catalog_description: match.lookup.description,
+        nhis_catalog_category: match.lookup.category || null,
+        nhis_catalog_match_source: match.source,
+      }
+    }
+
+    if (isDefaultMedicationBatchNumber(row.batch_number)) {
+      return {
+        ...row,
+        nhis_code: null,
+        nhis_price: null,
+        nhis_unit: null,
+        is_nhis_listed: false,
+        nhis_catalog_description: null,
+        nhis_catalog_category: null,
+        nhis_catalog_match_source: null,
+      }
+    }
+
+    return row
+  })
+}
+
 const getDrugs = async (
   adminClient: ReturnType<typeof createAdminClient>,
   requesterProfile: RequesterProfile,
@@ -626,11 +854,13 @@ const getDrugs = async (
     }
   }
 
+  const pricedRows = await enrichDrugsWithNhisCatalog(adminClient, organizationId, rows)
+
   if (includeCatalog) {
-    return rows
+    return pricedRows
   }
 
-  return rows.filter(
+  return pricedRows.filter(
     (row) => !isDefaultMedicationBatchNumber(row.batch_number) || Number(row.quantity || 0) > 0
   )
 }

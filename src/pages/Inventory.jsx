@@ -70,22 +70,28 @@ const filterOptions = [
   { value: 'expired', label: 'Expired' },
 ]
 
-const mapDrugToForm = (drug) => ({
-  name: drug.name || '',
-  batchNumber: drug.batch_number || drug.batch || '',
-  expiryDate: drug.expiry_date || drug.expiry || '',
-  quantity: String(drug.quantity ?? ''),
-  unit: drug.unit || 'tablet',
-  category: drug.category || 'medicine',
-  costPrice: String(drug.cost_price ?? ''),
-  price: String(drug.price ?? ''),
-  nhisPrice: String(drug.nhis_price ?? ''),
-  nhisCode: drug.nhis_code || '',
-  nhisUnit: drug.nhis_unit || '',
-  isNhisListed: Boolean(drug.is_nhis_listed || drug.nhis_price),
-  supplier: drug.supplier || '',
-  saleOnReturn: Boolean(drug.sale_on_return),
-})
+const mapDrugToForm = (drug) => {
+  const nhisPrice = Number.parseFloat(drug.nhis_price)
+  const hasNhisCatalogPrice = Boolean(drug.is_nhis_listed && Number.isFinite(nhisPrice) && nhisPrice > 0)
+  const isNhisListed = Boolean(drug.is_nhis_listed && (drug.nhis_code || hasNhisCatalogPrice))
+
+  return {
+    name: drug.name || '',
+    batchNumber: drug.batch_number || drug.batch || '',
+    expiryDate: drug.expiry_date || drug.expiry || '',
+    quantity: String(drug.quantity ?? ''),
+    unit: drug.unit || 'tablet',
+    category: drug.category || 'medicine',
+    costPrice: String(drug.cost_price ?? ''),
+    price: String(drug.price ?? ''),
+    nhisPrice: hasNhisCatalogPrice ? String(drug.nhis_price) : '',
+    nhisCode: isNhisListed ? drug.nhis_code || '' : '',
+    nhisUnit: isNhisListed ? drug.nhis_unit || '' : '',
+    isNhisListed,
+    supplier: drug.supplier || '',
+    saleOnReturn: Boolean(drug.sale_on_return),
+  }
+}
 
 const getMarkupPercent = (value) => {
   const number = Number.parseFloat(value)
@@ -757,6 +763,7 @@ const Inventory = () => {
                 const quantity = Number.parseFloat(drug.quantity ?? 0) || 0
                 const price = Number.parseFloat(drug.price ?? 0) || 0
                 const nhisPrice = Number.parseFloat(drug.nhis_price ?? 0) || 0
+                const hasNhisCatalogPrice = Boolean(drug.is_nhis_listed && nhisPrice > 0)
                 const total = (quantity * price).toFixed(2)
                 const batchNumber = drug.batch_number || drug.batch || 'N/A'
                 const expiryDate = drug.expiry_date || drug.expiry
@@ -772,7 +779,7 @@ const Inventory = () => {
                     <td>{expiryDate ? formatAppDate(expiryDate) : 'N/A'}</td>
                     <td>{quantity}</td>
                     <td>GHS {price.toFixed(2)}</td>
-                    {canUseNhisTopups && <td>{nhisPrice > 0 ? `GHS ${nhisPrice.toFixed(2)}` : '-'}</td>}
+                    {canUseNhisTopups && <td>{hasNhisCatalogPrice ? `GHS ${nhisPrice.toFixed(2)}` : '-'}</td>}
                     <td className="total-cell">GHS {total}</td>
                     <td>
                       <span className={`status-badge ${status.class}`}>{status.label}</span>

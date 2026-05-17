@@ -105,4 +105,57 @@ describe('Inventory', () => {
 
     expect(sellingPriceInput).toHaveValue(13.75)
   })
+
+  it('only shows NHIS prices for medicines matched to the NHIS catalog', async () => {
+    mocks.useTenant.mockReturnValue({
+      canUseNhisTopups: true,
+      tierLimits: { hasAdvancedInventory: true },
+    })
+    mocks.getAllDrugs.mockResolvedValue([
+      {
+        id: 'nhis-listed',
+        name: 'Aciclovir Cream, 5%',
+        batch_number: 'PDF-IMP-00848',
+        expiry_date: '2028-12-31',
+        quantity: 0,
+        price: 133,
+        cost_price: 106.4,
+        nhis_code: 'ACICLOCR1',
+        nhis_price: 38.5,
+        is_nhis_listed: true,
+        status: 'active',
+      },
+      {
+        id: 'not-listed',
+        name: 'Actifed Multi-Action Cough Syrup',
+        batch_number: 'PDF-IMP-00001',
+        expiry_date: '2028-12-31',
+        quantity: 0,
+        price: 43,
+        cost_price: 34.4,
+        nhis_code: null,
+        nhis_price: 0,
+        is_nhis_listed: false,
+        status: 'active',
+      },
+    ])
+
+    render(<Inventory />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Aciclovir Cream, 5%')).toBeInTheDocument()
+    })
+
+    expect(screen.getByText('GHS 38.50')).toBeInTheDocument()
+    expect(screen.getAllByText('-').length).toBeGreaterThan(0)
+
+    fireEvent.click(screen.getByTitle('Edit Aciclovir Cream, 5%'))
+    expect(getFieldAfterLabel('NHIS Code')).toHaveValue('ACICLOCR1')
+    expect(getFieldAfterLabel('NHIS Price (GHS)')).toHaveValue(38.5)
+
+    fireEvent.click(screen.getByRole('button', { name: /cancel/i }))
+    fireEvent.click(screen.getByTitle('Edit Actifed Multi-Action Cough Syrup'))
+    expect(getFieldAfterLabel('NHIS Code')).toHaveDisplayValue('')
+    expect(getFieldAfterLabel('NHIS Price (GHS)')).toHaveDisplayValue('')
+  })
 })

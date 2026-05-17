@@ -786,6 +786,11 @@ const Sales = () => {
         return current
       }
 
+      const parsedNhisPrice = Number.parseFloat(drug.nhis_price)
+      const hasNhisCatalogPrice = Boolean(
+        drug.is_nhis_listed && Number.isFinite(parsedNhisPrice) && parsedNhisPrice > 0
+      )
+
       return [
         ...current,
         {
@@ -793,11 +798,8 @@ const Sales = () => {
           drugId: drug.id,
           name: drug.name,
           price: Number.parseFloat(drug.price),
-          nhisPrice:
-            drug.nhis_price === undefined || drug.nhis_price === null
-              ? null
-              : Number.parseFloat(drug.nhis_price),
-          nhisCode: drug.nhis_code || null,
+          nhisPrice: hasNhisCatalogPrice ? parsedNhisPrice : null,
+          nhisCode: hasNhisCatalogPrice ? drug.nhis_code || null : null,
           genericName: drug.generic_name || null,
           unit: drug.unit || 'unit',
           quantity: 1,
@@ -2438,6 +2440,9 @@ const Sales = () => {
                   const remaining = Math.max(0, Number.parseFloat(drug.quantity || 0) - reserved)
                   const soldOut = remaining <= 0
                   const nhisPrice = Number.parseFloat(drug.nhis_price)
+                  const hasNhisCatalogPrice = Boolean(
+                    drug.is_nhis_listed && Number.isFinite(nhisPrice) && nhisPrice > 0
+                  )
 
                   return (
                     <button
@@ -2449,7 +2454,7 @@ const Sales = () => {
                       <span className="drug-name">{drug.name}</span>
                       <span className="drug-batch">{drug.batch_number || 'No batch'}</span>
                       <span className="drug-price">GHS {Number.parseFloat(drug.price).toFixed(2)}</span>
-                      {Number.isFinite(nhisPrice) && nhisPrice > 0 && (
+                      {hasNhisCatalogPrice && (
                         <span className="drug-nhis-price">NHIS GHS {nhisPrice.toFixed(2)}</span>
                       )}
                       <span className={`drug-stock ${soldOut ? 'sold-out' : ''}`}>
