@@ -16,6 +16,7 @@ import {
   submitPendingNhiaClaims,
 } from '../services/branchServerApi'
 import { useNotification } from '../context/NotificationContext'
+import { readSignatureFileAsDataUrl } from '../utils/imageUpload'
 import './OfflineSync.css'
 
 const ENTITY_LABELS = {
@@ -195,6 +196,21 @@ export default function OfflineSync() {
       ...current,
       credentials: { ...current.credentials, [field]: value },
     }))
+  }
+
+  const handleNhiaSignatureChange = async (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    try {
+      setError('')
+      const signatureUrl = await readSignatureFileAsDataUrl(file)
+      setNhiaForm((current) => ({ ...current, claimsOfficerSignatureUrl: signatureUrl }))
+    } catch (signatureError) {
+      setError(signatureError.message || 'Unable to upload claims officer signature.')
+    } finally {
+      event.target.value = ''
+    }
   }
 
   const saveNhiaForm = async () => {
@@ -411,12 +427,25 @@ export default function OfflineSync() {
               onChange={(event) => updateNhiaForm('claimsOfficerName', event.target.value)}
             />
           </label>
-          <label>
-            <span>Signature URL</span>
-            <input
-              value={nhiaForm.claimsOfficerSignatureUrl}
-              onChange={(event) => updateNhiaForm('claimsOfficerSignatureUrl', event.target.value)}
-            />
+          <label className="nhia-signature-field">
+            <span>Claims Officer Signature</span>
+            {nhiaForm.claimsOfficerSignatureUrl && (
+              <img
+                src={nhiaForm.claimsOfficerSignatureUrl}
+                alt="Claims officer signature preview"
+                className="nhia-signature-preview"
+              />
+            )}
+            <input type="file" accept="image/*" onChange={handleNhiaSignatureChange} />
+            {nhiaForm.claimsOfficerSignatureUrl && (
+              <button
+                className="btn btn-outline btn-sm"
+                type="button"
+                onClick={() => updateNhiaForm('claimsOfficerSignatureUrl', '')}
+              >
+                Remove signature
+              </button>
+            )}
           </label>
           <label>
             <span>Submitter ID</span>
@@ -453,7 +482,7 @@ export default function OfflineSync() {
               value={nhiaForm.credentialMode}
               onChange={(event) => updateNhiaForm('credentialMode', event.target.value)}
             >
-              <option value="api_key">API Key</option>
+              <option value="api_key">API Key / Secret</option>
               <option value="client_secret">Client ID / Secret</option>
               <option value="username_password">Username / Password</option>
               <option value="certificate">Certificate</option>
@@ -530,7 +559,7 @@ export default function OfflineSync() {
                 <span>API Key Header</span>
                 <input
                   value={nhiaForm.credentials.headerName}
-                  placeholder="Authorization"
+                  placeholder="x-api-key"
                   onChange={(event) => updateNhiaCredential('headerName', event.target.value)}
                 />
               </label>
@@ -538,7 +567,7 @@ export default function OfflineSync() {
                 <span>Header Prefix</span>
                 <input
                   value={nhiaForm.credentials.headerPrefix}
-                  placeholder="Bearer"
+                  placeholder="Optional"
                   onChange={(event) => updateNhiaCredential('headerPrefix', event.target.value)}
                 />
               </label>
@@ -556,6 +585,21 @@ export default function OfflineSync() {
                   value={nhiaForm.credentials.secretHeaderName}
                   placeholder="x-api-secret"
                   onChange={(event) => updateNhiaCredential('secretHeaderName', event.target.value)}
+                />
+              </label>
+              <label>
+                <span>Username {nhiaSettings?.credentialSummary?.username ? '(saved)' : ''}</span>
+                <input
+                  value={nhiaForm.credentials.username}
+                  onChange={(event) => updateNhiaCredential('username', event.target.value)}
+                />
+              </label>
+              <label>
+                <span>Password {nhiaSettings?.credentialSummary?.password ? '(saved)' : ''}</span>
+                <input
+                  type="password"
+                  value={nhiaForm.credentials.password}
+                  onChange={(event) => updateNhiaCredential('password', event.target.value)}
                 />
               </label>
             </>

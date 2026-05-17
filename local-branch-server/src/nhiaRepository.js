@@ -906,14 +906,26 @@ const buildHeaders = (settings) => {
     'Content-Type': 'application/json',
     Accept: 'application/json',
   }
+  const applyBasicCredentialsHeader = () => {
+    const username = normalizeText(credentials.username)
+    const password = normalizeText(credentials.password)
+    if ((username || password) && !headers.Authorization) {
+      const token = Buffer.from(`${username}:${password}`).toString('base64')
+      headers.Authorization = `Basic ${token}`
+    }
+  }
 
   if (settings.credentialMode === 'api_key') {
-    const headerName = normalizeText(credentials.headerName) || 'Authorization'
-    const prefix = normalizeText(credentials.headerPrefix) || (headerName.toLowerCase() === 'authorization' ? 'Bearer' : '')
+    const hasBasicCredentials = Boolean(normalizeText(credentials.username) || normalizeText(credentials.password))
+    const configuredHeaderName = normalizeText(credentials.headerName)
+    const headerName = configuredHeaderName || (hasBasicCredentials ? 'x-api-key' : 'Authorization')
+    const prefix = normalizeText(credentials.headerPrefix) ||
+      (!configuredHeaderName && headerName.toLowerCase() === 'authorization' ? 'Bearer' : '')
     headers[headerName] = prefix ? `${prefix} ${credentials.apiKey}` : credentials.apiKey
     const apiSecret = normalizeText(credentials.apiSecret)
     const secretHeaderName = normalizeText(credentials.secretHeaderName) || 'x-api-secret'
     if (apiSecret) headers[secretHeaderName] = apiSecret
+    applyBasicCredentialsHeader()
   } else if (settings.credentialMode === 'client_secret') {
     headers['x-client-id'] = credentials.clientId
     headers['x-client-secret'] = credentials.clientSecret

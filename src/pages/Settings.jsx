@@ -17,7 +17,7 @@ import { getNhiaApiSettings, saveNhiaApiSettings } from '../services/nhisService
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
 import { normalizeSubscriptionTier, useTenant } from '../context/TenantContext'
-import { readLogoFileAsDataUrl } from '../utils/imageUpload'
+import { readLogoFileAsDataUrl, readSignatureFileAsDataUrl } from '../utils/imageUpload'
 import { getRoleLabel } from '../utils/roleLabels'
 import { ROLE_OPTIONS } from '../utils/roles'
 import './Settings.css'
@@ -258,6 +258,21 @@ const Settings = () => {
       setFormData((current) => ({ ...current, logoUrl }))
     } catch (logoError) {
       setError(logoError.message || 'Unable to upload logo.')
+    } finally {
+      event.target.value = ''
+    }
+  }
+
+  const handleNhiaSignatureChange = async (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    try {
+      setError('')
+      const signatureUrl = await readSignatureFileAsDataUrl(file)
+      setNhiaApiForm((current) => ({ ...current, claimsOfficerSignatureUrl: signatureUrl }))
+    } catch (signatureError) {
+      setError(signatureError.message || 'Unable to upload claims officer signature.')
     } finally {
       event.target.value = ''
     }
@@ -770,11 +785,31 @@ const Settings = () => {
                   value={nhiaApiForm.claimsOfficerName}
                   onChange={(event) => updateNhiaApiForm('claimsOfficerName', event.target.value)}
                 />
-                <input
-                  placeholder="Claims officer signature URL"
-                  value={nhiaApiForm.claimsOfficerSignatureUrl}
-                  onChange={(event) => updateNhiaApiForm('claimsOfficerSignatureUrl', event.target.value)}
-                />
+                <div className="signature-upload-field">
+                  {nhiaApiForm.claimsOfficerSignatureUrl && (
+                    <img
+                      src={nhiaApiForm.claimsOfficerSignatureUrl}
+                      alt="Claims officer signature preview"
+                      className="settings-signature-preview"
+                    />
+                  )}
+                  <label htmlFor="nhiaSignature">Claims officer signature</label>
+                  <input
+                    id="nhiaSignature"
+                    type="file"
+                    accept="image/*"
+                    onChange={handleNhiaSignatureChange}
+                  />
+                  {nhiaApiForm.claimsOfficerSignatureUrl && (
+                    <button
+                      className="btn btn-outline btn-sm"
+                      type="button"
+                      onClick={() => updateNhiaApiForm('claimsOfficerSignatureUrl', '')}
+                    >
+                      Remove signature
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="settings-form-row">
                 <input
@@ -838,56 +873,106 @@ const Settings = () => {
                 value={nhiaApiForm.credentialMode}
                 onChange={(event) => updateNhiaApiForm('credentialMode', event.target.value)}
               >
-                <option value="api_key">API key</option>
+                <option value="api_key">API key / secret</option>
                 <option value="bearer_token">Bearer token</option>
-                <option value="basic_auth">Basic auth</option>
+                <option value="basic_auth">Username / password</option>
                 <option value="oauth_client">OAuth/client token</option>
               </select>
-              <div className="settings-form-row">
+              {nhiaApiForm.credentialMode === 'api_key' && (
+                <>
+                  <div className="settings-form-row">
+                    <input
+                      placeholder="API key"
+                      type="password"
+                      value={nhiaApiForm.credentials.apiKey}
+                      onChange={(event) => updateNhiaCredential('apiKey', event.target.value)}
+                    />
+                    <input
+                      placeholder="API key header (x-api-key)"
+                      value={nhiaApiForm.credentials.headerName}
+                      onChange={(event) => updateNhiaCredential('headerName', event.target.value)}
+                    />
+                  </div>
+                  <div className="settings-form-row">
+                    <input
+                      placeholder="API secret"
+                      type="password"
+                      value={nhiaApiForm.credentials.apiSecret}
+                      onChange={(event) => updateNhiaCredential('apiSecret', event.target.value)}
+                    />
+                    <input
+                      placeholder="Secret header (x-api-secret)"
+                      value={nhiaApiForm.credentials.secretHeaderName}
+                      onChange={(event) => updateNhiaCredential('secretHeaderName', event.target.value)}
+                    />
+                  </div>
+                  <div className="settings-form-row">
+                    <input
+                      placeholder="Username"
+                      value={nhiaApiForm.credentials.username}
+                      onChange={(event) => updateNhiaCredential('username', event.target.value)}
+                    />
+                    <input
+                      placeholder="Password"
+                      type="password"
+                      value={nhiaApiForm.credentials.password}
+                      onChange={(event) => updateNhiaCredential('password', event.target.value)}
+                    />
+                  </div>
+                </>
+              )}
+              {nhiaApiForm.credentialMode === 'bearer_token' && (
                 <input
-                  placeholder="API key or token"
+                  placeholder="Bearer token"
                   type="password"
-                  value={nhiaApiForm.credentials.apiKey}
-                  onChange={(event) => updateNhiaCredential('apiKey', event.target.value)}
-                />
-                <input
-                  placeholder="Header name"
-                  value={nhiaApiForm.credentials.headerName}
-                  onChange={(event) => updateNhiaCredential('headerName', event.target.value)}
-                />
-              </div>
-              <div className="settings-form-row">
-                <input
-                  placeholder="API secret"
-                  type="password"
-                  value={nhiaApiForm.credentials.apiSecret}
-                  onChange={(event) => updateNhiaCredential('apiSecret', event.target.value)}
-                />
-                <input
-                  placeholder="Secret header name"
-                  value={nhiaApiForm.credentials.secretHeaderName}
-                  onChange={(event) => updateNhiaCredential('secretHeaderName', event.target.value)}
-                />
-              </div>
-              <div className="settings-form-row">
-                <input
-                  placeholder="Username or client ID"
-                  value={nhiaApiForm.credentials.username || nhiaApiForm.credentials.clientId}
+                  value={nhiaApiForm.credentials.apiKey || nhiaApiForm.credentials.token}
                   onChange={(event) => {
-                    updateNhiaCredential('username', event.target.value)
-                    updateNhiaCredential('clientId', event.target.value)
+                    updateNhiaCredential('apiKey', event.target.value)
+                    updateNhiaCredential('token', event.target.value)
                   }}
                 />
-                <input
-                  placeholder="Password or client secret"
-                  type="password"
-                  value={nhiaApiForm.credentials.password || nhiaApiForm.credentials.clientSecret}
-                  onChange={(event) => {
-                    updateNhiaCredential('password', event.target.value)
-                    updateNhiaCredential('clientSecret', event.target.value)
-                  }}
-                />
-              </div>
+              )}
+              {nhiaApiForm.credentialMode === 'basic_auth' && (
+                <div className="settings-form-row">
+                  <input
+                    placeholder="Username"
+                    value={nhiaApiForm.credentials.username}
+                    onChange={(event) => updateNhiaCredential('username', event.target.value)}
+                  />
+                  <input
+                    placeholder="Password"
+                    type="password"
+                    value={nhiaApiForm.credentials.password}
+                    onChange={(event) => updateNhiaCredential('password', event.target.value)}
+                  />
+                </div>
+              )}
+              {nhiaApiForm.credentialMode === 'oauth_client' && (
+                <>
+                  <input
+                    placeholder="OAuth access token"
+                    type="password"
+                    value={nhiaApiForm.credentials.token || nhiaApiForm.credentials.apiKey}
+                    onChange={(event) => {
+                      updateNhiaCredential('token', event.target.value)
+                      updateNhiaCredential('apiKey', event.target.value)
+                    }}
+                  />
+                  <div className="settings-form-row">
+                    <input
+                      placeholder="Client ID"
+                      value={nhiaApiForm.credentials.clientId}
+                      onChange={(event) => updateNhiaCredential('clientId', event.target.value)}
+                    />
+                    <input
+                      placeholder="Client secret"
+                      type="password"
+                      value={nhiaApiForm.credentials.clientSecret}
+                      onChange={(event) => updateNhiaCredential('clientSecret', event.target.value)}
+                    />
+                  </div>
+                </>
+              )}
               <div className="settings-save-bar">
                 <span>Leave secret fields blank to keep the saved values.</span>
                 <button className="btn btn-primary" type="submit" disabled={savingNhiaApi}>

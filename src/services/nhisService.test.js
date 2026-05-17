@@ -519,6 +519,32 @@ describe('CLAIM-it export helpers', () => {
     expect(payload.claims[0].prescriptionAttachment.fileName).toBe('rx.pdf')
   })
 
+  it('carries HMS setup details into the CLAIM-it payload and XML', () => {
+    const payload = buildNhisClaimItExportPayload([claim], {
+      yearMonth: '2026-05',
+      organizationType: 'hospital',
+      facilityCode: 'HPI0542',
+      providerNumber: 'HPAH0542',
+      providerTypeDescription: 'Private clinics',
+      providerClassLevel: 'B2',
+      claimsOfficerName: 'David Selorm Gabion',
+      claimsOfficerSignatureUrl: 'data:image/png;base64,signature',
+      submitterId: 'admin',
+    })
+    const xml = buildNhisClaimItXml(payload)
+
+    expect(payload).toMatchObject({
+      facilityCode: 'HPI0542',
+      providerNumber: 'HPAH0542',
+      providerTypeDescription: 'Private clinics',
+      providerClassLevel: 'B2',
+      claimsOfficerName: 'David Selorm Gabion',
+      claimsOfficerSignatureUrl: 'data:image/png;base64,signature',
+      submitterId: 'admin',
+    })
+    expect(xml).toContain('<ClaimsOfficerSignatureUrl>data:image/png;base64,signature</ClaimsOfficerSignatureUrl>')
+  })
+
   it('builds valid XML with escaped patient and medicine text', () => {
     const payload = buildNhisClaimItExportPayload([
       { ...claim, surname: 'A & B', nhis_claim_medicines: [{ ...claim.nhis_claim_medicines[0], description: 'Tab <500mg>' }] },

@@ -465,6 +465,14 @@
   gap: 0.65rem;
 }
 
+.signature-upload-field {
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.75rem;
+}
+
 .settings-logo-preview {
   width: 86px;
   height: 86px;
@@ -472,6 +480,15 @@
   border: 1px solid var(--gray-200);
   border-radius: var(--radius);
   background: white;
+}
+
+.settings-signature-preview {
+  background: white;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  height: 56px;
+  object-fit: contain;
+  width: 180px;
 }
 
 .about-section {

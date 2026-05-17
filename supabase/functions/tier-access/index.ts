@@ -1733,6 +1733,13 @@ const buildNhiaHeaders = (settings: Record<string, unknown>, contentType = 'appl
   const credentials = (settings.credentials || {}) as Record<string, unknown>
   const headers: Record<string, string> = { Accept: 'application/json', 'Content-Type': contentType }
   const mode = normalizeCredentialMode(settings.credentialMode)
+  const applyBasicCredentialsHeader = () => {
+    const username = normalizeText(credentials.username)
+    const password = normalizeText(credentials.password)
+    if ((username || password) && !headers.Authorization) {
+      headers.Authorization = `Basic ${btoa(`${username}:${password}`)}`
+    }
+  }
 
   if (mode === 'api_key') {
     const headerName = normalizeText(credentials.headerName) || 'x-api-key'
@@ -1742,6 +1749,7 @@ const buildNhiaHeaders = (settings: Record<string, unknown>, contentType = 'appl
     const apiSecret = normalizeText(credentials.apiSecret)
     const secretHeaderName = normalizeText(credentials.secretHeaderName) || 'x-api-secret'
     if (apiSecret) headers[secretHeaderName] = apiSecret
+    applyBasicCredentialsHeader()
   } else if (mode === 'bearer_token') {
     const token = normalizeText(credentials.apiKey || credentials.token)
     if (token) headers.Authorization = `Bearer ${token}`

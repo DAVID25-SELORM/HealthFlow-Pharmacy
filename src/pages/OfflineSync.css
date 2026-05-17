@@ -163,6 +163,21 @@
   grid-column: 1 / -1;
 }
 
+.nhia-settings-grid .nhia-signature-field {
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem;
+}
+
+.nhia-signature-preview {
+  background: white;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  height: 56px;
+  object-fit: contain;
+  width: 180px;
+}
+
 .nhia-settings-grid .nhia-toggle {
   align-items: center;
   background: var(--gray-50);
