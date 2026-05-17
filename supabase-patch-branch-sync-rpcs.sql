@@ -234,22 +234,35 @@ BEGIN
     RAISE EXCEPTION 'Sold by user could not be found.';
   END IF;
 
-  IF shift_id_value IS NULL THEN
-    RAISE EXCEPTION 'Open a shift before completing sales.';
-  END IF;
+  IF shift_id_value IS NOT NULL THEN
+    SELECT *
+    INTO shift_record
+    FROM public.shifts
+    WHERE id = shift_id_value
+      AND status = 'open'
+      AND organization_id = v_client.organization_id
+      AND branch_id = v_client.branch_id
+      AND opened_by = sold_by_value
+    FOR UPDATE;
 
-  SELECT *
-  INTO shift_record
-  FROM public.shifts
-  WHERE id = shift_id_value
-    AND status = 'open'
-    AND organization_id = v_client.organization_id
-    AND branch_id = v_client.branch_id
-    AND opened_by = sold_by_value
-  FOR UPDATE;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'Open shift not found for this cashier and branch.';
+    END IF;
+  ELSE
+    SELECT *
+    INTO shift_record
+    FROM public.shifts
+    WHERE status = 'open'
+      AND organization_id = v_client.organization_id
+      AND branch_id = v_client.branch_id
+      AND opened_by = sold_by_value
+    ORDER BY opened_at DESC
+    LIMIT 1
+    FOR UPDATE;
 
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'Open shift not found for this cashier and branch.';
+    IF FOUND THEN
+      shift_id_value := shift_record.id;
+    END IF;
   END IF;
 
   FOR item IN SELECT * FROM jsonb_array_elements(sale_payload->'items') LOOP
@@ -377,7 +390,10 @@ BEGIN
     );
   END LOOP;
 
-  IF payment_method_value = 'cash' AND payment_status_value = 'completed' AND net_amount > 0 THEN
+  IF payment_method_value = 'cash'
+    AND payment_status_value = 'completed'
+    AND net_amount > 0
+    AND shift_id_value IS NOT NULL THEN
     INSERT INTO public.shift_cash_movements (
       shift_id, organization_id, branch_id, movement_type, source_type, source_id,
       amount, direction, description, created_by
@@ -590,7 +606,10 @@ BEGIN
     SELECT
       id,
       name,
+      brand_name,
+      generic_name,
       batch_number,
+      barcode,
       expiry_date,
       quantity,
       unit,

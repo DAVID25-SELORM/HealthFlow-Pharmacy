@@ -5,6 +5,7 @@ const ALLOWED_ENTITIES = new Set([
   'patients',
   'claims',
   'nhis_drugs',
+  'nhis_clinical_rules',
   'nhis_claims',
   'suppliers',
   'purchases',

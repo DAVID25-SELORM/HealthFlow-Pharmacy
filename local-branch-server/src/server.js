@@ -35,7 +35,7 @@ import {
   handlePaystackWebhook,
   initiatePayment,
 } from './paymentsRepository.js'
-import { createLocalSale, getRecentLocalSales } from './salesRepository.js'
+import { createLocalSale, getLocalSale, getRecentLocalSales } from './salesRepository.js'
 import {
   getSupabaseDiagnostics,
   getSyncStatus,
@@ -175,6 +175,35 @@ app.get('/api/inventory/search', (request, response) => {
       term: request.query.q || '',
       limit: request.query.limit || 30,
     }),
+  })
+})
+
+app.get('/api/pos/bootstrap', (request, response) => {
+  const inventoryLimit = Math.min(Math.max(Number(request.query.inventoryLimit) || 30, 1), 100)
+  const patientLimit = Math.min(Math.max(Number(request.query.patientLimit) || 25, 1), 500)
+  const recentLimit = Math.min(Math.max(Number(request.query.recentLimit) || 8, 1), 50)
+  const sync = getSyncStatus()
+
+  response.json({
+    data: {
+      inventory: searchLocalInventory({
+        term: request.query.inventoryTerm || '',
+        limit: inventoryLimit,
+      }),
+      patients: listOfflineRecords('patients', {
+        limit: patientLimit,
+        searchTerm: request.query.patientTerm || '',
+      }),
+      recentSales: getRecentLocalSales(recentLimit),
+      nhiaSettings: getNhiaSettings(),
+      branchId: config.branchId,
+      organizationId: config.organizationId,
+      sync,
+      cache: {
+        inventory: sync.inventory,
+        nhia: getNhiaSummary(),
+      },
+    },
   })
 })
 
@@ -494,6 +523,23 @@ app.post('/api/sales', (request, response, next) => {
 
 app.get('/api/sales/recent', (request, response) => {
   response.json({ data: getRecentLocalSales(request.query.limit || 20) })
+})
+
+app.get('/api/sales/:id', (request, response) => {
+  const sale = getLocalSale(request.params.id)
+  if (!sale) {
+    response.status(404).json({ error: 'Local sale not found.' })
+    return
+  }
+
+  const patient = sale.patientId ? getOfflineRecord('patients', sale.patientId) : null
+  response.json({
+    data: {
+      ...sale,
+      patients: patient,
+      sale_items: sale.items,
+    },
+  })
 })
 
 app.get('/api/sync/status', (_request, response) => {

@@ -1,5 +1,7 @@
 const DEFAULT_BRANCH_SERVER_URL = 'http://localhost:4780'
 const RUNTIME_CONFIG_KEY = 'healthflow.branchServer.config.v1'
+const DEFAULT_BRANCH_REQUEST_TIMEOUT_MS = 1500
+const SEARCH_BRANCH_REQUEST_TIMEOUT_MS = 450
 
 const readHostedConfig = () => {
   if (typeof window === 'undefined') {
@@ -66,20 +68,35 @@ const getBranchServerToken = () => getBranchServerConfig().token
 export const isBranchServerEnabled = () =>
   Boolean(getBranchServerConfig().enabled && getBranchServerUrl() && getBranchServerToken())
 
+const fetchWithTimeout = async (url, options = {}, timeoutMs = DEFAULT_BRANCH_REQUEST_TIMEOUT_MS) => {
+  const controller = new AbortController()
+  const timeout = globalThis.setTimeout(() => controller.abort(), timeoutMs)
+
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: options.signal || controller.signal,
+    })
+  } finally {
+    globalThis.clearTimeout(timeout)
+  }
+}
+
 const branchFetch = async (path, options = {}) => {
   if (!isBranchServerEnabled()) {
     throw new Error('Local branch server mode is not enabled.')
   }
 
-  const response = await fetch(`${getBranchServerUrl()}${path}`, {
-    ...options,
+  const { timeoutMs = DEFAULT_BRANCH_REQUEST_TIMEOUT_MS, ...fetchOptions } = options
+  const response = await fetchWithTimeout(`${getBranchServerUrl()}${path}`, {
+    ...fetchOptions,
     headers: {
       Accept: 'application/json',
       'Content-Type': 'application/json',
       'x-branch-token': getBranchServerToken(),
-      ...(options.headers || {}),
+      ...(fetchOptions.headers || {}),
     },
-  })
+  }, timeoutMs)
 
   const body = await response.json().catch(() => ({}))
   if (!response.ok) {
@@ -90,11 +107,11 @@ const branchFetch = async (path, options = {}) => {
 }
 
 export const getBranchServerHealth = async () =>
-  await fetch(`${getBranchServerUrl()}/health`, {
+  await fetchWithTimeout(`${getBranchServerUrl()}/health`, {
     headers: {
       Accept: 'application/json',
     },
-  }).then(async (response) => {
+  }, DEFAULT_BRANCH_REQUEST_TIMEOUT_MS).then(async (response) => {
     const body = await response.json().catch(() => ({}))
     if (!response.ok) {
       throw new Error(body?.error || 'Local branch server health check failed.')
@@ -110,8 +127,55 @@ export const searchBranchInventory = async ({ term = '', limit = 30 } = {}) => {
   }
   params.set('limit', String(limit))
 
-  const response = await branchFetch(`/api/inventory/search?${params.toString()}`)
+  const response = await branchFetch(`/api/inventory/search?${params.toString()}`, {
+    timeoutMs: SEARCH_BRANCH_REQUEST_TIMEOUT_MS,
+  })
   return response.data || []
+}
+
+export const searchBranchPatients = async ({ term = '', limit = 8 } = {}) => {
+  const params = new URLSearchParams()
+  if (term) {
+    params.set('searchTerm', term)
+  }
+  params.set('limit', String(limit))
+
+  const response = await branchFetch(`/api/patients?${params.toString()}`, {
+    timeoutMs: SEARCH_BRANCH_REQUEST_TIMEOUT_MS,
+  })
+  return response.data || []
+}
+
+export const getBranchRecentSales = async (limit = 8) => {
+  const params = new URLSearchParams({ limit: String(limit) })
+  const response = await branchFetch(`/api/sales/recent?${params.toString()}`)
+  return response.data || []
+}
+
+export const getBranchSale = async (id) => {
+  const response = await branchFetch(`/api/sales/${encodeURIComponent(id)}`)
+  return response.data || null
+}
+
+export const getBranchPosBootstrap = async ({
+  inventoryTerm = '',
+  inventoryLimit = 30,
+  patientLimit = 25,
+  recentLimit = 8,
+} = {}) => {
+  const params = new URLSearchParams({
+    inventoryLimit: String(inventoryLimit),
+    patientLimit: String(patientLimit),
+    recentLimit: String(recentLimit),
+  })
+  if (inventoryTerm) {
+    params.set('inventoryTerm', inventoryTerm)
+  }
+
+  const response = await branchFetch(`/api/pos/bootstrap?${params.toString()}`, {
+    timeoutMs: DEFAULT_BRANCH_REQUEST_TIMEOUT_MS,
+  })
+  return response.data || response
 }
 
 export const createBranchSale = async (salePayload) => {

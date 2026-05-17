@@ -154,6 +154,8 @@ export const searchLocalInventory = ({ term = '', limit = 30 } = {}) => {
 
   if (searchTokens.length > 0) {
     const placeholders = searchTokens.map(() => '?').join(',')
+    const tokenPrefixes = searchTokens.map((token) => `${token}%`)
+    const prefixConditions = tokenPrefixes.map(() => 's.token LIKE ?').join(' OR ')
     return db
       .prepare(`
         SELECT DISTINCT d.*
@@ -168,6 +170,7 @@ export const searchLocalInventory = ({ term = '', limit = 30 } = {}) => {
             OR lower(COALESCE(d.nhis_code, '')) LIKE ?
             OR lower(COALESCE(d.barcode, '')) LIKE ?
             OR s.token IN (${placeholders})
+            OR ${prefixConditions}
           )
         ORDER BY d.name ASC
         LIMIT ?
@@ -180,6 +183,7 @@ export const searchLocalInventory = ({ term = '', limit = 30 } = {}) => {
         likeTerm,
         likeTerm,
         ...searchTokens,
+        ...tokenPrefixes,
         maxResults
       )
   }

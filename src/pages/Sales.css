@@ -16,6 +16,39 @@
   border-radius: var(--radius);
 }
 
+.sales-page .page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.pos-mode-toggle {
+  border: 1px solid var(--gray-200);
+  background: white;
+  border-radius: var(--radius);
+  padding: 0.25rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.pos-mode-toggle button {
+  border: none;
+  background: transparent;
+  color: var(--gray-600);
+  border-radius: var(--radius-sm);
+  padding: 0.45rem 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pos-mode-toggle button.active {
+  background: var(--primary);
+  color: white;
+}
+
 .offline-pos-banner {
   margin-bottom: 1rem;
   border: 1px solid #b9ded4;
@@ -407,6 +440,15 @@
 
 .shift-summary strong {
   color: var(--gray-900);
+}
+
+.local-shift-note {
+  border: 1px solid #b9ded4;
+  background: #f5fffb;
+  color: var(--gray-700);
+  border-radius: var(--radius);
+  padding: 0.7rem 0.85rem;
+  font-size: 0.88rem;
 }
 
 .shift-open-form,
