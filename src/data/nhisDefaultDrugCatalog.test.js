@@ -10,6 +10,13 @@ describe('default NHIS drug catalog', () => {
           description: 'Amoxicillin Capsule, 250 mg',
           unit_price: 0.47,
         }),
+        expect.objectContaining({
+          code: 'GLTRSUTA1',
+          description: 'Glyceryl Trinitrate Sublingual Tablet, 500 microgram',
+          unit: '100 Tablets',
+          unit_price: 121.63,
+          category: 'C',
+        }),
       ])
     )
   })

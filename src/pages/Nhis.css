@@ -725,6 +725,15 @@
   align-items: center;
   gap: 0.45rem;
   margin-bottom: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.nhia-risk-score {
+  margin-left: auto;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: capitalize;
+  white-space: nowrap;
 }
 
 .nhia-readiness p,
@@ -1015,6 +1024,23 @@
   padding: 0.65rem 0.75rem;
   color: var(--gray-500);
   font-size: 0.8rem;
+}
+
+.nhis-services-panel {
+  border-top: 1px solid var(--gray-200);
+  margin-top: 1rem;
+  padding-top: 1rem;
+}
+
+.tariff-dropdown {
+  max-height: 18rem;
+  overflow-y: auto;
+}
+
+.service-qty-input {
+  width: 4.5rem;
+  padding-inline: 0.5rem;
+  text-align: right;
 }
 
 /* Shared reusables */

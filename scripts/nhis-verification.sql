@@ -110,3 +110,25 @@ FROM public.nhis_claim_medicines m
 JOIN public.nhis_claims c
   ON c.id = m.claim_id
 WHERE c.status IN ('served', 'submitted');
+
+SELECT
+  component,
+  version,
+  build,
+  client_version,
+  updated_at
+FROM public.nhia_claimit_base_data_versions
+ORDER BY component;
+
+SELECT
+  tariff_version,
+  facility_group,
+  COALESCE(catering_option, 'not_applicable') AS catering_option,
+  COUNT(*) AS tariff_rows,
+  COUNT(DISTINCT gdrg_code) AS distinct_codes,
+  MIN(tariff_amount) AS minimum_tariff,
+  MAX(tariff_amount) AS maximum_tariff
+FROM public.nhia_tariff_items
+WHERE is_active = true
+GROUP BY tariff_version, facility_group, catering_option
+ORDER BY tariff_version, facility_group, catering_option;

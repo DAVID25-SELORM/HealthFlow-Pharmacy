@@ -54,6 +54,23 @@ const baseMedicine = {
   duration: '5 days',
 }
 
+const baseTariffService = {
+  nhiaTariffItemId: 'tariff-1',
+  tariffVersion: 'FEB 2023',
+  facilityGroup: 'CHAG Primary Care Hospital',
+  cateringOption: 'exclusive',
+  mdc: 'Out Patient',
+  gdrgCode: 'OPDC01A',
+  description: 'General OPD Adult',
+  unitPrice: 37.08,
+  quantity: 1,
+  serviceDate: '2026-05-14',
+  totalAmount: 37.08,
+}
+
+const mismatchBlocker =
+  'Malaria: treatment does not appear to match the diagnosis. Correct the diagnosis or add a matching medicine before saving corrections/submission.'
+
 describe('assessNhisClaimReadiness', () => {
   it('warns about dose, frequency, and duration while serving patients', () => {
     const medicine = {
@@ -108,6 +125,244 @@ describe('assessNhisClaimReadiness', () => {
       'Medicine 1: dosage schedule/frequency is required.',
       'Medicine 1: duration is required.',
     ]))
+  })
+
+  it('blocks claims officer corrections when hospital diagnosis and medicines do not match', () => {
+    const medicine = {
+      ...baseMedicine,
+      drugCode: 'CIPTIN1',
+      description: 'Ciprofloxacin + Tinidazole Tablet, 500 mg + 600 mg',
+    }
+
+    const readiness = assessNhisClaimReadiness(
+      { ...baseClaim, organizationType: 'hospital', diagnosis: 'Plasmodium falciparum malaria' },
+      [medicine],
+      { requireMedicineDirections: true }
+    )
+
+    expect(readiness.blockers).toContain(mismatchBlocker)
+  })
+
+  it('falls back to built-in clinical rules when final readiness receives an empty rule set', () => {
+    const readiness = assessNhisClaimReadiness(
+      { ...baseClaim, organizationType: 'hospital', diagnosis: 'Malaria' },
+      [{ ...baseMedicine, drugCode: 'CIPTIN1', description: 'Ciprofloxacin + Tinidazole Tablet' }],
+      { finalSubmission: true, clinicalRules: [] }
+    )
+
+    expect(readiness.blockers).toContain(mismatchBlocker)
+  })
+
+  it('matches clinical rules using selected ICD diagnosis details', () => {
+    const readiness = assessNhisClaimReadiness(
+      {
+        ...baseClaim,
+        organizationType: 'hospital',
+        diagnosis: 'B50',
+        diagnosisDetails: [{ code: 'B50', label: 'Plasmodium falciparum malaria', source: 'ICD-10' }],
+      },
+      [{ ...baseMedicine, drugCode: 'CIPTIN1', description: 'Ciprofloxacin + Tinidazole Tablet' }],
+      { requireMedicineDirections: true }
+    )
+
+    expect(readiness.blockers).toContain(mismatchBlocker)
+  })
+
+  it('blocks age and gender clinical conflicts before hospital correction submission', () => {
+    const malePregnancy = assessNhisClaimReadiness(
+      { ...baseClaim, organizationType: 'hospital', gender: 'male', diagnosis: 'Antenatal care pregnancy' },
+      [{ ...baseMedicine, category: 'A' }],
+      { requireMedicineDirections: true, providerClassLevel: 'D' }
+    )
+    const childTetracycline = assessNhisClaimReadiness(
+      { ...baseClaim, organizationType: 'hospital', dateOfBirth: '2024-01-01', diagnosis: 'Skin infection' },
+      [{ ...baseMedicine, description: 'Tetracycline Capsule', drugCode: 'TETCAP1', category: 'A' }],
+      { requireMedicineDirections: true, providerClassLevel: 'D' }
+    )
+
+    expect(malePregnancy.blockers).toContain(
+      'Critical: male patient has a pregnancy/obstetric or female reproductive diagnosis. Correct patient gender or diagnosis before submission.'
+    )
+    expect(childTetracycline.blockers).toContain(
+      'Medicine 1: tetracycline/doxycycline is age-restricted for children under 8. Use an approved alternative or document specialist justification.'
+    )
+  })
+
+  it('blocks duplicate medicines and unsupported antibiotics on malaria-only hospital claims', () => {
+    const readiness = assessNhisClaimReadiness(
+      { ...baseClaim, organizationType: 'hospital', diagnosis: 'Uncomplicated malaria' },
+      [
+        { ...baseMedicine, drugCode: 'ARTLUM1', description: 'Artemether Lumefantrine Tablet', category: 'A' },
+        { ...baseMedicine, drugCode: 'ARTLUM1', description: 'Artemether Lumefantrine Tablet', category: 'A' },
+        { ...baseMedicine, drugCode: 'CEFTRIN1', description: 'Ceftriaxone Injection', category: 'B2' },
+      ],
+      { requireMedicineDirections: true, providerClassLevel: 'D' }
+    )
+
+    expect(readiness.blockers).toContain(
+      'High: duplicate medicine code ARTLUM1 appears on the claim. Merge the quantities or remove the repeated line.'
+    )
+    expect(readiness.blockers).toContain(
+      'High: Medicine 3: this item is unusual for malaria-only claims. Add a supporting diagnosis or remove it before submission.'
+    )
+    expect(readiness.riskLevel).toBe('critical')
+  })
+
+  it('flags excessive quantities against dose, frequency, and duration', () => {
+    const readiness = assessNhisClaimReadiness(
+      { ...baseClaim, organizationType: 'hospital', diagnosis: 'Fever' },
+      [{
+        ...baseMedicine,
+        description: 'Paracetamol Tablet',
+        category: 'A',
+        dispensedQty: 90,
+        dose: '1 tablet',
+        frequency: 'TDS',
+        duration: '5 days',
+      }],
+      { requireMedicineDirections: true, providerClassLevel: 'D' }
+    )
+
+    expect(readiness.blockers).toContain(
+      'High: Medicine 1: dispensed quantity 90 is far above the dose/frequency/duration estimate (15). Correct the quantity or directions.'
+    )
+  })
+
+  it('adds investigation and chronic disease documentation warnings for final hospital scrubbing', () => {
+    const malaria = assessNhisClaimReadiness(
+      { ...baseClaim, organizationType: 'hospital', diagnosis: 'Malaria' },
+      [{ ...baseMedicine, drugCode: 'ARTLUM1', description: 'Artemether Lumefantrine Tablet', category: 'A' }],
+      { finalSubmission: true, providerClassLevel: 'D' }
+    )
+    const hypertension = assessNhisClaimReadiness(
+      { ...baseClaim, organizationType: 'hospital', diagnosis: 'Hypertension' },
+      [{ ...baseMedicine, drugCode: 'AMLO1', description: 'Amlodipine Tablet', category: 'A' }],
+      { finalSubmission: true, providerClassLevel: 'D' }
+    )
+
+    expect(malaria.warnings).toContain(
+      'Malaria: supporting malaria test/RDT or blood film should be documented before final submission.'
+    )
+    expect(hypertension.warnings).toContain(
+      'Hypertension: BP reading/monitoring should be documented before final submission.'
+    )
+  })
+
+  it('blocks unsupported major procedures when procedure data is supplied', () => {
+    const readiness = assessNhisClaimReadiness(
+      { ...baseClaim, organizationType: 'hospital', diagnosis: 'Mild malaria' },
+      [{ ...baseMedicine, drugCode: 'ARTLUM1', description: 'Artemether Lumefantrine Tablet', category: 'A' }],
+      {
+        finalSubmission: true,
+        providerClassLevel: 'D',
+        services: [{ description: 'Theatre fee and CT scan' }],
+      }
+    )
+
+    expect(readiness.blockers).toContain(
+      'High: major procedure or imaging item is not supported by the recorded diagnosis. Add a supporting diagnosis/pre-authorization or remove the item.'
+    )
+  })
+
+  it('allows hospital claims with only NHIA tariff services and validates service metadata', () => {
+    const readiness = assessNhisClaimReadiness(
+      { ...baseClaim, organizationType: 'hospital', diagnosis: 'General consultation' },
+      [],
+      {
+        enforcePrescribingLevel: true,
+        providerClassLevel: 'D',
+        nhiaTariffServices: [baseTariffService],
+      }
+    )
+    const missingCatalog = assessNhisClaimReadiness(
+      { ...baseClaim, organizationType: 'hospital', diagnosis: 'General consultation' },
+      [],
+      {
+        enforcePrescribingLevel: true,
+        providerClassLevel: 'D',
+        nhiaTariffServices: [{ ...baseTariffService, nhiaTariffItemId: '' }],
+      }
+    )
+    const invalidQuantity = assessNhisClaimReadiness(
+      { ...baseClaim, organizationType: 'hospital', diagnosis: 'General consultation' },
+      [],
+      {
+        enforcePrescribingLevel: true,
+        providerClassLevel: 'D',
+        nhiaTariffServices: [{ ...baseTariffService, quantity: 0, totalAmount: 0 }],
+      }
+    )
+
+    expect(readiness.blockers).not.toContain('Add at least one medicine or NHIA tariff service to the claim.')
+    expect(readiness.blockers).not.toContain('Service 1: select an item from the FEB 2023 NHIA tariff catalog.')
+    expect(missingCatalog.blockers).toContain('Service 1: select an item from the FEB 2023 NHIA tariff catalog.')
+    expect(invalidQuantity.blockers).toContain('Service 1: quantity must be greater than zero.')
+  })
+
+  it('blocks medicines above the configured NHIA provider class level', () => {
+    const readiness = assessNhisClaimReadiness(
+      baseClaim,
+      [{ ...baseMedicine, category: 'C' }],
+      { enforcePrescribingLevel: true, providerClassLevel: 'B2' }
+    )
+
+    expect(readiness.blockers).toContain(
+      'Medicine 1: requires NHIS prescribing level C, but this facility is configured as B2. Use an authorized prescriber/facility or remove the medicine.'
+    )
+  })
+
+  it('allows medicines at or below provider class but reserves specialist medicines for SM', () => {
+    const allowed = assessNhisClaimReadiness(
+      baseClaim,
+      [{ ...baseMedicine, category: 'C' }],
+      { enforcePrescribingLevel: true, providerClassLevel: 'D' }
+    )
+    const specialistBlocked = assessNhisClaimReadiness(
+      baseClaim,
+      [{ ...baseMedicine, category: 'SM' }],
+      { enforcePrescribingLevel: true, providerClassLevel: 'D' }
+    )
+    const specialistAllowed = assessNhisClaimReadiness(
+      baseClaim,
+      [{ ...baseMedicine, category: 'SM' }],
+      { enforcePrescribingLevel: true, providerClassLevel: 'SM' }
+    )
+
+    expect(allowed.blockers).not.toEqual(expect.arrayContaining([
+      expect.stringContaining('requires NHIS prescribing level C'),
+    ]))
+    expect(specialistBlocked.blockers).toContain(
+      'Medicine 1: requires NHIS prescribing level SM, but this facility is configured as D. Use an authorized prescriber/facility or remove the medicine.'
+    )
+    expect(specialistAllowed.blockers).not.toEqual(expect.arrayContaining([
+      expect.stringContaining('requires NHIS prescribing level SM'),
+    ]))
+  })
+
+  it('uses the NHIS drug catalog to find prescribing level when claim medicine rows do not store it', () => {
+    const readiness = assessNhisClaimReadiness(
+      baseClaim,
+      [{ ...baseMedicine, drugCode: 'MIDAZOIN1', category: '' }],
+      {
+        enforcePrescribingLevel: true,
+        providerClassLevel: 'B2',
+        nhisDrugCatalog: [{ code: 'MIDAZOIN1', category: 'C' }],
+      }
+    )
+
+    expect(readiness.blockers).toContain(
+      'Medicine 1: requires NHIS prescribing level C, but this facility is configured as B2. Use an authorized prescriber/facility or remove the medicine.'
+    )
+  })
+
+  it('requires provider class level before enforcing prescribing levels', () => {
+    const readiness = assessNhisClaimReadiness(
+      baseClaim,
+      [{ ...baseMedicine, category: 'A' }],
+      { enforcePrescribingLevel: true }
+    )
+
+    expect(readiness.blockers).toContain('Set the NHIA provider class/level in Settings before saving/submitting NHIS claims.')
   })
 
   it('requires exact NHIS member number digit length', () => {
@@ -267,6 +522,44 @@ describe('CLAIM-it export helpers', () => {
     expect(xml).toContain('<NhiaClaimBatch>')
     expect(xml).toContain('A &amp; B')
     expect(xml).toContain('Tab &lt;500mg&gt;')
+  })
+
+  it('includes hospital tariff service lines in CLAIM-it payload and XML', () => {
+    const claimWithService = {
+      ...claim,
+      total_amount: 47.08,
+      nhis_claim_services: [{
+        nhia_tariff_item_id: 'tariff-1',
+        tariff_version: 'FEB 2023',
+        facility_group: 'CHAG Primary Care Hospital',
+        catering_option: 'exclusive',
+        mdc: 'Out Patient',
+        gdrg_code: 'OPDC01A',
+        description: 'General OPD Adult',
+        age_band: null,
+        unit_price: 37.08,
+        quantity: 1,
+        service_date: '2026-05-14',
+        total_amount: 37.08,
+      }],
+    }
+    const payload = buildNhisClaimItExportPayload([claimWithService], {
+      yearMonth: '2026-05',
+      organizationType: 'hospital',
+      generatedAt: '2026-05-15T00:00:00.000Z',
+    })
+    const xml = buildNhisClaimItXml(payload)
+
+    expect(payload.claims[0].tariffServices[0]).toMatchObject({
+      code: 'OPDC01A',
+      tariffVersion: 'FEB 2023',
+      facilityGroup: 'CHAG Primary Care Hospital',
+      totalAmount: 37.08,
+    })
+    expect(payload.totalAmount).toBe(47.08)
+    expect(xml).toContain('<TariffServices>')
+    expect(xml).toContain('<Code>OPDC01A</Code>')
+    expect(xml).toContain('<TotalAmount>37.08</TotalAmount>')
   })
 
   it('normalizes monthly and custom export periods', () => {

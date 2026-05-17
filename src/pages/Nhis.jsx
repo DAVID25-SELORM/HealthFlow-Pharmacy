@@ -18,6 +18,7 @@ import {
   deleteNhisDrug,
   upsertNhisDrugs,
   getAllNhisClaims,
+  getAllNhiaTariffItems,
   getNhisClaimStats,
   createNhisClaim,
   updateNhisClaim,
@@ -109,6 +110,7 @@ const BLANK_MEDICINE = {
   dose:          '',
   frequency:     '',
   duration:      '',
+  category:      '',
 }
 
 const BLANK_NHIS_DRUG = {
@@ -160,6 +162,7 @@ const Nhis = () => {
   // ── data ─────────────────────────────────────────────────────
   const [claims, setClaims]       = useState([])
   const [nhisDrugs, setNhisDrugs] = useState([])
+  const [nhiaTariffItems, setNhiaTariffItems] = useState([])
   const [clinicalRules, setClinicalRules] = useState([])
   const [patients, setPatients]   = useState([])
   const [stats, setStats]         = useState({ total: 0, served: 0, submitted: 0, paid: 0, rejected: 0, totalPaid: 0 })
@@ -186,6 +189,7 @@ const Nhis = () => {
   // ── new claim form ────────────────────────────────────────────
   const [claimForm, setClaimForm]           = useState(BLANK_CLAIM)
   const [claimMedicines, setClaimMedicines] = useState([])
+  const [claimServices, setClaimServices]   = useState([])
   const [claimSubmitting, setClaimSubmitting] = useState(false)
   const [claimError, setClaimError]           = useState('')
   const [editingClaim, setEditingClaim]       = useState(null)
@@ -200,6 +204,7 @@ const Nhis = () => {
   const [medSearchResults, setMedSearchResults] = useState([])
   const [medSearching, setMedSearching] = useState(false)
   const [editingMedicineIndex, setEditingMedicineIndex] = useState(null)
+  const [tariffSearch, setTariffSearch] = useState('')
 
   // ── drug catalog modal (add/edit) ─────────────────────────────
   const [editingDrug, setEditingDrug]   = useState(null) // null = add new
@@ -256,12 +261,13 @@ const Nhis = () => {
     try {
       setLoading(true)
       setError('')
-      const [claimsData, drugsData, patientsData, statsData, rulesData] = await Promise.all([
+      const [claimsData, drugsData, patientsData, statsData, rulesData, tariffData] = await Promise.all([
         getAllNhisClaims(),
         getAllNhisDrugs(),
         getAllPatients(),
         getNhisClaimStats(),
         getAllNhisClinicalRules(),
+        isHospital ? getAllNhiaTariffItems() : Promise.resolve([]),
       ])
 
       let readyDrugsData = drugsData
@@ -291,12 +297,13 @@ const Nhis = () => {
       setPatients(patientsData)
       setStats(statsData)
       setClinicalRules(rulesData)
+      setNhiaTariffItems(tariffData)
     } catch (err) {
       setError(err.message || 'Unable to load NHIS data.')
     } finally {
       setLoading(false)
     }
-  }, [canWrite, notify, organization?.can_use_nhis])
+  }, [canWrite, notify, organization?.can_use_nhis, isHospital])
 
   useEffect(() => { void loadAll() }, [loadAll])
 
@@ -305,7 +312,7 @@ const Nhis = () => {
     if (config.enabled && config.token) {
       try {
         const settings = await getBranchNhiaSettings()
-        if (settings?.directApiEnabled && settings?.apiBaseUrl) {
+        if (settings) {
           setDirectNhiaSettings({ ...settings, source: 'branch' })
           return
         }
@@ -316,7 +323,7 @@ const Nhis = () => {
 
     try {
       const settings = await getNhiaApiSettings()
-      setDirectNhiaSettings(settings?.directApiEnabled && settings?.apiBaseUrl ? { ...settings, source: 'hosted' } : null)
+      setDirectNhiaSettings(settings ? { ...settings, source: 'hosted' } : null)
     } catch {
       setDirectNhiaSettings(null)
     }
@@ -367,7 +374,29 @@ const Nhis = () => {
       .slice(0, 10)
   }, [patients, patientSearch])
 
+  const filteredTariffItems = useMemo(() => {
+    const term = tariffSearch.trim().toLowerCase()
+    if (!term) return []
+    return nhiaTariffItems
+      .filter((item) =>
+        lookupMatches(item.gdrg_code, term) ||
+        lookupMatches(item.description, term) ||
+        lookupMatches(item.mdc, term) ||
+        lookupMatches(item.facility_group, term)
+      )
+      .slice(0, 10)
+  }, [nhiaTariffItems, tariffSearch])
+
   const hasMedicineSearchTerm = medCodeSearch.trim().length > 0
+  const getCatalogCategoryForMedicine = (medicine = {}) => {
+    const code = String(medicine.drugCode || medicine.drug_code || '').trim().toUpperCase()
+    const id = String(medicine.nhisDrugId || medicine.nhis_drug_id || '').trim()
+    const match = nhisDrugs.find((drug) =>
+      (code && String(drug.code || '').trim().toUpperCase() === code) ||
+      (id && String(drug.id || '').trim() === id)
+    )
+    return match?.category || ''
+  }
 
   // ── select patient for claim ──────────────────────────────────
   const selectPatient = (patient) => {
@@ -448,6 +477,25 @@ const Nhis = () => {
         frequency: medicine.frequency || '',
         duration: medicine.duration || '',
         totalAmount: Number.parseFloat(medicine.total_amount || 0),
+        category: getCatalogCategoryForMedicine(medicine),
+      }))
+    )
+    setClaimServices(
+      (claim.nhis_claim_services || []).map((service) => ({
+        nhiaTariffItemId: service.nhia_tariff_item_id || '',
+        tariffVersion: service.tariff_version || 'FEB 2023',
+        facilityGroup: service.facility_group || '',
+        cateringOption: service.catering_option || '',
+        mdc: service.mdc || '',
+        gdrgCode: service.gdrg_code || '',
+        description: service.description || '',
+        ageBand: service.age_band || '',
+        unitPrice: Number.parseFloat(service.unit_price || 0),
+        quantity: Number.parseFloat(service.quantity || 1),
+        serviceDate: service.service_date || claim.service_date_from || '',
+        totalAmount: Number.parseFloat(service.total_amount || 0),
+        sourceFile: service.source_file || '',
+        sourcePage: service.source_page || null,
       }))
     )
     setShowNewClaimModal(true)
@@ -467,6 +515,7 @@ const Nhis = () => {
           description: drug.description,
           unit:        drug.unit,
           unitPrice:   String(drug.unit_price),
+          category:    drug.category || '',
         }))
         setMedSearchResults([])
       } else {
@@ -502,6 +551,7 @@ const Nhis = () => {
       description:  drug.description,
       unit:         drug.unit,
       unitPrice:    String(drug.unit_price),
+      category:     drug.category || '',
     }))
     setMedCodeSearch('')
     setMedSearchResults([])
@@ -529,6 +579,7 @@ const Nhis = () => {
       frequency:     medForm.frequency,
       duration:      medForm.duration,
       totalAmount:   price * qty,
+      category:      medForm.category || getCatalogCategoryForMedicine(medForm),
     }
 
     setClaimMedicines((prev) => {
@@ -559,6 +610,7 @@ const Nhis = () => {
       dose: medicine.dose || '',
       frequency: medicine.frequency || '',
       duration: medicine.duration || '',
+      category: medicine.category || getCatalogCategoryForMedicine(medicine),
     })
     setMedCodeSearch('')
     setMedSearchResults([])
@@ -570,11 +622,52 @@ const Nhis = () => {
     setClaimMedicines((prev) => prev.filter((_, i) => i !== index))
   }
 
+  const addTariffServiceToClaim = (item) => {
+    const amount = Number.parseFloat(item.tariff_amount || 0) || 0
+    setClaimServices((prev) => ([
+      ...prev,
+      {
+        nhiaTariffItemId: item.id,
+        tariffVersion: item.tariff_version || 'FEB 2023',
+        facilityGroup: item.facility_group || '',
+        cateringOption: item.catering_option || '',
+        mdc: item.mdc || '',
+        gdrgCode: item.gdrg_code || '',
+        description: item.description || '',
+        ageBand: item.age_band || '',
+        unitPrice: amount,
+        quantity: 1,
+        serviceDate: claimForm.serviceDate || new Date().toISOString().split('T')[0],
+        totalAmount: amount,
+        sourceFile: item.source_file || '',
+        sourcePage: item.source_page || null,
+      },
+    ]))
+    setTariffSearch('')
+  }
+
+  const updateTariffServiceQuantity = (index, value) => {
+    const parsedQuantity = Number.parseFloat(value)
+    const quantity = Number.isFinite(parsedQuantity) && parsedQuantity > 0 ? parsedQuantity : 1
+    setClaimServices((prev) => prev.map((service, serviceIndex) => (
+      serviceIndex === index
+        ? { ...service, quantity, totalAmount: quantity * Number(service.unitPrice || 0) }
+        : service
+    )))
+  }
+
+  const removeTariffService = (index) => {
+    setClaimServices((prev) => prev.filter((_, i) => i !== index))
+  }
+
   const claimTotal = useMemo(
-    () => claimMedicines.reduce((s, m) => s + m.totalAmount, 0),
-    [claimMedicines]
+    () =>
+      claimMedicines.reduce((s, m) => s + Number(m.totalAmount || 0), 0) +
+      claimServices.reduce((s, service) => s + Number(service.totalAmount || 0), 0),
+    [claimMedicines, claimServices]
   )
 
+  const providerClassLevel = directNhiaSettings?.providerClassLevel || directNhiaSettings?.provider_class_level || ''
   const directNhiaApiAvailable = Boolean(
     directNhiaSettings?.directApiEnabled &&
       directNhiaSettings?.apiBaseUrl &&
@@ -591,7 +684,7 @@ const Nhis = () => {
     providerNumber: organization?.provider_number || organization?.nhia_provider_number || directNhiaSettings?.providerNumber || '',
     schemeName: directNhiaSettings?.schemeName || 'National Health Insurance',
     providerTypeDescription: directNhiaSettings?.providerTypeDescription || '',
-    providerClassLevel: directNhiaSettings?.providerClassLevel || '',
+    providerClassLevel,
     claimsOfficerName: directNhiaSettings?.claimsOfficerName || '',
     admissionPaymentOption: directNhiaSettings?.admissionPaymentOption || 'nhis_pays_admission',
     claimitValidationEnabled: directNhiaSettings?.claimitValidationEnabled !== false,
@@ -605,9 +698,17 @@ const Nhis = () => {
     () => assessNhisClaimReadiness(
       { ...claimForm, organizationType },
       claimMedicines,
-      { requireMedicineDirections: Boolean(editingClaim) }
+      {
+        requireMedicineDirections: Boolean(editingClaim),
+        enforceDiagnosisTreatmentMatch: Boolean(editingClaim && isHospital),
+        enforcePrescribingLevel: true,
+        providerClassLevel,
+        nhisDrugCatalog: nhisDrugs,
+        clinicalRules,
+        nhiaTariffServices: claimServices,
+      }
     ),
-    [claimForm, claimMedicines, organizationType, editingClaim]
+    [claimForm, claimMedicines, claimServices, organizationType, editingClaim, isHospital, clinicalRules, providerClassLevel, nhisDrugs]
   )
 
   const readinessIssues = readiness.issues
@@ -733,19 +834,28 @@ const Nhis = () => {
         ...claimForm,
         ...uploadedPrescription,
         organizationType,
+        providerClassLevel,
         branchId: profile?.branch_id || branch?.id || null,
         createdBy: user?.id || null,
       }
 
       let successMessage = editingClaim ? 'NHIS claim corrections saved.' : 'NHIS claim saved.'
       if (editingClaim) {
-        await updateNhisClaim(editingClaim.id, payload, claimMedicines)
+        await updateNhisClaim(editingClaim.id, payload, claimMedicines, {
+          providerClassLevel,
+          nhisDrugCatalog: nhisDrugs,
+          nhiaTariffServices: claimServices,
+        })
         if (directNhiaApiAvailable) {
           await submitNhisClaimDirect(editingClaim.id, getDirectNhiaOptions())
           successMessage = 'NHIS claim corrections saved and submitted directly to NHIA.'
         }
       } else {
-        await createNhisClaim(payload, claimMedicines)
+        await createNhisClaim(payload, claimMedicines, {
+          providerClassLevel,
+          nhisDrugCatalog: nhisDrugs,
+          nhiaTariffServices: claimServices,
+        })
       }
 
       setShowNewClaimModal(false)
@@ -762,10 +872,12 @@ const Nhis = () => {
   const resetClaimModal = () => {
     setClaimForm(BLANK_CLAIM)
     setClaimMedicines([])
+    setClaimServices([])
     setClaimError('')
     setPatientSearch('')
     setMedForm(BLANK_MEDICINE)
     setEditingMedicineIndex(null)
+    setTariffSearch('')
     setEditingClaim(null)
     setPrescriptionPdfFile(null)
   }
@@ -786,9 +898,15 @@ const Nhis = () => {
     },
     [{
       ...medForm,
+      category: medForm.category || getCatalogCategoryForMedicine(medForm),
       totalAmount: (Number(medForm.unitPrice) || 0) * (Number(medForm.dispensedQty) || 0),
     }],
-    { requireMedicineDirections: Boolean(editingClaim) }
+    {
+      requireMedicineDirections: Boolean(editingClaim),
+      enforcePrescribingLevel: true,
+      providerClassLevel,
+      nhisDrugCatalog: nhisDrugs,
+    }
   ).blockers
 
   // ── status updates ────────────────────────────────────────────
@@ -796,8 +914,13 @@ const Nhis = () => {
     try {
       if (newStatus === 'submitted') {
         const blockers = await validateNhisClaimFinalReadiness(
-          { ...claim, organizationType },
-          claim.nhis_claim_medicines || []
+          { ...claim, organizationType, providerClassLevel },
+          claim.nhis_claim_medicines || [],
+          {
+            providerClassLevel,
+            nhisDrugCatalog: nhisDrugs,
+            nhiaTariffServices: claim.nhis_claim_services || [],
+          }
         )
 
         if (blockers.length) {
@@ -1653,6 +1776,7 @@ const Nhis = () => {
                           <div className="medicine-desc">{m.description}</div>
                           <div className="medicine-meta">
                             {m.dispensedQty} × {m.unit} @ {fmtCurrency(m.unitPrice)}
+                            {m.category && ` | NHIS Level: ${m.category}`}
                             {m.dose && ` | Dose: ${m.dose}`}
                             {m.frequency && ` | ${m.frequency}`}
                             {m.duration && ` for ${m.duration}`}
@@ -1677,6 +1801,68 @@ const Nhis = () => {
                   </div>
                 )}
 
+                {isHospital && (
+                  <div className="nhis-services-panel">
+                    <div className="nhis-medicines-header">
+                      <h3 className="nhis-section-title">Tariff Services</h3>
+                    </div>
+                    <div className="drug-search-wrap">
+                      <input
+                        className="form-input"
+                        placeholder="Search G-DRG, procedure, lab, OPD..."
+                        value={tariffSearch}
+                        onChange={(e) => setTariffSearch(e.target.value)}
+                      />
+                      {filteredTariffItems.length > 0 && (
+                        <div className="drug-dropdown tariff-dropdown">
+                          {filteredTariffItems.map((item) => (
+                            <button key={item.id} className="drug-dropdown-item" type="button" onClick={() => addTariffServiceToClaim(item)}>
+                              <span className="drug-name">{item.gdrg_code}</span>
+                              <span className="drug-meta">
+                                {item.description} - {fmtCurrency(item.tariff_amount)} - {item.facility_group}
+                                {item.catering_option ? ` (${item.catering_option})` : ''}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    {claimServices.length === 0 ? (
+                      <div className="no-medicines">No tariff services added.</div>
+                    ) : (
+                      <div className="medicines-list">
+                        {claimServices.map((service, idx) => (
+                          <div key={`${service.gdrgCode}-${idx}`} className="medicine-card">
+                            <div className="medicine-card-main">
+                              <div className="medicine-code">{service.gdrgCode}</div>
+                              <div className="medicine-desc">{service.description}</div>
+                              <div className="medicine-meta">
+                                {service.mdc || 'NHIA tariff'} | {service.facilityGroup}
+                                {service.cateringOption ? ` | ${service.cateringOption}` : ''}
+                              </div>
+                            </div>
+                            <div className="medicine-card-right">
+                              <input
+                                className="form-input service-qty-input"
+                                type="number"
+                                min="1"
+                                step="1"
+                                value={service.quantity}
+                                onChange={(e) => updateTariffServiceQuantity(idx, e.target.value)}
+                                aria-label="Service quantity"
+                              />
+                              <div className="medicine-total">{fmtCurrency(service.totalAmount)}</div>
+                              <button className="action-btn action-btn--cancel" type="button" onClick={() => removeTariffService(idx)}>
+                                <X size={12} />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <div className="medicines-total">
                   <strong>Total:</strong> {fmtCurrency(claimTotal)}
                 </div>
@@ -1684,10 +1870,13 @@ const Nhis = () => {
                 <div className={`nhia-readiness ${readinessBlocked ? 'nhia-readiness--fail' : 'nhia-readiness--pass'}`}>
                   <div className="nhia-readiness-header">
                     {readinessBlocked ? <XCircle size={16} /> : <CheckCircle2 size={16} />}
-                    <strong>NHIS Pharmacy Check</strong>
+                    <strong>{isHospital ? 'NHIS Claim Scrub' : 'NHIS Pharmacy Check'}</strong>
+                    <span className="nhia-risk-score">
+                      Risk {readiness.riskScore ?? 0}% - {readiness.riskLevel || 'clean'}
+                    </span>
                   </div>
                   {readinessPassed ? (
-                    <p>Ready for NHIS pharmacy claim submission.</p>
+                    <p>{isHospital ? 'Ready for NHIS claim submission.' : 'Ready for NHIS pharmacy claim submission.'}</p>
                   ) : !readinessBlocked ? (
                     <>
                       <p>Can be saved now; claims officer must complete warnings before corrections/export.</p>
@@ -2004,6 +2193,19 @@ const Nhis = () => {
                     <td>{m.duration || '—'}</td>
                   </tr>
                 ))}
+                {(viewClaim.nhis_claim_services || []).map((service) => (
+                  <tr key={service.id}>
+                    <td className="drug-code-cell">{service.gdrg_code || '—'}</td>
+                    <td>{service.description}</td>
+                    <td>{service.quantity}</td>
+                    <td>service</td>
+                    <td>{fmtCurrency(service.unit_price)}</td>
+                    <td>{fmtCurrency(service.total_amount)}</td>
+                    <td colSpan={3}>
+                      {service.mdc || 'NHIA tariff'} {service.facility_group ? `- ${service.facility_group}` : ''}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
               <tfoot>
                 <tr>
@@ -2068,9 +2270,14 @@ const Nhis = () => {
                     onChange={(e) => setDrugForm((p) => ({ ...p, dosageForm: e.target.value }))} />
                 </div>
                 <div className="form-group">
-                  <label>Category</label>
-                  <input className="form-input" value={drugForm.category}
-                    onChange={(e) => setDrugForm((p) => ({ ...p, category: e.target.value }))} />
+                  <label>Level of Prescribing *</label>
+                  <select className="form-input" required value={drugForm.category}
+                    onChange={(e) => setDrugForm((p) => ({ ...p, category: e.target.value }))}>
+                    <option value="">Select level</option>
+                    {['A', 'M', 'B1', 'B2', 'C', 'D', 'SM'].map((level) => (
+                      <option key={level} value={level}>{level}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
               <div className="form-group">

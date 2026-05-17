@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase'
-import { assertRequiredText, assertNonNegativeNumber, normalizeText, sanitizeSearchTerm } from '../utils/validation'
+import { assertRequiredText, assertNonNegativeNumber, assertPositiveNumber, normalizeText, sanitizeSearchTerm } from '../utils/validation'
 import {
   normalizeNhiaMemberNumber,
   validateNhiaMemberNumberFormat,
@@ -39,6 +39,11 @@ const getClaimField = (claim, camelKey, snakeKey = camelKey) =>
   asText(claim?.[camelKey] ?? claim?.[snakeKey])
 const VALID_ORGANIZATION_TYPES = ['pharmacy', 'hospital']
 const MAX_DIAGNOSES_PER_CLAIM = 10
+const NHIS_PRESCRIBING_LEVELS = ['A', 'M', 'B1', 'B2', 'C', 'D', 'SM']
+const NHIS_PRESCRIBING_LEVEL_RANKS = NHIS_PRESCRIBING_LEVELS.reduce((levels, level, index) => ({
+  ...levels,
+  [level]: index + 1,
+}), {})
 const NHIS_PRESCRIPTION_BUCKET = 'nhis-prescriptions'
 const MAX_PRESCRIPTION_ATTACHMENT_BYTES = 3 * 1024 * 1024
 const PRESCRIPTION_ATTACHMENT_TYPES = ['application/pdf', 'image/jpeg']
@@ -54,6 +59,22 @@ const OPTIONAL_CLAIM_SCHEMA_COLUMNS = [
   'prescription_file_size',
 ]
 const CLAIMIT_EXPORT_FORMATS = ['xml', 'json', 'csv']
+const NHIA_TARIFF_VERSION = 'FEB 2023'
+
+const NHIS_CLAIM_MEDICINES_SELECT = `
+      *,
+      nhis_claim_medicines (
+        id, nhis_drug_id, drug_code, description, unit,
+        unit_price, dispensed_qty, dispensary_date,
+        dose, frequency, duration, total_amount
+      )
+    `
+
+const NHIS_CLAIM_SERVICE_SELECT = `
+      id, nhia_tariff_item_id, tariff_version, facility_group, catering_option,
+      mdc, gdrg_code, description, age_band, unit_price, quantity,
+      service_date, total_amount, source_file, source_page
+    `
 
 export const normalizeOrganizationType = (value) => {
   const normalized = asText(value).toLowerCase()
@@ -63,6 +84,11 @@ export const normalizeOrganizationType = (value) => {
 const normalizeRuleOrganizationType = (value) => {
   const normalized = asText(value).toLowerCase()
   return ['hospital', 'pharmacy', 'all'].includes(normalized) ? normalized : 'hospital'
+}
+
+export const normalizeNhisPrescribingLevel = (value) => {
+  const normalized = asText(value).toUpperCase().replace(/[^A-Z0-9]/g, '')
+  return NHIS_PRESCRIBING_LEVELS.includes(normalized) ? normalized : ''
 }
 
 const normalizeMatchText = (value) => asText(value).toLowerCase().replace(/[^a-z0-9\s]/g, ' ')
@@ -112,6 +138,16 @@ const isMissingOptionalClaimColumn = (error) => {
     error?.code === 'PGRST204' ||
     message.includes('schema cache') ||
     OPTIONAL_CLAIM_SCHEMA_COLUMNS.some((column) => message.includes(column))
+  )
+}
+
+const isMissingClaimServicesTable = (error) => {
+  const message = String(error?.message || '').toLowerCase()
+  return (
+    ['42P01', 'PGRST200', 'PGRST205'].includes(error?.code) ||
+    message.includes('nhis_claim_services') ||
+    message.includes('relationship') ||
+    message.includes('schema cache')
   )
 }
 
@@ -239,11 +275,39 @@ const normalizeClinicalRules = (rules = []) =>
     .map(normalizeClinicalRule)
     .filter((rule) => rule.isActive && rule.label && rule.diagnosis.length && (rule.treatments.length || rule.drugCodes.length))
 
+const getDefaultClinicalRules = () => DIAGNOSIS_TREATMENT_RULES.map((rule) => normalizeClinicalRule(rule))
+
+const getEffectiveClinicalRules = (rules = DIAGNOSIS_TREATMENT_RULES) => {
+  const defaultRules = getDefaultClinicalRules()
+  const providedRules = normalizeClinicalRules(rules)
+  const effectiveRules = new Map(
+    defaultRules
+      .filter((rule) => ['hospital', 'all'].includes(rule.organizationType))
+      .map((rule) => [normalizeMatchText(rule.label), rule])
+  )
+
+  providedRules
+    .filter((rule) => ['hospital', 'all'].includes(rule.organizationType))
+    .forEach((rule) => {
+      effectiveRules.set(normalizeMatchText(rule.label), rule)
+    })
+
+  return [...effectiveRules.values()]
+}
+
+const getDiagnosisMatchText = (claimData) => {
+  const diagnosisDetails = normalizeDiagnosisDetails(claimData?.diagnosisDetails ?? claimData?.diagnosis_details)
+  return normalizeMatchText([
+    getClaimField(claimData, 'diagnosis'),
+    ...diagnosisDetails.flatMap((diagnosis) => [diagnosis.label, diagnosis.code]),
+  ].filter(Boolean).join(' '))
+}
+
 const getDiagnosisTreatmentMismatchBlockers = (claimData, medicines = [], rules = DIAGNOSIS_TREATMENT_RULES) => {
-  const diagnosis = normalizeMatchText(getClaimField(claimData, 'diagnosis'))
+  const diagnosis = getDiagnosisMatchText(claimData)
   if (!diagnosis) return []
 
-  const normalizedRules = normalizeClinicalRules(rules)
+  const normalizedRules = getEffectiveClinicalRules(rules)
   const matchedRules = normalizedRules.filter((rule) =>
     rule.diagnosis.some((keyword) => diagnosis.includes(keyword))
   )
@@ -274,8 +338,122 @@ const getDiagnosisTreatmentMismatchBlockers = (claimData, medicines = [], rules 
       const keywordMatches = rule.treatments.length && rule.treatments.some((keyword) => treatmentText.includes(normalizeMatchText(keyword)))
       return !codeMatches && !keywordMatches
     })
-    .map((rule) => `${rule.label}: treatment does not appear to match the diagnosis. Correct the diagnosis or add a matching medicine before final submission/export.`)
+    .map((rule) => `${rule.label}: treatment does not appear to match the diagnosis. Correct the diagnosis or add a matching medicine before saving corrections/submission.`)
 }
+
+const getProviderPrescribingLevel = (claimData = {}, options = {}) =>
+  normalizeNhisPrescribingLevel(
+    options.providerClassLevel ??
+      options.provider_class_level ??
+      options.facilityLevel ??
+      options.facility_level ??
+      claimData?.providerClassLevel ??
+      claimData?.provider_class_level ??
+      claimData?.facilityLevel ??
+      claimData?.facility_level
+  )
+
+const getMedicineLevelLookup = (drugCatalog = []) => {
+  const byCode = new Map()
+  const byId = new Map()
+
+  ;(drugCatalog || []).forEach((drug) => {
+    const level = normalizeNhisPrescribingLevel(
+      drug?.category ??
+        drug?.levelOfPrescribing ??
+        drug?.level_of_prescribing ??
+        drug?.prescribingLevel ??
+        drug?.prescribing_level
+    )
+    if (!level) return
+
+    const code = asText(drug?.code ?? drug?.drugCode ?? drug?.drug_code).toUpperCase()
+    const id = asText(drug?.id ?? drug?.nhisDrugId ?? drug?.nhis_drug_id)
+    if (code) byCode.set(code, level)
+    if (id) byId.set(id, level)
+  })
+
+  return { byCode, byId }
+}
+
+const getMedicinePrescribingLevel = (medicine = {}, lookup = getMedicineLevelLookup()) => {
+  const directLevel = normalizeNhisPrescribingLevel(
+    medicine?.category ??
+      medicine?.levelOfPrescribing ??
+      medicine?.level_of_prescribing ??
+      medicine?.prescribingLevel ??
+      medicine?.prescribing_level
+  )
+  if (directLevel) return directLevel
+
+  const code = asText(medicine?.drugCode ?? medicine?.drug_code).toUpperCase()
+  if (code && lookup.byCode.has(code)) return lookup.byCode.get(code)
+
+  const id = asText(medicine?.nhisDrugId ?? medicine?.nhis_drug_id)
+  if (id && lookup.byId.has(id)) return lookup.byId.get(id)
+
+  return ''
+}
+
+const canProviderPrescribeLevel = (providerLevel, requiredLevel) => {
+  if (!providerLevel || !requiredLevel) return false
+  if (requiredLevel === 'SM') return providerLevel === 'SM'
+  return (NHIS_PRESCRIBING_LEVEL_RANKS[providerLevel] || 0) >= (NHIS_PRESCRIBING_LEVEL_RANKS[requiredLevel] || 0)
+}
+
+const ANTIBIOTIC_KEYWORDS = [
+  'amoxicillin', 'ampicillin', 'augmentin', 'azithromycin', 'ceftriaxone', 'cefuroxime',
+  'cefixime', 'cephalexin', 'ciprofloxacin', 'cloxacillin', 'co amoxiclav', 'doxycycline',
+  'erythromycin', 'gentamicin', 'levofloxacin', 'metronidazole', 'tetracycline', 'tinidazole',
+]
+
+const INFECTION_DIAGNOSIS_KEYWORDS = [
+  'abscess', 'cellulitis', 'cholera', 'diarrhoea', 'diarrhea', 'dysentery', 'infection',
+  'otitis', 'pneumonia', 'sepsis', 'sinusitis', 'tonsillitis', 'typhoid', 'uti', 'urinary',
+]
+
+const SUPPORTING_INVESTIGATION_RULES = [
+  {
+    label: 'Malaria',
+    diagnosis: ['malaria'],
+    investigations: ['malaria test', 'rdt', 'rapid diagnostic', 'blood film', 'mp test'],
+    message: 'Malaria: supporting malaria test/RDT or blood film should be documented before final submission.',
+  },
+  {
+    label: 'Typhoid fever',
+    diagnosis: ['typhoid'],
+    investigations: ['widal', 'blood culture', 'stool culture', 'cbc', 'full blood count'],
+    message: 'Typhoid fever: supporting Widal, culture, or CBC should be documented before final submission.',
+  },
+  {
+    label: 'Diabetes',
+    diagnosis: ['diabetes', 'diabetic'],
+    investigations: ['glucose', 'fbs', 'rbs', 'hba1c', 'urinalysis'],
+    message: 'Diabetes: glucose/HbA1c or urinalysis monitoring should be documented where applicable.',
+  },
+]
+
+const GENDER_CONFLICT_RULES = [
+  {
+    gender: 'male',
+    terms: ['antenatal', 'pregnancy', 'pregnant', 'labour', 'delivery', 'abortion', 'uterine', 'ovarian', 'cervix'],
+    message: 'Critical: male patient has a pregnancy/obstetric or female reproductive diagnosis. Correct patient gender or diagnosis before submission.',
+  },
+  {
+    gender: 'female',
+    terms: ['prostate', 'prostatic', 'bph', 'testicular', 'testis', 'undescended testis'],
+    message: 'Critical: female patient has a male reproductive diagnosis. Correct patient gender or diagnosis before submission.',
+  },
+]
+
+const MAJOR_PROCEDURE_KEYWORDS = [
+  'ct scan', 'mri', 'surgery', 'surgical', 'theatre', 'operation', 'laparotomy',
+  'appendectomy', 'caesarean', 'cesarean', 'orthopaedic', 'orthopedic',
+]
+
+const SIMPLE_DIAGNOSIS_KEYWORDS = ['malaria', 'headache', 'urti', 'cold', 'gastroenteritis']
+const PROCEDURE_DIAGNOSIS_KEYWORDS = ['appendicitis', 'fracture', 'trauma', 'obstetric', 'delivery', 'surgical', 'tumour', 'tumor']
+const CHRONIC_DIAGNOSIS_KEYWORDS = ['hypertension', 'diabetes', 'diabetic', 'asthma', 'hiv', 'ckd', 'kidney']
 
 const calculateAge = (dateOfBirth) => {
   if (!dateOfBirth) return null
@@ -288,9 +466,346 @@ const calculateAge = (dateOfBirth) => {
   return age
 }
 
+const getMedicineCode = (medicine = {}) => asText(medicine?.drugCode ?? medicine?.drug_code).toUpperCase()
+
+const getMedicineDescription = (medicine = {}) =>
+  asText(
+    medicine?.description ??
+      medicine?.genericName ??
+      medicine?.generic_name ??
+      medicine?.drugName ??
+      medicine?.drug_name ??
+      getMedicineCode(medicine)
+  )
+
+const getMedicineClinicalText = (medicine = {}) =>
+  normalizeMatchText([
+    medicine?.description,
+    medicine?.genericName,
+    medicine?.generic_name,
+    medicine?.drugName,
+    medicine?.drug_name,
+    medicine?.dosageForm,
+    medicine?.dosage_form,
+    medicine?.drugCode,
+    medicine?.drug_code,
+  ].filter(Boolean).join(' '))
+
+const includesAnyTerm = (text, terms = []) =>
+  terms.some((term) => text.includes(normalizeMatchText(term)))
+
+const getClaimItemText = (item = {}) =>
+  normalizeMatchText(
+    typeof item === 'string'
+      ? item
+      : [
+          item?.name,
+          item?.label,
+          item?.description,
+          item?.service,
+          item?.serviceName,
+          item?.service_name,
+          item?.procedure,
+          item?.procedureName,
+          item?.procedure_name,
+          item?.code,
+        ].filter(Boolean).join(' ')
+  )
+
+const getClaimItems = (claimData = {}, options = {}, keys = []) =>
+  keys.flatMap((key) => {
+    const value = options[key] ?? claimData[key]
+    if (!value) return []
+    return Array.isArray(value) ? value : [value]
+  })
+
+const getNhiaTariffServices = (claimData = {}, options = {}) =>
+  getClaimItems(claimData, options, [
+    'nhiaTariffServices',
+    'nhia_tariff_services',
+    'nhisClaimServices',
+    'nhis_claim_services',
+    'claimServices',
+  ])
+
+const getTariffServiceCode = (service = {}) =>
+  asText(service?.gdrgCode ?? service?.gdrg_code ?? service?.serviceCode ?? service?.service_code).toUpperCase()
+
+const getTariffServiceDescription = (service = {}) =>
+  asText(service?.description ?? service?.serviceDescription ?? service?.service_description ?? getTariffServiceCode(service))
+
+const normalizeNhiaTariffServiceLine = (line = {}, claimData = {}) => {
+  const unitPrice = asNumber(line.unitPrice ?? line.unit_price ?? line.tariffAmount ?? line.tariff_amount)
+  const quantity = asNumber(line.quantity ?? line.qty ?? 1)
+  const totalAmount = asNumber(line.totalAmount ?? line.total_amount)
+  const safeQuantity = Number.isFinite(quantity) ? quantity : 1
+  const safeUnitPrice = Number.isFinite(unitPrice) && unitPrice >= 0 ? unitPrice : 0
+  const computedTotal = safeUnitPrice * Math.max(safeQuantity, 0)
+
+  return {
+    nhiaTariffItemId: asText(line.nhiaTariffItemId ?? line.nhia_tariff_item_id ?? line.id) || null,
+    tariffVersion: asText(line.tariffVersion ?? line.tariff_version) || NHIA_TARIFF_VERSION,
+    facilityGroup: asText(line.facilityGroup ?? line.facility_group) || null,
+    cateringOption: asText(line.cateringOption ?? line.catering_option) || null,
+    mdc: asText(line.mdc) || null,
+    gdrgCode: getTariffServiceCode(line),
+    description: getTariffServiceDescription(line),
+    ageBand: asText(line.ageBand ?? line.age_band) || null,
+    unitPrice: safeUnitPrice,
+    quantity: safeQuantity,
+    serviceDate: asText(line.serviceDate ?? line.service_date) || asText(claimData.serviceDate ?? claimData.service_date_from) || null,
+    totalAmount: Number.isFinite(totalAmount) && totalAmount >= 0 ? totalAmount : computedTotal,
+    sourceFile: asText(line.sourceFile ?? line.source_file) || null,
+    sourcePage: line.sourcePage ?? line.source_page ?? null,
+  }
+}
+
+const normalizeNhiaTariffServiceLines = (lines = [], claimData = {}) =>
+  (lines || []).map((line) => normalizeNhiaTariffServiceLine(line, claimData))
+
+const addUnique = (list, message) => {
+  if (message && !list.includes(message)) list.push(message)
+}
+
+const parseDurationDays = (duration) => {
+  const value = normalizeMatchText(duration)
+  if (!value) return null
+  const fractionMatch = value.match(/\b(\d+)\s*\/\s*7\b/)
+  if (fractionMatch) return Number(fractionMatch[1])
+  const numberMatch = value.match(/\b(\d+(?:\.\d+)?)\b/)
+  if (!numberMatch) return null
+  const amount = Number(numberMatch[1])
+  if (!Number.isFinite(amount) || amount <= 0) return null
+  if (value.includes('week')) return Math.round(amount * 7)
+  if (value.includes('month')) return Math.round(amount * 30)
+  return Math.round(amount)
+}
+
+const parseFrequencyPerDay = (frequency) => {
+  const value = normalizeMatchText(frequency)
+  if (!value) return null
+  if (/\b(qid|qds|four times)\b/.test(value)) return 4
+  if (/\b(tds|tid|three times)\b/.test(value)) return 3
+  if (/\b(bd|bid|twice|two times)\b/.test(value)) return 2
+  if (/\b(od|daily|once|nocte|night)\b/.test(value)) return 1
+  const hourlyMatch = value.match(/\b(\d+)\s*hour/)
+  if (hourlyMatch) {
+    const hours = Number(hourlyMatch[1])
+    return hours > 0 ? Math.ceil(24 / hours) : null
+  }
+  const timesMatch = value.match(/\b(\d+)\s*(?:x|times)\b/)
+  if (timesMatch) return Number(timesMatch[1])
+  return null
+}
+
+const parseDoseUnits = (dose) => {
+  const value = normalizeMatchText(dose)
+  if (!value) return 1
+  const match = value.match(/\b(\d+(?:\.\d+)?)\s*(tablet|tab|capsule|cap|ml|sachet|vial|ampoule|suppository|puff|drop)s?\b/)
+  if (!match) return 1
+  const amount = Number(match[1])
+  return Number.isFinite(amount) && amount > 0 ? amount : 1
+}
+
+const getDuplicateMedicineIssues = (medicines = [], strict = false) => {
+  const seenByCode = new Map()
+  const seenByDescription = new Map()
+  const blockers = []
+  const warnings = []
+
+  medicines.forEach((medicine, index) => {
+    const label = `Medicine ${index + 1}`
+    const code = getMedicineCode(medicine)
+    const description = normalizeMatchText(getMedicineDescription(medicine))
+
+    if (code) {
+      if (seenByCode.has(code)) {
+        addUnique(blockers, `High: duplicate medicine code ${code} appears on the claim. Merge the quantities or remove the repeated line.`)
+      } else {
+        seenByCode.set(code, label)
+      }
+      return
+    }
+
+    if (description) {
+      if (seenByDescription.has(description)) {
+        const message = `${label}: possible duplicate medicine "${getMedicineDescription(medicine)}"; confirm it is clinically intentional.`
+        if (strict) addUnique(blockers, `High: ${message}`)
+        else addUnique(warnings, message)
+      } else {
+        seenByDescription.set(description, label)
+      }
+    }
+  })
+
+  return { blockers, warnings }
+}
+
+const getGenderDiagnosisIssues = (claimData = {}) => {
+  const gender = normalizeMatchText(getClaimField(claimData, 'gender'))
+  const diagnosisText = getDiagnosisMatchText(claimData)
+  if (!gender || !diagnosisText) return []
+
+  return GENDER_CONFLICT_RULES
+    .filter((rule) => gender.includes(rule.gender) && includesAnyTerm(diagnosisText, rule.terms))
+    .map((rule) => rule.message)
+}
+
+const getAgeClinicalIssues = (patientAge, medicines = [], claimData = {}) => {
+  const blockers = []
+  const warnings = []
+  if (patientAge === null) return { blockers, warnings }
+
+  const diagnosisText = getDiagnosisMatchText(claimData)
+  if (patientAge < 8) {
+    medicines.forEach((medicine, index) => {
+      const text = getMedicineClinicalText(medicine)
+      if (includesAnyTerm(text, ['tetracycline', 'doxycycline'])) {
+        blockers.push(`Medicine ${index + 1}: tetracycline/doxycycline is age-restricted for children under 8. Use an approved alternative or document specialist justification.`)
+      }
+    })
+  }
+
+  if (patientAge < 16) {
+    medicines.forEach((medicine, index) => {
+      const text = getMedicineClinicalText(medicine)
+      if (includesAnyTerm(text, ['aspirin', 'acetylsalicylic'])) {
+        warnings.push(`Medicine ${index + 1}: aspirin is usually restricted in children; confirm indication and documentation before submission.`)
+      }
+    })
+  }
+
+  if (patientAge < 12 && includesAnyTerm(diagnosisText, ['hypertension', 'diabetes', 'ckd'])) {
+    warnings.push('Pediatric chronic diagnosis selected; confirm age, diagnosis, and specialist documentation before submission.')
+  }
+
+  return { blockers, warnings }
+}
+
+const getDrugDiagnosisIssues = (claimData = {}, medicines = [], strict = false) => {
+  const blockers = []
+  const warnings = []
+  const diagnosisText = getDiagnosisMatchText(claimData)
+  if (!diagnosisText || !medicines.length) return { blockers, warnings }
+
+  const hasInfectionDiagnosis = includesAnyTerm(diagnosisText, INFECTION_DIAGNOSIS_KEYWORDS)
+  const hasMalariaDiagnosis = diagnosisText.includes('malaria')
+
+  medicines.forEach((medicine, index) => {
+    const label = `Medicine ${index + 1}`
+    const text = getMedicineClinicalText(medicine)
+    const isAntibiotic = includesAnyTerm(text, ANTIBIOTIC_KEYWORDS)
+
+    if (isAntibiotic && !hasInfectionDiagnosis) {
+      const message = `${label}: antibiotic/antimicrobial medicine is not supported by the recorded diagnosis. Add the infection diagnosis/clinical notes or remove the medicine.`
+      if (strict || hasMalariaDiagnosis) addUnique(blockers, `High: ${message}`)
+      else addUnique(warnings, message)
+    }
+
+    if (hasMalariaDiagnosis && includesAnyTerm(text, ['ceftriaxone', 'ciprofloxacin', 'tinidazole', 'surgery', 'theatre'])) {
+      addUnique(blockers, `High: ${label}: this item is unusual for malaria-only claims. Add a supporting diagnosis or remove it before submission.`)
+    }
+  })
+
+  return { blockers, warnings }
+}
+
+const getQuantityCostIssues = (claimData = {}, medicines = [], strict = false) => {
+  const blockers = []
+  const warnings = []
+  const diagnosisText = getDiagnosisMatchText(claimData)
+  const isChronic = includesAnyTerm(diagnosisText, CHRONIC_DIAGNOSIS_KEYWORDS)
+
+  medicines.forEach((medicine, index) => {
+    const label = `Medicine ${index + 1}`
+    const quantity = asNumber(medicine?.dispensedQty ?? medicine?.dispensed_qty)
+    const unitPrice = asNumber(medicine?.unitPrice ?? medicine?.unit_price)
+    const total = Number.isFinite(quantity) && Number.isFinite(unitPrice) ? quantity * unitPrice : 0
+
+    if (quantity > 180 && !isChronic) {
+      addUnique(blockers, `High: ${label}: quantity ${quantity} is unusually high for an acute claim. Reduce quantity or add chronic/clinical justification.`)
+    } else if (quantity > 90 && !isChronic) {
+      addUnique(warnings, `${label}: quantity ${quantity} looks high for an acute claim; confirm duration and clinical justification.`)
+    }
+
+    const days = parseDurationDays(medicine?.duration)
+    const perDay = parseFrequencyPerDay(medicine?.frequency)
+    const doseUnits = parseDoseUnits(medicine?.dose)
+    if (quantity > 0 && days && perDay) {
+      const expected = Math.ceil(days * perDay * doseUnits)
+      if (expected > 0 && quantity > expected * 3) {
+        const message = `${label}: dispensed quantity ${quantity} is far above the dose/frequency/duration estimate (${expected}). Correct the quantity or directions.`
+        if (strict) addUnique(blockers, `High: ${message}`)
+        else addUnique(warnings, message)
+      }
+    }
+
+    if (total > 1500) {
+      addUnique(warnings, `${label}: line total GHS ${total.toFixed(2)} is unusually high; confirm tariff, quantity, and authorization.`)
+    }
+  })
+
+  return { blockers, warnings }
+}
+
+const getSupportingInvestigationIssues = (claimData = {}, options = {}, strict = false) => {
+  if (!strict) return []
+  const diagnosisText = getDiagnosisMatchText(claimData)
+  const investigationText = getClaimItems(claimData, options, ['labs', 'labInvestigations', 'investigations', 'claimInvestigations'])
+    .map(getClaimItemText)
+    .join(' ')
+
+  return SUPPORTING_INVESTIGATION_RULES
+    .filter((rule) => includesAnyTerm(diagnosisText, rule.diagnosis))
+    .filter((rule) => !investigationText || !includesAnyTerm(investigationText, rule.investigations))
+    .map((rule) => rule.message)
+}
+
+const getProcedureMismatchIssues = (claimData = {}, options = {}, strict = false) => {
+  const diagnosisText = getDiagnosisMatchText(claimData)
+  const procedureText = getClaimItems(claimData, options, ['procedures', 'services', 'claimServices'])
+    .map(getClaimItemText)
+    .join(' ')
+  if (!diagnosisText || !procedureText) return []
+  if (!includesAnyTerm(procedureText, MAJOR_PROCEDURE_KEYWORDS)) return []
+  if (!includesAnyTerm(diagnosisText, SIMPLE_DIAGNOSIS_KEYWORDS)) return []
+  if (includesAnyTerm(diagnosisText, PROCEDURE_DIAGNOSIS_KEYWORDS)) return []
+
+  const message = 'High: major procedure or imaging item is not supported by the recorded diagnosis. Add a supporting diagnosis/pre-authorization or remove the item.'
+  return strict ? [message] : [`${message} Confirm before final submission.`]
+}
+
+const getChronicDiseaseWarnings = (claimData = {}, options = {}, strict = false) => {
+  if (!strict) return []
+  const diagnosisText = getDiagnosisMatchText(claimData)
+  const clinicalText = getClaimItems(claimData, options, ['vitals', 'labs', 'labInvestigations', 'investigations', 'clinicalNotes'])
+    .map(getClaimItemText)
+    .join(' ')
+  const warnings = []
+
+  if (includesAnyTerm(diagnosisText, ['hypertension', 'blood pressure']) && !includesAnyTerm(clinicalText, ['bp', 'blood pressure'])) {
+    warnings.push('Hypertension: BP reading/monitoring should be documented before final submission.')
+  }
+  if (includesAnyTerm(diagnosisText, ['diabetes', 'diabetic']) && !includesAnyTerm(clinicalText, ['glucose', 'fbs', 'rbs', 'hba1c'])) {
+    warnings.push('Diabetes: glucose or HbA1c monitoring should be documented before final submission.')
+  }
+  if (includesAnyTerm(diagnosisText, ['asthma']) && !includesAnyTerm(clinicalText, ['spo2', 'oxygen saturation', 'peak flow', 'wheeze'])) {
+    warnings.push('Asthma: respiratory findings such as SpO2/peak flow/wheeze should be documented before final submission.')
+  }
+
+  return warnings
+}
+
+const getClaimRisk = (blockers = [], warnings = []) => {
+  const score = Math.min(100, blockers.length * 25 + warnings.length * 8)
+  const level = score >= 75 ? 'critical' : score >= 50 ? 'high' : score >= 25 ? 'moderate' : score > 0 ? 'low' : 'clean'
+  return { score, level }
+}
+
 export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}) => {
   const blockers = []
   const warnings = []
+  const tariffServices = normalizeNhiaTariffServiceLines(getNhiaTariffServices(claimData, options), claimData)
   const dateOfBirth = getClaimField(claimData, 'dateOfBirth', 'date_of_birth')
   const childWeight = getClaimField(claimData, 'childWeightKg', 'child_weight_kg')
   const organizationType = normalizeOrganizationType(
@@ -302,12 +817,25 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
   const cccNo = getClaimField(claimData, 'cccNo', 'ccc_no') || getClaimField(claimData, 'ccCode', 'cc_code')
   const patientAge = calculateAge(dateOfBirth)
   const requireMedicineDirections = options.finalSubmission || options.requireMedicineDirections === true
+  const shouldCheckDiagnosisTreatmentMatch =
+    isHospital &&
+    (options.finalSubmission || options.enforceDiagnosisTreatmentMatch === true || requireMedicineDirections)
+  const shouldCheckPrescribingLevel =
+    options.finalSubmission || options.enforcePrescribingLevel === true || requireMedicineDirections
+  const shouldRunClinicalScrub =
+    isHospital &&
+    (options.finalSubmission || options.enforceClinicalScrub === true || requireMedicineDirections)
+  const providerPrescribingLevel = getProviderPrescribingLevel(claimData, options)
+  const medicineLevelLookup = getMedicineLevelLookup(options.nhisDrugCatalog ?? options.drugCatalog ?? [])
   const memberNumberIssue = validateMemberNumberFormat(
     getClaimField(claimData, 'memberNo', 'member_no'),
     options
   )
 
   if (memberNumberIssue) blockers.push(memberNumberIssue)
+  if (shouldCheckPrescribingLevel && !providerPrescribingLevel) {
+    blockers.push('Set the NHIA provider class/level in Settings before saving/submitting NHIS claims.')
+  }
   if (!getClaimField(claimData, 'surname')) blockers.push('Patient surname is required.')
   if (!getClaimField(claimData, 'otherNames', 'other_names')) warnings.push('Patient other names are missing on the claim.')
   if (!getClaimField(claimData, 'patientAddress', 'patient_address')) warnings.push('Patient address is missing on the claim.')
@@ -326,8 +854,8 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
     warnings.push('Prescriber name or ID is missing from the prescription.')
   }
 
-  if (!medicines?.length) {
-    blockers.push('Add at least one medicine to the claim.')
+  if (!medicines?.length && (!isHospital || !tariffServices.length)) {
+    blockers.push(isHospital ? 'Add at least one medicine or NHIA tariff service to the claim.' : 'Add at least one medicine to the claim.')
   } else {
     medicines.forEach((medicine, index) => {
       const label = `Medicine ${index + 1}`
@@ -341,6 +869,14 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
       if (!asText(medicine?.unit)) blockers.push(`${label}: unit of pricing is required.`)
       if (!(quantity > 0)) blockers.push(`${label}: exact dispensed quantity must be greater than zero.`)
       if (!(unitPrice >= 0)) blockers.push(`${label}: NHIS unit price is required.`)
+      if (shouldCheckPrescribingLevel && providerPrescribingLevel) {
+        const requiredLevel = getMedicinePrescribingLevel(medicine, medicineLevelLookup)
+        if (!requiredLevel) {
+          blockers.push(`${label}: NHIS level of prescribing is missing from the medicine catalog. Update the medicine category before billing this claim.`)
+        } else if (!canProviderPrescribeLevel(providerPrescribingLevel, requiredLevel)) {
+          blockers.push(`${label}: requires NHIS prescribing level ${requiredLevel}, but this facility is configured as ${providerPrescribingLevel}. Use an authorized prescriber/facility or remove the medicine.`)
+        }
+      }
 
       const addDirectionIssue = (message) => {
         if (requireMedicineDirections) {
@@ -356,14 +892,55 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
     })
   }
 
-  if (options.finalSubmission && isHospital) {
+  if (isHospital && tariffServices.length) {
+    tariffServices.forEach((service, index) => {
+      const label = `Service ${index + 1}`
+      if (!service.nhiaTariffItemId) blockers.push(`${label}: select an item from the FEB 2023 NHIA tariff catalog.`)
+      if (!service.gdrgCode) blockers.push(`${label}: G-DRG/tariff code is required.`)
+      if (!service.description) blockers.push(`${label}: service description is required.`)
+      if (!(service.quantity > 0)) blockers.push(`${label}: quantity must be greater than zero.`)
+      if (!(service.unitPrice >= 0)) blockers.push(`${label}: official tariff amount is required.`)
+      if (!(service.totalAmount >= 0)) blockers.push(`${label}: service line total is required.`)
+      if (!service.serviceDate) warnings.push(`${label}: service date is missing; claim service date will be used for export.`)
+    })
+  }
+
+  if (shouldCheckDiagnosisTreatmentMatch) {
     blockers.push(...getDiagnosisTreatmentMismatchBlockers(claimData, medicines, options.clinicalRules || DIAGNOSIS_TREATMENT_RULES))
   }
+
+  if (shouldRunClinicalScrub) {
+    const duplicateIssues = getDuplicateMedicineIssues(medicines, true)
+    const ageIssues = getAgeClinicalIssues(patientAge, medicines, claimData)
+    const drugDiagnosisIssues = getDrugDiagnosisIssues(claimData, medicines, true)
+    const quantityCostIssues = getQuantityCostIssues(claimData, medicines, true)
+
+    blockers.push(
+      ...getGenderDiagnosisIssues(claimData),
+      ...duplicateIssues.blockers,
+      ...ageIssues.blockers,
+      ...drugDiagnosisIssues.blockers,
+      ...quantityCostIssues.blockers,
+      ...getProcedureMismatchIssues(claimData, { ...options, claimServices: tariffServices }, true)
+    )
+    warnings.push(
+      ...duplicateIssues.warnings,
+      ...ageIssues.warnings,
+      ...drugDiagnosisIssues.warnings,
+      ...quantityCostIssues.warnings,
+      ...getSupportingInvestigationIssues(claimData, { ...options, claimServices: tariffServices }, true),
+      ...getChronicDiseaseWarnings(claimData, options, true)
+    )
+  }
+
+  const risk = getClaimRisk(blockers, warnings)
 
   return {
     blockers,
     warnings,
     issues: [...blockers, ...warnings],
+    riskScore: risk.score,
+    riskLevel: risk.level,
   }
 }
 
@@ -469,6 +1046,21 @@ const submitHostedNhiaDirectPayload = async ({
   })
 }
 
+const getNhisReadinessContext = async (claimData = {}, options = {}) => {
+  let providerClassLevel = getProviderPrescribingLevel(claimData, options)
+  if (!providerClassLevel) {
+    const settings = options.nhiaSettings || options.settings || await getNhiaApiSettings().catch(() => null)
+    providerClassLevel = normalizeNhisPrescribingLevel(settings?.providerClassLevel ?? settings?.provider_class_level)
+  }
+
+  const hasCatalogOption = Array.isArray(options.nhisDrugCatalog) || Array.isArray(options.drugCatalog)
+  const nhisDrugCatalog = hasCatalogOption
+    ? (options.nhisDrugCatalog ?? options.drugCatalog)
+    : await getAllNhisDrugs().catch(() => [])
+
+  return { providerClassLevel, nhisDrugCatalog }
+}
+
 export const validateNhisClaimFinalReadiness = async (claimData, medicines = [], options = {}) => {
   const organizationType = normalizeOrganizationType(
     claimData?.organizationType ?? claimData?.organization_type ?? options.organizationType
@@ -476,11 +1068,19 @@ export const validateNhisClaimFinalReadiness = async (claimData, medicines = [],
   const clinicalRules = organizationType === 'hospital'
     ? await getAllNhisClinicalRules()
     : DIAGNOSIS_TREATMENT_RULES
+  const { providerClassLevel, nhisDrugCatalog } = await getNhisReadinessContext(claimData, options)
 
   return assessNhisClaimReadiness(
-    { ...claimData, organizationType },
+    { ...claimData, organizationType, providerClassLevel },
     medicines,
-    { finalSubmission: true, clinicalRules }
+    {
+      finalSubmission: true,
+      clinicalRules,
+      providerClassLevel,
+      nhisDrugCatalog,
+      enforcePrescribingLevel: true,
+      nhiaTariffServices: options.nhiaTariffServices ?? claimData?.nhis_claim_services ?? [],
+    }
   ).blockers
 }
 
@@ -581,6 +1181,40 @@ export const getNhisPrescriptionSignedUrl = async (path, expiresInSeconds = 5 * 
 
   if (error) throw error
   return data?.signedUrl || ''
+}
+
+export const getAllNhiaTariffItems = async (filters = {}) => {
+  if (shouldUseBranchServer()) return []
+
+  let query = supabase
+    .from('nhia_tariff_items')
+    .select(`
+      id, tariff_version, facility_group, catering_option, mdc, gdrg_code,
+      description, age_band, tariff_amount, currency, source_file, source_page
+    `)
+    .eq('is_active', true)
+    .eq('tariff_version', filters.tariffVersion || NHIA_TARIFF_VERSION)
+    .order('facility_group')
+    .order('catering_option')
+    .order('mdc')
+    .order('gdrg_code')
+    .limit(filters.limit || 5000)
+
+  if (filters.facilityGroup) query = query.eq('facility_group', filters.facilityGroup)
+  if (filters.cateringOption) query = query.eq('catering_option', filters.cateringOption)
+  if (filters.mdc) query = query.eq('mdc', filters.mdc)
+
+  const term = sanitizeSearchTerm(filters.searchTerm || filters.search || '')
+  if (term) {
+    query = query.or(`gdrg_code.ilike.%${term}%,description.ilike.%${term}%,mdc.ilike.%${term}%`)
+  }
+
+  const { data, error } = await query
+  if (error) {
+    if (['42P01', 'PGRST205'].includes(error.code)) return []
+    throw error
+  }
+  return data || []
 }
 
 export const getAllNhisDrugs = async (searchTerm = '') => {
@@ -776,6 +1410,70 @@ export const upsertNhisDrugs = async (drugs, options = {}) => {
 
 // ─── NHIS Claims ─────────────────────────────────────────────────────────────
 
+const hydrateClaimsWithServiceLines = async (claims = []) => {
+  if (!claims.length || shouldUseBranchServer()) return claims
+  const claimIds = claims.map((claim) => claim.id).filter(Boolean)
+  if (!claimIds.length) return claims
+
+  const { data, error } = await supabase
+    .from('nhis_claim_services')
+    .select(`claim_id, ${NHIS_CLAIM_SERVICE_SELECT}`)
+    .in('claim_id', claimIds)
+    .order('created_at')
+
+  if (error) {
+    if (isMissingClaimServicesTable(error)) {
+      return claims.map((claim) => ({ ...claim, nhis_claim_services: [] }))
+    }
+    throw error
+  }
+
+  const linesByClaim = new Map()
+  ;(data || []).forEach((line) => {
+    const lines = linesByClaim.get(line.claim_id) || []
+    lines.push(line)
+    linesByClaim.set(line.claim_id, lines)
+  })
+
+  return claims.map((claim) => ({
+    ...claim,
+    nhis_claim_services: linesByClaim.get(claim.id) || [],
+  }))
+}
+
+const toNhisClaimServiceRows = (claimId, serviceLines = [], claimData = {}) =>
+  normalizeNhiaTariffServiceLines(serviceLines, claimData).map((service) => ({
+    claim_id: claimId,
+    nhia_tariff_item_id: service.nhiaTariffItemId,
+    tariff_version: service.tariffVersion,
+    facility_group: service.facilityGroup,
+    catering_option: service.cateringOption,
+    mdc: service.mdc,
+    gdrg_code: service.gdrgCode,
+    description: assertRequiredText(service.description, 'Service description'),
+    age_band: service.ageBand,
+    unit_price: assertNonNegativeNumber(service.unitPrice, 'Service tariff amount'),
+    quantity: assertPositiveNumber(service.quantity, 'Service quantity'),
+    service_date: service.serviceDate || null,
+    total_amount: assertNonNegativeNumber(service.totalAmount, 'Service total amount'),
+    source_file: service.sourceFile,
+    source_page: service.sourcePage,
+  }))
+
+const insertNhisClaimServiceRows = async (serviceRows) => {
+  if (!serviceRows.length) return
+  const { error } = await supabase
+    .from('nhis_claim_services')
+    .insert(serviceRows)
+
+  if (error) {
+    if (isMissingClaimServicesTable(error)) {
+      throw new Error('NHIA tariff service lines need the claim-services SQL patch. Run supabase-patch-nhia-claim-services.sql, then save this hospital claim again.')
+    }
+    throw error
+  }
+}
+
 export const getAllNhisClaims = async (filters = {}) => {
   if (shouldUseBranchServer()) {
     return await listBranchRecords('nhis/claims', filters)
@@ -783,14 +1481,7 @@ export const getAllNhisClaims = async (filters = {}) => {
 
   let query = supabase
     .from('nhis_claims')
-    .select(`
-      *,
-      nhis_claim_medicines (
-        id, nhis_drug_id, drug_code, description, unit,
-        unit_price, dispensed_qty, dispensary_date,
-        dose, frequency, duration, total_amount
-      )
-    `)
+    .select(NHIS_CLAIM_MEDICINES_SELECT)
     .order('created_at', { ascending: false })
 
   if (filters.status && filters.status !== 'all') {
@@ -812,7 +1503,7 @@ export const getAllNhisClaims = async (filters = {}) => {
 
   const { data, error } = await query
   if (error) throw error
-  return data || []
+  return await hydrateClaimsWithServiceLines(data || [])
 }
 
 export const getNhisClaimStats = async () => {
@@ -854,13 +1545,27 @@ export const getNhisClaimStats = async () => {
  * Also saves HIN/member_no back to the patient record if patient_id is provided.
  */
 export const createNhisClaim = async (claimData, medicines, options = {}) => {
-  const readiness = assessNhisClaimReadiness(claimData, medicines)
+  const organizationType = normalizeOrganizationType(claimData?.organizationType ?? claimData?.organization_type)
+  const tariffServices = normalizeNhiaTariffServiceLines(
+    options.nhiaTariffServices ?? claimData?.nhiaTariffServices ?? claimData?.nhis_claim_services ?? [],
+    claimData
+  )
+  const { providerClassLevel, nhisDrugCatalog } = await getNhisReadinessContext(claimData, options)
+  const readiness = assessNhisClaimReadiness(
+    { ...claimData, organizationType, providerClassLevel },
+    medicines,
+    {
+      enforcePrescribingLevel: true,
+      providerClassLevel,
+      nhisDrugCatalog,
+      nhiaTariffServices: tariffServices,
+    }
+  )
   const allowIncompleteReview = Boolean(claimData?.allowIncompleteReview || claimData?.reviewOnly)
   if (readiness.blockers.length && !allowIncompleteReview) {
     throw new Error(`NHIS pharmacy dispensing check failed: ${readiness.blockers.slice(0, 5).join(' ')}`)
   }
 
-  const organizationType = normalizeOrganizationType(claimData?.organizationType ?? claimData?.organization_type)
   const isHospital = organizationType === 'hospital'
   assertRequiredText(claimData.surname, 'Surname')
   const memberNo = normalizeNhiaMemberNumber(
@@ -868,7 +1573,9 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
   )
   const serviceDate = normalizeText(claimData.serviceDate || claimData.serviceDateFrom)
 
-  const totalAmount = medicines.reduce((s, m) => s + Number(m.totalAmount || 0), 0)
+  const medicineTotal = medicines.reduce((s, m) => s + Number(m.totalAmount || 0), 0)
+  const serviceTotal = tariffServices.reduce((s, line) => s + Number(line.totalAmount || 0), 0)
+  const totalAmount = medicineTotal + serviceTotal
   const diagnosisDetails = getDiagnosisDetailsPayload(claimData)
   const claimPayload = {
     patient_id:         claimData.patientId         || null,
@@ -916,6 +1623,22 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
         duration: normalizeText(m.duration) || null,
         total_amount: assertNonNegativeNumber(m.totalAmount, 'Total amount'),
       })),
+      nhis_claim_services: tariffServices.map((service) => ({
+        nhia_tariff_item_id: service.nhiaTariffItemId,
+        tariff_version: service.tariffVersion,
+        facility_group: service.facilityGroup,
+        catering_option: service.cateringOption,
+        mdc: service.mdc,
+        gdrg_code: service.gdrgCode,
+        description: service.description,
+        age_band: service.ageBand,
+        unit_price: service.unitPrice,
+        quantity: service.quantity,
+        service_date: service.serviceDate,
+        total_amount: service.totalAmount,
+        source_file: service.sourceFile,
+        source_page: service.sourcePage,
+      })),
     })
   }
 
@@ -939,11 +1662,15 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
     total_amount:   assertNonNegativeNumber(m.totalAmount, 'Total amount'),
   }))
 
-  const { error: medsError } = await supabase
-    .from('nhis_claim_medicines')
-    .insert(medicineRows)
+  if (medicineRows.length) {
+    const { error: medsError } = await supabase
+      .from('nhis_claim_medicines')
+      .insert(medicineRows)
 
-  if (medsError) throw medsError
+    if (medsError) throw medsError
+  }
+
+  await insertNhisClaimServiceRows(toNhisClaimServiceRows(claim.id, tariffServices, claimData))
 
   // Save NHIS member info back to patient record for auto-fill on future visits
   if (claimData.patientId && (claimData.memberNo || claimData.hin)) {
@@ -969,6 +1696,7 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
       claim_number:  claim.claim_number,
       patient_name:  `${claimData.surname} ${claimData.otherNames || ''}`.trim(),
       medicine_count: medicines.length,
+      service_count:  tariffServices.length,
       total_amount:   totalAmount,
     },
   })
@@ -976,20 +1704,42 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
   return claim
 }
 
-export const updateNhisClaim = async (id, claimData, medicines) => {
-  const readiness = assessNhisClaimReadiness(claimData, medicines, { requireMedicineDirections: true })
+export const updateNhisClaim = async (id, claimData, medicines, options = {}) => {
+  const organizationType = normalizeOrganizationType(claimData?.organizationType ?? claimData?.organization_type)
+  const tariffServices = normalizeNhiaTariffServiceLines(
+    options.nhiaTariffServices ?? claimData?.nhiaTariffServices ?? claimData?.nhis_claim_services ?? [],
+    claimData
+  )
+  const { providerClassLevel, nhisDrugCatalog } = await getNhisReadinessContext(claimData, options)
+  const clinicalRules = organizationType === 'hospital'
+    ? await getAllNhisClinicalRules()
+    : DIAGNOSIS_TREATMENT_RULES
+  const readiness = assessNhisClaimReadiness(
+    { ...claimData, organizationType, providerClassLevel },
+    medicines,
+    {
+      requireMedicineDirections: true,
+      enforceDiagnosisTreatmentMatch: organizationType === 'hospital',
+      enforcePrescribingLevel: true,
+      providerClassLevel,
+      nhisDrugCatalog,
+      clinicalRules,
+      nhiaTariffServices: tariffServices,
+    }
+  )
   if (readiness.blockers.length) {
-    throw new Error(`NHIS pharmacy dispensing check failed: ${readiness.blockers.slice(0, 5).join(' ')}`)
+    throw new Error(`NHIS correction check failed: ${readiness.blockers.slice(0, 5).join(' ')}`)
   }
 
-  const organizationType = normalizeOrganizationType(claimData?.organizationType ?? claimData?.organization_type)
   const isHospital = organizationType === 'hospital'
   assertRequiredText(claimData.surname, 'Surname')
   const memberNo = normalizeNhiaMemberNumber(
     assertRequiredText(claimData.memberNo, 'NHIS member number or Ghana Card number')
   )
   const serviceDate = normalizeText(claimData.serviceDate || claimData.serviceDateFrom)
-  const totalAmount = medicines.reduce((s, m) => s + Number(m.totalAmount || 0), 0)
+  const medicineTotal = medicines.reduce((s, m) => s + Number(m.totalAmount || 0), 0)
+  const serviceTotal = tariffServices.reduce((s, line) => s + Number(line.totalAmount || 0), 0)
+  const totalAmount = medicineTotal + serviceTotal
   const diagnosisDetails = getDiagnosisDetailsPayload(claimData)
   const medicineRows = medicines.map((m) => ({
     nhis_drug_id: m.nhisDrugId || null,
@@ -1038,6 +1788,22 @@ export const updateNhisClaim = async (id, claimData, medicines) => {
     return await updateBranchRecord('nhis/claims', id, {
       ...claimPayload,
       nhis_claim_medicines: medicineRows,
+      nhis_claim_services: tariffServices.map((service) => ({
+        nhia_tariff_item_id: service.nhiaTariffItemId,
+        tariff_version: service.tariffVersion,
+        facility_group: service.facilityGroup,
+        catering_option: service.cateringOption,
+        mdc: service.mdc,
+        gdrg_code: service.gdrgCode,
+        description: service.description,
+        age_band: service.ageBand,
+        unit_price: service.unitPrice,
+        quantity: service.quantity,
+        service_date: service.serviceDate,
+        total_amount: service.totalAmount,
+        source_file: service.sourceFile,
+        source_page: service.sourcePage,
+      })),
     })
   }
 
@@ -1063,11 +1829,22 @@ export const updateNhisClaim = async (id, claimData, medicines) => {
 
   if (deleteError) throw deleteError
 
-  const { error: medsError } = await supabase
-    .from('nhis_claim_medicines')
-    .insert(medicineRows.map((row) => ({ ...row, claim_id: id })))
+  if (medicineRows.length) {
+    const { error: medsError } = await supabase
+      .from('nhis_claim_medicines')
+      .insert(medicineRows.map((row) => ({ ...row, claim_id: id })))
 
-  if (medsError) throw medsError
+    if (medsError) throw medsError
+  }
+
+  const { error: deleteServicesError } = await supabase
+    .from('nhis_claim_services')
+    .delete()
+    .eq('claim_id', id)
+
+  if (deleteServicesError && !isMissingClaimServicesTable(deleteServicesError)) throw deleteServicesError
+
+  await insertNhisClaimServiceRows(toNhisClaimServiceRows(id, tariffServices, claimData))
 
   if (claimData.patientId && (claimData.memberNo || claimData.hin)) {
     const { error: patientUpdateError } = await supabase
@@ -1092,6 +1869,7 @@ export const updateNhisClaim = async (id, claimData, medicines) => {
       claim_number: claim.claim_number,
       patient_name: `${claimData.surname} ${claimData.otherNames || ''}`.trim(),
       medicine_count: medicines.length,
+      service_count: tariffServices.length,
       total_amount: totalAmount,
     },
   })
@@ -1251,13 +2029,7 @@ export const getNhisClaimsForPeriod = async (periodOptions = {}) => {
 
   let query = supabase
     .from('nhis_claims')
-    .select(`
-      *,
-        nhis_claim_medicines (
-          nhis_drug_id, drug_code, description, unit, unit_price,
-          dispensed_qty, dispensary_date, dose, frequency, duration, total_amount
-        )
-    `)
+    .select(NHIS_CLAIM_MEDICINES_SELECT)
     .order('created_at')
 
   if (period.mode === 'month') {
@@ -1271,7 +2043,7 @@ export const getNhisClaimsForPeriod = async (periodOptions = {}) => {
   const { data, error } = await query
 
   if (error) throw error
-  return data || []
+  return await hydrateClaimsWithServiceLines(data || [])
 }
 
 /**
@@ -1292,18 +2064,12 @@ export const getNhisClaimForSubmission = async (id) => {
 
   const { data, error } = await supabase
     .from('nhis_claims')
-    .select(`
-      *,
-        nhis_claim_medicines (
-          nhis_drug_id, drug_code, description, unit, unit_price,
-          dispensed_qty, dispensary_date, dose, frequency, duration, total_amount
-        )
-    `)
+    .select(NHIS_CLAIM_MEDICINES_SELECT)
     .eq('id', id)
     .single()
 
   if (error) throw error
-  return data
+  return (await hydrateClaimsWithServiceLines([data]))[0]
 }
 
 const normalizeClaimItExportFormat = (format = 'xml') => {
@@ -1346,6 +2112,22 @@ const normalizeClaimMedicineForExport = (medicine = {}) => ({
   totalAmount: Number(medicine.total_amount || 0),
 })
 
+const normalizeClaimServiceForExport = (service = {}) => ({
+  code: normalizeText(service.gdrg_code),
+  description: normalizeText(service.description),
+  tariffVersion: normalizeText(service.tariff_version) || NHIA_TARIFF_VERSION,
+  facilityGroup: normalizeText(service.facility_group),
+  cateringOption: normalizeText(service.catering_option),
+  mdc: normalizeText(service.mdc),
+  ageBand: normalizeText(service.age_band),
+  unitPrice: Number(service.unit_price || 0),
+  quantity: Number(service.quantity || 0),
+  serviceDate: toClaimItDate(service.service_date),
+  totalAmount: Number(service.total_amount || 0),
+  sourceFile: normalizeText(service.source_file),
+  sourcePage: service.source_page ?? '',
+})
+
 const normalizeClaimDiagnosesForExport = (claim = {}, organizationType = 'pharmacy') => {
   if (normalizeOrganizationType(claim.organization_type || organizationType) !== 'hospital') return []
   const details = normalizeDiagnosisDetails(claim.diagnosis_details)
@@ -1377,6 +2159,7 @@ export const buildNhisClaimItExportPayload = (claims = [], options = {}) => {
   const normalizedClaims = claims.map((claim) => {
     const claimOrganizationType = normalizeOrganizationType(claim.organization_type || organizationType)
     const medicines = (claim.nhis_claim_medicines || []).map(normalizeClaimMedicineForExport)
+    const tariffServices = (claim.nhis_claim_services || []).map(normalizeClaimServiceForExport)
     const prescriptionAttachment = normalizeText(claim.prescription_file_path)
       ? {
           fileName: normalizeText(claim.prescription_file_name),
@@ -1418,6 +2201,7 @@ export const buildNhisClaimItExportPayload = (claims = [], options = {}) => {
         preAuthCodes: normalizeText(claim.pre_auth_codes),
       },
       medicines,
+      tariffServices,
       prescriptionAttachment,
       notes: normalizeText(claim.notes),
       totalAmount: Number(claim.total_amount || 0),
@@ -1533,6 +2317,23 @@ ${claim.medicines.map((medicine) => `        <Medicine>
           <TotalAmount>${xmlEscape(medicine.totalAmount.toFixed(2))}</TotalAmount>
         </Medicine>`).join('\n')}
       </Medicines>
+      <TariffServices>
+${claim.tariffServices.map((service) => `        <TariffService>
+          <Code>${xmlEscape(service.code)}</Code>
+          <Description>${xmlEscape(service.description)}</Description>
+          <TariffVersion>${xmlEscape(service.tariffVersion)}</TariffVersion>
+          <FacilityGroup>${xmlEscape(service.facilityGroup)}</FacilityGroup>
+          <CateringOption>${xmlEscape(service.cateringOption)}</CateringOption>
+          <Mdc>${xmlEscape(service.mdc)}</Mdc>
+          <AgeBand>${xmlEscape(service.ageBand)}</AgeBand>
+          <UnitPrice>${xmlEscape(service.unitPrice.toFixed(2))}</UnitPrice>
+          <Quantity>${xmlEscape(service.quantity)}</Quantity>
+          <ServiceDate>${xmlEscape(service.serviceDate)}</ServiceDate>
+          <TotalAmount>${xmlEscape(service.totalAmount.toFixed(2))}</TotalAmount>
+          <SourceFile>${xmlEscape(service.sourceFile)}</SourceFile>
+          <SourcePage>${xmlEscape(service.sourcePage)}</SourcePage>
+        </TariffService>`).join('\n')}
+      </TariffServices>
       <PrescriptionAttachment>
         <FileName>${xmlEscape(claim.prescriptionAttachment?.fileName || '')}</FileName>
         <FileType>${xmlEscape(claim.prescriptionAttachment?.fileType || '')}</FileType>
@@ -1559,14 +2360,17 @@ const buildNhisMonthlyCsv = (claims) => {
     'Prescriber Name/ID', 'Pre-Auth Codes',
     'Drug Code', 'Description', 'Unit', 'Unit Price',
     'Dispensed Qty', 'Dispensary Date', 'Dose', 'Frequency', 'Duration', 'Line Total',
+    'Service Code', 'Service Description', 'Tariff Version', 'Service Facility Group',
+    'Service Catering', 'Service MDC', 'Service Qty', 'Service Date', 'Service Total',
     'Claim Total',
   ].map(escapeCell).join(',')
 
   const dataRows = []
   for (const claim of claims) {
     const meds = claim.nhis_claim_medicines || []
+    const services = claim.nhis_claim_services || []
     const prescriptionFile = claim.prescription_file_name || claim.prescription_file_path || ''
-    if (!meds.length) {
+    if (!meds.length && !services.length) {
       dataRows.push([
         claim.claim_number, claim.status,
         claim.surname, claim.other_names || '',
@@ -1577,7 +2381,9 @@ const buildNhisMonthlyCsv = (claims) => {
         claim.service_date_from || '',
         claim.referring_facility || '', claim.referral_code || '',
         claim.physician_name || '', claim.pre_auth_codes || '',
-        '', '', '', '', '', '', '', '', '', '', claim.total_amount,
+        '', '', '', '', '', '', '', '', '', '',
+        '', '', '', '', '', '', '', '', '',
+        claim.total_amount,
       ].map(escapeCell).join(','))
     } else {
       for (const med of meds) {
@@ -1595,7 +2401,27 @@ const buildNhisMonthlyCsv = (claims) => {
           med.unit, med.unit_price,
           med.dispensed_qty, med.dispensary_date || '',
           med.dose || '', med.frequency || '', med.duration || '',
-          med.total_amount, claim.total_amount,
+          med.total_amount,
+          '', '', '', '', '', '', '', '', '',
+          claim.total_amount,
+        ].map(escapeCell).join(','))
+      }
+      for (const service of services) {
+        dataRows.push([
+          claim.claim_number, claim.status,
+          claim.surname, claim.other_names || '',
+          claim.member_no || '', claim.hin || '',
+          claim.folder_no || '', claim.gender || '',
+          claim.date_of_birth || '', claim.patient_address || '', claim.child_weight_kg || '', claim.ccc_no || '',
+          claim.diagnosis || '', prescriptionFile,
+          claim.service_date_from || '',
+          claim.referring_facility || '', claim.referral_code || '',
+          claim.physician_name || '', claim.pre_auth_codes || '',
+          '', '', '', '', '', '', '', '', '', '',
+          service.gdrg_code || '', service.description || '', service.tariff_version || '',
+          service.facility_group || '', service.catering_option || '', service.mdc || '',
+          service.quantity || '', service.service_date || '', service.total_amount || '',
+          claim.total_amount,
         ].map(escapeCell).join(','))
       }
     }
@@ -1634,8 +2460,9 @@ const downloadTextFile = ({ content, contentType, fileName }) => {
   URL.revokeObjectURL(url)
 }
 
-const assertNhisClaimsReadyForFinalSubmission = async (claims, organizationType) => {
+const assertNhisClaimsReadyForFinalSubmission = async (claims, organizationType, options = {}) => {
   const clinicalRules = organizationType === 'hospital' ? await getAllNhisClinicalRules() : DIAGNOSIS_TREATMENT_RULES
+  const { providerClassLevel, nhisDrugCatalog } = await getNhisReadinessContext({ organizationType }, options)
   const incompleteClaims = claims
     .map((claim) => ({
       claim,
@@ -1643,9 +2470,17 @@ const assertNhisClaimsReadyForFinalSubmission = async (claims, organizationType)
         {
           ...claim,
           organizationType: claim.organization_type || organizationType,
+          providerClassLevel,
         },
         claim.nhis_claim_medicines || [],
-        { finalSubmission: true, clinicalRules }
+        {
+          finalSubmission: true,
+          clinicalRules,
+          enforcePrescribingLevel: true,
+          providerClassLevel,
+          nhisDrugCatalog,
+          nhiaTariffServices: claim.nhis_claim_services || [],
+        }
       ).blockers,
     }))
     .filter((item) => item.issues.length)
@@ -1750,7 +2585,7 @@ export const exportNhisClaimsFile = async (options = {}) => {
   const claims = await getNhisClaimsForPeriod(period)
   if (!claims.length) throw new Error(`No claims found for ${period.label}.`)
   const organizationType = normalizeOrganizationType(options.organizationType)
-  await assertNhisClaimsReadyForFinalSubmission(claims, organizationType)
+  await assertNhisClaimsReadyForFinalSubmission(claims, organizationType, options)
 
   if (options.directSubmit) {
     await submitNhisClaimsDirect(claims, period, {
@@ -1772,7 +2607,7 @@ export const exportNhisClaimsFile = async (options = {}) => {
 export const submitNhisClaimDirect = async (id, options = {}) => {
   const claim = options.claim || await getNhisClaimForSubmission(id)
   const organizationType = normalizeOrganizationType(options.organizationType || claim.organization_type)
-  await assertNhisClaimsReadyForFinalSubmission([claim], organizationType)
+  await assertNhisClaimsReadyForFinalSubmission([claim], organizationType, options)
   const period = getDirectSubmissionPeriodForClaim(claim)
   const result = await submitNhisClaimsDirect([claim], period, {
     ...options,

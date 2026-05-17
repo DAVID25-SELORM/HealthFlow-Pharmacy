@@ -1977,7 +1977,7 @@ export const DEFAULT_NHIS_DRUG_CATALOG = [
     "code": "GLTRSUTA1",
     "description": "Glyceryl Trinitrate Sublingual Tablet, 500 microgram",
     "unit": "100 Tablets",
-    "unit_price": 100,
+    "unit_price": 121.63,
     "category": "C"
   },
   {
