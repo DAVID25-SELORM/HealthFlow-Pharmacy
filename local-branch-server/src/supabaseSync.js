@@ -394,6 +394,25 @@ const selectOptionalAll = async (supabase, table, select = '*') => {
   }
 }
 
+const selectNhisClaims = async (supabase) => {
+  const selectWithServices = '*, nhis_claim_medicines (*), nhis_claim_services (*)'
+
+  try {
+    return await selectAll(supabase, 'nhis_claims', selectWithServices)
+  } catch (error) {
+    const message = String(error?.message || '')
+    const missingServicesRelation =
+      ['42P01', 'PGRST200', 'PGRST205'].includes(error?.code) ||
+      message.includes('nhis_claim_services')
+
+    if (!missingServicesRelation) {
+      throw error
+    }
+
+    return selectAll(supabase, 'nhis_claims', '*, nhis_claim_medicines (*)')
+  }
+}
+
 export const pullReferenceData = async () => {
   const supabase = createSupabaseClient()
   const result = {
@@ -415,7 +434,7 @@ export const pullReferenceData = async () => {
         selectAll(supabase, 'claims', '*, claim_items (*)'),
         selectAll(supabase, 'nhis_drugs'),
         selectOptionalAll(supabase, 'nhis_clinical_rules'),
-        selectAll(supabase, 'nhis_claims', '*, nhis_claim_medicines (*)'),
+        selectNhisClaims(supabase),
         selectAll(supabase, 'purchases', '*, purchase_items (*)'),
       ])
     )

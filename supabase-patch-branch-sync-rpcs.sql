@@ -636,7 +636,6 @@ CREATE OR REPLACE FUNCTION public.branch_sync_upsert_offline_record(
 RETURNS JSONB AS $$
 DECLARE
   v_client public.branch_sync_clients%ROWTYPE;
-  v_existing public.branch_sync_events%ROWTYPE;
   v_response JSONB;
   v_item JSONB;
   v_record JSONB;
@@ -651,17 +650,6 @@ BEGIN
   END IF;
 
   v_client := public.get_branch_sync_client(p_sync_token);
-
-  SELECT *
-  INTO v_existing
-  FROM public.branch_sync_events
-  WHERE sync_client_id = v_client.id
-    AND event_type = 'record.upsert.' || p_entity_type
-    AND local_id = p_local_id;
-
-  IF FOUND THEN
-    RETURN v_existing.response;
-  END IF;
 
   v_record := p_record
     || jsonb_build_object(
@@ -907,6 +895,43 @@ BEGIN
       );
     END LOOP;
 
+    IF to_regclass('public.nhis_claim_services') IS NOT NULL THEN
+      EXECUTE 'DELETE FROM public.nhis_claim_services WHERE claim_id = $1'
+      USING p_local_id;
+
+      FOR v_item IN SELECT * FROM jsonb_array_elements(COALESCE(v_record->'nhis_claim_services', '[]'::JSONB)) LOOP
+        EXECUTE $nhis_claim_service_sql$
+          INSERT INTO public.nhis_claim_services (
+            id, claim_id, nhia_tariff_item_id, tariff_version, facility_group, catering_option,
+            mdc, gdrg_code, description, age_band, unit_price, quantity, service_date,
+            total_amount, source_file, source_page
+          )
+          VALUES (
+            $1, $2, $3, $4, $5, $6,
+            $7, $8, $9, $10, $11, $12, $13,
+            $14, $15, $16
+          )
+        $nhis_claim_service_sql$
+        USING
+          COALESCE(NULLIF(v_item->>'id', '')::UUID, uuid_generate_v4()),
+          p_local_id,
+          NULLIF(v_item->>'nhia_tariff_item_id', '')::UUID,
+          COALESCE(NULLIF(v_item->>'tariff_version', ''), 'FEB 2023'),
+          NULLIF(v_item->>'facility_group', ''),
+          NULLIF(v_item->>'catering_option', ''),
+          NULLIF(v_item->>'mdc', ''),
+          NULLIF(v_item->>'gdrg_code', ''),
+          NULLIF(v_item->>'description', ''),
+          NULLIF(v_item->>'age_band', ''),
+          COALESCE(NULLIF(v_item->>'unit_price', '')::NUMERIC, 0),
+          COALESCE(NULLIF(v_item->>'quantity', '')::NUMERIC, 1),
+          NULLIF(v_item->>'service_date', '')::DATE,
+          COALESCE(NULLIF(v_item->>'total_amount', '')::NUMERIC, 0),
+          NULLIF(v_item->>'source_file', ''),
+          NULLIF(v_item->>'source_page', '')::INTEGER;
+      END LOOP;
+    END IF;
+
   ELSIF p_entity_type = 'purchases' THEN
     INSERT INTO public.purchases (
       id, organization_id, branch_id, purchase_number, supplier_id, supplier_name,
@@ -983,7 +1008,11 @@ BEGIN
     p_local_id,
     p_local_id,
     v_response
-  );
+  )
+  ON CONFLICT (sync_client_id, event_type, local_id) DO UPDATE SET
+    remote_id = EXCLUDED.remote_id,
+    response = EXCLUDED.response,
+    created_at = NOW();
 
   RETURN v_response;
 END;
