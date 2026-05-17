@@ -86,11 +86,28 @@ ON CONFLICT (component) DO UPDATE SET
   source_note = EXCLUDED.source_note,
   updated_at = NOW();
 
--- Replace this official version seed so reruns stay deterministic.
-DELETE FROM public.nhia_tariff_items WHERE tariff_version = 'FEB 2023';
+-- Stage this official version seed so reruns refresh tariffs without changing
+-- existing nhia_tariff_items.id values referenced by claim service lines.
+-- Rows omitted from a future refreshed seed are intentionally left in place;
+-- retire them with a separate reviewed migration if claims may reference them.
+CREATE TEMP TABLE tmp_nhia_tariff_items_seed (
+  tariff_version  TEXT NOT NULL,
+  facility_group  TEXT NOT NULL,
+  catering_option TEXT,
+  mdc             TEXT,
+  gdrg_code       TEXT NOT NULL,
+  description     TEXT NOT NULL,
+  age_band        TEXT,
+  tariff_amount   DECIMAL(12,2) NOT NULL DEFAULT 0,
+  currency        TEXT NOT NULL DEFAULT 'GHS',
+  source_file     TEXT,
+  source_page     INTEGER,
+  is_active       BOOLEAN NOT NULL DEFAULT true,
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+) ON COMMIT DROP;
 
 -- Tariff seed batch 1 of 14. Split so Supabase SQL Editor does not truncate one very large INSERT.
-INSERT INTO public.nhia_tariff_items (
+INSERT INTO tmp_nhia_tariff_items_seed (
   tariff_version, facility_group, catering_option, mdc, gdrg_code, description,
   age_band, tariff_amount, currency, source_file, source_page, is_active, updated_at
 )
@@ -297,7 +314,7 @@ VALUES
   ('FEB 2023', 'CHAG Primary Care Hospital', 'exclusive', 'Obstetrics And Gynaecology', 'OBGY40A', 'Eclampsia', NULL, 258.00, 'GHS', 'CHAG Primary Hospital (Catering Exclusive).pdf', 14, true, NOW());
 
 -- Tariff seed batch 2 of 14. Split so Supabase SQL Editor does not truncate one very large INSERT.
-INSERT INTO public.nhia_tariff_items (
+INSERT INTO tmp_nhia_tariff_items_seed (
   tariff_version, facility_group, catering_option, mdc, gdrg_code, description,
   age_band, tariff_amount, currency, source_file, source_page, is_active, updated_at
 )
@@ -504,7 +521,7 @@ VALUES
   ('FEB 2023', 'CHAG Primary Care Hospital', 'exclusive', 'Zoom', 'ZOOM04A', 'Change of Catheter >= 12 Yrs', '>= 12 Yrs', 20.14, 'GHS', 'CHAG Primary Hospital (Catering Exclusive).pdf', 27, true, NOW());
 
 -- Tariff seed batch 3 of 14. Split so Supabase SQL Editor does not truncate one very large INSERT.
-INSERT INTO public.nhia_tariff_items (
+INSERT INTO tmp_nhia_tariff_items_seed (
   tariff_version, facility_group, catering_option, mdc, gdrg_code, description,
   age_band, tariff_amount, currency, source_file, source_page, is_active, updated_at
 )
@@ -711,7 +728,7 @@ VALUES
   ('FEB 2023', 'CHAG Primary Care Hospital', 'exclusive', 'Investigation', 'INVE82D', 'Myelogram - 1 Region', NULL, 111.60, 'GHS', 'CHAG Primary Hospital (Catering Exclusive).pdf', 38, true, NOW());
 
 -- Tariff seed batch 4 of 14. Split so Supabase SQL Editor does not truncate one very large INSERT.
-INSERT INTO public.nhia_tariff_items (
+INSERT INTO tmp_nhia_tariff_items_seed (
   tariff_version, facility_group, catering_option, mdc, gdrg_code, description,
   age_band, tariff_amount, currency, source_file, source_page, is_active, updated_at
 )
@@ -918,7 +935,7 @@ VALUES
   ('FEB 2023', 'CHAG Primary Care Hospital', 'inclusive', 'Obstetrics And Gynaecology', 'OBGY21A', 'Perineal repair - Complex', NULL, 557.76, 'GHS', 'CHAG Primary Hospital (Catering Inclusive).pdf', 13, true, NOW());
 
 -- Tariff seed batch 5 of 14. Split so Supabase SQL Editor does not truncate one very large INSERT.
-INSERT INTO public.nhia_tariff_items (
+INSERT INTO tmp_nhia_tariff_items_seed (
   tariff_version, facility_group, catering_option, mdc, gdrg_code, description,
   age_band, tariff_amount, currency, source_file, source_page, is_active, updated_at
 )
@@ -1125,7 +1142,7 @@ VALUES
   ('FEB 2023', 'CHAG Primary Care Hospital', 'inclusive', 'Reconstructive Surgery', 'RSUR10C', 'Corrective Osteotomy <12 Yrs', '<12 Yrs', 1117.25, 'GHS', 'CHAG Primary Hospital (Catering Inclusive).pdf', 25, true, NOW());
 
 -- Tariff seed batch 6 of 14. Split so Supabase SQL Editor does not truncate one very large INSERT.
-INSERT INTO public.nhia_tariff_items (
+INSERT INTO tmp_nhia_tariff_items_seed (
   tariff_version, facility_group, catering_option, mdc, gdrg_code, description,
   age_band, tariff_amount, currency, source_file, source_page, is_active, updated_at
 )
@@ -1332,7 +1349,7 @@ VALUES
   ('FEB 2023', 'CHAG Primary Care Hospital', 'inclusive', 'Investigation', 'INVE65D', 'High Vaginal Swab for C/S', NULL, 19.30, 'GHS', 'CHAG Primary Hospital (Catering Inclusive).pdf', 37, true, NOW());
 
 -- Tariff seed batch 7 of 14. Split so Supabase SQL Editor does not truncate one very large INSERT.
-INSERT INTO public.nhia_tariff_items (
+INSERT INTO tmp_nhia_tariff_items_seed (
   tariff_version, facility_group, catering_option, mdc, gdrg_code, description,
   age_band, tariff_amount, currency, source_file, source_page, is_active, updated_at
 )
@@ -1539,7 +1556,7 @@ VALUES
   ('FEB 2023', 'Private Primary Care Hospital', 'exclusive', 'Obstetrics And Gynaecology', 'OBGY04A', 'Culdocentesis/Culdotomy', NULL, 213.07, 'GHS', 'Private Primary Care (Catering Exclusive).pdf', 12, true, NOW());
 
 -- Tariff seed batch 8 of 14. Split so Supabase SQL Editor does not truncate one very large INSERT.
-INSERT INTO public.nhia_tariff_items (
+INSERT INTO tmp_nhia_tariff_items_seed (
   tariff_version, facility_group, catering_option, mdc, gdrg_code, description,
   age_band, tariff_amount, currency, source_file, source_page, is_active, updated_at
 )
@@ -1746,7 +1763,7 @@ VALUES
   ('FEB 2023', 'Private Primary Care Hospital', 'exclusive', 'Reconstructive Surgery', 'RSUR02A', 'Shaving and Skin Grafting >=12 Yrs', '>=12 Yrs', 1002.79, 'GHS', 'Private Primary Care (Catering Exclusive).pdf', 24, true, NOW());
 
 -- Tariff seed batch 9 of 14. Split so Supabase SQL Editor does not truncate one very large INSERT.
-INSERT INTO public.nhia_tariff_items (
+INSERT INTO tmp_nhia_tariff_items_seed (
   tariff_version, facility_group, catering_option, mdc, gdrg_code, description,
   age_band, tariff_amount, currency, source_file, source_page, is_active, updated_at
 )
@@ -1953,7 +1970,7 @@ VALUES
   ('FEB 2023', 'Private Primary Care Hospital', 'exclusive', 'Investigation', 'INVE01E', 'Serum Adrenocorticotropic Hormone (ACTH)', NULL, 10.92, 'GHS', 'Private Primary Care (Catering Exclusive).pdf', 36, true, NOW());
 
 -- Tariff seed batch 10 of 14. Split so Supabase SQL Editor does not truncate one very large INSERT.
-INSERT INTO public.nhia_tariff_items (
+INSERT INTO tmp_nhia_tariff_items_seed (
   tariff_version, facility_group, catering_option, mdc, gdrg_code, description,
   age_band, tariff_amount, currency, source_file, source_page, is_active, updated_at
 )
@@ -2160,7 +2177,7 @@ VALUES
   ('FEB 2023', 'Private Primary Care Hospital', 'inclusive', 'Adult Medicine', 'MEDI26A', 'Non-Specific Abdominal Conditions >=12 Yrs', '>=12 Yrs', 200.54, 'GHS', 'Private Primary Care (Catering Inclusive).pdf', 11, true, NOW());
 
 -- Tariff seed batch 11 of 14. Split so Supabase SQL Editor does not truncate one very large INSERT.
-INSERT INTO public.nhia_tariff_items (
+INSERT INTO tmp_nhia_tariff_items_seed (
   tariff_version, facility_group, catering_option, mdc, gdrg_code, description,
   age_band, tariff_amount, currency, source_file, source_page, is_active, updated_at
 )
@@ -2367,7 +2384,7 @@ VALUES
   ('FEB 2023', 'Private Primary Care Hospital', 'inclusive', 'Paediatric Surgery', 'PSUR24C', 'Laparotomy with Enterostomy Formation and closure <12 Yrs', '<12 Yrs', 1078.72, 'GHS', 'Private Primary Care (Catering Inclusive).pdf', 23, true, NOW());
 
 -- Tariff seed batch 12 of 14. Split so Supabase SQL Editor does not truncate one very large INSERT.
-INSERT INTO public.nhia_tariff_items (
+INSERT INTO tmp_nhia_tariff_items_seed (
   tariff_version, facility_group, catering_option, mdc, gdrg_code, description,
   age_band, tariff_amount, currency, source_file, source_page, is_active, updated_at
 )
@@ -2574,7 +2591,7 @@ VALUES
   ('FEB 2023', 'Private Primary Care Hospital', 'inclusive', 'Investigation', 'INVE109', 'Phosphorus', NULL, 12.80, 'GHS', 'Private Primary Care (Catering Inclusive).pdf', 35, true, NOW());
 
 -- Tariff seed batch 13 of 14. Split so Supabase SQL Editor does not truncate one very large INSERT.
-INSERT INTO public.nhia_tariff_items (
+INSERT INTO tmp_nhia_tariff_items_seed (
   tariff_version, facility_group, catering_option, mdc, gdrg_code, description,
   age_band, tariff_amount, currency, source_file, source_page, is_active, updated_at
 )
@@ -2781,7 +2798,7 @@ VALUES
   ('FEB 2023', 'Diagnostic Centre', NULL, 'Investigation', 'INVE51D', 'Full Blood Count FBC (Auto) & Film Comment', NULL, 24.26, 'GHS', 'Tariff for Diagnostic Centre.pdf', 6, true, NOW());
 
 -- Tariff seed batch 14 of 14. Split so Supabase SQL Editor does not truncate one very large INSERT.
-INSERT INTO public.nhia_tariff_items (
+INSERT INTO tmp_nhia_tariff_items_seed (
   tariff_version, facility_group, catering_option, mdc, gdrg_code, description,
   age_band, tariff_amount, currency, source_file, source_page, is_active, updated_at
 )
@@ -2934,6 +2951,72 @@ VALUES
   ('FEB 2023', 'Eye Centre', NULL, 'Opthalmology', 'OPHT18A', 'Cataract Surgery with Implants >=12 Yrs', '>=12 Yrs', 313.74, 'GHS', 'Tariff for Eye Centres.pdf', 4, true, NOW()),
   ('FEB 2023', 'Eye Centre', NULL, 'Out Patient', 'OPDC05A', 'Eye Adult (without procedure)', NULL, 21.18, 'GHS', 'Tariff for Eye Centres.pdf', 4, true, NOW()),
   ('FEB 2023', 'Eye Centre', NULL, 'Out Patient', 'OPDC05C', 'Eye Child (without procedure)', NULL, 21.18, 'GHS', 'Tariff for Eye Centres.pdf', 4, true, NOW());
+
+WITH deduped_seed AS (
+  SELECT DISTINCT ON (tariff_version, facility_group, COALESCE(catering_option, ''), gdrg_code)
+    tariff_version,
+    facility_group,
+    catering_option,
+    mdc,
+    gdrg_code,
+    description,
+    age_band,
+    tariff_amount,
+    currency,
+    source_file,
+    source_page,
+    is_active,
+    updated_at
+  FROM tmp_nhia_tariff_items_seed
+  ORDER BY tariff_version, facility_group, COALESCE(catering_option, ''), gdrg_code, source_file, source_page
+),
+updated AS (
+  UPDATE public.nhia_tariff_items target
+  SET
+    mdc = seed.mdc,
+    description = seed.description,
+    age_band = seed.age_band,
+    tariff_amount = seed.tariff_amount,
+    currency = seed.currency,
+    source_file = seed.source_file,
+    source_page = seed.source_page,
+    is_active = seed.is_active,
+    updated_at = NOW()
+  FROM deduped_seed seed
+  WHERE target.tariff_version = seed.tariff_version
+    AND target.facility_group = seed.facility_group
+    AND target.catering_option IS NOT DISTINCT FROM seed.catering_option
+    AND target.gdrg_code = seed.gdrg_code
+  RETURNING target.tariff_version, target.facility_group, target.catering_option, target.gdrg_code
+)
+INSERT INTO public.nhia_tariff_items (
+  tariff_version, facility_group, catering_option, mdc, gdrg_code, description,
+  age_band, tariff_amount, currency, source_file, source_page, is_active, updated_at
+)
+SELECT
+  seed.tariff_version,
+  seed.facility_group,
+  seed.catering_option,
+  seed.mdc,
+  seed.gdrg_code,
+  seed.description,
+  seed.age_band,
+  seed.tariff_amount,
+  seed.currency,
+  seed.source_file,
+  seed.source_page,
+  seed.is_active,
+  NOW()
+FROM deduped_seed seed
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM public.nhia_tariff_items target
+  WHERE target.tariff_version = seed.tariff_version
+    AND target.facility_group = seed.facility_group
+    AND target.catering_option IS NOT DISTINCT FROM seed.catering_option
+    AND target.gdrg_code = seed.gdrg_code
+);
+
 COMMIT;
 
 -- Seeded tariff rows: 2748
