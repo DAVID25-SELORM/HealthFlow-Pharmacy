@@ -23,6 +23,25 @@ ensureColumn('drugs', 'brand_name', 'TEXT')
 ensureColumn('drugs', 'generic_name', 'TEXT')
 ensureColumn('drugs', 'barcode', 'TEXT')
 db.exec('CREATE INDEX IF NOT EXISTS idx_drugs_barcode ON drugs(barcode)')
+ensureColumn('patients', 'surname', 'TEXT')
+ensureColumn('patients', 'other_names', 'TEXT')
+ensureColumn('patients', 'nhis_member_no', 'TEXT')
+ensureColumn('patients', 'nhis_hin', 'TEXT')
+ensureColumn('patients', 'member_no', 'TEXT')
+ensureColumn('patients', 'hin', 'TEXT')
+db.exec('CREATE INDEX IF NOT EXISTS idx_patients_name ON patients(full_name)')
+db.exec('CREATE INDEX IF NOT EXISTS idx_patients_updated ON patients(updated_at)')
+db.exec('CREATE INDEX IF NOT EXISTS idx_patients_insurance_id ON patients(insurance_id)')
+db.exec(`
+  CREATE TABLE IF NOT EXISTS patient_search_tokens (
+    patient_id TEXT NOT NULL,
+    token TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (patient_id, token)
+  )
+`)
+db.exec('CREATE INDEX IF NOT EXISTS idx_patient_search_tokens_token ON patient_search_tokens(token)')
+db.exec('CREATE INDEX IF NOT EXISTS idx_patient_search_tokens_patient ON patient_search_tokens(patient_id)')
 ensureColumn('drugs', 'sale_on_return', 'INTEGER NOT NULL DEFAULT 0')
 ensureColumn('sales', 'payment_status', "TEXT NOT NULL DEFAULT 'completed'")
 ensureColumn('sales', 'amount_paid', 'REAL')

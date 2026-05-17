@@ -18,13 +18,33 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS patients (
   id TEXT PRIMARY KEY,
   full_name TEXT NOT NULL,
+  surname TEXT,
+  other_names TEXT,
   phone TEXT,
   email TEXT,
   insurance_provider TEXT,
   insurance_id TEXT,
+  nhis_member_no TEXT,
+  nhis_hin TEXT,
+  member_no TEXT,
+  hin TEXT,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   sync_status TEXT NOT NULL DEFAULT 'synced'
 );
+
+CREATE INDEX IF NOT EXISTS idx_patients_name ON patients(full_name);
+CREATE INDEX IF NOT EXISTS idx_patients_updated ON patients(updated_at);
+CREATE INDEX IF NOT EXISTS idx_patients_insurance_id ON patients(insurance_id);
+
+CREATE TABLE IF NOT EXISTS patient_search_tokens (
+  patient_id TEXT NOT NULL,
+  token TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (patient_id, token)
+);
+
+CREATE INDEX IF NOT EXISTS idx_patient_search_tokens_token ON patient_search_tokens(token);
+CREATE INDEX IF NOT EXISTS idx_patient_search_tokens_patient ON patient_search_tokens(patient_id);
 
 CREATE TABLE IF NOT EXISTS drugs (
   id TEXT PRIMARY KEY,

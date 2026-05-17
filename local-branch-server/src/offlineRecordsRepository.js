@@ -88,6 +88,56 @@ const listRecordsStatement = db.prepare(`
   LIMIT ?
 `)
 
+const listPatientRecordsStatement = db.prepare(`
+  SELECT r.*
+  FROM offline_records r
+  JOIN patients p ON p.id = r.id
+  WHERE r.entity_type = 'patients'
+  ORDER BY p.updated_at DESC, r.updated_at DESC
+  LIMIT ?
+`)
+
+const upsertPatientIndex = db.prepare(`
+  INSERT INTO patients (
+    id, full_name, surname, other_names, phone, email, insurance_provider,
+    insurance_id, nhis_member_no, nhis_hin, member_no, hin, updated_at, sync_status
+  )
+  VALUES (
+    @id, @fullName, @surname, @otherNames, @phone, @email, @insuranceProvider,
+    @insuranceId, @nhisMemberNo, @nhisHin, @memberNo, @hin, @updatedAt, @syncStatus
+  )
+  ON CONFLICT(id) DO UPDATE SET
+    full_name = excluded.full_name,
+    surname = excluded.surname,
+    other_names = excluded.other_names,
+    phone = excluded.phone,
+    email = excluded.email,
+    insurance_provider = excluded.insurance_provider,
+    insurance_id = excluded.insurance_id,
+    nhis_member_no = excluded.nhis_member_no,
+    nhis_hin = excluded.nhis_hin,
+    member_no = excluded.member_no,
+    hin = excluded.hin,
+    updated_at = excluded.updated_at,
+    sync_status = excluded.sync_status
+`)
+
+const deletePatientSearchTokens = db.prepare(`DELETE FROM patient_search_tokens WHERE patient_id = ?`)
+const insertPatientSearchToken = db.prepare(`
+  INSERT OR IGNORE INTO patient_search_tokens (patient_id, token, created_at)
+  VALUES (@patientId, @token, @createdAt)
+`)
+const countPatientIndexRows = db.prepare(`SELECT COUNT(*) AS count FROM patients`)
+const countPatientSearchTokenRows = db.prepare(`SELECT COUNT(*) AS count FROM patient_search_tokens`)
+const countOfflinePatientRows = db.prepare(
+  `SELECT COUNT(*) AS count FROM offline_records WHERE entity_type = 'patients'`
+)
+const allOfflinePatientRows = db.prepare(`
+  SELECT *
+  FROM offline_records
+  WHERE entity_type = 'patients'
+`)
+
 const recordToObject = (row) => {
   const data = parseJson(row.data_json, {})
   return {
@@ -102,6 +152,91 @@ const recordToObject = (row) => {
 }
 
 const textIncludes = (value, term) => String(value || '').toLowerCase().includes(term)
+
+const normalizeSearchTerm = (value = '') =>
+  String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+
+const compactLookup = (value = '') =>
+  String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '')
+
+const extractSearchTokens = (values = []) => {
+  const tokens = new Set()
+  for (const value of values) {
+    const normalized = normalizeSearchTerm(value)
+    normalized
+      .split(' ')
+      .filter(Boolean)
+      .forEach((token) => tokens.add(token))
+
+    const compact = compactLookup(value)
+    if (compact) {
+      tokens.add(compact)
+    }
+  }
+  return [...tokens]
+}
+
+const getPatientFullName = (record = {}) => {
+  const explicitName = record.full_name || record.patient_name || record.name
+  if (explicitName) {
+    return explicitName
+  }
+  return [record.surname, record.other_names].filter(Boolean).join(' ').trim() || 'Unnamed patient'
+}
+
+const patientSearchValues = (record = {}) => [
+  getPatientFullName(record),
+  record.surname,
+  record.other_names,
+  record.phone,
+  record.email,
+  record.insurance_provider,
+  record.insurance_id,
+  record.nhis_member_no,
+  record.nhis_hin,
+  record.member_no,
+  record.hin,
+]
+
+const indexPatientRecord = (record = {}, syncStatus = 'synced') => {
+  if (!record?.id) {
+    return
+  }
+
+  const timestamp = record.updated_at || nowIso()
+  upsertPatientIndex.run({
+    id: record.id,
+    fullName: getPatientFullName(record),
+    surname: record.surname || null,
+    otherNames: record.other_names || null,
+    phone: record.phone || null,
+    email: record.email || null,
+    insuranceProvider: record.insurance_provider || null,
+    insuranceId: record.insurance_id || null,
+    nhisMemberNo: record.nhis_member_no || null,
+    nhisHin: record.nhis_hin || null,
+    memberNo: record.member_no || null,
+    hin: record.hin || null,
+    updatedAt: timestamp,
+    syncStatus,
+  })
+
+  deletePatientSearchTokens.run(record.id)
+  for (const token of extractSearchTokens(patientSearchValues(record))) {
+    insertPatientSearchToken.run({
+      patientId: record.id,
+      token,
+      createdAt: timestamp,
+    })
+  }
+}
 
 const matchesFilters = (record, filters = {}) => {
   const status = String(filters.status || '').trim()
@@ -209,8 +344,62 @@ const enrichRecord = (entityType, payload) => {
   return base
 }
 
+const listPatientRecords = (filters = {}) => {
+  const limit = Math.min(Math.max(Number(filters.limit) || 500, 1), 5000)
+  const nonSearchFilters = { ...filters, search: '', searchTerm: '' }
+
+  if (filters.id) {
+    const row = getRecordStatement.get('patients', filters.id)
+    return row ? [recordToObject(row)].filter((record) => matchesFilters(record, nonSearchFilters)) : []
+  }
+
+  const term = normalizeSearchTerm(filters.searchTerm || filters.search || '')
+  if (!term) {
+    return listPatientRecordsStatement
+      .all(limit)
+      .map(recordToObject)
+      .filter((record) => matchesFilters(record, nonSearchFilters))
+  }
+
+  const searchTokens = extractSearchTokens([term])
+  const compactTerm = compactLookup(term)
+  if (compactTerm && !searchTokens.includes(compactTerm)) {
+    searchTokens.push(compactTerm)
+  }
+
+  if (!searchTokens.length) {
+    return []
+  }
+
+  const placeholders = searchTokens.map(() => '?').join(',')
+  const tokenPrefixes = searchTokens.map((token) => `${token}%`)
+  const prefixConditions = tokenPrefixes.map(() => 'pst.token LIKE ?').join(' OR ')
+
+  return db
+    .prepare(`
+      SELECT DISTINCT r.*
+      FROM offline_records r
+      JOIN patients p ON p.id = r.id
+      JOIN patient_search_tokens pst ON pst.patient_id = p.id
+      WHERE r.entity_type = 'patients'
+        AND (
+          pst.token IN (${placeholders})
+          OR ${prefixConditions}
+        )
+      ORDER BY p.full_name ASC, p.updated_at DESC
+      LIMIT ?
+    `)
+    .all(...searchTokens, ...tokenPrefixes, limit)
+    .map(recordToObject)
+    .filter((record) => matchesFilters(record, nonSearchFilters))
+}
+
 export const listOfflineRecords = (entityType, filters = {}) => {
   const normalizedEntity = normalizeEntityType(entityType)
+  if (normalizedEntity === 'patients') {
+    return listPatientRecords(filters)
+  }
+
   const limit = Math.min(Math.max(Number(filters.limit) || 500, 1), 5000)
   return listRecordsStatement
     .all(normalizedEntity, limit)
@@ -262,6 +451,10 @@ export const saveOfflineRecord = db.transaction((entityType, payload = {}) => {
     updatedAt: timestamp,
   })
 
+  if (normalizedEntity === 'patients') {
+    indexPatientRecord(record, 'pending')
+  }
+
   return getOfflineRecord(normalizedEntity, record.id)
 })
 
@@ -286,6 +479,14 @@ export const importOfflineRecords = db.transaction((entityType, records = []) =>
       updatedAt: row.updated_at || timestamp,
       syncedAt: timestamp,
     })
+
+    if (normalizedEntity === 'patients') {
+      const storedPatientRow = getRecordStatement.get(normalizedEntity, row.id)
+      if (storedPatientRow) {
+        const storedPatient = recordToObject(storedPatientRow)
+        indexPatientRecord(storedPatient, storedPatient.sync_status || 'synced')
+      }
+    }
   }
 
   return {
@@ -294,3 +495,19 @@ export const importOfflineRecords = db.transaction((entityType, records = []) =>
     importedAt: timestamp,
   }
 })
+
+const rebuildPatientIndexFromOfflineRecords = db.transaction(() => {
+  for (const row of allOfflinePatientRows.all()) {
+    const patient = recordToObject(row)
+    indexPatientRecord(patient, patient.sync_status || 'synced')
+  }
+})
+
+const offlinePatientCount = countOfflinePatientRows.get().count
+if (
+  offlinePatientCount > 0 &&
+  (countPatientIndexRows.get().count < offlinePatientCount ||
+    countPatientSearchTokenRows.get().count < offlinePatientCount)
+) {
+  rebuildPatientIndexFromOfflineRecords()
+}
