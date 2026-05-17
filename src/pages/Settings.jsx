@@ -108,7 +108,7 @@ const formatSubscriptionTier = (tier) => {
 }
 
 const Settings = () => {
-  const { user, role, organization } = useAuth()
+  const { user, role, organization, refreshProfile } = useAuth()
   const { notify } = useNotification()
   const {
     isTrialActive,
@@ -337,7 +337,17 @@ const Settings = () => {
     try {
       setBranchUpdatingId(row.id)
       setError('')
-      await updateUserBranch(row.id, branchId)
+      const updatedUser = await updateUserBranch(row.id, branchId)
+      if (updatedUser?.id) {
+        setUsers((current) =>
+          current.map((userRow) =>
+            userRow.id === updatedUser.id ? { ...userRow, ...updatedUser } : userRow
+          )
+        )
+      }
+      if (row.id === user?.id && refreshProfile) {
+        await refreshProfile()
+      }
       notify(`${row.full_name} branch updated.`, 'success')
       await loadSettings()
     } catch (branchError) {

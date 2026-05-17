@@ -12,6 +12,21 @@ import { CLAIMS_ROLES, INVENTORY_ROLES, REPORT_ROLES, hasRole } from '../utils/r
 
 const AuthContext = createContext(null)
 const FALLBACK_ROLE = 'assistant'
+const PROFILE_SELECT = `
+  id,
+  email,
+  full_name,
+  role,
+  can_refund,
+  can_manage_inventory,
+  can_view_reports,
+  can_manage_claims,
+  is_active,
+  organization_id,
+  branch_id,
+  branches (id, name, code, is_main),
+  organizations (*)
+`
 
 const isSupabaseAuthFailure = (error) => {
   const status = Number(error?.status || error?.statusCode || 0)
@@ -208,21 +223,7 @@ export const AuthProvider = ({ children }) => {
 
       const { data, error } = await supabase
         .from('users')
-        .select(`
-          id, 
-          email, 
-          full_name, 
-          role, 
-          can_refund,
-          can_manage_inventory,
-          can_view_reports,
-          can_manage_claims,
-          is_active,
-          organization_id,
-          branch_id,
-          branches (id, name, code, is_main),
-          organizations (*)
-        `)
+        .select(PROFILE_SELECT)
         .eq('id', activeUser.id)
         .maybeSingle()
 
@@ -527,6 +528,27 @@ export const AuthProvider = ({ children }) => {
     }
   }
 
+  const refreshProfile = async () => {
+    if (!user?.id || !isSupabaseConfigured()) {
+      return null
+    }
+
+    const { data, error } = await supabase
+      .from('users')
+      .select(PROFILE_SELECT)
+      .eq('id', user.id)
+      .maybeSingle()
+
+    if (error) {
+      throw error
+    }
+
+    setProfile(data || null)
+    setOrganization(data?.organizations || null)
+    setBranch(data?.branches || null)
+    return data || null
+  }
+
   const value = useMemo(
     () => ({
       session,
@@ -545,6 +567,7 @@ export const AuthProvider = ({ children }) => {
       signOut,
       requestPasswordReset,
       updatePassword,
+      refreshProfile,
       isConfigured: isSupabaseConfigured(),
     }),
     [session, user, profile, organization, branch, loading]

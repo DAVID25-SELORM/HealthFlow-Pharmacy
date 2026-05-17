@@ -258,10 +258,11 @@ export const updateUserRefundPermission = async (id, canRefund) => {
 }
 
 export const updateUserBranch = async (userId, branchId) => {
-  const { error } = await supabase
-    .from('users')
-    .update({ branch_id: branchId || null })
-    .eq('id', userId)
+  const response = await invokeStaffAdmin({
+    action: 'set_staff_branch',
+    userId: assertRequiredText(userId, 'User id'),
+    branchId: normalizeText(branchId) || null,
+  })
 
-  if (error) throw error
+  return response.user
 }

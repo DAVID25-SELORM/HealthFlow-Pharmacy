@@ -23,6 +23,7 @@ type StaffAction =
   | 'upsert_staff_user'
   | 'set_staff_status'
   | 'set_refund_permission'
+  | 'set_staff_branch'
   | 'update_staff_user'
 type RequesterProfile = {
   id: string
@@ -601,6 +602,82 @@ const setRefundPermission = async (
   }
 }
 
+const setStaffBranch = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  requesterProfile: RequesterProfile,
+  payload: Record<string, unknown>
+) => {
+  const userId = normalizeText(payload.userId)
+  const branchId = normalizeText(payload.branchId) || null
+
+  if (!userId) {
+    throw new Error('User id is required.')
+  }
+
+  const { data: targetProfile, error: targetProfileError } = await adminClient
+    .from('users')
+    .select('id, organization_id')
+    .eq('id', userId)
+    .maybeSingle()
+
+  if (targetProfileError) {
+    throw targetProfileError
+  }
+
+  const targetOrganizationId = normalizeText(targetProfile?.organization_id)
+  if (!targetProfile || !targetOrganizationId) {
+    throw new Error('Target user is missing organization context.')
+  }
+
+  if (
+    requesterProfile.role !== 'super_admin' &&
+    targetOrganizationId !== requesterProfile.organization_id
+  ) {
+    throw new Error('You can only manage staff accounts in your own organization.')
+  }
+
+  if (branchId) {
+    const { data: branch, error: branchError } = await adminClient
+      .from('branches')
+      .select('id, organization_id, is_active')
+      .eq('id', branchId)
+      .maybeSingle()
+
+    if (branchError) {
+      throw branchError
+    }
+
+    if (!branch || normalizeText(branch.organization_id) !== targetOrganizationId) {
+      throw new Error('Select a branch from the target user organization.')
+    }
+
+    if (branch.is_active === false) {
+      throw new Error('Select an active branch.')
+    }
+  }
+
+  const { data, error } = await adminClient
+    .from('users')
+    .update({
+      branch_id: branchId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', userId)
+    .eq('organization_id', targetOrganizationId)
+    .select(
+      'id, email, full_name, phone, role, can_refund, is_active, organization_id, branch_id, branches (id, name, code)'
+    )
+    .single()
+
+  if (error) {
+    throw error
+  }
+
+  return {
+    user: data,
+  }
+}
+
 const updateStaffUser = async (
   adminClient: ReturnType<typeof createAdminClient>,
   requesterProfile: RequesterProfile,
@@ -771,6 +848,10 @@ Deno.serve(async (request) => {
 
     if (action === 'set_refund_permission') {
       return json(await setRefundPermission(adminClient, requesterProfile, payload))
+    }
+
+    if (action === 'set_staff_branch') {
+      return json(await setStaffBranch(adminClient, requesterProfile, payload))
     }
 
     return json({ error: 'Unsupported staff action.' }, 400)
