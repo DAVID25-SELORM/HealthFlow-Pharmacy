@@ -18,6 +18,9 @@ dist-ssr
 .npm-cache/
 .supabase-cli/
 scripts/output/
+data/*.sqlite
+data/*.sqlite-shm
+data/*.sqlite-wal
 
 # Editor directories and files
 .vscode/*

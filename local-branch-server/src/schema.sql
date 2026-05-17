@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS drugs (
   brand_name TEXT,
   generic_name TEXT,
   batch_number TEXT,
+  barcode TEXT,
   expiry_date TEXT,
   quantity REAL NOT NULL DEFAULT 0,
   unit TEXT,
@@ -48,6 +49,24 @@ CREATE TABLE IF NOT EXISTS drugs (
 
 CREATE INDEX IF NOT EXISTS idx_drugs_search ON drugs(name, batch_number, nhis_code);
 CREATE INDEX IF NOT EXISTS idx_drugs_branch ON drugs(branch_id);
+
+CREATE TABLE IF NOT EXISTS barcodes (
+  barcode TEXT PRIMARY KEY,
+  drug_id TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_barcodes_drug_id ON barcodes(drug_id);
+
+CREATE TABLE IF NOT EXISTS inventory_search_tokens (
+  drug_id TEXT NOT NULL,
+  token TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (drug_id, token)
+);
+
+CREATE INDEX IF NOT EXISTS idx_inventory_search_tokens_token ON inventory_search_tokens(token);
+CREATE INDEX IF NOT EXISTS idx_inventory_search_tokens_drug_id ON inventory_search_tokens(drug_id);
 
 CREATE TABLE IF NOT EXISTS sales (
   id TEXT PRIMARY KEY,

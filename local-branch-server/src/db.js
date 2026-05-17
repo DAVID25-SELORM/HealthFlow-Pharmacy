@@ -21,6 +21,8 @@ const ensureColumn = (table, column, definition) => {
 
 ensureColumn('drugs', 'brand_name', 'TEXT')
 ensureColumn('drugs', 'generic_name', 'TEXT')
+ensureColumn('drugs', 'barcode', 'TEXT')
+db.exec('CREATE INDEX IF NOT EXISTS idx_drugs_barcode ON drugs(barcode)')
 ensureColumn('drugs', 'sale_on_return', 'INTEGER NOT NULL DEFAULT 0')
 ensureColumn('sales', 'payment_status', "TEXT NOT NULL DEFAULT 'completed'")
 ensureColumn('sales', 'amount_paid', 'REAL')

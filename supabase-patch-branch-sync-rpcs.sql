@@ -573,7 +573,8 @@ GRANT EXECUTE ON FUNCTION public.branch_sync_create_claim_transaction(TEXT, UUID
 
 CREATE OR REPLACE FUNCTION public.branch_sync_get_inventory_snapshot(
   p_sync_token TEXT,
-  p_limit INTEGER DEFAULT 5000
+  p_limit INTEGER DEFAULT 5000,
+  p_updated_since TIMESTAMPTZ DEFAULT NULL
 )
 RETURNS JSONB AS $$
 DECLARE
@@ -612,6 +613,7 @@ BEGIN
     WHERE organization_id = v_client.organization_id
       AND (branch_id IS NULL OR branch_id = v_client.branch_id)
       AND COALESCE(status, 'active') <> 'inactive'
+      AND (p_updated_since IS NULL OR updated_at > p_updated_since)
     ORDER BY name, batch_number, id
     LIMIT v_limit
   ) d;
@@ -625,7 +627,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
-GRANT EXECUTE ON FUNCTION public.branch_sync_get_inventory_snapshot(TEXT, INTEGER) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.branch_sync_get_inventory_snapshot(TEXT, INTEGER, TIMESTAMPTZ) TO anon, authenticated;
 
 CREATE OR REPLACE FUNCTION public.branch_sync_upsert_offline_record(
   p_sync_token TEXT,

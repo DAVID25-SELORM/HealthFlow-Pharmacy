@@ -351,10 +351,12 @@ export const getSyncStatus = () => {
 
 export const pullInventorySnapshot = async () => {
   const supabase = createSupabaseClient()
+  const inventoryStatus = getInventoryImportStatus()
   const { data, error } = await withSupabaseNetworkContext(() =>
     supabase.rpc('branch_sync_get_inventory_snapshot', {
       p_sync_token: config.branchSyncToken,
       p_limit: 20000,
+      p_updated_since: inventoryStatus.lastInventoryImportAt || null,
     })
   )
 
