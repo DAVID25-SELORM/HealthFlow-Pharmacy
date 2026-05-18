@@ -30,6 +30,23 @@ const SALES_SELECT_FIELDS = `
   ),
   patients (full_name, phone, insurance_provider, insurance_id)
 `
+const REPORT_DRUG_SELECT_FIELDS = `
+  id,
+  organization_id,
+  branch_id,
+  name,
+  batch_number,
+  expiry_date,
+  quantity,
+  unit,
+  price,
+  cost_price,
+  supplier,
+  category,
+  reorder_level,
+  status,
+  created_at
+`
 
 type TierAccessAction =
   | 'get_drugs'
@@ -784,18 +801,21 @@ const getDrugs = async (
   payload: Record<string, unknown>
 ) => {
   const branchId = await getBranchIdForInventoryRequest(adminClient, organizationId, requesterProfile, payload)
-
-  try {
-    await syncDefaultMedicationCatalog(adminClient, organizationId, branchId)
-  } catch (error) {
-    // Never block core inventory visibility when catalog sync hits legacy-data issues.
-    console.error('tier-access catalog sync warning:', error)
-  }
-
   const includeCatalog = Boolean(payload.includeCatalog)
   const searchTerm = normalizeText(payload.searchTerm)
-  const limit = clampPositiveInteger(payload.limit, 0, 100)
   const inStockOnly = Boolean(payload.inStockOnly)
+  const shouldMaintainCatalog = includeCatalog && !searchTerm && !inStockOnly
+
+  if (shouldMaintainCatalog) {
+    try {
+      await syncDefaultMedicationCatalog(adminClient, organizationId, branchId)
+    } catch (error) {
+      // Never block core inventory visibility when catalog sync hits legacy-data issues.
+      console.error('tier-access catalog sync warning:', error)
+    }
+  }
+
+  const limit = clampPositiveInteger(payload.limit, 0, 100)
   const rows = []
   let from = 0
   let query = adminClient
@@ -856,7 +876,9 @@ const getDrugs = async (
     }
   }
 
-  const pricedRows = await enrichDrugsWithNhisCatalog(adminClient, organizationId, rows)
+  const pricedRows = searchTerm || inStockOnly
+    ? rows
+    : await enrichDrugsWithNhisCatalog(adminClient, organizationId, rows)
 
   if (includeCatalog) {
     return pricedRows
@@ -2154,11 +2176,16 @@ const getReportBundle = async (
     adminClient.from('patients').select('*').eq('organization_id', organizationId),
     adminClient
       .from('drugs')
-      .select('*')
+      .select(REPORT_DRUG_SELECT_FIELDS)
       .eq('organization_id', organizationId)
       .eq('status', 'active')
+      .or(`batch_number.is.null,batch_number.not.ilike.${DEFAULT_MEDICATION_BATCH_PREFIX}%,quantity.gt.0`)
       .order('created_at', { ascending: false }),
-    adminClient.from('drugs').select('*').eq('organization_id', organizationId),
+    adminClient
+      .from('drugs')
+      .select(REPORT_DRUG_SELECT_FIELDS)
+      .eq('organization_id', organizationId)
+      .or(`batch_number.is.null,batch_number.not.ilike.${DEFAULT_MEDICATION_BATCH_PREFIX}%,quantity.gt.0`),
   ])
 
   if (salesError) throw salesError
