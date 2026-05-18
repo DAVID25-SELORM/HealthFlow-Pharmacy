@@ -25,7 +25,14 @@ CREATE INDEX IF NOT EXISTS idx_claims_org_service_date
 CREATE OR REPLACE VIEW public.low_stock_drugs
 WITH (security_invoker = true)
 AS
-SELECT d.*
+SELECT
+  d.id,
+  d.name,
+  d.batch_number,
+  d.quantity,
+  d.reorder_level,
+  d.price,
+  d.expiry_date
 FROM public.drugs AS d
 WHERE d.status = 'active'
   AND COALESCE(d.quantity, 0) <= COALESCE(d.reorder_level, 0)
@@ -39,7 +46,11 @@ CREATE OR REPLACE VIEW public.expiring_soon_drugs
 WITH (security_invoker = true)
 AS
 SELECT
-  d.*,
+  d.id,
+  d.name,
+  d.batch_number,
+  d.quantity,
+  d.expiry_date,
   (d.expiry_date - CURRENT_DATE) AS days_until_expiry
 FROM public.drugs AS d
 WHERE d.status = 'active'
@@ -55,7 +66,11 @@ CREATE OR REPLACE VIEW public.expired_drugs
 WITH (security_invoker = true)
 AS
 SELECT
-  d.*,
+  d.id,
+  d.name,
+  d.batch_number,
+  d.quantity,
+  d.expiry_date,
   (COALESCE(d.price, 0) * COALESCE(d.quantity, 0)) AS total_value
 FROM public.drugs AS d
 WHERE d.expiry_date < CURRENT_DATE
