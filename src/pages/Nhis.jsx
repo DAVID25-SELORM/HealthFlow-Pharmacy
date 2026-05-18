@@ -702,6 +702,7 @@ const Nhis = () => {
         requireMedicineDirections: Boolean(editingClaim),
         enforceDiagnosisTreatmentMatch: Boolean(editingClaim && isHospital),
         enforcePrescribingLevel: true,
+        requirePrescriptionAttachment: true,
         providerClassLevel,
         nhisDrugCatalog: nhisDrugs,
         clinicalRules,
@@ -1625,7 +1626,7 @@ const Nhis = () => {
 
                   <div className="form-row">
                     <div className="form-group">
-                      <label>Patient Address *</label>
+                      <label>Patient Address</label>
                       <input className="form-input" value={claimForm.patientAddress}
                         onChange={(e) => setClaimForm((p) => ({ ...p, patientAddress: e.target.value }))} />
                     </div>
@@ -1720,10 +1721,10 @@ const Nhis = () => {
                 </section>
 
                 <section className="nhis-section">
-                  <h3 className="nhis-section-title">Scanned Prescription</h3>
+                  <h3 className="nhis-section-title">Scanned Prescription *</h3>
                   <label className="prescription-upload-box">
                     <Paperclip size={18} />
-                    <span>{claimForm.prescriptionFileName || 'Attach prescription file'}</span>
+                    <span>{claimForm.prescriptionFileName || 'Attach prescription file *'}</span>
                     <small>PDF or JPEG, max 3 MB</small>
                     <input
                       type="file"
@@ -2421,8 +2422,8 @@ const Nhis = () => {
                   </>
                 ) : (
                   <>
-                    Exports claims for the selected month or custom service-date period as a CLAIM-it HMS Toolkit XML/JSON file.
-                    All exported <strong>Served</strong> claims will be automatically marked as <strong>Submitted</strong>.
+                    Exports served claims for the selected month or custom service-date period as a CLAIM-it HMS Toolkit file.
+                    Downloaded claims remain <strong>Served</strong> so they can be corrected or exported again if CLAIM-it rejects the file.
                   </>
                 )}
               </p>
@@ -2434,7 +2435,7 @@ const Nhis = () => {
                     value={exportFormat}
                     onChange={(e) => setExportFormat(e.target.value)}
                   >
-                    <option value="xml">XML for CLAIM-it</option>
+                    <option value="xml">CXF/XML for CLAIM-it</option>
                     <option value="json">JSON for CLAIM-it</option>
                     <option value="csv">CSV review file</option>
                   </select>

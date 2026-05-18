@@ -19,6 +19,7 @@ import { useTenant } from '../context/TenantContext'
 import { formatAppDate } from '../utils/date'
 import { getPharmacySettings } from '../services/settingsService'
 import { getBranches } from '../services/branchService'
+import { getEffectiveSellingPrice, getNhisCatalogPrice, hasNhisCatalogPrice } from '../utils/drugPricing'
 import './Inventory.css'
 
 const emptyDrugForm = {
@@ -71,9 +72,9 @@ const filterOptions = [
 ]
 
 const mapDrugToForm = (drug) => {
-  const nhisPrice = Number.parseFloat(drug.nhis_price)
-  const hasNhisCatalogPrice = Boolean(drug.is_nhis_listed && Number.isFinite(nhisPrice) && nhisPrice > 0)
-  const isNhisListed = Boolean(drug.is_nhis_listed && (drug.nhis_code || hasNhisCatalogPrice))
+  const nhisPrice = getNhisCatalogPrice(drug)
+  const hasCatalogPrice = hasNhisCatalogPrice(drug)
+  const isNhisListed = Boolean(drug.is_nhis_listed && (drug.nhis_code || hasCatalogPrice))
 
   return {
     name: drug.name || '',
@@ -83,8 +84,8 @@ const mapDrugToForm = (drug) => {
     unit: drug.unit || 'tablet',
     category: drug.category || 'medicine',
     costPrice: String(drug.cost_price ?? ''),
-    price: String(drug.price ?? ''),
-    nhisPrice: hasNhisCatalogPrice ? String(drug.nhis_price) : '',
+    price: String(getEffectiveSellingPrice(drug) ?? ''),
+    nhisPrice: hasCatalogPrice ? String(nhisPrice) : '',
     nhisCode: isNhisListed ? drug.nhis_code || '' : '',
     nhisUnit: isNhisListed ? drug.nhis_unit || '' : '',
     isNhisListed,
@@ -108,7 +109,8 @@ const calculateMarkedUpPrice = (costPrice, markupPercent) => {
 const Inventory = () => {
   const { role, profile, branch } = useAuth()
   const { notify } = useNotification()
-  const { canUseNhisTopups, tierLimits } = useTenant()
+  const { canUseNhis, canUseNhisTopups, tierLimits } = useTenant()
+  const showNhisPricing = Boolean(canUseNhis || canUseNhisTopups)
   const [searchParams, setSearchParams] = useSearchParams()
   const [showDrugModal, setShowDrugModal] = useState(false)
   const [showImportModal, setShowImportModal] = useState(false)
@@ -315,7 +317,7 @@ const Inventory = () => {
     return activeStockRows.reduce(
       (summary, drug) => {
         const quantity = Number.parseFloat(drug.quantity ?? 0) || 0
-        const price = Number.parseFloat(drug.price ?? 0) || 0
+        const price = getEffectiveSellingPrice(drug)
         const costPrice = Number.parseFloat(drug.cost_price ?? 0) || 0
 
         return {
@@ -742,7 +744,7 @@ const Inventory = () => {
               <th>Expiry Date</th>
               <th>Quantity</th>
               <th>Price (GHS)</th>
-              {canUseNhisTopups && <th>NHIS (GHS)</th>}
+              {showNhisPricing && <th>NHIS (GHS)</th>}
               <th>Total (GHS)</th>
               <th>Status</th>
               <th>Actions</th>
@@ -751,7 +753,7 @@ const Inventory = () => {
           <tbody>
             {visibleDrugs.length === 0 ? (
               <tr>
-                <td colSpan={canUseNhisTopups ? 10 : 9} style={{ textAlign: 'center', padding: '2rem' }}>
+                <td colSpan={showNhisPricing ? 10 : 9} style={{ textAlign: 'center', padding: '2rem' }}>
                   {searchTerm || activeFilter !== 'all'
                     ? 'No medicines match the current search or filter.'
                     : 'No drugs in inventory. Click "Add Drug" to get started.'}
@@ -761,9 +763,8 @@ const Inventory = () => {
               visibleDrugs.map((drug) => {
                 const status = getStatusBadge(drug)
                 const quantity = Number.parseFloat(drug.quantity ?? 0) || 0
-                const price = Number.parseFloat(drug.price ?? 0) || 0
-                const nhisPrice = Number.parseFloat(drug.nhis_price ?? 0) || 0
-                const hasNhisCatalogPrice = Boolean(drug.is_nhis_listed && nhisPrice > 0)
+                const price = getEffectiveSellingPrice(drug)
+                const nhisPrice = getNhisCatalogPrice(drug)
                 const total = (quantity * price).toFixed(2)
                 const batchNumber = drug.batch_number || drug.batch || 'N/A'
                 const expiryDate = drug.expiry_date || drug.expiry
@@ -779,7 +780,7 @@ const Inventory = () => {
                     <td>{expiryDate ? formatAppDate(expiryDate) : 'N/A'}</td>
                     <td>{quantity}</td>
                     <td>GHS {price.toFixed(2)}</td>
-                    {canUseNhisTopups && <td>{hasNhisCatalogPrice ? `GHS ${nhisPrice.toFixed(2)}` : '-'}</td>}
+                    {showNhisPricing && <td>{hasNhisCatalogPrice(drug) ? `GHS ${nhisPrice.toFixed(2)}` : '-'}</td>}
                     <td className="total-cell">GHS {total}</td>
                     <td>
                       <span className={`status-badge ${status.class}`}>{status.label}</span>
@@ -977,7 +978,7 @@ const Inventory = () => {
                 <span>Sale on return</span>
               </label>
 
-              {canUseNhisTopups && (
+              {showNhisPricing && (
                 <div className="form-row">
                   <div className="form-group">
                     <label>NHIS Code</label>

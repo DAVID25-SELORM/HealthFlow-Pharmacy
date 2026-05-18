@@ -22,6 +22,7 @@ const ensureColumn = (table, column, definition) => {
 ensureColumn('drugs', 'brand_name', 'TEXT')
 ensureColumn('drugs', 'generic_name', 'TEXT')
 ensureColumn('drugs', 'barcode', 'TEXT')
+ensureColumn('drugs', 'nhis_unit', 'TEXT')
 db.exec('CREATE INDEX IF NOT EXISTS idx_drugs_barcode ON drugs(barcode)')
 ensureColumn('patients', 'surname', 'TEXT')
 ensureColumn('patients', 'other_names', 'TEXT')

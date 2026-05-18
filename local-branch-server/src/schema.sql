@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS drugs (
   cost_price REAL,
   nhis_code TEXT,
   nhis_price REAL,
+  nhis_unit TEXT,
   is_nhis_listed INTEGER NOT NULL DEFAULT 0,
   sale_on_return INTEGER NOT NULL DEFAULT 0,
   branch_id TEXT,

@@ -40,6 +40,7 @@ import {
   loadOfflinePosSnapshot,
   saveOfflinePosSnapshot,
 } from '../services/offlinePosCache'
+import { searchDrugs } from '../services/drugService'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
@@ -52,6 +53,7 @@ import {
 } from '../utils/nhiaMemberNumber'
 import Receipt from '../components/Receipt/Receipt'
 import DiagnosisSelector from '../components/DiagnosisSelector/DiagnosisSelector'
+import { getEffectiveSellingPrice, getNhisCatalogPrice, hasNhisCatalogPrice } from '../utils/drugPricing'
 import './Sales.css'
 
 const POS_DRUG_SEARCH_LIMIT = 30
@@ -613,6 +615,33 @@ const Sales = () => {
           }
         }
 
+        if (isSupabaseConfigured()) {
+          try {
+            const hostedResults = await searchDrugs(term, {
+              useTierAccess: true,
+              inStockOnly: true,
+              limit: POS_DRUG_SEARCH_LIMIT,
+              branchId: effectiveBranchId || undefined,
+            })
+
+            if (cancelled) {
+              return
+            }
+
+            setDrugs(hostedResults)
+            void saveOfflinePosSnapshot(user?.id, { drugs: hostedResults })
+            setDrugSearchMessage(
+              hostedResults.length
+                ? 'Showing live inventory.'
+                : 'No matching in-stock drugs found.'
+            )
+            return
+          } catch (hostedSearchError) {
+            console.warn('Hosted inventory search failed:', hostedSearchError)
+            setDrugSearchMessage('Live inventory is unavailable. Showing cached stock.')
+          }
+        }
+
         const snapshot = await loadOfflinePosSnapshot(user?.id)
         const cachedResults = filterCachedDrugs(
           snapshot?.drugs?.length ? snapshot.drugs : drugs,
@@ -630,7 +659,7 @@ const Sales = () => {
             ? 'Showing cached local inventory.'
             : branchServerModeEnabled
               ? 'No cached in-stock drugs found. Pull inventory from Admin mode.'
-              : 'Local POS inventory is not configured. Enable the branch server for dispensing.'
+              : 'No cached in-stock drugs found.'
         )
       } catch (searchError) {
         if (!cancelled) {
@@ -651,7 +680,7 @@ const Sales = () => {
       cancelled = true
       window.clearTimeout(timeout)
     }
-  }, [branchServerModeEnabled, loading, searchTerm, user?.id])
+  }, [branchServerModeEnabled, effectiveBranchId, loading, searchTerm, user?.id])
 
   useEffect(() => {
     const routeSearch = searchParams.get('search') || ''
@@ -786,10 +815,8 @@ const Sales = () => {
         return current
       }
 
-      const parsedNhisPrice = Number.parseFloat(drug.nhis_price)
-      const hasNhisCatalogPrice = Boolean(
-        drug.is_nhis_listed && Number.isFinite(parsedNhisPrice) && parsedNhisPrice > 0
-      )
+      const retailPrice = getEffectiveSellingPrice(drug)
+      const nhisPrice = getNhisCatalogPrice(drug)
 
       return [
         ...current,
@@ -797,9 +824,9 @@ const Sales = () => {
           id: drug.id,
           drugId: drug.id,
           name: drug.name,
-          price: Number.parseFloat(drug.price),
-          nhisPrice: hasNhisCatalogPrice ? parsedNhisPrice : null,
-          nhisCode: hasNhisCatalogPrice ? drug.nhis_code || null : null,
+          price: retailPrice,
+          nhisPrice: nhisPrice > 0 ? nhisPrice : null,
+          nhisCode: nhisPrice > 0 ? drug.nhis_code || null : null,
           genericName: drug.generic_name || null,
           unit: drug.unit || 'unit',
           quantity: 1,
@@ -854,6 +881,18 @@ const Sales = () => {
         })
         setDrugs(latestLocalDrugs)
         void saveOfflinePosSnapshot(user?.id, { drugs: latestLocalDrugs })
+        return
+      }
+
+      if (isSupabaseConfigured()) {
+        const latestHostedDrugs = await searchDrugs(searchTerm, {
+          useTierAccess: true,
+          inStockOnly: true,
+          limit: POS_DRUG_SEARCH_LIMIT,
+          branchId: effectiveBranchId || undefined,
+        })
+        setDrugs(latestHostedDrugs)
+        void saveOfflinePosSnapshot(user?.id, { drugs: latestHostedDrugs })
         return
       }
 
@@ -2439,10 +2478,8 @@ const Sales = () => {
                   const reserved = getReservedQty(drug.id)
                   const remaining = Math.max(0, Number.parseFloat(drug.quantity || 0) - reserved)
                   const soldOut = remaining <= 0
-                  const nhisPrice = Number.parseFloat(drug.nhis_price)
-                  const hasNhisCatalogPrice = Boolean(
-                    drug.is_nhis_listed && Number.isFinite(nhisPrice) && nhisPrice > 0
-                  )
+                  const retailPrice = getEffectiveSellingPrice(drug)
+                  const nhisPrice = getNhisCatalogPrice(drug)
 
                   return (
                     <button
@@ -2453,8 +2490,8 @@ const Sales = () => {
                     >
                       <span className="drug-name">{drug.name}</span>
                       <span className="drug-batch">{drug.batch_number || 'No batch'}</span>
-                      <span className="drug-price">GHS {Number.parseFloat(drug.price).toFixed(2)}</span>
-                      {hasNhisCatalogPrice && (
+                      <span className="drug-price">GHS {retailPrice.toFixed(2)}</span>
+                      {hasNhisCatalogPrice(drug) && (
                         <span className="drug-nhis-price">NHIS GHS {nhisPrice.toFixed(2)}</span>
                       )}
                       <span className={`drug-stock ${soldOut ? 'sold-out' : ''}`}>

@@ -746,8 +746,10 @@ const enrichDrugsWithNhisCatalog = async (
   return rows.map((row) => {
     const match = findBestNhisCatalogMatch(row, lookups, lookupsByCode)
     if (match) {
+      const retailPrice = Number(row.price ?? 0)
       return {
         ...row,
+        price: retailPrice > 0 ? row.price : match.lookup.unitPrice,
         nhis_code: match.lookup.code,
         nhis_price: match.lookup.unitPrice,
         nhis_unit: match.lookup.unit || normalizeText(row.nhis_unit) || null,
@@ -1777,6 +1779,7 @@ const syncNhisDrugsToInventory = async (
       ))
 
     if (existingDrug) {
+      const existingPrice = Number(existingDrug.price ?? 0)
       const { error } = await adminClient
         .from('drugs')
         .update({
@@ -1789,7 +1792,7 @@ const syncNhisDrugsToInventory = async (
           expiry_date: existingDrug.expiry_date || row.expiry_date,
           quantity: existingDrug.quantity ?? row.quantity,
           unit: normalizeText(existingDrug.unit) || row.unit,
-          price: existingDrug.price ?? row.price,
+          price: existingPrice > 0 ? existingDrug.price : row.price,
           cost_price: existingDrug.cost_price ?? row.cost_price,
           supplier: normalizeText(existingDrug.supplier) || row.supplier,
           category: normalizeText(existingDrug.category) || row.category,

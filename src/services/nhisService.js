@@ -37,6 +37,18 @@ const asText = (value) => String(value ?? '').trim()
 const asNumber = (value) => Number.parseFloat(value)
 const getClaimField = (claim, camelKey, snakeKey = camelKey) =>
   asText(claim?.[camelKey] ?? claim?.[snakeKey])
+const hasPrescriptionAttachment = (claimData = {}, options = {}) => {
+  const hasSavedFile = Boolean(
+    getClaimField(claimData, 'prescriptionFilePath', 'prescription_file_path') ||
+      getClaimField(claimData, 'prescriptionFileUrl', 'prescription_file_url')
+  )
+  if (hasSavedFile) return true
+
+  return Boolean(
+    options.allowPendingFile &&
+      getClaimField(claimData, 'prescriptionFileName', 'prescription_file_name')
+  )
+}
 const VALID_ORGANIZATION_TYPES = ['pharmacy', 'hospital']
 const MAX_DIAGNOSES_PER_CLAIM = 10
 const NHIS_PRESCRIBING_LEVELS = ['A', 'M', 'B1', 'B2', 'C', 'D', 'SM']
@@ -817,6 +829,7 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
   const cccNo = getClaimField(claimData, 'cccNo', 'ccc_no') || getClaimField(claimData, 'ccCode', 'cc_code')
   const patientAge = calculateAge(dateOfBirth)
   const requireMedicineDirections = options.finalSubmission || options.requireMedicineDirections === true
+  const requirePrescriptionAttachment = options.finalSubmission || options.requirePrescriptionAttachment === true
   const shouldCheckDiagnosisTreatmentMatch =
     isHospital &&
     (options.finalSubmission || options.enforceDiagnosisTreatmentMatch === true || requireMedicineDirections)
@@ -852,6 +865,14 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
   if (!getClaimField(claimData, 'serviceDate', 'service_date_from')) blockers.push('Date of dispensing/service is required.')
   if (!getClaimField(claimData, 'physicianName', 'physician_name')) {
     warnings.push('Prescriber name or ID is missing from the prescription.')
+  }
+  if (
+    requirePrescriptionAttachment &&
+    !hasPrescriptionAttachment(claimData, {
+      allowPendingFile: !options.finalSubmission && options.allowPendingPrescriptionAttachment !== false,
+    })
+  ) {
+    blockers.push('Attach the scanned prescription PDF or JPEG before saving/submitting this NHIS claim.')
   }
 
   if (!medicines?.length && (!isHospital || !tariffServices.length)) {
@@ -1551,17 +1572,18 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
     claimData
   )
   const { providerClassLevel, nhisDrugCatalog } = await getNhisReadinessContext(claimData, options)
+  const allowIncompleteReview = Boolean(claimData?.allowIncompleteReview || claimData?.reviewOnly)
   const readiness = assessNhisClaimReadiness(
     { ...claimData, organizationType, providerClassLevel },
     medicines,
     {
       enforcePrescribingLevel: true,
+      requirePrescriptionAttachment: !allowIncompleteReview,
       providerClassLevel,
       nhisDrugCatalog,
       nhiaTariffServices: tariffServices,
     }
   )
-  const allowIncompleteReview = Boolean(claimData?.allowIncompleteReview || claimData?.reviewOnly)
   if (readiness.blockers.length && !allowIncompleteReview) {
     throw new Error(`NHIS pharmacy dispensing check failed: ${readiness.blockers.slice(0, 5).join(' ')}`)
   }
@@ -1721,6 +1743,7 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
       requireMedicineDirections: true,
       enforceDiagnosisTreatmentMatch: organizationType === 'hospital',
       enforcePrescribingLevel: true,
+      requirePrescriptionAttachment: true,
       providerClassLevel,
       nhisDrugCatalog,
       clinicalRules,
@@ -2444,7 +2467,7 @@ const createNhisExportFile = (claims, period, options = {}) => {
   return {
     content: format === 'xml' ? buildNhisClaimItXml(payload) : JSON.stringify(payload, null, 2),
     contentType: format === 'xml' ? 'application/xml;charset=utf-8;' : 'application/json;charset=utf-8;',
-    fileName: `CLAIM-it-HMS-${period.fileTag}.${format}`,
+    fileName: `CLAIM-it-HMS-${period.fileTag}.${format === 'xml' ? 'cxf' : format}`,
   }
 }
 
@@ -2584,8 +2607,9 @@ const submitNhisClaimsDirect = async (claims, period, options = {}) => {
  */
 export const exportNhisClaimsFile = async (options = {}) => {
   const period = normalizeNhisExportPeriod(options)
-  const claims = await getNhisClaimsForPeriod(period)
-  if (!claims.length) throw new Error(`No claims found for ${period.label}.`)
+  const periodClaims = await getNhisClaimsForPeriod(period)
+  const claims = periodClaims.filter((claim) => normalizeText(claim.status).toLowerCase() === 'served')
+  if (!claims.length) throw new Error(`No served claims found for ${period.label}.`)
   const organizationType = normalizeOrganizationType(options.organizationType)
   await assertNhisClaimsReadyForFinalSubmission(claims, organizationType, options)
 
@@ -2600,8 +2624,6 @@ export const exportNhisClaimsFile = async (options = {}) => {
   }
 
   downloadTextFile(createNhisExportFile(claims, period, { ...options, organizationType }))
-
-  await markNhisServedClaimsSubmitted(claims)
 
   return claims.length
 }

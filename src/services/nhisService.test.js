@@ -46,6 +46,8 @@ const baseClaim = {
   cccNo: 'CC-12345',
   serviceDate: '2026-05-14',
   physicianName: 'Dr Test',
+  prescriptionFilePath: 'org/2026-05/claim/rx.pdf',
+  prescriptionFileName: 'rx.pdf',
   organizationType: 'pharmacy',
 }
 
@@ -132,6 +134,22 @@ describe('assessNhisClaimReadiness', () => {
       'Medicine 1: dosage schedule/frequency is required.',
       'Medicine 1: duration is required.',
     ]))
+  })
+
+  it('requires a scanned prescription attachment before final export', () => {
+    const readiness = assessNhisClaimReadiness(
+      {
+        ...baseClaim,
+        prescriptionFilePath: '',
+        prescriptionFileName: '',
+      },
+      [baseMedicine],
+      { finalSubmission: true }
+    )
+
+    expect(readiness.blockers).toContain(
+      'Attach the scanned prescription PDF or JPEG before saving/submitting this NHIS claim.'
+    )
   })
 
   it('blocks claims officer corrections when hospital diagnosis and medicines do not match', () => {
@@ -673,6 +691,9 @@ describe('direct NHIA submission', () => {
         diagnosis: 'Malaria',
         service_date_from: '2026-05-14',
         physician_name: 'Dr Test',
+        prescription_file_path: 'org/2026-05/claim/rx.pdf',
+        prescription_file_name: 'rx.pdf',
+        prescription_file_url: 'https://example.test/rx.pdf',
         total_amount: 10,
         nhis_claim_medicines: [
           {
