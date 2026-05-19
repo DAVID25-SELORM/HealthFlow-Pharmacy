@@ -84,7 +84,8 @@ const NHIS_CLAIM_MEDICINES_SELECT = `
       nhis_claim_medicines (
         id, nhis_drug_id, drug_code, description, unit,
         unit_price, dispensed_qty, dispensary_date,
-        dose, frequency, duration, total_amount
+        dose, frequency, duration, total_amount,
+        medicine_access_level, required_pharmacy_level
       )
     `
 

@@ -42,6 +42,7 @@ import {
   getNhiaSettings as getBranchNhiaSettings,
 } from '../services/branchServerApi'
 import { getAllPatients } from '../services/patientService'
+import { getAllDrugs } from '../services/drugService'
 import { parseNhisDrugFile, generateNhisDrugTemplate } from '../services/nhisDrugImportService'
 import { parseNhisClinicalRuleFile, generateNhisClinicalRuleTemplate } from '../services/nhisClinicalRuleImportService'
 import { normalizeNhiaMemberNumber } from '../utils/nhiaMemberNumber'
@@ -172,7 +173,7 @@ const Nhis = () => {
   const isHospital = organizationType === 'hospital'
 
   // ── page sub-tab ─────────────────────────────────────────────
-  const [pageTab, setPageTab] = useState('claims') // 'claims' | 'catalog' | 'rules'
+  const [pageTab, setPageTab] = useState('claims') // 'claims' | 'catalog' | 'review' | 'rules'
 
   // ── data ─────────────────────────────────────────────────────
   const [claims, setClaims]       = useState([])
@@ -180,6 +181,7 @@ const Nhis = () => {
   const [nhiaTariffItems, setNhiaTariffItems] = useState([])
   const [clinicalRules, setClinicalRules] = useState([])
   const [patients, setPatients]   = useState([])
+  const [inventoryDrugs, setInventoryDrugs] = useState([])
   const [stats, setStats]         = useState({ total: 0, served: 0, submitted: 0, paid: 0, rejected: 0, totalPaid: 0 })
   const [loading, setLoading]     = useState(true)
   const [error, setError]         = useState('')
@@ -276,13 +278,14 @@ const Nhis = () => {
     try {
       setLoading(true)
       setError('')
-      const [claimsData, drugsData, patientsData, statsData, rulesData, tariffData] = await Promise.all([
+      const [claimsData, drugsData, patientsData, statsData, rulesData, tariffData, inventoryData] = await Promise.all([
         getAllNhisClaims(),
         getAllNhisDrugs(),
         getAllPatients(),
         getNhisClaimStats(),
         getAllNhisClinicalRules(),
         isHospital ? getAllNhiaTariffItems() : Promise.resolve([]),
+        getAllDrugs({ includeCatalog: true, useTierAccess: true }).catch(() => []),
       ])
 
       let readyDrugsData = drugsData
@@ -313,6 +316,7 @@ const Nhis = () => {
       setStats(statsData)
       setClinicalRules(rulesData)
       setNhiaTariffItems(tariffData)
+      setInventoryDrugs(inventoryData)
     } catch (err) {
       setError(err.message || 'Unable to load NHIS data.')
     } finally {
@@ -402,10 +406,122 @@ const Nhis = () => {
       .slice(0, 10)
   }, [nhiaTariffItems, tariffSearch])
 
+  const providerClassLevel = directNhiaSettings?.providerClassLevel || directNhiaSettings?.provider_class_level || ''
+  const directNhiaApiAvailable = Boolean(
+    directNhiaSettings?.directApiEnabled &&
+      directNhiaSettings?.apiBaseUrl &&
+      directNhiaSettings?.claimEndpointPath
+  )
+  const nhiaCcCodeApiAvailable = Boolean(
+    directNhiaSettings?.directApiEnabled &&
+      directNhiaSettings?.apiBaseUrl &&
+      directNhiaSettings?.ccCodeEndpointPath
+  )
+
   const hasMedicineSearchTerm = medCodeSearch.trim().length > 0
   // ✅ NHIS PHARMACY LEVEL PATCH START
   const facilityPharmacyLevel = getEffectivePharmacyLevel(organization, directNhiaSettings)
   // ✅ NHIS PHARMACY LEVEL PATCH END
+
+  const configReview = useMemo(() => {
+    const apiIssues = []
+    const apiWarnings = []
+    if (!facilityPharmacyLevel) apiIssues.push('Pharmacy/facility level is not configured.')
+    if (!providerClassLevel) apiIssues.push('NHIA provider class/level is not configured.')
+    if (!directNhiaSettings) {
+      apiWarnings.push('NHIA API settings are not configured; CLAIM-it export remains available.')
+    } else {
+      if (!directNhiaSettings.facilityCode && !directNhiaSettings.facility_code) apiIssues.push('NHIA facility code is missing.')
+      if (!directNhiaSettings.providerNumber && !directNhiaSettings.provider_number) apiIssues.push('NHIA provider number is missing.')
+      if (directNhiaSettings.directApiEnabled) {
+        if (!directNhiaSettings.apiBaseUrl && !directNhiaSettings.api_base_url) apiIssues.push('Direct NHIA/CLAIM-it API base URL is missing.')
+        if (!directNhiaSettings.claimEndpointPath && !directNhiaSettings.claim_endpoint_path) apiIssues.push('Claim submission endpoint path is missing.')
+      } else {
+        apiWarnings.push('Direct API is off; use CLAIM-it export/import.')
+      }
+    }
+
+    const reviewMedicine = (medicine, source) => {
+      const accessLevel = medicine.medicine_access_level || medicine.medicineAccessLevel || ''
+      const requiredLevel = medicine.required_pharmacy_level || medicine.requiredPharmacyLevel || ''
+      const prescribingLevel = medicine.category || medicine.nhis_category || ''
+      const levelCheck = assessMedicinePharmacyLevel(medicine, facilityPharmacyLevel)
+      const issues = []
+      const warnings = []
+      if (!accessLevel && !requiredLevel) warnings.push('Level not configured.')
+      if (!prescribingLevel && source === 'NHIS catalog') warnings.push('NHIS prescribing level is missing.')
+      if (!levelCheck.allowed) issues.push(levelCheck.message)
+      return {
+        id: `${source}-${medicine.id || medicine.code || medicine.nhis_code || medicine.name}`,
+        source,
+        code: medicine.code || medicine.nhis_code || '',
+        name: medicine.description || medicine.name || medicine.generic_name || '',
+        accessLevel,
+        requiredLevel,
+        prescribingLevel,
+        issues,
+        warnings,
+        status: issues.length ? 'Blocked' : warnings.length ? 'Needs config' : 'Ready',
+      }
+    }
+
+    const catalogRows = nhisDrugs.map((drug) => reviewMedicine(drug, 'NHIS catalog'))
+    const inventoryRows = inventoryDrugs
+      .filter((drug) => drug.is_nhis_listed || drug.nhis_code || drug.medicine_access_level || drug.required_pharmacy_level)
+      .map((drug) => reviewMedicine(drug, 'Inventory'))
+
+    const claimRows = claims.map((claim) => {
+      const readiness = assessNhisClaimReadiness(
+        {
+          ...claim,
+          organizationType: claim.organization_type || organizationType,
+          providerClassLevel,
+        },
+        claim.nhis_claim_medicines || [],
+        {
+          finalSubmission: true,
+          providerClassLevel,
+          pharmacyLevel: facilityPharmacyLevel,
+          nhisDrugCatalog: nhisDrugs,
+          nhiaTariffServices: claim.nhis_claim_services || [],
+        }
+      )
+      return {
+        id: claim.id,
+        claimNumber: claim.claim_number,
+        patient: `${claim.surname || ''} ${claim.other_names || ''}`.trim(),
+        status: claim.status,
+        blockers: readiness.blockers,
+        warnings: readiness.warnings,
+      }
+    })
+
+    const medicineRows = [...catalogRows, ...inventoryRows]
+    return {
+      apiIssues,
+      apiWarnings,
+      medicineRows,
+      claimRows,
+      summary: {
+        configIssues: apiIssues.length,
+        configWarnings: apiWarnings.length,
+        medicinesTotal: medicineRows.length,
+        medicinesBlocked: medicineRows.filter((row) => row.issues.length).length,
+        medicinesNeedsConfig: medicineRows.filter((row) => !row.issues.length && row.warnings.length).length,
+        claimsBlocked: claimRows.filter((row) => row.blockers.length).length,
+        claimsWarnings: claimRows.filter((row) => !row.blockers.length && row.warnings.length).length,
+      },
+    }
+  }, [
+    claims,
+    directNhiaSettings,
+    facilityPharmacyLevel,
+    inventoryDrugs,
+    nhisDrugs,
+    organizationType,
+    providerClassLevel,
+  ])
+
   const getCatalogCategoryForMedicine = (medicine = {}) => {
     const code = String(medicine.drugCode || medicine.drug_code || '').trim().toUpperCase()
     const id = String(medicine.nhisDrugId || medicine.nhis_drug_id || '').trim()
@@ -716,17 +832,6 @@ const Nhis = () => {
     [claimMedicines, claimServices]
   )
 
-  const providerClassLevel = directNhiaSettings?.providerClassLevel || directNhiaSettings?.provider_class_level || ''
-  const directNhiaApiAvailable = Boolean(
-    directNhiaSettings?.directApiEnabled &&
-      directNhiaSettings?.apiBaseUrl &&
-      directNhiaSettings?.claimEndpointPath
-  )
-  const nhiaCcCodeApiAvailable = Boolean(
-    directNhiaSettings?.directApiEnabled &&
-      directNhiaSettings?.apiBaseUrl &&
-      directNhiaSettings?.ccCodeEndpointPath
-  )
   const getDirectNhiaOptions = () => ({
     organizationType,
     facilityCode: organization?.facility_code || organization?.claimit_facility_code || directNhiaSettings?.facilityCode || '',
@@ -1311,6 +1416,12 @@ const Nhis = () => {
         >
           <FileSpreadsheet size={16} /> Drug Catalog
         </button>
+        <button
+          className={`nhis-page-tab ${pageTab === 'review' ? 'active' : ''}`}
+          onClick={() => setPageTab('review')}
+        >
+          <CheckCircle2 size={16} /> Config Review
+        </button>
         {isHospital && (
           <button
             className={`nhis-page-tab ${pageTab === 'rules' ? 'active' : ''}`}
@@ -1493,6 +1604,135 @@ const Nhis = () => {
       )}
 
       {/* ── CATALOG TAB ───────────────────────────────────────────── */}
+      {pageTab === 'review' && (
+        <div className="nhis-review">
+          <div className="nhis-stats">
+            <div className={`stat-box ${configReview.summary.configIssues ? 'rejected' : 'approved'}`}>
+              <span className="stat-label">Config Issues</span>
+              <span className="stat-value">{configReview.summary.configIssues}</span>
+            </div>
+            <div className={`stat-box ${configReview.summary.medicinesBlocked ? 'rejected' : 'approved'}`}>
+              <span className="stat-label">Blocked Medicines</span>
+              <span className="stat-value">{configReview.summary.medicinesBlocked}</span>
+            </div>
+            <div className={`stat-box ${configReview.summary.medicinesNeedsConfig ? 'pending' : 'approved'}`}>
+              <span className="stat-label">Need Medicine Config</span>
+              <span className="stat-value">{configReview.summary.medicinesNeedsConfig}</span>
+            </div>
+            <div className={`stat-box ${configReview.summary.claimsBlocked ? 'rejected' : 'approved'}`}>
+              <span className="stat-label">Claims Blocked</span>
+              <span className="stat-value">{configReview.summary.claimsBlocked}</span>
+            </div>
+          </div>
+
+          <section className="nhis-review-section">
+            <div className="nhis-review-heading">
+              <h3>Facility and NHIA setup</h3>
+              <StatusBadge status={configReview.apiIssues.length ? 'rejected' : 'paid'} />
+            </div>
+            <div className="nhis-review-grid">
+              <div><strong>Pharmacy level:</strong> {facilityPharmacyLevel || 'Not configured'}</div>
+              <div><strong>NHIA provider class:</strong> {providerClassLevel || 'Not configured'}</div>
+              <div><strong>Direct API:</strong> {directNhiaSettings?.directApiEnabled ? 'Enabled' : 'Off'}</div>
+              <div><strong>Export fallback:</strong> {(directNhiaSettings?.exportFormat || exportFormat || 'cxf').toUpperCase()}</div>
+            </div>
+            {(configReview.apiIssues.length || configReview.apiWarnings.length) ? (
+              <div className="nhis-review-issues">
+                {configReview.apiIssues.map((issue) => <div key={issue} className="issue issue--block">{issue}</div>)}
+                {configReview.apiWarnings.map((warning) => <div key={warning} className="issue issue--warn">{warning}</div>)}
+              </div>
+            ) : (
+              <div className="nhis-review-ok">Facility and API/export settings look ready.</div>
+            )}
+          </section>
+
+          <section className="nhis-review-section">
+            <div className="nhis-review-heading">
+              <h3>Medicine configuration</h3>
+              <span>{configReview.summary.medicinesTotal} reviewed</span>
+            </div>
+            <div className="nhis-table-wrap">
+              {configReview.medicineRows.length === 0 ? (
+                <div className="nhis-empty">No NHIS medicines or listed inventory medicines found.</div>
+              ) : (
+                <table className="nhis-table">
+                  <thead>
+                    <tr>
+                      <th>Source</th>
+                      <th>Code</th>
+                      <th>Medicine</th>
+                      <th>Access</th>
+                      <th>Required Facility</th>
+                      <th>NHIS Level</th>
+                      <th>Status</th>
+                      <th>Issue</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {configReview.medicineRows
+                      .filter((row) => row.issues.length || row.warnings.length)
+                      .slice(0, 80)
+                      .map((row) => (
+                        <tr key={row.id}>
+                          <td>{row.source}</td>
+                          <td className="drug-code-cell">{row.code || '-'}</td>
+                          <td>{row.name || '-'}</td>
+                          <td>{row.accessLevel || 'Level not configured'}</td>
+                          <td>{row.requiredLevel || '-'}</td>
+                          <td>{row.prescribingLevel || '-'}</td>
+                          <td><StatusBadge status={row.issues.length ? 'rejected' : 'served'} /></td>
+                          <td>{[...row.issues, ...row.warnings].join(' ')}</td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            {configReview.medicineRows.some((row) => row.issues.length || row.warnings.length) ? null : (
+              <div className="nhis-review-ok">All reviewed medicines have the needed access configuration.</div>
+            )}
+          </section>
+
+          <section className="nhis-review-section">
+            <div className="nhis-review-heading">
+              <h3>Claim readiness</h3>
+              <span>{claims.length} claims reviewed</span>
+            </div>
+            <div className="nhis-table-wrap">
+              {configReview.claimRows.filter((row) => row.blockers.length || row.warnings.length).length === 0 ? (
+                <div className="nhis-review-ok">No claim readiness issues found.</div>
+              ) : (
+                <table className="nhis-table">
+                  <thead>
+                    <tr>
+                      <th>Claim #</th>
+                      <th>Patient</th>
+                      <th>Status</th>
+                      <th>Blockers</th>
+                      <th>Warnings</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {configReview.claimRows
+                      .filter((row) => row.blockers.length || row.warnings.length)
+                      .slice(0, 80)
+                      .map((row) => (
+                        <tr key={row.id}>
+                          <td className="claim-number">{row.claimNumber || '-'}</td>
+                          <td>{row.patient || '-'}</td>
+                          <td><StatusBadge status={row.status} /></td>
+                          <td>{row.blockers.slice(0, 3).join(' ') || '-'}</td>
+                          <td>{row.warnings.slice(0, 3).join(' ') || '-'}</td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </section>
+        </div>
+      )}
+
       {pageTab === 'catalog' && (
         <>
           <div className="nhis-controls">

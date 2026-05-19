@@ -148,6 +148,7 @@
 .nhis-page .stat-box.pending { border-left-color: var(--warning); }
 .nhis-page .stat-box.approved { border-left-color: var(--success); }
 .nhis-page .stat-box.rejected { border-left-color: var(--danger); }
+.nhis-page .stat-box.approved { border-left-color: var(--success); }
 
 .nhis-page .stat-label {
   display: block;
@@ -516,6 +517,81 @@
   flex-shrink: 0;
   background: white;
   box-shadow: 0 -10px 24px rgba(15, 23, 42, 0.06);
+}
+
+.nhis-review {
+  display: grid;
+  gap: 1rem;
+}
+
+.nhis-review-section {
+  background: white;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: 1rem;
+  min-width: 0;
+}
+
+.nhis-review-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+}
+
+.nhis-review-heading h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--gray-900);
+}
+
+.nhis-review-heading span {
+  color: var(--gray-600);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.nhis-review-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.75rem;
+  color: var(--gray-700);
+  font-size: 0.92rem;
+}
+
+.nhis-review-issues {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.85rem;
+}
+
+.nhis-review-issues .issue,
+.nhis-review-ok {
+  border-radius: var(--radius);
+  padding: 0.7rem 0.85rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.nhis-review-issues .issue--block {
+  background: #fff3f1;
+  color: #9f3020;
+  border: 1px solid #ffd4ce;
+}
+
+.nhis-review-issues .issue--warn {
+  background: #fff8e6;
+  color: #8a5a00;
+  border: 1px solid #ffe2a3;
+}
+
+.nhis-review-ok {
+  margin-top: 0.85rem;
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
 }
 
 .claim-footer-total,
