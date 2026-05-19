@@ -155,6 +155,48 @@ const lookupMatches = (value, term) => {
     compactLookupText(value).includes(compactLookupText(term))
 }
 
+const getSettingValue = (settings, camelKey, snakeKey) =>
+  settings?.[camelKey] ?? settings?.[snakeKey] ?? ''
+
+const getPreferredTariffFacilityGroup = (settings, organization) => {
+  const explicitGroup =
+    getSettingValue(settings, 'tariffFacilityGroup', 'tariff_facility_group') ||
+    getSettingValue(settings, 'nhiaTariffFacilityGroup', 'nhia_tariff_facility_group') ||
+    organization?.tariff_facility_group ||
+    organization?.nhia_tariff_facility_group
+
+  if (explicitGroup) return explicitGroup
+
+  const providerType =
+    getSettingValue(settings, 'providerTypeDescription', 'provider_type_description') ||
+    organization?.provider_type_description ||
+    organization?.providerTypeDescription ||
+    ''
+  const normalizedProvider = compactLookupText(providerType)
+
+  if (normalizedProvider.includes('privateprimarycarehospital') ||
+      (normalizedProvider.includes('private') && normalizedProvider.includes('primary') && normalizedProvider.includes('hospital'))) {
+    return 'Private Primary Care Hospital'
+  }
+
+  if (normalizedProvider.includes('chag') && normalizedProvider.includes('primary') && normalizedProvider.includes('hospital')) {
+    return 'CHAG Primary Care Hospital'
+  }
+
+  if (normalizedProvider.includes('healthcenters') || normalizedProvider.includes('healthcentre')) {
+    return 'CHAG Health Centre and Clinic'
+  }
+
+  return ''
+}
+
+const getPreferredTariffCateringOption = (settings) => {
+  const admissionOption = getSettingValue(settings, 'admissionPaymentOption', 'admission_payment_option')
+  if (admissionOption === 'patient_pays_admission') return 'exclusive'
+  if (admissionOption === 'nhis_pays_admission') return 'inclusive'
+  return ''
+}
+
 const StatusBadge = ({ status }) => (
   <span className={`nhis-badge nhis-badge--${status}`}>{status}</span>
 )
@@ -254,6 +296,8 @@ const Nhis = () => {
   const [updatingStatus, setUpdatingStatus] = useState(null)
   const [rejectTarget, setRejectTarget]     = useState(null)
   const [rejectReason, setRejectReason]     = useState('')
+  const activeTariffFacilityGroup = getPreferredTariffFacilityGroup(directNhiaSettings, organization)
+  const activeTariffCateringOption = getPreferredTariffCateringOption(directNhiaSettings)
 
   // ── sync tab from URL ────────────────────────────────────────
   useEffect(() => {
@@ -284,7 +328,12 @@ const Nhis = () => {
         getAllPatients(),
         getNhisClaimStats(),
         getAllNhisClinicalRules(),
-        isHospital ? getAllNhiaTariffItems() : Promise.resolve([]),
+        isHospital
+          ? getAllNhiaTariffItems({
+              facilityGroup: activeTariffFacilityGroup,
+              cateringOption: activeTariffCateringOption,
+            })
+          : Promise.resolve([]),
         getAllDrugs({ includeCatalog: true, useTierAccess: true }).catch(() => []),
       ])
 
@@ -322,7 +371,7 @@ const Nhis = () => {
     } finally {
       setLoading(false)
     }
-  }, [canWrite, notify, organization?.can_use_nhis, isHospital])
+  }, [canWrite, notify, organization?.can_use_nhis, isHospital, activeTariffFacilityGroup, activeTariffCateringOption])
 
   useEffect(() => { void loadAll() }, [loadAll])
 
@@ -397,14 +446,18 @@ const Nhis = () => {
     const term = tariffSearch.trim().toLowerCase()
     if (!term) return []
     return nhiaTariffItems
-      .filter((item) =>
-        lookupMatches(item.gdrg_code, term) ||
-        lookupMatches(item.description, term) ||
-        lookupMatches(item.mdc, term) ||
-        lookupMatches(item.facility_group, term)
-      )
+      .filter((item) => {
+        if (activeTariffFacilityGroup && item.facility_group !== activeTariffFacilityGroup) return false
+        if (activeTariffCateringOption && item.catering_option !== activeTariffCateringOption) return false
+        return (
+          lookupMatches(item.gdrg_code, term) ||
+          lookupMatches(item.description, term) ||
+          lookupMatches(item.mdc, term) ||
+          lookupMatches(item.facility_group, term)
+        )
+      })
       .slice(0, 10)
-  }, [nhiaTariffItems, tariffSearch])
+  }, [nhiaTariffItems, tariffSearch, activeTariffFacilityGroup, activeTariffCateringOption])
 
   const providerClassLevel = directNhiaSettings?.providerClassLevel || directNhiaSettings?.provider_class_level || ''
   const directNhiaApiAvailable = Boolean(

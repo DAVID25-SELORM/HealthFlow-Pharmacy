@@ -400,6 +400,8 @@ export default function OfflineSync() {
               <option value="Tertiary care hospital">Tertiary care hospital</option>
               <option value="Secondary care hospital">Secondary care hospital</option>
               <option value="Primary care hospital">Primary care hospital</option>
+              <option value="Private Primary Care Hospital">Private Primary Care Hospital</option>
+              <option value="CHAG Primary Care Hospital">CHAG Primary Care Hospital</option>
               <option value="Health centers (Public, Private, CHAG)">Health centers (Public, Private, CHAG)</option>
               <option value="Maternity homes">Maternity homes</option>
               <option value="Private clinics">Private clinics</option>
