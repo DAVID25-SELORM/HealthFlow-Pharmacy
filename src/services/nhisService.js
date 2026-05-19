@@ -485,6 +485,70 @@ const calculateAge = (dateOfBirth) => {
   return age
 }
 
+const getTariffAgeBandIssue = (ageBand, patientAge, serviceLabel) => {
+  const raw = asText(ageBand).toLowerCase().replace(/\s+/g, '')
+  const normalized = normalizeMatchText(ageBand)
+  if (!normalized) return null
+  if (patientAge === null) {
+    return `${serviceLabel}: patient date of birth is required to validate tariff age band ${ageBand}.`
+  }
+  if (/under|below|less/.test(normalized) && normalized.includes('12') && patientAge >= 12) {
+    return `${serviceLabel}: tariff age band ${ageBand} is for patients under 12, but this patient is ${patientAge}.`
+  }
+  if ((raw.includes('<12') || raw.includes('under12') || raw.includes('below12') || normalized.includes('lt12')) && patientAge >= 12) {
+    return `${serviceLabel}: tariff age band ${ageBand} is for patients under 12, but this patient is ${patientAge}.`
+  }
+  if ((raw.includes('>=12') || raw.includes('≥12') || normalized.includes('12yrsandabove') || normalized.includes('12yearsandabove')) && patientAge < 12) {
+    return `${serviceLabel}: tariff age band ${ageBand} is for patients 12 and above, but this patient is ${patientAge}.`
+  }
+  return null
+}
+
+const normalizeTariffCatalogItem = (item = {}) => ({
+  id: asText(item.id ?? item.nhiaTariffItemId ?? item.nhia_tariff_item_id),
+  tariffVersion: asText(item.tariffVersion ?? item.tariff_version) || NHIA_TARIFF_VERSION,
+  facilityGroup: asText(item.facilityGroup ?? item.facility_group),
+  cateringOption: asText(item.cateringOption ?? item.catering_option),
+  gdrgCode: asText(item.gdrgCode ?? item.gdrg_code).toUpperCase(),
+  tariffAmount: asNumber(item.tariffAmount ?? item.tariff_amount ?? item.unitPrice ?? item.unit_price),
+  ageBand: asText(item.ageBand ?? item.age_band),
+  sourceFile: asText(item.sourceFile ?? item.source_file),
+  sourcePage: item.sourcePage ?? item.source_page ?? null,
+})
+
+const getTariffCatalogKey = ({ tariffVersion, facilityGroup, cateringOption, gdrgCode } = {}) =>
+  [
+    asText(tariffVersion || NHIA_TARIFF_VERSION).toLowerCase(),
+    asText(facilityGroup).toLowerCase(),
+    asText(cateringOption).toLowerCase(),
+    asText(gdrgCode).toUpperCase(),
+  ].join('|')
+
+const getTariffCatalogLookup = (items = []) => {
+  const byId = new Map()
+  const byKey = new Map()
+  ;(items || []).map(normalizeTariffCatalogItem).forEach((item) => {
+    if (!item.gdrgCode) return
+    if (item.id) byId.set(item.id, item)
+    byKey.set(getTariffCatalogKey(item), item)
+  })
+  return { byId, byKey }
+}
+
+const getExpectedTariffForService = (service, lookup) => {
+  if (!lookup) return null
+  return lookup.byId.get(service.nhiaTariffItemId) ||
+    lookup.byKey.get(getTariffCatalogKey(service)) ||
+    null
+}
+
+const amountsDiffer = (a, b) => {
+  const left = Number(a)
+  const right = Number(b)
+  if (!Number.isFinite(left) || !Number.isFinite(right)) return false
+  return Math.abs(left - right) >= 0.01
+}
+
 const getMedicineCode = (medicine = {}) => asText(medicine?.drugCode ?? medicine?.drug_code).toUpperCase()
 
 const getMedicineDescription = (medicine = {}) =>
@@ -847,6 +911,9 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
     (options.finalSubmission || options.enforceClinicalScrub === true || requireMedicineDirections)
   const providerPrescribingLevel = getProviderPrescribingLevel(claimData, options)
   const medicineLevelLookup = getMedicineLevelLookup(options.nhisDrugCatalog ?? options.drugCatalog ?? [])
+  const tariffCatalogLookup = getTariffCatalogLookup(
+    options.currentNhiaTariffItems ?? options.nhiaTariffCatalog ?? options.tariffCatalog ?? []
+  )
   // ✅ NHIS PHARMACY LEVEL PATCH START
   const facilityPharmacyLevel = getEffectivePharmacyLevel(
     options.pharmacyLevel,
@@ -956,12 +1023,28 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
   if (isHospital && tariffServices.length) {
     tariffServices.forEach((service, index) => {
       const label = `Service ${index + 1}`
+      const expectedTariff = getExpectedTariffForService(service, tariffCatalogLookup)
+      const ageBand = expectedTariff?.ageBand || service.ageBand
+      const expectedUnitPrice = expectedTariff?.tariffAmount
       if (!service.nhiaTariffItemId) blockers.push(`${label}: select an item from the FEB 2023 NHIA tariff catalog.`)
       if (!service.gdrgCode) blockers.push(`${label}: G-DRG/tariff code is required.`)
       if (!service.description) blockers.push(`${label}: service description is required.`)
       if (!(service.quantity > 0)) blockers.push(`${label}: quantity must be greater than zero.`)
       if (!(service.unitPrice >= 0)) blockers.push(`${label}: official tariff amount is required.`)
       if (!(service.totalAmount >= 0)) blockers.push(`${label}: service line total is required.`)
+      if (ageBand) {
+        const ageIssue = getTariffAgeBandIssue(ageBand, patientAge, label)
+        if (ageIssue) blockers.push(ageIssue)
+      }
+      if (expectedTariff) {
+        const expectedTotal = Number(expectedUnitPrice || 0) * Number(service.quantity || 0)
+        if (amountsDiffer(service.unitPrice, expectedUnitPrice)) {
+          blockers.push(`${label}: tariff price is outdated. Current official amount is GHS ${Number(expectedUnitPrice || 0).toFixed(2)}.`)
+        }
+        if (amountsDiffer(service.totalAmount, expectedTotal)) {
+          blockers.push(`${label}: service total is outdated. Current official total is GHS ${expectedTotal.toFixed(2)}.`)
+        }
+      }
       if (!service.serviceDate) warnings.push(`${label}: service date is missing; claim service date will be used for export.`)
     })
   }
@@ -1130,6 +1213,11 @@ export const validateNhisClaimFinalReadiness = async (claimData, medicines = [],
     ? await getAllNhisClinicalRules()
     : DIAGNOSIS_TREATMENT_RULES
   const { providerClassLevel, nhisDrugCatalog } = await getNhisReadinessContext(claimData, options)
+  const tariffServices = options.nhiaTariffServices ?? claimData?.nhis_claim_services ?? []
+  const currentNhiaTariffItems = await getMergedCurrentNhiaTariffItemsForServices(
+    tariffServices,
+    options.currentNhiaTariffItems ?? options.nhiaTariffCatalog
+  )
 
   return assessNhisClaimReadiness(
     { ...claimData, organizationType, providerClassLevel },
@@ -1143,7 +1231,8 @@ export const validateNhisClaimFinalReadiness = async (claimData, medicines = [],
       // ✅ NHIS PHARMACY LEVEL PATCH END
       nhisDrugCatalog,
       enforcePrescribingLevel: true,
-      nhiaTariffServices: options.nhiaTariffServices ?? claimData?.nhis_claim_services ?? [],
+      nhiaTariffServices: tariffServices,
+      currentNhiaTariffItems,
     }
   ).blockers
 }
@@ -1279,6 +1368,42 @@ export const getAllNhiaTariffItems = async (filters = {}) => {
     throw error
   }
   return data || []
+}
+
+const getCurrentNhiaTariffItemsForServices = async (serviceLines = []) => {
+  if (shouldUseBranchServer()) return []
+  const ids = Array.from(new Set(
+    normalizeNhiaTariffServiceLines(serviceLines)
+      .map((service) => service.nhiaTariffItemId)
+      .filter(Boolean)
+  ))
+  if (!ids.length) return []
+
+  const { data, error } = await supabase
+    .from('nhia_tariff_items')
+    .select(`
+      id, tariff_version, facility_group, catering_option, mdc, gdrg_code,
+      description, age_band, tariff_amount, currency, source_file, source_page
+    `)
+    .in('id', ids)
+    .eq('is_active', true)
+
+  if (error) {
+    if (['42P01', 'PGRST205'].includes(error.code)) return []
+    throw error
+  }
+  return data || []
+}
+
+const getMergedCurrentNhiaTariffItemsForServices = async (serviceLines = [], providedItems = null) => {
+  const provided = Array.isArray(providedItems) ? providedItems : []
+  const fetched = await getCurrentNhiaTariffItemsForServices(serviceLines).catch(() => [])
+  const byId = new Map()
+  ;[...provided, ...fetched].forEach((item) => {
+    const normalized = normalizeTariffCatalogItem(item)
+    if (normalized.id) byId.set(normalized.id, item)
+  })
+  return byId.size ? Array.from(byId.values()) : [...provided, ...fetched]
 }
 
 export const getAllNhisDrugs = async (searchTerm = '') => {
@@ -1631,6 +1756,10 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
     claimData
   )
   const { providerClassLevel, nhisDrugCatalog } = await getNhisReadinessContext(claimData, options)
+  const currentNhiaTariffItems = await getMergedCurrentNhiaTariffItemsForServices(
+    tariffServices,
+    options.currentNhiaTariffItems ?? options.nhiaTariffCatalog
+  )
   const allowIncompleteReview = Boolean(claimData?.allowIncompleteReview || claimData?.reviewOnly)
   const readiness = assessNhisClaimReadiness(
     { ...claimData, organizationType, providerClassLevel },
@@ -1644,6 +1773,7 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
       // ✅ NHIS PHARMACY LEVEL PATCH END
       nhisDrugCatalog,
       nhiaTariffServices: tariffServices,
+      currentNhiaTariffItems,
     }
   )
   if (readiness.blockers.length && !allowIncompleteReview) {
@@ -1803,6 +1933,10 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
     claimData
   )
   const { providerClassLevel, nhisDrugCatalog } = await getNhisReadinessContext(claimData, options)
+  const currentNhiaTariffItems = await getMergedCurrentNhiaTariffItemsForServices(
+    tariffServices,
+    options.currentNhiaTariffItems ?? options.nhiaTariffCatalog
+  )
   const clinicalRules = organizationType === 'hospital'
     ? await getAllNhisClinicalRules()
     : DIAGNOSIS_TREATMENT_RULES
@@ -1821,6 +1955,7 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
       nhisDrugCatalog,
       clinicalRules,
       nhiaTariffServices: tariffServices,
+      currentNhiaTariffItems,
     }
   )
   if (readiness.blockers.length) {
@@ -2568,6 +2703,11 @@ const downloadTextFile = ({ content, contentType, fileName }) => {
 const assertNhisClaimsReadyForFinalSubmission = async (claims, organizationType, options = {}) => {
   const clinicalRules = organizationType === 'hospital' ? await getAllNhisClinicalRules() : DIAGNOSIS_TREATMENT_RULES
   const { providerClassLevel, nhisDrugCatalog } = await getNhisReadinessContext({ organizationType }, options)
+  const allTariffServices = claims.flatMap((claim) => claim.nhis_claim_services || [])
+  const currentNhiaTariffItems = await getMergedCurrentNhiaTariffItemsForServices(
+    allTariffServices,
+    options.currentNhiaTariffItems ?? options.nhiaTariffCatalog
+  )
   const incompleteClaims = claims
     .map((claim) => ({
       claim,
@@ -2588,6 +2728,7 @@ const assertNhisClaimsReadyForFinalSubmission = async (claims, organizationType,
           // ✅ NHIS PHARMACY LEVEL PATCH END
           nhisDrugCatalog,
           nhiaTariffServices: claim.nhis_claim_services || [],
+          currentNhiaTariffItems,
         }
       ).blockers,
     }))

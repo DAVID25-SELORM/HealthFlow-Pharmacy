@@ -537,6 +537,7 @@ const Nhis = () => {
           pharmacyLevel: facilityPharmacyLevel,
           nhisDrugCatalog: nhisDrugs,
           nhiaTariffServices: claim.nhis_claim_services || [],
+          currentNhiaTariffItems: nhiaTariffItems,
         }
       )
       return {
@@ -571,6 +572,7 @@ const Nhis = () => {
     facilityPharmacyLevel,
     inventoryDrugs,
     nhisDrugs,
+    nhiaTariffItems,
     organizationType,
     providerClassLevel,
   ])
@@ -920,9 +922,10 @@ const Nhis = () => {
         nhisDrugCatalog: nhisDrugs,
         clinicalRules,
         nhiaTariffServices: claimServices,
+        currentNhiaTariffItems: nhiaTariffItems,
       }
     ),
-    [claimForm, claimMedicines, claimServices, organizationType, editingClaim, isHospital, clinicalRules, providerClassLevel, facilityPharmacyLevel, nhisDrugs]
+    [claimForm, claimMedicines, claimServices, organizationType, editingClaim, isHospital, clinicalRules, providerClassLevel, facilityPharmacyLevel, nhisDrugs, nhiaTariffItems]
   )
 
   const readinessIssues = readiness.issues
@@ -1146,6 +1149,7 @@ const Nhis = () => {
             // ✅ NHIS PHARMACY LEVEL PATCH END
             nhisDrugCatalog: nhisDrugs,
             nhiaTariffServices: claim.nhis_claim_services || [],
+            currentNhiaTariffItems: nhiaTariffItems,
           }
         )
 
@@ -2190,6 +2194,8 @@ const Nhis = () => {
                               <span className="drug-meta">
                                 {item.description} - {fmtCurrency(item.tariff_amount)} - {item.facility_group}
                                 {item.catering_option ? ` (${item.catering_option})` : ''}
+                                {item.age_band ? ` - ${item.age_band}` : ''}
+                                {item.source_page ? ` - p.${item.source_page}` : ''}
                               </span>
                             </button>
                           ))}
@@ -2208,6 +2214,8 @@ const Nhis = () => {
                               <div className="medicine-meta">
                                 {service.mdc || 'NHIA tariff'} | {service.facilityGroup}
                                 {service.cateringOption ? ` | ${service.cateringOption}` : ''}
+                                {service.ageBand ? ` | ${service.ageBand}` : ''}
+                                {service.sourceFile ? ` | ${service.sourceFile}${service.sourcePage ? ` p.${service.sourcePage}` : ''}` : ''}
                               </div>
                             </div>
                             <div className="medicine-card-right">
@@ -2572,6 +2580,9 @@ const Nhis = () => {
                     <td>{fmtCurrency(service.total_amount)}</td>
                     <td colSpan={3}>
                       {service.mdc || 'NHIA tariff'} {service.facility_group ? `- ${service.facility_group}` : ''}
+                      {service.catering_option ? ` | ${service.catering_option}` : ''}
+                      {service.age_band ? ` | ${service.age_band}` : ''}
+                      {service.source_file ? ` | ${service.source_file}${service.source_page ? ` p.${service.source_page}` : ''}` : ''}
                     </td>
                   </tr>
                 ))}

@@ -324,6 +324,58 @@ describe('assessNhisClaimReadiness', () => {
     expect(invalidQuantity.blockers).toContain('Service 1: quantity must be greater than zero.')
   })
 
+  it('blocks tariff services when patient age does not match the PDF age band', () => {
+    const childWithAdultTariff = assessNhisClaimReadiness(
+      { ...baseClaim, organizationType: 'hospital', diagnosis: 'General consultation', dateOfBirth: '2020-01-01' },
+      [],
+      {
+        enforcePrescribingLevel: true,
+        providerClassLevel: 'D',
+        nhiaTariffServices: [{ ...baseTariffService, ageBand: '>=12 Yrs' }],
+      }
+    )
+    const adultWithChildTariff = assessNhisClaimReadiness(
+      { ...baseClaim, organizationType: 'hospital', diagnosis: 'General consultation', dateOfBirth: '1990-01-01' },
+      [],
+      {
+        enforcePrescribingLevel: true,
+        providerClassLevel: 'D',
+        nhiaTariffServices: [{ ...baseTariffService, ageBand: '<12 Yrs' }],
+      }
+    )
+
+    expect(childWithAdultTariff.blockers).toEqual(expect.arrayContaining([
+      expect.stringContaining('tariff age band >=12 Yrs is for patients 12 and above'),
+    ]))
+    expect(adultWithChildTariff.blockers).toEqual(expect.arrayContaining([
+      expect.stringContaining('tariff age band <12 Yrs is for patients under 12'),
+    ]))
+  })
+
+  it('blocks saved tariff service lines whose copied price no longer matches the catalog', () => {
+    const readiness = assessNhisClaimReadiness(
+      { ...baseClaim, organizationType: 'hospital', diagnosis: 'General consultation' },
+      [],
+      {
+        enforcePrescribingLevel: true,
+        providerClassLevel: 'D',
+        nhiaTariffServices: [{ ...baseTariffService, unitPrice: 37.08, quantity: 2, totalAmount: 74.16 }],
+        currentNhiaTariffItems: [{
+          id: 'tariff-1',
+          tariff_version: 'FEB 2023',
+          facility_group: 'CHAG Primary Care Hospital',
+          catering_option: 'exclusive',
+          gdrg_code: 'OPDC01A',
+          age_band: null,
+          tariff_amount: 50,
+        }],
+      }
+    )
+
+    expect(readiness.blockers).toContain('Service 1: tariff price is outdated. Current official amount is GHS 50.00.')
+    expect(readiness.blockers).toContain('Service 1: service total is outdated. Current official total is GHS 100.00.')
+  })
+
   it('blocks medicines above the configured NHIA provider class level', () => {
     const readiness = assessNhisClaimReadiness(
       baseClaim,
