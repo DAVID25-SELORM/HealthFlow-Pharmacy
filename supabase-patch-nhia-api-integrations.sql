@@ -37,8 +37,8 @@ CREATE TABLE IF NOT EXISTS public.organization_nhia_integrations (
   credential_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
   nhis_member_digits INTEGER NOT NULL DEFAULT 8,
   ghana_card_digits INTEGER NOT NULL DEFAULT 10,
-  export_format TEXT NOT NULL DEFAULT 'json'
-    CHECK (export_format IN ('json', 'xml')),
+  export_format TEXT NOT NULL DEFAULT 'cxf'
+    CHECK (export_format IN ('cxf', 'json', 'xml')),
   max_retry_attempts INTEGER NOT NULL DEFAULT 3,
   is_active BOOLEAN NOT NULL DEFAULT true,
   created_by UUID REFERENCES public.users(id),
@@ -59,6 +59,7 @@ ALTER TABLE public.organization_nhia_integrations
   ADD COLUMN IF NOT EXISTS claims_officer_signature_url TEXT,
   ADD COLUMN IF NOT EXISTS claim_status_endpoint_path TEXT,
   ADD COLUMN IF NOT EXISTS member_lookup_endpoint_path TEXT,
+  ALTER COLUMN export_format SET DEFAULT 'cxf',
   ALTER COLUMN claim_endpoint_path DROP DEFAULT,
   ALTER COLUMN claim_endpoint_path DROP NOT NULL;
 
@@ -91,6 +92,27 @@ BEGIN
   ALTER TABLE public.organization_nhia_integrations
     ADD CONSTRAINT organization_nhia_integrations_credential_mode_check
     CHECK (credential_mode IN ('api_key', 'bearer_token', 'basic_auth', 'oauth_client', 'claimit_token'));
+END $$;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'organization_nhia_integrations_export_format_check'
+      AND conrelid = 'public.organization_nhia_integrations'::regclass
+  ) THEN
+    ALTER TABLE public.organization_nhia_integrations
+      DROP CONSTRAINT organization_nhia_integrations_export_format_check;
+  END IF;
+
+  ALTER TABLE public.organization_nhia_integrations
+    ADD CONSTRAINT organization_nhia_integrations_export_format_check
+    CHECK (export_format IN ('cxf', 'json', 'xml'));
+
+  UPDATE public.organization_nhia_integrations
+  SET export_format = 'cxf'
+  WHERE export_format IS NULL OR export_format NOT IN ('cxf', 'json', 'xml');
 END $$;
 
 CREATE INDEX IF NOT EXISTS idx_organization_nhia_integrations_org
