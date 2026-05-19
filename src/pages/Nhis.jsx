@@ -230,7 +230,7 @@ const Nhis = () => {
   const [exportMode, setExportMode]     = useState('month')
   const [exportFromDate, setExportFromDate] = useState(todayIsoDate())
   const [exportToDate, setExportToDate] = useState(todayIsoDate())
-  const [exportFormat, setExportFormat] = useState('xml')
+  const [exportFormat, setExportFormat] = useState('cxf')
   const [exporting, setExporting]       = useState(false)
 
   // ── status update ─────────────────────────────────────────────
@@ -1145,7 +1145,7 @@ const Nhis = () => {
       notify(
         directNhiaApiAvailable
           ? `${count} claims submitted directly to NHIA for ${periodLabel}. Served claims marked as Submitted.`
-          : `${count} claims exported as ${exportFormat.toUpperCase()} for ${periodLabel}. Served claims marked as Submitted.`,
+          : `${count} claims exported as ${exportFormat.toUpperCase()} for ${periodLabel}. Claims remain Served until CLAIM-it accepts them.`,
         'success'
       )
     } catch (err) {
@@ -2422,7 +2422,7 @@ const Nhis = () => {
                   </>
                 ) : (
                   <>
-                    Exports served claims for the selected month or custom service-date period as a CLAIM-it HMS Toolkit file.
+                    Exports served claims for the selected month or custom service-date period as a CLAIM-it import file.
                     Downloaded claims remain <strong>Served</strong> so they can be corrected or exported again if CLAIM-it rejects the file.
                   </>
                 )}
@@ -2435,7 +2435,8 @@ const Nhis = () => {
                     value={exportFormat}
                     onChange={(e) => setExportFormat(e.target.value)}
                   >
-                    <option value="xml">CXF/XML for CLAIM-it</option>
+                    <option value="cxf">CLAIM-it import file (.cxf)</option>
+                    <option value="xml">XML file (.xml)</option>
                     <option value="json">JSON for CLAIM-it</option>
                     <option value="csv">CSV review file</option>
                   </select>

@@ -20,7 +20,7 @@ const CREDENTIAL_MODES = new Set([
   'certificate',
 ])
 
-const EXPORT_FORMATS = new Set(['json', 'xml'])
+const EXPORT_FORMATS = new Set(['cxf', 'json', 'xml'])
 const DEFAULT_NHIS_MEMBER_DIGITS = 8
 const DEFAULT_GHANA_CARD_DIGITS = 10
 const DIAGNOSIS_TREATMENT_RULES = [
@@ -252,9 +252,9 @@ const normalizeAdmissionPaymentOption = (value) => {
 }
 
 const normalizeExportFormat = (value) => {
-  const format = normalizeText(value || 'json').toLowerCase()
+  const format = normalizeText(value || 'cxf').toLowerCase()
   if (!EXPORT_FORMATS.has(format)) {
-    throw new Error('NHIA export format must be json or xml.')
+    throw new Error('NHIA export format must be cxf, json, or xml.')
   }
 
   return format
@@ -510,7 +510,7 @@ const mapSettingsRow = (row, { includeCredentials = false } = {}) => {
     credentialSummary: maskCredentials(credentials),
     nhisMemberDigits: Number(row.nhis_member_digits || DEFAULT_NHIS_MEMBER_DIGITS),
     ghanaCardDigits: Number(row.ghana_card_digits || DEFAULT_GHANA_CARD_DIGITS),
-    exportFormat: row.export_format || 'json',
+    exportFormat: row.export_format || 'cxf',
     maxRetryAttempts: Number(row.max_retry_attempts || 3),
     isActive: Boolean(row.is_active),
     createdAt: row.created_at,
@@ -1358,7 +1358,7 @@ export const createNhiaBatch = db.transaction(({ claimIds = [], exportFormat = '
     throw new Error('Select at least one NHIA claim for the batch.')
   }
 
-  const format = normalizeExportFormat(exportFormat || settings?.exportFormat || 'json')
+  const format = normalizeExportFormat(exportFormat || settings?.exportFormat || 'cxf')
   const payload = buildBatchPayload(claims, settings)
   const timestamp = nowIso()
   const batchId = createId()
@@ -1428,8 +1428,9 @@ export const exportNhiaBatch = (id, formatOverride = '') => {
   }
 
   const format = normalizeExportFormat(formatOverride || batch.exportFormat)
+  const isClaimItXml = format === 'cxf' || format === 'xml'
   const content =
-    format === 'xml'
+    isClaimItXml
       ? batchToXml(batch.payload)
       : JSON.stringify(batch.payload, null, 2)
 
@@ -1442,7 +1443,7 @@ export const exportNhiaBatch = (id, formatOverride = '') => {
 
   return {
     fileName: `${batch.batchNumber}.${format}`,
-    contentType: format === 'xml' ? 'application/xml' : 'application/json',
+    contentType: isClaimItXml ? 'application/xml' : 'application/json',
     content,
   }
 }

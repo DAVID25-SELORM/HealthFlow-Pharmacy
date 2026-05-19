@@ -60,7 +60,7 @@ const blankNhiaForm = {
   ccCodeEndpointPath: '',
   directApiEnabled: false,
   credentialMode: 'api_key',
-  exportFormat: 'json',
+  exportFormat: 'cxf',
   nhisMemberDigits: 8,
   ghanaCardDigits: 10,
   maxRetryAttempts: 3,
@@ -337,18 +337,18 @@ export default function OfflineSync() {
             <button
               className="btn btn-outline"
               type="button"
-              onClick={() => exportNhiaBatch('json')}
+              onClick={() => exportNhiaBatch('cxf')}
               disabled={!isConnected || Boolean(busyAction)}
             >
-              Export JSON
+              Export CXF
             </button>
             <button
               className="btn btn-outline"
               type="button"
-              onClick={() => exportNhiaBatch('xml')}
+              onClick={() => exportNhiaBatch('json')}
               disabled={!isConnected || Boolean(busyAction)}
             >
-              Export XML
+              Export JSON
             </button>
           </div>
         </div>
@@ -496,6 +496,7 @@ export default function OfflineSync() {
               value={nhiaForm.exportFormat}
               onChange={(event) => updateNhiaForm('exportFormat', event.target.value)}
             >
+              <option value="cxf">CLAIM-it import file (.cxf)</option>
               <option value="json">JSON</option>
               <option value="xml">XML</option>
             </select>

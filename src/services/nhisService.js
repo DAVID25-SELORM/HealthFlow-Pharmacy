@@ -70,7 +70,7 @@ const OPTIONAL_CLAIM_SCHEMA_COLUMNS = [
   'prescription_file_type',
   'prescription_file_size',
 ]
-const CLAIMIT_EXPORT_FORMATS = ['xml', 'json', 'csv']
+const CLAIMIT_EXPORT_FORMATS = ['cxf', 'xml', 'json', 'csv']
 const NHIA_TARIFF_VERSION = 'FEB 2023'
 
 const NHIS_CLAIM_MEDICINES_SELECT = `
@@ -2095,9 +2095,9 @@ export const getNhisClaimForSubmission = async (id) => {
   return (await hydrateClaimsWithServiceLines([data]))[0]
 }
 
-const normalizeClaimItExportFormat = (format = 'xml') => {
+const normalizeClaimItExportFormat = (format = 'cxf') => {
   const normalized = normalizeText(format).toLowerCase()
-  return CLAIMIT_EXPORT_FORMATS.includes(normalized) ? normalized : 'xml'
+  return CLAIMIT_EXPORT_FORMATS.includes(normalized) ? normalized : 'cxf'
 }
 
 const toClaimItDate = (value) => normalizeText(value).slice(0, 10)
@@ -2464,10 +2464,11 @@ const createNhisExportFile = (claims, period, options = {}) => {
   }
 
   const payload = buildNhisClaimItExportPayload(claims, { ...options, exportPeriod: period })
+  const isClaimItXml = format === 'cxf' || format === 'xml'
   return {
-    content: format === 'xml' ? buildNhisClaimItXml(payload) : JSON.stringify(payload, null, 2),
-    contentType: format === 'xml' ? 'application/xml;charset=utf-8;' : 'application/json;charset=utf-8;',
-    fileName: `CLAIM-it-HMS-${period.fileTag}.${format === 'xml' ? 'cxf' : format}`,
+    content: isClaimItXml ? buildNhisClaimItXml(payload) : JSON.stringify(payload, null, 2),
+    contentType: isClaimItXml ? 'application/xml;charset=utf-8;' : 'application/json;charset=utf-8;',
+    fileName: `CLAIM-it-HMS-${period.fileTag}.${format === 'cxf' ? 'cxf' : format}`,
   }
 }
 
