@@ -8,6 +8,20 @@ import { normalizePharmacyLevel } from '../utils/nhisPharmacyLevel'
 
 const STAFF_ADMIN_FUNCTION = 'staff-admin'
 
+// ✅ NHIS PHARMACY LEVEL PATCH START
+const isMissingPharmacyLevelColumnError = (error) => {
+  const message = String(error?.message || error?.details || '').toLowerCase()
+  return error?.code === 'PGRST204' ||
+    (message.includes('pharmacy_level') && (message.includes('schema cache') || message.includes('column')))
+}
+
+const withoutPharmacyLevel = (payload) => {
+  const nextPayload = { ...payload }
+  delete nextPayload.pharmacy_level
+  return nextPayload
+}
+// ✅ NHIS PHARMACY LEVEL PATCH END
+
 const invokeStaffAdmin = async (payload) => {
   const { data, error } = await invokeSupabaseFunction(STAFF_ADMIN_FUNCTION, {
     body: payload,
@@ -100,20 +114,29 @@ export const updatePharmacySettings = async (id, settings) => {
     payload.organization_id = organizationId
   }
 
-  let query = supabase
-    .from('pharmacy_settings')
-    .update(payload)
-    .select()
+  const runUpdate = async (updatePayload) => {
+    let query = supabase
+      .from('pharmacy_settings')
+      .update(updatePayload)
+      .select()
 
-  if (id) {
-    query = query.eq('id', id)
-  } else if (organizationId) {
-    query = query.eq('organization_id', organizationId)
-  } else {
-    throw new Error('Unable to determine which pharmacy settings to update.')
+    if (id) {
+      query = query.eq('id', id)
+    } else if (organizationId) {
+      query = query.eq('organization_id', organizationId)
+    } else {
+      throw new Error('Unable to determine which pharmacy settings to update.')
+    }
+
+    return await query.single()
   }
 
-  const { data, error } = await query.single()
+  let { data, error } = await runUpdate(payload)
+  // ✅ NHIS PHARMACY LEVEL PATCH START
+  if (error && isMissingPharmacyLevelColumnError(error)) {
+    ;({ data, error } = await runUpdate(withoutPharmacyLevel(payload)))
+  }
+  // ✅ NHIS PHARMACY LEVEL PATCH END
 
   if (error) {
     throw error
@@ -173,11 +196,21 @@ export const createSettings = async (settings) => {
     payload.organization_id = organizationId
   }
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('pharmacy_settings')
     .insert([payload])
     .select()
     .single()
+
+  // ✅ NHIS PHARMACY LEVEL PATCH START
+  if (error && isMissingPharmacyLevelColumnError(error)) {
+    ;({ data, error } = await supabase
+      .from('pharmacy_settings')
+      .insert([withoutPharmacyLevel(payload)])
+      .select()
+      .single())
+  }
+  // ✅ NHIS PHARMACY LEVEL PATCH END
 
   if (error) {
     throw error

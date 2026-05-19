@@ -13,6 +13,20 @@ const TENANT_SIGNUP_FUNCTION = 'tenant-signup'
 const DEFAULT_MEDICATION_BATCH_PREFIX = 'PDF-IMP-'
 const VALID_ORGANIZATION_TYPES = ['pharmacy', 'hospital']
 
+// ✅ NHIS PHARMACY LEVEL PATCH START
+const isMissingPharmacyLevelColumnError = (error) => {
+  const message = String(error?.message || error?.details || '').toLowerCase()
+  return error?.code === 'PGRST204' ||
+    (message.includes('pharmacy_level') && (message.includes('schema cache') || message.includes('column')))
+}
+
+const withoutPharmacyLevel = (payload) => {
+  const nextPayload = { ...payload }
+  delete nextPayload.pharmacy_level
+  return nextPayload
+}
+// ✅ NHIS PHARMACY LEVEL PATCH END
+
 const normalizeOrganizationType = (value) => {
   const normalized = normalizeText(value).toLowerCase()
   return VALID_ORGANIZATION_TYPES.includes(normalized) ? normalized : 'pharmacy'
@@ -168,11 +182,21 @@ export const createOrganization = async (orgData) => {
     trial_ends_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days
   }
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('organizations')
     .insert([payload])
     .select()
     .single()
+
+  // ✅ NHIS PHARMACY LEVEL PATCH START
+  if (error && isMissingPharmacyLevelColumnError(error)) {
+    ;({ data, error } = await supabase
+      .from('organizations')
+      .insert([withoutPharmacyLevel(payload)])
+      .select()
+      .single())
+  }
+  // ✅ NHIS PHARMACY LEVEL PATCH END
 
   if (error) throw error
 
@@ -206,12 +230,23 @@ export const updateOrganization = async (orgId, updates) => {
   // Remove undefined values
   Object.keys(payload).forEach((key) => payload[key] === undefined && delete payload[key])
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('organizations')
     .update(payload)
     .eq('id', orgId)
     .select()
     .single()
+
+  // ✅ NHIS PHARMACY LEVEL PATCH START
+  if (error && isMissingPharmacyLevelColumnError(error)) {
+    ;({ data, error } = await supabase
+      .from('organizations')
+      .update(withoutPharmacyLevel(payload))
+      .eq('id', orgId)
+      .select()
+      .single())
+  }
+  // ✅ NHIS PHARMACY LEVEL PATCH END
 
   if (error) throw error
 
