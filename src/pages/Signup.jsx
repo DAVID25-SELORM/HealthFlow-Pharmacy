@@ -6,6 +6,9 @@ import {
   registerOrganizationSignup,
 } from '../services/organizationService'
 import { readLogoFileAsDataUrl } from '../utils/imageUpload'
+// ✅ NHIS PHARMACY LEVEL PATCH START
+import { PHARMACY_LEVELS } from '../utils/nhisPharmacyLevel'
+// ✅ NHIS PHARMACY LEVEL PATCH END
 import './Signup.css'
 
 const Signup = () => {
@@ -32,6 +35,9 @@ const Signup = () => {
   const [logoUrl, setLogoUrl] = useState('')
   const [slogan, setSlogan] = useState('')
   const [licenseNumber, setLicenseNumber] = useState('')
+  // ✅ NHIS PHARMACY LEVEL PATCH START
+  const [pharmacyLevel, setPharmacyLevel] = useState('')
+  // ✅ NHIS PHARMACY LEVEL PATCH END
 
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
@@ -161,6 +167,9 @@ const Signup = () => {
         logoUrl,
         slogan,
         licenseNumber,
+        // ✅ NHIS PHARMACY LEVEL PATCH START
+        pharmacyLevel,
+        // ✅ NHIS PHARMACY LEVEL PATCH END
         fullName,
         email,
         phone,
@@ -247,6 +256,21 @@ const Signup = () => {
                 <option value="hospital">Hospital</option>
               </select>
             </div>
+            {/* ✅ NHIS PHARMACY LEVEL PATCH START */}
+            <div className="form-group">
+              <label htmlFor="pharmacyLevel">Pharmacy / facility level</label>
+              <select
+                id="pharmacyLevel"
+                value={pharmacyLevel}
+                onChange={(event) => setPharmacyLevel(event.target.value)}
+              >
+                <option value="">Level not configured</option>
+                {PHARMACY_LEVELS.map((level) => (
+                  <option key={level.value} value={level.value}>{level.label}</option>
+                ))}
+              </select>
+            </div>
+            {/* ✅ NHIS PHARMACY LEVEL PATCH END */}
 
             <div className="form-group">
               <label htmlFor="pharmacyName">{facilityLabel} Name *</label>

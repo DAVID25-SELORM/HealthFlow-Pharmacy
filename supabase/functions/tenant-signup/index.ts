@@ -12,6 +12,9 @@ const VALID_PLAN_CODES = ['starter', 'professional', 'premium'] as const
 const VALID_BILLING_STATUSES = ['trial', 'active', 'past_due', 'suspended', 'cancelled'] as const
 const VALID_SUPPORT_LEVELS = ['standard', 'priority', 'premium'] as const
 const VALID_ORGANIZATION_TYPES = ['pharmacy', 'hospital'] as const
+// ✅ NHIS PHARMACY LEVEL PATCH START
+const VALID_PHARMACY_LEVELS = ['P1', 'P2', 'LCS', 'HP'] as const
+// ✅ NHIS PHARMACY LEVEL PATCH END
 const ORGANIZATION_SELECT_FIELDS = '*'
 const TENANT_USER_SELECT_FIELDS =
   'id, email, full_name, role, is_active, organization_id, created_at'
@@ -172,6 +175,15 @@ const normalizeOrganizationType = (
 
   throw new Error('Organization type must be pharmacy or hospital.')
 }
+
+// ✅ NHIS PHARMACY LEVEL PATCH START
+const normalizePharmacyLevel = (value: unknown) => {
+  const normalized = normalizeText(value).toUpperCase()
+  return VALID_PHARMACY_LEVELS.includes(normalized as (typeof VALID_PHARMACY_LEVELS)[number])
+    ? normalized
+    : null
+}
+// ✅ NHIS PHARMACY LEVEL PATCH END
 
 const normalizeOptionalIsoDate = (value: unknown) => {
   const normalized = normalizeText(value)
@@ -733,6 +745,12 @@ const updateTenantOrganization = async (
       organizationInput.licenseNumber !== undefined
         ? normalizeText(organizationInput.licenseNumber) || null
         : null,
+    // ✅ NHIS PHARMACY LEVEL PATCH START
+    pharmacy_level:
+      organizationInput.pharmacyLevel !== undefined
+        ? normalizePharmacyLevel(organizationInput.pharmacyLevel)
+        : null,
+    // ✅ NHIS PHARMACY LEVEL PATCH END
     status:
       organizationInput.status !== undefined
         ? normalizeOrganizationStatus(organizationInput.status, 'trial')
@@ -811,6 +829,7 @@ const updateTenantOrganization = async (
       key !== 'organization_type' &&
       key !== 'slogan' &&
       key !== 'license_number' &&
+      key !== 'pharmacy_level' &&
       key !== 'subscription_tier' &&
       key !== 'plan_code' &&
       key !== 'billing_status' &&
@@ -844,6 +863,12 @@ const updateTenantOrganization = async (
   if (organizationInput.licenseNumber === undefined) {
     delete updatePayload.license_number
   }
+
+  // ✅ NHIS PHARMACY LEVEL PATCH START
+  if (organizationInput.pharmacyLevel === undefined) {
+    delete updatePayload.pharmacy_level
+  }
+  // ✅ NHIS PHARMACY LEVEL PATCH END
 
   if (organizationInput.subscriptionTier === undefined) {
     delete updatePayload.subscription_tier
@@ -1055,6 +1080,9 @@ const bootstrapOrganization = async (
     ? normalizeSubscriptionTier(organizationInput.subscriptionTier, defaults.defaultTier)
     : defaults.defaultTier
   const organizationType = normalizeOrganizationType(organizationInput.organizationType, 'pharmacy')
+  // ✅ NHIS PHARMACY LEVEL PATCH START
+  const pharmacyLevel = normalizePharmacyLevel(organizationInput.pharmacyLevel)
+  // ✅ NHIS PHARMACY LEVEL PATCH END
   const planCode = normalizePlanCode(organizationInput.planCode, 'starter')
   const billingStatus = normalizeBillingStatus(organizationInput.billingStatus, organizationStatus)
   const supportLevel = normalizeSupportLevel(organizationInput.supportLevel, 'standard')
@@ -1118,6 +1146,9 @@ const bootstrapOrganization = async (
           logo_url: normalizeText(organizationInput.logoUrl) || null,
           slogan: normalizeText(organizationInput.slogan) || null,
           license_number: normalizeText(organizationInput.licenseNumber) || null,
+          // ✅ NHIS PHARMACY LEVEL PATCH START
+          pharmacy_level: pharmacyLevel,
+          // ✅ NHIS PHARMACY LEVEL PATCH END
           status: organizationStatus,
           subscription_tier: subscriptionTier,
           plan_code: planCode,
@@ -1207,6 +1238,9 @@ const bootstrapOrganization = async (
         logo_url: normalizeText(organizationInput.logoUrl) || null,
         slogan: normalizeText(organizationInput.slogan) || null,
         license_number: normalizeText(organizationInput.licenseNumber) || null,
+        // ✅ NHIS PHARMACY LEVEL PATCH START
+        pharmacy_level: pharmacyLevel,
+        // ✅ NHIS PHARMACY LEVEL PATCH END
       },
     ])
 

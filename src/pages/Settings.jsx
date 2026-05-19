@@ -20,6 +20,9 @@ import { normalizeSubscriptionTier, useTenant } from '../context/TenantContext'
 import { readLogoFileAsDataUrl, readSignatureFileAsDataUrl } from '../utils/imageUpload'
 import { getRoleLabel } from '../utils/roleLabels'
 import { ROLE_OPTIONS } from '../utils/roles'
+// ✅ NHIS PHARMACY LEVEL PATCH START
+import { PHARMACY_LEVELS } from '../utils/nhisPharmacyLevel'
+// ✅ NHIS PHARMACY LEVEL PATCH END
 import './Settings.css'
 
 const toForm = (row) => ({
@@ -32,6 +35,9 @@ const toForm = (row) => ({
   logoUrl: row?.logo_url || '',
   slogan: row?.slogan || '',
   licenseNumber: row?.license_number || '',
+  // ✅ NHIS PHARMACY LEVEL PATCH START
+  pharmacyLevel: row?.pharmacy_level || '',
+  // ✅ NHIS PHARMACY LEVEL PATCH END
   taxRate: row?.tax_rate ?? 0,
   currency: row?.currency || 'GHS',
   defaultMarkupPercent: row?.default_markup_percent ?? 0,
@@ -522,6 +528,21 @@ const Settings = () => {
                 disabled={!isAdmin}
               />
             </div>
+            {/* ✅ NHIS PHARMACY LEVEL PATCH START */}
+            <label className="settings-field">
+              <span>Pharmacy / facility level</span>
+              <select
+                value={formData.pharmacyLevel}
+                onChange={(event) => setFormData({ ...formData, pharmacyLevel: event.target.value })}
+                disabled={!isAdmin}
+              >
+                <option value="">Level not configured</option>
+                {PHARMACY_LEVELS.map((level) => (
+                  <option key={level.value} value={level.value}>{level.label}</option>
+                ))}
+              </select>
+            </label>
+            {/* ✅ NHIS PHARMACY LEVEL PATCH END */}
             <label className="settings-field">
               <span>Currency</span>
               <input

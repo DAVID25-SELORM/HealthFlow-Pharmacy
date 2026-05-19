@@ -20,11 +20,19 @@ const searchStatement = db.prepare(`
 const upsertDrug = db.prepare(`
   INSERT INTO drugs (
     id, name, brand_name, generic_name, batch_number, barcode, expiry_date, quantity, unit, price, cost_price,
-    nhis_code, nhis_price, nhis_unit, is_nhis_listed, sale_on_return, branch_id, updated_at, sync_status
+    nhis_code, nhis_price, nhis_unit, is_nhis_listed, sale_on_return,
+    -- ✅ NHIS PHARMACY LEVEL PATCH START
+    medicine_access_level, required_pharmacy_level,
+    -- ✅ NHIS PHARMACY LEVEL PATCH END
+    branch_id, updated_at, sync_status
   )
   VALUES (
     @id, @name, @brand_name, @generic_name, @batch_number, @barcode, @expiry_date, @quantity, @unit, @price, @cost_price,
-    @nhis_code, @nhis_price, @nhis_unit, @is_nhis_listed, @sale_on_return, @branch_id, @updated_at, 'synced'
+    @nhis_code, @nhis_price, @nhis_unit, @is_nhis_listed, @sale_on_return,
+    -- ✅ NHIS PHARMACY LEVEL PATCH START
+    @medicine_access_level, @required_pharmacy_level,
+    -- ✅ NHIS PHARMACY LEVEL PATCH END
+    @branch_id, @updated_at, 'synced'
   )
   ON CONFLICT(id) DO UPDATE SET
     name = excluded.name,
@@ -45,6 +53,10 @@ const upsertDrug = db.prepare(`
     nhis_unit = excluded.nhis_unit,
     is_nhis_listed = excluded.is_nhis_listed,
     sale_on_return = excluded.sale_on_return,
+    -- ✅ NHIS PHARMACY LEVEL PATCH START
+    medicine_access_level = excluded.medicine_access_level,
+    required_pharmacy_level = excluded.required_pharmacy_level,
+    -- ✅ NHIS PHARMACY LEVEL PATCH END
     branch_id = excluded.branch_id,
     updated_at = excluded.updated_at,
     sync_status = CASE
@@ -214,6 +226,10 @@ const upsertDrugWithIndex = db.transaction((drug) => {
     nhis_unit: drug.nhis_unit || null,
     is_nhis_listed: drug.is_nhis_listed ? 1 : 0,
     sale_on_return: drug.sale_on_return ? 1 : 0,
+    // ✅ NHIS PHARMACY LEVEL PATCH START
+    medicine_access_level: drug.medicine_access_level || null,
+    required_pharmacy_level: drug.required_pharmacy_level || null,
+    // ✅ NHIS PHARMACY LEVEL PATCH END
     branch_id: drug.branch_id || null,
     updated_at: drug.updated_at || nowIso(),
   })

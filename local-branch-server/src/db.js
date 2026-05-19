@@ -23,6 +23,10 @@ ensureColumn('drugs', 'brand_name', 'TEXT')
 ensureColumn('drugs', 'generic_name', 'TEXT')
 ensureColumn('drugs', 'barcode', 'TEXT')
 ensureColumn('drugs', 'nhis_unit', 'TEXT')
+// ✅ NHIS PHARMACY LEVEL PATCH START
+ensureColumn('drugs', 'medicine_access_level', 'TEXT')
+ensureColumn('drugs', 'required_pharmacy_level', 'TEXT')
+// ✅ NHIS PHARMACY LEVEL PATCH END
 db.exec('CREATE INDEX IF NOT EXISTS idx_drugs_barcode ON drugs(barcode)')
 ensureColumn('patients', 'surname', 'TEXT')
 ensureColumn('patients', 'other_names', 'TEXT')
@@ -53,6 +57,9 @@ ensureColumn('nhia_settings', 'cc_code_endpoint_path', 'TEXT')
 ensureColumn('nhia_settings', 'scheme_name', "TEXT NOT NULL DEFAULT 'National Health Insurance'")
 ensureColumn('nhia_settings', 'provider_type_description', 'TEXT')
 ensureColumn('nhia_settings', 'provider_class_level', 'TEXT')
+// ✅ NHIS PHARMACY LEVEL PATCH START
+ensureColumn('nhia_settings', 'pharmacy_level', 'TEXT')
+// ✅ NHIS PHARMACY LEVEL PATCH END
 ensureColumn('nhia_settings', 'claims_officer_name', 'TEXT')
 ensureColumn('nhia_settings', 'admission_payment_option', "TEXT NOT NULL DEFAULT 'nhis_pays_admission'")
 ensureColumn('nhia_settings', 'claimit_validation_enabled', 'INTEGER NOT NULL DEFAULT 1')

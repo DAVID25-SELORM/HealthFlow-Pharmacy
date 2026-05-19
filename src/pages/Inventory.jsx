@@ -20,6 +20,9 @@ import { formatAppDate } from '../utils/date'
 import { getPharmacySettings } from '../services/settingsService'
 import { getBranches } from '../services/branchService'
 import { getEffectiveSellingPrice, getNhisCatalogPrice, hasNhisCatalogPrice } from '../utils/drugPricing'
+// ✅ NHIS PHARMACY LEVEL PATCH START
+import { MEDICINE_ACCESS_LEVELS, PHARMACY_LEVELS } from '../utils/nhisPharmacyLevel'
+// ✅ NHIS PHARMACY LEVEL PATCH END
 import './Inventory.css'
 
 const emptyDrugForm = {
@@ -35,6 +38,10 @@ const emptyDrugForm = {
   nhisCode: '',
   nhisUnit: '',
   isNhisListed: false,
+  // ✅ NHIS PHARMACY LEVEL PATCH START
+  medicineAccessLevel: '',
+  requiredPharmacyLevel: '',
+  // ✅ NHIS PHARMACY LEVEL PATCH END
   supplier: '',
   saleOnReturn: false,
 }
@@ -89,6 +96,10 @@ const mapDrugToForm = (drug) => {
     nhisCode: isNhisListed ? drug.nhis_code || '' : '',
     nhisUnit: isNhisListed ? drug.nhis_unit || '' : '',
     isNhisListed,
+    // ✅ NHIS PHARMACY LEVEL PATCH START
+    medicineAccessLevel: drug.medicine_access_level || '',
+    requiredPharmacyLevel: drug.required_pharmacy_level || '',
+    // ✅ NHIS PHARMACY LEVEL PATCH END
     supplier: drug.supplier || '',
     saleOnReturn: Boolean(drug.sale_on_return),
   }
@@ -977,6 +988,35 @@ const Inventory = () => {
                 />
                 <span>Sale on return</span>
               </label>
+
+              {/* ✅ NHIS PHARMACY LEVEL PATCH START */}
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Medicine access level</label>
+                  <select
+                    value={formData.medicineAccessLevel}
+                    onChange={(event) => setFormData({ ...formData, medicineAccessLevel: event.target.value })}
+                  >
+                    <option value="">Level not configured</option>
+                    {MEDICINE_ACCESS_LEVELS.map((level) => (
+                      <option key={level.value} value={level.value}>{level.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>Required pharmacy level</label>
+                  <select
+                    value={formData.requiredPharmacyLevel}
+                    onChange={(event) => setFormData({ ...formData, requiredPharmacyLevel: event.target.value })}
+                  >
+                    <option value="">Any configured level</option>
+                    {PHARMACY_LEVELS.map((level) => (
+                      <option key={level.value} value={level.value}>{level.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              {/* ✅ NHIS PHARMACY LEVEL PATCH END */}
 
               {showNhisPricing && (
                 <div className="form-row">

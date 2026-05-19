@@ -295,7 +295,11 @@ const selectAnySettings = db.prepare(`
 const upsertSettings = db.prepare(`
   INSERT INTO nhia_settings (
     id, organization_id, branch_id, facility_code, provider_number, submitter_id,
-    scheme_name, provider_type_description, provider_class_level, claims_officer_name,
+    scheme_name, provider_type_description, provider_class_level,
+    -- ✅ NHIS PHARMACY LEVEL PATCH START
+    pharmacy_level,
+    -- ✅ NHIS PHARMACY LEVEL PATCH END
+    claims_officer_name,
     admission_payment_option, claimit_validation_enabled, claims_officer_signature_url,
     api_base_url, claim_endpoint_path, cc_code_endpoint_path, direct_api_enabled, credential_mode,
     credential_payload, nhis_member_digits, ghana_card_digits, export_format,
@@ -303,7 +307,11 @@ const upsertSettings = db.prepare(`
   )
   VALUES (
     @id, @organizationId, @branchId, @facilityCode, @providerNumber, @submitterId,
-    @schemeName, @providerTypeDescription, @providerClassLevel, @claimsOfficerName,
+    @schemeName, @providerTypeDescription, @providerClassLevel,
+    -- ✅ NHIS PHARMACY LEVEL PATCH START
+    @pharmacyLevel,
+    -- ✅ NHIS PHARMACY LEVEL PATCH END
+    @claimsOfficerName,
     @admissionPaymentOption, @claimitValidationEnabled, @claimsOfficerSignatureUrl,
     @apiBaseUrl, @claimEndpointPath, @ccCodeEndpointPath, @directApiEnabled, @credentialMode,
     @credentialPayload, @nhisMemberDigits, @ghanaCardDigits, @exportFormat,
@@ -318,6 +326,9 @@ const upsertSettings = db.prepare(`
     scheme_name = excluded.scheme_name,
     provider_type_description = excluded.provider_type_description,
     provider_class_level = excluded.provider_class_level,
+    -- ✅ NHIS PHARMACY LEVEL PATCH START
+    pharmacy_level = excluded.pharmacy_level,
+    -- ✅ NHIS PHARMACY LEVEL PATCH END
     claims_officer_name = excluded.claims_officer_name,
     admission_payment_option = excluded.admission_payment_option,
     claimit_validation_enabled = excluded.claimit_validation_enabled,
@@ -496,6 +507,10 @@ const mapSettingsRow = (row, { includeCredentials = false } = {}) => {
     schemeName: row.scheme_name || 'National Health Insurance',
     providerTypeDescription: row.provider_type_description || '',
     providerClassLevel: row.provider_class_level || '',
+    // ✅ NHIS PHARMACY LEVEL PATCH START
+    pharmacyLevel: row.pharmacy_level || '',
+    pharmacy_level: row.pharmacy_level || '',
+    // ✅ NHIS PHARMACY LEVEL PATCH END
     claimsOfficerName: row.claims_officer_name || '',
     admissionPaymentOption: row.admission_payment_option || 'nhis_pays_admission',
     claimitValidationEnabled: row.claimit_validation_enabled !== 0,
@@ -553,6 +568,9 @@ export const saveNhiaSettings = (settings = {}) => {
     schemeName: normalizeText(settings.schemeName) || 'National Health Insurance',
     providerTypeDescription: normalizeText(settings.providerTypeDescription) || null,
     providerClassLevel: normalizeText(settings.providerClassLevel) || null,
+    // ✅ NHIS PHARMACY LEVEL PATCH START
+    pharmacyLevel: normalizeText(settings.pharmacyLevel || settings.pharmacy_level) || null,
+    // ✅ NHIS PHARMACY LEVEL PATCH END
     claimsOfficerName: normalizeText(settings.claimsOfficerName) || null,
     admissionPaymentOption: normalizeAdmissionPaymentOption(settings.admissionPaymentOption),
     claimitValidationEnabled: settings.claimitValidationEnabled === false ? 0 : 1,

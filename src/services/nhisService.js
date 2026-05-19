@@ -4,6 +4,12 @@ import {
   normalizeNhiaMemberNumber,
   validateNhiaMemberNumberFormat,
 } from '../utils/nhiaMemberNumber'
+import {
+  assessMedicinePharmacyLevel,
+  getEffectivePharmacyLevel,
+  normalizeMedicineAccessLevel,
+  normalizePharmacyLevel,
+} from '../utils/nhisPharmacyLevel'
 import { tryLogAuditEvent } from './auditService'
 import {
   createBranchRecord,
@@ -840,6 +846,24 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
     (options.finalSubmission || options.enforceClinicalScrub === true || requireMedicineDirections)
   const providerPrescribingLevel = getProviderPrescribingLevel(claimData, options)
   const medicineLevelLookup = getMedicineLevelLookup(options.nhisDrugCatalog ?? options.drugCatalog ?? [])
+  // ✅ NHIS PHARMACY LEVEL PATCH START
+  const facilityPharmacyLevel = getEffectivePharmacyLevel(
+    options.pharmacyLevel,
+    options.nhiaSettings,
+    claimData
+  )
+  const medicineCatalog = options.nhisDrugCatalog ?? options.drugCatalog ?? []
+  const medicineCatalogById = new Map(
+    medicineCatalog
+      .map((drug) => [asText(drug?.id), drug])
+      .filter(([id]) => id)
+  )
+  const medicineCatalogByCode = new Map(
+    medicineCatalog
+      .map((drug) => [asText(drug?.code ?? drug?.drug_code ?? drug?.nhis_code).toUpperCase(), drug])
+      .filter(([code]) => code)
+  )
+  // ✅ NHIS PHARMACY LEVEL PATCH END
   const memberNumberIssue = validateMemberNumberFormat(
     getClaimField(claimData, 'memberNo', 'member_no'),
     options
@@ -882,6 +906,21 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
       const label = `Medicine ${index + 1}`
       const quantity = asNumber(medicine?.dispensedQty ?? medicine?.dispensed_qty)
       const unitPrice = asNumber(medicine?.unitPrice ?? medicine?.unit_price)
+      // ✅ NHIS PHARMACY LEVEL PATCH START
+      const catalogMedicine =
+        medicineCatalogById.get(asText(medicine?.nhisDrugId ?? medicine?.nhis_drug_id)) ||
+        medicineCatalogByCode.get(asText(medicine?.drugCode ?? medicine?.drug_code ?? medicine?.nhisCode ?? medicine?.nhis_code).toUpperCase()) ||
+        {}
+      const pharmacyLevelCheck = assessMedicinePharmacyLevel(
+        { ...catalogMedicine, ...medicine },
+        facilityPharmacyLevel
+      )
+      if (!pharmacyLevelCheck.allowed) {
+        blockers.push(`${label}: ${pharmacyLevelCheck.message}`)
+      } else if (pharmacyLevelCheck.message === 'Level not configured') {
+        warnings.push(`${label}: Level not configured.`)
+      }
+      // ✅ NHIS PHARMACY LEVEL PATCH END
 
       if (!asText(medicine?.nhisDrugId ?? medicine?.nhis_drug_id) || !asText(medicine?.drugCode ?? medicine?.drug_code)) {
         blockers.push(`${label}: select a medicine from the NHIS catalog.`)
@@ -1098,6 +1137,9 @@ export const validateNhisClaimFinalReadiness = async (claimData, medicines = [],
       finalSubmission: true,
       clinicalRules,
       providerClassLevel,
+      // ✅ NHIS PHARMACY LEVEL PATCH START
+      pharmacyLevel: options.pharmacyLevel,
+      // ✅ NHIS PHARMACY LEVEL PATCH END
       nhisDrugCatalog,
       enforcePrescribingLevel: true,
       nhiaTariffServices: options.nhiaTariffServices ?? claimData?.nhis_claim_services ?? [],
@@ -1290,6 +1332,10 @@ export const createNhisDrug = async (drugData) => {
       strength: normalizeText(drugData.strength) || null,
       dosage_form: normalizeText(drugData.dosageForm) || null,
       category: normalizeText(drugData.category) || null,
+      // ✅ NHIS PHARMACY LEVEL PATCH START
+      medicine_access_level: normalizeMedicineAccessLevel(drugData.medicineAccessLevel) || null,
+      required_pharmacy_level: normalizePharmacyLevel(drugData.requiredPharmacyLevel) || null,
+      // ✅ NHIS PHARMACY LEVEL PATCH END
       unit: normalizeText(drugData.unit) || 'unit',
       unit_price: assertNonNegativeNumber(drugData.unitPrice, 'Unit price'),
       is_active: true,
@@ -1305,6 +1351,10 @@ export const createNhisDrug = async (drugData) => {
       strength:     normalizeText(drugData.strength)     || null,
       dosage_form:  normalizeText(drugData.dosageForm)   || null,
       category:     normalizeText(drugData.category)     || null,
+      // ✅ NHIS PHARMACY LEVEL PATCH START
+      medicine_access_level: normalizeMedicineAccessLevel(drugData.medicineAccessLevel) || null,
+      required_pharmacy_level: normalizePharmacyLevel(drugData.requiredPharmacyLevel) || null,
+      // ✅ NHIS PHARMACY LEVEL PATCH END
       unit:         normalizeText(drugData.unit)         || 'unit',
       unit_price:   assertNonNegativeNumber(drugData.unitPrice, 'Unit price'),
     }])
@@ -1323,6 +1373,10 @@ export const updateNhisDrug = async (id, drugData) => {
       strength: normalizeText(drugData.strength) || null,
       dosage_form: normalizeText(drugData.dosageForm) || null,
       category: normalizeText(drugData.category) || null,
+      // ✅ NHIS PHARMACY LEVEL PATCH START
+      medicine_access_level: normalizeMedicineAccessLevel(drugData.medicineAccessLevel) || null,
+      required_pharmacy_level: normalizePharmacyLevel(drugData.requiredPharmacyLevel) || null,
+      // ✅ NHIS PHARMACY LEVEL PATCH END
       unit: normalizeText(drugData.unit) || 'unit',
       unit_price: assertNonNegativeNumber(drugData.unitPrice, 'Unit price'),
       updated_at: new Date().toISOString(),
@@ -1337,6 +1391,10 @@ export const updateNhisDrug = async (id, drugData) => {
       strength:     normalizeText(drugData.strength)     || null,
       dosage_form:  normalizeText(drugData.dosageForm)   || null,
       category:     normalizeText(drugData.category)     || null,
+      // ✅ NHIS PHARMACY LEVEL PATCH START
+      medicine_access_level: normalizeMedicineAccessLevel(drugData.medicineAccessLevel) || null,
+      required_pharmacy_level: normalizePharmacyLevel(drugData.requiredPharmacyLevel) || null,
+      // ✅ NHIS PHARMACY LEVEL PATCH END
       unit:         normalizeText(drugData.unit)         || 'unit',
       unit_price:   assertNonNegativeNumber(drugData.unitPrice, 'Unit price'),
       updated_at:   new Date().toISOString(),
@@ -1580,6 +1638,9 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
       enforcePrescribingLevel: true,
       requirePrescriptionAttachment: !allowIncompleteReview,
       providerClassLevel,
+      // ✅ NHIS PHARMACY LEVEL PATCH START
+      pharmacyLevel: options.pharmacyLevel,
+      // ✅ NHIS PHARMACY LEVEL PATCH END
       nhisDrugCatalog,
       nhiaTariffServices: tariffServices,
     }
@@ -1644,6 +1705,10 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
         frequency: normalizeText(m.frequency) || null,
         duration: normalizeText(m.duration) || null,
         total_amount: assertNonNegativeNumber(m.totalAmount, 'Total amount'),
+        // ✅ NHIS PHARMACY LEVEL PATCH START
+        medicine_access_level: normalizeMedicineAccessLevel(m.medicineAccessLevel ?? m.medicine_access_level) || null,
+        required_pharmacy_level: normalizePharmacyLevel(m.requiredPharmacyLevel ?? m.required_pharmacy_level) || null,
+        // ✅ NHIS PHARMACY LEVEL PATCH END
       })),
       nhis_claim_services: tariffServices.map((service) => ({
         nhia_tariff_item_id: service.nhiaTariffItemId,
@@ -1682,6 +1747,10 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
     frequency:      normalizeText(m.frequency)      || null,
     duration:       normalizeText(m.duration)       || null,
     total_amount:   assertNonNegativeNumber(m.totalAmount, 'Total amount'),
+    // ✅ NHIS PHARMACY LEVEL PATCH START
+    medicine_access_level: normalizeMedicineAccessLevel(m.medicineAccessLevel ?? m.medicine_access_level) || null,
+    required_pharmacy_level: normalizePharmacyLevel(m.requiredPharmacyLevel ?? m.required_pharmacy_level) || null,
+    // ✅ NHIS PHARMACY LEVEL PATCH END
   }))
 
   if (medicineRows.length) {
@@ -1745,6 +1814,9 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
       enforcePrescribingLevel: true,
       requirePrescriptionAttachment: true,
       providerClassLevel,
+      // ✅ NHIS PHARMACY LEVEL PATCH START
+      pharmacyLevel: options.pharmacyLevel,
+      // ✅ NHIS PHARMACY LEVEL PATCH END
       nhisDrugCatalog,
       clinicalRules,
       nhiaTariffServices: tariffServices,
@@ -1776,6 +1848,10 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
     frequency: normalizeText(m.frequency) || null,
     duration: normalizeText(m.duration) || null,
     total_amount: assertNonNegativeNumber(m.totalAmount, 'Total amount'),
+    // ✅ NHIS PHARMACY LEVEL PATCH START
+    medicine_access_level: normalizeMedicineAccessLevel(m.medicineAccessLevel ?? m.medicine_access_level) || null,
+    required_pharmacy_level: normalizePharmacyLevel(m.requiredPharmacyLevel ?? m.required_pharmacy_level) || null,
+    // ✅ NHIS PHARMACY LEVEL PATCH END
   }))
 
   const claimPayload = {
@@ -2133,6 +2209,10 @@ const normalizeClaimMedicineForExport = (medicine = {}) => ({
   frequency: normalizeText(medicine.frequency),
   duration: normalizeText(medicine.duration),
   totalAmount: Number(medicine.total_amount || 0),
+  // ✅ NHIS PHARMACY LEVEL PATCH START
+  medicineAccessLevel: normalizeMedicineAccessLevel(medicine.medicine_access_level),
+  requiredPharmacyLevel: normalizePharmacyLevel(medicine.required_pharmacy_level),
+  // ✅ NHIS PHARMACY LEVEL PATCH END
 })
 
 const normalizeClaimServiceForExport = (service = {}) => ({
@@ -2502,6 +2582,9 @@ const assertNhisClaimsReadyForFinalSubmission = async (claims, organizationType,
           clinicalRules,
           enforcePrescribingLevel: true,
           providerClassLevel,
+          // ✅ NHIS PHARMACY LEVEL PATCH START
+          pharmacyLevel: options.pharmacyLevel,
+          // ✅ NHIS PHARMACY LEVEL PATCH END
           nhisDrugCatalog,
           nhiaTariffServices: claim.nhis_claim_services || [],
         }

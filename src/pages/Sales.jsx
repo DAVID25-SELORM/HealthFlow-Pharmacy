@@ -51,6 +51,12 @@ import {
   normalizeNhiaMemberNumber,
   validateNhiaMemberNumberFormat,
 } from '../utils/nhiaMemberNumber'
+// ✅ NHIS PHARMACY LEVEL PATCH START
+import {
+  assessMedicinePharmacyLevel,
+  getEffectivePharmacyLevel,
+} from '../utils/nhisPharmacyLevel'
+// ✅ NHIS PHARMACY LEVEL PATCH END
 import Receipt from '../components/Receipt/Receipt'
 import DiagnosisSelector from '../components/DiagnosisSelector/DiagnosisSelector'
 import { getEffectiveSellingPrice, getNhisCatalogPrice, hasNhisCatalogPrice } from '../utils/drugPricing'
@@ -130,6 +136,9 @@ const mergePharmacySettingsWithOrganization = (settings, organization) => ({
   logo_url: settings?.logo_url || organization?.logo_url || null,
   slogan: settings?.slogan || organization?.slogan || null,
   license_number: settings?.license_number || organization?.license_number || null,
+  // ✅ NHIS PHARMACY LEVEL PATCH START
+  pharmacy_level: settings?.pharmacy_level || organization?.pharmacy_level || null,
+  // ✅ NHIS PHARMACY LEVEL PATCH END
 })
 
 const createLocalPosShift = ({ branchId, branch, openingCash = 0, userId } = {}) => {
@@ -797,7 +806,30 @@ const Sales = () => {
     return row?.quantity || 0
   }
 
+  // ✅ NHIS PHARMACY LEVEL PATCH START
+  const getFacilityPharmacyLevel = () =>
+    getEffectivePharmacyLevel(pharmacyInfo, organization, nhiaSettings)
+
+  const validateDrugForFacilityLevel = (drug) => {
+    const check = assessMedicinePharmacyLevel(drug, getFacilityPharmacyLevel())
+    if (!check.allowed) {
+      notify(check.message, 'warning')
+      return false
+    }
+    if (check.message === 'Level not configured') {
+      notify('Level not configured', 'warning')
+    }
+    return true
+  }
+  // ✅ NHIS PHARMACY LEVEL PATCH END
+
   const addToCart = (drug) => {
+    // ✅ NHIS PHARMACY LEVEL PATCH START
+    if (!validateDrugForFacilityLevel(drug)) {
+      return
+    }
+    // ✅ NHIS PHARMACY LEVEL PATCH END
+
     setCart((current) => {
       const existing = current.find((item) => item.id === drug.id)
       const maxQty = Number.parseFloat(drug.quantity) || 0
@@ -829,6 +861,10 @@ const Sales = () => {
           nhisCode: nhisPrice > 0 ? drug.nhis_code || null : null,
           genericName: drug.generic_name || null,
           unit: drug.unit || 'unit',
+          // ✅ NHIS PHARMACY LEVEL PATCH START
+          medicineAccessLevel: drug.medicine_access_level || drug.medicineAccessLevel || null,
+          requiredPharmacyLevel: drug.required_pharmacy_level || drug.requiredPharmacyLevel || null,
+          // ✅ NHIS PHARMACY LEVEL PATCH END
           quantity: 1,
           available: maxQty,
         },
@@ -1286,6 +1322,10 @@ const Sales = () => {
         frequency: '',
         duration: '',
         totalAmount,
+        // ✅ NHIS PHARMACY LEVEL PATCH START
+        medicineAccessLevel: item.medicineAccessLevel || null,
+        requiredPharmacyLevel: item.requiredPharmacyLevel || null,
+        // ✅ NHIS PHARMACY LEVEL PATCH END
       }
     })
 
@@ -1446,6 +1486,10 @@ const Sales = () => {
         nhisPrice: item.nhisPrice || null,
         genericName: item.genericName || null,
         unit: item.unit || 'unit',
+        // ✅ NHIS PHARMACY LEVEL PATCH START
+        medicineAccessLevel: item.medicineAccessLevel || null,
+        requiredPharmacyLevel: item.requiredPharmacyLevel || null,
+        // ✅ NHIS PHARMACY LEVEL PATCH END
       }))
 
       const salePayload = {
@@ -1590,7 +1634,13 @@ const Sales = () => {
                 nhisReviewClaim = await createNhisClaim(
                   reviewClaim.claimData,
                   reviewClaim.medicines,
-                  { useBranchServer: true }
+                  {
+                    useBranchServer: true,
+                    // ✅ NHIS PHARMACY LEVEL PATCH START
+                    pharmacyLevel: getFacilityPharmacyLevel(),
+                    drugCatalog: soldItems,
+                    // ✅ NHIS PHARMACY LEVEL PATCH END
+                  }
                 )
               }
             } catch (claimError) {
@@ -2494,6 +2544,11 @@ const Sales = () => {
                       {hasNhisCatalogPrice(drug) && (
                         <span className="drug-nhis-price">NHIS GHS {nhisPrice.toFixed(2)}</span>
                       )}
+                      {/* ✅ NHIS PHARMACY LEVEL PATCH START */}
+                      <span className="drug-batch">
+                        {drug.medicine_access_level || drug.required_pharmacy_level || 'Level not configured'}
+                      </span>
+                      {/* ✅ NHIS PHARMACY LEVEL PATCH END */}
                       <span className={`drug-stock ${soldOut ? 'sold-out' : ''}`}>
                         {soldOut ? 'Out of stock' : `${remaining} in stock`}
                       </span>

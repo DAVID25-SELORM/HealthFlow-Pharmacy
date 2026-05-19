@@ -84,6 +84,10 @@ const CLAIMS_ROLES = ['admin', 'pharmacist', 'billing', 'claims_officer']
 const NHIS_ROLES = ['admin', 'pharmacist', 'billing', 'claims_officer']
 const REPORT_ROLES = ['admin', 'pharmacist', 'branch_manager']
 const NHIA_SETTINGS_ROLES = ['admin', 'pharmacist', 'branch_manager']
+// ✅ NHIS PHARMACY LEVEL PATCH START
+const VALID_PHARMACY_LEVELS = ['P1', 'P2', 'LCS', 'HP']
+const VALID_MEDICINE_ACCESS_LEVELS = ['OTC', 'Prescription', 'Specialist', 'Controlled']
+// ✅ NHIS PHARMACY LEVEL PATCH END
 
 const json = (body: Record<string, unknown>, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -923,6 +927,18 @@ const assertCustomBatchNumberAllowed = (batchNumber: string | null | undefined) 
   }
 }
 
+// ✅ NHIS PHARMACY LEVEL PATCH START
+const normalizePharmacyLevelForSave = (value: unknown) => {
+  const normalized = normalizeText(value).toUpperCase()
+  return VALID_PHARMACY_LEVELS.includes(normalized) ? normalized : null
+}
+
+const normalizeMedicineAccessLevelForSave = (value: unknown) => {
+  const normalized = normalizeText(value).toLowerCase()
+  return VALID_MEDICINE_ACCESS_LEVELS.find((level) => level.toLowerCase() === normalized) || null
+}
+// ✅ NHIS PHARMACY LEVEL PATCH END
+
 const buildDrugCreatePayload = (
   organizationId: string,
   branchId: string | null,
@@ -943,6 +959,10 @@ const buildDrugCreatePayload = (
     : parseNonNegativeNumber(drugData.nhisPrice, 'NHIS price'),
   nhis_unit: normalizeText(drugData.nhisUnit) || null,
   is_nhis_listed: Boolean(drugData.isNhisListed),
+  // ✅ NHIS PHARMACY LEVEL PATCH START
+  medicine_access_level: normalizeMedicineAccessLevelForSave(drugData.medicineAccessLevel),
+  required_pharmacy_level: normalizePharmacyLevelForSave(drugData.requiredPharmacyLevel),
+  // ✅ NHIS PHARMACY LEVEL PATCH END
   supplier: normalizeText(drugData.supplier) || null,
   category: normalizeText(drugData.category) || null,
   description: normalizeText(drugData.description) || null,
@@ -1576,6 +1596,16 @@ const updateDrug = async (
   if (Object.prototype.hasOwnProperty.call(drugData, 'isNhisListed')) {
     updatePayload.is_nhis_listed = Boolean(drugData.isNhisListed)
   }
+
+  // ✅ NHIS PHARMACY LEVEL PATCH START
+  if (Object.prototype.hasOwnProperty.call(drugData, 'medicineAccessLevel')) {
+    updatePayload.medicine_access_level = normalizeMedicineAccessLevelForSave(drugData.medicineAccessLevel)
+  }
+
+  if (Object.prototype.hasOwnProperty.call(drugData, 'requiredPharmacyLevel')) {
+    updatePayload.required_pharmacy_level = normalizePharmacyLevelForSave(drugData.requiredPharmacyLevel)
+  }
+  // ✅ NHIS PHARMACY LEVEL PATCH END
 
   const { data, error } = await adminClient
     .from('drugs')

@@ -1,6 +1,9 @@
 import { supabase } from '../lib/supabase'
 import { assertNonNegativeNumber, assertRequiredText, normalizeText, sanitizeSearchTerm } from '../utils/validation'
 import { invokeTierAccess } from './tierAccessService'
+// ✅ NHIS PHARMACY LEVEL PATCH START
+import { normalizeMedicineAccessLevel, normalizePharmacyLevel } from '../utils/nhisPharmacyLevel'
+// ✅ NHIS PHARMACY LEVEL PATCH END
 
 /**
  * Drug/Inventory Service
@@ -170,6 +173,10 @@ export const addDrug = async (drugData) => {
           : assertNonNegativeNumber(drugData.nhisPrice, 'NHIS price'),
       nhisUnit: normalizeText(drugData.nhisUnit) || null,
       isNhisListed: Boolean(drugData.isNhisListed),
+      // ✅ NHIS PHARMACY LEVEL PATCH START
+      medicineAccessLevel: normalizeMedicineAccessLevel(drugData.medicineAccessLevel) || null,
+      requiredPharmacyLevel: normalizePharmacyLevel(drugData.requiredPharmacyLevel) || null,
+      // ✅ NHIS PHARMACY LEVEL PATCH END
       supplier: normalizeText(drugData.supplier) || null,
       category: normalizeText(drugData.category) || null,
       description: normalizeText(drugData.description) || null,
@@ -242,6 +249,16 @@ export const updateDrug = async (id, drugData) => {
   if (Object.prototype.hasOwnProperty.call(drugData, 'isNhisListed')) {
     payload.isNhisListed = Boolean(drugData.isNhisListed)
   }
+
+  // ✅ NHIS PHARMACY LEVEL PATCH START
+  if (Object.prototype.hasOwnProperty.call(drugData, 'medicineAccessLevel')) {
+    payload.medicineAccessLevel = normalizeMedicineAccessLevel(drugData.medicineAccessLevel) || null
+  }
+
+  if (Object.prototype.hasOwnProperty.call(drugData, 'requiredPharmacyLevel')) {
+    payload.requiredPharmacyLevel = normalizePharmacyLevel(drugData.requiredPharmacyLevel) || null
+  }
+  // ✅ NHIS PHARMACY LEVEL PATCH END
 
   const response = await invokeTierAccess({
     action: 'update_drug',

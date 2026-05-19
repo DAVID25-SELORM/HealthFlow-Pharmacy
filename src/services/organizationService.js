@@ -1,5 +1,8 @@
 import { getCurrentSupabaseUser, invokeSupabaseFunction, supabase } from '../lib/supabase'
 import { assertRequiredText, normalizeText } from '../utils/validation'
+// ✅ NHIS PHARMACY LEVEL PATCH START
+import { normalizePharmacyLevel } from '../utils/nhisPharmacyLevel'
+// ✅ NHIS PHARMACY LEVEL PATCH END
 
 /**
  * Organization Service
@@ -104,6 +107,9 @@ export const registerOrganizationSignup = async (payload) => {
     logoUrl: normalizeText(payload.logoUrl) || null,
     slogan: normalizeText(payload.slogan) || null,
     licenseNumber: normalizeText(payload.licenseNumber) || null,
+    // ✅ NHIS PHARMACY LEVEL PATCH START
+    pharmacyLevel: normalizePharmacyLevel(payload.pharmacyLevel),
+    // ✅ NHIS PHARMACY LEVEL PATCH END
   }
 
   const adminUser = {
@@ -154,6 +160,9 @@ export const createOrganization = async (orgData) => {
     logo_url: normalizeText(orgData.logoUrl ?? orgData.logo_url) || null,
     slogan: normalizeText(orgData.slogan) || null,
     license_number: normalizeText(orgData.licenseNumber) || null,
+    // ✅ NHIS PHARMACY LEVEL PATCH START
+    pharmacy_level: normalizePharmacyLevel(orgData.pharmacyLevel) || null,
+    // ✅ NHIS PHARMACY LEVEL PATCH END
     status: 'trial', // Start with trial
     subscription_tier: 'trial',
     trial_ends_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days
@@ -188,6 +197,9 @@ export const updateOrganization = async (orgId, updates) => {
     logo_url: updates.logoUrl !== undefined ? normalizeText(updates.logoUrl) || null : undefined,
     slogan: updates.slogan !== undefined ? normalizeText(updates.slogan) || null : undefined,
     license_number: updates.licenseNumber !== undefined ? normalizeText(updates.licenseNumber) || null : undefined,
+    // ✅ NHIS PHARMACY LEVEL PATCH START
+    pharmacy_level: updates.pharmacyLevel !== undefined ? normalizePharmacyLevel(updates.pharmacyLevel) || null : undefined,
+    // ✅ NHIS PHARMACY LEVEL PATCH END
     updated_at: new Date().toISOString(),
   }
 

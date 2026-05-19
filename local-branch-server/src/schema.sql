@@ -63,6 +63,10 @@ CREATE TABLE IF NOT EXISTS drugs (
   nhis_unit TEXT,
   is_nhis_listed INTEGER NOT NULL DEFAULT 0,
   sale_on_return INTEGER NOT NULL DEFAULT 0,
+  -- ✅ NHIS PHARMACY LEVEL PATCH START
+  medicine_access_level TEXT,
+  required_pharmacy_level TEXT,
+  -- ✅ NHIS PHARMACY LEVEL PATCH END
   branch_id TEXT,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   sync_status TEXT NOT NULL DEFAULT 'synced'
@@ -206,6 +210,9 @@ CREATE TABLE IF NOT EXISTS nhia_settings (
   scheme_name TEXT NOT NULL DEFAULT 'National Health Insurance',
   provider_type_description TEXT,
   provider_class_level TEXT,
+  -- ✅ NHIS PHARMACY LEVEL PATCH START
+  pharmacy_level TEXT,
+  -- ✅ NHIS PHARMACY LEVEL PATCH END
   claims_officer_name TEXT,
   admission_payment_option TEXT NOT NULL DEFAULT 'nhis_pays_admission',
   claimit_validation_enabled INTEGER NOT NULL DEFAULT 1,

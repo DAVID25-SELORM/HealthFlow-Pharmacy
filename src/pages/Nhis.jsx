@@ -45,6 +45,14 @@ import { getAllPatients } from '../services/patientService'
 import { parseNhisDrugFile, generateNhisDrugTemplate } from '../services/nhisDrugImportService'
 import { parseNhisClinicalRuleFile, generateNhisClinicalRuleTemplate } from '../services/nhisClinicalRuleImportService'
 import { normalizeNhiaMemberNumber } from '../utils/nhiaMemberNumber'
+// ✅ NHIS PHARMACY LEVEL PATCH START
+import {
+  PHARMACY_LEVELS,
+  MEDICINE_ACCESS_LEVELS,
+  assessMedicinePharmacyLevel,
+  getEffectivePharmacyLevel,
+} from '../utils/nhisPharmacyLevel'
+// ✅ NHIS PHARMACY LEVEL PATCH END
 import { DEFAULT_NHIS_DRUG_CATALOG } from '../data/nhisDefaultDrugCatalog'
 import DiagnosisSelector from '../components/DiagnosisSelector/DiagnosisSelector'
 import './Nhis.css'
@@ -111,11 +119,18 @@ const BLANK_MEDICINE = {
   frequency:     '',
   duration:      '',
   category:      '',
+  // ✅ NHIS PHARMACY LEVEL PATCH START
+  medicineAccessLevel: '',
+  requiredPharmacyLevel: '',
+  // ✅ NHIS PHARMACY LEVEL PATCH END
 }
 
 const BLANK_NHIS_DRUG = {
   code: '', description: '', genericName: '', strength: '',
   dosageForm: '', category: '', unit: 'unit', unitPrice: '',
+  // ✅ NHIS PHARMACY LEVEL PATCH START
+  medicineAccessLevel: '', requiredPharmacyLevel: '',
+  // ✅ NHIS PHARMACY LEVEL PATCH END
 }
 
 const fmtCurrency = (n) =>
@@ -388,6 +403,9 @@ const Nhis = () => {
   }, [nhiaTariffItems, tariffSearch])
 
   const hasMedicineSearchTerm = medCodeSearch.trim().length > 0
+  // ✅ NHIS PHARMACY LEVEL PATCH START
+  const facilityPharmacyLevel = getEffectivePharmacyLevel(organization, directNhiaSettings)
+  // ✅ NHIS PHARMACY LEVEL PATCH END
   const getCatalogCategoryForMedicine = (medicine = {}) => {
     const code = String(medicine.drugCode || medicine.drug_code || '').trim().toUpperCase()
     const id = String(medicine.nhisDrugId || medicine.nhis_drug_id || '').trim()
@@ -478,6 +496,10 @@ const Nhis = () => {
         duration: medicine.duration || '',
         totalAmount: Number.parseFloat(medicine.total_amount || 0),
         category: getCatalogCategoryForMedicine(medicine),
+        // ✅ NHIS PHARMACY LEVEL PATCH START
+        medicineAccessLevel: medicine.medicine_access_level || '',
+        requiredPharmacyLevel: medicine.required_pharmacy_level || '',
+        // ✅ NHIS PHARMACY LEVEL PATCH END
       }))
     )
     setClaimServices(
@@ -516,6 +538,10 @@ const Nhis = () => {
           unit:        drug.unit,
           unitPrice:   String(drug.unit_price),
           category:    drug.category || '',
+          // ✅ NHIS PHARMACY LEVEL PATCH START
+          medicineAccessLevel: drug.medicine_access_level || '',
+          requiredPharmacyLevel: drug.required_pharmacy_level || '',
+          // ✅ NHIS PHARMACY LEVEL PATCH END
         }))
         setMedSearchResults([])
       } else {
@@ -552,6 +578,10 @@ const Nhis = () => {
       unit:         drug.unit,
       unitPrice:    String(drug.unit_price),
       category:     drug.category || '',
+      // ✅ NHIS PHARMACY LEVEL PATCH START
+      medicineAccessLevel: drug.medicine_access_level || '',
+      requiredPharmacyLevel: drug.required_pharmacy_level || '',
+      // ✅ NHIS PHARMACY LEVEL PATCH END
     }))
     setMedCodeSearch('')
     setMedSearchResults([])
@@ -567,6 +597,17 @@ const Nhis = () => {
       return
     }
 
+    // ✅ NHIS PHARMACY LEVEL PATCH START
+    const pharmacyLevelCheck = assessMedicinePharmacyLevel(medForm, facilityPharmacyLevel)
+    if (!pharmacyLevelCheck.allowed) {
+      notify(pharmacyLevelCheck.message, 'warning')
+      return
+    }
+    if (pharmacyLevelCheck.message === 'Level not configured') {
+      notify('Level not configured', 'warning')
+    }
+    // ✅ NHIS PHARMACY LEVEL PATCH END
+
     const nextMedicine = {
       nhisDrugId:    medForm.nhisDrugId   || null,
       drugCode:      medForm.drugCode,
@@ -580,6 +621,10 @@ const Nhis = () => {
       duration:      medForm.duration,
       totalAmount:   price * qty,
       category:      medForm.category || getCatalogCategoryForMedicine(medForm),
+      // ✅ NHIS PHARMACY LEVEL PATCH START
+      medicineAccessLevel: medForm.medicineAccessLevel || null,
+      requiredPharmacyLevel: medForm.requiredPharmacyLevel || null,
+      // ✅ NHIS PHARMACY LEVEL PATCH END
     }
 
     setClaimMedicines((prev) => {
@@ -611,6 +656,10 @@ const Nhis = () => {
       frequency: medicine.frequency || '',
       duration: medicine.duration || '',
       category: medicine.category || getCatalogCategoryForMedicine(medicine),
+      // ✅ NHIS PHARMACY LEVEL PATCH START
+      medicineAccessLevel: medicine.medicineAccessLevel || medicine.medicine_access_level || '',
+      requiredPharmacyLevel: medicine.requiredPharmacyLevel || medicine.required_pharmacy_level || '',
+      // ✅ NHIS PHARMACY LEVEL PATCH END
     })
     setMedCodeSearch('')
     setMedSearchResults([])
@@ -692,6 +741,9 @@ const Nhis = () => {
     submitterId: directNhiaSettings?.submitterId || user?.id || '',
     directApiSource: directNhiaSettings?.source || 'hosted',
     directPayloadFormat: directNhiaSettings?.exportFormat || 'json',
+    // ✅ NHIS PHARMACY LEVEL PATCH START
+    pharmacyLevel: facilityPharmacyLevel,
+    // ✅ NHIS PHARMACY LEVEL PATCH END
   })
 
   const readiness = useMemo(
@@ -704,12 +756,15 @@ const Nhis = () => {
         enforcePrescribingLevel: true,
         requirePrescriptionAttachment: true,
         providerClassLevel,
+        // ✅ NHIS PHARMACY LEVEL PATCH START
+        pharmacyLevel: facilityPharmacyLevel,
+        // ✅ NHIS PHARMACY LEVEL PATCH END
         nhisDrugCatalog: nhisDrugs,
         clinicalRules,
         nhiaTariffServices: claimServices,
       }
     ),
-    [claimForm, claimMedicines, claimServices, organizationType, editingClaim, isHospital, clinicalRules, providerClassLevel, nhisDrugs]
+    [claimForm, claimMedicines, claimServices, organizationType, editingClaim, isHospital, clinicalRules, providerClassLevel, facilityPharmacyLevel, nhisDrugs]
   )
 
   const readinessIssues = readiness.issues
@@ -844,6 +899,9 @@ const Nhis = () => {
       if (editingClaim) {
         await updateNhisClaim(editingClaim.id, payload, claimMedicines, {
           providerClassLevel,
+          // ✅ NHIS PHARMACY LEVEL PATCH START
+          pharmacyLevel: facilityPharmacyLevel,
+          // ✅ NHIS PHARMACY LEVEL PATCH END
           nhisDrugCatalog: nhisDrugs,
           nhiaTariffServices: claimServices,
         })
@@ -854,6 +912,9 @@ const Nhis = () => {
       } else {
         await createNhisClaim(payload, claimMedicines, {
           providerClassLevel,
+          // ✅ NHIS PHARMACY LEVEL PATCH START
+          pharmacyLevel: facilityPharmacyLevel,
+          // ✅ NHIS PHARMACY LEVEL PATCH END
           nhisDrugCatalog: nhisDrugs,
           nhiaTariffServices: claimServices,
         })
@@ -906,6 +967,9 @@ const Nhis = () => {
       requireMedicineDirections: Boolean(editingClaim),
       enforcePrescribingLevel: true,
       providerClassLevel,
+      // ✅ NHIS PHARMACY LEVEL PATCH START
+      pharmacyLevel: facilityPharmacyLevel,
+      // ✅ NHIS PHARMACY LEVEL PATCH END
       nhisDrugCatalog: nhisDrugs,
     }
   ).blockers
@@ -919,6 +983,9 @@ const Nhis = () => {
           claim.nhis_claim_medicines || [],
           {
             providerClassLevel,
+            // ✅ NHIS PHARMACY LEVEL PATCH START
+            pharmacyLevel: facilityPharmacyLevel,
+            // ✅ NHIS PHARMACY LEVEL PATCH END
             nhisDrugCatalog: nhisDrugs,
             nhiaTariffServices: claim.nhis_claim_services || [],
           }
@@ -990,6 +1057,10 @@ const Nhis = () => {
       category:    drug.category     || '',
       unit:        drug.unit,
       unitPrice:   String(drug.unit_price),
+      // ✅ NHIS PHARMACY LEVEL PATCH START
+      medicineAccessLevel: drug.medicine_access_level || '',
+      requiredPharmacyLevel: drug.required_pharmacy_level || '',
+      // ✅ NHIS PHARMACY LEVEL PATCH END
     })
     setShowDrugCatalogModal(true)
   }
@@ -1778,6 +1849,10 @@ const Nhis = () => {
                           <div className="medicine-meta">
                             {m.dispensedQty} × {m.unit} @ {fmtCurrency(m.unitPrice)}
                             {m.category && ` | NHIS Level: ${m.category}`}
+                            {/* ✅ NHIS PHARMACY LEVEL PATCH START */}
+                            {` | Access: ${m.medicineAccessLevel || 'Level not configured'}`}
+                            {m.requiredPharmacyLevel && ` | Facility: ${m.requiredPharmacyLevel}`}
+                            {/* ✅ NHIS PHARMACY LEVEL PATCH END */}
                             {m.dose && ` | Dose: ${m.dose}`}
                             {m.frequency && ` | ${m.frequency}`}
                             {m.duration && ` for ${m.duration}`}
@@ -2281,6 +2356,36 @@ const Nhis = () => {
                   </select>
                 </div>
               </div>
+              {/* ✅ NHIS PHARMACY LEVEL PATCH START */}
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Medicine access level</label>
+                  <select
+                    className="form-input"
+                    value={drugForm.medicineAccessLevel}
+                    onChange={(e) => setDrugForm((p) => ({ ...p, medicineAccessLevel: e.target.value }))}
+                  >
+                    <option value="">Level not configured</option>
+                    {MEDICINE_ACCESS_LEVELS.map((level) => (
+                      <option key={level.value} value={level.value}>{level.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>Required pharmacy/facility level</label>
+                  <select
+                    className="form-input"
+                    value={drugForm.requiredPharmacyLevel}
+                    onChange={(e) => setDrugForm((p) => ({ ...p, requiredPharmacyLevel: e.target.value }))}
+                  >
+                    <option value="">Any configured level</option>
+                    {PHARMACY_LEVELS.map((level) => (
+                      <option key={level.value} value={level.value}>{level.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              {/* ✅ NHIS PHARMACY LEVEL PATCH END */}
               <div className="form-group">
                 <label>Unit Price (GHS) *</label>
                 <input type="number" min="0" step="0.01" className="form-input" required

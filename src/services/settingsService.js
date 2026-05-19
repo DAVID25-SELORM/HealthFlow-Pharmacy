@@ -2,6 +2,9 @@ import { getCurrentSupabaseUser, invokeSupabaseFunction, supabase } from '../lib
 import { assertRequiredText, normalizeText } from '../utils/validation'
 import { STAFF_ROLE_VALUES } from '../utils/roles'
 import { tryLogAuditEvent } from './auditService'
+// ✅ NHIS PHARMACY LEVEL PATCH START
+import { normalizePharmacyLevel } from '../utils/nhisPharmacyLevel'
+// ✅ NHIS PHARMACY LEVEL PATCH END
 
 const STAFF_ADMIN_FUNCTION = 'staff-admin'
 
@@ -80,6 +83,9 @@ export const updatePharmacySettings = async (id, settings) => {
     logo_url: normalizeText(settings.logoUrl ?? settings.logo_url) || null,
     slogan: normalizeText(settings.slogan) || null,
     license_number: normalizeText(settings.licenseNumber) || null,
+    // ✅ NHIS PHARMACY LEVEL PATCH START
+    pharmacy_level: normalizePharmacyLevel(settings.pharmacyLevel) || null,
+    // ✅ NHIS PHARMACY LEVEL PATCH END
     tax_rate: Number.parseFloat(settings.taxRate || 0),
     currency: normalizeText(settings.currency) || 'GHS',
     default_markup_percent: Number.parseFloat(settings.defaultMarkupPercent || 0),
@@ -142,6 +148,9 @@ export const createSettings = async (settings) => {
     logo_url: normalizeText(settings.logo_url ?? settings.logoUrl) || null,
     slogan: normalizeText(settings.slogan) || null,
     license_number: normalizeText(settings.license_number ?? settings.licenseNumber) || null,
+    // ✅ NHIS PHARMACY LEVEL PATCH START
+    pharmacy_level: normalizePharmacyLevel(settings.pharmacy_level ?? settings.pharmacyLevel) || null,
+    // ✅ NHIS PHARMACY LEVEL PATCH END
     tax_rate: Number.parseFloat(settings.tax_rate ?? settings.taxRate ?? 0),
     currency: normalizeText(settings.currency) || 'GHS',
     default_markup_percent: Number.parseFloat(
