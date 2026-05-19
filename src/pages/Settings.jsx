@@ -71,6 +71,7 @@ const blankNhiaApiForm = {
     username: '',
     password: '',
     token: '',
+    tokenEndpointPath: '',
   },
 }
 
@@ -876,6 +877,7 @@ const Settings = () => {
                 <option value="api_key">API key / secret</option>
                 <option value="bearer_token">Bearer token</option>
                 <option value="basic_auth">Username / password</option>
+                <option value="claimit_token">ClaimIt token exchange</option>
                 <option value="oauth_client">OAuth/client token</option>
               </select>
               {nhiaApiForm.credentialMode === 'api_key' && (
@@ -946,6 +948,28 @@ const Settings = () => {
                     onChange={(event) => updateNhiaCredential('password', event.target.value)}
                   />
                 </div>
+              )}
+              {nhiaApiForm.credentialMode === 'claimit_token' && (
+                <>
+                  <div className="settings-form-row">
+                    <input
+                      placeholder="ClaimIt username"
+                      value={nhiaApiForm.credentials.username}
+                      onChange={(event) => updateNhiaCredential('username', event.target.value)}
+                    />
+                    <input
+                      placeholder="ClaimIt password"
+                      type="password"
+                      value={nhiaApiForm.credentials.password}
+                      onChange={(event) => updateNhiaCredential('password', event.target.value)}
+                    />
+                  </div>
+                  <input
+                    placeholder="Token endpoint path (/token)"
+                    value={nhiaApiForm.credentials.tokenEndpointPath}
+                    onChange={(event) => updateNhiaCredential('tokenEndpointPath', event.target.value)}
+                  />
+                </>
               )}
               {nhiaApiForm.credentialMode === 'oauth_client' && (
                 <>

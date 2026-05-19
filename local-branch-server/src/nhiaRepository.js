@@ -14,6 +14,7 @@ const CLAIM_STATUSES = new Set([
 
 const CREDENTIAL_MODES = new Set([
   'api_key',
+  'claimit_token',
   'client_secret',
   'username_password',
   'certificate',
@@ -800,6 +801,9 @@ const validateSettingsForSubmission = (settings) => {
     } else if (settings.credentialMode === 'username_password') {
       assertRequiredText(credentials.username, 'NHIA username')
       assertRequiredText(credentials.password, 'NHIA password')
+    } else if (settings.credentialMode === 'claimit_token') {
+      assertRequiredText(credentials.username, 'ClaimIt username')
+      assertRequiredText(credentials.password, 'ClaimIt password')
     } else if (settings.credentialMode === 'certificate') {
       assertRequiredText(credentials.certPem, 'NHIA certificate')
       assertRequiredText(credentials.keyPem, 'NHIA certificate key')
@@ -989,9 +993,14 @@ const submitPayload = async (settings, payload, endpointPathOverride = '') => {
     }
   }
 
+  const headers = buildHeaders(settings)
+  if (settings.credentialMode === 'claimit_token') {
+    headers.Authorization = `Bearer ${await fetchClaimItToken(settings)}`
+  }
+
   const response = await fetch(url, {
     method: 'POST',
-    headers: buildHeaders(settings),
+    headers,
     body,
   })
   const text = await response.text()
@@ -1001,6 +1010,36 @@ const submitPayload = async (settings, payload, endpointPathOverride = '') => {
     ok: response.ok,
     body: parseJson(text, { raw: text }),
   }
+}
+
+const fetchClaimItToken = async (settings) => {
+  const credentials = settings.credentials || {}
+  const username = assertRequiredText(credentials.username, 'ClaimIt username')
+  const password = assertRequiredText(credentials.password, 'ClaimIt password')
+  const tokenPath = normalizeText(credentials.tokenEndpointPath) || '/token'
+  const url = new URL(`${settings.apiBaseUrl.replace(/\/+$/, '')}/${tokenPath.replace(/^\/+/, '')}`)
+  url.searchParams.set('username', username)
+  url.searchParams.set('password', password)
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+    },
+  })
+  const text = await response.text()
+  const body = parseJson(text, { raw: text })
+
+  if (!response.ok) {
+    throw new Error(`ClaimIt token request returned HTTP ${response.status}.`)
+  }
+
+  const token = normalizeText(body?.token)
+  if (!token) {
+    throw new Error('ClaimIt token response did not include a token.')
+  }
+
+  return token
 }
 
 const deriveRemoteStatus = (body) => {

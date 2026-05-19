@@ -1847,7 +1847,7 @@ const syncNhisDrugsToInventory = async (
 
 const normalizeCredentialMode = (value: unknown) => {
   const normalized = normalizeText(value).toLowerCase()
-  return ['api_key', 'bearer_token', 'basic_auth', 'oauth_client'].includes(normalized)
+  return ['api_key', 'bearer_token', 'basic_auth', 'oauth_client', 'claimit_token'].includes(normalized)
     ? normalized
     : 'api_key'
 }
@@ -1984,6 +1984,41 @@ const saveNhiaApiSettings = async (
 const joinUrl = (baseUrl: string, path: string) =>
   `${baseUrl.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`
 
+const fetchClaimItToken = async (settings: Record<string, unknown>) => {
+  const credentials = (settings.credentials || {}) as Record<string, unknown>
+  const username = assertRequiredText(credentials.username, 'ClaimIt username')
+  const password = assertRequiredText(credentials.password, 'ClaimIt password')
+  const tokenPath = normalizeText(credentials.tokenEndpointPath) || '/token'
+  const url = new URL(joinUrl(String(settings.apiBaseUrl), tokenPath))
+  url.searchParams.set('username', username)
+  url.searchParams.set('password', password)
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+    },
+  })
+  const responseText = await response.text()
+  let body: unknown = {}
+  try {
+    body = responseText ? JSON.parse(responseText) : {}
+  } catch {
+    body = { raw: responseText }
+  }
+
+  if (!response.ok) {
+    throw new Error(`ClaimIt token request returned HTTP ${response.status}.`)
+  }
+
+  const token = normalizeText((body as Record<string, unknown>)?.token)
+  if (!token) {
+    throw new Error('ClaimIt token response did not include a token.')
+  }
+
+  return token
+}
+
 const buildNhiaHeaders = (settings: Record<string, unknown>, contentType = 'application/json') => {
   const credentials = (settings.credentials || {}) as Record<string, unknown>
   const headers: Record<string, string> = { Accept: 'application/json', 'Content-Type': contentType }
@@ -2017,6 +2052,18 @@ const buildNhiaHeaders = (settings: Record<string, unknown>, contentType = 'appl
     if (token) headers.Authorization = `Bearer ${token}`
   }
 
+  return headers
+}
+
+const buildNhiaSubmissionHeaders = async (
+  settings: Record<string, unknown>,
+  contentType = 'application/json'
+) => {
+  const mode = normalizeCredentialMode(settings.credentialMode)
+  const headers = buildNhiaHeaders(settings, contentType)
+  if (mode === 'claimit_token') {
+    headers.Authorization = `Bearer ${await fetchClaimItToken(settings)}`
+  }
   return headers
 }
 
@@ -2061,7 +2108,7 @@ const generateNhiaCcCode = async (
 
   const response = await fetch(joinUrl(String(settings.apiBaseUrl), String(settings.ccCodeEndpointPath)), {
     method: 'POST',
-    headers: buildNhiaHeaders(settings as unknown as Record<string, unknown>),
+    headers: await buildNhiaSubmissionHeaders(settings as unknown as Record<string, unknown>),
     body: JSON.stringify(requestPayload),
   })
   const responseText = await response.text()
@@ -2104,7 +2151,7 @@ const submitNhiaClaimsDirect = async (
   const requestBody = normalizeText(payload.payloadContent) || JSON.stringify(claimPayload)
   const response = await fetch(joinUrl(String(settings.apiBaseUrl), endpointPath), {
     method: 'POST',
-    headers: buildNhiaHeaders(settings as unknown as Record<string, unknown>, contentType),
+    headers: await buildNhiaSubmissionHeaders(settings as unknown as Record<string, unknown>, contentType),
     body: requestBody,
   })
   const responseText = await response.text()

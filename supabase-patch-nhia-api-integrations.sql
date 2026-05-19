@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS public.organization_nhia_integrations (
   member_lookup_endpoint_path TEXT,
   direct_api_enabled BOOLEAN NOT NULL DEFAULT false,
   credential_mode TEXT NOT NULL DEFAULT 'api_key'
-    CHECK (credential_mode IN ('api_key', 'bearer_token', 'basic_auth', 'oauth_client')),
+    CHECK (credential_mode IN ('api_key', 'bearer_token', 'basic_auth', 'oauth_client', 'claimit_token')),
   credential_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
   nhis_member_digits INTEGER NOT NULL DEFAULT 8,
   ghana_card_digits INTEGER NOT NULL DEFAULT 10,
@@ -74,6 +74,23 @@ BEGIN
       ADD CONSTRAINT organization_nhia_integrations_api_environment_check
       CHECK (api_environment IN ('sandbox', 'production'));
   END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'organization_nhia_integrations_credential_mode_check'
+      AND conrelid = 'public.organization_nhia_integrations'::regclass
+  ) THEN
+    ALTER TABLE public.organization_nhia_integrations
+      DROP CONSTRAINT organization_nhia_integrations_credential_mode_check;
+  END IF;
+
+  ALTER TABLE public.organization_nhia_integrations
+    ADD CONSTRAINT organization_nhia_integrations_credential_mode_check
+    CHECK (credential_mode IN ('api_key', 'bearer_token', 'basic_auth', 'oauth_client', 'claimit_token'));
 END $$;
 
 CREATE INDEX IF NOT EXISTS idx_organization_nhia_integrations_org

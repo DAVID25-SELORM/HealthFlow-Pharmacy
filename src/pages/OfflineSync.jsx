@@ -74,6 +74,7 @@ const blankNhiaForm = {
     clientSecret: '',
     username: '',
     password: '',
+    tokenEndpointPath: '',
     certPem: '',
     keyPem: '',
     caPem: '',
@@ -483,6 +484,7 @@ export default function OfflineSync() {
               onChange={(event) => updateNhiaForm('credentialMode', event.target.value)}
             >
               <option value="api_key">API Key / Secret</option>
+              <option value="claimit_token">ClaimIt Token Exchange</option>
               <option value="client_secret">Client ID / Secret</option>
               <option value="username_password">Username / Password</option>
               <option value="certificate">Certificate</option>
@@ -640,6 +642,34 @@ export default function OfflineSync() {
                   type="password"
                   value={nhiaForm.credentials.password}
                   onChange={(event) => updateNhiaCredential('password', event.target.value)}
+                />
+              </label>
+            </>
+          )}
+
+          {nhiaForm.credentialMode === 'claimit_token' && (
+            <>
+              <label>
+                <span>ClaimIt Username {nhiaSettings?.credentialSummary?.username ? '(saved)' : ''}</span>
+                <input
+                  value={nhiaForm.credentials.username}
+                  onChange={(event) => updateNhiaCredential('username', event.target.value)}
+                />
+              </label>
+              <label>
+                <span>ClaimIt Password {nhiaSettings?.credentialSummary?.password ? '(saved)' : ''}</span>
+                <input
+                  type="password"
+                  value={nhiaForm.credentials.password}
+                  onChange={(event) => updateNhiaCredential('password', event.target.value)}
+                />
+              </label>
+              <label>
+                <span>Token Endpoint</span>
+                <input
+                  value={nhiaForm.credentials.tokenEndpointPath}
+                  placeholder="/token"
+                  onChange={(event) => updateNhiaCredential('tokenEndpointPath', event.target.value)}
                 />
               </label>
             </>
