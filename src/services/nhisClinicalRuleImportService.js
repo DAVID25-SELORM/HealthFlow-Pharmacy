@@ -138,6 +138,12 @@ export const generateNhisClinicalRuleTemplate = async () => {
   const sample = [
     ['Malaria', 'malaria; plasmodium', '', 'artemether; lumefantrine; artesunate; quinine', 'block', 'hospital', 'Add exact NHIA drug codes when available.'],
     ['Hypertension', 'hypertension; blood pressure', '', 'amlodipine; losartan; lisinopril; nifedipine', 'block', 'hospital', ''],
+    ['Diabetes', 'diabetes; diabetic', '', 'metformin; insulin; glibenclamide; gliclazide', 'block', 'hospital', ''],
+    ['Asthma', 'asthma; wheeze', '', 'salbutamol; aminophylline; beclometasone; prednisolone; hydrocortisone', 'block', 'hospital', ''],
+    ['Infection', 'infection; sepsis; pneumonia; tonsillitis; otitis; uti; cellulitis; abscess', '', 'amoxicillin; cefuroxime; ceftriaxone; ciprofloxacin; azithromycin; metronidazole; doxycycline; cloxacillin', 'block', 'hospital', ''],
+    ['Diarrhoea', 'diarrhoea; diarrhea; gastroenteritis; dysentery; cholera', '', 'ors; zinc; metronidazole; ciprofloxacin', 'block', 'hospital', ''],
+    ['Gastritis or ulcer', 'ulcer; gastritis; gerd; dyspepsia; reflux', '', 'omeprazole; pantoprazole; antacid; ranitidine', 'block', 'hospital', ''],
+    ['Allergy', 'allergy; allergic; urticaria; pruritus; rash', '', 'chlorpheniramine; cetirizine; loratadine; promethazine; hydrocortisone; prednisolone', 'block', 'hospital', ''],
   ]
 
   return await writeExcelFile([headers, ...sample]).toBlob()

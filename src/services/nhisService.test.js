@@ -168,6 +168,47 @@ describe('assessNhisClaimReadiness', () => {
     expect(readiness.blockers).toContain(mismatchBlocker)
   })
 
+  it('blocks extra medicines that are not explained by any recorded diagnosis', () => {
+    const readiness = assessNhisClaimReadiness(
+      { ...baseClaim, organizationType: 'hospital', diagnosis: 'Uncomplicated malaria' },
+      [
+        { ...baseMedicine, drugCode: 'ARTLUM1', description: 'Artemether Lumefantrine Tablet' },
+        { ...baseMedicine, drugCode: 'AMLO1', description: 'Amlodipine Tablet' },
+      ],
+      { requireMedicineDirections: true, providerClassLevel: 'D' }
+    )
+
+    expect(readiness.blockers).toContain(
+      'Medicine 2: Amlodipine Tablet appears to be for Hypertension, but that diagnosis is not recorded on this claim.'
+    )
+  })
+
+  it('allows supportive treatment when a primary diagnosis treatment is present', () => {
+    const readiness = assessNhisClaimReadiness(
+      { ...baseClaim, organizationType: 'hospital', diagnosis: 'Uncomplicated malaria' },
+      [
+        { ...baseMedicine, drugCode: 'ARTLUM1', description: 'Artemether Lumefantrine Tablet' },
+        { ...baseMedicine, drugCode: 'PARA1', description: 'Paracetamol Tablet' },
+      ],
+      { requireMedicineDirections: true, providerClassLevel: 'D' }
+    )
+
+    expect(readiness.blockers).not.toContain(mismatchBlocker)
+    expect(readiness.blockers.join(' ')).not.toContain('Medicine 2: Paracetamol Tablet appears to be')
+  })
+
+  it('blocks final submission when medicines exist but diagnosis has no clinical rule coverage', () => {
+    const readiness = assessNhisClaimReadiness(
+      { ...baseClaim, organizationType: 'hospital', diagnosis: 'Unmapped diagnosis' },
+      [{ ...baseMedicine, drugCode: 'CEFTRIN1', description: 'Ceftriaxone Injection' }],
+      { finalSubmission: true, providerClassLevel: 'D' }
+    )
+
+    expect(readiness.blockers).toContain(
+      'Diagnosis-treatment rule not found for the recorded diagnosis. Import or add a clinical rule before final submission to reduce rejection risk.'
+    )
+  })
+
   it('falls back to built-in clinical rules when final readiness receives an empty rule set', () => {
     const readiness = assessNhisClaimReadiness(
       { ...baseClaim, organizationType: 'hospital', diagnosis: 'Malaria' },

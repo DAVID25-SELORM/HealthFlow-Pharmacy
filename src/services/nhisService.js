@@ -223,49 +223,85 @@ const updateNhisClaimWithSchemaFallback = async (id, payload) => {
 const DIAGNOSIS_TREATMENT_RULES = [
   {
     label: 'Malaria',
-    diagnosis: ['malaria'],
-    treatments: ['artem', 'lumefantrine', 'amodiaquine', 'artesunate', 'quinine', 'sulfadoxine', 'pyrimethamine'],
+    diagnosis: ['malaria', 'plasmodium', 'b50', 'b51', 'b52', 'b53', 'b54'],
+    treatments: ['artem', 'lumefantrine', 'amodiaquine', 'artesunate', 'quinine', 'sulfadoxine', 'pyrimethamine', 'primaquine'],
   },
   {
     label: 'Hypertension',
-    diagnosis: ['hypertension', 'blood pressure'],
-    treatments: ['amlodipine', 'nifedipine', 'lisinopril', 'losartan', 'bendro', 'atenolol', 'methyldopa', 'hydrochlorothiazide'],
+    diagnosis: ['hypertension', 'blood pressure', 'hypertensive', 'i10', 'i11', 'i12', 'i13', 'i15'],
+    treatments: ['amlodipine', 'nifedipine', 'lisinopril', 'losartan', 'bendro', 'bendroflumethiazide', 'atenolol', 'methyldopa', 'hydrochlorothiazide', 'bisoprolol', 'captopril', 'enalapril', 'valsartan'],
   },
   {
     label: 'Diabetes',
-    diagnosis: ['diabetes', 'diabetic'],
-    treatments: ['metformin', 'insulin', 'glibenclamide', 'gliclazide'],
+    diagnosis: ['diabetes', 'diabetic', 'e10', 'e11', 'e12', 'e13', 'e14'],
+    treatments: ['metformin', 'insulin', 'glibenclamide', 'gliclazide', 'glimepiride', 'sitagliptin'],
   },
   {
     label: 'Asthma',
-    diagnosis: ['asthma', 'wheeze'],
-    treatments: ['salbutamol', 'aminophylline', 'beclometasone', 'prednisolone', 'hydrocortisone'],
+    diagnosis: ['asthma', 'wheeze', 'bronchospasm', 'j45', 'j46'],
+    treatments: ['salbutamol', 'aminophylline', 'beclometasone', 'beclomethasone', 'prednisolone', 'hydrocortisone', 'ipratropium', 'budesonide'],
   },
   {
     label: 'Infection',
-    diagnosis: ['infection', 'sepsis', 'pneumonia', 'tonsillitis', 'otitis', 'uti', 'urinary'],
-    treatments: ['amoxicillin', 'ampicillin', 'cefuroxime', 'ceftriaxone', 'ciprofloxacin', 'azithromycin', 'metronidazole', 'doxycycline', 'cloxacillin'],
+    diagnosis: ['infection', 'sepsis', 'pneumonia', 'tonsillitis', 'otitis', 'uti', 'urinary', 'cellulitis', 'abscess', 'wound', 'typhoid', 'bacterial'],
+    treatments: ['amoxicillin', 'ampicillin', 'co amoxiclav', 'amoxiclav', 'cefuroxime', 'ceftriaxone', 'cefixime', 'cephalexin', 'ciprofloxacin', 'azithromycin', 'metronidazole', 'doxycycline', 'cloxacillin', 'flucloxacillin', 'gentamicin', 'erythromycin'],
   },
   {
     label: 'Pain or fever',
-    diagnosis: ['pain', 'headache', 'fever'],
-    treatments: ['paracetamol', 'ibuprofen', 'diclofenac', 'aspirin'],
+    diagnosis: ['pain', 'headache', 'fever', 'pyrexia', 'migraine', 'r50', 'r51'],
+    treatments: ['paracetamol', 'acetaminophen', 'ibuprofen', 'diclofenac', 'aspirin', 'tramadol'],
   },
   {
     label: 'Diarrhoea',
-    diagnosis: ['diarrhoea', 'diarrhea', 'gastroenteritis'],
-    treatments: ['ors', 'zinc', 'metronidazole', 'ciprofloxacin'],
+    diagnosis: ['diarrhoea', 'diarrhea', 'gastroenteritis', 'dysentery', 'cholera', 'a09'],
+    treatments: ['ors', 'oral rehydration', 'zinc', 'metronidazole', 'ciprofloxacin'],
   },
   {
     label: 'Gastritis or ulcer',
-    diagnosis: ['ulcer', 'gastritis', 'gerd'],
-    treatments: ['omeprazole', 'ranitidine', 'antacid', 'pantoprazole'],
+    diagnosis: ['ulcer', 'gastritis', 'gerd', 'dyspepsia', 'reflux', 'k21', 'k25', 'k26', 'k29', 'k30'],
+    treatments: ['omeprazole', 'ranitidine', 'antacid', 'pantoprazole', 'lansoprazole', 'esomeprazole'],
   },
   {
     label: 'Anaemia',
-    diagnosis: ['anaemia', 'anemia'],
+    diagnosis: ['anaemia', 'anemia', 'd50', 'd51', 'd52', 'd53', 'd64'],
     treatments: ['ferrous', 'folic', 'iron'],
   },
+  {
+    label: 'Allergy',
+    diagnosis: ['allergy', 'allergic', 'urticaria', 'pruritus', 'rash', 'l50', 't78'],
+    treatments: ['chlorpheniramine', 'cetirizine', 'loratadine', 'promethazine', 'hydrocortisone', 'prednisolone'],
+  },
+  {
+    label: 'Cough or cold',
+    diagnosis: ['cough', 'cold', 'urti', 'upper respiratory', 'rhinitis', 'j00', 'j06'],
+    treatments: ['chlorpheniramine', 'cetirizine', 'dextromethorphan', 'guaifenesin', 'salbutamol', 'paracetamol'],
+  },
+  {
+    label: 'Eye infection',
+    diagnosis: ['conjunctivitis', 'eye infection', 'keratitis', 'h10', 'h16'],
+    treatments: ['chloramphenicol', 'tetracycline eye', 'ciprofloxacin eye', 'gentamicin eye', 'ofloxacin eye'],
+  },
+  {
+    label: 'Helminthiasis',
+    diagnosis: ['worm', 'helminth', 'helminthiasis', 'schistosomiasis', 'b65', 'b76', 'b77', 'b78', 'b79', 'b80', 'b82'],
+    treatments: ['albendazole', 'mebendazole', 'praziquantel'],
+  },
+]
+
+const SUPPORTIVE_TREATMENT_KEYWORDS = [
+  'paracetamol', 'acetaminophen', 'ors', 'oral rehydration', 'zinc', 'multivitamin',
+  'vitamin', 'normal saline', 'dextrose', 'water for injection', 'syringe', 'needle',
+  'cotton wool', 'plaster', 'gloves',
+]
+
+const ALWAYS_REVIEW_TREATMENT_KEYWORDS = [
+  'amoxicillin', 'ampicillin', 'augmentin', 'azithromycin', 'ceftriaxone', 'cefuroxime',
+  'cefixime', 'cephalexin', 'ciprofloxacin', 'cloxacillin', 'co amoxiclav', 'doxycycline',
+  'erythromycin', 'gentamicin', 'levofloxacin', 'metronidazole', 'tetracycline', 'tinidazole',
+  'artem', 'lumefantrine', 'amodiaquine', 'artesunate', 'quinine',
+  'metformin', 'insulin', 'glibenclamide', 'gliclazide',
+  'amlodipine', 'nifedipine', 'lisinopril', 'losartan',
+  'salbutamol', 'aminophylline',
 ]
 
 const splitRuleTerms = (value) => {
@@ -322,7 +358,30 @@ const getDiagnosisMatchText = (claimData) => {
   ].filter(Boolean).join(' '))
 }
 
-const getDiagnosisTreatmentMismatchBlockers = (claimData, medicines = [], rules = DIAGNOSIS_TREATMENT_RULES) => {
+const ruleMatchesTreatment = (rule, treatmentText, treatmentCodes = new Set()) => {
+  const codeMatches = rule.drugCodes.length && rule.drugCodes.some((code) => treatmentCodes.has(code))
+  const keywordMatches = rule.treatments.length && rule.treatments.some((keyword) => treatmentText.includes(normalizeMatchText(keyword)))
+  return Boolean(codeMatches || keywordMatches)
+}
+
+const getMedicineMismatchReviewText = (medicine = {}) =>
+  normalizeMatchText([
+    medicine?.description,
+    medicine?.genericName,
+    medicine?.generic_name,
+    medicine?.drugName,
+    medicine?.drug_name,
+    medicine?.drugCode,
+    medicine?.drug_code,
+  ].filter(Boolean).join(' '))
+
+const isSupportiveTreatment = (medicineText) =>
+  SUPPORTIVE_TREATMENT_KEYWORDS.some((keyword) => medicineText.includes(normalizeMatchText(keyword)))
+
+const shouldStrictlyExplainTreatment = (medicineText) =>
+  ALWAYS_REVIEW_TREATMENT_KEYWORDS.some((keyword) => medicineText.includes(normalizeMatchText(keyword)))
+
+const getDiagnosisTreatmentMismatchBlockers = (claimData, medicines = [], rules = DIAGNOSIS_TREATMENT_RULES, options = {}) => {
   const diagnosis = getDiagnosisMatchText(claimData)
   if (!diagnosis) return []
 
@@ -331,7 +390,11 @@ const getDiagnosisTreatmentMismatchBlockers = (claimData, medicines = [], rules 
     rule.diagnosis.some((keyword) => diagnosis.includes(keyword))
   )
 
-  if (!matchedRules.length) return []
+  if (!matchedRules.length) {
+    return (medicines || []).length && (options.finalSubmission || options.requireMedicineDirections)
+      ? ['Diagnosis-treatment rule not found for the recorded diagnosis. Import or add a clinical rule before final submission to reduce rejection risk.']
+      : []
+  }
 
   const treatmentText = normalizeMatchText(
     (medicines || [])
@@ -350,14 +413,35 @@ const getDiagnosisTreatmentMismatchBlockers = (claimData, medicines = [], rules 
       .filter(Boolean)
   )
 
-  return matchedRules
+  const blockers = matchedRules
     .filter((rule) => {
       if (rule.severity !== 'block') return false
-      const codeMatches = rule.drugCodes.length && rule.drugCodes.some((code) => treatmentCodes.has(code))
-      const keywordMatches = rule.treatments.length && rule.treatments.some((keyword) => treatmentText.includes(normalizeMatchText(keyword)))
-      return !codeMatches && !keywordMatches
+      return !ruleMatchesTreatment(rule, treatmentText, treatmentCodes)
     })
     .map((rule) => `${rule.label}: treatment does not appear to match the diagnosis. Correct the diagnosis or add a matching medicine before saving corrections/submission.`)
+
+  ;(medicines || []).forEach((medicine, index) => {
+    const medicineText = getMedicineMismatchReviewText(medicine)
+    if (!medicineText || isSupportiveTreatment(medicineText)) return
+
+    const medicineCode = asText(medicine?.drugCode ?? medicine?.drug_code).toUpperCase()
+    const medicineCodes = new Set(medicineCode ? [medicineCode] : [])
+    const explainedByClaimDiagnosis = matchedRules.some((rule) => ruleMatchesTreatment(rule, medicineText, medicineCodes))
+    if (explainedByClaimDiagnosis) return
+
+    const explainedByOtherRule = normalizedRules.find((rule) => ruleMatchesTreatment(rule, medicineText, medicineCodes))
+    const label = `Medicine ${index + 1}`
+    if (explainedByOtherRule) {
+      blockers.push(`${label}: ${getMedicineDescription(medicine)} appears to be for ${explainedByOtherRule.label}, but that diagnosis is not recorded on this claim.`)
+      return
+    }
+
+    if (shouldStrictlyExplainTreatment(medicineText)) {
+      blockers.push(`${label}: ${getMedicineDescription(medicine)} is clinically significant but is not explained by the recorded diagnosis. Add the supporting diagnosis or remove the medicine.`)
+    }
+  })
+
+  return blockers
 }
 
 const getProviderPrescribingLevel = (claimData = {}, options = {}) =>
@@ -1050,7 +1134,7 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
   }
 
   if (shouldCheckDiagnosisTreatmentMatch) {
-    blockers.push(...getDiagnosisTreatmentMismatchBlockers(claimData, medicines, options.clinicalRules || DIAGNOSIS_TREATMENT_RULES))
+    blockers.push(...getDiagnosisTreatmentMismatchBlockers(claimData, medicines, options.clinicalRules || DIAGNOSIS_TREATMENT_RULES, options))
   }
 
   if (shouldRunClinicalScrub) {
