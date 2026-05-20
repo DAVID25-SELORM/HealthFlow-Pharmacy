@@ -20,6 +20,7 @@ import { normalizeSubscriptionTier, useTenant } from '../context/TenantContext'
 import { readLogoFileAsDataUrl, readSignatureFileAsDataUrl } from '../utils/imageUpload'
 import { getRoleLabel } from '../utils/roleLabels'
 import { ROLE_OPTIONS } from '../utils/roles'
+import { applyNhiaFacilityDefaults } from '../utils/nhiaFacilityDefaults'
 // ✅ NHIS PHARMACY LEVEL PATCH START
 import { PHARMACY_LEVELS } from '../utils/nhisPharmacyLevel'
 // ✅ NHIS PHARMACY LEVEL PATCH END
@@ -81,11 +82,14 @@ const blankNhiaApiForm = {
   },
 }
 
-const toNhiaApiForm = (settings) => ({
-  ...blankNhiaApiForm,
-  ...(settings || {}),
-  credentials: { ...blankNhiaApiForm.credentials },
-})
+const toNhiaApiForm = (settings, organization) => {
+  const resolved = applyNhiaFacilityDefaults(settings, organization)
+  return {
+    ...blankNhiaApiForm,
+    ...resolved,
+    credentials: { ...blankNhiaApiForm.credentials },
+  }
+}
 
 const blankStaffForm = {
   fullName: '',
@@ -179,7 +183,7 @@ const Settings = () => {
         ])
         setUsers(usersData)
         setBranches(branchesData)
-        setNhiaApiForm(toNhiaApiForm(nhiaApiSettings))
+        setNhiaApiForm(toNhiaApiForm(nhiaApiSettings, organization))
 
         // Load organization stats
         if (organization?.id) {

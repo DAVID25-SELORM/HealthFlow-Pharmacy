@@ -428,7 +428,7 @@ const updateClaimsBatch = db.prepare(`
 
 const selectBatchById = db.prepare('SELECT * FROM nhia_claim_batches WHERE id = ?')
 const selectLocalClinicalRules = db.prepare(`
-  SELECT payload_json
+  SELECT data_json AS payload_json
   FROM offline_records
   WHERE entity_type = 'nhis_clinical_rules'
     AND sync_status != 'failed'

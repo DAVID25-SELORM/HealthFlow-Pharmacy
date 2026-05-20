@@ -2398,6 +2398,272 @@ const normalizeClaimItExportFormat = (format = 'cxf') => {
 
 const toClaimItDate = (value) => normalizeText(value).slice(0, 10)
 
+const toClaimItDateTime = (value = new Date().toISOString()) => {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return normalizeText(value).replace('T', ' ').slice(0, 19)
+  const pad = (part) => String(part).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+}
+
+const toClaimItAmount = (value, decimals = 2) =>
+  Number(value || 0).toFixed(decimals)
+
+const toClaimItGender = (value) => {
+  const text = normalizeText(value).toLowerCase()
+  if (text.startsWith('f')) return 'F'
+  if (text.startsWith('m')) return 'M'
+  return normalizeText(value).toUpperCase()
+}
+
+const getClaimItAge = (dateOfBirth, serviceDate) => {
+  const dob = new Date(`${toClaimItDate(dateOfBirth)}T00:00:00Z`)
+  const dosp = new Date(`${toClaimItDate(serviceDate)}T00:00:00Z`)
+  if (Number.isNaN(dob.getTime()) || Number.isNaN(dosp.getTime())) return ''
+  const years = (dosp.getTime() - dob.getTime()) / (365.25 * 24 * 60 * 60 * 1000)
+  return Math.max(years, 0).toFixed(2)
+}
+
+const getClaimItAgeGroup = (dateOfBirth, serviceDate) => {
+  const age = Number(getClaimItAge(dateOfBirth, serviceDate))
+  if (!Number.isFinite(age)) return ''
+  return age < 12 ? 'C' : 'A'
+}
+
+const claimItDigitsOnly = (value) => normalizeText(value).replace(/\D/g, '')
+
+const splitClaimItCredentialCode = (credentialCode = '') => {
+  const parts = normalizeText(credentialCode).split('-')
+  return {
+    agencyCode: parts[0] || '',
+    regionCode: parts[1] || '',
+    districtCode: parts[2] || '',
+    ownershipCode: parts[3] || '',
+    sequenceNumber: parts[4] || '',
+    facilityTypeCode: parts[5] || '',
+    prescriptionLevelCode: parts[6] || '',
+    cateringStatusCode: parts[7] || '',
+    effectiveDateCode: parts[8] || '',
+  }
+}
+
+const getClaimItEffectiveDate = (credentialCode = '') => {
+  const { effectiveDateCode } = splitClaimItCredentialCode(credentialCode)
+  if (/^\d{6}$/.test(effectiveDateCode)) {
+    return `20${effectiveDateCode.slice(4, 6)}-${effectiveDateCode.slice(2, 4)}-${effectiveDateCode.slice(0, 2)}`
+  }
+  return ''
+}
+
+const getClaimItProviderCode = (payload = {}) => {
+  const providerNumber = normalizeText(payload.providerNumber)
+  if (providerNumber) return providerNumber
+  const credential = normalizeText(payload.facilityCode)
+  const { agencyCode, regionCode, sequenceNumber } = splitClaimItCredentialCode(credential)
+  return [agencyCode, regionCode, sequenceNumber].filter(Boolean).join('-')
+}
+
+const getClaimItPrescriptionLevel = (payload = {}) => {
+  const credential = normalizeText(payload.facilityCode)
+  const { prescriptionLevelCode } = splitClaimItCredentialCode(credential)
+  return prescriptionLevelCode || normalizeText(payload.providerClassLevel) || ''
+}
+
+const getClaimItFacilityType = (payload = {}) => {
+  const description = normalizeText(payload.providerTypeDescription).toLowerCase()
+  if (description.includes('pharmacy')) return 'PHC'
+  if (description.includes('hospital')) return 'HOSP'
+  if (description.includes('clinic')) return 'CL'
+  return 'PHC'
+}
+
+const getClaimItClaimType = (payload = {}) =>
+  normalizeOrganizationType(payload.organizationType) === 'hospital' ? 'INP' : 'NHIS'
+
+const getClaimItServiceType = (payload = {}) =>
+  normalizeOrganizationType(payload.organizationType) === 'hospital' ? 'INP' : 'PHC'
+
+const getClaimItGuid = (seed = '', salt = '') => {
+  const randomId = globalThis.crypto?.randomUUID?.() || String(Date.now())
+  const source = `${seed || randomId}-${salt}`
+  let hash = 2166136261
+  let output = ''
+  for (let index = 0; output.length < 40; index += 1) {
+    const code = source.charCodeAt(index % source.length) + index
+    hash ^= code
+    hash = Math.imul(hash, 16777619) >>> 0
+    output += hash.toString(16).padStart(8, '0')
+  }
+  return output.slice(0, 40)
+}
+
+const parseDirectionsNumber = (value, fallback = '1.00') => {
+  const match = normalizeText(value).match(/(\d+(?:\.\d+)?)/)
+  return Number(match?.[1] || fallback).toFixed(2)
+}
+
+const parseFrequencyValue = (value) => {
+  const text = normalizeText(value).toLowerCase()
+  if (/\b(qid|qds|four)\b/.test(text)) return '4.00'
+  if (/\b(tid|tds|three)\b/.test(text)) return '3.00'
+  if (/\b(bid|bd|twice|two)\b/.test(text)) return '2.00'
+  if (/\b(od|daily|once)\b/.test(text)) return '1.00'
+  return parseDirectionsNumber(text, '1.00')
+}
+
+const getClaimItDbStruct = () => ({
+  claims: {
+    guid: 'varchar(60)',
+    isException: 'tinyint(1)',
+    claimCheckCode: 'varchar(255)',
+    preAuthorizationCodes: 'varchar(255)',
+    physicianID: 'varchar(255)',
+    specialtyAttended: 'varchar(6)',
+    totalCost: 'decimal(10,2)',
+    procCost: 'decimal(10,2)',
+    diagCost: 'decimal(10,2)',
+    inveCost: 'decimal(10,2)',
+    medCost: 'decimal(10,2)',
+    principalGDRG: 'varchar(255)',
+    alternativeGDRG: 'varchar(255)',
+    autoSummaryGDRG: 'varchar(255)',
+    autoSummaryCost: 'decimal(10,2)',
+    memberAge: 'decimal(10,2)',
+    memberAgeGroup: 'varchar(255)',
+    isImported: 'tinyint(1)',
+    refID: 'varchar(255)',
+    medVersion: 'varchar(255)',
+    servVersion: 'varchar(255)',
+    policyVersion: 'varchar(255)',
+    isDirty: 'tinyint(1)',
+    status: 'varchar(255)',
+    submissionTime: 'datetime',
+    extraData: 'mediumtext',
+    addedOn: 'datetime',
+    addedByname: 'varchar(255)',
+    addedByuserID: 'varchar(255)',
+    addedByrole: 'varchar(255)',
+    modifiedOn: 'datetime',
+    modifiedByname: 'varchar(255)',
+    modifiedByuserID: 'varchar(255)',
+    modifiedByrole: 'varchar(255)',
+    memberNo: 'varchar(255)',
+    cardSerialNo: 'varchar(255)',
+    surname: 'varchar(255)',
+    otherNames: 'varchar(255)',
+    dateOfBirth: 'date',
+    gender: 'varchar(255)',
+    hospitalRecNo: 'varchar(255)',
+    prescriptionLevelID: 'varchar(255)',
+    credentialCode: 'varchar(255)',
+    accred_effectiveDate: 'date',
+    accred_providerID: 'varchar(255)',
+    facilityTypeCode: 'varchar(255)',
+    ownershipTypeCode: 'varchar(255)',
+    cateringStatusCode: 'varchar(255)',
+    minDOSP: 'date',
+    maxDOSP: 'date',
+    serviceProvisionDates: 'varchar(255)',
+    durationOfSpell: 'varchar(255)',
+    typeOfService: 'varchar(255)',
+    includesPharmacy: 'tinyint(1)',
+    claimType: 'varchar(255)',
+  },
+  medicineentries: {
+    _entry_id: 'int(11)',
+    _claim_id: 'varchar(60)',
+    medicineCode: 'varchar(255)',
+    serviceDate: 'date',
+    cost: 'decimal(10,4)',
+    qty: 'varchar(255)',
+    dispensedQty: 'varchar(255)',
+    dispensaryUnit: 'varchar(750)',
+    extraDirections: 'mediumtext',
+    unparsed: 'mediumtext',
+    dose_value: 'decimal(10,2)',
+    dose_unit: 'varchar(255)',
+    frequency_value: 'decimal(10,2)',
+    frequency_unit: 'varchar(255)',
+    frequency_desc: 'varchar(255)',
+    duration_value: 'decimal(10,2)',
+    duration_unit: 'varchar(255)',
+    duration_desc: 'varchar(255)',
+  },
+  serviceentries: {
+    _entry_id: 'int(11)',
+    _claim_id: 'varchar(60)',
+    gdrgCode: 'varchar(255)',
+    cost: 'decimal(10,4)',
+    entryType: 'varchar(255)',
+    serviceDate: 'date',
+    icd10: 'varchar(255)',
+    description: 'varchar(255)',
+  },
+  summaryitems: {
+    _entry_id: 'int(11)',
+    _claim_id: 'varchar(60)',
+    type: 'varchar(255)',
+    ordinal: 'int(11)',
+    description: 'varchar(255)',
+    amount: 'decimal(10,4)',
+  },
+  attachments: {
+    attach_id: 'varchar(40)',
+    _claim_id: 'varchar(60)',
+    type: 'varchar(255)',
+    fileType: 'varchar(255)',
+    comments: 'varchar(255)',
+  },
+  attachmentdata: {
+    _data_id: 'int(11)',
+    _attach_id: 'varchar(40)',
+    data: 'longblob',
+  },
+  comments: {
+    _entry_id: 'int(11)',
+    _claim_id: 'varchar(60)',
+    comment: 'mediumtext',
+    createdOn: 'datetime',
+    createdByname: 'varchar(255)',
+    createdByuserID: 'varchar(255)',
+    createdByrole: 'varchar(255)',
+  },
+  validations: {
+    _id: 'varchar(60)',
+    s_id: 'int(11)',
+    claimID: 'varchar(255)',
+    policyID: 'varchar(255)',
+    runTime: 'datetime',
+    outcome: 'varchar(255)',
+    isSavedClaim: 'tinyint(1)',
+    memberNo: 'varchar(255)',
+    firstDOSP: 'date',
+    lastDOSP: 'date',
+    runOn: 'datetime',
+    runByname: 'varchar(255)',
+    runByuserID: 'varchar(255)',
+    runByrole: 'varchar(255)',
+  },
+  validation_results: {
+    _id: 'int(11)',
+    _validation_id: 'varchar(60)',
+    ruleID: 'varchar(255)',
+    info: 'varchar(255)',
+    entryID: 'varchar(255)',
+  },
+  validation_zclaims: {
+    _id: 'int(11)',
+    _validation_id: 'varchar(60)',
+    serializedClaim: 'longblob',
+    isCompressed: 'tinyint(1)',
+  },
+  prescribersfordays: {
+    _id: 'int(11)',
+    day: 'date',
+    name: 'varchar(250)',
+    role: 'varchar(32)',
+  },
+})
+
 const isValidIsoDate = (value) => {
   const text = normalizeText(value)
   if (!ISO_DATE_RE.test(text)) return false
@@ -2671,6 +2937,331 @@ ${claim.tariffServices.map((service) => `        <TariffService>
 </NhiaClaimBatch>
 `
 
+const phpSerializeKey = (key) =>
+  Number.isInteger(key) ? `i:${key};` : phpSerialize(String(key))
+
+const phpSerialize = (value) => {
+  if (value === null || value === undefined) return 'N;'
+  if (typeof value === 'boolean') return `b:${value ? 1 : 0};`
+  if (typeof value === 'number') {
+    return Number.isInteger(value) ? `i:${value};` : `d:${Number.isFinite(value) ? value : 0};`
+  }
+  if (typeof value === 'string') {
+    return `s:${new TextEncoder().encode(value).length}:"${value}";`
+  }
+  if (Array.isArray(value)) {
+    return `a:${value.length}:{${value.map((item, index) => `${phpSerializeKey(index)}${phpSerialize(item)}`).join('')}}`
+  }
+  if (typeof value === 'object') {
+    const entries = Object.entries(value)
+    return `a:${entries.length}:{${entries.map(([key, item]) => `${phpSerializeKey(key)}${phpSerialize(item)}`).join('')}}`
+  }
+  return phpSerialize(String(value))
+}
+
+const deflateClaimItPayload = async (serializedPayload) => {
+  if (typeof CompressionStream === 'undefined') {
+    throw new Error('This browser cannot create CLAIM-it CXF files. Use a current Chrome or Edge browser, or export XML instead.')
+  }
+
+  const stream = new Response(serializedPayload).body.pipeThrough(new CompressionStream('deflate'))
+  return new Uint8Array(await new Response(stream).arrayBuffer())
+}
+
+const buildClaimItRows = (payload) => {
+  const generatedAt = toClaimItDateTime(payload.createdAt)
+  const signedByName = normalizeText(payload.claimsOfficerName) || 'HealthFlow'
+  const signedByUsername = normalizeText(payload.submitterId) || signedByName
+  const signedByRole = 'admin'
+  const credentialCode = normalizeText(payload.facilityCode)
+  const credentialParts = splitClaimItCredentialCode(credentialCode)
+  const effectiveDate = getClaimItEffectiveDate(credentialCode)
+  const providerId = getClaimItProviderCode(payload)
+  const prescriptionLevelId = getClaimItPrescriptionLevel(payload)
+  const facilityTypeCode = getClaimItFacilityType(payload)
+  const ownershipTypeCode = credentialParts.ownershipCode === '02' ? 'PVT' : ''
+  const cateringStatusCode = credentialParts.cateringStatusCode === '2' ? 'CE' : ''
+  const typeOfService = getClaimItServiceType(payload)
+  const claimType = getClaimItClaimType(payload)
+  const medVersion = normalizeText(payload.medVersion || payload.nhiaMedicineTariffVersion) || '2025-05-01.250531'
+  const policyVersion = normalizeText(payload.policyVersion) || 'cgs.2022-12-01.250531'
+  const serviceVersion = normalizeText(payload.serviceVersion) || null
+  const claims = []
+  const medicineentries = []
+  const serviceentries = []
+  const summaryitems = []
+  const validations = []
+  const validationZclaims = []
+
+  payload.claims.forEach((claim, claimIndex) => {
+    const claimGuid = getClaimItGuid(claim.claimNumber || claim.patient.memberNumber, claimIndex)
+    const medicineTotal = claim.medicines.reduce((sum, medicine) => sum + Number(medicine.totalAmount || 0), 0)
+    const serviceTotal = claim.tariffServices.reduce((sum, service) => sum + Number(service.totalAmount || 0), 0)
+    const serviceDate = claim.service.dateFrom || claim.medicines[0]?.dispensaryDate || claim.tariffServices[0]?.serviceDate || payload.periodFrom
+    const dateTo = claim.service.dateTo || serviceDate
+    const claimRow = {
+      guid: claimGuid,
+      isException: '0',
+      claimCheckCode: claimItDigitsOnly(claim.ccCode),
+      preAuthorizationCodes: normalizeText(claim.service.preAuthCodes),
+      physicianID: normalizeText(claim.service.prescriberNameOrId),
+      specialtyAttended: null,
+      totalCost: toClaimItAmount(claim.totalAmount),
+      procCost: toClaimItAmount(serviceTotal),
+      diagCost: '0.00',
+      inveCost: '0.00',
+      medCost: toClaimItAmount(medicineTotal),
+      principalGDRG: claim.tariffServices[0]?.code || '',
+      alternativeGDRG: '',
+      autoSummaryGDRG: '',
+      autoSummaryCost: '0.00',
+      memberAge: getClaimItAge(claim.patient.dateOfBirth, serviceDate),
+      memberAgeGroup: getClaimItAgeGroup(claim.patient.dateOfBirth, serviceDate),
+      isImported: null,
+      refID: null,
+      medVersion,
+      servVersion: serviceVersion,
+      policyVersion,
+      isDirty: '0',
+      status: 'VALID',
+      submissionTime: null,
+      extraData: '""',
+      addedOn: generatedAt,
+      addedByname: signedByName,
+      addedByuserID: signedByUsername,
+      addedByrole: signedByRole,
+      modifiedOn: generatedAt,
+      modifiedByname: signedByName,
+      modifiedByuserID: signedByUsername,
+      modifiedByrole: signedByRole,
+      signedOn: null,
+      signedByname: null,
+      signedByuserID: null,
+      signedByrole: null,
+      memberNo: normalizeText(claim.patient.memberNumber),
+      cardSerialNo: normalizeText(claim.patient.hin),
+      surname: normalizeText(claim.patient.surname).toLowerCase(),
+      otherNames: normalizeText(claim.patient.otherNames).toLowerCase(),
+      dateOfBirth: claim.patient.dateOfBirth,
+      gender: toClaimItGender(claim.patient.gender),
+      hospitalRecNo: normalizeText(claim.patient.folderNumber),
+      isDependant: null,
+      prescriptionLevelID: prescriptionLevelId,
+      credentialCode,
+      accred_effectiveDate: effectiveDate,
+      accred_providerID: providerId,
+      accred_ccd_agencyCode: credentialParts.agencyCode,
+      accred_ccd_regionCode: credentialParts.regionCode,
+      accred_ccd_districtCode: credentialParts.districtCode,
+      accred_ccd_ownershipCode: credentialParts.ownershipCode,
+      accred_ccd_sequenceNumber: credentialParts.sequenceNumber,
+      accred_ccd_facilityTypeCode: credentialParts.facilityTypeCode,
+      accred_ccd_prescriptionLevelCode: credentialParts.prescriptionLevelCode,
+      accred_ccd_cateringStatusCode: credentialParts.cateringStatusCode,
+      accred_ccd_effectiveDate: effectiveDate,
+      facilityTypeCode,
+      ownershipTypeCode,
+      cateringStatusCode,
+      refclaimCheckCode: '',
+      reffacilityID: normalizeText(claim.service.referralCode),
+      reffacilityName: normalizeText(claim.service.prescribingFacility).toLowerCase(),
+      minDOSP: serviceDate,
+      maxDOSP: dateTo,
+      serviceProvisionDates: serviceDate === dateTo ? serviceDate : `${serviceDate},${dateTo}`,
+      specialtiesAttended: '',
+      durationOfSpell: '1',
+      typeOfService,
+      isUnbundled: '',
+      includesPharmacy: claim.medicines.length ? '1' : '0',
+      typeOfAttendance: '',
+      serviceOutcome: '',
+      claimType,
+    }
+    claims.push(claimRow)
+
+    claim.medicines.forEach((medicine, medicineIndex) => {
+      medicineentries.push({
+        _entry_id: String((claimIndex + 1) * 10000 + medicineIndex + 1),
+        _claim_id: claimGuid,
+        medicineCode: normalizeText(medicine.code),
+        serviceDate: medicine.dispensaryDate || serviceDate,
+        cost: toClaimItAmount(medicine.totalAmount, 4),
+        qty: String(medicine.quantity || ''),
+        dispensedQty: String(medicine.quantity || ''),
+        dispensaryUnit: JSON.stringify({ unit: 'PRICE_UNIT', unitsInPrice: 1, ratio: 1 }),
+        extraDirections: null,
+        unparsed: null,
+        dose_value: parseDirectionsNumber(medicine.dose),
+        dose_unit: normalizeText(medicine.unit).toLowerCase() || 'unit',
+        frequency_value: parseFrequencyValue(medicine.frequency),
+        frequency_unit: 'DAILY',
+        frequency_desc: normalizeText(medicine.frequency).toLowerCase(),
+        duration_value: parseDirectionsNumber(medicine.duration),
+        duration_unit: 'DAYS',
+        duration_desc: normalizeText(medicine.duration).toLowerCase(),
+      })
+    })
+
+    claim.tariffServices.forEach((service, serviceIndex) => {
+      serviceentries.push({
+        _entry_id: String((claimIndex + 1) * 20000 + serviceIndex + 1),
+        _claim_id: claimGuid,
+        gdrgCode: normalizeText(service.code),
+        cost: toClaimItAmount(service.totalAmount, 4),
+        entryType: 'service',
+        serviceDate: service.serviceDate || serviceDate,
+        icd10: claim.diagnoses[0]?.code || '',
+        description: normalizeText(service.description),
+      })
+    })
+
+    if (medicineTotal > 0) {
+      summaryitems.push({
+        _entry_id: String((claimIndex + 1) * 30000 + 1),
+        _claim_id: claimGuid,
+        type: 'Medicines',
+        ordinal: '1',
+        description: '',
+        amount: toClaimItAmount(medicineTotal, 4),
+      })
+    }
+    if (serviceTotal > 0) {
+      summaryitems.push({
+        _entry_id: String((claimIndex + 1) * 30000 + 2),
+        _claim_id: claimGuid,
+        type: 'Services',
+        ordinal: '2',
+        description: '',
+        amount: toClaimItAmount(serviceTotal, 4),
+      })
+    }
+
+    const validationId = getClaimItGuid(claimGuid, 'validation')
+    validations.push({
+      _id: validationId,
+      s_id: String((claimIndex + 1) * 40000 + 1),
+      claimID: claimGuid,
+      policyID: policyVersion.replace(/\.\d{6}$/, ''),
+      runTime: generatedAt,
+      outcome: null,
+      isSavedClaim: '0',
+      memberNo: normalizeText(claim.patient.memberNumber),
+      firstDOSP: serviceDate,
+      lastDOSP: dateTo,
+      runOn: generatedAt,
+      runByname: signedByName,
+      runByuserID: signedByUsername,
+      runByrole: signedByRole,
+    })
+    validationZclaims.push({
+      _id: String((claimIndex + 1) * 40000 + 1),
+      _validation_id: validationId,
+      serializedClaim: '',
+      isCompressed: '1',
+    })
+  })
+
+  return { claims, medicineentries, serviceentries, summaryitems, validations, validationZclaims }
+}
+
+const buildClaimItMeta = (payload, rows) => {
+  const credentialCode = normalizeText(payload.facilityCode)
+  const effectiveDate = getClaimItEffectiveDate(credentialCode)
+  const providerId = getClaimItProviderCode(payload)
+  const totalCost = Number(payload.totalAmount || 0)
+  const typeOfService = getClaimItServiceType(payload)
+  const facilityName = normalizeText(payload.facilityName || payload.providerTypeDescription || 'HealthFlow Facility')
+
+  return {
+    dbVersions: [],
+    claimYear: (payload.periodFrom || payload.createdAt || '').slice(0, 4),
+    claimMonth: (payload.periodFrom || payload.createdAt || '').slice(5, 7),
+    claimType: '',
+    facilityName,
+    providerLevel: '',
+    providerID: providerId,
+    credentialCode,
+    policies: ['cgs.2022-12-01.250531'],
+    medVersions: ['2025-05-01.250531'],
+    servVersions: [null],
+    appVersion: {
+      version: 'HealthFlow',
+      build: '20260520',
+      type: 'hms',
+      sha1: '',
+      client: '1.0.0',
+      mode: 'standalone',
+    },
+    accreditations: credentialCode ? [{
+      accred_effectiveDate: effectiveDate,
+      accred_providerID: providerId,
+      facilityTypeCode: rows.claims[0]?.facilityTypeCode || '',
+      ownershipTypeCode: rows.claims[0]?.ownershipTypeCode || '',
+      cateringStatusCode: rows.claims[0]?.cateringStatusCode || '',
+      prescriptionLevelID: rows.claims[0]?.prescriptionLevelID || '',
+      facilityName,
+      dateGenerated: payload.createdAt.slice(0, 10),
+      expiryDate: '',
+      credentialCode,
+    }] : [],
+    credUsage: credentialCode ? rows.claims.map((claim) => ({
+      credentialCode,
+      minDOSP: claim.minDOSP,
+      maxDOSP: claim.maxDOSP,
+    })) : [],
+    [typeOfService]: [{
+      typeOfService,
+      vol: String(rows.claims.length),
+      cost: toClaimItAmount(totalCost),
+    }],
+    totalVol: rows.claims.length,
+    totalCost,
+    totalExceptions: '0',
+  }
+}
+
+const buildNhisClaimItCxfBundle = (payload) => {
+  const rows = buildClaimItRows(payload)
+  const generatedAt = toClaimItDateTime(payload.createdAt)
+
+  return {
+    lockID: `partial-export-${generatedAt}`,
+    dateGenerated: generatedAt,
+    signedByName: normalizeText(payload.claimsOfficerName) || 'HealthFlow',
+    signedByUsername: normalizeText(payload.submitterId) || 'HealthFlow',
+    signedByRole: 'admin',
+    data: {
+      claims: rows.claims,
+      serviceentries: rows.serviceentries,
+      medicineentries: rows.medicineentries,
+      summaryitems: rows.summaryitems,
+      attachmentdata: [],
+      attachments: [],
+      comments: [],
+      validations: rows.validations,
+      validation_results: [],
+      validation_zclaims: rows.validationZclaims,
+      prescribersfordays: [],
+      _meta: buildClaimItMeta(payload, rows),
+      _dbstruct: getClaimItDbStruct(),
+    },
+    isBackup: false,
+    isExport: true,
+    isPartial: true,
+    periodStart: payload.periodFrom,
+    periodEnd: payload.periodTo,
+  }
+}
+
+export const buildNhisClaimItCxf = async (payload) => {
+  const serialized = phpSerialize(buildNhisClaimItCxfBundle(payload))
+  const compressed = await deflateClaimItPayload(serialized)
+  const output = new Uint8Array(compressed.length + 3)
+  output.set([0x01, 0x02, 0x19], 0)
+  output.set(compressed, 3)
+  return output
+}
+
 const buildNhisMonthlyCsv = (claims) => {
   const escapeCell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`
 
@@ -2753,7 +3344,12 @@ const buildNhisMonthlyCsv = (claims) => {
   return [headerRow, ...dataRows].join('\n')
 }
 
-const createNhisExportFile = (claims, period, options = {}) => {
+const assertClaimItCxfExportConfigured = (options = {}) => {
+  if (normalizeText(options.facilityCode)) return
+  throw new Error('CLAIM-it CXF export needs the facility credential code. Add the NHIA/CLAIM-it facility code in Settings before exporting.')
+}
+
+const createNhisExportFile = async (claims, period, options = {}) => {
   const format = normalizeClaimItExportFormat(options.format)
   if (format === 'csv') {
     return {
@@ -2763,12 +3359,22 @@ const createNhisExportFile = (claims, period, options = {}) => {
     }
   }
 
+  if (format === 'cxf') assertClaimItCxfExportConfigured(options)
+
   const payload = buildNhisClaimItExportPayload(claims, { ...options, exportPeriod: period })
-  const isClaimItXml = format === 'cxf' || format === 'xml'
+  if (format === 'cxf') {
+    return {
+      content: await buildNhisClaimItCxf(payload),
+      contentType: 'application/octet-stream',
+      fileName: `CLAIM-it-HMS-${period.fileTag}.cxf`,
+    }
+  }
+
+  const isClaimItXml = format === 'xml'
   return {
     content: isClaimItXml ? buildNhisClaimItXml(payload) : JSON.stringify(payload, null, 2),
     contentType: isClaimItXml ? 'application/xml;charset=utf-8;' : 'application/json;charset=utf-8;',
-    fileName: `CLAIM-it-HMS-${period.fileTag}.${format === 'cxf' ? 'cxf' : format}`,
+    fileName: `CLAIM-it-HMS-${period.fileTag}.${format}`,
   }
 }
 
@@ -2939,7 +3545,7 @@ export const exportNhisClaimsFile = async (options = {}) => {
     return claims.length
   }
 
-  downloadTextFile(createNhisExportFile(claims, period, { ...options, organizationType }))
+  downloadTextFile(await createNhisExportFile(claims, period, { ...options, organizationType }))
 
   return claims.length
 }

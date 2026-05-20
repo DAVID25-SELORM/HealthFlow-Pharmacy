@@ -15,8 +15,10 @@ import {
   saveNhiaSettings,
   submitPendingNhiaClaims,
 } from '../services/branchServerApi'
+import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
 import { readSignatureFileAsDataUrl } from '../utils/imageUpload'
+import { applyNhiaFacilityDefaults } from '../utils/nhiaFacilityDefaults'
 import './OfflineSync.css'
 
 const ENTITY_LABELS = {
@@ -82,13 +84,17 @@ const blankNhiaForm = {
   },
 }
 
-const buildNhiaForm = (settings) => ({
-  ...blankNhiaForm,
-  ...(settings || {}),
-  credentials: { ...blankNhiaForm.credentials },
-})
+const buildNhiaForm = (settings, organization) => {
+  const resolved = applyNhiaFacilityDefaults(settings, organization)
+  return {
+    ...blankNhiaForm,
+    ...resolved,
+    credentials: { ...blankNhiaForm.credentials },
+  }
+}
 
 export default function OfflineSync() {
+  const { organization } = useAuth()
   const { notify } = useNotification()
   const [config, setConfig] = useState(() => getBranchServerConfig())
   const [health, setHealth] = useState(null)
@@ -132,7 +138,7 @@ export default function OfflineSync() {
       setNhiaSettings(nextNhiaSettings)
       setNhiaSummary(nextNhiaSummary)
       setNhiaClaims(nextNhiaClaims)
-      setNhiaForm(buildNhiaForm(nextNhiaSettings))
+      setNhiaForm(buildNhiaForm(nextNhiaSettings, organization))
       if (!silent) {
         notify('Offline sync status refreshed.', 'success')
       }
@@ -149,7 +155,7 @@ export default function OfflineSync() {
     } finally {
       setLoading(false)
     }
-  }, [notify])
+  }, [notify, organization])
 
   useEffect(() => {
     void refreshStatus({ silent: true })
@@ -218,7 +224,7 @@ export default function OfflineSync() {
     await runAction('nhia-settings', 'NHIA settings save', async () => {
       const saved = await saveNhiaSettings(nhiaForm)
       setNhiaSettings(saved)
-      setNhiaForm(buildNhiaForm(saved))
+      setNhiaForm(buildNhiaForm(saved, organization))
       return saved
     })
   }

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { inflateSync } from 'node:zlib'
 
 vi.mock('../lib/supabase', () => ({
   supabase: {
@@ -25,6 +26,7 @@ vi.mock('./tierAccessService', () => ({
 import {
   assessNhisClaimReadiness,
   buildNhisClaimItExportPayload,
+  buildNhisClaimItCxf,
   buildNhisClaimItXml,
   exportNhisClaimsFile,
   normalizeNhisExportPeriod,
@@ -669,6 +671,29 @@ describe('CLAIM-it export helpers', () => {
     expect(xml).toContain('Tab &lt;500mg&gt;')
   })
 
+  it('builds a binary CXF bundle using CLAIM-it serialized export format', async () => {
+    const payload = buildNhisClaimItExportPayload([claim], {
+      yearMonth: '2026-05',
+      organizationType: 'pharmacy',
+      facilityCode: '03-05-001-02-01954-11-P1-2-011225',
+      providerNumber: '03-05-01954',
+      providerTypeDescription: 'Pharmacy',
+      claimsOfficerName: 'Claims Officer',
+      submitterId: 'admin',
+      generatedAt: '2026-05-20T14:58:02.000Z',
+    })
+
+    const cxf = await buildNhisClaimItCxf(payload)
+    const inflated = inflateSync(Buffer.from(cxf.slice(3))).toString('utf8')
+
+    expect(Array.from(cxf.slice(0, 3))).toEqual([0x01, 0x02, 0x19])
+    expect(inflated).toContain('s:6:"lockID"')
+    expect(inflated).toContain('s:6:"claims"')
+    expect(inflated).toContain('s:15:"medicineentries"')
+    expect(inflated).toContain('s:14:"claimCheckCode"')
+    expect(inflated).not.toContain('<NhiaClaimBatch>')
+  })
+
   it('includes hospital tariff service lines in CLAIM-it payload and XML', () => {
     const claimWithService = {
       ...claim,
@@ -810,6 +835,56 @@ describe('CLAIM-it export helpers', () => {
     expect(count).toBe(1)
     expect(clickSpy).toHaveBeenCalled()
     clickSpy.mockRestore()
+  })
+
+  it('blocks CLAIM-it CXF export until the facility credential code is configured', async () => {
+    const submittedClaim = {
+      ...claim,
+      status: 'submitted',
+      organization_type: 'pharmacy',
+      diagnosis: '',
+      nhis_claim_medicines: [{
+        nhis_drug_id: 'drug-1',
+        drug_code: 'NH001',
+        description: 'Artemether Lumefantrine Tablet',
+        unit: 'tablet',
+        unit_price: 1,
+        dispensed_qty: 10,
+        dose: '1 tablet',
+        frequency: 'BD',
+        duration: '3 days',
+        total_amount: 10,
+        category: 'A',
+      }],
+    }
+    const claimsQuery = {
+      order: vi.fn(() => claimsQuery),
+      gte: vi.fn(() => claimsQuery),
+      lte: vi.fn().mockResolvedValue({ data: [submittedClaim], error: null }),
+    }
+    const serviceLinesQuery = {
+      in: vi.fn(() => serviceLinesQuery),
+      order: vi.fn().mockResolvedValue({ data: [], error: null }),
+    }
+    supabase.from.mockImplementation((table) => {
+      if (table === 'nhis_claims') {
+        return { select: vi.fn(() => claimsQuery) }
+      }
+      if (table === 'nhis_claim_services') {
+        return { select: vi.fn(() => serviceLinesQuery) }
+      }
+      return { select: vi.fn(() => ({ in: vi.fn().mockReturnThis(), eq: vi.fn().mockResolvedValue({ data: [], error: null }) })) }
+    })
+
+    await expect(exportNhisClaimsFile({
+      mode: 'custom',
+      fromDate: '2026-05-14',
+      toDate: '2026-05-14',
+      format: 'cxf',
+      organizationType: 'pharmacy',
+      providerClassLevel: 'D',
+      nhisDrugCatalog: [{ id: 'drug-1', code: 'NH001', category: 'A' }],
+    })).rejects.toThrow('CLAIM-it CXF export needs the facility credential code')
   })
 })
 

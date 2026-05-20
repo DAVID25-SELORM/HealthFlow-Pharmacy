@@ -46,6 +46,7 @@ import { getAllDrugs } from '../services/drugService'
 import { parseNhisDrugFile, generateNhisDrugTemplate } from '../services/nhisDrugImportService'
 import { parseNhisClinicalRuleFile, generateNhisClinicalRuleTemplate } from '../services/nhisClinicalRuleImportService'
 import { normalizeNhiaMemberNumber } from '../utils/nhiaMemberNumber'
+import { applyNhiaFacilityDefaults, hasNhiaFacilitySettings } from '../utils/nhiaFacilityDefaults'
 // ✅ NHIS PHARMACY LEVEL PATCH START
 import {
   PHARMACY_LEVELS,
@@ -303,8 +304,12 @@ const Nhis = () => {
   const [updatingStatus, setUpdatingStatus] = useState(null)
   const [rejectTarget, setRejectTarget]     = useState(null)
   const [rejectReason, setRejectReason]     = useState('')
-  const activeTariffFacilityGroup = getPreferredTariffFacilityGroup(directNhiaSettings, organization)
-  const activeTariffCateringOption = getPreferredTariffCateringOption(directNhiaSettings)
+  const resolvedNhiaSettings = useMemo(
+    () => applyNhiaFacilityDefaults(directNhiaSettings, organization),
+    [directNhiaSettings, organization]
+  )
+  const activeTariffFacilityGroup = getPreferredTariffFacilityGroup(resolvedNhiaSettings, organization)
+  const activeTariffCateringOption = getPreferredTariffCateringOption(resolvedNhiaSettings)
 
   // ── sync tab from URL ────────────────────────────────────────
   useEffect(() => {
@@ -466,21 +471,21 @@ const Nhis = () => {
       .slice(0, 10)
   }, [nhiaTariffItems, tariffSearch, activeTariffFacilityGroup, activeTariffCateringOption])
 
-  const providerClassLevel = directNhiaSettings?.providerClassLevel || directNhiaSettings?.provider_class_level || ''
+  const providerClassLevel = resolvedNhiaSettings?.providerClassLevel || resolvedNhiaSettings?.provider_class_level || ''
   const directNhiaApiAvailable = Boolean(
-    directNhiaSettings?.directApiEnabled &&
-      directNhiaSettings?.apiBaseUrl &&
-      directNhiaSettings?.claimEndpointPath
+    resolvedNhiaSettings?.directApiEnabled &&
+      resolvedNhiaSettings?.apiBaseUrl &&
+      resolvedNhiaSettings?.claimEndpointPath
   )
   const nhiaCcCodeApiAvailable = Boolean(
-    directNhiaSettings?.directApiEnabled &&
-      directNhiaSettings?.apiBaseUrl &&
-      directNhiaSettings?.ccCodeEndpointPath
+    resolvedNhiaSettings?.directApiEnabled &&
+      resolvedNhiaSettings?.apiBaseUrl &&
+      resolvedNhiaSettings?.ccCodeEndpointPath
   )
 
   const hasMedicineSearchTerm = medCodeSearch.trim().length > 0
   // ✅ NHIS PHARMACY LEVEL PATCH START
-  const facilityPharmacyLevel = getEffectivePharmacyLevel(organization, directNhiaSettings)
+  const facilityPharmacyLevel = getEffectivePharmacyLevel(organization, resolvedNhiaSettings)
   // ✅ NHIS PHARMACY LEVEL PATCH END
 
   const configReview = useMemo(() => {
@@ -488,14 +493,14 @@ const Nhis = () => {
     const apiWarnings = []
     if (!facilityPharmacyLevel) apiIssues.push('Pharmacy/facility level is not configured.')
     if (!providerClassLevel) apiIssues.push('NHIA provider class/level is not configured.')
-    if (!directNhiaSettings) {
+    if (!hasNhiaFacilitySettings(resolvedNhiaSettings)) {
       apiWarnings.push('NHIA API settings are not configured; CLAIM-it export remains available.')
     } else {
-      if (!directNhiaSettings.facilityCode && !directNhiaSettings.facility_code) apiIssues.push('NHIA facility code is missing.')
-      if (!directNhiaSettings.providerNumber && !directNhiaSettings.provider_number) apiIssues.push('NHIA provider number is missing.')
-      if (directNhiaSettings.directApiEnabled) {
-        if (!directNhiaSettings.apiBaseUrl && !directNhiaSettings.api_base_url) apiIssues.push('Direct NHIA/CLAIM-it API base URL is missing.')
-        if (!directNhiaSettings.claimEndpointPath && !directNhiaSettings.claim_endpoint_path) apiIssues.push('Claim submission endpoint path is missing.')
+      if (!resolvedNhiaSettings.facilityCode && !resolvedNhiaSettings.facility_code) apiIssues.push('NHIA facility code is missing.')
+      if (!resolvedNhiaSettings.providerNumber && !resolvedNhiaSettings.provider_number) apiIssues.push('NHIA provider number is missing.')
+      if (resolvedNhiaSettings.directApiEnabled) {
+        if (!resolvedNhiaSettings.apiBaseUrl && !resolvedNhiaSettings.api_base_url) apiIssues.push('Direct NHIA/CLAIM-it API base URL is missing.')
+        if (!resolvedNhiaSettings.claimEndpointPath && !resolvedNhiaSettings.claim_endpoint_path) apiIssues.push('Claim submission endpoint path is missing.')
       } else {
         apiWarnings.push('Direct API is off; use CLAIM-it export/import.')
       }
@@ -575,13 +580,13 @@ const Nhis = () => {
     }
   }, [
     claims,
-    directNhiaSettings,
     facilityPharmacyLevel,
     inventoryDrugs,
     nhisDrugs,
     nhiaTariffItems,
     organizationType,
     providerClassLevel,
+    resolvedNhiaSettings,
   ])
 
   const getCatalogCategoryForMedicine = (medicine = {}) => {
@@ -896,18 +901,18 @@ const Nhis = () => {
 
   const getDirectNhiaOptions = () => ({
     organizationType,
-    facilityCode: organization?.facility_code || organization?.claimit_facility_code || directNhiaSettings?.facilityCode || '',
-    providerNumber: organization?.provider_number || organization?.nhia_provider_number || directNhiaSettings?.providerNumber || '',
-    schemeName: directNhiaSettings?.schemeName || 'National Health Insurance',
-    providerTypeDescription: directNhiaSettings?.providerTypeDescription || '',
+    facilityCode: resolvedNhiaSettings?.facilityCode || '',
+    providerNumber: resolvedNhiaSettings?.providerNumber || '',
+    schemeName: resolvedNhiaSettings?.schemeName || 'National Health Insurance',
+    providerTypeDescription: resolvedNhiaSettings?.providerTypeDescription || '',
     providerClassLevel,
-    claimsOfficerName: directNhiaSettings?.claimsOfficerName || '',
-    admissionPaymentOption: directNhiaSettings?.admissionPaymentOption || 'nhis_pays_admission',
-    claimitValidationEnabled: directNhiaSettings?.claimitValidationEnabled !== false,
-    claimsOfficerSignatureUrl: directNhiaSettings?.claimsOfficerSignatureUrl || '',
-    submitterId: directNhiaSettings?.submitterId || user?.id || '',
-    directApiSource: directNhiaSettings?.source || 'hosted',
-    directPayloadFormat: directNhiaSettings?.exportFormat || 'json',
+    claimsOfficerName: resolvedNhiaSettings?.claimsOfficerName || '',
+    admissionPaymentOption: resolvedNhiaSettings?.admissionPaymentOption || 'nhis_pays_admission',
+    claimitValidationEnabled: resolvedNhiaSettings?.claimitValidationEnabled !== false,
+    claimsOfficerSignatureUrl: resolvedNhiaSettings?.claimsOfficerSignatureUrl || '',
+    submitterId: resolvedNhiaSettings?.submitterId || user?.id || '',
+    directApiSource: resolvedNhiaSettings?.source || 'hosted',
+    directPayloadFormat: resolvedNhiaSettings?.exportFormat || 'json',
     // ✅ NHIS PHARMACY LEVEL PATCH START
     pharmacyLevel: facilityPharmacyLevel,
     // ✅ NHIS PHARMACY LEVEL PATCH END
@@ -1010,7 +1015,7 @@ const Nhis = () => {
 
     try {
       setGeneratingCcCode(true)
-      const generateCcCode = directNhiaSettings?.source === 'branch'
+      const generateCcCode = resolvedNhiaSettings?.source === 'branch'
         ? generateBranchNhiaCcCode
         : generateHostedNhiaCcCode
       const result = await generateCcCode({
@@ -1697,8 +1702,8 @@ const Nhis = () => {
             <div className="nhis-review-grid">
               <div><strong>Pharmacy level:</strong> {facilityPharmacyLevel || 'Not configured'}</div>
               <div><strong>NHIA provider class:</strong> {providerClassLevel || 'Not configured'}</div>
-              <div><strong>Direct API:</strong> {directNhiaSettings?.directApiEnabled ? 'Enabled' : 'Off'}</div>
-              <div><strong>Export fallback:</strong> {(directNhiaSettings?.exportFormat || exportFormat || 'cxf').toUpperCase()}</div>
+              <div><strong>Direct API:</strong> {resolvedNhiaSettings?.directApiEnabled ? 'Enabled' : 'Off'}</div>
+              <div><strong>Export fallback:</strong> {(resolvedNhiaSettings?.exportFormat || exportFormat || 'cxf').toUpperCase()}</div>
             </div>
             {(configReview.apiIssues.length || configReview.apiWarnings.length) ? (
               <div className="nhis-review-issues">
