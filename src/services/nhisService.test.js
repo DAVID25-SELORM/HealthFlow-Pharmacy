@@ -26,6 +26,7 @@ import {
   assessNhisClaimReadiness,
   buildNhisClaimItExportPayload,
   buildNhisClaimItXml,
+  exportNhisClaimsFile,
   normalizeNhisExportPeriod,
   submitNhisClaimDirect,
   validateNhisPrescriptionPdfFile,
@@ -750,6 +751,65 @@ describe('CLAIM-it export helpers', () => {
     expect(payload.periodLabel).toBe('2026-05-01 to 2026-05-15')
     expect(xml).toContain('<PeriodFrom>2026-05-01</PeriodFrom>')
     expect(xml).toContain('<PeriodTo>2026-05-15</PeriodTo>')
+  })
+
+  it('allows submitted claims in downloaded exports for the selected period', async () => {
+    const submittedClaim = {
+      ...claim,
+      status: 'submitted',
+      organization_type: 'pharmacy',
+      diagnosis: '',
+      nhis_claim_medicines: [
+        {
+          nhis_drug_id: 'drug-1',
+          drug_code: 'NH001',
+          description: 'Artemether Lumefantrine Tablet',
+          unit: 'tablet',
+          unit_price: 1,
+          dispensed_qty: 10,
+          dose: '1 tablet',
+          frequency: 'BD',
+          duration: '3 days',
+          total_amount: 10,
+          category: 'A',
+        },
+      ],
+    }
+    const claimsQuery = {
+      order: vi.fn(() => claimsQuery),
+      gte: vi.fn(() => claimsQuery),
+      lte: vi.fn().mockResolvedValue({ data: [submittedClaim], error: null }),
+    }
+    const serviceLinesQuery = {
+      in: vi.fn(() => serviceLinesQuery),
+      order: vi.fn().mockResolvedValue({ data: [], error: null }),
+    }
+    supabase.from.mockImplementation((table) => {
+      if (table === 'nhis_claims') {
+        return { select: vi.fn(() => claimsQuery) }
+      }
+      if (table === 'nhis_claim_services') {
+        return { select: vi.fn(() => serviceLinesQuery) }
+      }
+      return { select: vi.fn(() => ({ in: vi.fn().mockReturnThis(), eq: vi.fn().mockResolvedValue({ data: [], error: null }) })) }
+    })
+    URL.createObjectURL = vi.fn(() => 'blob:nhis-export')
+    URL.revokeObjectURL = vi.fn()
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+
+    const count = await exportNhisClaimsFile({
+      mode: 'custom',
+      fromDate: '2026-05-14',
+      toDate: '2026-05-14',
+      format: 'json',
+      organizationType: 'pharmacy',
+      providerClassLevel: 'D',
+      nhisDrugCatalog: [{ id: 'drug-1', code: 'NH001', category: 'A' }],
+    })
+
+    expect(count).toBe(1)
+    expect(clickSpy).toHaveBeenCalled()
+    clickSpy.mockRestore()
   })
 })
 

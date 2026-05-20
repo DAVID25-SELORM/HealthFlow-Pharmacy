@@ -2918,8 +2918,14 @@ const submitNhisClaimsDirect = async (claims, period, options = {}) => {
 export const exportNhisClaimsFile = async (options = {}) => {
   const period = normalizeNhisExportPeriod(options)
   const periodClaims = await getNhisClaimsForPeriod(period)
-  const claims = periodClaims.filter((claim) => normalizeText(claim.status).toLowerCase() === 'served')
-  if (!claims.length) throw new Error(`No served claims found for ${period.label}.`)
+  const exportableStatuses = options.directSubmit ? ['served'] : ['served', 'submitted']
+  const claims = periodClaims.filter((claim) =>
+    exportableStatuses.includes(normalizeText(claim.status).toLowerCase())
+  )
+  if (!claims.length) {
+    const statusLabel = options.directSubmit ? 'served' : 'served or submitted'
+    throw new Error(`No ${statusLabel} claims found for ${period.label}.`)
+  }
   const organizationType = normalizeOrganizationType(options.organizationType)
   await assertNhisClaimsReadyForFinalSubmission(claims, organizationType, options)
 
