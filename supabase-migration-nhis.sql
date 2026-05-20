@@ -139,6 +139,7 @@ CREATE TABLE IF NOT EXISTS public.nhis_claims (
   -- Used for monthly batch exports (YYYY-MM). Maintained by trigger below.
   submission_month    TEXT,
   notes               TEXT,
+  unserved_medicines_note TEXT,
   created_by          UUID          REFERENCES public.users(id),
   created_at          TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
   updated_at          TIMESTAMPTZ   NOT NULL DEFAULT NOW()

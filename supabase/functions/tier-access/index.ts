@@ -2097,10 +2097,13 @@ const buildNhiaSubmissionHeaders = async (
   return headers
 }
 
+const normalizeCcCode = (value: unknown): string =>
+  String(value ?? '').trim().replace(/\D/g, '')
+
 const extractCcCode = (body: unknown): string => {
   if (!body || typeof body !== 'object') return ''
   const record = body as Record<string, unknown>
-  const direct = normalizeText(record.ccCode || record.cc_code || record.cccNo || record.ccc_no || record.code)
+  const direct = normalizeCcCode(record.ccCode || record.cc_code || record.cccNo || record.ccc_no || record.code)
   if (direct) return direct
   return record.data && typeof record.data === 'object' ? extractCcCode(record.data) : ''
 }
@@ -2153,6 +2156,7 @@ const generateNhiaCcCode = async (
 
   const ccCode = extractCcCode(body)
   if (!ccCode) throw new Error('NHIA API response did not include a CCC/CC code.')
+  if (ccCode.length !== 5) throw new Error('NHIA API returned a CCC/CC code that is not exactly 5 digits.')
 
   return { ccCode, source: 'api', response: body }
 }

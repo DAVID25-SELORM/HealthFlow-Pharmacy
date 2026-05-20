@@ -30,6 +30,7 @@ import {
   getAllNhisClinicalRules,
   upsertNhisClinicalRules,
   normalizeOrganizationType,
+  normalizeNhisCcCode,
   uploadNhisPrescriptionPdf,
   validateNhisPrescriptionPdfFile,
   getNhisPrescriptionSignedUrl,
@@ -107,6 +108,7 @@ const BLANK_CLAIM = {
   prescriptionFileType: '',
   prescriptionFileSize: '',
   notes:             '',
+  unservedMedicinesNote: '',
 }
 
 const BLANK_MEDICINE = {
@@ -663,6 +665,7 @@ const Nhis = () => {
       prescriptionFileType: claim.prescription_file_type || '',
       prescriptionFileSize: claim.prescription_file_size || '',
       notes: claim.notes || '',
+      unservedMedicinesNote: claim.unserved_medicines_note || '',
     })
     setPrescriptionPdfFile(null)
     setClaimMedicines(
@@ -1030,7 +1033,11 @@ const Nhis = () => {
       if (!result?.ccCode) {
         throw new Error('No CCC/CC code was returned.')
       }
-      setClaimForm((prev) => ({ ...prev, cccNo: result.ccCode }))
+      const ccCode = normalizeNhisCcCode(result.ccCode)
+      if (ccCode.length !== 5) {
+        throw new Error('NHIA API returned a CCC/CC code that is not exactly 5 digits.')
+      }
+      setClaimForm((prev) => ({ ...prev, cccNo: ccCode }))
       notify(
         result.source === 'api'
           ? 'CCC/CC code generated from NHIA API.'
@@ -1127,7 +1134,7 @@ const Nhis = () => {
       patientAddress: claimForm.patientAddress || 'pending',
       dateOfBirth: claimForm.dateOfBirth || '2000-01-01',
       diagnosis: claimForm.diagnosis || 'pending',
-      cccNo: claimForm.cccNo || 'pending',
+      cccNo: claimForm.cccNo || '00000',
       organizationType,
       serviceDate: claimForm.serviceDate || new Date().toISOString().split('T')[0],
       physicianName: claimForm.physicianName || 'pending',
@@ -2026,7 +2033,15 @@ const Nhis = () => {
                       <div className="nhis-code-field">
                         <input className="form-input" value={claimForm.cccNo}
                           required
-                          onChange={(e) => setClaimForm((p) => ({ ...p, cccNo: e.target.value }))} />
+                          inputMode="numeric"
+                          maxLength={5}
+                          pattern="[0-9]{5}"
+                          placeholder="12345"
+                          title="Enter the 5-digit CCC/CC code"
+                          onChange={(e) => setClaimForm((p) => ({
+                            ...p,
+                            cccNo: normalizeNhisCcCode(e.target.value).slice(0, 5),
+                          }))} />
                         {nhiaCcCodeApiAvailable && (
                           <button
                             type="button"
@@ -2186,6 +2201,20 @@ const Nhis = () => {
                     ))}
                   </div>
                 )}
+
+                <div className="nhis-internal-note">
+                  <label>Medicines not served</label>
+                  <textarea
+                    className="form-input"
+                    rows={3}
+                    value={claimForm.unservedMedicinesNote}
+                    onChange={(e) => setClaimForm((p) => ({
+                      ...p,
+                      unservedMedicinesNote: e.target.value,
+                    }))}
+                    placeholder="Internal audit note only"
+                  />
+                </div>
 
                 {isHospital && (
                   <div className="nhis-services-panel">
@@ -2544,6 +2573,7 @@ const Nhis = () => {
               <div><strong>Referral Code:</strong> {viewClaim.referral_code || '—'}</div>
               <div><strong>Prescriber:</strong> {viewClaim.physician_name || '—'}</div>
               <div><strong>Pre-auth Codes:</strong> {viewClaim.pre_auth_codes || '—'}</div>
+              <div><strong>Medicines Not Served:</strong> {viewClaim.unserved_medicines_note || '-'}</div>
               <div>
                 <strong>Prescription File:</strong>{' '}
                 {(viewClaim.prescription_file_path || viewClaim.prescription_file_url) ? (

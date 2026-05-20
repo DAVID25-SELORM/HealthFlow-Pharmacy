@@ -518,6 +518,15 @@ describe('assessNhisClaimReadiness', () => {
     expect(readiness.blockers).toContain('CCC/CC code is required before serving this NHIS claim.')
   })
 
+  it('requires CCC/CC code to contain exactly 5 digits', () => {
+    const readiness = assessNhisClaimReadiness(
+      { ...baseClaim, cccNo: '1234' },
+      [baseMedicine]
+    )
+
+    expect(readiness.blockers).toContain('CCC/CC code must contain exactly 5 digits.')
+  })
+
   it('only asks for child weight on hospital child claims', () => {
     const childClaim = {
       ...baseClaim,
@@ -645,6 +654,23 @@ describe('CLAIM-it export helpers', () => {
     })
     expect(payload.claims[0].medicines[0].code).toBe('NH001')
     expect(payload.claims[0].prescriptionAttachment.fileName).toBe('rx.pdf')
+  })
+
+  it('keeps internal unserved-medicines notes out of CLAIM-it exports', () => {
+    const payload = buildNhisClaimItExportPayload([
+      {
+        ...claim,
+        ccc_no: 'CC-12345',
+        unserved_medicines_note: 'Could not serve amoxicillin.',
+      },
+    ], {
+      yearMonth: '2026-05',
+      organizationType: 'hospital',
+    })
+
+    expect(payload.claims[0].ccCode).toBe('12345')
+    expect(payload.claims[0]).not.toHaveProperty('unservedMedicinesNote')
+    expect(JSON.stringify(payload)).not.toContain('Could not serve amoxicillin.')
   })
 
   it('carries HMS setup details into the CLAIM-it payload and XML', () => {
@@ -888,6 +914,72 @@ describe('CLAIM-it export helpers', () => {
 
     expect(count).toBe(1)
     expect(clickSpy).toHaveBeenCalled()
+    clickSpy.mockRestore()
+  })
+
+  it('names CLAIM-it CXF downloads like CLAIM-it partial exports', async () => {
+    const submittedClaim = {
+      ...claim,
+      status: 'submitted',
+      organization_type: 'pharmacy',
+      diagnosis: '',
+      nhis_claim_medicines: [
+        {
+          nhis_drug_id: 'drug-1',
+          drug_code: 'NH001',
+          description: 'Artemether Lumefantrine Tablet',
+          unit: 'tablet',
+          unit_price: 1,
+          dispensed_qty: 10,
+          dispensary_date: '2026-05-14',
+          dose: '1 tablet',
+          frequency: 'BD',
+          duration: '3 days',
+          total_amount: 10,
+          category: 'A',
+        },
+      ],
+    }
+    const claimsQuery = {
+      order: vi.fn(() => claimsQuery),
+      gte: vi.fn(() => claimsQuery),
+      lte: vi.fn().mockResolvedValue({ data: [submittedClaim], error: null }),
+    }
+    const serviceLinesQuery = {
+      in: vi.fn(() => serviceLinesQuery),
+      order: vi.fn().mockResolvedValue({ data: [], error: null }),
+    }
+    supabase.from.mockImplementation((table) => {
+      if (table === 'nhis_claims') {
+        return { select: vi.fn(() => claimsQuery) }
+      }
+      if (table === 'nhis_claim_services') {
+        return { select: vi.fn(() => serviceLinesQuery) }
+      }
+      return { select: vi.fn(() => ({ in: vi.fn().mockReturnThis(), eq: vi.fn().mockResolvedValue({ data: [], error: null }) })) }
+    })
+    URL.createObjectURL = vi.fn(() => 'blob:nhis-export')
+    URL.revokeObjectURL = vi.fn()
+    let downloadedName = ''
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function click() {
+      downloadedName = this.download
+    })
+
+    await exportNhisClaimsFile({
+      mode: 'custom',
+      fromDate: '2026-05-14',
+      toDate: '2026-05-14',
+      format: 'cxf',
+      organizationType: 'pharmacy',
+      providerClassLevel: 'D',
+      facilityName: 'Westpoint Chemist',
+      facilityCode: '03-05-001-02-01954-11-P1-2-011225',
+      providerNumber: '03-05-01954',
+      providerTypeDescription: 'Pharmacy',
+      nhisDrugCatalog: [{ id: 'drug-1', code: 'NH001', category: 'A' }],
+    })
+
+    expect(downloadedName).toMatch(/^MAY2026__[A-F0-9]{12} \[030501954\] \(WESTPOINT CHEMIST\)_2026-05-14-2026-05-14\.cxf$/)
     clickSpy.mockRestore()
   })
 

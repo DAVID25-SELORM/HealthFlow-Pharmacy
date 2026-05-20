@@ -199,6 +199,28 @@ const assertValidMemberNumber = (value, settings = {}) => {
   return normalizeNhiaMemberNumber(memberNumber)
 }
 
+const normalizeCcCode = (value) => digitsOnly(normalizeText(value))
+
+const assertValidCcCode = (value) => {
+  const ccCode = normalizeCcCode(value)
+  if (!ccCode) {
+    throw new Error('NHIA CCC/CC code is required.')
+  }
+  if (ccCode.length !== 5) {
+    throw new Error('NHIA CCC/CC code must contain exactly 5 digits.')
+  }
+  return ccCode
+}
+
+const normalizeOptionalCcCode = (value) => {
+  const ccCode = normalizeCcCode(value)
+  if (!ccCode) return null
+  if (ccCode.length !== 5) {
+    throw new Error('NHIA CCC/CC code must contain exactly 5 digits.')
+  }
+  return ccCode
+}
+
 const extractCcCode = (value) => {
   if (!value || typeof value !== 'object') {
     return null
@@ -214,7 +236,7 @@ const extractCcCode = (value) => {
     for (const [key, nestedValue] of Object.entries(current)) {
       const normalizedKey = key.toLowerCase().replace(/[^a-z0-9]/g, '')
       if (CC_CODE_KEYS.has(normalizedKey) && normalizeText(nestedValue)) {
-        return normalizeText(nestedValue)
+        return normalizeOptionalCcCode(nestedValue)
       }
 
       if (nestedValue && typeof nestedValue === 'object') {
@@ -350,12 +372,12 @@ const upsertSettings = db.prepare(`
 const insertClaim = db.prepare(`
   INSERT INTO nhia_claims (
     id, claim_number, local_sale_id, local_sale_number, patient_id, patient_name,
-    member_number, hin, cc_code, diagnosis, diagnosis_details_json, insurance_provider, service_date, total_amount, status,
+    member_number, hin, cc_code, diagnosis, diagnosis_details_json, unserved_medicines_note, insurance_provider, service_date, total_amount, status,
     payload_json, organization_id, branch_id, created_by, created_at, updated_at
   )
   VALUES (
     @id, @claimNumber, @localSaleId, @localSaleNumber, @patientId, @patientName,
-    @memberNumber, @hin, @ccCode, @diagnosis, @diagnosisDetailsJson, @insuranceProvider, @serviceDate, @totalAmount, @status,
+    @memberNumber, @hin, @ccCode, @diagnosis, @diagnosisDetailsJson, @unservedMedicinesNote, @insuranceProvider, @serviceDate, @totalAmount, @status,
     @payloadJson, @organizationId, @branchId, @createdBy, @createdAt, @updatedAt
   )
 `)
@@ -617,6 +639,7 @@ const mapClaimRow = (row) => ({
   ccCode: row.cc_code || '',
   diagnosis: row.diagnosis || '',
   diagnosisDetails: parseJson(row.diagnosis_details_json, []),
+  unservedMedicinesNote: row.unserved_medicines_note || '',
   insuranceProvider: row.insurance_provider,
   serviceDate: row.service_date,
   totalAmount: row.total_amount,
@@ -757,10 +780,13 @@ export const createNhiaClaim = db.transaction((claimData = {}, linkedSale = {}) 
       settings
     ),
     hin: normalizeText(claimData.hin) || null,
-    ccCode: normalizeText(claimData.ccCode || claimData.cc_code) || null,
+    ccCode: normalizeOptionalCcCode(claimData.ccCode || claimData.cc_code),
     diagnosis: organizationType === 'hospital' ? normalizeText(claimData.diagnosis) || null : null,
     diagnosisDetails,
     diagnosisDetailsJson: json(diagnosisDetails),
+    unservedMedicinesNote: normalizeText(
+      claimData.unservedMedicinesNote || claimData.unserved_medicines_note
+    ) || null,
     insuranceProvider: claimData.insuranceProvider || 'NHIA',
     serviceDate: claimData.serviceDate || linkedSale.saleDate?.slice(0, 10) || timestamp.slice(0, 10),
     totalAmount,
@@ -896,7 +922,7 @@ const validateClaimForSubmission = (claim, settings) => {
   assertRequiredText(claim.patientName, 'NHIA patient name')
   assertValidMemberNumber(claim.memberNumber, settings)
   assertRequiredText(claim.serviceDate, 'NHIA service date')
-  assertRequiredText(claim.ccCode || claim.payload?.ccCode || claim.payload?.cc_code, 'NHIA CCC/CC code')
+  assertValidCcCode(claim.ccCode || claim.payload?.ccCode || claim.payload?.cc_code)
   if (organizationType === 'hospital') {
     assertRequiredText(claim.diagnosis || claim.payload?.diagnosis, 'NHIA diagnosis')
   }

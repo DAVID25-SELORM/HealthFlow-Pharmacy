@@ -67,6 +67,7 @@ ensureColumn('nhia_settings', 'claims_officer_signature_url', 'TEXT')
 ensureColumn('nhia_claims', 'cc_code', 'TEXT')
 ensureColumn('nhia_claims', 'diagnosis', 'TEXT')
 ensureColumn('nhia_claims', 'diagnosis_details_json', "TEXT NOT NULL DEFAULT '[]'")
+ensureColumn('nhia_claims', 'unserved_medicines_note', 'TEXT')
 
 export const nowIso = () => new Date().toISOString()
 

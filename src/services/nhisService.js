@@ -57,6 +57,7 @@ const hasPrescriptionAttachment = (claimData = {}, options = {}) => {
 }
 const VALID_ORGANIZATION_TYPES = ['pharmacy', 'hospital']
 const MAX_DIAGNOSES_PER_CLAIM = 10
+const NHIS_CC_CODE_DIGITS = 5
 const NHIS_PRESCRIBING_LEVELS = ['A', 'M', 'B1', 'B2', 'C', 'D', 'SM']
 const NHIS_PRESCRIBING_LEVEL_RANKS = NHIS_PRESCRIBING_LEVELS.reduce((levels, level, index) => ({
   ...levels,
@@ -69,6 +70,7 @@ const PRESCRIPTION_ATTACHMENT_EXTENSIONS = ['.pdf', '.jpg', '.jpeg']
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 const YEAR_MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/
 const OPTIONAL_CLAIM_SCHEMA_COLUMNS = [
+  'unserved_medicines_note',
   'diagnosis_details',
   'prescription_file_url',
   'prescription_file_path',
@@ -108,6 +110,21 @@ const normalizeRuleOrganizationType = (value) => {
 export const normalizeNhisPrescribingLevel = (value) => {
   const normalized = asText(value).toUpperCase().replace(/[^A-Z0-9]/g, '')
   return NHIS_PRESCRIBING_LEVELS.includes(normalized) ? normalized : ''
+}
+
+export const normalizeNhisCcCode = (value) => asText(value).replace(/\D/g, '')
+
+const getNhisCcCodeIssue = (value) => {
+  const digits = normalizeNhisCcCode(value)
+  if (!digits) return 'CCC/CC code is required before serving this NHIS claim.'
+  if (digits.length !== NHIS_CC_CODE_DIGITS) return `CCC/CC code must contain exactly ${NHIS_CC_CODE_DIGITS} digits.`
+  return ''
+}
+
+const assertNhisCcCode = (value) => {
+  const issue = getNhisCcCodeIssue(value)
+  if (issue) throw new Error(issue)
+  return normalizeNhisCcCode(value)
 }
 
 const normalizeMatchText = (value) => asText(value).toLowerCase().replace(/[^a-z0-9\s]/g, ' ')
@@ -1032,7 +1049,8 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
   if (isHospital && patientAge !== null && patientAge < 12 && !(asNumber(childWeight) > 0)) {
     warnings.push('Child weight is missing for a child patient.')
   }
-  if (!cccNo) blockers.push('CCC/CC code is required before serving this NHIS claim.')
+  const cccNoIssue = getNhisCcCodeIssue(cccNo)
+  if (cccNoIssue) blockers.push(cccNoIssue)
   if (!diagnosis && isHospital) {
     blockers.push('Diagnosis is required for hospital NHIS claims.')
   } else if (isHospital && diagnoses.length > MAX_DIAGNOSES_PER_CLAIM) {
@@ -1869,6 +1887,9 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
   const memberNo = normalizeNhiaMemberNumber(
     assertRequiredText(claimData.memberNo, 'NHIS member number or Ghana Card number')
   )
+  const cccNo = assertNhisCcCode(
+    claimData.cccNo ?? claimData.ccc_no ?? claimData.ccCode ?? claimData.cc_code
+  )
   const serviceDate = normalizeText(claimData.serviceDate || claimData.serviceDateFrom)
 
   const medicineTotal = medicines.reduce((s, m) => s + Number(m.totalAmount || 0), 0)
@@ -1888,7 +1909,7 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
     child_weight_kg:    isHospital && claimData.childWeightKg
       ? assertNonNegativeNumber(claimData.childWeightKg, 'Child weight')
       : null,
-    ccc_no:             normalizeText(claimData.cccNo)             || null,
+    ccc_no:             cccNo,
     diagnosis:          normalizeText(claimData.diagnosis)         || null,
     diagnosis_details:  diagnosisDetails,
     service_date_from:  serviceDate                                || null,
@@ -1901,6 +1922,9 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
     total_amount:       totalAmount,
     status:             'served',
     notes:              normalizeText(claimData.notes)             || null,
+    unserved_medicines_note: normalizeText(
+      claimData.unservedMedicinesNote ?? claimData.unserved_medicines_note
+    ) || null,
     ...getPrescriptionAttachmentPayload(claimData),
     created_by:         claimData.createdBy                        || null,
   }
@@ -2051,6 +2075,9 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
   const memberNo = normalizeNhiaMemberNumber(
     assertRequiredText(claimData.memberNo, 'NHIS member number or Ghana Card number')
   )
+  const cccNo = assertNhisCcCode(
+    claimData.cccNo ?? claimData.ccc_no ?? claimData.ccCode ?? claimData.cc_code
+  )
   const serviceDate = normalizeText(claimData.serviceDate || claimData.serviceDateFrom)
   const medicineTotal = medicines.reduce((s, m) => s + Number(m.totalAmount || 0), 0)
   const serviceTotal = tariffServices.reduce((s, line) => s + Number(line.totalAmount || 0), 0)
@@ -2087,7 +2114,7 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
     child_weight_kg: isHospital && claimData.childWeightKg
       ? assertNonNegativeNumber(claimData.childWeightKg, 'Child weight')
       : null,
-    ccc_no: normalizeText(claimData.cccNo) || null,
+    ccc_no: cccNo,
     diagnosis: normalizeText(claimData.diagnosis) || null,
     diagnosis_details: diagnosisDetails,
     service_date_from: serviceDate || null,
@@ -2099,6 +2126,9 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
     pre_auth_codes: normalizeText(claimData.preAuthCodes) || null,
     total_amount: totalAmount,
     notes: normalizeText(claimData.notes) || null,
+    unserved_medicines_note: normalizeText(
+      claimData.unservedMedicinesNote ?? claimData.unserved_medicines_note
+    ) || null,
     ...getPrescriptionAttachmentPayload(claimData),
     updated_at: new Date().toISOString(),
   }
@@ -2482,6 +2512,15 @@ const getClaimItClaimType = (payload = {}) =>
 const getClaimItServiceType = (payload = {}) =>
   normalizeOrganizationType(payload.organizationType) === 'hospital' ? 'INP' : 'PHC'
 
+const CLAIM_IT_MONTH_TAGS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
+
+const sanitizeClaimItFilenameText = (value, fallback) =>
+  (normalizeText(value) || fallback)
+    .replace(/[<>:"/\\|?*]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toUpperCase()
+
 const getClaimItGuid = (seed = '', salt = '') => {
   const randomId = globalThis.crypto?.randomUUID?.() || String(Date.now())
   const source = `${seed || randomId}-${salt}`
@@ -2496,6 +2535,27 @@ const getClaimItGuid = (seed = '', salt = '') => {
     output += hash.toString(16).padStart(8, '0')
   }
   return output.slice(0, 40)
+}
+
+const getClaimItFileMonthTag = (dateValue) => {
+  const date = new Date(`${toClaimItDate(dateValue)}T00:00:00Z`)
+  if (Number.isNaN(date.getTime())) return 'CLAIMS'
+  return `${CLAIM_IT_MONTH_TAGS[date.getUTCMonth()]}${date.getUTCFullYear()}`
+}
+
+const buildClaimItCxfFileName = (payload) => {
+  const providerId = getClaimItProviderCode(payload)
+  const providerTag = normalizeText(providerId).replace(/[^a-z0-9]/gi, '') || 'PROVIDER'
+  const facilityName = sanitizeClaimItFilenameText(
+    payload.facilityName || payload.providerTypeDescription,
+    'HEALTHFLOW FACILITY'
+  )
+  const exportId = getClaimItGuid(
+    `${providerTag}-${payload.periodFrom}-${payload.periodTo}-${payload.claimCount}-${payload.totalAmount}`,
+    'file'
+  ).slice(0, 12).toUpperCase()
+
+  return `${getClaimItFileMonthTag(payload.periodFrom)}__${exportId} [${providerTag}] (${facilityName})_${payload.periodFrom}-${payload.periodTo}.cxf`
 }
 
 const parseDirectionsNumber = (value, fallback = '1.00') => {
@@ -2765,7 +2825,7 @@ export const buildNhisClaimItExportPayload = (claims = [], options = {}) => {
       claimNumber: normalizeText(claim.claim_number),
       status: normalizeText(claim.status),
       organizationType: claimOrganizationType,
-      ccCode: normalizeText(claim.ccc_no),
+      ccCode: normalizeNhisCcCode(claim.ccc_no),
       patient: {
         id: normalizeText(claim.patient_id),
         memberNumber: normalizeText(claim.member_no),
@@ -3575,7 +3635,7 @@ const buildNhisMonthlyCsv = (claims) => {
         claim.surname, claim.other_names || '',
         claim.member_no || '', claim.hin || '',
         claim.folder_no || '', claim.gender || '',
-        claim.date_of_birth || '', claim.patient_address || '', claim.child_weight_kg || '', claim.ccc_no || '',
+        claim.date_of_birth || '', claim.patient_address || '', claim.child_weight_kg || '', normalizeNhisCcCode(claim.ccc_no),
         claim.diagnosis || '', prescriptionFile,
         claim.service_date_from || '',
         claim.referring_facility || '', claim.referral_code || '',
@@ -3591,7 +3651,7 @@ const buildNhisMonthlyCsv = (claims) => {
           claim.surname, claim.other_names || '',
           claim.member_no || '', claim.hin || '',
           claim.folder_no || '', claim.gender || '',
-          claim.date_of_birth || '', claim.patient_address || '', claim.child_weight_kg || '', claim.ccc_no || '',
+          claim.date_of_birth || '', claim.patient_address || '', claim.child_weight_kg || '', normalizeNhisCcCode(claim.ccc_no),
           claim.diagnosis || '', prescriptionFile,
           claim.service_date_from || '',
           claim.referring_facility || '', claim.referral_code || '',
@@ -3611,7 +3671,7 @@ const buildNhisMonthlyCsv = (claims) => {
           claim.surname, claim.other_names || '',
           claim.member_no || '', claim.hin || '',
           claim.folder_no || '', claim.gender || '',
-          claim.date_of_birth || '', claim.patient_address || '', claim.child_weight_kg || '', claim.ccc_no || '',
+          claim.date_of_birth || '', claim.patient_address || '', claim.child_weight_kg || '', normalizeNhisCcCode(claim.ccc_no),
           claim.diagnosis || '', prescriptionFile,
           claim.service_date_from || '',
           claim.referring_facility || '', claim.referral_code || '',
@@ -3651,7 +3711,7 @@ const createNhisExportFile = async (claims, period, options = {}) => {
     return {
       content: await buildNhisClaimItCxf(payload),
       contentType: 'application/octet-stream',
-      fileName: `CLAIM-it-HMS-${period.fileTag}.cxf`,
+      fileName: buildClaimItCxfFileName(payload),
     }
   }
 

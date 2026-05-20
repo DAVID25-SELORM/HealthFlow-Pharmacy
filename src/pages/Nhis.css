@@ -750,6 +750,23 @@
   flex-shrink: 0;
 }
 
+.nhis-internal-note {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.nhis-internal-note label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--gray-700);
+}
+
+.nhis-internal-note textarea {
+  resize: vertical;
+  min-height: 4.75rem;
+}
+
 .medicine-total {
   font-weight: 700;
   font-size: 0.95rem;
