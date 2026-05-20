@@ -901,6 +901,7 @@ const Nhis = () => {
 
   const getDirectNhiaOptions = () => ({
     organizationType,
+    facilityName: resolvedNhiaSettings?.facilityName || organization?.name || organization?.pharmacy_name || '',
     facilityCode: resolvedNhiaSettings?.facilityCode || '',
     providerNumber: resolvedNhiaSettings?.providerNumber || '',
     schemeName: resolvedNhiaSettings?.schemeName || 'National Health Insurance',

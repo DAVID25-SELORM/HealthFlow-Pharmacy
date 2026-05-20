@@ -2485,12 +2485,14 @@ const getClaimItServiceType = (payload = {}) =>
 const getClaimItGuid = (seed = '', salt = '') => {
   const randomId = globalThis.crypto?.randomUUID?.() || String(Date.now())
   const source = `${seed || randomId}-${salt}`
-  let hash = 2166136261
   let output = ''
-  for (let index = 0; output.length < 40; index += 1) {
-    const code = source.charCodeAt(index % source.length) + index
-    hash ^= code
-    hash = Math.imul(hash, 16777619) >>> 0
+  for (let block = 0; output.length < 40; block += 1) {
+    let hash = (2166136261 ^ block) >>> 0
+    for (let index = 0; index < source.length; index += 1) {
+      const code = source.charCodeAt(index) + block + index
+      hash ^= code
+      hash = Math.imul(hash, 16777619) >>> 0
+    }
     output += hash.toString(16).padStart(8, '0')
   }
   return output.slice(0, 40)
@@ -2801,6 +2803,7 @@ export const buildNhisClaimItExportPayload = (claims = [], options = {}) => {
     sourceSystem: 'HealthFlow',
     targetSystem: 'CLAIM-it HMS Toolkit',
     batchNumber,
+    facilityName: normalizeText(options.facilityName),
     facilityCode: normalizeText(options.facilityCode),
     providerNumber: normalizeText(options.providerNumber),
     schemeName: normalizeText(options.schemeName) || 'National Health Insurance',
@@ -2937,26 +2940,57 @@ ${claim.tariffServices.map((service) => `        <TariffService>
 </NhiaClaimBatch>
 `
 
-const phpSerializeKey = (key) =>
-  Number.isInteger(key) ? `i:${key};` : phpSerialize(String(key))
+const PHP_TEXT_ENCODER = new TextEncoder()
 
-const phpSerialize = (value) => {
-  if (value === null || value === undefined) return 'N;'
-  if (typeof value === 'boolean') return `b:${value ? 1 : 0};`
+const encodePhpAscii = (value) => PHP_TEXT_ENCODER.encode(value)
+
+const concatPhpBytes = (parts) => {
+  const totalLength = parts.reduce((sum, part) => sum + part.length, 0)
+  const output = new Uint8Array(totalLength)
+  let offset = 0
+  parts.forEach((part) => {
+    output.set(part, offset)
+    offset += part.length
+  })
+  return output
+}
+
+const phpSerializeRawStringBytes = (bytes) =>
+  concatPhpBytes([
+    encodePhpAscii(`s:${bytes.length}:"`),
+    bytes,
+    encodePhpAscii('";'),
+  ])
+
+const phpSerializeKeyBytes = (key) =>
+  Number.isInteger(key) ? encodePhpAscii(`i:${key};`) : phpSerializeBytes(String(key))
+
+const phpSerializeBytes = (value) => {
+  if (value === null || value === undefined) return encodePhpAscii('N;')
+  if (value instanceof Uint8Array) return phpSerializeRawStringBytes(value)
+  if (typeof value === 'boolean') return encodePhpAscii(`b:${value ? 1 : 0};`)
   if (typeof value === 'number') {
-    return Number.isInteger(value) ? `i:${value};` : `d:${Number.isFinite(value) ? value : 0};`
+    return encodePhpAscii(Number.isInteger(value) ? `i:${value};` : `d:${Number.isFinite(value) ? value : 0};`)
   }
   if (typeof value === 'string') {
-    return `s:${new TextEncoder().encode(value).length}:"${value}";`
+    return phpSerializeRawStringBytes(PHP_TEXT_ENCODER.encode(value))
   }
   if (Array.isArray(value)) {
-    return `a:${value.length}:{${value.map((item, index) => `${phpSerializeKey(index)}${phpSerialize(item)}`).join('')}}`
+    return concatPhpBytes([
+      encodePhpAscii(`a:${value.length}:{`),
+      ...value.flatMap((item, index) => [phpSerializeKeyBytes(index), phpSerializeBytes(item)]),
+      encodePhpAscii('}'),
+    ])
   }
   if (typeof value === 'object') {
     const entries = Object.entries(value)
-    return `a:${entries.length}:{${entries.map(([key, item]) => `${phpSerializeKey(key)}${phpSerialize(item)}`).join('')}}`
+    return concatPhpBytes([
+      encodePhpAscii(`a:${entries.length}:{`),
+      ...entries.flatMap(([key, item]) => [phpSerializeKeyBytes(key), phpSerializeBytes(item)]),
+      encodePhpAscii('}'),
+    ])
   }
-  return phpSerialize(String(value))
+  return phpSerializeBytes(String(value))
 }
 
 const deflateClaimItPayload = async (serializedPayload) => {
@@ -2968,7 +3002,213 @@ const deflateClaimItPayload = async (serializedPayload) => {
   return new Uint8Array(await new Response(stream).arrayBuffer())
 }
 
-const buildClaimItRows = (payload) => {
+const toClaimItNumericValue = (value) => {
+  const number = Number(value || 0)
+  return Number.isFinite(number) ? number : 0
+}
+
+const toClaimItIntegerValue = (value) => {
+  const number = Number(value || 0)
+  return Number.isFinite(number) ? Math.round(number) : 0
+}
+
+const toClaimItCompactNumberText = (value) => {
+  const text = normalizeText(value)
+  const number = Number(text)
+  return Number.isFinite(number) ? String(number) : text
+}
+
+const parseClaimItJson = (value, fallback) => {
+  try {
+    return JSON.parse(value)
+  } catch {
+    return fallback
+  }
+}
+
+const toClaimItAttachmentFileType = (attachment = {}) => {
+  const fileType = normalizeText(attachment.fileType).toLowerCase()
+  const fileName = normalizeText(attachment.fileName).toLowerCase()
+  if (fileType.includes('pdf') || fileName.endsWith('.pdf')) return 'pdf'
+  if (fileType.includes('jpeg') || fileName.endsWith('.jpg') || fileName.endsWith('.jpeg')) return 'jpg'
+  if (fileType.includes('png') || fileName.endsWith('.png')) return 'png'
+  return 'pdf'
+}
+
+const getClaimItLineServiceDate = (lineDate, fallbackDate, minDate, maxDate) => {
+  const normalizedLineDate = toClaimItDate(lineDate)
+  if (
+    isValidIsoDate(normalizedLineDate) &&
+    (!isValidIsoDate(minDate) || normalizedLineDate >= minDate) &&
+    (!isValidIsoDate(maxDate) || normalizedLineDate <= maxDate)
+  ) {
+    return normalizedLineDate
+  }
+  return fallbackDate
+}
+
+const buildClaimItSerializedClaim = ({
+  claimRow,
+  credentialParts,
+  medicineEntries,
+  serviceEntries,
+  summaryItems,
+  attachmentRows,
+}) => ({
+  claimID: { guid: claimRow.guid },
+  isException: claimRow.isException === '1',
+  claimCheckCode: claimRow.claimCheckCode,
+  preAuthorizationCodes: claimRow.preAuthorizationCodes,
+  physicianID: claimRow.physicianID,
+  providerInfo: {
+    accreditationID: {
+      effectiveDate: claimRow.accred_effectiveDate,
+      providerID: claimRow.accred_providerID,
+      credentialCode: {
+        agencyCode: credentialParts.agencyCode,
+        regionCode: credentialParts.regionCode,
+        districtCode: credentialParts.districtCode,
+        ownershipCode: credentialParts.ownershipCode,
+        sequenceNumber: credentialParts.sequenceNumber,
+        facilityTypeCode: credentialParts.facilityTypeCode,
+        prescriptionLevelCode: credentialParts.prescriptionLevelCode,
+        cateringStatusCode: credentialParts.cateringStatusCode,
+        effectiveDate: claimRow.accred_effectiveDate,
+      },
+    },
+    providerLevelID: {
+      facilityTypeCode: claimRow.facilityTypeCode,
+      ownershipTypeCode: claimRow.ownershipTypeCode,
+      cateringStatusCode: claimRow.cateringStatusCode,
+    },
+    prescriptionLevelID: claimRow.prescriptionLevelID,
+    credentialCode: claimRow.credentialCode,
+  },
+  memberInfo: {
+    memberNo: claimRow.memberNo,
+    cardSerialNo: claimRow.cardSerialNo,
+    surname: claimRow.surname,
+    otherNames: claimRow.otherNames,
+    dateOfBirth: claimRow.dateOfBirth,
+    gender: claimRow.gender,
+    hospitalRecNo: claimRow.hospitalRecNo,
+    isDependant: claimRow.isDependant,
+  },
+  memberAgeGroup: claimRow.memberAgeGroup || null,
+  serviceInfo: {
+    typeOfService: {
+      type: claimRow.typeOfService,
+      isUnbundled: claimRow.isUnbundled,
+      includesPharmacy: toClaimItIntegerValue(claimRow.includesPharmacy),
+    },
+    typeOfAttendance: { code: claimRow.typeOfAttendance },
+    serviceOutcome: { code: claimRow.serviceOutcome },
+    serviceProvisionDates: normalizeText(claimRow.serviceProvisionDates)
+      ? claimRow.serviceProvisionDates.split(',').filter(Boolean)
+      : [],
+    specialtiesAttended: [],
+    minDOSP: claimRow.minDOSP,
+    maxDOSP: claimRow.maxDOSP,
+    durationOfSpell: toClaimItIntegerValue(claimRow.durationOfSpell),
+  },
+  investigationEntries: [],
+  procedureEntries: serviceEntries.map((entry) => ({
+    gdrgCode: entry.gdrgCode,
+    cost: toClaimItNumericValue(entry.cost),
+    entryType: entry.entryType,
+    serviceDate: entry.serviceDate,
+    icd10: entry.icd10,
+    description: entry.description,
+    _entry_id: null,
+    _claim_id: null,
+  })),
+  diagnosisEntries: [],
+  xDiagnosisEntries: [],
+  medicineEntries: medicineEntries.map((entry) => ({
+    medicineCode: entry.medicineCode,
+    dispensedQty: {
+      qty: toClaimItNumericValue(entry.qty),
+      dispensedQty: entry.dispensedQty,
+      dispensaryUnit: parseClaimItJson(entry.dispensaryUnit, { unit: 'PRICE_UNIT', unitsInPrice: 1, ratio: 1 }),
+    },
+    serviceDate: entry.serviceDate,
+    prescription: {
+      dose: {
+        value: toClaimItCompactNumberText(entry.dose_value),
+        unit: entry.dose_unit,
+      },
+      frequency: {
+        value: toClaimItCompactNumberText(entry.frequency_value),
+        unit: entry.frequency_unit,
+        desc: entry.frequency_desc,
+      },
+      duration: {
+        value: toClaimItCompactNumberText(entry.duration_value),
+        unit: entry.duration_unit,
+        desc: entry.duration_desc,
+      },
+      extraDirections: entry.extraDirections,
+      unparsed: entry.unparsed,
+    },
+    cost: toClaimItNumericValue(entry.cost),
+    _entry_id: null,
+    _claim_id: null,
+  })),
+  referralInfo: {
+    claimCheckCode: claimRow.refclaimCheckCode,
+    facilityID: claimRow.reffacilityID,
+    facilityName: claimRow.reffacilityName,
+  },
+  summaryItems: summaryItems.map((item) => ({
+    description: item.description,
+    ordinal: toClaimItIntegerValue(item.ordinal),
+    type: item.type,
+    amount: toClaimItNumericValue(item.amount),
+    _entry_id: null,
+    _claim_id: null,
+  })),
+  specialtyAttended: claimRow.specialtyAttended,
+  totalCost: toClaimItNumericValue(claimRow.totalCost),
+  procCost: toClaimItNumericValue(claimRow.procCost),
+  diagCost: toClaimItNumericValue(claimRow.diagCost),
+  inveCost: toClaimItNumericValue(claimRow.inveCost),
+  medCost: toClaimItNumericValue(claimRow.medCost),
+  principalGDRG: claimRow.principalGDRG,
+  alternativeGDRG: claimRow.alternativeGDRG,
+  autoSummaryGDRG: claimRow.autoSummaryGDRG,
+  autoSummaryCost: toClaimItNumericValue(claimRow.autoSummaryCost),
+  memberAge: claimRow.memberAge,
+  isImported: claimRow.isImported,
+  refID: claimRow.refID,
+  medVersion: null,
+  servVersion: null,
+  policyVersion: null,
+  additionBlame: null,
+  modifyBlame: null,
+  signedBlame: null,
+  isDirty: claimRow.isDirty === '1',
+  status: claimRow.status,
+  submissionTime: claimRow.submissionTime,
+  attachments: attachmentRows.map((attachment) => ({
+    type: attachment.type,
+    fileType: attachment.fileType,
+    data: [''],
+    comments: attachment.comments,
+    attach_id: null,
+    _claim_id: null,
+  })),
+  newAttachments: attachmentRows.length ? [[]] : [],
+  comments: [],
+  extraData: claimRow.extraData,
+  claimType: claimRow.claimType,
+  attendanceEntries: [],
+  _claim_id: null,
+})
+
+const compressClaimItSerializedClaim = async (serializedClaim) =>
+  await deflateClaimItPayload(JSON.stringify(serializedClaim))
+
+const buildClaimItRows = async (payload) => {
   const generatedAt = toClaimItDateTime(payload.createdAt)
   const signedByName = normalizeText(payload.claimsOfficerName) || 'HealthFlow'
   const signedByUsername = normalizeText(payload.submitterId) || signedByName
@@ -2990,15 +3230,21 @@ const buildClaimItRows = (payload) => {
   const medicineentries = []
   const serviceentries = []
   const summaryitems = []
+  const attachmentdata = []
+  const attachments = []
   const validations = []
   const validationZclaims = []
 
-  payload.claims.forEach((claim, claimIndex) => {
+  for (const [claimIndex, claim] of payload.claims.entries()) {
     const claimGuid = getClaimItGuid(claim.claimNumber || claim.patient.memberNumber, claimIndex)
     const medicineTotal = claim.medicines.reduce((sum, medicine) => sum + Number(medicine.totalAmount || 0), 0)
     const serviceTotal = claim.tariffServices.reduce((sum, service) => sum + Number(service.totalAmount || 0), 0)
     const serviceDate = claim.service.dateFrom || claim.medicines[0]?.dispensaryDate || claim.tariffServices[0]?.serviceDate || payload.periodFrom
     const dateTo = claim.service.dateTo || serviceDate
+    const claimMedicineEntries = []
+    const claimServiceEntries = []
+    const claimSummaryItems = []
+    const claimAttachmentRows = []
     const claimRow = {
       guid: claimGuid,
       isException: '0',
@@ -3080,11 +3326,12 @@ const buildClaimItRows = (payload) => {
     claims.push(claimRow)
 
     claim.medicines.forEach((medicine, medicineIndex) => {
-      medicineentries.push({
+      const medicineServiceDate = getClaimItLineServiceDate(medicine.dispensaryDate, serviceDate, serviceDate, dateTo)
+      const medicineEntry = {
         _entry_id: String((claimIndex + 1) * 10000 + medicineIndex + 1),
         _claim_id: claimGuid,
         medicineCode: normalizeText(medicine.code),
-        serviceDate: medicine.dispensaryDate || serviceDate,
+        serviceDate: medicineServiceDate,
         cost: toClaimItAmount(medicine.totalAmount, 4),
         qty: String(medicine.quantity || ''),
         dispensedQty: String(medicine.quantity || ''),
@@ -3099,42 +3346,68 @@ const buildClaimItRows = (payload) => {
         duration_value: parseDirectionsNumber(medicine.duration),
         duration_unit: 'DAYS',
         duration_desc: normalizeText(medicine.duration).toLowerCase(),
-      })
+      }
+      claimMedicineEntries.push(medicineEntry)
+      medicineentries.push(medicineEntry)
     })
 
     claim.tariffServices.forEach((service, serviceIndex) => {
-      serviceentries.push({
+      const tariffServiceDate = getClaimItLineServiceDate(service.serviceDate, serviceDate, serviceDate, dateTo)
+      const serviceEntry = {
         _entry_id: String((claimIndex + 1) * 20000 + serviceIndex + 1),
         _claim_id: claimGuid,
         gdrgCode: normalizeText(service.code),
         cost: toClaimItAmount(service.totalAmount, 4),
         entryType: 'service',
-        serviceDate: service.serviceDate || serviceDate,
+        serviceDate: tariffServiceDate,
         icd10: claim.diagnoses[0]?.code || '',
         description: normalizeText(service.description),
-      })
+      }
+      claimServiceEntries.push(serviceEntry)
+      serviceentries.push(serviceEntry)
     })
 
     if (medicineTotal > 0) {
-      summaryitems.push({
+      const medicineSummary = {
         _entry_id: String((claimIndex + 1) * 30000 + 1),
         _claim_id: claimGuid,
         type: 'Medicines',
         ordinal: '1',
         description: '',
         amount: toClaimItAmount(medicineTotal, 4),
-      })
+      }
+      claimSummaryItems.push(medicineSummary)
+      summaryitems.push(medicineSummary)
     }
     if (serviceTotal > 0) {
-      summaryitems.push({
+      const serviceSummary = {
         _entry_id: String((claimIndex + 1) * 30000 + 2),
         _claim_id: claimGuid,
         type: 'Services',
         ordinal: '2',
         description: '',
         amount: toClaimItAmount(serviceTotal, 4),
-      })
+      }
+      claimSummaryItems.push(serviceSummary)
+      summaryitems.push(serviceSummary)
     }
+
+    const attachmentId = getClaimItGuid(claimGuid, 'prescription-attachment')
+    const attachmentRow = {
+      attach_id: attachmentId,
+      _claim_id: claimGuid,
+      type: 'Prescription',
+      fileType: toClaimItAttachmentFileType(claim.prescriptionAttachment),
+      comments: null,
+    }
+    const attachmentDataRow = {
+      _data_id: String((claimIndex + 1) * 50000 + 1),
+      _attach_id: attachmentId,
+      data: '',
+    }
+    claimAttachmentRows.push(attachmentRow)
+    attachments.push(attachmentRow)
+    attachmentdata.push(attachmentDataRow)
 
     const validationId = getClaimItGuid(claimGuid, 'validation')
     validations.push({
@@ -3156,12 +3429,19 @@ const buildClaimItRows = (payload) => {
     validationZclaims.push({
       _id: String((claimIndex + 1) * 40000 + 1),
       _validation_id: validationId,
-      serializedClaim: '',
+      serializedClaim: await compressClaimItSerializedClaim(buildClaimItSerializedClaim({
+        claimRow,
+        credentialParts,
+        medicineEntries: claimMedicineEntries,
+        serviceEntries: claimServiceEntries,
+        summaryItems: claimSummaryItems,
+        attachmentRows: claimAttachmentRows,
+      })),
       isCompressed: '1',
     })
-  })
+  }
 
-  return { claims, medicineentries, serviceentries, summaryitems, validations, validationZclaims }
+  return { claims, medicineentries, serviceentries, summaryitems, attachmentdata, attachments, validations, validationZclaims }
 }
 
 const buildClaimItMeta = (payload, rows) => {
@@ -3171,6 +3451,11 @@ const buildClaimItMeta = (payload, rows) => {
   const totalCost = Number(payload.totalAmount || 0)
   const typeOfService = getClaimItServiceType(payload)
   const facilityName = normalizeText(payload.facilityName || payload.providerTypeDescription || 'HealthFlow Facility')
+  const providerLevel = [
+    rows.claims[0]?.ownershipTypeCode,
+    rows.claims[0]?.facilityTypeCode,
+    rows.claims[0]?.cateringStatusCode,
+  ].filter(Boolean).join('-')
 
   return {
     dbVersions: [],
@@ -3178,7 +3463,7 @@ const buildClaimItMeta = (payload, rows) => {
     claimMonth: (payload.periodFrom || payload.createdAt || '').slice(5, 7),
     claimType: '',
     facilityName,
-    providerLevel: '',
+    providerLevel,
     providerID: providerId,
     credentialCode,
     policies: ['cgs.2022-12-01.250531'],
@@ -3220,8 +3505,8 @@ const buildClaimItMeta = (payload, rows) => {
   }
 }
 
-const buildNhisClaimItCxfBundle = (payload) => {
-  const rows = buildClaimItRows(payload)
+const buildNhisClaimItCxfBundle = async (payload) => {
+  const rows = await buildClaimItRows(payload)
   const generatedAt = toClaimItDateTime(payload.createdAt)
 
   return {
@@ -3235,8 +3520,8 @@ const buildNhisClaimItCxfBundle = (payload) => {
       serviceentries: rows.serviceentries,
       medicineentries: rows.medicineentries,
       summaryitems: rows.summaryitems,
-      attachmentdata: [],
-      attachments: [],
+      attachmentdata: rows.attachmentdata,
+      attachments: rows.attachments,
       comments: [],
       validations: rows.validations,
       validation_results: [],
@@ -3245,7 +3530,7 @@ const buildNhisClaimItCxfBundle = (payload) => {
       _meta: buildClaimItMeta(payload, rows),
       _dbstruct: getClaimItDbStruct(),
     },
-    isBackup: false,
+    isBackup: true,
     isExport: true,
     isPartial: true,
     periodStart: payload.periodFrom,
@@ -3254,7 +3539,7 @@ const buildNhisClaimItCxfBundle = (payload) => {
 }
 
 export const buildNhisClaimItCxf = async (payload) => {
-  const serialized = phpSerialize(buildNhisClaimItCxfBundle(payload))
+  const serialized = phpSerializeBytes(await buildNhisClaimItCxfBundle(payload))
   const compressed = await deflateClaimItPayload(serialized)
   const output = new Uint8Array(compressed.length + 3)
   output.set([0x01, 0x02, 0x19], 0)

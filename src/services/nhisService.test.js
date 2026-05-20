@@ -40,6 +40,20 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
+const extractSerializedClaimBuffer = (inflatedCxfPayload) => {
+  const key = Buffer.from('s:15:"serializedClaim";s:', 'utf8')
+  const keyIndex = inflatedCxfPayload.indexOf(key)
+  expect(keyIndex).toBeGreaterThan(-1)
+
+  const lengthStart = keyIndex + key.length
+  const lengthEnd = inflatedCxfPayload.indexOf(Buffer.from(':"', 'utf8'), lengthStart)
+  expect(lengthEnd).toBeGreaterThan(lengthStart)
+
+  const byteLength = Number(inflatedCxfPayload.toString('ascii', lengthStart, lengthEnd))
+  const valueStart = lengthEnd + 2
+  return inflatedCxfPayload.subarray(valueStart, valueStart + byteLength)
+}
+
 const baseClaim = {
   memberNo: '12345678',
   surname: 'Mensah',
@@ -672,7 +686,17 @@ describe('CLAIM-it export helpers', () => {
   })
 
   it('builds a binary CXF bundle using CLAIM-it serialized export format', async () => {
-    const payload = buildNhisClaimItExportPayload([claim], {
+    const payload = buildNhisClaimItExportPayload([
+      {
+        ...claim,
+        nhis_claim_medicines: [
+          {
+            ...claim.nhis_claim_medicines[0],
+            dispensary_date: '2026-05-13',
+          },
+        ],
+      },
+    ], {
       yearMonth: '2026-05',
       organizationType: 'pharmacy',
       facilityCode: '03-05-001-02-01954-11-P1-2-011225',
@@ -684,14 +708,44 @@ describe('CLAIM-it export helpers', () => {
     })
 
     const cxf = await buildNhisClaimItCxf(payload)
-    const inflated = inflateSync(Buffer.from(cxf.slice(3))).toString('utf8')
+    const inflated = inflateSync(Buffer.from(cxf.slice(3)))
+    const inflatedText = inflated.toString('utf8')
+    const savedClaim = JSON.parse(inflateSync(extractSerializedClaimBuffer(inflated)).toString('utf8'))
 
     expect(Array.from(cxf.slice(0, 3))).toEqual([0x01, 0x02, 0x19])
-    expect(inflated).toContain('s:6:"lockID"')
-    expect(inflated).toContain('s:6:"claims"')
-    expect(inflated).toContain('s:15:"medicineentries"')
-    expect(inflated).toContain('s:14:"claimCheckCode"')
-    expect(inflated).not.toContain('<NhiaClaimBatch>')
+    expect(inflatedText).toContain('s:6:"lockID"')
+    expect(inflatedText).toContain('s:6:"claims"')
+    expect(inflatedText).toContain('s:15:"medicineentries"')
+    expect(inflatedText).toContain('s:14:"claimCheckCode"')
+    expect(inflatedText).toContain('s:8:"isBackup";b:1')
+    expect(inflatedText).not.toContain('<NhiaClaimBatch>')
+    expect(savedClaim).toMatchObject({
+      claimID: { guid: expect.any(String) },
+      claimCheckCode: '12345',
+      providerInfo: {
+        credentialCode: '03-05-001-02-01954-11-P1-2-011225',
+        prescriptionLevelID: 'P1',
+      },
+      memberInfo: {
+        memberNo: 'GHA-123456789-0',
+        surname: 'mensah',
+      },
+      status: 'VALID',
+      claimType: 'NHIS',
+    })
+    expect(savedClaim.medicineEntries[0]).toMatchObject({
+      medicineCode: 'NH001',
+      serviceDate: '2026-05-14',
+      dispensedQty: {
+        qty: 10,
+        dispensaryUnit: { unit: 'PRICE_UNIT', unitsInPrice: 1, ratio: 1 },
+      },
+    })
+    expect(savedClaim.attachments[0]).toMatchObject({
+      type: 'Prescription',
+      fileType: 'pdf',
+      data: [''],
+    })
   })
 
   it('includes hospital tariff service lines in CLAIM-it payload and XML', () => {
