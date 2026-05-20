@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { User, UserPlus, Lock, Bell, Building, Palette, Globe, GitBranch, Plus, KeyRound } from 'lucide-react'
 import { isSupabaseConfigured } from '../lib/supabase'
 import UpgradeGate from '../components/UpgradeGate'
+import GhanaRegionSelect from '../components/GhanaRegionSelect'
 import {
   createStaffUser,
   getPharmacySettings,
@@ -18,6 +19,7 @@ import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
 import { normalizeSubscriptionTier, useTenant } from '../context/TenantContext'
 import { readLogoFileAsDataUrl, readSignatureFileAsDataUrl } from '../utils/imageUpload'
+import { normalizeGhanaRegion } from '../utils/ghanaRegions'
 import { getRoleLabel } from '../utils/roleLabels'
 import { ROLE_OPTIONS } from '../utils/roles'
 import { applyNhiaFacilityDefaults } from '../utils/nhiaFacilityDefaults'
@@ -32,7 +34,7 @@ const toForm = (row) => ({
   email: row?.email || '',
   address: row?.address || '',
   city: row?.city || '',
-  region: row?.region || '',
+  region: normalizeGhanaRegion(row?.region),
   logoUrl: row?.logo_url || '',
   slogan: row?.slogan || '',
   licenseNumber: row?.license_number || '',
@@ -413,7 +415,7 @@ const Settings = () => {
       email: br.email || '',
       address: br.address || '',
       city: br.city || '',
-      region: br.region || '',
+      region: normalizeGhanaRegion(br.region),
     })
   }
 
@@ -506,8 +508,7 @@ const Settings = () => {
                 onChange={(event) => setFormData({ ...formData, city: event.target.value })}
                 disabled={!isAdmin}
               />
-              <input
-                placeholder="Region"
+              <GhanaRegionSelect
                 value={formData.region}
                 onChange={(event) => setFormData({ ...formData, region: event.target.value })}
                 disabled={!isAdmin}
@@ -1085,8 +1086,7 @@ const Settings = () => {
                           value={editBranchForm.city}
                           onChange={(e) => setEditBranchForm({ ...editBranchForm, city: e.target.value })}
                         />
-                        <input
-                          placeholder="Region"
+                        <GhanaRegionSelect
                           value={editBranchForm.region}
                           onChange={(e) => setEditBranchForm({ ...editBranchForm, region: e.target.value })}
                         />
@@ -1186,8 +1186,7 @@ const Settings = () => {
                     onChange={(e) => setBranchForm({ ...branchForm, city: e.target.value })}
                     disabled={creatingBranch}
                   />
-                  <input
-                    placeholder="Region"
+                  <GhanaRegionSelect
                     value={branchForm.region}
                     onChange={(e) => setBranchForm({ ...branchForm, region: e.target.value })}
                     disabled={creatingBranch}

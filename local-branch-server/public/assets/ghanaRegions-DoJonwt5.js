@@ -1,0 +1,1 @@
+var e=[`Ahafo`,`Ashanti`,`Bono`,`Bono East`,`Central`,`Eastern`,`Greater Accra`,`North East`,`Northern`,`Oti`,`Savannah`,`Upper East`,`Upper West`,`Volta`,`Western`,`Western North`],t=e=>String(e||``).trim().toLowerCase().replace(/[^a-z0-9]/g,``),n=new Map(e.map(e=>[t(e),e])),r=e=>{let r=String(e||``).trim();return n.get(t(r))||r};export{r as n,e as t};

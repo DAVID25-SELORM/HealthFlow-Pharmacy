@@ -1,5 +1,6 @@
 import { getCurrentSupabaseUser, invokeSupabaseFunction, supabase } from '../lib/supabase'
 import { assertRequiredText, normalizeText } from '../utils/validation'
+import { normalizeGhanaRegion } from '../utils/ghanaRegions'
 // ✅ NHIS PHARMACY LEVEL PATCH START
 import { normalizePharmacyLevel } from '../utils/nhisPharmacyLevel'
 // ✅ NHIS PHARMACY LEVEL PATCH END
@@ -117,7 +118,7 @@ export const registerOrganizationSignup = async (payload) => {
     email: normalizeText(payload.pharmacyEmail) || null,
     address: normalizeText(payload.address) || null,
     city: normalizeText(payload.city) || null,
-    region: normalizeText(payload.region) || null,
+    region: normalizeGhanaRegion(payload.region) || null,
     logoUrl: normalizeText(payload.logoUrl) || null,
     slogan: normalizeText(payload.slogan) || null,
     licenseNumber: normalizeText(payload.licenseNumber) || null,
@@ -168,7 +169,7 @@ export const createOrganization = async (orgData) => {
     subdomain: subdomain,
     address: normalizeText(orgData.address) || null,
     city: normalizeText(orgData.city) || null,
-    region: normalizeText(orgData.region) || null,
+    region: normalizeGhanaRegion(orgData.region) || null,
     phone: normalizeText(orgData.phone) || null,
     email: normalizeText(orgData.email) || null,
     logo_url: normalizeText(orgData.logoUrl ?? orgData.logo_url) || null,
@@ -215,7 +216,7 @@ export const updateOrganization = async (orgId, updates) => {
         : undefined,
     address: updates.address !== undefined ? normalizeText(updates.address) || null : undefined,
     city: updates.city !== undefined ? normalizeText(updates.city) || null : undefined,
-    region: updates.region !== undefined ? normalizeText(updates.region) || null : undefined,
+    region: updates.region !== undefined ? normalizeGhanaRegion(updates.region) || null : undefined,
     phone: updates.phone !== undefined ? normalizeText(updates.phone) || null : undefined,
     email: updates.email !== undefined ? normalizeText(updates.email) || null : undefined,
     logo_url: updates.logoUrl !== undefined ? normalizeText(updates.logoUrl) || null : undefined,

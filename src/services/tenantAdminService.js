@@ -1,4 +1,5 @@
 import { invokeSupabaseFunction } from '../lib/supabase'
+import { normalizeGhanaRegion } from '../utils/ghanaRegions'
 
 const TENANT_SIGNUP_FUNCTION = 'tenant-signup'
 const STAFF_ADMIN_FUNCTION = 'staff-admin'
@@ -100,6 +101,7 @@ const normalizeOrganizations = (organizations = []) =>
       organization.subscription_tier,
       organization.status === 'trial' ? 'trial' : 'basic'
     ),
+    region: normalizeGhanaRegion(organization.region),
     organization_type: normalizeOrganizationType(organization.organization_type, 'pharmacy'),
     plan_code: normalizeChoice(organization.plan_code, VALID_PLAN_CODES, 'starter', 'plan'),
     billing_status: normalizeChoice(
@@ -159,7 +161,7 @@ export const createPharmacyTenant = async ({ pharmacy, admin }) =>
       email: normalizeText(pharmacy.email) || null,
       address: normalizeText(pharmacy.address) || null,
       city: normalizeText(pharmacy.city) || null,
-      region: normalizeText(pharmacy.region) || null,
+      region: normalizeGhanaRegion(pharmacy.region) || null,
       logoUrl: normalizeText(pharmacy.logoUrl) || null,
       slogan: normalizeText(pharmacy.slogan) || null,
       licenseNumber: normalizeText(pharmacy.licenseNumber) || null,
@@ -263,7 +265,7 @@ export const updateOrganizationDetails = async (orgId, fields) => {
     email: fields.email !== undefined ? normalizeText(fields.email) || null : undefined,
     address: fields.address !== undefined ? normalizeText(fields.address) || null : undefined,
     city: fields.city !== undefined ? normalizeText(fields.city) || null : undefined,
-    region: fields.region !== undefined ? normalizeText(fields.region) || null : undefined,
+    region: fields.region !== undefined ? normalizeGhanaRegion(fields.region) || null : undefined,
     logoUrl: fields.logoUrl !== undefined ? normalizeText(fields.logoUrl) || null : undefined,
     slogan: fields.slogan !== undefined ? normalizeText(fields.slogan) || null : undefined,
     licenseNumber:

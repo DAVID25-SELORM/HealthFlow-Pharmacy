@@ -2,8 +2,10 @@ import { Fragment, useCallback, useEffect, useState } from 'react'
 import { getRoleLabel } from '../utils/roleLabels'
 import { Building2, GitBranch, Plus, Users, ChevronDown, ChevronUp, Eye, Pencil, Trash2 } from 'lucide-react'
 import { useNotification } from '../context/NotificationContext'
+import GhanaRegionSelect from '../components/GhanaRegionSelect'
 import { useSessionStorageState } from '../hooks/useSessionStorageState'
 import { formatAppDate } from '../utils/date'
+import { normalizeGhanaRegion } from '../utils/ghanaRegions'
 import { ROLE_OPTIONS } from '../utils/roles'
 import {
   getTenantAdminDashboard,
@@ -238,7 +240,7 @@ const TenantAdmin = () => {
       email: org.email || '',
       address: org.address || '',
       city: org.city || '',
-      region: org.region || '',
+      region: normalizeGhanaRegion(org.region),
       logoUrl: org.logo_url || '',
       slogan: org.slogan || '',
       licenseNumber: org.license_number || '',
@@ -508,8 +510,7 @@ const TenantAdmin = () => {
                 </div>
                 <div className="tenant-form-group">
                   <label>Region</label>
-                  <input
-                    placeholder="Greater Accra"
+                  <GhanaRegionSelect
                     value={pharmacy.region}
                     onChange={(e) => setPharmacy({ ...pharmacy, region: e.target.value })}
                   />
@@ -1059,10 +1060,9 @@ const TenantAdmin = () => {
                   </div>
                   <div className="tenant-form-group">
                     <label>Region</label>
-                    <input
+                    <GhanaRegionSelect
                       value={editForm.region}
                       onChange={(e) => setEditForm({ ...editForm, region: e.target.value })}
-                      placeholder="Greater Accra"
                     />
                   </div>
                   <div className="tenant-form-group">

@@ -1,6 +1,7 @@
 import { getCurrentSupabaseUser, invokeSupabaseFunction, supabase } from '../lib/supabase'
 import { assertRequiredText, normalizeText } from '../utils/validation'
 import { STAFF_ROLE_VALUES } from '../utils/roles'
+import { normalizeGhanaRegion } from '../utils/ghanaRegions'
 import { tryLogAuditEvent } from './auditService'
 // ✅ NHIS PHARMACY LEVEL PATCH START
 import { normalizePharmacyLevel } from '../utils/nhisPharmacyLevel'
@@ -93,7 +94,7 @@ export const updatePharmacySettings = async (id, settings) => {
     email: normalizeText(settings.email) || null,
     address: normalizeText(settings.address) || null,
     city: normalizeText(settings.city) || null,
-    region: normalizeText(settings.region) || null,
+    region: normalizeGhanaRegion(settings.region) || null,
     logo_url: normalizeText(settings.logoUrl ?? settings.logo_url) || null,
     slogan: normalizeText(settings.slogan) || null,
     license_number: normalizeText(settings.licenseNumber) || null,
@@ -167,7 +168,7 @@ export const createSettings = async (settings) => {
     email: normalizeText(settings.email) || null,
     address: normalizeText(settings.address) || null,
     city: normalizeText(settings.city) || null,
-    region: normalizeText(settings.region) || null,
+    region: normalizeGhanaRegion(settings.region) || null,
     logo_url: normalizeText(settings.logo_url ?? settings.logoUrl) || null,
     slogan: normalizeText(settings.slogan) || null,
     license_number: normalizeText(settings.license_number ?? settings.licenseNumber) || null,

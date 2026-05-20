@@ -5,6 +5,7 @@ import {
   checkSubdomainAvailability,
   registerOrganizationSignup,
 } from '../services/organizationService'
+import GhanaRegionSelect from '../components/GhanaRegionSelect'
 import { readLogoFileAsDataUrl } from '../utils/imageUpload'
 // ✅ NHIS PHARMACY LEVEL PATCH START
 import { PHARMACY_LEVELS } from '../utils/nhisPharmacyLevel'
@@ -366,12 +367,10 @@ const Signup = () => {
 
               <div className="form-group">
                 <label htmlFor="region">Region</label>
-                <input
-                  type="text"
+                <GhanaRegionSelect
                   id="region"
                   value={region}
                   onChange={(event) => setRegion(event.target.value)}
-                  placeholder="Greater Accra"
                 />
               </div>
             </div>

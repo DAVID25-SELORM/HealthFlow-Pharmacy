@@ -45,6 +45,37 @@ const json = (body: Record<string, unknown>, status = 200) =>
 
 const normalizeText = (value: unknown) => (typeof value === 'string' ? value.trim() : '')
 
+const GHANA_REGIONS = [
+  'Ahafo',
+  'Ashanti',
+  'Bono',
+  'Bono East',
+  'Central',
+  'Eastern',
+  'Greater Accra',
+  'North East',
+  'Northern',
+  'Oti',
+  'Savannah',
+  'Upper East',
+  'Upper West',
+  'Volta',
+  'Western',
+  'Western North',
+] as const
+
+const normalizeRegionKey = (value: unknown) =>
+  normalizeText(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '')
+
+const REGION_BY_KEY = new Map(GHANA_REGIONS.map((region) => [normalizeRegionKey(region), region]))
+
+const normalizeGhanaRegion = (value: unknown) => {
+  const normalized = normalizeText(value)
+  return REGION_BY_KEY.get(normalizeRegionKey(normalized)) || normalized
+}
+
 const validateEmail = (value: string, label: string) => {
   const normalized = normalizeText(value).toLowerCase()
 
@@ -408,7 +439,7 @@ const syncPharmacySettingsFromOrganization = async (
     email: normalizeText(organization.email) || null,
     address: normalizeText(organization.address) || null,
     city: normalizeText(organization.city) || null,
-    region: normalizeText(organization.region) || null,
+    region: normalizeGhanaRegion(organization.region) || null,
     logo_url: normalizeText(organization.logo_url) || null,
     slogan: normalizeText(organization.slogan) || null,
     license_number: normalizeText(organization.license_number) || null,
@@ -735,7 +766,7 @@ const updateTenantOrganization = async (
     address:
       organizationInput.address !== undefined ? normalizeText(organizationInput.address) || null : null,
     city: organizationInput.city !== undefined ? normalizeText(organizationInput.city) || null : null,
-    region: organizationInput.region !== undefined ? normalizeText(organizationInput.region) || null : null,
+    region: organizationInput.region !== undefined ? normalizeGhanaRegion(organizationInput.region) || null : null,
     logo_url:
       organizationInput.logoUrl !== undefined
         ? normalizeText(organizationInput.logoUrl) || null
@@ -1140,7 +1171,7 @@ const bootstrapOrganization = async (
           subdomain,
           address: normalizeText(organizationInput.address) || null,
           city: normalizeText(organizationInput.city) || null,
-          region: normalizeText(organizationInput.region) || null,
+          region: normalizeGhanaRegion(organizationInput.region) || null,
           phone: normalizeText(organizationInput.phone) || null,
           email: normalizeText(organizationInput.email) || adminEmail,
           logo_url: normalizeText(organizationInput.logoUrl) || null,
@@ -1234,7 +1265,7 @@ const bootstrapOrganization = async (
         email: normalizeText(organizationInput.email) || adminEmail,
         address: normalizeText(organizationInput.address) || null,
         city: normalizeText(organizationInput.city) || null,
-        region: normalizeText(organizationInput.region) || null,
+        region: normalizeGhanaRegion(organizationInput.region) || null,
         logo_url: normalizeText(organizationInput.logoUrl) || null,
         slogan: normalizeText(organizationInput.slogan) || null,
         license_number: normalizeText(organizationInput.licenseNumber) || null,

@@ -1,4 +1,5 @@
 import { getCurrentSupabaseUser, supabase } from '../lib/supabase'
+import { normalizeGhanaRegion } from '../utils/ghanaRegions'
 
 const normalizeText = (value) => (typeof value === 'string' ? value.trim() : '')
 
@@ -99,7 +100,7 @@ export const createBranch = async (fields) => {
         email: normalizeText(fields.email) || null,
         address: normalizeText(fields.address) || null,
         city: normalizeText(fields.city) || null,
-        region: normalizeText(fields.region) || null,
+        region: normalizeGhanaRegion(fields.region) || null,
         is_main: false,
       },
     ])
@@ -121,7 +122,7 @@ export const updateBranch = async (id, fields) => {
     email: fields.email !== undefined ? normalizeText(fields.email) || null : undefined,
     address: fields.address !== undefined ? normalizeText(fields.address) || null : undefined,
     city: fields.city !== undefined ? normalizeText(fields.city) || null : undefined,
-    region: fields.region !== undefined ? normalizeText(fields.region) || null : undefined,
+    region: fields.region !== undefined ? normalizeGhanaRegion(fields.region) || null : undefined,
     updated_at: new Date().toISOString(),
   }
 
