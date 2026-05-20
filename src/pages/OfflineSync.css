@@ -129,6 +129,73 @@
   padding: 1rem;
 }
 
+.branch-setup-grid {
+  display: grid;
+  gap: 0.85rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 1rem;
+}
+
+.branch-setup-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.branch-setup-grid label span,
+.branch-setup-footer span {
+  color: var(--gray-700);
+  font-size: 0.86rem;
+}
+
+.branch-setup-grid input,
+.branch-setup-grid select {
+  border: 1px solid var(--gray-300);
+  border-radius: var(--radius-sm);
+  color: var(--gray-900);
+  font: inherit;
+  min-height: 2.35rem;
+  padding: 0.5rem 0.65rem;
+  width: 100%;
+}
+
+.branch-generated-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.branch-generated-field span {
+  color: var(--gray-500);
+  font-size: 0.78rem;
+}
+
+.branch-setup-wide {
+  grid-column: 1 / -1;
+}
+
+.branch-setup-footer {
+  align-items: center;
+  border-top: 1px solid var(--gray-200);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: space-between;
+  padding: 1rem;
+}
+
+.branch-setup-env {
+  background: var(--gray-900);
+  color: #fff;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  margin: 0;
+  overflow-x: auto;
+  padding: 1rem;
+}
+
 .nhia-settings-grid label {
   display: flex;
   flex-direction: column;
@@ -325,6 +392,10 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .branch-setup-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .sync-record-row {
     grid-template-columns: 1fr 1fr;
   }
@@ -340,6 +411,7 @@
 
 @media (max-width: 520px) {
   .offline-sync-overview,
+  .branch-setup-grid,
   .nhia-settings-grid,
   .sync-record-row {
     grid-template-columns: 1fr;
