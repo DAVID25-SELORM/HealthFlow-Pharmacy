@@ -446,8 +446,8 @@ describe('assessNhisClaimReadiness', () => {
     )
   })
 
-  it('allows medicines at or below provider class but reserves specialist medicines for SM', () => {
-    const allowed = assessNhisClaimReadiness(
+  it('blocks mismatched CLAIM-it provider classes and reserves specialist medicines for SM', () => {
+    const classBlocked = assessNhisClaimReadiness(
       baseClaim,
       [{ ...baseMedicine, category: 'C' }],
       { enforcePrescribingLevel: true, providerClassLevel: 'D' }
@@ -463,9 +463,9 @@ describe('assessNhisClaimReadiness', () => {
       { enforcePrescribingLevel: true, providerClassLevel: 'SM' }
     )
 
-    expect(allowed.blockers).not.toEqual(expect.arrayContaining([
-      expect.stringContaining('requires NHIS prescribing level C'),
-    ]))
+    expect(classBlocked.blockers).toContain(
+      'Medicine 1: requires NHIS prescribing level C, but this facility is configured as D. Use an authorized prescriber/facility or remove the medicine.'
+    )
     expect(specialistBlocked.blockers).toContain(
       'Medicine 1: requires NHIS prescribing level SM, but this facility is configured as D. Use an authorized prescriber/facility or remove the medicine.'
     )
@@ -726,6 +726,7 @@ describe('CLAIM-it export helpers', () => {
       yearMonth: '2026-05',
       organizationType: 'pharmacy',
       facilityCode: '03-05-001-02-01954-11-P1-2-011225',
+      facilityName: 'Westpoint Chemist',
       providerNumber: '03-05-01954',
       providerTypeDescription: 'Pharmacy',
       claimsOfficerName: 'Claims Officer',
@@ -744,6 +745,15 @@ describe('CLAIM-it export helpers', () => {
     expect(inflatedText).toContain('s:15:"medicineentries"')
     expect(inflatedText).toContain('s:14:"claimCheckCode"')
     expect(inflatedText).toContain('s:8:"isBackup";b:1')
+    expect(inflatedText).toContain('s:12:"facilityName";s:17:"Westpoint Chemist"')
+    expect(inflatedText).toContain('s:13:"providerLevel";s:10:"PVT-PHC-CE"')
+    expect(inflatedText).toContain('s:10:"providerID";s:11:"03-05-01954"')
+    expect(inflatedText).toContain('s:10:"dbVersions";a:15')
+    expect(inflatedText).toContain('s:14:"accreditations"')
+    expect(inflatedText).toContain('s:10:"expiryDate";s:10:"2026-11-30"')
+    expect(inflatedText).toContain('s:27:"doctrine_migration_versions"')
+    expect(inflatedText).toContain('s:14:"providerlevels"')
+    expect(inflatedText).toContain('s:14:"servicetariffs"')
     expect(inflatedText).not.toContain('<NhiaClaimBatch>')
     expect(savedClaim).toMatchObject({
       claimID: { guid: expect.any(String) },
@@ -972,10 +982,14 @@ describe('CLAIM-it export helpers', () => {
       format: 'cxf',
       organizationType: 'pharmacy',
       providerClassLevel: 'D',
+      pharmacyFacilityLevel: 'P1',
       facilityName: 'Westpoint Chemist',
       facilityCode: '03-05-001-02-01954-11-P1-2-011225',
       providerNumber: '03-05-01954',
       providerTypeDescription: 'Pharmacy',
+      accreditationExpiryDate: '2026-12-31',
+      claimsOfficerName: 'Claims Officer',
+      submitterId: 'admin',
       nhisDrugCatalog: [{ id: 'drug-1', code: 'NH001', category: 'A' }],
     })
 
@@ -1030,7 +1044,7 @@ describe('CLAIM-it export helpers', () => {
       organizationType: 'pharmacy',
       providerClassLevel: 'D',
       nhisDrugCatalog: [{ id: 'drug-1', code: 'NH001', category: 'A' }],
-    })).rejects.toThrow('CLAIM-it CXF export needs the facility credential code')
+    })).rejects.toThrow('CLAIM-it CXF export needs complete NHIA configuration')
   })
 })
 

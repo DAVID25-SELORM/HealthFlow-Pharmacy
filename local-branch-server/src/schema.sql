@@ -228,6 +228,14 @@ CREATE TABLE IF NOT EXISTS nhia_settings (
   branch_id TEXT,
   facility_code TEXT,
   provider_number TEXT,
+  -- ✅ NHIA CONFIG PATCH START
+  facility_type TEXT,
+  pharmacy_facility_level TEXT,
+  provider_level_code TEXT,
+  credential_code TEXT,
+  license_number TEXT,
+  accreditation_expiry_date TEXT,
+  -- ✅ NHIA CONFIG PATCH END
   scheme_name TEXT NOT NULL DEFAULT 'National Health Insurance',
   provider_type_description TEXT,
   provider_class_level TEXT,

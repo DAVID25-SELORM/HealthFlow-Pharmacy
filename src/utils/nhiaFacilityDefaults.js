@@ -3,6 +3,30 @@ const normalizeIdentity = (value) => normalizeText(value).toLowerCase().replace(
 
 const getFirstText = (...values) => values.map(normalizeText).find(Boolean) || ''
 
+// ✅ NHIA CONFIG PATCH START
+const normalizeCode = (value) => normalizeText(value).toUpperCase().replace(/[^A-Z0-9]/g, '')
+
+export const normalizeNhiaFacilityType = (value, fallback = '') => {
+  const normalized = normalizeText(value).toLowerCase()
+  if (normalized.includes('hospital')) return 'Hospital'
+  if (normalized.includes('clinic')) return 'Clinic'
+  if (normalized.includes('maternity')) return 'Maternity'
+  if (normalized.includes('chemical')) return 'Chemical Seller'
+  if (normalized.includes('pharmacy')) return 'Pharmacy'
+  return fallback
+}
+
+export const normalizeNhiaPharmacyFacilityLevel = (value, fallback = '') => {
+  const code = normalizeCode(value)
+  return ['P1', 'P2', 'LCS', 'HP'].includes(code) ? code : fallback
+}
+
+export const normalizeNhiaProviderClassLevel = (value, fallback = '') => {
+  const code = normalizeCode(value)
+  return ['B1', 'B2', 'C', 'D', 'M', 'SM'].includes(code) ? code : fallback
+}
+// ✅ NHIA CONFIG PATCH END
+
 const KNOWN_NHIA_FACILITIES = [
   {
     aliases: [
@@ -14,8 +38,12 @@ const KNOWN_NHIA_FACILITIES = [
     ],
     defaults: {
       facilityCode: '03-05-001-02-01954-11-P1-2-011225',
+      credentialCode: '03-05-001-02-01954-11-P1-2-011225',
       providerNumber: '03-05-01954',
       providerTypeDescription: 'Pharmacy',
+      facilityType: 'Pharmacy',
+      pharmacyFacilityLevel: 'P1',
+      providerClassLevel: 'C',
     },
   },
 ]
@@ -46,9 +74,71 @@ export const applyNhiaFacilityDefaults = (settings = null, organization = null) 
   const knownDefaults = getKnownFacilityDefaults(organization || {})
   const source = settings || {}
   const org = organization || {}
+  // ✅ NHIA CONFIG PATCH START
+  const facilityType = normalizeNhiaFacilityType(
+    getFirstText(
+      source.facilityType,
+      source.facility_type,
+      source.providerTypeDescription,
+      source.provider_type_description,
+      org.facility_type,
+      org.organization_type,
+      knownDefaults.facilityType
+    ),
+    'Pharmacy'
+  )
+  const isPharmacy = facilityType === 'Pharmacy' || normalizeText(org.organization_type || 'pharmacy') === 'pharmacy'
+  const credentialCode = getFirstText(
+    source.credentialCode,
+    source.credential_code,
+    source.facilityCode,
+    source.facility_code,
+    org.claimit_facility_code,
+    org.nhia_facility_code,
+    org.nhia_credential_code,
+    org.credential_code,
+    org.facility_code,
+    knownDefaults.credentialCode,
+    knownDefaults.facilityCode
+  )
+  const rawProviderClassLevel = getFirstText(
+    source.providerClassLevel,
+    source.provider_class_level,
+    org.provider_class_level,
+    org.providerClassLevel,
+    org.nhia_provider_class_level,
+    knownDefaults.providerClassLevel
+  )
+  const rawPharmacyFacilityLevel = getFirstText(
+    source.pharmacyFacilityLevel,
+    source.pharmacy_facility_level,
+    source.pharmacyLevel,
+    source.pharmacy_level,
+    org.pharmacy_facility_level,
+    org.pharmacy_level,
+    knownDefaults.pharmacyFacilityLevel
+  )
+  const providerClassLevel = normalizeNhiaProviderClassLevel(rawProviderClassLevel, isPharmacy ? 'C' : '')
+  const pharmacyFacilityLevel = normalizeNhiaPharmacyFacilityLevel(rawPharmacyFacilityLevel, isPharmacy ? 'P1' : '')
+  // ✅ NHIA CONFIG PATCH END
 
   return {
     ...source,
+    // ✅ NHIA CONFIG PATCH START
+    facilityType,
+    pharmacyFacilityLevel,
+    providerClassLevel,
+    providerLevelCode: getFirstText(source.providerLevelCode, source.provider_level_code),
+    credentialCode,
+    licenseNumber: getFirstText(source.licenseNumber, source.license_number, org.license_number),
+    accreditationExpiryDate: getFirstText(
+      source.accreditationExpiryDate,
+      source.accreditation_expiry_date,
+      org.accreditation_expiry_date
+    ),
+    _inferredProviderClassLevel: !normalizeNhiaProviderClassLevel(rawProviderClassLevel) && Boolean(providerClassLevel),
+    _inferredPharmacyFacilityLevel: !normalizeNhiaPharmacyFacilityLevel(rawPharmacyFacilityLevel) && Boolean(pharmacyFacilityLevel),
+    // ✅ NHIA CONFIG PATCH END
     facilityCode: getFirstText(
       source.facilityCode,
       source.facility_code,
@@ -74,14 +164,8 @@ export const applyNhiaFacilityDefaults = (settings = null, organization = null) 
       source.provider_type_description,
       org.provider_type_description,
       org.providerTypeDescription,
-      knownDefaults.providerTypeDescription
-    ),
-    providerClassLevel: getFirstText(
-      source.providerClassLevel,
-      source.provider_class_level,
-      org.provider_class_level,
-      org.providerClassLevel,
-      org.nhia_provider_class_level
+      knownDefaults.providerTypeDescription,
+      facilityType
     ),
   }
 }

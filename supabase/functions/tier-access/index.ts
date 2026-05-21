@@ -1900,6 +1900,14 @@ const mapNhiaSettingsRow = (row: Record<string, unknown> | null, includeCredenti
     facilityCode: row.facility_code || '',
     providerNumber: row.provider_number || '',
     schemeName: row.scheme_name || 'National Health Insurance',
+    // ✅ NHIA CONFIG PATCH START
+    facilityType: row.facility_type || '',
+    pharmacyFacilityLevel: row.pharmacy_facility_level || '',
+    providerLevelCode: row.provider_level_code || '',
+    credentialCode: row.credential_code || row.facility_code || '',
+    licenseNumber: row.license_number || '',
+    accreditationExpiryDate: row.accreditation_expiry_date || '',
+    // ✅ NHIA CONFIG PATCH END
     providerTypeDescription: row.provider_type_description || '',
     providerClassLevel: row.provider_class_level || '',
     claimsOfficerName: row.claims_officer_name || '',
@@ -1971,6 +1979,14 @@ const saveNhiaApiSettings = async (
     facility_code: normalizeText(settings.facilityCode) || null,
     provider_number: normalizeText(settings.providerNumber) || null,
     scheme_name: normalizeText(settings.schemeName) || 'National Health Insurance',
+    // ✅ NHIA CONFIG PATCH START
+    facility_type: normalizeText(settings.facilityType) || null,
+    pharmacy_facility_level: normalizeText(settings.pharmacyFacilityLevel) || null,
+    provider_level_code: normalizeText(settings.providerLevelCode) || null,
+    credential_code: normalizeText(settings.credentialCode) || normalizeText(settings.facilityCode) || null,
+    license_number: normalizeText(settings.licenseNumber) || null,
+    accreditation_expiry_date: normalizeText(settings.accreditationExpiryDate) || null,
+    // ✅ NHIA CONFIG PATCH END
     provider_type_description: normalizeText(settings.providerTypeDescription) || null,
     provider_class_level: normalizeText(settings.providerClassLevel) || null,
     claims_officer_name: normalizeText(settings.claimsOfficerName) || null,

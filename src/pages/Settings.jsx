@@ -14,7 +14,7 @@ import {
 } from '../services/settingsService'
 import { getBranches, createBranch, updateBranch, deactivateBranch } from '../services/branchService'
 import { updateOrganization, getOrganizationStats } from '../services/organizationService'
-import { getNhiaApiSettings, saveNhiaApiSettings } from '../services/nhisService'
+import { buildClaimItConfigPreview, getNhiaApiSettings, saveNhiaApiSettings } from '../services/nhisService'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
 import { normalizeSubscriptionTier, useTenant } from '../context/TenantContext'
@@ -53,6 +53,14 @@ const blankNhiaApiForm = {
   facilityCode: '',
   providerNumber: '',
   schemeName: 'National Health Insurance',
+  // ✅ NHIA CONFIG PATCH START
+  facilityType: 'Pharmacy',
+  pharmacyFacilityLevel: '',
+  providerLevelCode: '',
+  credentialCode: '',
+  licenseNumber: '',
+  accreditationExpiryDate: '',
+  // ✅ NHIA CONFIG PATCH END
   providerTypeDescription: '',
   providerClassLevel: '',
   claimsOfficerName: '',
@@ -158,6 +166,12 @@ const Settings = () => {
   const atUserLimit = tierLimits.maxUsers !== Infinity && users.length >= tierLimits.maxUsers
   const activeBranches = branches.filter((branch) => branch.is_active !== false)
   const singleActiveBranch = activeBranches.length === 1 ? activeBranches[0] : null
+  // ✅ NHIA CONFIG PATCH START
+  const claimItPreview = buildClaimItConfigPreview({
+    ...nhiaApiForm,
+    facilityName: organization?.name || formData.pharmacyName,
+  }, { organizationType: organization?.organization_type || 'pharmacy' })
+  // ✅ NHIA CONFIG PATCH END
 
   useEffect(() => {
     void loadSettings()
@@ -760,6 +774,55 @@ const Settings = () => {
                   onChange={(event) => updateNhiaApiForm('facilityCode', event.target.value)}
                 />
               </div>
+              {/* ✅ NHIA CONFIG PATCH START */}
+              <div className="settings-form-row">
+                <select
+                  value={nhiaApiForm.facilityType}
+                  onChange={(event) => updateNhiaApiForm('facilityType', event.target.value)}
+                >
+                  <option value="Pharmacy">Pharmacy</option>
+                  <option value="Hospital">Hospital</option>
+                  <option value="Clinic">Clinic</option>
+                  <option value="Maternity">Maternity</option>
+                  <option value="Chemical Seller">Chemical Seller</option>
+                </select>
+                <select
+                  value={nhiaApiForm.pharmacyFacilityLevel}
+                  onChange={(event) => updateNhiaApiForm('pharmacyFacilityLevel', event.target.value)}
+                >
+                  <option value="">Pharmacy/facility level</option>
+                  <option value="P1">P1 - Full pharmacy / higher pharmacy service level</option>
+                  <option value="P2">P2 - Restricted or lower pharmacy service level</option>
+                  <option value="LCS">LCS - Licensed Chemical Seller</option>
+                  <option value="HP">HP - Hospital Pharmacy</option>
+                </select>
+              </div>
+              <div className="settings-form-row">
+                <input
+                  placeholder="CLAIM-it credential code"
+                  value={nhiaApiForm.credentialCode}
+                  onChange={(event) => updateNhiaApiForm('credentialCode', event.target.value)}
+                />
+                <input
+                  placeholder="Provider level code"
+                  value={nhiaApiForm.providerLevelCode}
+                  onChange={(event) => updateNhiaApiForm('providerLevelCode', event.target.value)}
+                />
+              </div>
+              <div className="settings-form-row">
+                <input
+                  placeholder="License number"
+                  value={nhiaApiForm.licenseNumber}
+                  onChange={(event) => updateNhiaApiForm('licenseNumber', event.target.value)}
+                />
+                <input
+                  type="date"
+                  placeholder="Accreditation expiry date"
+                  value={nhiaApiForm.accreditationExpiryDate}
+                  onChange={(event) => updateNhiaApiForm('accreditationExpiryDate', event.target.value)}
+                />
+              </div>
+              {/* ✅ NHIA CONFIG PATCH END */}
               <div className="settings-form-row">
                 <input
                   placeholder="Provider number"
@@ -855,6 +918,19 @@ const Settings = () => {
                   Allow CLAIM-it validation
                 </label>
               </div>
+              {/* ✅ NHIA CONFIG PATCH START */}
+              <div className="settings-note">
+                <strong>CLAIM-it metadata preview</strong>
+                <div>facilityName: {claimItPreview.facilityName || 'Not configured'}</div>
+                <div>providerID: {claimItPreview.providerID || 'Not configured'}</div>
+                <div>providerLevel: {claimItPreview.providerLevel || 'Not configured'}</div>
+                <div>providerClassLevel: {claimItPreview.providerClassLevel || 'Not configured'}</div>
+                <div>pharmacyFacilityLevel: {claimItPreview.pharmacyFacilityLevel || 'Not configured'}</div>
+                <div>credentialCode: {claimItPreview.credentialCode || 'Not configured'}</div>
+                <div>licenseNumber: {claimItPreview.licenseNumber || 'Not configured'}</div>
+                <div>accreditationExpiryDate: {claimItPreview.accreditationExpiryDate || 'Not configured'}</div>
+              </div>
+              {/* ✅ NHIA CONFIG PATCH END */}
               <select
                 value={nhiaApiForm.apiEnvironment}
                 onChange={(event) => updateNhiaApiForm('apiEnvironment', event.target.value)}

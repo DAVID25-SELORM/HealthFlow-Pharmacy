@@ -316,7 +316,12 @@ const selectAnySettings = db.prepare(`
 
 const upsertSettings = db.prepare(`
   INSERT INTO nhia_settings (
-    id, organization_id, branch_id, facility_code, provider_number, submitter_id,
+    id, organization_id, branch_id, facility_code, provider_number,
+    -- ✅ NHIA CONFIG PATCH START
+    facility_type, pharmacy_facility_level, provider_level_code, credential_code,
+    license_number, accreditation_expiry_date,
+    -- ✅ NHIA CONFIG PATCH END
+    submitter_id,
     scheme_name, provider_type_description, provider_class_level,
     -- ✅ NHIS PHARMACY LEVEL PATCH START
     pharmacy_level,
@@ -328,7 +333,12 @@ const upsertSettings = db.prepare(`
     max_retry_attempts, is_active, created_at, updated_at
   )
   VALUES (
-    @id, @organizationId, @branchId, @facilityCode, @providerNumber, @submitterId,
+    @id, @organizationId, @branchId, @facilityCode, @providerNumber,
+    -- ✅ NHIA CONFIG PATCH START
+    @facilityType, @pharmacyFacilityLevel, @providerLevelCode, @credentialCode,
+    @licenseNumber, @accreditationExpiryDate,
+    -- ✅ NHIA CONFIG PATCH END
+    @submitterId,
     @schemeName, @providerTypeDescription, @providerClassLevel,
     -- ✅ NHIS PHARMACY LEVEL PATCH START
     @pharmacyLevel,
@@ -344,6 +354,14 @@ const upsertSettings = db.prepare(`
     branch_id = excluded.branch_id,
     facility_code = excluded.facility_code,
     provider_number = excluded.provider_number,
+    -- ✅ NHIA CONFIG PATCH START
+    facility_type = excluded.facility_type,
+    pharmacy_facility_level = excluded.pharmacy_facility_level,
+    provider_level_code = excluded.provider_level_code,
+    credential_code = excluded.credential_code,
+    license_number = excluded.license_number,
+    accreditation_expiry_date = excluded.accreditation_expiry_date,
+    -- ✅ NHIA CONFIG PATCH END
     submitter_id = excluded.submitter_id,
     scheme_name = excluded.scheme_name,
     provider_type_description = excluded.provider_type_description,
@@ -526,6 +544,14 @@ const mapSettingsRow = (row, { includeCredentials = false } = {}) => {
     branchId: row.branch_id || '',
     facilityCode: row.facility_code || '',
     providerNumber: row.provider_number || '',
+    // ✅ NHIA CONFIG PATCH START
+    facilityType: row.facility_type || '',
+    pharmacyFacilityLevel: row.pharmacy_facility_level || '',
+    providerLevelCode: row.provider_level_code || '',
+    credentialCode: row.credential_code || row.facility_code || '',
+    licenseNumber: row.license_number || '',
+    accreditationExpiryDate: row.accreditation_expiry_date || '',
+    // ✅ NHIA CONFIG PATCH END
     schemeName: row.scheme_name || 'National Health Insurance',
     providerTypeDescription: row.provider_type_description || '',
     providerClassLevel: row.provider_class_level || '',
@@ -587,6 +613,14 @@ export const saveNhiaSettings = (settings = {}) => {
     branchId,
     facilityCode: normalizeText(settings.facilityCode) || null,
     providerNumber: normalizeText(settings.providerNumber) || null,
+    // ✅ NHIA CONFIG PATCH START
+    facilityType: normalizeText(settings.facilityType) || null,
+    pharmacyFacilityLevel: normalizeText(settings.pharmacyFacilityLevel) || null,
+    providerLevelCode: normalizeText(settings.providerLevelCode) || null,
+    credentialCode: normalizeText(settings.credentialCode) || normalizeText(settings.facilityCode) || null,
+    licenseNumber: normalizeText(settings.licenseNumber) || null,
+    accreditationExpiryDate: normalizeText(settings.accreditationExpiryDate) || null,
+    // ✅ NHIA CONFIG PATCH END
     schemeName: normalizeText(settings.schemeName) || 'National Health Insurance',
     providerTypeDescription: normalizeText(settings.providerTypeDescription) || null,
     providerClassLevel: normalizeText(settings.providerClassLevel) || null,

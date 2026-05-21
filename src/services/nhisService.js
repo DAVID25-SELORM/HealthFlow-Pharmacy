@@ -10,6 +10,13 @@ import {
   normalizeMedicineAccessLevel,
   normalizePharmacyLevel,
 } from '../utils/nhisPharmacyLevel'
+// ✅ NHIA CONFIG PATCH START
+import {
+  normalizeNhiaFacilityType,
+  normalizeNhiaPharmacyFacilityLevel,
+  normalizeNhiaProviderClassLevel,
+} from '../utils/nhiaFacilityDefaults'
+// ✅ NHIA CONFIG PATCH END
 import { tryLogAuditEvent } from './auditService'
 import {
   createBranchRecord,
@@ -59,6 +66,9 @@ const VALID_ORGANIZATION_TYPES = ['pharmacy', 'hospital']
 const MAX_DIAGNOSES_PER_CLAIM = 10
 const NHIS_CC_CODE_DIGITS = 5
 const NHIS_PRESCRIBING_LEVELS = ['A', 'M', 'B1', 'B2', 'C', 'D', 'SM']
+// ✅ NHIA CONFIG PATCH START
+const CLAIM_IT_PROVIDER_CLASS_LEVELS = ['B1', 'B2', 'C', 'D', 'M', 'SM']
+// ✅ NHIA CONFIG PATCH END
 const NHIS_PRESCRIBING_LEVEL_RANKS = NHIS_PRESCRIBING_LEVELS.reduce((levels, level, index) => ({
   ...levels,
   [level]: index + 1,
@@ -111,6 +121,74 @@ export const normalizeNhisPrescribingLevel = (value) => {
   const normalized = asText(value).toUpperCase().replace(/[^A-Z0-9]/g, '')
   return NHIS_PRESCRIBING_LEVELS.includes(normalized) ? normalized : ''
 }
+
+// ✅ NHIA CONFIG PATCH START
+const normalizeClaimItProviderClassLevel = (value, fallback = '') =>
+  normalizeNhiaProviderClassLevel(value, fallback)
+
+const normalizeClaimItPharmacyFacilityLevel = (value, fallback = '') =>
+  normalizeNhiaPharmacyFacilityLevel(value, fallback)
+
+const getClaimItCredentialCode = (payload = {}) =>
+  normalizeText(payload.credentialCode || payload.credential_code || payload.facilityCode || payload.facility_code)
+
+const getNhiaFacilityType = (payload = {}) =>
+  normalizeNhiaFacilityType(payload.facilityType || payload.facility_type || payload.providerTypeDescription, 'Pharmacy')
+
+const isClaimItPharmacyType = (payload = {}) =>
+  getNhiaFacilityType(payload) === 'Pharmacy' || normalizeOrganizationType(payload.organizationType) === 'pharmacy'
+
+const resolveClaimItProviderClassLevel = (payload = {}) =>
+  normalizeClaimItProviderClassLevel(
+    payload.providerClassLevel || payload.provider_class_level,
+    isClaimItPharmacyType(payload) ? 'C' : ''
+  )
+
+const resolveClaimItPharmacyFacilityLevel = (payload = {}) =>
+  normalizeClaimItPharmacyFacilityLevel(
+    payload.pharmacyFacilityLevel || payload.pharmacy_facility_level || payload.pharmacyLevel || payload.pharmacy_level,
+    isClaimItPharmacyType(payload) ? 'P1' : ''
+  )
+
+const resolveClaimItProviderLevelCode = (payload = {}, claimRow = {}) =>
+  normalizeText(payload.providerLevelCode || payload.provider_level_code) ||
+  [claimRow.ownershipTypeCode || 'PVT', claimRow.facilityTypeCode || getClaimItFacilityType(payload), claimRow.cateringStatusCode || 'CE']
+    .filter(Boolean)
+    .join('-')
+
+export const buildClaimItConfigPreview = (settings = {}, options = {}) => {
+  const organizationType = normalizeOrganizationType(options.organizationType || settings.organizationType || settings.organization_type)
+  const facilityType = getNhiaFacilityType({ ...settings, organizationType })
+  const payload = {
+    ...settings,
+    organizationType,
+    facilityType,
+    providerClassLevel: resolveClaimItProviderClassLevel({ ...settings, organizationType, facilityType }),
+    pharmacyFacilityLevel: resolveClaimItPharmacyFacilityLevel({ ...settings, organizationType, facilityType }),
+  }
+  const credentialCode = getClaimItCredentialCode(payload)
+  const credentialParts = splitClaimItCredentialCode(credentialCode)
+  const facilityTypeCode = getClaimItFacilityType(payload)
+  const providerLevel = resolveClaimItProviderLevelCode(payload, {
+    ownershipTypeCode: credentialParts.ownershipCode === '02' ? 'PVT' : 'PVT',
+    facilityTypeCode,
+    cateringStatusCode: credentialParts.cateringStatusCode === '2' ? 'CE' : 'CE',
+  })
+
+  return {
+    facilityName: normalizeText(payload.facilityName || payload.facility_name),
+    providerID: getClaimItProviderCode(payload),
+    providerLevel,
+    providerClassLevel: payload.providerClassLevel,
+    pharmacyFacilityLevel: payload.pharmacyFacilityLevel,
+    facilityType,
+    facilityCode: normalizeText(payload.facilityCode || payload.facility_code),
+    credentialCode,
+    licenseNumber: normalizeText(payload.licenseNumber || payload.license_number),
+    accreditationExpiryDate: normalizeText(payload.accreditationExpiryDate || payload.accreditation_expiry_date),
+  }
+}
+// ✅ NHIA CONFIG PATCH END
 
 export const normalizeNhisCcCode = (value) => asText(value).replace(/\D/g, '')
 
@@ -462,7 +540,7 @@ const getDiagnosisTreatmentMismatchBlockers = (claimData, medicines = [], rules 
 }
 
 const getProviderPrescribingLevel = (claimData = {}, options = {}) =>
-  normalizeNhisPrescribingLevel(
+  normalizeClaimItProviderClassLevel(
     options.providerClassLevel ??
       options.provider_class_level ??
       options.facilityLevel ??
@@ -518,6 +596,11 @@ const getMedicinePrescribingLevel = (medicine = {}, lookup = getMedicineLevelLoo
 const canProviderPrescribeLevel = (providerLevel, requiredLevel) => {
   if (!providerLevel || !requiredLevel) return false
   if (requiredLevel === 'SM') return providerLevel === 'SM'
+  // ✅ NHIA CONFIG PATCH START
+  if (CLAIM_IT_PROVIDER_CLASS_LEVELS.includes(providerLevel) && CLAIM_IT_PROVIDER_CLASS_LEVELS.includes(requiredLevel)) {
+    return providerLevel === requiredLevel
+  }
+  // ✅ NHIA CONFIG PATCH END
   return (NHIS_PRESCRIBING_LEVEL_RANKS[providerLevel] || 0) >= (NHIS_PRESCRIBING_LEVEL_RANKS[requiredLevel] || 0)
 }
 
@@ -1104,7 +1187,14 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
         if (!requiredLevel) {
           blockers.push(`${label}: NHIS level of prescribing is missing from the medicine catalog. Update the medicine category before billing this claim.`)
         } else if (!canProviderPrescribeLevel(providerPrescribingLevel, requiredLevel)) {
-          blockers.push(`${label}: requires NHIS prescribing level ${requiredLevel}, but this facility is configured as ${providerPrescribingLevel}. Use an authorized prescriber/facility or remove the medicine.`)
+          // ✅ NHIA CONFIG PATCH START
+          const message = `${label}: requires NHIS prescribing level ${requiredLevel}, but this facility is configured as ${providerPrescribingLevel}. Use an authorized prescriber/facility or remove the medicine.`
+          if (options.providerClassValidationMode === 'warn' || options.claimitValidationEnabled === false) {
+            warnings.push(message)
+          } else {
+            blockers.push(message)
+          }
+          // ✅ NHIA CONFIG PATCH END
         }
       }
 
@@ -1296,7 +1386,12 @@ const getNhisReadinessContext = async (claimData = {}, options = {}) => {
   let providerClassLevel = getProviderPrescribingLevel(claimData, options)
   if (!providerClassLevel) {
     const settings = options.nhiaSettings || options.settings || await getNhiaApiSettings().catch(() => null)
-    providerClassLevel = normalizeNhisPrescribingLevel(settings?.providerClassLevel ?? settings?.provider_class_level)
+    // ✅ NHIA CONFIG PATCH START
+    providerClassLevel = normalizeClaimItProviderClassLevel(
+      settings?.providerClassLevel ?? settings?.provider_class_level,
+      normalizeOrganizationType(claimData?.organizationType ?? claimData?.organization_type ?? options.organizationType) === 'pharmacy' ? 'C' : ''
+    )
+    // ✅ NHIA CONFIG PATCH END
   }
 
   const hasCatalogOption = Array.isArray(options.nhisDrugCatalog) || Array.isArray(options.drugCatalog)
@@ -2487,20 +2582,28 @@ const getClaimItEffectiveDate = (credentialCode = '') => {
 const getClaimItProviderCode = (payload = {}) => {
   const providerNumber = normalizeText(payload.providerNumber)
   if (providerNumber) return providerNumber
-  const credential = normalizeText(payload.facilityCode)
+  const credential = getClaimItCredentialCode(payload)
   const { agencyCode, regionCode, sequenceNumber } = splitClaimItCredentialCode(credential)
   return [agencyCode, regionCode, sequenceNumber].filter(Boolean).join('-')
 }
 
 const getClaimItPrescriptionLevel = (payload = {}) => {
-  const credential = normalizeText(payload.facilityCode)
+  const credential = getClaimItCredentialCode(payload)
   const { prescriptionLevelCode } = splitClaimItCredentialCode(credential)
-  return prescriptionLevelCode || normalizeText(payload.providerClassLevel) || ''
+  // ✅ NHIA CONFIG PATCH START
+  return prescriptionLevelCode || resolveClaimItPharmacyFacilityLevel(payload) || ''
+  // ✅ NHIA CONFIG PATCH END
 }
 
 const getClaimItFacilityType = (payload = {}) => {
-  const description = normalizeText(payload.providerTypeDescription).toLowerCase()
-  if (description.includes('pharmacy')) return 'PHC'
+  // ✅ NHIA CONFIG PATCH START
+  const facilityType = getNhiaFacilityType(payload).toLowerCase()
+  const description = normalizeText(payload.providerTypeDescription || payload.facilityType).toLowerCase()
+  if (facilityType.includes('chemical')) return 'CHS'
+  if (facilityType.includes('maternity')) return 'MAT'
+  if (facilityType.includes('clinic')) return 'CL'
+  if (facilityType.includes('pharmacy') || description.includes('pharmacy')) return 'PHC'
+  // ✅ NHIA CONFIG PATCH END
   if (description.includes('hospital')) return 'HOSP'
   if (description.includes('clinic')) return 'CL'
   return 'PHC'
@@ -2572,7 +2675,91 @@ const parseFrequencyValue = (value) => {
   return parseDirectionsNumber(text, '1.00')
 }
 
+// ✅ CLAIMIT SAVE FIX START
+const CLAIM_IT_DOCTRINE_MIGRATIONS = [
+  'DoctrineMigrations\\Version20170101000000',
+  'DoctrineMigrations\\Version20170315000000',
+  'DoctrineMigrations\\Version20170601000000',
+  'DoctrineMigrations\\Version20180112000000',
+  'DoctrineMigrations\\Version20180426000000',
+  'DoctrineMigrations\\Version20181115000000',
+  'DoctrineMigrations\\Version20190322000000',
+  'DoctrineMigrations\\Version20190718000000',
+  'DoctrineMigrations\\Version20200130000000',
+  'DoctrineMigrations\\Version20200619000000',
+  'DoctrineMigrations\\Version20210108000000',
+  'DoctrineMigrations\\Version20210624000000',
+  'DoctrineMigrations\\Version20220314000000',
+  'DoctrineMigrations\\Version20221201000000',
+  'DoctrineMigrations\\Version20250531000000',
+]
+
+const CLAIM_IT_EMPTY_TABLE_STRUCTS = {
+  attendanceentries: { _entry_id: 'int(11)', _attendance_id: 'varchar(60)', entryType: 'varchar(255)', entryDate: 'date' },
+  attendances: { guid: 'varchar(60)', memberNo: 'varchar(255)', attendanceDate: 'date', providerID: 'varchar(255)' },
+  contracts: { contractID: 'varchar(255)', providerID: 'varchar(255)', policyID: 'varchar(255)' },
+  diseases: { code: 'varchar(255)', name: 'varchar(255)' },
+  gdrgs: { code: 'varchar(255)', description: 'varchar(255)', mdcCode: 'varchar(255)' },
+  gdrgs_icd10s: { gdrgCode: 'varchar(255)', icd10Code: 'varchar(255)' },
+  icd10s: { code: 'varchar(255)', description: 'varchar(255)' },
+  mdcs: { code: 'varchar(255)', description: 'varchar(255)' },
+  medicineclasses: { code: 'varchar(255)', name: 'varchar(255)' },
+  medicineprices: { medicineCode: 'varchar(255)', version: 'varchar(255)', price: 'decimal(10,4)' },
+  medicines: { code: 'varchar(255)', description: 'varchar(255)', classCode: 'varchar(255)' },
+  policyrules: { policyID: 'varchar(255)', ruleID: 'varchar(255)' },
+  rules: { ruleID: 'varchar(255)', name: 'varchar(255)' },
+  servicetariffs: { gdrgCode: 'varchar(255)', version: 'varchar(255)', tariff: 'decimal(10,4)' },
+  systemupdates: { updateID: 'varchar(255)', appliedOn: 'datetime' },
+  users: { userID: 'varchar(255)', name: 'varchar(250)', role: 'varchar(32)' },
+}
+
+const getClaimItExpiryDate = (effectiveDate, generatedAt) => {
+  const base = new Date(`${toClaimItDate(effectiveDate || generatedAt)}T00:00:00Z`)
+  if (Number.isNaN(base.getTime())) return '2099-12-31'
+  base.setUTCFullYear(base.getUTCFullYear() + 1)
+  base.setUTCDate(base.getUTCDate() - 1)
+  return base.toISOString().slice(0, 10)
+}
+
+const getClaimItProviderLevelId = (claimRow = {}) =>
+  [
+    claimRow.ownershipTypeCode,
+    claimRow.facilityTypeCode,
+    claimRow.cateringStatusCode,
+  ].filter(Boolean).join('-')
+
 const getClaimItDbStruct = () => ({
+  accreditations: {
+    accred_effectiveDate: 'date',
+    accred_providerID: 'varchar(255)',
+    facilityTypeCode: 'varchar(255)',
+    ownershipTypeCode: 'varchar(255)',
+    cateringStatusCode: 'varchar(255)',
+    prescriptionLevelID: 'varchar(255)',
+    providerLevel: 'varchar(255)',
+    facilityType: 'varchar(255)',
+    facilityName: 'varchar(255)',
+    dateGenerated: 'date',
+    expiryDate: 'date',
+    credentialCode: 'varchar(255)',
+  },
+  attachmentdata: {
+    _data_id: 'int(11)',
+    _attach_id: 'varchar(40)',
+    data: 'longblob',
+  },
+  attachments: {
+    attach_id: 'varchar(40)',
+    _claim_id: 'varchar(60)',
+    type: 'varchar(255)',
+    fileType: 'varchar(255)',
+    comments: 'varchar(255)',
+  },
+  ...CLAIM_IT_EMPTY_TABLE_STRUCTS,
+  cateringstatuses: {
+    code: 'varchar(255)',
+    name: 'varchar(255)',
+  },
   claims: {
     guid: 'varchar(60)',
     isException: 'tinyint(1)',
@@ -2668,18 +2855,6 @@ const getClaimItDbStruct = () => ({
     description: 'varchar(255)',
     amount: 'decimal(10,4)',
   },
-  attachments: {
-    attach_id: 'varchar(40)',
-    _claim_id: 'varchar(60)',
-    type: 'varchar(255)',
-    fileType: 'varchar(255)',
-    comments: 'varchar(255)',
-  },
-  attachmentdata: {
-    _data_id: 'int(11)',
-    _attach_id: 'varchar(40)',
-    data: 'longblob',
-  },
   comments: {
     _entry_id: 'int(11)',
     _claim_id: 'varchar(60)',
@@ -2688,6 +2863,13 @@ const getClaimItDbStruct = () => ({
     createdByname: 'varchar(255)',
     createdByuserID: 'varchar(255)',
     createdByrole: 'varchar(255)',
+  },
+  doctrine_migration_versions: {
+    version: 'varchar(255)',
+  },
+  facilitytypes: {
+    code: 'varchar(255)',
+    name: 'varchar(255)',
   },
   validations: {
     _id: 'varchar(60)',
@@ -2718,13 +2900,89 @@ const getClaimItDbStruct = () => ({
     serializedClaim: 'longblob',
     isCompressed: 'tinyint(1)',
   },
+  ownerships: {
+    code: 'varchar(255)',
+    name: 'varchar(255)',
+  },
+  policies: {
+    policyID: 'varchar(255)',
+  },
   prescribersfordays: {
     _id: 'int(11)',
     day: 'date',
     name: 'varchar(250)',
     role: 'varchar(32)',
   },
+  prescriptionlevels: {
+    code: 'varchar(255)',
+    name: 'varchar(255)',
+  },
+  providerlevels: {
+    code: 'varchar(255)',
+    ownershipTypeCode: 'varchar(255)',
+    facilityTypeCode: 'varchar(255)',
+    cateringStatusCode: 'varchar(255)',
+    prescriptionLevelID: 'varchar(255)',
+  },
 })
+
+const getClaimItAccreditationRows = (payload, rows) => {
+  const credentialCode = getClaimItCredentialCode(payload)
+  if (!credentialCode) return []
+
+  const claimRow = rows.claims[0] || {}
+  const effectiveDate = getClaimItEffectiveDate(credentialCode)
+  return [{
+    accred_effectiveDate: effectiveDate,
+    accred_providerID: getClaimItProviderCode(payload),
+    facilityTypeCode: claimRow.facilityTypeCode || getClaimItFacilityType(payload),
+    ownershipTypeCode: claimRow.ownershipTypeCode || 'PVT',
+    cateringStatusCode: claimRow.cateringStatusCode || 'CE',
+    prescriptionLevelID: claimRow.prescriptionLevelID || getClaimItPrescriptionLevel(payload),
+    // ✅ NHIA CONFIG PATCH START
+    providerLevel: resolveClaimItProviderLevelCode(payload, claimRow),
+    facilityType: getNhiaFacilityType(payload),
+    // ✅ NHIA CONFIG PATCH END
+    facilityName: normalizeText(payload.facilityName) || 'HealthFlow Facility',
+    dateGenerated: toClaimItDate(payload.createdAt),
+    expiryDate: normalizeText(payload.accreditationExpiryDate || payload.accreditation_expiry_date) || getClaimItExpiryDate(effectiveDate, payload.createdAt),
+    credentialCode,
+  }]
+}
+
+const getClaimItStaticRows = (payload, rows, meta) => ({
+  accreditations: meta.accreditations,
+  attendanceentries: [],
+  attendances: [],
+  cateringstatuses: [{ code: rows.claims[0]?.cateringStatusCode || 'CE', name: 'Catering Exclusive' }],
+  contracts: [],
+  diseases: [],
+  doctrine_migration_versions: CLAIM_IT_DOCTRINE_MIGRATIONS.map((version) => ({ version })),
+  facilitytypes: [{ code: rows.claims[0]?.facilityTypeCode || getClaimItFacilityType(payload), name: normalizeText(payload.providerTypeDescription) || 'Facility' }],
+  gdrgs: [],
+  gdrgs_icd10s: [],
+  icd10s: [],
+  mdcs: [],
+  medicineclasses: [],
+  medicineprices: [],
+  medicines: [],
+  ownerships: [{ code: rows.claims[0]?.ownershipTypeCode || 'PVT', name: 'Private' }],
+  policies: meta.policies.map((policyID) => ({ policyID })),
+  policyrules: [],
+  prescriptionlevels: [{ code: rows.claims[0]?.prescriptionLevelID || getClaimItPrescriptionLevel(payload), name: rows.claims[0]?.prescriptionLevelID || getClaimItPrescriptionLevel(payload) }],
+  providerlevels: [{
+    code: meta.providerLevel,
+    ownershipTypeCode: rows.claims[0]?.ownershipTypeCode || 'PVT',
+    facilityTypeCode: rows.claims[0]?.facilityTypeCode || getClaimItFacilityType(payload),
+    cateringStatusCode: rows.claims[0]?.cateringStatusCode || 'CE',
+    prescriptionLevelID: rows.claims[0]?.prescriptionLevelID || getClaimItPrescriptionLevel(payload),
+  }],
+  rules: [],
+  servicetariffs: [],
+  systemupdates: [],
+  users: [],
+})
+// ✅ CLAIMIT SAVE FIX END
 
 const isValidIsoDate = (value) => {
   const text = normalizeText(value)
@@ -2806,6 +3064,12 @@ export const buildNhisClaimItExportPayload = (claims = [], options = {}) => {
   })
   const organizationType = normalizeOrganizationType(options.organizationType)
   const batchNumber = normalizeText(options.batchNumber) || `HF-NHIS-${exportPeriod.fileTag}-${String(Date.now()).slice(-6)}`
+  // ✅ NHIA CONFIG PATCH START
+  const facilityType = getNhiaFacilityType({ ...options, organizationType })
+  const providerClassLevel = resolveClaimItProviderClassLevel({ ...options, organizationType, facilityType })
+  const pharmacyFacilityLevel = resolveClaimItPharmacyFacilityLevel({ ...options, organizationType, facilityType })
+  const credentialCode = getClaimItCredentialCode(options)
+  // ✅ NHIA CONFIG PATCH END
 
   const normalizedClaims = claims.map((claim) => {
     const claimOrganizationType = normalizeOrganizationType(claim.organization_type || organizationType)
@@ -2864,11 +3128,19 @@ export const buildNhisClaimItExportPayload = (claims = [], options = {}) => {
     targetSystem: 'CLAIM-it HMS Toolkit',
     batchNumber,
     facilityName: normalizeText(options.facilityName),
+    // ✅ NHIA CONFIG PATCH START
+    facilityType,
+    pharmacyFacilityLevel,
+    providerLevelCode: normalizeText(options.providerLevelCode || options.provider_level_code),
+    credentialCode,
+    licenseNumber: normalizeText(options.licenseNumber || options.license_number),
+    accreditationExpiryDate: normalizeText(options.accreditationExpiryDate || options.accreditation_expiry_date),
+    // ✅ NHIA CONFIG PATCH END
     facilityCode: normalizeText(options.facilityCode),
     providerNumber: normalizeText(options.providerNumber),
     schemeName: normalizeText(options.schemeName) || 'National Health Insurance',
-    providerTypeDescription: normalizeText(options.providerTypeDescription),
-    providerClassLevel: normalizeText(options.providerClassLevel),
+    providerTypeDescription: normalizeText(options.providerTypeDescription || facilityType),
+    providerClassLevel,
     claimsOfficerName: normalizeText(options.claimsOfficerName),
     admissionPaymentOption: normalizeText(options.admissionPaymentOption) || 'nhis_pays_admission',
     claimitValidationEnabled: options.claimitValidationEnabled !== false,
@@ -3273,14 +3545,16 @@ const buildClaimItRows = async (payload) => {
   const signedByName = normalizeText(payload.claimsOfficerName) || 'HealthFlow'
   const signedByUsername = normalizeText(payload.submitterId) || signedByName
   const signedByRole = 'admin'
-  const credentialCode = normalizeText(payload.facilityCode)
+  const credentialCode = getClaimItCredentialCode(payload)
   const credentialParts = splitClaimItCredentialCode(credentialCode)
   const effectiveDate = getClaimItEffectiveDate(credentialCode)
   const providerId = getClaimItProviderCode(payload)
   const prescriptionLevelId = getClaimItPrescriptionLevel(payload)
   const facilityTypeCode = getClaimItFacilityType(payload)
-  const ownershipTypeCode = credentialParts.ownershipCode === '02' ? 'PVT' : ''
-  const cateringStatusCode = credentialParts.cateringStatusCode === '2' ? 'CE' : ''
+  // ✅ NHIA CONFIG PATCH START
+  const ownershipTypeCode = credentialParts.ownershipCode === '02' ? 'PVT' : 'PVT'
+  const cateringStatusCode = credentialParts.cateringStatusCode === '2' ? 'CE' : 'CE'
+  // ✅ NHIA CONFIG PATCH END
   const typeOfService = getClaimItServiceType(payload)
   const claimType = getClaimItClaimType(payload)
   const medVersion = normalizeText(payload.medVersion || payload.nhiaMedicineTariffVersion) || '2025-05-01.250531'
@@ -3505,24 +3779,32 @@ const buildClaimItRows = async (payload) => {
 }
 
 const buildClaimItMeta = (payload, rows) => {
-  const credentialCode = normalizeText(payload.facilityCode)
-  const effectiveDate = getClaimItEffectiveDate(credentialCode)
+  const credentialCode = getClaimItCredentialCode(payload)
   const providerId = getClaimItProviderCode(payload)
   const totalCost = Number(payload.totalAmount || 0)
   const typeOfService = getClaimItServiceType(payload)
-  const facilityName = normalizeText(payload.facilityName || payload.providerTypeDescription || 'HealthFlow Facility')
-  const providerLevel = [
-    rows.claims[0]?.ownershipTypeCode,
-    rows.claims[0]?.facilityTypeCode,
-    rows.claims[0]?.cateringStatusCode,
-  ].filter(Boolean).join('-')
+  // ✅ CLAIMIT SAVE FIX START
+  const facilityName = normalizeText(payload.facilityName) || 'HealthFlow Facility'
+  const providerLevel = getClaimItProviderLevelId(rows.claims[0]) || 'PVT-PHC-CE'
+  const accreditations = getClaimItAccreditationRows(payload, rows)
+  // ✅ CLAIMIT SAVE FIX END
 
   return {
-    dbVersions: [],
+    // ✅ CLAIMIT SAVE FIX START
+    dbVersions: CLAIM_IT_DOCTRINE_MIGRATIONS,
+    // ✅ CLAIMIT SAVE FIX END
     claimYear: (payload.periodFrom || payload.createdAt || '').slice(0, 4),
     claimMonth: (payload.periodFrom || payload.createdAt || '').slice(5, 7),
     claimType: '',
     facilityName,
+    // ✅ NHIA CONFIG PATCH START
+    facilityCode: normalizeText(payload.facilityCode),
+    facilityType: getNhiaFacilityType(payload),
+    pharmacyFacilityLevel: resolveClaimItPharmacyFacilityLevel(payload),
+    providerClassLevel: resolveClaimItProviderClassLevel(payload),
+    licenseNumber: normalizeText(payload.licenseNumber || payload.license_number),
+    accreditationExpiryDate: normalizeText(payload.accreditationExpiryDate || payload.accreditation_expiry_date),
+    // ✅ NHIA CONFIG PATCH END
     providerLevel,
     providerID: providerId,
     credentialCode,
@@ -3537,18 +3819,9 @@ const buildClaimItMeta = (payload, rows) => {
       client: '1.0.0',
       mode: 'standalone',
     },
-    accreditations: credentialCode ? [{
-      accred_effectiveDate: effectiveDate,
-      accred_providerID: providerId,
-      facilityTypeCode: rows.claims[0]?.facilityTypeCode || '',
-      ownershipTypeCode: rows.claims[0]?.ownershipTypeCode || '',
-      cateringStatusCode: rows.claims[0]?.cateringStatusCode || '',
-      prescriptionLevelID: rows.claims[0]?.prescriptionLevelID || '',
-      facilityName,
-      dateGenerated: payload.createdAt.slice(0, 10),
-      expiryDate: '',
-      credentialCode,
-    }] : [],
+    // ✅ CLAIMIT SAVE FIX START
+    accreditations,
+    // ✅ CLAIMIT SAVE FIX END
     credUsage: credentialCode ? rows.claims.map((claim) => ({
       credentialCode,
       minDOSP: claim.minDOSP,
@@ -3568,6 +3841,10 @@ const buildClaimItMeta = (payload, rows) => {
 const buildNhisClaimItCxfBundle = async (payload) => {
   const rows = await buildClaimItRows(payload)
   const generatedAt = toClaimItDateTime(payload.createdAt)
+  // ✅ CLAIMIT SAVE FIX START
+  const meta = buildClaimItMeta(payload, rows)
+  const staticRows = getClaimItStaticRows(payload, rows, meta)
+  // ✅ CLAIMIT SAVE FIX END
 
   return {
     lockID: `partial-export-${generatedAt}`,
@@ -3576,6 +3853,9 @@ const buildNhisClaimItCxfBundle = async (payload) => {
     signedByUsername: normalizeText(payload.submitterId) || 'HealthFlow',
     signedByRole: 'admin',
     data: {
+      // ✅ CLAIMIT SAVE FIX START
+      ...staticRows,
+      // ✅ CLAIMIT SAVE FIX END
       claims: rows.claims,
       serviceentries: rows.serviceentries,
       medicineentries: rows.medicineentries,
@@ -3587,7 +3867,9 @@ const buildNhisClaimItCxfBundle = async (payload) => {
       validation_results: [],
       validation_zclaims: rows.validationZclaims,
       prescribersfordays: [],
-      _meta: buildClaimItMeta(payload, rows),
+      // ✅ CLAIMIT SAVE FIX START
+      _meta: meta,
+      // ✅ CLAIMIT SAVE FIX END
       _dbstruct: getClaimItDbStruct(),
     },
     isBackup: true,
@@ -3690,8 +3972,32 @@ const buildNhisMonthlyCsv = (claims) => {
 }
 
 const assertClaimItCxfExportConfigured = (options = {}) => {
-  if (normalizeText(options.facilityCode)) return
-  throw new Error('CLAIM-it CXF export needs the facility credential code. Add the NHIA/CLAIM-it facility code in Settings before exporting.')
+  // ✅ NHIA CONFIG PATCH START
+  const missing = []
+  const organizationType = normalizeOrganizationType(options.organizationType)
+  const facilityType = getNhiaFacilityType({ ...options, organizationType })
+  const isPharmacy = facilityType === 'Pharmacy' || organizationType === 'pharmacy'
+  const providerClassLevel = normalizeClaimItProviderClassLevel(options.providerClassLevel || options.provider_class_level)
+  const pharmacyFacilityLevel = normalizeClaimItPharmacyFacilityLevel(
+    options.pharmacyFacilityLevel || options.pharmacy_facility_level || options.pharmacyLevel || options.pharmacy_level
+  )
+
+  if (!normalizeText(options.facilityName || options.facility_name)) missing.push('facilityName')
+  if (!normalizeText(options.providerNumber || options.provider_number)) missing.push('providerNumber')
+  if (!normalizeText(options.facilityCode || options.facility_code)) missing.push('facilityCode')
+  if (!getClaimItCredentialCode(options)) missing.push('credentialCode')
+  if (!providerClassLevel) missing.push('providerClassLevel')
+  if (isPharmacy && !pharmacyFacilityLevel) missing.push('pharmacyFacilityLevel')
+  if (!resolveClaimItProviderLevelCode(options)) missing.push('providerLevelCode')
+  if (!normalizeText(options.accreditationExpiryDate || options.accreditation_expiry_date)) missing.push('accreditationExpiryDate')
+  if (!normalizeText(options.claimsOfficerName || options.claims_officer_name)) missing.push('claimsOfficerName')
+  if (!normalizeText(options.submitterId || options.submitter_id)) missing.push('submitterId')
+  if (options._inferredProviderClassLevel) missing.push('providerClassLevel (confirm inferred C in Settings)')
+  if (isPharmacy && options._inferredPharmacyFacilityLevel) missing.push('pharmacyFacilityLevel (confirm inferred P1 in Settings)')
+
+  if (!missing.length) return
+  throw new Error(`CLAIM-it CXF export needs complete NHIA configuration. Missing: ${missing.join(', ')}.`)
+  // ✅ NHIA CONFIG PATCH END
 }
 
 const createNhisExportFile = async (claims, period, options = {}) => {
@@ -3758,6 +4064,10 @@ const assertNhisClaimsReadyForFinalSubmission = async (claims, organizationType,
           clinicalRules,
           enforcePrescribingLevel: true,
           providerClassLevel,
+          // ✅ NHIA CONFIG PATCH START
+          claimitValidationEnabled: options.claimitValidationEnabled,
+          providerClassValidationMode: options.claimitValidationEnabled === false ? 'warn' : 'block',
+          // ✅ NHIA CONFIG PATCH END
           // ✅ NHIS PHARMACY LEVEL PATCH START
           pharmacyLevel: options.pharmacyLevel,
           // ✅ NHIS PHARMACY LEVEL PATCH END

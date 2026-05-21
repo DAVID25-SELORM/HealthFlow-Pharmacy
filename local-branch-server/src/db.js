@@ -179,6 +179,14 @@ ensureColumn('nhia_settings', 'cc_code_endpoint_path', 'TEXT')
 ensureColumn('nhia_settings', 'scheme_name', "TEXT NOT NULL DEFAULT 'National Health Insurance'")
 ensureColumn('nhia_settings', 'provider_type_description', 'TEXT')
 ensureColumn('nhia_settings', 'provider_class_level', 'TEXT')
+// ✅ NHIA CONFIG PATCH START
+ensureColumn('nhia_settings', 'facility_type', 'TEXT')
+ensureColumn('nhia_settings', 'pharmacy_facility_level', 'TEXT')
+ensureColumn('nhia_settings', 'provider_level_code', 'TEXT')
+ensureColumn('nhia_settings', 'credential_code', 'TEXT')
+ensureColumn('nhia_settings', 'license_number', 'TEXT')
+ensureColumn('nhia_settings', 'accreditation_expiry_date', 'TEXT')
+// ✅ NHIA CONFIG PATCH END
 // ✅ NHIS PHARMACY LEVEL PATCH START
 ensureColumn('nhia_settings', 'pharmacy_level', 'TEXT')
 // ✅ NHIS PHARMACY LEVEL PATCH END

@@ -905,6 +905,16 @@ const Nhis = () => {
   const getDirectNhiaOptions = () => ({
     organizationType,
     facilityName: resolvedNhiaSettings?.facilityName || organization?.name || organization?.pharmacy_name || '',
+    // ✅ NHIA CONFIG PATCH START
+    facilityType: resolvedNhiaSettings?.facilityType || resolvedNhiaSettings?.facility_type || resolvedNhiaSettings?.providerTypeDescription || '',
+    pharmacyFacilityLevel: resolvedNhiaSettings?.pharmacyFacilityLevel || resolvedNhiaSettings?.pharmacy_facility_level || resolvedNhiaSettings?.pharmacyLevel || '',
+    providerLevelCode: resolvedNhiaSettings?.providerLevelCode || resolvedNhiaSettings?.provider_level_code || '',
+    credentialCode: resolvedNhiaSettings?.credentialCode || resolvedNhiaSettings?.credential_code || resolvedNhiaSettings?.facilityCode || '',
+    licenseNumber: resolvedNhiaSettings?.licenseNumber || resolvedNhiaSettings?.license_number || organization?.license_number || '',
+    accreditationExpiryDate: resolvedNhiaSettings?.accreditationExpiryDate || resolvedNhiaSettings?.accreditation_expiry_date || '',
+    _inferredProviderClassLevel: resolvedNhiaSettings?._inferredProviderClassLevel,
+    _inferredPharmacyFacilityLevel: resolvedNhiaSettings?._inferredPharmacyFacilityLevel,
+    // ✅ NHIA CONFIG PATCH END
     facilityCode: resolvedNhiaSettings?.facilityCode || '',
     providerNumber: resolvedNhiaSettings?.providerNumber || '',
     schemeName: resolvedNhiaSettings?.schemeName || 'National Health Insurance',
