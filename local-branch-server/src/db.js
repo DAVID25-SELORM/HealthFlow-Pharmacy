@@ -5,12 +5,134 @@ import { config } from './config.js'
 
 const schemaPath = new URL('./schema.sql', import.meta.url)
 
-fs.mkdirSync(path.dirname(config.sqlitePath), { recursive: true })
+// ✅ SQLITE CORRUPTION FIX START
+const timestampForFile = () => {
+  const value = new Date()
+  const pad = (part) => String(part).padStart(2, '0')
+  return [
+    value.getFullYear(),
+    pad(value.getMonth() + 1),
+    pad(value.getDate()),
+    '-',
+    pad(value.getHours()),
+    pad(value.getMinutes()),
+    pad(value.getSeconds()),
+  ].join('')
+}
 
-export const db = new Database(config.sqlitePath)
-db.pragma('journal_mode = WAL')
-db.pragma('foreign_keys = ON')
-db.exec(fs.readFileSync(schemaPath, 'utf8'))
+const ensureDatabaseDirectory = () => {
+  fs.mkdirSync(path.dirname(config.sqlitePath), { recursive: true })
+}
+
+const applyHardeningPragmas = (database) => {
+  database.pragma('journal_mode = WAL')
+  database.pragma('synchronous = NORMAL')
+  database.pragma('foreign_keys = ON')
+  database.pragma('busy_timeout = 5000')
+  database.pragma('temp_store = MEMORY')
+}
+
+const runIntegrityCheck = (database) => {
+  const result = database.prepare('PRAGMA integrity_check').pluck().get()
+  if (result !== 'ok') {
+    throw new Error(`SQLite integrity_check failed: ${result}`)
+  }
+}
+
+const renameIfExists = (source, destination) => {
+  if (fs.existsSync(source)) {
+    fs.renameSync(source, destination)
+  }
+}
+
+const quarantineCorruptDatabase = () => {
+  const parsed = path.parse(config.sqlitePath)
+  const suffix = timestampForFile()
+  const corruptPath = path.join(parsed.dir, `${parsed.name}-corrupt-${suffix}${parsed.ext}`)
+
+  renameIfExists(config.sqlitePath, corruptPath)
+  renameIfExists(`${config.sqlitePath}-wal`, `${corruptPath}-wal`)
+  renameIfExists(`${config.sqlitePath}-shm`, `${corruptPath}-shm`)
+
+  console.error(
+    `SQLite database was corrupt and has been preserved as ${corruptPath}. A fresh database will be created.`
+  )
+}
+
+const isRecoverableDatabaseError = (error) => {
+  const message = String(error?.message || '').toLowerCase()
+  return (
+    error?.code === 'SQLITE_CORRUPT' ||
+    message.includes('database disk image is malformed') ||
+    message.includes('integrity_check failed')
+  )
+}
+
+const initializeSchema = (database) => {
+  database.exec(fs.readFileSync(schemaPath, 'utf8'))
+}
+
+const openDatabase = () => {
+  ensureDatabaseDirectory()
+  const database = new Database(config.sqlitePath)
+  try {
+    applyHardeningPragmas(database)
+    runIntegrityCheck(database)
+    initializeSchema(database)
+    return database
+  } catch (error) {
+    try {
+      database.close()
+    } catch {
+      // Ignore close errors while bubbling the startup failure.
+    }
+    throw error
+  }
+}
+
+const openHealthyDatabase = () => {
+  try {
+    return openDatabase()
+  } catch (error) {
+    if (!isRecoverableDatabaseError(error)) {
+      throw error
+    }
+
+    console.error('SQLite startup health check failed:', error)
+    try {
+      const failedDatabase = new Database(config.sqlitePath)
+      failedDatabase.close()
+    } catch {
+      // Ignore close errors while recovering a malformed database.
+    }
+    quarantineCorruptDatabase()
+    const database = openDatabase()
+    console.error(`SQLite recovery complete. Fresh database created at ${config.sqlitePath}.`)
+    return database
+  }
+}
+
+export const db = openHealthyDatabase()
+
+export const backupDatabase = (label = 'backup') => {
+  const backupDir = path.join(path.dirname(config.sqlitePath), 'backups')
+  fs.mkdirSync(backupDir, { recursive: true })
+  const parsed = path.parse(config.sqlitePath)
+  const backupPath = path.join(
+    backupDir,
+    `${parsed.name}-${label}-${timestampForFile()}${parsed.ext}`
+  )
+  db.pragma('wal_checkpoint(FULL)')
+  fs.copyFileSync(config.sqlitePath, backupPath)
+  return backupPath
+}
+
+export const closeDatabase = () => {
+  if (db.open) {
+    db.close()
+  }
+}
+// ✅ SQLITE CORRUPTION FIX END
 
 const ensureColumn = (table, column, definition) => {
   const columns = db.prepare(`PRAGMA table_info(${table})`).all()

@@ -5,9 +5,9 @@ import { tryLogAuditEvent } from './auditService'
 import {
   createBranchRecord,
   listBranchRecords,
-  shouldUseBranchServer,
   updateBranchRecord,
 } from './branchServerApi'
+import { routeRead, routeWrite, shouldRouteToLocal } from './apiRouter'
 
 const PATIENT_INSURANCE_ID_UNIQUE_CONSTRAINTS = [
   'idx_patients_org_insurance_id_unique',
@@ -68,47 +68,55 @@ const throwFriendlyPatientError = (error) => {
 
 // Get all patients
 export const getAllPatients = async () => {
-  if (shouldUseBranchServer()) {
-    return await listBranchRecords('patients')
-  }
+  return await routeRead({
+    label: 'patients',
+    local: async () => await listBranchRecords('patients'),
+    cloud: async () => {
+      const { data, error } = await supabase
+        .from('patients')
+        .select('*')
+        .order('created_at', { ascending: false })
 
-  const { data, error } = await supabase
-    .from('patients')
-    .select('*')
-    .order('created_at', { ascending: false })
-  
-  if (error) throw error
-  return data
+      if (error) throw error
+      return data || []
+    },
+    fallback: [],
+  })
 }
 
 // Get patient by ID
 export const getPatientById = async (id) => {
-  if (shouldUseBranchServer()) {
-    const patients = await listBranchRecords('patients', { id, limit: 1 })
-    if (!patients.length) {
-      throw new Error('Patient not found in local branch server.')
-    }
-    return patients[0]
-  }
-
-  const { data, error } = await supabase
-    .from('patients')
-    .select(`
-      *,
-      sales (
-        *,
-        sale_items (
+  return await routeRead({
+    label: 'patient',
+    local: async () => {
+      const patients = await listBranchRecords('patients', { id, limit: 1 })
+      if (!patients.length) {
+        throw new Error('Patient not found in local branch server.')
+      }
+      return patients[0]
+    },
+    cloud: async () => {
+      const { data, error } = await supabase
+        .from('patients')
+        .select(`
           *,
-          drugs (name)
-        )
-      ),
-      claims (*)
-    `)
-    .eq('id', id)
-    .single()
-  
-  if (error) throw error
-  return data
+          sales (
+            *,
+            sale_items (
+              *,
+              drugs (name)
+            )
+          ),
+          claims (*)
+        `)
+        .eq('id', id)
+        .single()
+
+      if (error) throw error
+      return data
+    },
+    fallback: null,
+  })
 }
 
 const compactPatientLookup = (value) =>
@@ -145,8 +153,8 @@ export const addPatient = async (patientData) => {
   const insuranceProvider = normalizeText(patientData.insuranceProvider)
   const insuranceId = normalizeInsuranceId(insuranceProvider, patientData.insuranceId)
 
-  if (shouldUseBranchServer()) {
-    return await createBranchRecord('patients', {
+  const localCreate = async () =>
+    await createBranchRecord('patients', {
       full_name: fullName,
       phone,
       email: normalizeText(patientData.email) || null,
@@ -158,41 +166,48 @@ export const addPatient = async (patientData) => {
       allergies: normalizeText(patientData.allergies) || null,
       medical_notes: normalizeText(patientData.medicalNotes) || null,
     })
+
+  const cloudCreate = async () => {
+    const { data, error } = await supabase
+      .from('patients')
+      .insert([
+        {
+          full_name: fullName,
+          phone,
+          email: normalizeText(patientData.email) || null,
+          date_of_birth: patientData.dateOfBirth,
+          gender: normalizeText(patientData.gender) || null,
+          address: normalizeText(patientData.address) || null,
+          insurance_provider: insuranceProvider || null,
+          insurance_id: insuranceId || null,
+          allergies: normalizeText(patientData.allergies) || null,
+          medical_notes: normalizeText(patientData.medicalNotes) || null
+        }
+      ])
+      .select()
+
+    if (error) throwFriendlyPatientError(error)
+
+    await tryLogAuditEvent({
+      eventType: 'patient.created',
+      entityType: 'patients',
+      entityId: data[0].id,
+      action: 'create',
+      details: {
+        full_name: data[0].full_name,
+        phone: data[0].phone,
+        insurance_provider: data[0].insurance_provider,
+      },
+    })
+
+    return data[0]
   }
 
-  const { data, error } = await supabase
-    .from('patients')
-    .insert([
-      {
-        full_name: fullName,
-        phone,
-        email: normalizeText(patientData.email) || null,
-        date_of_birth: patientData.dateOfBirth,
-        gender: normalizeText(patientData.gender) || null,
-        address: normalizeText(patientData.address) || null,
-        insurance_provider: insuranceProvider || null,
-        insurance_id: insuranceId || null,
-        allergies: normalizeText(patientData.allergies) || null,
-        medical_notes: normalizeText(patientData.medicalNotes) || null
-      }
-    ])
-    .select()
-  
-  if (error) throwFriendlyPatientError(error)
-
-  await tryLogAuditEvent({
-    eventType: 'patient.created',
-    entityType: 'patients',
-    entityId: data[0].id,
-    action: 'create',
-    details: {
-      full_name: data[0].full_name,
-      phone: data[0].phone,
-      insurance_provider: data[0].insurance_provider,
-    },
+  return await routeWrite({
+    label: 'patient',
+    local: localCreate,
+    cloud: cloudCreate,
   })
-
-  return data[0]
 }
 
 // Update patient
@@ -202,8 +217,8 @@ export const updatePatient = async (id, patientData) => {
   const insuranceProvider = normalizeText(patientData.insuranceProvider)
   const insuranceId = normalizeInsuranceId(insuranceProvider, patientData.insuranceId)
 
-  if (shouldUseBranchServer()) {
-    return await updateBranchRecord('patients', id, {
+  const localUpdate = async () =>
+    await updateBranchRecord('patients', id, {
       full_name: fullName,
       phone,
       email: normalizeText(patientData.email) || null,
@@ -215,47 +230,54 @@ export const updatePatient = async (id, patientData) => {
       allergies: normalizeText(patientData.allergies) || null,
       medical_notes: normalizeText(patientData.medicalNotes) || null,
     })
+
+  const cloudUpdate = async () => {
+    const { data, error } = await supabase
+      .from('patients')
+      .update({
+        full_name: fullName,
+        phone,
+        email: normalizeText(patientData.email) || null,
+        date_of_birth: patientData.dateOfBirth,
+        gender: normalizeText(patientData.gender) || null,
+        address: normalizeText(patientData.address) || null,
+        insurance_provider: insuranceProvider || null,
+        insurance_id: insuranceId || null,
+        allergies: normalizeText(patientData.allergies) || null,
+        medical_notes: normalizeText(patientData.medicalNotes) || null,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', id)
+      .select()
+
+    if (error) throwFriendlyPatientError(error)
+
+    await tryLogAuditEvent({
+      eventType: 'patient.updated',
+      entityType: 'patients',
+      entityId: id,
+      action: 'update',
+      details: {
+        full_name: fullName,
+        phone,
+        insurance_provider: normalizeText(patientData.insuranceProvider) || null,
+      },
+    })
+
+    return data[0]
   }
 
-  const { data, error } = await supabase
-    .from('patients')
-    .update({
-      full_name: fullName,
-      phone,
-      email: normalizeText(patientData.email) || null,
-      date_of_birth: patientData.dateOfBirth,
-      gender: normalizeText(patientData.gender) || null,
-      address: normalizeText(patientData.address) || null,
-      insurance_provider: insuranceProvider || null,
-      insurance_id: insuranceId || null,
-      allergies: normalizeText(patientData.allergies) || null,
-      medical_notes: normalizeText(patientData.medicalNotes) || null,
-      updated_at: new Date().toISOString()
-    })
-    .eq('id', id)
-    .select()
-  
-  if (error) throwFriendlyPatientError(error)
-
-  await tryLogAuditEvent({
-    eventType: 'patient.updated',
-    entityType: 'patients',
-    entityId: id,
-    action: 'update',
-    details: {
-      full_name: fullName,
-      phone,
-      insurance_provider: normalizeText(patientData.insuranceProvider) || null,
-    },
+  return await routeWrite({
+    label: 'patient update',
+    local: localUpdate,
+    cloud: cloudUpdate,
   })
-
-  return data[0]
 }
 
 // Search patients
 export const searchPatients = async (searchTerm) => {
   const term = sanitizeSearchTerm(searchTerm)
-  if (shouldUseBranchServer()) {
+  if (await shouldRouteToLocal()) {
     return await listBranchRecords('patients', { searchTerm: term })
   }
 
@@ -301,7 +323,7 @@ export const searchPatients = async (searchTerm) => {
 
 // Get patient visit count
 export const getPatientVisitCount = async (patientId) => {
-  if (shouldUseBranchServer()) {
+  if (await shouldRouteToLocal()) {
     return 0
   }
 
@@ -316,7 +338,7 @@ export const getPatientVisitCount = async (patientId) => {
 
 // Get patient last visit
 export const getPatientLastVisit = async (patientId) => {
-  if (shouldUseBranchServer()) {
+  if (await shouldRouteToLocal()) {
     return null
   }
 

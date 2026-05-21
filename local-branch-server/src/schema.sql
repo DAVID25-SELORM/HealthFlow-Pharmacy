@@ -201,6 +201,27 @@ CREATE TABLE IF NOT EXISTS claim_items (
 
 CREATE INDEX IF NOT EXISTS idx_claim_items_claim ON claim_items(claim_id);
 
+-- ✅ OFFLINE-FIRST PATCH START
+CREATE TABLE IF NOT EXISTS claim_status_queue (
+  id TEXT PRIMARY KEY,
+  claim_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  pending_sync INTEGER NOT NULL DEFAULT 1,
+  idempotency_key TEXT UNIQUE NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  synced_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_claim_status_queue_pending
+  ON claim_status_queue(pending_sync, created_at);
+CREATE INDEX IF NOT EXISTS idx_claim_status_queue_claim
+  ON claim_status_queue(claim_id, created_at);
+-- ✅ OFFLINE-FIRST PATCH END
+
 CREATE TABLE IF NOT EXISTS nhia_settings (
   id TEXT PRIMARY KEY,
   organization_id TEXT,
@@ -354,6 +375,29 @@ CREATE TABLE IF NOT EXISTS sync_outbox (
 );
 
 CREATE INDEX IF NOT EXISTS idx_sync_outbox_status ON sync_outbox(status, created_at);
+
+-- ✅ OFFLINE-FIRST PATCH START
+CREATE TABLE IF NOT EXISTS sync_events (
+  id TEXT PRIMARY KEY,
+  event_type TEXT NOT NULL,
+  entity_type TEXT NOT NULL,
+  entity_id TEXT NOT NULL,
+  idempotency_key TEXT UNIQUE NOT NULL,
+  payload_json TEXT NOT NULL,
+  pending_sync INTEGER NOT NULL DEFAULT 1,
+  status TEXT NOT NULL DEFAULT 'pending',
+  attempts INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  synced_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_sync_events_pending
+  ON sync_events(pending_sync, status, created_at);
+CREATE INDEX IF NOT EXISTS idx_sync_events_entity
+  ON sync_events(entity_type, entity_id);
+-- ✅ OFFLINE-FIRST PATCH END
 
 CREATE TABLE IF NOT EXISTS offline_records (
   id TEXT PRIMARY KEY,

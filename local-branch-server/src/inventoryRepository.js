@@ -1,4 +1,8 @@
-import { db, nowIso } from './db.js'
+import { backupDatabase, db, nowIso } from './db.js'
+
+// ✅ SQLITE CORRUPTION FIX START
+const LARGE_INVENTORY_IMPORT_BACKUP_THRESHOLD = 100
+// ✅ SQLITE CORRUPTION FIX END
 
 const searchStatement = db.prepare(`
   SELECT *
@@ -229,7 +233,7 @@ export const listLocalInventory = ({ branchId = '', limit = 5000 } = {}) => {
   })
 }
 
-const upsertDrugWithIndex = db.transaction((drug) => {
+const upsertDrugWithIndex = (drug) => {
   upsertDrug.run({
     id: drug.id,
     name: drug.name,
@@ -255,21 +259,32 @@ const upsertDrugWithIndex = db.transaction((drug) => {
     updated_at: drug.updated_at || nowIso(),
   })
   indexDrug(drug)
-})
+}
 
 export const importInventorySnapshot = (drugs = []) => {
   const timestamp = nowIso()
-  const insertMany = db.transaction((rows) => {
+  const rows = Array.isArray(drugs) ? drugs : []
+
+  // ✅ SQLITE CORRUPTION FIX START
+  if (rows.length >= LARGE_INVENTORY_IMPORT_BACKUP_THRESHOLD) {
+    const backupPath = backupDatabase('before-inventory-import')
+    console.log(`SQLite backup created before inventory import: ${backupPath}`)
+  }
+
+  const importSnapshot = db.transaction(() => {
     for (const drug of rows) {
       upsertDrugWithIndex(drug)
     }
+
+    const cachedCount = Number(countInventoryStatement.get()?.count || 0)
+    setMeta.run('last_inventory_import_at', timestamp, timestamp)
+    setMeta.run('last_inventory_import_count', String(cachedCount), timestamp)
+    return cachedCount
   })
 
-  insertMany(Array.isArray(drugs) ? drugs : [])
-  const cachedCount = Number(countInventoryStatement.get()?.count || 0)
-  setMeta.run('last_inventory_import_at', timestamp, timestamp)
-  setMeta.run('last_inventory_import_count', String(cachedCount), timestamp)
-  return { imported: Array.isArray(drugs) ? drugs.length : 0, cachedCount, importedAt: timestamp }
+  const cachedCount = importSnapshot()
+  return { imported: rows.length, cachedCount, importedAt: timestamp }
+  // ✅ SQLITE CORRUPTION FIX END
 }
 
 export const getInventoryImportStatus = () => ({

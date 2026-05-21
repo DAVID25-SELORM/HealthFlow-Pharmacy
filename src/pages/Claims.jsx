@@ -12,7 +12,6 @@ import {
 } from '../services/claimsService'
 import { getAllPatients } from '../services/patientService'
 import { getAllDrugs } from '../services/drugService'
-import { isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
 import { useTenant } from '../context/TenantContext'
@@ -140,13 +139,6 @@ const Claims = () => {
     try {
       setLoading(true)
       setError('')
-
-      if (!isSupabaseConfigured()) {
-        setClaims([])
-        setStats({ total: 0, pending: 0, approved: 0, rejected: 0 })
-        setError('Supabase is not configured. Update .env to enable claims.')
-        return
-      }
 
       const [claimsData, statistics, patientData, drugData] = await Promise.all([
         getAllClaims(),

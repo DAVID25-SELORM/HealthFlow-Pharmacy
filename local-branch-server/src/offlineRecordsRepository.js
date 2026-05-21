@@ -73,6 +73,76 @@ const insertOutbox = db.prepare(`
   )
 `)
 
+// ✅ OFFLINE-FIRST PATCH START
+const insertSyncEvent = db.prepare(`
+  INSERT INTO sync_events (
+    id, event_type, entity_type, entity_id, idempotency_key, payload_json,
+    pending_sync, status, created_at, updated_at
+  )
+  VALUES (
+    @id, @eventType, @entityType, @entityId, @idempotencyKey, @payloadJson,
+    1, 'pending', @createdAt, @updatedAt
+  )
+  ON CONFLICT(idempotency_key) DO UPDATE SET
+    payload_json = excluded.payload_json,
+    pending_sync = 1,
+    status = 'pending',
+    updated_at = excluded.updated_at
+`)
+
+const insertClaimStatusQueue = db.prepare(`
+  INSERT INTO claim_status_queue (
+    id, claim_id, status, payload_json, pending_sync, idempotency_key, created_at, updated_at
+  )
+  VALUES (
+    @id, @claimId, @status, @payloadJson, 1, @idempotencyKey, @createdAt, @updatedAt
+  )
+  ON CONFLICT(idempotency_key) DO UPDATE SET
+    status = excluded.status,
+    payload_json = excluded.payload_json,
+    pending_sync = 1,
+    updated_at = excluded.updated_at
+`)
+
+const upsertClaimRow = db.prepare(`
+  INSERT INTO claims (
+    id, claim_number, patient_id, patient_name, insurance_provider, insurance_id,
+    service_date, total_amount, claim_status, prescription_url, notes,
+    organization_id, branch_id, submitted_at, created_at, sync_status
+  )
+  VALUES (
+    @id, @claimNumber, @patientId, @patientName, @insuranceProvider, @insuranceId,
+    @serviceDate, @totalAmount, @claimStatus, @prescriptionUrl, @notes,
+    @organizationId, @branchId, @submittedAt, @createdAt, @syncStatus
+  )
+  ON CONFLICT(id) DO UPDATE SET
+    claim_number = excluded.claim_number,
+    patient_id = excluded.patient_id,
+    patient_name = excluded.patient_name,
+    insurance_provider = excluded.insurance_provider,
+    insurance_id = excluded.insurance_id,
+    service_date = excluded.service_date,
+    total_amount = excluded.total_amount,
+    claim_status = excluded.claim_status,
+    prescription_url = excluded.prescription_url,
+    notes = excluded.notes,
+    organization_id = excluded.organization_id,
+    branch_id = excluded.branch_id,
+    submitted_at = excluded.submitted_at,
+    sync_status = excluded.sync_status
+`)
+
+const deleteClaimItems = db.prepare('DELETE FROM claim_items WHERE claim_id = ?')
+const insertClaimItem = db.prepare(`
+  INSERT INTO claim_items (
+    id, claim_id, drug_id, drug_name, quantity, unit_price, total_price, created_at
+  )
+  VALUES (
+    @id, @claimId, @drugId, @drugName, @quantity, @unitPrice, @totalPrice, @createdAt
+  )
+`)
+// ✅ OFFLINE-FIRST PATCH END
+
 const getRecordStatement = db.prepare(`
   SELECT *
   FROM offline_records
@@ -344,6 +414,56 @@ const enrichRecord = (entityType, payload) => {
   return base
 }
 
+// ✅ OFFLINE-FIRST PATCH START
+const indexClaimRecord = (record = {}, syncStatus = 'pending') => {
+  if (!record?.id) {
+    return
+  }
+
+  const timestamp = record.updated_at || nowIso()
+  const claimItems = Array.isArray(record.claim_items)
+    ? record.claim_items
+    : Array.isArray(record.items)
+      ? record.items
+      : []
+
+  upsertClaimRow.run({
+    id: record.id,
+    claimNumber: record.claim_number || `BCL-${timestamp.slice(2, 10).replace(/-/g, '')}-${record.id.slice(0, 4).toUpperCase()}`,
+    patientId: record.patient_id || null,
+    patientName: record.patient_name || 'Offline patient',
+    insuranceProvider: record.insurance_provider || 'Insurance',
+    insuranceId: record.insurance_id || 'Offline',
+    serviceDate: record.service_date || timestamp.slice(0, 10),
+    totalAmount: Number(record.total_amount || 0),
+    claimStatus: record.claim_status || record.status || 'pending',
+    prescriptionUrl: record.prescription_url || null,
+    notes: record.notes || null,
+    organizationId: record.organization_id || config.organizationId,
+    branchId: record.branch_id || config.branchId,
+    submittedAt: record.submitted_at || timestamp,
+    createdAt: record.created_at || timestamp,
+    syncStatus,
+  })
+
+  deleteClaimItems.run(record.id)
+  for (const item of claimItems) {
+    const quantity = Number(item.quantity || 0)
+    const unitPrice = Number(item.unit_price ?? item.price ?? 0)
+    insertClaimItem.run({
+      id: item.id || createId(),
+      claimId: record.id,
+      drugId: item.drug_id || item.drugId || '',
+      drugName: item.drug_name || item.name || 'Claim item',
+      quantity,
+      unitPrice,
+      totalPrice: Number(item.total_price ?? item.totalPrice ?? quantity * unitPrice),
+      createdAt: item.created_at || timestamp,
+    })
+  }
+}
+// ✅ OFFLINE-FIRST PATCH END
+
 const listPatientRecords = (filters = {}) => {
   const limit = Math.min(Math.max(Number(filters.limit) || 500, 1), 5000)
   const nonSearchFilters = { ...filters, search: '', searchTerm: '' }
@@ -451,6 +571,37 @@ export const saveOfflineRecord = db.transaction((entityType, payload = {}) => {
     updatedAt: timestamp,
   })
 
+  // ✅ OFFLINE-FIRST PATCH START
+  const syncPayload = {
+    entity_type: normalizedEntity,
+    local_id: record.id,
+    record,
+  }
+  insertSyncEvent.run({
+    id: createId(),
+    eventType: 'record.upsert',
+    entityType: normalizedEntity,
+    entityId: record.id,
+    idempotencyKey: `${normalizedEntity}:${record.id}:upsert`,
+    payloadJson: json(syncPayload),
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  })
+
+  if (normalizedEntity === 'claims') {
+    indexClaimRecord(record, 'pending')
+    insertClaimStatusQueue.run({
+      id: createId(),
+      claimId: record.id,
+      status: record.claim_status || record.status || 'pending',
+      payloadJson: json(record),
+      idempotencyKey: `claims:${record.id}:status:${record.claim_status || record.status || 'pending'}`,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    })
+  }
+  // ✅ OFFLINE-FIRST PATCH END
+
   if (normalizedEntity === 'patients') {
     indexPatientRecord(record, 'pending')
   }
@@ -485,6 +636,14 @@ export const importOfflineRecords = db.transaction((entityType, records = []) =>
       if (storedPatientRow) {
         const storedPatient = recordToObject(storedPatientRow)
         indexPatientRecord(storedPatient, storedPatient.sync_status || 'synced')
+      }
+    }
+
+    if (normalizedEntity === 'claims') {
+      const storedClaimRow = getRecordStatement.get(normalizedEntity, row.id)
+      if (storedClaimRow) {
+        const storedClaim = recordToObject(storedClaimRow)
+        indexClaimRecord(storedClaim, storedClaim.sync_status || 'synced')
       }
     }
   }

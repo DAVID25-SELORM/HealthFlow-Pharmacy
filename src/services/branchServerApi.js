@@ -1,3 +1,5 @@
+import { shouldPreferLocalApi } from './connectivityService'
+
 const DEFAULT_BRANCH_SERVER_URL = 'http://localhost:4780'
 const RUNTIME_CONFIG_KEY = 'healthflow.branchServer.config.v1'
 const DEFAULT_BRANCH_REQUEST_TIMEOUT_MS = 1500
@@ -106,12 +108,12 @@ const branchFetch = async (path, options = {}) => {
   return body
 }
 
-export const getBranchServerHealth = async () =>
+export const getBranchServerHealth = async (timeoutMs = DEFAULT_BRANCH_REQUEST_TIMEOUT_MS) =>
   await fetchWithTimeout(`${getBranchServerUrl()}/health`, {
     headers: {
       Accept: 'application/json',
     },
-  }, DEFAULT_BRANCH_REQUEST_TIMEOUT_MS).then(async (response) => {
+  }, timeoutMs).then(async (response) => {
     const body = await response.json().catch(() => ({}))
     if (!response.ok) {
       throw new Error(body?.error || 'Local branch server health check failed.')
@@ -190,6 +192,30 @@ export const getBranchPosBootstrap = async ({
   })
   return response.data || response
 }
+
+// ✅ OFFLINE-FIRST PATCH START
+export const preloadBranchData = async ({
+  patientLimit = 500,
+  inventoryLimit = 5000,
+  claimLimit = 500,
+  purchaseLimit = 500,
+  nhisClaimLimit = 500,
+  branchId = '',
+} = {}) => {
+  const params = new URLSearchParams({
+    patientLimit: String(patientLimit),
+    inventoryLimit: String(inventoryLimit),
+    claimLimit: String(claimLimit),
+    purchaseLimit: String(purchaseLimit),
+    nhisClaimLimit: String(nhisClaimLimit),
+  })
+  if (branchId) {
+    params.set('branchId', branchId)
+  }
+  const response = await branchFetch(`/api/preload?${params.toString()}`)
+  return response.data || response
+}
+// ✅ OFFLINE-FIRST PATCH END
 
 export const createBranchSale = async (salePayload) => {
   const response = await branchFetch('/api/sales', {
@@ -332,8 +358,15 @@ export const downloadNhiaBatchExport = async (batchId, format = '') => {
   }
 }
 
-export const shouldUseBranchServer = () =>
-  isBranchServerEnabled() && typeof navigator !== 'undefined' && navigator.onLine === false
+export const shouldUseBranchServer = () => {
+  // ✅ OFFLINE-FIRST PATCH START
+  if (!isBranchServerEnabled()) {
+    return false
+  }
+
+  return shouldPreferLocalApi()
+  // ✅ OFFLINE-FIRST PATCH END
+}
 
 export const listBranchRecords = async (resource, filters = {}) => {
   const params = new URLSearchParams()

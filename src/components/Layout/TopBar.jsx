@@ -9,6 +9,12 @@ import { useOnlineStatus } from '../../hooks/useOnlineStatus'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { getClaimsStatistics } from '../../services/claimsService'
 import { getExpiringDrugs, getLowStockDrugs } from '../../services/drugService'
+import {
+  CONNECTIVITY_MODES,
+  getConnectivityState,
+  refreshConnectivityState,
+  subscribeConnectivity,
+} from '../../services/connectivityService'
 import { CLAIMS_ROLES, INVENTORY_ROLES, hasRole } from '../../utils/roles'
 import './TopBar.css'
 
@@ -20,6 +26,7 @@ const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
   const { canUseClaims, tierLimits } = useTenant()
   const { notify } = useNotification()
   const isOnline = useOnlineStatus()
+  const [connectivity, setConnectivity] = useState(getConnectivityState())
   const navigate = useNavigate()
   const location = useLocation()
   const alertsRef = useRef(null)
@@ -33,6 +40,19 @@ const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
     () => alerts.filter((alert) => alert.count > 0).length,
     [alerts]
   )
+
+  const connectionLabel = useMemo(() => {
+    if (connectivity.mode === CONNECTIVITY_MODES.ONLINE_CLOUD) return '🟢 Online Cloud'
+    if (connectivity.mode === CONNECTIVITY_MODES.ONLINE_LOCAL_SYNC) return '🟡 Local Sync Mode'
+    if (connectivity.mode === CONNECTIVITY_MODES.OFFLINE_LOCAL) return '🔴 Offline Local Mode'
+    return '🔴 Offline'
+  }, [connectivity.mode])
+
+  const connectionClass = useMemo(() => {
+    if (connectivity.mode === CONNECTIVITY_MODES.ONLINE_CLOUD) return 'online'
+    if (connectivity.mode === CONNECTIVITY_MODES.ONLINE_LOCAL_SYNC) return 'local-sync'
+    return 'offline'
+  }, [connectivity.mode])
 
   const loadAlerts = useCallback(async () => {
     if (!isSupabaseConfigured() || (!canUseInventorySearch && !canUseClaimAlerts)) {
@@ -99,6 +119,12 @@ const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
   useEffect(() => {
     void loadAlerts()
   }, [loadAlerts, location.pathname])
+
+  useEffect(() => {
+    const unsubscribe = subscribeConnectivity(setConnectivity)
+    void refreshConnectivityState()
+    return unsubscribe
+  }, [isOnline])
 
   useEffect(() => {
     if (!alertsOpen) {
@@ -193,11 +219,11 @@ const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
 
       <div className="topbar-actions">
         <span
-          className={`connection-status ${isOnline ? 'online' : 'offline'}`}
-          title={isOnline ? 'Connected' : 'Offline'}
+          className={`connection-status ${connectionClass}`}
+          title={connectionLabel}
         >
-          {isOnline ? <Wifi size={16} /> : <WifiOff size={16} />}
-          {isOnline ? 'Online' : 'Offline'}
+          {connectivity.mode === CONNECTIVITY_MODES.OFFLINE_NO_SERVER ? <WifiOff size={16} /> : <Wifi size={16} />}
+          {connectionLabel}
         </span>
 
         <div className="topbar-alerts" ref={alertsRef}>

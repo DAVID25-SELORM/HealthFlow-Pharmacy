@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { assertConfiguredForServer, config, isSupabaseSyncConfigured } from './config.js'
-import './db.js'
+import { closeDatabase } from './db.js'
 import { requireBranchToken } from './httpAuth.js'
 import { createLocalClaim } from './claimsRepository.js'
 import { importInventorySnapshot, listLocalInventory, searchLocalInventory } from './inventoryRepository.js'
@@ -43,7 +43,7 @@ import {
   pullInventorySnapshot,
   syncPendingOutbox,
 } from './supabaseSync.js'
-import { startSyncWorker } from './syncWorker.js'
+import { startSyncWorker, stopSyncWorker, waitForSyncWorkerIdle } from './syncWorker.js'
 
 assertConfiguredForServer()
 
@@ -215,6 +215,24 @@ app.get('/api/pos/bootstrap', (request, response) => {
     },
   })
 })
+
+// ✅ OFFLINE-FIRST PATCH START
+app.get('/api/preload', (request, response) => {
+  response.json({
+    data: {
+      patients: listOfflineRecords('patients', { limit: request.query.patientLimit || 500 }),
+      inventory: listLocalInventory({
+        branchId: request.query.branchId || config.branchId || '',
+        limit: request.query.inventoryLimit || 5000,
+      }),
+      claims: listOfflineRecords('claims', { limit: request.query.claimLimit || 500 }),
+      purchases: listOfflineRecords('purchases', { limit: request.query.purchaseLimit || 500 }),
+      nhisClaims: listOfflineRecords('nhis_claims', { limit: request.query.nhisClaimLimit || 500 }),
+      sync: getSyncStatus(),
+    },
+  })
+})
+// ✅ OFFLINE-FIRST PATCH END
 
 app.get('/api/patients', (request, response) => {
   response.json({ data: listOfflineRecords('patients', request.query) })
@@ -612,7 +630,52 @@ app.use((error, _request, response, _next) => {
   })
 })
 
-app.listen(config.port, () => {
+const server = app.listen(config.port, () => {
   console.log(`HealthFlow local branch server listening on http://localhost:${config.port}`)
   startSyncWorker()
 })
+
+// ✅ SQLITE CORRUPTION FIX START
+let isShuttingDown = false
+
+const shutdownGracefully = async (signal) => {
+  if (isShuttingDown) {
+    return
+  }
+
+  isShuttingDown = true
+  console.log(`${signal} received. Shutting down HealthFlow local branch server...`)
+  stopSyncWorker()
+
+  try {
+    await Promise.race([
+      waitForSyncWorkerIdle(),
+      new Promise((resolve) => setTimeout(resolve, 15000)),
+    ])
+  } catch (error) {
+    console.error('Active sync failed during shutdown:', error)
+  }
+
+  await new Promise((resolve) => {
+    server.close(() => resolve())
+    setTimeout(resolve, 5000)
+  })
+
+  closeDatabase()
+  process.exit(0)
+}
+
+process.on('SIGINT', () => {
+  shutdownGracefully('SIGINT').catch((error) => {
+    console.error('Graceful shutdown failed:', error)
+    process.exit(1)
+  })
+})
+
+process.on('SIGTERM', () => {
+  shutdownGracefully('SIGTERM').catch((error) => {
+    console.error('Graceful shutdown failed:', error)
+    process.exit(1)
+  })
+})
+// ✅ SQLITE CORRUPTION FIX END

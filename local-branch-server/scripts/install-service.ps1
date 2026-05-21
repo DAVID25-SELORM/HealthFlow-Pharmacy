@@ -206,7 +206,9 @@ function Install-NssmService {
   & $Nssm set $Service.Name DisplayName $Service.DisplayName | Out-Null
   & $Nssm set $Service.Name Description $Service.Description | Out-Null
   & $Nssm set $Service.Name AppDirectory $installServerDir | Out-Null
-  & $Nssm set $Service.Name AppEnvironmentExtra NODE_ENV=production "SQLITE_PATH=$sqlitePath" | Out-Null
+  # ✅ SQLITE CORRUPTION FIX START
+  & $Nssm set $Service.Name AppEnvironmentExtra NODE_ENV=production "HEALTHFLOW_DB_PATH=$sqlitePath" "SQLITE_PATH=$sqlitePath" | Out-Null
+  # ✅ SQLITE CORRUPTION FIX END
   & $Nssm set $Service.Name AppStdout $stdoutPath | Out-Null
   & $Nssm set $Service.Name AppStderr $stderrPath | Out-Null
   & $Nssm set $Service.Name AppRotateFiles 1 | Out-Null

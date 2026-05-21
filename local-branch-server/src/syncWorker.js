@@ -5,8 +5,12 @@ import { pullInventorySnapshot, pullReferenceData, syncPendingOutbox } from './s
 
 let lastInventoryPullAt = 0
 let syncInterval = null
+// ✅ SQLITE CORRUPTION FIX START
+let isSyncRunning = false
+let activeSyncPromise = null
+// ✅ SQLITE CORRUPTION FIX END
 
-export const runSyncWorkerOnce = async () => {
+const runSyncWorkerBody = async () => {
   try {
     const nhiaResult = await submitPendingNhiaClaims()
     if (nhiaResult.checked > 0 || nhiaResult.failed > 0) {
@@ -46,6 +50,24 @@ export const runSyncWorkerOnce = async () => {
   }
 }
 
+export const runSyncWorkerOnce = async () => {
+  // ✅ SQLITE CORRUPTION FIX START
+  if (isSyncRunning) {
+    console.log('Sync skipped: previous run still active.')
+    return { skipped: true }
+  }
+
+  isSyncRunning = true
+  activeSyncPromise = runSyncWorkerBody()
+  try {
+    return await activeSyncPromise
+  } finally {
+    isSyncRunning = false
+    activeSyncPromise = null
+  }
+  // ✅ SQLITE CORRUPTION FIX END
+}
+
 export const startSyncWorker = () => {
   if (syncInterval) {
     return
@@ -57,6 +79,17 @@ export const startSyncWorker = () => {
     runSyncWorkerOnce().catch((error) => console.error(error))
   }, config.syncIntervalSeconds * 1000)
 }
+
+// ✅ SQLITE CORRUPTION FIX START
+export const stopSyncWorker = () => {
+  if (syncInterval) {
+    clearInterval(syncInterval)
+    syncInterval = null
+  }
+}
+
+export const waitForSyncWorkerIdle = () => activeSyncPromise || Promise.resolve()
+// ✅ SQLITE CORRUPTION FIX END
 
 const isCliEntry = process.argv[1] && /(^|\/)syncWorker\.js$/.test(process.argv[1].replace(/\\/g, '/'))
 

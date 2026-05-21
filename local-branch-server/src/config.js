@@ -18,7 +18,11 @@ export const config = {
     .filter(Boolean),
   branchId: process.env.BRANCH_ID || null,
   organizationId: process.env.ORGANIZATION_ID || null,
-  sqlitePath: path.resolve(process.env.SQLITE_PATH || './data/healthflow-branch.sqlite'),
+  sqlitePath: path.resolve(
+    process.env.HEALTHFLOW_DB_PATH ||
+      process.env.SQLITE_PATH ||
+      './data/healthflow-branch.sqlite'
+  ),
   syncIntervalSeconds: Math.max(5, toNumber(process.env.SYNC_INTERVAL_SECONDS, 30)),
   inventoryPullIntervalSeconds: Math.max(
     30,

@@ -72,35 +72,50 @@ For production branch computers, install HealthFlow as a Windows background serv
 
 NSSM is bundled at `local-branch-server\deployment\windows\nssm\win64\nssm.exe` and handled by the installer. If it is missing and internet is available, `install-service.ps1` downloads NSSM automatically as a recovery fallback.
 
-Run PowerShell as Administrator:
+### Pharmacy Machine Installation
+
+Run PowerShell as Administrator from the copied `local-branch-server` folder:
 
 ```powershell
-cd "C:\HealthFlowPharmacy\local-branch-server"
-npm run install:service
+cd "C:\Users\Realtime IT\Desktop\local-branch-server"
+npm run install:windows-service
 ```
 
 The installer creates:
 
 ```text
 HealthFlowOfflineServer -> node src/server.js
-C:\HealthFlowPharmacy\logs
-C:\HealthFlowPharmacy\data
-C:\HealthFlowPharmacy\nssm\nssm.exe
+C:\HealthFlowLocal\local-branch-server
+C:\HealthFlowLocal\logs
+C:\HealthFlowLocal\data
+C:\HealthFlowLocal\nssm\nssm.exe
 Public desktop shortcut: HealthFlow Offline POS
 ```
 
-The server process also starts the sync worker loop, so SQLite outbox records keep retrying automatically when internet returns.
+The Windows service starts automatically when Windows boots and restarts automatically if the Node process crashes. It runs with:
+
+```text
+HEALTHFLOW_DB_PATH=C:\HealthFlowLocal\data\healthflow-branch.sqlite
+```
+
+The server process also starts the sync worker loop, so SQLite outbox records keep retrying automatically when internet returns. After installation, cashiers should open the POS with the **HealthFlow Offline POS** desktop shortcut or:
+
+```text
+http://localhost:4780
+```
 
 Run a health check:
 
 ```powershell
+cd "C:\HealthFlowLocal\local-branch-server"
 npm run health:check
 ```
 
 Uninstall the Windows service:
 
 ```powershell
-npm run uninstall:service
+cd "C:\HealthFlowLocal\local-branch-server"
+npm run uninstall:windows-service
 ```
 
 Restart the service:
@@ -111,10 +126,10 @@ npm run restart:service
 
 The uninstall command preserves `.env`, SQLite data, and logs by default. Use the script's `-RemoveFiles` switch only when intentionally decommissioning a branch server.
 
-On Windows, you can use the helper CMD launcher as a backup only:
+On Windows, you can use the helper BAT launcher as a manual backup only. It keeps `npm start` behavior and sets the production database path for the current console session:
 
 ```powershell
-.\scripts\start-healthflow-offline.cmd
+.\scripts\start-local-server.bat
 ```
 
 The older Task Scheduler path is retained for fallback environments where services are blocked. It starts the server task only, because the server starts the sync worker loop internally:

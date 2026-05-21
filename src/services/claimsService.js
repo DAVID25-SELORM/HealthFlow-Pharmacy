@@ -8,9 +8,9 @@ import { tryLogAuditEvent } from './auditService'
 import {
   createBranchRecord,
   listBranchRecords,
-  shouldUseBranchServer,
   updateBranchRecord,
 } from './branchServerApi'
+import { routeRead, routeWrite } from './apiRouter'
 import { invokeTierAccess } from './tierAccessService'
 
 const buildValidatedClaimPayload = (claimData) => {
@@ -39,7 +39,7 @@ export const createClaim = async (claimData) => {
   }
 
   const validated = buildValidatedClaimPayload(claimData)
-  if (shouldUseBranchServer()) {
+  const localCreate = async () => {
     const claim = await createBranchRecord('claims', {
       patient_id: claimData.patientId || null,
       patient_name: validated.patientName,
@@ -67,40 +67,48 @@ export const createClaim = async (claimData) => {
     }
   }
 
-  const response = await invokeTierAccess({
-    action: 'create_claim',
-    claimData: {
-      patientId: claimData.patientId || null,
-      patientName: validated.patientName,
-      insuranceProvider: validated.insuranceProvider,
-      insuranceId: validated.insuranceId,
-      serviceDate: claimData.serviceDate || new Date().toISOString().split('T')[0],
-      prescriptionUrl: claimData.prescriptionUrl || null,
-      notes: normalizeText(claimData.notes) || null,
-      branchId: normalizeText(claimData.branchId) || null,
-      items: claimData.items.map((item) => ({
-        drugId: item.drugId,
-        name: item.name,
-        quantity: assertNonNegativeNumber(item.quantity, 'Item quantity'),
-        price: assertNonNegativeNumber(item.price, 'Item price'),
-      })),
-    },
-  })
+  const cloudCreate = async () => {
+    const response = await invokeTierAccess({
+      action: 'create_claim',
+      claimData: {
+        patientId: claimData.patientId || null,
+        patientName: validated.patientName,
+        insuranceProvider: validated.insuranceProvider,
+        insuranceId: validated.insuranceId,
+        serviceDate: claimData.serviceDate || new Date().toISOString().split('T')[0],
+        prescriptionUrl: claimData.prescriptionUrl || null,
+        notes: normalizeText(claimData.notes) || null,
+        branchId: normalizeText(claimData.branchId) || null,
+        items: claimData.items.map((item) => ({
+          drugId: item.drugId,
+          name: item.name,
+          quantity: assertNonNegativeNumber(item.quantity, 'Item quantity'),
+          price: assertNonNegativeNumber(item.price, 'Item price'),
+        })),
+      },
+    })
 
-  await tryLogAuditEvent({
-    eventType: 'claim.submitted',
-    entityType: 'claims',
-    entityId: response.claim?.id,
-    action: 'create',
-    details: {
-      claim_number: response.claimNumber,
-      insurance_provider: validated.insuranceProvider,
-      total_amount: validated.totalAmount,
-      item_count: claimData.items.length,
-    },
-  })
+    await tryLogAuditEvent({
+      eventType: 'claim.submitted',
+      entityType: 'claims',
+      entityId: response.claim?.id,
+      action: 'create',
+      details: {
+        claim_number: response.claimNumber,
+        insurance_provider: validated.insuranceProvider,
+        total_amount: validated.totalAmount,
+        item_count: claimData.items.length,
+      },
+    })
 
-  return response
+    return response
+  }
+
+  return await routeWrite({
+    label: 'claim',
+    local: localCreate,
+    cloud: cloudCreate,
+  })
 }
 
 export const updateClaim = async (id, claimData) => {
@@ -116,7 +124,7 @@ export const updateClaim = async (id, claimData) => {
     price: assertNonNegativeNumber(item.price, 'Item price'),
   }))
 
-  if (shouldUseBranchServer()) {
+  const localUpdate = async () => {
     const claim = await updateBranchRecord('claims', id, {
       patient_id: claimData.patientId || null,
       patient_name: validated.patientName,
@@ -142,58 +150,69 @@ export const updateClaim = async (id, claimData) => {
     }
   }
 
-  const response = await invokeTierAccess({
-    action: 'update_claim',
-    id,
-    claimData: {
-      patientId: claimData.patientId || null,
-      patientName: validated.patientName,
-      insuranceProvider: validated.insuranceProvider,
-      insuranceId: validated.insuranceId,
-      serviceDate: claimData.serviceDate || new Date().toISOString().split('T')[0],
-      prescriptionUrl: claimData.prescriptionUrl || null,
-      notes: normalizeText(claimData.notes) || null,
-      branchId: normalizeText(claimData.branchId) || null,
-      items: normalizedItems,
-    },
-  })
+  const cloudUpdate = async () => {
+    const response = await invokeTierAccess({
+      action: 'update_claim',
+      id,
+      claimData: {
+        patientId: claimData.patientId || null,
+        patientName: validated.patientName,
+        insuranceProvider: validated.insuranceProvider,
+        insuranceId: validated.insuranceId,
+        serviceDate: claimData.serviceDate || new Date().toISOString().split('T')[0],
+        prescriptionUrl: claimData.prescriptionUrl || null,
+        notes: normalizeText(claimData.notes) || null,
+        branchId: normalizeText(claimData.branchId) || null,
+        items: normalizedItems,
+      },
+    })
 
-  await tryLogAuditEvent({
-    eventType: 'claim.corrected',
-    entityType: 'claims',
-    entityId: id,
-    action: 'update',
-    details: {
-      claim_number: response.claim?.claim_number,
-      insurance_provider: validated.insuranceProvider,
-      total_amount: validated.totalAmount,
-      item_count: normalizedItems.length,
-    },
-  })
+    await tryLogAuditEvent({
+      eventType: 'claim.corrected',
+      entityType: 'claims',
+      entityId: id,
+      action: 'update',
+      details: {
+        claim_number: response.claim?.claim_number,
+        insurance_provider: validated.insuranceProvider,
+        total_amount: validated.totalAmount,
+        item_count: normalizedItems.length,
+      },
+    })
 
-  return response
+    return response
+  }
+
+  return await routeWrite({
+    label: 'claim update',
+    local: localUpdate,
+    cloud: cloudUpdate,
+  })
 }
 
 export const getAllClaims = async (filters = {}) => {
-  if (shouldUseBranchServer()) {
-    return await listBranchRecords('claims', filters)
-  }
+  return await routeRead({
+    label: 'claims',
+    local: async () => await listBranchRecords('claims', filters),
+    cloud: async () => {
+      const response = await invokeTierAccess({
+        action: 'get_claims',
+        filters: {
+          status: filters.status,
+          insuranceProvider: filters.insuranceProvider,
+          startDate: filters.startDate,
+          endDate: filters.endDate,
+          searchTerm: filters.searchTerm,
+          branchId: filters.branchId,
+          id: filters.id,
+          limit: filters.limit,
+        },
+      })
 
-  const response = await invokeTierAccess({
-    action: 'get_claims',
-    filters: {
-      status: filters.status,
-      insuranceProvider: filters.insuranceProvider,
-      startDate: filters.startDate,
-      endDate: filters.endDate,
-      searchTerm: filters.searchTerm,
-      branchId: filters.branchId,
-      id: filters.id,
-      limit: filters.limit,
+      return response.claims || []
     },
+    fallback: [],
   })
-
-  return response.claims || []
 }
 
 export const getClaimById = async (id) => {
@@ -206,45 +225,52 @@ export const getClaimById = async (id) => {
 }
 
 export const updateClaimStatus = async (id, status, additionalData = {}) => {
-  if (shouldUseBranchServer()) {
-    return await updateBranchRecord('claims', id, {
+  const localUpdate = async () =>
+    await updateBranchRecord('claims', id, {
       claim_status: status,
       status,
       approval_amount: additionalData.approval_amount ?? null,
       rejection_reason: additionalData.rejection_reason || null,
     })
+
+  const cloudUpdate = async () => {
+    let response
+
+    if (status === 'approved') {
+      response = await invokeTierAccess({
+        action: 'approve_claim',
+        id,
+        approvalAmount: additionalData.approval_amount,
+      })
+    } else if (status === 'rejected') {
+      response = await invokeTierAccess({
+        action: 'reject_claim',
+        id,
+        rejectionReason: additionalData.rejection_reason,
+      })
+    } else {
+      throw new Error('Unsupported claim status update.')
+    }
+
+    await tryLogAuditEvent({
+      eventType: 'claim.status_updated',
+      entityType: 'claims',
+      entityId: id,
+      action: 'update_status',
+      details: {
+        status,
+        ...additionalData,
+      },
+    })
+
+    return response.claim
   }
 
-  let response
-
-  if (status === 'approved') {
-    response = await invokeTierAccess({
-      action: 'approve_claim',
-      id,
-      approvalAmount: additionalData.approval_amount,
-    })
-  } else if (status === 'rejected') {
-    response = await invokeTierAccess({
-      action: 'reject_claim',
-      id,
-      rejectionReason: additionalData.rejection_reason,
-    })
-  } else {
-    throw new Error('Unsupported claim status update.')
-  }
-
-  await tryLogAuditEvent({
-    eventType: 'claim.status_updated',
-    entityType: 'claims',
-    entityId: id,
-    action: 'update_status',
-    details: {
-      status,
-      ...additionalData,
-    },
+  return await routeWrite({
+    label: 'claim status',
+    local: localUpdate,
+    cloud: cloudUpdate,
   })
-
-  return response.claim
 }
 
 export const approveClaim = async (id, approvalAmount) =>
@@ -258,26 +284,37 @@ export const rejectClaim = async (id, rejectionReason) =>
   })
 
 export const getClaimsStatistics = async () =>
-  shouldUseBranchServer()
-    ? (() => {
-        return getAllClaims().then((claims) => ({
-          total: claims.length,
-          pending: claims.filter((claim) => (claim.claim_status || claim.status) === 'pending').length,
-          approved: claims.filter((claim) => (claim.claim_status || claim.status) === 'approved').length,
-          rejected: claims.filter((claim) => (claim.claim_status || claim.status) === 'rejected').length,
-        }))
-      })()
-    : await invokeTierAccess({
+  await routeRead({
+    label: 'claim statistics',
+    local: async () => {
+      const claims = await getAllClaims()
+      return {
+        total: claims.length,
+        pending: claims.filter((claim) => (claim.claim_status || claim.status) === 'pending').length,
+        approved: claims.filter((claim) => (claim.claim_status || claim.status) === 'approved').length,
+        rejected: claims.filter((claim) => (claim.claim_status || claim.status) === 'rejected').length,
+      }
+    },
+    cloud: async () => await invokeTierAccess({
         action: 'get_claims_statistics',
-      })
-
-export const getRecentClaims = async (limit = 10) => {
-  const response = await invokeTierAccess({
-    action: 'get_recent_claims',
-    limit,
+      }),
+    fallback: { total: 0, pending: 0, approved: 0, rejected: 0 },
   })
 
-  return response.claims || []
+export const getRecentClaims = async (limit = 10) => {
+  return await routeRead({
+    label: 'recent claims',
+    local: async () => (await listBranchRecords('claims', { limit })).slice(0, limit),
+    cloud: async () => {
+      const response = await invokeTierAccess({
+        action: 'get_recent_claims',
+        limit,
+      })
+
+      return response.claims || []
+    },
+    fallback: [],
+  })
 }
 
 export const searchClaims = async (searchTerm) => {

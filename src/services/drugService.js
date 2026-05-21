@@ -1,6 +1,8 @@
 import { supabase } from '../lib/supabase'
 import { assertNonNegativeNumber, assertRequiredText, normalizeText, sanitizeSearchTerm } from '../utils/validation'
 import { invokeTierAccess } from './tierAccessService'
+import { getBranchInventory } from './branchServerApi'
+import { routeRead } from './apiRouter'
 // ✅ NHIS PHARMACY LEVEL PATCH START
 import { normalizeMedicineAccessLevel, normalizePharmacyLevel } from '../utils/nhisPharmacyLevel'
 // ✅ NHIS PHARMACY LEVEL PATCH END
@@ -122,13 +124,21 @@ export const getAllDrugs = async (options = {}) => {
   const useTierAccess = Boolean(options.useTierAccess)
   const branchId = normalizeText(options.branchId) || null
 
-  if (includeCatalog || useTierAccess || branchId) {
-    return getAllDrugsViaTierAccess(includeCatalog, branchId)
-  }
+  // ✅ OFFLINE-FIRST PATCH START
+  return await routeRead({
+    label: 'inventory',
+    local: async () => await getBranchInventory({ branchId: branchId || '', limit: 20000 }),
+    cloud: async () => {
+      if (includeCatalog || useTierAccess || branchId) {
+        return getAllDrugsViaTierAccess(includeCatalog, branchId)
+      }
 
-  const drugs = await getAllDrugsDirectly(branchId)
-
-  return drugs.filter(shouldShowDrugOutsideInventory)
+      const drugs = await getAllDrugsDirectly(branchId)
+      return drugs.filter(shouldShowDrugOutsideInventory)
+    },
+    fallback: [],
+  })
+  // ✅ OFFLINE-FIRST PATCH END
 }
 
 const getSearchLimit = (value) => {
@@ -392,22 +402,55 @@ export const searchDrugs = async (searchTerm, options = {}) => {
 
 // Get low stock drugs
 export const getLowStockDrugs = async () => {
-  const { data, error } = await supabase
-    .from('low_stock_drugs')
-    .select('*')
-  
-  if (error) throw error
-  return (data || []).filter(shouldAlertForDrug)
+  // ✅ OFFLINE-FIRST PATCH START
+  return await routeRead({
+    label: 'low stock alerts',
+    local: async () => {
+      const rows = await getBranchInventory({ limit: 20000 })
+      return rows.filter((drug) =>
+        shouldAlertForDrug(drug) &&
+        Number.parseFloat(drug?.quantity ?? 0) <= Number.parseFloat(drug?.reorder_level ?? drug?.reorderLevel ?? 10)
+      )
+    },
+    cloud: async () => {
+      const { data, error } = await supabase
+        .from('low_stock_drugs')
+        .select('*')
+
+      if (error) throw error
+      return (data || []).filter(shouldAlertForDrug)
+    },
+    fallback: [],
+  })
+  // ✅ OFFLINE-FIRST PATCH END
 }
 
 // Get expiring drugs (within 30 days)
 export const getExpiringDrugs = async () => {
-  const { data, error } = await supabase
-    .from('expiring_soon_drugs')
-    .select('*')
-  
-  if (error) throw error
-  return (data || []).filter(shouldAlertForDrug)
+  // ✅ OFFLINE-FIRST PATCH START
+  return await routeRead({
+    label: 'expiring inventory alerts',
+    local: async () => {
+      const today = new Date()
+      const soon = new Date(today)
+      soon.setDate(soon.getDate() + 30)
+      return (await getBranchInventory({ limit: 20000 })).filter((drug) => {
+        if (!shouldAlertForDrug(drug) || !drug?.expiry_date) return false
+        const expiry = new Date(drug.expiry_date)
+        return expiry >= today && expiry <= soon
+      })
+    },
+    cloud: async () => {
+      const { data, error } = await supabase
+        .from('expiring_soon_drugs')
+        .select('*')
+
+      if (error) throw error
+      return (data || []).filter(shouldAlertForDrug)
+    },
+    fallback: [],
+  })
+  // ✅ OFFLINE-FIRST PATCH END
 }
 
 // Get expired drugs

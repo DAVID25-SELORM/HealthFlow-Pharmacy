@@ -13,7 +13,10 @@
     "sync:windows": "scripts\\start-sync-worker.cmd",
     "install:service": "powershell -ExecutionPolicy Bypass -File scripts\\install-service.ps1",
     "uninstall:service": "powershell -ExecutionPolicy Bypass -File scripts\\uninstall-service.ps1",
+    "install:windows-service": "powershell -ExecutionPolicy Bypass -File scripts\\install-windows-service.ps1",
+    "uninstall:windows-service": "powershell -ExecutionPolicy Bypass -File scripts\\uninstall-windows-service.ps1",
     "restart:service": "powershell -ExecutionPolicy Bypass -File scripts\\restart-service.ps1",
+    "start:local-server": "scripts\\start-local-server.bat",
     "health:check": "powershell -ExecutionPolicy Bypass -File scripts\\health-check.ps1",
     "install:startup": "powershell -ExecutionPolicy Bypass -File scripts\\install-startup-tasks.ps1",
     "uninstall:startup": "powershell -ExecutionPolicy Bypass -File scripts\\uninstall-startup-tasks.ps1"
