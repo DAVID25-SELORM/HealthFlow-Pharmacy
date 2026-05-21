@@ -23,18 +23,20 @@ Before enabling branch sync, run this SQL patch in Supabase:
 supabase-patch-branch-sync-rpcs.sql
 ```
 
-Then register each branch server with a long random token:
+Then register each pharmacy machine from HealthFlow:
 
-```sql
-SELECT public.create_branch_sync_client(
-  'Main branch laptop',
-  '<organization_id>'::UUID,
-  '<branch_id>'::UUID,
-  '<long random branch sync token>'
-);
-```
+1. Deploy the latest `tenant-signup` Edge Function.
+2. Sign in as `super_admin`.
+3. Open **Offline Sync**.
+4. In **Branch Sync Setup**, select the organization.
+5. Use the existing branch, or let HealthFlow generate and create one automatically.
+6. Leave **Branch sync token** blank to generate a secure token.
+7. Click **Register Sync Client**.
+8. Copy the generated `.env` block into this local server's `.env`.
 
-Use that same plain token as `BRANCH_SYNC_TOKEN` in this local server. Supabase stores only the SHA-256 hash.
+The generated values include `ORGANIZATION_ID`, `BRANCH_ID`, `BRANCH_SYNC_TOKEN`, and
+`SUPABASE_URL`. Use the Supabase anon/publishable key for `SUPABASE_SYNC_KEY`.
+Supabase stores only the SHA-256 hash of `BRANCH_SYNC_TOKEN`.
 
 ## Setup
 
@@ -43,6 +45,18 @@ cd local-branch-server
 copy .env.example .env
 npm install
 npm run start
+```
+
+At minimum, set these values before starting:
+
+```env
+PORT=4780
+BRANCH_SERVER_TOKEN=<long-random-local-server-token>
+ORGANIZATION_ID=<from-branch-sync-setup>
+BRANCH_ID=<from-branch-sync-setup>
+BRANCH_SYNC_TOKEN=<from-branch-sync-setup>
+SUPABASE_URL=<from-branch-sync-setup>
+SUPABASE_SYNC_KEY=<supabase-anon-or-publishable-key>
 ```
 
 `npm run start` starts the local API/POS server and the embedded sync worker loop. Use the standalone sync command only for diagnostics:

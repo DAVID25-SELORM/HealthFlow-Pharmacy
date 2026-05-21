@@ -332,15 +332,12 @@ $bytes = New-Object byte[] 32
 [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
 $branchServerToken = [Convert]::ToBase64String($bytes)
 
-$bytes2 = New-Object byte[] 32
-[System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes2)
-$branchSyncToken = [Convert]::ToBase64String($bytes2)
-
 "BRANCH_SERVER_TOKEN=$branchServerToken"
-"BRANCH_SYNC_TOKEN=$branchSyncToken"
 ```
 
-Copy both values into the secure admin record.
+Copy the `BRANCH_SERVER_TOKEN` into the secure admin record. The `BRANCH_SYNC_TOKEN`,
+`ORGANIZATION_ID`, `BRANCH_ID`, and `SUPABASE_URL` are generated later from the
+Super Admin **Offline Sync** page.
 
 ## 10. Configure `local-branch-server/.env`
 
@@ -351,19 +348,19 @@ cd "C:\HealthFlowPharmacy\local-branch-server"
 notepad .env
 ```
 
-Set these core values:
+Set these core values. The branch sync values come from section 13.
 
 ```env
 PORT=4780
 BRANCH_SERVER_TOKEN=<generated-branch-server-token>
 ALLOWED_ORIGINS=
-ORGANIZATION_ID=<organization-id-from-supabase>
-BRANCH_ID=<branch-id-from-supabase>
+ORGANIZATION_ID=<from-branch-sync-setup>
+BRANCH_ID=<from-branch-sync-setup>
 SQLITE_PATH=./data/healthflow-branch.sqlite
 SYNC_INTERVAL_SECONDS=30
 INVENTORY_PULL_INTERVAL_SECONDS=300
-BRANCH_SYNC_TOKEN=<generated-branch-sync-token>
-SUPABASE_URL=https://your-project-ref.supabase.co
+BRANCH_SYNC_TOKEN=<from-branch-sync-setup>
+SUPABASE_URL=<from-branch-sync-setup>
 SUPABASE_SYNC_KEY=your-supabase-anon-or-publishable-key
 ```
 
@@ -454,20 +451,46 @@ Credential payload through backend/service role only
 
 For pharmacy provider class/level, use the exact class registered for the facility by NHIA/NHIS. If the facility is a pharmacy-only provider, do not choose a hospital class. If unsure, confirm from the provider's NHIA registration certificate or ClaimIT profile.
 
-## 13. Register Branch Sync Client In Supabase
+## 13. Register Branch Sync Client
 
-Before sync will work, run this in Supabase SQL Editor:
+Before sync will work, register the pharmacy machine from HealthFlow.
 
-```sql
-SELECT public.create_branch_sync_client(
-  'Main branch server',
-  '<organization_id>'::UUID,
-  '<branch_id>'::UUID,
-  '<BRANCH_SYNC_TOKEN_FROM_ENV>'
-);
+Prerequisites:
+
+- Deploy the latest `tenant-signup` Edge Function after code updates:
+
+```powershell
+cd "C:\HealthFlowPharmacy"
+npx.cmd supabase functions deploy tenant-signup
 ```
 
-The token must match `BRANCH_SYNC_TOKEN` in `local-branch-server/.env`.
+- Confirm `supabase-patch-branch-sync-rpcs.sql` has already been applied in Supabase.
+- Sign in to HealthFlow as a `super_admin`.
+
+Registration steps:
+
+1. Open **Offline Sync** from the platform dashboard.
+2. In **Branch Sync Setup**, select the organization.
+3. Leave **Branch** as the selected branch. If no branch exists or is visible, HealthFlow generates a branch UUID and creates the branch during registration.
+4. Keep **Client name** as `Main branch server`, or rename it to identify the machine, for example `ARK Medical Centre - Main POS Server`.
+5. Leave **Branch sync token** blank unless you are restoring a known token. HealthFlow generates a secure token.
+6. Click **Register Sync Client**.
+7. Copy the generated `.env` block into `local-branch-server/.env` on the pharmacy machine:
+
+```env
+ORGANIZATION_ID=<generated-organization-id>
+BRANCH_ID=<generated-or-selected-branch-id>
+BRANCH_SYNC_TOKEN=<generated-branch-sync-token>
+SUPABASE_URL=https://your-project-ref.supabase.co
+SUPABASE_SYNC_KEY=<your-supabase-anon-or-publishable-key>
+```
+
+Rules:
+
+- `BRANCH_SYNC_TOKEN` is shown only as the plain value for setup. Supabase stores only its SHA-256 hash.
+- Use the Supabase anon/publishable key for `SUPABASE_SYNC_KEY`.
+- Do not put the Supabase service role key on ordinary cashier laptops.
+- Do not use SQL Editor for normal branch sync registration anymore; use the protected Super Admin setup flow.
 
 ## 14. Start Branch Server Manually
 
