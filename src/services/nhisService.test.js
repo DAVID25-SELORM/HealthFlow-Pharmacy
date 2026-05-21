@@ -382,6 +382,58 @@ describe('assessNhisClaimReadiness', () => {
     expect(invalidQuantity.blockers).toContain('Service 1: quantity must be greater than zero.')
   })
 
+  it('separates hospital G-DRG tariffs from pharmacy medicine claims', () => {
+    const pharmacyWithTariff = assessNhisClaimReadiness(
+      baseClaim,
+      [baseMedicine],
+      {
+        enforcePrescribingLevel: true,
+        providerClassLevel: 'C',
+        pharmacyLevel: 'P1',
+        nhiaTariffServices: [baseTariffService],
+      }
+    )
+    const hospitalWithoutIcd = assessNhisClaimReadiness(
+      { ...baseClaim, organizationType: 'hospital', diagnosis: 'General consultation' },
+      [],
+      {
+        enforcePrescribingLevel: true,
+        providerClassLevel: 'D',
+        nhiaTariffServices: [baseTariffService],
+      }
+    )
+
+    expect(pharmacyWithTariff.blockers).toContain(
+      'Pharmacy NHIS claims cannot include hospital G-DRG/tariff service lines. Remove tariff services or switch to a hospital claim.'
+    )
+    expect(hospitalWithoutIcd.warnings).toContain(
+      'Hospital NHIS claims should use an ICD-10 coded diagnosis before selecting G-DRG/tariff services.'
+    )
+  })
+
+  it('blocks hospital tariffs that do not match the configured facility tariff set', () => {
+    const readiness = assessNhisClaimReadiness(
+      {
+        ...baseClaim,
+        organizationType: 'hospital',
+        diagnosis: 'B50',
+        diagnosisDetails: [{ code: 'B50', label: 'Plasmodium falciparum malaria', source: 'ICD-10' }],
+      },
+      [],
+      {
+        enforcePrescribingLevel: true,
+        providerClassLevel: 'D',
+        tariffFacilityGroup: 'Private Primary Care Hospital',
+        tariffCateringOption: 'exclusive',
+        nhiaTariffServices: [{ ...baseTariffService, facilityGroup: 'CHAG Primary Care Hospital' }],
+      }
+    )
+
+    expect(readiness.blockers).toContain(
+      'Service 1: tariff belongs to CHAG Primary Care Hospital, but Settings are configured for Private Primary Care Hospital. Select the correct hospital tariff set.'
+    )
+  })
+
   it('blocks tariff services when patient age does not match the PDF age band', () => {
     const childWithAdultTariff = assessNhisClaimReadiness(
       { ...baseClaim, organizationType: 'hospital', diagnosis: 'General consultation', dateOfBirth: '2020-01-01' },

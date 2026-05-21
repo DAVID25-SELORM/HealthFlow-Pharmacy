@@ -1069,6 +1069,60 @@ const getClaimRisk = (blockers = [], warnings = []) => {
   return { score, level }
 }
 
+// ✅ NHIS CLAIM LOGIC SEPARATION PATCH START
+const hasIcd10DiagnosisCode = (claimData = {}) => {
+  const diagnosisDetails = normalizeDiagnosisDetails(claimData?.diagnosisDetails ?? claimData?.diagnosis_details)
+  if (diagnosisDetails.some((diagnosis) => asText(diagnosis.code))) return true
+  return /\b[A-TV-Z][0-9][0-9A-Z](?:\.[0-9A-Z]{1,4})?\b/i.test(asText(claimData?.diagnosis))
+}
+
+const getConfiguredTariffFacilityGroup = (options = {}) =>
+  asText(
+    options.tariffFacilityGroup ??
+      options.tariff_facility_group ??
+      options.nhiaTariffFacilityGroup ??
+      options.nhia_tariff_facility_group
+  )
+
+const getConfiguredTariffCateringOption = (options = {}) =>
+  asText(
+    options.tariffCateringOption ??
+      options.tariff_catering_option ??
+      options.nhiaTariffCateringOption ??
+      options.nhia_tariff_catering_option
+  )
+
+const getHospitalServiceKind = (service = {}) => {
+  const text = normalizeMatchText([
+    service.gdrgCode,
+    service.gdrg_code,
+    service.mdc,
+    service.description,
+    service.facilityGroup,
+    service.facility_group,
+  ].filter(Boolean).join(' '))
+  if (includesAnyTerm(text, ['inpatient', 'admission', 'ward', 'alos'])) return 'inpatient'
+  if (includesAnyTerm(text, ['investigation', 'laboratory', 'lab', 'x ray', 'xray', 'scan', 'ultrasound'])) return 'investigation'
+  if (includesAnyTerm(text, ['procedure', 'surgery', 'operation', 'theatre', 'incision', 'excision'])) return 'procedure'
+  if (includesAnyTerm(text, ['zoom'])) return 'zoom'
+  if (includesAnyTerm(text, ['referral', 'referred'])) return 'referral'
+  if (includesAnyTerm(text, ['opd', 'out patient', 'outpatient', 'consultation'])) return 'opd'
+  return 'tariff'
+}
+
+const getHospitalTariffSetIssue = (service, expectedFacilityGroup, expectedCateringOption, label) => {
+  const serviceFacilityGroup = asText(service.facilityGroup ?? service.facility_group)
+  const serviceCateringOption = asText(service.cateringOption ?? service.catering_option)
+  if (expectedFacilityGroup && serviceFacilityGroup && serviceFacilityGroup !== expectedFacilityGroup) {
+    return `${label}: tariff belongs to ${serviceFacilityGroup}, but Settings are configured for ${expectedFacilityGroup}. Select the correct hospital tariff set.`
+  }
+  if (expectedCateringOption && serviceCateringOption && serviceCateringOption !== expectedCateringOption) {
+    return `${label}: tariff catering option is ${serviceCateringOption}, but Settings are configured for ${expectedCateringOption}. Select the correct tariff.`
+  }
+  return ''
+}
+// ✅ NHIS CLAIM LOGIC SEPARATION PATCH END
+
 export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}) => {
   const blockers = []
   const warnings = []
@@ -1098,6 +1152,10 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
   const tariffCatalogLookup = getTariffCatalogLookup(
     options.currentNhiaTariffItems ?? options.nhiaTariffCatalog ?? options.tariffCatalog ?? []
   )
+  // ✅ NHIS CLAIM LOGIC SEPARATION PATCH START
+  const configuredTariffFacilityGroup = getConfiguredTariffFacilityGroup(options)
+  const configuredTariffCateringOption = getConfiguredTariffCateringOption(options)
+  // ✅ NHIS CLAIM LOGIC SEPARATION PATCH END
   // ✅ NHIS PHARMACY LEVEL PATCH START
   const facilityPharmacyLevel = getEffectivePharmacyLevel(
     options.pharmacyLevel,
@@ -1139,6 +1197,14 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
   } else if (isHospital && diagnoses.length > MAX_DIAGNOSES_PER_CLAIM) {
     blockers.push(`Enter no more than ${MAX_DIAGNOSES_PER_CLAIM} diagnoses on one NHIS claim.`)
   }
+  // ✅ NHIS CLAIM LOGIC SEPARATION PATCH START
+  if (isHospital && diagnosis && !hasIcd10DiagnosisCode(claimData)) {
+    warnings.push('Hospital NHIS claims should use an ICD-10 coded diagnosis before selecting G-DRG/tariff services.')
+  }
+  if (!isHospital && tariffServices.length) {
+    blockers.push('Pharmacy NHIS claims cannot include hospital G-DRG/tariff service lines. Remove tariff services or switch to a hospital claim.')
+  }
+  // ✅ NHIS CLAIM LOGIC SEPARATION PATCH END
   if (!getClaimField(claimData, 'serviceDate', 'service_date_from')) blockers.push('Date of dispensing/service is required.')
   if (!getClaimField(claimData, 'physicianName', 'physician_name')) {
     warnings.push('Prescriber name or ID is missing from the prescription.')
@@ -1218,6 +1284,20 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
       const expectedTariff = getExpectedTariffForService(service, tariffCatalogLookup)
       const ageBand = expectedTariff?.ageBand || service.ageBand
       const expectedUnitPrice = expectedTariff?.tariffAmount
+      // ✅ NHIS CLAIM LOGIC SEPARATION PATCH START
+      const tariffSetIssue = getHospitalTariffSetIssue(service, configuredTariffFacilityGroup, configuredTariffCateringOption, label)
+      if (tariffSetIssue) blockers.push(tariffSetIssue)
+      const serviceKind = getHospitalServiceKind(service)
+      if (serviceKind === 'referral' && !getClaimField(claimData, 'referralCode', 'referral_code')) {
+        warnings.push(`${label}: referral tariff selected; add the referral code/CCC before export.`)
+      }
+      if (serviceKind === 'zoom' && !asText(service.sourceFile ?? service.source_file)) {
+        warnings.push(`${label}: ZOOM tariff selected; confirm source tariff/documentation before export.`)
+      }
+      if (['investigation', 'procedure'].includes(serviceKind) && !service.description) {
+        blockers.push(`${label}: ${serviceKind} tariff description is required.`)
+      }
+      // ✅ NHIS CLAIM LOGIC SEPARATION PATCH END
       if (!service.nhiaTariffItemId) blockers.push(`${label}: select an item from the FEB 2023 NHIA tariff catalog.`)
       if (!service.gdrgCode) blockers.push(`${label}: G-DRG/tariff code is required.`)
       if (!service.description) blockers.push(`${label}: service description is required.`)
@@ -4337,6 +4417,10 @@ const assertNhisClaimsReadyForFinalSubmission = async (claims, organizationType,
           // ✅ NHIS PHARMACY LEVEL PATCH START
           pharmacyLevel: options.pharmacyLevel,
           // ✅ NHIS PHARMACY LEVEL PATCH END
+          // ✅ NHIS CLAIM LOGIC SEPARATION PATCH START
+          tariffFacilityGroup: options.tariffFacilityGroup || options.tariff_facility_group,
+          tariffCateringOption: options.tariffCateringOption || options.tariff_catering_option,
+          // ✅ NHIS CLAIM LOGIC SEPARATION PATCH END
           nhisDrugCatalog,
           nhiaTariffServices: claim.nhis_claim_services || [],
           currentNhiaTariffItems,

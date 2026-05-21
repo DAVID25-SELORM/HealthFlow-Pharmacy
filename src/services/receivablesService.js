@@ -23,6 +23,30 @@ const getAgeDays = (dateValue) => {
   return Math.max(0, Math.floor((Date.now() - parsed.getTime()) / 86_400_000))
 }
 
+// ✅ NHIS ACCOUNTING BREAKDOWN PATCH START
+const sumNhisLineTotals = (rows = []) =>
+  (rows || []).reduce((sum, row) => sum + Number(row.total_amount || 0), 0)
+
+const buildNhisClaimBreakdown = (claim = {}) => {
+  const medicineAmount = sumNhisLineTotals(claim.nhis_claim_medicines)
+  const serviceAmount = sumNhisLineTotals(claim.nhis_claim_services)
+  const medicineCount = Number(claim.medicine_count ?? claim.nhis_claim_medicines?.length ?? 0)
+  const serviceCount = Number(claim.service_count ?? claim.nhis_claim_services?.length ?? 0)
+  const totalAmount = Number(claim.total_amount || 0)
+  const knownAmount = medicineAmount + serviceAmount
+  const unclassifiedAmount = Math.max(0, totalAmount - knownAmount)
+
+  return {
+    medicineAmount,
+    serviceAmount,
+    unclassifiedAmount,
+    medicineCount,
+    serviceCount,
+    claimType: serviceCount > 0 ? 'Hospital tariff + medicines' : 'Pharmacy medicines',
+  }
+}
+// ✅ NHIS ACCOUNTING BREAKDOWN PATCH END
+
 const buildGeneralReceivablesRows = async (claims, branchId = null) => {
   const claimsWithoutBranch = claims.filter((claim) => !claim.branch_id)
   const branchMap = await getUserBranchIdsByUserIds(
@@ -64,6 +88,9 @@ const buildNhisReceivablesRows = async (claims, branchId = null) => {
   return claims
     .map((claim) => {
       const approvedAmount = Number(claim.total_amount || 0)
+      // ✅ NHIS ACCOUNTING BREAKDOWN PATCH START
+      const nhisBreakdown = buildNhisClaimBreakdown(claim)
+      // ✅ NHIS ACCOUNTING BREAKDOWN PATCH END
       const totalPaid = (claim.nhis_claim_payments || []).reduce(
         (sum, payment) => sum + Number(payment.paid_amount),
         0
@@ -83,6 +110,11 @@ const buildNhisReceivablesRows = async (claims, branchId = null) => {
         patient_name: patientName || 'NHIS patient',
         service_date: serviceDate,
         approved_amount: approvedAmount,
+        // ✅ NHIS ACCOUNTING BREAKDOWN PATCH START
+        nhisBreakdown,
+        medicine_count: nhisBreakdown.medicineCount,
+        service_count: nhisBreakdown.serviceCount,
+        // ✅ NHIS ACCOUNTING BREAKDOWN PATCH END
         branch_id: claim.branch_id || branchMap[claim.created_by] || null,
         patients: {
           phone: null,
@@ -245,6 +277,10 @@ const getNhisReceivables = async (branchId = null) => {
       member_no,
       hin,
       created_by,
+      medicine_count,
+      service_count,
+      nhis_claim_medicines (total_amount),
+      nhis_claim_services (total_amount),
       created_at,
       nhis_claim_payments (id, paid_amount, payment_date)
     `)

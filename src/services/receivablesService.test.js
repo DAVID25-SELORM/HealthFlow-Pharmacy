@@ -74,6 +74,8 @@ describe('receivablesService NHIS accounting flow', () => {
           claim_number: 'NHIS-000001',
           status: 'submitted',
           total_amount: 47.08,
+          medicine_count: 1,
+          service_count: 1,
           service_date_from: '2026-05-14',
           surname: 'Mensah',
           other_names: 'Ama',
@@ -81,6 +83,8 @@ describe('receivablesService NHIS accounting flow', () => {
           hin: null,
           created_by: 'user-1',
           created_at: '2026-05-14T10:00:00Z',
+          nhis_claim_medicines: [{ total_amount: 10 }],
+          nhis_claim_services: [{ total_amount: 37.08 }],
           nhis_claim_payments: [{ paid_amount: 10 }],
         },
       ],
@@ -97,6 +101,15 @@ describe('receivablesService NHIS accounting flow', () => {
       approved_amount: 47.08,
       totalPaid: 10,
       outstanding: 37.08,
+      medicine_count: 1,
+      service_count: 1,
+      nhisBreakdown: {
+        medicineAmount: 10,
+        serviceAmount: 37.08,
+        medicineCount: 1,
+        serviceCount: 1,
+        claimType: 'Hospital tariff + medicines',
+      },
     })
   })
 

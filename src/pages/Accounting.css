@@ -632,6 +632,49 @@
   grid-template-columns: repeat(3, 1fr);
 }
 
+/* ✅ NHIS ACCOUNTING BREAKDOWN PATCH START */
+.acc-nhis-breakdown {
+  margin-top: 0.35rem;
+  display: grid;
+  gap: 0.15rem;
+  color: var(--gray-700);
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
+.acc-nhis-breakdown span {
+  font-weight: 700;
+}
+
+.acc-nhis-breakdown small {
+  color: var(--gray-500);
+  overflow-wrap: anywhere;
+}
+
+.acc-nhis-breakdown-card {
+  display: grid;
+  gap: 0.2rem;
+  margin: -0.35rem 0 1rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  background: var(--gray-50);
+  color: var(--gray-700);
+  font-size: 0.78rem;
+}
+
+.acc-nhis-breakdown-card span {
+  font-weight: 800;
+  text-transform: uppercase;
+  color: var(--gray-500);
+}
+
+.acc-nhis-breakdown-card strong {
+  color: var(--gray-900);
+  overflow-wrap: anywhere;
+}
+/* ✅ NHIS ACCOUNTING BREAKDOWN PATCH END */
+
 /* ── Modal ─────────────────────────────────────────────────────────────────── */
 .acc-modal-backdrop {
   position: fixed;

@@ -43,6 +43,24 @@ const fmt = (n) =>
 
 const PAYMENT_METHODS = ['cash', 'momo', 'bank_transfer', 'cheque', 'other']
 
+// ✅ NHIS ACCOUNTING BREAKDOWN PATCH START
+const formatNhisBreakdown = (receivable) => {
+  if (receivable?.source_type !== 'nhis_claim') return ''
+  const breakdown = receivable.nhisBreakdown || {}
+  const parts = []
+  if (Number(breakdown.medicineCount || receivable.medicine_count || 0) > 0) {
+    parts.push(`${Number(breakdown.medicineCount || receivable.medicine_count || 0)} med ${fmt(breakdown.medicineAmount || 0)}`)
+  }
+  if (Number(breakdown.serviceCount || receivable.service_count || 0) > 0) {
+    parts.push(`${Number(breakdown.serviceCount || receivable.service_count || 0)} tariff ${fmt(breakdown.serviceAmount || 0)}`)
+  }
+  if (Number(breakdown.unclassifiedAmount || 0) > 0.01) {
+    parts.push(`other ${fmt(breakdown.unclassifiedAmount)}`)
+  }
+  return parts.length ? parts.join(' | ') : 'No NHIS line breakdown'
+}
+// ✅ NHIS ACCOUNTING BREAKDOWN PATCH END
+
 const TABS = [
   { key: 'overview',     label: 'Overview',    icon: DollarSign   },
   { key: 'expenses',     label: 'Expenses',    icon: TrendingDown },
@@ -468,6 +486,10 @@ const Accounting = () => {
         receivable.patient_name,
         receivable.insurance_provider,
         receivable.insurance_id,
+        // ✅ NHIS ACCOUNTING BREAKDOWN PATCH START
+        receivable.nhisBreakdown?.claimType,
+        formatNhisBreakdown(receivable),
+        // ✅ NHIS ACCOUNTING BREAKDOWN PATCH END
         receivable.patients?.phone,
         receivable.patients?.insurance_id,
       ]
@@ -984,6 +1006,14 @@ const Accounting = () => {
                         ? 'NHIS claim'
                         : r.insurance_id || r.patients?.insurance_id || 'No insurance no.'}
                     </span>
+                    {/* ✅ NHIS ACCOUNTING BREAKDOWN PATCH START */}
+                    {r.source_type === 'nhis_claim' && (
+                      <span className="acc-nhis-breakdown">
+                        <span>{r.nhisBreakdown?.claimType || 'NHIS claim'}</span>
+                        <small>{formatNhisBreakdown(r)}</small>
+                      </span>
+                    )}
+                    {/* ✅ NHIS ACCOUNTING BREAKDOWN PATCH END */}
                   </td>
                   <td>{r.service_date}</td>
                   <td className="amount-cell">{Number(r.approved_amount).toFixed(2)}</td>
@@ -1019,6 +1049,14 @@ const Accounting = () => {
             <p className="acc-modal-subtitle">
               Insurer: <strong>{payingClaim.insurance_provider}</strong> &nbsp;|&nbsp; Outstanding: <strong>{fmt(payingClaim.outstanding)}</strong>
             </p>
+            {/* ✅ NHIS ACCOUNTING BREAKDOWN PATCH START */}
+            {payingClaim.source_type === 'nhis_claim' && (
+              <div className="acc-nhis-breakdown-card">
+                <span>{payingClaim.nhisBreakdown?.claimType || 'NHIS claim'}</span>
+                <strong>{formatNhisBreakdown(payingClaim)}</strong>
+              </div>
+            )}
+            {/* ✅ NHIS ACCOUNTING BREAKDOWN PATCH END */}
             <form onSubmit={handleRecordPayment}>
               <div className="acc-form-grid">
                 <label>

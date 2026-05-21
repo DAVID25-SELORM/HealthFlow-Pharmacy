@@ -552,6 +552,10 @@ const Nhis = () => {
           nhisDrugCatalog: nhisDrugs,
           nhiaTariffServices: claim.nhis_claim_services || [],
           currentNhiaTariffItems: nhiaTariffItems,
+          // ✅ NHIS CLAIM LOGIC SEPARATION PATCH START
+          tariffFacilityGroup: activeTariffFacilityGroup,
+          tariffCateringOption: activeTariffCateringOption,
+          // ✅ NHIS CLAIM LOGIC SEPARATION PATCH END
         }
       )
       return {
@@ -589,6 +593,8 @@ const Nhis = () => {
     organizationType,
     providerClassLevel,
     resolvedNhiaSettings,
+    activeTariffFacilityGroup,
+    activeTariffCateringOption,
   ])
 
   const getCatalogCategoryForMedicine = (medicine = {}) => {
@@ -930,6 +936,10 @@ const Nhis = () => {
     // ✅ NHIS PHARMACY LEVEL PATCH START
     pharmacyLevel: facilityPharmacyLevel,
     // ✅ NHIS PHARMACY LEVEL PATCH END
+    // ✅ NHIS CLAIM LOGIC SEPARATION PATCH START
+    tariffFacilityGroup: activeTariffFacilityGroup,
+    tariffCateringOption: activeTariffCateringOption,
+    // ✅ NHIS CLAIM LOGIC SEPARATION PATCH END
   })
 
   const readiness = useMemo(
@@ -949,9 +959,13 @@ const Nhis = () => {
         clinicalRules,
         nhiaTariffServices: claimServices,
         currentNhiaTariffItems: nhiaTariffItems,
+        // ✅ NHIS CLAIM LOGIC SEPARATION PATCH START
+        tariffFacilityGroup: activeTariffFacilityGroup,
+        tariffCateringOption: activeTariffCateringOption,
+        // ✅ NHIS CLAIM LOGIC SEPARATION PATCH END
       }
     ),
-    [claimForm, claimMedicines, claimServices, organizationType, editingClaim, isHospital, clinicalRules, providerClassLevel, facilityPharmacyLevel, nhisDrugs, nhiaTariffItems]
+    [claimForm, claimMedicines, claimServices, organizationType, editingClaim, isHospital, clinicalRules, providerClassLevel, facilityPharmacyLevel, nhisDrugs, nhiaTariffItems, activeTariffFacilityGroup, activeTariffCateringOption]
   )
 
   const readinessIssues = readiness.issues
