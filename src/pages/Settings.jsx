@@ -342,6 +342,14 @@ const Settings = () => {
       setSavingNhiaApi(true)
       setError('')
       // ✅ NHIA API ARCHITECTURE PATCH START
+      const requiresDirectConfig = nhiaApiForm.directApiEnabled ||
+        ['direct_nhia_api', 'hybrid'].includes(nhiaApiForm.integrationMode)
+      if (requiresDirectConfig) {
+        const missing = getNhiaIntegrationMissingFields()
+        if (missing.length) {
+          throw new Error(`Complete NHIA configuration before saving direct API mode: ${missing.join(', ')}.`)
+        }
+      }
       const activeBaseUrl = nhiaApiForm.apiEnvironment === 'sandbox'
         ? nhiaApiForm.sandboxBaseUrl
         : nhiaApiForm.productionBaseUrl
@@ -1177,12 +1185,12 @@ const Settings = () => {
                 <>
                   <div className="settings-form-row">
                     <input
-                      placeholder="ClaimIt username"
+                      placeholder="CLAIM-it username"
                       value={nhiaApiForm.credentials.username}
                       onChange={(event) => updateNhiaCredential('username', event.target.value)}
                     />
                     <input
-                      placeholder="ClaimIt password"
+                      placeholder="CLAIM-it password"
                       type="password"
                       value={nhiaApiForm.credentials.password}
                       onChange={(event) => updateNhiaCredential('password', event.target.value)}

@@ -76,6 +76,8 @@ const blankNhiaForm = {
     headerName: '',
     secretHeaderName: '',
     headerPrefix: '',
+    token: '',
+    accessToken: '',
     clientId: '',
     clientSecret: '',
     username: '',
@@ -756,16 +758,17 @@ SUPABASE_SYNC_KEY=<your-supabase-anon-or-publishable-key>`}</pre>
             />
           </label>
           <label>
-            <span>Credential Mode</span>
+            <span>Authentication mode</span>
             <select
               value={nhiaForm.credentialMode}
               onChange={(event) => updateNhiaForm('credentialMode', event.target.value)}
             >
-              <option value="api_key">API Key / Secret</option>
-              <option value="claimit_token">ClaimIt Token Exchange</option>
-              <option value="client_secret">Client ID / Secret</option>
-              <option value="username_password">Username / Password</option>
-              <option value="certificate">Certificate</option>
+              <option value="claimit_token">CLAIM-it credentials / Custom CLAIM-it authentication</option>
+              <option value="api_key">API key</option>
+              <option value="bearer_token">Bearer token</option>
+              <option value="oauth_client">OAuth2/client credentials</option>
+              <option value="basic_auth">Username/password</option>
+              <option value="custom">Custom integration</option>
             </select>
           </label>
           <label>
@@ -886,8 +889,34 @@ SUPABASE_SYNC_KEY=<your-supabase-anon-or-publishable-key>`}</pre>
             </>
           )}
 
-          {nhiaForm.credentialMode === 'client_secret' && (
+          {nhiaForm.credentialMode === 'bearer_token' && (
+            <label className="nhia-wide">
+              <span>Bearer token {nhiaSettings?.credentialSummary?.token || nhiaSettings?.credentialSummary?.apiKey ? '(saved)' : ''}</span>
+              <input
+                type="password"
+                value={nhiaForm.credentials.token || nhiaForm.credentials.apiKey}
+                onChange={(event) => {
+                  updateNhiaCredential('token', event.target.value)
+                  updateNhiaCredential('apiKey', event.target.value)
+                }}
+              />
+            </label>
+          )}
+
+          {nhiaForm.credentialMode === 'oauth_client' && (
             <>
+              <label className="nhia-wide">
+                <span>OAuth access token {nhiaSettings?.credentialSummary?.accessToken || nhiaSettings?.credentialSummary?.token ? '(saved)' : ''}</span>
+                <input
+                  type="password"
+                  value={nhiaForm.credentials.accessToken || nhiaForm.credentials.token || nhiaForm.credentials.apiKey}
+                  onChange={(event) => {
+                    updateNhiaCredential('accessToken', event.target.value)
+                    updateNhiaCredential('token', event.target.value)
+                    updateNhiaCredential('apiKey', event.target.value)
+                  }}
+                />
+              </label>
               <label>
                 <span>Client ID {nhiaSettings?.credentialSummary?.clientId ? '(saved)' : ''}</span>
                 <input
@@ -906,7 +935,7 @@ SUPABASE_SYNC_KEY=<your-supabase-anon-or-publishable-key>`}</pre>
             </>
           )}
 
-          {nhiaForm.credentialMode === 'username_password' && (
+          {nhiaForm.credentialMode === 'basic_auth' && (
             <>
               <label>
                 <span>Username {nhiaSettings?.credentialSummary?.username ? '(saved)' : ''}</span>
@@ -929,14 +958,14 @@ SUPABASE_SYNC_KEY=<your-supabase-anon-or-publishable-key>`}</pre>
           {nhiaForm.credentialMode === 'claimit_token' && (
             <>
               <label>
-                <span>ClaimIt Username {nhiaSettings?.credentialSummary?.username ? '(saved)' : ''}</span>
+                <span>CLAIM-it Username {nhiaSettings?.credentialSummary?.username ? '(saved)' : ''}</span>
                 <input
                   value={nhiaForm.credentials.username}
                   onChange={(event) => updateNhiaCredential('username', event.target.value)}
                 />
               </label>
               <label>
-                <span>ClaimIt Password {nhiaSettings?.credentialSummary?.password ? '(saved)' : ''}</span>
+                <span>CLAIM-it Password {nhiaSettings?.credentialSummary?.password ? '(saved)' : ''}</span>
                 <input
                   type="password"
                   value={nhiaForm.credentials.password}
@@ -954,7 +983,7 @@ SUPABASE_SYNC_KEY=<your-supabase-anon-or-publishable-key>`}</pre>
             </>
           )}
 
-          {nhiaForm.credentialMode === 'certificate' && (
+          {nhiaForm.credentialMode === 'custom' && (
             <>
               <label className="nhia-wide">
                 <span>Certificate PEM {nhiaSettings?.credentialSummary?.certPem ? '(saved)' : ''}</span>

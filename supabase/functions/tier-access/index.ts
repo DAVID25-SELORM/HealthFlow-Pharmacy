@@ -2047,8 +2047,8 @@ const joinUrl = (baseUrl: string, path: string) =>
 
 const fetchClaimItToken = async (settings: Record<string, unknown>) => {
   const credentials = (settings.credentials || {}) as Record<string, unknown>
-  const username = assertRequiredText(credentials.username, 'ClaimIt username')
-  const password = assertRequiredText(credentials.password, 'ClaimIt password')
+  const username = assertRequiredText(credentials.username, 'CLAIM-it username')
+  const password = assertRequiredText(credentials.password, 'CLAIM-it password')
   const tokenPath = normalizeText(credentials.tokenEndpointPath) || '/token'
   const url = new URL(joinUrl(String(settings.apiBaseUrl), tokenPath))
   url.searchParams.set('username', username)
@@ -2069,12 +2069,12 @@ const fetchClaimItToken = async (settings: Record<string, unknown>) => {
   }
 
   if (!response.ok) {
-    throw new Error(`ClaimIt token request returned HTTP ${response.status}.`)
+    throw new Error(`CLAIM-it token request returned HTTP ${response.status}.`)
   }
 
   const token = normalizeText((body as Record<string, unknown>)?.token)
   if (!token) {
-    throw new Error('ClaimIt token response did not include a token.')
+    throw new Error('CLAIM-it token response did not include a token.')
   }
 
   return token

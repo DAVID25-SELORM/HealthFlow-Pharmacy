@@ -14,11 +14,8 @@ const CLAIM_STATUSES = new Set([
 
 const CREDENTIAL_MODES = new Set([
   'api_key',
-  'claimit_token',
-  'client_secret',
-  'username_password',
-  'certificate',
   // ✅ NHIA API ARCHITECTURE PATCH START
+  'claimit_token',
   'bearer_token',
   'basic_auth',
   'oauth_client',
@@ -265,11 +262,19 @@ const normalizeStatus = (value, fallback = 'draft') => {
 
 const normalizeCredentialMode = (value) => {
   const mode = normalizeText(value || 'api_key').toLowerCase()
-  if (!CREDENTIAL_MODES.has(mode)) {
+  // ✅ NHIA API ARCHITECTURE PATCH START
+  const legacyModeMap = {
+    client_secret: 'oauth_client',
+    username_password: 'basic_auth',
+    certificate: 'custom',
+  }
+  const normalizedMode = legacyModeMap[mode] || mode
+  // ✅ NHIA API ARCHITECTURE PATCH END
+  if (!CREDENTIAL_MODES.has(normalizedMode)) {
     throw new Error(`NHIA credential mode must be one of: ${[...CREDENTIAL_MODES].join(', ')}.`)
   }
 
-  return mode
+  return normalizedMode
 }
 
 const normalizeAdmissionPaymentOption = (value) => {
@@ -590,7 +595,7 @@ const mapSettingsRow = (row, { includeCredentials = false } = {}) => {
     claimEndpointPath: row.claim_endpoint_path || '',
     ccCodeEndpointPath: row.cc_code_endpoint_path || '',
     directApiEnabled: Boolean(row.direct_api_enabled),
-    credentialMode: row.credential_mode || 'api_key',
+    credentialMode: normalizeCredentialMode(row.credential_mode || 'api_key'),
     credentials: includeCredentials ? credentials : {},
     credentialSummary: maskCredentials(credentials),
     nhisMemberDigits: Number(row.nhis_member_digits || DEFAULT_NHIS_MEMBER_DIGITS),
@@ -903,18 +908,17 @@ const validateSettingsForSubmission = (settings) => {
     const credentials = settings.credentials || {}
     if (settings.credentialMode === 'api_key') {
       assertRequiredText(credentials.apiKey, 'NHIA API key')
-    } else if (settings.credentialMode === 'client_secret') {
+    } else if (settings.credentialMode === 'bearer_token') {
+      assertRequiredText(credentials.apiKey || credentials.token, 'NHIA bearer token')
+    } else if (settings.credentialMode === 'oauth_client') {
       assertRequiredText(credentials.clientId, 'NHIA client ID')
       assertRequiredText(credentials.clientSecret, 'NHIA client secret')
-    } else if (settings.credentialMode === 'username_password') {
+    } else if (settings.credentialMode === 'basic_auth') {
       assertRequiredText(credentials.username, 'NHIA username')
       assertRequiredText(credentials.password, 'NHIA password')
     } else if (settings.credentialMode === 'claimit_token') {
-      assertRequiredText(credentials.username, 'ClaimIt username')
-      assertRequiredText(credentials.password, 'ClaimIt password')
-    } else if (settings.credentialMode === 'certificate') {
-      assertRequiredText(credentials.certPem, 'NHIA certificate')
-      assertRequiredText(credentials.keyPem, 'NHIA certificate key')
+      assertRequiredText(credentials.username, 'CLAIM-it username')
+      assertRequiredText(credentials.password, 'CLAIM-it password')
     }
   }
 }
@@ -1038,10 +1042,15 @@ const buildHeaders = (settings) => {
     const secretHeaderName = normalizeText(credentials.secretHeaderName) || 'x-api-secret'
     if (apiSecret) headers[secretHeaderName] = apiSecret
     applyBasicCredentialsHeader()
-  } else if (settings.credentialMode === 'client_secret') {
+  } else if (settings.credentialMode === 'bearer_token') {
+    const token = normalizeText(credentials.apiKey || credentials.token)
+    if (token) headers.Authorization = `Bearer ${token}`
+  } else if (settings.credentialMode === 'oauth_client') {
     headers['x-client-id'] = credentials.clientId
     headers['x-client-secret'] = credentials.clientSecret
-  } else if (settings.credentialMode === 'username_password') {
+    const token = normalizeText(credentials.accessToken || credentials.token || credentials.apiKey)
+    if (token) headers.Authorization = `Bearer ${token}`
+  } else if (settings.credentialMode === 'basic_auth') {
     const token = Buffer.from(`${credentials.username}:${credentials.password}`).toString('base64')
     headers.Authorization = `Basic ${token}`
   }
@@ -1091,7 +1100,7 @@ const submitPayload = async (settings, payload, endpointPathOverride = '') => {
   const url = `${settings.apiBaseUrl.replace(/\/+$/, '')}/${endpointPath.replace(/^\/+/, '')}`
   const body = JSON.stringify(payload)
 
-  if (settings.credentialMode === 'certificate') {
+  if (settings.credentialMode === 'custom' && settings.credentials?.certPem && settings.credentials?.keyPem) {
     const response = await postWithCertificate(url, body, settings)
     return {
       endpoint: url,
@@ -1122,8 +1131,8 @@ const submitPayload = async (settings, payload, endpointPathOverride = '') => {
 
 const fetchClaimItToken = async (settings) => {
   const credentials = settings.credentials || {}
-  const username = assertRequiredText(credentials.username, 'ClaimIt username')
-  const password = assertRequiredText(credentials.password, 'ClaimIt password')
+  const username = assertRequiredText(credentials.username, 'CLAIM-it username')
+  const password = assertRequiredText(credentials.password, 'CLAIM-it password')
   const tokenPath = normalizeText(credentials.tokenEndpointPath) || '/token'
   const url = new URL(`${settings.apiBaseUrl.replace(/\/+$/, '')}/${tokenPath.replace(/^\/+/, '')}`)
   url.searchParams.set('username', username)
@@ -1139,12 +1148,12 @@ const fetchClaimItToken = async (settings) => {
   const body = parseJson(text, { raw: text })
 
   if (!response.ok) {
-    throw new Error(`ClaimIt token request returned HTTP ${response.status}.`)
+    throw new Error(`CLAIM-it token request returned HTTP ${response.status}.`)
   }
 
   const token = normalizeText(body?.token)
   if (!token) {
-    throw new Error('ClaimIt token response did not include a token.')
+    throw new Error('CLAIM-it token response did not include a token.')
   }
 
   return token
