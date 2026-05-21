@@ -25,6 +25,11 @@ const listStatement = db.prepare(`
   LIMIT @limit
 `)
 
+const countInventoryStatement = db.prepare(`
+  SELECT COUNT(*) AS count
+  FROM drugs
+`)
+
 const upsertDrug = db.prepare(`
   INSERT INTO drugs (
     id, name, brand_name, generic_name, batch_number, barcode, expiry_date, quantity, unit, price, cost_price,
@@ -261,9 +266,10 @@ export const importInventorySnapshot = (drugs = []) => {
   })
 
   insertMany(Array.isArray(drugs) ? drugs : [])
+  const cachedCount = Number(countInventoryStatement.get()?.count || 0)
   setMeta.run('last_inventory_import_at', timestamp, timestamp)
-  setMeta.run('last_inventory_import_count', String(Array.isArray(drugs) ? drugs.length : 0), timestamp)
-  return { imported: Array.isArray(drugs) ? drugs.length : 0, importedAt: timestamp }
+  setMeta.run('last_inventory_import_count', String(cachedCount), timestamp)
+  return { imported: Array.isArray(drugs) ? drugs.length : 0, cachedCount, importedAt: timestamp }
 }
 
 export const getInventoryImportStatus = () => ({

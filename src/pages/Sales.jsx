@@ -2246,7 +2246,7 @@ const Sales = () => {
             {branchServerStatus.health?.sync?.inventory?.lastInventoryImportAt && (
               <span>
                 Inventory: {branchServerStatus.health.sync.inventory.lastInventoryImportCount || 0} item
-                {branchServerStatus.health.sync.inventory.lastInventoryImportCount === 1 ? '' : 's'} imported at{' '}
+                {branchServerStatus.health.sync.inventory.lastInventoryImportCount === 1 ? '' : 's'} cached at{' '}
                 {new Date(branchServerStatus.health.sync.inventory.lastInventoryImportAt).toLocaleString()}
               </span>
             )}
