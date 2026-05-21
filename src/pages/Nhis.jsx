@@ -493,7 +493,8 @@ const Nhis = () => {
   const configReview = useMemo(() => {
     const apiIssues = []
     const apiWarnings = []
-    if (!facilityPharmacyLevel) apiIssues.push('Pharmacy/facility level is not configured.')
+    const isPharmacyWorkflow = organizationType !== 'hospital'
+    if (isPharmacyWorkflow && !facilityPharmacyLevel) apiIssues.push('Pharmacy/facility level is not configured.')
     if (!providerClassLevel) apiIssues.push('NHIA provider class/level is not configured.')
     if (!hasNhiaFacilitySettings(resolvedNhiaSettings)) {
       apiWarnings.push('NHIA API settings are not configured; CLAIM-it export remains available.')
@@ -532,10 +533,12 @@ const Nhis = () => {
       }
     }
 
-    const catalogRows = nhisDrugs.map((drug) => reviewMedicine(drug, 'NHIS catalog'))
-    const inventoryRows = inventoryDrugs
-      .filter((drug) => drug.is_nhis_listed || drug.nhis_code || drug.medicine_access_level || drug.required_pharmacy_level)
-      .map((drug) => reviewMedicine(drug, 'Inventory'))
+    const catalogRows = isPharmacyWorkflow ? nhisDrugs.map((drug) => reviewMedicine(drug, 'NHIS catalog')) : []
+    const inventoryRows = isPharmacyWorkflow
+      ? inventoryDrugs
+          .filter((drug) => drug.is_nhis_listed || drug.nhis_code || drug.medicine_access_level || drug.required_pharmacy_level)
+          .map((drug) => reviewMedicine(drug, 'Inventory'))
+      : []
 
     const claimRows = claims.map((claim) => {
       const readiness = assessNhisClaimReadiness(
@@ -789,16 +792,18 @@ const Nhis = () => {
       return
     }
 
-    // ✅ NHIS PHARMACY LEVEL PATCH START
-    const pharmacyLevelCheck = assessMedicinePharmacyLevel(medForm, facilityPharmacyLevel)
-    if (!pharmacyLevelCheck.allowed) {
-      notify(pharmacyLevelCheck.message, 'warning')
-      return
+    if (!isHospital) {
+      // ✅ NHIS PHARMACY LEVEL PATCH START
+      const pharmacyLevelCheck = assessMedicinePharmacyLevel(medForm, facilityPharmacyLevel)
+      if (!pharmacyLevelCheck.allowed) {
+        notify(pharmacyLevelCheck.message, 'warning')
+        return
+      }
+      if (pharmacyLevelCheck.message === 'Level not configured') {
+        notify('Level not configured', 'warning')
+      }
+      // ✅ NHIS PHARMACY LEVEL PATCH END
     }
-    if (pharmacyLevelCheck.message === 'Level not configured') {
-      notify('Level not configured', 'warning')
-    }
-    // ✅ NHIS PHARMACY LEVEL PATCH END
 
     const nextMedicine = {
       nhisDrugId:    medForm.nhisDrugId   || null,
@@ -1078,7 +1083,7 @@ const Nhis = () => {
   const handleSubmitClaim = async (e) => {
     e.preventDefault()
     if (readiness.blockers.length) {
-      setClaimError(`NHIS pharmacy dispensing check failed: ${readiness.blockers.slice(0, 5).join(' ')}`)
+      setClaimError(`NHIS claim readiness check failed: ${readiness.blockers.slice(0, 5).join(' ')}`)
       return
     }
     try {
@@ -1109,6 +1114,8 @@ const Nhis = () => {
           // ✅ NHIS PHARMACY LEVEL PATCH END
           nhisDrugCatalog: nhisDrugs,
           nhiaTariffServices: claimServices,
+          tariffFacilityGroup: activeTariffFacilityGroup,
+          tariffCateringOption: activeTariffCateringOption,
         })
         if (directNhiaApiAvailable) {
           await submitNhisClaimDirect(editingClaim.id, getDirectNhiaOptions())
@@ -1122,6 +1129,8 @@ const Nhis = () => {
           // ✅ NHIS PHARMACY LEVEL PATCH END
           nhisDrugCatalog: nhisDrugs,
           nhiaTariffServices: claimServices,
+          tariffFacilityGroup: activeTariffFacilityGroup,
+          tariffCateringOption: activeTariffCateringOption,
         })
       }
 
@@ -1194,6 +1203,8 @@ const Nhis = () => {
             nhisDrugCatalog: nhisDrugs,
             nhiaTariffServices: claim.nhis_claim_services || [],
             currentNhiaTariffItems: nhiaTariffItems,
+            tariffFacilityGroup: activeTariffFacilityGroup,
+            tariffCateringOption: activeTariffCateringOption,
           }
         )
 

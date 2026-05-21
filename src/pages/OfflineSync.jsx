@@ -3,6 +3,7 @@ import { AlertCircle, CheckCircle2, RefreshCcw, Server, UploadCloud } from 'luci
 import {
   createNhiaBatch,
   downloadNhiaBatchExport,
+  getBranchInventory,
   getBranchServerConfig,
   getBranchServerHealth,
   getBranchSyncStatus,
@@ -15,6 +16,7 @@ import {
   saveNhiaSettings,
   submitPendingNhiaClaims,
 } from '../services/branchServerApi'
+import { saveOfflinePosSnapshot } from '../services/offlinePosCache'
 import {
   listBranchSyncSetupOptions,
   registerBranchSyncClient,
@@ -128,7 +130,7 @@ const getDefaultBranchName = (organization) =>
   organization?.name ? `${organization.name} Main branch` : 'Main branch'
 
 export default function OfflineSync() {
-  const { organization, role } = useAuth()
+  const { organization, role, user, profile, branch } = useAuth()
   const { notify } = useNotification()
   const [config, setConfig] = useState(() => getBranchServerConfig())
   const [health, setHealth] = useState(null)
@@ -202,6 +204,18 @@ export default function OfflineSync() {
       setLoading(false)
     }
   }, [notify, organization])
+
+  const pullInventoryAndCache = async () => {
+    const result = await pullBranchInventory()
+    const branchId = profile?.branch_id || branch?.id || ''
+    const inventory = await getBranchInventory({ branchId, limit: 20000 })
+    await saveOfflinePosSnapshot(user?.id, {
+      drugs: inventory || [],
+      drugsCacheMode: 'replace',
+      shiftBranchId: branchId,
+    })
+    return result
+  }
 
   useEffect(() => {
     void refreshStatus({ silent: true })
@@ -563,7 +577,7 @@ SUPABASE_SYNC_KEY=<your-supabase-anon-or-publishable-key>`}</pre>
         <button
           className="btn btn-outline"
           type="button"
-          onClick={() => runAction('inventory', 'Inventory pull', pullBranchInventory)}
+          onClick={() => runAction('inventory', 'Inventory pull', pullInventoryAndCache)}
           disabled={!isConnected || Boolean(busyAction)}
         >
           Pull Inventory

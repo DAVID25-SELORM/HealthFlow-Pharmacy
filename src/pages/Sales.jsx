@@ -10,6 +10,7 @@ import { getPharmacySettings } from '../services/settingsService'
 import { getBranches } from '../services/branchService'
 import {
   createBranchSale,
+  getBranchInventory,
   getBranchPosBootstrap,
   getBranchRecentSales,
   getBranchSale,
@@ -404,6 +405,18 @@ const Sales = () => {
               },
               nhiaSettings: bootstrap.nhiaSettings || null,
             })
+
+            getBranchInventory({ branchId, limit: 20000 })
+              .then((fullInventory) =>
+                saveOfflinePosSnapshot(user?.id, {
+                  drugs: fullInventory || [],
+                  drugsCacheMode: 'replace',
+                  shiftBranchId: branchId,
+                })
+              )
+              .catch((cacheError) => {
+                console.warn('Unable to preload full local inventory cache:', cacheError)
+              })
           } catch (branchError) {
             console.warn('Local POS bootstrap failed:', branchError)
             if (!snapshot && !cancelled) {
@@ -1135,6 +1148,15 @@ const Sales = () => {
         pullBranchInventory(),
         pullBranchReferenceData(),
       ])
+      const fullInventory = await getBranchInventory({
+        branchId: effectiveBranchId || fallbackBranch?.id || '',
+        limit: 20000,
+      })
+      await saveOfflinePosSnapshot(user?.id, {
+        drugs: fullInventory || [],
+        drugsCacheMode: 'replace',
+        shiftBranchId: effectiveBranchId || fallbackBranch?.id || '',
+      })
       await refreshBranchServerStatus()
       notify(
         `Updated local cache: ${result.imported || 0} inventory item${result.imported === 1 ? '' : 's'}, ${referenceResult.patients || 0} patient${referenceResult.patients === 1 ? '' : 's'}, and NHIA references.`,

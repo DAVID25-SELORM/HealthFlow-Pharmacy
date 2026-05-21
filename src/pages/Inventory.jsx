@@ -20,6 +20,7 @@ import { formatAppDate } from '../utils/date'
 import { getPharmacySettings } from '../services/settingsService'
 import { getBranches } from '../services/branchService'
 import { getBranchInventory, isBranchServerEnabled } from '../services/branchServerApi'
+import { loadOfflinePosSnapshot, saveOfflinePosSnapshot } from '../services/offlinePosCache'
 import { getEffectiveSellingPrice, getNhisCatalogPrice, hasNhisCatalogPrice } from '../utils/drugPricing'
 // ✅ NHIS PHARMACY LEVEL PATCH START
 import { MEDICINE_ACCESS_LEVELS, PHARMACY_LEVELS } from '../utils/nhisPharmacyLevel'
@@ -119,7 +120,7 @@ const calculateMarkedUpPrice = (costPrice, markupPercent) => {
 }
 
 const Inventory = () => {
-  const { role, profile, branch } = useAuth()
+  const { role, profile, branch, user } = useAuth()
   const { notify } = useNotification()
   const { canUseNhis, canUseNhisTopups, tierLimits } = useTenant()
   const showNhisPricing = Boolean(canUseNhis || canUseNhisTopups)
@@ -223,6 +224,17 @@ const Inventory = () => {
         }
       }
 
+      const snapshot = await loadOfflinePosSnapshot(user?.id)
+      if (snapshot?.drugs?.length) {
+        setDrugs(snapshot.drugs)
+        setBranches(snapshot.branches || [])
+        setSelectedBranchId(snapshot.shiftBranchId || '')
+        setUsingLocalInventory(true)
+        setError('')
+        notify('Loaded inventory from this browser offline cache.', 'success')
+        return
+      }
+
       setError(error.message || 'Unable to load inventory right now.')
       notify(error.message || 'Unable to load inventory right now.', 'error')
     } finally {
@@ -242,6 +254,11 @@ const Inventory = () => {
     setDefaultMarkupPercent(0)
     setUsingLocalInventory(true)
     setError('')
+    void saveOfflinePosSnapshot(user?.id, {
+      drugs: data,
+      drugsCacheMode: 'replace',
+      shiftBranchId: branchIdOverride || '',
+    })
     if (notifyOnSuccess) {
       notify('Loaded cached inventory from the local branch server.', 'success')
     }
@@ -269,6 +286,11 @@ const Inventory = () => {
       })
       setDrugs(data)
       setUsingLocalInventory(false)
+      void saveOfflinePosSnapshot(user?.id, {
+        drugs: data,
+        drugsCacheMode: 'replace',
+        shiftBranchId: branchIdOverride || '',
+      })
 
       try {
         const settings = await getPharmacySettings()
@@ -286,6 +308,15 @@ const Inventory = () => {
         } catch (localError) {
           console.error('Unable to load cached local inventory:', localError)
         }
+      }
+
+      const snapshot = await loadOfflinePosSnapshot(user?.id)
+      if (snapshot?.drugs?.length) {
+        setDrugs(snapshot.drugs)
+        setUsingLocalInventory(true)
+        setError('')
+        notify('Loaded inventory from this browser offline cache.', 'success')
+        return
       }
 
       setError(error.message || 'Unable to load inventory right now.')

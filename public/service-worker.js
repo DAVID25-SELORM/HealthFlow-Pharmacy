@@ -1,5 +1,17 @@
-const CACHE_NAME = 'healthflow-pharmacy-shell-v3'
+const CACHE_NAME = 'healthflow-pharmacy-shell-v4'
 const APP_SHELL = ['/', '/index.html', '/app-logo.png', '/manifest.webmanifest']
+const isAppAssetRequest = (request) => {
+  if (request.method !== 'GET') {
+    return false
+  }
+
+  const requestUrl = new URL(request.url)
+  if (requestUrl.origin !== self.location.origin) {
+    return false
+  }
+
+  return !requestUrl.pathname.startsWith('/api/')
+}
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -28,12 +40,7 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const { request } = event
 
-  if (request.method !== 'GET') {
-    return
-  }
-
-  const requestUrl = new URL(request.url)
-  if (requestUrl.origin !== self.location.origin) {
+  if (!isAppAssetRequest(request)) {
     return
   }
 
@@ -58,7 +65,7 @@ self.addEventListener('fetch', (event) => {
 
   event.respondWith(
     caches.match(request).then((cachedResponse) => {
-      const preferNetwork = ['script', 'style'].includes(request.destination)
+      const preferNetwork = ['document', 'script', 'style', 'worker'].includes(request.destination)
 
       if (preferNetwork) {
         return fetch(request)
@@ -81,7 +88,7 @@ self.addEventListener('fetch', (event) => {
         .then((response) => {
           const cacheable =
             response.ok &&
-            ['script', 'style', 'image', 'font', 'manifest'].includes(request.destination)
+            ['script', 'style', 'image', 'font', 'manifest', 'worker', ''].includes(request.destination)
 
           if (cacheable) {
             const responseCopy = response.clone()
@@ -92,5 +99,22 @@ self.addEventListener('fetch', (event) => {
         })
         .catch(() => cachedResponse || Response.error())
     })
+  )
+})
+
+self.addEventListener('message', (event) => {
+  if (event.data?.type !== 'HEALTHFLOW_PRECACHE_URLS') {
+    return
+  }
+
+  const urls = Array.isArray(event.data.urls) ? event.data.urls : []
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) =>
+      Promise.allSettled(
+        urls
+          .filter((url) => typeof url === 'string' && url.startsWith('/'))
+          .map((url) => cache.add(url))
+      )
+    )
   )
 })

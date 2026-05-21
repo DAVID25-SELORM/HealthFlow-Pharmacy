@@ -69,6 +69,48 @@ const NHIS_PRESCRIBING_LEVELS = ['A', 'M', 'B1', 'B2', 'C', 'D', 'SM']
 // ✅ NHIA CONFIG PATCH START
 const CLAIM_IT_PROVIDER_CLASS_LEVELS = ['B1', 'B2', 'C', 'D', 'M', 'SM']
 // ✅ NHIA CONFIG PATCH END
+const HOSPITAL_PROVIDER_CLASS_LEVELS = CLAIM_IT_PROVIDER_CLASS_LEVELS
+const HOSPITAL_PROVIDER_CLASS_RANKS = HOSPITAL_PROVIDER_CLASS_LEVELS.reduce((levels, level, index) => ({
+  ...levels,
+  [level]: index + 1,
+}), {})
+const HOSPITAL_SERVICE_KIND_MINIMUM_LEVELS = {
+  opd: 'B1',
+  tariff: 'B1',
+  zoom: 'B2',
+  referral: 'B2',
+  investigation: 'B2',
+  inpatient: 'C',
+  procedure: 'D',
+}
+const HOSPITAL_TARIFF_GROUP_MINIMUM_LEVELS = [
+  { terms: ['tertiary', 'teaching', 'specialist'], level: 'SM' },
+  { terms: ['secondary', 'regional'], level: 'M' },
+  { terms: ['primary care hospital', 'private primary care hospital', 'chag primary care hospital'], level: 'D' },
+  { terms: ['clinic', 'health center', 'health centre', 'maternity', 'dental', 'eye center', 'diagnostic center', 'chps'], level: 'C' },
+]
+const HOSPITAL_PROVIDER_CLASS_FIELD_KEYS = [
+  'minimumProviderClassLevel',
+  'minimum_provider_class_level',
+  'requiredProviderClassLevel',
+  'required_provider_class_level',
+  'minProviderClassLevel',
+  'min_provider_class_level',
+  'providerClassLevel',
+  'provider_class_level',
+  'minimumProviderLevel',
+  'minimum_provider_level',
+  'requiredProviderLevel',
+  'required_provider_level',
+]
+const HOSPITAL_PROVIDER_CLASS_LIST_FIELD_KEYS = [
+  'allowedProviderClassLevels',
+  'allowed_provider_class_levels',
+  'providerClassLevels',
+  'provider_class_levels',
+  'allowedProviderLevels',
+  'allowed_provider_levels',
+]
 const NHIS_PRESCRIBING_LEVEL_RANKS = NHIS_PRESCRIBING_LEVELS.reduce((levels, level, index) => ({
   ...levels,
   [level]: index + 1,
@@ -598,10 +640,52 @@ const canProviderPrescribeLevel = (providerLevel, requiredLevel) => {
   if (requiredLevel === 'SM') return providerLevel === 'SM'
   // ✅ NHIA CONFIG PATCH START
   if (CLAIM_IT_PROVIDER_CLASS_LEVELS.includes(providerLevel) && CLAIM_IT_PROVIDER_CLASS_LEVELS.includes(requiredLevel)) {
-    return providerLevel === requiredLevel
+    return (HOSPITAL_PROVIDER_CLASS_RANKS[providerLevel] || 0) >= (HOSPITAL_PROVIDER_CLASS_RANKS[requiredLevel] || 0)
   }
   // ✅ NHIA CONFIG PATCH END
   return (NHIS_PRESCRIBING_LEVEL_RANKS[providerLevel] || 0) >= (NHIS_PRESCRIBING_LEVEL_RANKS[requiredLevel] || 0)
+}
+
+const getFirstPresentField = (source = {}, keys = []) => {
+  for (const key of keys) {
+    const value = source?.[key]
+    if (Array.isArray(value) ? value.length : asText(value)) return value
+  }
+  return ''
+}
+
+const parseHospitalProviderClassList = (value) => {
+  if (Array.isArray(value)) {
+    return value.map((level) => normalizeClaimItProviderClassLevel(level)).filter(Boolean)
+  }
+
+  const text = asText(value)
+  if (!text) return []
+
+  if (text.startsWith('[')) {
+    try {
+      return parseHospitalProviderClassList(JSON.parse(text))
+    } catch {
+      // Fall through to delimiter parsing for malformed copied values.
+    }
+  }
+
+  return text
+    .split(/[,\s;/|]+/)
+    .map((level) => normalizeClaimItProviderClassLevel(level))
+    .filter(Boolean)
+}
+
+const getHighestHospitalProviderClassLevel = (levels = []) =>
+  levels
+    .map((level) => normalizeClaimItProviderClassLevel(level))
+    .filter(Boolean)
+    .sort((left, right) => (HOSPITAL_PROVIDER_CLASS_RANKS[right] || 0) - (HOSPITAL_PROVIDER_CLASS_RANKS[left] || 0))[0] || ''
+
+const canHospitalProviderAccessLevel = (providerLevel, requiredLevel) => {
+  const provider = normalizeClaimItProviderClassLevel(providerLevel)
+  const required = normalizeClaimItProviderClassLevel(requiredLevel)
+  return Boolean(provider && required && (HOSPITAL_PROVIDER_CLASS_RANKS[provider] || 0) >= (HOSPITAL_PROVIDER_CLASS_RANKS[required] || 0))
 }
 
 const ANTIBIOTIC_KEYWORDS = [
@@ -693,9 +777,18 @@ const normalizeTariffCatalogItem = (item = {}) => ({
   tariffVersion: asText(item.tariffVersion ?? item.tariff_version) || NHIA_TARIFF_VERSION,
   facilityGroup: asText(item.facilityGroup ?? item.facility_group),
   cateringOption: asText(item.cateringOption ?? item.catering_option),
+  mdc: asText(item.mdc),
   gdrgCode: asText(item.gdrgCode ?? item.gdrg_code).toUpperCase(),
+  description: asText(item.description),
   tariffAmount: asNumber(item.tariffAmount ?? item.tariff_amount ?? item.unitPrice ?? item.unit_price),
   ageBand: asText(item.ageBand ?? item.age_band),
+  providerClassLevel: normalizeClaimItProviderClassLevel(item.providerClassLevel ?? item.provider_class_level),
+  minimumProviderClassLevel: normalizeClaimItProviderClassLevel(
+    getFirstPresentField(item, HOSPITAL_PROVIDER_CLASS_FIELD_KEYS)
+  ),
+  allowedProviderClassLevels: parseHospitalProviderClassList(
+    getFirstPresentField(item, HOSPITAL_PROVIDER_CLASS_LIST_FIELD_KEYS)
+  ),
   sourceFile: asText(item.sourceFile ?? item.source_file),
   sourcePage: item.sourcePage ?? item.source_page ?? null,
 })
@@ -822,6 +915,13 @@ const normalizeNhiaTariffServiceLine = (line = {}, claimData = {}) => {
     quantity: safeQuantity,
     serviceDate: asText(line.serviceDate ?? line.service_date) || asText(claimData.serviceDate ?? claimData.service_date_from) || null,
     totalAmount: Number.isFinite(totalAmount) && totalAmount >= 0 ? totalAmount : computedTotal,
+    providerClassLevel: normalizeClaimItProviderClassLevel(line.providerClassLevel ?? line.provider_class_level),
+    minimumProviderClassLevel: normalizeClaimItProviderClassLevel(
+      getFirstPresentField(line, HOSPITAL_PROVIDER_CLASS_FIELD_KEYS)
+    ),
+    allowedProviderClassLevels: parseHospitalProviderClassList(
+      getFirstPresentField(line, HOSPITAL_PROVIDER_CLASS_LIST_FIELD_KEYS)
+    ),
     sourceFile: asText(line.sourceFile ?? line.source_file) || null,
     sourcePage: line.sourcePage ?? line.source_page ?? null,
   }
@@ -1121,6 +1221,49 @@ const getHospitalTariffSetIssue = (service, expectedFacilityGroup, expectedCater
   }
   return ''
 }
+
+const getHospitalTariffGroupMinimumLevel = (service = {}) => {
+  const text = normalizeMatchText(
+    [
+      service.facilityGroup,
+      service.facility_group,
+      service.providerTypeDescription,
+      service.provider_type_description,
+    ].filter(Boolean).join(' ')
+  )
+  if (!text) return ''
+
+  const match = HOSPITAL_TARIFF_GROUP_MINIMUM_LEVELS.find((rule) =>
+    rule.terms.some((term) => text.includes(normalizeMatchText(term)))
+  )
+  return match?.level || ''
+}
+
+const getHospitalProviderClassIssue = (service = {}, providerClassLevel = '', serviceKind = 'tariff', label = 'Service') => {
+  const providerLevel = normalizeClaimItProviderClassLevel(providerClassLevel)
+  if (!providerLevel) {
+    return `${label}: NHIA hospital provider class/level is required before selecting G-DRG/tariff services.`
+  }
+
+  const allowedLevels = parseHospitalProviderClassList(
+    getFirstPresentField(service, HOSPITAL_PROVIDER_CLASS_LIST_FIELD_KEYS)
+  )
+  if (allowedLevels.length && !allowedLevels.includes(providerLevel)) {
+    return `${label}: G-DRG/tariff is limited to hospital provider class ${allowedLevels.join(', ')}, but Settings are ${providerLevel}. Select an allowed tariff or update Settings.`
+  }
+
+  const minimumLevel = getHighestHospitalProviderClassLevel([
+    getFirstPresentField(service, HOSPITAL_PROVIDER_CLASS_FIELD_KEYS),
+    getHospitalTariffGroupMinimumLevel(service),
+    HOSPITAL_SERVICE_KIND_MINIMUM_LEVELS[serviceKind],
+  ])
+
+  if (minimumLevel && !canHospitalProviderAccessLevel(providerLevel, minimumLevel)) {
+    return `${label}: ${getTariffServiceCode(service) || 'G-DRG/tariff'} requires hospital provider class ${minimumLevel} or higher, but Settings are ${providerLevel}. Select an allowed G-DRG/tariff for this facility.`
+  }
+
+  return ''
+}
 // ✅ NHIS CLAIM LOGIC SEPARATION PATCH END
 
 export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}) => {
@@ -1144,10 +1287,14 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
     (options.finalSubmission || options.enforceDiagnosisTreatmentMatch === true || requireMedicineDirections)
   const shouldCheckPrescribingLevel =
     options.finalSubmission || options.enforcePrescribingLevel === true || requireMedicineDirections
+  const shouldCheckHospitalProviderClass =
+    isHospital &&
+    (options.finalSubmission || options.enforceHospitalProviderLevel === true || options.enforcePrescribingLevel === true || tariffServices.length > 0)
   const shouldRunClinicalScrub =
     isHospital &&
     (options.finalSubmission || options.enforceClinicalScrub === true || requireMedicineDirections)
   const providerPrescribingLevel = getProviderPrescribingLevel(claimData, options)
+  const hospitalProviderClassLevel = isHospital ? providerPrescribingLevel : ''
   const medicineLevelLookup = getMedicineLevelLookup(options.nhisDrugCatalog ?? options.drugCatalog ?? [])
   const tariffCatalogLookup = getTariffCatalogLookup(
     options.currentNhiaTariffItems ?? options.nhiaTariffCatalog ?? options.tariffCatalog ?? []
@@ -1180,8 +1327,8 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
   )
 
   if (memberNumberIssue) blockers.push(memberNumberIssue)
-  if (shouldCheckPrescribingLevel && !providerPrescribingLevel) {
-    blockers.push('Set the NHIA provider class/level in Settings before saving/submitting NHIS claims.')
+  if (shouldCheckHospitalProviderClass && !hospitalProviderClassLevel) {
+    blockers.push('Set the NHIA hospital provider class/level in Settings before saving/submitting hospital claims.')
   }
   if (!getClaimField(claimData, 'surname')) blockers.push('Patient surname is required.')
   if (!getClaimField(claimData, 'otherNames', 'other_names')) warnings.push('Patient other names are missing on the claim.')
@@ -1225,21 +1372,23 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
       const label = `Medicine ${index + 1}`
       const quantity = asNumber(medicine?.dispensedQty ?? medicine?.dispensed_qty)
       const unitPrice = asNumber(medicine?.unitPrice ?? medicine?.unit_price)
-      // ✅ NHIS PHARMACY LEVEL PATCH START
-      const catalogMedicine =
-        medicineCatalogById.get(asText(medicine?.nhisDrugId ?? medicine?.nhis_drug_id)) ||
-        medicineCatalogByCode.get(asText(medicine?.drugCode ?? medicine?.drug_code ?? medicine?.nhisCode ?? medicine?.nhis_code).toUpperCase()) ||
-        {}
-      const pharmacyLevelCheck = assessMedicinePharmacyLevel(
-        { ...catalogMedicine, ...medicine },
-        facilityPharmacyLevel
-      )
-      if (!pharmacyLevelCheck.allowed) {
-        blockers.push(`${label}: ${pharmacyLevelCheck.message}`)
-      } else if (pharmacyLevelCheck.message === 'Level not configured') {
-        warnings.push(`${label}: Level not configured.`)
+      if (!isHospital) {
+        // ✅ NHIS PHARMACY LEVEL PATCH START
+        const catalogMedicine =
+          medicineCatalogById.get(asText(medicine?.nhisDrugId ?? medicine?.nhis_drug_id)) ||
+          medicineCatalogByCode.get(asText(medicine?.drugCode ?? medicine?.drug_code ?? medicine?.nhisCode ?? medicine?.nhis_code).toUpperCase()) ||
+          {}
+        const pharmacyLevelCheck = assessMedicinePharmacyLevel(
+          { ...catalogMedicine, ...medicine },
+          facilityPharmacyLevel
+        )
+        if (!pharmacyLevelCheck.allowed) {
+          blockers.push(`${label}: ${pharmacyLevelCheck.message}`)
+        } else if (pharmacyLevelCheck.message === 'Level not configured') {
+          warnings.push(`${label}: Level not configured.`)
+        }
+        // ✅ NHIS PHARMACY LEVEL PATCH END
       }
-      // ✅ NHIS PHARMACY LEVEL PATCH END
 
       if (!asText(medicine?.nhisDrugId ?? medicine?.nhis_drug_id) || !asText(medicine?.drugCode ?? medicine?.drug_code)) {
         blockers.push(`${label}: select a medicine from the NHIS catalog.`)
@@ -1248,13 +1397,13 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
       if (!asText(medicine?.unit)) blockers.push(`${label}: unit of pricing is required.`)
       if (!(quantity > 0)) blockers.push(`${label}: exact dispensed quantity must be greater than zero.`)
       if (!(unitPrice >= 0)) blockers.push(`${label}: NHIS unit price is required.`)
-      if (shouldCheckPrescribingLevel && providerPrescribingLevel) {
+      if (isHospital && shouldCheckPrescribingLevel && hospitalProviderClassLevel) {
         const requiredLevel = getMedicinePrescribingLevel(medicine, medicineLevelLookup)
         if (!requiredLevel) {
           blockers.push(`${label}: NHIS level of prescribing is missing from the medicine catalog. Update the medicine category before billing this claim.`)
-        } else if (!canProviderPrescribeLevel(providerPrescribingLevel, requiredLevel)) {
+        } else if (!canProviderPrescribeLevel(hospitalProviderClassLevel, requiredLevel)) {
           // ✅ NHIA CONFIG PATCH START
-          const message = `${label}: requires NHIS prescribing level ${requiredLevel}, but this facility is configured as ${providerPrescribingLevel}. Use an authorized prescriber/facility or remove the medicine.`
+          const message = `${label}: requires NHIS prescribing level ${requiredLevel}, but this hospital is configured as ${hospitalProviderClassLevel}. Use an authorized prescriber/facility or remove the medicine.`
           if (options.providerClassValidationMode === 'warn' || options.claimitValidationEnabled === false) {
             warnings.push(message)
           } else {
@@ -1282,12 +1431,31 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
     tariffServices.forEach((service, index) => {
       const label = `Service ${index + 1}`
       const expectedTariff = getExpectedTariffForService(service, tariffCatalogLookup)
+      const serviceAllowedProviderLevels = Array.isArray(service.allowedProviderClassLevels)
+        ? service.allowedProviderClassLevels
+        : parseHospitalProviderClassList(service.allowedProviderClassLevels ?? service.allowed_provider_class_levels)
+      const serviceForProviderRules = expectedTariff
+        ? {
+            ...expectedTariff,
+            ...service,
+            providerClassLevel: service.providerClassLevel || service.provider_class_level || expectedTariff.providerClassLevel,
+            minimumProviderClassLevel:
+              service.minimumProviderClassLevel ||
+              service.minimum_provider_class_level ||
+              expectedTariff.minimumProviderClassLevel,
+            allowedProviderClassLevels: serviceAllowedProviderLevels.length
+              ? serviceAllowedProviderLevels
+              : expectedTariff.allowedProviderClassLevels,
+          }
+        : service
       const ageBand = expectedTariff?.ageBand || service.ageBand
       const expectedUnitPrice = expectedTariff?.tariffAmount
       // ✅ NHIS CLAIM LOGIC SEPARATION PATCH START
       const tariffSetIssue = getHospitalTariffSetIssue(service, configuredTariffFacilityGroup, configuredTariffCateringOption, label)
       if (tariffSetIssue) blockers.push(tariffSetIssue)
-      const serviceKind = getHospitalServiceKind(service)
+      const serviceKind = getHospitalServiceKind(serviceForProviderRules)
+      const providerClassIssue = getHospitalProviderClassIssue(serviceForProviderRules, hospitalProviderClassLevel, serviceKind, label)
+      if (providerClassIssue) blockers.push(providerClassIssue)
       if (serviceKind === 'referral' && !getClaimField(claimData, 'referralCode', 'referral_code')) {
         warnings.push(`${label}: referral tariff selected; add the referral code/CCC before export.`)
       }
@@ -1510,6 +1678,8 @@ export const validateNhisClaimFinalReadiness = async (claimData, medicines = [],
       enforcePrescribingLevel: true,
       nhiaTariffServices: tariffServices,
       currentNhiaTariffItems,
+      tariffFacilityGroup: options.tariffFacilityGroup || options.tariff_facility_group,
+      tariffCateringOption: options.tariffCateringOption || options.tariff_catering_option,
     }
   ).blockers
 }
@@ -2051,10 +2221,12 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
       nhisDrugCatalog,
       nhiaTariffServices: tariffServices,
       currentNhiaTariffItems,
+      tariffFacilityGroup: options.tariffFacilityGroup || options.tariff_facility_group,
+      tariffCateringOption: options.tariffCateringOption || options.tariff_catering_option,
     }
   )
   if (readiness.blockers.length && !allowIncompleteReview) {
-    throw new Error(`NHIS pharmacy dispensing check failed: ${readiness.blockers.slice(0, 5).join(' ')}`)
+    throw new Error(`NHIS claim readiness check failed: ${readiness.blockers.slice(0, 5).join(' ')}`)
   }
 
   const isHospital = organizationType === 'hospital'
@@ -2239,6 +2411,8 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
       clinicalRules,
       nhiaTariffServices: tariffServices,
       currentNhiaTariffItems,
+      tariffFacilityGroup: options.tariffFacilityGroup || options.tariff_facility_group,
+      tariffCateringOption: options.tariffCateringOption || options.tariff_catering_option,
     }
   )
   if (readiness.blockers.length) {

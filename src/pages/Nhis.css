@@ -425,7 +425,9 @@
   justify-content: center;
   z-index: 1000;
   padding: 1rem;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* Stacked modal (medicine sub-modal above claim modal) */
@@ -450,6 +452,8 @@
   max-width: min(1200px, calc(100vw - 2rem));
   height: min(92vh, 860px);
   height: min(92dvh, 860px);
+  max-height: calc(100vh - 2rem);
+  max-height: calc(100dvh - 2rem);
 }
 
 .nhis-page .modal-panel--medicine {

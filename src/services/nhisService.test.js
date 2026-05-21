@@ -486,49 +486,99 @@ describe('assessNhisClaimReadiness', () => {
     expect(readiness.blockers).toContain('Service 1: service total is outdated. Current official total is GHS 100.00.')
   })
 
-  it('blocks medicines above the configured NHIA provider class level', () => {
-    const readiness = assessNhisClaimReadiness(
+  it('uses pharmacy facility levels, not hospital provider classes, for pharmacy medicines', () => {
+    const providerClassIgnored = assessNhisClaimReadiness(
       baseClaim,
-      [{ ...baseMedicine, category: 'C' }],
-      { enforcePrescribingLevel: true, providerClassLevel: 'B2' }
+      [{ ...baseMedicine, category: 'C', medicineAccessLevel: 'Prescription', requiredPharmacyLevel: 'P2' }],
+      { enforcePrescribingLevel: true, providerClassLevel: 'B1', pharmacyLevel: 'P1' }
+    )
+    const pharmacyLevelBlocked = assessNhisClaimReadiness(
+      baseClaim,
+      [{ ...baseMedicine, category: 'A', medicineAccessLevel: 'Controlled', requiredPharmacyLevel: 'HP' }],
+      { enforcePrescribingLevel: true, providerClassLevel: 'SM', pharmacyLevel: 'P1' }
     )
 
-    expect(readiness.blockers).toContain(
-      'Medicine 1: requires NHIS prescribing level C, but this facility is configured as B2. Use an authorized prescriber/facility or remove the medicine.'
+    expect(providerClassIgnored.blockers).not.toEqual(expect.arrayContaining([
+      expect.stringContaining('requires NHIS prescribing level C'),
+    ]))
+    expect(pharmacyLevelBlocked.blockers).toContain(
+      'Medicine 1: This medicine is not allowed for your pharmacy/facility level and may cause NHIS claim rejection.'
     )
   })
 
-  it('blocks mismatched CLAIM-it provider classes and reserves specialist medicines for SM', () => {
-    const classBlocked = assessNhisClaimReadiness(
-      baseClaim,
-      [{ ...baseMedicine, category: 'C' }],
-      { enforcePrescribingLevel: true, providerClassLevel: 'D' }
+  it('uses hospital provider class levels for G-DRG and tariff access', () => {
+    const claim = {
+      ...baseClaim,
+      organizationType: 'hospital',
+      diagnosis: 'B50',
+      diagnosisDetails: [{ code: 'B50', label: 'Plasmodium falciparum malaria', source: 'ICD-10' }],
+    }
+    const blocked = assessNhisClaimReadiness(
+      claim,
+      [],
+      {
+        enforcePrescribingLevel: true,
+        providerClassLevel: 'C',
+        nhiaTariffServices: [{ ...baseTariffService, facilityGroup: 'Private Primary Care Hospital' }],
+      }
     )
-    const specialistBlocked = assessNhisClaimReadiness(
-      baseClaim,
-      [{ ...baseMedicine, category: 'SM' }],
-      { enforcePrescribingLevel: true, providerClassLevel: 'D' }
-    )
-    const specialistAllowed = assessNhisClaimReadiness(
-      baseClaim,
-      [{ ...baseMedicine, category: 'SM' }],
-      { enforcePrescribingLevel: true, providerClassLevel: 'SM' }
+    const allowed = assessNhisClaimReadiness(
+      claim,
+      [],
+      {
+        enforcePrescribingLevel: true,
+        providerClassLevel: 'D',
+        nhiaTariffServices: [{ ...baseTariffService, facilityGroup: 'Private Primary Care Hospital' }],
+      }
     )
 
-    expect(classBlocked.blockers).toContain(
-      'Medicine 1: requires NHIS prescribing level C, but this facility is configured as D. Use an authorized prescriber/facility or remove the medicine.'
+    expect(blocked.blockers).toContain(
+      'Service 1: OPDC01A requires hospital provider class D or higher, but Settings are C. Select an allowed G-DRG/tariff for this facility.'
     )
-    expect(specialistBlocked.blockers).toContain(
-      'Medicine 1: requires NHIS prescribing level SM, but this facility is configured as D. Use an authorized prescriber/facility or remove the medicine.'
-    )
-    expect(specialistAllowed.blockers).not.toEqual(expect.arrayContaining([
-      expect.stringContaining('requires NHIS prescribing level SM'),
+    expect(allowed.blockers).not.toEqual(expect.arrayContaining([
+      expect.stringContaining('requires hospital provider class D or higher'),
     ]))
   })
 
-  it('uses the NHIS drug catalog to find prescribing level when claim medicine rows do not store it', () => {
+  it('uses explicit tariff provider class metadata when present', () => {
+    const claim = {
+      ...baseClaim,
+      organizationType: 'hospital',
+      diagnosis: 'B50',
+      diagnosisDetails: [{ code: 'B50', label: 'Plasmodium falciparum malaria', source: 'ICD-10' }],
+    }
     const readiness = assessNhisClaimReadiness(
-      baseClaim,
+      claim,
+      [],
+      {
+        enforcePrescribingLevel: true,
+        providerClassLevel: 'D',
+        nhiaTariffServices: [{ ...baseTariffService, facilityGroup: 'Private Primary Care Hospital' }],
+        currentNhiaTariffItems: [{
+          id: 'tariff-1',
+          tariff_version: 'FEB 2023',
+          facility_group: 'Private Primary Care Hospital',
+          catering_option: 'exclusive',
+          gdrg_code: 'OPDC01A',
+          tariff_amount: 37.08,
+          allowed_provider_class_levels: 'SM',
+        }],
+      }
+    )
+
+    expect(readiness.blockers).toContain(
+      'Service 1: G-DRG/tariff is limited to hospital provider class SM, but Settings are D. Select an allowed tariff or update Settings.'
+    )
+  })
+
+  it('uses the NHIS drug catalog to find prescribing level for hospital medicines only', () => {
+    const readiness = assessNhisClaimReadiness(
+      {
+        ...baseClaim,
+        organizationType: 'hospital',
+        diagnosis: 'B50',
+        diagnosisDetails: [{ code: 'B50', label: 'Plasmodium falciparum malaria', source: 'ICD-10' }],
+      },
       [{ ...baseMedicine, drugCode: 'MIDAZOIN1', category: '' }],
       {
         enforcePrescribingLevel: true,
@@ -538,18 +588,23 @@ describe('assessNhisClaimReadiness', () => {
     )
 
     expect(readiness.blockers).toContain(
-      'Medicine 1: requires NHIS prescribing level C, but this facility is configured as B2. Use an authorized prescriber/facility or remove the medicine.'
+      'Medicine 1: requires NHIS prescribing level C, but this hospital is configured as B2. Use an authorized prescriber/facility or remove the medicine.'
     )
   })
 
-  it('requires provider class level before enforcing prescribing levels', () => {
+  it('requires hospital provider class level before enforcing hospital tariffs', () => {
     const readiness = assessNhisClaimReadiness(
-      baseClaim,
-      [{ ...baseMedicine, category: 'A' }],
-      { enforcePrescribingLevel: true }
+      {
+        ...baseClaim,
+        organizationType: 'hospital',
+        diagnosis: 'B50',
+        diagnosisDetails: [{ code: 'B50', label: 'Plasmodium falciparum malaria', source: 'ICD-10' }],
+      },
+      [],
+      { enforcePrescribingLevel: true, nhiaTariffServices: [baseTariffService] }
     )
 
-    expect(readiness.blockers).toContain('Set the NHIA provider class/level in Settings before saving/submitting NHIS claims.')
+    expect(readiness.blockers).toContain('Set the NHIA hospital provider class/level in Settings before saving/submitting hospital claims.')
   })
 
   it('requires exact NHIS member number digit length', () => {
