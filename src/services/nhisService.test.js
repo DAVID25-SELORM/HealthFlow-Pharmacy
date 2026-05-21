@@ -754,6 +754,13 @@ describe('CLAIM-it export helpers', () => {
     expect(inflatedText).toContain('s:27:"doctrine_migration_versions"')
     expect(inflatedText).toContain('s:14:"providerlevels"')
     expect(inflatedText).toContain('s:14:"servicetariffs"')
+    expect(inflatedText).toContain('s:18:"validation_results"')
+    expect(inflatedText).toContain('s:18:"validation_zclaims"')
+    expect(inflatedText).toContain('s:9:"contracts"')
+    expect(inflatedText).toContain('s:5:"users"')
+    expect(inflatedText).toContain('s:18:"prescribersfordays"')
+    expect(inflatedText).toContain('HF-CLAIMIT-RELATIONAL')
+    expect(inflatedText).toContain('HF-NHIA-PHARMACY')
     expect(inflatedText).not.toContain('<NhiaClaimBatch>')
     expect(savedClaim).toMatchObject({
       claimID: { guid: expect.any(String) },
@@ -768,10 +775,17 @@ describe('CLAIM-it export helpers', () => {
       },
       status: 'VALID',
       claimType: 'NHIS',
+      totalCost: 10,
+      medCost: 10,
+      procCost: 0,
     })
+    expect(savedClaim.summaryItems).toEqual([
+      expect.objectContaining({ type: 'Medicines', amount: 10 }),
+    ])
     expect(savedClaim.medicineEntries[0]).toMatchObject({
       medicineCode: 'NH001',
       serviceDate: '2026-05-14',
+      cost: 10,
       dispensedQty: {
         qty: 10,
         dispensaryUnit: { unit: 'PRICE_UNIT', unitsInPrice: 1, ratio: 1 },

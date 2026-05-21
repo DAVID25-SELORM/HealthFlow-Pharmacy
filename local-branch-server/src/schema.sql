@@ -235,6 +235,11 @@ CREATE TABLE IF NOT EXISTS nhia_settings (
   credential_code TEXT,
   license_number TEXT,
   accreditation_expiry_date TEXT,
+  -- ✅ NHIA API ARCHITECTURE PATCH START
+  integration_mode TEXT NOT NULL DEFAULT 'claimit_export',
+  sandbox_base_url TEXT,
+  production_base_url TEXT,
+  -- ✅ NHIA API ARCHITECTURE PATCH END
   -- ✅ NHIA CONFIG PATCH END
   scheme_name TEXT NOT NULL DEFAULT 'National Health Insurance',
   provider_type_description TEXT,

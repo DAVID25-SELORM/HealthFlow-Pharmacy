@@ -18,6 +18,12 @@ const CREDENTIAL_MODES = new Set([
   'client_secret',
   'username_password',
   'certificate',
+  // ✅ NHIA API ARCHITECTURE PATCH START
+  'bearer_token',
+  'basic_auth',
+  'oauth_client',
+  'custom',
+  // ✅ NHIA API ARCHITECTURE PATCH END
 ])
 
 const EXPORT_FORMATS = new Set(['cxf', 'json', 'xml'])
@@ -320,6 +326,9 @@ const upsertSettings = db.prepare(`
     -- ✅ NHIA CONFIG PATCH START
     facility_type, pharmacy_facility_level, provider_level_code, credential_code,
     license_number, accreditation_expiry_date,
+    -- ✅ NHIA API ARCHITECTURE PATCH START
+    integration_mode, sandbox_base_url, production_base_url,
+    -- ✅ NHIA API ARCHITECTURE PATCH END
     -- ✅ NHIA CONFIG PATCH END
     submitter_id,
     scheme_name, provider_type_description, provider_class_level,
@@ -337,6 +346,9 @@ const upsertSettings = db.prepare(`
     -- ✅ NHIA CONFIG PATCH START
     @facilityType, @pharmacyFacilityLevel, @providerLevelCode, @credentialCode,
     @licenseNumber, @accreditationExpiryDate,
+    -- ✅ NHIA API ARCHITECTURE PATCH START
+    @integrationMode, @sandboxBaseUrl, @productionBaseUrl,
+    -- ✅ NHIA API ARCHITECTURE PATCH END
     -- ✅ NHIA CONFIG PATCH END
     @submitterId,
     @schemeName, @providerTypeDescription, @providerClassLevel,
@@ -361,6 +373,11 @@ const upsertSettings = db.prepare(`
     credential_code = excluded.credential_code,
     license_number = excluded.license_number,
     accreditation_expiry_date = excluded.accreditation_expiry_date,
+    -- ✅ NHIA API ARCHITECTURE PATCH START
+    integration_mode = excluded.integration_mode,
+    sandbox_base_url = excluded.sandbox_base_url,
+    production_base_url = excluded.production_base_url,
+    -- ✅ NHIA API ARCHITECTURE PATCH END
     -- ✅ NHIA CONFIG PATCH END
     submitter_id = excluded.submitter_id,
     scheme_name = excluded.scheme_name,
@@ -551,6 +568,11 @@ const mapSettingsRow = (row, { includeCredentials = false } = {}) => {
     credentialCode: row.credential_code || row.facility_code || '',
     licenseNumber: row.license_number || '',
     accreditationExpiryDate: row.accreditation_expiry_date || '',
+    // ✅ NHIA API ARCHITECTURE PATCH START
+    integrationMode: row.integration_mode || 'claimit_export',
+    sandboxBaseUrl: row.sandbox_base_url || '',
+    productionBaseUrl: row.production_base_url || row.api_base_url || '',
+    // ✅ NHIA API ARCHITECTURE PATCH END
     // ✅ NHIA CONFIG PATCH END
     schemeName: row.scheme_name || 'National Health Insurance',
     providerTypeDescription: row.provider_type_description || '',
@@ -620,6 +642,11 @@ export const saveNhiaSettings = (settings = {}) => {
     credentialCode: normalizeText(settings.credentialCode) || normalizeText(settings.facilityCode) || null,
     licenseNumber: normalizeText(settings.licenseNumber) || null,
     accreditationExpiryDate: normalizeText(settings.accreditationExpiryDate) || null,
+    // ✅ NHIA API ARCHITECTURE PATCH START
+    integrationMode: normalizeText(settings.integrationMode) || 'claimit_export',
+    sandboxBaseUrl: normalizeText(settings.sandboxBaseUrl).replace(/\/+$/, '') || null,
+    productionBaseUrl: normalizeText(settings.productionBaseUrl).replace(/\/+$/, '') || null,
+    // ✅ NHIA API ARCHITECTURE PATCH END
     // ✅ NHIA CONFIG PATCH END
     schemeName: normalizeText(settings.schemeName) || 'National Health Insurance',
     providerTypeDescription: normalizeText(settings.providerTypeDescription) || null,
@@ -632,7 +659,10 @@ export const saveNhiaSettings = (settings = {}) => {
     claimitValidationEnabled: settings.claimitValidationEnabled === false ? 0 : 1,
     claimsOfficerSignatureUrl: normalizeText(settings.claimsOfficerSignatureUrl) || null,
     submitterId: normalizeText(settings.submitterId) || null,
-    apiBaseUrl: normalizeText(settings.apiBaseUrl).replace(/\/+$/, '') || null,
+    apiBaseUrl: normalizeText(
+      settings.apiBaseUrl ||
+        (settings.apiEnvironment === 'sandbox' ? settings.sandboxBaseUrl : settings.productionBaseUrl)
+    ).replace(/\/+$/, '') || null,
     claimEndpointPath: normalizeText(settings.claimEndpointPath) || null,
     ccCodeEndpointPath: normalizeText(settings.ccCodeEndpointPath) || null,
     directApiEnabled: toBool(settings.directApiEnabled),

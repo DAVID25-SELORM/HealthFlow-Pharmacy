@@ -61,6 +61,11 @@ const blankNhiaApiForm = {
   licenseNumber: '',
   accreditationExpiryDate: '',
   // ✅ NHIA CONFIG PATCH END
+  // ✅ NHIA API ARCHITECTURE PATCH START
+  integrationMode: 'claimit_export',
+  sandboxBaseUrl: '',
+  productionBaseUrl: '',
+  // ✅ NHIA API ARCHITECTURE PATCH END
   providerTypeDescription: '',
   providerClassLevel: '',
   claimsOfficerName: '',
@@ -89,6 +94,7 @@ const blankNhiaApiForm = {
     password: '',
     token: '',
     tokenEndpointPath: '',
+    customIntegration: '',
   },
 }
 
@@ -249,6 +255,76 @@ const Settings = () => {
     setNhiaApiForm((current) => ({ ...current, [field]: value }))
   }
 
+  // ✅ NHIA API ARCHITECTURE PATCH START
+  const getNhiaIntegrationMissingFields = (form = nhiaApiForm) => {
+    const preview = buildClaimItConfigPreview({
+      ...form,
+      facilityName: organization?.name || formData.pharmacyName,
+    }, { organizationType: organization?.organization_type || 'pharmacy' })
+
+    return [
+      !form.facilityCode && 'facilityCode',
+      !form.providerNumber && 'providerNumber',
+      !preview.providerLevel && 'providerLevel',
+      !form.submitterId && 'submitterId',
+      !form.credentialCode && 'credentialCode',
+    ].filter(Boolean)
+  }
+
+  const handleDirectNhiaToggle = (enabled) => {
+    if (enabled) {
+      const missing = getNhiaIntegrationMissingFields({ ...nhiaApiForm, directApiEnabled: true })
+      if (missing.length) {
+        setError(`Complete NHIA configuration before enabling direct API mode: ${missing.join(', ')}.`)
+        return
+      }
+    }
+    updateNhiaApiForm('directApiEnabled', enabled)
+  }
+
+  const handleNhiaIntegrationModeChange = (mode) => {
+    const requiresDirectConfig = ['direct_nhia_api', 'hybrid'].includes(mode)
+    if (requiresDirectConfig) {
+      const missing = getNhiaIntegrationMissingFields({ ...nhiaApiForm, integrationMode: mode })
+      if (missing.length) {
+        setError(`Complete NHIA configuration before selecting direct API mode: ${missing.join(', ')}.`)
+        return
+      }
+    }
+    setNhiaApiForm((current) => ({
+      ...current,
+      integrationMode: mode,
+      directApiEnabled: requiresDirectConfig ? true : current.directApiEnabled,
+    }))
+  }
+
+  const handleValidateNhiaConfig = () => {
+    const missing = getNhiaIntegrationMissingFields()
+    if (missing.length) {
+      setError(`NHIA configuration is incomplete: ${missing.join(', ')}.`)
+      return
+    }
+    setError('')
+    notify('NHIA configuration has the required CLAIM-it identifiers.', 'success')
+  }
+
+  const handlePreviewClaimItMetadata = () => {
+    notify(`CLAIM-it metadata preview ready for ${claimItPreview.providerID || 'provider'}.`, 'info')
+  }
+
+  const handleTestNhiaConnection = () => {
+    const baseUrl = nhiaApiForm.apiEnvironment === 'sandbox'
+      ? nhiaApiForm.sandboxBaseUrl || nhiaApiForm.apiBaseUrl
+      : nhiaApiForm.productionBaseUrl || nhiaApiForm.apiBaseUrl
+    if (!baseUrl) {
+      setError('Enter a Sandbox/Test or Production base URL before testing the connection.')
+      return
+    }
+    setError('')
+    notify('Connection settings are ready to test through the configured NHIA integration service.', 'info')
+  }
+  // ✅ NHIA API ARCHITECTURE PATCH END
+
   const updateNhiaCredential = (field, value) => {
     setNhiaApiForm((current) => ({
       ...current,
@@ -265,7 +341,15 @@ const Settings = () => {
     try {
       setSavingNhiaApi(true)
       setError('')
-      await saveNhiaApiSettings(nhiaApiForm)
+      // ✅ NHIA API ARCHITECTURE PATCH START
+      const activeBaseUrl = nhiaApiForm.apiEnvironment === 'sandbox'
+        ? nhiaApiForm.sandboxBaseUrl
+        : nhiaApiForm.productionBaseUrl
+      await saveNhiaApiSettings({
+        ...nhiaApiForm,
+        apiBaseUrl: activeBaseUrl || nhiaApiForm.apiBaseUrl,
+      })
+      // ✅ NHIA API ARCHITECTURE PATCH END
       await loadSettings()
       notify('NHIA API settings saved.', 'success')
     } catch (saveError) {
@@ -758,10 +842,24 @@ const Settings = () => {
                 <input
                   type="checkbox"
                   checked={Boolean(nhiaApiForm.directApiEnabled)}
-                  onChange={(event) => updateNhiaApiForm('directApiEnabled', event.target.checked)}
+                  onChange={(event) => handleDirectNhiaToggle(event.target.checked)}
                 />
-                Enable direct NHIA API
+                Enable NHIA integration
               </label>
+              {/* ✅ NHIA API ARCHITECTURE PATCH START */}
+              <p className="settings-note">
+                Direct NHIA integration depends on approved NHIA/CLAIM-it credentials.
+              </p>
+              <select
+                value={nhiaApiForm.integrationMode}
+                onChange={(event) => handleNhiaIntegrationModeChange(event.target.value)}
+              >
+                <option value="claimit_export">CLAIM-it export only</option>
+                <option value="claimit_assisted">CLAIM-it assisted submission</option>
+                <option value="direct_nhia_api">Direct NHIA API</option>
+                <option value="hybrid">Hybrid mode</option>
+              </select>
+              {/* ✅ NHIA API ARCHITECTURE PATCH END */}
               <div className="settings-form-row">
                 <input
                   placeholder="Scheme name"
@@ -774,6 +872,20 @@ const Settings = () => {
                   onChange={(event) => updateNhiaApiForm('facilityCode', event.target.value)}
                 />
               </div>
+              {/* ✅ NHIA API ARCHITECTURE PATCH START */}
+              <div className="settings-form-row">
+                <input
+                  placeholder="Provider number"
+                  value={nhiaApiForm.providerNumber}
+                  onChange={(event) => updateNhiaApiForm('providerNumber', event.target.value)}
+                />
+                <input
+                  placeholder="Submitter ID"
+                  value={nhiaApiForm.submitterId}
+                  onChange={(event) => updateNhiaApiForm('submitterId', event.target.value)}
+                />
+              </div>
+              {/* ✅ NHIA API ARCHITECTURE PATCH END */}
               {/* ✅ NHIA CONFIG PATCH START */}
               <div className="settings-form-row">
                 <select
@@ -824,11 +936,6 @@ const Settings = () => {
               </div>
               {/* ✅ NHIA CONFIG PATCH END */}
               <div className="settings-form-row">
-                <input
-                  placeholder="Provider number"
-                  value={nhiaApiForm.providerNumber}
-                  onChange={(event) => updateNhiaApiForm('providerNumber', event.target.value)}
-                />
                 <select
                   value={nhiaApiForm.providerClassLevel}
                   onChange={(event) => updateNhiaApiForm('providerClassLevel', event.target.value)}
@@ -904,11 +1011,6 @@ const Settings = () => {
                 </div>
               </div>
               <div className="settings-form-row">
-                <input
-                  placeholder="Submitter ID"
-                  value={nhiaApiForm.submitterId}
-                  onChange={(event) => updateNhiaApiForm('submitterId', event.target.value)}
-                />
                 <label className="settings-checkbox-label">
                   <input
                     type="checkbox"
@@ -922,13 +1024,12 @@ const Settings = () => {
               <div className="settings-note">
                 <strong>CLAIM-it metadata preview</strong>
                 <div>facilityName: {claimItPreview.facilityName || 'Not configured'}</div>
-                <div>providerID: {claimItPreview.providerID || 'Not configured'}</div>
                 <div>providerLevel: {claimItPreview.providerLevel || 'Not configured'}</div>
-                <div>providerClassLevel: {claimItPreview.providerClassLevel || 'Not configured'}</div>
-                <div>pharmacyFacilityLevel: {claimItPreview.pharmacyFacilityLevel || 'Not configured'}</div>
+                <div>providerClass: {claimItPreview.providerClassLevel || 'Not configured'}</div>
+                <div>facilityCode: {claimItPreview.facilityCode || 'Not configured'}</div>
+                <div>providerNumber: {claimItPreview.providerID || 'Not configured'}</div>
+                <div>submitterId: {nhiaApiForm.submitterId || 'Not configured'}</div>
                 <div>credentialCode: {claimItPreview.credentialCode || 'Not configured'}</div>
-                <div>licenseNumber: {claimItPreview.licenseNumber || 'Not configured'}</div>
-                <div>accreditationExpiryDate: {claimItPreview.accreditationExpiryDate || 'Not configured'}</div>
               </div>
               {/* ✅ NHIA CONFIG PATCH END */}
               <select
@@ -938,11 +1039,23 @@ const Settings = () => {
                 <option value="production">Production</option>
                 <option value="sandbox">Sandbox</option>
               </select>
-              <input
-                placeholder="API base URL"
-                value={nhiaApiForm.apiBaseUrl}
-                onChange={(event) => updateNhiaApiForm('apiBaseUrl', event.target.value)}
-              />
+              {/* ✅ NHIA API ARCHITECTURE PATCH START */}
+              <div className="settings-form-row">
+                <input
+                  placeholder="Sandbox/Test base URL"
+                  value={nhiaApiForm.sandboxBaseUrl}
+                  onChange={(event) => updateNhiaApiForm('sandboxBaseUrl', event.target.value)}
+                />
+                <input
+                  placeholder="Production base URL"
+                  value={nhiaApiForm.productionBaseUrl}
+                  onChange={(event) => {
+                    updateNhiaApiForm('productionBaseUrl', event.target.value)
+                    updateNhiaApiForm('apiBaseUrl', event.target.value)
+                  }}
+                />
+              </div>
+              {/* ✅ NHIA API ARCHITECTURE PATCH END */}
               <div className="settings-form-row">
                 <input
                   placeholder="Claim submit endpoint path"
@@ -955,6 +1068,11 @@ const Settings = () => {
                   onChange={(event) => updateNhiaApiForm('ccCodeEndpointPath', event.target.value)}
                 />
               </div>
+              {/* ✅ NHIA API ARCHITECTURE PATCH START */}
+              <p className="settings-note">
+                Claims Cover Control / Claim Control generation used during NHIA validation.
+              </p>
+              {/* ✅ NHIA API ARCHITECTURE PATCH END */}
               <select
                 value={nhiaApiForm.exportFormat}
                 onChange={(event) => updateNhiaApiForm('exportFormat', event.target.value)}
@@ -978,11 +1096,13 @@ const Settings = () => {
                 value={nhiaApiForm.credentialMode}
                 onChange={(event) => updateNhiaApiForm('credentialMode', event.target.value)}
               >
-                <option value="api_key">API key / secret</option>
+                <option value="">Authentication mode</option>
+                <option value="claimit_token">CLAIM-it credentials / Custom CLAIM-it authentication</option>
+                <option value="api_key">API key</option>
                 <option value="bearer_token">Bearer token</option>
-                <option value="basic_auth">Username / password</option>
-                <option value="claimit_token">ClaimIt token exchange</option>
                 <option value="oauth_client">OAuth/client token</option>
+                <option value="basic_auth">Username/password</option>
+                <option value="custom">Custom integration</option>
               </select>
               {nhiaApiForm.credentialMode === 'api_key' && (
                 <>
@@ -1101,6 +1221,26 @@ const Settings = () => {
                   </div>
                 </>
               )}
+              {/* ✅ NHIA API ARCHITECTURE PATCH START */}
+              {nhiaApiForm.credentialMode === 'custom' && (
+                <input
+                  placeholder="Custom integration reference"
+                  value={nhiaApiForm.credentials.customIntegration || ''}
+                  onChange={(event) => updateNhiaCredential('customIntegration', event.target.value)}
+                />
+              )}
+              <div className="settings-form-row">
+                <button className="btn btn-outline btn-sm" type="button" onClick={handleTestNhiaConnection}>
+                  Test Connection
+                </button>
+                <button className="btn btn-outline btn-sm" type="button" onClick={handleValidateNhiaConfig}>
+                  Validate NHIA Configuration
+                </button>
+              </div>
+              <button className="btn btn-outline btn-sm" type="button" onClick={handlePreviewClaimItMetadata}>
+                Preview CLAIM-it Metadata
+              </button>
+              {/* ✅ NHIA API ARCHITECTURE PATCH END */}
               <div className="settings-save-bar">
                 <span>Leave secret fields blank to keep the saved values.</span>
                 <button className="btn btn-primary" type="submit" disabled={savingNhiaApi}>

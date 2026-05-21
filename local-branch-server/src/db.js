@@ -186,6 +186,11 @@ ensureColumn('nhia_settings', 'provider_level_code', 'TEXT')
 ensureColumn('nhia_settings', 'credential_code', 'TEXT')
 ensureColumn('nhia_settings', 'license_number', 'TEXT')
 ensureColumn('nhia_settings', 'accreditation_expiry_date', 'TEXT')
+// ✅ NHIA API ARCHITECTURE PATCH START
+ensureColumn('nhia_settings', 'integration_mode', "TEXT NOT NULL DEFAULT 'claimit_export'")
+ensureColumn('nhia_settings', 'sandbox_base_url', 'TEXT')
+ensureColumn('nhia_settings', 'production_base_url', 'TEXT')
+// ✅ NHIA API ARCHITECTURE PATCH END
 // ✅ NHIA CONFIG PATCH END
 // ✅ NHIS PHARMACY LEVEL PATCH START
 ensureColumn('nhia_settings', 'pharmacy_level', 'TEXT')

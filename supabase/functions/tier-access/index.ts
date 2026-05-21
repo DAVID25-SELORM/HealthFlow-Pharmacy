@@ -1877,7 +1877,7 @@ const syncNhisDrugsToInventory = async (
 
 const normalizeCredentialMode = (value: unknown) => {
   const normalized = normalizeText(value).toLowerCase()
-  return ['api_key', 'bearer_token', 'basic_auth', 'oauth_client', 'claimit_token'].includes(normalized)
+  return ['api_key', 'bearer_token', 'basic_auth', 'oauth_client', 'claimit_token', 'custom'].includes(normalized)
     ? normalized
     : 'api_key'
 }
@@ -1908,6 +1908,11 @@ const mapNhiaSettingsRow = (row: Record<string, unknown> | null, includeCredenti
     licenseNumber: row.license_number || '',
     accreditationExpiryDate: row.accreditation_expiry_date || '',
     // ✅ NHIA CONFIG PATCH END
+    // ✅ NHIA API ARCHITECTURE PATCH START
+    integrationMode: row.integration_mode || 'claimit_export',
+    sandboxBaseUrl: row.sandbox_base_url || '',
+    productionBaseUrl: row.production_base_url || row.api_base_url || '',
+    // ✅ NHIA API ARCHITECTURE PATCH END
     providerTypeDescription: row.provider_type_description || '',
     providerClassLevel: row.provider_class_level || '',
     claimsOfficerName: row.claims_officer_name || '',
@@ -1987,6 +1992,11 @@ const saveNhiaApiSettings = async (
     license_number: normalizeText(settings.licenseNumber) || null,
     accreditation_expiry_date: normalizeText(settings.accreditationExpiryDate) || null,
     // ✅ NHIA CONFIG PATCH END
+    // ✅ NHIA API ARCHITECTURE PATCH START
+    integration_mode: normalizeText(settings.integrationMode) || 'claimit_export',
+    sandbox_base_url: normalizeText(settings.sandboxBaseUrl).replace(/\/+$/, '') || null,
+    production_base_url: normalizeText(settings.productionBaseUrl).replace(/\/+$/, '') || null,
+    // ✅ NHIA API ARCHITECTURE PATCH END
     provider_type_description: normalizeText(settings.providerTypeDescription) || null,
     provider_class_level: normalizeText(settings.providerClassLevel) || null,
     claims_officer_name: normalizeText(settings.claimsOfficerName) || null,
@@ -1999,7 +2009,12 @@ const saveNhiaApiSettings = async (
     claims_officer_signature_url: normalizeText(settings.claimsOfficerSignatureUrl) || null,
     submitter_id: normalizeText(settings.submitterId) || null,
     api_environment: normalizeText(settings.apiEnvironment).toLowerCase() === 'sandbox' ? 'sandbox' : 'production',
-    api_base_url: normalizeText(settings.apiBaseUrl).replace(/\/+$/, '') || null,
+    api_base_url: normalizeText(
+      settings.apiBaseUrl ||
+        (normalizeText(settings.apiEnvironment).toLowerCase() === 'sandbox'
+          ? settings.sandboxBaseUrl
+          : settings.productionBaseUrl)
+    ).replace(/\/+$/, '') || null,
     claim_endpoint_path: normalizeText(settings.claimEndpointPath) || null,
     cc_code_endpoint_path: normalizeText(settings.ccCodeEndpointPath) || null,
     claim_status_endpoint_path: normalizeText(settings.claimStatusEndpointPath) || null,
