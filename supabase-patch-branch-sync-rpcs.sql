@@ -20,9 +20,14 @@ ALTER TABLE public.nhis_claims
   ADD COLUMN IF NOT EXISTS diagnosis_details JSONB NOT NULL DEFAULT '[]'::jsonb;
 
 ALTER TABLE public.drugs
+  ADD COLUMN IF NOT EXISTS barcode TEXT,
   ADD COLUMN IF NOT EXISTS brand_name TEXT,
   ADD COLUMN IF NOT EXISTS generic_name TEXT,
   ADD COLUMN IF NOT EXISTS sale_on_return BOOLEAN NOT NULL DEFAULT false;
+
+CREATE INDEX IF NOT EXISTS idx_drugs_barcode
+  ON public.drugs(barcode)
+  WHERE barcode IS NOT NULL;
 
 ALTER TABLE public.purchase_items
   ADD COLUMN IF NOT EXISTS brand_name TEXT,

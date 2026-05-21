@@ -19,6 +19,7 @@ import { useTenant } from '../context/TenantContext'
 import { formatAppDate } from '../utils/date'
 import { getPharmacySettings } from '../services/settingsService'
 import { getBranches } from '../services/branchService'
+import { getBranchInventory, isBranchServerEnabled } from '../services/branchServerApi'
 import { getEffectiveSellingPrice, getNhisCatalogPrice, hasNhisCatalogPrice } from '../utils/drugPricing'
 // ✅ NHIS PHARMACY LEVEL PATCH START
 import { MEDICINE_ACCESS_LEVELS, PHARMACY_LEVELS } from '../utils/nhisPharmacyLevel'
@@ -144,6 +145,7 @@ const Inventory = () => {
   const [transferDrug, setTransferDrug] = useState(null)
   const [transferForm, setTransferForm] = useState({ destinationBranchId: '', quantity: '', notes: '' })
   const [transferSubmitting, setTransferSubmitting] = useState(false)
+  const [usingLocalInventory, setUsingLocalInventory] = useState(false)
 
   useEffect(() => {
     void loadInitialInventory()
@@ -190,6 +192,11 @@ const Inventory = () => {
       setLoading(true)
       setError('')
 
+      if (typeof navigator !== 'undefined' && !navigator.onLine && isBranchServerEnabled()) {
+        await loadLocalInventory('', { notifyOnSuccess: false })
+        return
+      }
+
       if (!isSupabaseConfigured()) {
         console.warn('Supabase not configured, using sample data')
         setSampleData()
@@ -207,10 +214,36 @@ const Inventory = () => {
       await loadDrugs(defaultBranchId, { manageLoading: false })
     } catch (error) {
       console.error('Error loading inventory:', error)
+      if (isBranchServerEnabled()) {
+        try {
+          await loadLocalInventory('', { notifyOnSuccess: true })
+          return
+        } catch (localError) {
+          console.error('Unable to load cached local inventory:', localError)
+        }
+      }
+
       setError(error.message || 'Unable to load inventory right now.')
       notify(error.message || 'Unable to load inventory right now.', 'error')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const loadLocalInventory = async (branchIdOverride = selectedBranchId, options = {}) => {
+    const { notifyOnSuccess = true } = options
+    const data = await getBranchInventory({
+      branchId: branchIdOverride || undefined,
+      limit: 20000,
+    })
+    setBranches([])
+    setSelectedBranchId(branchIdOverride || '')
+    setDrugs(data)
+    setDefaultMarkupPercent(0)
+    setUsingLocalInventory(true)
+    setError('')
+    if (notifyOnSuccess) {
+      notify('Loaded cached inventory from the local branch server.', 'success')
     }
   }
 
@@ -225,11 +258,17 @@ const Inventory = () => {
         return
       }
 
+      if (typeof navigator !== 'undefined' && !navigator.onLine && isBranchServerEnabled()) {
+        await loadLocalInventory(branchIdOverride, { notifyOnSuccess: false })
+        return
+      }
+
       const data = await getAllDrugs({
         includeCatalog: true,
         branchId: branchIdOverride || undefined,
       })
       setDrugs(data)
+      setUsingLocalInventory(false)
 
       try {
         const settings = await getPharmacySettings()
@@ -240,6 +279,15 @@ const Inventory = () => {
       }
     } catch (error) {
       console.error('Error loading drugs:', error)
+      if (isBranchServerEnabled()) {
+        try {
+          await loadLocalInventory(branchIdOverride, { notifyOnSuccess: true })
+          return
+        } catch (localError) {
+          console.error('Unable to load cached local inventory:', localError)
+        }
+      }
+
       setError(error.message || 'Unable to load inventory right now.')
       notify(error.message || 'Unable to load inventory right now.', 'error')
     } finally {
@@ -724,6 +772,12 @@ const Inventory = () => {
       {error && (
         <div className="error-message" role="alert" style={{ marginBottom: '1rem' }}>
           {error}
+        </div>
+      )}
+
+      {usingLocalInventory && (
+        <div className="inventory-local-banner" role="status">
+          Showing cached inventory from the local branch server.
         </div>
       )}
 

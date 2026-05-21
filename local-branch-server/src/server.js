@@ -6,7 +6,7 @@ import { assertConfiguredForServer, config, isSupabaseSyncConfigured } from './c
 import './db.js'
 import { requireBranchToken } from './httpAuth.js'
 import { createLocalClaim } from './claimsRepository.js'
-import { importInventorySnapshot, searchLocalInventory } from './inventoryRepository.js'
+import { importInventorySnapshot, listLocalInventory, searchLocalInventory } from './inventoryRepository.js'
 import {
   createNhiaBatch,
   createNhiaClaim,
@@ -174,6 +174,15 @@ app.get('/api/inventory/search', (request, response) => {
     data: searchLocalInventory({
       term: request.query.q || '',
       limit: request.query.limit || 30,
+    }),
+  })
+})
+
+app.get('/api/inventory', (request, response) => {
+  response.json({
+    data: listLocalInventory({
+      branchId: request.query.branchId || config.branchId || '',
+      limit: request.query.limit || 5000,
     }),
   })
 })

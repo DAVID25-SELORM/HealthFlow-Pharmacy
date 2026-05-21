@@ -17,6 +17,14 @@ const searchStatement = db.prepare(`
   LIMIT @limit
 `)
 
+const listStatement = db.prepare(`
+  SELECT *
+  FROM drugs
+  WHERE (@branchId = '' OR branch_id IS NULL OR branch_id = @branchId)
+  ORDER BY name ASC, batch_number ASC, id ASC
+  LIMIT @limit
+`)
+
 const upsertDrug = db.prepare(`
   INSERT INTO drugs (
     id, name, brand_name, generic_name, batch_number, barcode, expiry_date, quantity, unit, price, cost_price,
@@ -204,6 +212,14 @@ export const searchLocalInventory = ({ term = '', limit = 30 } = {}) => {
   return searchStatement.all({
     term: normalizedTerm,
     likeTerm,
+    limit: maxResults,
+  })
+}
+
+export const listLocalInventory = ({ branchId = '', limit = 5000 } = {}) => {
+  const maxResults = Math.min(Math.max(Number(limit) || 5000, 1), 20000)
+  return listStatement.all({
+    branchId: String(branchId || '').trim(),
     limit: maxResults,
   })
 }

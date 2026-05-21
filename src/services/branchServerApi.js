@@ -133,6 +133,19 @@ export const searchBranchInventory = async ({ term = '', limit = 30 } = {}) => {
   return response.data || []
 }
 
+export const getBranchInventory = async ({ branchId = '', limit = 5000 } = {}) => {
+  const params = new URLSearchParams()
+  if (branchId) {
+    params.set('branchId', branchId)
+  }
+  params.set('limit', String(limit))
+
+  const response = await branchFetch(`/api/inventory?${params.toString()}`, {
+    timeoutMs: DEFAULT_BRANCH_REQUEST_TIMEOUT_MS,
+  })
+  return response.data || []
+}
+
 export const searchBranchPatients = async ({ term = '', limit = 8 } = {}) => {
   const params = new URLSearchParams()
   if (term) {

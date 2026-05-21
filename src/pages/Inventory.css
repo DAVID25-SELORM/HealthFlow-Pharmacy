@@ -59,6 +59,16 @@
   border-color: var(--gray-400);
 }
 
+.inventory-local-banner {
+  background: #eefbf7;
+  border: 1px solid #b9ded4;
+  border-radius: var(--radius);
+  color: #116b52;
+  font-weight: 700;
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+}
+
 /* Buttons */
 .inventory-page .btn {
   display: inline-flex;
