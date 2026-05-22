@@ -28,14 +28,18 @@ const readRuntimeConfig = () => {
 export const getBranchServerConfig = () => {
   const hostedConfig = readHostedConfig()
   const runtimeConfig = readRuntimeConfig()
+  const token = String(runtimeConfig.token || hostedConfig.token || '')
   const hostedUrl =
     hostedConfig.enabled === true && typeof window !== 'undefined' ? window.location.origin : ''
+  const enabledByHostedConfig = hostedConfig.enabled === true && Boolean(token)
+  const enabledByRuntimeConfig = runtimeConfig.enabled === true && Boolean(token)
+  const enabledByBuildConfig =
+    String(import.meta.env.VITE_BRANCH_SERVER_ENABLED || '').toLowerCase() === 'true' &&
+    Boolean(import.meta.env.VITE_BRANCH_SERVER_URL) &&
+    Boolean(token)
 
   return {
-    enabled:
-      hostedConfig.enabled === true ||
-      runtimeConfig.enabled === true ||
-      String(import.meta.env.VITE_BRANCH_SERVER_ENABLED || '').toLowerCase() === 'true',
+    enabled: enabledByHostedConfig || enabledByRuntimeConfig || enabledByBuildConfig,
     url: String(
       runtimeConfig.url ||
         hostedConfig.url ||
@@ -43,7 +47,7 @@ export const getBranchServerConfig = () => {
         import.meta.env.VITE_BRANCH_SERVER_URL ||
         DEFAULT_BRANCH_SERVER_URL
     ).replace(/\/+$/, ''),
-    token: String(runtimeConfig.token || hostedConfig.token || ''),
+    token,
     runtimeConfigured: Boolean(runtimeConfig.url && runtimeConfig.token),
   }
 }

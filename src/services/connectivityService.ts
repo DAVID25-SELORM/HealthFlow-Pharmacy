@@ -19,14 +19,18 @@ const readRuntimeConfig = () => {
 const getConnectivityBranchServerConfig = () => {
   const hostedConfig = readHostedConfig()
   const runtimeConfig = readRuntimeConfig()
+  const token = String(runtimeConfig.token || hostedConfig.token || '')
   const hostedUrl =
     hostedConfig.enabled === true && typeof window !== 'undefined' ? window.location.origin : ''
+  const enabledByHostedConfig = hostedConfig.enabled === true && Boolean(token)
+  const enabledByRuntimeConfig = runtimeConfig.enabled === true && Boolean(token)
+  const enabledByBuildConfig =
+    String((import.meta as any).env?.VITE_BRANCH_SERVER_ENABLED || '').toLowerCase() === 'true' &&
+    Boolean((import.meta as any).env?.VITE_BRANCH_SERVER_URL) &&
+    Boolean(token)
 
   return {
-    enabled:
-      hostedConfig.enabled === true ||
-      runtimeConfig.enabled === true ||
-      String((import.meta as any).env?.VITE_BRANCH_SERVER_ENABLED || '').toLowerCase() === 'true',
+    enabled: enabledByHostedConfig || enabledByRuntimeConfig || enabledByBuildConfig,
     url: String(
       runtimeConfig.url ||
         hostedConfig.url ||
@@ -34,7 +38,7 @@ const getConnectivityBranchServerConfig = () => {
         (import.meta as any).env?.VITE_BRANCH_SERVER_URL ||
         DEFAULT_BRANCH_SERVER_URL
     ).replace(/\/+$/, ''),
-    token: String(runtimeConfig.token || hostedConfig.token || ''),
+    token,
     runtimeConfigured: Boolean(runtimeConfig.url && runtimeConfig.token),
   }
 }
@@ -121,7 +125,7 @@ export const refreshConnectivityState = async ({ timeoutMs = 900 } = {}): Promis
     const branchConfig = getConnectivityBranchServerConfig()
     let branchServerAvailable = false
 
-    if (branchConfig.enabled && branchConfig.url) {
+    if (branchConfig.enabled && branchConfig.url && branchConfig.token) {
       try {
         await fetchBranchHealth(branchConfig.url, timeoutMs)
         branchServerAvailable = true
@@ -153,7 +157,7 @@ export const subscribeConnectivity = (listener: (state: ConnectivityState) => vo
 
 export const shouldPreferLocalApi = () => {
   const branchConfig = getConnectivityBranchServerConfig()
-  if (!branchConfig.enabled || !branchConfig.url) return false
+  if (!branchConfig.enabled || !branchConfig.url || !branchConfig.token) return false
   if (state.branchServerAvailable) return true
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return true
   return false
