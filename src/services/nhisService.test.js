@@ -31,9 +31,11 @@ import {
   exportNhisClaimsFile,
   normalizeNhisExportPeriod,
   submitNhisClaimDirect,
+  uploadNhisPrescriptionPdf,
   validateNhisPrescriptionPdfFile,
 } from './nhisService'
 import { supabase } from '../lib/supabase'
+import { shouldUseBranchServer } from './branchServerApi'
 import { invokeTierAccess } from './tierAccessService'
 
 beforeEach(() => {
@@ -167,6 +169,24 @@ describe('assessNhisClaimReadiness', () => {
     expect(readiness.blockers).toContain(
       'Attach the scanned prescription PDF or JPEG before saving/submitting this NHIS claim.'
     )
+  })
+
+  it('does not warn for missing patient address on pharmacy claims', () => {
+    const readiness = assessNhisClaimReadiness(
+      { ...baseClaim, patientAddress: '', organizationType: 'pharmacy' },
+      [baseMedicine]
+    )
+
+    expect(readiness.warnings).not.toContain('Patient address is missing on the claim.')
+  })
+
+  it('keeps patient address warning for hospital claims', () => {
+    const readiness = assessNhisClaimReadiness(
+      { ...baseClaim, patientAddress: '', organizationType: 'hospital', diagnosis: 'Uncomplicated malaria' },
+      [baseMedicine]
+    )
+
+    expect(readiness.warnings).toContain('Patient address is missing on the claim.')
   })
 
   it('blocks claims officer corrections when hospital diagnosis and medicines do not match', () => {
@@ -784,6 +804,43 @@ describe('CLAIM-it export helpers', () => {
     expect(payload.claims[0].prescriptionAttachment.fileName).toBe('rx.pdf')
   })
 
+  it('includes URL-only prescription attachments in CLAIM-it payloads', () => {
+    const payload = buildNhisClaimItExportPayload([
+      {
+        ...claim,
+        prescription_file_path: '',
+        prescription_file_url: 'data:image/jpeg;base64,rx',
+        prescription_file_name: 'rx.jpg',
+        prescription_file_type: 'image/jpeg',
+      },
+    ], {
+      yearMonth: '2026-05',
+      organizationType: 'hospital',
+    })
+
+    expect(payload.claims[0].prescriptionAttachment).toMatchObject({
+      fileName: 'rx.jpg',
+      fileType: 'image/jpeg',
+      storagePath: '',
+      url: 'data:image/jpeg;base64,rx',
+    })
+  })
+
+  it('omits patient address from pharmacy CLAIM-it payloads', () => {
+    const payload = buildNhisClaimItExportPayload([
+      {
+        ...claim,
+        organization_type: 'pharmacy',
+        patient_address: 'Accra',
+      },
+    ], {
+      yearMonth: '2026-05',
+      organizationType: 'pharmacy',
+    })
+
+    expect(payload.claims[0].patient.address).toBe('')
+  })
+
   it('keeps internal unserved-medicines notes out of CLAIM-it exports', () => {
     const payload = buildNhisClaimItExportPayload([
       {
@@ -1272,5 +1329,31 @@ describe('validateNhisPrescriptionPdfFile', () => {
     expect(validateNhisPrescriptionPdfFile({ name: 'rx.pdf', type: 'application/pdf', size: 4 * 1024 * 1024 })).toBe(
       'Prescription attachment must be 3 MB or smaller.'
     )
+  })
+})
+
+describe('uploadNhisPrescriptionPdf', () => {
+  it('stores a local data URL when running through the branch server', async () => {
+    shouldUseBranchServer.mockReturnValueOnce(true)
+    const OriginalFileReader = global.FileReader
+    class MockFileReader {
+      readAsDataURL() {
+        this.result = 'data:image/jpeg;base64,rx'
+        this.onload()
+      }
+    }
+    global.FileReader = MockFileReader
+
+    try {
+      await expect(uploadNhisPrescriptionPdf({ name: 'rx.jpg', type: '', size: 1024 })).resolves.toEqual({
+        prescriptionFilePath: '',
+        prescriptionFileName: 'rx.jpg',
+        prescriptionFileType: 'image/jpeg',
+        prescriptionFileSize: 1024,
+        prescriptionFileUrl: 'data:image/jpeg;base64,rx',
+      })
+    } finally {
+      global.FileReader = OriginalFileReader
+    }
   })
 })

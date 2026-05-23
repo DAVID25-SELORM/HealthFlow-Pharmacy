@@ -1064,10 +1064,18 @@ const Nhis = () => {
         return
       }
 
+      const openUrl = String(url).startsWith('data:')
+        ? URL.createObjectURL(await (await fetch(url)).blob())
+        : url
+
       if (newWindow) {
-        newWindow.location.href = url
+        newWindow.location.href = openUrl
       } else {
-        window.open(url, '_blank', 'noopener,noreferrer')
+        window.open(openUrl, '_blank', 'noopener,noreferrer')
+      }
+
+      if (openUrl !== url) {
+        window.setTimeout(() => URL.revokeObjectURL(openUrl), 60 * 1000)
       }
     } catch (err) {
       notify(err.message || 'Unable to open prescription file.', 'error')
@@ -2193,20 +2201,20 @@ const Nhis = () => {
                     </div>
                   </div>
 
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label>Patient Address</label>
-                      <input className="form-input" value={claimForm.patientAddress}
-                        onChange={(e) => setClaimForm((p) => ({ ...p, patientAddress: e.target.value }))} />
-                    </div>
-                    {isHospital && (
+                  {isHospital && (
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label>Patient Address</label>
+                        <input className="form-input" value={claimForm.patientAddress}
+                          onChange={(e) => setClaimForm((p) => ({ ...p, patientAddress: e.target.value }))} />
+                      </div>
                       <div className="form-group">
                         <label>Child Weight (kg)</label>
                         <input type="number" min="0" step="0.1" className="form-input" value={claimForm.childWeightKg}
                           onChange={(e) => setClaimForm((p) => ({ ...p, childWeightKg: e.target.value }))} />
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
 
                   <div className="form-row">
                     <div className="form-group">
@@ -2745,7 +2753,7 @@ const Nhis = () => {
               <div><strong>Folder No:</strong> {viewClaim.folder_no || '—'}</div>
               <div><strong>Gender:</strong> {viewClaim.gender || '—'}</div>
               <div><strong>DOB:</strong> {viewClaim.date_of_birth ? formatAppDate(viewClaim.date_of_birth) : '—'}</div>
-              <div><strong>Address:</strong> {viewClaim.patient_address || '—'}</div>
+              {isHospital && <div><strong>Address:</strong> {viewClaim.patient_address || '—'}</div>}
               {isHospital && <div><strong>Child Weight:</strong> {viewClaim.child_weight_kg ? `${viewClaim.child_weight_kg} kg` : '—'}</div>}
               <div><strong>CCC / CC Code:</strong> {viewClaim.ccc_no || '—'}</div>
               {isHospital && <div><strong>Diagnoses:</strong> {viewClaim.diagnosis || '—'}</div>}

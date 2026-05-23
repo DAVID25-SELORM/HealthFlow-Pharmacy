@@ -1350,7 +1350,7 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
   }
   if (!getClaimField(claimData, 'surname')) blockers.push('Patient surname is required.')
   if (!getClaimField(claimData, 'otherNames', 'other_names')) warnings.push('Patient other names are missing on the claim.')
-  if (!getClaimField(claimData, 'patientAddress', 'patient_address')) warnings.push('Patient address is missing on the claim.')
+  if (isHospital && !getClaimField(claimData, 'patientAddress', 'patient_address')) warnings.push('Patient address is missing on the claim.')
   if (!dateOfBirth) warnings.push('Patient date of birth is missing on the claim.')
   if (isHospital && patientAge !== null && patientAge < 12 && !(asNumber(childWeight) > 0)) {
     warnings.push('Child weight is missing for a child patient.')
@@ -1722,11 +1722,37 @@ export const validateNhisPrescriptionPdfFile = (file) => {
   return ''
 }
 
+const getPrescriptionAttachmentContentType = (file = {}) => {
+  const fileName = String(file.name || '').toLowerCase()
+  if (file.type === 'image/jpeg' || fileName.endsWith('.jpg') || fileName.endsWith('.jpeg')) {
+    return 'image/jpeg'
+  }
+  return 'application/pdf'
+}
+
 export const uploadNhisPrescriptionPdf = async (file, options = {}) => {
   const validationError = validateNhisPrescriptionPdfFile(file)
   if (validationError) throw new Error(validationError)
+  const contentType = getPrescriptionAttachmentContentType(file)
   if (shouldUseBranchServer()) {
-    throw new Error('Prescription attachment upload requires Supabase storage access.')
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(String(reader.result || ''))
+      reader.onerror = () => reject(reader.error || new Error('Unable to read prescription attachment.'))
+      reader.readAsDataURL(file)
+    })
+
+    if (!dataUrl) {
+      throw new Error('Unable to read prescription attachment.')
+    }
+
+    return {
+      prescriptionFilePath: '',
+      prescriptionFileName: file.name || 'prescription',
+      prescriptionFileType: contentType,
+      prescriptionFileSize: file.size || 0,
+      prescriptionFileUrl: dataUrl,
+    }
   }
   if (!supabase?.storage) {
     throw new Error('Supabase storage is not configured for prescription attachments.')
@@ -1742,7 +1768,6 @@ export const uploadNhisPrescriptionPdf = async (file, options = {}) => {
       ? crypto.randomUUID()
       : String(Date.now())
   const claimId = sanitizeStoragePathSegment(options.claimId || randomId, 'claim')
-  const contentType = file.type === 'image/jpeg' ? 'image/jpeg' : 'application/pdf'
   const fileName = sanitizeStoragePathSegment(file.name || 'prescription', 'prescription')
   const path = `${organizationId}/${month}/${claimId}/${Date.now()}-${fileName}`
 
@@ -2283,7 +2308,7 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
     folder_no:          normalizeText(claimData.folderNo)          || null,
     gender:             normalizeText(claimData.gender)            || null,
     date_of_birth:      claimData.dateOfBirth                      || null,
-    patient_address:    normalizeText(claimData.patientAddress)    || null,
+    patient_address:    isHospital ? normalizeText(claimData.patientAddress) || null : null,
     child_weight_kg:    isHospital && claimData.childWeightKg
       ? assertNonNegativeNumber(claimData.childWeightKg, 'Child weight')
       : null,
@@ -2490,7 +2515,7 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
     folder_no: normalizeText(claimData.folderNo) || null,
     gender: normalizeText(claimData.gender) || null,
     date_of_birth: claimData.dateOfBirth || null,
-    patient_address: normalizeText(claimData.patientAddress) || null,
+    patient_address: isHospital ? normalizeText(claimData.patientAddress) || null : null,
     child_weight_kg: isHospital && claimData.childWeightKg
       ? assertNonNegativeNumber(claimData.childWeightKg, 'Child weight')
       : null,
@@ -3590,13 +3615,15 @@ export const buildNhisClaimItExportPayload = (claims = [], options = {}) => {
     const claimOrganizationType = normalizeOrganizationType(claim.organization_type || organizationType)
     const medicines = (claim.nhis_claim_medicines || []).map(normalizeClaimMedicineForExport)
     const tariffServices = (claim.nhis_claim_services || []).map(normalizeClaimServiceForExport)
-    const prescriptionAttachment = normalizeText(claim.prescription_file_path)
+    const prescriptionFilePath = normalizeText(claim.prescription_file_path)
+    const prescriptionFileUrl = normalizeText(claim.prescription_file_url)
+    const prescriptionAttachment = prescriptionFilePath || prescriptionFileUrl
       ? {
           fileName: normalizeText(claim.prescription_file_name),
           fileType: normalizeText(claim.prescription_file_type) || 'application/pdf',
           fileSize: normalizePrescriptionFileSize(claim.prescription_file_size) || 0,
-          storagePath: normalizeText(claim.prescription_file_path),
-          url: normalizeText(claim.prescription_file_url),
+          storagePath: prescriptionFilePath,
+          url: prescriptionFileUrl,
         }
       : null
 
@@ -3615,7 +3642,7 @@ export const buildNhisClaimItExportPayload = (claims = [], options = {}) => {
         folderNumber: normalizeText(claim.folder_no),
         gender: normalizeText(claim.gender),
         dateOfBirth: toClaimItDate(claim.date_of_birth),
-        address: normalizeText(claim.patient_address),
+        address: claimOrganizationType === 'hospital' ? normalizeText(claim.patient_address) : '',
         childWeightKg: claim.child_weight_kg === null || claim.child_weight_kg === undefined
           ? null
           : Number(claim.child_weight_kg),
@@ -4440,8 +4467,9 @@ export const buildNhisClaimItCxf = async (payload) => {
   return output
 }
 
-const buildNhisMonthlyCsv = (claims) => {
+const buildNhisMonthlyCsv = (claims, options = {}) => {
   const escapeCell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`
+  const exportOrganizationType = normalizeOrganizationType(options.organizationType)
 
   const headerRow = [
     'Claim Number', 'Status', 'Surname', 'Other Names', 'Member No', 'HIN',
@@ -4462,13 +4490,15 @@ const buildNhisMonthlyCsv = (claims) => {
     const meds = claim.nhis_claim_medicines || []
     const services = claim.nhis_claim_services || []
     const prescriptionFile = claim.prescription_file_name || claim.prescription_file_path || ''
+    const claimOrganizationType = normalizeOrganizationType(claim.organization_type || exportOrganizationType)
+    const patientAddress = claimOrganizationType === 'hospital' ? claim.patient_address || '' : ''
     if (!meds.length && !services.length) {
       dataRows.push([
         claim.claim_number, claim.status,
         claim.surname, claim.other_names || '',
         claim.member_no || '', claim.hin || '',
         claim.folder_no || '', claim.gender || '',
-        claim.date_of_birth || '', claim.patient_address || '', claim.child_weight_kg || '', normalizeNhisCcCode(claim.ccc_no),
+        claim.date_of_birth || '', patientAddress, claim.child_weight_kg || '', normalizeNhisCcCode(claim.ccc_no),
         claim.diagnosis || '', prescriptionFile,
         claim.service_date_from || '',
         claim.referring_facility || '', claim.referral_code || '',
@@ -4484,7 +4514,7 @@ const buildNhisMonthlyCsv = (claims) => {
           claim.surname, claim.other_names || '',
           claim.member_no || '', claim.hin || '',
           claim.folder_no || '', claim.gender || '',
-          claim.date_of_birth || '', claim.patient_address || '', claim.child_weight_kg || '', normalizeNhisCcCode(claim.ccc_no),
+          claim.date_of_birth || '', patientAddress, claim.child_weight_kg || '', normalizeNhisCcCode(claim.ccc_no),
           claim.diagnosis || '', prescriptionFile,
           claim.service_date_from || '',
           claim.referring_facility || '', claim.referral_code || '',
@@ -4504,7 +4534,7 @@ const buildNhisMonthlyCsv = (claims) => {
           claim.surname, claim.other_names || '',
           claim.member_no || '', claim.hin || '',
           claim.folder_no || '', claim.gender || '',
-          claim.date_of_birth || '', claim.patient_address || '', claim.child_weight_kg || '', normalizeNhisCcCode(claim.ccc_no),
+          claim.date_of_birth || '', patientAddress, claim.child_weight_kg || '', normalizeNhisCcCode(claim.ccc_no),
           claim.diagnosis || '', prescriptionFile,
           claim.service_date_from || '',
           claim.referring_facility || '', claim.referral_code || '',
@@ -4557,7 +4587,7 @@ const createNhisExportFile = async (claims, period, options = {}) => {
   const format = normalizeClaimItExportFormat(options.format)
   if (format === 'csv') {
     return {
-      content: buildNhisMonthlyCsv(claims),
+      content: buildNhisMonthlyCsv(claims, options),
       contentType: 'text/csv;charset=utf-8;',
       fileName: `NHIS-Claims-${period.fileTag}.csv`,
     }
