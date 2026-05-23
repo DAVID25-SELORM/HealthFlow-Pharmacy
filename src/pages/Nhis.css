@@ -863,6 +863,19 @@
   padding-left: 1rem;
 }
 
+.nhia-readiness-section {
+  margin-top: 0.45rem;
+}
+
+.nhia-readiness-label {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
 .nhia-readiness-warnings {
   color: #92400e;
 }

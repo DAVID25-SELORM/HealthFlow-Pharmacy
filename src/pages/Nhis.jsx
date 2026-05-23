@@ -1008,7 +1008,6 @@ const Nhis = () => {
     [claimForm, claimMedicines, claimServices, organizationType, editingClaim, isHospital, clinicalRules, providerClassLevel, facilityPharmacyLevel, nhisDrugs, nhiaTariffItems, activeTariffFacilityGroup, activeTariffCateringOption]
   )
 
-  const readinessIssues = readiness.issues
   const readinessPassed = readiness.issues.length === 0
   const readinessBlocked = readiness.blockers.length > 0
   const canSaveCommunityPharmacyClaim = readiness.blockers.length === 0
@@ -2488,33 +2487,36 @@ const Nhis = () => {
                   ) : !readinessBlocked ? (
                     <>
                       <p>Can be saved now; claims officer must complete warnings before corrections/export.</p>
-                      <ul className="nhia-readiness-warnings">
-                        {readiness.warnings.slice(0, 4).map((issue) => (
-                          <li key={issue}>{issue}</li>
-                        ))}
-                      </ul>
-                      {readinessIssues.length > 8 && (
-                        <p>{readinessIssues.length - 8} more item(s) to complete before export.</p>
-                      )}
+                      <div className="nhia-readiness-section">
+                        <span className="nhia-readiness-label">Warnings ({readiness.warnings.length})</span>
+                        <ul className="nhia-readiness-warnings">
+                          {readiness.warnings.map((issue) => (
+                            <li key={issue}>{issue}</li>
+                          ))}
+                        </ul>
+                      </div>
                     </>
                   ) : (
                     <>
                       {readiness.blockers.length > 0 && (
-                        <ul>
-                          {readiness.blockers.slice(0, 4).map((issue) => (
-                            <li key={issue}>{issue}</li>
-                          ))}
-                        </ul>
+                        <div className="nhia-readiness-section">
+                          <span className="nhia-readiness-label">Blockers ({readiness.blockers.length})</span>
+                          <ul>
+                            {readiness.blockers.map((issue) => (
+                              <li key={issue}>{issue}</li>
+                            ))}
+                          </ul>
+                        </div>
                       )}
                       {readiness.warnings.length > 0 && (
-                        <ul className="nhia-readiness-warnings">
-                          {readiness.warnings.slice(0, 4).map((issue) => (
-                            <li key={issue}>{issue}</li>
-                          ))}
-                        </ul>
-                      )}
-                      {readinessIssues.length > 8 && (
-                        <p>{readinessIssues.length - 8} more item(s) to complete before export.</p>
+                        <div className="nhia-readiness-section">
+                          <span className="nhia-readiness-label">Warnings ({readiness.warnings.length})</span>
+                          <ul className="nhia-readiness-warnings">
+                            {readiness.warnings.map((issue) => (
+                              <li key={issue}>{issue}</li>
+                            ))}
+                          </ul>
+                        </div>
                       )}
                     </>
                   )}
