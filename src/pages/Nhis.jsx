@@ -48,7 +48,11 @@ import { getAllDrugs } from '../services/drugService'
 import { parseNhisDrugFile, generateNhisDrugTemplate } from '../services/nhisDrugImportService'
 import { parseNhisClinicalRuleFile, generateNhisClinicalRuleTemplate } from '../services/nhisClinicalRuleImportService'
 import { normalizeNhiaMemberNumber } from '../utils/nhiaMemberNumber'
-import { applyNhiaFacilityDefaults, hasNhiaFacilitySettings } from '../utils/nhiaFacilityDefaults'
+import {
+  applyNhiaFacilityDefaults,
+  getNhiaAccreditationExpiryDate,
+  hasNhiaFacilitySettings,
+} from '../utils/nhiaFacilityDefaults'
 import { getErrorMessage, isNetworkRequestError } from '../utils/requestErrors'
 // ✅ NHIS PHARMACY LEVEL PATCH START
 import {
@@ -962,7 +966,7 @@ const Nhis = () => {
     providerLevelCode: resolvedNhiaSettings?.providerLevelCode || resolvedNhiaSettings?.provider_level_code || '',
     credentialCode: resolvedNhiaSettings?.credentialCode || resolvedNhiaSettings?.credential_code || resolvedNhiaSettings?.facilityCode || '',
     licenseNumber: resolvedNhiaSettings?.licenseNumber || resolvedNhiaSettings?.license_number || organization?.license_number || '',
-    accreditationExpiryDate: resolvedNhiaSettings?.accreditationExpiryDate || resolvedNhiaSettings?.accreditation_expiry_date || '',
+    accreditationExpiryDate: getNhiaAccreditationExpiryDate(resolvedNhiaSettings),
     _inferredProviderClassLevel: resolvedNhiaSettings?._inferredProviderClassLevel,
     _inferredPharmacyFacilityLevel: resolvedNhiaSettings?._inferredPharmacyFacilityLevel,
     // ✅ NHIA CONFIG PATCH END

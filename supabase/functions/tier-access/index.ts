@@ -100,6 +100,39 @@ const json = (body: Record<string, unknown>, status = 200) =>
 
 const normalizeText = (value: unknown) => (typeof value === 'string' ? value.trim() : '')
 
+const normalizeNhiaAccreditationExpiryDate = (value: unknown) => {
+  const raw = normalizeText(value)
+  if (!raw) return ''
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw
+
+  const isoDate = raw.match(/^(\d{4}-\d{2}-\d{2})[T\s]/)?.[1]
+  if (isoDate) return isoDate
+
+  const localDate = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  if (localDate) {
+    const [, day, month, year] = localDate
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
+  }
+
+  const parsed = new Date(raw)
+  return Number.isNaN(parsed.getTime()) ? '' : parsed.toISOString().slice(0, 10)
+}
+
+const getNhiaAccreditationExpiryDate = (...sources: unknown[]) =>
+  normalizeNhiaAccreditationExpiryDate(
+    sources.map((source) => {
+      if (!source || typeof source !== 'object') return source
+      const payload = source as Record<string, unknown>
+      return normalizeText(
+        payload.accreditationExpiryDate ||
+          payload.accreditationExpiry ||
+          payload.nhiaAccreditationExpiry ||
+          payload.accreditation_expiry_date ||
+          payload.expiryDate
+      )
+    }).find(Boolean)
+  )
+
 const normalizeOrganizationType = (value: unknown) => {
   const normalized = normalizeText(value).toLowerCase()
   return normalized === 'hospital' ? 'hospital' : 'pharmacy'
@@ -1906,7 +1939,7 @@ const mapNhiaSettingsRow = (row: Record<string, unknown> | null, includeCredenti
     providerLevelCode: row.provider_level_code || '',
     credentialCode: row.credential_code || row.facility_code || '',
     licenseNumber: row.license_number || '',
-    accreditationExpiryDate: row.accreditation_expiry_date || '',
+    accreditationExpiryDate: getNhiaAccreditationExpiryDate(row),
     // ✅ NHIA CONFIG PATCH END
     // ✅ NHIA API ARCHITECTURE PATCH START
     integrationMode: row.integration_mode || 'claimit_export',
@@ -1979,7 +2012,7 @@ const saveNhiaApiSettings = async (
     if (normalizeText(value)) credentials[key] = value
   }
 
-  const accreditationExpiryDate = normalizeText(settings.accreditationExpiryDate ?? settings.accreditation_expiry_date)
+  const accreditationExpiryDate = getNhiaAccreditationExpiryDate(settings)
   const claimsOfficerName = normalizeText(settings.claimsOfficerName ?? settings.claims_officer_name)
 
   const row = {

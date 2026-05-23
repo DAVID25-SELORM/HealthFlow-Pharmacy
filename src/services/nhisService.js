@@ -12,6 +12,7 @@ import {
 } from '../utils/nhisPharmacyLevel'
 // ✅ NHIA CONFIG PATCH START
 import {
+  getNhiaAccreditationExpiryDate,
   normalizeNhiaFacilityTypeForOrganization,
   normalizeNhiaPharmacyFacilityLevel,
   normalizeNhiaProviderClassLevel,
@@ -157,6 +158,8 @@ const NHIA_API_SETTINGS_CACHE_FIELDS = [
   'licenseNumber',
   'license_number',
   'accreditationExpiryDate',
+  'accreditationExpiry',
+  'nhiaAccreditationExpiry',
   'accreditation_expiry_date',
   'claimsOfficerName',
   'claims_officer_name',
@@ -191,6 +194,12 @@ const NHIA_API_SETTINGS_CACHE_FIELDS = [
   'exportFormat',
   'export_format',
 ]
+
+const logNhiaAccreditationExpiryDate = (action, value) => {
+  if (import.meta.env.DEV) {
+    console.info(`[NHIA export] ${action} accreditationExpiryDate`, value || '')
+  }
+}
 
 const NHIS_CLAIM_MEDICINES_SELECT = `
       *,
@@ -294,7 +303,7 @@ export const buildClaimItConfigPreview = (settings = {}, options = {}) => {
     facilityCode: normalizeText(payload.facilityCode || payload.facility_code),
     credentialCode,
     licenseNumber: normalizeText(payload.licenseNumber || payload.license_number),
-    accreditationExpiryDate: normalizeText(payload.accreditationExpiryDate || payload.accreditation_expiry_date),
+    accreditationExpiryDate: getNhiaAccreditationExpiryDate(payload),
   }
 }
 // ✅ NHIA CONFIG PATCH END
@@ -1666,6 +1675,11 @@ const pickCacheableNhiaApiSettings = (settings = {}, organizationId = '') => {
     cacheable.organization_id = resolvedOrganizationId
   }
 
+  const accreditationExpiryDate = getNhiaAccreditationExpiryDate(settings, cacheable)
+  if (accreditationExpiryDate) {
+    cacheable.accreditationExpiryDate = accreditationExpiryDate
+  }
+
   return cacheable
 }
 
@@ -1721,6 +1735,11 @@ const mergeNhiaApiSettings = (...sources) => {
     }
   }
 
+  const accreditationExpiryDate = getNhiaAccreditationExpiryDate(...sources, merged)
+  if (accreditationExpiryDate) {
+    merged.accreditationExpiryDate = accreditationExpiryDate
+  }
+
   return Object.keys(merged).length ? merged : null
 }
 
@@ -1749,7 +1768,7 @@ const mapNhiaApiSettingsRow = (row = null) => {
     credential_code: row.credential_code || row.facility_code || '',
     licenseNumber: row.license_number || '',
     license_number: row.license_number || '',
-    accreditationExpiryDate: row.accreditation_expiry_date || '',
+    accreditationExpiryDate: getNhiaAccreditationExpiryDate(row),
     accreditation_expiry_date: row.accreditation_expiry_date || '',
     claimsOfficerName: row.claims_officer_name || '',
     claims_officer_name: row.claims_officer_name || '',
@@ -1830,7 +1849,7 @@ const buildNhiaApiSettingsRow = (settings = {}, organizationId = '') => {
     provider_level_code: normalizeText(settings.providerLevelCode || settings.provider_level_code) || null,
     credential_code: normalizeText(settings.credentialCode || settings.credential_code || settings.facilityCode || settings.facility_code) || null,
     license_number: normalizeText(settings.licenseNumber || settings.license_number) || null,
-    accreditation_expiry_date: normalizeText(settings.accreditationExpiryDate || settings.accreditation_expiry_date) || null,
+    accreditation_expiry_date: getNhiaAccreditationExpiryDate(settings) || null,
     provider_type_description: normalizeText(settings.providerTypeDescription || settings.provider_type_description) || null,
     provider_class_level: normalizeText(settings.providerClassLevel || settings.provider_class_level) || null,
     claims_officer_name: normalizeText(settings.claimsOfficerName || settings.claims_officer_name) || null,
@@ -1910,6 +1929,7 @@ export const getNhiaApiSettings = async (options = {}) => {
   const mergedSettings = mergeNhiaApiSettings(hostedSettings, directSettings, cachedSettings)
   if (mergedSettings) {
     writeCachedNhiaApiSettings(mergedSettings, organizationId)
+    logNhiaAccreditationExpiryDate('loaded', mergedSettings.accreditationExpiryDate)
     return mergedSettings
   }
 
@@ -1941,6 +1961,7 @@ export const saveNhiaApiSettings = async (settings, options = {}) => {
   const mergedSettings = mergeNhiaApiSettings(hostedSettings, directSettings, settings)
   if (mergedSettings) {
     writeCachedNhiaApiSettings(mergedSettings, organizationId)
+    logNhiaAccreditationExpiryDate('saved', mergedSettings.accreditationExpiryDate)
     return mergedSettings
   }
 
@@ -3633,7 +3654,7 @@ const getClaimItAccreditationRows = (payload, rows) => {
     // ✅ NHIA CONFIG PATCH END
     facilityName: normalizeText(payload.facilityName) || 'HealthFlow Facility',
     dateGenerated: toClaimItDate(payload.createdAt),
-    expiryDate: normalizeText(payload.accreditationExpiryDate || payload.accreditation_expiry_date) || getClaimItExpiryDate(effectiveDate, payload.createdAt),
+    expiryDate: getNhiaAccreditationExpiryDate(payload) || getClaimItExpiryDate(effectiveDate, payload.createdAt),
     credentialCode,
   }]
 }
@@ -4054,7 +4075,7 @@ export const buildNhisClaimItExportPayload = (claims = [], options = {}) => {
     providerLevelCode: normalizeText(options.providerLevelCode || options.provider_level_code),
     credentialCode,
     licenseNumber: normalizeText(options.licenseNumber || options.license_number),
-    accreditationExpiryDate: normalizeText(options.accreditationExpiryDate || options.accreditation_expiry_date),
+    accreditationExpiryDate: getNhiaAccreditationExpiryDate(options),
     // ✅ NHIA CONFIG PATCH END
     facilityCode: normalizeText(options.facilityCode),
     providerNumber: normalizeText(options.providerNumber),
@@ -4754,7 +4775,7 @@ const buildClaimItMeta = (payload, rows) => {
     pharmacyFacilityLevel: resolveClaimItPharmacyFacilityLevel(payload),
     providerClassLevel: resolveClaimItProviderClassLevel(payload),
     licenseNumber: normalizeText(payload.licenseNumber || payload.license_number),
-    accreditationExpiryDate: normalizeText(payload.accreditationExpiryDate || payload.accreditation_expiry_date),
+    accreditationExpiryDate: getNhiaAccreditationExpiryDate(payload),
     // ✅ NHIA CONFIG PATCH END
     providerLevel,
     providerID: providerId,
@@ -4951,7 +4972,9 @@ export const assertClaimItCxfExportConfigured = (options = {}) => {
   if (isHospitalFacility && !providerClassLevel) missing.push('providerClassLevel')
   if (isPharmacy && !pharmacyFacilityLevel) missing.push('pharmacyFacilityLevel')
   if (!resolveClaimItProviderLevelCode(options)) missing.push('providerLevelCode')
-  if (!normalizeText(options.accreditationExpiryDate || options.accreditation_expiry_date)) missing.push('accreditationExpiryDate')
+  const accreditationExpiryDate = getNhiaAccreditationExpiryDate(options)
+  logNhiaAccreditationExpiryDate('export validation config', accreditationExpiryDate)
+  if (!accreditationExpiryDate) missing.push('accreditationExpiryDate')
   if (!normalizeText(options.claimsOfficerName || options.claims_officer_name)) missing.push('claimsOfficerName')
   if (!normalizeText(options.submitterId || options.submitter_id)) missing.push('submitterId')
   if (isHospitalFacility && options._inferredProviderClassLevel) missing.push('providerClassLevel (confirm in Settings)')

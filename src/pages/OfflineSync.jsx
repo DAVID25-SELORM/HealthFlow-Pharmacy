@@ -24,7 +24,10 @@ import {
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
 import { readSignatureFileAsDataUrl } from '../utils/imageUpload'
-import { applyNhiaFacilityDefaults } from '../utils/nhiaFacilityDefaults'
+import {
+  applyNhiaFacilityDefaults,
+  normalizeNhiaAccreditationExpiryDate,
+} from '../utils/nhiaFacilityDefaults'
 import './OfflineSync.css'
 
 const ENTITY_LABELS = {
@@ -58,6 +61,7 @@ const blankNhiaForm = {
   schemeName: 'National Health Insurance',
   providerTypeDescription: '',
   providerClassLevel: '',
+  accreditationExpiryDate: '',
   claimsOfficerName: '',
   admissionPaymentOption: 'nhis_pays_admission',
   claimitValidationEnabled: true,
@@ -99,6 +103,7 @@ const buildNhiaForm = (settings, organization) => {
   return {
     ...blankNhiaForm,
     ...resolved,
+    accreditationExpiryDate: normalizeNhiaAccreditationExpiryDate(resolved.accreditationExpiryDate),
     credentials: { ...blankNhiaForm.credentials },
   }
 }
@@ -395,7 +400,10 @@ export default function OfflineSync() {
 
   const saveNhiaForm = async () => {
     await runAction('nhia-settings', 'NHIA settings save', async () => {
-      const saved = await saveNhiaSettings(nhiaForm)
+      const saved = await saveNhiaSettings({
+        ...nhiaForm,
+        accreditationExpiryDate: normalizeNhiaAccreditationExpiryDate(nhiaForm.accreditationExpiryDate),
+      })
       setNhiaSettings(saved)
       setNhiaForm(buildNhiaForm(saved, organization))
       return saved
@@ -714,6 +722,14 @@ SUPABASE_SYNC_KEY=<your-supabase-anon-or-publishable-key>`}</pre>
               <option value="patient_pays_admission">Patient pays admission</option>
               <option value="not_applicable">Not applicable</option>
             </select>
+          </label>
+          <label>
+            <span>Accreditation Expiry Date</span>
+            <input
+              type="date"
+              value={nhiaForm.accreditationExpiryDate}
+              onChange={(event) => updateNhiaForm('accreditationExpiryDate', normalizeNhiaAccreditationExpiryDate(event.target.value))}
+            />
           </label>
           <label>
             <span>Claims Officer</span>

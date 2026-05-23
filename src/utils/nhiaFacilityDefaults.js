@@ -6,6 +6,40 @@ const getFirstText = (...values) => values.map(normalizeText).find(Boolean) || '
 // ✅ NHIA CONFIG PATCH START
 const normalizeCode = (value) => normalizeText(value).toUpperCase().replace(/[^A-Z0-9]/g, '')
 
+export const normalizeNhiaAccreditationExpiryDate = (value) => {
+  const raw = normalizeText(value)
+  if (!raw) return ''
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw
+
+  const isoDate = raw.match(/^(\d{4}-\d{2}-\d{2})[T\s]/)?.[1]
+  if (isoDate) return isoDate
+
+  const localDate = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  if (localDate) {
+    const [, day, month, year] = localDate
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
+  }
+
+  const parsed = new Date(raw)
+  if (!Number.isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 10)
+
+  return ''
+}
+
+export const getNhiaAccreditationExpiryDate = (...sources) =>
+  normalizeNhiaAccreditationExpiryDate(
+    sources.map((source) => {
+      if (!source || typeof source !== 'object') return source
+      return getFirstText(
+        source.accreditationExpiryDate,
+        source.accreditationExpiry,
+        source.nhiaAccreditationExpiry,
+        source.accreditation_expiry_date,
+        source.expiryDate
+      )
+    }).find(Boolean)
+  )
+
 export const normalizeNhiaFacilityType = (value, fallback = '') => {
   const normalized = normalizeText(value).toLowerCase()
   if (normalized.includes('hospital')) return 'Hospital'
@@ -154,11 +188,7 @@ export const applyNhiaFacilityDefaults = (settings = null, organization = null) 
     providerLevelCode: getFirstText(source.providerLevelCode, source.provider_level_code),
     credentialCode,
     licenseNumber: getFirstText(source.licenseNumber, source.license_number, org.license_number),
-    accreditationExpiryDate: getFirstText(
-      source.accreditationExpiryDate,
-      source.accreditation_expiry_date,
-      org.accreditation_expiry_date
-    ),
+    accreditationExpiryDate: getNhiaAccreditationExpiryDate(source, org),
     _inferredProviderClassLevel: !normalizeNhiaProviderClassLevel(rawProviderClassLevel) && Boolean(providerClassLevel),
     _inferredPharmacyFacilityLevel: !normalizeNhiaPharmacyFacilityLevel(rawPharmacyFacilityLevel) && Boolean(pharmacyFacilityLevel),
     // ✅ NHIA CONFIG PATCH END

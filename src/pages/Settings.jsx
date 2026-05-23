@@ -25,6 +25,7 @@ import { ROLE_OPTIONS } from '../utils/roles'
 import {
   applyNhiaFacilityDefaults,
   getNhiaFacilityTypesForOrganization,
+  normalizeNhiaAccreditationExpiryDate,
   normalizeNhiaFacilityTypeForOrganization,
 } from '../utils/nhiaFacilityDefaults'
 // ✅ NHIS PHARMACY LEVEL PATCH START
@@ -103,19 +104,13 @@ const blankNhiaApiForm = {
 }
 
 const normalizeDateInputValue = (value) => {
-  const raw = String(value || '').trim()
-  if (!raw) return ''
-  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw
+  return normalizeNhiaAccreditationExpiryDate(value)
+}
 
-  const dateOnly = raw.match(/^(\d{4}-\d{2}-\d{2})[T\s]/)?.[1]
-  if (dateOnly) return dateOnly
-
-  const parsed = new Date(raw)
-  if (!Number.isNaN(parsed.getTime())) {
-    return parsed.toISOString().slice(0, 10)
+const logNhiaAccreditationExpiryDate = (action, value) => {
+  if (import.meta.env.DEV) {
+    console.info(`[NHIA settings] ${action} accreditationExpiryDate`, value || '')
   }
-
-  return ''
 }
 
 const toNhiaApiForm = (settings, organization) => {
@@ -232,9 +227,11 @@ const Settings = () => {
           getBranches(),
           getNhiaApiSettings({ organizationId: organization?.id || organization?.organization_id }).catch(() => null),
         ])
+        const nextNhiaApiForm = toNhiaApiForm(nhiaApiSettings, organization)
         setUsers(usersData)
         setBranches(branchesData)
-        setNhiaApiForm(toNhiaApiForm(nhiaApiSettings, organization))
+        setNhiaApiForm(nextNhiaApiForm)
+        logNhiaAccreditationExpiryDate('loaded', nextNhiaApiForm.accreditationExpiryDate)
 
         // Load organization stats
         if (organization?.id) {
@@ -401,27 +398,26 @@ const Settings = () => {
         organizationId: nhiaOrganizationId,
         organization_id: nhiaOrganizationId,
         accreditationExpiryDate,
-        accreditation_expiry_date: accreditationExpiryDate,
         claims_officer_name: nhiaApiForm.claimsOfficerName,
         facilityType: nhiaFacilityType,
         pharmacyFacilityLevel: isHospitalOrganization ? '' : nhiaApiForm.pharmacyFacilityLevel,
         apiBaseUrl: activeBaseUrl || nhiaApiForm.apiBaseUrl,
       }
+      logNhiaAccreditationExpiryDate('saved', accreditationExpiryDate)
       const savedNhiaApiSettings = await saveNhiaApiSettings(nhiaSettingsPayload, { organizationId: nhiaOrganizationId })
-      const savedHasAccreditationExpiryDate = Boolean(savedNhiaApiSettings) && (
-        savedNhiaApiSettings.accreditationExpiryDate !== undefined ||
-        savedNhiaApiSettings.accreditation_expiry_date !== undefined
+      const savedAccreditationExpiryDate = normalizeDateInputValue(
+        savedNhiaApiSettings?.accreditationExpiryDate ??
+          savedNhiaApiSettings?.accreditationExpiry ??
+          savedNhiaApiSettings?.nhiaAccreditationExpiry ??
+          savedNhiaApiSettings?.accreditation_expiry_date ??
+          savedNhiaApiSettings?.expiryDate
       )
       const savedClaimsOfficerName = savedNhiaApiSettings?.claimsOfficerName ?? savedNhiaApiSettings?.claims_officer_name
 
       setNhiaApiForm(toNhiaApiForm({
         ...nhiaSettingsPayload,
         ...(savedNhiaApiSettings || {}),
-        accreditationExpiryDate: savedHasAccreditationExpiryDate
-          ? normalizeDateInputValue(
-            savedNhiaApiSettings.accreditationExpiryDate ?? savedNhiaApiSettings.accreditation_expiry_date
-          )
-          : accreditationExpiryDate,
+        accreditationExpiryDate: savedAccreditationExpiryDate || accreditationExpiryDate,
         claimsOfficerName: savedClaimsOfficerName !== undefined
           ? savedClaimsOfficerName
           : nhiaApiForm.claimsOfficerName,

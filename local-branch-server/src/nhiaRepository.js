@@ -95,6 +95,40 @@ const toBool = (value) => (value === true || value === 1 || value === '1' ? 1 : 
 
 const normalizeText = (value) => String(value || '').trim()
 
+const normalizeAccreditationExpiryDate = (value) => {
+  const raw = normalizeText(value)
+  if (!raw) return ''
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw
+
+  const isoDate = raw.match(/^(\d{4}-\d{2}-\d{2})[T\s]/)?.[1]
+  if (isoDate) return isoDate
+
+  const localDate = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  if (localDate) {
+    const [, day, month, year] = localDate
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
+  }
+
+  const parsed = new Date(raw)
+  if (!Number.isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 10)
+
+  return ''
+}
+
+const getAccreditationExpiryDate = (...sources) =>
+  normalizeAccreditationExpiryDate(
+    sources.map((source) => {
+      if (!source || typeof source !== 'object') return source
+      return normalizeText(
+        source.accreditationExpiryDate ||
+          source.accreditationExpiry ||
+          source.nhiaAccreditationExpiry ||
+          source.accreditation_expiry_date ||
+          source.expiryDate
+      )
+    }).find(Boolean)
+  )
+
 const normalizeOrganizationType = (value) =>
   normalizeText(value).toLowerCase() === 'hospital' ? 'hospital' : 'pharmacy'
 
@@ -572,7 +606,7 @@ const mapSettingsRow = (row, { includeCredentials = false } = {}) => {
     providerLevelCode: row.provider_level_code || '',
     credentialCode: row.credential_code || row.facility_code || '',
     licenseNumber: row.license_number || '',
-    accreditationExpiryDate: row.accreditation_expiry_date || '',
+    accreditationExpiryDate: getAccreditationExpiryDate(row),
     // ✅ NHIA API ARCHITECTURE PATCH START
     integrationMode: row.integration_mode || 'claimit_export',
     sandboxBaseUrl: row.sandbox_base_url || '',
@@ -646,7 +680,7 @@ export const saveNhiaSettings = (settings = {}) => {
     providerLevelCode: normalizeText(settings.providerLevelCode) || null,
     credentialCode: normalizeText(settings.credentialCode) || normalizeText(settings.facilityCode) || null,
     licenseNumber: normalizeText(settings.licenseNumber) || null,
-    accreditationExpiryDate: normalizeText(settings.accreditationExpiryDate) || null,
+    accreditationExpiryDate: getAccreditationExpiryDate(settings) || null,
     // ✅ NHIA API ARCHITECTURE PATCH START
     integrationMode: normalizeText(settings.integrationMode) || 'claimit_export',
     sandboxBaseUrl: normalizeText(settings.sandboxBaseUrl).replace(/\/+$/, '') || null,

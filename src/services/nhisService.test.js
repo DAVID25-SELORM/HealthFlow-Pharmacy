@@ -1393,6 +1393,19 @@ describe('NHIA API settings fallback', () => {
       claimsOfficerName: 'Claims Officer',
     })
   })
+
+  it('normalizes legacy accreditation expiry fields to accreditationExpiryDate', async () => {
+    invokeTierAccess.mockResolvedValueOnce({
+      settings: {
+        organizationId: 'org-1',
+        accreditation_expiry_date: '31/12/2026',
+      },
+    })
+
+    await expect(getNhiaApiSettings({ organizationId: 'org-1' })).resolves.toMatchObject({
+      accreditationExpiryDate: '2026-12-31',
+    })
+  })
 })
 
 describe('NHIS claim status routing', () => {
