@@ -102,11 +102,28 @@ const blankNhiaApiForm = {
   },
 }
 
+const normalizeDateInputValue = (value) => {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw
+
+  const dateOnly = raw.match(/^(\d{4}-\d{2}-\d{2})[T\s]/)?.[1]
+  if (dateOnly) return dateOnly
+
+  const parsed = new Date(raw)
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toISOString().slice(0, 10)
+  }
+
+  return ''
+}
+
 const toNhiaApiForm = (settings, organization) => {
   const resolved = applyNhiaFacilityDefaults(settings, organization)
   return {
     ...blankNhiaApiForm,
     ...resolved,
+    accreditationExpiryDate: normalizeDateInputValue(resolved.accreditationExpiryDate),
     credentials: { ...blankNhiaApiForm.credentials },
   }
 }
@@ -379,6 +396,7 @@ const Settings = () => {
         : nhiaApiForm.productionBaseUrl
       await saveNhiaApiSettings({
         ...nhiaApiForm,
+        accreditationExpiryDate: normalizeDateInputValue(nhiaApiForm.accreditationExpiryDate),
         facilityType: nhiaFacilityType,
         pharmacyFacilityLevel: isHospitalOrganization ? '' : nhiaApiForm.pharmacyFacilityLevel,
         apiBaseUrl: activeBaseUrl || nhiaApiForm.apiBaseUrl,
@@ -967,7 +985,7 @@ const Settings = () => {
                   type="date"
                   placeholder="Accreditation expiry date"
                   value={nhiaApiForm.accreditationExpiryDate}
-                  onChange={(event) => updateNhiaApiForm('accreditationExpiryDate', event.target.value)}
+                  onChange={(event) => updateNhiaApiForm('accreditationExpiryDate', normalizeDateInputValue(event.target.value))}
                 />
               </div>
               {/* ✅ NHIA CONFIG PATCH END */}

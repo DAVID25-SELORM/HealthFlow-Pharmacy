@@ -19,6 +19,10 @@ vi.mock('./branchServerApi', () => ({
   updateBranchRecord: vi.fn(),
 }))
 
+vi.mock('./apiRouter', () => ({
+  routeWrite: vi.fn(async ({ local }) => await local()),
+}))
+
 vi.mock('./tierAccessService', () => ({
   invokeTierAccess: vi.fn(),
 }))
@@ -33,11 +37,13 @@ import {
   exportNhisClaimsFile,
   normalizeNhisExportPeriod,
   submitNhisClaimDirect,
+  updateNhisClaimStatus,
   uploadNhisPrescriptionPdf,
   validateNhisPrescriptionPdfFile,
 } from './nhisService'
 import { supabase } from '../lib/supabase'
-import { shouldUseBranchServer } from './branchServerApi'
+import { shouldUseBranchServer, updateBranchRecord } from './branchServerApi'
+import { routeWrite } from './apiRouter'
 import { invokeTierAccess } from './tierAccessService'
 
 beforeEach(() => {
@@ -1349,6 +1355,29 @@ describe('direct NHIA submission', () => {
       submissionAction: 'nhis.direct_claim_submit',
       claimIds: ['claim-1'],
     }))
+  })
+})
+
+describe('NHIS claim status routing', () => {
+  it('uses the local/cloud write router before marking a local-sync claim submitted', async () => {
+    shouldUseBranchServer.mockReturnValueOnce(true)
+    updateBranchRecord.mockResolvedValue({ id: 'claim-1', status: 'submitted' })
+
+    await expect(updateNhisClaimStatus('claim-1', 'submitted', '', 'user-1')).resolves.toEqual({
+      id: 'claim-1',
+      status: 'submitted',
+    })
+
+    expect(routeWrite).toHaveBeenCalledWith(expect.objectContaining({
+      label: 'NHIS claim status',
+      local: expect.any(Function),
+      cloud: expect.any(Function),
+    }))
+    expect(updateBranchRecord).toHaveBeenCalledWith(
+      'nhis/claims',
+      'claim-1',
+      expect.objectContaining({ status: 'submitted' })
+    )
   })
 })
 

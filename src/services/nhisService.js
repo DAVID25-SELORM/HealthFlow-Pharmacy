@@ -25,6 +25,7 @@ import {
   submitNhiaDirectPayload,
   updateBranchRecord,
 } from './branchServerApi'
+import { routeWrite } from './apiRouter'
 import { invokeTierAccess } from './tierAccessService'
 
 const UNIQUE_PATIENT_INSURANCE_INDEXES = [
@@ -2677,21 +2678,7 @@ export const updateNhisClaimStatus = async (id, status, rejectionReason = '', ac
   const validStatuses = ['served', 'submitted', 'paid', 'rejected']
   if (!validStatuses.includes(status)) throw new Error('Invalid claim status.')
 
-  if (shouldUseBranchServer()) {
-    return await updateBranchRecord('nhis/claims', id, {
-      status,
-      updated_at: new Date().toISOString(),
-      ...(status === 'rejected' && rejectionReason
-        ? { rejection_reason: rejectionReason }
-        : {}),
-    })
-  }
-
-  if (status === 'paid') {
-    await recordNhisPaidLedgerEntry(id, actorId)
-  }
-
-  const updates = {
+  const updatePayload = {
     status,
     updated_at: new Date().toISOString(),
     ...(status === 'rejected' && rejectionReason
@@ -2699,24 +2686,71 @@ export const updateNhisClaimStatus = async (id, status, rejectionReason = '', ac
       : {}),
   }
 
-  const { data, error } = await supabase
-    .from('nhis_claims')
-    .update(updates)
-    .eq('id', id)
-    .select()
-    .single()
+  const updateLocalStatus = async () =>
+    await updateBranchRecord('nhis/claims', id, updatePayload)
 
-  if (error) throw error
+  const updateCloudStatus = async () => {
+    if (status === 'paid') {
+      await recordNhisPaidLedgerEntry(id, actorId)
+    }
 
-  await tryLogAuditEvent({
-    eventType: 'nhis_claim.status_updated',
-    entityType: 'nhis_claims',
-    entityId: id,
-    action: 'update_status',
-    details: { status, rejection_reason: rejectionReason || null },
+    const { data, error } = await supabase
+      .from('nhis_claims')
+      .update(updatePayload)
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (error) throw error
+
+    await tryLogAuditEvent({
+      eventType: 'nhis_claim.status_updated',
+      entityType: 'nhis_claims',
+      entityId: id,
+      action: 'update_status',
+      details: { status, rejection_reason: rejectionReason || null },
+    })
+
+    return data
+  }
+
+  return await routeWrite({
+    label: 'NHIS claim status',
+    local: updateLocalStatus,
+    cloud: updateCloudStatus,
   })
+}
 
-  return data
+const markNhisClaimsSubmittedByRoute = async (claims) => {
+  const servedClaims = claims.filter((claim) => claim.status === 'served')
+  const servedClaimIds = servedClaims.map((claim) => claim.id).filter(Boolean)
+  if (!servedClaimIds.length) return
+
+  const submittedPayload = {
+    status: 'submitted',
+    updated_at: new Date().toISOString(),
+  }
+
+  const markLocalSubmitted = async () => {
+    await Promise.all(
+      servedClaims.map((claim) => updateBranchRecord('nhis/claims', claim.id, submittedPayload))
+    )
+  }
+
+  const markCloudSubmitted = async () => {
+    const { error } = await supabase
+      .from('nhis_claims')
+      .update(submittedPayload)
+      .in('id', servedClaimIds)
+
+    if (error) throw error
+  }
+
+  await routeWrite({
+    label: 'NHIS submitted claim status',
+    local: markLocalSubmitted,
+    cloud: markCloudSubmitted,
+  })
 }
 
 // ─── Batch Export ──────────────────────────────────────────────────────────────
@@ -4674,24 +4708,7 @@ const assertNhisClaimsReadyForFinalSubmission = async (claims, organizationType,
 }
 
 const markNhisServedClaimsSubmitted = async (claims) => {
-  const servedClaims = claims.filter((claim) => claim.status === 'served')
-  if (shouldUseBranchServer()) {
-    await Promise.all(
-      servedClaims.map((claim) => updateBranchRecord('nhis/claims', claim.id, {
-        status: 'submitted',
-        updated_at: new Date().toISOString(),
-      }))
-    )
-    return
-  }
-
-  const servedClaimIds = servedClaims.map((claim) => claim.id).filter(Boolean)
-  if (servedClaimIds.length) {
-    await supabase
-      .from('nhis_claims')
-      .update({ status: 'submitted', updated_at: new Date().toISOString() })
-      .in('id', servedClaimIds)
-  }
+  await markNhisClaimsSubmittedByRoute(claims)
 }
 
 const getDirectSubmissionPeriodForClaim = (claim = {}) => {

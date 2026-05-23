@@ -5,6 +5,8 @@ const DEFAULT_BRANCH_SERVER_URL = 'http://localhost:4780'
 const RUNTIME_CONFIG_KEY = 'healthflow.branchServer.config.v1'
 const DEFAULT_BRANCH_REQUEST_TIMEOUT_MS = 1500
 const SEARCH_BRANCH_REQUEST_TIMEOUT_MS = 450
+const WRITE_BRANCH_REQUEST_TIMEOUT_MS = 8000
+const LONG_BRANCH_REQUEST_TIMEOUT_MS = 60000
 
 const readHostedConfig = () => {
   if (typeof window === 'undefined') {
@@ -231,6 +233,7 @@ export const createBranchSale = async (salePayload) => {
   const response = await branchFetch('/api/sales', {
     method: 'POST',
     body: JSON.stringify(salePayload),
+    timeoutMs: WRITE_BRANCH_REQUEST_TIMEOUT_MS,
   })
 
   return {
@@ -251,6 +254,7 @@ export const initiateBranchPayment = async (paymentPayload) => {
   const response = await branchFetch('/api/payments/initiate', {
     method: 'POST',
     body: JSON.stringify(paymentPayload),
+    timeoutMs: LONG_BRANCH_REQUEST_TIMEOUT_MS,
   })
 
   return response.data || null
@@ -264,6 +268,7 @@ export const getBranchPaymentStatus = async (reference) => {
 export const runBranchSync = async () =>
   await branchFetch('/api/sync/run', {
     method: 'POST',
+    timeoutMs: LONG_BRANCH_REQUEST_TIMEOUT_MS,
   })
 
 export const getBranchSyncStatus = async () => await branchFetch('/api/sync/status')
@@ -271,11 +276,13 @@ export const getBranchSyncStatus = async () => await branchFetch('/api/sync/stat
 export const pullBranchInventory = async () =>
   await branchFetch('/api/sync/pull-inventory', {
     method: 'POST',
+    timeoutMs: LONG_BRANCH_REQUEST_TIMEOUT_MS,
   })
 
 export const pullBranchReferenceData = async () =>
   await branchFetch('/api/sync/pull-reference-data', {
     method: 'POST',
+    timeoutMs: LONG_BRANCH_REQUEST_TIMEOUT_MS,
   })
 
 export const getNhiaSettings = async () => {
@@ -287,6 +294,7 @@ export const saveNhiaSettings = async (settings) => {
   const response = await branchFetch('/api/nhia/settings', {
     method: 'PUT',
     body: JSON.stringify(settings || {}),
+    timeoutMs: WRITE_BRANCH_REQUEST_TIMEOUT_MS,
   })
   return response.data || null
 }
@@ -295,6 +303,7 @@ export const generateNhiaCcCode = async (claimContext = {}) => {
   const response = await branchFetch('/api/nhia/cc-code', {
     method: 'POST',
     body: JSON.stringify(claimContext || {}),
+    timeoutMs: LONG_BRANCH_REQUEST_TIMEOUT_MS,
   })
   return response.data || null
 }
@@ -315,12 +324,14 @@ export const listNhiaClaims = async (filters = {}) => {
 export const submitPendingNhiaClaims = async () =>
   await branchFetch('/api/nhia/submit-pending', {
     method: 'POST',
+    timeoutMs: LONG_BRANCH_REQUEST_TIMEOUT_MS,
   })
 
 export const submitNhiaDirectPayload = async ({ payload, claimIds = [], action = '' } = {}) => {
   const response = await branchFetch('/api/nhia/direct-submit', {
     method: 'POST',
     body: JSON.stringify({ payload, claimIds, action }),
+    timeoutMs: LONG_BRANCH_REQUEST_TIMEOUT_MS,
   })
   return response.data || null
 }
@@ -329,6 +340,7 @@ export const createNhiaBatch = async ({ claimIds = [], exportFormat = 'json' } =
   const response = await branchFetch('/api/nhia/batches', {
     method: 'POST',
     body: JSON.stringify({ claimIds, exportFormat }),
+    timeoutMs: WRITE_BRANCH_REQUEST_TIMEOUT_MS,
   })
   return response.data || null
 }
@@ -395,6 +407,7 @@ export const createBranchRecord = async (resource, payload) => {
   const response = await branchFetch(`/api/${resource}`, {
     method: 'POST',
     body: JSON.stringify(payload || {}),
+    timeoutMs: WRITE_BRANCH_REQUEST_TIMEOUT_MS,
   })
   return response.data
 }
@@ -403,6 +416,7 @@ export const updateBranchRecord = async (resource, id, payload) => {
   const response = await branchFetch(`/api/${resource}/${id}`, {
     method: 'PUT',
     body: JSON.stringify(payload || {}),
+    timeoutMs: WRITE_BRANCH_REQUEST_TIMEOUT_MS,
   })
   return response.data
 }
