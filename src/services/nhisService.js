@@ -134,6 +134,9 @@ const OPTIONAL_CLAIM_SCHEMA_COLUMNS = [
 ]
 const CLAIMIT_EXPORT_FORMATS = ['cxf', 'xml', 'json', 'csv']
 const NHIA_TARIFF_VERSION = 'FEB 2023'
+const CLAIM_IT_MEDICINE_PRICE_VERSION = '2025-05-01.250531'
+const CLAIM_IT_SERVICE_TARIFF_VERSION = '2023-02-01.250531'
+const CLAIM_IT_POLICY_VERSION = 'cgs.2022-12-01.250531'
 const NHIA_API_SETTINGS_CACHE_PREFIX = 'healthflow.nhiaApiSettings.v1'
 const NHIA_API_SETTINGS_CACHE_FIELDS = [
   'id',
@@ -3126,9 +3129,12 @@ const markNhisClaimsSubmittedByRoute = async (claims) => {
  * Normalizes monthly or custom-period export filters for NHIA submission.
  */
 export const normalizeNhisExportPeriod = (options = {}) => {
-  const mode = normalizeText(options.mode || options.exportMode || '').toLowerCase() === 'custom'
+  const requestedMode = normalizeText(options.mode || options.exportMode || '').toLowerCase()
+  const mode = requestedMode === 'custom'
     ? 'custom'
-    : 'month'
+    : ['partial', 'month-to-date', 'month_to_date', 'mtd'].includes(requestedMode)
+      ? 'partial'
+      : 'month'
   const generatedAt = options.generatedAt || new Date().toISOString()
 
   if (mode === 'custom') {
@@ -3145,6 +3151,24 @@ export const normalizeNhisExportPeriod = (options = {}) => {
     return {
       mode,
       yearMonth: '',
+      fromDate,
+      toDate,
+      label: `${fromDate} to ${toDate}`,
+      fileTag: `${fromDate.replace(/-/g, '')}-${toDate.replace(/-/g, '')}`,
+    }
+  }
+
+  if (mode === 'partial') {
+    const toDate = normalizeText(options.toDate || options.dateTo || options.periodTo || generatedAt.slice(0, 10))
+    if (!isValidIsoDate(toDate)) {
+      throw new Error('Partial export period must include a valid Up To date.')
+    }
+    const yearMonth = toDate.slice(0, 7)
+    const fromDate = `${yearMonth}-01`
+
+    return {
+      mode,
+      yearMonth,
       fromDate,
       toDate,
       label: `${fromDate} to ${toDate}`,
@@ -3384,42 +3408,44 @@ const parseFrequencyValue = (value) => {
   return parseDirectionsNumber(text, '1.00')
 }
 
-// ✅ CLAIMIT SAVE FIX START
 const CLAIM_IT_DOCTRINE_MIGRATIONS = [
-  'DoctrineMigrations\\Version20170101000000',
-  'DoctrineMigrations\\Version20170315000000',
-  'DoctrineMigrations\\Version20170601000000',
-  'DoctrineMigrations\\Version20180112000000',
-  'DoctrineMigrations\\Version20180426000000',
-  'DoctrineMigrations\\Version20181115000000',
-  'DoctrineMigrations\\Version20190322000000',
-  'DoctrineMigrations\\Version20190718000000',
-  'DoctrineMigrations\\Version20200130000000',
-  'DoctrineMigrations\\Version20200619000000',
-  'DoctrineMigrations\\Version20210108000000',
-  'DoctrineMigrations\\Version20210624000000',
-  'DoctrineMigrations\\Version20220314000000',
-  'DoctrineMigrations\\Version20221201000000',
-  'DoctrineMigrations\\Version20250531000000',
+  'DoctrineMigrations\\Version20240629224941',
+  'DoctrineMigrations\\Version20240125165114',
+  'DoctrineMigrations\\Version20231109002747',
+  'DoctrineMigrations\\Version20231023180333',
+  'DoctrineMigrations\\Version20230607141151',
+  'DoctrineMigrations\\Version20230417132348',
+  'DoctrineMigrations\\Version20220627160453',
+  'DoctrineMigrations\\Version20210723124850',
+  'DoctrineMigrations\\Version20210410200656',
+  'DoctrineMigrations\\Version20200423115101',
+  'DoctrineMigrations\\Version20190813200553',
+  'DoctrineMigrations\\Version20170814193015',
+  'DoctrineMigrations\\Version20170709122733',
+  'DoctrineMigrations\\Version20170617124727',
+  'DoctrineMigrations\\Version20170611184415',
+  'DoctrineMigrations\\Version20170430000428',
+  'DoctrineMigrations\\Version20170122224753',
+  'DoctrineMigrations\\Version20170101145643',
+  'DoctrineMigrations\\Version20170101130118',
+  'DoctrineMigrations\\Version20161218200856',
+  'DoctrineMigrations\\Version20161120224705',
+  'DoctrineMigrations\\Version20161106145044',
+  'DoctrineMigrations\\Version20161007193233',
+  'DoctrineMigrations\\Version20160917202912',
+  'DoctrineMigrations\\Version20160916193613',
+  'DoctrineMigrations\\Version20160916193612',
+  'DoctrineMigrations\\Version20160901033143',
+  'DoctrineMigrations\\Version20160901033142',
 ]
 
-const CLAIM_IT_EMPTY_TABLE_STRUCTS = {
-  attendanceentries: { _entry_id: 'int(11)', _attendance_id: 'varchar(60)', entryType: 'varchar(255)', entryDate: 'date' },
-  attendances: { guid: 'varchar(60)', memberNo: 'varchar(255)', attendanceDate: 'date', providerID: 'varchar(255)' },
-  contracts: { contractID: 'varchar(255)', providerID: 'varchar(255)', policyID: 'varchar(255)' },
-  diseases: { code: 'varchar(255)', name: 'varchar(255)' },
-  gdrgs: { code: 'varchar(255)', description: 'varchar(255)', mdcCode: 'varchar(255)' },
-  gdrgs_icd10s: { gdrgCode: 'varchar(255)', icd10Code: 'varchar(255)' },
-  icd10s: { code: 'varchar(255)', description: 'varchar(255)' },
-  mdcs: { code: 'varchar(255)', description: 'varchar(255)' },
-  medicineclasses: { code: 'varchar(255)', name: 'varchar(255)' },
-  medicineprices: { medicineCode: 'varchar(255)', version: 'varchar(255)', price: 'decimal(10,4)' },
-  medicines: { code: 'varchar(255)', description: 'varchar(255)', classCode: 'varchar(255)' },
-  policyrules: { policyID: 'varchar(255)', ruleID: 'varchar(255)' },
-  rules: { ruleID: 'varchar(255)', name: 'varchar(255)' },
-  servicetariffs: { gdrgCode: 'varchar(255)', version: 'varchar(255)', tariff: 'decimal(10,4)' },
-  systemupdates: { updateID: 'varchar(255)', appliedOn: 'datetime' },
-  users: { userID: 'varchar(255)', name: 'varchar(250)', role: 'varchar(32)' },
+const CLAIM_IT_APP_VERSION = {
+  version: 'Head',
+  build: '2025053123',
+  type: 'head',
+  sha1: 'bebe76e96864d0f25d3514e5916816aadc34cff4',
+  client: '1.0.0.3',
+  mode: 'standalone',
 }
 
 const getClaimItExpiryDate = (effectiveDate, generatedAt) => {
@@ -3439,18 +3465,29 @@ const getClaimItProviderLevelId = (claimRow = {}) =>
 
 const getClaimItDbStruct = () => ({
   accreditations: {
+    uid: 'varchar(50)',
+    prescriptionLevelID: 'varchar(255)',
+    facilityName: 'varchar(255)',
+    dateGenerated: 'date',
+    expiryDate: 'date',
+    isTemporary: 'tinyint(1)',
+    meta: 'mediumtext',
+    effectiveDate: 'date',
+    providerID: 'varchar(255)',
+    ccd_agencyCode: 'varchar(255)',
+    ccd_regionCode: 'varchar(255)',
+    ccd_districtCode: 'varchar(255)',
+    ccd_ownershipCode: 'varchar(255)',
+    ccd_sequenceNumber: 'varchar(255)',
+    ccd_facilityTypeCode: 'varchar(255)',
+    ccd_prescriptionLevelCode: 'varchar(255)',
+    ccd_cateringStatusCode: 'varchar(255)',
+    ccd_effectiveDate: 'date',
     accred_effectiveDate: 'date',
     accred_providerID: 'varchar(255)',
     facilityTypeCode: 'varchar(255)',
     ownershipTypeCode: 'varchar(255)',
     cateringStatusCode: 'varchar(255)',
-    prescriptionLevelID: 'varchar(255)',
-    providerLevel: 'varchar(255)',
-    facilityType: 'varchar(255)',
-    facilityName: 'varchar(255)',
-    dateGenerated: 'date',
-    expiryDate: 'date',
-    credentialCode: 'varchar(255)',
   },
   attachmentdata: {
     _data_id: 'int(11)',
@@ -3464,10 +3501,44 @@ const getClaimItDbStruct = () => ({
     fileType: 'varchar(255)',
     comments: 'varchar(255)',
   },
-  ...CLAIM_IT_EMPTY_TABLE_STRUCTS,
+  attendanceentries: {
+    _entry_id: 'int(11)',
+    _claim_id: 'varchar(60)',
+    claimType: 'varchar(255)',
+    attdate: 'date',
+    ccc: 'varchar(255)',
+  },
+  attendances: {
+    attdate: 'date',
+    ccc: 'varchar(255)',
+    expiryDate: 'datetime',
+    data: 'longtext',
+    claimType: 'varchar(255)',
+    memberNo: 'varchar(255)',
+    cardSerialNo: 'varchar(255)',
+    surname: 'varchar(255)',
+    otherNames: 'varchar(255)',
+    dateOfBirth: 'date',
+    gender: 'varchar(255)',
+    hospitalRecNo: 'varchar(255)',
+    isDependant: 'tinyint(1)',
+    generatedOn: 'datetime',
+    generatedByname: 'varchar(255)',
+    generatedByuserID: 'varchar(255)',
+    generatedByrole: 'varchar(255)',
+    addedOn: 'datetime',
+    addedByname: 'varchar(255)',
+    addedByuserID: 'varchar(255)',
+    addedByrole: 'varchar(255)',
+    modifiedOn: 'datetime',
+    modifiedByname: 'varchar(255)',
+    modifiedByuserID: 'varchar(255)',
+    modifiedByrole: 'varchar(255)',
+  },
   cateringstatuses: {
-    code: 'varchar(255)',
-    name: 'varchar(255)',
+    description: 'varchar(255)',
+    accredCode: 'varchar(4)',
+    statusCode: 'varchar(32)',
   },
   claims: {
     guid: 'varchar(60)',
@@ -3486,7 +3557,7 @@ const getClaimItDbStruct = () => ({
     autoSummaryGDRG: 'varchar(255)',
     autoSummaryCost: 'decimal(10,2)',
     memberAge: 'decimal(10,2)',
-    memberAgeGroup: 'varchar(255)',
+    memberAgeGroup: 'varchar(1)',
     isImported: 'tinyint(1)',
     refID: 'varchar(255)',
     medVersion: 'varchar(255)',
@@ -3495,7 +3566,7 @@ const getClaimItDbStruct = () => ({
     isDirty: 'tinyint(1)',
     status: 'varchar(255)',
     submissionTime: 'datetime',
-    extraData: 'mediumtext',
+    extraData: 'longtext',
     addedOn: 'datetime',
     addedByname: 'varchar(255)',
     addedByuserID: 'varchar(255)',
@@ -3504,6 +3575,10 @@ const getClaimItDbStruct = () => ({
     modifiedByname: 'varchar(255)',
     modifiedByuserID: 'varchar(255)',
     modifiedByrole: 'varchar(255)',
+    signedOn: 'datetime',
+    signedByname: 'varchar(255)',
+    signedByuserID: 'varchar(255)',
+    signedByrole: 'varchar(255)',
     memberNo: 'varchar(255)',
     cardSerialNo: 'varchar(255)',
     surname: 'varchar(255)',
@@ -3511,58 +3586,37 @@ const getClaimItDbStruct = () => ({
     dateOfBirth: 'date',
     gender: 'varchar(255)',
     hospitalRecNo: 'varchar(255)',
+    isDependant: 'tinyint(1)',
     prescriptionLevelID: 'varchar(255)',
     credentialCode: 'varchar(255)',
     accred_effectiveDate: 'date',
     accred_providerID: 'varchar(255)',
+    accred_ccd_agencyCode: 'varchar(255)',
+    accred_ccd_regionCode: 'varchar(255)',
+    accred_ccd_districtCode: 'varchar(255)',
+    accred_ccd_ownershipCode: 'varchar(255)',
+    accred_ccd_sequenceNumber: 'varchar(255)',
+    accred_ccd_facilityTypeCode: 'varchar(255)',
+    accred_ccd_prescriptionLevelCode: 'varchar(255)',
+    accred_ccd_cateringStatusCode: 'varchar(255)',
+    accred_ccd_effectiveDate: 'date',
     facilityTypeCode: 'varchar(255)',
     ownershipTypeCode: 'varchar(255)',
     cateringStatusCode: 'varchar(255)',
+    refclaimCheckCode: 'varchar(255)',
+    reffacilityID: 'varchar(255)',
+    reffacilityName: 'varchar(255)',
     minDOSP: 'date',
     maxDOSP: 'date',
-    serviceProvisionDates: 'varchar(255)',
-    durationOfSpell: 'varchar(255)',
+    serviceProvisionDates: 'varchar(750)',
+    specialtiesAttended: 'varchar(750)',
+    durationOfSpell: 'int(11)',
     typeOfService: 'varchar(255)',
-    includesPharmacy: 'tinyint(1)',
+    isUnbundled: 'varchar(255)',
+    includesPharmacy: 'varchar(255)',
+    typeOfAttendance: 'varchar(255)',
+    serviceOutcome: 'varchar(255)',
     claimType: 'varchar(255)',
-  },
-  medicineentries: {
-    _entry_id: 'int(11)',
-    _claim_id: 'varchar(60)',
-    medicineCode: 'varchar(255)',
-    serviceDate: 'date',
-    cost: 'decimal(10,4)',
-    qty: 'varchar(255)',
-    dispensedQty: 'varchar(255)',
-    dispensaryUnit: 'varchar(750)',
-    extraDirections: 'mediumtext',
-    unparsed: 'mediumtext',
-    dose_value: 'decimal(10,2)',
-    dose_unit: 'varchar(255)',
-    frequency_value: 'decimal(10,2)',
-    frequency_unit: 'varchar(255)',
-    frequency_desc: 'varchar(255)',
-    duration_value: 'decimal(10,2)',
-    duration_unit: 'varchar(255)',
-    duration_desc: 'varchar(255)',
-  },
-  serviceentries: {
-    _entry_id: 'int(11)',
-    _claim_id: 'varchar(60)',
-    gdrgCode: 'varchar(255)',
-    cost: 'decimal(10,4)',
-    entryType: 'varchar(255)',
-    serviceDate: 'date',
-    icd10: 'varchar(255)',
-    description: 'varchar(255)',
-  },
-  summaryitems: {
-    _entry_id: 'int(11)',
-    _claim_id: 'varchar(60)',
-    type: 'varchar(255)',
-    ordinal: 'int(11)',
-    description: 'varchar(255)',
-    amount: 'decimal(10,4)',
   },
   comments: {
     _entry_id: 'int(11)',
@@ -3573,12 +3627,213 @@ const getClaimItDbStruct = () => ({
     createdByuserID: 'varchar(255)',
     createdByrole: 'varchar(255)',
   },
+  contracts: {
+    scheme: 'varchar(255)',
+    facilityName: 'varchar(255)',
+    dateGenerated: 'date',
+    expiryDate: 'date',
+    isTemporary: 'tinyint(1)',
+    data: 'longtext',
+    meta: 'mediumtext',
+    effectiveDate: 'date',
+    providerID: 'varchar(255)',
+    contractCode: 'varchar(255)',
+  },
+  diseases: {
+    _id: 'int(11)',
+    icd10: 'varchar(255)',
+    gender: 'varchar(255)',
+    ageGroup: 'varchar(255)',
+    sanitizedDescription: 'varchar(255)',
+    description: 'varchar(255)',
+  },
   doctrine_migration_versions: {
-    version: 'varchar(255)',
+    version: 'varchar(1024)',
+    executed_at: 'datetime',
+    execution_time: 'int(11)',
   },
   facilitytypes: {
+    description: 'varchar(255)',
+    accredCode: 'varchar(4)',
+    typeCode: 'varchar(32)',
+  },
+  gdrgs: {
     code: 'varchar(255)',
+    description: 'varchar(255)',
+    MDCCode: 'varchar(255)',
+    GDRGNo: 'varchar(255)',
+    split: 'varchar(255)',
+    prefix: 'varchar(255)',
+    suffix: 'varchar(255)',
+  },
+  gdrgs_icd10s: {
+    code: 'varchar(255)',
+    icd10: 'varchar(255)',
+  },
+  icd10s: {
+    icd10: 'varchar(255)',
+    description: 'varchar(255)',
+  },
+  mdcs: {
+    code: 'varchar(255)',
+    description: 'varchar(255)',
+  },
+  medicineclasses: {
+    _entry_id: 'int(11)',
+    _med_code: 'varchar(255)',
+    major: 'varchar(255)',
+    minor: 'varchar(255)',
+  },
+  medicineentries: {
+    _entry_id: 'int(11)',
+    _claim_id: 'varchar(60)',
+    medicineCode: 'varchar(255)',
+    serviceDate: 'date',
+    cost: 'decimal(10,4)',
+    qty: 'varchar(255)',
+    dispensedQty: 'varchar(255)',
+    dispensaryUnit: 'varchar(150)',
+    extraDirections: 'varchar(255)',
+    unparsed: 'varchar(255)',
+    dose_value: 'decimal(10,2)',
+    dose_unit: 'varchar(255)',
+    frequency_value: 'decimal(10,2)',
+    frequency_unit: 'varchar(255)',
+    frequency_desc: 'varchar(255)',
+    duration_value: 'decimal(10,2)',
+    duration_unit: 'varchar(255)',
+    duration_desc: 'varchar(255)',
+  },
+  medicineprices: {
+    uid: 'varchar(255)',
+    price: 'decimal(10,2)',
+    pricingUnit: 'varchar(255)',
+    maxDosage: 'decimal(10,0)',
+    flags: 'varchar(750)',
+    prescriptionUnits: 'varchar(750)',
+    dispensaryUnits: 'varchar(750)',
+    buildVersion: 'varchar(255)',
+    effectiveDate: 'date',
+    prescriptionLevelCode: 'varchar(255)',
+    medicineCode: 'varchar(255)',
+  },
+  medicines: {
+    code: 'varchar(255)',
+    description: 'varchar(255)',
+  },
+  ownerships: {
+    description: 'varchar(255)',
+    accredCode: 'varchar(4)',
+    ownershipCode: 'varchar(32)',
+  },
+  policies: {
+    uid: 'varchar(40)',
+    description: 'varchar(255)',
+    buildVersion: 'varchar(255)',
+    effectiveDate: 'date',
+    type: 'varchar(32)',
+  },
+  policyrules: {
+    _id: 'int(11)',
+    _policy_id: 'varchar(40)',
+    position: 'int(11)',
     name: 'varchar(255)',
+    outcome: 'varchar(255)',
+    version: 'varchar(255)',
+    runAt: 'varchar(255)',
+  },
+  prescribersfordays: {
+    _id: 'int(11)',
+    day: 'date',
+    name: 'varchar(250)',
+    role: 'varchar(32)',
+  },
+  prescriptionlevels: {
+    rank: 'decimal(6,1)',
+    description: 'varchar(255)',
+    levelCode: 'varchar(4)',
+  },
+  providerlevels: {
+    uid: 'varchar(32)',
+    description: 'varchar(255)',
+    facilityTypeCode: 'varchar(255)',
+    ownershipTypeCode: 'varchar(255)',
+    cateringStatusCode: 'varchar(255)',
+  },
+  rules: {
+    uid: 'varchar(120)',
+    codeScript: 'longtext',
+    scope: 'varchar(255)',
+    description: 'longtext',
+    category: 'varchar(255)',
+    name: 'varchar(255)',
+    outcome: 'varchar(255)',
+    version: 'varchar(255)',
+    runAt: 'varchar(255)',
+  },
+  serviceentries: {
+    _entry_id: 'int(11)',
+    _claim_id: 'varchar(60)',
+    gdrgCode: 'varchar(255)',
+    cost: 'decimal(10,4)',
+    entryType: 'varchar(255)',
+    serviceDate: 'date',
+    icd10: 'varchar(255)',
+    description: 'varchar(255)',
+    suggestedICD10: 'varchar(255)',
+  },
+  servicetariffs: {
+    uid: 'varchar(255)',
+    cost: 'decimal(10,2)',
+    flags: 'varchar(750)',
+    buildVersion: 'varchar(255)',
+    effectiveDate: 'date',
+    facilityTypeCode: 'varchar(255)',
+    ownershipTypeCode: 'varchar(255)',
+    cateringStatusCode: 'varchar(255)',
+    MDCCode: 'varchar(255)',
+    GDRGNo: 'varchar(255)',
+    split: 'varchar(255)',
+    prefix: 'varchar(255)',
+    suffix: 'varchar(255)',
+  },
+  summaryitems: {
+    _entry_id: 'int(11)',
+    _claim_id: 'varchar(60)',
+    type: 'varchar(255)',
+    ordinal: 'int(11)',
+    description: 'varchar(255)',
+    amount: 'decimal(10,4)',
+  },
+  systemupdates: {
+    uid: 'varchar(32)',
+    installDate: 'date',
+    hash: 'varchar(32)',
+    buildVersion: 'varchar(255)',
+    updateType: 'varchar(255)',
+    updateVersion: 'varchar(255)',
+  },
+  users: {
+    username: 'varchar(32)',
+    name: 'varchar(250)',
+    role: 'varchar(32)',
+    password: 'varchar(255)',
+    status: 'varchar(1)',
+    officesanitizedName: 'varchar(255)',
+    officename: 'varchar(255)',
+  },
+  validation_results: {
+    _id: 'int(11)',
+    _validation_id: 'varchar(60)',
+    ruleID: 'varchar(255)',
+    info: 'varchar(255)',
+    entryID: 'varchar(255)',
+  },
+  validation_zclaims: {
+    _id: 'int(11)',
+    _validation_id: 'varchar(60)',
+    serializedClaim: 'longblob',
+    isCompressed: 'tinyint(1)',
   },
   validations: {
     _id: 'varchar(60)',
@@ -3596,43 +3851,6 @@ const getClaimItDbStruct = () => ({
     runByuserID: 'varchar(255)',
     runByrole: 'varchar(255)',
   },
-  validation_results: {
-    _id: 'int(11)',
-    _validation_id: 'varchar(60)',
-    ruleID: 'varchar(255)',
-    info: 'varchar(255)',
-    entryID: 'varchar(255)',
-  },
-  validation_zclaims: {
-    _id: 'int(11)',
-    _validation_id: 'varchar(60)',
-    serializedClaim: 'longblob',
-    isCompressed: 'tinyint(1)',
-  },
-  ownerships: {
-    code: 'varchar(255)',
-    name: 'varchar(255)',
-  },
-  policies: {
-    policyID: 'varchar(255)',
-  },
-  prescribersfordays: {
-    _id: 'int(11)',
-    day: 'date',
-    name: 'varchar(250)',
-    role: 'varchar(32)',
-  },
-  prescriptionlevels: {
-    code: 'varchar(255)',
-    name: 'varchar(255)',
-  },
-  providerlevels: {
-    code: 'varchar(255)',
-    ownershipTypeCode: 'varchar(255)',
-    facilityTypeCode: 'varchar(255)',
-    cateringStatusCode: 'varchar(255)',
-    prescriptionLevelID: 'varchar(255)',
-  },
 })
 
 const getClaimItAccreditationRows = (payload, rows) => {
@@ -3648,10 +3866,6 @@ const getClaimItAccreditationRows = (payload, rows) => {
     ownershipTypeCode: claimRow.ownershipTypeCode || 'PVT',
     cateringStatusCode: claimRow.cateringStatusCode || 'CE',
     prescriptionLevelID: claimRow.prescriptionLevelID || getClaimItPrescriptionLevel(payload),
-    // ✅ NHIA CONFIG PATCH START
-    providerLevel: resolveClaimItProviderLevelCode(payload, claimRow),
-    facilityType: getNhiaFacilityType(payload),
-    // ✅ NHIA CONFIG PATCH END
     facilityName: normalizeText(payload.facilityName) || 'HealthFlow Facility',
     dateGenerated: toClaimItDate(payload.createdAt),
     expiryDate: getNhiaAccreditationExpiryDate(payload) || getClaimItExpiryDate(effectiveDate, payload.createdAt),
@@ -3659,28 +3873,21 @@ const getClaimItAccreditationRows = (payload, rows) => {
   }]
 }
 
-// ✅ FINAL CLAIMIT RELATIONAL FIX START
-const CLAIM_IT_REQUIRED_RELATIONAL_TABLES = [
+const CLAIM_IT_PARTIAL_EXPORT_TABLES = [
+  'claims',
+  'serviceentries',
+  'medicineentries',
+  'summaryitems',
+  'attachmentdata',
+  'attachments',
+  'comments',
+  'validations',
   'validation_results',
   'validation_zclaims',
-  'contracts',
-  'policies',
-  'policyrules',
-  'attendances',
   'prescribersfordays',
-  'attachments',
-  'attachmentdata',
-  'users',
-  'providerlevels',
-  'ownerships',
-  'facilitytypes',
-  'medicineclasses',
-  'servicetariffs',
-  'gdrgs',
-  'icd10s',
 ]
 
-const CLAIM_IT_RELATIONAL_RULE_ID = 'HF-CLAIMIT-RELATIONAL'
+const CLAIM_IT_REQUIRED_ROW_TABLES = new Set(['claims', 'validations', 'validation_zclaims'])
 
 const uniqueClaimItRows = (rows, getKey) => {
   const seen = new Set()
@@ -3697,103 +3904,18 @@ const sumClaimItRows = (rows, claimId) =>
     .filter((row) => row._claim_id === claimId)
     .reduce((sum, row) => sum + Number(row.cost || row.amount || 0), 0)
 
-const getClaimItStaticRows = (payload, rows, meta) => {
-  const claimRow = rows.claims[0] || {}
-  const policyID = meta.policies[0] || 'cgs.2022-12-01.250531'
-  const signedByName = normalizeText(payload.claimsOfficerName) || 'HealthFlow'
-  const signedByUsername = normalizeText(payload.submitterId) || signedByName
-  const facilityTypeCode = claimRow.facilityTypeCode || getClaimItFacilityType(payload)
-  const prescriptionLevelID = claimRow.prescriptionLevelID || getClaimItPrescriptionLevel(payload)
-  const mdcRows = uniqueClaimItRows(
-    rows.serviceentries.map((entry) => ({ code: entry.gdrgCode ? 'OPD' : '', description: 'Out Patient' })),
-    (row) => row.code
-  )
-  const icd10Rows = uniqueClaimItRows(
-    rows.serviceentries
-      .filter((entry) => entry.icd10)
-      .map((entry) => ({ code: entry.icd10, description: entry.icd10 })),
-    (row) => row.code
-  )
-  const gdrgRows = uniqueClaimItRows(
-    rows.serviceentries
-      .filter((entry) => entry.gdrgCode)
-      .map((entry) => ({ code: entry.gdrgCode, description: entry.description || entry.gdrgCode, mdcCode: 'OPD' })),
-    (row) => row.code
-  )
-  const fallbackMdcRows = mdcRows.length ? mdcRows : [{ code: 'PHARMACY', description: 'Pharmacy' }]
-  const fallbackIcd10Rows = icd10Rows.length ? icd10Rows : [{ code: 'Z76.0', description: 'Issue of repeat prescription' }]
-  const fallbackGdrgRows = gdrgRows.length ? gdrgRows : [{ code: 'HF-NHIA-PHARMACY', description: 'Pharmacy medicine claim', mdcCode: 'PHARMACY' }]
-  const medicineRows = uniqueClaimItRows(
-    rows.medicineentries
-      .filter((entry) => entry.medicineCode)
-      .map((entry) => ({ code: entry.medicineCode, description: entry.medicineCode, classCode: 'NHIA' })),
-    (row) => row.code
-  )
-
-  return {
-    accreditations: meta.accreditations,
-    attendanceentries: rows.claims.map((claim, index) => ({
-      _entry_id: String((index + 1) * 60000 + 1),
-      _attendance_id: getClaimItGuid(claim.guid, 'attendance'),
-      entryType: 'claim',
-      entryDate: claim.minDOSP,
-    })),
-    attendances: rows.claims.map((claim) => ({
-      guid: getClaimItGuid(claim.guid, 'attendance'),
-      memberNo: claim.memberNo,
-      attendanceDate: claim.minDOSP,
-      providerID: meta.providerID,
-    })),
-    cateringstatuses: [{ code: claimRow.cateringStatusCode || 'CE', name: 'Catering Exclusive' }],
-    contracts: [{ contractID: `${meta.providerID || 'provider'}-${policyID}`, providerID: meta.providerID, policyID }],
-    diseases: fallbackIcd10Rows.map((row) => ({ code: row.code, name: row.description })),
-    doctrine_migration_versions: CLAIM_IT_DOCTRINE_MIGRATIONS.map((version) => ({ version })),
-    facilitytypes: [{ code: facilityTypeCode, name: normalizeText(payload.providerTypeDescription) || meta.facilityType || 'Facility' }],
-    gdrgs: fallbackGdrgRows,
-    gdrgs_icd10s: rows.serviceentries.some((entry) => entry.gdrgCode && entry.icd10)
-      ? rows.serviceentries
-          .filter((entry) => entry.gdrgCode && entry.icd10)
-          .map((entry) => ({ gdrgCode: entry.gdrgCode, icd10Code: entry.icd10 }))
-      : [{ gdrgCode: fallbackGdrgRows[0].code, icd10Code: fallbackIcd10Rows[0].code }],
-    icd10s: fallbackIcd10Rows,
-    mdcs: fallbackMdcRows,
-    medicineclasses: [{ code: 'NHIA', name: 'NHIA Medicines' }],
-    medicineprices: rows.medicineentries.map((entry) => ({
-      medicineCode: entry.medicineCode,
-      version: claimRow.medVersion || meta.medVersions[0] || '2025-05-01.250531',
-      price: entry.cost,
-    })),
-    medicines: medicineRows,
-    ownerships: [{ code: claimRow.ownershipTypeCode || 'PVT', name: 'Private' }],
-    policies: meta.policies.map((rowPolicyID) => ({ policyID: rowPolicyID })),
-    policyrules: [{ policyID, ruleID: CLAIM_IT_RELATIONAL_RULE_ID }],
-    prescribersfordays: uniqueClaimItRows(
-      rows.claims.map((claim, index) => ({
+const getClaimItPrescriberRows = (rows) =>
+  uniqueClaimItRows(
+    rows.claims
+      .filter((claim) => normalizeText(claim.physicianID))
+      .map((claim, index) => ({
         _id: String((index + 1) * 70000 + 1),
         day: claim.minDOSP,
-        name: claim.physicianID || signedByName,
+        name: claim.physicianID,
         role: 'Prescriber',
       })),
-      (row) => `${row.day}:${row.name}`
-    ),
-    prescriptionlevels: [{ code: prescriptionLevelID, name: prescriptionLevelID }],
-    providerlevels: [{
-      code: meta.providerLevel,
-      ownershipTypeCode: claimRow.ownershipTypeCode || 'PVT',
-      facilityTypeCode,
-      cateringStatusCode: claimRow.cateringStatusCode || 'CE',
-      prescriptionLevelID,
-    }],
-    rules: [{ ruleID: CLAIM_IT_RELATIONAL_RULE_ID, name: 'HealthFlow CLAIM-it relational compatibility' }],
-    servicetariffs: (rows.serviceentries.length ? rows.serviceentries : [{ gdrgCode: fallbackGdrgRows[0].code, cost: '0.0000' }]).map((entry) => ({
-      gdrgCode: entry.gdrgCode,
-      version: claimRow.servVersion || meta.servVersions[0] || '',
-      tariff: entry.cost,
-    })),
-    systemupdates: [{ updateID: 'HealthFlow-CLAIM-it-relational-export', appliedOn: toClaimItDateTime(payload.createdAt) }],
-    users: [{ userID: signedByUsername, name: signedByName, role: 'admin' }],
-  }
-}
+    (row) => `${row.day}:${row.name}`
+  )
 
 const createClaimItDiagnostic = (level, code, message, details = {}) => ({
   level,
@@ -3808,13 +3930,12 @@ const validateClaimItRelationalBundleData = (data, { strict = true } = {}) => {
   const claimIds = new Set((data.claims || []).map((claim) => claim.guid))
   const attachmentIds = new Set((data.attachments || []).map((attachment) => attachment.attach_id))
   const validationIds = new Set((data.validations || []).map((validation) => validation._id))
-  const providerLevelCodes = new Set((data.providerlevels || []).map((level) => level.code))
   const tableCounts = Object.fromEntries(Object.entries(data).map(([table, value]) => [table, Array.isArray(value) ? value.length : null]))
 
-  CLAIM_IT_REQUIRED_RELATIONAL_TABLES.forEach((table) => {
+  CLAIM_IT_PARTIAL_EXPORT_TABLES.forEach((table) => {
     if (!Array.isArray(data[table])) {
       diagnostics.push(createClaimItDiagnostic('error', 'missing_table', `Missing CLAIM-it table: ${table}`, { table }))
-    } else if (!data[table].length) {
+    } else if (CLAIM_IT_REQUIRED_ROW_TABLES.has(table) && !data[table].length) {
       diagnostics.push(createClaimItDiagnostic('warning', 'empty_table', `CLAIM-it table has no rows: ${table}`, { table }))
     }
     if (!dbStruct[table]) {
@@ -3824,16 +3945,12 @@ const validateClaimItRelationalBundleData = (data, { strict = true } = {}) => {
 
   if (!normalizeText(data._meta?.providerLevel)) {
     diagnostics.push(createClaimItDiagnostic('error', 'empty_provider_level', 'CLAIM-it providerLevel cannot be empty.'))
-  } else if (!providerLevelCodes.has(data._meta.providerLevel)) {
-    diagnostics.push(createClaimItDiagnostic('error', 'invalid_provider_level_reference', 'providerLevel is missing from providerlevels.', {
-      providerLevel: data._meta.providerLevel,
-    }))
   }
-  if (!normalizeText(data._meta?.providerClassLevel)) {
-    diagnostics.push(createClaimItDiagnostic('error', 'missing_provider_class', 'CLAIM-it providerClassLevel cannot be empty.'))
+  if (!normalizeText(data._meta?.providerID) || !normalizeText(data._meta?.credentialCode)) {
+    diagnostics.push(createClaimItDiagnostic('error', 'invalid_facility_mapping', 'CLAIM-it providerID and credentialCode are required.'))
   }
-  if (!normalizeText(data._meta?.facilityType) || !normalizeText(data._meta?.credentialCode)) {
-    diagnostics.push(createClaimItDiagnostic('error', 'invalid_facility_mapping', 'CLAIM-it facilityType and credentialCode are required.'))
+  if (!Array.isArray(data._meta?.accreditations) || !data._meta.accreditations.length) {
+    diagnostics.push(createClaimItDiagnostic('error', 'missing_accreditation', 'CLAIM-it accreditation metadata is required.'))
   }
 
   ;(data.claims || []).forEach((claim) => {
@@ -3865,6 +3982,12 @@ const validateClaimItRelationalBundleData = (data, { strict = true } = {}) => {
   ;(data.attachmentdata || []).forEach((row) => {
     if (!attachmentIds.has(row._attach_id)) {
       diagnostics.push(createClaimItDiagnostic('error', 'orphaned_attachment_reference', 'attachmentdata references a missing attachment.', {
+        dataID: row._data_id,
+        attachmentID: row._attach_id,
+      }))
+    }
+    if (!(row.data instanceof Uint8Array) || row.data.length === 0) {
+      diagnostics.push(createClaimItDiagnostic('error', 'missing_attachment_data', 'attachmentdata.data is missing or empty.', {
         dataID: row._data_id,
         attachmentID: row._attach_id,
       }))
@@ -4094,6 +4217,9 @@ export const buildNhisClaimItExportPayload = (claims = [], options = {}) => {
     periodTo: exportPeriod.toDate,
     organizationType,
     createdAt: generatedAt,
+    medVersion: normalizeText(options.medVersion || options.nhiaMedicineTariffVersion),
+    serviceVersion: normalizeText(options.serviceVersion),
+    policyVersion: normalizeText(options.policyVersion),
     // ✅ FINAL CLAIMIT RELATIONAL FIX START
     strictClaimItExportMode: options.strictClaimItExportMode !== false,
     // ✅ FINAL CLAIMIT RELATIONAL FIX END
@@ -4118,6 +4244,12 @@ export const buildNhisClaimItXml = (payload) => `<?xml version="1.0" encoding="U
   <BatchNumber>${xmlEscape(payload.batchNumber)}</BatchNumber>
   <FacilityCode>${xmlEscape(payload.facilityCode)}</FacilityCode>
   <ProviderNumber>${xmlEscape(payload.providerNumber)}</ProviderNumber>
+  <FacilityType>${xmlEscape(payload.facilityType)}</FacilityType>
+  <PharmacyFacilityLevel>${xmlEscape(payload.pharmacyFacilityLevel)}</PharmacyFacilityLevel>
+  <ProviderLevelCode>${xmlEscape(payload.providerLevelCode)}</ProviderLevelCode>
+  <CredentialCode>${xmlEscape(payload.credentialCode)}</CredentialCode>
+  <LicenseNumber>${xmlEscape(payload.licenseNumber)}</LicenseNumber>
+  <AccreditationExpiryDate>${xmlEscape(payload.accreditationExpiryDate)}</AccreditationExpiryDate>
   <SchemeName>${xmlEscape(payload.schemeName)}</SchemeName>
   <ProviderTypeDescription>${xmlEscape(payload.providerTypeDescription)}</ProviderTypeDescription>
   <ProviderClassLevel>${xmlEscape(payload.providerClassLevel)}</ProviderClassLevel>
@@ -4311,6 +4443,28 @@ const toClaimItAttachmentFileType = (attachment = {}) => {
   return 'pdf'
 }
 
+const fetchClaimItAttachmentBytes = async (attachment = {}) => {
+  const sourceUrl = normalizeText(attachment.url)
+  if (!sourceUrl) {
+    throw new Error('CLAIM-it CXF export cannot include a prescription attachment without a readable file URL.')
+  }
+
+  try {
+    const response = await fetch(sourceUrl)
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+    const bytes = new Uint8Array(await response.arrayBuffer())
+    if (!bytes.length) {
+      throw new Error('downloaded file is empty')
+    }
+    return bytes
+  } catch (error) {
+    const fileName = normalizeText(attachment.fileName) || 'prescription attachment'
+    throw new Error(`Unable to include ${fileName} in CLAIM-it CXF export: ${error.message}`)
+  }
+}
+
 const getClaimItLineServiceDate = (lineDate, fallbackDate, minDate, maxDate) => {
   const normalizedLineDate = toClaimItDate(lineDate)
   if (
@@ -4501,9 +4655,10 @@ const buildClaimItRows = async (payload) => {
   // ✅ NHIA CONFIG PATCH END
   const typeOfService = getClaimItServiceType(payload)
   const claimType = getClaimItClaimType(payload)
-  const medVersion = normalizeText(payload.medVersion || payload.nhiaMedicineTariffVersion) || '2025-05-01.250531'
-  const policyVersion = normalizeText(payload.policyVersion) || 'cgs.2022-12-01.250531'
-  const serviceVersion = normalizeText(payload.serviceVersion) || null
+  const medVersion = normalizeText(payload.medVersion || payload.nhiaMedicineTariffVersion) || CLAIM_IT_MEDICINE_PRICE_VERSION
+  const policyVersion = normalizeText(payload.policyVersion) || CLAIM_IT_POLICY_VERSION
+  const serviceVersion = normalizeText(payload.serviceVersion) ||
+    (payload.claims.some((claim) => claim.tariffServices.length) ? CLAIM_IT_SERVICE_TARIFF_VERSION : null)
   const claims = []
   const medicineentries = []
   const serviceentries = []
@@ -4512,10 +4667,7 @@ const buildClaimItRows = async (payload) => {
   const attachments = []
   const validations = []
   const validationZclaims = []
-  // ✅ FINAL CLAIMIT RELATIONAL FIX START
-  const validationResults = []
   const validationClaimContexts = []
-  // ✅ FINAL CLAIMIT RELATIONAL FIX END
 
   for (const [claimIndex, claim] of payload.claims.entries()) {
     const claimGuid = getClaimItGuid(claim.claimNumber || claim.patient.memberNumber, claimIndex)
@@ -4674,22 +4826,24 @@ const buildClaimItRows = async (payload) => {
       summaryitems.push(serviceSummary)
     }
 
-    const attachmentId = getClaimItGuid(claimGuid, 'prescription-attachment')
-    const attachmentRow = {
-      attach_id: attachmentId,
-      _claim_id: claimGuid,
-      type: 'Prescription',
-      fileType: toClaimItAttachmentFileType(claim.prescriptionAttachment),
-      comments: null,
+    if (claim.prescriptionAttachment) {
+      const attachmentId = getClaimItGuid(claimGuid, 'prescription-attachment')
+      const attachmentRow = {
+        attach_id: attachmentId,
+        _claim_id: claimGuid,
+        type: 'Prescription',
+        fileType: toClaimItAttachmentFileType(claim.prescriptionAttachment),
+        comments: null,
+      }
+      const attachmentDataRow = {
+        _data_id: String((claimIndex + 1) * 50000 + 1),
+        _attach_id: attachmentId,
+        data: await fetchClaimItAttachmentBytes(claim.prescriptionAttachment),
+      }
+      claimAttachmentRows.push(attachmentRow)
+      attachments.push(attachmentRow)
+      attachmentdata.push(attachmentDataRow)
     }
-    const attachmentDataRow = {
-      _data_id: String((claimIndex + 1) * 50000 + 1),
-      _attach_id: attachmentId,
-      data: '',
-    }
-    claimAttachmentRows.push(attachmentRow)
-    attachments.push(attachmentRow)
-    attachmentdata.push(attachmentDataRow)
 
     const validationId = getClaimItGuid(claimGuid, 'validation')
     validations.push({
@@ -4708,14 +4862,6 @@ const buildClaimItRows = async (payload) => {
       runByuserID: signedByUsername,
       runByrole: signedByRole,
     })
-    // ✅ FINAL CLAIMIT RELATIONAL FIX START
-    validationResults.push({
-      _id: String((claimIndex + 1) * 40000 + 2),
-      _validation_id: validationId,
-      ruleID: CLAIM_IT_RELATIONAL_RULE_ID,
-      info: 'HealthFlow relational compatibility validated',
-      entryID: claimGuid,
-    })
     validationClaimContexts.push({
       zclaimId: String((claimIndex + 1) * 40000 + 1),
       validationId,
@@ -4726,10 +4872,8 @@ const buildClaimItRows = async (payload) => {
       summaryItems: claimSummaryItems,
       attachmentRows: claimAttachmentRows,
     })
-    // ✅ FINAL CLAIMIT RELATIONAL FIX END
   }
 
-  // ✅ FINAL CLAIMIT RELATIONAL FIX START
   for (const context of validationClaimContexts) {
     validationZclaims.push({
       _id: context.zclaimId,
@@ -4745,9 +4889,17 @@ const buildClaimItRows = async (payload) => {
       isCompressed: '1',
     })
   }
-  // ✅ FINAL CLAIMIT RELATIONAL FIX END
 
-  return { claims, medicineentries, serviceentries, summaryitems, attachmentdata, attachments, validations, validationResults, validationZclaims }
+  return {
+    claims,
+    medicineentries,
+    serviceentries,
+    summaryitems,
+    attachmentdata,
+    attachments,
+    validations,
+    validationZclaims,
+  }
 }
 
 const buildClaimItMeta = (payload, rows) => {
@@ -4755,45 +4907,27 @@ const buildClaimItMeta = (payload, rows) => {
   const providerId = getClaimItProviderCode(payload)
   const totalCost = Number(payload.totalAmount || 0)
   const typeOfService = getClaimItServiceType(payload)
-  // ✅ CLAIMIT SAVE FIX START
   const facilityName = normalizeText(payload.facilityName) || 'HealthFlow Facility'
   const providerLevel = getClaimItProviderLevelId(rows.claims[0]) || 'PVT-PHC-CE'
   const accreditations = getClaimItAccreditationRows(payload, rows)
-  // ✅ CLAIMIT SAVE FIX END
+  const policies = [...new Set(rows.claims.map((claim) => claim.policyVersion).filter(Boolean))]
+  const medVersions = [...new Set(rows.claims.map((claim) => claim.medVersion).filter(Boolean))]
+  const servVersions = [...new Set(rows.claims.map((claim) => claim.servVersion).filter(Boolean))]
 
   return {
-    // ✅ CLAIMIT SAVE FIX START
     dbVersions: CLAIM_IT_DOCTRINE_MIGRATIONS,
-    // ✅ CLAIMIT SAVE FIX END
     claimYear: (payload.periodFrom || payload.createdAt || '').slice(0, 4),
     claimMonth: (payload.periodFrom || payload.createdAt || '').slice(5, 7),
     claimType: '',
     facilityName,
-    // ✅ NHIA CONFIG PATCH START
-    facilityCode: normalizeText(payload.facilityCode),
-    facilityType: getNhiaFacilityType(payload),
-    pharmacyFacilityLevel: resolveClaimItPharmacyFacilityLevel(payload),
-    providerClassLevel: resolveClaimItProviderClassLevel(payload),
-    licenseNumber: normalizeText(payload.licenseNumber || payload.license_number),
-    accreditationExpiryDate: getNhiaAccreditationExpiryDate(payload),
-    // ✅ NHIA CONFIG PATCH END
     providerLevel,
     providerID: providerId,
     credentialCode,
-    policies: ['cgs.2022-12-01.250531'],
-    medVersions: ['2025-05-01.250531'],
-    servVersions: [null],
-    appVersion: {
-      version: 'HealthFlow',
-      build: '20260520',
-      type: 'hms',
-      sha1: '',
-      client: '1.0.0',
-      mode: 'standalone',
-    },
-    // ✅ CLAIMIT SAVE FIX START
+    policies: policies.length ? policies : [CLAIM_IT_POLICY_VERSION],
+    medVersions: medVersions.length ? medVersions : [CLAIM_IT_MEDICINE_PRICE_VERSION],
+    servVersions: servVersions.length ? servVersions : [null],
+    appVersion: CLAIM_IT_APP_VERSION,
     accreditations,
-    // ✅ CLAIMIT SAVE FIX END
     credUsage: credentialCode ? rows.claims.map((claim) => ({
       credentialCode,
       minDOSP: claim.minDOSP,
@@ -4813,15 +4947,8 @@ const buildClaimItMeta = (payload, rows) => {
 const buildNhisClaimItCxfBundle = async (payload) => {
   const rows = await buildClaimItRows(payload)
   const generatedAt = toClaimItDateTime(payload.createdAt)
-  // ✅ CLAIMIT SAVE FIX START
   const meta = buildClaimItMeta(payload, rows)
-  const staticRows = getClaimItStaticRows(payload, rows, meta)
-  // ✅ CLAIMIT SAVE FIX END
-  // ✅ FINAL CLAIMIT RELATIONAL FIX START
   const data = {
-    // ✅ CLAIMIT SAVE FIX START
-    ...staticRows,
-    // ✅ CLAIMIT SAVE FIX END
     claims: rows.claims,
     serviceentries: rows.serviceentries,
     medicineentries: rows.medicineentries,
@@ -4830,17 +4957,14 @@ const buildNhisClaimItCxfBundle = async (payload) => {
     attachments: rows.attachments,
     comments: [],
     validations: rows.validations,
-    validation_results: rows.validationResults,
+    validation_results: [],
     validation_zclaims: rows.validationZclaims,
-    prescribersfordays: staticRows.prescribersfordays,
-    // ✅ CLAIMIT SAVE FIX START
+    prescribersfordays: getClaimItPrescriberRows(rows),
     _meta: meta,
-    // ✅ CLAIMIT SAVE FIX END
     _dbstruct: getClaimItDbStruct(),
   }
   const diagnostics = validateClaimItRelationalBundleData(data, { strict: payload.strictClaimItExportMode !== false })
   logClaimItExportDiagnostics(diagnostics)
-  // ✅ FINAL CLAIMIT RELATIONAL FIX END
 
   return {
     lockID: `partial-export-${generatedAt}`,
@@ -4998,10 +5122,12 @@ const createNhisExportFile = async (claims, period, options = {}) => {
   const payload = buildNhisClaimItExportPayload(claims, { ...options, exportPeriod: period })
   if (format === 'cxf') assertClaimItCxfExportConfigured({ ...options, ...payload })
   if (format === 'cxf') {
+    const claimsForPayload = await hydrateNhisPrescriptionUrlsForTransfer(claims)
+    const cxfPayload = buildNhisClaimItExportPayload(claimsForPayload, { ...options, exportPeriod: period })
     return {
-      content: await buildNhisClaimItCxf(payload),
+      content: await buildNhisClaimItCxf(cxfPayload),
       contentType: 'application/octet-stream',
-      fileName: buildClaimItCxfFileName(payload),
+      fileName: buildClaimItCxfFileName(cxfPayload),
     }
   }
 
@@ -5085,7 +5211,7 @@ const getDirectSubmissionPeriodForClaim = (claim = {}) => {
   return normalizeNhisExportPeriod({ mode: 'custom', fromDate: serviceDate, toDate: serviceDate })
 }
 
-const hydrateNhisPrescriptionUrlsForDirectSubmit = async (claims = []) => {
+const hydrateNhisPrescriptionUrlsForTransfer = async (claims = []) => {
   if (shouldUseBranchServer()) return claims
 
   return await Promise.all(
@@ -5122,7 +5248,7 @@ const buildHostedDirectSubmissionPayload = (payload, options = {}) => {
 const submitNhisClaimsDirect = async (claims, period, options = {}) => {
   const directApiSource = options.directApiSource === 'branch' ? 'branch' : 'hosted'
   const claimsForSubmission = directApiSource === 'hosted'
-    ? await hydrateNhisPrescriptionUrlsForDirectSubmit(claims)
+    ? await hydrateNhisPrescriptionUrlsForTransfer(claims)
     : claims
   const payload = buildNhisClaimItExportPayload(claimsForSubmission, {
     ...options,

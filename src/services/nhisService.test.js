@@ -51,6 +51,12 @@ import { invokeTierAccess } from './tierAccessService'
 beforeEach(() => {
   vi.clearAllMocks()
   window.localStorage?.clear()
+  delete supabase.storage
+  vi.stubGlobal('fetch', vi.fn(async () => ({
+    ok: true,
+    status: 200,
+    arrayBuffer: async () => Uint8Array.from([0x25, 0x50, 0x44, 0x46]).buffer,
+  })))
 })
 
 const extractSerializedClaimBuffer = (inflatedCxfPayload) => {
@@ -875,6 +881,11 @@ describe('CLAIM-it export helpers', () => {
       organizationType: 'hospital',
       facilityCode: 'HPI0542',
       providerNumber: 'HPAH0542',
+      facilityType: 'Clinic',
+      providerLevelCode: 'PVT-CL-CE',
+      credentialCode: '03-05-001-02-01954-11-P1-2-011225',
+      licenseNumber: 'LIC-100',
+      accreditationExpiryDate: '2026-12-31',
       providerTypeDescription: 'Private clinics',
       providerClassLevel: 'B2',
       claimsOfficerName: 'David Selorm Gabion',
@@ -893,6 +904,11 @@ describe('CLAIM-it export helpers', () => {
       submitterId: 'admin',
     })
     expect(xml).toContain('<ClaimsOfficerSignatureUrl>data:image/png;base64,signature</ClaimsOfficerSignatureUrl>')
+    expect(xml).toContain('<FacilityType>Clinic</FacilityType>')
+    expect(xml).toContain('<ProviderLevelCode>PVT-CL-CE</ProviderLevelCode>')
+    expect(xml).toContain('<CredentialCode>03-05-001-02-01954-11-P1-2-011225</CredentialCode>')
+    expect(xml).toContain('<LicenseNumber>LIC-100</LicenseNumber>')
+    expect(xml).toContain('<AccreditationExpiryDate>2026-12-31</AccreditationExpiryDate>')
   })
 
   it('normalizes hospital CLAIM-it preview to provider class levels instead of pharmacy P-levels', () => {
@@ -951,6 +967,7 @@ describe('CLAIM-it export helpers', () => {
             dispensary_date: '2026-05-13',
           },
         ],
+        prescription_file_url: 'https://example.test/rx.pdf',
       },
     ], {
       yearMonth: '2026-05',
@@ -978,19 +995,19 @@ describe('CLAIM-it export helpers', () => {
     expect(inflatedText).toContain('s:12:"facilityName";s:17:"Westpoint Chemist"')
     expect(inflatedText).toContain('s:13:"providerLevel";s:10:"PVT-PHC-CE"')
     expect(inflatedText).toContain('s:10:"providerID";s:11:"03-05-01954"')
-    expect(inflatedText).toContain('s:10:"dbVersions";a:15')
+    expect(inflatedText).toContain('s:4:"data";a:13')
+    expect(inflatedText).toContain('s:10:"dbVersions";a:28')
     expect(inflatedText).toContain('s:14:"accreditations"')
     expect(inflatedText).toContain('s:10:"expiryDate";s:10:"2026-11-30"')
     expect(inflatedText).toContain('s:27:"doctrine_migration_versions"')
-    expect(inflatedText).toContain('s:14:"providerlevels"')
-    expect(inflatedText).toContain('s:14:"servicetariffs"')
-    expect(inflatedText).toContain('s:18:"validation_results"')
+    expect(inflatedText).toContain('%PDF')
+    expect(inflatedText).toContain('s:18:"validation_results";a:0:{}')
     expect(inflatedText).toContain('s:18:"validation_zclaims"')
-    expect(inflatedText).toContain('s:9:"contracts"')
-    expect(inflatedText).toContain('s:5:"users"')
     expect(inflatedText).toContain('s:18:"prescribersfordays"')
-    expect(inflatedText).toContain('HF-CLAIMIT-RELATIONAL')
-    expect(inflatedText).toContain('HF-NHIA-PHARMACY')
+    expect(inflatedText).not.toContain('HF-CLAIMIT-RELATIONAL')
+    expect(inflatedText).not.toContain('HF-NHIA-PHARMACY')
+    expect(inflatedText).not.toContain('s:18:"providerClassLevel"')
+    expect(inflatedText).not.toContain('s:23:"accreditationExpiryDate"')
     expect(inflatedText).not.toContain('<NhiaClaimBatch>')
     expect(savedClaim).toMatchObject({
       claimID: { guid: expect.any(String) },
@@ -1026,6 +1043,34 @@ describe('CLAIM-it export helpers', () => {
       fileType: 'pdf',
       data: [''],
     })
+  })
+
+  it('blocks CLAIM-it CXF export when a prescription attachment downloads as an empty file', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      arrayBuffer: async () => new ArrayBuffer(0),
+    })))
+    const payload = buildNhisClaimItExportPayload([
+      {
+        ...claim,
+        prescription_file_url: 'https://example.test/empty-rx.pdf',
+      },
+    ], {
+      yearMonth: '2026-05',
+      organizationType: 'pharmacy',
+      facilityCode: '03-05-001-02-01954-11-P1-2-011225',
+      facilityName: 'Westpoint Chemist',
+      providerNumber: '03-05-01954',
+      providerTypeDescription: 'Pharmacy',
+      claimsOfficerName: 'Claims Officer',
+      submitterId: 'admin',
+      generatedAt: '2026-05-20T14:58:02.000Z',
+    })
+
+    await expect(buildNhisClaimItCxf(payload)).rejects.toThrow(
+      'Unable to include rx.pdf in CLAIM-it CXF export: downloaded file is empty'
+    )
   })
 
   it('includes hospital tariff service lines in CLAIM-it payload and XML', () => {
@@ -1066,6 +1111,38 @@ describe('CLAIM-it export helpers', () => {
     expect(xml).toContain('<TotalAmount>37.08</TotalAmount>')
   })
 
+  it('includes service-line totals and the tariff version without exporting reference tariff rows', async () => {
+    const payload = buildNhisClaimItExportPayload([{
+      ...claim,
+      prescription_file_url: 'https://example.test/rx.pdf',
+      total_amount: 47.08,
+      nhis_claim_services: [{
+        gdrg_code: 'OPDC01A',
+        description: 'General OPD Adult',
+        unit_price: 18.54,
+        quantity: 2,
+        total_amount: 37.08,
+        service_date: '2026-05-14',
+      }],
+    }], {
+      yearMonth: '2026-05',
+      organizationType: 'hospital',
+      facilityName: 'Central Hospital',
+      facilityCode: 'HOSP-001',
+      providerNumber: 'HOSP-PROV',
+      credentialCode: '03-05-001-02-01954-11-P1-2-011225',
+      providerClassLevel: 'B2',
+      generatedAt: '2026-05-15T00:00:00.000Z',
+    })
+
+    const inflatedText = inflateSync(Buffer.from((await buildNhisClaimItCxf(payload)).slice(3))).toString('utf8')
+
+    expect(inflatedText).toContain('2023-02-01.250531')
+    expect(inflatedText).toContain('s:8:"gdrgCode";s:7:"OPDC01A"')
+    expect(inflatedText).toContain('s:4:"cost";s:7:"37.0800"')
+    expect(inflatedText).not.toContain('s:6:"tariff";s:7:"18.5400"')
+  })
+
   it('normalizes monthly and custom export periods', () => {
     expect(normalizeNhisExportPeriod({ mode: 'month', yearMonth: '2026-02' })).toMatchObject({
       mode: 'month',
@@ -1084,6 +1161,18 @@ describe('CLAIM-it export helpers', () => {
       yearMonth: '',
       label: '2026-05-01 to 2026-05-15',
       fileTag: '20260501-20260515',
+    })
+
+    expect(normalizeNhisExportPeriod({
+      mode: 'partial',
+      toDate: '2026-05-20',
+    })).toMatchObject({
+      mode: 'partial',
+      yearMonth: '2026-05',
+      fromDate: '2026-05-01',
+      toDate: '2026-05-20',
+      label: '2026-05-01 to 2026-05-20',
+      fileTag: '20260501-20260520',
     })
   })
 
@@ -1215,6 +1304,14 @@ describe('CLAIM-it export helpers', () => {
     })
     URL.createObjectURL = vi.fn(() => 'blob:nhis-export')
     URL.revokeObjectURL = vi.fn()
+    supabase.storage = {
+      from: vi.fn(() => ({
+        createSignedUrl: vi.fn().mockResolvedValue({
+          data: { signedUrl: 'https://example.test/rx.pdf' },
+          error: null,
+        }),
+      })),
+    }
     let downloadedName = ''
     const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function click() {
       downloadedName = this.download
@@ -1240,6 +1337,7 @@ describe('CLAIM-it export helpers', () => {
     })
 
     expect(downloadedName).toMatch(/^MAY2026__[A-F0-9]{12} \[030501954\] \(WESTPOINT CHEMIST\)_2026-05-14-2026-05-14\.cxf$/)
+    expect(supabase.storage.from).toHaveBeenCalledWith('nhis-prescriptions')
     clickSpy.mockRestore()
   })
 

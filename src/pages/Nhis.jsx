@@ -168,6 +168,7 @@ const toLocalIsoDate = (date = new Date()) => {
 }
 
 const todayIsoDate = () => toLocalIsoDate()
+const monthStartIsoDate = (date = new Date()) => toLocalIsoDate(new Date(date.getFullYear(), date.getMonth(), 1))
 
 const fmtFileSize = (bytes) => {
   const size = Number(bytes || 0)
@@ -321,8 +322,8 @@ const Nhis = () => {
   const [exportMonth, setExportMonth]   = useState(
     todayIsoDate().slice(0, 7) // YYYY-MM
   )
-  const [exportMode, setExportMode]     = useState('month')
-  const [exportFromDate, setExportFromDate] = useState(todayIsoDate())
+  const [exportMode, setExportMode]     = useState('partial')
+  const [exportFromDate, setExportFromDate] = useState(monthStartIsoDate())
   const [exportToDate, setExportToDate] = useState(todayIsoDate())
   const [exportFormat, setExportFormat] = useState('cxf')
   const [exporting, setExporting]       = useState(false)
@@ -515,8 +516,11 @@ const Nhis = () => {
   }, [nhiaTariffItems, tariffCatalogSearch, activeTariffFacilityGroup, activeTariffCateringOption])
 
   const providerClassLevel = resolvedNhiaSettings?.providerClassLevel || resolvedNhiaSettings?.provider_class_level || ''
+  const integrationMode = resolvedNhiaSettings?.integrationMode || resolvedNhiaSettings?.integration_mode || 'claimit_export'
+  const allowsDirectNhiaSubmission = ['direct_nhia_api', 'hybrid'].includes(integrationMode)
   const directNhiaApiAvailable = Boolean(
-    resolvedNhiaSettings?.directApiEnabled &&
+    allowsDirectNhiaSubmission &&
+      resolvedNhiaSettings?.directApiEnabled &&
       resolvedNhiaSettings?.apiBaseUrl &&
       resolvedNhiaSettings?.claimEndpointPath
   )
@@ -1532,10 +1536,14 @@ const Nhis = () => {
       setExporting(true)
       const periodOptions = exportMode === 'custom'
         ? { mode: 'custom', fromDate: exportFromDate, toDate: exportToDate }
-        : { mode: 'month', yearMonth: exportMonth }
+        : exportMode === 'partial'
+          ? { mode: 'partial', toDate: exportToDate }
+          : { mode: 'month', yearMonth: exportMonth }
       const periodLabel = exportMode === 'custom'
         ? `${exportFromDate} to ${exportToDate}`
-        : exportMonth
+        : exportMode === 'partial'
+          ? `${exportToDate.slice(0, 7)}-01 to ${exportToDate}`
+          : exportMonth
       const count = await exportNhisClaimsFile({
         ...periodOptions,
         ...getDirectNhiaOptions(),
@@ -1560,7 +1568,9 @@ const Nhis = () => {
   // ─────────────────────────────────────────────────────────────
   const exportPeriodReady = exportMode === 'custom'
     ? Boolean(exportFromDate && exportToDate && exportFromDate <= exportToDate)
-    : Boolean(exportMonth)
+    : exportMode === 'partial'
+      ? Boolean(exportToDate)
+      : Boolean(exportMonth)
 
   return (
     <div className="nhis-page">
@@ -3178,7 +3188,7 @@ const Nhis = () => {
                   </>
                 ) : (
                   <>
-                    Exports served claims for the selected month or custom service-date period as a CLAIM-it import file.
+                    Exports served claims for a CLAIM-it partial period, selected month, or custom service-date range.
                     Downloaded claims remain <strong>Served</strong> so they can be corrected or exported again if CLAIM-it rejects the file.
                   </>
                 )}
@@ -3204,11 +3214,12 @@ const Nhis = () => {
                   className="form-input"
                   value={exportMode}
                   onChange={(e) => setExportMode(e.target.value)}
-                >
-                  <option value="month">Monthly batch</option>
-                  <option value="custom">Custom date range</option>
-                </select>
-              </div>
+                  >
+                    <option value="partial">Month-to-date partial batch</option>
+                    <option value="month">Monthly batch</option>
+                    <option value="custom">Custom date range</option>
+                  </select>
+                </div>
               {exportMode === 'month' ? (
                 <div className="form-group">
                   <label>Select Month</label>
@@ -3218,6 +3229,17 @@ const Nhis = () => {
                     value={exportMonth}
                     onChange={(e) => setExportMonth(e.target.value)}
                   />
+                </div>
+              ) : exportMode === 'partial' ? (
+                <div className="form-group">
+                  <label>Up To Date</label>
+                  <input
+                    type="date"
+                    className="form-input"
+                    value={exportToDate}
+                    onChange={(e) => setExportToDate(e.target.value)}
+                  />
+                  <small>Matches CLAIM-it partial export: first day of this month through the selected date.</small>
                 </div>
               ) : (
                 <div className="form-row">
