@@ -10,6 +10,7 @@ ALTER TABLE public.organization_nhia_integrations
   ADD COLUMN IF NOT EXISTS provider_level_code TEXT,
   ADD COLUMN IF NOT EXISTS credential_code TEXT,
   ADD COLUMN IF NOT EXISTS license_number TEXT,
+  ADD COLUMN IF NOT EXISTS claims_officer_name TEXT,
   ADD COLUMN IF NOT EXISTS accreditation_expiry_date DATE,
   -- ✅ NHIA API ARCHITECTURE PATCH START
   ADD COLUMN IF NOT EXISTS integration_mode TEXT NOT NULL DEFAULT 'claimit_export',
