@@ -238,6 +238,7 @@ const Nhis = () => {
 
   const canWrite = hasRole(role, NHIS_ROLES)
   const organizationType = normalizeOrganizationType(organization?.organization_type)
+  const organizationId = organization?.id || profile?.organization_id || ''
   const isHospital = organizationType === 'hospital'
 
   // ── page sub-tab ─────────────────────────────────────────────
@@ -422,12 +423,12 @@ const Nhis = () => {
     }
 
     try {
-      const settings = await getNhiaApiSettings()
+      const settings = await getNhiaApiSettings({ organizationId })
       setDirectNhiaSettings(settings ? { ...settings, source: 'hosted' } : null)
     } catch {
       setDirectNhiaSettings(null)
     }
-  }, [])
+  }, [organizationId])
 
   useEffect(() => { void refreshDirectNhiaApiStatus() }, [refreshDirectNhiaApiStatus])
 

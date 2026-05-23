@@ -230,7 +230,7 @@ const Settings = () => {
         const [usersData, branchesData, nhiaApiSettings] = await Promise.all([
           getUsers(),
           getBranches(),
-          getNhiaApiSettings().catch(() => null),
+          getNhiaApiSettings({ organizationId: organization?.id || organization?.organization_id }).catch(() => null),
         ])
         setUsers(usersData)
         setBranches(branchesData)
@@ -395,8 +395,11 @@ const Settings = () => {
         ? nhiaApiForm.sandboxBaseUrl
         : nhiaApiForm.productionBaseUrl
       const accreditationExpiryDate = normalizeDateInputValue(nhiaApiForm.accreditationExpiryDate)
+      const nhiaOrganizationId = organization?.id || organization?.organization_id || nhiaApiForm.organizationId || nhiaApiForm.organization_id
       const nhiaSettingsPayload = {
         ...nhiaApiForm,
+        organizationId: nhiaOrganizationId,
+        organization_id: nhiaOrganizationId,
         accreditationExpiryDate,
         accreditation_expiry_date: accreditationExpiryDate,
         claims_officer_name: nhiaApiForm.claimsOfficerName,
@@ -404,7 +407,7 @@ const Settings = () => {
         pharmacyFacilityLevel: isHospitalOrganization ? '' : nhiaApiForm.pharmacyFacilityLevel,
         apiBaseUrl: activeBaseUrl || nhiaApiForm.apiBaseUrl,
       }
-      const savedNhiaApiSettings = await saveNhiaApiSettings(nhiaSettingsPayload)
+      const savedNhiaApiSettings = await saveNhiaApiSettings(nhiaSettingsPayload, { organizationId: nhiaOrganizationId })
       const savedHasAccreditationExpiryDate = Boolean(savedNhiaApiSettings) && (
         savedNhiaApiSettings.accreditationExpiryDate !== undefined ||
         savedNhiaApiSettings.accreditation_expiry_date !== undefined

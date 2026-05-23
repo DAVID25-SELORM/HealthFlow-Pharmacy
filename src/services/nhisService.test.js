@@ -35,7 +35,9 @@ import {
   buildNhisClaimItCxf,
   buildNhisClaimItXml,
   exportNhisClaimsFile,
+  getNhiaApiSettings,
   normalizeNhisExportPeriod,
+  saveNhiaApiSettings,
   submitNhisClaimDirect,
   updateNhisClaimStatus,
   uploadNhisPrescriptionPdf,
@@ -48,6 +50,7 @@ import { invokeTierAccess } from './tierAccessService'
 
 beforeEach(() => {
   vi.clearAllMocks()
+  window.localStorage?.clear()
 })
 
 const extractSerializedClaimBuffer = (inflatedCxfPayload) => {
@@ -1355,6 +1358,40 @@ describe('direct NHIA submission', () => {
       submissionAction: 'nhis.direct_claim_submit',
       claimIds: ['claim-1'],
     }))
+  })
+})
+
+describe('NHIA API settings fallback', () => {
+  it('keeps the accreditation expiry date available when hosted settings omit it', async () => {
+    invokeTierAccess.mockResolvedValueOnce({
+      settings: {
+        organizationId: 'org-1',
+        facilityCode: 'FAC-1',
+        accreditationExpiryDate: '2026-12-31',
+        claimsOfficerName: 'Claims Officer',
+      },
+    })
+
+    await expect(saveNhiaApiSettings({
+      organizationId: 'org-1',
+      facilityCode: 'FAC-1',
+      accreditationExpiryDate: '2026-12-31',
+      claimsOfficerName: 'Claims Officer',
+    }, { organizationId: 'org-1' })).resolves.toMatchObject({
+      accreditationExpiryDate: '2026-12-31',
+    })
+
+    invokeTierAccess.mockResolvedValueOnce({
+      settings: {
+        organizationId: 'org-1',
+        facilityCode: 'FAC-1',
+      },
+    })
+
+    await expect(getNhiaApiSettings({ organizationId: 'org-1' })).resolves.toMatchObject({
+      accreditationExpiryDate: '2026-12-31',
+      claimsOfficerName: 'Claims Officer',
+    })
   })
 })
 
