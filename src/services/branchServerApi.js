@@ -1,4 +1,5 @@
 import { shouldPreferLocalApi } from './connectivityService'
+import { isNetworkRequestError } from '../utils/requestErrors'
 
 const DEFAULT_BRANCH_SERVER_URL = 'http://localhost:4780'
 const RUNTIME_CONFIG_KEY = 'healthflow.branchServer.config.v1'
@@ -83,6 +84,11 @@ const fetchWithTimeout = async (url, options = {}, timeoutMs = DEFAULT_BRANCH_RE
       ...options,
       signal: options.signal || controller.signal,
     })
+  } catch (error) {
+    if (isNetworkRequestError(error)) {
+      throw new Error(`Unable to reach local branch server at ${url}. Start the branch server and confirm the local server URL.`)
+    }
+    throw error
   } finally {
     globalThis.clearTimeout(timeout)
   }

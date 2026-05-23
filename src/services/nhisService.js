@@ -12,7 +12,7 @@ import {
 } from '../utils/nhisPharmacyLevel'
 // ✅ NHIA CONFIG PATCH START
 import {
-  normalizeNhiaFacilityType,
+  normalizeNhiaFacilityTypeForOrganization,
   normalizeNhiaPharmacyFacilityLevel,
   normalizeNhiaProviderClassLevel,
 } from '../utils/nhiaFacilityDefaults'
@@ -175,20 +175,16 @@ const getClaimItCredentialCode = (payload = {}) =>
   normalizeText(payload.credentialCode || payload.credential_code || payload.facilityCode || payload.facility_code)
 
 const getNhiaFacilityType = (payload = {}) => {
-  const explicitFacilityType = normalizeNhiaFacilityType(
+  const organizationType = normalizeOrganizationType(payload.organizationType || payload.organization_type)
+  return normalizeNhiaFacilityTypeForOrganization(
     payload.facilityType || payload.facility_type || payload.providerTypeDescription,
-    ''
+    organizationType
   )
-  if (explicitFacilityType) return explicitFacilityType
-
-  return normalizeOrganizationType(payload.organizationType || payload.organization_type) === 'hospital'
-    ? 'Hospital'
-    : 'Pharmacy'
 }
 
 const isClaimItPharmacyType = (payload = {}) =>
-  ['Pharmacy', 'Chemical Seller'].includes(getNhiaFacilityType(payload)) ||
-  normalizeOrganizationType(payload.organizationType) === 'pharmacy'
+  normalizeOrganizationType(payload.organizationType || payload.organization_type) === 'pharmacy' ||
+  ['Pharmacy', 'Chemical Seller'].includes(getNhiaFacilityType(payload))
 
 const resolveClaimItProviderClassLevel = (payload = {}) =>
   normalizeClaimItProviderClassLevel(
@@ -197,10 +193,12 @@ const resolveClaimItProviderClassLevel = (payload = {}) =>
   )
 
 const resolveClaimItPharmacyFacilityLevel = (payload = {}) =>
-  normalizeClaimItPharmacyFacilityLevel(
-    payload.pharmacyFacilityLevel || payload.pharmacy_facility_level || payload.pharmacyLevel || payload.pharmacy_level,
-    isClaimItPharmacyType(payload) ? 'P1' : ''
-  )
+  isClaimItPharmacyType(payload)
+    ? normalizeClaimItPharmacyFacilityLevel(
+        payload.pharmacyFacilityLevel || payload.pharmacy_facility_level || payload.pharmacyLevel || payload.pharmacy_level,
+        'P1'
+      )
+    : ''
 
 const resolveClaimItProviderLevelCode = (payload = {}, claimRow = {}) =>
   normalizeText(payload.providerLevelCode || payload.provider_level_code) ||
@@ -4552,31 +4550,32 @@ const buildNhisMonthlyCsv = (claims, options = {}) => {
   return [headerRow, ...dataRows].join('\n')
 }
 
-const assertClaimItCxfExportConfigured = (options = {}) => {
+export const assertClaimItCxfExportConfigured = (options = {}) => {
   // ✅ NHIA CONFIG PATCH START
   const missing = []
   const organizationType = normalizeOrganizationType(options.organizationType)
   const facilityType = getNhiaFacilityType({ ...options, organizationType })
   const isPharmacy = ['Pharmacy', 'Chemical Seller'].includes(facilityType) || organizationType === 'pharmacy'
   const isHospitalFacility = !isPharmacy
-  const hasMedicineClaims = (options.claims || []).some((claim) => claim?.medicines?.length || claim?.nhis_claim_medicines?.length)
   const providerClassLevel = normalizeClaimItProviderClassLevel(options.providerClassLevel || options.provider_class_level)
-  const pharmacyFacilityLevel = normalizeClaimItPharmacyFacilityLevel(
-    options.pharmacyFacilityLevel || options.pharmacy_facility_level || options.pharmacyLevel || options.pharmacy_level
-  )
+  const pharmacyFacilityLevel = isPharmacy
+    ? normalizeClaimItPharmacyFacilityLevel(
+        options.pharmacyFacilityLevel || options.pharmacy_facility_level || options.pharmacyLevel || options.pharmacy_level
+      )
+    : ''
 
   if (!normalizeText(options.facilityName || options.facility_name)) missing.push('facilityName')
   if (!normalizeText(options.providerNumber || options.provider_number)) missing.push('providerNumber')
   if (!normalizeText(options.facilityCode || options.facility_code)) missing.push('facilityCode')
   if (!getClaimItCredentialCode(options)) missing.push('credentialCode')
   if (isHospitalFacility && !providerClassLevel) missing.push('providerClassLevel')
-  if ((isPharmacy || hasMedicineClaims) && !pharmacyFacilityLevel) missing.push('pharmacyFacilityLevel')
+  if (isPharmacy && !pharmacyFacilityLevel) missing.push('pharmacyFacilityLevel')
   if (!resolveClaimItProviderLevelCode(options)) missing.push('providerLevelCode')
   if (!normalizeText(options.accreditationExpiryDate || options.accreditation_expiry_date)) missing.push('accreditationExpiryDate')
   if (!normalizeText(options.claimsOfficerName || options.claims_officer_name)) missing.push('claimsOfficerName')
   if (!normalizeText(options.submitterId || options.submitter_id)) missing.push('submitterId')
   if (isHospitalFacility && options._inferredProviderClassLevel) missing.push('providerClassLevel (confirm in Settings)')
-  if ((isPharmacy || hasMedicineClaims) && options._inferredPharmacyFacilityLevel) missing.push('pharmacyFacilityLevel (confirm inferred P1 in Settings)')
+  if (isPharmacy && options._inferredPharmacyFacilityLevel) missing.push('pharmacyFacilityLevel (confirm inferred P1 in Settings)')
 
   if (!missing.length) return
   throw new Error(`CLAIM-it CXF export needs complete NHIA configuration. Missing: ${missing.join(', ')}.`)

@@ -22,7 +22,11 @@ import { readLogoFileAsDataUrl, readSignatureFileAsDataUrl } from '../utils/imag
 import { normalizeGhanaRegion } from '../utils/ghanaRegions'
 import { getRoleLabel } from '../utils/roleLabels'
 import { ROLE_OPTIONS } from '../utils/roles'
-import { applyNhiaFacilityDefaults, normalizeNhiaFacilityType } from '../utils/nhiaFacilityDefaults'
+import {
+  applyNhiaFacilityDefaults,
+  getNhiaFacilityTypesForOrganization,
+  normalizeNhiaFacilityTypeForOrganization,
+} from '../utils/nhiaFacilityDefaults'
 // ✅ NHIS PHARMACY LEVEL PATCH START
 import { PHARMACY_LEVELS } from '../utils/nhisPharmacyLevel'
 // ✅ NHIS PHARMACY LEVEL PATCH END
@@ -173,15 +177,18 @@ const Settings = () => {
   const activeBranches = branches.filter((branch) => branch.is_active !== false)
   const singleActiveBranch = activeBranches.length === 1 ? activeBranches[0] : null
   // ✅ NHIA CONFIG PATCH START
+  const organizationType = organization?.organization_type === 'hospital' ? 'hospital' : 'pharmacy'
+  const isHospitalOrganization = organizationType === 'hospital'
+  const nhiaFacilityTypeOptions = getNhiaFacilityTypesForOrganization(organizationType)
+  const nhiaFacilityType = normalizeNhiaFacilityTypeForOrganization(nhiaApiForm.facilityType, organizationType)
   const claimItPreview = buildClaimItConfigPreview({
     ...nhiaApiForm,
+    facilityType: nhiaFacilityType,
     facilityName: organization?.name || formData.pharmacyName,
-  }, { organizationType: organization?.organization_type || 'pharmacy' })
-  const organizationType = organization?.organization_type === 'hospital' ? 'hospital' : 'pharmacy'
-  const nhiaFacilityType = normalizeNhiaFacilityType(nhiaApiForm.facilityType, organizationType === 'hospital' ? 'Hospital' : 'Pharmacy')
-  const isNhiaPharmacyFacility = organizationType === 'pharmacy' || ['Pharmacy', 'Chemical Seller'].includes(nhiaFacilityType)
-  const showNhiaPharmacyLevel = isNhiaPharmacyFacility || organizationType === 'hospital' || Boolean(nhiaApiForm.pharmacyFacilityLevel)
-  const showNhiaProviderClassLevel = !isNhiaPharmacyFacility
+  }, { organizationType })
+  const isNhiaPharmacyFacility = organizationType === 'pharmacy' && ['Pharmacy', 'Chemical Seller'].includes(nhiaFacilityType)
+  const showNhiaPharmacyLevel = isNhiaPharmacyFacility
+  const showNhiaProviderClassLevel = isHospitalOrganization
   // ✅ NHIA CONFIG PATCH END
 
   useEffect(() => {
@@ -232,9 +239,11 @@ const Settings = () => {
     try {
       setSaving(true)
       setError('')
-      await updatePharmacySettings(settingsId, formData)
+      const settingsPayload = isHospitalOrganization ? { ...formData, pharmacyLevel: '' } : formData
+      await updatePharmacySettings(settingsId, settingsPayload)
       if (organization?.id) {
         await updateOrganization(organization.id, {
+          organizationType,
           name: formData.pharmacyName,
           phone: formData.phone,
           email: formData.email,
@@ -244,10 +253,11 @@ const Settings = () => {
           logoUrl: formData.logoUrl,
           slogan: formData.slogan,
           licenseNumber: formData.licenseNumber,
+          pharmacyLevel: isHospitalOrganization ? '' : formData.pharmacyLevel,
         })
       }
       await loadSettings()
-      notify('Pharmacy settings saved.', 'success')
+      notify(`${isHospitalOrganization ? 'Hospital' : 'Pharmacy'} settings saved.`, 'success')
     } catch (saveError) {
       console.error('Error saving settings:', saveError)
       setError(saveError.message || 'Unable to save settings.')
@@ -258,6 +268,15 @@ const Settings = () => {
 
   const updateNhiaApiForm = (field, value) => {
     setNhiaApiForm((current) => ({ ...current, [field]: value }))
+  }
+
+  const updateNhiaFacilityType = (value) => {
+    const facilityType = normalizeNhiaFacilityTypeForOrganization(value, organizationType)
+    setNhiaApiForm((current) => ({
+      ...current,
+      facilityType,
+      pharmacyFacilityLevel: isHospitalOrganization ? '' : current.pharmacyFacilityLevel,
+    }))
   }
 
   // ✅ NHIA API ARCHITECTURE PATCH START
@@ -360,6 +379,8 @@ const Settings = () => {
         : nhiaApiForm.productionBaseUrl
       await saveNhiaApiSettings({
         ...nhiaApiForm,
+        facilityType: nhiaFacilityType,
+        pharmacyFacilityLevel: isHospitalOrganization ? '' : nhiaApiForm.pharmacyFacilityLevel,
         apiBaseUrl: activeBaseUrl || nhiaApiForm.apiBaseUrl,
       })
       // ✅ NHIA API ARCHITECTURE PATCH END
@@ -645,19 +666,21 @@ const Settings = () => {
               />
             </div>
             {/* ✅ NHIS PHARMACY LEVEL PATCH START */}
-            <label className="settings-field">
-              <span>Pharmacy / facility level</span>
-              <select
-                value={formData.pharmacyLevel}
-                onChange={(event) => setFormData({ ...formData, pharmacyLevel: event.target.value })}
-                disabled={!isAdmin}
-              >
-                <option value="">Level not configured</option>
-                {PHARMACY_LEVELS.map((level) => (
-                  <option key={level.value} value={level.value}>{level.label}</option>
-                ))}
-              </select>
-            </label>
+            {!isHospitalOrganization && (
+              <label className="settings-field">
+                <span>Pharmacy medicine level</span>
+                <select
+                  value={formData.pharmacyLevel}
+                  onChange={(event) => setFormData({ ...formData, pharmacyLevel: event.target.value })}
+                  disabled={!isAdmin}
+                >
+                  <option value="">Level not configured</option>
+                  {PHARMACY_LEVELS.map((level) => (
+                    <option key={level.value} value={level.value}>{level.label}</option>
+                  ))}
+                </select>
+              </label>
+            )}
             {/* ✅ NHIS PHARMACY LEVEL PATCH END */}
             <label className="settings-field">
               <span>Currency</span>
@@ -902,14 +925,12 @@ const Settings = () => {
               {/* ✅ NHIA CONFIG PATCH START */}
               <div className="settings-form-row">
                 <select
-                  value={nhiaApiForm.facilityType}
-                  onChange={(event) => updateNhiaApiForm('facilityType', event.target.value)}
+                  value={nhiaFacilityType}
+                  onChange={(event) => updateNhiaFacilityType(event.target.value)}
                 >
-                  <option value="Pharmacy">Pharmacy</option>
-                  <option value="Hospital">Hospital</option>
-                  <option value="Clinic">Clinic</option>
-                  <option value="Maternity">Maternity</option>
-                  <option value="Chemical Seller">Chemical Seller</option>
+                  {nhiaFacilityTypeOptions.map((facilityType) => (
+                    <option key={facilityType} value={facilityType}>{facilityType}</option>
+                  ))}
                 </select>
                 {showNhiaPharmacyLevel && (
                   <select

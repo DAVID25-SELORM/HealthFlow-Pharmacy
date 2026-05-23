@@ -51,6 +51,7 @@ const Signup = () => {
   const facilitySloganPlaceholder =
     organizationType === 'hospital' ? 'Smart Care. Better Health.' : 'Smart Pharmacy. Better Health.'
   const facilityLicensePlaceholder = organizationType === 'hospital' ? 'HF-12345' : 'PL-12345'
+  const isHospital = organizationType === 'hospital'
 
   const runSubdomainCheck = async (candidate = subdomain) => {
     const normalized = candidate.trim().toLowerCase()
@@ -169,7 +170,7 @@ const Signup = () => {
         slogan,
         licenseNumber,
         // ✅ NHIS PHARMACY LEVEL PATCH START
-        pharmacyLevel,
+        pharmacyLevel: isHospital ? '' : pharmacyLevel,
         // ✅ NHIS PHARMACY LEVEL PATCH END
         fullName,
         email,
@@ -250,7 +251,11 @@ const Signup = () => {
               <select
                 id="organizationType"
                 value={organizationType}
-                onChange={(event) => setOrganizationType(event.target.value)}
+                onChange={(event) => {
+                  const nextType = event.target.value
+                  setOrganizationType(nextType)
+                  if (nextType === 'hospital') setPharmacyLevel('')
+                }}
                 required
               >
                 <option value="pharmacy">Pharmacy</option>
@@ -258,19 +263,21 @@ const Signup = () => {
               </select>
             </div>
             {/* ✅ NHIS PHARMACY LEVEL PATCH START */}
-            <div className="form-group">
-              <label htmlFor="pharmacyLevel">Pharmacy / facility level</label>
-              <select
-                id="pharmacyLevel"
-                value={pharmacyLevel}
-                onChange={(event) => setPharmacyLevel(event.target.value)}
-              >
-                <option value="">Level not configured</option>
-                {PHARMACY_LEVELS.map((level) => (
-                  <option key={level.value} value={level.value}>{level.label}</option>
-                ))}
-              </select>
-            </div>
+            {!isHospital && (
+              <div className="form-group">
+                <label htmlFor="pharmacyLevel">Pharmacy medicine level</label>
+                <select
+                  id="pharmacyLevel"
+                  value={pharmacyLevel}
+                  onChange={(event) => setPharmacyLevel(event.target.value)}
+                >
+                  <option value="">Level not configured</option>
+                  {PHARMACY_LEVELS.map((level) => (
+                    <option key={level.value} value={level.value}>{level.label}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             {/* ✅ NHIS PHARMACY LEVEL PATCH END */}
 
             <div className="form-group">

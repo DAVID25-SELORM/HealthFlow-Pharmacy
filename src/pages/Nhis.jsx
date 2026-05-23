@@ -49,6 +49,7 @@ import { parseNhisDrugFile, generateNhisDrugTemplate } from '../services/nhisDru
 import { parseNhisClinicalRuleFile, generateNhisClinicalRuleTemplate } from '../services/nhisClinicalRuleImportService'
 import { normalizeNhiaMemberNumber } from '../utils/nhiaMemberNumber'
 import { applyNhiaFacilityDefaults, hasNhiaFacilitySettings } from '../utils/nhiaFacilityDefaults'
+import { getErrorMessage, isNetworkRequestError } from '../utils/requestErrors'
 // ✅ NHIS PHARMACY LEVEL PATCH START
 import {
   PHARMACY_LEVELS,
@@ -519,6 +520,9 @@ const Nhis = () => {
       resolvedNhiaSettings?.apiBaseUrl &&
       resolvedNhiaSettings?.ccCodeEndpointPath
   )
+  const nhisPageSubtitle = isHospital
+    ? 'NHIA hospital service claims, tariffs, diagnoses, and direct CLAIM-it submission'
+    : 'NHIS prescription dispensing claims and medicines catalog for pharmacies'
 
   const hasMedicineSearchTerm = medCodeSearch.trim().length > 0
   // ✅ NHIS PHARMACY LEVEL PATCH START
@@ -982,6 +986,23 @@ const Nhis = () => {
     // ✅ NHIS CLAIM LOGIC SEPARATION PATCH END
   })
 
+  const getNhisRequestErrorMessage = (err, fallback = 'Request failed.', outcome = '') => {
+    if (!isNetworkRequestError(err)) {
+      return getErrorMessage(err, fallback)
+    }
+
+    if (directNhiaApiAvailable) {
+      const isBranchSubmit = resolvedNhiaSettings?.source === 'branch'
+      const target = isBranchSubmit ? 'local branch server' : 'hosted NHIA/CLAIM-it service'
+      const check = isBranchSubmit
+        ? 'Confirm the branch server is running and the local server URL/token are correct.'
+        : 'Check internet access and the NHIA API base URL/endpoint in Settings.'
+      return `Unable to reach the ${target}. ${check}${outcome ? ` ${outcome}` : ''}`
+    }
+
+    return `Unable to reach the database or local branch server. Check connectivity, then try again.${outcome ? ` ${outcome}` : ''}`
+  }
+
   const readiness = useMemo(
     () => assessNhisClaimReadiness(
       { ...claimForm, organizationType },
@@ -1181,7 +1202,11 @@ const Nhis = () => {
       await loadAll()
       notify(successMessage, 'success')
     } catch (err) {
-      setClaimError(err.message || 'Unable to save claim.')
+      setClaimError(getNhisRequestErrorMessage(
+        err,
+        'Unable to save claim.',
+        editingClaim && directNhiaApiAvailable ? 'Corrections were not submitted.' : 'The claim was not saved.'
+      ))
     } finally {
       setClaimSubmitting(false)
     }
@@ -1276,7 +1301,7 @@ const Nhis = () => {
         'success'
       )
     } catch (err) {
-      notify(err.message || 'Update failed.', 'error')
+      notify(getNhisRequestErrorMessage(err, 'Update failed.', 'The claim was not marked Submitted.'), 'error')
     } finally {
       setUpdatingStatus(null)
     }
@@ -1521,7 +1546,7 @@ const Nhis = () => {
         'success'
       )
     } catch (err) {
-      notify(err.message || 'Export failed.', 'error')
+      notify(getNhisRequestErrorMessage(err, 'Export failed.', 'Claims were not submitted/exported.'), 'error')
     } finally {
       setExporting(false)
     }
@@ -1538,7 +1563,7 @@ const Nhis = () => {
       <div className="page-header">
         <div>
           <h1 className="page-title">NHIS</h1>
-          <p className="page-subtitle">NHIS prescription dispensing claims and medicines catalog for pharmacies</p>
+          <p className="page-subtitle">{nhisPageSubtitle}</p>
         </div>
         <div className="header-actions">
           {pageTab === 'claims' && canWrite && (

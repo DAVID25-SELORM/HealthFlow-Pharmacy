@@ -123,7 +123,7 @@ export const registerOrganizationSignup = async (payload) => {
     slogan: normalizeText(payload.slogan) || null,
     licenseNumber: normalizeText(payload.licenseNumber) || null,
     // ✅ NHIS PHARMACY LEVEL PATCH START
-    pharmacyLevel: normalizePharmacyLevel(payload.pharmacyLevel),
+    pharmacyLevel: organizationType === 'pharmacy' ? normalizePharmacyLevel(payload.pharmacyLevel) : '',
     // ✅ NHIS PHARMACY LEVEL PATCH END
   }
 
@@ -163,9 +163,10 @@ export const createOrganization = async (orgData) => {
     throw new Error('This subdomain is already taken. Please choose another.')
   }
 
+  const organizationType = normalizeOrganizationType(orgData.organizationType ?? orgData.organization_type)
   const payload = {
     name: normalizeText(name),
-    organization_type: normalizeOrganizationType(orgData.organizationType ?? orgData.organization_type),
+    organization_type: organizationType,
     subdomain: subdomain,
     address: normalizeText(orgData.address) || null,
     city: normalizeText(orgData.city) || null,
@@ -176,7 +177,7 @@ export const createOrganization = async (orgData) => {
     slogan: normalizeText(orgData.slogan) || null,
     license_number: normalizeText(orgData.licenseNumber) || null,
     // ✅ NHIS PHARMACY LEVEL PATCH START
-    pharmacy_level: normalizePharmacyLevel(orgData.pharmacyLevel) || null,
+    pharmacy_level: organizationType === 'pharmacy' ? normalizePharmacyLevel(orgData.pharmacyLevel) || null : null,
     // ✅ NHIS PHARMACY LEVEL PATCH END
     status: 'trial', // Start with trial
     subscription_tier: 'trial',
@@ -208,12 +209,13 @@ export const createOrganization = async (orgData) => {
  * Update organization details
  */
 export const updateOrganization = async (orgId, updates) => {
+  const nextOrganizationType =
+    updates.organizationType !== undefined || updates.organization_type !== undefined
+      ? normalizeOrganizationType(updates.organizationType ?? updates.organization_type)
+      : undefined
   const payload = {
     name: updates.name ? normalizeText(updates.name) : undefined,
-    organization_type:
-      updates.organizationType !== undefined || updates.organization_type !== undefined
-        ? normalizeOrganizationType(updates.organizationType ?? updates.organization_type)
-        : undefined,
+    organization_type: nextOrganizationType,
     address: updates.address !== undefined ? normalizeText(updates.address) || null : undefined,
     city: updates.city !== undefined ? normalizeText(updates.city) || null : undefined,
     region: updates.region !== undefined ? normalizeGhanaRegion(updates.region) || null : undefined,
@@ -223,7 +225,11 @@ export const updateOrganization = async (orgId, updates) => {
     slogan: updates.slogan !== undefined ? normalizeText(updates.slogan) || null : undefined,
     license_number: updates.licenseNumber !== undefined ? normalizeText(updates.licenseNumber) || null : undefined,
     // ✅ NHIS PHARMACY LEVEL PATCH START
-    pharmacy_level: updates.pharmacyLevel !== undefined ? normalizePharmacyLevel(updates.pharmacyLevel) || null : undefined,
+    pharmacy_level: updates.pharmacyLevel !== undefined
+      ? nextOrganizationType === 'hospital'
+        ? null
+        : normalizePharmacyLevel(updates.pharmacyLevel) || null
+      : undefined,
     // ✅ NHIS PHARMACY LEVEL PATCH END
     updated_at: new Date().toISOString(),
   }

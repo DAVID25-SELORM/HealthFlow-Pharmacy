@@ -87,6 +87,41 @@ describe('invokeSupabaseFunction', () => {
     )
   })
 
+  it('maps Supabase function fetch failures to actionable errors', async () => {
+    const activeSession = {
+      access_token: 'active-token',
+      expires_at: Math.floor(NOW.getTime() / 1000) + 3600,
+    }
+
+    const getSession = vi.fn().mockResolvedValue({
+      data: { session: activeSession },
+      error: null,
+    })
+    const invoke = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'))
+    const createClient = vi.fn(() => ({
+      auth: {
+        getSession,
+        getUser: vi.fn(),
+        refreshSession: vi.fn(),
+      },
+      functions: {
+        invoke,
+      },
+    }))
+
+    vi.doMock('@supabase/supabase-js', () => ({
+      createClient,
+    }))
+
+    const { invokeSupabaseFunction } = await import('./supabase')
+
+    const result = await invokeSupabaseFunction('tier-access', {
+      body: { action: 'submit_nhia_claims_direct' },
+    })
+
+    expect(result.error?.message).toContain('Unable to reach Supabase function "tier-access"')
+  })
+
   it('refreshes before reading the current user when the stored session is expired', async () => {
     const expiredSession = {
       access_token: 'expired-token',

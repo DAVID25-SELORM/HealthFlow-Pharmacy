@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { isNetworkRequestError } from '../utils/requestErrors'
 
 // Get environment variables
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
@@ -213,14 +214,24 @@ const isSupabaseAuthFailure = (error) => {
   )
 }
 
-const invokeFunctionWithToken = (name, options, accessToken) =>
-  supabase.functions.invoke(name, {
-    ...options,
-    headers: {
-      ...(options.headers || {}),
-      Authorization: `Bearer ${accessToken}`,
-    },
-  })
+const invokeFunctionWithToken = async (name, options, accessToken) => {
+  try {
+    return await supabase.functions.invoke(name, {
+      ...options,
+      headers: {
+        ...(options.headers || {}),
+        Authorization: `Bearer ${accessToken}`,
+      },
+    })
+  } catch (error) {
+    return {
+      data: null,
+      error: isNetworkRequestError(error)
+        ? new Error(`Unable to reach Supabase function "${name}". Check internet access and Supabase configuration, then try again.`)
+        : error,
+    }
+  }
+}
 
 const isUnauthorizedFunctionError = (error) =>
   error?.name === 'FunctionsHttpError' && Number(error?.context?.status || 0) === 401

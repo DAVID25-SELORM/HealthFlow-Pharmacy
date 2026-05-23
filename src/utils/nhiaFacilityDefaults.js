@@ -16,6 +16,26 @@ export const normalizeNhiaFacilityType = (value, fallback = '') => {
   return fallback
 }
 
+const NHIA_HOSPITAL_FACILITY_TYPES = ['Hospital', 'Clinic', 'Maternity']
+const NHIA_PHARMACY_FACILITY_TYPES = ['Pharmacy', 'Chemical Seller']
+
+const normalizeOrganizationType = (value) =>
+  normalizeText(value).toLowerCase() === 'hospital' ? 'hospital' : 'pharmacy'
+
+export const getNhiaFacilityTypesForOrganization = (organizationType = 'pharmacy') =>
+  normalizeOrganizationType(organizationType) === 'hospital'
+    ? NHIA_HOSPITAL_FACILITY_TYPES
+    : NHIA_PHARMACY_FACILITY_TYPES
+
+export const normalizeNhiaFacilityTypeForOrganization = (value, organizationType = 'pharmacy') => {
+  const normalizedOrganizationType = normalizeOrganizationType(organizationType)
+  const fallback = normalizedOrganizationType === 'hospital' ? 'Hospital' : 'Pharmacy'
+  const facilityType = normalizeNhiaFacilityType(value, fallback)
+  const allowedTypes = getNhiaFacilityTypesForOrganization(normalizedOrganizationType)
+
+  return allowedTypes.includes(facilityType) ? facilityType : fallback
+}
+
 export const normalizeNhiaPharmacyFacilityLevel = (value, fallback = '') => {
   const code = normalizeCode(value)
   return ['P1', 'P2', 'LCS', 'HP'].includes(code) ? code : fallback
@@ -75,8 +95,8 @@ export const applyNhiaFacilityDefaults = (settings = null, organization = null) 
   const source = settings || {}
   const org = organization || {}
   // ✅ NHIA CONFIG PATCH START
-  const organizationType = normalizeText(org.organization_type || 'pharmacy').toLowerCase() === 'hospital' ? 'hospital' : 'pharmacy'
-  const facilityType = normalizeNhiaFacilityType(
+  const organizationType = normalizeOrganizationType(org.organization_type)
+  const facilityType = normalizeNhiaFacilityTypeForOrganization(
     getFirstText(
       source.facilityType,
       source.facility_type,
@@ -86,9 +106,9 @@ export const applyNhiaFacilityDefaults = (settings = null, organization = null) 
       org.organization_type,
       knownDefaults.facilityType
     ),
-    organizationType === 'hospital' ? 'Hospital' : 'Pharmacy'
+    organizationType
   )
-  const isPharmacy = ['Pharmacy', 'Chemical Seller'].includes(facilityType) || organizationType === 'pharmacy'
+  const isPharmacy = organizationType === 'pharmacy'
   const credentialCode = getFirstText(
     source.credentialCode,
     source.credential_code,
@@ -120,7 +140,9 @@ export const applyNhiaFacilityDefaults = (settings = null, organization = null) 
     knownDefaults.pharmacyFacilityLevel
   )
   const providerClassLevel = normalizeNhiaProviderClassLevel(rawProviderClassLevel, isPharmacy ? 'C' : '')
-  const pharmacyFacilityLevel = normalizeNhiaPharmacyFacilityLevel(rawPharmacyFacilityLevel, isPharmacy ? 'P1' : '')
+  const pharmacyFacilityLevel = isPharmacy
+    ? normalizeNhiaPharmacyFacilityLevel(rawPharmacyFacilityLevel, 'P1')
+    : ''
   // ✅ NHIA CONFIG PATCH END
 
   return {

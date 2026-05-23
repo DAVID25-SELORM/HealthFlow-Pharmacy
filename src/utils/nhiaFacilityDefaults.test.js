@@ -39,4 +39,19 @@ describe('NHIA facility defaults', () => {
     expect(resolved.providerNumber).toBe('provider-from-org')
     expect(hasNhiaFacilitySettings(resolved)).toBe(true)
   })
+
+  it('does not carry pharmacy P-level defaults into hospital facilities', () => {
+    const resolved = applyNhiaFacilityDefaults({
+      facilityType: 'Pharmacy',
+      pharmacyFacilityLevel: 'P1',
+      providerClassLevel: 'B2',
+    }, {
+      name: 'Central Hospital',
+      organization_type: 'hospital',
+    })
+
+    expect(resolved.facilityType).toBe('Hospital')
+    expect(resolved.pharmacyFacilityLevel).toBe('')
+    expect(resolved.providerClassLevel).toBe('B2')
+  })
 })

@@ -25,6 +25,8 @@ vi.mock('./tierAccessService', () => ({
 
 import {
   assessNhisClaimReadiness,
+  assertClaimItCxfExportConfigured,
+  buildClaimItConfigPreview,
   buildNhisClaimItExportPayload,
   buildNhisClaimItCxf,
   buildNhisClaimItXml,
@@ -882,6 +884,40 @@ describe('CLAIM-it export helpers', () => {
       submitterId: 'admin',
     })
     expect(xml).toContain('<ClaimsOfficerSignatureUrl>data:image/png;base64,signature</ClaimsOfficerSignatureUrl>')
+  })
+
+  it('normalizes hospital CLAIM-it preview to provider class levels instead of pharmacy P-levels', () => {
+    const preview = buildClaimItConfigPreview({
+      facilityType: 'Pharmacy',
+      pharmacyFacilityLevel: 'P1',
+      providerClassLevel: 'B2',
+      facilityCode: 'HOSP-001',
+      providerNumber: 'HOSP-PROV',
+    }, {
+      organizationType: 'hospital',
+    })
+
+    expect(preview.facilityType).toBe('Hospital')
+    expect(preview.providerClassLevel).toBe('B2')
+    expect(preview.pharmacyFacilityLevel).toBe('')
+  })
+
+  it('does not require pharmacy P-levels for hospital CXF exports with medicines', () => {
+    expect(() => assertClaimItCxfExportConfigured({
+      organizationType: 'hospital',
+      facilityType: 'Pharmacy',
+      pharmacyFacilityLevel: 'P1',
+      providerClassLevel: 'B2',
+      facilityName: 'Central Hospital',
+      providerNumber: 'HOSP-PROV',
+      facilityCode: 'HOSP-001',
+      credentialCode: 'HOSP-001-B2',
+      providerLevelCode: 'PVT-HOS-CE',
+      accreditationExpiryDate: '2026-12-31',
+      claimsOfficerName: 'Claims Officer',
+      submitterId: 'admin',
+      claims: [{ medicines: [{ code: 'NH001' }] }],
+    })).not.toThrow()
   })
 
   it('builds valid XML with escaped patient and medicine text', () => {
