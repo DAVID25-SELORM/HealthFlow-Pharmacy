@@ -188,13 +188,39 @@ const Inventory = () => {
     branchRows.find((row) => row.is_active !== false)?.id ||
     ''
 
+  const loadBrowserInventorySnapshot = async (notifyOnSuccess = true) => {
+    const snapshot = await loadOfflinePosSnapshot(user?.id)
+    if (!snapshot?.drugs?.length) return false
+
+    setDrugs(snapshot.drugs)
+    setBranches(snapshot.branches || [])
+    setSelectedBranchId(snapshot.shiftBranchId || '')
+    setUsingLocalInventory(true)
+    setError('')
+    if (notifyOnSuccess) {
+      notify('Loaded inventory from this browser offline cache.', 'success')
+    }
+    return true
+  }
+
   const loadInitialInventory = async () => {
     try {
       setLoading(true)
       setError('')
 
-      if (typeof navigator !== 'undefined' && !navigator.onLine && isBranchServerEnabled()) {
-        await loadLocalInventory('', { notifyOnSuccess: false })
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        if (isBranchServerEnabled()) {
+          try {
+            await loadLocalInventory('', { notifyOnSuccess: false })
+            return
+          } catch (localError) {
+            console.error('Unable to load cached local inventory:', localError)
+          }
+        }
+        if (await loadBrowserInventorySnapshot(false)) {
+          return
+        }
+        setError('Inventory is not cached for offline use yet. Go online once and refresh Inventory, or pull inventory into the local branch server.')
         return
       }
 
@@ -224,14 +250,7 @@ const Inventory = () => {
         }
       }
 
-      const snapshot = await loadOfflinePosSnapshot(user?.id)
-      if (snapshot?.drugs?.length) {
-        setDrugs(snapshot.drugs)
-        setBranches(snapshot.branches || [])
-        setSelectedBranchId(snapshot.shiftBranchId || '')
-        setUsingLocalInventory(true)
-        setError('')
-        notify('Loaded inventory from this browser offline cache.', 'success')
+      if (await loadBrowserInventorySnapshot(true)) {
         return
       }
 
@@ -275,8 +294,19 @@ const Inventory = () => {
         return
       }
 
-      if (typeof navigator !== 'undefined' && !navigator.onLine && isBranchServerEnabled()) {
-        await loadLocalInventory(branchIdOverride, { notifyOnSuccess: false })
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        if (isBranchServerEnabled()) {
+          try {
+            await loadLocalInventory(branchIdOverride, { notifyOnSuccess: false })
+            return
+          } catch (localError) {
+            console.error('Unable to load cached local inventory:', localError)
+          }
+        }
+        if (await loadBrowserInventorySnapshot(false)) {
+          return
+        }
+        setError('Inventory is not cached for offline use yet. Go online once and refresh Inventory, or pull inventory into the local branch server.')
         return
       }
 
@@ -310,12 +340,7 @@ const Inventory = () => {
         }
       }
 
-      const snapshot = await loadOfflinePosSnapshot(user?.id)
-      if (snapshot?.drugs?.length) {
-        setDrugs(snapshot.drugs)
-        setUsingLocalInventory(true)
-        setError('')
-        notify('Loaded inventory from this browser offline cache.', 'success')
+      if (await loadBrowserInventorySnapshot(true)) {
         return
       }
 

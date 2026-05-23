@@ -19,6 +19,7 @@ import {
   upsertNhisDrugs,
   getAllNhisClaims,
   getAllNhiaTariffItems,
+  updateNhiaTariffItem,
   getNhisClaimStats,
   createNhisClaim,
   updateNhisClaim,
@@ -137,6 +138,20 @@ const BLANK_NHIS_DRUG = {
   // ✅ NHIS PHARMACY LEVEL PATCH END
 }
 
+const BLANK_NHIA_TARIFF = {
+  tariffVersion: 'FEB 2023',
+  facilityGroup: '',
+  cateringOption: '',
+  mdc: '',
+  gdrgCode: '',
+  description: '',
+  ageBand: '',
+  tariffAmount: '',
+  currency: 'GHS',
+  sourceFile: '',
+  sourcePage: '',
+}
+
 const fmtCurrency = (n) =>
   `GHS ${Number(n || 0).toLocaleString('en-GH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
@@ -225,7 +240,7 @@ const Nhis = () => {
   const isHospital = organizationType === 'hospital'
 
   // ── page sub-tab ─────────────────────────────────────────────
-  const [pageTab, setPageTab] = useState('claims') // 'claims' | 'catalog' | 'review' | 'rules'
+  const [pageTab, setPageTab] = useState('claims') // 'claims' | 'catalog' | 'gdrg' | 'review' | 'rules'
 
   // ── data ─────────────────────────────────────────────────────
   const [claims, setClaims]       = useState([])
@@ -245,6 +260,7 @@ const Nhis = () => {
 
   // ── catalog filter ────────────────────────────────────────────
   const [catalogSearch, setCatalogSearch] = useState('')
+  const [tariffCatalogSearch, setTariffCatalogSearch] = useState('')
 
   // ── modals ────────────────────────────────────────────────────
   const [showNewClaimModal, setShowNewClaimModal]   = useState(false)
@@ -279,6 +295,9 @@ const Nhis = () => {
   const [editingDrug, setEditingDrug]   = useState(null) // null = add new
   const [drugForm, setDrugForm]         = useState(BLANK_NHIS_DRUG)
   const [drugSubmitting, setDrugSubmitting] = useState(false)
+  const [editingTariff, setEditingTariff] = useState(null)
+  const [tariffForm, setTariffForm] = useState(BLANK_NHIA_TARIFF)
+  const [tariffSubmitting, setTariffSubmitting] = useState(false)
 
   // ── import modal ──────────────────────────────────────────────
   const [importRows, setImportRows]     = useState([])
@@ -342,12 +361,10 @@ const Nhis = () => {
         getAllPatients(),
         getNhisClaimStats(),
         getAllNhisClinicalRules(),
-        isHospital
-          ? getAllNhiaTariffItems({
-              facilityGroup: activeTariffFacilityGroup,
-              cateringOption: activeTariffCateringOption,
-            })
-          : Promise.resolve([]),
+        getAllNhiaTariffItems({
+          facilityGroup: activeTariffFacilityGroup,
+          cateringOption: activeTariffCateringOption,
+        }),
         getAllDrugs({ includeCatalog: true, useTierAccess: true }).catch(() => []),
       ])
 
@@ -472,6 +489,24 @@ const Nhis = () => {
       })
       .slice(0, 10)
   }, [nhiaTariffItems, tariffSearch, activeTariffFacilityGroup, activeTariffCateringOption])
+
+  const filteredTariffCatalog = useMemo(() => {
+    const term = tariffCatalogSearch.trim().toLowerCase()
+    const rows = nhiaTariffItems.filter((item) => {
+      if (activeTariffFacilityGroup && item.facility_group !== activeTariffFacilityGroup) return false
+      if (activeTariffCateringOption && item.catering_option !== activeTariffCateringOption) return false
+      if (!term) return true
+      return (
+        lookupMatches(item.gdrg_code, term) ||
+        lookupMatches(item.description, term) ||
+        lookupMatches(item.mdc, term) ||
+        lookupMatches(item.facility_group, term) ||
+        lookupMatches(item.catering_option, term) ||
+        lookupMatches(item.age_band, term)
+      )
+    })
+    return rows.slice(0, 500)
+  }, [nhiaTariffItems, tariffCatalogSearch, activeTariffFacilityGroup, activeTariffCateringOption])
 
   const providerClassLevel = resolvedNhiaSettings?.providerClassLevel || resolvedNhiaSettings?.provider_class_level || ''
   const directNhiaApiAvailable = Boolean(
@@ -1316,6 +1351,48 @@ const Nhis = () => {
   }
 
   // ── import ────────────────────────────────────────────────────
+  const openEditTariff = (tariff) => {
+    setEditingTariff(tariff)
+    setTariffForm({
+      tariffVersion: tariff.tariff_version || 'FEB 2023',
+      facilityGroup: tariff.facility_group || '',
+      cateringOption: tariff.catering_option || '',
+      mdc: tariff.mdc || '',
+      gdrgCode: tariff.gdrg_code || '',
+      description: tariff.description || '',
+      ageBand: tariff.age_band || '',
+      tariffAmount: String(tariff.tariff_amount ?? ''),
+      currency: tariff.currency || 'GHS',
+      sourceFile: tariff.source_file || '',
+      sourcePage: tariff.source_page ? String(tariff.source_page) : '',
+    })
+  }
+
+  const closeTariffModal = () => {
+    setEditingTariff(null)
+    setTariffForm(BLANK_NHIA_TARIFF)
+  }
+
+  const handleSaveTariff = async (e) => {
+    e.preventDefault()
+    if (!editingTariff) return
+    try {
+      setTariffSubmitting(true)
+      await updateNhiaTariffItem(editingTariff.id, tariffForm)
+      const fresh = await getAllNhiaTariffItems({
+        facilityGroup: activeTariffFacilityGroup,
+        cateringOption: activeTariffCateringOption,
+      })
+      setNhiaTariffItems(fresh)
+      closeTariffModal()
+      notify('G-DRG tariff updated.', 'success')
+    } catch (err) {
+      notify(err.message || 'Unable to save G-DRG tariff.', 'error')
+    } finally {
+      setTariffSubmitting(false)
+    }
+  }
+
   const handleFileSelect = async (e) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -1527,6 +1604,12 @@ const Nhis = () => {
           onClick={() => setPageTab('catalog')}
         >
           <FileSpreadsheet size={16} /> Drug Catalog
+        </button>
+        <button
+          className={`nhis-page-tab ${pageTab === 'gdrg' ? 'active' : ''}`}
+          onClick={() => setPageTab('gdrg')}
+        >
+          <FileSpreadsheet size={16} /> G-DRG Catalog
         </button>
         <button
           className={`nhis-page-tab ${pageTab === 'review' ? 'active' : ''}`}
@@ -1914,6 +1997,69 @@ const Nhis = () => {
       {/* ══════════════════════════════════════════════════════════════
           NEW CLAIM MODAL
       ══════════════════════════════════════════════════════════════ */}
+      {pageTab === 'gdrg' && (
+        <>
+          <div className="nhis-controls">
+            <div className="search-box">
+              <Search size={16} className="search-icon" />
+              <input
+                className="search-input"
+                placeholder="Search by G-DRG code, description, MDC, facility group..."
+                value={tariffCatalogSearch}
+                onChange={(e) => setTariffCatalogSearch(e.target.value)}
+              />
+            </div>
+            <span className="catalog-count">{filteredTariffCatalog.length} G-DRG tariffs</span>
+          </div>
+
+          <div className="nhis-table-wrap">
+            {loading ? (
+              <div className="nhis-empty">Loading G-DRG catalog...</div>
+            ) : filteredTariffCatalog.length === 0 ? (
+              <div className="nhis-empty">
+                <FileSpreadsheet size={40} />
+                <p>No G-DRG tariffs found for the configured tariff set.</p>
+              </div>
+            ) : (
+              <table className="nhis-table">
+                <thead>
+                  <tr>
+                    <th>G-DRG</th>
+                    <th>Description</th>
+                    <th>MDC</th>
+                    <th>Age Band</th>
+                    <th>Facility Group</th>
+                    <th>Catering</th>
+                    <th>Tariff</th>
+                    {canWrite && <th>Actions</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredTariffCatalog.map((item) => (
+                    <tr key={item.id}>
+                      <td className="drug-code-cell">{item.gdrg_code}</td>
+                      <td>{item.description}</td>
+                      <td>{item.mdc || '-'}</td>
+                      <td>{item.age_band || '-'}</td>
+                      <td>{item.facility_group || '-'}</td>
+                      <td>{item.catering_option || '-'}</td>
+                      <td>{fmtCurrency(item.tariff_amount)}</td>
+                      {canWrite && (
+                        <td className="nhis-actions">
+                          <button className="action-btn action-btn--view" onClick={() => openEditTariff(item)} title="Edit G-DRG tariff">
+                            <Pencil size={14} />
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </>
+      )}
+
       {pageTab === 'rules' && isHospital && (
         <div className="nhis-table-wrap">
           {loading ? (
@@ -2682,6 +2828,89 @@ const Nhis = () => {
       {/* ══════════════════════════════════════════════════════════════
           ADD / EDIT DRUG MODAL
       ══════════════════════════════════════════════════════════════ */}
+      {editingTariff && (
+        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && closeTariffModal()}>
+          <div className="modal-panel modal-panel--drug">
+            <div className="modal-header">
+              <h2>Edit G-DRG Tariff</h2>
+              <button className="modal-close" onClick={closeTariffModal}><X size={18} /></button>
+            </div>
+            <form className="drug-form" onSubmit={handleSaveTariff}>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>G-DRG Code</label>
+                  <input className="form-input" value={tariffForm.gdrgCode} readOnly />
+                </div>
+                <div className="form-group">
+                  <label>Tariff Version</label>
+                  <input className="form-input" value={tariffForm.tariffVersion} readOnly />
+                </div>
+              </div>
+              <div className="form-group">
+                <label>Description *</label>
+                <input className="form-input" required value={tariffForm.description}
+                  onChange={(e) => setTariffForm((p) => ({ ...p, description: e.target.value }))} />
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>MDC</label>
+                  <input className="form-input" value={tariffForm.mdc}
+                    onChange={(e) => setTariffForm((p) => ({ ...p, mdc: e.target.value }))} />
+                </div>
+                <div className="form-group">
+                  <label>Age Band</label>
+                  <input className="form-input" value={tariffForm.ageBand}
+                    onChange={(e) => setTariffForm((p) => ({ ...p, ageBand: e.target.value }))} />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Facility Group</label>
+                  <input className="form-input" value={tariffForm.facilityGroup}
+                    onChange={(e) => setTariffForm((p) => ({ ...p, facilityGroup: e.target.value }))} />
+                </div>
+                <div className="form-group">
+                  <label>Catering Option</label>
+                  <input className="form-input" value={tariffForm.cateringOption}
+                    onChange={(e) => setTariffForm((p) => ({ ...p, cateringOption: e.target.value }))} />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Tariff Amount (GHS) *</label>
+                  <input type="number" min="0" step="0.01" className="form-input" required
+                    value={tariffForm.tariffAmount}
+                    onChange={(e) => setTariffForm((p) => ({ ...p, tariffAmount: e.target.value }))} />
+                </div>
+                <div className="form-group">
+                  <label>Currency</label>
+                  <input className="form-input" value={tariffForm.currency}
+                    onChange={(e) => setTariffForm((p) => ({ ...p, currency: e.target.value.toUpperCase() }))} />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Source File</label>
+                  <input className="form-input" value={tariffForm.sourceFile}
+                    onChange={(e) => setTariffForm((p) => ({ ...p, sourceFile: e.target.value }))} />
+                </div>
+                <div className="form-group">
+                  <label>Source Page</label>
+                  <input type="number" min="0" step="1" className="form-input" value={tariffForm.sourcePage}
+                    onChange={(e) => setTariffForm((p) => ({ ...p, sourcePage: e.target.value }))} />
+                </div>
+              </div>
+              <div className="modal-footer" style={{ padding: '0', marginTop: '1rem' }}>
+                <button type="button" className="btn btn-secondary" onClick={closeTariffModal}>Cancel</button>
+                <button type="submit" className="btn btn-primary" disabled={tariffSubmitting}>
+                  {tariffSubmitting ? 'Saving...' : 'Update G-DRG'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {showDrugCatalogModal && (
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowDrugCatalogModal(false)}>
           <div className="modal-panel modal-panel--drug">

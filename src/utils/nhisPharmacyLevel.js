@@ -40,7 +40,7 @@ export const normalizeMedicineAccessLevel = (value) => {
 export const getEffectivePharmacyLevel = (...sources) => {
   for (const source of sources) {
     const level = normalizePharmacyLevel(
-      source?.pharmacy_level ?? source?.pharmacyLevel ?? source?.providerClassLevel ?? source
+      source?.pharmacy_level ?? source?.pharmacyLevel ?? source?.pharmacyFacilityLevel ?? source?.pharmacy_facility_level ?? source
     )
     if (level) return level
   }

@@ -571,7 +571,7 @@ describe('assessNhisClaimReadiness', () => {
     )
   })
 
-  it('uses the NHIS drug catalog to find prescribing level for hospital medicines only', () => {
+  it('uses pharmacy medicine level, not hospital provider class, for hospital pharmacy-module medicines', () => {
     const readiness = assessNhisClaimReadiness(
       {
         ...baseClaim,
@@ -583,12 +583,33 @@ describe('assessNhisClaimReadiness', () => {
       {
         enforcePrescribingLevel: true,
         providerClassLevel: 'B2',
+        pharmacyLevel: 'P1',
         nhisDrugCatalog: [{ code: 'MIDAZOIN1', category: 'C' }],
       }
     )
 
+    expect(readiness.blockers).not.toEqual(expect.arrayContaining([
+      expect.stringContaining('requires NHIS prescribing level C'),
+    ]))
+  })
+
+  it('requires pharmacy medicine level for hospital medicine claims', () => {
+    const readiness = assessNhisClaimReadiness(
+      {
+        ...baseClaim,
+        organizationType: 'hospital',
+        diagnosis: 'B50',
+        diagnosisDetails: [{ code: 'B50', label: 'Plasmodium falciparum malaria', source: 'ICD-10' }],
+      },
+      [{ ...baseMedicine, medicineAccessLevel: 'Prescription', requiredPharmacyLevel: 'P2' }],
+      {
+        enforcePrescribingLevel: true,
+        providerClassLevel: 'C',
+      }
+    )
+
     expect(readiness.blockers).toContain(
-      'Medicine 1: requires NHIS prescribing level C, but this hospital is configured as B2. Use an authorized prescriber/facility or remove the medicine.'
+      'Set the NHIS pharmacy/medicine level in Settings before saving/submitting medicine claims for the hospital pharmacy module.'
     )
   })
 
@@ -1040,6 +1061,7 @@ describe('CLAIM-it export helpers', () => {
       format: 'json',
       organizationType: 'pharmacy',
       providerClassLevel: 'D',
+      pharmacyLevel: 'P1',
       nhisDrugCatalog: [{ id: 'drug-1', code: 'NH001', category: 'A' }],
     })
 
@@ -1103,6 +1125,7 @@ describe('CLAIM-it export helpers', () => {
       format: 'cxf',
       organizationType: 'pharmacy',
       providerClassLevel: 'D',
+      pharmacyLevel: 'P1',
       pharmacyFacilityLevel: 'P1',
       facilityName: 'Westpoint Chemist',
       facilityCode: '03-05-001-02-01954-11-P1-2-011225',
@@ -1164,6 +1187,7 @@ describe('CLAIM-it export helpers', () => {
       format: 'cxf',
       organizationType: 'pharmacy',
       providerClassLevel: 'D',
+      pharmacyLevel: 'P1',
       nhisDrugCatalog: [{ id: 'drug-1', code: 'NH001', category: 'A' }],
     })).rejects.toThrow('CLAIM-it CXF export needs complete NHIA configuration')
   })
@@ -1223,6 +1247,7 @@ describe('direct NHIA submission', () => {
       },
       directApiSource: 'hosted',
       providerClassLevel: 'D',
+      pharmacyLevel: 'P1',
       nhisDrugCatalog: [{ code: 'NH001', category: 'A' }],
     })
 

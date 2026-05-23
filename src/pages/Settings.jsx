@@ -22,7 +22,7 @@ import { readLogoFileAsDataUrl, readSignatureFileAsDataUrl } from '../utils/imag
 import { normalizeGhanaRegion } from '../utils/ghanaRegions'
 import { getRoleLabel } from '../utils/roleLabels'
 import { ROLE_OPTIONS } from '../utils/roles'
-import { applyNhiaFacilityDefaults } from '../utils/nhiaFacilityDefaults'
+import { applyNhiaFacilityDefaults, normalizeNhiaFacilityType } from '../utils/nhiaFacilityDefaults'
 // ✅ NHIS PHARMACY LEVEL PATCH START
 import { PHARMACY_LEVELS } from '../utils/nhisPharmacyLevel'
 // ✅ NHIS PHARMACY LEVEL PATCH END
@@ -177,6 +177,11 @@ const Settings = () => {
     ...nhiaApiForm,
     facilityName: organization?.name || formData.pharmacyName,
   }, { organizationType: organization?.organization_type || 'pharmacy' })
+  const organizationType = organization?.organization_type === 'hospital' ? 'hospital' : 'pharmacy'
+  const nhiaFacilityType = normalizeNhiaFacilityType(nhiaApiForm.facilityType, organizationType === 'hospital' ? 'Hospital' : 'Pharmacy')
+  const isNhiaPharmacyFacility = organizationType === 'pharmacy' || ['Pharmacy', 'Chemical Seller'].includes(nhiaFacilityType)
+  const showNhiaPharmacyLevel = isNhiaPharmacyFacility || organizationType === 'hospital' || Boolean(nhiaApiForm.pharmacyFacilityLevel)
+  const showNhiaProviderClassLevel = !isNhiaPharmacyFacility
   // ✅ NHIA CONFIG PATCH END
 
   useEffect(() => {
@@ -906,16 +911,18 @@ const Settings = () => {
                   <option value="Maternity">Maternity</option>
                   <option value="Chemical Seller">Chemical Seller</option>
                 </select>
-                <select
-                  value={nhiaApiForm.pharmacyFacilityLevel}
-                  onChange={(event) => updateNhiaApiForm('pharmacyFacilityLevel', event.target.value)}
-                >
-                  <option value="">Pharmacy/facility level</option>
-                  <option value="P1">P1 - Full pharmacy / higher pharmacy service level</option>
-                  <option value="P2">P2 - Restricted or lower pharmacy service level</option>
-                  <option value="LCS">LCS - Licensed Chemical Seller</option>
-                  <option value="HP">HP - Hospital Pharmacy</option>
-                </select>
+                {showNhiaPharmacyLevel && (
+                  <select
+                    value={nhiaApiForm.pharmacyFacilityLevel}
+                    onChange={(event) => updateNhiaApiForm('pharmacyFacilityLevel', event.target.value)}
+                  >
+                    <option value="">Pharmacy medicine level</option>
+                    <option value="P1">P1 - Full pharmacy / higher pharmacy service level</option>
+                    <option value="P2">P2 - Restricted or lower pharmacy service level</option>
+                    <option value="LCS">LCS - Licensed Chemical Seller</option>
+                    <option value="HP">HP - Hospital Pharmacy</option>
+                  </select>
+                )}
               </div>
               <div className="settings-form-row">
                 <input
@@ -943,20 +950,22 @@ const Settings = () => {
                 />
               </div>
               {/* ✅ NHIA CONFIG PATCH END */}
-              <div className="settings-form-row">
-                <select
-                  value={nhiaApiForm.providerClassLevel}
-                  onChange={(event) => updateNhiaApiForm('providerClassLevel', event.target.value)}
-                >
-                  <option value="">Provider class / level</option>
-                  <option value="B1">B1</option>
-                  <option value="B2">B2</option>
-                  <option value="C">C</option>
-                  <option value="D">D</option>
-                  <option value="M">M</option>
-                  <option value="SM">SM</option>
-                </select>
-              </div>
+              {showNhiaProviderClassLevel && (
+                <div className="settings-form-row">
+                  <select
+                    value={nhiaApiForm.providerClassLevel}
+                    onChange={(event) => updateNhiaApiForm('providerClassLevel', event.target.value)}
+                  >
+                    <option value="">Hospital provider class / level</option>
+                    <option value="B1">B1</option>
+                    <option value="B2">B2</option>
+                    <option value="C">C</option>
+                    <option value="D">D</option>
+                    <option value="M">M</option>
+                    <option value="SM">SM</option>
+                  </select>
+                </div>
+              )}
               <div className="settings-form-row">
                 <select
                   value={nhiaApiForm.providerTypeDescription}

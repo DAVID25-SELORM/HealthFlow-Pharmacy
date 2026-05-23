@@ -75,6 +75,7 @@ export const applyNhiaFacilityDefaults = (settings = null, organization = null) 
   const source = settings || {}
   const org = organization || {}
   // ✅ NHIA CONFIG PATCH START
+  const organizationType = normalizeText(org.organization_type || 'pharmacy').toLowerCase() === 'hospital' ? 'hospital' : 'pharmacy'
   const facilityType = normalizeNhiaFacilityType(
     getFirstText(
       source.facilityType,
@@ -85,9 +86,9 @@ export const applyNhiaFacilityDefaults = (settings = null, organization = null) 
       org.organization_type,
       knownDefaults.facilityType
     ),
-    'Pharmacy'
+    organizationType === 'hospital' ? 'Hospital' : 'Pharmacy'
   )
-  const isPharmacy = facilityType === 'Pharmacy' || normalizeText(org.organization_type || 'pharmacy') === 'pharmacy'
+  const isPharmacy = ['Pharmacy', 'Chemical Seller'].includes(facilityType) || organizationType === 'pharmacy'
   const credentialCode = getFirstText(
     source.credentialCode,
     source.credential_code,
