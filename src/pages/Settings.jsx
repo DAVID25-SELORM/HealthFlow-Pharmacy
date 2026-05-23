@@ -394,15 +394,36 @@ const Settings = () => {
       const activeBaseUrl = nhiaApiForm.apiEnvironment === 'sandbox'
         ? nhiaApiForm.sandboxBaseUrl
         : nhiaApiForm.productionBaseUrl
-      await saveNhiaApiSettings({
+      const accreditationExpiryDate = normalizeDateInputValue(nhiaApiForm.accreditationExpiryDate)
+      const nhiaSettingsPayload = {
         ...nhiaApiForm,
-        accreditationExpiryDate: normalizeDateInputValue(nhiaApiForm.accreditationExpiryDate),
+        accreditationExpiryDate,
+        accreditation_expiry_date: accreditationExpiryDate,
+        claims_officer_name: nhiaApiForm.claimsOfficerName,
         facilityType: nhiaFacilityType,
         pharmacyFacilityLevel: isHospitalOrganization ? '' : nhiaApiForm.pharmacyFacilityLevel,
         apiBaseUrl: activeBaseUrl || nhiaApiForm.apiBaseUrl,
-      })
+      }
+      const savedNhiaApiSettings = await saveNhiaApiSettings(nhiaSettingsPayload)
+      const savedHasAccreditationExpiryDate = Boolean(savedNhiaApiSettings) && (
+        savedNhiaApiSettings.accreditationExpiryDate !== undefined ||
+        savedNhiaApiSettings.accreditation_expiry_date !== undefined
+      )
+      const savedClaimsOfficerName = savedNhiaApiSettings?.claimsOfficerName ?? savedNhiaApiSettings?.claims_officer_name
+
+      setNhiaApiForm(toNhiaApiForm({
+        ...nhiaSettingsPayload,
+        ...(savedNhiaApiSettings || {}),
+        accreditationExpiryDate: savedHasAccreditationExpiryDate
+          ? normalizeDateInputValue(
+            savedNhiaApiSettings.accreditationExpiryDate ?? savedNhiaApiSettings.accreditation_expiry_date
+          )
+          : accreditationExpiryDate,
+        claimsOfficerName: savedClaimsOfficerName !== undefined
+          ? savedClaimsOfficerName
+          : nhiaApiForm.claimsOfficerName,
+      }, organization))
       // ✅ NHIA API ARCHITECTURE PATCH END
-      await loadSettings()
       notify('NHIA API settings saved.', 'success')
     } catch (saveError) {
       setError(saveError.message || 'Unable to save NHIA API settings.')

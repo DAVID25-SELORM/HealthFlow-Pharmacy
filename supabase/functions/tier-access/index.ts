@@ -1979,6 +1979,9 @@ const saveNhiaApiSettings = async (
     if (normalizeText(value)) credentials[key] = value
   }
 
+  const accreditationExpiryDate = normalizeText(settings.accreditationExpiryDate ?? settings.accreditation_expiry_date)
+  const claimsOfficerName = normalizeText(settings.claimsOfficerName ?? settings.claims_officer_name)
+
   const row = {
     organization_id: organizationId,
     facility_code: normalizeText(settings.facilityCode) || null,
@@ -1990,7 +1993,7 @@ const saveNhiaApiSettings = async (
     provider_level_code: normalizeText(settings.providerLevelCode) || null,
     credential_code: normalizeText(settings.credentialCode) || normalizeText(settings.facilityCode) || null,
     license_number: normalizeText(settings.licenseNumber) || null,
-    accreditation_expiry_date: normalizeText(settings.accreditationExpiryDate) || null,
+    accreditation_expiry_date: accreditationExpiryDate || null,
     // ✅ NHIA CONFIG PATCH END
     // ✅ NHIA API ARCHITECTURE PATCH START
     integration_mode: normalizeText(settings.integrationMode) || 'claimit_export',
@@ -1999,7 +2002,7 @@ const saveNhiaApiSettings = async (
     // ✅ NHIA API ARCHITECTURE PATCH END
     provider_type_description: normalizeText(settings.providerTypeDescription) || null,
     provider_class_level: normalizeText(settings.providerClassLevel) || null,
-    claims_officer_name: normalizeText(settings.claimsOfficerName) || null,
+    claims_officer_name: claimsOfficerName || null,
     admission_payment_option: ['nhis_pays_admission', 'patient_pays_admission', 'not_applicable'].includes(
       normalizeText(settings.admissionPaymentOption)
     )
