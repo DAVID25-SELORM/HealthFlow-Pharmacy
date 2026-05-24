@@ -317,7 +317,13 @@ const Settings = () => {
         return
       }
     }
-    updateNhiaApiForm('directApiEnabled', enabled)
+    setNhiaApiForm((current) => ({
+      ...current,
+      directApiEnabled: enabled,
+      integrationMode: enabled
+        ? (['direct_nhia_api', 'hybrid'].includes(current.integrationMode) ? current.integrationMode : 'direct_nhia_api')
+        : (['direct_nhia_api', 'hybrid'].includes(current.integrationMode) ? 'claimit_export' : current.integrationMode),
+    }))
   }
 
   const handleNhiaIntegrationModeChange = (mode) => {
@@ -332,7 +338,7 @@ const Settings = () => {
     setNhiaApiForm((current) => ({
       ...current,
       integrationMode: mode,
-      directApiEnabled: requiresDirectConfig ? true : current.directApiEnabled,
+      directApiEnabled: requiresDirectConfig,
     }))
   }
 

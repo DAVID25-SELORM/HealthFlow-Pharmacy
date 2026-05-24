@@ -59,6 +59,11 @@ const blankNhiaForm = {
   facilityCode: '',
   providerNumber: '',
   schemeName: 'National Health Insurance',
+  facilityType: '',
+  pharmacyFacilityLevel: '',
+  providerLevelCode: '',
+  credentialCode: '',
+  licenseNumber: '',
   providerTypeDescription: '',
   providerClassLevel: '',
   accreditationExpiryDate: '',
@@ -72,7 +77,7 @@ const blankNhiaForm = {
   ccCodeEndpointPath: '',
   directApiEnabled: false,
   credentialMode: 'api_key',
-  exportFormat: 'cxf',
+  exportFormat: 'xml',
   nhisMemberDigits: 8,
   ghanaCardDigits: 10,
   maxRetryAttempts: 3,
@@ -637,10 +642,10 @@ SUPABASE_SYNC_KEY=<your-supabase-anon-or-publishable-key>`}</pre>
             <button
               className="btn btn-outline"
               type="button"
-              onClick={() => exportNhiaBatch('cxf')}
+              onClick={() => exportNhiaBatch('xml')}
               disabled={!isConnected || Boolean(busyAction)}
             >
-              Export CXF
+              Export XML
             </button>
             <button
               className="btn btn-outline"
@@ -673,6 +678,41 @@ SUPABASE_SYNC_KEY=<your-supabase-anon-or-publishable-key>`}</pre>
             <input
               value={nhiaForm.providerNumber}
               onChange={(event) => updateNhiaForm('providerNumber', event.target.value)}
+            />
+          </label>
+          <label>
+            <span>Facility Type</span>
+            <input
+              value={nhiaForm.facilityType}
+              onChange={(event) => updateNhiaForm('facilityType', event.target.value)}
+            />
+          </label>
+          <label>
+            <span>Pharmacy Facility Level</span>
+            <input
+              value={nhiaForm.pharmacyFacilityLevel}
+              onChange={(event) => updateNhiaForm('pharmacyFacilityLevel', event.target.value)}
+            />
+          </label>
+          <label>
+            <span>Provider Level Code</span>
+            <input
+              value={nhiaForm.providerLevelCode}
+              onChange={(event) => updateNhiaForm('providerLevelCode', event.target.value)}
+            />
+          </label>
+          <label>
+            <span>Credential Code</span>
+            <input
+              value={nhiaForm.credentialCode}
+              onChange={(event) => updateNhiaForm('credentialCode', event.target.value)}
+            />
+          </label>
+          <label>
+            <span>License Number</span>
+            <input
+              value={nhiaForm.licenseNumber}
+              onChange={(event) => updateNhiaForm('licenseNumber', event.target.value)}
             />
           </label>
           <label>
@@ -807,9 +847,8 @@ SUPABASE_SYNC_KEY=<your-supabase-anon-or-publishable-key>`}</pre>
               value={nhiaForm.exportFormat}
               onChange={(event) => updateNhiaForm('exportFormat', event.target.value)}
             >
-              <option value="cxf">CLAIM-it import file (.cxf)</option>
-              <option value="json">JSON</option>
               <option value="xml">XML</option>
+              <option value="json">JSON</option>
             </select>
           </label>
           <label>

@@ -13,7 +13,7 @@ ALTER TABLE public.organization_nhia_integrations
   ADD COLUMN IF NOT EXISTS claims_officer_name TEXT,
   ADD COLUMN IF NOT EXISTS accreditation_expiry_date DATE,
   -- ✅ NHIA API ARCHITECTURE PATCH START
-  ADD COLUMN IF NOT EXISTS integration_mode TEXT NOT NULL DEFAULT 'claimit_export',
+  ADD COLUMN IF NOT EXISTS integration_mode TEXT,
   ADD COLUMN IF NOT EXISTS sandbox_base_url TEXT,
   ADD COLUMN IF NOT EXISTS production_base_url TEXT;
   -- ✅ NHIA API ARCHITECTURE PATCH END
@@ -36,10 +36,13 @@ SET
   ),
   provider_class_level = CASE
     WHEN COALESCE(NULLIF(integration.facility_type, ''), integration.provider_type_description, org.organization_type) ILIKE '%pharmacy%'
+      OR COALESCE(NULLIF(integration.facility_type, ''), integration.provider_type_description, org.organization_type) ILIKE '%chemical%'
       THEN COALESCE(NULLIF(integration.provider_class_level, ''), 'C')
     ELSE NULLIF(integration.provider_class_level, '')
   END,
   pharmacy_facility_level = CASE
+    WHEN COALESCE(NULLIF(integration.facility_type, ''), integration.provider_type_description, org.organization_type) ILIKE '%chemical%'
+      THEN COALESCE(NULLIF(integration.pharmacy_facility_level, ''), 'LCS')
     WHEN COALESCE(NULLIF(integration.facility_type, ''), integration.provider_type_description, org.organization_type) ILIKE '%pharmacy%'
       THEN COALESCE(NULLIF(integration.pharmacy_facility_level, ''), 'P1')
     ELSE NULLIF(integration.pharmacy_facility_level, '')
@@ -51,9 +54,15 @@ WHERE integration.organization_id = org.id
 -- ✅ NHIA API ARCHITECTURE PATCH START
 UPDATE public.organization_nhia_integrations
 SET
-  integration_mode = COALESCE(NULLIF(integration_mode, ''), 'claimit_export'),
-  production_base_url = COALESCE(NULLIF(production_base_url, ''), api_base_url)
-WHERE is_active = true;
+  integration_mode = COALESCE(
+    NULLIF(integration_mode, ''),
+    CASE WHEN direct_api_enabled IS TRUE THEN 'direct_nhia_api' ELSE 'claimit_export' END
+  ),
+  production_base_url = COALESCE(NULLIF(production_base_url, ''), api_base_url);
+
+ALTER TABLE public.organization_nhia_integrations
+  ALTER COLUMN integration_mode SET DEFAULT 'claimit_export',
+  ALTER COLUMN integration_mode SET NOT NULL;
 
 DO $$
 BEGIN

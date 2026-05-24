@@ -319,7 +319,7 @@ const normalizeAdmissionPaymentOption = (value) => {
 }
 
 const normalizeExportFormat = (value) => {
-  const format = normalizeText(value || 'cxf').toLowerCase()
+  const format = normalizeText(value || 'xml').toLowerCase()
   if (!EXPORT_FORMATS.has(format)) {
     throw new Error('NHIA export format must be cxf, json, or xml.')
   }
@@ -634,7 +634,7 @@ const mapSettingsRow = (row, { includeCredentials = false } = {}) => {
     credentialSummary: maskCredentials(credentials),
     nhisMemberDigits: Number(row.nhis_member_digits || DEFAULT_NHIS_MEMBER_DIGITS),
     ghanaCardDigits: Number(row.ghana_card_digits || DEFAULT_GHANA_CARD_DIGITS),
-    exportFormat: row.export_format || 'cxf',
+    exportFormat: row.export_format === 'cxf' ? 'xml' : (row.export_format || 'xml'),
     maxRetryAttempts: Number(row.max_retry_attempts || 3),
     isActive: Boolean(row.is_active),
     createdAt: row.created_at,
@@ -1443,6 +1443,12 @@ const buildBatchPayload = (claims, settings) => ({
   batchNumber: createBatchNumber(),
   facilityCode: settings?.facilityCode || '',
   providerNumber: settings?.providerNumber || '',
+  facilityType: settings?.facilityType || '',
+  pharmacyFacilityLevel: settings?.pharmacyFacilityLevel || '',
+  providerLevelCode: settings?.providerLevelCode || '',
+  credentialCode: settings?.credentialCode || settings?.facilityCode || '',
+  licenseNumber: settings?.licenseNumber || '',
+  accreditationExpiryDate: getAccreditationExpiryDate(settings),
   schemeName: settings?.schemeName || 'National Health Insurance',
   providerTypeDescription: settings?.providerTypeDescription || '',
   providerClassLevel: settings?.providerClassLevel || '',
@@ -1467,6 +1473,12 @@ const batchToXml = (payload) => `<?xml version="1.0" encoding="UTF-8"?>
   <BatchNumber>${xmlEscape(payload.batchNumber)}</BatchNumber>
   <FacilityCode>${xmlEscape(payload.facilityCode)}</FacilityCode>
   <ProviderNumber>${xmlEscape(payload.providerNumber)}</ProviderNumber>
+  <FacilityType>${xmlEscape(payload.facilityType)}</FacilityType>
+  <PharmacyFacilityLevel>${xmlEscape(payload.pharmacyFacilityLevel)}</PharmacyFacilityLevel>
+  <ProviderLevelCode>${xmlEscape(payload.providerLevelCode)}</ProviderLevelCode>
+  <CredentialCode>${xmlEscape(payload.credentialCode)}</CredentialCode>
+  <LicenseNumber>${xmlEscape(payload.licenseNumber)}</LicenseNumber>
+  <AccreditationExpiryDate>${xmlEscape(payload.accreditationExpiryDate)}</AccreditationExpiryDate>
   <SchemeName>${xmlEscape(payload.schemeName)}</SchemeName>
   <ProviderTypeDescription>${xmlEscape(payload.providerTypeDescription)}</ProviderTypeDescription>
   <ProviderClassLevel>${xmlEscape(payload.providerClassLevel)}</ProviderClassLevel>
@@ -1509,7 +1521,10 @@ export const createNhiaBatch = db.transaction(({ claimIds = [], exportFormat = '
     throw new Error('Select at least one NHIA claim for the batch.')
   }
 
-  const format = normalizeExportFormat(exportFormat || settings?.exportFormat || 'cxf')
+  const format = normalizeExportFormat(exportFormat || settings?.exportFormat || 'xml')
+  if (format === 'cxf') {
+    throw new Error('Offline CXF export is not available yet. Use XML here or download CXF from the NHIS Claims export screen.')
+  }
   const payload = buildBatchPayload(claims, settings)
   const timestamp = nowIso()
   const batchId = createId()
@@ -1579,7 +1594,10 @@ export const exportNhiaBatch = (id, formatOverride = '') => {
   }
 
   const format = normalizeExportFormat(formatOverride || batch.exportFormat)
-  const isClaimItXml = format === 'cxf' || format === 'xml'
+  if (format === 'cxf') {
+    throw new Error('Offline CXF export is not available yet. Use XML here or download CXF from the NHIS Claims export screen.')
+  }
+  const isClaimItXml = format === 'xml'
   const content =
     isClaimItXml
       ? batchToXml(batch.payload)
