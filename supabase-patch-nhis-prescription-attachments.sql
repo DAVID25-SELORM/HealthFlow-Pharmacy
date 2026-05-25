@@ -1,8 +1,9 @@
 -- ================================================================
--- PATCH: NHIS scanned prescription PDF/JPEG attachments
+-- PATCH: NHIS scanned prescription PDF/JPEG/PNG attachments
 -- ================================================================
 -- Purpose:
---   Stores scanned prescription PDF/JPEG metadata on NHIS claims and
+--   Stores scanned prescription PDF/JPEG/PNG metadata on NHIS claims,
+--   stores CLAIM-it PDF export derivatives separately, and
 --   creates a private Supabase Storage bucket for the files.
 -- ================================================================
 
@@ -13,7 +14,11 @@ ALTER TABLE public.nhis_claims
   ADD COLUMN IF NOT EXISTS prescription_file_path TEXT,
   ADD COLUMN IF NOT EXISTS prescription_file_name TEXT,
   ADD COLUMN IF NOT EXISTS prescription_file_type TEXT,
-  ADD COLUMN IF NOT EXISTS prescription_file_size INTEGER;
+  ADD COLUMN IF NOT EXISTS prescription_file_size INTEGER,
+  ADD COLUMN IF NOT EXISTS claimit_attachment_file_name TEXT,
+  ADD COLUMN IF NOT EXISTS claimit_attachment_file_type TEXT,
+  ADD COLUMN IF NOT EXISTS claimit_attachment_mime_type TEXT,
+  ADD COLUMN IF NOT EXISTS claimit_attachment_base64 TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_nhis_claims_prescription_file
   ON public.nhis_claims(organization_id, prescription_file_path)
@@ -31,13 +36,13 @@ VALUES (
   'nhis-prescriptions',
   false,
   3145728,
-  ARRAY['application/pdf', 'image/jpeg']
+  ARRAY['application/pdf', 'image/jpeg', 'image/png']
 )
 ON CONFLICT (id) DO UPDATE
 SET
   public = false,
   file_size_limit = 3145728,
-  allowed_mime_types = ARRAY['application/pdf', 'image/jpeg'];
+  allowed_mime_types = ARRAY['application/pdf', 'image/jpeg', 'image/png'];
 
 DROP POLICY IF EXISTS nhis_prescriptions_select ON storage.objects;
 CREATE POLICY nhis_prescriptions_select

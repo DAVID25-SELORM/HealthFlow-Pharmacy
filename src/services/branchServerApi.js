@@ -114,7 +114,10 @@ const branchFetch = async (path, options = {}) => {
 
   const body = await response.json().catch(() => ({}))
   if (!response.ok) {
-    throw new Error(body?.error || 'Local branch server request failed.')
+    throw Object.assign(new Error(body?.error || 'Local branch server request failed.'), {
+      status: response.status,
+      endpoint: path,
+    })
   }
 
   return body
@@ -286,13 +289,13 @@ export const pullBranchReferenceData = async () =>
   })
 
 export const getNhiaSettings = async () => {
-  const response = await branchFetch('/api/nhia/settings')
+  const response = await branchFetch('/api/nhia-config')
   return response.data || null
 }
 
 export const saveNhiaSettings = async (settings) => {
-  const response = await branchFetch('/api/nhia/settings', {
-    method: 'PUT',
+  const response = await branchFetch('/api/nhia-config', {
+    method: 'POST',
     body: JSON.stringify(settings || {}),
     timeoutMs: WRITE_BRANCH_REQUEST_TIMEOUT_MS,
   })

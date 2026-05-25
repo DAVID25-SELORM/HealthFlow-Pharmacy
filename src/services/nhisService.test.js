@@ -13,7 +13,9 @@ vi.mock('./auditService', () => ({
 
 vi.mock('./branchServerApi', () => ({
   createBranchRecord: vi.fn(),
+  getNhiaSettings: vi.fn(),
   listBranchRecords: vi.fn(),
+  saveNhiaSettings: vi.fn(),
   shouldUseBranchServer: vi.fn(() => false),
   submitNhiaDirectPayload: vi.fn(),
   updateBranchRecord: vi.fn(),
@@ -21,6 +23,21 @@ vi.mock('./branchServerApi', () => ({
 
 vi.mock('./apiRouter', () => ({
   routeWrite: vi.fn(async ({ local }) => await local()),
+}))
+
+vi.mock('./connectivityService', () => ({
+  getConnectivityState: vi.fn(() => ({
+    mode: 'ONLINE_LOCAL_SYNC',
+    internetAvailable: true,
+    branchServerAvailable: true,
+    checkedAt: Date.now(),
+  })),
+  refreshConnectivityState: vi.fn(async () => ({
+    mode: 'ONLINE_LOCAL_SYNC',
+    internetAvailable: true,
+    branchServerAvailable: true,
+    checkedAt: Date.now(),
+  })),
 }))
 
 vi.mock('./tierAccessService', () => ({
@@ -44,7 +61,7 @@ import {
   validateNhisPrescriptionPdfFile,
 } from './nhisService'
 import { supabase } from '../lib/supabase'
-import { shouldUseBranchServer, updateBranchRecord } from './branchServerApi'
+import { getNhiaSettings, saveNhiaSettings, shouldUseBranchServer, updateBranchRecord } from './branchServerApi'
 import { routeWrite } from './apiRouter'
 import { invokeTierAccess } from './tierAccessService'
 
@@ -762,6 +779,7 @@ describe('assessNhisClaimReadiness', () => {
 })
 
 describe('CLAIM-it export helpers', () => {
+  const pdfBase64 = Buffer.from('%PDF-1.4\n%%EOF', 'utf8').toString('base64')
   const claim = {
     id: 'claim-1',
     claim_number: 'NHIS-000001',
@@ -818,7 +836,7 @@ describe('CLAIM-it export helpers', () => {
       label: 'Plasmodium falciparum malaria',
     })
     expect(payload.claims[0].medicines[0].code).toBe('NH001')
-    expect(payload.claims[0].prescriptionAttachment.fileName).toBe('rx.pdf')
+    expect(payload.claims[0].prescriptionAttachment.fileName).toBe('prescription_NHIS-000001.pdf')
   })
 
   it('includes URL-only prescription attachments in CLAIM-it payloads', () => {
@@ -836,11 +854,40 @@ describe('CLAIM-it export helpers', () => {
     })
 
     expect(payload.claims[0].prescriptionAttachment).toMatchObject({
-      fileName: 'rx.jpg',
+      fileName: 'prescription_NHIS-000001.pdf',
       fileType: 'image/jpeg',
+      mimeType: 'image/jpeg',
       storagePath: '',
       url: 'data:image/jpeg;base64,rx',
     })
+  })
+
+  it('prefers stored CLAIM-it PDF derivatives for prescription attachments', () => {
+    const payload = buildNhisClaimItExportPayload([
+      {
+        ...claim,
+        prescription_file_url: 'data:image/jpeg;base64,original',
+        prescription_file_name: 'rx photo.jpg',
+        prescription_file_type: 'image/jpeg',
+        claimit_attachment_file_name: 'ignored.pdf',
+        claimit_attachment_file_type: 'pdf',
+        claimit_attachment_mime_type: 'application/pdf',
+        claimit_attachment_base64: `data:application/pdf;base64,${pdfBase64}`,
+      },
+    ], {
+      yearMonth: '2026-05',
+      organizationType: 'hospital',
+    })
+
+    expect(payload.claims[0].prescriptionAttachment).toMatchObject({
+      fileName: 'prescription_NHIS-000001.pdf',
+      fileType: 'pdf',
+      mimeType: 'application/pdf',
+      base64: pdfBase64,
+      storagePath: '',
+      url: '',
+    })
+    expect(payload.claims[0].prescriptionAttachment.base64.startsWith('data:')).toBe(false)
   })
 
   it('omits patient address from pharmacy CLAIM-it payloads', () => {
@@ -1069,8 +1116,31 @@ describe('CLAIM-it export helpers', () => {
     })
 
     await expect(buildNhisClaimItCxf(payload)).rejects.toThrow(
-      'Unable to include rx.pdf in CLAIM-it CXF export: downloaded file is empty'
+      'Unable to include prescription_NHIS-000001.pdf in CLAIM-it CXF export: downloaded file is empty'
     )
+  })
+
+  it('blocks CLAIM-it CXF export when stored attachment base64 is invalid', async () => {
+    const payload = buildNhisClaimItExportPayload([
+      {
+        ...claim,
+        claimit_attachment_file_type: 'pdf',
+        claimit_attachment_mime_type: 'application/pdf',
+        claimit_attachment_base64: 'not-valid-base64!',
+      },
+    ], {
+      yearMonth: '2026-05',
+      organizationType: 'pharmacy',
+      facilityCode: '03-05-001-02-01954-11-P1-2-011225',
+      facilityName: 'Westpoint Chemist',
+      providerNumber: '03-05-01954',
+      providerTypeDescription: 'Pharmacy',
+      claimsOfficerName: 'Claims Officer',
+      submitterId: 'admin',
+      generatedAt: '2026-05-20T14:58:02.000Z',
+    })
+
+    await expect(buildNhisClaimItCxf(payload)).rejects.toThrow('base64 is invalid')
   })
 
   it('includes hospital tariff service lines in CLAIM-it payload and XML', () => {
@@ -1460,6 +1530,64 @@ describe('direct NHIA submission', () => {
 })
 
 describe('NHIA API settings fallback', () => {
+  it('reads NHIA settings from the local branch server when local sync is preferred', async () => {
+    shouldUseBranchServer.mockReturnValueOnce(true)
+    getNhiaSettings.mockResolvedValueOnce({
+      organizationId: 'org-1',
+      facilityCode: 'FAC-1',
+      hasApiKey: true,
+      hasApiSecret: true,
+      credentialSummary: {
+        apiKey: true,
+        apiSecret: true,
+      },
+    })
+
+    await expect(getNhiaApiSettings({ organizationId: 'org-1' })).resolves.toMatchObject({
+      organizationId: 'org-1',
+      facilityCode: 'FAC-1',
+      hasApiKey: true,
+      hasApiSecret: true,
+    })
+
+    expect(getNhiaSettings).toHaveBeenCalledTimes(1)
+    expect(invokeTierAccess).not.toHaveBeenCalled()
+  })
+
+  it('falls back to the cloud save path when the local NHIA save route fails', async () => {
+    shouldUseBranchServer.mockReturnValue(true)
+    saveNhiaSettings.mockRejectedValueOnce(Object.assign(new Error('Local branch server request failed.'), { status: 404, endpoint: '/api/nhia-config' }))
+    invokeTierAccess.mockResolvedValueOnce({
+      settings: {
+        organizationId: 'org-1',
+        facilityCode: 'FAC-1',
+        hasApiKey: true,
+        hasApiSecret: true,
+      },
+    })
+
+    const onLocalSaveFailure = vi.fn()
+
+    await expect(saveNhiaApiSettings({
+      organizationId: 'org-1',
+      facilityCode: 'FAC-1',
+      credentials: {
+        apiKey: 'local-key',
+        apiSecret: 'local-secret',
+      },
+    }, { organizationId: 'org-1', onLocalSaveFailure })).resolves.toMatchObject({
+      organizationId: 'org-1',
+      facilityCode: 'FAC-1',
+      hasApiKey: true,
+      hasApiSecret: true,
+    })
+
+    expect(onLocalSaveFailure).toHaveBeenCalledTimes(1)
+    expect(invokeTierAccess).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'save_nhia_api_settings',
+    }))
+  })
+
   it('keeps the accreditation expiry date available when hosted settings omit it', async () => {
     invokeTierAccess.mockResolvedValueOnce({
       settings: {
@@ -1565,9 +1693,7 @@ describe('validateNhisPrescriptionPdfFile', () => {
   it('accepts PDF and JPEG files and rejects other file types', () => {
     expect(validateNhisPrescriptionPdfFile({ name: 'rx.pdf', type: 'application/pdf', size: 1024 })).toBe('')
     expect(validateNhisPrescriptionPdfFile({ name: 'rx.jpg', type: 'image/jpeg', size: 1024 })).toBe('')
-    expect(validateNhisPrescriptionPdfFile({ name: 'rx.png', type: 'image/png', size: 1024 })).toBe(
-      'Only scanned prescription files in PDF or JPEG format can be attached.'
-    )
+    expect(validateNhisPrescriptionPdfFile({ name: 'rx.png', type: 'image/png', size: 1024 })).toBe('')
   })
 
   it('enforces the 3 MB prescription attachment limit', () => {
@@ -1578,27 +1704,48 @@ describe('validateNhisPrescriptionPdfFile', () => {
 })
 
 describe('uploadNhisPrescriptionPdf', () => {
-  it('stores a local data URL when running through the branch server', async () => {
+  it('stores the original image and a CLAIM-it PDF derivative when running through the branch server', async () => {
     shouldUseBranchServer.mockReturnValueOnce(true)
     const OriginalFileReader = global.FileReader
+    const OriginalImage = global.Image
+    const jpegDataUrl = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////2wBDAf//////////////////////////////////////////////////////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAX/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIQAxAAAAH/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oACAEBAAEFAqf/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oACAEDAQE/ASf/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oACAECAQE/ASf/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oACAEBAAY/Aqf/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oACAEBAAE/ISf/2gAMAwEAAgADAAAAEP/EABQRAQAAAAAAAAAAAAAAAAAAABD/2gAIAQMBAT8QH//EABQRAQAAAAAAAAAAAAAAAAAAABD/2gAIAQIBAT8QH//EABQQAQAAAAAAAAAAAAAAAAAAABD/2gAIAQEAAT8QH//Z'
     class MockFileReader {
       readAsDataURL() {
-        this.result = 'data:image/jpeg;base64,rx'
+        this.result = jpegDataUrl
+        this.onload()
+      }
+    }
+    class MockImage {
+      set src(_value) {
+        this.width = 1
+        this.height = 1
+        this.naturalWidth = 1
+        this.naturalHeight = 1
         this.onload()
       }
     }
     global.FileReader = MockFileReader
+    global.Image = MockImage
 
     try {
-      await expect(uploadNhisPrescriptionPdf({ name: 'rx.jpg', type: '', size: 1024 })).resolves.toEqual({
+      const result = await uploadNhisPrescriptionPdf({ name: 'rx.jpg', type: 'image/jpeg', size: 1024 }, {
+        claimNumber: 'NHIS-000001',
+      })
+      expect(result).toMatchObject({
         prescriptionFilePath: '',
         prescriptionFileName: 'rx.jpg',
         prescriptionFileType: 'image/jpeg',
         prescriptionFileSize: 1024,
-        prescriptionFileUrl: 'data:image/jpeg;base64,rx',
+        prescriptionFileUrl: jpegDataUrl,
+        claimitAttachmentFileName: 'prescription_NHIS-000001.pdf',
+        claimitAttachmentFileType: 'pdf',
+        claimitAttachmentMimeType: 'application/pdf',
       })
+      expect(result.claimitAttachmentBase64.startsWith('data:')).toBe(false)
+      expect(Buffer.from(result.claimitAttachmentBase64, 'base64').toString('utf8', 0, 4)).toBe('%PDF')
     } finally {
       global.FileReader = OriginalFileReader
+      global.Image = OriginalImage
     }
   })
 })

@@ -115,6 +115,10 @@ const BLANK_CLAIM = {
   prescriptionFileName: '',
   prescriptionFileType: '',
   prescriptionFileSize: '',
+  claimitAttachmentFileName: '',
+  claimitAttachmentFileType: '',
+  claimitAttachmentMimeType: '',
+  claimitAttachmentBase64: '',
   notes:             '',
   unservedMedicinesNote: '',
 }
@@ -735,6 +739,10 @@ const Nhis = () => {
       prescriptionFileName: claim.prescription_file_name || '',
       prescriptionFileType: claim.prescription_file_type || '',
       prescriptionFileSize: claim.prescription_file_size || '',
+      claimitAttachmentFileName: claim.claimit_attachment_file_name || '',
+      claimitAttachmentFileType: claim.claimit_attachment_file_type || '',
+      claimitAttachmentMimeType: claim.claimit_attachment_mime_type || '',
+      claimitAttachmentBase64: claim.claimit_attachment_base64 || '',
       notes: claim.notes || '',
       unservedMedicinesNote: claim.unserved_medicines_note || '',
     })
@@ -1086,8 +1094,18 @@ const Nhis = () => {
       prescriptionFileUrl: '',
       prescriptionFilePath: prev.prescriptionFilePath || '',
       prescriptionFileName: file.name,
-      prescriptionFileType: file.type === 'image/jpeg' ? 'image/jpeg' : 'application/pdf',
+      prescriptionFileType: file.type || (
+        file.name.toLowerCase().endsWith('.png')
+          ? 'image/png'
+          : file.name.toLowerCase().match(/\.jpe?g$/)
+            ? 'image/jpeg'
+            : 'application/pdf'
+      ),
       prescriptionFileSize: file.size,
+      claimitAttachmentFileName: '',
+      claimitAttachmentFileType: '',
+      claimitAttachmentMimeType: '',
+      claimitAttachmentBase64: '',
     }))
     event.target.value = ''
   }
@@ -1101,6 +1119,10 @@ const Nhis = () => {
       prescriptionFileName: '',
       prescriptionFileType: '',
       prescriptionFileSize: '',
+      claimitAttachmentFileName: '',
+      claimitAttachmentFileType: '',
+      claimitAttachmentMimeType: '',
+      claimitAttachmentBase64: '',
     }))
   }
 
@@ -2412,10 +2434,10 @@ const Nhis = () => {
                   <label className="prescription-upload-box">
                     <Paperclip size={18} />
                     <span>{claimForm.prescriptionFileName || 'Attach prescription file *'}</span>
-                    <small>PDF or JPEG, max 3 MB</small>
+                    <small>PDF, JPEG, or PNG, max 3 MB</small>
                     <input
                       type="file"
-                      accept="application/pdf,image/jpeg,.pdf,.jpg,.jpeg"
+                      accept="application/pdf,image/jpeg,image/png,.pdf,.jpg,.jpeg,.png"
                       onChange={handlePrescriptionPdfSelect}
                     />
                   </label>
