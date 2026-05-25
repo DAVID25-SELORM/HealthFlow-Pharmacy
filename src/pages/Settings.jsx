@@ -163,6 +163,23 @@ const buildNhiaCredentialsPayload = (credentials = {}) => {
   return payload
 }
 
+const getNhiaPayloadKeysForLog = (payload = {}) =>
+  Object.keys(payload || {})
+    .filter((key) => key !== 'credentials')
+    .sort()
+
+const getNhiaCredentialKeysForLog = (payload = {}) =>
+  Object.keys(payload.credentials && typeof payload.credentials === 'object' ? payload.credentials : {}).sort()
+
+const summarizeNhiaSettingsForLog = (settings = null) => ({
+  table: 'organization_nhia_integrations',
+  hasSettings: Boolean(settings),
+  keys: getNhiaPayloadKeysForLog(settings || {}),
+  credentialKeys: getNhiaCredentialKeysForLog(settings || {}),
+  hasApiKey: Boolean(settings?.hasApiKey || settings?.has_api_key || settings?.credentialSummary?.apiKey),
+  hasApiSecret: Boolean(settings?.hasApiSecret || settings?.has_api_secret || settings?.credentialSummary?.apiSecret),
+})
+
 const normalizeNhiaText = (value) => String(value || '').trim()
 
 const getNhiaActiveBaseUrl = (form = {}) => {
@@ -493,21 +510,25 @@ const Settings = () => {
     try {
       setSavingNhiaApi(true)
       setError('')
+      console.info('Saving NHIA API config started')
       // ✅ NHIA API ARCHITECTURE PATCH START
       const requiresDirectConfig = nhiaApiForm.directApiEnabled ||
         NHIA_API_INTEGRATION_MODES.includes(nhiaApiForm.integrationMode)
       if (requiresDirectConfig) {
         const missing = getNhiaIntegrationMissingFields()
         if (missing.length) {
-          throw new Error(`Complete NHIA configuration before saving API integration mode: ${missing.join(', ')}.`)
+          console.warn('NHIA API integration metadata is incomplete; saving entered NHIA API config anyway.', {
+            missingFields: missing,
+          })
         }
       }
       const activeBaseUrl = getNhiaActiveBaseUrl(nhiaApiForm)
       const accreditationExpiryDate = normalizeDateInputValue(nhiaApiForm.accreditationExpiryDate)
       const nhiaOrganizationId = organization?.id || organization?.organization_id || nhiaApiForm.organizationId || nhiaApiForm.organization_id
+      const credentialPayload = buildNhiaCredentialsPayload(nhiaApiForm.credentials)
       const nhiaSettingsPayload = {
         ...nhiaApiForm,
-        credentials: buildNhiaCredentialsPayload(nhiaApiForm.credentials),
+        credentials: credentialPayload,
         organizationId: nhiaOrganizationId,
         organization_id: nhiaOrganizationId,
         accreditationExpiryDate,
@@ -518,31 +539,73 @@ const Settings = () => {
         ccEndpointPath: nhiaApiForm.ccEndpointPath || nhiaApiForm.ccCodeEndpointPath,
         ccCodeEndpointPath: nhiaApiForm.ccCodeEndpointPath || nhiaApiForm.ccEndpointPath,
       }
+      console.info('Saving NHIA API config payload keys only', {
+        table: 'organization_nhia_integrations',
+        keys: getNhiaPayloadKeysForLog(nhiaSettingsPayload),
+        credentialKeys: getNhiaCredentialKeysForLog(nhiaSettingsPayload),
+      })
       logNhiaAccreditationExpiryDate('saved', accreditationExpiryDate)
       const savedNhiaApiSettings = await saveNhiaApiSettings(nhiaSettingsPayload, { organizationId: nhiaOrganizationId })
+      const reloadedNhiaApiSettings = await getNhiaApiSettings({ organizationId: nhiaOrganizationId })
+      const effectiveNhiaApiSettings = {
+        ...(savedNhiaApiSettings || {}),
+        ...(reloadedNhiaApiSettings || {}),
+      }
+      console.info('Saving NHIA API config Supabase response/error', {
+        response: summarizeNhiaSettingsForLog(effectiveNhiaApiSettings),
+        error: null,
+      })
       const savedAccreditationExpiryDate = normalizeDateInputValue(
-        savedNhiaApiSettings?.accreditationExpiryDate ??
-          savedNhiaApiSettings?.accreditationExpiry ??
-          savedNhiaApiSettings?.nhiaAccreditationExpiry ??
-          savedNhiaApiSettings?.accreditation_expiry_date ??
-          savedNhiaApiSettings?.expiryDate
+        effectiveNhiaApiSettings?.accreditationExpiryDate ??
+          effectiveNhiaApiSettings?.accreditationExpiry ??
+          effectiveNhiaApiSettings?.nhiaAccreditationExpiry ??
+          effectiveNhiaApiSettings?.accreditation_expiry_date ??
+          effectiveNhiaApiSettings?.expiryDate
       )
-      const savedClaimsOfficerName = savedNhiaApiSettings?.claimsOfficerName ?? savedNhiaApiSettings?.claims_officer_name
+      const savedClaimsOfficerName = effectiveNhiaApiSettings?.claimsOfficerName ?? effectiveNhiaApiSettings?.claims_officer_name
+      const hasSavedApiKey = Boolean(
+        effectiveNhiaApiSettings?.hasApiKey ||
+          effectiveNhiaApiSettings?.has_api_key ||
+          effectiveNhiaApiSettings?.credentialSummary?.apiKey ||
+          nhiaApiForm.hasApiKey ||
+          credentialPayload.apiKey
+      )
+      const hasSavedApiSecret = Boolean(
+        effectiveNhiaApiSettings?.hasApiSecret ||
+          effectiveNhiaApiSettings?.has_api_secret ||
+          effectiveNhiaApiSettings?.credentialSummary?.apiSecret ||
+          nhiaApiForm.hasApiSecret ||
+          credentialPayload.apiSecret
+      )
 
       setNhiaApiForm(toNhiaApiForm({
         ...nhiaSettingsPayload,
-        ...(savedNhiaApiSettings || {}),
-        hasApiKey: Boolean(savedNhiaApiSettings?.hasApiKey || nhiaApiForm.hasApiKey || nhiaApiForm.credentials.apiKey),
-        hasApiSecret: Boolean(savedNhiaApiSettings?.hasApiSecret || nhiaApiForm.hasApiSecret || nhiaApiForm.credentials.apiSecret),
+        ...(effectiveNhiaApiSettings || {}),
+        hasApiKey: hasSavedApiKey,
+        hasApiSecret: hasSavedApiSecret,
         accreditationExpiryDate: savedAccreditationExpiryDate || accreditationExpiryDate,
         claimsOfficerName: savedClaimsOfficerName !== undefined
           ? savedClaimsOfficerName
           : nhiaApiForm.claimsOfficerName,
       }, organization))
       // ✅ NHIA API ARCHITECTURE PATCH END
+      console.info('NHIA API config saved successfully', {
+        table: 'organization_nhia_integrations',
+        hasApiKey: hasSavedApiKey,
+        hasApiSecret: hasSavedApiSecret,
+      })
       notify('NHIA API settings saved.', 'success')
     } catch (saveError) {
+      console.error('Saving NHIA API config Supabase response/error', {
+        response: null,
+        error: {
+          table: 'organization_nhia_integrations',
+          message: saveError?.message || 'Unable to save NHIA API settings.',
+          code: saveError?.code || saveError?.status || saveError?.statusCode || '',
+        },
+      })
       setError(saveError.message || 'Unable to save NHIA API settings.')
+      notify(saveError.message || 'Unable to save NHIA API settings.', 'error')
     } finally {
       setSavingNhiaApi(false)
     }

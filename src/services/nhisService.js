@@ -179,6 +179,8 @@ const NHIA_API_SETTINGS_CACHE_FIELDS = [
   'claimit_validation_enabled',
   'submitterId',
   'submitter_id',
+  'nhiaApiMode',
+  'nhia_api_mode',
   'integrationMode',
   'integration_mode',
   'connectionProfile',
@@ -197,6 +199,8 @@ const NHIA_API_SETTINGS_CACHE_FIELDS = [
   'production_base_url',
   'claimEndpointPath',
   'claim_endpoint_path',
+  'claimSubmitEndpoint',
+  'claim_submit_endpoint',
   'claimValidationEndpointPath',
   'claim_validation_endpoint_path',
   'ccEndpointPath',
@@ -205,19 +209,26 @@ const NHIA_API_SETTINGS_CACHE_FIELDS = [
   'cc_code_endpoint_path',
   'claimStatusEndpointPath',
   'claim_status_endpoint_path',
+  'claimStatusEndpoint',
+  'claim_status_endpoint',
   'memberLookupEndpointPath',
   'member_lookup_endpoint_path',
+  'memberLookupEndpoint',
+  'member_lookup_endpoint',
   'directApiEnabled',
   'direct_api_enabled',
   'credentialMode',
   'credential_mode',
   'hasApiKey',
+  'has_api_key',
   'hasApiSecret',
+  'has_api_secret',
   'exportFormat',
   'export_format',
 ]
 const NHIA_SECRET_MASK = '••••••••••••'
 const NHIA_SECRET_FIELDS = new Set(['apiKey', 'apiSecret'])
+const NHIA_API_CONFIG_TABLE = 'organization_nhia_integrations'
 
 const logNhiaAccreditationExpiryDate = (action, value) => {
   if (import.meta.env.DEV) {
@@ -1832,6 +1843,38 @@ const sanitizeNhiaApiSettingsPayload = (settings = {}) => {
   return sanitized
 }
 
+const getNhiaCredentialKeys = (settings = {}) =>
+  Object.keys(settings.credentials && typeof settings.credentials === 'object' ? settings.credentials : {}).sort()
+
+const getNhiaPayloadKeys = (settings = {}) =>
+  Object.keys(settings || {})
+    .filter((key) => key !== 'credentials')
+    .sort()
+
+const hasNhiaSavedCredential = (settings = {}, camelKey, snakeKey) =>
+  Boolean(
+    settings?.[camelKey] ||
+      settings?.[snakeKey] ||
+      settings?.credentialSummary?.[camelKey.replace(/^has/, '').replace(/^Api/, 'api')] ||
+      settings?.credentialSummary?.[camelKey === 'hasApiKey' ? 'apiKey' : 'apiSecret']
+  )
+
+const summarizeNhiaApiSettingsForLog = (settings = null) => ({
+  table: NHIA_API_CONFIG_TABLE,
+  hasSettings: Boolean(settings),
+  keys: getNhiaPayloadKeys(settings || {}),
+  credentialKeys: getNhiaCredentialKeys(settings || {}),
+  hasApiKey: hasNhiaSavedCredential(settings || {}, 'hasApiKey', 'has_api_key'),
+  hasApiSecret: hasNhiaSavedCredential(settings || {}, 'hasApiSecret', 'has_api_secret'),
+})
+
+const summarizeNhiaApiErrorForLog = (error) => ({
+  table: NHIA_API_CONFIG_TABLE,
+  message: error?.message || String(error || 'Unknown Supabase error'),
+  code: error?.code || error?.status || error?.statusCode || '',
+  details: error?.details || '',
+})
+
 const canUseClaimItBridgeQueue = () =>
   typeof window !== 'undefined' && Boolean(window.localStorage)
 
@@ -2102,27 +2145,44 @@ export const saveNhiaApiSettings = async (settings, options = {}) => {
     options.organizationId || options.organization_id || settings?.organizationId || settings?.organization_id
   )
   const sanitizedSettings = sanitizeNhiaApiSettingsPayload(settings)
-  let hostedError = null
-  let hostedSettings = null
+  console.info('Saving NHIA API config started')
+  console.info('Saving NHIA API config payload keys only', {
+    table: NHIA_API_CONFIG_TABLE,
+    keys: getNhiaPayloadKeys(sanitizedSettings),
+    credentialKeys: getNhiaCredentialKeys(sanitizedSettings),
+  })
+
   try {
     const response = await invokeTierAccess({
       action: 'save_nhia_api_settings',
       settings: sanitizedSettings,
     })
-    hostedSettings = response?.settings || null
-  } catch (error) {
-    hostedError = error
-  }
+    const hostedSettings = response?.settings || null
+    console.info('Saving NHIA API config Supabase response/error', {
+      response: summarizeNhiaApiSettingsForLog(hostedSettings),
+      error: null,
+    })
 
-  const mergedSettings = mergeNhiaApiSettings(hostedSettings, sanitizedSettings)
-  if (mergedSettings) {
+    if (!hostedSettings) {
+      throw new Error('Supabase did not return saved NHIA API settings.')
+    }
+
+    const mergedSettings = mergeNhiaApiSettings(hostedSettings, sanitizedSettings)
+    if (!mergedSettings) {
+      throw new Error('Unable to read the saved NHIA API settings response.')
+    }
+
     writeCachedNhiaApiSettings(mergedSettings, organizationId)
     logNhiaAccreditationExpiryDate('saved', mergedSettings.accreditationExpiryDate)
+    console.info('NHIA API config saved successfully', summarizeNhiaApiSettingsForLog(mergedSettings))
     return mergedSettings
+  } catch (error) {
+    console.error('Saving NHIA API config Supabase response/error', {
+      response: null,
+      error: summarizeNhiaApiErrorForLog(error),
+    })
+    throw error
   }
-
-  if (hostedError) throw hostedError
-  return null
 }
 
 export const generateHostedNhiaCcCode = async (claimContext = {}) => {
