@@ -366,7 +366,7 @@ const upsertSettings = db.prepare(`
     facility_type, pharmacy_facility_level, provider_level_code, credential_code,
     license_number, accreditation_expiry_date,
     -- ✅ NHIA API ARCHITECTURE PATCH START
-    integration_mode, connection_profile, validation_mode, sandbox_base_url, production_base_url,
+    integration_mode, connection_profile, validation_mode, claim_control_mode, sandbox_base_url, production_base_url,
     -- ✅ NHIA API ARCHITECTURE PATCH END
     -- ✅ NHIA CONFIG PATCH END
     submitter_id,
@@ -376,7 +376,7 @@ const upsertSettings = db.prepare(`
     -- ✅ NHIS PHARMACY LEVEL PATCH END
     claims_officer_name,
     admission_payment_option, claimit_validation_enabled, claims_officer_signature_url,
-    api_base_url, claim_endpoint_path, claim_validation_endpoint_path, cc_code_endpoint_path,
+    api_base_url, claim_endpoint_path, claim_validation_endpoint_path, cc_endpoint_path, cc_code_endpoint_path,
     claim_status_endpoint_path, member_lookup_endpoint_path, direct_api_enabled, credential_mode,
     credential_payload, nhis_member_digits, ghana_card_digits, export_format,
     max_retry_attempts, is_active, created_at, updated_at
@@ -387,7 +387,7 @@ const upsertSettings = db.prepare(`
     @facilityType, @pharmacyFacilityLevel, @providerLevelCode, @credentialCode,
     @licenseNumber, @accreditationExpiryDate,
     -- ✅ NHIA API ARCHITECTURE PATCH START
-    @integrationMode, @connectionProfile, @validationMode, @sandboxBaseUrl, @productionBaseUrl,
+    @integrationMode, @connectionProfile, @validationMode, @claimControlMode, @sandboxBaseUrl, @productionBaseUrl,
     -- ✅ NHIA API ARCHITECTURE PATCH END
     -- ✅ NHIA CONFIG PATCH END
     @submitterId,
@@ -397,7 +397,7 @@ const upsertSettings = db.prepare(`
     -- ✅ NHIS PHARMACY LEVEL PATCH END
     @claimsOfficerName,
     @admissionPaymentOption, @claimitValidationEnabled, @claimsOfficerSignatureUrl,
-    @apiBaseUrl, @claimEndpointPath, @claimValidationEndpointPath, @ccCodeEndpointPath,
+    @apiBaseUrl, @claimEndpointPath, @claimValidationEndpointPath, @ccEndpointPath, @ccCodeEndpointPath,
     @claimStatusEndpointPath, @memberLookupEndpointPath, @directApiEnabled, @credentialMode,
     @credentialPayload, @nhisMemberDigits, @ghanaCardDigits, @exportFormat,
     @maxRetryAttempts, 1, @createdAt, @updatedAt
@@ -418,6 +418,7 @@ const upsertSettings = db.prepare(`
     integration_mode = excluded.integration_mode,
     connection_profile = excluded.connection_profile,
     validation_mode = excluded.validation_mode,
+    claim_control_mode = excluded.claim_control_mode,
     sandbox_base_url = excluded.sandbox_base_url,
     production_base_url = excluded.production_base_url,
     -- ✅ NHIA API ARCHITECTURE PATCH END
@@ -436,6 +437,7 @@ const upsertSettings = db.prepare(`
     api_base_url = excluded.api_base_url,
     claim_endpoint_path = excluded.claim_endpoint_path,
     claim_validation_endpoint_path = excluded.claim_validation_endpoint_path,
+    cc_endpoint_path = excluded.cc_endpoint_path,
     cc_code_endpoint_path = excluded.cc_code_endpoint_path,
     claim_status_endpoint_path = excluded.claim_status_endpoint_path,
     member_lookup_endpoint_path = excluded.member_lookup_endpoint_path,
@@ -621,6 +623,12 @@ const mapSettingsRow = (row, { includeCredentials = false } = {}) => {
     integrationMode: row.integration_mode || 'claimit_export',
     connectionProfile: row.connection_profile || 'local_server',
     validationMode: row.validation_mode || 'validate_before_submit',
+    claimControlMode: row.claim_control_mode ||
+      (['claimit_bridge', 'claimit_assisted'].includes(normalizeText(row.integration_mode))
+        ? 'claimit_bridge'
+        : normalizeText(row.integration_mode) === 'direct_nhia_api'
+          ? 'direct_api'
+          : 'manual'),
     sandboxBaseUrl: row.sandbox_base_url || '',
     productionBaseUrl: row.production_base_url || row.api_base_url || '',
     // ✅ NHIA API ARCHITECTURE PATCH END
@@ -640,6 +648,7 @@ const mapSettingsRow = (row, { includeCredentials = false } = {}) => {
     apiBaseUrl: row.api_base_url || '',
     claimEndpointPath: row.claim_endpoint_path || '',
     claimValidationEndpointPath: row.claim_validation_endpoint_path || '',
+    ccEndpointPath: row.cc_endpoint_path || row.cc_code_endpoint_path || '',
     ccCodeEndpointPath: row.cc_code_endpoint_path || '',
     claimStatusEndpointPath: row.claim_status_endpoint_path || '',
     memberLookupEndpointPath: row.member_lookup_endpoint_path || '',
@@ -705,6 +714,9 @@ export const saveNhiaSettings = (settings = {}) => {
     integrationMode: normalizeText(settings.integrationMode) || 'claimit_export',
     connectionProfile: normalizeText(settings.connectionProfile || settings.connection_profile) || 'local_server',
     validationMode: normalizeText(settings.validationMode || settings.validation_mode) || 'validate_before_submit',
+    claimControlMode: ['manual', 'claimit_bridge', 'direct_api'].includes(normalizeText(settings.claimControlMode || settings.claim_control_mode))
+      ? normalizeText(settings.claimControlMode || settings.claim_control_mode)
+      : 'manual',
     sandboxBaseUrl: normalizeText(settings.sandboxBaseUrl).replace(/\/+$/, '') || null,
     productionBaseUrl: normalizeText(settings.productionBaseUrl).replace(/\/+$/, '') || null,
     // ✅ NHIA API ARCHITECTURE PATCH END
@@ -726,7 +738,8 @@ export const saveNhiaSettings = (settings = {}) => {
     ).replace(/\/+$/, '') || null,
     claimEndpointPath: normalizeText(settings.claimEndpointPath) || null,
     claimValidationEndpointPath: normalizeText(settings.claimValidationEndpointPath || settings.claim_validation_endpoint_path) || null,
-    ccCodeEndpointPath: normalizeText(settings.ccCodeEndpointPath) || null,
+    ccEndpointPath: normalizeText(settings.ccEndpointPath || settings.cc_endpoint_path || settings.ccCodeEndpointPath || settings.cc_code_endpoint_path) || null,
+    ccCodeEndpointPath: normalizeText(settings.ccCodeEndpointPath || settings.cc_code_endpoint_path || settings.ccEndpointPath || settings.cc_endpoint_path) || null,
     claimStatusEndpointPath: normalizeText(settings.claimStatusEndpointPath || settings.claim_status_endpoint_path) || null,
     memberLookupEndpointPath: normalizeText(settings.memberLookupEndpointPath || settings.member_lookup_endpoint_path) || null,
     directApiEnabled: toBool(settings.directApiEnabled),
@@ -1191,6 +1204,9 @@ const submitPayload = async (settings, payload, endpointPathOverride = '') => {
 const isClaimItBridgeMode = (settings) =>
   ['claimit_bridge', 'claimit_assisted'].includes(normalizeText(settings?.integrationMode))
 
+const getCcEndpointPath = (settings) =>
+  normalizeText(settings?.ccEndpointPath || settings?.cc_endpoint_path || settings?.ccCodeEndpointPath || settings?.cc_code_endpoint_path)
+
 const validateClaimItBridgePayload = async (settings, payload) => {
   const endpointPath = normalizeText(settings.claimValidationEndpointPath)
   const validationMode = normalizeText(settings.validationMode) || 'validate_before_submit'
@@ -1244,14 +1260,29 @@ export const generateNhiaCcCode = async (claimContext = {}) => {
   validateSettingsForSubmission(settings)
 
   if (!settings.directApiEnabled) {
-    throw new Error('Direct NHIA API is disabled. Enter the CCC/CC code manually.')
+    return { status: 'pending', source: 'pending', message: 'Pending CLAIM-it validation' }
   }
 
   const payload = {
-    action: 'generate_cc_code',
+    action: isClaimItBridgeMode(settings) ? 'generate_or_validate_cc_code' : 'generate_cc_code',
+    claimControlMode: settings.claimControlMode || (isClaimItBridgeMode(settings) ? 'claimit_bridge' : 'direct_api'),
     facilityCode: settings.facilityCode,
     providerNumber: settings.providerNumber,
-    submitterId: settings.submitterId,
+    submitterId: isClaimItBridgeMode(settings) ? undefined : settings.submitterId,
+    batch: {
+      organizationType: normalizeOrganizationType(claimContext.organizationType || claimContext.organization_type),
+      facilityCode: settings.facilityCode,
+      providerNumber: settings.providerNumber,
+      claimCount: 1,
+    },
+    claims: [{
+      patientName: normalizeText(claimContext.patientName),
+      memberNumber: normalizeText(claimContext.memberNumber || claimContext.memberNo),
+      hin: normalizeText(claimContext.hin),
+      diagnosis: normalizeText(claimContext.diagnosis),
+      serviceDate: normalizeText(claimContext.serviceDate),
+      totalAmount: Number(claimContext.totalAmount || 0),
+    }],
     organizationType: normalizeOrganizationType(claimContext.organizationType || claimContext.organization_type),
     patient: {
       name: normalizeText(claimContext.patientName),
@@ -1263,19 +1294,20 @@ export const generateNhiaCcCode = async (claimContext = {}) => {
     requestedAt: nowIso(),
   }
 
-  if (!settings.ccCodeEndpointPath) {
-    throw new Error('NHIA CCC/CC code endpoint is not configured. Enter the official endpoint path from NHIA/CLAIM-it.')
+  const endpointPath = getCcEndpointPath(settings)
+  if (!endpointPath) {
+    return { status: 'pending', source: 'pending', message: 'Pending CLAIM-it validation' }
   }
 
   logSubmission({ action: 'cc_code.generate.start', status: 'pending', request: payload })
   try {
-    const result = await submitPayload(settings, payload, settings.ccCodeEndpointPath)
+    const result = await submitPayload(settings, payload, endpointPath)
     if (!result.ok) {
       throw new Error(`NHIA API returned HTTP ${result.httpStatus}.`)
     }
     const ccCode = extractCcCode(result.body)
     if (!ccCode) {
-      throw new Error('NHIA API response did not include a CCC/CC code.')
+      return { status: 'pending', source: 'pending', message: 'Pending CLAIM-it validation', response: result.body }
     }
     logSubmission({
       action: 'cc_code.generate.complete',
@@ -1283,7 +1315,7 @@ export const generateNhiaCcCode = async (claimContext = {}) => {
       httpStatus: result.httpStatus,
       response: result.body,
     })
-    return { ccCode, source: 'api', response: result.body }
+    return { ccCode, source: isClaimItBridgeMode(settings) ? 'claimit_bridge' : 'api', response: result.body }
   } catch (error) {
     logSubmission({
       action: 'cc_code.generate.failed',

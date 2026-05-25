@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS public.organization_nhia_integrations (
     CHECK (api_environment IN ('sandbox', 'production')),
   api_base_url TEXT,
   claim_endpoint_path TEXT,
+  cc_endpoint_path TEXT,
   cc_code_endpoint_path TEXT,
   claim_status_endpoint_path TEXT,
   member_lookup_endpoint_path TEXT,
@@ -36,6 +37,8 @@ CREATE TABLE IF NOT EXISTS public.organization_nhia_integrations (
     CHECK (connection_profile IN ('local_server', 'lan_ip', 'production_server')),
   validation_mode TEXT NOT NULL DEFAULT 'validate_before_submit'
     CHECK (validation_mode IN ('validate_before_submit', 'submit_only')),
+  claim_control_mode TEXT NOT NULL DEFAULT 'manual'
+    CHECK (claim_control_mode IN ('manual', 'claimit_bridge', 'direct_api')),
   direct_api_enabled BOOLEAN NOT NULL DEFAULT false,
   credential_mode TEXT NOT NULL DEFAULT 'api_key'
     CHECK (credential_mode IN ('api_key', 'bearer_token', 'basic_auth', 'oauth_client', 'claimit_token')),
@@ -65,8 +68,10 @@ ALTER TABLE public.organization_nhia_integrations
   ADD COLUMN IF NOT EXISTS claim_status_endpoint_path TEXT,
   ADD COLUMN IF NOT EXISTS member_lookup_endpoint_path TEXT,
   ADD COLUMN IF NOT EXISTS claim_validation_endpoint_path TEXT,
+  ADD COLUMN IF NOT EXISTS cc_endpoint_path TEXT,
   ADD COLUMN IF NOT EXISTS connection_profile TEXT NOT NULL DEFAULT 'local_server',
   ADD COLUMN IF NOT EXISTS validation_mode TEXT NOT NULL DEFAULT 'validate_before_submit',
+  ADD COLUMN IF NOT EXISTS claim_control_mode TEXT NOT NULL DEFAULT 'manual',
   ALTER COLUMN export_format SET DEFAULT 'cxf',
   ALTER COLUMN claim_endpoint_path DROP DEFAULT,
   ALTER COLUMN claim_endpoint_path DROP NOT NULL;
@@ -83,6 +88,23 @@ BEGIN
       ADD CONSTRAINT organization_nhia_integrations_api_environment_check
       CHECK (api_environment IN ('sandbox', 'production'));
   END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'organization_nhia_integrations_claim_control_mode_check'
+      AND conrelid = 'public.organization_nhia_integrations'::regclass
+  ) THEN
+    ALTER TABLE public.organization_nhia_integrations
+      DROP CONSTRAINT organization_nhia_integrations_claim_control_mode_check;
+  END IF;
+
+  ALTER TABLE public.organization_nhia_integrations
+    ADD CONSTRAINT organization_nhia_integrations_claim_control_mode_check
+      CHECK (claim_control_mode IN ('manual', 'claimit_bridge', 'direct_api'));
 END $$;
 
 DO $$

@@ -1949,6 +1949,12 @@ const mapNhiaSettingsRow = (row: Record<string, unknown> | null, includeCredenti
     integrationMode: row.integration_mode || 'claimit_export',
     connectionProfile: row.connection_profile || 'local_server',
     validationMode: row.validation_mode || 'validate_before_submit',
+    claimControlMode: row.claim_control_mode ||
+      (['claimit_bridge', 'claimit_assisted'].includes(normalizeText(row.integration_mode))
+        ? 'claimit_bridge'
+        : normalizeText(row.integration_mode) === 'direct_nhia_api'
+          ? 'direct_api'
+          : 'manual'),
     sandboxBaseUrl: row.sandbox_base_url || '',
     productionBaseUrl: row.production_base_url || row.api_base_url || '',
     // ✅ NHIA API ARCHITECTURE PATCH END
@@ -1963,6 +1969,7 @@ const mapNhiaSettingsRow = (row: Record<string, unknown> | null, includeCredenti
     apiBaseUrl: row.api_base_url || '',
     claimEndpointPath: row.claim_endpoint_path || '',
     claimValidationEndpointPath: row.claim_validation_endpoint_path || '',
+    ccEndpointPath: row.cc_endpoint_path || row.cc_code_endpoint_path || '',
     ccCodeEndpointPath: row.cc_code_endpoint_path || '',
     claimStatusEndpointPath: row.claim_status_endpoint_path || '',
     memberLookupEndpointPath: row.member_lookup_endpoint_path || '',
@@ -2042,6 +2049,9 @@ const saveNhiaApiSettings = async (
     integration_mode: normalizeText(settings.integrationMode) || 'claimit_export',
     connection_profile: normalizeText(settings.connectionProfile || settings.connection_profile) || 'local_server',
     validation_mode: normalizeText(settings.validationMode || settings.validation_mode) || 'validate_before_submit',
+    claim_control_mode: ['manual', 'claimit_bridge', 'direct_api'].includes(normalizeText(settings.claimControlMode || settings.claim_control_mode))
+      ? normalizeText(settings.claimControlMode || settings.claim_control_mode)
+      : 'manual',
     sandbox_base_url: normalizeText(settings.sandboxBaseUrl).replace(/\/+$/, '') || null,
     production_base_url: normalizeText(settings.productionBaseUrl).replace(/\/+$/, '') || null,
     // ✅ NHIA API ARCHITECTURE PATCH END
@@ -2065,7 +2075,8 @@ const saveNhiaApiSettings = async (
     ).replace(/\/+$/, '') || null,
     claim_endpoint_path: normalizeText(settings.claimEndpointPath) || null,
     claim_validation_endpoint_path: normalizeText(settings.claimValidationEndpointPath || settings.claim_validation_endpoint_path) || null,
-    cc_code_endpoint_path: normalizeText(settings.ccCodeEndpointPath) || null,
+    cc_endpoint_path: normalizeText(settings.ccEndpointPath || settings.cc_endpoint_path || settings.ccCodeEndpointPath || settings.cc_code_endpoint_path) || null,
+    cc_code_endpoint_path: normalizeText(settings.ccCodeEndpointPath || settings.cc_code_endpoint_path || settings.ccEndpointPath || settings.cc_endpoint_path) || null,
     claim_status_endpoint_path: normalizeText(settings.claimStatusEndpointPath) || null,
     member_lookup_endpoint_path: normalizeText(settings.memberLookupEndpointPath) || null,
     direct_api_enabled: Boolean(settings.directApiEnabled),
@@ -2269,9 +2280,32 @@ const normalizeCcCode = (value: unknown): string =>
 const extractCcCode = (body: unknown): string => {
   if (!body || typeof body !== 'object') return ''
   const record = body as Record<string, unknown>
-  const direct = normalizeCcCode(record.ccCode || record.cc_code || record.cccNo || record.ccc_no || record.code)
+  const direct = normalizeCcCode(
+    record.ccCode ||
+      record.cc_code ||
+      record.cccNo ||
+      record.ccc_no ||
+      record.claimControlCode ||
+      record.claim_control_code ||
+      record.controlCode ||
+      record.control_code ||
+      record.code
+  )
   if (direct) return direct
   return record.data && typeof record.data === 'object' ? extractCcCode(record.data) : ''
+}
+
+const getCcEndpointPath = (settings: Record<string, unknown>) =>
+  normalizeText(settings.ccEndpointPath || settings.cc_endpoint_path || settings.ccCodeEndpointPath || settings.cc_code_endpoint_path)
+
+const logClaimItBridgeStatus = (action: string, detail: Record<string, unknown> = {}) => {
+  console.info(`[CLAIM-it Bridge] ${action}`, JSON.stringify({
+    status: normalizeText(detail.status),
+    httpStatus: detail.httpStatus ?? null,
+    endpointPath: normalizeText(detail.endpointPath),
+    claimCount: detail.claimCount ?? null,
+    message: normalizeText(detail.message),
+  }))
 }
 
 const generateNhiaCcCode = async (
@@ -2282,14 +2316,29 @@ const generateNhiaCcCode = async (
 ) => {
   const settings = await getNhiaApiSettings(adminClient, requesterProfile, organizationId, true)
   if (!settings?.directApiEnabled || !settings.apiBaseUrl) {
-    throw new Error('Direct NHIA API is not configured. Enter the CCC/CC code manually.')
+    return { status: 'pending', source: 'pending', message: 'Pending CLAIM-it validation' }
   }
 
   const requestPayload = {
-    action: 'generate_cc_code',
+    action: isClaimItBridgeMode(settings as unknown as Record<string, unknown>) ? 'generate_or_validate_cc_code' : 'generate_cc_code',
+    claimControlMode: settings.claimControlMode || settings.claim_control_mode || (isClaimItBridgeMode(settings as unknown as Record<string, unknown>) ? 'claimit_bridge' : 'direct_api'),
     facilityCode: settings.facilityCode,
     providerNumber: settings.providerNumber,
-    submitterId: settings.submitterId || requesterProfile.id,
+    submitterId: isClaimItBridgeMode(settings as unknown as Record<string, unknown>) ? undefined : (settings.submitterId || requesterProfile.id),
+    batch: {
+      organizationType: normalizeOrganizationType(payload.organizationType || payload.organization_type),
+      facilityCode: settings.facilityCode,
+      providerNumber: settings.providerNumber,
+      claimCount: 1,
+    },
+    claims: [{
+      patientName: normalizeText(payload.patientName),
+      memberNumber: normalizeText(payload.memberNumber || payload.memberNo),
+      hin: normalizeText(payload.hin),
+      diagnosis: normalizeText(payload.diagnosis),
+      serviceDate: normalizeText(payload.serviceDate),
+      totalAmount: Number(payload.totalAmount || 0),
+    }],
     organizationType: normalizeOrganizationType(payload.organizationType || payload.organization_type),
     patient: {
       name: normalizeText(payload.patientName),
@@ -2301,11 +2350,13 @@ const generateNhiaCcCode = async (
     requestedAt: new Date().toISOString(),
   }
 
-  if (!normalizeText(settings.ccCodeEndpointPath)) {
-    throw new Error('NHIA CCC/CC code endpoint is not configured. Enter the official endpoint path from NHIA/CLAIM-it.')
+  const endpointPath = getCcEndpointPath(settings as unknown as Record<string, unknown>)
+  if (!endpointPath) {
+    return { status: 'pending', source: 'pending', message: 'Pending CLAIM-it validation' }
   }
 
-  const response = await fetch(joinUrl(String(settings.apiBaseUrl), String(settings.ccCodeEndpointPath)), {
+  logClaimItBridgeStatus('cc_code.request', { status: 'pending', endpointPath, claimCount: 1 })
+  const response = await fetch(joinUrl(String(settings.apiBaseUrl), endpointPath), {
     method: 'POST',
     headers: await buildNhiaSubmissionHeaders(settings as unknown as Record<string, unknown>),
     body: JSON.stringify(requestPayload),
@@ -2318,13 +2369,20 @@ const generateNhiaCcCode = async (
     body = { raw: responseText }
   }
 
+  logClaimItBridgeStatus('cc_code.response', {
+    status: response.ok ? 'success' : 'failed',
+    httpStatus: response.status,
+    endpointPath,
+    claimCount: 1,
+  })
+
   if (!response.ok) throw new Error(`NHIA API returned HTTP ${response.status}.`)
 
   const ccCode = extractCcCode(body)
-  if (!ccCode) throw new Error('NHIA API response did not include a CCC/CC code.')
+  if (!ccCode) return { status: 'pending', source: 'pending', message: 'Pending CLAIM-it validation', response: body }
   if (ccCode.length !== 5) throw new Error('NHIA API returned a CCC/CC code that is not exactly 5 digits.')
 
-  return { ccCode, source: 'api', response: body }
+  return { ccCode, source: isClaimItBridgeMode(settings as unknown as Record<string, unknown>) ? 'claimit_bridge' : 'api', response: body }
 }
 
 const submitNhiaClaimsDirect = async (

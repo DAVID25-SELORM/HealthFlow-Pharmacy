@@ -124,6 +124,9 @@ const PRESCRIPTION_ATTACHMENT_EXTENSIONS = ['.pdf', '.jpg', '.jpeg']
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 const YEAR_MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/
 const OPTIONAL_CLAIM_SCHEMA_COLUMNS = [
+  'patient_address',
+  'child_weight_kg',
+  'diagnosis',
   'unserved_medicines_note',
   'diagnosis_details',
   'prescription_file_url',
@@ -141,6 +144,7 @@ const NHIA_API_SETTINGS_CACHE_PREFIX = 'healthflow.nhiaApiSettings.v1'
 const CLAIMIT_BRIDGE_QUEUE_KEY = 'healthflow.claimitBridgeQueue.v1'
 const CLAIMIT_BRIDGE_RETRY_INTERVAL_MS = 60 * 1000
 const CLAIMIT_BRIDGE_MODES = new Set(['claimit_bridge', 'claimit_assisted'])
+const PENDING_CLAIMIT_CC_MESSAGE = 'Pending CLAIM-it validation'
 const NHIA_API_SETTINGS_CACHE_FIELDS = [
   'id',
   'organizationId',
@@ -181,6 +185,8 @@ const NHIA_API_SETTINGS_CACHE_FIELDS = [
   'connection_profile',
   'validationMode',
   'validation_mode',
+  'claimControlMode',
+  'claim_control_mode',
   'apiEnvironment',
   'api_environment',
   'apiBaseUrl',
@@ -193,6 +199,8 @@ const NHIA_API_SETTINGS_CACHE_FIELDS = [
   'claim_endpoint_path',
   'claimValidationEndpointPath',
   'claim_validation_endpoint_path',
+  'ccEndpointPath',
+  'cc_endpoint_path',
   'ccCodeEndpointPath',
   'cc_code_endpoint_path',
   'claimStatusEndpointPath',
@@ -337,6 +345,16 @@ const assertNhisCcCode = (value) => {
   const issue = getNhisCcCodeIssue(value)
   if (issue) throw new Error(issue)
   return normalizeNhisCcCode(value)
+}
+
+const shouldAllowPendingClaimControl = (options = {}) =>
+  ['claimit_bridge', 'direct_api'].includes(normalizeText(options.claimControlMode || options.claim_control_mode))
+
+const normalizeOptionalNhisCcCodeForMode = (value, options = {}) => {
+  const digits = normalizeNhisCcCode(value)
+  if (digits) return assertNhisCcCode(digits)
+  if (shouldAllowPendingClaimControl(options)) return ''
+  return assertNhisCcCode(value)
 }
 
 const normalizeMatchText = (value) => asText(value).toLowerCase().replace(/[^a-z0-9\s]/g, ' ')
@@ -1437,7 +1455,9 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
   if (isHospital && patientAge !== null && patientAge < 12 && !(asNumber(childWeight) > 0)) {
     warnings.push('Child weight is missing for a child patient.')
   }
-  const cccNoIssue = getNhisCcCodeIssue(cccNo)
+  const cccNoIssue = shouldAllowPendingClaimControl(options) && !normalizeNhisCcCode(cccNo)
+    ? ''
+    : getNhisCcCodeIssue(cccNo)
   if (cccNoIssue) blockers.push(cccNoIssue)
   if (!diagnosis && isHospital) {
     blockers.push('Diagnosis is required for hospital NHIS claims.')
@@ -1807,6 +1827,37 @@ const isLocalClaimItBridgeProfile = (profile = '') =>
 const joinClaimItBridgeUrl = (baseUrl = '', path = '') =>
   `${normalizeText(baseUrl).replace(/\/+$/, '')}/${normalizeText(path).replace(/^\/+/, '')}`
 
+const getClaimControlEndpointPath = (settings = {}) =>
+  normalizeText(settings.ccEndpointPath || settings.cc_endpoint_path || settings.ccCodeEndpointPath || settings.cc_code_endpoint_path)
+
+const extractClaimControlCode = (body) => {
+  if (!body || typeof body !== 'object') return ''
+  const record = body
+  const direct = normalizeNhisCcCode(
+    record.ccCode ||
+      record.cc_code ||
+      record.cccNo ||
+      record.ccc_no ||
+      record.claimControlCode ||
+      record.claim_control_code ||
+      record.controlCode ||
+      record.control_code ||
+      record.code
+  )
+  if (direct) return direct
+  return record.data && typeof record.data === 'object' ? extractClaimControlCode(record.data) : ''
+}
+
+const logClaimItBridgeStatus = (action, detail = {}) => {
+  console.info(`[CLAIM-it Bridge] ${action}`, {
+    status: detail.status || '',
+    httpStatus: detail.httpStatus || null,
+    endpointPath: detail.endpointPath || '',
+    claimCount: detail.claimCount || null,
+    message: detail.message || '',
+  })
+}
+
 const isClaimItBridgeUnavailableError = (error) => {
   const message = normalizeText(error?.message || error).toLowerCase()
   return [
@@ -1922,6 +1973,66 @@ export const testClaimItConnection = async (settings = {}) => {
     action: 'test_claimit_connection',
     settings: sanitizeNhiaApiSettingsPayload(settings),
   })
+}
+
+export const generateBrowserClaimItBridgeCcCode = async (settings = {}, claimContext = {}) => {
+  const endpointPath = getClaimControlEndpointPath(settings)
+  const baseUrl = normalizeText(settings.apiBaseUrl || settings.api_base_url)
+  if (!baseUrl || !endpointPath) {
+    return { source: 'pending', status: 'pending', message: PENDING_CLAIMIT_CC_MESSAGE }
+  }
+
+  const requestPayload = {
+    action: 'generate_or_validate_cc_code',
+    claimControlMode: normalizeText(settings.claimControlMode || settings.claim_control_mode) || 'claimit_bridge',
+    batch: {
+      batchNumber: normalizeText(claimContext.batchNumber),
+      organizationType: normalizeOrganizationType(claimContext.organizationType || claimContext.organization_type),
+      facilityCode: normalizeText(settings.facilityCode || settings.facility_code),
+      providerNumber: normalizeText(settings.providerNumber || settings.provider_number),
+      claimCount: 1,
+    },
+    claims: [{
+      patientName: normalizeText(claimContext.patientName),
+      memberNumber: normalizeText(claimContext.memberNumber || claimContext.memberNo),
+      hin: normalizeText(claimContext.hin),
+      diagnosis: normalizeText(claimContext.diagnosis),
+      serviceDate: normalizeText(claimContext.serviceDate),
+      totalAmount: Number(claimContext.totalAmount || 0),
+    }],
+    requestedAt: new Date().toISOString(),
+  }
+
+  logClaimItBridgeStatus('cc_code.request', { status: 'pending', endpointPath, claimCount: 1 })
+  const response = await fetch(joinClaimItBridgeUrl(baseUrl, endpointPath), {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(requestPayload),
+  })
+  const responseText = await response.text()
+  let body = {}
+  try {
+    body = responseText ? JSON.parse(responseText) : {}
+  } catch {
+    body = { raw: responseText }
+  }
+  logClaimItBridgeStatus('cc_code.response', {
+    status: response.ok ? 'success' : 'failed',
+    httpStatus: response.status,
+    endpointPath,
+    claimCount: 1,
+  })
+  if (!response.ok) throw new Error(`CLAIM-it bridge returned HTTP ${response.status}.`)
+
+  const ccCode = extractClaimControlCode(body)
+  if (!ccCode) return { source: 'pending', status: 'pending', message: PENDING_CLAIMIT_CC_MESSAGE, response: body }
+  if (ccCode.length !== NHIS_CC_CODE_DIGITS) {
+    throw new Error(`CLAIM-it returned a CCC/CC code that is not exactly ${NHIS_CC_CODE_DIGITS} digits.`)
+  }
+  return { ccCode, source: 'claimit_bridge', response: body }
 }
 
 export const getNhiaApiSettings = async (options = {}) => {
@@ -2717,8 +2828,9 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
   const memberNo = normalizeNhiaMemberNumber(
     assertRequiredText(claimData.memberNo, 'NHIS member number or Ghana Card number')
   )
-  const cccNo = assertNhisCcCode(
-    claimData.cccNo ?? claimData.ccc_no ?? claimData.ccCode ?? claimData.cc_code
+  const cccNo = normalizeOptionalNhisCcCodeForMode(
+    claimData.cccNo ?? claimData.ccc_no ?? claimData.ccCode ?? claimData.cc_code,
+    options
   )
   const serviceDate = normalizeText(claimData.serviceDate || claimData.serviceDateFrom)
 
@@ -2907,8 +3019,9 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
   const memberNo = normalizeNhiaMemberNumber(
     assertRequiredText(claimData.memberNo, 'NHIS member number or Ghana Card number')
   )
-  const cccNo = assertNhisCcCode(
-    claimData.cccNo ?? claimData.ccc_no ?? claimData.ccCode ?? claimData.cc_code
+  const cccNo = normalizeOptionalNhisCcCodeForMode(
+    claimData.cccNo ?? claimData.ccc_no ?? claimData.ccCode ?? claimData.cc_code,
+    options
   )
   const serviceDate = normalizeText(claimData.serviceDate || claimData.serviceDateFrom)
   const medicineTotal = medicines.reduce((s, m) => s + Number(m.totalAmount || 0), 0)
@@ -5158,7 +5271,7 @@ export const assertClaimItCxfExportConfigured = (options = {}) => {
   logNhiaAccreditationExpiryDate('export validation config', accreditationExpiryDate)
   if (!accreditationExpiryDate) missing.push('accreditationExpiryDate')
   if (!normalizeText(options.claimsOfficerName || options.claims_officer_name)) missing.push('claimsOfficerName')
-  if (!normalizeText(options.submitterId || options.submitter_id)) missing.push('submitterId')
+  if (!isClaimItBridgeMode(options.integrationMode || options.integration_mode) && !normalizeText(options.submitterId || options.submitter_id)) missing.push('submitterId')
   if (isHospitalFacility && options._inferredProviderClassLevel) missing.push('providerClassLevel (confirm in Settings)')
   if (isPharmacy && options._inferredPharmacyFacilityLevel) missing.push('pharmacyFacilityLevel (confirm inferred P1 in Settings)')
 

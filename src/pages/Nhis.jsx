@@ -35,6 +35,7 @@ import {
   uploadNhisPrescriptionPdf,
   validateNhisPrescriptionPdfFile,
   getNhisPrescriptionSignedUrl,
+  generateBrowserClaimItBridgeCcCode,
   generateHostedNhiaCcCode,
   getNhiaApiSettings,
   startClaimItBridgeQueueAutoSync,
@@ -525,7 +526,11 @@ const Nhis = () => {
 
   const providerClassLevel = resolvedNhiaSettings?.providerClassLevel || resolvedNhiaSettings?.provider_class_level || ''
   const integrationMode = resolvedNhiaSettings?.integrationMode || resolvedNhiaSettings?.integration_mode || 'claimit_export'
+  const claimControlMode = resolvedNhiaSettings?.claimControlMode || resolvedNhiaSettings?.claim_control_mode || (['claimit_bridge', 'claimit_assisted'].includes(integrationMode) ? 'claimit_bridge' : 'manual')
+  const ccEndpointPath = resolvedNhiaSettings?.ccEndpointPath || resolvedNhiaSettings?.cc_endpoint_path || resolvedNhiaSettings?.ccCodeEndpointPath || resolvedNhiaSettings?.cc_code_endpoint_path || ''
   const isClaimItBridgeMode = ['claimit_bridge', 'claimit_assisted'].includes(integrationMode)
+  const isLocalClaimItBridge = isClaimItBridgeMode && ['local_server', 'lan_ip'].includes(resolvedNhiaSettings?.connectionProfile || resolvedNhiaSettings?.connection_profile || 'local_server')
+  const canManuallyEditCcCode = role === 'admin' || role === 'super_admin'
   const allowsDirectNhiaSubmission = ['claimit_bridge', 'claimit_assisted', 'direct_nhia_api', 'hybrid'].includes(integrationMode)
   const directNhiaApiAvailable = Boolean(
     allowsDirectNhiaSubmission &&
@@ -534,9 +539,9 @@ const Nhis = () => {
       resolvedNhiaSettings?.claimEndpointPath
   )
   const nhiaCcCodeApiAvailable = Boolean(
-    resolvedNhiaSettings?.directApiEnabled &&
+    (resolvedNhiaSettings?.directApiEnabled || claimControlMode === 'claimit_bridge') &&
       resolvedNhiaSettings?.apiBaseUrl &&
-      resolvedNhiaSettings?.ccCodeEndpointPath
+      ccEndpointPath
   )
   const nhisPageSubtitle = isHospital
     ? 'NHIA hospital service claims, tariffs, diagnoses, and direct CLAIM-it submission'
@@ -996,9 +1001,12 @@ const Nhis = () => {
     integrationMode,
     connectionProfile: resolvedNhiaSettings?.connectionProfile || resolvedNhiaSettings?.connection_profile || 'local_server',
     validationMode: resolvedNhiaSettings?.validationMode || resolvedNhiaSettings?.validation_mode || 'validate_before_submit',
+    claimControlMode,
     apiBaseUrl: resolvedNhiaSettings?.apiBaseUrl || resolvedNhiaSettings?.api_base_url || '',
     claimEndpointPath: resolvedNhiaSettings?.claimEndpointPath || resolvedNhiaSettings?.claim_endpoint_path || '',
     claimValidationEndpointPath: resolvedNhiaSettings?.claimValidationEndpointPath || resolvedNhiaSettings?.claim_validation_endpoint_path || '',
+    ccEndpointPath,
+    ccCodeEndpointPath: ccEndpointPath,
     claimStatusEndpointPath: resolvedNhiaSettings?.claimStatusEndpointPath || resolvedNhiaSettings?.claim_status_endpoint_path || '',
     memberLookupEndpointPath: resolvedNhiaSettings?.memberLookupEndpointPath || resolvedNhiaSettings?.member_lookup_endpoint_path || '',
     directApiSource: resolvedNhiaSettings?.source || 'hosted',
@@ -1038,6 +1046,7 @@ const Nhis = () => {
         enforceDiagnosisTreatmentMatch: Boolean(editingClaim && isHospital),
         enforcePrescribingLevel: true,
         requirePrescriptionAttachment: true,
+        claimControlMode,
         providerClassLevel,
         // ✅ NHIS PHARMACY LEVEL PATCH START
         pharmacyLevel: facilityPharmacyLevel,
@@ -1052,7 +1061,7 @@ const Nhis = () => {
         // ✅ NHIS CLAIM LOGIC SEPARATION PATCH END
       }
     ),
-    [claimForm, claimMedicines, claimServices, organizationType, editingClaim, isHospital, clinicalRules, providerClassLevel, facilityPharmacyLevel, nhisDrugs, nhiaTariffItems, activeTariffFacilityGroup, activeTariffCateringOption]
+    [claimForm, claimMedicines, claimServices, organizationType, editingClaim, isHospital, clinicalRules, claimControlMode, providerClassLevel, facilityPharmacyLevel, nhisDrugs, nhiaTariffItems, activeTariffFacilityGroup, activeTariffCateringOption]
   )
 
   const readinessPassed = readiness.issues.length === 0
@@ -1131,23 +1140,39 @@ const Nhis = () => {
   // ── submit claim ──────────────────────────────────────────────
   const handleGenerateCcCode = async () => {
     if (!nhiaCcCodeApiAvailable) {
-      notify('Direct NHIA API is not configured. Enter the CCC/CC code manually.', 'warning')
+      setClaimForm((prev) => ({ ...prev, cccNo: '' }))
+      notify('Pending CLAIM-it validation. No CCC/CC bridge endpoint is configured.', 'info')
       return
     }
 
     try {
       setGeneratingCcCode(true)
-      const generateCcCode = resolvedNhiaSettings?.source === 'branch'
-        ? generateBranchNhiaCcCode
-        : generateHostedNhiaCcCode
-      const result = await generateCcCode({
+      const claimContext = {
         organizationType,
         patientName: `${claimForm.surname} ${claimForm.otherNames || ''}`.trim(),
         memberNumber: claimForm.memberNo,
         hin: claimForm.hin,
         diagnosis: claimForm.diagnosis,
         serviceDate: claimForm.serviceDate,
-      })
+        totalAmount: claimTotal,
+      }
+      const generateCcCode = isLocalClaimItBridge
+        ? (context) => generateBrowserClaimItBridgeCcCode({
+            ...resolvedNhiaSettings,
+            apiBaseUrl: resolvedNhiaSettings?.apiBaseUrl || resolvedNhiaSettings?.api_base_url,
+            ccEndpointPath,
+            ccCodeEndpointPath: ccEndpointPath,
+            claimControlMode,
+          }, context)
+        : resolvedNhiaSettings?.source === 'branch'
+        ? generateBranchNhiaCcCode
+        : generateHostedNhiaCcCode
+      const result = await generateCcCode(claimContext)
+      if (result?.status === 'pending' || result?.source === 'pending') {
+        setClaimForm((prev) => ({ ...prev, cccNo: '' }))
+        notify(result.message || 'Pending CLAIM-it validation.', 'info')
+        return
+      }
       if (!result?.ccCode) {
         throw new Error('No CCC/CC code was returned.')
       }
@@ -1157,9 +1182,11 @@ const Nhis = () => {
       }
       setClaimForm((prev) => ({ ...prev, cccNo: ccCode }))
       notify(
-        result.source === 'api'
-          ? 'CCC/CC code generated from NHIA API.'
-          : 'CCC/CC code generated for direct NHIA submission.',
+        result.source === 'claimit_bridge'
+          ? 'CCC/CC code generated or validated via CLAIM-it.'
+          : result.source === 'api'
+            ? 'CCC/CC code generated from NHIA API.'
+            : 'CCC/CC code generated for direct NHIA submission.',
         'success'
       )
     } catch (err) {
@@ -1198,6 +1225,7 @@ const Nhis = () => {
       if (editingClaim) {
         await updateNhisClaim(editingClaim.id, payload, claimMedicines, {
           providerClassLevel,
+          claimControlMode,
           // ✅ NHIS PHARMACY LEVEL PATCH START
           pharmacyLevel: facilityPharmacyLevel,
           // ✅ NHIS PHARMACY LEVEL PATCH END
@@ -1215,6 +1243,7 @@ const Nhis = () => {
       } else {
         await createNhisClaim(payload, claimMedicines, {
           providerClassLevel,
+          claimControlMode,
           // ✅ NHIS PHARMACY LEVEL PATCH START
           pharmacyLevel: facilityPharmacyLevel,
           // ✅ NHIS PHARMACY LEVEL PATCH END
@@ -2284,30 +2313,37 @@ const Nhis = () => {
 
                   <div className="form-row">
                     <div className="form-group">
-                      <label>CCC / CC Code *</label>
+                      <label>CCC / CC Code{claimControlMode === 'manual' ? ' *' : ''}</label>
                       <div className="nhis-code-field">
                         <input className="form-input" value={claimForm.cccNo}
-                          required
+                          required={claimControlMode === 'manual'}
+                          disabled={claimControlMode === 'manual' && !canManuallyEditCcCode}
                           inputMode="numeric"
                           maxLength={5}
-                          pattern="[0-9]{5}"
-                          placeholder="12345"
+                          pattern={claimControlMode === 'manual' ? '[0-9]{5}' : '[0-9]{0,5}'}
+                          placeholder={claimControlMode === 'manual' ? '12345' : 'Pending CLAIM-it validation'}
                           title="Enter the 5-digit CCC/CC code"
                           onChange={(e) => setClaimForm((p) => ({
                             ...p,
                             cccNo: normalizeNhisCcCode(e.target.value).slice(0, 5),
                           }))} />
-                        {nhiaCcCodeApiAvailable && (
+                        {claimControlMode !== 'manual' && (
                           <button
                             type="button"
                             className="btn btn-secondary nhis-code-generate"
                             disabled={generatingCcCode}
                             onClick={handleGenerateCcCode}
                           >
-                            {generatingCcCode ? 'Generating...' : 'Generate'}
+                            {generatingCcCode ? 'Validating...' : 'Generate/Validate CC Code via CLAIM-it'}
                           </button>
                         )}
                       </div>
+                      {claimControlMode === 'manual' && !canManuallyEditCcCode && (
+                        <div className="patient-meta">Manual CC/CCC entry is restricted to admin users.</div>
+                      )}
+                      {claimControlMode !== 'manual' && !claimForm.cccNo && (
+                        <div className="patient-meta">Pending CLAIM-it validation</div>
+                      )}
                     </div>
                     {isHospital && (
                       <div className="form-group">

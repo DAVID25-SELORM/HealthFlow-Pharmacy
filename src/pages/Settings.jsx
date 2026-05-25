@@ -77,6 +77,7 @@ const blankNhiaApiForm = {
   integrationMode: 'claimit_export',
   connectionProfile: 'local_server',
   validationMode: 'validate_before_submit',
+  claimControlMode: 'claimit_bridge',
   sandboxBaseUrl: '',
   productionBaseUrl: '',
   // ✅ NHIA API ARCHITECTURE PATCH END
@@ -91,6 +92,7 @@ const blankNhiaApiForm = {
   apiBaseUrl: '',
   claimEndpointPath: '',
   claimValidationEndpointPath: '',
+  ccEndpointPath: '',
   ccCodeEndpointPath: '',
   claimStatusEndpointPath: '',
   memberLookupEndpointPath: '',
@@ -134,6 +136,8 @@ const toNhiaApiForm = (settings, organization) => {
     ...blankNhiaApiForm,
     ...resolved,
     integrationMode: resolved.integrationMode === 'claimit_assisted' ? 'claimit_bridge' : resolved.integrationMode,
+    ccEndpointPath: resolved.ccEndpointPath || resolved.cc_endpoint_path || resolved.ccCodeEndpointPath || resolved.cc_code_endpoint_path || '',
+    ccCodeEndpointPath: resolved.ccCodeEndpointPath || resolved.cc_code_endpoint_path || resolved.ccEndpointPath || resolved.cc_endpoint_path || '',
     accreditationExpiryDate: normalizeDateInputValue(resolved.accreditationExpiryDate),
     hasApiKey,
     hasApiSecret,
@@ -511,6 +515,8 @@ const Settings = () => {
         facilityType: nhiaFacilityType,
         pharmacyFacilityLevel: isHospitalOrganization ? '' : nhiaApiForm.pharmacyFacilityLevel,
         apiBaseUrl: activeBaseUrl || nhiaApiForm.apiBaseUrl,
+        ccEndpointPath: nhiaApiForm.ccEndpointPath || nhiaApiForm.ccCodeEndpointPath,
+        ccCodeEndpointPath: nhiaApiForm.ccCodeEndpointPath || nhiaApiForm.ccEndpointPath,
       }
       logNhiaAccreditationExpiryDate('saved', accreditationExpiryDate)
       const savedNhiaApiSettings = await saveNhiaApiSettings(nhiaSettingsPayload, { organizationId: nhiaOrganizationId })
@@ -1060,6 +1066,14 @@ const Settings = () => {
                   <option value="submit_only">Submit without bridge validation</option>
                 </select>
               </div>
+              <select
+                value={nhiaApiForm.claimControlMode}
+                onChange={(event) => updateNhiaApiForm('claimControlMode', event.target.value)}
+              >
+                <option value="manual">Manual CC/CCC entry</option>
+                <option value="claimit_bridge">CLAIM-it Bridge CC/CCC</option>
+                <option value="direct_api">Direct API CC/CCC</option>
+              </select>
               {/* ✅ NHIA API ARCHITECTURE PATCH END */}
               <div className="settings-form-row">
                 <input
@@ -1277,9 +1291,12 @@ const Settings = () => {
                 />
               </div>
               <input
-                placeholder="CCC/CC endpoint path"
-                value={nhiaApiForm.ccCodeEndpointPath}
-                onChange={(event) => updateNhiaApiForm('ccCodeEndpointPath', event.target.value)}
+                placeholder="ccEndpointPath / CCC/CC endpoint path"
+                value={nhiaApiForm.ccEndpointPath || nhiaApiForm.ccCodeEndpointPath}
+                onChange={(event) => {
+                  updateNhiaApiForm('ccEndpointPath', event.target.value)
+                  updateNhiaApiForm('ccCodeEndpointPath', event.target.value)
+                }}
               />
               {/* ✅ NHIA API ARCHITECTURE PATCH START */}
               <p className="settings-note">

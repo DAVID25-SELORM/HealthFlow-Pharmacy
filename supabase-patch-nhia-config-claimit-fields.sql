@@ -16,8 +16,10 @@ ALTER TABLE public.organization_nhia_integrations
   ADD COLUMN IF NOT EXISTS integration_mode TEXT,
   ADD COLUMN IF NOT EXISTS connection_profile TEXT DEFAULT 'local_server',
   ADD COLUMN IF NOT EXISTS validation_mode TEXT DEFAULT 'validate_before_submit',
+  ADD COLUMN IF NOT EXISTS claim_control_mode TEXT DEFAULT 'manual',
   ADD COLUMN IF NOT EXISTS sandbox_base_url TEXT,
   ADD COLUMN IF NOT EXISTS production_base_url TEXT,
+  ADD COLUMN IF NOT EXISTS cc_endpoint_path TEXT,
   ADD COLUMN IF NOT EXISTS claim_validation_endpoint_path TEXT;
   -- ✅ NHIA API ARCHITECTURE PATCH END
 
@@ -66,7 +68,8 @@ SET
 UPDATE public.organization_nhia_integrations
 SET
   connection_profile = COALESCE(NULLIF(connection_profile, ''), 'local_server'),
-  validation_mode = COALESCE(NULLIF(validation_mode, ''), 'validate_before_submit');
+  validation_mode = COALESCE(NULLIF(validation_mode, ''), 'validate_before_submit'),
+  claim_control_mode = COALESCE(NULLIF(claim_control_mode, ''), 'manual');
 
 ALTER TABLE public.organization_nhia_integrations
   ALTER COLUMN integration_mode SET DEFAULT 'claimit_export',
@@ -132,6 +135,17 @@ BEGIN
     ALTER TABLE public.organization_nhia_integrations
       ADD CONSTRAINT organization_nhia_integrations_validation_mode_check
       CHECK (validation_mode IN ('validate_before_submit', 'submit_only'));
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'organization_nhia_integrations_claim_control_mode_check'
+      AND conrelid = 'public.organization_nhia_integrations'::regclass
+  ) THEN
+    ALTER TABLE public.organization_nhia_integrations
+      ADD CONSTRAINT organization_nhia_integrations_claim_control_mode_check
+      CHECK (claim_control_mode IN ('manual', 'claimit_bridge', 'direct_api'));
   END IF;
 END $$;
 -- ✅ NHIA API ARCHITECTURE PATCH END
