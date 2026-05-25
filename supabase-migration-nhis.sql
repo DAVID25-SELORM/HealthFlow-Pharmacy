@@ -192,7 +192,10 @@ CREATE POLICY nhis_claims_insert ON public.nhis_claims
     AND EXISTS (
       SELECT 1 FROM public.users
       WHERE id = auth.uid()
-        AND role IN ('admin', 'pharmacist', 'billing')
+        AND (
+          role IN ('admin', 'pharmacist', 'billing', 'claims_officer')
+          OR can_manage_claims = true
+        )
     )
   );
 
@@ -205,7 +208,10 @@ CREATE POLICY nhis_claims_update ON public.nhis_claims
     AND EXISTS (
       SELECT 1 FROM public.users
       WHERE id = auth.uid()
-        AND role IN ('admin', 'pharmacist', 'billing')
+        AND (
+          role IN ('admin', 'pharmacist', 'billing', 'claims_officer')
+          OR can_manage_claims = true
+        )
     )
   );
 
