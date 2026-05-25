@@ -235,6 +235,15 @@ const NHIS_CLAIM_MEDICINES_SELECT = `
       )
     `
 
+const NHIS_CLAIM_MEDICINES_SELECT_BASIC = `
+      *,
+      nhis_claim_medicines (
+        id, nhis_drug_id, drug_code, description, unit,
+        unit_price, dispensed_qty, dispensary_date,
+        dose, frequency, duration, total_amount
+      )
+    `
+
 const NHIS_CLAIM_SERVICE_SELECT = `
       id, nhia_tariff_item_id, tariff_version, facility_group, catering_option,
       mdc, gdrg_code, description, age_band, unit_price, quantity,
@@ -421,6 +430,18 @@ const isMissingClaimServicesTable = (error) => {
     message.includes('schema cache')
   )
 }
+
+const isMissingOptionalClaimMedicineColumn = (error) => {
+  const message = String(error?.message || '').toLowerCase()
+  return (
+    error?.code === 'PGRST204' ||
+    message.includes('schema cache') ||
+    message.includes('medicine_access_level') ||
+    message.includes('required_pharmacy_level')
+  )
+}
+
+const OPTIONAL_CLAIM_MEDICINE_SCHEMA_COLUMNS = ['medicine_access_level', 'required_pharmacy_level']
 
 const stripClaimSchemaColumns = (payload, columns = OPTIONAL_CLAIM_SCHEMA_COLUMNS) => {
   const stripped = { ...payload }
@@ -2697,6 +2718,44 @@ const hydrateClaimsWithServiceLines = async (claims = []) => {
   }))
 }
 
+const hydrateClaimsWithMedicineLines = async (claims = []) => {
+  if (!claims.length || shouldUseBranchServer()) return claims
+  const claimIds = claims
+    .filter((claim) => !Array.isArray(claim.nhis_claim_medicines) || (!claim.nhis_claim_medicines.length && Number(claim.total_amount || 0) > 0))
+    .map((claim) => claim.id)
+    .filter(Boolean)
+  if (!claimIds.length) return claims
+
+  const { data, error } = await supabase
+    .from('nhis_claim_medicines')
+    .select(`
+      id, claim_id, nhis_drug_id, drug_code, description, unit,
+      unit_price, dispensed_qty, dispensary_date,
+      dose, frequency, duration, total_amount
+    `)
+    .in('claim_id', claimIds)
+    .order('created_at')
+
+  if (error) return claims
+
+  const linesByClaim = new Map()
+  ;(data || []).forEach((line) => {
+    const lines = linesByClaim.get(line.claim_id) || []
+    lines.push(line)
+    linesByClaim.set(line.claim_id, lines)
+  })
+
+  return claims.map((claim) => ({
+    ...claim,
+    nhis_claim_medicines: Array.isArray(claim.nhis_claim_medicines) && claim.nhis_claim_medicines.length
+      ? claim.nhis_claim_medicines
+      : (linesByClaim.get(claim.id) || claim.nhis_claim_medicines || []),
+  }))
+}
+
+const hydrateNhisClaimsForUi = async (claims = []) =>
+  await hydrateClaimsWithServiceLines(await hydrateClaimsWithMedicineLines(claims))
+
 const toNhisClaimServiceRows = (claimId, serviceLines = [], claimData = {}) =>
   normalizeNhiaTariffServiceLines(serviceLines, claimData).map((service) => ({
     claim_id: claimId,
@@ -2730,36 +2789,68 @@ const insertNhisClaimServiceRows = async (serviceRows) => {
   }
 }
 
+const stripOptionalClaimMedicineSchemaColumns = (medicineRows = []) =>
+  medicineRows.map((row) => {
+    const stripped = { ...row }
+    OPTIONAL_CLAIM_MEDICINE_SCHEMA_COLUMNS.forEach((column) => {
+      delete stripped[column]
+    })
+    return stripped
+  })
+
+const insertNhisClaimMedicineRows = async (medicineRows = []) => {
+  if (!medicineRows.length) return
+
+  let { error } = await supabase
+    .from('nhis_claim_medicines')
+    .insert(medicineRows)
+
+  if (error && isMissingOptionalClaimMedicineColumn(error)) {
+    ;({ error } = await supabase
+      .from('nhis_claim_medicines')
+      .insert(stripOptionalClaimMedicineSchemaColumns(medicineRows)))
+  }
+
+  if (error) throw error
+}
+
 export const getAllNhisClaims = async (filters = {}) => {
   if (shouldUseBranchServer()) {
     return await listBranchRecords('nhis/claims', filters)
   }
 
-  let query = supabase
-    .from('nhis_claims')
-    .select(NHIS_CLAIM_MEDICINES_SELECT)
-    .order('created_at', { ascending: false })
+  const buildQuery = (select = NHIS_CLAIM_MEDICINES_SELECT) => {
+    let query = supabase
+      .from('nhis_claims')
+      .select(select)
+      .order('created_at', { ascending: false })
 
-  if (filters.status && filters.status !== 'all') {
-    query = query.eq('status', filters.status)
-  }
-
-  if (filters.month) {
-    query = query.eq('submission_month', filters.month)
-  }
-
-  if (filters.searchTerm) {
-    const term = sanitizeSearchTerm(filters.searchTerm)
-    if (term) {
-      query = query.or(
-        `surname.ilike.%${term}%,other_names.ilike.%${term}%,member_no.ilike.%${term}%,claim_number.ilike.%${term}%,hin.ilike.%${term}%`
-      )
+    if (filters.status && filters.status !== 'all') {
+      query = query.eq('status', filters.status)
     }
+
+    if (filters.month) {
+      query = query.eq('submission_month', filters.month)
+    }
+
+    if (filters.searchTerm) {
+      const term = sanitizeSearchTerm(filters.searchTerm)
+      if (term) {
+        query = query.or(
+          `surname.ilike.%${term}%,other_names.ilike.%${term}%,member_no.ilike.%${term}%,claim_number.ilike.%${term}%,hin.ilike.%${term}%`
+        )
+      }
+    }
+
+    return query
   }
 
-  const { data, error } = await query
+  let { data, error } = await buildQuery()
+  if (error && isMissingOptionalClaimMedicineColumn(error)) {
+    ;({ data, error } = await buildQuery(NHIS_CLAIM_MEDICINES_SELECT_BASIC))
+  }
   if (error) throw error
-  return await hydrateClaimsWithServiceLines(data || [])
+  return await hydrateNhisClaimsForUi(data || [])
 }
 
 export const getNhisClaimStats = async () => {
@@ -2944,13 +3035,7 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
     // ✅ NHIS PHARMACY LEVEL PATCH END
   }))
 
-  if (medicineRows.length) {
-    const { error: medsError } = await supabase
-      .from('nhis_claim_medicines')
-      .insert(medicineRows)
-
-    if (medsError) throw medsError
-  }
+  await insertNhisClaimMedicineRows(medicineRows)
 
   await insertNhisClaimServiceRows(toNhisClaimServiceRows(claim.id, tariffServices, claimData))
 
@@ -3133,13 +3218,7 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
 
   if (deleteError) throw deleteError
 
-  if (medicineRows.length) {
-    const { error: medsError } = await supabase
-      .from('nhis_claim_medicines')
-      .insert(medicineRows.map((row) => ({ ...row, claim_id: id })))
-
-    if (medsError) throw medsError
-  }
+  await insertNhisClaimMedicineRows(medicineRows.map((row) => ({ ...row, claim_id: id })))
 
   const { error: deleteServicesError } = await supabase
     .from('nhis_claim_services')
@@ -3385,23 +3464,30 @@ export const getNhisClaimsForPeriod = async (periodOptions = {}) => {
       : rows.filter((claim) => claimMatchesExportPeriod(claim, period))
   }
 
-  let query = supabase
-    .from('nhis_claims')
-    .select(NHIS_CLAIM_MEDICINES_SELECT)
-    .order('created_at')
+  const buildQuery = (select = NHIS_CLAIM_MEDICINES_SELECT) => {
+    let query = supabase
+      .from('nhis_claims')
+      .select(select)
+      .order('created_at')
 
-  if (period.mode === 'month') {
-    query = query.eq('submission_month', period.yearMonth)
-  } else {
-    query = query
-      .gte('service_date_from', period.fromDate)
-      .lte('service_date_from', period.toDate)
+    if (period.mode === 'month') {
+      query = query.eq('submission_month', period.yearMonth)
+    } else {
+      query = query
+        .gte('service_date_from', period.fromDate)
+        .lte('service_date_from', period.toDate)
+    }
+
+    return query
   }
 
-  const { data, error } = await query
+  let { data, error } = await buildQuery()
+  if (error && isMissingOptionalClaimMedicineColumn(error)) {
+    ;({ data, error } = await buildQuery(NHIS_CLAIM_MEDICINES_SELECT_BASIC))
+  }
 
   if (error) throw error
-  return await hydrateClaimsWithServiceLines(data || [])
+  return await hydrateNhisClaimsForUi(data || [])
 }
 
 /**
@@ -3420,14 +3506,19 @@ export const getNhisClaimForSubmission = async (id) => {
     return claim
   }
 
-  const { data, error } = await supabase
-    .from('nhis_claims')
-    .select(NHIS_CLAIM_MEDICINES_SELECT)
-    .eq('id', id)
-    .single()
+  const loadClaim = async (select = NHIS_CLAIM_MEDICINES_SELECT) =>
+    await supabase
+      .from('nhis_claims')
+      .select(select)
+      .eq('id', id)
+      .single()
 
+  let { data, error } = await loadClaim()
+  if (error && isMissingOptionalClaimMedicineColumn(error)) {
+    ;({ data, error } = await loadClaim(NHIS_CLAIM_MEDICINES_SELECT_BASIC))
+  }
   if (error) throw error
-  return (await hydrateClaimsWithServiceLines([data]))[0]
+  return (await hydrateNhisClaimsForUi([data]))[0]
 }
 
 const normalizeClaimItExportFormat = (format = 'cxf') => {
