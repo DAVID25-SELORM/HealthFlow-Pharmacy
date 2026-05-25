@@ -1490,6 +1490,7 @@ describe('NHIA API settings fallback', () => {
       accreditationExpiryDate: '2026-12-31',
       claimsOfficerName: 'Claims Officer',
     })
+    expect(supabase.from).not.toHaveBeenCalled()
   })
 
   it('normalizes legacy accreditation expiry fields to accreditationExpiryDate', async () => {
@@ -1503,6 +1504,7 @@ describe('NHIA API settings fallback', () => {
     await expect(getNhiaApiSettings({ organizationId: 'org-1' })).resolves.toMatchObject({
       accreditationExpiryDate: '2026-12-31',
     })
+    expect(supabase.from).not.toHaveBeenCalled()
   })
 
   it('does not send blank or masked NHIA API secrets when saving settings', async () => {
@@ -1532,6 +1534,7 @@ describe('NHIA API settings fallback', () => {
         },
       },
     })
+    expect(supabase.from).not.toHaveBeenCalled()
   })
 })
 

@@ -1750,73 +1750,6 @@ const mergeNhiaApiSettings = (...sources) => {
   return Object.keys(merged).length ? merged : null
 }
 
-const mapNhiaApiSettingsRow = (row = null) => {
-  if (!row) return null
-  const credentials = row.credential_payload && typeof row.credential_payload === 'object'
-    ? row.credential_payload
-    : {}
-
-  return {
-    id: row.id,
-    organizationId: row.organization_id || '',
-    organization_id: row.organization_id || '',
-    facilityCode: row.facility_code || '',
-    facility_code: row.facility_code || '',
-    providerNumber: row.provider_number || '',
-    provider_number: row.provider_number || '',
-    schemeName: row.scheme_name || 'National Health Insurance',
-    scheme_name: row.scheme_name || 'National Health Insurance',
-    facilityType: row.facility_type || '',
-    facility_type: row.facility_type || '',
-    pharmacyFacilityLevel: row.pharmacy_facility_level || '',
-    pharmacy_facility_level: row.pharmacy_facility_level || '',
-    providerClassLevel: row.provider_class_level || '',
-    provider_class_level: row.provider_class_level || '',
-    providerLevelCode: row.provider_level_code || '',
-    provider_level_code: row.provider_level_code || '',
-    credentialCode: row.credential_code || row.facility_code || '',
-    credential_code: row.credential_code || row.facility_code || '',
-    licenseNumber: row.license_number || '',
-    license_number: row.license_number || '',
-    accreditationExpiryDate: getNhiaAccreditationExpiryDate(row),
-    accreditation_expiry_date: row.accreditation_expiry_date || '',
-    claimsOfficerName: row.claims_officer_name || '',
-    claims_officer_name: row.claims_officer_name || '',
-    admissionPaymentOption: row.admission_payment_option || 'nhis_pays_admission',
-    admission_payment_option: row.admission_payment_option || 'nhis_pays_admission',
-    claimitValidationEnabled: row.claimit_validation_enabled !== false,
-    claimit_validation_enabled: row.claimit_validation_enabled !== false,
-    submitterId: row.submitter_id || '',
-    submitter_id: row.submitter_id || '',
-    integrationMode: row.integration_mode || 'claimit_export',
-    integration_mode: row.integration_mode || 'claimit_export',
-    apiEnvironment: row.api_environment || 'production',
-    api_environment: row.api_environment || 'production',
-    apiBaseUrl: row.api_base_url || row.production_base_url || '',
-    api_base_url: row.api_base_url || row.production_base_url || '',
-    sandboxBaseUrl: row.sandbox_base_url || '',
-    sandbox_base_url: row.sandbox_base_url || '',
-    productionBaseUrl: row.production_base_url || row.api_base_url || '',
-    production_base_url: row.production_base_url || row.api_base_url || '',
-    claimEndpointPath: row.claim_endpoint_path || '',
-    claim_endpoint_path: row.claim_endpoint_path || '',
-    ccCodeEndpointPath: row.cc_code_endpoint_path || '',
-    cc_code_endpoint_path: row.cc_code_endpoint_path || '',
-    claimStatusEndpointPath: row.claim_status_endpoint_path || '',
-    claim_status_endpoint_path: row.claim_status_endpoint_path || '',
-    memberLookupEndpointPath: row.member_lookup_endpoint_path || '',
-    member_lookup_endpoint_path: row.member_lookup_endpoint_path || '',
-    directApiEnabled: Boolean(row.direct_api_enabled),
-    direct_api_enabled: Boolean(row.direct_api_enabled),
-    credentialMode: row.credential_mode || 'claimit_token',
-    credential_mode: row.credential_mode || 'claimit_token',
-    hasApiKey: Boolean(credentials.apiKey),
-    hasApiSecret: Boolean(credentials.apiSecret),
-    exportFormat: row.export_format || 'json',
-    export_format: row.export_format || 'json',
-  }
-}
-
 const buildNhiaCredentialsPayload = (credentials = {}) => {
   const payload = {}
 
@@ -1839,139 +1772,6 @@ const sanitizeNhiaApiSettingsPayload = (settings = {}) => {
   return sanitized
 }
 
-const getNhiaApiSettingsDirectly = async (organizationId = '') => {
-  const resolvedOrganizationId = normalizeText(organizationId)
-  if (!resolvedOrganizationId || !supabase) return null
-
-  try {
-    const { data, error } = await supabase
-      .from('organization_nhia_integrations')
-      .select('*')
-      .eq('organization_id', resolvedOrganizationId)
-      .eq('is_active', true)
-      .maybeSingle()
-
-    if (error) return null
-    return mapNhiaApiSettingsRow(data)
-  } catch {
-    return null
-  }
-}
-
-const getNhiaApiSettingsDirectRow = async (organizationId = '') => {
-  const resolvedOrganizationId = normalizeText(organizationId)
-  if (!resolvedOrganizationId || !supabase) return null
-
-  try {
-    const { data, error } = await supabase
-      .from('organization_nhia_integrations')
-      .select('*')
-      .eq('organization_id', resolvedOrganizationId)
-      .eq('is_active', true)
-      .maybeSingle()
-
-    if (error) return null
-    return data || null
-  } catch {
-    return null
-  }
-}
-
-const buildNhiaApiSettingsRow = (settings = {}, organizationId = '') => {
-  const resolvedOrganizationId = normalizeText(
-    organizationId || settings.organizationId || settings.organization_id
-  )
-  if (!resolvedOrganizationId) return null
-
-  const apiEnvironment = normalizeText(settings.apiEnvironment || settings.api_environment).toLowerCase() === 'sandbox'
-    ? 'sandbox'
-    : 'production'
-  const apiBaseUrl = normalizeText(
-    settings.apiBaseUrl ||
-      settings.api_base_url ||
-      (apiEnvironment === 'sandbox' ? settings.sandboxBaseUrl || settings.sandbox_base_url : settings.productionBaseUrl || settings.production_base_url)
-  ).replace(/\/+$/, '')
-
-  return {
-    organization_id: resolvedOrganizationId,
-    facility_code: normalizeText(settings.facilityCode || settings.facility_code) || null,
-    provider_number: normalizeText(settings.providerNumber || settings.provider_number) || null,
-    scheme_name: normalizeText(settings.schemeName || settings.scheme_name) || 'National Health Insurance',
-    facility_type: normalizeText(settings.facilityType || settings.facility_type) || null,
-    pharmacy_facility_level: normalizeText(settings.pharmacyFacilityLevel || settings.pharmacy_facility_level) || null,
-    provider_level_code: normalizeText(settings.providerLevelCode || settings.provider_level_code) || null,
-    credential_code: normalizeText(settings.credentialCode || settings.credential_code || settings.facilityCode || settings.facility_code) || null,
-    license_number: normalizeText(settings.licenseNumber || settings.license_number) || null,
-    accreditation_expiry_date: getNhiaAccreditationExpiryDate(settings) || null,
-    provider_type_description: normalizeText(settings.providerTypeDescription || settings.provider_type_description) || null,
-    provider_class_level: normalizeText(settings.providerClassLevel || settings.provider_class_level) || null,
-    claims_officer_name: normalizeText(settings.claimsOfficerName || settings.claims_officer_name) || null,
-    admission_payment_option: ['nhis_pays_admission', 'patient_pays_admission', 'not_applicable'].includes(
-      normalizeText(settings.admissionPaymentOption || settings.admission_payment_option)
-    )
-      ? normalizeText(settings.admissionPaymentOption || settings.admission_payment_option)
-      : 'nhis_pays_admission',
-    claimit_validation_enabled: settings.claimitValidationEnabled !== false && settings.claimit_validation_enabled !== false,
-    claims_officer_signature_url: normalizeText(settings.claimsOfficerSignatureUrl || settings.claims_officer_signature_url) || null,
-    submitter_id: normalizeText(settings.submitterId || settings.submitter_id) || null,
-    integration_mode: normalizeText(settings.integrationMode || settings.integration_mode) || 'claimit_export',
-    api_environment: apiEnvironment,
-    api_base_url: apiBaseUrl || null,
-    sandbox_base_url: normalizeText(settings.sandboxBaseUrl || settings.sandbox_base_url).replace(/\/+$/, '') || null,
-    production_base_url: normalizeText(settings.productionBaseUrl || settings.production_base_url).replace(/\/+$/, '') || null,
-    claim_endpoint_path: normalizeText(settings.claimEndpointPath || settings.claim_endpoint_path) || null,
-    cc_code_endpoint_path: normalizeText(settings.ccCodeEndpointPath || settings.cc_code_endpoint_path) || null,
-    claim_status_endpoint_path: normalizeText(settings.claimStatusEndpointPath || settings.claim_status_endpoint_path) || null,
-    member_lookup_endpoint_path: normalizeText(settings.memberLookupEndpointPath || settings.member_lookup_endpoint_path) || null,
-    direct_api_enabled: Boolean(settings.directApiEnabled || settings.direct_api_enabled),
-    credential_mode: normalizeText(settings.credentialMode || settings.credential_mode) || 'claimit_token',
-    export_format: normalizeText(settings.exportFormat || settings.export_format) || 'json',
-    is_active: true,
-    updated_at: new Date().toISOString(),
-  }
-}
-
-const saveNhiaApiSettingsDirectly = async (settings = {}, organizationId = '') => {
-  const row = buildNhiaApiSettingsRow(settings, organizationId)
-  if (!row || !supabase) return null
-
-  try {
-    const existingRow = await getNhiaApiSettingsDirectRow(row.organization_id)
-    const existing = mapNhiaApiSettingsRow(existingRow)
-    const existingCredentials = existingRow?.credential_payload && typeof existingRow.credential_payload === 'object'
-      ? existingRow.credential_payload
-      : {}
-    const incomingCredentials = buildNhiaCredentialsPayload(settings.credentials)
-    const credentials = { ...existingCredentials, ...incomingCredentials }
-    if (Object.keys(credentials).length) {
-      row.credential_payload = credentials
-    }
-
-    if (existing?.id) {
-      const { data, error } = await supabase
-        .from('organization_nhia_integrations')
-        .update(row)
-        .eq('id', existing.id)
-        .select('*')
-        .single()
-
-      if (error) return null
-      return mapNhiaApiSettingsRow(data)
-    }
-
-    const { data, error } = await supabase
-      .from('organization_nhia_integrations')
-      .insert(row)
-      .select('*')
-      .single()
-
-    if (error) return null
-    return mapNhiaApiSettingsRow(data)
-  } catch {
-    return null
-  }
-}
-
 export const getNhiaApiSettings = async (options = {}) => {
   if (shouldUseBranchServer()) {
     return null
@@ -1987,9 +1787,8 @@ export const getNhiaApiSettings = async (options = {}) => {
     hostedError = error
   }
 
-  const directSettings = await getNhiaApiSettingsDirectly(organizationId)
   const cachedSettings = readCachedNhiaApiSettings(organizationId)
-  const mergedSettings = mergeNhiaApiSettings(hostedSettings, directSettings, cachedSettings)
+  const mergedSettings = mergeNhiaApiSettings(hostedSettings, cachedSettings)
   if (mergedSettings) {
     writeCachedNhiaApiSettings(mergedSettings, organizationId)
     logNhiaAccreditationExpiryDate('loaded', mergedSettings.accreditationExpiryDate)
@@ -2021,8 +1820,7 @@ export const saveNhiaApiSettings = async (settings, options = {}) => {
     hostedError = error
   }
 
-  const directSettings = await saveNhiaApiSettingsDirectly(sanitizedSettings, organizationId)
-  const mergedSettings = mergeNhiaApiSettings(hostedSettings, directSettings, sanitizedSettings)
+  const mergedSettings = mergeNhiaApiSettings(hostedSettings, sanitizedSettings)
   if (mergedSettings) {
     writeCachedNhiaApiSettings(mergedSettings, organizationId)
     logNhiaAccreditationExpiryDate('saved', mergedSettings.accreditationExpiryDate)
