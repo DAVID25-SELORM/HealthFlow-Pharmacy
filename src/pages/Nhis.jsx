@@ -37,6 +37,7 @@ import {
   getNhisPrescriptionSignedUrl,
   generateHostedNhiaCcCode,
   getNhiaApiSettings,
+  startClaimItBridgeQueueAutoSync,
 } from '../services/nhisService'
 import {
   generateNhiaCcCode as generateBranchNhiaCcCode,
@@ -413,6 +414,13 @@ const Nhis = () => {
 
   useEffect(() => { void loadAll() }, [loadAll])
 
+  useEffect(() => startClaimItBridgeQueueAutoSync({
+    onSynced: (result) => {
+      void loadAll()
+      notify(`${result.submitted} queued CLAIM-it claim${result.submitted === 1 ? '' : 's'} submitted.`, 'success')
+    },
+  }), [loadAll, notify])
+
   const refreshDirectNhiaApiStatus = useCallback(async () => {
     const config = getBranchServerConfig()
     if (config.enabled && config.token) {
@@ -517,7 +525,8 @@ const Nhis = () => {
 
   const providerClassLevel = resolvedNhiaSettings?.providerClassLevel || resolvedNhiaSettings?.provider_class_level || ''
   const integrationMode = resolvedNhiaSettings?.integrationMode || resolvedNhiaSettings?.integration_mode || 'claimit_export'
-  const allowsDirectNhiaSubmission = ['claimit_assisted', 'direct_nhia_api', 'hybrid'].includes(integrationMode)
+  const isClaimItBridgeMode = ['claimit_bridge', 'claimit_assisted'].includes(integrationMode)
+  const allowsDirectNhiaSubmission = ['claimit_bridge', 'claimit_assisted', 'direct_nhia_api', 'hybrid'].includes(integrationMode)
   const directNhiaApiAvailable = Boolean(
     allowsDirectNhiaSubmission &&
       resolvedNhiaSettings?.directApiEnabled &&
@@ -984,6 +993,14 @@ const Nhis = () => {
     claimitValidationEnabled: resolvedNhiaSettings?.claimitValidationEnabled !== false,
     claimsOfficerSignatureUrl: resolvedNhiaSettings?.claimsOfficerSignatureUrl || '',
     submitterId: resolvedNhiaSettings?.submitterId || user?.id || '',
+    integrationMode,
+    connectionProfile: resolvedNhiaSettings?.connectionProfile || resolvedNhiaSettings?.connection_profile || 'local_server',
+    validationMode: resolvedNhiaSettings?.validationMode || resolvedNhiaSettings?.validation_mode || 'validate_before_submit',
+    apiBaseUrl: resolvedNhiaSettings?.apiBaseUrl || resolvedNhiaSettings?.api_base_url || '',
+    claimEndpointPath: resolvedNhiaSettings?.claimEndpointPath || resolvedNhiaSettings?.claim_endpoint_path || '',
+    claimValidationEndpointPath: resolvedNhiaSettings?.claimValidationEndpointPath || resolvedNhiaSettings?.claim_validation_endpoint_path || '',
+    claimStatusEndpointPath: resolvedNhiaSettings?.claimStatusEndpointPath || resolvedNhiaSettings?.claim_status_endpoint_path || '',
+    memberLookupEndpointPath: resolvedNhiaSettings?.memberLookupEndpointPath || resolvedNhiaSettings?.member_lookup_endpoint_path || '',
     directApiSource: resolvedNhiaSettings?.source || 'hosted',
     directPayloadFormat: resolvedNhiaSettings?.exportFormat || 'json',
     // ✅ NHIS PHARMACY LEVEL PATCH START
@@ -1190,8 +1207,10 @@ const Nhis = () => {
           tariffCateringOption: activeTariffCateringOption,
         })
         if (directNhiaApiAvailable) {
-          await submitNhisClaimDirect(editingClaim.id, getDirectNhiaOptions())
-          successMessage = 'NHIS claim corrections saved and submitted directly to NHIA.'
+          const submitResult = await submitNhisClaimDirect(editingClaim.id, getDirectNhiaOptions())
+          successMessage = submitResult?.queued
+            ? 'NHIS claim corrections saved and queued for CLAIM-it bridge submission.'
+            : 'NHIS claim corrections saved and submitted through CLAIM-it.'
         }
       } else {
         await createNhisClaim(payload, claimMedicines, {
@@ -1295,17 +1314,22 @@ const Nhis = () => {
 
       setUpdatingStatus(claim.id)
       if (newStatus === 'submitted' && directNhiaApiAvailable) {
-        await submitNhisClaimDirect(claim.id, {
+        const submitResult = await submitNhisClaimDirect(claim.id, {
           ...getDirectNhiaOptions(),
           claim,
         })
+        if (submitResult?.queued) {
+          await loadAll()
+          notify(`Claim ${claim.claim_number} queued for CLAIM-it bridge submission.`, 'info')
+          return
+        }
       } else {
         await updateNhisClaimStatus(claim.id, newStatus, '', user?.id || null)
       }
       await loadAll()
       notify(
         newStatus === 'submitted' && directNhiaApiAvailable
-          ? `Claim ${claim.claim_number} submitted directly to NHIA.`
+          ? `Claim ${claim.claim_number} submitted through CLAIM-it.`
           : `Claim ${claim.claim_number} marked as ${newStatus}.`,
         'success'
       )
@@ -1544,17 +1568,20 @@ const Nhis = () => {
         : exportMode === 'partial'
           ? `${exportToDate.slice(0, 7)}-01 to ${exportToDate}`
           : exportMonth
-      const count = await exportNhisClaimsFile({
+      const exportResult = await exportNhisClaimsFile({
         ...periodOptions,
         ...getDirectNhiaOptions(),
         directSubmit: directNhiaApiAvailable,
         format: exportFormat,
       })
+      const count = typeof exportResult === 'number' ? exportResult : exportResult?.count || 0
       setShowExportModal(false)
       await loadAll()
       notify(
-        directNhiaApiAvailable
-          ? `${count} claims submitted directly to NHIA for ${periodLabel}. Served claims marked as Submitted.`
+        exportResult?.queued
+          ? `${count} claims queued for CLAIM-it bridge submission for ${periodLabel}. They will retry automatically.`
+          : directNhiaApiAvailable
+            ? `${count} claims submitted through CLAIM-it for ${periodLabel}. Served claims marked as Submitted.`
           : `${count} claims exported as ${exportFormat.toUpperCase()} for ${periodLabel}. Claims remain Served until CLAIM-it accepts them.`,
         'success'
       )
@@ -1584,7 +1611,7 @@ const Nhis = () => {
           {pageTab === 'claims' && canWrite && (
             <>
               <button className="btn btn-secondary" onClick={() => setShowExportModal(true)}>
-                <Download size={16} /> {directNhiaApiAvailable ? 'Submit Claims' : 'Export Claims'}
+                <Download size={16} /> {directNhiaApiAvailable ? (isClaimItBridgeMode ? 'Submit to CLAIM-it' : 'Submit Claims') : 'Export Claims'}
               </button>
               <button className="btn btn-primary" onClick={openNewClaimModal}>
                 <Plus size={16} /> New Claim
@@ -3176,14 +3203,14 @@ const Nhis = () => {
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowExportModal(false)}>
           <div className="modal-panel modal-panel--export">
             <div className="modal-header">
-              <h2>{directNhiaApiAvailable ? 'Direct NHIA Submission' : 'Claims Batch Export'}</h2>
+              <h2>{directNhiaApiAvailable ? (isClaimItBridgeMode ? 'CLAIM-it Bridge Submission' : 'Direct NHIA Submission') : 'Claims Batch Export'}</h2>
               <button className="modal-close" onClick={() => setShowExportModal(false)}><X size={18} /></button>
             </div>
             <div className="export-body">
               <p className="export-info">
                 {directNhiaApiAvailable ? (
                   <>
-                    Direct NHIA API is enabled. Claims in the selected period will be sent to NHIA/CLAIM-it directly.
+                    {isClaimItBridgeMode ? 'CLAIM-it Bridge API' : 'Direct NHIA API'} is enabled. Claims in the selected period will be sent through the configured integration.
                     Successfully sent <strong>Served</strong> claims will be marked as <strong>Submitted</strong>.
                   </>
                 ) : (
@@ -3269,7 +3296,7 @@ const Nhis = () => {
               <button className="btn btn-primary" disabled={exporting || !exportPeriodReady} onClick={handleExport}>
                 {exporting
                   ? (directNhiaApiAvailable ? 'Submitting...' : 'Exporting...')
-                  : <><Download size={14} /> {directNhiaApiAvailable ? 'Submit Directly' : 'Export & Download'}</>}
+                  : <><Download size={14} /> {directNhiaApiAvailable ? (isClaimItBridgeMode ? 'Submit to CLAIM-it' : 'Submit Directly') : 'Export & Download'}</>}
               </button>
             </div>
           </div>

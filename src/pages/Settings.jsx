@@ -14,7 +14,7 @@ import {
 } from '../services/settingsService'
 import { getBranches, createBranch, updateBranch, deactivateBranch } from '../services/branchService'
 import { updateOrganization, getOrganizationStats } from '../services/organizationService'
-import { buildClaimItConfigPreview, getNhiaApiSettings, saveNhiaApiSettings } from '../services/nhisService'
+import { buildClaimItConfigPreview, getNhiaApiSettings, saveNhiaApiSettings, testClaimItConnection } from '../services/nhisService'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
 import { normalizeSubscriptionTier, useTenant } from '../context/TenantContext'
@@ -35,7 +35,10 @@ import './Settings.css'
 
 const NHIA_SECRET_MASK = '••••••••••••'
 const NHIA_SECRET_FIELDS = new Set(['apiKey', 'apiSecret'])
-const NHIA_API_INTEGRATION_MODES = ['claimit_assisted', 'direct_nhia_api', 'hybrid']
+const NHIA_API_INTEGRATION_MODES = ['claimit_bridge', 'claimit_assisted', 'direct_nhia_api', 'hybrid']
+const NHIA_BRIDGE_MODES = ['claimit_bridge', 'claimit_assisted']
+const NHIA_LOCAL_BRIDGE_PROFILES = ['local_server', 'lan_ip']
+const NHIA_BRIDGE_REACHABLE_STATUSES = [401, 403, 404, 405]
 
 const toForm = (row) => ({
   pharmacyName: row?.pharmacy_name || 'HealthFlow Pharmacy',
@@ -72,6 +75,8 @@ const blankNhiaApiForm = {
   // ✅ NHIA CONFIG PATCH END
   // ✅ NHIA API ARCHITECTURE PATCH START
   integrationMode: 'claimit_export',
+  connectionProfile: 'local_server',
+  validationMode: 'validate_before_submit',
   sandboxBaseUrl: '',
   productionBaseUrl: '',
   // ✅ NHIA API ARCHITECTURE PATCH END
@@ -85,6 +90,7 @@ const blankNhiaApiForm = {
   apiEnvironment: 'production',
   apiBaseUrl: '',
   claimEndpointPath: '',
+  claimValidationEndpointPath: '',
   ccCodeEndpointPath: '',
   claimStatusEndpointPath: '',
   memberLookupEndpointPath: '',
@@ -127,6 +133,7 @@ const toNhiaApiForm = (settings, organization) => {
   return {
     ...blankNhiaApiForm,
     ...resolved,
+    integrationMode: resolved.integrationMode === 'claimit_assisted' ? 'claimit_bridge' : resolved.integrationMode,
     accreditationExpiryDate: normalizeDateInputValue(resolved.accreditationExpiryDate),
     hasApiKey,
     hasApiSecret,
@@ -150,6 +157,66 @@ const buildNhiaCredentialsPayload = (credentials = {}) => {
   }
 
   return payload
+}
+
+const normalizeNhiaText = (value) => String(value || '').trim()
+
+const getNhiaActiveBaseUrl = (form = {}) => {
+  const profile = form.connectionProfile || form.connection_profile || 'local_server'
+  if (NHIA_BRIDGE_MODES.includes(form.integrationMode) || NHIA_LOCAL_BRIDGE_PROFILES.includes(profile)) {
+    return form.apiBaseUrl || form.productionBaseUrl || form.sandboxBaseUrl
+  }
+  return form.apiEnvironment === 'sandbox'
+    ? form.sandboxBaseUrl
+    : form.productionBaseUrl
+}
+
+const isLocalNhiaBridgeProfile = (form = {}) =>
+  NHIA_LOCAL_BRIDGE_PROFILES.includes(form.connectionProfile || form.connection_profile || 'local_server')
+
+const joinNhiaBridgeUrl = (baseUrl = '', path = '') => {
+  const normalizedBaseUrl = normalizeNhiaText(baseUrl).replace(/\/+$/, '')
+  const normalizedPath = normalizeNhiaText(path).replace(/^\/+/, '')
+  return normalizedPath ? `${normalizedBaseUrl}/${normalizedPath}` : normalizedBaseUrl
+}
+
+const buildLocalClaimItHeaders = (form = {}) => {
+  const credentials = form.credentials || {}
+  const credentialMode = normalizeNhiaText(form.credentialMode || form.credential_mode || 'api_key')
+  const headers = { Accept: 'application/json' }
+  const apiKey = normalizeNhiaText(credentials.apiKey)
+  const apiSecret = normalizeNhiaText(credentials.apiSecret)
+  const username = normalizeNhiaText(credentials.username)
+  const password = normalizeNhiaText(credentials.password)
+
+  if (credentialMode === 'api_key' && apiKey && apiKey !== NHIA_SECRET_MASK) {
+    const headerName = normalizeNhiaText(credentials.headerName) || 'x-api-key'
+    const headerPrefix = normalizeNhiaText(credentials.headerPrefix)
+    headers[headerName] = headerPrefix ? `${headerPrefix} ${apiKey}` : apiKey
+  }
+  if (credentialMode === 'api_key' && apiSecret && apiSecret !== NHIA_SECRET_MASK) {
+    headers[normalizeNhiaText(credentials.secretHeaderName) || 'x-api-secret'] = apiSecret
+  }
+  if (credentialMode === 'basic_auth' && (username || password)) {
+    headers.Authorization = `Basic ${btoa(`${username}:${password}`)}`
+  }
+  if (credentialMode === 'bearer_token' && apiKey && apiKey !== NHIA_SECRET_MASK) {
+    headers.Authorization = `Bearer ${apiKey}`
+  }
+
+  return headers
+}
+
+const testLocalClaimItConnection = async (form = {}, baseUrl = '') => {
+  const endpointPath = form.claimValidationEndpointPath || form.claimEndpointPath || form.memberLookupEndpointPath || form.claimStatusEndpointPath
+  const response = await fetch(joinNhiaBridgeUrl(baseUrl, endpointPath), {
+    method: 'GET',
+    headers: buildLocalClaimItHeaders(form),
+  })
+  if (response.ok || NHIA_BRIDGE_REACHABLE_STATUSES.includes(response.status)) {
+    return { message: `CLAIM-it bridge reached (HTTP ${response.status}).` }
+  }
+  throw new Error(`CLAIM-it bridge returned HTTP ${response.status}.`)
 }
 
 const blankStaffForm = {
@@ -349,7 +416,7 @@ const Settings = () => {
       ...current,
       directApiEnabled: enabled,
       integrationMode: enabled
-        ? (NHIA_API_INTEGRATION_MODES.includes(current.integrationMode) ? current.integrationMode : 'claimit_assisted')
+        ? (NHIA_API_INTEGRATION_MODES.includes(current.integrationMode) ? current.integrationMode : 'claimit_bridge')
         : (NHIA_API_INTEGRATION_MODES.includes(current.integrationMode) ? 'claimit_export' : current.integrationMode),
     }))
   }
@@ -384,16 +451,25 @@ const Settings = () => {
     notify(`CLAIM-it metadata preview ready for ${claimItPreview.providerID || 'provider'}.`, 'info')
   }
 
-  const handleTestNhiaConnection = () => {
-    const baseUrl = nhiaApiForm.apiEnvironment === 'sandbox'
-      ? nhiaApiForm.sandboxBaseUrl || nhiaApiForm.apiBaseUrl
-      : nhiaApiForm.productionBaseUrl || nhiaApiForm.apiBaseUrl
+  const handleTestNhiaConnection = async () => {
+    const baseUrl = getNhiaActiveBaseUrl(nhiaApiForm)
     if (!baseUrl) {
-      setError('Enter a Sandbox/Test or Production base URL before testing the connection.')
+      setError('Enter a CLAIM-it bridge base URL before testing the connection.')
       return
     }
-    setError('')
-    notify('Connection settings are ready to test through the configured NHIA integration service.', 'info')
+    try {
+      setError('')
+      const result = isLocalNhiaBridgeProfile(nhiaApiForm)
+        ? await testLocalClaimItConnection(nhiaApiForm, baseUrl)
+        : await testClaimItConnection({
+            ...nhiaApiForm,
+            apiBaseUrl: baseUrl,
+            credentials: buildNhiaCredentialsPayload(nhiaApiForm.credentials),
+          })
+      notify(result?.message || 'CLAIM-it bridge connection reached.', 'success')
+    } catch (connectionError) {
+      setError(connectionError.message || 'Unable to reach the CLAIM-it bridge service.')
+    }
   }
   // ✅ NHIA API ARCHITECTURE PATCH END
 
@@ -422,9 +498,7 @@ const Settings = () => {
           throw new Error(`Complete NHIA configuration before saving API integration mode: ${missing.join(', ')}.`)
         }
       }
-      const activeBaseUrl = nhiaApiForm.apiEnvironment === 'sandbox'
-        ? nhiaApiForm.sandboxBaseUrl
-        : nhiaApiForm.productionBaseUrl
+      const activeBaseUrl = getNhiaActiveBaseUrl(nhiaApiForm)
       const accreditationExpiryDate = normalizeDateInputValue(nhiaApiForm.accreditationExpiryDate)
       const nhiaOrganizationId = organization?.id || organization?.organization_id || nhiaApiForm.organizationId || nhiaApiForm.organization_id
       const nhiaSettingsPayload = {
@@ -965,11 +1039,27 @@ const Settings = () => {
                 value={nhiaApiForm.integrationMode}
                 onChange={(event) => handleNhiaIntegrationModeChange(event.target.value)}
               >
-                <option value="claimit_export">CLAIM-it export only</option>
-                <option value="claimit_assisted">CLAIM-it assisted submission</option>
-                <option value="direct_nhia_api">Direct NHIA API</option>
-                <option value="hybrid">Hybrid mode</option>
+                <option value="claimit_export">CLAIM-it CXF Export</option>
+                <option value="claimit_bridge">CLAIM-it Local Bridge API</option>
+                <option value="direct_nhia_api">Direct NHIA API (future)</option>
               </select>
+              <div className="settings-form-row">
+                <select
+                  value={nhiaApiForm.connectionProfile}
+                  onChange={(event) => updateNhiaApiForm('connectionProfile', event.target.value)}
+                >
+                  <option value="local_server">Local server</option>
+                  <option value="lan_ip">LAN IP</option>
+                  <option value="production_server">Production server</option>
+                </select>
+                <select
+                  value={nhiaApiForm.validationMode}
+                  onChange={(event) => updateNhiaApiForm('validationMode', event.target.value)}
+                >
+                  <option value="validate_before_submit">Validate before submit</option>
+                  <option value="submit_only">Submit without bridge validation</option>
+                </select>
+              </div>
               {/* ✅ NHIA API ARCHITECTURE PATCH END */}
               <div className="settings-form-row">
                 <input
@@ -1153,6 +1243,11 @@ const Settings = () => {
                 <option value="sandbox">Sandbox</option>
               </select>
               {/* ✅ NHIA API ARCHITECTURE PATCH START */}
+              <input
+                placeholder="CLAIM-it bridge base URL (http://server-pc:9090)"
+                value={nhiaApiForm.apiBaseUrl}
+                onChange={(event) => updateNhiaApiForm('apiBaseUrl', event.target.value)}
+              />
               <div className="settings-form-row">
                 <input
                   placeholder="Sandbox/Test base URL"
@@ -1176,11 +1271,16 @@ const Settings = () => {
                   onChange={(event) => updateNhiaApiForm('claimEndpointPath', event.target.value)}
                 />
                 <input
-                  placeholder="CCC/CC endpoint path"
-                  value={nhiaApiForm.ccCodeEndpointPath}
-                  onChange={(event) => updateNhiaApiForm('ccCodeEndpointPath', event.target.value)}
+                  placeholder="Claim validation endpoint path"
+                  value={nhiaApiForm.claimValidationEndpointPath}
+                  onChange={(event) => updateNhiaApiForm('claimValidationEndpointPath', event.target.value)}
                 />
               </div>
+              <input
+                placeholder="CCC/CC endpoint path"
+                value={nhiaApiForm.ccCodeEndpointPath}
+                onChange={(event) => updateNhiaApiForm('ccCodeEndpointPath', event.target.value)}
+              />
               {/* ✅ NHIA API ARCHITECTURE PATCH START */}
               <p className="settings-note">
                 Claims Cover Control / Claim Control generation used during NHIA validation.
@@ -1356,7 +1456,7 @@ const Settings = () => {
               )}
               <div className="settings-form-row">
                 <button className="btn btn-outline btn-sm" type="button" onClick={handleTestNhiaConnection}>
-                  Test Connection
+                  Test CLAIM-it Connection
                 </button>
                 <button className="btn btn-outline btn-sm" type="button" onClick={handleValidateNhiaConfig}>
                   Validate NHIA Configuration

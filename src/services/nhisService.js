@@ -138,6 +138,9 @@ const CLAIM_IT_MEDICINE_PRICE_VERSION = '2025-05-01.250531'
 const CLAIM_IT_SERVICE_TARIFF_VERSION = '2023-02-01.250531'
 const CLAIM_IT_POLICY_VERSION = 'cgs.2022-12-01.250531'
 const NHIA_API_SETTINGS_CACHE_PREFIX = 'healthflow.nhiaApiSettings.v1'
+const CLAIMIT_BRIDGE_QUEUE_KEY = 'healthflow.claimitBridgeQueue.v1'
+const CLAIMIT_BRIDGE_RETRY_INTERVAL_MS = 60 * 1000
+const CLAIMIT_BRIDGE_MODES = new Set(['claimit_bridge', 'claimit_assisted'])
 const NHIA_API_SETTINGS_CACHE_FIELDS = [
   'id',
   'organizationId',
@@ -174,6 +177,10 @@ const NHIA_API_SETTINGS_CACHE_FIELDS = [
   'submitter_id',
   'integrationMode',
   'integration_mode',
+  'connectionProfile',
+  'connection_profile',
+  'validationMode',
+  'validation_mode',
   'apiEnvironment',
   'api_environment',
   'apiBaseUrl',
@@ -184,6 +191,8 @@ const NHIA_API_SETTINGS_CACHE_FIELDS = [
   'production_base_url',
   'claimEndpointPath',
   'claim_endpoint_path',
+  'claimValidationEndpointPath',
+  'claim_validation_endpoint_path',
   'ccCodeEndpointPath',
   'cc_code_endpoint_path',
   'claimStatusEndpointPath',
@@ -1772,6 +1781,149 @@ const sanitizeNhiaApiSettingsPayload = (settings = {}) => {
   return sanitized
 }
 
+const canUseClaimItBridgeQueue = () =>
+  typeof window !== 'undefined' && Boolean(window.localStorage)
+
+const readClaimItBridgeQueue = () => {
+  if (!canUseClaimItBridgeQueue()) return []
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(CLAIMIT_BRIDGE_QUEUE_KEY) || '[]')
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+const writeClaimItBridgeQueue = (queue = []) => {
+  if (!canUseClaimItBridgeQueue()) return
+  window.localStorage.setItem(CLAIMIT_BRIDGE_QUEUE_KEY, JSON.stringify(queue))
+}
+
+const isClaimItBridgeMode = (mode = '') => CLAIMIT_BRIDGE_MODES.has(normalizeText(mode))
+
+const isLocalClaimItBridgeProfile = (profile = '') =>
+  ['local_server', 'lan_ip'].includes(normalizeText(profile) || 'local_server')
+
+const joinClaimItBridgeUrl = (baseUrl = '', path = '') =>
+  `${normalizeText(baseUrl).replace(/\/+$/, '')}/${normalizeText(path).replace(/^\/+/, '')}`
+
+const isClaimItBridgeUnavailableError = (error) => {
+  const message = normalizeText(error?.message || error).toLowerCase()
+  return [
+    'failed to fetch',
+    'network',
+    'unavailable',
+    'refused',
+    'timed out',
+    'timeout',
+    'unreachable',
+    'connection',
+    'connect',
+    'dns',
+    'error sending request',
+    'http 502',
+    'http 503',
+    'http 504',
+    'http 521',
+    'http 522',
+    'http 523',
+    'http 524',
+  ].some((term) => message.includes(term))
+}
+
+const enqueueClaimItBridgeSubmission = ({ claims = [], directPayload = {}, request = {}, error = null } = {}) => {
+  const queue = readClaimItBridgeQueue()
+  const item = {
+    id: typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `claimit-bridge-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    claims: claims.map((claim) => ({
+      id: claim.id,
+      status: claim.status,
+      claim_number: claim.claim_number,
+    })).filter((claim) => claim.id),
+    request,
+    directPayload,
+    attempts: 0,
+    lastError: normalizeText(error?.message || error),
+    queuedAt: new Date().toISOString(),
+    nextRetryAt: new Date(Date.now() + CLAIMIT_BRIDGE_RETRY_INTERVAL_MS).toISOString(),
+  }
+  writeClaimItBridgeQueue([...queue, item])
+  return item
+}
+
+export const getClaimItBridgeQueueSummary = () => {
+  const queue = readClaimItBridgeQueue()
+  return {
+    pending: queue.length,
+    nextRetryAt: queue[0]?.nextRetryAt || null,
+  }
+}
+
+export const flushClaimItBridgeQueue = async () => {
+  const queue = readClaimItBridgeQueue()
+  if (!queue.length) return { checked: 0, submitted: 0, failed: 0 }
+
+  const now = Date.now()
+  const remaining = []
+  let submitted = 0
+  let failed = 0
+
+  for (const item of queue) {
+    if (item.nextRetryAt && Date.parse(item.nextRetryAt) > now) {
+      remaining.push(item)
+      continue
+    }
+
+    try {
+      if (item.request?.localBridge) {
+        await submitBrowserClaimItBridgePayload(item.request)
+      } else {
+        await submitHostedNhiaDirectPayload(item.request)
+      }
+      await markNhisClaimsSubmittedByRoute(item.claims || [])
+      submitted += item.claims?.length || 0
+    } catch (error) {
+      failed += 1
+      remaining.push({
+        ...item,
+        attempts: (item.attempts || 0) + 1,
+        lastError: normalizeText(error?.message || error),
+        nextRetryAt: new Date(now + CLAIMIT_BRIDGE_RETRY_INTERVAL_MS * Math.min((item.attempts || 0) + 1, 10)).toISOString(),
+      })
+    }
+  }
+
+  writeClaimItBridgeQueue(remaining)
+  return { checked: queue.length, submitted, failed }
+}
+
+let claimItBridgeQueueTimer = null
+
+export const startClaimItBridgeQueueAutoSync = ({ onSynced } = {}) => {
+  if (typeof window === 'undefined') return () => {}
+  const run = async () => {
+    const result = await flushClaimItBridgeQueue().catch(() => null)
+    if (result?.submitted > 0) onSynced?.(result)
+  }
+  window.addEventListener('online', run)
+  if (!claimItBridgeQueueTimer) {
+    claimItBridgeQueueTimer = window.setInterval(run, CLAIMIT_BRIDGE_RETRY_INTERVAL_MS)
+  }
+  void run()
+  return () => {
+    window.removeEventListener('online', run)
+  }
+}
+
+export const testClaimItConnection = async (settings = {}) => {
+  return await invokeTierAccess({
+    action: 'test_claimit_connection',
+    settings: sanitizeNhiaApiSettingsPayload(settings),
+  })
+}
+
 export const getNhiaApiSettings = async (options = {}) => {
   if (shouldUseBranchServer()) {
     return null
@@ -1857,6 +2009,53 @@ const submitHostedNhiaDirectPayload = async ({
     claimIds,
     submissionAction,
   })
+}
+
+const submitBrowserClaimItBridgePayload = async ({
+  payload,
+  payloadContent = '',
+  contentType = 'application/json',
+  settings = {},
+} = {}) => {
+  const baseUrl = normalizeText(settings.apiBaseUrl || settings.api_base_url)
+  const claimEndpointPath = normalizeText(settings.claimEndpointPath || settings.claim_endpoint_path)
+  if (!baseUrl) throw new Error('CLAIM-it bridge base URL is required.')
+  if (!claimEndpointPath) throw new Error('CLAIM-it claim submission endpoint path is required.')
+
+  const body = normalizeText(payloadContent) || JSON.stringify(payload)
+  const headers = {
+    Accept: 'application/json',
+    'Content-Type': contentType,
+  }
+  const validationMode = normalizeText(settings.validationMode || settings.validation_mode) || 'validate_before_submit'
+  const validationEndpointPath = normalizeText(settings.claimValidationEndpointPath || settings.claim_validation_endpoint_path)
+  if (validationMode !== 'submit_only' && validationEndpointPath) {
+    const validationResponse = await fetch(joinClaimItBridgeUrl(baseUrl, validationEndpointPath), {
+      method: 'POST',
+      headers,
+      body,
+    })
+    if (!validationResponse.ok) {
+      throw new Error(`CLAIM-it validation returned HTTP ${validationResponse.status}.`)
+    }
+  }
+
+  const response = await fetch(joinClaimItBridgeUrl(baseUrl, claimEndpointPath), {
+    method: 'POST',
+    headers,
+    body,
+  })
+  const responseText = await response.text()
+  let responseBody = {}
+  try {
+    responseBody = responseText ? JSON.parse(responseText) : {}
+  } catch {
+    responseBody = { raw: responseText }
+  }
+  if (!response.ok) {
+    throw new Error(`CLAIM-it bridge returned HTTP ${response.status}.`)
+  }
+  return { ok: true, status: response.status, response: responseBody }
 }
 
 const getNhisReadinessContext = async (claimData = {}, options = {}) => {
@@ -5106,6 +5305,11 @@ const buildHostedDirectSubmissionPayload = (payload, options = {}) => {
 
 const submitNhisClaimsDirect = async (claims, period, options = {}) => {
   const directApiSource = options.directApiSource === 'branch' ? 'branch' : 'hosted'
+  const integrationMode = normalizeText(options.integrationMode || options.integration_mode)
+  const connectionProfile = normalizeText(options.connectionProfile || options.connection_profile) || 'local_server'
+  const useBrowserBridge = directApiSource === 'hosted' &&
+    isClaimItBridgeMode(integrationMode) &&
+    isLocalClaimItBridgeProfile(connectionProfile)
   const claimsForSubmission = directApiSource === 'hosted'
     ? await hydrateNhisPrescriptionUrlsForTransfer(claims)
     : claims
@@ -5113,20 +5317,43 @@ const submitNhisClaimsDirect = async (claims, period, options = {}) => {
     ...options,
     exportPeriod: period,
   })
-  const submitDirectPayload = directApiSource === 'branch'
+  const submitDirectPayload = useBrowserBridge
+    ? submitBrowserClaimItBridgePayload
+    : directApiSource === 'branch'
     ? submitNhiaDirectPayload
     : submitHostedNhiaDirectPayload
   const directPayload = directApiSource === 'hosted'
     ? buildHostedDirectSubmissionPayload(payload, options)
     : { payload }
 
-  return await submitDirectPayload({
+  const request = {
     ...directPayload,
+    ...(useBrowserBridge
+      ? {
+          localBridge: true,
+          settings: {
+            apiBaseUrl: options.apiBaseUrl || options.api_base_url,
+            claimEndpointPath: options.claimEndpointPath || options.claim_endpoint_path,
+            claimValidationEndpointPath: options.claimValidationEndpointPath || options.claim_validation_endpoint_path,
+            validationMode: options.validationMode || options.validation_mode,
+          },
+        }
+      : {}),
     claimIds: claims.map((claim) => claim.id).filter(Boolean),
     ...(directApiSource === 'hosted'
       ? { submissionAction: options.action || 'nhis.direct_submit' }
       : { action: options.action || 'nhis.direct_submit' }),
-  })
+  }
+
+  try {
+    return await submitDirectPayload(request)
+  } catch (error) {
+    if (directApiSource === 'hosted' && isClaimItBridgeMode(integrationMode) && isClaimItBridgeUnavailableError(error)) {
+      const queued = enqueueClaimItBridgeSubmission({ claims, directPayload, request, error })
+      return { queued: true, queuedId: queued.id, queuedCount: claims.length }
+    }
+    throw error
+  }
 }
 
 /**
@@ -5147,11 +5374,12 @@ export const exportNhisClaimsFile = async (options = {}) => {
   await assertNhisClaimsReadyForFinalSubmission(claims, organizationType, options)
 
   if (options.directSubmit) {
-    await submitNhisClaimsDirect(claims, period, {
+    const result = await submitNhisClaimsDirect(claims, period, {
       ...options,
       organizationType,
       action: 'nhis.direct_batch_submit',
     })
+    if (result?.queued) return { queued: true, count: claims.length }
     await markNhisServedClaimsSubmitted(claims)
     return claims.length
   }
@@ -5171,6 +5399,7 @@ export const submitNhisClaimDirect = async (id, options = {}) => {
     organizationType,
     action: 'nhis.direct_claim_submit',
   })
+  if (result?.queued) return result
   await markNhisServedClaimsSubmitted([claim])
   return result
 }

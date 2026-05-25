@@ -14,8 +14,11 @@ ALTER TABLE public.organization_nhia_integrations
   ADD COLUMN IF NOT EXISTS accreditation_expiry_date DATE,
   -- ✅ NHIA API ARCHITECTURE PATCH START
   ADD COLUMN IF NOT EXISTS integration_mode TEXT,
+  ADD COLUMN IF NOT EXISTS connection_profile TEXT DEFAULT 'local_server',
+  ADD COLUMN IF NOT EXISTS validation_mode TEXT DEFAULT 'validate_before_submit',
   ADD COLUMN IF NOT EXISTS sandbox_base_url TEXT,
-  ADD COLUMN IF NOT EXISTS production_base_url TEXT;
+  ADD COLUMN IF NOT EXISTS production_base_url TEXT,
+  ADD COLUMN IF NOT EXISTS claim_validation_endpoint_path TEXT;
   -- ✅ NHIA API ARCHITECTURE PATCH END
 
 UPDATE public.organization_nhia_integrations AS integration
@@ -60,6 +63,11 @@ SET
   ),
   production_base_url = COALESCE(NULLIF(production_base_url, ''), api_base_url);
 
+UPDATE public.organization_nhia_integrations
+SET
+  connection_profile = COALESCE(NULLIF(connection_profile, ''), 'local_server'),
+  validation_mode = COALESCE(NULLIF(validation_mode, ''), 'validate_before_submit');
+
 ALTER TABLE public.organization_nhia_integrations
   ALTER COLUMN integration_mode SET DEFAULT 'claimit_export',
   ALTER COLUMN integration_mode SET NOT NULL;
@@ -80,6 +88,16 @@ BEGIN
     ADD CONSTRAINT organization_nhia_integrations_credential_mode_check
     CHECK (credential_mode IN ('api_key', 'bearer_token', 'basic_auth', 'oauth_client', 'claimit_token', 'custom'));
 
+  IF EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'organization_nhia_integrations_integration_mode_check'
+      AND conrelid = 'public.organization_nhia_integrations'::regclass
+  ) THEN
+    ALTER TABLE public.organization_nhia_integrations
+      DROP CONSTRAINT organization_nhia_integrations_integration_mode_check;
+  END IF;
+
   IF NOT EXISTS (
     SELECT 1
     FROM pg_constraint
@@ -88,7 +106,32 @@ BEGIN
   ) THEN
     ALTER TABLE public.organization_nhia_integrations
       ADD CONSTRAINT organization_nhia_integrations_integration_mode_check
-      CHECK (integration_mode IN ('claimit_export', 'claimit_assisted', 'direct_nhia_api', 'hybrid'));
+      CHECK (integration_mode IN ('claimit_export', 'claimit_bridge', 'claimit_assisted', 'direct_nhia_api', 'hybrid'));
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'organization_nhia_integrations_connection_profile_check'
+      AND conrelid = 'public.organization_nhia_integrations'::regclass
+  ) THEN
+    ALTER TABLE public.organization_nhia_integrations
+      ADD CONSTRAINT organization_nhia_integrations_connection_profile_check
+      CHECK (connection_profile IN ('local_server', 'lan_ip', 'production_server'));
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'organization_nhia_integrations_validation_mode_check'
+      AND conrelid = 'public.organization_nhia_integrations'::regclass
+  ) THEN
+    ALTER TABLE public.organization_nhia_integrations
+      ADD CONSTRAINT organization_nhia_integrations_validation_mode_check
+      CHECK (validation_mode IN ('validate_before_submit', 'submit_only'));
   END IF;
 END $$;
 -- ✅ NHIA API ARCHITECTURE PATCH END

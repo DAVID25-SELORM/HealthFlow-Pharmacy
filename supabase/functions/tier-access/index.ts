@@ -67,6 +67,7 @@ type TierAccessAction =
   | 'save_nhia_api_settings'
   | 'generate_nhia_cc_code'
   | 'submit_nhia_claims_direct'
+  | 'test_claimit_connection'
 
 type RequesterProfile = {
   id: string
@@ -1946,6 +1947,8 @@ const mapNhiaSettingsRow = (row: Record<string, unknown> | null, includeCredenti
     // ✅ NHIA CONFIG PATCH END
     // ✅ NHIA API ARCHITECTURE PATCH START
     integrationMode: row.integration_mode || 'claimit_export',
+    connectionProfile: row.connection_profile || 'local_server',
+    validationMode: row.validation_mode || 'validate_before_submit',
     sandboxBaseUrl: row.sandbox_base_url || '',
     productionBaseUrl: row.production_base_url || row.api_base_url || '',
     // ✅ NHIA API ARCHITECTURE PATCH END
@@ -1959,6 +1962,7 @@ const mapNhiaSettingsRow = (row: Record<string, unknown> | null, includeCredenti
     apiEnvironment: row.api_environment || 'production',
     apiBaseUrl: row.api_base_url || '',
     claimEndpointPath: row.claim_endpoint_path || '',
+    claimValidationEndpointPath: row.claim_validation_endpoint_path || '',
     ccCodeEndpointPath: row.cc_code_endpoint_path || '',
     claimStatusEndpointPath: row.claim_status_endpoint_path || '',
     memberLookupEndpointPath: row.member_lookup_endpoint_path || '',
@@ -2036,6 +2040,8 @@ const saveNhiaApiSettings = async (
     // ✅ NHIA CONFIG PATCH END
     // ✅ NHIA API ARCHITECTURE PATCH START
     integration_mode: normalizeText(settings.integrationMode) || 'claimit_export',
+    connection_profile: normalizeText(settings.connectionProfile || settings.connection_profile) || 'local_server',
+    validation_mode: normalizeText(settings.validationMode || settings.validation_mode) || 'validate_before_submit',
     sandbox_base_url: normalizeText(settings.sandboxBaseUrl).replace(/\/+$/, '') || null,
     production_base_url: normalizeText(settings.productionBaseUrl).replace(/\/+$/, '') || null,
     // ✅ NHIA API ARCHITECTURE PATCH END
@@ -2058,6 +2064,7 @@ const saveNhiaApiSettings = async (
           : settings.productionBaseUrl)
     ).replace(/\/+$/, '') || null,
     claim_endpoint_path: normalizeText(settings.claimEndpointPath) || null,
+    claim_validation_endpoint_path: normalizeText(settings.claimValidationEndpointPath || settings.claim_validation_endpoint_path) || null,
     cc_code_endpoint_path: normalizeText(settings.ccCodeEndpointPath) || null,
     claim_status_endpoint_path: normalizeText(settings.claimStatusEndpointPath) || null,
     member_lookup_endpoint_path: normalizeText(settings.memberLookupEndpointPath) || null,
@@ -2170,6 +2177,92 @@ const buildNhiaSubmissionHeaders = async (
   return headers
 }
 
+const isClaimItBridgeMode = (settings: Record<string, unknown>) =>
+  ['claimit_bridge', 'claimit_assisted'].includes(normalizeText(settings.integrationMode || settings.integration_mode))
+
+const mergeIncomingCredentials = (
+  saved: Record<string, unknown> | null,
+  incoming: Record<string, unknown>
+) => {
+  const savedCredentials = (saved?.credentials && typeof saved.credentials === 'object'
+    ? saved.credentials
+    : {}) as Record<string, unknown>
+  const incomingCredentials = (incoming.credentials && typeof incoming.credentials === 'object'
+    ? incoming.credentials
+    : {}) as Record<string, unknown>
+  const credentials = { ...savedCredentials }
+  for (const [key, value] of Object.entries(incomingCredentials)) {
+    if (normalizeText(value) && normalizeText(value) !== NHIA_SECRET_MASK) credentials[key] = value
+  }
+  return credentials
+}
+
+const getClaimItConnectionSettings = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  requesterProfile: RequesterProfile,
+  organizationId: string,
+  payload: Record<string, unknown>
+) => {
+  const incoming = (payload.settings || payload) as Record<string, unknown>
+  const saved = await getNhiaApiSettings(adminClient, requesterProfile, organizationId, true)
+  return {
+    ...(saved || {}),
+    ...incoming,
+    credentials: mergeIncomingCredentials(saved, incoming),
+  } as Record<string, unknown>
+}
+
+const testClaimItConnection = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  requesterProfile: RequesterProfile,
+  organizationId: string,
+  payload: Record<string, unknown>
+) => {
+  requireNhiaSettingsAccess(requesterProfile, 'Only organization admins can test CLAIM-it connection settings.')
+  const settings = await getClaimItConnectionSettings(adminClient, requesterProfile, organizationId, payload)
+  const baseUrl = normalizeText(settings.apiBaseUrl || settings.api_base_url)
+  if (!baseUrl) throw new Error('CLAIM-it bridge base URL is required.')
+
+  const endpointPath = normalizeText(
+    settings.claimValidationEndpointPath ||
+      settings.claim_validation_endpoint_path ||
+      settings.claimEndpointPath ||
+      settings.claim_endpoint_path
+  )
+  const url = endpointPath ? joinUrl(baseUrl, endpointPath) : baseUrl.replace(/\/+$/, '')
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: buildNhiaHeaders(settings, 'application/json'),
+  })
+
+  if ([401, 403, 404, 405].includes(response.status)) {
+    return { ok: true, status: response.status, message: `CLAIM-it bridge reached (HTTP ${response.status}).` }
+  }
+  if (!response.ok) throw new Error(`CLAIM-it bridge returned HTTP ${response.status}.`)
+  return { ok: true, status: response.status, message: 'CLAIM-it bridge connection reached.' }
+}
+
+const validateClaimItBridgePayload = async (
+  settings: Record<string, unknown>,
+  requestBody: string,
+  contentType: string
+) => {
+  if (!isClaimItBridgeMode(settings)) return
+  const validationMode = normalizeText(settings.validationMode || settings.validation_mode) || 'validate_before_submit'
+  const endpointPath = normalizeText(settings.claimValidationEndpointPath || settings.claim_validation_endpoint_path)
+  if (validationMode === 'submit_only' || !endpointPath) return
+
+  const response = await fetch(joinUrl(String(settings.apiBaseUrl), endpointPath), {
+    method: 'POST',
+    headers: await buildNhiaSubmissionHeaders(settings, contentType),
+    body: requestBody,
+  })
+  const responseText = await response.text()
+  if (!response.ok) {
+    throw new Error(`CLAIM-it validation returned HTTP ${response.status}${responseText ? `: ${responseText.slice(0, 240)}` : ''}`)
+  }
+}
+
 const normalizeCcCode = (value: unknown): string =>
   String(value ?? '').trim().replace(/\D/g, '')
 
@@ -2256,6 +2349,7 @@ const submitNhiaClaimsDirect = async (
   }
   const contentType = normalizeText(payload.contentType) || 'application/json'
   const requestBody = normalizeText(payload.payloadContent) || JSON.stringify(claimPayload)
+  await validateClaimItBridgePayload(settings as unknown as Record<string, unknown>, requestBody, contentType)
   const response = await fetch(joinUrl(String(settings.apiBaseUrl), endpointPath), {
     method: 'POST',
     headers: await buildNhiaSubmissionHeaders(settings as unknown as Record<string, unknown>, contentType),
@@ -2560,6 +2654,10 @@ Deno.serve(async (request) => {
 
     if (action === 'save_nhia_api_settings') {
       return json(await saveNhiaApiSettings(adminClient, requesterProfile, organizationId, payload))
+    }
+
+    if (action === 'test_claimit_connection') {
+      return json(await testClaimItConnection(adminClient, requesterProfile, organizationId, payload))
     }
 
     if (action === 'generate_nhia_cc_code') {

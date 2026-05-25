@@ -366,7 +366,7 @@ const upsertSettings = db.prepare(`
     facility_type, pharmacy_facility_level, provider_level_code, credential_code,
     license_number, accreditation_expiry_date,
     -- ✅ NHIA API ARCHITECTURE PATCH START
-    integration_mode, sandbox_base_url, production_base_url,
+    integration_mode, connection_profile, validation_mode, sandbox_base_url, production_base_url,
     -- ✅ NHIA API ARCHITECTURE PATCH END
     -- ✅ NHIA CONFIG PATCH END
     submitter_id,
@@ -376,7 +376,8 @@ const upsertSettings = db.prepare(`
     -- ✅ NHIS PHARMACY LEVEL PATCH END
     claims_officer_name,
     admission_payment_option, claimit_validation_enabled, claims_officer_signature_url,
-    api_base_url, claim_endpoint_path, cc_code_endpoint_path, direct_api_enabled, credential_mode,
+    api_base_url, claim_endpoint_path, claim_validation_endpoint_path, cc_code_endpoint_path,
+    claim_status_endpoint_path, member_lookup_endpoint_path, direct_api_enabled, credential_mode,
     credential_payload, nhis_member_digits, ghana_card_digits, export_format,
     max_retry_attempts, is_active, created_at, updated_at
   )
@@ -386,7 +387,7 @@ const upsertSettings = db.prepare(`
     @facilityType, @pharmacyFacilityLevel, @providerLevelCode, @credentialCode,
     @licenseNumber, @accreditationExpiryDate,
     -- ✅ NHIA API ARCHITECTURE PATCH START
-    @integrationMode, @sandboxBaseUrl, @productionBaseUrl,
+    @integrationMode, @connectionProfile, @validationMode, @sandboxBaseUrl, @productionBaseUrl,
     -- ✅ NHIA API ARCHITECTURE PATCH END
     -- ✅ NHIA CONFIG PATCH END
     @submitterId,
@@ -396,7 +397,8 @@ const upsertSettings = db.prepare(`
     -- ✅ NHIS PHARMACY LEVEL PATCH END
     @claimsOfficerName,
     @admissionPaymentOption, @claimitValidationEnabled, @claimsOfficerSignatureUrl,
-    @apiBaseUrl, @claimEndpointPath, @ccCodeEndpointPath, @directApiEnabled, @credentialMode,
+    @apiBaseUrl, @claimEndpointPath, @claimValidationEndpointPath, @ccCodeEndpointPath,
+    @claimStatusEndpointPath, @memberLookupEndpointPath, @directApiEnabled, @credentialMode,
     @credentialPayload, @nhisMemberDigits, @ghanaCardDigits, @exportFormat,
     @maxRetryAttempts, 1, @createdAt, @updatedAt
   )
@@ -414,6 +416,8 @@ const upsertSettings = db.prepare(`
     accreditation_expiry_date = excluded.accreditation_expiry_date,
     -- ✅ NHIA API ARCHITECTURE PATCH START
     integration_mode = excluded.integration_mode,
+    connection_profile = excluded.connection_profile,
+    validation_mode = excluded.validation_mode,
     sandbox_base_url = excluded.sandbox_base_url,
     production_base_url = excluded.production_base_url,
     -- ✅ NHIA API ARCHITECTURE PATCH END
@@ -431,7 +435,10 @@ const upsertSettings = db.prepare(`
     claims_officer_signature_url = excluded.claims_officer_signature_url,
     api_base_url = excluded.api_base_url,
     claim_endpoint_path = excluded.claim_endpoint_path,
+    claim_validation_endpoint_path = excluded.claim_validation_endpoint_path,
     cc_code_endpoint_path = excluded.cc_code_endpoint_path,
+    claim_status_endpoint_path = excluded.claim_status_endpoint_path,
+    member_lookup_endpoint_path = excluded.member_lookup_endpoint_path,
     direct_api_enabled = excluded.direct_api_enabled,
     credential_mode = excluded.credential_mode,
     credential_payload = excluded.credential_payload,
@@ -612,6 +619,8 @@ const mapSettingsRow = (row, { includeCredentials = false } = {}) => {
     accreditationExpiryDate: getAccreditationExpiryDate(row),
     // ✅ NHIA API ARCHITECTURE PATCH START
     integrationMode: row.integration_mode || 'claimit_export',
+    connectionProfile: row.connection_profile || 'local_server',
+    validationMode: row.validation_mode || 'validate_before_submit',
     sandboxBaseUrl: row.sandbox_base_url || '',
     productionBaseUrl: row.production_base_url || row.api_base_url || '',
     // ✅ NHIA API ARCHITECTURE PATCH END
@@ -630,7 +639,10 @@ const mapSettingsRow = (row, { includeCredentials = false } = {}) => {
     submitterId: row.submitter_id || '',
     apiBaseUrl: row.api_base_url || '',
     claimEndpointPath: row.claim_endpoint_path || '',
+    claimValidationEndpointPath: row.claim_validation_endpoint_path || '',
     ccCodeEndpointPath: row.cc_code_endpoint_path || '',
+    claimStatusEndpointPath: row.claim_status_endpoint_path || '',
+    memberLookupEndpointPath: row.member_lookup_endpoint_path || '',
     directApiEnabled: Boolean(row.direct_api_enabled),
     credentialMode: normalizeCredentialMode(row.credential_mode || 'api_key'),
     credentials: includeCredentials ? credentials : {},
@@ -691,6 +703,8 @@ export const saveNhiaSettings = (settings = {}) => {
     accreditationExpiryDate: getAccreditationExpiryDate(settings) || null,
     // ✅ NHIA API ARCHITECTURE PATCH START
     integrationMode: normalizeText(settings.integrationMode) || 'claimit_export',
+    connectionProfile: normalizeText(settings.connectionProfile || settings.connection_profile) || 'local_server',
+    validationMode: normalizeText(settings.validationMode || settings.validation_mode) || 'validate_before_submit',
     sandboxBaseUrl: normalizeText(settings.sandboxBaseUrl).replace(/\/+$/, '') || null,
     productionBaseUrl: normalizeText(settings.productionBaseUrl).replace(/\/+$/, '') || null,
     // ✅ NHIA API ARCHITECTURE PATCH END
@@ -711,7 +725,10 @@ export const saveNhiaSettings = (settings = {}) => {
         (settings.apiEnvironment === 'sandbox' ? settings.sandboxBaseUrl : settings.productionBaseUrl)
     ).replace(/\/+$/, '') || null,
     claimEndpointPath: normalizeText(settings.claimEndpointPath) || null,
+    claimValidationEndpointPath: normalizeText(settings.claimValidationEndpointPath || settings.claim_validation_endpoint_path) || null,
     ccCodeEndpointPath: normalizeText(settings.ccCodeEndpointPath) || null,
+    claimStatusEndpointPath: normalizeText(settings.claimStatusEndpointPath || settings.claim_status_endpoint_path) || null,
+    memberLookupEndpointPath: normalizeText(settings.memberLookupEndpointPath || settings.member_lookup_endpoint_path) || null,
     directApiEnabled: toBool(settings.directApiEnabled),
     credentialMode,
     credentialPayload: json(credentials),
@@ -1171,6 +1188,19 @@ const submitPayload = async (settings, payload, endpointPathOverride = '') => {
   }
 }
 
+const isClaimItBridgeMode = (settings) =>
+  ['claimit_bridge', 'claimit_assisted'].includes(normalizeText(settings?.integrationMode))
+
+const validateClaimItBridgePayload = async (settings, payload) => {
+  const endpointPath = normalizeText(settings.claimValidationEndpointPath)
+  const validationMode = normalizeText(settings.validationMode) || 'validate_before_submit'
+  if (!isClaimItBridgeMode(settings) || validationMode === 'submit_only' || !endpointPath) return
+  const result = await submitPayload(settings, payload, endpointPath)
+  if (!result.ok) {
+    throw new Error(`CLAIM-it validation returned HTTP ${result.httpStatus}.`)
+  }
+}
+
 const fetchClaimItToken = async (settings) => {
   const credentials = settings.credentials || {}
   const username = assertRequiredText(credentials.username, 'CLAIM-it username')
@@ -1276,6 +1306,7 @@ export const submitNhiaDirectPayload = async ({ payload, claimIds = [], action =
   }
 
   const startedAt = nowIso()
+  await validateClaimItBridgePayload(settings, payload)
   logSubmission({
     action: action || 'nhis.direct_submit',
     status: 'pending',
@@ -1381,6 +1412,7 @@ export const submitNhiaClaim = async (id) => {
 
   const payload = validateClaimForSubmission(claim, settings)
   const attempt = Number(claim.retryCount || 0) + 1
+  await validateClaimItBridgePayload(settings, payload)
   logSubmission({ claimId: id, action: 'claim.submit.start', status: 'pending', attempt, request: payload })
 
   try {

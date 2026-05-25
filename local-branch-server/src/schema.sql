@@ -237,6 +237,8 @@ CREATE TABLE IF NOT EXISTS nhia_settings (
   accreditation_expiry_date TEXT,
   -- ✅ NHIA API ARCHITECTURE PATCH START
   integration_mode TEXT NOT NULL DEFAULT 'claimit_export',
+  connection_profile TEXT NOT NULL DEFAULT 'local_server',
+  validation_mode TEXT NOT NULL DEFAULT 'validate_before_submit',
   sandbox_base_url TEXT,
   production_base_url TEXT,
   -- ✅ NHIA API ARCHITECTURE PATCH END
@@ -254,7 +256,10 @@ CREATE TABLE IF NOT EXISTS nhia_settings (
   submitter_id TEXT,
   api_base_url TEXT,
   claim_endpoint_path TEXT,
+  claim_validation_endpoint_path TEXT,
   cc_code_endpoint_path TEXT,
+  claim_status_endpoint_path TEXT,
+  member_lookup_endpoint_path TEXT,
   direct_api_enabled INTEGER NOT NULL DEFAULT 0,
   credential_mode TEXT NOT NULL DEFAULT 'api_key',
   credential_payload TEXT NOT NULL DEFAULT '{}',

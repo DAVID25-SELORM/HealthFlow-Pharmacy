@@ -188,8 +188,13 @@ ensureColumn('nhia_settings', 'license_number', 'TEXT')
 ensureColumn('nhia_settings', 'accreditation_expiry_date', 'TEXT')
 // ✅ NHIA API ARCHITECTURE PATCH START
 ensureColumn('nhia_settings', 'integration_mode', "TEXT NOT NULL DEFAULT 'claimit_export'")
+ensureColumn('nhia_settings', 'connection_profile', "TEXT NOT NULL DEFAULT 'local_server'")
+ensureColumn('nhia_settings', 'validation_mode', "TEXT NOT NULL DEFAULT 'validate_before_submit'")
 ensureColumn('nhia_settings', 'sandbox_base_url', 'TEXT')
 ensureColumn('nhia_settings', 'production_base_url', 'TEXT')
+ensureColumn('nhia_settings', 'claim_validation_endpoint_path', 'TEXT')
+ensureColumn('nhia_settings', 'claim_status_endpoint_path', 'TEXT')
+ensureColumn('nhia_settings', 'member_lookup_endpoint_path', 'TEXT')
 // ✅ NHIA API ARCHITECTURE PATCH END
 // ✅ NHIA CONFIG PATCH END
 // ✅ NHIS PHARMACY LEVEL PATCH START

@@ -31,6 +31,11 @@ CREATE TABLE IF NOT EXISTS public.organization_nhia_integrations (
   cc_code_endpoint_path TEXT,
   claim_status_endpoint_path TEXT,
   member_lookup_endpoint_path TEXT,
+  claim_validation_endpoint_path TEXT,
+  connection_profile TEXT NOT NULL DEFAULT 'local_server'
+    CHECK (connection_profile IN ('local_server', 'lan_ip', 'production_server')),
+  validation_mode TEXT NOT NULL DEFAULT 'validate_before_submit'
+    CHECK (validation_mode IN ('validate_before_submit', 'submit_only')),
   direct_api_enabled BOOLEAN NOT NULL DEFAULT false,
   credential_mode TEXT NOT NULL DEFAULT 'api_key'
     CHECK (credential_mode IN ('api_key', 'bearer_token', 'basic_auth', 'oauth_client', 'claimit_token')),
@@ -59,6 +64,9 @@ ALTER TABLE public.organization_nhia_integrations
   ADD COLUMN IF NOT EXISTS claims_officer_signature_url TEXT,
   ADD COLUMN IF NOT EXISTS claim_status_endpoint_path TEXT,
   ADD COLUMN IF NOT EXISTS member_lookup_endpoint_path TEXT,
+  ADD COLUMN IF NOT EXISTS claim_validation_endpoint_path TEXT,
+  ADD COLUMN IF NOT EXISTS connection_profile TEXT NOT NULL DEFAULT 'local_server',
+  ADD COLUMN IF NOT EXISTS validation_mode TEXT NOT NULL DEFAULT 'validate_before_submit',
   ALTER COLUMN export_format SET DEFAULT 'cxf',
   ALTER COLUMN claim_endpoint_path DROP DEFAULT,
   ALTER COLUMN claim_endpoint_path DROP NOT NULL;
@@ -91,7 +99,7 @@ BEGIN
 
   ALTER TABLE public.organization_nhia_integrations
     ADD CONSTRAINT organization_nhia_integrations_credential_mode_check
-    CHECK (credential_mode IN ('api_key', 'bearer_token', 'basic_auth', 'oauth_client', 'claimit_token'));
+      CHECK (credential_mode IN ('api_key', 'bearer_token', 'basic_auth', 'oauth_client', 'claimit_token', 'custom'));
 END $$;
 
 DO $$
