@@ -72,7 +72,7 @@ beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn(async () => ({
     ok: true,
     status: 200,
-    arrayBuffer: async () => Uint8Array.from([0x25, 0x50, 0x44, 0x46]).buffer,
+    arrayBuffer: async () => Uint8Array.from([0x25, 0x50, 0x44, 0x46, 0x2d]).buffer,
   })))
 })
 
@@ -86,6 +86,24 @@ const extractSerializedClaimBuffer = (inflatedCxfPayload) => {
   expect(lengthEnd).toBeGreaterThan(lengthStart)
 
   const byteLength = Number(inflatedCxfPayload.toString('ascii', lengthStart, lengthEnd))
+  const valueStart = lengthEnd + 2
+  return inflatedCxfPayload.subarray(valueStart, valueStart + byteLength)
+}
+
+const extractAttachmentDataBuffer = (inflatedCxfPayload) => {
+  const inflatedText = Buffer.from(inflatedCxfPayload).toString('latin1')
+  const tableIndex = inflatedText.indexOf('s:14:"attachmentdata"')
+  expect(tableIndex).toBeGreaterThan(-1)
+
+  const dataKey = 's:4:"data";s:'
+  const dataIndex = inflatedText.indexOf(dataKey, tableIndex)
+  expect(dataIndex).toBeGreaterThan(-1)
+
+  const lengthStart = dataIndex + dataKey.length
+  const lengthEnd = inflatedText.indexOf(':"', lengthStart)
+  expect(lengthEnd).toBeGreaterThan(lengthStart)
+
+  const byteLength = Number(inflatedText.slice(lengthStart, lengthEnd))
   const valueStart = lengthEnd + 2
   return inflatedCxfPayload.subarray(valueStart, valueStart + byteLength)
 }
@@ -855,8 +873,9 @@ describe('CLAIM-it export helpers', () => {
 
     expect(payload.claims[0].prescriptionAttachment).toMatchObject({
       fileName: 'prescription_NHIS-000001.pdf',
-      fileType: 'image/jpeg',
-      mimeType: 'image/jpeg',
+      fileType: 'pdf',
+      mimeType: 'application/pdf',
+      sourceMimeType: 'image/jpeg',
       storagePath: '',
       url: 'data:image/jpeg;base64,rx',
     })
@@ -888,6 +907,51 @@ describe('CLAIM-it export helpers', () => {
       url: '',
     })
     expect(payload.claims[0].prescriptionAttachment.base64.startsWith('data:')).toBe(false)
+  })
+
+  it('exports stored PDF derivatives to CXF without changing PDF bytes', async () => {
+    const pdfBytes = Buffer.from('%PDF-1.7\r\n%\xff\xfe\r\n1 0 obj\r\n<< /Type /Catalog >>\r\nendobj\r\n%%EOF', 'latin1')
+    const pdfBase64 = pdfBytes.toString('base64')
+    const payload = buildNhisClaimItExportPayload([
+      {
+        ...claim,
+        prescription_file_url: 'data:image/jpeg;base64,original',
+        prescription_file_name: 'original.jpg',
+        prescription_file_type: 'image/jpeg',
+        claimit_attachment_file_name: 'ignored.pdf',
+        claimit_attachment_file_type: 'pdf',
+        claimit_attachment_mime_type: 'application/pdf',
+        claimit_attachment_base64: `data:application/pdf;base64,${pdfBase64}`,
+      },
+    ], {
+      yearMonth: '2026-05',
+      organizationType: 'pharmacy',
+      facilityCode: '03-05-001-02-01954-11-P1-2-011225',
+      facilityName: 'Westpoint Chemist',
+      providerNumber: '03-05-01954',
+      providerTypeDescription: 'Pharmacy',
+      claimsOfficerName: 'Claims Officer',
+      submitterId: 'admin',
+      generatedAt: '2026-05-20T14:58:02.000Z',
+    })
+
+    expect(payload.claims[0].prescriptionAttachment).toMatchObject({
+      fileName: 'prescription_NHIS-000001.pdf',
+      fileType: 'pdf',
+      mimeType: 'application/pdf',
+      base64: pdfBase64,
+    })
+    expect(payload.claims[0].prescriptionAttachment.base64.startsWith('data:')).toBe(false)
+
+    const inflated = inflateSync(Buffer.from((await buildNhisClaimItCxf(payload)).slice(3)))
+    const inflatedText = inflated.toString('latin1')
+    const attachmentData = extractAttachmentDataBuffer(inflated)
+    const decodedAttachment = inflateSync(attachmentData)
+
+    expect(inflatedText).toContain('s:8:"fileType";s:3:"pdf"')
+    expect(decodedAttachment.equals(pdfBytes)).toBe(true)
+    expect(decodedAttachment.subarray(0, 5).toString('latin1')).toBe('%PDF-')
+    expect(Array.from(decodedAttachment.subarray(0, 3))).not.toEqual([0xff, 0xd8, 0xff])
   })
 
   it('omits patient address from pharmacy CLAIM-it payloads', () => {
@@ -1047,7 +1111,9 @@ describe('CLAIM-it export helpers', () => {
     expect(inflatedText).toContain('s:14:"accreditations"')
     expect(inflatedText).toContain('s:10:"expiryDate";s:10:"2026-11-30"')
     expect(inflatedText).toContain('s:27:"doctrine_migration_versions"')
-    expect(inflatedText).toContain('%PDF')
+    const attachmentData = extractAttachmentDataBuffer(inflated)
+    expect(Array.from(attachmentData.subarray(0, 1))).toEqual([0x78])
+    expect(inflateSync(attachmentData).subarray(0, 5).toString('latin1')).toBe('%PDF-')
     expect(inflatedText).toContain('s:18:"validation_results";a:0:{}')
     expect(inflatedText).toContain('s:18:"validation_zclaims"')
     expect(inflatedText).toContain('s:18:"prescribersfordays"')
@@ -1090,6 +1156,81 @@ describe('CLAIM-it export helpers', () => {
       fileType: 'pdf',
       data: [''],
     })
+  })
+
+  it('converts JPEG prescription attachments to PDF binary before CXF serialization', async () => {
+    const jpegBase64 = '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////2wBDAf//////////////////////////////////////////////////////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAX/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIQAxAAAAH/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oACAEBAAEFAqf/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oACAEDAQE/ASf/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oACAECAQE/ASf/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oACAEBAAY/Aqf/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oACAEBAAE/ISf/2gAMAwEAAgADAAAAEP/EABQRAQAAAAAAAAAAAAAAAAAAABD/2gAIAQMBAT8QH//EABQRAQAAAAAAAAAAAAAAAAAAABD/2gAIAQIBAT8QH//EABQQAQAAAAAAAAAAAAAAAAAAABD/2gAIAQEAAT8QH//Z'
+    const jpegBytes = Buffer.from(jpegBase64, 'base64')
+    const OriginalImage = global.Image
+    class MockImage {
+      set src(_value) {
+        this.width = 1
+        this.height = 1
+        this.naturalWidth = 1
+        this.naturalHeight = 1
+        this.onload()
+      }
+    }
+    global.Image = MockImage
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      arrayBuffer: async () => jpegBytes.buffer.slice(jpegBytes.byteOffset, jpegBytes.byteOffset + jpegBytes.byteLength),
+    })))
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {})
+
+    try {
+      const payload = buildNhisClaimItExportPayload([
+        {
+          ...claim,
+          prescription_file_path: '',
+          prescription_file_url: 'https://example.test/rx.jpg?download=1',
+          prescription_file_name: '',
+          prescription_file_type: '',
+        },
+      ], {
+        yearMonth: '2026-05',
+        organizationType: 'pharmacy',
+        facilityCode: '03-05-001-02-01954-11-P1-2-011225',
+        facilityName: 'Westpoint Chemist',
+        providerNumber: '03-05-01954',
+        providerTypeDescription: 'Pharmacy',
+        claimsOfficerName: 'Claims Officer',
+        submitterId: 'admin',
+        generatedAt: '2026-05-20T14:58:02.000Z',
+      })
+      expect(payload.claims[0].prescriptionAttachment).toMatchObject({
+        fileType: 'pdf',
+        mimeType: 'application/pdf',
+        sourceMimeType: 'image/jpeg',
+      })
+
+      const inflated = inflateSync(Buffer.from((await buildNhisClaimItCxf(payload)).slice(3)))
+      const inflatedText = inflated.toString('latin1')
+      const attachmentData = extractAttachmentDataBuffer(inflated)
+      const decodedAttachment = inflateSync(attachmentData)
+
+      expect(inflatedText).toContain('s:8:"fileType";s:3:"pdf"')
+      expect(Array.from(attachmentData.subarray(0, 1))).toEqual([0x78])
+      expect(decodedAttachment.subarray(0, 5).toString('latin1')).toBe('%PDF-')
+      expect(Array.from(attachmentData.subarray(0, 3))).not.toEqual([0xff, 0xd8, 0xff])
+      expect(infoSpy).toHaveBeenCalledWith(
+        '[CLAIM-it export diagnostics]',
+        expect.objectContaining({
+          claimitAttachmentOutputType: 'pdf',
+          embeddedPdfDetected: true,
+          embeddedPdfHeaderDetected: true,
+          embeddedJpegDetected: false,
+          attachmentBase64Length: expect.any(Number),
+          attachmentDecodedStartsWithPdf: true,
+          attachmentMimeType: 'application/pdf',
+          attachmentFileType: 'pdf',
+        })
+      )
+    } finally {
+      infoSpy.mockRestore()
+      global.Image = OriginalImage
+    }
   })
 
   it('blocks CLAIM-it CXF export when a prescription attachment downloads as an empty file', async () => {
@@ -1704,6 +1845,39 @@ describe('validateNhisPrescriptionPdfFile', () => {
 })
 
 describe('uploadNhisPrescriptionPdf', () => {
+  it('stores PDF CLAIM-it base64 from raw ArrayBuffer bytes without a data URL prefix', async () => {
+    shouldUseBranchServer.mockReturnValueOnce(true)
+    const OriginalFileReader = global.FileReader
+    const pdfBytes = Buffer.from('%PDF-1.7\r\n%\xff\xff\r\n1 0 obj\r\n<<>>\r\nendobj\r\n%%EOF', 'latin1')
+    class MockFileReader {
+      readAsDataURL() {
+        this.result = `data:application/pdf;base64,${pdfBytes.toString('base64')}`
+        this.onload()
+      }
+    }
+    global.FileReader = MockFileReader
+
+    try {
+      const result = await uploadNhisPrescriptionPdf({
+        name: 'rx.pdf',
+        type: 'application/pdf',
+        size: pdfBytes.length,
+        arrayBuffer: async () => pdfBytes.buffer.slice(pdfBytes.byteOffset, pdfBytes.byteOffset + pdfBytes.byteLength),
+      }, {
+        claimNumber: 'NHIS-000001',
+      })
+
+      expect(result.claimitAttachmentFileName).toBe('prescription_NHIS-000001.pdf')
+      expect(result.claimitAttachmentFileType).toBe('pdf')
+      expect(result.claimitAttachmentMimeType).toBe('application/pdf')
+      expect(result.claimitAttachmentBase64).toBe(pdfBytes.toString('base64'))
+      expect(result.claimitAttachmentBase64.startsWith('data:')).toBe(false)
+      expect(Buffer.from(result.claimitAttachmentBase64, 'base64').subarray(0, 5).toString('latin1')).toBe('%PDF-')
+    } finally {
+      global.FileReader = OriginalFileReader
+    }
+  })
+
   it('stores the original image and a CLAIM-it PDF derivative when running through the branch server', async () => {
     shouldUseBranchServer.mockReturnValueOnce(true)
     const OriginalFileReader = global.FileReader

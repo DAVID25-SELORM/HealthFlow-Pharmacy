@@ -2359,11 +2359,29 @@ const base64ToBytes = (value = '') => {
 }
 
 const bytesStartWithPdfHeader = (bytes = new Uint8Array()) =>
-  bytes.length >= 4 &&
+  bytes.length >= 5 &&
   bytes[0] === 0x25 &&
   bytes[1] === 0x50 &&
   bytes[2] === 0x44 &&
-  bytes[3] === 0x46
+  bytes[3] === 0x46 &&
+  bytes[4] === 0x2d
+
+const bytesStartWithJpegHeader = (bytes = new Uint8Array()) =>
+  bytes.length >= 3 &&
+  bytes[0] === 0xff &&
+  bytes[1] === 0xd8 &&
+  bytes[2] === 0xff
+
+const bytesStartWithPngHeader = (bytes = new Uint8Array()) =>
+  bytes.length >= 8 &&
+  bytes[0] === 0x89 &&
+  bytes[1] === 0x50 &&
+  bytes[2] === 0x4e &&
+  bytes[3] === 0x47 &&
+  bytes[4] === 0x0d &&
+  bytes[5] === 0x0a &&
+  bytes[6] === 0x1a &&
+  bytes[7] === 0x0a
 
 const normalizeClaimItAttachmentBase64 = (value = '') => stripDataUrlPrefix(value).replace(/\s+/g, '')
 
@@ -2388,6 +2406,19 @@ const validateClaimItAttachmentBase64 = (base64, fileName = 'prescription attach
   }
   return bytes
 }
+
+const getClaimItAttachmentBinaryDiagnostic = ({
+  base64 = '',
+  bytes = new Uint8Array(),
+  mimeType = CLAIMIT_ATTACHMENT_MIME_TYPE,
+  fileType = CLAIMIT_ATTACHMENT_FILE_TYPE,
+} = {}) => ({
+  embeddedPdfHeaderDetected: bytesStartWithPdfHeader(bytes),
+  attachmentBase64Length: normalizeClaimItAttachmentBase64(base64).length,
+  attachmentDecodedStartsWithPdf: bytesStartWithPdfHeader(bytes),
+  attachmentMimeType: mimeType,
+  attachmentFileType: fileType,
+})
 
 const getPrescriptionAttachmentPayload = (claimData = {}) => ({
   prescription_file_url: normalizeText(claimData.prescriptionFileUrl ?? claimData.prescription_file_url) || null,
@@ -2453,6 +2484,19 @@ const getImageDimensions = (dataUrl) =>
     image.src = dataUrl
   })
 
+const fileToArrayBuffer = async (file) => {
+  if (typeof file?.arrayBuffer === 'function') return await file.arrayBuffer()
+
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result)
+    reader.onerror = () => reject(reader.error || new Error('Unable to read prescription attachment.'))
+    reader.readAsArrayBuffer(file)
+  })
+}
+
+const fileToBytes = async (file) => new Uint8Array(await fileToArrayBuffer(file))
+
 const fileToDataUrl = async (file) =>
   await new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -2462,8 +2506,7 @@ const fileToDataUrl = async (file) =>
   })
 
 const fileToBase64 = async (file) => {
-  const dataUrl = await fileToDataUrl(file)
-  return normalizeClaimItAttachmentBase64(dataUrl)
+  return bytesToBase64(await fileToBytes(file))
 }
 
 const imageDataUrlToPdfBase64 = async (dataUrl, contentType) => {
@@ -4469,6 +4512,7 @@ const validateClaimItRelationalBundleData = (data, { strict = true } = {}) => {
   })
 
   ;(data.attachmentdata || []).forEach((row) => {
+    const attachment = (data.attachments || []).find((item) => item.attach_id === row._attach_id)
     if (!attachmentIds.has(row._attach_id)) {
       diagnostics.push(createClaimItDiagnostic('error', 'orphaned_attachment_reference', 'attachmentdata references a missing attachment.', {
         dataID: row._data_id,
@@ -4480,6 +4524,29 @@ const validateClaimItRelationalBundleData = (data, { strict = true } = {}) => {
         dataID: row._data_id,
         attachmentID: row._attach_id,
       }))
+    }
+    if (attachment && normalizeText(attachment.fileType).toLowerCase() !== CLAIMIT_ATTACHMENT_FILE_TYPE) {
+      diagnostics.push(createClaimItDiagnostic('error', 'invalid_attachment_file_type', 'CLAIM-it attachment fileType must be pdf.', {
+        dataID: row._data_id,
+        attachmentID: row._attach_id,
+        fileType: attachment.fileType,
+        claimitAttachmentOutputType: CLAIMIT_ATTACHMENT_FILE_TYPE,
+      }))
+    }
+    if (row.data instanceof Uint8Array && row.data.length) {
+      const embeddedPdfDetected = bytesStartWithPdfHeader(row.data)
+      const embeddedJpegDetected = bytesStartWithJpegHeader(row.data)
+      const embeddedDeflateDetected = row.data[0] === 0x78
+      if ((!embeddedPdfDetected && !embeddedDeflateDetected) || embeddedJpegDetected) {
+        diagnostics.push(createClaimItDiagnostic('error', 'invalid_attachment_binary', 'CLAIM-it attachment content must be PDF binary, not the original image file.', {
+          dataID: row._data_id,
+          attachmentID: row._attach_id,
+          claimitAttachmentOutputType: CLAIMIT_ATTACHMENT_FILE_TYPE,
+          embeddedPdfDetected,
+          embeddedJpegDetected,
+          embeddedDeflateDetected,
+        }))
+      }
     }
   })
 
@@ -4513,14 +4580,60 @@ const validateClaimItRelationalBundleData = (data, { strict = true } = {}) => {
     const message = errors.slice(0, 5).map((diagnostic) => diagnostic.message).join('; ')
     throw new Error(`Strict CLAIM-it export validation failed: ${message}`)
   }
-  return { diagnostics, tableCounts }
+  return { diagnostics, tableCounts, ...getClaimItAttachmentExportDiagnostic(data, data._attachmentDiagnostics || []) }
 }
 
-const logClaimItExportDiagnostics = ({ diagnostics, tableCounts }) => {
+const getClaimItAttachmentExportDiagnostic = (data = {}, attachmentDiagnostics = []) => {
+  const attachmentDataRows = data.attachmentdata || []
+  const attachmentRows = data.attachments || []
+  const hasAttachments = attachmentDataRows.length > 0
+  const allFileTypesPdf = attachmentRows.every((attachment) =>
+    normalizeText(attachment.fileType).toLowerCase() === CLAIMIT_ATTACHMENT_FILE_TYPE
+  )
+  const embeddedPdfDetected = attachmentDiagnostics.length
+    ? attachmentDiagnostics.every((diagnostic) => diagnostic.attachmentDecodedStartsWithPdf)
+    : hasAttachments && attachmentDataRows.every((row) => row.data instanceof Uint8Array && bytesStartWithPdfHeader(row.data))
+  const embeddedJpegDetected = attachmentDataRows.some((row) =>
+    row.data instanceof Uint8Array && bytesStartWithJpegHeader(row.data)
+  )
+  const firstDiagnostic = attachmentDiagnostics[0] || {}
+
+  return {
+    claimitAttachmentOutputType: allFileTypesPdf ? CLAIMIT_ATTACHMENT_FILE_TYPE : 'invalid',
+    embeddedPdfDetected,
+    embeddedPdfHeaderDetected: Boolean(firstDiagnostic.embeddedPdfHeaderDetected || embeddedPdfDetected),
+    embeddedJpegDetected,
+    attachmentBase64Length: firstDiagnostic.attachmentBase64Length || 0,
+    attachmentDecodedStartsWithPdf: Boolean(firstDiagnostic.attachmentDecodedStartsWithPdf || embeddedPdfDetected),
+    attachmentMimeType: firstDiagnostic.attachmentMimeType || CLAIMIT_ATTACHMENT_MIME_TYPE,
+    attachmentFileType: firstDiagnostic.attachmentFileType || CLAIMIT_ATTACHMENT_FILE_TYPE,
+  }
+}
+
+const logClaimItExportDiagnostics = ({
+  diagnostics,
+  tableCounts,
+  claimitAttachmentOutputType = CLAIMIT_ATTACHMENT_FILE_TYPE,
+  embeddedPdfDetected = false,
+  embeddedPdfHeaderDetected = false,
+  embeddedJpegDetected = false,
+  attachmentBase64Length = 0,
+  attachmentDecodedStartsWithPdf = false,
+  attachmentMimeType = CLAIMIT_ATTACHMENT_MIME_TYPE,
+  attachmentFileType = CLAIMIT_ATTACHMENT_FILE_TYPE,
+}) => {
   const errors = diagnostics.filter((diagnostic) => diagnostic.level === 'error')
   const warnings = diagnostics.filter((diagnostic) => diagnostic.level === 'warning')
   const payload = {
     tableCounts,
+    claimitAttachmentOutputType,
+    embeddedPdfDetected,
+    embeddedPdfHeaderDetected,
+    embeddedJpegDetected,
+    attachmentBase64Length,
+    attachmentDecodedStartsWithPdf,
+    attachmentMimeType,
+    attachmentFileType,
     errors: errors.map((diagnostic) => ({ code: diagnostic.code, message: diagnostic.message, details: diagnostic.details })),
     warnings: warnings.map((diagnostic) => ({ code: diagnostic.code, message: diagnostic.message, details: diagnostic.details })),
   }
@@ -4615,6 +4728,7 @@ const getClaimItPrescriptionAttachmentForPayload = (claim = {}) => {
       fileName: getSafeClaimItPrescriptionFileName(claimNumber),
       fileType: CLAIMIT_ATTACHMENT_FILE_TYPE,
       mimeType: CLAIMIT_ATTACHMENT_MIME_TYPE,
+      sourceMimeType: CLAIMIT_ATTACHMENT_MIME_TYPE,
       fileSize: Math.ceil((claimItBase64.length * 3) / 4),
       base64: claimItBase64,
       storagePath: '',
@@ -4626,14 +4740,23 @@ const getClaimItPrescriptionAttachmentForPayload = (claim = {}) => {
   const prescriptionFileUrl = normalizeText(claim.prescription_file_url)
   if (!prescriptionFilePath && !prescriptionFileUrl) return null
 
-  const originalFileType = normalizeText(claim.prescription_file_type) || CLAIMIT_ATTACHMENT_MIME_TYPE
+  const originalFileType = normalizeText(claim.prescription_file_type)
   const originalFileName = normalizeText(claim.prescription_file_name)
-  const isOriginalPdf = originalFileType.toLowerCase().includes('pdf') || originalFileName.toLowerCase().endsWith('.pdf')
+  const inferredMimeType = originalFileType ||
+    getAttachmentMimeTypeFromPath(originalFileName) ||
+    getDataUrlMimeType(prescriptionFileUrl) ||
+    getAttachmentMimeTypeFromPath(prescriptionFileUrl) ||
+    getAttachmentMimeTypeFromPath(prescriptionFilePath)
+  const isOriginalPdf = inferredMimeType.toLowerCase().includes('pdf')
+  const sourceMimeType = isOriginalPdf
+    ? CLAIMIT_ATTACHMENT_MIME_TYPE
+    : inferredMimeType
 
   return {
     fileName: getSafeClaimItPrescriptionFileName(claimNumber),
-    fileType: isOriginalPdf ? CLAIMIT_ATTACHMENT_FILE_TYPE : originalFileType,
-    mimeType: isOriginalPdf ? CLAIMIT_ATTACHMENT_MIME_TYPE : originalFileType,
+    fileType: CLAIMIT_ATTACHMENT_FILE_TYPE,
+    mimeType: CLAIMIT_ATTACHMENT_MIME_TYPE,
+    sourceMimeType,
     fileSize: normalizePrescriptionFileSize(claim.prescription_file_size) || 0,
     base64: '',
     storagePath: prescriptionFilePath,
@@ -4978,7 +5101,28 @@ const fetchClaimItAttachmentBytes = async (attachment = {}) => {
 
 const bytesToDataUrl = (bytes, mimeType) => `data:${mimeType};base64,${bytesToBase64(bytes)}`
 
+const getDataUrlMimeType = (value = '') => {
+  const match = String(value || '').match(/^data:([^;,]+)/i)
+  return normalizeText(match?.[1]).toLowerCase()
+}
+
+const getAttachmentMimeTypeFromPath = (value = '') => {
+  const path = normalizeText(value).toLowerCase().split(/[?#]/)[0]
+  if (path.endsWith('.png')) return 'image/png'
+  if (path.endsWith('.jpg') || path.endsWith('.jpeg')) return 'image/jpeg'
+  if (path.endsWith('.pdf')) return CLAIMIT_ATTACHMENT_MIME_TYPE
+  return ''
+}
+
 const getClaimItAttachmentMimeType = (attachment = {}) => {
+  const sourceMimeType = normalizeText(attachment.sourceMimeType).toLowerCase() ||
+    getDataUrlMimeType(attachment.url) ||
+    getAttachmentMimeTypeFromPath(attachment.url) ||
+    getAttachmentMimeTypeFromPath(attachment.storagePath)
+  if (sourceMimeType.includes('png')) return 'image/png'
+  if (sourceMimeType.includes('jpeg') || sourceMimeType.includes('jpg')) return 'image/jpeg'
+  if (sourceMimeType.includes('pdf')) return CLAIMIT_ATTACHMENT_MIME_TYPE
+
   const fileType = normalizeText(attachment.fileType).toLowerCase()
   const mimeType = normalizeText(attachment.mimeType).toLowerCase()
   const fileName = normalizeText(attachment.fileName).toLowerCase()
@@ -4990,15 +5134,30 @@ const getClaimItAttachmentMimeType = (attachment = {}) => {
   return CLAIMIT_ATTACHMENT_MIME_TYPE
 }
 
-const prepareClaimItAttachmentPdfBytes = async (attachment = {}) => {
+const prepareClaimItAttachmentPdfPayload = async (attachment = {}) => {
   const fileName = normalizeText(attachment.fileName) || 'prescription attachment'
   const base64 = normalizeClaimItAttachmentBase64(attachment.base64)
   if (base64) {
-    return validateClaimItAttachmentBase64(base64, fileName)
+    const pdfBytes = validateClaimItAttachmentBase64(base64, fileName)
+    return {
+      pdfBytes,
+      payloadBase64: bytesToBase64(pdfBytes),
+      diagnostic: getClaimItAttachmentBinaryDiagnostic({
+        base64,
+        bytes: pdfBytes,
+        mimeType: CLAIMIT_ATTACHMENT_MIME_TYPE,
+        fileType: CLAIMIT_ATTACHMENT_FILE_TYPE,
+      }),
+    }
   }
 
   const sourceBytes = await fetchClaimItAttachmentBytes(attachment)
-  const mimeType = getClaimItAttachmentMimeType(attachment)
+  let mimeType = getClaimItAttachmentMimeType(attachment)
+  if (mimeType === CLAIMIT_ATTACHMENT_MIME_TYPE && !bytesStartWithPdfHeader(sourceBytes)) {
+    if (bytesStartWithJpegHeader(sourceBytes)) mimeType = 'image/jpeg'
+    if (bytesStartWithPngHeader(sourceBytes)) mimeType = 'image/png'
+  }
+  let pdfBytes
   if (mimeType === CLAIMIT_ATTACHMENT_MIME_TYPE) {
     if (sourceBytes.length > MAX_CLAIMIT_ATTACHMENT_BYTES) {
       throw new Error(`Unable to include ${fileName} in CLAIM-it CXF export: attachment is larger than 8 MB.`)
@@ -5006,11 +5165,23 @@ const prepareClaimItAttachmentPdfBytes = async (attachment = {}) => {
     if (!bytesStartWithPdfHeader(sourceBytes)) {
       throw new Error(`Unable to include ${fileName} in CLAIM-it CXF export: attachment must be a valid PDF.`)
     }
-    return sourceBytes
+    pdfBytes = sourceBytes
+  } else {
+    const pdfBase64 = await imageDataUrlToPdfBase64(bytesToDataUrl(sourceBytes, mimeType), mimeType)
+    pdfBytes = validateClaimItAttachmentBase64(pdfBase64, fileName)
   }
 
-  const pdfBase64 = await imageDataUrlToPdfBase64(bytesToDataUrl(sourceBytes, mimeType), mimeType)
-  return validateClaimItAttachmentBase64(pdfBase64, fileName)
+  const payloadBase64 = bytesToBase64(pdfBytes)
+  return {
+    pdfBytes,
+    payloadBase64,
+    diagnostic: getClaimItAttachmentBinaryDiagnostic({
+      base64: payloadBase64,
+      bytes: pdfBytes,
+      mimeType: CLAIMIT_ATTACHMENT_MIME_TYPE,
+      fileType: CLAIMIT_ATTACHMENT_FILE_TYPE,
+    }),
+  }
 }
 
 const assertClaimItPrescriptionAttachmentForExport = (claim = {}) => {
@@ -5245,6 +5416,7 @@ const buildClaimItRows = async (payload) => {
   const validations = []
   const validationZclaims = []
   const validationClaimContexts = []
+  const attachmentDiagnostics = []
 
   for (const [claimIndex, claim] of payload.claims.entries()) {
     assertClaimItPrescriptionAttachmentForExport(claim)
@@ -5406,7 +5578,12 @@ const buildClaimItRows = async (payload) => {
 
     if (claim.prescriptionAttachment) {
       const attachmentId = getClaimItGuid(claimGuid, 'prescription-attachment')
-      const attachmentBytes = await prepareClaimItAttachmentPdfBytes(claim.prescriptionAttachment)
+      const attachmentPayload = await prepareClaimItAttachmentPdfPayload(claim.prescriptionAttachment)
+      attachmentDiagnostics.push({
+        claimNumber: claim.claimNumber,
+        attachmentID: attachmentId,
+        ...attachmentPayload.diagnostic,
+      })
       const attachmentRow = {
         attach_id: attachmentId,
         _claim_id: claimGuid,
@@ -5420,7 +5597,7 @@ const buildClaimItRows = async (payload) => {
       const attachmentDataRow = {
         _data_id: String((claimIndex + 1) * 50000 + 1),
         _attach_id: attachmentId,
-        data: attachmentBytes,
+        data: await deflateClaimItPayload(attachmentPayload.pdfBytes),
       }
       claimAttachmentRows.push(attachmentRow)
       attachments.push(attachmentRow)
@@ -5481,6 +5658,7 @@ const buildClaimItRows = async (payload) => {
     attachments,
     validations,
     validationZclaims,
+    attachmentDiagnostics,
   }
 }
 
@@ -5545,6 +5723,10 @@ const buildNhisClaimItCxfBundle = async (payload) => {
     _meta: meta,
     _dbstruct: getClaimItDbStruct(),
   }
+  Object.defineProperty(data, '_attachmentDiagnostics', {
+    value: rows.attachmentDiagnostics,
+    enumerable: false,
+  })
   const diagnostics = validateClaimItRelationalBundleData(data, { strict: payload.strictClaimItExportMode !== false })
   logClaimItExportDiagnostics(diagnostics)
 
