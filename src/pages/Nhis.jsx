@@ -517,7 +517,7 @@ const Nhis = () => {
 
   const providerClassLevel = resolvedNhiaSettings?.providerClassLevel || resolvedNhiaSettings?.provider_class_level || ''
   const integrationMode = resolvedNhiaSettings?.integrationMode || resolvedNhiaSettings?.integration_mode || 'claimit_export'
-  const allowsDirectNhiaSubmission = ['direct_nhia_api', 'hybrid'].includes(integrationMode)
+  const allowsDirectNhiaSubmission = ['claimit_assisted', 'direct_nhia_api', 'hybrid'].includes(integrationMode)
   const directNhiaApiAvailable = Boolean(
     allowsDirectNhiaSubmission &&
       resolvedNhiaSettings?.directApiEnabled &&

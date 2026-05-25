@@ -35,6 +35,7 @@ import './Settings.css'
 
 const NHIA_SECRET_MASK = '••••••••••••'
 const NHIA_SECRET_FIELDS = new Set(['apiKey', 'apiSecret'])
+const NHIA_API_INTEGRATION_MODES = ['claimit_assisted', 'direct_nhia_api', 'hybrid']
 
 const toForm = (row) => ({
   pharmacyName: row?.pharmacy_name || 'HealthFlow Pharmacy',
@@ -332,7 +333,6 @@ const Settings = () => {
       !form.facilityCode && 'facilityCode',
       !form.providerNumber && 'providerNumber',
       !preview.providerLevel && 'providerLevel',
-      !form.submitterId && 'submitterId',
       !form.credentialCode && 'credentialCode',
     ].filter(Boolean)
   }
@@ -341,7 +341,7 @@ const Settings = () => {
     if (enabled) {
       const missing = getNhiaIntegrationMissingFields({ ...nhiaApiForm, directApiEnabled: true })
       if (missing.length) {
-        setError(`Complete NHIA configuration before enabling direct API mode: ${missing.join(', ')}.`)
+        setError(`Complete NHIA configuration before enabling API integration: ${missing.join(', ')}.`)
         return
       }
     }
@@ -349,17 +349,17 @@ const Settings = () => {
       ...current,
       directApiEnabled: enabled,
       integrationMode: enabled
-        ? (['direct_nhia_api', 'hybrid'].includes(current.integrationMode) ? current.integrationMode : 'direct_nhia_api')
-        : (['direct_nhia_api', 'hybrid'].includes(current.integrationMode) ? 'claimit_export' : current.integrationMode),
+        ? (NHIA_API_INTEGRATION_MODES.includes(current.integrationMode) ? current.integrationMode : 'claimit_assisted')
+        : (NHIA_API_INTEGRATION_MODES.includes(current.integrationMode) ? 'claimit_export' : current.integrationMode),
     }))
   }
 
   const handleNhiaIntegrationModeChange = (mode) => {
-    const requiresDirectConfig = ['direct_nhia_api', 'hybrid'].includes(mode)
+    const requiresDirectConfig = NHIA_API_INTEGRATION_MODES.includes(mode)
     if (requiresDirectConfig) {
       const missing = getNhiaIntegrationMissingFields({ ...nhiaApiForm, integrationMode: mode })
       if (missing.length) {
-        setError(`Complete NHIA configuration before selecting direct API mode: ${missing.join(', ')}.`)
+        setError(`Complete NHIA configuration before selecting API integration mode: ${missing.join(', ')}.`)
         return
       }
     }
@@ -415,11 +415,11 @@ const Settings = () => {
       setError('')
       // ✅ NHIA API ARCHITECTURE PATCH START
       const requiresDirectConfig = nhiaApiForm.directApiEnabled ||
-        ['direct_nhia_api', 'hybrid'].includes(nhiaApiForm.integrationMode)
+        NHIA_API_INTEGRATION_MODES.includes(nhiaApiForm.integrationMode)
       if (requiresDirectConfig) {
         const missing = getNhiaIntegrationMissingFields()
         if (missing.length) {
-          throw new Error(`Complete NHIA configuration before saving direct API mode: ${missing.join(', ')}.`)
+          throw new Error(`Complete NHIA configuration before saving API integration mode: ${missing.join(', ')}.`)
         }
       }
       const activeBaseUrl = nhiaApiForm.apiEnvironment === 'sandbox'
