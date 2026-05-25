@@ -407,6 +407,11 @@ const isMissingOptionalClaimColumn = (error) => {
   )
 }
 
+const getMissingOptionalClaimColumns = (error) => {
+  const message = String(error?.message || '').toLowerCase()
+  return OPTIONAL_CLAIM_SCHEMA_COLUMNS.filter((column) => message.includes(column))
+}
+
 const isMissingClaimServicesTable = (error) => {
   const message = String(error?.message || '').toLowerCase()
   return (
@@ -417,12 +422,17 @@ const isMissingClaimServicesTable = (error) => {
   )
 }
 
-const stripOptionalClaimSchemaColumns = (payload) => {
+const stripClaimSchemaColumns = (payload, columns = OPTIONAL_CLAIM_SCHEMA_COLUMNS) => {
   const stripped = { ...payload }
-  OPTIONAL_CLAIM_SCHEMA_COLUMNS.forEach((column) => {
+  columns.forEach((column) => {
     delete stripped[column]
   })
   return stripped
+}
+
+const stripOptionalClaimSchemaColumns = (payload, error = null) => {
+  const missingColumns = getMissingOptionalClaimColumns(error)
+  return stripClaimSchemaColumns(payload, missingColumns.length ? missingColumns : OPTIONAL_CLAIM_SCHEMA_COLUMNS)
 }
 
 const insertNhisClaimWithSchemaFallback = async (payload) => {
@@ -439,7 +449,7 @@ const insertNhisClaimWithSchemaFallback = async (payload) => {
 
   return await supabase
     .from('nhis_claims')
-    .insert([stripOptionalClaimSchemaColumns(insertPayload)])
+    .insert([stripOptionalClaimSchemaColumns(insertPayload, result.error)])
     .select()
     .single()
 }
@@ -460,7 +470,7 @@ const updateNhisClaimWithSchemaFallback = async (id, payload) => {
 
   return await supabase
     .from('nhis_claims')
-    .update(stripOptionalClaimSchemaColumns(updatePayload))
+    .update(stripOptionalClaimSchemaColumns(updatePayload, result.error))
     .eq('id', id)
     .eq('status', 'served')
     .select()
