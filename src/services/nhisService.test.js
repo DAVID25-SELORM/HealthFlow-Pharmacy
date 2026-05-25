@@ -67,6 +67,7 @@ import { invokeTierAccess } from './tierAccessService'
 
 beforeEach(() => {
   vi.clearAllMocks()
+  shouldUseBranchServer.mockReturnValue(false)
   window.localStorage?.clear()
   delete supabase.storage
   vi.stubGlobal('fetch', vi.fn(async () => ({
@@ -1051,7 +1052,6 @@ describe('CLAIM-it export helpers', () => {
       providerLevelCode: 'PVT-HOS-CE',
       accreditationExpiryDate: '2026-12-31',
       claimsOfficerName: 'Claims Officer',
-      submitterId: 'admin',
       claims: [{ medicines: [{ code: 'NH001' }] }],
     })).not.toThrow()
   })
@@ -1671,6 +1671,14 @@ describe('direct NHIA submission', () => {
 })
 
 describe('NHIA API settings fallback', () => {
+  const completeClaimItSettings = {
+    providerId: 'PROVIDER-1',
+    providerNumber: 'PROVIDER-1',
+    credentialCode: 'CRED-1',
+    accreditationExpiryDate: '2026-12-31',
+    claimsOfficerName: 'Claims Officer',
+  }
+
   it('reads NHIA settings from the local branch server when local sync is preferred', async () => {
     shouldUseBranchServer.mockReturnValueOnce(true)
     getNhiaSettings.mockResolvedValueOnce({
@@ -1710,6 +1718,7 @@ describe('NHIA API settings fallback', () => {
     const onLocalSaveFailure = vi.fn()
 
     await expect(saveNhiaApiSettings({
+      ...completeClaimItSettings,
       organizationId: 'org-1',
       facilityCode: 'FAC-1',
       credentials: {
@@ -1729,7 +1738,7 @@ describe('NHIA API settings fallback', () => {
     }))
   })
 
-  it('keeps the accreditation expiry date available when hosted settings omit it', async () => {
+  it('does not mix hosted NHIA settings with cached partial settings', async () => {
     invokeTierAccess.mockResolvedValueOnce({
       settings: {
         organizationId: 'org-1',
@@ -1740,6 +1749,7 @@ describe('NHIA API settings fallback', () => {
     })
 
     await expect(saveNhiaApiSettings({
+      ...completeClaimItSettings,
       organizationId: 'org-1',
       facilityCode: 'FAC-1',
       accreditationExpiryDate: '2026-12-31',
@@ -1755,10 +1765,14 @@ describe('NHIA API settings fallback', () => {
       },
     })
 
-    await expect(getNhiaApiSettings({ organizationId: 'org-1' })).resolves.toMatchObject({
-      accreditationExpiryDate: '2026-12-31',
-      claimsOfficerName: 'Claims Officer',
+    const reloaded = await getNhiaApiSettings({ organizationId: 'org-1' })
+    expect(reloaded).toMatchObject({
+      organizationId: 'org-1',
+      facilityCode: 'FAC-1',
+      configSource: 'cloud_supabase',
     })
+    expect(reloaded.accreditationExpiryDate).toBe('')
+    expect(reloaded.claimsOfficerName).toBe('')
     expect(supabase.from).not.toHaveBeenCalled()
   })
 
@@ -1786,6 +1800,7 @@ describe('NHIA API settings fallback', () => {
     })
 
     await saveNhiaApiSettings({
+      ...completeClaimItSettings,
       organizationId: 'org-1',
       credentials: {
         apiKey: '••••••••••••',
@@ -1796,12 +1811,13 @@ describe('NHIA API settings fallback', () => {
 
     expect(invokeTierAccess).toHaveBeenCalledWith({
       action: 'save_nhia_api_settings',
-      settings: {
+      settings: expect.objectContaining({
+        ...completeClaimItSettings,
         organizationId: 'org-1',
         credentials: {
           headerName: 'x-api-key',
         },
-      },
+      }),
     })
     expect(supabase.from).not.toHaveBeenCalled()
   })

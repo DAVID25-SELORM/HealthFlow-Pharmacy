@@ -7,15 +7,14 @@ import {
   getBranchServerConfig,
   getBranchServerHealth,
   getBranchSyncStatus,
-  getNhiaSettings,
   getNhiaSummary,
   listNhiaClaims,
   pullBranchInventory,
   pullBranchReferenceData,
   runBranchSync,
-  saveNhiaSettings,
   submitPendingNhiaClaims,
 } from '../services/branchServerApi'
+import { getNhiaApiSettings, saveNhiaApiSettings } from '../services/nhisService'
 import { saveOfflinePosSnapshot } from '../services/offlinePosCache'
 import {
   listBranchSyncSetupOptions,
@@ -45,6 +44,8 @@ const EVENT_LABELS = {
   'claim.submitted': 'POS Claims',
   'record.upsert': 'Module Records',
 }
+
+const NHIA_SECRET_MASK = '••••••••••••'
 
 const formatDateTime = (value) => {
   if (!value) return '-'
@@ -105,11 +106,19 @@ const supabaseProjectUrl = import.meta.env.VITE_SUPABASE_URL || ''
 
 const buildNhiaForm = (settings, organization) => {
   const resolved = applyNhiaFacilityDefaults(settings, organization)
+  const hasApiKey = Boolean(settings?.hasApiKey || settings?.has_api_key || settings?.credentialSummary?.apiKey)
+  const hasApiSecret = Boolean(settings?.hasApiSecret || settings?.has_api_secret || settings?.credentialSummary?.apiSecret)
+  const hasPassword = Boolean(settings?.hasPassword || settings?.has_password || settings?.credentialSummary?.password)
   return {
     ...blankNhiaForm,
     ...resolved,
     accreditationExpiryDate: normalizeNhiaAccreditationExpiryDate(resolved.accreditationExpiryDate),
-    credentials: { ...blankNhiaForm.credentials },
+    credentials: {
+      ...blankNhiaForm.credentials,
+      apiKey: hasApiKey ? NHIA_SECRET_MASK : '',
+      apiSecret: hasApiSecret ? NHIA_SECRET_MASK : '',
+      password: hasPassword ? NHIA_SECRET_MASK : '',
+    },
   }
 }
 
@@ -187,7 +196,7 @@ export default function OfflineSync() {
       const [nextHealth, nextStatus, nextNhiaSettings, nextNhiaSummary, nextNhiaClaims] = await Promise.all([
         getBranchServerHealth(),
         getBranchSyncStatus(),
-        getNhiaSettings().catch(() => null),
+        getNhiaApiSettings({ organizationId: organization?.id || organization?.organization_id }).catch(() => null),
         getNhiaSummary().catch(() => null),
         listNhiaClaims({ limit: 8 }).catch(() => []),
       ])
@@ -405,12 +414,14 @@ export default function OfflineSync() {
 
   const saveNhiaForm = async () => {
     await runAction('nhia-settings', 'NHIA settings save', async () => {
-      const saved = await saveNhiaSettings({
+      const saved = await saveNhiaApiSettings({
         ...nhiaForm,
+        organizationId: organization?.id || organization?.organization_id || nhiaForm.organizationId || nhiaForm.organization_id,
         accreditationExpiryDate: normalizeNhiaAccreditationExpiryDate(nhiaForm.accreditationExpiryDate),
-      })
-      setNhiaSettings(saved)
-      setNhiaForm(buildNhiaForm(saved, organization))
+      }, { organizationId: organization?.id || organization?.organization_id || nhiaForm.organizationId || nhiaForm.organization_id })
+      const reloaded = await getNhiaApiSettings({ organizationId: organization?.id || organization?.organization_id || nhiaForm.organizationId || nhiaForm.organization_id })
+      setNhiaSettings(reloaded || saved)
+      setNhiaForm(buildNhiaForm(reloaded || saved, organization))
       return saved
     })
   }

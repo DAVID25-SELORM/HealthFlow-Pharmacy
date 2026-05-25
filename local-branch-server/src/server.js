@@ -340,6 +340,30 @@ app.put('/api/nhia/settings', (request, response, next) => {
   }
 })
 
+app.get('/api/nhia-config', (_request, response) => {
+  response.json({ data: getNhiaSettings() })
+})
+
+app.post('/api/nhia-config', (request, response, next) => {
+  try {
+    response.json({ data: saveNhiaSettings(request.body || {}) })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.patch('/api/nhia-config', (request, response, next) => {
+  try {
+    response.json({ data: saveNhiaSettings(request.body || {}) })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.post('/api/nhia-config/test', (_request, response) => {
+  response.json({ data: { ok: true, message: 'NHIA configuration route is available.' } })
+})
+
 app.post('/api/nhia/cc-code', async (request, response, next) => {
   try {
     response.json({ data: await generateNhiaCcCode(request.body || {}) })

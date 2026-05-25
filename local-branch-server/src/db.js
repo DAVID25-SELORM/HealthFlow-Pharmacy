@@ -206,6 +206,53 @@ ensureColumn('nhia_settings', 'claims_officer_name', 'TEXT')
 ensureColumn('nhia_settings', 'admission_payment_option', "TEXT NOT NULL DEFAULT 'nhis_pays_admission'")
 ensureColumn('nhia_settings', 'claimit_validation_enabled', 'INTEGER NOT NULL DEFAULT 1')
 ensureColumn('nhia_settings', 'claims_officer_signature_url', 'TEXT')
+const ensureNhiaConfigurationColumn = (column, definition) => ensureColumn('nhia_configuration', column, definition)
+ensureNhiaConfigurationColumn('mode', "TEXT NOT NULL DEFAULT 'OFFLINE_LOCAL'")
+ensureNhiaConfigurationColumn('provider_id', 'TEXT')
+ensureNhiaConfigurationColumn('api_key_encrypted', 'TEXT')
+ensureNhiaConfigurationColumn('api_secret_encrypted', 'TEXT')
+ensureNhiaConfigurationColumn('has_api_key', 'INTEGER NOT NULL DEFAULT 0')
+ensureNhiaConfigurationColumn('has_api_secret', 'INTEGER NOT NULL DEFAULT 0')
+ensureNhiaConfigurationColumn('api_key_header_name', 'TEXT')
+ensureNhiaConfigurationColumn('api_secret_header_name', 'TEXT')
+ensureNhiaConfigurationColumn('api_key_header_prefix', 'TEXT')
+ensureNhiaConfigurationColumn('username', 'TEXT')
+ensureNhiaConfigurationColumn('password_encrypted', 'TEXT')
+ensureNhiaConfigurationColumn('token_endpoint_path', 'TEXT')
+ensureNhiaConfigurationColumn('claim_submit_endpoint', 'TEXT')
+ensureNhiaConfigurationColumn('claim_status_endpoint', 'TEXT')
+ensureNhiaConfigurationColumn('member_lookup_endpoint', 'TEXT')
+ensureNhiaConfigurationColumn('updated_by', 'TEXT')
+db.exec(`
+  INSERT OR IGNORE INTO nhia_configuration (
+    id, organization_id, branch_id, facility_code, provider_number,
+    provider_id, facility_type, pharmacy_facility_level, provider_level_code, credential_code,
+    license_number, accreditation_expiry_date, integration_mode, connection_profile,
+    validation_mode, claim_control_mode, sandbox_base_url, production_base_url,
+    scheme_name, provider_type_description, provider_class_level, pharmacy_level,
+    claims_officer_name, admission_payment_option, claimit_validation_enabled,
+    claims_officer_signature_url, submitter_id, api_base_url, claim_endpoint_path,
+    claim_submit_endpoint, claim_validation_endpoint_path, cc_endpoint_path, cc_code_endpoint_path,
+    claim_status_endpoint_path, claim_status_endpoint, member_lookup_endpoint_path,
+    member_lookup_endpoint, direct_api_enabled, credential_mode,
+    nhis_member_digits, ghana_card_digits, export_format, max_retry_attempts,
+    is_active, created_at, updated_at
+  )
+  SELECT
+    id, organization_id, branch_id, facility_code, provider_number,
+    provider_number, facility_type, pharmacy_facility_level, provider_level_code, credential_code,
+    license_number, accreditation_expiry_date, integration_mode, connection_profile,
+    validation_mode, claim_control_mode, sandbox_base_url, production_base_url,
+    scheme_name, provider_type_description, provider_class_level, pharmacy_level,
+    claims_officer_name, admission_payment_option, claimit_validation_enabled,
+    claims_officer_signature_url, submitter_id, api_base_url, claim_endpoint_path,
+    claim_endpoint_path, claim_validation_endpoint_path, cc_endpoint_path, cc_code_endpoint_path,
+    claim_status_endpoint_path, claim_status_endpoint_path, member_lookup_endpoint_path,
+    member_lookup_endpoint_path, direct_api_enabled, credential_mode,
+    nhis_member_digits, ghana_card_digits, export_format, max_retry_attempts,
+    is_active, created_at, updated_at
+  FROM nhia_settings
+`)
 ensureColumn('nhia_claims', 'cc_code', 'TEXT')
 ensureColumn('nhia_claims', 'diagnosis', 'TEXT')
 ensureColumn('nhia_claims', 'diagnosis_details_json', "TEXT NOT NULL DEFAULT '[]'")

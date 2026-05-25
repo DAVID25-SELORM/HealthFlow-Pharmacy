@@ -14,7 +14,7 @@ import {
 } from '../services/settingsService'
 import { getBranches, createBranch, updateBranch, deactivateBranch } from '../services/branchService'
 import { updateOrganization, getOrganizationStats } from '../services/organizationService'
-import { buildClaimItConfigPreview, getNhiaApiSettings, saveNhiaApiSettings, testClaimItConnection } from '../services/nhisService'
+import { buildClaimItConfigPreview, getNhiaApiSettings, saveNhiaApiSettings, testClaimItConnection, validateNhiaConfigForMode } from '../services/nhisService'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
 import { normalizeSubscriptionTier, useTenant } from '../context/TenantContext'
@@ -34,7 +34,7 @@ import { PHARMACY_LEVELS } from '../utils/nhisPharmacyLevel'
 import './Settings.css'
 
 const NHIA_SECRET_MASK = '••••••••••••'
-const NHIA_SECRET_FIELDS = new Set(['apiKey', 'apiSecret'])
+const NHIA_SECRET_FIELDS = new Set(['apiKey', 'apiSecret', 'password'])
 const NHIA_API_INTEGRATION_MODES = ['claimit_bridge', 'claimit_assisted', 'direct_nhia_api', 'hybrid']
 const NHIA_BRIDGE_MODES = ['claimit_bridge', 'claimit_assisted']
 const NHIA_LOCAL_BRIDGE_PROFILES = ['local_server', 'lan_ip']
@@ -115,6 +115,7 @@ const blankNhiaApiForm = {
   },
   hasApiKey: false,
   hasApiSecret: false,
+  hasPassword: false,
 }
 
 const normalizeDateInputValue = (value) => {
@@ -131,6 +132,7 @@ const toNhiaApiForm = (settings, organization) => {
   const resolved = applyNhiaFacilityDefaults(settings, organization)
   const hasApiKey = Boolean(settings?.hasApiKey || settings?.credentialSummary?.apiKey)
   const hasApiSecret = Boolean(settings?.hasApiSecret || settings?.credentialSummary?.apiSecret)
+  const hasPassword = Boolean(settings?.hasPassword || settings?.has_password || settings?.credentialSummary?.password)
 
   return {
     ...blankNhiaApiForm,
@@ -141,11 +143,13 @@ const toNhiaApiForm = (settings, organization) => {
     accreditationExpiryDate: normalizeDateInputValue(resolved.accreditationExpiryDate),
     hasApiKey,
     hasApiSecret,
+    hasPassword,
     credentials: {
       ...blankNhiaApiForm.credentials,
       ...(resolved.credentials || {}),
       apiKey: hasApiKey ? NHIA_SECRET_MASK : '',
       apiSecret: hasApiSecret ? NHIA_SECRET_MASK : '',
+      password: hasPassword ? NHIA_SECRET_MASK : '',
     },
   }
 }
@@ -172,7 +176,7 @@ const getNhiaCredentialKeysForLog = (payload = {}) =>
   Object.keys(payload.credentials && typeof payload.credentials === 'object' ? payload.credentials : {}).sort()
 
 const summarizeNhiaSettingsForLog = (settings = null) => ({
-  table: 'organization_nhia_integrations',
+  table: 'nhia_configuration',
   hasSettings: Boolean(settings),
   keys: getNhiaPayloadKeysForLog(settings || {}),
   credentialKeys: getNhiaCredentialKeysForLog(settings || {}),
@@ -412,17 +416,11 @@ const Settings = () => {
 
   // ✅ NHIA API ARCHITECTURE PATCH START
   const getNhiaIntegrationMissingFields = (form = nhiaApiForm) => {
-    const preview = buildClaimItConfigPreview({
+    return validateNhiaConfigForMode({
       ...form,
+      providerId: form.providerId || form.providerNumber,
       facilityName: organization?.name || formData.pharmacyName,
-    }, { organizationType: organization?.organization_type || 'pharmacy' })
-
-    return [
-      !form.facilityCode && 'facilityCode',
-      !form.providerNumber && 'providerNumber',
-      !preview.providerLevel && 'providerLevel',
-      !form.credentialCode && 'credentialCode',
-    ].filter(Boolean)
+    }).missing
   }
 
   const handleDirectNhiaToggle = (enabled) => {
@@ -514,12 +512,10 @@ const Settings = () => {
       // ✅ NHIA API ARCHITECTURE PATCH START
       const requiresDirectConfig = nhiaApiForm.directApiEnabled ||
         NHIA_API_INTEGRATION_MODES.includes(nhiaApiForm.integrationMode)
-      if (requiresDirectConfig) {
+      if (requiresDirectConfig || nhiaApiForm.integrationMode === 'claimit_export') {
         const missing = getNhiaIntegrationMissingFields()
         if (missing.length) {
-          console.warn('NHIA API integration metadata is incomplete; saving entered NHIA API config anyway.', {
-            missingFields: missing,
-          })
+          throw new Error(`NHIA configuration is incomplete: ${missing.join(', ')}.`)
         }
       }
       const activeBaseUrl = getNhiaActiveBaseUrl(nhiaApiForm)
@@ -540,7 +536,7 @@ const Settings = () => {
         ccCodeEndpointPath: nhiaApiForm.ccCodeEndpointPath || nhiaApiForm.ccEndpointPath,
       }
       console.info('Saving NHIA API config payload keys only', {
-        table: 'organization_nhia_integrations',
+        table: 'nhia_configuration',
         keys: getNhiaPayloadKeysForLog(nhiaSettingsPayload),
         credentialKeys: getNhiaCredentialKeysForLog(nhiaSettingsPayload),
       })
@@ -590,7 +586,7 @@ const Settings = () => {
       }, organization))
       // ✅ NHIA API ARCHITECTURE PATCH END
       console.info('NHIA API config saved successfully', {
-        table: 'organization_nhia_integrations',
+        table: 'nhia_configuration',
         hasApiKey: hasSavedApiKey,
         hasApiSecret: hasSavedApiSecret,
       })
@@ -599,7 +595,7 @@ const Settings = () => {
       console.error('Saving NHIA API config Supabase response/error', {
         response: null,
         error: {
-          table: 'organization_nhia_integrations',
+          table: 'nhia_configuration',
           message: saveError?.message || 'Unable to save NHIA API settings.',
           code: saveError?.code || saveError?.status || saveError?.statusCode || '',
         },
@@ -1447,6 +1443,9 @@ const Settings = () => {
                       placeholder="Password"
                       type="password"
                       value={nhiaApiForm.credentials.password}
+                      onFocus={() => {
+                        if (nhiaApiForm.credentials.password === NHIA_SECRET_MASK) updateNhiaCredential('password', '')
+                      }}
                       onChange={(event) => updateNhiaCredential('password', event.target.value)}
                     />
                   </div>
@@ -1474,6 +1473,9 @@ const Settings = () => {
                     placeholder="Password"
                     type="password"
                     value={nhiaApiForm.credentials.password}
+                    onFocus={() => {
+                      if (nhiaApiForm.credentials.password === NHIA_SECRET_MASK) updateNhiaCredential('password', '')
+                    }}
                     onChange={(event) => updateNhiaCredential('password', event.target.value)}
                   />
                 </div>
@@ -1490,6 +1492,9 @@ const Settings = () => {
                       placeholder="CLAIM-it password"
                       type="password"
                       value={nhiaApiForm.credentials.password}
+                      onFocus={() => {
+                        if (nhiaApiForm.credentials.password === NHIA_SECRET_MASK) updateNhiaCredential('password', '')
+                      }}
                       onChange={(event) => updateNhiaCredential('password', event.target.value)}
                     />
                   </div>

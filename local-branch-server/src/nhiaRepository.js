@@ -343,7 +343,7 @@ const getDrug = db.prepare('SELECT * FROM drugs WHERE id = ?')
 
 const selectSettings = db.prepare(`
   SELECT *
-  FROM nhia_settings
+  FROM nhia_configuration
   WHERE is_active = 1
     AND COALESCE(organization_id, '') = COALESCE(?, '')
     AND COALESCE(branch_id, '') = COALESCE(?, '')
@@ -353,15 +353,15 @@ const selectSettings = db.prepare(`
 
 const selectAnySettings = db.prepare(`
   SELECT *
-  FROM nhia_settings
+  FROM nhia_configuration
   WHERE is_active = 1
   ORDER BY updated_at DESC
   LIMIT 1
 `)
 
 const upsertSettings = db.prepare(`
-  INSERT INTO nhia_settings (
-    id, organization_id, branch_id, facility_code, provider_number,
+  INSERT INTO nhia_configuration (
+    id, organization_id, branch_id, facility_code, provider_number, provider_id,
     -- ✅ NHIA CONFIG PATCH START
     facility_type, pharmacy_facility_level, provider_level_code, credential_code,
     license_number, accreditation_expiry_date,
@@ -376,13 +376,16 @@ const upsertSettings = db.prepare(`
     -- ✅ NHIS PHARMACY LEVEL PATCH END
     claims_officer_name,
     admission_payment_option, claimit_validation_enabled, claims_officer_signature_url,
-    api_base_url, claim_endpoint_path, claim_validation_endpoint_path, cc_endpoint_path, cc_code_endpoint_path,
-    claim_status_endpoint_path, member_lookup_endpoint_path, direct_api_enabled, credential_mode,
-    credential_payload, nhis_member_digits, ghana_card_digits, export_format,
+    api_base_url, api_key_encrypted, api_secret_encrypted, has_api_key, has_api_secret,
+    api_key_header_name, api_secret_header_name, api_key_header_prefix,
+    username, password_encrypted, token_endpoint_path,
+    claim_endpoint_path, claim_submit_endpoint, claim_validation_endpoint_path, cc_endpoint_path, cc_code_endpoint_path,
+    claim_status_endpoint_path, claim_status_endpoint, member_lookup_endpoint_path, member_lookup_endpoint, direct_api_enabled, credential_mode,
+    nhis_member_digits, ghana_card_digits, export_format,
     max_retry_attempts, is_active, created_at, updated_at
   )
   VALUES (
-    @id, @organizationId, @branchId, @facilityCode, @providerNumber,
+    @id, @organizationId, @branchId, @facilityCode, @providerNumber, @providerId,
     -- ✅ NHIA CONFIG PATCH START
     @facilityType, @pharmacyFacilityLevel, @providerLevelCode, @credentialCode,
     @licenseNumber, @accreditationExpiryDate,
@@ -397,9 +400,12 @@ const upsertSettings = db.prepare(`
     -- ✅ NHIS PHARMACY LEVEL PATCH END
     @claimsOfficerName,
     @admissionPaymentOption, @claimitValidationEnabled, @claimsOfficerSignatureUrl,
-    @apiBaseUrl, @claimEndpointPath, @claimValidationEndpointPath, @ccEndpointPath, @ccCodeEndpointPath,
-    @claimStatusEndpointPath, @memberLookupEndpointPath, @directApiEnabled, @credentialMode,
-    @credentialPayload, @nhisMemberDigits, @ghanaCardDigits, @exportFormat,
+    @apiBaseUrl, @apiKeyEncrypted, @apiSecretEncrypted, @hasApiKey, @hasApiSecret,
+    @apiKeyHeaderName, @apiSecretHeaderName, @apiKeyHeaderPrefix,
+    @username, @passwordEncrypted, @tokenEndpointPath,
+    @claimEndpointPath, @claimSubmitEndpoint, @claimValidationEndpointPath, @ccEndpointPath, @ccCodeEndpointPath,
+    @claimStatusEndpointPath, @claimStatusEndpoint, @memberLookupEndpointPath, @memberLookupEndpoint, @directApiEnabled, @credentialMode,
+    @nhisMemberDigits, @ghanaCardDigits, @exportFormat,
     @maxRetryAttempts, 1, @createdAt, @updatedAt
   )
   ON CONFLICT(id) DO UPDATE SET
@@ -407,6 +413,7 @@ const upsertSettings = db.prepare(`
     branch_id = excluded.branch_id,
     facility_code = excluded.facility_code,
     provider_number = excluded.provider_number,
+    provider_id = excluded.provider_id,
     -- ✅ NHIA CONFIG PATCH START
     facility_type = excluded.facility_type,
     pharmacy_facility_level = excluded.pharmacy_facility_level,
@@ -435,15 +442,27 @@ const upsertSettings = db.prepare(`
     claimit_validation_enabled = excluded.claimit_validation_enabled,
     claims_officer_signature_url = excluded.claims_officer_signature_url,
     api_base_url = excluded.api_base_url,
+    api_key_encrypted = excluded.api_key_encrypted,
+    api_secret_encrypted = excluded.api_secret_encrypted,
+    has_api_key = excluded.has_api_key,
+    has_api_secret = excluded.has_api_secret,
+    api_key_header_name = excluded.api_key_header_name,
+    api_secret_header_name = excluded.api_secret_header_name,
+    api_key_header_prefix = excluded.api_key_header_prefix,
+    username = excluded.username,
+    password_encrypted = excluded.password_encrypted,
+    token_endpoint_path = excluded.token_endpoint_path,
     claim_endpoint_path = excluded.claim_endpoint_path,
+    claim_submit_endpoint = excluded.claim_submit_endpoint,
     claim_validation_endpoint_path = excluded.claim_validation_endpoint_path,
     cc_endpoint_path = excluded.cc_endpoint_path,
     cc_code_endpoint_path = excluded.cc_code_endpoint_path,
     claim_status_endpoint_path = excluded.claim_status_endpoint_path,
+    claim_status_endpoint = excluded.claim_status_endpoint,
     member_lookup_endpoint_path = excluded.member_lookup_endpoint_path,
+    member_lookup_endpoint = excluded.member_lookup_endpoint,
     direct_api_enabled = excluded.direct_api_enabled,
     credential_mode = excluded.credential_mode,
-    credential_payload = excluded.credential_payload,
     nhis_member_digits = excluded.nhis_member_digits,
     ghana_card_digits = excluded.ghana_card_digits,
     export_format = excluded.export_format,
@@ -598,20 +617,31 @@ const maskCredentials = (payload = {}) =>
   )
 
 const NHIA_SECRET_MASK = '••••••••••••'
-const NHIA_SECRET_FIELDS = new Set(['apiKey', 'apiSecret'])
+const NHIA_SECRET_FIELDS = new Set(['apiKey', 'apiSecret', 'password'])
 
 const mapSettingsRow = (row, { includeCredentials = false } = {}) => {
   if (!row) {
     return null
   }
 
-  const credentials = parseJson(row.credential_payload, {})
+  const credentials = {
+    apiKey: row.api_key_encrypted || '',
+    apiSecret: row.api_secret_encrypted || '',
+    headerName: row.api_key_header_name || '',
+    secretHeaderName: row.api_secret_header_name || '',
+    headerPrefix: row.api_key_header_prefix || '',
+    username: row.username || '',
+    password: row.password_encrypted || '',
+    tokenEndpointPath: row.token_endpoint_path || '',
+  }
   return {
     id: row.id,
     organizationId: row.organization_id || '',
     branchId: row.branch_id || '',
     facilityCode: row.facility_code || '',
-    providerNumber: row.provider_number || '',
+    providerId: row.provider_id || row.provider_number || '',
+    provider_id: row.provider_id || row.provider_number || '',
+    providerNumber: row.provider_number || row.provider_id || '',
     // ✅ NHIA CONFIG PATCH START
     facilityType: row.facility_type || '',
     pharmacyFacilityLevel: row.pharmacy_facility_level || '',
@@ -646,18 +676,29 @@ const mapSettingsRow = (row, { includeCredentials = false } = {}) => {
     claimsOfficerSignatureUrl: row.claims_officer_signature_url || '',
     submitterId: row.submitter_id || '',
     apiBaseUrl: row.api_base_url || '',
+    apiKeyEncrypted: row.api_key_encrypted ? NHIA_SECRET_MASK : '',
+    apiSecretEncrypted: row.api_secret_encrypted ? NHIA_SECRET_MASK : '',
     claimEndpointPath: row.claim_endpoint_path || '',
+    claimSubmitEndpoint: row.claim_submit_endpoint || row.claim_endpoint_path || '',
+    claim_submit_endpoint: row.claim_submit_endpoint || row.claim_endpoint_path || '',
     claimValidationEndpointPath: row.claim_validation_endpoint_path || '',
     ccEndpointPath: row.cc_endpoint_path || row.cc_code_endpoint_path || '',
     ccCodeEndpointPath: row.cc_code_endpoint_path || '',
     claimStatusEndpointPath: row.claim_status_endpoint_path || '',
+    claimStatusEndpoint: row.claim_status_endpoint || row.claim_status_endpoint_path || '',
+    claim_status_endpoint: row.claim_status_endpoint || row.claim_status_endpoint_path || '',
     memberLookupEndpointPath: row.member_lookup_endpoint_path || '',
+    memberLookupEndpoint: row.member_lookup_endpoint || row.member_lookup_endpoint_path || '',
+    member_lookup_endpoint: row.member_lookup_endpoint || row.member_lookup_endpoint_path || '',
     directApiEnabled: Boolean(row.direct_api_enabled),
     credentialMode: normalizeCredentialMode(row.credential_mode || 'api_key'),
     credentials: includeCredentials ? credentials : {},
     credentialSummary: maskCredentials(credentials),
-    hasApiKey: Boolean(normalizeText(credentials.apiKey)),
-    hasApiSecret: Boolean(normalizeText(credentials.apiSecret)),
+    hasApiKey: Boolean(row.has_api_key || normalizeText(credentials.apiKey) || normalizeText(row.api_key_encrypted)),
+    hasApiSecret: Boolean(row.has_api_secret || normalizeText(credentials.apiSecret) || normalizeText(row.api_secret_encrypted)),
+    username: row.username || credentials.username || '',
+    passwordEncrypted: row.password_encrypted ? NHIA_SECRET_MASK : '',
+    hasPassword: Boolean(row.password_encrypted || credentials.password),
     nhisMemberDigits: Number(row.nhis_member_digits || DEFAULT_NHIS_MEMBER_DIGITS),
     ghanaCardDigits: Number(row.ghana_card_digits || DEFAULT_GHANA_CARD_DIGITS),
     exportFormat: row.export_format === 'cxf' ? 'xml' : (row.export_format || 'xml'),
@@ -674,6 +715,51 @@ const resolveSettingsRow = () =>
 export const getNhiaSettings = ({ includeCredentials = false } = {}) =>
   mapSettingsRow(resolveSettingsRow(), { includeCredentials })
 
+const hasUsableNhiaSecret = (value) => {
+  const normalized = normalizeText(value)
+  return Boolean(normalized && normalized !== NHIA_SECRET_MASK)
+}
+
+const validateNhiaSettingsForMode = (settings = {}) => {
+  const credentials = settings.credentials && typeof settings.credentials === 'object' ? settings.credentials : {}
+  const integrationMode = normalizeText(settings.integrationMode || settings.integration_mode || settings.nhiaApiMode || settings.nhia_api_mode) || 'claimit_export'
+  const hasApiKey = Boolean(settings.hasApiKey || settings.has_api_key || settings.credentialSummary?.apiKey || hasUsableNhiaSecret(credentials.apiKey))
+  const hasApiSecret = Boolean(settings.hasApiSecret || settings.has_api_secret || settings.credentialSummary?.apiSecret || hasUsableNhiaSecret(credentials.apiSecret))
+  const hasUsername = Boolean(normalizeText(settings.username || credentials.username))
+  const hasPassword = Boolean(settings.hasPassword || settings.has_password || settings.credentialSummary?.password || hasUsableNhiaSecret(credentials.password))
+  const missing = [
+    !normalizeText(settings.providerId || settings.provider_id || settings.providerNumber || settings.provider_number) && 'providerId',
+    !normalizeText(settings.credentialCode || settings.credential_code) && 'credentialCode',
+    !getAccreditationExpiryDate(settings) && 'accreditationExpiryDate',
+    !normalizeText(settings.claimsOfficerName || settings.claims_officer_name) && 'claimsOfficerName',
+  ].filter(Boolean)
+  const apiBaseUrl = normalizeText(settings.apiBaseUrl || settings.api_base_url || settings.productionBaseUrl || settings.production_base_url || settings.sandboxBaseUrl || settings.sandbox_base_url)
+  const claimSubmitEndpoint = normalizeText(settings.claimSubmitEndpoint || settings.claim_submit_endpoint || settings.claimEndpointPath || settings.claim_endpoint_path)
+  const claimStatusEndpoint = normalizeText(settings.claimStatusEndpoint || settings.claim_status_endpoint || settings.claimStatusEndpointPath || settings.claim_status_endpoint_path)
+  const memberLookupEndpoint = normalizeText(settings.memberLookupEndpoint || settings.member_lookup_endpoint || settings.memberLookupEndpointPath || settings.member_lookup_endpoint_path)
+
+  if (['claimit_bridge', 'claimit_assisted'].includes(integrationMode)) {
+    if (!apiBaseUrl) missing.push('apiBaseUrl')
+    if (!((hasUsername && hasPassword) || (hasApiKey && hasApiSecret))) {
+      missing.push('username/password or api credentials')
+    }
+  }
+
+  if (integrationMode === 'direct_nhia_api' || integrationMode === 'hybrid') {
+    if (!apiBaseUrl) missing.push('apiBaseUrl')
+    if (!normalizeText(settings.submitterId || settings.submitter_id)) missing.push('submitterId')
+    if (!hasApiKey) missing.push('apiKey')
+    if (!hasApiSecret) missing.push('apiSecret')
+    if (!claimSubmitEndpoint) missing.push('claimSubmitEndpoint')
+    if (!claimStatusEndpoint) missing.push('claimStatusEndpoint')
+    if (!memberLookupEndpoint) missing.push('memberLookupEndpoint')
+  }
+
+  if (missing.length) {
+    throw new Error(`NHIA configuration is incomplete for ${integrationMode}: ${missing.join(', ')}.`)
+  }
+}
+
 export const saveNhiaSettings = (settings = {}) => {
   const existing = resolveSettingsRow()
   const timestamp = nowIso()
@@ -682,7 +768,18 @@ export const saveNhiaSettings = (settings = {}) => {
     settings.credentials && typeof settings.credentials === 'object'
       ? settings.credentials
       : parseJson(settings.credentialPayload, {})
-  const existingCredentials = parseJson(existing?.credential_payload, {})
+  const existingCredentials = existing
+    ? {
+        apiKey: existing.api_key_encrypted || '',
+        apiSecret: existing.api_secret_encrypted || '',
+        headerName: existing.api_key_header_name || '',
+        secretHeaderName: existing.api_secret_header_name || '',
+        headerPrefix: existing.api_key_header_prefix || '',
+        username: existing.username || '',
+        password: existing.password_encrypted || '',
+        tokenEndpointPath: existing.token_endpoint_path || '',
+      }
+    : {}
   const credentials = { ...existingCredentials }
   for (const [key, value] of Object.entries(incomingCredentials || {})) {
     if (NHIA_SECRET_FIELDS.has(key) && (!normalizeText(value) || normalizeText(value) === NHIA_SECRET_MASK)) {
@@ -692,6 +789,15 @@ export const saveNhiaSettings = (settings = {}) => {
       credentials[key] = value
     }
   }
+  const hasApiKey = Boolean(normalizeText(credentials.apiKey))
+  const hasApiSecret = Boolean(normalizeText(credentials.apiSecret))
+  validateNhiaSettingsForMode({
+    ...settings,
+    credentials,
+    hasApiKey,
+    hasApiSecret,
+    hasPassword: Boolean(normalizeText(credentials.password)),
+  })
 
   const organizationId = normalizeText(settings.organizationId) || config.organizationId || null
   const branchId = normalizeText(settings.branchId) || config.branchId || null
@@ -702,7 +808,8 @@ export const saveNhiaSettings = (settings = {}) => {
     organizationId,
     branchId,
     facilityCode: normalizeText(settings.facilityCode) || null,
-    providerNumber: normalizeText(settings.providerNumber) || null,
+    providerId: normalizeText(settings.providerId || settings.provider_id || settings.providerNumber || settings.provider_number) || null,
+    providerNumber: normalizeText(settings.providerNumber || settings.provider_id || settings.providerId) || null,
     // ✅ NHIA CONFIG PATCH START
     facilityType: normalizeText(settings.facilityType) || null,
     pharmacyFacilityLevel: normalizeText(settings.pharmacyFacilityLevel) || null,
@@ -736,15 +843,27 @@ export const saveNhiaSettings = (settings = {}) => {
       settings.apiBaseUrl ||
         (settings.apiEnvironment === 'sandbox' ? settings.sandboxBaseUrl : settings.productionBaseUrl)
     ).replace(/\/+$/, '') || null,
-    claimEndpointPath: normalizeText(settings.claimEndpointPath) || null,
+    apiKeyEncrypted: hasApiKey ? credentials.apiKey : null,
+    apiSecretEncrypted: hasApiSecret ? credentials.apiSecret : null,
+    hasApiKey: hasApiKey ? 1 : 0,
+    hasApiSecret: hasApiSecret ? 1 : 0,
+    apiKeyHeaderName: normalizeText(credentials.headerName) || null,
+    apiSecretHeaderName: normalizeText(credentials.secretHeaderName) || null,
+    apiKeyHeaderPrefix: normalizeText(credentials.headerPrefix) || null,
+    username: normalizeText(settings.username || credentials.username) || null,
+    passwordEncrypted: normalizeText(credentials.password) || null,
+    tokenEndpointPath: normalizeText(credentials.tokenEndpointPath) || null,
+    claimEndpointPath: normalizeText(settings.claimEndpointPath || settings.claimSubmitEndpoint || settings.claim_submit_endpoint) || null,
+    claimSubmitEndpoint: normalizeText(settings.claimSubmitEndpoint || settings.claim_submit_endpoint || settings.claimEndpointPath || settings.claim_endpoint_path) || null,
     claimValidationEndpointPath: normalizeText(settings.claimValidationEndpointPath || settings.claim_validation_endpoint_path) || null,
     ccEndpointPath: normalizeText(settings.ccEndpointPath || settings.cc_endpoint_path || settings.ccCodeEndpointPath || settings.cc_code_endpoint_path) || null,
     ccCodeEndpointPath: normalizeText(settings.ccCodeEndpointPath || settings.cc_code_endpoint_path || settings.ccEndpointPath || settings.cc_endpoint_path) || null,
-    claimStatusEndpointPath: normalizeText(settings.claimStatusEndpointPath || settings.claim_status_endpoint_path) || null,
-    memberLookupEndpointPath: normalizeText(settings.memberLookupEndpointPath || settings.member_lookup_endpoint_path) || null,
+    claimStatusEndpointPath: normalizeText(settings.claimStatusEndpointPath || settings.claim_status_endpoint_path || settings.claimStatusEndpoint || settings.claim_status_endpoint) || null,
+    claimStatusEndpoint: normalizeText(settings.claimStatusEndpoint || settings.claim_status_endpoint || settings.claimStatusEndpointPath || settings.claim_status_endpoint_path) || null,
+    memberLookupEndpointPath: normalizeText(settings.memberLookupEndpointPath || settings.member_lookup_endpoint_path || settings.memberLookupEndpoint || settings.member_lookup_endpoint) || null,
+    memberLookupEndpoint: normalizeText(settings.memberLookupEndpoint || settings.member_lookup_endpoint || settings.memberLookupEndpointPath || settings.member_lookup_endpoint_path) || null,
     directApiEnabled: toBool(settings.directApiEnabled),
     credentialMode,
-    credentialPayload: json(credentials),
     nhisMemberDigits: toDigitLength(settings.nhisMemberDigits, DEFAULT_NHIS_MEMBER_DIGITS),
     ghanaCardDigits: toDigitLength(settings.ghanaCardDigits, DEFAULT_GHANA_CARD_DIGITS),
     exportFormat: normalizeExportFormat(settings.exportFormat),
