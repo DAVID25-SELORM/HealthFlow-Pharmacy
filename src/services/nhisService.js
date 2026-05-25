@@ -194,9 +194,13 @@ const NHIA_API_SETTINGS_CACHE_FIELDS = [
   'direct_api_enabled',
   'credentialMode',
   'credential_mode',
+  'hasApiKey',
+  'hasApiSecret',
   'exportFormat',
   'export_format',
 ]
+const NHIA_SECRET_MASK = '••••••••••••'
+const NHIA_SECRET_FIELDS = new Set(['apiKey', 'apiSecret'])
 
 const logNhiaAccreditationExpiryDate = (action, value) => {
   if (import.meta.env.DEV) {
@@ -1748,6 +1752,9 @@ const mergeNhiaApiSettings = (...sources) => {
 
 const mapNhiaApiSettingsRow = (row = null) => {
   if (!row) return null
+  const credentials = row.credential_payload && typeof row.credential_payload === 'object'
+    ? row.credential_payload
+    : {}
 
   return {
     id: row.id,
@@ -1803,9 +1810,33 @@ const mapNhiaApiSettingsRow = (row = null) => {
     direct_api_enabled: Boolean(row.direct_api_enabled),
     credentialMode: row.credential_mode || 'claimit_token',
     credential_mode: row.credential_mode || 'claimit_token',
+    hasApiKey: Boolean(credentials.apiKey),
+    hasApiSecret: Boolean(credentials.apiSecret),
     exportFormat: row.export_format || 'json',
     export_format: row.export_format || 'json',
   }
+}
+
+const buildNhiaCredentialsPayload = (credentials = {}) => {
+  const payload = {}
+
+  for (const [field, value] of Object.entries(credentials || {})) {
+    if (NHIA_SECRET_FIELDS.has(field) && (!value || value === NHIA_SECRET_MASK)) continue
+    if (value !== undefined && value !== null && value !== '') payload[field] = value
+  }
+
+  return payload
+}
+
+const sanitizeNhiaApiSettingsPayload = (settings = {}) => {
+  const sanitized = { ...(settings || {}) }
+  const credentials = buildNhiaCredentialsPayload(sanitized.credentials)
+  if (Object.keys(credentials).length) {
+    sanitized.credentials = credentials
+  } else {
+    delete sanitized.credentials
+  }
+  return sanitized
 }
 
 const getNhiaApiSettingsDirectly = async (organizationId = '') => {
@@ -1822,6 +1853,25 @@ const getNhiaApiSettingsDirectly = async (organizationId = '') => {
 
     if (error) return null
     return mapNhiaApiSettingsRow(data)
+  } catch {
+    return null
+  }
+}
+
+const getNhiaApiSettingsDirectRow = async (organizationId = '') => {
+  const resolvedOrganizationId = normalizeText(organizationId)
+  if (!resolvedOrganizationId || !supabase) return null
+
+  try {
+    const { data, error } = await supabase
+      .from('organization_nhia_integrations')
+      .select('*')
+      .eq('organization_id', resolvedOrganizationId)
+      .eq('is_active', true)
+      .maybeSingle()
+
+    if (error) return null
+    return data || null
   } catch {
     return null
   }
@@ -1886,7 +1936,17 @@ const saveNhiaApiSettingsDirectly = async (settings = {}, organizationId = '') =
   if (!row || !supabase) return null
 
   try {
-    const existing = await getNhiaApiSettingsDirectly(row.organization_id)
+    const existingRow = await getNhiaApiSettingsDirectRow(row.organization_id)
+    const existing = mapNhiaApiSettingsRow(existingRow)
+    const existingCredentials = existingRow?.credential_payload && typeof existingRow.credential_payload === 'object'
+      ? existingRow.credential_payload
+      : {}
+    const incomingCredentials = buildNhiaCredentialsPayload(settings.credentials)
+    const credentials = { ...existingCredentials, ...incomingCredentials }
+    if (Object.keys(credentials).length) {
+      row.credential_payload = credentials
+    }
+
     if (existing?.id) {
       const { data, error } = await supabase
         .from('organization_nhia_integrations')
@@ -1948,20 +2008,21 @@ export const saveNhiaApiSettings = async (settings, options = {}) => {
   const organizationId = normalizeText(
     options.organizationId || options.organization_id || settings?.organizationId || settings?.organization_id
   )
+  const sanitizedSettings = sanitizeNhiaApiSettingsPayload(settings)
   let hostedError = null
   let hostedSettings = null
   try {
     const response = await invokeTierAccess({
       action: 'save_nhia_api_settings',
-      settings,
+      settings: sanitizedSettings,
     })
     hostedSettings = response?.settings || null
   } catch (error) {
     hostedError = error
   }
 
-  const directSettings = await saveNhiaApiSettingsDirectly(settings, organizationId)
-  const mergedSettings = mergeNhiaApiSettings(hostedSettings, directSettings, settings)
+  const directSettings = await saveNhiaApiSettingsDirectly(sanitizedSettings, organizationId)
+  const mergedSettings = mergeNhiaApiSettings(hostedSettings, directSettings, sanitizedSettings)
   if (mergedSettings) {
     writeCachedNhiaApiSettings(mergedSettings, organizationId)
     logNhiaAccreditationExpiryDate('saved', mergedSettings.accreditationExpiryDate)

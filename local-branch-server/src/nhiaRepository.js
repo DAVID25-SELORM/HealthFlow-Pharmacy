@@ -588,6 +588,9 @@ const maskCredentials = (payload = {}) =>
     ])
   )
 
+const NHIA_SECRET_MASK = '••••••••••••'
+const NHIA_SECRET_FIELDS = new Set(['apiKey', 'apiSecret'])
+
 const mapSettingsRow = (row, { includeCredentials = false } = {}) => {
   if (!row) {
     return null
@@ -632,6 +635,8 @@ const mapSettingsRow = (row, { includeCredentials = false } = {}) => {
     credentialMode: normalizeCredentialMode(row.credential_mode || 'api_key'),
     credentials: includeCredentials ? credentials : {},
     credentialSummary: maskCredentials(credentials),
+    hasApiKey: Boolean(normalizeText(credentials.apiKey)),
+    hasApiSecret: Boolean(normalizeText(credentials.apiSecret)),
     nhisMemberDigits: Number(row.nhis_member_digits || DEFAULT_NHIS_MEMBER_DIGITS),
     ghanaCardDigits: Number(row.ghana_card_digits || DEFAULT_GHANA_CARD_DIGITS),
     exportFormat: row.export_format === 'cxf' ? 'xml' : (row.export_format || 'xml'),
@@ -659,6 +664,9 @@ export const saveNhiaSettings = (settings = {}) => {
   const existingCredentials = parseJson(existing?.credential_payload, {})
   const credentials = { ...existingCredentials }
   for (const [key, value] of Object.entries(incomingCredentials || {})) {
+    if (NHIA_SECRET_FIELDS.has(key) && (!normalizeText(value) || normalizeText(value) === NHIA_SECRET_MASK)) {
+      continue
+    }
     if (normalizeText(value)) {
       credentials[key] = value
     }

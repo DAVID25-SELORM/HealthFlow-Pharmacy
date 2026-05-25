@@ -1504,6 +1504,35 @@ describe('NHIA API settings fallback', () => {
       accreditationExpiryDate: '2026-12-31',
     })
   })
+
+  it('does not send blank or masked NHIA API secrets when saving settings', async () => {
+    invokeTierAccess.mockResolvedValueOnce({
+      settings: {
+        organizationId: 'org-1',
+        hasApiKey: true,
+        hasApiSecret: true,
+      },
+    })
+
+    await saveNhiaApiSettings({
+      organizationId: 'org-1',
+      credentials: {
+        apiKey: '••••••••••••',
+        apiSecret: '',
+        headerName: 'x-api-key',
+      },
+    }, { organizationId: 'org-1' })
+
+    expect(invokeTierAccess).toHaveBeenCalledWith({
+      action: 'save_nhia_api_settings',
+      settings: {
+        organizationId: 'org-1',
+        credentials: {
+          headerName: 'x-api-key',
+        },
+      },
+    })
+  })
 })
 
 describe('NHIS claim status routing', () => {

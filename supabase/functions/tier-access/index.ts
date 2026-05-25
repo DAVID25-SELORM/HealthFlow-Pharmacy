@@ -1918,6 +1918,9 @@ const normalizeCredentialMode = (value: unknown) => {
 const normalizeExportFormat = (value: unknown) =>
   normalizeText(value).toLowerCase() === 'xml' ? 'xml' : 'json'
 
+const NHIA_SECRET_MASK = '••••••••••••'
+const NHIA_SECRET_FIELDS = new Set(['apiKey', 'apiSecret'])
+
 const maskCredentials = (payload: Record<string, unknown> = {}) =>
   Object.fromEntries(Object.entries(payload).map(([key, value]) => [key, Boolean(normalizeText(value))]))
 
@@ -1963,6 +1966,8 @@ const mapNhiaSettingsRow = (row: Record<string, unknown> | null, includeCredenti
     credentialMode: row.credential_mode || 'api_key',
     credentials: includeCredentials ? credentials : {},
     credentialSummary: maskCredentials(credentials),
+    hasApiKey: Boolean(normalizeText(credentials.apiKey)),
+    hasApiSecret: Boolean(normalizeText(credentials.apiSecret)),
     nhisMemberDigits: Number(row.nhis_member_digits || 8),
     ghanaCardDigits: Number(row.ghana_card_digits || 10),
     exportFormat: row.export_format || 'json',
@@ -2009,6 +2014,7 @@ const saveNhiaApiSettings = async (
   const credentials = { ...(existing?.credentials || {}) } as Record<string, unknown>
 
   for (const [key, value] of Object.entries(incomingCredentials)) {
+    if (NHIA_SECRET_FIELDS.has(key) && (!normalizeText(value) || normalizeText(value) === NHIA_SECRET_MASK)) continue
     if (normalizeText(value)) credentials[key] = value
   }
 

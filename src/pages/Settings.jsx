@@ -33,6 +33,9 @@ import { PHARMACY_LEVELS } from '../utils/nhisPharmacyLevel'
 // ✅ NHIS PHARMACY LEVEL PATCH END
 import './Settings.css'
 
+const NHIA_SECRET_MASK = '••••••••••••'
+const NHIA_SECRET_FIELDS = new Set(['apiKey', 'apiSecret'])
+
 const toForm = (row) => ({
   pharmacyName: row?.pharmacy_name || 'HealthFlow Pharmacy',
   phone: row?.phone || '',
@@ -101,6 +104,8 @@ const blankNhiaApiForm = {
     tokenEndpointPath: '',
     customIntegration: '',
   },
+  hasApiKey: false,
+  hasApiSecret: false,
 }
 
 const normalizeDateInputValue = (value) => {
@@ -115,12 +120,35 @@ const logNhiaAccreditationExpiryDate = (action, value) => {
 
 const toNhiaApiForm = (settings, organization) => {
   const resolved = applyNhiaFacilityDefaults(settings, organization)
+  const hasApiKey = Boolean(settings?.hasApiKey || settings?.credentialSummary?.apiKey)
+  const hasApiSecret = Boolean(settings?.hasApiSecret || settings?.credentialSummary?.apiSecret)
+
   return {
     ...blankNhiaApiForm,
     ...resolved,
     accreditationExpiryDate: normalizeDateInputValue(resolved.accreditationExpiryDate),
-    credentials: { ...blankNhiaApiForm.credentials },
+    hasApiKey,
+    hasApiSecret,
+    credentials: {
+      ...blankNhiaApiForm.credentials,
+      ...(resolved.credentials || {}),
+      apiKey: hasApiKey ? NHIA_SECRET_MASK : '',
+      apiSecret: hasApiSecret ? NHIA_SECRET_MASK : '',
+    },
   }
+}
+
+const buildNhiaCredentialsPayload = (credentials = {}) => {
+  const payload = {}
+
+  for (const [field, value] of Object.entries(credentials || {})) {
+    if (NHIA_SECRET_FIELDS.has(field) && (!value || value === NHIA_SECRET_MASK)) continue
+    if (value !== undefined && value !== null && value !== '') {
+      payload[field] = value
+    }
+  }
+
+  return payload
 }
 
 const blankStaffForm = {
@@ -401,6 +429,7 @@ const Settings = () => {
       const nhiaOrganizationId = organization?.id || organization?.organization_id || nhiaApiForm.organizationId || nhiaApiForm.organization_id
       const nhiaSettingsPayload = {
         ...nhiaApiForm,
+        credentials: buildNhiaCredentialsPayload(nhiaApiForm.credentials),
         organizationId: nhiaOrganizationId,
         organization_id: nhiaOrganizationId,
         accreditationExpiryDate,
@@ -423,6 +452,8 @@ const Settings = () => {
       setNhiaApiForm(toNhiaApiForm({
         ...nhiaSettingsPayload,
         ...(savedNhiaApiSettings || {}),
+        hasApiKey: Boolean(savedNhiaApiSettings?.hasApiKey || nhiaApiForm.hasApiKey || nhiaApiForm.credentials.apiKey),
+        hasApiSecret: Boolean(savedNhiaApiSettings?.hasApiSecret || nhiaApiForm.hasApiSecret || nhiaApiForm.credentials.apiSecret),
         accreditationExpiryDate: savedAccreditationExpiryDate || accreditationExpiryDate,
         claimsOfficerName: savedClaimsOfficerName !== undefined
           ? savedClaimsOfficerName
@@ -1189,12 +1220,18 @@ const Settings = () => {
               {nhiaApiForm.credentialMode === 'api_key' && (
                 <>
                   <div className="settings-form-row">
-                    <input
-                      placeholder="API key"
-                      type="password"
-                      value={nhiaApiForm.credentials.apiKey}
-                      onChange={(event) => updateNhiaCredential('apiKey', event.target.value)}
-                    />
+                    <div className="settings-field">
+                      <input
+                        placeholder="API key"
+                        type="password"
+                        value={nhiaApiForm.credentials.apiKey}
+                        onFocus={() => {
+                          if (nhiaApiForm.credentials.apiKey === NHIA_SECRET_MASK) updateNhiaCredential('apiKey', '')
+                        }}
+                        onChange={(event) => updateNhiaCredential('apiKey', event.target.value)}
+                      />
+                      {nhiaApiForm.hasApiKey && <p className="settings-helper">API key saved</p>}
+                    </div>
                     <input
                       placeholder="API key header (x-api-key)"
                       value={nhiaApiForm.credentials.headerName}
@@ -1202,12 +1239,18 @@ const Settings = () => {
                     />
                   </div>
                   <div className="settings-form-row">
-                    <input
-                      placeholder="API secret"
-                      type="password"
-                      value={nhiaApiForm.credentials.apiSecret}
-                      onChange={(event) => updateNhiaCredential('apiSecret', event.target.value)}
-                    />
+                    <div className="settings-field">
+                      <input
+                        placeholder="API secret"
+                        type="password"
+                        value={nhiaApiForm.credentials.apiSecret}
+                        onFocus={() => {
+                          if (nhiaApiForm.credentials.apiSecret === NHIA_SECRET_MASK) updateNhiaCredential('apiSecret', '')
+                        }}
+                        onChange={(event) => updateNhiaCredential('apiSecret', event.target.value)}
+                      />
+                      {nhiaApiForm.hasApiSecret && <p className="settings-helper">API secret saved</p>}
+                    </div>
                     <input
                       placeholder="Secret header (x-api-secret)"
                       value={nhiaApiForm.credentials.secretHeaderName}
