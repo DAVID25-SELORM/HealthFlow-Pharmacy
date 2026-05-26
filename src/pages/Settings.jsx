@@ -37,7 +37,11 @@ const NHIA_SECRET_MASK = '\u2022'.repeat(8)
 const NHIA_SECRET_FIELDS = new Set(['apiKey', 'apiSecret', 'password'])
 const NHIA_DISPLAY_SECRET_MASK = '\u2022'.repeat(8)
 const NHIA_SECRET_MASK_VALUES = new Set([NHIA_SECRET_MASK, NHIA_DISPLAY_SECRET_MASK, '\u2022'.repeat(12)])
-const isNhiaSecretMask = (value) => NHIA_SECRET_MASK_VALUES.has(String(value || '').trim())
+const isMaskedPlaceholder = (value) => /^[\u2022*]+$/.test(String(value || '').trim())
+const isNhiaSecretMask = (value) => {
+  const normalized = String(value || '').trim()
+  return NHIA_SECRET_MASK_VALUES.has(normalized) || isMaskedPlaceholder(normalized)
+}
 const NHIA_API_INTEGRATION_MODES = ['claimit_bridge', 'claimit_assisted', 'direct_nhia_api', 'hybrid']
 const NHIA_BRIDGE_MODES = ['claimit_bridge', 'claimit_assisted']
 const NHIA_LOCAL_BRIDGE_PROFILES = ['local_server', 'lan_ip']
@@ -166,7 +170,7 @@ const buildNhiaCredentialsPayload = (credentials = {}) => {
   const payload = {}
 
   for (const [field, value] of Object.entries(credentials || {})) {
-    if (NHIA_SECRET_FIELDS.has(field) && (!value || isNhiaSecretMask(value))) continue
+    if (NHIA_SECRET_FIELDS.has(field) && (!String(value || '').trim() || isMaskedPlaceholder(value))) continue
     if (value !== undefined && value !== null && value !== '') {
       payload[field] = value
     }
@@ -1482,7 +1486,7 @@ const Settings = () => {
                   <div className="settings-form-row">
                     <div className="settings-field">
                       <input
-                        placeholder="API key"
+                        placeholder="Enter new API key to replace saved key"
                         type="password"
                         value={nhiaApiForm.credentials.apiKey}
                         onFocus={() => {
@@ -1503,7 +1507,7 @@ const Settings = () => {
                   <div className="settings-form-row">
                     <div className="settings-field">
                       <input
-                        placeholder="API secret"
+                        placeholder="Enter new API secret to replace saved secret"
                         type="password"
                         value={nhiaApiForm.credentials.apiSecret}
                         onFocus={() => {
