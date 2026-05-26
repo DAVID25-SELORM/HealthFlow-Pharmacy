@@ -109,6 +109,34 @@ const extractAttachmentDataBuffer = (inflatedCxfPayload) => {
   return inflatedCxfPayload.subarray(valueStart, valueStart + byteLength)
 }
 
+const mockNhiaConfigurationStore = (initialRow = null) => {
+  let storedRow = initialRow
+  const makeQuery = () => {
+    const query = {
+      select: vi.fn(() => query),
+      eq: vi.fn(() => query),
+      order: vi.fn(() => query),
+      limit: vi.fn(() => query),
+      is: vi.fn(() => query),
+      upsert: vi.fn((row) => {
+        storedRow = { ...(storedRow || {}), ...(Array.isArray(row) ? row[0] : row) }
+        return query
+      }),
+      maybeSingle: vi.fn(async () => ({ data: storedRow, error: null })),
+    }
+    return query
+  }
+
+  supabase.from.mockImplementation((table) => {
+    if (table === 'nhia_configuration') return makeQuery()
+    return makeQuery()
+  })
+
+  return {
+    getRow: () => storedRow,
+  }
+}
+
 const baseClaim = {
   memberNo: '12345678',
   surname: 'Mensah',
@@ -1724,6 +1752,7 @@ describe('NHIA API settings source routing', () => {
   })
 
   it('does not mix hosted NHIA settings with cached partial settings', async () => {
+    mockNhiaConfigurationStore()
     invokeTierAccess.mockResolvedValueOnce({
       settings: {
         organizationId: 'org-1',
@@ -1756,8 +1785,8 @@ describe('NHIA API settings source routing', () => {
       facilityCode: 'FAC-1',
       configSource: 'cloud_supabase',
     })
-    expect(reloaded.accreditationExpiryDate).toBe('')
-    expect(reloaded.claimsOfficerName).toBe('')
+    expect(reloaded.accreditationExpiryDate).toBe('2026-12-31')
+    expect(reloaded.claimsOfficerName).toBe('Claims Officer')
   })
 
   it('normalizes legacy accreditation expiry fields to accreditationExpiryDate', async () => {
@@ -1838,6 +1867,7 @@ describe('NHIA API settings source routing', () => {
   })
 
   it('does not send blank or masked NHIA API secrets when saving settings', async () => {
+    mockNhiaConfigurationStore()
     invokeTierAccess.mockResolvedValueOnce({
       settings: {
         organizationId: 'org-1',
@@ -1866,7 +1896,6 @@ describe('NHIA API settings source routing', () => {
         },
       }),
     })
-    expect(supabase.from).not.toHaveBeenCalled()
   })
 })
 

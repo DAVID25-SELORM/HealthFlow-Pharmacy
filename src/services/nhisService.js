@@ -1929,6 +1929,105 @@ const readHostedNhiaConfigDirect = async (organizationId = '', preferredSettings
   return null
 }
 
+const getHostedNhiaConfigRowPayload = async (settings = {}, organizationId = '', preferredSettings = null) => {
+  const resolvedOrganizationId = normalizeText(
+    organizationId || settings.organizationId || settings.organization_id || preferredSettings?.organizationId || preferredSettings?.organization_id
+  )
+  if (!resolvedOrganizationId) {
+    throw new Error('Organization is required to save NHIA configuration.')
+  }
+
+  const branchId = normalizeText(
+    settings.branchId ||
+      settings.branch_id ||
+      preferredSettings?.branchId ||
+      preferredSettings?.branch_id ||
+      await getCurrentUserBranchIdForNhiaConfig()
+  )
+  const activeBaseUrl = normalizeText(
+    settings.apiBaseUrl ||
+      settings.api_base_url ||
+      (normalizeText(settings.apiEnvironment || settings.api_environment).toLowerCase() === 'sandbox'
+        ? settings.sandboxBaseUrl || settings.sandbox_base_url
+        : settings.productionBaseUrl || settings.production_base_url)
+  ).replace(/\/+$/, '')
+  const facilityCode = normalizeText(settings.facilityCode || settings.facility_code)
+  const providerNumber = normalizeText(settings.providerNumber || settings.provider_number || settings.providerId || settings.provider_id)
+  const credentialCode = normalizeText(settings.credentialCode || settings.credential_code || facilityCode)
+  const claimEndpointPath = normalizeText(settings.claimEndpointPath || settings.claim_endpoint_path || settings.claimSubmitEndpoint || settings.claim_submit_endpoint)
+  const claimStatusEndpointPath = normalizeText(settings.claimStatusEndpointPath || settings.claim_status_endpoint_path || settings.claimStatusEndpoint || settings.claim_status_endpoint)
+  const memberLookupEndpointPath = normalizeText(settings.memberLookupEndpointPath || settings.member_lookup_endpoint_path || settings.memberLookupEndpoint || settings.member_lookup_endpoint)
+  const ccEndpointPath = normalizeText(settings.ccEndpointPath || settings.cc_endpoint_path || settings.ccCodeEndpointPath || settings.cc_code_endpoint_path)
+  const ccCodeEndpointPath = normalizeText(settings.ccCodeEndpointPath || settings.cc_code_endpoint_path || settings.ccEndpointPath || settings.cc_endpoint_path)
+
+  return {
+    organization_id: resolvedOrganizationId,
+    branch_id: branchId || null,
+    mode: 'ONLINE_CLOUD',
+    provider_id: providerNumber || null,
+    facility_code: facilityCode || null,
+    provider_number: providerNumber || null,
+    scheme_name: normalizeText(settings.schemeName || settings.scheme_name) || 'National Health Insurance',
+    facility_type: normalizeText(settings.facilityType || settings.facility_type) || null,
+    pharmacy_facility_level: normalizeText(settings.pharmacyFacilityLevel || settings.pharmacy_facility_level) || null,
+    provider_level_code: normalizeText(settings.providerLevelCode || settings.provider_level_code) || null,
+    credential_code: credentialCode || null,
+    license_number: normalizeText(settings.licenseNumber || settings.license_number) || null,
+    accreditation_expiry_date: getNhiaAccreditationExpiryDate(settings) || null,
+    integration_mode: normalizeText(settings.integrationMode || settings.integration_mode || settings.nhiaApiMode || settings.nhia_api_mode) || 'claimit_export',
+    connection_profile: normalizeText(settings.connectionProfile || settings.connection_profile) || 'local_server',
+    validation_mode: normalizeText(settings.validationMode || settings.validation_mode) || 'validate_before_submit',
+    claim_control_mode: normalizeText(settings.claimControlMode || settings.claim_control_mode) || 'manual',
+    sandbox_base_url: normalizeText(settings.sandboxBaseUrl || settings.sandbox_base_url).replace(/\/+$/, '') || null,
+    production_base_url: normalizeText(settings.productionBaseUrl || settings.production_base_url).replace(/\/+$/, '') || null,
+    provider_type_description: normalizeText(settings.providerTypeDescription || settings.provider_type_description) || null,
+    provider_class_level: normalizeText(settings.providerClassLevel || settings.provider_class_level) || null,
+    claims_officer_name: normalizeText(settings.claimsOfficerName || settings.claims_officer_name) || null,
+    admission_payment_option: normalizeText(settings.admissionPaymentOption || settings.admission_payment_option) || 'nhis_pays_admission',
+    claimit_validation_enabled: settings.claimitValidationEnabled !== false && settings.claimit_validation_enabled !== false,
+    claims_officer_signature_url: normalizeText(settings.claimsOfficerSignatureUrl || settings.claims_officer_signature_url) || null,
+    submitter_id: normalizeText(settings.submitterId || settings.submitter_id) || null,
+    api_environment: normalizeText(settings.apiEnvironment || settings.api_environment).toLowerCase() === 'sandbox' ? 'sandbox' : 'production',
+    api_base_url: activeBaseUrl || null,
+    claim_endpoint_path: claimEndpointPath || null,
+    claim_submit_endpoint: claimEndpointPath || null,
+    claim_validation_endpoint_path: normalizeText(settings.claimValidationEndpointPath || settings.claim_validation_endpoint_path) || null,
+    cc_endpoint_path: ccEndpointPath || null,
+    cc_code_endpoint_path: ccCodeEndpointPath || null,
+    claim_status_endpoint_path: claimStatusEndpointPath || null,
+    claim_status_endpoint: claimStatusEndpointPath || null,
+    member_lookup_endpoint_path: memberLookupEndpointPath || null,
+    member_lookup_endpoint: memberLookupEndpointPath || null,
+    direct_api_enabled: Boolean(settings.directApiEnabled || settings.direct_api_enabled),
+    credential_mode: normalizeText(settings.credentialMode || settings.credential_mode) || 'api_key',
+    nhis_member_digits: Number(settings.nhisMemberDigits || settings.nhis_member_digits || 8),
+    ghana_card_digits: Number(settings.ghanaCardDigits || settings.ghana_card_digits || 10),
+    export_format: normalizeText(settings.exportFormat || settings.export_format) || 'json',
+    max_retry_attempts: Math.min(Math.max(Number(settings.maxRetryAttempts || settings.max_retry_attempts || 3), 1), 10),
+    is_active: true,
+    updated_at: new Date().toISOString(),
+  }
+}
+
+const saveHostedNhiaConfigDirect = async (settings = {}, organizationId = '', preferredSettings = null) => {
+  if (!supabase) {
+    throw new Error('Supabase is not configured for direct NHIA configuration save.')
+  }
+
+  const row = await getHostedNhiaConfigRowPayload(settings, organizationId, preferredSettings)
+  const { data, error } = await supabase
+    .from(NHIA_CONFIG_TABLE)
+    .upsert(row, { onConflict: 'organization_id,branch_id' })
+    .select('*')
+    .maybeSingle()
+
+  if (error) {
+    throw error
+  }
+
+  return data || row
+}
+
 const normalizeNhiaConfig = (settings = null, {
   mode = '',
   source = 'default',
@@ -2570,14 +2669,31 @@ export const saveNhiaApiSettings = async (settings, options = {}) => {
       action: 'save_nhia_api_settings',
       settings: sanitizedSettings,
     })
+    const directSavedSettings = await saveHostedNhiaConfigDirect(
+      sanitizedSettings,
+      organizationId,
+      response?.settings || null
+    )
     const readBack = await invokeTierAccess({ action: 'get_nhia_api_settings' })
-    const hostedSettings = readBack?.settings || response?.settings || null
+    const directReadBackSettings = await readHostedNhiaConfigDirect(organizationId, directSavedSettings)
+    const hostedSettings = {
+      ...(response?.settings || {}),
+      ...(readBack?.settings || {}),
+      ...(directReadBackSettings || directSavedSettings || {}),
+    }
     console.info('[NHIA CONFIG] cloud response/error', {
       response: summarizeNhiaApiSettingsForLog(hostedSettings),
       error: null,
     })
 
-    if (!hostedSettings) {
+    if (!hostedSettings || !normalizeText(
+      hostedSettings.facility_code ||
+        hostedSettings.facilityCode ||
+        hostedSettings.credential_code ||
+        hostedSettings.credentialCode ||
+        hostedSettings.provider_number ||
+        hostedSettings.providerNumber
+    )) {
       throw new Error('Unable to read the saved NHIA API settings response.')
     }
 
