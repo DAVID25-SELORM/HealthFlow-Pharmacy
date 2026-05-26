@@ -1868,6 +1868,62 @@ describe('NHIA API settings source routing', () => {
     })
   })
 
+  it('prefers the latest active legacy NHIA integration row and maps credential payload flags', async () => {
+    invokeTierAccess.mockResolvedValueOnce({
+      settings: {
+        id: 'config-1',
+        organizationId: 'org-1',
+        facilityCode: 'STALE-CONFIG',
+        updatedAt: '2026-05-25T10:00:00.000Z',
+      },
+    })
+
+    const makeQuery = (data) => ({
+      select: vi.fn(function select() { return this }),
+      eq: vi.fn(function eq() { return this }),
+      order: vi.fn(function order() { return this }),
+      limit: vi.fn(function limit() { return this }),
+      is: vi.fn(function is() { return this }),
+      maybeSingle: vi.fn().mockResolvedValue({ data, error: null }),
+    })
+
+    const configQuery = makeQuery({
+      id: 'config-1',
+      organization_id: 'org-1',
+      facility_code: 'STALE-CONFIG',
+      updated_at: '2026-05-25T10:00:00.000Z',
+      is_active: true,
+    })
+    const legacyQuery = makeQuery({
+      id: 'legacy-1',
+      organization_id: 'org-1',
+      facility_code: 'LATEST-INTEGRATION',
+      credential_code: 'api_key',
+      credential_payload: {
+        apiKey: 'saved-key',
+        apiSecret: 'saved-secret',
+      },
+      updated_at: '2026-05-26T10:00:00.000Z',
+      is_active: true,
+    })
+
+    supabase.from.mockImplementation((table) => {
+      if (table === 'organization_nhia_integrations') return legacyQuery
+      return configQuery
+    })
+
+    await expect(getNhiaApiSettings({ organizationId: 'org-1' })).resolves.toMatchObject({
+      organizationId: 'org-1',
+      facilityCode: 'LATEST-INTEGRATION',
+      hasApiKey: true,
+      hasApiSecret: true,
+      credentialSummary: {
+        apiKey: true,
+        apiSecret: true,
+      },
+    })
+  })
+
   it('does not send blank NHIA API secrets when saving settings', async () => {
     mockNhiaConfigurationStore()
     invokeTierAccess.mockResolvedValueOnce({

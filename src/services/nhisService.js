@@ -248,6 +248,7 @@ const NHIA_API_SETTINGS_CACHE_FIELDS = [
 const NHIA_SECRET_FIELDS = new Set(['apiKey', 'apiSecret', 'password'])
 const NHIA_API_CONFIG_TABLE = 'nhia_configuration'
 const NHIA_CONFIG_TABLE = 'nhia_configuration'
+const NHIA_LEGACY_INTEGRATIONS_TABLE = 'organization_nhia_integrations'
 const NHIA_CONFIG_DEFAULTS = {
   id: '',
   branchId: '',
@@ -1879,6 +1880,7 @@ const readHostedNhiaConfigDirect = async (organizationId = '', preferredSettings
   if (!supabase) return null
 
   try {
+    let preferredConfigRow = null
     const preferredId = normalizeText(preferredSettings?.id)
     if (preferredId) {
       const { data, error } = await supabase
@@ -1887,7 +1889,7 @@ const readHostedNhiaConfigDirect = async (organizationId = '', preferredSettings
         .eq('id', preferredId)
         .maybeSingle()
 
-      if (!error && data) return data
+      if (!error && data) preferredConfigRow = data
     }
 
     const branchId = normalizeText(
@@ -1907,7 +1909,7 @@ const readHostedNhiaConfigDirect = async (organizationId = '', preferredSettings
     query = branchId ? query.eq('branch_id', branchId) : query.is('branch_id', null)
 
     const { data, error } = await query.maybeSingle()
-    if (!error && data) return data
+    const configRow = !error && data ? data : null
 
     let fallbackQuery = supabase
       .from(NHIA_CONFIG_TABLE)
@@ -1919,12 +1921,93 @@ const readHostedNhiaConfigDirect = async (organizationId = '', preferredSettings
     if (organizationId) fallbackQuery = fallbackQuery.eq('organization_id', organizationId)
 
     const { data: fallbackData, error: fallbackError } = await fallbackQuery.maybeSingle()
-    if (!fallbackError && fallbackData) return fallbackData
+    const fallbackConfigRow = !fallbackError && fallbackData ? fallbackData : null
+    const legacyRow = await readLatestHostedNhiaIntegrationDirect(organizationId)
+    return pickLatestNhiaConfigRow(preferredConfigRow, configRow, fallbackConfigRow, legacyRow)
   } catch {
     // Keep the function response/cache path as the graceful fallback.
   }
 
   return null
+}
+
+const getNhiaUpdatedAtTime = (settings = null) => {
+  const value = settings?.updated_at || settings?.updatedAt || settings?.created_at || settings?.createdAt
+  const time = value ? new Date(value).getTime() : 0
+  return Number.isNaN(time) ? 0 : time
+}
+
+const pickLatestNhiaConfigRow = (...rows) =>
+  rows
+    .filter(Boolean)
+    .sort((left, right) => getNhiaUpdatedAtTime(right) - getNhiaUpdatedAtTime(left))[0] || null
+
+const normalizeHostedNhiaIntegrationRow = (row = null) => {
+  if (!row) return null
+
+  const credentialPayload = row.credential_payload && typeof row.credential_payload === 'object'
+    ? row.credential_payload
+    : {}
+  const hasApiKey = Boolean(row.has_api_key || normalizeText(credentialPayload.apiKey))
+  const hasApiSecret = Boolean(row.has_api_secret || normalizeText(credentialPayload.apiSecret))
+  const hasPassword = Boolean(row.has_password || normalizeText(credentialPayload.password))
+
+  return {
+    ...row,
+    organizationId: row.organization_id || '',
+    branchId: row.branch_id || '',
+    facilityCode: row.facility_code || '',
+    providerNumber: row.provider_number || row.provider_id || '',
+    providerId: row.provider_id || row.provider_number || '',
+    credentialCode: row.credential_code || row.facility_code || '',
+    accreditationExpiryDate: getNhiaAccreditationExpiryDate(row),
+    claimsOfficerName: row.claims_officer_name || '',
+    apiBaseUrl: row.api_base_url || '',
+    claimEndpointPath: row.claim_endpoint_path || row.claim_submit_endpoint || '',
+    claimSubmitEndpoint: row.claim_submit_endpoint || row.claim_endpoint_path || '',
+    claimStatusEndpointPath: row.claim_status_endpoint_path || row.claim_status_endpoint || '',
+    claimStatusEndpoint: row.claim_status_endpoint || row.claim_status_endpoint_path || '',
+    memberLookupEndpointPath: row.member_lookup_endpoint_path || row.member_lookup_endpoint || '',
+    memberLookupEndpoint: row.member_lookup_endpoint || row.member_lookup_endpoint_path || '',
+    ccEndpointPath: row.cc_endpoint_path || row.cc_code_endpoint_path || '',
+    ccCodeEndpointPath: row.cc_code_endpoint_path || row.cc_endpoint_path || '',
+    integrationMode: row.integration_mode || 'claimit_export',
+    credentialMode: row.credential_mode || 'api_key',
+    credentials: credentialPayload,
+    credentialSummary: {
+      apiKey: hasApiKey,
+      apiSecret: hasApiSecret,
+      password: hasPassword,
+      username: Boolean(row.username || credentialPayload.username),
+    },
+    hasApiKey,
+    has_api_key: hasApiKey,
+    hasApiSecret,
+    has_api_secret: hasApiSecret,
+    hasPassword,
+    has_password: hasPassword,
+    sourceTable: NHIA_LEGACY_INTEGRATIONS_TABLE,
+  }
+}
+
+const readLatestHostedNhiaIntegrationDirect = async (organizationId = '') => {
+  if (!supabase || !organizationId) return null
+
+  try {
+    const { data, error } = await supabase
+      .from(NHIA_LEGACY_INTEGRATIONS_TABLE)
+      .select('*')
+      .eq('organization_id', organizationId)
+      .eq('is_active', true)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (error || !data) return null
+    return normalizeHostedNhiaIntegrationRow(data)
+  } catch {
+    return null
+  }
 }
 
 const getHostedNhiaConfigRowPayload = async (settings = {}, organizationId = '', preferredSettings = null) => {
