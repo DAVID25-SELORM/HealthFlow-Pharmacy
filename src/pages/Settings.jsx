@@ -1490,7 +1490,9 @@ const Settings = () => {
                         }}
                         onChange={(event) => updateNhiaCredential('apiKey', event.target.value)}
                       />
-                      {nhiaCredentialState.hasApiKey && <p className="settings-helper">✅ API Key Saved</p>}
+                      <p className="settings-helper">
+                        {nhiaCredentialState.hasApiKey ? '✅ API Key Saved' : '⚠ API Key Not Saved'}
+                      </p>
                     </div>
                     <input
                       placeholder="API key header (x-api-key)"
@@ -1509,7 +1511,9 @@ const Settings = () => {
                         }}
                         onChange={(event) => updateNhiaCredential('apiSecret', event.target.value)}
                       />
-                      {nhiaCredentialState.hasApiSecret && <p className="settings-helper">✅ API Secret Saved</p>}
+                      <p className="settings-helper">
+                        {nhiaCredentialState.hasApiSecret ? '✅ API Secret Saved' : '⚠ API Secret Not Saved'}
+                      </p>
                     </div>
                     <input
                       placeholder="Secret header (x-api-secret)"
@@ -1644,7 +1648,7 @@ const Settings = () => {
                     onClick={handleRemoveNhiaApiCredentials}
                     disabled={removingNhiaCredentials || savingNhiaApi}
                   >
-                    {removingNhiaCredentials ? 'Removing...' : 'Remove Saved API Credentials'}
+                    {removingNhiaCredentials ? 'Removing...' : 'Remove Saved Credentials'}
                   </button>
                 )}
                 <button className="btn btn-primary" type="submit" disabled={savingNhiaApi}>
