@@ -2125,6 +2125,9 @@ const mapNhiaSettingsRow = async (row: Record<string, unknown> | null, includeCr
   }
 }
 
+const hasWritableNhiaSecret = (credentials: Record<string, unknown>, key: string) =>
+  normalizeText(credentials[key]) && !isNhiaSecretMask(credentials[key])
+
 const hasUsableNhiaSecret = (value: unknown) => {
   const normalized = normalizeText(value)
   return Boolean(normalized && !isNhiaSecretMask(normalized))
@@ -2227,6 +2230,7 @@ const saveNhiaApiSettings = async (
   }
   const hasApiKey = Boolean(normalizeText(credentials.apiKey))
   const hasApiSecret = Boolean(normalizeText(credentials.apiSecret))
+  const shouldWritePassword = hasWritableNhiaSecret(credentials, 'password')
   logNhiaConfigEvent('save started', {
     mode: 'ONLINE_CLOUD',
     saveTarget: 'cloud_supabase',
@@ -2307,7 +2311,7 @@ const saveNhiaApiSettings = async (
     api_secret_header_name: normalizeText(credentials.secretHeaderName) || null,
     api_key_header_prefix: normalizeText(credentials.headerPrefix) || null,
     username: normalizeText(settings.username || credentials.username) || null,
-    password_encrypted: normalizeText(credentials.password) ? await encodeNhiaSecret(credentials.password) : null,
+    password_encrypted: shouldWritePassword ? await encodeNhiaSecret(credentials.password) : null,
     token_endpoint_path: normalizeText(credentials.tokenEndpointPath) || null,
     claim_endpoint_path: normalizeText(settings.claimEndpointPath || settings.claim_endpoint_path || settings.claimSubmitEndpoint || settings.claim_submit_endpoint) || null,
     claim_submit_endpoint: normalizeText(settings.claimSubmitEndpoint || settings.claim_submit_endpoint || settings.claimEndpointPath || settings.claim_endpoint_path) || null,

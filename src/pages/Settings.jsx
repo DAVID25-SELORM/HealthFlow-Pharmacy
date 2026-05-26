@@ -206,6 +206,10 @@ const getFirstNhiaValue = (...values) =>
 const mergeNhiaSaveReadback = (submitted = {}, saved = {}) => ({
   ...submitted,
   ...(saved || {}),
+  credentials: {
+    ...(submitted.credentials || {}),
+    ...((saved || {}).credentials || {}),
+  },
   facilityCode: getFirstNhiaValue(saved?.facilityCode, saved?.facility_code, submitted.facilityCode),
   providerNumber: getFirstNhiaValue(saved?.providerNumber, saved?.provider_number, saved?.providerId, saved?.provider_id, submitted.providerNumber),
   providerId: getFirstNhiaValue(saved?.providerId, saved?.provider_id, saved?.providerNumber, saved?.provider_number, submitted.providerId, submitted.providerNumber),
@@ -584,6 +588,9 @@ const Settings = () => {
       const accreditationExpiryDate = normalizeDateInputValue(nhiaApiForm.accreditationExpiryDate)
       const nhiaOrganizationId = organization?.id || organization?.organization_id || nhiaApiForm.organizationId || nhiaApiForm.organization_id
       const credentialPayload = buildNhiaCredentialsPayload(nhiaApiForm.credentials)
+      const preservedCredentials = {
+        ...nhiaApiForm.credentials,
+      }
       const nhiaSettingsPayload = {
         ...getNhiaFormWithSavedCredentialState(nhiaApiForm),
         credentials: credentialPayload,
@@ -628,7 +635,7 @@ const Settings = () => {
         'apiSecret'
       )
 
-      setNhiaApiForm(toNhiaApiForm({
+      const rebuiltForm = toNhiaApiForm({
         ...mergeNhiaSaveReadback(nhiaSettingsPayload, effectiveNhiaApiSettings),
         hasApiKey: hasSavedApiKey,
         hasApiSecret: hasSavedApiSecret,
@@ -636,7 +643,14 @@ const Settings = () => {
         claimsOfficerName: savedClaimsOfficerName !== undefined
           ? savedClaimsOfficerName
           : nhiaApiForm.claimsOfficerName,
-      }, organization))
+      }, organization)
+
+      rebuiltForm.credentials = {
+        ...preservedCredentials,
+        ...(rebuiltForm.credentials || {}),
+      }
+
+      setNhiaApiForm(rebuiltForm)
       setNhiaCredentialState({
         hasApiKey: hasSavedApiKey,
         hasApiSecret: hasSavedApiSecret,
@@ -1480,7 +1494,7 @@ const Settings = () => {
                       <input
                         placeholder={nhiaCredentialState.hasApiKey ? NHIA_SAVED_SECRET_PLACEHOLDER : 'Enter API key'}
                         type="password"
-                        value={nhiaApiForm.credentials.apiKey}
+                        value={nhiaApiForm.credentials.apiKey || ''}
                         onChange={(event) => updateNhiaCredential('apiKey', event.target.value)}
                       />
                       <p className="settings-helper">
@@ -1489,7 +1503,7 @@ const Settings = () => {
                     </div>
                     <input
                       placeholder="API key header (x-api-key)"
-                      value={nhiaApiForm.credentials.headerName}
+                      value={nhiaApiForm.credentials.headerName || ''}
                       onChange={(event) => updateNhiaCredential('headerName', event.target.value)}
                     />
                   </div>
@@ -1498,7 +1512,7 @@ const Settings = () => {
                       <input
                         placeholder={nhiaCredentialState.hasApiSecret ? NHIA_SAVED_SECRET_PLACEHOLDER : 'Enter API secret'}
                         type="password"
-                        value={nhiaApiForm.credentials.apiSecret}
+                        value={nhiaApiForm.credentials.apiSecret || ''}
                         onChange={(event) => updateNhiaCredential('apiSecret', event.target.value)}
                       />
                       <p className="settings-helper">
@@ -1507,20 +1521,20 @@ const Settings = () => {
                     </div>
                     <input
                       placeholder="Secret header (x-api-secret)"
-                      value={nhiaApiForm.credentials.secretHeaderName}
+                      value={nhiaApiForm.credentials.secretHeaderName || ''}
                       onChange={(event) => updateNhiaCredential('secretHeaderName', event.target.value)}
                     />
                   </div>
                   <div className="settings-form-row">
                     <input
                       placeholder="Username"
-                      value={nhiaApiForm.credentials.username}
+                      value={nhiaApiForm.credentials.username || ''}
                       onChange={(event) => updateNhiaCredential('username', event.target.value)}
                     />
                     <input
                       placeholder={nhiaCredentialState.hasPassword ? NHIA_SAVED_SECRET_PLACEHOLDER : 'Password'}
                       type="password"
-                      value={nhiaApiForm.credentials.password}
+                      value={nhiaApiForm.credentials.password || ''}
                       onChange={(event) => updateNhiaCredential('password', event.target.value)}
                     />
                   </div>
@@ -1530,7 +1544,7 @@ const Settings = () => {
                 <input
                   placeholder="Bearer token"
                   type="password"
-                  value={nhiaApiForm.credentials.apiKey || nhiaApiForm.credentials.token}
+                  value={nhiaApiForm.credentials.apiKey || nhiaApiForm.credentials.token || ''}
                   onChange={(event) => {
                     updateNhiaCredential('apiKey', event.target.value)
                     updateNhiaCredential('token', event.target.value)
@@ -1541,13 +1555,13 @@ const Settings = () => {
                 <div className="settings-form-row">
                   <input
                     placeholder="Username"
-                    value={nhiaApiForm.credentials.username}
+                    value={nhiaApiForm.credentials.username || ''}
                     onChange={(event) => updateNhiaCredential('username', event.target.value)}
                   />
                   <input
                     placeholder={nhiaCredentialState.hasPassword ? NHIA_SAVED_SECRET_PLACEHOLDER : 'Password'}
                     type="password"
-                    value={nhiaApiForm.credentials.password}
+                    value={nhiaApiForm.credentials.password || ''}
                     onChange={(event) => updateNhiaCredential('password', event.target.value)}
                   />
                 </div>
@@ -1557,19 +1571,19 @@ const Settings = () => {
                   <div className="settings-form-row">
                     <input
                       placeholder="CLAIM-it username"
-                      value={nhiaApiForm.credentials.username}
+                      value={nhiaApiForm.credentials.username || ''}
                       onChange={(event) => updateNhiaCredential('username', event.target.value)}
                     />
                     <input
                       placeholder={nhiaCredentialState.hasPassword ? NHIA_SAVED_SECRET_PLACEHOLDER : 'CLAIM-it password'}
                       type="password"
-                      value={nhiaApiForm.credentials.password}
+                      value={nhiaApiForm.credentials.password || ''}
                       onChange={(event) => updateNhiaCredential('password', event.target.value)}
                     />
                   </div>
                   <input
                     placeholder="Token endpoint path (/token)"
-                    value={nhiaApiForm.credentials.tokenEndpointPath}
+                    value={nhiaApiForm.credentials.tokenEndpointPath || ''}
                     onChange={(event) => updateNhiaCredential('tokenEndpointPath', event.target.value)}
                   />
                 </>
@@ -1579,7 +1593,7 @@ const Settings = () => {
                   <input
                     placeholder="OAuth access token"
                     type="password"
-                    value={nhiaApiForm.credentials.token || nhiaApiForm.credentials.apiKey}
+                    value={nhiaApiForm.credentials.token || nhiaApiForm.credentials.apiKey || ''}
                     onChange={(event) => {
                       updateNhiaCredential('token', event.target.value)
                       updateNhiaCredential('apiKey', event.target.value)
@@ -1588,13 +1602,13 @@ const Settings = () => {
                   <div className="settings-form-row">
                     <input
                       placeholder="Client ID"
-                      value={nhiaApiForm.credentials.clientId}
+                      value={nhiaApiForm.credentials.clientId || ''}
                       onChange={(event) => updateNhiaCredential('clientId', event.target.value)}
                     />
                     <input
                       placeholder="Client secret"
                       type="password"
-                      value={nhiaApiForm.credentials.clientSecret}
+                      value={nhiaApiForm.credentials.clientSecret || ''}
                       onChange={(event) => updateNhiaCredential('clientSecret', event.target.value)}
                     />
                   </div>

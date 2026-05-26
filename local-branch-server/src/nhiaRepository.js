@@ -835,6 +835,9 @@ const queueNhiaConfigSync = (row, timestamp = nowIso()) => {
   })
 }
 
+const hasWritableNhiaSecret = (credentials, key) =>
+  Boolean(normalizeText(credentials[key]) && !isNhiaSecretMask(credentials[key]))
+
 export const getNhiaSettings = ({ includeCredentials = false } = {}) => {
   const settings = mapSettingsRow(resolveSettingsRow(), { includeCredentials })
   logNhiaConfigEvent('load', {
@@ -923,6 +926,9 @@ export const saveNhiaSettings = (settings = {}) => {
   }
   const hasApiKey = Boolean(normalizeText(credentials.apiKey))
   const hasApiSecret = Boolean(normalizeText(credentials.apiSecret))
+  const shouldWriteApiKey = hasWritableNhiaSecret(credentials, 'apiKey')
+  const shouldWriteApiSecret = hasWritableNhiaSecret(credentials, 'apiSecret')
+  const shouldWritePassword = hasWritableNhiaSecret(credentials, 'password')
   logNhiaConfigEvent('save started', {
     mode: normalizeText(settings.mode) || 'ONLINE_LOCAL_SYNC',
     saveTarget: 'local_branch_server',
@@ -983,15 +989,15 @@ export const saveNhiaSettings = (settings = {}) => {
       settings.apiBaseUrl ||
         (settings.apiEnvironment === 'sandbox' ? settings.sandboxBaseUrl : settings.productionBaseUrl)
     ).replace(/\/+$/, '') || null,
-    apiKeyEncrypted: hasApiKey ? encodeNhiaSecret(credentials.apiKey) : null,
-    apiSecretEncrypted: hasApiSecret ? encodeNhiaSecret(credentials.apiSecret) : null,
+    apiKeyEncrypted: shouldWriteApiKey ? encodeNhiaSecret(credentials.apiKey) : existing?.api_key_encrypted || null,
+    apiSecretEncrypted: shouldWriteApiSecret ? encodeNhiaSecret(credentials.apiSecret) : existing?.api_secret_encrypted || null,
     hasApiKey: hasApiKey ? 1 : 0,
     hasApiSecret: hasApiSecret ? 1 : 0,
     apiKeyHeaderName: normalizeText(credentials.headerName) || null,
     apiSecretHeaderName: normalizeText(credentials.secretHeaderName) || null,
     apiKeyHeaderPrefix: normalizeText(credentials.headerPrefix) || null,
     username: normalizeText(settings.username || credentials.username) || null,
-    passwordEncrypted: normalizeText(credentials.password) ? encodeNhiaSecret(credentials.password) : null,
+    passwordEncrypted: shouldWritePassword ? encodeNhiaSecret(credentials.password) : existing?.password_encrypted || null,
     tokenEndpointPath: normalizeText(credentials.tokenEndpointPath) || null,
     claimEndpointPath: normalizeText(settings.claimEndpointPath || settings.claimSubmitEndpoint || settings.claim_submit_endpoint) || null,
     claimSubmitEndpoint: normalizeText(settings.claimSubmitEndpoint || settings.claim_submit_endpoint || settings.claimEndpointPath || settings.claim_endpoint_path) || null,
