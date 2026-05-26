@@ -1537,6 +1537,7 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
   }
   if (!getClaimField(claimData, 'surname')) blockers.push('Patient surname is required.')
   if (!getClaimField(claimData, 'otherNames', 'other_names')) warnings.push('Patient other names are missing on the claim.')
+  if (!getClaimField(claimData, 'folderNo', 'folder_no')) blockers.push('Folder number is required.')
   if (isHospital && !getClaimField(claimData, 'patientAddress', 'patient_address')) warnings.push('Patient address is missing on the claim.')
   if (!dateOfBirth) warnings.push('Patient date of birth is missing on the claim.')
   if (isHospital && patientAge !== null && patientAge < 12 && !(asNumber(childWeight) > 0)) {
@@ -1560,6 +1561,7 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
   }
   // ✅ NHIS CLAIM LOGIC SEPARATION PATCH END
   if (!getClaimField(claimData, 'serviceDate', 'service_date_from')) blockers.push('Date of dispensing/service is required.')
+  if (!getClaimField(claimData, 'referringFacility', 'referring_facility')) blockers.push('Prescribing facility is required.')
   if (!getClaimField(claimData, 'physicianName', 'physician_name')) {
     warnings.push('Prescriber name or ID is missing from the prescription.')
   }
@@ -3957,6 +3959,8 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
 
   const isHospital = organizationType === 'hospital'
   assertRequiredText(claimData.surname, 'Surname')
+  assertRequiredText(claimData.folderNo, 'Folder number')
+  assertRequiredText(claimData.referringFacility, 'Prescribing facility')
   const memberNo = normalizeNhiaMemberNumber(
     assertRequiredText(claimData.memberNo, 'NHIS member number or Ghana Card number')
   )
@@ -4148,6 +4152,8 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
 
   const isHospital = organizationType === 'hospital'
   assertRequiredText(claimData.surname, 'Surname')
+  assertRequiredText(claimData.folderNo, 'Folder number')
+  assertRequiredText(claimData.referringFacility, 'Prescribing facility')
   const memberNo = normalizeNhiaMemberNumber(
     assertRequiredText(claimData.memberNo, 'NHIS member number or Ghana Card number')
   )

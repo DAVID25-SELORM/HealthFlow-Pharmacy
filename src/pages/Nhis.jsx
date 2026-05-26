@@ -190,6 +190,121 @@ const lookupMatches = (value, term) => {
     compactLookupText(value).includes(compactLookupText(term))
 }
 
+const parseClaimDurationDays = (duration) => {
+  const value = normalizeLookupText(duration)
+  if (!value) return null
+  const fractionMatch = value.match(/\b(\d+)\s*\/\s*7\b/)
+  if (fractionMatch) return Number(fractionMatch[1])
+  const numberMatch = value.match(/\b(\d+(?:\.\d+)?)\b/)
+  if (!numberMatch) return null
+  const amount = Number(numberMatch[1])
+  if (!Number.isFinite(amount) || amount <= 0) return null
+  if (value.includes('week')) return Math.round(amount * 7)
+  if (value.includes('month')) return Math.round(amount * 30)
+  return Math.round(amount)
+}
+
+const getClaimPatientKey = (claim = {}) => {
+  const memberKey = compactLookupText(claim.memberNo || claim.member_no || claim.hin)
+  if (memberKey) return memberKey
+  return compactLookupText(
+    [claim.surname, claim.otherNames || claim.other_names].filter(Boolean).join(' ')
+  )
+}
+
+const getMedicineKey = (medicine = {}) =>
+  compactLookupText(
+    medicine.drugCode ||
+      medicine.drug_code ||
+      medicine.nhisDrugId ||
+      medicine.nhis_drug_id ||
+      medicine.description
+  )
+
+const getMedicineNameKey = (medicine = {}) =>
+  compactLookupText(medicine.description || medicine.drug_name || medicine.name)
+
+const getClaimServiceDate = (claim = {}) =>
+  claim.serviceDate || claim.service_date_from || claim.dispensaryDate || claim.dispensary_date || ''
+
+const daysBetweenIsoDates = (fromDate, toDate) => {
+  const from = new Date(fromDate)
+  const to = new Date(toDate)
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return null
+  return Math.floor((to.getTime() - from.getTime()) / 86400000)
+}
+
+const buildNhisDuplicateWarnings = ({
+  currentClaim,
+  currentMedicines,
+  existingClaims,
+  editingClaimId,
+}) => {
+  const warnings = []
+  const currentPatientKey = getClaimPatientKey(currentClaim)
+  const currentDate = getClaimServiceDate(currentClaim)
+  const currentTotal = currentMedicines.reduce((sum, medicine) => sum + Number(medicine.totalAmount || 0), 0)
+  const seenMedicines = new Map()
+
+  currentMedicines.forEach((medicine) => {
+    const medicineKey = getMedicineKey(medicine)
+    const nameKey = getMedicineNameKey(medicine)
+    const duplicateKey = medicineKey || nameKey
+    if (!duplicateKey) return
+    if (seenMedicines.has(duplicateKey)) {
+      warnings.push(`This claim already contains "${medicine.description}" more than once.`)
+    } else {
+      seenMedicines.set(duplicateKey, medicine)
+    }
+  })
+
+  existingClaims
+    .filter((claim) => claim.id !== editingClaimId)
+    .filter((claim) => getClaimPatientKey(claim) && getClaimPatientKey(claim) === currentPatientKey)
+    .forEach((claim) => {
+      const existingMedicines = claim.nhis_claim_medicines || []
+      const existingDate = getClaimServiceDate(claim)
+      const existingTotal = Number(claim.total_amount || 0)
+      const claimLabel = claim.claim_number || `${claim.surname || ''} ${claim.other_names || ''}`.trim() || 'existing claim'
+      const sameDate = currentDate && existingDate && currentDate === existingDate
+      const sameTotal = Math.abs(existingTotal - currentTotal) < 0.01
+
+      if (sameDate && sameTotal) {
+        warnings.push(`${claimLabel} has the same patient, date, and total amount.`)
+      }
+
+      currentMedicines.forEach((medicine) => {
+        const currentMedicineKey = getMedicineKey(medicine)
+        const currentNameKey = getMedicineNameKey(medicine)
+        const match = existingMedicines.find((existingMedicine) => {
+          const existingMedicineKey = getMedicineKey(existingMedicine)
+          const existingNameKey = getMedicineNameKey(existingMedicine)
+          return (
+            (currentMedicineKey && currentMedicineKey === existingMedicineKey) ||
+            (currentNameKey && currentNameKey === existingNameKey)
+          )
+        })
+
+        if (!match) return
+
+        const daysSinceLast = daysBetweenIsoDates(existingDate, currentDate)
+        const servedDays = parseClaimDurationDays(match.duration || medicine.duration)
+        const sameQuantity = Number(match.dispensed_qty || 0) === Number(medicine.dispensedQty || 0)
+        const sameAmount = Math.abs(Number(match.total_amount || 0) - Number(medicine.totalAmount || 0)) < 0.01
+
+        if (servedDays && daysSinceLast !== null && daysSinceLast >= 0 && daysSinceLast < servedDays) {
+          warnings.push(
+            `${medicine.description} was already served on ${formatAppDate(existingDate)} for ${servedDays} day(s); this is only ${daysSinceLast} day(s) later.`
+          )
+        } else if (sameQuantity && sameAmount) {
+          warnings.push(`${claimLabel} has the same medicine, quantity, and amount for this patient.`)
+        }
+      })
+    })
+
+  return [...new Set(warnings)]
+}
+
 const getSettingValue = (settings, camelKey, snakeKey) =>
   settings?.[camelKey] ?? settings?.[snakeKey] ?? ''
 
@@ -1221,6 +1336,23 @@ const Nhis = () => {
       setClaimError(`NHIS claim readiness check failed: ${readiness.blockers.slice(0, 5).join(' ')}`)
       return
     }
+
+    const duplicateWarnings = buildNhisDuplicateWarnings({
+      currentClaim: claimForm,
+      currentMedicines: claimMedicines,
+      existingClaims: claims,
+      editingClaimId: editingClaim?.id,
+    })
+    if (duplicateWarnings.length) {
+      const proceed = window.confirm(
+        `Possible duplicate claim or medicine detected:\n\n${duplicateWarnings.slice(0, 6).join('\n')}\n\nContinue anyway?`
+      )
+      if (!proceed) {
+        setClaimError(`Possible duplicate found: ${duplicateWarnings[0]}`)
+        return
+      }
+    }
+
     try {
       setClaimSubmitting(true)
       setClaimError('')
@@ -2294,8 +2426,9 @@ const Nhis = () => {
 
                   <div className="form-row form-row--3">
                     <div className="form-group">
-                      <label>Folder No</label>
+                      <label>Folder No *</label>
                       <input className="form-input" value={claimForm.folderNo}
+                        required
                         onChange={(e) => setClaimForm((p) => ({ ...p, folderNo: e.target.value }))} />
                     </div>
                     <div className="form-group">
@@ -2397,8 +2530,9 @@ const Nhis = () => {
                   <h3 className="nhis-section-title">Prescription Source</h3>
                   <div className="form-row">
                     <div className="form-group">
-                      <label>Prescribing Facility</label>
+                      <label>Prescribing Facility *</label>
                       <input className="form-input" value={claimForm.referringFacility}
+                        required
                         onChange={(e) => setClaimForm((p) => ({ ...p, referringFacility: e.target.value }))} />
                     </div>
                     <div className="form-group">
