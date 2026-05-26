@@ -200,6 +200,33 @@ const getSavedNhiaCredentialFlag = (settings = {}, previousValue = false, creden
   return Boolean(previousValue)
 }
 
+const getFirstNhiaValue = (...values) =>
+  values.find((value) => value !== undefined && value !== null && String(value).trim() !== '') ?? ''
+
+const mergeNhiaSaveReadback = (submitted = {}, saved = {}) => ({
+  ...submitted,
+  ...(saved || {}),
+  facilityCode: getFirstNhiaValue(saved?.facilityCode, saved?.facility_code, submitted.facilityCode),
+  providerNumber: getFirstNhiaValue(saved?.providerNumber, saved?.provider_number, saved?.providerId, saved?.provider_id, submitted.providerNumber),
+  providerId: getFirstNhiaValue(saved?.providerId, saved?.provider_id, saved?.providerNumber, saved?.provider_number, submitted.providerId, submitted.providerNumber),
+  schemeName: getFirstNhiaValue(saved?.schemeName, saved?.scheme_name, submitted.schemeName),
+  facilityType: getFirstNhiaValue(saved?.facilityType, saved?.facility_type, submitted.facilityType),
+  pharmacyFacilityLevel: getFirstNhiaValue(saved?.pharmacyFacilityLevel, saved?.pharmacy_facility_level, submitted.pharmacyFacilityLevel),
+  providerLevelCode: getFirstNhiaValue(saved?.providerLevelCode, saved?.provider_level_code, submitted.providerLevelCode),
+  credentialCode: getFirstNhiaValue(saved?.credentialCode, saved?.credential_code, saved?.facilityCode, saved?.facility_code, submitted.credentialCode),
+  licenseNumber: getFirstNhiaValue(saved?.licenseNumber, saved?.license_number, submitted.licenseNumber),
+  providerTypeDescription: getFirstNhiaValue(saved?.providerTypeDescription, saved?.provider_type_description, submitted.providerTypeDescription),
+  providerClassLevel: getFirstNhiaValue(saved?.providerClassLevel, saved?.provider_class_level, submitted.providerClassLevel),
+  claimsOfficerName: getFirstNhiaValue(saved?.claimsOfficerName, saved?.claims_officer_name, submitted.claimsOfficerName),
+  accreditationExpiryDate: getFirstNhiaValue(
+    saved?.accreditationExpiryDate,
+    saved?.accreditation_expiry_date,
+    saved?.accreditationExpiry,
+    saved?.nhiaAccreditationExpiry,
+    submitted.accreditationExpiryDate
+  ),
+})
+
 const summarizeNhiaSettingsForLog = (settings = null) => ({
   table: 'nhia_configuration',
   hasSettings: Boolean(settings),
@@ -592,8 +619,7 @@ const Settings = () => {
       )
 
       setNhiaApiForm(toNhiaApiForm({
-        ...nhiaSettingsPayload,
-        ...(effectiveNhiaApiSettings || {}),
+        ...mergeNhiaSaveReadback(nhiaSettingsPayload, effectiveNhiaApiSettings),
         hasApiKey: hasSavedApiKey,
         hasApiSecret: hasSavedApiSecret,
         accreditationExpiryDate: savedAccreditationExpiryDate || accreditationExpiryDate,

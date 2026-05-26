@@ -1877,6 +1877,15 @@ const normalizeNhiaConfig = (settings = null, {
     raw.memberLookupEndpoint || raw.member_lookup_endpoint || raw.memberLookupEndpointPath || raw.member_lookup_endpoint_path
   )
   const ccEndpointPath = normalizeText(raw.ccEndpointPath || raw.cc_endpoint_path || raw.ccCodeEndpointPath || raw.cc_code_endpoint_path)
+  const facilityCode = normalizeText(raw.facilityCode || raw.facility_code)
+  const credentialCode = normalizeText(raw.credentialCode || raw.credential_code || facilityCode)
+  const schemeName = normalizeText(raw.schemeName || raw.scheme_name) || 'National Health Insurance'
+  const facilityType = normalizeText(raw.facilityType || raw.facility_type)
+  const pharmacyFacilityLevel = normalizeText(raw.pharmacyFacilityLevel || raw.pharmacy_facility_level)
+  const providerLevelCode = normalizeText(raw.providerLevelCode || raw.provider_level_code)
+  const licenseNumber = normalizeText(raw.licenseNumber || raw.license_number)
+  const providerTypeDescription = normalizeText(raw.providerTypeDescription || raw.provider_type_description)
+  const providerClassLevel = normalizeText(raw.providerClassLevel || raw.provider_class_level)
   const hasApiKey = hasNhiaSavedCredential(raw, 'hasApiKey', 'has_api_key') || Boolean(normalizeText(credentials.apiKey))
   const hasApiSecret = hasNhiaSavedCredential(raw, 'hasApiSecret', 'has_api_secret') || Boolean(normalizeText(credentials.apiSecret))
   const username = normalizeText(raw.username || credentials.username)
@@ -1897,14 +1906,28 @@ const normalizeNhiaConfig = (settings = null, {
     provider_id: providerId,
     providerNumber: providerId,
     provider_number: providerId,
-    facilityCode: normalizeText(raw.facilityCode || raw.facility_code),
-    facility_code: normalizeText(raw.facility_code || raw.facilityCode),
-    credentialCode: normalizeText(raw.credentialCode || raw.credential_code || raw.facilityCode || raw.facility_code),
-    credential_code: normalizeText(raw.credential_code || raw.credentialCode || raw.facilityCode || raw.facility_code),
+    facilityCode,
+    facility_code: facilityCode,
+    schemeName,
+    scheme_name: schemeName,
+    facilityType,
+    facility_type: facilityType,
+    pharmacyFacilityLevel,
+    pharmacy_facility_level: pharmacyFacilityLevel,
+    providerLevelCode,
+    provider_level_code: providerLevelCode,
+    credentialCode,
+    credential_code: credentialCode,
+    licenseNumber,
+    license_number: licenseNumber,
     accreditationExpiryDate: getNhiaAccreditationExpiryDate(raw),
     accreditation_expiry_date: getNhiaAccreditationExpiryDate(raw),
     claimsOfficerName: normalizeText(raw.claimsOfficerName || raw.claims_officer_name),
     claims_officer_name: normalizeText(raw.claims_officer_name || raw.claimsOfficerName),
+    providerTypeDescription,
+    provider_type_description: providerTypeDescription,
+    providerClassLevel,
+    provider_class_level: providerClassLevel,
     apiBaseUrl: normalizeText(raw.apiBaseUrl || raw.api_base_url),
     api_base_url: normalizeText(raw.api_base_url || raw.apiBaseUrl),
     submitterId: normalizeText(raw.submitterId || raw.submitter_id),

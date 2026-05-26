@@ -2243,21 +2243,31 @@ const saveNhiaApiSettings = async (
 
   const accreditationExpiryDate = getNhiaAccreditationExpiryDate(settings)
   const claimsOfficerName = normalizeText(settings.claimsOfficerName ?? settings.claims_officer_name)
+  const facilityCode = normalizeText(settings.facilityCode || settings.facility_code)
+  const providerNumber = normalizeText(settings.providerNumber || settings.provider_number || settings.providerId || settings.provider_id)
+  const schemeName = normalizeText(settings.schemeName || settings.scheme_name) || 'National Health Insurance'
+  const facilityType = normalizeText(settings.facilityType || settings.facility_type)
+  const pharmacyFacilityLevel = normalizeText(settings.pharmacyFacilityLevel || settings.pharmacy_facility_level)
+  const providerLevelCode = normalizeText(settings.providerLevelCode || settings.provider_level_code)
+  const credentialCode = normalizeText(settings.credentialCode || settings.credential_code || facilityCode)
+  const licenseNumber = normalizeText(settings.licenseNumber || settings.license_number)
+  const providerTypeDescription = normalizeText(settings.providerTypeDescription || settings.provider_type_description)
+  const providerClassLevel = normalizeText(settings.providerClassLevel || settings.provider_class_level)
 
   const row = {
     organization_id: organizationId,
     branch_id: requesterProfile.branch_id,
     mode: 'ONLINE_CLOUD',
-    provider_id: normalizeText(settings.providerId || settings.provider_id || settings.providerNumber || settings.provider_number) || null,
-    facility_code: normalizeText(settings.facilityCode) || null,
-    provider_number: normalizeText(settings.providerNumber || settings.providerId || settings.provider_id) || null,
-    scheme_name: normalizeText(settings.schemeName) || 'National Health Insurance',
+    provider_id: providerNumber || null,
+    facility_code: facilityCode || null,
+    provider_number: providerNumber || null,
+    scheme_name: schemeName,
     // ✅ NHIA CONFIG PATCH START
-    facility_type: normalizeText(settings.facilityType) || null,
-    pharmacy_facility_level: normalizeText(settings.pharmacyFacilityLevel) || null,
-    provider_level_code: normalizeText(settings.providerLevelCode) || null,
-    credential_code: normalizeText(settings.credentialCode) || normalizeText(settings.facilityCode) || null,
-    license_number: normalizeText(settings.licenseNumber) || null,
+    facility_type: facilityType || null,
+    pharmacy_facility_level: pharmacyFacilityLevel || null,
+    provider_level_code: providerLevelCode || null,
+    credential_code: credentialCode || null,
+    license_number: licenseNumber || null,
     accreditation_expiry_date: accreditationExpiryDate || null,
     // ✅ NHIA CONFIG PATCH END
     // ✅ NHIA API ARCHITECTURE PATCH START
@@ -2270,8 +2280,8 @@ const saveNhiaApiSettings = async (
     sandbox_base_url: normalizeText(settings.sandboxBaseUrl).replace(/\/+$/, '') || null,
     production_base_url: normalizeText(settings.productionBaseUrl).replace(/\/+$/, '') || null,
     // ✅ NHIA API ARCHITECTURE PATCH END
-    provider_type_description: normalizeText(settings.providerTypeDescription) || null,
-    provider_class_level: normalizeText(settings.providerClassLevel) || null,
+    provider_type_description: providerTypeDescription || null,
+    provider_class_level: providerClassLevel || null,
     claims_officer_name: claimsOfficerName || null,
     admission_payment_option: ['nhis_pays_admission', 'patient_pays_admission', 'not_applicable'].includes(
       normalizeText(settings.admissionPaymentOption)
