@@ -1758,7 +1758,6 @@ describe('NHIA API settings source routing', () => {
     })
     expect(reloaded.accreditationExpiryDate).toBe('')
     expect(reloaded.claimsOfficerName).toBe('')
-    expect(supabase.from).not.toHaveBeenCalled()
   })
 
   it('normalizes legacy accreditation expiry fields to accreditationExpiryDate', async () => {
@@ -1772,7 +1771,6 @@ describe('NHIA API settings source routing', () => {
     await expect(getNhiaApiSettings({ organizationId: 'org-1' })).resolves.toMatchObject({
       accreditationExpiryDate: '2026-12-31',
     })
-    expect(supabase.from).not.toHaveBeenCalled()
   })
 
   it('does not show saved NHIA API credentials when encrypted values are empty', async () => {
@@ -1798,7 +1796,45 @@ describe('NHIA API settings source routing', () => {
         apiSecret: false,
       },
     })
-    expect(supabase.from).not.toHaveBeenCalled()
+  })
+
+  it('merges direct NHIA configuration rows when the hosted response is partial', async () => {
+    invokeTierAccess.mockResolvedValueOnce({
+      settings: {
+        organizationId: 'org-1',
+        hasApiKey: true,
+      },
+    })
+    const directQuery = {
+      select: vi.fn(() => directQuery),
+      eq: vi.fn(() => directQuery),
+      order: vi.fn(() => directQuery),
+      limit: vi.fn(() => directQuery),
+      is: vi.fn(() => directQuery),
+      maybeSingle: vi.fn().mockResolvedValue({
+        data: {
+          organization_id: 'org-1',
+          facility_code: 'FAC-DIRECT',
+          provider_number: 'PROV-DIRECT',
+          credential_code: 'CRED-DIRECT',
+          accreditation_expiry_date: '2026-12-31',
+          claims_officer_name: 'Direct Officer',
+          is_active: true,
+        },
+        error: null,
+      }),
+    }
+    supabase.from.mockReturnValue(directQuery)
+
+    await expect(getNhiaApiSettings({ organizationId: 'org-1' })).resolves.toMatchObject({
+      organizationId: 'org-1',
+      facilityCode: 'FAC-DIRECT',
+      providerNumber: 'PROV-DIRECT',
+      credentialCode: 'CRED-DIRECT',
+      accreditationExpiryDate: '2026-12-31',
+      claimsOfficerName: 'Direct Officer',
+      hasApiKey: true,
+    })
   })
 
   it('does not send blank or masked NHIA API secrets when saving settings', async () => {

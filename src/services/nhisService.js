@@ -1858,6 +1858,77 @@ const getNhiaConfigMode = async () => {
 
 const readOfflineNhiaConfig = (organizationId = '') => readCachedNhiaApiSettings(organizationId)
 
+const getCurrentUserBranchIdForNhiaConfig = async () => {
+  try {
+    const { data: authData } = await supabase.auth.getUser()
+    const userId = authData?.user?.id
+    if (!userId) return ''
+
+    const { data, error } = await supabase
+      .from('users')
+      .select('branch_id')
+      .eq('id', userId)
+      .maybeSingle()
+
+    if (error) return ''
+    return normalizeText(data?.branch_id)
+  } catch {
+    return ''
+  }
+}
+
+const readHostedNhiaConfigDirect = async (organizationId = '', preferredSettings = null) => {
+  if (!supabase) return null
+
+  try {
+    const preferredId = normalizeText(preferredSettings?.id)
+    if (preferredId) {
+      const { data, error } = await supabase
+        .from(NHIA_CONFIG_TABLE)
+        .select('*')
+        .eq('id', preferredId)
+        .maybeSingle()
+
+      if (!error && data) return data
+    }
+
+    const branchId = normalizeText(
+      preferredSettings?.branchId ||
+        preferredSettings?.branch_id ||
+        await getCurrentUserBranchIdForNhiaConfig()
+    )
+
+    let query = supabase
+      .from(NHIA_CONFIG_TABLE)
+      .select('*')
+      .eq('is_active', true)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+
+    if (organizationId) query = query.eq('organization_id', organizationId)
+    query = branchId ? query.eq('branch_id', branchId) : query.is('branch_id', null)
+
+    const { data, error } = await query.maybeSingle()
+    if (!error && data) return data
+
+    let fallbackQuery = supabase
+      .from(NHIA_CONFIG_TABLE)
+      .select('*')
+      .eq('is_active', true)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+
+    if (organizationId) fallbackQuery = fallbackQuery.eq('organization_id', organizationId)
+
+    const { data: fallbackData, error: fallbackError } = await fallbackQuery.maybeSingle()
+    if (!fallbackError && fallbackData) return fallbackData
+  } catch {
+    // Keep the function response/cache path as the graceful fallback.
+  }
+
+  return null
+}
+
 const normalizeNhiaConfig = (settings = null, {
   mode = '',
   source = 'default',
@@ -2400,12 +2471,15 @@ export const getNhiaApiSettings = async (options = {}) => {
     hostedError = error
   }
 
+  const directHostedSettings = await readHostedNhiaConfigDirect(organizationId, hostedSettings)
   const cachedSettings = readCachedNhiaApiSettings(organizationId)
-  const selectedSettings = hostedSettings || cachedSettings
+  const selectedSettings = directHostedSettings
+    ? { ...(hostedSettings || {}), ...directHostedSettings }
+    : hostedSettings || cachedSettings
   if (selectedSettings) {
     const nhiaConfig = normalizeNhiaConfig(selectedSettings, {
       mode,
-      source: hostedSettings ? 'cloud_supabase' : 'local_cache',
+      source: directHostedSettings || hostedSettings ? 'cloud_supabase' : 'local_cache',
       organizationId,
     })
     writeCachedNhiaApiSettings(nhiaConfig, organizationId)
