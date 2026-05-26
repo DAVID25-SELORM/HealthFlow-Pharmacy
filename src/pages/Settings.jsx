@@ -14,7 +14,7 @@ import {
 } from '../services/settingsService'
 import { getBranches, createBranch, updateBranch, deactivateBranch } from '../services/branchService'
 import { updateOrganization, getOrganizationStats } from '../services/organizationService'
-import { buildClaimItConfigPreview, getNhiaApiSettings, saveNhiaApiSettings, testClaimItConnection, validateNhiaConfigForMode } from '../services/nhisService'
+import { buildClaimItConfigPreview, getNhiaApiSettings, removeNhiaApiCredentials, saveNhiaApiSettings, testClaimItConnection, validateNhiaConfigForMode } from '../services/nhisService'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
 import { normalizeSubscriptionTier, useTenant } from '../context/TenantContext'
@@ -156,6 +156,11 @@ const toNhiaApiForm = (settings, organization) => {
     },
   }
 }
+
+const toNhiaCredentialState = (settings = {}) => ({
+  hasApiKey: Boolean(settings?.hasApiKey || settings?.has_api_key || settings?.credentialSummary?.apiKey),
+  hasApiSecret: Boolean(settings?.hasApiSecret || settings?.has_api_secret || settings?.credentialSummary?.apiSecret),
+})
 
 const buildNhiaCredentialsPayload = (credentials = {}) => {
   const payload = {}
@@ -341,7 +346,9 @@ const Settings = () => {
   const [users, setUsers] = useState([])
   const [orgStats, setOrgStats] = useState(null)
   const [nhiaApiForm, setNhiaApiForm] = useState(blankNhiaApiForm)
+  const [nhiaCredentialState, setNhiaCredentialState] = useState(toNhiaCredentialState(blankNhiaApiForm))
   const [savingNhiaApi, setSavingNhiaApi] = useState(false)
+  const [removingNhiaCredentials, setRemovingNhiaCredentials] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [creatingStaff, setCreatingStaff] = useState(false)
@@ -404,6 +411,7 @@ const Settings = () => {
         setUsers(usersData)
         setBranches(branchesData)
         setNhiaApiForm(nextNhiaApiForm)
+        setNhiaCredentialState(toNhiaCredentialState(nhiaApiSettings || nextNhiaApiForm))
         logNhiaAccreditationExpiryDate('loaded', nextNhiaApiForm.accreditationExpiryDate)
 
         // Load organization stats
@@ -467,10 +475,17 @@ const Settings = () => {
   }
 
   // ✅ NHIA API ARCHITECTURE PATCH START
+  const getNhiaFormWithSavedCredentialState = (form = nhiaApiForm) => ({
+    ...form,
+    hasApiKey: Boolean(nhiaCredentialState.hasApiKey || form.hasApiKey),
+    hasApiSecret: Boolean(nhiaCredentialState.hasApiSecret || form.hasApiSecret),
+  })
+
   const getNhiaIntegrationMissingFields = (form = nhiaApiForm) => {
+    const formWithCredentialState = getNhiaFormWithSavedCredentialState(form)
     return validateNhiaConfigForMode({
-      ...form,
-      providerId: form.providerId || form.providerNumber,
+      ...formWithCredentialState,
+      providerId: formWithCredentialState.providerId || formWithCredentialState.providerNumber,
       facilityName: organization?.name || formData.pharmacyName,
     }).missing
   }
@@ -575,7 +590,7 @@ const Settings = () => {
       const nhiaOrganizationId = organization?.id || organization?.organization_id || nhiaApiForm.organizationId || nhiaApiForm.organization_id
       const credentialPayload = buildNhiaCredentialsPayload(nhiaApiForm.credentials)
       const nhiaSettingsPayload = {
-        ...nhiaApiForm,
+        ...getNhiaFormWithSavedCredentialState(nhiaApiForm),
         credentials: credentialPayload,
         organizationId: nhiaOrganizationId,
         organization_id: nhiaOrganizationId,
@@ -627,6 +642,10 @@ const Settings = () => {
           ? savedClaimsOfficerName
           : nhiaApiForm.claimsOfficerName,
       }, organization))
+      setNhiaCredentialState({
+        hasApiKey: hasSavedApiKey,
+        hasApiSecret: hasSavedApiSecret,
+      })
       // ✅ NHIA API ARCHITECTURE PATCH END
       console.info('NHIA API config saved successfully', {
         table: 'nhia_configuration',
@@ -647,6 +666,28 @@ const Settings = () => {
       notify(saveError.message || 'Unable to save NHIA API settings.', 'error')
     } finally {
       setSavingNhiaApi(false)
+    }
+  }
+
+  const handleRemoveNhiaApiCredentials = async () => {
+    try {
+      setRemovingNhiaCredentials(true)
+      setError('')
+      const nhiaOrganizationId = organization?.id || organization?.organization_id || nhiaApiForm.organizationId || nhiaApiForm.organization_id
+      const savedNhiaApiSettings = await removeNhiaApiCredentials({ organizationId: nhiaOrganizationId })
+      const nextForm = toNhiaApiForm({
+        ...mergeNhiaSaveReadback(nhiaApiForm, savedNhiaApiSettings || {}),
+        hasApiKey: false,
+        hasApiSecret: false,
+      }, organization)
+      setNhiaApiForm(nextForm)
+      setNhiaCredentialState({ hasApiKey: false, hasApiSecret: false })
+      notify('Saved NHIA API credentials removed.', 'success')
+    } catch (removeError) {
+      setError(removeError.message || 'Unable to remove saved NHIA API credentials.')
+      notify(removeError.message || 'Unable to remove saved NHIA API credentials.', 'error')
+    } finally {
+      setRemovingNhiaCredentials(false)
     }
   }
 
@@ -1449,7 +1490,7 @@ const Settings = () => {
                         }}
                         onChange={(event) => updateNhiaCredential('apiKey', event.target.value)}
                       />
-                      {nhiaApiForm.hasApiKey && <p className="settings-helper">API Key Saved</p>}
+                      {nhiaCredentialState.hasApiKey && <p className="settings-helper">✅ API Key Saved</p>}
                     </div>
                     <input
                       placeholder="API key header (x-api-key)"
@@ -1468,7 +1509,7 @@ const Settings = () => {
                         }}
                         onChange={(event) => updateNhiaCredential('apiSecret', event.target.value)}
                       />
-                      {nhiaApiForm.hasApiSecret && <p className="settings-helper">API Secret Saved</p>}
+                      {nhiaCredentialState.hasApiSecret && <p className="settings-helper">✅ API Secret Saved</p>}
                     </div>
                     <input
                       placeholder="Secret header (x-api-secret)"
@@ -1596,6 +1637,16 @@ const Settings = () => {
               {/* ✅ NHIA API ARCHITECTURE PATCH END */}
               <div className="settings-save-bar">
                 <span>Leave secret fields blank to keep the saved values.</span>
+                {(nhiaCredentialState.hasApiKey || nhiaCredentialState.hasApiSecret) && (
+                  <button
+                    className="btn btn-outline"
+                    type="button"
+                    onClick={handleRemoveNhiaApiCredentials}
+                    disabled={removingNhiaCredentials || savingNhiaApi}
+                  >
+                    {removingNhiaCredentials ? 'Removing...' : 'Remove Saved API Credentials'}
+                  </button>
+                )}
                 <button className="btn btn-primary" type="submit" disabled={savingNhiaApi}>
                   {savingNhiaApi ? 'Saving...' : 'Save NHIA API'}
                 </button>

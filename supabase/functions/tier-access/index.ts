@@ -65,6 +65,7 @@ type TierAccessAction =
   | 'sync_nhis_drugs_to_inventory'
   | 'get_nhia_api_settings'
   | 'save_nhia_api_settings'
+  | 'remove_nhia_api_credentials'
   | 'generate_nhia_cc_code'
   | 'submit_nhia_claims_direct'
   | 'test_claimit_connection'
@@ -2349,6 +2350,48 @@ const saveNhiaApiSettings = async (
   return { settings: savedSettings }
 }
 
+const removeNhiaApiCredentials = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  requesterProfile: RequesterProfile,
+  organizationId: string
+) => {
+  requireNhiaSettingsAccess(requesterProfile, 'Only organization admins can remove NHIA API credentials.')
+
+  let query = adminClient
+    .from('nhia_configuration')
+    .update({
+      api_key_encrypted: null,
+      api_secret_encrypted: null,
+      has_api_key: false,
+      has_api_secret: false,
+      updated_by: requesterProfile.id,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('organization_id', organizationId)
+
+  query = requesterProfile.branch_id
+    ? query.eq('branch_id', requesterProfile.branch_id)
+    : query.is('branch_id', null)
+
+  const { error } = await query
+    .select('id')
+    .maybeSingle()
+
+  if (error) throw error
+
+  const settings = await getNhiaApiSettings(adminClient, requesterProfile, organizationId, false)
+  logNhiaConfigEvent('credentials removed', {
+    mode: settings?.mode || 'ONLINE_CLOUD',
+    saveTarget: 'cloud_supabase',
+    endpoint: 'nhia_configuration',
+    saveSuccess: true,
+    configSource: 'cloud_supabase',
+    hasApiKey: false,
+    hasApiSecret: false,
+  })
+  return { settings }
+}
+
 const joinUrl = (baseUrl: string, path: string) =>
   `${baseUrl.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`
 
@@ -2959,6 +3002,10 @@ Deno.serve(async (request) => {
 
     if (action === 'save_nhia_api_settings') {
       return json(await saveNhiaApiSettings(adminClient, requesterProfile, organizationId, payload))
+    }
+
+    if (action === 'remove_nhia_api_credentials') {
+      return json(await removeNhiaApiCredentials(adminClient, requesterProfile, organizationId))
     }
 
     if (action === 'test_claimit_connection') {

@@ -2028,6 +2028,48 @@ const saveHostedNhiaConfigDirect = async (settings = {}, organizationId = '', pr
   return data || row
 }
 
+const removeHostedNhiaCredentialsDirect = async (organizationId = '', preferredSettings = null) => {
+  if (!supabase) {
+    throw new Error('Supabase is not configured for direct NHIA credential removal.')
+  }
+
+  const resolvedOrganizationId = normalizeText(
+    organizationId || preferredSettings?.organizationId || preferredSettings?.organization_id
+  )
+  if (!resolvedOrganizationId) {
+    throw new Error('Organization is required to remove NHIA API credentials.')
+  }
+
+  const branchId = normalizeText(
+    preferredSettings?.branchId ||
+      preferredSettings?.branch_id ||
+      await getCurrentUserBranchIdForNhiaConfig()
+  )
+
+  let query = supabase
+    .from(NHIA_CONFIG_TABLE)
+    .update({
+      api_key_encrypted: null,
+      api_secret_encrypted: null,
+      has_api_key: false,
+      has_api_secret: false,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('organization_id', resolvedOrganizationId)
+
+  query = branchId ? query.eq('branch_id', branchId) : query.is('branch_id', null)
+
+  const { data, error } = await query
+    .select('*')
+    .maybeSingle()
+
+  if (error) {
+    throw error
+  }
+
+  return data || await readHostedNhiaConfigDirect(resolvedOrganizationId, preferredSettings)
+}
+
 const normalizeNhiaConfig = (settings = null, {
   mode = '',
   source = 'default',
@@ -2730,6 +2772,86 @@ export const saveNhiaApiSettings = async (settings, options = {}) => {
     })
     throw error
   }
+}
+
+export const removeNhiaApiCredentials = async (options = {}) => {
+  const organizationId = normalizeText(options.organizationId || options.organization_id)
+  const mode = await getNhiaConfigMode()
+
+  if (mode === 'ONLINE_LOCAL_SYNC' || mode === 'OFFLINE_LOCAL') {
+    const currentSettings = await getBranchNhiaSettings()
+    await saveBranchNhiaSettings({
+      ...(currentSettings || {}),
+      credentials: {},
+      hasApiKey: false,
+      hasApiSecret: false,
+      has_api_key: false,
+      has_api_secret: false,
+    })
+    const savedSettings = await getBranchNhiaSettings()
+    const nhiaConfig = normalizeNhiaConfig({
+      ...(savedSettings || {}),
+      hasApiKey: false,
+      hasApiSecret: false,
+      has_api_key: false,
+      has_api_secret: false,
+      apiKeyEncrypted: '',
+      apiSecretEncrypted: '',
+      api_key_encrypted: '',
+      api_secret_encrypted: '',
+    }, {
+      mode,
+      source: 'local_branch_server',
+      organizationId,
+    })
+    writeCachedNhiaApiSettings(nhiaConfig, organizationId)
+    return nhiaConfig
+  }
+
+  let responseSettings = null
+  try {
+    const response = await invokeTierAccess({ action: 'remove_nhia_api_credentials' })
+    responseSettings = response?.settings || null
+  } catch (error) {
+    console.warn('[NHIA CONFIG] tier-access credential removal failed; trying direct update', summarizeNhiaApiErrorForLog(error))
+  }
+
+  let directSettings = null
+  if (!responseSettings) {
+    directSettings = await removeHostedNhiaCredentialsDirect(organizationId, responseSettings)
+  } else {
+    try {
+      directSettings = await removeHostedNhiaCredentialsDirect(organizationId, responseSettings)
+    } catch {
+      directSettings = null
+    }
+  }
+  const hostedSettings = {
+    ...(responseSettings || {}),
+    ...(directSettings || {}),
+    hasApiKey: false,
+    has_api_key: false,
+    hasApiSecret: false,
+    has_api_secret: false,
+    apiKeyEncrypted: '',
+    api_key_encrypted: '',
+    apiSecretEncrypted: '',
+    api_secret_encrypted: '',
+  }
+  const nhiaConfig = normalizeNhiaConfig(hostedSettings, {
+    mode: 'ONLINE_CLOUD',
+    source: 'cloud_supabase',
+    organizationId,
+  })
+  writeCachedNhiaApiSettings(nhiaConfig, organizationId)
+  logNhiaConfigEvent('credentials removed', {
+    mode: 'ONLINE_CLOUD',
+    saveTarget: 'cloud_supabase',
+    endpoint: 'nhia_configuration',
+    hasApiKey: false,
+    hasApiSecret: false,
+  })
+  return nhiaConfig
 }
 
 export const generateHostedNhiaCcCode = async (claimContext = {}) => {
