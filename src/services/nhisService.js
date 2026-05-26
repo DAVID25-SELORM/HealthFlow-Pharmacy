@@ -30,7 +30,7 @@ import {
   updateBranchRecord,
 } from './branchServerApi'
 import { routeWrite } from './apiRouter'
-import { getConnectivityState } from './connectivityService'
+import { getConnectivityState, refreshConnectivityState } from './connectivityService'
 import { invokeTierAccess } from './tierAccessService'
 
 const UNIQUE_PATIENT_INSURANCE_INDEXES = [
@@ -151,7 +151,7 @@ const NHIA_TARIFF_VERSION = 'FEB 2023'
 const CLAIM_IT_MEDICINE_PRICE_VERSION = '2025-05-01.250531'
 const CLAIM_IT_SERVICE_TARIFF_VERSION = '2023-02-01.250531'
 const CLAIM_IT_POLICY_VERSION = 'cgs.2022-12-01.250531'
-const NHIA_API_SETTINGS_CACHE_PREFIX = 'healthflow.nhiaApiSettings.v1'
+const NHIA_API_SETTINGS_CACHE_PREFIX = 'healthflow.nhiaApiSettings.v2'
 const CLAIMIT_BRIDGE_QUEUE_KEY = 'healthflow.claimitBridgeQueue.v1'
 const CLAIMIT_BRIDGE_RETRY_INTERVAL_MS = 60 * 1000
 const CLAIMIT_BRIDGE_MODES = new Set(['claimit_bridge', 'claimit_assisted'])
@@ -245,8 +245,9 @@ const NHIA_API_SETTINGS_CACHE_FIELDS = [
   'exportFormat',
   'export_format',
 ]
-const NHIA_SECRET_MASK = '••••••••••••'
+const NHIA_SECRET_MASK = '\u2022'.repeat(8)
 const NHIA_SECRET_FIELDS = new Set(['apiKey', 'apiSecret', 'password'])
+const NHIA_SECRET_MASK_VALUES = new Set([NHIA_SECRET_MASK, '\u2022'.repeat(8), '\u2022'.repeat(12)])
 const NHIA_API_CONFIG_TABLE = 'nhia_configuration'
 const NHIA_CONFIG_TABLE = 'nhia_configuration'
 const NHIA_CONFIG_DEFAULTS = {
@@ -1846,6 +1847,7 @@ const readCachedNhiaApiSettings = (organizationId = '') => {
 }
 
 const getNhiaConfigMode = async () => {
+  await refreshConnectivityState().catch(() => null)
   if (shouldUseBranchServer()) {
     const state = getConnectivityState()
     return state?.internetAvailable === false ? 'OFFLINE_LOCAL' : 'ONLINE_LOCAL_SYNC'
@@ -1879,7 +1881,7 @@ const normalizeNhiaConfig = (settings = null, {
   const hasApiSecret = hasNhiaSavedCredential(raw, 'hasApiSecret', 'has_api_secret') || Boolean(normalizeText(credentials.apiSecret))
   const username = normalizeText(raw.username || credentials.username)
   const hasPassword = Boolean(raw.hasPassword || raw.has_password || normalizeText(credentials.password))
-  const resolvedMode = normalizeText(raw.mode) || mode || 'ONLINE_CLOUD'
+  const resolvedMode = mode || normalizeText(raw.mode) || 'ONLINE_CLOUD'
   const normalized = {
     ...NHIA_CONFIG_DEFAULTS,
     ...raw,
@@ -1973,14 +1975,11 @@ const logNhiaConfigEvent = (event, details = {}) => {
   console.info(`[NHIA CONFIG] ${event}`, payload)
 }
 
-const isMissingLocalNhiaConfigRoute = (error) =>
-  error?.status === 404 || normalizeText(error?.endpoint).includes('/api/nhia-config')
-
 const buildNhiaCredentialsPayload = (credentials = {}) => {
   const payload = {}
 
   for (const [field, value] of Object.entries(credentials || {})) {
-    if (NHIA_SECRET_FIELDS.has(field) && (!value || value === NHIA_SECRET_MASK)) continue
+    if (NHIA_SECRET_FIELDS.has(field) && (!value || isNhiaSecretMask(value))) continue
     if (value !== undefined && value !== null && value !== '') payload[field] = value
   }
 
@@ -2000,8 +1999,10 @@ const sanitizeNhiaApiSettingsPayload = (settings = {}) => {
 
 const hasUsableNhiaSecret = (value) => {
   const normalized = normalizeText(value)
-  return Boolean(normalized && normalized !== NHIA_SECRET_MASK)
+  return Boolean(normalized && !isNhiaSecretMask(normalized))
 }
+
+const isNhiaSecretMask = (value) => NHIA_SECRET_MASK_VALUES.has(normalizeText(value))
 
 export const validateNhiaConfigForMode = (settings = {}) => {
   const credentials = settings.credentials && typeof settings.credentials === 'object' ? settings.credentials : {}
@@ -2054,13 +2055,26 @@ const getNhiaPayloadKeys = (settings = {}) =>
     .filter((key) => key !== 'credentials')
     .sort()
 
-const hasNhiaSavedCredential = (settings = {}, camelKey, snakeKey) =>
-  Boolean(
+const hasOwnNhiaCredentialValue = (settings = {}, camelKey, snakeKey) =>
+  Object.prototype.hasOwnProperty.call(settings || {}, camelKey) ||
+  Object.prototype.hasOwnProperty.call(settings || {}, snakeKey)
+
+const hasNhiaSavedCredential = (settings = {}, camelKey, snakeKey) => {
+  const encryptedCamelKey = camelKey === 'hasApiKey' ? 'apiKeyEncrypted' : 'apiSecretEncrypted'
+  const encryptedSnakeKey = camelKey === 'hasApiKey' ? 'api_key_encrypted' : 'api_secret_encrypted'
+  const hasEncryptedValue = Boolean(normalizeText(settings?.[encryptedCamelKey] || settings?.[encryptedSnakeKey]))
+
+  if (hasOwnNhiaCredentialValue(settings, encryptedCamelKey, encryptedSnakeKey)) {
+    return hasEncryptedValue
+  }
+
+  return Boolean(
     settings?.[camelKey] ||
       settings?.[snakeKey] ||
       settings?.credentialSummary?.[camelKey.replace(/^has/, '').replace(/^Api/, 'api')] ||
       settings?.credentialSummary?.[camelKey === 'hasApiKey' ? 'apiKey' : 'apiSecret']
   )
+}
 
 const summarizeNhiaApiSettingsForLog = (settings = null) => ({
   table: NHIA_API_CONFIG_TABLE,
@@ -2393,6 +2407,7 @@ export const saveNhiaApiSettings = async (settings, options = {}) => {
   )
   const mode = await getNhiaConfigMode()
   const sanitizedSettings = sanitizeNhiaApiSettingsPayload(settings)
+  sanitizedSettings.mode = mode
   const validation = validateNhiaConfigForMode(sanitizedSettings)
   if (!validation.valid) {
     logNhiaConfigEvent('save failed', {
@@ -2449,8 +2464,7 @@ export const saveNhiaApiSettings = async (settings, options = {}) => {
         hasApiKey: Boolean(sanitizedSettings.hasApiKey || sanitizedSettings.credentials?.apiKey),
         hasApiSecret: Boolean(sanitizedSettings.hasApiSecret || sanitizedSettings.credentials?.apiSecret),
       })
-      if (!isMissingLocalNhiaConfigRoute(error) || mode === 'OFFLINE_LOCAL') throw error
-      options.onLocalSaveFailure?.(error)
+      throw error
     }
   }
 
@@ -2459,15 +2473,12 @@ export const saveNhiaApiSettings = async (settings, options = {}) => {
       action: 'save_nhia_api_settings',
       settings: sanitizedSettings,
     })
-    const hostedSettings = response?.settings || null
+    const readBack = await invokeTierAccess({ action: 'get_nhia_api_settings' })
+    const hostedSettings = readBack?.settings || response?.settings || null
     console.info('[NHIA CONFIG] cloud response/error', {
       response: summarizeNhiaApiSettingsForLog(hostedSettings),
       error: null,
     })
-
-    if (!hostedSettings) {
-      throw new Error('Supabase did not return saved NHIA API settings.')
-    }
 
     if (!hostedSettings) {
       throw new Error('Unable to read the saved NHIA API settings response.')

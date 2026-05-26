@@ -181,6 +181,26 @@ const syncClaimSubmitted = async (supabase, row) => {
   }
 }
 
+const syncNhiaConfiguration = async (supabase, row) => {
+  const payload = parseJson(row.payload_json, {})
+  const configPayload = payload.config || payload.record || {}
+  const { data, error } = await supabase.rpc('branch_sync_upsert_nhia_configuration', {
+    p_sync_token: config.branchSyncToken,
+    p_config: configPayload,
+  })
+
+  if (error) {
+    throw error
+  }
+
+  const timestamp = nowIso()
+  markOutboxSynced.run(timestamp, timestamp, row.id)
+  return {
+    localId: row.entity_id,
+    remoteId: data?.remote_id || row.entity_id,
+  }
+}
+
 const stripLocalFields = (record, omit = []) => {
   const omitted = new Set([
     'local_id',
@@ -240,6 +260,9 @@ const runPendingOutboxSync = async ({ limit = 25 } = {}) => {
       } else if (row.event_type === 'claim.submitted') {
         await syncClaimSubmitted(supabase, row)
         result.synced += 1
+      } else if (row.event_type === 'nhia_config.updated') {
+        await syncNhiaConfiguration(supabase, row)
+        result.synced += 1
       } else if (row.event_type === 'record.upsert') {
         await syncRecordUpsert(supabase, row)
         result.synced += 1
@@ -254,6 +277,8 @@ const runPendingOutboxSync = async ({ limit = 25 } = {}) => {
       } else if (row.entity_type === 'claims') {
         markClaimFailed.run(message, row.entity_id)
         markOfflineRecordFailed.run(message, nowIso(), row.entity_id, row.entity_type)
+      } else if (row.entity_type === 'nhia_configuration') {
+        // The outbox row carries the retry state for configuration sync.
       } else {
         markOfflineRecordFailed.run(message, nowIso(), row.entity_id, row.entity_type)
       }

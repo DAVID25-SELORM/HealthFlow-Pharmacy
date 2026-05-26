@@ -1670,7 +1670,7 @@ describe('direct NHIA submission', () => {
   })
 })
 
-describe('NHIA API settings fallback', () => {
+describe('NHIA API settings source routing', () => {
   const completeClaimItSettings = {
     providerId: 'PROVIDER-1',
     providerNumber: 'PROVIDER-1',
@@ -1703,17 +1703,9 @@ describe('NHIA API settings fallback', () => {
     expect(invokeTierAccess).not.toHaveBeenCalled()
   })
 
-  it('falls back to the cloud save path when the local NHIA save route fails', async () => {
+  it('does not fall back to the cloud save path when the local NHIA save route fails', async () => {
     shouldUseBranchServer.mockReturnValue(true)
     saveNhiaSettings.mockRejectedValueOnce(Object.assign(new Error('Local branch server request failed.'), { status: 404, endpoint: '/api/nhia-config' }))
-    invokeTierAccess.mockResolvedValueOnce({
-      settings: {
-        organizationId: 'org-1',
-        facilityCode: 'FAC-1',
-        hasApiKey: true,
-        hasApiSecret: true,
-      },
-    })
 
     const onLocalSaveFailure = vi.fn()
 
@@ -1725,17 +1717,10 @@ describe('NHIA API settings fallback', () => {
         apiKey: 'local-key',
         apiSecret: 'local-secret',
       },
-    }, { organizationId: 'org-1', onLocalSaveFailure })).resolves.toMatchObject({
-      organizationId: 'org-1',
-      facilityCode: 'FAC-1',
-      hasApiKey: true,
-      hasApiSecret: true,
-    })
+    }, { organizationId: 'org-1', onLocalSaveFailure })).rejects.toThrow('Local branch server request failed.')
 
-    expect(onLocalSaveFailure).toHaveBeenCalledTimes(1)
-    expect(invokeTierAccess).toHaveBeenCalledWith(expect.objectContaining({
-      action: 'save_nhia_api_settings',
-    }))
+    expect(onLocalSaveFailure).not.toHaveBeenCalled()
+    expect(invokeTierAccess).not.toHaveBeenCalled()
   })
 
   it('does not mix hosted NHIA settings with cached partial settings', async () => {
@@ -1786,6 +1771,32 @@ describe('NHIA API settings fallback', () => {
 
     await expect(getNhiaApiSettings({ organizationId: 'org-1' })).resolves.toMatchObject({
       accreditationExpiryDate: '2026-12-31',
+    })
+    expect(supabase.from).not.toHaveBeenCalled()
+  })
+
+  it('does not show saved NHIA API credentials when encrypted values are empty', async () => {
+    invokeTierAccess.mockResolvedValueOnce({
+      settings: {
+        organizationId: 'org-1',
+        hasApiKey: true,
+        hasApiSecret: true,
+        apiKeyEncrypted: '',
+        apiSecretEncrypted: '',
+        credentialSummary: {
+          apiKey: true,
+          apiSecret: true,
+        },
+      },
+    })
+
+    await expect(getNhiaApiSettings({ organizationId: 'org-1' })).resolves.toMatchObject({
+      hasApiKey: false,
+      hasApiSecret: false,
+      credentialSummary: {
+        apiKey: false,
+        apiSecret: false,
+      },
     })
     expect(supabase.from).not.toHaveBeenCalled()
   })

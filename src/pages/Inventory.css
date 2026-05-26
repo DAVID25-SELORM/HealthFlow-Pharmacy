@@ -789,3 +789,412 @@
     border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   }
 }
+
+/* Compact redesign pass based on the supplied inventory prototype. */
+.inventory-page {
+  --surface: #ffffff;
+  --surface-soft: #f5f7f6;
+  --line: #dfe6e3;
+  --line-soft: #edf1ef;
+  --ink: #17211f;
+  --muted: #697672;
+  --teal: #1d9e75;
+  --teal-dark: #0f6e56;
+  --amber-bg: #faeeda;
+  --amber: #854f0b;
+  --red-bg: #fcebeb;
+  --red: #a32d2d;
+  --blue-bg: #e6f1fb;
+  --blue: #185fa5;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  color: var(--ink);
+  font-size: 0.82rem;
+}
+
+.inventory-page .page-header {
+  align-items: flex-start;
+  gap: 0.8rem;
+  margin-bottom: 0;
+}
+
+.inventory-page .page-header h1 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.inventory-page .page-header p {
+  margin-top: 0.2rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.inventory-page .header-actions {
+  gap: 0.5rem;
+}
+
+.inventory-page .btn,
+.branch-stock-select,
+.inventory-page .search-box,
+.filter-box,
+.inventory-summary-card,
+.inventory-page .table-container,
+.pagination,
+.inventory-page .modal-content,
+.transfer-summary,
+.import-errors,
+.valid-preview,
+.preview-table-wrapper {
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.inventory-page .btn {
+  min-height: 34px;
+  padding: 0.5rem 0.72rem;
+  border: 1px solid var(--line);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.inventory-page .btn-primary {
+  border-color: var(--teal);
+  background: var(--teal);
+}
+
+.inventory-page .btn-primary:hover {
+  background: var(--teal-dark);
+}
+
+.inventory-page .btn-secondary,
+.inventory-page .btn-outline {
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.inventory-page .btn-secondary:hover,
+.inventory-page .btn-outline:hover {
+  border-color: var(--teal);
+  background: var(--surface-soft);
+  color: var(--teal-dark);
+}
+
+.branch-stock-select {
+  min-height: 34px;
+  padding: 0.3rem 0.55rem;
+  border-color: var(--line);
+  background: var(--surface);
+}
+
+.branch-stock-select span {
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
+.branch-stock-select select {
+  color: var(--ink);
+  font-size: 0.76rem;
+}
+
+.inventory-controls {
+  gap: 0.55rem;
+  margin-bottom: 0;
+}
+
+.inventory-page .search-box,
+.filter-box {
+  min-height: 36px;
+  border-color: var(--line);
+  background: var(--surface-soft);
+  padding: 0 0.65rem;
+}
+
+.inventory-page .search-box {
+  max-width: 340px;
+}
+
+.filter-box {
+  min-width: 190px;
+}
+
+.inventory-page .search-box input,
+.filter-box select {
+  padding: 0.52rem 0;
+  color: var(--ink);
+  font-size: 0.78rem;
+}
+
+.inventory-summary-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin-bottom: 0;
+}
+
+.inventory-summary-card {
+  min-height: 82px;
+  padding: 0.85rem;
+  border: 1px solid var(--line-soft);
+  background: var(--surface);
+}
+
+.inventory-summary-card span {
+  color: var(--muted);
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+}
+
+.inventory-summary-card strong {
+  color: var(--ink);
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.inventory-summary-card small {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.inventory-local-banner {
+  margin-bottom: 0;
+  border-color: #9fe1cb;
+  border-radius: 8px;
+  background: #e1f5ee;
+  color: var(--teal-dark);
+  font-size: 0.78rem;
+}
+
+.inventory-page .table-container {
+  margin-bottom: 0;
+  border: 1px solid var(--line-soft);
+  background: var(--surface);
+}
+
+.inventory-table {
+  table-layout: fixed;
+}
+
+.inventory-table thead {
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--surface-soft);
+}
+
+.inventory-table th {
+  padding: 0.62rem 0.8rem;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.inventory-table td {
+  padding: 0.65rem 0.8rem;
+  border-bottom-color: var(--line-soft);
+  color: var(--ink);
+  font-size: 0.78rem;
+  vertical-align: middle;
+}
+
+.inventory-table tbody tr:hover {
+  background: var(--surface-soft);
+}
+
+.inventory-page .drug-name {
+  color: var(--ink);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.drug-subtext {
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.total-cell {
+  color: var(--ink);
+}
+
+.inventory-page .status-badge {
+  padding: 0.16rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.inventory-page .status-good {
+  background: #e1f5ee;
+  color: #085041;
+}
+
+.inventory-page .status-low {
+  background: var(--amber-bg);
+  color: #633806;
+}
+
+.inventory-page .status-expiring {
+  background: #eeedfe;
+  color: #3c3489;
+}
+
+.inventory-page .status-expired {
+  background: var(--red-bg);
+  color: #791f1f;
+}
+
+.inventory-page .action-buttons {
+  gap: 0.25rem;
+}
+
+.inventory-page .icon-btn {
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.inventory-page .icon-btn:hover {
+  background: var(--surface-soft);
+  color: var(--ink);
+}
+
+.edit-btn:hover {
+  border-color: #b7d6ef;
+  background: var(--blue-bg);
+  color: var(--blue);
+}
+
+.delete-btn:hover {
+  border-color: #f09595;
+  background: var(--red-bg);
+  color: var(--red);
+}
+
+.transfer-btn:hover {
+  border-color: #9fe1cb;
+  background: #e1f5ee;
+  color: var(--teal-dark);
+}
+
+.pagination {
+  padding: 0.65rem 0.8rem;
+  border: 1px solid var(--line-soft);
+}
+
+.inventory-page .page-info {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.inventory-page .page-btn {
+  min-width: 30px;
+  min-height: 30px;
+  padding: 0.25rem 0.55rem;
+  border-color: var(--line);
+  border-radius: 7px;
+  font-size: 0.76rem;
+}
+
+.inventory-page .page-btn:disabled {
+  background: var(--teal);
+  border-color: var(--teal);
+}
+
+.inventory-page .modal-overlay {
+  background: rgba(15, 23, 42, 0.42);
+}
+
+.inventory-page .modal-content {
+  border: 1px solid var(--line-soft);
+}
+
+.inventory-page .modal-header {
+  padding: 1rem;
+  border-bottom-color: var(--line-soft);
+}
+
+.inventory-page .modal-header h2 {
+  color: var(--ink);
+  font-size: 1rem;
+}
+
+.inventory-page .close-btn {
+  width: 30px;
+  height: 30px;
+  min-height: 30px;
+  border-radius: 7px;
+  font-size: 1.5rem;
+}
+
+.inventory-page .drug-form {
+  padding: 1rem;
+}
+
+.inventory-page .form-row {
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.inventory-page .form-group {
+  gap: 0.35rem;
+}
+
+.inventory-page .form-group label {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.inventory-page .form-group input,
+.inventory-page .form-group select,
+.inventory-page .form-group textarea {
+  min-height: 36px;
+  padding: 0.52rem 0.65rem;
+  border-color: var(--line);
+  border-radius: 7px;
+  color: var(--ink);
+  font-size: 0.78rem;
+}
+
+.inventory-page .form-actions {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top-color: var(--line-soft);
+}
+
+.import-stats {
+  gap: 0.65rem;
+}
+
+.inventory-page .stat-card {
+  border-width: 1px;
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+@media (max-width: 1180px) {
+  .inventory-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .inventory-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-page .search-box,
+  .filter-box {
+    max-width: none;
+  }
+
+  .inventory-table {
+    min-width: 860px;
+  }
+}

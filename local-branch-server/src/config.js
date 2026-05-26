@@ -29,6 +29,7 @@ export const config = {
     toNumber(process.env.INVENTORY_PULL_INTERVAL_SECONDS, 300)
   ),
   branchSyncToken: process.env.BRANCH_SYNC_TOKEN || '',
+  nhiaConfigSecretKey: process.env.NHIA_CONFIG_SECRET_KEY || process.env.NHIA_SECRET_KEY || '',
   supabaseUrl: process.env.SUPABASE_URL || '',
   supabaseSyncKey: process.env.SUPABASE_SYNC_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '',
   payments: {

@@ -1919,26 +1919,133 @@ const normalizeCredentialMode = (value: unknown) => {
 const normalizeExportFormat = (value: unknown) =>
   normalizeText(value).toLowerCase() === 'xml' ? 'xml' : 'json'
 
-const NHIA_SECRET_MASK = '••••••••••••'
+const NHIA_SECRET_MASK = '\u2022'.repeat(8)
 const NHIA_SECRET_FIELDS = new Set(['apiKey', 'apiSecret', 'password'])
+const NHIA_SECRET_PREFIX = 'hfsec:aesgcm:v1:'
+const NHIA_LEGACY_SECRET_PREFIX = 'hfsec:v1:'
+const NHIA_SECRET_MASK_VALUES = new Set([NHIA_SECRET_MASK, '\u2022'.repeat(8), '\u2022'.repeat(12)])
+let nhiaSecretKeyPromise: Promise<CryptoKey> | null = null
 
 const maskCredentials = (payload: Record<string, unknown> = {}) =>
   Object.fromEntries(Object.entries(payload).map(([key, value]) => [key, Boolean(normalizeText(value))]))
 
-const mapNhiaSettingsRow = (row: Record<string, unknown> | null, includeCredentials = false) => {
+const isNhiaSecretMask = (value: unknown) => NHIA_SECRET_MASK_VALUES.has(normalizeText(value))
+
+const bytesToBase64 = (bytes: Uint8Array) => {
+  let binary = ''
+  for (const byte of bytes) binary += String.fromCharCode(byte)
+  return btoa(binary)
+}
+
+const base64ToBytes = (value: string) =>
+  Uint8Array.from(atob(value), (char) => char.charCodeAt(0))
+
+const decodeLegacyNhiaSecret = (value: string) => {
+  try {
+    return new TextDecoder().decode(base64ToBytes(value.slice(NHIA_LEGACY_SECRET_PREFIX.length)))
+  } catch {
+    return ''
+  }
+}
+
+const getNhiaSecretKeyMaterial = () =>
+  normalizeText(Deno.env.get('NHIA_CONFIG_SECRET_KEY')) ||
+  normalizeText(Deno.env.get('NHIA_SECRET_KEY')) ||
+  normalizeText(Deno.env.get('SERVICE_ROLE_KEY')) ||
+  normalizeText(Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'))
+
+const getNhiaSecretKey = async () => {
+  const keyMaterial = getNhiaSecretKeyMaterial()
+  if (!keyMaterial) {
+    throw new Error('Missing NHIA_CONFIG_SECRET_KEY for NHIA secret encryption.')
+  }
+
+  if (!nhiaSecretKeyPromise) {
+    nhiaSecretKeyPromise = crypto.subtle
+      .digest('SHA-256', new TextEncoder().encode(keyMaterial))
+      .then((digest) =>
+        crypto.subtle.importKey('raw', digest, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt'])
+      )
+  }
+
+  return nhiaSecretKeyPromise
+}
+
+const encodeNhiaSecret = async (value: unknown) => {
+  const normalized = normalizeText(value)
+  if (!normalized) return ''
+  if (normalized.startsWith(NHIA_SECRET_PREFIX)) return normalized
+  const plaintext = normalized.startsWith(NHIA_LEGACY_SECRET_PREFIX)
+    ? decodeLegacyNhiaSecret(normalized)
+    : normalized
+  if (!plaintext) return ''
+  const iv = crypto.getRandomValues(new Uint8Array(12))
+  const key = await getNhiaSecretKey()
+  const ciphertext = new Uint8Array(
+    await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(plaintext))
+  )
+  return `${NHIA_SECRET_PREFIX}${bytesToBase64(iv)}:${bytesToBase64(ciphertext)}`
+}
+
+const decodeNhiaSecret = async (value: unknown) => {
+  const normalized = normalizeText(value)
+  if (!normalized) return ''
+  if (normalized.startsWith(NHIA_LEGACY_SECRET_PREFIX)) {
+    return decodeLegacyNhiaSecret(normalized)
+  }
+  if (!normalized.startsWith(NHIA_SECRET_PREFIX)) return normalized
+  try {
+    const [ivEncoded, ciphertextEncoded] = normalized.slice(NHIA_SECRET_PREFIX.length).split(':')
+    if (!ivEncoded || !ciphertextEncoded) {
+      throw new Error('Invalid NHIA secret ciphertext.')
+    }
+    const key = await getNhiaSecretKey()
+    const plaintext = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: base64ToBytes(ivEncoded) },
+      key,
+      base64ToBytes(ciphertextEncoded)
+    )
+    return new TextDecoder().decode(plaintext)
+  } catch {
+    throw new Error('Unable to decrypt NHIA secret. Check NHIA_CONFIG_SECRET_KEY.')
+  }
+}
+
+const logNhiaConfigEvent = (event: string, details: Record<string, unknown> = {}) => {
+  console.info(`[NHIA CONFIG] ${event}`, {
+    mode: details.mode || '',
+    saveTarget: details.saveTarget || '',
+    endpoint: details.endpoint || '',
+    saveSuccess: details.saveSuccess ?? null,
+    saveFailed: details.saveFailed ?? null,
+    configSource: details.configSource || '',
+    hasApiKey: Boolean(details.hasApiKey),
+    hasApiSecret: Boolean(details.hasApiSecret),
+  })
+}
+
+const mapNhiaSettingsRow = async (row: Record<string, unknown> | null, includeCredentials = false) => {
   if (!row) return null
   const credentials = includeCredentials
     ? {
-        apiKey: row.api_key_encrypted || '',
-        apiSecret: row.api_secret_encrypted || '',
+        apiKey: await decodeNhiaSecret(row.api_key_encrypted),
+        apiSecret: await decodeNhiaSecret(row.api_secret_encrypted),
         headerName: row.api_key_header_name || '',
         secretHeaderName: row.api_secret_header_name || '',
         headerPrefix: row.api_key_header_prefix || '',
         username: row.username || '',
-        password: row.password_encrypted || '',
+        password: await decodeNhiaSecret(row.password_encrypted),
         tokenEndpointPath: row.token_endpoint_path || '',
       }
     : {}
+  const credentialSummary = includeCredentials
+    ? maskCredentials(credentials)
+    : {
+        apiKey: Boolean(row.api_key_encrypted),
+        apiSecret: Boolean(row.api_secret_encrypted),
+        password: Boolean(row.password_encrypted),
+        username: Boolean(row.username),
+      }
 
   return {
     id: row.id,
@@ -1998,14 +2105,14 @@ const mapNhiaSettingsRow = (row: Record<string, unknown> | null, includeCredenti
     directApiEnabled: Boolean(row.direct_api_enabled),
     credentialMode: row.credential_mode || 'api_key',
     credentials: includeCredentials ? credentials : {},
-    credentialSummary: maskCredentials(credentials),
+    credentialSummary,
     username: row.username || '',
     passwordEncrypted: row.password_encrypted ? NHIA_SECRET_MASK : '',
     hasPassword: Boolean(row.password_encrypted),
-    hasApiKey: Boolean(row.has_api_key || row.api_key_encrypted),
-    has_api_key: Boolean(row.has_api_key || row.api_key_encrypted),
-    hasApiSecret: Boolean(row.has_api_secret || row.api_secret_encrypted),
-    has_api_secret: Boolean(row.has_api_secret || row.api_secret_encrypted),
+    hasApiKey: Boolean(row.api_key_encrypted),
+    has_api_key: Boolean(row.api_key_encrypted),
+    hasApiSecret: Boolean(row.api_secret_encrypted),
+    has_api_secret: Boolean(row.api_secret_encrypted),
     nhisMemberDigits: Number(row.nhis_member_digits || 8),
     ghanaCardDigits: Number(row.ghana_card_digits || 10),
     exportFormat: row.export_format || 'json',
@@ -2013,12 +2120,13 @@ const mapNhiaSettingsRow = (row: Record<string, unknown> | null, includeCredenti
     isActive: row.is_active !== false,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    updatedBy: row.updated_by || '',
   }
 }
 
 const hasUsableNhiaSecret = (value: unknown) => {
   const normalized = normalizeText(value)
-  return Boolean(normalized && normalized !== NHIA_SECRET_MASK)
+  return Boolean(normalized && !isNhiaSecretMask(normalized))
 }
 
 const validateNhiaSettingsForMode = (settings: Record<string, unknown>) => {
@@ -2085,7 +2193,15 @@ const getNhiaApiSettings = async (
     .maybeSingle()
 
   if (error) throw error
-  return mapNhiaSettingsRow(data as Record<string, unknown> | null, includeCredentials)
+  const settings = await mapNhiaSettingsRow(data as Record<string, unknown> | null, includeCredentials)
+  logNhiaConfigEvent('load', {
+    mode: settings?.mode || 'ONLINE_CLOUD',
+    endpoint: 'nhia_configuration',
+    configSource: 'cloud_supabase',
+    hasApiKey: settings?.hasApiKey,
+    hasApiSecret: settings?.hasApiSecret,
+  })
+  return settings
 }
 
 const saveNhiaApiSettings = async (
@@ -2105,11 +2221,18 @@ const saveNhiaApiSettings = async (
   const credentials = { ...(existing?.credentials || {}) } as Record<string, unknown>
 
   for (const [key, value] of Object.entries(incomingCredentials)) {
-    if (NHIA_SECRET_FIELDS.has(key) && (!normalizeText(value) || normalizeText(value) === NHIA_SECRET_MASK)) continue
+    if (NHIA_SECRET_FIELDS.has(key) && (!normalizeText(value) || isNhiaSecretMask(value))) continue
     if (normalizeText(value)) credentials[key] = value
   }
   const hasApiKey = Boolean(normalizeText(credentials.apiKey))
   const hasApiSecret = Boolean(normalizeText(credentials.apiSecret))
+  logNhiaConfigEvent('save started', {
+    mode: 'ONLINE_CLOUD',
+    saveTarget: 'cloud_supabase',
+    endpoint: 'nhia_configuration',
+    hasApiKey,
+    hasApiSecret,
+  })
   validateNhiaSettingsForMode({
     ...settings,
     credentials,
@@ -2165,15 +2288,15 @@ const saveNhiaApiSettings = async (
           ? settings.sandboxBaseUrl
           : settings.productionBaseUrl)
     ).replace(/\/+$/, '') || null,
-    api_key_encrypted: hasApiKey ? normalizeText(credentials.apiKey) : null,
-    api_secret_encrypted: hasApiSecret ? normalizeText(credentials.apiSecret) : null,
+    api_key_encrypted: hasApiKey ? await encodeNhiaSecret(credentials.apiKey) : null,
+    api_secret_encrypted: hasApiSecret ? await encodeNhiaSecret(credentials.apiSecret) : null,
     has_api_key: hasApiKey,
     has_api_secret: hasApiSecret,
     api_key_header_name: normalizeText(credentials.headerName) || null,
     api_secret_header_name: normalizeText(credentials.secretHeaderName) || null,
     api_key_header_prefix: normalizeText(credentials.headerPrefix) || null,
     username: normalizeText(settings.username || credentials.username) || null,
-    password_encrypted: normalizeText(credentials.password) || null,
+    password_encrypted: normalizeText(credentials.password) ? await encodeNhiaSecret(credentials.password) : null,
     token_endpoint_path: normalizeText(credentials.tokenEndpointPath) || null,
     claim_endpoint_path: normalizeText(settings.claimEndpointPath || settings.claim_endpoint_path || settings.claimSubmitEndpoint || settings.claim_submit_endpoint) || null,
     claim_submit_endpoint: normalizeText(settings.claimSubmitEndpoint || settings.claim_submit_endpoint || settings.claimEndpointPath || settings.claim_endpoint_path) || null,
@@ -2196,14 +2319,24 @@ const saveNhiaApiSettings = async (
     ...(existing?.id ? {} : { created_by: requesterProfile.id }),
   }
 
-  const { data, error } = await adminClient
+  const { error } = await adminClient
     .from('nhia_configuration')
     .upsert(row, { onConflict: 'organization_id,branch_id' })
-    .select('*')
+    .select('id')
     .single()
 
   if (error) throw error
-  return { settings: mapNhiaSettingsRow(data as Record<string, unknown>, false) }
+  const savedSettings = await getNhiaApiSettings(adminClient, requesterProfile, organizationId, false)
+  logNhiaConfigEvent('save completed', {
+    mode: 'ONLINE_CLOUD',
+    saveTarget: 'cloud_supabase',
+    endpoint: 'nhia_configuration',
+    saveSuccess: true,
+    configSource: 'cloud_supabase',
+    hasApiKey: savedSettings?.hasApiKey,
+    hasApiSecret: savedSettings?.hasApiSecret,
+  })
+  return { settings: savedSettings }
 }
 
 const joinUrl = (baseUrl: string, path: string) =>
@@ -2307,7 +2440,7 @@ const mergeIncomingCredentials = (
     : {}) as Record<string, unknown>
   const credentials = { ...savedCredentials }
   for (const [key, value] of Object.entries(incomingCredentials)) {
-    if (normalizeText(value) && normalizeText(value) !== NHIA_SECRET_MASK) credentials[key] = value
+    if (normalizeText(value) && !isNhiaSecretMask(value)) credentials[key] = value
   }
   return credentials
 }

@@ -93,7 +93,7 @@ app.use((request, response, next) => {
 
   response.setHeader('Access-Control-Allow-Origin', origin || 'null')
   response.setHeader('Vary', 'Origin')
-  response.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,OPTIONS')
+  response.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,OPTIONS')
   response.setHeader(
     'Access-Control-Allow-Headers',
     'Content-Type, x-branch-token, x-paystack-signature, x-hubtel-signature, x-hubtel-webhook-signature, x-signature'

@@ -1,3 +1,4 @@
+import crypto from 'node:crypto'
 import https from 'node:https'
 import { createId, db, json, nowIso, parseJson } from './db.js'
 import { config } from './config.js'
@@ -361,7 +362,7 @@ const selectAnySettings = db.prepare(`
 
 const upsertSettings = db.prepare(`
   INSERT INTO nhia_configuration (
-    id, organization_id, branch_id, facility_code, provider_number, provider_id,
+    id, organization_id, branch_id, mode, facility_code, provider_number, provider_id,
     -- ✅ NHIA CONFIG PATCH START
     facility_type, pharmacy_facility_level, provider_level_code, credential_code,
     license_number, accreditation_expiry_date,
@@ -382,10 +383,10 @@ const upsertSettings = db.prepare(`
     claim_endpoint_path, claim_submit_endpoint, claim_validation_endpoint_path, cc_endpoint_path, cc_code_endpoint_path,
     claim_status_endpoint_path, claim_status_endpoint, member_lookup_endpoint_path, member_lookup_endpoint, direct_api_enabled, credential_mode,
     nhis_member_digits, ghana_card_digits, export_format,
-    max_retry_attempts, is_active, created_at, updated_at
+    max_retry_attempts, is_active, created_at, updated_at, updated_by
   )
   VALUES (
-    @id, @organizationId, @branchId, @facilityCode, @providerNumber, @providerId,
+    @id, @organizationId, @branchId, @mode, @facilityCode, @providerNumber, @providerId,
     -- ✅ NHIA CONFIG PATCH START
     @facilityType, @pharmacyFacilityLevel, @providerLevelCode, @credentialCode,
     @licenseNumber, @accreditationExpiryDate,
@@ -406,11 +407,12 @@ const upsertSettings = db.prepare(`
     @claimEndpointPath, @claimSubmitEndpoint, @claimValidationEndpointPath, @ccEndpointPath, @ccCodeEndpointPath,
     @claimStatusEndpointPath, @claimStatusEndpoint, @memberLookupEndpointPath, @memberLookupEndpoint, @directApiEnabled, @credentialMode,
     @nhisMemberDigits, @ghanaCardDigits, @exportFormat,
-    @maxRetryAttempts, 1, @createdAt, @updatedAt
+    @maxRetryAttempts, 1, @createdAt, @updatedAt, @updatedBy
   )
   ON CONFLICT(id) DO UPDATE SET
     organization_id = excluded.organization_id,
     branch_id = excluded.branch_id,
+    mode = excluded.mode,
     facility_code = excluded.facility_code,
     provider_number = excluded.provider_number,
     provider_id = excluded.provider_id,
@@ -468,7 +470,25 @@ const upsertSettings = db.prepare(`
     export_format = excluded.export_format,
     max_retry_attempts = excluded.max_retry_attempts,
     is_active = 1,
-    updated_at = excluded.updated_at
+    updated_at = excluded.updated_at,
+    updated_by = excluded.updated_by
+`)
+
+const deletePendingNhiaConfigOutbox = db.prepare(`
+  DELETE FROM sync_outbox
+  WHERE event_type = 'nhia_config.updated'
+    AND entity_type = 'nhia_configuration'
+    AND entity_id = ?
+    AND status IN ('pending', 'failed')
+`)
+
+const insertNhiaConfigOutbox = db.prepare(`
+  INSERT INTO sync_outbox (
+    id, event_type, entity_type, entity_id, payload_json, status, created_at, updated_at
+  )
+  VALUES (
+    @id, 'nhia_config.updated', 'nhia_configuration', @entityId, @payloadJson, 'pending', @createdAt, @updatedAt
+  )
 `)
 
 const insertClaim = db.prepare(`
@@ -616,28 +636,118 @@ const maskCredentials = (payload = {}) =>
     ])
   )
 
-const NHIA_SECRET_MASK = '••••••••••••'
+const NHIA_SECRET_MASK = '\u2022'.repeat(8)
 const NHIA_SECRET_FIELDS = new Set(['apiKey', 'apiSecret', 'password'])
+const NHIA_SECRET_PREFIX = 'hfsec:aesgcm:v1:'
+const NHIA_LEGACY_SECRET_PREFIX = 'hfsec:v1:'
+const NHIA_SECRET_MASK_VALUES = new Set([NHIA_SECRET_MASK, '\u2022'.repeat(8), '\u2022'.repeat(12)])
+
+const isNhiaSecretMask = (value) => NHIA_SECRET_MASK_VALUES.has(normalizeText(value))
+
+const decodeLegacyNhiaSecret = (value) => {
+  try {
+    return Buffer.from(value.slice(NHIA_LEGACY_SECRET_PREFIX.length), 'base64').toString('utf8')
+  } catch {
+    return ''
+  }
+}
+
+const getNhiaSecretKeyMaterial = () =>
+  normalizeText(config.nhiaConfigSecretKey) ||
+  normalizeText(config.branchServerToken) ||
+  normalizeText(config.branchSyncToken) ||
+  normalizeText(config.supabaseSyncKey)
+
+const getNhiaSecretKey = () => {
+  const keyMaterial = getNhiaSecretKeyMaterial()
+  if (!keyMaterial) {
+    throw new Error('Missing NHIA_CONFIG_SECRET_KEY for NHIA secret encryption.')
+  }
+  return crypto.createHash('sha256').update(keyMaterial).digest()
+}
+
+const encodeNhiaSecret = (value) => {
+  const normalized = normalizeText(value)
+  if (!normalized) return ''
+  if (normalized.startsWith(NHIA_SECRET_PREFIX)) return normalized
+  const plaintext = normalized.startsWith(NHIA_LEGACY_SECRET_PREFIX)
+    ? decodeLegacyNhiaSecret(normalized)
+    : normalized
+  if (!plaintext) return ''
+  const iv = crypto.randomBytes(12)
+  const cipher = crypto.createCipheriv('aes-256-gcm', getNhiaSecretKey(), iv)
+  const ciphertext = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()])
+  const tag = cipher.getAuthTag()
+  return `${NHIA_SECRET_PREFIX}${iv.toString('base64')}:${tag.toString('base64')}:${ciphertext.toString('base64')}`
+}
+
+const decodeNhiaSecret = (value) => {
+  const normalized = normalizeText(value)
+  if (!normalized) return ''
+  if (normalized.startsWith(NHIA_LEGACY_SECRET_PREFIX)) {
+    return decodeLegacyNhiaSecret(normalized)
+  }
+  if (!normalized.startsWith(NHIA_SECRET_PREFIX)) return normalized
+  try {
+    const [ivEncoded, tagEncoded, ciphertextEncoded] = normalized.slice(NHIA_SECRET_PREFIX.length).split(':')
+    if (!ivEncoded || !tagEncoded || !ciphertextEncoded) {
+      throw new Error('Invalid NHIA secret ciphertext.')
+    }
+    const decipher = crypto.createDecipheriv('aes-256-gcm', getNhiaSecretKey(), Buffer.from(ivEncoded, 'base64'))
+    decipher.setAuthTag(Buffer.from(tagEncoded, 'base64'))
+    return Buffer.concat([
+      decipher.update(Buffer.from(ciphertextEncoded, 'base64')),
+      decipher.final(),
+    ]).toString('utf8')
+  } catch {
+    throw new Error('Unable to decrypt NHIA secret. Check NHIA_CONFIG_SECRET_KEY.')
+  }
+}
+
+const logNhiaConfigEvent = (event, details = {}) => {
+  console.info(`[NHIA CONFIG] ${event}`, {
+    mode: details.mode || '',
+    saveTarget: details.saveTarget || '',
+    endpoint: details.endpoint || '',
+    saveSuccess: details.saveSuccess ?? null,
+    saveFailed: details.saveFailed ?? null,
+    configSource: details.configSource || '',
+    hasApiKey: Boolean(details.hasApiKey),
+    hasApiSecret: Boolean(details.hasApiSecret),
+  })
+}
 
 const mapSettingsRow = (row, { includeCredentials = false } = {}) => {
   if (!row) {
     return null
   }
 
-  const credentials = {
-    apiKey: row.api_key_encrypted || '',
-    apiSecret: row.api_secret_encrypted || '',
-    headerName: row.api_key_header_name || '',
-    secretHeaderName: row.api_secret_header_name || '',
-    headerPrefix: row.api_key_header_prefix || '',
-    username: row.username || '',
-    password: row.password_encrypted || '',
-    tokenEndpointPath: row.token_endpoint_path || '',
-  }
+  const credentials = includeCredentials
+    ? {
+        apiKey: decodeNhiaSecret(row.api_key_encrypted),
+        apiSecret: decodeNhiaSecret(row.api_secret_encrypted),
+        headerName: row.api_key_header_name || '',
+        secretHeaderName: row.api_secret_header_name || '',
+        headerPrefix: row.api_key_header_prefix || '',
+        username: row.username || '',
+        password: decodeNhiaSecret(row.password_encrypted),
+        tokenEndpointPath: row.token_endpoint_path || '',
+      }
+    : {}
+  const credentialSummary = includeCredentials
+    ? maskCredentials(credentials)
+    : {
+        apiKey: Boolean(row.api_key_encrypted),
+        apiSecret: Boolean(row.api_secret_encrypted),
+        password: Boolean(row.password_encrypted),
+        username: Boolean(row.username),
+      }
+
   return {
     id: row.id,
     organizationId: row.organization_id || '',
     branchId: row.branch_id || '',
+    mode: row.mode || 'OFFLINE_LOCAL',
     facilityCode: row.facility_code || '',
     providerId: row.provider_id || row.provider_number || '',
     provider_id: row.provider_id || row.provider_number || '',
@@ -693,12 +803,12 @@ const mapSettingsRow = (row, { includeCredentials = false } = {}) => {
     directApiEnabled: Boolean(row.direct_api_enabled),
     credentialMode: normalizeCredentialMode(row.credential_mode || 'api_key'),
     credentials: includeCredentials ? credentials : {},
-    credentialSummary: maskCredentials(credentials),
-    hasApiKey: Boolean(row.has_api_key || normalizeText(credentials.apiKey) || normalizeText(row.api_key_encrypted)),
-    hasApiSecret: Boolean(row.has_api_secret || normalizeText(credentials.apiSecret) || normalizeText(row.api_secret_encrypted)),
-    username: row.username || credentials.username || '',
+    credentialSummary,
+    hasApiKey: Boolean(row.api_key_encrypted),
+    hasApiSecret: Boolean(row.api_secret_encrypted),
+    username: row.username || '',
     passwordEncrypted: row.password_encrypted ? NHIA_SECRET_MASK : '',
-    hasPassword: Boolean(row.password_encrypted || credentials.password),
+    hasPassword: Boolean(row.password_encrypted),
     nhisMemberDigits: Number(row.nhis_member_digits || DEFAULT_NHIS_MEMBER_DIGITS),
     ghanaCardDigits: Number(row.ghana_card_digits || DEFAULT_GHANA_CARD_DIGITS),
     exportFormat: row.export_format === 'cxf' ? 'xml' : (row.export_format || 'xml'),
@@ -706,18 +816,40 @@ const mapSettingsRow = (row, { includeCredentials = false } = {}) => {
     isActive: Boolean(row.is_active),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    updatedBy: row.updated_by || '',
   }
 }
 
 const resolveSettingsRow = () =>
   selectSettings.get(config.organizationId, config.branchId) || selectAnySettings.get()
 
-export const getNhiaSettings = ({ includeCredentials = false } = {}) =>
-  mapSettingsRow(resolveSettingsRow(), { includeCredentials })
+const queueNhiaConfigSync = (row, timestamp = nowIso()) => {
+  if (!row?.id) return
+  deletePendingNhiaConfigOutbox.run(row.id)
+  insertNhiaConfigOutbox.run({
+    id: createId(),
+    entityId: row.id,
+    payloadJson: json({ config: row }),
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  })
+}
+
+export const getNhiaSettings = ({ includeCredentials = false } = {}) => {
+  const settings = mapSettingsRow(resolveSettingsRow(), { includeCredentials })
+  logNhiaConfigEvent('load', {
+    mode: settings?.mode || 'OFFLINE_LOCAL',
+    endpoint: '/api/nhia-config',
+    configSource: 'local_branch_server',
+    hasApiKey: settings?.hasApiKey,
+    hasApiSecret: settings?.hasApiSecret,
+  })
+  return settings
+}
 
 const hasUsableNhiaSecret = (value) => {
   const normalized = normalizeText(value)
-  return Boolean(normalized && normalized !== NHIA_SECRET_MASK)
+  return Boolean(normalized && !isNhiaSecretMask(normalized))
 }
 
 const validateNhiaSettingsForMode = (settings = {}) => {
@@ -763,26 +895,26 @@ const validateNhiaSettingsForMode = (settings = {}) => {
 export const saveNhiaSettings = (settings = {}) => {
   const existing = resolveSettingsRow()
   const timestamp = nowIso()
-  const credentialMode = normalizeCredentialMode(settings.credentialMode)
+  const credentialMode = normalizeCredentialMode(settings.credentialMode || settings.credential_mode)
   const incomingCredentials =
     settings.credentials && typeof settings.credentials === 'object'
       ? settings.credentials
       : parseJson(settings.credentialPayload, {})
   const existingCredentials = existing
     ? {
-        apiKey: existing.api_key_encrypted || '',
-        apiSecret: existing.api_secret_encrypted || '',
+        apiKey: decodeNhiaSecret(existing.api_key_encrypted),
+        apiSecret: decodeNhiaSecret(existing.api_secret_encrypted),
         headerName: existing.api_key_header_name || '',
         secretHeaderName: existing.api_secret_header_name || '',
         headerPrefix: existing.api_key_header_prefix || '',
         username: existing.username || '',
-        password: existing.password_encrypted || '',
+        password: decodeNhiaSecret(existing.password_encrypted),
         tokenEndpointPath: existing.token_endpoint_path || '',
       }
     : {}
   const credentials = { ...existingCredentials }
   for (const [key, value] of Object.entries(incomingCredentials || {})) {
-    if (NHIA_SECRET_FIELDS.has(key) && (!normalizeText(value) || normalizeText(value) === NHIA_SECRET_MASK)) {
+    if (NHIA_SECRET_FIELDS.has(key) && (!normalizeText(value) || isNhiaSecretMask(value))) {
       continue
     }
     if (normalizeText(value)) {
@@ -791,6 +923,13 @@ export const saveNhiaSettings = (settings = {}) => {
   }
   const hasApiKey = Boolean(normalizeText(credentials.apiKey))
   const hasApiSecret = Boolean(normalizeText(credentials.apiSecret))
+  logNhiaConfigEvent('save started', {
+    mode: normalizeText(settings.mode) || 'ONLINE_LOCAL_SYNC',
+    saveTarget: 'local_branch_server',
+    endpoint: '/api/nhia-config',
+    hasApiKey,
+    hasApiSecret,
+  })
   validateNhiaSettingsForMode({
     ...settings,
     credentials,
@@ -807,6 +946,7 @@ export const saveNhiaSettings = (settings = {}) => {
     id,
     organizationId,
     branchId,
+    mode: normalizeText(settings.mode) || 'ONLINE_LOCAL_SYNC',
     facilityCode: normalizeText(settings.facilityCode) || null,
     providerId: normalizeText(settings.providerId || settings.provider_id || settings.providerNumber || settings.provider_number) || null,
     providerNumber: normalizeText(settings.providerNumber || settings.provider_id || settings.providerId) || null,
@@ -843,15 +983,15 @@ export const saveNhiaSettings = (settings = {}) => {
       settings.apiBaseUrl ||
         (settings.apiEnvironment === 'sandbox' ? settings.sandboxBaseUrl : settings.productionBaseUrl)
     ).replace(/\/+$/, '') || null,
-    apiKeyEncrypted: hasApiKey ? credentials.apiKey : null,
-    apiSecretEncrypted: hasApiSecret ? credentials.apiSecret : null,
+    apiKeyEncrypted: hasApiKey ? encodeNhiaSecret(credentials.apiKey) : null,
+    apiSecretEncrypted: hasApiSecret ? encodeNhiaSecret(credentials.apiSecret) : null,
     hasApiKey: hasApiKey ? 1 : 0,
     hasApiSecret: hasApiSecret ? 1 : 0,
     apiKeyHeaderName: normalizeText(credentials.headerName) || null,
     apiSecretHeaderName: normalizeText(credentials.secretHeaderName) || null,
     apiKeyHeaderPrefix: normalizeText(credentials.headerPrefix) || null,
     username: normalizeText(settings.username || credentials.username) || null,
-    passwordEncrypted: normalizeText(credentials.password) || null,
+    passwordEncrypted: normalizeText(credentials.password) ? encodeNhiaSecret(credentials.password) : null,
     tokenEndpointPath: normalizeText(credentials.tokenEndpointPath) || null,
     claimEndpointPath: normalizeText(settings.claimEndpointPath || settings.claimSubmitEndpoint || settings.claim_submit_endpoint) || null,
     claimSubmitEndpoint: normalizeText(settings.claimSubmitEndpoint || settings.claim_submit_endpoint || settings.claimEndpointPath || settings.claim_endpoint_path) || null,
@@ -870,6 +1010,7 @@ export const saveNhiaSettings = (settings = {}) => {
     maxRetryAttempts: Math.min(Math.max(Number(settings.maxRetryAttempts) || 3, 1), 10),
     createdAt: existing?.created_at || timestamp,
     updatedAt: timestamp,
+    updatedBy: normalizeText(settings.updatedBy || settings.updated_by) || null,
   })
 
   logSubmission({
@@ -883,7 +1024,19 @@ export const saveNhiaSettings = (settings = {}) => {
     },
   })
 
-  return getNhiaSettings()
+  const savedRow = selectSettings.get(organizationId, branchId) || selectAnySettings.get()
+  queueNhiaConfigSync(savedRow, timestamp)
+  const saved = getNhiaSettings()
+  logNhiaConfigEvent('save completed', {
+    mode: saved?.mode || 'ONLINE_LOCAL_SYNC',
+    saveTarget: 'local_branch_server',
+    endpoint: '/api/nhia-config',
+    saveSuccess: true,
+    configSource: 'local_branch_server',
+    hasApiKey: saved?.hasApiKey,
+    hasApiSecret: saved?.hasApiSecret,
+  })
+  return saved
 }
 
 const mapClaimRow = (row) => ({

@@ -4,7 +4,7 @@ import { useSearchParams } from 'react-router-dom'
 import { dispatchHealthflowDataChanged } from '../lib/appEvents'
 import { createSale, getRecentSales, getSaleById, refundSale } from '../services/salesService'
 import { createClaim } from '../services/claimsService'
-import { createNhisClaim } from '../services/nhisService'
+import { createNhisClaim, getNhiaApiSettings } from '../services/nhisService'
 import { getAllPatients } from '../services/patientService'
 import { getPharmacySettings } from '../services/settingsService'
 import { getBranches } from '../services/branchService'
@@ -17,7 +17,6 @@ import {
   getBranchServerConfig,
   getBranchServerHealth,
   getBranchSyncStatus,
-  getNhiaSettings,
   initiateBranchPayment,
   isBranchServerEnabled,
   pullBranchInventory,
@@ -576,13 +575,10 @@ const Sales = () => {
   }, [branchServerModeEnabled, loading, patientSearchTerm, user?.id])
 
   useEffect(() => {
-    if (!branchServerModeEnabled) {
-      setNhiaSettings(null)
-      return
-    }
-
     let cancelled = false
-    getNhiaSettings()
+    getNhiaApiSettings({
+      organizationId: profile?.organization_id || organization?.id || organization?.organization_id,
+    })
       .then((settings) => {
         if (!cancelled) {
           setNhiaSettings(settings)
@@ -597,7 +593,7 @@ const Sales = () => {
     return () => {
       cancelled = true
     }
-  }, [branchServerModeEnabled])
+  }, [organization?.id, organization?.organization_id, profile?.organization_id])
 
   useEffect(() => {
     if (loading) {

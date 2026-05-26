@@ -207,22 +207,65 @@ ensureColumn('nhia_settings', 'admission_payment_option', "TEXT NOT NULL DEFAULT
 ensureColumn('nhia_settings', 'claimit_validation_enabled', 'INTEGER NOT NULL DEFAULT 1')
 ensureColumn('nhia_settings', 'claims_officer_signature_url', 'TEXT')
 const ensureNhiaConfigurationColumn = (column, definition) => ensureColumn('nhia_configuration', column, definition)
-ensureNhiaConfigurationColumn('mode', "TEXT NOT NULL DEFAULT 'OFFLINE_LOCAL'")
-ensureNhiaConfigurationColumn('provider_id', 'TEXT')
-ensureNhiaConfigurationColumn('api_key_encrypted', 'TEXT')
-ensureNhiaConfigurationColumn('api_secret_encrypted', 'TEXT')
-ensureNhiaConfigurationColumn('has_api_key', 'INTEGER NOT NULL DEFAULT 0')
-ensureNhiaConfigurationColumn('has_api_secret', 'INTEGER NOT NULL DEFAULT 0')
-ensureNhiaConfigurationColumn('api_key_header_name', 'TEXT')
-ensureNhiaConfigurationColumn('api_secret_header_name', 'TEXT')
-ensureNhiaConfigurationColumn('api_key_header_prefix', 'TEXT')
-ensureNhiaConfigurationColumn('username', 'TEXT')
-ensureNhiaConfigurationColumn('password_encrypted', 'TEXT')
-ensureNhiaConfigurationColumn('token_endpoint_path', 'TEXT')
-ensureNhiaConfigurationColumn('claim_submit_endpoint', 'TEXT')
-ensureNhiaConfigurationColumn('claim_status_endpoint', 'TEXT')
-ensureNhiaConfigurationColumn('member_lookup_endpoint', 'TEXT')
-ensureNhiaConfigurationColumn('updated_by', 'TEXT')
+;[
+  ['organization_id', 'TEXT'],
+  ['branch_id', 'TEXT'],
+  ['mode', "TEXT NOT NULL DEFAULT 'OFFLINE_LOCAL'"],
+  ['provider_id', 'TEXT'],
+  ['facility_code', 'TEXT'],
+  ['provider_number', 'TEXT'],
+  ['facility_type', 'TEXT'],
+  ['pharmacy_facility_level', 'TEXT'],
+  ['provider_level_code', 'TEXT'],
+  ['credential_code', 'TEXT'],
+  ['license_number', 'TEXT'],
+  ['accreditation_expiry_date', 'TEXT'],
+  ['integration_mode', "TEXT NOT NULL DEFAULT 'claimit_export'"],
+  ['connection_profile', "TEXT NOT NULL DEFAULT 'local_server'"],
+  ['validation_mode', "TEXT NOT NULL DEFAULT 'validate_before_submit'"],
+  ['claim_control_mode', "TEXT NOT NULL DEFAULT 'manual'"],
+  ['sandbox_base_url', 'TEXT'],
+  ['production_base_url', 'TEXT'],
+  ['scheme_name', "TEXT NOT NULL DEFAULT 'National Health Insurance'"],
+  ['provider_type_description', 'TEXT'],
+  ['provider_class_level', 'TEXT'],
+  ['pharmacy_level', 'TEXT'],
+  ['claims_officer_name', 'TEXT'],
+  ['admission_payment_option', "TEXT NOT NULL DEFAULT 'nhis_pays_admission'"],
+  ['claimit_validation_enabled', 'INTEGER NOT NULL DEFAULT 1'],
+  ['claims_officer_signature_url', 'TEXT'],
+  ['submitter_id', 'TEXT'],
+  ['api_base_url', 'TEXT'],
+  ['api_key_encrypted', 'TEXT'],
+  ['api_secret_encrypted', 'TEXT'],
+  ['has_api_key', 'INTEGER NOT NULL DEFAULT 0'],
+  ['has_api_secret', 'INTEGER NOT NULL DEFAULT 0'],
+  ['api_key_header_name', 'TEXT'],
+  ['api_secret_header_name', 'TEXT'],
+  ['api_key_header_prefix', 'TEXT'],
+  ['username', 'TEXT'],
+  ['password_encrypted', 'TEXT'],
+  ['token_endpoint_path', 'TEXT'],
+  ['claim_endpoint_path', 'TEXT'],
+  ['claim_submit_endpoint', 'TEXT'],
+  ['claim_validation_endpoint_path', 'TEXT'],
+  ['cc_endpoint_path', 'TEXT'],
+  ['cc_code_endpoint_path', 'TEXT'],
+  ['claim_status_endpoint_path', 'TEXT'],
+  ['claim_status_endpoint', 'TEXT'],
+  ['member_lookup_endpoint_path', 'TEXT'],
+  ['member_lookup_endpoint', 'TEXT'],
+  ['direct_api_enabled', 'INTEGER NOT NULL DEFAULT 0'],
+  ['credential_mode', "TEXT NOT NULL DEFAULT 'api_key'"],
+  ['nhis_member_digits', 'INTEGER NOT NULL DEFAULT 8'],
+  ['ghana_card_digits', 'INTEGER NOT NULL DEFAULT 10'],
+  ['export_format', "TEXT NOT NULL DEFAULT 'json'"],
+  ['max_retry_attempts', 'INTEGER NOT NULL DEFAULT 3'],
+  ['is_active', 'INTEGER NOT NULL DEFAULT 1'],
+  ['created_at', 'TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP'],
+  ['updated_at', 'TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP'],
+  ['updated_by', 'TEXT'],
+].forEach(([column, definition]) => ensureNhiaConfigurationColumn(column, definition))
 db.exec(`
   INSERT OR IGNORE INTO nhia_configuration (
     id, organization_id, branch_id, facility_code, provider_number,

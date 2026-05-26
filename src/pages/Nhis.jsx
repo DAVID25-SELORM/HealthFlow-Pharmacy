@@ -42,8 +42,6 @@ import {
 } from '../services/nhisService'
 import {
   generateNhiaCcCode as generateBranchNhiaCcCode,
-  getBranchServerConfig,
-  getNhiaSettings as getBranchNhiaSettings,
 } from '../services/branchServerApi'
 import { getAllPatients } from '../services/patientService'
 import { getAllDrugs } from '../services/drugService'
@@ -427,22 +425,9 @@ const Nhis = () => {
   }), [loadAll, notify])
 
   const refreshDirectNhiaApiStatus = useCallback(async () => {
-    const config = getBranchServerConfig()
-    if (config.enabled && config.token) {
-      try {
-        const settings = await getBranchNhiaSettings()
-        if (settings) {
-          setDirectNhiaSettings({ ...settings, source: 'branch' })
-          return
-        }
-      } catch {
-        // Hosted settings below are the fallback for online Supabase deployments.
-      }
-    }
-
     try {
       const settings = await getNhiaApiSettings({ organizationId })
-      setDirectNhiaSettings(settings ? { ...settings, source: 'hosted' } : null)
+      setDirectNhiaSettings(settings || null)
     } catch {
       setDirectNhiaSettings(null)
     }
@@ -1005,7 +990,7 @@ const Nhis = () => {
     admissionPaymentOption: resolvedNhiaSettings?.admissionPaymentOption || 'nhis_pays_admission',
     claimitValidationEnabled: resolvedNhiaSettings?.claimitValidationEnabled !== false,
     claimsOfficerSignatureUrl: resolvedNhiaSettings?.claimsOfficerSignatureUrl || '',
-    submitterId: resolvedNhiaSettings?.submitterId || user?.id || '',
+    submitterId: resolvedNhiaSettings?.submitterId || '',
     integrationMode,
     connectionProfile: resolvedNhiaSettings?.connectionProfile || resolvedNhiaSettings?.connection_profile || 'local_server',
     validationMode: resolvedNhiaSettings?.validationMode || resolvedNhiaSettings?.validation_mode || 'validate_before_submit',
@@ -1017,7 +1002,9 @@ const Nhis = () => {
     ccCodeEndpointPath: ccEndpointPath,
     claimStatusEndpointPath: resolvedNhiaSettings?.claimStatusEndpointPath || resolvedNhiaSettings?.claim_status_endpoint_path || '',
     memberLookupEndpointPath: resolvedNhiaSettings?.memberLookupEndpointPath || resolvedNhiaSettings?.member_lookup_endpoint_path || '',
-    directApiSource: resolvedNhiaSettings?.source || 'hosted',
+    directApiSource: ['local_branch_server', 'local_cache'].includes(
+      resolvedNhiaSettings?.configSource || resolvedNhiaSettings?.source
+    ) ? 'branch' : 'hosted',
     directPayloadFormat: resolvedNhiaSettings?.exportFormat || 'json',
     // ✅ NHIS PHARMACY LEVEL PATCH START
     pharmacyLevel: facilityPharmacyLevel,
@@ -1034,7 +1021,9 @@ const Nhis = () => {
     }
 
     if (directNhiaApiAvailable) {
-      const isBranchSubmit = resolvedNhiaSettings?.source === 'branch'
+      const isBranchSubmit = ['local_branch_server', 'local_cache'].includes(
+        resolvedNhiaSettings?.configSource || resolvedNhiaSettings?.source
+      )
       const target = isBranchSubmit ? 'local branch server' : 'hosted NHIA/CLAIM-it service'
       const check = isBranchSubmit
         ? 'Confirm the branch server is running and the local server URL/token are correct.'
@@ -1186,7 +1175,9 @@ const Nhis = () => {
             ccCodeEndpointPath: ccEndpointPath,
             claimControlMode,
           }, context)
-        : resolvedNhiaSettings?.source === 'branch'
+        : ['local_branch_server', 'local_cache'].includes(
+          resolvedNhiaSettings?.configSource || resolvedNhiaSettings?.source
+        )
         ? generateBranchNhiaCcCode
         : generateHostedNhiaCcCode
       const result = await generateCcCode(claimContext)

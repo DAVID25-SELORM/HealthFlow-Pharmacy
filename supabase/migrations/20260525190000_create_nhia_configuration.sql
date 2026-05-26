@@ -63,20 +63,82 @@ create table if not exists public.nhia_configuration (
 create unique index if not exists idx_nhia_configuration_org_branch
   on public.nhia_configuration (organization_id, branch_id) nulls not distinct;
 
+create index if not exists idx_nhia_configuration_branch
+  on public.nhia_configuration (branch_id)
+  where branch_id is not null;
+
 alter table public.nhia_configuration enable row level security;
 
 drop policy if exists "nhia_configuration_select_org" on public.nhia_configuration;
 create policy "nhia_configuration_select_org"
   on public.nhia_configuration
   for select
-  using (true);
+  using (
+    organization_id = public.user_organization_id()
+    or exists (
+      select 1
+      from public.users u
+      where u.id = auth.uid()
+        and u.role = 'super_admin'
+    )
+  );
 
 drop policy if exists "nhia_configuration_service_write" on public.nhia_configuration;
 create policy "nhia_configuration_service_write"
   on public.nhia_configuration
   for all
-  using (true)
-  with check (true);
+  using (
+    (
+      organization_id = public.user_organization_id()
+      and exists (
+        select 1
+        from public.users u
+        where u.id = auth.uid()
+          and u.role = 'admin'
+      )
+    )
+    or exists (
+      select 1
+      from public.users u
+      where u.id = auth.uid()
+        and u.role = 'super_admin'
+    )
+  )
+  with check (
+    (
+      organization_id = public.user_organization_id()
+      and exists (
+        select 1
+        from public.users u
+        where u.id = auth.uid()
+          and u.role = 'admin'
+      )
+    )
+    or exists (
+      select 1
+      from public.users u
+      where u.id = auth.uid()
+        and u.role = 'super_admin'
+    )
+  );
+
+create or replace function public.set_nhia_configuration_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  new.has_api_key = nullif(new.api_key_encrypted, '') is not null;
+  new.has_api_secret = nullif(new.api_secret_encrypted, '') is not null;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_nhia_configuration_updated_at on public.nhia_configuration;
+create trigger trg_nhia_configuration_updated_at
+before update on public.nhia_configuration
+for each row
+execute function public.set_nhia_configuration_updated_at();
 
 create or replace function pg_temp.nhia_column_expr(column_name text, fallback text)
 returns text

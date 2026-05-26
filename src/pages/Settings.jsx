@@ -33,8 +33,11 @@ import { PHARMACY_LEVELS } from '../utils/nhisPharmacyLevel'
 // ✅ NHIS PHARMACY LEVEL PATCH END
 import './Settings.css'
 
-const NHIA_SECRET_MASK = '••••••••••••'
+const NHIA_SECRET_MASK = '\u2022'.repeat(8)
 const NHIA_SECRET_FIELDS = new Set(['apiKey', 'apiSecret', 'password'])
+const NHIA_DISPLAY_SECRET_MASK = '\u2022'.repeat(8)
+const NHIA_SECRET_MASK_VALUES = new Set([NHIA_SECRET_MASK, NHIA_DISPLAY_SECRET_MASK, '\u2022'.repeat(12)])
+const isNhiaSecretMask = (value) => NHIA_SECRET_MASK_VALUES.has(String(value || '').trim())
 const NHIA_API_INTEGRATION_MODES = ['claimit_bridge', 'claimit_assisted', 'direct_nhia_api', 'hybrid']
 const NHIA_BRIDGE_MODES = ['claimit_bridge', 'claimit_assisted']
 const NHIA_LOCAL_BRIDGE_PROFILES = ['local_server', 'lan_ip']
@@ -147,9 +150,9 @@ const toNhiaApiForm = (settings, organization) => {
     credentials: {
       ...blankNhiaApiForm.credentials,
       ...(resolved.credentials || {}),
-      apiKey: hasApiKey ? NHIA_SECRET_MASK : '',
-      apiSecret: hasApiSecret ? NHIA_SECRET_MASK : '',
-      password: hasPassword ? NHIA_SECRET_MASK : '',
+      apiKey: hasApiKey ? NHIA_DISPLAY_SECRET_MASK : '',
+      apiSecret: hasApiSecret ? NHIA_DISPLAY_SECRET_MASK : '',
+      password: hasPassword ? NHIA_DISPLAY_SECRET_MASK : '',
     },
   }
 }
@@ -158,7 +161,7 @@ const buildNhiaCredentialsPayload = (credentials = {}) => {
   const payload = {}
 
   for (const [field, value] of Object.entries(credentials || {})) {
-    if (NHIA_SECRET_FIELDS.has(field) && (!value || value === NHIA_SECRET_MASK)) continue
+    if (NHIA_SECRET_FIELDS.has(field) && (!value || isNhiaSecretMask(value))) continue
     if (value !== undefined && value !== null && value !== '') {
       payload[field] = value
     }
@@ -174,6 +177,28 @@ const getNhiaPayloadKeysForLog = (payload = {}) =>
 
 const getNhiaCredentialKeysForLog = (payload = {}) =>
   Object.keys(payload.credentials && typeof payload.credentials === 'object' ? payload.credentials : {}).sort()
+
+const hasOwnNhiaKey = (settings = {}, ...keys) =>
+  keys.some((key) => Object.prototype.hasOwnProperty.call(settings || {}, key))
+
+const getSavedNhiaCredentialFlag = (settings = {}, previousValue = false, credentialKey = 'apiKey') => {
+  const camelKey = credentialKey === 'apiKey' ? 'hasApiKey' : 'hasApiSecret'
+  const snakeKey = credentialKey === 'apiKey' ? 'has_api_key' : 'has_api_secret'
+  const encryptedCamelKey = credentialKey === 'apiKey' ? 'apiKeyEncrypted' : 'apiSecretEncrypted'
+  const encryptedSnakeKey = credentialKey === 'apiKey' ? 'api_key_encrypted' : 'api_secret_encrypted'
+
+  if (hasOwnNhiaKey(settings, encryptedCamelKey, encryptedSnakeKey)) {
+    return Boolean(settings?.[encryptedCamelKey] || settings?.[encryptedSnakeKey])
+  }
+  if (hasOwnNhiaKey(settings, camelKey, snakeKey)) {
+    return Boolean(settings?.[camelKey] || settings?.[snakeKey])
+  }
+  if (settings?.credentialSummary && hasOwnNhiaKey(settings.credentialSummary, credentialKey)) {
+    return Boolean(settings.credentialSummary[credentialKey])
+  }
+
+  return Boolean(previousValue)
+}
 
 const summarizeNhiaSettingsForLog = (settings = null) => ({
   table: 'nhia_configuration',
@@ -214,18 +239,18 @@ const buildLocalClaimItHeaders = (form = {}) => {
   const username = normalizeNhiaText(credentials.username)
   const password = normalizeNhiaText(credentials.password)
 
-  if (credentialMode === 'api_key' && apiKey && apiKey !== NHIA_SECRET_MASK) {
+  if (credentialMode === 'api_key' && apiKey && !isNhiaSecretMask(apiKey)) {
     const headerName = normalizeNhiaText(credentials.headerName) || 'x-api-key'
     const headerPrefix = normalizeNhiaText(credentials.headerPrefix)
     headers[headerName] = headerPrefix ? `${headerPrefix} ${apiKey}` : apiKey
   }
-  if (credentialMode === 'api_key' && apiSecret && apiSecret !== NHIA_SECRET_MASK) {
+  if (credentialMode === 'api_key' && apiSecret && !isNhiaSecretMask(apiSecret)) {
     headers[normalizeNhiaText(credentials.secretHeaderName) || 'x-api-secret'] = apiSecret
   }
   if (credentialMode === 'basic_auth' && (username || password)) {
     headers.Authorization = `Basic ${btoa(`${username}:${password}`)}`
   }
-  if (credentialMode === 'bearer_token' && apiKey && apiKey !== NHIA_SECRET_MASK) {
+  if (credentialMode === 'bearer_token' && apiKey && !isNhiaSecretMask(apiKey)) {
     headers.Authorization = `Bearer ${apiKey}`
   }
 
@@ -542,11 +567,7 @@ const Settings = () => {
       })
       logNhiaAccreditationExpiryDate('saved', accreditationExpiryDate)
       const savedNhiaApiSettings = await saveNhiaApiSettings(nhiaSettingsPayload, { organizationId: nhiaOrganizationId })
-      const reloadedNhiaApiSettings = await getNhiaApiSettings({ organizationId: nhiaOrganizationId })
-      const effectiveNhiaApiSettings = {
-        ...(savedNhiaApiSettings || {}),
-        ...(reloadedNhiaApiSettings || {}),
-      }
+      const effectiveNhiaApiSettings = savedNhiaApiSettings || {}
       console.info('Saving NHIA API config Supabase response/error', {
         response: summarizeNhiaSettingsForLog(effectiveNhiaApiSettings),
         error: null,
@@ -559,19 +580,15 @@ const Settings = () => {
           effectiveNhiaApiSettings?.expiryDate
       )
       const savedClaimsOfficerName = effectiveNhiaApiSettings?.claimsOfficerName ?? effectiveNhiaApiSettings?.claims_officer_name
-      const hasSavedApiKey = Boolean(
-        effectiveNhiaApiSettings?.hasApiKey ||
-          effectiveNhiaApiSettings?.has_api_key ||
-          effectiveNhiaApiSettings?.credentialSummary?.apiKey ||
-          nhiaApiForm.hasApiKey ||
-          credentialPayload.apiKey
+      const hasSavedApiKey = getSavedNhiaCredentialFlag(
+        effectiveNhiaApiSettings,
+        nhiaApiForm.hasApiKey || credentialPayload.apiKey,
+        'apiKey'
       )
-      const hasSavedApiSecret = Boolean(
-        effectiveNhiaApiSettings?.hasApiSecret ||
-          effectiveNhiaApiSettings?.has_api_secret ||
-          effectiveNhiaApiSettings?.credentialSummary?.apiSecret ||
-          nhiaApiForm.hasApiSecret ||
-          credentialPayload.apiSecret
+      const hasSavedApiSecret = getSavedNhiaCredentialFlag(
+        effectiveNhiaApiSettings,
+        nhiaApiForm.hasApiSecret || credentialPayload.apiSecret,
+        'apiSecret'
       )
 
       setNhiaApiForm(toNhiaApiForm({
@@ -590,7 +607,7 @@ const Settings = () => {
         hasApiKey: hasSavedApiKey,
         hasApiSecret: hasSavedApiSecret,
       })
-      notify('NHIA API settings saved.', 'success')
+      notify('NHIA API settings saved. API Key Saved. API Secret Saved.', 'success')
     } catch (saveError) {
       console.error('Saving NHIA API config Supabase response/error', {
         response: null,
@@ -1402,11 +1419,11 @@ const Settings = () => {
                         type="password"
                         value={nhiaApiForm.credentials.apiKey}
                         onFocus={() => {
-                          if (nhiaApiForm.credentials.apiKey === NHIA_SECRET_MASK) updateNhiaCredential('apiKey', '')
+                          if (isNhiaSecretMask(nhiaApiForm.credentials.apiKey)) updateNhiaCredential('apiKey', '')
                         }}
                         onChange={(event) => updateNhiaCredential('apiKey', event.target.value)}
                       />
-                      {nhiaApiForm.hasApiKey && <p className="settings-helper">API key saved</p>}
+                      {nhiaApiForm.hasApiKey && <p className="settings-helper">API Key Saved</p>}
                     </div>
                     <input
                       placeholder="API key header (x-api-key)"
@@ -1421,11 +1438,11 @@ const Settings = () => {
                         type="password"
                         value={nhiaApiForm.credentials.apiSecret}
                         onFocus={() => {
-                          if (nhiaApiForm.credentials.apiSecret === NHIA_SECRET_MASK) updateNhiaCredential('apiSecret', '')
+                          if (isNhiaSecretMask(nhiaApiForm.credentials.apiSecret)) updateNhiaCredential('apiSecret', '')
                         }}
                         onChange={(event) => updateNhiaCredential('apiSecret', event.target.value)}
                       />
-                      {nhiaApiForm.hasApiSecret && <p className="settings-helper">API secret saved</p>}
+                      {nhiaApiForm.hasApiSecret && <p className="settings-helper">API Secret Saved</p>}
                     </div>
                     <input
                       placeholder="Secret header (x-api-secret)"
@@ -1444,7 +1461,7 @@ const Settings = () => {
                       type="password"
                       value={nhiaApiForm.credentials.password}
                       onFocus={() => {
-                        if (nhiaApiForm.credentials.password === NHIA_SECRET_MASK) updateNhiaCredential('password', '')
+                        if (isNhiaSecretMask(nhiaApiForm.credentials.password)) updateNhiaCredential('password', '')
                       }}
                       onChange={(event) => updateNhiaCredential('password', event.target.value)}
                     />
@@ -1474,7 +1491,7 @@ const Settings = () => {
                     type="password"
                     value={nhiaApiForm.credentials.password}
                     onFocus={() => {
-                      if (nhiaApiForm.credentials.password === NHIA_SECRET_MASK) updateNhiaCredential('password', '')
+                      if (isNhiaSecretMask(nhiaApiForm.credentials.password)) updateNhiaCredential('password', '')
                     }}
                     onChange={(event) => updateNhiaCredential('password', event.target.value)}
                   />
@@ -1493,7 +1510,7 @@ const Settings = () => {
                       type="password"
                       value={nhiaApiForm.credentials.password}
                       onFocus={() => {
-                        if (nhiaApiForm.credentials.password === NHIA_SECRET_MASK) updateNhiaCredential('password', '')
+                        if (isNhiaSecretMask(nhiaApiForm.credentials.password)) updateNhiaCredential('password', '')
                       }}
                       onChange={(event) => updateNhiaCredential('password', event.target.value)}
                     />
