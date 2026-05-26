@@ -150,9 +150,9 @@ const toNhiaApiForm = (settings, organization) => {
     credentials: {
       ...blankNhiaApiForm.credentials,
       ...(resolved.credentials || {}),
-      apiKey: hasApiKey ? NHIA_DISPLAY_SECRET_MASK : '',
-      apiSecret: hasApiSecret ? NHIA_DISPLAY_SECRET_MASK : '',
-      password: hasPassword ? NHIA_DISPLAY_SECRET_MASK : '',
+      apiKey: '',
+      apiSecret: '',
+      password: '',
     },
   }
 }

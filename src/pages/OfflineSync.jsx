@@ -115,9 +115,9 @@ const buildNhiaForm = (settings, organization) => {
     accreditationExpiryDate: normalizeNhiaAccreditationExpiryDate(resolved.accreditationExpiryDate),
     credentials: {
       ...blankNhiaForm.credentials,
-      apiKey: hasApiKey ? NHIA_SECRET_MASK : '',
-      apiSecret: hasApiSecret ? NHIA_SECRET_MASK : '',
-      password: hasPassword ? NHIA_SECRET_MASK : '',
+      apiKey: '',
+      apiSecret: '',
+      password: '',
     },
   }
 }
