@@ -52,6 +52,7 @@ import {
   buildNhisClaimItCxf,
   buildNhisClaimItXml,
   exportNhisClaimsFile,
+  generateBrowserClaimItBridgeCcCode,
   getNhiaApiSettings,
   normalizeNhisExportPeriod,
   saveNhiaApiSettings,
@@ -1954,6 +1955,46 @@ describe('NHIA API settings source routing', () => {
         },
       }),
     })
+  })
+
+  it('uses the claim endpoint as the CLAIM-it CC code endpoint fallback', async () => {
+    fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      text: vi.fn().mockResolvedValue(JSON.stringify({ ccCode: '12345' })),
+    })
+
+    await expect(generateBrowserClaimItBridgeCcCode({
+      apiBaseUrl: 'http://localhost:31719/json-api',
+      claimEndpointPath: '/claims',
+      credentialMode: 'api_key',
+      credentials: {
+        apiKey: 'api-key',
+        apiSecret: 'api-secret',
+        headerName: 'Authorization',
+        secretHeaderName: 'x-api-secret',
+      },
+    }, {
+      organizationType: 'pharmacy',
+      patientName: 'Ama Mensah',
+      memberNumber: '12345678',
+      serviceDate: '2026-05-26',
+      totalAmount: 12,
+    })).resolves.toMatchObject({
+      ccCode: '12345',
+      source: 'claimit_bridge',
+    })
+
+    expect(fetch).toHaveBeenCalledWith(
+      'http://localhost:31719/json-api/claims',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          Authorization: 'api-key',
+          'x-api-secret': 'api-secret',
+        }),
+      })
+    )
   })
 })
 

@@ -516,7 +516,13 @@ const Nhis = () => {
   const providerClassLevel = resolvedNhiaSettings?.providerClassLevel || resolvedNhiaSettings?.provider_class_level || ''
   const integrationMode = resolvedNhiaSettings?.integrationMode || resolvedNhiaSettings?.integration_mode || 'claimit_export'
   const claimControlMode = resolvedNhiaSettings?.claimControlMode || resolvedNhiaSettings?.claim_control_mode || (['claimit_bridge', 'claimit_assisted'].includes(integrationMode) ? 'claimit_bridge' : 'manual')
-  const ccEndpointPath = resolvedNhiaSettings?.ccEndpointPath || resolvedNhiaSettings?.cc_endpoint_path || resolvedNhiaSettings?.ccCodeEndpointPath || resolvedNhiaSettings?.cc_code_endpoint_path || ''
+  const ccEndpointPath = resolvedNhiaSettings?.ccEndpointPath ||
+    resolvedNhiaSettings?.cc_endpoint_path ||
+    resolvedNhiaSettings?.ccCodeEndpointPath ||
+    resolvedNhiaSettings?.cc_code_endpoint_path ||
+    resolvedNhiaSettings?.claimEndpointPath ||
+    resolvedNhiaSettings?.claim_endpoint_path ||
+    ''
   const isClaimItBridgeMode = ['claimit_bridge', 'claimit_assisted'].includes(integrationMode)
   const isLocalClaimItBridge = isClaimItBridgeMode && ['local_server', 'lan_ip'].includes(resolvedNhiaSettings?.connectionProfile || resolvedNhiaSettings?.connection_profile || 'local_server')
   const canManuallyEditCcCode = role === 'admin' || role === 'super_admin'

@@ -1483,7 +1483,14 @@ const isClaimItBridgeMode = (settings) =>
   ['claimit_bridge', 'claimit_assisted'].includes(normalizeText(settings?.integrationMode))
 
 const getCcEndpointPath = (settings) =>
-  normalizeText(settings?.ccEndpointPath || settings?.cc_endpoint_path || settings?.ccCodeEndpointPath || settings?.cc_code_endpoint_path)
+  normalizeText(
+    settings?.ccEndpointPath ||
+      settings?.cc_endpoint_path ||
+      settings?.ccCodeEndpointPath ||
+      settings?.cc_code_endpoint_path ||
+      settings?.claimEndpointPath ||
+      settings?.claim_endpoint_path
+  )
 
 const validateClaimItBridgePayload = async (settings, payload) => {
   const endpointPath = normalizeText(settings.claimValidationEndpointPath)

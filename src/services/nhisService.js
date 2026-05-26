@@ -2435,7 +2435,46 @@ const joinClaimItBridgeUrl = (baseUrl = '', path = '') =>
   `${normalizeText(baseUrl).replace(/\/+$/, '')}/${normalizeText(path).replace(/^\/+/, '')}`
 
 const getClaimControlEndpointPath = (settings = {}) =>
-  normalizeText(settings.ccEndpointPath || settings.cc_endpoint_path || settings.ccCodeEndpointPath || settings.cc_code_endpoint_path)
+  normalizeText(
+    settings.ccEndpointPath ||
+      settings.cc_endpoint_path ||
+      settings.ccCodeEndpointPath ||
+      settings.cc_code_endpoint_path ||
+      settings.claimEndpointPath ||
+      settings.claim_endpoint_path
+  )
+
+const buildClaimItBridgeHeaders = (settings = {}) => {
+  const credentials = settings.credentials && typeof settings.credentials === 'object' ? settings.credentials : {}
+  const credentialMode = normalizeText(settings.credentialMode || settings.credential_mode || 'api_key')
+  const headers = {
+    Accept: 'application/json',
+    'Content-Type': 'application/json',
+  }
+  const apiKey = normalizeText(credentials.apiKey || credentials.token)
+  const apiSecret = normalizeText(credentials.apiSecret)
+  const username = normalizeText(credentials.username)
+  const password = normalizeText(credentials.password)
+
+  if (credentialMode === 'api_key' && apiKey) {
+    const configuredHeaderName = normalizeText(credentials.headerName)
+    const headerName = configuredHeaderName || 'Authorization'
+    const headerPrefix = normalizeText(credentials.headerPrefix) ||
+      (!configuredHeaderName && headerName.toLowerCase() === 'authorization' ? 'Bearer' : '')
+    headers[headerName] = headerPrefix ? `${headerPrefix} ${apiKey}` : apiKey
+  }
+  if (credentialMode === 'api_key' && apiSecret) {
+    headers[normalizeText(credentials.secretHeaderName) || 'x-api-secret'] = apiSecret
+  }
+  if (credentialMode === 'basic_auth' && (username || password)) {
+    headers.Authorization = `Basic ${btoa(`${username}:${password}`)}`
+  }
+  if (credentialMode === 'bearer_token' && apiKey) {
+    headers.Authorization = `Bearer ${apiKey}`
+  }
+
+  return headers
+}
 
 const extractClaimControlCode = (body) => {
   if (!body || typeof body !== 'object') return ''
@@ -2613,10 +2652,7 @@ export const generateBrowserClaimItBridgeCcCode = async (settings = {}, claimCon
   logClaimItBridgeStatus('cc_code.request', { status: 'pending', endpointPath, claimCount: 1 })
   const response = await fetch(joinClaimItBridgeUrl(baseUrl, endpointPath), {
     method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-    },
+    headers: buildClaimItBridgeHeaders(settings),
     body: JSON.stringify(requestPayload),
   })
   const responseText = await response.text()
