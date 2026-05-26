@@ -45,8 +45,6 @@ const EVENT_LABELS = {
   'record.upsert': 'Module Records',
 }
 
-const NHIA_SECRET_MASK = '••••••••••••'
-
 const formatDateTime = (value) => {
   if (!value) return '-'
   const date = new Date(value)

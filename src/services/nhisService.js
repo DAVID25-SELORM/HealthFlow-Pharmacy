@@ -151,7 +151,7 @@ const NHIA_TARIFF_VERSION = 'FEB 2023'
 const CLAIM_IT_MEDICINE_PRICE_VERSION = '2025-05-01.250531'
 const CLAIM_IT_SERVICE_TARIFF_VERSION = '2023-02-01.250531'
 const CLAIM_IT_POLICY_VERSION = 'cgs.2022-12-01.250531'
-const NHIA_API_SETTINGS_CACHE_PREFIX = 'healthflow.nhiaApiSettings.v2'
+const NHIA_API_SETTINGS_CACHE_PREFIX = 'healthflow.nhiaApiSettings.v3'
 const CLAIMIT_BRIDGE_QUEUE_KEY = 'healthflow.claimitBridgeQueue.v1'
 const CLAIMIT_BRIDGE_RETRY_INTERVAL_MS = 60 * 1000
 const CLAIMIT_BRIDGE_MODES = new Set(['claimit_bridge', 'claimit_assisted'])
@@ -245,9 +245,7 @@ const NHIA_API_SETTINGS_CACHE_FIELDS = [
   'exportFormat',
   'export_format',
 ]
-const NHIA_SECRET_MASK = '\u2022'.repeat(8)
 const NHIA_SECRET_FIELDS = new Set(['apiKey', 'apiSecret', 'password'])
-const NHIA_SECRET_MASK_VALUES = new Set([NHIA_SECRET_MASK, '\u2022'.repeat(8), '\u2022'.repeat(12)])
 const NHIA_API_CONFIG_TABLE = 'nhia_configuration'
 const NHIA_CONFIG_TABLE = 'nhia_configuration'
 const NHIA_CONFIG_DEFAULTS = {
@@ -2144,17 +2142,17 @@ const normalizeNhiaConfig = (settings = null, {
     api_base_url: normalizeText(raw.api_base_url || raw.apiBaseUrl),
     submitterId: normalizeText(raw.submitterId || raw.submitter_id),
     submitter_id: normalizeText(raw.submitter_id || raw.submitterId),
-    apiKeyEncrypted: hasApiKey ? NHIA_SECRET_MASK : '',
-    api_key_encrypted: hasApiKey ? NHIA_SECRET_MASK : '',
-    apiSecretEncrypted: hasApiSecret ? NHIA_SECRET_MASK : '',
-    api_secret_encrypted: hasApiSecret ? NHIA_SECRET_MASK : '',
+    apiKeyEncrypted: '',
+    api_key_encrypted: '',
+    apiSecretEncrypted: '',
+    api_secret_encrypted: '',
     hasApiKey,
     has_api_key: hasApiKey,
     hasApiSecret,
     has_api_secret: hasApiSecret,
     username,
-    passwordEncrypted: hasPassword ? NHIA_SECRET_MASK : '',
-    password_encrypted: hasPassword ? NHIA_SECRET_MASK : '',
+    passwordEncrypted: '',
+    password_encrypted: '',
     hasPassword,
     has_password: hasPassword,
     claimEndpointPath: claimSubmitEndpoint,
@@ -2214,7 +2212,7 @@ const buildNhiaCredentialsPayload = (credentials = {}) => {
   const payload = {}
 
   for (const [field, value] of Object.entries(credentials || {})) {
-    if (NHIA_SECRET_FIELDS.has(field) && (!value || isNhiaSecretMask(value))) continue
+    if (NHIA_SECRET_FIELDS.has(field) && !normalizeText(value)) continue
     if (value !== undefined && value !== null && value !== '') payload[field] = value
   }
 
@@ -2234,10 +2232,8 @@ const sanitizeNhiaApiSettingsPayload = (settings = {}) => {
 
 const hasUsableNhiaSecret = (value) => {
   const normalized = normalizeText(value)
-  return Boolean(normalized && !isNhiaSecretMask(normalized))
+  return Boolean(normalized)
 }
-
-const isNhiaSecretMask = (value) => NHIA_SECRET_MASK_VALUES.has(normalizeText(value))
 
 export const validateNhiaConfigForMode = (settings = {}) => {
   const credentials = settings.credentials && typeof settings.credentials === 'object' ? settings.credentials : {}
@@ -2299,16 +2295,18 @@ const hasNhiaSavedCredential = (settings = {}, camelKey, snakeKey) => {
   const encryptedSnakeKey = camelKey === 'hasApiKey' ? 'api_key_encrypted' : 'api_secret_encrypted'
   const hasEncryptedValue = Boolean(normalizeText(settings?.[encryptedCamelKey] || settings?.[encryptedSnakeKey]))
 
-  if (hasOwnNhiaCredentialValue(settings, encryptedCamelKey, encryptedSnakeKey)) {
-    return hasEncryptedValue
+  if (hasOwnNhiaCredentialValue(settings, camelKey, snakeKey)) {
+    return Boolean(settings?.[camelKey] || settings?.[snakeKey])
   }
 
-  return Boolean(
-    settings?.[camelKey] ||
-      settings?.[snakeKey] ||
-      settings?.credentialSummary?.[camelKey.replace(/^has/, '').replace(/^Api/, 'api')] ||
-      settings?.credentialSummary?.[camelKey === 'hasApiKey' ? 'apiKey' : 'apiSecret']
-  )
+  if (settings?.credentialSummary) {
+    return Boolean(
+      settings.credentialSummary?.[camelKey.replace(/^has/, '').replace(/^Api/, 'api')] ||
+        settings.credentialSummary?.[camelKey === 'hasApiKey' ? 'apiKey' : 'apiSecret']
+    )
+  }
+
+  return hasEncryptedValue
 }
 
 const summarizeNhiaApiSettingsForLog = (settings = null) => ({

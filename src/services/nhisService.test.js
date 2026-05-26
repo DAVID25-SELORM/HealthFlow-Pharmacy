@@ -1802,7 +1802,7 @@ describe('NHIA API settings source routing', () => {
     })
   })
 
-  it('does not show saved NHIA API credentials when encrypted values are empty', async () => {
+  it('uses saved NHIA API credential flags instead of display encrypted values', async () => {
     invokeTierAccess.mockResolvedValueOnce({
       settings: {
         organizationId: 'org-1',
@@ -1818,11 +1818,13 @@ describe('NHIA API settings source routing', () => {
     })
 
     await expect(getNhiaApiSettings({ organizationId: 'org-1' })).resolves.toMatchObject({
-      hasApiKey: false,
-      hasApiSecret: false,
+      hasApiKey: true,
+      hasApiSecret: true,
+      apiKeyEncrypted: '',
+      apiSecretEncrypted: '',
       credentialSummary: {
-        apiKey: false,
-        apiSecret: false,
+        apiKey: true,
+        apiSecret: true,
       },
     })
   })
@@ -1866,7 +1868,7 @@ describe('NHIA API settings source routing', () => {
     })
   })
 
-  it('does not send blank or masked NHIA API secrets when saving settings', async () => {
+  it('does not send blank NHIA API secrets when saving settings', async () => {
     mockNhiaConfigurationStore()
     invokeTierAccess.mockResolvedValueOnce({
       settings: {
@@ -1880,7 +1882,7 @@ describe('NHIA API settings source routing', () => {
       ...completeClaimItSettings,
       organizationId: 'org-1',
       credentials: {
-        apiKey: '••••••••••••',
+        apiKey: '',
         apiSecret: '',
         headerName: 'x-api-key',
       },
