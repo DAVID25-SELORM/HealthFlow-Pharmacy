@@ -38,6 +38,7 @@ const NHIA_API_INTEGRATION_MODES = ['claimit_bridge', 'claimit_assisted', 'direc
 const NHIA_BRIDGE_MODES = ['claimit_bridge', 'claimit_assisted']
 const NHIA_LOCAL_BRIDGE_PROFILES = ['local_server', 'lan_ip']
 const NHIA_BRIDGE_REACHABLE_STATUSES = [401, 403, 404, 405]
+const NHIA_SAVED_SECRET_PLACEHOLDER = `${'\u2022'.repeat(8)} SAVED`
 
 const toForm = (row) => ({
   pharmacyName: row?.pharmacy_name || 'HealthFlow Pharmacy',
@@ -146,9 +147,6 @@ const toNhiaApiForm = (settings, organization) => {
     credentials: {
       ...blankNhiaApiForm.credentials,
       ...(resolved.credentials || {}),
-      apiKey: '',
-      apiSecret: '',
-      password: '',
     },
   }
 }
@@ -156,6 +154,7 @@ const toNhiaApiForm = (settings, organization) => {
 const toNhiaCredentialState = (settings = {}) => ({
   hasApiKey: Boolean(settings?.hasApiKey || settings?.has_api_key || settings?.credentialSummary?.apiKey),
   hasApiSecret: Boolean(settings?.hasApiSecret || settings?.has_api_secret || settings?.credentialSummary?.apiSecret),
+  hasPassword: Boolean(settings?.hasPassword || settings?.has_password || settings?.credentialSummary?.password),
 })
 
 const buildNhiaCredentialsPayload = (credentials = {}) => {
@@ -641,6 +640,7 @@ const Settings = () => {
       setNhiaCredentialState({
         hasApiKey: hasSavedApiKey,
         hasApiSecret: hasSavedApiSecret,
+        hasPassword: Boolean(effectiveNhiaApiSettings?.hasPassword || effectiveNhiaApiSettings?.has_password || effectiveNhiaApiSettings?.credentialSummary?.password),
       })
       // ✅ NHIA API ARCHITECTURE PATCH END
       console.info('NHIA API config saved successfully', {
@@ -677,7 +677,7 @@ const Settings = () => {
         hasApiSecret: false,
       }, organization)
       setNhiaApiForm(nextForm)
-      setNhiaCredentialState({ hasApiKey: false, hasApiSecret: false })
+      setNhiaCredentialState({ hasApiKey: false, hasApiSecret: false, hasPassword: false })
       notify('Saved NHIA API credentials removed.', 'success')
     } catch (removeError) {
       setError(removeError.message || 'Unable to remove saved NHIA API credentials.')
@@ -1478,7 +1478,7 @@ const Settings = () => {
                   <div className="settings-form-row">
                     <div className="settings-field">
                       <input
-                        placeholder="Enter new API key to replace saved key"
+                        placeholder={nhiaCredentialState.hasApiKey ? NHIA_SAVED_SECRET_PLACEHOLDER : 'Enter API key'}
                         type="password"
                         value={nhiaApiForm.credentials.apiKey}
                         onChange={(event) => updateNhiaCredential('apiKey', event.target.value)}
@@ -1496,7 +1496,7 @@ const Settings = () => {
                   <div className="settings-form-row">
                     <div className="settings-field">
                       <input
-                        placeholder="Enter new API secret to replace saved secret"
+                        placeholder={nhiaCredentialState.hasApiSecret ? NHIA_SAVED_SECRET_PLACEHOLDER : 'Enter API secret'}
                         type="password"
                         value={nhiaApiForm.credentials.apiSecret}
                         onChange={(event) => updateNhiaCredential('apiSecret', event.target.value)}
@@ -1518,7 +1518,7 @@ const Settings = () => {
                       onChange={(event) => updateNhiaCredential('username', event.target.value)}
                     />
                     <input
-                      placeholder="Password"
+                      placeholder={nhiaCredentialState.hasPassword ? NHIA_SAVED_SECRET_PLACEHOLDER : 'Password'}
                       type="password"
                       value={nhiaApiForm.credentials.password}
                       onChange={(event) => updateNhiaCredential('password', event.target.value)}
@@ -1545,7 +1545,7 @@ const Settings = () => {
                     onChange={(event) => updateNhiaCredential('username', event.target.value)}
                   />
                   <input
-                    placeholder="Password"
+                    placeholder={nhiaCredentialState.hasPassword ? NHIA_SAVED_SECRET_PLACEHOLDER : 'Password'}
                     type="password"
                     value={nhiaApiForm.credentials.password}
                     onChange={(event) => updateNhiaCredential('password', event.target.value)}
@@ -1561,7 +1561,7 @@ const Settings = () => {
                       onChange={(event) => updateNhiaCredential('username', event.target.value)}
                     />
                     <input
-                      placeholder="CLAIM-it password"
+                      placeholder={nhiaCredentialState.hasPassword ? NHIA_SAVED_SECRET_PLACEHOLDER : 'CLAIM-it password'}
                       type="password"
                       value={nhiaApiForm.credentials.password}
                       onChange={(event) => updateNhiaCredential('password', event.target.value)}
