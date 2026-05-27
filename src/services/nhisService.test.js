@@ -51,6 +51,7 @@ import {
   buildNhisClaimItExportPayload,
   buildNhisClaimItCxf,
   buildNhisClaimItXml,
+  createNhisClaim,
   exportNhisClaimsFile,
   generateBrowserClaimItBridgeCcCode,
   getNhiaApiSettings,
@@ -136,6 +137,24 @@ const mockNhiaConfigurationStore = (initialRow = null) => {
   return {
     getRow: () => storedRow,
   }
+}
+
+const mockNhisClaimDuplicateAndUpdateQueries = ({ duplicates = [] } = {}) => {
+  const updateQuery = {
+    in: vi.fn().mockResolvedValue({ error: null }),
+  }
+  const claimQuery = {
+    select: vi.fn(() => claimQuery),
+    eq: vi.fn(() => claimQuery),
+    neq: vi.fn(() => claimQuery),
+    limit: vi.fn().mockResolvedValue({ data: duplicates, error: null }),
+    update: vi.fn(() => updateQuery),
+  }
+  supabase.from.mockImplementation((table) => {
+    if (table === 'nhis_claims') return claimQuery
+    return { update: vi.fn(() => updateQuery) }
+  })
+  return { claimQuery, updateQuery }
 }
 
 const baseClaim = {
@@ -1676,12 +1695,7 @@ describe('direct NHIA submission', () => {
   }
 
   it('keeps the tier-access router action separate from the submission audit label', async () => {
-    const updateQuery = {
-      in: vi.fn().mockResolvedValue({ error: null }),
-    }
-    supabase.from.mockReturnValue({
-      update: vi.fn(() => updateQuery),
-    })
+    mockNhisClaimDuplicateAndUpdateQueries()
     invokeTierAccess.mockResolvedValue({
       source: 'hosted',
       httpStatus: 200,
@@ -1706,12 +1720,7 @@ describe('direct NHIA submission', () => {
   })
 
   it('routes public CLAIM-it bridge URLs through the hosted tier-access proxy', async () => {
-    const updateQuery = {
-      in: vi.fn().mockResolvedValue({ error: null }),
-    }
-    supabase.from.mockReturnValue({
-      update: vi.fn(() => updateQuery),
-    })
+    mockNhisClaimDuplicateAndUpdateQueries()
     invokeTierAccess.mockResolvedValue({ source: 'hosted', httpStatus: 200, response: { accepted: true } })
 
     await submitNhisClaimDirect('claim-1', {
@@ -1737,12 +1746,7 @@ describe('direct NHIA submission', () => {
   })
 
   it('keeps browser bridge submission only for local CLAIM-it bridge URLs', async () => {
-    const updateQuery = {
-      in: vi.fn().mockResolvedValue({ error: null }),
-    }
-    supabase.from.mockReturnValue({
-      update: vi.fn(() => updateQuery),
-    })
+    mockNhisClaimDuplicateAndUpdateQueries()
     fetch.mockResolvedValue({
       ok: true,
       status: 200,
@@ -1766,6 +1770,101 @@ describe('direct NHIA submission', () => {
       expect.objectContaining({ method: 'POST' })
     )
     expect(invokeTierAccess).not.toHaveBeenCalled()
+  })
+})
+
+describe('duplicate NHIS claim prevention', () => {
+  it('blocks saving the same member, service date, and total amount twice', async () => {
+    mockNhisClaimDuplicateAndUpdateQueries({
+      duplicates: [{
+        id: 'existing-claim',
+        claim_number: 'NHIS-000123',
+        member_no: '12345678',
+        service_date_from: '2026-05-14',
+        total_amount: 10,
+      }],
+    })
+
+    await expect(createNhisClaim(
+      baseClaim,
+      [{ ...baseMedicine, totalAmount: 10 }],
+      {
+        pharmacyLevel: 'P1',
+        nhisDrugCatalog: [{ code: 'NH001', category: 'A' }],
+      }
+    )).rejects.toThrow('Duplicate NHIS claim blocked')
+  })
+
+  it('blocks batch export when duplicate claims are already present', async () => {
+    const sourceClaim = {
+      id: 'claim-1',
+      claim_number: 'NHIS-000001',
+      status: 'served',
+      organization_type: 'hospital',
+      member_no: '12345678',
+      surname: 'Mensah',
+      other_names: 'Ama',
+      folder_no: 'F001',
+      date_of_birth: '1990-01-01',
+      patient_address: 'Accra',
+      ccc_no: 'CC-12345',
+      diagnosis: 'Malaria',
+      diagnosis_details: [{ code: 'B50', label: 'Plasmodium falciparum malaria', source: 'ICD-10' }],
+      service_date_from: '2026-05-14',
+      service_date_to: '2026-05-14',
+      referring_facility: 'Westpoint Chemist',
+      physician_name: 'Dr Test',
+      prescription_file_path: 'org/2026-05/claim/rx.pdf',
+      prescription_file_name: 'rx.pdf',
+      prescription_file_url: 'https://example.test/rx.pdf',
+      total_amount: 10,
+      nhis_claim_medicines: [{
+        drug_code: 'NH001',
+        description: 'Artemether Lumefantrine Tablet',
+        unit: 'tablet',
+        unit_price: 1,
+        dispensed_qty: 10,
+        dose: '1 tablet',
+        frequency: 'BD',
+        duration: '3 days',
+        total_amount: 10,
+        category: 'A',
+      }],
+    }
+    const duplicateClaim = {
+      ...sourceClaim,
+      id: 'claim-2',
+      claim_number: 'NHIS-000002',
+    }
+    const claimsQuery = {
+      order: vi.fn(() => claimsQuery),
+      gte: vi.fn(() => claimsQuery),
+      lte: vi.fn().mockResolvedValue({ data: [sourceClaim, duplicateClaim], error: null }),
+    }
+    const serviceLinesQuery = {
+      in: vi.fn(() => serviceLinesQuery),
+      order: vi.fn().mockResolvedValue({ data: [], error: null }),
+    }
+    supabase.from.mockImplementation((table) => {
+      if (table === 'nhis_claims') {
+        return { select: vi.fn(() => claimsQuery) }
+      }
+      if (table === 'nhis_claim_services') {
+        return { select: vi.fn(() => serviceLinesQuery) }
+      }
+      return { select: vi.fn(() => ({ in: vi.fn().mockReturnThis(), eq: vi.fn().mockResolvedValue({ data: [], error: null }) })) }
+    })
+
+    await expect(exportNhisClaimsFile({
+      mode: 'custom',
+      fromDate: '2026-05-14',
+      toDate: '2026-05-14',
+      format: 'json',
+      organizationType: 'hospital',
+      providerClassLevel: 'D',
+      pharmacyLevel: 'P1',
+      nhisDrugCatalog: [{ code: 'NH001', category: 'A' }],
+    })).rejects.toThrow('Duplicate NHIS claim blocked')
   })
 })
 

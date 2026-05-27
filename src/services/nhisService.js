@@ -554,6 +554,103 @@ const updateNhisClaimWithSchemaFallback = async (id, payload) => {
     .single()
 }
 
+const getNhisDuplicatePatientKey = (claim = {}) => {
+  const memberKey = normalizeText(
+    claim.memberNo ||
+      claim.member_no ||
+      claim.memberNumber ||
+      claim.member_number ||
+      claim.hin
+  ).replace(/\D/g, '')
+  if (memberKey) return memberKey
+
+  return normalizeMatchText(
+    [claim.surname, claim.otherNames || claim.other_names].filter(Boolean).join(' ')
+  ).replace(/\s+/g, '')
+}
+
+const getNhisDuplicateServiceDate = (claim = {}) =>
+  normalizeText(
+    claim.serviceDate ||
+      claim.service_date ||
+      claim.serviceDateFrom ||
+      claim.service_date_from ||
+      claim.dispensaryDate ||
+      claim.dispensary_date
+  )
+
+const getNhisDuplicateAmountKey = (amount) => {
+  const parsed = Number(amount)
+  return Number.isFinite(parsed) ? parsed.toFixed(2) : ''
+}
+
+const getNhisClaimDuplicateKey = (claim = {}) => {
+  const patientKey = getNhisDuplicatePatientKey(claim)
+  const serviceDate = getNhisDuplicateServiceDate(claim)
+  const amountKey = getNhisDuplicateAmountKey(claim.totalAmount ?? claim.total_amount)
+  return patientKey && serviceDate && amountKey ? `${patientKey}|${serviceDate}|${amountKey}` : ''
+}
+
+const getNhisDuplicateLabel = (claim = {}) =>
+  normalizeText(claim.claim_number || claim.claimNumber) ||
+  [claim.surname, claim.otherNames || claim.other_names].filter(Boolean).join(' ').trim() ||
+  'Existing claim'
+
+const getNhisDuplicateBlockMessage = (duplicate = {}) =>
+  `Duplicate NHIS claim blocked: ${getNhisDuplicateLabel(duplicate)} has the same member/patient, service date, and total amount.`
+
+const assertNoDuplicateNhisClaimsForTransfer = (claims = []) => {
+  const seen = new Map()
+  for (const claim of claims) {
+    const key = getNhisClaimDuplicateKey(claim)
+    if (!key) continue
+    const existing = seen.get(key)
+    if (existing) throw new Error(getNhisDuplicateBlockMessage(existing))
+    seen.set(key, claim)
+  }
+}
+
+const assertNoDuplicateNhisClaimInStore = async ({
+  memberNo,
+  hin,
+  surname,
+  otherNames,
+  serviceDate,
+  totalAmount,
+  ignoreClaimId = '',
+}) => {
+  const claim = {
+    memberNo,
+    hin,
+    surname,
+    otherNames,
+    serviceDate,
+    totalAmount,
+  }
+  const patientKey = getNhisDuplicatePatientKey(claim)
+  const serviceDateKey = getNhisDuplicateServiceDate(claim)
+  const amountKey = getNhisDuplicateAmountKey(totalAmount)
+  if (!patientKey || !serviceDateKey || !amountKey || shouldUseBranchServer()) return
+
+  let query = supabase
+    .from('nhis_claims')
+    .select('id, claim_number, member_no, hin, surname, other_names, service_date_from, total_amount')
+    .eq('service_date_from', serviceDateKey)
+
+  if (ignoreClaimId) {
+    query = query.neq('id', ignoreClaimId)
+  }
+
+  const { data, error } = await query.limit(250)
+  if (error) throw error
+
+  const duplicate = (data || []).find((row) =>
+    getNhisDuplicatePatientKey(row) === patientKey &&
+    getNhisDuplicateAmountKey(row.total_amount) === amountKey
+  )
+  if (duplicate) throw new Error(getNhisDuplicateBlockMessage(duplicate))
+}
+
 const DIAGNOSIS_TREATMENT_RULES = [
   {
     label: 'Malaria',
@@ -3986,6 +4083,14 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
   const medicineTotal = medicines.reduce((s, m) => s + Number(m.totalAmount || 0), 0)
   const serviceTotal = tariffServices.reduce((s, line) => s + Number(line.totalAmount || 0), 0)
   const totalAmount = medicineTotal + serviceTotal
+  await assertNoDuplicateNhisClaimInStore({
+    memberNo,
+    hin: claimData.hin,
+    surname: claimData.surname,
+    otherNames: claimData.otherNames,
+    serviceDate,
+    totalAmount,
+  })
   const diagnosisDetails = getDiagnosisDetailsPayload(claimData)
   let claimPayload = {
     patient_id:         claimData.patientId         || null,
@@ -4178,6 +4283,15 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
   const medicineTotal = medicines.reduce((s, m) => s + Number(m.totalAmount || 0), 0)
   const serviceTotal = tariffServices.reduce((s, line) => s + Number(line.totalAmount || 0), 0)
   const totalAmount = medicineTotal + serviceTotal
+  await assertNoDuplicateNhisClaimInStore({
+    memberNo,
+    hin: claimData.hin,
+    surname: claimData.surname,
+    otherNames: claimData.otherNames,
+    serviceDate,
+    totalAmount,
+    ignoreClaimId: id,
+  })
   const diagnosisDetails = getDiagnosisDetailsPayload(claimData)
   const medicineRows = medicines.map((m) => ({
     nhis_drug_id: m.nhisDrugId || null,
@@ -6882,6 +6996,7 @@ export const exportNhisClaimsFile = async (options = {}) => {
     throw new Error(`No ${statusLabel} claims found for ${period.label}.`)
   }
   const organizationType = normalizeOrganizationType(options.organizationType)
+  assertNoDuplicateNhisClaimsForTransfer(claims)
   await assertNhisClaimsReadyForFinalSubmission(claims, organizationType, options)
 
   if (options.directSubmit) {
@@ -6903,6 +7018,15 @@ export const exportNhisClaimsFile = async (options = {}) => {
 export const submitNhisClaimDirect = async (id, options = {}) => {
   const claim = options.claim || await getNhisClaimForSubmission(id)
   const organizationType = normalizeOrganizationType(options.organizationType || claim.organization_type)
+  await assertNoDuplicateNhisClaimInStore({
+    memberNo: claim.member_no,
+    hin: claim.hin,
+    surname: claim.surname,
+    otherNames: claim.other_names,
+    serviceDate: claim.service_date_from,
+    totalAmount: claim.total_amount,
+    ignoreClaimId: claim.id || id,
+  })
   await assertNhisClaimsReadyForFinalSubmission([claim], organizationType, options)
   const period = getDirectSubmissionPeriodForClaim(claim)
   const result = await submitNhisClaimsDirect([claim], period, {

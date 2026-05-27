@@ -318,6 +318,33 @@ const buildNhisDuplicateWarnings = ({
   return [...new Set(warnings)]
 }
 
+const buildNhisDuplicateClaimBlockers = ({
+  currentClaim,
+  currentMedicines,
+  existingClaims,
+  editingClaimId,
+}) => {
+  const currentPatientKey = getClaimPatientKey(currentClaim)
+  const currentDate = getClaimServiceDate(currentClaim)
+  const currentTotal = currentMedicines.reduce((sum, medicine) => sum + Number(medicine.totalAmount || 0), 0)
+  if (!currentPatientKey || !currentDate) return []
+
+  return [...new Set(
+    existingClaims
+      .filter((claim) => claim.id !== editingClaimId)
+      .filter((claim) => getClaimPatientKey(claim) && getClaimPatientKey(claim) === currentPatientKey)
+      .filter((claim) => {
+        const existingDate = getClaimServiceDate(claim)
+        const existingTotal = Number(claim.total_amount || 0)
+        return existingDate && existingDate === currentDate && Math.abs(existingTotal - currentTotal) < 0.01
+      })
+      .map((claim) => {
+        const claimLabel = claim.claim_number || `${claim.surname || ''} ${claim.other_names || ''}`.trim() || 'existing claim'
+        return `${claimLabel} has the same patient, date, and total amount.`
+      })
+  )]
+}
+
 const getSettingValue = (settings, camelKey, snakeKey) =>
   settings?.[camelKey] ?? settings?.[snakeKey] ?? ''
 
@@ -1356,6 +1383,17 @@ const Nhis = () => {
     e.preventDefault()
     if (readiness.blockers.length) {
       setClaimError(`NHIS claim readiness check failed: ${readiness.blockers.slice(0, 5).join(' ')}`)
+      return
+    }
+
+    const duplicateClaimBlockers = buildNhisDuplicateClaimBlockers({
+      currentClaim: claimForm,
+      currentMedicines: claimMedicines,
+      existingClaims: claims,
+      editingClaimId: editingClaim?.id,
+    })
+    if (duplicateClaimBlockers.length) {
+      setClaimError(`Duplicate NHIS claim blocked: ${duplicateClaimBlockers[0]}`)
       return
     }
 
