@@ -69,6 +69,19 @@ import './Nhis.css'
 // ─── constants ────────────────────────────────────────────────────────────────
 
 const CLAIM_STATUS_TABS = ['all', 'served', 'submitted', 'paid', 'rejected']
+const isLocalClaimItBridgeBaseUrl = (baseUrl = '') => {
+  try {
+    const hostname = new URL(String(baseUrl || '').trim()).hostname.toLowerCase()
+    return hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname.startsWith('192.168.') ||
+      hostname.startsWith('10.') ||
+      /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname)
+  } catch {
+    return false
+  }
+}
+
 const FREQUENCY_OPTIONS = [
   'OD',
   'BD',
@@ -639,18 +652,27 @@ const Nhis = () => {
     resolvedNhiaSettings?.claim_endpoint_path ||
     ''
   const isClaimItBridgeMode = ['claimit_bridge', 'claimit_assisted'].includes(integrationMode)
-  const isLocalClaimItBridge = isClaimItBridgeMode && ['local_server', 'lan_ip'].includes(resolvedNhiaSettings?.connectionProfile || resolvedNhiaSettings?.connection_profile || 'local_server')
+  const nhiaApiBaseUrl = resolvedNhiaSettings?.apiBaseUrl ||
+    resolvedNhiaSettings?.api_base_url ||
+    resolvedNhiaSettings?.productionBaseUrl ||
+    resolvedNhiaSettings?.production_base_url ||
+    resolvedNhiaSettings?.sandboxBaseUrl ||
+    resolvedNhiaSettings?.sandbox_base_url ||
+    ''
+  const isLocalClaimItBridge = isClaimItBridgeMode &&
+    ['local_server', 'lan_ip'].includes(resolvedNhiaSettings?.connectionProfile || resolvedNhiaSettings?.connection_profile || 'local_server') &&
+    isLocalClaimItBridgeBaseUrl(nhiaApiBaseUrl)
   const canManuallyEditCcCode = role === 'admin' || role === 'super_admin'
   const allowsDirectNhiaSubmission = ['claimit_bridge', 'claimit_assisted', 'direct_nhia_api', 'hybrid'].includes(integrationMode)
   const directNhiaApiAvailable = Boolean(
     allowsDirectNhiaSubmission &&
       resolvedNhiaSettings?.directApiEnabled &&
-      resolvedNhiaSettings?.apiBaseUrl &&
+      nhiaApiBaseUrl &&
       resolvedNhiaSettings?.claimEndpointPath
   )
   const nhiaCcCodeApiAvailable = Boolean(
     (resolvedNhiaSettings?.directApiEnabled || claimControlMode === 'claimit_bridge') &&
-      resolvedNhiaSettings?.apiBaseUrl &&
+      nhiaApiBaseUrl &&
       ccEndpointPath
   )
   const nhisPageSubtitle = isHospital
@@ -674,7 +696,7 @@ const Nhis = () => {
       if (!resolvedNhiaSettings.facilityCode && !resolvedNhiaSettings.facility_code) apiIssues.push('NHIA facility code is missing.')
       if (!resolvedNhiaSettings.providerNumber && !resolvedNhiaSettings.provider_number) apiIssues.push('NHIA provider number is missing.')
       if (resolvedNhiaSettings.directApiEnabled) {
-        if (!resolvedNhiaSettings.apiBaseUrl && !resolvedNhiaSettings.api_base_url) apiIssues.push('Direct NHIA/CLAIM-it API base URL is missing.')
+        if (!nhiaApiBaseUrl) apiIssues.push('Direct NHIA/CLAIM-it API base URL is missing.')
         if (!resolvedNhiaSettings.claimEndpointPath && !resolvedNhiaSettings.claim_endpoint_path) apiIssues.push('Claim submission endpoint path is missing.')
       } else {
         apiWarnings.push('Direct API is off; use CLAIM-it export/import.')
@@ -1116,7 +1138,7 @@ const Nhis = () => {
     connectionProfile: resolvedNhiaSettings?.connectionProfile || resolvedNhiaSettings?.connection_profile || 'local_server',
     validationMode: resolvedNhiaSettings?.validationMode || resolvedNhiaSettings?.validation_mode || 'validate_before_submit',
     claimControlMode,
-    apiBaseUrl: resolvedNhiaSettings?.apiBaseUrl || resolvedNhiaSettings?.api_base_url || '',
+    apiBaseUrl: nhiaApiBaseUrl,
     claimEndpointPath: resolvedNhiaSettings?.claimEndpointPath || resolvedNhiaSettings?.claim_endpoint_path || '',
     claimValidationEndpointPath: resolvedNhiaSettings?.claimValidationEndpointPath || resolvedNhiaSettings?.claim_validation_endpoint_path || '',
     ccEndpointPath,
@@ -1291,7 +1313,7 @@ const Nhis = () => {
       const generateCcCode = isLocalClaimItBridge
         ? (context) => generateBrowserClaimItBridgeCcCode({
             ...resolvedNhiaSettings,
-            apiBaseUrl: resolvedNhiaSettings?.apiBaseUrl || resolvedNhiaSettings?.api_base_url,
+            apiBaseUrl: nhiaApiBaseUrl,
             ccEndpointPath,
             ccCodeEndpointPath: ccEndpointPath,
             claimControlMode,

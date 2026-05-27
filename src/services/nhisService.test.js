@@ -142,10 +142,12 @@ const baseClaim = {
   memberNo: '12345678',
   surname: 'Mensah',
   otherNames: 'Ama',
+  folderNo: 'F001',
   patientAddress: 'Accra',
   dateOfBirth: '1990-01-01',
   cccNo: 'CC-12345',
   serviceDate: '2026-05-14',
+  referringFacility: 'Westpoint Chemist',
   physicianName: 'Dr Test',
   prescriptionFilePath: 'org/2026-05/claim/rx.pdf',
   prescriptionFileName: 'rx.pdf',
@@ -846,6 +848,7 @@ describe('CLAIM-it export helpers', () => {
     diagnosis_details: [{ code: 'B50', label: 'Plasmodium falciparum malaria', source: 'ICD-10' }],
     service_date_from: '2026-05-14',
     service_date_to: '2026-05-14',
+    referring_facility: 'Westpoint Chemist',
     physician_name: 'Dr Test',
     prescription_file_name: 'rx.pdf',
     prescription_file_path: 'org/2026-05/claim/rx.pdf',
@@ -1634,6 +1637,44 @@ describe('CLAIM-it export helpers', () => {
 })
 
 describe('direct NHIA submission', () => {
+  const directClaim = {
+    id: 'claim-1',
+    claim_number: 'NHIS-000001',
+    status: 'served',
+    organization_type: 'pharmacy',
+    member_no: '12345678',
+    surname: 'Mensah',
+    other_names: 'Ama',
+    folder_no: 'F001',
+    patient_address: 'Accra',
+    date_of_birth: '1990-01-01',
+    ccc_no: 'CC-12345',
+    diagnosis: 'Malaria',
+    service_date_from: '2026-05-14',
+    referring_facility: 'Westpoint Chemist',
+    physician_name: 'Dr Test',
+    prescription_file_path: 'org/2026-05/claim/rx.pdf',
+    prescription_file_name: 'rx.pdf',
+    prescription_file_url: 'https://example.test/rx.pdf',
+    total_amount: 10,
+    nhis_claim_medicines: [
+      {
+        nhis_drug_id: 'drug-1',
+        drug_code: 'NH001',
+        description: 'Paracetamol Tablet',
+        unit: 'tablet',
+        unit_price: 1,
+        dispensed_qty: 10,
+        dispensary_date: '2026-05-14',
+        dose: '1 tablet',
+        frequency: 'TDS',
+        duration: '5 days',
+        total_amount: 10,
+        category: 'A',
+      },
+    ],
+  }
+
   it('keeps the tier-access router action separate from the submission audit label', async () => {
     const updateQuery = {
       in: vi.fn().mockResolvedValue({ error: null }),
@@ -1650,41 +1691,7 @@ describe('direct NHIA submission', () => {
     })
 
     await submitNhisClaimDirect('claim-1', {
-      claim: {
-        id: 'claim-1',
-        claim_number: 'NHIS-000001',
-        status: 'served',
-        organization_type: 'pharmacy',
-        member_no: '12345678',
-        surname: 'Mensah',
-        other_names: 'Ama',
-        patient_address: 'Accra',
-        date_of_birth: '1990-01-01',
-        ccc_no: 'CC-12345',
-        diagnosis: 'Malaria',
-        service_date_from: '2026-05-14',
-        physician_name: 'Dr Test',
-        prescription_file_path: 'org/2026-05/claim/rx.pdf',
-        prescription_file_name: 'rx.pdf',
-        prescription_file_url: 'https://example.test/rx.pdf',
-        total_amount: 10,
-        nhis_claim_medicines: [
-          {
-            nhis_drug_id: 'drug-1',
-            drug_code: 'NH001',
-            description: 'Paracetamol Tablet',
-            unit: 'tablet',
-            unit_price: 1,
-            dispensed_qty: 10,
-            dispensary_date: '2026-05-14',
-            dose: '1 tablet',
-            frequency: 'TDS',
-            duration: '5 days',
-            total_amount: 10,
-            category: 'A',
-          },
-        ],
-      },
+      claim: directClaim,
       directApiSource: 'hosted',
       providerClassLevel: 'D',
       pharmacyLevel: 'P1',
@@ -1696,6 +1703,69 @@ describe('direct NHIA submission', () => {
       submissionAction: 'nhis.direct_claim_submit',
       claimIds: ['claim-1'],
     }))
+  })
+
+  it('routes public CLAIM-it bridge URLs through the hosted tier-access proxy', async () => {
+    const updateQuery = {
+      in: vi.fn().mockResolvedValue({ error: null }),
+    }
+    supabase.from.mockReturnValue({
+      update: vi.fn(() => updateQuery),
+    })
+    invokeTierAccess.mockResolvedValue({ source: 'hosted', httpStatus: 200, response: { accepted: true } })
+
+    await submitNhisClaimDirect('claim-1', {
+      claim: directClaim,
+      directApiSource: 'hosted',
+      integrationMode: 'claimit_bridge',
+      connectionProfile: 'local_server',
+      apiBaseUrl: 'https://claims.example.test/json-api',
+      claimEndpointPath: '/claims',
+      providerClassLevel: 'D',
+      pharmacyLevel: 'P1',
+      nhisDrugCatalog: [{ code: 'NH001', category: 'A' }],
+    })
+
+    expect(fetch).not.toHaveBeenCalledWith(
+      'https://claims.example.test/json-api/claims',
+      expect.any(Object)
+    )
+    expect(invokeTierAccess).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'submit_nhia_claims_direct',
+      submissionAction: 'nhis.direct_claim_submit',
+    }))
+  })
+
+  it('keeps browser bridge submission only for local CLAIM-it bridge URLs', async () => {
+    const updateQuery = {
+      in: vi.fn().mockResolvedValue({ error: null }),
+    }
+    supabase.from.mockReturnValue({
+      update: vi.fn(() => updateQuery),
+    })
+    fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: vi.fn().mockResolvedValue(JSON.stringify({ accepted: true })),
+    })
+
+    await submitNhisClaimDirect('claim-1', {
+      claim: directClaim,
+      directApiSource: 'hosted',
+      integrationMode: 'claimit_bridge',
+      connectionProfile: 'local_server',
+      apiBaseUrl: 'http://localhost:31719/json-api',
+      claimEndpointPath: '/claims',
+      providerClassLevel: 'D',
+      pharmacyLevel: 'P1',
+      nhisDrugCatalog: [{ code: 'NH001', category: 'A' }],
+    })
+
+    expect(fetch).toHaveBeenCalledWith(
+      'http://localhost:31719/json-api/claims',
+      expect.objectContaining({ method: 'POST' })
+    )
+    expect(invokeTierAccess).not.toHaveBeenCalled()
   })
 })
 

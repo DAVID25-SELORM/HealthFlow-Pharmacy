@@ -2433,6 +2433,19 @@ const isClaimItBridgeMode = (mode = '') => CLAIMIT_BRIDGE_MODES.has(normalizeTex
 const isLocalClaimItBridgeProfile = (profile = '') =>
   ['local_server', 'lan_ip'].includes(normalizeText(profile) || 'local_server')
 
+const isLocalClaimItBridgeUrl = (baseUrl = '') => {
+  try {
+    const hostname = new URL(normalizeText(baseUrl)).hostname.toLowerCase()
+    return hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname.startsWith('192.168.') ||
+      hostname.startsWith('10.') ||
+      /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname)
+  } catch {
+    return false
+  }
+}
+
 const joinClaimItBridgeUrl = (baseUrl = '', path = '') =>
   `${normalizeText(baseUrl).replace(/\/+$/, '')}/${normalizeText(path).replace(/^\/+/, '')}`
 
@@ -6796,9 +6809,18 @@ const submitNhisClaimsDirect = async (claims, period, options = {}) => {
   const directApiSource = options.directApiSource === 'branch' ? 'branch' : 'hosted'
   const integrationMode = normalizeText(options.integrationMode || options.integration_mode)
   const connectionProfile = normalizeText(options.connectionProfile || options.connection_profile) || 'local_server'
+  const bridgeBaseUrl = normalizeText(
+    options.apiBaseUrl ||
+      options.api_base_url ||
+      options.productionBaseUrl ||
+      options.production_base_url ||
+      options.sandboxBaseUrl ||
+      options.sandbox_base_url
+  )
   const useBrowserBridge = directApiSource === 'hosted' &&
     isClaimItBridgeMode(integrationMode) &&
-    isLocalClaimItBridgeProfile(connectionProfile)
+    isLocalClaimItBridgeProfile(connectionProfile) &&
+    isLocalClaimItBridgeUrl(bridgeBaseUrl)
   const claimsForSubmission = directApiSource === 'hosted'
     ? await hydrateNhisPrescriptionUrlsForTransfer(claims)
     : claims
@@ -6821,7 +6843,7 @@ const submitNhisClaimsDirect = async (claims, period, options = {}) => {
       ? {
           localBridge: true,
           settings: {
-            apiBaseUrl: options.apiBaseUrl || options.api_base_url,
+            apiBaseUrl: bridgeBaseUrl,
             claimEndpointPath: options.claimEndpointPath || options.claim_endpoint_path,
             claimValidationEndpointPath: options.claimValidationEndpointPath || options.claim_validation_endpoint_path,
             validationMode: options.validationMode || options.validation_mode,

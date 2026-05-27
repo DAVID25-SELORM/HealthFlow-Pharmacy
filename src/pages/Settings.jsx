@@ -38,6 +38,7 @@ const NHIA_API_INTEGRATION_MODES = ['claimit_bridge', 'claimit_assisted', 'direc
 const NHIA_BRIDGE_MODES = ['claimit_bridge', 'claimit_assisted']
 const NHIA_LOCAL_BRIDGE_PROFILES = ['local_server', 'lan_ip']
 const NHIA_BRIDGE_REACHABLE_STATUSES = [401, 403, 404, 405]
+const CLAIMIT_PRODUCTION_BRIDGE_BASE_URL = String(import.meta.env.VITE_CLAIMIT_PRODUCTION_BRIDGE_BASE_URL || '').trim().replace(/\/+$/, '')
 
 const toForm = (row) => ({
   pharmacyName: row?.pharmacy_name || 'HealthFlow Pharmacy',
@@ -246,6 +247,19 @@ const summarizeNhiaSettingsForLog = (settings = null) => ({
 
 const normalizeNhiaText = (value) => String(value || '').trim()
 
+const isLocalNhiaBridgeBaseUrl = (baseUrl = '') => {
+  try {
+    const hostname = new URL(normalizeNhiaText(baseUrl)).hostname.toLowerCase()
+    return hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname.startsWith('192.168.') ||
+      hostname.startsWith('10.') ||
+      /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname)
+  } catch {
+    return false
+  }
+}
+
 const getNhiaActiveBaseUrl = (form = {}) => {
   const profile = form.connectionProfile || form.connection_profile || 'local_server'
   if (NHIA_BRIDGE_MODES.includes(form.integrationMode) || NHIA_LOCAL_BRIDGE_PROFILES.includes(profile)) {
@@ -258,6 +272,26 @@ const getNhiaActiveBaseUrl = (form = {}) => {
 
 const isLocalNhiaBridgeProfile = (form = {}) =>
   NHIA_LOCAL_BRIDGE_PROFILES.includes(form.connectionProfile || form.connection_profile || 'local_server')
+
+const withProductionClaimItBridgeDefaults = (form = {}) => {
+  const isClaimItBridge = NHIA_BRIDGE_MODES.includes(form.integrationMode || form.integration_mode)
+  if (!isClaimItBridge) return form
+
+  const activeBaseUrl = getNhiaActiveBaseUrl(form)
+  const shouldUseProductionProfile = !activeBaseUrl || !isLocalNhiaBridgeBaseUrl(activeBaseUrl)
+  if (activeBaseUrl && !shouldUseProductionProfile) return form
+
+  return {
+    ...form,
+    ...(shouldUseProductionProfile ? { connectionProfile: 'production_server' } : {}),
+    ...(CLAIMIT_PRODUCTION_BRIDGE_BASE_URL
+      ? {
+          productionBaseUrl: CLAIMIT_PRODUCTION_BRIDGE_BASE_URL,
+          apiBaseUrl: CLAIMIT_PRODUCTION_BRIDGE_BASE_URL,
+        }
+      : {}),
+  }
+}
 
 const joinNhiaBridgeUrl = (baseUrl = '', path = '') => {
   const normalizedBaseUrl = normalizeNhiaText(baseUrl).replace(/\/+$/, '')
@@ -494,36 +528,50 @@ const Settings = () => {
   }
 
   const handleDirectNhiaToggle = (enabled) => {
+    const nextForm = enabled
+      ? withProductionClaimItBridgeDefaults({
+          ...nhiaApiForm,
+          directApiEnabled: true,
+          integrationMode: NHIA_API_INTEGRATION_MODES.includes(nhiaApiForm.integrationMode)
+            ? nhiaApiForm.integrationMode
+            : 'claimit_bridge',
+        })
+      : {
+          ...nhiaApiForm,
+          directApiEnabled: false,
+          integrationMode: NHIA_API_INTEGRATION_MODES.includes(nhiaApiForm.integrationMode)
+            ? 'claimit_export'
+            : nhiaApiForm.integrationMode,
+        }
+
     if (enabled) {
-      const missing = getNhiaIntegrationMissingFields({ ...nhiaApiForm, directApiEnabled: true })
+      const missing = getNhiaIntegrationMissingFields(nextForm)
       if (missing.length) {
         setError(`Complete NHIA configuration before enabling API integration: ${missing.join(', ')}.`)
         return
       }
     }
-    setNhiaApiForm((current) => ({
-      ...current,
-      directApiEnabled: enabled,
-      integrationMode: enabled
-        ? (NHIA_API_INTEGRATION_MODES.includes(current.integrationMode) ? current.integrationMode : 'claimit_bridge')
-        : (NHIA_API_INTEGRATION_MODES.includes(current.integrationMode) ? 'claimit_export' : current.integrationMode),
-    }))
+    setNhiaApiForm(nextForm)
   }
 
   const handleNhiaIntegrationModeChange = (mode) => {
     const requiresDirectConfig = NHIA_API_INTEGRATION_MODES.includes(mode)
+    const nextForm = withProductionClaimItBridgeDefaults({
+      ...nhiaApiForm,
+      integrationMode: mode,
+      directApiEnabled: requiresDirectConfig,
+      ...(NHIA_BRIDGE_MODES.includes(mode) && !getNhiaActiveBaseUrl(nhiaApiForm)
+        ? { connectionProfile: 'production_server' }
+        : {}),
+    })
     if (requiresDirectConfig) {
-      const missing = getNhiaIntegrationMissingFields({ ...nhiaApiForm, integrationMode: mode })
+      const missing = getNhiaIntegrationMissingFields(nextForm)
       if (missing.length) {
         setError(`Complete NHIA configuration before selecting API integration mode: ${missing.join(', ')}.`)
         return
       }
     }
-    setNhiaApiForm((current) => ({
-      ...current,
-      integrationMode: mode,
-      directApiEnabled: requiresDirectConfig,
-    }))
+    setNhiaApiForm(nextForm)
   }
 
   const handleValidateNhiaConfig = () => {
@@ -1211,9 +1259,9 @@ const Settings = () => {
                   value={nhiaApiForm.connectionProfile}
                   onChange={(event) => updateNhiaApiForm('connectionProfile', event.target.value)}
                 >
+                  <option value="production_server">Production bridge server</option>
                   <option value="local_server">Local server</option>
                   <option value="lan_ip">LAN IP</option>
-                  <option value="production_server">Production server</option>
                 </select>
                 <select
                   value={nhiaApiForm.validationMode}
@@ -1415,7 +1463,7 @@ const Settings = () => {
               </select>
               {/* ✅ NHIA API ARCHITECTURE PATCH START */}
               <input
-                placeholder="CLAIM-it bridge base URL (http://server-pc:9090)"
+                placeholder="CLAIM-it bridge base URL (https://your-bridge-domain/json-api)"
                 value={nhiaApiForm.apiBaseUrl}
                 onChange={(event) => updateNhiaApiForm('apiBaseUrl', event.target.value)}
               />
@@ -1426,7 +1474,7 @@ const Settings = () => {
                   onChange={(event) => updateNhiaApiForm('sandboxBaseUrl', event.target.value)}
                 />
                 <input
-                  placeholder="Production base URL"
+                  placeholder="Production base URL (https://your-bridge-domain/json-api)"
                   value={nhiaApiForm.productionBaseUrl}
                   onChange={(event) => {
                     updateNhiaApiForm('productionBaseUrl', event.target.value)
@@ -1457,7 +1505,7 @@ const Settings = () => {
               />
               {/* ✅ NHIA API ARCHITECTURE PATCH START */}
               <p className="settings-note">
-                Claims Cover Control / Claim Control generation used during NHIA validation.
+                Production bridge mode uses a network-accessible CLAIM-it bridge; local server and LAN profiles are for branch-machine testing.
               </p>
               {/* ✅ NHIA API ARCHITECTURE PATCH END */}
               <select
