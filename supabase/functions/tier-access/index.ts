@@ -3527,13 +3527,39 @@ const generateNhiaCcCode = async (
   organizationId: string,
   payload: Record<string, unknown>
 ) => {
-  const settings = await getNhiaApiSettings(adminClient, requesterProfile, organizationId, true)
-  if (!settings?.directApiEnabled || !settings.apiBaseUrl) {
-    return { status: 'pending', source: 'pending', message: 'Pending CLAIM-it validation' }
+  console.log('[GENERATE NHIA CC PAYLOAD]', redactTierAccessBody(payload))
+  const receivedKeys = Object.keys(payload || {})
+  const claimId = normalizeText(payload.claimId || payload.claim_id)
+  if (!claimId) {
+    return { ok: false, error: 'Missing claimId', receivedKeys }
+  }
+
+  let settings: Awaited<ReturnType<typeof getNhiaApiSettings>> | null = null
+  try {
+    settings = await getNhiaApiSettings(adminClient, requesterProfile, organizationId, true)
+  } catch (error) {
+    return {
+      ok: false,
+      error: `Unable to load NHIA API settings: ${getErrorMessage(error)}`,
+      receivedKeys,
+    }
+  }
+
+  if (!settings) {
+    return { ok: false, error: 'NHIA API settings not found for organization', receivedKeys }
+  }
+
+  if (!settings.directApiEnabled) {
+    return { ok: false, error: 'Direct NHIA API is not enabled for organization', receivedKeys }
+  }
+
+  if (!settings.apiBaseUrl) {
+    return { ok: false, error: 'NHIA API base URL is not configured', receivedKeys }
   }
 
   const requestPayload = {
     action: isClaimItBridgeMode(settings as unknown as Record<string, unknown>) ? 'generate_or_validate_cc_code' : 'generate_cc_code',
+    claimId,
     claimControlMode: settings.claimControlMode || settings.claim_control_mode || (isClaimItBridgeMode(settings as unknown as Record<string, unknown>) ? 'claimit_bridge' : 'direct_api'),
     facilityCode: settings.facilityCode,
     providerNumber: settings.providerNumber,
@@ -3545,6 +3571,7 @@ const generateNhiaCcCode = async (
       claimCount: 1,
     },
     claims: [{
+      claimId,
       patientName: normalizeText(payload.patientName),
       memberNumber: normalizeText(payload.memberNumber || payload.memberNo),
       hin: normalizeText(payload.hin),
@@ -3565,15 +3592,24 @@ const generateNhiaCcCode = async (
 
   const endpointPath = getCcEndpointPath(settings as unknown as Record<string, unknown>)
   if (!endpointPath) {
-    return { status: 'pending', source: 'pending', message: 'Pending CLAIM-it validation' }
+    return { ok: false, error: 'CC/CCC endpoint path is not configured', receivedKeys }
   }
 
   logClaimItBridgeStatus('cc_code.request', { status: 'pending', endpointPath, claimCount: 1 })
-  const response = await fetch(joinUrl(String(settings.apiBaseUrl), endpointPath), {
-    method: 'POST',
-    headers: await buildNhiaSubmissionHeaders(settings as unknown as Record<string, unknown>),
-    body: JSON.stringify(requestPayload),
-  })
+  let response: Response
+  try {
+    response = await fetch(joinUrl(String(settings.apiBaseUrl), endpointPath), {
+      method: 'POST',
+      headers: await buildNhiaSubmissionHeaders(settings as unknown as Record<string, unknown>),
+      body: JSON.stringify(requestPayload),
+    })
+  } catch (error) {
+    return {
+      ok: false,
+      error: `NHIA API request failed: ${getErrorMessage(error)}`,
+      receivedKeys,
+    }
+  }
   const responseText = await response.text()
   let body: unknown = {}
   try {
@@ -3589,13 +3625,28 @@ const generateNhiaCcCode = async (
     claimCount: 1,
   })
 
-  if (!response.ok) throw buildRemoteHttpError('NHIA API', response.status, body)
+  if (!response.ok) {
+    return {
+      ok: false,
+      error: getErrorMessage(buildRemoteHttpError('NHIA API', response.status, body)),
+      httpStatus: response.status,
+      receivedKeys,
+      response: body,
+    }
+  }
 
   const ccCode = extractCcCode(body)
   if (!ccCode) return { status: 'pending', source: 'pending', message: 'Pending CLAIM-it validation', response: body }
-  if (ccCode.length !== 5) throw new Error('NHIA API returned a CCC/CC code that is not exactly 5 digits.')
+  if (ccCode.length !== 5) {
+    return {
+      ok: false,
+      error: 'NHIA API returned a CCC/CC code that is not exactly 5 digits.',
+      receivedKeys,
+      response: body,
+    }
+  }
 
-  return { ccCode, source: isClaimItBridgeMode(settings as unknown as Record<string, unknown>) ? 'claimit_bridge' : 'api', response: body }
+  return { ok: true, ccCode, source: isClaimItBridgeMode(settings as unknown as Record<string, unknown>) ? 'claimit_bridge' : 'api', response: body }
 }
 
 const submitNhiaClaimsDirect = async (
