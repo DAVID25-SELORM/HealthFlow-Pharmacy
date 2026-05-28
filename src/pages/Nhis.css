@@ -1102,9 +1102,9 @@
   border-bottom: 1px solid var(--gray-100);
   cursor: pointer;
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.25rem 0.75rem;
   font-size: 0.85rem;
 }
 
@@ -1112,6 +1112,21 @@
 
 .pd-name { font-weight: 500; }
 .pd-meta { font-size: 0.72rem; color: var(--gray-400); }
+
+.patient-search-status {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 59;
+  padding: 0.45rem 0.75rem;
+  background: white;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  color: var(--gray-500);
+  font-size: 0.78rem;
+}
 
 /* Drug dropdown (medicine search) */
 .nhis-page .drug-search-wrap {

@@ -43,7 +43,7 @@ import {
 import {
   generateNhiaCcCode as generateBranchNhiaCcCode,
 } from '../services/branchServerApi'
-import { getAllPatients } from '../services/patientService'
+import { getAllPatients, searchPatients } from '../services/patientService'
 import { getAllDrugs } from '../services/drugService'
 import { parseNhisDrugFile, generateNhisDrugTemplate } from '../services/nhisDrugImportService'
 import { parseNhisClinicalRuleFile, generateNhisClinicalRuleTemplate } from '../services/nhisClinicalRuleImportService'
@@ -202,6 +202,38 @@ const lookupMatches = (value, term) => {
   return normalizeLookupText(value).includes(term) ||
     compactLookupText(value).includes(compactLookupText(term))
 }
+
+const patientNameParts = (fullName = '') => {
+  const parts = String(fullName || '').trim().split(/\s+/).filter(Boolean)
+  return {
+    surname: parts[0] || '',
+    otherNames: parts.slice(1).join(' '),
+  }
+}
+
+const patientSearchKey = (patient = {}) =>
+  patient.id ||
+  compactLookupText([
+    patient.full_name,
+    patient.nhis_member_no,
+    patient.insurance_id,
+    patient.nhis_hin,
+    patient.folder_no,
+  ].filter(Boolean).join('|'))
+
+const claimToPatientSearchResult = (claim = {}) => ({
+  id: claim.patient_id || `nhis-claim-${claim.id || claim.claim_number || patientSearchKey(claim)}`,
+  patient_id: claim.patient_id || '',
+  full_name: [claim.surname, claim.other_names].filter(Boolean).join(' ').trim(),
+  nhis_member_no: claim.member_no || '',
+  insurance_id: claim.member_no || '',
+  nhis_hin: claim.hin || '',
+  gender: claim.gender || '',
+  date_of_birth: claim.date_of_birth || '',
+  address: claim.patient_address || '',
+  folder_no: claim.folder_no || '',
+  sourceClaimNumber: claim.claim_number || '',
+})
 
 const parseClaimDurationDays = (duration) => {
   const value = normalizeLookupText(duration)
@@ -448,6 +480,8 @@ const Nhis = () => {
 
   // ── patient lookup (for claim form) ──────────────────────────
   const [patientSearch, setPatientSearch] = useState('')
+  const [patientSearchResults, setPatientSearchResults] = useState([])
+  const [patientSearching, setPatientSearching] = useState(false)
 
   // ── medicine sub-modal ────────────────────────────────────────
   const [medForm, setMedForm]           = useState(BLANK_MEDICINE)
@@ -618,8 +652,8 @@ const Nhis = () => {
     )
   }, [nhisDrugs, catalogSearch])
 
-  // ── filtered patients for claim form ─────────────────────────
-  const filteredPatients = useMemo(() => {
+  // ── patient matches for claim form ───────────────────────────
+  const localPatientMatches = useMemo(() => {
     const term = patientSearch.trim().toLowerCase()
     if (!term) return []
     return patients
@@ -630,8 +664,75 @@ const Nhis = () => {
           lookupMatches(p.nhis_member_no, term) ||
           lookupMatches(p.insurance_id, term)
       )
-      .slice(0, 10)
   }, [patients, patientSearch])
+
+  const priorClaimPatientMatches = useMemo(() => {
+    const term = patientSearch.trim().toLowerCase()
+    if (!term) return []
+    const merged = new Map()
+    claims
+      .filter((claim) =>
+        lookupMatches([claim.surname, claim.other_names].filter(Boolean).join(' '), term) ||
+        lookupMatches(claim.member_no, term) ||
+        lookupMatches(claim.hin, term) ||
+        lookupMatches(claim.folder_no, term)
+      )
+      .forEach((claim) => {
+        const result = claimToPatientSearchResult(claim)
+        const key = patientSearchKey(result)
+        if (key && !merged.has(key)) merged.set(key, result)
+      })
+    return [...merged.values()]
+  }, [claims, patientSearch])
+
+  useEffect(() => {
+    const term = patientSearch.trim()
+    if (!showNewClaimModal || term.length < 2) {
+      setPatientSearchResults([])
+      setPatientSearching(false)
+      return undefined
+    }
+
+    let cancelled = false
+    setPatientSearching(true)
+    const timer = setTimeout(async () => {
+      try {
+        const remoteMatches = await searchPatients(term)
+        if (!cancelled) setPatientSearchResults(remoteMatches || [])
+      } catch (err) {
+        console.warn('NHIS patient search failed:', err)
+        if (!cancelled) setPatientSearchResults([])
+      } finally {
+        if (!cancelled) setPatientSearching(false)
+      }
+    }, 250)
+
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [patientSearch, showNewClaimModal])
+
+  const filteredPatients = useMemo(() => {
+    const merged = new Map()
+    ;[...patientSearchResults, ...localPatientMatches, ...priorClaimPatientMatches]
+      .filter((patient) => patient?.full_name || patient?.nhis_member_no || patient?.insurance_id || patient?.nhis_hin)
+      .forEach((patient) => {
+        const key = patientSearchKey(patient)
+        if (!key) return
+        const existing = merged.get(key)
+        merged.set(key, existing
+          ? {
+              ...patient,
+              ...existing,
+              folder_no: existing.folder_no || patient.folder_no || '',
+              sourceClaimNumber: existing.sourceClaimNumber || patient.sourceClaimNumber || '',
+              patient_id: existing.patient_id || patient.patient_id || '',
+            }
+          : patient)
+      })
+    return [...merged.values()].slice(0, 10)
+  }, [patientSearchResults, localPatientMatches, priorClaimPatientMatches])
 
   const filteredTariffItems = useMemo(() => {
     const term = tariffSearch.trim().toLowerCase()
@@ -834,14 +935,16 @@ const Nhis = () => {
   // ── select patient for claim ──────────────────────────────────
   const selectPatient = (patient) => {
     const memberNo = patient.nhis_member_no || patient.insurance_id || ''
+    const nameParts = patientNameParts(patient.full_name)
     setClaimForm((prev) => ({
       ...prev,
-      patientId:   patient.id,
-      surname:     (patient.full_name || '').split(' ')[0],
-      otherNames:  (patient.full_name || '').split(' ').slice(1).join(' '),
+      patientId:   patient.patient_id || (String(patient.id || '').startsWith('nhis-claim-') ? '' : patient.id),
+      surname:     nameParts.surname,
+      otherNames:  nameParts.otherNames,
       gender:      patient.gender     || '',
       dateOfBirth: patient.date_of_birth || '',
       patientAddress: patient.address || '',
+      folderNo:    patient.folder_no || prev.folderNo,
       memberNo:    normalizeNhiaMemberNumber(memberNo),
       hin:         patient.nhis_hin       || '',
     }))
@@ -2441,6 +2544,7 @@ const Nhis = () => {
                           {filteredPatients.map((p) => (
                             <button
                               key={p.id}
+                              type="button"
                               className="patient-dropdown-item"
                               onClick={() => selectPatient(p)}
                             >
@@ -2448,9 +2552,14 @@ const Nhis = () => {
                               {(p.nhis_member_no || p.insurance_id) && (
                                 <span className="pd-meta">Member: {p.nhis_member_no || p.insurance_id}</span>
                               )}
+                              {p.folder_no && <span className="pd-meta">Folder: {p.folder_no}</span>}
+                              {p.sourceClaimNumber && <span className="pd-meta">Previous claim: {p.sourceClaimNumber}</span>}
                             </button>
                           ))}
                         </div>
+                      )}
+                      {patientSearching && (
+                        <div className="patient-search-status">Searching patients...</div>
                       )}
                     </div>
                   </div>
