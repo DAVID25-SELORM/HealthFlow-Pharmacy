@@ -3719,7 +3719,20 @@ Deno.serve(async (request) => {
 
   try {
     const payload = (await request.json()) as Record<string, unknown>
+    console.log('[EDGE FUNCTION BODY]', payload)
+
     const action = normalizeText(payload.action) as TierAccessAction
+    if (!action) {
+      return json(
+        {
+          ok: false,
+          error: 'missing action',
+          received: payload,
+        },
+        400
+      )
+    }
+
     const { supabaseUrl, supabaseAnonKey, serviceRoleKey } = getFunctionEnv()
     const adminClient = createAdminClient(supabaseUrl, serviceRoleKey)
     const requesterResult = await requireRequester(
@@ -3887,7 +3900,14 @@ Deno.serve(async (request) => {
       return json(await updateEpharmacyOrderStatus(adminClient, requesterProfile, organizationId, payload))
     }
 
-    return json({ error: 'Unsupported tier access action.' }, 400)
+    return json(
+      {
+        ok: false,
+        error: `Unsupported tier access action: ${normalizeText(payload.action) || '<none>'}`,
+        received: payload,
+      },
+      400
+    )
   } catch (error) {
     console.error('tier-access error:', error)
     return json(
