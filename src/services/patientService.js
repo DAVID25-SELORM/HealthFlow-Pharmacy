@@ -348,7 +348,7 @@ export const getPatientLastVisit = async (patientId) => {
     .eq('patient_id', patientId)
     .order('sale_date', { ascending: false })
     .limit(1)
-    .single()
+    .maybeSingle()
   
   if (error && error.code !== 'PGRST116') throw error
   return data?.sale_date || null
