@@ -2554,6 +2554,14 @@ const getClaimControlEndpointPath = (settings = {}) =>
       settings.cc_code_endpoint_path
   )
 
+const getClaimSubmitEndpointPath = (settings = {}) =>
+  normalizeText(
+    settings.claimEndpointPath ||
+      settings.claim_endpoint_path ||
+      settings.claimSubmitEndpoint ||
+      settings.claim_submit_endpoint
+  )
+
 const getMemberLookupEndpointPath = (settings = {}) =>
   normalizeText(
     settings.memberLookupEndpointPath ||
@@ -2822,7 +2830,9 @@ export const testClaimItConnection = async (settings = {}) => {
 }
 
 export const generateBrowserClaimItBridgeCcCode = async (settings = {}, claimContext = {}) => {
-  const endpointPath = getClaimControlEndpointPath(settings)
+  const ccEndpointPath = getClaimControlEndpointPath(settings)
+  const claimEndpointPath = getClaimSubmitEndpointPath(settings)
+  const endpointPath = ccEndpointPath || claimEndpointPath
   const baseUrl = getClaimItBridgeBaseUrl(settings)
   if (!baseUrl || (!endpointPath && !canUseBaseUrlForClaimControl(settings))) {
     return { source: 'pending', status: 'pending', message: PENDING_CLAIMIT_CC_MESSAGE }

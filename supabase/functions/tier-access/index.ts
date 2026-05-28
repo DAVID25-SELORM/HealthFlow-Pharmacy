@@ -3522,6 +3522,14 @@ const getCcEndpointPath = (settings: Record<string, unknown>) =>
       settings.cc_code_endpoint_path
   )
 
+const getClaimSubmitEndpointPath = (settings: Record<string, unknown>) =>
+  normalizeText(
+    settings.claimEndpointPath ||
+      settings.claim_endpoint_path ||
+      settings.claimSubmitEndpoint ||
+      settings.claim_submit_endpoint
+  )
+
 const getMemberLookupEndpointPath = (settings: Record<string, unknown>) =>
   normalizeText(
     settings.memberLookupEndpointPath ||
@@ -3681,7 +3689,9 @@ const generateNhiaCcCode = async (
     requestedAt: new Date().toISOString(),
   }
 
-  const endpointPath = getCcEndpointPath(settings as unknown as Record<string, unknown>)
+  const ccEndpointPath = getCcEndpointPath(settings as unknown as Record<string, unknown>)
+  const claimEndpointPath = getClaimSubmitEndpointPath(settings as unknown as Record<string, unknown>)
+  const endpointPath = ccEndpointPath || claimEndpointPath
   if (!endpointPath && !canUseBaseUrlForCcGeneration(settings as unknown as Record<string, unknown>)) {
     return { ok: false, error: 'CC/CCC endpoint path is not configured', receivedKeys }
   }

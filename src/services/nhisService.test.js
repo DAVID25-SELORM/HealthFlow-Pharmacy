@@ -2154,7 +2154,7 @@ describe('NHIA API settings source routing', () => {
     })
   })
 
-  it('uses the CLAIM-it base URL instead of the claim endpoint when no CC endpoint is configured', async () => {
+  it('uses the CLAIM-it claim endpoint when no CC endpoint is configured', async () => {
     fetch.mockResolvedValueOnce({
       ok: true,
       status: 200,
@@ -2185,10 +2185,9 @@ describe('NHIA API settings source routing', () => {
     })
 
     expect(fetch).toHaveBeenCalledWith(
-      'http://localhost:31719/json-api',
+      'http://localhost:31719/json-api/claims',
       expect.objectContaining({ method: 'POST' })
     )
-    expect(fetch.mock.calls[0][0]).not.toContain('/claims')
   })
 
   it('allows CLAIM-it validation mode to return a CCC without a CC endpoint', async () => {
@@ -2202,6 +2201,7 @@ describe('NHIA API settings source routing', () => {
 
     await expect(generateBrowserClaimItBridgeCcCode({
       apiBaseUrl: 'http://localhost:31719/json-api',
+      claimEndpointPath: '/claims',
       validationMode: 'validate_before_submit',
       claimControlMode: 'claimit_bridge_ccc',
       credentialMode: 'api_key',
@@ -2220,7 +2220,7 @@ describe('NHIA API settings source routing', () => {
     })
 
     expect(fetch).toHaveBeenCalledWith(
-      'http://localhost:31719/json-api',
+      'http://localhost:31719/json-api/claims',
       expect.objectContaining({ method: 'POST' })
     )
   })
@@ -2240,6 +2240,7 @@ describe('NHIA API settings source routing', () => {
 
     await expect(generateBrowserClaimItBridgeCcCode({
       apiBaseUrl: 'http://localhost:31719/json-api',
+      claimEndpointPath: '/claims',
       memberLookupEndpointPath: '/subscribers/verify',
       validationMode: 'validate_before_submit',
       claimControlMode: 'claimit_bridge_ccc',
@@ -2265,7 +2266,7 @@ describe('NHIA API settings source routing', () => {
     )
     expect(fetch).toHaveBeenNthCalledWith(
       2,
-      'http://localhost:31719/json-api',
+      'http://localhost:31719/json-api/claims',
       expect.objectContaining({ method: 'POST' })
     )
   })
