@@ -179,6 +179,39 @@ const json = (body: Record<string, unknown>, status = 200) =>
 
 const normalizeText = (value: unknown) => (typeof value === 'string' ? value.trim() : '')
 
+const REDACTED_VALUE = '[REDACTED]'
+
+const shouldRedactTierAccessField = (key: string) => {
+  const normalized = key.toLowerCase().replace(/[^a-z0-9]/g, '')
+  return (
+    normalized === 'credentials' ||
+    normalized.includes('apikey') ||
+    normalized.includes('apisecret') ||
+    normalized.includes('password') ||
+    normalized.includes('token') ||
+    normalized.includes('authorization') ||
+    normalized.includes('encrypted') ||
+    normalized.includes('secret')
+  )
+}
+
+const redactTierAccessBody = (value: unknown): unknown => {
+  if (Array.isArray(value)) {
+    return value.map((item) => redactTierAccessBody(item))
+  }
+
+  if (!value || typeof value !== 'object') {
+    return value
+  }
+
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
+      key,
+      shouldRedactTierAccessField(key) ? REDACTED_VALUE : redactTierAccessBody(entry),
+    ])
+  )
+}
+
 const normalizeNhiaAccreditationExpiryDate = (value: unknown) => {
   const raw = normalizeText(value)
   if (!raw) return ''
@@ -3719,17 +3752,23 @@ Deno.serve(async (request) => {
     return json({ error: 'Method not allowed.' }, 405)
   }
 
-  try {
-    const payload = (await request.json()) as Record<string, unknown>
-    console.log('[EDGE FUNCTION BODY]', payload)
+  let payload: Record<string, unknown> = {}
+  let redactedPayload: unknown = {}
+  let action = ''
 
-    const action = normalizeText(payload.action) as TierAccessAction
+  try {
+    payload = (await request.json()) as Record<string, unknown>
+    redactedPayload = redactTierAccessBody(payload)
+    console.log('[EDGE FUNCTION BODY]', redactedPayload)
+
+    action = normalizeText(payload.action)
     if (!action) {
       return json(
         {
           ok: false,
+          action: '',
           error: 'missing action',
-          received: payload,
+          received: redactedPayload,
         },
         400
       )
@@ -3905,8 +3944,9 @@ Deno.serve(async (request) => {
     return json(
       {
         ok: false,
+        action,
         error: `Unsupported tier access action: ${normalizeText(payload.action) || '<none>'}`,
-        received: payload,
+        received: redactedPayload,
       },
       400
     )
@@ -3914,7 +3954,10 @@ Deno.serve(async (request) => {
     console.error('tier-access error:', error)
     return json(
       {
+        ok: false,
+        action,
         error: getErrorMessage(error),
+        received: redactedPayload,
       },
       400
     )
