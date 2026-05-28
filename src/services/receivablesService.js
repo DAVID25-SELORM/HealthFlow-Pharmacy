@@ -277,8 +277,6 @@ const getNhisReceivables = async (branchId = null) => {
       member_no,
       hin,
       created_by,
-      medicine_count,
-      service_count,
       nhis_claim_medicines (total_amount),
       nhis_claim_services (total_amount),
       created_at,

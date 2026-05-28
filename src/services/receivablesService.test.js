@@ -66,7 +66,7 @@ describe('receivablesService NHIS accounting flow', () => {
 
   it('builds NHIS receivables from the full claim total and existing payments', async () => {
     queueTable('claims', makeQuery({ data: [], error: null }))
-    queueTable('nhis_claims', makeQuery({
+    const nhisReceivablesQuery = queueTable('nhis_claims', makeQuery({
       data: [
         {
           id: 'nhis-claim-1',
@@ -74,8 +74,6 @@ describe('receivablesService NHIS accounting flow', () => {
           claim_number: 'NHIS-000001',
           status: 'submitted',
           total_amount: 47.08,
-          medicine_count: 1,
-          service_count: 1,
           service_date_from: '2026-05-14',
           surname: 'Mensah',
           other_names: 'Ama',
@@ -93,6 +91,8 @@ describe('receivablesService NHIS accounting flow', () => {
 
     const receivables = await getReceivables()
 
+    expect(nhisReceivablesQuery.select).not.toHaveBeenCalledWith(expect.stringContaining('medicine_count'))
+    expect(nhisReceivablesQuery.select).not.toHaveBeenCalledWith(expect.stringContaining('service_count'))
     expect(receivables).toHaveLength(1)
     expect(receivables[0]).toMatchObject({
       source_type: 'nhis_claim',
