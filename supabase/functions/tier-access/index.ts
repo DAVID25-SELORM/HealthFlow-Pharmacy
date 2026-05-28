@@ -3394,6 +3394,37 @@ const extractCcCode = (body: unknown): string => {
   return record.data && typeof record.data === 'object' ? extractCcCode(record.data) : ''
 }
 
+const summarizeRemoteBody = (body: unknown): string => {
+  if (!body) return ''
+  if (typeof body === 'string') return body.slice(0, 240)
+  if (typeof body === 'object') {
+    const record = body as Record<string, unknown>
+    const message = normalizeText(
+      record.error ||
+        record.message ||
+        record.detail ||
+        record.description ||
+        (record.data && typeof record.data === 'object'
+          ? (record.data as Record<string, unknown>).error ||
+            (record.data as Record<string, unknown>).message ||
+            (record.data as Record<string, unknown>).detail
+          : '')
+    )
+    if (message) return message.slice(0, 240)
+    try {
+      return JSON.stringify(body).slice(0, 240)
+    } catch {
+      return ''
+    }
+  }
+  return normalizeText(body).slice(0, 240)
+}
+
+const buildRemoteHttpError = (label: string, status: number, body: unknown) => {
+  const summary = summarizeRemoteBody(body)
+  return new Error(`${label} returned HTTP ${status}${summary ? `: ${summary}` : ''}`)
+}
+
 const getCcEndpointPath = (settings: Record<string, unknown>) =>
   normalizeText(
     settings.ccEndpointPath ||
@@ -3482,7 +3513,7 @@ const generateNhiaCcCode = async (
     claimCount: 1,
   })
 
-  if (!response.ok) throw new Error(`NHIA API returned HTTP ${response.status}.`)
+  if (!response.ok) throw buildRemoteHttpError('NHIA API', response.status, body)
 
   const ccCode = extractCcCode(body)
   if (!ccCode) return { status: 'pending', source: 'pending', message: 'Pending CLAIM-it validation', response: body }
@@ -3528,7 +3559,7 @@ const submitNhiaClaimsDirect = async (
   }
 
   if (!response.ok) {
-    throw new Error(`NHIA API returned HTTP ${response.status}.`)
+    throw buildRemoteHttpError('NHIA API', response.status, responseBody)
   }
 
   return {
