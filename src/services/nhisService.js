@@ -2554,6 +2554,25 @@ const getClaimControlEndpointPath = (settings = {}) =>
       settings.cc_code_endpoint_path
   )
 
+const getClaimItBridgeBaseUrl = (settings = {}) => {
+  const environment = normalizeText(settings.apiEnvironment || settings.api_environment).toLowerCase()
+  const apiBaseUrl = normalizeText(settings.apiBaseUrl || settings.api_base_url)
+  const productionBaseUrl = normalizeText(settings.productionBaseUrl || settings.production_base_url)
+  const sandboxBaseUrl = normalizeText(settings.sandboxBaseUrl || settings.sandbox_base_url)
+  return environment === 'sandbox'
+    ? sandboxBaseUrl || apiBaseUrl || productionBaseUrl
+    : productionBaseUrl || apiBaseUrl || sandboxBaseUrl
+}
+
+const canUseBaseUrlForClaimControl = (settings = {}) => {
+  const validationMode = normalizeText(settings.validationMode || settings.validation_mode)
+  const integrationMode = normalizeText(settings.integrationMode || settings.integration_mode || settings.nhiaApiMode || settings.nhia_api_mode)
+  return validationMode === 'claimit_local_bridge' ||
+    integrationMode === 'claimit_export' ||
+    isClaimItBridgeMode(integrationMode) ||
+    Boolean(getClaimItBridgeBaseUrl(settings))
+}
+
 const buildClaimItBridgeHeaders = (settings = {}) => {
   const credentials = settings.credentials && typeof settings.credentials === 'object' ? settings.credentials : {}
   const credentialMode = normalizeText(settings.credentialMode || settings.credential_mode || 'api_key')
@@ -2733,8 +2752,8 @@ export const testClaimItConnection = async (settings = {}) => {
 
 export const generateBrowserClaimItBridgeCcCode = async (settings = {}, claimContext = {}) => {
   const endpointPath = getClaimControlEndpointPath(settings)
-  const baseUrl = normalizeText(settings.apiBaseUrl || settings.api_base_url)
-  if (!baseUrl || !endpointPath) {
+  const baseUrl = getClaimItBridgeBaseUrl(settings)
+  if (!baseUrl || (!endpointPath && !canUseBaseUrlForClaimControl(settings))) {
     return { source: 'pending', status: 'pending', message: PENDING_CLAIMIT_CC_MESSAGE }
   }
 
@@ -2760,7 +2779,7 @@ export const generateBrowserClaimItBridgeCcCode = async (settings = {}, claimCon
   }
 
   logClaimItBridgeStatus('cc_code.request', { status: 'pending', endpointPath, claimCount: 1 })
-  const response = await fetch(joinClaimItBridgeUrl(baseUrl, endpointPath), {
+  const response = await fetch(endpointPath ? joinClaimItBridgeUrl(baseUrl, endpointPath) : baseUrl.replace(/\/+$/, ''), {
     method: 'POST',
     headers: buildClaimItBridgeHeaders(settings),
     body: JSON.stringify(requestPayload),

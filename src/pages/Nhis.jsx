@@ -793,6 +793,7 @@ const Nhis = () => {
 
   const providerClassLevel = resolvedNhiaSettings?.providerClassLevel || resolvedNhiaSettings?.provider_class_level || ''
   const integrationMode = resolvedNhiaSettings?.integrationMode || resolvedNhiaSettings?.integration_mode || 'claimit_export'
+  const validationMode = resolvedNhiaSettings?.validationMode || resolvedNhiaSettings?.validation_mode || 'validate_before_submit'
   const claimControlMode = resolvedNhiaSettings?.claimControlMode || resolvedNhiaSettings?.claim_control_mode || (['claimit_bridge', 'claimit_assisted'].includes(integrationMode) ? 'claimit_bridge' : 'manual')
   const ccEndpointPath = resolvedNhiaSettings?.ccEndpointPath ||
     resolvedNhiaSettings?.cc_endpoint_path ||
@@ -800,6 +801,9 @@ const Nhis = () => {
     resolvedNhiaSettings?.cc_code_endpoint_path ||
     ''
   const isClaimItBridgeMode = ['claimit_bridge', 'claimit_assisted'].includes(integrationMode)
+  const usesClaimItValidationFlow = isClaimItBridgeMode ||
+    integrationMode === 'claimit_export' ||
+    validationMode === 'claimit_local_bridge'
   const nhiaApiBaseUrl = resolvedNhiaSettings?.apiBaseUrl ||
     resolvedNhiaSettings?.api_base_url ||
     resolvedNhiaSettings?.productionBaseUrl ||
@@ -811,11 +815,11 @@ const Nhis = () => {
     resolvedNhiaSettings?.connectionProfile || resolvedNhiaSettings?.connection_profile || 'local_server'
   )
   const isLocalClaimItBridgeUrl = isLocalClaimItBridgeBaseUrl(nhiaApiBaseUrl)
-  const isHostedPageWithLocalClaimItBridge = isClaimItBridgeMode &&
+  const isHostedPageWithLocalClaimItBridge = usesClaimItValidationFlow &&
     isLocalClaimItBridgeProfile &&
     isLocalClaimItBridgeUrl &&
     !isLocalAppOrigin()
-  const isLocalClaimItBridge = isClaimItBridgeMode &&
+  const isLocalClaimItBridge = usesClaimItValidationFlow &&
     isLocalClaimItBridgeProfile &&
     isLocalClaimItBridgeUrl &&
     !isHostedPageWithLocalClaimItBridge
@@ -831,7 +835,7 @@ const Nhis = () => {
     (resolvedNhiaSettings?.directApiEnabled || claimControlMode === 'claimit_bridge') &&
       !isHostedPageWithLocalClaimItBridge &&
       nhiaApiBaseUrl &&
-      ccEndpointPath
+      (ccEndpointPath || usesClaimItValidationFlow)
   )
   const nhisPageSubtitle = isHospital
     ? 'NHIA hospital service claims, tariffs, diagnoses, and direct CLAIM-it submission'
@@ -1297,7 +1301,7 @@ const Nhis = () => {
     submitterId: resolvedNhiaSettings?.submitterId || '',
     integrationMode,
     connectionProfile: resolvedNhiaSettings?.connectionProfile || resolvedNhiaSettings?.connection_profile || 'local_server',
-    validationMode: resolvedNhiaSettings?.validationMode || resolvedNhiaSettings?.validation_mode || 'validate_before_submit',
+    validationMode,
     claimControlMode,
     apiBaseUrl: nhiaApiBaseUrl,
     claimEndpointPath: resolvedNhiaSettings?.claimEndpointPath || resolvedNhiaSettings?.claim_endpoint_path || '',

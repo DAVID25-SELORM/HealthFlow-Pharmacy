@@ -2154,15 +2154,17 @@ describe('NHIA API settings source routing', () => {
     })
   })
 
-  it('does not use the claim endpoint as the CLAIM-it CC code endpoint fallback', async () => {
+  it('uses the CLAIM-it base URL instead of the claim endpoint when no CC endpoint is configured', async () => {
     fetch.mockResolvedValueOnce({
       ok: true,
       status: 200,
-      text: vi.fn().mockResolvedValue(JSON.stringify({ ccCode: '12345' })),
+      text: vi.fn().mockResolvedValue(JSON.stringify({ claims: [{ claim: { outcome: 'PASSED' } }] })),
     })
 
     await expect(generateBrowserClaimItBridgeCcCode({
       apiBaseUrl: 'http://localhost:31719/json-api',
+      integrationMode: 'claimit_export',
+      validationMode: 'claimit_local_bridge',
       claimEndpointPath: '/claims',
       credentialMode: 'api_key',
       credentials: {
@@ -2182,7 +2184,11 @@ describe('NHIA API settings source routing', () => {
       status: 'pending',
     })
 
-    expect(fetch).not.toHaveBeenCalled()
+    expect(fetch).toHaveBeenCalledWith(
+      'http://localhost:31719/json-api',
+      expect.objectContaining({ method: 'POST' })
+    )
+    expect(fetch.mock.calls[0][0]).not.toContain('/claims')
   })
 })
 

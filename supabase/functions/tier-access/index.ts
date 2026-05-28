@@ -3509,6 +3509,25 @@ const getCcEndpointPath = (settings: Record<string, unknown>) =>
       settings.cc_code_endpoint_path
   )
 
+const getNhiaApiBaseUrl = (settings: Record<string, unknown>) => {
+  const environment = normalizeText(settings.apiEnvironment || settings.api_environment).toLowerCase()
+  const apiBaseUrl = normalizeText(settings.apiBaseUrl || settings.api_base_url)
+  const productionBaseUrl = normalizeText(settings.productionBaseUrl || settings.production_base_url)
+  const sandboxBaseUrl = normalizeText(settings.sandboxBaseUrl || settings.sandbox_base_url)
+  return environment === 'sandbox'
+    ? sandboxBaseUrl || apiBaseUrl || productionBaseUrl
+    : productionBaseUrl || apiBaseUrl || sandboxBaseUrl
+}
+
+const canUseBaseUrlForCcGeneration = (settings: Record<string, unknown>) => {
+  const validationMode = normalizeText(settings.validationMode || settings.validation_mode)
+  const integrationMode = normalizeText(settings.integrationMode || settings.integration_mode || settings.nhiaApiMode || settings.nhia_api_mode)
+  return validationMode === 'claimit_local_bridge' ||
+    integrationMode === 'claimit_export' ||
+    isClaimItBridgeMode(settings) ||
+    Boolean(getNhiaApiBaseUrl(settings))
+}
+
 const logClaimItBridgeStatus = (action: string, detail: Record<string, unknown> = {}) => {
   console.info(`[CLAIM-it Bridge] ${action}`, JSON.stringify({
     status: normalizeText(detail.status),
@@ -3551,7 +3570,8 @@ const generateNhiaCcCode = async (
     return { ok: false, error: 'Direct NHIA API is not enabled for organization', receivedKeys }
   }
 
-  if (!settings.apiBaseUrl) {
+  const apiBaseUrl = getNhiaApiBaseUrl(settings as unknown as Record<string, unknown>)
+  if (!apiBaseUrl) {
     return { ok: false, error: 'NHIA API base URL is not configured', receivedKeys }
   }
 
@@ -3589,14 +3609,15 @@ const generateNhiaCcCode = async (
   }
 
   const endpointPath = getCcEndpointPath(settings as unknown as Record<string, unknown>)
-  if (!endpointPath) {
+  if (!endpointPath && !canUseBaseUrlForCcGeneration(settings as unknown as Record<string, unknown>)) {
     return { ok: false, error: 'CC/CCC endpoint path is not configured', receivedKeys }
   }
+  const finalUrl = endpointPath ? joinUrl(apiBaseUrl, endpointPath) : apiBaseUrl.replace(/\/+$/, '')
 
   logClaimItBridgeStatus('cc_code.request', { status: 'pending', endpointPath, claimCount: 1 })
   let response: Response
   try {
-    response = await fetch(joinUrl(String(settings.apiBaseUrl), endpointPath), {
+    response = await fetch(finalUrl, {
       method: 'POST',
       headers: await buildNhiaSubmissionHeaders(settings as unknown as Record<string, unknown>),
       body: JSON.stringify(requestPayload),
