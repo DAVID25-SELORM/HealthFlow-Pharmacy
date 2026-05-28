@@ -66,6 +66,46 @@ npm run test
 4. Test with existing account (migrated to default 'healthflow' organization)
 5. Create new pharmacy via `/signup` route
 
+### Vercel CLAIM-it Bridge
+
+The production CLAIM-it/NHIA bridge is served by Vercel at:
+
+```text
+https://health-flow-pharmacy.vercel.app/json-api
+```
+
+If `claimbridge.healthflowgh.com` is added as a Vercel custom domain for this project, the same bridge is available at:
+
+```text
+https://claimbridge.healthflowgh.com/json-api
+```
+
+Set these Vercel environment variables:
+
+```env
+CLAIMIT_UPSTREAM_BASE_URL=https://official-claimit-or-nhia-host.example.com
+CLAIM_BRIDGE_TOKEN=<long-random-production-token>
+CLAIM_BRIDGE_TOKEN_HEADER=x-claim-bridge-token
+```
+
+Optional upstream auth variables:
+
+```env
+CLAIMIT_UPSTREAM_API_KEY=
+CLAIMIT_UPSTREAM_API_KEY_HEADER=x-api-key
+CLAIMIT_UPSTREAM_API_SECRET=
+CLAIMIT_UPSTREAM_API_SECRET_HEADER=x-api-secret
+CLAIMIT_UPSTREAM_BEARER_TOKEN=
+CLAIMIT_UPSTREAM_USERNAME=
+CLAIMIT_UPSTREAM_PASSWORD=
+```
+
+Health check:
+
+```text
+/json-api/health
+```
+
 **Architecture**:
 - **Shared Database**: All tenants in one PostgreSQL database
 - **RLS Isolation**: Row-Level Security ensures perfect data separation

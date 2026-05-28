@@ -44,6 +44,14 @@
   ],
   "rewrites": [
     {
+      "source": "/json-api/:path*",
+      "destination": "/api/json-api/:path*"
+    },
+    {
+      "source": "/json-api",
+      "destination": "/api/json-api"
+    },
+    {
       "source": "/((?!.*\\.).*)",
       "destination": "/index.html"
     }
