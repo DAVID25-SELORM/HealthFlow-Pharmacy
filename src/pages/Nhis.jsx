@@ -245,6 +245,18 @@ const claimToPatientSearchResult = (claim = {}) => ({
   sourceClaimNumber: claim.claim_number || '',
 })
 
+const buildPendingNhisClaimId = ({ organizationId = '', claimForm = {} } = {}) => {
+  const key = compactLookupText([
+    organizationId,
+    claimForm.memberNo,
+    claimForm.hin,
+    claimForm.serviceDate,
+    claimForm.surname,
+    claimForm.otherNames,
+  ].filter(Boolean).join('|'))
+  return `pending-${key || 'claim'}`
+}
+
 const parseClaimDurationDays = (duration) => {
   const value = normalizeLookupText(duration)
   if (!value) return null
@@ -1461,7 +1473,10 @@ const Nhis = () => {
 
     try {
       setGeneratingCcCode(true)
+      const claimId = editingClaim?.id || claimForm.id || buildPendingNhisClaimId({ organizationId, claimForm })
       const claimContext = {
+        claimId,
+        claim_id: claimId,
         organizationId,
         organizationType,
         patientName: `${claimForm.surname} ${claimForm.otherNames || ''}`.trim(),
