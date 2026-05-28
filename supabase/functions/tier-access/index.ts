@@ -3252,8 +3252,10 @@ const buildNhiaHeaders = (settings: Record<string, unknown>, contentType = 'appl
   }
 
   if (mode === 'api_key') {
-    const headerName = normalizeText(credentials.headerName) || 'x-api-key'
-    const prefix = normalizeText(credentials.headerPrefix)
+    const configuredHeaderName = normalizeText(credentials.headerName)
+    const headerName = configuredHeaderName || 'Authorization'
+    const prefix = normalizeText(credentials.headerPrefix) ||
+      (!configuredHeaderName && headerName.toLowerCase() === 'authorization' ? 'Bearer' : '')
     const apiKey = normalizeText(credentials.apiKey)
     if (apiKey) headers[headerName] = prefix ? `${prefix} ${apiKey}` : apiKey
     const apiSecret = normalizeText(credentials.apiSecret)
