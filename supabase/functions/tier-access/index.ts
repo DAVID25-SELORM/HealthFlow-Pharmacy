@@ -122,6 +122,9 @@ type TierAccessAction =
   | 'save_nhia_api_settings'
   | 'remove_nhia_api_credentials'
   | 'generate_nhia_cc_code'
+  | 'generate_cc_code'
+  | 'request_cc_code'
+  | 'generate_cc'
   | 'submit_nhia_claims_direct'
   | 'test_claimit_connection'
   | 'get_epharmacy_marketplace'
@@ -129,6 +132,44 @@ type TierAccessAction =
   | 'update_epharmacy_listing_controls'
   | 'create_epharmacy_order'
   | 'update_epharmacy_order_status'
+
+const SUPPORTED_TIER_ACCESS_ACTIONS = [
+  'get_drugs',
+  'get_claims',
+  'get_recent_claims',
+  'get_claims_statistics',
+  'create_claim',
+  'update_claim',
+  'approve_claim',
+  'reject_claim',
+  'get_report_bundle',
+  'create_drug',
+  'update_drug',
+  'delete_drug',
+  'bulk_import_drugs',
+  'sync_nhis_drugs_to_inventory',
+  'get_nhia_api_settings',
+  'save_nhia_api_settings',
+  'remove_nhia_api_credentials',
+  'test_claimit_connection',
+  'generate_nhia_cc_code',
+  'generate_cc_code',
+  'request_cc_code',
+  'generate_cc',
+  'submit_nhia_claims_direct',
+  'get_epharmacy_marketplace',
+  'save_epharmacy_profile',
+  'update_epharmacy_listing_controls',
+  'create_epharmacy_order',
+  'update_epharmacy_order_status',
+]
+
+const NHIA_CC_CODE_ACTIONS = new Set([
+  'generate_nhia_cc_code',
+  'generate_cc_code',
+  'request_cc_code',
+  'generate_cc',
+])
 
 type RequesterProfile = {
   id: string
@@ -3762,12 +3803,14 @@ Deno.serve(async (request) => {
     console.log('[EDGE FUNCTION BODY]', redactedPayload)
 
     action = normalizeText(payload.action)
+    console.log('[TIER ACTION]', payload.action)
     if (!action) {
       return json(
         {
           ok: false,
           action: '',
           error: 'missing action',
+          supportedActions: SUPPORTED_TIER_ACCESS_ACTIONS,
           received: redactedPayload,
         },
         400
@@ -3913,7 +3956,7 @@ Deno.serve(async (request) => {
       return json(await testClaimItConnection(adminClient, requesterProfile, organizationId, payload))
     }
 
-    if (action === 'generate_nhia_cc_code') {
+    if (NHIA_CC_CODE_ACTIONS.has(action)) {
       return json(await generateNhiaCcCode(adminClient, requesterProfile, organizationId, payload))
     }
 
@@ -3945,7 +3988,8 @@ Deno.serve(async (request) => {
       {
         ok: false,
         action,
-        error: `Unsupported tier access action: ${normalizeText(payload.action) || '<none>'}`,
+        error: `Unsupported action: ${action}`,
+        supportedActions: SUPPORTED_TIER_ACCESS_ACTIONS,
         received: redactedPayload,
       },
       400
