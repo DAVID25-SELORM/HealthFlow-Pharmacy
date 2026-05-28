@@ -47,6 +47,61 @@ const REPORT_DRUG_SELECT_FIELDS = `
   status,
   created_at
 `
+const EPHARMACY_ORG_SELECT_FIELDS = `
+  id,
+  name,
+  organization_type,
+  address,
+  city,
+  region,
+  phone,
+  email,
+  license_number,
+  epharmacy_enabled,
+  epharmacy_certificate_number,
+  epharmacy_license_status,
+  pharmacist_in_charge_name,
+  pharmacist_in_charge_reg_no,
+  epharmacy_contact_phone,
+  epharmacy_contact_email,
+  epharmacy_pickup_enabled,
+  epharmacy_delivery_enabled,
+  epharmacy_delivery_zones,
+  epharmacy_minimum_order_amount,
+  epharmacy_terms_accepted_at,
+  epharmacy_updated_at
+`
+const EPHARMACY_DRUG_SELECT_FIELDS = `
+  id,
+  organization_id,
+  branch_id,
+  name,
+  brand_name,
+  generic_name,
+  batch_number,
+  expiry_date,
+  quantity,
+  unit,
+  price,
+  cost_price,
+  supplier,
+  category,
+  description,
+  reorder_level,
+  status,
+  medicine_access_level,
+  required_pharmacy_level,
+  epharmacy_visible,
+  epharmacy_interfacility_visible,
+  epharmacy_customer_visible,
+  epharmacy_requires_prescription,
+  epharmacy_sale_class,
+  epharmacy_pickup_enabled,
+  epharmacy_delivery_enabled,
+  epharmacy_warning,
+  epharmacy_updated_at,
+  branches (id, name, code)
+`
 
 type TierAccessAction =
   | 'get_drugs'
@@ -69,6 +124,11 @@ type TierAccessAction =
   | 'generate_nhia_cc_code'
   | 'submit_nhia_claims_direct'
   | 'test_claimit_connection'
+  | 'get_epharmacy_marketplace'
+  | 'save_epharmacy_profile'
+  | 'update_epharmacy_listing_controls'
+  | 'create_epharmacy_order'
+  | 'update_epharmacy_order_status'
 
 type RequesterProfile = {
   id: string
@@ -86,9 +146,26 @@ const CLAIMS_ROLES = ['admin', 'pharmacist', 'billing', 'claims_officer']
 const NHIS_ROLES = ['admin', 'pharmacist', 'billing', 'claims_officer']
 const REPORT_ROLES = ['admin', 'pharmacist', 'branch_manager']
 const NHIA_SETTINGS_ROLES = ['admin', 'pharmacist', 'branch_manager']
+const EPHARMACY_ROLES = ['admin', 'pharmacist', 'procurement', 'branch_manager']
+const EPHARMACY_REVIEW_ROLES = ['admin', 'pharmacist']
 // ✅ NHIS PHARMACY LEVEL PATCH START
 const VALID_PHARMACY_LEVELS = ['P1', 'P2', 'LCS', 'HP']
 const VALID_MEDICINE_ACCESS_LEVELS = ['OTC', 'Prescription', 'Specialist', 'Controlled']
+const VALID_EPHARMACY_SALE_CLASSES = ['otc', 'prescription', 'restricted', 'controlled', 'narcotic']
+const BLOCKED_EPHARMACY_SALE_CLASSES = new Set(['restricted', 'controlled', 'narcotic'])
+const EPHARMACY_REVIEW_SALE_CLASSES = new Set(['prescription', 'restricted', 'controlled', 'narcotic'])
+const EPHARMACY_ORDER_STATUSES = [
+  'pending_review',
+  'approved',
+  'rejected',
+  'paid',
+  'packed',
+  'out_for_delivery',
+  'delivered',
+  'cancelled',
+]
+const EPHARMACY_FULFILLMENT_METHODS = ['pickup', 'delivery']
+const EPHARMACY_PAYMENT_METHODS = ['none', 'paystack', 'momo', 'card', 'cash_on_delivery', 'account_transfer', 'credit']
 // ✅ NHIS PHARMACY LEVEL PATCH END
 
 const json = (body: Record<string, unknown>, status = 200) =>
@@ -452,6 +529,82 @@ const requireClaimCreateAccess = (requesterProfile: RequesterProfile, message: s
 const requireReportsAccess = (requesterProfile: RequesterProfile, message: string) => {
   if (!REPORT_ROLES.includes(requesterProfile.role) && !requesterProfile.can_view_reports) {
     throw new Error(message)
+  }
+}
+
+const requireEpharmacyAccess = (requesterProfile: RequesterProfile, message: string) => {
+  if (!EPHARMACY_ROLES.includes(requesterProfile.role) && !requesterProfile.can_manage_inventory) {
+    throw new Error(message)
+  }
+}
+
+const normalizeEpharmacySaleClass = (value: unknown) => {
+  const normalized = normalizeText(value).toLowerCase().replace(/\s+/g, '_')
+  return VALID_EPHARMACY_SALE_CLASSES.includes(normalized) ? normalized : 'otc'
+}
+
+const normalizeEpharmacyStatus = (value: unknown) => {
+  const normalized = normalizeText(value).toLowerCase()
+  if (!EPHARMACY_ORDER_STATUSES.includes(normalized)) {
+    throw new Error('Invalid e-pharmacy order status.')
+  }
+  return normalized
+}
+
+const normalizeEpharmacyFulfillmentMethod = (value: unknown) => {
+  const normalized = normalizeText(value).toLowerCase()
+  return EPHARMACY_FULFILLMENT_METHODS.includes(normalized) ? normalized : 'pickup'
+}
+
+const normalizeEpharmacyPaymentMethod = (value: unknown) => {
+  const normalized = normalizeText(value).toLowerCase()
+  return EPHARMACY_PAYMENT_METHODS.includes(normalized) ? normalized : 'none'
+}
+
+const isExpiredDate = (value: unknown) => {
+  const raw = normalizeText(value)
+  if (!raw) return true
+  const expiry = new Date(`${raw}T23:59:59`)
+  return Number.isNaN(expiry.getTime()) || expiry.getTime() < Date.now()
+}
+
+const getEpharmacySurplusQuantity = (drug: Record<string, unknown>) => {
+  const quantity = Number(drug.quantity || 0)
+  const reorderLevel = Number(drug.reorder_level || 0)
+  return Math.max(0, quantity - Math.max(0, reorderLevel))
+}
+
+const buildEpharmacyOrderNumber = () => {
+  const stamp = Date.now().toString(36).toUpperCase()
+  const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 5).toUpperCase()
+  return `EPH-${stamp}-${suffix}`
+}
+
+const tryWriteTierAuditEvent = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  requesterProfile: RequesterProfile,
+  organizationId: string,
+  event: {
+    eventType: string
+    entityType: string
+    entityId?: string | null
+    action: string
+    details?: Record<string, unknown>
+  }
+) => {
+  try {
+    await adminClient.from('audit_logs').insert({
+      actor_user_id: requesterProfile.id,
+      event_type: event.eventType,
+      entity_type: event.entityType,
+      entity_id: event.entityId || null,
+      action: event.action,
+      details: event.details || {},
+      organization_id: organizationId,
+      created_at: new Date().toISOString(),
+    })
+  } catch (error) {
+    console.warn('tier-access audit warning:', getErrorMessage(error))
   }
 }
 
@@ -926,6 +1079,658 @@ const getDrugs = async (
   return pricedRows.filter(
     (row) => !isDefaultMedicationBatchNumber(row.batch_number) || Number(row.quantity || 0) > 0
   )
+}
+
+const loadEpharmacyOrders = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+  limit = 60
+) => {
+  const { data: orders, error } = await adminClient
+    .from('epharmacy_orders')
+    .select('*, epharmacy_order_items (*)')
+    .or(`buyer_organization_id.eq.${organizationId},seller_organization_id.eq.${organizationId}`)
+    .order('created_at', { ascending: false })
+    .limit(limit)
+
+  if (error) {
+    throw error
+  }
+
+  const rows = orders || []
+  const organizationIds = [
+    ...new Set(
+      rows
+        .flatMap((order) => [normalizeText(order.buyer_organization_id), normalizeText(order.seller_organization_id)])
+        .filter(Boolean)
+    ),
+  ]
+  const branchIds = [
+    ...new Set(
+      rows
+        .flatMap((order) => [normalizeText(order.buyer_branch_id), normalizeText(order.seller_branch_id)])
+        .filter(Boolean)
+    ),
+  ]
+
+  const [{ data: orgRows, error: orgError }, { data: branchRows, error: branchError }] = await Promise.all([
+    organizationIds.length
+      ? adminClient
+          .from('organizations')
+          .select('id, name, organization_type, license_number, epharmacy_certificate_number')
+          .in('id', organizationIds)
+      : Promise.resolve({ data: [], error: null }),
+    branchIds.length
+      ? adminClient
+          .from('branches')
+          .select('id, name, code')
+          .in('id', branchIds)
+      : Promise.resolve({ data: [], error: null }),
+  ])
+
+  if (orgError) throw orgError
+  if (branchError) throw branchError
+
+  const orgMap = new Map((orgRows || []).map((org) => [normalizeText(org.id), org]))
+  const branchMap = new Map((branchRows || []).map((branch) => [normalizeText(branch.id), branch]))
+
+  return rows.map((order) => ({
+    ...order,
+    buyer_facility: orgMap.get(normalizeText(order.buyer_organization_id)) || null,
+    seller_facility: orgMap.get(normalizeText(order.seller_organization_id)) || null,
+    buyer_branch: branchMap.get(normalizeText(order.buyer_branch_id)) || null,
+    seller_branch: branchMap.get(normalizeText(order.seller_branch_id)) || null,
+  }))
+}
+
+const getEpharmacyMarketplace = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  requesterProfile: RequesterProfile,
+  organizationId: string,
+  payload: Record<string, unknown>
+) => {
+  requireEpharmacyAccess(requesterProfile, 'Only pharmacy procurement or pharmacist staff can access e-pharmacy.')
+
+  const searchTerm = normalizeText(payload.searchTerm)
+  const facilityId = normalizeText(payload.facilityId)
+  const today = new Date().toISOString().split('T')[0]
+  const limit = clampPositiveInteger(payload.limit, 120, 250)
+
+  const { data: currentFacility, error: currentFacilityError } = await adminClient
+    .from('organizations')
+    .select(EPHARMACY_ORG_SELECT_FIELDS)
+    .eq('id', organizationId)
+    .maybeSingle()
+
+  if (currentFacilityError) throw currentFacilityError
+  if (!currentFacility) throw new Error('Organization not found.')
+
+  const { data: facilities, error: facilitiesError } = await adminClient
+    .from('organizations')
+    .select(EPHARMACY_ORG_SELECT_FIELDS)
+    .eq('epharmacy_enabled', true)
+    .eq('epharmacy_license_status', 'registered')
+    .in('status', ['active', 'trial'])
+    .order('name')
+
+  if (facilitiesError) throw facilitiesError
+
+  const facilityRows = facilities || []
+  const facilityIds = facilityRows.map((facility) => normalizeText(facility.id)).filter(Boolean)
+  const permittedFacilityIds = facilityId
+    ? facilityIds.filter((id) => id === facilityId)
+    : facilityIds
+
+  let listingRows: Record<string, unknown>[] = []
+  if (permittedFacilityIds.length > 0) {
+    let listingsQuery = adminClient
+      .from('drugs')
+      .select(EPHARMACY_DRUG_SELECT_FIELDS)
+      .in('organization_id', permittedFacilityIds)
+      .eq('status', 'active')
+      .eq('epharmacy_interfacility_visible', true)
+      .gt('quantity', 0)
+      .gte('expiry_date', today)
+      .order('name')
+      .limit(limit)
+
+    if (searchTerm) {
+      const searchParts = [searchTerm, ...normalizeSearchTokens(searchTerm)]
+        .map((part) => normalizeText(part).replace(/[%_,]/g, ''))
+        .filter(Boolean)
+        .flatMap((part) => [
+          `name.ilike.%${part}%`,
+          `brand_name.ilike.%${part}%`,
+          `generic_name.ilike.%${part}%`,
+          `category.ilike.%${part}%`,
+          `description.ilike.%${part}%`,
+        ])
+
+      listingsQuery = listingsQuery.or([...new Set(searchParts)].join(','))
+    }
+
+    const { data: listings, error: listingsError } = await listingsQuery
+    if (listingsError) throw listingsError
+    listingRows = (listings || []) as Record<string, unknown>[]
+  }
+
+  const facilityMap = new Map(facilityRows.map((facility) => [normalizeText(facility.id), facility]))
+  const listings = listingRows
+    .filter((row) => !isDefaultMedicationBatchNumber(row.batch_number) || Number(row.quantity || 0) > 0)
+    .map((row) => {
+      const saleClass = normalizeEpharmacySaleClass(row.epharmacy_sale_class || row.medicine_access_level)
+      const availableQuantity = getEpharmacySurplusQuantity(row)
+      return {
+        ...row,
+        sale_class: saleClass,
+        available_quantity: availableQuantity,
+        prescription_required: Boolean(row.epharmacy_requires_prescription) || EPHARMACY_REVIEW_SALE_CLASSES.has(saleClass),
+        facility: facilityMap.get(normalizeText(row.organization_id)) || null,
+        branch: row.branches || null,
+      }
+    })
+    .filter((row) => row.facility && row.available_quantity > 0)
+    .filter((row) => !BLOCKED_EPHARMACY_SALE_CLASSES.has(String(row.sale_class)))
+
+  const { data: ownDrugs, error: ownDrugsError } = await adminClient
+    .from('drugs')
+    .select(EPHARMACY_DRUG_SELECT_FIELDS)
+    .eq('organization_id', organizationId)
+    .eq('status', 'active')
+    .order('name')
+    .limit(250)
+
+  if (ownDrugsError) throw ownDrugsError
+
+  const ownListings = (ownDrugs || [])
+    .filter((row) => !isDefaultMedicationBatchNumber(row.batch_number) || Number(row.quantity || 0) > 0)
+    .map((row) => {
+      const saleClass = normalizeEpharmacySaleClass(row.epharmacy_sale_class || row.medicine_access_level)
+      return {
+        ...row,
+        sale_class: saleClass,
+        available_quantity: getEpharmacySurplusQuantity(row as Record<string, unknown>),
+        prescription_required: Boolean(row.epharmacy_requires_prescription) || EPHARMACY_REVIEW_SALE_CLASSES.has(saleClass),
+        branch: row.branches || null,
+        blocked_online: BLOCKED_EPHARMACY_SALE_CLASSES.has(saleClass),
+        expired_online: isExpiredDate(row.expiry_date),
+      }
+    })
+
+  return {
+    facility: currentFacility,
+    facilities: facilityRows,
+    listings,
+    ownListings,
+    orders: await loadEpharmacyOrders(adminClient, organizationId),
+  }
+}
+
+const saveEpharmacyProfile = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  requesterProfile: RequesterProfile,
+  organizationId: string,
+  payload: Record<string, unknown>
+) => {
+  requireRole(
+    requesterProfile,
+    ['pharmacist', 'branch_manager'],
+    'Only organization admins, pharmacists, or branch managers can update e-pharmacy registration.'
+  )
+
+  const profile = (payload.profile || {}) as Record<string, unknown>
+  const enabled = Boolean(profile.enabled)
+  const licenseNumber = normalizeText(profile.licenseNumber)
+  const certificateNumber = normalizeText(profile.certificateNumber)
+  const pharmacistName = normalizeText(profile.pharmacistInChargeName)
+  const pharmacistRegNo = normalizeText(profile.pharmacistInChargeRegNo)
+
+  if (enabled && (!licenseNumber || !certificateNumber || !pharmacistName || !pharmacistRegNo)) {
+    throw new Error('License number, ePharmacy certificate, and pharmacist-in-charge details are required before publishing.')
+  }
+
+  const updatePayload = {
+    license_number: licenseNumber || null,
+    epharmacy_enabled: enabled,
+    epharmacy_certificate_number: certificateNumber || null,
+    epharmacy_license_status: enabled ? 'registered' : 'not_registered',
+    pharmacist_in_charge_name: pharmacistName || null,
+    pharmacist_in_charge_reg_no: pharmacistRegNo || null,
+    epharmacy_contact_phone: normalizeText(profile.contactPhone) || null,
+    epharmacy_contact_email: normalizeText(profile.contactEmail) || null,
+    epharmacy_pickup_enabled: profile.pickupEnabled !== false,
+    epharmacy_delivery_enabled: Boolean(profile.deliveryEnabled),
+    epharmacy_delivery_zones: Array.isArray(profile.deliveryZones) ? profile.deliveryZones : [],
+    epharmacy_minimum_order_amount: parseNonNegativeNumber(profile.minimumOrderAmount || 0, 'Minimum order amount'),
+    epharmacy_terms_accepted_at: enabled ? new Date().toISOString() : null,
+    epharmacy_updated_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  }
+
+  const { data, error } = await adminClient
+    .from('organizations')
+    .update(updatePayload)
+    .eq('id', organizationId)
+    .select(EPHARMACY_ORG_SELECT_FIELDS)
+    .single()
+
+  if (error) throw error
+  await tryWriteTierAuditEvent(adminClient, requesterProfile, organizationId, {
+    eventType: 'epharmacy.profile.updated',
+    entityType: 'organizations',
+    entityId: organizationId,
+    action: enabled ? 'enable_epharmacy' : 'disable_epharmacy',
+    details: {
+      epharmacy_enabled: enabled,
+      license_number: licenseNumber || null,
+      epharmacy_certificate_number: certificateNumber || null,
+    },
+  })
+  return { facility: data }
+}
+
+const updateEpharmacyListingControls = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  requesterProfile: RequesterProfile,
+  organizationId: string,
+  payload: Record<string, unknown>
+) => {
+  requireInventoryAccess(requesterProfile, 'Only inventory staff can publish e-pharmacy stock.')
+
+  const drugId = assertRequiredText(payload.drugId, 'Drug id')
+  const controls = (payload.controls || {}) as Record<string, unknown>
+  const saleClass = normalizeEpharmacySaleClass(controls.saleClass)
+  const interfacilityVisible = Boolean(controls.interfacilityVisible)
+  const customerVisible = Boolean(controls.customerVisible)
+  const visible = interfacilityVisible || customerVisible || Boolean(controls.visible)
+
+  if (visible && BLOCKED_EPHARMACY_SALE_CLASSES.has(saleClass)) {
+    throw new Error('Restricted, controlled, and narcotic medicines cannot be published for online ordering.')
+  }
+
+  const { data: existingDrug, error: existingDrugError } = await adminClient
+    .from('drugs')
+    .select('id, organization_id')
+    .eq('id', drugId)
+    .eq('organization_id', organizationId)
+    .maybeSingle()
+
+  if (existingDrugError) throw existingDrugError
+  if (!existingDrug) throw new Error('Medicine not found.')
+
+  const updatePayload = {
+    epharmacy_visible: visible,
+    epharmacy_interfacility_visible: interfacilityVisible,
+    epharmacy_customer_visible: customerVisible,
+    epharmacy_sale_class: saleClass,
+    epharmacy_requires_prescription: Boolean(controls.requiresPrescription) || EPHARMACY_REVIEW_SALE_CLASSES.has(saleClass),
+    epharmacy_pickup_enabled: controls.pickupEnabled !== false,
+    epharmacy_delivery_enabled: Boolean(controls.deliveryEnabled),
+    epharmacy_warning: normalizeText(controls.warning) || null,
+    epharmacy_updated_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  }
+
+  const { data, error } = await adminClient
+    .from('drugs')
+    .update(updatePayload)
+    .eq('id', drugId)
+    .eq('organization_id', organizationId)
+    .select(EPHARMACY_DRUG_SELECT_FIELDS)
+    .single()
+
+  if (error) throw error
+  await tryWriteTierAuditEvent(adminClient, requesterProfile, organizationId, {
+    eventType: 'epharmacy.listing.updated',
+    entityType: 'drugs',
+    entityId: drugId,
+    action: 'update_epharmacy_listing_controls',
+    details: {
+      sale_class: saleClass,
+      interfacility_visible: interfacilityVisible,
+      customer_visible: customerVisible,
+    },
+  })
+  return { listing: data }
+}
+
+const getBuyerBranchIdForEpharmacyOrder = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+  requesterProfile: RequesterProfile,
+  payload: Record<string, unknown>
+) => {
+  const requestedBranchId = normalizeText(payload.buyerBranchId) || requesterProfile.branch_id
+  if (!requestedBranchId) return null
+
+  const { data, error } = await adminClient
+    .from('branches')
+    .select('id')
+    .eq('id', requestedBranchId)
+    .eq('organization_id', organizationId)
+    .eq('is_active', true)
+    .maybeSingle()
+
+  if (error) throw error
+  if (!data) throw new Error('Buyer branch could not be found.')
+  return requestedBranchId
+}
+
+const createEpharmacyOrder = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  requesterProfile: RequesterProfile,
+  organizationId: string,
+  payload: Record<string, unknown>
+) => {
+  requireEpharmacyAccess(requesterProfile, 'Only pharmacy procurement or pharmacist staff can request medicines.')
+
+  const orderInput = (payload.order || {}) as Record<string, unknown>
+  const sellerOrganizationId = assertRequiredText(orderInput.sellerOrganizationId, 'Seller facility')
+  if (sellerOrganizationId === organizationId) {
+    throw new Error('Select a colleague facility before creating an e-pharmacy order.')
+  }
+
+  const itemsInput = Array.isArray(orderInput.items) ? orderInput.items : []
+  if (itemsInput.length === 0) {
+    throw new Error('Add at least one medicine to the e-pharmacy order.')
+  }
+
+  const { data: sellerFacility, error: sellerFacilityError } = await adminClient
+    .from('organizations')
+    .select(EPHARMACY_ORG_SELECT_FIELDS)
+    .eq('id', sellerOrganizationId)
+    .eq('epharmacy_enabled', true)
+    .eq('epharmacy_license_status', 'registered')
+    .maybeSingle()
+
+  if (sellerFacilityError) throw sellerFacilityError
+  if (!sellerFacility) throw new Error('Seller facility is not registered for e-pharmacy ordering.')
+
+  const fulfillmentMethod = normalizeEpharmacyFulfillmentMethod(orderInput.fulfillmentMethod)
+  if (fulfillmentMethod === 'pickup' && sellerFacility.epharmacy_pickup_enabled === false) {
+    throw new Error('This seller facility is not accepting pickup orders.')
+  }
+  if (fulfillmentMethod === 'delivery' && !sellerFacility.epharmacy_delivery_enabled) {
+    throw new Error('This seller facility is not accepting delivery orders yet.')
+  }
+
+  const requestedItems = itemsInput.map((item) => item as Record<string, unknown>)
+  const requestedDrugIds = [...new Set(requestedItems.map((item) => assertRequiredText(item.drugId, 'Medicine')).filter(Boolean))]
+  const { data: drugRows, error: drugRowsError } = await adminClient
+    .from('drugs')
+    .select(EPHARMACY_DRUG_SELECT_FIELDS)
+    .eq('organization_id', sellerOrganizationId)
+    .eq('status', 'active')
+    .in('id', requestedDrugIds)
+
+  if (drugRowsError) throw drugRowsError
+
+  const drugMap = new Map((drugRows || []).map((drug) => [normalizeText(drug.id), drug]))
+  const orderItems = requestedItems.map((item) => {
+    const drugId = assertRequiredText(item.drugId, 'Medicine')
+    const drug = drugMap.get(drugId) as Record<string, unknown> | undefined
+    if (!drug) throw new Error('One of the selected medicines is no longer available.')
+
+    const saleClass = normalizeEpharmacySaleClass(drug.epharmacy_sale_class || drug.medicine_access_level)
+    if (BLOCKED_EPHARMACY_SALE_CLASSES.has(saleClass)) {
+      throw new Error(`${normalizeText(drug.name) || 'This medicine'} cannot be ordered through e-pharmacy.`)
+    }
+    if (!drug.epharmacy_interfacility_visible) {
+      throw new Error(`${normalizeText(drug.name) || 'This medicine'} is not published for inter-facility ordering.`)
+    }
+    if (isExpiredDate(drug.expiry_date)) {
+      throw new Error(`${normalizeText(drug.name) || 'This medicine'} is expired or missing a valid expiry date.`)
+    }
+
+    const quantity = parseNonNegativeNumber(item.quantity, 'Order quantity')
+    if (quantity <= 0) throw new Error('Order quantity must be greater than zero.')
+
+    const availableQuantity = getEpharmacySurplusQuantity(drug)
+    if (quantity > availableQuantity) {
+      throw new Error(`${normalizeText(drug.name) || 'This medicine'} has only ${availableQuantity} surplus unit(s) available.`)
+    }
+
+    const unitPrice = Number(drug.price || 0)
+    return {
+      drug,
+      row: {
+        drug_id: drugId,
+        seller_organization_id: sellerOrganizationId,
+        buyer_organization_id: organizationId,
+        drug_name: assertRequiredText(drug.name, 'Medicine name'),
+        brand_name: normalizeText(drug.brand_name) || null,
+        generic_name: normalizeText(drug.generic_name) || null,
+        batch_number: normalizeText(drug.batch_number) || null,
+        expiry_date: normalizeText(drug.expiry_date) || null,
+        quantity,
+        unit: normalizeText(drug.unit) || 'unit',
+        unit_price: unitPrice,
+        total_amount: quantity * unitPrice,
+        sale_class: saleClass,
+        prescription_required: Boolean(drug.epharmacy_requires_prescription) || EPHARMACY_REVIEW_SALE_CLASSES.has(saleClass),
+      },
+    }
+  })
+
+  const totalAmount = orderItems.reduce((sum, item) => sum + Number(item.row.total_amount || 0), 0)
+  const minimumOrder = Number(sellerFacility.epharmacy_minimum_order_amount || 0)
+  if (minimumOrder > 0 && totalAmount < minimumOrder) {
+    throw new Error(`Minimum order amount for this seller is GHS ${minimumOrder.toFixed(2)}.`)
+  }
+
+  const sellerBranchId =
+    normalizeText(orderInput.sellerBranchId) ||
+    normalizeText(orderItems.find((item) => normalizeText(item.drug.branch_id))?.drug.branch_id)
+  const buyerBranchId = await getBuyerBranchIdForEpharmacyOrder(
+    adminClient,
+    organizationId,
+    requesterProfile,
+    orderInput
+  )
+  const orderNumber = buildEpharmacyOrderNumber()
+  const prescriptionRequired = orderItems.some((item) => item.row.prescription_required)
+
+  const { data: order, error: orderError } = await adminClient
+    .from('epharmacy_orders')
+    .insert([{
+      order_number: orderNumber,
+      channel: 'interfacility',
+      buyer_organization_id: organizationId,
+      buyer_branch_id: buyerBranchId,
+      seller_organization_id: sellerOrganizationId,
+      seller_branch_id: sellerBranchId || null,
+      prescription_required: prescriptionRequired,
+      status: 'pending_review',
+      fulfillment_method: fulfillmentMethod,
+      payment_method: normalizeEpharmacyPaymentMethod(orderInput.paymentMethod),
+      payment_status: 'pending',
+      total_amount: totalAmount,
+      notes: normalizeText(orderInput.notes) || null,
+      requested_by: requesterProfile.id,
+    }])
+    .select('*')
+    .single()
+
+  if (orderError) throw orderError
+
+  const { error: itemsError } = await adminClient.from('epharmacy_order_items').insert(
+    orderItems.map((item) => ({
+      order_id: order.id,
+      ...item.row,
+    }))
+  )
+
+  if (itemsError) throw itemsError
+  await tryWriteTierAuditEvent(adminClient, requesterProfile, organizationId, {
+    eventType: 'epharmacy.order.created',
+    entityType: 'epharmacy_orders',
+    entityId: order.id,
+    action: 'create',
+    details: {
+      order_number: order.order_number,
+      seller_organization_id: sellerOrganizationId,
+      item_count: orderItems.length,
+      total_amount: totalAmount,
+      prescription_required: prescriptionRequired,
+    },
+  })
+
+  return {
+    order,
+    orders: await loadEpharmacyOrders(adminClient, organizationId),
+  }
+}
+
+const getEpharmacyStatusTimestamp = (status: string) => {
+  if (status === 'paid') return { payment_status: 'paid', paid_at: new Date().toISOString() }
+  if (status === 'packed') return { packed_at: new Date().toISOString() }
+  if (status === 'out_for_delivery') return { dispatched_at: new Date().toISOString() }
+  if (status === 'delivered') return { delivered_at: new Date().toISOString() }
+  return {}
+}
+
+const assertEpharmacyTransitionAllowed = (
+  order: Record<string, unknown>,
+  nextStatus: string,
+  isSeller: boolean,
+  isBuyer: boolean
+) => {
+  const currentStatus = normalizeText(order.status)
+  const allowed: Record<string, string[]> = {
+    pending_review: ['approved', 'rejected', 'cancelled'],
+    approved: ['paid', 'cancelled'],
+    paid: ['packed', 'cancelled'],
+    packed: ['out_for_delivery', 'delivered'],
+    out_for_delivery: ['delivered'],
+  }
+
+  if (!allowed[currentStatus]?.includes(nextStatus)) {
+    throw new Error(`Order cannot move from ${currentStatus || 'unknown'} to ${nextStatus}.`)
+  }
+
+  if (nextStatus === 'cancelled') {
+    if (!isBuyer && !isSeller) throw new Error('Only the buyer or seller facility can cancel this order.')
+    return
+  }
+
+  if (!isSeller && nextStatus !== 'paid') {
+    throw new Error('Only the seller facility can update this order status.')
+  }
+
+  if (nextStatus === 'paid' && !isSeller && !isBuyer) {
+    throw new Error('Only the buyer or seller facility can mark this order paid.')
+  }
+}
+
+const updateEpharmacyOrderStatus = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  requesterProfile: RequesterProfile,
+  organizationId: string,
+  payload: Record<string, unknown>
+) => {
+  requireEpharmacyAccess(requesterProfile, 'Only pharmacy procurement or pharmacist staff can update e-pharmacy orders.')
+
+  const orderId = assertRequiredText(payload.orderId, 'Order id')
+  const nextStatus = normalizeEpharmacyStatus(payload.status)
+  const note = normalizeText(payload.note)
+  const rejectionReason = normalizeText(payload.rejectionReason)
+
+  const { data: order, error: orderError } = await adminClient
+    .from('epharmacy_orders')
+    .select('*')
+    .eq('id', orderId)
+    .maybeSingle()
+
+  if (orderError) throw orderError
+  if (!order) throw new Error('E-pharmacy order not found.')
+
+  const isSeller = normalizeText(order.seller_organization_id) === organizationId
+  const isBuyer = normalizeText(order.buyer_organization_id) === organizationId
+  if (!isSeller && !isBuyer) {
+    throw new Error('This order does not belong to your facility.')
+  }
+
+  assertEpharmacyTransitionAllowed(order, nextStatus, isSeller, isBuyer)
+
+  if (['approved', 'rejected'].includes(nextStatus)) {
+    requireRole(requesterProfile, EPHARMACY_REVIEW_ROLES, 'Only an admin or pharmacist can review e-pharmacy orders.')
+  }
+
+  if (nextStatus === 'rejected' && !rejectionReason) {
+    throw new Error('Rejection reason is required.')
+  }
+
+  if (nextStatus === 'delivered') {
+    const { data, error } = await adminClient.rpc('complete_epharmacy_order', {
+      p_order_id: orderId,
+      p_actor_user_id: requesterProfile.id,
+      p_actor_organization_id: organizationId,
+    })
+
+    if (error) throw error
+    if (data?.error) throw new Error(String(data.error))
+    await tryWriteTierAuditEvent(adminClient, requesterProfile, organizationId, {
+      eventType: 'epharmacy.order.delivered',
+      entityType: 'epharmacy_orders',
+      entityId: orderId,
+      action: 'deliver',
+      details: {
+        completion: data,
+      },
+    })
+    return {
+      completion: data,
+      orders: await loadEpharmacyOrders(adminClient, organizationId),
+    }
+  }
+
+  const updatePayload: Record<string, unknown> = {
+    status: nextStatus,
+    updated_at: new Date().toISOString(),
+    pharmacist_note: note || order.pharmacist_note || null,
+    ...getEpharmacyStatusTimestamp(nextStatus),
+  }
+
+  if (nextStatus === 'approved') {
+    updatePayload.reviewed_by = requesterProfile.id
+    updatePayload.reviewed_at = new Date().toISOString()
+  }
+
+  if (nextStatus === 'rejected') {
+    updatePayload.reviewed_by = requesterProfile.id
+    updatePayload.reviewed_at = new Date().toISOString()
+    updatePayload.rejection_reason = rejectionReason
+  }
+
+  if (nextStatus === 'cancelled') {
+    updatePayload.rejection_reason = note || 'Order cancelled'
+  }
+
+  const { data: updatedOrder, error: updateError } = await adminClient
+    .from('epharmacy_orders')
+    .update(updatePayload)
+    .eq('id', orderId)
+    .select('*')
+    .single()
+
+  if (updateError) throw updateError
+  await tryWriteTierAuditEvent(adminClient, requesterProfile, organizationId, {
+    eventType: 'epharmacy.order.status_updated',
+    entityType: 'epharmacy_orders',
+    entityId: orderId,
+    action: nextStatus,
+    details: {
+      previous_status: order.status,
+      next_status: nextStatus,
+      note,
+      rejection_reason: rejectionReason || null,
+    },
+  })
+
+  return {
+    order: updatedOrder,
+    orders: await loadEpharmacyOrders(adminClient, organizationId),
+  }
 }
 
 const assertCanAddDrugs = async (
@@ -3029,6 +3834,26 @@ Deno.serve(async (request) => {
 
     if (action === 'submit_nhia_claims_direct') {
       return json(await submitNhiaClaimsDirect(adminClient, requesterProfile, organizationId, payload))
+    }
+
+    if (action === 'get_epharmacy_marketplace') {
+      return json(await getEpharmacyMarketplace(adminClient, requesterProfile, organizationId, payload))
+    }
+
+    if (action === 'save_epharmacy_profile') {
+      return json(await saveEpharmacyProfile(adminClient, requesterProfile, organizationId, payload))
+    }
+
+    if (action === 'update_epharmacy_listing_controls') {
+      return json(await updateEpharmacyListingControls(adminClient, requesterProfile, organizationId, payload))
+    }
+
+    if (action === 'create_epharmacy_order') {
+      return json(await createEpharmacyOrder(adminClient, requesterProfile, organizationId, payload))
+    }
+
+    if (action === 'update_epharmacy_order_status') {
+      return json(await updateEpharmacyOrderStatus(adminClient, requesterProfile, organizationId, payload))
     }
 
     return json({ error: 'Unsupported tier access action.' }, 400)

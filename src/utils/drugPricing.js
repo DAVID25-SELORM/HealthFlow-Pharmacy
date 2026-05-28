@@ -1,6 +1,6 @@
 export const getNhisCatalogPrice = (drug) => {
   const nhisPrice = Number.parseFloat(drug?.nhis_price)
-  return Boolean(drug?.is_nhis_listed && Number.isFinite(nhisPrice) && nhisPrice > 0)
+  return drug?.is_nhis_listed && Number.isFinite(nhisPrice) && nhisPrice > 0
     ? nhisPrice
     : 0
 }

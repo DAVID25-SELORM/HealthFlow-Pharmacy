@@ -12,6 +12,7 @@ import {
   ShieldCheck,
   List,
   Truck,
+  Building2,
   HeartPulse,
   RefreshCcw,
 } from 'lucide-react'
@@ -22,6 +23,7 @@ import {
   ACTIVITY_LOG_ROLES,
   CLAIMS_ROLES,
   DASHBOARD_ROLES,
+  EPHARMACY_ROLES,
   INVENTORY_ROLES,
   NHIS_ROLES,
   OFFLINE_SYNC_ROLES,
@@ -50,6 +52,7 @@ const Sidebar = ({ isOpen, onClose }) => {
     { path: '/patients', icon: Users, label: 'Patients', roles: PATIENT_ROLES },
     { path: '/claims', icon: ClipboardList, label: 'Claims', roles: CLAIMS_ROLES, allow: canManageClaims, featureAllowed: canUseClaims },
     { path: '/purchases', icon: Truck, label: 'Purchases', roles: PURCHASES_ROLES, featureAllowed: canUsePurchases },
+    { path: '/e-pharmacy', icon: Building2, label: 'E-Pharmacy', roles: EPHARMACY_ROLES },
     { path: '/nhis', icon: HeartPulse, label: 'NHIS', roles: NHIS_ROLES, featureAllowed: canUseNhis },
     { path: '/reports', icon: BarChart3, label: 'Reports', roles: REPORT_ROLES, allow: canViewReports },
     { path: '/accounting', icon: Wallet, label: 'Accounting', roles: ACCOUNTING_ROLES, featureAllowed: canUseAccounting },

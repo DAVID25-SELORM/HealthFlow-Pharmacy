@@ -56,6 +56,7 @@ const app = express()
 const DEFAULT_ALLOWED_WEB_ORIGINS = new Set([
   'https://health-flow-pharmacy.vercel.app',
 ])
+const isDevelopment = process.env.NODE_ENV !== 'production'
 
 const isAllowedOrigin = (origin) => {
   if (!origin) {
@@ -70,6 +71,10 @@ const isAllowedOrigin = (origin) => {
     const url = new URL(origin)
     if (DEFAULT_ALLOWED_WEB_ORIGINS.has(origin.replace(/\/+$/, ''))) {
       return true
+    }
+
+    if (!isDevelopment) {
+      return false
     }
 
     return (
@@ -136,7 +141,6 @@ app.get('/branch-runtime-config.js', (_request, response) => {
       `window.__HEALTHFLOW_BRANCH_SERVER__ = ${JSON.stringify({
         enabled: true,
         url: '',
-        token: config.branchServerToken,
       })};`
     )
 })

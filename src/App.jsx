@@ -8,6 +8,7 @@ import {
   ACCOUNTING_ROLES,
   ACTIVITY_LOG_ROLES,
   CLAIMS_ROLES,
+  EPHARMACY_ROLES,
   INVENTORY_ROLES,
   NHIS_ROLES,
   OFFLINE_SYNC_ROLES,
@@ -35,6 +36,7 @@ const ActivityLog = lazy(() => import('./pages/ActivityLog'))
 const OfflineSync = lazy(() => import('./pages/OfflineSync'))
 const Purchases = lazy(() => import('./pages/Purchases'))
 const Nhis = lazy(() => import('./pages/Nhis'))
+const EPharmacy = lazy(() => import('./pages/EPharmacy'))
 
 const RouteFallback = () => (
   <div className="route-fallback" role="status" aria-live="polite">
@@ -102,6 +104,14 @@ function App() {
               element={
                 <RoleRoute allowedRoles={PURCHASES_ROLES} featureAllowed={canUsePurchases}>
                   <Purchases />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="e-pharmacy"
+              element={
+                <RoleRoute allowedRoles={EPHARMACY_ROLES}>
+                  <EPharmacy />
                 </RoleRoute>
               }
             />
