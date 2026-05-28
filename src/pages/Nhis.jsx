@@ -82,6 +82,16 @@ const isLocalClaimItBridgeBaseUrl = (baseUrl = '') => {
   }
 }
 
+const isLocalAppOrigin = () => {
+  if (typeof window === 'undefined') return false
+  const hostname = window.location.hostname.toLowerCase()
+  return hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname.startsWith('192.168.') ||
+    hostname.startsWith('10.') ||
+    /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname)
+}
+
 const FREQUENCY_OPTIONS = [
   'OD',
   'BD',
@@ -787,9 +797,18 @@ const Nhis = () => {
     resolvedNhiaSettings?.sandboxBaseUrl ||
     resolvedNhiaSettings?.sandbox_base_url ||
     ''
+  const isLocalClaimItBridgeProfile = ['local_server', 'lan_ip'].includes(
+    resolvedNhiaSettings?.connectionProfile || resolvedNhiaSettings?.connection_profile || 'local_server'
+  )
+  const isLocalClaimItBridgeUrl = isLocalClaimItBridgeBaseUrl(nhiaApiBaseUrl)
+  const isHostedPageWithLocalClaimItBridge = isClaimItBridgeMode &&
+    isLocalClaimItBridgeProfile &&
+    isLocalClaimItBridgeUrl &&
+    !isLocalAppOrigin()
   const isLocalClaimItBridge = isClaimItBridgeMode &&
-    ['local_server', 'lan_ip'].includes(resolvedNhiaSettings?.connectionProfile || resolvedNhiaSettings?.connection_profile || 'local_server') &&
-    isLocalClaimItBridgeBaseUrl(nhiaApiBaseUrl)
+    isLocalClaimItBridgeProfile &&
+    isLocalClaimItBridgeUrl &&
+    !isHostedPageWithLocalClaimItBridge
   const canManuallyEditCcCode = role === 'admin' || role === 'super_admin'
   const allowsDirectNhiaSubmission = ['claimit_bridge', 'claimit_assisted', 'direct_nhia_api', 'hybrid'].includes(integrationMode)
   const directNhiaApiAvailable = Boolean(
@@ -800,6 +819,7 @@ const Nhis = () => {
   )
   const nhiaCcCodeApiAvailable = Boolean(
     (resolvedNhiaSettings?.directApiEnabled || claimControlMode === 'claimit_bridge') &&
+      !isHostedPageWithLocalClaimItBridge &&
       nhiaApiBaseUrl &&
       ccEndpointPath
   )
@@ -1423,6 +1443,15 @@ const Nhis = () => {
 
   // ── submit claim ──────────────────────────────────────────────
   const handleGenerateCcCode = async () => {
+    if (isHostedPageWithLocalClaimItBridge) {
+      setClaimForm((prev) => ({ ...prev, cccNo: '' }))
+      notify(
+        'Production HealthFlow cannot call a localhost CLAIM-it bridge. Set NHIA Settings to Production bridge server and use https://claimbridge.healthflowgh.com/json-api.',
+        'warning'
+      )
+      return
+    }
+
     if (!nhiaCcCodeApiAvailable) {
       setClaimForm((prev) => ({ ...prev, cccNo: '' }))
       notify('Pending CLAIM-it validation. No CCC/CC bridge endpoint is configured.', 'info')
