@@ -2195,7 +2195,9 @@ describe('NHIA API settings source routing', () => {
     fetch.mockResolvedValueOnce({
       ok: true,
       status: 200,
-      text: vi.fn().mockResolvedValue(JSON.stringify({ cccCode: '54321' })),
+      text: vi.fn().mockResolvedValue(JSON.stringify({
+        claims: [{ claim: { claimControlCode: '54321' } }],
+      })),
     })
 
     await expect(generateBrowserClaimItBridgeCcCode({

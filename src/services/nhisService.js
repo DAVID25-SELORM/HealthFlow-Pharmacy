@@ -2610,6 +2610,13 @@ const buildClaimItBridgeHeaders = (settings = {}) => {
 }
 
 const extractClaimControlCode = (body) => {
+  if (Array.isArray(body)) {
+    for (const item of body) {
+      const nested = extractClaimControlCode(item)
+      if (nested) return nested
+    }
+    return ''
+  }
   if (!body || typeof body !== 'object') return ''
   const record = body
   const direct = normalizeNhisCcCode(
@@ -2626,7 +2633,11 @@ const extractClaimControlCode = (body) => {
       record.code
   )
   if (direct) return direct
-  return record.data && typeof record.data === 'object' ? extractClaimControlCode(record.data) : ''
+  for (const key of ['data', 'claim', 'claims', 'result', 'results', 'response']) {
+    const nested = extractClaimControlCode(record[key])
+    if (nested) return nested
+  }
+  return ''
 }
 
 const logClaimItBridgeStatus = (action, detail = {}) => {

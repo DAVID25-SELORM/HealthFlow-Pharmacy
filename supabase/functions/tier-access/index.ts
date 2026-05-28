@@ -3453,6 +3453,13 @@ const normalizeCcCode = (value: unknown): string =>
   String(value ?? '').trim().replace(/\D/g, '')
 
 const extractCcCode = (body: unknown): string => {
+  if (Array.isArray(body)) {
+    for (const item of body) {
+      const nested = extractCcCode(item)
+      if (nested) return nested
+    }
+    return ''
+  }
   if (!body || typeof body !== 'object') return ''
   const record = body as Record<string, unknown>
   const direct = normalizeCcCode(
@@ -3469,7 +3476,11 @@ const extractCcCode = (body: unknown): string => {
       record.code
   )
   if (direct) return direct
-  return record.data && typeof record.data === 'object' ? extractCcCode(record.data) : ''
+  for (const key of ['data', 'claim', 'claims', 'result', 'results', 'response']) {
+    const nested = extractCcCode(record[key])
+    if (nested) return nested
+  }
+  return ''
 }
 
 const summarizeRemoteBody = (body: unknown): string => {
