@@ -1262,6 +1262,7 @@ const Nhis = () => {
   )
 
   const getDirectNhiaOptions = () => ({
+    organizationId,
     organizationType,
     facilityName: resolvedNhiaSettings?.facilityName || organization?.name || organization?.pharmacy_name || '',
     // ✅ NHIA CONFIG PATCH START
@@ -1461,6 +1462,7 @@ const Nhis = () => {
     try {
       setGeneratingCcCode(true)
       const claimContext = {
+        organizationId,
         organizationType,
         patientName: `${claimForm.surname} ${claimForm.otherNames || ''}`.trim(),
         memberNumber: claimForm.memberNo,

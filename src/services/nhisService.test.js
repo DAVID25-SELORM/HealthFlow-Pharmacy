@@ -53,6 +53,7 @@ import {
   buildNhisClaimItXml,
   createNhisClaim,
   exportNhisClaimsFile,
+  generateHostedNhiaCcCode,
   generateBrowserClaimItBridgeCcCode,
   getNhiaApiSettings,
   normalizeNhisExportPeriod,
@@ -1745,6 +1746,32 @@ describe('direct NHIA submission', () => {
     }))
   })
 
+  it('sends tenant context when requesting a hosted CCC/CC code', async () => {
+    invokeTierAccess.mockResolvedValueOnce({
+      ccCode: '12345',
+      source: 'claimit_bridge',
+    })
+
+    await expect(generateHostedNhiaCcCode({
+      organizationId: 'org-1',
+      organizationType: 'pharmacy',
+      patientName: 'Ama Mensah',
+      memberNumber: '12345678',
+      serviceDate: '2026-05-26',
+      totalAmount: 12,
+    })).resolves.toMatchObject({
+      ccCode: '12345',
+      source: 'claimit_bridge',
+    })
+
+    expect(invokeTierAccess).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'generate_nhia_cc_code',
+      organizationId: 'org-1',
+      patientName: 'Ama Mensah',
+      memberNumber: '12345678',
+    }))
+  })
+
   it('keeps browser bridge submission only for local CLAIM-it bridge URLs', async () => {
     mockNhisClaimDuplicateAndUpdateQueries()
     fetch.mockResolvedValue({
@@ -2116,6 +2143,7 @@ describe('NHIA API settings source routing', () => {
 
     expect(invokeTierAccess).toHaveBeenCalledWith({
       action: 'save_nhia_api_settings',
+      organizationId: 'org-1',
       settings: expect.objectContaining({
         ...completeClaimItSettings,
         organizationId: 'org-1',

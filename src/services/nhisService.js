@@ -2835,7 +2835,10 @@ export const getNhiaApiSettings = async (options = {}) => {
   let hostedError = null
   let hostedSettings = null
   try {
-    const response = await invokeTierAccess({ action: 'get_nhia_api_settings' })
+    const response = await invokeTierAccess({
+      action: 'get_nhia_api_settings',
+      organizationId,
+    })
     hostedSettings = response?.settings || null
   } catch (error) {
     hostedError = error
@@ -2938,6 +2941,7 @@ export const saveNhiaApiSettings = async (settings, options = {}) => {
   try {
     const response = await invokeTierAccess({
       action: 'save_nhia_api_settings',
+      organizationId,
       settings: sanitizedSettings,
     })
     const directSavedSettings = await saveHostedNhiaConfigDirect(
@@ -2945,7 +2949,10 @@ export const saveNhiaApiSettings = async (settings, options = {}) => {
       organizationId,
       response?.settings || null
     )
-    const readBack = await invokeTierAccess({ action: 'get_nhia_api_settings' })
+    const readBack = await invokeTierAccess({
+      action: 'get_nhia_api_settings',
+      organizationId,
+    })
     const directReadBackSettings = await readHostedNhiaConfigDirect(organizationId, directSavedSettings)
     const hostedSettings = {
       ...(response?.settings || {}),
@@ -3039,7 +3046,10 @@ export const removeNhiaApiCredentials = async (options = {}) => {
 
   let responseSettings = null
   try {
-    const response = await invokeTierAccess({ action: 'remove_nhia_api_credentials' })
+    const response = await invokeTierAccess({
+      action: 'remove_nhia_api_credentials',
+      organizationId,
+    })
     responseSettings = response?.settings || null
   } catch (error) {
     console.warn('[NHIA CONFIG] tier-access credential removal failed; trying direct update', summarizeNhiaApiErrorForLog(error))
@@ -3088,9 +3098,12 @@ export const generateHostedNhiaCcCode = async (claimContext = {}) => {
     throw new Error('Hosted NHIA CCC/CC code generation requires Supabase access.')
   }
 
+  const organizationId = normalizeText(claimContext.organizationId || claimContext.organization_id)
+
   return await invokeTierAccess({
     action: 'generate_nhia_cc_code',
     ...claimContext,
+    organizationId,
   })
 }
 
@@ -3100,9 +3113,11 @@ const submitHostedNhiaDirectPayload = async ({
   contentType = 'application/json',
   claimIds = [],
   submissionAction = '',
+  organizationId = '',
 } = {}) => {
   return await invokeTierAccess({
     action: 'submit_nhia_claims_direct',
+    organizationId: normalizeText(organizationId || payload?.organizationId || payload?.organization_id),
     payload,
     payloadContent,
     contentType,
@@ -6965,6 +6980,7 @@ const submitNhisClaimsDirect = async (claims, period, options = {}) => {
         }
       : {}),
     claimIds: claims.map((claim) => claim.id).filter(Boolean),
+    organizationId: normalizeText(options.organizationId || options.organization_id),
     ...(directApiSource === 'hosted'
       ? { submissionAction: options.action || 'nhis.direct_submit' }
       : { action: options.action || 'nhis.direct_submit' }),
