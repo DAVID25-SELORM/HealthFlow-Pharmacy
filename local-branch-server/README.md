@@ -201,6 +201,70 @@ POST /api/payments/webhook/hubtel
 
 If the branch server or internet is offline, use Cash. Mobile Money and Card are disabled in the POS until the local branch server is reachable and the browser is online.
 
+## Production CLAIM-it Bridge Setup
+
+For production NHIA submission from the Vercel app, do not use `localhost`.
+Deploy this server behind a public HTTPS domain and enable the CLAIM-it bridge
+proxy:
+
+```env
+NODE_ENV=production
+PORT=4780
+BRANCH_SERVER_TOKEN=<long-random-token-for-/api-routes>
+
+CLAIM_BRIDGE_ENABLED=true
+CLAIM_BRIDGE_PUBLIC_PATH=/json-api
+CLAIMIT_UPSTREAM_BASE_URL=https://official-claimit-or-nhia-host.example.com
+CLAIM_BRIDGE_TOKEN=<long-random-production-bridge-token>
+CLAIM_BRIDGE_TOKEN_HEADER=x-claim-bridge-token
+CLAIM_BRIDGE_TIMEOUT_MS=30000
+
+# Optional upstream auth, stored only on the bridge server:
+CLAIMIT_UPSTREAM_API_KEY=
+CLAIMIT_UPSTREAM_API_KEY_HEADER=x-api-key
+CLAIMIT_UPSTREAM_API_SECRET=
+CLAIMIT_UPSTREAM_API_SECRET_HEADER=x-api-secret
+CLAIMIT_UPSTREAM_BEARER_TOKEN=
+CLAIMIT_UPSTREAM_USERNAME=
+CLAIMIT_UPSTREAM_PASSWORD=
+```
+
+Point DNS/reverse proxy traffic from:
+
+```text
+https://claimbridge.healthflowgh.com/json-api
+```
+
+to this server's `CLAIM_BRIDGE_PUBLIC_PATH`. The bridge forwards:
+
+```text
+https://claimbridge.healthflowgh.com/json-api/<endpoint-path>
+```
+
+to:
+
+```text
+CLAIMIT_UPSTREAM_BASE_URL/<endpoint-path>
+```
+
+In HealthFlow Settings use:
+
+```text
+Integration mode: CLAIM-it Local Bridge API
+Connection profile: Production bridge server
+Base URL: https://claimbridge.healthflowgh.com/json-api
+Credential mode: API key
+API key header: x-claim-bridge-token
+API key: <CLAIM_BRIDGE_TOKEN>
+```
+
+Keep the official CLAIM-it/NHIA host, provider credentials, and bridge token in
+backend environments only. The bridge health endpoint is:
+
+```http
+GET /json-api/health
+```
+
 ## API
 
 Health check:

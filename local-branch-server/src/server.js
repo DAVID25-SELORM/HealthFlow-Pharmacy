@@ -4,6 +4,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { assertConfiguredForServer, config, isSupabaseSyncConfigured } from './config.js'
 import { closeDatabase } from './db.js'
+import { createClaimBridgeRouter } from './claimBridge.js'
 import { requireBranchToken } from './httpAuth.js'
 import { createLocalClaim } from './claimsRepository.js'
 import { importInventorySnapshot, listLocalInventory, searchLocalInventory } from './inventoryRepository.js'
@@ -144,6 +145,11 @@ app.get('/branch-runtime-config.js', (_request, response) => {
       })};`
     )
 })
+
+if (config.claimBridge.enabled) {
+  app.use(config.claimBridge.publicPath, createClaimBridgeRouter())
+  console.log(`CLAIM-it production bridge mounted at ${config.claimBridge.publicPath}`)
+}
 
 app.post('/api/payments/webhook/hubtel', async (request, response, next) => {
   try {

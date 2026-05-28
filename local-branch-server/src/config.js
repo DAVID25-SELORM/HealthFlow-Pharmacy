@@ -9,6 +9,17 @@ const toNumber = (value, fallback) => {
   return Number.isFinite(parsed) ? parsed : fallback
 }
 
+const toBoolean = (value) => ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase())
+
+const normalizePath = (value, fallback) => {
+  const normalized = String(value || fallback || '').trim()
+  if (!normalized) {
+    return fallback
+  }
+
+  return normalized.startsWith('/') ? normalized.replace(/\/+$/, '') || '/' : `/${normalized.replace(/\/+$/, '')}`
+}
+
 export const config = {
   port: toNumber(process.env.PORT, 4780),
   branchServerToken: process.env.BRANCH_SERVER_TOKEN || '',
@@ -32,6 +43,22 @@ export const config = {
   nhiaConfigSecretKey: process.env.NHIA_CONFIG_SECRET_KEY || process.env.NHIA_SECRET_KEY || '',
   supabaseUrl: process.env.SUPABASE_URL || '',
   supabaseSyncKey: process.env.SUPABASE_SYNC_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+  claimBridge: {
+    enabled: toBoolean(process.env.CLAIM_BRIDGE_ENABLED) || Boolean(process.env.CLAIMIT_UPSTREAM_BASE_URL),
+    publicPath: normalizePath(process.env.CLAIM_BRIDGE_PUBLIC_PATH, '/json-api'),
+    upstreamBaseUrl: String(process.env.CLAIMIT_UPSTREAM_BASE_URL || '').trim().replace(/\/+$/, ''),
+    upstreamApiKey: process.env.CLAIMIT_UPSTREAM_API_KEY || '',
+    upstreamApiKeyHeader: String(process.env.CLAIMIT_UPSTREAM_API_KEY_HEADER || 'x-api-key').trim(),
+    upstreamApiSecret: process.env.CLAIMIT_UPSTREAM_API_SECRET || '',
+    upstreamApiSecretHeader: String(process.env.CLAIMIT_UPSTREAM_API_SECRET_HEADER || 'x-api-secret').trim(),
+    upstreamBearerToken: process.env.CLAIMIT_UPSTREAM_BEARER_TOKEN || '',
+    upstreamUsername: process.env.CLAIMIT_UPSTREAM_USERNAME || '',
+    upstreamPassword: process.env.CLAIMIT_UPSTREAM_PASSWORD || '',
+    accessToken: process.env.CLAIM_BRIDGE_TOKEN || '',
+    tokenHeader: String(process.env.CLAIM_BRIDGE_TOKEN_HEADER || 'x-claim-bridge-token').trim().toLowerCase(),
+    timeoutMs: Math.max(1000, toNumber(process.env.CLAIM_BRIDGE_TIMEOUT_MS, 30000)),
+    bodyLimit: process.env.CLAIM_BRIDGE_BODY_LIMIT || '10mb',
+  },
   payments: {
     defaultProvider: String(process.env.PAYMENT_DEFAULT_PROVIDER || 'paystack').toLowerCase(),
     publicBaseUrl: (process.env.PAYMENT_PUBLIC_BASE_URL || '').replace(/\/+$/, ''),
@@ -57,6 +84,14 @@ export const config = {
 export const assertConfiguredForServer = () => {
   if (!config.branchServerToken || config.branchServerToken.includes('change-this')) {
     throw new Error('Set BRANCH_SERVER_TOKEN to a long random value before starting the server.')
+  }
+
+  if (config.claimBridge.enabled && !config.claimBridge.upstreamBaseUrl) {
+    throw new Error('Set CLAIMIT_UPSTREAM_BASE_URL before enabling the public CLAIM-it bridge.')
+  }
+
+  if (config.claimBridge.enabled && process.env.NODE_ENV === 'production' && !config.claimBridge.accessToken) {
+    throw new Error('Set CLAIM_BRIDGE_TOKEN before running the public CLAIM-it bridge in production.')
   }
 }
 
