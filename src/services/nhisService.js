@@ -2551,9 +2551,7 @@ const getClaimControlEndpointPath = (settings = {}) =>
     settings.ccEndpointPath ||
       settings.cc_endpoint_path ||
       settings.ccCodeEndpointPath ||
-      settings.cc_code_endpoint_path ||
-      settings.claimEndpointPath ||
-      settings.claim_endpoint_path
+      settings.cc_code_endpoint_path
   )
 
 const buildClaimItBridgeHeaders = (settings = {}) => {

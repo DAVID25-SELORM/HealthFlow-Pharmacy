@@ -798,8 +798,6 @@ const Nhis = () => {
     resolvedNhiaSettings?.cc_endpoint_path ||
     resolvedNhiaSettings?.ccCodeEndpointPath ||
     resolvedNhiaSettings?.cc_code_endpoint_path ||
-    resolvedNhiaSettings?.claimEndpointPath ||
-    resolvedNhiaSettings?.claim_endpoint_path ||
     ''
   const isClaimItBridgeMode = ['claimit_bridge', 'claimit_assisted'].includes(integrationMode)
   const nhiaApiBaseUrl = resolvedNhiaSettings?.apiBaseUrl ||

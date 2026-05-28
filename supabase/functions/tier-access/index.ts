@@ -3506,9 +3506,7 @@ const getCcEndpointPath = (settings: Record<string, unknown>) =>
     settings.ccEndpointPath ||
       settings.cc_endpoint_path ||
       settings.ccCodeEndpointPath ||
-      settings.cc_code_endpoint_path ||
-      settings.claimEndpointPath ||
-      settings.claim_endpoint_path
+      settings.cc_code_endpoint_path
   )
 
 const logClaimItBridgeStatus = (action: string, detail: Record<string, unknown> = {}) => {
