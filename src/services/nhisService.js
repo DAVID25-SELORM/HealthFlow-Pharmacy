@@ -2554,6 +2554,14 @@ const getClaimControlEndpointPath = (settings = {}) =>
       settings.cc_code_endpoint_path
   )
 
+const getMemberLookupEndpointPath = (settings = {}) =>
+  normalizeText(
+    settings.memberLookupEndpointPath ||
+      settings.member_lookup_endpoint_path ||
+      settings.memberLookupEndpoint ||
+      settings.member_lookup_endpoint
+  )
+
 const getClaimItBridgeBaseUrl = (settings = {}) => {
   const environment = normalizeText(settings.apiEnvironment || settings.api_environment).toLowerCase()
   const apiBaseUrl = normalizeText(settings.apiBaseUrl || settings.api_base_url)
@@ -2648,6 +2656,52 @@ const logClaimItBridgeStatus = (action, detail = {}) => {
     claimCount: detail.claimCount || null,
     message: detail.message || '',
   })
+}
+
+const isSubscriberVerificationInvalid = (body) => {
+  if (!body || typeof body !== 'object') return false
+  const record = body
+  const status = normalizeText(record.status || record.outcome || record.result || record.validationStatus).toLowerCase()
+  const valid = record.valid ?? record.isValid ?? record.verified ?? record.isVerified ?? record.success
+  if (valid === false) return true
+  if (['invalid', 'not_found', 'not found', 'failed', 'error', 'inactive'].includes(status)) return true
+  return record.data && typeof record.data === 'object' ? isSubscriberVerificationInvalid(record.data) : false
+}
+
+const verifyClaimItSubscriber = async (settings = {}, claimContext = {}) => {
+  const endpointPath = getMemberLookupEndpointPath(settings)
+  if (!endpointPath) return null
+
+  const baseUrl = getClaimItBridgeBaseUrl(settings)
+  if (!baseUrl) throw new Error('CLAIM-it bridge base URL is required for subscriber verification.')
+  const payload = {
+    action: 'verify_subscriber',
+    memberNumber: normalizeText(claimContext.memberNumber || claimContext.memberNo),
+    hin: normalizeText(claimContext.hin),
+    patientName: normalizeText(claimContext.patientName),
+    serviceDate: normalizeText(claimContext.serviceDate),
+  }
+  logClaimItBridgeStatus('subscriber_verification.request', { status: 'pending', endpointPath })
+  const response = await fetch(joinClaimItBridgeUrl(baseUrl, endpointPath), {
+    method: 'POST',
+    headers: buildClaimItBridgeHeaders(settings),
+    body: JSON.stringify(payload),
+  })
+  const responseText = await response.text()
+  let body = {}
+  try {
+    body = responseText ? JSON.parse(responseText) : {}
+  } catch {
+    body = { raw: responseText }
+  }
+  logClaimItBridgeStatus('subscriber_verification.response', {
+    status: response.ok ? 'success' : 'failed',
+    httpStatus: response.status,
+    endpointPath,
+  })
+  if (!response.ok) throw new Error(`Subscriber verification returned HTTP ${response.status}.`)
+  if (isSubscriberVerificationInvalid(body)) throw new Error('Subscriber verification failed.')
+  return body
 }
 
 const isClaimItBridgeUnavailableError = (error) => {
@@ -2795,6 +2849,7 @@ export const generateBrowserClaimItBridgeCcCode = async (settings = {}, claimCon
     requestedAt: new Date().toISOString(),
   }
 
+  await verifyClaimItSubscriber(settings, claimContext)
   logClaimItBridgeStatus('cc_code.request', { status: 'pending', endpointPath, claimCount: 1 })
   const response = await fetch(endpointPath ? joinClaimItBridgeUrl(baseUrl, endpointPath) : baseUrl.replace(/\/+$/, ''), {
     method: 'POST',

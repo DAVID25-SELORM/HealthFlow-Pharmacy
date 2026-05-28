@@ -3522,6 +3522,14 @@ const getCcEndpointPath = (settings: Record<string, unknown>) =>
       settings.cc_code_endpoint_path
   )
 
+const getMemberLookupEndpointPath = (settings: Record<string, unknown>) =>
+  normalizeText(
+    settings.memberLookupEndpointPath ||
+      settings.member_lookup_endpoint_path ||
+      settings.memberLookupEndpoint ||
+      settings.member_lookup_endpoint
+  )
+
 const getNhiaApiBaseUrl = (settings: Record<string, unknown>) => {
   const environment = normalizeText(settings.apiEnvironment || settings.api_environment).toLowerCase()
   const apiBaseUrl = normalizeText(settings.apiBaseUrl || settings.api_base_url)
@@ -3553,6 +3561,54 @@ const logClaimItBridgeStatus = (action: string, detail: Record<string, unknown> 
     claimCount: detail.claimCount ?? null,
     message: normalizeText(detail.message),
   }))
+}
+
+const isSubscriberVerificationInvalid = (body: unknown): boolean => {
+  if (!body || typeof body !== 'object') return false
+  const record = body as Record<string, unknown>
+  const status = normalizeText(record.status || record.outcome || record.result || record.validationStatus).toLowerCase()
+  const valid = record.valid ?? record.isValid ?? record.verified ?? record.isVerified ?? record.success
+  if (valid === false) return true
+  if (['invalid', 'not_found', 'not found', 'failed', 'error', 'inactive'].includes(status)) return true
+  return record.data && typeof record.data === 'object' ? isSubscriberVerificationInvalid(record.data) : false
+}
+
+const verifyClaimItSubscriber = async (
+  settings: Record<string, unknown>,
+  apiBaseUrl: string,
+  payload: Record<string, unknown>
+) => {
+  const endpointPath = getMemberLookupEndpointPath(settings)
+  if (!endpointPath) return null
+
+  const requestPayload = {
+    action: 'verify_subscriber',
+    memberNumber: normalizeText(payload.memberNumber || payload.memberNo),
+    hin: normalizeText(payload.hin),
+    patientName: normalizeText(payload.patientName),
+    serviceDate: normalizeText(payload.serviceDate),
+  }
+  logClaimItBridgeStatus('subscriber_verification.request', { status: 'pending', endpointPath })
+  const response = await fetch(joinUrl(apiBaseUrl, endpointPath), {
+    method: 'POST',
+    headers: await buildNhiaSubmissionHeaders(settings),
+    body: JSON.stringify(requestPayload),
+  })
+  const responseText = await response.text()
+  let body: unknown = {}
+  try {
+    body = responseText ? JSON.parse(responseText) : {}
+  } catch {
+    body = { raw: responseText }
+  }
+  logClaimItBridgeStatus('subscriber_verification.response', {
+    status: response.ok ? 'success' : 'failed',
+    httpStatus: response.status,
+    endpointPath,
+  })
+  if (!response.ok) throw buildRemoteHttpError('Subscriber verification', response.status, body)
+  if (isSubscriberVerificationInvalid(body)) throw new Error('Subscriber verification failed.')
+  return body
 }
 
 const generateNhiaCcCode = async (
@@ -3630,6 +3686,16 @@ const generateNhiaCcCode = async (
     return { ok: false, error: 'CC/CCC endpoint path is not configured', receivedKeys }
   }
   const finalUrl = endpointPath ? joinUrl(apiBaseUrl, endpointPath) : apiBaseUrl.replace(/\/+$/, '')
+
+  try {
+    await verifyClaimItSubscriber(settings as unknown as Record<string, unknown>, apiBaseUrl, payload)
+  } catch (error) {
+    return {
+      ok: false,
+      error: getErrorMessage(error),
+      receivedKeys,
+    }
+  }
 
   logClaimItBridgeStatus('cc_code.request', { status: 'pending', endpointPath, claimCount: 1 })
   let response: Response

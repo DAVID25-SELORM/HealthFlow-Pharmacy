@@ -2224,6 +2224,51 @@ describe('NHIA API settings source routing', () => {
       expect.objectContaining({ method: 'POST' })
     )
   })
+
+  it('verifies subscriber before requesting CLAIM-it CCC when lookup endpoint is configured', async () => {
+    fetch
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: vi.fn().mockResolvedValue(JSON.stringify({ valid: true })),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: vi.fn().mockResolvedValue(JSON.stringify({ ccCode: '69273' })),
+      })
+
+    await expect(generateBrowserClaimItBridgeCcCode({
+      apiBaseUrl: 'http://localhost:31719/json-api',
+      memberLookupEndpointPath: '/subscribers/verify',
+      validationMode: 'validate_before_submit',
+      claimControlMode: 'claimit_bridge_ccc',
+      credentialMode: 'api_key',
+      credentials: {
+        apiKey: 'api-key',
+        headerName: 'Authorization',
+      },
+    }, {
+      patientName: 'Ama Mensah',
+      memberNumber: '12345678',
+      serviceDate: '2026-05-26',
+      totalAmount: 12,
+    })).resolves.toMatchObject({
+      ccCode: '69273',
+      source: 'claimit_bridge',
+    })
+
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      'http://localhost:31719/json-api/subscribers/verify',
+      expect.objectContaining({ method: 'POST' })
+    )
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost:31719/json-api',
+      expect.objectContaining({ method: 'POST' })
+    )
+  })
 })
 
 describe('NHIS claim status routing', () => {

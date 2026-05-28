@@ -1478,6 +1478,7 @@ const Nhis = () => {
 
     try {
       setGeneratingCcCode(true)
+      notify('Subscriber Verification', 'info')
       const claimId = editingClaim?.id || claimForm.id || buildPendingNhisClaimId({ organizationId, claimForm })
       const claimContext = {
         claimId,
@@ -1517,7 +1518,7 @@ const Nhis = () => {
       if (ccCode.length !== 5) {
         throw new Error('NHIA API returned a CCC/CC code that is not exactly 5 digits.')
       }
-      setClaimForm((prev) => ({ ...prev, cccNo: ccCode }))
+      setClaimForm((prev) => ({ ...prev, cccNo: ccCode, ccCode }))
       notify(
         result.source === 'claimit_bridge'
           ? 'CCC/CC code generated or validated via CLAIM-it.'
