@@ -3458,6 +3458,8 @@ const extractCcCode = (body: unknown): string => {
   const direct = normalizeCcCode(
     record.ccCode ||
       record.cc_code ||
+      record.cccCode ||
+      record.ccc_code ||
       record.cccNo ||
       record.ccc_no ||
       record.claimControlCode ||
@@ -3522,8 +3524,12 @@ const getNhiaApiBaseUrl = (settings: Record<string, unknown>) => {
 const canUseBaseUrlForCcGeneration = (settings: Record<string, unknown>) => {
   const validationMode = normalizeText(settings.validationMode || settings.validation_mode)
   const integrationMode = normalizeText(settings.integrationMode || settings.integration_mode || settings.nhiaApiMode || settings.nhia_api_mode)
-  return validationMode === 'claimit_local_bridge' ||
+  const claimControlMode = normalizeText(settings.claimControlMode || settings.claim_control_mode)
+  return validationMode === 'validate_before_submit' ||
+    validationMode === 'claimit_local_bridge' ||
     integrationMode === 'claimit_export' ||
+    integrationMode === 'claimit_local_bridge' ||
+    claimControlMode === 'claimit_bridge_ccc' ||
     isClaimItBridgeMode(settings) ||
     Boolean(getNhiaApiBaseUrl(settings))
 }

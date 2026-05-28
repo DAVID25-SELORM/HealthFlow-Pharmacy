@@ -2190,6 +2190,38 @@ describe('NHIA API settings source routing', () => {
     )
     expect(fetch.mock.calls[0][0]).not.toContain('/claims')
   })
+
+  it('allows CLAIM-it validation mode to return a CCC without a CC endpoint', async () => {
+    fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      text: vi.fn().mockResolvedValue(JSON.stringify({ cccCode: '54321' })),
+    })
+
+    await expect(generateBrowserClaimItBridgeCcCode({
+      apiBaseUrl: 'http://localhost:31719/json-api',
+      validationMode: 'validate_before_submit',
+      claimControlMode: 'claimit_bridge_ccc',
+      credentialMode: 'api_key',
+      credentials: {
+        apiKey: 'api-key',
+        headerName: 'Authorization',
+      },
+    }, {
+      patientName: 'Ama Mensah',
+      memberNumber: '12345678',
+      serviceDate: '2026-05-26',
+      totalAmount: 12,
+    })).resolves.toMatchObject({
+      ccCode: '54321',
+      source: 'claimit_bridge',
+    })
+
+    expect(fetch).toHaveBeenCalledWith(
+      'http://localhost:31719/json-api',
+      expect.objectContaining({ method: 'POST' })
+    )
+  })
 })
 
 describe('NHIS claim status routing', () => {

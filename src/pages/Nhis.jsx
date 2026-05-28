@@ -803,7 +803,10 @@ const Nhis = () => {
   const isClaimItBridgeMode = ['claimit_bridge', 'claimit_assisted'].includes(integrationMode)
   const usesClaimItValidationFlow = isClaimItBridgeMode ||
     integrationMode === 'claimit_export' ||
-    validationMode === 'claimit_local_bridge'
+    integrationMode === 'claimit_local_bridge' ||
+    validationMode === 'validate_before_submit' ||
+    validationMode === 'claimit_local_bridge' ||
+    claimControlMode === 'claimit_bridge_ccc'
   const nhiaApiBaseUrl = resolvedNhiaSettings?.apiBaseUrl ||
     resolvedNhiaSettings?.api_base_url ||
     resolvedNhiaSettings?.productionBaseUrl ||
@@ -832,7 +835,7 @@ const Nhis = () => {
       resolvedNhiaSettings?.claimEndpointPath
   )
   const nhiaCcCodeApiAvailable = Boolean(
-    (resolvedNhiaSettings?.directApiEnabled || claimControlMode === 'claimit_bridge') &&
+    (resolvedNhiaSettings?.directApiEnabled || ['claimit_bridge', 'claimit_bridge_ccc'].includes(claimControlMode)) &&
       !isHostedPageWithLocalClaimItBridge &&
       nhiaApiBaseUrl &&
       (ccEndpointPath || usesClaimItValidationFlow)

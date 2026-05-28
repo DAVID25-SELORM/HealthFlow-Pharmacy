@@ -2567,8 +2567,12 @@ const getClaimItBridgeBaseUrl = (settings = {}) => {
 const canUseBaseUrlForClaimControl = (settings = {}) => {
   const validationMode = normalizeText(settings.validationMode || settings.validation_mode)
   const integrationMode = normalizeText(settings.integrationMode || settings.integration_mode || settings.nhiaApiMode || settings.nhia_api_mode)
-  return validationMode === 'claimit_local_bridge' ||
+  const claimControlMode = normalizeText(settings.claimControlMode || settings.claim_control_mode)
+  return validationMode === 'validate_before_submit' ||
+    validationMode === 'claimit_local_bridge' ||
     integrationMode === 'claimit_export' ||
+    integrationMode === 'claimit_local_bridge' ||
+    claimControlMode === 'claimit_bridge_ccc' ||
     isClaimItBridgeMode(integrationMode) ||
     Boolean(getClaimItBridgeBaseUrl(settings))
 }
@@ -2611,6 +2615,8 @@ const extractClaimControlCode = (body) => {
   const direct = normalizeNhisCcCode(
     record.ccCode ||
       record.cc_code ||
+      record.cccCode ||
+      record.ccc_code ||
       record.cccNo ||
       record.ccc_no ||
       record.claimControlCode ||
