@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: healthflow-claim-bridge
+    env: docker
+    plan: starter
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /json-api/health
+    envVars:
+      - key: CLAIM_BRIDGE_PUBLIC_PATH
+        value: /json-api
+      - key: ALLOWED_ORIGINS
+        value: https://health-flow-pharmacy.vercel.app
+      - key: CLAIM_BRIDGE_TIMEOUT_MS
+        value: "30000"
+      - key: CLAIM_BRIDGE_MAX_BODY_BYTES
+        value: "10485760"
+      - key: CLAIMIT_UPSTREAM_BASE_URL
+        sync: false
+      - key: CLAIM_BRIDGE_TOKEN
+        generateValue: true
+      - key: CLAIM_BRIDGE_TOKEN_HEADER
+        value: x-claim-bridge-token

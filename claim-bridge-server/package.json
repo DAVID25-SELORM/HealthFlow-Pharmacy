@@ -1,0 +1,15 @@
+{
+  "name": "healthflow-claim-bridge",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Stateless production CLAIM-it/NHIA bridge for HealthFlow Pharmacy.",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "check": "node --check src/server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
