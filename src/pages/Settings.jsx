@@ -1234,6 +1234,7 @@ const Settings = () => {
               Store the NHIA/CLAIM-it issued API details for CCC/CC generation and direct claim submission.
             </p>
             <form className="settings-form" onSubmit={handleSaveNhiaApi}>
+              {/* ── 1. Enable & Integration mode ── */}
               <label className="settings-checkbox-label">
                 <input
                   type="checkbox"
@@ -1242,7 +1243,6 @@ const Settings = () => {
                 />
                 Enable NHIA integration
               </label>
-              {/* ✅ NHIA API ARCHITECTURE PATCH START */}
               <p className="settings-note">
                 Direct NHIA integration depends on approved NHIA/CLAIM-it credentials.
               </p>
@@ -1250,36 +1250,239 @@ const Settings = () => {
                 value={nhiaApiForm.integrationMode}
                 onChange={(event) => handleNhiaIntegrationModeChange(event.target.value)}
               >
-                <option value="claimit_export">CLAIM-it CXF Export</option>
+                <option value="claimit_export">CLAIM-it CXF Export (offline batch only)</option>
+                <option value="claimit_assisted">CLAIM-it Assisted Submission</option>
                 <option value="claimit_bridge">CLAIM-it Local Bridge API</option>
                 <option value="direct_nhia_api">Direct NHIA API (future)</option>
               </select>
-              <div className="settings-form-row">
-                <select
-                  value={nhiaApiForm.connectionProfile}
-                  onChange={(event) => updateNhiaApiForm('connectionProfile', event.target.value)}
-                >
-                  <option value="production_server">Production bridge server</option>
-                  <option value="local_server">Local server</option>
-                  <option value="lan_ip">LAN IP</option>
-                </select>
-                <select
-                  value={nhiaApiForm.validationMode}
-                  onChange={(event) => updateNhiaApiForm('validationMode', event.target.value)}
-                >
-                  <option value="validate_before_submit">Validate before submit</option>
-                  <option value="submit_only">Submit without bridge validation</option>
-                </select>
-              </div>
-              <select
-                value={nhiaApiForm.claimControlMode}
-                onChange={(event) => updateNhiaApiForm('claimControlMode', event.target.value)}
-              >
-                <option value="manual">Manual CC/CCC entry</option>
-                <option value="claimit_bridge">CLAIM-it Bridge CC/CCC</option>
-                <option value="direct_api">Direct API CC/CCC</option>
-              </select>
-              {/* ✅ NHIA API ARCHITECTURE PATCH END */}
+
+              {/* ── 2. API connection (shown for all modes that need a URL) ── */}
+              {nhiaApiForm.integrationMode !== 'claimit_export' && (
+                <>
+                  <select
+                    value={nhiaApiForm.apiEnvironment}
+                    onChange={(event) => updateNhiaApiForm('apiEnvironment', event.target.value)}
+                  >
+                    <option value="production">Production</option>
+                    <option value="sandbox">Sandbox / Test</option>
+                  </select>
+                  <input
+                    placeholder="API base URL (e.g. http://localhost:31719/json-api)"
+                    value={nhiaApiForm.apiBaseUrl}
+                    onChange={(event) => updateNhiaApiForm('apiBaseUrl', event.target.value)}
+                  />
+                  <div className="settings-form-row">
+                    <input
+                      placeholder="Sandbox/Test base URL"
+                      value={nhiaApiForm.sandboxBaseUrl}
+                      onChange={(event) => updateNhiaApiForm('sandboxBaseUrl', event.target.value)}
+                    />
+                    <input
+                      placeholder="Production base URL"
+                      value={nhiaApiForm.productionBaseUrl}
+                      onChange={(event) => {
+                        updateNhiaApiForm('productionBaseUrl', event.target.value)
+                        updateNhiaApiForm('apiBaseUrl', event.target.value)
+                      }}
+                    />
+                  </div>
+                  <div className="settings-form-row">
+                    <input
+                      placeholder="Claim submit endpoint path (e.g. /claims)"
+                      value={nhiaApiForm.claimEndpointPath}
+                      onChange={(event) => updateNhiaApiForm('claimEndpointPath', event.target.value)}
+                    />
+                    <input
+                      placeholder="CC/CCC endpoint path (leave blank to use claim endpoint)"
+                      value={nhiaApiForm.ccEndpointPath || nhiaApiForm.ccCodeEndpointPath}
+                      onChange={(event) => {
+                        updateNhiaApiForm('ccEndpointPath', event.target.value)
+                        updateNhiaApiForm('ccCodeEndpointPath', event.target.value)
+                      }}
+                    />
+                  </div>
+                  <div className="settings-form-row">
+                    <input
+                      placeholder="Claim validation endpoint path"
+                      value={nhiaApiForm.claimValidationEndpointPath}
+                      onChange={(event) => updateNhiaApiForm('claimValidationEndpointPath', event.target.value)}
+                    />
+                    <input
+                      placeholder="Claim status endpoint path"
+                      value={nhiaApiForm.claimStatusEndpointPath}
+                      onChange={(event) => updateNhiaApiForm('claimStatusEndpointPath', event.target.value)}
+                    />
+                  </div>
+                  <input
+                    placeholder="Member lookup endpoint path"
+                    value={nhiaApiForm.memberLookupEndpointPath}
+                    onChange={(event) => updateNhiaApiForm('memberLookupEndpointPath', event.target.value)}
+                  />
+
+                  {/* ── 3. Authentication ── */}
+                  <select
+                    value={nhiaApiForm.credentialMode}
+                    onChange={(event) => updateNhiaApiForm('credentialMode', event.target.value)}
+                  >
+                    <option value="">Authentication mode</option>
+                    <option value="claimit_token">CLAIM-it credentials (username + password)</option>
+                    <option value="api_key">API key</option>
+                    <option value="bearer_token">Bearer token</option>
+                    <option value="oauth_client">OAuth / client token</option>
+                    <option value="basic_auth">Basic auth (username / password)</option>
+                    <option value="custom">Custom integration</option>
+                  </select>
+                </>
+              )}
+              {/* Credential fields — only when a live integration mode is selected */}
+              {nhiaApiForm.integrationMode !== 'claimit_export' && (
+                <>
+                  {nhiaApiForm.credentialMode === 'api_key' && (
+                    <>
+                      <div className="settings-form-row">
+                        <div className="settings-field">
+                          <input
+                            placeholder={nhiaCredentialState.hasApiKey ? 'Saved API key — leave blank to keep existing' : 'Enter API key'}
+                            type="password"
+                            autoComplete="new-password"
+                            value={nhiaApiForm.credentials.apiKey || ''}
+                            onChange={(event) => updateNhiaCredential('apiKey', event.target.value)}
+                          />
+                          <p className="settings-helper">
+                            {nhiaCredentialState.hasApiKey ? 'API Key Saved' : 'API Key Not Saved'}
+                          </p>
+                        </div>
+                        <input
+                          placeholder="API key header name (e.g. Authorization)"
+                          value={nhiaApiForm.credentials.headerName || ''}
+                          onChange={(event) => updateNhiaCredential('headerName', event.target.value)}
+                        />
+                      </div>
+                      <div className="settings-form-row">
+                        <div className="settings-field">
+                          <input
+                            placeholder={nhiaCredentialState.hasApiSecret ? 'Saved API secret — leave blank to keep existing' : 'Enter API secret'}
+                            type="password"
+                            autoComplete="new-password"
+                            value={nhiaApiForm.credentials.apiSecret || ''}
+                            onChange={(event) => updateNhiaCredential('apiSecret', event.target.value)}
+                          />
+                          <p className="settings-helper">
+                            {nhiaCredentialState.hasApiSecret ? 'API Secret Saved' : 'API Secret Not Saved'}
+                          </p>
+                        </div>
+                        <input
+                          placeholder="Secret header name (e.g. x-api-secret)"
+                          value={nhiaApiForm.credentials.secretHeaderName || ''}
+                          onChange={(event) => updateNhiaCredential('secretHeaderName', event.target.value)}
+                        />
+                      </div>
+                      <div className="settings-form-row">
+                        <input
+                          placeholder="Username (optional)"
+                          value={nhiaApiForm.credentials.username || ''}
+                          onChange={(event) => updateNhiaCredential('username', event.target.value)}
+                        />
+                        <input
+                          placeholder={nhiaCredentialState.hasPassword ? 'Saved password — leave blank to keep existing' : 'Password (optional)'}
+                          type="password"
+                          autoComplete="new-password"
+                          value={nhiaApiForm.credentials.password || ''}
+                          onChange={(event) => updateNhiaCredential('password', event.target.value)}
+                        />
+                      </div>
+                    </>
+                  )}
+                  {nhiaApiForm.credentialMode === 'bearer_token' && (
+                    <input
+                      placeholder="Bearer token"
+                      type="password"
+                      autoComplete="new-password"
+                      value={nhiaApiForm.credentials.apiKey || nhiaApiForm.credentials.token || ''}
+                      onChange={(event) => {
+                        updateNhiaCredential('apiKey', event.target.value)
+                        updateNhiaCredential('token', event.target.value)
+                      }}
+                    />
+                  )}
+                  {nhiaApiForm.credentialMode === 'basic_auth' && (
+                    <div className="settings-form-row">
+                      <input
+                        placeholder="Username"
+                        value={nhiaApiForm.credentials.username || ''}
+                        onChange={(event) => updateNhiaCredential('username', event.target.value)}
+                      />
+                      <input
+                        placeholder={nhiaCredentialState.hasPassword ? 'Saved password — leave blank to keep existing' : 'Password'}
+                        type="password"
+                        autoComplete="new-password"
+                        value={nhiaApiForm.credentials.password || ''}
+                        onChange={(event) => updateNhiaCredential('password', event.target.value)}
+                      />
+                    </div>
+                  )}
+                  {nhiaApiForm.credentialMode === 'claimit_token' && (
+                    <>
+                      <div className="settings-form-row">
+                        <input
+                          placeholder="CLAIM-it username"
+                          value={nhiaApiForm.credentials.username || ''}
+                          onChange={(event) => updateNhiaCredential('username', event.target.value)}
+                        />
+                        <input
+                          placeholder={nhiaCredentialState.hasPassword ? 'Saved password — leave blank to keep existing' : 'CLAIM-it password'}
+                          type="password"
+                          autoComplete="new-password"
+                          value={nhiaApiForm.credentials.password || ''}
+                          onChange={(event) => updateNhiaCredential('password', event.target.value)}
+                        />
+                      </div>
+                      <input
+                        placeholder="Token endpoint path (/token)"
+                        value={nhiaApiForm.credentials.tokenEndpointPath || ''}
+                        onChange={(event) => updateNhiaCredential('tokenEndpointPath', event.target.value)}
+                      />
+                    </>
+                  )}
+                  {nhiaApiForm.credentialMode === 'oauth_client' && (
+                    <>
+                      <input
+                        placeholder="OAuth access token"
+                        type="password"
+                        autoComplete="new-password"
+                        value={nhiaApiForm.credentials.token || nhiaApiForm.credentials.apiKey || ''}
+                        onChange={(event) => {
+                          updateNhiaCredential('token', event.target.value)
+                          updateNhiaCredential('apiKey', event.target.value)
+                        }}
+                      />
+                      <div className="settings-form-row">
+                        <input
+                          placeholder="Client ID"
+                          value={nhiaApiForm.credentials.clientId || ''}
+                          onChange={(event) => updateNhiaCredential('clientId', event.target.value)}
+                        />
+                        <input
+                          placeholder="Client secret"
+                          type="password"
+                          autoComplete="new-password"
+                          value={nhiaApiForm.credentials.clientSecret || ''}
+                          onChange={(event) => updateNhiaCredential('clientSecret', event.target.value)}
+                        />
+                      </div>
+                    </>
+                  )}
+                  {nhiaApiForm.credentialMode === 'custom' && (
+                    <input
+                      placeholder="Custom integration reference"
+                      value={nhiaApiForm.credentials.customIntegration || ''}
+                      onChange={(event) => updateNhiaCredential('customIntegration', event.target.value)}
+                    />
+                  )}
+                </>
+              )}
+
+              {/* ── 4. Facility & provider details ── */}
               <div className="settings-form-row">
                 <input
                   placeholder="Scheme name"
@@ -1292,7 +1495,6 @@ const Settings = () => {
                   onChange={(event) => updateNhiaApiForm('facilityCode', event.target.value)}
                 />
               </div>
-              {/* ✅ NHIA API ARCHITECTURE PATCH START */}
               <div className="settings-form-row">
                 <input
                   placeholder="Provider number"
@@ -1305,8 +1507,6 @@ const Settings = () => {
                   onChange={(event) => updateNhiaApiForm('submitterId', event.target.value)}
                 />
               </div>
-              {/* ✅ NHIA API ARCHITECTURE PATCH END */}
-              {/* ✅ NHIA CONFIG PATCH START */}
               <div className="settings-form-row">
                 <select
                   value={nhiaFacilityType}
@@ -1354,7 +1554,6 @@ const Settings = () => {
                   onChange={(event) => updateNhiaApiForm('accreditationExpiryDate', normalizeDateInputValue(event.target.value))}
                 />
               </div>
-              {/* ✅ NHIA CONFIG PATCH END */}
               {showNhiaProviderClassLevel && (
                 <div className="settings-form-row">
                   <select
@@ -1400,6 +1599,8 @@ const Settings = () => {
                   <option value="not_applicable">Not applicable</option>
                 </select>
               </div>
+
+              {/* ── 5. Claims officer ── */}
               <div className="settings-form-row">
                 <input
                   placeholder="Claims officer name"
@@ -1432,17 +1633,55 @@ const Settings = () => {
                   )}
                 </div>
               </div>
+
+              {/* ── 6. Advanced / submission options ── */}
               <div className="settings-form-row">
-                <label className="settings-checkbox-label">
-                  <input
-                    type="checkbox"
-                    checked={nhiaApiForm.claimitValidationEnabled !== false}
-                    onChange={(event) => updateNhiaApiForm('claimitValidationEnabled', event.target.checked)}
-                  />
-                  Allow CLAIM-it validation
-                </label>
+                <select
+                  value={nhiaApiForm.connectionProfile}
+                  onChange={(event) => updateNhiaApiForm('connectionProfile', event.target.value)}
+                >
+                  <option value="production_server">Production bridge server</option>
+                  <option value="local_server">Local server</option>
+                  <option value="lan_ip">LAN IP</option>
+                </select>
+                <select
+                  value={nhiaApiForm.validationMode}
+                  onChange={(event) => updateNhiaApiForm('validationMode', event.target.value)}
+                >
+                  <option value="validate_before_submit">Validate before submit</option>
+                  <option value="submit_only">Submit without bridge validation</option>
+                </select>
               </div>
-              {/* ✅ NHIA CONFIG PATCH START */}
+              <div className="settings-form-row">
+                <select
+                  value={nhiaApiForm.claimControlMode}
+                  onChange={(event) => updateNhiaApiForm('claimControlMode', event.target.value)}
+                >
+                  <option value="manual">Manual CC/CCC entry</option>
+                  <option value="claimit_bridge">CLAIM-it Bridge CC/CCC</option>
+                  <option value="direct_api">Direct API CC/CCC</option>
+                </select>
+                <select
+                  value={nhiaApiForm.exportFormat}
+                  onChange={(event) => updateNhiaApiForm('exportFormat', event.target.value)}
+                >
+                  <option value="json">Submit JSON payload</option>
+                  <option value="xml">Submit XML payload</option>
+                </select>
+              </div>
+              <label className="settings-checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={nhiaApiForm.claimitValidationEnabled !== false}
+                  onChange={(event) => updateNhiaApiForm('claimitValidationEnabled', event.target.checked)}
+                />
+                Allow CLAIM-it validation
+              </label>
+              <p className="settings-note">
+                Production bridge mode uses a network-accessible CLAIM-it bridge; local server and LAN profiles are for branch-machine testing.
+              </p>
+
+              {/* ── 7. Metadata preview + Test buttons ── */}
               <div className="settings-note">
                 <strong>CLAIM-it metadata preview</strong>
                 <div>facilityName: {claimItPreview.facilityName || 'Not configured'}</div>
@@ -1453,235 +1692,6 @@ const Settings = () => {
                 <div>submitterId: {nhiaApiForm.submitterId || 'Not configured'}</div>
                 <div>credentialCode: {claimItPreview.credentialCode || 'Not configured'}</div>
               </div>
-              {/* ✅ NHIA CONFIG PATCH END */}
-              <select
-                value={nhiaApiForm.apiEnvironment}
-                onChange={(event) => updateNhiaApiForm('apiEnvironment', event.target.value)}
-              >
-                <option value="production">Production</option>
-                <option value="sandbox">Sandbox</option>
-              </select>
-              {/* ✅ NHIA API ARCHITECTURE PATCH START */}
-              <input
-                placeholder="CLAIM-it bridge base URL (https://your-bridge-domain/json-api)"
-                value={nhiaApiForm.apiBaseUrl}
-                onChange={(event) => updateNhiaApiForm('apiBaseUrl', event.target.value)}
-              />
-              <div className="settings-form-row">
-                <input
-                  placeholder="Sandbox/Test base URL"
-                  value={nhiaApiForm.sandboxBaseUrl}
-                  onChange={(event) => updateNhiaApiForm('sandboxBaseUrl', event.target.value)}
-                />
-                <input
-                  placeholder="Production base URL (https://your-bridge-domain/json-api)"
-                  value={nhiaApiForm.productionBaseUrl}
-                  onChange={(event) => {
-                    updateNhiaApiForm('productionBaseUrl', event.target.value)
-                    updateNhiaApiForm('apiBaseUrl', event.target.value)
-                  }}
-                />
-              </div>
-              {/* ✅ NHIA API ARCHITECTURE PATCH END */}
-              <div className="settings-form-row">
-                <input
-                  placeholder="Claim submit endpoint path"
-                  value={nhiaApiForm.claimEndpointPath}
-                  onChange={(event) => updateNhiaApiForm('claimEndpointPath', event.target.value)}
-                />
-                <input
-                  placeholder="Claim validation endpoint path"
-                  value={nhiaApiForm.claimValidationEndpointPath}
-                  onChange={(event) => updateNhiaApiForm('claimValidationEndpointPath', event.target.value)}
-                />
-              </div>
-              <input
-                placeholder="ccEndpointPath / CCC/CC endpoint path"
-                value={nhiaApiForm.ccEndpointPath || nhiaApiForm.ccCodeEndpointPath}
-                onChange={(event) => {
-                  updateNhiaApiForm('ccEndpointPath', event.target.value)
-                  updateNhiaApiForm('ccCodeEndpointPath', event.target.value)
-                }}
-              />
-              {/* ✅ NHIA API ARCHITECTURE PATCH START */}
-              <p className="settings-note">
-                Production bridge mode uses a network-accessible CLAIM-it bridge; local server and LAN profiles are for branch-machine testing.
-              </p>
-              {/* ✅ NHIA API ARCHITECTURE PATCH END */}
-              <select
-                value={nhiaApiForm.exportFormat}
-                onChange={(event) => updateNhiaApiForm('exportFormat', event.target.value)}
-              >
-                <option value="json">Submit JSON payload</option>
-                <option value="xml">Submit XML payload</option>
-              </select>
-              <div className="settings-form-row">
-                <input
-                  placeholder="Claim status endpoint path"
-                  value={nhiaApiForm.claimStatusEndpointPath}
-                  onChange={(event) => updateNhiaApiForm('claimStatusEndpointPath', event.target.value)}
-                />
-                <input
-                  placeholder="Member lookup endpoint path"
-                  value={nhiaApiForm.memberLookupEndpointPath}
-                  onChange={(event) => updateNhiaApiForm('memberLookupEndpointPath', event.target.value)}
-                />
-              </div>
-              <select
-                value={nhiaApiForm.credentialMode}
-                onChange={(event) => updateNhiaApiForm('credentialMode', event.target.value)}
-              >
-                <option value="">Authentication mode</option>
-                <option value="claimit_token">CLAIM-it credentials / Custom CLAIM-it authentication</option>
-                <option value="api_key">API key</option>
-                <option value="bearer_token">Bearer token</option>
-                <option value="oauth_client">OAuth/client token</option>
-                <option value="basic_auth">Username/password</option>
-                <option value="custom">Custom integration</option>
-              </select>
-              {nhiaApiForm.credentialMode === 'api_key' && (
-                <>
-                  <div className="settings-form-row">
-                    <div className="settings-field">
-                      <input
-                        placeholder={nhiaCredentialState.hasApiKey ? 'Saved API key — leave blank to keep existing' : 'Enter API key'}
-                        type="password"
-                        autoComplete="new-password"
-                        value={nhiaApiForm.credentials.apiKey || ''}
-                        onChange={(event) => updateNhiaCredential('apiKey', event.target.value)}
-                      />
-                      <p className="settings-helper">
-                        {nhiaCredentialState.hasApiKey ? 'API Key Saved' : 'API Key Not Saved'}
-                      </p>
-                    </div>
-                    <input
-                      placeholder="API key header (x-api-key)"
-                      value={nhiaApiForm.credentials.headerName || ''}
-                      onChange={(event) => updateNhiaCredential('headerName', event.target.value)}
-                    />
-                  </div>
-                  <div className="settings-form-row">
-                    <div className="settings-field">
-                      <input
-                        placeholder={nhiaCredentialState.hasApiSecret ? 'Saved API secret — leave blank to keep existing' : 'Enter API secret'}
-                        type="password"
-                        autoComplete="new-password"
-                        value={nhiaApiForm.credentials.apiSecret || ''}
-                        onChange={(event) => updateNhiaCredential('apiSecret', event.target.value)}
-                      />
-                      <p className="settings-helper">
-                        {nhiaCredentialState.hasApiSecret ? 'API Secret Saved' : 'API Secret Not Saved'}
-                      </p>
-                    </div>
-                    <input
-                      placeholder="Secret header (x-api-secret)"
-                      value={nhiaApiForm.credentials.secretHeaderName || ''}
-                      onChange={(event) => updateNhiaCredential('secretHeaderName', event.target.value)}
-                    />
-                  </div>
-                  <div className="settings-form-row">
-                    <input
-                      placeholder="Username"
-                      value={nhiaApiForm.credentials.username || ''}
-                      onChange={(event) => updateNhiaCredential('username', event.target.value)}
-                    />
-                    <input
-                      placeholder={nhiaCredentialState.hasPassword ? 'Saved password — leave blank to keep existing' : 'Password'}
-                      type="password"
-                      autoComplete="new-password"
-                      value={nhiaApiForm.credentials.password || ''}
-                      onChange={(event) => updateNhiaCredential('password', event.target.value)}
-                    />
-                  </div>
-                </>
-              )}
-              {nhiaApiForm.credentialMode === 'bearer_token' && (
-                  <input
-                    placeholder="Bearer token"
-                    type="password"
-                    autoComplete="new-password"
-                    value={nhiaApiForm.credentials.apiKey || nhiaApiForm.credentials.token || ''}
-                  onChange={(event) => {
-                    updateNhiaCredential('apiKey', event.target.value)
-                    updateNhiaCredential('token', event.target.value)
-                  }}
-                />
-              )}
-              {nhiaApiForm.credentialMode === 'basic_auth' && (
-                <div className="settings-form-row">
-                  <input
-                    placeholder="Username"
-                    value={nhiaApiForm.credentials.username || ''}
-                    onChange={(event) => updateNhiaCredential('username', event.target.value)}
-                  />
-                  <input
-                    placeholder={nhiaCredentialState.hasPassword ? 'Saved password — leave blank to keep existing' : 'Password'}
-                    type="password"
-                    autoComplete="new-password"
-                    value={nhiaApiForm.credentials.password || ''}
-                    onChange={(event) => updateNhiaCredential('password', event.target.value)}
-                  />
-                </div>
-              )}
-              {nhiaApiForm.credentialMode === 'claimit_token' && (
-                <>
-                  <div className="settings-form-row">
-                    <input
-                      placeholder="CLAIM-it username"
-                      value={nhiaApiForm.credentials.username || ''}
-                      onChange={(event) => updateNhiaCredential('username', event.target.value)}
-                    />
-                    <input
-                      placeholder={nhiaCredentialState.hasPassword ? 'Saved password — leave blank to keep existing' : 'CLAIM-it password'}
-                      type="password"
-                      autoComplete="new-password"
-                      value={nhiaApiForm.credentials.password || ''}
-                      onChange={(event) => updateNhiaCredential('password', event.target.value)}
-                    />
-                  </div>
-                  <input
-                    placeholder="Token endpoint path (/token)"
-                    value={nhiaApiForm.credentials.tokenEndpointPath || ''}
-                    onChange={(event) => updateNhiaCredential('tokenEndpointPath', event.target.value)}
-                  />
-                </>
-              )}
-              {nhiaApiForm.credentialMode === 'oauth_client' && (
-                <>
-                  <input
-                    placeholder="OAuth access token"
-                    type="password"
-                    autoComplete="new-password"
-                    value={nhiaApiForm.credentials.token || nhiaApiForm.credentials.apiKey || ''}
-                    onChange={(event) => {
-                      updateNhiaCredential('token', event.target.value)
-                      updateNhiaCredential('apiKey', event.target.value)
-                    }}
-                  />
-                  <div className="settings-form-row">
-                    <input
-                      placeholder="Client ID"
-                      value={nhiaApiForm.credentials.clientId || ''}
-                      onChange={(event) => updateNhiaCredential('clientId', event.target.value)}
-                    />
-                    <input
-                      placeholder="Client secret"
-                      type="password"
-                      autoComplete="new-password"
-                      value={nhiaApiForm.credentials.clientSecret || ''}
-                      onChange={(event) => updateNhiaCredential('clientSecret', event.target.value)}
-                    />
-                  </div>
-                </>
-              )}
-              {/* ✅ NHIA API ARCHITECTURE PATCH START */}
-              {nhiaApiForm.credentialMode === 'custom' && (
-                <input
-                  placeholder="Custom integration reference"
-                  value={nhiaApiForm.credentials.customIntegration || ''}
-                  onChange={(event) => updateNhiaCredential('customIntegration', event.target.value)}
-                />
-              )}
               <div className="settings-form-row">
                 <button className="btn btn-outline btn-sm" type="button" onClick={handleTestNhiaConnection}>
                   Test CLAIM-it Connection
@@ -1693,7 +1703,6 @@ const Settings = () => {
               <button className="btn btn-outline btn-sm" type="button" onClick={handlePreviewClaimItMetadata}>
                 Preview CLAIM-it Metadata
               </button>
-              {/* ✅ NHIA API ARCHITECTURE PATCH END */}
               <div className="settings-save-bar">
                 <span>Leave secret fields blank to keep the saved values.</span>
                 {(nhiaCredentialState.hasApiKey || nhiaCredentialState.hasApiSecret) && (
