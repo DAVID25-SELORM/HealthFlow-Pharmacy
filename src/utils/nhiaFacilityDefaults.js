@@ -42,6 +42,8 @@ export const getNhiaAccreditationExpiryDate = (...sources) =>
 
 export const normalizeNhiaFacilityType = (value, fallback = '') => {
   const normalized = normalizeText(value).toLowerCase()
+  // Check hospital pharmacy before plain hospital to avoid misclassification.
+  if (normalized.includes('hospital') && normalized.includes('pharmacy')) return 'Hospital Pharmacy'
   if (normalized.includes('hospital')) return 'Hospital'
   if (normalized.includes('clinic')) return 'Clinic'
   if (normalized.includes('maternity')) return 'Maternity'
@@ -50,7 +52,7 @@ export const normalizeNhiaFacilityType = (value, fallback = '') => {
   return fallback
 }
 
-const NHIA_HOSPITAL_FACILITY_TYPES = ['Hospital', 'Clinic', 'Maternity']
+const NHIA_HOSPITAL_FACILITY_TYPES = ['Hospital', 'Clinic', 'Maternity', 'Hospital Pharmacy']
 const NHIA_PHARMACY_FACILITY_TYPES = ['Pharmacy', 'Chemical Seller']
 
 const normalizeOrganizationType = (value) =>
@@ -72,7 +74,14 @@ export const normalizeNhiaFacilityTypeForOrganization = (value, organizationType
 
 export const normalizeNhiaPharmacyFacilityLevel = (value, fallback = '') => {
   const code = normalizeCode(value)
+  // HP is only valid for hospital pharmacies (organization_type = 'hospital', facilityType = 'Hospital Pharmacy').
+  // Community pharmacies use P1, P2, or LCS only.
   return ['P1', 'P2', 'LCS', 'HP'].includes(code) ? code : fallback
+}
+
+export const normalizeNhiaCommunityPharmacyLevel = (value, fallback = '') => {
+  const code = normalizeCode(value)
+  return ['P1', 'P2', 'LCS'].includes(code) ? code : fallback
 }
 
 export const normalizeNhiaProviderClassLevel = (value, fallback = '') => {

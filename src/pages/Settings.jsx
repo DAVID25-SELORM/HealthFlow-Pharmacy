@@ -415,9 +415,12 @@ const Settings = () => {
     facilityType: nhiaFacilityType,
     facilityName: organization?.name || formData.pharmacyName,
   }, { organizationType })
-  const isNhiaPharmacyFacility = organizationType === 'pharmacy' && ['Pharmacy', 'Chemical Seller'].includes(nhiaFacilityType)
-  const showNhiaPharmacyLevel = isNhiaPharmacyFacility
-  const showNhiaProviderClassLevel = isHospitalOrganization
+  const isNhiaCommunityPharmacy = organizationType === 'pharmacy' && ['Pharmacy', 'Chemical Seller'].includes(nhiaFacilityType)
+  const isNhiaHospitalPharmacy = isHospitalOrganization && nhiaFacilityType === 'Hospital Pharmacy'
+  // Pharmacy medicine level shown for community pharmacies (P1/P2/LCS) and hospital pharmacies (HP).
+  const showNhiaPharmacyLevel = isNhiaCommunityPharmacy || isNhiaHospitalPharmacy
+  // Hospital provider class (B1–SM) shown for hospitals that are NOT a hospital pharmacy.
+  const showNhiaProviderClassLevel = isHospitalOrganization && !isNhiaHospitalPharmacy
   // ✅ NHIA CONFIG PATCH END
 
   useEffect(() => {
@@ -1522,10 +1525,17 @@ const Settings = () => {
                     onChange={(event) => updateNhiaApiForm('pharmacyFacilityLevel', event.target.value)}
                   >
                     <option value="">Pharmacy medicine level</option>
-                    <option value="P1">P1 - Full pharmacy / higher pharmacy service level</option>
-                    <option value="P2">P2 - Restricted or lower pharmacy service level</option>
-                    <option value="LCS">LCS - Licensed Chemical Seller</option>
-                    <option value="HP">HP - Hospital Pharmacy</option>
+                    {isNhiaHospitalPharmacy ? (
+                      <option value="HP">HP - Hospital Pharmacy</option>
+                    ) : (
+                      <>
+                        <option value="P1">P1 - Full pharmacy / higher pharmacy service level</option>
+                        <option value="P2">P2 - Restricted or lower pharmacy service level</option>
+                        {nhiaFacilityType === 'Chemical Seller' && (
+                          <option value="LCS">LCS - Licensed Chemical Seller</option>
+                        )}
+                      </>
+                    )}
                   </select>
                 )}
               </div>
@@ -1589,6 +1599,7 @@ const Settings = () => {
                   <option value="Diagnostic centers">Diagnostic centers</option>
                   <option value="CHPS Compounds">CHPS Compounds</option>
                   <option value="Pharmacy">Pharmacy</option>
+                  <option value="Hospital Pharmacy">Hospital Pharmacy</option>
                 </select>
                 <select
                   value={nhiaApiForm.admissionPaymentOption}
