@@ -9,6 +9,7 @@ import {
   createBranchRecord,
   listBranchRecords,
   updateBranchRecord,
+  submitNhisPharmacyClaim as branchSubmitNhisPharmacyClaim,
 } from './branchServerApi'
 import { routeRead, routeWrite } from './apiRouter'
 import { invokeTierAccess } from './tierAccessService'
@@ -324,4 +325,55 @@ export const searchClaims = async (searchTerm) => {
   }
 
   return getAllClaims({ searchTerm: term })
+}
+
+// Unified NHIS pharmacy claim: generates CC code (if absent), saves, and submits to CLAIM-it.
+// On the local path the branch server handles CC generation and submission directly.
+// On the cloud path the claim is sent to the NHIA tier-access function for Supabase persistence and CLAIM-it forwarding.
+export const submitNhisPharmacyClaim = async (claimData) => {
+  assertRequiredText(claimData?.patientName, 'Patient name')
+  assertRequiredText(claimData?.memberNumber, 'Member number')
+  assertRequiredText(claimData?.diagnosis, 'Diagnosis')
+  if (!claimData?.medicines?.length) {
+    throw new Error('At least one medicine is required.')
+  }
+
+  const local = async () => {
+    const result = await branchSubmitNhisPharmacyClaim(claimData)
+    await tryLogAuditEvent({
+      eventType: 'nhis_claim.submitted',
+      entityType: 'nhia_claims',
+      entityId: result?.id,
+      action: 'create',
+      details: {
+        claim_number: result?.claim_number,
+        member_number: claimData.memberNumber,
+        total_amount: result?.total_amount,
+        medicine_count: claimData.medicines.length,
+      },
+    })
+    return result
+  }
+
+  const cloud = async () => {
+    const response = await invokeTierAccess({
+      action: 'submit_nhis_pharmacy_claim',
+      claimData,
+    })
+    await tryLogAuditEvent({
+      eventType: 'nhis_claim.submitted',
+      entityType: 'nhis_claims',
+      entityId: response?.claim?.id,
+      action: 'create',
+      details: {
+        claim_number: response?.claim?.claim_number,
+        member_number: claimData.memberNumber,
+        total_amount: response?.claim?.total_amount,
+        medicine_count: claimData.medicines.length,
+      },
+    })
+    return response?.claim || response
+  }
+
+  return await routeWrite({ label: 'NHIS pharmacy claim', local, cloud })
 }

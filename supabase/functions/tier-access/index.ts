@@ -126,6 +126,7 @@ type TierAccessAction =
   | 'request_cc_code'
   | 'generate_cc'
   | 'submit_nhia_claims_direct'
+  | 'submit_nhis_pharmacy_claim'
   | 'test_claimit_connection'
   | 'get_epharmacy_marketplace'
   | 'save_epharmacy_profile'
@@ -157,6 +158,7 @@ const SUPPORTED_TIER_ACCESS_ACTIONS = [
   'request_cc_code',
   'generate_cc',
   'submit_nhia_claims_direct',
+  'submit_nhis_pharmacy_claim',
   'get_epharmacy_marketplace',
   'save_epharmacy_profile',
   'update_epharmacy_listing_controls',
@@ -3761,6 +3763,194 @@ const generateNhiaCcCode = async (
   return { ok: true, ccCode, source: isClaimItBridgeMode(settings as unknown as Record<string, unknown>) ? 'claimit_bridge' : 'api', response: body }
 }
 
+const buildNhisClaimNumber = () => {
+  const stamp = Date.now().toString(36).toUpperCase()
+  const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 4).toUpperCase()
+  return `PHC-${stamp}-${suffix}`
+}
+
+const submitNhisPharmacyClaim = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  requesterProfile: RequesterProfile,
+  organizationId: string,
+  payload: Record<string, unknown>
+) => {
+  requireClaimsAccess(requesterProfile, 'Only claims staff can submit NHIS pharmacy claims.')
+  await requireTierFeature(adminClient, organizationId, 'claims')
+
+  const claimData = (payload.claimData || payload) as Record<string, unknown>
+  const patientName = assertRequiredText(claimData.patientName, 'Patient name')
+  const memberNumber = assertRequiredText(claimData.memberNumber, 'Member number')
+  const diagnosis = assertRequiredText(claimData.diagnosis, 'Diagnosis')
+  const medicines = Array.isArray(claimData.medicines) ? claimData.medicines as Record<string, unknown>[] : []
+  if (!medicines.length) {
+    throw new Error('At least one medicine is required.')
+  }
+
+  const serviceDate = normalizeText(claimData.dispensingDate || claimData.serviceDate) || new Date().toISOString().split('T')[0]
+  const totalAmount = medicines.reduce((sum, m) => sum + Number(m.totalPrice || 0), 0)
+  const hin = normalizeText(claimData.hin)
+
+  const settings = await getNhiaApiSettings(adminClient, requesterProfile, organizationId, true)
+
+  // Generate CC code via CLAIM-it if not provided and API is enabled.
+  let ccCode = normalizeText(claimData.ccCode) || null
+  let ccSource = 'manual'
+  if (!ccCode && settings?.directApiEnabled && settings.apiBaseUrl) {
+    const ccResult = await generateNhiaCcCode(adminClient, requesterProfile, organizationId, {
+      claimId: `pre-${Date.now()}`,
+      patientName,
+      memberNumber,
+      hin,
+      diagnosis,
+      serviceDate,
+      totalAmount,
+      organizationType: normalizeOrganizationType(claimData.organizationType),
+    })
+    if (ccResult.ok && ccResult.ccCode) {
+      ccCode = String(ccResult.ccCode)
+      ccSource = String(ccResult.source || 'api')
+    }
+  }
+
+  // Persist claim to nhis_claims.
+  const claimNumber = buildNhisClaimNumber()
+  const nameParts = patientName.split(' ')
+  const surname = nameParts.slice(-1)[0]
+  const otherNames = nameParts.slice(0, -1).join(' ') || ''
+
+  const { data: claimRow, error: claimError } = await adminClient
+    .from('nhis_claims')
+    .insert([{
+      organization_id: organizationId,
+      branch_id: requesterProfile.branch_id || null,
+      claim_number: claimNumber,
+      member_no: memberNumber,
+      hin: hin || null,
+      surname,
+      other_names: otherNames,
+      gender: normalizeText(claimData.gender) || null,
+      date_of_birth: normalizeText(claimData.dateOfBirth) || null,
+      ccc_no: ccCode || null,
+      diagnosis,
+      service_date: serviceDate,
+      service_date_from: serviceDate,
+      service_date_to: serviceDate,
+      referring_facility: normalizeText(claimData.referralFacility) || null,
+      total_amount: totalAmount,
+      status: 'served',
+      submitted_by: requesterProfile.id,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }])
+    .select('*')
+    .single()
+
+  if (claimError) throw claimError
+
+  // Persist medicine lines to nhis_claim_medicines.
+  const medicineRows = medicines.map((m) => ({
+    claim_id: claimRow.id,
+    organization_id: organizationId,
+    drug_code: normalizeText(m.nhiaCode || m.code) || null,
+    description: normalizeText(m.name),
+    unit: normalizeText(m.unit) || 'tablet',
+    unit_price: Number(m.unitPrice || 0),
+    dispensed_qty: Number(m.quantity || 0),
+    dispensary_date: serviceDate,
+    total_amount: Number(m.totalPrice || 0),
+    dose: normalizeText(m.dose) || null,
+    frequency: normalizeText(m.frequency) || null,
+    duration: normalizeText(m.duration) || null,
+  }))
+
+  const { error: medicineError } = await adminClient.from('nhis_claim_medicines').insert(medicineRows)
+  if (medicineError) throw medicineError
+
+  // Submit to CLAIM-it if API is configured.
+  let claimItResponse: unknown = null
+  let submissionStatus = 'served'
+  if (settings?.directApiEnabled && settings.apiBaseUrl) {
+    const claimEndpointPath = getClaimSubmitEndpointPath(settings as unknown as Record<string, unknown>)
+    if (claimEndpointPath) {
+      const submissionPayload = {
+        claimNumber,
+        facilityCode: settings.facilityCode,
+        providerNumber: settings.providerNumber,
+        schemeName: settings.schemeName || 'National Health Insurance',
+        providerTypeDescription: settings.providerTypeDescription,
+        providerClassLevel: settings.providerClassLevel,
+        claimsOfficerName: normalizeText(claimData.claimsOfficerName) || settings.claimsOfficerName,
+        organizationType: normalizeOrganizationType(claimData.organizationType),
+        patient: { name: patientName, memberNumber, hin },
+        ccCode,
+        diagnosis,
+        serviceDate,
+        totalAmount,
+        items: medicines.map((m) => ({
+          code: normalizeText(m.nhiaCode || m.code),
+          name: normalizeText(m.name),
+          quantity: Number(m.quantity),
+          unitPrice: Number(m.unitPrice),
+          totalPrice: Number(m.totalPrice),
+        })),
+      }
+
+      try {
+        const response = await fetch(joinUrl(String(settings.apiBaseUrl), claimEndpointPath), {
+          method: 'POST',
+          headers: await buildNhiaSubmissionHeaders(settings as unknown as Record<string, unknown>),
+          body: JSON.stringify(submissionPayload),
+        })
+        const responseText = await response.text()
+        try {
+          claimItResponse = responseText ? JSON.parse(responseText) : {}
+        } catch {
+          claimItResponse = { raw: responseText }
+        }
+
+        submissionStatus = response.ok ? 'submitted' : 'served'
+        const { error: updateError } = await adminClient
+          .from('nhis_claims')
+          .update({
+            status: submissionStatus,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', claimRow.id)
+
+        if (updateError) console.warn('tier-access nhis claim status update warning:', updateError.message)
+      } catch (error) {
+        console.warn('tier-access CLAIM-it submission warning:', getErrorMessage(error))
+      }
+    }
+  }
+
+  await tryWriteTierAuditEvent(adminClient, requesterProfile, organizationId, {
+    eventType: 'nhis_claim.submitted',
+    entityType: 'nhis_claims',
+    entityId: claimRow.id,
+    action: 'create',
+    details: {
+      claim_number: claimNumber,
+      member_number: memberNumber,
+      total_amount: totalAmount,
+      medicine_count: medicines.length,
+      cc_code: ccCode,
+      cc_source: ccSource,
+      submission_status: submissionStatus,
+    },
+  })
+
+  return {
+    claim: { ...claimRow, status: submissionStatus, ccc_no: ccCode },
+    claimNumber,
+    ccCode,
+    ccSource,
+    submissionStatus,
+    claimItResponse,
+  }
+}
+
 const submitNhiaClaimsDirect = async (
   adminClient: ReturnType<typeof createAdminClient>,
   requesterProfile: RequesterProfile,
@@ -4125,6 +4315,10 @@ Deno.serve(async (request) => {
 
     if (action === 'submit_nhia_claims_direct') {
       return json(await submitNhiaClaimsDirect(adminClient, requesterProfile, organizationId, payload))
+    }
+
+    if (action === 'submit_nhis_pharmacy_claim') {
+      return json(await submitNhisPharmacyClaim(adminClient, requesterProfile, organizationId, payload))
     }
 
     if (action === 'get_epharmacy_marketplace') {

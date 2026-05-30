@@ -429,6 +429,76 @@ app.post('/api/nhia/claims/:id/submit', async (request, response, next) => {
   }
 })
 
+// Unified pharmacy claim route: generate CC code (if absent), save, and submit in one call.
+app.post('/api/nhis/pharmacy-claim', async (request, response, next) => {
+  try {
+    const body = request.body || {}
+    const {
+      patientName, memberNumber, hin, schemeCode, gender, dateOfBirth,
+      dispensingDate, referralFacility, diagnosis, medicines = [],
+      facilityCode: bodyFacilityCode, claimPeriod, claimsOfficerName,
+      organizationType,
+    } = body
+
+    if (!patientName || !memberNumber || !diagnosis || !medicines.length) {
+      response.status(400).json({ error: 'patientName, memberNumber, diagnosis, and at least one medicine are required.' })
+      return
+    }
+
+    const totalAmount = medicines.reduce((sum, m) => sum + Number(m.totalPrice || 0), 0)
+
+    // Generate CC code unless one was supplied by the caller.
+    let ccCode = body.ccCode || null
+    if (!ccCode) {
+      const ccResult = await generateNhiaCcCode({
+        patientName,
+        memberNumber,
+        hin,
+        diagnosis,
+        serviceDate: dispensingDate,
+        totalAmount,
+        organizationType,
+      })
+      ccCode = ccResult.ccCode || null
+    }
+
+    // Persist the claim locally.
+    const claim = createNhiaClaim({
+      member_number: memberNumber,
+      hin,
+      surname: patientName.split(' ').slice(-1)[0] || patientName,
+      other_names: patientName.split(' ').slice(0, -1).join(' ') || '',
+      gender,
+      date_of_birth: dateOfBirth,
+      cc_code: ccCode,
+      diagnosis,
+      service_date: dispensingDate,
+      referring_facility: referralFacility || null,
+      scheme_code: schemeCode || null,
+      claim_period: claimPeriod || null,
+      claims_officer_name: claimsOfficerName || null,
+      total_amount: totalAmount,
+      items: medicines.map((m) => ({
+        nhia_code: m.nhiaCode || m.code,
+        description: m.name,
+        quantity: Number(m.quantity),
+        unit_price: Number(m.unitPrice),
+        total_price: Number(m.totalPrice),
+        unit: m.unit || '',
+        dosage_form: m.dosageForm || '',
+        strength: m.strength || '',
+        dispensary_date: dispensingDate,
+      })),
+    })
+
+    // Immediately submit to CLAIM-it.
+    const submitted = await submitNhiaClaim(claim.id)
+    response.status(201).json({ data: submitted })
+  } catch (error) {
+    next(error)
+  }
+})
+
 app.post('/api/nhia/submit-pending', async (request, response, next) => {
   try {
     response.json(await submitPendingNhiaClaims({ limit: request.body?.limit || 10 }))

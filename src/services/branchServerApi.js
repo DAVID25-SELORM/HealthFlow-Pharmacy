@@ -383,6 +383,15 @@ export const downloadNhiaBatchExport = async (batchId, format = '') => {
   }
 }
 
+export const submitNhisPharmacyClaim = async (claimData = {}) => {
+  const response = await branchFetch('/api/nhis/pharmacy-claim', {
+    method: 'POST',
+    body: JSON.stringify(claimData),
+    timeoutMs: LONG_BRANCH_REQUEST_TIMEOUT_MS,
+  })
+  return response.data || null
+}
+
 export const shouldUseBranchServer = () => {
   // ✅ OFFLINE-FIRST PATCH START
   if (!isBranchServerEnabled()) {
