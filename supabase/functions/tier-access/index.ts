@@ -3781,14 +3781,21 @@ const submitNhisPharmacyClaim = async (
   const claimData = (payload.claimData || payload) as Record<string, unknown>
   const patientName = assertRequiredText(claimData.patientName, 'Patient name')
   const memberNumber = assertRequiredText(claimData.memberNumber, 'Member number')
-  const diagnosis = assertRequiredText(claimData.diagnosis, 'Diagnosis')
+  const isHospital = normalizeOrganizationType(claimData.organizationType) === 'hospital'
+  const diagnosis = normalizeText(claimData.diagnosis) || null
+  if (isHospital && !diagnosis) {
+    throw new Error('Diagnosis is required for hospital claims.')
+  }
   const medicines = Array.isArray(claimData.medicines) ? claimData.medicines as Record<string, unknown>[] : []
   if (!medicines.length) {
     throw new Error('At least one medicine is required.')
   }
+  const services = isHospital && Array.isArray(claimData.services) ? claimData.services as Record<string, unknown>[] : []
 
   const serviceDate = normalizeText(claimData.dispensingDate || claimData.serviceDate) || new Date().toISOString().split('T')[0]
-  const totalAmount = medicines.reduce((sum, m) => sum + Number(m.totalPrice || 0), 0)
+  const medicinesTotal = medicines.reduce((sum, m) => sum + Number(m.totalPrice || 0), 0)
+  const servicesTotal = services.reduce((sum, s) => sum + Number(s.totalAmount || s.total_amount || 0), 0)
+  const totalAmount = medicinesTotal + servicesTotal
   const hin = normalizeText(claimData.hin)
 
   const settings = await getNhiaApiSettings(adminClient, requesterProfile, organizationId, true)
@@ -3832,7 +3839,8 @@ const submitNhisPharmacyClaim = async (
       gender: normalizeText(claimData.gender) || null,
       date_of_birth: normalizeText(claimData.dateOfBirth) || null,
       ccc_no: ccCode || null,
-      diagnosis,
+      // Diagnosis only applies to hospital claims; community pharmacies leave it null.
+      diagnosis: isHospital ? diagnosis : null,
       service_date: serviceDate,
       service_date_from: serviceDate,
       service_date_to: serviceDate,
@@ -3848,7 +3856,7 @@ const submitNhisPharmacyClaim = async (
 
   if (claimError) throw claimError
 
-  // Persist medicine lines to nhis_claim_medicines.
+  // Persist medicine lines (both hospital and community pharmacy).
   const medicineRows = medicines.map((m) => ({
     claim_id: claimRow.id,
     organization_id: organizationId,
@@ -3867,6 +3875,26 @@ const submitNhisPharmacyClaim = async (
   const { error: medicineError } = await adminClient.from('nhis_claim_medicines').insert(medicineRows)
   if (medicineError) throw medicineError
 
+  // Persist G-DRG service lines for hospital claims only.
+  if (isHospital && services.length > 0) {
+    const serviceRows = services.map((s) => ({
+      claim_id: claimRow.id,
+      gdrg_code: normalizeText(s.gdrgCode || s.gdrg_code),
+      description: normalizeText(s.description),
+      age_band: normalizeText(s.ageBand || s.age_band) || null,
+      unit_price: Number(s.unitPrice || s.unit_price || 0),
+      quantity: Number(s.quantity || 1),
+      total_amount: Number(s.totalAmount || s.total_amount || 0),
+      facility_group: normalizeText(s.facilityGroup || s.facility_group) || null,
+      catering_option: normalizeText(s.cateringOption || s.catering_option) || null,
+      mdc: normalizeText(s.mdc) || null,
+      service_date: serviceDate,
+    }))
+
+    const { error: serviceError } = await adminClient.from('nhis_claim_services').insert(serviceRows)
+    if (serviceError) throw serviceError
+  }
+
   // Submit to CLAIM-it if API is configured.
   let claimItResponse: unknown = null
   let submissionStatus = 'served'
@@ -3881,10 +3909,10 @@ const submitNhisPharmacyClaim = async (
         providerTypeDescription: settings.providerTypeDescription,
         providerClassLevel: settings.providerClassLevel,
         claimsOfficerName: normalizeText(claimData.claimsOfficerName) || settings.claimsOfficerName,
-        organizationType: normalizeOrganizationType(claimData.organizationType),
+        organizationType: isHospital ? 'hospital' : 'pharmacy',
         patient: { name: patientName, memberNumber, hin },
         ccCode,
-        diagnosis,
+        diagnosis: isHospital ? diagnosis : null,
         serviceDate,
         totalAmount,
         items: medicines.map((m) => ({
@@ -3894,6 +3922,19 @@ const submitNhisPharmacyClaim = async (
           unitPrice: Number(m.unitPrice),
           totalPrice: Number(m.totalPrice),
         })),
+        ...(isHospital && services.length > 0 ? {
+          services: services.map((s) => ({
+            gdrgCode: normalizeText(s.gdrgCode || s.gdrg_code),
+            description: normalizeText(s.description),
+            ageBand: normalizeText(s.ageBand || s.age_band) || null,
+            unitPrice: Number(s.unitPrice || s.unit_price || 0),
+            quantity: Number(s.quantity || 1),
+            totalAmount: Number(s.totalAmount || s.total_amount || 0),
+            facilityGroup: normalizeText(s.facilityGroup || s.facility_group) || null,
+            cateringOption: normalizeText(s.cateringOption || s.catering_option) || null,
+            mdc: normalizeText(s.mdc) || null,
+          })),
+        } : {}),
       }
 
       try {

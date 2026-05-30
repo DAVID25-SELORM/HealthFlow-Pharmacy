@@ -429,23 +429,32 @@ app.post('/api/nhia/claims/:id/submit', async (request, response, next) => {
   }
 })
 
-// Unified pharmacy claim route: generate CC code (if absent), save, and submit in one call.
+// Unified NHIS claim route for both community pharmacies (medicines only) and hospital pharmacies (medicines + G-DRG services).
+// Community pharmacy: organizationType omitted or 'pharmacy' — diagnosis optional, no service lines.
+// Hospital pharmacy:  organizationType 'hospital' — diagnosis required, services array included.
 app.post('/api/nhis/pharmacy-claim', async (request, response, next) => {
   try {
     const body = request.body || {}
     const {
       patientName, memberNumber, hin, schemeCode, gender, dateOfBirth,
-      dispensingDate, referralFacility, diagnosis, medicines = [],
-      facilityCode: bodyFacilityCode, claimPeriod, claimsOfficerName,
-      organizationType,
+      dispensingDate, referralFacility, diagnosis, medicines = [], services = [],
+      claimPeriod, claimsOfficerName, organizationType,
     } = body
 
-    if (!patientName || !memberNumber || !diagnosis || !medicines.length) {
-      response.status(400).json({ error: 'patientName, memberNumber, diagnosis, and at least one medicine are required.' })
+    const isHospital = (organizationType || '').toLowerCase() === 'hospital'
+
+    if (!patientName || !memberNumber || !medicines.length) {
+      response.status(400).json({ error: 'patientName, memberNumber, and at least one medicine are required.' })
+      return
+    }
+    if (isHospital && !diagnosis) {
+      response.status(400).json({ error: 'diagnosis is required for hospital claims.' })
       return
     }
 
-    const totalAmount = medicines.reduce((sum, m) => sum + Number(m.totalPrice || 0), 0)
+    const medicinesTotal = medicines.reduce((sum, m) => sum + Number(m.totalPrice || 0), 0)
+    const servicesTotal = isHospital ? services.reduce((sum, s) => sum + Number(s.totalAmount || 0), 0) : 0
+    const totalAmount = medicinesTotal + servicesTotal
 
     // Generate CC code unless one was supplied by the caller.
     let ccCode = body.ccCode || null
@@ -454,10 +463,10 @@ app.post('/api/nhis/pharmacy-claim', async (request, response, next) => {
         patientName,
         memberNumber,
         hin,
-        diagnosis,
+        diagnosis: isHospital ? diagnosis : undefined,
         serviceDate: dispensingDate,
         totalAmount,
-        organizationType,
+        organizationType: isHospital ? 'hospital' : 'pharmacy',
       })
       ccCode = ccResult.ccCode || null
     }
@@ -471,7 +480,8 @@ app.post('/api/nhis/pharmacy-claim', async (request, response, next) => {
       gender,
       date_of_birth: dateOfBirth,
       cc_code: ccCode,
-      diagnosis,
+      diagnosis: isHospital ? diagnosis : null,
+      organization_type: isHospital ? 'hospital' : 'pharmacy',
       service_date: dispensingDate,
       referring_facility: referralFacility || null,
       scheme_code: schemeCode || null,
@@ -489,6 +499,19 @@ app.post('/api/nhis/pharmacy-claim', async (request, response, next) => {
         strength: m.strength || '',
         dispensary_date: dispensingDate,
       })),
+      // Hospital service/G-DRG lines stored in payload for branch server persistence.
+      services: isHospital ? services.map((s) => ({
+        gdrg_code: s.gdrgCode || s.gdrg_code,
+        description: s.description,
+        age_band: s.ageBand || s.age_band || null,
+        unit_price: Number(s.unitPrice || s.unit_price || 0),
+        quantity: Number(s.quantity || 1),
+        total_amount: Number(s.totalAmount || s.total_amount || 0),
+        facility_group: s.facilityGroup || s.facility_group || null,
+        catering_option: s.cateringOption || s.catering_option || null,
+        mdc: s.mdc || null,
+        service_date: dispensingDate,
+      })) : [],
     })
 
     // Immediately submit to CLAIM-it.
