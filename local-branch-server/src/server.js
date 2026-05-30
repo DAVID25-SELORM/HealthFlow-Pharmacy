@@ -476,7 +476,7 @@ app.post('/api/nhis/pharmacy-claim', async (request, response, next) => {
       member_number: memberNumber,
       hin,
       surname: patientName.split(' ').slice(-1)[0] || patientName,
-      other_names: patientName.split(' ').slice(0, -1).join(' ') || '',
+      other_names: patientName.split(' ').slice(0, -1).join(' ') || patientName,
       gender,
       date_of_birth: dateOfBirth,
       cc_code: ccCode,

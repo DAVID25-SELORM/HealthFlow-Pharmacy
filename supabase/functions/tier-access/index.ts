@@ -3824,7 +3824,7 @@ const submitNhisPharmacyClaim = async (
   const claimNumber = buildNhisClaimNumber()
   const nameParts = patientName.split(' ')
   const surname = nameParts.slice(-1)[0]
-  const otherNames = nameParts.slice(0, -1).join(' ') || ''
+  const otherNames = nameParts.slice(0, -1).join(' ') || patientName
 
   const { data: claimRow, error: claimError } = await adminClient
     .from('nhis_claims')

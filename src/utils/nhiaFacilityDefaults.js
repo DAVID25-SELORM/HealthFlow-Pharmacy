@@ -79,10 +79,6 @@ export const normalizeNhiaPharmacyFacilityLevel = (value, fallback = '') => {
   return ['P1', 'P2', 'LCS', 'HP'].includes(code) ? code : fallback
 }
 
-export const normalizeNhiaCommunityPharmacyLevel = (value, fallback = '') => {
-  const code = normalizeCode(value)
-  return ['P1', 'P2', 'LCS'].includes(code) ? code : fallback
-}
 
 export const normalizeNhiaProviderClassLevel = (value, fallback = '') => {
   const code = normalizeCode(value)

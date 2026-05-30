@@ -333,7 +333,8 @@ export const searchClaims = async (searchTerm) => {
 export const submitNhisPharmacyClaim = async (claimData) => {
   assertRequiredText(claimData?.patientName, 'Patient name')
   assertRequiredText(claimData?.memberNumber, 'Member number')
-  assertRequiredText(claimData?.diagnosis, 'Diagnosis')
+  const isHospitalClaim = (claimData?.organizationType || '').toLowerCase() === 'hospital'
+  if (isHospitalClaim) assertRequiredText(claimData?.diagnosis, 'Diagnosis')
   if (!claimData?.medicines?.length) {
     throw new Error('At least one medicine is required.')
   }
