@@ -1533,6 +1533,13 @@ const fetchClaimItToken = async (settings) => {
 }
 
 const deriveRemoteStatus = (body) => {
+  // CLAIM-it API v1.0.0 response: { passedClaims, failedClaims, savedClaims, success, claims[] }
+  if (body && typeof body === 'object') {
+    if (Number(body.failedClaims) > 0 && Number(body.savedClaims) === 0) return 'rejected'
+    if (Number(body.savedClaims) > 0 || Number(body.passedClaims) > 0) return 'submitted'
+    if (body.success === false || body.failed === true) return 'rejected'
+    if (body.success === true) return 'submitted'
+  }
   const value = normalizeText(body?.status || body?.claimStatus || body?.state).toLowerCase()
   if (value.includes('paid')) return 'paid'
   if (value.includes('reject')) return 'rejected'

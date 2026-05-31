@@ -3950,7 +3950,17 @@ const submitNhisPharmacyClaim = async (
           claimItResponse = { raw: responseText }
         }
 
-        submissionStatus = response.ok ? 'submitted' : 'served'
+        // CLAIM-it API v1.0.0: { passedClaims, failedClaims, savedClaims, success }
+        const claimItBody = claimItResponse as Record<string, unknown> | null
+        const savedClaims = Number(claimItBody?.savedClaims ?? -1)
+        const failedClaims = Number(claimItBody?.failedClaims ?? 0)
+        if (response.ok && (savedClaims > 0 || claimItBody?.success === true)) {
+          submissionStatus = 'submitted'
+        } else if (failedClaims > 0 || claimItBody?.failed === true) {
+          submissionStatus = 'rejected'
+        } else {
+          submissionStatus = response.ok ? 'submitted' : 'served'
+        }
         const { error: updateError } = await adminClient
           .from('nhis_claims')
           .update({
