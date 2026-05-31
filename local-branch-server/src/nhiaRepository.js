@@ -81,6 +81,10 @@ const CC_CODE_KEYS = new Set([
   'claimcertificatecode',
   'certificatecode',
   'claimitcode',
+  // NHIA member verification API response field (Mobile Claims Check Code)
+  'mobccc',
+  'mobileccc',
+  'mobileclaimcheckcode',
 ])
 
 const toMoney = (value, fallback = 0) => {
@@ -1545,6 +1549,67 @@ const deriveRemoteStatus = (body) => {
   if (value.includes('reject')) return 'rejected'
   if (value.includes('accept') || value.includes('approve')) return 'accepted'
   return 'submitted'
+}
+
+// Maps the NHIA member verification response (checkcccode / member lookup) to a
+// normalised object. The NHIA API returns MobCCC as the CC code field.
+const mapNhiaMemberLookupResponse = (body) => {
+  if (!body || typeof body !== 'object') return null
+  const ccCode = extractCcCode(body) || null
+  return {
+    ccCode,
+    memberName: normalizeText(body.MemberName || body.memberName || body.member_name),
+    hin: normalizeText(body.HIN || body.hin),
+    gender: normalizeText(body.Gender || body.gender),
+    dateOfBirth: normalizeText(body.DateOfBirth || body.dateOfBirth || body.date_of_birth).slice(0, 10) || null,
+    eligibilityStartDate: normalizeText(body.EligibilityStartDate || body.eligibilityStartDate).slice(0, 10) || null,
+    eligibilityEndDate: normalizeText(body.EligibilityEndDate || body.eligibilityEndDate).slice(0, 10) || null,
+    status: normalizeText(body.Status || body.status),
+    attendanceDate: normalizeText(body.AttendanceDate || body.attendanceDate).slice(0, 10) || null,
+    transactionId: normalizeText(body.TransactionID || body.transactionId || body.transaction_id),
+    hpName: normalizeText(body.HPName || body.hpName || body.hp_name),
+    pppCode: normalizeText(body.PPPCode || body.pppCode) || null,
+    pppName: normalizeText(body.PPPName || body.pppName) || null,
+    raw: body,
+  }
+}
+
+export const lookupNhiaMember = async (memberNumber, { serviceDate } = {}) => {
+  const settings = getNhiaSettings({ includeCredentials: true })
+  if (!settings.directApiEnabled) {
+    return { status: 'pending', message: 'NHIA API not configured' }
+  }
+
+  const endpointPath = normalizeText(settings.memberLookupEndpointPath || settings.memberLookupEndpoint)
+  if (!endpointPath) {
+    return { status: 'pending', message: 'Member lookup endpoint not configured' }
+  }
+
+  const validatedMemberNumber = assertValidMemberNumber(memberNumber, settings)
+  const payload = {
+    memberNumber: validatedMemberNumber,
+    MemberNumber: validatedMemberNumber,
+    serviceDate: (serviceDate || new Date().toISOString()).slice(0, 10),
+    ServiceDate: (serviceDate || new Date().toISOString()).slice(0, 10),
+    facilityCode: settings.facilityCode,
+    FacilityCode: settings.facilityCode,
+    providerNumber: settings.providerNumber,
+    ProviderNumber: settings.providerNumber,
+  }
+
+  logSubmission({ action: 'member.lookup.start', status: 'pending', memberNumber: validatedMemberNumber })
+  try {
+    const result = await submitPayload(settings, payload, endpointPath)
+    if (!result.ok) {
+      throw new Error(`NHIA member lookup returned HTTP ${result.httpStatus}.`)
+    }
+    const mapped = mapNhiaMemberLookupResponse(result.body)
+    logSubmission({ action: 'member.lookup.complete', status: 'success', ccCode: mapped?.ccCode })
+    return { ok: true, ...mapped }
+  } catch (error) {
+    logSubmission({ action: 'member.lookup.failed', status: 'failed', error: error.message })
+    throw error
+  }
 }
 
 export const generateNhiaCcCode = async (claimContext = {}) => {

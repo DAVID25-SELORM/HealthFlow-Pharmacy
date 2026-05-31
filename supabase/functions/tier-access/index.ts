@@ -3465,7 +3465,12 @@ const extractCcCode = (body: unknown): string => {
   if (!body || typeof body !== 'object') return ''
   const record = body as Record<string, unknown>
   const direct = normalizeCcCode(
-    record.ccCode ||
+    // NHIA member verification API returns MobCCC (Mobile Claims Check Code)
+    record.MobCCC ||
+      record.mobCCC ||
+      record.mobccc ||
+      record.MobileCCC ||
+      record.ccCode ||
       record.cc_code ||
       record.cccCode ||
       record.ccc_code ||

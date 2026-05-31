@@ -19,6 +19,7 @@ import {
   getNhiaSubmissionLogs,
   getNhiaSummary,
   listNhiaClaims,
+  lookupNhiaMember,
   markNhiaClaimReady,
   saveNhiaSettings,
   submitNhiaDirectPayload,
@@ -377,6 +378,20 @@ app.post('/api/nhia-config/test', (_request, response) => {
 app.post('/api/nhia/cc-code', async (request, response, next) => {
   try {
     response.json({ data: await generateNhiaCcCode(request.body || {}) })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// Member lookup: verifies NHIS membership and returns MobCCC + member details in one call.
+app.post('/api/nhia/member-lookup', async (request, response, next) => {
+  try {
+    const { memberNumber, serviceDate } = request.body || {}
+    if (!memberNumber) {
+      response.status(400).json({ error: 'memberNumber is required.' })
+      return
+    }
+    response.json({ data: await lookupNhiaMember(memberNumber, { serviceDate }) })
   } catch (error) {
     next(error)
   }
