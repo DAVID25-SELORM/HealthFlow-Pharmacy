@@ -1518,12 +1518,31 @@ const Nhis = () => {
       if (ccCode.length !== 5) {
         throw new Error('NHIA API returned a CCC/CC code that is not exactly 5 digits.')
       }
-      setClaimForm((prev) => ({ ...prev, cccNo: ccCode, ccCode }))
+      const md = result.memberDetails
+      setClaimForm((prev) => ({
+        ...prev,
+        cccNo: ccCode,
+        ccCode,
+        // Auto-fill member details returned by NHIA genCCC (member lookup).
+        ...(md ? {
+          hin: md.hin || prev.hin,
+          surname: md.memberName
+            ? (md.memberName.split(' ').slice(-1)[0] || prev.surname)
+            : prev.surname,
+          otherNames: md.memberName
+            ? (md.memberName.split(' ').slice(0, -1).join(' ') || prev.otherNames)
+            : prev.otherNames,
+          dateOfBirth: md.dateOfBirth || prev.dateOfBirth,
+          gender: md.gender
+            ? (md.gender.charAt(0).toUpperCase() + md.gender.slice(1).toLowerCase())
+            : prev.gender,
+        } : {}),
+      }))
       notify(
         result.source === 'claimit_bridge'
           ? 'CCC/CC code generated or validated via CLAIM-it.'
           : result.source === 'api'
-            ? 'CCC/CC code generated from NHIA API.'
+            ? `CCC/CC code generated from NHIA API${md?.memberName ? ` — ${md.memberName}` : ''}.`
             : 'CCC/CC code generated for direct NHIA submission.',
         'success'
       )

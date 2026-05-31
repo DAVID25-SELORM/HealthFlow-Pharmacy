@@ -72,8 +72,10 @@ const blankNhiaForm = {
   claimsOfficerSignatureUrl: '',
   submitterId: '',
   apiBaseUrl: '',
+  claimitSubmitBaseUrl: '',
   claimEndpointPath: '',
   ccCodeEndpointPath: '',
+  memberLookupEndpointPath: '/api/hmis/genCCC',
   directApiEnabled: false,
   credentialMode: 'api_key',
   exportFormat: 'xml',
@@ -759,6 +761,7 @@ SUPABASE_SYNC_KEY=<your-supabase-anon-or-publishable-key>`}</pre>
               <option value="Diagnostic centers">Diagnostic centers</option>
               <option value="CHPS Compounds">CHPS Compounds</option>
               <option value="Pharmacy">Pharmacy</option>
+              <option value="Hospital Pharmacy">Hospital Pharmacy</option>
             </select>
           </label>
           <label>
@@ -834,6 +837,22 @@ SUPABASE_SYNC_KEY=<your-supabase-anon-or-publishable-key>`}</pre>
               value={nhiaForm.ccCodeEndpointPath}
               placeholder="Optional"
               onChange={(event) => updateNhiaForm('ccCodeEndpointPath', event.target.value)}
+            />
+          </label>
+          <label>
+            <span>Member Lookup Endpoint</span>
+            <input
+              value={nhiaForm.memberLookupEndpointPath}
+              placeholder="/api/hmis/genCCC"
+              onChange={(event) => updateNhiaForm('memberLookupEndpointPath', event.target.value)}
+            />
+          </label>
+          <label>
+            <span>CLAIM-it Submit URL (local)</span>
+            <input
+              value={nhiaForm.claimitSubmitBaseUrl}
+              placeholder="http://localhost:31719/json-api"
+              onChange={(event) => updateNhiaForm('claimitSubmitBaseUrl', event.target.value)}
             />
           </label>
           <label>

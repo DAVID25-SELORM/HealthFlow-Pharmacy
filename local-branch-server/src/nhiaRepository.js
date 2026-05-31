@@ -1675,7 +1675,28 @@ export const generateNhiaCcCode = async (claimContext = {}) => {
   }
 
   const endpointPath = getCcEndpointPath(settings)
+
+  // No dedicated CC endpoint — fall back to NHIA genCCC (member lookup).
+  // https://elig.nhia.gov.gh:5000/api/hmis/genCCC returns MobCCC as part of
+  // member eligibility verification. This is how most facilities generate CC codes.
   if (!endpointPath) {
+    const memberNumber = normalizeText(claimContext.memberNumber || claimContext.memberNo)
+    if (memberNumber) {
+      try {
+        const result = await lookupNhiaMember(memberNumber, {
+          cardType: claimContext.cardType,
+        })
+        if (result?.ccCode) {
+          return {
+            ccCode: result.ccCode,
+            source: 'api',
+            memberDetails: result,
+          }
+        }
+      } catch {
+        // Fall through to pending
+      }
+    }
     return { status: 'pending', source: 'pending', message: 'Pending CLAIM-it validation' }
   }
 

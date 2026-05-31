@@ -1316,11 +1316,18 @@ const Settings = () => {
                       onChange={(event) => updateNhiaApiForm('claimStatusEndpointPath', event.target.value)}
                     />
                   </div>
-                  <input
-                    placeholder="Member lookup endpoint path"
-                    value={nhiaApiForm.memberLookupEndpointPath}
-                    onChange={(event) => updateNhiaApiForm('memberLookupEndpointPath', event.target.value)}
-                  />
+                  <div className="settings-form-row">
+                    <input
+                      placeholder="Member lookup endpoint path (e.g. /api/hmis/genCCC)"
+                      value={nhiaApiForm.memberLookupEndpointPath}
+                      onChange={(event) => updateNhiaApiForm('memberLookupEndpointPath', event.target.value)}
+                    />
+                    <input
+                      placeholder="CLAIM-it local submit URL (e.g. http://localhost:31719/json-api)"
+                      value={nhiaApiForm.claimitSubmitBaseUrl || ''}
+                      onChange={(event) => updateNhiaApiForm('claimitSubmitBaseUrl', event.target.value)}
+                    />
+                  </div>
 
                   {/* ── 3. Authentication ── */}
                   <select
