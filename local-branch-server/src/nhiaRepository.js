@@ -1563,19 +1563,19 @@ export const generateNhiaCcCode = async (claimContext = {}) => {
     claims: [{
       patientName: normalizeText(claimContext.patientName),
       memberNumber: normalizeText(claimContext.memberNumber || claimContext.memberNo),
-      hin: normalizeText(claimContext.hin),
-      diagnosis: normalizeText(claimContext.diagnosis),
-      serviceDate: normalizeText(claimContext.serviceDate),
+      hin: normalizeText(claimContext.hin) || null,
+      diagnosis: normalizeText(claimContext.diagnosis) || null,
+      serviceDate: normalizeText(claimContext.serviceDate).slice(0, 10),
       totalAmount: Number(claimContext.totalAmount || 0),
     }],
     organizationType: normalizeOrganizationType(claimContext.organizationType || claimContext.organization_type),
     patient: {
       name: normalizeText(claimContext.patientName),
       memberNumber: normalizeText(claimContext.memberNumber || claimContext.memberNo),
-      hin: normalizeText(claimContext.hin),
+      hin: normalizeText(claimContext.hin) || null,
     },
-    diagnosis: normalizeText(claimContext.diagnosis),
-    serviceDate: normalizeText(claimContext.serviceDate),
+    diagnosis: normalizeText(claimContext.diagnosis) || null,
+    serviceDate: normalizeText(claimContext.serviceDate).slice(0, 10),
     requestedAt: nowIso(),
   }
 
