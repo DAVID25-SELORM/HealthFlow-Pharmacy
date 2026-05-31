@@ -125,6 +125,12 @@ const BLANK_CLAIM = {
   patientAddress:    '',
   childWeightKg:     '',
   cccNo:             '',
+  nhiaTransactionId: '',
+  nhiaEligibilityStartDate: '',
+  nhiaEligibilityEndDate: '',
+  nhiaAttendanceDate: '',
+  nhiaMemberStatus: '',
+  nhiaMemberLookupPayload: null,
   diagnosis:         '',
   diagnosisDetails:  [],
   serviceDate:       new Date().toISOString().split('T')[0],
@@ -840,6 +846,7 @@ const Nhis = () => {
   const directNhiaApiAvailable = Boolean(
     allowsDirectNhiaSubmission &&
       resolvedNhiaSettings?.directApiEnabled &&
+      !isHostedPageWithLocalClaimItBridge &&
       claimSubmissionBaseUrl &&
       resolvedNhiaSettings?.claimEndpointPath
   )
@@ -1036,6 +1043,12 @@ const Nhis = () => {
       patientAddress: claim.patient_address || '',
       childWeightKg: claim.child_weight_kg ?? '',
       cccNo: claim.ccc_no || '',
+      nhiaTransactionId: claim.nhia_transaction_id || '',
+      nhiaEligibilityStartDate: claim.nhia_eligibility_start_date || '',
+      nhiaEligibilityEndDate: claim.nhia_eligibility_end_date || '',
+      nhiaAttendanceDate: claim.nhia_attendance_date || '',
+      nhiaMemberStatus: claim.nhia_member_status || '',
+      nhiaMemberLookupPayload: claim.nhia_member_lookup_payload || null,
       diagnosis: claim.diagnosis || '',
       diagnosisDetails: claim.diagnosis_details || [],
       serviceDate: claim.service_date_from || new Date().toISOString().split('T')[0],
@@ -1493,6 +1506,12 @@ const Nhis = () => {
         ? memberDetails.gender.charAt(0).toUpperCase() + memberDetails.gender.slice(1).toLowerCase()
         : prev.gender,
       ...(memberDetails.ccCode ? { cccNo: memberDetails.ccCode, ccCode: memberDetails.ccCode } : {}),
+      nhiaTransactionId: memberDetails.transactionId || prev.nhiaTransactionId,
+      nhiaEligibilityStartDate: memberDetails.eligibilityStartDate || prev.nhiaEligibilityStartDate,
+      nhiaEligibilityEndDate: memberDetails.eligibilityEndDate || prev.nhiaEligibilityEndDate,
+      nhiaAttendanceDate: memberDetails.attendanceDate || prev.nhiaAttendanceDate,
+      nhiaMemberStatus: memberDetails.status || prev.nhiaMemberStatus,
+      nhiaMemberLookupPayload: memberDetails.raw || prev.nhiaMemberLookupPayload,
     }
   }, [])
 

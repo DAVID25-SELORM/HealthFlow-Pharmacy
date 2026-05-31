@@ -129,6 +129,27 @@ const getKnownFacilityDefaults = (organization = {}) => {
   return matched?.defaults || {}
 }
 
+const STANDARD_GHANA_NHIS_DEFAULTS = {
+  schemeName: 'National Health Insurance',
+  apiBaseUrl: 'https://elig.nhia.gov.gh:5000',
+  productionBaseUrl: 'http://localhost:31719/json-api',
+  claimitSubmitBaseUrl: 'http://localhost:31719/json-api',
+  claimEndpointPath: '/claims',
+  claimSubmitEndpoint: '/claims',
+  memberLookupEndpointPath: '/api/hmis/genCCC',
+  memberLookupEndpoint: '/api/hmis/genCCC',
+  integrationMode: 'claimit_assisted',
+  connectionProfile: 'local_server',
+  validationMode: 'validate_before_submit',
+  claimControlMode: 'manual',
+  admissionPaymentOption: 'nhis_pays_admission',
+  claimitValidationEnabled: true,
+  directApiEnabled: false,
+  credentialMode: 'claimit_token',
+  tokenEndpointPath: '/token',
+  exportFormat: 'json',
+}
+
 export const applyNhiaFacilityDefaults = (settings = null, organization = null) => {
   const knownDefaults = getKnownFacilityDefaults(organization || {})
   const source = settings || {}
@@ -186,6 +207,46 @@ export const applyNhiaFacilityDefaults = (settings = null, organization = null) 
 
   return {
     ...source,
+    schemeName: getFirstText(source.schemeName, source.scheme_name, STANDARD_GHANA_NHIS_DEFAULTS.schemeName),
+    scheme_name: getFirstText(source.scheme_name, source.schemeName, STANDARD_GHANA_NHIS_DEFAULTS.schemeName),
+    apiBaseUrl: getFirstText(source.apiBaseUrl, source.api_base_url, STANDARD_GHANA_NHIS_DEFAULTS.apiBaseUrl),
+    api_base_url: getFirstText(source.api_base_url, source.apiBaseUrl, STANDARD_GHANA_NHIS_DEFAULTS.apiBaseUrl),
+    productionBaseUrl: getFirstText(source.productionBaseUrl, source.production_base_url, STANDARD_GHANA_NHIS_DEFAULTS.productionBaseUrl),
+    production_base_url: getFirstText(source.production_base_url, source.productionBaseUrl, STANDARD_GHANA_NHIS_DEFAULTS.productionBaseUrl),
+    claimitSubmitBaseUrl: getFirstText(source.claimitSubmitBaseUrl, source.claimit_submit_base_url, source.productionBaseUrl, source.production_base_url, STANDARD_GHANA_NHIS_DEFAULTS.claimitSubmitBaseUrl),
+    claimit_submit_base_url: getFirstText(source.claimit_submit_base_url, source.claimitSubmitBaseUrl, source.production_base_url, source.productionBaseUrl, STANDARD_GHANA_NHIS_DEFAULTS.claimitSubmitBaseUrl),
+    claimEndpointPath: getFirstText(source.claimEndpointPath, source.claim_endpoint_path, source.claimSubmitEndpoint, source.claim_submit_endpoint, STANDARD_GHANA_NHIS_DEFAULTS.claimEndpointPath),
+    claim_endpoint_path: getFirstText(source.claim_endpoint_path, source.claimEndpointPath, source.claim_submit_endpoint, source.claimSubmitEndpoint, STANDARD_GHANA_NHIS_DEFAULTS.claimEndpointPath),
+    claimSubmitEndpoint: getFirstText(source.claimSubmitEndpoint, source.claim_submit_endpoint, source.claimEndpointPath, source.claim_endpoint_path, STANDARD_GHANA_NHIS_DEFAULTS.claimSubmitEndpoint),
+    claim_submit_endpoint: getFirstText(source.claim_submit_endpoint, source.claimSubmitEndpoint, source.claim_endpoint_path, source.claimEndpointPath, STANDARD_GHANA_NHIS_DEFAULTS.claimSubmitEndpoint),
+    memberLookupEndpointPath: getFirstText(source.memberLookupEndpointPath, source.member_lookup_endpoint_path, source.memberLookupEndpoint, source.member_lookup_endpoint, STANDARD_GHANA_NHIS_DEFAULTS.memberLookupEndpointPath),
+    member_lookup_endpoint_path: getFirstText(source.member_lookup_endpoint_path, source.memberLookupEndpointPath, source.member_lookup_endpoint, source.memberLookupEndpoint, STANDARD_GHANA_NHIS_DEFAULTS.memberLookupEndpointPath),
+    memberLookupEndpoint: getFirstText(source.memberLookupEndpoint, source.member_lookup_endpoint, source.memberLookupEndpointPath, source.member_lookup_endpoint_path, STANDARD_GHANA_NHIS_DEFAULTS.memberLookupEndpoint),
+    member_lookup_endpoint: getFirstText(source.member_lookup_endpoint, source.memberLookupEndpoint, source.member_lookup_endpoint_path, source.memberLookupEndpointPath, STANDARD_GHANA_NHIS_DEFAULTS.memberLookupEndpoint),
+    integrationMode: getFirstText(source.integrationMode, source.integration_mode, STANDARD_GHANA_NHIS_DEFAULTS.integrationMode),
+    integration_mode: getFirstText(source.integration_mode, source.integrationMode, STANDARD_GHANA_NHIS_DEFAULTS.integrationMode),
+    connectionProfile: getFirstText(source.connectionProfile, source.connection_profile, STANDARD_GHANA_NHIS_DEFAULTS.connectionProfile),
+    connection_profile: getFirstText(source.connection_profile, source.connectionProfile, STANDARD_GHANA_NHIS_DEFAULTS.connectionProfile),
+    validationMode: getFirstText(source.validationMode, source.validation_mode, STANDARD_GHANA_NHIS_DEFAULTS.validationMode),
+    validation_mode: getFirstText(source.validation_mode, source.validationMode, STANDARD_GHANA_NHIS_DEFAULTS.validationMode),
+    claimControlMode: getFirstText(source.claimControlMode, source.claim_control_mode, STANDARD_GHANA_NHIS_DEFAULTS.claimControlMode),
+    claim_control_mode: getFirstText(source.claim_control_mode, source.claimControlMode, STANDARD_GHANA_NHIS_DEFAULTS.claimControlMode),
+    admissionPaymentOption: getFirstText(source.admissionPaymentOption, source.admission_payment_option, STANDARD_GHANA_NHIS_DEFAULTS.admissionPaymentOption),
+    admission_payment_option: getFirstText(source.admission_payment_option, source.admissionPaymentOption, STANDARD_GHANA_NHIS_DEFAULTS.admissionPaymentOption),
+    claimitValidationEnabled: source.claimitValidationEnabled ?? source.claimit_validation_enabled ?? STANDARD_GHANA_NHIS_DEFAULTS.claimitValidationEnabled,
+    claimit_validation_enabled: source.claimit_validation_enabled ?? source.claimitValidationEnabled ?? STANDARD_GHANA_NHIS_DEFAULTS.claimitValidationEnabled,
+    directApiEnabled: source.directApiEnabled ?? source.direct_api_enabled ?? STANDARD_GHANA_NHIS_DEFAULTS.directApiEnabled,
+    direct_api_enabled: source.direct_api_enabled ?? source.directApiEnabled ?? STANDARD_GHANA_NHIS_DEFAULTS.directApiEnabled,
+    credentialMode: getFirstText(source.credentialMode, source.credential_mode, STANDARD_GHANA_NHIS_DEFAULTS.credentialMode),
+    credential_mode: getFirstText(source.credential_mode, source.credentialMode, STANDARD_GHANA_NHIS_DEFAULTS.credentialMode),
+    exportFormat: getFirstText(source.exportFormat, source.export_format, STANDARD_GHANA_NHIS_DEFAULTS.exportFormat),
+    export_format: getFirstText(source.export_format, source.exportFormat, STANDARD_GHANA_NHIS_DEFAULTS.exportFormat),
+    credentials: {
+      ...(source.credentials || {}),
+      headerName: getFirstText(source.credentials?.headerName, source.apiKeyHeaderName, source.api_key_header_name, 'x-nhia-apikey'),
+      secretHeaderName: getFirstText(source.credentials?.secretHeaderName, source.apiSecretHeaderName, source.api_secret_header_name, 'x-nhia-apisecret'),
+      tokenEndpointPath: getFirstText(source.credentials?.tokenEndpointPath, source.tokenEndpointPath, source.token_endpoint_path, STANDARD_GHANA_NHIS_DEFAULTS.tokenEndpointPath),
+    },
     // ✅ NHIA CONFIG PATCH START
     facilityType,
     pharmacyFacilityLevel,
@@ -216,7 +277,6 @@ export const applyNhiaFacilityDefaults = (settings = null, organization = null) 
       org.provider_code,
       knownDefaults.providerNumber
     ),
-    schemeName: getFirstText(source.schemeName, source.scheme_name, 'National Health Insurance'),
     providerTypeDescription: getFirstText(
       source.providerTypeDescription,
       source.provider_type_description,

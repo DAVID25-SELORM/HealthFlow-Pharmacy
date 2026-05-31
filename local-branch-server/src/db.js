@@ -256,7 +256,7 @@ const ensureNhiaConfigurationColumn = (column, definition) => ensureColumn('nhia
   ['member_lookup_endpoint_path', 'TEXT'],
   ['member_lookup_endpoint', 'TEXT'],
   ['direct_api_enabled', 'INTEGER NOT NULL DEFAULT 0'],
-  ['credential_mode', "TEXT NOT NULL DEFAULT 'api_key'"],
+  ['credential_mode', "TEXT NOT NULL DEFAULT 'claimit_token'"],
   ['nhis_member_digits', 'INTEGER NOT NULL DEFAULT 8'],
   ['ghana_card_digits', 'INTEGER NOT NULL DEFAULT 10'],
   ['export_format', "TEXT NOT NULL DEFAULT 'json'"],
@@ -295,6 +295,38 @@ db.exec(`
     nhis_member_digits, ghana_card_digits, export_format, max_retry_attempts,
     is_active, created_at, updated_at
   FROM nhia_settings
+`)
+db.exec(`
+  UPDATE nhia_configuration
+  SET
+    scheme_name = COALESCE(NULLIF(scheme_name, ''), 'National Health Insurance'),
+    api_base_url = COALESCE(NULLIF(api_base_url, ''), 'https://elig.nhia.gov.gh:5000'),
+    production_base_url = COALESCE(NULLIF(production_base_url, ''), 'http://localhost:31719/json-api'),
+    member_lookup_endpoint_path = COALESCE(NULLIF(member_lookup_endpoint_path, ''), NULLIF(member_lookup_endpoint, ''), '/api/hmis/genCCC'),
+    member_lookup_endpoint = COALESCE(NULLIF(member_lookup_endpoint, ''), NULLIF(member_lookup_endpoint_path, ''), '/api/hmis/genCCC'),
+    claim_endpoint_path = COALESCE(NULLIF(claim_endpoint_path, ''), NULLIF(claim_submit_endpoint, ''), '/claims'),
+    claim_submit_endpoint = COALESCE(NULLIF(claim_submit_endpoint, ''), NULLIF(claim_endpoint_path, ''), '/claims'),
+    integration_mode = COALESCE(NULLIF(integration_mode, ''), 'claimit_assisted'),
+    connection_profile = COALESCE(NULLIF(connection_profile, ''), 'local_server'),
+    validation_mode = COALESCE(NULLIF(validation_mode, ''), 'validate_before_submit'),
+    claim_control_mode = COALESCE(NULLIF(claim_control_mode, ''), 'manual'),
+    credential_mode = COALESCE(NULLIF(credential_mode, ''), 'claimit_token'),
+    api_key_header_name = COALESCE(NULLIF(api_key_header_name, ''), 'x-nhia-apikey'),
+    api_secret_header_name = COALESCE(NULLIF(api_secret_header_name, ''), 'x-nhia-apisecret'),
+    facility_type = COALESCE(NULLIF(facility_type, ''), 'Pharmacy'),
+    pharmacy_facility_level = CASE
+      WHEN facility_type = 'Hospital' THEN NULL
+      ELSE COALESCE(NULLIF(pharmacy_facility_level, ''), NULLIF(pharmacy_level, ''), 'P1')
+    END,
+    admission_payment_option = COALESCE(NULLIF(admission_payment_option, ''), 'nhis_pays_admission'),
+    claimit_validation_enabled = COALESCE(claimit_validation_enabled, 1),
+    direct_api_enabled = COALESCE(direct_api_enabled, 0),
+    export_format = COALESCE(NULLIF(export_format, ''), 'json'),
+    nhis_member_digits = COALESCE(nhis_member_digits, 8),
+    ghana_card_digits = COALESCE(ghana_card_digits, 10),
+    max_retry_attempts = COALESCE(max_retry_attempts, 3),
+    is_active = COALESCE(is_active, 1),
+    updated_at = CURRENT_TIMESTAMP
 `)
 ensureColumn('nhia_claims', 'cc_code', 'TEXT')
 ensureColumn('nhia_claims', 'diagnosis', 'TEXT')

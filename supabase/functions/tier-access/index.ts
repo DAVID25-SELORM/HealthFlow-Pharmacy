@@ -2795,7 +2795,7 @@ const normalizeCredentialMode = (value: unknown) => {
   const normalized = normalizeText(value).toLowerCase()
   return ['api_key', 'bearer_token', 'basic_auth', 'oauth_client', 'claimit_token', 'custom'].includes(normalized)
     ? normalized
-    : 'api_key'
+    : 'claimit_token'
 }
 
 const normalizeExportFormat = (value: unknown) =>
@@ -3011,7 +3011,7 @@ const mapNhiaSettingsRow = async (row: Record<string, unknown> | null, includeCr
     memberLookupEndpoint: row.member_lookup_endpoint || row.member_lookup_endpoint_path || '',
     member_lookup_endpoint: row.member_lookup_endpoint || row.member_lookup_endpoint_path || '',
     directApiEnabled: Boolean(row.direct_api_enabled),
-    credentialMode: row.credential_mode || 'api_key',
+    credentialMode: row.credential_mode || 'claimit_token',
     credentials: includeCredentials ? credentials : {},
     credentialSummary,
     username: row.username || '',
@@ -3064,9 +3064,12 @@ const validateNhiaSettingsForMode = (settings: Record<string, unknown>) => {
   if (['claimit_bridge', 'claimit_assisted'].includes(integrationMode)) {
     if (!apiBaseUrl) missing.push('apiBaseUrl')
     if (!claimitSubmitBaseUrl) missing.push('claimitSubmitBaseUrl')
-    if (!((hasUsername && hasPassword) || (hasApiKey && hasApiSecret))) {
-      missing.push('username/password or api credentials')
-    }
+    if (!hasApiKey) missing.push('NHIA CCC apiKey')
+    if (!hasApiSecret) missing.push('NHIA CCC apiSecret')
+    if (!hasUsername) missing.push('ClaimIt username')
+    if (!hasPassword) missing.push('ClaimIt password')
+    if (!claimSubmitEndpoint) missing.push('claimSubmitEndpoint')
+    if (!memberLookupEndpoint) missing.push('memberLookupEndpoint')
   }
 
   if (integrationMode === 'direct_nhia_api' || integrationMode === 'hybrid') {
@@ -3391,10 +3394,31 @@ const buildNhiaSubmissionHeaders = async (
 ) => {
   const mode = normalizeCredentialMode(settings.credentialMode)
   const headers = buildNhiaHeaders(settings, contentType)
-  if (mode === 'claimit_token') {
+  const credentials = (settings.credentials || {}) as Record<string, unknown>
+  const hasClaimItTokenCredentials = Boolean(
+    normalizeText(credentials.username) && normalizeText(credentials.password)
+  )
+  if (mode === 'claimit_token' || hasClaimItTokenCredentials) {
+    Object.keys(headers).forEach((key) => {
+      if (key.toLowerCase().startsWith('x-nhia-') || key.toLowerCase() === 'x-api-secret') {
+        delete headers[key]
+      }
+    })
     headers.Authorization = `Bearer ${await fetchClaimItToken(settings)}`
   }
   return headers
+}
+
+const buildNhiaEligibilityHeaders = (settings: Record<string, unknown>) => {
+  const credentials = (settings.credentials || {}) as Record<string, unknown>
+  const apiKey = assertRequiredText(credentials.apiKey || credentials.token, 'NHIA CCC API key')
+  const apiSecret = assertRequiredText(credentials.apiSecret, 'NHIA CCC API secret')
+  return {
+    Accept: 'application/json',
+    'Content-Type': 'application/json',
+    'x-nhia-apikey': apiKey,
+    'x-nhia-apisecret': apiSecret,
+  }
 }
 
 const isClaimItBridgeMode = (settings: Record<string, unknown>) =>
@@ -3440,7 +3464,7 @@ const testClaimItConnection = async (
 ) => {
   requireNhiaSettingsAccess(requesterProfile, 'Only organization admins can test CLAIM-it connection settings.')
   const settings = await getClaimItConnectionSettings(adminClient, requesterProfile, organizationId, payload)
-  const baseUrl = normalizeText(settings.apiBaseUrl || settings.api_base_url)
+  const baseUrl = getClaimSubmitBaseUrl(settings)
   if (!baseUrl) throw new Error('CLAIM-it bridge base URL is required.')
 
   const endpointPath = normalizeText(
@@ -3452,7 +3476,7 @@ const testClaimItConnection = async (
   const url = endpointPath ? joinUrl(baseUrl, endpointPath) : baseUrl.replace(/\/+$/, '')
   const response = await fetch(url, {
     method: 'GET',
-    headers: buildNhiaHeaders(settings, 'application/json'),
+    headers: await buildNhiaSubmissionHeaders(settings, 'application/json'),
   })
 
   if ([401, 403, 404, 405].includes(response.status)) {
@@ -3576,6 +3600,36 @@ const getMemberLookupEndpointPath = (settings: Record<string, unknown>) =>
       settings.memberLookupEndpoint ||
       settings.member_lookup_endpoint
   )
+
+const isGhanaCardNumber = (value: unknown) =>
+  /^GHA-\d{9}-\d$/i.test(normalizeText(value))
+
+const getNhiaCardType = (memberNumber: unknown, explicitCardType: unknown = '') => {
+  const cardType = normalizeText(explicitCardType).toUpperCase()
+  if (cardType === 'NHISCARD' || cardType === 'GHANACARD') return cardType
+  return isGhanaCardNumber(memberNumber) ? 'GHANACARD' : 'NHISCARD'
+}
+
+const mapNhiaMemberLookupResponse = (body: unknown) => {
+  if (!body || typeof body !== 'object') return null
+  const record = body as Record<string, unknown>
+  return {
+    ccCode: extractCcCode(body),
+    memberName: normalizeText(record.MemberName || record.memberName || record.member_name),
+    hin: normalizeText(record.HIN || record.hin),
+    gender: normalizeText(record.Gender || record.gender),
+    dateOfBirth: normalizeText(record.DateOfBirth || record.dateOfBirth || record.date_of_birth).slice(0, 10) || null,
+    eligibilityStartDate: normalizeText(record.EligibilityStartDate || record.eligibilityStartDate).slice(0, 10) || null,
+    eligibilityEndDate: normalizeText(record.EligibilityEndDate || record.eligibilityEndDate).slice(0, 10) || null,
+    status: normalizeText(record.Status || record.status),
+    attendanceDate: normalizeText(record.AttendanceDate || record.attendanceDate).slice(0, 10) || null,
+    transactionId: normalizeText(record.TransactionID || record.transactionId || record.transaction_id),
+    hpName: normalizeText(record.HPName || record.hpName || record.hp_name),
+    pppCode: normalizeText(record.PPPCode || record.pppCode) || null,
+    pppName: normalizeText(record.PPPName || record.pppName) || null,
+    raw: body,
+  }
+}
 
 // NHIA eligibility API base URL — used for member lookup (genCCC) and CC code generation.
 // This is the apiBaseUrl configured directly (e.g. https://elig.nhia.gov.gh:5000).
@@ -3708,55 +3762,16 @@ const generateNhiaCcCode = async (
     return { ok: false, error: 'NHIA API base URL is not configured', receivedKeys }
   }
 
+  const memberNumber = normalizeText(payload.memberNumber || payload.memberNo)
+  if (!memberNumber) {
+    return { ok: false, error: 'Member number is required for NHIA genCCC lookup', receivedKeys }
+  }
+
+  const endpointPath = getMemberLookupEndpointPath(settings as unknown as Record<string, unknown>) || '/api/hmis/genCCC'
+  const finalUrl = joinUrl(apiBaseUrl, endpointPath)
   const requestPayload = {
-    action: isClaimItBridgeMode(settings as unknown as Record<string, unknown>) ? 'generate_or_validate_cc_code' : 'generate_cc_code',
-    claimId,
-    claimControlMode: settings.claimControlMode || settings.claim_control_mode || (isClaimItBridgeMode(settings as unknown as Record<string, unknown>) ? 'claimit_bridge' : 'direct_api'),
-    facilityCode: settings.facilityCode,
-    providerNumber: settings.providerNumber,
-    submitterId: isClaimItBridgeMode(settings as unknown as Record<string, unknown>) ? undefined : (settings.submitterId || requesterProfile.id),
-    batch: {
-      organizationType: normalizeOrganizationType(payload.organizationType || payload.organization_type),
-      facilityCode: settings.facilityCode,
-      providerNumber: settings.providerNumber,
-      claimCount: 1,
-    },
-    claims: [{
-      claimId,
-      patientName: normalizeText(payload.patientName),
-      memberNumber: normalizeText(payload.memberNumber || payload.memberNo),
-      hin: normalizeText(payload.hin) || null,
-      diagnosis: normalizeText(payload.diagnosis) || null,
-      serviceDate: normalizeText(payload.serviceDate).slice(0, 10),
-      totalAmount: Number(payload.totalAmount || 0),
-    }],
-    organizationType: normalizeOrganizationType(payload.organizationType || payload.organization_type),
-    patient: {
-      name: normalizeText(payload.patientName),
-      memberNumber: normalizeText(payload.memberNumber || payload.memberNo),
-      hin: normalizeText(payload.hin) || null,
-    },
-    diagnosis: normalizeText(payload.diagnosis) || null,
-    serviceDate: normalizeText(payload.serviceDate).slice(0, 10),
-    requestedAt: new Date().toISOString(),
-  }
-
-  const ccEndpointPath = getCcEndpointPath(settings as unknown as Record<string, unknown>)
-  const claimEndpointPath = getClaimSubmitEndpointPath(settings as unknown as Record<string, unknown>)
-  const endpointPath = ccEndpointPath || claimEndpointPath
-  if (!endpointPath && !canUseBaseUrlForCcGeneration(settings as unknown as Record<string, unknown>)) {
-    return { ok: false, error: 'CC/CCC endpoint path is not configured', receivedKeys }
-  }
-  const finalUrl = endpointPath ? joinUrl(apiBaseUrl, endpointPath) : apiBaseUrl.replace(/\/+$/, '')
-
-  try {
-    await verifyClaimItSubscriber(settings as unknown as Record<string, unknown>, apiBaseUrl, payload)
-  } catch (error) {
-    return {
-      ok: false,
-      error: getErrorMessage(error),
-      receivedKeys,
-    }
+    CardNo: memberNumber,
+    CardType: getNhiaCardType(memberNumber, payload.cardType || payload.card_type),
   }
 
   logClaimItBridgeStatus('cc_code.request', { status: 'pending', endpointPath, claimCount: 1 })
@@ -3764,7 +3779,7 @@ const generateNhiaCcCode = async (
   try {
     response = await fetch(finalUrl, {
       method: 'POST',
-      headers: await buildNhiaSubmissionHeaders(settings as unknown as Record<string, unknown>),
+      headers: buildNhiaEligibilityHeaders(settings as unknown as Record<string, unknown>),
       body: JSON.stringify(requestPayload),
     })
   } catch (error) {
@@ -3799,7 +3814,8 @@ const generateNhiaCcCode = async (
     }
   }
 
-  const ccCode = extractCcCode(body)
+  const memberDetails = mapNhiaMemberLookupResponse(body)
+  const ccCode = memberDetails?.ccCode || ''
   if (!ccCode) return { status: 'pending', source: 'pending', message: 'Pending CLAIM-it validation', response: body }
   if (ccCode.length !== 5) {
     return {
@@ -3810,7 +3826,7 @@ const generateNhiaCcCode = async (
     }
   }
 
-  return { ok: true, ccCode, source: isClaimItBridgeMode(settings as unknown as Record<string, unknown>) ? 'claimit_bridge' : 'api', response: body }
+  return { ok: true, ccCode, source: 'api', memberDetails, response: body }
 }
 
 const buildNhisClaimNumber = () => {

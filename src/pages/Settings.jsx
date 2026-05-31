@@ -98,7 +98,7 @@ const blankNhiaApiForm = {
   claimStatusEndpointPath: '',
   memberLookupEndpointPath: '/api/hmis/genCCC',
   directApiEnabled: false,
-  credentialMode: 'api_key',
+  credentialMode: 'claimit_token',
   exportFormat: 'json',
   credentials: {
     apiKey: '',
@@ -111,7 +111,7 @@ const blankNhiaApiForm = {
     username: '',
     password: '',
     token: '',
-    tokenEndpointPath: '',
+    tokenEndpointPath: '/token',
     customIntegration: '',
   },
   hasApiKey: false,
@@ -147,6 +147,7 @@ const toNhiaApiForm = (settings, organization) => {
     ...blankNhiaApiForm,
     ...resolved,
     integrationMode: resolved.integrationMode || 'claimit_assisted',
+    credentialMode: resolved.credentialMode || resolved.credential_mode || 'claimit_token',
     ccEndpointPath: resolved.ccEndpointPath || resolved.cc_endpoint_path || resolved.ccCodeEndpointPath || resolved.cc_code_endpoint_path || '',
     ccCodeEndpointPath: resolved.ccCodeEndpointPath || resolved.cc_code_endpoint_path || resolved.ccEndpointPath || resolved.cc_endpoint_path || '',
     memberLookupEndpointPath: resolved.memberLookupEndpointPath || resolved.member_lookup_endpoint_path || resolved.memberLookupEndpoint || resolved.member_lookup_endpoint || '/api/hmis/genCCC',
@@ -304,7 +305,7 @@ const joinNhiaBridgeUrl = (baseUrl = '', path = '') => {
 
 const buildLocalClaimItHeaders = (form = {}) => {
   const credentials = form.credentials || {}
-  const credentialMode = normalizeNhiaText(form.credentialMode || form.credential_mode || 'api_key')
+  const credentialMode = normalizeNhiaText(form.credentialMode || form.credential_mode || 'claimit_token')
   const headers = { Accept: 'application/json' }
   const apiKey = normalizeNhiaText(credentials.apiKey)
   const apiSecret = normalizeNhiaText(credentials.apiSecret)
@@ -1341,11 +1342,55 @@ const Settings = () => {
                   </div>
 
                   {/* ── 3. Authentication ── */}
+                  <p className="settings-note">
+                    <strong>NHIA CCC credentials</strong> - used only for eligibility/member lookup and CC code generation.
+                  </p>
+                  <div className="settings-form-row">
+                    <div className="settings-field">
+                      <input
+                        placeholder={nhiaCredentialState.hasApiKey ? 'Saved NHIA CCC API key - leave blank to keep existing' : 'NHIA CCC API key'}
+                        type="password"
+                        autoComplete="new-password"
+                        value={nhiaApiForm.credentials.apiKey || ''}
+                        onChange={(event) => updateNhiaCredential('apiKey', event.target.value)}
+                      />
+                      <p className="settings-helper">
+                        {nhiaCredentialState.hasApiKey ? 'NHIA CCC API Key Saved' : 'NHIA CCC API Key Not Saved'}
+                      </p>
+                    </div>
+                    <div className="settings-field">
+                      <input
+                        placeholder={nhiaCredentialState.hasApiSecret ? 'Saved NHIA CCC API secret - leave blank to keep existing' : 'NHIA CCC API secret'}
+                        type="password"
+                        autoComplete="new-password"
+                        value={nhiaApiForm.credentials.apiSecret || ''}
+                        onChange={(event) => updateNhiaCredential('apiSecret', event.target.value)}
+                      />
+                      <p className="settings-helper">
+                        {nhiaCredentialState.hasApiSecret ? 'NHIA CCC API Secret Saved' : 'NHIA CCC API Secret Not Saved'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="settings-form-row">
+                    <input
+                      placeholder="NHIA API key header name"
+                      value={nhiaApiForm.credentials.headerName || 'x-nhia-apikey'}
+                      onChange={(event) => updateNhiaCredential('headerName', event.target.value)}
+                    />
+                    <input
+                      placeholder="NHIA API secret header name"
+                      value={nhiaApiForm.credentials.secretHeaderName || 'x-nhia-apisecret'}
+                      onChange={(event) => updateNhiaCredential('secretHeaderName', event.target.value)}
+                    />
+                  </div>
+                  <p className="settings-note">
+                    <strong>CLAIM-it submission credentials</strong> - used for /token and then Authorization on /claims.
+                  </p>
                   <select
                     value={nhiaApiForm.credentialMode}
                     onChange={(event) => updateNhiaApiForm('credentialMode', event.target.value)}
                   >
-                    <option value="">Authentication mode</option>
+                    <option value="">CLAIM-it authentication mode</option>
                     <option value="claimit_token">CLAIM-it credentials (username + password)</option>
                     <option value="api_key">API key</option>
                     <option value="bearer_token">Bearer token</option>

@@ -145,6 +145,12 @@ const OPTIONAL_CLAIM_SCHEMA_COLUMNS = [
   'claimit_attachment_file_type',
   'claimit_attachment_mime_type',
   'claimit_attachment_base64',
+  'nhia_transaction_id',
+  'nhia_eligibility_start_date',
+  'nhia_eligibility_end_date',
+  'nhia_attendance_date',
+  'nhia_member_status',
+  'nhia_member_lookup_payload',
 ]
 const CLAIMIT_EXPORT_FORMATS = ['cxf', 'xml', 'json', 'csv']
 const NHIA_TARIFF_VERSION = 'FEB 2023'
@@ -2104,7 +2110,7 @@ const normalizeHostedNhiaIntegrationRow = (row = null) => {
     ccEndpointPath: row.cc_endpoint_path || row.cc_code_endpoint_path || '',
     ccCodeEndpointPath: row.cc_code_endpoint_path || row.cc_endpoint_path || '',
     integrationMode: row.integration_mode || 'claimit_export',
-    credentialMode: row.credential_mode || 'api_key',
+    credentialMode: row.credential_mode || 'claimit_token',
     credentials: credentialPayload,
     credentialSummary: {
       apiKey: hasApiKey,
@@ -2206,7 +2212,7 @@ const getHostedNhiaConfigRowPayload = async (settings = {}, organizationId = '',
     member_lookup_endpoint_path: memberLookupEndpointPath || null,
     member_lookup_endpoint: memberLookupEndpointPath || null,
     direct_api_enabled: Boolean(settings.directApiEnabled || settings.direct_api_enabled),
-    credential_mode: normalizeText(settings.credentialMode || settings.credential_mode) || 'api_key',
+    credential_mode: normalizeText(settings.credentialMode || settings.credential_mode) || 'claimit_token',
     nhis_member_digits: Number(settings.nhisMemberDigits || settings.nhis_member_digits || 8),
     ghana_card_digits: Number(settings.ghanaCardDigits || settings.ghana_card_digits || 10),
     export_format: normalizeText(settings.exportFormat || settings.export_format) || 'json',
@@ -2474,9 +2480,12 @@ export const validateNhiaConfigForMode = (settings = {}) => {
   if (isClaimItBridgeMode(integrationMode)) {
     if (!apiBaseUrl) missing.push('apiBaseUrl')
     if (!claimitSubmitBaseUrl) missing.push('claimitSubmitBaseUrl')
-    if (!((hasUsername && hasPassword) || (hasApiKey && hasApiSecret))) {
-      missing.push('username/password or api credentials')
-    }
+    if (!hasApiKey) missing.push('NHIA CCC apiKey')
+    if (!hasApiSecret) missing.push('NHIA CCC apiSecret')
+    if (!hasUsername) missing.push('ClaimIt username')
+    if (!hasPassword) missing.push('ClaimIt password')
+    if (!claimSubmitEndpoint) missing.push('claimSubmitEndpoint')
+    if (!memberLookupEndpoint) missing.push('memberLookupEndpoint')
   }
 
   if (integrationMode === 'direct_nhia_api' || integrationMode === 'hybrid') {
@@ -2632,7 +2641,7 @@ const canUseBaseUrlForClaimControl = (settings = {}) => {
 
 const buildClaimItBridgeHeaders = (settings = {}) => {
   const credentials = settings.credentials && typeof settings.credentials === 'object' ? settings.credentials : {}
-  const credentialMode = normalizeText(settings.credentialMode || settings.credential_mode || 'api_key')
+  const credentialMode = normalizeText(settings.credentialMode || settings.credential_mode || 'claimit_token')
   const headers = {
     Accept: 'application/json',
     'Content-Type': 'application/json',
@@ -4257,6 +4266,14 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
       ? assertNonNegativeNumber(claimData.childWeightKg, 'Child weight')
       : null,
     ccc_no:             cccNo,
+    nhia_transaction_id: normalizeText(
+      claimData.nhiaTransactionId ?? claimData.nhia_transaction_id ?? claimData.transactionId ?? claimData.transaction_id
+    ) || null,
+    nhia_eligibility_start_date: normalizeText(claimData.nhiaEligibilityStartDate ?? claimData.nhia_eligibility_start_date) || null,
+    nhia_eligibility_end_date: normalizeText(claimData.nhiaEligibilityEndDate ?? claimData.nhia_eligibility_end_date) || null,
+    nhia_attendance_date: normalizeText(claimData.nhiaAttendanceDate ?? claimData.nhia_attendance_date) || null,
+    nhia_member_status: normalizeText(claimData.nhiaMemberStatus ?? claimData.nhia_member_status) || null,
+    nhia_member_lookup_payload: claimData.nhiaMemberLookupPayload ?? claimData.nhia_member_lookup_payload ?? null,
     diagnosis:          normalizeText(claimData.diagnosis)         || null,
     diagnosis_details:  diagnosisDetails,
     service_date_from:  serviceDate                                || null,
@@ -4476,6 +4493,14 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
       ? assertNonNegativeNumber(claimData.childWeightKg, 'Child weight')
       : null,
     ccc_no: cccNo,
+    nhia_transaction_id: normalizeText(
+      claimData.nhiaTransactionId ?? claimData.nhia_transaction_id ?? claimData.transactionId ?? claimData.transaction_id
+    ) || null,
+    nhia_eligibility_start_date: normalizeText(claimData.nhiaEligibilityStartDate ?? claimData.nhia_eligibility_start_date) || null,
+    nhia_eligibility_end_date: normalizeText(claimData.nhiaEligibilityEndDate ?? claimData.nhia_eligibility_end_date) || null,
+    nhia_attendance_date: normalizeText(claimData.nhiaAttendanceDate ?? claimData.nhia_attendance_date) || null,
+    nhia_member_status: normalizeText(claimData.nhiaMemberStatus ?? claimData.nhia_member_status) || null,
+    nhia_member_lookup_payload: claimData.nhiaMemberLookupPayload ?? claimData.nhia_member_lookup_payload ?? null,
     diagnosis: normalizeText(claimData.diagnosis) || null,
     diagnosis_details: diagnosisDetails,
     service_date_from: serviceDate || null,

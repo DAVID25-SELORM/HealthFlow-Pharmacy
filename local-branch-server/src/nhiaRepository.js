@@ -300,7 +300,7 @@ const normalizeStatus = (value, fallback = 'draft') => {
 }
 
 const normalizeCredentialMode = (value) => {
-  const mode = normalizeText(value || 'api_key').toLowerCase()
+  const mode = normalizeText(value || 'claimit_token').toLowerCase()
   // ✅ NHIA API ARCHITECTURE PATCH START
   const legacyModeMap = {
     client_secret: 'oauth_client',
@@ -826,7 +826,7 @@ const mapSettingsRow = (row, { includeCredentials = false } = {}) => {
     memberLookupEndpoint: row.member_lookup_endpoint || row.member_lookup_endpoint_path || '',
     member_lookup_endpoint: row.member_lookup_endpoint || row.member_lookup_endpoint_path || '',
     directApiEnabled: Boolean(row.direct_api_enabled),
-    credentialMode: normalizeCredentialMode(row.credential_mode || 'api_key'),
+    credentialMode: normalizeCredentialMode(row.credential_mode || 'claimit_token'),
     credentials: includeCredentials ? credentials : {},
     credentialSummary,
     hasApiKey: Boolean(row.api_key_encrypted),
@@ -902,9 +902,12 @@ const validateNhiaSettingsForMode = (settings = {}) => {
   if (['claimit_bridge', 'claimit_assisted'].includes(integrationMode)) {
     if (!apiBaseUrl) missing.push('apiBaseUrl')
     if (!claimitSubmitBaseUrl) missing.push('claimitSubmitBaseUrl')
-    if (!((hasUsername && hasPassword) || (hasApiKey && hasApiSecret))) {
-      missing.push('username/password or api credentials')
-    }
+    if (!hasApiKey) missing.push('NHIA CCC apiKey')
+    if (!hasApiSecret) missing.push('NHIA CCC apiSecret')
+    if (!hasUsername) missing.push('ClaimIt username')
+    if (!hasPassword) missing.push('ClaimIt password')
+    if (!claimSubmitEndpoint) missing.push('claimSubmitEndpoint')
+    if (!memberLookupEndpoint) missing.push('memberLookupEndpoint')
   }
 
   if (integrationMode === 'direct_nhia_api' || integrationMode === 'hybrid') {
@@ -1288,9 +1291,9 @@ const validateSettingsForSubmission = (settings) => {
   if (settings.directApiEnabled) {
     assertRequiredText(settings.apiBaseUrl, 'NHIA API base URL')
     const credentials = settings.credentials || {}
-    if (settings.credentialMode === 'api_key') {
-      assertRequiredText(credentials.apiKey, 'NHIA API key')
-    } else if (settings.credentialMode === 'bearer_token') {
+    assertRequiredText(credentials.apiKey, 'NHIA CCC API key')
+    assertRequiredText(credentials.apiSecret, 'NHIA CCC API secret')
+    if (settings.credentialMode === 'bearer_token') {
       assertRequiredText(credentials.apiKey || credentials.token, 'NHIA bearer token')
     } else if (settings.credentialMode === 'oauth_client') {
       assertRequiredText(credentials.clientId, 'NHIA client ID')
@@ -1440,6 +1443,23 @@ const buildHeaders = (settings) => {
   return headers
 }
 
+const hasClaimItTokenCredentials = (settings = {}) => {
+  const credentials = settings.credentials || {}
+  return Boolean(normalizeText(credentials.username) && normalizeText(credentials.password))
+}
+
+const buildClaimItSubmissionHeaders = async (settings) => {
+  if (!hasClaimItTokenCredentials(settings)) {
+    return buildHeaders(settings)
+  }
+
+  return {
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+    Authorization: `Bearer ${await fetchClaimItToken(settings)}`,
+  }
+}
+
 const postWithCertificate = (url, body, settings) =>
   new Promise((resolve, reject) => {
     const credentials = settings.credentials || {}
@@ -1502,10 +1522,7 @@ const submitPayload = async (settings, payload, endpointPathOverride = '') => {
     }
   }
 
-  const headers = buildHeaders(settings)
-  if (settings.credentialMode === 'claimit_token') {
-    headers.Authorization = `Bearer ${await fetchClaimItToken(settings)}`
-  }
+  const headers = await buildClaimItSubmissionHeaders(settings)
 
   const response = await fetch(url, {
     method: 'POST',
@@ -1526,12 +1543,10 @@ const isClaimItBridgeMode = (settings) =>
 
 const getCcEndpointPath = (settings) =>
   normalizeText(
-    settings?.ccEndpointPath ||
+      settings?.ccEndpointPath ||
       settings?.cc_endpoint_path ||
       settings?.ccCodeEndpointPath ||
-      settings?.cc_code_endpoint_path ||
-      settings?.claimEndpointPath ||
-      settings?.claim_endpoint_path
+      settings?.cc_code_endpoint_path
   )
 
 const validateClaimItBridgePayload = async (settings, payload) => {
