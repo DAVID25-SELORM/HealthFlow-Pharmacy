@@ -774,7 +774,10 @@ const mapSettingsRow = (row, { includeCredentials = false } = {}) => {
           ? 'direct_api'
           : 'manual'),
     sandboxBaseUrl: row.sandbox_base_url || '',
-    productionBaseUrl: row.production_base_url || row.api_base_url || '',
+    productionBaseUrl: row.production_base_url || '',
+    // claimitSubmitBaseUrl: the local CLAIM-it desktop software URL (localhost:31719/json-api).
+    // Stored in production_base_url column — distinct from apiBaseUrl (NHIA eligibility server).
+    claimitSubmitBaseUrl: row.production_base_url || '',
     // ✅ NHIA API ARCHITECTURE PATCH END
     // ✅ NHIA CONFIG PATCH END
     schemeName: row.scheme_name || 'National Health Insurance',
@@ -975,7 +978,12 @@ export const saveNhiaSettings = (settings = {}) => {
       ? normalizeText(settings.claimControlMode || settings.claim_control_mode)
       : 'manual',
     sandboxBaseUrl: normalizeText(settings.sandboxBaseUrl).replace(/\/+$/, '') || null,
-    productionBaseUrl: normalizeText(settings.productionBaseUrl).replace(/\/+$/, '') || null,
+    // claimitSubmitBaseUrl (CLAIM-it local software URL) is the canonical value here.
+    // productionBaseUrl is kept as a fallback for backwards-compatibility.
+    productionBaseUrl: normalizeText(
+      settings.claimitSubmitBaseUrl || settings.claimit_submit_base_url ||
+      settings.productionBaseUrl
+    ).replace(/\/+$/, '') || null,
     // ✅ NHIA API ARCHITECTURE PATCH END
     // ✅ NHIA CONFIG PATCH END
     schemeName: normalizeText(settings.schemeName) || 'National Health Insurance',
@@ -1446,12 +1454,22 @@ const postWithCertificate = (url, body, settings) =>
     request.end()
   })
 
+// Returns the base URL for claim submission (CLAIM-it local software).
+// Prefers claimitSubmitBaseUrl (localhost:31719/json-api) over apiBaseUrl
+// (NHIA eligibility server) so the two APIs are never mixed up.
+const getClaimSubmitBaseUrl = (settings) =>
+  normalizeText(settings.claimitSubmitBaseUrl || settings.productionBaseUrl || settings.apiBaseUrl)
+
 const submitPayload = async (settings, payload, endpointPathOverride = '') => {
   const endpointPath = normalizeText(endpointPathOverride || settings.claimEndpointPath)
   if (!endpointPath) {
     throw new Error('NHIA endpoint path is required. Enter the official endpoint path from NHIA/CLAIM-it.')
   }
-  const url = `${settings.apiBaseUrl.replace(/\/+$/, '')}/${endpointPath.replace(/^\/+/, '')}`
+  const baseUrl = getClaimSubmitBaseUrl(settings)
+  if (!baseUrl) {
+    throw new Error('CLAIM-it submit base URL is not configured. Set the CLAIM-it local submit URL in NHIA settings.')
+  }
+  const url = `${baseUrl.replace(/\/+$/, '')}/${endpointPath.replace(/^\/+/, '')}`
   const body = JSON.stringify(payload)
 
   if (settings.credentialMode === 'custom' && settings.credentials?.certPem && settings.credentials?.keyPem) {
@@ -1511,7 +1529,7 @@ const fetchClaimItToken = async (settings) => {
   const username = assertRequiredText(credentials.username, 'CLAIM-it username')
   const password = assertRequiredText(credentials.password, 'CLAIM-it password')
   const tokenPath = normalizeText(credentials.tokenEndpointPath) || '/token'
-  const url = new URL(`${settings.apiBaseUrl.replace(/\/+$/, '')}/${tokenPath.replace(/^\/+/, '')}`)
+  const url = new URL(`${getClaimSubmitBaseUrl(settings).replace(/\/+$/, '')}/${tokenPath.replace(/^\/+/, '')}`)
   url.searchParams.set('username', username)
   url.searchParams.set('password', password)
 

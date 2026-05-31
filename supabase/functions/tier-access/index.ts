@@ -2957,7 +2957,8 @@ const mapNhiaSettingsRow = async (row: Record<string, unknown> | null, includeCr
           ? 'direct_api'
           : 'manual'),
     sandboxBaseUrl: row.sandbox_base_url || '',
-    productionBaseUrl: row.production_base_url || row.api_base_url || '',
+    productionBaseUrl: row.production_base_url || '',
+    claimitSubmitBaseUrl: row.production_base_url || '',
     // ✅ NHIA API ARCHITECTURE PATCH END
     providerTypeDescription: row.provider_type_description || '',
     providerClassLevel: row.provider_class_level || '',
@@ -3164,7 +3165,11 @@ const saveNhiaApiSettings = async (
       ? normalizeText(settings.claimControlMode || settings.claim_control_mode)
       : 'manual',
     sandbox_base_url: normalizeText(settings.sandboxBaseUrl).replace(/\/+$/, '') || null,
-    production_base_url: normalizeText(settings.productionBaseUrl).replace(/\/+$/, '') || null,
+    // production_base_url stores the CLAIM-it local submit URL.
+    // claimitSubmitBaseUrl takes precedence; productionBaseUrl is a fallback.
+    production_base_url: normalizeText(
+      settings.claimitSubmitBaseUrl || settings.claimit_submit_base_url || settings.productionBaseUrl
+    ).replace(/\/+$/, '') || null,
     // ✅ NHIA API ARCHITECTURE PATCH END
     provider_type_description: providerTypeDescription || null,
     provider_class_level: providerClassLevel || null,
@@ -3285,7 +3290,7 @@ const fetchClaimItToken = async (settings: Record<string, unknown>) => {
   const username = assertRequiredText(credentials.username, 'CLAIM-it username')
   const password = assertRequiredText(credentials.password, 'CLAIM-it password')
   const tokenPath = normalizeText(credentials.tokenEndpointPath) || '/token'
-  const url = new URL(joinUrl(String(settings.apiBaseUrl), tokenPath))
+  const url = new URL(joinUrl(getClaimSubmitBaseUrl(settings), tokenPath))
   url.searchParams.set('username', username)
   url.searchParams.set('password', password)
 
@@ -3440,7 +3445,7 @@ const validateClaimItBridgePayload = async (
   const endpointPath = normalizeText(settings.claimValidationEndpointPath || settings.claim_validation_endpoint_path)
   if (validationMode === 'submit_only' || !endpointPath) return
 
-  const response = await fetch(joinUrl(String(settings.apiBaseUrl), endpointPath), {
+  const response = await fetch(joinUrl(getClaimSubmitBaseUrl(settings), endpointPath), {
     method: 'POST',
     headers: await buildNhiaSubmissionHeaders(settings, contentType),
     body: requestBody,
@@ -3545,15 +3550,28 @@ const getMemberLookupEndpointPath = (settings: Record<string, unknown>) =>
       settings.member_lookup_endpoint
   )
 
+// NHIA eligibility API base URL — used for member lookup (genCCC) and CC code generation.
+// This is the apiBaseUrl configured directly (e.g. https://elig.nhia.gov.gh:5000).
 const getNhiaApiBaseUrl = (settings: Record<string, unknown>) => {
   const environment = normalizeText(settings.apiEnvironment || settings.api_environment).toLowerCase()
   const apiBaseUrl = normalizeText(settings.apiBaseUrl || settings.api_base_url)
-  const productionBaseUrl = normalizeText(settings.productionBaseUrl || settings.production_base_url)
   const sandboxBaseUrl = normalizeText(settings.sandboxBaseUrl || settings.sandbox_base_url)
   return environment === 'sandbox'
-    ? sandboxBaseUrl || apiBaseUrl || productionBaseUrl
-    : productionBaseUrl || apiBaseUrl || sandboxBaseUrl
+    ? sandboxBaseUrl || apiBaseUrl
+    : apiBaseUrl || sandboxBaseUrl
 }
+
+// CLAIM-it local software base URL — used for claim submission.
+// Stored in production_base_url / claimitSubmitBaseUrl.
+const getClaimSubmitBaseUrl = (settings: Record<string, unknown>) =>
+  normalizeText(
+    settings.claimitSubmitBaseUrl ||
+    settings.claimit_submit_base_url ||
+    settings.productionBaseUrl ||
+    settings.production_base_url ||
+    settings.apiBaseUrl ||
+    settings.api_base_url
+  )
 
 const canUseBaseUrlForCcGeneration = (settings: Record<string, unknown>) => {
   const validationMode = normalizeText(settings.validationMode || settings.validation_mode)
@@ -3943,7 +3961,7 @@ const submitNhisPharmacyClaim = async (
       }
 
       try {
-        const response = await fetch(joinUrl(String(settings.apiBaseUrl), claimEndpointPath), {
+        const response = await fetch(joinUrl(getClaimSubmitBaseUrl(settings as unknown as Record<string, unknown>), claimEndpointPath), {
           method: 'POST',
           headers: await buildNhiaSubmissionHeaders(settings as unknown as Record<string, unknown>),
           body: JSON.stringify(submissionPayload),
@@ -4030,7 +4048,7 @@ const submitNhiaClaimsDirect = async (
   const contentType = normalizeText(payload.contentType) || 'application/json'
   const requestBody = normalizeText(payload.payloadContent) || JSON.stringify(claimPayload)
   await validateClaimItBridgePayload(settings as unknown as Record<string, unknown>, requestBody, contentType)
-  const response = await fetch(joinUrl(String(settings.apiBaseUrl), endpointPath), {
+  const response = await fetch(joinUrl(getClaimSubmitBaseUrl(settings as unknown as Record<string, unknown>), endpointPath), {
     method: 'POST',
     headers: await buildNhiaSubmissionHeaders(settings as unknown as Record<string, unknown>, contentType),
     body: requestBody,
