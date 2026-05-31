@@ -386,12 +386,12 @@ app.post('/api/nhia/cc-code', async (request, response, next) => {
 // Member lookup: verifies NHIS membership and returns MobCCC + member details in one call.
 app.post('/api/nhia/member-lookup', async (request, response, next) => {
   try {
-    const { memberNumber, serviceDate } = request.body || {}
+    const { memberNumber, cardType } = request.body || {}
     if (!memberNumber) {
       response.status(400).json({ error: 'memberNumber is required.' })
       return
     }
-    response.json({ data: await lookupNhiaMember(memberNumber, { serviceDate }) })
+    response.json({ data: await lookupNhiaMember(memberNumber, { cardType }) })
   } catch (error) {
     next(error)
   }

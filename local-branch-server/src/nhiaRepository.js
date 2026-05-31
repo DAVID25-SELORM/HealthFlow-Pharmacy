@@ -1574,51 +1574,59 @@ const mapNhiaMemberLookupResponse = (body) => {
   }
 }
 
-export const lookupNhiaMember = async (memberNumber, { serviceDate } = {}) => {
+// Determine CardType for NHIA genCCC API: GHANACARD for GHA-xxxxxxxxx-x numbers, NHISCARD otherwise.
+const getNhiaCardType = (memberNumber) =>
+  isGhanaCardNumber(normalizeText(memberNumber)) ? 'GHANACARD' : 'NHISCARD'
+
+export const lookupNhiaMember = async (memberNumber, { cardType } = {}) => {
   const settings = getNhiaSettings({ includeCredentials: true })
   if (!settings.directApiEnabled) {
     return { status: 'pending', message: 'NHIA API not configured' }
   }
-
-  const endpointPath = normalizeText(settings.memberLookupEndpointPath || settings.memberLookupEndpoint)
-  if (!endpointPath) {
-    return { status: 'pending', message: 'Member lookup endpoint not configured' }
-  }
-
-  const validatedMemberNumber = assertValidMemberNumber(memberNumber, settings)
-  const credentials = settings.credentials || {}
-  const apiKey = normalizeText(credentials.apiKey || credentials.token)
-  const apiSecret = normalizeText(credentials.apiSecret || credentials.secret)
-
-  // NHIA member lookup API expects application/x-www-form-urlencoded with:
-  //   umn  = member number
-  //   key  = base64-encoded API key
-  //   secret = base64-encoded API secret
-  const formBody = new URLSearchParams({
-    umn: validatedMemberNumber,
-    ...(apiKey ? { key: Buffer.from(apiKey).toString('base64') } : {}),
-    ...(apiSecret ? { secret: Buffer.from(apiSecret).toString('base64') } : {}),
-  }).toString()
 
   const apiBaseUrl = normalizeText(settings.apiBaseUrl)
   if (!apiBaseUrl) {
     return { status: 'pending', message: 'NHIA API base URL not configured' }
   }
 
-  const url = `${apiBaseUrl.replace(/\/+$/, '')}/${endpointPath.replace(/^\/+/, '')}`
-  const headers = { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' }
+  // Default lookup endpoint is /api/hmis/genCCC on the NHIA eligibility server.
+  const endpointPath = normalizeText(
+    settings.memberLookupEndpointPath || settings.memberLookupEndpoint
+  ) || '/api/hmis/genCCC'
 
-  logSubmission({ action: 'member.lookup.start', status: 'pending', memberNumber: validatedMemberNumber })
+  const validatedMemberNumber = assertValidMemberNumber(memberNumber, settings)
+  const credentials = settings.credentials || {}
+  const apiKey = normalizeText(credentials.apiKey || credentials.token)
+  const apiSecret = normalizeText(credentials.apiSecret)
+
+  if (!apiKey) {
+    return { status: 'pending', message: 'NHIA API key not configured' }
+  }
+
+  // NHIA genCCC API (https://elig.nhia.gov.gh:5000/api/hmis/genCCC):
+  //   Headers: x-nhia-apikey, x-nhia-apisecret
+  //   Body JSON: { CardNo, CardType }  CardType = "NHISCARD" | "GHANACARD"
+  const resolvedCardType = cardType || getNhiaCardType(validatedMemberNumber)
+  const url = `${apiBaseUrl.replace(/\/+$/, '')}/${endpointPath.replace(/^\/+/, '')}`
+  const headers = {
+    'x-nhia-apikey': apiKey,
+    'x-nhia-apisecret': apiSecret,
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+  }
+  const body = JSON.stringify({ CardNo: validatedMemberNumber, CardType: resolvedCardType })
+
+  logSubmission({ action: 'member.lookup.start', status: 'pending', memberNumber: validatedMemberNumber, cardType: resolvedCardType })
   try {
-    const response = await fetch(url, { method: 'POST', headers, body: formBody })
+    const response = await fetch(url, { method: 'POST', headers, body })
     const text = await response.text()
-    let body = {}
-    try { body = text ? JSON.parse(text) : {} } catch { body = { raw: text } }
+    let responseBody = {}
+    try { responseBody = text ? JSON.parse(text) : {} } catch { responseBody = { raw: text } }
 
     if (!response.ok) {
       throw new Error(`NHIA member lookup returned HTTP ${response.status}.`)
     }
-    const mapped = mapNhiaMemberLookupResponse(body)
+    const mapped = mapNhiaMemberLookupResponse(responseBody)
     logSubmission({ action: 'member.lookup.complete', status: 'success', ccCode: mapped?.ccCode })
     return { ok: true, ...mapped }
   } catch (error) {

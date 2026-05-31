@@ -313,10 +313,13 @@ export const generateNhiaCcCode = async (claimContext = {}) => {
 
 // Member lookup: single call that returns MobCCC (CC code) + member details from NHIA.
 // Use this when patient presents their NHIS card — it verifies eligibility and gets the CC code.
-export const lookupNhiaMember = async ({ memberNumber, serviceDate = '' } = {}) => {
+// Calls NHIA genCCC API (https://elig.nhia.gov.gh:5000/api/hmis/genCCC).
+// Returns MobCCC (CC code) + member name, HIN, DOB, eligibility dates, status.
+// cardType: 'NHISCARD' | 'GHANACARD' — auto-detected from memberNumber if omitted.
+export const lookupNhiaMember = async ({ memberNumber, cardType = '' } = {}) => {
   const response = await branchFetch('/api/nhia/member-lookup', {
     method: 'POST',
-    body: JSON.stringify({ memberNumber, serviceDate }),
+    body: JSON.stringify({ memberNumber, cardType }),
     timeoutMs: LONG_BRANCH_REQUEST_TIMEOUT_MS,
   })
   return response.data || null
