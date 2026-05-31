@@ -834,11 +834,15 @@ const Nhis = () => {
       nhiaApiBaseUrl &&
       resolvedNhiaSettings?.claimEndpointPath
   )
+  const memberLookupEndpointPath = resolvedNhiaSettings?.memberLookupEndpointPath ||
+    resolvedNhiaSettings?.member_lookup_endpoint_path || ''
   const nhiaCcCodeApiAvailable = Boolean(
-    (resolvedNhiaSettings?.directApiEnabled || ['claimit_bridge', 'claimit_bridge_ccc'].includes(claimControlMode)) &&
+    (resolvedNhiaSettings?.directApiEnabled ||
+      ['claimit_bridge', 'claimit_bridge_ccc', 'direct_api'].includes(claimControlMode)) &&
       !isHostedPageWithLocalClaimItBridge &&
       nhiaApiBaseUrl &&
-      (ccEndpointPath || usesClaimItValidationFlow)
+      // genCCC member lookup endpoint OR a dedicated CC endpoint OR CLAIM-it bridge flow
+      (memberLookupEndpointPath || ccEndpointPath || usesClaimItValidationFlow)
   )
   const nhisPageSubtitle = isHospital
     ? 'NHIA hospital service claims, tariffs, diagnoses, and direct CLAIM-it submission'

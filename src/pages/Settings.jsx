@@ -77,7 +77,7 @@ const blankNhiaApiForm = {
   integrationMode: 'claimit_export',
   connectionProfile: 'local_server',
   validationMode: 'validate_before_submit',
-  claimControlMode: 'claimit_bridge',
+  claimControlMode: 'manual',
   sandboxBaseUrl: '',
   productionBaseUrl: '',
   // ✅ NHIA API ARCHITECTURE PATCH END
@@ -90,12 +90,13 @@ const blankNhiaApiForm = {
   submitterId: '',
   apiEnvironment: 'production',
   apiBaseUrl: '',
+  claimitSubmitBaseUrl: '',
   claimEndpointPath: '',
   claimValidationEndpointPath: '',
   ccEndpointPath: '',
   ccCodeEndpointPath: '',
   claimStatusEndpointPath: '',
-  memberLookupEndpointPath: '',
+  memberLookupEndpointPath: '/api/hmis/genCCC',
   directApiEnabled: false,
   credentialMode: 'api_key',
   exportFormat: 'json',
@@ -1269,8 +1270,11 @@ const Settings = () => {
                     <option value="production">Production</option>
                     <option value="sandbox">Sandbox / Test</option>
                   </select>
+                  <p className="settings-note">
+                    <strong>NHIA eligibility API</strong> — for CC/CCC code generation via member lookup (genCCC).
+                  </p>
                   <input
-                    placeholder="API base URL (e.g. http://localhost:31719/json-api)"
+                    placeholder="NHIA API base URL (e.g. https://elig.nhia.gov.gh:5000)"
                     value={nhiaApiForm.apiBaseUrl}
                     onChange={(event) => updateNhiaApiForm('apiBaseUrl', event.target.value)}
                   />
@@ -1291,12 +1295,12 @@ const Settings = () => {
                   </div>
                   <div className="settings-form-row">
                     <input
-                      placeholder="Claim submit endpoint path (e.g. /claims)"
-                      value={nhiaApiForm.claimEndpointPath}
-                      onChange={(event) => updateNhiaApiForm('claimEndpointPath', event.target.value)}
+                      placeholder="Member lookup / genCCC endpoint (e.g. /api/hmis/genCCC)"
+                      value={nhiaApiForm.memberLookupEndpointPath}
+                      onChange={(event) => updateNhiaApiForm('memberLookupEndpointPath', event.target.value)}
                     />
                     <input
-                      placeholder="CC/CCC endpoint path (leave blank to use claim endpoint)"
+                      placeholder="CC/CCC endpoint path (leave blank — genCCC is used instead)"
                       value={nhiaApiForm.ccEndpointPath || nhiaApiForm.ccCodeEndpointPath}
                       onChange={(event) => {
                         updateNhiaApiForm('ccEndpointPath', event.target.value)
@@ -1304,28 +1308,31 @@ const Settings = () => {
                       }}
                     />
                   </div>
+                  <p className="settings-note">
+                    <strong>CLAIM-it local software</strong> — for claim submission to the local CLAIM-it desktop app.
+                  </p>
+                  <input
+                    placeholder="CLAIM-it local submit base URL (e.g. http://localhost:31719/json-api)"
+                    value={nhiaApiForm.claimitSubmitBaseUrl || ''}
+                    onChange={(event) => updateNhiaApiForm('claimitSubmitBaseUrl', event.target.value)}
+                  />
                   <div className="settings-form-row">
+                    <input
+                      placeholder="Claim submit endpoint path (e.g. /claims)"
+                      value={nhiaApiForm.claimEndpointPath}
+                      onChange={(event) => updateNhiaApiForm('claimEndpointPath', event.target.value)}
+                    />
                     <input
                       placeholder="Claim validation endpoint path"
                       value={nhiaApiForm.claimValidationEndpointPath}
                       onChange={(event) => updateNhiaApiForm('claimValidationEndpointPath', event.target.value)}
                     />
+                  </div>
+                  <div className="settings-form-row">
                     <input
                       placeholder="Claim status endpoint path"
                       value={nhiaApiForm.claimStatusEndpointPath}
                       onChange={(event) => updateNhiaApiForm('claimStatusEndpointPath', event.target.value)}
-                    />
-                  </div>
-                  <div className="settings-form-row">
-                    <input
-                      placeholder="Member lookup endpoint path (e.g. /api/hmis/genCCC)"
-                      value={nhiaApiForm.memberLookupEndpointPath}
-                      onChange={(event) => updateNhiaApiForm('memberLookupEndpointPath', event.target.value)}
-                    />
-                    <input
-                      placeholder="CLAIM-it local submit URL (e.g. http://localhost:31719/json-api)"
-                      value={nhiaApiForm.claimitSubmitBaseUrl || ''}
-                      onChange={(event) => updateNhiaApiForm('claimitSubmitBaseUrl', event.target.value)}
                     />
                   </div>
 
@@ -1363,7 +1370,7 @@ const Settings = () => {
                           </p>
                         </div>
                         <input
-                          placeholder="API key header name (e.g. Authorization)"
+                          placeholder="API key header name (e.g. x-nhia-apikey)"
                           value={nhiaApiForm.credentials.headerName || ''}
                           onChange={(event) => updateNhiaCredential('headerName', event.target.value)}
                         />
@@ -1382,7 +1389,7 @@ const Settings = () => {
                           </p>
                         </div>
                         <input
-                          placeholder="Secret header name (e.g. x-api-secret)"
+                          placeholder="Secret header name (e.g. x-nhia-apisecret)"
                           value={nhiaApiForm.credentials.secretHeaderName || ''}
                           onChange={(event) => updateNhiaCredential('secretHeaderName', event.target.value)}
                         />
@@ -1676,8 +1683,8 @@ const Settings = () => {
                   onChange={(event) => updateNhiaApiForm('claimControlMode', event.target.value)}
                 >
                   <option value="manual">Manual CC/CCC entry</option>
+                  <option value="direct_api">NHIA API — auto-generate via genCCC</option>
                   <option value="claimit_bridge">CLAIM-it Bridge CC/CCC</option>
-                  <option value="direct_api">Direct API CC/CCC</option>
                 </select>
                 <select
                   value={nhiaApiForm.exportFormat}
