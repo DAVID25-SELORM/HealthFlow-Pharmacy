@@ -113,6 +113,8 @@ const buildNhiaForm = (settings, organization) => {
     ...blankNhiaForm,
     ...resolved,
     accreditationExpiryDate: normalizeNhiaAccreditationExpiryDate(resolved.accreditationExpiryDate),
+    memberLookupEndpointPath: resolved.memberLookupEndpointPath || resolved.member_lookup_endpoint_path || resolved.memberLookupEndpoint || '/api/hmis/genCCC',
+    claimitSubmitBaseUrl: resolved.claimitSubmitBaseUrl || resolved.claimit_submit_base_url || '',
     credentials: {
       ...blankNhiaForm.credentials,
       apiKey: '',

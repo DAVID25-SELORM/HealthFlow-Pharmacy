@@ -42,6 +42,7 @@ import {
 } from '../services/nhisService'
 import {
   generateNhiaCcCode as generateBranchNhiaCcCode,
+  lookupNhiaMember as branchLookupNhiaMember,
 } from '../services/branchServerApi'
 import { getAllPatients, searchPatients } from '../services/patientService'
 import { getAllDrugs } from '../services/drugService'
@@ -532,6 +533,7 @@ const Nhis = () => {
   // ─── direct NHIA API ─────────────────────────────────────────
   const [directNhiaSettings, setDirectNhiaSettings] = useState(null)
   const [generatingCcCode, setGeneratingCcCode] = useState(false)
+  const [lookingUpMember, setLookingUpMember] = useState(false)
 
   // ── export modal ──────────────────────────────────────────────
   const [exportMonth, setExportMonth]   = useState(
@@ -1464,6 +1466,55 @@ const Nhis = () => {
   }
 
   // ── submit claim ──────────────────────────────────────────────
+  // Called when the member number field loses focus (onBlur) or when the
+  // user clicks the lookup icon. Calls NHIA genCCC to verify eligibility
+  // and auto-fill name, HIN, DOB, gender, and CC code.
+  const handleMemberLookup = async (memberNo) => {
+    const memberNumber = (memberNo || claimForm.memberNo || '').trim()
+    if (!memberNumber || !nhiaCcCodeApiAvailable) return
+
+    try {
+      setLookingUpMember(true)
+      const isBranchSource = ['local_branch_server', 'local_cache'].includes(
+        resolvedNhiaSettings?.configSource || resolvedNhiaSettings?.source
+      )
+      if (!isBranchSource) return
+
+      const result = await branchLookupNhiaMember({ memberNumber })
+      if (!result) return
+
+      setClaimForm((prev) => ({
+        ...prev,
+        memberNo: memberNumber,
+        hin: result.hin || prev.hin,
+        surname: result.memberName
+          ? (result.memberName.split(' ').slice(-1)[0] || prev.surname)
+          : prev.surname,
+        otherNames: result.memberName
+          ? (result.memberName.split(' ').slice(0, -1).join(' ') || prev.otherNames)
+          : prev.otherNames,
+        dateOfBirth: result.dateOfBirth || prev.dateOfBirth,
+        gender: result.gender
+          ? (result.gender.charAt(0).toUpperCase() + result.gender.slice(1).toLowerCase())
+          : prev.gender,
+        ...(result.ccCode ? { cccNo: result.ccCode, ccCode: result.ccCode } : {}),
+      }))
+
+      if (result.status && result.status.toUpperCase() !== 'ACTIVE') {
+        notify(`Member status: ${result.status}. Check eligibility before proceeding.`, 'warning')
+      } else if (result.ccCode) {
+        notify(`Member verified — ${result.memberName || memberNumber}. CC code auto-filled.`, 'success')
+      } else {
+        notify(`Member verified — ${result.memberName || memberNumber}.`, 'info')
+      }
+    } catch (err) {
+      // Non-critical — user can still type manually
+      if (import.meta.env.DEV) console.warn('Member lookup failed:', err.message)
+    } finally {
+      setLookingUpMember(false)
+    }
+  }
+
   const handleGenerateCcCode = async () => {
     if (isHostedPageWithLocalClaimItBridge) {
       setClaimForm((prev) => ({ ...prev, cccNo: '' }))
@@ -2645,8 +2696,16 @@ const Nhis = () => {
                       <input className="form-input" value={claimForm.memberNo}
                         required
                         placeholder="12345678 or GHA-XXXXXXXXX-X"
-                        onBlur={(e) => setClaimForm((p) => ({ ...p, memberNo: normalizeNhiaMemberNumber(e.target.value) }))}
+                        disabled={lookingUpMember}
+                        onBlur={(e) => {
+                          const normalized = normalizeNhiaMemberNumber(e.target.value)
+                          setClaimForm((p) => ({ ...p, memberNo: normalized }))
+                          handleMemberLookup(normalized)
+                        }}
                         onChange={(e) => setClaimForm((p) => ({ ...p, memberNo: e.target.value }))} />
+                      {lookingUpMember && (
+                        <div className="patient-meta">Verifying member with NHIA...</div>
+                      )}
                     </div>
                     <div className="form-group">
                       <label>HIN</label>
