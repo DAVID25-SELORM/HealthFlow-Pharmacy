@@ -775,9 +775,28 @@ const mapSettingsRow = (row, { includeCredentials = false } = {}) => {
           : 'manual'),
     sandboxBaseUrl: row.sandbox_base_url || '',
     productionBaseUrl: row.production_base_url || '',
-    // claimitSubmitBaseUrl: the local CLAIM-it desktop software URL (localhost:31719/json-api).
-    // Stored in production_base_url column — distinct from apiBaseUrl (NHIA eligibility server).
-    claimitSubmitBaseUrl: row.production_base_url || '',
+    // Detect legacy rows where api_base_url held a CLAIM-it bridge URL.
+    // Move it to claimitSubmitBaseUrl and clear apiBaseUrl so admin fills in the correct NHIA URL.
+    apiBaseUrl: (() => {
+      const stored = normalizeText(row.api_base_url)
+      if (!stored) return ''
+      const isClaimItUrl = stored.includes('localhost') ||
+        stored.includes('/json-api') || stored.includes('/xml-api') ||
+        stored.includes('31719') ||
+        (!stored.includes('nhia.gov.gh') && (stored.includes('.vercel.app') || stored.includes('.healthflow')))
+      return isClaimItUrl ? '' : stored
+    })(),
+    claimitSubmitBaseUrl: (() => {
+      const fromProduction = normalizeText(row.production_base_url)
+      if (fromProduction) return fromProduction
+      const stored = normalizeText(row.api_base_url)
+      if (!stored) return ''
+      const isClaimItUrl = stored.includes('localhost') ||
+        stored.includes('/json-api') || stored.includes('/xml-api') ||
+        stored.includes('31719') ||
+        (!stored.includes('nhia.gov.gh') && (stored.includes('.vercel.app') || stored.includes('.healthflow')))
+      return isClaimItUrl ? stored : ''
+    })(),
     // ✅ NHIA API ARCHITECTURE PATCH END
     // ✅ NHIA CONFIG PATCH END
     schemeName: row.scheme_name || 'National Health Insurance',
@@ -792,7 +811,6 @@ const mapSettingsRow = (row, { includeCredentials = false } = {}) => {
     claimitValidationEnabled: row.claimit_validation_enabled !== 0,
     claimsOfficerSignatureUrl: row.claims_officer_signature_url || '',
     submitterId: row.submitter_id || '',
-    apiBaseUrl: row.api_base_url || '',
     apiKeyEncrypted: row.api_key_encrypted ? NHIA_SECRET_MASK : '',
     apiSecretEncrypted: row.api_secret_encrypted ? NHIA_SECRET_MASK : '',
     claimEndpointPath: row.claim_endpoint_path || '',

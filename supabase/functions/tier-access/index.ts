@@ -2958,7 +2958,6 @@ const mapNhiaSettingsRow = async (row: Record<string, unknown> | null, includeCr
           : 'manual'),
     sandboxBaseUrl: row.sandbox_base_url || '',
     productionBaseUrl: row.production_base_url || '',
-    claimitSubmitBaseUrl: row.production_base_url || '',
     // ✅ NHIA API ARCHITECTURE PATCH END
     providerTypeDescription: row.provider_type_description || '',
     providerClassLevel: row.provider_class_level || '',
@@ -2970,7 +2969,33 @@ const mapNhiaSettingsRow = async (row: Record<string, unknown> | null, includeCr
     nhiaApiMode: row.nhia_api_mode || row.integration_mode || 'claimit_export',
     nhia_api_mode: row.nhia_api_mode || row.integration_mode || 'claimit_export',
     apiEnvironment: row.api_environment || 'production',
-    apiBaseUrl: row.api_base_url || '',
+    // Detect legacy rows where api_base_url held the CLAIM-it bridge URL
+    // (e.g. https://*.vercel.app/json-api or localhost:31719).
+    // In those cases move it to claimitSubmitBaseUrl and leave apiBaseUrl blank
+    // so the admin sees the right field to fill with the NHIA eligibility URL.
+    apiBaseUrl: (() => {
+      const stored = normalizeText(row.api_base_url)
+      if (!stored) return ''
+      const isClaimItUrl = stored.includes('localhost') ||
+        stored.includes('/json-api') ||
+        stored.includes('/xml-api') ||
+        stored.includes('31719') ||
+        (!stored.includes('nhia.gov.gh') && (stored.includes('.vercel.app') || stored.includes('.healthflow')))
+      return isClaimItUrl ? '' : stored
+    })(),
+    claimitSubmitBaseUrl: (() => {
+      const fromProductionUrl = normalizeText(row.production_base_url)
+      if (fromProductionUrl) return fromProductionUrl
+      // Migrate: if api_base_url was a CLAIM-it URL, move it here
+      const stored = normalizeText(row.api_base_url)
+      if (!stored) return ''
+      const isClaimItUrl = stored.includes('localhost') ||
+        stored.includes('/json-api') ||
+        stored.includes('/xml-api') ||
+        stored.includes('31719') ||
+        (!stored.includes('nhia.gov.gh') && (stored.includes('.vercel.app') || stored.includes('.healthflow')))
+      return isClaimItUrl ? stored : ''
+    })(),
     apiKeyEncrypted: row.api_key_encrypted ? NHIA_SECRET_MASK : '',
     apiSecretEncrypted: row.api_secret_encrypted ? NHIA_SECRET_MASK : '',
     claimEndpointPath: row.claim_endpoint_path || row.claim_submit_endpoint || '',

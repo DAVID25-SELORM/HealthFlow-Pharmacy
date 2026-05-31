@@ -146,7 +146,7 @@ const toNhiaApiForm = (settings, organization) => {
   return {
     ...blankNhiaApiForm,
     ...resolved,
-    integrationMode: resolved.integrationMode === 'claimit_assisted' ? 'claimit_bridge' : resolved.integrationMode,
+    integrationMode: resolved.integrationMode || 'claimit_assisted',
     ccEndpointPath: resolved.ccEndpointPath || resolved.cc_endpoint_path || resolved.ccCodeEndpointPath || resolved.cc_code_endpoint_path || '',
     ccCodeEndpointPath: resolved.ccCodeEndpointPath || resolved.cc_code_endpoint_path || resolved.ccEndpointPath || resolved.cc_endpoint_path || '',
     memberLookupEndpointPath: resolved.memberLookupEndpointPath || resolved.member_lookup_endpoint_path || resolved.memberLookupEndpoint || resolved.member_lookup_endpoint || '/api/hmis/genCCC',
