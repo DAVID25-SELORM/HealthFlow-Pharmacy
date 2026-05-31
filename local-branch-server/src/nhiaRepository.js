@@ -1584,9 +1584,17 @@ export const lookupNhiaMember = async (memberNumber, { cardType } = {}) => {
     return { status: 'pending', message: 'NHIA API not configured' }
   }
 
-  const apiBaseUrl = normalizeText(settings.apiBaseUrl)
-  if (!apiBaseUrl) {
-    return { status: 'pending', message: 'NHIA API base URL not configured' }
+  // Prefer a dedicated NHIA eligibility base URL if configured.
+  // Fall back to apiBaseUrl only when it looks like the NHIA eligibility server
+  // (not the local CLAIM-it software at localhost:31719).
+  const nhiaEligibilityBaseUrl = normalizeText(
+    settings.nhiaEligibilityBaseUrl ||
+    settings.nhia_eligibility_base_url ||
+    // apiBaseUrl is used for genCCC only when it is NOT the local CLAIM-it URL
+    (normalizeText(settings.apiBaseUrl).includes('localhost') ? '' : settings.apiBaseUrl)
+  )
+  if (!nhiaEligibilityBaseUrl) {
+    return { status: 'pending', message: 'NHIA eligibility API base URL not configured (set API Base URL to https://elig.nhia.gov.gh:5000)' }
   }
 
   // Default lookup endpoint is /api/hmis/genCCC on the NHIA eligibility server.
@@ -1594,7 +1602,6 @@ export const lookupNhiaMember = async (memberNumber, { cardType } = {}) => {
     settings.memberLookupEndpointPath || settings.memberLookupEndpoint
   ) || '/api/hmis/genCCC'
 
-  const validatedMemberNumber = assertValidMemberNumber(memberNumber, settings)
   const credentials = settings.credentials || {}
   const apiKey = normalizeText(credentials.apiKey || credentials.token)
   const apiSecret = normalizeText(credentials.apiSecret)
@@ -1603,11 +1610,13 @@ export const lookupNhiaMember = async (memberNumber, { cardType } = {}) => {
     return { status: 'pending', message: 'NHIA API key not configured' }
   }
 
+  const validatedMemberNumber = assertValidMemberNumber(memberNumber, settings)
+
   // NHIA genCCC API (https://elig.nhia.gov.gh:5000/api/hmis/genCCC):
   //   Headers: x-nhia-apikey, x-nhia-apisecret
   //   Body JSON: { CardNo, CardType }  CardType = "NHISCARD" | "GHANACARD"
   const resolvedCardType = cardType || getNhiaCardType(validatedMemberNumber)
-  const url = `${apiBaseUrl.replace(/\/+$/, '')}/${endpointPath.replace(/^\/+/, '')}`
+  const url = `${nhiaEligibilityBaseUrl.replace(/\/+$/, '')}/${endpointPath.replace(/^\/+/, '')}`
   const headers = {
     'x-nhia-apikey': apiKey,
     'x-nhia-apisecret': apiSecret,
@@ -1693,8 +1702,13 @@ export const generateNhiaCcCode = async (claimContext = {}) => {
             memberDetails: result,
           }
         }
-      } catch {
-        // Fall through to pending
+      } catch (lookupError) {
+        logSubmission({
+          action: 'cc_code.genccc_fallback.failed',
+          status: 'failed',
+          error: lookupError?.message || 'genCCC fallback failed',
+        })
+        // Fall through to pending — caller handles missing CC code
       }
     }
     return { status: 'pending', source: 'pending', message: 'Pending CLAIM-it validation' }

@@ -534,6 +534,9 @@ const Nhis = () => {
   const [directNhiaSettings, setDirectNhiaSettings] = useState(null)
   const [generatingCcCode, setGeneratingCcCode] = useState(false)
   const [lookingUpMember, setLookingUpMember] = useState(false)
+  // Tracks the last member number we already looked up — prevents duplicate API calls
+  // when the field loses focus without changing value.
+  const lastLookedUpMemberRef = useRef('')
 
   // ── export modal ──────────────────────────────────────────────
   const [exportMonth, setExportMonth]   = useState(
@@ -1466,54 +1469,62 @@ const Nhis = () => {
   }
 
   // ── submit claim ──────────────────────────────────────────────
-  // Called when the member number field loses focus (onBlur) or when the
-  // user clicks the lookup icon. Calls NHIA genCCC to verify eligibility
-  // and auto-fill name, HIN, DOB, gender, and CC code.
-  const handleMemberLookup = async (memberNo) => {
+  // Shared helper — applies member details from an NHIA genCCC response to the
+  // claim form. Used by both handleMemberLookup and handleGenerateCcCode so that
+  // auto-fill behaviour is always identical regardless of which path triggered it.
+  const applyMemberDetailsToForm = useCallback((prev, memberDetails) => {
+    if (!memberDetails) return prev
+    const nameParts = (memberDetails.memberName || '').trim().split(/\s+/)
+    const surname = nameParts.length > 1 ? nameParts[nameParts.length - 1] : nameParts[0] || prev.surname
+    const otherNames = nameParts.length > 1 ? nameParts.slice(0, -1).join(' ') : prev.otherNames
+    return {
+      ...prev,
+      hin: memberDetails.hin || prev.hin,
+      surname: surname || prev.surname,
+      otherNames: otherNames || prev.otherNames,
+      dateOfBirth: memberDetails.dateOfBirth || prev.dateOfBirth,
+      gender: memberDetails.gender
+        ? memberDetails.gender.charAt(0).toUpperCase() + memberDetails.gender.slice(1).toLowerCase()
+        : prev.gender,
+      ...(memberDetails.ccCode ? { cccNo: memberDetails.ccCode, ccCode: memberDetails.ccCode } : {}),
+    }
+  }, [])
+
+  // Called when the member number field loses focus. Calls NHIA genCCC to verify
+  // eligibility and auto-fill name, HIN, DOB, gender, and CC code.
+  // Skips if the value hasn't changed since the last successful lookup.
+  const handleMemberLookup = useCallback(async (memberNo) => {
     const memberNumber = (memberNo || claimForm.memberNo || '').trim()
     if (!memberNumber || !nhiaCcCodeApiAvailable) return
+    // Skip if we already looked up this exact member number.
+    if (lastLookedUpMemberRef.current === memberNumber) return
+
+    const isBranchSource = ['local_branch_server', 'local_cache'].includes(
+      resolvedNhiaSettings?.configSource || resolvedNhiaSettings?.source
+    )
+    if (!isBranchSource) return   // Cloud path: lookup not yet wired, skip silently
 
     try {
       setLookingUpMember(true)
-      const isBranchSource = ['local_branch_server', 'local_cache'].includes(
-        resolvedNhiaSettings?.configSource || resolvedNhiaSettings?.source
-      )
-      if (!isBranchSource) return
-
       const result = await branchLookupNhiaMember({ memberNumber })
       if (!result) return
-
-      setClaimForm((prev) => ({
-        ...prev,
-        memberNo: memberNumber,
-        hin: result.hin || prev.hin,
-        surname: result.memberName
-          ? (result.memberName.split(' ').slice(-1)[0] || prev.surname)
-          : prev.surname,
-        otherNames: result.memberName
-          ? (result.memberName.split(' ').slice(0, -1).join(' ') || prev.otherNames)
-          : prev.otherNames,
-        dateOfBirth: result.dateOfBirth || prev.dateOfBirth,
-        gender: result.gender
-          ? (result.gender.charAt(0).toUpperCase() + result.gender.slice(1).toLowerCase())
-          : prev.gender,
-        ...(result.ccCode ? { cccNo: result.ccCode, ccCode: result.ccCode } : {}),
-      }))
+      lastLookedUpMemberRef.current = memberNumber
+      setClaimForm((prev) => applyMemberDetailsToForm(prev, result))
 
       if (result.status && result.status.toUpperCase() !== 'ACTIVE') {
-        notify(`Member status: ${result.status}. Check eligibility before proceeding.`, 'warning')
+        notify(`Member status: ${result.status}. Verify eligibility before proceeding.`, 'warning')
       } else if (result.ccCode) {
         notify(`Member verified — ${result.memberName || memberNumber}. CC code auto-filled.`, 'success')
       } else {
         notify(`Member verified — ${result.memberName || memberNumber}.`, 'info')
       }
     } catch (err) {
-      // Non-critical — user can still type manually
+      // Non-critical — user can still enter details manually
       if (import.meta.env.DEV) console.warn('Member lookup failed:', err.message)
     } finally {
       setLookingUpMember(false)
     }
-  }
+  }, [claimForm.memberNo, nhiaCcCodeApiAvailable, resolvedNhiaSettings, applyMemberDetailsToForm, notify])
 
   const handleGenerateCcCode = async () => {
     if (isHostedPageWithLocalClaimItBridge) {
@@ -1574,25 +1585,11 @@ const Nhis = () => {
         throw new Error('NHIA API returned a CCC/CC code that is not exactly 5 digits.')
       }
       const md = result.memberDetails
-      setClaimForm((prev) => ({
-        ...prev,
-        cccNo: ccCode,
-        ccCode,
-        // Auto-fill member details returned by NHIA genCCC (member lookup).
-        ...(md ? {
-          hin: md.hin || prev.hin,
-          surname: md.memberName
-            ? (md.memberName.split(' ').slice(-1)[0] || prev.surname)
-            : prev.surname,
-          otherNames: md.memberName
-            ? (md.memberName.split(' ').slice(0, -1).join(' ') || prev.otherNames)
-            : prev.otherNames,
-          dateOfBirth: md.dateOfBirth || prev.dateOfBirth,
-          gender: md.gender
-            ? (md.gender.charAt(0).toUpperCase() + md.gender.slice(1).toLowerCase())
-            : prev.gender,
-        } : {}),
-      }))
+      if (md) lastLookedUpMemberRef.current = claimForm.memberNo || ''
+      setClaimForm((prev) => applyMemberDetailsToForm(
+        { ...prev, cccNo: ccCode, ccCode },
+        md || null
+      ))
       notify(
         result.source === 'claimit_bridge'
           ? 'CCC/CC code generated or validated via CLAIM-it.'
@@ -2700,7 +2697,10 @@ const Nhis = () => {
                         onBlur={(e) => {
                           const normalized = normalizeNhiaMemberNumber(e.target.value)
                           setClaimForm((p) => ({ ...p, memberNo: normalized }))
-                          handleMemberLookup(normalized)
+                          // Only trigger lookup when value actually changed
+                          if (normalized && normalized !== lastLookedUpMemberRef.current) {
+                            handleMemberLookup(normalized)
+                          }
                         }}
                         onChange={(e) => setClaimForm((p) => ({ ...p, memberNo: e.target.value }))} />
                       {lookingUpMember && (
