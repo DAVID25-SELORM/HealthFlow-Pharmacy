@@ -485,6 +485,77 @@ const syncPharmacySettingsFromOrganization = async (
   }
 }
 
+// Seeds standard Ghana NHIS configuration defaults so new facilities don't
+// start with a completely blank NHIA settings page.
+// Facility-specific credentials (API key, secret) are left empty — the admin
+// fills those in after receiving them from NHIA/CLAIM-it.
+const seedNhiaConfiguration = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  organization: {
+    id: string
+    organization_type: string
+    license_number?: string | null
+    pharmacy_level?: string | null
+  },
+  adminFullName: string
+) => {
+  const { error: existingError, data: existing } = await adminClient
+    .from('nhia_configuration')
+    .select('id')
+    .eq('organization_id', organization.id)
+    .is('branch_id', null)
+    .maybeSingle()
+
+  if (existingError && existingError.code !== '42P01') throw existingError
+  if (existing) return   // already seeded — don't overwrite
+
+  const isHospital = normalizeText(organization.organization_type).toLowerCase() === 'hospital'
+  const facilityType = isHospital ? 'Hospital' : 'Pharmacy'
+  const pharmacyLevel = normalizeText(organization.pharmacy_level).toUpperCase()
+  const pharmacyFacilityLevel = ['P1', 'P2', 'LCS', 'HP'].includes(pharmacyLevel) ? pharmacyLevel : (isHospital ? '' : 'P1')
+
+  const { error } = await adminClient.from('nhia_configuration').insert([{
+    organization_id: organization.id,
+    branch_id: null,
+    mode: 'ONLINE_CLOUD',
+    scheme_name: 'National Health Insurance',
+    // NHIA eligibility API (member lookup / genCCC)
+    api_base_url: 'https://elig.nhia.gov.gh:5000',
+    // CLAIM-it local software (claim submission) stored in production_base_url
+    production_base_url: 'http://localhost:31719/json-api',
+    member_lookup_endpoint_path: '/api/hmis/genCCC',
+    member_lookup_endpoint: '/api/hmis/genCCC',
+    claim_endpoint_path: '/claims',
+    claim_submit_endpoint: '/claims',
+    integration_mode: 'claimit_assisted',
+    connection_profile: 'local_server',
+    validation_mode: 'validate_before_submit',
+    claim_control_mode: 'manual',
+    credential_mode: 'api_key',
+    api_key_header_name: 'x-nhia-apikey',
+    api_secret_header_name: 'x-nhia-apisecret',
+    facility_type: facilityType,
+    pharmacy_facility_level: pharmacyFacilityLevel || null,
+    license_number: normalizeText(organization.license_number) || null,
+    admission_payment_option: 'nhis_pays_admission',
+    claimit_validation_enabled: true,
+    claims_officer_name: adminFullName || null,
+    direct_api_enabled: false,
+    export_format: 'json',
+    nhis_member_digits: 8,
+    ghana_card_digits: 10,
+    max_retry_attempts: 3,
+    is_active: true,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  }])
+
+  // Table may not exist on older deployments — log and continue, don't block onboarding
+  if (error && error.code !== '42P01' && error.code !== 'PGRST205') {
+    console.warn('nhia_configuration seed warning:', error.message)
+  }
+}
+
 const seedDefaultMedicationCatalog = async (
   adminClient: ReturnType<typeof createAdminClient>,
   organizationId: string
@@ -1473,6 +1544,13 @@ const bootstrapOrganization = async (
     }
 
     await seedDefaultMedicationCatalog(adminClient, organizationId)
+
+    await seedNhiaConfiguration(adminClient, {
+      id: organizationId,
+      organization_type: organizationType,
+      license_number: normalizeText(organizationInput.licenseNumber) || null,
+      pharmacy_level: pharmacyLevel || null,
+    }, adminFullName)
 
     return {
       organization,

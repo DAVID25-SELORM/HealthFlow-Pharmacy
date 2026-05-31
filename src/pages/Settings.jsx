@@ -74,12 +74,12 @@ const blankNhiaApiForm = {
   accreditationExpiryDate: '',
   // ✅ NHIA CONFIG PATCH END
   // ✅ NHIA API ARCHITECTURE PATCH START
-  integrationMode: 'claimit_export',
+  integrationMode: 'claimit_assisted',
   connectionProfile: 'local_server',
   validationMode: 'validate_before_submit',
   claimControlMode: 'manual',
   sandboxBaseUrl: '',
-  productionBaseUrl: '',
+  productionBaseUrl: 'http://localhost:31719/json-api',
   // ✅ NHIA API ARCHITECTURE PATCH END
   providerTypeDescription: '',
   providerClassLevel: '',
@@ -89,9 +89,9 @@ const blankNhiaApiForm = {
   claimsOfficerSignatureUrl: '',
   submitterId: '',
   apiEnvironment: 'production',
-  apiBaseUrl: '',
-  claimitSubmitBaseUrl: '',
-  claimEndpointPath: '',
+  apiBaseUrl: 'https://elig.nhia.gov.gh:5000',
+  claimitSubmitBaseUrl: 'http://localhost:31719/json-api',
+  claimEndpointPath: '/claims',
   claimValidationEndpointPath: '',
   ccEndpointPath: '',
   ccCodeEndpointPath: '',
@@ -103,8 +103,8 @@ const blankNhiaApiForm = {
   credentials: {
     apiKey: '',
     apiSecret: '',
-    headerName: '',
-    secretHeaderName: '',
+    headerName: 'x-nhia-apikey',
+    secretHeaderName: 'x-nhia-apisecret',
     headerPrefix: '',
     clientId: '',
     clientSecret: '',
