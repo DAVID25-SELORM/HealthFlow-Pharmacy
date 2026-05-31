@@ -156,6 +156,35 @@ const CLAIMIT_BRIDGE_QUEUE_KEY = 'healthflow.claimitBridgeQueue.v1'
 const CLAIMIT_BRIDGE_RETRY_INTERVAL_MS = 60 * 1000
 const CLAIMIT_BRIDGE_MODES = new Set(['claimit_bridge', 'claimit_assisted'])
 const PENDING_CLAIMIT_CC_MESSAGE = 'Pending CLAIM-it validation'
+const isClaimItBaseUrl = (value = '') => {
+  const stored = normalizeText(value).toLowerCase()
+  if (!stored) return false
+  return stored.includes('localhost') ||
+    stored.includes('127.0.0.1') ||
+    stored.includes('/json-api') ||
+    stored.includes('/xml-api') ||
+    stored.includes('31719') ||
+    (!stored.includes('nhia.gov.gh') && (stored.includes('.vercel.app') || stored.includes('.healthflow')))
+}
+const resolveNhiaApiBaseUrls = (raw = {}) => {
+  const apiCandidate = normalizeText(raw.apiBaseUrl || raw.api_base_url).replace(/\/+$/, '')
+  const explicitClaimItUrl = normalizeText(raw.claimitSubmitBaseUrl || raw.claimit_submit_base_url).replace(/\/+$/, '')
+  const productionCandidate = normalizeText(raw.productionBaseUrl || raw.production_base_url).replace(/\/+$/, '')
+  const storedClaimItUrl = explicitClaimItUrl || (isClaimItBaseUrl(productionCandidate) ? productionCandidate : '')
+  const claimitSubmitBaseUrl = isClaimItBaseUrl(apiCandidate)
+    ? storedClaimItUrl || apiCandidate
+    : storedClaimItUrl
+  const apiBaseUrl = isClaimItBaseUrl(apiCandidate) ? '' : apiCandidate
+
+  return {
+    apiBaseUrl,
+    api_base_url: apiBaseUrl,
+    claimitSubmitBaseUrl,
+    claimit_submit_base_url: claimitSubmitBaseUrl,
+    productionBaseUrl: claimitSubmitBaseUrl,
+    production_base_url: claimitSubmitBaseUrl,
+  }
+}
 const NHIA_API_SETTINGS_CACHE_FIELDS = [
   'id',
   'branchId',
@@ -209,6 +238,8 @@ const NHIA_API_SETTINGS_CACHE_FIELDS = [
   'api_environment',
   'apiBaseUrl',
   'api_base_url',
+  'claimitSubmitBaseUrl',
+  'claimit_submit_base_url',
   'sandboxBaseUrl',
   'sandbox_base_url',
   'productionBaseUrl',
@@ -258,6 +289,7 @@ const NHIA_CONFIG_DEFAULTS = {
   accreditationExpiryDate: '',
   claimsOfficerName: '',
   apiBaseUrl: '',
+  claimitSubmitBaseUrl: '',
   submitterId: '',
   apiKeyEncrypted: '',
   apiSecretEncrypted: '',
@@ -2050,6 +2082,7 @@ const normalizeHostedNhiaIntegrationRow = (row = null) => {
   const hasApiKey = Boolean(row.has_api_key || normalizeText(credentialPayload.apiKey))
   const hasApiSecret = Boolean(row.has_api_secret || normalizeText(credentialPayload.apiSecret))
   const hasPassword = Boolean(row.has_password || normalizeText(credentialPayload.password))
+  const resolvedBaseUrls = resolveNhiaApiBaseUrls(row)
 
   return {
     ...row,
@@ -2061,7 +2094,7 @@ const normalizeHostedNhiaIntegrationRow = (row = null) => {
     credentialCode: row.credential_code || row.facility_code || '',
     accreditationExpiryDate: getNhiaAccreditationExpiryDate(row),
     claimsOfficerName: row.claims_officer_name || '',
-    apiBaseUrl: row.api_base_url || '',
+    ...resolvedBaseUrls,
     claimEndpointPath: row.claim_endpoint_path || row.claim_submit_endpoint || '',
     claimSubmitEndpoint: row.claim_submit_endpoint || row.claim_endpoint_path || '',
     claimStatusEndpointPath: row.claim_status_endpoint_path || row.claim_status_endpoint || '',
@@ -2124,13 +2157,7 @@ const getHostedNhiaConfigRowPayload = async (settings = {}, organizationId = '',
       preferredSettings?.branch_id ||
       await getCurrentUserBranchIdForNhiaConfig()
   )
-  const activeBaseUrl = normalizeText(
-    settings.apiBaseUrl ||
-      settings.api_base_url ||
-      (normalizeText(settings.apiEnvironment || settings.api_environment).toLowerCase() === 'sandbox'
-        ? settings.sandboxBaseUrl || settings.sandbox_base_url
-        : settings.productionBaseUrl || settings.production_base_url)
-  ).replace(/\/+$/, '')
+  const resolvedBaseUrls = resolveNhiaApiBaseUrls(settings)
   const facilityCode = normalizeText(settings.facilityCode || settings.facility_code)
   const providerNumber = normalizeText(settings.providerNumber || settings.provider_number || settings.providerId || settings.provider_id)
   const credentialCode = normalizeText(settings.credentialCode || settings.credential_code || facilityCode)
@@ -2159,7 +2186,7 @@ const getHostedNhiaConfigRowPayload = async (settings = {}, organizationId = '',
     validation_mode: normalizeText(settings.validationMode || settings.validation_mode) || 'validate_before_submit',
     claim_control_mode: normalizeText(settings.claimControlMode || settings.claim_control_mode) || 'manual',
     sandbox_base_url: normalizeText(settings.sandboxBaseUrl || settings.sandbox_base_url).replace(/\/+$/, '') || null,
-    production_base_url: normalizeText(settings.productionBaseUrl || settings.production_base_url).replace(/\/+$/, '') || null,
+    production_base_url: resolvedBaseUrls.claimitSubmitBaseUrl || null,
     provider_type_description: normalizeText(settings.providerTypeDescription || settings.provider_type_description) || null,
     provider_class_level: normalizeText(settings.providerClassLevel || settings.provider_class_level) || null,
     claims_officer_name: normalizeText(settings.claimsOfficerName || settings.claims_officer_name) || null,
@@ -2168,7 +2195,7 @@ const getHostedNhiaConfigRowPayload = async (settings = {}, organizationId = '',
     claims_officer_signature_url: normalizeText(settings.claimsOfficerSignatureUrl || settings.claims_officer_signature_url) || null,
     submitter_id: normalizeText(settings.submitterId || settings.submitter_id) || null,
     api_environment: normalizeText(settings.apiEnvironment || settings.api_environment).toLowerCase() === 'sandbox' ? 'sandbox' : 'production',
-    api_base_url: activeBaseUrl || null,
+    api_base_url: resolvedBaseUrls.apiBaseUrl || null,
     claim_endpoint_path: claimEndpointPath || null,
     claim_submit_endpoint: claimEndpointPath || null,
     claim_validation_endpoint_path: normalizeText(settings.claimValidationEndpointPath || settings.claim_validation_endpoint_path) || null,
@@ -2278,6 +2305,7 @@ const normalizeNhiaConfig = (settings = null, {
   const licenseNumber = normalizeText(raw.licenseNumber || raw.license_number)
   const providerTypeDescription = normalizeText(raw.providerTypeDescription || raw.provider_type_description)
   const providerClassLevel = normalizeText(raw.providerClassLevel || raw.provider_class_level)
+  const resolvedBaseUrls = resolveNhiaApiBaseUrls(raw)
   const hasApiKey = hasNhiaSavedCredential(raw, 'hasApiKey', 'has_api_key') || Boolean(normalizeText(credentials.apiKey))
   const hasApiSecret = hasNhiaSavedCredential(raw, 'hasApiSecret', 'has_api_secret') || Boolean(normalizeText(credentials.apiSecret))
   const username = normalizeText(raw.username || credentials.username)
@@ -2320,8 +2348,12 @@ const normalizeNhiaConfig = (settings = null, {
     provider_type_description: providerTypeDescription,
     providerClassLevel,
     provider_class_level: providerClassLevel,
-    apiBaseUrl: normalizeText(raw.apiBaseUrl || raw.api_base_url),
-    api_base_url: normalizeText(raw.api_base_url || raw.apiBaseUrl),
+    apiBaseUrl: resolvedBaseUrls.apiBaseUrl,
+    api_base_url: resolvedBaseUrls.api_base_url,
+    claimitSubmitBaseUrl: resolvedBaseUrls.claimitSubmitBaseUrl,
+    claimit_submit_base_url: resolvedBaseUrls.claimit_submit_base_url,
+    productionBaseUrl: resolvedBaseUrls.productionBaseUrl,
+    production_base_url: resolvedBaseUrls.production_base_url,
     submitterId: normalizeText(raw.submitterId || raw.submitter_id),
     submitter_id: normalizeText(raw.submitter_id || raw.submitterId),
     apiKeyEncrypted: '',
@@ -2403,6 +2435,7 @@ const buildNhiaCredentialsPayload = (credentials = {}) => {
 
 const sanitizeNhiaApiSettingsPayload = (settings = {}) => {
   const sanitized = { ...(settings || {}) }
+  Object.assign(sanitized, resolveNhiaApiBaseUrls(sanitized))
   const credentials = buildNhiaCredentialsPayload(sanitized.credentials)
   if (Object.keys(credentials).length) {
     sanitized.credentials = credentials
@@ -2428,7 +2461,9 @@ export const validateNhiaConfigForMode = (settings = {}) => {
   const claimSubmitEndpoint = normalizeText(settings.claimSubmitEndpoint || settings.claim_submit_endpoint || settings.claimEndpointPath || settings.claim_endpoint_path)
   const claimStatusEndpoint = normalizeText(settings.claimStatusEndpoint || settings.claim_status_endpoint || settings.claimStatusEndpointPath || settings.claim_status_endpoint_path)
   const memberLookupEndpoint = normalizeText(settings.memberLookupEndpoint || settings.member_lookup_endpoint || settings.memberLookupEndpointPath || settings.member_lookup_endpoint_path)
-  const apiBaseUrl = normalizeText(settings.apiBaseUrl || settings.api_base_url || settings.productionBaseUrl || settings.production_base_url || settings.sandboxBaseUrl || settings.sandbox_base_url)
+  const resolvedBaseUrls = resolveNhiaApiBaseUrls(settings)
+  const apiBaseUrl = resolvedBaseUrls.apiBaseUrl || normalizeText(settings.sandboxBaseUrl || settings.sandbox_base_url)
+  const claimitSubmitBaseUrl = resolvedBaseUrls.claimitSubmitBaseUrl
   const missing = [
     !providerId && 'providerId',
     !normalizeText(settings.credentialCode || settings.credential_code) && 'credentialCode',
@@ -2438,6 +2473,7 @@ export const validateNhiaConfigForMode = (settings = {}) => {
 
   if (isClaimItBridgeMode(integrationMode)) {
     if (!apiBaseUrl) missing.push('apiBaseUrl')
+    if (!claimitSubmitBaseUrl) missing.push('claimitSubmitBaseUrl')
     if (!((hasUsername && hasPassword) || (hasApiKey && hasApiSecret))) {
       missing.push('username/password or api credentials')
     }
@@ -2573,11 +2609,12 @@ const getMemberLookupEndpointPath = (settings = {}) =>
 const getClaimItBridgeBaseUrl = (settings = {}) => {
   const environment = normalizeText(settings.apiEnvironment || settings.api_environment).toLowerCase()
   const apiBaseUrl = normalizeText(settings.apiBaseUrl || settings.api_base_url)
+  const claimitSubmitBaseUrl = normalizeText(settings.claimitSubmitBaseUrl || settings.claimit_submit_base_url)
   const productionBaseUrl = normalizeText(settings.productionBaseUrl || settings.production_base_url)
   const sandboxBaseUrl = normalizeText(settings.sandboxBaseUrl || settings.sandbox_base_url)
   return environment === 'sandbox'
-    ? sandboxBaseUrl || apiBaseUrl || productionBaseUrl
-    : productionBaseUrl || apiBaseUrl || sandboxBaseUrl
+    ? sandboxBaseUrl || claimitSubmitBaseUrl || productionBaseUrl || apiBaseUrl
+    : claimitSubmitBaseUrl || productionBaseUrl || apiBaseUrl || sandboxBaseUrl
 }
 
 const canUseBaseUrlForClaimControl = (settings = {}) => {
@@ -7038,10 +7075,12 @@ const submitNhisClaimsDirect = async (claims, period, options = {}) => {
   const integrationMode = normalizeText(options.integrationMode || options.integration_mode)
   const connectionProfile = normalizeText(options.connectionProfile || options.connection_profile) || 'local_server'
   const bridgeBaseUrl = normalizeText(
-    options.apiBaseUrl ||
-      options.api_base_url ||
+    options.claimitSubmitBaseUrl ||
+      options.claimit_submit_base_url ||
       options.productionBaseUrl ||
       options.production_base_url ||
+      options.apiBaseUrl ||
+      options.api_base_url ||
       options.sandboxBaseUrl ||
       options.sandbox_base_url
   )

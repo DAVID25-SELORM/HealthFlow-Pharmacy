@@ -814,15 +814,19 @@ const Nhis = () => {
     claimControlMode === 'claimit_bridge_ccc'
   const nhiaApiBaseUrl = resolvedNhiaSettings?.apiBaseUrl ||
     resolvedNhiaSettings?.api_base_url ||
+    ''
+  const claimItSubmitBaseUrl = resolvedNhiaSettings?.claimitSubmitBaseUrl ||
+    resolvedNhiaSettings?.claimit_submit_base_url ||
     resolvedNhiaSettings?.productionBaseUrl ||
     resolvedNhiaSettings?.production_base_url ||
     resolvedNhiaSettings?.sandboxBaseUrl ||
     resolvedNhiaSettings?.sandbox_base_url ||
     ''
+  const claimSubmissionBaseUrl = isClaimItBridgeMode ? claimItSubmitBaseUrl : nhiaApiBaseUrl
   const isLocalClaimItBridgeProfile = ['local_server', 'lan_ip'].includes(
     resolvedNhiaSettings?.connectionProfile || resolvedNhiaSettings?.connection_profile || 'local_server'
   )
-  const isLocalClaimItBridgeUrl = isLocalClaimItBridgeBaseUrl(nhiaApiBaseUrl)
+  const isLocalClaimItBridgeUrl = isLocalClaimItBridgeBaseUrl(claimSubmissionBaseUrl)
   const isHostedPageWithLocalClaimItBridge = usesClaimItValidationFlow &&
     isLocalClaimItBridgeProfile &&
     isLocalClaimItBridgeUrl &&
@@ -836,7 +840,7 @@ const Nhis = () => {
   const directNhiaApiAvailable = Boolean(
     allowsDirectNhiaSubmission &&
       resolvedNhiaSettings?.directApiEnabled &&
-      nhiaApiBaseUrl &&
+      claimSubmissionBaseUrl &&
       resolvedNhiaSettings?.claimEndpointPath
   )
   const memberLookupEndpointPath = resolvedNhiaSettings?.memberLookupEndpointPath ||
@@ -845,7 +849,7 @@ const Nhis = () => {
     (resolvedNhiaSettings?.directApiEnabled ||
       ['claimit_bridge', 'claimit_bridge_ccc', 'direct_api'].includes(claimControlMode)) &&
       !isHostedPageWithLocalClaimItBridge &&
-      nhiaApiBaseUrl &&
+      (nhiaApiBaseUrl || claimSubmissionBaseUrl) &&
       // genCCC member lookup endpoint OR a dedicated CC endpoint OR CLAIM-it bridge flow
       (memberLookupEndpointPath || ccEndpointPath || usesClaimItValidationFlow)
   )
@@ -870,7 +874,8 @@ const Nhis = () => {
       if (!resolvedNhiaSettings.facilityCode && !resolvedNhiaSettings.facility_code) apiIssues.push('NHIA facility code is missing.')
       if (!resolvedNhiaSettings.providerNumber && !resolvedNhiaSettings.provider_number) apiIssues.push('NHIA provider number is missing.')
       if (resolvedNhiaSettings.directApiEnabled) {
-        if (!nhiaApiBaseUrl) apiIssues.push('Direct NHIA/CLAIM-it API base URL is missing.')
+        if (isClaimItBridgeMode && !claimItSubmitBaseUrl) apiIssues.push('CLAIM-it submit base URL is missing.')
+        if (!isClaimItBridgeMode && !nhiaApiBaseUrl) apiIssues.push('Direct NHIA API base URL is missing.')
         if (!resolvedNhiaSettings.claimEndpointPath && !resolvedNhiaSettings.claim_endpoint_path) apiIssues.push('Claim submission endpoint path is missing.')
       } else {
         apiWarnings.push('Direct API is off; use CLAIM-it export/import.')
@@ -1316,6 +1321,7 @@ const Nhis = () => {
     validationMode,
     claimControlMode,
     apiBaseUrl: nhiaApiBaseUrl,
+    claimitSubmitBaseUrl: claimItSubmitBaseUrl,
     claimEndpointPath: resolvedNhiaSettings?.claimEndpointPath || resolvedNhiaSettings?.claim_endpoint_path || '',
     claimValidationEndpointPath: resolvedNhiaSettings?.claimValidationEndpointPath || resolvedNhiaSettings?.claim_validation_endpoint_path || '',
     ccEndpointPath,
@@ -1561,7 +1567,7 @@ const Nhis = () => {
       const generateCcCode = isLocalClaimItBridge
         ? (context) => generateBrowserClaimItBridgeCcCode({
             ...resolvedNhiaSettings,
-            apiBaseUrl: nhiaApiBaseUrl,
+            apiBaseUrl: claimSubmissionBaseUrl,
             ccEndpointPath,
             ccCodeEndpointPath: ccEndpointPath,
             claimControlMode,

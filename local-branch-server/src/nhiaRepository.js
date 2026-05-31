@@ -893,13 +893,15 @@ const validateNhiaSettingsForMode = (settings = {}) => {
     !getAccreditationExpiryDate(settings) && 'accreditationExpiryDate',
     !normalizeText(settings.claimsOfficerName || settings.claims_officer_name) && 'claimsOfficerName',
   ].filter(Boolean)
-  const apiBaseUrl = normalizeText(settings.apiBaseUrl || settings.api_base_url || settings.productionBaseUrl || settings.production_base_url || settings.sandboxBaseUrl || settings.sandbox_base_url)
+  const apiBaseUrl = normalizeText(settings.apiBaseUrl || settings.api_base_url || settings.sandboxBaseUrl || settings.sandbox_base_url)
+  const claimitSubmitBaseUrl = normalizeText(settings.claimitSubmitBaseUrl || settings.claimit_submit_base_url || settings.productionBaseUrl || settings.production_base_url)
   const claimSubmitEndpoint = normalizeText(settings.claimSubmitEndpoint || settings.claim_submit_endpoint || settings.claimEndpointPath || settings.claim_endpoint_path)
   const claimStatusEndpoint = normalizeText(settings.claimStatusEndpoint || settings.claim_status_endpoint || settings.claimStatusEndpointPath || settings.claim_status_endpoint_path)
   const memberLookupEndpoint = normalizeText(settings.memberLookupEndpoint || settings.member_lookup_endpoint || settings.memberLookupEndpointPath || settings.member_lookup_endpoint_path)
 
   if (['claimit_bridge', 'claimit_assisted'].includes(integrationMode)) {
     if (!apiBaseUrl) missing.push('apiBaseUrl')
+    if (!claimitSubmitBaseUrl) missing.push('claimitSubmitBaseUrl')
     if (!((hasUsername && hasPassword) || (hasApiKey && hasApiSecret))) {
       missing.push('username/password or api credentials')
     }
@@ -1017,7 +1019,7 @@ export const saveNhiaSettings = (settings = {}) => {
     submitterId: normalizeText(settings.submitterId) || null,
     apiBaseUrl: normalizeText(
       settings.apiBaseUrl ||
-        (settings.apiEnvironment === 'sandbox' ? settings.sandboxBaseUrl : settings.productionBaseUrl)
+        (settings.apiEnvironment === 'sandbox' ? settings.sandboxBaseUrl : '')
     ).replace(/\/+$/, '') || null,
     apiKeyEncrypted: shouldWriteApiKey ? encodeNhiaSecret(credentials.apiKey) : existing?.api_key_encrypted || null,
     apiSecretEncrypted: shouldWriteApiSecret ? encodeNhiaSecret(credentials.apiSecret) : existing?.api_secret_encrypted || null,

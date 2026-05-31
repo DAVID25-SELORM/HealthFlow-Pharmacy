@@ -150,7 +150,7 @@ const toNhiaApiForm = (settings, organization) => {
     ccEndpointPath: resolved.ccEndpointPath || resolved.cc_endpoint_path || resolved.ccCodeEndpointPath || resolved.cc_code_endpoint_path || '',
     ccCodeEndpointPath: resolved.ccCodeEndpointPath || resolved.cc_code_endpoint_path || resolved.ccEndpointPath || resolved.cc_endpoint_path || '',
     memberLookupEndpointPath: resolved.memberLookupEndpointPath || resolved.member_lookup_endpoint_path || resolved.memberLookupEndpoint || resolved.member_lookup_endpoint || '/api/hmis/genCCC',
-    claimitSubmitBaseUrl: resolved.claimitSubmitBaseUrl || resolved.claimit_submit_base_url || '',
+    claimitSubmitBaseUrl: resolved.claimitSubmitBaseUrl || resolved.claimit_submit_base_url || resolved.productionBaseUrl || resolved.production_base_url || '',
     accreditationExpiryDate: normalizeDateInputValue(resolved.accreditationExpiryDate),
     hasApiKey,
     hasApiSecret,
@@ -266,7 +266,7 @@ const isLocalNhiaBridgeBaseUrl = (baseUrl = '') => {
 const getNhiaActiveBaseUrl = (form = {}) => {
   const profile = form.connectionProfile || form.connection_profile || 'local_server'
   if (NHIA_BRIDGE_MODES.includes(form.integrationMode) || NHIA_LOCAL_BRIDGE_PROFILES.includes(profile)) {
-    return form.apiBaseUrl || form.productionBaseUrl || form.sandboxBaseUrl
+    return form.claimitSubmitBaseUrl || form.claimit_submit_base_url || form.productionBaseUrl || form.production_base_url || form.sandboxBaseUrl
   }
   return form.apiEnvironment === 'sandbox'
     ? form.sandboxBaseUrl
@@ -289,8 +289,8 @@ const withProductionClaimItBridgeDefaults = (form = {}) => {
     ...(shouldUseProductionProfile ? { connectionProfile: 'production_server' } : {}),
     ...(CLAIMIT_PRODUCTION_BRIDGE_BASE_URL
       ? {
+          claimitSubmitBaseUrl: form.claimitSubmitBaseUrl || CLAIMIT_PRODUCTION_BRIDGE_BASE_URL,
           productionBaseUrl: CLAIMIT_PRODUCTION_BRIDGE_BASE_URL,
-          apiBaseUrl: CLAIMIT_PRODUCTION_BRIDGE_BASE_URL,
         }
       : {}),
   }
@@ -658,7 +658,12 @@ const Settings = () => {
         claims_officer_name: nhiaApiForm.claimsOfficerName,
         facilityType: nhiaFacilityType,
         pharmacyFacilityLevel: isHospitalOrganization ? '' : nhiaApiForm.pharmacyFacilityLevel,
-        apiBaseUrl: activeBaseUrl || nhiaApiForm.apiBaseUrl,
+        apiBaseUrl: nhiaApiForm.apiBaseUrl,
+        api_base_url: nhiaApiForm.apiBaseUrl,
+        claimitSubmitBaseUrl: activeBaseUrl || nhiaApiForm.claimitSubmitBaseUrl,
+        claimit_submit_base_url: activeBaseUrl || nhiaApiForm.claimitSubmitBaseUrl,
+        productionBaseUrl: activeBaseUrl || nhiaApiForm.claimitSubmitBaseUrl,
+        production_base_url: activeBaseUrl || nhiaApiForm.claimitSubmitBaseUrl,
         ccEndpointPath: nhiaApiForm.ccEndpointPath || nhiaApiForm.ccCodeEndpointPath,
         ccCodeEndpointPath: nhiaApiForm.ccCodeEndpointPath || nhiaApiForm.ccEndpointPath,
       }
@@ -1289,10 +1294,7 @@ const Settings = () => {
                     <input
                       placeholder="Production base URL"
                       value={nhiaApiForm.productionBaseUrl}
-                      onChange={(event) => {
-                        updateNhiaApiForm('productionBaseUrl', event.target.value)
-                        updateNhiaApiForm('apiBaseUrl', event.target.value)
-                      }}
+                      onChange={(event) => updateNhiaApiForm('productionBaseUrl', event.target.value)}
                     />
                   </div>
                   <div className="settings-form-row">

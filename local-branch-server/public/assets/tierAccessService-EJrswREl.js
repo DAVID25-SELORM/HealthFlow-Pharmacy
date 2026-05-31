@@ -1,1 +1,0 @@
-import{i as e}from"./jsx-runtime-BkaSohSC.js";var t=`tier-access`,n=async n=>{let{data:r,error:i}=await e(t,{body:n});if(i)throw i;if(r?.error)throw Error(r.error);return r};export{n as t};
