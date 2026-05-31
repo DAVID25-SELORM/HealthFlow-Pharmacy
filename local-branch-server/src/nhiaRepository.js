@@ -1586,24 +1586,39 @@ export const lookupNhiaMember = async (memberNumber, { serviceDate } = {}) => {
   }
 
   const validatedMemberNumber = assertValidMemberNumber(memberNumber, settings)
-  const payload = {
-    memberNumber: validatedMemberNumber,
-    MemberNumber: validatedMemberNumber,
-    serviceDate: (serviceDate || new Date().toISOString()).slice(0, 10),
-    ServiceDate: (serviceDate || new Date().toISOString()).slice(0, 10),
-    facilityCode: settings.facilityCode,
-    FacilityCode: settings.facilityCode,
-    providerNumber: settings.providerNumber,
-    ProviderNumber: settings.providerNumber,
+  const credentials = settings.credentials || {}
+  const apiKey = normalizeText(credentials.apiKey || credentials.token)
+  const apiSecret = normalizeText(credentials.apiSecret || credentials.secret)
+
+  // NHIA member lookup API expects application/x-www-form-urlencoded with:
+  //   umn  = member number
+  //   key  = base64-encoded API key
+  //   secret = base64-encoded API secret
+  const formBody = new URLSearchParams({
+    umn: validatedMemberNumber,
+    ...(apiKey ? { key: Buffer.from(apiKey).toString('base64') } : {}),
+    ...(apiSecret ? { secret: Buffer.from(apiSecret).toString('base64') } : {}),
+  }).toString()
+
+  const apiBaseUrl = normalizeText(settings.apiBaseUrl)
+  if (!apiBaseUrl) {
+    return { status: 'pending', message: 'NHIA API base URL not configured' }
   }
+
+  const url = `${apiBaseUrl.replace(/\/+$/, '')}/${endpointPath.replace(/^\/+/, '')}`
+  const headers = { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' }
 
   logSubmission({ action: 'member.lookup.start', status: 'pending', memberNumber: validatedMemberNumber })
   try {
-    const result = await submitPayload(settings, payload, endpointPath)
-    if (!result.ok) {
-      throw new Error(`NHIA member lookup returned HTTP ${result.httpStatus}.`)
+    const response = await fetch(url, { method: 'POST', headers, body: formBody })
+    const text = await response.text()
+    let body = {}
+    try { body = text ? JSON.parse(text) : {} } catch { body = { raw: text } }
+
+    if (!response.ok) {
+      throw new Error(`NHIA member lookup returned HTTP ${response.status}.`)
     }
-    const mapped = mapNhiaMemberLookupResponse(result.body)
+    const mapped = mapNhiaMemberLookupResponse(body)
     logSubmission({ action: 'member.lookup.complete', status: 'success', ccCode: mapped?.ccCode })
     return { ok: true, ...mapped }
   } catch (error) {
