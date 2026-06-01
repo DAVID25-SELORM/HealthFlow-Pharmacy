@@ -1,6 +1,7 @@
 // ✅ OFFLINE-FIRST PATCH START
 const DEFAULT_BRANCH_SERVER_URL = 'http://localhost:4780'
 const RUNTIME_CONFIG_KEY = 'healthflow.branchServer.config.v1'
+const BRANCH_TOKEN_STORAGE_KEY = 'healthflow_branch_token'
 
 const readHostedConfig = () => {
   if (typeof window === 'undefined') return {} as Record<string, unknown>
@@ -16,21 +17,28 @@ const readRuntimeConfig = () => {
   }
 }
 
+const readBrowserBranchToken = () => {
+  if (typeof window === 'undefined') return ''
+  return window.localStorage.getItem(BRANCH_TOKEN_STORAGE_KEY) || ''
+}
+
 const getConnectivityBranchServerConfig = () => {
   const hostedConfig = readHostedConfig()
   const runtimeConfig = readRuntimeConfig()
-  const token = String(runtimeConfig.token || hostedConfig.token || '')
+  const browserToken = readBrowserBranchToken()
+  const buildToken = String((import.meta as any).env?.VITE_BRANCH_TOKEN || '')
+  const token = String(browserToken || buildToken || runtimeConfig.token || hostedConfig.token || '')
   const hostedUrl =
     hostedConfig.enabled === true && typeof window !== 'undefined' ? window.location.origin : ''
   const enabledByHostedConfig = hostedConfig.enabled === true && Boolean(token)
   const enabledByRuntimeConfig = runtimeConfig.enabled === true && Boolean(token)
+  const enabledByBrowserToken = Boolean(browserToken)
   const enabledByBuildConfig =
     String((import.meta as any).env?.VITE_BRANCH_SERVER_ENABLED || '').toLowerCase() === 'true' &&
-    Boolean((import.meta as any).env?.VITE_BRANCH_SERVER_URL) &&
     Boolean(token)
 
   return {
-    enabled: enabledByHostedConfig || enabledByRuntimeConfig || enabledByBuildConfig,
+    enabled: enabledByHostedConfig || enabledByRuntimeConfig || enabledByBrowserToken || enabledByBuildConfig,
     url: String(
       runtimeConfig.url ||
         hostedConfig.url ||
@@ -39,7 +47,7 @@ const getConnectivityBranchServerConfig = () => {
         DEFAULT_BRANCH_SERVER_URL
     ).replace(/\/+$/, ''),
     token,
-    runtimeConfigured: Boolean(runtimeConfig.url && runtimeConfig.token),
+    runtimeConfigured: Boolean(runtimeConfig.url && token),
   }
 }
 

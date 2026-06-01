@@ -13,6 +13,7 @@ import {
   updateUserBranch,
 } from '../services/settingsService'
 import { getBranches, createBranch, updateBranch, deactivateBranch } from '../services/branchService'
+import { getSavedBranchToken, saveBranchToken } from '../services/branchServerApi'
 import { updateOrganization, getOrganizationStats } from '../services/organizationService'
 import { buildClaimItConfigPreview, getNhiaApiSettings, removeNhiaApiCredentials, saveNhiaApiSettings, testClaimItConnection, validateNhiaConfigForMode } from '../services/nhisService'
 import { useAuth } from '../context/AuthContext'
@@ -386,6 +387,7 @@ const Settings = () => {
   const [staffForm, setStaffForm] = useState(blankStaffForm)
   const [users, setUsers] = useState([])
   const [orgStats, setOrgStats] = useState(null)
+  const [branchTokenForm, setBranchTokenForm] = useState(() => getSavedBranchToken())
   const [nhiaApiForm, setNhiaApiForm] = useState(blankNhiaApiForm)
   const [nhiaCredentialState, setNhiaCredentialState] = useState(toNhiaCredentialState(blankNhiaApiForm))
   const [savingNhiaApi, setSavingNhiaApi] = useState(false)
@@ -503,6 +505,13 @@ const Settings = () => {
     } finally {
       setSaving(false)
     }
+  }
+
+  const handleSaveBranchToken = (event) => {
+    event.preventDefault()
+    const savedToken = saveBranchToken(branchTokenForm)
+    setBranchTokenForm(savedToken)
+    notify(savedToken ? 'Branch token saved in this browser.' : 'Branch token removed from this browser.', 'success')
   }
 
   const updateNhiaApiForm = (field, value) => {
@@ -1233,6 +1242,36 @@ const Settings = () => {
                 </>
               )}
             </div>
+          </div>
+        )}
+
+        {isAdmin && (
+          <div className="settings-card">
+            <div className="card-icon">
+              <GitBranch size={24} />
+            </div>
+            <h3>Local Branch Server</h3>
+            <p className="settings-note">
+              Save the browser token used for protected local server API requests.
+            </p>
+            <form className="settings-form" onSubmit={handleSaveBranchToken}>
+              <label className="settings-field">
+                <span>Branch token</span>
+                <input
+                  type="password"
+                  value={branchTokenForm}
+                  onChange={(event) => setBranchTokenForm(event.target.value)}
+                  placeholder="Paste the local branch token"
+                  autoComplete="new-password"
+                />
+              </label>
+              <div className="settings-save-bar">
+                <span>Stored only in this browser as healthflow_branch_token.</span>
+                <button className="btn btn-primary" type="submit">
+                  Save Branch Token
+                </button>
+              </div>
+            </form>
           </div>
         )}
 

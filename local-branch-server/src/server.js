@@ -55,6 +55,15 @@ const frontendDir = path.resolve(__dirname, '..', 'public')
 const frontendIndex = path.join(frontendDir, 'index.html')
 
 const app = express()
+// ✅ STATIC FRONTEND PATCH START
+if (fs.existsSync(frontendIndex)) {
+  app.use(express.static(frontendDir, {
+    index: false,
+    maxAge: '1h',
+  }))
+}
+// ✅ STATIC FRONTEND PATCH END
+
 const DEFAULT_ALLOWED_WEB_ORIGINS = new Set([
   'https://health-flow-pharmacy.vercel.app',
 ])
@@ -749,12 +758,8 @@ app.get('/api/sync/diagnostics', async (_request, response, next) => {
   }
 })
 
+// ✅ SPA FALLBACK PATCH START
 if (fs.existsSync(frontendIndex)) {
-  app.use(express.static(frontendDir, {
-    index: false,
-    maxAge: '1h',
-  }))
-
   app.get('*', (request, response, next) => {
     if (request.path.startsWith('/api/')) {
       next()
@@ -764,6 +769,7 @@ if (fs.existsSync(frontendIndex)) {
     response.sendFile(frontendIndex)
   })
 }
+// ✅ SPA FALLBACK PATCH END
 
 app.use((error, _request, response, _next) => {
   console.error(error)

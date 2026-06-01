@@ -6,12 +6,14 @@ import {
   getBranchInventory,
   getBranchServerConfig,
   getBranchServerHealth,
+  getSavedBranchToken,
   getBranchSyncStatus,
   getNhiaSummary,
   listNhiaClaims,
   pullBranchInventory,
   pullBranchReferenceData,
   runBranchSync,
+  saveBranchToken,
   submitPendingNhiaClaims,
 } from '../services/branchServerApi'
 import { getNhiaApiSettings, saveNhiaApiSettings } from '../services/nhisService'
@@ -154,6 +156,7 @@ export default function OfflineSync() {
   const { organization, role, user, profile, branch } = useAuth()
   const { notify } = useNotification()
   const [config, setConfig] = useState(() => getBranchServerConfig())
+  const [branchTokenForm, setBranchTokenForm] = useState(() => getSavedBranchToken())
   const [health, setHealth] = useState(null)
   const [status, setStatus] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -175,7 +178,9 @@ export default function OfflineSync() {
   })
   const [setupResult, setSetupResult] = useState(null)
   const [setupLoading, setSetupLoading] = useState(false)
-  const isSuperAdmin = String(role || '').toLowerCase() === 'super_admin'
+  const normalizedRole = String(role || '').toLowerCase()
+  const canManageBranchToken = normalizedRole === 'admin' || normalizedRole === 'super_admin'
+  const isSuperAdmin = normalizedRole === 'super_admin'
 
   const refreshStatus = useCallback(async ({ silent = false } = {}) => {
     const nextConfig = getBranchServerConfig()
@@ -388,6 +393,13 @@ export default function OfflineSync() {
     }
   }
 
+  const saveBrowserBranchToken = () => {
+    const savedToken = saveBranchToken(branchTokenForm)
+    setBranchTokenForm(savedToken)
+    setConfig(getBranchServerConfig())
+    notify(savedToken ? 'Branch token saved in this browser.' : 'Branch token removed from this browser.', 'success')
+  }
+
   const updateNhiaForm = (field, value) => {
     setNhiaForm((current) => ({ ...current, [field]: value }))
   }
@@ -472,6 +484,32 @@ export default function OfflineSync() {
       </div>
 
       {error && <div className="offline-sync-alert">{error}</div>}
+
+      {canManageBranchToken && (
+        <section className="offline-sync-section branch-token-section">
+          <div className="offline-sync-section-header">
+            <div>
+              <h2>Local Branch Token</h2>
+              <p>Save the browser token used for protected local server API requests.</p>
+            </div>
+          </div>
+          <div className="branch-token-form">
+            <label>
+              <span>Branch token</span>
+              <input
+                type="password"
+                value={branchTokenForm}
+                onChange={(event) => setBranchTokenForm(event.target.value)}
+                placeholder="Paste the local branch token"
+                autoComplete="new-password"
+              />
+            </label>
+            <button className="btn btn-primary" type="button" onClick={saveBrowserBranchToken}>
+              Save Branch Token
+            </button>
+          </div>
+        </section>
+      )}
 
       {isSuperAdmin && (
         <section className="offline-sync-section branch-setup-section">

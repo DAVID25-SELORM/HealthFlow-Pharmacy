@@ -3,6 +3,7 @@ import { isNetworkRequestError } from '../utils/requestErrors'
 
 const DEFAULT_BRANCH_SERVER_URL = 'http://localhost:4780'
 const RUNTIME_CONFIG_KEY = 'healthflow.branchServer.config.v1'
+export const BRANCH_TOKEN_STORAGE_KEY = 'healthflow_branch_token'
 const DEFAULT_BRANCH_REQUEST_TIMEOUT_MS = 1500
 const SEARCH_BRANCH_REQUEST_TIMEOUT_MS = 450
 const WRITE_BRANCH_REQUEST_TIMEOUT_MS = 8000
@@ -28,21 +29,46 @@ const readRuntimeConfig = () => {
   }
 }
 
+export const getSavedBranchToken = () => {
+  if (typeof window === 'undefined') {
+    return ''
+  }
+
+  return window.localStorage.getItem(BRANCH_TOKEN_STORAGE_KEY) || ''
+}
+
+export const saveBranchToken = (token) => {
+  if (typeof window === 'undefined') {
+    return ''
+  }
+
+  const normalizedToken = String(token || '').trim()
+  if (normalizedToken) {
+    window.localStorage.setItem(BRANCH_TOKEN_STORAGE_KEY, normalizedToken)
+  } else {
+    window.localStorage.removeItem(BRANCH_TOKEN_STORAGE_KEY)
+  }
+
+  return normalizedToken
+}
+
 export const getBranchServerConfig = () => {
   const hostedConfig = readHostedConfig()
   const runtimeConfig = readRuntimeConfig()
-  const token = String(runtimeConfig.token || hostedConfig.token || '')
+  const browserToken = getSavedBranchToken()
+  const buildToken = String(import.meta.env.VITE_BRANCH_TOKEN || '')
+  const token = String(browserToken || buildToken || runtimeConfig.token || hostedConfig.token || '')
   const hostedUrl =
     hostedConfig.enabled === true && typeof window !== 'undefined' ? window.location.origin : ''
   const enabledByHostedConfig = hostedConfig.enabled === true && Boolean(token)
   const enabledByRuntimeConfig = runtimeConfig.enabled === true && Boolean(token)
+  const enabledByBrowserToken = Boolean(browserToken)
   const enabledByBuildConfig =
     String(import.meta.env.VITE_BRANCH_SERVER_ENABLED || '').toLowerCase() === 'true' &&
-    Boolean(import.meta.env.VITE_BRANCH_SERVER_URL) &&
     Boolean(token)
 
   return {
-    enabled: enabledByHostedConfig || enabledByRuntimeConfig || enabledByBuildConfig,
+    enabled: enabledByHostedConfig || enabledByRuntimeConfig || enabledByBrowserToken || enabledByBuildConfig,
     url: String(
       runtimeConfig.url ||
         hostedConfig.url ||
@@ -51,7 +77,7 @@ export const getBranchServerConfig = () => {
         DEFAULT_BRANCH_SERVER_URL
     ).replace(/\/+$/, ''),
     token,
-    runtimeConfigured: Boolean(runtimeConfig.url && runtimeConfig.token),
+    runtimeConfigured: Boolean(runtimeConfig.url && token),
   }
 }
 
@@ -107,8 +133,8 @@ const branchFetch = async (path, options = {}) => {
     headers: {
       Accept: 'application/json',
       'Content-Type': 'application/json',
-      'x-branch-token': getBranchServerToken(),
       ...(fetchOptions.headers || {}),
+      'x-branch-token': getBranchServerToken(),
     },
   }, timeoutMs)
 
