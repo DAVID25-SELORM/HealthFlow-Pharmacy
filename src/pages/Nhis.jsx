@@ -35,7 +35,6 @@ import {
   uploadNhisPrescriptionPdf,
   validateNhisPrescriptionPdfFile,
   getNhisPrescriptionSignedUrl,
-  generateBrowserClaimItBridgeCcCode,
   generateHostedNhiaCcCode,
   getNhiaApiSettings,
   startClaimItBridgeQueueAutoSync,
@@ -837,10 +836,6 @@ const Nhis = () => {
     isLocalClaimItBridgeProfile &&
     isLocalClaimItBridgeUrl &&
     !isLocalAppOrigin()
-  const isLocalClaimItBridge = usesClaimItValidationFlow &&
-    isLocalClaimItBridgeProfile &&
-    isLocalClaimItBridgeUrl &&
-    !isHostedPageWithLocalClaimItBridge
   const canManuallyEditCcCode = role === 'admin' || role === 'super_admin'
   const allowsDirectNhiaSubmission = ['claimit_bridge', 'claimit_assisted', 'direct_nhia_api', 'hybrid'].includes(integrationMode)
   const directNhiaApiAvailable = Boolean(
@@ -855,10 +850,8 @@ const Nhis = () => {
   const nhiaCcCodeApiAvailable = Boolean(
     (resolvedNhiaSettings?.directApiEnabled ||
       ['claimit_bridge', 'claimit_bridge_ccc', 'direct_api'].includes(claimControlMode)) &&
-      !isHostedPageWithLocalClaimItBridge &&
-      (nhiaApiBaseUrl || claimSubmissionBaseUrl) &&
-      // genCCC member lookup endpoint OR a dedicated CC endpoint OR CLAIM-it bridge flow
-      (memberLookupEndpointPath || ccEndpointPath || usesClaimItValidationFlow)
+      nhiaApiBaseUrl &&
+      memberLookupEndpointPath
   )
   const nhisPageSubtitle = isHospital
     ? 'NHIA hospital service claims, tariffs, diagnoses, and direct CLAIM-it submission'
@@ -1552,24 +1545,15 @@ const Nhis = () => {
   }, [claimForm.memberNo, nhiaCcCodeApiAvailable, resolvedNhiaSettings, applyMemberDetailsToForm, notify])
 
   const handleGenerateCcCode = async () => {
-    if (isHostedPageWithLocalClaimItBridge) {
-      setClaimForm((prev) => ({ ...prev, cccNo: '' }))
-      notify(
-        'Production HealthFlow cannot call a localhost CLAIM-it bridge. Set NHIA Settings to Production bridge server and use https://claimbridge.healthflowgh.com/json-api.',
-        'warning'
-      )
-      return
-    }
-
     if (!nhiaCcCodeApiAvailable) {
       setClaimForm((prev) => ({ ...prev, cccNo: '' }))
-      notify('Pending CLAIM-it validation. No CCC/CC bridge endpoint is configured.', 'info')
+      notify('NHIA CCC generation is not configured. Set the NHIA API base URL and /api/hmis/genCCC endpoint in Settings.', 'info')
       return
     }
 
     try {
       setGeneratingCcCode(true)
-      notify('Subscriber Verification', 'info')
+      notify('NHIA CCC Verification', 'info')
       const claimId = editingClaim?.id || claimForm.id || buildPendingNhisClaimId({ organizationId, claimForm })
       const claimContext = {
         claimId,
@@ -1583,15 +1567,7 @@ const Nhis = () => {
         serviceDate: claimForm.serviceDate,
         totalAmount: claimTotal,
       }
-      const generateCcCode = isLocalClaimItBridge
-        ? (context) => generateBrowserClaimItBridgeCcCode({
-            ...resolvedNhiaSettings,
-            apiBaseUrl: claimSubmissionBaseUrl,
-            ccEndpointPath,
-            ccCodeEndpointPath: ccEndpointPath,
-            claimControlMode,
-          }, context)
-        : ['local_branch_server', 'local_cache'].includes(
+      const generateCcCode = ['local_branch_server', 'local_cache'].includes(
           resolvedNhiaSettings?.configSource || resolvedNhiaSettings?.source
         )
         ? generateBranchNhiaCcCode
@@ -1599,7 +1575,7 @@ const Nhis = () => {
       const result = await generateCcCode(claimContext)
       if (result?.status === 'pending' || result?.source === 'pending') {
         setClaimForm((prev) => ({ ...prev, cccNo: '' }))
-        notify(result.message || 'Pending CLAIM-it validation.', 'info')
+        notify(result.message || 'Pending NHIA CCC verification.', 'info')
         return
       }
       if (!result?.ccCode) {
@@ -1617,7 +1593,7 @@ const Nhis = () => {
       ))
       notify(
         result.source === 'claimit_bridge'
-          ? 'CCC/CC code generated or validated via CLAIM-it.'
+          ? 'CCC/CC code returned by CLAIM-it.'
           : result.source === 'api'
             ? `CCC/CC code generated from NHIA API${md?.memberName ? ` — ${md.memberName}` : ''}.`
             : 'CCC/CC code generated for direct NHIA submission.',
@@ -2801,7 +2777,7 @@ const Nhis = () => {
                           inputMode="numeric"
                           maxLength={5}
                           pattern={claimControlMode === 'manual' ? '[0-9]{5}' : '[0-9]{0,5}'}
-                          placeholder={claimControlMode === 'manual' ? '12345' : 'Pending CLAIM-it validation'}
+                          placeholder={claimControlMode === 'manual' ? '12345' : 'Pending NHIA CCC verification'}
                           title="Enter the 5-digit CCC/CC code"
                           onChange={(e) => setClaimForm((p) => ({
                             ...p,
@@ -2814,7 +2790,7 @@ const Nhis = () => {
                             disabled={generatingCcCode}
                             onClick={handleGenerateCcCode}
                           >
-                            {generatingCcCode ? 'Validating...' : 'Generate/Validate CC Code via CLAIM-it'}
+                            {generatingCcCode ? 'Validating...' : 'Generate/Validate CC Code via NHIA'}
                           </button>
                         )}
                       </div>
@@ -2822,7 +2798,7 @@ const Nhis = () => {
                         <div className="patient-meta">Manual CC/CCC entry is restricted to admin users.</div>
                       )}
                       {claimControlMode !== 'manual' && !claimForm.cccNo && (
-                        <div className="patient-meta">Pending CLAIM-it validation</div>
+                        <div className="patient-meta">Pending NHIA CCC verification</div>
                       )}
                     </div>
                     {isHospital && (
