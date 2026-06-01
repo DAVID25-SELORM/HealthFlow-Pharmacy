@@ -3577,13 +3577,22 @@ const buildRemoteHttpError = (label: string, status: number, body: unknown) => {
   return new Error(`${label} returned HTTP ${status}${summary ? `: ${summary}` : ''}`)
 }
 
-const getCcEndpointPath = (settings: Record<string, unknown>) =>
-  normalizeText(
+const isValidEndpointPath = (value: string): boolean => {
+  if (!value) return false
+  if (value.includes('@')) return false           // reject emails
+  if (/^https?:\/\//i.test(value)) return false  // reject full URLs
+  return value.startsWith('/') || /^[a-zA-Z0-9_-]/.test(value)
+}
+
+const getCcEndpointPath = (settings: Record<string, unknown>) => {
+  const value = normalizeText(
     settings.ccEndpointPath ||
-      settings.cc_endpoint_path ||
-      settings.ccCodeEndpointPath ||
-      settings.cc_code_endpoint_path
+    settings.cc_endpoint_path ||
+    settings.ccCodeEndpointPath ||
+    settings.cc_code_endpoint_path
   )
+  return isValidEndpointPath(value) ? value : ''
+}
 
 const getClaimSubmitEndpointPath = (settings: Record<string, unknown>) =>
   normalizeText(

@@ -1541,13 +1541,25 @@ const submitPayload = async (settings, payload, endpointPathOverride = '') => {
 const isClaimItBridgeMode = (settings) =>
   ['claimit_bridge', 'claimit_assisted'].includes(normalizeText(settings?.integrationMode))
 
-const getCcEndpointPath = (settings) =>
-  normalizeText(
-      settings?.ccEndpointPath ||
-      settings?.cc_endpoint_path ||
-      settings?.ccCodeEndpointPath ||
-      settings?.cc_code_endpoint_path
+const isValidEndpointPath = (value) => {
+  const v = normalizeText(value)
+  if (!v) return false
+  // Reject values that look like emails, URLs with dots but no slash, or plain text
+  if (v.includes('@')) return false
+  if (/^https?:\/\//i.test(v)) return false
+  // Must start with / or be a simple path segment
+  return v.startsWith('/') || /^[a-zA-Z0-9_-]/.test(v)
+}
+
+const getCcEndpointPath = (settings) => {
+  const value = normalizeText(
+    settings?.ccEndpointPath ||
+    settings?.cc_endpoint_path ||
+    settings?.ccCodeEndpointPath ||
+    settings?.cc_code_endpoint_path
   )
+  return isValidEndpointPath(value) ? value : ''
+}
 
 const validateClaimItBridgePayload = async (settings, payload) => {
   const endpointPath = normalizeText(settings.claimValidationEndpointPath)
