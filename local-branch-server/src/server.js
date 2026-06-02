@@ -76,10 +76,19 @@ const isLocalOrigin = (url) =>
   url.hostname.startsWith('10.') ||
   /^172\.(1[6-9]|2\d|3[0-1])\./.test(url.hostname)
 
-// ✅ ORIGIN PATCH START
+// ✅ ORIGIN PATCH FINAL START
 const isAllowedOrigin = (origin) => {
-  // Allow direct browser/local requests
-  if (!origin) {
+  if (!origin || origin === 'null') {
+    return true
+  }
+
+  const normalizedOrigin = origin.replace(/\/+$/, '')
+
+  if (config.allowedOrigins.length > 0) {
+    return config.allowedOrigins.includes(normalizedOrigin)
+  }
+
+  if (DEFAULT_ALLOWED_WEB_ORIGINS.has(normalizedOrigin)) {
     return true
   }
 
@@ -97,7 +106,7 @@ const isAllowedOrigin = (origin) => {
     return false
   }
 }
-// ✅ ORIGIN PATCH END
+// ✅ ORIGIN PATCH FINAL END
 
 app.use((request, response, next) => {
   const origin = request.get('Origin') || ''
