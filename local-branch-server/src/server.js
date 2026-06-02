@@ -69,6 +69,13 @@ const DEFAULT_ALLOWED_WEB_ORIGINS = new Set([
 ])
 const isDevelopment = process.env.NODE_ENV !== 'production'
 
+const isLocalOrigin = (url) =>
+  url.hostname === 'localhost' ||
+  url.hostname === '127.0.0.1' ||
+  url.hostname.startsWith('192.168.') ||
+  url.hostname.startsWith('10.') ||
+  /^172\.(1[6-9]|2\d|3[0-1])\./.test(url.hostname)
+
 const isAllowedOrigin = (origin) => {
   if (!origin) {
     return true
@@ -84,17 +91,9 @@ const isAllowedOrigin = (origin) => {
       return true
     }
 
-    if (!isDevelopment) {
-      return false
-    }
-
-    return (
-      url.hostname === 'localhost' ||
-      url.hostname === '127.0.0.1' ||
-      url.hostname.startsWith('192.168.') ||
-      url.hostname.startsWith('10.') ||
-      /^172\.(1[6-9]|2\d|3[0-1])\./.test(url.hostname)
-    )
+    // Always allow localhost and private LAN origins — the branch server
+    // is designed to run locally and serve the React app from its own port.
+    return isLocalOrigin(url)
   } catch {
     return false
   }
