@@ -319,14 +319,13 @@ export const runBranchSync = async () =>
 
 export const getBranchSyncStatus = async () => await branchFetch('/api/sync/status')
 
+// ✅ SYNC POST TOKEN FIX START
 const getBranchSyncPostHeaders = () => ({
   Accept: 'application/json',
   'Content-Type': 'application/json',
-  'x-branch-token':
-    typeof window === 'undefined'
-      ? ''
-      : window.localStorage.getItem(BRANCH_TOKEN_STORAGE_KEY) || '',
+  'x-branch-token': getBranchRequestToken(),
 })
+// ✅ SYNC POST TOKEN FIX END
 
 const branchSyncPost = async (path) => {
   if (!isBranchServerEnabled()) {
