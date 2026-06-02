@@ -25,6 +25,16 @@ const CREDENTIAL_MODES = new Set([
 ])
 
 const EXPORT_FORMATS = new Set(['cxf', 'json', 'xml'])
+const INTEGRATION_MODE_ALIASES = {
+  cxf_export: 'claimit_export',
+  claimit_export: 'claimit_export',
+  claimit_assisted: 'claimit_assisted',
+  claimit_local_bridge: 'claimit_bridge',
+  claimit_bridge: 'claimit_bridge',
+  direct_nhia: 'direct_nhia_api',
+  direct_nhia_api: 'direct_nhia_api',
+  hybrid: 'hybrid',
+}
 const DEFAULT_NHIS_MEMBER_DIGITS = 8
 const DEFAULT_GHANA_CARD_DIGITS = 10
 const DIAGNOSIS_TREATMENT_RULES = [
@@ -314,6 +324,11 @@ const normalizeCredentialMode = (value) => {
   }
 
   return normalizedMode
+}
+
+const normalizeIntegrationMode = (value, fallback = 'claimit_export') => {
+  const mode = normalizeText(value).toLowerCase()
+  return INTEGRATION_MODE_ALIASES[mode] || fallback
 }
 
 const normalizeAdmissionPaymentOption = (value) => {
@@ -764,13 +779,13 @@ const mapSettingsRow = (row, { includeCredentials = false } = {}) => {
     licenseNumber: row.license_number || '',
     accreditationExpiryDate: getAccreditationExpiryDate(row),
     // ✅ NHIA API ARCHITECTURE PATCH START
-    integrationMode: row.integration_mode || 'claimit_export',
+    integrationMode: normalizeIntegrationMode(row.integration_mode),
     connectionProfile: row.connection_profile || 'local_server',
     validationMode: row.validation_mode || 'validate_before_submit',
     claimControlMode: row.claim_control_mode ||
-      (['claimit_bridge', 'claimit_assisted'].includes(normalizeText(row.integration_mode))
+      (['claimit_bridge', 'claimit_assisted'].includes(normalizeIntegrationMode(row.integration_mode))
         ? 'claimit_bridge'
-        : normalizeText(row.integration_mode) === 'direct_nhia_api'
+        : normalizeIntegrationMode(row.integration_mode) === 'direct_nhia_api'
           ? 'direct_api'
           : 'manual'),
     sandboxBaseUrl: row.sandbox_base_url || '',
@@ -882,7 +897,7 @@ const hasUsableNhiaSecret = (value) => {
 
 const validateNhiaSettingsForMode = (settings = {}) => {
   const credentials = settings.credentials && typeof settings.credentials === 'object' ? settings.credentials : {}
-  const integrationMode = normalizeText(settings.integrationMode || settings.integration_mode || settings.nhiaApiMode || settings.nhia_api_mode) || 'claimit_export'
+  const integrationMode = normalizeIntegrationMode(settings.integrationMode || settings.integration_mode || settings.nhiaApiMode || settings.nhia_api_mode)
   const hasApiKey = Boolean(settings.hasApiKey || settings.has_api_key || settings.credentialSummary?.apiKey || hasUsableNhiaSecret(credentials.apiKey))
   const hasApiSecret = Boolean(settings.hasApiSecret || settings.has_api_secret || settings.credentialSummary?.apiSecret || hasUsableNhiaSecret(credentials.apiSecret))
   const hasUsername = Boolean(normalizeText(settings.username || credentials.username))
@@ -994,7 +1009,7 @@ export const saveNhiaSettings = (settings = {}) => {
     licenseNumber: normalizeText(settings.licenseNumber) || null,
     accreditationExpiryDate: getAccreditationExpiryDate(settings) || null,
     // ✅ NHIA API ARCHITECTURE PATCH START
-    integrationMode: normalizeText(settings.integrationMode) || 'claimit_export',
+    integrationMode: normalizeIntegrationMode(settings.integrationMode || settings.integration_mode || settings.nhiaApiMode || settings.nhia_api_mode),
     connectionProfile: normalizeText(settings.connectionProfile || settings.connection_profile) || 'local_server',
     validationMode: normalizeText(settings.validationMode || settings.validation_mode) || 'validate_before_submit',
     claimControlMode: ['manual', 'claimit_bridge', 'direct_api'].includes(normalizeText(settings.claimControlMode || settings.claim_control_mode))
@@ -1539,7 +1554,7 @@ const submitPayload = async (settings, payload, endpointPathOverride = '') => {
 }
 
 const isClaimItBridgeMode = (settings) =>
-  ['claimit_bridge', 'claimit_assisted'].includes(normalizeText(settings?.integrationMode))
+  ['claimit_bridge', 'claimit_assisted'].includes(normalizeIntegrationMode(settings?.integrationMode))
 
 const isValidEndpointPath = (value) => {
   const v = normalizeText(value)

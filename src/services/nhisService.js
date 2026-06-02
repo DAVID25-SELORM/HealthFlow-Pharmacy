@@ -160,6 +160,20 @@ const CLAIM_IT_POLICY_VERSION = 'cgs.2022-12-01.250531'
 const NHIA_API_SETTINGS_CACHE_PREFIX = 'healthflow.nhiaApiSettings.v3'
 const CLAIMIT_BRIDGE_QUEUE_KEY = 'healthflow.claimitBridgeQueue.v1'
 const CLAIMIT_BRIDGE_RETRY_INTERVAL_MS = 60 * 1000
+const NHIA_INTEGRATION_MODE_ALIASES = {
+  cxf_export: 'claimit_export',
+  claimit_export: 'claimit_export',
+  claimit_assisted: 'claimit_assisted',
+  claimit_local_bridge: 'claimit_bridge',
+  claimit_bridge: 'claimit_bridge',
+  direct_nhia: 'direct_nhia_api',
+  direct_nhia_api: 'direct_nhia_api',
+  hybrid: 'hybrid',
+}
+const normalizeNhiaIntegrationMode = (value, fallback = 'claimit_export') => {
+  const normalized = normalizeText(value).toLowerCase()
+  return NHIA_INTEGRATION_MODE_ALIASES[normalized] || fallback
+}
 const CLAIMIT_BRIDGE_MODES = new Set(['claimit_bridge', 'claimit_assisted'])
 const PENDING_CLAIMIT_CC_MESSAGE = 'Pending CLAIM-it validation'
 const isClaimItBaseUrl = (value = '') => {
@@ -2109,7 +2123,7 @@ const normalizeHostedNhiaIntegrationRow = (row = null) => {
     memberLookupEndpoint: row.member_lookup_endpoint || row.member_lookup_endpoint_path || '',
     ccEndpointPath: row.cc_endpoint_path || row.cc_code_endpoint_path || '',
     ccCodeEndpointPath: row.cc_code_endpoint_path || row.cc_endpoint_path || '',
-    integrationMode: row.integration_mode || 'claimit_export',
+    integrationMode: normalizeNhiaIntegrationMode(row.integration_mode),
     credentialMode: row.credential_mode || 'claimit_token',
     credentials: credentialPayload,
     credentialSummary: {
@@ -2187,7 +2201,7 @@ const getHostedNhiaConfigRowPayload = async (settings = {}, organizationId = '',
     credential_code: credentialCode || null,
     license_number: normalizeText(settings.licenseNumber || settings.license_number) || null,
     accreditation_expiry_date: getNhiaAccreditationExpiryDate(settings) || null,
-    integration_mode: normalizeText(settings.integrationMode || settings.integration_mode || settings.nhiaApiMode || settings.nhia_api_mode) || 'claimit_export',
+    integration_mode: normalizeNhiaIntegrationMode(settings.integrationMode || settings.integration_mode || settings.nhiaApiMode || settings.nhia_api_mode),
     connection_profile: normalizeText(settings.connectionProfile || settings.connection_profile) || 'local_server',
     validation_mode: normalizeText(settings.validationMode || settings.validation_mode) || 'validate_before_submit',
     claim_control_mode: normalizeText(settings.claimControlMode || settings.claim_control_mode) || 'manual',
@@ -2393,8 +2407,8 @@ const normalizeNhiaConfig = (settings = null, {
     cc_code_endpoint_path: normalizeText(raw.cc_code_endpoint_path || raw.ccCodeEndpointPath || ccEndpointPath),
     validationMode: normalizeText(raw.validationMode || raw.validation_mode) || NHIA_CONFIG_DEFAULTS.validationMode,
     validation_mode: normalizeText(raw.validation_mode || raw.validationMode) || NHIA_CONFIG_DEFAULTS.validationMode,
-    integrationMode: normalizeText(raw.integrationMode || raw.integration_mode || raw.nhiaApiMode || raw.nhia_api_mode) || 'claimit_export',
-    integration_mode: normalizeText(raw.integration_mode || raw.integrationMode || raw.nhiaApiMode || raw.nhia_api_mode) || 'claimit_export',
+    integrationMode: normalizeNhiaIntegrationMode(raw.integrationMode || raw.integration_mode || raw.nhiaApiMode || raw.nhia_api_mode),
+    integration_mode: normalizeNhiaIntegrationMode(raw.integration_mode || raw.integrationMode || raw.nhiaApiMode || raw.nhia_api_mode),
     claimControlMode: normalizeText(raw.claimControlMode || raw.claim_control_mode) || 'manual',
     claim_control_mode: normalizeText(raw.claim_control_mode || raw.claimControlMode) || 'manual',
     updatedAt: normalizeText(raw.updatedAt || raw.updated_at),
@@ -2458,7 +2472,7 @@ const hasUsableNhiaSecret = (value) => {
 
 export const validateNhiaConfigForMode = (settings = {}) => {
   const credentials = settings.credentials && typeof settings.credentials === 'object' ? settings.credentials : {}
-  const integrationMode = normalizeText(settings.integrationMode || settings.integration_mode || settings.nhiaApiMode || settings.nhia_api_mode) || 'claimit_export'
+  const integrationMode = normalizeNhiaIntegrationMode(settings.integrationMode || settings.integration_mode || settings.nhiaApiMode || settings.nhia_api_mode)
   const hasApiKey = Boolean(settings.hasApiKey || settings.has_api_key || settings.credentialSummary?.apiKey || hasUsableNhiaSecret(credentials.apiKey))
   const hasApiSecret = Boolean(settings.hasApiSecret || settings.has_api_secret || settings.credentialSummary?.apiSecret || hasUsableNhiaSecret(credentials.apiSecret))
   const hasUsername = Boolean(normalizeText(settings.username || credentials.username))
@@ -2570,7 +2584,7 @@ const writeClaimItBridgeQueue = (queue = []) => {
   window.localStorage.setItem(CLAIMIT_BRIDGE_QUEUE_KEY, JSON.stringify(queue))
 }
 
-const isClaimItBridgeMode = (mode = '') => CLAIMIT_BRIDGE_MODES.has(normalizeText(mode))
+const isClaimItBridgeMode = (mode = '') => CLAIMIT_BRIDGE_MODES.has(normalizeNhiaIntegrationMode(mode, ''))
 
 const isLocalClaimItBridgeProfile = (profile = '') =>
   ['local_server', 'lan_ip'].includes(normalizeText(profile) || 'local_server')
@@ -2628,7 +2642,10 @@ const getClaimItBridgeBaseUrl = (settings = {}) => {
 
 const canUseBaseUrlForClaimControl = (settings = {}) => {
   const validationMode = normalizeText(settings.validationMode || settings.validation_mode)
-  const integrationMode = normalizeText(settings.integrationMode || settings.integration_mode || settings.nhiaApiMode || settings.nhia_api_mode)
+  const integrationMode = normalizeNhiaIntegrationMode(
+    settings.integrationMode || settings.integration_mode || settings.nhiaApiMode || settings.nhia_api_mode,
+    ''
+  )
   const claimControlMode = normalizeText(settings.claimControlMode || settings.claim_control_mode)
   return validationMode === 'validate_before_submit' ||
     validationMode === 'claimit_local_bridge' ||
@@ -7097,7 +7114,7 @@ const buildHostedDirectSubmissionPayload = (payload, options = {}) => {
 
 const submitNhisClaimsDirect = async (claims, period, options = {}) => {
   const directApiSource = options.directApiSource === 'branch' ? 'branch' : 'hosted'
-  const integrationMode = normalizeText(options.integrationMode || options.integration_mode)
+  const integrationMode = normalizeNhiaIntegrationMode(options.integrationMode || options.integration_mode, '')
   const connectionProfile = normalizeText(options.connectionProfile || options.connection_profile) || 'local_server'
   const bridgeBaseUrl = normalizeText(
     options.claimitSubmitBaseUrl ||

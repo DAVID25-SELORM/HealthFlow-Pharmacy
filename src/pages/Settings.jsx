@@ -580,13 +580,7 @@ const Settings = () => {
         ? { connectionProfile: 'production_server' }
         : {}),
     })
-    if (requiresDirectConfig) {
-      const missing = getNhiaIntegrationMissingFields(nextForm)
-      if (missing.length) {
-        setError(`Complete NHIA configuration before selecting API integration mode: ${missing.join(', ')}.`)
-        return
-      }
-    }
+    setError('')
     setNhiaApiForm(nextForm)
   }
 
