@@ -41,6 +41,7 @@ import {
 } from '../services/nhisService'
 import {
   generateNhiaCcCode as generateBranchNhiaCcCode,
+  getNhiaLookupCardType,
   lookupNhiaMember as branchLookupNhiaMember,
 } from '../services/branchServerApi'
 import { getAllPatients, searchPatients } from '../services/patientService'
@@ -509,6 +510,7 @@ const Nhis = () => {
   // ── patient lookup (for claim form) ──────────────────────────
   const [patientSearch, setPatientSearch] = useState('')
   const [patientSearchResults, setPatientSearchResults] = useState([])
+  const [patientSearchError, setPatientSearchError] = useState('')
   const [patientSearching, setPatientSearching] = useState(false)
 
   // ── medicine sub-modal ────────────────────────────────────────
@@ -721,19 +723,27 @@ const Nhis = () => {
     const term = patientSearch.trim()
     if (!showNewClaimModal || term.length < 2) {
       setPatientSearchResults([])
+      setPatientSearchError('')
       setPatientSearching(false)
       return undefined
     }
 
     let cancelled = false
     setPatientSearching(true)
+    setPatientSearchError('')
     const timer = setTimeout(async () => {
       try {
         const remoteMatches = await searchPatients(term)
-        if (!cancelled) setPatientSearchResults(remoteMatches || [])
+        if (!cancelled) {
+          setPatientSearchResults(remoteMatches || [])
+          setPatientSearchError('')
+        }
       } catch (err) {
         console.warn('NHIS patient search failed:', err)
-        if (!cancelled) setPatientSearchResults([])
+        if (!cancelled) {
+          setPatientSearchResults([])
+          setPatientSearchError(getErrorMessage(err) || 'Patient search failed on the local branch server.')
+        }
       } finally {
         if (!cancelled) setPatientSearching(false)
       }
@@ -1000,6 +1010,7 @@ const Nhis = () => {
       hin:         patient.nhis_hin       || '',
     }))
     setPatientSearch('')
+    setPatientSearchError('')
   }
 
   // ── medicine code search ──────────────────────────────────────
@@ -1513,7 +1524,11 @@ const Nhis = () => {
   // Skips if the value hasn't changed since the last successful lookup.
   const handleMemberLookup = useCallback(async (memberNo) => {
     const memberNumber = (memberNo || claimForm.memberNo || '').trim()
-    if (!memberNumber || !nhiaCcCodeApiAvailable) return
+    if (!memberNumber) {
+      notify('memberNumber is required.', 'warning')
+      return
+    }
+    if (!nhiaCcCodeApiAvailable) return
     // Skip if we already looked up this exact member number.
     if (lastLookedUpMemberRef.current === memberNumber) return
 
@@ -1524,9 +1539,13 @@ const Nhis = () => {
 
     try {
       setLookingUpMember(true)
-      const result = await branchLookupNhiaMember({ memberNumber })
+      const normalizedMemberNumber = normalizeNhiaMemberNumber(memberNumber)
+      const result = await branchLookupNhiaMember({
+        memberNumber: normalizedMemberNumber,
+        cardType: getNhiaLookupCardType(normalizedMemberNumber),
+      })
       if (!result) return
-      lastLookedUpMemberRef.current = memberNumber
+      lastLookedUpMemberRef.current = normalizedMemberNumber
       setClaimForm((prev) => applyMemberDetailsToForm(prev, result))
 
       if (result.status && result.status.toUpperCase() !== 'ACTIVE') {
@@ -1537,8 +1556,9 @@ const Nhis = () => {
         notify(`Member verified — ${result.memberName || memberNumber}.`, 'info')
       }
     } catch (err) {
-      // Non-critical — user can still enter details manually
-      if (import.meta.env.DEV) console.warn('Member lookup failed:', err.message)
+      const message = getErrorMessage(err) || 'Member lookup failed.'
+      notify(message, 'error')
+      if (import.meta.env.DEV) console.warn('Member lookup failed:', message)
     } finally {
       setLookingUpMember(false)
     }
@@ -2684,6 +2704,11 @@ const Nhis = () => {
                       )}
                       {patientSearching && (
                         <div className="patient-search-status">Searching patients...</div>
+                      )}
+                      {patientSearchError && !patientSearching && (
+                        <div className="patient-search-status patient-search-status--error">
+                          {patientSearchError}
+                        </div>
                       )}
                     </div>
                   </div>

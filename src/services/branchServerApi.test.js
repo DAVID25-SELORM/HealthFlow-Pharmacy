@@ -61,4 +61,37 @@ describe('branchServerApi', () => {
       expect(options.headers['x-branch-token']).toBe(DEFAULT_BRANCH_TOKEN)
     })
   })
+
+  it('maps NHIA member lookup aliases to the branch server payload', async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ ok: true, data: { status: 'ACTIVE' } }), { status: 200 })
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { lookupNhiaMember } = await importBranchServerApi()
+
+    await lookupNhiaMember({ nhisNumber: 'gha1234567890' })
+
+    const [, options] = fetchMock.mock.calls.find(([url]) =>
+      String(url).endsWith('/api/nhia/member-lookup')
+    )
+    expect(JSON.parse(options.body)).toEqual({
+      memberNumber: 'GHA-123456789-0',
+      cardType: 'GHANACARD',
+    })
+  })
+
+  it('does not call member lookup with an empty memberNumber', async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ ok: true, data: {} }), { status: 200 })
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { lookupNhiaMember } = await importBranchServerApi()
+
+    await expect(lookupNhiaMember({ insuranceId: '  ' })).rejects.toThrow('memberNumber is required.')
+    expect(fetchMock.mock.calls.some(([url]) =>
+      String(url).endsWith('/api/nhia/member-lookup')
+    )).toBe(false)
+  })
 })

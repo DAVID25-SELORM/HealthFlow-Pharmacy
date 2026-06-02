@@ -1,5 +1,6 @@
 import { shouldPreferLocalApi } from './connectivityService'
 import { isNetworkRequestError } from '../utils/requestErrors'
+import { isGhanaCardNumber, normalizeNhiaMemberNumber } from '../utils/nhiaMemberNumber'
 
 const DEFAULT_BRANCH_SERVER_URL = 'http://localhost:4780'
 const RUNTIME_CONFIG_KEY = 'healthflow.branchServer.config.v1'
@@ -121,6 +122,32 @@ const getBranchApiHeaders = (headers = {}) => ({
   ...headers,
   'x-branch-token': getBranchRequestToken(),
 })
+
+const getNhiaLookupMemberNumber = (payload = {}) =>
+  normalizeNhiaMemberNumber(
+    payload.memberNumber ||
+      payload.memberNo ||
+      payload.member_no ||
+      payload.nhisNumber ||
+      payload.nhis_number ||
+      payload.insuranceId ||
+      payload.insurance_id ||
+      payload.cardNumber ||
+      payload.card_number ||
+      ''
+  )
+
+export const getNhiaLookupCardType = (memberNumber = '') =>
+  isGhanaCardNumber(memberNumber) ? 'GHANACARD' : 'NHISCARD'
+
+export const normalizeNhiaMemberLookupPayload = (payload = {}) => {
+  const memberNumber = getNhiaLookupMemberNumber(payload)
+  const explicitCardType = String(payload.cardType || payload.card_type || '').trim().toUpperCase()
+  return {
+    memberNumber,
+    cardType: explicitCardType || (memberNumber ? getNhiaLookupCardType(memberNumber) : ''),
+  }
+}
 
 export const isBranchServerEnabled = () =>
   Boolean(getBranchServerConfig().enabled && getBranchServerUrl() && getBranchServerToken())
@@ -381,8 +408,13 @@ export const generateNhiaCcCode = async (claimContext = {}) => {
 // Use this when patient presents their NHIS card — it verifies eligibility and gets the CC code.
 // Calls NHIA genCCC API (https://elig.nhia.gov.gh:5000/api/hmis/genCCC).
 // Returns MobCCC (CC code) + member name, HIN, DOB, eligibility dates, status.
-// cardType: 'NHISCARD' | 'GHANACARD' — auto-detected from memberNumber if omitted.
-export const lookupNhiaMember = async ({ memberNumber, cardType = '' } = {}) => {
+// cardType: 'NHISCARD' | 'GHANACARD' — detected from memberNumber if omitted.
+export const lookupNhiaMember = async (payload = {}) => {
+  const { memberNumber, cardType } = normalizeNhiaMemberLookupPayload(payload)
+  if (!memberNumber) {
+    throw new Error('memberNumber is required.')
+  }
+
   const response = await branchFetch('/api/nhia/member-lookup', {
     method: 'POST',
     body: JSON.stringify({ memberNumber, cardType }),

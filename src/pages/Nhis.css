@@ -1128,6 +1128,12 @@
   font-size: 0.78rem;
 }
 
+.patient-search-status--error {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
 /* Drug dropdown (medicine search) */
 .nhis-page .drug-search-wrap {
   position: relative;
