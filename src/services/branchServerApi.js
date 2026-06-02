@@ -320,22 +320,40 @@ export const runBranchSync = async () =>
 export const getBranchSyncStatus = async () => await branchFetch('/api/sync/status')
 
 const getBranchSyncPostHeaders = () => ({
-  'x-branch-token': getSavedBranchToken(),
+  Accept: 'application/json',
+  'Content-Type': 'application/json',
+  'x-branch-token':
+    typeof window === 'undefined'
+      ? ''
+      : window.localStorage.getItem(BRANCH_TOKEN_STORAGE_KEY) || '',
 })
 
-export const pullBranchInventory = async () =>
-  await branchFetch('/api/sync/pull-inventory', {
+const branchSyncPost = async (path) => {
+  if (!isBranchServerEnabled()) {
+    throw new Error('Local branch server mode is not enabled.')
+  }
+
+  const response = await fetchWithTimeout(`${getBranchServerUrl()}${path}`, {
     method: 'POST',
     headers: getBranchSyncPostHeaders(),
-    timeoutMs: LONG_BRANCH_REQUEST_TIMEOUT_MS,
-  })
+  }, LONG_BRANCH_REQUEST_TIMEOUT_MS)
+
+  const body = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    throw Object.assign(new Error(body?.error || 'Local branch server request failed.'), {
+      status: response.status,
+      endpoint: path,
+    })
+  }
+
+  return body
+}
+
+export const pullBranchInventory = async () =>
+  await branchSyncPost('/api/sync/pull-inventory')
 
 export const pullBranchReferenceData = async () =>
-  await branchFetch('/api/sync/pull-reference-data', {
-    method: 'POST',
-    headers: getBranchSyncPostHeaders(),
-    timeoutMs: LONG_BRANCH_REQUEST_TIMEOUT_MS,
-  })
+  await branchSyncPost('/api/sync/pull-reference-data')
 
 export const getNhiaSettings = async () => {
   const response = await branchFetch('/api/nhia-config')
