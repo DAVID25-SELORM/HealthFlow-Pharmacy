@@ -76,7 +76,7 @@ const isLocalOrigin = (url) =>
   url.hostname.startsWith('10.') ||
   /^172\.(1[6-9]|2\d|3[0-1])\./.test(url.hostname)
 
-// ✅ ORIGIN PATCH FINAL START
+// ✅ ORIGIN PATCH FINAL FINAL START
 const isAllowedOrigin = (origin) => {
   if (!origin || origin === 'null') {
     return true
@@ -84,29 +84,34 @@ const isAllowedOrigin = (origin) => {
 
   const normalizedOrigin = origin.replace(/\/+$/, '')
 
-  if (config.allowedOrigins.length > 0) {
-    return config.allowedOrigins.includes(normalizedOrigin)
+  try {
+    const url = new URL(normalizedOrigin)
+
+    const isLocal =
+      url.hostname === 'localhost' ||
+      url.hostname === '127.0.0.1' ||
+      url.hostname.startsWith('192.168.') ||
+      url.hostname.startsWith('10.') ||
+      /^172\.(1[6-9]|2\d|3[0-1])\./.test(url.hostname)
+
+    if (isLocal) {
+      return true
+    }
+  } catch {
+    return false
   }
 
   if (DEFAULT_ALLOWED_WEB_ORIGINS.has(normalizedOrigin)) {
     return true
   }
 
-  try {
-    const url = new URL(origin)
-
-    return (
-      url.hostname === 'localhost' ||
-      url.hostname === '127.0.0.1' ||
-      url.hostname.startsWith('192.168.') ||
-      url.hostname.startsWith('10.') ||
-      /^172\.(1[6-9]|2\d|3[0-1])\./.test(url.hostname)
-    )
-  } catch {
-    return false
+  if (config.allowedOrigins.length > 0) {
+    return config.allowedOrigins.includes(normalizedOrigin)
   }
+
+  return false
 }
-// ✅ ORIGIN PATCH FINAL END
+// ✅ ORIGIN PATCH FINAL FINAL END
 
 app.use((request, response, next) => {
   const origin = request.get('Origin') || ''
