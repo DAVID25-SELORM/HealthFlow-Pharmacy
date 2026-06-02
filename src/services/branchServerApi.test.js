@@ -36,18 +36,28 @@ describe('branchServerApi', () => {
       DEFAULT_BRANCH_TOKEN,
       downloadNhiaBatchExport,
       pullBranchInventory,
+      pullBranchReferenceData,
     } = await importBranchServerApi()
 
     await pullBranchInventory()
+    await pullBranchReferenceData()
     await downloadNhiaBatchExport('batch-1', 'json')
 
     const localApiCalls = fetchMock.mock.calls.filter(([url]) =>
       String(url).startsWith('http://localhost:4780/api/')
     )
+    const syncPostCalls = fetchMock.mock.calls.filter(
+      ([url, options]) =>
+        [
+          'http://localhost:4780/api/sync/pull-inventory',
+          'http://localhost:4780/api/sync/pull-reference-data',
+        ].includes(String(url)) && options.method === 'POST'
+    )
 
     expect(localApiCalls.length).toBeGreaterThanOrEqual(2)
+    expect(syncPostCalls).toHaveLength(2)
     expect(window.localStorage.getItem(BRANCH_TOKEN_STORAGE_KEY)).toBe(DEFAULT_BRANCH_TOKEN)
-    localApiCalls.forEach(([, options]) => {
+    syncPostCalls.forEach(([, options]) => {
       expect(options.headers['x-branch-token']).toBe(DEFAULT_BRANCH_TOKEN)
     })
   })

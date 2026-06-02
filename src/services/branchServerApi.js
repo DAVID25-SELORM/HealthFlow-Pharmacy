@@ -319,15 +319,21 @@ export const runBranchSync = async () =>
 
 export const getBranchSyncStatus = async () => await branchFetch('/api/sync/status')
 
+const getBranchSyncPostHeaders = () => ({
+  'x-branch-token': getSavedBranchToken(),
+})
+
 export const pullBranchInventory = async () =>
   await branchFetch('/api/sync/pull-inventory', {
     method: 'POST',
+    headers: getBranchSyncPostHeaders(),
     timeoutMs: LONG_BRANCH_REQUEST_TIMEOUT_MS,
   })
 
 export const pullBranchReferenceData = async () =>
   await branchFetch('/api/sync/pull-reference-data', {
     method: 'POST',
+    headers: getBranchSyncPostHeaders(),
     timeoutMs: LONG_BRANCH_REQUEST_TIMEOUT_MS,
   })
 
