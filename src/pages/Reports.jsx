@@ -33,6 +33,23 @@ const searchIncludes = (value, term) => {
     compactSearchValue(value).includes(compactSearchValue(term))
 }
 
+const getSoldItemSearchValues = (item) => [
+  item.saleNumber,
+  item.saleDate,
+  item.patientName,
+  item.patientPhone,
+  item.insuranceName,
+  item.insuranceId,
+  item.insuranceId
+    ? `${item.insuranceName || 'No insurance'} (${item.insuranceId})`
+    : item.insuranceName || 'No insurance',
+  item.paymentMethod,
+  item.drugName,
+  item.quantity,
+  item.unitPrice,
+  item.totalPrice,
+]
+
 const getSaleInsuranceDetails = (sale, linkedPatient = null) => {
   const provider =
     sale.patients?.insurance_provider ||
@@ -64,7 +81,7 @@ const Reports = () => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [bundle, setBundle] = useState(null)
-  const [insuranceFilter, setInsuranceFilter] = useState('')
+  const [ledgerSearchTerm, setLedgerSearchTerm] = useState('')
 
   const cards = useMemo(() => {
     if (!bundle) {
@@ -144,39 +161,29 @@ const Reports = () => {
     )
   }, [bundle])
 
-  const insuranceOptions = useMemo(() => {
+  const ledgerSearchOptions = useMemo(() => {
     const options = new Set()
 
     soldItemRows.forEach((item) => {
-      if (item.insuranceName) {
-        options.add(item.insuranceName)
-      }
-      if (item.insuranceId) {
-        options.add(item.insuranceId)
-      }
-      if (item.patientPhone) {
-        options.add(item.patientPhone)
-      }
+      getSoldItemSearchValues(item)
+        .filter(Boolean)
+        .forEach((value) => options.add(String(value)))
     })
 
     return [...options].sort((left, right) => left.localeCompare(right))
   }, [soldItemRows])
 
   const filteredSoldItemRows = useMemo(() => {
-    const term = insuranceFilter.trim().toLowerCase()
+    const term = ledgerSearchTerm.trim().toLowerCase()
 
     if (!term) {
       return soldItemRows
     }
 
     return soldItemRows.filter((item) => {
-      return [
-        item.insuranceName,
-        item.insuranceId,
-        item.patientPhone,
-      ].some((value) => searchIncludes(value, term))
+      return getSoldItemSearchValues(item).some((value) => searchIncludes(value, term))
     })
-  }, [insuranceFilter, soldItemRows])
+  }, [ledgerSearchTerm, soldItemRows])
 
   const runReports = async (rangeStart, rangeEnd) => {
     try {
@@ -375,22 +382,23 @@ const Reports = () => {
               <Search size={16} />
               <input
                 type="search"
-                list="report-insurance-options"
-                placeholder="Filter by insurance type, name, phone, or insurance no."
-                value={insuranceFilter}
-                onChange={(event) => setInsuranceFilter(event.target.value)}
+                list="report-ledger-options"
+                placeholder="Search sale no., patient, item, phone, insurer, insurance no., or payment"
+                value={ledgerSearchTerm}
+                onChange={(event) => setLedgerSearchTerm(event.target.value)}
+                aria-label="Search sold items ledger"
               />
             </label>
-            <datalist id="report-insurance-options">
-              {insuranceOptions.map((option) => (
+            <datalist id="report-ledger-options">
+              {ledgerSearchOptions.map((option) => (
                 <option key={option} value={option} />
               ))}
             </datalist>
-            {insuranceFilter && (
+            {ledgerSearchTerm && (
               <button
                 type="button"
                 className="btn btn-outline btn-sm"
-                onClick={() => setInsuranceFilter('')}
+                onClick={() => setLedgerSearchTerm('')}
               >
                 Clear
               </button>

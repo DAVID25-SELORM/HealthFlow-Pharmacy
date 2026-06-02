@@ -2,6 +2,8 @@
 const DEFAULT_BRANCH_SERVER_URL = 'http://localhost:4780'
 const RUNTIME_CONFIG_KEY = 'healthflow.branchServer.config.v1'
 const BRANCH_TOKEN_STORAGE_KEY = 'healthflow_branch_token'
+const DEFAULT_BRANCH_TOKEN =
+  'hf_local_90d8db19-5b4e-4252-ab25-afb6d9f136a6_6e5832df-72b9-4578-a705-e01a6f96c6db'
 
 const readHostedConfig = () => {
   if (typeof window === 'undefined') return {} as Record<string, unknown>
@@ -19,7 +21,11 @@ const readRuntimeConfig = () => {
 
 const readBrowserBranchToken = () => {
   if (typeof window === 'undefined') return ''
-  return window.localStorage.getItem(BRANCH_TOKEN_STORAGE_KEY) || ''
+  const savedToken = window.localStorage.getItem(BRANCH_TOKEN_STORAGE_KEY)
+  if (savedToken) return savedToken
+
+  window.localStorage.setItem(BRANCH_TOKEN_STORAGE_KEY, DEFAULT_BRANCH_TOKEN)
+  return DEFAULT_BRANCH_TOKEN
 }
 
 const getConnectivityBranchServerConfig = () => {

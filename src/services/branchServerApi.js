@@ -4,6 +4,7 @@ import { isNetworkRequestError } from '../utils/requestErrors'
 const DEFAULT_BRANCH_SERVER_URL = 'http://localhost:4780'
 const RUNTIME_CONFIG_KEY = 'healthflow.branchServer.config.v1'
 export const BRANCH_TOKEN_STORAGE_KEY = 'healthflow_branch_token'
+export const DEFAULT_BRANCH_TOKEN = 'hf_local_90d8db19-5b4e-4252-ab25-afb6d9f136a6_6e5832df-72b9-4578-a705-e01a6f96c6db'
 const DEFAULT_BRANCH_REQUEST_TIMEOUT_MS = 1500
 const SEARCH_BRANCH_REQUEST_TIMEOUT_MS = 450
 const WRITE_BRANCH_REQUEST_TIMEOUT_MS = 8000
@@ -34,7 +35,13 @@ export const getSavedBranchToken = () => {
     return ''
   }
 
-  return window.localStorage.getItem(BRANCH_TOKEN_STORAGE_KEY) || ''
+  const savedToken = window.localStorage.getItem(BRANCH_TOKEN_STORAGE_KEY)
+  if (savedToken) {
+    return savedToken
+  }
+
+  window.localStorage.setItem(BRANCH_TOKEN_STORAGE_KEY, DEFAULT_BRANCH_TOKEN)
+  return DEFAULT_BRANCH_TOKEN
 }
 
 export const saveBranchToken = (token) => {
@@ -100,6 +107,21 @@ const getBranchServerUrl = () => getBranchServerConfig().url
 
 const getBranchServerToken = () => getBranchServerConfig().token
 
+const getBranchRequestToken = () => {
+  if (typeof window === 'undefined') {
+    return getBranchServerToken()
+  }
+
+  return window.localStorage.getItem(BRANCH_TOKEN_STORAGE_KEY) || getSavedBranchToken()
+}
+
+const getBranchApiHeaders = (headers = {}) => ({
+  Accept: 'application/json',
+  'Content-Type': 'application/json',
+  ...headers,
+  'x-branch-token': getBranchRequestToken(),
+})
+
 export const isBranchServerEnabled = () =>
   Boolean(getBranchServerConfig().enabled && getBranchServerUrl() && getBranchServerToken())
 
@@ -130,12 +152,7 @@ const branchFetch = async (path, options = {}) => {
   const { timeoutMs = DEFAULT_BRANCH_REQUEST_TIMEOUT_MS, ...fetchOptions } = options
   const response = await fetchWithTimeout(`${getBranchServerUrl()}${path}`, {
     ...fetchOptions,
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      ...(fetchOptions.headers || {}),
-      'x-branch-token': getBranchServerToken(),
-    },
+    headers: getBranchApiHeaders(fetchOptions.headers || {}),
   }, timeoutMs)
 
   const body = await response.json().catch(() => ({}))
@@ -397,10 +414,9 @@ export const downloadNhiaBatchExport = async (batchId, format = '') => {
   const response = await fetch(
     `${getBranchServerUrl()}/api/nhia/batches/${batchId}/export${params.toString() ? `?${params}` : ''}`,
     {
-      headers: {
+      headers: getBranchApiHeaders({
         Accept: '*/*',
-        'x-branch-token': getBranchServerToken(),
-      },
+      }),
     }
   )
   const content = await response.text()
