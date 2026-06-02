@@ -214,6 +214,63 @@ const stripLocalFields = (record, omit = []) => {
   )
 }
 
+const buildNhisDrugUpsertRecord = (record = {}) => {
+  const organizationId = String(record.organization_id || config.organizationId || '').trim()
+  const code = String(record.code || '').trim().toUpperCase()
+  const description = String(record.description || '').trim()
+
+  if (!organizationId) {
+    throw new Error('NHIS drug sync requires ORGANIZATION_ID.')
+  }
+
+  if (!code) {
+    throw new Error('NHIS drug sync requires a drug code.')
+  }
+
+  if (!description) {
+    throw new Error('NHIS drug sync requires a description.')
+  }
+
+  return {
+    organization_id: organizationId,
+    code,
+    description,
+    generic_name: record.generic_name || null,
+    strength: record.strength || null,
+    dosage_form: record.dosage_form || null,
+    category: record.category || null,
+    unit: record.unit || 'unit',
+    unit_price: Number(record.unit_price ?? record.unitPrice ?? 0) || 0,
+    is_active: record.is_active !== false,
+    updated_at: record.updated_at || nowIso(),
+  }
+}
+
+const syncNhisDrugUpsert = async (supabase, row, record) => {
+  const upsertRecord = buildNhisDrugUpsertRecord(record)
+  const { data, error } = await supabase
+    .from('nhis_drugs')
+    .upsert(upsertRecord, {
+      onConflict: 'organization_id,code',
+      ignoreDuplicates: false,
+    })
+    .select('id')
+    .single()
+
+  if (error) {
+    throw error
+  }
+
+  const timestamp = nowIso()
+  markOfflineRecordSynced.run(timestamp, timestamp, record.id, 'nhis_drugs')
+  markOutboxSynced.run(timestamp, timestamp, row.id)
+  return {
+    localId: record.id,
+    entityType: 'nhis_drugs',
+    remoteId: data?.id || record.id,
+  }
+}
+
 const syncRecordUpsert = async (supabase, row) => {
   const payload = parseJson(row.payload_json, {})
   const entityType = payload.entity_type || row.entity_type
@@ -222,6 +279,10 @@ const syncRecordUpsert = async (supabase, row) => {
 
   if (!record.id) {
     throw new Error('Offline record is missing an id.')
+  }
+
+  if (entityType === 'nhis_drugs') {
+    return await syncNhisDrugUpsert(supabase, row, record)
   }
 
   const { data, error } = await supabase.rpc('branch_sync_upsert_offline_record', {
@@ -246,7 +307,7 @@ const syncRecordUpsert = async (supabase, row) => {
 
 const runPendingOutboxSync = async ({ limit = 25 } = {}) => {
   const supabase = createSupabaseClient()
-  const rows = pendingOutbox.all(Math.min(Math.max(Number(limit) || 25, 1), 100))
+  const rows = pendingOutbox.all(Math.min(Math.max(Number(limit) || 25, 1), 1000))
   const result = { synced: 0, failed: 0, total: rows.length, errors: [] }
 
   for (const row of rows) {
@@ -475,6 +536,22 @@ export const pullReferenceData = async () => {
   result.purchases = importOfflineRecords('purchases', purchases).imported
 
   return result
+}
+
+export const repairFailedSync = async ({ limit = 1000 } = {}) => {
+  const sync = await syncPendingOutbox({ limit })
+  const [inventory, reference] = await Promise.all([
+    pullInventorySnapshot(),
+    pullReferenceData(),
+  ])
+
+  return {
+    repairedAt: nowIso(),
+    sync,
+    inventory,
+    reference,
+    status: getSyncStatus(),
+  }
 }
 
 export const getSupabaseDiagnostics = async () => {

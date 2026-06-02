@@ -777,8 +777,7 @@ BEGIN
       COALESCE(NULLIF(v_record->>'created_at', '')::TIMESTAMPTZ, NOW()),
       COALESCE(NULLIF(v_record->>'updated_at', '')::TIMESTAMPTZ, NOW())
     )
-    ON CONFLICT (id) DO UPDATE SET
-      code = EXCLUDED.code,
+    ON CONFLICT (organization_id, code) DO UPDATE SET
       description = EXCLUDED.description,
       generic_name = EXCLUDED.generic_name,
       strength = EXCLUDED.strength,

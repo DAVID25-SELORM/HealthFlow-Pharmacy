@@ -12,6 +12,7 @@ import {
   listNhiaClaims,
   pullBranchInventory,
   pullBranchReferenceData,
+  repairBranchSync,
   runBranchSync,
   saveBranchToken,
   submitPendingNhiaClaims,
@@ -360,6 +361,12 @@ export default function OfflineSync() {
           `Checked ${result.total || 0} event${result.total === 1 ? '' : 's'}: ${result.synced || 0} synced, ${result.failed || 0} failed.`,
           result.failed ? 'warning' : 'success'
         )
+      } else if (action === 'repair') {
+        const syncResult = result.sync || {}
+        notify(
+          `Repair checked ${syncResult.total || 0} event${syncResult.total === 1 ? '' : 's'}: ${syncResult.synced || 0} synced, ${syncResult.failed || 0} failed.`,
+          syncResult.failed ? 'warning' : 'success'
+        )
       } else {
         notify(`${label} completed.`, 'success')
       }
@@ -637,6 +644,14 @@ SUPABASE_SYNC_KEY=<your-supabase-anon-or-publishable-key>`}</pre>
         >
           <UploadCloud size={16} />
           {busyAction === 'sync' ? 'Syncing...' : 'Sync Now'}
+        </button>
+        <button
+          className="btn btn-outline"
+          type="button"
+          onClick={() => runAction('repair', 'Sync repair', repairBranchSync)}
+          disabled={!isConnected || Boolean(busyAction)}
+        >
+          Repair Failed Sync
         </button>
         <button
           className="btn btn-outline"

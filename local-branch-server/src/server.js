@@ -43,6 +43,7 @@ import {
   getSyncStatus,
   pullReferenceData,
   pullInventorySnapshot,
+  repairFailedSync,
   syncPendingOutbox,
 } from './supabaseSync.js'
 import { startSyncWorker, stopSyncWorker, waitForSyncWorkerIdle } from './syncWorker.js'
@@ -742,6 +743,14 @@ app.get('/api/sync/status', (_request, response) => {
 app.post('/api/sync/run', async (_request, response, next) => {
   try {
     response.json(await syncPendingOutbox())
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.post('/api/sync/repair', async (request, response, next) => {
+  try {
+    response.json(await repairFailedSync({ limit: request.body?.limit || 1000 }))
   } catch (error) {
     next(error)
   }

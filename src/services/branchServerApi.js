@@ -344,6 +344,13 @@ export const runBranchSync = async () =>
     timeoutMs: LONG_BRANCH_REQUEST_TIMEOUT_MS,
   })
 
+export const repairBranchSync = async () =>
+  await branchFetch('/api/sync/repair', {
+    method: 'POST',
+    body: JSON.stringify({ limit: 1000 }),
+    timeoutMs: LONG_BRANCH_REQUEST_TIMEOUT_MS,
+  })
+
 export const getBranchSyncStatus = async () => await branchFetch('/api/sync/status')
 
 // ✅ SYNC POST TOKEN FIX START
