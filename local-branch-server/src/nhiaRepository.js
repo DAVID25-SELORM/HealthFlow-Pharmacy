@@ -38,6 +38,11 @@ const INTEGRATION_MODE_ALIASES = {
 }
 const DEFAULT_NHIS_MEMBER_DIGITS = 8
 const DEFAULT_GHANA_CARD_DIGITS = 10
+const DEFAULT_NHIA_API_BASE_URL = 'https://elig.nhia.gov.gh:5000'
+const DEFAULT_CLAIMIT_SUBMIT_BASE_URL = 'http://localhost:31719/json-api'
+const DEFAULT_NHIA_MEMBER_LOOKUP_ENDPOINT = '/api/hmis/genCCC'
+const DEFAULT_CLAIMIT_CLAIM_ENDPOINT = '/claims'
+const DEFAULT_NHIA_INTEGRATION_MODE = 'claimit_assisted'
 const DIAGNOSIS_TREATMENT_RULES = [
   {
     label: 'Malaria',
@@ -790,7 +795,7 @@ const mapSettingsRow = (row, { includeCredentials = false } = {}) => {
     licenseNumber: row.license_number || '',
     accreditationExpiryDate: getAccreditationExpiryDate(row),
     // ✅ NHIA API ARCHITECTURE PATCH START
-    integrationMode: normalizeIntegrationMode(row.integration_mode),
+    integrationMode: normalizeIntegrationMode(row.integration_mode, DEFAULT_NHIA_INTEGRATION_MODE),
     connectionProfile: row.connection_profile || 'local_server',
     validationMode: row.validation_mode || 'validate_before_submit',
     claimControlMode: row.claim_control_mode ||
@@ -805,23 +810,23 @@ const mapSettingsRow = (row, { includeCredentials = false } = {}) => {
     // Move it to claimitSubmitBaseUrl and clear apiBaseUrl so admin fills in the correct NHIA URL.
     apiBaseUrl: (() => {
       const stored = normalizeText(row.api_base_url)
-      if (!stored) return ''
+      if (!stored) return DEFAULT_NHIA_API_BASE_URL
       const isClaimItUrl = stored.includes('localhost') ||
         stored.includes('/json-api') || stored.includes('/xml-api') ||
         stored.includes('31719') ||
         (!stored.includes('nhia.gov.gh') && (stored.includes('.vercel.app') || stored.includes('.healthflow')))
-      return isClaimItUrl ? '' : stored
+      return isClaimItUrl ? DEFAULT_NHIA_API_BASE_URL : stored
     })(),
     claimitSubmitBaseUrl: (() => {
       const fromProduction = normalizeText(row.production_base_url)
       if (fromProduction) return fromProduction
       const stored = normalizeText(row.api_base_url)
-      if (!stored) return ''
+      if (!stored) return DEFAULT_CLAIMIT_SUBMIT_BASE_URL
       const isClaimItUrl = stored.includes('localhost') ||
         stored.includes('/json-api') || stored.includes('/xml-api') ||
         stored.includes('31719') ||
         (!stored.includes('nhia.gov.gh') && (stored.includes('.vercel.app') || stored.includes('.healthflow')))
-      return isClaimItUrl ? stored : ''
+      return isClaimItUrl ? stored : DEFAULT_CLAIMIT_SUBMIT_BASE_URL
     })(),
     // ✅ NHIA API ARCHITECTURE PATCH END
     // ✅ NHIA CONFIG PATCH END
@@ -839,18 +844,18 @@ const mapSettingsRow = (row, { includeCredentials = false } = {}) => {
     submitterId: row.submitter_id || '',
     apiKeyEncrypted: row.api_key_encrypted ? NHIA_SECRET_MASK : '',
     apiSecretEncrypted: row.api_secret_encrypted ? NHIA_SECRET_MASK : '',
-    claimEndpointPath: row.claim_endpoint_path || '',
-    claimSubmitEndpoint: row.claim_submit_endpoint || row.claim_endpoint_path || '',
-    claim_submit_endpoint: row.claim_submit_endpoint || row.claim_endpoint_path || '',
+    claimEndpointPath: row.claim_endpoint_path || DEFAULT_CLAIMIT_CLAIM_ENDPOINT,
+    claimSubmitEndpoint: row.claim_submit_endpoint || row.claim_endpoint_path || DEFAULT_CLAIMIT_CLAIM_ENDPOINT,
+    claim_submit_endpoint: row.claim_submit_endpoint || row.claim_endpoint_path || DEFAULT_CLAIMIT_CLAIM_ENDPOINT,
     claimValidationEndpointPath: row.claim_validation_endpoint_path || '',
     ccEndpointPath: row.cc_endpoint_path || row.cc_code_endpoint_path || '',
     ccCodeEndpointPath: row.cc_code_endpoint_path || '',
     claimStatusEndpointPath: row.claim_status_endpoint_path || '',
     claimStatusEndpoint: row.claim_status_endpoint || row.claim_status_endpoint_path || '',
     claim_status_endpoint: row.claim_status_endpoint || row.claim_status_endpoint_path || '',
-    memberLookupEndpointPath: row.member_lookup_endpoint_path || '',
-    memberLookupEndpoint: row.member_lookup_endpoint || row.member_lookup_endpoint_path || '',
-    member_lookup_endpoint: row.member_lookup_endpoint || row.member_lookup_endpoint_path || '',
+    memberLookupEndpointPath: row.member_lookup_endpoint_path || row.member_lookup_endpoint || DEFAULT_NHIA_MEMBER_LOOKUP_ENDPOINT,
+    memberLookupEndpoint: row.member_lookup_endpoint || row.member_lookup_endpoint_path || DEFAULT_NHIA_MEMBER_LOOKUP_ENDPOINT,
+    member_lookup_endpoint: row.member_lookup_endpoint || row.member_lookup_endpoint_path || DEFAULT_NHIA_MEMBER_LOOKUP_ENDPOINT,
     directApiEnabled: Boolean(row.direct_api_enabled),
     credentialMode: normalizeCredentialMode(row.credential_mode || 'claimit_token'),
     credentials: includeCredentials ? credentials : {},
@@ -890,17 +895,18 @@ const hasWritableNhiaSecret = (credentials, key) =>
   Boolean(normalizeText(credentials[key]) && !isNhiaSecretMask(credentials[key]))
 
 const buildClaimBridgeEnvNhiaSettings = ({ includeCredentials = false } = {}) => {
-  if (!config.claimBridge.enabled || !normalizeText(config.claimBridge.upstreamBaseUrl)) {
+  const nhiaEligibilityBaseUrl = normalizeText(config.nhiaEligibilityBaseUrl) || DEFAULT_NHIA_API_BASE_URL
+  const upstreamBaseUrl = normalizeText(config.claimBridge.upstreamBaseUrl) || nhiaEligibilityBaseUrl
+  if (!config.claimBridge.enabled && !upstreamBaseUrl) {
     return null
   }
 
-  const nhiaEligibilityBaseUrl = normalizeText(config.nhiaEligibilityBaseUrl)
   const hasApiKey = Boolean(normalizeText(config.claimBridge.upstreamApiKey))
   const hasApiSecret = Boolean(normalizeText(config.claimBridge.upstreamApiSecret))
   const hasUsername = Boolean(normalizeText(config.claimBridge.upstreamUsername))
   const hasPassword = Boolean(normalizeText(config.claimBridge.upstreamPassword))
   const credentialMode = normalizeCredentialMode(config.claimBridge.upstreamCredentialMode || 'api_key')
-  const memberLookupEndpointPath = config.claimBridge.upstreamMemberLookupPath || '/api/hmis/genCCC'
+  const memberLookupEndpointPath = config.claimBridge.upstreamMemberLookupPath || DEFAULT_NHIA_MEMBER_LOOKUP_ENDPOINT
   const ccEndpointPath = config.claimBridge.upstreamCcEndpointPath || ''
   const credentials = includeCredentials
     ? {
@@ -921,21 +927,22 @@ const buildClaimBridgeEnvNhiaSettings = ({ includeCredentials = false } = {}) =>
     mode: 'ONLINE_LOCAL_SYNC',
     source: 'claim_bridge_env',
     configSource: 'claim_bridge_env',
-    integrationMode: 'direct_nhia_api',
-    integration_mode: 'direct_nhia_api',
+    integrationMode: DEFAULT_NHIA_INTEGRATION_MODE,
+    integration_mode: DEFAULT_NHIA_INTEGRATION_MODE,
     claimControlMode: 'direct_api',
     claim_control_mode: 'direct_api',
     connectionProfile: 'local_server',
     connection_profile: 'local_server',
     validationMode: 'validate_before_submit',
     validation_mode: 'validate_before_submit',
-    apiBaseUrl: config.claimBridge.upstreamBaseUrl,
-    api_base_url: config.claimBridge.upstreamBaseUrl,
+    apiBaseUrl: upstreamBaseUrl,
+    api_base_url: upstreamBaseUrl,
     nhiaEligibilityBaseUrl,
     nhia_eligibility_base_url: nhiaEligibilityBaseUrl,
-    claimitSubmitBaseUrl: config.claimBridge.upstreamBaseUrl,
-    productionBaseUrl: config.claimBridge.upstreamBaseUrl,
-    production_base_url: config.claimBridge.upstreamBaseUrl,
+    claimitSubmitBaseUrl: DEFAULT_CLAIMIT_SUBMIT_BASE_URL,
+    claimit_submit_base_url: DEFAULT_CLAIMIT_SUBMIT_BASE_URL,
+    productionBaseUrl: DEFAULT_CLAIMIT_SUBMIT_BASE_URL,
+    production_base_url: DEFAULT_CLAIMIT_SUBMIT_BASE_URL,
     ccEndpointPath,
     cc_endpoint_path: ccEndpointPath,
     ccCodeEndpointPath: ccEndpointPath,

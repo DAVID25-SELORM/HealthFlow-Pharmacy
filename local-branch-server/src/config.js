@@ -13,6 +13,7 @@ const toNumber = (value, fallback) => {
 }
 
 const toBoolean = (value) => ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase())
+const DEFAULT_NHIA_ELIGIBILITY_BASE_URL = 'https://elig.nhia.gov.gh:5000'
 
 const normalizePath = (value, fallback) => {
   const normalized = String(value || fallback || '').trim()
@@ -44,7 +45,7 @@ export const config = {
   ),
   branchSyncToken: process.env.BRANCH_SYNC_TOKEN || '',
   nhiaConfigSecretKey: process.env.NHIA_CONFIG_SECRET_KEY || process.env.NHIA_SECRET_KEY || '',
-  nhiaEligibilityBaseUrl: String(process.env.NHIA_ELIGIBILITY_BASE_URL || '').trim().replace(/\/+$/, ''),
+  nhiaEligibilityBaseUrl: String(process.env.NHIA_ELIGIBILITY_BASE_URL || DEFAULT_NHIA_ELIGIBILITY_BASE_URL).trim().replace(/\/+$/, ''),
   supabaseUrl: process.env.SUPABASE_URL || '',
   supabaseSyncKey: process.env.SUPABASE_SYNC_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '',
   claimBridge: {
@@ -59,9 +60,9 @@ export const config = {
       ''
     ),
     upstreamApiKey: process.env.CLAIMIT_UPSTREAM_API_KEY || '',
-    upstreamApiKeyHeader: String(process.env.CLAIMIT_UPSTREAM_API_KEY_HEADER || 'x-api-key').trim(),
+    upstreamApiKeyHeader: String(process.env.CLAIMIT_UPSTREAM_API_KEY_HEADER || 'x-nhia-apikey').trim(),
     upstreamApiSecret: process.env.CLAIMIT_UPSTREAM_API_SECRET || '',
-    upstreamApiSecretHeader: String(process.env.CLAIMIT_UPSTREAM_API_SECRET_HEADER || 'x-api-secret').trim(),
+    upstreamApiSecretHeader: String(process.env.CLAIMIT_UPSTREAM_API_SECRET_HEADER || 'x-nhia-apisecret').trim(),
     upstreamBearerToken: process.env.CLAIMIT_UPSTREAM_BEARER_TOKEN || '',
     upstreamUsername: process.env.CLAIMIT_UPSTREAM_USERNAME || '',
     upstreamPassword: process.env.CLAIMIT_UPSTREAM_PASSWORD || '',

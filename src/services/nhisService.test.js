@@ -1907,6 +1907,26 @@ describe('NHIA API settings source routing', () => {
     claimsOfficerName: 'Claims Officer',
   }
 
+  it('applies standard Ghana NHIS API defaults when no NHIA row exists', async () => {
+    mockNhiaConfigurationStore(null)
+    invokeTierAccess.mockResolvedValueOnce({ settings: null })
+
+    await expect(getNhiaApiSettings({ organizationId: 'org-1' })).resolves.toMatchObject({
+      organizationId: 'org-1',
+      configSource: 'default_app_config',
+      apiBaseUrl: 'https://elig.nhia.gov.gh:5000',
+      api_base_url: 'https://elig.nhia.gov.gh:5000',
+      memberLookupEndpointPath: '/api/hmis/genCCC',
+      member_lookup_endpoint_path: '/api/hmis/genCCC',
+      memberLookupEndpoint: '/api/hmis/genCCC',
+      member_lookup_endpoint: '/api/hmis/genCCC',
+      claimitSubmitBaseUrl: 'http://localhost:31719/json-api',
+      claimSubmitEndpoint: '/claims',
+      integrationMode: 'claimit_assisted',
+      credentialMode: 'claimit_token',
+    })
+  })
+
   it('reads NHIA settings from the local branch server when local sync is preferred', async () => {
     shouldUseBranchServer.mockReturnValueOnce(true)
     getNhiaSettings.mockResolvedValueOnce({

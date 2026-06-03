@@ -193,8 +193,8 @@ const resolveNhiaApiBaseUrls = (raw = {}) => {
   const storedClaimItUrl = explicitClaimItUrl || (isClaimItBaseUrl(productionCandidate) ? productionCandidate : '')
   const claimitSubmitBaseUrl = isClaimItBaseUrl(apiCandidate)
     ? storedClaimItUrl || apiCandidate
-    : storedClaimItUrl
-  const apiBaseUrl = isClaimItBaseUrl(apiCandidate) ? '' : apiCandidate
+    : storedClaimItUrl || DEFAULT_CLAIMIT_SUBMIT_BASE_URL
+  const apiBaseUrl = isClaimItBaseUrl(apiCandidate) ? DEFAULT_NHIA_API_BASE_URL : apiCandidate || DEFAULT_NHIA_API_BASE_URL
 
   return {
     apiBaseUrl,
@@ -300,6 +300,10 @@ const NHIA_SECRET_FIELDS = new Set(['apiKey', 'apiSecret', 'password'])
 const NHIA_API_CONFIG_TABLE = 'nhia_configuration'
 const NHIA_CONFIG_TABLE = 'nhia_configuration'
 const NHIA_LEGACY_INTEGRATIONS_TABLE = 'organization_nhia_integrations'
+const DEFAULT_NHIA_API_BASE_URL = 'https://elig.nhia.gov.gh:5000'
+const DEFAULT_CLAIMIT_SUBMIT_BASE_URL = 'http://localhost:31719/json-api'
+const DEFAULT_NHIA_MEMBER_LOOKUP_ENDPOINT = '/api/hmis/genCCC'
+const DEFAULT_CLAIMIT_CLAIM_ENDPOINT = '/claims'
 const NHIA_CONFIG_DEFAULTS = {
   id: '',
   branchId: '',
@@ -308,8 +312,8 @@ const NHIA_CONFIG_DEFAULTS = {
   credentialCode: '',
   accreditationExpiryDate: '',
   claimsOfficerName: '',
-  apiBaseUrl: '',
-  claimitSubmitBaseUrl: '',
+  apiBaseUrl: DEFAULT_NHIA_API_BASE_URL,
+  claimitSubmitBaseUrl: DEFAULT_CLAIMIT_SUBMIT_BASE_URL,
   submitterId: '',
   apiKeyEncrypted: '',
   apiSecretEncrypted: '',
@@ -318,11 +322,16 @@ const NHIA_CONFIG_DEFAULTS = {
   username: '',
   passwordEncrypted: '',
   hasPassword: false,
-  claimSubmitEndpoint: '',
+  claimSubmitEndpoint: DEFAULT_CLAIMIT_CLAIM_ENDPOINT,
   claimStatusEndpoint: '',
-  memberLookupEndpoint: '',
+  memberLookupEndpoint: DEFAULT_NHIA_MEMBER_LOOKUP_ENDPOINT,
   ccEndpointPath: '',
   validationMode: 'validate_before_submit',
+  integrationMode: 'claimit_assisted',
+  connectionProfile: 'local_server',
+  claimControlMode: 'manual',
+  credentialMode: 'claimit_token',
+  directApiEnabled: false,
   updatedAt: '',
   updatedBy: '',
 }
@@ -2308,13 +2317,13 @@ const normalizeNhiaConfig = (settings = null, {
   const providerId = normalizeText(raw.providerId || raw.provider_id || raw.providerNumber || raw.provider_number)
   const claimSubmitEndpoint = normalizeText(
     raw.claimSubmitEndpoint || raw.claim_submit_endpoint || raw.claimEndpointPath || raw.claim_endpoint_path
-  )
+  ) || NHIA_CONFIG_DEFAULTS.claimSubmitEndpoint
   const claimStatusEndpoint = normalizeText(
     raw.claimStatusEndpoint || raw.claim_status_endpoint || raw.claimStatusEndpointPath || raw.claim_status_endpoint_path
   )
   const memberLookupEndpoint = normalizeText(
     raw.memberLookupEndpoint || raw.member_lookup_endpoint || raw.memberLookupEndpointPath || raw.member_lookup_endpoint_path
-  )
+  ) || NHIA_CONFIG_DEFAULTS.memberLookupEndpoint
   const ccEndpointPath = normalizeText(raw.ccEndpointPath || raw.cc_endpoint_path || raw.ccCodeEndpointPath || raw.cc_code_endpoint_path)
   const facilityCode = normalizeText(raw.facilityCode || raw.facility_code)
   const credentialCode = normalizeText(raw.credentialCode || raw.credential_code || facilityCode)
@@ -2407,10 +2416,22 @@ const normalizeNhiaConfig = (settings = null, {
     cc_code_endpoint_path: normalizeText(raw.cc_code_endpoint_path || raw.ccCodeEndpointPath || ccEndpointPath),
     validationMode: normalizeText(raw.validationMode || raw.validation_mode) || NHIA_CONFIG_DEFAULTS.validationMode,
     validation_mode: normalizeText(raw.validation_mode || raw.validationMode) || NHIA_CONFIG_DEFAULTS.validationMode,
-    integrationMode: normalizeNhiaIntegrationMode(raw.integrationMode || raw.integration_mode || raw.nhiaApiMode || raw.nhia_api_mode),
-    integration_mode: normalizeNhiaIntegrationMode(raw.integration_mode || raw.integrationMode || raw.nhiaApiMode || raw.nhia_api_mode),
+    integrationMode: normalizeNhiaIntegrationMode(
+      raw.integrationMode || raw.integration_mode || raw.nhiaApiMode || raw.nhia_api_mode,
+      NHIA_CONFIG_DEFAULTS.integrationMode
+    ),
+    integration_mode: normalizeNhiaIntegrationMode(
+      raw.integration_mode || raw.integrationMode || raw.nhiaApiMode || raw.nhia_api_mode,
+      NHIA_CONFIG_DEFAULTS.integrationMode
+    ),
+    connectionProfile: normalizeText(raw.connectionProfile || raw.connection_profile) || NHIA_CONFIG_DEFAULTS.connectionProfile,
+    connection_profile: normalizeText(raw.connection_profile || raw.connectionProfile) || NHIA_CONFIG_DEFAULTS.connectionProfile,
     claimControlMode: normalizeText(raw.claimControlMode || raw.claim_control_mode) || 'manual',
     claim_control_mode: normalizeText(raw.claim_control_mode || raw.claimControlMode) || 'manual',
+    directApiEnabled: raw.directApiEnabled ?? raw.direct_api_enabled ?? NHIA_CONFIG_DEFAULTS.directApiEnabled,
+    direct_api_enabled: raw.direct_api_enabled ?? raw.directApiEnabled ?? NHIA_CONFIG_DEFAULTS.directApiEnabled,
+    credentialMode: normalizeText(raw.credentialMode || raw.credential_mode) || NHIA_CONFIG_DEFAULTS.credentialMode,
+    credential_mode: normalizeText(raw.credential_mode || raw.credentialMode) || NHIA_CONFIG_DEFAULTS.credentialMode,
     updatedAt: normalizeText(raw.updatedAt || raw.updated_at),
     updated_at: normalizeText(raw.updated_at || raw.updatedAt),
     updatedBy: normalizeText(raw.updatedBy || raw.updated_by),
