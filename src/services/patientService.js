@@ -8,6 +8,7 @@ import {
   updateBranchRecord,
 } from './branchServerApi'
 import { routeRead, routeWrite, shouldRouteToLocal } from './apiRouter'
+import { getConnectivityState } from './connectivityService'
 
 const PATIENT_INSURANCE_ID_UNIQUE_CONSTRAINTS = [
   'idx_patients_org_insurance_id_unique',
@@ -66,20 +67,74 @@ const throwFriendlyPatientError = (error) => {
  * Handles all patient-related operations
  */
 
+const fetchPatientsFromSupabase = async () => {
+  const { data, error } = await supabase
+    .from('patients')
+    .select('*')
+    .order('created_at', { ascending: false })
+
+  if (error) throw error
+  return data || []
+}
+
+const searchPatientsFromSupabase = async (term) => {
+  if (!term) {
+    return fetchPatientsFromSupabase()
+  }
+
+  const compactTerm = compactPatientLookup(term)
+  const searchTerms = [...new Set([term, compactTerm].filter(Boolean))]
+  const searchFilters = searchTerms.flatMap((value) => [
+    `full_name.ilike.%${value}%`,
+    `phone.ilike.%${value}%`,
+    `email.ilike.%${value}%`,
+    `insurance_provider.ilike.%${value}%`,
+    `insurance_id.ilike.%${value}%`,
+    `nhis_member_no.ilike.%${value}%`,
+    `nhis_hin.ilike.%${value}%`,
+  ])
+
+  const { data, error } = await supabase
+    .from('patients')
+    .select('*')
+    .or(searchFilters.join(','))
+    .order('full_name')
+
+  if (error) throw error
+
+  const rows = data || []
+  if (compactTerm === term) {
+    return rows
+  }
+
+  const allPatients = await fetchPatientsFromSupabase()
+  const merged = new Map(rows.map((patient) => [patient.id, patient]))
+  allPatients
+    .filter((patient) => patientMatchesSearch(patient, term))
+    .forEach((patient) => merged.set(patient.id, patient))
+
+  return [...merged.values()].sort((left, right) =>
+    String(left.full_name || '').localeCompare(String(right.full_name || ''))
+  )
+}
+
 // Get all patients
 export const getAllPatients = async () => {
   return await routeRead({
     label: 'patients',
-    local: async () => await listBranchRecords('patients'),
-    cloud: async () => {
-      const { data, error } = await supabase
-        .from('patients')
-        .select('*')
-        .order('created_at', { ascending: false })
+    local: async () => {
+      const localPatients = await listBranchRecords('patients')
+      if (localPatients.length || getConnectivityState().internetAvailable === false) {
+        return localPatients
+      }
 
-      if (error) throw error
-      return data || []
+      try {
+        return await fetchPatientsFromSupabase()
+      } catch {
+        return localPatients
+      }
     },
+    cloud: fetchPatientsFromSupabase,
     fallback: [],
   })
 }
@@ -278,47 +333,23 @@ export const updatePatient = async (id, patientData) => {
 export const searchPatients = async (searchTerm) => {
   const term = sanitizeSearchTerm(searchTerm)
   if (await shouldRouteToLocal()) {
-    return await listBranchRecords('patients', { searchTerm: term })
+    const localPatients = await listBranchRecords('patients', { searchTerm: term })
+    if (localPatients.length || getConnectivityState().internetAvailable === false) {
+      return localPatients
+    }
+
+    try {
+      return await searchPatientsFromSupabase(term)
+    } catch {
+      return localPatients
+    }
   }
 
   if (!term) {
     return getAllPatients()
   }
 
-  const compactTerm = compactPatientLookup(term)
-  const searchTerms = [...new Set([term, compactTerm].filter(Boolean))]
-  const searchFilters = searchTerms.flatMap((value) => [
-    `full_name.ilike.%${value}%`,
-    `phone.ilike.%${value}%`,
-    `email.ilike.%${value}%`,
-    `insurance_provider.ilike.%${value}%`,
-    `insurance_id.ilike.%${value}%`,
-    `nhis_member_no.ilike.%${value}%`,
-    `nhis_hin.ilike.%${value}%`,
-  ])
-
-  const { data, error } = await supabase
-    .from('patients')
-    .select('*')
-    .or(searchFilters.join(','))
-    .order('full_name')
-  
-  if (error) throw error
-
-  const rows = data || []
-  if (compactTerm === term) {
-    return rows
-  }
-
-  const allPatients = await getAllPatients()
-  const merged = new Map(rows.map((patient) => [patient.id, patient]))
-  allPatients
-    .filter((patient) => patientMatchesSearch(patient, term))
-    .forEach((patient) => merged.set(patient.id, patient))
-
-  return [...merged.values()].sort((left, right) =>
-    String(left.full_name || '').localeCompare(String(right.full_name || ''))
-  )
+  return searchPatientsFromSupabase(term)
 }
 
 // Get patient visit count
