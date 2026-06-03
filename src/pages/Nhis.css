@@ -1110,8 +1110,50 @@
 
 .patient-dropdown-item:hover { background: var(--gray-50); }
 
-.pd-name { font-weight: 500; }
-.pd-meta { font-size: 0.72rem; color: var(--gray-400); }
+.pd-name { font-weight: 700; color: var(--gray-900); }
+.pd-meta { font-size: 0.72rem; color: var(--gray-600); }
+
+.selected-patient-card {
+  margin-top: 0.5rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid rgba(16, 163, 127, 0.28);
+  border-radius: var(--radius);
+  background: rgba(16, 163, 127, 0.08);
+  color: var(--gray-900);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.selected-patient-card strong {
+  display: block;
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.selected-patient-meta {
+  margin-top: 0.2rem;
+  color: var(--gray-600);
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.selected-patient-change {
+  flex: 0 0 auto;
+  border: 1px solid rgba(16, 163, 127, 0.35);
+  border-radius: var(--radius);
+  background: white;
+  color: var(--primary);
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 0.35rem 0.6rem;
+}
+
+.selected-patient-change:hover {
+  background: rgba(16, 163, 127, 0.1);
+}
 
 .patient-search-status {
   position: absolute;

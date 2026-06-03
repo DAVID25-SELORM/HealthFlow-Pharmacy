@@ -229,6 +229,14 @@ const patientNameParts = (fullName = '') => {
   }
 }
 
+const formatPatientLookupName = (patient = {}) =>
+  patient.full_name ||
+  [patient.surname, patient.other_names || patient.otherNames].filter(Boolean).join(' ') ||
+  patient.nhis_member_no ||
+  patient.insurance_id ||
+  patient.nhis_hin ||
+  'Selected patient'
+
 const patientSearchKey = (patient = {}) =>
   patient.id ||
   compactLookupText([
@@ -513,6 +521,7 @@ const Nhis = () => {
   const [patientSearchResults, setPatientSearchResults] = useState([])
   const [patientSearchError, setPatientSearchError] = useState('')
   const [patientSearching, setPatientSearching] = useState(false)
+  const [selectedClaimPatient, setSelectedClaimPatient] = useState(null)
 
   // ── medicine sub-modal ────────────────────────────────────────
   const [medForm, setMedForm]           = useState(BLANK_MEDICINE)
@@ -722,7 +731,7 @@ const Nhis = () => {
 
   useEffect(() => {
     const term = patientSearch.trim()
-    if (!showNewClaimModal || term.length < 2) {
+    if (!showNewClaimModal || selectedClaimPatient || term.length < 2) {
       setPatientSearchResults([])
       setPatientSearchError('')
       setPatientSearching(false)
@@ -754,7 +763,7 @@ const Nhis = () => {
       cancelled = true
       clearTimeout(timer)
     }
-  }, [patientSearch, showNewClaimModal])
+  }, [patientSearch, selectedClaimPatient, showNewClaimModal])
 
   const filteredPatients = useMemo(() => {
     const merged = new Map()
@@ -1004,7 +1013,14 @@ const Nhis = () => {
   // ── select patient for claim ──────────────────────────────────
   const selectPatient = (patient) => {
     const memberNo = patient.nhis_member_no || patient.insurance_id || ''
+    const normalizedMemberNo = normalizeNhiaMemberNumber(memberNo)
     const nameParts = patientNameParts(patient.full_name)
+    const selectedPatient = {
+      ...patient,
+      full_name: formatPatientLookupName(patient),
+      nhis_member_no: normalizedMemberNo || patient.nhis_member_no || '',
+      folder_no: patient.folder_no || '',
+    }
     setClaimForm((prev) => ({
       ...prev,
       patientId:   patient.patient_id || (String(patient.id || '').startsWith('nhis-claim-') ? '' : patient.id),
@@ -1014,10 +1030,24 @@ const Nhis = () => {
       dateOfBirth: patient.date_of_birth || '',
       patientAddress: patient.address || '',
       folderNo:    patient.folder_no || prev.folderNo,
-      memberNo:    normalizeNhiaMemberNumber(memberNo),
+      memberNo:    normalizedMemberNo,
       hin:         patient.nhis_hin       || '',
     }))
+    setSelectedClaimPatient(selectedPatient)
+    setPatientSearch(formatPatientLookupName(selectedPatient))
+    setPatientSearchResults([])
+    setPatientSearchError('')
+  }
+
+  const handlePatientSearchChange = (event) => {
+    setSelectedClaimPatient(null)
+    setPatientSearch(event.target.value)
+  }
+
+  const clearSelectedPatient = () => {
+    setSelectedClaimPatient(null)
     setPatientSearch('')
+    setPatientSearchResults([])
     setPatientSearchError('')
   }
 
@@ -1040,7 +1070,15 @@ const Nhis = () => {
 
     setEditingClaim(claim)
     setClaimError('')
-    setPatientSearch('')
+    setPatientSearch(formatPatientLookupName(claim))
+    setSelectedClaimPatient({
+      id: claim.patient_id || `nhis-claim-${claim.id || claim.claim_number || ''}`,
+      full_name: formatPatientLookupName(claim),
+      nhis_member_no: claim.member_no || '',
+      nhis_hin: claim.hin || '',
+      folder_no: claim.folder_no || '',
+      sourceClaimNumber: claim.claim_number || '',
+    })
     setMedForm(BLANK_MEDICINE)
     setEditingMedicineIndex(null)
     setClaimForm({
@@ -1747,6 +1785,9 @@ const Nhis = () => {
     setClaimServices([])
     setClaimError('')
     setPatientSearch('')
+    setPatientSearchResults([])
+    setPatientSearchError('')
+    setSelectedClaimPatient(null)
     setMedForm(BLANK_MEDICINE)
     setEditingMedicineIndex(null)
     setTariffSearch('')
@@ -2695,9 +2736,9 @@ const Nhis = () => {
                         className="form-input"
                         placeholder="Type to search patients..."
                         value={patientSearch}
-                        onChange={(e) => setPatientSearch(e.target.value)}
+                        onChange={handlePatientSearchChange}
                       />
-                      {filteredPatients.length > 0 && (
+                      {!selectedClaimPatient && filteredPatients.length > 0 && (
                         <div className="patient-dropdown">
                           {filteredPatients.map((p) => (
                             <button
@@ -2716,12 +2757,36 @@ const Nhis = () => {
                           ))}
                         </div>
                       )}
-                      {patientSearching && (
+                      {!selectedClaimPatient && patientSearching && (
                         <div className="patient-search-status">Searching patients...</div>
                       )}
-                      {patientSearchError && !patientSearching && (
+                      {!selectedClaimPatient && patientSearchError && !patientSearching && (
                         <div className="patient-search-status patient-search-status--error">
                           {patientSearchError}
+                        </div>
+                      )}
+                      {selectedClaimPatient && (
+                        <div className="selected-patient-card">
+                          <div>
+                            <strong>{formatPatientLookupName(selectedClaimPatient)}</strong>
+                            <div className="selected-patient-meta">
+                              {[
+                                selectedClaimPatient.nhis_member_no || selectedClaimPatient.insurance_id
+                                  ? `Member: ${selectedClaimPatient.nhis_member_no || selectedClaimPatient.insurance_id}`
+                                  : '',
+                                selectedClaimPatient.nhis_hin ? `HIN: ${selectedClaimPatient.nhis_hin}` : '',
+                                selectedClaimPatient.folder_no ? `Folder: ${selectedClaimPatient.folder_no}` : '',
+                                selectedClaimPatient.sourceClaimNumber ? `Previous claim: ${selectedClaimPatient.sourceClaimNumber}` : '',
+                              ].filter(Boolean).join(' | ')}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            className="selected-patient-change"
+                            onClick={clearSelectedPatient}
+                          >
+                            Change
+                          </button>
                         </div>
                       )}
                     </div>
