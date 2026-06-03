@@ -248,6 +248,15 @@ const patientSearchKey = (patient = {}) =>
     patient.folder_no,
   ].filter(Boolean).join('|'))
 
+const isNhisPatientRecord = (patient = {}) =>
+  Boolean(
+    patient.nhis_member_no ||
+      patient.nhis_hin ||
+      patient.insurance_id ||
+      String(patient.insurance_provider || '').toLowerCase().includes('nhis') ||
+      String(patient.insurance_provider || '').toLowerCase().includes('national health')
+  )
+
 const claimToPatientSearchResult = (claim = {}) => ({
   id: claim.patient_id || `nhis-claim-${claim.id || claim.claim_number || patientSearchKey(claim)}`,
   patient_id: claim.patient_id || '',
@@ -685,6 +694,30 @@ const Nhis = () => {
     })
   }, [claims, claimTab, claimSearch])
 
+  const visibleNhisPatients = useMemo(() => {
+    const term = claimSearch.trim().toLowerCase()
+    const merged = new Map()
+
+    patients
+      .filter(isNhisPatientRecord)
+      .filter((patient) => {
+        if (!term) return true
+        return (
+          lookupMatches(formatPatientLookupName(patient), term) ||
+          lookupMatches(patient.nhis_member_no, term) ||
+          lookupMatches(patient.insurance_id, term) ||
+          lookupMatches(patient.nhis_hin, term) ||
+          lookupMatches(patient.folder_no, term)
+        )
+      })
+      .forEach((patient) => {
+        const key = patientSearchKey(patient)
+        if (key && !merged.has(key)) merged.set(key, patient)
+      })
+
+    return [...merged.values()].slice(0, 12)
+  }, [patients, claimSearch])
+
   // ── filtered catalog ─────────────────────────────────────────
   const filteredCatalog = useMemo(() => {
     const term = catalogSearch.trim().toLowerCase()
@@ -1057,6 +1090,12 @@ const Nhis = () => {
   // ── medicine code search ──────────────────────────────────────
   const openNewClaimModal = () => {
     resetClaimModal()
+    setShowNewClaimModal(true)
+  }
+
+  const openNewClaimForPatient = (patient) => {
+    resetClaimModal()
+    selectPatient(patient)
     setShowNewClaimModal(true)
   }
 
@@ -2317,8 +2356,61 @@ const Nhis = () => {
               <div className="nhis-empty">Loading claims...</div>
             ) : filteredClaims.length === 0 ? (
               <div className="nhis-empty">
-                <HeartPulse size={40} />
-                <p>No claims found.</p>
+                {visibleNhisPatients.length > 0 ? (
+                  <>
+                    <HeartPulse size={40} />
+                    <p>No claims found, but NHIS patients are available.</p>
+                    <div className="nhis-patient-fallback">
+                      <div className="nhis-patient-fallback__header">
+                        <strong>Known NHIS patients</strong>
+                        <span>{visibleNhisPatients.length} shown</span>
+                      </div>
+                      <table className="nhis-table">
+                        <thead>
+                          <tr>
+                            <th>Patient</th>
+                            <th>Member No / HIN</th>
+                            <th>Folder</th>
+                            <th>Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {visibleNhisPatients.map((patient) => (
+                            <tr key={patientSearchKey(patient)}>
+                              <td>
+                                <div className="patient-name">{formatPatientLookupName(patient)}</div>
+                                {patient.phone && <div className="patient-meta">{patient.phone}</div>}
+                              </td>
+                              <td>
+                                {(patient.nhis_member_no || patient.insurance_id) && (
+                                  <div>{patient.nhis_member_no || patient.insurance_id}</div>
+                                )}
+                                {patient.nhis_hin && <div className="patient-meta">HIN: {patient.nhis_hin}</div>}
+                              </td>
+                              <td>{patient.folder_no || <span className="patient-meta">-</span>}</td>
+                              <td>
+                                {canWrite && (
+                                  <button
+                                    type="button"
+                                    className="btn btn-primary btn-sm"
+                                    onClick={() => openNewClaimForPatient(patient)}
+                                  >
+                                    <Plus size={14} /> New Claim
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <HeartPulse size={40} />
+                    <p>No claims found.</p>
+                  </>
+                )}
                 {canWrite && (
                   <button className="btn btn-primary" onClick={openNewClaimModal}>
                     <Plus size={16} /> New Claim

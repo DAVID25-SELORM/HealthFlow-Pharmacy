@@ -330,6 +330,36 @@
   font-size: 1rem;
 }
 
+.nhis-patient-fallback {
+  width: min(100%, 920px);
+  text-align: left;
+  overflow-x: auto;
+}
+
+.nhis-patient-fallback__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+  color: var(--gray-700);
+}
+
+.nhis-patient-fallback__header span {
+  color: var(--gray-500);
+  font-size: 0.875rem;
+}
+
+.nhis-patient-fallback .nhis-table {
+  background: white;
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+}
+
+.nhis-patient-fallback .btn-sm {
+  white-space: nowrap;
+}
+
 /* Cells */
 .claim-number {
   font-family: monospace;
