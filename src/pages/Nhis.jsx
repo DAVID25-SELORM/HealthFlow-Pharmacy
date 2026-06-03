@@ -230,31 +230,63 @@ const patientNameParts = (fullName = '') => {
   }
 }
 
-const formatPatientLookupName = (patient = {}) =>
+const getPatientFullName = (patient = {}) =>
   patient.full_name ||
-  [patient.surname, patient.other_names || patient.otherNames].filter(Boolean).join(' ') ||
+  patient.fullName ||
+  [patient.surname, patient.other_names || patient.otherNames].filter(Boolean).join(' ')
+
+const getPatientMemberNumber = (patient = {}) =>
   patient.nhis_member_no ||
+  patient.nhisMemberNo ||
+  patient.member_no ||
+  patient.memberNo ||
   patient.insurance_id ||
-  patient.nhis_hin ||
+  patient.insuranceId ||
+  ''
+
+const getPatientHin = (patient = {}) =>
+  patient.nhis_hin || patient.nhisHin || patient.hin || ''
+
+const getPatientFolderNo = (patient = {}) =>
+  patient.folder_no || patient.folderNo || ''
+
+const getPatientPhone = (patient = {}) =>
+  patient.phone || patient.mobile || patient.contact || ''
+
+const getPatientGender = (patient = {}) =>
+  patient.gender || patient.sex || ''
+
+const getPatientDateOfBirth = (patient = {}) =>
+  patient.date_of_birth || patient.dateOfBirth || patient.dob || ''
+
+const getPatientAddress = (patient = {}) =>
+  patient.address || patient.patient_address || patient.patientAddress || ''
+
+const getPatientInsuranceProvider = (patient = {}) =>
+  patient.insurance_provider || patient.insuranceProvider || ''
+
+const formatPatientLookupName = (patient = {}) =>
+  getPatientFullName(patient) ||
+  getPatientMemberNumber(patient) ||
+  getPatientHin(patient) ||
   'Selected patient'
 
 const patientSearchKey = (patient = {}) =>
   patient.id ||
   compactLookupText([
-    patient.full_name,
-    patient.nhis_member_no,
-    patient.insurance_id,
-    patient.nhis_hin,
-    patient.folder_no,
+    getPatientFullName(patient),
+    getPatientMemberNumber(patient),
+    getPatientHin(patient),
+    getPatientFolderNo(patient),
+    getPatientDateOfBirth(patient),
   ].filter(Boolean).join('|'))
 
 const isNhisPatientRecord = (patient = {}) =>
   Boolean(
-    patient.nhis_member_no ||
-      patient.nhis_hin ||
-      patient.insurance_id ||
-      String(patient.insurance_provider || '').toLowerCase().includes('nhis') ||
-      String(patient.insurance_provider || '').toLowerCase().includes('national health')
+    getPatientMemberNumber(patient) ||
+      getPatientHin(patient) ||
+      String(getPatientInsuranceProvider(patient)).toLowerCase().includes('nhis') ||
+      String(getPatientInsuranceProvider(patient)).toLowerCase().includes('national health')
   )
 
 const claimToPatientSearchResult = (claim = {}) => ({
@@ -704,10 +736,10 @@ const Nhis = () => {
         if (!term) return true
         return (
           lookupMatches(formatPatientLookupName(patient), term) ||
-          lookupMatches(patient.nhis_member_no, term) ||
-          lookupMatches(patient.insurance_id, term) ||
-          lookupMatches(patient.nhis_hin, term) ||
-          lookupMatches(patient.folder_no, term)
+          lookupMatches(getPatientMemberNumber(patient), term) ||
+          lookupMatches(getPatientHin(patient), term) ||
+          lookupMatches(getPatientFolderNo(patient), term) ||
+          lookupMatches(getPatientPhone(patient), term)
         )
       })
       .forEach((patient) => {
@@ -715,7 +747,9 @@ const Nhis = () => {
         if (key && !merged.has(key)) merged.set(key, patient)
       })
 
-    return [...merged.values()].slice(0, 12)
+    return [...merged.values()].sort((left, right) =>
+      formatPatientLookupName(left).localeCompare(formatPatientLookupName(right))
+    )
   }, [patients, claimSearch])
 
   // ── filtered catalog ─────────────────────────────────────────
@@ -738,9 +772,12 @@ const Nhis = () => {
       .filter(
         (p) =>
           lookupMatches(p.full_name, term) ||
+          lookupMatches(p.fullName, term) ||
           lookupMatches(p.phone, term) ||
-          lookupMatches(p.nhis_member_no, term) ||
-          lookupMatches(p.insurance_id, term)
+          lookupMatches(p.mobile, term) ||
+          lookupMatches(getPatientMemberNumber(p), term) ||
+          lookupMatches(getPatientHin(p), term) ||
+          lookupMatches(getPatientFolderNo(p), term)
       )
   }, [patients, patientSearch])
 
@@ -1047,27 +1084,28 @@ const Nhis = () => {
 
   // ── select patient for claim ──────────────────────────────────
   const selectPatient = (patient) => {
-    const memberNo = patient.nhis_member_no || patient.insurance_id || ''
+    const memberNo = getPatientMemberNumber(patient)
     const normalizedMemberNo = normalizeNhiaMemberNumber(memberNo)
-    const nameParts = patientNameParts(patient.full_name)
+    const nameParts = patientNameParts(formatPatientLookupName(patient))
     const selectedPatient = {
       ...patient,
       full_name: formatPatientLookupName(patient),
-      nhis_member_no: normalizedMemberNo || patient.nhis_member_no || '',
-      folder_no: patient.folder_no || '',
+      nhis_member_no: normalizedMemberNo || getPatientMemberNumber(patient),
+      nhis_hin: getPatientHin(patient),
+      folder_no: getPatientFolderNo(patient),
     }
     setClaimForm((prev) => ({
       ...prev,
       patientId:   patient.patient_id || (String(patient.id || '').startsWith('nhis-claim-') ? '' : patient.id),
       surname:     nameParts.surname,
       otherNames:  nameParts.otherNames,
-      gender:      patient.gender     || '',
-      dateOfBirth: patient.date_of_birth || '',
-      patientAddress: patient.address || '',
-      folderNo:    patient.folder_no || prev.folderNo,
+      gender:      getPatientGender(patient),
+      dateOfBirth: getPatientDateOfBirth(patient),
+      patientAddress: getPatientAddress(patient),
+      folderNo:    getPatientFolderNo(patient) || prev.folderNo,
       memberNo:    normalizedMemberNo,
       cardType:    getNhiaLookupCardType(normalizedMemberNo),
-      hin:         patient.nhis_hin       || '',
+      hin:         getPatientHin(patient),
     }))
     setSelectedClaimPatient(selectedPatient)
     setPatientSearch(formatPatientLookupName(selectedPatient))
@@ -2370,7 +2408,7 @@ const Nhis = () => {
                           <tr>
                             <th>Patient</th>
                             <th>Member No / HIN</th>
-                            <th>Folder</th>
+                            <th>Details</th>
                             <th>Action</th>
                           </tr>
                         </thead>
@@ -2379,15 +2417,27 @@ const Nhis = () => {
                             <tr key={patientSearchKey(patient)}>
                               <td>
                                 <div className="patient-name">{formatPatientLookupName(patient)}</div>
-                                {patient.phone && <div className="patient-meta">{patient.phone}</div>}
+                                {getPatientPhone(patient) && <div className="patient-meta">{getPatientPhone(patient)}</div>}
+                                {getPatientAddress(patient) && <div className="patient-meta">{getPatientAddress(patient)}</div>}
                               </td>
                               <td>
-                                {(patient.nhis_member_no || patient.insurance_id) && (
-                                  <div>{patient.nhis_member_no || patient.insurance_id}</div>
+                                {getPatientMemberNumber(patient) && (
+                                  <div>{getPatientMemberNumber(patient)}</div>
                                 )}
-                                {patient.nhis_hin && <div className="patient-meta">HIN: {patient.nhis_hin}</div>}
+                                {getPatientHin(patient) && <div className="patient-meta">HIN: {getPatientHin(patient)}</div>}
                               </td>
-                              <td>{patient.folder_no || <span className="patient-meta">-</span>}</td>
+                              <td>
+                                {getPatientFolderNo(patient) && <div>Folder: {getPatientFolderNo(patient)}</div>}
+                                {getPatientGender(patient) && <div className="patient-meta">Gender: {getPatientGender(patient)}</div>}
+                                {getPatientDateOfBirth(patient) && <div className="patient-meta">DOB: {formatAppDate(getPatientDateOfBirth(patient))}</div>}
+                                {getPatientInsuranceProvider(patient) && <div className="patient-meta">{getPatientInsuranceProvider(patient)}</div>}
+                                {!getPatientFolderNo(patient) &&
+                                  !getPatientGender(patient) &&
+                                  !getPatientDateOfBirth(patient) &&
+                                  !getPatientInsuranceProvider(patient) && (
+                                    <span className="patient-meta">-</span>
+                                  )}
+                              </td>
                               <td>
                                 {canWrite && (
                                   <button
@@ -2853,11 +2903,13 @@ const Nhis = () => {
                               className="patient-dropdown-item"
                               onClick={() => selectPatient(p)}
                             >
-                              <span className="pd-name">{p.full_name}</span>
-                              {(p.nhis_member_no || p.insurance_id) && (
-                                <span className="pd-meta">Member: {p.nhis_member_no || p.insurance_id}</span>
+                              <span className="pd-name">{formatPatientLookupName(p)}</span>
+                              {getPatientMemberNumber(p) && (
+                                <span className="pd-meta">Member: {getPatientMemberNumber(p)}</span>
                               )}
-                              {p.folder_no && <span className="pd-meta">Folder: {p.folder_no}</span>}
+                              {getPatientHin(p) && <span className="pd-meta">HIN: {getPatientHin(p)}</span>}
+                              {getPatientFolderNo(p) && <span className="pd-meta">Folder: {getPatientFolderNo(p)}</span>}
+                              {getPatientPhone(p) && <span className="pd-meta">{getPatientPhone(p)}</span>}
                               {p.sourceClaimNumber && <span className="pd-meta">Previous claim: {p.sourceClaimNumber}</span>}
                             </button>
                           ))}
@@ -2877,11 +2929,12 @@ const Nhis = () => {
                             <strong>{formatPatientLookupName(selectedClaimPatient)}</strong>
                             <div className="selected-patient-meta">
                               {[
-                                selectedClaimPatient.nhis_member_no || selectedClaimPatient.insurance_id
-                                  ? `Member: ${selectedClaimPatient.nhis_member_no || selectedClaimPatient.insurance_id}`
+                                getPatientMemberNumber(selectedClaimPatient)
+                                  ? `Member: ${getPatientMemberNumber(selectedClaimPatient)}`
                                   : '',
-                                selectedClaimPatient.nhis_hin ? `HIN: ${selectedClaimPatient.nhis_hin}` : '',
-                                selectedClaimPatient.folder_no ? `Folder: ${selectedClaimPatient.folder_no}` : '',
+                                getPatientHin(selectedClaimPatient) ? `HIN: ${getPatientHin(selectedClaimPatient)}` : '',
+                                getPatientFolderNo(selectedClaimPatient) ? `Folder: ${getPatientFolderNo(selectedClaimPatient)}` : '',
+                                getPatientPhone(selectedClaimPatient) || '',
                                 selectedClaimPatient.sourceClaimNumber ? `Previous claim: ${selectedClaimPatient.sourceClaimNumber}` : '',
                               ].filter(Boolean).join(' | ')}
                             </div>

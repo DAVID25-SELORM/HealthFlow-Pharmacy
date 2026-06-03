@@ -123,8 +123,8 @@ export const getAllPatients = async () => {
   return await routeRead({
     label: 'patients',
     local: async () => {
-      const localPatients = await listBranchRecords('patients')
-      const localNhisClaimPatients = await listLocalNhisClaimPatients({ limit: 500 })
+      const localPatients = await listBranchRecords('patients', { limit: 5000 })
+      const localNhisClaimPatients = await listLocalNhisClaimPatients({ limit: 5000 })
       const mergedLocalPatients = mergePatients(localPatients, localNhisClaimPatients)
       if (mergedLocalPatients.length || getConnectivityState().internetAvailable === false) {
         return mergedLocalPatients

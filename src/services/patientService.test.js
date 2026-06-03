@@ -90,8 +90,8 @@ describe('patientService local sync reads', () => {
 
     await expect(getAllPatients()).resolves.toEqual(cloudPatients)
 
-    expect(listBranchRecords).toHaveBeenCalledWith('patients')
-    expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { limit: 500 })
+    expect(listBranchRecords).toHaveBeenCalledWith('patients', { limit: 5000 })
+    expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { limit: 5000 })
     expect(fromMock).toHaveBeenCalledWith('patients')
     expect(query.select).toHaveBeenCalledWith('*')
     expect(query.order).toHaveBeenCalledWith('created_at', { ascending: false })
@@ -105,8 +105,8 @@ describe('patientService local sync reads', () => {
 
     await expect(getAllPatients()).resolves.toEqual([])
 
-    expect(listBranchRecords).toHaveBeenCalledWith('patients')
-    expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { limit: 500 })
+    expect(listBranchRecords).toHaveBeenCalledWith('patients', { limit: 5000 })
+    expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { limit: 5000 })
     expect(fromMock).not.toHaveBeenCalled()
   })
 
@@ -136,8 +136,8 @@ describe('patientService local sync reads', () => {
       }),
     ])
 
-    expect(listBranchRecords).toHaveBeenCalledWith('patients')
-    expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { limit: 500 })
+    expect(listBranchRecords).toHaveBeenCalledWith('patients', { limit: 5000 })
+    expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { limit: 5000 })
     expect(fromMock).not.toHaveBeenCalled()
   })
 
