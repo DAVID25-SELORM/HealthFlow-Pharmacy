@@ -2442,6 +2442,18 @@ const logNhiaConfigEvent = (event, details = {}) => {
   console.info(`[NHIA CONFIG] ${event}`, payload)
 }
 
+const hasMeaningfulNhiaApiSettings = (settings = null) => Boolean(
+  settings &&
+    (
+      normalizeText(settings.id) ||
+      normalizeText(settings.facilityCode || settings.facility_code) ||
+      normalizeText(settings.providerId || settings.provider_id || settings.providerNumber || settings.provider_number) ||
+      normalizeText(settings.credentialCode || settings.credential_code) ||
+      Boolean(settings.hasApiKey || settings.has_api_key || settings.credentialSummary?.apiKey) ||
+      Boolean(settings.hasApiSecret || settings.has_api_secret || settings.credentialSummary?.apiSecret)
+    )
+)
+
 const buildNhiaCredentialsPayload = (credentials = {}) => {
   const payload = {}
 
@@ -2952,48 +2964,7 @@ export const generateBrowserClaimItBridgeCcCode = async (settings = {}, claimCon
   return { ccCode, source: 'claimit_bridge', response: body }
 }
 
-export const getNhiaApiSettings = async (options = {}) => {
-  const organizationId = normalizeText(options.organizationId || options.organization_id)
-  const mode = await getNhiaConfigMode()
-
-  if (mode === 'ONLINE_LOCAL_SYNC' || mode === 'OFFLINE_LOCAL') {
-    try {
-      const localSettings = await getBranchNhiaSettings()
-      const nhiaConfig = normalizeNhiaConfig(localSettings, {
-        mode,
-        source: 'local_branch_server',
-        organizationId,
-      })
-      writeCachedNhiaApiSettings(nhiaConfig, organizationId)
-      logNhiaConfigEvent('load', {
-        mode,
-        configSource: 'local_branch_server',
-        endpoint: '/api/nhia-config',
-        hasApiKey: nhiaConfig.hasApiKey,
-        hasApiSecret: nhiaConfig.hasApiSecret,
-      })
-      return nhiaConfig
-    } catch (error) {
-      const cachedSettings = readOfflineNhiaConfig(organizationId)
-      if (mode === 'OFFLINE_LOCAL' && cachedSettings) {
-        const nhiaConfig = normalizeNhiaConfig(cachedSettings, {
-          mode,
-          source: 'local_cache',
-          organizationId,
-        })
-        logNhiaConfigEvent('load', {
-          mode,
-          configSource: 'local_cache',
-          endpoint: 'localStorage',
-          hasApiKey: nhiaConfig.hasApiKey,
-          hasApiSecret: nhiaConfig.hasApiSecret,
-        })
-        return nhiaConfig
-      }
-      throw error
-    }
-  }
-
+const loadHostedNhiaApiSettings = async ({ organizationId = '', mode = '' } = {}) => {
   let hostedError = null
   let hostedSettings = null
   try {
@@ -3030,6 +3001,63 @@ export const getNhiaApiSettings = async (options = {}) => {
   }
 
   if (hostedError) throw hostedError
+  return null
+}
+
+export const getNhiaApiSettings = async (options = {}) => {
+  const organizationId = normalizeText(options.organizationId || options.organization_id)
+  const mode = await getNhiaConfigMode()
+
+  if (mode === 'ONLINE_LOCAL_SYNC' || mode === 'OFFLINE_LOCAL') {
+    try {
+      const localSettings = await getBranchNhiaSettings()
+      if (
+        mode === 'ONLINE_LOCAL_SYNC' &&
+        !hasMeaningfulNhiaApiSettings(localSettings) &&
+        getConnectivityState().internetAvailable !== false
+      ) {
+        const hostedFallbackSettings = await loadHostedNhiaApiSettings({ organizationId, mode })
+        if (hostedFallbackSettings) return hostedFallbackSettings
+      }
+
+      const nhiaConfig = normalizeNhiaConfig(localSettings, {
+        mode,
+        source: 'local_branch_server',
+        organizationId,
+      })
+      writeCachedNhiaApiSettings(nhiaConfig, organizationId)
+      logNhiaConfigEvent('load', {
+        mode,
+        configSource: 'local_branch_server',
+        endpoint: '/api/nhia-config',
+        hasApiKey: nhiaConfig.hasApiKey,
+        hasApiSecret: nhiaConfig.hasApiSecret,
+      })
+      return nhiaConfig
+    } catch (error) {
+      const cachedSettings = readOfflineNhiaConfig(organizationId)
+      if (mode === 'OFFLINE_LOCAL' && cachedSettings) {
+        const nhiaConfig = normalizeNhiaConfig(cachedSettings, {
+          mode,
+          source: 'local_cache',
+          organizationId,
+        })
+        logNhiaConfigEvent('load', {
+          mode,
+          configSource: 'local_cache',
+          endpoint: 'localStorage',
+          hasApiKey: nhiaConfig.hasApiKey,
+          hasApiSecret: nhiaConfig.hasApiSecret,
+        })
+        return nhiaConfig
+      }
+      throw error
+    }
+  }
+
+  const hostedSettings = await loadHostedNhiaApiSettings({ organizationId, mode })
+  if (hostedSettings) return hostedSettings
+
   return normalizeNhiaConfig(null, { mode, source: 'default_app_config', organizationId })
 }
 
@@ -3798,16 +3826,11 @@ const getMergedCurrentNhiaTariffItemsForServices = async (serviceLines = [], pro
   return byId.size ? Array.from(byId.values()) : [...provided, ...fetched]
 }
 
-export const getAllNhisDrugs = async (searchTerm = '') => {
-  if (shouldUseBranchServer()) {
-    return await listBranchRecords('nhis/drugs', { searchTerm })
-  }
-
+const fetchNhisDrugsFromSupabase = async (searchTerm = '') => {
   let query = supabase
     .from('nhis_drugs')
     .select('*')
     .eq('is_active', true)
-    .order('description')
 
   const term = sanitizeSearchTerm(searchTerm)
   if (term) {
@@ -3816,21 +3839,51 @@ export const getAllNhisDrugs = async (searchTerm = '') => {
     )
   }
 
+  query = query.order('description')
+
   const { data, error } = await query
   if (error) throw error
   return data || []
 }
 
+export const getAllNhisDrugs = async (searchTerm = '') => {
+  if (shouldUseBranchServer()) {
+    const localDrugs = await listBranchRecords('nhis/drugs', { searchTerm })
+    if (localDrugs.length || getConnectivityState().internetAvailable === false) {
+      return localDrugs
+    }
+
+    try {
+      return await fetchNhisDrugsFromSupabase(searchTerm)
+    } catch {
+      return localDrugs
+    }
+  }
+
+  return await fetchNhisDrugsFromSupabase(searchTerm)
+}
+
 export const getNhisDrugByCode = async (code) => {
+  const normalizedCode = code.trim().toUpperCase()
   if (shouldUseBranchServer()) {
     const drugs = await listBranchRecords('nhis/drugs', { searchTerm: code, limit: 1 })
-    return drugs.find((drug) => String(drug.code || '').toUpperCase() === code.trim().toUpperCase()) || null
+    const localMatch = drugs.find((drug) => String(drug.code || '').toUpperCase() === normalizedCode) || null
+    if (localMatch || getConnectivityState().internetAvailable === false) {
+      return localMatch
+    }
+
+    try {
+      return (await fetchNhisDrugsFromSupabase(code))
+        .find((drug) => String(drug.code || '').toUpperCase() === normalizedCode) || null
+    } catch {
+      return localMatch
+    }
   }
 
   const { data, error } = await supabase
     .from('nhis_drugs')
     .select('*')
-    .eq('code', code.trim().toUpperCase())
+    .eq('code', normalizedCode)
     .eq('is_active', true)
     .maybeSingle()
 

@@ -43,6 +43,7 @@ import {
   generateNhiaCcCode as generateBranchNhiaCcCode,
   getNhiaLookupCardType,
   lookupNhiaMember as branchLookupNhiaMember,
+  shouldUseBranchServer,
 } from '../services/branchServerApi'
 import { getAllPatients, searchPatients } from '../services/patientService'
 import { getAllDrugs } from '../services/drugService'
@@ -857,12 +858,19 @@ const Nhis = () => {
   )
   const memberLookupEndpointPath = resolvedNhiaSettings?.memberLookupEndpointPath ||
     resolvedNhiaSettings?.member_lookup_endpoint_path || ''
+  const isBranchNhiaConfigSource = ['local_branch_server', 'local_cache'].includes(
+    resolvedNhiaSettings?.configSource || resolvedNhiaSettings?.source
+  )
+  const shouldUseOfflineNhiaUrl = shouldUseBranchServer() || isBranchNhiaConfigSource
+  const effectiveMemberLookupEndpointPath = memberLookupEndpointPath ||
+    (shouldUseOfflineNhiaUrl ? '/api/hmis/genCCC' : '')
   const nhiaCcCodeApiAvailable = Boolean(
     (resolvedNhiaSettings?.directApiEnabled ||
       ['claimit_bridge', 'claimit_bridge_ccc', 'direct_api'].includes(claimControlMode)) &&
-      nhiaApiBaseUrl &&
-      memberLookupEndpointPath
+      (nhiaApiBaseUrl || shouldUseOfflineNhiaUrl) &&
+      effectiveMemberLookupEndpointPath
   )
+  const canGenerateNhiaCcCode = Boolean(nhiaCcCodeApiAvailable && integrationMode !== 'claimit_export')
   const nhisPageSubtitle = isHospital
     ? 'NHIA hospital service claims, tariffs, diagnoses, and direct CLAIM-it submission'
     : 'NHIS prescription dispensing claims and medicines catalog for pharmacies'
@@ -1528,14 +1536,11 @@ const Nhis = () => {
       notify('memberNumber is required.', 'warning')
       return
     }
-    if (!nhiaCcCodeApiAvailable) return
+    if (!canGenerateNhiaCcCode) return
     // Skip if we already looked up this exact member number.
     if (lastLookedUpMemberRef.current === memberNumber) return
 
-    const isBranchSource = ['local_branch_server', 'local_cache'].includes(
-      resolvedNhiaSettings?.configSource || resolvedNhiaSettings?.source
-    )
-    if (!isBranchSource) return   // Cloud path: lookup not yet wired, skip silently
+    if (!shouldUseOfflineNhiaUrl) return   // Cloud path: lookup not yet wired, skip silently
 
     try {
       setLookingUpMember(true)
@@ -1562,12 +1567,23 @@ const Nhis = () => {
     } finally {
       setLookingUpMember(false)
     }
-  }, [claimForm.memberNo, nhiaCcCodeApiAvailable, resolvedNhiaSettings, applyMemberDetailsToForm, notify])
+  }, [claimForm.memberNo, canGenerateNhiaCcCode, resolvedNhiaSettings, applyMemberDetailsToForm, notify])
 
   const handleGenerateCcCode = async () => {
-    if (!nhiaCcCodeApiAvailable) {
+    if (!canGenerateNhiaCcCode) {
       setClaimForm((prev) => ({ ...prev, cccNo: '' }))
-      notify('NHIA CCC generation is not configured. Set the NHIA API base URL and /api/hmis/genCCC endpoint in Settings.', 'info')
+      notify(
+        integrationMode === 'claimit_export'
+          ? 'CLAIM-it CXF export mode does not generate live NHIA CCC codes. Select a live NHIA/CLAIM-it API mode in Settings, or enter the CC/CCC manually.'
+          : 'NHIA CCC generation is not configured. Set the NHIA API base URL and /api/hmis/genCCC endpoint in Settings.',
+        'info'
+      )
+      return
+    }
+
+    const memberNumber = normalizeNhiaMemberNumber(claimForm.memberNo)
+    if (!memberNumber) {
+      notify('Enter the patient NHIS Member No / Ghana Card field before generating a CC/CCC code.', 'warning')
       return
     }
 
@@ -1581,15 +1597,13 @@ const Nhis = () => {
         organizationId,
         organizationType,
         patientName: `${claimForm.surname} ${claimForm.otherNames || ''}`.trim(),
-        memberNumber: claimForm.memberNo,
+        memberNumber,
         hin: claimForm.hin,
         diagnosis: claimForm.diagnosis,
         serviceDate: claimForm.serviceDate,
         totalAmount: claimTotal,
       }
-      const generateCcCode = ['local_branch_server', 'local_cache'].includes(
-          resolvedNhiaSettings?.configSource || resolvedNhiaSettings?.source
-        )
+      const generateCcCode = shouldUseOfflineNhiaUrl
         ? generateBranchNhiaCcCode
         : generateHostedNhiaCcCode
       const result = await generateCcCode(claimContext)
@@ -2808,7 +2822,7 @@ const Nhis = () => {
                             ...p,
                             cccNo: normalizeNhisCcCode(e.target.value).slice(0, 5),
                           }))} />
-                        {claimControlMode !== 'manual' && (
+                        {claimControlMode !== 'manual' && canGenerateNhiaCcCode && (
                           <button
                             type="button"
                             className="btn btn-secondary nhis-code-generate"
@@ -2822,7 +2836,14 @@ const Nhis = () => {
                       {claimControlMode === 'manual' && !canManuallyEditCcCode && (
                         <div className="patient-meta">Manual CC/CCC entry is restricted to admin users.</div>
                       )}
-                      {claimControlMode !== 'manual' && !claimForm.cccNo && (
+                      {claimControlMode !== 'manual' && !canGenerateNhiaCcCode && (
+                        <div className="patient-meta">
+                          {integrationMode === 'claimit_export'
+                            ? 'CLAIM-it export mode does not perform live NHIA CCC generation.'
+                            : 'Live NHIA CCC generation is not configured in Settings.'}
+                        </div>
+                      )}
+                      {claimControlMode !== 'manual' && canGenerateNhiaCcCode && !claimForm.cccNo && (
                         <div className="patient-meta">Pending NHIA CCC verification</div>
                       )}
                     </div>

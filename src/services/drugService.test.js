@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { invokeTierAccess, fromMock } = vi.hoisted(() => ({
+const { invokeTierAccess, fromMock, getBranchInventory, routeReadMock } = vi.hoisted(() => ({
   invokeTierAccess: vi.fn(),
   fromMock: vi.fn(),
+  getBranchInventory: vi.fn(),
+  routeReadMock: vi.fn(),
 }))
 
 vi.mock('./tierAccessService', () => ({
@@ -13,6 +15,14 @@ vi.mock('../lib/supabase', () => ({
   supabase: {
     from: fromMock,
   },
+}))
+
+vi.mock('./branchServerApi', () => ({
+  getBranchInventory,
+}))
+
+vi.mock('./apiRouter', () => ({
+  routeRead: routeReadMock,
 }))
 
 import {
@@ -29,6 +39,9 @@ describe('drugService catalog handling', () => {
   beforeEach(() => {
     invokeTierAccess.mockReset()
     fromMock.mockReset()
+    getBranchInventory.mockReset()
+    routeReadMock.mockReset()
+    routeReadMock.mockImplementation(({ cloud }) => cloud())
   })
 
   const createDirectDrugQuery = (rows) => {
@@ -147,6 +160,33 @@ describe('drugService catalog handling', () => {
       action: 'get_drugs',
       includeCatalog: true,
     })
+    expect(fromMock).not.toHaveBeenCalled()
+  })
+
+  it('does not pass hosted branch ids into local branch inventory reads', async () => {
+    const localRows = [
+      {
+        id: 'local-branch-stock',
+        name: 'Anastrazole 1mg',
+        branch_id: 'local-branch-id',
+        quantity: 20,
+      },
+      {
+        id: 'unassigned-local-stock',
+        name: 'Paracetamol Verify',
+        branch_id: null,
+        quantity: 5,
+      },
+    ]
+    routeReadMock.mockImplementationOnce(({ local }) => local())
+    getBranchInventory.mockResolvedValueOnce(localRows)
+
+    await expect(
+      getAllDrugs({ includeCatalog: true, branchId: 'hosted-browser-branch-id' })
+    ).resolves.toEqual(localRows)
+
+    expect(getBranchInventory).toHaveBeenCalledWith({ limit: 20000 })
+    expect(invokeTierAccess).not.toHaveBeenCalled()
     expect(fromMock).not.toHaveBeenCalled()
   })
 

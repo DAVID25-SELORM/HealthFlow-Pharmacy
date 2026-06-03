@@ -27,26 +27,30 @@ const runSyncWorkerBody = async () => {
     return
   }
 
-  const result = await syncPendingOutbox()
-  if (result.total > 0) {
-    console.log(
-      `Sync checked ${result.total} event(s): ${result.synced} synced, ${result.failed} failed.`
-    )
-  }
+  try {
+    const result = await syncPendingOutbox()
+    if (result.total > 0) {
+      console.log(
+        `Sync checked ${result.total} event(s): ${result.synced} synced, ${result.failed} failed.`
+      )
+    }
 
-  const now = Date.now()
-  if (now - lastInventoryPullAt >= config.inventoryPullIntervalSeconds * 1000) {
-    const [inventoryResult, referenceResult] = await Promise.all([
-      pullInventorySnapshot(),
-      pullReferenceData(),
-    ])
-    lastInventoryPullAt = now
-    console.log(
-      `Inventory snapshot imported ${inventoryResult.imported} drug(s) at ${inventoryResult.importedAt}.`
-    )
-    console.log(
-      `Reference data pulled: ${referenceResult.patients} patient(s), ${referenceResult.claims} claim(s), ${referenceResult.nhisClaims} NHIS claim(s), ${referenceResult.purchases} purchase(s).`
-    )
+    const now = Date.now()
+    if (now - lastInventoryPullAt >= config.inventoryPullIntervalSeconds * 1000) {
+      const [inventoryResult, referenceResult] = await Promise.all([
+        pullInventorySnapshot(),
+        pullReferenceData(),
+      ])
+      lastInventoryPullAt = now
+      console.log(
+        `Inventory snapshot imported ${inventoryResult.imported} drug(s) at ${inventoryResult.importedAt}.`
+      )
+      console.log(
+        `Reference data pulled: ${referenceResult.patients} patient(s), ${referenceResult.claims} claim(s), ${referenceResult.nhisClaims} NHIS claim(s), ${referenceResult.nhiaConfigurations} NHIA config(s), ${referenceResult.purchases} purchase(s).`
+      )
+    }
+  } catch (error) {
+    console.error('Supabase branch sync failed:', error)
   }
 }
 

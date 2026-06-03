@@ -878,8 +878,172 @@ const queueNhiaConfigSync = (row, timestamp = nowIso()) => {
 const hasWritableNhiaSecret = (credentials, key) =>
   Boolean(normalizeText(credentials[key]) && !isNhiaSecretMask(credentials[key]))
 
+const buildClaimBridgeEnvNhiaSettings = ({ includeCredentials = false } = {}) => {
+  if (!config.claimBridge.enabled || !normalizeText(config.claimBridge.upstreamBaseUrl)) {
+    return null
+  }
+
+  const nhiaEligibilityBaseUrl = normalizeText(config.nhiaEligibilityBaseUrl)
+  const hasApiKey = Boolean(normalizeText(config.claimBridge.upstreamApiKey))
+  const hasApiSecret = Boolean(normalizeText(config.claimBridge.upstreamApiSecret))
+  const hasUsername = Boolean(normalizeText(config.claimBridge.upstreamUsername))
+  const hasPassword = Boolean(normalizeText(config.claimBridge.upstreamPassword))
+  const credentials = includeCredentials
+    ? {
+        apiKey: config.claimBridge.upstreamApiKey,
+        apiSecret: config.claimBridge.upstreamApiSecret,
+        headerName: config.claimBridge.upstreamApiKeyHeader || 'x-nhia-apikey',
+        secretHeaderName: config.claimBridge.upstreamApiSecretHeader || 'x-nhia-apisecret',
+        username: config.claimBridge.upstreamUsername,
+        password: config.claimBridge.upstreamPassword,
+        token: config.claimBridge.upstreamBearerToken,
+      }
+    : {}
+
+  return {
+    id: 'claim-bridge-env',
+    organizationId: config.organizationId || '',
+    branchId: config.branchId || '',
+    mode: 'ONLINE_LOCAL_SYNC',
+    source: 'claim_bridge_env',
+    configSource: 'claim_bridge_env',
+    integrationMode: 'direct_nhia_api',
+    integration_mode: 'direct_nhia_api',
+    claimControlMode: 'direct_api',
+    claim_control_mode: 'direct_api',
+    connectionProfile: 'local_server',
+    connection_profile: 'local_server',
+    validationMode: 'validate_before_submit',
+    validation_mode: 'validate_before_submit',
+    apiBaseUrl: config.claimBridge.upstreamBaseUrl,
+    api_base_url: config.claimBridge.upstreamBaseUrl,
+    nhiaEligibilityBaseUrl,
+    nhia_eligibility_base_url: nhiaEligibilityBaseUrl,
+    claimitSubmitBaseUrl: config.claimBridge.upstreamBaseUrl,
+    productionBaseUrl: config.claimBridge.upstreamBaseUrl,
+    production_base_url: config.claimBridge.upstreamBaseUrl,
+    memberLookupEndpointPath: '/api/hmis/genCCC',
+    member_lookup_endpoint_path: '/api/hmis/genCCC',
+    memberLookupEndpoint: '/api/hmis/genCCC',
+    member_lookup_endpoint: '/api/hmis/genCCC',
+    directApiEnabled: true,
+    direct_api_enabled: true,
+    credentialMode: 'api_key',
+    credential_mode: 'api_key',
+    credentials,
+    credentialSummary: {
+      apiKey: hasApiKey,
+      apiSecret: hasApiSecret,
+      username: hasUsername,
+      password: hasPassword,
+    },
+    hasApiKey,
+    has_api_key: hasApiKey,
+    hasApiSecret,
+    has_api_secret: hasApiSecret,
+    username: includeCredentials ? config.claimBridge.upstreamUsername : '',
+    hasPassword,
+    has_password: hasPassword,
+    isActive: true,
+    is_active: true,
+  }
+}
+
+const mapRemoteNhiaConfigurationRow = (row = {}) => {
+  const organizationId = normalizeText(row.organization_id || row.organizationId || config.organizationId)
+  const branchId = normalizeText(row.branch_id || row.branchId || config.branchId)
+  const existing = selectSettings.get(organizationId, branchId)
+  const timestamp = normalizeText(row.updated_at || row.updatedAt) || nowIso()
+  const apiKeyEncrypted = normalizeText(row.api_key_encrypted || row.apiKeyEncrypted)
+  const apiSecretEncrypted = normalizeText(row.api_secret_encrypted || row.apiSecretEncrypted)
+  const passwordEncrypted = normalizeText(row.password_encrypted || row.passwordEncrypted)
+
+  return {
+    id: existing?.id || normalizeText(row.id) || createId(),
+    organizationId,
+    branchId,
+    mode: normalizeText(row.mode) || 'ONLINE_LOCAL_SYNC',
+    facilityCode: normalizeText(row.facility_code || row.facilityCode) || null,
+    providerId: normalizeText(row.provider_id || row.providerId || row.provider_number || row.providerNumber) || null,
+    providerNumber: normalizeText(row.provider_number || row.providerNumber || row.provider_id || row.providerId) || null,
+    facilityType: normalizeText(row.facility_type || row.facilityType) || null,
+    pharmacyFacilityLevel: normalizeText(row.pharmacy_facility_level || row.pharmacyFacilityLevel) || null,
+    providerLevelCode: normalizeText(row.provider_level_code || row.providerLevelCode) || null,
+    credentialCode: normalizeText(row.credential_code || row.credentialCode || row.facility_code || row.facilityCode) || null,
+    licenseNumber: normalizeText(row.license_number || row.licenseNumber) || null,
+    accreditationExpiryDate: getAccreditationExpiryDate(row) || null,
+    integrationMode: normalizeIntegrationMode(row.integration_mode || row.integrationMode || row.nhia_api_mode || row.nhiaApiMode),
+    connectionProfile: normalizeText(row.connection_profile || row.connectionProfile) || 'local_server',
+    validationMode: normalizeText(row.validation_mode || row.validationMode) || 'validate_before_submit',
+    claimControlMode: normalizeText(row.claim_control_mode || row.claimControlMode) || 'manual',
+    sandboxBaseUrl: normalizeText(row.sandbox_base_url || row.sandboxBaseUrl).replace(/\/+$/, '') || null,
+    productionBaseUrl: normalizeText(row.production_base_url || row.productionBaseUrl || row.claimit_submit_base_url || row.claimitSubmitBaseUrl).replace(/\/+$/, '') || null,
+    submitterId: normalizeText(row.submitter_id || row.submitterId) || null,
+    schemeName: normalizeText(row.scheme_name || row.schemeName) || 'National Health Insurance',
+    providerTypeDescription: normalizeText(row.provider_type_description || row.providerTypeDescription) || null,
+    providerClassLevel: normalizeText(row.provider_class_level || row.providerClassLevel) || null,
+    pharmacyLevel: normalizeText(row.pharmacy_level || row.pharmacyLevel) || null,
+    claimsOfficerName: normalizeText(row.claims_officer_name || row.claimsOfficerName) || null,
+    admissionPaymentOption: normalizeAdmissionPaymentOption(row.admission_payment_option || row.admissionPaymentOption),
+    claimitValidationEnabled: row.claimit_validation_enabled === false || row.claimitValidationEnabled === false ? 0 : 1,
+    claimsOfficerSignatureUrl: normalizeText(row.claims_officer_signature_url || row.claimsOfficerSignatureUrl) || null,
+    apiBaseUrl: normalizeText(row.api_base_url || row.apiBaseUrl).replace(/\/+$/, '') || null,
+    apiKeyEncrypted: apiKeyEncrypted || null,
+    apiSecretEncrypted: apiSecretEncrypted || null,
+    hasApiKey: apiKeyEncrypted ? 1 : toBool(row.has_api_key || row.hasApiKey),
+    hasApiSecret: apiSecretEncrypted ? 1 : toBool(row.has_api_secret || row.hasApiSecret),
+    apiKeyHeaderName: normalizeText(row.api_key_header_name || row.apiKeyHeaderName) || null,
+    apiSecretHeaderName: normalizeText(row.api_secret_header_name || row.apiSecretHeaderName) || null,
+    apiKeyHeaderPrefix: normalizeText(row.api_key_header_prefix || row.apiKeyHeaderPrefix) || null,
+    username: normalizeText(row.username) || null,
+    passwordEncrypted: passwordEncrypted || null,
+    tokenEndpointPath: normalizeText(row.token_endpoint_path || row.tokenEndpointPath) || null,
+    claimEndpointPath: normalizeText(row.claim_endpoint_path || row.claimEndpointPath || row.claim_submit_endpoint || row.claimSubmitEndpoint) || null,
+    claimSubmitEndpoint: normalizeText(row.claim_submit_endpoint || row.claimSubmitEndpoint || row.claim_endpoint_path || row.claimEndpointPath) || null,
+    claimValidationEndpointPath: normalizeText(row.claim_validation_endpoint_path || row.claimValidationEndpointPath) || null,
+    ccEndpointPath: normalizeText(row.cc_endpoint_path || row.ccEndpointPath || row.cc_code_endpoint_path || row.ccCodeEndpointPath) || null,
+    ccCodeEndpointPath: normalizeText(row.cc_code_endpoint_path || row.ccCodeEndpointPath || row.cc_endpoint_path || row.ccEndpointPath) || null,
+    claimStatusEndpointPath: normalizeText(row.claim_status_endpoint_path || row.claimStatusEndpointPath || row.claim_status_endpoint || row.claimStatusEndpoint) || null,
+    claimStatusEndpoint: normalizeText(row.claim_status_endpoint || row.claimStatusEndpoint || row.claim_status_endpoint_path || row.claimStatusEndpointPath) || null,
+    memberLookupEndpointPath: normalizeText(row.member_lookup_endpoint_path || row.memberLookupEndpointPath || row.member_lookup_endpoint || row.memberLookupEndpoint) || null,
+    memberLookupEndpoint: normalizeText(row.member_lookup_endpoint || row.memberLookupEndpoint || row.member_lookup_endpoint_path || row.memberLookupEndpointPath) || null,
+    directApiEnabled: toBool(row.direct_api_enabled || row.directApiEnabled),
+    credentialMode: normalizeCredentialMode(row.credential_mode || row.credentialMode),
+    nhisMemberDigits: toDigitLength(row.nhis_member_digits || row.nhisMemberDigits, DEFAULT_NHIS_MEMBER_DIGITS),
+    ghanaCardDigits: toDigitLength(row.ghana_card_digits || row.ghanaCardDigits, DEFAULT_GHANA_CARD_DIGITS),
+    exportFormat: normalizeExportFormat(row.export_format || row.exportFormat),
+    maxRetryAttempts: Math.min(Math.max(Number(row.max_retry_attempts || row.maxRetryAttempts) || 3, 1), 10),
+    createdAt: normalizeText(row.created_at || row.createdAt) || timestamp,
+    updatedAt: timestamp,
+    updatedBy: normalizeText(row.updated_by || row.updatedBy) || 'branch-reference-pull',
+  }
+}
+
+export const importNhiaConfigurationSnapshot = db.transaction((rows = []) => {
+  const result = { imported: 0, skipped: 0 }
+  const list = Array.isArray(rows) ? rows : []
+
+  for (const row of list) {
+    if (!row || typeof row !== 'object') {
+      result.skipped += 1
+      continue
+    }
+
+    if (row.is_active === false || row.is_active === 0) {
+      result.skipped += 1
+      continue
+    }
+
+    upsertSettings.run(mapRemoteNhiaConfigurationRow(row))
+    result.imported += 1
+  }
+
+  return result
+})
+
 export const getNhiaSettings = ({ includeCredentials = false } = {}) => {
-  const settings = mapSettingsRow(resolveSettingsRow(), { includeCredentials })
+  const settings = mapSettingsRow(resolveSettingsRow(), { includeCredentials }) ||
+    buildClaimBridgeEnvNhiaSettings({ includeCredentials })
   logNhiaConfigEvent('load', {
     mode: settings?.mode || 'OFFLINE_LOCAL',
     endpoint: '/api/nhia-config',
@@ -1660,21 +1824,33 @@ const getNhiaCardType = (memberNumber) =>
 
 export const lookupNhiaMember = async (memberNumber, { cardType } = {}) => {
   const settings = getNhiaSettings({ includeCredentials: true })
+  if (!settings) {
+    return { status: 'pending', message: 'NHIA settings are required before generating CCC/CC codes.' }
+  }
   if (!settings.directApiEnabled) {
     return { status: 'pending', message: 'NHIA API not configured' }
   }
 
-  // Prefer a dedicated NHIA eligibility base URL if configured.
-  // Fall back to apiBaseUrl only when it looks like the NHIA eligibility server
-  // (not the local CLAIM-it software at localhost:31719).
-  const nhiaEligibilityBaseUrl = normalizeText(
-    settings.nhiaEligibilityBaseUrl ||
-    settings.nhia_eligibility_base_url ||
-    // apiBaseUrl is used for genCCC only when it is NOT the local CLAIM-it URL
-    (normalizeText(settings.apiBaseUrl).includes('localhost') ? '' : settings.apiBaseUrl)
-  )
+  // In claim-bridge-env mode the upstream credentials (CLAIMIT_UPSTREAM_API_KEY/SECRET) belong
+  // to the CLAIM-it software, not the NHIA direct API. Route genCCC through CLAIM-it so it
+  // can authenticate with NHIA on the facility's behalf.
+  // In DB-configured mode (settings saved via the UI), use the dedicated NHIA eligibility URL.
+  const isBridgeEnvMode = settings.configSource === 'claim_bridge_env' || settings.source === 'claim_bridge_env'
+  const nhiaEligibilityBaseUrl = isBridgeEnvMode
+    ? normalizeText(settings.claimitSubmitBaseUrl || settings.productionBaseUrl || settings.apiBaseUrl)
+    : normalizeText(
+        settings.nhiaEligibilityBaseUrl ||
+        settings.nhia_eligibility_base_url ||
+        // apiBaseUrl is used for genCCC only when it is NOT the local CLAIM-it URL
+        (normalizeText(settings.apiBaseUrl).includes('localhost') ? '' : settings.apiBaseUrl)
+      )
   if (!nhiaEligibilityBaseUrl) {
-    return { status: 'pending', message: 'NHIA eligibility API base URL not configured (set API Base URL to https://elig.nhia.gov.gh:5000)' }
+    return {
+      status: 'pending',
+      message: isBridgeEnvMode
+        ? 'CLAIM-it bridge URL not configured. Set CLAIMIT_UPSTREAM_BASE_URL in the branch server .env.'
+        : 'NHIA eligibility API base URL not configured (set API Base URL to https://elig.nhia.gov.gh:5000)',
+    }
   }
 
   // Default lookup endpoint is /api/hmis/genCCC on the NHIA eligibility server.
@@ -1697,9 +1873,11 @@ export const lookupNhiaMember = async (memberNumber, { cardType } = {}) => {
   //   Body JSON: { CardNo, CardType }  CardType = "NHISCARD" | "GHANACARD"
   const resolvedCardType = cardType || getNhiaCardType(validatedMemberNumber)
   const url = `${nhiaEligibilityBaseUrl.replace(/\/+$/, '')}/${endpointPath.replace(/^\/+/, '')}`
+  const apiKeyHeaderName = normalizeText(credentials.headerName) || 'x-nhia-apikey'
+  const apiSecretHeaderName = normalizeText(credentials.secretHeaderName) || 'x-nhia-apisecret'
   const headers = {
-    'x-nhia-apikey': apiKey,
-    'x-nhia-apisecret': apiSecret,
+    [apiKeyHeaderName]: apiKey,
+    [apiSecretHeaderName]: apiSecret,
     'Content-Type': 'application/json',
     'Accept': 'application/json',
   }
@@ -1713,20 +1891,33 @@ export const lookupNhiaMember = async (memberNumber, { cardType } = {}) => {
     try { responseBody = text ? JSON.parse(text) : {} } catch { responseBody = { raw: text } }
 
     if (!response.ok) {
-      throw new Error(`NHIA member lookup returned HTTP ${response.status}.`)
+      const upstreamMessage = normalizeText(
+        responseBody?.message ||
+        responseBody?.error ||
+        responseBody?.detail ||
+        responseBody?.raw
+      )
+      throw new Error(
+        `NHIA member lookup returned HTTP ${response.status}${upstreamMessage ? `: ${upstreamMessage}` : ''}.`
+      )
     }
     const mapped = mapNhiaMemberLookupResponse(responseBody)
     logSubmission({ action: 'member.lookup.complete', status: 'success', ccCode: mapped?.ccCode })
     return { ok: true, ...mapped }
   } catch (error) {
     logSubmission({ action: 'member.lookup.failed', status: 'failed', error: error.message })
+    if (error?.cause?.code === 'ECONNREFUSED' || error?.code === 'ECONNREFUSED') {
+      throw new Error('Unable to reach the configured NHIA/CLAIM-it upstream. Start the local CLAIM-it/NHIA middleware or correct CLAIMIT_UPSTREAM_BASE_URL.')
+    }
     throw error
   }
 }
 
 export const generateNhiaCcCode = async (claimContext = {}) => {
   const settings = getNhiaSettings({ includeCredentials: true })
-  validateSettingsForSubmission(settings)
+  if (!settings) {
+    throw new Error('NHIA settings are required before submitting claims.')
+  }
 
   if (!settings.directApiEnabled) {
     return { status: 'pending', source: 'pending', message: 'Pending CLAIM-it validation' }
@@ -1783,16 +1974,20 @@ export const generateNhiaCcCode = async (claimContext = {}) => {
           }
         }
       } catch (lookupError) {
+        const message = lookupError?.message || 'genCCC fallback failed'
         logSubmission({
           action: 'cc_code.genccc_fallback.failed',
           status: 'failed',
-          error: lookupError?.message || 'genCCC fallback failed',
+          error: message,
         })
+        throw new Error(`NHIA genCCC lookup failed: ${message}`)
         // Fall through to pending — caller handles missing CC code
       }
     }
     return { status: 'pending', source: 'pending', message: 'Pending CLAIM-it validation' }
   }
+
+  validateSettingsForSubmission(settings)
 
   logSubmission({ action: 'cc_code.generate.start', status: 'pending', request: payload })
   try {

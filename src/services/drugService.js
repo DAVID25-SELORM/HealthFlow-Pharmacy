@@ -127,7 +127,7 @@ export const getAllDrugs = async (options = {}) => {
   // ✅ OFFLINE-FIRST PATCH START
   return await routeRead({
     label: 'inventory',
-    local: async () => await getBranchInventory({ branchId: branchId || '', limit: 20000 }),
+    local: async () => await getBranchInventory({ limit: 20000 }),
     cloud: async () => {
       if (includeCatalog || useTierAccess || branchId) {
         return getAllDrugsViaTierAccess(includeCatalog, branchId)

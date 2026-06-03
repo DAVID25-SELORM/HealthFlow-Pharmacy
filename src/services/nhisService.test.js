@@ -55,6 +55,8 @@ import {
   exportNhisClaimsFile,
   generateHostedNhiaCcCode,
   generateBrowserClaimItBridgeCcCode,
+  getAllNhisDrugs,
+  getNhisDrugByCode,
   getNhiaApiSettings,
   normalizeNhisExportPeriod,
   saveNhiaApiSettings,
@@ -64,8 +66,9 @@ import {
   validateNhisPrescriptionPdfFile,
 } from './nhisService'
 import { supabase } from '../lib/supabase'
-import { getNhiaSettings, saveNhiaSettings, shouldUseBranchServer, updateBranchRecord } from './branchServerApi'
+import { getNhiaSettings, listBranchRecords, saveNhiaSettings, shouldUseBranchServer, updateBranchRecord } from './branchServerApi'
 import { routeWrite } from './apiRouter'
+import { getConnectivityState } from './connectivityService'
 import { invokeTierAccess } from './tierAccessService'
 
 beforeEach(() => {
@@ -1928,6 +1931,39 @@ describe('NHIA API settings source routing', () => {
     expect(invokeTierAccess).not.toHaveBeenCalled()
   })
 
+  it('falls back to hosted NHIA settings when local sync has no saved settings while online', async () => {
+    mockNhiaConfigurationStore()
+    shouldUseBranchServer.mockReturnValueOnce(true)
+    getNhiaSettings.mockResolvedValueOnce(null)
+    invokeTierAccess.mockResolvedValueOnce({
+      settings: {
+        organizationId: 'org-1',
+        facilityCode: 'FAC-CLOUD',
+        providerNumber: 'PROV-CLOUD',
+        credentialCode: 'CRED-CLOUD',
+        accreditationExpiryDate: '2026-12-31',
+        claimsOfficerName: 'Cloud Officer',
+        hasApiKey: true,
+        hasApiSecret: true,
+      },
+    })
+
+    await expect(getNhiaApiSettings({ organizationId: 'org-1' })).resolves.toMatchObject({
+      organizationId: 'org-1',
+      facilityCode: 'FAC-CLOUD',
+      providerNumber: 'PROV-CLOUD',
+      configSource: 'cloud_supabase',
+      hasApiKey: true,
+      hasApiSecret: true,
+    })
+
+    expect(getNhiaSettings).toHaveBeenCalledTimes(1)
+    expect(invokeTierAccess).toHaveBeenCalledWith({
+      action: 'get_nhia_api_settings',
+      organizationId: 'org-1',
+    })
+  })
+
   it('does not fall back to the cloud save path when the local NHIA save route fails', async () => {
     shouldUseBranchServer.mockReturnValue(true)
     saveNhiaSettings.mockRejectedValueOnce(Object.assign(new Error('Local branch server request failed.'), { status: 404, endpoint: '/api/nhia-config' }))
@@ -2269,6 +2305,49 @@ describe('NHIA API settings source routing', () => {
       'http://localhost:31719/json-api/claims',
       expect.objectContaining({ method: 'POST' })
     )
+  })
+})
+
+describe('NHIS drug catalog routing', () => {
+  const mockCloudNhisDrugQuery = (rows = []) => {
+    const query = {
+      select: vi.fn(() => query),
+      eq: vi.fn(() => query),
+      order: vi.fn(() => Promise.resolve({ data: rows, error: null })),
+      or: vi.fn(() => query),
+    }
+    supabase.from.mockReturnValue(query)
+    return query
+  }
+
+  it('falls back to the cloud NHIS catalog when local sync has no cached catalog rows', async () => {
+    const cloudRows = [{ id: 'drug-1', code: 'NH001', description: 'Paracetamol 500mg', is_active: true }]
+    shouldUseBranchServer.mockReturnValue(true)
+    listBranchRecords.mockResolvedValueOnce([])
+    mockCloudNhisDrugQuery(cloudRows)
+
+    await expect(getAllNhisDrugs()).resolves.toEqual(cloudRows)
+
+    expect(listBranchRecords).toHaveBeenCalledWith('nhis/drugs', { searchTerm: '' })
+    expect(supabase.from).toHaveBeenCalledWith('nhis_drugs')
+  })
+
+  it('falls back to the cloud NHIS catalog when a local code lookup misses while online', async () => {
+    const cloudRows = [{ id: 'drug-2', code: 'NH002', description: 'Amoxicillin 250mg', is_active: true }]
+    shouldUseBranchServer.mockReturnValue(true)
+    listBranchRecords.mockResolvedValueOnce([])
+    getConnectivityState.mockReturnValueOnce({
+      mode: 'ONLINE_LOCAL_SYNC',
+      internetAvailable: true,
+      branchServerAvailable: true,
+      checkedAt: Date.now(),
+    })
+    mockCloudNhisDrugQuery(cloudRows)
+
+    await expect(getNhisDrugByCode('nh002')).resolves.toEqual(cloudRows[0])
+
+    expect(listBranchRecords).toHaveBeenCalledWith('nhis/drugs', { searchTerm: 'nh002', limit: 1 })
+    expect(supabase.from).toHaveBeenCalledWith('nhis_drugs')
   })
 })
 

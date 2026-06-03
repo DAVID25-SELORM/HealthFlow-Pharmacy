@@ -756,9 +756,9 @@ app.post('/api/sync/repair', async (request, response, next) => {
   }
 })
 
-app.post('/api/sync/pull-inventory', async (_request, response, next) => {
+app.post('/api/sync/pull-inventory', async (request, response, next) => {
   try {
-    response.json(await pullInventorySnapshot())
+    response.json(await pullInventorySnapshot({ forceFull: request.body?.forceFull !== false }))
   } catch (error) {
     next(error)
   }

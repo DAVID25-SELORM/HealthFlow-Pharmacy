@@ -264,7 +264,6 @@ const Inventory = () => {
   const loadLocalInventory = async (branchIdOverride = selectedBranchId, options = {}) => {
     const { notifyOnSuccess = true } = options
     const data = await getBranchInventory({
-      branchId: branchIdOverride || undefined,
       limit: 20000,
     })
     setBranches([])

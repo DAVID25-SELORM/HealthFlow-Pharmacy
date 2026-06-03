@@ -3,7 +3,7 @@ import WebSocket from 'ws'
 import { config, isSupabaseSyncConfigured } from './config.js'
 import { db, parseJson, nowIso } from './db.js'
 import { getInventoryImportStatus, importInventorySnapshot } from './inventoryRepository.js'
-import { getNhiaSummary } from './nhiaRepository.js'
+import { getNhiaSummary, importNhiaConfigurationSnapshot } from './nhiaRepository.js'
 import { importOfflineRecords } from './offlineRecordsRepository.js'
 
 const pendingOutbox = db.prepare(`
@@ -435,14 +435,14 @@ export const getSyncStatus = () => {
   }
 }
 
-export const pullInventorySnapshot = async () => {
+export const pullInventorySnapshot = async ({ forceFull = false } = {}) => {
   const supabase = createSupabaseClient()
   const inventoryStatus = getInventoryImportStatus()
   const { data, error } = await withSupabaseNetworkContext(() =>
     supabase.rpc('branch_sync_get_inventory_snapshot', {
       p_sync_token: config.branchSyncToken,
       p_limit: 20000,
-      p_updated_since: inventoryStatus.lastInventoryImportAt || null,
+      p_updated_since: forceFull ? null : inventoryStatus.lastInventoryImportAt || null,
     })
   )
 
@@ -511,10 +511,11 @@ export const pullReferenceData = async () => {
     nhisDrugs: 0,
     nhisClinicalRules: 0,
     nhisClaims: 0,
+    nhiaConfigurations: 0,
     purchases: 0,
   }
 
-  const [patients, suppliers, claims, nhisDrugs, nhisClinicalRules, nhisClaims, purchases] =
+  const [patients, suppliers, claims, nhisDrugs, nhisClinicalRules, nhisClaims, nhiaConfigurations, purchases] =
     await withSupabaseNetworkContext(() =>
       Promise.all([
         selectAll(supabase, 'patients'),
@@ -523,6 +524,7 @@ export const pullReferenceData = async () => {
         selectAll(supabase, 'nhis_drugs'),
         selectOptionalAll(supabase, 'nhis_clinical_rules'),
         selectNhisClaims(supabase),
+        selectOptionalAll(supabase, 'nhia_configuration'),
         selectAll(supabase, 'purchases', '*, purchase_items (*)'),
       ])
     )
@@ -533,6 +535,7 @@ export const pullReferenceData = async () => {
   result.nhisDrugs = importOfflineRecords('nhis_drugs', nhisDrugs).imported
   result.nhisClinicalRules = importOfflineRecords('nhis_clinical_rules', nhisClinicalRules).imported
   result.nhisClaims = importOfflineRecords('nhis_claims', nhisClaims).imported
+  result.nhiaConfigurations = importNhiaConfigurationSnapshot(nhiaConfigurations).imported
   result.purchases = importOfflineRecords('purchases', purchases).imported
 
   return result
@@ -541,7 +544,7 @@ export const pullReferenceData = async () => {
 export const repairFailedSync = async ({ limit = 1000 } = {}) => {
   const sync = await syncPendingOutbox({ limit })
   const [inventory, reference] = await Promise.all([
-    pullInventorySnapshot(),
+    pullInventorySnapshot({ forceFull: true }),
     pullReferenceData(),
   ])
 
