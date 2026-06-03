@@ -124,14 +124,16 @@ export const getAllPatients = async () => {
     label: 'patients',
     local: async () => {
       const localPatients = await listBranchRecords('patients')
-      if (localPatients.length || getConnectivityState().internetAvailable === false) {
-        return localPatients
+      const localNhisClaimPatients = await listLocalNhisClaimPatients({ limit: 500 })
+      const mergedLocalPatients = mergePatients(localPatients, localNhisClaimPatients)
+      if (mergedLocalPatients.length || getConnectivityState().internetAvailable === false) {
+        return mergedLocalPatients
       }
 
       try {
         return await fetchPatientsFromSupabase()
       } catch {
-        return localPatients
+        return mergedLocalPatients
       }
     },
     cloud: fetchPatientsFromSupabase,
@@ -199,6 +201,70 @@ const patientMatchesSearch = (patient, term) => {
       return normalizedValue.includes(normalizedTerm) ||
         (compactTerm && compactPatientLookup(value).includes(compactTerm))
     })
+}
+
+const patientSearchKey = (patient = {}) =>
+  compactPatientLookup([
+    patient.id,
+    patient.full_name,
+    patient.insurance_id,
+    patient.nhis_member_no,
+    patient.nhis_hin,
+    patient.folder_no,
+  ].filter(Boolean).join('|'))
+
+const nhisClaimToPatient = (claim = {}) => ({
+  id: claim.patient_id || `nhis-claim-${claim.id || claim.claim_number || compactPatientLookup([
+    claim.member_no,
+    claim.hin,
+    claim.surname,
+    claim.other_names,
+  ].filter(Boolean).join('|'))}`,
+  patient_id: claim.patient_id || '',
+  full_name: [claim.surname, claim.other_names].filter(Boolean).join(' ').trim(),
+  phone: claim.phone || '',
+  email: claim.email || '',
+  gender: claim.gender || '',
+  date_of_birth: claim.date_of_birth || '',
+  address: claim.patient_address || '',
+  insurance_provider: claim.insurance_provider || 'NHIS',
+  insurance_id: claim.member_no || '',
+  nhis_member_no: claim.member_no || '',
+  nhis_hin: claim.hin || '',
+  folder_no: claim.folder_no || '',
+  source_claim_number: claim.claim_number || '',
+  sourceClaimNumber: claim.claim_number || '',
+})
+
+const mergePatients = (...groups) => {
+  const merged = new Map()
+  groups.flat().filter(Boolean).forEach((patient) => {
+    const key = patientSearchKey(patient)
+    if (!key) return
+    const existing = merged.get(key)
+    merged.set(key, existing
+      ? {
+          ...patient,
+          ...existing,
+          full_name: existing.full_name || patient.full_name || '',
+          phone: existing.phone || patient.phone || '',
+          nhis_member_no: existing.nhis_member_no || patient.nhis_member_no || '',
+          nhis_hin: existing.nhis_hin || patient.nhis_hin || '',
+          insurance_id: existing.insurance_id || patient.insurance_id || '',
+          folder_no: existing.folder_no || patient.folder_no || '',
+          sourceClaimNumber: existing.sourceClaimNumber || patient.sourceClaimNumber || '',
+          source_claim_number: existing.source_claim_number || patient.source_claim_number || '',
+        }
+      : patient)
+  })
+  return [...merged.values()]
+}
+
+const listLocalNhisClaimPatients = async (filters = {}) => {
+  const claims = await Promise.resolve(listBranchRecords('nhis/claims', filters)).catch(() => [])
+  return (claims || [])
+    .map(nhisClaimToPatient)
+    .filter((patient) => patient.full_name || patient.nhis_member_no || patient.nhis_hin || patient.insurance_id)
 }
 
 // Add new patient
@@ -334,14 +400,16 @@ export const searchPatients = async (searchTerm) => {
   const term = sanitizeSearchTerm(searchTerm)
   if (await shouldRouteToLocal()) {
     const localPatients = await listBranchRecords('patients', { searchTerm: term })
-    if (localPatients.length || getConnectivityState().internetAvailable === false) {
-      return localPatients
+    const localNhisClaimPatients = await listLocalNhisClaimPatients({ searchTerm: term, limit: 100 })
+    const mergedLocalPatients = mergePatients(localPatients, localNhisClaimPatients)
+    if (mergedLocalPatients.length || getConnectivityState().internetAvailable === false) {
+      return mergedLocalPatients
     }
 
     try {
       return await searchPatientsFromSupabase(term)
     } catch {
-      return localPatients
+      return mergedLocalPatients
     }
   }
 

@@ -83,12 +83,15 @@ describe('patientService local sync reads', () => {
     const cloudPatients = [
       { id: 'cloud-patient-1', full_name: 'Cloud Patient', nhis_member_no: '99441270' },
     ]
-    listBranchRecords.mockResolvedValueOnce([])
+    listBranchRecords
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
     const query = mockPatientQuery(cloudPatients)
 
     await expect(getAllPatients()).resolves.toEqual(cloudPatients)
 
     expect(listBranchRecords).toHaveBeenCalledWith('patients')
+    expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { limit: 500 })
     expect(fromMock).toHaveBeenCalledWith('patients')
     expect(query.select).toHaveBeenCalledWith('*')
     expect(query.order).toHaveBeenCalledWith('created_at', { ascending: false })
@@ -96,11 +99,45 @@ describe('patientService local sync reads', () => {
 
   it('does not query cloud patients when offline and the local branch cache is empty', async () => {
     getConnectivityState.mockReturnValueOnce({ internetAvailable: false })
-    listBranchRecords.mockResolvedValueOnce([])
+    listBranchRecords
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
 
     await expect(getAllPatients()).resolves.toEqual([])
 
     expect(listBranchRecords).toHaveBeenCalledWith('patients')
+    expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { limit: 500 })
+    expect(fromMock).not.toHaveBeenCalled()
+  })
+
+  it('includes local NHIS claim patients when the patient cache is empty', async () => {
+    const claimPatients = [
+      {
+        id: 'nhis-claim-1',
+        claim_number: 'NHIS-001',
+        surname: 'Mensah',
+        other_names: 'Akua',
+        member_no: 'GHA-000606820-8',
+        hin: '36663082',
+        folder_no: 'F-10',
+      },
+    ]
+    listBranchRecords
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce(claimPatients)
+
+    await expect(getAllPatients()).resolves.toEqual([
+      expect.objectContaining({
+        id: 'nhis-claim-nhis-claim-1',
+        full_name: 'Mensah Akua',
+        nhis_member_no: 'GHA-000606820-8',
+        nhis_hin: '36663082',
+        sourceClaimNumber: 'NHIS-001',
+      }),
+    ])
+
+    expect(listBranchRecords).toHaveBeenCalledWith('patients')
+    expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { limit: 500 })
     expect(fromMock).not.toHaveBeenCalled()
   })
 
@@ -109,12 +146,15 @@ describe('patientService local sync reads', () => {
       { id: 'cloud-patient-1', full_name: 'Cloud Patient', nhis_member_no: '99441270' },
     ]
     shouldRouteToLocal.mockResolvedValueOnce(true)
-    listBranchRecords.mockResolvedValueOnce([])
+    listBranchRecords
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
     const query = mockPatientQuery(cloudMatches)
 
     await expect(searchPatients('99441270')).resolves.toEqual(cloudMatches)
 
     expect(listBranchRecords).toHaveBeenCalledWith('patients', { searchTerm: '99441270' })
+    expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { searchTerm: '99441270', limit: 100 })
     expect(fromMock).toHaveBeenCalledWith('patients')
     expect(query.select).toHaveBeenCalledWith('*')
     expect(query.or).toHaveBeenCalledWith(expect.stringContaining('nhis_member_no.ilike.%99441270%'))
@@ -126,11 +166,44 @@ describe('patientService local sync reads', () => {
       { id: 'local-patient-1', full_name: 'Local Patient', nhis_member_no: '99441270' },
     ]
     shouldRouteToLocal.mockResolvedValueOnce(true)
-    listBranchRecords.mockResolvedValueOnce(localMatches)
+    listBranchRecords
+      .mockResolvedValueOnce(localMatches)
+      .mockResolvedValueOnce([])
 
     await expect(searchPatients('99441270')).resolves.toEqual(localMatches)
 
     expect(listBranchRecords).toHaveBeenCalledWith('patients', { searchTerm: '99441270' })
+    expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { searchTerm: '99441270', limit: 100 })
+    expect(fromMock).not.toHaveBeenCalled()
+  })
+
+  it('keeps local NHIS claim-derived patient search results when patient rows are missing', async () => {
+    const claimMatches = [
+      {
+        id: 'claim-row-1',
+        claim_number: 'NHIS-002',
+        surname: 'Baria',
+        other_names: 'Karim',
+        member_no: 'GHA-000606820-8',
+        hin: '36663082',
+      },
+    ]
+    shouldRouteToLocal.mockResolvedValueOnce(true)
+    listBranchRecords
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce(claimMatches)
+
+    await expect(searchPatients('GHA-000606820-8')).resolves.toEqual([
+      expect.objectContaining({
+        id: 'nhis-claim-claim-row-1',
+        full_name: 'Baria Karim',
+        nhis_member_no: 'GHA-000606820-8',
+        nhis_hin: '36663082',
+      }),
+    ])
+
+    expect(listBranchRecords).toHaveBeenCalledWith('patients', { searchTerm: 'GHA-000606820-8' })
+    expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { searchTerm: 'GHA-000606820-8', limit: 100 })
     expect(fromMock).not.toHaveBeenCalled()
   })
 })

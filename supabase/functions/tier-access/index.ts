@@ -2951,7 +2951,7 @@ const mapNhiaSettingsRow = async (row: Record<string, unknown> | null, includeCr
     connectionProfile: row.connection_profile || 'local_server',
     validationMode: row.validation_mode || 'validate_before_submit',
     claimControlMode: row.claim_control_mode ||
-      (['claimit_bridge', 'claimit_assisted'].includes(normalizeText(row.integration_mode))
+      (normalizeText(row.integration_mode) === 'claimit_bridge'
         ? 'claimit_bridge'
         : normalizeText(row.integration_mode) === 'direct_nhia_api'
           ? 'direct_api'
@@ -3061,7 +3061,14 @@ const validateNhiaSettingsForMode = (settings: Record<string, unknown>) => {
   const claimStatusEndpoint = normalizeText(settings.claimStatusEndpoint || settings.claim_status_endpoint || settings.claimStatusEndpointPath || settings.claim_status_endpoint_path)
   const memberLookupEndpoint = normalizeText(settings.memberLookupEndpoint || settings.member_lookup_endpoint || settings.memberLookupEndpointPath || settings.member_lookup_endpoint_path)
 
-  if (['claimit_bridge', 'claimit_assisted'].includes(integrationMode)) {
+  if (integrationMode === 'claimit_assisted') {
+    if (!apiBaseUrl) missing.push('apiBaseUrl')
+    if (!hasApiKey) missing.push('NHIA CCC apiKey')
+    if (!hasApiSecret) missing.push('NHIA CCC apiSecret')
+    if (!memberLookupEndpoint) missing.push('memberLookupEndpoint')
+  }
+
+  if (integrationMode === 'claimit_bridge') {
     if (!apiBaseUrl) missing.push('apiBaseUrl')
     if (!claimitSubmitBaseUrl) missing.push('claimitSubmitBaseUrl')
     if (!hasApiKey) missing.push('NHIA CCC apiKey')
@@ -3422,7 +3429,7 @@ const buildNhiaEligibilityHeaders = (settings: Record<string, unknown>) => {
 }
 
 const isClaimItBridgeMode = (settings: Record<string, unknown>) =>
-  ['claimit_bridge', 'claimit_assisted'].includes(normalizeText(settings.integrationMode || settings.integration_mode))
+  normalizeText(settings.integrationMode || settings.integration_mode) === 'claimit_bridge'
 
 const mergeIncomingCredentials = (
   saved: Record<string, unknown> | null,
@@ -3640,6 +3647,12 @@ const mapNhiaMemberLookupResponse = (body: unknown) => {
   }
 }
 
+const getNhiaMemberLookupFailureMessage = (memberDetails: ReturnType<typeof mapNhiaMemberLookupResponse>) => {
+  const status = normalizeText(memberDetails?.status)
+  if (!memberDetails || memberDetails.ccCode || !status) return ''
+  return `NHIA member lookup did not return a CC code: ${status}.`
+}
+
 // NHIA eligibility API base URL — used for member lookup (genCCC) and CC code generation.
 // This is the apiBaseUrl configured directly (e.g. https://elig.nhia.gov.gh:5000).
 const getNhiaApiBaseUrl = (settings: Record<string, unknown>) => {
@@ -3825,7 +3838,11 @@ const generateNhiaCcCode = async (
 
   const memberDetails = mapNhiaMemberLookupResponse(body)
   const ccCode = memberDetails?.ccCode || ''
-  if (!ccCode) return { status: 'pending', source: 'pending', message: 'Pending CLAIM-it validation', response: body }
+  if (!ccCode) {
+    const failureMessage = getNhiaMemberLookupFailureMessage(memberDetails)
+    if (failureMessage) return { ok: false, error: failureMessage, response: body, receivedKeys }
+    return { status: 'pending', source: 'pending', message: 'Pending CLAIM-it validation', response: body }
+  }
   if (ccCode.length !== 5) {
     return {
       ok: false,

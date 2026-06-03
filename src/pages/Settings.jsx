@@ -36,7 +36,7 @@ import './Settings.css'
 
 const NHIA_SECRET_FIELDS = new Set(['apiKey', 'apiSecret', 'password'])
 const NHIA_API_INTEGRATION_MODES = ['claimit_bridge', 'claimit_assisted', 'direct_nhia_api', 'hybrid']
-const NHIA_BRIDGE_MODES = ['claimit_bridge', 'claimit_assisted']
+const NHIA_BRIDGE_MODES = ['claimit_bridge']
 const NHIA_LOCAL_BRIDGE_PROFILES = ['local_server', 'lan_ip']
 const NHIA_BRIDGE_REACHABLE_STATUSES = [401, 403, 404, 405]
 const CLAIMIT_PRODUCTION_BRIDGE_BASE_URL = String(import.meta.env.VITE_CLAIMIT_PRODUCTION_BRIDGE_BASE_URL || '').trim().replace(/\/+$/, '')
@@ -130,6 +130,9 @@ const logNhiaAccreditationExpiryDate = (action, value) => {
   }
 }
 
+const isNhiaEligibilityBaseUrl = (value = '') =>
+  String(value || '').trim().toLowerCase().includes('nhia.gov.gh')
+
 const toNhiaApiForm = (settings, organization) => {
   const resolved = applyNhiaFacilityDefaults(settings, organization)
   const hasApiKey = Boolean(settings?.hasApiKey || settings?.has_api_key || settings?.credentialSummary?.apiKey)
@@ -143,6 +146,11 @@ const toNhiaApiForm = (settings, organization) => {
   if (hasApiKey) credentials.apiKey = ''
   if (hasApiSecret) credentials.apiSecret = ''
   if (hasPassword) credentials.password = ''
+  const resolvedClaimItSubmitBaseUrl = resolved.claimitSubmitBaseUrl ||
+    resolved.claimit_submit_base_url ||
+    resolved.productionBaseUrl ||
+    resolved.production_base_url ||
+    ''
 
   return {
     ...blankNhiaApiForm,
@@ -152,7 +160,7 @@ const toNhiaApiForm = (settings, organization) => {
     ccEndpointPath: resolved.ccEndpointPath || resolved.cc_endpoint_path || resolved.ccCodeEndpointPath || resolved.cc_code_endpoint_path || '',
     ccCodeEndpointPath: resolved.ccCodeEndpointPath || resolved.cc_code_endpoint_path || resolved.ccEndpointPath || resolved.cc_endpoint_path || '',
     memberLookupEndpointPath: resolved.memberLookupEndpointPath || resolved.member_lookup_endpoint_path || resolved.memberLookupEndpoint || resolved.member_lookup_endpoint || '/api/hmis/genCCC',
-    claimitSubmitBaseUrl: resolved.claimitSubmitBaseUrl || resolved.claimit_submit_base_url || resolved.productionBaseUrl || resolved.production_base_url || '',
+    claimitSubmitBaseUrl: isNhiaEligibilityBaseUrl(resolvedClaimItSubmitBaseUrl) ? '' : resolvedClaimItSubmitBaseUrl,
     accreditationExpiryDate: normalizeDateInputValue(resolved.accreditationExpiryDate),
     hasApiKey,
     hasApiSecret,
@@ -266,8 +274,7 @@ const isLocalNhiaBridgeBaseUrl = (baseUrl = '') => {
 }
 
 const getNhiaActiveBaseUrl = (form = {}) => {
-  const profile = form.connectionProfile || form.connection_profile || 'local_server'
-  if (NHIA_BRIDGE_MODES.includes(form.integrationMode) || NHIA_LOCAL_BRIDGE_PROFILES.includes(profile)) {
+  if (NHIA_BRIDGE_MODES.includes(form.integrationMode)) {
     return form.claimitSubmitBaseUrl || form.claimit_submit_base_url || form.productionBaseUrl || form.production_base_url || form.sandboxBaseUrl
   }
   return form.apiEnvironment === 'sandbox'
@@ -550,7 +557,7 @@ const Settings = () => {
           directApiEnabled: true,
           integrationMode: NHIA_API_INTEGRATION_MODES.includes(nhiaApiForm.integrationMode)
             ? nhiaApiForm.integrationMode
-            : 'claimit_bridge',
+            : 'claimit_assisted',
         })
       : {
           ...nhiaApiForm,
@@ -647,6 +654,11 @@ const Settings = () => {
         }
       }
       const activeBaseUrl = getNhiaActiveBaseUrl(nhiaApiForm)
+      const claimitSubmitBaseUrl = NHIA_BRIDGE_MODES.includes(nhiaApiForm.integrationMode)
+        ? activeBaseUrl || nhiaApiForm.claimitSubmitBaseUrl
+        : isNhiaEligibilityBaseUrl(nhiaApiForm.claimitSubmitBaseUrl)
+          ? ''
+          : nhiaApiForm.claimitSubmitBaseUrl
       const accreditationExpiryDate = normalizeDateInputValue(nhiaApiForm.accreditationExpiryDate)
       const nhiaOrganizationId = organization?.id || organization?.organization_id || nhiaApiForm.organizationId || nhiaApiForm.organization_id
       const credentialPayload = buildNhiaCredentialsPayload(nhiaApiForm.credentials)
@@ -664,10 +676,10 @@ const Settings = () => {
         pharmacyFacilityLevel: isHospitalOrganization ? '' : nhiaApiForm.pharmacyFacilityLevel,
         apiBaseUrl: nhiaApiForm.apiBaseUrl,
         api_base_url: nhiaApiForm.apiBaseUrl,
-        claimitSubmitBaseUrl: activeBaseUrl || nhiaApiForm.claimitSubmitBaseUrl,
-        claimit_submit_base_url: activeBaseUrl || nhiaApiForm.claimitSubmitBaseUrl,
-        productionBaseUrl: activeBaseUrl || nhiaApiForm.claimitSubmitBaseUrl,
-        production_base_url: activeBaseUrl || nhiaApiForm.claimitSubmitBaseUrl,
+        claimitSubmitBaseUrl,
+        claimit_submit_base_url: claimitSubmitBaseUrl,
+        productionBaseUrl: claimitSubmitBaseUrl,
+        production_base_url: claimitSubmitBaseUrl,
         ccEndpointPath: nhiaApiForm.ccEndpointPath || nhiaApiForm.ccCodeEndpointPath,
         ccCodeEndpointPath: nhiaApiForm.ccCodeEndpointPath || nhiaApiForm.ccEndpointPath,
       }

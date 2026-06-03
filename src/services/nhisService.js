@@ -174,7 +174,7 @@ const normalizeNhiaIntegrationMode = (value, fallback = 'claimit_export') => {
   const normalized = normalizeText(value).toLowerCase()
   return NHIA_INTEGRATION_MODE_ALIASES[normalized] || fallback
 }
-const CLAIMIT_BRIDGE_MODES = new Set(['claimit_bridge', 'claimit_assisted'])
+const CLAIMIT_BRIDGE_MODES = new Set(['claimit_bridge'])
 const PENDING_CLAIMIT_CC_MESSAGE = 'Pending CLAIM-it validation'
 const isClaimItBaseUrl = (value = '') => {
   const stored = normalizeText(value).toLowerCase()
@@ -2503,7 +2503,14 @@ export const validateNhiaConfigForMode = (settings = {}) => {
     !normalizeText(settings.claimsOfficerName || settings.claims_officer_name) && 'claimsOfficerName',
   ].filter(Boolean)
 
-  if (isClaimItBridgeMode(integrationMode)) {
+  if (integrationMode === 'claimit_assisted') {
+    if (!apiBaseUrl) missing.push('apiBaseUrl')
+    if (!hasApiKey) missing.push('NHIA CCC apiKey')
+    if (!hasApiSecret) missing.push('NHIA CCC apiSecret')
+    if (!memberLookupEndpoint) missing.push('memberLookupEndpoint')
+  }
+
+  if (integrationMode === 'claimit_bridge') {
     if (!apiBaseUrl) missing.push('apiBaseUrl')
     if (!claimitSubmitBaseUrl) missing.push('claimitSubmitBaseUrl')
     if (!hasApiKey) missing.push('NHIA CCC apiKey')

@@ -49,7 +49,7 @@ import { getAllPatients, searchPatients } from '../services/patientService'
 import { getAllDrugs } from '../services/drugService'
 import { parseNhisDrugFile, generateNhisDrugTemplate } from '../services/nhisDrugImportService'
 import { parseNhisClinicalRuleFile, generateNhisClinicalRuleTemplate } from '../services/nhisClinicalRuleImportService'
-import { normalizeNhiaMemberNumber } from '../utils/nhiaMemberNumber'
+import { isGhanaCardNumber, normalizeNhiaMemberNumber } from '../utils/nhiaMemberNumber'
 import {
   applyNhiaFacilityDefaults,
   getNhiaAccreditationExpiryDate,
@@ -117,6 +117,7 @@ const DURATION_OPTIONS = [
 const BLANK_CLAIM = {
   patientId:         '',
   memberNo:          '',
+  cardType:          '',
   hin:               '',
   surname:           '',
   otherNames:        '',
@@ -824,13 +825,13 @@ const Nhis = () => {
   const providerClassLevel = resolvedNhiaSettings?.providerClassLevel || resolvedNhiaSettings?.provider_class_level || ''
   const integrationMode = resolvedNhiaSettings?.integrationMode || resolvedNhiaSettings?.integration_mode || 'claimit_export'
   const validationMode = resolvedNhiaSettings?.validationMode || resolvedNhiaSettings?.validation_mode || 'validate_before_submit'
-  const claimControlMode = resolvedNhiaSettings?.claimControlMode || resolvedNhiaSettings?.claim_control_mode || (['claimit_bridge', 'claimit_assisted'].includes(integrationMode) ? 'claimit_bridge' : 'manual')
+  const claimControlMode = resolvedNhiaSettings?.claimControlMode || resolvedNhiaSettings?.claim_control_mode || (integrationMode === 'claimit_bridge' ? 'claimit_bridge' : 'manual')
   const ccEndpointPath = resolvedNhiaSettings?.ccEndpointPath ||
     resolvedNhiaSettings?.cc_endpoint_path ||
     resolvedNhiaSettings?.ccCodeEndpointPath ||
     resolvedNhiaSettings?.cc_code_endpoint_path ||
     ''
-  const isClaimItBridgeMode = ['claimit_bridge', 'claimit_assisted'].includes(integrationMode)
+  const isClaimItBridgeMode = integrationMode === 'claimit_bridge'
   const usesClaimItValidationFlow = isClaimItBridgeMode ||
     integrationMode === 'claimit_export' ||
     integrationMode === 'claimit_local_bridge' ||
@@ -857,7 +858,7 @@ const Nhis = () => {
     isLocalClaimItBridgeUrl &&
     !isLocalAppOrigin()
   const canManuallyEditCcCode = role === 'admin' || role === 'super_admin'
-  const allowsDirectNhiaSubmission = ['claimit_bridge', 'claimit_assisted', 'direct_nhia_api', 'hybrid'].includes(integrationMode)
+  const allowsDirectNhiaSubmission = ['claimit_bridge', 'direct_nhia_api', 'hybrid'].includes(integrationMode)
   const directNhiaApiAvailable = Boolean(
     allowsDirectNhiaSubmission &&
       resolvedNhiaSettings?.directApiEnabled &&
@@ -875,6 +876,7 @@ const Nhis = () => {
     (shouldUseOfflineNhiaUrl ? '/api/hmis/genCCC' : '')
   const nhiaCcCodeApiAvailable = Boolean(
     (resolvedNhiaSettings?.directApiEnabled ||
+      integrationMode === 'claimit_assisted' ||
       ['claimit_bridge', 'claimit_bridge_ccc', 'direct_api'].includes(claimControlMode)) &&
       (nhiaApiBaseUrl || shouldUseOfflineNhiaUrl) &&
       effectiveMemberLookupEndpointPath
@@ -1031,6 +1033,7 @@ const Nhis = () => {
       patientAddress: patient.address || '',
       folderNo:    patient.folder_no || prev.folderNo,
       memberNo:    normalizedMemberNo,
+      cardType:    getNhiaLookupCardType(normalizedMemberNo),
       hin:         patient.nhis_hin       || '',
     }))
     setSelectedClaimPatient(selectedPatient)
@@ -1568,10 +1571,15 @@ const Nhis = () => {
   // Called when the member number field loses focus. Calls NHIA genCCC to verify
   // eligibility and auto-fill name, HIN, DOB, gender, and CC code.
   // Skips if the value hasn't changed since the last successful lookup.
-  const handleMemberLookup = useCallback(async (memberNo) => {
+  const handleMemberLookup = useCallback(async (memberNo, explicitCardType = '') => {
     const memberNumber = (memberNo || claimForm.memberNo || '').trim()
     if (!memberNumber) {
       notify('memberNumber is required.', 'warning')
+      return
+    }
+    const selectedCardType = explicitCardType || claimForm.cardType || getNhiaLookupCardType(memberNumber)
+    if (selectedCardType === 'GHANACARD' && !isGhanaCardNumber(memberNumber)) {
+      notify('Enter the full Ghana Card number in the format GHA-#########-# before generating a CC code.', 'warning')
       return
     }
     if (!canGenerateNhiaCcCode) return
@@ -1585,7 +1593,7 @@ const Nhis = () => {
       const normalizedMemberNumber = normalizeNhiaMemberNumber(memberNumber)
       const result = await branchLookupNhiaMember({
         memberNumber: normalizedMemberNumber,
-        cardType: getNhiaLookupCardType(normalizedMemberNumber),
+        cardType: selectedCardType,
       })
       if (!result) return
       lastLookedUpMemberRef.current = normalizedMemberNumber
@@ -1605,7 +1613,7 @@ const Nhis = () => {
     } finally {
       setLookingUpMember(false)
     }
-  }, [claimForm.memberNo, canGenerateNhiaCcCode, resolvedNhiaSettings, applyMemberDetailsToForm, notify])
+  }, [claimForm.memberNo, claimForm.cardType, canGenerateNhiaCcCode, resolvedNhiaSettings, applyMemberDetailsToForm, notify])
 
   const handleGenerateCcCode = async () => {
     if (!canGenerateNhiaCcCode) {
@@ -1624,6 +1632,11 @@ const Nhis = () => {
       notify('Enter the patient NHIS Member No / Ghana Card field before generating a CC/CCC code.', 'warning')
       return
     }
+    const selectedCardType = claimForm.cardType || getNhiaLookupCardType(memberNumber)
+    if (selectedCardType === 'GHANACARD' && !isGhanaCardNumber(memberNumber)) {
+      notify('Enter the full Ghana Card number in the format GHA-#########-# before generating a CC code.', 'warning')
+      return
+    }
 
     try {
       setGeneratingCcCode(true)
@@ -1636,6 +1649,7 @@ const Nhis = () => {
         organizationType,
         patientName: `${claimForm.surname} ${claimForm.otherNames || ''}`.trim(),
         memberNumber,
+        cardType: selectedCardType,
         hin: claimForm.hin,
         diagnosis: claimForm.diagnosis,
         serviceDate: claimForm.serviceDate,
@@ -2804,13 +2818,24 @@ const Nhis = () => {
                           setClaimForm((p) => ({ ...p, memberNo: normalized }))
                           // Only trigger lookup when value actually changed
                           if (normalized && normalized !== lastLookedUpMemberRef.current) {
-                            handleMemberLookup(normalized)
+                            handleMemberLookup(normalized, claimForm.cardType || getNhiaLookupCardType(normalized))
                           }
                         }}
                         onChange={(e) => setClaimForm((p) => ({ ...p, memberNo: e.target.value }))} />
                       {lookingUpMember && (
                         <div className="patient-meta">Verifying member with NHIA...</div>
                       )}
+                    </div>
+                    <div className="form-group">
+                      <label>Card type</label>
+                      <select
+                        className="form-input"
+                        value={claimForm.cardType || getNhiaLookupCardType(claimForm.memberNo)}
+                        onChange={(e) => setClaimForm((p) => ({ ...p, cardType: e.target.value }))}
+                      >
+                        <option value="NHISCARD">NHIS card</option>
+                        <option value="GHANACARD">Ghana Card</option>
+                      </select>
                     </div>
                     <div className="form-group">
                       <label>HIN</label>

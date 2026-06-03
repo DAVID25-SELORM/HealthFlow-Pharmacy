@@ -1,7 +1,10 @@
 import path from 'node:path'
 import process from 'node:process'
+import { fileURLToPath } from 'node:url'
 import dotenv from 'dotenv'
 
+const serverDir = path.dirname(fileURLToPath(import.meta.url))
+dotenv.config({ path: path.resolve(serverDir, '..', '.env'), override: true })
 dotenv.config()
 
 const toNumber = (value, fallback) => {

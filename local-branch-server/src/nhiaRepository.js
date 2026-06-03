@@ -794,7 +794,7 @@ const mapSettingsRow = (row, { includeCredentials = false } = {}) => {
     connectionProfile: row.connection_profile || 'local_server',
     validationMode: row.validation_mode || 'validate_before_submit',
     claimControlMode: row.claim_control_mode ||
-      (['claimit_bridge', 'claimit_assisted'].includes(normalizeIntegrationMode(row.integration_mode))
+      (normalizeIntegrationMode(row.integration_mode) === 'claimit_bridge'
         ? 'claimit_bridge'
         : normalizeIntegrationMode(row.integration_mode) === 'direct_nhia_api'
           ? 'direct_api'
@@ -1096,7 +1096,14 @@ const validateNhiaSettingsForMode = (settings = {}) => {
   const claimStatusEndpoint = normalizeText(settings.claimStatusEndpoint || settings.claim_status_endpoint || settings.claimStatusEndpointPath || settings.claim_status_endpoint_path)
   const memberLookupEndpoint = normalizeText(settings.memberLookupEndpoint || settings.member_lookup_endpoint || settings.memberLookupEndpointPath || settings.member_lookup_endpoint_path)
 
-  if (['claimit_bridge', 'claimit_assisted'].includes(integrationMode)) {
+  if (integrationMode === 'claimit_assisted') {
+    if (!apiBaseUrl) missing.push('apiBaseUrl')
+    if (!hasApiKey) missing.push('NHIA CCC apiKey')
+    if (!hasApiSecret) missing.push('NHIA CCC apiSecret')
+    if (!memberLookupEndpoint) missing.push('memberLookupEndpoint')
+  }
+
+  if (integrationMode === 'claimit_bridge') {
     if (!apiBaseUrl) missing.push('apiBaseUrl')
     if (!claimitSubmitBaseUrl) missing.push('claimitSubmitBaseUrl')
     if (!hasApiKey) missing.push('NHIA CCC apiKey')
@@ -1784,7 +1791,7 @@ const submitPayload = async (settings, payload, endpointPathOverride = '') => {
 }
 
 const isClaimItBridgeMode = (settings) =>
-  ['claimit_bridge', 'claimit_assisted'].includes(normalizeIntegrationMode(settings?.integrationMode))
+  normalizeIntegrationMode(settings?.integrationMode) === 'claimit_bridge'
 
 const isValidEndpointPath = (value) => {
   const v = normalizeText(value)
@@ -1805,6 +1812,13 @@ const getCcEndpointPath = (settings) => {
   )
   return isValidEndpointPath(value) ? value : ''
 }
+
+const isNhiaGenCccEndpointPath = (value) =>
+  normalizeText(value).replace(/^\/+/, '').toLowerCase() === 'api/hmis/genccc'
+
+const shouldUseNhiaGenCccLookup = (settings, endpointPath) =>
+  settings?.credentialMode !== 'healthmanager_form' &&
+    (!endpointPath || isNhiaGenCccEndpointPath(endpointPath))
 
 const validateClaimItBridgePayload = async (settings, payload) => {
   const endpointPath = normalizeText(settings.claimValidationEndpointPath)
@@ -1884,9 +1898,25 @@ const mapNhiaMemberLookupResponse = (body) => {
   }
 }
 
+const getNhiaMemberLookupFailureMessage = (memberDetails) => {
+  const status = normalizeText(memberDetails?.status)
+  if (!memberDetails || memberDetails.ccCode || !status) return ''
+  return `NHIA member lookup did not return a CC code: ${status}.`
+}
+
 // Determine CardType for NHIA genCCC API: GHANACARD for GHA-xxxxxxxxx-x numbers, NHISCARD otherwise.
 const getNhiaCardType = (memberNumber) =>
   isGhanaCardNumber(normalizeText(memberNumber)) ? 'GHANACARD' : 'NHISCARD'
+
+const normalizeNhiaCardType = (memberNumber, cardType) => {
+  const value = normalizeText(cardType).toUpperCase().replace(/[\s_-]/g, '')
+  if (value) {
+    if (value === '1' || value === 'NHISCARD') return 'NHISCARD'
+    if (value === '2' || value === 'GHANACARD') return 'GHANACARD'
+  }
+
+  return getNhiaCardType(memberNumber)
+}
 
 export const lookupNhiaMember = async (memberNumber, { cardType } = {}) => {
   const settings = getNhiaSettings({ includeCredentials: true })
@@ -1897,31 +1927,31 @@ export const lookupNhiaMember = async (memberNumber, { cardType } = {}) => {
     return { status: 'pending', message: 'NHIA API not configured' }
   }
 
-  // In claim-bridge-env mode the upstream credentials (CLAIMIT_UPSTREAM_API_KEY/SECRET) belong
-  // to the CLAIM-it software, not the NHIA direct API. Route genCCC through CLAIM-it so it
-  // can authenticate with NHIA on the facility's behalf.
-  // In DB-configured mode (settings saved via the UI), use the dedicated NHIA eligibility URL.
+  // CCC generation follows the NHIA genCCC flow used by checkcccode.php:
+  // use the dedicated eligibility base URL, then POST CardNo/CardType to /api/hmis/genCCC.
   const isBridgeEnvMode = settings.configSource === 'claim_bridge_env' || settings.source === 'claim_bridge_env'
-  const nhiaEligibilityBaseUrl = isBridgeEnvMode
-    ? normalizeText(settings.claimitSubmitBaseUrl || settings.productionBaseUrl || settings.apiBaseUrl)
-    : normalizeText(
-        settings.nhiaEligibilityBaseUrl ||
-        settings.nhia_eligibility_base_url ||
-        // apiBaseUrl is used for genCCC only when it is NOT the local CLAIM-it URL
-        (normalizeText(settings.apiBaseUrl).includes('localhost') ? '' : settings.apiBaseUrl)
-      )
+  const apiBaseUrl = normalizeText(settings.apiBaseUrl)
+  const isLocalOrBridgeBaseUrl = /^(https?:\/\/)?(localhost|127\.0\.0\.1|server-pc)(?::|\/|$)/i.test(apiBaseUrl)
+  const nhiaEligibilityBaseUrl = normalizeText(
+    settings.nhiaEligibilityBaseUrl ||
+      settings.nhia_eligibility_base_url ||
+      (!isLocalOrBridgeBaseUrl ? apiBaseUrl : '')
+  )
   if (!nhiaEligibilityBaseUrl) {
     return {
       status: 'pending',
       message: isBridgeEnvMode
-        ? 'CLAIM-it bridge URL not configured. Set CLAIMIT_UPSTREAM_BASE_URL in the branch server .env.'
+        ? 'NHIA eligibility API base URL not configured. Set NHIA_ELIGIBILITY_BASE_URL to https://elig.nhia.gov.gh:5000 in the branch server .env.'
         : 'NHIA eligibility API base URL not configured (set API Base URL to https://elig.nhia.gov.gh:5000)',
     }
   }
 
   // Default lookup endpoint is /api/hmis/genCCC on the NHIA eligibility server.
+  const ccEndpointPath = getCcEndpointPath(settings)
   const endpointPath = normalizeText(
-    settings.memberLookupEndpointPath || settings.memberLookupEndpoint
+    settings.memberLookupEndpointPath ||
+      settings.memberLookupEndpoint ||
+      (isNhiaGenCccEndpointPath(ccEndpointPath) ? ccEndpointPath : '')
   ) || '/api/hmis/genCCC'
 
   const credentials = settings.credentials || {}
@@ -1937,7 +1967,7 @@ export const lookupNhiaMember = async (memberNumber, { cardType } = {}) => {
   // NHIA genCCC API (https://elig.nhia.gov.gh:5000/api/hmis/genCCC):
   //   Headers: x-nhia-apikey, x-nhia-apisecret
   //   Body JSON: { CardNo, CardType }  CardType = "NHISCARD" | "GHANACARD"
-  const resolvedCardType = cardType || getNhiaCardType(validatedMemberNumber)
+  const resolvedCardType = normalizeNhiaCardType(validatedMemberNumber, cardType)
   const url = `${nhiaEligibilityBaseUrl.replace(/\/+$/, '')}/${endpointPath.replace(/^\/+/, '')}`
   const apiKeyHeaderName = normalizeText(credentials.headerName) || 'x-nhia-apikey'
   const apiSecretHeaderName = normalizeText(credentials.secretHeaderName) || 'x-nhia-apisecret'
@@ -2022,10 +2052,9 @@ export const generateNhiaCcCode = async (claimContext = {}) => {
 
   const endpointPath = getCcEndpointPath(settings)
 
-  // No dedicated CC endpoint — fall back to NHIA genCCC (member lookup).
-  // https://elig.nhia.gov.gh:5000/api/hmis/genCCC returns MobCCC as part of
-  // member eligibility verification. This is how most facilities generate CC codes.
-  if (!endpointPath) {
+  // NHIA genCCC is the canonical CCC/CC generation endpoint used by the HMS
+  // checkcccode.php flow. It expects CardNo/CardType, not the generic claim payload.
+  if (shouldUseNhiaGenCccLookup(settings, endpointPath)) {
     const memberNumber = normalizeText(claimContext.memberNumber || claimContext.memberNo)
     if (memberNumber) {
       try {
@@ -2039,6 +2068,8 @@ export const generateNhiaCcCode = async (claimContext = {}) => {
             memberDetails: result,
           }
         }
+        const failureMessage = getNhiaMemberLookupFailureMessage(result)
+        if (failureMessage) throw new Error(failureMessage)
       } catch (lookupError) {
         const message = lookupError?.message || 'genCCC fallback failed'
         logSubmission({
@@ -2063,6 +2094,9 @@ export const generateNhiaCcCode = async (claimContext = {}) => {
     }
     const ccCode = extractCcCode(result.body)
     if (!ccCode) {
+      const memberDetails = mapNhiaMemberLookupResponse(result.body)
+      const failureMessage = getNhiaMemberLookupFailureMessage(memberDetails)
+      if (failureMessage) throw new Error(failureMessage)
       return { status: 'pending', source: 'pending', message: 'Pending CLAIM-it validation', response: result.body }
     }
     logSubmission({
