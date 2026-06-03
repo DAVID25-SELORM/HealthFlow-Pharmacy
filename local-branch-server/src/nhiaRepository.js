@@ -20,6 +20,7 @@ const CREDENTIAL_MODES = new Set([
   'bearer_token',
   'basic_auth',
   'oauth_client',
+  'healthmanager_form',
   'custom',
   // ✅ NHIA API ARCHITECTURE PATCH END
 ])
@@ -274,6 +275,13 @@ const normalizeOptionalCcCode = (value) => {
 }
 
 const extractCcCode = (value) => {
+  if (typeof value === 'string') {
+    const text = normalizeText(value)
+    if (/^\d{5}$/.test(text)) {
+      return normalizeOptionalCcCode(text)
+    }
+  }
+
   if (!value || typeof value !== 'object') {
     return null
   }
@@ -316,6 +324,9 @@ const normalizeCredentialMode = (value) => {
     client_secret: 'oauth_client',
     username_password: 'basic_auth',
     certificate: 'custom',
+    healthmanager: 'healthmanager_form',
+    health_manager: 'healthmanager_form',
+    healthmanager_checkcc: 'healthmanager_form',
   }
   const normalizedMode = legacyModeMap[mode] || mode
   // ✅ NHIA API ARCHITECTURE PATCH END
@@ -888,6 +899,9 @@ const buildClaimBridgeEnvNhiaSettings = ({ includeCredentials = false } = {}) =>
   const hasApiSecret = Boolean(normalizeText(config.claimBridge.upstreamApiSecret))
   const hasUsername = Boolean(normalizeText(config.claimBridge.upstreamUsername))
   const hasPassword = Boolean(normalizeText(config.claimBridge.upstreamPassword))
+  const credentialMode = normalizeCredentialMode(config.claimBridge.upstreamCredentialMode || 'api_key')
+  const memberLookupEndpointPath = config.claimBridge.upstreamMemberLookupPath || '/api/hmis/genCCC'
+  const ccEndpointPath = config.claimBridge.upstreamCcEndpointPath || ''
   const credentials = includeCredentials
     ? {
         apiKey: config.claimBridge.upstreamApiKey,
@@ -922,14 +936,18 @@ const buildClaimBridgeEnvNhiaSettings = ({ includeCredentials = false } = {}) =>
     claimitSubmitBaseUrl: config.claimBridge.upstreamBaseUrl,
     productionBaseUrl: config.claimBridge.upstreamBaseUrl,
     production_base_url: config.claimBridge.upstreamBaseUrl,
-    memberLookupEndpointPath: '/api/hmis/genCCC',
-    member_lookup_endpoint_path: '/api/hmis/genCCC',
-    memberLookupEndpoint: '/api/hmis/genCCC',
-    member_lookup_endpoint: '/api/hmis/genCCC',
+    ccEndpointPath,
+    cc_endpoint_path: ccEndpointPath,
+    ccCodeEndpointPath: ccEndpointPath,
+    cc_code_endpoint_path: ccEndpointPath,
+    memberLookupEndpointPath,
+    member_lookup_endpoint_path: memberLookupEndpointPath,
+    memberLookupEndpoint: memberLookupEndpointPath,
+    member_lookup_endpoint: memberLookupEndpointPath,
     directApiEnabled: true,
     direct_api_enabled: true,
-    credentialMode: 'api_key',
-    credential_mode: 'api_key',
+    credentialMode,
+    credential_mode: credentialMode,
     credentials,
     credentialSummary: {
       apiKey: hasApiKey,
@@ -1679,6 +1697,46 @@ const postWithCertificate = (url, body, settings) =>
 const getClaimSubmitBaseUrl = (settings) =>
   normalizeText(settings.claimitSubmitBaseUrl || settings.productionBaseUrl || settings.apiBaseUrl)
 
+const getClaimContextMemberNumber = (payload = {}) =>
+  normalizeText(
+    payload.memberNumber ||
+      payload.memberNo ||
+      payload.patient?.memberNumber ||
+      payload.patient?.memberNo ||
+      payload.claims?.[0]?.memberNumber ||
+      payload.claims?.[0]?.memberNo
+  )
+
+const buildHealthmanagerFormSubmission = (settings, payload = {}) => {
+  const credentials = settings.credentials || {}
+  const memberNumber = getClaimContextMemberNumber(payload)
+  if (!memberNumber) {
+    throw new Error('Healthmanager CC lookup requires a patient member number.')
+  }
+  const apiKey = assertRequiredText(credentials.apiKey, 'Healthmanager API key')
+  const apiSecret = assertRequiredText(credentials.apiSecret, 'Healthmanager API secret')
+  return new URLSearchParams({
+    unm: normalizeNhiaMemberNumber(memberNumber),
+    key: apiKey,
+    secret: apiSecret,
+  }).toString()
+}
+
+const validateSettingsForCcCode = (settings) => {
+  if (settings?.credentialMode !== 'healthmanager_form') {
+    validateSettingsForSubmission(settings)
+    return
+  }
+
+  if (!settings) {
+    throw new Error('NHIA settings are required before generating CCC/CC codes.')
+  }
+  assertRequiredText(getClaimSubmitBaseUrl(settings), 'Healthmanager base URL')
+  const credentials = settings.credentials || {}
+  assertRequiredText(credentials.apiKey, 'Healthmanager API key')
+  assertRequiredText(credentials.apiSecret, 'Healthmanager API secret')
+}
+
 const submitPayload = async (settings, payload, endpointPathOverride = '') => {
   const endpointPath = normalizeText(endpointPathOverride || settings.claimEndpointPath)
   if (!endpointPath) {
@@ -1689,7 +1747,10 @@ const submitPayload = async (settings, payload, endpointPathOverride = '') => {
     throw new Error('CLAIM-it submit base URL is not configured. Set the CLAIM-it local submit URL in NHIA settings.')
   }
   const url = `${baseUrl.replace(/\/+$/, '')}/${endpointPath.replace(/^\/+/, '')}`
-  const body = JSON.stringify(payload)
+  const isHealthmanagerForm = settings.credentialMode === 'healthmanager_form'
+  const body = isHealthmanagerForm
+    ? buildHealthmanagerFormSubmission(settings, payload)
+    : JSON.stringify(payload)
 
   if (settings.credentialMode === 'custom' && settings.credentials?.certPem && settings.credentials?.keyPem) {
     const response = await postWithCertificate(url, body, settings)
@@ -1702,6 +1763,11 @@ const submitPayload = async (settings, payload, endpointPathOverride = '') => {
   }
 
   const headers = await buildClaimItSubmissionHeaders(settings)
+  if (isHealthmanagerForm) {
+    headers['Content-Type'] = 'application/x-www-form-urlencoded;charset=UTF-8'
+    headers.Accept = 'application/json, text/plain, */*'
+    delete headers.Authorization
+  }
 
   const response = await fetch(url, {
     method: 'POST',
@@ -1987,7 +2053,7 @@ export const generateNhiaCcCode = async (claimContext = {}) => {
     return { status: 'pending', source: 'pending', message: 'Pending CLAIM-it validation' }
   }
 
-  validateSettingsForSubmission(settings)
+  validateSettingsForCcCode(settings)
 
   logSubmission({ action: 'cc_code.generate.start', status: 'pending', request: payload })
   try {

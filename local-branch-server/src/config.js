@@ -48,6 +48,13 @@ export const config = {
     enabled: toBoolean(process.env.CLAIM_BRIDGE_ENABLED) || Boolean(process.env.CLAIMIT_UPSTREAM_BASE_URL),
     publicPath: normalizePath(process.env.CLAIM_BRIDGE_PUBLIC_PATH, '/json-api'),
     upstreamBaseUrl: String(process.env.CLAIMIT_UPSTREAM_BASE_URL || '').trim().replace(/\/+$/, ''),
+    upstreamCredentialMode: String(process.env.CLAIMIT_UPSTREAM_CREDENTIAL_MODE || '').trim(),
+    upstreamMemberLookupPath: normalizePath(process.env.CLAIMIT_UPSTREAM_MEMBER_LOOKUP_PATH, '/api/hmis/genCCC'),
+    upstreamCcEndpointPath: normalizePath(
+      process.env.CLAIMIT_UPSTREAM_CC_ENDPOINT_PATH ||
+        process.env.CLAIMIT_UPSTREAM_CC_CODE_ENDPOINT_PATH,
+      ''
+    ),
     upstreamApiKey: process.env.CLAIMIT_UPSTREAM_API_KEY || '',
     upstreamApiKeyHeader: String(process.env.CLAIMIT_UPSTREAM_API_KEY_HEADER || 'x-api-key').trim(),
     upstreamApiSecret: process.env.CLAIMIT_UPSTREAM_API_SECRET || '',

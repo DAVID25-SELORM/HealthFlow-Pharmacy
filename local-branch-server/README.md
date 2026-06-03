@@ -229,6 +229,18 @@ CLAIMIT_UPSTREAM_USERNAME=
 CLAIMIT_UPSTREAM_PASSWORD=
 ```
 
+For Healthmanager / Ark Medical-style CC lookup endpoints that post `unm`, `key`, and `secret`
+as form data, configure the upstream like this:
+
+```env
+CLAIMIT_UPSTREAM_BASE_URL=http://server-pc:9090
+CLAIMIT_UPSTREAM_CREDENTIAL_MODE=healthmanager_form
+CLAIMIT_UPSTREAM_MEMBER_LOOKUP_PATH=/checkcccode.php
+CLAIMIT_UPSTREAM_CC_ENDPOINT_PATH=/checkcccode.php
+CLAIMIT_UPSTREAM_API_KEY=<form key value>
+CLAIMIT_UPSTREAM_API_SECRET=<form secret value>
+```
+
 Point DNS/reverse proxy traffic from:
 
 ```text
