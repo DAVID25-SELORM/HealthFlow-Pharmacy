@@ -45,6 +45,7 @@ export const config = {
   ),
   branchSyncToken: process.env.BRANCH_SYNC_TOKEN || '',
   nhiaConfigSecretKey: process.env.NHIA_CONFIG_SECRET_KEY || process.env.NHIA_SECRET_KEY || '',
+  nhiaFacilityCode: process.env.NHIA_FACILITY_CODE || process.env.FACILITY_CODE || '',
   nhiaEligibilityBaseUrl: String(
     process.env.NHIA_BASE_URL ||
       process.env.NHIA_ELIGIBILITY_BASE_URL ||
@@ -63,13 +64,13 @@ export const config = {
         process.env.CLAIMIT_UPSTREAM_CC_CODE_ENDPOINT_PATH,
       ''
     ),
-    upstreamApiKey: process.env.CLAIMIT_UPSTREAM_API_KEY || '',
-    upstreamApiKeyHeader: String(process.env.CLAIMIT_UPSTREAM_API_KEY_HEADER || 'x-nhia-apikey').trim(),
-    upstreamApiSecret: process.env.CLAIMIT_UPSTREAM_API_SECRET || '',
-    upstreamApiSecretHeader: String(process.env.CLAIMIT_UPSTREAM_API_SECRET_HEADER || 'x-nhia-apisecret').trim(),
+    upstreamApiKey: process.env.NHIA_API_KEY || process.env.CLAIMIT_UPSTREAM_API_KEY || '',
+    upstreamApiKeyHeader: String(process.env.NHIA_API_KEY_HEADER || process.env.CLAIMIT_UPSTREAM_API_KEY_HEADER || 'x-nhia-apikey').trim(),
+    upstreamApiSecret: process.env.NHIA_API_SECRET || process.env.CLAIMIT_UPSTREAM_API_SECRET || '',
+    upstreamApiSecretHeader: String(process.env.NHIA_API_SECRET_HEADER || process.env.CLAIMIT_UPSTREAM_API_SECRET_HEADER || 'x-nhia-apisecret').trim(),
     upstreamBearerToken: process.env.CLAIMIT_UPSTREAM_BEARER_TOKEN || '',
-    upstreamUsername: process.env.CLAIMIT_UPSTREAM_USERNAME || '',
-    upstreamPassword: process.env.CLAIMIT_UPSTREAM_PASSWORD || '',
+    upstreamUsername: process.env.NHIA_USERNAME || process.env.CLAIMIT_UPSTREAM_USERNAME || '',
+    upstreamPassword: process.env.NHIA_PASSWORD || process.env.CLAIMIT_UPSTREAM_PASSWORD || '',
     accessToken: process.env.CLAIM_BRIDGE_TOKEN || '',
     tokenHeader: String(process.env.CLAIM_BRIDGE_TOKEN_HEADER || 'x-claim-bridge-token').trim().toLowerCase(),
     timeoutMs: Math.max(1000, toNumber(process.env.CLAIM_BRIDGE_TIMEOUT_MS, 30000)),

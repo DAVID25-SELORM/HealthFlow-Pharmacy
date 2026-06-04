@@ -752,6 +752,51 @@ const logNhiaConfigEvent = (event, details = {}) => {
   })
 }
 
+const logNhiaCredentialDebug = (event, details = {}) => {
+  console.info(`[NHIA CREDENTIALS] ${event}`, {
+    configSource: details.configSource || '',
+    nhiaBaseUrl: details.nhiaBaseUrl || '',
+    endpointPath: details.endpointPath || '',
+    organizationId: details.organizationId || '',
+    branchId: details.branchId || '',
+    facilityCode: details.facilityCode || '',
+    providerNumber: details.providerNumber || '',
+    credentialMode: details.credentialMode || '',
+    usernamePresent: Boolean(details.usernamePresent),
+    passwordPresent: Boolean(details.passwordPresent),
+    apiKeyPresent: Boolean(details.apiKeyPresent),
+    apiSecretPresent: Boolean(details.apiSecretPresent),
+    apiKeyHeaderName: details.apiKeyHeaderName || '',
+    apiSecretHeaderName: details.apiSecretHeaderName || '',
+    requestBodyFields: details.requestBodyFields || [],
+  })
+}
+
+const getNhiaCredentialDebugDetails = ({
+  settings = {},
+  credentials = {},
+  nhiaBaseUrl = '',
+  endpointPath = '',
+  apiKeyHeaderName = '',
+  apiSecretHeaderName = '',
+} = {}) => ({
+  configSource: settings.configSource || settings.source || 'settings',
+  nhiaBaseUrl,
+  endpointPath,
+  organizationId: settings.organizationId || settings.organization_id || config.organizationId || '',
+  branchId: settings.branchId || settings.branch_id || config.branchId || '',
+  facilityCode: settings.facilityCode || settings.facility_code || config.nhiaFacilityCode || '',
+  providerNumber: settings.providerNumber || settings.provider_number || settings.providerId || settings.provider_id || '',
+  credentialMode: settings.credentialMode || settings.credential_mode || '',
+  usernamePresent: Boolean(normalizeText(settings.username || credentials.username)),
+  passwordPresent: Boolean(settings.hasPassword || settings.has_password || settings.credentialSummary?.password || hasUsableNhiaSecret(credentials.password)),
+  apiKeyPresent: Boolean(settings.hasApiKey || settings.has_api_key || settings.credentialSummary?.apiKey || hasUsableNhiaSecret(credentials.apiKey || credentials.token)),
+  apiSecretPresent: Boolean(settings.hasApiSecret || settings.has_api_secret || settings.credentialSummary?.apiSecret || hasUsableNhiaSecret(credentials.apiSecret)),
+  apiKeyHeaderName,
+  apiSecretHeaderName,
+  requestBodyFields: ['CardNo', 'CardType'],
+})
+
 const mapSettingsRow = (row, { includeCredentials = false } = {}) => {
   if (!row) {
     return null
@@ -783,6 +828,8 @@ const mapSettingsRow = (row, { includeCredentials = false } = {}) => {
     organizationId: row.organization_id || '',
     branchId: row.branch_id || '',
     mode: row.mode || 'OFFLINE_LOCAL',
+    source: 'settings',
+    configSource: 'settings',
     facilityCode: row.facility_code || '',
     providerId: row.provider_id || row.provider_number || '',
     provider_id: row.provider_id || row.provider_number || '',
@@ -927,6 +974,10 @@ const buildClaimBridgeEnvNhiaSettings = ({ includeCredentials = false } = {}) =>
     mode: 'ONLINE_LOCAL_SYNC',
     source: 'claim_bridge_env',
     configSource: 'claim_bridge_env',
+    facilityCode: config.nhiaFacilityCode || '',
+    facility_code: config.nhiaFacilityCode || '',
+    credentialCode: config.nhiaFacilityCode || '',
+    credential_code: config.nhiaFacilityCode || '',
     integrationMode: DEFAULT_NHIA_INTEGRATION_MODE,
     integration_mode: DEFAULT_NHIA_INTEGRATION_MODE,
     claimControlMode: 'direct_api',
@@ -971,6 +1022,81 @@ const buildClaimBridgeEnvNhiaSettings = ({ includeCredentials = false } = {}) =>
     has_password: hasPassword,
     isActive: true,
     is_active: true,
+  }
+}
+
+const applyEnvNhiaCredentialOverrides = (settings, { includeCredentials = false } = {}) => {
+  if (!settings) return settings
+
+  const envApiKey = normalizeText(config.claimBridge.upstreamApiKey)
+  const envApiSecret = normalizeText(config.claimBridge.upstreamApiSecret)
+  const envFacilityCode = normalizeText(config.nhiaFacilityCode)
+  const envUsername = normalizeText(config.claimBridge.upstreamUsername)
+  const envPassword = normalizeText(config.claimBridge.upstreamPassword)
+  const hasCredentialOverride = Boolean(envApiKey || envApiSecret || envUsername || envPassword)
+  const hasHeaderOverride = Boolean(normalizeText(
+    process.env.NHIA_API_KEY_HEADER ||
+    process.env.CLAIMIT_UPSTREAM_API_KEY_HEADER ||
+    process.env.NHIA_API_SECRET_HEADER ||
+    process.env.CLAIMIT_UPSTREAM_API_SECRET_HEADER
+  ))
+  const envApiKeyHeader = hasCredentialOverride || hasHeaderOverride
+    ? normalizeText(config.claimBridge.upstreamApiKeyHeader)
+    : ''
+  const envApiSecretHeader = hasCredentialOverride || hasHeaderOverride
+    ? normalizeText(config.claimBridge.upstreamApiSecretHeader)
+    : ''
+  const hasOverride = Boolean(
+    hasCredentialOverride ||
+    envFacilityCode ||
+    hasHeaderOverride
+  )
+
+  if (!hasOverride) return settings
+
+  const credentials = includeCredentials ? { ...(settings.credentials || {}) } : {}
+  const credentialSummary = { ...(settings.credentialSummary || {}) }
+
+  if (envApiKey) {
+    if (includeCredentials) credentials.apiKey = envApiKey
+    credentialSummary.apiKey = true
+  }
+  if (envApiSecret) {
+    if (includeCredentials) credentials.apiSecret = envApiSecret
+    credentialSummary.apiSecret = true
+  }
+  if (envApiKeyHeader) {
+    if (includeCredentials) credentials.headerName = envApiKeyHeader
+  }
+  if (envApiSecretHeader) {
+    if (includeCredentials) credentials.secretHeaderName = envApiSecretHeader
+  }
+  if (envUsername) {
+    if (includeCredentials) credentials.username = envUsername
+    credentialSummary.username = true
+  }
+  if (envPassword) {
+    if (includeCredentials) credentials.password = envPassword
+    credentialSummary.password = true
+  }
+
+  return {
+    ...settings,
+    source: `${settings.source || 'settings'}+env`,
+    configSource: `${settings.configSource || settings.source || 'settings'}+env`,
+    facilityCode: envFacilityCode || settings.facilityCode || '',
+    facility_code: envFacilityCode || settings.facility_code || settings.facilityCode || '',
+    credentialCode: envFacilityCode || settings.credentialCode || settings.credential_code || '',
+    credential_code: envFacilityCode || settings.credential_code || settings.credentialCode || '',
+    credentials,
+    credentialSummary,
+    hasApiKey: Boolean(envApiKey || settings.hasApiKey || settings.has_api_key),
+    has_api_key: Boolean(envApiKey || settings.hasApiKey || settings.has_api_key),
+    hasApiSecret: Boolean(envApiSecret || settings.hasApiSecret || settings.has_api_secret),
+    has_api_secret: Boolean(envApiSecret || settings.hasApiSecret || settings.has_api_secret),
+    hasPassword: Boolean(envPassword || settings.hasPassword || settings.has_password),
+    has_password: Boolean(envPassword || settings.hasPassword || settings.has_password),
+    username: envUsername || settings.username || '',
   }
 }
 
@@ -1067,12 +1193,15 @@ export const importNhiaConfigurationSnapshot = db.transaction((rows = []) => {
 })
 
 export const getNhiaSettings = ({ includeCredentials = false } = {}) => {
-  const settings = mapSettingsRow(resolveSettingsRow(), { includeCredentials }) ||
-    buildClaimBridgeEnvNhiaSettings({ includeCredentials })
+  const settings = applyEnvNhiaCredentialOverrides(
+    mapSettingsRow(resolveSettingsRow(), { includeCredentials }) ||
+      buildClaimBridgeEnvNhiaSettings({ includeCredentials }),
+    { includeCredentials }
+  )
   logNhiaConfigEvent('load', {
     mode: settings?.mode || 'OFFLINE_LOCAL',
     endpoint: '/api/nhia-config',
-    configSource: 'local_branch_server',
+    configSource: settings?.configSource || settings?.source || 'local_branch_server',
     hasApiKey: settings?.hasApiKey,
     hasApiSecret: settings?.hasApiSecret,
   })
@@ -1947,20 +2076,36 @@ export const lookupNhiaMember = async (memberNumber, { cardType } = {}) => {
   const credentials = settings.credentials || {}
   const apiKey = normalizeText(credentials.apiKey || credentials.token)
   const apiSecret = normalizeText(credentials.apiSecret)
+  const facilityCode = normalizeText(settings.facilityCode || settings.facility_code || config.nhiaFacilityCode)
+  const apiKeyHeaderName = normalizeText(credentials.headerName) || 'x-nhia-apikey'
+  const apiSecretHeaderName = normalizeText(credentials.secretHeaderName) || 'x-nhia-apisecret'
 
-  if (!apiKey) {
-    return { status: 'pending', message: 'NHIA API key not configured' }
+  const debugDetails = getNhiaCredentialDebugDetails({
+    settings: { ...settings, facilityCode },
+    credentials,
+    nhiaBaseUrl: nhiaEligibilityBaseUrl,
+    endpointPath,
+    apiKeyHeaderName,
+    apiSecretHeaderName,
+  })
+  logNhiaCredentialDebug('member.lookup.credentials', debugDetails)
+
+  const missingCredentials = []
+  if (!apiKey) missingCredentials.push('apiKey')
+  if (!apiSecret) missingCredentials.push('apiSecret')
+  if (missingCredentials.length) {
+    throw new Error(
+      `NHIA credentials are incomplete for member lookup: ${missingCredentials.join(', ')} missing. ` +
+      'Save the correct NHIA API key and NHIA API secret in backend Settings or .env.'
+    )
   }
-
-  const validatedMemberNumber = assertValidMemberNumber(memberNumber, settings)
 
   // NHIA genCCC API (https://elig.nhia.gov.gh:5000/api/hmis/genCCC):
   //   Headers: x-nhia-apikey, x-nhia-apisecret
   //   Body JSON: { CardNo, CardType }  CardType = "NHISCARD" | "GHANACARD"
+  const validatedMemberNumber = assertValidMemberNumber(memberNumber, settings)
   const resolvedCardType = normalizeNhiaCardType(validatedMemberNumber, cardType)
   const url = `${nhiaEligibilityBaseUrl.replace(/\/+$/, '')}/${endpointPath.replace(/^\/+/, '')}`
-  const apiKeyHeaderName = normalizeText(credentials.headerName) || 'x-nhia-apikey'
-  const apiSecretHeaderName = normalizeText(credentials.secretHeaderName) || 'x-nhia-apisecret'
   const headers = {
     [apiKeyHeaderName]: apiKey,
     [apiSecretHeaderName]: apiSecret,
@@ -1983,6 +2128,14 @@ export const lookupNhiaMember = async (memberNumber, { cardType } = {}) => {
         responseBody?.detail ||
         responseBody?.raw
       )
+      if (response.status === 401 || response.status === 403) {
+        logNhiaCredentialDebug('member.lookup.credentials_rejected', debugDetails)
+        throw new Error(
+          `NHIA credentials were rejected by the eligibility API (HTTP ${response.status})` +
+          `${upstreamMessage ? `: ${upstreamMessage}` : ''}. ` +
+          'Check that the saved NHIA API key, API secret, and facility code belong to the same accredited facility.'
+        )
+      }
       throw new Error(
         `NHIA member lookup returned HTTP ${response.status}${upstreamMessage ? `: ${upstreamMessage}` : ''}.`
       )
