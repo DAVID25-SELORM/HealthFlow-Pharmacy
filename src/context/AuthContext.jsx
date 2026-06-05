@@ -36,6 +36,7 @@ const isSupabaseAuthFailure = (error) => {
 
   return (
     status === 401 ||
+    status === 403 ||
     code === 'PGRST301' ||
     code === 'PGRST303' ||
     name === 'AuthApiError' ||
@@ -45,7 +46,8 @@ const isSupabaseAuthFailure = (error) => {
     message.includes('session missing') ||
     message.includes('session not found') ||
     message.includes('refresh token') ||
-    message.includes('unauthorized')
+    message.includes('unauthorized') ||
+    message.includes('forbidden')
   )
 }
 

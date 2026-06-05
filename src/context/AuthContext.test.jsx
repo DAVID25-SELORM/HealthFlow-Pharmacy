@@ -342,6 +342,37 @@ describe('AuthProvider', () => {
     expect(mocks.clearSupabaseStoredSession).not.toHaveBeenCalled()
   })
 
+  it('clears a stored session when user validation returns a plain 403', async () => {
+    const staleSession = {
+      access_token: 'stale-token',
+      user: { id: 'stale-user', email: 'stale@example.com' },
+    }
+
+    mocks.auth.getSession.mockResolvedValue({
+      data: { session: staleSession },
+      error: null,
+    })
+    mocks.auth.getUser.mockResolvedValue({
+      data: { user: null },
+      error: {
+        status: 403,
+        message: 'Forbidden',
+      },
+    })
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId('auth-state')).toHaveTextContent('signed-out')
+    })
+    expect(mocks.auth.refreshSession).toHaveBeenCalledTimes(1)
+    expect(mocks.clearSupabaseStoredSession).toHaveBeenCalledTimes(1)
+  })
+
   it('keeps the current session when a refresh race reports a temporary auth failure', async () => {
     const validUser = {
       id: 'admin-user',
