@@ -214,6 +214,25 @@
   color: white;
 }
 
+.nhis-date-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.nhis-date-filter select,
+.nhis-date-filter input {
+  min-height: 38px;
+  border: 1px solid var(--gray-300);
+  border-radius: var(--radius);
+  background: white;
+  color: var(--gray-800);
+  padding: 0.45rem 0.7rem;
+  font: inherit;
+  font-size: 0.88rem;
+}
+
 .nhis-tabs .tab-btn.active .tab-count {
   background: rgba(255, 255, 255, 0.24);
   color: white;
@@ -358,6 +377,12 @@
 
 .nhis-patient-fallback .btn-sm {
   white-space: nowrap;
+}
+
+.nhis-patient-list-section {
+  margin-top: 1.25rem;
+  padding-top: 1.1rem;
+  border-top: 1px solid var(--gray-200);
 }
 
 /* Cells */

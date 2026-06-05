@@ -598,7 +598,6 @@ const updateNhisClaimWithSchemaFallback = async (id, payload) => {
     .from('nhis_claims')
     .update(updatePayload)
     .eq('id', id)
-    .eq('status', 'served')
     .select()
     .single()
 
@@ -610,7 +609,6 @@ const updateNhisClaimWithSchemaFallback = async (id, payload) => {
     .from('nhis_claims')
     .update(stripOptionalClaimSchemaColumns(updatePayload, result.error))
     .eq('id', id)
-    .eq('status', 'served')
     .select()
     .single()
 }
@@ -4772,9 +4770,6 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
     .single()
 
   if (existingError) throw existingError
-  if (existingClaim.status !== 'served') {
-    throw new Error('Only served NHIS claims can be edited before submission/export.')
-  }
 
   claimPayload = withClaimItAttachmentFileName(claimPayload, existingClaim.claim_number)
   const { data: claim, error: claimError } = await updateNhisClaimWithSchemaFallback(id, claimPayload)

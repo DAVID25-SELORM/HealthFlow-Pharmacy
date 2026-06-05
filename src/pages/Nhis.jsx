@@ -205,6 +205,13 @@ const toLocalIsoDate = (date = new Date()) => {
 
 const todayIsoDate = () => toLocalIsoDate()
 const monthStartIsoDate = (date = new Date()) => toLocalIsoDate(new Date(date.getFullYear(), date.getMonth(), 1))
+const weekStartIsoDate = (date = new Date()) => {
+  const start = new Date(date)
+  const day = start.getDay()
+  const offset = day === 0 ? 6 : day - 1
+  start.setDate(start.getDate() - offset)
+  return toLocalIsoDate(start)
+}
 
 const fmtFileSize = (bytes) => {
   const size = Number(bytes || 0)
@@ -535,6 +542,9 @@ const Nhis = () => {
   // ── claims filter ─────────────────────────────────────────────
   const [claimTab, setClaimTab]         = useState('all')
   const [claimSearch, setClaimSearch]   = useState('')
+  const [claimDateFilter, setClaimDateFilter] = useState('all')
+  const [claimFromDate, setClaimFromDate] = useState(monthStartIsoDate())
+  const [claimToDate, setClaimToDate] = useState(todayIsoDate())
 
   // ── catalog filter ────────────────────────────────────────────
   const [catalogSearch, setCatalogSearch] = useState('')
@@ -631,6 +641,8 @@ const Nhis = () => {
     setSearchParams(p, { replace: true })
   }
 
+  const canEditNhisClaimAnytime = ['admin', 'claims_officer'].includes(String(role || '').toLowerCase())
+
   // ── load data ────────────────────────────────────────────────
   const loadAll = useCallback(async () => {
     if (!isSupabaseConfigured()) {
@@ -711,10 +723,22 @@ const Nhis = () => {
   useEffect(() => { void refreshDirectNhiaApiStatus() }, [refreshDirectNhiaApiStatus])
 
   // ── filtered claims ──────────────────────────────────────────
+  const claimDateRange = useMemo(() => {
+    const today = todayIsoDate()
+    if (claimDateFilter === 'today') return { from: today, to: today }
+    if (claimDateFilter === 'week') return { from: weekStartIsoDate(), to: today }
+    if (claimDateFilter === 'month') return { from: monthStartIsoDate(), to: today }
+    if (claimDateFilter === 'custom') return { from: claimFromDate, to: claimToDate }
+    return { from: '', to: '' }
+  }, [claimDateFilter, claimFromDate, claimToDate])
+
   const filteredClaims = useMemo(() => {
     const term = claimSearch.trim().toLowerCase()
     return claims.filter((c) => {
       if (claimTab !== 'all' && c.status !== claimTab) return false
+      const serviceDate = String(c.service_date_from || c.serviceDate || c.created_at || '').slice(0, 10)
+      if (claimDateRange.from && (!serviceDate || serviceDate < claimDateRange.from)) return false
+      if (claimDateRange.to && (!serviceDate || serviceDate > claimDateRange.to)) return false
       if (!term) return true
       return (
         (c.surname       || '').toLowerCase().includes(term) ||
@@ -724,7 +748,7 @@ const Nhis = () => {
         (c.hin           || '').toLowerCase().includes(term)
       )
     })
-  }, [claims, claimTab, claimSearch])
+  }, [claims, claimTab, claimSearch, claimDateRange])
 
   const visibleNhisPatients = useMemo(() => {
     const term = claimSearch.trim().toLowerCase()
@@ -1143,7 +1167,7 @@ const Nhis = () => {
   }
 
   const openEditClaim = (claim) => {
-    if (claim.status !== 'served') {
+    if (!canEditNhisClaimAnytime && claim.status !== 'served') {
       notify('Only served NHIS claims can be edited before submission/export.', 'warning')
       return
     }
@@ -1835,7 +1859,7 @@ const Nhis = () => {
           tariffFacilityGroup: activeTariffFacilityGroup,
           tariffCateringOption: activeTariffCateringOption,
         })
-        if (directNhiaApiAvailable) {
+        if (editingClaim.status === 'served' && directNhiaApiAvailable) {
           const submitResult = await submitNhisClaimDirect(editingClaim.id, getDirectNhiaOptions())
           successMessage = submitResult?.queued
             ? 'NHIS claim corrections saved and queued for CLAIM-it bridge submission.'
@@ -2377,6 +2401,35 @@ const Nhis = () => {
                 </button>
               ))}
             </div>
+            <div className="nhis-date-filter">
+              <select
+                value={claimDateFilter}
+                onChange={(event) => setClaimDateFilter(event.target.value)}
+                aria-label="Filter claims by date"
+              >
+                <option value="all">All dates</option>
+                <option value="today">Today</option>
+                <option value="week">This week</option>
+                <option value="month">This month</option>
+                <option value="custom">Custom</option>
+              </select>
+              {claimDateFilter === 'custom' && (
+                <>
+                  <input
+                    type="date"
+                    value={claimFromDate}
+                    onChange={(event) => setClaimFromDate(event.target.value)}
+                    aria-label="Claims from date"
+                  />
+                  <input
+                    type="date"
+                    value={claimToDate}
+                    onChange={(event) => setClaimToDate(event.target.value)}
+                    aria-label="Claims to date"
+                  />
+                </>
+              )}
+            </div>
             <div className="search-box">
               <Search size={16} className="search-icon" />
               <input
@@ -2520,25 +2573,25 @@ const Nhis = () => {
                         >
                           <Eye size={14} />
                         </button>
+                        {canWrite && (c.status === 'served' || canEditNhisClaimAnytime) && (
+                          <button
+                            className="action-btn action-btn--edit"
+                            title={canEditNhisClaimAnytime ? 'Edit claim' : 'Edit before submission/export'}
+                            disabled={updatingStatus === c.id}
+                            onClick={() => openEditClaim(c)}
+                          >
+                            <Pencil size={14} />
+                          </button>
+                        )}
                         {c.status === 'served' && canWrite && (
-                          <>
-                            <button
-                              className="action-btn action-btn--edit"
-                              title="Edit before submission/export"
-                              disabled={updatingStatus === c.id}
-                              onClick={() => openEditClaim(c)}
-                            >
-                              <Pencil size={14} />
-                            </button>
-                            <button
-                              className="action-btn action-btn--submit"
-                              title={directNhiaApiAvailable ? 'Submit directly to NHIA' : 'Mark as Submitted'}
-                              disabled={updatingStatus === c.id}
-                              onClick={() => handleStatusUpdate(c, 'submitted')}
-                            >
-                              <Send size={14} />
-                            </button>
-                          </>
+                          <button
+                            className="action-btn action-btn--submit"
+                            title={directNhiaApiAvailable ? 'Submit directly to NHIA' : 'Mark as Submitted'}
+                            disabled={updatingStatus === c.id}
+                            onClick={() => handleStatusUpdate(c, 'submitted')}
+                          >
+                            <Send size={14} />
+                          </button>
                         )}
                         {c.status === 'submitted' && canWrite && (
                           <>
@@ -2567,6 +2620,66 @@ const Nhis = () => {
               </table>
             )}
           </div>
+          {!loading && filteredClaims.length > 0 && visibleNhisPatients.length > 0 && (
+            <div className="nhis-patient-list-section">
+              <div className="nhis-patient-fallback__header">
+                <strong>Known NHIS patients</strong>
+                <span>{visibleNhisPatients.length} shown</span>
+              </div>
+              <div className="nhis-patient-fallback">
+                <table className="nhis-table">
+                  <thead>
+                    <tr>
+                      <th>Patient</th>
+                      <th>Member No / HIN</th>
+                      <th>Details</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleNhisPatients.map((patient) => (
+                      <tr key={patientSearchKey(patient)}>
+                        <td>
+                          <div className="patient-name">{formatPatientLookupName(patient)}</div>
+                          {getPatientPhone(patient) && <div className="patient-meta">{getPatientPhone(patient)}</div>}
+                          {getPatientAddress(patient) && <div className="patient-meta">{getPatientAddress(patient)}</div>}
+                        </td>
+                        <td>
+                          {getPatientMemberNumber(patient) && (
+                            <div>{getPatientMemberNumber(patient)}</div>
+                          )}
+                          {getPatientHin(patient) && <div className="patient-meta">HIN: {getPatientHin(patient)}</div>}
+                        </td>
+                        <td>
+                          {getPatientFolderNo(patient) && <div>Folder: {getPatientFolderNo(patient)}</div>}
+                          {getPatientGender(patient) && <div className="patient-meta">Gender: {getPatientGender(patient)}</div>}
+                          {getPatientDateOfBirth(patient) && <div className="patient-meta">DOB: {formatAppDate(getPatientDateOfBirth(patient))}</div>}
+                          {getPatientInsuranceProvider(patient) && <div className="patient-meta">{getPatientInsuranceProvider(patient)}</div>}
+                          {!getPatientFolderNo(patient) &&
+                            !getPatientGender(patient) &&
+                            !getPatientDateOfBirth(patient) &&
+                            !getPatientInsuranceProvider(patient) && (
+                              <span className="patient-meta">-</span>
+                            )}
+                        </td>
+                        <td>
+                          {canWrite && (
+                            <button
+                              type="button"
+                              className="btn btn-primary btn-sm"
+                              onClick={() => openNewClaimForPatient(patient)}
+                            >
+                              <Plus size={14} /> New Claim
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </>
       )}
 
