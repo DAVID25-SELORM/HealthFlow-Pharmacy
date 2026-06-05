@@ -2604,7 +2604,41 @@ const summarizeNhiaApiErrorForLog = (error) => ({
   message: error?.message || String(error || 'Unknown Supabase error'),
   code: error?.code || error?.status || error?.statusCode || '',
   details: error?.details || '',
+  missingFields: Array.isArray(error?.missingFields) ? error.missingFields : [],
 })
+
+const REDACTED_NHIA_LOG_VALUE = '[REDACTED]'
+
+const shouldRedactNhiaLogField = (key = '') => {
+  const normalized = normalizeText(key).toLowerCase().replace(/[^a-z0-9]/g, '')
+  return (
+    normalized === 'credentials' ||
+    normalized.includes('apikey') ||
+    normalized.includes('apisecret') ||
+    normalized.includes('password') ||
+    normalized.includes('token') ||
+    normalized.includes('authorization') ||
+    normalized.includes('encrypted') ||
+    normalized.includes('secret')
+  )
+}
+
+const redactNhiaLogPayload = (value) => {
+  if (Array.isArray(value)) {
+    return value.map((item) => redactNhiaLogPayload(item))
+  }
+
+  if (!value || typeof value !== 'object') {
+    return value
+  }
+
+  return Object.fromEntries(
+    Object.entries(value).map(([key, entry]) => [
+      key,
+      shouldRedactNhiaLogField(key) ? REDACTED_NHIA_LOG_VALUE : redactNhiaLogPayload(entry),
+    ])
+  )
+}
 
 const canUseClaimItBridgeQueue = () =>
   typeof window !== 'undefined' && Boolean(window.localStorage)
@@ -3109,6 +3143,9 @@ export const saveNhiaApiSettings = async (settings, options = {}) => {
     throw new Error(`NHIA configuration is incomplete for ${validation.integrationMode}: ${validation.missing.join(', ')}.`)
   }
   const saveTarget = mode === 'ONLINE_LOCAL_SYNC' || mode === 'OFFLINE_LOCAL' ? 'local_branch_server' : 'cloud_supabase'
+  if (saveTarget === 'cloud_supabase' && !organizationId) {
+    throw new Error('Cannot save cloud NHIA API settings: organizationId is missing.')
+  }
   logNhiaConfigEvent('save started', {
     mode,
     saveTarget,
@@ -3157,6 +3194,11 @@ export const saveNhiaApiSettings = async (settings, options = {}) => {
   }
 
   try {
+    console.info('[NHIA CONFIG] tier-access save payload', redactNhiaLogPayload({
+      action: 'save_nhia_api_settings',
+      organizationId,
+      settings: sanitizedSettings,
+    }))
     const response = await invokeTierAccess({
       action: 'save_nhia_api_settings',
       organizationId,

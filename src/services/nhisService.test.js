@@ -2004,6 +2004,14 @@ describe('NHIA API settings source routing', () => {
     expect(invokeTierAccess).not.toHaveBeenCalled()
   })
 
+  it('requires organizationId before saving NHIA settings through cloud Supabase', async () => {
+    await expect(saveNhiaApiSettings({
+      ...completeClaimItSettings,
+    })).rejects.toThrow('organizationId is missing')
+
+    expect(invokeTierAccess).not.toHaveBeenCalled()
+  })
+
   it('does not mix hosted NHIA settings with cached partial settings', async () => {
     mockNhiaConfigurationStore()
     invokeTierAccess.mockResolvedValueOnce({

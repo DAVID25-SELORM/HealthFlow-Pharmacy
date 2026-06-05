@@ -122,6 +122,58 @@ describe('invokeSupabaseFunction', () => {
     expect(result.error?.message).toContain('Unable to reach Supabase function "tier-access"')
   })
 
+  it('surfaces Supabase function 400 response details', async () => {
+    const activeSession = {
+      access_token: 'active-token',
+      expires_at: Math.floor(NOW.getTime() / 1000) + 3600,
+    }
+
+    const getSession = vi.fn().mockResolvedValue({
+      data: { session: activeSession },
+      error: null,
+    })
+    const responseBody = {
+      error: 'NHIA configuration is incomplete for claimit_assisted: missing claimsOfficerName.',
+      missingFields: ['claimsOfficerName'],
+      received: { action: 'save_nhia_api_settings' },
+    }
+    const invoke = vi.fn().mockResolvedValue({
+      data: null,
+      error: {
+        name: 'FunctionsHttpError',
+        context: new Response(JSON.stringify(responseBody), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      },
+    })
+    const createClient = vi.fn(() => ({
+      auth: {
+        getSession,
+        getUser: vi.fn(),
+        refreshSession: vi.fn(),
+      },
+      functions: {
+        invoke,
+      },
+    }))
+
+    vi.doMock('@supabase/supabase-js', () => ({
+      createClient,
+    }))
+
+    const { invokeSupabaseFunction } = await import('./supabase')
+
+    const result = await invokeSupabaseFunction('tier-access', {
+      body: { action: 'save_nhia_api_settings' },
+    })
+
+    expect(result.error?.message).toBe(responseBody.error)
+    expect(result.error?.status).toBe(400)
+    expect(result.error?.missingFields).toEqual(['claimsOfficerName'])
+    expect(result.error?.details).toEqual(responseBody.received)
+  })
+
   it('refreshes before reading the current user when the stored session is expired', async () => {
     const expiredSession = {
       access_token: 'expired-token',

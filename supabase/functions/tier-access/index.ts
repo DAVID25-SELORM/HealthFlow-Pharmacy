@@ -224,6 +224,29 @@ const normalizeText = (value: unknown) => (typeof value === 'string' ? value.tri
 
 const REDACTED_VALUE = '[REDACTED]'
 
+class NhiaSettingsValidationError extends Error {
+  integrationMode: string
+  missingFields: string[]
+
+  constructor(integrationMode: string, missingFields: string[]) {
+    super(`NHIA configuration is incomplete for ${integrationMode}: missing ${missingFields.join(', ')}.`)
+    this.name = 'NhiaSettingsValidationError'
+    this.integrationMode = integrationMode
+    this.missingFields = missingFields
+  }
+}
+
+const getNhiaValidationDetails = (error: unknown) => {
+  if (error instanceof NhiaSettingsValidationError) {
+    return {
+      integrationMode: error.integrationMode,
+      missingFields: error.missingFields,
+    }
+  }
+
+  return null
+}
+
 const shouldRedactTierAccessField = (key: string) => {
   const normalized = key.toLowerCase().replace(/[^a-z0-9]/g, '')
   return (
@@ -3090,7 +3113,7 @@ const validateNhiaSettingsForMode = (settings: Record<string, unknown>) => {
   }
 
   if (missing.length) {
-    throw new Error(`NHIA configuration is incomplete for ${integrationMode}: ${missing.join(', ')}.`)
+    throw new NhiaSettingsValidationError(integrationMode, missing)
   }
 }
 
@@ -4496,11 +4519,18 @@ Deno.serve(async (request) => {
     )
   } catch (error) {
     console.error('tier-access error:', error)
+    const nhiaValidation = getNhiaValidationDetails(error)
     return json(
       {
         ok: false,
         action,
         error: getErrorMessage(error),
+        ...(nhiaValidation
+          ? {
+              integrationMode: nhiaValidation.integrationMode,
+              missingFields: nhiaValidation.missingFields,
+            }
+          : {}),
         received: redactedPayload,
       },
       400

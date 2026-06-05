@@ -239,21 +239,30 @@ const isUnauthorizedFunctionError = (error) =>
 const getFunctionErrorMessage = async (error) => {
   const response = error?.context
   if (!response || typeof response.clone !== 'function') {
-    return ''
+    return null
   }
 
   try {
     const cloned = response.clone()
     const contentType = String(cloned.headers.get('Content-Type') || '').toLowerCase()
+    const status = Number(cloned.status || error?.status || error?.statusCode || 0)
 
     if (contentType.includes('application/json')) {
       const body = await cloned.json()
-      return body?.error || body?.message || ''
+      return {
+        message: body?.error || body?.message || '',
+        status,
+        body,
+      }
     }
 
-    return (await cloned.text()) || ''
+    return {
+      message: (await cloned.text()) || '',
+      status,
+      body: null,
+    }
   } catch {
-    return ''
+    return null
   }
 }
 
@@ -393,11 +402,17 @@ export const invokeSupabaseFunction = async (name, options = {}) => {
     }
   }
 
-  const functionErrorMessage = await getFunctionErrorMessage(result.error)
-  if (functionErrorMessage) {
+  const functionError = await getFunctionErrorMessage(result.error)
+  if (functionError?.message) {
+    const error = new Error(functionError.message)
+    error.status = functionError.status
+    error.statusCode = functionError.status
+    error.body = functionError.body
+    error.details = functionError.body?.details || functionError.body?.received || ''
+    error.missingFields = functionError.body?.missingFields || functionError.body?.missing_fields || []
     return {
       ...result,
-      error: new Error(functionErrorMessage),
+      error,
     }
   }
 
