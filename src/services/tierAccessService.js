@@ -34,6 +34,14 @@ const redactPayload = (value) => {
   )
 }
 
+const stringifyForLog = (value) => {
+  try {
+    return JSON.stringify(value ?? null, null, 2)
+  } catch {
+    return String(value)
+  }
+}
+
 export const invokeTierAccess = async (payload) => {
   console.log('[TIER ACCESS REQUEST]', {
     action: payload?.action,
@@ -46,6 +54,13 @@ export const invokeTierAccess = async (payload) => {
   })
 
   if (error) {
+    console.error('[TIER ACCESS ERROR BODY]', stringifyForLog({
+      message: error?.message || '',
+      status: error?.status || error?.statusCode || '',
+      body: error?.body || null,
+      details: error?.details || null,
+      missingFields: error?.missingFields || [],
+    }))
     throw error
   }
 

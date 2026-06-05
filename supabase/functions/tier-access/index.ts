@@ -2916,6 +2916,29 @@ const decodeNhiaSecret = async (value: unknown) => {
   }
 }
 
+const logNhiaSecretDecryptDebug = (field: string, value: unknown, success: boolean) => {
+  const encrypted = normalizeText(value)
+  console.info('[NHIA CONFIG] secret decrypt debug', {
+    field,
+    encryptedLength: encrypted.length,
+    keyExists: Boolean(getNhiaSecretKeyMaterial()),
+    decryptSuccess: Boolean(success),
+  })
+}
+
+const safeDecodeNhiaSecret = async (value: unknown, field = 'secret') => {
+  const normalized = normalizeText(value)
+  if (!normalized) return ''
+  try {
+    const decoded = await decodeNhiaSecret(normalized)
+    logNhiaSecretDecryptDebug(field, normalized, true)
+    return decoded
+  } catch {
+    logNhiaSecretDecryptDebug(field, normalized, false)
+    return ''
+  }
+}
+
 const logNhiaConfigEvent = (event: string, details: Record<string, unknown> = {}) => {
   console.info(`[NHIA CONFIG] ${event}`, {
     mode: details.mode || '',
@@ -2933,16 +2956,21 @@ const mapNhiaSettingsRow = async (row: Record<string, unknown> | null, includeCr
   if (!row) return null
   const credentials = includeCredentials
     ? {
-        apiKey: await decodeNhiaSecret(row.api_key_encrypted),
-        apiSecret: await decodeNhiaSecret(row.api_secret_encrypted),
+        apiKey: await safeDecodeNhiaSecret(row.api_key_encrypted, 'apiKey'),
+        apiSecret: await safeDecodeNhiaSecret(row.api_secret_encrypted, 'apiSecret'),
         headerName: row.api_key_header_name || '',
         secretHeaderName: row.api_secret_header_name || '',
         headerPrefix: row.api_key_header_prefix || '',
         username: row.username || '',
-        password: await decodeNhiaSecret(row.password_encrypted),
+        password: await safeDecodeNhiaSecret(row.password_encrypted, 'password'),
         tokenEndpointPath: row.token_endpoint_path || '',
       }
     : {}
+  const credentialDecodeFailed = includeCredentials && Boolean(
+    (row.api_key_encrypted && !credentials.apiKey) ||
+      (row.api_secret_encrypted && !credentials.apiSecret) ||
+      (row.password_encrypted && !credentials.password)
+  )
   const credentialSummary = includeCredentials
     ? maskCredentials(credentials)
     : {
@@ -3037,13 +3065,18 @@ const mapNhiaSettingsRow = async (row: Record<string, unknown> | null, includeCr
     credentialMode: row.credential_mode || 'claimit_token',
     credentials: includeCredentials ? credentials : {},
     credentialSummary,
+    credentialDecodeFailed,
+    requiresCredentialReentry: credentialDecodeFailed,
+    credentialWarning: credentialDecodeFailed
+      ? 'Unable to decrypt saved NHIA credentials. Re-enter the NHIA API key and secret, then save again.'
+      : '',
     username: row.username || '',
     passwordEncrypted: row.password_encrypted ? NHIA_SECRET_MASK : '',
     hasPassword: Boolean(row.password_encrypted),
-    hasApiKey: Boolean(row.api_key_encrypted),
-    has_api_key: Boolean(row.api_key_encrypted),
-    hasApiSecret: Boolean(row.api_secret_encrypted),
-    has_api_secret: Boolean(row.api_secret_encrypted),
+    hasApiKey: includeCredentials ? Boolean(credentials.apiKey) : Boolean(row.api_key_encrypted),
+    has_api_key: includeCredentials ? Boolean(credentials.apiKey) : Boolean(row.api_key_encrypted),
+    hasApiSecret: includeCredentials ? Boolean(credentials.apiSecret) : Boolean(row.api_secret_encrypted),
+    has_api_secret: includeCredentials ? Boolean(credentials.apiSecret) : Boolean(row.api_secret_encrypted),
     nhisMemberDigits: Number(row.nhis_member_digits || 8),
     ghanaCardDigits: Number(row.ghana_card_digits || 10),
     exportFormat: row.export_format || 'json',
@@ -3158,7 +3191,13 @@ const saveNhiaApiSettings = async (
 ) => {
   requireNhiaSettingsAccess(requesterProfile, 'Only organization admins can update NHIA API settings.')
 
-  const settings = (payload.settings || {}) as Record<string, unknown>
+  const nestedPayload =
+    payload.payload && typeof payload.payload === 'object'
+      ? payload.payload
+      : payload.data && typeof payload.data === 'object'
+        ? payload.data
+        : null
+  const settings = (payload.settings || nestedPayload || {}) as Record<string, unknown>
   const incomingCredentials =
     settings.credentials && typeof settings.credentials === 'object'
       ? (settings.credentials as Record<string, unknown>)

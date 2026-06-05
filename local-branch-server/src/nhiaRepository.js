@@ -739,6 +739,29 @@ const decodeNhiaSecret = (value) => {
   }
 }
 
+const logNhiaSecretDecryptDebug = (field, value, success) => {
+  const encrypted = normalizeText(value)
+  console.info('[NHIA CONFIG] secret decrypt debug', {
+    field,
+    encryptedLength: encrypted.length,
+    keyExists: Boolean(getNhiaSecretKeyMaterial()),
+    decryptSuccess: Boolean(success),
+  })
+}
+
+const safeDecodeNhiaSecret = (value, field = 'secret') => {
+  const normalized = normalizeText(value)
+  if (!normalized) return ''
+  try {
+    const decoded = decodeNhiaSecret(normalized)
+    logNhiaSecretDecryptDebug(field, normalized, true)
+    return decoded
+  } catch {
+    logNhiaSecretDecryptDebug(field, normalized, false)
+    return ''
+  }
+}
+
 const logNhiaConfigEvent = (event, details = {}) => {
   console.info(`[NHIA CONFIG] ${event}`, {
     mode: details.mode || '',
@@ -804,16 +827,21 @@ const mapSettingsRow = (row, { includeCredentials = false } = {}) => {
 
   const credentials = includeCredentials
     ? {
-        apiKey: decodeNhiaSecret(row.api_key_encrypted),
-        apiSecret: decodeNhiaSecret(row.api_secret_encrypted),
+        apiKey: safeDecodeNhiaSecret(row.api_key_encrypted, 'apiKey'),
+        apiSecret: safeDecodeNhiaSecret(row.api_secret_encrypted, 'apiSecret'),
         headerName: row.api_key_header_name || '',
         secretHeaderName: row.api_secret_header_name || '',
         headerPrefix: row.api_key_header_prefix || '',
         username: row.username || '',
-        password: decodeNhiaSecret(row.password_encrypted),
+        password: safeDecodeNhiaSecret(row.password_encrypted, 'password'),
         tokenEndpointPath: row.token_endpoint_path || '',
       }
     : {}
+  const credentialDecodeFailed = includeCredentials && Boolean(
+    (row.api_key_encrypted && !credentials.apiKey) ||
+      (row.api_secret_encrypted && !credentials.apiSecret) ||
+      (row.password_encrypted && !credentials.password)
+  )
   const credentialSummary = includeCredentials
     ? maskCredentials(credentials)
     : {
@@ -907,8 +935,13 @@ const mapSettingsRow = (row, { includeCredentials = false } = {}) => {
     credentialMode: normalizeCredentialMode(row.credential_mode || 'claimit_token'),
     credentials: includeCredentials ? credentials : {},
     credentialSummary,
-    hasApiKey: Boolean(row.api_key_encrypted),
-    hasApiSecret: Boolean(row.api_secret_encrypted),
+    credentialDecodeFailed,
+    requiresCredentialReentry: credentialDecodeFailed,
+    credentialWarning: credentialDecodeFailed
+      ? 'Unable to decrypt saved NHIA credentials. Re-enter the NHIA API key and secret, then save again.'
+      : '',
+    hasApiKey: includeCredentials ? Boolean(credentials.apiKey) : Boolean(row.api_key_encrypted),
+    hasApiSecret: includeCredentials ? Boolean(credentials.apiSecret) : Boolean(row.api_secret_encrypted),
     username: row.username || '',
     passwordEncrypted: row.password_encrypted ? NHIA_SECRET_MASK : '',
     hasPassword: Boolean(row.password_encrypted),
@@ -1275,13 +1308,13 @@ export const saveNhiaSettings = (settings = {}) => {
       : parseJson(settings.credentialPayload, {})
   const existingCredentials = existing
     ? {
-        apiKey: decodeNhiaSecret(existing.api_key_encrypted),
-        apiSecret: decodeNhiaSecret(existing.api_secret_encrypted),
+        apiKey: safeDecodeNhiaSecret(existing.api_key_encrypted, 'apiKey'),
+        apiSecret: safeDecodeNhiaSecret(existing.api_secret_encrypted, 'apiSecret'),
         headerName: existing.api_key_header_name || '',
         secretHeaderName: existing.api_secret_header_name || '',
         headerPrefix: existing.api_key_header_prefix || '',
         username: existing.username || '',
-        password: decodeNhiaSecret(existing.password_encrypted),
+        password: safeDecodeNhiaSecret(existing.password_encrypted, 'password'),
         tokenEndpointPath: existing.token_endpoint_path || '',
       }
     : {}

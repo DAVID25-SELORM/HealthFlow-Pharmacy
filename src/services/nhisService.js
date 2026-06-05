@@ -2339,6 +2339,11 @@ const normalizeNhiaConfig = (settings = null, {
   const hasApiSecret = hasNhiaSavedCredential(raw, 'hasApiSecret', 'has_api_secret') || Boolean(normalizeText(credentials.apiSecret))
   const username = normalizeText(raw.username || credentials.username)
   const hasPassword = Boolean(raw.hasPassword || raw.has_password || normalizeText(credentials.password))
+  const credentialDecodeFailed = Boolean(raw.credentialDecodeFailed || raw.credential_decode_failed || raw.requiresCredentialReentry || raw.requires_credential_reentry)
+  const credentialWarning = normalizeText(raw.credentialWarning || raw.credential_warning) ||
+    (credentialDecodeFailed
+      ? 'Unable to decrypt saved NHIA credentials. Re-enter the NHIA API key and secret, then save again.'
+      : '')
   const resolvedMode = mode || normalizeText(raw.mode) || 'ONLINE_CLOUD'
   const normalized = {
     ...NHIA_CONFIG_DEFAULTS,
@@ -2398,6 +2403,12 @@ const normalizeNhiaConfig = (settings = null, {
     password_encrypted: '',
     hasPassword,
     has_password: hasPassword,
+    credentialDecodeFailed,
+    credential_decode_failed: credentialDecodeFailed,
+    requiresCredentialReentry: credentialDecodeFailed,
+    requires_credential_reentry: credentialDecodeFailed,
+    credentialWarning,
+    credential_warning: credentialWarning,
     claimEndpointPath: claimSubmitEndpoint,
     claim_endpoint_path: claimSubmitEndpoint,
     claimSubmitEndpoint,
@@ -2639,6 +2650,49 @@ const redactNhiaLogPayload = (value) => {
     ])
   )
 }
+
+const stripUndefinedValues = (value) => {
+  if (Array.isArray(value)) {
+    return value.map((item) => stripUndefinedValues(item))
+  }
+
+  if (!value || typeof value !== 'object') {
+    return value
+  }
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([, entry]) => entry !== undefined)
+      .map(([key, entry]) => [key, stripUndefinedValues(entry)])
+  )
+}
+
+const stringifyNhiaLogValue = (value) => {
+  try {
+    return JSON.stringify(value ?? null, null, 2)
+  } catch {
+    return String(value)
+  }
+}
+
+const buildNhiaTierAccessSavePayload = ({
+  organizationId = '',
+  branchId = '',
+  settings = {},
+} = {}) => stripUndefinedValues({
+  action: 'save_nhia_api_settings',
+  requestType: 'save_nhia_api_settings',
+  type: 'save_nhia_api_settings',
+  organizationId,
+  organization_id: organizationId,
+  branchId: branchId || null,
+  branch_id: branchId || null,
+  featureKey: 'nhia_api_config',
+  feature_key: 'nhia_api_config',
+  payload: settings,
+  data: settings,
+  settings,
+})
 
 const canUseClaimItBridgeQueue = () =>
   typeof window !== 'undefined' && Boolean(window.localStorage)
@@ -3127,6 +3181,9 @@ export const saveNhiaApiSettings = async (settings, options = {}) => {
   const organizationId = normalizeText(
     options.organizationId || options.organization_id || settings?.organizationId || settings?.organization_id
   )
+  const branchId = normalizeText(
+    options.branchId || options.branch_id || settings?.branchId || settings?.branch_id
+  )
   const mode = await getNhiaConfigMode()
   const sanitizedSettings = sanitizeNhiaApiSettingsPayload(settings)
   sanitizedSettings.mode = mode
@@ -3161,13 +3218,24 @@ export const saveNhiaApiSettings = async (settings, options = {}) => {
 
   if (saveTarget === 'local_branch_server') {
     try {
-      await saveBranchNhiaSettings(sanitizedSettings)
+      const localSavePayload = stripUndefinedValues({
+        ...sanitizedSettings,
+        organizationId: organizationId || sanitizedSettings.organizationId,
+        organization_id: organizationId || sanitizedSettings.organization_id,
+        branchId: branchId || sanitizedSettings.branchId,
+        branch_id: branchId || sanitizedSettings.branch_id,
+      })
+      await saveBranchNhiaSettings(localSavePayload)
       const savedSettings = await getBranchNhiaSettings()
       const nhiaConfig = normalizeNhiaConfig(savedSettings, {
         mode,
         source: 'local_branch_server',
         organizationId,
       })
+      if (mode === 'ONLINE_LOCAL_SYNC') {
+        nhiaConfig.syncWarning = 'Saved locally, cloud sync pending.'
+        nhiaConfig.cloudSyncPending = true
+      }
       writeCachedNhiaApiSettings(nhiaConfig, organizationId)
       logNhiaAccreditationExpiryDate('saved', nhiaConfig.accreditationExpiryDate)
       logNhiaConfigEvent('save completed', {
@@ -3194,16 +3262,13 @@ export const saveNhiaApiSettings = async (settings, options = {}) => {
   }
 
   try {
-    console.info('[NHIA CONFIG] tier-access save payload', redactNhiaLogPayload({
-      action: 'save_nhia_api_settings',
+    const tierAccessPayload = buildNhiaTierAccessSavePayload({
       organizationId,
-      settings: sanitizedSettings,
-    }))
-    const response = await invokeTierAccess({
-      action: 'save_nhia_api_settings',
-      organizationId,
+      branchId,
       settings: sanitizedSettings,
     })
+    console.info('[NHIA CONFIG] tier-access save payload', redactNhiaLogPayload(tierAccessPayload))
+    const response = await invokeTierAccess(tierAccessPayload)
     const directSavedSettings = await saveHostedNhiaConfigDirect(
       sanitizedSettings,
       organizationId,
@@ -3254,10 +3319,13 @@ export const saveNhiaApiSettings = async (settings, options = {}) => {
     console.info('[NHIA CONFIG] saved successfully', summarizeNhiaApiSettingsForLog(nhiaConfig))
     return nhiaConfig
   } catch (error) {
+    const summarizedError = summarizeNhiaApiErrorForLog(error)
     console.error('[NHIA CONFIG] cloud response/error', {
       response: null,
-      error: summarizeNhiaApiErrorForLog(error),
+      error: summarizedError,
+      body: stringifyNhiaLogValue(error?.body || null),
     })
+    console.error('[NHIA CONFIG] cloud error body', stringifyNhiaLogValue(error?.body || summarizedError))
     logNhiaConfigEvent('save failed', {
       mode: 'ONLINE_CLOUD',
       saveTarget: 'cloud_supabase',

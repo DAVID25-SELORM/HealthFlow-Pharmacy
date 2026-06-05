@@ -2050,6 +2050,56 @@ describe('NHIA API settings source routing', () => {
     expect(reloaded.claimsOfficerName).toBe('Claims Officer')
   })
 
+  it('saves NHIA settings locally in local-sync mode and reports cloud sync pending', async () => {
+    shouldUseBranchServer.mockReturnValue(true)
+    saveNhiaSettings.mockResolvedValueOnce({
+      ...completeClaimItSettings,
+      organizationId: 'org-1',
+      branchId: 'branch-1',
+      facilityCode: 'FAC-1',
+      hasApiKey: true,
+      hasApiSecret: true,
+    })
+    getNhiaSettings.mockResolvedValueOnce({
+      ...completeClaimItSettings,
+      organizationId: 'org-1',
+      branchId: 'branch-1',
+      facilityCode: 'FAC-1',
+      hasApiKey: true,
+      hasApiSecret: true,
+      credentialSummary: {
+        apiKey: true,
+        apiSecret: true,
+      },
+    })
+
+    await expect(saveNhiaApiSettings({
+      ...completeClaimItSettings,
+      organizationId: 'org-1',
+      branchId: 'branch-1',
+      facilityCode: 'FAC-1',
+      credentials: {
+        apiKey: 'local-key',
+        apiSecret: 'local-secret',
+      },
+    }, { organizationId: 'org-1', branchId: 'branch-1' })).resolves.toMatchObject({
+      organizationId: 'org-1',
+      branchId: 'branch-1',
+      facilityCode: 'FAC-1',
+      configSource: 'local_branch_server',
+      syncWarning: 'Saved locally, cloud sync pending.',
+      cloudSyncPending: true,
+    })
+
+    expect(saveNhiaSettings).toHaveBeenCalledWith(expect.objectContaining({
+      organizationId: 'org-1',
+      organization_id: 'org-1',
+      branchId: 'branch-1',
+      branch_id: 'branch-1',
+    }))
+    expect(invokeTierAccess).not.toHaveBeenCalled()
+  })
+
   it('normalizes legacy accreditation expiry fields to accreditationExpiryDate', async () => {
     invokeTierAccess.mockResolvedValueOnce({
       settings: {
@@ -2205,9 +2255,30 @@ describe('NHIA API settings source routing', () => {
       },
     }, { organizationId: 'org-1' })
 
-    expect(invokeTierAccess).toHaveBeenCalledWith({
+    expect(invokeTierAccess).toHaveBeenCalledWith(expect.objectContaining({
       action: 'save_nhia_api_settings',
+      requestType: 'save_nhia_api_settings',
+      type: 'save_nhia_api_settings',
       organizationId: 'org-1',
+      organization_id: 'org-1',
+      branchId: null,
+      branch_id: null,
+      featureKey: 'nhia_api_config',
+      feature_key: 'nhia_api_config',
+      payload: expect.objectContaining({
+        ...completeClaimItSettings,
+        organizationId: 'org-1',
+        credentials: {
+          headerName: 'x-api-key',
+        },
+      }),
+      data: expect.objectContaining({
+        ...completeClaimItSettings,
+        organizationId: 'org-1',
+        credentials: {
+          headerName: 'x-api-key',
+        },
+      }),
       settings: expect.objectContaining({
         ...completeClaimItSettings,
         organizationId: 'org-1',
@@ -2215,7 +2286,8 @@ describe('NHIA API settings source routing', () => {
           headerName: 'x-api-key',
         },
       }),
-    })
+    }))
+    expect(JSON.stringify(invokeTierAccess.mock.calls[0][0])).not.toContain('undefined')
   })
 
   it('uses the CLAIM-it claim endpoint when no CC endpoint is configured', async () => {

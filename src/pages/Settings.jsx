@@ -465,6 +465,9 @@ const Settings = () => {
         setBranches(branchesData)
         setNhiaApiForm(nextNhiaApiForm)
         setNhiaCredentialState(toNhiaCredentialState(nhiaApiSettings || nextNhiaApiForm))
+        if (nhiaApiSettings?.credentialWarning) {
+          notify(nhiaApiSettings.credentialWarning, 'warning')
+        }
         logNhiaAccreditationExpiryDate('loaded', nextNhiaApiForm.accreditationExpiryDate)
 
         // Load organization stats
@@ -741,7 +744,13 @@ const Settings = () => {
         hasApiKey: hasSavedApiKey,
         hasApiSecret: hasSavedApiSecret,
       })
-      notify('NHIA API settings saved. API Key Saved. API Secret Saved.', 'success')
+      if (effectiveNhiaApiSettings.credentialWarning) {
+        notify(effectiveNhiaApiSettings.credentialWarning, 'warning')
+      } else if (effectiveNhiaApiSettings.syncWarning) {
+        notify(effectiveNhiaApiSettings.syncWarning, 'warning')
+      } else {
+        notify('NHIA API settings saved. API Key Saved. API Secret Saved.', 'success')
+      }
     } catch (saveError) {
       console.error('Saving NHIA API config Supabase response/error', {
         response: null,
