@@ -288,6 +288,34 @@ const patientSearchKey = (patient = {}) =>
     getPatientDateOfBirth(patient),
   ].filter(Boolean).join('|'))
 
+const nhisPatientListKey = (patient = {}) =>
+  compactLookupText([
+    getPatientMemberNumber(patient),
+    getPatientHin(patient),
+    getPatientFullName(patient),
+    getPatientFolderNo(patient),
+    getPatientDateOfBirth(patient),
+  ].filter(Boolean).join('|')) || patientSearchKey(patient)
+
+const mergeNhisPatientRecord = (existing, patient) =>
+  existing
+    ? {
+        ...patient,
+        ...existing,
+        full_name: getPatientFullName(existing) || getPatientFullName(patient),
+        nhis_member_no: getPatientMemberNumber(existing) || getPatientMemberNumber(patient),
+        insurance_id: existing.insurance_id || patient.insurance_id || getPatientMemberNumber(existing) || getPatientMemberNumber(patient),
+        nhis_hin: getPatientHin(existing) || getPatientHin(patient),
+        folder_no: getPatientFolderNo(existing) || getPatientFolderNo(patient),
+        phone: getPatientPhone(existing) || getPatientPhone(patient),
+        gender: getPatientGender(existing) || getPatientGender(patient),
+        date_of_birth: getPatientDateOfBirth(existing) || getPatientDateOfBirth(patient),
+        address: getPatientAddress(existing) || getPatientAddress(patient),
+        insurance_provider: getPatientInsuranceProvider(existing) || getPatientInsuranceProvider(patient),
+        sourceClaimNumber: existing.sourceClaimNumber || patient.sourceClaimNumber || '',
+      }
+    : patient
+
 const isNhisPatientRecord = (patient = {}) =>
   Boolean(
     getPatientMemberNumber(patient) ||
@@ -751,58 +779,56 @@ const Nhis = () => {
     })
   }, [claims, claimTab, claimSearch, claimDateRange])
 
-  const visibleNhisPatients = useMemo(() => {
-    const term = claimSearch.trim().toLowerCase()
+  const allNhisPatients = useMemo(() => {
     const merged = new Map()
+    const addPatient = (patient) => {
+      const key = nhisPatientListKey(patient)
+      if (!key) return
+      merged.set(key, mergeNhisPatientRecord(merged.get(key), patient))
+    }
 
     patients
       .filter(isNhisPatientRecord)
-      .filter((patient) => {
-        if (!term) return true
-        return (
-          lookupMatches(formatPatientLookupName(patient), term) ||
-          lookupMatches(getPatientMemberNumber(patient), term) ||
-          lookupMatches(getPatientHin(patient), term) ||
-          lookupMatches(getPatientFolderNo(patient), term) ||
-          lookupMatches(getPatientPhone(patient), term)
-        )
-      })
-      .forEach((patient) => {
-        const key = patientSearchKey(patient)
-        if (key && !merged.has(key)) merged.set(key, patient)
-      })
+      .forEach(addPatient)
+
+    claims
+      .map(claimToPatientSearchResult)
+      .filter(isNhisPatientRecord)
+      .forEach(addPatient)
 
     return [...merged.values()].sort((left, right) =>
       formatPatientLookupName(left).localeCompare(formatPatientLookupName(right))
     )
-  }, [patients, claimSearch])
+  }, [claims, patients])
+
+  const visibleNhisPatients = useMemo(() => {
+    const term = claimSearch.trim().toLowerCase()
+    return allNhisPatients.filter((patient) => {
+      if (!term) return true
+      return (
+        lookupMatches(formatPatientLookupName(patient), term) ||
+        lookupMatches(getPatientMemberNumber(patient), term) ||
+        lookupMatches(getPatientHin(patient), term) ||
+        lookupMatches(getPatientFolderNo(patient), term) ||
+        lookupMatches(getPatientPhone(patient), term)
+      )
+    })
+  }, [allNhisPatients, claimSearch])
 
   const filteredNhisPatients = useMemo(() => {
     const term = nhisPatientSearch.trim().toLowerCase()
-    const merged = new Map()
-
-    patients
-      .filter(isNhisPatientRecord)
-      .filter((patient) => {
-        if (!term) return true
-        return (
-          lookupMatches(formatPatientLookupName(patient), term) ||
-          lookupMatches(getPatientMemberNumber(patient), term) ||
-          lookupMatches(getPatientHin(patient), term) ||
-          lookupMatches(getPatientFolderNo(patient), term) ||
-          lookupMatches(getPatientPhone(patient), term) ||
-          lookupMatches(getPatientAddress(patient), term)
-        )
-      })
-      .forEach((patient) => {
-        const key = patientSearchKey(patient)
-        if (key && !merged.has(key)) merged.set(key, patient)
-      })
-
-    return [...merged.values()].sort((left, right) =>
-      formatPatientLookupName(left).localeCompare(formatPatientLookupName(right))
-    )
-  }, [patients, nhisPatientSearch])
+    return allNhisPatients.filter((patient) => {
+      if (!term) return true
+      return (
+        lookupMatches(formatPatientLookupName(patient), term) ||
+        lookupMatches(getPatientMemberNumber(patient), term) ||
+        lookupMatches(getPatientHin(patient), term) ||
+        lookupMatches(getPatientFolderNo(patient), term) ||
+        lookupMatches(getPatientPhone(patient), term) ||
+        lookupMatches(getPatientAddress(patient), term)
+      )
+    })
+  }, [allNhisPatients, nhisPatientSearch])
 
   // ── filtered catalog ─────────────────────────────────────────
   const filteredCatalog = useMemo(() => {
