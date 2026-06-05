@@ -1,0 +1,17 @@
+[Unit]
+Description=HealthFlow Local Branch Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=healthflow
+Group=healthflow
+WorkingDirectory=/opt/healthflow/local-branch-server
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node src/server.js
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

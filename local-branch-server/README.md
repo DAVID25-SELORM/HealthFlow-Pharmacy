@@ -152,6 +152,114 @@ If Task Scheduler is blocked on a machine, you can use the older Startup folder 
 powershell -ExecutionPolicy Bypass -File .\scripts\install-startup-shortcut.ps1
 ```
 
+## Production Linux Service Setup
+
+For Linux branch computers, use the same Node server with a `systemd` service.
+The Windows service scripts are not used on Linux.
+
+Recommended Ubuntu/Debian prerequisites:
+
+```bash
+sudo apt update
+sudo apt install -y git curl build-essential python3 make g++
+node -v
+npm -v
+```
+
+Use Node.js 20 or newer. The local server depends on native SQLite bindings.
+The Linux installer removes copied `node_modules`, installs fresh dependencies,
+and runs:
+
+```bash
+npm run rebuild:sqlite
+```
+
+That recompiles `better-sqlite3` for the Linux CPU/OS instead of reusing a
+Windows-compiled binding.
+
+Build the offline app bundle from the repository root before installing the
+service:
+
+```bash
+npm install
+npm run build:offline
+```
+
+Prepare the Linux branch server environment:
+
+```bash
+cd local-branch-server
+cp .env.linux.example .env
+npm install
+npm run rebuild:sqlite
+```
+
+Edit `.env` and set the branch values generated from HealthFlow Offline Sync.
+For Linux production installs, prefer this database path:
+
+```env
+HEALTHFLOW_DB_PATH=/var/lib/healthflow-branch/healthflow-branch.sqlite
+```
+
+If migrating an existing Windows branch server, keep these values unchanged:
+
+```text
+ORGANIZATION_ID
+BRANCH_ID
+BRANCH_SYNC_TOKEN
+BRANCH_SERVER_TOKEN
+NHIA_CONFIG_SECRET_KEY
+```
+
+Stop the Windows branch server before copying SQLite. Copy
+`healthflow-branch.sqlite` and any matching `-wal` / `-shm` files into the Linux
+database directory if those files exist.
+
+Install the Linux service from the `local-branch-server` directory:
+
+```bash
+sudo bash scripts/install-linux-service.sh
+sudo systemctl start healthflow-branch
+sudo systemctl status healthflow-branch
+```
+
+The installer copies this package to:
+
+```text
+/opt/healthflow/local-branch-server
+/var/lib/healthflow-branch
+```
+
+The service starts automatically on boot and restarts if Node exits. Follow logs:
+
+```bash
+sudo journalctl -u healthflow-branch -f
+```
+
+Run a health check:
+
+```bash
+bash scripts/health-check.sh
+```
+
+If other pharmacy machines must connect over LAN, allow the server port:
+
+```bash
+sudo ufw allow 4780/tcp
+```
+
+Then point those browsers to the Linux machine's LAN address, for example:
+
+```text
+http://192.168.1.10:4780
+```
+
+Uninstall only the service, preserving app files and SQLite data:
+
+```bash
+sudo bash scripts/uninstall-linux-service.sh
+```
+
 The server defaults to:
 
 ```text

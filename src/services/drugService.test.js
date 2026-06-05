@@ -163,6 +163,17 @@ describe('drugService catalog handling', () => {
     expect(fromMock).not.toHaveBeenCalled()
   })
 
+  it('rejects script-like drug names before saving', async () => {
+    await expect(addDrug({
+      name: '<script>alert(1)</script>',
+      expiryDate: '2026-12-31',
+      quantity: 10,
+      price: 5,
+    })).rejects.toThrow('Drug name cannot contain HTML or script characters.')
+
+    expect(invokeTierAccess).not.toHaveBeenCalled()
+  })
+
   it('does not pass hosted branch ids into local branch inventory reads', async () => {
     const localRows = [
       {

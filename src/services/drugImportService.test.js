@@ -122,6 +122,24 @@ describe('Drug Import Validation', () => {
     expect(result.totalRows).toBe(3)
   })
 
+  it('rejects drug names containing HTML or script characters', () => {
+    const data = [
+      {
+        name: '<script>alert(1)</script>',
+        batch_number: 'BT001',
+        expiry_date: '2026-12-31',
+        quantity: 10,
+        price: 5.00
+      }
+    ]
+
+    const result = validateImportData(data)
+
+    expect(result.validCount).toBe(0)
+    expect(result.invalidCount).toBe(1)
+    expect(result.invalidRows[0].errors[0]).toContain('HTML or script')
+  })
+
   it('rejects reserved default catalog batch numbers during import validation', () => {
     const data = [
       {

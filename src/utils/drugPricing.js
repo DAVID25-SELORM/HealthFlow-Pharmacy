@@ -16,7 +16,7 @@ export const getEffectiveSellingPrice = (drug) => {
     return nhisPrice
   }
 
-  return Number.isFinite(price) ? price : 0
+  return 0
 }
 
 export const hasNhisCatalogPrice = (drug) => getNhisCatalogPrice(drug) > 0

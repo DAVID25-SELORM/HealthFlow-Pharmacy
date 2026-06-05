@@ -6064,6 +6064,7 @@ const getClaimItPrescriptionAttachmentForPayload = (claim = {}) => {
   const prescriptionFilePath = normalizeText(claim.prescription_file_path)
   const prescriptionFileUrl = normalizeText(claim.prescription_file_url)
   if (!prescriptionFilePath && !prescriptionFileUrl) return null
+  if (!prescriptionFileUrl) return null
 
   const originalFileType = normalizeText(claim.prescription_file_type)
   const originalFileName = normalizeText(claim.prescription_file_name)
@@ -6744,7 +6745,9 @@ const buildClaimItRows = async (payload) => {
   const attachmentDiagnostics = []
 
   for (const [claimIndex, claim] of payload.claims.entries()) {
-    assertClaimItPrescriptionAttachmentForExport(claim)
+    if (claim.prescriptionAttachment) {
+      assertClaimItPrescriptionAttachmentForExport(claim)
+    }
     const claimGuid = getClaimItGuid(claim.claimNumber || claim.patient.memberNumber, claimIndex)
     const medicineTotal = claim.medicines.reduce((sum, medicine) => sum + Number(medicine.totalAmount || 0), 0)
     const serviceTotal = claim.tariffServices.reduce((sum, service) => sum + Number(service.totalAmount || 0), 0)

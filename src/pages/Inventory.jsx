@@ -432,7 +432,8 @@ const Inventory = () => {
       (summary, drug) => {
         const quantity = Number.parseFloat(drug.quantity ?? 0) || 0
         const price = getEffectiveSellingPrice(drug)
-        const costPrice = Number.parseFloat(drug.cost_price ?? 0) || 0
+        const rawCostPrice = Number.parseFloat(drug.cost_price ?? 0)
+        const costPrice = Number.isFinite(rawCostPrice) && rawCostPrice > 0 ? rawCostPrice : 0
 
         return {
           itemCount: summary.itemCount + 1,

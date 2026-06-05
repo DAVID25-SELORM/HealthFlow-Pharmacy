@@ -28,6 +28,14 @@ const shouldAlertForDrug = (drug) =>
 
 const isInactiveDrug = (drug) => String(drug?.status || 'active').toLowerCase() === 'inactive'
 
+const assertSafeDrugName = (value) => {
+  const name = assertRequiredText(value, 'Drug name')
+  if (/[<>]/.test(name)) {
+    throw new Error('Drug name cannot contain HTML or script characters.')
+  }
+  return name
+}
+
 const normalizeDrugSearchTokens = (value) =>
   sanitizeSearchTerm(value)
     .toLowerCase()
@@ -164,7 +172,7 @@ export const getDrugById = async (id) => {
 
 // Add new drug
 export const addDrug = async (drugData) => {
-  const name = assertRequiredText(drugData.name, 'Drug name')
+  const name = assertSafeDrugName(drugData.name)
   const batchNumber = normalizeText(drugData.batchNumber) || null
 
   const response = await invokeTierAccess({
@@ -209,7 +217,7 @@ export const addDrug = async (drugData) => {
 
 // Update drug
 export const updateDrug = async (id, drugData) => {
-  const name = assertRequiredText(drugData.name, 'Drug name')
+  const name = assertSafeDrugName(drugData.name)
   const batchNumber = normalizeText(drugData.batchNumber) || null
   const payload = {
     name,

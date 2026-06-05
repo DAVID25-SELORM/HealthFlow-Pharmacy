@@ -893,7 +893,7 @@ describe('CLAIM-it export helpers', () => {
     ],
   }
 
-  it('builds a CLAIM-it JSON payload with diagnoses, medicines, and prescription attachment metadata', () => {
+  it('builds a CLAIM-it JSON payload with diagnoses and medicines', () => {
     const payload = buildNhisClaimItExportPayload([claim], {
       yearMonth: '2026-05',
       organizationType: 'hospital',
@@ -910,7 +910,7 @@ describe('CLAIM-it export helpers', () => {
       label: 'Plasmodium falciparum malaria',
     })
     expect(payload.claims[0].medicines[0].code).toBe('NH001')
-    expect(payload.claims[0].prescriptionAttachment.fileName).toBe('prescription_NHIS-000001.pdf')
+    expect(payload.claims[0].prescriptionAttachment).toBeNull()
   })
 
   it('includes URL-only prescription attachments in CLAIM-it payloads', () => {
@@ -1314,6 +1314,37 @@ describe('CLAIM-it export helpers', () => {
     await expect(buildNhisClaimItCxf(payload)).rejects.toThrow(
       'Unable to include prescription_NHIS-000001.pdf in CLAIM-it CXF export: downloaded file is empty'
     )
+  })
+
+  it('exports CLAIM-it CXF without blocking when a claim only has unreadable attachment metadata', async () => {
+    const payload = buildNhisClaimItExportPayload([
+      {
+        ...claim,
+        prescription_file_path: 'nhis-prescriptions/rx-only-in-storage.pdf',
+        prescription_file_url: '',
+        prescription_file_name: 'rx-only-in-storage.pdf',
+        prescription_file_type: 'application/pdf',
+      },
+    ], {
+      yearMonth: '2026-05',
+      organizationType: 'pharmacy',
+      facilityCode: '03-05-001-02-01954-11-P1-2-011225',
+      facilityName: 'Westpoint Chemist',
+      providerNumber: '03-05-01954',
+      providerTypeDescription: 'Pharmacy',
+      claimsOfficerName: 'Claims Officer',
+      submitterId: 'admin',
+      generatedAt: '2026-05-20T14:58:02.000Z',
+    })
+
+    expect(payload.claims[0].prescriptionAttachment).toBeNull()
+    const cxf = await buildNhisClaimItCxf(payload)
+    const inflated = inflateSync(Buffer.from(cxf.slice(3)))
+    const inflatedText = inflated.toString('latin1')
+
+    expect(Array.from(cxf.slice(0, 3))).toEqual([0x01, 0x02, 0x19])
+    expect(inflatedText).toContain('s:11:"attachments";a:0:{}')
+    expect(inflatedText).toContain('s:14:"attachmentdata";a:0:{}')
   })
 
   it('blocks CLAIM-it CXF export when stored attachment base64 is invalid', async () => {

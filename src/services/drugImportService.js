@@ -14,6 +14,14 @@ const ALL_COLUMNS = [...REQUIRED_COLUMNS, ...OPTIONAL_COLUMNS]
 const RESERVED_DEFAULT_BATCH_PREFIX = 'PDF-IMP-'
 const MAX_IMPORT_FILE_SIZE_BYTES = 2 * 1024 * 1024
 
+const assertSafeDrugName = (value) => {
+  const name = assertRequiredText(value, 'Drug name')
+  if (/[<>]/.test(name)) {
+    throw new Error('Drug name cannot contain HTML or script characters.')
+  }
+  return name
+}
+
 const formatDateCell = (value) => {
   if (value instanceof Date) {
     return value.toISOString().split('T')[0]
@@ -59,7 +67,7 @@ const validateDrugRow = (row, rowIndex) => {
   
   try {
     // Required fields
-    const name = assertRequiredText(row.name, 'Drug name')
+    const name = assertSafeDrugName(row.name)
     const batchNumber = normalizeText(row.batch_number) || null
 
     if (batchNumber && batchNumber.toUpperCase().startsWith(RESERVED_DEFAULT_BATCH_PREFIX)) {
