@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Plus, Search, X, Upload, Download, CheckCircle2,
   Send, Banknote, XCircle, Eye, FileSpreadsheet, HeartPulse,
-  Pencil, Paperclip, FileText,
+  Pencil, Paperclip, FileText, Users,
 } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { isSupabaseConfigured } from '../lib/supabase'
@@ -525,7 +525,7 @@ const Nhis = () => {
   const isHospital = organizationType === 'hospital'
 
   // ── page sub-tab ─────────────────────────────────────────────
-  const [pageTab, setPageTab] = useState('claims') // 'claims' | 'catalog' | 'gdrg' | 'review' | 'rules'
+  const [pageTab, setPageTab] = useState('claims') // 'claims' | 'patients' | 'catalog' | 'gdrg' | 'review' | 'rules'
 
   // ── data ─────────────────────────────────────────────────────
   const [claims, setClaims]       = useState([])
@@ -542,6 +542,7 @@ const Nhis = () => {
   // ── claims filter ─────────────────────────────────────────────
   const [claimTab, setClaimTab]         = useState('all')
   const [claimSearch, setClaimSearch]   = useState('')
+  const [nhisPatientSearch, setNhisPatientSearch] = useState('')
   const [claimDateFilter, setClaimDateFilter] = useState('all')
   const [claimFromDate, setClaimFromDate] = useState(monthStartIsoDate())
   const [claimToDate, setClaimToDate] = useState(todayIsoDate())
@@ -775,6 +776,33 @@ const Nhis = () => {
       formatPatientLookupName(left).localeCompare(formatPatientLookupName(right))
     )
   }, [patients, claimSearch])
+
+  const filteredNhisPatients = useMemo(() => {
+    const term = nhisPatientSearch.trim().toLowerCase()
+    const merged = new Map()
+
+    patients
+      .filter(isNhisPatientRecord)
+      .filter((patient) => {
+        if (!term) return true
+        return (
+          lookupMatches(formatPatientLookupName(patient), term) ||
+          lookupMatches(getPatientMemberNumber(patient), term) ||
+          lookupMatches(getPatientHin(patient), term) ||
+          lookupMatches(getPatientFolderNo(patient), term) ||
+          lookupMatches(getPatientPhone(patient), term) ||
+          lookupMatches(getPatientAddress(patient), term)
+        )
+      })
+      .forEach((patient) => {
+        const key = patientSearchKey(patient)
+        if (key && !merged.has(key)) merged.set(key, patient)
+      })
+
+    return [...merged.values()].sort((left, right) =>
+      formatPatientLookupName(left).localeCompare(formatPatientLookupName(right))
+    )
+  }, [patients, nhisPatientSearch])
 
   // ── filtered catalog ─────────────────────────────────────────
   const filteredCatalog = useMemo(() => {
@@ -2265,11 +2293,13 @@ const Nhis = () => {
           <p className="page-subtitle">{nhisPageSubtitle}</p>
         </div>
         <div className="header-actions">
-          {pageTab === 'claims' && canWrite && (
+          {(pageTab === 'claims' || pageTab === 'patients') && canWrite && (
             <>
-              <button className="btn btn-secondary" onClick={() => setShowExportModal(true)}>
-                <Download size={16} /> {directNhiaApiAvailable ? (isClaimItBridgeMode ? 'Submit to CLAIM-it' : 'Submit Claims') : 'Export Claims'}
-              </button>
+              {pageTab === 'claims' && (
+                <button className="btn btn-secondary" onClick={() => setShowExportModal(true)}>
+                  <Download size={16} /> {directNhiaApiAvailable ? (isClaimItBridgeMode ? 'Submit to CLAIM-it' : 'Submit Claims') : 'Export Claims'}
+                </button>
+              )}
               <button className="btn btn-primary" onClick={openNewClaimModal}>
                 <Plus size={16} /> New Claim
               </button>
@@ -2329,6 +2359,12 @@ const Nhis = () => {
           onClick={() => setPageTab('claims')}
         >
           <HeartPulse size={16} /> Claims
+        </button>
+        <button
+          className={`nhis-page-tab ${pageTab === 'patients' ? 'active' : ''}`}
+          onClick={() => setPageTab('patients')}
+        >
+          <Users size={16} /> NHIS Patients
         </button>
         <button
           className={`nhis-page-tab ${pageTab === 'catalog' ? 'active' : ''}`}
@@ -2684,6 +2720,92 @@ const Nhis = () => {
       )}
 
       {/* ── CATALOG TAB ───────────────────────────────────────────── */}
+      {pageTab === 'patients' && (
+        <>
+          <div className="nhis-controls">
+            <div className="search-box">
+              <Search size={16} className="search-icon" />
+              <input
+                className="search-input"
+                placeholder="Search NHIS patients by name, member no, HIN, folder, phone..."
+                value={nhisPatientSearch}
+                onChange={(event) => setNhisPatientSearch(event.target.value)}
+              />
+            </div>
+            <span className="catalog-count">{filteredNhisPatients.length} NHIS patients</span>
+          </div>
+
+          <div className="nhis-table-wrap">
+            {loading ? (
+              <div className="nhis-empty">Loading NHIS patients...</div>
+            ) : filteredNhisPatients.length === 0 ? (
+              <div className="nhis-empty">
+                <Users size={40} />
+                <p>No NHIS patients found.</p>
+                {canWrite && (
+                  <button className="btn btn-primary" onClick={openNewClaimModal}>
+                    <Plus size={16} /> New Claim
+                  </button>
+                )}
+              </div>
+            ) : (
+              <table className="nhis-table">
+                <thead>
+                  <tr>
+                    <th>Patient</th>
+                    <th>Member No / HIN</th>
+                    <th>Details</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredNhisPatients.map((patient) => (
+                    <tr key={patientSearchKey(patient)}>
+                      <td>
+                        <div className="patient-name">{formatPatientLookupName(patient)}</div>
+                        {getPatientPhone(patient) && <div className="patient-meta">{getPatientPhone(patient)}</div>}
+                        {getPatientAddress(patient) && <div className="patient-meta">{getPatientAddress(patient)}</div>}
+                      </td>
+                      <td>
+                        {getPatientMemberNumber(patient) && (
+                          <div>{getPatientMemberNumber(patient)}</div>
+                        )}
+                        {getPatientHin(patient) && <div className="patient-meta">HIN: {getPatientHin(patient)}</div>}
+                      </td>
+                      <td>
+                        {getPatientFolderNo(patient) && <div>Folder: {getPatientFolderNo(patient)}</div>}
+                        {getPatientGender(patient) && <div className="patient-meta">Gender: {getPatientGender(patient)}</div>}
+                        {getPatientDateOfBirth(patient) && <div className="patient-meta">DOB: {formatAppDate(getPatientDateOfBirth(patient))}</div>}
+                        {getPatientInsuranceProvider(patient) && <div className="patient-meta">{getPatientInsuranceProvider(patient)}</div>}
+                        {!getPatientFolderNo(patient) &&
+                          !getPatientGender(patient) &&
+                          !getPatientDateOfBirth(patient) &&
+                          !getPatientInsuranceProvider(patient) && (
+                            <span className="patient-meta">-</span>
+                          )}
+                      </td>
+                      <td>
+                        {canWrite ? (
+                          <button
+                            type="button"
+                            className="btn btn-primary btn-sm"
+                            onClick={() => openNewClaimForPatient(patient)}
+                          >
+                            <Plus size={14} /> New Claim
+                          </button>
+                        ) : (
+                          <span className="patient-meta">-</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </>
+      )}
+
       {pageTab === 'review' && (
         <div className="nhis-review">
           <div className="nhis-stats">
