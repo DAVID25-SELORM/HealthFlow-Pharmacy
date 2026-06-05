@@ -52,6 +52,32 @@ const NHIS_USSD_TEL_LINK = 'tel:*929%23'
 const isNhisProvider = (provider) =>
   String(provider || '').trim().toLowerCase().includes('nhis')
 
+const getPatientDisplayName = (patient = {}) => {
+  const fallbackName = [
+    patient.first_name || patient.firstName || patient.other_names || patient.otherNames,
+    patient.last_name || patient.lastName || patient.surname,
+  ]
+    .filter(Boolean)
+    .join(' ')
+
+  return (
+    String(patient.full_name || patient.fullName || patient.name || fallbackName || '').trim() ||
+    'Unnamed patient'
+  )
+}
+
+const getPatientInitials = (patient = {}) => {
+  const initials = getPatientDisplayName(patient)
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((namePart) => namePart[0])
+    .join('')
+    .toUpperCase()
+
+  return initials || 'PT'
+}
+
 const Patients = () => {
   const [patients, setPatients] = useState([])
   const [searchTerm, setSearchTerm] = useState('')
@@ -277,15 +303,10 @@ const Patients = () => {
           patients.map((patient) => (
             <div key={patient.id} className="patient-card">
               <div className="patient-avatar">
-                {patient.full_name
-                  .split(' ')
-                  .filter(Boolean)
-                  .slice(0, 2)
-                  .map((namePart) => namePart[0])
-                  .join('')}
+                {getPatientInitials(patient)}
               </div>
               <div className="patient-info">
-                <h3>{patient.full_name}</h3>
+                <h3>{getPatientDisplayName(patient)}</h3>
                 <div className="contact-info">
                   <span>
                     <Phone size={14} />
@@ -487,7 +508,7 @@ const Patients = () => {
         <div className="modal-overlay" onClick={closeHistoryModal}>
           <div className="modal-content" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
-              <h2>{selectedPatient.full_name}</h2>
+              <h2>{getPatientDisplayName(selectedPatient)}</h2>
               <button className="close-btn" onClick={closeHistoryModal}>
                 x
               </button>
