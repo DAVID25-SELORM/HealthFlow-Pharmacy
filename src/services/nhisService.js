@@ -4267,6 +4267,41 @@ const hydrateClaimsWithMedicineLines = async (claims = []) => {
 const hydrateNhisClaimsForUi = async (claims = []) =>
   await hydrateClaimsWithServiceLines(await hydrateClaimsWithMedicineLines(claims))
 
+const fetchNhisClaimsFromSupabase = async (filters = {}, { ascending = false } = {}) => {
+  const buildQuery = (select = NHIS_CLAIM_MEDICINES_SELECT) => {
+    let query = supabase
+      .from('nhis_claims')
+      .select(select)
+      .order('created_at', { ascending })
+
+    if (filters.status && filters.status !== 'all') {
+      query = query.eq('status', filters.status)
+    }
+
+    if (filters.month) {
+      query = query.eq('submission_month', filters.month)
+    }
+
+    if (filters.searchTerm) {
+      const term = sanitizeSearchTerm(filters.searchTerm)
+      if (term) {
+        query = query.or(
+          `surname.ilike.%${term}%,other_names.ilike.%${term}%,member_no.ilike.%${term}%,claim_number.ilike.%${term}%,hin.ilike.%${term}%`
+        )
+      }
+    }
+
+    return query
+  }
+
+  let { data, error } = await buildQuery()
+  if (error && isMissingOptionalClaimMedicineColumn(error)) {
+    ;({ data, error } = await buildQuery(NHIS_CLAIM_MEDICINES_SELECT_BASIC))
+  }
+  if (error) throw error
+  return await hydrateNhisClaimsForUi(data || [])
+}
+
 const toNhisClaimServiceRows = (claimId, serviceLines = [], claimData = {}) =>
   normalizeNhiaTariffServiceLines(serviceLines, claimData).map((service) => ({
     claim_id: claimId,
@@ -4327,41 +4362,21 @@ const insertNhisClaimMedicineRows = async (medicineRows = []) => {
 
 export const getAllNhisClaims = async (filters = {}) => {
   if (shouldUseBranchServer()) {
-    return await listBranchRecords('nhis/claims', filters)
-  }
-
-  const buildQuery = (select = NHIS_CLAIM_MEDICINES_SELECT) => {
-    let query = supabase
-      .from('nhis_claims')
-      .select(select)
-      .order('created_at', { ascending: false })
-
-    if (filters.status && filters.status !== 'all') {
-      query = query.eq('status', filters.status)
+    const localRows = await listBranchRecords('nhis/claims', filters)
+    if (localRows.length || getConnectivityState().internetAvailable === false) {
+      return localRows
     }
 
-    if (filters.month) {
-      query = query.eq('submission_month', filters.month)
+    try {
+      console.info('[SYNC] Local NHIS claims cache is empty; reading visible claims from Supabase.')
+      return await fetchNhisClaimsFromSupabase(filters)
+    } catch (error) {
+      console.warn('[SYNC] Cloud NHIS claims fallback failed; using local cache.', error)
+      return localRows
     }
-
-    if (filters.searchTerm) {
-      const term = sanitizeSearchTerm(filters.searchTerm)
-      if (term) {
-        query = query.or(
-          `surname.ilike.%${term}%,other_names.ilike.%${term}%,member_no.ilike.%${term}%,claim_number.ilike.%${term}%,hin.ilike.%${term}%`
-        )
-      }
-    }
-
-    return query
   }
 
-  let { data, error } = await buildQuery()
-  if (error && isMissingOptionalClaimMedicineColumn(error)) {
-    ;({ data, error } = await buildQuery(NHIS_CLAIM_MEDICINES_SELECT_BASIC))
-  }
-  if (error) throw error
-  return await hydrateNhisClaimsForUi(data || [])
+  return await fetchNhisClaimsFromSupabase(filters)
 }
 
 export const getNhisClaimStats = async () => {
@@ -5006,43 +5021,63 @@ export const normalizeNhisExportPeriod = (options = {}) => {
 
 export const getNhisClaimsForPeriod = async (periodOptions = {}) => {
   const period = normalizeNhisExportPeriod(periodOptions)
+  let localRows = []
 
   if (shouldUseBranchServer()) {
-    const rows = await listBranchRecords(
+    localRows = await listBranchRecords(
       'nhis/claims',
       period.mode === 'month'
         ? { month: period.yearMonth, limit: 5000 }
         : { fromDate: period.fromDate, toDate: period.toDate, limit: 5000 }
     )
-    return period.mode === 'month'
-      ? rows
-      : rows.filter((claim) => claimMatchesExportPeriod(claim, period))
-  }
-
-  const buildQuery = (select = NHIS_CLAIM_MEDICINES_SELECT) => {
-    let query = supabase
-      .from('nhis_claims')
-      .select(select)
-      .order('created_at')
-
-    if (period.mode === 'month') {
-      query = query.eq('submission_month', period.yearMonth)
-    } else {
-      query = query
-        .gte('service_date_from', period.fromDate)
-        .lte('service_date_from', period.toDate)
+    if (localRows.length || getConnectivityState().internetAvailable === false) {
+      return period.mode === 'month'
+        ? localRows
+        : localRows.filter((claim) => claimMatchesExportPeriod(claim, period))
     }
 
-    return query
+    console.info('[SYNC] Local NHIS claims export cache is empty; reading visible claims from Supabase.')
   }
 
-  let { data, error } = await buildQuery()
-  if (error && isMissingOptionalClaimMedicineColumn(error)) {
-    ;({ data, error } = await buildQuery(NHIS_CLAIM_MEDICINES_SELECT_BASIC))
+  const fetchPeriodClaimsFromSupabase = async () => {
+    const buildQuery = (select = NHIS_CLAIM_MEDICINES_SELECT) => {
+      let query = supabase
+        .from('nhis_claims')
+        .select(select)
+        .order('created_at')
+
+      if (period.mode === 'month') {
+        query = query.eq('submission_month', period.yearMonth)
+      } else {
+        query = query
+          .gte('service_date_from', period.fromDate)
+          .lte('service_date_from', period.toDate)
+      }
+
+      return query
+    }
+
+    let { data, error } = await buildQuery()
+    if (error && isMissingOptionalClaimMedicineColumn(error)) {
+      ;({ data, error } = await buildQuery(NHIS_CLAIM_MEDICINES_SELECT_BASIC))
+    }
+
+    if (error) throw error
+    return await hydrateNhisClaimsForUi(data || [])
   }
 
-  if (error) throw error
-  return await hydrateNhisClaimsForUi(data || [])
+  if (shouldUseBranchServer()) {
+    try {
+      return await fetchPeriodClaimsFromSupabase()
+    } catch (error) {
+      console.warn('[SYNC] Cloud NHIS claims export fallback failed; using empty local cache.', error)
+      return period.mode === 'month'
+        ? localRows
+        : localRows.filter((claim) => claimMatchesExportPeriod(claim, period))
+    }
+  }
+
+  return await fetchPeriodClaimsFromSupabase()
 }
 
 /**
