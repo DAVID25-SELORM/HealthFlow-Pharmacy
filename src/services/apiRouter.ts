@@ -64,8 +64,10 @@ export const routeRead = async <T>({
     return await cloud()
   } catch (error) {
     if (isNetworkLikeError(error)) {
-      console.warn(`[OFFLINE] Cloud read failed for ${label}; retrying local branch server.`, error)
-      await refreshConnectivityState().catch(() => null)
+      console.warn(`[OFFLINE] Cloud read failed for ${label}; checking fallback route.`, error)
+      if (shouldPreferLocalApi()) {
+        await refreshConnectivityState({ probeLocal: true }).catch(() => null)
+      }
       if (shouldPreferLocalApi()) {
         return local()
       }

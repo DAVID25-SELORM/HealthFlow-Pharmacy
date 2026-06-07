@@ -86,6 +86,11 @@ type ConnectivityState = {
   checkedAt: number
 }
 
+type RefreshConnectivityOptions = {
+  timeoutMs?: number
+  probeLocal?: boolean
+}
+
 const listeners = new Set<(state: ConnectivityState) => void>()
 let state: ConnectivityState = {
   mode: CONNECTIVITY_MODES.OFFLINE_NO_SERVER,
@@ -94,6 +99,7 @@ let state: ConnectivityState = {
   checkedAt: 0,
 }
 let refreshPromise: Promise<ConnectivityState> | null = null
+let refreshPromiseProbeLocal = false
 
 const logMode = (nextState: ConnectivityState) => {
   const prefix =
@@ -127,15 +133,24 @@ const publish = (nextState: ConnectivityState) => {
 
 export const getConnectivityState = () => state
 
-export const refreshConnectivityState = async ({ timeoutMs = 900 } = {}): Promise<ConnectivityState> => {
-  if (refreshPromise) return refreshPromise
+export const refreshConnectivityState = async ({
+  timeoutMs = 900,
+  probeLocal = false,
+}: RefreshConnectivityOptions = {}): Promise<ConnectivityState> => {
+  if (refreshPromise && (!probeLocal || refreshPromiseProbeLocal)) return refreshPromise
+  refreshPromiseProbeLocal = probeLocal
 
   refreshPromise = (async () => {
     const internetAvailable = typeof navigator === 'undefined' ? true : navigator.onLine !== false
     const branchConfig = getConnectivityBranchServerConfig()
     let branchServerAvailable = false
+    const shouldProbeBranchServer =
+      branchConfig.enabled &&
+      branchConfig.url &&
+      branchConfig.token &&
+      (probeLocal || !internetAvailable || state.branchServerAvailable)
 
-    if (branchConfig.enabled && branchConfig.url && branchConfig.token) {
+    if (shouldProbeBranchServer) {
       try {
         await fetchBranchHealth(branchConfig.url, timeoutMs)
         branchServerAvailable = true
@@ -156,6 +171,7 @@ export const refreshConnectivityState = async ({ timeoutMs = 900 } = {}): Promis
     return nextState
   })().finally(() => {
     refreshPromise = null
+    refreshPromiseProbeLocal = false
   })
 
   return refreshPromise
@@ -182,7 +198,7 @@ if (typeof window !== 'undefined') {
   })
   window.addEventListener('offline', () => {
     console.info('[OFFLINE] Browser went offline; checking local branch server.')
-    void refreshConnectivityState()
+    void refreshConnectivityState({ probeLocal: true })
   })
   void refreshConnectivityState()
 }
