@@ -74,7 +74,8 @@ const fetchPatientsFromSupabase = async () => {
     .order('created_at', { ascending: false })
 
   if (error) throw error
-  return data || []
+  const nhisClaimPatients = await fetchNhisClaimPatientsFromSupabase().catch(() => [])
+  return mergePatients(data || [], nhisClaimPatients)
 }
 
 const searchPatientsFromSupabase = async (term) => {
@@ -103,10 +104,6 @@ const searchPatientsFromSupabase = async (term) => {
   if (error) throw error
 
   const rows = data || []
-  if (compactTerm === term) {
-    return rows
-  }
-
   const allPatients = await fetchPatientsFromSupabase()
   const merged = new Map(rows.map((patient) => [patient.id, patient]))
   allPatients
@@ -235,6 +232,19 @@ const nhisClaimToPatient = (claim = {}) => ({
   source_claim_number: claim.claim_number || '',
   sourceClaimNumber: claim.claim_number || '',
 })
+
+const fetchNhisClaimPatientsFromSupabase = async () => {
+  const { data, error } = await supabase
+    .from('nhis_claims')
+    .select('*')
+    .limit(5000)
+
+  if (error) throw error
+
+  return (data || [])
+    .map(nhisClaimToPatient)
+    .filter((patient) => patient.full_name || patient.nhis_member_no || patient.nhis_hin || patient.insurance_id)
+}
 
 const mergePatients = (...groups) => {
   const merged = new Map()

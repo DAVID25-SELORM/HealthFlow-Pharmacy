@@ -127,6 +127,67 @@ export const backupDatabase = (label = 'backup') => {
   return backupPath
 }
 
+const fileInfo = (filePath) => {
+  if (!fs.existsSync(filePath)) {
+    return { exists: false, sizeBytes: 0, modifiedAt: null }
+  }
+
+  const stats = fs.statSync(filePath)
+  return {
+    exists: true,
+    sizeBytes: stats.size,
+    modifiedAt: stats.mtime.toISOString(),
+  }
+}
+
+const listBackups = () => {
+  const backupDir = path.join(path.dirname(config.sqlitePath), 'backups')
+  if (!fs.existsSync(backupDir)) {
+    return []
+  }
+
+  return fs
+    .readdirSync(backupDir, { withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => {
+      const backupPath = path.join(backupDir, entry.name)
+      return {
+        name: entry.name,
+        path: backupPath,
+        ...fileInfo(backupPath),
+      }
+    })
+    .sort((left, right) => String(right.modifiedAt || '').localeCompare(String(left.modifiedAt || '')))
+}
+
+export const getDatabaseStatus = () => {
+  const integrity = db.prepare('PRAGMA integrity_check').pluck().get()
+  const pageCount = Number(db.prepare('PRAGMA page_count').pluck().get() || 0)
+  const pageSize = Number(db.prepare('PRAGMA page_size').pluck().get() || 0)
+  const freeListCount = Number(db.prepare('PRAGMA freelist_count').pluck().get() || 0)
+  const journalMode = db.pragma('journal_mode', { simple: true })
+  const foreignKeys = db.pragma('foreign_keys', { simple: true })
+  const backups = listBackups()
+
+  return {
+    ok: integrity === 'ok',
+    sqlitePath: config.sqlitePath,
+    integrity,
+    journalMode,
+    foreignKeysEnabled: Number(foreignKeys) === 1,
+    pageCount,
+    pageSize,
+    freeListCount,
+    estimatedSizeBytes: pageCount * pageSize,
+    database: fileInfo(config.sqlitePath),
+    wal: fileInfo(`${config.sqlitePath}-wal`),
+    shm: fileInfo(`${config.sqlitePath}-shm`),
+    backupDirectory: path.join(path.dirname(config.sqlitePath), 'backups'),
+    backupCount: backups.length,
+    latestBackups: backups.slice(0, 5),
+  }
+}
+
 export const closeDatabase = () => {
   if (db.open) {
     db.close()

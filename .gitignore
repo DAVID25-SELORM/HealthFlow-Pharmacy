@@ -21,6 +21,7 @@ scripts/output/
 data/*.sqlite
 data/*.sqlite-shm
 data/*.sqlite-wal
+local-branch-server/data/
 
 # Editor directories and files
 .vscode/*

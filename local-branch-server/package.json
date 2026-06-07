@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Local branch server for HealthFlow Pharmacy offline operations and Supabase sync.",
+  "description": "Local branch server for HealthFlow offline operations and Supabase sync.",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",

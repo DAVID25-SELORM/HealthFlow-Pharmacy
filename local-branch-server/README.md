@@ -1,8 +1,10 @@
 # HealthFlow Local Branch Server
 
-This package is the starting point for serious offline pharmacy operations.
+This package runs the **HealthFlow Branch Server** module for offline and local-network facility operations.
 
-It runs on a pharmacy laptop or a small branch computer on the local network. The React app can later call this local API instead of calling Supabase directly while the branch is offline. The server writes pharmacy activity to a local SQLite database, records every cloud-bound action in a sync outbox, and pushes pending events to Supabase when internet returns.
+It runs on a facility laptop or a small branch computer on the local network. The React app can call this local API instead of calling Supabase directly while the branch is offline. The server writes dispensing, claims, inventory, patient, and branch activity to a local SQLite database, records every cloud-bound action in a sync outbox, and pushes pending events to Supabase when internet returns.
+
+HealthFlow is the master platform. Dispensing, claims, NHIS, inventory, tariffs, and branch server workflows are modules under the same platform.
 
 ## First supported slice
 
@@ -23,7 +25,7 @@ Before enabling branch sync, run this SQL patch in Supabase:
 supabase-patch-branch-sync-rpcs.sql
 ```
 
-Then register each pharmacy machine from HealthFlow:
+Then register each facility branch machine from HealthFlow:
 
 1. Deploy the latest `tenant-signup` Edge Function.
 2. Sign in as `super_admin`.
@@ -394,6 +396,7 @@ backend environments only. The bridge health endpoint is:
 
 ```http
 GET /json-api/health
+x-claim-bridge-token: <CLAIM_BRIDGE_TOKEN>
 ```
 
 ## API
@@ -402,6 +405,7 @@ Health check:
 
 ```http
 GET /health
+x-branch-token: <BRANCH_SERVER_TOKEN>
 ```
 
 Import inventory snapshot:
@@ -523,24 +527,16 @@ Pull cloud inventory into the local branch database:
 POST /api/sync/pull-inventory
 ```
 
-## Recommended pharmacy installation model
+## Recommended facility installation model
 
-Single laptop pharmacy:
+Single workstation facility:
 
 - Install this local branch server on the same laptop.
 - Install the HealthFlow PWA in Edge or Chrome.
 - Configure the PWA to call `http://localhost:4780` for offline-capable modules.
 
-Multi-laptop pharmacy:
+Multi-workstation facility:
 
 - Install this local branch server on one always-on branch computer.
-- Put all pharmacy laptops on the same LAN.
-- Configure every laptop to call the branch server LAN address, for example `http://192.168.1.10:4780`.
-
-## Next implementation steps
-
-1. Add a frontend `branchApi` service that chooses local branch server first for POS when enabled.
-2. Add inventory snapshot pull from Supabase into `/api/inventory/import`.
-3. Add local patients, purchases, and shift close.
-4. Add conflict screens for stock changes that fail on cloud sync.
-5. Package this server as a Windows service for pharmacy laptops.
+- Put all facility workstations on the same private LAN.
+- Configure each workstation to call the branch server LAN address, for example `http://192.168.1.10:4780`.

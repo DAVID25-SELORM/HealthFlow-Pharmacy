@@ -68,10 +68,15 @@ foreach ($logName in $expectedLogs) {
 }
 
 try {
-  $health = Invoke-WebRequest -Uri "$BaseUrl/health" -UseBasicParsing -TimeoutSec 10
-  Write-Check -Name 'HTTP health endpoint' -Passed ($health.StatusCode -eq 200) -Detail "status=$($health.StatusCode)"
+  if (-not $BranchToken) {
+    throw 'BRANCH_SERVER_TOKEN not provided or not found in .env'
+  }
+
+  $headers = @{ 'x-branch-token' = $BranchToken }
+  $health = Invoke-WebRequest -Uri "$BaseUrl/health" -Headers $headers -UseBasicParsing -TimeoutSec 10
+  Write-Check -Name 'Protected health endpoint' -Passed ($health.StatusCode -eq 200) -Detail "status=$($health.StatusCode)"
 } catch {
-  Write-Check -Name 'HTTP health endpoint' -Passed $false -Detail $_.Exception.Message
+  Write-Check -Name 'Protected health endpoint' -Passed $false -Detail $_.Exception.Message
 }
 
 if ($BranchToken) {

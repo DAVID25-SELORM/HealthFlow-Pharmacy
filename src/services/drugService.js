@@ -1,8 +1,8 @@
 import { supabase } from '../lib/supabase'
 import { assertNonNegativeNumber, assertRequiredText, normalizeText, sanitizeSearchTerm } from '../utils/validation'
 import { invokeTierAccess } from './tierAccessService'
-import { getBranchInventory } from './branchServerApi'
-import { routeRead } from './apiRouter'
+import { deleteBranchInventoryDrug, getBranchInventory } from './branchServerApi'
+import { routeRead, routeWrite } from './apiRouter'
 // ✅ NHIS PHARMACY LEVEL PATCH START
 import { normalizeMedicineAccessLevel, normalizePharmacyLevel } from '../utils/nhisPharmacyLevel'
 // ✅ NHIS PHARMACY LEVEL PATCH END
@@ -289,12 +289,18 @@ export const updateDrug = async (id, drugData) => {
 
 // Delete drug (soft delete by setting status to inactive)
 export const deleteDrug = async (id) => {
-  const response = await invokeTierAccess({
-    action: 'delete_drug',
-    drugId: id,
-  })
+  return await routeWrite({
+    label: 'inventory drug',
+    local: async () => await deleteBranchInventoryDrug(id),
+    cloud: async () => {
+      const response = await invokeTierAccess({
+        action: 'delete_drug',
+        drugId: id,
+      })
 
-  return response.drug
+      return response.drug
+    },
+  })
 }
 
 export const transferDrugToBranch = async ({

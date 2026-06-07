@@ -22,10 +22,10 @@
 }
 
 .signup-brand-logo {
-  width: 132px;
-  height: 108px;
+  width: 240px;
+  height: 240px;
   object-fit: contain;
-  margin-bottom: 0.85rem;
+  margin: -1rem 0 -0.25rem;
 }
 
 .signup-header h1 {

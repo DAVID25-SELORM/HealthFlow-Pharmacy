@@ -227,7 +227,7 @@ const SuperAdminDashboard = () => {
     {
       title: 'Branches',
       value: totalBranches,
-      subtitle: 'Registered operating locations across all pharmacies',
+      subtitle: 'Registered operating locations across all facilities',
       icon: GitBranch,
       tone: 'info',
     },
@@ -261,11 +261,11 @@ const SuperAdminDashboard = () => {
           <h1>Platform command center</h1>
           <p>
             Track tenant health, subscription pressure, and onboarding gaps without dropping into
-            pharmacy-level operations.
+            facility-level operations.
           </p>
 
           <div className="platform-hero-chips">
-            <span>{organizations.length} pharmacies</span>
+            <span>{organizations.length} facilities</span>
             <span>{statusCounts.trial} in trial</span>
             <span>{statusCounts.suspended} suspended</span>
             <span>{totalUsers} total users</span>

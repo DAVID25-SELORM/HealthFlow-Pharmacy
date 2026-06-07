@@ -1,5 +1,11 @@
 import { jsPDF } from 'jspdf'
 import { formatAppDateTime } from '../utils/date'
+import {
+  PLATFORM_GENERATED_BY,
+  getFacilityName,
+  getFacilityWebsite,
+  getReceiptFooter,
+} from '../utils/facilityBranding'
 
 /**
  * Receipt Service
@@ -37,7 +43,7 @@ const addReceiptLogo = (doc, logoUrl, x, y, size) => {
     doc.addImage(logoUrl, format, x, y, size, size)
     return true
   } catch (error) {
-    console.warn('Unable to add pharmacy logo to receipt PDF:', error)
+    console.warn('Unable to add facility logo to receipt PDF:', error)
     return false
   }
 }
@@ -56,6 +62,9 @@ export const generateReceiptPDF = (saleData, pharmacyInfo) => {
   const margin = 20
   const currency = pharmacyInfo?.currency || 'GHS'
   const pharmacySlogan = String(pharmacyInfo?.slogan || '').trim()
+  const facilityName = getFacilityName(pharmacyInfo)
+  const facilityWebsite = getFacilityWebsite(pharmacyInfo)
+  const receiptFooter = getReceiptFooter(pharmacyInfo)
   let y = 18
 
   const green = [8, 119, 92]
@@ -80,7 +89,7 @@ export const generateReceiptPDF = (saleData, pharmacyInfo) => {
   doc.setFont('helvetica', 'bold')
   setColor(green)
   doc.setFontSize(22)
-  doc.text(pharmacyInfo?.pharmacy_name || 'HealthFlow Pharmacy', margin + 18, y + 10)
+  doc.text(facilityName, margin + 18, y + 10)
   if (pharmacySlogan) {
     doc.setFont('helvetica', 'normal')
     setColor(gray)
@@ -110,7 +119,7 @@ export const generateReceiptPDF = (saleData, pharmacyInfo) => {
   setColor(green)
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(16)
-  doc.text(pharmacyInfo?.pharmacy_name || 'HealthFlow Pharmacy', pageWidth / 2, y, {
+  doc.text(facilityName, pageWidth / 2, y, {
     align: 'center',
   })
   y += 8
@@ -128,6 +137,7 @@ export const generateReceiptPDF = (saleData, pharmacyInfo) => {
     [pharmacyInfo?.address, pharmacyInfo?.city, pharmacyInfo?.region].filter(Boolean).join(', '),
     pharmacyInfo?.phone,
     pharmacyInfo?.email,
+    facilityWebsite,
   ].filter(Boolean)
   contactLines.forEach((line) => {
     doc.text(line, pageWidth / 2, y, { align: 'center' })
@@ -250,9 +260,9 @@ export const generateReceiptPDF = (saleData, pharmacyInfo) => {
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(10)
   doc.text('Please keep this receipt for your records.', pageWidth / 2, y, { align: 'center' })
-  if (pharmacyInfo?.receipt_footer) {
+  if (receiptFooter) {
     y += 7
-    doc.text(pharmacyInfo.receipt_footer, pageWidth / 2, y, { align: 'center' })
+    doc.text(receiptFooter, pageWidth / 2, y, { align: 'center' })
   }
   y += 12
   doc.text(`Printed: ${formatAppDateTime(new Date(), { hour12: true })}`, pageWidth / 2, y, {
@@ -260,11 +270,7 @@ export const generateReceiptPDF = (saleData, pharmacyInfo) => {
   })
   y += 8
   doc.setFontSize(8)
-  doc.text('Software developed by Neon Digital Technologies Ltd.', pageWidth / 2, y, {
-    align: 'center',
-  })
-  y += 4
-  doc.text('neondigitaltechnologies@gmail.com', pageWidth / 2, y, {
+  doc.text(PLATFORM_GENERATED_BY, pageWidth / 2, y, {
     align: 'center',
   })
 
@@ -272,7 +278,7 @@ export const generateReceiptPDF = (saleData, pharmacyInfo) => {
   doc.rect(0, pageHeight - 18, pageWidth, 18, 'F')
   doc.setTextColor(255, 255, 255)
   doc.setFont('helvetica', 'bold')
-  doc.text('Your health is our priority.', pageWidth / 2, pageHeight - 7, { align: 'center' })
+  doc.text(receiptFooter || 'Your health is our priority.', pageWidth / 2, pageHeight - 7, { align: 'center' })
 
   return doc
 }

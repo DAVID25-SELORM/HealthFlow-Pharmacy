@@ -117,10 +117,6 @@ const HOSPITAL_PROVIDER_CLASS_LIST_FIELD_KEYS = [
   'allowedProviderLevels',
   'allowed_provider_levels',
 ]
-const NHIS_PRESCRIBING_LEVEL_RANKS = NHIS_PRESCRIBING_LEVELS.reduce((levels, level, index) => ({
-  ...levels,
-  [level]: index + 1,
-}), {})
 const NHIS_PRESCRIPTION_BUCKET = 'nhis-prescriptions'
 const MAX_PRESCRIPTION_ATTACHMENT_BYTES = 3 * 1024 * 1024
 const MAX_CLAIMIT_ATTACHMENT_BYTES = 8 * 1024 * 1024
@@ -946,59 +942,6 @@ const getProviderPrescribingLevel = (claimData = {}, options = {}) =>
       claimData?.facility_level
   )
 
-const getMedicineLevelLookup = (drugCatalog = []) => {
-  const byCode = new Map()
-  const byId = new Map()
-
-  ;(drugCatalog || []).forEach((drug) => {
-    const level = normalizeNhisPrescribingLevel(
-      drug?.category ??
-        drug?.levelOfPrescribing ??
-        drug?.level_of_prescribing ??
-        drug?.prescribingLevel ??
-        drug?.prescribing_level
-    )
-    if (!level) return
-
-    const code = asText(drug?.code ?? drug?.drugCode ?? drug?.drug_code).toUpperCase()
-    const id = asText(drug?.id ?? drug?.nhisDrugId ?? drug?.nhis_drug_id)
-    if (code) byCode.set(code, level)
-    if (id) byId.set(id, level)
-  })
-
-  return { byCode, byId }
-}
-
-const getMedicinePrescribingLevel = (medicine = {}, lookup = getMedicineLevelLookup()) => {
-  const directLevel = normalizeNhisPrescribingLevel(
-    medicine?.category ??
-      medicine?.levelOfPrescribing ??
-      medicine?.level_of_prescribing ??
-      medicine?.prescribingLevel ??
-      medicine?.prescribing_level
-  )
-  if (directLevel) return directLevel
-
-  const code = asText(medicine?.drugCode ?? medicine?.drug_code).toUpperCase()
-  if (code && lookup.byCode.has(code)) return lookup.byCode.get(code)
-
-  const id = asText(medicine?.nhisDrugId ?? medicine?.nhis_drug_id)
-  if (id && lookup.byId.has(id)) return lookup.byId.get(id)
-
-  return ''
-}
-
-const canProviderPrescribeLevel = (providerLevel, requiredLevel) => {
-  if (!providerLevel || !requiredLevel) return false
-  if (requiredLevel === 'SM') return providerLevel === 'SM'
-  // ✅ NHIA CONFIG PATCH START
-  if (CLAIM_IT_PROVIDER_CLASS_LEVELS.includes(providerLevel) && CLAIM_IT_PROVIDER_CLASS_LEVELS.includes(requiredLevel)) {
-    return (HOSPITAL_PROVIDER_CLASS_RANKS[providerLevel] || 0) >= (HOSPITAL_PROVIDER_CLASS_RANKS[requiredLevel] || 0)
-  }
-  // ✅ NHIA CONFIG PATCH END
-  return (NHIS_PRESCRIBING_LEVEL_RANKS[providerLevel] || 0) >= (NHIS_PRESCRIBING_LEVEL_RANKS[requiredLevel] || 0)
-}
-
 const getFirstPresentField = (source = {}, keys = []) => {
   for (const key of keys) {
     const value = source?.[key]
@@ -1649,7 +1592,6 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
     (options.finalSubmission || options.enforceClinicalScrub === true || requireMedicineDirections)
   const providerPrescribingLevel = getProviderPrescribingLevel(claimData, options)
   const hospitalProviderClassLevel = isHospital ? providerPrescribingLevel : ''
-  const medicineLevelLookup = getMedicineLevelLookup(options.nhisDrugCatalog ?? options.drugCatalog ?? [])
   const tariffCatalogLookup = getTariffCatalogLookup(
     options.currentNhiaTariffItems ?? options.nhiaTariffCatalog ?? options.tariffCatalog ?? []
   )
@@ -5723,7 +5665,7 @@ const getClaimItAccreditationRows = (payload, rows) => {
     ownershipTypeCode: claimRow.ownershipTypeCode || 'PVT',
     cateringStatusCode: claimRow.cateringStatusCode || 'CE',
     prescriptionLevelID: claimRow.prescriptionLevelID || getClaimItPrescriptionLevel(payload),
-    facilityName: normalizeText(payload.facilityName) || 'HealthFlow Facility',
+    facilityName: normalizeText(payload.facilityName) || 'Facility',
     dateGenerated: toClaimItDate(payload.createdAt),
     expiryDate: getNhiaAccreditationExpiryDate(payload) || getClaimItExpiryDate(effectiveDate, payload.createdAt),
     credentialCode,
@@ -6995,7 +6937,7 @@ const buildClaimItMeta = (payload, rows) => {
   const providerId = getClaimItProviderCode(payload)
   const totalCost = Number(payload.totalAmount || 0)
   const typeOfService = getClaimItServiceType(payload)
-  const facilityName = normalizeText(payload.facilityName) || 'HealthFlow Facility'
+  const facilityName = normalizeText(payload.facilityName) || 'Facility'
   const providerLevel = getClaimItProviderLevelId(rows.claims[0]) || 'PVT-PHC-CE'
   const accreditations = getClaimItAccreditationRows(payload, rows)
   const policies = [...new Set(rows.claims.map((claim) => claim.policyVersion).filter(Boolean))]
@@ -7061,8 +7003,8 @@ const buildNhisClaimItCxfBundle = async (payload) => {
   return {
     lockID: `partial-export-${generatedAt}`,
     dateGenerated: generatedAt,
-    signedByName: normalizeText(payload.claimsOfficerName) || 'HealthFlow',
-    signedByUsername: normalizeText(payload.submitterId) || 'HealthFlow',
+    signedByName: normalizeText(payload.claimsOfficerName) || 'Facility User',
+    signedByUsername: normalizeText(payload.submitterId) || 'Facility User',
     signedByRole: 'admin',
     data,
     isBackup: true,

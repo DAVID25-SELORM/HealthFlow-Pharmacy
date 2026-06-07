@@ -9,16 +9,35 @@ import { normalizePharmacyLevel } from '../utils/nhisPharmacyLevel'
 
 const STAFF_ADMIN_FUNCTION = 'staff-admin'
 
+const OPTIONAL_SETTINGS_COLUMNS = [
+  'pharmacy_level',
+  'facility_type',
+  'website',
+  'report_footer',
+  'theme_primary_color',
+  'theme_secondary_color',
+  'theme_accent_color',
+  'custom_header',
+  'report_template',
+]
+
 // ✅ NHIS PHARMACY LEVEL PATCH START
-const isMissingPharmacyLevelColumnError = (error) => {
+const getMissingOptionalSettingsColumn = (error, payload = {}) => {
   const message = String(error?.message || error?.details || '').toLowerCase()
-  return error?.code === 'PGRST204' ||
-    (message.includes('pharmacy_level') && (message.includes('schema cache') || message.includes('column')))
+  if (!error || !(error.code === 'PGRST204' || message.includes('schema cache') || message.includes('column'))) {
+    return null
+  }
+
+  return OPTIONAL_SETTINGS_COLUMNS.find(
+    (column) =>
+      Object.prototype.hasOwnProperty.call(payload, column) &&
+      (message.includes(column.toLowerCase()) || error.code === 'PGRST204')
+  ) || null
 }
 
-const withoutPharmacyLevel = (payload) => {
+const withoutOptionalSettingsColumn = (payload, column) => {
   const nextPayload = { ...payload }
-  delete nextPayload.pharmacy_level
+  delete nextPayload[column]
   return nextPayload
 }
 // ✅ NHIS PHARMACY LEVEL PATCH END
@@ -83,7 +102,7 @@ export const getPharmacySettings = async () => {
 
   return createSettings({
     organizationId,
-    pharmacyName: 'HealthFlow Pharmacy',
+    pharmacyName: 'Facility',
   })
 }
 
@@ -95,6 +114,8 @@ export const updatePharmacySettings = async (id, settings) => {
     address: normalizeText(settings.address) || null,
     city: normalizeText(settings.city) || null,
     region: normalizeGhanaRegion(settings.region) || null,
+    facility_type: normalizeText(settings.facilityType ?? settings.facility_type) || null,
+    website: normalizeText(settings.website) || null,
     logo_url: normalizeText(settings.logoUrl ?? settings.logo_url) || null,
     slogan: normalizeText(settings.slogan) || null,
     license_number: normalizeText(settings.licenseNumber) || null,
@@ -107,6 +128,12 @@ export const updatePharmacySettings = async (id, settings) => {
     low_stock_threshold: Number.parseFloat(settings.lowStockThreshold || 10),
     expiry_alert_days: Number.parseInt(settings.expiryAlertDays || 30, 10),
     receipt_footer: normalizeText(settings.receiptFooter) || null,
+    report_footer: normalizeText(settings.reportFooter ?? settings.report_footer) || null,
+    theme_primary_color: normalizeText(settings.themePrimaryColor ?? settings.theme_primary_color) || null,
+    theme_secondary_color: normalizeText(settings.themeSecondaryColor ?? settings.theme_secondary_color) || null,
+    theme_accent_color: normalizeText(settings.themeAccentColor ?? settings.theme_accent_color) || null,
+    custom_header: normalizeText(settings.customHeader ?? settings.custom_header) || null,
+    report_template: normalizeText(settings.reportTemplate ?? settings.report_template) || null,
     updated_at: new Date().toISOString(),
   }
 
@@ -132,10 +159,14 @@ export const updatePharmacySettings = async (id, settings) => {
     return await query.single()
   }
 
-  let { data, error } = await runUpdate(payload)
+  let updatePayload = payload
+  let { data, error } = await runUpdate(updatePayload)
   // ✅ NHIS PHARMACY LEVEL PATCH START
-  if (error && isMissingPharmacyLevelColumnError(error)) {
-    ;({ data, error } = await runUpdate(withoutPharmacyLevel(payload)))
+  let missingColumn = getMissingOptionalSettingsColumn(error, updatePayload)
+  while (error && missingColumn) {
+    updatePayload = withoutOptionalSettingsColumn(updatePayload, missingColumn)
+    ;({ data, error } = await runUpdate(updatePayload))
+    missingColumn = getMissingOptionalSettingsColumn(error, updatePayload)
   }
   // ✅ NHIS PHARMACY LEVEL PATCH END
 
@@ -163,12 +194,14 @@ export const updatePharmacySettings = async (id, settings) => {
 export const createSettings = async (settings) => {
   const payload = {
     pharmacy_name:
-      normalizeText(settings.pharmacy_name ?? settings.pharmacyName) || 'HealthFlow Pharmacy',
+      normalizeText(settings.pharmacy_name ?? settings.pharmacyName) || 'Facility',
     phone: normalizeText(settings.phone) || null,
     email: normalizeText(settings.email) || null,
     address: normalizeText(settings.address) || null,
     city: normalizeText(settings.city) || null,
     region: normalizeGhanaRegion(settings.region) || null,
+    facility_type: normalizeText(settings.facility_type ?? settings.facilityType) || null,
+    website: normalizeText(settings.website) || null,
     logo_url: normalizeText(settings.logo_url ?? settings.logoUrl) || null,
     slogan: normalizeText(settings.slogan) || null,
     license_number: normalizeText(settings.license_number ?? settings.licenseNumber) || null,
@@ -188,6 +221,12 @@ export const createSettings = async (settings) => {
       10
     ),
     receipt_footer: normalizeText(settings.receipt_footer ?? settings.receiptFooter) || null,
+    report_footer: normalizeText(settings.report_footer ?? settings.reportFooter) || null,
+    theme_primary_color: normalizeText(settings.theme_primary_color ?? settings.themePrimaryColor) || null,
+    theme_secondary_color: normalizeText(settings.theme_secondary_color ?? settings.themeSecondaryColor) || null,
+    theme_accent_color: normalizeText(settings.theme_accent_color ?? settings.themeAccentColor) || null,
+    custom_header: normalizeText(settings.custom_header ?? settings.customHeader) || null,
+    report_template: normalizeText(settings.report_template ?? settings.reportTemplate) || null,
   }
 
   const organizationId =
@@ -197,19 +236,22 @@ export const createSettings = async (settings) => {
     payload.organization_id = organizationId
   }
 
-  let { data, error } = await supabase
-    .from('pharmacy_settings')
-    .insert([payload])
-    .select()
-    .single()
+  const runInsert = async (insertPayload) =>
+    await supabase
+      .from('pharmacy_settings')
+      .insert([insertPayload])
+      .select()
+      .single()
+
+  let insertPayload = payload
+  let { data, error } = await runInsert(insertPayload)
 
   // ✅ NHIS PHARMACY LEVEL PATCH START
-  if (error && isMissingPharmacyLevelColumnError(error)) {
-    ;({ data, error } = await supabase
-      .from('pharmacy_settings')
-      .insert([withoutPharmacyLevel(payload)])
-      .select()
-      .single())
+  let missingColumn = getMissingOptionalSettingsColumn(error, insertPayload)
+  while (error && missingColumn) {
+    insertPayload = withoutOptionalSettingsColumn(insertPayload, missingColumn)
+    ;({ data, error } = await runInsert(insertPayload))
+    missingColumn = getMissingOptionalSettingsColumn(error, insertPayload)
   }
   // ✅ NHIS PHARMACY LEVEL PATCH END
 

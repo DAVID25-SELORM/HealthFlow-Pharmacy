@@ -60,6 +60,7 @@ import {
 import Receipt from '../components/Receipt/Receipt'
 import DiagnosisSelector from '../components/DiagnosisSelector/DiagnosisSelector'
 import { getEffectiveSellingPrice, getNhisCatalogPrice, hasNhisCatalogPrice } from '../utils/drugPricing'
+import { DEFAULT_FACILITY_NAME } from '../utils/facilityBranding'
 import './Sales.css'
 
 const POS_DRUG_SEARCH_LIMIT = 30
@@ -127,15 +128,18 @@ const splitPatientNameForNhis = (patient) => {
 
 const mergePharmacySettingsWithOrganization = (settings, organization) => ({
   ...(settings || {}),
-  pharmacy_name: settings?.pharmacy_name || organization?.name || 'HealthFlow Pharmacy',
+  pharmacy_name: settings?.pharmacy_name || organization?.name || DEFAULT_FACILITY_NAME,
   phone: settings?.phone || organization?.phone || null,
   email: settings?.email || organization?.email || null,
+  website: settings?.website || organization?.website || null,
   address: settings?.address || organization?.address || null,
   city: settings?.city || organization?.city || null,
   region: settings?.region || organization?.region || null,
   logo_url: settings?.logo_url || organization?.logo_url || null,
   slogan: settings?.slogan || organization?.slogan || null,
   license_number: settings?.license_number || organization?.license_number || null,
+  facility_type: settings?.facility_type || organization?.organization_type || null,
+  report_footer: settings?.report_footer || null,
   // ✅ NHIS PHARMACY LEVEL PATCH START
   pharmacy_level: settings?.pharmacy_level || organization?.pharmacy_level || null,
   // ✅ NHIS PHARMACY LEVEL PATCH END
@@ -235,6 +239,7 @@ const Sales = () => {
   const canProcessRefund =
     hasRole(role, ['admin', 'pharmacist']) || Boolean(profile?.can_refund)
   const isAdmin = String(role || '').toLowerCase() === 'admin'
+  const canViewLocalPosTechnicalDetails = hasRole(role, ['admin', 'pharmacist', 'branch_manager', 'super_admin'])
   const organizationType = normalizeOrganizationType(organization?.organization_type)
   const isHospital = organizationType === 'hospital'
   const activeBranches = branches.filter((branch) => branch.is_active !== false)
@@ -2242,9 +2247,13 @@ const Sales = () => {
           <div>
             <strong>Local POS Mode</strong>
             <span>
-              {branchServerStatus.online
-                ? 'Dispensing from the local SQLite cache. Cloud sync runs in the background.'
-                : 'Using the browser cache until the local branch server is reachable.'}
+              {canViewLocalPosTechnicalDetails
+                ? branchServerStatus.online
+                  ? 'Dispensing from the local SQLite cache. Cloud sync runs in the background.'
+                  : 'Using the browser cache until the local branch server is reachable.'
+                : branchServerStatus.online
+                  ? 'POS is ready for sales.'
+                  : 'POS connection needs attention.'}
             </span>
           </div>
         </div>
@@ -2345,11 +2354,11 @@ const Sales = () => {
                 <strong>GHS {Number(activeShift.expected_cash || 0).toFixed(2)}</strong>
               </div>
             </div>
-            {activeShift.isLocalPosShift ? (
+            {activeShift.isLocalPosShift && canViewLocalPosTechnicalDetails ? (
               <div className="local-shift-note">
                 <span>Sales are written locally first; the background sync worker handles cloud updates.</span>
               </div>
-            ) : (
+            ) : !activeShift.isLocalPosShift ? (
               <form className="shift-close-form" onSubmit={handleCloseShift}>
                 <input
                   type="number"
@@ -2370,7 +2379,7 @@ const Sales = () => {
                   {shiftBusy ? 'Closing...' : 'Close Shift'}
                 </button>
               </form>
-            )}
+            ) : null}
           </>
         ) : (
           <form className="shift-open-form" onSubmit={handleOpenShift}>

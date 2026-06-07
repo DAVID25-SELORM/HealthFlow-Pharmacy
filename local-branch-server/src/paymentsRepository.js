@@ -173,7 +173,7 @@ const initializePaystackPayment = async ({ attempt, customerEmail, returnUrl }) 
       saleId: attempt.saleId,
       localReference: attempt.reference,
       paymentMethod: attempt.paymentMethod,
-      source: 'HealthFlow Pharmacy POS',
+      source: 'HealthFlow POS',
     },
   }
 
@@ -209,7 +209,7 @@ const initializeHubtelPayment = async ({ attempt, customerPhone, returnUrl }) =>
   )
   const payload = {
     amount: attempt.amount,
-    title: 'HealthFlow Pharmacy POS',
+    title: 'HealthFlow POS',
     description: `Payment for sale ${attempt.sale?.saleNumber || attempt.reference}`,
     clientReference: attempt.reference,
     callbackUrl,

@@ -100,7 +100,8 @@ const buildForwardHeaders = (request) => {
 
 const requireClaimBridgeToken = (request, response) => {
   if (!config.claimBridge.accessToken) {
-    return true
+    response.status(503).json({ error: 'CLAIM-it bridge token is not configured.' })
+    return false
   }
 
   const token = request.get(config.claimBridge.tokenHeader) || ''
@@ -120,11 +121,14 @@ export const createClaimBridgeRouter = () => {
     limit: config.claimBridge.bodyLimit,
   }))
 
-  router.get(['/', '/health'], (_request, response) => {
+  router.get(['/', '/health'], (request, response) => {
+    if (!requireClaimBridgeToken(request, response)) {
+      return
+    }
+
     response.json({
       ok: true,
       mode: 'claimit-production-bridge',
-      path: config.claimBridge.publicPath,
       upstreamConfigured: Boolean(config.claimBridge.upstreamBaseUrl),
       tokenProtected: Boolean(config.claimBridge.accessToken),
     })

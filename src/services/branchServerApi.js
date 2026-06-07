@@ -5,7 +5,6 @@ import { isGhanaCardNumber, normalizeNhiaMemberNumber } from '../utils/nhiaMembe
 const DEFAULT_BRANCH_SERVER_URL = 'http://localhost:4780'
 const RUNTIME_CONFIG_KEY = 'healthflow.branchServer.config.v1'
 export const BRANCH_TOKEN_STORAGE_KEY = 'healthflow_branch_token'
-export const DEFAULT_BRANCH_TOKEN = 'hf_local_90d8db19-5b4e-4252-ab25-afb6d9f136a6_6e5832df-72b9-4578-a705-e01a6f96c6db'
 const DEFAULT_BRANCH_REQUEST_TIMEOUT_MS = 1500
 const SEARCH_BRANCH_REQUEST_TIMEOUT_MS = 450
 const WRITE_BRANCH_REQUEST_TIMEOUT_MS = 8000
@@ -36,13 +35,7 @@ export const getSavedBranchToken = () => {
     return ''
   }
 
-  const savedToken = window.localStorage.getItem(BRANCH_TOKEN_STORAGE_KEY)
-  if (savedToken) {
-    return savedToken
-  }
-
-  window.localStorage.setItem(BRANCH_TOKEN_STORAGE_KEY, DEFAULT_BRANCH_TOKEN)
-  return DEFAULT_BRANCH_TOKEN
+  return window.localStorage.getItem(BRANCH_TOKEN_STORAGE_KEY) || ''
 }
 
 export const saveBranchToken = (token) => {
@@ -64,8 +57,7 @@ export const getBranchServerConfig = () => {
   const hostedConfig = readHostedConfig()
   const runtimeConfig = readRuntimeConfig()
   const browserToken = getSavedBranchToken()
-  const buildToken = String(import.meta.env.VITE_BRANCH_TOKEN || '')
-  const token = String(browserToken || buildToken || runtimeConfig.token || hostedConfig.token || '')
+  const token = String(browserToken || runtimeConfig.token || hostedConfig.token || '')
   const hostedUrl =
     hostedConfig.enabled === true && typeof window !== 'undefined' ? window.location.origin : ''
   const enabledByHostedConfig = hostedConfig.enabled === true && Boolean(token)
@@ -113,7 +105,7 @@ const getBranchRequestToken = () => {
     return getBranchServerToken()
   }
 
-  return window.localStorage.getItem(BRANCH_TOKEN_STORAGE_KEY) || getSavedBranchToken()
+  return window.localStorage.getItem(BRANCH_TOKEN_STORAGE_KEY) || getBranchServerToken()
 }
 
 const getBranchApiHeaders = (headers = {}) => ({
@@ -197,6 +189,7 @@ export const getBranchServerHealth = async (timeoutMs = DEFAULT_BRANCH_REQUEST_T
   await fetchWithTimeout(`${getBranchServerUrl()}/health`, {
     headers: {
       Accept: 'application/json',
+      'x-branch-token': getBranchRequestToken(),
     },
   }, timeoutMs).then(async (response) => {
     const body = await response.json().catch(() => ({}))
@@ -231,6 +224,14 @@ export const getBranchInventory = async ({ branchId = '', limit = 5000 } = {}) =
     timeoutMs: DEFAULT_BRANCH_REQUEST_TIMEOUT_MS,
   })
   return response.data || []
+}
+
+export const deleteBranchInventoryDrug = async (id) => {
+  const response = await branchFetch(`/api/inventory/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    timeoutMs: DEFAULT_BRANCH_REQUEST_TIMEOUT_MS,
+  })
+  return response.data || null
 }
 
 export const searchBranchPatients = async ({ term = '', limit = 8 } = {}) => {

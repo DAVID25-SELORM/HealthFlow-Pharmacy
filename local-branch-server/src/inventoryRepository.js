@@ -84,6 +84,7 @@ const upsertDrug = db.prepare(`
 
 const deleteDrugSearchTokens = db.prepare(`DELETE FROM inventory_search_tokens WHERE drug_id = ?`)
 const deleteDrugBarcodes = db.prepare(`DELETE FROM barcodes WHERE drug_id = ?`)
+const deleteDrugById = db.prepare(`DELETE FROM drugs WHERE id = ?`)
 const upsertDrugBarcode = db.prepare(`
   INSERT INTO barcodes (barcode, drug_id, updated_at)
   VALUES (@barcode, @drugId, @updatedAt)
@@ -115,6 +116,8 @@ const normalizeSearchTerm = (value = '') =>
 
 const extractSearchTokens = (value = '') =>
   [...new Set(normalizeSearchTerm(value).split(' ').filter(Boolean))]
+
+const hasUnsafeDisplayName = (drug = {}) => /[<>]/.test(String(drug.name || ''))
 
 const indexDrug = (drug = {}) => {
   deleteDrugSearchTokens.run(drug.id)
@@ -159,7 +162,7 @@ export const searchLocalInventory = ({ term = '', limit = 30 } = {}) => {
       term: normalizedTerm,
       likeTerm: '%',
       limit: maxResults,
-    })
+    }).filter((drug) => !hasUnsafeDisplayName(drug))
   }
 
   const barcodeTerm = normalizedTerm.replace(/\s+/g, '')
@@ -175,7 +178,7 @@ export const searchLocalInventory = ({ term = '', limit = 30 } = {}) => {
     `).all(barcodeTerm, maxResults)
 
     if (barcodeResults.length) {
-      return barcodeResults
+      return barcodeResults.filter((drug) => !hasUnsafeDisplayName(drug))
     }
   }
 
@@ -216,13 +219,14 @@ export const searchLocalInventory = ({ term = '', limit = 30 } = {}) => {
         ...tokenPrefixes,
         maxResults
       )
+      .filter((drug) => !hasUnsafeDisplayName(drug))
   }
 
   return searchStatement.all({
     term: normalizedTerm,
     likeTerm,
     limit: maxResults,
-  })
+  }).filter((drug) => !hasUnsafeDisplayName(drug))
 }
 
 export const listLocalInventory = ({ branchId = '', limit = 5000 } = {}) => {
@@ -231,6 +235,21 @@ export const listLocalInventory = ({ branchId = '', limit = 5000 } = {}) => {
     branchId: String(branchId || '').trim(),
     limit: maxResults,
   })
+}
+
+export const deleteLocalInventoryDrug = (id) => {
+  const drugId = String(id || '').trim()
+  if (!drugId) {
+    throw new Error('Drug id is required.')
+  }
+
+  const removeDrug = db.transaction(() => {
+    deleteDrugSearchTokens.run(drugId)
+    deleteDrugBarcodes.run(drugId)
+    return deleteDrugById.run(drugId).changes
+  })
+
+  return { id: drugId, deleted: removeDrug() > 0 }
 }
 
 const upsertDrugWithIndex = (drug) => {

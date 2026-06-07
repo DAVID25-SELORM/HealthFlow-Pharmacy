@@ -18,10 +18,10 @@
 
 .auth-brand-logo {
   display: block;
-  width: 112px;
-  height: 92px;
+  width: 236px;
+  height: 236px;
   object-fit: contain;
-  margin: 0 auto 1rem;
+  margin: -1.5rem auto -0.25rem;
 }
 
 .login-card h1 {

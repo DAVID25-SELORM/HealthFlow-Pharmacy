@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Plus, Search, Package, X, CheckCircle2, XCircle, Eye, Truck } from 'lucide-react'
+import { Plus, Search, Package, X, CheckCircle2, XCircle, Eye } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'

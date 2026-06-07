@@ -1,6 +1,12 @@
 import { forwardRef } from 'react'
 import { Briefcase, CreditCard, HeartPulse, Mail, MapPin, Phone, Printer, ReceiptText, ShoppingBag } from 'lucide-react'
 import { formatAppDateTime } from '../../utils/date'
+import {
+  PLATFORM_GENERATED_BY,
+  getFacilityName,
+  getFacilityWebsite,
+  getReceiptFooter,
+} from '../../utils/facilityBranding'
 import './Receipt.css'
 
 const Receipt = forwardRef(({ saleData, pharmacyInfo, mode = 'preview' }, ref) => {
@@ -32,6 +38,9 @@ const Receipt = forwardRef(({ saleData, pharmacyInfo, mode = 'preview' }, ref) =
   const receiptQrValue = encodeURIComponent(`${saleNumber || 'receipt'}-${netAmount || 0}`)
   const receiptQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=110x110&data=${receiptQrValue}`
   const pharmacySlogan = String(pharmacyInfo?.slogan || '').trim()
+  const facilityName = getFacilityName(pharmacyInfo)
+  const facilityWebsite = getFacilityWebsite(pharmacyInfo)
+  const receiptFooter = getReceiptFooter(pharmacyInfo)
 
   return (
     <div ref={ref} className={`receipt-container receipt-${mode}-mode`}>
@@ -42,7 +51,7 @@ const Receipt = forwardRef(({ saleData, pharmacyInfo, mode = 'preview' }, ref) =
               <HeartPulse size={34} />
             </div>
             <div>
-              <h2>{pharmacyInfo?.pharmacy_name || 'HealthFlow Pharmacy'}</h2>
+              <h2>{facilityName}</h2>
               {pharmacySlogan && <p>{pharmacySlogan}</p>}
             </div>
           </div>
@@ -57,7 +66,7 @@ const Receipt = forwardRef(({ saleData, pharmacyInfo, mode = 'preview' }, ref) =
           {pharmacyInfo?.logo_url && (
             <img src={pharmacyInfo.logo_url} alt="" className="receipt-pharmacy-logo" />
           )}
-          <h3>{pharmacyInfo?.pharmacy_name || 'HealthFlow Pharmacy'}</h3>
+          <h3>{facilityName}</h3>
           {pharmacySlogan && <p className="receipt-slogan">{pharmacySlogan}</p>}
           <div className="pharmacy-contact">
             {pharmacyInfo?.address && (
@@ -79,6 +88,12 @@ const Receipt = forwardRef(({ saleData, pharmacyInfo, mode = 'preview' }, ref) =
               <span>
                 <Mail size={15} />
                 {pharmacyInfo.email}
+              </span>
+            )}
+            {facilityWebsite && (
+              <span>
+                <Briefcase size={15} />
+                {facilityWebsite}
               </span>
             )}
           </div>
@@ -236,7 +251,7 @@ const Receipt = forwardRef(({ saleData, pharmacyInfo, mode = 'preview' }, ref) =
           <div className="footer-message">
             <p className="thank-you">Thank you for your patronage!</p>
             <p className="footer-note">Please keep this receipt for your records.</p>
-            {pharmacyInfo?.receipt_footer && <p className="custom-footer">{pharmacyInfo.receipt_footer}</p>}
+            {receiptFooter && <p className="custom-footer">{receiptFooter}</p>}
             <p className="print-timestamp">
               <Printer size={14} />
               Printed: {printedAt}
@@ -245,13 +260,12 @@ const Receipt = forwardRef(({ saleData, pharmacyInfo, mode = 'preview' }, ref) =
         </footer>
 
         <div className="receipt-bottom-bar">
-          <span>Your health is our priority.</span>
+          <span>{receiptFooter || 'Your health is our priority.'}</span>
           <HeartPulse size={26} />
         </div>
 
         <div className="receipt-developer-credit">
-          <p>Software developed by Neon Digital Technologies Ltd.</p>
-          <p>neondigitaltechnologies@gmail.com</p>
+          <p>{PLATFORM_GENERATED_BY}</p>
         </div>
       </div>
     </div>

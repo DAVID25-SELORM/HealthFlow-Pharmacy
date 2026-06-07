@@ -16,6 +16,10 @@ const bridgeConfig = {
   upstreamBaseUrl: String(process.env.CLAIMIT_UPSTREAM_BASE_URL || '').trim().replace(/\/+$/, ''),
   bridgeToken: process.env.CLAIM_BRIDGE_TOKEN || '',
   bridgeTokenHeader: String(process.env.CLAIM_BRIDGE_TOKEN_HEADER || 'x-claim-bridge-token').trim().toLowerCase(),
+  allowedOrigins: String(process.env.CLAIM_BRIDGE_ALLOWED_ORIGINS || process.env.ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((origin) => origin.trim().replace(/\/+$/, ''))
+    .filter(Boolean),
   timeoutMs: Math.max(1000, toNumber(process.env.CLAIM_BRIDGE_TIMEOUT_MS, 30000)),
   maxBodyBytes: Math.max(1024, toNumber(process.env.CLAIM_BRIDGE_MAX_BODY_BYTES, 10 * 1024 * 1024)),
   upstreamApiKey: process.env.CLAIMIT_UPSTREAM_API_KEY || '',
@@ -123,12 +127,29 @@ const requireBridgeToken = (request, response) => {
   return false
 }
 
+const getSameHostOrigins = (request) => {
+  const host = String(request.headers?.['x-forwarded-host'] || request.headers?.host || '').trim()
+  if (!host) return []
+  const protocol = String(request.headers?.['x-forwarded-proto'] || 'https').split(',')[0].trim() || 'https'
+  return [`${protocol}://${host}`.replace(/\/+$/, '')]
+}
+
+const isAllowedOrigin = (request) => {
+  const origin = request.headers?.origin || ''
+  if (!origin) return true
+
+  const normalizedOrigin = origin.replace(/\/+$/, '')
+  if (getSameHostOrigins(request).includes(normalizedOrigin)) return true
+
+  return bridgeConfig.allowedOrigins.includes(normalizedOrigin)
+}
+
 const setCorsHeaders = (request, response) => {
   const origin = request.headers?.origin || ''
-  if (origin) {
-    response.setHeader('access-control-allow-origin', origin)
-    response.setHeader('vary', 'Origin')
+  if (origin && isAllowedOrigin(request)) {
+    response.setHeader('access-control-allow-origin', origin.replace(/\/+$/, ''))
   }
+  response.setHeader('vary', 'Origin')
   response.setHeader('access-control-allow-methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS')
   response.setHeader(
     'access-control-allow-headers',
@@ -138,6 +159,11 @@ const setCorsHeaders = (request, response) => {
 
 export default async function handler(request, response) {
   setCorsHeaders(request, response)
+
+  if (!isAllowedOrigin(request)) {
+    json(response, 403, { error: 'Origin is not allowed for this CLAIM-it bridge.' })
+    return
+  }
 
   if (request.method === 'OPTIONS') {
     response.status(204).end()

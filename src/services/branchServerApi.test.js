@@ -11,14 +11,13 @@ describe('branchServerApi', () => {
     vi.restoreAllMocks()
   })
 
-  it('saves the default branch token in localStorage when missing', async () => {
+  it('does not create a default branch token when missing', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 200 })))
 
-    const { BRANCH_TOKEN_STORAGE_KEY, DEFAULT_BRANCH_TOKEN, getSavedBranchToken } =
-      await importBranchServerApi()
+    const { BRANCH_TOKEN_STORAGE_KEY, getSavedBranchToken } = await importBranchServerApi()
 
-    expect(getSavedBranchToken()).toBe(DEFAULT_BRANCH_TOKEN)
-    expect(window.localStorage.getItem(BRANCH_TOKEN_STORAGE_KEY)).toBe(DEFAULT_BRANCH_TOKEN)
+    expect(getSavedBranchToken()).toBe('')
+    expect(window.localStorage.getItem(BRANCH_TOKEN_STORAGE_KEY)).toBeNull()
   })
 
   it('sends the localStorage branch token on local branch API requests', async () => {
@@ -33,11 +32,14 @@ describe('branchServerApi', () => {
 
     const {
       BRANCH_TOKEN_STORAGE_KEY,
-      DEFAULT_BRANCH_TOKEN,
       downloadNhiaBatchExport,
       pullBranchInventory,
       pullBranchReferenceData,
+      saveBranchToken,
     } = await importBranchServerApi()
+
+    const branchToken = 'facility-branch-token'
+    saveBranchToken(branchToken)
 
     await pullBranchInventory()
     await pullBranchReferenceData()
@@ -56,10 +58,32 @@ describe('branchServerApi', () => {
 
     expect(localApiCalls.length).toBeGreaterThanOrEqual(2)
     expect(syncPostCalls).toHaveLength(2)
-    expect(window.localStorage.getItem(BRANCH_TOKEN_STORAGE_KEY)).toBe(DEFAULT_BRANCH_TOKEN)
+    expect(window.localStorage.getItem(BRANCH_TOKEN_STORAGE_KEY)).toBe(branchToken)
     syncPostCalls.forEach(([, options]) => {
-      expect(options.headers['x-branch-token']).toBe(DEFAULT_BRANCH_TOKEN)
+      expect(options.headers['x-branch-token']).toBe(branchToken)
     })
+  })
+
+  it('sends the localStorage branch token on health checks', async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ ok: true }), { status: 200 })
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { getBranchServerHealth, saveBranchToken } = await importBranchServerApi()
+    const branchToken = 'facility-branch-token'
+    saveBranchToken(branchToken)
+
+    await getBranchServerHealth()
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:4780/health',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'x-branch-token': branchToken,
+        }),
+      })
+    )
   })
 
   it('maps NHIA member lookup aliases to the branch server payload', async () => {
@@ -68,7 +92,8 @@ describe('branchServerApi', () => {
     )
     vi.stubGlobal('fetch', fetchMock)
 
-    const { lookupNhiaMember } = await importBranchServerApi()
+    const { lookupNhiaMember, saveBranchToken } = await importBranchServerApi()
+    saveBranchToken('facility-branch-token')
 
     await lookupNhiaMember({ nhisNumber: 'gha1234567890' })
 

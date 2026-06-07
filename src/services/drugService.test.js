@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { invokeTierAccess, fromMock, getBranchInventory, routeReadMock } = vi.hoisted(() => ({
+const { invokeTierAccess, fromMock, getBranchInventory, deleteBranchInventoryDrug, routeReadMock, routeWriteMock } = vi.hoisted(() => ({
   invokeTierAccess: vi.fn(),
   fromMock: vi.fn(),
   getBranchInventory: vi.fn(),
+  deleteBranchInventoryDrug: vi.fn(),
   routeReadMock: vi.fn(),
+  routeWriteMock: vi.fn(),
 }))
 
 vi.mock('./tierAccessService', () => ({
@@ -19,10 +21,12 @@ vi.mock('../lib/supabase', () => ({
 
 vi.mock('./branchServerApi', () => ({
   getBranchInventory,
+  deleteBranchInventoryDrug,
 }))
 
 vi.mock('./apiRouter', () => ({
   routeRead: routeReadMock,
+  routeWrite: routeWriteMock,
 }))
 
 import {
@@ -40,8 +44,11 @@ describe('drugService catalog handling', () => {
     invokeTierAccess.mockReset()
     fromMock.mockReset()
     getBranchInventory.mockReset()
+    deleteBranchInventoryDrug.mockReset()
     routeReadMock.mockReset()
+    routeWriteMock.mockReset()
     routeReadMock.mockImplementation(({ cloud }) => cloud())
+    routeWriteMock.mockImplementation(({ cloud }) => cloud())
   })
 
   const createDirectDrugQuery = (rows) => {

@@ -24,6 +24,39 @@
   min-width: 0;
 }
 
+.reports-facility-brand {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.reports-facility-brand img {
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+  border: 1px solid var(--gray-200);
+  background: white;
+  object-fit: contain;
+  padding: 0.25rem;
+  flex-shrink: 0;
+}
+
+.reports-facility-brand h1 {
+  margin: 0;
+}
+
+.reports-facility-brand p {
+  margin: 0.25rem 0;
+}
+
+.reports-facility-brand span {
+  color: var(--gray-500);
+  display: inline-flex;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
 .date-range svg {
   color: var(--primary);
 }
@@ -274,6 +307,10 @@
 
   .report-table-header {
     flex-direction: column;
+  }
+
+  .reports-facility-brand {
+    align-items: flex-start;
   }
 }
 

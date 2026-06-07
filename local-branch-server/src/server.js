@@ -3,11 +3,11 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { assertConfiguredForServer, config, isSupabaseSyncConfigured } from './config.js'
-import { closeDatabase } from './db.js'
+import { backupDatabase, closeDatabase, getDatabaseStatus } from './db.js'
 import { createClaimBridgeRouter } from './claimBridge.js'
 import { requireBranchToken } from './httpAuth.js'
 import { createLocalClaim } from './claimsRepository.js'
-import { importInventorySnapshot, listLocalInventory, searchLocalInventory } from './inventoryRepository.js'
+import { deleteLocalInventoryDrug, importInventorySnapshot, listLocalInventory, searchLocalInventory } from './inventoryRepository.js'
 import {
   createNhiaBatch,
   createNhiaClaim,
@@ -56,6 +56,51 @@ const frontendDir = path.resolve(__dirname, '..', 'public')
 const frontendIndex = path.join(frontendDir, 'index.html')
 
 const app = express()
+const rateLimitBuckets = new Map()
+
+const shouldRateLimit = (request) =>
+  request.path.startsWith('/api/') ||
+  request.path === config.claimBridge.publicPath ||
+  request.path.startsWith(`${config.claimBridge.publicPath}/`)
+
+const rateLimitRequests = (request, response, next) => {
+  if (!config.rateLimit.enabled || !shouldRateLimit(request)) {
+    next()
+    return
+  }
+
+  const now = Date.now()
+  const windowMs = config.rateLimit.windowMs
+  const ip = request.ip || request.socket?.remoteAddress || 'unknown'
+  const key = `${ip}:${request.path}`
+  const bucket = rateLimitBuckets.get(key)
+
+  if (!bucket || now >= bucket.resetAt) {
+    rateLimitBuckets.set(key, { count: 1, resetAt: now + windowMs })
+    next()
+    return
+  }
+
+  bucket.count += 1
+  if (bucket.count > config.rateLimit.maxRequests) {
+    response.setHeader('Retry-After', Math.ceil((bucket.resetAt - now) / 1000))
+    response.status(429).json({ error: 'Too many requests. Please try again shortly.' })
+    return
+  }
+
+  next()
+}
+
+app.use(rateLimitRequests)
+
+setInterval(() => {
+  const now = Date.now()
+  for (const [key, bucket] of rateLimitBuckets.entries()) {
+    if (now >= bucket.resetAt) {
+      rateLimitBuckets.delete(key)
+    }
+  }
+}, Math.max(config.rateLimit.windowMs, 60000)).unref()
 // ✅ STATIC FRONTEND PATCH START
 if (fs.existsSync(frontendIndex)) {
   app.use(express.static(frontendDir, {
@@ -66,21 +111,26 @@ if (fs.existsSync(frontendIndex)) {
 // ✅ STATIC FRONTEND PATCH END
 
 const DEFAULT_ALLOWED_WEB_ORIGINS = new Set([
-  'https://health-flow-pharmacy.vercel.app',
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
 ])
-const isDevelopment = process.env.NODE_ENV !== 'production'
 
-const isLocalOrigin = (url) =>
+const isLoopbackOrigin = (url) =>
   url.hostname === 'localhost' ||
-  url.hostname === '127.0.0.1' ||
+  url.hostname === '127.0.0.1'
+
+const isLanOrigin = (url) =>
   url.hostname.startsWith('192.168.') ||
   url.hostname.startsWith('10.') ||
   /^172\.(1[6-9]|2\d|3[0-1])\./.test(url.hostname)
 
-// ✅ ORIGIN PATCH FINAL FINAL START
 const isAllowedOrigin = (origin) => {
-  if (!origin || origin === 'null') {
+  if (!origin) {
     return true
+  }
+
+  if (origin === 'null') {
+    return config.allowNullOrigin
   }
 
   const normalizedOrigin = origin.replace(/\/+$/, '')
@@ -88,14 +138,11 @@ const isAllowedOrigin = (origin) => {
   try {
     const url = new URL(normalizedOrigin)
 
-    const isLocal =
-      url.hostname === 'localhost' ||
-      url.hostname === '127.0.0.1' ||
-      url.hostname.startsWith('192.168.') ||
-      url.hostname.startsWith('10.') ||
-      /^172\.(1[6-9]|2\d|3[0-1])\./.test(url.hostname)
+    if (isLoopbackOrigin(url)) {
+      return true
+    }
 
-    if (isLocal) {
+    if (config.allowLanOrigins && isLanOrigin(url)) {
       return true
     }
   } catch {
@@ -112,7 +159,6 @@ const isAllowedOrigin = (origin) => {
 
   return false
 }
-// ✅ ORIGIN PATCH FINAL FINAL END
 
 app.use((request, response, next) => {
   const origin = request.get('Origin') || ''
@@ -121,7 +167,7 @@ app.use((request, response, next) => {
     return
   }
 
-  response.setHeader('Access-Control-Allow-Origin', origin || 'null')
+  response.setHeader('Access-Control-Allow-Origin', origin || '*')
   response.setHeader('Vary', 'Origin')
   response.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,OPTIONS')
   response.setHeader(
@@ -147,14 +193,11 @@ app.use(express.json({
   },
 }))
 
-app.get('/health', (_request, response) => {
+app.get('/health', requireBranchToken, (_request, response) => {
   response.json({
     ok: true,
     mode: 'local-branch-server',
-    branchId: config.branchId,
-    organizationId: config.organizationId,
     supabaseSyncConfigured: isSupabaseSyncConfigured(),
-    sync: getSyncStatus(),
   })
 })
 
@@ -203,6 +246,24 @@ app.post('/api/payments/webhook/paystack', async (request, response, next) => {
 
 app.use('/api', requireBranchToken)
 
+app.get('/api/database/status', (_request, response, next) => {
+  try {
+    response.json({ data: getDatabaseStatus() })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.post('/api/database/backup', (request, response, next) => {
+  try {
+    const label = String(request.body?.label || 'manual').trim() || 'manual'
+    const backupPath = backupDatabase(label.replace(/[^a-z0-9._-]+/gi, '-').slice(0, 64))
+    response.status(201).json({ data: { path: backupPath, status: getDatabaseStatus() } })
+  } catch (error) {
+    next(error)
+  }
+})
+
 app.get('/api/inventory/search', (request, response) => {
   response.json({
     data: searchLocalInventory({
@@ -219,6 +280,14 @@ app.get('/api/inventory', (request, response) => {
       limit: request.query.limit || 5000,
     }),
   })
+})
+
+app.delete('/api/inventory/:id', (request, response, next) => {
+  try {
+    response.json({ data: deleteLocalInventoryDrug(request.params.id) })
+  } catch (error) {
+    next(error)
+  }
 })
 
 app.get('/api/pos/bootstrap', (request, response) => {
@@ -795,10 +864,9 @@ if (fs.existsSync(frontendIndex)) {
 
 app.use((error, _request, response, _next) => {
   console.error(error)
-  response.status(400).json({
-    error: error.message || 'Request failed.',
-    cause: error.cause?.message || null,
-    code: error.cause?.code || error.code || null,
+  response.status(error.status || 400).json({
+    error: 'Request failed.',
+    code: error.code || null,
   })
 })
 

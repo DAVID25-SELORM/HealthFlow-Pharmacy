@@ -1,74 +1,110 @@
-# HealthFlow Pharmacy Management System
+# HealthFlow
 
-A modern **multi-tenant SaaS** pharmacy management system for efficient drug inventory, sales, patient records, and insurance claims management. Each pharmacy operates as an isolated organization with its own data and users.
+HealthFlow is a multi-tenant platform for pharmacy, claims, NHIS, inventory, tariffs, local sync, and facility operations. The master brand is **HealthFlow**; facility-facing screens use each facility's own name, logo, and document branding.
+
+## Brand Architecture
+
+- **HealthFlow** - master platform for facility operations.
+- **Pharmacy module** - dispensing, POS, inventory, medicines, and pharmacy workflows.
+- **HealthFlow Claims** - NHIA/NHIS claims preparation, tracking, and export.
+- **HealthFlow NHIS** - member verification, CCC generation, NHIS patient records, and claims support.
+- **HealthFlow Inventory** - medicine catalog, branch stock, expiry, and replenishment workflows.
+- **HealthFlow Tariffs** - G-DRG tariff and medicines pricing support.
+- **HealthFlow Branch Server** - local SQLite, offline POS, local sync, and CLAIM-it bridge operations.
+
+## Supported Facilities
+
+HealthFlow supports:
+
+- Community Pharmacy
+- Hospital Pharmacy
+- Clinic
+- Hospital
+
+Facility criteria remain separated:
+
+- Pharmacy: P1, P2, LCS, HP
+- Hospital: B1, B2, C, D, M, SM
 
 ## Features
 
-- 🏢 **Multi-Tenant Architecture** - Serve multiple pharmacies with complete data isolation ([See Migration Guide](MULTI_TENANT_MIGRATION_GUIDE.md))
-- 📝 **Pharmacy Onboarding** - Self-service signup with 30-day free trial
-- 💊 **Drug Inventory Management** - Track stock levels, batch numbers, and expiry dates
-- 📤 **Excel Import** - Bulk import drugs from Excel files ([See Guide](DRUG_IMPORT_GUIDE.md))
-- 🧾 **Sales & POS** - Quick dispensing with cash, mobile money, and insurance support
-- 🖨️ **Receipt Printing** - Professional receipts with browser print & PDF export ([See Guide](RECEIPT_PRINTING_GUIDE.md))
-- 🏥 **Insurance Claims** - Automated claim tracking and submission
-- 👥 **Patient Records** - Manage patient information and prescription history
-- 📊 **Reports & Analytics** - Daily sales, monthly trends, and insights
-- 🔐 **User Roles** - Admin, Pharmacist, and Assistant access levels
-- 🌐 **Organization Management** - Subdomain support, subscription tiers, usage tracking
+- **Multi-tenant architecture** - multiple facilities with isolated organization data.
+- **Facility onboarding** - self-service signup with trial setup.
+- **Inventory management** - stock levels, batch numbers, expiry dates, cost, and selling prices.
+- **Excel import** - bulk import medicines from Excel files.
+- **Sales and POS** - cash, mobile money, insurance, and NHIA claim flows.
+- **Receipt printing** - professional receipts with browser print and PDF export.
+- **NHIS and claims** - NHIA member checks, CCC support, medicine claims, G-DRG/tariff workflows, and CLAIM-it exports.
+- **Patient records** - standard patients and NHIS patient lists.
+- **Reports and analytics** - sales, claims, inventory, and operational insights.
+- **Role-based access** - admin, pharmacist, claims officer, cashier, MCA, and other role levels.
+- **Branch server** - local SQLite, offline mode, LAN access, background cloud sync, and CLAIM-it bridge support.
 
 ## Tech Stack
 
 - React + Vite
 - React Router
-- Supabase (Backend & Database)
+- Supabase
+- SQLite local branch server
 - Lucide Icons
 
 ## Getting Started
 
-### Development
+Install dependencies:
 
-1. Install dependencies:
 ```bash
 npm install
 ```
 
-2. Run development server:
+Run the development server:
+
 ```bash
 npm run dev
 ```
 
-3. Build for production:
+Build for production:
+
 ```bash
 npm run build
 ```
 
-4. Run tests:
+Build the offline branch-server bundle:
+
+```bash
+npm run build:offline
+```
+
+Run tests:
+
 ```bash
 npm run test
 ```
 
-### Production Deployment
+## Production Deployment
 
-📋 **Multi-Tenant Deployment**:
-- [MULTI_TENANT_MIGRATION_GUIDE.md](MULTI_TENANT_MIGRATION_GUIDE.md) - Complete guide for transforming to multi-tenant
-- [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md) - Vercel deployment guide
-- [SUPABASE_SETUP.md](SUPABASE_SETUP.md) - Database setup instructions
+Use these guides for production setup:
 
-**Quick Start for Multi-Tenant**:
-1. Run database migrations in order:
-   - `supabase-migration-multi-tenant-step1.sql` (schema changes)
-   - `supabase-migration-multi-tenant-step2-rls.sql` (RLS policies)
-   - `supabase-migration-multi-tenant-step3-fixes.sql` (tenant bootstrap and org defaults)
-2. Deploy Supabase Edge Functions:
-   - `staff-admin`
-   - `tenant-signup`
-3. Deploy frontend to Vercel
-4. Test with existing account (migrated to default 'healthflow' organization)
-5. Create new pharmacy via `/signup` route
+- [MULTI_TENANT_MIGRATION_GUIDE.md](MULTI_TENANT_MIGRATION_GUIDE.md)
+- [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md)
+- [SUPABASE_SETUP.md](SUPABASE_SETUP.md)
+- [WINDOWS_INSTALLATION.md](WINDOWS_INSTALLATION.md)
+- [LINUX_INSTALLATION.md](LINUX_INSTALLATION.md)
+- [BRANCH_SERVER_ARCHITECTURE.md](BRANCH_SERVER_ARCHITECTURE.md)
+- [BACKUP_AND_RECOVERY.md](BACKUP_AND_RECOVERY.md)
+- [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
+- [DEPLOYMENT_CHECKLIST.md](DEPLOYMENT_CHECKLIST.md)
 
-### Vercel CLAIM-it Bridge
+Quick start for multi-tenant setup:
 
-The production CLAIM-it/NHIA bridge is served by Vercel at:
+1. Run database migrations in order.
+2. Deploy Supabase Edge Functions such as `staff-admin`, `tenant-signup`, and `tier-access`.
+3. Deploy the frontend to Vercel or the selected hosting platform.
+4. Register each facility and branch.
+5. Install the HealthFlow Branch Server where local/offline sync is required.
+
+## Vercel CLAIM-it Bridge
+
+The production CLAIM-it/NHIA bridge for this deployment is served at:
 
 ```text
 https://health-flow-pharmacy.vercel.app/json-api
@@ -106,25 +142,23 @@ Health check:
 /json-api/health
 ```
 
-**Architecture**:
-- **Shared Database**: All tenants in one PostgreSQL database
-- **RLS Isolation**: Row-Level Security ensures perfect data separation
-- **Organization-Based**: Every table has `organization_id` for tenant filtering
-- **Automatic Filtering**: All queries automatically scoped to user's organization
-
 ## Quality Gates
 
+- Lint: `npm run lint`
 - Unit tests: `npm run test`
 - Coverage: `npm run test:coverage`
-- CI workflow: `.github/workflows/ci.yml` runs tests and build on push/PR to `main`
+- Build: `npm run build`
+- Offline bundle: `npm run build:offline`
 
 ## Developer
 
 Built by **David Gabion Selorm**
+
 - Email: gabiondavidselorm@gmail.com
 - Business: Neon Digital Technologies
 - Website: https://www.neondigitaltechnologies.com
 - Business Email: zittechgh@gmail.com
 
 ---
-© 2026 HealthFlow Pharmacy. All rights reserved.
+
+Copyright 2026 HealthFlow. All rights reserved.

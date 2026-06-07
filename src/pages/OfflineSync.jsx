@@ -109,9 +109,6 @@ const supabaseProjectUrl = import.meta.env.VITE_SUPABASE_URL || ''
 
 const buildNhiaForm = (settings, organization) => {
   const resolved = applyNhiaFacilityDefaults(settings, organization)
-  const hasApiKey = Boolean(settings?.hasApiKey || settings?.has_api_key || settings?.credentialSummary?.apiKey)
-  const hasApiSecret = Boolean(settings?.hasApiSecret || settings?.has_api_secret || settings?.credentialSummary?.apiSecret)
-  const hasPassword = Boolean(settings?.hasPassword || settings?.has_password || settings?.credentialSummary?.password)
   return {
     ...blankNhiaForm,
     ...resolved,
@@ -815,8 +812,10 @@ SUPABASE_SYNC_KEY=<your-supabase-anon-or-publishable-key>`}</pre>
               <option value="Eye centers">Eye centers</option>
               <option value="Diagnostic centers">Diagnostic centers</option>
               <option value="CHPS Compounds">CHPS Compounds</option>
-              <option value="Pharmacy">Pharmacy</option>
+              <option value="Pharmacy">Community Pharmacy</option>
               <option value="Hospital Pharmacy">Hospital Pharmacy</option>
+              <option value="Clinic">Clinic</option>
+              <option value="Hospital">Hospital</option>
             </select>
           </label>
           <label>

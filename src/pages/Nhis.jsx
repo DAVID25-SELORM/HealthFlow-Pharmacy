@@ -1032,7 +1032,7 @@ const Nhis = () => {
   const canGenerateNhiaCcCode = Boolean(nhiaCcCodeApiAvailable && integrationMode !== 'claimit_export')
   const nhisPageSubtitle = isHospital
     ? 'NHIA hospital service claims, tariffs, diagnoses, and direct CLAIM-it submission'
-    : 'NHIS prescription dispensing claims and medicines catalog for pharmacies'
+    : 'NHIS medicine dispensing claims and catalog workflows for community and hospital pharmacies'
 
   const hasMedicineSearchTerm = medCodeSearch.trim().length > 0
   // ✅ NHIS PHARMACY LEVEL PATCH START

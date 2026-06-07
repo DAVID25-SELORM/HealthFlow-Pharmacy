@@ -8,8 +8,8 @@ export const getReportBundle = async (startDate, endDate) => {
   })
 }
 
-export const downloadCsv = (filename, headers, rows) => {
-  const csv = [headers, ...rows]
+export const downloadCsv = (filename, headers, rows, metadataRows = []) => {
+  const csv = [...metadataRows, headers, ...rows]
     .map((row) =>
       row
         .map((cell) => {

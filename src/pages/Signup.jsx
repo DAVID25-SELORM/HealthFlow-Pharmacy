@@ -19,7 +19,7 @@ const Signup = () => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [successMessage, setSuccessMessage] = useState(
-    'Your pharmacy has been registered and your 30-day free trial has started.'
+    'Your facility has been registered and your 30-day free trial has started.'
   )
   const [dashboardReady, setDashboardReady] = useState(false)
   const [subdomainStatus, setSubdomainStatus] = useState(null)
@@ -45,11 +45,11 @@ const Signup = () => {
   const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
-  const facilityLabel = organizationType === 'hospital' ? 'Hospital' : 'Pharmacy'
-  const facilityNamePlaceholder = organizationType === 'hospital' ? 'ABC Hospital' : 'ABC Pharmacy'
-  const facilityEmailPlaceholder = organizationType === 'hospital' ? 'info@hospital.com' : 'info@pharmacy.com'
+  const facilityLabel = organizationType === 'hospital' ? 'Hospital / Clinic' : 'Community Pharmacy'
+  const facilityNamePlaceholder = organizationType === 'hospital' ? 'ABC Hospital' : 'ABC Community Pharmacy'
+  const facilityEmailPlaceholder = organizationType === 'hospital' ? 'info@facility.com' : 'info@pharmacy.com'
   const facilitySloganPlaceholder =
-    organizationType === 'hospital' ? 'Smart Care. Better Health.' : 'Smart Pharmacy. Better Health.'
+    organizationType === 'hospital' ? 'Smart Care. Better Health.' : 'Connected Pharmacy. Better Health.'
   const facilityLicensePlaceholder = organizationType === 'hospital' ? 'HF-12345' : 'PL-12345'
   const isHospital = organizationType === 'hospital'
 
@@ -219,9 +219,9 @@ const Signup = () => {
     <div className="signup-page">
       <div className="signup-container">
         <div className="signup-header">
-          <img src="/app-logo.png" alt="HealthFlow Pharmacy logo" className="signup-brand-logo" />
-          <h1>HealthFlow Pharmacy</h1>
-          <p>Start your 30-day free trial</p>
+          <img src="/app-logo.png" alt="HealthFlow logo" className="signup-brand-logo" />
+          <h1>HealthFlow</h1>
+          <p>Pharmacy, Claims & Facility Operations Platform</p>
         </div>
 
         {!isConfigured && (
@@ -258,8 +258,8 @@ const Signup = () => {
                 }}
                 required
               >
-                <option value="pharmacy">Pharmacy</option>
-                <option value="hospital">Hospital</option>
+                <option value="pharmacy">Community Pharmacy</option>
+                <option value="hospital">Hospital / Clinic</option>
               </select>
             </div>
             {/* ✅ NHIS PHARMACY LEVEL PATCH START */}

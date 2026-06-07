@@ -1,7 +1,7 @@
 {
-  "name": "HealthFlow Pharmacy",
+  "name": "HealthFlow",
   "short_name": "HealthFlow",
-  "description": "Pharmacy management for sales, inventory, patients, claims, and accounting.",
+  "description": "Pharmacy, claims, NHIS, inventory, tariffs, and facility operations platform.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

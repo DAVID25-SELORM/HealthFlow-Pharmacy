@@ -13,6 +13,14 @@ const toNumber = (value, fallback) => {
 }
 
 const toBoolean = (value) => ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase())
+const isWeakPlaceholder = (value) => {
+  const normalized = String(value || '').trim().toLowerCase()
+  return !normalized ||
+    normalized.includes('change-me') ||
+    normalized.includes('change_this') ||
+    normalized.includes('change-this') ||
+    normalized.includes('placeholder')
+}
 const DEFAULT_NHIA_ELIGIBILITY_BASE_URL = 'https://elig.nhia.gov.gh:5000'
 
 const normalizePath = (value, fallback) => {
@@ -24,6 +32,15 @@ const normalizePath = (value, fallback) => {
   return normalized.startsWith('/') ? normalized.replace(/\/+$/, '') || '/' : `/${normalized.replace(/\/+$/, '')}`
 }
 
+const resolveClaimBridgeEnabled = () => {
+  const configured = String(process.env.CLAIM_BRIDGE_ENABLED || '').trim()
+  if (configured) {
+    return toBoolean(configured)
+  }
+
+  return Boolean(process.env.CLAIMIT_UPSTREAM_BASE_URL)
+}
+
 export const config = {
   port: toNumber(process.env.PORT, 4780),
   branchServerToken: process.env.BRANCH_SERVER_TOKEN || '',
@@ -31,8 +48,24 @@ export const config = {
     .split(',')
     .map((origin) => origin.trim().replace(/\/+$/, ''))
     .filter(Boolean),
+  allowNullOrigin: toBoolean(process.env.ALLOW_NULL_ORIGIN),
+  allowLanOrigins: toBoolean(process.env.ALLOW_LAN_ORIGINS),
   branchId: process.env.BRANCH_ID || null,
   organizationId: process.env.ORGANIZATION_ID || null,
+  facilityBranding: {
+    name: process.env.FACILITY_NAME || '',
+    type: process.env.FACILITY_TYPE || '',
+    logoUrl: process.env.FACILITY_LOGO_URL || '',
+    address: process.env.FACILITY_ADDRESS || '',
+    phone: process.env.FACILITY_PHONE || '',
+    email: process.env.FACILITY_EMAIL || '',
+    website: process.env.FACILITY_WEBSITE || '',
+    receiptFooter: process.env.FACILITY_RECEIPT_FOOTER || '',
+    reportFooter: process.env.FACILITY_REPORT_FOOTER || '',
+    themePrimaryColor: process.env.FACILITY_THEME_PRIMARY_COLOR || '',
+    themeSecondaryColor: process.env.FACILITY_THEME_SECONDARY_COLOR || '',
+    themeAccentColor: process.env.FACILITY_THEME_ACCENT_COLOR || '',
+  },
   sqlitePath: path.resolve(
     process.env.HEALTHFLOW_DB_PATH ||
       process.env.SQLITE_PATH ||
@@ -43,6 +76,13 @@ export const config = {
     30,
     toNumber(process.env.INVENTORY_PULL_INTERVAL_SECONDS, 300)
   ),
+  rateLimit: {
+    enabled: !['0', 'false', 'no', 'off'].includes(
+      String(process.env.RATE_LIMIT_ENABLED || 'true').trim().toLowerCase()
+    ),
+    windowMs: Math.max(1000, toNumber(process.env.RATE_LIMIT_WINDOW_MS, 60000)),
+    maxRequests: Math.max(10, toNumber(process.env.RATE_LIMIT_MAX_REQUESTS, 600)),
+  },
   branchSyncToken: process.env.BRANCH_SYNC_TOKEN || '',
   nhiaConfigSecretKey: process.env.NHIA_CONFIG_SECRET_KEY || process.env.NHIA_SECRET_KEY || '',
   nhiaFacilityCode: process.env.NHIA_FACILITY_CODE || process.env.FACILITY_CODE || '',
@@ -54,7 +94,7 @@ export const config = {
   supabaseUrl: process.env.SUPABASE_URL || '',
   supabaseSyncKey: process.env.SUPABASE_SYNC_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '',
   claimBridge: {
-    enabled: toBoolean(process.env.CLAIM_BRIDGE_ENABLED) || Boolean(process.env.CLAIMIT_UPSTREAM_BASE_URL),
+    enabled: resolveClaimBridgeEnabled(),
     publicPath: normalizePath(process.env.CLAIM_BRIDGE_PUBLIC_PATH, '/json-api'),
     upstreamBaseUrl: String(process.env.CLAIMIT_UPSTREAM_BASE_URL || '').trim().replace(/\/+$/, ''),
     upstreamCredentialMode: String(process.env.CLAIMIT_UPSTREAM_CREDENTIAL_MODE || '').trim(),
@@ -96,6 +136,43 @@ export const config = {
       defaultEmail: process.env.PAYSTACK_DEFAULT_EMAIL || '',
     },
   },
+  communication: {
+    emailEnabled: toBoolean(process.env.COMMUNICATION_EMAIL_ENABLED),
+    smsEnabled: toBoolean(process.env.COMMUNICATION_SMS_ENABLED),
+    defaultEmailProvider: String(process.env.COMMUNICATION_DEFAULT_EMAIL_PROVIDER || 'smtp').toLowerCase(),
+    defaultSmsProvider: String(
+      process.env.COMMUNICATION_DEFAULT_SMS_PROVIDER ||
+        process.env.SMS_PROVIDER ||
+        'arkesel'
+    ).toLowerCase(),
+    smtp: {
+      host: process.env.SMTP_HOST || '',
+      port: toNumber(process.env.SMTP_PORT, 587),
+      secure: toBoolean(process.env.SMTP_SECURE),
+      user: process.env.SMTP_USER || '',
+      password: process.env.SMTP_PASSWORD || '',
+      fromEmail: process.env.SMTP_FROM_EMAIL || '',
+      fromName: process.env.SMTP_FROM_NAME || process.env.FACILITY_NAME || 'HealthFlow',
+    },
+    sms: {
+      provider: String(process.env.SMS_PROVIDER || 'arkesel').toLowerCase(),
+      baseUrl: String(process.env.SMS_BASE_URL || process.env.SMS_AKESEL_BASE_URL || process.env.SMS_AKESSEL_BASE_URL || '').replace(/\/+$/, ''),
+      apiKey: process.env.SMS_API_KEY || process.env.SMS_AKESEL_API_KEY || process.env.SMS_AKESSEL_API_KEY || '',
+      senderId: process.env.SMS_SENDER_ID || process.env.SMS_AKESEL_SENDER_ID || process.env.SMS_AKESSEL_SENDER_ID || process.env.FACILITY_NAME || 'HealthFlow',
+      timeoutMs: Math.max(1000, toNumber(process.env.SMS_TIMEOUT_MS, 30000)),
+      arkesel: {
+        baseUrl: String(process.env.SMS_AKESEL_BASE_URL || process.env.SMS_AKESSEL_BASE_URL || process.env.SMS_BASE_URL || '').replace(/\/+$/, ''),
+        apiKey: process.env.SMS_AKESEL_API_KEY || process.env.SMS_AKESSEL_API_KEY || process.env.SMS_API_KEY || '',
+        senderId: process.env.SMS_AKESEL_SENDER_ID || process.env.SMS_AKESSEL_SENDER_ID || process.env.SMS_SENDER_ID || process.env.FACILITY_NAME || 'HealthFlow',
+      },
+      hubtel: {
+        baseUrl: String(process.env.SMS_HUBTEL_BASE_URL || '').replace(/\/+$/, ''),
+        clientId: process.env.SMS_HUBTEL_CLIENT_ID || '',
+        clientSecret: process.env.SMS_HUBTEL_CLIENT_SECRET || '',
+        senderId: process.env.SMS_HUBTEL_SENDER_ID || process.env.FACILITY_NAME || 'HealthFlow',
+      },
+    },
+  },
 }
 
 export const assertConfiguredForServer = () => {
@@ -107,8 +184,28 @@ export const assertConfiguredForServer = () => {
     throw new Error('Set CLAIMIT_UPSTREAM_BASE_URL before enabling the public CLAIM-it bridge.')
   }
 
-  if (config.claimBridge.enabled && process.env.NODE_ENV === 'production' && !config.claimBridge.accessToken) {
-    throw new Error('Set CLAIM_BRIDGE_TOKEN before running the public CLAIM-it bridge in production.')
+  if (config.claimBridge.enabled && isWeakPlaceholder(config.claimBridge.accessToken)) {
+    throw new Error('Set CLAIM_BRIDGE_TOKEN to a long random value before enabling the public CLAIM-it bridge.')
+  }
+
+  if (config.payments.hubtel.enabled && isWeakPlaceholder(config.payments.hubtel.webhookSecret)) {
+    throw new Error('Set HUBTEL_WEBHOOK_SECRET to a long random value before enabling Hubtel payments.')
+  }
+
+  if (config.communication.emailEnabled && !config.communication.smtp.host) {
+    throw new Error('Set SMTP_HOST before enabling email communication.')
+  }
+
+  if (config.communication.emailEnabled && !config.communication.smtp.fromEmail) {
+    throw new Error('Set SMTP_FROM_EMAIL before enabling email communication.')
+  }
+
+  if (config.communication.smsEnabled && !config.communication.sms.baseUrl) {
+    throw new Error('Set SMS_BASE_URL before enabling SMS communication.')
+  }
+
+  if (config.communication.smsEnabled && !config.communication.sms.apiKey) {
+    throw new Error('Set SMS_API_KEY before enabling SMS communication.')
   }
 }
 

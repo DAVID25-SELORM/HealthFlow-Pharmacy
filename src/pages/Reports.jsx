@@ -2,8 +2,15 @@ import { useEffect, useMemo, useState } from 'react'
 import { FileText, Download, Calendar, RefreshCcw, Search } from 'lucide-react'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { downloadCsv, getReportBundle } from '../services/reportsService'
+import { getPharmacySettings } from '../services/settingsService'
 import { useTenant } from '../context/TenantContext'
 import { formatAppDateTime } from '../utils/date'
+import {
+  PLATFORM_GENERATED_BY,
+  getFacilityLogo,
+  getFacilityName,
+  getReportFooter,
+} from '../utils/facilityBranding'
 import UpgradeGate from '../components/UpgradeGate'
 import './Reports.css'
 
@@ -75,13 +82,18 @@ const getSaleInsuranceDetails = (sale, linkedPatient = null) => {
 }
 
 const Reports = () => {
-  const { canUseClaims, tierLimits } = useTenant()
+  const { organization, canUseClaims, tierLimits } = useTenant()
   const [startDate, setStartDate] = useState(firstOfMonth)
   const [endDate, setEndDate] = useState(today)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [bundle, setBundle] = useState(null)
+  const [facilitySettings, setFacilitySettings] = useState(null)
   const [ledgerSearchTerm, setLedgerSearchTerm] = useState('')
+  const brandingSource = { ...(organization || {}), ...(facilitySettings || {}) }
+  const facilityName = getFacilityName(brandingSource)
+  const facilityLogo = getFacilityLogo(brandingSource)
+  const reportFooter = getReportFooter(brandingSource)
 
   const cards = useMemo(() => {
     if (!bundle) {
@@ -226,9 +238,39 @@ const Reports = () => {
     void runReports(firstOfMonth, today)
   }, [tierLimits.hasReports])
 
+  useEffect(() => {
+    if (!tierLimits.hasReports || !isSupabaseConfigured()) {
+      return
+    }
+
+    let cancelled = false
+    getPharmacySettings()
+      .then((settings) => {
+        if (!cancelled) {
+          setFacilitySettings(settings)
+        }
+      })
+      .catch((settingsError) => {
+        console.warn('Unable to load report branding settings:', settingsError)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [tierLimits.hasReports])
+
   const generateReports = async () => {
     await runReports(startDate, endDate)
   }
+
+  const getReportMetadataRows = (title) => [
+    [facilityName],
+    [title],
+    [`Period: ${startDate} to ${endDate}`],
+    [PLATFORM_GENERATED_BY],
+    ...(reportFooter ? [[reportFooter]] : []),
+    [],
+  ]
 
   const exportSalesCsv = () => {
     if (!bundle) {
@@ -244,7 +286,12 @@ const Reports = () => {
       sale.total_amount,
     ])
 
-    downloadCsv('sales-report.csv', ['Sale Number', 'Sale Date', 'Payment Method', 'Status', 'Net Amount', 'Total Amount'], rows)
+    downloadCsv(
+      'sales-report.csv',
+      ['Sale Number', 'Sale Date', 'Payment Method', 'Status', 'Net Amount', 'Total Amount'],
+      rows,
+      getReportMetadataRows('Sales Report')
+    )
   }
 
   const exportClaimsCsv = () => {
@@ -261,7 +308,12 @@ const Reports = () => {
       claim.service_date,
     ])
 
-    downloadCsv('claims-report.csv', ['Claim Number', 'Patient', 'Insurance Provider', 'Status', 'Total Amount', 'Service Date'], rows)
+    downloadCsv(
+      'claims-report.csv',
+      ['Claim Number', 'Patient', 'Insurance Provider', 'Status', 'Total Amount', 'Service Date'],
+      rows,
+      getReportMetadataRows('Claims Report')
+    )
   }
 
   const exportSoldItemsCsv = () => {
@@ -286,7 +338,8 @@ const Reports = () => {
     downloadCsv(
       'sold-items-report.csv',
       ['Sale Number', 'Sale Date', 'Patient', 'Insurance', 'Drug', 'Quantity', 'Unit Price', 'Line Total', 'Payment Method'],
-      rows
+      rows,
+      getReportMetadataRows('Sold Items Report')
     )
   }
 
@@ -295,8 +348,14 @@ const Reports = () => {
     <div className="reports-page">
       <div className="page-header">
         <div>
-          <h1>Reports and Analytics</h1>
-          <p>Generate operational reports for sales, stock, claims, and patient trends</p>
+          <div className="reports-facility-brand">
+            {facilityLogo && <img src={facilityLogo} alt={`${facilityName} logo`} />}
+            <div>
+              <h1>{facilityName}</h1>
+              <p>Operational reports for sales, stock, claims, and patient trends</p>
+              <span>{PLATFORM_GENERATED_BY}</span>
+            </div>
+          </div>
         </div>
         <div className="date-range">
           <Calendar size={18} />

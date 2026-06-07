@@ -6,7 +6,7 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 
 export default [
   {
-    ignores: ['dist/**', 'node_modules/**', 'local-branch-server/**', 'supabase/functions/**'],
+    ignores: ['dist/**', 'archive-review/**', 'node_modules/**', 'local-branch-server/**', 'supabase/functions/**'],
   },
   {
     files: ['**/*.{js,jsx,mjs,cjs}'],
@@ -37,8 +37,9 @@ export default [
       ...js.configs.recommended.rules,
       ...reactHooks.configs.recommended.rules,
       'react/jsx-uses-vars': 'error',
-      'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      'react-hooks/exhaustive-deps': 'off',
+      'react-refresh/only-export-components': 'off',
+      'no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
     },
   },
   {

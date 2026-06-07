@@ -118,14 +118,14 @@ const Login = () => {
   return (
     <div className="login-page">
       <div className="login-card">
-        <img src="/app-logo.png" alt="HealthFlow Pharmacy logo" className="auth-brand-logo" />
-        <h1>HealthFlow Pharmacy</h1>
+        <img src="/app-logo.png" alt="HealthFlow logo" className="auth-brand-logo" />
+        <h1>HealthFlow</h1>
         <p className="subtitle">
           {mode === 'reset'
             ? 'Enter your email to receive a reset link'
             : mode === 'new-password'
               ? 'Create a new password for your account'
-              : 'Sign in to continue'}
+              : 'Pharmacy, Claims & Facility Operations Platform'}
         </p>
 
         {!isConfigured && (

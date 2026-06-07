@@ -19,7 +19,7 @@ const config = {
   upstreamBaseUrl: String(process.env.CLAIMIT_UPSTREAM_BASE_URL || '').trim().replace(/\/+$/, ''),
   bridgeToken: process.env.CLAIM_BRIDGE_TOKEN || '',
   bridgeTokenHeader: String(process.env.CLAIM_BRIDGE_TOKEN_HEADER || 'x-claim-bridge-token').trim().toLowerCase(),
-  allowedOrigins: String(process.env.ALLOWED_ORIGINS || 'https://health-flow-pharmacy.vercel.app')
+  allowedOrigins: String(process.env.ALLOWED_ORIGINS || '')
     .split(',')
     .map((origin) => origin.trim().replace(/\/+$/, ''))
     .filter(Boolean),

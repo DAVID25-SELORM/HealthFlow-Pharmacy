@@ -1,0 +1,387 @@
+.patient-care-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.patient-care-page .page-header {
+  align-items: flex-start;
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.care-alert {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  color: #991b1b;
+  padding: 0.8rem 1rem;
+}
+
+.care-tabs {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.care-tab {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  color: #475569;
+  cursor: pointer;
+  display: inline-flex;
+  font-weight: 700;
+  gap: 0.45rem;
+  min-height: 42px;
+  padding: 0.55rem 0.8rem;
+}
+
+.care-tab.active {
+  background: #ecfdf5;
+  border-color: #10b981;
+  color: #047857;
+}
+
+.care-summary-grid {
+  display: grid;
+  gap: 0.8rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.care-summary-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.care-summary-card span {
+  color: #64748b;
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 700;
+  margin-bottom: 0.45rem;
+}
+
+.care-summary-card strong {
+  color: #0f172a;
+  display: block;
+  font-size: 1.55rem;
+  line-height: 1.1;
+}
+
+.care-summary-card--warning {
+  background: #fffbeb;
+  border-color: #fbbf24;
+}
+
+.care-summary-card--danger {
+  background: #fef2f2;
+  border-color: #fca5a5;
+}
+
+.care-summary-card--success {
+  background: #ecfdf5;
+  border-color: #6ee7b7;
+}
+
+.care-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.care-grid--two,
+.care-grid--form {
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.4fr);
+}
+
+.care-panel {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  min-width: 0;
+  padding: 1rem;
+}
+
+.care-panel-header {
+  align-items: center;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+  margin-bottom: 0.9rem;
+}
+
+.care-panel-header h2 {
+  color: #0f172a;
+  font-size: 1rem;
+  margin: 0;
+}
+
+.care-panel-header span,
+.care-panel-header select {
+  color: #64748b;
+  font-size: 0.85rem;
+}
+
+.care-panel-header select {
+  background: #ffffff;
+  border: 1px solid #dbe4ec;
+  border-radius: 8px;
+  min-height: 38px;
+  padding: 0.35rem 0.55rem;
+}
+
+.care-search {
+  align-items: center;
+  border: 1px solid #dbe4ec;
+  border-radius: 8px;
+  display: flex;
+  gap: 0.55rem;
+  margin-bottom: 0.9rem;
+  max-width: 460px;
+  padding: 0 0.75rem;
+}
+
+.care-search input {
+  border: 0;
+  flex: 1;
+  min-height: 42px;
+  min-width: 0;
+  outline: none;
+}
+
+.care-worklist,
+.care-patient-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.care-worklist-row,
+.care-patient-row {
+  align-items: center;
+  border-bottom: 1px solid #eef2f7;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  padding: 0.75rem 0;
+}
+
+.care-worklist-row:first-child,
+.care-patient-row:first-child {
+  padding-top: 0;
+}
+
+.care-worklist-row:last-child,
+.care-patient-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.care-worklist-row div,
+.care-patient-row div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.care-worklist-row strong,
+.care-patient-row strong {
+  color: #0f172a;
+  font-size: 0.92rem;
+}
+
+.care-worklist-row span,
+.care-patient-row span {
+  color: #64748b;
+  font-size: 0.82rem;
+}
+
+.care-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.care-form label {
+  color: #475569;
+  display: flex;
+  flex-direction: column;
+  font-size: 0.82rem;
+  font-weight: 700;
+  gap: 0.35rem;
+}
+
+.care-form input,
+.care-form select,
+.care-form textarea {
+  background: #ffffff;
+  border: 1px solid #dbe4ec;
+  border-radius: 8px;
+  color: #0f172a;
+  font: inherit;
+  min-height: 42px;
+  padding: 0.6rem 0.7rem;
+  resize: vertical;
+  width: 100%;
+}
+
+.care-form textarea {
+  min-height: 84px;
+}
+
+.care-form input[readonly] {
+  background: #f8fafc;
+  color: #64748b;
+}
+
+.care-form-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.care-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.care-chip-row span {
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  color: #475569;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 0.35rem 0.6rem;
+}
+
+.care-table-wrap {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  overflow-x: auto;
+}
+
+.care-table {
+  border-collapse: collapse;
+  min-width: 720px;
+  width: 100%;
+}
+
+.care-table th,
+.care-table td {
+  border-bottom: 1px solid #eef2f7;
+  padding: 0.78rem 0.9rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.care-table th {
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+
+.care-table td {
+  color: #0f172a;
+  font-size: 0.9rem;
+}
+
+.care-table td strong,
+.care-table td span {
+  display: block;
+}
+
+.care-table td span {
+  color: #64748b;
+  font-size: 0.78rem;
+  margin-top: 0.2rem;
+}
+
+.care-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.care-message-cell {
+  max-width: 360px;
+  white-space: normal;
+}
+
+.care-status {
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 0.75rem;
+  font-weight: 800;
+  padding: 0.35rem 0.6rem;
+}
+
+.care-status--neutral {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.care-status--success {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.care-status--warning {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.care-status--danger {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.care-empty {
+  color: #94a3b8;
+  padding: 1.4rem;
+  text-align: center;
+}
+
+.btn-small {
+  min-height: 34px;
+  padding: 0.35rem 0.65rem;
+}
+
+@media (max-width: 1100px) {
+  .care-summary-grid,
+  .care-grid--two,
+  .care-grid--form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .patient-care-page .page-header,
+  .care-panel-header,
+  .care-worklist-row,
+  .care-patient-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .care-summary-grid,
+  .care-grid--two,
+  .care-grid--form,
+  .care-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .care-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .care-tab {
+    justify-content: center;
+  }
+}

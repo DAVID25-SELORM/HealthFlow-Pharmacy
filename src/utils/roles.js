@@ -26,6 +26,7 @@ export const OFFLINE_SYNC_ROLES = ['admin', 'branch_manager', 'super_admin']
 export const PURCHASES_ROLES = ['admin', 'pharmacist', 'procurement', 'branch_manager']
 export const NHIS_ROLES = ['admin', 'pharmacist', 'billing', 'claims_officer']
 export const EPHARMACY_ROLES = ['admin', 'pharmacist', 'procurement', 'branch_manager']
+export const PATIENT_CARE_ROLES = ['admin', 'pharmacist', 'assistant', 'technician', 'branch_manager', 'billing', 'claims_officer']
 
 export const hasRole = (role, roles = []) => {
   const normalizedRole = String(role || '').toLowerCase()

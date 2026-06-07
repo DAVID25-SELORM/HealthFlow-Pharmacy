@@ -40,14 +40,39 @@ const NHIA_BRIDGE_MODES = ['claimit_bridge']
 const NHIA_LOCAL_BRIDGE_PROFILES = ['local_server', 'lan_ip']
 const NHIA_BRIDGE_REACHABLE_STATUSES = [401, 403, 404, 405]
 const CLAIMIT_PRODUCTION_BRIDGE_BASE_URL = String(import.meta.env.VITE_CLAIMIT_PRODUCTION_BRIDGE_BASE_URL || '').trim().replace(/\/+$/, '')
+const FACILITY_TYPE_OPTIONS = [
+  'Community Pharmacy',
+  'Hospital Pharmacy',
+  'Clinic',
+  'Hospital',
+]
 
-const toForm = (row) => ({
-  pharmacyName: row?.pharmacy_name || 'HealthFlow Pharmacy',
+const normalizeFacilityType = (value, fallbackOrganizationType = 'pharmacy') => {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (normalized.includes('hospital') && normalized.includes('pharmacy')) return 'Hospital Pharmacy'
+  if (normalized.includes('clinic')) return 'Clinic'
+  if (normalized.includes('hospital')) return 'Hospital'
+  if (normalized.includes('pharmacy') || normalized.includes('chemical')) return 'Community Pharmacy'
+  return fallbackOrganizationType === 'hospital' ? 'Hospital' : 'Community Pharmacy'
+}
+
+const getOrganizationTypeForFacilityType = (facilityType, fallback = 'pharmacy') => {
+  const normalized = normalizeFacilityType(facilityType, fallback).toLowerCase()
+  return normalized.includes('hospital') || normalized.includes('clinic') ? 'hospital' : 'pharmacy'
+}
+
+const toForm = (row, organization) => {
+  const fallbackOrganizationType = organization?.organization_type === 'hospital' ? 'hospital' : 'pharmacy'
+
+  return {
+  pharmacyName: row?.pharmacy_name || 'Facility',
   phone: row?.phone || '',
   email: row?.email || '',
+  website: row?.website || '',
   address: row?.address || '',
   city: row?.city || '',
   region: normalizeGhanaRegion(row?.region),
+  facilityType: normalizeFacilityType(row?.facility_type, fallbackOrganizationType),
   logoUrl: row?.logo_url || '',
   slogan: row?.slogan || '',
   licenseNumber: row?.license_number || '',
@@ -60,7 +85,14 @@ const toForm = (row) => ({
   lowStockThreshold: row?.low_stock_threshold ?? 10,
   expiryAlertDays: row?.expiry_alert_days ?? 30,
   receiptFooter: row?.receipt_footer || '',
-})
+  reportFooter: row?.report_footer || '',
+  themePrimaryColor: row?.theme_primary_color || '#16a085',
+  themeSecondaryColor: row?.theme_secondary_color || '#0f766e',
+  themeAccentColor: row?.theme_accent_color || '#f59e0b',
+  customHeader: row?.custom_header || '',
+  reportTemplate: row?.report_template || 'standard',
+  }
+}
 
 const blankNhiaApiForm = {
   facilityCode: '',
@@ -420,7 +452,8 @@ const Settings = () => {
   const singleActiveBranch = activeBranches.length === 1 ? activeBranches[0] : null
   // ✅ NHIA CONFIG PATCH START
   const organizationType = organization?.organization_type === 'hospital' ? 'hospital' : 'pharmacy'
-  const isHospitalOrganization = organizationType === 'hospital'
+  const selectedOrganizationType = getOrganizationTypeForFacilityType(formData.facilityType, organizationType)
+  const isHospitalOrganization = selectedOrganizationType === 'hospital'
   const nhiaFacilityTypeOptions = getNhiaFacilityTypesForOrganization(organizationType)
   const nhiaFacilityType = normalizeNhiaFacilityTypeForOrganization(nhiaApiForm.facilityType, organizationType)
   const claimItPreview = buildClaimItConfigPreview({
@@ -452,7 +485,7 @@ const Settings = () => {
 
       const settings = await getPharmacySettings()
       setSettingsId(settings.id)
-      setFormData(toForm(settings))
+      setFormData(toForm(settings, organization))
 
       if (isAdmin) {
         const [usersData, branchesData, nhiaApiSettings] = await Promise.all([
@@ -490,11 +523,13 @@ const Settings = () => {
     try {
       setSaving(true)
       setError('')
-      const settingsPayload = isHospitalOrganization ? { ...formData, pharmacyLevel: '' } : formData
-      await updatePharmacySettings(settingsId, settingsPayload)
+      const nextOrganizationType = getOrganizationTypeForFacilityType(formData.facilityType, organizationType)
+      const settingsPayload = nextOrganizationType === 'hospital' ? { ...formData, pharmacyLevel: '' } : formData
+      const savedSettings = await updatePharmacySettings(settingsId, settingsPayload)
+      let savedOrganization = organization
       if (organization?.id) {
-        await updateOrganization(organization.id, {
-          organizationType,
+        savedOrganization = await updateOrganization(organization.id, {
+          organizationType: nextOrganizationType,
           name: formData.pharmacyName,
           phone: formData.phone,
           email: formData.email,
@@ -504,11 +539,14 @@ const Settings = () => {
           logoUrl: formData.logoUrl,
           slogan: formData.slogan,
           licenseNumber: formData.licenseNumber,
-          pharmacyLevel: isHospitalOrganization ? '' : formData.pharmacyLevel,
+          pharmacyLevel: nextOrganizationType === 'hospital' ? '' : formData.pharmacyLevel,
         })
       }
-      await loadSettings()
-      notify(`${isHospitalOrganization ? 'Hospital' : 'Pharmacy'} settings saved.`, 'success')
+      setFormData(toForm(savedSettings, savedOrganization))
+      if (refreshProfile) {
+        await refreshProfile()
+      }
+      notify('Facility settings saved.', 'success')
     } catch (saveError) {
       console.error('Error saving settings:', saveError)
       setError(saveError.message || 'Unable to save settings.')
@@ -989,7 +1027,7 @@ const Settings = () => {
     <div className="settings-page">
       <div className="page-header">
         <h1>Settings</h1>
-        <p>Manage your pharmacy system preferences</p>
+        <p>Manage facility branding, operations, staff access, and integrations</p>
       </div>
 
       {error && <div className="settings-alert">{error}</div>}
@@ -999,16 +1037,29 @@ const Settings = () => {
           <div className="card-icon">
             <Building size={24} />
           </div>
-          <h3>Pharmacy Information</h3>
+          <h3>Facility Branding</h3>
           <form className="settings-form" onSubmit={handleSave}>
             <input
-              placeholder="Pharmacy name"
+              placeholder="Facility name"
               value={formData.pharmacyName}
               onChange={(event) =>
                 setFormData({ ...formData, pharmacyName: event.target.value })
               }
               disabled={!isAdmin}
             />
+            <label className="settings-field">
+              <span>Facility type</span>
+              <select
+                value={formData.facilityType}
+                onChange={(event) => setFormData({ ...formData, facilityType: event.target.value })}
+                disabled={!isAdmin}
+              >
+                <option value="">Select facility type</option>
+                {FACILITY_TYPE_OPTIONS.map((facilityType) => (
+                  <option key={facilityType} value={facilityType}>{facilityType}</option>
+                ))}
+              </select>
+            </label>
             <input
               placeholder="Phone"
               value={formData.phone}
@@ -1019,6 +1070,12 @@ const Settings = () => {
               placeholder="Email"
               value={formData.email}
               onChange={(event) => setFormData({ ...formData, email: event.target.value })}
+              disabled={!isAdmin}
+            />
+            <input
+              placeholder="Website"
+              value={formData.website}
+              onChange={(event) => setFormData({ ...formData, website: event.target.value })}
               disabled={!isAdmin}
             />
             <input
@@ -1044,7 +1101,7 @@ const Settings = () => {
             </div>
             <div className="settings-form-row">
               <input
-                placeholder="Pharmacy slogan"
+                placeholder="Facility slogan"
                 value={formData.slogan}
                 onChange={(event) =>
                   setFormData({ ...formData, slogan: event.target.value })
@@ -1091,9 +1148,9 @@ const Settings = () => {
             </label>
             <div className="logo-upload-field">
               {formData.logoUrl && (
-                <img src={formData.logoUrl} alt="Pharmacy logo preview" className="settings-logo-preview" />
+                <img src={formData.logoUrl} alt="Facility logo preview" className="settings-logo-preview" />
               )}
-              <label htmlFor="pharmacyLogo">Pharmacy logo</label>
+              <label htmlFor="pharmacyLogo">Facility logo</label>
               <input
                 id="pharmacyLogo"
                 type="file"
@@ -1182,9 +1239,76 @@ const Settings = () => {
               rows={3}
               style={{ resize: 'vertical', fontFamily: 'inherit' }}
             />
+            <textarea
+              placeholder="Report footer message (optional)"
+              value={formData.reportFooter}
+              onChange={(event) =>
+                setFormData({ ...formData, reportFooter: event.target.value })
+              }
+              disabled={!isAdmin}
+              rows={3}
+              style={{ resize: 'vertical', fontFamily: 'inherit' }}
+            />
+            <textarea
+              placeholder="Custom document header text (optional)"
+              value={formData.customHeader}
+              onChange={(event) =>
+                setFormData({ ...formData, customHeader: event.target.value })
+              }
+              disabled={!isAdmin}
+              rows={2}
+              style={{ resize: 'vertical', fontFamily: 'inherit' }}
+            />
+            <label className="settings-field">
+              <span>Report template</span>
+              <select
+                value={formData.reportTemplate}
+                onChange={(event) => setFormData({ ...formData, reportTemplate: event.target.value })}
+                disabled={!isAdmin}
+              >
+                <option value="standard">Standard</option>
+                <option value="compact">Compact</option>
+                <option value="letterhead">Letterhead</option>
+              </select>
+            </label>
+            <div className="settings-form-row">
+              <label className="settings-field">
+                <span>Primary color</span>
+                <input
+                  type="color"
+                  value={formData.themePrimaryColor}
+                  onChange={(event) =>
+                    setFormData({ ...formData, themePrimaryColor: event.target.value })
+                  }
+                  disabled={!isAdmin}
+                />
+              </label>
+              <label className="settings-field">
+                <span>Secondary color</span>
+                <input
+                  type="color"
+                  value={formData.themeSecondaryColor}
+                  onChange={(event) =>
+                    setFormData({ ...formData, themeSecondaryColor: event.target.value })
+                  }
+                  disabled={!isAdmin}
+                />
+              </label>
+              <label className="settings-field">
+                <span>Accent color</span>
+                <input
+                  type="color"
+                  value={formData.themeAccentColor}
+                  onChange={(event) =>
+                    setFormData({ ...formData, themeAccentColor: event.target.value })
+                  }
+                  disabled={!isAdmin}
+                />
+              </label>
+            </div>
             {isAdmin && (
               <div className="settings-save-bar">
-                <span>Save pharmacy details, slogan, logo, and receipt footer.</span>
+                <span>Save facility branding, document footers, and theme details.</span>
                 <button className="btn btn-primary" type="submit" disabled={saving}>
                   {saving ? 'Saving...' : 'Save Settings'}
                 </button>
@@ -1715,8 +1839,10 @@ const Settings = () => {
                   <option value="Eye centers">Eye centers</option>
                   <option value="Diagnostic centers">Diagnostic centers</option>
                   <option value="CHPS Compounds">CHPS Compounds</option>
-                  <option value="Pharmacy">Pharmacy</option>
+                  <option value="Pharmacy">Community Pharmacy</option>
                   <option value="Hospital Pharmacy">Hospital Pharmacy</option>
+                  <option value="Clinic">Clinic</option>
+                  <option value="Hospital">Hospital</option>
                 </select>
                 <select
                   value={nhiaApiForm.admissionPaymentOption}
@@ -2300,20 +2426,19 @@ const Settings = () => {
           </div>
           <h3>Appearance</h3>
           <p>
-            The interface uses the current HealthFlow brand palette for consistency across pharmacy
-            workstations.
+            Facility logo, document headers, footers, and theme colors can be managed from Facility Branding.
           </p>
         </div>
       </div>
 
       <div className="about-section">
-        <h2>About HealthFlow Pharmacy</h2>
+        <h2>About HealthFlow</h2>
         <p className="about-version">Version 1.0.0</p>
         <p className="about-summary">
-          HealthFlow Pharmacy brings inventory, sales, claims, staff, and tenant operations
+          HealthFlow brings pharmacy, inventory, claims, NHIS, tariffs, staff, branch sync, and facility operations
           together in one streamlined workspace.
         </p>
-        <p className="copyright">Copyright 2026 HealthFlow Pharmacy. All rights reserved.</p>
+        <p className="copyright">Copyright 2026 HealthFlow. All rights reserved.</p>
       </div>
     </div>
   )

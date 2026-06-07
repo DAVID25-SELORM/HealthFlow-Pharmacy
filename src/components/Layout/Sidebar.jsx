@@ -14,6 +14,7 @@ import {
   Truck,
   Building2,
   HeartPulse,
+  Activity,
   RefreshCcw,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
@@ -27,6 +28,7 @@ import {
   INVENTORY_ROLES,
   NHIS_ROLES,
   OFFLINE_SYNC_ROLES,
+  PATIENT_CARE_ROLES,
   PATIENT_ROLES,
   PURCHASES_ROLES,
   REPORT_ROLES,
@@ -34,11 +36,14 @@ import {
   SETTINGS_ROLES,
   hasRole,
 } from '../../utils/roles'
+import { getFacilityLogo, getFacilityName } from '../../utils/facilityBranding'
 import './Sidebar.css'
 
 const Sidebar = ({ isOpen, onClose }) => {
   const { role, canManageInventory, canViewReports, canManageClaims } = useAuth()
-  const { canUseClaims, canUsePurchases, canUseNhis, canUseAccounting } = useTenant()
+  const { organization, canUseClaims, canUsePurchases, canUseNhis, canUseAccounting } = useTenant()
+  const facilityName = getFacilityName(organization)
+  const facilityLogo = getFacilityLogo(organization) || '/app-logo.png'
 
   const menuItems = [
     {
@@ -54,6 +59,7 @@ const Sidebar = ({ isOpen, onClose }) => {
     { path: '/purchases', icon: Truck, label: 'Purchases', roles: PURCHASES_ROLES, featureAllowed: canUsePurchases },
     { path: '/e-pharmacy', icon: Building2, label: 'E-Pharmacy', roles: EPHARMACY_ROLES },
     { path: '/nhis', icon: HeartPulse, label: 'NHIS', roles: NHIS_ROLES, featureAllowed: canUseNhis },
+    { path: '/patient-care', icon: Activity, label: 'Patient Care', roles: PATIENT_CARE_ROLES },
     { path: '/reports', icon: BarChart3, label: 'Reports', roles: REPORT_ROLES, allow: canViewReports },
     { path: '/accounting', icon: Wallet, label: 'Accounting', roles: ACCOUNTING_ROLES, featureAllowed: canUseAccounting },
     { path: '/settings', icon: Settings, label: 'Settings', roles: SETTINGS_ROLES },
@@ -69,7 +75,7 @@ const Sidebar = ({ isOpen, onClose }) => {
   return (
     <aside className={`sidebar ${isOpen ? 'open' : ''}`}>
       <div className="sidebar-logo">
-        <img src="/app-logo.png" alt="HealthFlow Pharmacy" className="sidebar-brand-logo" />
+        <img src={facilityLogo} alt={`${facilityName} logo`} className="sidebar-brand-logo" />
         <button type="button" className="sidebar-close" onClick={onClose} aria-label="Close menu">
           <X size={18} />
         </button>
@@ -90,8 +96,8 @@ const Sidebar = ({ isOpen, onClose }) => {
       </nav>
 
       <div className="sidebar-footer">
-        <p>Copyright 2026 HealthFlow</p>
-        <p className="developer">Built by David Gabion Selorm</p>
+        <p>{facilityName}</p>
+        <p className="developer">{organization?.organization_type || 'Facility'} workspace</p>
       </div>
     </aside>
   )

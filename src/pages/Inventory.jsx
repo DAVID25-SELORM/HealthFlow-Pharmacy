@@ -139,7 +139,6 @@ const Inventory = () => {
   const [formData, setFormData] = useState(emptyDrugForm)
   const [defaultMarkupPercent, setDefaultMarkupPercent] = useState(0)
   const [priceEditedManually, setPriceEditedManually] = useState(false)
-  const [importFile, setImportFile] = useState(null)
   const [importPreview, setImportPreview] = useState(null)
   const [branches, setBranches] = useState([])
   const [selectedBranchId, setSelectedBranchId] = useState('')
@@ -554,7 +553,7 @@ const Inventory = () => {
   const handleDelete = async (id) => {
     const targetDrug = drugs.find((drug) => drug.id === id)
     if (targetDrug && isDefaultCatalogDrug(targetDrug)) {
-      notify('Default catalog medicines stay available to all pharmacies and cannot be deleted.', 'info')
+      notify('Default catalog medicines stay available to all facilities and cannot be deleted.', 'info')
       return
     }
 
@@ -563,7 +562,7 @@ const Inventory = () => {
     }
 
     try {
-      if (!isSupabaseConfigured()) {
+      if (!isSupabaseConfigured() && !isBranchServerEnabled()) {
         notify('Supabase not configured.', 'warning')
         return
       }
@@ -649,7 +648,6 @@ const Inventory = () => {
       const data = await parseExcelFile(file)
       const validation = validateImportData(data)
 
-      setImportFile(file)
       setImportPreview(validation)
       setShowImportModal(true)
     } catch (error) {
@@ -718,7 +716,6 @@ const Inventory = () => {
       }
 
       setShowImportModal(false)
-      setImportFile(null)
       setImportPreview(null)
       await loadDrugs()
       dispatchHealthflowDataChanged()
@@ -731,7 +728,6 @@ const Inventory = () => {
 
   const closeImportModal = () => {
     setShowImportModal(false)
-    setImportFile(null)
     setImportPreview(null)
   }
 

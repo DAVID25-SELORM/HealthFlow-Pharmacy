@@ -418,7 +418,7 @@ const TenantAdmin = () => {
       <div className="page-header">
         <div>
           <h1>Tenant Administration</h1>
-          <p>Manage all pharmacy and hospital organizations on the platform</p>
+          <p>Manage pharmacies, hospital pharmacies, clinics, and hospitals on the HealthFlow platform</p>
         </div>
         <button className="btn btn-primary" onClick={() => setShowCreate((v) => !v)}>
           <Plus size={16} />
@@ -443,14 +443,14 @@ const TenantAdmin = () => {
                     onChange={(e) => setPharmacy({ ...pharmacy, organizationType: e.target.value })}
                     required
                   >
-                    <option value="pharmacy">Pharmacy</option>
-                    <option value="hospital">Hospital</option>
+                    <option value="pharmacy">Community Pharmacy</option>
+                    <option value="hospital">Hospital / Clinic</option>
                   </select>
                 </div>
                 <div className="tenant-form-group">
                   <label>{formatOrganizationType(pharmacy.organizationType)} Name *</label>
                   <input
-                    placeholder={pharmacy.organizationType === 'hospital' ? 'ABC Hospital' : 'ABC Pharmacy'}
+                    placeholder={pharmacy.organizationType === 'hospital' ? 'ABC Hospital' : 'ABC Community Pharmacy'}
                     value={pharmacy.name}
                     onChange={(e) => setPharmacy({ ...pharmacy, name: e.target.value })}
                     required
@@ -460,7 +460,7 @@ const TenantAdmin = () => {
                   <label>Subdomain *</label>
                   <div className="subdomain-row">
                     <input
-                      placeholder="abc-pharmacy"
+                      placeholder="abc-facility"
                       value={pharmacy.subdomain}
                       onChange={(e) => {
                         setPharmacy({ ...pharmacy, subdomain: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '') })
@@ -487,7 +487,7 @@ const TenantAdmin = () => {
                   <label>Email</label>
                   <input
                     type="email"
-                    placeholder="info@pharmacy.com"
+                    placeholder="info@facility.com"
                     value={pharmacy.email}
                     onChange={(e) => setPharmacy({ ...pharmacy, email: e.target.value })}
                   />
@@ -518,7 +518,7 @@ const TenantAdmin = () => {
                 <div className="tenant-form-group">
                   <label>{formatOrganizationType(pharmacy.organizationType)} Slogan</label>
                   <input
-                    placeholder={pharmacy.organizationType === 'hospital' ? 'Smart Care. Better Health.' : 'Smart Pharmacy. Better Health.'}
+                    placeholder={pharmacy.organizationType === 'hospital' ? 'Smart Care. Better Health.' : 'Connected Pharmacy. Better Health.'}
                     value={pharmacy.slogan}
                     onChange={(e) => setPharmacy({ ...pharmacy, slogan: e.target.value })}
                     maxLength={120}
@@ -1013,8 +1013,8 @@ const TenantAdmin = () => {
                       onChange={(e) => setEditForm({ ...editForm, organizationType: e.target.value })}
                       required
                     >
-                      <option value="pharmacy">Pharmacy</option>
-                      <option value="hospital">Hospital</option>
+                      <option value="pharmacy">Community Pharmacy</option>
+                      <option value="hospital">Hospital / Clinic</option>
                     </select>
                   </div>
                   <div className="tenant-form-group full-width">
@@ -1039,7 +1039,7 @@ const TenantAdmin = () => {
                       type="email"
                       value={editForm.email}
                       onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
-                      placeholder="info@pharmacy.com"
+                      placeholder="info@facility.com"
                     />
                   </div>
                   <div className="tenant-form-group full-width">
@@ -1070,7 +1070,7 @@ const TenantAdmin = () => {
                     <input
                       value={editForm.slogan}
                       onChange={(e) => setEditForm({ ...editForm, slogan: e.target.value })}
-                      placeholder="Smart Pharmacy. Better Health."
+                      placeholder={editForm.organizationType === 'hospital' ? 'Smart Care. Better Health.' : 'Connected Pharmacy. Better Health.'}
                       maxLength={120}
                     />
                   </div>

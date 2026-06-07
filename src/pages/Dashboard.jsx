@@ -232,7 +232,7 @@ const Dashboard = () => {
   const canViewOperationalMetrics = canManageInventory || hasRole(role, INVENTORY_ROLES)
   const canViewClaimsMetrics =
     canUseClaims && (canManageClaims || hasRole(role, CLAIMS_ROLES)) && tierLimits.hasClaims
-  const pharmacyName = organization?.name || 'Your Pharmacy'
+  const pharmacyName = organization?.name || 'Your Facility'
   const pharmacyLogoUrl = organization?.logo_url || ''
   const pharmacySlogan = organization?.slogan || ''
   const welcomeName = resolveWelcomeName(displayName)
@@ -375,7 +375,7 @@ const Dashboard = () => {
     }
 
     cards.push({
-      title: 'Month-to-Date Pharmacy Sales',
+      title: 'Month-to-Date Facility Sales',
       value: `GHS ${currencyFormatter.format(stats.monthlySales)}`,
       icon: TrendingUp,
       color: 'success',
@@ -459,7 +459,7 @@ const Dashboard = () => {
       })
     } else if (tierLimits.hasReports && canViewOperationalMetrics) {
       actions.push({
-        label: 'Pharmacy Reports',
+        label: 'Facility Reports',
         description: 'Review dispensing revenue and inventory movement.',
         icon: BarChart3,
         path: '/reports',
@@ -467,8 +467,8 @@ const Dashboard = () => {
       })
     } else if (role === 'admin') {
       actions.push({
-        label: 'Pharmacy Settings',
-        description: 'Update pharmacy profile and staff access.',
+        label: 'Facility Settings',
+        description: 'Update facility profile and staff access.',
         icon: Settings,
         path: '/settings',
         tone: 'secondary',
@@ -585,7 +585,7 @@ const Dashboard = () => {
               </div>
             )}
             <div className="hero-pharmacy-copy">
-              <span className="hero-pharmacy-label">Current pharmacy</span>
+            <span className="hero-pharmacy-label">Current facility</span>
               <strong>{pharmacyName}</strong>
               {pharmacySlogan && <span className="hero-pharmacy-slogan">{pharmacySlogan}</span>}
             </div>
@@ -714,11 +714,11 @@ const Dashboard = () => {
               </div>
               <h3>No completed sales yet</h3>
               <p>
-                Once this pharmacy starts recording dispensing sales, the {chartMode} trend will appear
+                Once this facility starts recording dispensing sales, the {chartMode} trend will appear
                 here automatically.
               </p>
               <button type="button" className="inline-action-btn" onClick={() => navigate('/sales')}>
-                Open Pharmacy POS
+                Open POS
               </button>
             </div>
           )}
@@ -748,7 +748,7 @@ const Dashboard = () => {
                   className="inline-action-btn"
                   onClick={() => navigate('/sales')}
                 >
-                  Open Pharmacy POS
+                  Open POS
                 </button>
               </div>
             ) : (
