@@ -2303,13 +2303,38 @@ export const submitNhiaDirectPayload = async ({ payload, claimIds = [], action =
     throw new Error('Direct NHIA submission requires a claim payload.')
   }
 
+  const normalizedClaimIds = Array.isArray(claimIds)
+    ? claimIds.map((id) => normalizeText(id)).filter(Boolean)
+    : []
+  if (!normalizedClaimIds.length) {
+    throw new Error('Direct NHIA submission requires at least one local claim ID.')
+  }
+
+  const localClaims = normalizedClaimIds.map((id) => {
+    const claim = getNhiaClaim(id)
+    if (!claim) {
+      throw new Error('Direct NHIA submission can only submit existing local claims.')
+    }
+    return claim
+  })
+  const payloadClaims = Array.isArray(payload.claims) ? payload.claims : [payload]
+  if (payloadClaims.length !== localClaims.length) {
+    throw new Error('Direct NHIA submission payload must match the selected local claims.')
+  }
+
+  const localClaimNumbers = new Set(localClaims.map((claim) => normalizeText(claim.claimNumber)))
+  const payloadClaimNumbers = payloadClaims.map((claim) => normalizeText(claim.claimNumber || claim.claim_no || claim.claimNo))
+  if (payloadClaimNumbers.some((claimNumber) => !claimNumber || !localClaimNumbers.has(claimNumber))) {
+    throw new Error('Direct NHIA submission payload does not match the selected local claims.')
+  }
+
   const startedAt = nowIso()
   await validateClaimItBridgePayload(settings, payload)
   logSubmission({
     action: action || 'nhis.direct_submit',
     status: 'pending',
     request: {
-      claimIds,
+      claimIds: normalizedClaimIds,
       claimCount: Array.isArray(payload.claims) ? payload.claims.length : null,
       payload,
       startedAt,

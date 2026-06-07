@@ -56,6 +56,9 @@ const frontendDir = path.resolve(__dirname, '..', 'public')
 const frontendIndex = path.join(frontendDir, 'index.html')
 
 const app = express()
+if (config.trustProxy) {
+  app.set('trust proxy', config.trustProxy)
+}
 const rateLimitBuckets = new Map()
 
 const shouldRateLimit = (request) =>
@@ -257,8 +260,8 @@ app.get('/api/database/status', (_request, response, next) => {
 app.post('/api/database/backup', (request, response, next) => {
   try {
     const label = String(request.body?.label || 'manual').trim() || 'manual'
-    const backupPath = backupDatabase(label.replace(/[^a-z0-9._-]+/gi, '-').slice(0, 64))
-    response.status(201).json({ data: { path: backupPath, status: getDatabaseStatus() } })
+    const backup = backupDatabase(label.replace(/[^a-z0-9._-]+/gi, '-').slice(0, 64))
+    response.status(201).json({ data: { backup, status: getDatabaseStatus() } })
   } catch (error) {
     next(error)
   }
@@ -866,7 +869,6 @@ app.use((error, _request, response, _next) => {
   console.error(error)
   response.status(error.status || 400).json({
     error: 'Request failed.',
-    code: error.code || null,
   })
 })
 

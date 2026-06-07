@@ -41,6 +41,14 @@ const resolveClaimBridgeEnabled = () => {
   return Boolean(process.env.CLAIMIT_UPSTREAM_BASE_URL)
 }
 
+const resolveTrustProxy = () => {
+  const value = String(process.env.TRUST_PROXY || '').trim().toLowerCase()
+  if (!value || ['0', 'false', 'no', 'off'].includes(value)) return false
+  if (['1', 'true', 'yes', 'on'].includes(value)) return 1
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? numeric : value
+}
+
 export const config = {
   port: toNumber(process.env.PORT, 4780),
   branchServerToken: process.env.BRANCH_SERVER_TOKEN || '',
@@ -50,6 +58,7 @@ export const config = {
     .filter(Boolean),
   allowNullOrigin: toBoolean(process.env.ALLOW_NULL_ORIGIN),
   allowLanOrigins: toBoolean(process.env.ALLOW_LAN_ORIGINS),
+  trustProxy: resolveTrustProxy(),
   branchId: process.env.BRANCH_ID || null,
   organizationId: process.env.ORGANIZATION_ID || null,
   facilityBranding: {
@@ -186,6 +195,10 @@ export const assertConfiguredForServer = () => {
 
   if (config.claimBridge.enabled && isWeakPlaceholder(config.claimBridge.accessToken)) {
     throw new Error('Set CLAIM_BRIDGE_TOKEN to a long random value before enabling the public CLAIM-it bridge.')
+  }
+
+  if (config.claimBridge.enabled && config.claimBridge.accessToken.length < 32) {
+    throw new Error('Set CLAIM_BRIDGE_TOKEN to at least 32 random characters before enabling the public CLAIM-it bridge.')
   }
 
   if (config.payments.hubtel.enabled && isWeakPlaceholder(config.payments.hubtel.webhookSecret)) {

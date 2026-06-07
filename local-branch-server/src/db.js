@@ -124,7 +124,10 @@ export const backupDatabase = (label = 'backup') => {
   )
   db.pragma('wal_checkpoint(FULL)')
   fs.copyFileSync(config.sqlitePath, backupPath)
-  return backupPath
+  return {
+    fileName: path.basename(backupPath),
+    createdAt: new Date().toISOString(),
+  }
 }
 
 const fileInfo = (filePath) => {
@@ -153,7 +156,6 @@ const listBackups = () => {
       const backupPath = path.join(backupDir, entry.name)
       return {
         name: entry.name,
-        path: backupPath,
         ...fileInfo(backupPath),
       }
     })
@@ -171,7 +173,6 @@ export const getDatabaseStatus = () => {
 
   return {
     ok: integrity === 'ok',
-    sqlitePath: config.sqlitePath,
     integrity,
     journalMode,
     foreignKeysEnabled: Number(foreignKeys) === 1,
@@ -182,7 +183,6 @@ export const getDatabaseStatus = () => {
     database: fileInfo(config.sqlitePath),
     wal: fileInfo(`${config.sqlitePath}-wal`),
     shm: fileInfo(`${config.sqlitePath}-shm`),
-    backupDirectory: path.join(path.dirname(config.sqlitePath), 'backups'),
     backupCount: backups.length,
     latestBackups: backups.slice(0, 5),
   }
