@@ -140,7 +140,9 @@ export const refreshConnectivityState = async ({ timeoutMs = 900 } = {}): Promis
         await fetchBranchHealth(branchConfig.url, timeoutMs)
         branchServerAvailable = true
       } catch (error) {
-        console.info('[OFFLINE] Local branch server health check failed:', error)
+        if (!internetAvailable) {
+          console.info('[OFFLINE] Local branch server health check failed:', error)
+        }
       }
     }
 

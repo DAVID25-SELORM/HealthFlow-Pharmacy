@@ -254,6 +254,7 @@ const Sales = () => {
   const canChooseShiftBranch = isAdmin && !profile?.branch_id && activeBranches.length > 1
   const unsyncedOfflineSales = Number(offlineSalesSummary.unsynced || 0)
   const branchServerModeEnabled = isBranchServerEnabled()
+  const localBranchServerAvailable = branchServerModeEnabled && branchServerStatus.online
   const posAdminMode = isAdmin && searchParams.get('mode') === 'admin'
   const selectedPatientForSale = useMemo(
     () => patients.find((patient) => patient.id === patientId) || null,
@@ -308,12 +309,12 @@ const Sales = () => {
         profileBranch ||
         null
       const cachedSnapshotShift =
-        snapshot.activeShift?.isLocalPosShift && !branchServerModeEnabled
+        snapshot.activeShift?.isLocalPosShift && !localBranchServerAvailable
           ? null
           : snapshot.activeShift
       const cachedShift =
         cachedSnapshotShift ||
-        (branchServerModeEnabled
+        (localBranchServerAvailable
           ? createLocalPosShift({
               branchId: cachedBranchId,
               branch: cachedBranch,
@@ -342,12 +343,12 @@ const Sales = () => {
         if (snapshot) {
           applySnapshot(snapshot)
           setLoading(false)
-        } else if (branchServerModeEnabled) {
+        } else if (localBranchServerAvailable) {
           applySnapshot({})
           setLoading(false)
         }
 
-        if (branchServerModeEnabled) {
+        if (localBranchServerAvailable) {
           try {
             const bootstrap = await getBranchPosBootstrap({
               inventoryLimit: POS_DRUG_SEARCH_LIMIT,
@@ -421,9 +422,10 @@ const Sales = () => {
               .catch((cacheError) => {
                 console.warn('Unable to preload full local inventory cache:', cacheError)
               })
+            return
           } catch (branchError) {
-            console.warn('Local POS bootstrap failed:', branchError)
-            if (!snapshot && !cancelled) {
+            console.info('Local POS bootstrap unavailable; falling back to hosted POS data.', branchError)
+            if (!isSupabaseConfigured() && !snapshot && !cancelled) {
               setError(
                 branchError.name === 'AbortError'
                   ? 'Local POS cache is not ready yet. Start the branch server or pull data from Admin mode.'
@@ -431,8 +433,10 @@ const Sales = () => {
               )
               setLoading(false)
             }
+            if (!isSupabaseConfigured()) {
+              return
+            }
           }
-          return
         }
 
         if (!isSupabaseConfigured()) {
@@ -506,9 +510,9 @@ const Sales = () => {
       cancelled = true
     }
   }, [
-    branchServerModeEnabled,
     canProcessRefund,
     isOnline,
+    localBranchServerAvailable,
     organization,
     profile?.branch_id,
     profile?.branches,
@@ -531,7 +535,7 @@ const Sales = () => {
 
     const searchPatientsLocally = async () => {
       try {
-        if (branchServerModeEnabled) {
+        if (localBranchServerAvailable) {
           setPatientSearchLoading(true)
           const localPatients = await searchBranchPatients({
             term,
@@ -577,7 +581,7 @@ const Sales = () => {
       cancelled = true
       window.clearTimeout(timeout)
     }
-  }, [branchServerModeEnabled, loading, patientSearchTerm, user?.id])
+  }, [loading, localBranchServerAvailable, patientSearchTerm, user?.id])
 
   useEffect(() => {
     let cancelled = false
@@ -613,7 +617,7 @@ const Sales = () => {
         setDrugSearchLoading(true)
         setDrugSearchMessage('')
 
-        if (branchServerModeEnabled) {
+        if (localBranchServerAvailable) {
           try {
             const localResults = await searchBranchInventory({
               term,
@@ -703,7 +707,7 @@ const Sales = () => {
       cancelled = true
       window.clearTimeout(timeout)
     }
-  }, [branchServerModeEnabled, effectiveBranchId, loading, searchTerm, user?.id])
+  }, [branchServerModeEnabled, effectiveBranchId, loading, localBranchServerAvailable, searchTerm, user?.id])
 
   useEffect(() => {
     const routeSearch = searchParams.get('search') || ''
@@ -924,7 +928,7 @@ const Sales = () => {
 
   const refreshDrugs = async () => {
     try {
-      if (branchServerModeEnabled) {
+      if (localBranchServerAvailable) {
         const latestLocalDrugs = await searchBranchInventory({
           term: searchTerm,
           limit: POS_DRUG_SEARCH_LIMIT,
@@ -990,7 +994,7 @@ const Sales = () => {
   const refreshRecentSales = async () => {
     try {
       setLoadingRecentSales(true)
-      const recent = branchServerModeEnabled
+      const recent = localBranchServerAvailable
         ? await getBranchRecentSales(RECENT_SALES_LIMIT)
         : await getRecentSales(RECENT_SALES_LIMIT)
       setRecentSales(recent || [])
@@ -1444,7 +1448,7 @@ const Sales = () => {
         return
       }
 
-      if (!branchServerModeEnabled || !branchServerStatus.online) {
+      if (!localBranchServerAvailable) {
         notify('Connect the local branch server before taking Mobile Money or Card payments.', 'warning')
         return
       }
@@ -1490,7 +1494,7 @@ const Sales = () => {
         return
       }
 
-      if (saleIsNhiaClaim && !branchServerModeEnabled) {
+      if (saleIsNhiaClaim && !localBranchServerAvailable) {
         notify('NHIA claim sales must be saved through the local branch server.', 'warning')
         return
       }
@@ -1621,7 +1625,7 @@ const Sales = () => {
         return
       }
 
-      if (branchServerModeEnabled) {
+      if (localBranchServerAvailable) {
         try {
           const localClaimPayload =
             paymentMethod === 'insurance'
@@ -1715,7 +1719,7 @@ const Sales = () => {
       }
 
       if (!isOnline) {
-        if (branchServerModeEnabled) {
+        if (localBranchServerAvailable) {
           try {
             const localClaimPayload =
               paymentMethod === 'insurance'
@@ -1930,7 +1934,7 @@ const Sales = () => {
       if (!effectiveBranchId && !isAdmin) {
         throw new Error('Ask an admin to assign your branch before opening a shift.')
       }
-      if (branchServerModeEnabled) {
+      if (localBranchServerAvailable) {
         const branchId = effectiveBranchId || fallbackBranch?.id
         const branch =
           activeBranches.find((row) => row.id === branchId) ||
@@ -2020,7 +2024,7 @@ const Sales = () => {
     try {
       setReprintingSaleId(sale.id)
       setError('')
-      const fullSale = branchServerModeEnabled
+      const fullSale = localBranchServerAvailable
         ? await getBranchSale(sale.id)
         : await getSaleById(sale.id)
       const normalizedSale = fullSale.sale_number
@@ -2081,7 +2085,7 @@ const Sales = () => {
   const checkoutTotal = isNhiaClaimSale ? Math.min(nhisCoveredTotal, total) : total
   const nhiaPricingAdjustment = isNhiaClaimSale ? Math.max(total - checkoutTotal, 0) : 0
   const isInsuranceSale = paymentMethod === 'insurance' || isNhiaClaimSale
-  const onlinePaymentDisabled = !isOnline || !branchServerModeEnabled || !branchServerStatus.online
+  const onlinePaymentDisabled = !isOnline || !localBranchServerAvailable
   const servingNhisPatient = isInsuranceSale && isNhisPatient(selectedPatientForSale)
   const insuranceSplitAllowed = !isNhiaClaimSale && (!servingNhisPatient || canUseNhisTopups)
   const insuranceHasPatientDetails =
@@ -2383,7 +2387,7 @@ const Sales = () => {
           </>
         ) : (
           <form className="shift-open-form" onSubmit={handleOpenShift}>
-            <strong>{branchServerModeEnabled ? 'Start local POS session' : 'Open a shift to begin sales'}</strong>
+            <strong>{localBranchServerAvailable ? 'Start local POS session' : 'Open a shift to begin sales'}</strong>
             {assignedBranch ? (
               <div className="assigned-branch-field">
                 <span>Assigned branch</span>
@@ -2427,7 +2431,7 @@ const Sales = () => {
               className="btn btn-primary"
               disabled={shiftBusy || !effectiveBranchId}
             >
-              {shiftBusy ? 'Opening...' : branchServerModeEnabled ? 'Start POS' : 'Open Shift'}
+              {shiftBusy ? 'Opening...' : localBranchServerAvailable ? 'Start POS' : 'Open Shift'}
             </button>
           </form>
         )}
@@ -2971,7 +2975,7 @@ const Sales = () => {
                     : 'Saving Offline...'
                   : isOnline
                     ? 'Complete Sale'
-                    : branchServerModeEnabled
+                    : localBranchServerAvailable
                       ? 'Save to Branch Server'
                       : 'Save Offline Sale'}
             </button>
