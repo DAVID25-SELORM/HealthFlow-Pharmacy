@@ -48,7 +48,13 @@ vi.mock('./connectivityService', () => ({
   getConnectivityState,
 }))
 
-import { getAllPatients, searchPatients } from './patientService'
+import {
+  getAllPatients,
+  getPatientById,
+  getPatientLastVisit,
+  getPatientVisitCount,
+  searchPatients,
+} from './patientService'
 
 describe('patientService local sync reads', () => {
   beforeEach(() => {
@@ -204,6 +210,44 @@ describe('patientService local sync reads', () => {
 
     expect(listBranchRecords).toHaveBeenCalledWith('patients', { searchTerm: 'GHA-000606820-8' })
     expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { searchTerm: 'GHA-000606820-8', limit: 100 })
+    expect(fromMock).not.toHaveBeenCalled()
+  })
+
+  it('does not query sales for NHIS claim-derived patient IDs', async () => {
+    await expect(getPatientVisitCount('nhis-claim-c480b306-1085-46d3-b1cc-5066b127a182')).resolves.toBe(0)
+    await expect(getPatientLastVisit('nhis-claim-c480b306-1085-46d3-b1cc-5066b127a182')).resolves.toBeNull()
+
+    expect(fromMock).not.toHaveBeenCalled()
+    expect(shouldRouteToLocal).not.toHaveBeenCalled()
+  })
+
+  it('loads NHIS claim-derived patient details from local claim rows', async () => {
+    listBranchRecords.mockResolvedValueOnce([{
+      id: 'claim-row-1',
+      claim_number: 'NHIS-002',
+      surname: 'Baria',
+      other_names: 'Karim',
+      member_no: '99441270',
+      hin: '36663082',
+      status: 'served',
+      service_date_from: '2026-05-14',
+      total_amount: 45,
+    }])
+
+    await expect(getPatientById('nhis-claim-claim-row-1')).resolves.toMatchObject({
+      id: 'nhis-claim-claim-row-1',
+      full_name: 'Baria Karim',
+      sales: [],
+      claims: [{
+        id: 'claim-row-1',
+        claim_number: 'NHIS-002',
+        claim_status: 'served',
+        service_date: '2026-05-14',
+        total_amount: 45,
+      }],
+    })
+
+    expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { id: 'claim-row-1', limit: 1 })
     expect(fromMock).not.toHaveBeenCalled()
   })
 })

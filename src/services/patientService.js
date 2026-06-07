@@ -140,6 +140,34 @@ export const getAllPatients = async () => {
 
 // Get patient by ID
 export const getPatientById = async (id) => {
+  if (isNhisClaimPatientId(id)) {
+    const claimKey = getNhisClaimKeyFromPatientId(id)
+    return await routeRead({
+      label: 'NHIS claim patient',
+      local: async () => {
+        const claims = await listBranchRecords('nhis/claims', { id: claimKey, limit: 1 })
+        if (!claims.length) {
+          throw new Error('NHIS claim patient not found in local branch server.')
+        }
+        return nhisClaimToPatientDetail(claims[0])
+      },
+      cloud: async () => {
+        const query = supabase
+          .from('nhis_claims')
+          .select('*')
+
+        const { data, error } = isPersistedSupabasePatientId(claimKey)
+          ? await query.eq('id', claimKey).maybeSingle()
+          : await query.eq('claim_number', claimKey).maybeSingle()
+
+        if (error && error.code !== 'PGRST116') throw error
+        if (!data) throw new Error('NHIS claim patient not found.')
+        return nhisClaimToPatientDetail(data)
+      },
+      fallback: null,
+    })
+  }
+
   return await routeRead({
     label: 'patient',
     local: async () => {
@@ -210,6 +238,15 @@ const patientSearchKey = (patient = {}) =>
     patient.folder_no,
   ].filter(Boolean).join('|'))
 
+const SUPABASE_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+const isPersistedSupabasePatientId = (id) => SUPABASE_UUID_PATTERN.test(String(id || '').trim())
+
+const isNhisClaimPatientId = (id) => String(id || '').startsWith('nhis-claim-')
+
+const getNhisClaimKeyFromPatientId = (id) =>
+  String(id || '').replace(/^nhis-claim-/, '').trim()
+
 const nhisClaimToPatient = (claim = {}) => ({
   id: claim.patient_id || `nhis-claim-${claim.id || claim.claim_number || compactPatientLookup([
     claim.member_no,
@@ -231,6 +268,18 @@ const nhisClaimToPatient = (claim = {}) => ({
   folder_no: claim.folder_no || '',
   source_claim_number: claim.claim_number || '',
   sourceClaimNumber: claim.claim_number || '',
+})
+
+const nhisClaimToPatientDetail = (claim = {}) => ({
+  ...nhisClaimToPatient(claim),
+  sales: [],
+  claims: [{
+    id: claim.id || claim.claim_number,
+    claim_number: claim.claim_number || '',
+    claim_status: claim.claim_status || claim.status || '',
+    service_date: claim.service_date || claim.service_date_from || claim.dispensing_date || '',
+    total_amount: claim.total_amount || 0,
+  }],
 })
 
 const fetchNhisClaimPatientsFromSupabase = async () => {
@@ -432,6 +481,10 @@ export const searchPatients = async (searchTerm) => {
 
 // Get patient visit count
 export const getPatientVisitCount = async (patientId) => {
+  if (!isPersistedSupabasePatientId(patientId)) {
+    return 0
+  }
+
   if (await shouldRouteToLocal()) {
     return 0
   }
@@ -447,6 +500,10 @@ export const getPatientVisitCount = async (patientId) => {
 
 // Get patient last visit
 export const getPatientLastVisit = async (patientId) => {
+  if (!isPersistedSupabasePatientId(patientId)) {
+    return null
+  }
+
   if (await shouldRouteToLocal()) {
     return null
   }

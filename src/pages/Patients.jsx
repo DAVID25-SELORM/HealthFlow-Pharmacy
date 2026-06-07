@@ -227,7 +227,7 @@ const Patients = () => {
     setHistoryLoading(true)
 
     try {
-      const detail = await getPatientById(patient.id)
+      const detail = await getPatientById(patient.id) || patient
       const sales = [...(detail.sales || [])].sort(
         (left, right) => new Date(right.sale_date) - new Date(left.sale_date)
       )
