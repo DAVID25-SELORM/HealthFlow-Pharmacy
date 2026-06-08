@@ -615,6 +615,11 @@ const requireNhiaSettingsAccess = (requesterProfile: RequesterProfile, message: 
   }
 }
 
+const resolveScopedBranchId = (
+  requesterProfile: RequesterProfile,
+  payload: Record<string, unknown> = {}
+) => requesterProfile.branch_id || normalizeText(payload.branchId || payload.branch_id)
+
 const requireClaimCreateAccess = (requesterProfile: RequesterProfile, message: string) => {
   if (
     !CLAIMS_ROLES.includes(requesterProfile.role) &&
@@ -3154,9 +3159,11 @@ const getNhiaApiSettings = async (
   adminClient: ReturnType<typeof createAdminClient>,
   requesterProfile: RequesterProfile,
   organizationId: string,
-  includeCredentials = false
+  includeCredentials = false,
+  branchId = ''
 ) => {
   requireNhiaAccess(requesterProfile, 'Only NHIS staff can access NHIA API settings.')
+  const scopedBranchId = resolveScopedBranchId(requesterProfile, { branchId })
 
   let query = adminClient
     .from('nhia_configuration')
@@ -3164,8 +3171,8 @@ const getNhiaApiSettings = async (
     .eq('organization_id', organizationId)
     .eq('is_active', true)
 
-  query = requesterProfile.branch_id
-    ? query.eq('branch_id', requesterProfile.branch_id)
+  query = scopedBranchId
+    ? query.eq('branch_id', scopedBranchId)
     : query.is('branch_id', null)
 
   const { data, error } = await query
@@ -3198,11 +3205,15 @@ const saveNhiaApiSettings = async (
         ? payload.data
         : null
   const settings = (payload.settings || nestedPayload || {}) as Record<string, unknown>
+  const scopedBranchId = resolveScopedBranchId(requesterProfile, {
+    ...payload,
+    ...settings,
+  })
   const incomingCredentials =
     settings.credentials && typeof settings.credentials === 'object'
       ? (settings.credentials as Record<string, unknown>)
       : {}
-  const existing = await getNhiaApiSettings(adminClient, requesterProfile, organizationId, true)
+  const existing = await getNhiaApiSettings(adminClient, requesterProfile, organizationId, true, scopedBranchId)
   const credentials = { ...(existing?.credentials || {}) } as Record<string, unknown>
 
   for (const [key, value] of Object.entries(incomingCredentials)) {
@@ -3242,7 +3253,7 @@ const saveNhiaApiSettings = async (
 
   const row = {
     organization_id: organizationId,
-    branch_id: requesterProfile.branch_id,
+    branch_id: scopedBranchId || null,
     mode: 'ONLINE_CLOUD',
     provider_id: providerNumber || null,
     facility_code: facilityCode || null,
@@ -3326,7 +3337,7 @@ const saveNhiaApiSettings = async (
     .single()
 
   if (error) throw error
-  const savedSettings = await getNhiaApiSettings(adminClient, requesterProfile, organizationId, false)
+  const savedSettings = await getNhiaApiSettings(adminClient, requesterProfile, organizationId, false, scopedBranchId)
   logNhiaConfigEvent('save completed', {
     mode: 'ONLINE_CLOUD',
     saveTarget: 'cloud_supabase',
@@ -3342,9 +3353,11 @@ const saveNhiaApiSettings = async (
 const removeNhiaApiCredentials = async (
   adminClient: ReturnType<typeof createAdminClient>,
   requesterProfile: RequesterProfile,
-  organizationId: string
+  organizationId: string,
+  payload: Record<string, unknown> = {}
 ) => {
   requireNhiaSettingsAccess(requesterProfile, 'Only organization admins can remove NHIA API credentials.')
+  const scopedBranchId = resolveScopedBranchId(requesterProfile, payload)
 
   let query = adminClient
     .from('nhia_configuration')
@@ -3358,8 +3371,8 @@ const removeNhiaApiCredentials = async (
     })
     .eq('organization_id', organizationId)
 
-  query = requesterProfile.branch_id
-    ? query.eq('branch_id', requesterProfile.branch_id)
+  query = scopedBranchId
+    ? query.eq('branch_id', scopedBranchId)
     : query.is('branch_id', null)
 
   const { error } = await query
@@ -3368,7 +3381,7 @@ const removeNhiaApiCredentials = async (
 
   if (error) throw error
 
-  const settings = await getNhiaApiSettings(adminClient, requesterProfile, organizationId, false)
+  const settings = await getNhiaApiSettings(adminClient, requesterProfile, organizationId, false, scopedBranchId)
   logNhiaConfigEvent('credentials removed', {
     mode: settings?.mode || 'ONLINE_CLOUD',
     saveTarget: 'cloud_supabase',
@@ -3824,7 +3837,8 @@ const generateNhiaCcCode = async (
 
   let settings: Awaited<ReturnType<typeof getNhiaApiSettings>> | null = null
   try {
-    settings = await getNhiaApiSettings(adminClient, requesterProfile, organizationId, true)
+    const scopedBranchId = resolveScopedBranchId(requesterProfile, payload)
+    settings = await getNhiaApiSettings(adminClient, requesterProfile, organizationId, true, scopedBranchId)
   } catch (error) {
     return {
       ok: false,
@@ -4510,7 +4524,15 @@ Deno.serve(async (request) => {
     }
 
     if (action === 'get_nhia_api_settings') {
-      return json({ settings: await getNhiaApiSettings(adminClient, requesterProfile, organizationId, false) })
+      return json({
+        settings: await getNhiaApiSettings(
+          adminClient,
+          requesterProfile,
+          organizationId,
+          false,
+          resolveScopedBranchId(requesterProfile, payload)
+        ),
+      })
     }
 
     if (action === 'save_nhia_api_settings') {
@@ -4518,7 +4540,7 @@ Deno.serve(async (request) => {
     }
 
     if (action === 'remove_nhia_api_credentials') {
-      return json(await removeNhiaApiCredentials(adminClient, requesterProfile, organizationId))
+      return json(await removeNhiaApiCredentials(adminClient, requesterProfile, organizationId, payload))
     }
 
     if (action === 'test_claimit_connection') {

@@ -1801,6 +1801,7 @@ const Nhis = () => {
         claimId,
         claim_id: claimId,
         organizationId,
+        branchId: profile?.branch_id || branch?.id || null,
         organizationType,
         patientName: `${claimForm.surname} ${claimForm.otherNames || ''}`.trim(),
         memberNumber,

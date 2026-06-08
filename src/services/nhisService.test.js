@@ -1789,6 +1789,7 @@ describe('direct NHIA submission', () => {
 
     await expect(generateHostedNhiaCcCode({
       organizationId: 'org-1',
+      branchId: 'branch-1',
       organizationType: 'pharmacy',
       patientName: 'Ama Mensah',
       memberNumber: '12345678',
@@ -1802,6 +1803,7 @@ describe('direct NHIA submission', () => {
     expect(invokeTierAccess).toHaveBeenCalledWith(expect.objectContaining({
       action: 'generate_nhia_cc_code',
       organizationId: 'org-1',
+      branchId: 'branch-1',
       patientName: 'Ama Mensah',
       memberNumber: '12345678',
     }))
