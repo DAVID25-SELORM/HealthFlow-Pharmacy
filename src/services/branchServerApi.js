@@ -354,6 +354,20 @@ export const repairBranchSync = async () =>
 
 export const getBranchSyncStatus = async () => await branchFetch('/api/sync/status')
 
+export const getBranchReportBundle = async (filters = {}) => {
+  const params = new URLSearchParams()
+  Object.entries(filters || {}).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      params.set(key, String(value))
+    }
+  })
+
+  const response = await branchFetch(`/api/reports/bundle${params.toString() ? `?${params}` : ''}`, {
+    timeoutMs: LONG_BRANCH_REQUEST_TIMEOUT_MS,
+  })
+  return response.data || response
+}
+
 // ✅ SYNC POST TOKEN FIX START
 const getBranchSyncPostHeaders = () => ({
   Accept: 'application/json',

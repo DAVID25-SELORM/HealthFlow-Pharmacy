@@ -187,7 +187,19 @@ const INVENTORY_ROLES = ['admin', 'pharmacist', 'technician', 'procurement', 'br
 const SALES_ROLES = ['admin', 'pharmacist', 'assistant', 'cashier', 'technician', 'branch_manager']
 const CLAIMS_ROLES = ['admin', 'pharmacist', 'billing', 'claims_officer']
 const NHIS_ROLES = ['admin', 'pharmacist', 'billing', 'claims_officer']
-const REPORT_ROLES = ['admin', 'pharmacist', 'branch_manager']
+const REPORT_ROLES = [
+  'super_admin',
+  'admin',
+  'pharmacist',
+  'cashier',
+  'billing',
+  'branch_manager',
+  'procurement',
+  'accountant',
+  'accounts_officer',
+  'inventory_officer',
+  'claims_officer',
+]
 const NHIA_SETTINGS_ROLES = ['admin', 'pharmacist', 'branch_manager']
 const EPHARMACY_ROLES = ['admin', 'pharmacist', 'procurement', 'branch_manager']
 const EPHARMACY_REVIEW_ROLES = ['admin', 'pharmacist']
@@ -4339,14 +4351,109 @@ const getReportBundle = async (
     return acc
   }, {})
 
+  const [
+    nhisClaimsResult,
+    purchasesResult,
+    suppliersResult,
+    exportHistoryResult,
+    submissionLogsResult,
+  ] = await Promise.allSettled([
+    adminClient
+      .from('nhis_claims')
+      .select('*, nhis_claim_medicines (*), nhis_claim_services (*)')
+      .eq('organization_id', organizationId)
+      .gte('service_date', startDate || '1900-01-01')
+      .lte('service_date', endDate || '2999-12-31')
+      .order('created_at', { ascending: false }),
+    adminClient
+      .from('purchases')
+      .select('*, purchase_items (*)')
+      .eq('organization_id', organizationId)
+      .gte('purchase_date', startDate || '1900-01-01')
+      .lte('purchase_date', endDate || '2999-12-31')
+      .order('purchase_date', { ascending: false }),
+    adminClient
+      .from('suppliers')
+      .select('*')
+      .eq('organization_id', organizationId)
+      .order('name', { ascending: true }),
+    adminClient
+      .from('nhia_claim_batches')
+      .select('*')
+      .eq('organization_id', organizationId)
+      .order('created_at', { ascending: false }),
+    adminClient
+      .from('nhia_submission_logs')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(200),
+  ])
+
+  const getOptionalRows = (result: PromiseSettledResult<{ data: unknown[] | null; error: unknown }>) => {
+    if (result.status !== 'fulfilled' || result.value.error) {
+      return []
+    }
+
+    return result.value.data || []
+  }
+
+  const nhisClaims = getOptionalRows(nhisClaimsResult)
+  const purchases = getOptionalRows(purchasesResult)
+  const suppliers = getOptionalRows(suppliersResult)
+  const exportHistory = getOptionalRows(exportHistoryResult)
+  const submissionLogs = getOptionalRows(submissionLogsResult)
+  const monthlyNhisSubmission = Object.values(
+    nhisClaims.reduce<Record<string, Record<string, number | string>>>((acc, claim) => {
+      const row = claim as Record<string, unknown>
+      const month = String(row.submission_month || row.service_date || row.created_at || '').slice(0, 7) || 'Unspecified'
+      if (!acc[month]) {
+        acc[month] = { month, count: 0, totalAmount: 0, accepted: 0, rejected: 0, pending: 0 }
+      }
+
+      const status = normalizeText(row.status || row.claim_status).toLowerCase()
+      acc[month].count = Number(acc[month].count || 0) + 1
+      acc[month].totalAmount =
+        Number(acc[month].totalAmount || 0) + Number.parseFloat(String(row.total_amount || 0))
+      if (['accepted', 'approved', 'paid'].includes(status)) {
+        acc[month].accepted = Number(acc[month].accepted || 0) + 1
+      } else if (['rejected', 'failed'].includes(status)) {
+        acc[month].rejected = Number(acc[month].rejected || 0) + 1
+      } else {
+        acc[month].pending = Number(acc[month].pending || 0) + 1
+      }
+      return acc
+    }, {})
+  )
+
   return {
     sales: salesRows,
     claims: claimRows,
+    nhisClaims,
     lowStock,
     expired,
     expiring,
     patients: patientRows,
     drugs: reportVisibleActiveDrugRows,
+    purchases,
+    suppliers,
+    exportHistory,
+    submissionLogs,
+    monthlyNhisSubmission,
+    staffActivity: [
+      ...submissionLogs.map((log) => ({
+        ...(log as Record<string, unknown>),
+        module: 'NHIS',
+      })),
+      ...salesRows.map((sale) => ({
+        id: sale.id,
+        action: 'sale.completed',
+        status: sale.payment_status,
+        userId: sale.sold_by,
+        module: 'Sales',
+        createdAt: sale.sale_date,
+        details: sale.sale_number,
+      })),
+    ],
     metrics: {
       salesCount: salesRows.length,
       salesAmount: salesRows.reduce(
@@ -4365,13 +4472,25 @@ const getReportBundle = async (
         0
       ),
       claimsCount: claimRows.length,
+      nhisClaimsCount: nhisClaims.length,
       approvedClaims: claimRows.filter((claim) => claim.claim_status === 'approved').length,
       rejectedClaims: claimRows.filter((claim) => claim.claim_status === 'rejected').length,
+      approvedNhisClaims: nhisClaims.filter((claim) =>
+        ['accepted', 'approved', 'paid'].includes(normalizeText((claim as Record<string, unknown>).status).toLowerCase())
+      ).length,
+      rejectedNhisClaims: nhisClaims.filter((claim) =>
+        ['rejected', 'failed'].includes(normalizeText((claim as Record<string, unknown>).status).toLowerCase())
+      ).length,
       lowStockCount: lowStock.length,
       expiredCount: expired.length,
       expiringCount: expiring.length,
       patientCount: patientRows.length,
       inventoryCount: reportVisibleActiveDrugRows.length,
+      purchasesCount: purchases.length,
+      purchaseAmount: purchases.reduce(
+        (sum, purchase) => sum + Number.parseFloat(String((purchase as Record<string, unknown>).total_amount || 0)),
+        0
+      ),
       dailySales,
     },
   }

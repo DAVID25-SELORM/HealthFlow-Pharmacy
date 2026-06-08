@@ -37,6 +37,7 @@ import {
   handlePaystackWebhook,
   initiatePayment,
 } from './paymentsRepository.js'
+import { getLocalReportBundle } from './reportsRepository.js'
 import { createLocalSale, getLocalSale, getRecentLocalSales } from './salesRepository.js'
 import {
   getSupabaseDiagnostics,
@@ -752,6 +753,14 @@ app.put('/api/suppliers/:id', (request, response, next) => {
 
 app.get('/api/purchases', (request, response) => {
   response.json({ data: listOfflineRecords('purchases', request.query) })
+})
+
+app.get('/api/reports/bundle', (request, response, next) => {
+  try {
+    response.json({ data: getLocalReportBundle(request.query || {}) })
+  } catch (error) {
+    next(error)
+  }
 })
 
 app.post('/api/purchases', (request, response, next) => {

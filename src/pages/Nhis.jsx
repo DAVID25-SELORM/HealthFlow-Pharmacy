@@ -4,7 +4,7 @@ import {
   Send, Banknote, XCircle, Eye, FileSpreadsheet, HeartPulse,
   Pencil, Paperclip, FileText, Users,
 } from 'lucide-react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
@@ -2320,6 +2320,9 @@ const Nhis = () => {
           <p className="page-subtitle">{nhisPageSubtitle}</p>
         </div>
         <div className="header-actions">
+          <Link className="btn btn-secondary" to="/reports">
+            <FileText size={16} /> NHIS Reports
+          </Link>
           {(pageTab === 'claims' || pageTab === 'patients') && canWrite && (
             <>
               {pageTab === 'claims' && (
