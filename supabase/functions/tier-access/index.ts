@@ -3655,6 +3655,10 @@ const summarizeRemoteBody = (body: unknown): string => {
 }
 
 const buildRemoteHttpError = (label: string, status: number, body: unknown) => {
+  if (label === 'NHIA API' && status === 401) {
+    return new Error('NHIA API rejected this facility\'s API key/secret. Re-save the correct NHIA API credentials for the facility.')
+  }
+
   const summary = summarizeRemoteBody(body)
   return new Error(`${label} returned HTTP ${status}${summary ? `: ${summary}` : ''}`)
 }
