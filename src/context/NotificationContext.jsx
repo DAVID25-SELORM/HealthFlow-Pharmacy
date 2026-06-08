@@ -1,8 +1,21 @@
 import { createContext, useCallback, useContext, useMemo, useState } from 'react'
 
 const NotificationContext = createContext(null)
+const DEFAULT_TOAST_DURATION_MS = 3500
+const PERSISTENT_TOAST_TYPES = new Set(['warning'])
 
 let nextToastId = 1
+
+const getToastDuration = (type, duration) => {
+  if (PERSISTENT_TOAST_TYPES.has(type)) {
+    return 0
+  }
+
+  const parsedDuration = Number(duration)
+  return Number.isFinite(parsedDuration) && parsedDuration > 0
+    ? parsedDuration
+    : DEFAULT_TOAST_DURATION_MS
+}
 
 export const NotificationProvider = ({ children }) => {
   const [toasts, setToasts] = useState([])
@@ -12,13 +25,16 @@ export const NotificationProvider = ({ children }) => {
   }, [])
 
   const notify = useCallback(
-    (message, type = 'info', duration = 3500) => {
+    (message, type = 'info', duration = DEFAULT_TOAST_DURATION_MS) => {
       const id = nextToastId++
       setToasts((current) => [...current, { id, message, type }])
+      const toastDuration = getToastDuration(type, duration)
 
-      window.setTimeout(() => {
-        removeToast(id)
-      }, duration)
+      if (toastDuration > 0) {
+        window.setTimeout(() => {
+          removeToast(id)
+        }, toastDuration)
+      }
     },
     [removeToast]
   )
@@ -37,11 +53,12 @@ export const NotificationProvider = ({ children }) => {
       <div className="toast-stack" role="status" aria-live="polite">
         {toasts.map((toast) => (
           <div key={toast.id} className={`toast-item toast-${toast.type}`}>
-            <span>{toast.message}</span>
+            <span className="toast-message">{toast.message}</span>
             <button
               type="button"
               onClick={() => removeToast(toast.id)}
               aria-label="Dismiss notification"
+              title="Dismiss notification"
             >
               x
             </button>

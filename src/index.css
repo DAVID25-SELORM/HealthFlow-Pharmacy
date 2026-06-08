@@ -371,15 +371,24 @@ h6 { font-size: 0.875rem; }
 
 .toast-item {
   min-width: 250px;
-  max-width: 360px;
+  max-width: min(520px, calc(100vw - 2rem));
+  max-height: 70vh;
   border-radius: var(--radius);
   box-shadow: var(--shadow-lg);
   color: var(--white);
   padding: 0.7rem 0.85rem;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 0.8rem;
+  overflow: auto;
+}
+
+.toast-message {
+  flex: 1;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .toast-item button {
@@ -388,6 +397,8 @@ h6 { font-size: 0.875rem; }
   color: inherit;
   font-size: 1rem;
   cursor: pointer;
+  flex-shrink: 0;
+  line-height: 1.2;
 }
 
 .toast-info {
