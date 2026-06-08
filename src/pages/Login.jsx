@@ -5,6 +5,8 @@ import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
 import './Login.css'
 
+const LOGIN_BUILD_STAMP = 'HF-2026-06-08-branch-sync-v1'
+
 const hasRecoveryHint = () => {
   if (typeof window === 'undefined') {
     return false
@@ -127,6 +129,7 @@ const Login = () => {
               ? 'Create a new password for your account'
               : 'Pharmacy, Claims & Facility Operations Platform'}
         </p>
+        <p className="login-build-stamp">Build {LOGIN_BUILD_STAMP}</p>
 
         {!isConfigured && (
           <div className="login-alert">Supabase credentials are not configured in your .env file.</div>

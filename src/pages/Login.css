@@ -31,7 +31,15 @@
 
 .subtitle {
   color: var(--gray-600);
-  margin-bottom: 1.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.login-build-stamp {
+  color: var(--gray-500);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  margin: 0 0 1.5rem;
 }
 
 .login-alert {
