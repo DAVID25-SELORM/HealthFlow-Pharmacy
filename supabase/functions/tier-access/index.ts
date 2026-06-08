@@ -3841,6 +3841,16 @@ const generateNhiaCcCode = async (
     return { ok: false, error: 'Direct NHIA API is not enabled for organization', receivedKeys }
   }
 
+  if (settings.credentialDecodeFailed || settings.requiresCredentialReentry) {
+    return {
+      ok: false,
+      error: settings.credentialWarning ||
+        'Unable to decrypt saved NHIA credentials. Re-enter the NHIA API key and secret for this facility, then save again.',
+      requiresCredentialReentry: true,
+      receivedKeys,
+    }
+  }
+
   const apiBaseUrl = getNhiaApiBaseUrl(settings as unknown as Record<string, unknown>)
   if (!apiBaseUrl) {
     return { ok: false, error: 'NHIA API base URL is not configured', receivedKeys }
@@ -3861,9 +3871,10 @@ const generateNhiaCcCode = async (
   logClaimItBridgeStatus('cc_code.request', { status: 'pending', endpointPath, claimCount: 1 })
   let response: Response
   try {
+    const headers = buildNhiaEligibilityHeaders(settings as unknown as Record<string, unknown>)
     response = await fetch(finalUrl, {
       method: 'POST',
-      headers: buildNhiaEligibilityHeaders(settings as unknown as Record<string, unknown>),
+      headers,
       body: JSON.stringify(requestPayload),
     })
   } catch (error) {
