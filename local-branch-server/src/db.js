@@ -400,6 +400,17 @@ export const nowIso = () => new Date().toISOString()
 
 export const createId = () => crypto.randomUUID()
 
+db.exec(`
+  DELETE FROM sync_outbox
+  WHERE event_type = 'nhia_config.updated'
+    AND entity_type = 'nhia_configuration'
+    AND status IN ('pending', 'failed')
+    AND (
+      entity_id = 'claim-bridge-env'
+      OR payload_json LIKE '%claim-bridge-env%'
+    )
+`)
+
 export const parseJson = (value, fallback = null) => {
   try {
     return JSON.parse(value)

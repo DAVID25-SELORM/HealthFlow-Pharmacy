@@ -54,6 +54,24 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const frontendDir = path.resolve(__dirname, '..', 'public')
 const frontendIndex = path.join(frontendDir, 'index.html')
+const noStoreFrontendFiles = new Set([
+  'index.html',
+  'service-worker.js',
+  'manifest.webmanifest',
+  'branch-runtime-config.js',
+])
+
+const setFrontendCacheHeaders = (response, filePath) => {
+  const fileName = path.basename(filePath)
+  if (noStoreFrontendFiles.has(fileName)) {
+    response.setHeader('Cache-Control', 'no-store')
+    return
+  }
+
+  if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+    response.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
+  }
+}
 
 const app = express()
 if (config.trustProxy) {
@@ -108,7 +126,8 @@ setInterval(() => {
 if (fs.existsSync(frontendIndex)) {
   app.use(express.static(frontendDir, {
     index: false,
-    maxAge: '1h',
+    maxAge: 0,
+    setHeaders: setFrontendCacheHeaders,
   }))
 }
 // ✅ STATIC FRONTEND PATCH END
@@ -860,6 +879,7 @@ if (fs.existsSync(frontendIndex)) {
       return
     }
 
+    response.setHeader('Cache-Control', 'no-store')
     response.sendFile(frontendIndex)
   })
 }

@@ -43,6 +43,7 @@ const DEFAULT_CLAIMIT_SUBMIT_BASE_URL = 'http://localhost:31719/json-api'
 const DEFAULT_NHIA_MEMBER_LOOKUP_ENDPOINT = '/api/hmis/genCCC'
 const DEFAULT_CLAIMIT_CLAIM_ENDPOINT = '/claims'
 const DEFAULT_NHIA_INTEGRATION_MODE = 'claimit_assisted'
+const SUPABASE_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i
 const DIAGNOSIS_TREATMENT_RULES = [
   {
     label: 'Malaria',
@@ -965,13 +966,23 @@ const mapSettingsRow = (row, { includeCredentials = false } = {}) => {
 const resolveSettingsRow = () =>
   selectSettings.get(config.organizationId, config.branchId) || selectAnySettings.get()
 
+const isSupabaseUuid = (value) => SUPABASE_UUID_PATTERN.test(normalizeText(value))
+
+const sanitizeNhiaConfigForSync = (row = {}) => {
+  const payload = { ...row }
+  if (!isSupabaseUuid(payload.id)) {
+    delete payload.id
+  }
+  return payload
+}
+
 const queueNhiaConfigSync = (row, timestamp = nowIso()) => {
   if (!row?.id) return
   deletePendingNhiaConfigOutbox.run(row.id)
   insertNhiaConfigOutbox.run({
     id: createId(),
     entityId: row.id,
-    payloadJson: json({ config: row }),
+    payloadJson: json({ config: sanitizeNhiaConfigForSync(row) }),
     createdAt: timestamp,
     updatedAt: timestamp,
   })
