@@ -975,6 +975,10 @@ const hasWritableNhiaSecret = (credentials, key) =>
   Boolean(normalizeText(credentials[key]) && !isNhiaSecretMask(credentials[key]))
 
 const buildClaimBridgeEnvNhiaSettings = ({ includeCredentials = false } = {}) => {
+  if (!config.claimBridge.allowEnvCredentialOverrides) {
+    return null
+  }
+
   const nhiaEligibilityBaseUrl = getNhiaEligibilityBaseUrl()
   const upstreamBaseUrl = normalizeText(config.claimBridge.upstreamBaseUrl) || nhiaEligibilityBaseUrl
   if (!config.claimBridge.enabled && !upstreamBaseUrl) {
@@ -1060,6 +1064,7 @@ const buildClaimBridgeEnvNhiaSettings = ({ includeCredentials = false } = {}) =>
 
 const applyEnvNhiaCredentialOverrides = (settings, { includeCredentials = false } = {}) => {
   if (!settings) return settings
+  if (!config.claimBridge.allowEnvCredentialOverrides) return settings
 
   const envApiKey = normalizeText(config.claimBridge.upstreamApiKey)
   const envApiSecret = normalizeText(config.claimBridge.upstreamApiSecret)

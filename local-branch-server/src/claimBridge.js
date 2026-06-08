@@ -79,17 +79,20 @@ const buildForwardHeaders = (request) => {
 
   headers['x-healthflow-claim-bridge'] = '1'
 
-  if (config.claimBridge.upstreamApiKey) {
+  if (config.claimBridge.allowEnvCredentialOverrides && config.claimBridge.upstreamApiKey) {
     headers[config.claimBridge.upstreamApiKeyHeader || 'x-api-key'] = config.claimBridge.upstreamApiKey
   }
 
-  if (config.claimBridge.upstreamApiSecret) {
+  if (config.claimBridge.allowEnvCredentialOverrides && config.claimBridge.upstreamApiSecret) {
     headers[config.claimBridge.upstreamApiSecretHeader || 'x-api-secret'] = config.claimBridge.upstreamApiSecret
   }
 
-  if (config.claimBridge.upstreamBearerToken) {
+  if (config.claimBridge.allowEnvCredentialOverrides && config.claimBridge.upstreamBearerToken) {
     headers.Authorization = `Bearer ${config.claimBridge.upstreamBearerToken}`
-  } else if (config.claimBridge.upstreamUsername || config.claimBridge.upstreamPassword) {
+  } else if (
+    config.claimBridge.allowEnvCredentialOverrides &&
+    (config.claimBridge.upstreamUsername || config.claimBridge.upstreamPassword)
+  ) {
     headers.Authorization = `Basic ${Buffer.from(
       `${config.claimBridge.upstreamUsername}:${config.claimBridge.upstreamPassword}`
     ).toString('base64')}`
@@ -131,6 +134,7 @@ export const createClaimBridgeRouter = () => {
       mode: 'claimit-production-bridge',
       upstreamConfigured: Boolean(config.claimBridge.upstreamBaseUrl),
       tokenProtected: Boolean(config.claimBridge.accessToken),
+      envCredentialInjectionEnabled: Boolean(config.claimBridge.allowEnvCredentialOverrides),
     })
   })
 

@@ -107,6 +107,10 @@ export const config = {
     publicPath: normalizePath(process.env.CLAIM_BRIDGE_PUBLIC_PATH, '/json-api'),
     upstreamBaseUrl: String(process.env.CLAIMIT_UPSTREAM_BASE_URL || '').trim().replace(/\/+$/, ''),
     upstreamCredentialMode: String(process.env.CLAIMIT_UPSTREAM_CREDENTIAL_MODE || '').trim(),
+    allowEnvCredentialOverrides: toBoolean(
+      process.env.CLAIMIT_ALLOW_ENV_CREDENTIAL_OVERRIDES ||
+        process.env.NHIA_ALLOW_ENV_CREDENTIAL_OVERRIDES
+    ),
     upstreamMemberLookupPath: normalizePath(process.env.CLAIMIT_UPSTREAM_MEMBER_LOOKUP_PATH, '/api/hmis/genCCC'),
     upstreamCcEndpointPath: normalizePath(
       process.env.CLAIMIT_UPSTREAM_CC_ENDPOINT_PATH ||
@@ -191,6 +195,24 @@ export const assertConfiguredForServer = () => {
 
   if (config.claimBridge.enabled && !config.claimBridge.upstreamBaseUrl) {
     throw new Error('Set CLAIMIT_UPSTREAM_BASE_URL before enabling the public CLAIM-it bridge.')
+  }
+
+  const claimBridgeEnvCredentials = [
+    config.claimBridge.upstreamApiKey,
+    config.claimBridge.upstreamApiSecret,
+    config.claimBridge.upstreamBearerToken,
+    config.claimBridge.upstreamUsername,
+    config.claimBridge.upstreamPassword,
+  ].some((value) => String(value || '').trim())
+
+  if (
+    config.claimBridge.enabled &&
+    claimBridgeEnvCredentials &&
+    !config.claimBridge.allowEnvCredentialOverrides
+  ) {
+    throw new Error(
+      'Remove CLAIM-it/NHIA upstream credentials from .env or set CLAIMIT_ALLOW_ENV_CREDENTIAL_OVERRIDES=true for a dedicated single-facility bridge deployment.'
+    )
   }
 
   if (config.claimBridge.enabled && isWeakPlaceholder(config.claimBridge.accessToken)) {
