@@ -687,14 +687,17 @@ const decodeLegacyNhiaSecret = (value) => {
   }
 }
 
-const getNhiaSecretKeyMaterial = () =>
-  normalizeText(config.nhiaConfigSecretKey) ||
-  normalizeText(config.branchServerToken) ||
-  normalizeText(config.branchSyncToken) ||
-  normalizeText(config.supabaseSyncKey)
+const getNhiaSecretKeyMaterials = () =>
+  [
+    normalizeText(config.nhiaConfigSecretKey),
+    normalizeText(config.branchServerToken),
+    normalizeText(config.branchSyncToken),
+    normalizeText(config.supabaseSyncKey),
+  ].filter((value, index, values) => value && values.indexOf(value) === index)
 
-const getNhiaSecretKey = () => {
-  const keyMaterial = getNhiaSecretKeyMaterial()
+const getPrimaryNhiaSecretKeyMaterial = () => getNhiaSecretKeyMaterials()[0] || ''
+
+const getNhiaSecretKey = (keyMaterial = getPrimaryNhiaSecretKeyMaterial()) => {
   if (!keyMaterial) {
     throw new Error('Missing NHIA_CONFIG_SECRET_KEY for NHIA secret encryption.')
   }
@@ -723,20 +726,23 @@ const decodeNhiaSecret = (value) => {
     return decodeLegacyNhiaSecret(normalized)
   }
   if (!normalized.startsWith(NHIA_SECRET_PREFIX)) return normalized
-  try {
-    const [ivEncoded, tagEncoded, ciphertextEncoded] = normalized.slice(NHIA_SECRET_PREFIX.length).split(':')
-    if (!ivEncoded || !tagEncoded || !ciphertextEncoded) {
-      throw new Error('Invalid NHIA secret ciphertext.')
-    }
-    const decipher = crypto.createDecipheriv('aes-256-gcm', getNhiaSecretKey(), Buffer.from(ivEncoded, 'base64'))
-    decipher.setAuthTag(Buffer.from(tagEncoded, 'base64'))
-    return Buffer.concat([
-      decipher.update(Buffer.from(ciphertextEncoded, 'base64')),
-      decipher.final(),
-    ]).toString('utf8')
-  } catch {
-    throw new Error('Unable to decrypt NHIA secret. Check NHIA_CONFIG_SECRET_KEY.')
+  const [ivEncoded, tagEncoded, ciphertextEncoded] = normalized.slice(NHIA_SECRET_PREFIX.length).split(':')
+  if (!ivEncoded || !tagEncoded || !ciphertextEncoded) {
+    throw new Error('Invalid NHIA secret ciphertext.')
   }
+  for (const keyMaterial of getNhiaSecretKeyMaterials()) {
+    try {
+      const decipher = crypto.createDecipheriv('aes-256-gcm', getNhiaSecretKey(keyMaterial), Buffer.from(ivEncoded, 'base64'))
+      decipher.setAuthTag(Buffer.from(tagEncoded, 'base64'))
+      return Buffer.concat([
+        decipher.update(Buffer.from(ciphertextEncoded, 'base64')),
+        decipher.final(),
+      ]).toString('utf8')
+    } catch {
+      // Try the next configured legacy key material.
+    }
+  }
+  throw new Error('Unable to decrypt NHIA secret. Check NHIA_CONFIG_SECRET_KEY.')
 }
 
 const logNhiaSecretDecryptDebug = (field, value, success) => {
@@ -744,7 +750,7 @@ const logNhiaSecretDecryptDebug = (field, value, success) => {
   console.info('[NHIA CONFIG] secret decrypt debug', {
     field,
     encryptedLength: encrypted.length,
-    keyExists: Boolean(getNhiaSecretKeyMaterial()),
+    keyExists: Boolean(getPrimaryNhiaSecretKeyMaterial()),
     decryptSuccess: Boolean(success),
   })
 }

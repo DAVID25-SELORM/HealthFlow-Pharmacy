@@ -2834,7 +2834,7 @@ const NHIA_SECRET_FIELDS = new Set(['apiKey', 'apiSecret', 'password'])
 const NHIA_SECRET_PREFIX = 'hfsec:aesgcm:v1:'
 const NHIA_LEGACY_SECRET_PREFIX = 'hfsec:v1:'
 const NHIA_SECRET_MASK_VALUES = new Set([NHIA_SECRET_MASK, '\u2022'.repeat(8), '\u2022'.repeat(12)])
-let nhiaSecretKeyPromise: Promise<CryptoKey> | null = null
+const nhiaSecretKeyPromises = new Map<string, Promise<CryptoKey>>()
 
 const maskCredentials = (payload: Record<string, unknown> = {}) =>
   Object.fromEntries(Object.entries(payload).map(([key, value]) => [key, Boolean(normalizeText(value))]))
@@ -2858,27 +2858,30 @@ const decodeLegacyNhiaSecret = (value: string) => {
   }
 }
 
-const getNhiaSecretKeyMaterial = () =>
-  normalizeText(Deno.env.get('NHIA_CONFIG_SECRET_KEY')) ||
-  normalizeText(Deno.env.get('NHIA_SECRET_KEY')) ||
-  normalizeText(Deno.env.get('SERVICE_ROLE_KEY')) ||
-  normalizeText(Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'))
+const getNhiaSecretKeyMaterials = () =>
+  [
+    normalizeText(Deno.env.get('NHIA_CONFIG_SECRET_KEY')),
+    normalizeText(Deno.env.get('NHIA_SECRET_KEY')),
+    normalizeText(Deno.env.get('SERVICE_ROLE_KEY')),
+    normalizeText(Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')),
+  ].filter((value, index, values) => value && values.indexOf(value) === index)
 
-const getNhiaSecretKey = async () => {
-  const keyMaterial = getNhiaSecretKeyMaterial()
+const getPrimaryNhiaSecretKeyMaterial = () => getNhiaSecretKeyMaterials()[0] || ''
+
+const getNhiaSecretKey = async (keyMaterial = getPrimaryNhiaSecretKeyMaterial()) => {
   if (!keyMaterial) {
     throw new Error('Missing NHIA_CONFIG_SECRET_KEY for NHIA secret encryption.')
   }
 
-  if (!nhiaSecretKeyPromise) {
-    nhiaSecretKeyPromise = crypto.subtle
+  if (!nhiaSecretKeyPromises.has(keyMaterial)) {
+    nhiaSecretKeyPromises.set(keyMaterial, crypto.subtle
       .digest('SHA-256', new TextEncoder().encode(keyMaterial))
       .then((digest) =>
         crypto.subtle.importKey('raw', digest, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt'])
-      )
+      ))
   }
 
-  return nhiaSecretKeyPromise
+  return nhiaSecretKeyPromises.get(keyMaterial) as Promise<CryptoKey>
 }
 
 const encodeNhiaSecret = async (value: unknown) => {
@@ -2904,21 +2907,24 @@ const decodeNhiaSecret = async (value: unknown) => {
     return decodeLegacyNhiaSecret(normalized)
   }
   if (!normalized.startsWith(NHIA_SECRET_PREFIX)) return normalized
-  try {
-    const [ivEncoded, ciphertextEncoded] = normalized.slice(NHIA_SECRET_PREFIX.length).split(':')
-    if (!ivEncoded || !ciphertextEncoded) {
-      throw new Error('Invalid NHIA secret ciphertext.')
-    }
-    const key = await getNhiaSecretKey()
-    const plaintext = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: base64ToBytes(ivEncoded) },
-      key,
-      base64ToBytes(ciphertextEncoded)
-    )
-    return new TextDecoder().decode(plaintext)
-  } catch {
-    throw new Error('Unable to decrypt NHIA secret. Check NHIA_CONFIG_SECRET_KEY.')
+  const [ivEncoded, ciphertextEncoded] = normalized.slice(NHIA_SECRET_PREFIX.length).split(':')
+  if (!ivEncoded || !ciphertextEncoded) {
+    throw new Error('Invalid NHIA secret ciphertext.')
   }
+  for (const keyMaterial of getNhiaSecretKeyMaterials()) {
+    try {
+      const key = await getNhiaSecretKey(keyMaterial)
+      const plaintext = await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv: base64ToBytes(ivEncoded) },
+        key,
+        base64ToBytes(ciphertextEncoded)
+      )
+      return new TextDecoder().decode(plaintext)
+    } catch {
+      // Try the next configured legacy key material.
+    }
+  }
+  throw new Error('Unable to decrypt NHIA secret. Check NHIA_CONFIG_SECRET_KEY.')
 }
 
 const logNhiaSecretDecryptDebug = (field: string, value: unknown, success: boolean) => {
@@ -2926,7 +2932,7 @@ const logNhiaSecretDecryptDebug = (field: string, value: unknown, success: boole
   console.info('[NHIA CONFIG] secret decrypt debug', {
     field,
     encryptedLength: encrypted.length,
-    keyExists: Boolean(getNhiaSecretKeyMaterial()),
+    keyExists: Boolean(getPrimaryNhiaSecretKeyMaterial()),
     decryptSuccess: Boolean(success),
   })
 }

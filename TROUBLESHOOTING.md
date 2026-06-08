@@ -29,13 +29,14 @@ The browser is missing or using the wrong `x-branch-token`. Confirm `BRANCH_SERV
 
 ## NHIA Secret Cannot Decrypt
 
-Cause: `NHIA_CONFIG_SECRET_KEY` does not match the key used when credentials were saved.
+Cause: `NHIA_CONFIG_SECRET_KEY` does not match the key used when credentials were saved, or the saved facility credentials were created before the permanent production key was configured.
 
 Fix:
 
-1. Set the same `NHIA_CONFIG_SECRET_KEY` in Supabase Edge Functions, Vercel, and the local branch server.
-2. Re-enter and save the NHIA API secret in Settings.
-3. Test member lookup or CC code generation.
+1. Confirm Supabase Edge Functions and each local branch server use the same permanent `NHIA_CONFIG_SECRET_KEY`.
+2. Do not replace that key during new facility onboarding.
+3. Re-enter and save the facility's NHIA API key/secret in Settings if a specific facility still cannot decrypt.
+4. Test member lookup or CC code generation.
 
 ## CLAIM-it CC Code Fails
 
@@ -45,7 +46,7 @@ Check:
 - `CLAIMIT_UPSTREAM_MEMBER_LOOKUP_PATH=/api/hmis/genCCC`
 - `CLAIMIT_UPSTREAM_API_KEY_HEADER=x-nhia-apikey`
 - `CLAIMIT_UPSTREAM_API_SECRET_HEADER=x-nhia-apisecret`
-- Actual facility API key and secret.
+- Actual facility API key and secret, preserving case and special characters exactly.
 
 ## Local CLAIM-it URL From Hosted App
 

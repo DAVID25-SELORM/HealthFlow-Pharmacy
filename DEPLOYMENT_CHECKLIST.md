@@ -6,7 +6,7 @@
 - [ ] Confirm `ORGANIZATION_ID` and `BRANCH_ID`.
 - [ ] Generate a strong `BRANCH_SERVER_TOKEN`.
 - [ ] Register `BRANCH_SYNC_TOKEN` in Supabase.
-- [ ] Set `NHIA_CONFIG_SECRET_KEY` and keep it unchanged.
+- [ ] Set one permanent production `NHIA_CONFIG_SECRET_KEY`; never regenerate it during facility onboarding.
 - [ ] Confirm NHIA facility code, provider class, claims officer, submitter ID, API key, and API secret.
 - [ ] Configure CLAIM-it endpoint paths.
 - [ ] Configure payment providers only if used.
