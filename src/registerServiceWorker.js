@@ -44,6 +44,37 @@ const notifyServiceWorkerAboutLoadedAssets = (registration) => {
   })
 }
 
+let serviceWorkerReloading = false
+
+const requestWaitingServiceWorkerActivation = (registration) => {
+  if (registration?.waiting) {
+    registration.waiting.postMessage({ type: 'HEALTHFLOW_SKIP_WAITING' })
+  }
+}
+
+const watchForServiceWorkerUpdates = (registration) => {
+  registration.addEventListener('updatefound', () => {
+    const nextWorker = registration.installing
+    if (!nextWorker) {
+      return
+    }
+
+    nextWorker.addEventListener('statechange', () => {
+      if (nextWorker.state === 'installed' && navigator.serviceWorker.controller) {
+        nextWorker.postMessage({ type: 'HEALTHFLOW_SKIP_WAITING' })
+      }
+    })
+  })
+
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (serviceWorkerReloading) {
+      return
+    }
+    serviceWorkerReloading = true
+    window.location.reload()
+  })
+}
+
 const registerServiceWorker = () => {
   if (!import.meta.env.PROD || !('serviceWorker' in navigator)) {
     return
@@ -53,6 +84,10 @@ const registerServiceWorker = () => {
     navigator.serviceWorker
       .register('/service-worker.js')
       .then(async (registration) => {
+        watchForServiceWorkerUpdates(registration)
+        requestWaitingServiceWorkerActivation(registration)
+        await registration.update()
+        requestWaitingServiceWorkerActivation(registration)
         const readyRegistration = await navigator.serviceWorker.ready
         await warmOfflineRouteChunks()
         notifyServiceWorkerAboutLoadedAssets(readyRegistration || registration)

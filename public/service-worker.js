@@ -1,4 +1,4 @@
-const CACHE_NAME = 'healthflow-pharmacy-shell-v4'
+const CACHE_NAME = 'healthflow-pharmacy-shell-v5'
 const APP_SHELL = ['/', '/index.html', '/app-logo.png', '/manifest.webmanifest']
 const isAppAssetRequest = (request) => {
   if (request.method !== 'GET') {
@@ -103,6 +103,20 @@ self.addEventListener('fetch', (event) => {
 })
 
 self.addEventListener('message', (event) => {
+  if (event.data?.type === 'HEALTHFLOW_SKIP_WAITING') {
+    self.skipWaiting()
+    return
+  }
+
+  if (event.data?.type === 'HEALTHFLOW_CLEAR_APP_CACHES') {
+    event.waitUntil(
+      caches
+        .keys()
+        .then((cacheNames) => Promise.all(cacheNames.map((cacheName) => caches.delete(cacheName))))
+    )
+    return
+  }
+
   if (event.data?.type !== 'HEALTHFLOW_PRECACHE_URLS') {
     return
   }
