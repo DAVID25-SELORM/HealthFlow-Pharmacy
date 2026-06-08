@@ -61,6 +61,7 @@ import {
   normalizeNhisExportPeriod,
   saveNhiaApiSettings,
   submitNhisClaimDirect,
+  updateNhisClaim,
   updateNhisClaimStatus,
   uploadNhisPrescriptionPdf,
   validateNhisPrescriptionPdfFile,
@@ -2483,6 +2484,106 @@ describe('NHIS drug catalog routing', () => {
 })
 
 describe('NHIS claim status routing', () => {
+  it('saves corrections when the live schema rejects optional CLAIM-it attachment aliases', async () => {
+    const updatePayloads = []
+    const makeUpdateQuery = (response) => {
+      const query = {
+        eq: vi.fn(() => query),
+        select: vi.fn(() => query),
+        single: vi.fn().mockResolvedValue(response),
+      }
+      return query
+    }
+    const duplicateQuery = {
+      eq: vi.fn(() => duplicateQuery),
+      neq: vi.fn(() => duplicateQuery),
+      limit: vi.fn().mockResolvedValue({ data: [], error: null }),
+    }
+    const existingClaimQuery = {
+      eq: vi.fn(() => existingClaimQuery),
+      single: vi.fn().mockResolvedValue({
+        data: { id: 'claim-1', claim_number: 'NHIS-000001', status: 'served' },
+        error: null,
+      }),
+    }
+    const firstUpdateQuery = makeUpdateQuery({
+      data: null,
+      error: {
+        code: 'PGRST204',
+        message: "Could not find the 'claimitAttachmentFileName' column of 'nhis_claims' in the schema cache",
+      },
+    })
+    const fallbackUpdateQuery = makeUpdateQuery({
+      data: { id: 'claim-1', claim_number: 'NHIS-000001', status: 'served' },
+      error: null,
+    })
+    const claimTable = {
+      select: vi.fn((columns = '') =>
+        String(columns).includes('status') ? existingClaimQuery : duplicateQuery
+      ),
+      update: vi.fn((payload) => {
+        updatePayloads.push(payload)
+        return updatePayloads.length === 1 ? firstUpdateQuery : fallbackUpdateQuery
+      }),
+    }
+    const medicineDeleteQuery = {
+      eq: vi.fn().mockResolvedValue({ error: null }),
+    }
+    const medicineTable = {
+      delete: vi.fn(() => medicineDeleteQuery),
+      insert: vi.fn().mockResolvedValue({ error: null }),
+    }
+    const servicesDeleteQuery = {
+      eq: vi.fn().mockResolvedValue({ error: null }),
+    }
+    const servicesTable = {
+      delete: vi.fn(() => servicesDeleteQuery),
+      insert: vi.fn().mockResolvedValue({ error: null }),
+    }
+
+    supabase.from.mockImplementation((table) => {
+      if (table === 'nhis_claims') return claimTable
+      if (table === 'nhis_claim_medicines') return medicineTable
+      if (table === 'nhis_claim_services') return servicesTable
+      return { update: vi.fn(() => ({ eq: vi.fn().mockResolvedValue({ error: null }) })) }
+    })
+
+    await expect(updateNhisClaim(
+      'claim-1',
+      {
+        ...baseClaim,
+        cccNo: '81416',
+        claimitAttachmentFileName: 'prescription_NHIS-000001.pdf',
+        claimitAttachmentFileType: 'pdf',
+        claimitAttachmentMimeType: 'application/pdf',
+        claimitAttachmentBase64: Buffer.from('%PDF-1.7\n%%EOF', 'utf8').toString('base64'),
+      },
+      [{
+        ...baseMedicine,
+        totalAmount: 10,
+        medicineAccessLevel: 'Prescription',
+        requiredPharmacyLevel: 'P1',
+      }],
+      {
+        providerClassLevel: 'D',
+        pharmacyLevel: 'P1',
+        nhisDrugCatalog: [{
+          id: 'drug-1',
+          code: 'NH001',
+          medicine_access_level: 'Prescription',
+          required_pharmacy_level: 'P1',
+        }],
+      }
+    )).resolves.toEqual({ id: 'claim-1', claim_number: 'NHIS-000001', status: 'served' })
+
+    expect(updatePayloads).toHaveLength(2)
+    expect(updatePayloads[0]).toHaveProperty('claimit_attachment_file_name', 'prescription_NHIS-000001.pdf')
+    expect(updatePayloads[1]).not.toHaveProperty('claimitAttachmentFileName')
+    expect(updatePayloads[1]).not.toHaveProperty('claimit_attachment_file_name')
+    expect(updatePayloads[1]).not.toHaveProperty('claimit_attachment_base64')
+    expect(medicineTable.insert).toHaveBeenCalled()
+  })
+
   it('uses the local/cloud write router before marking a local-sync claim submitted', async () => {
     shouldUseBranchServer.mockReturnValueOnce(true)
     updateBranchRecord.mockResolvedValue({ id: 'claim-1', status: 'submitted' })

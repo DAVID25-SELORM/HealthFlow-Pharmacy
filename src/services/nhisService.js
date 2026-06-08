@@ -148,6 +148,32 @@ const OPTIONAL_CLAIM_SCHEMA_COLUMNS = [
   'nhia_member_status',
   'nhia_member_lookup_payload',
 ]
+const OPTIONAL_CLAIM_SCHEMA_FIELD_GROUPS = [
+  ['patient_address', 'patientAddress'],
+  ['child_weight_kg', 'childWeightKg'],
+  ['diagnosis_details', 'diagnosisDetails'],
+  ['prescription_file_url', 'prescriptionFileUrl'],
+  ['prescription_file_path', 'prescriptionFilePath'],
+  ['prescription_file_name', 'prescriptionFileName'],
+  ['prescription_file_type', 'prescriptionFileType'],
+  ['prescription_file_size', 'prescriptionFileSize'],
+  ['claimit_attachment_file_name', 'claimitAttachmentFileName'],
+  ['claimit_attachment_file_type', 'claimitAttachmentFileType'],
+  ['claimit_attachment_mime_type', 'claimitAttachmentMimeType'],
+  ['claimit_attachment_base64', 'claimitAttachmentBase64'],
+  ['nhia_transaction_id', 'nhiaTransactionId'],
+  ['nhia_eligibility_start_date', 'nhiaEligibilityStartDate'],
+  ['nhia_eligibility_end_date', 'nhiaEligibilityEndDate'],
+  ['nhia_attendance_date', 'nhiaAttendanceDate'],
+  ['nhia_member_status', 'nhiaMemberStatus'],
+  ['nhia_member_lookup_payload', 'nhiaMemberLookupPayload'],
+]
+const OPTIONAL_CLAIM_SCHEMA_PAYLOAD_KEYS = [
+  ...new Set([
+    ...OPTIONAL_CLAIM_SCHEMA_COLUMNS,
+    ...OPTIONAL_CLAIM_SCHEMA_FIELD_GROUPS.flat(),
+  ]),
+]
 const CLAIMIT_EXPORT_FORMATS = ['cxf', 'xml', 'json', 'csv']
 const NHIA_TARIFF_VERSION = 'FEB 2023'
 const CLAIM_IT_MEDICINE_PRICE_VERSION = '2025-05-01.250531'
@@ -525,13 +551,27 @@ const isMissingOptionalClaimColumn = (error) => {
   return (
     error?.code === 'PGRST204' ||
     message.includes('schema cache') ||
-    OPTIONAL_CLAIM_SCHEMA_COLUMNS.some((column) => message.includes(column))
+    OPTIONAL_CLAIM_SCHEMA_PAYLOAD_KEYS.some((column) => message.includes(column.toLowerCase()))
   )
 }
 
 const getMissingOptionalClaimColumns = (error) => {
   const message = String(error?.message || '').toLowerCase()
-  return OPTIONAL_CLAIM_SCHEMA_COLUMNS.filter((column) => message.includes(column))
+  const matchingKeys = new Set()
+
+  OPTIONAL_CLAIM_SCHEMA_FIELD_GROUPS.forEach((fieldGroup) => {
+    if (fieldGroup.some((key) => message.includes(key.toLowerCase()))) {
+      fieldGroup.forEach((key) => matchingKeys.add(key))
+    }
+  })
+
+  OPTIONAL_CLAIM_SCHEMA_COLUMNS.forEach((column) => {
+    if (message.includes(column.toLowerCase())) {
+      matchingKeys.add(column)
+    }
+  })
+
+  return [...matchingKeys]
 }
 
 const isMissingClaimServicesTable = (error) => {
@@ -565,8 +605,13 @@ const stripClaimSchemaColumns = (payload, columns = OPTIONAL_CLAIM_SCHEMA_COLUMN
 }
 
 const stripOptionalClaimSchemaColumns = (payload, error = null) => {
+  const message = String(error?.message || '').toLowerCase()
+  if (error?.code === 'PGRST204' || message.includes('schema cache')) {
+    return stripClaimSchemaColumns(payload, OPTIONAL_CLAIM_SCHEMA_PAYLOAD_KEYS)
+  }
+
   const missingColumns = getMissingOptionalClaimColumns(error)
-  return stripClaimSchemaColumns(payload, missingColumns.length ? missingColumns : OPTIONAL_CLAIM_SCHEMA_COLUMNS)
+  return stripClaimSchemaColumns(payload, missingColumns.length ? missingColumns : OPTIONAL_CLAIM_SCHEMA_PAYLOAD_KEYS)
 }
 
 const insertNhisClaimWithSchemaFallback = async (payload) => {
