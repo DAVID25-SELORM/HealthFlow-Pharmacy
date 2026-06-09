@@ -1971,6 +1971,7 @@ const Nhis = () => {
       memberNo: claimForm.memberNo || '00000000',
       surname: claimForm.surname || 'pending',
       otherNames: claimForm.otherNames || 'pending',
+      folderNo: claimForm.folderNo || 'pending',
       patientAddress: claimForm.patientAddress || 'pending',
       dateOfBirth: claimForm.dateOfBirth || '2000-01-01',
       diagnosis: claimForm.diagnosis || 'pending',

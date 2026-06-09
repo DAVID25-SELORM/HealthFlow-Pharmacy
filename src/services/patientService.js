@@ -89,6 +89,7 @@ const searchPatientsFromSupabase = async (term) => {
     `full_name.ilike.%${value}%`,
     `phone.ilike.%${value}%`,
     `email.ilike.%${value}%`,
+    `folder_no.ilike.%${value}%`,
     `insurance_provider.ilike.%${value}%`,
     `insurance_id.ilike.%${value}%`,
     `nhis_member_no.ilike.%${value}%`,
@@ -215,6 +216,7 @@ const patientMatchesSearch = (patient, term) => {
     patient?.full_name,
     patient?.phone,
     patient?.email,
+    patient?.folder_no,
     patient?.insurance_provider,
     patient?.insurance_id,
     patient?.nhis_member_no,
@@ -330,6 +332,7 @@ const listLocalNhisClaimPatients = async (filters = {}) => {
 export const addPatient = async (patientData) => {
   const fullName = assertRequiredText(patientData.fullName, 'Patient name')
   const phone = assertRequiredText(patientData.phone, 'Phone')
+  const folderNo = assertRequiredText(patientData.folderNo || patientData.folder_no, 'Folder number')
   const insuranceProvider = normalizeText(patientData.insuranceProvider)
   const insuranceId = normalizeInsuranceId(insuranceProvider, patientData.insuranceId)
 
@@ -337,6 +340,7 @@ export const addPatient = async (patientData) => {
     await createBranchRecord('patients', {
       full_name: fullName,
       phone,
+      folder_no: folderNo,
       email: normalizeText(patientData.email) || null,
       date_of_birth: patientData.dateOfBirth || null,
       gender: normalizeText(patientData.gender) || null,
@@ -354,6 +358,7 @@ export const addPatient = async (patientData) => {
         {
           full_name: fullName,
           phone,
+          folder_no: folderNo,
           email: normalizeText(patientData.email) || null,
           date_of_birth: patientData.dateOfBirth,
           gender: normalizeText(patientData.gender) || null,
@@ -394,6 +399,7 @@ export const addPatient = async (patientData) => {
 export const updatePatient = async (id, patientData) => {
   const fullName = assertRequiredText(patientData.fullName, 'Patient name')
   const phone = assertRequiredText(patientData.phone, 'Phone')
+  const folderNo = assertRequiredText(patientData.folderNo || patientData.folder_no, 'Folder number')
   const insuranceProvider = normalizeText(patientData.insuranceProvider)
   const insuranceId = normalizeInsuranceId(insuranceProvider, patientData.insuranceId)
 
@@ -401,6 +407,7 @@ export const updatePatient = async (id, patientData) => {
     await updateBranchRecord('patients', id, {
       full_name: fullName,
       phone,
+      folder_no: folderNo,
       email: normalizeText(patientData.email) || null,
       date_of_birth: patientData.dateOfBirth || null,
       gender: normalizeText(patientData.gender) || null,
@@ -417,6 +424,7 @@ export const updatePatient = async (id, patientData) => {
       .update({
         full_name: fullName,
         phone,
+        folder_no: folderNo,
         email: normalizeText(patientData.email) || null,
         date_of_birth: patientData.dateOfBirth,
         gender: normalizeText(patientData.gender) || null,

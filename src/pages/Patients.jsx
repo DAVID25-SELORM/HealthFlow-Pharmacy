@@ -37,6 +37,7 @@ const initialForm = {
   fullName: '',
   phone: '',
   email: '',
+  folderNo: '',
   dateOfBirth: '',
   gender: '',
   address: '',
@@ -289,7 +290,7 @@ const Patients = () => {
         <Search size={18} />
         <input
           type="text"
-          placeholder="Search patients by name, phone, email, insurance, or NHIS number..."
+          placeholder="Search patients by name, phone, email, folder, insurance, or NHIS number..."
           value={searchTerm}
           onChange={handleSearch}
         />
@@ -319,6 +320,9 @@ const Patients = () => {
                   <span className="insurance-info">
                     Insurance: {patient.insurance_provider || 'Not provided'}
                     {patient.insurance_id ? ` (${patient.insurance_id})` : ''}
+                  </span>
+                  <span className="insurance-info">
+                    Folder: {patient.folder_no || 'Not provided'}
                   </span>
                 </div>
               </div>
@@ -382,6 +386,15 @@ const Patients = () => {
 
               <div className="form-row">
                 <div className="form-group">
+                  <label>Folder Number *</label>
+                  <input
+                    type="text"
+                    value={formData.folderNo}
+                    onChange={(event) => setFormData({ ...formData, folderNo: event.target.value })}
+                    required
+                  />
+                </div>
+                <div className="form-group">
                   <label>Email</label>
                   <input
                     type="email"
@@ -389,6 +402,9 @@ const Patients = () => {
                     onChange={(event) => setFormData({ ...formData, email: event.target.value })}
                   />
                 </div>
+              </div>
+
+              <div className="form-row">
                 <div className="form-group">
                   <label>Date of Birth</label>
                   <input
