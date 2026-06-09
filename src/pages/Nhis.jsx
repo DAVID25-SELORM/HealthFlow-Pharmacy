@@ -1386,23 +1386,9 @@ const Nhis = () => {
   const addMedicineToList = () => {
     const qty   = Number.parseFloat(medForm.dispensedQty) || 0
     const price = Number.parseFloat(medForm.unitPrice)    || 0
-    const medicineBlockers = getMedicineReadinessBlockers()
-    if (medicineBlockers.length) {
-      notify(medicineBlockers[0], 'warning')
+    if (!(qty > 0)) {
+      notify('Dispensed quantity is required.', 'warning')
       return
-    }
-
-    if (!isHospital) {
-      // ✅ NHIS PHARMACY LEVEL PATCH START
-      const pharmacyLevelCheck = assessMedicinePharmacyLevel(medForm, facilityPharmacyLevel)
-      if (!pharmacyLevelCheck.allowed) {
-        notify(pharmacyLevelCheck.message, 'warning')
-        return
-      }
-      if (pharmacyLevelCheck.message === 'Level not configured') {
-        notify('Level not configured', 'warning')
-      }
-      // ✅ NHIS PHARMACY LEVEL PATCH END
     }
 
     const nextMedicine = {
@@ -1964,37 +1950,6 @@ const Nhis = () => {
     setEditingClaim(null)
     setPrescriptionPdfFile(null)
   }
-
-  const getMedicineReadinessBlockers = () => assessNhisClaimReadiness(
-    {
-      ...claimForm,
-      memberNo: claimForm.memberNo || '00000000',
-      surname: claimForm.surname || 'pending',
-      otherNames: claimForm.otherNames || 'pending',
-      folderNo: claimForm.folderNo || 'pending',
-      patientAddress: claimForm.patientAddress || 'pending',
-      dateOfBirth: claimForm.dateOfBirth || '2000-01-01',
-      diagnosis: claimForm.diagnosis || 'pending',
-      cccNo: claimForm.cccNo || '00000',
-      organizationType,
-      serviceDate: claimForm.serviceDate || new Date().toISOString().split('T')[0],
-      physicianName: claimForm.physicianName || 'pending',
-    },
-    [{
-      ...medForm,
-      category: medForm.category || getCatalogCategoryForMedicine(medForm),
-      totalAmount: (Number(medForm.unitPrice) || 0) * (Number(medForm.dispensedQty) || 0),
-    }],
-    {
-      requireMedicineDirections: Boolean(editingClaim),
-      enforcePrescribingLevel: true,
-      providerClassLevel,
-      // ✅ NHIS PHARMACY LEVEL PATCH START
-      pharmacyLevel: facilityPharmacyLevel,
-      // ✅ NHIS PHARMACY LEVEL PATCH END
-      nhisDrugCatalog: nhisDrugs,
-    }
-  ).blockers
 
   // ── status updates ────────────────────────────────────────────
   const handleStatusUpdate = async (claim, newStatus) => {
