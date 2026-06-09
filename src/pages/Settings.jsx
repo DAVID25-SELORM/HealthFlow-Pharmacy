@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { User, UserPlus, Lock, Bell, Building, Palette, Globe, GitBranch, Plus, KeyRound } from 'lucide-react'
+import { User, UserPlus, Lock, Bell, Building, Palette, Globe, GitBranch, Plus, KeyRound, Database, Download, RefreshCcw } from 'lucide-react'
 import { isSupabaseConfigured } from '../lib/supabase'
 import UpgradeGate from '../components/UpgradeGate'
 import GhanaRegionSelect from '../components/GhanaRegionSelect'
@@ -13,7 +13,13 @@ import {
   updateUserBranch,
 } from '../services/settingsService'
 import { getBranches, createBranch, updateBranch, deactivateBranch } from '../services/branchService'
-import { getSavedBranchToken, saveBranchToken } from '../services/branchServerApi'
+import {
+  createBranchDatabaseBackup,
+  downloadBranchDatabaseBackup,
+  getBranchDatabaseStatus,
+  getSavedBranchToken,
+  saveBranchToken,
+} from '../services/branchServerApi'
 import { updateOrganization, getOrganizationStats } from '../services/organizationService'
 import { buildClaimItConfigPreview, getNhiaApiSettings, removeNhiaApiCredentials, saveNhiaApiSettings, testClaimItConnection, validateNhiaConfigForMode } from '../services/nhisService'
 import { useAuth } from '../context/AuthContext'
@@ -23,6 +29,7 @@ import { readLogoFileAsDataUrl, readSignatureFileAsDataUrl } from '../utils/imag
 import { normalizeGhanaRegion } from '../utils/ghanaRegions'
 import { getRoleLabel } from '../utils/roleLabels'
 import { ROLE_OPTIONS } from '../utils/roles'
+import { formatAppDateTime } from '../utils/date'
 import {
   applyNhiaFacilityDefaults,
   getNhiaFacilityTypesForOrganization,
@@ -409,6 +416,19 @@ const formatSubscriptionTier = (tier) => {
   return normalizedTier.charAt(0).toUpperCase() + normalizedTier.slice(1)
 }
 
+const formatBytes = (value) => {
+  const bytes = Number(value || 0)
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return '0 B'
+  }
+
+  const units = ['B', 'KB', 'MB', 'GB']
+  const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
+  return `${(bytes / (1024 ** exponent)).toFixed(exponent === 0 ? 0 : 1)} ${units[exponent]}`
+}
+
+const getBackupFileName = (backup = {}) => backup.fileName || backup.name || ''
+
 const Settings = () => {
   const { user, role, organization, refreshProfile } = useAuth()
   const { notify } = useNotification()
@@ -427,6 +447,10 @@ const Settings = () => {
   const [users, setUsers] = useState([])
   const [orgStats, setOrgStats] = useState(null)
   const [branchTokenForm, setBranchTokenForm] = useState(() => getSavedBranchToken())
+  const [databaseStatus, setDatabaseStatus] = useState(null)
+  const [backupLoading, setBackupLoading] = useState(false)
+  const [backupCreating, setBackupCreating] = useState(false)
+  const [backupDownloading, setBackupDownloading] = useState('')
   const [nhiaApiForm, setNhiaApiForm] = useState(blankNhiaApiForm)
   const [nhiaCredentialState, setNhiaCredentialState] = useState(toNhiaCredentialState(blankNhiaApiForm))
   const [savingNhiaApi, setSavingNhiaApi] = useState(false)
@@ -467,11 +491,19 @@ const Settings = () => {
   const showNhiaPharmacyLevel = isNhiaCommunityPharmacy || isNhiaHospitalPharmacy
   // Hospital provider class (B1–SM) shown for hospitals that are NOT a hospital pharmacy.
   const showNhiaProviderClassLevel = isHospitalOrganization && !isNhiaHospitalPharmacy
+  const latestBackups = databaseStatus?.latestBackups || []
+  const latestBackup = latestBackups[0] || null
   // ✅ NHIA CONFIG PATCH END
 
   useEffect(() => {
     void loadSettings()
   }, [])
+
+  useEffect(() => {
+    if (isAdmin) {
+      void loadDatabaseStatus({ silent: true })
+    }
+  }, [isAdmin])
 
   const loadSettings = async () => {
     try {
@@ -560,6 +592,59 @@ const Settings = () => {
     const savedToken = saveBranchToken(branchTokenForm)
     setBranchTokenForm(savedToken)
     notify(savedToken ? 'Branch token saved in this browser.' : 'Branch token removed from this browser.', 'success')
+    if (savedToken) {
+      void loadDatabaseStatus({ silent: true })
+    } else {
+      setDatabaseStatus(null)
+    }
+  }
+
+  const loadDatabaseStatus = async ({ silent = false } = {}) => {
+    try {
+      setBackupLoading(true)
+      const status = await getBranchDatabaseStatus()
+      setDatabaseStatus(status)
+      if (!silent) {
+        notify('Local database status refreshed.', 'success')
+      }
+    } catch (statusError) {
+      if (!silent) {
+        notify(statusError.message || 'Unable to read local database status.', 'error')
+      }
+    } finally {
+      setBackupLoading(false)
+    }
+  }
+
+  const handleCreateDatabaseBackup = async () => {
+    try {
+      setBackupCreating(true)
+      const result = await createBranchDatabaseBackup(`settings-${new Date().toISOString().slice(0, 10)}`)
+      setDatabaseStatus(result.status || null)
+      notify(`Backup created: ${getBackupFileName(result.backup) || 'latest backup'}`, 'success')
+    } catch (backupError) {
+      notify(backupError.message || 'Unable to create local database backup.', 'error')
+    } finally {
+      setBackupCreating(false)
+    }
+  }
+
+  const handleDownloadDatabaseBackup = async (backup) => {
+    const fileName = getBackupFileName(backup)
+    if (!fileName) {
+      notify('Backup file name is missing.', 'error')
+      return
+    }
+
+    try {
+      setBackupDownloading(fileName)
+      await downloadBranchDatabaseBackup(fileName)
+      notify(`Backup download started: ${fileName}`, 'success')
+    } catch (downloadError) {
+      notify(downloadError.message || 'Unable to download backup file.', 'error')
+    } finally {
+      setBackupDownloading('')
+    }
   }
 
   const updateNhiaApiForm = (field, value) => {
@@ -1411,6 +1496,97 @@ const Settings = () => {
                 </button>
               </div>
             </form>
+          </div>
+        )}
+
+        {isAdmin && (
+          <div className="settings-card settings-backup-card">
+            <div className="card-icon">
+              <Database size={24} />
+            </div>
+            <h3>Data Backup & Recovery</h3>
+            <p className="settings-note">
+              Create a full local SQLite backup for offline recovery, then download it to an external drive or secure cloud folder.
+            </p>
+            <div className="backup-status-grid">
+              <div>
+                <span>Database</span>
+                <strong>{databaseStatus?.ok ? 'Healthy' : databaseStatus ? 'Needs attention' : 'Not connected'}</strong>
+              </div>
+              <div>
+                <span>Size</span>
+                <strong>{formatBytes(databaseStatus?.estimatedSizeBytes || databaseStatus?.database?.sizeBytes)}</strong>
+              </div>
+              <div>
+                <span>Backups</span>
+                <strong>{databaseStatus?.backupCount ?? 0}</strong>
+              </div>
+              <div>
+                <span>Latest</span>
+                <strong>{latestBackup ? formatAppDateTime(latestBackup.modifiedAt) : '-'}</strong>
+              </div>
+            </div>
+
+            <div className="backup-action-row">
+              <button
+                className="btn btn-outline"
+                type="button"
+                onClick={() => loadDatabaseStatus()}
+                disabled={backupLoading}
+              >
+                <RefreshCcw size={16} />
+                {backupLoading ? 'Checking...' : 'Check Status'}
+              </button>
+              <button
+                className="btn btn-primary"
+                type="button"
+                onClick={handleCreateDatabaseBackup}
+                disabled={backupCreating}
+              >
+                <Database size={16} />
+                {backupCreating ? 'Creating...' : 'Backup Now'}
+              </button>
+              <button
+                className="btn btn-outline"
+                type="button"
+                onClick={() => handleDownloadDatabaseBackup(latestBackup)}
+                disabled={!latestBackup || Boolean(backupDownloading)}
+              >
+                <Download size={16} />
+                {backupDownloading ? 'Downloading...' : 'Download Latest'}
+              </button>
+            </div>
+
+            {latestBackups.length > 0 ? (
+              <div className="backup-list">
+                {latestBackups.map((backup) => {
+                  const fileName = getBackupFileName(backup)
+                  return (
+                    <div className="backup-list-row" key={fileName}>
+                      <div>
+                        <strong>{fileName}</strong>
+                        <span>{formatBytes(backup.sizeBytes)} - {formatAppDateTime(backup.modifiedAt)}</span>
+                      </div>
+                      <button
+                        className="btn btn-outline"
+                        type="button"
+                        onClick={() => handleDownloadDatabaseBackup(backup)}
+                        disabled={backupDownloading === fileName}
+                      >
+                        <Download size={14} />
+                        Save
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            ) : (
+              <div className="backup-empty-state">No local backups found yet.</div>
+            )}
+
+            <p className="settings-helper">
+              Recovery file: local-branch-server/data/healthflow-branch.sqlite. Restore by stopping the branch server, replacing the SQLite file with a trusted backup, then starting the server again.
+            </p>
           </div>
         )}
 

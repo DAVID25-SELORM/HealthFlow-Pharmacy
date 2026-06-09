@@ -287,6 +287,28 @@ app.post('/api/database/backup', (request, response, next) => {
   }
 })
 
+app.get('/api/database/backups/:fileName/download', (request, response, next) => {
+  try {
+    const backupDir = path.join(path.dirname(config.sqlitePath), 'backups')
+    const fileName = path.basename(String(request.params.fileName || ''))
+    const filePath = path.join(backupDir, fileName)
+
+    if (
+      !fileName ||
+      path.dirname(path.relative(backupDir, filePath)) !== '.' ||
+      !fs.existsSync(filePath) ||
+      !fs.statSync(filePath).isFile()
+    ) {
+      response.status(404).json({ error: 'Backup file not found.' })
+      return
+    }
+
+    response.download(filePath, fileName)
+  } catch (error) {
+    next(error)
+  }
+})
+
 app.get('/api/inventory/search', (request, response) => {
   response.json({
     data: searchLocalInventory({

@@ -403,6 +403,59 @@ export const pullBranchInventory = async () =>
 export const pullBranchReferenceData = async () =>
   await branchSyncPost('/api/sync/pull-reference-data')
 
+export const getBranchDatabaseStatus = async () => {
+  const response = await branchFetch('/api/database/status', {
+    timeoutMs: DEFAULT_BRANCH_REQUEST_TIMEOUT_MS,
+  })
+  return response.data || response
+}
+
+export const createBranchDatabaseBackup = async (label = 'manual') => {
+  const response = await branchFetch('/api/database/backup', {
+    method: 'POST',
+    body: JSON.stringify({ label }),
+    timeoutMs: LONG_BRANCH_REQUEST_TIMEOUT_MS,
+  })
+  return response.data || response
+}
+
+export const downloadBranchDatabaseBackup = async (fileName) => {
+  if (!isBranchServerEnabled()) {
+    throw new Error('Local branch server mode is not enabled.')
+  }
+
+  const normalizedFileName = String(fileName || '').trim()
+  if (!normalizedFileName) {
+    throw new Error('Backup file name is required.')
+  }
+
+  const response = await fetchWithTimeout(
+    `${getBranchServerUrl()}/api/database/backups/${encodeURIComponent(normalizedFileName)}/download`,
+    {
+      headers: {
+        Accept: 'application/octet-stream',
+        'x-branch-token': getBranchRequestToken(),
+      },
+    },
+    LONG_BRANCH_REQUEST_TIMEOUT_MS
+  )
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}))
+    throw new Error(body?.error || 'Unable to download backup file.')
+  }
+
+  const blob = await response.blob()
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.setAttribute('download', normalizedFileName)
+  document.body.appendChild(anchor)
+  anchor.click()
+  document.body.removeChild(anchor)
+  URL.revokeObjectURL(url)
+}
+
 export const getNhiaSettings = async () => {
   const response = await branchFetch('/api/nhia-config')
   return response.data || null
