@@ -955,6 +955,7 @@ const Reports = () => {
       : dispensingLines.slice(0, 8),
     [dispensingLines, selectedDrug]
   )
+  const visibleDrugPatientLines = selectedDrugLines.slice(0, selectedDrug ? 50 : 8)
 
   const updateFilter = (key, value) => {
     setFilters((current) => ({ ...current, [key]: value }))
@@ -1279,6 +1280,7 @@ const Reports = () => {
                     <span>{drug.drug}</span>
                     <strong>{drug.patientsServed} patients</strong>
                     <small>{drug.quantity} {drug.unit || 'unit'} | {money(drug.revenue)}</small>
+                    <em>View patients who received this drug</em>
                   </button>
                 ))}
               </div>
@@ -1287,7 +1289,14 @@ const Reports = () => {
 
           <div className="drug-drilldown-preview">
             <div className="drug-panel-heading">
-              <h2>{selectedDrug ? `${selectedDrug} Patient Drill Down` : 'Recent Patient Drill Down'}</h2>
+              <div>
+                <h2>{selectedDrug ? `${selectedDrug} - Patients Given This Drug` : 'Recent Patient Drug Recipients'}</h2>
+                <p>
+                  {selectedDrug
+                    ? `${selectedDrugLines.length} dispensing record${selectedDrugLines.length === 1 ? '' : 's'} found for ${selectedDrug}.`
+                    : 'Select a drug above to see exactly which patients received it.'}
+                </p>
+              </div>
               <button
                 type="button"
                 className="btn btn-primary"
@@ -1306,23 +1315,34 @@ const Reports = () => {
                     <th>Date</th>
                     <th>Patient</th>
                     <th>Folder No.</th>
+                    <th>Patient Type</th>
                     <th>Quantity</th>
                     <th>Prescriber</th>
+                    <th>Source</th>
+                    <th>Record No.</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {selectedDrugLines.slice(0, 6).map((line) => (
+                  {visibleDrugPatientLines.map((line) => (
                     <tr key={line.id}>
                       <td>{dateLabel(line.date) || '-'}</td>
                       <td>{line.patient}</td>
                       <td>{line.folderNo || '-'}</td>
+                      <td>{line.patientType || '-'}</td>
                       <td>{line.quantity} {line.unit || ''}</td>
                       <td>{line.prescriber || '-'}</td>
+                      <td>{line.source || '-'}</td>
+                      <td>{line.recordNo || '-'}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
               {selectedDrugLines.length === 0 && <div className="report-empty-state">Search or select a drug to see patient-level dispensing detail.</div>}
+              {selectedDrugLines.length > visibleDrugPatientLines.length && (
+                <div className="drug-recipient-note">
+                  Showing the first {visibleDrugPatientLines.length} recipient records. Open the drill down report to view and export all rows.
+                </div>
+              )}
             </div>
           </div>
         </div>

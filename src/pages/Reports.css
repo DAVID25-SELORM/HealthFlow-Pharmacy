@@ -188,6 +188,28 @@
   margin-top: 0.2rem;
 }
 
+.drug-chip-list em {
+  color: var(--primary);
+  display: block;
+  font-size: 0.78rem;
+  font-style: normal;
+  font-weight: 800;
+  margin-top: 0.35rem;
+}
+
+.drug-panel-heading p {
+  color: var(--gray-600);
+  font-size: 0.82rem;
+  line-height: 1.35;
+  margin: 0.2rem 0 0;
+}
+
+.drug-recipient-note {
+  color: var(--gray-600);
+  font-size: 0.82rem;
+  padding: 0.75rem 0.2rem 0;
+}
+
 .report-table.compact th,
 .report-table.compact td {
   padding: 0.5rem;

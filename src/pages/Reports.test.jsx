@@ -181,19 +181,22 @@ describe('Reports', () => {
   })
 
   it('generates report cards and filters the selected report rows by visible values', async () => {
-    render(<Reports />)
+    const { container } = render(<Reports />)
 
     await waitFor(() => {
       expect(screen.getAllByText('Sales/POS Report').length).toBeGreaterThan(0)
     })
 
+    const reportTableCard = container.querySelector('.report-table-card')
+    expect(reportTableCard).toBeTruthy()
+
     fireEvent.click(screen.getAllByRole('button', { name: /^Generate$/i })[0])
-    expect(screen.getByText('SALE-001')).toBeInTheDocument()
-    expect(screen.getByText('SALE-002')).toBeInTheDocument()
+    expect(within(reportTableCard).getByText('SALE-001')).toBeInTheDocument()
+    expect(within(reportTableCard).getByText('SALE-002')).toBeInTheDocument()
 
     fireEvent.change(screen.getByLabelText(/search reports/i), { target: { value: 'Kojo' } })
-    expect(screen.queryByText('SALE-001')).not.toBeInTheDocument()
-    expect(screen.getByText('SALE-002')).toBeInTheDocument()
+    expect(within(reportTableCard).queryByText('SALE-001')).not.toBeInTheDocument()
+    expect(within(reportTableCard).getByText('SALE-002')).toBeInTheDocument()
     expect(screen.getByText('1 rows')).toBeInTheDocument()
   })
 
@@ -234,8 +237,12 @@ describe('Reports', () => {
 
     const amoxicillinButton = screen.getByRole('button', { name: /Amoxicillin Capsules/i })
     fireEvent.click(amoxicillinButton)
-    expect(screen.getByText('Amoxicillin Capsules Patient Drill Down')).toBeInTheDocument()
+    expect(screen.getByText('Amoxicillin Capsules - Patients Given This Drug')).toBeInTheDocument()
+    expect(screen.getByText('2 dispensing records found for Amoxicillin Capsules.')).toBeInTheDocument()
     expect(screen.getAllByText('Ama Mensah').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('SALE-001').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('NHIA-001').length).toBeGreaterThan(0)
+    expect(screen.getByText('View patients who received this drug')).toBeInTheDocument()
   })
 
   it('keeps report tabs and preview navigation in sync', async () => {
