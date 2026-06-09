@@ -1027,6 +1027,20 @@ const Reports = () => {
     setSelectedReportId(reportCatalog[0]?.id || '')
   }, [reportCatalog, role, selectedReport])
 
+  useEffect(() => {
+    const nextReport = activeTab === 'overview'
+      ? reportCatalog[0]
+      : reportCatalog.find((report) => report.tab === activeTab)
+
+    const shouldSelectReport = activeTab === 'overview'
+      ? selectedReport?.id !== nextReport?.id
+      : selectedReport?.tab !== activeTab
+
+    if (nextReport && shouldSelectReport) {
+      setSelectedReportId(nextReport.id)
+    }
+  }, [activeTab, reportCatalog, selectedReport])
+
   const getMetadataRows = (title, reportId = selectedReport?.id, rows = reportData.rows) => [
     ...buildReportHeaderRows({
       title,
@@ -1319,6 +1333,8 @@ const Reports = () => {
             <button
               key={tab.id}
               type="button"
+              role="tab"
+              aria-selected={activeTab === tab.id}
               className={activeTab === tab.id ? 'active' : ''}
               onClick={() => setActiveTab(tab.id)}
             >

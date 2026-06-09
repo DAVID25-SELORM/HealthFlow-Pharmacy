@@ -211,7 +211,7 @@ describe('Reports', () => {
     })
 
     expect(screen.queryByText('Sales/POS Report')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: /NHIS Claims/i }))
+    fireEvent.click(screen.getByRole('tab', { name: /NHIS Claims/i }))
     expect(screen.getByText('NHIS Medicines Dispensed Report')).toBeInTheDocument()
     expect(screen.getByText('Tariff/GDRG Services Report')).toBeInTheDocument()
 
@@ -236,6 +236,22 @@ describe('Reports', () => {
     fireEvent.click(amoxicillinButton)
     expect(screen.getByText('Amoxicillin Capsules Patient Drill Down')).toBeInTheDocument()
     expect(screen.getAllByText('Ama Mensah').length).toBeGreaterThan(0)
+  })
+
+  it('keeps report tabs and preview navigation in sync', async () => {
+    render(<Reports />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Drug Utilization Report')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('tab', { name: /Accounting/i }))
+    expect(screen.getByRole('tab', { name: /Accounting/i })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getAllByRole('heading', { name: 'Accounting/Cashier Shifts Report' }).length).toBeGreaterThan(0)
+
+    fireEvent.click(screen.getByRole('tab', { name: /Drug Utilization/i }))
+    expect(screen.getByRole('tab', { name: /Drug Utilization/i })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getAllByRole('heading', { name: 'Drug Utilization Report' }).length).toBeGreaterThan(0)
   })
 
   it('does not expose the drug analytics panel to roles without analytics reports', async () => {
