@@ -1622,7 +1622,9 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
   const cccNo = getClaimField(claimData, 'cccNo', 'ccc_no') || getClaimField(claimData, 'ccCode', 'cc_code')
   const patientAge = calculateAge(dateOfBirth)
   const requireMedicineDirections = options.finalSubmission || options.requireMedicineDirections === true
-  const requirePrescriptionAttachment = options.finalSubmission || options.requirePrescriptionAttachment === true
+  const requirePrescriptionAttachment = options.finalSubmission
+    ? options.requirePrescriptionAttachment !== false
+    : options.requirePrescriptionAttachment === true
   const shouldCheckDiagnosisTreatmentMatch =
     isHospital &&
     (options.finalSubmission || options.enforceDiagnosisTreatmentMatch === true || requireMedicineDirections)

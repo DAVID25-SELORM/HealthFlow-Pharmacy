@@ -1575,7 +1575,7 @@ const Nhis = () => {
         requireMedicineDirections: Boolean(editingClaim),
         enforceDiagnosisTreatmentMatch: Boolean(editingClaim && isHospital),
         enforcePrescribingLevel: true,
-        requirePrescriptionAttachment: true,
+        requirePrescriptionAttachment: false,
         claimControlMode,
         providerClassLevel,
         // ✅ NHIS PHARMACY LEVEL PATCH START
@@ -1968,6 +1968,7 @@ const Nhis = () => {
             currentNhiaTariffItems: nhiaTariffItems,
             tariffFacilityGroup: activeTariffFacilityGroup,
             tariffCateringOption: activeTariffCateringOption,
+            requirePrescriptionAttachment: false,
           }
         )
 
@@ -1981,7 +1982,12 @@ const Nhis = () => {
       }
 
       setUpdatingStatus(claim.id)
-      if (newStatus === 'submitted' && directNhiaApiAvailable) {
+      const hasReadablePrescriptionFile = Boolean(
+        claim.prescription_file_path ||
+        claim.prescription_file_url ||
+        claim.claimit_attachment_base64
+      )
+      if (newStatus === 'submitted' && directNhiaApiAvailable && hasReadablePrescriptionFile) {
         const submitResult = await submitNhisClaimDirect(claim.id, {
           ...getDirectNhiaOptions(),
           claim,
@@ -1994,9 +2000,9 @@ const Nhis = () => {
       } else {
         await updateNhisClaimStatus(claim.id, newStatus, '', user?.id || null)
       }
-      await loadAll()
-      notify(
-        newStatus === 'submitted' && directNhiaApiAvailable
+        await loadAll()
+        notify(
+        newStatus === 'submitted' && directNhiaApiAvailable && hasReadablePrescriptionFile
           ? `Claim ${claim.claim_number} submitted through CLAIM-it.`
           : `Claim ${claim.claim_number} marked as ${newStatus}.`,
         'success'

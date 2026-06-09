@@ -279,6 +279,22 @@ describe('assessNhisClaimReadiness', () => {
     )
   })
 
+  it('allows manual final status checks to skip the scanned prescription blocker', () => {
+    const readiness = assessNhisClaimReadiness(
+      {
+        ...baseClaim,
+        prescriptionFilePath: '',
+        prescriptionFileName: '',
+      },
+      [baseMedicine],
+      { finalSubmission: true, requirePrescriptionAttachment: false }
+    )
+
+    expect(readiness.blockers).not.toContain(
+      'Attach the scanned prescription PDF or JPEG before saving/submitting this NHIS claim.'
+    )
+  })
+
   it('does not warn for missing patient address on pharmacy claims', () => {
     const readiness = assessNhisClaimReadiness(
       { ...baseClaim, patientAddress: '', organizationType: 'pharmacy' },
