@@ -1523,7 +1523,7 @@ const mapClaimRow = (row) => ({
 
 export const listNhiaClaims = ({ status = '', limit = 100 } = {}) => {
   const normalizedStatus = normalizeText(status).toLowerCase()
-  const cappedLimit = Math.min(Math.max(Number(limit) || 100, 1), 500)
+  const cappedLimit = Math.min(Math.max(Number(limit) || 100, 1), 5000)
   const rows = normalizedStatus
     ? db.prepare(`${selectClaimsBase} WHERE status = ? ORDER BY created_at DESC LIMIT ?`).all(normalizedStatus, cappedLimit)
     : db.prepare(`${selectClaimsBase} ORDER BY created_at DESC LIMIT ?`).all(cappedLimit)

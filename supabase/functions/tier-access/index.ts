@@ -28,7 +28,7 @@ const SALES_SELECT_FIELDS = `
     *,
     drugs (name)
   ),
-  patients (full_name, phone, insurance_provider, insurance_id)
+  patients (id, full_name, phone, insurance_provider, insurance_id, folder_no)
 `
 const REPORT_DRUG_SELECT_FIELDS = `
   id,
@@ -41,6 +41,9 @@ const REPORT_DRUG_SELECT_FIELDS = `
   unit,
   price,
   cost_price,
+  nhis_code,
+  nhis_price,
+  nhis_unit,
   supplier,
   category,
   reorder_level,

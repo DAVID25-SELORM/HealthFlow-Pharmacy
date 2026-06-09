@@ -53,8 +53,9 @@ const getClaimStatus = (claim = {}) => normalizeText(claim.status || claim.claim
 const getClaimServiceDate = (claim = {}) =>
   claim.serviceDate || claim.service_date || claim.service_date_from || claim.createdAt || claim.created_at
 
-const mapSale = (sale) => ({
+const mapSale = (sale, patientMap = new Map()) => ({
   ...sale,
+  patients: patientMap.get(String(sale.patient_id || '')) || null,
   sale_items: selectSaleItems.all(sale.id),
 })
 
@@ -170,11 +171,12 @@ export const getLocalReportBundle = (filters = {}) => {
     department: String(filters.department || filters.module || '').trim(),
   }
 
-  const sales = filterSales(selectSales.all(5000).map(mapSale), normalizedFilters)
   const patients = listOfflineRecords('patients', { limit: 5000 })
+  const patientMap = new Map(patients.map((patient) => [String(patient.id), patient]))
+  const sales = filterSales(selectSales.all(5000).map((sale) => mapSale(sale, patientMap)), normalizedFilters)
   const claims = filterClaims(listOfflineRecords('claims', { limit: 5000 }), normalizedFilters)
   const nhisClaims = filterClaims(
-    listNhiaClaims({ limit: 500 }).map(normalizeNhisClaimForReport),
+    listNhiaClaims({ limit: 5000 }).map(normalizeNhisClaimForReport),
     normalizedFilters
   )
   const drugs = filterInventory(listLocalInventory({ branchId: normalizedFilters.branch || config.branchId || '', limit: 20000 }), normalizedFilters)

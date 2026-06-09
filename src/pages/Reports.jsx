@@ -50,6 +50,10 @@ const FILTER_DEFAULTS = {
   nhisStatus: '',
   claimStatus: '',
   drugCategory: '',
+  drug: '',
+  patientType: '',
+  prescriber: '',
+  facilityBranch: '',
 }
 
 const money = (value) => `GHS ${Number(value || 0).toFixed(2)}`
@@ -150,15 +154,232 @@ const getGdrgServiceLines = (claims) =>
     }))
   )
 
+const normalizeKey = (value) => String(value || '').trim().toLowerCase()
+const normalizeDrugKey = (name, id = '') => normalizeKey(id || name)
+const getDrugName = (item = {}) =>
+  item.drug_name || item.drugName || item.description || item.name || item.drugs?.name || 'Medicine'
+const getDrugId = (item = {}) =>
+  item.drug_id || item.drugId || item.nhis_drug_id || item.nhisDrugId || item.drugs?.id || ''
+const getPatientId = (row = {}) =>
+  row.patient_id || row.patientId || row.patients?.id || row.member_number || row.memberNumber || row.insurance_id || row.insuranceId || ''
+const getPatientType = (row = {}) => {
+  const provider = normalizeKey(row.insurance_provider || row.insuranceProvider || row.patients?.insurance_provider)
+  const payment = normalizeKey(row.payment_method || row.paymentMethod)
+  if (provider.includes('nhis') || provider.includes('nhia') || payment === 'nhia') return 'NHIS'
+  if (provider || payment === 'insurance') return 'Corporate'
+  return 'Cash'
+}
+const getFolderNo = (row = {}) =>
+  row.folder_no || row.folderNo || row.folder_number || row.folderNumber || row.patients?.folder_no || row.patient?.folderNo || ''
+const getDepartment = (row = {}) =>
+  row.department || row.department_name || row.departmentName || row.module || row.service_department || row.serviceDepartment || ''
+const getPrescriber = (row = {}) =>
+  row.prescriber || row.prescriber_name || row.prescriberName || row.physician_name || row.physicianName || row.doctor_name || row.doctorName || ''
+const getDiagnosis = (row = {}) => {
+  const details = rowsOf(row.diagnosis_details || row.diagnosisDetails)
+    .map((diagnosis) => diagnosis.label || diagnosis.name || diagnosis.diagnosis || diagnosis.code)
+    .filter(Boolean)
+  return row.diagnosis || details.join('; ') || ''
+}
+const getLineQuantity = (item = {}) =>
+  numberValue(item.dispensed_quantity ?? item.dispensedQuantity ?? item.quantity ?? item.prescribed_quantity ?? item.prescribedQuantity)
+const getLineUnit = (item = {}, drug = {}) =>
+  item.unit || item.nhis_unit || item.nhisUnit || item.drugs?.unit || drug.unit || 'unit'
+const getLineUnitPrice = (item = {}) =>
+  numberValue(item.unit_price ?? item.unitPrice ?? item.price ?? item.nhis_price ?? item.nhisPrice)
+const getLineTotal = (item = {}) => {
+  const explicit = item.total_price ?? item.totalPrice ?? item.total_amount ?? item.totalAmount
+  if (explicit !== undefined && explicit !== null && explicit !== '') return numberValue(explicit)
+  return getLineQuantity(item) * getLineUnitPrice(item)
+}
+const dateLabel = (value) => value ? formatAppDateTime(value) : ''
+const getQuarterKey = (dateValue) => {
+  const date = new Date(dateValue)
+  if (Number.isNaN(date.getTime())) return 'Unspecified'
+  return `${date.getFullYear()} Q${Math.floor(date.getMonth() / 3) + 1}`
+}
+
+const getDispensingLines = (bundle) => {
+  const drugsById = new Map(rowsOf(bundle.drugs).map((drug) => [String(drug.id), drug]))
+
+  const saleLines = rowsOf(bundle.sales).flatMap((sale) =>
+    rowsOf(sale.sale_items || sale.items).map((item) => {
+      const drug = drugsById.get(String(getDrugId(item))) || {}
+      const quantity = getLineQuantity(item)
+      const total = getLineTotal(item)
+      return {
+        id: item.id || `${sale.id}-${getDrugId(item) || getDrugName(item)}`,
+        source: 'POS',
+        recordNo: sale.sale_number || sale.saleNumber,
+        recordId: sale.id,
+        drugId: getDrugId(item),
+        drug: getDrugName(item),
+        nhiaCode: item.nhis_code || item.nhia_code || item.nhiaCode || drug.nhis_code || drug.nhia_code || '',
+        patientId: getPatientId(sale),
+        patient: getPatientName(sale),
+        folderNo: getFolderNo(sale),
+        patientType: getPatientType(sale),
+        quantity,
+        unit: getLineUnit(item, drug),
+        unitPrice: getLineUnitPrice(item),
+        revenue: total,
+        nhisValue: getPatientType(sale) === 'NHIS' ? total : 0,
+        date: sale.sale_date || sale.saleDate || sale.created_at || sale.createdAt,
+        branch: getBranchId(sale),
+        prescriber: getPrescriber(sale),
+        department: getDepartment(sale),
+        diagnosis: getDiagnosis(sale),
+      }
+    })
+  )
+
+  const nhisLines = rowsOf(bundle.nhisClaims).flatMap((claim) =>
+    rowsOf(claim.nhis_claim_medicines || claim.items).map((item) => {
+      const drug = drugsById.get(String(getDrugId(item))) || {}
+      const quantity = getLineQuantity(item)
+      const total = getLineTotal(item)
+      return {
+        id: item.id || `${claim.id}-${getDrugId(item) || getDrugName(item)}`,
+        source: 'NHIS',
+        recordNo: getClaimNumber(claim),
+        recordId: claim.id,
+        drugId: getDrugId(item),
+        drug: getDrugName(item),
+        nhiaCode: item.nhia_code || item.nhiaCode || item.drug_code || item.drugCode || item.code || drug.nhis_code || '',
+        patientId: getPatientId(claim),
+        patient: getPatientName(claim),
+        folderNo: getFolderNo(claim),
+        patientType: 'NHIS',
+        quantity,
+        unit: getLineUnit(item, drug),
+        unitPrice: getLineUnitPrice(item),
+        revenue: total,
+        nhisValue: total,
+        date: getServiceDate(claim),
+        branch: getBranchId(claim),
+        prescriber: getPrescriber(claim),
+        department: getDepartment(claim),
+        diagnosis: getDiagnosis(claim),
+      }
+    })
+  )
+
+  return [...saleLines, ...nhisLines]
+}
+
+const matchesFilterText = (value, expected) =>
+  !expected || normalizeKey(value).includes(normalizeKey(expected))
+
+const filterDispensingLines = (lines, filters = {}) =>
+  rowsOf(lines).filter((line) => (
+    matchesFilterText(line.drug, filters.drug || filters.drugCategory) &&
+    matchesFilterText(line.patientType, filters.patientType) &&
+    matchesFilterText(line.department, filters.department) &&
+    matchesFilterText(line.prescriber, filters.prescriber || filters.staff) &&
+    matchesFilterText(line.branch, filters.facilityBranch || filters.branch)
+  ))
+
+const summarizeDrugUtilization = (lines) =>
+  Object.values(
+    rowsOf(lines).reduce((summary, line) => {
+      const key = normalizeDrugKey(line.drug, line.drugId)
+      if (!summary[key]) {
+        summary[key] = {
+          drug: line.drug,
+          patients: new Set(),
+          quantity: 0,
+          prescriptions: new Set(),
+          revenue: 0,
+          nhisValue: 0,
+          unit: line.unit,
+          lastDate: '',
+          prescribers: {},
+        }
+      }
+      const patientKey = line.patientId || line.patient
+      if (patientKey) summary[key].patients.add(String(patientKey))
+      if (line.recordNo || line.recordId) summary[key].prescriptions.add(String(line.recordNo || line.recordId))
+      summary[key].quantity += numberValue(line.quantity)
+      summary[key].revenue += numberValue(line.revenue)
+      summary[key].nhisValue += numberValue(line.nhisValue)
+      if (line.unit && summary[key].unit === 'unit') summary[key].unit = line.unit
+      if (String(line.date || '') > String(summary[key].lastDate || '')) summary[key].lastDate = line.date
+      if (line.prescriber) summary[key].prescribers[line.prescriber] = (summary[key].prescribers[line.prescriber] || 0) + 1
+      return summary
+    }, {})
+  )
+    .map((entry) => ({
+      ...entry,
+      patientsServed: entry.patients.size,
+      prescriptionsCount: entry.prescriptions.size,
+      topPrescribers: Object.entries(entry.prescribers)
+        .sort((left, right) => right[1] - left[1])
+        .slice(0, 3)
+        .map(([name, count]) => `${name} (${count})`)
+        .join(', '),
+    }))
+    .sort((left, right) => right.quantity - left.quantity || right.patientsServed - left.patientsServed)
+
+const getDrugMovementRows = (bundle, lines) => {
+  const dispensedByDrug = summarizeDrugUtilization(lines).reduce((map, item) => {
+    map[normalizeDrugKey(item.drug)] = item
+    return map
+  }, {})
+  const purchaseItems = rowsOf(bundle.purchases).flatMap((purchase) => rowsOf(purchase.purchase_items || purchase.items))
+  const purchasesByDrug = purchaseItems.reduce((map, item) => {
+    const key = normalizeDrugKey(getDrugName(item), getDrugId(item))
+    map[key] = (map[key] || 0) + getLineQuantity(item)
+    return map
+  }, {})
+
+  return rowsOf(bundle.drugs)
+    .map((drug) => {
+      const key = normalizeDrugKey(drug.name, drug.id)
+      const byNameKey = normalizeDrugKey(drug.name)
+      const dispensed = dispensedByDrug[key]?.quantity || dispensedByDrug[byNameKey]?.quantity || 0
+      const purchased = purchasesByDrug[key] || purchasesByDrug[byNameKey] || 0
+      const balance = numberValue(drug.quantity)
+      const expired = drug.expiry_date && new Date(drug.expiry_date).getTime() < Date.now() ? balance : 0
+      const opening = balance + dispensed - purchased
+      return [drug.name, numberValue(opening), purchased, dispensed, 0, expired, balance, drug.unit || 'unit', getBranchId(drug)]
+    })
+    .filter((row) => row[2] || row[3] || row[6])
+    .sort((left, right) => String(left[0]).localeCompare(String(right[0])))
+}
+
+const getTrendRows = (lines) => {
+  const periods = rowsOf(lines).reduce((summary, line) => {
+    const date = new Date(line.date)
+    const month = Number.isNaN(date.getTime()) ? 'Unspecified' : line.date.slice(0, 7)
+    const year = Number.isNaN(date.getTime()) ? 'Unspecified' : String(date.getFullYear())
+    const periodKey = `${month}|${getQuarterKey(line.date)}|${year}|${line.drug}`
+    if (!summary[periodKey]) {
+      summary[periodKey] = { month, quarter: getQuarterKey(line.date), year, drug: line.drug, patients: new Set(), quantity: 0, revenue: 0, nhisValue: 0 }
+    }
+    if (line.patientId || line.patient) summary[periodKey].patients.add(String(line.patientId || line.patient))
+    summary[periodKey].quantity += numberValue(line.quantity)
+    summary[periodKey].revenue += numberValue(line.revenue)
+    summary[periodKey].nhisValue += numberValue(line.nhisValue)
+    return summary
+  }, {})
+
+  return Object.values(periods)
+    .sort((left, right) => String(right.month).localeCompare(String(left.month)) || right.quantity - left.quantity)
+    .map((entry) => [entry.month, entry.quarter, entry.year, entry.drug, entry.patients.size, entry.quantity, money(entry.revenue), money(entry.nhisValue)])
+}
+
 const includesTerm = (row, term) =>
   !term ||
   Object.values(row).some((value) =>
     String(value || '').toLowerCase().includes(String(term || '').toLowerCase())
   )
 
-const getReportRows = (reportId, bundle) => {
+const getReportRows = (reportId, bundle, filters = {}) => {
   const nhisClaims = rowsOf(bundle.nhisClaims)
   const generalClaims = rowsOf(bundle.claims)
+  const dispensingLines = filterDispensingLines(getDispensingLines(bundle), filters)
+  const drugSummary = summarizeDrugUtilization(dispensingLines)
+  const nhisDrugLines = dispensingLines.filter((line) => line.patientType === 'NHIS' || line.source === 'NHIS')
 
   const claimRows = (claims) =>
     rowsOf(claims).map((claim) => [
@@ -176,6 +397,88 @@ const getReportRows = (reportId, bundle) => {
     ])
 
   const definitions = {
+    'drug-utilization': {
+      headers: ['Drug', 'Patients Served', 'Quantity Dispensed', 'Unit', 'Prescriptions', 'Revenue', 'NHIS Value', 'Last Dispensed', 'Top Prescribers'],
+      rows: drugSummary.map((drug) => [
+        drug.drug,
+        drug.patientsServed,
+        drug.quantity,
+        drug.unit || 'unit',
+        drug.prescriptionsCount,
+        money(drug.revenue),
+        money(drug.nhisValue),
+        dateLabel(drug.lastDate),
+        drug.topPrescribers || '',
+      ]),
+    },
+    'drug-patient-drilldown': {
+      headers: ['Date', 'Patient', 'Folder No.', 'Patient Type', 'Drug', 'Quantity', 'Unit', 'Prescriber', 'Department', 'Branch', 'Source', 'Record No.'],
+      rows: dispensingLines
+        .sort((left, right) => String(right.date || '').localeCompare(String(left.date || '')))
+        .map((line) => [
+          dateLabel(line.date),
+          line.patient,
+          line.folderNo,
+          line.patientType,
+          line.drug,
+          line.quantity,
+          line.unit,
+          line.prescriber,
+          line.department,
+          line.branch,
+          line.source,
+          line.recordNo,
+        ]),
+    },
+    'top-dispensed-drugs': {
+      headers: ['Rank', 'Drug', 'Patients', 'Quantity Dispensed', 'Unit', 'Revenue', 'NHIS Value', 'Prescriptions'],
+      rows: drugSummary.slice(0, 10).map((drug, index) => [
+        index + 1,
+        drug.drug,
+        drug.patientsServed,
+        drug.quantity,
+        drug.unit || 'unit',
+        money(drug.revenue),
+        money(drug.nhisValue),
+        drug.prescriptionsCount,
+      ]),
+    },
+    'disease-drug-analysis': {
+      headers: ['Diagnosis', 'Drug', 'Patients', 'Quantity', 'Unit', 'NHIS Value', 'Prescriptions'],
+      rows: Object.values(
+        nhisDrugLines.reduce((summary, line) => {
+          const diagnosis = line.diagnosis || 'Unspecified'
+          const key = `${normalizeKey(diagnosis)}|${normalizeDrugKey(line.drug, line.drugId)}`
+          if (!summary[key]) summary[key] = { diagnosis, drug: line.drug, patients: new Set(), quantity: 0, unit: line.unit, value: 0, prescriptions: new Set() }
+          if (line.patientId || line.patient) summary[key].patients.add(String(line.patientId || line.patient))
+          if (line.recordNo || line.recordId) summary[key].prescriptions.add(String(line.recordNo || line.recordId))
+          summary[key].quantity += numberValue(line.quantity)
+          summary[key].value += numberValue(line.nhisValue)
+          return summary
+        }, {})
+      )
+        .sort((left, right) => right.quantity - left.quantity)
+        .map((entry) => [entry.diagnosis, entry.drug, entry.patients.size, entry.quantity, entry.unit || 'unit', money(entry.value), entry.prescriptions.size]),
+    },
+    'nhis-drug-consumption': {
+      headers: ['Drug', 'Quantity Served', 'Unit', 'Patients Served', 'NHIS Claims Value', 'Claims/Prescriptions'],
+      rows: summarizeDrugUtilization(nhisDrugLines).map((drug) => [
+        drug.drug,
+        drug.quantity,
+        drug.unit || 'unit',
+        drug.patientsServed,
+        money(drug.nhisValue),
+        drug.prescriptionsCount,
+      ]),
+    },
+    'drug-movement': {
+      headers: ['Drug', 'Opening Stock Estimate', 'Purchased', 'Dispensed', 'Adjustments', 'Expired', 'Current Balance', 'Unit', 'Branch'],
+      rows: getDrugMovementRows(bundle, dispensingLines),
+    },
+    'drug-utilization-trends': {
+      headers: ['Month', 'Quarter', 'Year', 'Drug', 'Patients', 'Quantity', 'Revenue', 'NHIS Value'],
+      rows: getTrendRows(dispensingLines),
+    },
     'sales-summary': {
       headers: ['Sale No.', 'Date', 'Patient', 'Payment', 'Items', 'Units', 'Gross', 'Discount', 'Tax', 'Net Amount', 'Status', 'Cashier', 'Branch', 'Notes'],
       rows: rowsOf(bundle.sales).map((sale) => [
@@ -585,6 +888,7 @@ const Reports = () => {
   const [filters, setFilters] = useState(FILTER_DEFAULTS)
   const [activeTab, setActiveTab] = useState('overview')
   const [selectedReportId, setSelectedReportId] = useState('sales-summary')
+  const [selectedDrug, setSelectedDrug] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -596,11 +900,18 @@ const Reports = () => {
   const facilityLogo = getFacilityLogo(brandingSource)
   const reportFooter = getReportFooter(brandingSource)
   const reportCatalog = useMemo(() => getVisibleReportCatalog(role), [role])
+  const canViewDrugAnalytics = reportCatalog.some((report) => report.tab === 'analytics')
+  const canViewFullDrugAnalytics = canAccessReport(role, 'drug-utilization')
   const selectedReport = reportCatalog.find((report) => report.id === selectedReportId) || reportCatalog[0]
   const normalizedBundle = useMemo(() => normalizeReportBundle(bundle || {}), [bundle])
+  const analyticsFilters = useMemo(() => ({
+    ...filters,
+    drug: selectedDrug || filters.drug,
+    patientType: canViewFullDrugAnalytics ? filters.patientType : 'NHIS',
+  }), [canViewFullDrugAnalytics, filters, selectedDrug])
   const rawReportData = useMemo(
-    () => (selectedReport ? getReportRows(selectedReport.id, normalizedBundle) : { headers: [], rows: [] }),
-    [selectedReport, normalizedBundle]
+    () => (selectedReport ? getReportRows(selectedReport.id, normalizedBundle, analyticsFilters) : { headers: [], rows: [] }),
+    [selectedReport, normalizedBundle, analyticsFilters]
   )
   const filteredRows = useMemo(
     () => rawReportData.rows.filter((row) => includesTerm(row, searchTerm)),
@@ -631,9 +942,25 @@ const Reports = () => {
     { label: 'NHIS Claims', value: normalizedBundle.metrics.nhisClaimsCount || normalizedBundle.metrics.claimsCount, detail: `${normalizedBundle.metrics.rejectedNhisClaims || 0} rejected/failed` },
     { label: 'Purchases', value: money(normalizedBundle.metrics.purchaseAmount), detail: `${normalizedBundle.metrics.purchasesCount} purchase records` },
   ]
+  const dispensingLines = useMemo(
+    () => filterDispensingLines(getDispensingLines(normalizedBundle), analyticsFilters),
+    [normalizedBundle, analyticsFilters]
+  )
+  const drugAnalytics = useMemo(() => summarizeDrugUtilization(dispensingLines), [dispensingLines])
+  const fastSearchResult = drugAnalytics[0]
+  const topDrugs = drugAnalytics.slice(0, 10)
+  const selectedDrugLines = useMemo(
+    () => selectedDrug
+      ? dispensingLines.filter((line) => matchesFilterText(line.drug, selectedDrug))
+      : dispensingLines.slice(0, 8),
+    [dispensingLines, selectedDrug]
+  )
 
   const updateFilter = (key, value) => {
     setFilters((current) => ({ ...current, [key]: value }))
+    if (key === 'drug') {
+      setSelectedDrug(value)
+    }
   }
 
   const runReports = async (nextFilters = filters) => {
@@ -655,6 +982,9 @@ const Reports = () => {
         ...nextFilters,
         branchId: nextFilters.branch,
         userId: nextFilters.staff,
+        prescriber: nextFilters.prescriber,
+        patientType: nextFilters.patientType,
+        drug: nextFilters.drug,
       })
       setBundle(data)
     } catch (reportError) {
@@ -781,6 +1111,23 @@ const Reports = () => {
             <input value={filters.branch} onChange={(event) => updateFilter('branch', event.target.value)} placeholder="All branches" />
           </label>
           <label>
+            <span>Facility branch</span>
+            <input value={filters.facilityBranch} onChange={(event) => updateFilter('facilityBranch', event.target.value)} placeholder="Branch name or code" />
+          </label>
+          <label>
+            <span>Drug</span>
+            <input value={filters.drug} onChange={(event) => updateFilter('drug', event.target.value)} placeholder="Amoxicillin, Paracetamol..." />
+          </label>
+          <label>
+            <span>Patient type</span>
+            <select value={filters.patientType} onChange={(event) => updateFilter('patientType', event.target.value)}>
+              <option value="">All</option>
+              <option value="NHIS">NHIS</option>
+              <option value="Cash">Cash</option>
+              <option value="Corporate">Corporate</option>
+            </select>
+          </label>
+          <label>
             <span>Facility</span>
             <input value={filters.facility} onChange={(event) => updateFilter('facility', event.target.value)} placeholder="Current facility" />
           </label>
@@ -791,6 +1138,10 @@ const Reports = () => {
           <label>
             <span>Staff/user</span>
             <input value={filters.staff} onChange={(event) => updateFilter('staff', event.target.value)} placeholder="All users" />
+          </label>
+          <label>
+            <span>Prescriber</span>
+            <input value={filters.prescriber} onChange={(event) => updateFilter('prescriber', event.target.value)} placeholder="Doctor or prescriber" />
           </label>
           <label>
             <span>Payment type</span>
@@ -839,6 +1190,129 @@ const Reports = () => {
             </div>
           ))}
         </div>
+
+        {canViewDrugAnalytics && (
+        <div className="drug-analytics-panel">
+          <div className="drug-fast-search">
+            <label className="report-filter-field">
+              <Search size={16} />
+              <input
+                type="search"
+                placeholder="Fast search drug utilization"
+                value={selectedDrug || filters.drug}
+                onChange={(event) => updateFilter('drug', event.target.value)}
+                aria-label="Fast search drug utilization"
+              />
+            </label>
+            <div className="drug-fast-stats">
+              <div>
+                <span>Patients served</span>
+                <strong>{fastSearchResult?.patientsServed || 0}</strong>
+              </div>
+              <div>
+                <span>Quantity dispensed</span>
+                <strong>{fastSearchResult ? `${fastSearchResult.quantity} ${fastSearchResult.unit || ''}`.trim() : 0}</strong>
+              </div>
+              <div>
+                <span>Revenue</span>
+                <strong>{money(fastSearchResult?.revenue)}</strong>
+              </div>
+              <div>
+                <span>NHIS value</span>
+                <strong>{money(fastSearchResult?.nhisValue)}</strong>
+              </div>
+              <div>
+                <span>Last dispensed</span>
+                <strong>{dateLabel(fastSearchResult?.lastDate) || '-'}</strong>
+              </div>
+              <div>
+                <span>Top prescribers</span>
+                <strong>{fastSearchResult?.topPrescribers || '-'}</strong>
+              </div>
+            </div>
+          </div>
+
+          <div className="drug-top-list">
+            <div className="drug-panel-heading">
+              <h2>Top 10 Dispensed Drugs</h2>
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={() => {
+                  setActiveTab('analytics')
+                  setSelectedReportId('top-dispensed-drugs')
+                }}
+              >
+                View Report
+              </button>
+            </div>
+            {topDrugs.length === 0 ? (
+              <div className="report-empty-state">No drug utilization data found for the selected filters.</div>
+            ) : (
+              <div className="drug-chip-list">
+                {topDrugs.map((drug, index) => (
+                  <button
+                    type="button"
+                    key={`${drug.drug}-${index}`}
+                    className={selectedDrug && matchesFilterText(drug.drug, selectedDrug) ? 'active' : ''}
+                    onClick={() => {
+                      setSelectedDrug(drug.drug)
+                      setFilters((current) => ({ ...current, drug: drug.drug }))
+                      setActiveTab('analytics')
+                      setSelectedReportId('drug-patient-drilldown')
+                    }}
+                  >
+                    <span>{drug.drug}</span>
+                    <strong>{drug.patientsServed} patients</strong>
+                    <small>{drug.quantity} {drug.unit || 'unit'} | {money(drug.revenue)}</small>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="drug-drilldown-preview">
+            <div className="drug-panel-heading">
+              <h2>{selectedDrug ? `${selectedDrug} Patient Drill Down` : 'Recent Patient Drill Down'}</h2>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  setActiveTab('analytics')
+                  setSelectedReportId('drug-patient-drilldown')
+                }}
+              >
+                Open Drill Down
+              </button>
+            </div>
+            <div className="report-table-wrap">
+              <table className="report-table compact">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Patient</th>
+                    <th>Folder No.</th>
+                    <th>Quantity</th>
+                    <th>Prescriber</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedDrugLines.slice(0, 6).map((line) => (
+                    <tr key={line.id}>
+                      <td>{dateLabel(line.date) || '-'}</td>
+                      <td>{line.patient}</td>
+                      <td>{line.folderNo || '-'}</td>
+                      <td>{line.quantity} {line.unit || ''}</td>
+                      <td>{line.prescriber || '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {selectedDrugLines.length === 0 && <div className="report-empty-state">Search or select a drug to see patient-level dispensing detail.</div>}
+            </div>
+          </div>
+        </div>
+        )}
 
         <div className="reports-tabs" role="tablist" aria-label="Report categories">
           {visibleTabs.map((tab) => (
@@ -905,9 +1379,9 @@ const Reports = () => {
                     setSelectedReportId(report.id)
                     downloadCsv(
                       `${report.id}.csv`,
-                      getReportRows(report.id, normalizedBundle).headers,
-                      getReportRows(report.id, normalizedBundle).rows,
-                      getMetadataRows(report.title, report.id, getReportRows(report.id, normalizedBundle).rows)
+                      getReportRows(report.id, normalizedBundle, analyticsFilters).headers,
+                      getReportRows(report.id, normalizedBundle, analyticsFilters).rows,
+                      getMetadataRows(report.title, report.id, getReportRows(report.id, normalizedBundle, analyticsFilters).rows)
                     )
                   }}
                 >

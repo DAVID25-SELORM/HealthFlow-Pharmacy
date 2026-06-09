@@ -220,6 +220,40 @@ describe('Reports', () => {
     expect(screen.getByText('GDRG-01')).toBeInTheDocument()
     expect(screen.getByText('Consultation')).toBeInTheDocument()
   })
+
+  it('shows drug utilization analytics with fast search and patient drill down', async () => {
+    render(<Reports />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Drug Utilization Report')).toBeInTheDocument()
+    })
+
+    expect(screen.getAllByText('Top 10 Dispensed Drugs').length).toBeGreaterThan(0)
+    fireEvent.change(screen.getByLabelText(/fast search drug utilization/i), { target: { value: 'Amoxicillin' } })
+    expect(screen.getAllByText('2 patients').length).toBeGreaterThan(0)
+
+    const amoxicillinButton = screen.getByRole('button', { name: /Amoxicillin Capsules/i })
+    fireEvent.click(amoxicillinButton)
+    expect(screen.getByText('Amoxicillin Capsules Patient Drill Down')).toBeInTheDocument()
+    expect(screen.getAllByText('Ama Mensah').length).toBeGreaterThan(0)
+  })
+
+  it('does not expose the drug analytics panel to roles without analytics reports', async () => {
+    mocks.useAuth.mockReturnValue({
+      role: 'cashier',
+      displayName: 'Cashier User',
+      branch: { id: 'branch-1', name: 'Main Branch' },
+    })
+
+    render(<Reports />)
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Sales/POS Report').length).toBeGreaterThan(0)
+    })
+
+    expect(screen.queryByLabelText(/fast search drug utilization/i)).not.toBeInTheDocument()
+    expect(screen.queryByText('Drug Utilization Report')).not.toBeInTheDocument()
+  })
 })
 
 describe('reportsService access helpers', () => {
@@ -236,7 +270,9 @@ describe('reportsService access helpers', () => {
     expect(normalized.metrics.pendingNhisClaims).toBe(1)
     expect(normalized.metrics.approvedNhisClaims).toBe(1)
     expect(REPORT_TABS.map((tab) => tab.id)).toContain('nhis')
+    expect(REPORT_TABS.map((tab) => tab.id)).toContain('analytics')
     expect(REPORT_CATALOG.map((report) => report.id)).toContain('cc-code-generation')
+    expect(REPORT_CATALOG.map((report) => report.id)).toContain('drug-utilization')
     expect(buildReportHeaderRows({
       title: 'Claims',
       filters: { startDate: '2026-06-01', endDate: '2026-06-30' },

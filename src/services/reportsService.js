@@ -40,6 +40,7 @@ const hasReportAccess = (role, category) => {
 
 export const REPORT_TABS = [
   { id: 'overview', label: 'Overview' },
+  { id: 'analytics', label: 'Drug Utilization' },
   { id: 'sales', label: 'Sales' },
   { id: 'inventory', label: 'Inventory' },
   { id: 'purchases', label: 'Purchases' },
@@ -57,6 +58,55 @@ export const REPORT_CATALOG = [
     category: 'sales',
     title: 'Sales/POS Report',
     description: 'Daily sales, payment mix, item ledger, cashier totals, and refunds.',
+  },
+  {
+    id: 'drug-utilization',
+    tab: 'analytics',
+    category: 'inventory',
+    title: 'Drug Utilization Report',
+    description: 'Patients served, prescriptions, quantities dispensed, revenue, and NHIS value by drug.',
+  },
+  {
+    id: 'drug-patient-drilldown',
+    tab: 'analytics',
+    category: 'inventory',
+    title: 'Patient-Level Drug Drill Down',
+    description: 'Patient-by-patient dispensing detail for the selected drug and filters.',
+  },
+  {
+    id: 'top-dispensed-drugs',
+    tab: 'analytics',
+    category: 'inventory',
+    title: 'Top 10 Dispensed Drugs',
+    description: 'Highest volume medicines with patient count, quantity, revenue, and NHIS value.',
+  },
+  {
+    id: 'disease-drug-analysis',
+    tab: 'analytics',
+    category: 'nhis',
+    title: 'Disease vs Drug Analysis',
+    description: 'Diagnosis-linked medicine consumption for NHIS and hospital audit justification.',
+  },
+  {
+    id: 'nhis-drug-consumption',
+    tab: 'analytics',
+    category: 'nhis',
+    title: 'NHIS Drug Consumption Report',
+    description: 'NHIS medicine quantities served and claim value by drug.',
+  },
+  {
+    id: 'drug-movement',
+    tab: 'analytics',
+    category: 'inventory',
+    title: 'Drug Movement Report',
+    description: 'Opening estimate, purchases, dispensed quantities, expired stock, and current balance by drug.',
+  },
+  {
+    id: 'drug-utilization-trends',
+    tab: 'analytics',
+    category: 'inventory',
+    title: 'Drug Utilization Trends',
+    description: 'Monthly, quarterly, and yearly utilization trend rows by drug.',
   },
   {
     id: 'inventory-stock',
