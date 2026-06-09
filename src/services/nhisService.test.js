@@ -1853,6 +1853,72 @@ describe('direct NHIA submission', () => {
   })
 })
 
+describe('NHIS claim save attachment behavior', () => {
+  const claimWithoutPrescription = {
+    ...baseClaim,
+    prescriptionFilePath: '',
+    prescriptionFileName: '',
+  }
+  const medicineWithTotal = { ...baseMedicine, totalAmount: 10 }
+
+  it('saves a served NHIS claim without forcing an RX attachment', async () => {
+    const insertedClaim = { id: 'claim-1', claim_number: 'NHIS-000001', status: 'served' }
+    const claimInsertResult = {
+      select: vi.fn(() => ({
+        single: vi.fn().mockResolvedValue({ data: insertedClaim, error: null }),
+      })),
+    }
+    const duplicateQuery = {
+      eq: vi.fn(() => duplicateQuery),
+      neq: vi.fn(() => duplicateQuery),
+      limit: vi.fn().mockResolvedValue({ data: [], error: null }),
+    }
+    const claimTable = {
+      select: vi.fn(() => duplicateQuery),
+      insert: vi.fn(() => claimInsertResult),
+    }
+    const medicineTable = {
+      insert: vi.fn().mockResolvedValue({ error: null }),
+    }
+    const serviceTable = {
+      insert: vi.fn().mockResolvedValue({ error: null }),
+    }
+
+    supabase.from.mockImplementation((table) => {
+      if (table === 'nhis_claims') return claimTable
+      if (table === 'nhis_claim_medicines') return medicineTable
+      if (table === 'nhis_claim_services') return serviceTable
+      return { update: vi.fn(() => ({ eq: vi.fn().mockResolvedValue({ error: null }) })) }
+    })
+
+    await expect(createNhisClaim(
+      claimWithoutPrescription,
+      [medicineWithTotal],
+      {
+        providerClassLevel: 'D',
+        pharmacyLevel: 'P1',
+        nhisDrugCatalog: [{ code: 'NH001', category: 'A' }],
+      }
+    )).resolves.toEqual(insertedClaim)
+
+    expect(claimTable.insert).toHaveBeenCalled()
+    expect(medicineTable.insert).toHaveBeenCalled()
+  })
+
+  it('still blocks save when a caller explicitly requires an RX attachment', async () => {
+    await expect(createNhisClaim(
+      claimWithoutPrescription,
+      [medicineWithTotal],
+      {
+        providerClassLevel: 'D',
+        pharmacyLevel: 'P1',
+        nhisDrugCatalog: [{ code: 'NH001', category: 'A' }],
+        requirePrescriptionAttachment: true,
+      }
+    )).rejects.toThrow('Attach the scanned prescription PDF or JPEG')
+  })
+})
+
 describe('duplicate NHIS claim prevention', () => {
   it('blocks saving the same member, service date, and total amount twice', async () => {
     mockNhisClaimDuplicateAndUpdateQueries({

@@ -1886,6 +1886,14 @@ const Nhis = () => {
         branchId: profile?.branch_id || branch?.id || null,
         createdBy: user?.id || null,
       }
+      const hasReadablePrescriptionFile = Boolean(
+        payload.prescriptionFilePath ||
+        payload.prescription_file_path ||
+        payload.prescriptionFileUrl ||
+        payload.prescription_file_url ||
+        payload.claimitAttachmentBase64 ||
+        payload.claimit_attachment_base64
+      )
 
       let successMessage = editingClaim ? 'NHIS claim corrections saved.' : 'NHIS claim saved.'
       if (editingClaim) {
@@ -1900,7 +1908,7 @@ const Nhis = () => {
           tariffFacilityGroup: activeTariffFacilityGroup,
           tariffCateringOption: activeTariffCateringOption,
         })
-        if (editingClaim.status === 'served' && directNhiaApiAvailable) {
+        if (editingClaim.status === 'served' && directNhiaApiAvailable && hasReadablePrescriptionFile) {
           const submitResult = await submitNhisClaimDirect(editingClaim.id, getDirectNhiaOptions())
           successMessage = submitResult?.queued
             ? 'NHIS claim corrections saved and queued for CLAIM-it bridge submission.'
@@ -3373,10 +3381,10 @@ const Nhis = () => {
                 </section>
 
                 <section className="nhis-section">
-                  <h3 className="nhis-section-title">Scanned Prescription *</h3>
+                  <h3 className="nhis-section-title">Scanned Prescription</h3>
                   <label className="prescription-upload-box">
                     <Paperclip size={18} />
-                    <span>{claimForm.prescriptionFileName || 'Attach prescription file *'}</span>
+                    <span>{claimForm.prescriptionFileName || 'Attach prescription file'}</span>
                     <small>PDF, JPEG, or PNG, max 3 MB</small>
                     <input
                       type="file"

@@ -4421,7 +4421,7 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
     medicines,
     {
       enforcePrescribingLevel: true,
-      requirePrescriptionAttachment: !allowIncompleteReview,
+      requirePrescriptionAttachment: options.requirePrescriptionAttachment === true,
       providerClassLevel,
       // ✅ NHIS PHARMACY LEVEL PATCH START
       pharmacyLevel: options.pharmacyLevel,
@@ -4629,7 +4629,7 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
       requireMedicineDirections: true,
       enforceDiagnosisTreatmentMatch: organizationType === 'hospital',
       enforcePrescribingLevel: true,
-      requirePrescriptionAttachment: true,
+      requirePrescriptionAttachment: options.requirePrescriptionAttachment === true,
       providerClassLevel,
       // ✅ NHIS PHARMACY LEVEL PATCH START
       pharmacyLevel: options.pharmacyLevel,
