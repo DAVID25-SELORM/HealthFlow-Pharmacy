@@ -398,7 +398,7 @@ const selectAnySettings = db.prepare(`
 
 const upsertSettings = db.prepare(`
   INSERT INTO nhia_configuration (
-    id, organization_id, branch_id, mode, facility_code, provider_number, provider_id,
+    id, organization_id, branch_id, mode, facility_code, provider_number, provider_id, hpn, hp_code,
     -- ✅ NHIA CONFIG PATCH START
     facility_type, pharmacy_facility_level, provider_level_code, credential_code,
     license_number, accreditation_expiry_date,
@@ -422,7 +422,7 @@ const upsertSettings = db.prepare(`
     max_retry_attempts, is_active, created_at, updated_at, updated_by
   )
   VALUES (
-    @id, @organizationId, @branchId, @mode, @facilityCode, @providerNumber, @providerId,
+    @id, @organizationId, @branchId, @mode, @facilityCode, @providerNumber, @providerId, @hpn, @hpCode,
     -- ✅ NHIA CONFIG PATCH START
     @facilityType, @pharmacyFacilityLevel, @providerLevelCode, @credentialCode,
     @licenseNumber, @accreditationExpiryDate,
@@ -452,6 +452,8 @@ const upsertSettings = db.prepare(`
     facility_code = excluded.facility_code,
     provider_number = excluded.provider_number,
     provider_id = excluded.provider_id,
+    hpn = excluded.hpn,
+    hp_code = excluded.hp_code,
     -- ✅ NHIA CONFIG PATCH START
     facility_type = excluded.facility_type,
     pharmacy_facility_level = excluded.pharmacy_facility_level,
@@ -530,12 +532,18 @@ const insertNhiaConfigOutbox = db.prepare(`
 const insertClaim = db.prepare(`
   INSERT INTO nhia_claims (
     id, claim_number, local_sale_id, local_sale_number, patient_id, patient_name,
-    member_number, hin, cc_code, diagnosis, diagnosis_details_json, unserved_medicines_note, insurance_provider, service_date, total_amount, status,
+    member_number, card_type, hin, cc_code,
+    nhia_auth_id, nhia_auth_type, nhia_new_ccc_status, nhia_otac, nhia_attendance_date,
+    nhia_attendance_verification_status, nhia_attendance_verification_source,
+    diagnosis, diagnosis_details_json, unserved_medicines_note, insurance_provider, service_date, total_amount, status,
     payload_json, organization_id, branch_id, created_by, created_at, updated_at
   )
   VALUES (
     @id, @claimNumber, @localSaleId, @localSaleNumber, @patientId, @patientName,
-    @memberNumber, @hin, @ccCode, @diagnosis, @diagnosisDetailsJson, @unservedMedicinesNote, @insuranceProvider, @serviceDate, @totalAmount, @status,
+    @memberNumber, @cardType, @hin, @ccCode,
+    @nhiaAuthId, @nhiaAuthType, @nhiaNewCccStatus, @nhiaOtac, @nhiaAttendanceDate,
+    @nhiaAttendanceVerificationStatus, @nhiaAttendanceVerificationSource,
+    @diagnosis, @diagnosisDetailsJson, @unservedMedicinesNote, @insuranceProvider, @serviceDate, @totalAmount, @status,
     @payloadJson, @organizationId, @branchId, @createdBy, @createdAt, @updatedAt
   )
 `)
@@ -869,6 +877,9 @@ const mapSettingsRow = (row, { includeCredentials = false } = {}) => {
     providerId: row.provider_id || row.provider_number || '',
     provider_id: row.provider_id || row.provider_number || '',
     providerNumber: row.provider_number || row.provider_id || '',
+    hpn: row.hpn || row.provider_number || row.provider_id || '',
+    hpCode: row.hp_code || row.facility_code || '',
+    hp_code: row.hp_code || row.facility_code || '',
     // ✅ NHIA CONFIG PATCH START
     facilityType: row.facility_type || '',
     pharmacyFacilityLevel: row.pharmacy_facility_level || '',
@@ -1172,6 +1183,8 @@ const mapRemoteNhiaConfigurationRow = (row = {}) => {
     facilityCode: normalizeText(row.facility_code || row.facilityCode) || null,
     providerId: normalizeText(row.provider_id || row.providerId || row.provider_number || row.providerNumber) || null,
     providerNumber: normalizeText(row.provider_number || row.providerNumber || row.provider_id || row.providerId) || null,
+    hpn: normalizeText(row.hpn || row.HPN || row.provider_number || row.providerNumber || row.provider_id || row.providerId) || null,
+    hpCode: normalizeText(row.hp_code || row.hpCode || row.HPCode || row.facility_code || row.facilityCode) || null,
     facilityType: normalizeText(row.facility_type || row.facilityType) || null,
     pharmacyFacilityLevel: normalizeText(row.pharmacy_facility_level || row.pharmacyFacilityLevel) || null,
     providerLevelCode: normalizeText(row.provider_level_code || row.providerLevelCode) || null,
@@ -1381,6 +1394,8 @@ export const saveNhiaSettings = (settings = {}) => {
     facilityCode: normalizeText(settings.facilityCode) || null,
     providerId: normalizeText(settings.providerId || settings.provider_id || settings.providerNumber || settings.provider_number) || null,
     providerNumber: normalizeText(settings.providerNumber || settings.provider_id || settings.providerId) || null,
+    hpn: normalizeText(settings.hpn || settings.HPN || settings.providerNumber || settings.provider_number || settings.providerId || settings.provider_id) || null,
+    hpCode: normalizeText(settings.hpCode || settings.hp_code || settings.HPCode || settings.facilityCode || settings.facility_code) || null,
     // ✅ NHIA CONFIG PATCH START
     facilityType: normalizeText(settings.facilityType) || null,
     pharmacyFacilityLevel: normalizeText(settings.pharmacyFacilityLevel) || null,
@@ -1628,8 +1643,24 @@ export const createNhiaClaim = db.transaction((claimData = {}, linkedSale = {}) 
       claimData.memberNumber || claimData.insuranceId || claimData.memberNo,
       settings
     ),
+    cardType: normalizeText(claimData.cardType || claimData.card_type) || null,
     hin: normalizeText(claimData.hin) || null,
     ccCode: normalizeOptionalCcCode(claimData.ccCode || claimData.cc_code),
+    nhiaAuthId: normalizeText(claimData.authId || claimData.nhiaAuthId || claimData.nhia_auth_id) || null,
+    nhiaAuthType: normalizeText(claimData.authType || claimData.nhiaAuthType || claimData.nhia_auth_type) || null,
+    nhiaNewCccStatus: normalizeText(claimData.newCcc || claimData.nhiaNewCccStatus || claimData.nhia_new_ccc_status) || null,
+    nhiaOtac: normalizeText(claimData.otacCode || claimData.nhiaOtac || claimData.nhia_otac) || null,
+    nhiaAttendanceDate: normalizeText(claimData.nhiaAttendanceDate || claimData.nhia_attendance_date) || null,
+    nhiaAttendanceVerificationStatus: normalizeText(
+      claimData.attendanceVerificationStatus ||
+        claimData.nhiaAttendanceVerificationStatus ||
+        claimData.nhia_attendance_verification_status
+    ) || null,
+    nhiaAttendanceVerificationSource: normalizeText(
+      claimData.attendanceVerificationSource ||
+        claimData.nhiaAttendanceVerificationSource ||
+        claimData.nhia_attendance_verification_source
+    ) || null,
     diagnosis: organizationType === 'hospital' ? normalizeText(claimData.diagnosis) || null : null,
     diagnosisDetails,
     diagnosisDetailsJson: json(diagnosisDetails),

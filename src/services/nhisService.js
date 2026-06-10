@@ -129,6 +129,7 @@ const YEAR_MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/
 const OPTIONAL_CLAIM_SCHEMA_COLUMNS = [
   'patient_address',
   'child_weight_kg',
+  'card_type',
   'diagnosis',
   'unserved_medicines_note',
   'diagnosis_details',
@@ -145,12 +146,19 @@ const OPTIONAL_CLAIM_SCHEMA_COLUMNS = [
   'nhia_eligibility_start_date',
   'nhia_eligibility_end_date',
   'nhia_attendance_date',
+  'nhia_auth_id',
+  'nhia_auth_type',
+  'nhia_new_ccc_status',
+  'nhia_otac',
+  'nhia_attendance_verification_status',
+  'nhia_attendance_verification_source',
   'nhia_member_status',
   'nhia_member_lookup_payload',
 ]
 const OPTIONAL_CLAIM_SCHEMA_FIELD_GROUPS = [
   ['patient_address', 'patientAddress'],
   ['child_weight_kg', 'childWeightKg'],
+  ['card_type', 'cardType'],
   ['diagnosis_details', 'diagnosisDetails'],
   ['prescription_file_url', 'prescriptionFileUrl'],
   ['prescription_file_path', 'prescriptionFilePath'],
@@ -165,6 +173,12 @@ const OPTIONAL_CLAIM_SCHEMA_FIELD_GROUPS = [
   ['nhia_eligibility_start_date', 'nhiaEligibilityStartDate'],
   ['nhia_eligibility_end_date', 'nhiaEligibilityEndDate'],
   ['nhia_attendance_date', 'nhiaAttendanceDate'],
+  ['nhia_auth_id', 'authId'],
+  ['nhia_auth_type', 'authType'],
+  ['nhia_new_ccc_status', 'newCcc'],
+  ['nhia_otac', 'otacCode'],
+  ['nhia_attendance_verification_status', 'attendanceVerificationStatus'],
+  ['nhia_attendance_verification_source', 'attendanceVerificationSource'],
   ['nhia_member_status', 'nhiaMemberStatus'],
   ['nhia_member_lookup_payload', 'nhiaMemberLookupPayload'],
 ]
@@ -240,6 +254,10 @@ const NHIA_API_SETTINGS_CACHE_FIELDS = [
   'facility_code',
   'providerNumber',
   'provider_number',
+  'hpn',
+  'HPN',
+  'hpCode',
+  'hp_code',
   'schemeName',
   'scheme_name',
   'facilityType',
@@ -331,6 +349,8 @@ const NHIA_CONFIG_DEFAULTS = {
   branchId: '',
   mode: 'ONLINE_CLOUD',
   providerId: '',
+  hpn: '',
+  hpCode: '',
   credentialCode: '',
   accreditationExpiryDate: '',
   claimsOfficerName: '',
@@ -504,6 +524,32 @@ const normalizeOptionalNhisCcCodeForMode = (value, options = {}) => {
   if (shouldAllowPendingClaimControl(options)) return ''
   return assertNhisCcCode(value)
 }
+
+const normalizeNhiaNewCccStatus = (value) => {
+  const normalized = normalizeText(value).toLowerCase()
+  if (['yes', 'y', 'true', '1'].includes(normalized)) return 'yes'
+  if (['no', 'n', 'false', '0'].includes(normalized)) return 'no'
+  return ''
+}
+
+const getNhiaAttendancePayload = (claimData = {}) => ({
+  nhia_auth_id: normalizeText(claimData.authId ?? claimData.nhiaAuthId ?? claimData.nhia_auth_id) || null,
+  nhia_auth_type: normalizeText(claimData.authType ?? claimData.nhiaAuthType ?? claimData.nhia_auth_type) || null,
+  nhia_new_ccc_status: normalizeNhiaNewCccStatus(
+    claimData.newCcc ?? claimData.nhiaNewCccStatus ?? claimData.nhia_new_ccc_status
+  ) || null,
+  nhia_otac: normalizeText(claimData.otacCode ?? claimData.nhiaOtac ?? claimData.nhia_otac) || null,
+  nhia_attendance_verification_status: normalizeText(
+    claimData.attendanceVerificationStatus ??
+      claimData.nhiaAttendanceVerificationStatus ??
+      claimData.nhia_attendance_verification_status
+  ) || null,
+  nhia_attendance_verification_source: normalizeText(
+    claimData.attendanceVerificationSource ??
+      claimData.nhiaAttendanceVerificationSource ??
+      claimData.nhia_attendance_verification_source
+  ) || null,
+})
 
 const normalizeMatchText = (value) => asText(value).toLowerCase().replace(/[^a-z0-9\s]/g, ' ')
 
@@ -2107,6 +2153,9 @@ const normalizeHostedNhiaIntegrationRow = (row = null) => {
     facilityCode: row.facility_code || '',
     providerNumber: row.provider_number || row.provider_id || '',
     providerId: row.provider_id || row.provider_number || '',
+    hpn: row.hpn || row.provider_number || row.provider_id || '',
+    hpCode: row.hp_code || row.facility_code || '',
+    hp_code: row.hp_code || row.facility_code || '',
     credentialCode: row.credential_code || row.facility_code || '',
     accreditationExpiryDate: getNhiaAccreditationExpiryDate(row),
     claimsOfficerName: row.claims_officer_name || '',
@@ -2176,6 +2225,8 @@ const getHostedNhiaConfigRowPayload = async (settings = {}, organizationId = '',
   const resolvedBaseUrls = resolveNhiaApiBaseUrls(settings)
   const facilityCode = normalizeText(settings.facilityCode || settings.facility_code)
   const providerNumber = normalizeText(settings.providerNumber || settings.provider_number || settings.providerId || settings.provider_id)
+  const hpn = normalizeText(settings.hpn || settings.HPN || providerNumber)
+  const hpCode = normalizeText(settings.hpCode || settings.hp_code || settings.HPCode || facilityCode)
   const credentialCode = normalizeText(settings.credentialCode || settings.credential_code || facilityCode)
   const claimEndpointPath = normalizeText(settings.claimEndpointPath || settings.claim_endpoint_path || settings.claimSubmitEndpoint || settings.claim_submit_endpoint)
   const claimStatusEndpointPath = normalizeText(settings.claimStatusEndpointPath || settings.claim_status_endpoint_path || settings.claimStatusEndpoint || settings.claim_status_endpoint)
@@ -2190,6 +2241,8 @@ const getHostedNhiaConfigRowPayload = async (settings = {}, organizationId = '',
     provider_id: providerNumber || null,
     facility_code: facilityCode || null,
     provider_number: providerNumber || null,
+    hpn: hpn || null,
+    hp_code: hpCode || null,
     scheme_name: normalizeText(settings.schemeName || settings.scheme_name) || 'National Health Insurance',
     facility_type: normalizeText(settings.facilityType || settings.facility_type) || null,
     pharmacy_facility_level: normalizeText(settings.pharmacyFacilityLevel || settings.pharmacy_facility_level) || null,
@@ -2313,6 +2366,8 @@ const normalizeNhiaConfig = (settings = null, {
   ) || NHIA_CONFIG_DEFAULTS.memberLookupEndpoint
   const ccEndpointPath = normalizeText(raw.ccEndpointPath || raw.cc_endpoint_path || raw.ccCodeEndpointPath || raw.cc_code_endpoint_path)
   const facilityCode = normalizeText(raw.facilityCode || raw.facility_code)
+  const hpn = normalizeText(raw.hpn || raw.HPN || raw.providerNumber || raw.provider_number || raw.providerId || raw.provider_id)
+  const hpCode = normalizeText(raw.hpCode || raw.hp_code || raw.HPCode || raw.facilityCode || raw.facility_code)
   const credentialCode = normalizeText(raw.credentialCode || raw.credential_code || facilityCode)
   const schemeName = normalizeText(raw.schemeName || raw.scheme_name) || 'National Health Insurance'
   const facilityType = normalizeText(raw.facilityType || raw.facility_type)
@@ -2349,6 +2404,9 @@ const normalizeNhiaConfig = (settings = null, {
     provider_number: providerId,
     facilityCode,
     facility_code: facilityCode,
+    hpn,
+    hpCode,
+    hp_code: hpCode,
     schemeName,
     scheme_name: schemeName,
     facilityType,
@@ -4465,6 +4523,7 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
   let claimPayload = {
     patient_id:         claimData.patientId         || null,
     member_no:          memberNo,
+    card_type:          normalizeText(claimData.cardType ?? claimData.card_type) || null,
     hin:                normalizeText(claimData.hin)               || null,
     surname:            normalizeText(claimData.surname),
     other_names:        normalizeText(claimData.otherNames)        || null,
@@ -4482,6 +4541,7 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
     nhia_eligibility_start_date: normalizeText(claimData.nhiaEligibilityStartDate ?? claimData.nhia_eligibility_start_date) || null,
     nhia_eligibility_end_date: normalizeText(claimData.nhiaEligibilityEndDate ?? claimData.nhia_eligibility_end_date) || null,
     nhia_attendance_date: normalizeText(claimData.nhiaAttendanceDate ?? claimData.nhia_attendance_date) || null,
+    ...getNhiaAttendancePayload(claimData),
     nhia_member_status: normalizeText(claimData.nhiaMemberStatus ?? claimData.nhia_member_status) || null,
     nhia_member_lookup_payload: claimData.nhiaMemberLookupPayload ?? claimData.nhia_member_lookup_payload ?? null,
     diagnosis:          normalizeText(claimData.diagnosis)         || null,
@@ -4692,6 +4752,7 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
   let claimPayload = {
     patient_id: claimData.patientId || null,
     member_no: memberNo,
+    card_type: normalizeText(claimData.cardType ?? claimData.card_type) || null,
     hin: normalizeText(claimData.hin) || null,
     surname: normalizeText(claimData.surname),
     other_names: normalizeText(claimData.otherNames) || null,
@@ -4709,6 +4770,7 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
     nhia_eligibility_start_date: normalizeText(claimData.nhiaEligibilityStartDate ?? claimData.nhia_eligibility_start_date) || null,
     nhia_eligibility_end_date: normalizeText(claimData.nhiaEligibilityEndDate ?? claimData.nhia_eligibility_end_date) || null,
     nhia_attendance_date: normalizeText(claimData.nhiaAttendanceDate ?? claimData.nhia_attendance_date) || null,
+    ...getNhiaAttendancePayload(claimData),
     nhia_member_status: normalizeText(claimData.nhiaMemberStatus ?? claimData.nhia_member_status) || null,
     nhia_member_lookup_payload: claimData.nhiaMemberLookupPayload ?? claimData.nhia_member_lookup_payload ?? null,
     diagnosis: normalizeText(claimData.diagnosis) || null,
@@ -6129,6 +6191,19 @@ export const buildNhisClaimItExportPayload = (claims = [], options = {}) => {
         referralCode: normalizeText(claim.referral_code),
         prescriberNameOrId: normalizeText(claim.physician_name),
         preAuthCodes: normalizeText(claim.pre_auth_codes),
+      },
+      attendanceVerification: {
+        system: 'NeHFAMS',
+        source: normalizeText(claim.nhia_attendance_verification_source) || 'nehfams_manual',
+        status: normalizeText(claim.nhia_attendance_verification_status),
+        attendanceDate: toClaimItDate(claim.nhia_attendance_date || claim.service_date_from),
+        authId: normalizeText(claim.nhia_auth_id || claim.nhia_transaction_id),
+        authType: normalizeText(claim.nhia_auth_type) || 'NHIS',
+        newCcc: normalizeNhiaNewCccStatus(claim.nhia_new_ccc_status),
+        otac: normalizeText(claim.nhia_otac),
+        cardType: normalizeText(claim.card_type),
+        hin: normalizeText(claim.hin),
+        ccc: normalizeNhisCcCode(claim.ccc_no),
       },
       medicines,
       tariffServices,

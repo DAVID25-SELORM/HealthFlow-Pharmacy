@@ -14,22 +14,20 @@
 }
 
 .sidebar-logo {
-  padding: 1rem;
+  padding: 1rem 0.75rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  min-height: 166px;
+  min-height: 146px;
 }
 
 .sidebar-brand-logo {
-  width: min(218px, 100%);
-  height: 142px;
+  width: min(226px, 100%);
+  height: 126px;
   border-radius: 8px;
-  background: white;
   box-shadow: 0 12px 24px rgba(0, 0, 0, 0.12);
   object-fit: contain;
-  padding: 0.25rem;
 }
 
 .sidebar-close {
@@ -108,12 +106,12 @@
 
   .sidebar-logo {
     padding: 1.25rem 1rem;
-    min-height: 156px;
+    min-height: 144px;
   }
 
   .sidebar-brand-logo {
     width: min(216px, calc(100% - 48px));
-    height: 136px;
+    height: 122px;
   }
 
   .sidebar-close {

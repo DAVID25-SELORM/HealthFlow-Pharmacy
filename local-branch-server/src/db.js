@@ -240,6 +240,8 @@ ensureColumn('nhia_settings', 'cc_code_endpoint_path', 'TEXT')
 ensureColumn('nhia_settings', 'scheme_name', "TEXT NOT NULL DEFAULT 'National Health Insurance'")
 ensureColumn('nhia_settings', 'provider_type_description', 'TEXT')
 ensureColumn('nhia_settings', 'provider_class_level', 'TEXT')
+ensureColumn('nhia_settings', 'hpn', 'TEXT')
+ensureColumn('nhia_settings', 'hp_code', 'TEXT')
 // ✅ NHIA CONFIG PATCH START
 ensureColumn('nhia_settings', 'facility_type', 'TEXT')
 ensureColumn('nhia_settings', 'pharmacy_facility_level', 'TEXT')
@@ -275,6 +277,8 @@ const ensureNhiaConfigurationColumn = (column, definition) => ensureColumn('nhia
   ['provider_id', 'TEXT'],
   ['facility_code', 'TEXT'],
   ['provider_number', 'TEXT'],
+  ['hpn', 'TEXT'],
+  ['hp_code', 'TEXT'],
   ['facility_type', 'TEXT'],
   ['pharmacy_facility_level', 'TEXT'],
   ['provider_level_code', 'TEXT'],
@@ -330,7 +334,7 @@ const ensureNhiaConfigurationColumn = (column, definition) => ensureColumn('nhia
 db.exec(`
   INSERT OR IGNORE INTO nhia_configuration (
     id, organization_id, branch_id, facility_code, provider_number,
-    provider_id, facility_type, pharmacy_facility_level, provider_level_code, credential_code,
+    hpn, hp_code, provider_id, facility_type, pharmacy_facility_level, provider_level_code, credential_code,
     license_number, accreditation_expiry_date, integration_mode, connection_profile,
     validation_mode, claim_control_mode, sandbox_base_url, production_base_url,
     scheme_name, provider_type_description, provider_class_level, pharmacy_level,
@@ -344,7 +348,7 @@ db.exec(`
   )
   SELECT
     id, organization_id, branch_id, facility_code, provider_number,
-    provider_number, facility_type, pharmacy_facility_level, provider_level_code, credential_code,
+    hpn, hp_code, provider_number, facility_type, pharmacy_facility_level, provider_level_code, credential_code,
     license_number, accreditation_expiry_date, integration_mode, connection_profile,
     validation_mode, claim_control_mode, sandbox_base_url, production_base_url,
     scheme_name, provider_type_description, provider_class_level, pharmacy_level,
@@ -390,6 +394,14 @@ db.exec(`
     updated_at = CURRENT_TIMESTAMP
 `)
 ensureColumn('nhia_claims', 'cc_code', 'TEXT')
+ensureColumn('nhia_claims', 'card_type', 'TEXT')
+ensureColumn('nhia_claims', 'nhia_auth_id', 'TEXT')
+ensureColumn('nhia_claims', 'nhia_auth_type', 'TEXT')
+ensureColumn('nhia_claims', 'nhia_new_ccc_status', 'TEXT')
+ensureColumn('nhia_claims', 'nhia_otac', 'TEXT')
+ensureColumn('nhia_claims', 'nhia_attendance_date', 'TEXT')
+ensureColumn('nhia_claims', 'nhia_attendance_verification_status', 'TEXT')
+ensureColumn('nhia_claims', 'nhia_attendance_verification_source', 'TEXT')
 ensureColumn('nhia_claims', 'diagnosis', 'TEXT')
 ensureColumn('nhia_claims', 'diagnosis_details_json', "TEXT NOT NULL DEFAULT '[]'")
 ensureColumn('nhia_claims', 'unserved_medicines_note', 'TEXT')

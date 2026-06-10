@@ -930,6 +930,41 @@ describe('CLAIM-it export helpers', () => {
     expect(payload.claims[0].prescriptionAttachment).toBeNull()
   })
 
+  it('includes NeHFAMS attendance verification details in CLAIM-it payloads', () => {
+    const payload = buildNhisClaimItExportPayload([
+      {
+        ...claim,
+        card_type: 'GHANACARD',
+        hin: 'HIN-001',
+        ccc_no: 'CC-12345',
+        nhia_auth_id: 'AUTH-123',
+        nhia_auth_type: 'NHIS',
+        nhia_new_ccc_status: 'Yes',
+        nhia_otac: '987654',
+        nhia_attendance_date: '2026-05-14',
+        nhia_attendance_verification_status: 'confirmed',
+        nhia_attendance_verification_source: 'nehfams_manual',
+      },
+    ], {
+      yearMonth: '2026-05',
+      organizationType: 'hospital',
+    })
+
+    expect(payload.claims[0].attendanceVerification).toEqual({
+      system: 'NeHFAMS',
+      source: 'nehfams_manual',
+      status: 'confirmed',
+      attendanceDate: '2026-05-14',
+      authId: 'AUTH-123',
+      authType: 'NHIS',
+      newCcc: 'yes',
+      otac: '987654',
+      cardType: 'GHANACARD',
+      hin: 'HIN-001',
+      ccc: '12345',
+    })
+  })
+
   it('includes URL-only prescription attachments in CLAIM-it payloads', () => {
     const payload = buildNhisClaimItExportPayload([
       {
@@ -1892,7 +1927,17 @@ describe('NHIS claim save attachment behavior', () => {
     })
 
     await expect(createNhisClaim(
-      claimWithoutPrescription,
+      {
+        ...claimWithoutPrescription,
+        cardType: 'GHANACARD',
+        authId: 'AUTH-123',
+        authType: 'NHIS',
+        newCcc: 'true',
+        otacCode: '987654',
+        nhiaAttendanceDate: '2026-05-14',
+        attendanceVerificationStatus: 'confirmed',
+        attendanceVerificationSource: 'nehfams_manual',
+      },
       [medicineWithTotal],
       {
         providerClassLevel: 'D',
@@ -1902,6 +1947,16 @@ describe('NHIS claim save attachment behavior', () => {
     )).resolves.toEqual(insertedClaim)
 
     expect(claimTable.insert).toHaveBeenCalled()
+    expect(claimTable.insert.mock.calls[0][0][0]).toMatchObject({
+      card_type: 'GHANACARD',
+      nhia_auth_id: 'AUTH-123',
+      nhia_auth_type: 'NHIS',
+      nhia_new_ccc_status: 'yes',
+      nhia_otac: '987654',
+      nhia_attendance_date: '2026-05-14',
+      nhia_attendance_verification_status: 'confirmed',
+      nhia_attendance_verification_source: 'nehfams_manual',
+    })
     expect(medicineTable.insert).toHaveBeenCalled()
   })
 

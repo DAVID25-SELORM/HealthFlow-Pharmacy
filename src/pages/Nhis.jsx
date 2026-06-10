@@ -127,6 +127,12 @@ const BLANK_CLAIM = {
   patientAddress:    '',
   childWeightKg:     '',
   cccNo:             '',
+  authId:            '',
+  authType:          'NHIS',
+  newCcc:            '',
+  otacCode:          '',
+  attendanceVerificationStatus: '',
+  attendanceVerificationSource: 'nehfams_manual',
   nhiaTransactionId: '',
   nhiaEligibilityStartDate: '',
   nhiaEligibilityEndDate: '',
@@ -1242,6 +1248,7 @@ const Nhis = () => {
     setClaimForm({
       patientId: claim.patient_id || '',
       memberNo: claim.member_no || '',
+      cardType: claim.card_type || getNhiaLookupCardType(claim.member_no || ''),
       hin: claim.hin || '',
       surname: claim.surname || '',
       otherNames: claim.other_names || '',
@@ -1251,6 +1258,12 @@ const Nhis = () => {
       patientAddress: claim.patient_address || '',
       childWeightKg: claim.child_weight_kg ?? '',
       cccNo: claim.ccc_no || '',
+      authId: claim.nhia_auth_id || '',
+      authType: claim.nhia_auth_type || 'NHIS',
+      newCcc: claim.nhia_new_ccc_status || '',
+      otacCode: claim.nhia_otac || '',
+      attendanceVerificationStatus: claim.nhia_attendance_verification_status || '',
+      attendanceVerificationSource: claim.nhia_attendance_verification_source || 'nehfams_manual',
       nhiaTransactionId: claim.nhia_transaction_id || '',
       nhiaEligibilityStartDate: claim.nhia_eligibility_start_date || '',
       nhiaEligibilityEndDate: claim.nhia_eligibility_end_date || '',
@@ -1700,6 +1713,12 @@ const Nhis = () => {
         ? memberDetails.gender.charAt(0).toUpperCase() + memberDetails.gender.slice(1).toLowerCase()
         : prev.gender,
       ...(memberDetails.ccCode ? { cccNo: memberDetails.ccCode, ccCode: memberDetails.ccCode } : {}),
+      authId: memberDetails.authId || prev.authId,
+      authType: memberDetails.authType || prev.authType || 'NHIS',
+      newCcc: memberDetails.newCcc ?? prev.newCcc,
+      otacCode: memberDetails.otacCode || prev.otacCode,
+      attendanceVerificationStatus: memberDetails.attendanceVerificationStatus || prev.attendanceVerificationStatus,
+      attendanceVerificationSource: memberDetails.attendanceVerificationSource || prev.attendanceVerificationSource || 'nehfams_manual',
       nhiaTransactionId: memberDetails.transactionId || prev.nhiaTransactionId,
       nhiaEligibilityStartDate: memberDetails.eligibilityStartDate || prev.nhiaEligibilityStartDate,
       nhiaEligibilityEndDate: memberDetails.eligibilityEndDate || prev.nhiaEligibilityEndDate,
@@ -3330,6 +3349,82 @@ const Nhis = () => {
                         />
                       </div>
                     )}
+                  </div>
+                </section>
+
+                <section className="nhis-section">
+                  <h3 className="nhis-section-title">NeHFAMS / OTAC Attendance Verification</h3>
+                  <div className="patient-meta">
+                    Record the attendance details from otac.nhia.gov.gh. This is manual capture only until NHIA provides official OTAC API credentials/endpoints.
+                  </div>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Attendance Date</label>
+                      <input
+                        type="date"
+                        className="form-input"
+                        value={claimForm.nhiaAttendanceDate}
+                        onChange={(e) => setClaimForm((p) => ({ ...p, nhiaAttendanceDate: e.target.value }))}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>AuthID</label>
+                      <input
+                        className="form-input"
+                        value={claimForm.authId}
+                        placeholder="NeHFAMS AuthID"
+                        onChange={(e) => setClaimForm((p) => ({ ...p, authId: e.target.value }))}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Auth Type</label>
+                      <select
+                        className="form-input"
+                        value={claimForm.authType || 'NHIS'}
+                        onChange={(e) => setClaimForm((p) => ({ ...p, authType: e.target.value }))}
+                      >
+                        <option value="NHIS">NHIS</option>
+                        <option value="OTAC">OTAC</option>
+                        <option value="OTP">OTP</option>
+                        <option value="MANUAL">Manual</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>OTAC / OTP Code</label>
+                      <input
+                        className="form-input"
+                        value={claimForm.otacCode}
+                        placeholder="Code from NeHFAMS, if shown"
+                        onChange={(e) => setClaimForm((p) => ({ ...p, otacCode: e.target.value }))}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>New CCC</label>
+                      <select
+                        className="form-input"
+                        value={claimForm.newCcc}
+                        onChange={(e) => setClaimForm((p) => ({ ...p, newCcc: e.target.value }))}
+                      >
+                        <option value="">Not stated</option>
+                        <option value="yes">Yes</option>
+                        <option value="no">No</option>
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label>Verification Status</label>
+                      <select
+                        className="form-input"
+                        value={claimForm.attendanceVerificationStatus}
+                        onChange={(e) => setClaimForm((p) => ({ ...p, attendanceVerificationStatus: e.target.value }))}
+                      >
+                        <option value="">Not recorded</option>
+                        <option value="confirmed">Confirmed</option>
+                        <option value="pending">Pending</option>
+                        <option value="failed">Failed</option>
+                      </select>
+                    </div>
                   </div>
                 </section>
 

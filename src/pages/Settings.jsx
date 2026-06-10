@@ -104,6 +104,8 @@ const toForm = (row, organization) => {
 const blankNhiaApiForm = {
   facilityCode: '',
   providerNumber: '',
+  hpn: '',
+  hpCode: '',
   schemeName: 'National Health Insurance',
   // ✅ NHIA CONFIG PATCH START
   facilityType: 'Pharmacy',
@@ -270,6 +272,8 @@ const mergeNhiaSaveReadback = (submitted = {}, saved = {}) => ({
   facilityCode: getFirstNhiaValue(saved?.facilityCode, saved?.facility_code, submitted.facilityCode),
   providerNumber: getFirstNhiaValue(saved?.providerNumber, saved?.provider_number, saved?.providerId, saved?.provider_id, submitted.providerNumber),
   providerId: getFirstNhiaValue(saved?.providerId, saved?.provider_id, saved?.providerNumber, saved?.provider_number, submitted.providerId, submitted.providerNumber),
+  hpn: getFirstNhiaValue(saved?.hpn, saved?.HPN, submitted.hpn),
+  hpCode: getFirstNhiaValue(saved?.hpCode, saved?.hp_code, saved?.HPCode, submitted.hpCode),
   schemeName: getFirstNhiaValue(saved?.schemeName, saved?.scheme_name, submitted.schemeName),
   facilityType: getFirstNhiaValue(saved?.facilityType, saved?.facility_type, submitted.facilityType),
   pharmacyFacilityLevel: getFirstNhiaValue(saved?.pharmacyFacilityLevel, saved?.pharmacy_facility_level, submitted.pharmacyFacilityLevel),
@@ -1925,6 +1929,18 @@ const Settings = () => {
                   placeholder="Submitter ID"
                   value={nhiaApiForm.submitterId}
                   onChange={(event) => updateNhiaApiForm('submitterId', event.target.value)}
+                />
+              </div>
+              <div className="settings-form-row">
+                <input
+                  placeholder="NeHFAMS HPN"
+                  value={nhiaApiForm.hpn}
+                  onChange={(event) => updateNhiaApiForm('hpn', event.target.value)}
+                />
+                <input
+                  placeholder="NeHFAMS HP Code"
+                  value={nhiaApiForm.hpCode}
+                  onChange={(event) => updateNhiaApiForm('hpCode', event.target.value)}
                 />
               </div>
               <div className="settings-form-row">
