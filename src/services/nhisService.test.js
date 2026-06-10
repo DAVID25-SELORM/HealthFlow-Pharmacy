@@ -2623,7 +2623,7 @@ describe('NHIS drug catalog routing', () => {
 })
 
 describe('NHIS claim status routing', () => {
-  it('saves corrections when the live schema rejects optional CLAIM-it attachment aliases', async () => {
+  it('does not report success when the live schema would discard an RX attachment', async () => {
     const updatePayloads = []
     const makeUpdateQuery = (response) => {
       const query = {
@@ -2652,17 +2652,13 @@ describe('NHIS claim status routing', () => {
         message: "Could not find the 'claimitAttachmentFileName' column of 'nhis_claims' in the schema cache",
       },
     })
-    const fallbackUpdateQuery = makeUpdateQuery({
-      data: { id: 'claim-1', claim_number: 'NHIS-000001', status: 'served' },
-      error: null,
-    })
     const claimTable = {
       select: vi.fn((columns = '') =>
         String(columns).includes('status') ? existingClaimQuery : duplicateQuery
       ),
       update: vi.fn((payload) => {
         updatePayloads.push(payload)
-        return updatePayloads.length === 1 ? firstUpdateQuery : fallbackUpdateQuery
+        return firstUpdateQuery
       }),
     }
     const medicineDeleteQuery = {
@@ -2713,14 +2709,13 @@ describe('NHIS claim status routing', () => {
           required_pharmacy_level: 'P1',
         }],
       }
-    )).resolves.toEqual({ id: 'claim-1', claim_number: 'NHIS-000001', status: 'served' })
+    )).rejects.toThrow(
+      'Prescription file upload completed, but the NHIS claim attachment database fields are missing.'
+    )
 
-    expect(updatePayloads).toHaveLength(2)
+    expect(updatePayloads).toHaveLength(1)
     expect(updatePayloads[0]).toHaveProperty('claimit_attachment_file_name', 'prescription_NHIS-000001.pdf')
-    expect(updatePayloads[1]).not.toHaveProperty('claimitAttachmentFileName')
-    expect(updatePayloads[1]).not.toHaveProperty('claimit_attachment_file_name')
-    expect(updatePayloads[1]).not.toHaveProperty('claimit_attachment_base64')
-    expect(medicineTable.insert).toHaveBeenCalled()
+    expect(medicineTable.insert).not.toHaveBeenCalled()
   })
 
   it('uses the local/cloud write router before marking a local-sync claim submitted', async () => {

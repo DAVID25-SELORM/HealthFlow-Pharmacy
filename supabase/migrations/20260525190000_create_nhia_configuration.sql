@@ -158,18 +158,15 @@ begin
 end;
 $$;
 
-create or replace function pg_temp.nhia_json_secret(payload text, secret_key text)
+create or replace function pg_temp.nhia_json_secret(payload jsonb, secret_key text)
 returns text
 language plpgsql
 as $$
-declare
-  parsed jsonb;
 begin
-  if payload is null or btrim(payload) = '' then
+  if payload is null then
     return null;
   end if;
-  parsed := payload::jsonb;
-  return parsed ->> secret_key;
+  return payload ->> secret_key;
 exception when others then
   return null;
 end;

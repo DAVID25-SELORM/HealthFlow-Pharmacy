@@ -188,6 +188,17 @@ const OPTIONAL_CLAIM_SCHEMA_PAYLOAD_KEYS = [
     ...OPTIONAL_CLAIM_SCHEMA_FIELD_GROUPS.flat(),
   ]),
 ]
+const PRESCRIPTION_ATTACHMENT_SCHEMA_KEYS = [
+  'prescription_file_url',
+  'prescription_file_path',
+  'prescription_file_name',
+  'prescription_file_type',
+  'prescription_file_size',
+  'claimit_attachment_file_name',
+  'claimit_attachment_file_type',
+  'claimit_attachment_mime_type',
+  'claimit_attachment_base64',
+]
 const CLAIMIT_EXPORT_FORMATS = ['cxf', 'xml', 'json', 'csv']
 const NHIA_TARIFF_VERSION = 'FEB 2023'
 const CLAIM_IT_MEDICINE_PRICE_VERSION = '2025-05-01.250531'
@@ -651,13 +662,34 @@ const stripClaimSchemaColumns = (payload, columns = OPTIONAL_CLAIM_SCHEMA_COLUMN
 }
 
 const stripOptionalClaimSchemaColumns = (payload, error = null) => {
-  const message = String(error?.message || '').toLowerCase()
-  if (error?.code === 'PGRST204' || message.includes('schema cache')) {
-    return stripClaimSchemaColumns(payload, OPTIONAL_CLAIM_SCHEMA_PAYLOAD_KEYS)
-  }
-
   const missingColumns = getMissingOptionalClaimColumns(error)
-  return stripClaimSchemaColumns(payload, missingColumns.length ? missingColumns : OPTIONAL_CLAIM_SCHEMA_PAYLOAD_KEYS)
+  return stripClaimSchemaColumns(
+    payload,
+    missingColumns.length ? missingColumns : OPTIONAL_CLAIM_SCHEMA_PAYLOAD_KEYS
+  )
+}
+
+const hasPrescriptionAttachmentPayload = (payload = {}) =>
+  PRESCRIPTION_ATTACHMENT_SCHEMA_KEYS.some((key) => {
+    const value = payload[key]
+    return value !== null && value !== undefined && value !== ''
+  })
+
+const wouldDiscardPrescriptionAttachment = (payload, fallbackPayload) =>
+  hasPrescriptionAttachmentPayload(payload) &&
+  PRESCRIPTION_ATTACHMENT_SCHEMA_KEYS.some((key) => (
+    payload[key] !== null &&
+    payload[key] !== undefined &&
+    payload[key] !== '' &&
+    !(key in fallbackPayload)
+  ))
+
+const buildMissingPrescriptionAttachmentSchemaError = () => {
+  const error = new Error(
+    'Prescription file upload completed, but the NHIS claim attachment database fields are missing. Run the latest Supabase migrations, then save the claim again.'
+  )
+  error.code = 'NHIS_ATTACHMENT_SCHEMA_MISSING'
+  return error
 }
 
 const insertNhisClaimWithSchemaFallback = async (payload) => {
@@ -672,9 +704,14 @@ const insertNhisClaimWithSchemaFallback = async (payload) => {
     return result
   }
 
+  const fallbackPayload = stripOptionalClaimSchemaColumns(insertPayload, result.error)
+  if (wouldDiscardPrescriptionAttachment(insertPayload, fallbackPayload)) {
+    return { data: null, error: buildMissingPrescriptionAttachmentSchemaError() }
+  }
+
   return await supabase
     .from('nhis_claims')
-    .insert([stripOptionalClaimSchemaColumns(insertPayload, result.error)])
+    .insert([fallbackPayload])
     .select()
     .single()
 }
@@ -692,9 +729,14 @@ const updateNhisClaimWithSchemaFallback = async (id, payload) => {
     return result
   }
 
+  const fallbackPayload = stripOptionalClaimSchemaColumns(updatePayload, result.error)
+  if (wouldDiscardPrescriptionAttachment(updatePayload, fallbackPayload)) {
+    return { data: null, error: buildMissingPrescriptionAttachmentSchemaError() }
+  }
+
   return await supabase
     .from('nhis_claims')
-    .update(stripOptionalClaimSchemaColumns(updatePayload, result.error))
+    .update(fallbackPayload)
     .eq('id', id)
     .select()
     .single()
