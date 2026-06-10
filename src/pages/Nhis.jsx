@@ -257,11 +257,8 @@ const getPatientMemberNumber = (patient = {}) =>
   patient.insuranceId ||
   ''
 
-const getPatientHin = (patient = {}) => {
-  const hin = String(patient.nhis_hin || patient.nhisHin || patient.hin || '').trim()
-  const memberNo = normalizeNhiaMemberNumber(getPatientMemberNumber(patient))
-  return hin && normalizeNhiaMemberNumber(hin) !== memberNo ? hin : ''
-}
+const getPatientHin = (patient = {}) =>
+  patient.nhis_hin || patient.nhisHin || patient.hin || ''
 
 const getPatientFolderNo = (patient = {}) =>
   patient.folder_no || patient.folderNo || ''
@@ -1706,14 +1703,9 @@ const Nhis = () => {
     const nameParts = (memberDetails.memberName || '').trim().split(/\s+/)
     const surname = nameParts.length > 1 ? nameParts[nameParts.length - 1] : nameParts[0] || prev.surname
     const otherNames = nameParts.length > 1 ? nameParts.slice(0, -1).join(' ') : prev.otherNames
-    const returnedHin = String(memberDetails.hin || '').trim()
-    const memberNumber = normalizeNhiaMemberNumber(prev.memberNo)
-    const validHin = returnedHin && normalizeNhiaMemberNumber(returnedHin) !== memberNumber
-      ? returnedHin
-      : ''
     return {
       ...prev,
-      hin: validHin,
+      hin: memberDetails.hin || '',
       surname: surname || prev.surname,
       otherNames: otherNames || prev.otherNames,
       dateOfBirth: memberDetails.dateOfBirth || prev.dateOfBirth,
