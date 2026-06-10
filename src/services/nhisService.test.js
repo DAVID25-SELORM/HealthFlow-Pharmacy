@@ -295,6 +295,30 @@ describe('assessNhisClaimReadiness', () => {
     )
   })
 
+  it('does not require OTAC or NeHFAMS attendance fields for final submission', () => {
+    const readiness = assessNhisClaimReadiness(
+      {
+        ...baseClaim,
+        authId: '',
+        authType: '',
+        newCcc: '',
+        otacCode: '',
+        nhiaAttendanceDate: '',
+        attendanceVerificationStatus: '',
+        attendanceVerificationSource: '',
+      },
+      [baseMedicine],
+      {
+        finalSubmission: true,
+        requirePrescriptionAttachment: false,
+        pharmacyLevel: 'P1',
+        nhisDrugCatalog: [{ id: baseMedicine.nhisDrugId, code: baseMedicine.drugCode, category: 'A' }],
+      }
+    )
+
+    expect(readiness.blockers.join(' ')).not.toMatch(/OTAC|NeHFAMS|attendance|AuthID/i)
+  })
+
   it('does not warn for missing patient address on pharmacy claims', () => {
     const readiness = assessNhisClaimReadiness(
       { ...baseClaim, patientAddress: '', organizationType: 'pharmacy' },
@@ -965,7 +989,7 @@ describe('CLAIM-it export helpers', () => {
     })
   })
 
-  it('does not substitute an NHIA transaction ID for a missing attendance AuthID', () => {
+  it('omits attendance verification when OTAC and NeHFAMS fields are absent', () => {
     const payload = buildNhisClaimItExportPayload(
       [{
         ...claim,
@@ -978,7 +1002,8 @@ describe('CLAIM-it export helpers', () => {
       }
     )
 
-    expect(payload.claims[0].attendanceVerification.authId).toBe('')
+    expect(payload.claims[0].attendanceVerification).toBeNull()
+    expect(JSON.stringify(payload.claims[0])).not.toContain('383735134')
   })
 
   it('includes URL-only prescription attachments in CLAIM-it payloads', () => {
