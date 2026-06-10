@@ -2128,6 +2128,16 @@ const mapNhiaMemberLookupResponse = (body) => {
     eligibilityEndDate: normalizeText(body.EligibilityEndDate || body.eligibilityEndDate).slice(0, 10) || null,
     status: normalizeText(body.Status || body.status),
     attendanceDate: normalizeText(body.AttendanceDate || body.attendanceDate).slice(0, 10) || null,
+    authId: normalizeText(
+      body.AuthID ||
+        body.AuthId ||
+        body.authID ||
+        body.authId ||
+        body.auth_id ||
+        body.AuthorizationID ||
+        body.authorizationId ||
+        body.authorization_id
+    ),
     transactionId: normalizeText(body.TransactionID || body.transactionId || body.transaction_id),
     hpName: normalizeText(body.HPName || body.hpName || body.hp_name),
     pppCode: normalizeText(body.PPPCode || body.pppCode) || null,

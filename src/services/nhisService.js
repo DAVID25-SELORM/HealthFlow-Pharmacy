@@ -6239,7 +6239,7 @@ export const buildNhisClaimItExportPayload = (claims = [], options = {}) => {
         source: normalizeText(claim.nhia_attendance_verification_source) || 'nehfams_manual',
         status: normalizeText(claim.nhia_attendance_verification_status),
         attendanceDate: toClaimItDate(claim.nhia_attendance_date || claim.service_date_from),
-        authId: normalizeText(claim.nhia_auth_id || claim.nhia_transaction_id),
+        authId: normalizeText(claim.nhia_auth_id),
         authType: normalizeText(claim.nhia_auth_type) || 'NHIS',
         newCcc: normalizeNhiaNewCccStatus(claim.nhia_new_ccc_status),
         otac: normalizeText(claim.nhia_otac),

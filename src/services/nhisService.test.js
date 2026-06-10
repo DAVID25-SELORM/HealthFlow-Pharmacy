@@ -965,6 +965,22 @@ describe('CLAIM-it export helpers', () => {
     })
   })
 
+  it('does not substitute an NHIA transaction ID for a missing attendance AuthID', () => {
+    const payload = buildNhisClaimItExportPayload(
+      [{
+        ...claim,
+        nhia_auth_id: null,
+        nhia_transaction_id: '383735134',
+      }],
+      {
+        yearMonth: '2026-05',
+        organizationType: 'hospital',
+      }
+    )
+
+    expect(payload.claims[0].attendanceVerification.authId).toBe('')
+  })
+
   it('includes URL-only prescription attachments in CLAIM-it payloads', () => {
     const payload = buildNhisClaimItExportPayload([
       {

@@ -3757,6 +3757,16 @@ const mapNhiaMemberLookupResponse = (body: unknown) => {
     eligibilityEndDate: normalizeText(record.EligibilityEndDate || record.eligibilityEndDate).slice(0, 10) || null,
     status: normalizeText(record.Status || record.status),
     attendanceDate: normalizeText(record.AttendanceDate || record.attendanceDate).slice(0, 10) || null,
+    authId: normalizeText(
+      record.AuthID ||
+        record.AuthId ||
+        record.authID ||
+        record.authId ||
+        record.auth_id ||
+        record.AuthorizationID ||
+        record.authorizationId ||
+        record.authorization_id
+    ),
     transactionId: normalizeText(record.TransactionID || record.transactionId || record.transaction_id),
     hpName: normalizeText(record.HPName || record.hpName || record.hp_name),
     pppCode: normalizeText(record.PPPCode || record.pppCode) || null,
