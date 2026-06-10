@@ -257,8 +257,11 @@ const getPatientMemberNumber = (patient = {}) =>
   patient.insuranceId ||
   ''
 
-const getPatientHin = (patient = {}) =>
-  patient.nhis_hin || patient.nhisHin || patient.hin || ''
+const getPatientHin = (patient = {}) => {
+  const hin = String(patient.nhis_hin || patient.nhisHin || patient.hin || '').trim()
+  const memberNo = normalizeNhiaMemberNumber(getPatientMemberNumber(patient))
+  return hin && normalizeNhiaMemberNumber(hin) !== memberNo ? hin : ''
+}
 
 const getPatientFolderNo = (patient = {}) =>
   patient.folder_no || patient.folderNo || ''
@@ -1703,9 +1706,14 @@ const Nhis = () => {
     const nameParts = (memberDetails.memberName || '').trim().split(/\s+/)
     const surname = nameParts.length > 1 ? nameParts[nameParts.length - 1] : nameParts[0] || prev.surname
     const otherNames = nameParts.length > 1 ? nameParts.slice(0, -1).join(' ') : prev.otherNames
+    const returnedHin = String(memberDetails.hin || '').trim()
+    const memberNumber = normalizeNhiaMemberNumber(prev.memberNo)
+    const validHin = returnedHin && normalizeNhiaMemberNumber(returnedHin) !== memberNumber
+      ? returnedHin
+      : ''
     return {
       ...prev,
-      hin: memberDetails.hin || prev.hin,
+      hin: validHin,
       surname: surname || prev.surname,
       otherNames: otherNames || prev.otherNames,
       dateOfBirth: memberDetails.dateOfBirth || prev.dateOfBirth,
@@ -3214,13 +3222,25 @@ const Nhis = () => {
                         disabled={lookingUpMember}
                         onBlur={(e) => {
                           const normalized = normalizeNhiaMemberNumber(e.target.value)
-                          setClaimForm((p) => ({ ...p, memberNo: normalized }))
+                          setClaimForm((p) => ({
+                            ...p,
+                            memberNo: normalized,
+                            hin: normalizeNhiaMemberNumber(p.hin) === normalizeNhiaMemberNumber(p.memberNo)
+                              ? ''
+                              : p.hin,
+                          }))
                           // Only trigger lookup when value actually changed
                           if (normalized && normalized !== lastLookedUpMemberRef.current) {
                             handleMemberLookup(normalized, claimForm.cardType || getNhiaLookupCardType(normalized))
                           }
                         }}
-                        onChange={(e) => setClaimForm((p) => ({ ...p, memberNo: e.target.value }))} />
+                        onChange={(e) => setClaimForm((p) => ({
+                          ...p,
+                          memberNo: e.target.value,
+                          hin: normalizeNhiaMemberNumber(p.hin) === normalizeNhiaMemberNumber(p.memberNo)
+                            ? ''
+                            : p.hin,
+                        }))} />
                       {lookingUpMember && (
                         <div className="patient-meta">Verifying member with NHIA...</div>
                       )}

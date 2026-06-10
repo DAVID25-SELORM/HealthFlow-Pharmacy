@@ -3729,10 +3729,28 @@ const getNhiaCardType = (memberNumber: unknown, explicitCardType: unknown = '') 
 const mapNhiaMemberLookupResponse = (body: unknown) => {
   if (!body || typeof body !== 'object') return null
   const record = body as Record<string, unknown>
+  const memberNumber = normalizeText(
+    record.CardNo || record.cardNo || record.card_no || record.MemberNo || record.memberNo || record.member_no
+  )
+  const returnedHin = normalizeText(
+    record.HIN ||
+      record.hin ||
+      record.HINNo ||
+      record.hinNo ||
+      record.hin_no ||
+      record.CardSerialNo ||
+      record.cardSerialNo ||
+      record.card_serial_no ||
+      record.CardSerialNumber ||
+      record.cardSerialNumber
+  )
+  const hin = returnedHin && normalizeText(returnedHin).replace(/\W/g, '') !== memberNumber.replace(/\W/g, '')
+    ? returnedHin
+    : ''
   return {
     ccCode: extractCcCode(body),
     memberName: normalizeText(record.MemberName || record.memberName || record.member_name),
-    hin: normalizeText(record.HIN || record.hin),
+    hin,
     gender: normalizeText(record.Gender || record.gender),
     dateOfBirth: normalizeText(record.DateOfBirth || record.dateOfBirth || record.date_of_birth).slice(0, 10) || null,
     eligibilityStartDate: normalizeText(record.EligibilityStartDate || record.eligibilityStartDate).slice(0, 10) || null,

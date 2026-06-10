@@ -2099,11 +2099,29 @@ const deriveRemoteStatus = (body) => {
 // normalised object. The NHIA API returns MobCCC as the CC code field.
 const mapNhiaMemberLookupResponse = (body) => {
   if (!body || typeof body !== 'object') return null
+  const memberNumber = normalizeText(
+    body.CardNo || body.cardNo || body.card_no || body.MemberNo || body.memberNo || body.member_no
+  )
+  const returnedHin = normalizeText(
+    body.HIN ||
+      body.hin ||
+      body.HINNo ||
+      body.hinNo ||
+      body.hin_no ||
+      body.CardSerialNo ||
+      body.cardSerialNo ||
+      body.card_serial_no ||
+      body.CardSerialNumber ||
+      body.cardSerialNumber
+  )
+  const hin = returnedHin && returnedHin.replace(/\W/g, '') !== memberNumber.replace(/\W/g, '')
+    ? returnedHin
+    : ''
   const ccCode = extractCcCode(body) || null
   return {
     ccCode,
     memberName: normalizeText(body.MemberName || body.memberName || body.member_name),
-    hin: normalizeText(body.HIN || body.hin),
+    hin,
     gender: normalizeText(body.Gender || body.gender),
     dateOfBirth: normalizeText(body.DateOfBirth || body.dateOfBirth || body.date_of_birth).slice(0, 10) || null,
     eligibilityStartDate: normalizeText(body.EligibilityStartDate || body.eligibilityStartDate).slice(0, 10) || null,
