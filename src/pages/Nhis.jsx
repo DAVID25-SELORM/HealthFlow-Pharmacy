@@ -32,6 +32,7 @@ import {
   upsertNhisClinicalRules,
   normalizeOrganizationType,
   normalizeNhisCcCode,
+  normalizeNhisGender,
   uploadNhisPrescriptionPdf,
   validateNhisPrescriptionPdfFile,
   getNhisPrescriptionSignedUrl,
@@ -1709,9 +1710,7 @@ const Nhis = () => {
       surname: surname || prev.surname,
       otherNames: otherNames || prev.otherNames,
       dateOfBirth: memberDetails.dateOfBirth || prev.dateOfBirth,
-      gender: memberDetails.gender
-        ? memberDetails.gender.charAt(0).toUpperCase() + memberDetails.gender.slice(1).toLowerCase()
-        : prev.gender,
+      gender: normalizeNhisGender(memberDetails.gender) || prev.gender,
       ...(memberDetails.ccCode ? { cccNo: memberDetails.ccCode, ccCode: memberDetails.ccCode } : {}),
       authId: memberDetails.authId || prev.authId,
       authType: memberDetails.authType || prev.authType || 'NHIS',

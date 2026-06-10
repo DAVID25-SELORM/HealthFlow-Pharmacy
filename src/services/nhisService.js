@@ -513,6 +513,14 @@ export const buildClaimItConfigPreview = (settings = {}, options = {}) => {
 
 export const normalizeNhisCcCode = (value) => asText(value).replace(/\D/g, '')
 
+export const normalizeNhisGender = (value) => {
+  const gender = normalizeText(value).toLowerCase()
+  if (gender === 'm' || gender === 'male') return 'male'
+  if (gender === 'f' || gender === 'female') return 'female'
+  if (gender === 'o' || gender === 'other') return 'other'
+  return gender
+}
+
 const getNhisCcCodeIssue = (value) => {
   const digits = normalizeNhisCcCode(value)
   if (!digits) return 'CCC/CC code is required before serving this NHIS claim.'

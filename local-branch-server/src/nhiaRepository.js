@@ -260,6 +260,14 @@ const assertValidMemberNumber = (value, settings = {}) => {
 
 const normalizeCcCode = (value) => digitsOnly(normalizeText(value))
 
+const normalizeNhisGender = (value) => {
+  const gender = normalizeText(value).toLowerCase()
+  if (gender === 'm' || gender === 'male') return 'male'
+  if (gender === 'f' || gender === 'female') return 'female'
+  if (gender === 'o' || gender === 'other') return 'other'
+  return gender
+}
+
 const assertValidCcCode = (value) => {
   const ccCode = normalizeCcCode(value)
   if (!ccCode) {
@@ -2116,7 +2124,7 @@ const mapNhiaMemberLookupResponse = (body) => {
     ccCode,
     memberName: normalizeText(body.MemberName || body.memberName || body.member_name),
     hin,
-    gender: normalizeText(body.Gender || body.gender),
+    gender: normalizeNhisGender(body.Gender || body.gender),
     dateOfBirth: normalizeText(body.DateOfBirth || body.dateOfBirth || body.date_of_birth).slice(0, 10) || null,
     eligibilityStartDate: normalizeText(body.EligibilityStartDate || body.eligibilityStartDate).slice(0, 10) || null,
     eligibilityEndDate: normalizeText(body.EligibilityEndDate || body.eligibilityEndDate).slice(0, 10) || null,

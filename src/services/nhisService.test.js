@@ -58,6 +58,7 @@ import {
   getAllNhisDrugs,
   getNhisDrugByCode,
   getNhiaApiSettings,
+  normalizeNhisGender,
   normalizeNhisExportPeriod,
   saveNhiaApiSettings,
   submitNhisClaimDirect,
@@ -161,6 +162,15 @@ const mockNhisClaimDuplicateAndUpdateQueries = ({ duplicates = [] } = {}) => {
   })
   return { claimQuery, updateQuery }
 }
+
+describe('normalizeNhisGender', () => {
+  it('maps NHIA gender values to claim form option values', () => {
+    expect(normalizeNhisGender('MALE')).toBe('male')
+    expect(normalizeNhisGender('FEMALE')).toBe('female')
+    expect(normalizeNhisGender('M')).toBe('male')
+    expect(normalizeNhisGender('F')).toBe('female')
+  })
+})
 
 const baseClaim = {
   memberNo: '12345678',
