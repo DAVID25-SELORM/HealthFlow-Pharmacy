@@ -147,8 +147,7 @@ export const refreshConnectivityState = async ({
     const shouldProbeBranchServer =
       branchConfig.enabled &&
       branchConfig.url &&
-      branchConfig.token &&
-      (probeLocal || !internetAvailable || state.branchServerAvailable)
+      branchConfig.token
 
     if (shouldProbeBranchServer) {
       try {
@@ -194,12 +193,12 @@ export const shouldPreferLocalApi = () => {
 if (typeof window !== 'undefined') {
   window.addEventListener('online', () => {
     console.info('[SYNC] Browser came online; checking HealthFlow routes.')
-    void refreshConnectivityState()
+    void refreshConnectivityState({ probeLocal: true })
   })
   window.addEventListener('offline', () => {
     console.info('[OFFLINE] Browser went offline; checking local branch server.')
     void refreshConnectivityState({ probeLocal: true })
   })
-  void refreshConnectivityState()
+  void refreshConnectivityState({ probeLocal: true })
 }
 // ✅ OFFLINE-FIRST PATCH END

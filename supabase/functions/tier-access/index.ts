@@ -3512,37 +3512,10 @@ const buildNhiaSubmissionHeaders = async (
   return headers
 }
 
-const getScopedNhiaEligibilityCredentials = (
-  settings: Record<string, unknown>,
-  organizationId = ''
-) => {
+const buildNhiaEligibilityHeaders = (settings: Record<string, unknown>) => {
   const credentials = (settings.credentials || {}) as Record<string, unknown>
-  const overrideOrganizationId = normalizeText(Deno.env.get('NHIA_API_ORGANIZATION_ID'))
-  const overrideApiKey = normalizeText(Deno.env.get('NHIA_API_KEY'))
-  const overrideApiSecret = normalizeText(Deno.env.get('NHIA_API_SECRET'))
-  const canUseOverride = Boolean(
-    overrideOrganizationId &&
-      overrideOrganizationId === normalizeText(organizationId) &&
-      overrideApiKey &&
-      overrideApiSecret
-  )
-
-  return {
-    apiKey: canUseOverride
-      ? overrideApiKey
-      : assertRequiredText(credentials.apiKey || credentials.token, 'NHIA CCC API key'),
-    apiSecret: canUseOverride
-      ? overrideApiSecret
-      : assertRequiredText(credentials.apiSecret, 'NHIA CCC API secret'),
-    source: canUseOverride ? 'facility_scoped_env' : 'saved_configuration',
-  }
-}
-
-const buildNhiaEligibilityHeaders = (
-  settings: Record<string, unknown>,
-  organizationId = ''
-) => {
-  const { apiKey, apiSecret } = getScopedNhiaEligibilityCredentials(settings, organizationId)
+  const apiKey = assertRequiredText(credentials.apiKey || credentials.token, 'NHIA CCC API key')
+  const apiSecret = assertRequiredText(credentials.apiSecret, 'NHIA CCC API secret')
   return {
     Accept: 'application/json',
     'Content-Type': 'application/json',
@@ -3959,18 +3932,7 @@ const generateNhiaCcCode = async (
   logClaimItBridgeStatus('cc_code.request', { status: 'pending', endpointPath, claimCount: 1 })
   let response: Response
   try {
-    const eligibilityCredentials = getScopedNhiaEligibilityCredentials(
-      settings as unknown as Record<string, unknown>,
-      organizationId
-    )
-    console.info('[NHIA CONFIG] eligibility credential source', {
-      organizationId,
-      source: eligibilityCredentials.source,
-    })
-    const headers = buildNhiaEligibilityHeaders(
-      settings as unknown as Record<string, unknown>,
-      organizationId
-    )
+    const headers = buildNhiaEligibilityHeaders(settings as unknown as Record<string, unknown>)
     response = await fetch(finalUrl, {
       method: 'POST',
       headers,

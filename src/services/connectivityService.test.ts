@@ -21,8 +21,30 @@ describe('connectivityService', () => {
     setNavigatorOnline(true)
   })
 
-  it('does not probe the local branch server during online cloud refreshes', async () => {
+  it('probes a configured local branch server during online refreshes', async () => {
     window.localStorage.setItem(BRANCH_TOKEN_STORAGE_KEY, 'branch-token')
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ ok: true }), { status: 200 })
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { CONNECTIVITY_MODES, getConnectivityState, refreshConnectivityState } =
+      await importConnectivityService()
+
+    await refreshConnectivityState()
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:4780/health',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'x-branch-token': 'branch-token',
+        }),
+      })
+    )
+    expect(getConnectivityState().mode).toBe(CONNECTIVITY_MODES.ONLINE_LOCAL_SYNC)
+  })
+
+  it('stays cloud-only when no local branch token is configured', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
 
