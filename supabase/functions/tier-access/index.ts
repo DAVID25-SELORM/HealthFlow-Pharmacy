@@ -3512,10 +3512,64 @@ const buildNhiaSubmissionHeaders = async (
   return headers
 }
 
-const buildNhiaEligibilityHeaders = (settings: Record<string, unknown>) => {
+const getScopedNhiaEligibilityCredentials = (
+  settings: Record<string, unknown>,
+  organizationId = '',
+  branchId = ''
+) => {
   const credentials = (settings.credentials || {}) as Record<string, unknown>
-  const apiKey = assertRequiredText(credentials.apiKey || credentials.token, 'NHIA CCC API key')
-  const apiSecret = assertRequiredText(credentials.apiSecret, 'NHIA CCC API secret')
+  const overrideOrganizationIds = [
+    ...normalizeText(Deno.env.get('NHIA_API_ORGANIZATION_ID')).split(','),
+    ...normalizeText(Deno.env.get('NHIA_API_ORGANIZATION_IDS')).split(','),
+  ].map((value) => normalizeText(value)).filter(Boolean)
+  const overrideBranchIds = [
+    ...normalizeText(Deno.env.get('NHIA_API_BRANCH_ID')).split(','),
+    ...normalizeText(Deno.env.get('NHIA_API_BRANCH_IDS')).split(','),
+  ].map((value) => normalizeText(value)).filter(Boolean)
+  const overrideApiKey = normalizeText(
+    Deno.env.get('NHIA_API_KEY') ||
+      Deno.env.get('CLAIMIT_UPSTREAM_API_KEY')
+  )
+  const overrideApiSecret = normalizeText(
+    Deno.env.get('NHIA_API_SECRET') ||
+      Deno.env.get('CLAIMIT_UPSTREAM_API_SECRET')
+  )
+  const normalizedOrganizationId = normalizeText(organizationId)
+  const normalizedBranchId = normalizeText(branchId)
+  const organizationMatches = Boolean(
+    normalizedOrganizationId &&
+      overrideOrganizationIds.includes(normalizedOrganizationId)
+  )
+  const branchMatches = overrideBranchIds.length === 0 ||
+    Boolean(normalizedBranchId && overrideBranchIds.includes(normalizedBranchId))
+  const canUseOverride = Boolean(
+    overrideApiKey &&
+      overrideApiSecret &&
+      organizationMatches &&
+      branchMatches
+  )
+
+  return {
+    apiKey: canUseOverride
+      ? overrideApiKey
+      : assertRequiredText(credentials.apiKey || credentials.token, 'NHIA CCC API key'),
+    apiSecret: canUseOverride
+      ? overrideApiSecret
+      : assertRequiredText(credentials.apiSecret, 'NHIA CCC API secret'),
+    source: canUseOverride ? 'facility_scoped_env' : 'saved_configuration',
+  }
+}
+
+const buildNhiaEligibilityHeaders = (
+  settings: Record<string, unknown>,
+  organizationId = '',
+  branchId = ''
+) => {
+  const { apiKey, apiSecret } = getScopedNhiaEligibilityCredentials(
+    settings,
+    organizationId,
+    branchId
+  )
   return {
     Accept: 'application/json',
     'Content-Type': 'application/json',
@@ -3883,8 +3937,9 @@ const generateNhiaCcCode = async (
   }
 
   let settings: Awaited<ReturnType<typeof getNhiaApiSettings>> | null = null
+  let scopedBranchId = ''
   try {
-    const scopedBranchId = resolveScopedBranchId(requesterProfile, payload)
+    scopedBranchId = resolveScopedBranchId(requesterProfile, payload)
     settings = await getNhiaApiSettings(adminClient, requesterProfile, organizationId, true, scopedBranchId)
   } catch (error) {
     return {
@@ -3932,7 +3987,21 @@ const generateNhiaCcCode = async (
   logClaimItBridgeStatus('cc_code.request', { status: 'pending', endpointPath, claimCount: 1 })
   let response: Response
   try {
-    const headers = buildNhiaEligibilityHeaders(settings as unknown as Record<string, unknown>)
+    const credentialDetails = getScopedNhiaEligibilityCredentials(
+      settings as unknown as Record<string, unknown>,
+      organizationId,
+      scopedBranchId
+    )
+    console.info('[NHIA CONFIG] eligibility credential source', {
+      organizationId,
+      branchId: scopedBranchId || '',
+      source: credentialDetails.source,
+    })
+    const headers = buildNhiaEligibilityHeaders(
+      settings as unknown as Record<string, unknown>,
+      organizationId,
+      scopedBranchId
+    )
     response = await fetch(finalUrl, {
       method: 'POST',
       headers,
