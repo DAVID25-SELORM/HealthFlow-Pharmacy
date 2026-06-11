@@ -224,14 +224,18 @@ app.get('/health', requireBranchToken, (_request, response) => {
   })
 })
 
-app.get('/branch-runtime-config.js', (_request, response) => {
+app.get('/branch-runtime-config.js', (request, response) => {
+  const sameOriginRequest = String(request.get('Sec-Fetch-Site') || '').toLowerCase() === 'same-origin'
   response
     .type('application/javascript')
     .set('Cache-Control', 'no-store')
     .send(
       `window.__HEALTHFLOW_BRANCH_SERVER__ = ${JSON.stringify({
         enabled: true,
-        url: '',
+        url: `http://localhost:${config.port}`,
+        token: sameOriginRequest ? config.branchServerToken : '',
+        organizationId: config.organizationId,
+        branchId: config.branchId,
       })};`
     )
 })

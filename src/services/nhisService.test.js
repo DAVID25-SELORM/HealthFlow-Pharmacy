@@ -1884,6 +1884,12 @@ describe('direct NHIA submission', () => {
   })
 
   it('sends tenant context when requesting a hosted CCC/CC code', async () => {
+    getConnectivityState.mockReturnValueOnce({
+      mode: 'ONLINE_CLOUD',
+      internetAvailable: true,
+      branchServerAvailable: false,
+      checkedAt: Date.now(),
+    })
     invokeTierAccess.mockResolvedValueOnce({
       ccCode: '12345',
       source: 'claimit_bridge',
@@ -1909,6 +1915,37 @@ describe('direct NHIA submission', () => {
       patientName: 'Ama Mensah',
       memberNumber: '12345678',
     }))
+  })
+
+  it('blocks hosted CCC verification while local branch mode is active', async () => {
+    getConnectivityState.mockReturnValueOnce({
+      mode: 'ONLINE_LOCAL_SYNC',
+      internetAvailable: true,
+      branchServerAvailable: true,
+      checkedAt: Date.now(),
+    })
+
+    await expect(generateHostedNhiaCcCode({
+      organizationId: 'org-1',
+      memberNumber: '12345678',
+    })).rejects.toThrow('blocked while local branch mode is active')
+
+    expect(invokeTierAccess).not.toHaveBeenCalled()
+  })
+
+  it('requires organizationId before hosted CCC verification', async () => {
+    getConnectivityState.mockReturnValueOnce({
+      mode: 'ONLINE_CLOUD',
+      internetAvailable: true,
+      branchServerAvailable: false,
+      checkedAt: Date.now(),
+    })
+
+    await expect(generateHostedNhiaCcCode({
+      memberNumber: '12345678',
+    })).rejects.toThrow('organizationId is missing')
+
+    expect(invokeTierAccess).not.toHaveBeenCalled()
   })
 
   it('keeps browser bridge submission only for local CLAIM-it bridge URLs', async () => {
@@ -2173,37 +2210,20 @@ describe('NHIA API settings source routing', () => {
     expect(invokeTierAccess).not.toHaveBeenCalled()
   })
 
-  it('falls back to hosted NHIA settings when local sync has no saved settings while online', async () => {
+  it('does not fall back to hosted NHIA settings when local sync has no saved settings', async () => {
     mockNhiaConfigurationStore()
     shouldUseBranchServer.mockReturnValueOnce(true)
     getNhiaSettings.mockResolvedValueOnce(null)
-    invokeTierAccess.mockResolvedValueOnce({
-      settings: {
-        organizationId: 'org-1',
-        facilityCode: 'FAC-CLOUD',
-        providerNumber: 'PROV-CLOUD',
-        credentialCode: 'CRED-CLOUD',
-        accreditationExpiryDate: '2026-12-31',
-        claimsOfficerName: 'Cloud Officer',
-        hasApiKey: true,
-        hasApiSecret: true,
-      },
-    })
 
     await expect(getNhiaApiSettings({ organizationId: 'org-1' })).resolves.toMatchObject({
       organizationId: 'org-1',
-      facilityCode: 'FAC-CLOUD',
-      providerNumber: 'PROV-CLOUD',
-      configSource: 'cloud_supabase',
-      hasApiKey: true,
-      hasApiSecret: true,
+      configSource: 'local_branch_server',
+      hasApiKey: false,
+      hasApiSecret: false,
     })
 
     expect(getNhiaSettings).toHaveBeenCalledTimes(1)
-    expect(invokeTierAccess).toHaveBeenCalledWith({
-      action: 'get_nhia_api_settings',
-      organizationId: 'org-1',
-    })
+    expect(invokeTierAccess).not.toHaveBeenCalled()
   })
 
   it('does not fall back to the cloud save path when the local NHIA save route fails', async () => {

@@ -77,6 +77,8 @@ export const getBranchServerConfig = () => {
         DEFAULT_BRANCH_SERVER_URL
     ).replace(/\/+$/, ''),
     token,
+    organizationId: String(runtimeConfig.organizationId || hostedConfig.organizationId || ''),
+    branchId: String(runtimeConfig.branchId || hostedConfig.branchId || ''),
     runtimeConfigured: Boolean(runtimeConfig.url && token),
   }
 }
@@ -96,7 +98,7 @@ export const saveBranchServerConfig = ({ enabled = true, url, token }) => {
   return getBranchServerConfig()
 }
 
-const getBranchServerUrl = () => getBranchServerConfig().url
+export const getBranchServerUrl = () => getBranchServerConfig().url
 
 const getBranchServerToken = () => getBranchServerConfig().token
 
@@ -179,6 +181,7 @@ const branchFetch = async (path, options = {}) => {
     throw Object.assign(new Error(body?.error || 'Local branch server request failed.'), {
       status: response.status,
       endpoint: path,
+      body,
     })
   }
 

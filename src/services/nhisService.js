@@ -2569,18 +2569,6 @@ const logNhiaConfigEvent = (event, details = {}) => {
   console.info(`[NHIA CONFIG] ${event}`, payload)
 }
 
-const hasMeaningfulNhiaApiSettings = (settings = null) => Boolean(
-  settings &&
-    (
-      normalizeText(settings.id) ||
-      normalizeText(settings.facilityCode || settings.facility_code) ||
-      normalizeText(settings.providerId || settings.provider_id || settings.providerNumber || settings.provider_number) ||
-      normalizeText(settings.credentialCode || settings.credential_code) ||
-      Boolean(settings.hasApiKey || settings.has_api_key || settings.credentialSummary?.apiKey) ||
-      Boolean(settings.hasApiSecret || settings.has_api_secret || settings.credentialSummary?.apiSecret)
-    )
-)
-
 const buildNhiaCredentialsPayload = (credentials = {}) => {
   const payload = {}
 
@@ -3222,15 +3210,6 @@ export const getNhiaApiSettings = async (options = {}) => {
   if (mode === 'ONLINE_LOCAL_SYNC' || mode === 'OFFLINE_LOCAL') {
     try {
       const localSettings = await getBranchNhiaSettings()
-      if (
-        mode === 'ONLINE_LOCAL_SYNC' &&
-        !hasMeaningfulNhiaApiSettings(localSettings) &&
-        getConnectivityState().internetAvailable !== false
-      ) {
-        const hostedFallbackSettings = await loadHostedNhiaApiSettings({ organizationId, mode })
-        if (hostedFallbackSettings) return hostedFallbackSettings
-      }
-
       const nhiaConfig = normalizeNhiaConfig(localSettings, {
         mode,
         source: 'local_branch_server',
@@ -3517,11 +3496,19 @@ export const removeNhiaApiCredentials = async (options = {}) => {
 }
 
 export const generateHostedNhiaCcCode = async (claimContext = {}) => {
-  if (shouldUseBranchServer()) {
-    throw new Error('Hosted NHIA CCC/CC code generation requires Supabase access.')
+  const connectivityMode = getConnectivityState().mode
+  if (
+    shouldUseBranchServer() ||
+    connectivityMode === 'ONLINE_LOCAL_SYNC' ||
+    connectivityMode === 'OFFLINE_LOCAL'
+  ) {
+    throw new Error('Hosted NHIA CCC/CC code generation is blocked while local branch mode is active.')
   }
 
   const organizationId = normalizeText(claimContext.organizationId || claimContext.organization_id)
+  if (!organizationId) {
+    throw new Error('Cannot verify NHIA CCC through cloud: organizationId is missing.')
+  }
 
   return await invokeTierAccess({
     action: 'generate_nhia_cc_code',
