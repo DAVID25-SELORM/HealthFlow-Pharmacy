@@ -4387,8 +4387,8 @@ const getReportBundle = async (
       .from('nhis_claims')
       .select('*, nhis_claim_medicines (*), nhis_claim_services (*)')
       .eq('organization_id', organizationId)
-      .gte('service_date', startDate || '1900-01-01')
-      .lte('service_date', endDate || '2999-12-31')
+      .gte('service_date_from', startDate || '1900-01-01')
+      .lte('service_date_from', endDate || '2999-12-31')
       .order('created_at', { ascending: false }),
     adminClient
       .from('purchases')
@@ -4430,7 +4430,7 @@ const getReportBundle = async (
   const monthlyNhisSubmission = Object.values(
     nhisClaims.reduce<Record<string, Record<string, number | string>>>((acc, claim) => {
       const row = claim as Record<string, unknown>
-      const month = String(row.submission_month || row.service_date || row.created_at || '').slice(0, 7) || 'Unspecified'
+      const month = String(row.submission_month || row.service_date_from || row.service_date || row.created_at || '').slice(0, 7) || 'Unspecified'
       if (!acc[month]) {
         acc[month] = { month, count: 0, totalAmount: 0, accepted: 0, rejected: 0, pending: 0 }
       }

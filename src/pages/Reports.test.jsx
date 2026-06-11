@@ -121,6 +121,28 @@ const reportBundle = {
   claims: [],
   nhisClaims: [
     {
+      id: 'nhis-insulin',
+      claim_number: 'NHIS-000016',
+      surname: 'ARMAH',
+      other_names: 'ABRAHAM NII ADAMAH',
+      member_no: '15171866',
+      insurance_provider: 'NHIS',
+      status: 'served',
+      total_amount: 587.52,
+      service_date_from: '2026-06-09',
+      physician_name: 'DR. ANGELINA KUMI',
+      folder_no: '833357',
+      nhis_claim_medicines: [{
+        id: 'nhis-insulin-line',
+        drug_code: 'INPRMIIN1',
+        description: 'Insulin premixed (30/70) HM Injection, 100 units/mL in 10 mL',
+        dispensed_qty: 6,
+        unit: 'Vial',
+        unit_price: 84.42,
+        total_amount: 506.52,
+      }],
+    },
+    {
       id: 'nhis-1',
       claimNumber: 'NHIA-001',
       patientName: 'Ama Mensah',
@@ -243,6 +265,23 @@ describe('Reports', () => {
     expect(screen.getAllByText('SALE-001').length).toBeGreaterThan(0)
     expect(screen.getAllByText('NHIA-001').length).toBeGreaterThan(0)
     expect(screen.getByText('View patients who received this drug')).toBeInTheDocument()
+  })
+
+  it('finds served NHIS medicines stored with claim schema field names', async () => {
+    render(<Reports />)
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/fast search drug utilization/i)).toBeInTheDocument()
+    })
+
+    fireEvent.change(screen.getByLabelText(/fast search drug utilization/i), {
+      target: { value: 'INSULI' },
+    })
+
+    expect(await screen.findByText(/Insulin premixed \(30\/70\)/i)).toBeInTheDocument()
+    expect(screen.getAllByText('6 Vial')).toHaveLength(2)
+    expect(screen.getByText('ARMAH ABRAHAM NII ADAMAH')).toBeInTheDocument()
+    expect(screen.getByText('NHIS-000016')).toBeInTheDocument()
   })
 
   it('keeps report tabs and preview navigation in sync', async () => {

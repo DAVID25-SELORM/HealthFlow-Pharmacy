@@ -61,8 +61,14 @@ const text = (value, fallback = '-') => value || fallback
 const rowsOf = (value) => (Array.isArray(value) ? value : [])
 const getStatus = (row = {}) => row.status || row.claim_status || row.claimStatus || ''
 const getClaimNumber = (row = {}) => row.claim_number || row.claimNumber || row.localSaleNumber || row.id
-const getPatientName = (row = {}) => row.patient_name || row.patientName || row.patients?.full_name || 'Walk-in Customer'
-const getServiceDate = (row = {}) => row.service_date || row.serviceDate || row.created_at || row.createdAt
+const getPatientName = (row = {}) =>
+  row.patient_name ||
+  row.patientName ||
+  row.patients?.full_name ||
+  [row.surname, row.other_names || row.otherNames].filter(Boolean).join(' ').trim() ||
+  'Walk-in Customer'
+const getServiceDate = (row = {}) =>
+  row.service_date || row.serviceDate || row.service_date_from || row.serviceDateFrom || row.created_at || row.createdAt
 const getBranchId = (row = {}) => row.branch_id || row.branchId || row.branch?.name || 'Main'
 const getUserId = (row = {}) => row.created_by || row.createdBy || row.sold_by || row.soldBy || row.userId || row.user_id || ''
 const numberValue = (value) => {
@@ -118,19 +124,19 @@ const getSaleItems = (sales) =>
 const getNhisMedicineLines = (claims) =>
   rowsOf(claims).flatMap((claim) =>
     rowsOf(claim.nhis_claim_medicines || claim.items).map((item) => ({
-      id: item.id || `${claim.id}-${item.drug_name || item.drugName}`,
+      id: item.id || `${claim.id}-${getDrugName(item)}`,
       claimNumber: getClaimNumber(claim),
       patient: getPatientName(claim),
       serviceDate: getServiceDate(claim),
       status: getStatus(claim),
-      item: item.drug_name || item.drugName || item.name || 'Medicine',
-      code: item.nhia_code || item.nhiaCode || item.code || '',
+      item: getDrugName(item),
+      code: item.nhia_code || item.nhiaCode || item.drug_code || item.drugCode || item.code || '',
       category: item.category || item.drug_category || item.drugCategory || '',
-      prescribed: item.prescribed_quantity || item.prescribedQuantity || item.quantity,
-      dispensed: item.dispensed_quantity || item.dispensedQuantity || item.quantity,
-      quantity: item.quantity,
+      prescribed: item.prescribed_quantity || item.prescribedQuantity || item.dispensed_qty || item.dispensedQty || item.quantity,
+      dispensed: item.dispensed_quantity || item.dispensedQuantity || item.dispensed_qty || item.dispensedQty || item.quantity,
+      quantity: item.dispensed_qty || item.dispensedQty || item.quantity,
       unitPrice: item.unit_price ?? item.unitPrice,
-      totalPrice: item.total_price ?? item.totalPrice,
+      totalPrice: item.total_price ?? item.totalPrice ?? item.total_amount ?? item.totalAmount,
       branch: getBranchId(claim),
       officer: getUserId(claim),
     }))
@@ -182,7 +188,15 @@ const getDiagnosis = (row = {}) => {
   return row.diagnosis || details.join('; ') || ''
 }
 const getLineQuantity = (item = {}) =>
-  numberValue(item.dispensed_quantity ?? item.dispensedQuantity ?? item.quantity ?? item.prescribed_quantity ?? item.prescribedQuantity)
+  numberValue(
+    item.dispensed_quantity ??
+    item.dispensedQuantity ??
+    item.dispensed_qty ??
+    item.dispensedQty ??
+    item.quantity ??
+    item.prescribed_quantity ??
+    item.prescribedQuantity
+  )
 const getLineUnit = (item = {}, drug = {}) =>
   item.unit || item.nhis_unit || item.nhisUnit || item.drugs?.unit || drug.unit || 'unit'
 const getLineUnitPrice = (item = {}) =>
