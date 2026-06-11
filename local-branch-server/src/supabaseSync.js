@@ -214,48 +214,13 @@ const stripLocalFields = (record, omit = []) => {
   )
 }
 
-const buildNhisDrugUpsertRecord = (record = {}) => {
-  const organizationId = String(record.organization_id || config.organizationId || '').trim()
-  const code = String(record.code || '').trim().toUpperCase()
-  const description = String(record.description || '').trim()
-
-  if (!organizationId) {
-    throw new Error('NHIS drug sync requires ORGANIZATION_ID.')
-  }
-
-  if (!code) {
-    throw new Error('NHIS drug sync requires a drug code.')
-  }
-
-  if (!description) {
-    throw new Error('NHIS drug sync requires a description.')
-  }
-
-  return {
-    organization_id: organizationId,
-    code,
-    description,
-    generic_name: record.generic_name || null,
-    strength: record.strength || null,
-    dosage_form: record.dosage_form || null,
-    category: record.category || null,
-    unit: record.unit || 'unit',
-    unit_price: Number(record.unit_price ?? record.unitPrice ?? 0) || 0,
-    is_active: record.is_active !== false,
-    updated_at: record.updated_at || nowIso(),
-  }
-}
-
 const syncNhisDrugUpsert = async (supabase, row, record) => {
-  const upsertRecord = buildNhisDrugUpsertRecord(record)
-  const { data, error } = await supabase
-    .from('nhis_drugs')
-    .upsert(upsertRecord, {
-      onConflict: 'organization_id,code',
-      ignoreDuplicates: false,
-    })
-    .select('id')
-    .single()
+  const { data, error } = await supabase.rpc('branch_sync_upsert_offline_record', {
+    p_sync_token: config.branchSyncToken,
+    p_entity_type: 'nhis_drugs',
+    p_local_id: record.id,
+    p_record: stripLocalFields(record),
+  })
 
   if (error) {
     throw error
@@ -267,7 +232,7 @@ const syncNhisDrugUpsert = async (supabase, row, record) => {
   return {
     localId: record.id,
     entityType: 'nhis_drugs',
-    remoteId: data?.id || record.id,
+    remoteId: data?.remote_id || record.id,
   }
 }
 
