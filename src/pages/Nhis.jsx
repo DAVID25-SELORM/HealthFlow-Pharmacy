@@ -42,17 +42,10 @@ import {
 } from '../services/nhisService'
 import {
   generateNhiaCcCode as generateBranchNhiaCcCode,
-  getBranchServerConfig,
-  getBranchServerUrl,
   getNhiaLookupCardType,
-  getNhiaSettings as getBranchNhiaSettings,
   lookupNhiaMember as branchLookupNhiaMember,
   shouldUseBranchServer,
 } from '../services/branchServerApi'
-import {
-  CONNECTIVITY_MODES,
-  refreshConnectivityState,
-} from '../services/connectivityService'
 import { getAllPatients, searchPatients } from '../services/patientService'
 import { getAllDrugs } from '../services/drugService'
 import { parseNhisDrugFile, generateNhisDrugTemplate } from '../services/nhisDrugImportService'
@@ -1807,24 +1800,12 @@ const Nhis = () => {
     try {
       setGeneratingCcCode(true)
       notify('NHIA CCC Verification', 'info')
-      const connectivity = await refreshConnectivityState({ probeLocal: true, timeoutMs: 1500 })
-      const branchServerConfig = getBranchServerConfig()
-      const useLocalNhia =
-        connectivity.mode === CONNECTIVITY_MODES.ONLINE_LOCAL_SYNC ||
-        connectivity.mode === CONNECTIVITY_MODES.OFFLINE_LOCAL ||
-        isBranchNhiaConfigSource
-      const effectiveOrganizationId = organizationId || branchServerConfig.organizationId || ''
-      const effectiveBranchId =
-        profile?.branch_id || branch?.id || branchServerConfig.branchId || null
-      const claimId = editingClaim?.id || claimForm.id || buildPendingNhisClaimId({
-        organizationId: effectiveOrganizationId,
-        claimForm,
-      })
+      const claimId = editingClaim?.id || claimForm.id || buildPendingNhisClaimId({ organizationId, claimForm })
       const claimContext = {
         claimId,
         claim_id: claimId,
-        organizationId: effectiveOrganizationId,
-        branchId: effectiveBranchId,
+        organizationId,
+        branchId: profile?.branch_id || branch?.id || null,
         organizationType,
         patientName: `${claimForm.surname} ${claimForm.otherNames || ''}`.trim(),
         memberNumber,
@@ -1834,42 +1815,10 @@ const Nhis = () => {
         serviceDate: claimForm.serviceDate,
         totalAmount: claimTotal,
       }
-      const endpoint = useLocalNhia
-        ? `${getBranchServerUrl()}/api/nhia/cc-code`
-        : 'tier-access:generate_nhia_cc_code'
-
-      console.info('[NHIA CCC] route', {
-        connectivityMode: connectivity.mode,
-        organizationId: effectiveOrganizationId || null,
-        branchId: claimContext.branchId || null,
-        apiBaseUrl: useLocalNhia ? getBranchServerUrl() : 'Supabase Edge Function',
-        endpoint,
-        branchServerEnabled: branchServerConfig.enabled,
-        branchServerAvailable: connectivity.branchServerAvailable,
-      })
-
-      if (useLocalNhia) {
-        if (!connectivity.branchServerAvailable) {
-          throw new Error(
-            `NHIA CCC verification is locked to the local branch server, but ${getBranchServerUrl()} is unavailable.`
-          )
-        }
-        const localSettings = await getBranchNhiaSettings()
-        console.info('[NHIA CCC] local configuration', {
-          source: 'local_branch_server',
-          endpoint: `${getBranchServerUrl()}/api/nhia-config`,
-          organizationId: localSettings?.organizationId || localSettings?.organization_id || effectiveOrganizationId || null,
-          branchId: localSettings?.branchId || localSettings?.branch_id || claimContext.branchId || null,
-          hasApiKey: Boolean(localSettings?.hasApiKey || localSettings?.has_api_key),
-          hasApiSecret: Boolean(localSettings?.hasApiSecret || localSettings?.has_api_secret),
-        })
-      } else if (!effectiveOrganizationId) {
-        throw new Error('Cannot verify NHIA CCC through cloud: organizationId is missing.')
-      }
-
-      const result = useLocalNhia
-        ? await generateBranchNhiaCcCode(claimContext)
-        : await generateHostedNhiaCcCode(claimContext)
+      const generateCcCode = shouldUseOfflineNhiaUrl
+        ? generateBranchNhiaCcCode
+        : generateHostedNhiaCcCode
+      const result = await generateCcCode(claimContext)
       if (result?.status === 'pending' || result?.source === 'pending') {
         setClaimForm((prev) => ({ ...prev, cccNo: '' }))
         notify(result.message || 'Pending NHIA CCC verification.', 'info')
@@ -1897,12 +1846,6 @@ const Nhis = () => {
         'success'
       )
     } catch (err) {
-      console.error('[NHIA CCC] verification failed', {
-        message: err?.message || 'Unable to generate CCC/CC code.',
-        status: err?.status || null,
-        endpoint: err?.endpoint || null,
-        responseBody: err?.body || null,
-      })
       notify(err.message || 'Unable to generate CCC/CC code.', 'error')
     } finally {
       setGeneratingCcCode(false)
