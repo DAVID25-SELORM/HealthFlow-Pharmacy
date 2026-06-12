@@ -61,6 +61,59 @@ SUPABASE_URL=<from-branch-sync-setup>
 SUPABASE_SYNC_KEY=<supabase-anon-or-publishable-key>
 ```
 
+## Signed Branch Updates
+
+The hosted admin page can check and install updates on a connected localhost
+branch server. Vercel does not directly replace localhost files; the branch
+server downloads and verifies a signed release package, then an external
+installer stops the Windows NSSM service or Linux `systemd` service, backs up
+the application, installs the update, and restarts it. `.env`, SQLite data,
+and logs are preserved. A failed install restores the previous application
+version.
+
+Configure every facility server with the same update public key:
+
+```env
+HEALTHFLOW_UPDATE_MANIFEST_URL=https://updates.example.com/healthflow/manifest.json
+HEALTHFLOW_UPDATE_PUBLIC_KEY=-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----
+HEALTHFLOW_UPDATE_CHANNEL=stable
+HEALTHFLOW_UPDATE_AUTO_CHECK_HOURS=24
+HEALTHFLOW_UPDATE_AUTO_INSTALL=false
+```
+
+Scheduled checks are enabled by default every 24 hours after these values are
+configured. Installation still requires an administrator click unless
+`HEALTHFLOW_UPDATE_AUTO_INSTALL=true` is explicitly set.
+
+Generate an Ed25519 signing key once. Keep the private key outside this
+repository and outside all facility computers. Node.js is sufficient:
+
+```powershell
+node local-branch-server\scripts\generate-update-keypair.mjs C:\secure\healthflow-update-keys
+```
+
+OpenSSL may also be used:
+
+```powershell
+openssl genpkey -algorithm Ed25519 -out healthflow-update-private.pem
+openssl pkey -in healthflow-update-private.pem -pubout -out healthflow-update-public.pem
+```
+
+For each release, first refresh the offline bundle, increment
+`local-branch-server/package.json`, and build the signed package:
+
+```powershell
+npm.cmd run build:offline
+powershell -ExecutionPolicy Bypass -File local-branch-server\scripts\build-update-package.ps1 `
+  -PackageBaseUrl "https://updates.example.com/healthflow" `
+  -PrivateKeyPath "C:\secure\healthflow-update-private.pem" `
+  -ReleaseNotes "Facility update notes"
+```
+
+Upload both generated files from `release\branch-updates` without changing
+their contents. `manifest.json` may be replaced for each release; versioned ZIP
+files should remain immutable.
+
 `npm run start` starts the local API/POS server and the embedded sync worker loop. Use the standalone sync command only for diagnostics:
 
 ```powershell
@@ -163,7 +216,7 @@ Recommended Ubuntu/Debian prerequisites:
 
 ```bash
 sudo apt update
-sudo apt install -y git curl build-essential python3 make g++
+sudo apt install -y git curl sudo unzip build-essential python3 make g++
 node -v
 npm -v
 ```
@@ -231,6 +284,31 @@ The installer copies this package to:
 /opt/healthflow/local-branch-server
 /var/lib/healthflow-branch
 ```
+
+It also installs a narrow root-owned update helper:
+
+```text
+/usr/local/lib/healthflow/apply-update-linux.sh
+/etc/healthflow-branch-updater.conf
+/etc/sudoers.d/healthflow-branch-updater
+```
+
+The `healthflow` service account may run only that helper without a password.
+The helper accepts only the fixed pending package path inside the installation
+directory and a semantic version. It preserves `.env` and external SQLite
+data, rebuilds `better-sqlite3`, verifies the protected health endpoint, and
+rolls back if installation fails.
+
+Existing Linux installations must run the installer once after upgrading to
+this release:
+
+```bash
+sudo bash scripts/install-linux-service.sh
+sudo systemctl restart healthflow-branch
+```
+
+After that bootstrap, **Check for Updates** and **Download and Install** work
+from the HealthFlow Offline Sync page on Linux and Windows.
 
 The service starts automatically on boot and restarts if Node exits. Follow logs:
 

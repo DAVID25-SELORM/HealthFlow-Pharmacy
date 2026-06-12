@@ -226,6 +226,99 @@
   padding: 1rem;
 }
 
+.branch-setup-result {
+  border-top: 1px solid var(--gray-200);
+}
+
+.branch-update-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding: 1rem;
+}
+
+.branch-update-grid > div {
+  background: var(--gray-50);
+  border: 1px solid var(--gray-200);
+  border-radius: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.75rem;
+}
+
+.branch-update-grid span {
+  color: var(--gray-600);
+  font-size: 0.82rem;
+}
+
+.branch-update-grid strong {
+  text-transform: capitalize;
+}
+
+.branch-update-message,
+.branch-update-notes {
+  margin: 0;
+  padding: 0 1rem 1rem;
+}
+
+.branch-update-notes {
+  color: var(--gray-600);
+  white-space: pre-wrap;
+}
+
+.branch-setup-result > p {
+  background: #fff9e8;
+  color: #7a5510;
+  margin: 0;
+  padding: 0.75rem 1rem;
+}
+
+.branch-client-list {
+  border-top: 1px solid var(--gray-200);
+  padding: 1rem;
+}
+
+.branch-client-list-header,
+.branch-client-row {
+  align-items: center;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.branch-client-list-header {
+  grid-template-columns: minmax(0, 1fr) auto;
+  margin-bottom: 0.75rem;
+}
+
+.branch-client-list-header span,
+.branch-client-row span {
+  color: var(--gray-600);
+  font-size: 0.84rem;
+}
+
+.branch-client-row {
+  border-top: 1px solid var(--gray-100);
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto auto;
+  padding: 0.75rem 0;
+}
+
+.branch-client-row > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.sync-client-active {
+  color: #116b52 !important;
+  font-weight: 700;
+}
+
+.sync-client-inactive {
+  color: #9f3020 !important;
+  font-weight: 700;
+}
+
 .nhia-settings-grid label {
   display: flex;
   flex-direction: column;
@@ -437,9 +530,20 @@
   .sync-failure-tables {
     overflow-x: auto;
   }
+
+  .branch-client-row {
+    grid-template-columns: 1fr;
+  }
+
+  .branch-update-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 520px) {
+  .branch-update-grid {
+    grid-template-columns: 1fr;
+  }
   .offline-sync-overview,
   .branch-token-form,
   .branch-setup-grid,

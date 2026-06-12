@@ -29,6 +29,8 @@ type TenantSignupAction =
   | 'delete_tenant'
   | 'list_branch_sync_setup_options'
   | 'register_branch_sync_client'
+  | 'list_branch_sync_clients'
+  | 'deactivate_branch_sync_client'
 
 type RequesterProfile = {
   id: string
@@ -859,6 +861,78 @@ const registerBranchSyncClient = async (
   }
 }
 
+const listBranchSyncClients = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  payload: Record<string, unknown>
+) => {
+  const organizationId = normalizeText(payload.organizationId)
+  if (!organizationId) {
+    throw new Error('Organization is required.')
+  }
+
+  const { data: organization, error: organizationError } = await adminClient
+    .from('organizations')
+    .select('id')
+    .eq('id', organizationId)
+    .maybeSingle()
+
+  if (organizationError) throw organizationError
+  if (!organization) throw new Error('Organization not found.')
+
+  const { data, error } = await adminClient
+    .from('branch_sync_clients')
+    .select('id, name, organization_id, branch_id, is_active, created_at, last_seen_at, branches(name, code)')
+    .eq('organization_id', organizationId)
+    .order('created_at', { ascending: false })
+
+  if (error) throw error
+
+  return {
+    clients: (data || []).map((client) => ({
+      id: client.id,
+      name: client.name,
+      organizationId: client.organization_id,
+      branchId: client.branch_id,
+      branchName: Array.isArray(client.branches)
+        ? client.branches[0]?.name || ''
+        : (client.branches as Record<string, unknown> | null)?.name || '',
+      branchCode: Array.isArray(client.branches)
+        ? client.branches[0]?.code || ''
+        : (client.branches as Record<string, unknown> | null)?.code || '',
+      isActive: client.is_active !== false,
+      createdAt: client.created_at,
+      lastSeenAt: client.last_seen_at,
+    })),
+  }
+}
+
+const deactivateBranchSyncClient = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  payload: Record<string, unknown>
+) => {
+  const organizationId = normalizeText(payload.organizationId)
+  const syncClientId = normalizeText(payload.syncClientId)
+  if (!organizationId || !syncClientId) {
+    throw new Error('Organization and sync client are required.')
+  }
+
+  const { data, error } = await adminClient
+    .from('branch_sync_clients')
+    .update({ is_active: false })
+    .eq('id', syncClientId)
+    .eq('organization_id', organizationId)
+    .select('id, is_active')
+    .maybeSingle()
+
+  if (error) throw error
+  if (!data) throw new Error('Branch sync client not found.')
+
+  return {
+    syncClientId: data.id,
+    isActive: data.is_active !== false,
+  }
+}
+
 const deleteRowsByOrganization = async (
   adminClient: ReturnType<typeof createAdminClient>,
   tableName: string,
@@ -1659,7 +1733,9 @@ Deno.serve(async (request) => {
       action === 'update_tenant_organization' ||
       action === 'delete_tenant' ||
       action === 'list_branch_sync_setup_options' ||
-      action === 'register_branch_sync_client'
+      action === 'register_branch_sync_client' ||
+      action === 'list_branch_sync_clients' ||
+      action === 'deactivate_branch_sync_client'
     ) {
       const { supabaseUrl, supabaseAnonKey, serviceRoleKey } = getFunctionEnv(true)
       const adminClient = createAdminClient(supabaseUrl, serviceRoleKey)
@@ -1688,6 +1764,14 @@ Deno.serve(async (request) => {
 
       if (action === 'register_branch_sync_client') {
         return json(await registerBranchSyncClient(adminClient, payload))
+      }
+
+      if (action === 'list_branch_sync_clients') {
+        return json(await listBranchSyncClients(adminClient, payload))
+      }
+
+      if (action === 'deactivate_branch_sync_client') {
+        return json(await deactivateBranchSyncClient(adminClient, payload))
       }
 
       if (action === 'delete_tenant') {

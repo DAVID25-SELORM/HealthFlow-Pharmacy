@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import dotenv from 'dotenv'
 
 const serverDir = path.dirname(fileURLToPath(import.meta.url))
-dotenv.config({ path: path.resolve(serverDir, '..', '.env'), override: true })
+dotenv.config({ path: path.resolve(serverDir, '..', '.env') })
 dotenv.config()
 
 const toNumber = (value, fallback) => {
@@ -95,6 +95,10 @@ export const config = {
   branchSyncToken: process.env.BRANCH_SYNC_TOKEN || '',
   nhiaConfigSecretKey: process.env.NHIA_CONFIG_SECRET_KEY || process.env.NHIA_SECRET_KEY || '',
   nhiaFacilityCode: process.env.NHIA_FACILITY_CODE || process.env.FACILITY_CODE || '',
+  nhiaProviderId: process.env.NHIA_PROVIDER_ID || process.env.NHIA_PROVIDER_NUMBER || '',
+  nhiaCredentialCode: process.env.NHIA_CREDENTIAL_CODE || '',
+  nhiaClaimsOfficerName: process.env.NHIA_CLAIMS_OFFICER_NAME || '',
+  nhiaAccreditationExpiryDate: process.env.NHIA_ACCREDITATION_EXPIRY_DATE || '',
   nhiaEligibilityBaseUrl: String(
     process.env.NHIA_BASE_URL ||
       process.env.NHIA_ELIGIBILITY_BASE_URL ||
@@ -102,6 +106,19 @@ export const config = {
   ).trim().replace(/\/+$/, ''),
   supabaseUrl: process.env.SUPABASE_URL || '',
   supabaseSyncKey: process.env.SUPABASE_SYNC_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+  updates: {
+    manifestUrl: String(process.env.HEALTHFLOW_UPDATE_MANIFEST_URL || '').trim(),
+    publicKey: String(process.env.HEALTHFLOW_UPDATE_PUBLIC_KEY || '').trim().replace(/\\n/g, '\n'),
+    channel: String(process.env.HEALTHFLOW_UPDATE_CHANNEL || 'stable').trim().toLowerCase(),
+    serviceName: String(process.env.HEALTHFLOW_WINDOWS_SERVICE_NAME || 'HealthFlowOfflineServer').trim(),
+    checkTimeoutMs: Math.max(3000, toNumber(process.env.HEALTHFLOW_UPDATE_CHECK_TIMEOUT_MS, 15000)),
+    autoCheckHours: Math.max(0, toNumber(process.env.HEALTHFLOW_UPDATE_AUTO_CHECK_HOURS, 24)),
+    autoInstall: toBoolean(process.env.HEALTHFLOW_UPDATE_AUTO_INSTALL),
+    maxPackageBytes: Math.max(
+      10 * 1024 * 1024,
+      toNumber(process.env.HEALTHFLOW_UPDATE_MAX_PACKAGE_BYTES, 500 * 1024 * 1024)
+    ),
+  },
   claimBridge: {
     enabled: resolveClaimBridgeEnabled(),
     publicPath: normalizePath(process.env.CLAIM_BRIDGE_PUBLIC_PATH, '/json-api'),
@@ -112,6 +129,16 @@ export const config = {
         process.env.NHIA_ALLOW_ENV_CREDENTIAL_OVERRIDES
     ),
     upstreamMemberLookupPath: normalizePath(process.env.CLAIMIT_UPSTREAM_MEMBER_LOOKUP_PATH, '/api/hmis/genCCC'),
+    claimItSubmitBaseUrl: String(
+      process.env.CLAIMIT_SUBMIT_BASE_URL ||
+        process.env.CLAIMIT_LOCAL_BASE_URL ||
+        'http://localhost:31719/json-api'
+    ).trim().replace(/\/+$/, ''),
+    claimSubmitPath: normalizePath(
+      process.env.CLAIMIT_CLAIM_SUBMIT_PATH ||
+        process.env.CLAIMIT_UPSTREAM_CLAIM_SUBMIT_PATH,
+      '/claims'
+    ),
     upstreamCcEndpointPath: normalizePath(
       process.env.CLAIMIT_UPSTREAM_CC_ENDPOINT_PATH ||
         process.env.CLAIMIT_UPSTREAM_CC_CODE_ENDPOINT_PATH,

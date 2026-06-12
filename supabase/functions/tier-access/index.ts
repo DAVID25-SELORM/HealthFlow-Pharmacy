@@ -2845,7 +2845,9 @@ const normalizeExportFormat = (value: unknown) =>
   normalizeText(value).toLowerCase() === 'xml' ? 'xml' : 'json'
 
 const NHIA_SECRET_MASK = '\u2022'.repeat(8)
-const NHIA_SECRET_FIELDS = new Set(['apiKey', 'apiSecret', 'password'])
+const NHIA_SECRET_FIELDS = new Set(['apiKey', 'apiSecret', 'username', 'password'])
+const NHIA_CREDENTIAL_DECODE_ERROR =
+  'NHIA credentials are saved, but HealthFlow could not decode them. Check the Supabase encryption key, then re-save the NHIA API credentials.'
 const NHIA_SECRET_PREFIX = 'hfsec:aesgcm:v1:'
 const NHIA_LEGACY_SECRET_PREFIX = 'hfsec:v1:'
 const NHIA_SECRET_MASK_VALUES = new Set([NHIA_SECRET_MASK, '\u2022'.repeat(8), '\u2022'.repeat(12)])
@@ -2967,6 +2969,10 @@ const safeDecodeNhiaSecret = async (value: unknown, field = 'secret') => {
 
 const logNhiaConfigEvent = (event: string, details: Record<string, unknown> = {}) => {
   console.info(`[NHIA CONFIG] ${event}`, {
+    organizationId: details.organizationId || details.organization_id || '',
+    branchId: details.branchId || details.branch_id || '',
+    table: details.table || 'nhia_configuration',
+    source: details.source || details.configSource || '',
     mode: details.mode || '',
     saveTarget: details.saveTarget || '',
     endpoint: details.endpoint || '',
@@ -2975,6 +2981,9 @@ const logNhiaConfigEvent = (event: string, details: Record<string, unknown> = {}
     configSource: details.configSource || '',
     hasApiKey: Boolean(details.hasApiKey),
     hasApiSecret: Boolean(details.hasApiSecret),
+    apiBaseUrl: details.apiBaseUrl || details.api_base_url || '',
+    memberLookupEndpointPath: details.memberLookupEndpointPath || details.member_lookup_endpoint_path || '',
+    credentialMode: details.credentialMode || details.credential_mode || '',
   })
 }
 
@@ -2992,17 +3001,23 @@ const mapNhiaSettingsRow = async (row: Record<string, unknown> | null, includeCr
         tokenEndpointPath: row.token_endpoint_path || '',
       }
     : {}
+  const hasStoredApiKey = Boolean(row.api_key_encrypted)
+  const hasStoredApiSecret = Boolean(row.api_secret_encrypted)
+  const hasStoredPassword = Boolean(row.password_encrypted)
+  const apiCredentialDecodeFailed = includeCredentials && Boolean(
+    (hasStoredApiKey && !credentials.apiKey) ||
+      (hasStoredApiSecret && !credentials.apiSecret)
+  )
   const credentialDecodeFailed = includeCredentials && Boolean(
-    (row.api_key_encrypted && !credentials.apiKey) ||
-      (row.api_secret_encrypted && !credentials.apiSecret) ||
-      (row.password_encrypted && !credentials.password)
+    apiCredentialDecodeFailed ||
+      (hasStoredPassword && !credentials.password)
   )
   const credentialSummary = includeCredentials
     ? maskCredentials(credentials)
     : {
-        apiKey: Boolean(row.api_key_encrypted),
-        apiSecret: Boolean(row.api_secret_encrypted),
-        password: Boolean(row.password_encrypted),
+        apiKey: hasStoredApiKey,
+        apiSecret: hasStoredApiSecret,
+        password: hasStoredPassword,
         username: Boolean(row.username),
       }
 
@@ -3092,17 +3107,29 @@ const mapNhiaSettingsRow = async (row: Record<string, unknown> | null, includeCr
     credentials: includeCredentials ? credentials : {},
     credentialSummary,
     credentialDecodeFailed,
+    credential_decode_failed: credentialDecodeFailed,
+    apiCredentialDecodeFailed,
+    api_credential_decode_failed: apiCredentialDecodeFailed,
     requiresCredentialReentry: credentialDecodeFailed,
+    requires_credential_reentry: credentialDecodeFailed,
     credentialWarning: credentialDecodeFailed
-      ? 'Unable to decrypt saved NHIA credentials. Re-enter the NHIA API key and secret, then save again.'
+      ? NHIA_CREDENTIAL_DECODE_ERROR
       : '',
-    username: row.username || '',
+    username: includeCredentials ? row.username || '' : '',
+    hasUsername: Boolean(row.username),
+    has_username: Boolean(row.username),
     passwordEncrypted: row.password_encrypted ? NHIA_SECRET_MASK : '',
-    hasPassword: Boolean(row.password_encrypted),
-    hasApiKey: includeCredentials ? Boolean(credentials.apiKey) : Boolean(row.api_key_encrypted),
-    has_api_key: includeCredentials ? Boolean(credentials.apiKey) : Boolean(row.api_key_encrypted),
-    hasApiSecret: includeCredentials ? Boolean(credentials.apiSecret) : Boolean(row.api_secret_encrypted),
-    has_api_secret: includeCredentials ? Boolean(credentials.apiSecret) : Boolean(row.api_secret_encrypted),
+    hasStoredPassword,
+    has_stored_password: hasStoredPassword,
+    hasPassword: hasStoredPassword,
+    hasStoredApiKey,
+    has_stored_api_key: hasStoredApiKey,
+    hasApiKey: includeCredentials ? Boolean(credentials.apiKey) : hasStoredApiKey,
+    has_api_key: includeCredentials ? Boolean(credentials.apiKey) : hasStoredApiKey,
+    hasStoredApiSecret,
+    has_stored_api_secret: hasStoredApiSecret,
+    hasApiSecret: includeCredentials ? Boolean(credentials.apiSecret) : hasStoredApiSecret,
+    has_api_secret: includeCredentials ? Boolean(credentials.apiSecret) : hasStoredApiSecret,
     nhisMemberDigits: Number(row.nhis_member_digits || 8),
     ghanaCardDigits: Number(row.ghana_card_digits || 10),
     exportFormat: row.export_format || 'json',
@@ -3176,6 +3203,30 @@ const validateNhiaSettingsForMode = (settings: Record<string, unknown>) => {
   }
 }
 
+const fetchNhiaSettingsRow = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+  branchId = ''
+) => {
+  let query = adminClient
+    .from('nhia_configuration')
+    .select('*')
+    .eq('organization_id', organizationId)
+    .eq('is_active', true)
+
+  query = branchId
+    ? query.eq('branch_id', branchId)
+    : query.is('branch_id', null)
+
+  const { data, error } = await query
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (error) throw error
+  return (data as Record<string, unknown> | null) || null
+}
+
 const getNhiaApiSettings = async (
   adminClient: ReturnType<typeof createAdminClient>,
   requesterProfile: RequesterProfile,
@@ -3186,27 +3237,24 @@ const getNhiaApiSettings = async (
   requireNhiaAccess(requesterProfile, 'Only NHIS staff can access NHIA API settings.')
   const scopedBranchId = resolveScopedBranchId(requesterProfile, { branchId })
 
-  let query = adminClient
-    .from('nhia_configuration')
-    .select('*')
-    .eq('organization_id', organizationId)
-    .eq('is_active', true)
-
-  query = scopedBranchId
-    ? query.eq('branch_id', scopedBranchId)
-    : query.is('branch_id', null)
-
-  const { data, error } = await query
-    .maybeSingle()
-
-  if (error) throw error
-  const settings = await mapNhiaSettingsRow(data as Record<string, unknown> | null, includeCredentials)
+  const scopedRow = scopedBranchId
+    ? await fetchNhiaSettingsRow(adminClient, organizationId, scopedBranchId)
+    : null
+  const organizationRow = await fetchNhiaSettingsRow(adminClient, organizationId)
+  const data = scopedRow || organizationRow
+  const settings = await mapNhiaSettingsRow(data, includeCredentials)
   logNhiaConfigEvent('load', {
     mode: settings?.mode || 'ONLINE_CLOUD',
     endpoint: 'nhia_configuration',
     configSource: 'cloud_supabase',
+    source: scopedRow ? 'branch_override' : 'organization_default',
+    organizationId,
+    branchId: settings?.branchId || scopedBranchId,
     hasApiKey: settings?.hasApiKey,
     hasApiSecret: settings?.hasApiSecret,
+    apiBaseUrl: settings?.apiBaseUrl,
+    memberLookupEndpointPath: settings?.memberLookupEndpointPath,
+    credentialMode: settings?.credentialMode,
   })
   return settings
 }
@@ -3234,7 +3282,8 @@ const saveNhiaApiSettings = async (
     settings.credentials && typeof settings.credentials === 'object'
       ? (settings.credentials as Record<string, unknown>)
       : {}
-  const existing = await getNhiaApiSettings(adminClient, requesterProfile, organizationId, true, scopedBranchId)
+  const existingRow = await fetchNhiaSettingsRow(adminClient, organizationId, scopedBranchId)
+  const existing = await mapNhiaSettingsRow(existingRow, true)
   const credentials = { ...(existing?.credentials || {}) } as Record<string, unknown>
 
   for (const [key, value] of Object.entries(incomingCredentials)) {
@@ -3245,11 +3294,16 @@ const saveNhiaApiSettings = async (
   const hasApiSecret = Boolean(normalizeText(credentials.apiSecret))
   const shouldWritePassword = hasWritableNhiaSecret(credentials, 'password')
   logNhiaConfigEvent('save started', {
+    organizationId,
+    branchId: scopedBranchId,
     mode: 'ONLINE_CLOUD',
     saveTarget: 'cloud_supabase',
     endpoint: 'nhia_configuration',
     hasApiKey,
     hasApiSecret,
+    apiBaseUrl: settings.apiBaseUrl || settings.api_base_url,
+    memberLookupEndpointPath: settings.memberLookupEndpointPath || settings.member_lookup_endpoint_path,
+    credentialMode: settings.credentialMode || settings.credential_mode,
   })
   validateNhiaSettingsForMode({
     ...settings,
@@ -3358,6 +3412,16 @@ const saveNhiaApiSettings = async (
     .single()
 
   if (error) throw error
+  const credentialReadBack = await getNhiaApiSettings(adminClient, requesterProfile, organizationId, true, scopedBranchId)
+  if (credentialReadBack?.apiCredentialDecodeFailed || credentialReadBack?.credentialDecodeFailed) {
+    throw new Error(NHIA_CREDENTIAL_DECODE_ERROR)
+  }
+  if (hasApiKey && credentialReadBack?.hasApiKey !== true) {
+    throw new Error('Saved NHIA API key could not be decrypted/read back from nhia_configuration. Re-save the NHIA API credentials.')
+  }
+  if (hasApiSecret && credentialReadBack?.hasApiSecret !== true) {
+    throw new Error('Saved NHIA API secret could not be decrypted/read back from nhia_configuration. Re-save the NHIA API credentials.')
+  }
   const savedSettings = await getNhiaApiSettings(adminClient, requesterProfile, organizationId, false, scopedBranchId)
   logNhiaConfigEvent('save completed', {
     mode: 'ONLINE_CLOUD',
@@ -3365,8 +3429,14 @@ const saveNhiaApiSettings = async (
     endpoint: 'nhia_configuration',
     saveSuccess: true,
     configSource: 'cloud_supabase',
+    source: 'service_role_readback',
+    organizationId,
+    branchId: savedSettings?.branchId || scopedBranchId,
     hasApiKey: savedSettings?.hasApiKey,
     hasApiSecret: savedSettings?.hasApiSecret,
+    apiBaseUrl: savedSettings?.apiBaseUrl,
+    memberLookupEndpointPath: savedSettings?.memberLookupEndpointPath,
+    credentialMode: savedSettings?.credentialMode,
   })
   return { settings: savedSettings }
 }
@@ -3957,14 +4027,8 @@ const generateNhiaCcCode = async (
     return { ok: false, error: 'Direct NHIA API is not enabled for organization', receivedKeys }
   }
 
-  if (settings.credentialDecodeFailed || settings.requiresCredentialReentry) {
-    return {
-      ok: false,
-      error: settings.credentialWarning ||
-        'Unable to decrypt saved NHIA credentials. Re-enter the NHIA API key and secret for this facility, then save again.',
-      requiresCredentialReentry: true,
-      receivedKeys,
-    }
+  if (settings.apiCredentialDecodeFailed || settings.credentialDecodeFailed || settings.requiresCredentialReentry) {
+    throw new Error(NHIA_CREDENTIAL_DECODE_ERROR)
   }
 
   const apiBaseUrl = getNhiaApiBaseUrl(settings as unknown as Record<string, unknown>)
@@ -3983,6 +4047,19 @@ const generateNhiaCcCode = async (
     CardNo: memberNumber,
     CardType: getNhiaCardType(memberNumber, payload.cardType || payload.card_type),
   }
+  logNhiaConfigEvent('ccc generation settings', {
+    mode: settings.mode || 'ONLINE_CLOUD',
+    endpoint: 'nhia_configuration',
+    configSource: 'cloud_supabase',
+    source: 'service_role_readback',
+    organizationId,
+    branchId: (settings as Record<string, unknown>).branchId || scopedBranchId,
+    hasApiKey: settings.hasApiKey,
+    hasApiSecret: settings.hasApiSecret,
+    apiBaseUrl,
+    memberLookupEndpointPath: endpointPath,
+    credentialMode: (settings as Record<string, unknown>).credentialMode || (settings as Record<string, unknown>).credential_mode,
+  })
 
   logClaimItBridgeStatus('cc_code.request', { status: 'pending', endpointPath, claimCount: 1 })
   let response: Response
@@ -4043,7 +4120,17 @@ const generateNhiaCcCode = async (
   const ccCode = memberDetails?.ccCode || ''
   if (!ccCode) {
     const failureMessage = getNhiaMemberLookupFailureMessage(memberDetails)
-    if (failureMessage) return { ok: false, error: failureMessage, response: body, receivedKeys }
+    if (failureMessage) {
+      return {
+        ok: true,
+        ccCode: '',
+        source: 'api',
+        memberDetails,
+        eligibilityError: failureMessage,
+        response: body,
+        receivedKeys,
+      }
+    }
     return { status: 'pending', source: 'pending', message: 'Pending CLAIM-it validation', response: body }
   }
   if (ccCode.length !== 5) {
@@ -4303,7 +4390,8 @@ const submitNhiaClaimsDirect = async (
   organizationId: string,
   payload: Record<string, unknown>
 ) => {
-  const settings = await getNhiaApiSettings(adminClient, requesterProfile, organizationId, true)
+  const scopedBranchId = resolveScopedBranchId(requesterProfile, payload)
+  const settings = await getNhiaApiSettings(adminClient, requesterProfile, organizationId, true, scopedBranchId)
   if (!settings?.directApiEnabled || !settings.apiBaseUrl) {
     throw new Error('Direct NHIA API is not configured. Export a claim batch instead.')
   }
@@ -4311,6 +4399,27 @@ const submitNhiaClaimsDirect = async (
   const claimPayload = payload.payload
   if (!claimPayload || typeof claimPayload !== 'object') {
     throw new Error('Direct NHIA submission requires a claim payload.')
+  }
+
+  const expectedFacilityCode = normalizeText(settings.facilityCode)
+  const expectedProviderNumber = normalizeText(settings.providerNumber || settings.providerId)
+  const identityScopes = [
+    claimPayload,
+    (claimPayload as Record<string, unknown>).batch,
+    (claimPayload as Record<string, unknown>).facility,
+    (claimPayload as Record<string, unknown>).provider,
+  ].filter((scope): scope is Record<string, unknown> => Boolean(scope && typeof scope === 'object'))
+  for (const scope of identityScopes) {
+    const payloadFacilityCode = normalizeText(scope.facilityCode || scope.facility_code)
+    const payloadProviderNumber = normalizeText(
+      scope.providerNumber || scope.provider_number || scope.providerId || scope.provider_id
+    )
+    if (payloadFacilityCode && expectedFacilityCode && payloadFacilityCode !== expectedFacilityCode) {
+      throw new Error('Claim payload facility code does not match the saved facility configuration.')
+    }
+    if (payloadProviderNumber && expectedProviderNumber && payloadProviderNumber !== expectedProviderNumber) {
+      throw new Error('Claim payload provider ID does not match the saved facility configuration.')
+    }
   }
 
   const endpointPath = normalizeText(settings.claimEndpointPath)

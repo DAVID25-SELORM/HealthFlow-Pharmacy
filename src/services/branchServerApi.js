@@ -203,6 +203,29 @@ export const getBranchServerHealth = async (timeoutMs = DEFAULT_BRANCH_REQUEST_T
     return body
   })
 
+export const getBranchUpdateStatus = async () => {
+  const response = await branchFetch('/api/updates/status')
+  return response.data || response
+}
+
+export const checkBranchServerUpdates = async () => {
+  const response = await branchFetch('/api/updates/check', {
+    method: 'POST',
+    body: JSON.stringify({}),
+    timeoutMs: LONG_BRANCH_REQUEST_TIMEOUT_MS,
+  })
+  return response.data || response
+}
+
+export const installBranchServerUpdate = async () => {
+  const response = await branchFetch('/api/updates/install', {
+    method: 'POST',
+    body: JSON.stringify({}),
+    timeoutMs: LONG_BRANCH_REQUEST_TIMEOUT_MS,
+  })
+  return response.data || response
+}
+
 export const searchBranchInventory = async ({ term = '', limit = 30 } = {}) => {
   const params = new URLSearchParams()
   if (term) {

@@ -15,6 +15,7 @@ import {
   generateNhiaCcCode,
   getNhiaBatch,
   getNhiaClaim,
+  getNhiaConfigurationHealth,
   getNhiaSettings,
   getNhiaSubmissionLogs,
   getNhiaSummary,
@@ -48,6 +49,13 @@ import {
   syncPendingOutbox,
 } from './supabaseSync.js'
 import { startSyncWorker, stopSyncWorker, waitForSyncWorkerIdle } from './syncWorker.js'
+import {
+  checkForUpdates,
+  getUpdateStatus,
+  installAvailableUpdate,
+  startUpdateScheduler,
+  stopUpdateScheduler,
+} from './updateManager.js'
 
 assertConfiguredForServer()
 
@@ -217,10 +225,18 @@ app.use(express.json({
 }))
 
 app.get('/health', requireBranchToken, (_request, response) => {
+  const database = getDatabaseStatus()
+  const nhia = getNhiaConfigurationHealth()
   response.json({
-    ok: true,
+    ok: database.ok,
     mode: 'local-branch-server',
+    version: getUpdateStatus().currentVersion,
     supabaseSyncConfigured: isSupabaseSyncConfigured(),
+    database: {
+      integrity: database.integrity,
+      sizeBytes: database.estimatedSizeBytes,
+    },
+    nhia,
   })
 })
 
@@ -513,7 +529,16 @@ app.patch('/api/nhia-config', (request, response, next) => {
 })
 
 app.post('/api/nhia-config/test', (_request, response) => {
-  response.json({ data: { ok: true, message: 'NHIA configuration route is available.' } })
+  const health = getNhiaConfigurationHealth()
+  response.json({
+    data: {
+      ok: health.ccGeneration.ready && health.claimItTransfer.ready,
+      message: health.ccGeneration.ready && health.claimItTransfer.ready
+        ? 'NHIA CC generation and CLAIM-it transfer are configured.'
+        : 'NHIA configuration is reachable but incomplete.',
+      health,
+    },
+  })
 })
 
 app.post('/api/nhia/cc-code', async (request, response, next) => {
@@ -882,6 +907,26 @@ app.post('/api/sync/repair', async (request, response, next) => {
   }
 })
 
+app.get('/api/updates/status', (_request, response) => {
+  response.json({ data: getUpdateStatus() })
+})
+
+app.post('/api/updates/check', async (_request, response, next) => {
+  try {
+    response.json({ data: await checkForUpdates() })
+  } catch (error) {
+    response.status(400).json({ error: error.message || 'Unable to check for updates.' })
+  }
+})
+
+app.post('/api/updates/install', async (_request, response, next) => {
+  try {
+    response.status(202).json({ data: await installAvailableUpdate() })
+  } catch (error) {
+    response.status(400).json({ error: error.message || 'Unable to install the update.' })
+  }
+})
+
 app.post('/api/sync/pull-inventory', async (request, response, next) => {
   try {
     response.json(await pullInventorySnapshot({ forceFull: request.body?.forceFull !== false }))
@@ -930,6 +975,7 @@ app.use((error, _request, response, _next) => {
 const server = app.listen(config.port, () => {
   console.log(`HealthFlow local branch server listening on http://localhost:${config.port}`)
   startSyncWorker()
+  startUpdateScheduler()
 })
 
 // ✅ SQLITE CORRUPTION FIX START
@@ -943,6 +989,7 @@ const shutdownGracefully = async (signal) => {
   isShuttingDown = true
   console.log(`${signal} received. Shutting down HealthFlow local branch server...`)
   stopSyncWorker()
+  stopUpdateScheduler()
 
   try {
     await Promise.race([

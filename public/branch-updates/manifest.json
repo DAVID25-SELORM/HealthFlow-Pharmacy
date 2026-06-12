@@ -1,0 +1,9 @@
+{
+  "version": "1.1.0",
+  "releaseNotes": "Adds signed automatic update installation for Linux systemd branches with root-owned helper, health verification, and rollback.",
+  "channel": "stable",
+  "sha256": "fe1dcb278caf3d12cbb7048cdc73d324e7b513e6d9ca263ada96c4df1deac952",
+  "publishedAt": "2026-06-12T10:37:20.5060287Z",
+  "packageUrl": "https://health-flow-pharmacy.vercel.app/branch-updates/healthflow-branch-1.1.0.zip",
+  "signature": "AaS2ouSyz8no0t4s32HRbauC2hTzgMscMtkhE4OxGtnkOpbyA57ZOK4ZeLdzxsjGZr275nSLyBxRYOMeBbN3CA=="
+}

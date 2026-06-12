@@ -1819,6 +1819,16 @@ const Nhis = () => {
         ? generateBranchNhiaCcCode
         : generateHostedNhiaCcCode
       const result = await generateCcCode(claimContext)
+      const memberDetails = result?.memberDetails
+      if (memberDetails) {
+        lastLookedUpMemberRef.current = memberNumber
+        setClaimForm((prev) => applyMemberDetailsToForm(prev, memberDetails))
+      }
+      if (result?.eligibilityError) {
+        setClaimForm((prev) => ({ ...prev, cccNo: '', ccCode: '' }))
+        notify(result.eligibilityError, 'warning')
+        return
+      }
       if (result?.status === 'pending' || result?.source === 'pending') {
         setClaimForm((prev) => ({ ...prev, cccNo: '' }))
         notify(result.message || 'Pending NHIA CCC verification.', 'info')
@@ -1831,17 +1841,15 @@ const Nhis = () => {
       if (ccCode.length !== 5) {
         throw new Error('NHIA API returned a CCC/CC code that is not exactly 5 digits.')
       }
-      const md = result.memberDetails
-      if (md) lastLookedUpMemberRef.current = claimForm.memberNo || ''
       setClaimForm((prev) => applyMemberDetailsToForm(
         { ...prev, cccNo: ccCode, ccCode },
-        md || null
+        memberDetails || null
       ))
       notify(
         result.source === 'claimit_bridge'
           ? 'CCC/CC code returned by CLAIM-it.'
           : result.source === 'api'
-            ? `CCC/CC code generated from NHIA API${md?.memberName ? ` — ${md.memberName}` : ''}.`
+            ? `CCC/CC code generated from NHIA API${memberDetails?.memberName ? ` — ${memberDetails.memberName}` : ''}.`
             : 'CCC/CC code generated for direct NHIA submission.',
         'success'
       )

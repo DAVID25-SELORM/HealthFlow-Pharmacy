@@ -2,14 +2,17 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AlertCircle, CheckCircle2, RefreshCcw, Server, UploadCloud } from 'lucide-react'
 import {
   createNhiaBatch,
+  checkBranchServerUpdates,
   downloadNhiaBatchExport,
   getBranchInventory,
   getBranchServerConfig,
   getBranchServerHealth,
   getSavedBranchToken,
   getBranchSyncStatus,
+  getBranchUpdateStatus,
   getNhiaSummary,
   listNhiaClaims,
+  installBranchServerUpdate,
   pullBranchInventory,
   pullBranchReferenceData,
   repairBranchSync,
@@ -20,11 +23,17 @@ import {
 import { getNhiaApiSettings, saveNhiaApiSettings } from '../services/nhisService'
 import { saveOfflinePosSnapshot } from '../services/offlinePosCache'
 import {
+  deactivateBranchSyncClient,
+  listBranchSyncClients,
   listBranchSyncSetupOptions,
   registerBranchSyncClient,
 } from '../services/tenantAdminService'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
+import {
+  BRANCH_UPDATE_MANIFEST_URL,
+  BRANCH_UPDATE_PUBLIC_KEY,
+} from '../config/branchUpdateConfig'
 import { readSignatureFileAsDataUrl } from '../utils/imageUpload'
 import {
   applyNhiaFacilityDefaults,
@@ -106,6 +115,19 @@ const blankNhiaForm = {
 }
 
 const supabaseProjectUrl = import.meta.env.VITE_SUPABASE_URL || ''
+const supabaseSyncKey =
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+  import.meta.env.VITE_SUPABASE_ANON_KEY ||
+  ''
+const branchUpdateManifestUrl =
+  import.meta.env.VITE_HEALTHFLOW_UPDATE_MANIFEST_URL ||
+  BRANCH_UPDATE_MANIFEST_URL
+const branchUpdatePublicKey = String(
+  import.meta.env.VITE_HEALTHFLOW_UPDATE_PUBLIC_KEY ||
+  BRANCH_UPDATE_PUBLIC_KEY
+)
+  .trim()
+  .replace(/\r?\n/g, '\\n')
 
 const buildNhiaForm = (settings, organization) => {
   const resolved = applyNhiaFacilityDefaults(settings, organization)
@@ -157,6 +179,7 @@ export default function OfflineSync() {
   const [branchTokenForm, setBranchTokenForm] = useState(() => getSavedBranchToken())
   const [health, setHealth] = useState(null)
   const [status, setStatus] = useState(null)
+  const [updateStatus, setUpdateStatus] = useState(null)
   const [loading, setLoading] = useState(true)
   const [busyAction, setBusyAction] = useState('')
   const [error, setError] = useState('')
@@ -175,7 +198,9 @@ export default function OfflineSync() {
     branchSyncToken: '',
   })
   const [setupResult, setSetupResult] = useState(null)
+  const [setupClients, setSetupClients] = useState([])
   const [setupLoading, setSetupLoading] = useState(false)
+  const [setupClientAction, setSetupClientAction] = useState('')
   const normalizedRole = String(role || '').toLowerCase()
   const canManageBranchToken = normalizedRole === 'admin' || normalizedRole === 'super_admin'
   const isSuperAdmin = normalizedRole === 'super_admin'
@@ -188,6 +213,7 @@ export default function OfflineSync() {
     if (!nextConfig.enabled || !nextConfig.token) {
       setHealth(null)
       setStatus(null)
+      setUpdateStatus(null)
       setNhiaSettings(null)
       setNhiaSummary(null)
       setNhiaClaims([])
@@ -198,15 +224,17 @@ export default function OfflineSync() {
 
     try {
       setLoading(true)
-      const [nextHealth, nextStatus, nextNhiaSettings, nextNhiaSummary, nextNhiaClaims] = await Promise.all([
+      const [nextHealth, nextStatus, nextUpdateStatus, nextNhiaSettings, nextNhiaSummary, nextNhiaClaims] = await Promise.all([
         getBranchServerHealth(),
         getBranchSyncStatus(),
+        getBranchUpdateStatus().catch(() => null),
         getNhiaApiSettings({ organizationId: organization?.id || organization?.organization_id }).catch(() => null),
         getNhiaSummary().catch(() => null),
         listNhiaClaims({ limit: 8 }).catch(() => []),
       ])
       setHealth(nextHealth)
       setStatus(nextStatus)
+      setUpdateStatus(nextUpdateStatus)
       setNhiaSettings(nextNhiaSettings)
       setNhiaSummary(nextNhiaSummary)
       setNhiaClaims(nextNhiaClaims)
@@ -217,6 +245,7 @@ export default function OfflineSync() {
     } catch (statusError) {
       setHealth(null)
       setStatus(null)
+      setUpdateStatus(null)
       setNhiaSettings(null)
       setNhiaSummary(null)
       setNhiaClaims([])
@@ -258,13 +287,6 @@ export default function OfflineSync() {
           ...current,
           organizationId: current.organizationId || options.organizations?.[0]?.id || '',
         }))
-        if (options.fallback) {
-          notify(
-            options.fallbackReason ||
-              'Loaded organizations through the tenant dashboard. Deploy tenant-signup to enable full branch setup.',
-            'warning'
-          )
-        }
       } catch (setupError) {
         notify(setupError.message || 'Unable to load branch setup options.', 'error')
       }
@@ -272,6 +294,24 @@ export default function OfflineSync() {
 
     void loadSetupOptions()
   }, [isSuperAdmin, notify])
+
+  const loadSetupClients = useCallback(async (organizationId) => {
+    if (!isSuperAdmin || !organizationId) {
+      setSetupClients([])
+      return
+    }
+
+    try {
+      setSetupClients(await listBranchSyncClients(organizationId))
+    } catch (setupError) {
+      setSetupClients([])
+      notify(setupError.message || 'Unable to load registered branch machines.', 'error')
+    }
+  }, [isSuperAdmin, notify])
+
+  useEffect(() => {
+    void loadSetupClients(setupForm.organizationId)
+  }, [loadSetupClients, setupForm.organizationId])
 
   const recordEntries = useMemo(
     () =>
@@ -383,17 +423,40 @@ export default function OfflineSync() {
       setSetupLoading(true)
       setSetupResult(null)
       const branchSyncToken = setupForm.branchSyncToken.trim() || generateSetupToken()
+      const branchServerToken = generateSetupToken()
+      const nhiaConfigSecretKey = generateSetupToken()
       const result = await registerBranchSyncClient({
         ...setupForm,
         branchSyncToken,
       })
       setSetupForm((current) => ({ ...current, branchSyncToken }))
-      setSetupResult(result)
-      notify('Branch sync client registered. Put the generated token in the pharmacy machine .env.', 'success')
+      setSetupResult({ ...result, branchServerToken, nhiaConfigSecretKey })
+      await loadSetupClients(setupForm.organizationId)
+      notify('Branch sync client registered. Save the one-time setup block on the facility machine.', 'success')
     } catch (setupError) {
       notify(setupError.message || 'Unable to register branch sync client.', 'error')
     } finally {
       setSetupLoading(false)
+    }
+  }
+
+  const deactivateSetupClient = async (client) => {
+    if (!window.confirm(`Deactivate ${client.name}? This machine will stop syncing until it is registered again.`)) {
+      return
+    }
+
+    try {
+      setSetupClientAction(client.id)
+      await deactivateBranchSyncClient({
+        organizationId: setupForm.organizationId,
+        syncClientId: client.id,
+      })
+      await loadSetupClients(setupForm.organizationId)
+      notify('Branch sync client deactivated.', 'success')
+    } catch (setupError) {
+      notify(setupError.message || 'Unable to deactivate branch sync client.', 'error')
+    } finally {
+      setSetupClientAction('')
     }
   }
 
@@ -402,6 +465,35 @@ export default function OfflineSync() {
     setBranchTokenForm(savedToken)
     setConfig(getBranchServerConfig())
     notify(savedToken ? 'Branch token saved in this browser.' : 'Branch token removed from this browser.', 'success')
+  }
+
+  const checkForBranchUpdates = async () => {
+    try {
+      setBusyAction('update-check')
+      const nextStatus = await checkBranchServerUpdates()
+      setUpdateStatus(nextStatus)
+      notify(nextStatus.message || 'Update check completed.', nextStatus.available ? 'warning' : 'success')
+    } catch (updateError) {
+      notify(updateError.message || 'Unable to check for branch server updates.', 'error')
+    } finally {
+      setBusyAction('')
+    }
+  }
+
+  const installBranchUpdate = async () => {
+    if (!window.confirm('Install the HealthFlow branch update now? The localhost app will restart briefly.')) {
+      return
+    }
+
+    try {
+      setBusyAction('update-install')
+      const nextStatus = await installBranchServerUpdate()
+      setUpdateStatus(nextStatus)
+      notify('Update installation started. The localhost app will restart briefly.', 'success')
+    } catch (updateError) {
+      notify(updateError.message || 'Unable to install the branch server update.', 'error')
+      setBusyAction('')
+    }
   }
 
   const updateNhiaForm = (field, value) => {
@@ -473,6 +565,13 @@ export default function OfflineSync() {
   const recentEventFailures = status?.recentFailures?.events || []
   const hasFailures = recentRecordFailures.length > 0 || recentEventFailures.length > 0
   const isConnected = Boolean(health?.ok)
+  const branchUpdateMessage = updateStatus?.configured === false
+    ? 'Automatic updates are not configured on this facility machine.'
+    : updateStatus?.installerSupported === false
+      ? `Automatic installation is not supported on ${updateStatus.platform || 'this platform'}.`
+      : updateStatus?.installerReady === false
+        ? 'The update helper is not installed. Rerun the branch service installer once.'
+        : updateStatus?.message || 'Check for a signed HealthFlow branch update.'
 
   return (
     <div className="offline-sync-page">
@@ -515,6 +614,81 @@ export default function OfflineSync() {
         </section>
       )}
 
+      {canManageBranchToken && (
+        <section className="offline-sync-section branch-update-section">
+          <div className="offline-sync-section-header">
+            <div>
+              <h2>Local App Updates</h2>
+              <p>Securely update the localhost server and offline app without replacing facility data or credentials.</p>
+            </div>
+          </div>
+          <div className="branch-update-grid">
+            <div>
+              <span>Installed version</span>
+              <strong>{updateStatus?.currentVersion || health?.version || '-'}</strong>
+            </div>
+            <div>
+              <span>Latest version</span>
+              <strong>{updateStatus?.latestVersion || '-'}</strong>
+            </div>
+            <div>
+              <span>Update channel</span>
+              <strong>{updateStatus?.channel || 'stable'}</strong>
+            </div>
+            <div>
+              <span>Server platform</span>
+              <strong>{updateStatus?.platform || '-'}</strong>
+            </div>
+            <div>
+              <span>Status</span>
+              <strong>{updateStatus?.state || (isConnected ? 'idle' : 'disconnected')}</strong>
+            </div>
+            <div>
+              <span>Scheduled checks</span>
+              <strong>
+                {updateStatus?.autoCheckHours > 0
+                  ? `Every ${updateStatus.autoCheckHours}h`
+                  : 'Disabled'}
+              </strong>
+            </div>
+            <div>
+              <span>Automatic install</span>
+              <strong>{updateStatus?.autoInstall ? 'Enabled' : 'Manual approval'}</strong>
+            </div>
+          </div>
+          <div className="branch-update-message">
+            {branchUpdateMessage}
+          </div>
+          {updateStatus?.releaseNotes && (
+            <p className="branch-update-notes">{updateStatus.releaseNotes}</p>
+          )}
+          <div className="branch-setup-footer">
+            <button
+              className="btn btn-outline"
+              type="button"
+              onClick={() => void checkForBranchUpdates()}
+              disabled={!isConnected || Boolean(busyAction) || updateStatus?.configured === false}
+            >
+              {busyAction === 'update-check' ? 'Checking...' : 'Check for Updates'}
+            </button>
+            <button
+              className="btn btn-primary"
+              type="button"
+              onClick={() => void installBranchUpdate()}
+              disabled={
+                !isConnected ||
+                Boolean(busyAction) ||
+                !updateStatus?.available ||
+                updateStatus?.installerSupported === false ||
+                updateStatus?.installerReady === false
+              }
+            >
+              {busyAction === 'update-install' ? 'Starting...' : 'Download and Install'}
+            </button>
+          </div>
+        </section>
+      )}
+
       {isSuperAdmin && (
         <section className="offline-sync-section branch-setup-section">
           <div className="offline-sync-section-header">
@@ -540,6 +714,7 @@ export default function OfflineSync() {
                     ),
                   }))
                   setSetupResult(null)
+                  setSetupClients([])
                 }}
                 disabled={setupLoading}
               >
@@ -619,12 +794,57 @@ export default function OfflineSync() {
             <span>Run this once per pharmacy machine. Supabase stores only the token hash.</span>
           </div>
           {setupResult && (
-            <pre className="branch-setup-env">{`ORGANIZATION_ID=${setupResult.organizationId}
+            <div className="branch-setup-result">
+              <p>This setup is shown once. Re-registering the same client name rotates its sync token.</p>
+              <pre className="branch-setup-env">{`PORT=4780
+BRANCH_SERVER_TOKEN=${setupResult.branchServerToken}
+NHIA_CONFIG_SECRET_KEY=${setupResult.nhiaConfigSecretKey}
+ORGANIZATION_ID=${setupResult.organizationId}
 BRANCH_ID=${setupResult.branchId}
 BRANCH_SYNC_TOKEN=${setupResult.branchSyncToken}
 SUPABASE_URL=${supabaseProjectUrl || '<your-supabase-project-url>'}
-SUPABASE_SYNC_KEY=<your-supabase-anon-or-publishable-key>`}</pre>
+SUPABASE_SYNC_KEY=${supabaseSyncKey || '<your-supabase-anon-or-publishable-key>'}
+HEALTHFLOW_UPDATE_MANIFEST_URL=${branchUpdateManifestUrl || '<your-signed-update-manifest-url>'}
+HEALTHFLOW_UPDATE_PUBLIC_KEY=${branchUpdatePublicKey || '<your-update-public-key-with-escaped-newlines>'}
+HEALTHFLOW_UPDATE_AUTO_CHECK_HOURS=24
+HEALTHFLOW_UPDATE_AUTO_INSTALL=false`}</pre>
+            </div>
           )}
+          <div className="branch-client-list">
+            <div className="branch-client-list-header">
+              <strong>Registered machines</strong>
+              <span>Use the same client name to rotate its token.</span>
+            </div>
+            {setupClients.length === 0 ? (
+              <p className="sync-empty">No branch machines registered for this facility.</p>
+            ) : (
+              setupClients.map((client) => (
+                <div className="branch-client-row" key={client.id}>
+                  <div>
+                    <strong>{client.name}</strong>
+                    <span>
+                      {client.branchName || client.branchId}
+                      {client.branchCode ? ` (${client.branchCode})` : ''}
+                    </span>
+                  </div>
+                  <span>{client.lastSeenAt ? `Last seen ${formatDateTime(client.lastSeenAt)}` : 'Never connected'}</span>
+                  <span className={client.isActive ? 'sync-client-active' : 'sync-client-inactive'}>
+                    {client.isActive ? 'Active' : 'Inactive'}
+                  </span>
+                  {client.isActive && (
+                    <button
+                      className="btn btn-outline btn-sm"
+                      type="button"
+                      disabled={setupClientAction === client.id}
+                      onClick={() => void deactivateSetupClient(client)}
+                    >
+                      {setupClientAction === client.id ? 'Deactivating...' : 'Deactivate'}
+                    </button>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
         </section>
       )}
 

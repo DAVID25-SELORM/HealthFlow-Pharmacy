@@ -689,7 +689,7 @@ const maskCredentials = (payload = {}) =>
   )
 
 const NHIA_SECRET_MASK = '\u2022'.repeat(8)
-const NHIA_SECRET_FIELDS = new Set(['apiKey', 'apiSecret', 'password'])
+const NHIA_SECRET_FIELDS = new Set(['apiKey', 'apiSecret', 'username', 'password'])
 const NHIA_SECRET_PREFIX = 'hfsec:aesgcm:v1:'
 const NHIA_LEGACY_SECRET_PREFIX = 'hfsec:v1:'
 const NHIA_SECRET_MASK_VALUES = new Set([NHIA_SECRET_MASK, '\u2022'.repeat(8), '\u2022'.repeat(12)])
@@ -968,7 +968,9 @@ const mapSettingsRow = (row, { includeCredentials = false } = {}) => {
       : '',
     hasApiKey: includeCredentials ? Boolean(credentials.apiKey) : Boolean(row.api_key_encrypted),
     hasApiSecret: includeCredentials ? Boolean(credentials.apiSecret) : Boolean(row.api_secret_encrypted),
-    username: row.username || '',
+    username: includeCredentials ? row.username || '' : '',
+    hasUsername: Boolean(row.username),
+    has_username: Boolean(row.username),
     passwordEncrypted: row.password_encrypted ? NHIA_SECRET_MASK : '',
     hasPassword: Boolean(row.password_encrypted),
     nhisMemberDigits: Number(row.nhis_member_digits || DEFAULT_NHIS_MEMBER_DIGITS),
@@ -1049,8 +1051,15 @@ const buildClaimBridgeEnvNhiaSettings = ({ includeCredentials = false } = {}) =>
     configSource: 'claim_bridge_env',
     facilityCode: config.nhiaFacilityCode || '',
     facility_code: config.nhiaFacilityCode || '',
-    credentialCode: config.nhiaFacilityCode || '',
-    credential_code: config.nhiaFacilityCode || '',
+    providerId: config.nhiaProviderId || '',
+    provider_id: config.nhiaProviderId || '',
+    providerNumber: config.nhiaProviderId || '',
+    provider_number: config.nhiaProviderId || '',
+    credentialCode: config.nhiaCredentialCode || config.nhiaFacilityCode || '',
+    credential_code: config.nhiaCredentialCode || config.nhiaFacilityCode || '',
+    claimsOfficerName: config.nhiaClaimsOfficerName || '',
+    claims_officer_name: config.nhiaClaimsOfficerName || '',
+    accreditationExpiryDate: config.nhiaAccreditationExpiryDate || '',
     integrationMode: DEFAULT_NHIA_INTEGRATION_MODE,
     integration_mode: DEFAULT_NHIA_INTEGRATION_MODE,
     claimControlMode: 'direct_api',
@@ -1063,10 +1072,13 @@ const buildClaimBridgeEnvNhiaSettings = ({ includeCredentials = false } = {}) =>
     api_base_url: nhiaEligibilityBaseUrl,
     nhiaEligibilityBaseUrl,
     nhia_eligibility_base_url: nhiaEligibilityBaseUrl,
-    claimitSubmitBaseUrl: DEFAULT_CLAIMIT_SUBMIT_BASE_URL,
-    claimit_submit_base_url: DEFAULT_CLAIMIT_SUBMIT_BASE_URL,
-    productionBaseUrl: DEFAULT_CLAIMIT_SUBMIT_BASE_URL,
-    production_base_url: DEFAULT_CLAIMIT_SUBMIT_BASE_URL,
+    claimitSubmitBaseUrl: config.claimBridge.claimItSubmitBaseUrl || DEFAULT_CLAIMIT_SUBMIT_BASE_URL,
+    claimit_submit_base_url: config.claimBridge.claimItSubmitBaseUrl || DEFAULT_CLAIMIT_SUBMIT_BASE_URL,
+    productionBaseUrl: config.claimBridge.claimItSubmitBaseUrl || DEFAULT_CLAIMIT_SUBMIT_BASE_URL,
+    production_base_url: config.claimBridge.claimItSubmitBaseUrl || DEFAULT_CLAIMIT_SUBMIT_BASE_URL,
+    claimEndpointPath: config.claimBridge.claimSubmitPath || DEFAULT_CLAIMIT_CLAIM_ENDPOINT,
+    claimSubmitEndpoint: config.claimBridge.claimSubmitPath || DEFAULT_CLAIMIT_CLAIM_ENDPOINT,
+    claim_submit_endpoint: config.claimBridge.claimSubmitPath || DEFAULT_CLAIMIT_CLAIM_ENDPOINT,
     ccEndpointPath,
     cc_endpoint_path: ccEndpointPath,
     ccCodeEndpointPath: ccEndpointPath,
@@ -1105,6 +1117,8 @@ const applyEnvNhiaCredentialOverrides = (settings, { includeCredentials = false 
   const envApiKey = normalizeText(config.claimBridge.upstreamApiKey)
   const envApiSecret = normalizeText(config.claimBridge.upstreamApiSecret)
   const envFacilityCode = normalizeText(config.nhiaFacilityCode)
+  const envProviderId = normalizeText(config.nhiaProviderId)
+  const envCredentialCode = normalizeText(config.nhiaCredentialCode)
   const envUsername = normalizeText(config.claimBridge.upstreamUsername)
   const envPassword = normalizeText(config.claimBridge.upstreamPassword)
   const hasCredentialOverride = Boolean(envApiKey || envApiSecret || envUsername || envPassword)
@@ -1123,6 +1137,8 @@ const applyEnvNhiaCredentialOverrides = (settings, { includeCredentials = false 
   const hasOverride = Boolean(
     hasCredentialOverride ||
     envFacilityCode ||
+    envProviderId ||
+    envCredentialCode ||
     hasHeaderOverride
   )
 
@@ -1160,8 +1176,20 @@ const applyEnvNhiaCredentialOverrides = (settings, { includeCredentials = false 
     configSource: `${settings.configSource || settings.source || 'settings'}+env`,
     facilityCode: envFacilityCode || settings.facilityCode || '',
     facility_code: envFacilityCode || settings.facility_code || settings.facilityCode || '',
-    credentialCode: envFacilityCode || settings.credentialCode || settings.credential_code || '',
-    credential_code: envFacilityCode || settings.credential_code || settings.credentialCode || '',
+    providerId: envProviderId || settings.providerId || settings.provider_id || '',
+    provider_id: envProviderId || settings.provider_id || settings.providerId || '',
+    providerNumber: envProviderId || settings.providerNumber || settings.provider_number || '',
+    provider_number: envProviderId || settings.provider_number || settings.providerNumber || '',
+    credentialCode: envCredentialCode || envFacilityCode || settings.credentialCode || settings.credential_code || '',
+    credential_code: envCredentialCode || envFacilityCode || settings.credential_code || settings.credentialCode || '',
+    claimsOfficerName: normalizeText(config.nhiaClaimsOfficerName) || settings.claimsOfficerName || '',
+    claims_officer_name: normalizeText(config.nhiaClaimsOfficerName) || settings.claims_officer_name || settings.claimsOfficerName || '',
+    accreditationExpiryDate: normalizeText(config.nhiaAccreditationExpiryDate) || settings.accreditationExpiryDate || '',
+    claimitSubmitBaseUrl: normalizeText(config.claimBridge.claimItSubmitBaseUrl) || settings.claimitSubmitBaseUrl || '',
+    claimit_submit_base_url: normalizeText(config.claimBridge.claimItSubmitBaseUrl) || settings.claimit_submit_base_url || '',
+    claimEndpointPath: normalizeText(config.claimBridge.claimSubmitPath) || settings.claimEndpointPath || '',
+    claimSubmitEndpoint: normalizeText(config.claimBridge.claimSubmitPath) || settings.claimSubmitEndpoint || '',
+    claim_submit_endpoint: normalizeText(config.claimBridge.claimSubmitPath) || settings.claim_submit_endpoint || '',
     credentials,
     credentialSummary,
     hasApiKey: Boolean(envApiKey || settings.hasApiKey || settings.has_api_key),
@@ -1282,6 +1310,44 @@ export const getNhiaSettings = ({ includeCredentials = false } = {}) => {
     hasApiSecret: settings?.hasApiSecret,
   })
   return settings
+}
+
+export const getNhiaConfigurationHealth = () => {
+  const settings = getNhiaSettings({ includeCredentials: true })
+  const credentials = settings?.credentials || {}
+  const ccMissing = [
+    !normalizeText(settings?.apiBaseUrl || settings?.api_base_url) && 'eligibilityBaseUrl',
+    !normalizeText(settings?.memberLookupEndpointPath || settings?.member_lookup_endpoint_path) && 'memberLookupEndpoint',
+    !hasUsableNhiaSecret(credentials.apiKey || credentials.token) && 'apiKey',
+    !hasUsableNhiaSecret(credentials.apiSecret) && 'apiSecret',
+  ].filter(Boolean)
+  const transferMissing = [
+    !normalizeText(settings?.facilityCode || settings?.facility_code) && 'facilityCode',
+    !normalizeText(settings?.providerNumber || settings?.provider_number || settings?.providerId) && 'providerId',
+    !normalizeText(settings?.claimitSubmitBaseUrl || settings?.claimit_submit_base_url) && 'claimItSubmitBaseUrl',
+    !normalizeText(settings?.claimEndpointPath || settings?.claim_submit_endpoint) && 'claimSubmitEndpoint',
+  ].filter(Boolean)
+
+  return {
+    configured: Boolean(settings),
+    source: settings?.configSource || settings?.source || 'none',
+    organizationScoped: Boolean(normalizeText(settings?.organizationId || settings?.organization_id || config.organizationId)),
+    branchScoped: Boolean(normalizeText(settings?.branchId || settings?.branch_id || config.branchId)),
+    ccGeneration: {
+      ready: ccMissing.length === 0,
+      missing: ccMissing,
+    },
+    claimItTransfer: {
+      ready: transferMissing.length === 0,
+      missing: transferMissing,
+    },
+    credentials: {
+      apiKeySaved: hasUsableNhiaSecret(credentials.apiKey || credentials.token),
+      apiSecretSaved: hasUsableNhiaSecret(credentials.apiSecret),
+      usernameSaved: Boolean(normalizeText(credentials.username)),
+      passwordSaved: hasUsableNhiaSecret(credentials.password),
+    },
+  }
 }
 
 const hasUsableNhiaSecret = (value) => {
@@ -2328,7 +2394,14 @@ export const generateNhiaCcCode = async (claimContext = {}) => {
           }
         }
         const failureMessage = getNhiaMemberLookupFailureMessage(result)
-        if (failureMessage) throw new Error(failureMessage)
+        if (failureMessage) {
+          return {
+            ccCode: '',
+            source: 'api',
+            memberDetails: result,
+            eligibilityError: failureMessage,
+          }
+        }
       } catch (lookupError) {
         const message = lookupError?.message || 'genCCC fallback failed'
         logSubmission({
@@ -2384,6 +2457,23 @@ export const submitNhiaDirectPayload = async ({ payload, claimIds = [], action =
   }
   if (!payload || typeof payload !== 'object') {
     throw new Error('Direct NHIA submission requires a claim payload.')
+  }
+
+  const expectedFacilityCode = normalizeText(settings.facilityCode)
+  const expectedProviderNumber = normalizeText(settings.providerNumber || settings.providerId)
+  const identityScopes = [payload, payload.batch, payload.facility, payload.provider]
+    .filter((scope) => scope && typeof scope === 'object')
+  for (const scope of identityScopes) {
+    const payloadFacilityCode = normalizeText(scope.facilityCode || scope.facility_code)
+    const payloadProviderNumber = normalizeText(
+      scope.providerNumber || scope.provider_number || scope.providerId || scope.provider_id
+    )
+    if (payloadFacilityCode && expectedFacilityCode && payloadFacilityCode !== expectedFacilityCode) {
+      throw new Error('Claim payload facility code does not match the saved facility configuration.')
+    }
+    if (payloadProviderNumber && expectedProviderNumber && payloadProviderNumber !== expectedProviderNumber) {
+      throw new Error('Claim payload provider ID does not match the saved facility configuration.')
+    }
   }
 
   const normalizedClaimIds = Array.isArray(claimIds)

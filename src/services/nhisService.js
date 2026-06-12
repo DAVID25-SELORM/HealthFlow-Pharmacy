@@ -347,10 +347,11 @@ const NHIA_API_SETTINGS_CACHE_FIELDS = [
   'exportFormat',
   'export_format',
 ]
-const NHIA_SECRET_FIELDS = new Set(['apiKey', 'apiSecret', 'password'])
+const NHIA_SECRET_MASK_VALUES = new Set(['\u2022'.repeat(8), '\u2022'.repeat(12)])
+const NHIA_SECRET_FIELDS = new Set(['apiKey', 'apiSecret', 'username', 'password'])
+const isNhiaSecretMask = (value) => NHIA_SECRET_MASK_VALUES.has(normalizeText(value))
 const NHIA_API_CONFIG_TABLE = 'nhia_configuration'
 const NHIA_CONFIG_TABLE = 'nhia_configuration'
-const NHIA_LEGACY_INTEGRATIONS_TABLE = 'organization_nhia_integrations'
 const DEFAULT_NHIA_API_BASE_URL = 'https://elig.nhia.gov.gh:5000'
 const DEFAULT_CLAIMIT_SUBMIT_BASE_URL = 'http://localhost:31719/json-api'
 const DEFAULT_NHIA_MEMBER_LOOKUP_ENDPOINT = '/api/hmis/genCCC'
@@ -2068,6 +2069,7 @@ const readCachedNhiaApiSettings = (organizationId = '') => {
   if (!canUseNhiaApiSettingsCache()) return null
 
   const cacheKeys = [
+    NHIA_API_SETTINGS_CACHE_PREFIX,
     getNhiaApiSettingsCacheKey(organizationId),
     getNhiaApiSettingsCacheKey(),
   ].filter((key, index, keys) => key && keys.indexOf(key) === index)
@@ -2088,6 +2090,30 @@ const readCachedNhiaApiSettings = (organizationId = '') => {
   return null
 }
 
+const clearCachedNhiaApiSettings = (organizationId = '') => {
+  if (!canUseNhiaApiSettingsCache()) return
+
+  try {
+    const explicitKeys = new Set([
+      NHIA_API_SETTINGS_CACHE_PREFIX,
+      getNhiaApiSettingsCacheKey(organizationId),
+      getNhiaApiSettingsCacheKey(),
+    ])
+    const prefixedKeys = []
+    for (let index = 0; index < window.localStorage.length; index += 1) {
+      const key = window.localStorage.key(index)
+      if (key && key.startsWith(NHIA_API_SETTINGS_CACHE_PREFIX)) {
+        prefixedKeys.push(key)
+      }
+    }
+    for (const key of new Set([...explicitKeys, ...prefixedKeys])) {
+      window.localStorage.removeItem(key)
+    }
+  } catch {
+    // Browser storage is only a convenience fallback.
+  }
+}
+
 const getNhiaConfigMode = async () => {
   await refreshConnectivityState().catch(() => null)
   if (shouldUseBranchServer()) {
@@ -2099,302 +2125,6 @@ const getNhiaConfigMode = async () => {
 }
 
 const readOfflineNhiaConfig = (organizationId = '') => readCachedNhiaApiSettings(organizationId)
-
-const getCurrentUserBranchIdForNhiaConfig = async () => {
-  try {
-    const { data: authData } = await supabase.auth.getUser()
-    const userId = authData?.user?.id
-    if (!userId) return ''
-
-    const { data, error } = await supabase
-      .from('users')
-      .select('branch_id')
-      .eq('id', userId)
-      .maybeSingle()
-
-    if (error) return ''
-    return normalizeText(data?.branch_id)
-  } catch {
-    return ''
-  }
-}
-
-const readHostedNhiaConfigDirect = async (organizationId = '', preferredSettings = null) => {
-  if (!supabase) return null
-
-  try {
-    let preferredConfigRow = null
-    const preferredId = normalizeText(preferredSettings?.id)
-    if (preferredId) {
-      const { data, error } = await supabase
-        .from(NHIA_CONFIG_TABLE)
-        .select('*')
-        .eq('id', preferredId)
-        .maybeSingle()
-
-      if (!error && data) preferredConfigRow = data
-    }
-
-    const branchId = normalizeText(
-      preferredSettings?.branchId ||
-        preferredSettings?.branch_id ||
-        await getCurrentUserBranchIdForNhiaConfig()
-    )
-
-    let query = supabase
-      .from(NHIA_CONFIG_TABLE)
-      .select('*')
-      .eq('is_active', true)
-      .order('updated_at', { ascending: false })
-      .limit(1)
-
-    if (organizationId) query = query.eq('organization_id', organizationId)
-    query = branchId ? query.eq('branch_id', branchId) : query.is('branch_id', null)
-
-    const { data, error } = await query.maybeSingle()
-    const configRow = !error && data ? data : null
-
-    let fallbackQuery = supabase
-      .from(NHIA_CONFIG_TABLE)
-      .select('*')
-      .eq('is_active', true)
-      .order('updated_at', { ascending: false })
-      .limit(1)
-
-    if (organizationId) fallbackQuery = fallbackQuery.eq('organization_id', organizationId)
-
-    const { data: fallbackData, error: fallbackError } = await fallbackQuery.maybeSingle()
-    const fallbackConfigRow = !fallbackError && fallbackData ? fallbackData : null
-    const legacyRow = await readLatestHostedNhiaIntegrationDirect(organizationId)
-    return pickLatestNhiaConfigRow(preferredConfigRow, configRow, fallbackConfigRow, legacyRow)
-  } catch {
-    // Keep the function response/cache path as the graceful fallback.
-  }
-
-  return null
-}
-
-const getNhiaUpdatedAtTime = (settings = null) => {
-  const value = settings?.updated_at || settings?.updatedAt || settings?.created_at || settings?.createdAt
-  const time = value ? new Date(value).getTime() : 0
-  return Number.isNaN(time) ? 0 : time
-}
-
-const pickLatestNhiaConfigRow = (...rows) =>
-  rows
-    .filter(Boolean)
-    .sort((left, right) => getNhiaUpdatedAtTime(right) - getNhiaUpdatedAtTime(left))[0] || null
-
-const normalizeHostedNhiaIntegrationRow = (row = null) => {
-  if (!row) return null
-
-  const credentialPayload = row.credential_payload && typeof row.credential_payload === 'object'
-    ? row.credential_payload
-    : {}
-  const hasApiKey = Boolean(row.has_api_key || normalizeText(credentialPayload.apiKey))
-  const hasApiSecret = Boolean(row.has_api_secret || normalizeText(credentialPayload.apiSecret))
-  const hasPassword = Boolean(row.has_password || normalizeText(credentialPayload.password))
-  const resolvedBaseUrls = resolveNhiaApiBaseUrls(row)
-
-  return {
-    ...row,
-    organizationId: row.organization_id || '',
-    branchId: row.branch_id || '',
-    facilityCode: row.facility_code || '',
-    providerNumber: row.provider_number || row.provider_id || '',
-    providerId: row.provider_id || row.provider_number || '',
-    hpn: row.hpn || row.provider_number || row.provider_id || '',
-    hpCode: row.hp_code || row.facility_code || '',
-    hp_code: row.hp_code || row.facility_code || '',
-    credentialCode: row.credential_code || row.facility_code || '',
-    accreditationExpiryDate: getNhiaAccreditationExpiryDate(row),
-    claimsOfficerName: row.claims_officer_name || '',
-    ...resolvedBaseUrls,
-    claimEndpointPath: row.claim_endpoint_path || row.claim_submit_endpoint || '',
-    claimSubmitEndpoint: row.claim_submit_endpoint || row.claim_endpoint_path || '',
-    claimStatusEndpointPath: row.claim_status_endpoint_path || row.claim_status_endpoint || '',
-    claimStatusEndpoint: row.claim_status_endpoint || row.claim_status_endpoint_path || '',
-    memberLookupEndpointPath: row.member_lookup_endpoint_path || row.member_lookup_endpoint || '',
-    memberLookupEndpoint: row.member_lookup_endpoint || row.member_lookup_endpoint_path || '',
-    ccEndpointPath: row.cc_endpoint_path || row.cc_code_endpoint_path || '',
-    ccCodeEndpointPath: row.cc_code_endpoint_path || row.cc_endpoint_path || '',
-    integrationMode: normalizeNhiaIntegrationMode(row.integration_mode),
-    credentialMode: row.credential_mode || 'claimit_token',
-    credentials: credentialPayload,
-    credentialSummary: {
-      apiKey: hasApiKey,
-      apiSecret: hasApiSecret,
-      password: hasPassword,
-      username: Boolean(row.username || credentialPayload.username),
-    },
-    hasApiKey,
-    has_api_key: hasApiKey,
-    hasApiSecret,
-    has_api_secret: hasApiSecret,
-    hasPassword,
-    has_password: hasPassword,
-    sourceTable: NHIA_LEGACY_INTEGRATIONS_TABLE,
-  }
-}
-
-const readLatestHostedNhiaIntegrationDirect = async (organizationId = '') => {
-  if (!supabase || !organizationId) return null
-
-  try {
-    const { data, error } = await supabase
-      .from(NHIA_LEGACY_INTEGRATIONS_TABLE)
-      .select('*')
-      .eq('organization_id', organizationId)
-      .eq('is_active', true)
-      .order('updated_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-
-    if (error || !data) return null
-    return normalizeHostedNhiaIntegrationRow(data)
-  } catch {
-    return null
-  }
-}
-
-const getHostedNhiaConfigRowPayload = async (settings = {}, organizationId = '', preferredSettings = null) => {
-  const resolvedOrganizationId = normalizeText(
-    organizationId || settings.organizationId || settings.organization_id || preferredSettings?.organizationId || preferredSettings?.organization_id
-  )
-  if (!resolvedOrganizationId) {
-    throw new Error('Organization is required to save NHIA configuration.')
-  }
-
-  const branchId = normalizeText(
-    settings.branchId ||
-      settings.branch_id ||
-      preferredSettings?.branchId ||
-      preferredSettings?.branch_id ||
-      await getCurrentUserBranchIdForNhiaConfig()
-  )
-  const resolvedBaseUrls = resolveNhiaApiBaseUrls(settings)
-  const facilityCode = normalizeText(settings.facilityCode || settings.facility_code)
-  const providerNumber = normalizeText(settings.providerNumber || settings.provider_number || settings.providerId || settings.provider_id)
-  const hpn = normalizeText(settings.hpn || settings.HPN || providerNumber)
-  const hpCode = normalizeText(settings.hpCode || settings.hp_code || settings.HPCode || facilityCode)
-  const credentialCode = normalizeText(settings.credentialCode || settings.credential_code || facilityCode)
-  const claimEndpointPath = normalizeText(settings.claimEndpointPath || settings.claim_endpoint_path || settings.claimSubmitEndpoint || settings.claim_submit_endpoint)
-  const claimStatusEndpointPath = normalizeText(settings.claimStatusEndpointPath || settings.claim_status_endpoint_path || settings.claimStatusEndpoint || settings.claim_status_endpoint)
-  const memberLookupEndpointPath = normalizeText(settings.memberLookupEndpointPath || settings.member_lookup_endpoint_path || settings.memberLookupEndpoint || settings.member_lookup_endpoint)
-  const ccEndpointPath = normalizeText(settings.ccEndpointPath || settings.cc_endpoint_path || settings.ccCodeEndpointPath || settings.cc_code_endpoint_path)
-  const ccCodeEndpointPath = normalizeText(settings.ccCodeEndpointPath || settings.cc_code_endpoint_path || settings.ccEndpointPath || settings.cc_endpoint_path)
-
-  return {
-    organization_id: resolvedOrganizationId,
-    branch_id: branchId || null,
-    mode: 'ONLINE_CLOUD',
-    provider_id: providerNumber || null,
-    facility_code: facilityCode || null,
-    provider_number: providerNumber || null,
-    hpn: hpn || null,
-    hp_code: hpCode || null,
-    scheme_name: normalizeText(settings.schemeName || settings.scheme_name) || 'National Health Insurance',
-    facility_type: normalizeText(settings.facilityType || settings.facility_type) || null,
-    pharmacy_facility_level: normalizeText(settings.pharmacyFacilityLevel || settings.pharmacy_facility_level) || null,
-    provider_level_code: normalizeText(settings.providerLevelCode || settings.provider_level_code) || null,
-    credential_code: credentialCode || null,
-    license_number: normalizeText(settings.licenseNumber || settings.license_number) || null,
-    accreditation_expiry_date: getNhiaAccreditationExpiryDate(settings) || null,
-    integration_mode: normalizeNhiaIntegrationMode(settings.integrationMode || settings.integration_mode || settings.nhiaApiMode || settings.nhia_api_mode),
-    connection_profile: normalizeText(settings.connectionProfile || settings.connection_profile) || 'local_server',
-    validation_mode: normalizeText(settings.validationMode || settings.validation_mode) || 'validate_before_submit',
-    claim_control_mode: normalizeText(settings.claimControlMode || settings.claim_control_mode) || 'manual',
-    sandbox_base_url: normalizeText(settings.sandboxBaseUrl || settings.sandbox_base_url).replace(/\/+$/, '') || null,
-    production_base_url: resolvedBaseUrls.claimitSubmitBaseUrl || null,
-    provider_type_description: normalizeText(settings.providerTypeDescription || settings.provider_type_description) || null,
-    provider_class_level: normalizeText(settings.providerClassLevel || settings.provider_class_level) || null,
-    claims_officer_name: normalizeText(settings.claimsOfficerName || settings.claims_officer_name) || null,
-    admission_payment_option: normalizeText(settings.admissionPaymentOption || settings.admission_payment_option) || 'nhis_pays_admission',
-    claimit_validation_enabled: settings.claimitValidationEnabled !== false && settings.claimit_validation_enabled !== false,
-    claims_officer_signature_url: normalizeText(settings.claimsOfficerSignatureUrl || settings.claims_officer_signature_url) || null,
-    submitter_id: normalizeText(settings.submitterId || settings.submitter_id) || null,
-    api_environment: normalizeText(settings.apiEnvironment || settings.api_environment).toLowerCase() === 'sandbox' ? 'sandbox' : 'production',
-    api_base_url: resolvedBaseUrls.apiBaseUrl || null,
-    claim_endpoint_path: claimEndpointPath || null,
-    claim_submit_endpoint: claimEndpointPath || null,
-    claim_validation_endpoint_path: normalizeText(settings.claimValidationEndpointPath || settings.claim_validation_endpoint_path) || null,
-    cc_endpoint_path: ccEndpointPath || null,
-    cc_code_endpoint_path: ccCodeEndpointPath || null,
-    claim_status_endpoint_path: claimStatusEndpointPath || null,
-    claim_status_endpoint: claimStatusEndpointPath || null,
-    member_lookup_endpoint_path: memberLookupEndpointPath || null,
-    member_lookup_endpoint: memberLookupEndpointPath || null,
-    direct_api_enabled: Boolean(settings.directApiEnabled || settings.direct_api_enabled),
-    credential_mode: normalizeText(settings.credentialMode || settings.credential_mode) || 'claimit_token',
-    nhis_member_digits: Number(settings.nhisMemberDigits || settings.nhis_member_digits || 8),
-    ghana_card_digits: Number(settings.ghanaCardDigits || settings.ghana_card_digits || 10),
-    export_format: normalizeText(settings.exportFormat || settings.export_format) || 'json',
-    max_retry_attempts: Math.min(Math.max(Number(settings.maxRetryAttempts || settings.max_retry_attempts || 3), 1), 10),
-    is_active: true,
-    updated_at: new Date().toISOString(),
-  }
-}
-
-const saveHostedNhiaConfigDirect = async (settings = {}, organizationId = '', preferredSettings = null) => {
-  if (!supabase) {
-    throw new Error('Supabase is not configured for direct NHIA configuration save.')
-  }
-
-  const row = await getHostedNhiaConfigRowPayload(settings, organizationId, preferredSettings)
-  const { data, error } = await supabase
-    .from(NHIA_CONFIG_TABLE)
-    .upsert(row, { onConflict: 'organization_id,branch_id' })
-    .select('*')
-    .maybeSingle()
-
-  if (error) {
-    throw error
-  }
-
-  return data || row
-}
-
-const removeHostedNhiaCredentialsDirect = async (organizationId = '', preferredSettings = null) => {
-  if (!supabase) {
-    throw new Error('Supabase is not configured for direct NHIA credential removal.')
-  }
-
-  const resolvedOrganizationId = normalizeText(
-    organizationId || preferredSettings?.organizationId || preferredSettings?.organization_id
-  )
-  if (!resolvedOrganizationId) {
-    throw new Error('Organization is required to remove NHIA API credentials.')
-  }
-
-  const branchId = normalizeText(
-    preferredSettings?.branchId ||
-      preferredSettings?.branch_id ||
-      await getCurrentUserBranchIdForNhiaConfig()
-  )
-
-  let query = supabase
-    .from(NHIA_CONFIG_TABLE)
-    .update({
-      api_key_encrypted: null,
-      api_secret_encrypted: null,
-      has_api_key: false,
-      has_api_secret: false,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('organization_id', resolvedOrganizationId)
-
-  query = branchId ? query.eq('branch_id', branchId) : query.is('branch_id', null)
-
-  const { data, error } = await query
-    .select('*')
-    .maybeSingle()
-
-  if (error) {
-    throw error
-  }
-
-  return data || await readHostedNhiaConfigDirect(resolvedOrganizationId, preferredSettings)
-}
 
 const normalizeNhiaConfig = (settings = null, {
   mode = '',
@@ -2556,7 +2286,12 @@ const normalizeNhiaConfig = (settings = null, {
 }
 
 const logNhiaConfigEvent = (event, details = {}) => {
+  if (!import.meta.env.DEV) return
   const payload = {
+    organizationId: details.organizationId || details.organization_id || '',
+    branchId: details.branchId || details.branch_id || '',
+    table: details.table || NHIA_API_CONFIG_TABLE,
+    source: details.source || details.configSource || '',
     mode: details.mode || '',
     saveTarget: details.saveTarget || details.target || '',
     endpoint: details.endpoint || '',
@@ -2565,6 +2300,9 @@ const logNhiaConfigEvent = (event, details = {}) => {
     configSource: details.configSource || details.source || '',
     hasApiKey: Boolean(details.hasApiKey),
     hasApiSecret: Boolean(details.hasApiSecret),
+    apiBaseUrl: details.apiBaseUrl || details.api_base_url || '',
+    memberLookupEndpointPath: details.memberLookupEndpointPath || details.member_lookup_endpoint_path || '',
+    credentialMode: details.credentialMode || details.credential_mode || '',
   }
   console.info(`[NHIA CONFIG] ${event}`, payload)
 }
@@ -2573,7 +2311,7 @@ const buildNhiaCredentialsPayload = (credentials = {}) => {
   const payload = {}
 
   for (const [field, value] of Object.entries(credentials || {})) {
-    if (NHIA_SECRET_FIELDS.has(field) && !normalizeText(value)) continue
+    if (NHIA_SECRET_FIELDS.has(field) && (!normalizeText(value) || isNhiaSecretMask(value))) continue
     if (value !== undefined && value !== null && value !== '') payload[field] = value
   }
 
@@ -3163,7 +2901,7 @@ export const generateBrowserClaimItBridgeCcCode = async (settings = {}, claimCon
   return { ccCode, source: 'claimit_bridge', response: body }
 }
 
-const loadHostedNhiaApiSettings = async ({ organizationId = '', mode = '' } = {}) => {
+const loadHostedNhiaApiSettings = async ({ organizationId = '', mode = '', forceRefresh = false } = {}) => {
   let hostedError = null
   let hostedSettings = null
   try {
@@ -3176,25 +2914,27 @@ const loadHostedNhiaApiSettings = async ({ organizationId = '', mode = '' } = {}
     hostedError = error
   }
 
-  const directHostedSettings = await readHostedNhiaConfigDirect(organizationId, hostedSettings)
-  const cachedSettings = readCachedNhiaApiSettings(organizationId)
-  const selectedSettings = directHostedSettings
-    ? { ...(hostedSettings || {}), ...directHostedSettings }
-    : hostedSettings || cachedSettings
+  const cachedSettings = forceRefresh ? null : readCachedNhiaApiSettings(organizationId)
+  const selectedSettings = hostedSettings || cachedSettings
   if (selectedSettings) {
     const nhiaConfig = normalizeNhiaConfig(selectedSettings, {
       mode,
-      source: directHostedSettings || hostedSettings ? 'cloud_supabase' : 'local_cache',
+      source: hostedSettings ? 'cloud_supabase' : 'local_cache',
       organizationId,
     })
     writeCachedNhiaApiSettings(nhiaConfig, organizationId)
     logNhiaAccreditationExpiryDate('loaded', nhiaConfig.accreditationExpiryDate)
     logNhiaConfigEvent('load', {
+      organizationId,
+      branchId: nhiaConfig.branchId,
       mode,
       configSource: nhiaConfig.configSource,
       endpoint: 'tier-access:get_nhia_api_settings',
       hasApiKey: nhiaConfig.hasApiKey,
       hasApiSecret: nhiaConfig.hasApiSecret,
+      apiBaseUrl: nhiaConfig.apiBaseUrl,
+      memberLookupEndpointPath: nhiaConfig.memberLookupEndpointPath,
+      credentialMode: nhiaConfig.credentialMode,
     })
     return nhiaConfig
   }
@@ -3205,6 +2945,7 @@ const loadHostedNhiaApiSettings = async ({ organizationId = '', mode = '' } = {}
 
 export const getNhiaApiSettings = async (options = {}) => {
   const organizationId = normalizeText(options.organizationId || options.organization_id)
+  const forceRefresh = Boolean(options.forceRefresh || options.force_refresh || options.bypassCache || options.bypass_cache)
   const mode = await getNhiaConfigMode()
 
   if (mode === 'ONLINE_LOCAL_SYNC' || mode === 'OFFLINE_LOCAL') {
@@ -3217,11 +2958,16 @@ export const getNhiaApiSettings = async (options = {}) => {
       })
       writeCachedNhiaApiSettings(nhiaConfig, organizationId)
       logNhiaConfigEvent('load', {
+        organizationId,
+        branchId: nhiaConfig.branchId,
         mode,
         configSource: 'local_branch_server',
         endpoint: '/api/nhia-config',
         hasApiKey: nhiaConfig.hasApiKey,
         hasApiSecret: nhiaConfig.hasApiSecret,
+        apiBaseUrl: nhiaConfig.apiBaseUrl,
+        memberLookupEndpointPath: nhiaConfig.memberLookupEndpointPath,
+        credentialMode: nhiaConfig.credentialMode,
       })
       return nhiaConfig
     } catch (error) {
@@ -3233,11 +2979,16 @@ export const getNhiaApiSettings = async (options = {}) => {
           organizationId,
         })
         logNhiaConfigEvent('load', {
+          organizationId,
+          branchId: nhiaConfig.branchId,
           mode,
           configSource: 'local_cache',
           endpoint: 'localStorage',
           hasApiKey: nhiaConfig.hasApiKey,
           hasApiSecret: nhiaConfig.hasApiSecret,
+          apiBaseUrl: nhiaConfig.apiBaseUrl,
+          memberLookupEndpointPath: nhiaConfig.memberLookupEndpointPath,
+          credentialMode: nhiaConfig.credentialMode,
         })
         return nhiaConfig
       }
@@ -3245,7 +2996,7 @@ export const getNhiaApiSettings = async (options = {}) => {
     }
   }
 
-  const hostedSettings = await loadHostedNhiaApiSettings({ organizationId, mode })
+  const hostedSettings = await loadHostedNhiaApiSettings({ organizationId, mode, forceRefresh })
   if (hostedSettings) return hostedSettings
 
   return normalizeNhiaConfig(null, { mode, source: 'default_app_config', organizationId })
@@ -3261,15 +3012,32 @@ export const saveNhiaApiSettings = async (settings, options = {}) => {
   const mode = await getNhiaConfigMode()
   const sanitizedSettings = sanitizeNhiaApiSettingsPayload(settings)
   sanitizedSettings.mode = mode
+  const expectedHasApiKey = Boolean(
+    sanitizedSettings.hasApiKey ||
+      sanitizedSettings.has_api_key ||
+      sanitizedSettings.credentialSummary?.apiKey ||
+      sanitizedSettings.credentials?.apiKey
+  )
+  const expectedHasApiSecret = Boolean(
+    sanitizedSettings.hasApiSecret ||
+      sanitizedSettings.has_api_secret ||
+      sanitizedSettings.credentialSummary?.apiSecret ||
+      sanitizedSettings.credentials?.apiSecret
+  )
   const validation = validateNhiaConfigForMode(sanitizedSettings)
   if (!validation.valid) {
     logNhiaConfigEvent('save failed', {
+      organizationId,
+      branchId,
       mode,
       saveTarget: mode === 'ONLINE_LOCAL_SYNC' || mode === 'OFFLINE_LOCAL' ? 'local_branch_server' : 'cloud_supabase',
       endpoint: 'validation',
       saveFailed: true,
-      hasApiKey: Boolean(sanitizedSettings.hasApiKey || sanitizedSettings.credentials?.apiKey),
-      hasApiSecret: Boolean(sanitizedSettings.hasApiSecret || sanitizedSettings.credentials?.apiSecret),
+      hasApiKey: expectedHasApiKey,
+      hasApiSecret: expectedHasApiSecret,
+      apiBaseUrl: sanitizedSettings.apiBaseUrl,
+      memberLookupEndpointPath: sanitizedSettings.memberLookupEndpointPath,
+      credentialMode: sanitizedSettings.credentialMode,
     })
     throw new Error(`NHIA configuration is incomplete for ${validation.integrationMode}: ${validation.missing.join(', ')}.`)
   }
@@ -3278,17 +3046,32 @@ export const saveNhiaApiSettings = async (settings, options = {}) => {
     throw new Error('Cannot save cloud NHIA API settings: organizationId is missing.')
   }
   logNhiaConfigEvent('save started', {
+    organizationId,
+    branchId,
     mode,
     saveTarget,
     endpoint: saveTarget === 'local_branch_server' ? '/api/nhia-config' : 'tier-access:save_nhia_api_settings',
-    hasApiKey: Boolean(sanitizedSettings.hasApiKey || sanitizedSettings.credentials?.apiKey),
-    hasApiSecret: Boolean(sanitizedSettings.hasApiSecret || sanitizedSettings.credentials?.apiSecret),
+    hasApiKey: expectedHasApiKey,
+    hasApiSecret: expectedHasApiSecret,
+    apiBaseUrl: sanitizedSettings.apiBaseUrl,
+    memberLookupEndpointPath: sanitizedSettings.memberLookupEndpointPath,
+    credentialMode: sanitizedSettings.credentialMode,
   })
-  console.info('[NHIA CONFIG] payload keys only', {
-    table: saveTarget === 'local_branch_server' ? NHIA_CONFIG_TABLE : NHIA_CONFIG_TABLE,
-    keys: getNhiaPayloadKeys(sanitizedSettings),
-    credentialKeys: getNhiaCredentialKeys(sanitizedSettings),
-  })
+  if (import.meta.env.DEV) {
+    console.info('[NHIA CONFIG] payload keys only', {
+      organizationId,
+      branchId,
+      table: NHIA_CONFIG_TABLE,
+      source: saveTarget,
+      keys: getNhiaPayloadKeys(sanitizedSettings),
+      credentialKeys: getNhiaCredentialKeys(sanitizedSettings),
+      hasApiKey: expectedHasApiKey,
+      hasApiSecret: expectedHasApiSecret,
+      apiBaseUrl: sanitizedSettings.apiBaseUrl,
+      memberLookupEndpointPath: sanitizedSettings.memberLookupEndpointPath,
+      credentialMode: sanitizedSettings.credentialMode,
+    })
+  }
 
   if (saveTarget === 'local_branch_server') {
     try {
@@ -3313,6 +3096,8 @@ export const saveNhiaApiSettings = async (settings, options = {}) => {
       writeCachedNhiaApiSettings(nhiaConfig, organizationId)
       logNhiaAccreditationExpiryDate('saved', nhiaConfig.accreditationExpiryDate)
       logNhiaConfigEvent('save completed', {
+        organizationId,
+        branchId: nhiaConfig.branchId,
         mode,
         saveTarget,
         endpoint: '/api/nhia-config',
@@ -3320,48 +3105,55 @@ export const saveNhiaApiSettings = async (settings, options = {}) => {
         configSource: 'local_branch_server',
         hasApiKey: nhiaConfig.hasApiKey,
         hasApiSecret: nhiaConfig.hasApiSecret,
+        apiBaseUrl: nhiaConfig.apiBaseUrl,
+        memberLookupEndpointPath: nhiaConfig.memberLookupEndpointPath,
+        credentialMode: nhiaConfig.credentialMode,
       })
       return nhiaConfig
     } catch (error) {
       logNhiaConfigEvent('save failed', {
+        organizationId,
+        branchId,
         mode,
         saveTarget,
         endpoint: error?.endpoint || '/api/nhia-config',
         saveFailed: true,
-        hasApiKey: Boolean(sanitizedSettings.hasApiKey || sanitizedSettings.credentials?.apiKey),
-        hasApiSecret: Boolean(sanitizedSettings.hasApiSecret || sanitizedSettings.credentials?.apiSecret),
+        hasApiKey: expectedHasApiKey,
+        hasApiSecret: expectedHasApiSecret,
+        apiBaseUrl: sanitizedSettings.apiBaseUrl,
+        memberLookupEndpointPath: sanitizedSettings.memberLookupEndpointPath,
+        credentialMode: sanitizedSettings.credentialMode,
       })
       throw error
     }
   }
 
   try {
+    clearCachedNhiaApiSettings(organizationId)
     const tierAccessPayload = buildNhiaTierAccessSavePayload({
       organizationId,
       branchId,
       settings: sanitizedSettings,
     })
-    console.info('[NHIA CONFIG] tier-access save payload', redactNhiaLogPayload(tierAccessPayload))
+    if (import.meta.env.DEV) {
+      console.info('[NHIA CONFIG] tier-access save payload', redactNhiaLogPayload(tierAccessPayload))
+    }
     const response = await invokeTierAccess(tierAccessPayload)
-    const directSavedSettings = await saveHostedNhiaConfigDirect(
-      sanitizedSettings,
-      organizationId,
-      response?.settings || null
-    )
     const readBack = await invokeTierAccess({
       action: 'get_nhia_api_settings',
       organizationId,
+      branchId: branchId || null,
     })
-    const directReadBackSettings = await readHostedNhiaConfigDirect(organizationId, directSavedSettings)
     const hostedSettings = {
       ...(response?.settings || {}),
       ...(readBack?.settings || {}),
-      ...(directReadBackSettings || directSavedSettings || {}),
     }
-    console.info('[NHIA CONFIG] cloud response/error', {
-      response: summarizeNhiaApiSettingsForLog(hostedSettings),
-      error: null,
-    })
+    if (import.meta.env.DEV) {
+      console.info('[NHIA CONFIG] cloud response/error', {
+        response: summarizeNhiaApiSettingsForLog(hostedSettings),
+        error: null,
+      })
+    }
 
     if (!hostedSettings || !normalizeText(
       hostedSettings.facility_code ||
@@ -3379,9 +3171,18 @@ export const saveNhiaApiSettings = async (settings, options = {}) => {
       source: 'cloud_supabase',
       organizationId,
     })
+    if (expectedHasApiKey && nhiaConfig.hasApiKey !== true) {
+      throw new Error('NHIA API key save could not be confirmed by backend read-back. Re-save the NHIA API credentials.')
+    }
+    if (expectedHasApiSecret && nhiaConfig.hasApiSecret !== true) {
+      throw new Error('NHIA API secret save could not be confirmed by backend read-back. Re-save the NHIA API credentials.')
+    }
+    clearCachedNhiaApiSettings(organizationId)
     writeCachedNhiaApiSettings(nhiaConfig, organizationId)
     logNhiaAccreditationExpiryDate('saved', nhiaConfig.accreditationExpiryDate)
     logNhiaConfigEvent('save completed', {
+      organizationId,
+      branchId: nhiaConfig.branchId,
       mode: 'ONLINE_CLOUD',
       saveTarget: 'cloud_supabase',
       endpoint: 'tier-access:save_nhia_api_settings',
@@ -3389,24 +3190,36 @@ export const saveNhiaApiSettings = async (settings, options = {}) => {
       configSource: 'cloud_supabase',
       hasApiKey: nhiaConfig.hasApiKey,
       hasApiSecret: nhiaConfig.hasApiSecret,
+      apiBaseUrl: nhiaConfig.apiBaseUrl,
+      memberLookupEndpointPath: nhiaConfig.memberLookupEndpointPath,
+      credentialMode: nhiaConfig.credentialMode,
     })
-    console.info('[NHIA CONFIG] saved successfully', summarizeNhiaApiSettingsForLog(nhiaConfig))
+    if (import.meta.env.DEV) {
+      console.info('[NHIA CONFIG] saved successfully', summarizeNhiaApiSettingsForLog(nhiaConfig))
+    }
     return nhiaConfig
   } catch (error) {
     const summarizedError = summarizeNhiaApiErrorForLog(error)
-    console.error('[NHIA CONFIG] cloud response/error', {
-      response: null,
-      error: summarizedError,
-      body: stringifyNhiaLogValue(error?.body || null),
-    })
-    console.error('[NHIA CONFIG] cloud error body', stringifyNhiaLogValue(error?.body || summarizedError))
+    if (import.meta.env.DEV) {
+      console.error('[NHIA CONFIG] cloud response/error', {
+        response: null,
+        error: summarizedError,
+        body: stringifyNhiaLogValue(error?.body || null),
+      })
+      console.error('[NHIA CONFIG] cloud error body', stringifyNhiaLogValue(error?.body || summarizedError))
+    }
     logNhiaConfigEvent('save failed', {
+      organizationId,
+      branchId,
       mode: 'ONLINE_CLOUD',
       saveTarget: 'cloud_supabase',
       endpoint: 'tier-access:save_nhia_api_settings',
       saveFailed: true,
-      hasApiKey: Boolean(sanitizedSettings.hasApiKey || sanitizedSettings.credentials?.apiKey),
-      hasApiSecret: Boolean(sanitizedSettings.hasApiSecret || sanitizedSettings.credentials?.apiSecret),
+      hasApiKey: expectedHasApiKey,
+      hasApiSecret: expectedHasApiSecret,
+      apiBaseUrl: sanitizedSettings.apiBaseUrl,
+      memberLookupEndpointPath: sanitizedSettings.memberLookupEndpointPath,
+      credentialMode: sanitizedSettings.credentialMode,
     })
     throw error
   }
@@ -3417,6 +3230,7 @@ export const removeNhiaApiCredentials = async (options = {}) => {
   const mode = await getNhiaConfigMode()
 
   if (mode === 'ONLINE_LOCAL_SYNC' || mode === 'OFFLINE_LOCAL') {
+    clearCachedNhiaApiSettings(organizationId)
     const currentSettings = await getBranchNhiaSettings()
     await saveBranchNhiaSettings({
       ...(currentSettings || {}),
@@ -3442,10 +3256,12 @@ export const removeNhiaApiCredentials = async (options = {}) => {
       source: 'local_branch_server',
       organizationId,
     })
+    clearCachedNhiaApiSettings(organizationId)
     writeCachedNhiaApiSettings(nhiaConfig, organizationId)
     return nhiaConfig
   }
 
+  clearCachedNhiaApiSettings(organizationId)
   let responseSettings = null
   try {
     const response = await invokeTierAccess({
@@ -3454,22 +3270,14 @@ export const removeNhiaApiCredentials = async (options = {}) => {
     })
     responseSettings = response?.settings || null
   } catch (error) {
-    console.warn('[NHIA CONFIG] tier-access credential removal failed; trying direct update', summarizeNhiaApiErrorForLog(error))
+    if (import.meta.env.DEV) {
+      console.warn('[NHIA CONFIG] tier-access credential removal failed', summarizeNhiaApiErrorForLog(error))
+    }
+    throw error
   }
 
-  let directSettings = null
-  if (!responseSettings) {
-    directSettings = await removeHostedNhiaCredentialsDirect(organizationId, responseSettings)
-  } else {
-    try {
-      directSettings = await removeHostedNhiaCredentialsDirect(organizationId, responseSettings)
-    } catch {
-      directSettings = null
-    }
-  }
   const hostedSettings = {
     ...(responseSettings || {}),
-    ...(directSettings || {}),
     hasApiKey: false,
     has_api_key: false,
     hasApiSecret: false,
@@ -3484,13 +3292,19 @@ export const removeNhiaApiCredentials = async (options = {}) => {
     source: 'cloud_supabase',
     organizationId,
   })
+  clearCachedNhiaApiSettings(organizationId)
   writeCachedNhiaApiSettings(nhiaConfig, organizationId)
   logNhiaConfigEvent('credentials removed', {
+    organizationId,
+    branchId: nhiaConfig.branchId,
     mode: 'ONLINE_CLOUD',
     saveTarget: 'cloud_supabase',
     endpoint: 'nhia_configuration',
     hasApiKey: false,
     hasApiSecret: false,
+    apiBaseUrl: nhiaConfig.apiBaseUrl,
+    memberLookupEndpointPath: nhiaConfig.memberLookupEndpointPath,
+    credentialMode: nhiaConfig.credentialMode,
   })
   return nhiaConfig
 }
@@ -3509,6 +3323,17 @@ export const generateHostedNhiaCcCode = async (claimContext = {}) => {
   if (!organizationId) {
     throw new Error('Cannot verify NHIA CCC through cloud: organizationId is missing.')
   }
+
+  logNhiaConfigEvent('hosted CCC route', {
+    organizationId,
+    branchId: claimContext.branchId || claimContext.branch_id || '',
+    mode: connectivityMode || 'ONLINE_CLOUD',
+    source: 'cloud_supabase',
+    endpoint: 'tier-access:generate_nhia_cc_code',
+    apiBaseUrl: 'service-role:nhia_configuration',
+    memberLookupEndpointPath: 'service-role:nhia_configuration',
+    credentialMode: 'service-role:nhia_configuration',
+  })
 
   return await invokeTierAccess({
     action: 'generate_nhia_cc_code',

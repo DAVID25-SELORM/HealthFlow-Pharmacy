@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "build:offline": "vite build --outDir local-branch-server/public --emptyOutDir",
+    "build:offline": "vite build --outDir local-branch-server/public --emptyOutDir && node scripts/remove-offline-update-artifacts.mjs",
     "preview": "vite preview",
     "lint": "eslint .",
     "seed:diagnosis-catalog": "node scripts/seed-diagnosis-catalog.mjs",

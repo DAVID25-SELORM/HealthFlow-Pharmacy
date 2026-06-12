@@ -1917,6 +1917,39 @@ describe('direct NHIA submission', () => {
     }))
   })
 
+  it('returns inactive hosted member details even when no CC code is issued', async () => {
+    getConnectivityState.mockReturnValueOnce({
+      mode: 'ONLINE_CLOUD',
+      internetAvailable: true,
+      branchServerAvailable: false,
+      checkedAt: Date.now(),
+    })
+    invokeTierAccess.mockResolvedValueOnce({
+      ok: true,
+      ccCode: '',
+      source: 'api',
+      eligibilityError: 'NHIA member lookup did not return a CC code: INACTIVE.',
+      memberDetails: {
+        memberName: 'FRANK OKYERE',
+        hin: '99441270',
+        status: 'INACTIVE',
+      },
+    })
+
+    await expect(generateHostedNhiaCcCode({
+      organizationId: 'org-1',
+      memberNumber: '99441270',
+    })).resolves.toMatchObject({
+      ccCode: '',
+      eligibilityError: expect.stringContaining('INACTIVE'),
+      memberDetails: {
+        memberName: 'FRANK OKYERE',
+        hin: '99441270',
+        status: 'INACTIVE',
+      },
+    })
+  })
+
   it('blocks hosted CCC verification while local branch mode is active', async () => {
     getConnectivityState.mockReturnValueOnce({
       mode: 'ONLINE_LOCAL_SYNC',
@@ -2254,12 +2287,96 @@ describe('NHIA API settings source routing', () => {
     expect(invokeTierAccess).not.toHaveBeenCalled()
   })
 
-  it('does not mix hosted NHIA settings with cached partial settings', async () => {
-    mockNhiaConfigurationStore()
+  it('does not send saved credential masks as replacement credentials', async () => {
+    invokeTierAccess
+      .mockResolvedValueOnce({
+        settings: {
+          organizationId: 'org-1',
+          facilityCode: 'FAC-1',
+          hasApiKey: true,
+          hasApiSecret: true,
+          credentialSummary: {
+            apiKey: true,
+            apiSecret: true,
+            username: true,
+            password: true,
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        settings: {
+          organizationId: 'org-1',
+          facilityCode: 'FAC-1',
+          hasApiKey: true,
+          hasApiSecret: true,
+          credentialSummary: {
+            apiKey: true,
+            apiSecret: true,
+            username: true,
+            password: true,
+          },
+        },
+      })
+
+    await saveNhiaApiSettings({
+      ...completeClaimItSettings,
+      organizationId: 'org-1',
+      facilityCode: 'FAC-1',
+      credentials: {
+        apiKey: '\u2022'.repeat(8),
+        apiSecret: '\u2022'.repeat(8),
+        username: '\u2022'.repeat(8),
+        password: '\u2022'.repeat(8),
+        headerName: 'x-nhia-apikey',
+        secretHeaderName: 'x-nhia-apisecret',
+      },
+      hasApiKey: true,
+      hasApiSecret: true,
+    }, { organizationId: 'org-1' })
+
+    expect(invokeTierAccess).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      action: 'save_nhia_api_settings',
+      settings: expect.objectContaining({
+        credentials: {
+          headerName: 'x-nhia-apikey',
+          secretHeaderName: 'x-nhia-apisecret',
+        },
+      }),
+    }))
+  })
+
+  it('clears stale NHIA settings cache and uses tier-access readback after saving', async () => {
+    window.localStorage.setItem('healthflow.nhiaApiSettings.v3', JSON.stringify({
+      settings: {
+        organizationId: 'org-1',
+        facilityCode: 'STALE-CACHE',
+        hasApiKey: false,
+        hasApiSecret: false,
+      },
+    }))
+    window.localStorage.setItem('healthflow.nhiaApiSettings.v3:org-1', JSON.stringify({
+      settings: {
+        organizationId: 'org-1',
+        facilityCode: 'STALE-CACHE',
+        hasApiKey: false,
+        hasApiSecret: false,
+      },
+    }))
     invokeTierAccess.mockResolvedValueOnce({
       settings: {
         organizationId: 'org-1',
         facilityCode: 'FAC-1',
+        hasApiKey: true,
+        hasApiSecret: true,
+        accreditationExpiryDate: '2026-12-31',
+        claimsOfficerName: 'Claims Officer',
+      },
+    }).mockResolvedValueOnce({
+      settings: {
+        organizationId: 'org-1',
+        facilityCode: 'FAC-1',
+        hasApiKey: true,
+        hasApiSecret: true,
         accreditationExpiryDate: '2026-12-31',
         claimsOfficerName: 'Claims Officer',
       },
@@ -2269,27 +2386,30 @@ describe('NHIA API settings source routing', () => {
       ...completeClaimItSettings,
       organizationId: 'org-1',
       facilityCode: 'FAC-1',
+      credentials: {
+        apiKey: 'saved-key',
+        apiSecret: 'saved-secret',
+      },
       accreditationExpiryDate: '2026-12-31',
       claimsOfficerName: 'Claims Officer',
     }, { organizationId: 'org-1' })).resolves.toMatchObject({
+      facilityCode: 'FAC-1',
+      hasApiKey: true,
+      hasApiSecret: true,
       accreditationExpiryDate: '2026-12-31',
     })
 
-    invokeTierAccess.mockResolvedValueOnce({
-      settings: {
-        organizationId: 'org-1',
-        facilityCode: 'FAC-1',
-      },
-    })
-
-    const reloaded = await getNhiaApiSettings({ organizationId: 'org-1' })
-    expect(reloaded).toMatchObject({
+    expect(invokeTierAccess).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      action: 'get_nhia_api_settings',
       organizationId: 'org-1',
+      branchId: null,
+    }))
+    expect(window.localStorage.getItem('healthflow.nhiaApiSettings.v3')).toBeNull()
+    expect(JSON.parse(window.localStorage.getItem('healthflow.nhiaApiSettings.v3:org-1'))?.settings).toMatchObject({
       facilityCode: 'FAC-1',
-      configSource: 'cloud_supabase',
+      hasApiKey: true,
+      hasApiSecret: true,
     })
-    expect(reloaded.accreditationExpiryDate).toBe('2026-12-31')
-    expect(reloaded.claimsOfficerName).toBe('Claims Officer')
   })
 
   it('saves NHIA settings locally in local-sync mode and reports cloud sync pending', async () => {
@@ -2382,10 +2502,11 @@ describe('NHIA API settings source routing', () => {
     })
   })
 
-  it('merges direct NHIA configuration rows when the hosted response is partial', async () => {
+  it('does not merge browser direct NHIA configuration rows into hosted settings', async () => {
     invokeTierAccess.mockResolvedValueOnce({
       settings: {
         organizationId: 'org-1',
+        facilityCode: 'FAC-HOSTED',
         hasApiKey: true,
       },
     })
@@ -2412,62 +2533,54 @@ describe('NHIA API settings source routing', () => {
 
     await expect(getNhiaApiSettings({ organizationId: 'org-1' })).resolves.toMatchObject({
       organizationId: 'org-1',
-      facilityCode: 'FAC-DIRECT',
-      providerNumber: 'PROV-DIRECT',
-      credentialCode: 'CRED-DIRECT',
-      accreditationExpiryDate: '2026-12-31',
-      claimsOfficerName: 'Direct Officer',
+      facilityCode: 'FAC-HOSTED',
       hasApiKey: true,
     })
+    expect(supabase.from).not.toHaveBeenCalled()
   })
 
-  it('prefers the latest active legacy NHIA integration row and maps credential payload flags', async () => {
+  it('ignores legacy NHIA integration rows in the frontend hosted settings path', async () => {
     invokeTierAccess.mockResolvedValueOnce({
       settings: {
         id: 'config-1',
         organizationId: 'org-1',
-        facilityCode: 'STALE-CONFIG',
+        facilityCode: 'HOSTED-CONFIG',
+        hasApiKey: true,
+        hasApiSecret: true,
+        credentialSummary: {
+          apiKey: true,
+          apiSecret: true,
+        },
         updatedAt: '2026-05-25T10:00:00.000Z',
       },
     })
 
-    const makeQuery = (data) => ({
+    const legacyQuery = {
       select: vi.fn(function select() { return this }),
       eq: vi.fn(function eq() { return this }),
       order: vi.fn(function order() { return this }),
       limit: vi.fn(function limit() { return this }),
       is: vi.fn(function is() { return this }),
-      maybeSingle: vi.fn().mockResolvedValue({ data, error: null }),
-    })
-
-    const configQuery = makeQuery({
-      id: 'config-1',
-      organization_id: 'org-1',
-      facility_code: 'STALE-CONFIG',
-      updated_at: '2026-05-25T10:00:00.000Z',
-      is_active: true,
-    })
-    const legacyQuery = makeQuery({
-      id: 'legacy-1',
-      organization_id: 'org-1',
-      facility_code: 'LATEST-INTEGRATION',
-      credential_code: 'api_key',
-      credential_payload: {
-        apiKey: 'saved-key',
-        apiSecret: 'saved-secret',
-      },
-      updated_at: '2026-05-26T10:00:00.000Z',
-      is_active: true,
-    })
-
-    supabase.from.mockImplementation((table) => {
-      if (table === 'organization_nhia_integrations') return legacyQuery
-      return configQuery
-    })
+      maybeSingle: vi.fn().mockResolvedValue({
+        data: {
+          id: 'legacy-1',
+          organization_id: 'org-1',
+          facility_code: 'LATEST-INTEGRATION',
+          credential_payload: {
+            apiKey: 'saved-key',
+            apiSecret: 'saved-secret',
+          },
+          updated_at: '2026-05-26T10:00:00.000Z',
+          is_active: true,
+        },
+        error: null,
+      }),
+    }
+    supabase.from.mockReturnValue(legacyQuery)
 
     await expect(getNhiaApiSettings({ organizationId: 'org-1' })).resolves.toMatchObject({
       organizationId: 'org-1',
-      facilityCode: 'LATEST-INTEGRATION',
+      facilityCode: 'HOSTED-CONFIG',
       hasApiKey: true,
       hasApiSecret: true,
       credentialSummary: {
@@ -2475,6 +2588,7 @@ describe('NHIA API settings source routing', () => {
         apiSecret: true,
       },
     })
+    expect(supabase.from).not.toHaveBeenCalled()
   })
 
   it('does not send blank NHIA API secrets when saving settings', async () => {
@@ -2482,6 +2596,14 @@ describe('NHIA API settings source routing', () => {
     invokeTierAccess.mockResolvedValueOnce({
       settings: {
         organizationId: 'org-1',
+        facilityCode: 'FAC-1',
+        hasApiKey: true,
+        hasApiSecret: true,
+      },
+    }).mockResolvedValueOnce({
+      settings: {
+        organizationId: 'org-1',
+        facilityCode: 'FAC-1',
         hasApiKey: true,
         hasApiSecret: true,
       },
