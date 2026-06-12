@@ -39,6 +39,40 @@ Facility criteria remain separated:
 - **Reports and analytics** - sales, claims, inventory, and operational insights.
 - **Role-based access** - admin, pharmacist, claims officer, cashier, MCA, and other role levels.
 - **Branch server** - local SQLite, offline mode, LAN access, background cloud sync, and CLAIM-it bridge support.
+- **Licensed E-Pharmacy** - inter-facility stock sharing plus a public customer storefront with progressive OTC and prescription checkout.
+
+## Customer E-Pharmacy
+
+The public customer storefront is available at:
+
+```text
+/shop
+```
+
+Customers may browse published stock without signing in. Checkout requires a
+Supabase Auth account:
+
+- Google and Apple use Supabase OAuth.
+- Yahoo and other email providers use Supabase email magic links.
+- OTC pickup requires a verified account, full name, mobile number, terms, and
+  privacy consent.
+- Delivery additionally requires delivery address details.
+- Prescription orders additionally require identity details, patient details,
+  allergies/current medicines, a private prescription upload, and pharmacist
+  review.
+- Restricted, controlled, and narcotic medicines remain blocked from online
+  publication and ordering.
+
+Apply `20260612123000_customer_epharmacy_portal.sql`, then deploy:
+
+```bash
+npx supabase functions deploy customer-epharmacy
+npx supabase functions deploy tier-access
+```
+
+In Supabase Auth, add `/shop` to the redirect allow-list and enable the Google
+and Apple providers with credentials issued by those providers. OAuth secrets
+must remain in Supabase and must not be committed to this repository.
 
 ## Tech Stack
 
@@ -97,7 +131,7 @@ Use these guides for production setup:
 Quick start for multi-tenant setup:
 
 1. Run database migrations in order.
-2. Deploy Supabase Edge Functions such as `staff-admin`, `tenant-signup`, and `tier-access`.
+2. Deploy Supabase Edge Functions such as `staff-admin`, `tenant-signup`, `tier-access`, and `customer-epharmacy`.
 3. Deploy the frontend to Vercel or the selected hosting platform.
 4. Register each facility and branch.
 5. Install the HealthFlow Branch Server where local/offline sync is required.

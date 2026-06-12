@@ -1,9 +1,9 @@
 {
-  "version": "1.1.0",
-  "releaseNotes": "Adds signed automatic update installation for Linux systemd branches with root-owned helper, health verification, and rollback.",
+  "version": "1.2.0",
+  "releaseNotes": "Adds the customer E-Pharmacy storefront, Google and Apple sign-in, Yahoo and other email magic links, progressive OTC and prescription checkout, and pharmacist review.",
   "channel": "stable",
-  "sha256": "fe1dcb278caf3d12cbb7048cdc73d324e7b513e6d9ca263ada96c4df1deac952",
-  "publishedAt": "2026-06-12T10:37:20.5060287Z",
-  "packageUrl": "https://health-flow-pharmacy.vercel.app/branch-updates/healthflow-branch-1.1.0.zip",
-  "signature": "AaS2ouSyz8no0t4s32HRbauC2hTzgMscMtkhE4OxGtnkOpbyA57ZOK4ZeLdzxsjGZr275nSLyBxRYOMeBbN3CA=="
+  "sha256": "c6bcd70458cb9715ebecf4f5f57ab9dda9694193d7785f36035a36b0ad1be0c4",
+  "publishedAt": "2026-06-12T16:05:53.5260733Z",
+  "packageUrl": "https://health-flow-pharmacy.vercel.app/branch-updates/healthflow-branch-1.2.0.zip",
+  "signature": "MRAA1K5jxgW1VatIsjWm2NbcNe7c+G3z24hbWuO8n5N9E2qrjYO2ZS9Ts9bC9OZi8TmWnlWkiYvc0s86dBdICg=="
 }

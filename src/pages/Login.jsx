@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { Lock, Mail } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
 import './Login.css'
@@ -130,6 +131,9 @@ const Login = () => {
               : 'Pharmacy, Claims & Facility Operations Platform'}
         </p>
         <p className="login-build-stamp">Build {LOGIN_BUILD_STAMP}</p>
+        <p className="login-customer-link">
+          Ordering medicine for yourself? <Link to="/shop">Open the customer pharmacy</Link>
+        </p>
 
         {!isConfigured && (
           <div className="login-alert">Supabase credentials are not configured in your .env file.</div>

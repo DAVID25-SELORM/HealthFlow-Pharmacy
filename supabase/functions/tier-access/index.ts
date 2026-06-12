@@ -1253,12 +1253,23 @@ const loadEpharmacyOrders = async (
   const orgMap = new Map((orgRows || []).map((org) => [normalizeText(org.id), org]))
   const branchMap = new Map((branchRows || []).map((branch) => [normalizeText(branch.id), branch]))
 
-  return rows.map((order) => ({
-    ...order,
-    buyer_facility: orgMap.get(normalizeText(order.buyer_organization_id)) || null,
-    seller_facility: orgMap.get(normalizeText(order.seller_organization_id)) || null,
-    buyer_branch: branchMap.get(normalizeText(order.buyer_branch_id)) || null,
-    seller_branch: branchMap.get(normalizeText(order.seller_branch_id)) || null,
+  return await Promise.all(rows.map(async (order) => {
+    let prescriptionFileUrl = ''
+    if (normalizeText(order.prescription_file_path)) {
+      const { data } = await adminClient.storage
+        .from('epharmacy-prescriptions')
+        .createSignedUrl(normalizeText(order.prescription_file_path), 15 * 60)
+      prescriptionFileUrl = data?.signedUrl || ''
+    }
+
+    return {
+      ...order,
+      prescription_file_url: prescriptionFileUrl,
+      buyer_facility: orgMap.get(normalizeText(order.buyer_organization_id)) || null,
+      seller_facility: orgMap.get(normalizeText(order.seller_organization_id)) || null,
+      buyer_branch: branchMap.get(normalizeText(order.buyer_branch_id)) || null,
+      seller_branch: branchMap.get(normalizeText(order.seller_branch_id)) || null,
+    }
   }))
 }
 
@@ -1780,7 +1791,10 @@ const updateEpharmacyOrderStatus = async (
   }
 
   if (nextStatus === 'delivered') {
-    const { data, error } = await adminClient.rpc('complete_epharmacy_order', {
+    const completionFunction = order.channel === 'customer'
+      ? 'complete_customer_epharmacy_order'
+      : 'complete_epharmacy_order'
+    const { data, error } = await adminClient.rpc(completionFunction, {
       p_order_id: orderId,
       p_actor_user_id: requesterProfile.id,
       p_actor_organization_id: organizationId,

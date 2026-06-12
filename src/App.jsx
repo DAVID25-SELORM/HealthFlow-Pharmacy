@@ -39,6 +39,7 @@ const Purchases = lazy(() => import('./pages/Purchases'))
 const Nhis = lazy(() => import('./pages/Nhis'))
 const EPharmacy = lazy(() => import('./pages/EPharmacy'))
 const PatientCare = lazy(() => import('./pages/PatientCare'))
+const CustomerEPharmacy = lazy(() => import('./pages/CustomerEPharmacy'))
 
 const RouteFallback = () => (
   <div className="route-fallback" role="status" aria-live="polite">
@@ -59,6 +60,7 @@ function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
+          <Route path="/shop" element={<CustomerEPharmacy />} />
           <Route
             path="/"
             element={

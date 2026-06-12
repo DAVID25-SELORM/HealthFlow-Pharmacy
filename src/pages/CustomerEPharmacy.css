@@ -1,0 +1,461 @@
+.customer-shop-page {
+  min-height: 100vh;
+  background: #f5faf8;
+  color: #17312a;
+}
+
+.customer-shop-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem clamp(1rem, 4vw, 4rem);
+  background: rgba(255, 255, 255, 0.96);
+  border-bottom: 1px solid #dcebe5;
+  backdrop-filter: blur(12px);
+}
+
+.customer-shop-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  color: inherit;
+  text-decoration: none;
+}
+
+.customer-shop-brand img {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+}
+
+.customer-shop-brand div,
+.customer-orders-list article > div {
+  display: flex;
+  flex-direction: column;
+}
+
+.customer-shop-brand span,
+.customer-orders-list span {
+  color: #64766f;
+  font-size: 0.82rem;
+}
+
+.customer-shop-header nav {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.customer-shop-header nav button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 0;
+  border-radius: 999px;
+  padding: 0.55rem 0.85rem;
+  background: transparent;
+  color: #294d43;
+  cursor: pointer;
+}
+
+.customer-shop-header nav button:hover {
+  background: #e7f5f0;
+}
+
+.customer-shop-main {
+  width: min(1180px, calc(100% - 2rem));
+  margin: 0 auto;
+  padding: 2rem 0 4rem;
+}
+
+.customer-shop-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(260px, 0.8fr);
+  gap: 2rem;
+  align-items: center;
+  padding: clamp(1.5rem, 4vw, 3.5rem);
+  border-radius: 28px;
+  color: white;
+  background:
+    radial-gradient(circle at top right, rgba(255, 255, 255, 0.22), transparent 38%),
+    linear-gradient(135deg, #0d7764, #16a085);
+  box-shadow: 0 22px 50px rgba(13, 119, 100, 0.2);
+}
+
+.customer-shop-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.customer-shop-hero h1 {
+  max-width: 700px;
+  margin: 0.6rem 0;
+  font-size: clamp(2rem, 5vw, 4rem);
+  line-height: 1.04;
+}
+
+.customer-shop-hero p {
+  max-width: 700px;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.customer-shop-trust {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.customer-shop-trust div {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.8rem;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.customer-shop-alert,
+.customer-shop-empty {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  border: 1px solid #f2c4bd;
+  border-radius: 12px;
+  background: #fff3f1;
+  color: #9c3327;
+}
+
+.customer-shop-search {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.35fr) auto;
+  gap: 0.8rem;
+  margin: 1.5rem 0;
+}
+
+.customer-shop-search label,
+.customer-input-icon {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0 0.85rem;
+  border: 1px solid #d4e5df;
+  border-radius: 12px;
+  background: white;
+}
+
+.customer-shop-search input,
+.customer-input-icon input {
+  width: 100%;
+  min-height: 44px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+}
+
+.customer-shop-search select,
+.customer-form-grid input,
+.customer-form-grid select,
+.customer-form-grid textarea {
+  width: 100%;
+  min-height: 44px;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #d4e5df;
+  border-radius: 10px;
+  background: white;
+}
+
+.customer-shop-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.customer-shop-empty {
+  grid-column: 1 / -1;
+  border-color: #d4e5df;
+  background: white;
+  color: #64766f;
+}
+
+.customer-medicine-card,
+.customer-account-card,
+.customer-profile-card,
+.customer-orders-card {
+  border: 1px solid #dcebe5;
+  border-radius: 18px;
+  background: white;
+  box-shadow: 0 8px 24px rgba(24, 70, 58, 0.07);
+}
+
+.customer-medicine-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1.1rem;
+}
+
+.customer-medicine-card-top,
+.customer-medicine-card footer,
+.customer-checkout-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.customer-medicine-card-top {
+  color: #6b7d76;
+  font-size: 0.78rem;
+}
+
+.customer-medicine-class {
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.customer-medicine-class.otc {
+  color: #08795f;
+  background: #dff6ee;
+}
+
+.customer-medicine-class.prescription {
+  color: #8a5700;
+  background: #fff1cc;
+}
+
+.customer-medicine-card h2 {
+  font-size: 1.08rem;
+}
+
+.customer-medicine-card p,
+.customer-facility-line {
+  color: #64766f;
+  font-size: 0.88rem;
+}
+
+.customer-facility-line {
+  display: flex;
+  gap: 0.4rem;
+  align-items: flex-start;
+}
+
+.customer-medicine-warning {
+  padding: 0.6rem;
+  border-radius: 8px;
+  background: #fff7e1;
+  color: #76520b;
+  font-size: 0.82rem;
+}
+
+.customer-medicine-card footer {
+  margin-top: auto;
+  padding-top: 0.6rem;
+  border-top: 1px solid #edf4f1;
+}
+
+.customer-account-card,
+.customer-profile-card,
+.customer-orders-card {
+  width: min(100%, 820px);
+  margin: 1.5rem auto 0;
+  padding: clamp(1.2rem, 4vw, 2rem);
+}
+
+.customer-social-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin: 1.25rem 0;
+}
+
+.customer-social-buttons button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  padding: 0.75rem;
+  border: 1px solid #d4e5df;
+  border-radius: 10px;
+  background: white;
+  cursor: pointer;
+}
+
+.google-mark {
+  font-weight: 900;
+  color: #4285f4;
+}
+
+.customer-auth-divider {
+  display: flex;
+  align-items: center;
+  margin: 1.2rem 0;
+  color: #80928b;
+}
+
+.customer-auth-divider::before,
+.customer-auth-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: #dcebe5;
+}
+
+.customer-auth-divider span {
+  padding: 0 0.8rem;
+}
+
+.customer-account-card form,
+.customer-profile-card form,
+.customer-checkout-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.customer-account-card form > label,
+.customer-form-grid label {
+  display: grid;
+  gap: 0.35rem;
+  color: #3d5a52;
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.customer-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.customer-form-grid .wide {
+  grid-column: 1 / -1;
+}
+
+.customer-consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  color: #4d665e;
+  font-size: 0.86rem;
+}
+
+.customer-consent input {
+  margin-top: 0.25rem;
+}
+
+.customer-orders-list {
+  display: grid;
+  gap: 0.7rem;
+  margin-top: 1rem;
+}
+
+.customer-orders-list article {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem;
+  border: 1px solid #e0ece8;
+  border-radius: 10px;
+}
+
+.customer-orders-list article > div:last-child {
+  text-align: right;
+}
+
+.customer-checkout-modal {
+  width: min(100%, 880px);
+}
+
+.customer-checkout-modal .modal-header,
+.customer-checkout-signin,
+.customer-checkout-form {
+  padding: 1.2rem;
+}
+
+.customer-checkout-modal fieldset {
+  padding: 1rem;
+  border: 1px solid #dcebe5;
+  border-radius: 12px;
+}
+
+.customer-checkout-modal legend {
+  padding: 0 0.5rem;
+  color: #176f5e;
+  font-weight: 800;
+}
+
+.customer-file-upload {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin-top: 0.8rem;
+  padding: 0.9rem;
+  border: 1px dashed #75ad9e;
+  border-radius: 10px;
+  background: #f0faf7;
+  cursor: pointer;
+}
+
+.customer-file-upload input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.customer-checkout-total {
+  padding: 1rem;
+  border-radius: 12px;
+  background: #eaf7f3;
+}
+
+@media (max-width: 900px) {
+  .customer-shop-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .customer-shop-header nav {
+    width: 100%;
+    overflow-x: auto;
+  }
+
+  .customer-shop-hero,
+  .customer-shop-search {
+    grid-template-columns: 1fr;
+  }
+
+  .customer-shop-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .customer-shop-brand span {
+    display: none;
+  }
+
+  .customer-shop-grid,
+  .customer-social-buttons,
+  .customer-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .customer-form-grid .wide {
+    grid-column: auto;
+  }
+
+  .customer-shop-header nav button {
+    white-space: nowrap;
+  }
+}

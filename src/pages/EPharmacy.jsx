@@ -494,7 +494,13 @@ const EPharmacy = () => {
                           <div className="medicine-name">{order.order_number}</div>
                           <div className="medicine-meta">{order.fulfillment_method}</div>
                         </td>
-                        <td>{order.buyer_facility?.name || 'Customer'}</td>
+                        <td>
+                          <div>{order.buyer_facility?.name || order.customer_name || 'Customer'}</div>
+                          {order.customer_phone && <div className="medicine-meta">{order.customer_phone}</div>}
+                          {order.patient_name && order.patient_name !== order.customer_name && (
+                            <div className="medicine-meta">Patient: {order.patient_name}</div>
+                          )}
+                        </td>
                         <td>{order.seller_facility?.name || 'Facility'}</td>
                         <td>
                           {(order.epharmacy_order_items || []).slice(0, 2).map((item) => (
@@ -502,6 +508,19 @@ const EPharmacy = () => {
                               {item.drug_name} x {item.quantity}
                             </div>
                           ))}
+                          {order.prescription_file_url && (
+                            <a
+                              className="epharmacy-prescription-link"
+                              href={order.prescription_file_url}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              View prescription
+                            </a>
+                          )}
+                          {order.clinical_notes && (
+                            <div className="medicine-meta">Clinical: {order.clinical_notes}</div>
+                          )}
                         </td>
                         <td>{currency(order.total_amount)}</td>
                         <td>

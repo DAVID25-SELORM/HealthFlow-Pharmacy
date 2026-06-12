@@ -245,6 +245,14 @@
   overflow-wrap: anywhere;
 }
 
+.epharmacy-prescription-link {
+  display: inline-block;
+  margin-top: 0.3rem;
+  color: var(--primary);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
 .empty-row {
   color: var(--ep-muted);
   text-align: center;

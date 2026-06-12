@@ -19,3 +19,5 @@ export const getPublicAppUrl = () => {
 }
 
 export const getPasswordRecoveryRedirectUrl = () => `${getPublicAppUrl()}/login?mode=recovery`
+
+export const getCustomerAuthRedirectUrl = () => `${getPublicAppUrl()}/shop`
