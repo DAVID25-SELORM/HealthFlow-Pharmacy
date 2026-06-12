@@ -2,6 +2,7 @@ import crypto from 'node:crypto'
 import https from 'node:https'
 import { createId, db, json, nowIso, parseJson } from './db.js'
 import { config } from './config.js'
+import { getNhiaMemberLookupFailureMessage } from './nhiaFeedback.js'
 
 const CLAIM_STATUSES = new Set([
   'draft',
@@ -2212,12 +2213,6 @@ const mapNhiaMemberLookupResponse = (body) => {
     pppName: normalizeText(body.PPPName || body.pppName) || null,
     raw: body,
   }
-}
-
-const getNhiaMemberLookupFailureMessage = (memberDetails) => {
-  const status = normalizeText(memberDetails?.status)
-  if (!memberDetails || memberDetails.ccCode || !status) return ''
-  return `NHIA member lookup did not return a CC code: ${status}.`
 }
 
 // Determine CardType for NHIA genCCC API: GHANACARD for GHA-xxxxxxxxx-x numbers, NHISCARD otherwise.
