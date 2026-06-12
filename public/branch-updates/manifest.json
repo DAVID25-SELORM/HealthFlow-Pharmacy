@@ -1,9 +1,9 @@
 {
-  "version": "1.2.0",
-  "releaseNotes": "Adds the customer E-Pharmacy storefront, Google and Apple sign-in, Yahoo and other email magic links, progressive OTC and prescription checkout, and pharmacist review.",
+  "version": "1.2.1",
+  "releaseNotes": "Improves inactive NHIS membership feedback and adds browser compatibility for older branch server responses.",
   "channel": "stable",
-  "sha256": "c6bcd70458cb9715ebecf4f5f57ab9dda9694193d7785f36035a36b0ad1be0c4",
-  "publishedAt": "2026-06-12T16:05:53.5260733Z",
-  "packageUrl": "https://health-flow-pharmacy.vercel.app/branch-updates/healthflow-branch-1.2.0.zip",
-  "signature": "MRAA1K5jxgW1VatIsjWm2NbcNe7c+G3z24hbWuO8n5N9E2qrjYO2ZS9Ts9bC9OZi8TmWnlWkiYvc0s86dBdICg=="
+  "sha256": "c6c2a94bb5b775be5f22be356e12a4398c38fc136d54f20e74bd85c9e9bce764",
+  "publishedAt": "2026-06-12T17:29:30.1729079Z",
+  "packageUrl": "https://health-flow-pharmacy.vercel.app/branch-updates/healthflow-branch-1.2.1.zip",
+  "signature": "B3EGKsLA9dxxv0awCG0Tvdc9CYo6/bbw0hmJB6bOp8gHVu5I3YRkskSYuM/d/n2aCqVhKorTTYRQjksbPnHVAg=="
 }

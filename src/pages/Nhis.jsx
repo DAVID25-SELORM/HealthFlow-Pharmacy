@@ -57,6 +57,7 @@ import {
   hasNhiaFacilitySettings,
 } from '../utils/nhiaFacilityDefaults'
 import { getErrorMessage, isNetworkRequestError } from '../utils/requestErrors'
+import { getNhiaMemberFeedbackMessage } from '../utils/nhiaFeedback'
 // ✅ NHIS PHARMACY LEVEL PATCH START
 import {
   PHARMACY_LEVELS,
@@ -1766,7 +1767,7 @@ const Nhis = () => {
         notify(`Member verified — ${result.memberName || memberNumber}.`, 'info')
       }
     } catch (err) {
-      const message = getErrorMessage(err) || 'Member lookup failed.'
+      const message = getNhiaMemberFeedbackMessage(getErrorMessage(err), 'Member lookup failed.')
       notify(message, 'error')
       if (import.meta.env.DEV) console.warn('Member lookup failed:', message)
     } finally {
@@ -1826,7 +1827,7 @@ const Nhis = () => {
       }
       if (result?.eligibilityError) {
         setClaimForm((prev) => ({ ...prev, cccNo: '', ccCode: '' }))
-        notify(result.eligibilityError, 'warning')
+        notify(getNhiaMemberFeedbackMessage(result.eligibilityError), 'warning')
         return
       }
       if (result?.status === 'pending' || result?.source === 'pending') {
@@ -1854,7 +1855,10 @@ const Nhis = () => {
         'success'
       )
     } catch (err) {
-      notify(err.message || 'Unable to generate CCC/CC code.', 'error')
+      notify(
+        getNhiaMemberFeedbackMessage(err.message, 'Unable to generate CCC/CC code.'),
+        'error'
+      )
     } finally {
       setGeneratingCcCode(false)
     }
