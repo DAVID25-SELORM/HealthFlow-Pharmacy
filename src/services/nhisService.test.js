@@ -55,9 +55,12 @@ import {
   exportNhisClaimsFile,
   generateHostedNhiaCcCode,
   generateBrowserClaimItBridgeCcCode,
+  getNhisClaimExportDate,
   getAllNhisDrugs,
   getNhisDrugByCode,
+  getNhisClaimsForPeriod,
   getNhiaApiSettings,
+  nhisClaimMatchesExportPeriod,
   normalizeNhisGender,
   normalizeNhisExportPeriod,
   saveNhiaApiSettings,
@@ -1582,6 +1585,85 @@ describe('CLAIM-it export helpers', () => {
       fromDate: '2026-05-20',
       toDate: '2026-05-01',
     })).toThrow('Custom export From date cannot be after To date.')
+  })
+
+  it('uses created_at only when an NHIS claim has no service date', () => {
+    expect(getNhisClaimExportDate({
+      service_date_from: '',
+      created_at: '2026-06-09T14:30:00.000Z',
+    })).toBe('2026-06-09')
+
+    expect(getNhisClaimExportDate({
+      service_date_from: '2026-05-14',
+      created_at: '2026-06-09T14:30:00.000Z',
+    })).toBe('2026-05-14')
+  })
+
+  it('includes a blank-service-date claim in its creation-date export period', () => {
+    const period = normalizeNhisExportPeriod({
+      mode: 'custom',
+      fromDate: '2026-06-09',
+      toDate: '2026-06-09',
+    })
+
+    expect(nhisClaimMatchesExportPeriod({
+      service_date_from: null,
+      created_at: '2026-06-09T14:30:00.000Z',
+    }, period)).toBe(true)
+
+    expect(nhisClaimMatchesExportPeriod({
+      service_date_from: null,
+      created_at: '2026-06-10T08:00:00.000Z',
+    }, period)).toBe(false)
+  })
+
+  it('retrieves blank-service-date claims before applying the creation-date fallback', async () => {
+    const insidePeriod = {
+      id: 'claim-inside',
+      status: 'served',
+      service_date_from: null,
+      submission_month: '2026-06',
+      created_at: '2026-06-09T14:30:00.000Z',
+      total_amount: 0,
+      nhis_claim_medicines: [],
+    }
+    const outsidePeriod = {
+      ...insidePeriod,
+      id: 'claim-outside',
+      created_at: '2026-06-10T08:00:00.000Z',
+    }
+    const claimsQuery = {
+      order: vi.fn(() => claimsQuery),
+      gte: vi.fn(() => claimsQuery),
+      lte: vi.fn().mockResolvedValue({
+        data: [insidePeriod, outsidePeriod],
+        error: null,
+      }),
+    }
+    const serviceLinesQuery = {
+      in: vi.fn(() => serviceLinesQuery),
+      order: vi.fn().mockResolvedValue({ data: [], error: null }),
+    }
+    supabase.from.mockImplementation((table) => {
+      if (table === 'nhis_claims') {
+        return { select: vi.fn(() => claimsQuery) }
+      }
+      if (table === 'nhis_claim_services') {
+        return { select: vi.fn(() => serviceLinesQuery) }
+      }
+      throw new Error(`Unexpected table: ${table}`)
+    })
+
+    await expect(getNhisClaimsForPeriod({
+      mode: 'custom',
+      fromDate: '2026-06-09',
+      toDate: '2026-06-09',
+    })).resolves.toEqual([
+      expect.objectContaining({ id: 'claim-inside' }),
+    ])
+
+    expect(claimsQuery.gte).toHaveBeenCalledWith('submission_month', '2026-06')
+    expect(claimsQuery.lte).toHaveBeenCalledWith('submission_month', '2026-06')
   })
 
   it('includes custom period metadata in CLAIM-it payload and XML', () => {

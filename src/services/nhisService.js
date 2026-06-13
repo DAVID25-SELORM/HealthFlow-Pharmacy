@@ -4941,7 +4941,7 @@ export const getNhisClaimsForPeriod = async (periodOptions = {}) => {
     if (localRows.length || getConnectivityState().internetAvailable === false) {
       return period.mode === 'month'
         ? localRows
-        : localRows.filter((claim) => claimMatchesExportPeriod(claim, period))
+        : localRows.filter((claim) => nhisClaimMatchesExportPeriod(claim, period))
     }
 
     console.info('[SYNC] Local NHIS claims export cache is empty; reading visible claims from Supabase.')
@@ -4958,8 +4958,8 @@ export const getNhisClaimsForPeriod = async (periodOptions = {}) => {
         query = query.eq('submission_month', period.yearMonth)
       } else {
         query = query
-          .gte('service_date_from', period.fromDate)
-          .lte('service_date_from', period.toDate)
+          .gte('submission_month', period.fromDate.slice(0, 7))
+          .lte('submission_month', period.toDate.slice(0, 7))
       }
 
       return query
@@ -4971,7 +4971,10 @@ export const getNhisClaimsForPeriod = async (periodOptions = {}) => {
     }
 
     if (error) throw error
-    return await hydrateNhisClaimsForUi(data || [])
+    const claims = await hydrateNhisClaimsForUi(data || [])
+    return period.mode === 'month'
+      ? claims
+      : claims.filter((claim) => nhisClaimMatchesExportPeriod(claim, period))
   }
 
   if (shouldUseBranchServer()) {
@@ -4981,7 +4984,7 @@ export const getNhisClaimsForPeriod = async (periodOptions = {}) => {
       console.warn('[SYNC] Cloud NHIS claims export fallback failed; using empty local cache.', error)
       return period.mode === 'month'
         ? localRows
-        : localRows.filter((claim) => claimMatchesExportPeriod(claim, period))
+        : localRows.filter((claim) => nhisClaimMatchesExportPeriod(claim, period))
     }
   }
 
@@ -5898,11 +5901,17 @@ const getMonthEndDate = (yearMonth) => {
   return new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10)
 }
 
-const getClaimExportServiceDate = (claim = {}) =>
-  toClaimItDate(claim.service_date_from || claim.serviceDate || claim.service_date)
+export const getNhisClaimExportDate = (claim = {}) =>
+  toClaimItDate(
+    claim.service_date_from ||
+    claim.serviceDate ||
+    claim.service_date ||
+    claim.created_at ||
+    claim.createdAt
+  )
 
-const claimMatchesExportPeriod = (claim = {}, period) => {
-  const serviceDate = getClaimExportServiceDate(claim)
+export const nhisClaimMatchesExportPeriod = (claim = {}, period) => {
+  const serviceDate = getNhisClaimExportDate(claim)
   return Boolean(serviceDate && serviceDate >= period.fromDate && serviceDate <= period.toDate)
 }
 
@@ -7232,7 +7241,7 @@ const markNhisServedClaimsSubmitted = async (claims) => {
 }
 
 const getDirectSubmissionPeriodForClaim = (claim = {}) => {
-  const serviceDate = getClaimExportServiceDate(claim) || new Date().toISOString().slice(0, 10)
+  const serviceDate = getNhisClaimExportDate(claim) || new Date().toISOString().slice(0, 10)
   return normalizeNhisExportPeriod({ mode: 'custom', fromDate: serviceDate, toDate: serviceDate })
 }
 
