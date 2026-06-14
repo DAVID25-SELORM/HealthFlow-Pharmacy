@@ -3,6 +3,7 @@ import https from 'node:https'
 import { createId, db, json, nowIso, parseJson } from './db.js'
 import { config } from './config.js'
 import { getNhiaMemberLookupFailureMessage } from './nhiaFeedback.js'
+import { getOfflineRecord } from './offlineRecordsRepository.js'
 
 const CLAIM_STATUSES = new Set([
   'draft',
@@ -229,6 +230,7 @@ const toDigitLength = (value, fallback) => {
 }
 
 const assertValidMemberNumber = (value, settings = {}) => {
+  settings = settings || {}
   const memberNumber = assertRequiredText(value, 'NHIA member number or Ghana Card number')
 
   if (isGhanaCardNumber(memberNumber)) {
@@ -386,6 +388,7 @@ const createBatchNumber = () => {
 }
 
 const getDrug = db.prepare('SELECT * FROM drugs WHERE id = ?')
+const getDrugByNhisCode = db.prepare('SELECT * FROM drugs WHERE UPPER(nhis_code) = UPPER(?) LIMIT 1')
 
 const selectSettings = db.prepare(`
   SELECT *
@@ -568,6 +571,19 @@ const insertClaimItem = db.prepare(`
   )
 `)
 
+const insertClaimService = db.prepare(`
+  INSERT INTO nhia_claim_services (
+    id, nhia_claim_id, gdrg_code, description, quantity, unit_price,
+    total_amount, age_band, facility_group, catering_option, mdc,
+    service_date, payload_json, created_at
+  )
+  VALUES (
+    @id, @claimId, @gdrgCode, @description, @quantity, @unitPrice,
+    @totalAmount, @ageBand, @facilityGroup, @cateringOption, @mdc,
+    @serviceDate, @payloadJson, @createdAt
+  )
+`)
+
 const selectClaimsBase = `
   SELECT *
   FROM nhia_claims
@@ -577,6 +593,12 @@ const selectClaimById = db.prepare(`${selectClaimsBase} WHERE id = ?`)
 const selectClaimItems = db.prepare(`
   SELECT *
   FROM nhia_claim_items
+  WHERE nhia_claim_id = ?
+  ORDER BY created_at ASC
+`)
+const selectClaimServices = db.prepare(`
+  SELECT *
+  FROM nhia_claim_services
   WHERE nhia_claim_id = ?
   ORDER BY created_at ASC
 `)
@@ -1609,6 +1631,22 @@ const mapClaimRow = (row) => ({
     payload: parseJson(item.payload_json, {}),
     createdAt: item.created_at,
   })),
+  services: selectClaimServices.all(row.id).map((service) => ({
+    id: service.id,
+    claimId: service.nhia_claim_id,
+    gdrgCode: service.gdrg_code,
+    description: service.description,
+    quantity: service.quantity,
+    unitPrice: service.unit_price,
+    totalAmount: service.total_amount,
+    ageBand: service.age_band,
+    facilityGroup: service.facility_group,
+    cateringOption: service.catering_option,
+    mdc: service.mdc,
+    serviceDate: service.service_date,
+    payload: parseJson(service.payload_json, {}),
+    createdAt: service.created_at,
+  })),
 })
 
 export const listNhiaClaims = ({ status = '', limit = 100 } = {}) => {
@@ -1626,7 +1664,33 @@ export const getNhiaClaim = (id) => {
   return row ? mapClaimRow(row) : null
 }
 
-const buildClaimPayload = ({ claim, items, settings }) => ({
+const normalizeDirectSubmissionClaimNumber = (claim = {}) =>
+  normalizeText(claim.claimNumber || claim.claim_number || claim.claim_no || claim.claimNo)
+
+export const resolveDirectSubmissionLocalClaims = (claimIds = []) =>
+  claimIds.map((id) => {
+    const claim = getNhiaClaim(id)
+    if (claim) {
+      return {
+        id: claim.id,
+        claimNumber: normalizeDirectSubmissionClaimNumber(claim),
+        source: 'nhia_claims',
+      }
+    }
+
+    const offlineClaim = getOfflineRecord('nhis_claims', id)
+    if (offlineClaim) {
+      return {
+        id: offlineClaim.id,
+        claimNumber: normalizeDirectSubmissionClaimNumber(offlineClaim),
+        source: 'offline_nhis_claims',
+      }
+    }
+
+    throw new Error('Direct NHIA submission can only submit existing local claims.')
+  })
+
+const buildClaimPayload = ({ claim, items, services = [], settings }) => ({
   claimNumber: claim.claimNumber,
   facilityCode: settings?.facilityCode || '',
   providerNumber: settings?.providerNumber || '',
@@ -1664,30 +1728,56 @@ const buildClaimPayload = ({ claim, items, settings }) => ({
     unitPrice: item.unitPrice,
     totalPrice: item.totalPrice,
   })),
+  services: services.map((service) => ({
+    code: service.gdrgCode || null,
+    description: service.description,
+    quantity: service.quantity,
+    unitPrice: service.unitPrice,
+    totalAmount: service.totalAmount,
+    ageBand: service.ageBand || null,
+    facilityGroup: service.facilityGroup || null,
+    cateringOption: service.cateringOption || null,
+    mdc: service.mdc || null,
+    serviceDate: service.serviceDate || claim.serviceDate,
+  })),
 })
 
 export const createNhiaClaim = db.transaction((claimData = {}, linkedSale = {}) => {
-  if (!Array.isArray(claimData.items) || claimData.items.length === 0) {
-    throw new Error('At least one NHIA claim item is required.')
-  }
-
   const timestamp = nowIso()
   const claimId = createId()
   const claimNumber = claimData.claimNumber || createClaimNumber()
   const settings = getNhiaSettings()
   const organizationType = normalizeOrganizationType(claimData.organizationType || claimData.organization_type)
+  const sourceItems = Array.isArray(claimData.items) ? claimData.items : []
+  const sourceServices = organizationType === 'hospital' && Array.isArray(claimData.services)
+    ? claimData.services
+    : []
+  if (!sourceItems.length && !sourceServices.length) {
+    throw new Error('At least one NHIA claim medicine or hospital service is required.')
+  }
   const diagnosisDetails = organizationType === 'hospital'
     ? normalizeDiagnosisDetails(claimData.diagnosisDetails || claimData.diagnosis_details)
     : []
   let totalAmount = 0
 
-  const items = claimData.items.map((item) => {
+  const items = sourceItems.map((item) => {
     const drugId = item.drugId || item.id || null
-    const drug = drugId ? getDrug.get(drugId) : null
+    const submittedCode = normalizeText(item.nhiaCode || item.nhisCode)
+    const drug = (drugId ? getDrug.get(drugId) : null) ||
+      (submittedCode ? getDrugByNhisCode.get(submittedCode) : null)
     const quantity = assertPositiveQuantity(item.quantity, 'NHIA claim item quantity')
-    const unitPrice = toMoney(item.nhiaPrice ?? item.price ?? item.unitPrice ?? drug?.nhis_price ?? drug?.price, 0)
+    const submittedUnitPrice = toMoney(item.nhiaPrice ?? item.price ?? item.unitPrice, -1)
+    const catalogUnitPrice = toMoney(drug?.nhis_price ?? drug?.price, -1)
+    if (
+      catalogUnitPrice >= 0 &&
+      submittedUnitPrice >= 0 &&
+      Math.abs(catalogUnitPrice - submittedUnitPrice) > 0.01
+    ) {
+      throw new Error(`NHIA claim item price does not match the local catalogue for ${submittedCode || drug?.name || 'medicine'}.`)
+    }
+    const unitPrice = catalogUnitPrice >= 0 ? catalogUnitPrice : submittedUnitPrice
     if (unitPrice < 0) {
-      throw new Error('NHIA claim item price cannot be negative.')
+      throw new Error('NHIA claim item price is required and cannot be negative.')
     }
 
     const totalPrice = toMoney(quantity * unitPrice)
@@ -1706,6 +1796,33 @@ export const createNhiaClaim = db.transaction((claimData = {}, linkedSale = {}) 
       createdAt: timestamp,
     }
   })
+  const services = sourceServices.map((service) => {
+    const quantity = assertPositiveQuantity(service.quantity ?? 1, 'NHIA service quantity')
+    const unitPrice = toMoney(service.unitPrice ?? service.unit_price, -1)
+    if (unitPrice < 0) {
+      throw new Error('NHIA service unit price is required and cannot be negative.')
+    }
+    const totalAmount = toMoney(quantity * unitPrice)
+    return {
+      id: createId(),
+      claimId,
+      gdrgCode: normalizeText(service.gdrgCode || service.gdrg_code) || null,
+      description: assertRequiredText(service.description, 'NHIA service description'),
+      quantity,
+      unitPrice,
+      totalAmount,
+      ageBand: normalizeText(service.ageBand || service.age_band) || null,
+      facilityGroup: normalizeText(service.facilityGroup || service.facility_group) || null,
+      cateringOption: normalizeText(service.cateringOption || service.catering_option) || null,
+      mdc: normalizeText(service.mdc) || null,
+      serviceDate: normalizeText(service.serviceDate || service.service_date || claimData.serviceDate) || null,
+      payloadJson: json(service),
+      createdAt: timestamp,
+    }
+  })
+  totalAmount = toMoney(
+    totalAmount + services.reduce((sum, service) => sum + service.totalAmount, 0)
+  )
 
   const claim = {
     id: claimId,
@@ -1752,11 +1869,19 @@ export const createNhiaClaim = db.transaction((claimData = {}, linkedSale = {}) 
     createdAt: timestamp,
     updatedAt: timestamp,
   }
-  claim.payloadJson = json(buildClaimPayload({ claim: { ...claim, organizationType }, items, settings }))
+  claim.payloadJson = json(buildClaimPayload({
+    claim: { ...claim, organizationType },
+    items,
+    services,
+    settings,
+  }))
 
   insertClaim.run(claim)
   for (const item of items) {
     insertClaimItem.run(item)
+  }
+  for (const service of services) {
+    insertClaimService.run(service)
   }
 
   logSubmission({
@@ -1880,8 +2005,8 @@ const validateClaimForSubmission = (claim, settings) => {
   if (organizationType === 'hospital') {
     assertRequiredText(claim.diagnosis || claim.payload?.diagnosis, 'NHIA diagnosis')
   }
-  if (!claim.items.length) {
-    throw new Error('NHIA claim requires at least one item.')
+  if (!claim.items.length && !claim.services.length) {
+    throw new Error('NHIA claim requires at least one medicine or hospital service.')
   }
 
   for (const item of claim.items) {
@@ -1899,7 +2024,12 @@ const validateClaimForSubmission = (claim, settings) => {
     }
   }
 
-  return buildClaimPayload({ claim, items: claim.items, settings })
+  return buildClaimPayload({
+    claim,
+    items: claim.items,
+    services: claim.services,
+    settings,
+  })
 }
 
 const buildHeaders = (settings) => {
@@ -1949,6 +2079,8 @@ const hasClaimItTokenCredentials = (settings = {}) => {
   return Boolean(normalizeText(credentials.username) && normalizeText(credentials.password))
 }
 
+export const buildClaimItAuthorizationHeader = (token) => normalizeText(token)
+
 const buildClaimItSubmissionHeaders = async (settings) => {
   if (!hasClaimItTokenCredentials(settings)) {
     return buildHeaders(settings)
@@ -1956,8 +2088,10 @@ const buildClaimItSubmissionHeaders = async (settings) => {
 
   return {
     'Content-Type': 'application/json',
-    Accept: 'application/json',
-    Authorization: `Bearer ${await fetchClaimItToken(settings)}`,
+    // CLAIM-it/IIS rejects a strict application/json Accept with HTTP 406; mirror
+    // the HMS curl client (Accept: */*) so claim submission is not refused.
+    Accept: '*/*',
+    Authorization: buildClaimItAuthorizationHeader(await fetchClaimItToken(settings)),
   }
 }
 
@@ -2041,6 +2175,44 @@ const validateSettingsForCcCode = (settings) => {
   assertRequiredText(credentials.apiSecret, 'Healthmanager API secret')
 }
 
+const getClaimItTransportErrorMessage = (error, url) => {
+  const code = normalizeText(error?.cause?.code || error?.code)
+  const target = normalizeText(url)
+
+  if (code === 'ECONNREFUSED') {
+    return `CLAIM-it local bridge is not reachable at ${target}. Confirm CLAIM-it is running on this machine and the saved CLAIM-it base URL is correct.`
+  }
+  if (code === 'ENOTFOUND') {
+    return `CLAIM-it host could not be resolved for ${target}. Check the saved CLAIM-it base URL.`
+  }
+  if (code === 'ETIMEDOUT' || code === 'UND_ERR_CONNECT_TIMEOUT') {
+    return `CLAIM-it request timed out at ${target}. Confirm CLAIM-it is running and reachable from this machine.`
+  }
+
+  return `CLAIM-it request failed at ${target}: ${error?.message || 'network request failed'}.`
+}
+
+export const getClaimItUpstreamErrorMessage = (body) => {
+  if (!body) return ''
+  if (typeof body === 'string') return normalizeText(body)
+  if (typeof body !== 'object') return normalizeText(body)
+
+  return normalizeText(
+    body.user_msg ||
+      body.userMessage ||
+      body.message ||
+      body.error ||
+      body.detail ||
+      body.raw ||
+      body.statusMessage
+  )
+}
+
+const buildClaimItHttpError = (label, status, body) => {
+  const upstreamMessage = getClaimItUpstreamErrorMessage(body)
+  return `${label} returned HTTP ${status}${upstreamMessage ? `: ${upstreamMessage}` : ''}.`
+}
+
 const submitPayload = async (settings, payload, endpointPathOverride = '') => {
   const endpointPath = normalizeText(endpointPathOverride || settings.claimEndpointPath)
   if (!endpointPath) {
@@ -2073,11 +2245,16 @@ const submitPayload = async (settings, payload, endpointPathOverride = '') => {
     delete headers.Authorization
   }
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers,
-    body,
-  })
+  let response
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body,
+    })
+  } catch (error) {
+    throw new Error(getClaimItTransportErrorMessage(error, url))
+  }
   const text = await response.text()
   return {
     endpoint: url,
@@ -2121,8 +2298,65 @@ const validateClaimItBridgePayload = async (settings, payload) => {
   if (!isClaimItBridgeMode(settings) || validationMode === 'submit_only' || !endpointPath) return
   const result = await submitPayload(settings, payload, endpointPath)
   if (!result.ok) {
-    throw new Error(`CLAIM-it validation returned HTTP ${result.httpStatus}.`)
+    throw new Error(buildClaimItHttpError('CLAIM-it validation', result.httpStatus, result.body))
   }
+}
+
+const shouldTryNextClaimItTokenRequest = (status) =>
+  [400, 404, 405, 406, 415].includes(Number(status))
+
+export const buildClaimItTokenRequestCandidates = ({ baseUrl, tokenPath = '/token', username, password } = {}) => {
+  const tokenUrl = `${normalizeText(baseUrl).replace(/\/+$/, '')}/${normalizeText(tokenPath || '/token').replace(/^\/+/, '')}`
+  const queryUrl = new URL(tokenUrl)
+  queryUrl.searchParams.set('username', username)
+  queryUrl.searchParams.set('password', password)
+  const formBody = new URLSearchParams({ username, password }).toString()
+
+  // CLAIM-it/IIS returns HTTP 406 (Not Acceptable) when the Accept header does
+  // not match what the endpoint produces. A PHP curl client (as the HMS uses)
+  // defaults to Accept: */*, so mirror that to avoid content-negotiation rejection.
+  return [
+    {
+      label: 'query POST',
+      url: queryUrl,
+      init: {
+        method: 'POST',
+        headers: { Accept: '*/*' },
+      },
+    },
+    {
+      label: 'form POST',
+      url: new URL(tokenUrl),
+      init: {
+        method: 'POST',
+        headers: {
+          Accept: '*/*',
+          'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+        },
+        body: formBody,
+      },
+    },
+    {
+      label: 'json POST',
+      url: new URL(tokenUrl),
+      init: {
+        method: 'POST',
+        headers: {
+          Accept: '*/*',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ username, password }),
+      },
+    },
+    {
+      label: 'query GET',
+      url: queryUrl,
+      init: {
+        method: 'GET',
+        headers: { Accept: '*/*' },
+      },
+    },
+  ]
 }
 
 const fetchClaimItToken = async (settings) => {
@@ -2130,29 +2364,44 @@ const fetchClaimItToken = async (settings) => {
   const username = assertRequiredText(credentials.username, 'CLAIM-it username')
   const password = assertRequiredText(credentials.password, 'CLAIM-it password')
   const tokenPath = normalizeText(credentials.tokenEndpointPath) || '/token'
-  const url = new URL(`${getClaimSubmitBaseUrl(settings).replace(/\/+$/, '')}/${tokenPath.replace(/^\/+/, '')}`)
-  url.searchParams.set('username', username)
-  url.searchParams.set('password', password)
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-    },
+  const failures = []
+  const candidates = buildClaimItTokenRequestCandidates({
+    baseUrl: getClaimSubmitBaseUrl(settings),
+    tokenPath,
+    username,
+    password,
   })
-  const text = await response.text()
-  const body = parseJson(text, { raw: text })
 
-  if (!response.ok) {
-    throw new Error(`CLAIM-it token request returned HTTP ${response.status}.`)
+  for (const candidate of candidates) {
+    let response
+    try {
+      response = await fetch(candidate.url, candidate.init)
+    } catch (error) {
+      throw new Error(getClaimItTransportErrorMessage(error, candidate.url.toString()))
+    }
+
+    const text = await response.text()
+    const body = parseJson(text, { raw: text })
+
+    if (!response.ok) {
+      const upstreamMessage = getClaimItUpstreamErrorMessage(body)
+      failures.push(`${candidate.label} HTTP ${response.status}${upstreamMessage ? `: ${upstreamMessage}` : ''}`)
+      if (shouldTryNextClaimItTokenRequest(response.status)) {
+        continue
+      }
+      throw new Error(buildClaimItHttpError('CLAIM-it token request', response.status, body))
+    }
+
+    const token = normalizeText(body?.token)
+    if (!token) {
+      throw new Error('CLAIM-it token response did not include a token.')
+    }
+
+    return token
   }
 
-  const token = normalizeText(body?.token)
-  if (!token) {
-    throw new Error('CLAIM-it token response did not include a token.')
-  }
-
-  return token
+  throw new Error(`CLAIM-it token request failed. Tried: ${failures.join('; ')}.`)
 }
 
 const deriveRemoteStatus = (body) => {
@@ -2417,7 +2666,7 @@ export const generateNhiaCcCode = async (claimContext = {}) => {
   try {
     const result = await submitPayload(settings, payload, endpointPath)
     if (!result.ok) {
-      throw new Error(`NHIA API returned HTTP ${result.httpStatus}.`)
+      throw new Error(buildClaimItHttpError('NHIA API', result.httpStatus, result.body))
     }
     const ccCode = extractCcCode(result.body)
     if (!ccCode) {
@@ -2478,20 +2727,14 @@ export const submitNhiaDirectPayload = async ({ payload, claimIds = [], action =
     throw new Error('Direct NHIA submission requires at least one local claim ID.')
   }
 
-  const localClaims = normalizedClaimIds.map((id) => {
-    const claim = getNhiaClaim(id)
-    if (!claim) {
-      throw new Error('Direct NHIA submission can only submit existing local claims.')
-    }
-    return claim
-  })
+  const localClaims = resolveDirectSubmissionLocalClaims(normalizedClaimIds)
   const payloadClaims = Array.isArray(payload.claims) ? payload.claims : [payload]
   if (payloadClaims.length !== localClaims.length) {
     throw new Error('Direct NHIA submission payload must match the selected local claims.')
   }
 
-  const localClaimNumbers = new Set(localClaims.map((claim) => normalizeText(claim.claimNumber)))
-  const payloadClaimNumbers = payloadClaims.map((claim) => normalizeText(claim.claimNumber || claim.claim_no || claim.claimNo))
+  const localClaimNumbers = new Set(localClaims.map((claim) => claim.claimNumber))
+  const payloadClaimNumbers = payloadClaims.map((claim) => normalizeDirectSubmissionClaimNumber(claim))
   if (payloadClaimNumbers.some((claimNumber) => !claimNumber || !localClaimNumbers.has(claimNumber))) {
     throw new Error('Direct NHIA submission payload does not match the selected local claims.')
   }
@@ -2512,7 +2755,7 @@ export const submitNhiaDirectPayload = async ({ payload, claimIds = [], action =
   try {
     const result = await submitPayload(settings, payload)
     if (!result.ok) {
-      throw new Error(`NHIA API returned HTTP ${result.httpStatus}.`)
+      throw new Error(buildClaimItHttpError('CLAIM-it claim submission', result.httpStatus, result.body))
     }
     const remoteStatus = deriveRemoteStatus(result.body)
     logSubmission({
@@ -2609,7 +2852,7 @@ export const submitNhiaClaim = async (id) => {
   try {
     const result = await submitPayload(settings, payload)
     if (!result.ok) {
-      throw new Error(`NHIA API returned HTTP ${result.httpStatus}.`)
+      throw new Error(buildClaimItHttpError('NHIA API', result.httpStatus, result.body))
     }
 
     const remoteStatus = deriveRemoteStatus(result.body)
