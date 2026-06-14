@@ -7193,6 +7193,9 @@ const buildNhisClaimItDirectJsonPayload = async (payload) => {
     claimCount: payload.claimCount,
     totalAmount: payload.totalAmount,
     claimReferences,
+    // CLAIM-it /claims expects the claim array at the top level (Claims-Data = { claims: [...] }),
+    // each carrying a claimID. The full relational bundle remains under `data` for the importer.
+    claims,
     ...bundle,
     data: {
       ...bundle.data,
