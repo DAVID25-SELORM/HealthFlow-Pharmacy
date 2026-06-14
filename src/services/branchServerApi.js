@@ -251,8 +251,9 @@ export const getBranchInventory = async ({ branchId = '', limit = 5000 } = {}) =
   }
   params.set('limit', String(limit))
 
+  const requestedLimit = Number(limit || 0)
   const response = await branchFetch(`/api/inventory?${params.toString()}`, {
-    timeoutMs: DEFAULT_BRANCH_REQUEST_TIMEOUT_MS,
+    timeoutMs: requestedLimit >= 1000 ? LONG_BRANCH_REQUEST_TIMEOUT_MS : DEFAULT_BRANCH_REQUEST_TIMEOUT_MS,
   })
   return response.data || []
 }
