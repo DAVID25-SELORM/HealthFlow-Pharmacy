@@ -348,6 +348,7 @@ describe('hospital NHIA claim persistence', () => {
         {
           id: '3f3e0422-594f-4ef4-a528-3979722107ee',
           claimNumber: 'NHIS-000014',
+          claimItClaimId: '',
           source: 'offline_nhis_claims',
         },
       ])
@@ -403,6 +404,103 @@ describe('hospital NHIA claim persistence', () => {
         claimId: 'e026c30b-3b22-4340-b763-62a625bbffe9',
         localClaimId: 'e026c30b-3b22-4340-b763-62a625bbffe9',
       })
+    } finally {
+      fs.rmSync(testDirectory, { recursive: true, force: true })
+    }
+  })
+
+  it('repairs missing CLAIM-it claim IDs from local claim records before direct submit', () => {
+    const testDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'healthflow-claimit-repair-claim-id-'))
+    const repositoryUrl = pathToFileURL(path.resolve('local-branch-server/src/nhiaRepository.js')).href
+    const databaseUrl = pathToFileURL(path.resolve('local-branch-server/src/db.js')).href
+    const script = `
+      const {
+        createNhiaClaim,
+        getNhiaClaim,
+        saveNhiaSettings,
+        submitNhiaDirectPayload,
+      } = await import(${JSON.stringify(repositoryUrl)});
+      const { closeDatabase } = await import(${JSON.stringify(databaseUrl)});
+      const calls = [];
+      globalThis.fetch = async (url, init = {}) => {
+        calls.push({ url: String(url), body: init.body || '' });
+        if (String(url).includes('/token')) {
+          return { ok: true, status: 200, text: async () => JSON.stringify({ token: 'claimit-token' }) };
+        }
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({ success: true, savedClaims: 1, passedClaims: 1 }),
+        };
+      };
+      saveNhiaSettings({
+        mode: 'ONLINE_LOCAL_SYNC',
+        facilityCode: '03-05-001-02-01954-11-P1-2-011225',
+        providerNumber: '03-05-01954',
+        credentialCode: '03-05-001-02-01954-11-P1-2-011225',
+        accreditationExpiryDate: '2026-12-31',
+        claimsOfficerName: 'Claims Officer',
+        directApiEnabled: true,
+        integrationMode: 'claimit_bridge',
+        apiBaseUrl: 'https://elig.nhia.gov.gh:5000',
+        claimitSubmitBaseUrl: 'http://localhost:31719/json-api',
+        claimEndpointPath: '/claims',
+        memberLookupEndpointPath: '/api/hmis/genCCC',
+        credentialMode: 'claimit_token',
+        credentials: {
+          apiKey: 'nhia-api-key',
+          apiSecret: 'nhia-api-secret',
+          username: 'claimit-user',
+          password: 'claimit-password',
+        },
+      });
+      const claim = createNhiaClaim({
+        claimNumber: 'NHIS-000014',
+        patientName: 'Ama Mensah',
+        memberNumber: '12345678',
+        ccCode: '12345',
+        serviceDate: '2026-06-14',
+        items: [{ name: 'Paracetamol', quantity: 1, unitPrice: 2, nhiaCode: 'NH001' }],
+      });
+      const result = await submitNhiaDirectPayload({
+        claimIds: [claim.id],
+        payload: {
+          payloadFormat: 'claimit_direct_json_v1',
+          claims: [{ claimNumber: 'NHIS-000014' }],
+          claimReferences: [{ claimNumber: 'NHIS-000014' }],
+          data: { claims: [{ claimNumber: 'NHIS-000014' }] },
+        },
+      });
+      const claimSubmit = calls.find((call) => call.url.endsWith('/claims'));
+      const submitted = JSON.parse(claimSubmit.body);
+      const repaired = getNhiaClaim(claim.id);
+      closeDatabase();
+      console.log(JSON.stringify({
+        status: result.status,
+        claimID: submitted.claims[0].claimID,
+        dataClaimID: submitted.data.claims[0].claimID,
+        referenceClaimID: submitted.claimReferences[0].claimID,
+        repairedClaimID: repaired.payload.claimID,
+      }));
+    `
+
+    try {
+      const output = execFileSync(process.execPath, ['--input-type=module', '--eval', script], {
+        cwd: path.resolve('local-branch-server'),
+        env: {
+          ...process.env,
+          HEALTHFLOW_DB_PATH: path.join(testDirectory, 'branch.sqlite'),
+          BRANCH_SERVER_TOKEN: 'test-branch-token-with-enough-entropy',
+        },
+        encoding: 'utf8',
+      })
+      const result = JSON.parse(output.trim().split(/\r?\n/).at(-1))
+
+      expect(result.status).toBe('submitted')
+      expect(result.claimID).toMatch(/^[0-9a-f]{40}$/)
+      expect(result.dataClaimID).toBe(result.claimID)
+      expect(result.referenceClaimID).toBe(result.claimID)
+      expect(result.repairedClaimID).toBe(result.claimID)
     } finally {
       fs.rmSync(testDirectory, { recursive: true, force: true })
     }

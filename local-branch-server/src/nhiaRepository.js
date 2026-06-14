@@ -47,6 +47,8 @@ const DEFAULT_CLAIMIT_CLAIM_ENDPOINT = '/claims'
 const DEFAULT_NHIA_INTEGRATION_MODE = 'claimit_assisted'
 const CLAIMIT_CXF_API_BLOCK_MESSAGE =
   'Direct CLAIM-it CXF import is not allowed by the API. Please export the CXF file and import it manually into CLAIM-it.'
+const CLAIMIT_MISSING_CLAIM_ID_MESSAGE =
+  'CLAIM-it claimID is missing. Please regenerate or repair this claim before direct API submission.'
 const SUPABASE_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i
 const DIAGNOSIS_TREATMENT_RULES = [
   {
@@ -603,6 +605,12 @@ const selectClaimServices = db.prepare(`
   FROM nhia_claim_services
   WHERE nhia_claim_id = ?
   ORDER BY created_at ASC
+`)
+const updateClaimPayloadJson = db.prepare(`
+  UPDATE nhia_claims
+  SET payload_json = ?,
+      updated_at = ?
+  WHERE id = ?
 `)
 
 const updateClaimStatus = db.prepare(`
@@ -1669,6 +1677,59 @@ export const getNhiaClaim = (id) => {
 const normalizeDirectSubmissionClaimNumber = (claim = {}) =>
   normalizeText(claim.claimNumber || claim.claim_number || claim.claim_no || claim.claimNo)
 
+const normalizeDirectSubmissionClaimId = (value) => {
+  if (value && typeof value === 'object') {
+    return normalizeText(value.guid || value.id || value.claimID || value.claimId)
+  }
+  return normalizeText(value)
+}
+
+const createClaimItClaimId = (claim = {}, index = 0) => {
+  const source = normalizeText(
+    claim.claimItClaimId ||
+      claim.claimID ||
+      claim.claimId ||
+      claim.id ||
+      claim.localClaimId ||
+      claim.claimNumber ||
+      claim.claim_number
+  )
+  if (!source) return ''
+
+  // CLAIM-it relational exports use a GUID-like claimID, separate from the human claim number.
+  const seed = `healthflow-claimit-claim:${source}:${normalizeDirectSubmissionClaimNumber(claim)}:${index}`
+  let output = ''
+  for (let block = 0; output.length < 40; block += 1) {
+    let hash = (2166136261 ^ block) >>> 0
+    for (let charIndex = 0; charIndex < seed.length; charIndex += 1) {
+      const code = seed.charCodeAt(charIndex) + block + charIndex
+      hash ^= code
+      hash = Math.imul(hash, 16777619) >>> 0
+    }
+    output += hash.toString(16).padStart(8, '0')
+  }
+  return output.slice(0, 40)
+}
+
+const getExistingPayloadClaimId = (payload = {}, index = 0) =>
+  normalizeDirectSubmissionClaimId(
+    payload.claims?.[index]?.claimID ||
+      payload.claims?.[index]?.guid ||
+      payload.claimReferences?.[index]?.claimID ||
+      payload.claimReferences?.[index]?.guid ||
+      payload.data?.claims?.[index]?.claimID ||
+      payload.data?.claims?.[index]?.guid
+  )
+
+const resolveDirectSubmissionClaimId = (payload = {}, localClaims = [], claim = {}, index = 0) =>
+  normalizeDirectSubmissionClaimId(
+    claim.claimID ||
+      claim.guid ||
+      getExistingPayloadClaimId(payload, index) ||
+      localClaims[index]?.claimItClaimId ||
+      localClaims[index]?.claimID
+  ) || createClaimItClaimId(localClaims[index] || claim, index)
+
 const getDirectSubmissionPayloadClaims = (payload = {}) => {
   if (!payload || typeof payload !== 'object') return []
   if (Array.isArray(payload.claims)) return payload.claims
@@ -1681,21 +1742,30 @@ const getDirectSubmissionPayloadClaims = (payload = {}) => {
 export const withDirectSubmissionClaimIds = (payload = {}, localClaims = []) => {
   if (!payload || typeof payload !== 'object') return payload
 
+  const baseClaims = Array.isArray(payload.claims) ? payload.claims : []
   const enriched = {
     ...payload,
+    claims: baseClaims.length
+      ? baseClaims.map((claim, index) => {
+          const claimID = resolveDirectSubmissionClaimId(payload, localClaims, claim, index)
+          return {
+            ...claim,
+            claimID,
+            claimId: normalizeText(claim.claimId || claim.localClaimId || localClaims[index]?.id),
+            localClaimId: normalizeText(claim.localClaimId || claim.claimId || localClaims[index]?.id),
+          }
+        })
+      : payload.claims,
     claimReferences: Array.isArray(payload.claimReferences)
-      ? payload.claimReferences.map((claim, index) => ({
-          ...claim,
-          claimId: normalizeText(claim.claimId || claim.localClaimId || localClaims[index]?.id),
-          localClaimId: normalizeText(claim.localClaimId || claim.claimId || localClaims[index]?.id),
-          claimID: normalizeText(
-            claim.claimID ||
-              claim.guid ||
-              payload.data?.claims?.[index]?.claimID ||
-              payload.data?.claims?.[index]?.guid ||
-              localClaims[index]?.claimItClaimId
-          ),
-        }))
+      ? payload.claimReferences.map((claim, index) => {
+          const claimID = resolveDirectSubmissionClaimId(payload, localClaims, claim, index)
+          return {
+            ...claim,
+            claimId: normalizeText(claim.claimId || claim.localClaimId || localClaims[index]?.id),
+            localClaimId: normalizeText(claim.localClaimId || claim.claimId || localClaims[index]?.id),
+            claimID,
+          }
+        })
       : payload.claimReferences,
   }
 
@@ -1703,7 +1773,7 @@ export const withDirectSubmissionClaimIds = (payload = {}, localClaims = []) => 
     enriched.data = {
       ...payload.data,
       claims: payload.data.claims.map((claim, index) => {
-        const claimItId = normalizeText(claim.claimID || claim.guid || localClaims[index]?.claimItClaimId)
+        const claimItId = resolveDirectSubmissionClaimId(payload, localClaims, claim, index)
         const localClaimId = normalizeText(claim.claimId || claim.localClaimId || localClaims[index]?.id)
         return {
           ...claim,
@@ -1718,6 +1788,62 @@ export const withDirectSubmissionClaimIds = (payload = {}, localClaims = []) => 
   return enriched
 }
 
+const getDirectSubmissionClaimAudit = (payload = {}, localClaims = []) =>
+  getDirectSubmissionPayloadClaims(payload).map((claim, index) => ({
+    internalClaimId: localClaims[index]?.id || normalizeText(claim.claimId || claim.localClaimId),
+    claim_number: localClaims[index]?.claimNumber || normalizeDirectSubmissionClaimNumber(claim),
+    claimID: normalizeDirectSubmissionClaimId(claim.claimID || payload.data?.claims?.[index]?.claimID),
+    submissionRoute: 'direct_api_submission',
+  }))
+
+const assertDirectSubmissionClaimIds = (payload = {}, localClaims = []) => {
+  const audit = getDirectSubmissionClaimAudit(payload, localClaims)
+  const missing = audit.filter((claim) => !claim.claimID)
+  if (missing.length) {
+    throw new Error(CLAIMIT_MISSING_CLAIM_ID_MESSAGE)
+  }
+  return audit
+}
+
+const repairNhiaClaimPayloadClaimId = (claimId, claimID) => {
+  const claim = getNhiaClaim(claimId)
+  if (!claim || !claimID) return false
+  const payload = claim.payload && typeof claim.payload === 'object' ? claim.payload : {}
+  if (normalizeDirectSubmissionClaimId(payload.claimID || payload.claimId) === claimID) return false
+
+  updateClaimPayloadJson.run(json({
+    ...payload,
+    claimID,
+    claimItClaimId: claimID,
+  }), nowIso(), claimId)
+  return true
+}
+
+export const repairMissingNhiaClaimIds = (claimIds = []) => {
+  const normalizedClaimIds = Array.isArray(claimIds)
+    ? claimIds.map((id) => normalizeText(id)).filter(Boolean)
+    : []
+  const targetClaims = normalizedClaimIds.length
+    ? resolveDirectSubmissionLocalClaims(normalizedClaimIds)
+    : listNhiaClaims({ limit: 5000 }).map((claim) => ({
+        id: claim.id,
+        claimNumber: claim.claimNumber,
+        claimItClaimId: normalizeDirectSubmissionClaimId(claim.payload?.claimID || claim.payload?.claimItClaimId),
+        source: 'nhia_claims',
+      }))
+  let repaired = 0
+
+  targetClaims.forEach((claim, index) => {
+    if (claim.source !== 'nhia_claims') return
+    const claimID = normalizeDirectSubmissionClaimId(claim.claimItClaimId) || createClaimItClaimId(claim, index)
+    if (repairNhiaClaimPayloadClaimId(claim.id, claimID)) {
+      repaired += 1
+    }
+  })
+
+  return { checked: targetClaims.length, repaired }
+}
+
 export const resolveDirectSubmissionLocalClaims = (claimIds = []) =>
   claimIds.map((id) => {
     const claim = getNhiaClaim(id)
@@ -1725,6 +1851,7 @@ export const resolveDirectSubmissionLocalClaims = (claimIds = []) =>
       return {
         id: claim.id,
         claimNumber: normalizeDirectSubmissionClaimNumber(claim),
+        claimItClaimId: normalizeDirectSubmissionClaimId(claim.payload?.claimID || claim.payload?.claimItClaimId),
         source: 'nhia_claims',
       }
     }
@@ -1734,6 +1861,7 @@ export const resolveDirectSubmissionLocalClaims = (claimIds = []) =>
       return {
         id: offlineClaim.id,
         claimNumber: normalizeDirectSubmissionClaimNumber(offlineClaim),
+        claimItClaimId: normalizeDirectSubmissionClaimId(offlineClaim.claimID || offlineClaim.claim_id || offlineClaim.claimItClaimId),
         source: 'offline_nhis_claims',
       }
     }
@@ -1771,6 +1899,10 @@ const buildClaimPayload = ({ claim, items, services = [], settings }) => ({
   serviceDate: claim.serviceDate,
   totalAmount: claim.totalAmount,
   localSaleNumber: claim.localSaleNumber || null,
+  claimID: normalizeDirectSubmissionClaimId(claim.claimID || claim.claimItClaimId) ||
+    createClaimItClaimId(claim, 0),
+  claimItClaimId: normalizeDirectSubmissionClaimId(claim.claimID || claim.claimItClaimId) ||
+    createClaimItClaimId(claim, 0),
   items: items.map((item) => ({
     drugId: item.drugId || null,
     code: item.nhiaCode || null,
@@ -1992,11 +2124,12 @@ const validateSettingsForSubmission = (settings) => {
 const isClaimItCxfImportPayload = (payload) => {
   if (!payload || typeof payload !== 'object') return false
   const payloadFormat = normalizeText(payload.payloadFormat || payload.payload_format).toLowerCase()
-  if (payloadFormat === 'claimit_relational_json_v1' || payloadFormat.includes('cxf')) return true
+  const hasDirectClaimArray = Array.isArray(payload.claims) && payload.claims.length > 0
+  if (payloadFormat.includes('cxf')) return true
   if (payload.cxfBundleBase64 || payload.cxf_bundle_base64 || payload.cxfContent || payload.cxf_content) return true
   const data = payload.data && typeof payload.data === 'object' ? payload.data : null
   if (!data) return false
-  return Array.isArray(data.validation_zclaims) || Array.isArray(data.attachmentdata)
+  return !hasDirectClaimArray && (Array.isArray(data.validation_zclaims) || Array.isArray(data.attachmentdata))
 }
 
 const validateSettingsForBatchExport = (settings) => {
@@ -2897,6 +3030,12 @@ export const submitNhiaDirectPayload = async ({ payload, claimIds = [], action =
   if (payloadClaims.length !== localClaims.length) {
     throw new Error('Direct NHIA submission payload must match the selected local claims.')
   }
+  const claimAudit = assertDirectSubmissionClaimIds(payloadToSubmit, localClaims)
+  claimAudit.forEach((claim) => {
+    if (claim.internalClaimId) {
+      repairNhiaClaimPayloadClaimId(claim.internalClaimId, claim.claimID)
+    }
+  })
 
   const localClaimNumbers = new Set(localClaims.map((claim) => claim.claimNumber))
   const payloadClaimNumbers = payloadClaims.map((claim) => normalizeDirectSubmissionClaimNumber(claim))
@@ -2912,6 +3051,7 @@ export const submitNhiaDirectPayload = async ({ payload, claimIds = [], action =
     request: {
       route: 'direct_api_submission',
       claimIds: normalizedClaimIds,
+      claims: claimAudit,
       claimCount: Array.isArray(payload.claims) ? payload.claims.length : null,
       payloadFormat: payloadToSubmit.payloadFormat || payloadToSubmit.payload_format || 'json',
       payload: payloadToSubmit,
@@ -3013,9 +3153,26 @@ export const submitNhiaClaim = async (id) => {
   }
 
   const payload = validateClaimForSubmission(claim, settings)
+  const claimID = normalizeDirectSubmissionClaimId(payload.claimID)
+  if (!claimID) {
+    throw new Error(CLAIMIT_MISSING_CLAIM_ID_MESSAGE)
+  }
+  repairNhiaClaimPayloadClaimId(id, claimID)
   const attempt = Number(claim.retryCount || 0) + 1
   await validateClaimItBridgePayload(settings, payload)
-  logSubmission({ claimId: id, action: 'claim.submit.start', status: 'pending', attempt, request: payload })
+  logSubmission({
+    claimId: id,
+    action: 'claim.submit.start',
+    status: 'pending',
+    attempt,
+    request: {
+      route: 'direct_api_submission',
+      internalClaimId: id,
+      claim_number: claim.claimNumber,
+      claimID,
+      payload,
+    },
+  })
 
   try {
     const result = await submitPayload(settings, payload)
