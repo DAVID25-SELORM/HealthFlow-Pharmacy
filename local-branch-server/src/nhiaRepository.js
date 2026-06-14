@@ -48,7 +48,7 @@ const DEFAULT_NHIA_INTEGRATION_MODE = 'claimit_assisted'
 const CLAIMIT_CXF_API_BLOCK_MESSAGE =
   'Direct CLAIM-it CXF import is not allowed by the API. Please export the CXF file and import it manually into CLAIM-it.'
 const CLAIMIT_MISSING_CLAIM_ID_MESSAGE =
-  'CLAIM-it claimID is missing. Please regenerate or repair this claim before direct API submission.'
+  'CLAIM-it claimID is missing. Regenerate or repair the claim before direct API submission.'
 const SUPABASE_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i
 const DIAGNOSIS_TREATMENT_RULES = [
   {
@@ -1742,23 +1742,29 @@ const getDirectSubmissionPayloadClaims = (payload = {}) => {
 export const withDirectSubmissionClaimIds = (payload = {}, localClaims = []) => {
   if (!payload || typeof payload !== 'object') return payload
 
-  const baseClaims = Array.isArray(payload.claims) ? payload.claims : []
+  const sourceClaims = Array.isArray(payload.claims) && payload.claims.length
+    ? payload.claims
+    : Array.isArray(payload.data?.claims) && payload.data.claims.length
+      ? payload.data.claims
+      : Array.isArray(payload.claimReferences) && payload.claimReferences.length
+        ? payload.claimReferences
+        : []
+  const directClaims = sourceClaims.map((claim, index) => {
+    const claimID = resolveDirectSubmissionClaimId(payload, localClaims, claim, index)
+    return {
+      ...claim,
+      claimID,
+      claimId: normalizeText(claim.claimId || claim.localClaimId || localClaims[index]?.id),
+      localClaimId: normalizeText(claim.localClaimId || claim.claimId || localClaims[index]?.id),
+      claimNumber: normalizeDirectSubmissionClaimNumber(claim) || localClaims[index]?.claimNumber,
+    }
+  })
   const enriched = {
     ...payload,
-    claims: baseClaims.length
-      ? baseClaims.map((claim, index) => {
-          const claimID = resolveDirectSubmissionClaimId(payload, localClaims, claim, index)
-          return {
-            ...claim,
-            claimID,
-            claimId: normalizeText(claim.claimId || claim.localClaimId || localClaims[index]?.id),
-            localClaimId: normalizeText(claim.localClaimId || claim.claimId || localClaims[index]?.id),
-          }
-        })
-      : payload.claims,
+    claims: directClaims.length ? directClaims : payload.claims,
     claimReferences: Array.isArray(payload.claimReferences)
       ? payload.claimReferences.map((claim, index) => {
-          const claimID = resolveDirectSubmissionClaimId(payload, localClaims, claim, index)
+          const claimID = directClaims[index]?.claimID || resolveDirectSubmissionClaimId(payload, localClaims, claim, index)
           return {
             ...claim,
             claimId: normalizeText(claim.claimId || claim.localClaimId || localClaims[index]?.id),
@@ -1773,7 +1779,7 @@ export const withDirectSubmissionClaimIds = (payload = {}, localClaims = []) => 
     enriched.data = {
       ...payload.data,
       claims: payload.data.claims.map((claim, index) => {
-        const claimItId = resolveDirectSubmissionClaimId(payload, localClaims, claim, index)
+        const claimItId = directClaims[index]?.claimID || resolveDirectSubmissionClaimId(payload, localClaims, claim, index)
         const localClaimId = normalizeText(claim.claimId || claim.localClaimId || localClaims[index]?.id)
         return {
           ...claim,

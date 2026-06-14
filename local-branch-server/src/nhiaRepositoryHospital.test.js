@@ -399,6 +399,12 @@ describe('hospital NHIA claim persistence', () => {
         localClaimId: 'e026c30b-3b22-4340-b763-62a625bbffe9',
         claimNumber: 'NHIS-OFF-260614-E026',
       })
+      expect(payload.claims[0]).toMatchObject({
+        claimID: '8fdce6ff-1ec4-5967-b7ba-7d93a9f4a781',
+        claimId: 'e026c30b-3b22-4340-b763-62a625bbffe9',
+        localClaimId: 'e026c30b-3b22-4340-b763-62a625bbffe9',
+        claimNumber: 'NHIS-OFF-260614-E026',
+      })
       expect(payload.data.claims[0]).toMatchObject({
         claimID: '8fdce6ff-1ec4-5967-b7ba-7d93a9f4a781',
         claimId: 'e026c30b-3b22-4340-b763-62a625bbffe9',

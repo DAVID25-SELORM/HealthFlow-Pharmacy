@@ -27,6 +27,7 @@ import {
   listNhiaClaims,
   lookupNhiaMember,
   markNhiaClaimReady,
+  repairMissingNhiaClaimIds,
   saveNhiaSettings,
   submitNhiaDirectPayload,
   submitNhiaClaim,
@@ -731,6 +732,16 @@ app.post('/api/nhia/direct-submit', async (request, response, next) => {
         claimIds: request.body?.claimIds || [],
         action: request.body?.action || 'nhis.direct_submit',
       }),
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.post('/api/nhia/repair-claim-ids', (request, response, next) => {
+  try {
+    response.json({
+      data: repairMissingNhiaClaimIds(request.body?.claimIds || []),
     })
   } catch (error) {
     next(error)
