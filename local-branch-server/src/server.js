@@ -4,8 +4,13 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { assertConfiguredForServer, config, isSupabaseSyncConfigured } from './config.js'
 import { backupDatabase, closeDatabase, getDatabaseStatus } from './db.js'
+import { normalizePharmacyClaimLines } from './claimPricing.js'
 import { createClaimBridgeRouter } from './claimBridge.js'
-import { requireBranchToken } from './httpAuth.js'
+import { getBranchAuthCookie, requireBranchToken } from './httpAuth.js'
+import {
+  BRANCH_JSON_BODY_LIMIT,
+  getBranchRequestErrorResponse,
+} from './requestLimits.js'
 import { createLocalClaim } from './claimsRepository.js'
 import { deleteLocalInventoryDrug, importInventorySnapshot, listLocalInventory, searchLocalInventory } from './inventoryRepository.js'
 import {
@@ -218,7 +223,7 @@ app.use((request, response, next) => {
 })
 
 app.use(express.json({
-  limit: '5mb',
+  limit: BRANCH_JSON_BODY_LIMIT,
   verify: (request, _response, buffer) => {
     request.rawBody = buffer.toString('utf8')
   },
@@ -242,6 +247,9 @@ app.get('/health', requireBranchToken, (_request, response) => {
 
 app.get('/branch-runtime-config.js', (request, response) => {
   const sameOriginRequest = String(request.get('Sec-Fetch-Site') || '').toLowerCase() === 'same-origin'
+  if (sameOriginRequest) {
+    response.setHeader('Set-Cookie', getBranchAuthCookie())
+  }
   response
     .type('application/javascript')
     .set('Cache-Control', 'no-store')
@@ -249,7 +257,7 @@ app.get('/branch-runtime-config.js', (request, response) => {
       `window.__HEALTHFLOW_BRANCH_SERVER__ = ${JSON.stringify({
         enabled: true,
         url: `http://localhost:${config.port}`,
-        token: sameOriginRequest ? config.branchServerToken : '',
+        token: '',
         organizationId: config.organizationId,
         branchId: config.branchId,
       })};`
@@ -611,8 +619,8 @@ app.post('/api/nhia/claims/:id/submit', async (request, response, next) => {
 })
 
 // Unified NHIS claim route for both community pharmacies (medicines only) and hospital pharmacies (medicines + G-DRG services).
-// Community pharmacy: organizationType omitted or 'pharmacy' — diagnosis optional, no service lines.
-// Hospital pharmacy:  organizationType 'hospital' — diagnosis required, services array included.
+// Community pharmacy: organizationType omitted or 'pharmacy'; diagnosis optional, no service lines.
+// Hospital pharmacy: organizationType 'hospital'; diagnosis required, services array included.
 app.post('/api/nhis/pharmacy-claim', async (request, response, next) => {
   try {
     const body = request.body || {}
@@ -624,8 +632,10 @@ app.post('/api/nhis/pharmacy-claim', async (request, response, next) => {
 
     const isHospital = (organizationType || '').toLowerCase() === 'hospital'
 
-    if (!patientName || !memberNumber || !medicines.length) {
-      response.status(400).json({ error: 'patientName, memberNumber, and at least one medicine are required.' })
+    if (!patientName || !memberNumber || (!medicines.length && !(isHospital && services.length))) {
+      response.status(400).json({
+        error: 'patientName, memberNumber, and at least one medicine or hospital service are required.',
+      })
       return
     }
     if (isHospital && !diagnosis) {
@@ -633,9 +643,8 @@ app.post('/api/nhis/pharmacy-claim', async (request, response, next) => {
       return
     }
 
-    const medicinesTotal = medicines.reduce((sum, m) => sum + Number(m.totalPrice || 0), 0)
-    const servicesTotal = isHospital ? services.reduce((sum, s) => sum + Number(s.totalAmount || 0), 0) : 0
-    const totalAmount = medicinesTotal + servicesTotal
+    const pricedLines = normalizePharmacyClaimLines({ medicines, services, isHospital })
+    const totalAmount = pricedLines.totalAmount
 
     // Generate CC code unless one was supplied by the caller.
     let ccCode = body.ccCode || null
@@ -669,32 +678,33 @@ app.post('/api/nhis/pharmacy-claim', async (request, response, next) => {
       schemeCode: schemeCode || null,
       claimPeriod: claimPeriod || null,
       claimsOfficerName: claimsOfficerName || null,
-      items: medicines.map((m) => ({
+      items: pricedLines.medicines.map((m) => ({
+        drugId: m.drugId || m.drug_id || m.id || null,
         name: m.name,
         nhiaCode: m.nhiaCode || m.code || null,
         nhisCode: m.nhiaCode || m.code || null,
         quantity: Number(m.quantity),
         unitPrice: Number(m.unitPrice),
         price: Number(m.unitPrice),
-        totalPrice: Number(m.totalPrice),
+        totalPrice: m.totalPrice,
         unit: m.unit || '',
         dosageForm: m.dosageForm || '',
         strength: m.strength || '',
         dispensaryDate: dispensingDate,
       })),
       // Hospital service/G-DRG lines stored in payload for branch server persistence.
-      services: isHospital ? services.map((s) => ({
+      services: pricedLines.services.map((s) => ({
         gdrg_code: s.gdrgCode || s.gdrg_code,
         description: s.description,
         age_band: s.ageBand || s.age_band || null,
-        unit_price: Number(s.unitPrice || s.unit_price || 0),
-        quantity: Number(s.quantity || 1),
-        total_amount: Number(s.totalAmount || s.total_amount || 0),
+        unit_price: s.unitPrice,
+        quantity: s.quantity,
+        total_amount: s.totalAmount,
         facility_group: s.facilityGroup || s.facility_group || null,
         catering_option: s.cateringOption || s.catering_option || null,
         mdc: s.mdc || null,
         service_date: dispensingDate,
-      })) : [],
+      })),
     })
 
     // Immediately submit to CLAIM-it.
@@ -967,9 +977,8 @@ if (fs.existsSync(frontendIndex)) {
 
 app.use((error, _request, response, _next) => {
   console.error(error)
-  response.status(error.status || 400).json({
-    error: 'Request failed.',
-  })
+  const errorResponse = getBranchRequestErrorResponse(error)
+  response.status(errorResponse.status).json(errorResponse.body)
 })
 
 const server = app.listen(config.port, () => {

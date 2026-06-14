@@ -405,6 +405,25 @@ CREATE TABLE IF NOT EXISTS nhia_claim_items (
 
 CREATE INDEX IF NOT EXISTS idx_nhia_claim_items_claim ON nhia_claim_items(nhia_claim_id);
 
+CREATE TABLE IF NOT EXISTS nhia_claim_services (
+  id TEXT PRIMARY KEY,
+  nhia_claim_id TEXT NOT NULL REFERENCES nhia_claims(id) ON DELETE CASCADE,
+  gdrg_code TEXT,
+  description TEXT NOT NULL,
+  quantity REAL NOT NULL,
+  unit_price REAL NOT NULL,
+  total_amount REAL NOT NULL,
+  age_band TEXT,
+  facility_group TEXT,
+  catering_option TEXT,
+  mdc TEXT,
+  service_date TEXT,
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_nhia_claim_services_claim ON nhia_claim_services(nhia_claim_id);
+
 CREATE TABLE IF NOT EXISTS nhia_claim_batches (
   id TEXT PRIMARY KEY,
   batch_number TEXT UNIQUE NOT NULL,

@@ -55,12 +55,14 @@ import {
   exportNhisClaimsFile,
   generateHostedNhiaCcCode,
   generateBrowserClaimItBridgeCcCode,
+  getAllNhisClaims,
   getNhisClaimExportDate,
   getAllNhisDrugs,
   getNhisDrugByCode,
   getNhisClaimsForPeriod,
   getNhiaApiSettings,
   nhisClaimMatchesExportPeriod,
+  mergeNhisClaimRows,
   normalizeNhisGender,
   normalizeNhisExportPeriod,
   saveNhiaApiSettings,
@@ -967,6 +969,21 @@ describe('CLAIM-it export helpers', () => {
     expect(payload.claims[0].prescriptionAttachment).toBeNull()
   })
 
+  it('defaults CLAIM-it version fields for direct JSON submissions', () => {
+    const payload = buildNhisClaimItExportPayload([claim], {
+      mode: 'custom',
+      fromDate: '2026-05-14',
+      toDate: '2026-05-14',
+      organizationType: 'hospital',
+      generatedAt: '2026-05-15T00:00:00.000Z',
+    })
+
+    expect(payload.medVersion).toBe('2025-05-01.250531')
+    expect(payload.serviceVersion).toBe('2023-02-01.250531')
+    expect(payload.policyVersion).toBe('cgs.2022-12-01.250531')
+    expect(payload.submissionMonth).toBe('')
+  })
+
   it('includes NeHFAMS attendance verification details in CLAIM-it payloads', () => {
     const payload = buildNhisClaimItExportPayload([
       {
@@ -1666,6 +1683,49 @@ describe('CLAIM-it export helpers', () => {
     expect(claimsQuery.lte).toHaveBeenCalledWith('submission_month', '2026-06')
   })
 
+  it('merges local corrections with cloud history for branch export periods', async () => {
+    const localRows = [{
+      id: 'shared-claim',
+      status: 'rejected',
+      submission_month: '2026-06',
+      service_date_from: '2026-06-11',
+      created_at: '2026-06-11T08:00:00.000Z',
+    }]
+    const cloudRows = [
+      {
+        id: 'cloud-only',
+        status: 'served',
+        submission_month: '2026-06',
+        service_date_from: '2026-06-10',
+        created_at: '2026-06-10T08:00:00.000Z',
+      },
+      {
+        id: 'shared-claim',
+        status: 'served',
+        submission_month: '2026-06',
+        service_date_from: '2026-06-11',
+        created_at: '2026-06-11T08:00:00.000Z',
+      },
+    ]
+    const claimsQuery = {
+      order: vi.fn(() => claimsQuery),
+      eq: vi.fn().mockResolvedValue({ data: cloudRows, error: null }),
+    }
+    shouldUseBranchServer.mockReturnValue(true)
+    listBranchRecords.mockResolvedValueOnce(localRows)
+    supabase.from.mockReturnValue({ select: vi.fn(() => claimsQuery) })
+
+    await expect(getNhisClaimsForPeriod({
+      mode: 'month',
+      yearMonth: '2026-06',
+    })).resolves.toEqual([
+      cloudRows[0],
+      localRows[0],
+    ])
+
+    expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { limit: 5000 })
+  })
+
   it('includes custom period metadata in CLAIM-it payload and XML', () => {
     const payload = buildNhisClaimItExportPayload([claim], {
       mode: 'custom',
@@ -1876,6 +1936,19 @@ describe('CLAIM-it export helpers', () => {
 })
 
 describe('direct NHIA submission', () => {
+  const directSettings = {
+    providerClassLevel: 'D',
+    pharmacyLevel: 'P1',
+    pharmacyFacilityLevel: 'P1',
+    facilityName: 'Westpoint Chemist',
+    facilityCode: '03-05-001-02-01954-11-P1-2-011225',
+    providerNumber: '03-05-01954',
+    providerTypeDescription: 'Pharmacy',
+    accreditationExpiryDate: '2026-12-31',
+    claimsOfficerName: 'Claims Officer',
+    submitterId: 'admin',
+    nhisDrugCatalog: [{ code: 'NH001', category: 'A' }],
+  }
   const directClaim = {
     id: 'claim-1',
     claim_number: 'NHIS-000001',
@@ -1927,9 +2000,7 @@ describe('direct NHIA submission', () => {
     await submitNhisClaimDirect('claim-1', {
       claim: directClaim,
       directApiSource: 'hosted',
-      providerClassLevel: 'D',
-      pharmacyLevel: 'P1',
-      nhisDrugCatalog: [{ code: 'NH001', category: 'A' }],
+      ...directSettings,
     })
 
     expect(invokeTierAccess).toHaveBeenCalledWith(expect.objectContaining({
@@ -1950,9 +2021,7 @@ describe('direct NHIA submission', () => {
       connectionProfile: 'local_server',
       apiBaseUrl: 'https://claims.example.test/json-api',
       claimEndpointPath: '/claims',
-      providerClassLevel: 'D',
-      pharmacyLevel: 'P1',
-      nhisDrugCatalog: [{ code: 'NH001', category: 'A' }],
+      ...directSettings,
     })
 
     expect(fetch).not.toHaveBeenCalledWith(
@@ -2068,7 +2137,8 @@ describe('direct NHIA submission', () => {
     fetch.mockResolvedValue({
       ok: true,
       status: 200,
-      text: vi.fn().mockResolvedValue(JSON.stringify({ accepted: true })),
+      arrayBuffer: vi.fn().mockResolvedValue(Uint8Array.from([0x25, 0x50, 0x44, 0x46, 0x2d]).buffer),
+      text: vi.fn().mockResolvedValue(JSON.stringify({ success: true, savedClaims: 1 })),
     })
 
     await submitNhisClaimDirect('claim-1', {
@@ -2078,16 +2148,92 @@ describe('direct NHIA submission', () => {
       connectionProfile: 'local_server',
       apiBaseUrl: 'http://localhost:31719/json-api',
       claimEndpointPath: '/claims',
-      providerClassLevel: 'D',
-      pharmacyLevel: 'P1',
-      nhisDrugCatalog: [{ code: 'NH001', category: 'A' }],
+      ...directSettings,
     })
 
-    expect(fetch).toHaveBeenCalledWith(
+    const claimSubmitCall = fetch.mock.calls.find(([url]) => url === 'http://localhost:31719/json-api/claims')
+    expect(claimSubmitCall).toEqual([
       'http://localhost:31719/json-api/claims',
-      expect.objectContaining({ method: 'POST' })
-    )
+      expect.objectContaining({ method: 'POST' }),
+    ])
+    const submittedBody = JSON.parse(claimSubmitCall[1].body)
+    expect(submittedBody).toMatchObject({
+      payloadFormat: 'claimit_relational_json_v1',
+      data: {
+        claims: [
+          expect.objectContaining({
+            claimNumber: 'NHIS-000001',
+            claimCheckCode: '12345',
+            medVersion: expect.any(String),
+            policyVersion: expect.any(String),
+          }),
+        ],
+        medicineentries: [
+          expect.objectContaining({
+            medicineCode: 'NH001',
+          }),
+        ],
+        validation_zclaims: [
+          expect.objectContaining({
+            serializedClaim: expect.any(String),
+          }),
+        ],
+      },
+      claimReferences: [
+        expect.objectContaining({
+          claimNumber: 'NHIS-000001',
+        }),
+      ],
+    })
     expect(invokeTierAccess).not.toHaveBeenCalled()
+  })
+
+  it('does not queue huge local CLAIM-it bridge payloads when the browser bridge is unreachable', async () => {
+    mockNhisClaimDuplicateAndUpdateQueries()
+    fetch
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        arrayBuffer: vi.fn().mockResolvedValue(Uint8Array.from([0x25, 0x50, 0x44, 0x46, 0x2d]).buffer),
+      })
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+
+    await expect(submitNhisClaimDirect('claim-1', {
+      claim: directClaim,
+      directApiSource: 'hosted',
+      integrationMode: 'claimit_bridge',
+      connectionProfile: 'local_server',
+      apiBaseUrl: 'http://localhost:31719/json-api',
+      claimEndpointPath: '/claims',
+      ...directSettings,
+    })).rejects.toThrow('CLAIM-it local bridge is not reachable')
+
+    expect(window.localStorage.getItem('healthflow.claimitBridgeQueue.v1')).toBeNull()
+  })
+
+  it('rejects browser bridge submissions when CLAIM-it returns HTTP 200 without saving claims', async () => {
+    mockNhisClaimDuplicateAndUpdateQueries()
+    fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      arrayBuffer: vi.fn().mockResolvedValue(Uint8Array.from([0x25, 0x50, 0x44, 0x46, 0x2d]).buffer),
+      text: vi.fn().mockResolvedValue(JSON.stringify({
+        success: false,
+        failedClaims: 1,
+        savedClaims: 0,
+        user_msg: 'Medicine price/version could not be validated.',
+      })),
+    })
+
+    await expect(submitNhisClaimDirect('claim-1', {
+      claim: directClaim,
+      directApiSource: 'hosted',
+      integrationMode: 'claimit_bridge',
+      connectionProfile: 'local_server',
+      apiBaseUrl: 'http://localhost:31719/json-api',
+      claimEndpointPath: '/claims',
+      ...directSettings,
+    })).rejects.toThrow('Medicine price/version could not be validated.')
   })
 })
 
@@ -2174,6 +2320,71 @@ describe('NHIS claim save attachment behavior', () => {
         requirePrescriptionAttachment: true,
       }
     )).rejects.toThrow('Attach the scanned prescription PDF or JPEG')
+  })
+
+  it('updates local branch NHIS claims without probing the Supabase mirror row', async () => {
+    shouldUseBranchServer.mockReturnValue(false)
+    updateBranchRecord.mockResolvedValueOnce({
+      id: 'claim-1',
+      claim_number: 'NHIS-000001',
+      status: 'served',
+    })
+
+    await expect(updateNhisClaim(
+      'claim-1',
+      {
+        ...baseClaim,
+        cccNo: '81416',
+        claimitAttachmentFileName: 'prescription_NHIS-000001.pdf',
+        claimitAttachmentFileType: 'pdf',
+        claimitAttachmentMimeType: 'application/pdf',
+        claimitAttachmentBase64: Buffer.from('%PDF-1.7\n%%EOF', 'utf8').toString('base64'),
+      },
+      [medicineWithTotal],
+      {
+        useBranchServer: true,
+        providerClassLevel: 'D',
+        pharmacyLevel: 'P1',
+        nhisDrugCatalog: [{ code: 'NH001', category: 'A' }],
+      }
+    )).resolves.toMatchObject({
+      id: 'claim-1',
+      status: 'served',
+    })
+
+    expect(updateBranchRecord).toHaveBeenCalledWith(
+      'nhis/claims',
+      'claim-1',
+      expect.objectContaining({
+        claimit_attachment_file_name: 'prescription_NHIS-000001.pdf',
+        nhis_claim_medicines: expect.any(Array),
+      })
+    )
+    expect(supabase.from).not.toHaveBeenCalledWith('nhis_claims')
+  })
+
+  it('blocks an inline CLAIM-it attachment larger than 3 MB before saving', async () => {
+    shouldUseBranchServer.mockReturnValue(true)
+    const oversizedPdf = Buffer.concat([
+      Buffer.from('%PDF-1.7\n', 'utf8'),
+      Buffer.alloc(3 * 1024 * 1024),
+    ]).toString('base64')
+
+    await expect(createNhisClaim(
+      {
+        ...baseClaim,
+        claimitAttachmentFileName: 'prescription_NHIS-000001.pdf',
+        claimitAttachmentFileType: 'pdf',
+        claimitAttachmentMimeType: 'application/pdf',
+        claimitAttachmentBase64: oversizedPdf,
+      },
+      [medicineWithTotal],
+      {
+        providerClassLevel: 'D',
+        pharmacyLevel: 'P1',
+        nhisDrugCatalog: [{ code: 'NH001', category: 'A' }],
+      }
+    )).rejects.toThrow('attachment is larger than 3 MB')
   })
 })
 
@@ -2897,6 +3108,107 @@ describe('NHIS drug catalog routing', () => {
   })
 })
 
+describe('NHIS local and cloud claim reads', () => {
+  const mockCloudNhisClaimsQuery = ({ rows = [], error = null } = {}) => {
+    const query = {
+      select: vi.fn(() => query),
+      order: vi.fn(() => query),
+      eq: vi.fn(() => query),
+      or: vi.fn(() => query),
+      then: (resolve, reject) => Promise.resolve({ data: rows, error }).then(resolve, reject),
+    }
+    supabase.from.mockReturnValue(query)
+    return query
+  }
+
+  it('merges cloud history with local claims and gives the local copy precedence', () => {
+    const cloudRows = [
+      { id: 'cloud-only', status: 'served', created_at: '2026-06-10T08:00:00Z' },
+      { id: 'shared', status: 'served', notes: 'cloud copy', created_at: '2026-06-11T08:00:00Z' },
+    ]
+    const localRows = [
+      { id: 'shared', status: 'rejected', notes: 'local correction', created_at: '2026-06-11T08:00:00Z' },
+      { id: 'local-only', status: 'served', created_at: '2026-06-12T08:00:00Z' },
+    ]
+
+    expect(mergeNhisClaimRows(cloudRows, localRows)).toEqual([
+      localRows[1],
+      localRows[0],
+      cloudRows[0],
+    ])
+  })
+
+  it('keeps cloud history visible when the online local cache contains only one claim', async () => {
+    const localRows = [
+      { id: 'local-claim', status: 'served', created_at: '2026-06-12T08:00:00Z' },
+    ]
+    const cloudRows = [
+      { id: 'cloud-claim', status: 'submitted', created_at: '2026-06-10T08:00:00Z' },
+    ]
+    shouldUseBranchServer.mockReturnValue(true)
+    listBranchRecords.mockResolvedValueOnce(localRows)
+    mockCloudNhisClaimsQuery({ rows: cloudRows })
+
+    await expect(getAllNhisClaims()).resolves.toEqual([
+      localRows[0],
+      cloudRows[0],
+    ])
+
+    expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { limit: 5000 })
+    expect(supabase.from).toHaveBeenCalledWith('nhis_claims')
+  })
+
+  it('does not revive a stale cloud status in a filtered view', async () => {
+    const localRows = [
+      { id: 'shared', status: 'rejected', created_at: '2026-06-12T08:00:00Z' },
+    ]
+    const cloudRows = [
+      { id: 'shared', status: 'served', created_at: '2026-06-12T08:00:00Z' },
+      { id: 'served-cloud', status: 'served', created_at: '2026-06-11T08:00:00Z' },
+    ]
+    shouldUseBranchServer.mockReturnValue(true)
+    listBranchRecords.mockResolvedValueOnce(localRows)
+    mockCloudNhisClaimsQuery({ rows: cloudRows })
+
+    await expect(getAllNhisClaims({ status: 'served' })).resolves.toEqual([
+      cloudRows[1],
+    ])
+  })
+
+  it('uses only the filtered local cache when internet is unavailable', async () => {
+    const localRows = [
+      { id: 'offline-claim', status: 'served', created_at: '2026-06-12T08:00:00Z' },
+    ]
+    shouldUseBranchServer.mockReturnValue(true)
+    getConnectivityState.mockReturnValueOnce({
+      mode: 'OFFLINE_LOCAL',
+      internetAvailable: false,
+      branchServerAvailable: true,
+      checkedAt: Date.now(),
+    })
+    listBranchRecords.mockResolvedValueOnce(localRows)
+
+    await expect(getAllNhisClaims({ status: 'served' })).resolves.toEqual(localRows)
+
+    expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { status: 'served' })
+    expect(supabase.from).not.toHaveBeenCalled()
+  })
+
+  it('falls back to local claims when the cloud read fails', async () => {
+    const localRows = [
+      { id: 'local-served', status: 'served', created_at: '2026-06-12T08:00:00Z' },
+      { id: 'local-rejected', status: 'rejected', created_at: '2026-06-11T08:00:00Z' },
+    ]
+    shouldUseBranchServer.mockReturnValue(true)
+    listBranchRecords.mockResolvedValueOnce(localRows)
+    mockCloudNhisClaimsQuery({ error: new Error('cloud unavailable') })
+
+    await expect(getAllNhisClaims({ status: 'served' })).resolves.toEqual([
+      localRows[0],
+    ])
+  })
+})
+
 describe('NHIS claim status routing', () => {
   it('does not report success when the live schema would discard an RX attachment', async () => {
     const updatePayloads = []
@@ -3023,6 +3335,11 @@ describe('validateNhisPrescriptionPdfFile', () => {
   })
 
   it('enforces the 3 MB prescription attachment limit', () => {
+    expect(validateNhisPrescriptionPdfFile({
+      name: 'rx.pdf',
+      type: 'application/pdf',
+      size: 3 * 1024 * 1024,
+    })).toBe('')
     expect(validateNhisPrescriptionPdfFile({ name: 'rx.pdf', type: 'application/pdf', size: 4 * 1024 * 1024 })).toBe(
       'Prescription attachment must be 3 MB or smaller.'
     )

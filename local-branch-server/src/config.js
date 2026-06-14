@@ -44,9 +44,8 @@ const resolveClaimBridgeEnabled = () => {
 const resolveTrustProxy = () => {
   const value = String(process.env.TRUST_PROXY || '').trim().toLowerCase()
   if (!value || ['0', 'false', 'no', 'off'].includes(value)) return false
-  if (['1', 'true', 'yes', 'on'].includes(value)) return 1
-  const numeric = Number(value)
-  return Number.isFinite(numeric) ? numeric : value
+  if (['1', 'true', 'yes', 'on', 'loopback'].includes(value)) return 'loopback'
+  throw new Error('TRUST_PROXY only supports false or loopback for the local branch server.')
 }
 
 export const config = {

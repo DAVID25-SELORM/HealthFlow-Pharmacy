@@ -10,6 +10,7 @@ import {
   ShoppingCart,
   Upload,
 } from 'lucide-react'
+import Seo from '../components/Seo/Seo'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
 import {
@@ -266,6 +267,19 @@ const CustomerEPharmacy = () => {
 
   return (
     <div className="customer-shop-page">
+      <Seo
+        title="Shop Medicines Online"
+        description="Order medicines online from licensed pharmacies with pharmacist-reviewed orders, pickup and delivery options on HealthFlow."
+        path="/shop"
+        jsonLd={{
+          '@context': 'https://schema.org',
+          '@type': 'Pharmacy',
+          name: 'HealthFlow Customer Pharmacy',
+          description: 'Licensed facilities and pharmacist-reviewed orders.',
+          url: 'https://health-flow-pharmacy.vercel.app/shop',
+          medicalSpecialty: 'Pharmacy',
+        }}
+      />
       <header className="customer-shop-header">
         <a className="customer-shop-brand" href="/shop">
           <img src="/app-logo.png" alt="HealthFlow" />

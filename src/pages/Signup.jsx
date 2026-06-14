@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import Seo from '../components/Seo/Seo'
 import { useAuth } from '../context/AuthContext'
 import {
   checkSubdomainAvailability,
@@ -217,6 +218,11 @@ const Signup = () => {
 
   return (
     <div className="signup-page">
+      <Seo
+        title="Create Your Pharmacy Account"
+        description="Get started with HealthFlow — register your pharmacy or facility for claims, NHIS, inventory, and operations management."
+        path="/signup"
+      />
       <div className="signup-container">
         <div className="signup-header">
           <img src="/app-logo.png" alt="HealthFlow logo" className="signup-brand-logo" />

@@ -2,6 +2,7 @@ import crypto from 'node:crypto'
 import { config } from './config.js'
 import { createId, db, json, nowIso, parseJson } from './db.js'
 import { createLocalSale, getLocalSale, markLocalSalePaidAndQueueSync } from './salesRepository.js'
+import { verifyHubtelWebhookSignature } from './webhookSecurity.js'
 
 const PROVIDERS = new Set(['hubtel', 'paystack'])
 const ONLINE_PAYMENT_METHODS = new Set(['momo', 'card'])
@@ -327,21 +328,6 @@ const verifyPaystackSignature = (rawBody, signature) => {
   }
 }
 
-const verifyHubtelSignatureIfConfigured = (rawBody, headers = {}) => {
-  if (!config.payments.hubtel.webhookSecret) return
-  const signature =
-    headers['x-hubtel-signature'] ||
-    headers['x-hubtel-webhook-signature'] ||
-    headers['x-signature']
-  const expected = crypto
-    .createHmac('sha256', config.payments.hubtel.webhookSecret)
-    .update(rawBody || '')
-    .digest('hex')
-  if (!timingSafeEqual(expected, signature)) {
-    throw new Error('Invalid Hubtel webhook signature.')
-  }
-}
-
 const verifyPaystackTransaction = async (reference) => {
   const response = await getJson(
     `${config.payments.paystack.baseUrl}/transaction/verify/${encodeURIComponent(reference)}`,
@@ -409,7 +395,11 @@ export const handlePaystackWebhook = async ({ rawBody = '', headers = {}, body =
 
 export const handleHubtelWebhook = async ({ rawBody = '', headers = {}, body = {} } = {}) => {
   assertProviderConfigured('hubtel')
-  verifyHubtelSignatureIfConfigured(rawBody, headers)
+  verifyHubtelWebhookSignature({
+    rawBody,
+    headers,
+    secret: config.payments.hubtel.webhookSecret,
+  })
 
   const data = body?.data || {}
   const reference = normalizeText(

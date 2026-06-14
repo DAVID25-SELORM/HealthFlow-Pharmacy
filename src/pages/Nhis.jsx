@@ -1916,7 +1916,7 @@ const Nhis = () => {
         branchId: profile?.branch_id || branch?.id || null,
         createdBy: user?.id || null,
       }
-      const hasReadablePrescriptionFile = Boolean(
+      const payloadHasReadablePrescriptionFile = Boolean(
         payload.prescriptionFilePath ||
         payload.prescription_file_path ||
         payload.prescriptionFileUrl ||
@@ -1927,9 +1927,10 @@ const Nhis = () => {
 
       let successMessage = editingClaim ? 'NHIS claim corrections saved.' : 'NHIS claim saved.'
       if (editingClaim) {
-        await updateNhisClaim(editingClaim.id, payload, claimMedicines, {
+        const savedClaim = await updateNhisClaim(editingClaim.id, payload, claimMedicines, {
           providerClassLevel,
           claimControlMode,
+          useBranchServer: isBranchNhiaConfigSource,
           // ✅ NHIS PHARMACY LEVEL PATCH START
           pharmacyLevel: facilityPharmacyLevel,
           // ✅ NHIS PHARMACY LEVEL PATCH END
@@ -1938,16 +1939,46 @@ const Nhis = () => {
           tariffFacilityGroup: activeTariffFacilityGroup,
           tariffCateringOption: activeTariffCateringOption,
         })
-        if (editingClaim.status === 'served' && directNhiaApiAvailable && hasReadablePrescriptionFile) {
-          const submitResult = await submitNhisClaimDirect(editingClaim.id, getDirectNhiaOptions())
-          successMessage = submitResult?.queued
-            ? 'NHIS claim corrections saved and queued for CLAIM-it bridge submission.'
-            : 'NHIS claim corrections saved and submitted through CLAIM-it.'
+        const claimForSubmission = savedClaim || editingClaim
+        const isServedClaim = normalizeText(claimForSubmission?.status || editingClaim.status).toLowerCase() === 'served'
+        const hasReadablePrescriptionFile = Boolean(
+          payloadHasReadablePrescriptionFile ||
+            claimForSubmission?.prescription_file_path ||
+            claimForSubmission?.prescription_file_url ||
+            claimForSubmission?.claimit_attachment_base64 ||
+            claimForSubmission?.prescriptionFilePath ||
+            claimForSubmission?.prescriptionFileUrl ||
+            claimForSubmission?.claimitAttachmentBase64
+        )
+        if (isServedClaim && directNhiaApiAvailable && hasReadablePrescriptionFile) {
+          try {
+            const submitResult = await submitNhisClaimDirect(editingClaim.id, {
+              ...getDirectNhiaOptions(),
+              claim: claimForSubmission,
+            })
+            successMessage = submitResult?.queued
+              ? 'NHIS claim corrections saved and queued for CLAIM-it bridge submission.'
+              : 'NHIS claim corrections saved and submitted through CLAIM-it.'
+          } catch (submitError) {
+            await loadAll()
+            setPrescriptionPdfFile(null)
+            setEditingClaim(savedClaim || editingClaim)
+            setClaimError(getNhisRequestErrorMessage(
+              submitError,
+              'Corrections were saved locally, but CLAIM-it submission failed.',
+              'The prescription file remains saved on the local claim.'
+            ))
+            notify('NHIS claim corrections and prescription file saved locally. CLAIM-it rejected the submission.', 'warning')
+            return
+          }
+        } else if (isServedClaim && directNhiaApiAvailable) {
+          successMessage = 'NHIS claim corrections saved locally. CLAIM-it submission was skipped because no readable prescription attachment is on the claim.'
         }
       } else {
         await createNhisClaim(payload, claimMedicines, {
           providerClassLevel,
           claimControlMode,
+          useBranchServer: isBranchNhiaConfigSource,
           // ✅ NHIS PHARMACY LEVEL PATCH START
           pharmacyLevel: facilityPharmacyLevel,
           // ✅ NHIS PHARMACY LEVEL PATCH END

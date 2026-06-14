@@ -8,6 +8,7 @@ const importBranchServerApi = async () => {
 describe('branchServerApi', () => {
   beforeEach(() => {
     window.localStorage.clear()
+    delete window.__HEALTHFLOW_BRANCH_SERVER__
     vi.restoreAllMocks()
   })
 
@@ -18,6 +19,22 @@ describe('branchServerApi', () => {
 
     expect(getSavedBranchToken()).toBe('')
     expect(window.localStorage.getItem(BRANCH_TOKEN_STORAGE_KEY)).toBeNull()
+  })
+
+  it('enables the bundled same-origin branch app without exposing a JavaScript token', async () => {
+    window.__HEALTHFLOW_BRANCH_SERVER__ = {
+      enabled: true,
+      url: window.location.origin,
+      token: '',
+    }
+
+    const { getBranchServerConfig, isBranchServerEnabled } = await importBranchServerApi()
+
+    expect(getBranchServerConfig()).toMatchObject({
+      enabled: true,
+      token: '',
+    })
+    expect(isBranchServerEnabled()).toBe(true)
   })
 
   it('sends the localStorage branch token on local branch API requests', async () => {

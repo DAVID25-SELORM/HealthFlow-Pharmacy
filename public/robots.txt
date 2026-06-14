@@ -1,0 +1,24 @@
+User-agent: *
+Allow: /$
+Allow: /shop
+Allow: /login
+Allow: /signup
+
+# Keep the authenticated application out of search engines
+Disallow: /dashboard
+Disallow: /inventory
+Disallow: /sales
+Disallow: /patients
+Disallow: /claims
+Disallow: /purchases
+Disallow: /e-pharmacy
+Disallow: /nhis
+Disallow: /patient-care
+Disallow: /reports
+Disallow: /accounting
+Disallow: /settings
+Disallow: /tenant-admin
+Disallow: /activity-log
+Disallow: /offline-sync
+
+Sitemap: https://health-flow-pharmacy.vercel.app/sitemap.xml

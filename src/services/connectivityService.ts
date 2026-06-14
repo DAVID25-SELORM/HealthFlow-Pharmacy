@@ -29,7 +29,7 @@ const getConnectivityBranchServerConfig = () => {
   const token = String(browserToken || runtimeConfig.token || hostedConfig.token || '')
   const hostedUrl =
     hostedConfig.enabled === true && typeof window !== 'undefined' ? window.location.origin : ''
-  const enabledByHostedConfig = hostedConfig.enabled === true && Boolean(token)
+  const enabledByHostedConfig = hostedConfig.enabled === true
   const enabledByRuntimeConfig = runtimeConfig.enabled === true && Boolean(token)
   const enabledByBrowserToken = Boolean(browserToken)
   const enabledByBuildConfig =

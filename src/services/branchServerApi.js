@@ -60,7 +60,7 @@ export const getBranchServerConfig = () => {
   const token = String(browserToken || runtimeConfig.token || hostedConfig.token || '')
   const hostedUrl =
     hostedConfig.enabled === true && typeof window !== 'undefined' ? window.location.origin : ''
-  const enabledByHostedConfig = hostedConfig.enabled === true && Boolean(token)
+  const enabledByHostedConfig = hostedConfig.enabled === true
   const enabledByRuntimeConfig = runtimeConfig.enabled === true && Boolean(token)
   const enabledByBrowserToken = Boolean(browserToken)
   const enabledByBuildConfig =
@@ -80,6 +80,7 @@ export const getBranchServerConfig = () => {
     organizationId: String(runtimeConfig.organizationId || hostedConfig.organizationId || ''),
     branchId: String(runtimeConfig.branchId || hostedConfig.branchId || ''),
     runtimeConfigured: Boolean(runtimeConfig.url && token),
+    cookieAuthenticated: hostedConfig.enabled === true && !token,
   }
 }
 
@@ -144,7 +145,11 @@ export const normalizeNhiaMemberLookupPayload = (payload = {}) => {
 }
 
 export const isBranchServerEnabled = () =>
-  Boolean(getBranchServerConfig().enabled && getBranchServerUrl() && getBranchServerToken())
+  Boolean(
+    getBranchServerConfig().enabled &&
+    getBranchServerUrl() &&
+    (getBranchServerToken() || getBranchServerConfig().cookieAuthenticated)
+  )
 
 const fetchWithTimeout = async (url, options = {}, timeoutMs = DEFAULT_BRANCH_REQUEST_TIMEOUT_MS) => {
   const controller = new AbortController()

@@ -83,6 +83,33 @@ const markOfflineRecordFailed = db.prepare(`
     AND entity_type = ?
 `)
 
+const reconcileSyncedOfflineRecords = db.prepare(`
+  UPDATE offline_records
+  SET sync_status = 'synced',
+      synced_at = COALESCE((
+        SELECT MAX(outbox.synced_at)
+        FROM sync_outbox AS outbox
+        WHERE outbox.entity_id = offline_records.id
+          AND outbox.entity_type = offline_records.entity_type
+          AND outbox.status = 'synced'
+      ), ?),
+      last_sync_error = NULL,
+      updated_at = ?
+  WHERE sync_status = 'failed'
+    AND EXISTS (
+      SELECT 1
+      FROM sync_outbox AS outbox
+      WHERE outbox.entity_id = offline_records.id
+        AND outbox.entity_type = offline_records.entity_type
+        AND outbox.status = 'synced'
+    )
+`)
+
+export const reconcileSyncedOfflineRecordStatuses = () => {
+  const timestamp = nowIso()
+  return reconcileSyncedOfflineRecords.run(timestamp, timestamp).changes
+}
+
 let syncPendingOutboxPromise = null
 
 const createSupabaseClient = () => {
@@ -228,6 +255,9 @@ const syncNhisDrugUpsert = async (supabase, row, record) => {
 
   const timestamp = nowIso()
   markOfflineRecordSynced.run(timestamp, timestamp, record.id, 'nhis_drugs')
+  if (row.entity_id !== record.id) {
+    markOfflineRecordSynced.run(timestamp, timestamp, row.entity_id, 'nhis_drugs')
+  }
   markOutboxSynced.run(timestamp, timestamp, row.id)
   return {
     localId: record.id,
@@ -262,6 +292,9 @@ const syncRecordUpsert = async (supabase, row) => {
   }
 
   markOfflineRecordSynced.run(timestamp, timestamp, record.id, entityType)
+  if (row.entity_id !== record.id) {
+    markOfflineRecordSynced.run(timestamp, timestamp, row.entity_id, entityType)
+  }
   markOutboxSynced.run(timestamp, timestamp, row.id)
   return {
     localId: record.id,
@@ -508,6 +541,7 @@ export const pullReferenceData = async () => {
 
 export const repairFailedSync = async ({ limit = 1000 } = {}) => {
   const sync = await syncPendingOutbox({ limit })
+  const reconciledRecords = reconcileSyncedOfflineRecordStatuses()
   const [inventory, reference] = await Promise.all([
     pullInventorySnapshot({ forceFull: true }),
     pullReferenceData(),
@@ -516,6 +550,7 @@ export const repairFailedSync = async ({ limit = 1000 } = {}) => {
   return {
     repairedAt: nowIso(),
     sync,
+    reconciledRecords,
     inventory,
     reference,
     status: getSyncStatus(),

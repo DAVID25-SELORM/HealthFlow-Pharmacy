@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
+import Seo from '../components/Seo/Seo'
 import { Lock, Mail } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
@@ -120,6 +121,11 @@ const Login = () => {
 
   return (
     <div className="login-page">
+      <Seo
+        title="Sign In"
+        description="Sign in to HealthFlow — the pharmacy, claims, NHIS, inventory, and facility operations platform."
+        path="/login"
+      />
       <div className="login-card">
         <img src="/app-logo.png" alt="HealthFlow logo" className="auth-brand-logo" />
         <h1>HealthFlow</h1>
