@@ -2208,8 +2208,62 @@ export const getClaimItUpstreamErrorMessage = (body) => {
   )
 }
 
+const collectClaimItMessages = (value, messages = [], path = '', depth = 0) => {
+  if (messages.length >= 8 || depth > 6 || !value) return messages
+  if (typeof value === 'string') {
+    const text = normalizeText(value)
+    if (
+      text &&
+      text.length <= 300 &&
+      !/^data:/i.test(text) &&
+      !/^[A-Za-z0-9+/=]{120,}$/.test(text)
+    ) {
+      messages.push(path ? `${path}: ${text}` : text)
+    }
+    return messages
+  }
+  if (typeof value !== 'object') return messages
+
+  const messageKeys = new Set([
+    'user_msg',
+    'userMessage',
+    'message',
+    'error',
+    'detail',
+    'reason',
+    'statusMessage',
+    'validationMessage',
+    'validationError',
+    'remarks',
+    'remark',
+    'description',
+    // CLAIM-it per-claim validation results: claims[].claim.errors[]/warnings[] = { code, info, help }
+    'info',
+    'help',
+    'code',
+  ])
+  for (const [key, nestedValue] of Object.entries(value)) {
+    if (messages.length >= 8) break
+    const nextPath = path ? `${path}.${key}` : key
+    if (messageKeys.has(key)) {
+      collectClaimItMessages(nestedValue, messages, nextPath, depth + 1)
+      continue
+    }
+    if (Array.isArray(nestedValue) || (nestedValue && typeof nestedValue === 'object')) {
+      collectClaimItMessages(nestedValue, messages, nextPath, depth + 1)
+    }
+  }
+
+  return messages
+}
+
+export const getClaimItDetailedErrorMessage = (body) =>
+  [...new Set(collectClaimItMessages(body).map(normalizeText).filter(Boolean))]
+    .slice(0, 5)
+    .join(' | ')
+
 const buildClaimItHttpError = (label, status, body) => {
-  const upstreamMessage = getClaimItUpstreamErrorMessage(body)
+  const upstreamMessage = getClaimItDetailedErrorMessage(body) || getClaimItUpstreamErrorMessage(body)
   return `${label} returned HTTP ${status}${upstreamMessage ? `: ${upstreamMessage}` : ''}.`
 }
 
@@ -2404,19 +2458,51 @@ const fetchClaimItToken = async (settings) => {
   throw new Error(`CLAIM-it token request failed. Tried: ${failures.join('; ')}.`)
 }
 
+const getClaimItSubmissionCounts = (body = {}) => ({
+  failedClaims: Number(body?.failedClaims || 0),
+  passedClaims: Number(body?.passedClaims || 0),
+  savedClaims: Number(body?.savedClaims || 0),
+})
+
+export const getClaimItSubmissionAcceptanceError = (body) => {
+  const { failedClaims, passedClaims, savedClaims } = getClaimItSubmissionCounts(body)
+  if (savedClaims > 0 || passedClaims > 0) return ''
+
+  const upstreamMessage = getClaimItDetailedErrorMessage(body) || getClaimItUpstreamErrorMessage(body)
+  if (upstreamMessage) return upstreamMessage
+  if (!body || typeof body !== 'object') {
+    return 'CLAIM-it did not return a claim submission result.'
+  }
+  if (failedClaims > 0) {
+    return 'CLAIM-it rejected all submitted claims.'
+  }
+  if (body.success === true) {
+    return 'CLAIM-it returned success but did not report any saved or passed claims.'
+  }
+  return 'CLAIM-it did not confirm that any submitted claims were saved.'
+}
+
+const assertClaimItSubmissionAccepted = (body) => {
+  const message = getClaimItSubmissionAcceptanceError(body)
+  if (message) {
+    throw new Error(`CLAIM-it did not save the claim batch: ${message}`)
+  }
+}
+
 const deriveRemoteStatus = (body) => {
   // CLAIM-it API v1.0.0 response: { passedClaims, failedClaims, savedClaims, success, claims[] }
   if (body && typeof body === 'object') {
-    if (Number(body.failedClaims) > 0 && Number(body.savedClaims) === 0) return 'rejected'
-    if (Number(body.savedClaims) > 0 || Number(body.passedClaims) > 0) return 'submitted'
+    const { failedClaims, passedClaims, savedClaims } = getClaimItSubmissionCounts(body)
+    if (failedClaims > 0 && savedClaims === 0 && passedClaims === 0) return 'rejected'
+    if (savedClaims > 0 || passedClaims > 0) return 'submitted'
     if (body.success === false || body.failed === true) return 'rejected'
-    if (body.success === true) return 'submitted'
   }
   const value = normalizeText(body?.status || body?.claimStatus || body?.state).toLowerCase()
   if (value.includes('paid')) return 'paid'
   if (value.includes('reject')) return 'rejected'
   if (value.includes('accept') || value.includes('approve')) return 'accepted'
-  return 'submitted'
+  if (value.includes('submit') || value.includes('saved') || value.includes('passed')) return 'submitted'
+  return 'failed'
 }
 
 // Maps the NHIA member verification response (checkcccode / member lookup) to a
@@ -2757,6 +2843,7 @@ export const submitNhiaDirectPayload = async ({ payload, claimIds = [], action =
     if (!result.ok) {
       throw new Error(buildClaimItHttpError('CLAIM-it claim submission', result.httpStatus, result.body))
     }
+    assertClaimItSubmissionAccepted(result.body)
     const remoteStatus = deriveRemoteStatus(result.body)
     logSubmission({
       action: `${action || 'nhis.direct_submit'}.complete`,
@@ -2854,6 +2941,7 @@ export const submitNhiaClaim = async (id) => {
     if (!result.ok) {
       throw new Error(buildClaimItHttpError('NHIA API', result.httpStatus, result.body))
     }
+    assertClaimItSubmissionAccepted(result.body)
 
     const remoteStatus = deriveRemoteStatus(result.body)
     updateClaimAfterAttempt({
