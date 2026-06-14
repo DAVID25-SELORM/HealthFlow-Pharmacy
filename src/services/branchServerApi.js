@@ -628,7 +628,11 @@ export const listBranchRecords = async (resource, filters = {}) => {
   })
 
   const query = params.toString()
-  const response = await branchFetch(`/api/${resource}${query ? `?${query}` : ''}`)
+  const requestedLimit = Number(filters?.limit || 0)
+  const timeoutMs = resource === 'nhis/claims' || requestedLimit >= 1000
+    ? LONG_BRANCH_REQUEST_TIMEOUT_MS
+    : DEFAULT_BRANCH_REQUEST_TIMEOUT_MS
+  const response = await branchFetch(`/api/${resource}${query ? `?${query}` : ''}`, { timeoutMs })
   return response.data || []
 }
 
