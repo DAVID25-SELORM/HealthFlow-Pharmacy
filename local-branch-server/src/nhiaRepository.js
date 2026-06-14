@@ -1027,6 +1027,12 @@ const sanitizeNhiaConfigForSync = (row = {}) => {
   if (!isSupabaseUuid(payload.id)) {
     delete payload.id
   }
+  delete payload.api_key_encrypted
+  delete payload.api_secret_encrypted
+  delete payload.password_encrypted
+  delete payload.has_api_key
+  delete payload.has_api_secret
+  delete payload.username
   return payload
 }
 
