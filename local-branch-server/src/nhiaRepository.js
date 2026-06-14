@@ -1667,6 +1667,15 @@ export const getNhiaClaim = (id) => {
 const normalizeDirectSubmissionClaimNumber = (claim = {}) =>
   normalizeText(claim.claimNumber || claim.claim_number || claim.claim_no || claim.claimNo)
 
+const getDirectSubmissionPayloadClaims = (payload = {}) => {
+  if (!payload || typeof payload !== 'object') return []
+  if (Array.isArray(payload.claims)) return payload.claims
+  if (Array.isArray(payload.claimReferences)) return payload.claimReferences
+  if (Array.isArray(payload.claim_references)) return payload.claim_references
+  if (Array.isArray(payload.data?.claims)) return payload.data.claims
+  return [payload]
+}
+
 export const resolveDirectSubmissionLocalClaims = (claimIds = []) =>
   claimIds.map((id) => {
     const claim = getNhiaClaim(id)
@@ -2814,7 +2823,7 @@ export const submitNhiaDirectPayload = async ({ payload, claimIds = [], action =
   }
 
   const localClaims = resolveDirectSubmissionLocalClaims(normalizedClaimIds)
-  const payloadClaims = Array.isArray(payload.claims) ? payload.claims : [payload]
+  const payloadClaims = getDirectSubmissionPayloadClaims(payload)
   if (payloadClaims.length !== localClaims.length) {
     throw new Error('Direct NHIA submission payload must match the selected local claims.')
   }

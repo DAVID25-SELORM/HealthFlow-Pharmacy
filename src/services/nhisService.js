@@ -119,7 +119,7 @@ const HOSPITAL_PROVIDER_CLASS_LIST_FIELD_KEYS = [
 ]
 const NHIS_PRESCRIPTION_BUCKET = 'nhis-prescriptions'
 const MAX_PRESCRIPTION_ATTACHMENT_BYTES = 3 * 1024 * 1024
-const MAX_CLAIMIT_ATTACHMENT_BYTES = 8 * 1024 * 1024
+const MAX_CLAIMIT_ATTACHMENT_BYTES = MAX_PRESCRIPTION_ATTACHMENT_BYTES
 const PRESCRIPTION_ATTACHMENT_TYPES = ['application/pdf', 'image/jpeg', 'image/png']
 const PRESCRIPTION_ATTACHMENT_EXTENSIONS = ['.pdf', '.jpg', '.jpeg', '.png']
 const CLAIMIT_ATTACHMENT_MIME_TYPE = 'application/pdf'
@@ -815,6 +815,7 @@ const assertNoDuplicateNhisClaimInStore = async ({
   serviceDate,
   totalAmount,
   ignoreClaimId = '',
+  useBranchServer = false,
 }) => {
   const claim = {
     memberNo,
@@ -827,7 +828,7 @@ const assertNoDuplicateNhisClaimInStore = async ({
   const patientKey = getNhisDuplicatePatientKey(claim)
   const serviceDateKey = getNhisDuplicateServiceDate(claim)
   const amountKey = getNhisDuplicateAmountKey(totalAmount)
-  if (!patientKey || !serviceDateKey || !amountKey || shouldUseBranchServer()) return
+  if (!patientKey || !serviceDateKey || !amountKey || useBranchServer || shouldUseBranchServer()) return
 
   let query = supabase
     .from('nhis_claims')
@@ -2530,7 +2531,14 @@ const readClaimItBridgeQueue = () => {
 
 const writeClaimItBridgeQueue = (queue = []) => {
   if (!canUseClaimItBridgeQueue()) return
-  window.localStorage.setItem(CLAIMIT_BRIDGE_QUEUE_KEY, JSON.stringify(queue))
+  try {
+    window.localStorage.setItem(CLAIMIT_BRIDGE_QUEUE_KEY, JSON.stringify(queue))
+  } catch (error) {
+    throw new Error(
+      'CLAIM-it bridge submission could not be queued in this browser because the payload is too large. ' +
+      'Start CLAIM-it and submit again, or submit through the local branch server.'
+    )
+  }
 }
 
 const isClaimItBridgeMode = (mode = '') => CLAIMIT_BRIDGE_MODES.has(normalizeNhiaIntegrationMode(mode, ''))
@@ -3408,6 +3416,32 @@ const submitBrowserClaimItBridgePayload = async ({
   return { ok: true, status: response.status, response: responseBody }
 }
 
+const getClaimItBrowserSubmissionCounts = (body = {}) => ({
+  failedClaims: Number(body?.failedClaims || 0),
+  passedClaims: Number(body?.passedClaims || 0),
+  savedClaims: Number(body?.savedClaims || 0),
+})
+
+const assertBrowserClaimItSubmissionAccepted = (body = {}) => {
+  const { failedClaims, passedClaims, savedClaims } = getClaimItBrowserSubmissionCounts(body)
+  if (savedClaims > 0 || passedClaims > 0) return
+  const upstreamMessage = normalizeText(
+    body?.user_msg ||
+      body?.userMessage ||
+      body?.message ||
+      body?.error ||
+      body?.detail ||
+      body?.raw
+  )
+  if (upstreamMessage) {
+    throw new Error(`CLAIM-it did not save the claim batch: ${upstreamMessage}`)
+  }
+  if (failedClaims > 0) {
+    throw new Error('CLAIM-it did not save the claim batch: CLAIM-it rejected all submitted claims.')
+  }
+  throw new Error('CLAIM-it did not confirm that any submitted claims were saved.')
+}
+
 const getNhisReadinessContext = async (claimData = {}, options = {}) => {
   let providerClassLevel = getProviderPrescribingLevel(claimData, options)
   if (!providerClassLevel) {
@@ -3539,7 +3573,7 @@ const validateClaimItAttachmentBase64 = (base64, fileName = 'prescription attach
     throw new Error(`Unable to include ${fileName} in CLAIM-it CXF export: attachment is empty.`)
   }
   if (bytes.length > MAX_CLAIMIT_ATTACHMENT_BYTES) {
-    throw new Error(`Unable to include ${fileName} in CLAIM-it CXF export: attachment is larger than 8 MB.`)
+    throw new Error(`Unable to include ${fileName} in CLAIM-it CXF export: attachment is larger than 3 MB.`)
   }
   if (!bytesStartWithPdfHeader(bytes)) {
     throw new Error(`Unable to include ${fileName} in CLAIM-it CXF export: attachment must be a valid PDF.`)
@@ -3560,27 +3594,36 @@ const getClaimItAttachmentBinaryDiagnostic = ({
   attachmentFileType: fileType,
 })
 
-const getPrescriptionAttachmentPayload = (claimData = {}) => ({
-  prescription_file_url: normalizeText(claimData.prescriptionFileUrl ?? claimData.prescription_file_url) || null,
-  prescription_file_path: normalizeText(claimData.prescriptionFilePath ?? claimData.prescription_file_path) || null,
-  prescription_file_name: normalizeText(claimData.prescriptionFileName ?? claimData.prescription_file_name) || null,
-  prescription_file_type: normalizeText(claimData.prescriptionFileType ?? claimData.prescription_file_type) || null,
-  prescription_file_size: normalizePrescriptionFileSize(
-    claimData.prescriptionFileSize ?? claimData.prescription_file_size
-  ),
-  claimit_attachment_file_name: normalizeText(
-    claimData.claimitAttachmentFileName ?? claimData.claimit_attachment_file_name
-  ) || null,
-  claimit_attachment_file_type: normalizeText(
-    claimData.claimitAttachmentFileType ?? claimData.claimit_attachment_file_type
-  ) || null,
-  claimit_attachment_mime_type: normalizeText(
-    claimData.claimitAttachmentMimeType ?? claimData.claimit_attachment_mime_type
-  ) || null,
-  claimit_attachment_base64: normalizeClaimItAttachmentBase64(
+const getPrescriptionAttachmentPayload = (claimData = {}) => {
+  const attachmentBase64 = normalizeClaimItAttachmentBase64(
     claimData.claimitAttachmentBase64 ?? claimData.claimit_attachment_base64
-  ) || null,
-})
+  )
+  const attachmentFileName = normalizeText(
+    claimData.claimitAttachmentFileName ?? claimData.claimit_attachment_file_name
+  ) || null
+
+  if (attachmentBase64) {
+    validateClaimItAttachmentBase64(attachmentBase64, attachmentFileName || 'prescription attachment')
+  }
+
+  return {
+    prescription_file_url: normalizeText(claimData.prescriptionFileUrl ?? claimData.prescription_file_url) || null,
+    prescription_file_path: normalizeText(claimData.prescriptionFilePath ?? claimData.prescription_file_path) || null,
+    prescription_file_name: normalizeText(claimData.prescriptionFileName ?? claimData.prescription_file_name) || null,
+    prescription_file_type: normalizeText(claimData.prescriptionFileType ?? claimData.prescription_file_type) || null,
+    prescription_file_size: normalizePrescriptionFileSize(
+      claimData.prescriptionFileSize ?? claimData.prescription_file_size
+    ),
+    claimit_attachment_file_name: attachmentFileName,
+    claimit_attachment_file_type: normalizeText(
+      claimData.claimitAttachmentFileType ?? claimData.claimit_attachment_file_type
+    ) || null,
+    claimit_attachment_mime_type: normalizeText(
+      claimData.claimitAttachmentMimeType ?? claimData.claimit_attachment_mime_type
+    ) || null,
+    claimit_attachment_base64: attachmentBase64 || null,
+  }
+}
 
 const sanitizeStoragePathSegment = (value, fallback = 'unknown') =>
   String(value || fallback)
@@ -4209,6 +4252,87 @@ const fetchNhisClaimsFromSupabase = async (filters = {}, { ascending = false } =
   return await hydrateNhisClaimsForUi(data || [])
 }
 
+const getNhisClaimMergeKey = (claim = {}, index = 0) =>
+  normalizeText(claim.id || claim.claim_number || claim.claimNumber) || `claim-row-${index}`
+
+const getNhisClaimSortTimestamp = (claim = {}) => {
+  const value =
+    claim.created_at ||
+    claim.createdAt ||
+    claim.updated_at ||
+    claim.updatedAt ||
+    claim.service_date_from ||
+    claim.serviceDate ||
+    ''
+  const timestamp = Date.parse(value)
+  return Number.isFinite(timestamp) ? timestamp : 0
+}
+
+export const mergeNhisClaimRows = (cloudRows = [], localRows = [], { ascending = false } = {}) => {
+  const merged = new Map()
+
+  ;(cloudRows || []).forEach((claim, index) => {
+    merged.set(getNhisClaimMergeKey(claim, index), claim)
+  })
+  ;(localRows || []).forEach((claim, index) => {
+    merged.set(getNhisClaimMergeKey(claim, index), claim)
+  })
+
+  return Array.from(merged.values()).sort((left, right) => {
+    const difference = getNhisClaimSortTimestamp(left) - getNhisClaimSortTimestamp(right)
+    return ascending ? difference : -difference
+  })
+}
+
+const nhisClaimMatchesListFilters = (claim = {}, filters = {}) => {
+  const status = normalizeText(filters.status)
+  if (
+    status &&
+    status !== 'all' &&
+    ![claim.status, claim.claim_status, claim.sync_status]
+      .map((value) => normalizeText(value))
+      .includes(status)
+  ) {
+    return false
+  }
+
+  if (filters.month) {
+    const claimMonth = normalizeText(
+      claim.submission_month ||
+      String(claim.service_date_from || claim.serviceDate || claim.created_at || '').slice(0, 7)
+    )
+    if (claimMonth !== normalizeText(filters.month)) return false
+  }
+
+  const serviceDate = String(
+    claim.service_date_from || claim.serviceDate || claim.created_at || ''
+  ).slice(0, 10)
+  if (filters.fromDate && (!serviceDate || serviceDate < String(filters.fromDate))) return false
+  if (filters.toDate && (!serviceDate || serviceDate > String(filters.toDate))) return false
+  if (filters.id && claim.id !== filters.id) return false
+
+  const searchTerm = normalizeText(filters.searchTerm || filters.search).toLowerCase()
+  if (searchTerm) {
+    const matchesSearch = [
+      claim.patient_name,
+      claim.claim_number,
+      claim.member_no,
+      claim.hin,
+      claim.surname,
+      claim.other_names,
+    ].some((value) => String(value || '').toLowerCase().includes(searchTerm))
+    if (!matchesSearch) return false
+  }
+
+  return true
+}
+
+const filterNhisClaimRows = (claims = [], filters = {}) => {
+  const filtered = (claims || []).filter((claim) => nhisClaimMatchesListFilters(claim, filters))
+  const limit = Number(filters.limit)
+  return Number.isFinite(limit) && limit > 0 ? filtered.slice(0, limit) : filtered
+}
+
 const toNhisClaimServiceRows = (claimId, serviceLines = [], claimData = {}) =>
   normalizeNhiaTariffServiceLines(serviceLines, claimData).map((service) => ({
     claim_id: claimId,
@@ -4269,17 +4393,17 @@ const insertNhisClaimMedicineRows = async (medicineRows = []) => {
 
 export const getAllNhisClaims = async (filters = {}) => {
   if (shouldUseBranchServer()) {
-    const localRows = await listBranchRecords('nhis/claims', filters)
-    if (localRows.length || getConnectivityState().internetAvailable === false) {
-      return localRows
+    if (getConnectivityState().internetAvailable === false) {
+      return await listBranchRecords('nhis/claims', filters)
     }
 
+    const localRows = await listBranchRecords('nhis/claims', { limit: 5000 })
     try {
-      console.info('[SYNC] Local NHIS claims cache is empty; reading visible claims from Supabase.')
-      return await fetchNhisClaimsFromSupabase(filters)
+      const cloudRows = await fetchNhisClaimsFromSupabase(filters)
+      return filterNhisClaimRows(mergeNhisClaimRows(cloudRows, localRows), filters)
     } catch (error) {
-      console.warn('[SYNC] Cloud NHIS claims fallback failed; using local cache.', error)
-      return localRows
+      console.warn('[SYNC] Cloud NHIS claims read failed; using local cache.', error)
+      return filterNhisClaimRows(localRows, filters)
     }
   }
 
@@ -4380,6 +4504,7 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
     otherNames: claimData.otherNames,
     serviceDate,
     totalAmount,
+    useBranchServer: options.useBranchServer,
   })
   const diagnosisDetails = getDiagnosisDetailsPayload(claimData)
   let claimPayload = {
@@ -4591,6 +4716,7 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
     serviceDate,
     totalAmount,
     ignoreClaimId: id,
+    useBranchServer: options.useBranchServer,
   })
   const diagnosisDetails = getDiagnosisDetailsPayload(claimData)
   const medicineRows = medicines.map((m) => ({
@@ -4653,7 +4779,7 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
     updated_at: new Date().toISOString(),
   }
 
-  if (shouldUseBranchServer()) {
+  if (options.useBranchServer || shouldUseBranchServer()) {
     return await updateBranchRecord('nhis/claims', id, {
       ...claimPayload,
       nhis_claim_medicines: medicineRows,
@@ -4932,19 +5058,19 @@ export const getNhisClaimsForPeriod = async (periodOptions = {}) => {
   let localRows = []
 
   if (shouldUseBranchServer()) {
-    localRows = await listBranchRecords(
-      'nhis/claims',
-      period.mode === 'month'
-        ? { month: period.yearMonth, limit: 5000 }
-        : { fromDate: period.fromDate, toDate: period.toDate, limit: 5000 }
-    )
-    if (localRows.length || getConnectivityState().internetAvailable === false) {
+    if (getConnectivityState().internetAvailable === false) {
+      localRows = await listBranchRecords(
+        'nhis/claims',
+        period.mode === 'month'
+          ? { month: period.yearMonth, limit: 5000 }
+          : { fromDate: period.fromDate, toDate: period.toDate, limit: 5000 }
+      )
       return period.mode === 'month'
         ? localRows
         : localRows.filter((claim) => nhisClaimMatchesExportPeriod(claim, period))
     }
 
-    console.info('[SYNC] Local NHIS claims export cache is empty; reading visible claims from Supabase.')
+    localRows = await listBranchRecords('nhis/claims', { limit: 5000 })
   }
 
   const fetchPeriodClaimsFromSupabase = async () => {
@@ -4979,11 +5105,15 @@ export const getNhisClaimsForPeriod = async (periodOptions = {}) => {
 
   if (shouldUseBranchServer()) {
     try {
-      return await fetchPeriodClaimsFromSupabase()
-    } catch (error) {
-      console.warn('[SYNC] Cloud NHIS claims export fallback failed; using empty local cache.', error)
+      const cloudRows = await fetchPeriodClaimsFromSupabase()
+      const mergedRows = mergeNhisClaimRows(cloudRows, localRows, { ascending: true })
       return period.mode === 'month'
-        ? localRows
+        ? mergedRows.filter((claim) => nhisClaimMatchesListFilters(claim, { month: period.yearMonth }))
+        : mergedRows.filter((claim) => nhisClaimMatchesExportPeriod(claim, period))
+    } catch (error) {
+      console.warn('[SYNC] Cloud NHIS claims export read failed; using local cache.', error)
+      return period.mode === 'month'
+        ? localRows.filter((claim) => nhisClaimMatchesListFilters(claim, { month: period.yearMonth }))
         : localRows.filter((claim) => nhisClaimMatchesExportPeriod(claim, period))
     }
   }
@@ -6122,9 +6252,9 @@ export const buildNhisClaimItExportPayload = (claims = [], options = {}) => {
     periodTo: exportPeriod.toDate,
     organizationType,
     createdAt: generatedAt,
-    medVersion: normalizeText(options.medVersion || options.nhiaMedicineTariffVersion),
-    serviceVersion: normalizeText(options.serviceVersion),
-    policyVersion: normalizeText(options.policyVersion),
+    medVersion: normalizeText(options.medVersion || options.nhiaMedicineTariffVersion) || CLAIM_IT_MEDICINE_PRICE_VERSION,
+    serviceVersion: normalizeText(options.serviceVersion) || CLAIM_IT_SERVICE_TARIFF_VERSION,
+    policyVersion: normalizeText(options.policyVersion) || CLAIM_IT_POLICY_VERSION,
     // ✅ FINAL CLAIMIT RELATIONAL FIX START
     strictClaimItExportMode: options.strictClaimItExportMode !== false,
     // ✅ FINAL CLAIMIT RELATIONAL FIX END
@@ -6429,7 +6559,7 @@ const prepareClaimItAttachmentPdfPayload = async (attachment = {}) => {
   let pdfBytes
   if (mimeType === CLAIMIT_ATTACHMENT_MIME_TYPE) {
     if (sourceBytes.length > MAX_CLAIMIT_ATTACHMENT_BYTES) {
-      throw new Error(`Unable to include ${fileName} in CLAIM-it CXF export: attachment is larger than 8 MB.`)
+      throw new Error(`Unable to include ${fileName} in CLAIM-it CXF export: attachment is larger than 3 MB.`)
     }
     if (!bytesStartWithPdfHeader(sourceBytes)) {
       throw new Error(`Unable to include ${fileName} in CLAIM-it CXF export: attachment must be a valid PDF.`)
@@ -7016,6 +7146,54 @@ const buildNhisClaimItCxfBundle = async (payload) => {
   }
 }
 
+const buildNhisClaimItDirectJsonPayload = async (payload) => {
+  const bundle = await buildNhisClaimItCxfBundle(payload)
+  const claimReferences = (payload.claims || []).map((claim, index) => ({
+    index,
+    claimNumber: normalizeText(claim.claimNumber),
+    memberNumber: normalizeText(claim.patient?.memberNumber),
+  }))
+  const claims = (bundle.data?.claims || []).map((claim, index) => ({
+    ...claim,
+    claimNumber: claimReferences[index]?.claimNumber || normalizeText(claim.claimNumber),
+  }))
+  const attachmentdata = (bundle.data?.attachmentdata || []).map((row) => ({
+    ...row,
+    data: row.data instanceof Uint8Array ? bytesToBase64(row.data) : row.data,
+  }))
+  const validationZclaims = (bundle.data?.validation_zclaims || []).map((row) => ({
+    ...row,
+    serializedClaim: row.serializedClaim instanceof Uint8Array
+      ? bytesToBase64(row.serializedClaim)
+      : row.serializedClaim,
+  }))
+
+  return {
+    sourceSystem: payload.sourceSystem || 'HealthFlow',
+    targetSystem: payload.targetSystem || 'CLAIM-it HMS Toolkit',
+    payloadFormat: 'claimit_relational_json_v1',
+    binaryEncoding: 'base64',
+    batchNumber: payload.batchNumber,
+    facilityCode: payload.facilityCode,
+    providerNumber: payload.providerNumber,
+    submissionMonth: payload.submissionMonth,
+    exportMode: payload.exportMode,
+    periodLabel: payload.periodLabel,
+    periodFrom: payload.periodFrom,
+    periodTo: payload.periodTo,
+    claimCount: payload.claimCount,
+    totalAmount: payload.totalAmount,
+    claimReferences,
+    ...bundle,
+    data: {
+      ...bundle.data,
+      claims,
+      attachmentdata,
+      validation_zclaims: validationZclaims,
+    },
+  }
+}
+
 export const buildNhisClaimItCxf = async (payload) => {
   const serialized = phpSerializeBytes(await buildNhisClaimItCxfBundle(payload))
   const compressed = await deflateClaimItPayload(serialized)
@@ -7263,7 +7441,7 @@ const hydrateNhisPrescriptionUrlsForTransfer = async (claims = []) => {
   )
 }
 
-const buildHostedDirectSubmissionPayload = (payload, options = {}) => {
+const buildHostedDirectSubmissionPayload = async (payload, options = {}) => {
   const format = normalizeClaimItExportFormat(options.directPayloadFormat || options.exportFormat || 'json')
   if (format === 'xml') {
     return {
@@ -7273,8 +7451,12 @@ const buildHostedDirectSubmissionPayload = (payload, options = {}) => {
     }
   }
 
+  const directPayload = format === 'json'
+    ? await buildNhisClaimItDirectJsonPayload(payload)
+    : payload
+
   return {
-    payload,
+    payload: directPayload,
     contentType: 'application/json',
   }
 }
@@ -7310,8 +7492,8 @@ const submitNhisClaimsDirect = async (claims, period, options = {}) => {
     ? submitNhiaDirectPayload
     : submitHostedNhiaDirectPayload
   const directPayload = directApiSource === 'hosted'
-    ? buildHostedDirectSubmissionPayload(payload, options)
-    : { payload }
+    ? await buildHostedDirectSubmissionPayload(payload, options)
+    : { payload: await buildNhisClaimItDirectJsonPayload(payload) }
 
   const request = {
     ...directPayload,
@@ -7334,8 +7516,18 @@ const submitNhisClaimsDirect = async (claims, period, options = {}) => {
   }
 
   try {
-    return await submitDirectPayload(request)
+    const result = await submitDirectPayload(request)
+    if (useBrowserBridge) {
+      assertBrowserClaimItSubmissionAccepted(result?.response || result?.body || result)
+    }
+    return result
   } catch (error) {
+    if (useBrowserBridge && isClaimItBridgeUnavailableError(error)) {
+      throw new Error(
+        `CLAIM-it local bridge is not reachable at ${bridgeBaseUrl}. ` +
+        'Start CLAIM-it on this computer and submit again. The claim was not sent to CLAIM-it.'
+      )
+    }
     if (directApiSource === 'hosted' && isClaimItBridgeMode(integrationMode) && isClaimItBridgeUnavailableError(error)) {
       const queued = enqueueClaimItBridgeSubmission({ claims, directPayload, request, error })
       return { queued: true, queuedId: queued.id, queuedCount: claims.length }
@@ -7389,6 +7581,7 @@ export const submitNhisClaimDirect = async (id, options = {}) => {
     serviceDate: claim.service_date_from,
     totalAmount: claim.total_amount,
     ignoreClaimId: claim.id || id,
+    useBranchServer: options.useBranchServer || options.directApiSource === 'branch',
   })
   await assertNhisClaimsReadyForFinalSubmission([claim], organizationType, options)
   const period = getDirectSubmissionPeriodForClaim(claim)
