@@ -652,6 +652,7 @@ const Nhis = () => {
   const [exportFromDate, setExportFromDate] = useState(monthStartIsoDate())
   const [exportToDate, setExportToDate] = useState(todayIsoDate())
   const [exportFormat, setExportFormat] = useState('cxf')
+  const [exportRoute, setExportRoute] = useState('cxf_export')
   const [exporting, setExporting]       = useState(false)
 
   // ── status update ─────────────────────────────────────────────
@@ -2311,11 +2312,14 @@ const Nhis = () => {
         : exportMode === 'partial'
           ? `${exportToDate.slice(0, 7)}-01 to ${exportToDate}`
           : exportMonth
+      const submitDirectApi = directNhiaApiAvailable && exportRoute === 'direct_api'
+      const selectedFormat = submitDirectApi ? 'json' : exportFormat
       const exportResult = await exportNhisClaimsFile({
         ...periodOptions,
         ...getDirectNhiaOptions(),
-        directSubmit: directNhiaApiAvailable,
-        format: exportFormat,
+        directSubmit: submitDirectApi,
+        format: selectedFormat,
+        directPayloadFormat: submitDirectApi ? 'json' : selectedFormat,
       })
       const count = typeof exportResult === 'number' ? exportResult : exportResult?.count || 0
       setShowExportModal(false)
@@ -2323,9 +2327,9 @@ const Nhis = () => {
       notify(
         exportResult?.queued
           ? `${count} claims queued for CLAIM-it bridge submission for ${periodLabel}. They will retry automatically.`
-          : directNhiaApiAvailable
-            ? `${count} claims submitted through CLAIM-it for ${periodLabel}. Served claims marked as Submitted.`
-          : `${count} claims exported as ${exportFormat.toUpperCase()} for ${periodLabel}. Claims remain Served until CLAIM-it accepts them.`,
+          : submitDirectApi
+            ? `${count} claims submitted through the Direct API for ${periodLabel}. Served claims marked as Submitted.`
+          : `${count} claims exported as ${selectedFormat.toUpperCase()} for ${periodLabel}. Manual CLAIM-it import required.`,
         'success'
       )
     } catch (err) {
@@ -2358,7 +2362,7 @@ const Nhis = () => {
             <>
               {pageTab === 'claims' && (
                 <button className="btn btn-secondary" onClick={() => setShowExportModal(true)}>
-                  <Download size={16} /> {directNhiaApiAvailable ? (isClaimItBridgeMode ? 'Submit to CLAIM-it' : 'Submit Claims') : 'Export Claims'}
+                  <Download size={16} /> {directNhiaApiAvailable ? 'Transfer Claims' : 'Export CXF'}
                 </button>
               )}
               <button className="btn btn-primary" onClick={openNewClaimModal}>
@@ -4361,24 +4365,37 @@ const Nhis = () => {
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowExportModal(false)}>
           <div className="modal-panel modal-panel--export">
             <div className="modal-header">
-              <h2>{directNhiaApiAvailable ? (isClaimItBridgeMode ? 'CLAIM-it Bridge Submission' : 'Direct NHIA Submission') : 'Claims Batch Export'}</h2>
+              <h2>{directNhiaApiAvailable ? 'NHIS Claim Transfer' : 'Claims Batch Export'}</h2>
               <button className="modal-close" onClick={() => setShowExportModal(false)}><X size={18} /></button>
             </div>
             <div className="export-body">
               <p className="export-info">
-                {directNhiaApiAvailable ? (
+                {directNhiaApiAvailable && exportRoute === 'direct_api' ? (
                   <>
-                    {isClaimItBridgeMode ? 'CLAIM-it Bridge API' : 'Direct NHIA API'} is enabled. Claims in the selected period will be sent through the configured integration.
+                    Submit Direct API is selected. Claims in the selected period will be sent through the configured direct submission integration.
                     Successfully sent <strong>Served</strong> claims will be marked as <strong>Submitted</strong>.
                   </>
                 ) : (
                   <>
-                    Exports served claims for a CLAIM-it partial period, selected month, or custom service-date range.
+                    Export CXF is selected. Direct CLAIM-it CXF import is not allowed by the API; manual CLAIM-it import is required.
                     Downloaded claims remain <strong>Served</strong> so they can be corrected or exported again if CLAIM-it rejects the file.
                   </>
                 )}
               </p>
-              {!directNhiaApiAvailable && (
+              {directNhiaApiAvailable && (
+                <div className="form-group">
+                  <label>Submission Route</label>
+                  <select
+                    className="form-input"
+                    value={exportRoute}
+                    onChange={(e) => setExportRoute(e.target.value)}
+                  >
+                    <option value="cxf_export">Export CXF - Manual CLAIM-it Import Required</option>
+                    <option value="direct_api">Submit Direct API</option>
+                  </select>
+                </div>
+              )}
+              {(!directNhiaApiAvailable || exportRoute !== 'direct_api') && (
                 <div className="form-group">
                   <label>Export File Type</label>
                   <select
@@ -4386,7 +4403,7 @@ const Nhis = () => {
                     value={exportFormat}
                     onChange={(e) => setExportFormat(e.target.value)}
                   >
-                    <option value="cxf">CLAIM-it import file (.cxf)</option>
+                    <option value="cxf">Export CXF (.cxf)</option>
                     <option value="xml">XML file (.xml)</option>
                     <option value="json">JSON for CLAIM-it</option>
                     <option value="csv">CSV review file</option>
@@ -4453,8 +4470,8 @@ const Nhis = () => {
               <button className="btn btn-secondary" onClick={() => setShowExportModal(false)}>Cancel</button>
               <button className="btn btn-primary" disabled={exporting || !exportPeriodReady} onClick={handleExport}>
                 {exporting
-                  ? (directNhiaApiAvailable ? 'Submitting...' : 'Exporting...')
-                  : <><Download size={14} /> {directNhiaApiAvailable ? (isClaimItBridgeMode ? 'Submit to CLAIM-it' : 'Submit Directly') : 'Export & Download'}</>}
+                  ? (directNhiaApiAvailable && exportRoute === 'direct_api' ? 'Submitting...' : 'Exporting...')
+                  : <><Download size={14} /> {directNhiaApiAvailable && exportRoute === 'direct_api' ? 'Submit Direct API' : 'Export CXF'}</>}
               </button>
             </div>
           </div>

@@ -206,6 +206,8 @@ const CLAIM_IT_SERVICE_TARIFF_VERSION = '2023-02-01.250531'
 const CLAIM_IT_POLICY_VERSION = 'cgs.2022-12-01.250531'
 const NHIA_API_SETTINGS_CACHE_PREFIX = 'healthflow.nhiaApiSettings.v3'
 const CLAIMIT_BRIDGE_QUEUE_KEY = 'healthflow.claimitBridgeQueue.v1'
+const CLAIMIT_CXF_API_BLOCK_MESSAGE =
+  'Direct CLAIM-it CXF import is not allowed by the API. Please export the CXF file and import it manually into CLAIM-it.'
 const CLAIMIT_BRIDGE_RETRY_INTERVAL_MS = 60 * 1000
 const NHIA_INTEGRATION_MODE_ALIASES = {
   cxf_export: 'claimit_export',
@@ -7476,6 +7478,18 @@ const buildHostedDirectSubmissionPayload = async (payload, options = {}) => {
 const submitNhisClaimsDirect = async (claims, period, options = {}) => {
   const directApiSource = options.directApiSource === 'branch' ? 'branch' : 'hosted'
   const integrationMode = normalizeNhiaIntegrationMode(options.integrationMode || options.integration_mode, '')
+  const exportFormat = normalizeClaimItExportFormat(options.format || options.exportFormat || options.export_format || 'json')
+  const directPayloadFormat = normalizeClaimItExportFormat(options.directPayloadFormat || options.direct_payload_format || exportFormat)
+  if (exportFormat === 'cxf' || directPayloadFormat === 'cxf') {
+    console.info('[NHIS submission route]', {
+      route: 'blocked_cxf_api_import',
+      integrationMode,
+      exportFormat,
+      directPayloadFormat,
+      claimCount: claims.length,
+    })
+    throw new Error(CLAIMIT_CXF_API_BLOCK_MESSAGE)
+  }
   const connectionProfile = normalizeText(options.connectionProfile || options.connection_profile) || 'local_server'
   const bridgeBaseUrl = normalizeText(
     options.claimitSubmitBaseUrl ||
@@ -7506,6 +7520,14 @@ const submitNhisClaimsDirect = async (claims, period, options = {}) => {
   const directPayload = directApiSource === 'hosted'
     ? await buildHostedDirectSubmissionPayload(payload, options)
     : { payload: await buildNhisClaimItDirectJsonPayload(payload) }
+
+  console.info('[NHIS submission route]', {
+    route: directApiSource === 'branch' ? 'local_branch_direct_submit' : useBrowserBridge ? 'browser_claimit_bridge' : 'hosted_direct_submit',
+    integrationMode,
+    exportFormat,
+    directPayloadFormat,
+    claimCount: claims.length,
+  })
 
   const request = {
     ...directPayload,
@@ -7553,20 +7575,29 @@ const submitNhisClaimsDirect = async (claims, period, options = {}) => {
  */
 export const exportNhisClaimsFile = async (options = {}) => {
   const period = normalizeNhisExportPeriod(options)
+  const format = normalizeClaimItExportFormat(options.format || options.exportFormat || options.export_format || 'cxf')
+  const directSubmit = Boolean(options.directSubmit && format !== 'cxf')
+  if (options.directSubmit && format === 'cxf') {
+    console.info('[NHIS submission route]', {
+      route: 'manual_cxf_export_required',
+      exportFormat: format,
+      period: period.label,
+    })
+  }
   const periodClaims = await getNhisClaimsForPeriod(period)
-  const exportableStatuses = options.directSubmit ? ['served'] : ['served', 'submitted']
+  const exportableStatuses = directSubmit ? ['served'] : ['served', 'submitted']
   const claims = periodClaims.filter((claim) =>
     exportableStatuses.includes(normalizeText(claim.status).toLowerCase())
   )
   if (!claims.length) {
-    const statusLabel = options.directSubmit ? 'served' : 'served or submitted'
+    const statusLabel = directSubmit ? 'served' : 'served or submitted'
     throw new Error(`No ${statusLabel} claims found for ${period.label}.`)
   }
   const organizationType = normalizeOrganizationType(options.organizationType)
   assertNoDuplicateNhisClaimsForTransfer(claims)
   await assertNhisClaimsReadyForFinalSubmission(claims, organizationType, options)
 
-  if (options.directSubmit) {
+  if (directSubmit) {
     const result = await submitNhisClaimsDirect(claims, period, {
       ...options,
       organizationType,
@@ -7577,7 +7608,13 @@ export const exportNhisClaimsFile = async (options = {}) => {
     return claims.length
   }
 
-  downloadTextFile(await createNhisExportFile(claims, period, { ...options, organizationType }))
+  console.info('[NHIS submission route]', {
+    route: format === 'cxf' ? 'export_cxf_manual_claimit_import' : 'export_file',
+    exportFormat: format,
+    period: period.label,
+    claimCount: claims.length,
+  })
+  downloadTextFile(await createNhisExportFile(claims, period, { ...options, format, organizationType }))
 
   return claims.length
 }

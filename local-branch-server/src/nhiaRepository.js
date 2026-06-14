@@ -45,6 +45,8 @@ const DEFAULT_CLAIMIT_SUBMIT_BASE_URL = 'http://localhost:31719/json-api'
 const DEFAULT_NHIA_MEMBER_LOOKUP_ENDPOINT = '/api/hmis/genCCC'
 const DEFAULT_CLAIMIT_CLAIM_ENDPOINT = '/claims'
 const DEFAULT_NHIA_INTEGRATION_MODE = 'claimit_assisted'
+const CLAIMIT_CXF_API_BLOCK_MESSAGE =
+  'Direct CLAIM-it CXF import is not allowed by the API. Please export the CXF file and import it manually into CLAIM-it.'
 const SUPABASE_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i
 const DIAGNOSIS_TREATMENT_RULES = [
   {
@@ -1963,6 +1965,10 @@ const validateSettingsForSubmission = (settings) => {
   assertRequiredText(settings.facilityCode, 'NHIA facility code')
   assertRequiredText(settings.providerNumber, 'NHIA provider number')
 
+  if (normalizeIntegrationMode(settings.integrationMode || settings.integration_mode, '') === 'claimit_export') {
+    throw new Error(CLAIMIT_CXF_API_BLOCK_MESSAGE)
+  }
+
   if (settings.directApiEnabled) {
     assertRequiredText(settings.apiBaseUrl, 'NHIA API base URL')
     const credentials = settings.credentials || {}
@@ -1981,6 +1987,16 @@ const validateSettingsForSubmission = (settings) => {
       assertRequiredText(credentials.password, 'CLAIM-it password')
     }
   }
+}
+
+const isClaimItCxfImportPayload = (payload) => {
+  if (!payload || typeof payload !== 'object') return false
+  const payloadFormat = normalizeText(payload.payloadFormat || payload.payload_format).toLowerCase()
+  if (payloadFormat === 'claimit_relational_json_v1' || payloadFormat.includes('cxf')) return true
+  if (payload.cxfBundleBase64 || payload.cxf_bundle_base64 || payload.cxfContent || payload.cxf_content) return true
+  const data = payload.data && typeof payload.data === 'object' ? payload.data : null
+  if (!data) return false
+  return Array.isArray(data.validation_zclaims) || Array.isArray(data.attachmentdata)
 }
 
 const validateSettingsForBatchExport = (settings) => {
@@ -2837,6 +2853,19 @@ export const submitNhiaDirectPayload = async ({ payload, claimIds = [], action =
   if (!payload || typeof payload !== 'object') {
     throw new Error('Direct NHIA submission requires a claim payload.')
   }
+  if (isClaimItCxfImportPayload(payload)) {
+    logSubmission({
+      action: `${action || 'nhis.direct_submit'}.blocked_cxf_import`,
+      status: 'blocked',
+      request: {
+        route: 'manual_cxf_export_required',
+        payloadFormat: payload.payloadFormat || payload.payload_format || null,
+        claimIds,
+      },
+      error: CLAIMIT_CXF_API_BLOCK_MESSAGE,
+    })
+    throw new Error(CLAIMIT_CXF_API_BLOCK_MESSAGE)
+  }
 
   const expectedFacilityCode = normalizeText(settings.facilityCode)
   const expectedProviderNumber = normalizeText(settings.providerNumber || settings.providerId)
@@ -2881,8 +2910,10 @@ export const submitNhiaDirectPayload = async ({ payload, claimIds = [], action =
     action: action || 'nhis.direct_submit',
     status: 'pending',
     request: {
+      route: 'direct_api_submission',
       claimIds: normalizedClaimIds,
       claimCount: Array.isArray(payload.claims) ? payload.claims.length : null,
+      payloadFormat: payloadToSubmit.payloadFormat || payloadToSubmit.payload_format || 'json',
       payload: payloadToSubmit,
       startedAt,
     },

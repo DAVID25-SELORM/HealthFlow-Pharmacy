@@ -407,4 +407,70 @@ describe('hospital NHIA claim persistence', () => {
       fs.rmSync(testDirectory, { recursive: true, force: true })
     }
   })
+
+  it('blocks CLAIM-it relational CXF import payloads from direct API submission', () => {
+    const testDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'healthflow-claimit-cxf-block-'))
+    const repositoryUrl = pathToFileURL(path.resolve('local-branch-server/src/nhiaRepository.js')).href
+    const databaseUrl = pathToFileURL(path.resolve('local-branch-server/src/db.js')).href
+    const script = `
+      const { saveNhiaSettings, submitNhiaDirectPayload } = await import(${JSON.stringify(repositoryUrl)});
+      const { closeDatabase } = await import(${JSON.stringify(databaseUrl)});
+      saveNhiaSettings({
+        mode: 'ONLINE_LOCAL_SYNC',
+        facilityCode: '03-05-001-02-01954-11-P1-2-011225',
+        providerNumber: '03-05-01954',
+        credentialCode: '03-05-001-02-01954-11-P1-2-011225',
+        accreditationExpiryDate: '2026-12-31',
+        claimsOfficerName: 'Claims Officer',
+        directApiEnabled: true,
+        integrationMode: 'claimit_bridge',
+        apiBaseUrl: 'https://elig.nhia.gov.gh:5000',
+        claimitSubmitBaseUrl: 'http://localhost:31719/json-api',
+        claimEndpointPath: '/claims',
+        memberLookupEndpointPath: '/api/hmis/genCCC',
+        credentialMode: 'claimit_token',
+        credentials: {
+          apiKey: 'nhia-api-key',
+          apiSecret: 'nhia-api-secret',
+          username: 'claimit-user',
+          password: 'claimit-password',
+        },
+      });
+      try {
+        await submitNhiaDirectPayload({
+          payload: {
+            payloadFormat: 'claimit_relational_json_v1',
+            claims: [],
+            data: { validation_zclaims: [] },
+          },
+          claimIds: ['local-claim-1'],
+        });
+        console.log(JSON.stringify({ blocked: false }));
+      } catch (error) {
+        console.log(JSON.stringify({ blocked: true, message: error.message }));
+      } finally {
+        closeDatabase();
+      }
+    `
+
+    try {
+      const output = execFileSync(process.execPath, ['--input-type=module', '--eval', script], {
+        cwd: path.resolve('local-branch-server'),
+        env: {
+          ...process.env,
+          HEALTHFLOW_DB_PATH: path.join(testDirectory, 'branch.sqlite'),
+          BRANCH_SERVER_TOKEN: 'test-branch-token-with-enough-entropy',
+        },
+        encoding: 'utf8',
+      })
+      const result = JSON.parse(output.trim().split(/\r?\n/).at(-1))
+
+      expect(result).toEqual({
+        blocked: true,
+        message: 'Direct CLAIM-it CXF import is not allowed by the API. Please export the CXF file and import it manually into CLAIM-it.',
+      })
+    } finally {
+      fs.rmSync(testDirectory, { recursive: true, force: true })
+    }
+  })
 })

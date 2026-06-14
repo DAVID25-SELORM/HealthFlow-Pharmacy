@@ -73,7 +73,7 @@ import {
   validateNhisPrescriptionPdfFile,
 } from './nhisService'
 import { supabase } from '../lib/supabase'
-import { getNhiaSettings, listBranchRecords, saveNhiaSettings, shouldUseBranchServer, updateBranchRecord } from './branchServerApi'
+import { getNhiaSettings, listBranchRecords, saveNhiaSettings, shouldUseBranchServer, submitNhiaDirectPayload, updateBranchRecord } from './branchServerApi'
 import { routeWrite } from './apiRouter'
 import { getConnectivityState } from './connectivityService'
 import { invokeTierAccess } from './tierAccessService'
@@ -1880,6 +1880,85 @@ describe('CLAIM-it export helpers', () => {
 
     expect(downloadedName).toMatch(/^MAY2026__[A-F0-9]{12} \[030501954\] \(WESTPOINT CHEMIST\)_2026-05-14-2026-05-14\.cxf$/)
     expect(supabase.storage.from).toHaveBeenCalledWith('nhis-prescriptions')
+    clickSpy.mockRestore()
+  })
+
+  it('keeps CXF on the manual export route even when direct submit is requested', async () => {
+    const servedClaim = {
+      ...claim,
+      status: 'served',
+      organization_type: 'pharmacy',
+      diagnosis: '',
+      nhis_claim_medicines: [
+        {
+          nhis_drug_id: 'drug-1',
+          drug_code: 'NH001',
+          description: 'Artemether Lumefantrine Tablet',
+          unit: 'tablet',
+          unit_price: 1,
+          dispensed_qty: 10,
+          dispensary_date: '2026-05-14',
+          dose: '1 tablet',
+          frequency: 'BD',
+          duration: '3 days',
+          total_amount: 10,
+          category: 'A',
+        },
+      ],
+    }
+    const claimsQuery = {
+      order: vi.fn(() => claimsQuery),
+      gte: vi.fn(() => claimsQuery),
+      lte: vi.fn().mockResolvedValue({ data: [servedClaim], error: null }),
+    }
+    const serviceLinesQuery = {
+      in: vi.fn(() => serviceLinesQuery),
+      order: vi.fn().mockResolvedValue({ data: [], error: null }),
+    }
+    supabase.from.mockImplementation((table) => {
+      if (table === 'nhis_claims') {
+        return { select: vi.fn(() => claimsQuery) }
+      }
+      if (table === 'nhis_claim_services') {
+        return { select: vi.fn(() => serviceLinesQuery) }
+      }
+      return { select: vi.fn(() => ({ in: vi.fn().mockReturnThis(), eq: vi.fn().mockResolvedValue({ data: [], error: null }) })) }
+    })
+    URL.createObjectURL = vi.fn(() => 'blob:nhis-export')
+    URL.revokeObjectURL = vi.fn()
+    supabase.storage = {
+      from: vi.fn(() => ({
+        createSignedUrl: vi.fn().mockResolvedValue({
+          data: { signedUrl: 'https://example.test/rx.pdf' },
+          error: null,
+        }),
+      })),
+    }
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+
+    const count = await exportNhisClaimsFile({
+      mode: 'custom',
+      fromDate: '2026-05-14',
+      toDate: '2026-05-14',
+      directSubmit: true,
+      format: 'cxf',
+      organizationType: 'pharmacy',
+      providerClassLevel: 'D',
+      pharmacyLevel: 'P1',
+      pharmacyFacilityLevel: 'P1',
+      facilityName: 'Westpoint Chemist',
+      facilityCode: '03-05-001-02-01954-11-P1-2-011225',
+      providerNumber: '03-05-01954',
+      providerTypeDescription: 'Pharmacy',
+      accreditationExpiryDate: '2026-12-31',
+      claimsOfficerName: 'Claims Officer',
+      submitterId: 'admin',
+      nhisDrugCatalog: [{ id: 'drug-1', code: 'NH001', category: 'A' }],
+    })
+
+    expect(count).toBe(1)
+    expect(clickSpy).toHaveBeenCalled()
+    expect(submitNhiaDirectPayload).not.toHaveBeenCalled()
     clickSpy.mockRestore()
   })
 
