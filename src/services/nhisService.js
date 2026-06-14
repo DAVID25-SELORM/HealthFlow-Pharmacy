@@ -6164,6 +6164,7 @@ export const buildNhisClaimItExportPayload = (claims = [], options = {}) => {
     const prescriptionAttachment = getClaimItPrescriptionAttachmentForPayload(claim)
 
     return {
+      id: normalizeText(claim.id),
       claimNumber: normalizeText(claim.claim_number),
       status: normalizeText(claim.status),
       organizationType: claimOrganizationType,
@@ -7148,14 +7149,22 @@ const buildNhisClaimItCxfBundle = async (payload) => {
 
 const buildNhisClaimItDirectJsonPayload = async (payload) => {
   const bundle = await buildNhisClaimItCxfBundle(payload)
-  const claimReferences = (payload.claims || []).map((claim, index) => ({
+  const baseClaimReferences = (payload.claims || []).map((claim, index) => ({
     index,
+    claimId: normalizeText(claim.id),
     claimNumber: normalizeText(claim.claimNumber),
     memberNumber: normalizeText(claim.patient?.memberNumber),
   }))
   const claims = (bundle.data?.claims || []).map((claim, index) => ({
     ...claim,
-    claimNumber: claimReferences[index]?.claimNumber || normalizeText(claim.claimNumber),
+    claimID: normalizeText(claim.claimID || claim.guid),
+    claimId: baseClaimReferences[index]?.claimId || normalizeText(claim.claimId),
+    localClaimId: baseClaimReferences[index]?.claimId || normalizeText(claim.localClaimId),
+    claimNumber: baseClaimReferences[index]?.claimNumber || normalizeText(claim.claimNumber),
+  }))
+  const claimReferences = baseClaimReferences.map((claim, index) => ({
+    ...claim,
+    claimID: claims[index]?.claimID || '',
   }))
   const attachmentdata = (bundle.data?.attachmentdata || []).map((row) => ({
     ...row,

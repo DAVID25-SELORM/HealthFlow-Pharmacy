@@ -355,4 +355,56 @@ describe('hospital NHIA claim persistence', () => {
       fs.rmSync(testDirectory, { recursive: true, force: true })
     }
   })
+
+  it('adds CLAIM-it claim IDs before forwarding direct relational payloads', () => {
+    const testDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'healthflow-claimit-claim-id-'))
+    const repositoryUrl = pathToFileURL(path.resolve('local-branch-server/src/nhiaRepository.js')).href
+    const databaseUrl = pathToFileURL(path.resolve('local-branch-server/src/db.js')).href
+    const script = `
+      const { withDirectSubmissionClaimIds } = await import(${JSON.stringify(repositoryUrl)});
+      const { closeDatabase } = await import(${JSON.stringify(databaseUrl)});
+      const payload = withDirectSubmissionClaimIds({
+        payloadFormat: 'claimit_relational_json_v1',
+        claimReferences: [{ claimNumber: 'NHIS-OFF-260614-E026' }],
+        data: {
+          claims: [{
+            guid: '8fdce6ff-1ec4-5967-b7ba-7d93a9f4a781',
+            claimNumber: 'NHIS-OFF-260614-E026',
+          }],
+        },
+      }, [{
+        id: 'e026c30b-3b22-4340-b763-62a625bbffe9',
+        claimNumber: 'NHIS-OFF-260614-E026',
+        source: 'offline_nhis_claims',
+      }]);
+      closeDatabase();
+      console.log(JSON.stringify(payload));
+    `
+
+    try {
+      const output = execFileSync(process.execPath, ['--input-type=module', '--eval', script], {
+        cwd: path.resolve('local-branch-server'),
+        env: {
+          ...process.env,
+          HEALTHFLOW_DB_PATH: path.join(testDirectory, 'branch.sqlite'),
+        },
+        encoding: 'utf8',
+      })
+      const payload = JSON.parse(output.trim().split(/\r?\n/).at(-1))
+
+      expect(payload.claimReferences[0]).toMatchObject({
+        claimID: '8fdce6ff-1ec4-5967-b7ba-7d93a9f4a781',
+        claimId: 'e026c30b-3b22-4340-b763-62a625bbffe9',
+        localClaimId: 'e026c30b-3b22-4340-b763-62a625bbffe9',
+        claimNumber: 'NHIS-OFF-260614-E026',
+      })
+      expect(payload.data.claims[0]).toMatchObject({
+        claimID: '8fdce6ff-1ec4-5967-b7ba-7d93a9f4a781',
+        claimId: 'e026c30b-3b22-4340-b763-62a625bbffe9',
+        localClaimId: 'e026c30b-3b22-4340-b763-62a625bbffe9',
+      })
+    } finally {
+      fs.rmSync(testDirectory, { recursive: true, force: true })
+    }
+  })
 })

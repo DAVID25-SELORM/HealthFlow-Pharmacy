@@ -1676,6 +1676,46 @@ const getDirectSubmissionPayloadClaims = (payload = {}) => {
   return [payload]
 }
 
+export const withDirectSubmissionClaimIds = (payload = {}, localClaims = []) => {
+  if (!payload || typeof payload !== 'object') return payload
+
+  const enriched = {
+    ...payload,
+    claimReferences: Array.isArray(payload.claimReferences)
+      ? payload.claimReferences.map((claim, index) => ({
+          ...claim,
+          claimId: normalizeText(claim.claimId || claim.localClaimId || localClaims[index]?.id),
+          localClaimId: normalizeText(claim.localClaimId || claim.claimId || localClaims[index]?.id),
+          claimID: normalizeText(
+            claim.claimID ||
+              claim.guid ||
+              payload.data?.claims?.[index]?.claimID ||
+              payload.data?.claims?.[index]?.guid ||
+              localClaims[index]?.claimItClaimId
+          ),
+        }))
+      : payload.claimReferences,
+  }
+
+  if (payload.data && typeof payload.data === 'object' && Array.isArray(payload.data.claims)) {
+    enriched.data = {
+      ...payload.data,
+      claims: payload.data.claims.map((claim, index) => {
+        const claimItId = normalizeText(claim.claimID || claim.guid || localClaims[index]?.claimItClaimId)
+        const localClaimId = normalizeText(claim.claimId || claim.localClaimId || localClaims[index]?.id)
+        return {
+          ...claim,
+          claimID: claimItId,
+          claimId: localClaimId,
+          localClaimId,
+        }
+      }),
+    }
+  }
+
+  return enriched
+}
+
 export const resolveDirectSubmissionLocalClaims = (claimIds = []) =>
   claimIds.map((id) => {
     const claim = getNhiaClaim(id)
@@ -2823,7 +2863,8 @@ export const submitNhiaDirectPayload = async ({ payload, claimIds = [], action =
   }
 
   const localClaims = resolveDirectSubmissionLocalClaims(normalizedClaimIds)
-  const payloadClaims = getDirectSubmissionPayloadClaims(payload)
+  const payloadToSubmit = withDirectSubmissionClaimIds(payload, localClaims)
+  const payloadClaims = getDirectSubmissionPayloadClaims(payloadToSubmit)
   if (payloadClaims.length !== localClaims.length) {
     throw new Error('Direct NHIA submission payload must match the selected local claims.')
   }
@@ -2835,20 +2876,20 @@ export const submitNhiaDirectPayload = async ({ payload, claimIds = [], action =
   }
 
   const startedAt = nowIso()
-  await validateClaimItBridgePayload(settings, payload)
+  await validateClaimItBridgePayload(settings, payloadToSubmit)
   logSubmission({
     action: action || 'nhis.direct_submit',
     status: 'pending',
     request: {
       claimIds: normalizedClaimIds,
       claimCount: Array.isArray(payload.claims) ? payload.claims.length : null,
-      payload,
+      payload: payloadToSubmit,
       startedAt,
     },
   })
 
   try {
-    const result = await submitPayload(settings, payload)
+    const result = await submitPayload(settings, payloadToSubmit)
     if (!result.ok) {
       throw new Error(buildClaimItHttpError('CLAIM-it claim submission', result.httpStatus, result.body))
     }

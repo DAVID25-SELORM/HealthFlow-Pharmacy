@@ -2163,6 +2163,9 @@ describe('direct NHIA submission', () => {
         claims: [
           expect.objectContaining({
             claimNumber: 'NHIS-000001',
+            claimID: expect.any(String),
+            claimId: 'claim-1',
+            localClaimId: 'claim-1',
             claimCheckCode: '12345',
             medVersion: expect.any(String),
             policyVersion: expect.any(String),
@@ -2181,6 +2184,8 @@ describe('direct NHIA submission', () => {
       },
       claimReferences: [
         expect.objectContaining({
+          claimID: expect.any(String),
+          claimId: 'claim-1',
           claimNumber: 'NHIS-000001',
         }),
       ],
