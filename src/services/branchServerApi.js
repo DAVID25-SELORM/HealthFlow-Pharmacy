@@ -502,6 +502,14 @@ export const saveNhiaSettings = async (settings) => {
   return response.data || null
 }
 
+export const testNhiaConfiguration = async () => {
+  const response = await branchFetch('/api/nhia-config/test', {
+    method: 'POST',
+    timeoutMs: WRITE_BRANCH_REQUEST_TIMEOUT_MS,
+  })
+  return response.data || null
+}
+
 export const generateNhiaCcCode = async (claimContext = {}) => {
   const response = await branchFetch('/api/nhia/cc-code', {
     method: 'POST',

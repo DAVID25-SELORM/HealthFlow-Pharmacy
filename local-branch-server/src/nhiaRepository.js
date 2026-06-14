@@ -1734,7 +1734,7 @@ const resolveDirectSubmissionClaimId = (payload = {}, localClaims = [], claim = 
       getExistingPayloadClaimId(payload, index) ||
       localClaims[index]?.claimItClaimId ||
       localClaims[index]?.claimID
-  ) || createClaimItClaimId(localClaims[index] || claim, index)
+  )
 
 const getDirectSubmissionPayloadClaims = (payload = {}) => {
   if (!payload || typeof payload !== 'object') return []

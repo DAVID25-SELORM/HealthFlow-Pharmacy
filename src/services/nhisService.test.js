@@ -2089,9 +2089,9 @@ describe('direct NHIA submission', () => {
     }))
   })
 
-  it('routes public CLAIM-it bridge URLs through the hosted tier-access proxy', async () => {
+  it('routes public CLAIM-it bridge URLs through the branch server', async () => {
     mockNhisClaimDuplicateAndUpdateQueries()
-    invokeTierAccess.mockResolvedValue({ source: 'hosted', httpStatus: 200, response: { accepted: true } })
+    submitNhiaDirectPayload.mockResolvedValue({ status: 'submitted', httpStatus: 200, response: { accepted: true } })
 
     await submitNhisClaimDirect('claim-1', {
       claim: directClaim,
@@ -2107,10 +2107,11 @@ describe('direct NHIA submission', () => {
       'https://claims.example.test/json-api/claims',
       expect.any(Object)
     )
-    expect(invokeTierAccess).toHaveBeenCalledWith(expect.objectContaining({
-      action: 'submit_nhia_claims_direct',
-      submissionAction: 'nhis.direct_claim_submit',
+    expect(submitNhiaDirectPayload).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'nhis.direct_claim_submit',
+      claimIds: ['claim-1'],
     }))
+    expect(invokeTierAccess).not.toHaveBeenCalled()
   })
 
   it('sends tenant context when requesting a hosted CCC/CC code', async () => {
@@ -2211,13 +2212,12 @@ describe('direct NHIA submission', () => {
     expect(invokeTierAccess).not.toHaveBeenCalled()
   })
 
-  it('keeps browser bridge submission only for local CLAIM-it bridge URLs', async () => {
+  it('routes local CLAIM-it bridge submissions through the branch server', async () => {
     mockNhisClaimDuplicateAndUpdateQueries()
-    fetch.mockResolvedValue({
-      ok: true,
-      status: 200,
-      arrayBuffer: vi.fn().mockResolvedValue(Uint8Array.from([0x25, 0x50, 0x44, 0x46, 0x2d]).buffer),
-      text: vi.fn().mockResolvedValue(JSON.stringify({ success: true, savedClaims: 1 })),
+    submitNhiaDirectPayload.mockResolvedValue({
+      status: 'submitted',
+      httpStatus: 200,
+      response: { success: true, savedClaims: 1 },
     })
 
     await submitNhisClaimDirect('claim-1', {
@@ -2230,57 +2230,41 @@ describe('direct NHIA submission', () => {
       ...directSettings,
     })
 
-    const claimSubmitCall = fetch.mock.calls.find(([url]) => url === 'http://localhost:31719/json-api/claims')
-    expect(claimSubmitCall).toEqual([
-      'http://localhost:31719/json-api/claims',
-      expect.objectContaining({ method: 'POST' }),
-    ])
-    const submittedBody = JSON.parse(claimSubmitCall[1].body)
-    expect(submittedBody).toMatchObject({
-      payloadFormat: 'claimit_relational_json_v1',
-      data: {
+    expect(submitNhiaDirectPayload).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'nhis.direct_claim_submit',
+      claimIds: ['claim-1'],
+      payload: expect.objectContaining({
+        payloadFormat: 'claimit_relational_json_v1',
         claims: [
           expect.objectContaining({
-            claimNumber: 'NHIS-000001',
             claimID: expect.any(String),
-            claimId: 'claim-1',
-            localClaimId: 'claim-1',
+            claimNumber: 'NHIS-000001',
             claimCheckCode: '12345',
             medVersion: expect.any(String),
             policyVersion: expect.any(String),
           }),
         ],
-        medicineentries: [
-          expect.objectContaining({
-            medicineCode: 'NH001',
-          }),
-        ],
-        validation_zclaims: [
-          expect.objectContaining({
-            serializedClaim: expect.any(String),
-          }),
-        ],
-      },
-      claimReferences: [
-        expect.objectContaining({
-          claimID: expect.any(String),
-          claimId: 'claim-1',
-          claimNumber: 'NHIS-000001',
+        data: expect.objectContaining({
+          medicineentries: [
+            expect.objectContaining({
+              medicineCode: 'NH001',
+            }),
+          ],
+          validation_zclaims: [
+            expect.objectContaining({
+              serializedClaim: expect.any(String),
+            }),
+          ],
         }),
-      ],
-    })
+      }),
+    }))
+    expect(fetch.mock.calls.some(([url]) => String(url).includes('localhost:31719'))).toBe(false)
     expect(invokeTierAccess).not.toHaveBeenCalled()
   })
 
-  it('does not queue huge local CLAIM-it bridge payloads when the browser bridge is unreachable', async () => {
+  it('does not queue CLAIM-it payloads when the branch route is unreachable', async () => {
     mockNhisClaimDuplicateAndUpdateQueries()
-    fetch
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        arrayBuffer: vi.fn().mockResolvedValue(Uint8Array.from([0x25, 0x50, 0x44, 0x46, 0x2d]).buffer),
-      })
-      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    submitNhiaDirectPayload.mockRejectedValueOnce(new TypeError('Failed to fetch'))
 
     await expect(submitNhisClaimDirect('claim-1', {
       claim: directClaim,
@@ -2290,24 +2274,17 @@ describe('direct NHIA submission', () => {
       apiBaseUrl: 'http://localhost:31719/json-api',
       claimEndpointPath: '/claims',
       ...directSettings,
-    })).rejects.toThrow('CLAIM-it local bridge is not reachable')
+    })).rejects.toThrow('browser is not permitted to send claims directly to CLAIM-it')
 
     expect(window.localStorage.getItem('healthflow.claimitBridgeQueue.v1')).toBeNull()
+    expect(fetch.mock.calls.some(([url]) => String(url).includes('localhost:31719'))).toBe(false)
   })
 
-  it('rejects browser bridge submissions when CLAIM-it returns HTTP 200 without saving claims', async () => {
+  it('surfaces CLAIM-it rejection returned by the branch server', async () => {
     mockNhisClaimDuplicateAndUpdateQueries()
-    fetch.mockResolvedValue({
-      ok: true,
-      status: 200,
-      arrayBuffer: vi.fn().mockResolvedValue(Uint8Array.from([0x25, 0x50, 0x44, 0x46, 0x2d]).buffer),
-      text: vi.fn().mockResolvedValue(JSON.stringify({
-        success: false,
-        failedClaims: 1,
-        savedClaims: 0,
-        user_msg: 'Medicine price/version could not be validated.',
-      })),
-    })
+    submitNhiaDirectPayload.mockRejectedValueOnce(
+      new Error('CLAIM-it did not save the claim batch: Medicine price/version could not be validated.')
+    )
 
     await expect(submitNhisClaimDirect('claim-1', {
       claim: directClaim,
@@ -2318,6 +2295,7 @@ describe('direct NHIA submission', () => {
       claimEndpointPath: '/claims',
       ...directSettings,
     })).rejects.toThrow('Medicine price/version could not be validated.')
+    expect(fetch.mock.calls.some(([url]) => String(url).includes('localhost:31719'))).toBe(false)
   })
 })
 
@@ -3031,121 +3009,15 @@ describe('NHIA API settings source routing', () => {
     expect(JSON.stringify(invokeTierAccess.mock.calls[0][0])).not.toContain('undefined')
   })
 
-  it('uses the CLAIM-it claim endpoint when no CC endpoint is configured', async () => {
-    fetch.mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      text: vi.fn().mockResolvedValue(JSON.stringify({ claims: [{ claim: { outcome: 'PASSED' } }] })),
-    })
-
-    await expect(generateBrowserClaimItBridgeCcCode({
-      apiBaseUrl: 'http://localhost:31719/json-api',
-      integrationMode: 'claimit_export',
-      validationMode: 'claimit_local_bridge',
-      claimEndpointPath: '/claims',
-      credentialMode: 'api_key',
-      credentials: {
-        apiKey: 'api-key',
-        apiSecret: 'api-secret',
-        headerName: 'Authorization',
-        secretHeaderName: 'x-api-secret',
-      },
-    }, {
-      organizationType: 'pharmacy',
-      patientName: 'Ama Mensah',
-      memberNumber: '12345678',
-      serviceDate: '2026-05-26',
-      totalAmount: 12,
-    })).resolves.toMatchObject({
-      source: 'pending',
-      status: 'pending',
-    })
-
-    expect(fetch).toHaveBeenCalledWith(
-      'http://localhost:31719/json-api/claims',
-      expect.objectContaining({ method: 'POST' })
-    )
-  })
-
-  it('allows CLAIM-it validation mode to return a CCC without a CC endpoint', async () => {
-    fetch.mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      text: vi.fn().mockResolvedValue(JSON.stringify({
-        claims: [{ claim: { claimControlCode: '54321' } }],
-      })),
-    })
-
+  it('blocks all browser-to-CLAIM-it CCC requests', async () => {
     await expect(generateBrowserClaimItBridgeCcCode({
       apiBaseUrl: 'http://localhost:31719/json-api',
       claimEndpointPath: '/claims',
-      validationMode: 'validate_before_submit',
-      claimControlMode: 'claimit_bridge_ccc',
-      credentialMode: 'api_key',
-      credentials: {
-        apiKey: 'api-key',
-        headerName: 'Authorization',
-      },
     }, {
-      patientName: 'Ama Mensah',
       memberNumber: '12345678',
-      serviceDate: '2026-05-26',
-      totalAmount: 12,
-    })).resolves.toMatchObject({
-      ccCode: '54321',
-      source: 'claimit_bridge',
-    })
+    })).rejects.toThrow('Browser-to-CLAIM-it requests are disabled')
 
-    expect(fetch).toHaveBeenCalledWith(
-      'http://localhost:31719/json-api/claims',
-      expect.objectContaining({ method: 'POST' })
-    )
-  })
-
-  it('verifies subscriber before requesting CLAIM-it CCC when lookup endpoint is configured', async () => {
-    fetch
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        text: vi.fn().mockResolvedValue(JSON.stringify({ valid: true })),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        text: vi.fn().mockResolvedValue(JSON.stringify({ ccCode: '69273' })),
-      })
-
-    await expect(generateBrowserClaimItBridgeCcCode({
-      apiBaseUrl: 'http://localhost:31719/json-api',
-      claimEndpointPath: '/claims',
-      memberLookupEndpointPath: '/subscribers/verify',
-      validationMode: 'validate_before_submit',
-      claimControlMode: 'claimit_bridge_ccc',
-      credentialMode: 'api_key',
-      credentials: {
-        apiKey: 'api-key',
-        headerName: 'Authorization',
-      },
-    }, {
-      patientName: 'Ama Mensah',
-      memberNumber: '12345678',
-      serviceDate: '2026-05-26',
-      totalAmount: 12,
-    })).resolves.toMatchObject({
-      ccCode: '69273',
-      source: 'claimit_bridge',
-    })
-
-    expect(fetch).toHaveBeenNthCalledWith(
-      1,
-      'http://localhost:31719/json-api/subscribers/verify',
-      expect.objectContaining({ method: 'POST' })
-    )
-    expect(fetch).toHaveBeenNthCalledWith(
-      2,
-      'http://localhost:31719/json-api/claims',
-      expect.objectContaining({ method: 'POST' })
-    )
+    expect(fetch).not.toHaveBeenCalled()
   })
 })
 

@@ -224,7 +224,6 @@ const normalizeNhiaIntegrationMode = (value, fallback = 'claimit_export') => {
   return NHIA_INTEGRATION_MODE_ALIASES[normalized] || fallback
 }
 const CLAIMIT_BRIDGE_MODES = new Set(['claimit_bridge'])
-const PENDING_CLAIMIT_CC_MESSAGE = 'Pending CLAIM-it validation'
 const isClaimItBaseUrl = (value = '') => {
   const stored = normalizeText(value).toLowerCase()
   if (!stored) return false
@@ -2545,195 +2544,6 @@ const writeClaimItBridgeQueue = (queue = []) => {
 
 const isClaimItBridgeMode = (mode = '') => CLAIMIT_BRIDGE_MODES.has(normalizeNhiaIntegrationMode(mode, ''))
 
-const isLocalClaimItBridgeProfile = (profile = '') =>
-  ['local_server', 'lan_ip'].includes(normalizeText(profile) || 'local_server')
-
-const isLocalClaimItBridgeUrl = (baseUrl = '') => {
-  try {
-    const hostname = new URL(normalizeText(baseUrl)).hostname.toLowerCase()
-    return hostname === 'localhost' ||
-      hostname === '127.0.0.1' ||
-      hostname.startsWith('192.168.') ||
-      hostname.startsWith('10.') ||
-      /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname)
-  } catch {
-    return false
-  }
-}
-
-const joinClaimItBridgeUrl = (baseUrl = '', path = '') =>
-  `${normalizeText(baseUrl).replace(/\/+$/, '')}/${normalizeText(path).replace(/^\/+/, '')}`
-
-const getClaimControlEndpointPath = (settings = {}) =>
-  normalizeText(
-    settings.ccEndpointPath ||
-      settings.cc_endpoint_path ||
-      settings.ccCodeEndpointPath ||
-      settings.cc_code_endpoint_path
-  )
-
-const getClaimSubmitEndpointPath = (settings = {}) =>
-  normalizeText(
-    settings.claimEndpointPath ||
-      settings.claim_endpoint_path ||
-      settings.claimSubmitEndpoint ||
-      settings.claim_submit_endpoint
-  )
-
-const getMemberLookupEndpointPath = (settings = {}) =>
-  normalizeText(
-    settings.memberLookupEndpointPath ||
-      settings.member_lookup_endpoint_path ||
-      settings.memberLookupEndpoint ||
-      settings.member_lookup_endpoint
-  )
-
-const getClaimItBridgeBaseUrl = (settings = {}) => {
-  const environment = normalizeText(settings.apiEnvironment || settings.api_environment).toLowerCase()
-  const apiBaseUrl = normalizeText(settings.apiBaseUrl || settings.api_base_url)
-  const claimitSubmitBaseUrl = normalizeText(settings.claimitSubmitBaseUrl || settings.claimit_submit_base_url)
-  const productionBaseUrl = normalizeText(settings.productionBaseUrl || settings.production_base_url)
-  const sandboxBaseUrl = normalizeText(settings.sandboxBaseUrl || settings.sandbox_base_url)
-  return environment === 'sandbox'
-    ? sandboxBaseUrl || claimitSubmitBaseUrl || productionBaseUrl || apiBaseUrl
-    : claimitSubmitBaseUrl || productionBaseUrl || apiBaseUrl || sandboxBaseUrl
-}
-
-const canUseBaseUrlForClaimControl = (settings = {}) => {
-  const validationMode = normalizeText(settings.validationMode || settings.validation_mode)
-  const integrationMode = normalizeNhiaIntegrationMode(
-    settings.integrationMode || settings.integration_mode || settings.nhiaApiMode || settings.nhia_api_mode,
-    ''
-  )
-  const claimControlMode = normalizeText(settings.claimControlMode || settings.claim_control_mode)
-  return validationMode === 'validate_before_submit' ||
-    validationMode === 'claimit_local_bridge' ||
-    integrationMode === 'claimit_export' ||
-    integrationMode === 'claimit_local_bridge' ||
-    claimControlMode === 'claimit_bridge_ccc' ||
-    isClaimItBridgeMode(integrationMode) ||
-    Boolean(getClaimItBridgeBaseUrl(settings))
-}
-
-const buildClaimItBridgeHeaders = (settings = {}) => {
-  const credentials = settings.credentials && typeof settings.credentials === 'object' ? settings.credentials : {}
-  const credentialMode = normalizeText(settings.credentialMode || settings.credential_mode || 'claimit_token')
-  const headers = {
-    Accept: 'application/json',
-    'Content-Type': 'application/json',
-  }
-  const apiKey = normalizeText(credentials.apiKey || credentials.token)
-  const apiSecret = normalizeText(credentials.apiSecret)
-  const username = normalizeText(credentials.username)
-  const password = normalizeText(credentials.password)
-
-  if (credentialMode === 'api_key' && apiKey) {
-    const configuredHeaderName = normalizeText(credentials.headerName)
-    const headerName = configuredHeaderName || 'Authorization'
-    const headerPrefix = normalizeText(credentials.headerPrefix) ||
-      (!configuredHeaderName && headerName.toLowerCase() === 'authorization' ? 'Bearer' : '')
-    headers[headerName] = headerPrefix ? `${headerPrefix} ${apiKey}` : apiKey
-  }
-  if (credentialMode === 'api_key' && apiSecret) {
-    headers[normalizeText(credentials.secretHeaderName) || 'x-api-secret'] = apiSecret
-  }
-  if (credentialMode === 'basic_auth' && (username || password)) {
-    headers.Authorization = `Basic ${btoa(`${username}:${password}`)}`
-  }
-  if (credentialMode === 'bearer_token' && apiKey) {
-    headers.Authorization = `Bearer ${apiKey}`
-  }
-
-  return headers
-}
-
-const extractClaimControlCode = (body) => {
-  if (Array.isArray(body)) {
-    for (const item of body) {
-      const nested = extractClaimControlCode(item)
-      if (nested) return nested
-    }
-    return ''
-  }
-  if (!body || typeof body !== 'object') return ''
-  const record = body
-  const direct = normalizeNhisCcCode(
-    record.ccCode ||
-      record.cc_code ||
-      record.cccCode ||
-      record.ccc_code ||
-      record.cccNo ||
-      record.ccc_no ||
-      record.claimControlCode ||
-      record.claim_control_code ||
-      record.controlCode ||
-      record.control_code ||
-      record.code
-  )
-  if (direct) return direct
-  for (const key of ['data', 'claim', 'claims', 'result', 'results', 'response']) {
-    const nested = extractClaimControlCode(record[key])
-    if (nested) return nested
-  }
-  return ''
-}
-
-const logClaimItBridgeStatus = (action, detail = {}) => {
-  console.info(`[CLAIM-it Bridge] ${action}`, {
-    status: detail.status || '',
-    httpStatus: detail.httpStatus || null,
-    endpointPath: detail.endpointPath || '',
-    claimCount: detail.claimCount || null,
-    message: detail.message || '',
-  })
-}
-
-const isSubscriberVerificationInvalid = (body) => {
-  if (!body || typeof body !== 'object') return false
-  const record = body
-  const status = normalizeText(record.status || record.outcome || record.result || record.validationStatus).toLowerCase()
-  const valid = record.valid ?? record.isValid ?? record.verified ?? record.isVerified ?? record.success
-  if (valid === false) return true
-  if (['invalid', 'not_found', 'not found', 'failed', 'error', 'inactive'].includes(status)) return true
-  return record.data && typeof record.data === 'object' ? isSubscriberVerificationInvalid(record.data) : false
-}
-
-const verifyClaimItSubscriber = async (settings = {}, claimContext = {}) => {
-  const endpointPath = getMemberLookupEndpointPath(settings)
-  if (!endpointPath) return null
-
-  const baseUrl = getClaimItBridgeBaseUrl(settings)
-  if (!baseUrl) throw new Error('CLAIM-it bridge base URL is required for subscriber verification.')
-  const payload = {
-    action: 'verify_subscriber',
-    memberNumber: normalizeText(claimContext.memberNumber || claimContext.memberNo),
-    hin: normalizeText(claimContext.hin),
-    patientName: normalizeText(claimContext.patientName),
-    serviceDate: normalizeText(claimContext.serviceDate),
-  }
-  logClaimItBridgeStatus('subscriber_verification.request', { status: 'pending', endpointPath })
-  const response = await fetch(joinClaimItBridgeUrl(baseUrl, endpointPath), {
-    method: 'POST',
-    headers: buildClaimItBridgeHeaders(settings),
-    body: JSON.stringify(payload),
-  })
-  const responseText = await response.text()
-  let body = {}
-  try {
-    body = responseText ? JSON.parse(responseText) : {}
-  } catch {
-    body = { raw: responseText }
-  }
-  logClaimItBridgeStatus('subscriber_verification.response', {
-    status: response.ok ? 'success' : 'failed',
-    httpStatus: response.status,
-    endpointPath,
-  })
-  if (!response.ok) throw new Error(`Subscriber verification returned HTTP ${response.status}.`)
-  if (isSubscriberVerificationInvalid(body)) throw new Error('Subscriber verification failed.')
-  return body
-}
-
 const isClaimItBridgeUnavailableError = (error) => {
   const message = normalizeText(error?.message || error).toLowerCase()
   return [
@@ -2756,28 +2566,6 @@ const isClaimItBridgeUnavailableError = (error) => {
     'http 523',
     'http 524',
   ].some((term) => message.includes(term))
-}
-
-const enqueueClaimItBridgeSubmission = ({ claims = [], directPayload = {}, request = {}, error = null } = {}) => {
-  const queue = readClaimItBridgeQueue()
-  const item = {
-    id: typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-      ? crypto.randomUUID()
-      : `claimit-bridge-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-    claims: claims.map((claim) => ({
-      id: claim.id,
-      status: claim.status,
-      claim_number: claim.claim_number,
-    })).filter((claim) => claim.id),
-    request,
-    directPayload,
-    attempts: 0,
-    lastError: normalizeText(error?.message || error),
-    queuedAt: new Date().toISOString(),
-    nextRetryAt: new Date(Date.now() + CLAIMIT_BRIDGE_RETRY_INTERVAL_MS).toISOString(),
-  }
-  writeClaimItBridgeQueue([...queue, item])
-  return item
 }
 
 export const getClaimItBridgeQueueSummary = () => {
@@ -2805,10 +2593,9 @@ export const flushClaimItBridgeQueue = async () => {
 
     try {
       if (item.request?.localBridge) {
-        await submitBrowserClaimItBridgePayload(item.request)
-      } else {
-        await submitHostedNhiaDirectPayload(item.request)
+        throw new Error('Legacy browser-to-CLAIM-it submissions are disabled. Submit through the local branch server.')
       }
+      await submitHostedNhiaDirectPayload(item.request)
       await markNhisClaimsSubmittedByRoute(item.claims || [])
       submitted += item.claims?.length || 0
     } catch (error) {
@@ -2852,63 +2639,11 @@ export const testClaimItConnection = async (settings = {}) => {
 }
 
 export const generateBrowserClaimItBridgeCcCode = async (settings = {}, claimContext = {}) => {
-  const ccEndpointPath = getClaimControlEndpointPath(settings)
-  const claimEndpointPath = getClaimSubmitEndpointPath(settings)
-  const endpointPath = ccEndpointPath || claimEndpointPath
-  const baseUrl = getClaimItBridgeBaseUrl(settings)
-  if (!baseUrl || (!endpointPath && !canUseBaseUrlForClaimControl(settings))) {
-    return { source: 'pending', status: 'pending', message: PENDING_CLAIMIT_CC_MESSAGE }
-  }
-
-  const requestPayload = {
-    action: 'generate_or_validate_cc_code',
-    claimControlMode: normalizeText(settings.claimControlMode || settings.claim_control_mode) || 'claimit_bridge',
-    batch: {
-      batchNumber: normalizeText(claimContext.batchNumber),
-      organizationType: normalizeOrganizationType(claimContext.organizationType || claimContext.organization_type),
-      facilityCode: normalizeText(settings.facilityCode || settings.facility_code),
-      providerNumber: normalizeText(settings.providerNumber || settings.provider_number),
-      claimCount: 1,
-    },
-    claims: [{
-      patientName: normalizeText(claimContext.patientName),
-      memberNumber: normalizeText(claimContext.memberNumber || claimContext.memberNo),
-      hin: normalizeText(claimContext.hin),
-      diagnosis: normalizeText(claimContext.diagnosis),
-      serviceDate: normalizeText(claimContext.serviceDate),
-      totalAmount: Number(claimContext.totalAmount || 0),
-    }],
-    requestedAt: new Date().toISOString(),
-  }
-
-  await verifyClaimItSubscriber(settings, claimContext)
-  logClaimItBridgeStatus('cc_code.request', { status: 'pending', endpointPath, claimCount: 1 })
-  const response = await fetch(endpointPath ? joinClaimItBridgeUrl(baseUrl, endpointPath) : baseUrl.replace(/\/+$/, ''), {
-    method: 'POST',
-    headers: buildClaimItBridgeHeaders(settings),
-    body: JSON.stringify(requestPayload),
-  })
-  const responseText = await response.text()
-  let body = {}
-  try {
-    body = responseText ? JSON.parse(responseText) : {}
-  } catch {
-    body = { raw: responseText }
-  }
-  logClaimItBridgeStatus('cc_code.response', {
-    status: response.ok ? 'success' : 'failed',
-    httpStatus: response.status,
-    endpointPath,
-    claimCount: 1,
-  })
-  if (!response.ok) throw new Error(`CLAIM-it bridge returned HTTP ${response.status}.`)
-
-  const ccCode = extractClaimControlCode(body)
-  if (!ccCode) return { source: 'pending', status: 'pending', message: PENDING_CLAIMIT_CC_MESSAGE, response: body }
-  if (ccCode.length !== NHIS_CC_CODE_DIGITS) {
-    throw new Error(`CLAIM-it returned a CCC/CC code that is not exactly ${NHIS_CC_CODE_DIGITS} digits.`)
-  }
-  return { ccCode, source: 'claimit_bridge', response: body }
+  void settings
+  void claimContext
+  throw new Error(
+    'Browser-to-CLAIM-it requests are disabled. Generate CCC through the NHIA eligibility API or use the local branch server.'
+  )
 }
 
 const loadHostedNhiaApiSettings = async ({ organizationId = '', mode = '', forceRefresh = false } = {}) => {
@@ -3369,79 +3104,6 @@ const submitHostedNhiaDirectPayload = async ({
     claimIds,
     submissionAction,
   })
-}
-
-const submitBrowserClaimItBridgePayload = async ({
-  payload,
-  payloadContent = '',
-  contentType = 'application/json',
-  settings = {},
-} = {}) => {
-  const baseUrl = normalizeText(settings.apiBaseUrl || settings.api_base_url)
-  const claimEndpointPath = normalizeText(settings.claimEndpointPath || settings.claim_endpoint_path)
-  if (!baseUrl) throw new Error('CLAIM-it bridge base URL is required.')
-  if (!claimEndpointPath) throw new Error('CLAIM-it claim submission endpoint path is required.')
-
-  const body = normalizeText(payloadContent) || JSON.stringify(payload)
-  const headers = {
-    Accept: 'application/json',
-    'Content-Type': contentType,
-  }
-  const validationMode = normalizeText(settings.validationMode || settings.validation_mode) || 'validate_before_submit'
-  const validationEndpointPath = normalizeText(settings.claimValidationEndpointPath || settings.claim_validation_endpoint_path)
-  if (validationMode !== 'submit_only' && validationEndpointPath) {
-    const validationResponse = await fetch(joinClaimItBridgeUrl(baseUrl, validationEndpointPath), {
-      method: 'POST',
-      headers,
-      body,
-    })
-    if (!validationResponse.ok) {
-      throw new Error(`CLAIM-it validation returned HTTP ${validationResponse.status}.`)
-    }
-  }
-
-  const response = await fetch(joinClaimItBridgeUrl(baseUrl, claimEndpointPath), {
-    method: 'POST',
-    headers,
-    body,
-  })
-  const responseText = await response.text()
-  let responseBody = {}
-  try {
-    responseBody = responseText ? JSON.parse(responseText) : {}
-  } catch {
-    responseBody = { raw: responseText }
-  }
-  if (!response.ok) {
-    throw new Error(`CLAIM-it bridge returned HTTP ${response.status}.`)
-  }
-  return { ok: true, status: response.status, response: responseBody }
-}
-
-const getClaimItBrowserSubmissionCounts = (body = {}) => ({
-  failedClaims: Number(body?.failedClaims || 0),
-  passedClaims: Number(body?.passedClaims || 0),
-  savedClaims: Number(body?.savedClaims || 0),
-})
-
-const assertBrowserClaimItSubmissionAccepted = (body = {}) => {
-  const { failedClaims, passedClaims, savedClaims } = getClaimItBrowserSubmissionCounts(body)
-  if (savedClaims > 0 || passedClaims > 0) return
-  const upstreamMessage = normalizeText(
-    body?.user_msg ||
-      body?.userMessage ||
-      body?.message ||
-      body?.error ||
-      body?.detail ||
-      body?.raw
-  )
-  if (upstreamMessage) {
-    throw new Error(`CLAIM-it did not save the claim batch: ${upstreamMessage}`)
-  }
-  if (failedClaims > 0) {
-    throw new Error('CLAIM-it did not save the claim batch: CLAIM-it rejected all submitted claims.')
-  }
-  throw new Error('CLAIM-it did not confirm that any submitted claims were saved.')
 }
 
 const getNhisReadinessContext = async (claimData = {}, options = {}) => {
@@ -7490,21 +7152,7 @@ const submitNhisClaimsDirect = async (claims, period, options = {}) => {
     })
     throw new Error(CLAIMIT_CXF_API_BLOCK_MESSAGE)
   }
-  const connectionProfile = normalizeText(options.connectionProfile || options.connection_profile) || 'local_server'
-  const bridgeBaseUrl = normalizeText(
-    options.claimitSubmitBaseUrl ||
-      options.claimit_submit_base_url ||
-      options.productionBaseUrl ||
-      options.production_base_url ||
-      options.apiBaseUrl ||
-      options.api_base_url ||
-      options.sandboxBaseUrl ||
-      options.sandbox_base_url
-  )
-  const useBrowserBridge = directApiSource === 'hosted' &&
-    isClaimItBridgeMode(integrationMode) &&
-    isLocalClaimItBridgeProfile(connectionProfile) &&
-    isLocalClaimItBridgeUrl(bridgeBaseUrl)
+  const requiresBranchClaimIt = isClaimItBridgeMode(integrationMode)
   const claimsForSubmission = directApiSource === 'hosted'
     ? await hydrateNhisPrescriptionUrlsForTransfer(claims)
     : claims
@@ -7512,17 +7160,17 @@ const submitNhisClaimsDirect = async (claims, period, options = {}) => {
     ...options,
     exportPeriod: period,
   })
-  const submitDirectPayload = useBrowserBridge
-    ? submitBrowserClaimItBridgePayload
-    : directApiSource === 'branch'
+  const submitDirectPayload = requiresBranchClaimIt || directApiSource === 'branch'
     ? submitNhiaDirectPayload
     : submitHostedNhiaDirectPayload
-  const directPayload = directApiSource === 'hosted'
-    ? await buildHostedDirectSubmissionPayload(payload, options)
-    : { payload: await buildNhisClaimItDirectJsonPayload(payload) }
+  const directPayload = requiresBranchClaimIt || directApiSource === 'branch'
+    ? { payload: await buildNhisClaimItDirectJsonPayload(payload) }
+    : await buildHostedDirectSubmissionPayload(payload, options)
 
   console.info('[NHIS submission route]', {
-    route: directApiSource === 'branch' ? 'local_branch_direct_submit' : useBrowserBridge ? 'browser_claimit_bridge' : 'hosted_direct_submit',
+    route: requiresBranchClaimIt || directApiSource === 'branch'
+      ? 'local_branch_direct_submit'
+      : 'hosted_direct_submit',
     integrationMode,
     exportFormat,
     directPayloadFormat,
@@ -7531,40 +7179,21 @@ const submitNhisClaimsDirect = async (claims, period, options = {}) => {
 
   const request = {
     ...directPayload,
-    ...(useBrowserBridge
-      ? {
-          localBridge: true,
-          settings: {
-            apiBaseUrl: bridgeBaseUrl,
-            claimEndpointPath: options.claimEndpointPath || options.claim_endpoint_path,
-            claimValidationEndpointPath: options.claimValidationEndpointPath || options.claim_validation_endpoint_path,
-            validationMode: options.validationMode || options.validation_mode,
-          },
-        }
-      : {}),
     claimIds: claims.map((claim) => claim.id).filter(Boolean),
     organizationId: normalizeText(options.organizationId || options.organization_id),
-    ...(directApiSource === 'hosted'
+    ...(!requiresBranchClaimIt && directApiSource === 'hosted'
       ? { submissionAction: options.action || 'nhis.direct_submit' }
       : { action: options.action || 'nhis.direct_submit' }),
   }
 
   try {
-    const result = await submitDirectPayload(request)
-    if (useBrowserBridge) {
-      assertBrowserClaimItSubmissionAccepted(result?.response || result?.body || result)
-    }
-    return result
+    return await submitDirectPayload(request)
   } catch (error) {
-    if (useBrowserBridge && isClaimItBridgeUnavailableError(error)) {
+    if (requiresBranchClaimIt && isClaimItBridgeUnavailableError(error)) {
       throw new Error(
-        `CLAIM-it local bridge is not reachable at ${bridgeBaseUrl}. ` +
-        'Start CLAIM-it on this computer and submit again. The claim was not sent to CLAIM-it.'
+        'The local branch server or CLAIM-it is not reachable. Start both services and submit again. ' +
+        'The browser is not permitted to send claims directly to CLAIM-it.'
       )
-    }
-    if (directApiSource === 'hosted' && isClaimItBridgeMode(integrationMode) && isClaimItBridgeUnavailableError(error)) {
-      const queued = enqueueClaimItBridgeSubmission({ claims, directPayload, request, error })
-      return { queued: true, queuedId: queued.id, queuedCount: claims.length }
     }
     throw error
   }

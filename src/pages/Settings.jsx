@@ -19,6 +19,7 @@ import {
   getBranchDatabaseStatus,
   getSavedBranchToken,
   saveBranchToken,
+  testNhiaConfiguration as testBranchNhiaConfiguration,
 } from '../services/branchServerApi'
 import { updateOrganization, getOrganizationStats } from '../services/organizationService'
 import { buildClaimItConfigPreview, getNhiaApiSettings, removeNhiaApiCredentials, saveNhiaApiSettings, testClaimItConnection, validateNhiaConfigForMode } from '../services/nhisService'
@@ -48,7 +49,6 @@ const isNhiaSecretMask = (value) => NHIA_SECRET_MASK_VALUES.has(String(value || 
 const NHIA_API_INTEGRATION_MODES = ['claimit_bridge', 'claimit_assisted', 'direct_nhia_api', 'hybrid']
 const NHIA_BRIDGE_MODES = ['claimit_bridge']
 const NHIA_LOCAL_BRIDGE_PROFILES = ['local_server', 'lan_ip']
-const NHIA_BRIDGE_REACHABLE_STATUSES = [401, 403, 404, 405]
 const CLAIMIT_PRODUCTION_BRIDGE_BASE_URL = String(import.meta.env.VITE_CLAIMIT_PRODUCTION_BRIDGE_BASE_URL || '').trim().replace(/\/+$/, '')
 const FACILITY_TYPE_OPTIONS = [
   'Community Pharmacy',
@@ -369,51 +369,6 @@ const withProductionClaimItBridgeDefaults = (form = {}) => {
         }
       : {}),
   }
-}
-
-const joinNhiaBridgeUrl = (baseUrl = '', path = '') => {
-  const normalizedBaseUrl = normalizeNhiaText(baseUrl).replace(/\/+$/, '')
-  const normalizedPath = normalizeNhiaText(path).replace(/^\/+/, '')
-  return normalizedPath ? `${normalizedBaseUrl}/${normalizedPath}` : normalizedBaseUrl
-}
-
-const buildLocalClaimItHeaders = (form = {}) => {
-  const credentials = form.credentials || {}
-  const credentialMode = normalizeNhiaText(form.credentialMode || form.credential_mode || 'claimit_token')
-  const headers = { Accept: 'application/json' }
-  const apiKey = normalizeNhiaText(credentials.apiKey)
-  const apiSecret = normalizeNhiaText(credentials.apiSecret)
-  const username = normalizeNhiaText(credentials.username)
-  const password = normalizeNhiaText(credentials.password)
-
-  if (credentialMode === 'api_key' && apiKey) {
-    const headerName = normalizeNhiaText(credentials.headerName) || 'x-api-key'
-    const headerPrefix = normalizeNhiaText(credentials.headerPrefix)
-    headers[headerName] = headerPrefix ? `${headerPrefix} ${apiKey}` : apiKey
-  }
-  if (credentialMode === 'api_key' && apiSecret) {
-    headers[normalizeNhiaText(credentials.secretHeaderName) || 'x-api-secret'] = apiSecret
-  }
-  if (credentialMode === 'basic_auth' && (username || password)) {
-    headers.Authorization = `Basic ${btoa(`${username}:${password}`)}`
-  }
-  if (credentialMode === 'bearer_token' && apiKey) {
-    headers.Authorization = `Bearer ${apiKey}`
-  }
-
-  return headers
-}
-
-const testLocalClaimItConnection = async (form = {}, baseUrl = '') => {
-  const endpointPath = form.claimValidationEndpointPath || form.claimEndpointPath || form.memberLookupEndpointPath || form.claimStatusEndpointPath
-  const response = await fetch(joinNhiaBridgeUrl(baseUrl, endpointPath), {
-    method: 'GET',
-    headers: buildLocalClaimItHeaders(form),
-  })
-  if (response.ok || NHIA_BRIDGE_REACHABLE_STATUSES.includes(response.status)) {
-    return { message: `CLAIM-it bridge reached (HTTP ${response.status}).` }
-  }
-  throw new Error(`CLAIM-it bridge returned HTTP ${response.status}.`)
 }
 
 const blankStaffForm = {
@@ -767,7 +722,7 @@ const Settings = () => {
     try {
       setError('')
       const result = isLocalNhiaBridgeProfile(nhiaApiForm)
-        ? await testLocalClaimItConnection(nhiaApiForm, baseUrl)
+        ? await testBranchNhiaConfiguration()
         : await testClaimItConnection({
             ...nhiaApiForm,
             apiBaseUrl: baseUrl,

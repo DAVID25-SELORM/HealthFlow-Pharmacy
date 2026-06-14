@@ -415,7 +415,7 @@ describe('hospital NHIA claim persistence', () => {
     }
   })
 
-  it('repairs missing CLAIM-it claim IDs from local claim records before direct submit', () => {
+  it('blocks missing CLAIM-it claim IDs until the repair action runs', () => {
     const testDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'healthflow-claimit-repair-claim-id-'))
     const repositoryUrl = pathToFileURL(path.resolve('local-branch-server/src/nhiaRepository.js')).href
     const databaseUrl = pathToFileURL(path.resolve('local-branch-server/src/db.js')).href
@@ -423,10 +423,11 @@ describe('hospital NHIA claim persistence', () => {
       const {
         createNhiaClaim,
         getNhiaClaim,
+        repairMissingNhiaClaimIds,
         saveNhiaSettings,
         submitNhiaDirectPayload,
       } = await import(${JSON.stringify(repositoryUrl)});
-      const { closeDatabase } = await import(${JSON.stringify(databaseUrl)});
+      const { closeDatabase, db } = await import(${JSON.stringify(databaseUrl)});
       const calls = [];
       globalThis.fetch = async (url, init = {}) => {
         calls.push({ url: String(url), body: init.body || '' });
@@ -468,6 +469,26 @@ describe('hospital NHIA claim persistence', () => {
         serviceDate: '2026-06-14',
         items: [{ name: 'Paracetamol', quantity: 1, unitPrice: 2, nhiaCode: 'NH001' }],
       });
+      const payloadWithoutClaimId = { ...claim.payload };
+      delete payloadWithoutClaimId.claimID;
+      delete payloadWithoutClaimId.claimItClaimId;
+      db.prepare('UPDATE nhia_claims SET payload_json = ? WHERE id = ?')
+        .run(JSON.stringify(payloadWithoutClaimId), claim.id);
+      let blockedMessage = '';
+      try {
+        await submitNhiaDirectPayload({
+          claimIds: [claim.id],
+          payload: {
+            payloadFormat: 'claimit_direct_json_v1',
+            claims: [{ claimNumber: 'NHIS-000014' }],
+            claimReferences: [{ claimNumber: 'NHIS-000014' }],
+            data: { claims: [{ claimNumber: 'NHIS-000014' }] },
+          },
+        });
+      } catch (error) {
+        blockedMessage = error.message;
+      }
+      const repairResult = repairMissingNhiaClaimIds([claim.id]);
       const result = await submitNhiaDirectPayload({
         claimIds: [claim.id],
         payload: {
@@ -487,6 +508,8 @@ describe('hospital NHIA claim persistence', () => {
         dataClaimID: submitted.data.claims[0].claimID,
         referenceClaimID: submitted.claimReferences[0].claimID,
         repairedClaimID: repaired.payload.claimID,
+        blockedMessage,
+        repairResult,
       }));
     `
 
@@ -503,6 +526,10 @@ describe('hospital NHIA claim persistence', () => {
       const result = JSON.parse(output.trim().split(/\r?\n/).at(-1))
 
       expect(result.status).toBe('submitted')
+      expect(result.blockedMessage).toBe(
+        'CLAIM-it claimID is missing. Regenerate or repair the claim before direct API submission.'
+      )
+      expect(result.repairResult).toEqual({ checked: 1, repaired: 1 })
       expect(result.claimID).toMatch(/^[0-9a-f]{40}$/)
       expect(result.dataClaimID).toBe(result.claimID)
       expect(result.referenceClaimID).toBe(result.claimID)
