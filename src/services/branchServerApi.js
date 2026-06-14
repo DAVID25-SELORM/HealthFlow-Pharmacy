@@ -557,10 +557,16 @@ export const submitPendingNhiaClaims = async () =>
     timeoutMs: LONG_BRANCH_REQUEST_TIMEOUT_MS,
   })
 
-export const submitNhiaDirectPayload = async ({ payload, claimIds = [], action = '' } = {}) => {
+export const submitNhiaDirectPayload = async ({
+  payload,
+  payloadContent = '',
+  contentType = 'application/json',
+  claimIds = [],
+  action = '',
+} = {}) => {
   const response = await branchFetch('/api/nhia/direct-submit', {
     method: 'POST',
-    body: JSON.stringify({ payload, claimIds, action }),
+    body: JSON.stringify({ payload, payloadContent, contentType, claimIds, action }),
     timeoutMs: LONG_BRANCH_REQUEST_TIMEOUT_MS,
   })
   return response.data || null

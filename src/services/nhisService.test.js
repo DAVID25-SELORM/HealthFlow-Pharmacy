@@ -50,6 +50,7 @@ import {
   buildClaimItConfigPreview,
   buildNhisClaimItExportPayload,
   buildNhisClaimItCxf,
+  buildNhisClaimItDirectXml,
   buildNhisClaimItXml,
   createNhisClaim,
   exportNhisClaimsFile,
@@ -2260,6 +2261,59 @@ describe('direct NHIA submission', () => {
     }))
     expect(fetch.mock.calls.some(([url]) => String(url).includes('localhost:31719'))).toBe(false)
     expect(invokeTierAccess).not.toHaveBeenCalled()
+  })
+
+  it('sends rich XML through the branch route for XML direct submission', async () => {
+    mockNhisClaimDuplicateAndUpdateQueries()
+    submitNhiaDirectPayload.mockResolvedValue({
+      status: 'submitted',
+      httpStatus: 200,
+      response: { success: true, savedClaims: 1 },
+    })
+
+    await submitNhisClaimDirect('claim-1', {
+      claim: directClaim,
+      directApiSource: 'hosted',
+      integrationMode: 'claimit_bridge',
+      directPayloadFormat: 'xml',
+      format: 'xml',
+      apiBaseUrl: 'http://localhost:31719/json-api',
+      claimEndpointPath: '/claims',
+      ...directSettings,
+    })
+
+    const request = submitNhiaDirectPayload.mock.calls[0][0]
+    expect(request.contentType).toBe('application/xml;charset=utf-8')
+    expect(request.payload).toMatchObject({
+      payloadFormat: 'claimit_relational_json_v1',
+      claims: [expect.objectContaining({
+        claimID: expect.any(String),
+        medVersion: expect.any(String),
+        policyVersion: expect.any(String),
+      })],
+      data: expect.objectContaining({
+        medicineentries: [expect.objectContaining({ medicineCode: 'NH001' })],
+        attachmentdata: [expect.objectContaining({ data: expect.any(String) })],
+      }),
+    })
+    expect(request.payloadContent).toContain('<Claims-Data>')
+    expect(request.payloadContent).toContain(`<claimID>${request.payload.claims[0].claimID}</claimID>`)
+    expect(request.payloadContent).toContain('<medicineCode>NH001</medicineCode>')
+    expect(request.payloadContent).toContain('<attachmentdata>')
+    expect(fetch.mock.calls.some(([url]) => String(url).includes('localhost:31719'))).toBe(false)
+  })
+
+  it('serializes relational arrays with CLAIM-it-specific XML element names', () => {
+    const xml = buildNhisClaimItDirectXml({
+      claims: [{ claimID: 'claim-guid' }],
+      data: {
+        medicineentries: [{ medicineCode: 'NH001' }],
+      },
+    })
+
+    expect(xml).toContain('<claims>\n    <claim>')
+    expect(xml).toContain('<medicineentries>\n      <medicineentry>')
+    expect(xml).not.toContain('<claims>\n    <item>')
   })
 
   it('does not queue CLAIM-it payloads when the branch route is unreachable', async () => {

@@ -2291,13 +2291,16 @@ const hasClaimItTokenCredentials = (settings = {}) => {
 
 export const buildClaimItAuthorizationHeader = (token) => normalizeText(token)
 
-const buildClaimItSubmissionHeaders = async (settings) => {
+const buildClaimItSubmissionHeaders = async (settings, contentType = 'application/json') => {
   if (!hasClaimItTokenCredentials(settings)) {
-    return buildHeaders(settings)
+    return {
+      ...buildHeaders(settings),
+      'Content-Type': contentType,
+    }
   }
 
   return {
-    'Content-Type': 'application/json',
+    'Content-Type': contentType,
     // CLAIM-it/IIS rejects a strict application/json Accept with HTTP 406; mirror
     // the HMS curl client (Accept: */*) so claim submission is not refused.
     Accept: '*/*',
@@ -2477,7 +2480,56 @@ const buildClaimItHttpError = (label, status, body) => {
   return `${label} returned HTTP ${status}${upstreamMessage ? `: ${upstreamMessage}` : ''}.`
 }
 
-const submitPayload = async (settings, payload, endpointPathOverride = '') => {
+const decodeXmlText = (value = '') =>
+  String(value || '')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&')
+
+const getXmlElementText = (xml, names = []) => {
+  for (const name of names) {
+    const match = String(xml || '').match(new RegExp(`<${name}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${name}>`, 'i'))
+    if (match) return decodeXmlText(match[1].replace(/<[^>]+>/g, '').trim())
+  }
+  return ''
+}
+
+const parseClaimItResponse = (text = '') => {
+  const parsed = parseJson(text, null)
+  if (parsed && typeof parsed === 'object') return parsed
+  const xml = normalizeText(text)
+  if (!xml.startsWith('<')) return { raw: text }
+
+  const savedClaims = Number(getXmlElementText(xml, ['savedClaims', 'SavedClaims', 'saved_claims']) || 0)
+  const passedClaims = Number(getXmlElementText(xml, ['passedClaims', 'PassedClaims', 'passed_claims']) || 0)
+  const failedClaims = Number(getXmlElementText(xml, ['failedClaims', 'FailedClaims', 'failed_claims']) || 0)
+  const successText = getXmlElementText(xml, ['success', 'Success'])
+  const message = getXmlElementText(xml, ['user_msg', 'userMessage', 'message', 'Message', 'error', 'Error'])
+  return {
+    savedClaims,
+    passedClaims,
+    failedClaims,
+    success: /^(true|1|yes)$/i.test(successText),
+    ...(message ? { message } : {}),
+    raw: text,
+  }
+}
+
+const getClaimItTransportBaseUrl = (baseUrl, contentType = 'application/json') => {
+  const normalized = normalizeText(baseUrl).replace(/\/+$/, '')
+  return normalizeText(contentType).toLowerCase().includes('xml')
+    ? normalized.replace(/\/json-api$/i, '/xml-api')
+    : normalized
+}
+
+const submitPayload = async (
+  settings,
+  payload,
+  endpointPathOverride = '',
+  { payloadContent = '', contentType = 'application/json' } = {}
+) => {
   const endpointPath = normalizeText(endpointPathOverride || settings.claimEndpointPath)
   if (!endpointPath) {
     throw new Error('NHIA endpoint path is required. Enter the official endpoint path from NHIA/CLAIM-it.')
@@ -2486,11 +2538,15 @@ const submitPayload = async (settings, payload, endpointPathOverride = '') => {
   if (!baseUrl) {
     throw new Error('CLAIM-it submit base URL is not configured. Set the CLAIM-it local submit URL in NHIA settings.')
   }
-  const url = `${baseUrl.replace(/\/+$/, '')}/${endpointPath.replace(/^\/+/, '')}`
+  const transportBaseUrl = getClaimItTransportBaseUrl(baseUrl, contentType)
+  const url = `${transportBaseUrl}/${endpointPath.replace(/^\/+/, '')}`
   const isHealthmanagerForm = settings.credentialMode === 'healthmanager_form'
+  const isXml = normalizeText(contentType).toLowerCase().includes('xml')
   const body = isHealthmanagerForm
     ? buildHealthmanagerFormSubmission(settings, payload)
-    : JSON.stringify(payload)
+    : isXml
+      ? payloadContent
+      : JSON.stringify(payload)
 
   if (settings.credentialMode === 'custom' && settings.credentials?.certPem && settings.credentials?.keyPem) {
     const response = await postWithCertificate(url, body, settings)
@@ -2498,11 +2554,11 @@ const submitPayload = async (settings, payload, endpointPathOverride = '') => {
       endpoint: url,
       httpStatus: response.status,
       ok: response.ok,
-      body: parseJson(response.text, { raw: response.text }),
+      body: parseClaimItResponse(response.text),
     }
   }
 
-  const headers = await buildClaimItSubmissionHeaders(settings)
+  const headers = await buildClaimItSubmissionHeaders(settings, contentType)
   if (isHealthmanagerForm) {
     headers['Content-Type'] = 'application/x-www-form-urlencoded;charset=UTF-8'
     headers.Accept = 'application/json, text/plain, */*'
@@ -2524,7 +2580,7 @@ const submitPayload = async (settings, payload, endpointPathOverride = '') => {
     endpoint: url,
     httpStatus: response.status,
     ok: response.ok,
-    body: parseJson(text, { raw: text }),
+    body: parseClaimItResponse(text),
   }
 }
 
@@ -2556,11 +2612,18 @@ const getNhiaEligibilityBaseUrl = () =>
 
 const getNhiaMemberLookupEndpointPath = () => DEFAULT_NHIA_MEMBER_LOOKUP_ENDPOINT
 
-const validateClaimItBridgePayload = async (settings, payload) => {
+const validateClaimItBridgePayload = async (
+  settings,
+  payload,
+  { payloadContent = '', contentType = 'application/json' } = {}
+) => {
   const endpointPath = normalizeText(settings.claimValidationEndpointPath)
   const validationMode = normalizeText(settings.validationMode) || 'validate_before_submit'
   if (!isClaimItBridgeMode(settings) || validationMode === 'submit_only' || !endpointPath) return
-  const result = await submitPayload(settings, payload, endpointPath)
+  const result = await submitPayload(settings, payload, endpointPath, {
+    payloadContent,
+    contentType,
+  })
   if (!result.ok) {
     throw new Error(buildClaimItHttpError('CLAIM-it validation', result.httpStatus, result.body))
   }
@@ -2631,7 +2694,7 @@ const fetchClaimItToken = async (settings) => {
 
   const failures = []
   const candidates = buildClaimItTokenRequestCandidates({
-    baseUrl: getClaimSubmitBaseUrl(settings),
+    baseUrl: getClaimSubmitBaseUrl(settings).replace(/\/xml-api$/i, '/json-api'),
     tokenPath,
     username,
     password,
@@ -2988,7 +3051,13 @@ export const generateNhiaCcCode = async (claimContext = {}) => {
   }
 }
 
-export const submitNhiaDirectPayload = async ({ payload, claimIds = [], action = 'nhis.direct_submit' } = {}) => {
+export const submitNhiaDirectPayload = async ({
+  payload,
+  payloadContent = '',
+  contentType = 'application/json',
+  claimIds = [],
+  action = 'nhis.direct_submit',
+} = {}) => {
   const settings = getNhiaSettings({ includeCredentials: true })
   validateSettingsForSubmission(settings)
 
@@ -3043,6 +3112,16 @@ export const submitNhiaDirectPayload = async ({ payload, claimIds = [], action =
     throw new Error('Direct NHIA submission payload must match the selected local claims.')
   }
   const claimAudit = assertDirectSubmissionClaimIds(payloadToSubmit, localClaims)
+  const isXmlSubmission = normalizeText(contentType).toLowerCase().includes('xml')
+  if (isXmlSubmission) {
+    const xml = normalizeText(payloadContent)
+    if (!xml.startsWith('<?xml') || !xml.includes('<Claims-Data>')) {
+      throw new Error('Direct CLAIM-it XML submission requires a valid Claims-Data XML payload.')
+    }
+    if (claimAudit.some((claim) => !xml.includes(claim.claimID))) {
+      throw new Error(CLAIMIT_MISSING_CLAIM_ID_MESSAGE)
+    }
+  }
   claimAudit.forEach((claim) => {
     if (claim.internalClaimId) {
       repairNhiaClaimPayloadClaimId(claim.internalClaimId, claim.claimID)
@@ -3056,7 +3135,10 @@ export const submitNhiaDirectPayload = async ({ payload, claimIds = [], action =
   }
 
   const startedAt = nowIso()
-  await validateClaimItBridgePayload(settings, payloadToSubmit)
+  await validateClaimItBridgePayload(settings, payloadToSubmit, {
+    payloadContent,
+    contentType,
+  })
   logSubmission({
     action: action || 'nhis.direct_submit',
     status: 'pending',
@@ -3072,7 +3154,10 @@ export const submitNhiaDirectPayload = async ({ payload, claimIds = [], action =
   })
 
   try {
-    const result = await submitPayload(settings, payloadToSubmit)
+    const result = await submitPayload(settings, payloadToSubmit, '', {
+      payloadContent,
+      contentType,
+    })
     if (!result.ok) {
       throw new Error(buildClaimItHttpError('CLAIM-it claim submission', result.httpStatus, result.body))
     }

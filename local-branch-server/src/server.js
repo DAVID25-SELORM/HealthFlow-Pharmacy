@@ -729,6 +729,8 @@ app.post('/api/nhia/direct-submit', async (request, response, next) => {
     response.json({
       data: await submitNhiaDirectPayload({
         payload: request.body?.payload,
+        payloadContent: request.body?.payloadContent || '',
+        contentType: request.body?.contentType || 'application/json',
         claimIds: request.body?.claimIds || [],
         action: request.body?.action || 'nhis.direct_submit',
       }),

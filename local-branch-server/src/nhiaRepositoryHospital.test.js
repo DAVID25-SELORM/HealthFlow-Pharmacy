@@ -203,6 +203,114 @@ describe('hospital NHIA claim persistence', () => {
     }
   })
 
+  it('posts XML direct submissions to xml-api with the raw CLAIM-it token', () => {
+    const testDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'healthflow-claimit-xml-submit-'))
+    const repositoryUrl = pathToFileURL(path.resolve('local-branch-server/src/nhiaRepository.js')).href
+    const databaseUrl = pathToFileURL(path.resolve('local-branch-server/src/db.js')).href
+    const script = `
+      const {
+        createNhiaClaim,
+        saveNhiaSettings,
+        submitNhiaDirectPayload,
+      } = await import(${JSON.stringify(repositoryUrl)});
+      const { closeDatabase } = await import(${JSON.stringify(databaseUrl)});
+      const calls = [];
+      globalThis.fetch = async (url, init = {}) => {
+        calls.push({ url: String(url), headers: init.headers || {}, body: init.body || '' });
+        if (String(url).includes('/token')) {
+          return { ok: true, status: 200, text: async () => JSON.stringify({ token: 'raw-claimit-token' }) };
+        }
+        return {
+          ok: true,
+          status: 200,
+          text: async () => '<Claims-Import-Report><success>true</success><savedClaims>1</savedClaims><passedClaims>1</passedClaims><failedClaims>0</failedClaims></Claims-Import-Report>',
+        };
+      };
+      saveNhiaSettings({
+        mode: 'ONLINE_LOCAL_SYNC',
+        facilityCode: '03-05-001-02-01954-11-P1-2-011225',
+        providerNumber: '03-05-01954',
+        credentialCode: '03-05-001-02-01954-11-P1-2-011225',
+        accreditationExpiryDate: '2026-12-31',
+        claimsOfficerName: 'Claims Officer',
+        directApiEnabled: true,
+        integrationMode: 'claimit_bridge',
+        apiBaseUrl: 'https://elig.nhia.gov.gh:5000',
+        claimitSubmitBaseUrl: 'http://localhost:31719/json-api',
+        claimEndpointPath: '/claims',
+        memberLookupEndpointPath: '/api/hmis/genCCC',
+        credentialMode: 'claimit_token',
+        credentials: {
+          apiKey: 'nhia-api-key',
+          apiSecret: 'nhia-api-secret',
+          username: 'claimit-user',
+          password: 'claimit-password',
+        },
+      });
+      const claim = createNhiaClaim({
+        claimNumber: 'NHIS-XML-0001',
+        patientName: 'Ama Mensah',
+        memberNumber: '12345678',
+        ccCode: '12345',
+        serviceDate: '2026-06-14',
+        items: [{ name: 'Paracetamol', quantity: 1, unitPrice: 2, nhiaCode: 'NH001' }],
+      });
+      const claimID = claim.payload.claimID;
+      const payload = {
+        payloadFormat: 'claimit_relational_json_v1',
+        claims: [{ claimID, claimNumber: claim.claimNumber }],
+        data: { claims: [{ claimID, claimNumber: claim.claimNumber }] },
+      };
+      const xml = '<?xml version="1.0" encoding="UTF-8"?><Claims-Data><claims><claim><claimID>' +
+        claimID + '</claimID><claimNumber>' + claim.claimNumber +
+        '</claimNumber></claim></claims></Claims-Data>';
+      const result = await submitNhiaDirectPayload({
+        claimIds: [claim.id],
+        payload,
+        payloadContent: xml,
+        contentType: 'application/xml;charset=utf-8',
+      });
+      const tokenCall = calls.find((call) => call.url.includes('/token'));
+      const claimCall = calls.find((call) => call.url.includes('/claims'));
+      closeDatabase();
+      console.log(JSON.stringify({
+        status: result.status,
+        response: result.response,
+        tokenUrl: tokenCall.url,
+        claimUrl: claimCall.url,
+        authorization: claimCall.headers.Authorization,
+        contentType: claimCall.headers['Content-Type'],
+        accept: claimCall.headers.Accept,
+        body: claimCall.body,
+      }));
+    `
+
+    try {
+      const output = execFileSync(process.execPath, ['--input-type=module', '--eval', script], {
+        cwd: path.resolve('local-branch-server'),
+        env: {
+          ...process.env,
+          HEALTHFLOW_DB_PATH: path.join(testDirectory, 'branch.sqlite'),
+          BRANCH_SERVER_TOKEN: 'test-branch-token-with-enough-entropy',
+        },
+        encoding: 'utf8',
+      })
+      const result = JSON.parse(output.trim().split(/\r?\n/).at(-1))
+
+      expect(result.status).toBe('submitted')
+      expect(result.response).toMatchObject({ savedClaims: 1, passedClaims: 1, failedClaims: 0 })
+      expect(result.tokenUrl).toContain('/json-api/token')
+      expect(result.claimUrl).toBe('http://localhost:31719/xml-api/claims')
+      expect(result.authorization).toBe('raw-claimit-token')
+      expect(result.contentType).toBe('application/xml;charset=utf-8')
+      expect(result.accept).toBe('*/*')
+      expect(result.body).toContain('<Claims-Data>')
+      expect(result.body).not.toContain('"payloadFormat"')
+    } finally {
+      fs.rmSync(testDirectory, { recursive: true, force: true })
+    }
+  })
+
   it('persists, reloads, and totals a service-only hospital claim', () => {
     const testDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'healthflow-nhia-'))
     const repositoryUrl = pathToFileURL(path.resolve('local-branch-server/src/nhiaRepository.js')).href

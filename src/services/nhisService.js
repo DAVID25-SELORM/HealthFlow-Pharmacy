@@ -5937,6 +5937,62 @@ const xmlEscape = (value) =>
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&apos;')
 
+const toClaimItXmlElementName = (value, fallback = 'item') => {
+  const normalized = String(value || '').replace(/[^A-Za-z0-9_.-]/g, '_')
+  if (!normalized) return fallback
+  return /^[A-Za-z_]/.test(normalized) ? normalized : `_${normalized}`
+}
+
+const getClaimItXmlItemName = (name) => {
+  const normalized = String(name || '').toLowerCase()
+  const names = {
+    claims: 'claim',
+    claimreferences: 'claimReference',
+    medicineentries: 'medicineentry',
+    serviceentries: 'serviceentry',
+    summaryitems: 'summaryitem',
+    attachmentdata: 'attachment',
+    attachments: 'attachment',
+    comments: 'comment',
+    validations: 'validation',
+    validation_results: 'validation_result',
+    validation_zclaims: 'validation_zclaim',
+    prescribersfordays: 'prescriberforday',
+  }
+  return names[normalized] || 'item'
+}
+
+const buildClaimItXmlValue = (name, value, indent = '  ') => {
+  const elementName = toClaimItXmlElementName(name)
+  if (Array.isArray(value)) {
+    return [
+      `${indent}<${elementName}>`,
+      ...value.map((item) => buildClaimItXmlValue(getClaimItXmlItemName(name), item, `${indent}  `)),
+      `${indent}</${elementName}>`,
+    ].join('\n')
+  }
+  if (value && typeof value === 'object') {
+    return [
+      `${indent}<${elementName}>`,
+      ...Object.entries(value).map(([key, nestedValue]) =>
+        buildClaimItXmlValue(key, nestedValue, `${indent}  `)
+      ),
+      `${indent}</${elementName}>`,
+    ].join('\n')
+  }
+  if (value === null || value === undefined) {
+    return `${indent}<${elementName} />`
+  }
+  return `${indent}<${elementName}>${xmlEscape(value)}</${elementName}>`
+}
+
+export const buildNhisClaimItDirectXml = (payload) => [
+  '<?xml version="1.0" encoding="UTF-8"?>',
+  '<Claims-Data>',
+  ...Object.entries(payload || {}).map(([key, value]) => buildClaimItXmlValue(key, value)),
+  '</Claims-Data>',
+].join('\n')
+
 export const buildNhisClaimItXml = (payload) => `<?xml version="1.0" encoding="UTF-8"?>
 <NhiaClaimBatch>
   <SourceSystem>${xmlEscape(payload.sourceSystem)}</SourceSystem>
@@ -7163,9 +7219,22 @@ const submitNhisClaimsDirect = async (claims, period, options = {}) => {
   const submitDirectPayload = requiresBranchClaimIt || directApiSource === 'branch'
     ? submitNhiaDirectPayload
     : submitHostedNhiaDirectPayload
-  const directPayload = requiresBranchClaimIt || directApiSource === 'branch'
-    ? { payload: await buildNhisClaimItDirectJsonPayload(payload) }
-    : await buildHostedDirectSubmissionPayload(payload, options)
+  let directPayload
+  if (requiresBranchClaimIt || directApiSource === 'branch') {
+    const relationalPayload = await buildNhisClaimItDirectJsonPayload(payload)
+    directPayload = directPayloadFormat === 'xml'
+      ? {
+          payload: relationalPayload,
+          payloadContent: buildNhisClaimItDirectXml(relationalPayload),
+          contentType: 'application/xml;charset=utf-8',
+        }
+      : {
+          payload: relationalPayload,
+          contentType: 'application/json',
+        }
+  } else {
+    directPayload = await buildHostedDirectSubmissionPayload(payload, options)
+  }
 
   console.info('[NHIS submission route]', {
     route: requiresBranchClaimIt || directApiSource === 'branch'
