@@ -1726,7 +1726,7 @@ describe('CLAIM-it export helpers', () => {
       localRows[0],
     ])
 
-    expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { limit: 5000 })
+    expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { limit: 100000 })
   })
 
   it('includes custom period metadata in CLAIM-it payload and XML', () => {
@@ -3166,7 +3166,7 @@ describe('NHIS local and cloud claim reads', () => {
       cloudRows[0],
     ])
 
-    expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { limit: 5000 })
+    expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { limit: 100000 })
     expect(supabase.from).toHaveBeenCalledWith('nhis_claims')
   })
 

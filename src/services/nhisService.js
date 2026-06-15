@@ -4071,7 +4071,7 @@ export const getAllNhisClaims = async (filters = {}) => {
       return await listBranchRecords('nhis/claims', filters)
     }
 
-    const localRows = await listBranchRecords('nhis/claims', { limit: 5000 })
+    const localRows = await listBranchRecords('nhis/claims', { limit: 100000 })
     try {
       const cloudRows = await fetchNhisClaimsFromSupabase(filters)
       return filterNhisClaimRows(mergeNhisClaimRows(cloudRows, localRows), filters)
@@ -4740,15 +4740,15 @@ export const getNhisClaimsForPeriod = async (periodOptions = {}) => {
       localRows = await listBranchRecords(
         'nhis/claims',
         period.mode === 'month'
-          ? { month: period.yearMonth, limit: 5000 }
-          : { fromDate: period.fromDate, toDate: period.toDate, limit: 5000 }
+          ? { month: period.yearMonth, limit: 100000 }
+          : { fromDate: period.fromDate, toDate: period.toDate, limit: 100000 }
       )
       return period.mode === 'month'
         ? localRows
         : localRows.filter((claim) => nhisClaimMatchesExportPeriod(claim, period))
     }
 
-    localRows = await listBranchRecords('nhis/claims', { limit: 5000 })
+    localRows = await listBranchRecords('nhis/claims', { limit: 100000 })
   }
 
   const fetchPeriodClaimsFromSupabase = async () => {
