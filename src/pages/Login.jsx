@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import Seo from '../components/Seo/Seo'
-import { Lock, Mail } from 'lucide-react'
+import { ArrowRight, Lock, Mail, ShoppingBag } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
@@ -128,18 +128,15 @@ const Login = () => {
       />
       <div className="login-card">
         <img src="/app-logo.png" alt="HealthFlow logo" className="auth-brand-logo" />
-        <h1>HealthFlow</h1>
+        <h1>{mode === 'sign-in' ? 'Staff Portal' : 'HealthFlow'}</h1>
         <p className="subtitle">
           {mode === 'reset'
             ? 'Enter your email to receive a reset link'
             : mode === 'new-password'
               ? 'Create a new password for your account'
-              : 'Pharmacy, Claims & Facility Operations Platform'}
+              : 'Sign in to manage pharmacy and facility operations'}
         </p>
         <p className="login-build-stamp">Build {LOGIN_BUILD_STAMP}</p>
-        <p className="login-customer-link">
-          Ordering medicine for yourself? <Link to="/shop">Open the customer pharmacy</Link>
-        </p>
 
         {!isConfigured && (
           <div className="login-alert">Supabase credentials are not configured in your .env file.</div>
@@ -229,6 +226,24 @@ const Login = () => {
             </button>
           )}
         </form>
+
+        {mode === 'sign-in' && (
+          <div className="customer-entry">
+            <div className="customer-entry-divider">
+              <span>For customers</span>
+            </div>
+            <Link to="/shop" className="customer-entry-link">
+              <span className="customer-entry-icon" aria-hidden="true">
+                <ShoppingBag size={20} />
+              </span>
+              <span className="customer-entry-copy">
+                <strong>Shop for medicines</strong>
+                <small>Browse available medicines from licensed pharmacies</small>
+              </span>
+              <ArrowRight size={19} aria-hidden="true" />
+            </Link>
+          </div>
+        )}
       </div>
     </div>
   )
