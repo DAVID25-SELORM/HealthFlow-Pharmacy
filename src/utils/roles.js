@@ -72,7 +72,7 @@ export const PURCHASES_ROLES = [
   'inventory_officer',
   'branch_manager',
 ]
-export const NHIS_ROLES = ['admin', 'pharmacist', 'billing', 'claims_officer', 'records_officer']
+export const NHIS_ROLES = ['admin', 'pharmacist', 'assistant', 'billing', 'claims_officer', 'records_officer']
 export const EPHARMACY_ROLES = [
   'admin',
   'pharmacist',
@@ -102,4 +102,13 @@ export const hasRole = (role, roles = []) => {
   }
 
   return normalizedRoles.includes(normalizedRole)
+}
+
+export const normalizeAssignedRoles = (assignedRoles, primaryRole = 'assistant') => {
+  const values = Array.isArray(assignedRoles) ? assignedRoles : []
+  const normalizedPrimaryRole = String(primaryRole || 'assistant').trim().toLowerCase()
+  const validRoles = new Set([...STAFF_ROLE_VALUES, 'super_admin'])
+
+  return [...new Set([normalizedPrimaryRole, ...values.map((role) => String(role || '').trim().toLowerCase())])]
+    .filter((role) => validRoles.has(role))
 }

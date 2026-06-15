@@ -19,7 +19,9 @@ import {
   REPORT_ROLES,
   SALES_ROLES,
   hasRole,
+  normalizeAssignedRoles,
 } from '../utils/roles'
+import { storeActiveRole } from '../utils/activeRole'
 
 const AuthContext = createContext(null)
 const FALLBACK_ROLE = 'assistant'
@@ -28,6 +30,7 @@ const PROFILE_SELECT = `
   email,
   full_name,
   role,
+  assigned_roles,
   can_refund,
   can_manage_inventory,
   can_view_reports,
@@ -40,6 +43,7 @@ const PROFILE_SELECT = `
   can_view_activity_log,
   can_adjust_stock,
   can_approve_purchases,
+  can_delete_nhis_claims,
   is_active,
   organization_id,
   branch_id,
@@ -55,6 +59,8 @@ const OPTIONAL_PRIVILEGE_COLUMNS = [
   'can_view_activity_log',
   'can_adjust_stock',
   'can_approve_purchases',
+  'assigned_roles',
+  'can_delete_nhis_claims',
 ]
 const LEGACY_PROFILE_SELECT = OPTIONAL_PRIVILEGE_COLUMNS.reduce(
   (columns, field) => columns.replace(new RegExp(`\\s*${field},\\s*`), '\n'),
@@ -152,6 +158,7 @@ export const AuthProvider = ({ children }) => {
   const [profile, setProfile] = useState(null)
   const [organization, setOrganization] = useState(null)
   const [branch, setBranch] = useState(null)
+  const [activeRole, setActiveRoleState] = useState(FALLBACK_ROLE)
   const [loading, setLoading] = useState(true)
   const sessionRef = useRef(null)
 
@@ -182,6 +189,8 @@ export const AuthProvider = ({ children }) => {
       setProfile(null)
       setOrganization(null)
       setBranch(null)
+      setActiveRoleState(FALLBACK_ROLE)
+      storeActiveRole('')
       setLoading(false)
     }
 
@@ -601,6 +610,40 @@ export const AuthProvider = ({ children }) => {
     return data || null
   }
 
+  const primaryRole = resolveRole(profile, user)
+  const assignedRoles = useMemo(
+    () => normalizeAssignedRoles(profile?.assigned_roles, primaryRole),
+    [primaryRole, profile?.assigned_roles]
+  )
+
+  useEffect(() => {
+    const storageKey = user?.id ? `healthflow.active-role.${user.id}` : ''
+    const storedRole = storageKey ? window.localStorage.getItem(storageKey) : ''
+    setActiveRoleState(
+      assignedRoles.includes(storedRole) ? storedRole : assignedRoles[0] || primaryRole
+    )
+  }, [assignedRoles, primaryRole, user?.id])
+
+  const setActiveRole = (nextRole) => {
+    const normalizedRole = String(nextRole || '').trim().toLowerCase()
+    if (!assignedRoles.includes(normalizedRole)) {
+      throw new Error('You can only switch to a role assigned by an administrator.')
+    }
+
+    setActiveRoleState(normalizedRole)
+    storeActiveRole(normalizedRole)
+    if (user?.id) {
+      window.localStorage.setItem(`healthflow.active-role.${user.id}`, normalizedRole)
+    }
+  }
+  const currentRole = assignedRoles.includes(activeRole)
+    ? activeRole
+    : assignedRoles[0] || primaryRole
+
+  useEffect(() => {
+    storeActiveRole(currentRole)
+  }, [currentRole])
+
   const value = useMemo(
     () => ({
       session,
@@ -609,26 +652,37 @@ export const AuthProvider = ({ children }) => {
       organization,
       branch,
       loading,
-      role: resolveRole(profile, user),
+      role: currentRole,
+      primaryRole,
+      assignedRoles,
+      setActiveRole,
       displayName: resolveDisplayName(profile, user),
       isAuthenticated: Boolean(session),
-      canManageInventory: hasRole(resolveRole(profile, user), INVENTORY_ROLES) || Boolean(profile?.can_manage_inventory),
-      canViewReports: hasRole(resolveRole(profile, user), REPORT_ROLES) || Boolean(profile?.can_view_reports),
-      canManageClaims: hasRole(resolveRole(profile, user), CLAIMS_ROLES) || Boolean(profile?.can_manage_claims),
+      canManageInventory: hasRole(currentRole, INVENTORY_ROLES) || Boolean(profile?.can_manage_inventory),
+      canViewReports: hasRole(currentRole, REPORT_ROLES) || Boolean(profile?.can_view_reports),
+      canManageClaims:
+        currentRole !== 'assistant' &&
+        (hasRole(currentRole, CLAIMS_ROLES) || Boolean(profile?.can_manage_claims)),
       canManagePurchases:
-        ['admin', 'super_admin'].includes(resolveRole(profile, user)) ||
+        ['admin', 'super_admin'].includes(currentRole) ||
         (Object.prototype.hasOwnProperty.call(profile || {}, 'can_manage_purchases')
           ? Boolean(profile?.can_manage_purchases)
-          : hasRole(resolveRole(profile, user), PURCHASES_ROLES)),
-      canProcessSales: hasRole(resolveRole(profile, user), SALES_ROLES) || Boolean(profile?.can_process_sales),
-      canManagePatients: hasRole(resolveRole(profile, user), PATIENT_ROLES) || Boolean(profile?.can_manage_patients),
-      canManageAccounting: hasRole(resolveRole(profile, user), ACCOUNTING_ROLES) || Boolean(profile?.can_manage_accounting),
-      canManageEpharmacy: hasRole(resolveRole(profile, user), EPHARMACY_ROLES) || Boolean(profile?.can_manage_epharmacy),
-      canViewActivityLog: hasRole(resolveRole(profile, user), ACTIVITY_LOG_ROLES) || Boolean(profile?.can_view_activity_log),
-      canAdjustStock: hasRole(resolveRole(profile, user), INVENTORY_ROLES) || Boolean(profile?.can_adjust_stock),
+          : hasRole(currentRole, PURCHASES_ROLES)),
+      canProcessSales: hasRole(currentRole, SALES_ROLES) || Boolean(profile?.can_process_sales),
+      canManagePatients: hasRole(currentRole, PATIENT_ROLES) || Boolean(profile?.can_manage_patients),
+      canManageAccounting: hasRole(currentRole, ACCOUNTING_ROLES) || Boolean(profile?.can_manage_accounting),
+      canManageEpharmacy: hasRole(currentRole, EPHARMACY_ROLES) || Boolean(profile?.can_manage_epharmacy),
+      canViewActivityLog: hasRole(currentRole, ACTIVITY_LOG_ROLES) || Boolean(profile?.can_view_activity_log),
+      canAdjustStock: hasRole(currentRole, INVENTORY_ROLES) || Boolean(profile?.can_adjust_stock),
       canApprovePurchases:
-        ['admin', 'super_admin'].includes(resolveRole(profile, user)) ||
+        ['admin', 'super_admin'].includes(currentRole) ||
         Boolean(profile?.can_approve_purchases),
+      canDeleteNhisClaims:
+        currentRole !== 'assistant' &&
+        (
+          ['admin', 'super_admin'].includes(currentRole) ||
+          Boolean(profile?.can_delete_nhis_claims)
+        ),
       signIn,
       signOut,
       requestPasswordReset,
@@ -636,7 +690,7 @@ export const AuthProvider = ({ children }) => {
       refreshProfile,
       isConfigured: isSupabaseConfigured(),
     }),
-    [session, user, profile, organization, branch, loading]
+    [session, user, profile, organization, branch, loading, activeRole, assignedRoles, primaryRole]
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

@@ -1,10 +1,13 @@
 import { shouldPreferLocalApi } from './connectivityService'
 import { isNetworkRequestError } from '../utils/requestErrors'
 import { isGhanaCardNumber, normalizeNhiaMemberNumber } from '../utils/nhiaMemberNumber'
+import { supabase } from '../lib/supabase'
+import { getStoredActiveRole } from '../utils/activeRole'
 
 const DEFAULT_BRANCH_SERVER_URL = 'http://localhost:4780'
 const RUNTIME_CONFIG_KEY = 'healthflow.branchServer.config.v1'
 export const BRANCH_TOKEN_STORAGE_KEY = 'healthflow_branch_token'
+export const BRANCH_USER_SESSION_STORAGE_KEY = 'healthflow_branch_user_session'
 const DEFAULT_BRANCH_REQUEST_TIMEOUT_MS = 1500
 const SEARCH_BRANCH_REQUEST_TIMEOUT_MS = 450
 const WRITE_BRANCH_REQUEST_TIMEOUT_MS = 8000
@@ -118,6 +121,63 @@ const getBranchApiHeaders = (headers = {}) => ({
   'x-branch-token': getBranchRequestToken(),
 })
 
+const readBranchUserSession = () => {
+  if (typeof window === 'undefined') return null
+  try {
+    const value = JSON.parse(window.localStorage.getItem(BRANCH_USER_SESSION_STORAGE_KEY) || 'null')
+    if (
+      !value?.token ||
+      value.role !== getStoredActiveRole() ||
+      Number(value.expiresAt || 0) <= Math.floor(Date.now() / 1000) + 30
+    ) {
+      return null
+    }
+    return value
+  } catch {
+    return null
+  }
+}
+
+const getCurrentSupabaseSession = async () => {
+  if (!supabase) {
+    throw new Error('A verified staff session is required for local NHIS changes.')
+  }
+  const { data, error } = await supabase.auth.getSession()
+  if (error || !data?.session?.access_token || !data.session.user?.id) {
+    throw new Error('Your staff session has expired. Sign in again before changing NHIS records.')
+  }
+  return data.session
+}
+
+const requestBranchUserSession = async (session = null) => {
+  const currentSession = session || await getCurrentSupabaseSession()
+  const accessToken = currentSession.access_token
+
+  const response = await fetchWithTimeout(`${getBranchServerUrl()}/api/auth/user-session`, {
+    method: 'POST',
+    headers: getBranchApiHeaders({
+      Authorization: `Bearer ${accessToken}`,
+    }),
+    body: JSON.stringify({ activeRole: getStoredActiveRole() }),
+  }, WRITE_BRANCH_REQUEST_TIMEOUT_MS)
+  const body = await response.json().catch(() => ({}))
+  if (!response.ok || !body?.data?.token) {
+    throw new Error(body?.error || 'Unable to verify this staff member with the branch server.')
+  }
+
+  window.localStorage.setItem(BRANCH_USER_SESSION_STORAGE_KEY, JSON.stringify(body.data))
+  return body.data
+}
+
+const getVerifiedBranchUserSession = async () => {
+  const currentSession = await getCurrentSupabaseSession()
+  const savedSession = readBranchUserSession()
+  if (savedSession?.userId === currentSession.user.id) {
+    return savedSession
+  }
+  return await requestBranchUserSession(currentSession)
+}
+
 const getNhiaLookupMemberNumber = (payload = {}) =>
   normalizeNhiaMemberNumber(
     payload.memberNumber ||
@@ -175,10 +235,18 @@ const branchFetch = async (path, options = {}) => {
     throw new Error('Local branch server mode is not enabled.')
   }
 
-  const { timeoutMs = DEFAULT_BRANCH_REQUEST_TIMEOUT_MS, ...fetchOptions } = options
+  const {
+    timeoutMs = DEFAULT_BRANCH_REQUEST_TIMEOUT_MS,
+    requireUserSession = false,
+    ...fetchOptions
+  } = options
+  const userSession = requireUserSession ? await getVerifiedBranchUserSession() : null
   const response = await fetchWithTimeout(`${getBranchServerUrl()}${path}`, {
     ...fetchOptions,
-    headers: getBranchApiHeaders(fetchOptions.headers || {}),
+    headers: getBranchApiHeaders({
+      ...(fetchOptions.headers || {}),
+      ...(userSession?.token ? { 'x-branch-user-session': userSession.token } : {}),
+    }),
   }, timeoutMs)
 
   const body = await response.json().catch(() => ({}))
@@ -498,6 +566,7 @@ export const saveNhiaSettings = async (settings) => {
     method: 'POST',
     body: JSON.stringify(settings || {}),
     timeoutMs: WRITE_BRANCH_REQUEST_TIMEOUT_MS,
+    requireUserSession: true,
   })
   return response.data || null
 }
@@ -506,6 +575,7 @@ export const testNhiaConfiguration = async () => {
   const response = await branchFetch('/api/nhia-config/test', {
     method: 'POST',
     timeoutMs: WRITE_BRANCH_REQUEST_TIMEOUT_MS,
+    requireUserSession: true,
   })
   return response.data || null
 }
@@ -515,6 +585,7 @@ export const generateNhiaCcCode = async (claimContext = {}) => {
     method: 'POST',
     body: JSON.stringify(claimContext || {}),
     timeoutMs: LONG_BRANCH_REQUEST_TIMEOUT_MS,
+    requireUserSession: true,
   })
   return response.data || null
 }
@@ -534,6 +605,7 @@ export const lookupNhiaMember = async (payload = {}) => {
     method: 'POST',
     body: JSON.stringify({ memberNumber, cardType }),
     timeoutMs: LONG_BRANCH_REQUEST_TIMEOUT_MS,
+    requireUserSession: true,
   })
   return response.data || null
 }
@@ -555,6 +627,7 @@ export const submitPendingNhiaClaims = async () =>
   await branchFetch('/api/nhia/submit-pending', {
     method: 'POST',
     timeoutMs: LONG_BRANCH_REQUEST_TIMEOUT_MS,
+    requireUserSession: true,
   })
 
 export const submitNhiaDirectPayload = async ({
@@ -568,6 +641,7 @@ export const submitNhiaDirectPayload = async ({
     method: 'POST',
     body: JSON.stringify({ payload, payloadContent, contentType, claimIds, action }),
     timeoutMs: LONG_BRANCH_REQUEST_TIMEOUT_MS,
+    requireUserSession: true,
   })
   return response.data || null
 }
@@ -577,6 +651,7 @@ export const createNhiaBatch = async ({ claimIds = [], exportFormat = 'json' } =
     method: 'POST',
     body: JSON.stringify({ claimIds, exportFormat }),
     timeoutMs: WRITE_BRANCH_REQUEST_TIMEOUT_MS,
+    requireUserSession: true,
   })
   return response.data || null
 }
@@ -620,6 +695,7 @@ export const submitNhisPharmacyClaim = async (claimData = {}) => {
     method: 'POST',
     body: JSON.stringify(claimData),
     timeoutMs: LONG_BRANCH_REQUEST_TIMEOUT_MS,
+    requireUserSession: true,
   })
   return response.data || null
 }
@@ -656,6 +732,7 @@ export const createBranchRecord = async (resource, payload) => {
     method: 'POST',
     body: JSON.stringify(payload || {}),
     timeoutMs: WRITE_BRANCH_REQUEST_TIMEOUT_MS,
+    requireUserSession: resource === 'nhis/claims',
   })
   return response.data
 }
@@ -665,6 +742,17 @@ export const updateBranchRecord = async (resource, id, payload) => {
     method: 'PUT',
     body: JSON.stringify(payload || {}),
     timeoutMs: WRITE_BRANCH_REQUEST_TIMEOUT_MS,
+    requireUserSession: resource === 'nhis/claims',
+  })
+  return response.data
+}
+
+export const updateBranchNhisClaimMedicines = async (id, payload) => {
+  const response = await branchFetch(`/api/nhis/claims/${encodeURIComponent(id)}/medicines`, {
+    method: 'PUT',
+    body: JSON.stringify(payload || {}),
+    timeoutMs: WRITE_BRANCH_REQUEST_TIMEOUT_MS,
+    requireUserSession: true,
   })
   return response.data
 }
@@ -674,6 +762,7 @@ export const deleteBranchRecord = async (resource, id, payload = {}) => {
     method: 'DELETE',
     body: JSON.stringify(payload),
     timeoutMs: WRITE_BRANCH_REQUEST_TIMEOUT_MS,
+    requireUserSession: resource === 'nhis/claims',
   })
   return response.data || null
 }

@@ -713,6 +713,17 @@
   min-height: 0;
 }
 
+.nhis-claim-left-fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.nhis-claim-left-fieldset:disabled {
+  opacity: 0.78;
+}
+
 .nhis-claim-right {
   display: flex;
   flex-direction: column;

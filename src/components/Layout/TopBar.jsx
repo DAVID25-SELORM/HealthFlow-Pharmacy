@@ -16,13 +16,23 @@ import {
   subscribeConnectivity,
 } from '../../services/connectivityService'
 import { CLAIMS_ROLES, INVENTORY_ROLES, hasRole } from '../../utils/roles'
+import { getRoleLabel } from '../../utils/roleLabels'
 import './TopBar.css'
 
 const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
   const [quickSearch, setQuickSearch] = useState('')
   const [alertsOpen, setAlertsOpen] = useState(false)
   const [alerts, setAlerts] = useState([])
-  const { displayName, role, branch, canManageInventory, canManageClaims, signOut } = useAuth()
+  const {
+    displayName,
+    role,
+    assignedRoles = [],
+    setActiveRole,
+    branch,
+    canManageInventory,
+    canManageClaims,
+    signOut,
+  } = useAuth()
   const { canUseClaims, tierLimits } = useTenant()
   const { notify } = useNotification()
   const isOnline = useOnlineStatus()
@@ -276,7 +286,24 @@ const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
           />
           <div className="user-info">
             <span className="user-name">{displayName}</span>
-            <span className="user-role">{role}</span>
+            {assignedRoles.length > 1 ? (
+              <label className="active-role-switcher">
+                <span className="sr-only">Active role</span>
+                <select
+                  value={role}
+                  onChange={(event) => setActiveRole(event.target.value)}
+                  title="Switch active role"
+                >
+                  {assignedRoles.map((assignedRole) => (
+                    <option key={assignedRole} value={assignedRole}>
+                      {getRoleLabel(assignedRole)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <span className="user-role">{getRoleLabel(role)}</span>
+            )}
             {branch && <span className="branch-topbar-badge">{branch.name}</span>}
           </div>
           <button className="notification-btn" type="button" onClick={handleLogout} title="Sign out">

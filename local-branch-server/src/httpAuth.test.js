@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
-import { BRANCH_AUTH_COOKIE, requireBranchToken } from './httpAuth.js'
+import {
+  BRANCH_AUTH_COOKIE,
+  requireBranchToken,
+  requireBranchUserSession,
+} from './httpAuth.js'
 import { config } from './config.js'
 
 const makeResponse = () => {
@@ -38,5 +42,22 @@ describe('branch HTTP authentication', () => {
     requireBranchToken(request, response, vi.fn())
 
     expect(response.status).toHaveBeenCalledWith(401)
+  })
+
+  it('rejects a browser-supplied role when no signed staff session exists', () => {
+    const request = {
+      body: {
+        role: 'admin',
+        canDeleteNhisClaims: true,
+      },
+      get: vi.fn(() => ''),
+    }
+    const response = makeResponse()
+    const next = vi.fn()
+
+    requireBranchUserSession(request, response, next)
+
+    expect(response.status).toHaveBeenCalledWith(401)
+    expect(next).not.toHaveBeenCalled()
   })
 })

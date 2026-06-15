@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthProvider, useAuth } from './AuthContext'
 
@@ -72,9 +72,34 @@ const StateRecorder = ({ states }) => {
   return null
 }
 
+const RoleProbe = () => {
+  const {
+    role,
+    assignedRoles,
+    setActiveRole,
+    canManageClaims,
+    canDeleteNhisClaims,
+  } = useAuth()
+  return (
+    <>
+      <label>
+        Active role
+        <select value={role} onChange={(event) => setActiveRole(event.target.value)}>
+          {assignedRoles.map((assignedRole) => (
+            <option key={assignedRole} value={assignedRole}>{assignedRole}</option>
+          ))}
+        </select>
+      </label>
+      <span data-testid="claim-access">{canManageClaims ? 'claims' : 'no-claims'}</span>
+      <span data-testid="delete-access">{canDeleteNhisClaims ? 'delete' : 'no-delete'}</span>
+    </>
+  )
+}
+
 describe('AuthProvider', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    window.localStorage.clear()
     window.history.replaceState({}, '', '/')
     mocks.queryBuilder.select.mockImplementation(() => mocks.queryBuilder)
     mocks.queryBuilder.eq.mockImplementation(() => mocks.queryBuilder)
@@ -86,6 +111,49 @@ describe('AuthProvider', () => {
         message: 'refresh token is invalid',
       },
     })
+  })
+
+  it('switches only among roles assigned to the signed-in user', async () => {
+    const validUser = {
+      id: 'multi-role-user',
+      email: 'staff@example.com',
+      app_metadata: { role: 'assistant' },
+      user_metadata: { full_name: 'Multi Role User' },
+    }
+    const validSession = { access_token: 'fresh-token', user: validUser }
+    mocks.auth.getSession.mockResolvedValue({ data: { session: validSession }, error: null })
+    mocks.auth.getUser.mockResolvedValue({ data: { user: validUser }, error: null })
+    mocks.queryBuilder.maybeSingle.mockResolvedValue({
+      data: {
+        id: validUser.id,
+        full_name: 'Multi Role User',
+        role: 'assistant',
+        assigned_roles: ['assistant', 'claims_officer'],
+        can_manage_claims: true,
+        can_delete_nhis_claims: true,
+        is_active: true,
+      },
+      error: null,
+    })
+
+    render(
+      <AuthProvider>
+        <RoleProbe />
+      </AuthProvider>
+    )
+
+    const roleSelect = await screen.findByLabelText('Active role')
+    expect(roleSelect).toHaveValue('assistant')
+    expect(screen.getByTestId('claim-access')).toHaveTextContent('no-claims')
+    expect(screen.getByTestId('delete-access')).toHaveTextContent('no-delete')
+    fireEvent.change(roleSelect, { target: { value: 'claims_officer' } })
+    expect(roleSelect).toHaveValue('claims_officer')
+    expect(screen.getByTestId('claim-access')).toHaveTextContent('claims')
+    expect(screen.getByTestId('delete-access')).toHaveTextContent('delete')
+    expect(window.localStorage.getItem('healthflow.active-role.multi-role-user'))
+      .toBe('claims_officer')
+    expect(window.localStorage.getItem('healthflow.active-role.current'))
+      .toBe('claims_officer')
   })
 
   it('accepts a fresh sign-in after clearing an invalid stored session', async () => {

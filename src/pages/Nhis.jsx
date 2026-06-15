@@ -9,7 +9,6 @@ import { isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
 import { formatAppDate } from '../utils/date'
-import { NHIS_ROLES, hasRole } from '../utils/roles'
 import { normalizeText } from '../utils/validation'
 import {
   getAllNhisDrugs,
@@ -551,14 +550,29 @@ const StatusBadge = ({ status }) => (
 // ─── component ────────────────────────────────────────────────────────────────
 
 const Nhis = () => {
-  const { role, user, profile, branch, organization } = useAuth()
+  const {
+    role,
+    user,
+    profile,
+    branch,
+    organization,
+    canDeleteNhisClaims,
+    canViewReports,
+  } = useAuth()
   const { notify } = useNotification()
   const [searchParams, setSearchParams] = useSearchParams()
   const fileInputRef = useRef(null)
   const ruleFileInputRef = useRef(null)
 
-  const canWrite = hasRole(role, NHIS_ROLES)
-  const canDeleteNhisClaims = String(role || '').toLowerCase() === 'admin'
+  const normalizedRole = String(role || '').toLowerCase()
+  const isMedicineCounterAssistant = normalizedRole === 'assistant'
+  const canWrite = !isMedicineCounterAssistant && (
+    ['admin', 'super_admin', 'pharmacist', 'billing', 'claims_officer', 'records_officer']
+      .includes(normalizedRole) ||
+    Boolean(profile?.can_manage_claims)
+  )
+  const canServeNhisMedicines = canWrite || isMedicineCounterAssistant
+  const canEditNhisPatientDetails = canWrite
   const organizationType = normalizeOrganizationType(organization?.organization_type)
   const organizationId = organization?.id || profile?.organization_id || ''
   const isHospital = organizationType === 'hospital'
@@ -682,7 +696,7 @@ const Nhis = () => {
     setSearchParams(p, { replace: true })
   }
 
-  const canEditNhisClaimAnytime = ['admin', 'claims_officer'].includes(String(role || '').toLowerCase())
+  const canEditNhisClaimAnytime = ['admin', 'claims_officer'].includes(normalizedRole)
 
   // ── load data ────────────────────────────────────────────────
   const loadAll = useCallback(async () => {
@@ -1780,6 +1794,10 @@ const Nhis = () => {
   }, [claimForm.memberNo, claimForm.cardType, canGenerateNhiaCcCode, resolvedNhiaSettings, applyMemberDetailsToForm, notify])
 
   const handleGenerateCcCode = async () => {
+    if (!canEditNhisPatientDetails) {
+      notify('Medicine Counter Assistants cannot generate or change NHIA CC codes.', 'error')
+      return
+    }
     if (!canGenerateNhiaCcCode) {
       setClaimForm((prev) => ({ ...prev, cccNo: '' }))
       notify(
@@ -1929,7 +1947,9 @@ const Nhis = () => {
         payload.claimit_attachment_base64
       )
 
-      let successMessage = editingClaim ? 'NHIS claim corrections saved.' : 'NHIS claim saved.'
+      let successMessage = editingClaim
+        ? (isMedicineCounterAssistant ? 'NHIS medicines saved.' : 'NHIS claim corrections saved.')
+        : 'NHIS claim saved.'
       if (editingClaim) {
         const savedClaim = await updateNhisClaim(editingClaim.id, payload, claimMedicines, {
           providerClassLevel,
@@ -1942,6 +1962,7 @@ const Nhis = () => {
           nhiaTariffServices: claimServices,
           tariffFacilityGroup: activeTariffFacilityGroup,
           tariffCateringOption: activeTariffCateringOption,
+          medicinesOnly: isMedicineCounterAssistant,
         })
         const claimForSubmission = savedClaim || editingClaim
         const isServedClaim = normalizeText(claimForSubmission?.status || editingClaim.status).toLowerCase() === 'served'
@@ -1954,7 +1975,7 @@ const Nhis = () => {
             claimForSubmission?.prescriptionFileUrl ||
             claimForSubmission?.claimitAttachmentBase64
         )
-        if (isServedClaim && directNhiaApiAvailable && hasReadablePrescriptionFile) {
+        if (canWrite && isServedClaim && directNhiaApiAvailable && hasReadablePrescriptionFile) {
           try {
             const submitResult = await submitNhisClaimDirect(editingClaim.id, {
               ...getDirectNhiaOptions(),
@@ -1975,7 +1996,7 @@ const Nhis = () => {
             notify('NHIS claim corrections and prescription file saved locally. CLAIM-it rejected the submission.', 'warning')
             return
           }
-        } else if (isServedClaim && directNhiaApiAvailable) {
+        } else if (canWrite && isServedClaim && directNhiaApiAvailable) {
           successMessage = 'NHIS claim corrections saved locally. CLAIM-it submission was skipped because no readable prescription attachment is on the claim.'
         }
       } else {
@@ -2114,7 +2135,7 @@ const Nhis = () => {
 
     try {
       setUpdatingStatus(claim.id)
-      await deleteNhisClaim(claim.id, { role })
+      await deleteNhisClaim(claim.id, { role, canDeleteNhisClaims })
       if (viewClaim?.id === claim.id) setViewClaim(null)
       if (editingClaim?.id === claim.id) closeClaimModal()
       await loadAll()
@@ -2381,19 +2402,23 @@ const Nhis = () => {
           <p className="page-subtitle">{nhisPageSubtitle}</p>
         </div>
         <div className="header-actions">
-          <Link className="btn btn-secondary" to="/reports">
-            <FileText size={16} /> NHIS Reports
-          </Link>
-          {(pageTab === 'claims' || pageTab === 'patients') && canWrite && (
+          {canViewReports && (
+            <Link className="btn btn-secondary" to="/reports">
+              <FileText size={16} /> NHIS Reports
+            </Link>
+          )}
+          {(pageTab === 'claims' || pageTab === 'patients') && canServeNhisMedicines && (
             <>
-              {pageTab === 'claims' && (
+              {pageTab === 'claims' && canWrite && (
                 <button className="btn btn-secondary" onClick={() => setShowExportModal(true)}>
                   <Download size={16} /> {directNhiaApiAvailable ? 'Transfer Claims' : 'Export CXF'}
                 </button>
               )}
-              <button className="btn btn-primary" onClick={openNewClaimModal}>
-                <Plus size={16} /> New Claim
-              </button>
+              {canWrite && (
+                <button className="btn btn-primary" onClick={openNewClaimModal}>
+                  <Plus size={16} /> New Claim
+                </button>
+              )}
             </>
           )}
           {pageTab === 'catalog' && canWrite && (
@@ -2700,10 +2725,10 @@ const Nhis = () => {
                         >
                           <Eye size={14} />
                         </button>
-                        {canWrite && (c.status === 'served' || canEditNhisClaimAnytime) && (
+                        {canServeNhisMedicines && (c.status === 'served' || canEditNhisClaimAnytime) && (
                           <button
                             className="action-btn action-btn--edit"
-                            title={canEditNhisClaimAnytime ? 'Edit claim' : 'Edit before submission/export'}
+                            title={isMedicineCounterAssistant ? 'Serve medicines' : canEditNhisClaimAnytime ? 'Edit claim' : 'Edit before submission/export'}
                             disabled={updatingStatus === c.id}
                             onClick={() => openEditClaim(c)}
                           >
@@ -3216,7 +3241,7 @@ const Nhis = () => {
 
             <div className="nhis-claim-body">
               {/* Left column */}
-              <div className="nhis-claim-left">
+              <fieldset className="nhis-claim-left nhis-claim-left-fieldset" disabled={!canEditNhisPatientDetails}>
 
                 {/* Patient search */}
                 <section className="nhis-section">
@@ -3594,7 +3619,7 @@ const Nhis = () => {
                     </div>
                   )}
                 </section>
-              </div>
+              </fieldset>
 
               {/* Right column — medicines */}
               <div className="nhis-claim-right">
@@ -3803,9 +3828,11 @@ const Nhis = () => {
                 onClick={handleSubmitClaim}
               >
                 {claimSubmitting
-                  ? (editingClaim && directNhiaApiAvailable ? 'Submitting...' : 'Saving...')
+                  ? (editingClaim && canWrite && directNhiaApiAvailable ? 'Submitting...' : 'Saving...')
                   : editingClaim
-                    ? (directNhiaApiAvailable ? 'Save Corrections & Submit' : 'Save Corrections')
+                    ? (isMedicineCounterAssistant
+                        ? 'Save Medicines'
+                        : directNhiaApiAvailable ? 'Save Corrections & Submit' : 'Save Corrections')
                     : 'Save Claim'}
               </button>
             </div>

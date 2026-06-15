@@ -35,6 +35,7 @@ type StaffAction =
 type RequesterProfile = {
   id: string
   role: string
+  assigned_roles: string[]
   organization_id: string | null
 }
 
@@ -61,6 +62,15 @@ const isValidRole = (value: string): value is StaffRole =>
   STAFF_ROLES.includes(value as StaffRole)
 
 const staffRoleMessage = () => `Role must be one of: ${STAFF_ROLES.join(', ')}.`
+
+const normalizeAssignedRoles = (value: unknown, primaryRole: StaffRole) => {
+  const values = Array.isArray(value) ? value : []
+  return [...new Set([primaryRole, ...values.map((role) => normalizeText(role).toLowerCase())])]
+    .filter((role): role is StaffRole => isValidRole(role))
+}
+
+const requesterHasRole = (profile: RequesterProfile, roles: string[]) =>
+  roles.some((role) => role === profile.role || profile.assigned_roles.includes(role))
 
 const deriveDisplayName = (email: string, fullName?: string | null) => {
   const normalizedName = normalizeText(fullName)
@@ -164,7 +174,7 @@ const getRequesterProfile = async (
 ): Promise<RequesterProfile | null> => {
   const { data, error } = await adminClient
     .from('users')
-    .select('id, role, organization_id')
+    .select('id, role, assigned_roles, organization_id')
     .eq('id', userId)
     .maybeSingle()
 
@@ -179,6 +189,9 @@ const getRequesterProfile = async (
   return {
     id: data.id,
     role: normalizeText(data.role).toLowerCase(),
+    assigned_roles: Array.isArray(data.assigned_roles)
+      ? data.assigned_roles.map((role: unknown) => normalizeText(role).toLowerCase()).filter(Boolean)
+      : [],
     organization_id: normalizeText(data.organization_id) || null,
   }
 }
@@ -251,6 +264,7 @@ const syncPublicUser = async (
     fullName?: string | null
     phone?: string | null
     role?: StaffRole
+    assignedRoles?: StaffRole[]
     isActive?: boolean
     organizationId?: string | null
     canRefund?: boolean
@@ -265,6 +279,7 @@ const syncPublicUser = async (
     canViewActivityLog?: boolean
     canAdjustStock?: boolean
     canApprovePurchases?: boolean
+    canDeleteNhisClaims?: boolean
     branchId?: string | null
   } = {}
 ) => {
@@ -331,6 +346,7 @@ const syncPublicUser = async (
       full_name: fullName,
       phone,
       role,
+      ...(overrides.assignedRoles ? { assigned_roles: overrides.assignedRoles } : {}),
       is_active: isActive,
       organization_id: organizationId,
       ...(typeof overrides.canRefund === 'boolean' ? { can_refund: overrides.canRefund } : {}),
@@ -345,6 +361,7 @@ const syncPublicUser = async (
       ...(typeof overrides.canViewActivityLog === 'boolean' ? { can_view_activity_log: overrides.canViewActivityLog } : {}),
       ...(typeof overrides.canAdjustStock === 'boolean' ? { can_adjust_stock: overrides.canAdjustStock } : {}),
       ...(typeof overrides.canApprovePurchases === 'boolean' ? { can_approve_purchases: overrides.canApprovePurchases } : {}),
+      ...(typeof overrides.canDeleteNhisClaims === 'boolean' ? { can_delete_nhis_claims: overrides.canDeleteNhisClaims } : {}),
       ...(overrides.branchId !== undefined ? { branch_id: overrides.branchId } : {}),
       updated_at: new Date().toISOString(),
     },
@@ -358,7 +375,7 @@ const syncPublicUser = async (
   const { data: syncedProfile, error: syncedProfileError } = await adminClient
     .from('users')
     .select(
-      'id, email, full_name, phone, role, can_refund, can_manage_inventory, can_view_reports, can_manage_claims, can_manage_purchases, can_process_sales, can_manage_patients, can_manage_accounting, can_manage_epharmacy, can_view_activity_log, can_adjust_stock, can_approve_purchases, is_active, organization_id, branch_id'
+      'id, email, full_name, phone, role, assigned_roles, can_refund, can_manage_inventory, can_view_reports, can_manage_claims, can_manage_purchases, can_process_sales, can_manage_patients, can_manage_accounting, can_manage_epharmacy, can_view_activity_log, can_adjust_stock, can_approve_purchases, can_delete_nhis_claims, is_active, organization_id, branch_id'
     )
     .eq('id', authUser.id)
     .single()
@@ -404,6 +421,9 @@ const upsertStaffUser = async (
   const phone = normalizeText(payload.phone) || null
   const password = normalizeText(payload.password)
   const roleCandidate = normalizeText(payload.role).toLowerCase()
+  const assignedRoles = isValidRole(roleCandidate)
+    ? normalizeAssignedRoles(payload.assignedRoles, roleCandidate)
+    : []
   const requestedOrganizationId = normalizeText(payload.organizationId)
   const canRefund = typeof payload.canRefund === 'boolean' ? payload.canRefund : undefined
   const canManageInventory = typeof payload.canManageInventory === 'boolean' ? payload.canManageInventory : undefined
@@ -417,6 +437,7 @@ const upsertStaffUser = async (
   const canViewActivityLog = typeof payload.canViewActivityLog === 'boolean' ? payload.canViewActivityLog : undefined
   const canAdjustStock = typeof payload.canAdjustStock === 'boolean' ? payload.canAdjustStock : undefined
   const canApprovePurchases = typeof payload.canApprovePurchases === 'boolean' ? payload.canApprovePurchases : undefined
+  const canDeleteNhisClaims = typeof payload.canDeleteNhisClaims === 'boolean' ? payload.canDeleteNhisClaims : undefined
   const requestedBranchId = normalizeText(payload.branchId) || null
 
   if (!email) {
@@ -499,6 +520,7 @@ const upsertStaffUser = async (
       fullName,
       phone,
       role: roleCandidate,
+      assignedRoles,
       isActive: true,
       organizationId,
       canRefund,
@@ -513,6 +535,7 @@ const upsertStaffUser = async (
       canViewActivityLog,
       canAdjustStock,
       canApprovePurchases,
+      canDeleteNhisClaims,
       branchId,
     })
 
@@ -542,6 +565,7 @@ const upsertStaffUser = async (
     fullName,
     phone,
     role: roleCandidate,
+    assignedRoles,
     isActive: true,
     organizationId,
     canRefund,
@@ -556,6 +580,7 @@ const upsertStaffUser = async (
     canViewActivityLog,
     canAdjustStock,
     canApprovePurchases,
+    canDeleteNhisClaims,
     branchId,
   })
 
@@ -768,6 +793,9 @@ const updateStaffUser = async (
   const email = normalizeText(payload.email).toLowerCase()
   const fullName = normalizeText(payload.fullName)
   const roleCandidate = normalizeText(payload.role).toLowerCase()
+  const assignedRoles = isValidRole(roleCandidate)
+    ? normalizeAssignedRoles(payload.assignedRoles, roleCandidate)
+    : []
   const phone = normalizeText(payload.phone) || null
   const isActive =
     typeof payload.isActive === 'boolean' ? Boolean(payload.isActive) : undefined
@@ -784,6 +812,7 @@ const updateStaffUser = async (
   const canViewActivityLog = typeof payload.canViewActivityLog === 'boolean' ? payload.canViewActivityLog : undefined
   const canAdjustStock = typeof payload.canAdjustStock === 'boolean' ? payload.canAdjustStock : undefined
   const canApprovePurchases = typeof payload.canApprovePurchases === 'boolean' ? payload.canApprovePurchases : undefined
+  const canDeleteNhisClaims = typeof payload.canDeleteNhisClaims === 'boolean' ? payload.canDeleteNhisClaims : undefined
   const requestedBranchId =
     payload.branchId === null ? null : normalizeText(payload.branchId) || undefined
 
@@ -890,6 +919,7 @@ const updateStaffUser = async (
     fullName,
     phone: nextPhone,
     role: roleCandidate,
+    assignedRoles,
     isActive: nextIsActive,
     organizationId: targetOrganizationId,
     canRefund,
@@ -904,6 +934,7 @@ const updateStaffUser = async (
     canViewActivityLog,
     canAdjustStock,
     canApprovePurchases,
+    canDeleteNhisClaims,
     branchId,
   })
 
@@ -949,14 +980,14 @@ Deno.serve(async (request) => {
     const action = normalizeText(payload.action) as StaffAction
 
     if (action === 'update_staff_user' || action === 'update_staff_access') {
-      if (!['admin', 'super_admin'].includes(requesterProfile.role)) {
+      if (!requesterHasRole(requesterProfile, ['admin', 'super_admin'])) {
         return json({ error: 'Only admin or super admin users can update staff accounts.' }, 403)
       }
 
       return json(await updateStaffUser(adminClient, requesterProfile, payload))
     }
 
-    if (!['admin', 'super_admin'].includes(requesterProfile.role)) {
+    if (!requesterHasRole(requesterProfile, ['admin', 'super_admin'])) {
       return json({ error: 'Only admin or super admin users can manage staff accounts.' }, 403)
     }
 

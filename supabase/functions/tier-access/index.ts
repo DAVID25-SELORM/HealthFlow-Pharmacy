@@ -183,6 +183,8 @@ const NHIA_CC_CODE_ACTIONS = new Set([
 type RequesterProfile = {
   id: string
   role: string
+  assigned_roles: string[]
+  active_role_enforced?: boolean
   organization_id: string | null
   branch_id: string | null
   can_manage_inventory: boolean
@@ -208,7 +210,7 @@ const PATIENT_ROLES = [
   'doctor',
   'records_officer',
 ]
-const NHIS_ROLES = ['admin', 'pharmacist', 'billing', 'claims_officer']
+const NHIS_ROLES = ['admin', 'pharmacist', 'assistant', 'billing', 'claims_officer', 'records_officer']
 const REPORT_ROLES = [
   'super_admin',
   'admin',
@@ -491,7 +493,7 @@ const getRequesterProfile = async (
 ): Promise<RequesterProfile | null> => {
   const { data, error } = await adminClient
     .from('users')
-    .select('id, role, organization_id, branch_id, can_manage_inventory, can_view_reports, can_manage_claims, can_manage_patients, can_manage_epharmacy, can_adjust_stock')
+    .select('id, role, assigned_roles, organization_id, branch_id, can_manage_inventory, can_view_reports, can_manage_claims, can_manage_patients, can_manage_epharmacy, can_adjust_stock')
     .eq('id', userId)
     .maybeSingle()
 
@@ -506,6 +508,9 @@ const getRequesterProfile = async (
   return {
     id: data.id,
     role: normalizeText(data.role).toLowerCase(),
+    assigned_roles: Array.isArray(data.assigned_roles)
+      ? data.assigned_roles.map((role: unknown) => normalizeText(role).toLowerCase()).filter(Boolean)
+      : [],
     organization_id: normalizeText(data.organization_id) || null,
     branch_id: normalizeText(data.branch_id) || null,
     can_manage_inventory: Boolean(data.can_manage_inventory),
@@ -605,23 +610,46 @@ const requireRole = (
   allowedRoles: string[],
   message: string
 ) => {
-  if (
-    requesterProfile.role !== 'admin' &&
-    !allowedRoles.includes(requesterProfile.role)
-  ) {
+  if (!requesterHasAnyRole(requesterProfile, ['admin', ...allowedRoles])) {
     throw new Error(message)
   }
 }
 
+const requesterHasAnyRole = (requesterProfile: RequesterProfile, roles: string[]) =>
+  requesterProfile.active_role_enforced
+    ? roles.includes(requesterProfile.role)
+    : roles.some((role) =>
+        role === requesterProfile.role || requesterProfile.assigned_roles.includes(role)
+      )
+
+const applyRequestedActiveRole = (
+  requesterProfile: RequesterProfile,
+  requestedRole: unknown
+): RequesterProfile => {
+  const activeRole = normalizeText(requestedRole).toLowerCase()
+  if (!activeRole) return requesterProfile
+
+  const availableRoles = [...new Set([requesterProfile.role, ...requesterProfile.assigned_roles])]
+  if (!availableRoles.includes(activeRole)) {
+    throw new Error('The selected active role is not assigned to this user.')
+  }
+
+  return {
+    ...requesterProfile,
+    role: activeRole,
+    active_role_enforced: true,
+  }
+}
+
 const requireInventoryAccess = (requesterProfile: RequesterProfile, message: string) => {
-  if (!INVENTORY_ROLES.includes(requesterProfile.role) && !requesterProfile.can_manage_inventory) {
+  if (!requesterHasAnyRole(requesterProfile, INVENTORY_ROLES) && !requesterProfile.can_manage_inventory) {
     throw new Error(message)
   }
 }
 
 const requireStockAdjustmentAccess = (requesterProfile: RequesterProfile, message: string) => {
   if (
-    !INVENTORY_ROLES.includes(requesterProfile.role) &&
+    !requesterHasAnyRole(requesterProfile, INVENTORY_ROLES) &&
     !requesterProfile.can_manage_inventory &&
     !requesterProfile.can_adjust_stock
   ) {
@@ -630,14 +658,17 @@ const requireStockAdjustmentAccess = (requesterProfile: RequesterProfile, messag
 }
 
 const requireClaimsAccess = (requesterProfile: RequesterProfile, message: string) => {
-  if (!CLAIMS_ROLES.includes(requesterProfile.role) && !requesterProfile.can_manage_claims) {
+  if (requesterProfile.active_role_enforced && requesterProfile.role === 'assistant') {
+    throw new Error(message)
+  }
+  if (!requesterHasAnyRole(requesterProfile, CLAIMS_ROLES) && !requesterProfile.can_manage_claims) {
     throw new Error(message)
   }
 }
 
 const requirePatientAccess = (requesterProfile: RequesterProfile, message: string) => {
   if (
-    !PATIENT_ROLES.includes(requesterProfile.role) &&
+    !requesterHasAnyRole(requesterProfile, PATIENT_ROLES) &&
     !requesterProfile.can_manage_claims &&
     !requesterProfile.can_manage_patients
   ) {
@@ -647,8 +678,8 @@ const requirePatientAccess = (requesterProfile: RequesterProfile, message: strin
 
 const requireNhisCatalogAccess = (requesterProfile: RequesterProfile, message: string) => {
   if (
-    !NHIS_ROLES.includes(requesterProfile.role) &&
-    !INVENTORY_ROLES.includes(requesterProfile.role) &&
+    !requesterHasAnyRole(requesterProfile, NHIS_ROLES) &&
+    !requesterHasAnyRole(requesterProfile, INVENTORY_ROLES) &&
     !requesterProfile.can_manage_inventory &&
     !requesterProfile.can_manage_claims
   ) {
@@ -658,8 +689,8 @@ const requireNhisCatalogAccess = (requesterProfile: RequesterProfile, message: s
 
 const requireNhiaAccess = (requesterProfile: RequesterProfile, message: string) => {
   if (
-    !NHIS_ROLES.includes(requesterProfile.role) &&
-    !NHIA_SETTINGS_ROLES.includes(requesterProfile.role) &&
+    !requesterHasAnyRole(requesterProfile, NHIS_ROLES) &&
+    !requesterHasAnyRole(requesterProfile, NHIA_SETTINGS_ROLES) &&
     !requesterProfile.can_manage_claims
   ) {
     throw new Error(message)
@@ -667,7 +698,7 @@ const requireNhiaAccess = (requesterProfile: RequesterProfile, message: string) 
 }
 
 const requireNhiaSettingsAccess = (requesterProfile: RequesterProfile, message: string) => {
-  if (!NHIA_SETTINGS_ROLES.includes(requesterProfile.role) && !requesterProfile.can_manage_claims) {
+  if (!requesterHasAnyRole(requesterProfile, NHIA_SETTINGS_ROLES) && !requesterProfile.can_manage_claims) {
     throw new Error(message)
   }
 }
@@ -679,23 +710,23 @@ const resolveScopedBranchId = (
 
 const requireClaimCreateAccess = (requesterProfile: RequesterProfile, message: string) => {
   if (
-    !CLAIMS_ROLES.includes(requesterProfile.role) &&
+    !requesterHasAnyRole(requesterProfile, CLAIMS_ROLES) &&
     !requesterProfile.can_manage_claims &&
-    !SALES_ROLES.includes(requesterProfile.role)
+    !requesterHasAnyRole(requesterProfile, SALES_ROLES)
   ) {
     throw new Error(message)
   }
 }
 
 const requireReportsAccess = (requesterProfile: RequesterProfile, message: string) => {
-  if (!REPORT_ROLES.includes(requesterProfile.role) && !requesterProfile.can_view_reports) {
+  if (!requesterHasAnyRole(requesterProfile, REPORT_ROLES) && !requesterProfile.can_view_reports) {
     throw new Error(message)
   }
 }
 
 const requireEpharmacyAccess = (requesterProfile: RequesterProfile, message: string) => {
   if (
-    !EPHARMACY_ROLES.includes(requesterProfile.role) &&
+    !requesterHasAnyRole(requesterProfile, EPHARMACY_ROLES) &&
     !requesterProfile.can_manage_inventory &&
     !requesterProfile.can_manage_epharmacy
   ) {
@@ -4158,6 +4189,7 @@ const generateNhiaCcCode = async (
   organizationId: string,
   payload: Record<string, unknown>
 ) => {
+  requireClaimsAccess(requesterProfile, 'Only claims staff can generate or change NHIA CC codes.')
   console.log('[GENERATE NHIA CC PAYLOAD]', redactTierAccessBody(payload))
   const receivedKeys = Object.keys(payload || {})
   const claimId = normalizeText(payload.claimId || payload.claim_id)
@@ -4549,6 +4581,7 @@ const submitNhiaClaimsDirect = async (
   organizationId: string,
   payload: Record<string, unknown>
 ) => {
+  requireClaimsAccess(requesterProfile, 'Only claims staff can submit NHIA claims.')
   const scopedBranchId = resolveScopedBranchId(requesterProfile, payload)
   const settings = await getNhiaApiSettings(adminClient, requesterProfile, organizationId, true, scopedBranchId)
   if (!settings?.directApiEnabled || !settings.apiBaseUrl) {
@@ -4904,7 +4937,11 @@ Deno.serve(async (request) => {
       return requesterResult.error
     }
 
-    const { requesterProfile, organizationId } = requesterResult
+    const requesterProfile = applyRequestedActiveRole(
+      requesterResult.requesterProfile,
+      payload.activeRole || payload.active_role
+    )
+    const { organizationId } = requesterResult
 
     if (action === 'get_drugs') {
       return json({ drugs: await getDrugs(adminClient, requesterProfile, organizationId, payload) })

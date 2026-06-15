@@ -28,6 +28,7 @@ import {
   saveNhiaSettings as saveBranchNhiaSettings,
   shouldUseBranchServer,
   submitNhiaDirectPayload,
+  updateBranchNhisClaimMedicines,
   updateBranchRecord,
 } from './branchServerApi'
 import { routeWrite } from './apiRouter'
@@ -2544,7 +2545,7 @@ const writeClaimItBridgeQueue = (queue = []) => {
   if (!canUseClaimItBridgeQueue()) return
   try {
     window.localStorage.setItem(CLAIMIT_BRIDGE_QUEUE_KEY, JSON.stringify(queue))
-  } catch (error) {
+  } catch {
     throw new Error(
       'CLAIM-it bridge submission could not be queued in this browser because the payload is too large. ' +
       'Start CLAIM-it and submit again, or submit through the local branch server.'
@@ -4453,6 +4454,26 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
     updated_at: new Date().toISOString(),
   }
 
+  if (options.medicinesOnly === true) {
+    const medicinesOnlyPayload = {
+      nhis_claim_medicines: medicineRows,
+      total_amount: totalAmount,
+      updated_at: claimPayload.updated_at,
+    }
+
+    if (options.useBranchServer || shouldUseBranchServer()) {
+      return await updateBranchNhisClaimMedicines(id, medicinesOnlyPayload)
+    }
+
+    const { data, error } = await supabase.rpc('serve_nhis_claim_medicines', {
+      p_claim_id: id,
+      p_medicines: medicineRows,
+      p_total_amount: totalAmount,
+    })
+    if (error) throw error
+    return data
+  }
+
   if (options.useBranchServer || shouldUseBranchServer()) {
     return await updateBranchRecord('nhis/claims', id, {
       ...claimPayload,
@@ -5958,12 +5979,15 @@ const toClaimItXmlElementName = (value, fallback = 'item') => {
 }
 
 export const deleteNhisClaim = async (id, options = {}) => {
-  if (normalizeText(options.role).toLowerCase() !== 'admin') {
-    throw new Error('Only an administrator can delete NHIS claims.')
+  const role = normalizeText(options.role).toLowerCase()
+  const canDeleteNhisClaims =
+    ['admin', 'super_admin'].includes(role) || options.canDeleteNhisClaims === true
+  if (!canDeleteNhisClaims) {
+    throw new Error('You do not have permission to delete NHIS claims.')
   }
 
   if (shouldUseBranchServer()) {
-    return await deleteBranchRecord('nhis/claims', id, { role: 'admin' })
+    return await deleteBranchRecord('nhis/claims', id)
   }
 
   const { data: claim, error } = await supabase

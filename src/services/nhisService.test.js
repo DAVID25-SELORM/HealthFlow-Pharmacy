@@ -19,6 +19,7 @@ vi.mock('./branchServerApi', () => ({
   saveNhiaSettings: vi.fn(),
   shouldUseBranchServer: vi.fn(() => false),
   submitNhiaDirectPayload: vi.fn(),
+  updateBranchNhisClaimMedicines: vi.fn(),
   updateBranchRecord: vi.fn(),
 }))
 
@@ -76,7 +77,16 @@ import {
   validateNhisPrescriptionPdfFile,
 } from './nhisService'
 import { supabase } from '../lib/supabase'
-import { deleteBranchRecord, getNhiaSettings, listBranchRecords, saveNhiaSettings, shouldUseBranchServer, submitNhiaDirectPayload, updateBranchRecord } from './branchServerApi'
+import {
+  deleteBranchRecord,
+  getNhiaSettings,
+  listBranchRecords,
+  saveNhiaSettings,
+  shouldUseBranchServer,
+  submitNhiaDirectPayload,
+  updateBranchNhisClaimMedicines,
+  updateBranchRecord,
+} from './branchServerApi'
 import { routeWrite } from './apiRouter'
 import { getConnectivityState } from './connectivityService'
 import { invokeTierAccess } from './tierAccessService'
@@ -2481,6 +2491,39 @@ describe('NHIS claim save attachment behavior', () => {
     expect(supabase.from).not.toHaveBeenCalledWith('nhis_claims')
   })
 
+  it('uses the medicines-only branch route for an MCA save', async () => {
+    updateBranchNhisClaimMedicines.mockResolvedValueOnce({
+      id: 'claim-1',
+      status: 'served',
+      total_amount: 10,
+    })
+
+    await expect(updateNhisClaim(
+      'claim-1',
+      { ...baseClaim, cccNo: '81416' },
+      [medicineWithTotal],
+      {
+        useBranchServer: true,
+        medicinesOnly: true,
+        providerClassLevel: 'D',
+        pharmacyLevel: 'P1',
+        nhisDrugCatalog: [{ code: 'NH001', category: 'A' }],
+      }
+    )).resolves.toMatchObject({
+      id: 'claim-1',
+      status: 'served',
+    })
+
+    expect(updateBranchNhisClaimMedicines).toHaveBeenCalledWith(
+      'claim-1',
+      expect.objectContaining({
+        nhis_claim_medicines: expect.any(Array),
+        total_amount: 10,
+      })
+    )
+    expect(updateBranchRecord).not.toHaveBeenCalled()
+  })
+
   it('blocks an inline CLAIM-it attachment larger than 3 MB before saving', async () => {
     shouldUseBranchServer.mockReturnValue(true)
     const oversizedPdf = Buffer.concat([
@@ -3222,9 +3265,9 @@ describe('NHIS local and cloud claim reads', () => {
 })
 
 describe('NHIS claim status routing', () => {
-  it('blocks NHIS claim deletion for non-admin roles before any write', async () => {
+  it('blocks NHIS claim deletion without the explicit permission before any write', async () => {
     await expect(deleteNhisClaim('claim-1', { role: 'claims_officer' }))
-      .rejects.toThrow('Only an administrator can delete NHIS claims.')
+      .rejects.toThrow('You do not have permission to delete NHIS claims.')
 
     expect(deleteBranchRecord).not.toHaveBeenCalled()
     expect(supabase.from).not.toHaveBeenCalled()
@@ -3241,10 +3284,20 @@ describe('NHIS claim status routing', () => {
       id: 'claim-1',
     })
 
-    expect(deleteBranchRecord).toHaveBeenCalledWith('nhis/claims', 'claim-1', {
-      role: 'admin',
-    })
+    expect(deleteBranchRecord).toHaveBeenCalledWith('nhis/claims', 'claim-1')
     expect(supabase.from).not.toHaveBeenCalled()
+  })
+
+  it('allows a claims officer with explicit NHIS deletion permission', async () => {
+    shouldUseBranchServer.mockReturnValue(true)
+    deleteBranchRecord.mockResolvedValueOnce({ id: 'claim-1' })
+
+    await expect(deleteNhisClaim('claim-1', {
+      role: 'claims_officer',
+      canDeleteNhisClaims: true,
+    })).resolves.toMatchObject({ id: 'claim-1' })
+
+    expect(deleteBranchRecord).toHaveBeenCalledWith('nhis/claims', 'claim-1')
   })
 
   it('does not report success when the live schema would discard an RX attachment', async () => {

@@ -374,6 +374,7 @@ const blankStaffForm = {
   email: '',
   phone: '',
   role: 'assistant',
+  assignedRoles: ['assistant'],
   canRefund: false,
   canManageInventory: false,
   canViewReports: false,
@@ -386,6 +387,7 @@ const blankStaffForm = {
   canViewActivityLog: false,
   canAdjustStock: false,
   canApprovePurchases: false,
+  canDeleteNhisClaims: false,
   temporaryPassword: '',
   branchId: '',
 }
@@ -396,6 +398,9 @@ const toStaffEditForm = (row = {}) => ({
   email: row.email || '',
   phone: row.phone || '',
   role: row.role || 'assistant',
+  assignedRoles: Array.isArray(row.assigned_roles) && row.assigned_roles.length
+    ? row.assigned_roles
+    : [row.role || 'assistant'],
   branchId: row.branch_id || '',
   isActive: row.is_active !== false,
   canRefund: Boolean(row.can_refund),
@@ -410,6 +415,7 @@ const toStaffEditForm = (row = {}) => ({
   canViewActivityLog: Boolean(row.can_view_activity_log),
   canAdjustStock: Boolean(row.can_adjust_stock),
   canApprovePurchases: Boolean(row.can_approve_purchases),
+  canDeleteNhisClaims: Boolean(row.can_delete_nhis_claims),
   temporaryPassword: '',
 })
 
@@ -426,6 +432,7 @@ const STAFF_PRIVILEGE_OPTIONS = [
   ['canViewActivityLog', 'View activity log', 'can_view_activity_log', 'Activity log'],
   ['canAdjustStock', 'Adjust stock', 'can_adjust_stock', 'Stock adjustment'],
   ['canApprovePurchases', 'Approve purchases', 'can_approve_purchases', 'Purchase approval'],
+  ['canDeleteNhisClaims', 'Delete NHIS claims', 'can_delete_nhis_claims', 'NHIS deletion'],
 ]
 
 const blankBranchForm = {
@@ -2431,10 +2438,11 @@ const Settings = () => {
                     setStaffForm({
                       ...staffForm,
                       role: event.target.value,
+                      assignedRoles: [...new Set([event.target.value, ...staffForm.assignedRoles])],
                       canRefund: false,
                       canManageInventory: false,
                       canViewReports: false,
-                      canManageClaims: event.target.value === 'claims_officer',
+                      canManageClaims: false,
                       canManagePurchases: ['pharmacist', 'inventory_officer', 'procurement', 'branch_manager'].includes(event.target.value),
                       canProcessSales: ['pharmacist', 'assistant', 'cashier', 'technician', 'branch_manager'].includes(event.target.value),
                       canManagePatients: ['pharmacist', 'assistant', 'technician', 'branch_manager', 'billing', 'claims_officer', 'nurse', 'doctor', 'records_officer'].includes(event.target.value),
@@ -2454,24 +2462,46 @@ const Settings = () => {
                   ))}
                 </select>
               </div>
-              {!['admin', 'pharmacist', 'claims_officer'].includes(staffForm.role) && (
-                <div className="settings-privileges-group">
-                  <p className="settings-helper">Privileges</p>
-                  {STAFF_PRIVILEGE_OPTIONS.map(([field, label]) => (
-                    <label className="settings-checkbox-label" key={field}>
+              <div className="settings-roles-group">
+                <p className="settings-helper">Assigned roles</p>
+                <div className="settings-role-options">
+                  {ROLE_OPTIONS.map((option) => (
+                    <label className="settings-checkbox-label" key={option.value}>
                       <input
                         type="checkbox"
-                        checked={staffForm[field]}
-                        onChange={(event) =>
-                          setStaffForm({ ...staffForm, [field]: event.target.checked })
-                        }
-                        disabled={creatingStaff}
+                        checked={staffForm.assignedRoles.includes(option.value)}
+                        onChange={(event) => setStaffForm({
+                          ...staffForm,
+                          assignedRoles: event.target.checked
+                            ? [...new Set([...staffForm.assignedRoles, option.value])]
+                            : staffForm.assignedRoles.filter((assignedRole) =>
+                                assignedRole !== option.value || assignedRole === staffForm.role
+                              ),
+                        })}
+                        disabled={creatingStaff || option.value === staffForm.role}
                       />
-                      {label}
+                      {option.label}
                     </label>
                   ))}
                 </div>
-              )}
+                <p className="settings-helper">The primary role opens by default. Staff can switch only among roles assigned here.</p>
+              </div>
+              <div className="settings-privileges-group">
+                <p className="settings-helper">Additional privileges</p>
+                {STAFF_PRIVILEGE_OPTIONS.map(([field, label]) => (
+                  <label className="settings-checkbox-label" key={field}>
+                    <input
+                      type="checkbox"
+                      checked={staffForm.role === 'admin' || staffForm[field]}
+                      onChange={(event) =>
+                        setStaffForm({ ...staffForm, [field]: event.target.checked })
+                      }
+                      disabled={creatingStaff || staffForm.role === 'admin'}
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
               <input
                 type="password"
                 minLength={8}
@@ -2538,6 +2568,14 @@ const Settings = () => {
                       <span className={`user-status-badge ${row.branch_id ? 'active' : 'inactive'}`}>
                         Branch: {row.branches?.name || 'Not assigned'}
                       </span>
+                    </div>
+                    <div className="user-role-list" aria-label="Assigned roles">
+                      {(Array.isArray(row.assigned_roles) && row.assigned_roles.length
+                        ? row.assigned_roles
+                        : [row.role]
+                      ).map((assignedRole) => (
+                        <span key={assignedRole}>{getRoleLabel(assignedRole)}</span>
+                      ))}
                     </div>
                     <div className="user-privilege-list" aria-label="Assigned privileges">
                       {STAFF_PRIVILEGE_OPTIONS.map(([, , column, badge]) =>
@@ -2621,7 +2659,11 @@ const Settings = () => {
                     <span>Role / title</span>
                     <select
                       value={editingStaff.role}
-                      onChange={(event) => setEditingStaff({ ...editingStaff, role: event.target.value })}
+                      onChange={(event) => setEditingStaff({
+                        ...editingStaff,
+                        role: event.target.value,
+                        assignedRoles: [...new Set([event.target.value, ...editingStaff.assignedRoles])],
+                      })}
                       disabled={savingStaff || editingStaff.id === user?.id}
                     >
                       {ROLE_OPTIONS.map((option) => (
@@ -2655,6 +2697,37 @@ const Settings = () => {
                       disabled={savingStaff}
                     />
                   </label>
+                </div>
+
+                <div className="settings-roles-group settings-edit-roles">
+                  <div className="settings-privileges-heading">
+                    <strong>Assigned roles</strong>
+                    <span>The primary role is selected above and cannot be removed.</span>
+                  </div>
+                  <div className="settings-role-options">
+                    {ROLE_OPTIONS.map((option) => (
+                      <label className="settings-checkbox-label" key={option.value}>
+                        <input
+                          type="checkbox"
+                          checked={editingStaff.assignedRoles.includes(option.value)}
+                          onChange={(event) => setEditingStaff({
+                            ...editingStaff,
+                            assignedRoles: event.target.checked
+                              ? [...new Set([...editingStaff.assignedRoles, option.value])]
+                              : editingStaff.assignedRoles.filter((assignedRole) =>
+                                  assignedRole !== option.value || assignedRole === editingStaff.role
+                                ),
+                          })}
+                          disabled={
+                            savingStaff ||
+                            option.value === editingStaff.role ||
+                            editingStaff.id === user?.id
+                          }
+                        />
+                        {option.label}
+                      </label>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="settings-privileges-group settings-edit-privileges">

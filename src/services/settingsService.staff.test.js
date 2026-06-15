@@ -74,6 +74,7 @@ describe('settingsService staff administration', () => {
       email: 'KOFI@EXAMPLE.COM',
       phone: '',
       role: 'assistant',
+      assignedRoles: ['assistant', 'claims_officer'],
       branchId: 'branch-2',
       temporaryPassword: 'ResetPass123',
       isActive: false,
@@ -89,6 +90,7 @@ describe('settingsService staff administration', () => {
       canViewActivityLog: false,
       canAdjustStock: false,
       canApprovePurchases: false,
+      canDeleteNhisClaims: true,
     })
 
     expect(invokeSupabaseFunction).toHaveBeenCalledWith('staff-admin', {
@@ -99,6 +101,7 @@ describe('settingsService staff administration', () => {
         email: 'kofi@example.com',
         phone: null,
         role: 'assistant',
+        assignedRoles: ['assistant', 'claims_officer'],
         branchId: 'branch-2',
         isActive: false,
         canRefund: true,
@@ -113,6 +116,7 @@ describe('settingsService staff administration', () => {
         canViewActivityLog: false,
         canAdjustStock: false,
         canApprovePurchases: false,
+        canDeleteNhisClaims: true,
         password: 'ResetPass123',
       },
     })

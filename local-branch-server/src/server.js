@@ -6,7 +6,12 @@ import { assertConfiguredForServer, config, isSupabaseSyncConfigured } from './c
 import { backupDatabase, closeDatabase, getDatabaseStatus } from './db.js'
 import { normalizePharmacyClaimLines } from './claimPricing.js'
 import { createClaimBridgeRouter } from './claimBridge.js'
-import { getBranchAuthCookie, requireBranchToken } from './httpAuth.js'
+import {
+  getBranchAuthCookie,
+  issueBranchUserSession,
+  requireBranchToken,
+  requireBranchUserSession,
+} from './httpAuth.js'
 import {
   BRANCH_JSON_BODY_LIMIT,
   getBranchRequestErrorResponse,
@@ -207,10 +212,10 @@ app.use((request, response, next) => {
 
   response.setHeader('Access-Control-Allow-Origin', origin || '*')
   response.setHeader('Vary', 'Origin')
-  response.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,OPTIONS')
+  response.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS')
   response.setHeader(
     'Access-Control-Allow-Headers',
-    'Content-Type, x-branch-token, x-paystack-signature, x-hubtel-signature, x-hubtel-webhook-signature, x-signature'
+    'Content-Type, Authorization, x-branch-token, x-branch-user-session, x-paystack-signature, x-hubtel-signature, x-hubtel-webhook-signature, x-signature'
   )
   response.setHeader('X-Content-Type-Options', 'nosniff')
   response.setHeader('Referrer-Policy', 'no-referrer')
@@ -298,6 +303,45 @@ app.post('/api/payments/webhook/paystack', async (request, response, next) => {
 })
 
 app.use('/api', requireBranchToken)
+
+const requireBranchClaimsAccess = (request, response, next) => {
+  const role = String(request.branchUser?.role || '').toLowerCase()
+  const allowed =
+    ['admin', 'super_admin', 'pharmacist', 'billing', 'claims_officer', 'records_officer'].includes(role) ||
+    (role !== 'assistant' && request.branchUser?.canManageClaims === true)
+  if (!allowed) {
+    response.status(403).json({ error: 'Only claims staff can perform this action.' })
+    return
+  }
+  next()
+}
+
+const requireBranchAdminAccess = (request, response, next) => {
+  if (!['admin', 'super_admin'].includes(String(request.branchUser?.role || '').toLowerCase())) {
+    response.status(403).json({ error: 'Only an administrator can change NHIA settings.' })
+    return
+  }
+  next()
+}
+
+app.post('/api/auth/user-session', async (request, response, next) => {
+  try {
+    const authorization = String(request.get('Authorization') || '')
+    const accessToken = authorization.replace(/^Bearer\s+/i, '').trim()
+    if (!accessToken) {
+      response.status(401).json({ error: 'A signed-in Supabase session is required.' })
+      return
+    }
+    response.json({
+      data: await issueBranchUserSession({
+        accessToken,
+        activeRole: request.body?.activeRole,
+      }),
+    })
+  } catch (error) {
+    next(error)
+  }
+})
 
 app.get('/api/database/status', (_request, response, next) => {
   try {
@@ -483,16 +527,32 @@ app.get('/api/nhis/claims', (request, response) => {
   response.json({ data: listOfflineRecords('nhis_claims', request.query) })
 })
 
-app.post('/api/nhis/claims', (request, response, next) => {
+app.post('/api/nhis/claims', requireBranchUserSession, (request, response, next) => {
   try {
+    const role = String(request.branchUser?.role || '').toLowerCase()
+    const canManageClaims =
+      ['admin', 'super_admin', 'pharmacist', 'billing', 'claims_officer', 'records_officer'].includes(role) ||
+      (role !== 'assistant' && request.branchUser?.canManageClaims === true)
+    if (!canManageClaims) {
+      response.status(403).json({ error: 'Only claims staff can create NHIS claims.' })
+      return
+    }
     response.status(201).json({ data: saveOfflineRecord('nhis_claims', request.body || {}) })
   } catch (error) {
     next(error)
   }
 })
 
-app.put('/api/nhis/claims/:id', (request, response, next) => {
+app.put('/api/nhis/claims/:id', requireBranchUserSession, (request, response, next) => {
   try {
+    const role = String(request.branchUser?.role || '').toLowerCase()
+    const canManageClaims =
+      ['admin', 'super_admin', 'pharmacist', 'billing', 'claims_officer', 'records_officer'].includes(role) ||
+      (role !== 'assistant' && request.branchUser?.canManageClaims === true)
+    if (!canManageClaims) {
+      response.status(403).json({ error: 'Only claims staff can edit NHIS claim details.' })
+      return
+    }
     const existing = getOfflineRecord('nhis_claims', request.params.id)
     response.json({
       data: saveOfflineRecord('nhis_claims', {
@@ -506,10 +566,45 @@ app.put('/api/nhis/claims/:id', (request, response, next) => {
   }
 })
 
-app.delete('/api/nhis/claims/:id', (request, response, next) => {
+app.put('/api/nhis/claims/:id/medicines', requireBranchUserSession, (request, response, next) => {
   try {
-    if (String(request.body?.role || '').trim().toLowerCase() !== 'admin') {
-      response.status(403).json({ error: 'Only an administrator can delete NHIS claims.' })
+    const role = String(request.branchUser?.role || '').toLowerCase()
+    const canServeMedicines =
+      ['admin', 'super_admin', 'pharmacist', 'assistant', 'billing', 'claims_officer', 'records_officer'].includes(role) ||
+      request.branchUser?.canManageClaims === true
+    if (!canServeMedicines) {
+      response.status(403).json({ error: 'You do not have permission to serve NHIS medicines.' })
+      return
+    }
+
+    const existing = getOfflineRecord('nhis_claims', request.params.id)
+    if (!existing) {
+      response.status(404).json({ error: 'NHIS claim not found.' })
+      return
+    }
+    response.json({
+      data: saveOfflineRecord('nhis_claims', {
+        ...existing,
+        nhis_claim_medicines: Array.isArray(request.body?.nhis_claim_medicines)
+          ? request.body.nhis_claim_medicines
+          : [],
+        total_amount: Number(request.body?.total_amount || 0),
+        updated_at: request.body?.updated_at || new Date().toISOString(),
+        id: request.params.id,
+      }),
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.delete('/api/nhis/claims/:id', requireBranchUserSession, (request, response, next) => {
+  try {
+    const role = String(request.branchUser?.role || '').trim().toLowerCase()
+    const canDeleteNhisClaims =
+      ['admin', 'super_admin'].includes(role) || request.branchUser?.canDeleteNhisClaims === true
+    if (!canDeleteNhisClaims) {
+      response.status(403).json({ error: 'You do not have permission to delete NHIS claims.' })
       return
     }
     response.json({ data: deleteOfflineRecord('nhis_claims', request.params.id) })
@@ -522,7 +617,7 @@ app.get('/api/nhia/settings', (_request, response) => {
   response.json({ data: getNhiaSettings() })
 })
 
-app.put('/api/nhia/settings', (request, response, next) => {
+app.put('/api/nhia/settings', requireBranchUserSession, requireBranchAdminAccess, (request, response, next) => {
   try {
     response.json({ data: saveNhiaSettings(request.body || {}) })
   } catch (error) {
@@ -534,7 +629,7 @@ app.get('/api/nhia-config', (_request, response) => {
   response.json({ data: getNhiaSettings() })
 })
 
-app.post('/api/nhia-config', (request, response, next) => {
+app.post('/api/nhia-config', requireBranchUserSession, requireBranchAdminAccess, (request, response, next) => {
   try {
     response.json({ data: saveNhiaSettings(request.body || {}) })
   } catch (error) {
@@ -542,7 +637,7 @@ app.post('/api/nhia-config', (request, response, next) => {
   }
 })
 
-app.patch('/api/nhia-config', (request, response, next) => {
+app.patch('/api/nhia-config', requireBranchUserSession, requireBranchAdminAccess, (request, response, next) => {
   try {
     response.json({ data: saveNhiaSettings(request.body || {}) })
   } catch (error) {
@@ -550,7 +645,7 @@ app.patch('/api/nhia-config', (request, response, next) => {
   }
 })
 
-app.post('/api/nhia-config/test', (_request, response) => {
+app.post('/api/nhia-config/test', requireBranchUserSession, requireBranchAdminAccess, (_request, response) => {
   const health = getNhiaConfigurationHealth()
   response.json({
     data: {
@@ -563,7 +658,7 @@ app.post('/api/nhia-config/test', (_request, response) => {
   })
 })
 
-app.post('/api/nhia/cc-code', async (request, response, next) => {
+app.post('/api/nhia/cc-code', requireBranchUserSession, requireBranchClaimsAccess, async (request, response, next) => {
   try {
     response.json({ data: await generateNhiaCcCode(request.body || {}) })
   } catch (error) {
@@ -572,7 +667,7 @@ app.post('/api/nhia/cc-code', async (request, response, next) => {
 })
 
 // Member lookup: verifies NHIS membership and returns MobCCC + member details in one call.
-app.post('/api/nhia/member-lookup', async (request, response, next) => {
+app.post('/api/nhia/member-lookup', requireBranchUserSession, requireBranchClaimsAccess, async (request, response, next) => {
   try {
     const { memberNumber, cardType } = request.body || {}
     if (!memberNumber) {
@@ -598,7 +693,7 @@ app.get('/api/nhia/claims', (request, response) => {
   })
 })
 
-app.post('/api/nhia/claims', (request, response, next) => {
+app.post('/api/nhia/claims', requireBranchUserSession, requireBranchClaimsAccess, (request, response, next) => {
   try {
     response.status(201).json({ data: createNhiaClaim(request.body || {}) })
   } catch (error) {
@@ -616,7 +711,7 @@ app.get('/api/nhia/claims/:id', (request, response) => {
   response.json({ data: claim })
 })
 
-app.post('/api/nhia/claims/:id/ready', (request, response, next) => {
+app.post('/api/nhia/claims/:id/ready', requireBranchUserSession, requireBranchClaimsAccess, (request, response, next) => {
   try {
     response.json({ data: markNhiaClaimReady(request.params.id) })
   } catch (error) {
@@ -624,7 +719,7 @@ app.post('/api/nhia/claims/:id/ready', (request, response, next) => {
   }
 })
 
-app.post('/api/nhia/claims/:id/submit', async (request, response, next) => {
+app.post('/api/nhia/claims/:id/submit', requireBranchUserSession, requireBranchClaimsAccess, async (request, response, next) => {
   try {
     response.json({ data: await submitNhiaClaim(request.params.id) })
   } catch (error) {
@@ -635,7 +730,7 @@ app.post('/api/nhia/claims/:id/submit', async (request, response, next) => {
 // Unified NHIS claim route for both community pharmacies (medicines only) and hospital pharmacies (medicines + G-DRG services).
 // Community pharmacy: organizationType omitted or 'pharmacy'; diagnosis optional, no service lines.
 // Hospital pharmacy: organizationType 'hospital'; diagnosis required, services array included.
-app.post('/api/nhis/pharmacy-claim', async (request, response, next) => {
+app.post('/api/nhis/pharmacy-claim', requireBranchUserSession, requireBranchClaimsAccess, async (request, response, next) => {
   try {
     const body = request.body || {}
     const {
@@ -729,7 +824,7 @@ app.post('/api/nhis/pharmacy-claim', async (request, response, next) => {
   }
 })
 
-app.post('/api/nhia/submit-pending', async (request, response, next) => {
+app.post('/api/nhia/submit-pending', requireBranchUserSession, requireBranchClaimsAccess, async (request, response, next) => {
   try {
     response.json(await submitPendingNhiaClaims({ limit: request.body?.limit || 10 }))
   } catch (error) {
@@ -737,7 +832,7 @@ app.post('/api/nhia/submit-pending', async (request, response, next) => {
   }
 })
 
-app.post('/api/nhia/direct-submit', async (request, response, next) => {
+app.post('/api/nhia/direct-submit', requireBranchUserSession, requireBranchClaimsAccess, async (request, response, next) => {
   try {
     response.json({
       data: await submitNhiaDirectPayload({
@@ -753,7 +848,7 @@ app.post('/api/nhia/direct-submit', async (request, response, next) => {
   }
 })
 
-app.post('/api/nhia/repair-claim-ids', (request, response, next) => {
+app.post('/api/nhia/repair-claim-ids', requireBranchUserSession, requireBranchClaimsAccess, (request, response, next) => {
   try {
     response.json({
       data: repairMissingNhiaClaimIds(request.body?.claimIds || []),
@@ -763,7 +858,7 @@ app.post('/api/nhia/repair-claim-ids', (request, response, next) => {
   }
 })
 
-app.post('/api/nhia/batches', (request, response, next) => {
+app.post('/api/nhia/batches', requireBranchUserSession, requireBranchClaimsAccess, (request, response, next) => {
   try {
     response.status(201).json({ data: createNhiaBatch(request.body || {}) })
   } catch (error) {

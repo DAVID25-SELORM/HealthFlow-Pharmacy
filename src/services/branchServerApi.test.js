@@ -1,5 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+const mocks = vi.hoisted(() => ({
+  getSession: vi.fn(),
+}))
+
+vi.mock('../lib/supabase', () => ({
+  supabase: {
+    auth: {
+      getSession: mocks.getSession,
+    },
+  },
+}))
+
 const importBranchServerApi = async () => {
   vi.resetModules()
   return await import('./branchServerApi')
@@ -10,6 +22,7 @@ describe('branchServerApi', () => {
     window.localStorage.clear()
     delete window.__HEALTHFLOW_BRANCH_SERVER__
     vi.restoreAllMocks()
+    mocks.getSession.mockReset()
   })
 
   it('does not create a default branch token when missing', async () => {
@@ -104,6 +117,22 @@ describe('branchServerApi', () => {
   })
 
   it('maps NHIA member lookup aliases to the branch server payload', async () => {
+    mocks.getSession.mockResolvedValue({
+      data: {
+        session: {
+          access_token: 'supabase-user-token',
+          user: { id: 'staff-1' },
+        },
+      },
+      error: null,
+    })
+    window.localStorage.setItem('healthflow.active-role.current', 'claims_officer')
+    window.localStorage.setItem('healthflow_branch_user_session', JSON.stringify({
+      token: 'signed-branch-user-session',
+      expiresAt: Math.floor(Date.now() / 1000) + 3600,
+      role: 'claims_officer',
+      userId: 'staff-1',
+    }))
     const fetchMock = vi.fn(async () =>
       new Response(JSON.stringify({ ok: true, data: { status: 'ACTIVE' } }), { status: 200 })
     )
@@ -135,5 +164,46 @@ describe('branchServerApi', () => {
     expect(fetchMock.mock.calls.some(([url]) =>
       String(url).endsWith('/api/nhia/member-lookup')
     )).toBe(false)
+  })
+
+  it('uses a server-issued staff session for local NHIS writes', async () => {
+    mocks.getSession.mockResolvedValue({
+      data: {
+        session: {
+          access_token: 'supabase-user-token',
+          user: { id: 'staff-1' },
+        },
+      },
+      error: null,
+    })
+    window.localStorage.setItem('healthflow.active-role.current', 'claims_officer')
+    const fetchMock = vi.fn(async (url) => {
+      if (String(url).endsWith('/api/auth/user-session')) {
+        return new Response(JSON.stringify({
+          data: {
+            token: 'signed-branch-user-session',
+            expiresAt: Math.floor(Date.now() / 1000) + 3600,
+            role: 'claims_officer',
+            userId: 'staff-1',
+          },
+        }), { status: 200 })
+      }
+      return new Response(JSON.stringify({ data: { id: 'claim-1' } }), { status: 200 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { saveBranchToken, updateBranchRecord } = await importBranchServerApi()
+    saveBranchToken('facility-branch-token')
+
+    await updateBranchRecord('nhis/claims', 'claim-1', { notes: 'reviewed' })
+
+    const sessionCall = fetchMock.mock.calls.find(([url]) =>
+      String(url).endsWith('/api/auth/user-session')
+    )
+    const updateCall = fetchMock.mock.calls.find(([url]) =>
+      String(url).endsWith('/api/nhis/claims/claim-1')
+    )
+    expect(sessionCall[1].headers.Authorization).toBe('Bearer supabase-user-token')
+    expect(updateCall[1].headers['x-branch-user-session']).toBe('signed-branch-user-session')
   })
 })

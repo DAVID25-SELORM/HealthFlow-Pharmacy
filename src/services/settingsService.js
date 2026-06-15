@@ -293,6 +293,7 @@ export const getUsers = async () => {
       .order('created_at', { ascending: false })
 
   const optionalPrivilegeColumns = [
+    'assigned_roles',
     'can_manage_purchases',
     'can_process_sales',
     'can_manage_patients',
@@ -301,6 +302,7 @@ export const getUsers = async () => {
     'can_view_activity_log',
     'can_adjust_stock',
     'can_approve_purchases',
+    'can_delete_nhis_claims',
   ]
   const columns = `id, email, full_name, phone, role, can_refund, can_manage_inventory, can_view_reports, can_manage_claims, ${optionalPrivilegeColumns.join(', ')}, is_active, branch_id, created_at, branches (id, name, code)`
   const legacyColumns = optionalPrivilegeColumns.reduce(
@@ -329,6 +331,8 @@ export const getUsers = async () => {
       can_view_activity_log: ACTIVITY_LOG_ROLES.includes(row.role),
       can_adjust_stock: INVENTORY_ROLES.includes(row.role),
       can_approve_purchases: ['admin', 'pharmacist', 'branch_manager'].includes(row.role),
+      assigned_roles: [row.role],
+      can_delete_nhis_claims: row.role === 'admin',
     }))
     error = legacyResult.error
   }
@@ -345,6 +349,9 @@ export const createStaffUser = async (staff) => {
   const email = assertRequiredText(staff.email, 'Email').toLowerCase()
   const temporaryPassword = assertRequiredText(staff.temporaryPassword, 'Temporary password')
   const role = normalizeText(staff.role || 'assistant').toLowerCase()
+  const assignedRoles = [...new Set([role, ...(Array.isArray(staff.assignedRoles) ? staff.assignedRoles : [])])]
+    .map((assignedRole) => normalizeText(assignedRole).toLowerCase())
+    .filter((assignedRole) => STAFF_ROLE_VALUES.includes(assignedRole))
   const phone = normalizeText(staff.phone) || null
 
   if (!STAFF_ROLE_VALUES.includes(role)) {
@@ -362,6 +369,7 @@ export const createStaffUser = async (staff) => {
     fullName,
     phone,
     role,
+    assignedRoles,
     canRefund: Boolean(staff.canRefund),
     canManageInventory: Boolean(staff.canManageInventory),
     canViewReports: Boolean(staff.canViewReports),
@@ -374,6 +382,7 @@ export const createStaffUser = async (staff) => {
     canViewActivityLog: Boolean(staff.canViewActivityLog),
     canAdjustStock: Boolean(staff.canAdjustStock),
     canApprovePurchases: Boolean(staff.canApprovePurchases),
+    canDeleteNhisClaims: Boolean(staff.canDeleteNhisClaims),
     branchId: requestedBranchId,
     password: temporaryPassword,
   })
@@ -395,6 +404,9 @@ export const updateStaffUser = async (id, staff) => {
   const fullName = assertRequiredText(staff.fullName, 'Full name')
   const email = assertRequiredText(staff.email, 'Email').toLowerCase()
   const role = normalizeText(staff.role).toLowerCase()
+  const assignedRoles = [...new Set([role, ...(Array.isArray(staff.assignedRoles) ? staff.assignedRoles : [])])]
+    .map((assignedRole) => normalizeText(assignedRole).toLowerCase())
+    .filter((assignedRole) => STAFF_ROLE_VALUES.includes(assignedRole))
   const temporaryPassword = normalizeText(staff.temporaryPassword)
 
   if (!STAFF_ROLE_VALUES.includes(role)) {
@@ -412,6 +424,7 @@ export const updateStaffUser = async (id, staff) => {
     email,
     phone: normalizeText(staff.phone) || null,
     role,
+    assignedRoles,
     branchId: requestedBranchId,
     isActive: Boolean(staff.isActive),
     canRefund: Boolean(staff.canRefund),
@@ -426,6 +439,7 @@ export const updateStaffUser = async (id, staff) => {
     canViewActivityLog: Boolean(staff.canViewActivityLog),
     canAdjustStock: Boolean(staff.canAdjustStock),
     canApprovePurchases: Boolean(staff.canApprovePurchases),
+    canDeleteNhisClaims: Boolean(staff.canDeleteNhisClaims),
     password: temporaryPassword || undefined,
   })
 
