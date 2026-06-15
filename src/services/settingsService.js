@@ -1,6 +1,6 @@
 import { getCurrentSupabaseUser, invokeSupabaseFunction, supabase } from '../lib/supabase'
 import { assertRequiredText, normalizeText } from '../utils/validation'
-import { STAFF_ROLE_VALUES } from '../utils/roles'
+import { PURCHASES_ROLES, STAFF_ROLE_VALUES } from '../utils/roles'
 import { normalizeGhanaRegion } from '../utils/ghanaRegions'
 import { tryLogAuditEvent } from './auditService'
 // ✅ NHIS PHARMACY LEVEL PATCH START
@@ -277,10 +277,32 @@ export const createSettings = async (settings) => {
 }
 
 export const getUsers = async () => {
-  const { data, error } = await supabase
-    .from('users')
-    .select('id, email, full_name, role, can_refund, is_active, branch_id, created_at, branches (id, name, code)')
-    .order('created_at', { ascending: false })
+  const selectUsers = (columns) =>
+    supabase
+      .from('users')
+      .select(columns)
+      .order('created_at', { ascending: false })
+
+  const columns = 'id, email, full_name, phone, role, can_refund, can_manage_inventory, can_view_reports, can_manage_claims, can_manage_purchases, is_active, branch_id, created_at, branches (id, name, code)'
+  const legacyColumns = columns.replace(', can_manage_purchases', '')
+  let { data, error } = await selectUsers(columns)
+  const errorMessage = String(error?.message || error?.details || '').toLowerCase()
+
+  if (
+    error &&
+    (
+      error.code === '42703' ||
+      error.code === 'PGRST204' ||
+      (errorMessage.includes('can_manage_purchases') && errorMessage.includes('column'))
+    )
+  ) {
+    const legacyResult = await selectUsers(legacyColumns)
+    data = (legacyResult.data || []).map((row) => ({
+      ...row,
+      can_manage_purchases: PURCHASES_ROLES.includes(row.role),
+    }))
+    error = legacyResult.error
+  }
 
   if (error) {
     throw error
@@ -304,6 +326,7 @@ export const createStaffUser = async (staff) => {
     throw new Error('Temporary password must be at least 8 characters.')
   }
 
+  const requestedBranchId = normalizeText(staff.branchId) || null
   const response = await invokeStaffAdmin({
     action: 'upsert_staff_user',
     email,
@@ -314,8 +337,63 @@ export const createStaffUser = async (staff) => {
     canManageInventory: Boolean(staff.canManageInventory),
     canViewReports: Boolean(staff.canViewReports),
     canManageClaims: Boolean(staff.canManageClaims),
+    canManagePurchases: Boolean(staff.canManagePurchases),
+    branchId: requestedBranchId,
     password: temporaryPassword,
   })
+
+  if (requestedBranchId && response.user?.branch_id !== requestedBranchId) {
+    const branchResponse = await invokeStaffAdmin({
+      action: 'set_staff_branch',
+      userId: response.user.id,
+      branchId: requestedBranchId,
+    })
+    return branchResponse.user
+  }
+
+  return response.user
+}
+
+export const updateStaffUser = async (id, staff) => {
+  const userId = assertRequiredText(id, 'User id')
+  const fullName = assertRequiredText(staff.fullName, 'Full name')
+  const email = assertRequiredText(staff.email, 'Email').toLowerCase()
+  const role = normalizeText(staff.role).toLowerCase()
+  const temporaryPassword = normalizeText(staff.temporaryPassword)
+
+  if (!STAFF_ROLE_VALUES.includes(role)) {
+    throw new Error('Select a valid staff role.')
+  }
+  if (temporaryPassword && temporaryPassword.length < 8) {
+    throw new Error('Temporary password must be at least 8 characters.')
+  }
+
+  const requestedBranchId = normalizeText(staff.branchId) || null
+  const response = await invokeStaffAdmin({
+    action: 'update_staff_access',
+    userId,
+    fullName,
+    email,
+    phone: normalizeText(staff.phone) || null,
+    role,
+    branchId: requestedBranchId,
+    isActive: Boolean(staff.isActive),
+    canRefund: Boolean(staff.canRefund),
+    canManageInventory: Boolean(staff.canManageInventory),
+    canViewReports: Boolean(staff.canViewReports),
+    canManageClaims: Boolean(staff.canManageClaims),
+    canManagePurchases: Boolean(staff.canManagePurchases),
+    password: temporaryPassword || undefined,
+  })
+
+  if (requestedBranchId && response.user?.branch_id !== requestedBranchId) {
+    const branchResponse = await invokeStaffAdmin({
+      action: 'set_staff_branch',
+      userId: response.user.id,
+      branchId: requestedBranchId,
+    })
+    return branchResponse.user
+  }
 
   return response.user
 }

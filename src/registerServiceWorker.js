@@ -16,7 +16,6 @@ const warmOfflineRouteChunks = async () => {
     import('./pages/OfflineSync'),
     import('./pages/Purchases'),
     import('./pages/Nhis'),
-    import('./data/diagnosisCatalog.js'),
   ])
 }
 

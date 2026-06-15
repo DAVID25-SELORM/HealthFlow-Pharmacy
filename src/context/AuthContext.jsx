@@ -8,7 +8,13 @@ import {
 } from '../lib/supabase'
 import { tryLogAuditEvent } from '../services/auditService'
 import { getPasswordRecoveryRedirectUrl } from '../config/appUrl'
-import { CLAIMS_ROLES, INVENTORY_ROLES, REPORT_ROLES, hasRole } from '../utils/roles'
+import {
+  CLAIMS_ROLES,
+  INVENTORY_ROLES,
+  PURCHASES_ROLES,
+  REPORT_ROLES,
+  hasRole,
+} from '../utils/roles'
 
 const AuthContext = createContext(null)
 const FALLBACK_ROLE = 'assistant'
@@ -21,12 +27,39 @@ const PROFILE_SELECT = `
   can_manage_inventory,
   can_view_reports,
   can_manage_claims,
+  can_manage_purchases,
   is_active,
   organization_id,
   branch_id,
   branches (id, name, code, is_main),
   organizations (*)
 `
+const LEGACY_PROFILE_SELECT = PROFILE_SELECT.replace(/\s*can_manage_purchases,\s*/, '\n')
+
+const isMissingPurchasesColumn = (error) => {
+  const message = String(error?.message || error?.details || '').toLowerCase()
+  return (
+    error?.code === '42703' ||
+    error?.code === 'PGRST204' ||
+    (message.includes('can_manage_purchases') && message.includes('column'))
+  )
+}
+
+const loadUserProfile = async (userId) => {
+  const runQuery = (columns) =>
+    supabase
+      .from('users')
+      .select(columns)
+      .eq('id', userId)
+      .maybeSingle()
+
+  const result = await runQuery(PROFILE_SELECT)
+  if (!result.error || !isMissingPurchasesColumn(result.error)) {
+    return result
+  }
+
+  return await runQuery(LEGACY_PROFILE_SELECT)
+}
 
 const isSupabaseAuthFailure = (error) => {
   const status = Number(error?.status || error?.statusCode || 0)
@@ -223,11 +256,7 @@ export const AuthProvider = ({ children }) => {
         return { profile: null, organization: null }
       }
 
-      const { data, error } = await supabase
-        .from('users')
-        .select(PROFILE_SELECT)
-        .eq('id', activeUser.id)
-        .maybeSingle()
+      const { data, error } = await loadUserProfile(activeUser.id)
 
       if (error) {
         throw error
@@ -535,11 +564,7 @@ export const AuthProvider = ({ children }) => {
       return null
     }
 
-    const { data, error } = await supabase
-      .from('users')
-      .select(PROFILE_SELECT)
-      .eq('id', user.id)
-      .maybeSingle()
+    const { data, error } = await loadUserProfile(user.id)
 
     if (error) {
       throw error
@@ -565,6 +590,11 @@ export const AuthProvider = ({ children }) => {
       canManageInventory: hasRole(resolveRole(profile, user), INVENTORY_ROLES) || Boolean(profile?.can_manage_inventory),
       canViewReports: hasRole(resolveRole(profile, user), REPORT_ROLES) || Boolean(profile?.can_view_reports),
       canManageClaims: hasRole(resolveRole(profile, user), CLAIMS_ROLES) || Boolean(profile?.can_manage_claims),
+      canManagePurchases:
+        ['admin', 'super_admin'].includes(resolveRole(profile, user)) ||
+        (Object.prototype.hasOwnProperty.call(profile || {}, 'can_manage_purchases')
+          ? Boolean(profile?.can_manage_purchases)
+          : hasRole(resolveRole(profile, user), PURCHASES_ROLES)),
       signIn,
       signOut,
       requestPasswordReset,

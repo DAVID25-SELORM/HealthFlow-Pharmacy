@@ -5,7 +5,6 @@ import { isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
 import { formatAppDate } from '../utils/date'
-import { PURCHASES_ROLES, hasRole } from '../utils/roles'
 import {
   getAllSuppliers,
   createSupplier,
@@ -94,11 +93,11 @@ const StatusBadge = ({ status }) => (
 )
 
 const Purchases = () => {
-  const { role, profile, branch } = useAuth()
+  const { profile, branch, canManagePurchases } = useAuth()
   const { notify } = useNotification()
   const [searchParams, setSearchParams] = useSearchParams()
 
-  const canWrite = hasRole(role, PURCHASES_ROLES)
+  const canWrite = canManagePurchases
 
   // ── data state ──────────────────────────────────────────────
   const [purchases, setPurchases]   = useState([])

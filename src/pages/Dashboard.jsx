@@ -23,7 +23,7 @@ import { getLowStockDrugs, getExpiringDrugs } from '../services/drugService'
 import { getRecentClaims } from '../services/claimsService'
 import { useTenant } from '../context/TenantContext'
 import { isSupabaseConfigured } from '../lib/supabase'
-import { CLAIMS_ROLES, INVENTORY_ROLES, NHIS_ROLES, PURCHASES_ROLES, hasRole } from '../utils/roles'
+import { CLAIMS_ROLES, INVENTORY_ROLES, NHIS_ROLES, hasRole } from '../utils/roles'
 import './Dashboard.css'
 
 const currencyFormatter = new Intl.NumberFormat('en-GH', {
@@ -203,7 +203,7 @@ const createEmptyStats = (anchorDate = new Date()) => ({
 
 const Dashboard = () => {
   const navigate = useNavigate()
-  const { role, displayName, canManageInventory, canManageClaims } = useAuth()
+  const { role, displayName, canManageInventory, canManageClaims, canManagePurchases } = useAuth()
   const {
     tierLimits,
     organization,
@@ -449,7 +449,7 @@ const Dashboard = () => {
         path: '/nhis',
         tone: 'secondary',
       })
-    } else if (canUsePurchases && hasRole(role, PURCHASES_ROLES)) {
+    } else if (canUsePurchases && canManagePurchases) {
       actions.push({
         label: 'Purchases',
         description: 'Record supplier orders and update received stock.',
@@ -479,6 +479,7 @@ const Dashboard = () => {
   }, [
     canUseNhis,
     canUsePurchases,
+    canManagePurchases,
     canUseClaims,
     canViewClaimsMetrics,
     canViewOperationalMetrics,

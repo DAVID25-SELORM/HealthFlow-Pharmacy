@@ -8,6 +8,12 @@ const STAFF_ROLES = [
   'assistant',
   'technician',
   'cashier',
+  'inventory_officer',
+  'accounts_officer',
+  'nurse',
+  'doctor',
+  'records_officer',
+  'other',
   'branch_manager',
   'procurement',
   'claims_officer',
@@ -25,6 +31,7 @@ type StaffAction =
   | 'set_refund_permission'
   | 'set_staff_branch'
   | 'update_staff_user'
+  | 'update_staff_access'
 type RequesterProfile = {
   id: string
   role: string
@@ -250,6 +257,8 @@ const syncPublicUser = async (
     canManageInventory?: boolean
     canViewReports?: boolean
     canManageClaims?: boolean
+    canManagePurchases?: boolean
+    branchId?: string | null
   } = {}
 ) => {
   const email = normalizeText(authUser.email).toLowerCase()
@@ -321,6 +330,8 @@ const syncPublicUser = async (
       ...(typeof overrides.canManageInventory === 'boolean' ? { can_manage_inventory: overrides.canManageInventory } : {}),
       ...(typeof overrides.canViewReports === 'boolean' ? { can_view_reports: overrides.canViewReports } : {}),
       ...(typeof overrides.canManageClaims === 'boolean' ? { can_manage_claims: overrides.canManageClaims } : {}),
+      ...(typeof overrides.canManagePurchases === 'boolean' ? { can_manage_purchases: overrides.canManagePurchases } : {}),
+      ...(overrides.branchId !== undefined ? { branch_id: overrides.branchId } : {}),
       updated_at: new Date().toISOString(),
     },
     { onConflict: 'id' }
@@ -330,15 +341,43 @@ const syncPublicUser = async (
     throw syncError
   }
 
-  return {
-    id: authUser.id,
-    email,
-    full_name: fullName,
-    phone,
-    role,
-    is_active: isActive,
-    organization_id: organizationId,
+  const { data: syncedProfile, error: syncedProfileError } = await adminClient
+    .from('users')
+    .select(
+      'id, email, full_name, phone, role, can_refund, can_manage_inventory, can_view_reports, can_manage_claims, can_manage_purchases, is_active, organization_id, branch_id'
+    )
+    .eq('id', authUser.id)
+    .single()
+
+  if (syncedProfileError) {
+    throw syncedProfileError
   }
+
+  return syncedProfile
+}
+
+const validateStaffBranch = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+  branchId: string | null
+) => {
+  if (!branchId) return null
+
+  const { data: branch, error } = await adminClient
+    .from('branches')
+    .select('id, organization_id, is_active')
+    .eq('id', branchId)
+    .maybeSingle()
+
+  if (error) throw error
+  if (!branch || normalizeText(branch.organization_id) !== organizationId) {
+    throw new Error('Select a branch from the staff member organization.')
+  }
+  if (branch.is_active === false) {
+    throw new Error('Select an active branch.')
+  }
+
+  return branchId
 }
 
 const upsertStaffUser = async (
@@ -356,6 +395,8 @@ const upsertStaffUser = async (
   const canManageInventory = typeof payload.canManageInventory === 'boolean' ? payload.canManageInventory : undefined
   const canViewReports = typeof payload.canViewReports === 'boolean' ? payload.canViewReports : undefined
   const canManageClaims = typeof payload.canManageClaims === 'boolean' ? payload.canManageClaims : undefined
+  const canManagePurchases = typeof payload.canManagePurchases === 'boolean' ? payload.canManagePurchases : undefined
+  const requestedBranchId = normalizeText(payload.branchId) || null
 
   if (!email) {
     throw new Error('Email is required.')
@@ -385,6 +426,7 @@ const upsertStaffUser = async (
         : 'Admin account is missing organization context.'
     )
   }
+  const branchId = await validateStaffBranch(adminClient, organizationId, requestedBranchId)
 
   const metadata = {
     full_name: fullName,
@@ -442,6 +484,8 @@ const upsertStaffUser = async (
       canManageInventory,
       canViewReports,
       canManageClaims,
+      canManagePurchases,
+      branchId,
     })
 
     return {
@@ -476,6 +520,8 @@ const upsertStaffUser = async (
     canManageInventory,
     canViewReports,
     canManageClaims,
+    canManagePurchases,
+    branchId,
   })
 
   return {
@@ -690,6 +736,14 @@ const updateStaffUser = async (
   const phone = normalizeText(payload.phone) || null
   const isActive =
     typeof payload.isActive === 'boolean' ? Boolean(payload.isActive) : undefined
+  const password = normalizeText(payload.password)
+  const canRefund = typeof payload.canRefund === 'boolean' ? payload.canRefund : undefined
+  const canManageInventory = typeof payload.canManageInventory === 'boolean' ? payload.canManageInventory : undefined
+  const canViewReports = typeof payload.canViewReports === 'boolean' ? payload.canViewReports : undefined
+  const canManageClaims = typeof payload.canManageClaims === 'boolean' ? payload.canManageClaims : undefined
+  const canManagePurchases = typeof payload.canManagePurchases === 'boolean' ? payload.canManagePurchases : undefined
+  const requestedBranchId =
+    payload.branchId === null ? null : normalizeText(payload.branchId) || undefined
 
   if (!userId) {
     throw new Error('User id is required.')
@@ -706,10 +760,13 @@ const updateStaffUser = async (
   if (!isValidRole(roleCandidate)) {
     throw new Error(staffRoleMessage())
   }
+  if (password && password.length < 8) {
+    throw new Error('Temporary password must be at least 8 characters.')
+  }
 
   const { data: targetProfile, error: targetProfileError } = await adminClient
     .from('users')
-    .select('id, organization_id')
+    .select('id, role, organization_id, branch_id')
     .eq('id', userId)
     .maybeSingle()
 
@@ -732,6 +789,15 @@ const updateStaffUser = async (
   ) {
     throw new Error('You can only manage staff accounts in your own organization.')
   }
+  if (
+    requesterProfile.id === userId &&
+    (roleCandidate !== normalizeText(targetProfile.role).toLowerCase() || isActive === false)
+  ) {
+    throw new Error('You cannot demote or disable your own admin account.')
+  }
+  const branchId = requestedBranchId === undefined
+    ? normalizeText(targetProfile.branch_id) || null
+    : await validateStaffBranch(adminClient, targetOrganizationId, requestedBranchId)
 
   const conflictingAuthUser = await findAuthUserByEmail(adminClient, email)
   if (conflictingAuthUser && conflictingAuthUser.id !== userId) {
@@ -751,22 +817,27 @@ const updateStaffUser = async (
   const nextPhone =
     phone || normalizeText(currentUser.user_metadata?.phone ?? currentUser.phone) || null
 
+  const authUpdates: Record<string, unknown> = {
+    email,
+    email_confirm: true,
+    ban_duration: nextIsActive ? 'none' : DISABLE_DURATION,
+    user_metadata: {
+      ...(currentUser.user_metadata || {}),
+      full_name: fullName,
+      phone: nextPhone,
+    },
+    app_metadata: {
+      ...(currentUser.app_metadata || {}),
+      role: roleCandidate,
+    },
+  }
+  if (password) {
+    authUpdates.password = password
+  }
+
   const { data: updatedUserData, error: updateError } = await adminClient.auth.admin.updateUserById(
     userId,
-    {
-      email,
-      email_confirm: true,
-      ban_duration: nextIsActive ? 'none' : DISABLE_DURATION,
-      user_metadata: {
-        ...(currentUser.user_metadata || {}),
-        full_name: fullName,
-        phone: nextPhone,
-      },
-      app_metadata: {
-        ...(currentUser.app_metadata || {}),
-        role: roleCandidate,
-      },
-    }
+    authUpdates
   )
 
   if (updateError || !updatedUserData.user) {
@@ -779,6 +850,12 @@ const updateStaffUser = async (
     role: roleCandidate,
     isActive: nextIsActive,
     organizationId: targetOrganizationId,
+    canRefund,
+    canManageInventory,
+    canViewReports,
+    canManageClaims,
+    canManagePurchases,
+    branchId,
   })
 
   return {
@@ -822,7 +899,7 @@ Deno.serve(async (request) => {
     const payload = (await request.json()) as Record<string, unknown>
     const action = normalizeText(payload.action) as StaffAction
 
-    if (action === 'update_staff_user') {
+    if (action === 'update_staff_user' || action === 'update_staff_access') {
       if (!['admin', 'super_admin'].includes(requesterProfile.role)) {
         return json({ error: 'Only admin or super admin users can update staff accounts.' }, 403)
       }

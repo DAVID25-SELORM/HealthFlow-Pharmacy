@@ -2,10 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import { Plus, Search, Phone, Mail, ShieldCheck } from 'lucide-react'
 import {
   addPatient,
-  getAllPatients,
   getPatientById,
   getPatientLastVisit,
   getPatientVisitCount,
+  getPatientsWorkspace,
   searchPatients,
 } from '../services/patientService'
 import { isSupabaseConfigured } from '../lib/supabase'
@@ -114,6 +114,13 @@ const Patients = () => {
   const enrichPatients = async (records) => {
     const enriched = await Promise.all(
       records.map(async (patient) => {
+        if (
+          Object.prototype.hasOwnProperty.call(patient, 'visits') &&
+          Object.prototype.hasOwnProperty.call(patient, 'lastVisit')
+        ) {
+          return patient
+        }
+
         const [visits, lastVisit] = await Promise.all([
           getPatientVisitCount(patient.id),
           getPatientLastVisit(patient.id),
@@ -153,7 +160,7 @@ const Patients = () => {
         return
       }
 
-      const rows = term.trim() ? await searchPatients(term) : await getAllPatients()
+      const rows = term.trim() ? await searchPatients(term) : await getPatientsWorkspace()
       const enriched = await enrichPatients(rows)
 
       if (patientsRequestRef.current !== requestId) {

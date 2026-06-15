@@ -118,7 +118,7 @@ const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
 
   useEffect(() => {
     void loadAlerts()
-  }, [loadAlerts, location.pathname])
+  }, [loadAlerts])
 
   useEffect(() => {
     const unsubscribe = subscribeConnectivity(setConnectivity)

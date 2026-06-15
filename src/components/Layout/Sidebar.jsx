@@ -30,7 +30,6 @@ import {
   OFFLINE_SYNC_ROLES,
   PATIENT_CARE_ROLES,
   PATIENT_ROLES,
-  PURCHASES_ROLES,
   REPORT_ROLES,
   SALES_ROLES,
   SETTINGS_ROLES,
@@ -40,7 +39,7 @@ import { getFacilityLogo, getFacilityName } from '../../utils/facilityBranding'
 import './Sidebar.css'
 
 const Sidebar = ({ isOpen, onClose }) => {
-  const { role, canManageInventory, canViewReports, canManageClaims } = useAuth()
+  const { role, canManageInventory, canViewReports, canManageClaims, canManagePurchases } = useAuth()
   const { organization, canUseClaims, canUsePurchases, canUseNhis, canUseAccounting } = useTenant()
   const facilityName = getFacilityName(organization)
   const facilityLogo = getFacilityLogo(organization) || '/app-logo-display.jpg'
@@ -56,7 +55,14 @@ const Sidebar = ({ isOpen, onClose }) => {
     { path: '/sales', icon: ShoppingCart, label: 'Sales (POS)', roles: SALES_ROLES },
     { path: '/patients', icon: Users, label: 'Patients', roles: PATIENT_ROLES },
     { path: '/claims', icon: ClipboardList, label: 'Claims', roles: CLAIMS_ROLES, allow: canManageClaims, featureAllowed: canUseClaims },
-    { path: '/purchases', icon: Truck, label: 'Purchases', roles: PURCHASES_ROLES, featureAllowed: canUsePurchases },
+    {
+      path: '/purchases',
+      icon: Truck,
+      label: 'Purchases',
+      roles: ['admin', 'super_admin'],
+      allow: canManagePurchases,
+      featureAllowed: canUsePurchases,
+    },
     { path: '/e-pharmacy', icon: Building2, label: 'E-Pharmacy', roles: EPHARMACY_ROLES },
     { path: '/nhis', icon: HeartPulse, label: 'NHIS', roles: NHIS_ROLES, featureAllowed: canUseNhis },
     { path: '/patient-care', icon: Activity, label: 'Patient Care', roles: PATIENT_CARE_ROLES },

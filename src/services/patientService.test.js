@@ -4,6 +4,7 @@ const {
   createBranchRecord,
   fromMock,
   getConnectivityState,
+  invokeTierAccess,
   listBranchRecords,
   routeRead,
   routeWrite,
@@ -14,6 +15,7 @@ const {
   createBranchRecord: vi.fn(),
   fromMock: vi.fn(),
   getConnectivityState: vi.fn(),
+  invokeTierAccess: vi.fn(),
   listBranchRecords: vi.fn(),
   routeRead: vi.fn(),
   routeWrite: vi.fn(),
@@ -48,8 +50,13 @@ vi.mock('./connectivityService', () => ({
   getConnectivityState,
 }))
 
+vi.mock('./tierAccessService', () => ({
+  invokeTierAccess,
+}))
+
 import {
   getAllPatients,
+  getPatientsWorkspace,
   getPatientById,
   getPatientLastVisit,
   getPatientVisitCount,
@@ -61,6 +68,7 @@ describe('patientService local sync reads', () => {
     createBranchRecord.mockReset()
     fromMock.mockReset()
     getConnectivityState.mockReset()
+    invokeTierAccess.mockReset()
     listBranchRecords.mockReset()
     routeRead.mockReset()
     routeWrite.mockReset()
@@ -147,6 +155,47 @@ describe('patientService local sync reads', () => {
     expect(fromMock).not.toHaveBeenCalled()
   })
 
+  it('loads the cloud patient workspace with visit totals in one tier-access request', async () => {
+    routeRead.mockImplementationOnce(async ({ cloud }) => await cloud())
+    invokeTierAccess.mockResolvedValueOnce({
+      patients: [{
+        id: '2df77f2d-ea44-4f14-966c-a0a7c213f86a',
+        full_name: 'Ama Mensah',
+      }],
+      nhisClaims: [{
+        id: 'claim-row-1',
+        claim_number: 'NHIS-002',
+        surname: 'Baria',
+        other_names: 'Karim',
+        member_no: '99441270',
+      }],
+      visitStats: {
+        '2df77f2d-ea44-4f14-966c-a0a7c213f86a': {
+          visits: 3,
+          lastVisit: '2026-06-14T10:00:00Z',
+        },
+      },
+    })
+
+    await expect(getPatientsWorkspace()).resolves.toEqual([
+      expect.objectContaining({
+        id: '2df77f2d-ea44-4f14-966c-a0a7c213f86a',
+        visits: 3,
+        lastVisit: '2026-06-14T10:00:00Z',
+      }),
+      expect.objectContaining({
+        id: 'nhis-claim-claim-row-1',
+        full_name: 'Baria Karim',
+        visits: 0,
+        lastVisit: null,
+      }),
+    ])
+
+    expect(invokeTierAccess).toHaveBeenCalledTimes(1)
+    expect(invokeTierAccess).toHaveBeenCalledWith({ action: 'get_patients_workspace' })
+    expect(fromMock).not.toHaveBeenCalled()
+  })
+
   it('falls back to cloud patient search when local sync search has no matches online', async () => {
     const cloudMatches = [
       { id: 'cloud-patient-1', full_name: 'Cloud Patient', nhis_member_no: '99441270' },
@@ -155,16 +204,24 @@ describe('patientService local sync reads', () => {
     listBranchRecords
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
-    const query = mockPatientQuery(cloudMatches)
+    invokeTierAccess.mockResolvedValueOnce({
+      patients: cloudMatches,
+      nhisClaims: [],
+      visitStats: {},
+    })
 
-    await expect(searchPatients('99441270')).resolves.toEqual(cloudMatches)
+    await expect(searchPatients('99441270')).resolves.toEqual([
+      expect.objectContaining({
+        ...cloudMatches[0],
+        visits: 0,
+        lastVisit: null,
+      }),
+    ])
 
     expect(listBranchRecords).toHaveBeenCalledWith('patients', { searchTerm: '99441270' })
     expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { searchTerm: '99441270', limit: 100 })
-    expect(fromMock).toHaveBeenCalledWith('patients')
-    expect(query.select).toHaveBeenCalledWith('*')
-    expect(query.or).toHaveBeenCalledWith(expect.stringContaining('nhis_member_no.ilike.%99441270%'))
-    expect(query.order).toHaveBeenCalledWith('full_name')
+    expect(invokeTierAccess).toHaveBeenCalledWith({ action: 'get_patients_workspace' })
+    expect(fromMock).not.toHaveBeenCalled()
   })
 
   it('keeps local patient search results when local sync has matches', async () => {

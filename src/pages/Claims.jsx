@@ -5,13 +5,10 @@ import { dispatchHealthflowDataChanged } from '../lib/appEvents'
 import {
   approveClaim,
   createClaim,
-  getAllClaims,
-  getClaimsStatistics,
+  getClaimsWorkspace,
   rejectClaim,
   updateClaim,
 } from '../services/claimsService'
-import { getAllPatients } from '../services/patientService'
-import { getAllDrugs } from '../services/drugService'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
 import { useTenant } from '../context/TenantContext'
@@ -140,17 +137,12 @@ const Claims = () => {
       setLoading(true)
       setError('')
 
-      const [claimsData, statistics, patientData, drugData] = await Promise.all([
-        getAllClaims(),
-        getClaimsStatistics(),
-        getAllPatients(),
-        getAllDrugs({ useTierAccess: true }),
-      ])
+      const workspace = await getClaimsWorkspace()
 
-      setClaims(claimsData)
-      setStats(statistics)
-      setPatients(patientData)
-      setDrugs(drugData)
+      setClaims(workspace.claims)
+      setStats(workspace.statistics)
+      setPatients(workspace.patients)
+      setDrugs(workspace.drugs)
     } catch (loadError) {
       console.error('Error loading claims:', loadError)
       setError(loadError.message || 'Unable to load claims.')

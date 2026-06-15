@@ -7,12 +7,15 @@ import {
 import { tryLogAuditEvent } from './auditService'
 import {
   createBranchRecord,
+  getBranchInventory,
   listBranchRecords,
   updateBranchRecord,
   submitNhisPharmacyClaim as branchSubmitNhisPharmacyClaim,
 } from './branchServerApi'
 import { routeRead, routeWrite } from './apiRouter'
 import { invokeTierAccess } from './tierAccessService'
+import { normalizePatientWorkspaceData } from './patientService'
+import { getConnectivityState } from './connectivityService'
 
 const buildValidatedClaimPayload = (claimData) => {
   const patientName = assertRequiredText(claimData.patientName, 'Patient name')
@@ -215,6 +218,59 @@ export const getAllClaims = async (filters = {}) => {
     fallback: [],
   })
 }
+
+const getClaimsStatisticsFromRows = (claims = []) => ({
+  total: claims.length,
+  pending: claims.filter((claim) => (claim.claim_status || claim.status) === 'pending').length,
+  approved: claims.filter((claim) => (claim.claim_status || claim.status) === 'approved').length,
+  rejected: claims.filter((claim) => (claim.claim_status || claim.status) === 'rejected').length,
+})
+
+export const getClaimsWorkspace = async () =>
+  await routeRead({
+    label: 'claims workspace',
+    local: async () => {
+      const [claims, patients, nhisClaims, drugs] = await Promise.all([
+        listBranchRecords('claims', { limit: 5000 }),
+        listBranchRecords('patients', { limit: 5000 }),
+        Promise.resolve(listBranchRecords('nhis/claims', { limit: 5000 })).catch(() => []),
+        getBranchInventory({ limit: 20000 }),
+      ])
+      const localPatients = normalizePatientWorkspaceData({ patients, nhisClaims })
+      let workspacePatients = localPatients
+
+      if (!localPatients.length && getConnectivityState().internetAvailable !== false) {
+        try {
+          const cloudPatientData = await invokeTierAccess({ action: 'get_patients_workspace' })
+          workspacePatients = normalizePatientWorkspaceData(cloudPatientData)
+        } catch {
+          workspacePatients = localPatients
+        }
+      }
+
+      return {
+        claims,
+        statistics: getClaimsStatisticsFromRows(claims),
+        patients: workspacePatients,
+        drugs,
+      }
+    },
+    cloud: async () => {
+      const response = await invokeTierAccess({ action: 'get_claims_workspace' })
+      return {
+        claims: response.claims || [],
+        statistics: response.statistics || getClaimsStatisticsFromRows(response.claims || []),
+        patients: normalizePatientWorkspaceData(response),
+        drugs: response.drugs || [],
+      }
+    },
+    fallback: {
+      claims: [],
+      statistics: getClaimsStatisticsFromRows([]),
+      patients: [],
+      drugs: [],
+    },
+  })
 
 export const getClaimById = async (id) => {
   const claims = await getAllClaims({ id, limit: 1 })

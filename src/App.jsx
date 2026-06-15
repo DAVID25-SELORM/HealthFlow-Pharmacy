@@ -14,7 +14,6 @@ import {
   OFFLINE_SYNC_ROLES,
   PATIENT_CARE_ROLES,
   PATIENT_ROLES,
-  PURCHASES_ROLES,
   REPORT_ROLES,
   SALES_ROLES,
   SETTINGS_ROLES,
@@ -52,7 +51,7 @@ const RouteFallback = () => (
 )
 
 function App() {
-  const { canManageInventory, canViewReports, canManageClaims } = useAuth()
+  const { canManageInventory, canViewReports, canManageClaims, canManagePurchases } = useAuth()
   const { canUseClaims, canUsePurchases, canUseNhis, canUseAccounting } = useTenant()
   return (
     <Router>
@@ -106,7 +105,11 @@ function App() {
             <Route
               path="purchases"
               element={
-                <RoleRoute allowedRoles={PURCHASES_ROLES} featureAllowed={canUsePurchases}>
+                <RoleRoute
+                  allowedRoles={['admin', 'super_admin']}
+                  allow={canManagePurchases}
+                  featureAllowed={canUsePurchases}
+                >
                   <Purchases />
                 </RoleRoute>
               }

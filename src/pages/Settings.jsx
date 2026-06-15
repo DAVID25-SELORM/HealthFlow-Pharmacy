@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { User, UserPlus, Lock, Bell, Building, Palette, Globe, GitBranch, Plus, KeyRound, Database, Download, RefreshCcw } from 'lucide-react'
+import { User, UserPlus, Lock, Bell, Building, Palette, Globe, GitBranch, Plus, KeyRound, Database, Download, RefreshCcw, Pencil, X } from 'lucide-react'
 import { isSupabaseConfigured } from '../lib/supabase'
 import UpgradeGate from '../components/UpgradeGate'
 import GhanaRegionSelect from '../components/GhanaRegionSelect'
@@ -8,9 +8,7 @@ import {
   getPharmacySettings,
   getUsers,
   updatePharmacySettings,
-  updateUserRefundPermission,
-  updateUserStatus,
-  updateUserBranch,
+  updateStaffUser,
 } from '../services/settingsService'
 import { getBranches, createBranch, updateBranch, deactivateBranch } from '../services/branchService'
 import {
@@ -380,9 +378,26 @@ const blankStaffForm = {
   canManageInventory: false,
   canViewReports: false,
   canManageClaims: false,
+  canManagePurchases: false,
   temporaryPassword: '',
   branchId: '',
 }
+
+const toStaffEditForm = (row = {}) => ({
+  id: row.id || '',
+  fullName: row.full_name || '',
+  email: row.email || '',
+  phone: row.phone || '',
+  role: row.role || 'assistant',
+  branchId: row.branch_id || '',
+  isActive: row.is_active !== false,
+  canRefund: Boolean(row.can_refund),
+  canManageInventory: Boolean(row.can_manage_inventory),
+  canViewReports: Boolean(row.can_view_reports),
+  canManageClaims: Boolean(row.can_manage_claims),
+  canManagePurchases: Boolean(row.can_manage_purchases),
+  temporaryPassword: '',
+})
 
 const blankBranchForm = {
   name: '', code: '', phone: '', email: '', address: '', city: '', region: '',
@@ -440,9 +455,8 @@ const Settings = () => {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [creatingStaff, setCreatingStaff] = useState(false)
-  const [statusUpdatingId, setStatusUpdatingId] = useState('')
-  const [refundPermissionUpdatingId, setRefundPermissionUpdatingId] = useState('')
-  const [branchUpdatingId, setBranchUpdatingId] = useState('')
+  const [editingStaff, setEditingStaff] = useState(null)
+  const [savingStaff, setSavingStaff] = useState(false)
   const [error, setError] = useState('')
 
   // Branch state
@@ -961,48 +975,6 @@ const Settings = () => {
     }
   }
 
-  const toggleUserStatus = async (id, currentStatus) => {
-    if (id === user?.id && currentStatus) {
-      setError('Your current admin account cannot be disabled from this screen.')
-      return
-    }
-
-    try {
-      setStatusUpdatingId(id)
-      setError('')
-      await updateUserStatus(id, !currentStatus)
-      notify(
-        `User ${!currentStatus ? 'enabled' : 'disabled'} successfully.`,
-        !currentStatus ? 'success' : 'info'
-      )
-      await loadSettings()
-    } catch (statusError) {
-      setError(statusError.message || 'Unable to update user status.')
-    } finally {
-      setStatusUpdatingId('')
-    }
-  }
-
-  const toggleRefundPermission = async (row) => {
-    try {
-      setRefundPermissionUpdatingId(row.id)
-      setError('')
-      const nextValue = !row.can_refund
-      await updateUserRefundPermission(row.id, nextValue)
-      notify(
-        nextValue
-          ? `${row.full_name} can now process refunds.`
-          : `${row.full_name} can no longer process refunds.`,
-        nextValue ? 'success' : 'info'
-      )
-      await loadSettings()
-    } catch (permissionError) {
-      setError(permissionError.message || 'Unable to update refund permission.')
-    } finally {
-      setRefundPermissionUpdatingId('')
-    }
-  }
-
   const handleCreateStaff = async (event) => {
     event.preventDefault()
 
@@ -1013,10 +985,10 @@ const Settings = () => {
       if (activeBranches.length > 1 && !selectedBranchId) {
         throw new Error('Select the staff member branch before creating the account.')
       }
-      const createdUser = await createStaffUser(staffForm)
-      if (selectedBranchId && createdUser?.id) {
-        await updateUserBranch(createdUser.id, selectedBranchId)
-      }
+      const createdUser = await createStaffUser({
+        ...staffForm,
+        branchId: selectedBranchId,
+      })
       notify(
         `Staff account ready for ${createdUser.email}. Share the temporary password securely.`,
         'success',
@@ -1031,27 +1003,26 @@ const Settings = () => {
     }
   }
 
-  const handleUserBranchChange = async (row, branchId) => {
+  const handleSaveStaff = async (event) => {
+    event.preventDefault()
+    if (!editingStaff?.id) return
+
     try {
-      setBranchUpdatingId(row.id)
+      setSavingStaff(true)
       setError('')
-      const updatedUser = await updateUserBranch(row.id, branchId)
-      if (updatedUser?.id) {
-        setUsers((current) =>
-          current.map((userRow) =>
-            userRow.id === updatedUser.id ? { ...userRow, ...updatedUser } : userRow
-          )
-        )
-      }
-      if (row.id === user?.id && refreshProfile) {
+      await updateStaffUser(editingStaff.id, editingStaff)
+      if (editingStaff.id === user?.id && refreshProfile) {
         await refreshProfile()
       }
-      notify(`${row.full_name} branch updated.`, 'success')
+      notify(`${editingStaff.fullName} updated successfully.`, 'success')
+      setEditingStaff(null)
       await loadSettings()
-    } catch (branchError) {
-      setError(branchError.message || 'Unable to update user branch.')
+    } catch (staffError) {
+      const message = staffError.message || 'Unable to update staff account.'
+      setError(message)
+      notify(message, 'error')
     } finally {
-      setBranchUpdatingId('')
+      setSavingStaff(false)
     }
   }
 
@@ -2382,7 +2353,7 @@ const Settings = () => {
         )}
 
         {isAdmin && (
-          <div className="settings-card">
+          <div className="settings-card settings-staff-onboarding-card">
             <div className="card-icon">
               <UserPlus size={24} />
             </div>
@@ -2398,7 +2369,7 @@ const Settings = () => {
               </p>
             )}
             <UpgradeGate locked={atUserLimit} feature={`More than ${tierLimits.maxUsers} users`} requiredTier="pro">
-            <form className="settings-form" onSubmit={handleCreateStaff}>
+            <form className="settings-form settings-staff-form" onSubmit={handleCreateStaff}>
               <input
                 placeholder="Full name"
                 value={staffForm.fullName}
@@ -2435,6 +2406,7 @@ const Settings = () => {
                       canManageInventory: false,
                       canViewReports: false,
                       canManageClaims: event.target.value === 'claims_officer',
+                      canManagePurchases: ['pharmacist', 'inventory_officer', 'procurement', 'branch_manager'].includes(event.target.value),
                     })
                   }
                   disabled={creatingStaff}
@@ -2493,6 +2465,17 @@ const Settings = () => {
                     />
                     Submit insurance claims
                   </label>
+                  <label className="settings-checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={staffForm.canManagePurchases}
+                      onChange={(event) =>
+                        setStaffForm({ ...staffForm, canManagePurchases: event.target.checked })
+                      }
+                      disabled={creatingStaff}
+                    />
+                    Purchases
+                  </label>
                 </div>
               )}
               <input
@@ -2540,85 +2523,202 @@ const Settings = () => {
         )}
 
         {isAdmin && (
-          <div className="settings-card">
+          <div className="settings-card settings-user-management-card">
             <div className="card-icon">
               <User size={24} />
             </div>
             <h3>User Management</h3>
             <div className="user-list">
               {users.map((row) => (
-                <div key={row.id} className="user-row">
-                  <div>
-                    <strong>{row.full_name}</strong>
-                    <p>{row.email}</p>
+                <article key={row.id} className="user-row">
+                  <div className="user-summary">
+                    <div className="user-heading">
+                      <strong>{row.full_name}</strong>
+                      <span className={`user-status-badge ${row.is_active ? 'active' : 'inactive'}`}>
+                        {row.is_active ? 'Active' : 'Disabled'}
+                      </span>
+                    </div>
+                    <p className="user-email">{row.email}</p>
                     <div className="user-meta">
                       <small>{getRoleLabel(row.role)}</small>
                       <span className={`user-status-badge ${row.branch_id ? 'active' : 'inactive'}`}>
                         Branch: {row.branches?.name || 'Not assigned'}
                       </span>
-                      {row.role === 'admin' ? (
-                        <span className="user-status-badge active">Refunds: Admin</span>
-                      ) : (
-                        <span
-                          className={`user-status-badge ${row.can_refund ? 'active' : 'inactive'}`}
-                        >
-                          Refunds: {row.can_refund ? 'Allowed' : 'Not allowed'}
-                        </span>
-                      )}
-                      <span
-                        className={`user-status-badge ${row.is_active ? 'active' : 'inactive'}`}
-                      >
-                        {row.is_active ? 'Active' : 'Disabled'}
-                      </span>
+                    </div>
+                    <div className="user-privilege-list" aria-label="Assigned privileges">
+                      {(row.role === 'admin' || row.can_refund) && <span>Refunds</span>}
+                      {(row.role === 'admin' || row.can_manage_inventory) && <span>Inventory</span>}
+                      {(row.role === 'admin' || row.can_view_reports) && <span>Reports</span>}
+                      {(row.role === 'admin' || row.can_manage_claims) && <span>Claims</span>}
+                      {(row.role === 'admin' || row.can_manage_purchases) && <span>Purchases</span>}
+                      {row.role !== 'admin' &&
+                        !row.can_refund &&
+                        !row.can_manage_inventory &&
+                        !row.can_view_reports &&
+                        !row.can_manage_claims &&
+                        !row.can_manage_purchases && <span className="muted">No extra privileges</span>}
                     </div>
                   </div>
                   <div className="user-actions">
-                    {branches.length > 0 && (
-                      <select
-                        className="user-branch-select"
-                        value={row.branch_id || ''}
-                        onChange={(event) => handleUserBranchChange(row, event.target.value)}
-                        disabled={branchUpdatingId === row.id}
-                      >
-                        <option value="">Select branch</option>
-                        {branches.filter((b) => b.is_active).map((b) => (
-                          <option key={b.id} value={b.id}>
-                            {b.name}{b.code ? ` (${b.code})` : ''}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                    {row.role !== 'admin' && (
-                      <button
-                        className={`btn ${row.can_refund ? 'btn-outline' : 'btn-primary'}`}
-                        onClick={() => toggleRefundPermission(row)}
-                        type="button"
-                        disabled={refundPermissionUpdatingId === row.id}
-                      >
-                        {refundPermissionUpdatingId === row.id
-                          ? 'Updating...'
-                          : row.can_refund
-                            ? 'Remove Refund Access'
-                            : 'Allow Refunds'}
-                      </button>
-                    )}
                     <button
-                      className={`btn ${row.is_active ? 'btn-outline' : 'btn-primary'}`}
-                      onClick={() => toggleUserStatus(row.id, row.is_active)}
+                      className="btn btn-outline user-edit-button"
+                      onClick={() => setEditingStaff(toStaffEditForm(row))}
                       type="button"
-                      disabled={statusUpdatingId === row.id || row.id === user?.id}
                     >
-                      {row.id === user?.id
-                        ? 'Current Account'
-                        : statusUpdatingId === row.id
-                          ? 'Updating...'
-                          : row.is_active
-                            ? 'Disable'
-                            : 'Enable'}
+                      <Pencil size={15} />
+                      Edit
                     </button>
                   </div>
-                </div>
+                </article>
               ))}
+              {users.length === 0 && (
+                <div className="user-list-empty">No staff accounts found for this facility.</div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {isAdmin && editingStaff && (
+          <div
+            className="modal-overlay settings-staff-modal-overlay"
+            onClick={(event) => event.target === event.currentTarget && !savingStaff && setEditingStaff(null)}
+          >
+            <div className="modal-content settings-staff-modal" role="dialog" aria-modal="true" aria-labelledby="edit-staff-title">
+              <div className="modal-header">
+                <div>
+                  <h3 id="edit-staff-title">Edit Staff Account</h3>
+                  <p>Update identity, access, branch, and login security.</p>
+                </div>
+                <button
+                  type="button"
+                  className="close-btn"
+                  onClick={() => setEditingStaff(null)}
+                  disabled={savingStaff}
+                  aria-label="Close staff editor"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <form className="settings-staff-edit-form" onSubmit={handleSaveStaff}>
+                <div className="settings-staff-edit-grid">
+                  <label className="settings-field">
+                    <span>Full name</span>
+                    <input
+                      value={editingStaff.fullName}
+                      onChange={(event) => setEditingStaff({ ...editingStaff, fullName: event.target.value })}
+                      required
+                      disabled={savingStaff}
+                    />
+                  </label>
+                  <label className="settings-field">
+                    <span>Email</span>
+                    <input
+                      type="email"
+                      value={editingStaff.email}
+                      onChange={(event) => setEditingStaff({ ...editingStaff, email: event.target.value })}
+                      required
+                      disabled={savingStaff}
+                    />
+                  </label>
+                  <label className="settings-field">
+                    <span>Phone</span>
+                    <input
+                      value={editingStaff.phone}
+                      onChange={(event) => setEditingStaff({ ...editingStaff, phone: event.target.value })}
+                      disabled={savingStaff}
+                    />
+                  </label>
+                  <label className="settings-field">
+                    <span>Role / title</span>
+                    <select
+                      value={editingStaff.role}
+                      onChange={(event) => setEditingStaff({ ...editingStaff, role: event.target.value })}
+                      disabled={savingStaff || editingStaff.id === user?.id}
+                    >
+                      {ROLE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="settings-field">
+                    <span>Branch</span>
+                    <select
+                      value={editingStaff.branchId}
+                      onChange={(event) => setEditingStaff({ ...editingStaff, branchId: event.target.value })}
+                      disabled={savingStaff}
+                    >
+                      <option value="">Not assigned</option>
+                      {activeBranches.map((branchRow) => (
+                        <option key={branchRow.id} value={branchRow.id}>
+                          {branchRow.name}{branchRow.code ? ` (${branchRow.code})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="settings-field">
+                    <span>Temporary / reset password</span>
+                    <input
+                      type="password"
+                      minLength={8}
+                      value={editingStaff.temporaryPassword}
+                      onChange={(event) => setEditingStaff({ ...editingStaff, temporaryPassword: event.target.value })}
+                      placeholder="Leave blank to keep current password"
+                      disabled={savingStaff}
+                    />
+                  </label>
+                </div>
+
+                <div className="settings-privileges-group settings-edit-privileges">
+                  <div className="settings-privileges-heading">
+                    <strong>Privileges</strong>
+                    <span>Admin accounts retain full access.</span>
+                  </div>
+                  {[
+                    ['canRefund', 'Process refunds'],
+                    ['canManageInventory', 'Manage inventory'],
+                    ['canViewReports', 'View reports'],
+                    ['canManageClaims', 'Submit insurance claims'],
+                    ['canManagePurchases', 'Purchases'],
+                  ].map(([field, label]) => (
+                    <label className="settings-checkbox-label" key={field}>
+                      <input
+                        type="checkbox"
+                        checked={editingStaff.role === 'admin' || editingStaff[field]}
+                        onChange={(event) => setEditingStaff({ ...editingStaff, [field]: event.target.checked })}
+                        disabled={savingStaff || editingStaff.role === 'admin'}
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+
+                <label className="settings-status-toggle">
+                  <input
+                    type="checkbox"
+                    checked={editingStaff.isActive}
+                    onChange={(event) => setEditingStaff({ ...editingStaff, isActive: event.target.checked })}
+                    disabled={savingStaff || editingStaff.id === user?.id}
+                  />
+                  <span>
+                    <strong>Account active</strong>
+                    <small>Disabled users cannot sign in.</small>
+                  </span>
+                </label>
+
+                <div className="settings-staff-modal-actions">
+                  <button
+                    type="button"
+                    className="btn btn-outline"
+                    onClick={() => setEditingStaff(null)}
+                    disabled={savingStaff}
+                  >
+                    Cancel
+                  </button>
+                  <button type="submit" className="btn btn-primary" disabled={savingStaff}>
+                    {savingStaff ? 'Saving...' : 'Save Staff Changes'}
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         )}

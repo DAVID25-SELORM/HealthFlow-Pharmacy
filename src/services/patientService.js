@@ -9,6 +9,7 @@ import {
 } from './branchServerApi'
 import { routeRead, routeWrite, shouldRouteToLocal } from './apiRouter'
 import { getConnectivityState } from './connectivityService'
+import { invokeTierAccess } from './tierAccessService'
 
 const PATIENT_INSURANCE_ID_UNIQUE_CONSTRAINTS = [
   'idx_patients_org_insurance_id_unique',
@@ -76,44 +77,6 @@ const fetchPatientsFromSupabase = async () => {
   if (error) throw error
   const nhisClaimPatients = await fetchNhisClaimPatientsFromSupabase().catch(() => [])
   return mergePatients(data || [], nhisClaimPatients)
-}
-
-const searchPatientsFromSupabase = async (term) => {
-  if (!term) {
-    return fetchPatientsFromSupabase()
-  }
-
-  const compactTerm = compactPatientLookup(term)
-  const searchTerms = [...new Set([term, compactTerm].filter(Boolean))]
-  const searchFilters = searchTerms.flatMap((value) => [
-    `full_name.ilike.%${value}%`,
-    `phone.ilike.%${value}%`,
-    `email.ilike.%${value}%`,
-    `folder_no.ilike.%${value}%`,
-    `insurance_provider.ilike.%${value}%`,
-    `insurance_id.ilike.%${value}%`,
-    `nhis_member_no.ilike.%${value}%`,
-    `nhis_hin.ilike.%${value}%`,
-  ])
-
-  const { data, error } = await supabase
-    .from('patients')
-    .select('*')
-    .or(searchFilters.join(','))
-    .order('full_name')
-
-  if (error) throw error
-
-  const rows = data || []
-  const allPatients = await fetchPatientsFromSupabase()
-  const merged = new Map(rows.map((patient) => [patient.id, patient]))
-  allPatients
-    .filter((patient) => patientMatchesSearch(patient, term))
-    .forEach((patient) => merged.set(patient.id, patient))
-
-  return [...merged.values()].sort((left, right) =>
-    String(left.full_name || '').localeCompare(String(right.full_name || ''))
-  )
 }
 
 // Get all patients
@@ -321,12 +284,56 @@ const mergePatients = (...groups) => {
   return [...merged.values()]
 }
 
+export const normalizePatientWorkspaceData = (workspace = {}) => {
+  const claimPatients = (workspace.nhisClaims || [])
+    .map(nhisClaimToPatient)
+    .filter((patient) => patient.full_name || patient.nhis_member_no || patient.nhis_hin || patient.insurance_id)
+  const visitStats = workspace.visitStats || {}
+
+  return mergePatients(workspace.patients || [], claimPatients).map((patient) => {
+    const stats = visitStats[patient.id] || {}
+    return {
+      ...patient,
+      visits: Number(stats.visits || 0),
+      lastVisit: stats.lastVisit || null,
+    }
+  })
+}
+
+const fetchPatientsWorkspaceFromCloud = async () =>
+  normalizePatientWorkspaceData(
+    await invokeTierAccess({ action: 'get_patients_workspace' })
+  )
+
 const listLocalNhisClaimPatients = async (filters = {}) => {
   const claims = await Promise.resolve(listBranchRecords('nhis/claims', filters)).catch(() => [])
   return (claims || [])
     .map(nhisClaimToPatient)
     .filter((patient) => patient.full_name || patient.nhis_member_no || patient.nhis_hin || patient.insurance_id)
 }
+
+export const getPatientsWorkspace = async () =>
+  await routeRead({
+    label: 'patient workspace',
+    local: async () => {
+      const [patients, nhisClaims] = await Promise.all([
+        listBranchRecords('patients', { limit: 5000 }),
+        Promise.resolve(listBranchRecords('nhis/claims', { limit: 5000 })).catch(() => []),
+      ])
+      const localWorkspace = normalizePatientWorkspaceData({ patients, nhisClaims })
+      if (localWorkspace.length || getConnectivityState().internetAvailable === false) {
+        return localWorkspace
+      }
+
+      try {
+        return await fetchPatientsWorkspaceFromCloud()
+      } catch {
+        return localWorkspace
+      }
+    },
+    cloud: fetchPatientsWorkspaceFromCloud,
+    fallback: [],
+  })
 
 // Add new patient
 export const addPatient = async (patientData) => {
@@ -474,17 +481,19 @@ export const searchPatients = async (searchTerm) => {
     }
 
     try {
-      return await searchPatientsFromSupabase(term)
+      const cloudPatients = await fetchPatientsWorkspaceFromCloud()
+      return cloudPatients.filter((patient) => patientMatchesSearch(patient, term))
     } catch {
       return mergedLocalPatients
     }
   }
 
   if (!term) {
-    return getAllPatients()
+    return getPatientsWorkspace()
   }
 
-  return searchPatientsFromSupabase(term)
+  const cloudPatients = await fetchPatientsWorkspaceFromCloud()
+  return cloudPatients.filter((patient) => patientMatchesSearch(patient, term))
 }
 
 // Get patient visit count

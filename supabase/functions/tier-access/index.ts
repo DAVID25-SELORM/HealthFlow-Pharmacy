@@ -109,6 +109,8 @@ const EPHARMACY_DRUG_SELECT_FIELDS = `
 type TierAccessAction =
   | 'get_drugs'
   | 'get_claims'
+  | 'get_claims_workspace'
+  | 'get_patients_workspace'
   | 'get_recent_claims'
   | 'get_claims_statistics'
   | 'create_claim'
@@ -140,6 +142,8 @@ type TierAccessAction =
 const SUPPORTED_TIER_ACCESS_ACTIONS = [
   'get_drugs',
   'get_claims',
+  'get_claims_workspace',
+  'get_patients_workspace',
   'get_recent_claims',
   'get_claims_statistics',
   'create_claim',
@@ -189,6 +193,18 @@ type RequesterProfile = {
 const INVENTORY_ROLES = ['admin', 'pharmacist', 'technician', 'procurement', 'branch_manager']
 const SALES_ROLES = ['admin', 'pharmacist', 'assistant', 'cashier', 'technician', 'branch_manager']
 const CLAIMS_ROLES = ['admin', 'pharmacist', 'billing', 'claims_officer']
+const PATIENT_ROLES = [
+  'admin',
+  'pharmacist',
+  'assistant',
+  'technician',
+  'branch_manager',
+  'billing',
+  'claims_officer',
+  'nurse',
+  'doctor',
+  'records_officer',
+]
 const NHIS_ROLES = ['admin', 'pharmacist', 'billing', 'claims_officer']
 const REPORT_ROLES = [
   'super_admin',
@@ -599,6 +615,12 @@ const requireInventoryAccess = (requesterProfile: RequesterProfile, message: str
 
 const requireClaimsAccess = (requesterProfile: RequesterProfile, message: string) => {
   if (!CLAIMS_ROLES.includes(requesterProfile.role) && !requesterProfile.can_manage_claims) {
+    throw new Error(message)
+  }
+}
+
+const requirePatientAccess = (requesterProfile: RequesterProfile, message: string) => {
+  if (!PATIENT_ROLES.includes(requesterProfile.role) && !requesterProfile.can_manage_claims) {
     throw new Error(message)
   }
 }
@@ -2213,6 +2235,105 @@ const getClaimsStatistics = async (
     approvedAmount: rows
       .filter((row) => row.claim_status === 'approved')
       .reduce((sum, row) => sum + Number.parseFloat(String(row.total_amount || 0)), 0),
+  }
+}
+
+const getClaimsStatisticsFromRows = (rows: Record<string, unknown>[]) => ({
+  total: rows.length,
+  pending: rows.filter((row) => row.claim_status === 'pending').length,
+  approved: rows.filter((row) => row.claim_status === 'approved').length,
+  rejected: rows.filter((row) => row.claim_status === 'rejected').length,
+  processing: rows.filter((row) => row.claim_status === 'processing').length,
+  totalAmount: rows.reduce(
+    (sum, row) => sum + Number.parseFloat(String(row.total_amount || 0)),
+    0
+  ),
+  approvedAmount: rows
+    .filter((row) => row.claim_status === 'approved')
+    .reduce(
+      (sum, row) => sum + Number.parseFloat(String(row.total_amount || 0)),
+      0
+    ),
+})
+
+const getPatientVisitRows = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  organizationId: string
+) => {
+  const rows: Record<string, unknown>[] = []
+  const pageSize = 1000
+  let from = 0
+
+  while (true) {
+    const { data, error } = await adminClient
+      .from('sales')
+      .select('patient_id, sale_date')
+      .eq('organization_id', organizationId)
+      .not('patient_id', 'is', null)
+      .order('id')
+      .range(from, from + pageSize - 1)
+
+    if (error) throw error
+
+    rows.push(...(data || []))
+    if (!data || data.length < pageSize) break
+    from += pageSize
+  }
+
+  return rows
+}
+
+const getPatientWorkspaceData = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+  { includeVisitStats = true } = {}
+) => {
+  const [
+    { data: patients, error: patientsError },
+    { data: nhisClaims, error: nhisClaimsError },
+    visitRows,
+  ] = await Promise.all([
+    adminClient
+      .from('patients')
+      .select('*')
+      .eq('organization_id', organizationId)
+      .order('created_at', { ascending: false }),
+    adminClient
+      .from('nhis_claims')
+      .select('*')
+      .eq('organization_id', organizationId)
+      .limit(5000),
+    includeVisitStats
+      ? getPatientVisitRows(adminClient, organizationId)
+      : Promise.resolve([]),
+  ])
+
+  if (patientsError) throw patientsError
+  if (nhisClaimsError) throw nhisClaimsError
+
+  const visitStats = visitRows.reduce<Record<string, { visits: number; lastVisit: string | null }>>(
+    (stats, row) => {
+      const patientId = normalizeText(row.patient_id)
+      if (!patientId) return stats
+
+      const current = stats[patientId] || { visits: 0, lastVisit: null }
+      const saleDate = normalizeText(row.sale_date)
+      stats[patientId] = {
+        visits: current.visits + 1,
+        lastVisit:
+          saleDate && (!current.lastVisit || saleDate > current.lastVisit)
+            ? saleDate
+            : current.lastVisit,
+      }
+      return stats
+    },
+    {}
+  )
+
+  return {
+    patients: patients || [],
+    nhisClaims: nhisClaims || [],
+    visitStats,
   }
 }
 
@@ -4765,8 +4886,14 @@ Deno.serve(async (request) => {
       return json({ drugs: await getDrugs(adminClient, requesterProfile, organizationId, payload) })
     }
 
+    if (action === 'get_patients_workspace') {
+      requirePatientAccess(requesterProfile, 'Only patient-care staff can access patients.')
+      return json(await getPatientWorkspaceData(adminClient, organizationId))
+    }
+
     if (
       action === 'get_claims' ||
+      action === 'get_claims_workspace' ||
       action === 'get_recent_claims' ||
       action === 'get_claims_statistics' ||
       action === 'create_claim' ||
@@ -4786,6 +4913,23 @@ Deno.serve(async (request) => {
       }
 
       requireClaimsAccess(requesterProfile, 'Only claims staff can access claims.')
+
+      if (action === 'get_claims_workspace') {
+        const [claims, patientData, drugs] = await Promise.all([
+          getClaims(adminClient, organizationId, payload),
+          getPatientWorkspaceData(adminClient, organizationId, { includeVisitStats: false }),
+          getDrugs(adminClient, requesterProfile, organizationId, {
+            includeCatalog: false,
+          }),
+        ])
+
+        return json({
+          claims,
+          statistics: getClaimsStatisticsFromRows(claims),
+          ...patientData,
+          drugs,
+        })
+      }
 
       if (action === 'get_claims') {
         return json({ claims: await getClaims(adminClient, organizationId, payload) })
