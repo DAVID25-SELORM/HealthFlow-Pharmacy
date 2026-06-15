@@ -45,6 +45,13 @@ describe('settingsService staff administration', () => {
       canViewReports: true,
       canManageClaims: false,
       canManagePurchases: true,
+      canProcessSales: false,
+      canManagePatients: false,
+      canManageAccounting: false,
+      canManageEpharmacy: true,
+      canViewActivityLog: false,
+      canAdjustStock: true,
+      canApprovePurchases: false,
     })
 
     expect(invokeSupabaseFunction).toHaveBeenCalledWith('staff-admin', {
@@ -54,6 +61,8 @@ describe('settingsService staff administration', () => {
         branchId: 'branch-1',
         canManageInventory: true,
         canManagePurchases: true,
+        canManageEpharmacy: true,
+        canAdjustStock: true,
         password: 'Temporary123',
       }),
     })
@@ -73,6 +82,13 @@ describe('settingsService staff administration', () => {
       canViewReports: true,
       canManageClaims: true,
       canManagePurchases: false,
+      canProcessSales: true,
+      canManagePatients: true,
+      canManageAccounting: false,
+      canManageEpharmacy: false,
+      canViewActivityLog: false,
+      canAdjustStock: false,
+      canApprovePurchases: false,
     })
 
     expect(invokeSupabaseFunction).toHaveBeenCalledWith('staff-admin', {
@@ -90,6 +106,13 @@ describe('settingsService staff administration', () => {
         canViewReports: true,
         canManageClaims: true,
         canManagePurchases: false,
+        canProcessSales: true,
+        canManagePatients: true,
+        canManageAccounting: false,
+        canManageEpharmacy: false,
+        canViewActivityLog: false,
+        canAdjustStock: false,
+        canApprovePurchases: false,
         password: 'ResetPass123',
       },
     })

@@ -379,6 +379,13 @@ const blankStaffForm = {
   canViewReports: false,
   canManageClaims: false,
   canManagePurchases: false,
+  canProcessSales: false,
+  canManagePatients: false,
+  canManageAccounting: false,
+  canManageEpharmacy: false,
+  canViewActivityLog: false,
+  canAdjustStock: false,
+  canApprovePurchases: false,
   temporaryPassword: '',
   branchId: '',
 }
@@ -396,8 +403,30 @@ const toStaffEditForm = (row = {}) => ({
   canViewReports: Boolean(row.can_view_reports),
   canManageClaims: Boolean(row.can_manage_claims),
   canManagePurchases: Boolean(row.can_manage_purchases),
+  canProcessSales: Boolean(row.can_process_sales),
+  canManagePatients: Boolean(row.can_manage_patients),
+  canManageAccounting: Boolean(row.can_manage_accounting),
+  canManageEpharmacy: Boolean(row.can_manage_epharmacy),
+  canViewActivityLog: Boolean(row.can_view_activity_log),
+  canAdjustStock: Boolean(row.can_adjust_stock),
+  canApprovePurchases: Boolean(row.can_approve_purchases),
   temporaryPassword: '',
 })
+
+const STAFF_PRIVILEGE_OPTIONS = [
+  ['canRefund', 'Process refunds', 'can_refund', 'Refunds'],
+  ['canManageInventory', 'Manage inventory', 'can_manage_inventory', 'Inventory'],
+  ['canViewReports', 'View reports', 'can_view_reports', 'Reports'],
+  ['canManageClaims', 'Submit insurance claims', 'can_manage_claims', 'Claims'],
+  ['canManagePurchases', 'Manage purchases', 'can_manage_purchases', 'Purchases'],
+  ['canProcessSales', 'Process sales (POS)', 'can_process_sales', 'Sales'],
+  ['canManagePatients', 'Manage patients', 'can_manage_patients', 'Patients'],
+  ['canManageAccounting', 'Manage accounting', 'can_manage_accounting', 'Accounting'],
+  ['canManageEpharmacy', 'Manage E-Pharmacy', 'can_manage_epharmacy', 'E-Pharmacy'],
+  ['canViewActivityLog', 'View activity log', 'can_view_activity_log', 'Activity log'],
+  ['canAdjustStock', 'Adjust stock', 'can_adjust_stock', 'Stock adjustment'],
+  ['canApprovePurchases', 'Approve purchases', 'can_approve_purchases', 'Purchase approval'],
+]
 
 const blankBranchForm = {
   name: '', code: '', phone: '', email: '', address: '', city: '', region: '',
@@ -2407,6 +2436,13 @@ const Settings = () => {
                       canViewReports: false,
                       canManageClaims: event.target.value === 'claims_officer',
                       canManagePurchases: ['pharmacist', 'inventory_officer', 'procurement', 'branch_manager'].includes(event.target.value),
+                      canProcessSales: ['pharmacist', 'assistant', 'cashier', 'technician', 'branch_manager'].includes(event.target.value),
+                      canManagePatients: ['pharmacist', 'assistant', 'technician', 'branch_manager', 'billing', 'claims_officer', 'nurse', 'doctor', 'records_officer'].includes(event.target.value),
+                      canManageAccounting: event.target.value === 'accounts_officer',
+                      canManageEpharmacy: ['pharmacist', 'procurement', 'inventory_officer', 'branch_manager'].includes(event.target.value),
+                      canViewActivityLog: event.target.value === 'branch_manager',
+                      canAdjustStock: ['pharmacist', 'technician', 'procurement', 'inventory_officer', 'branch_manager'].includes(event.target.value),
+                      canApprovePurchases: ['pharmacist', 'branch_manager'].includes(event.target.value),
                     })
                   }
                   disabled={creatingStaff}
@@ -2421,61 +2457,19 @@ const Settings = () => {
               {!['admin', 'pharmacist', 'claims_officer'].includes(staffForm.role) && (
                 <div className="settings-privileges-group">
                   <p className="settings-helper">Privileges</p>
-                  <label className="settings-checkbox-label">
-                    <input
-                      type="checkbox"
-                      checked={staffForm.canRefund}
-                      onChange={(event) =>
-                        setStaffForm({ ...staffForm, canRefund: event.target.checked })
-                      }
-                      disabled={creatingStaff}
-                    />
-                    Process refunds
-                  </label>
-                  <label className="settings-checkbox-label">
-                    <input
-                      type="checkbox"
-                      checked={staffForm.canManageInventory}
-                      onChange={(event) =>
-                        setStaffForm({ ...staffForm, canManageInventory: event.target.checked })
-                      }
-                      disabled={creatingStaff}
-                    />
-                    Manage inventory
-                  </label>
-                  <label className="settings-checkbox-label">
-                    <input
-                      type="checkbox"
-                      checked={staffForm.canViewReports}
-                      onChange={(event) =>
-                        setStaffForm({ ...staffForm, canViewReports: event.target.checked })
-                      }
-                      disabled={creatingStaff}
-                    />
-                    View reports
-                  </label>
-                  <label className="settings-checkbox-label">
-                    <input
-                      type="checkbox"
-                      checked={staffForm.canManageClaims}
-                      onChange={(event) =>
-                        setStaffForm({ ...staffForm, canManageClaims: event.target.checked })
-                      }
-                      disabled={creatingStaff}
-                    />
-                    Submit insurance claims
-                  </label>
-                  <label className="settings-checkbox-label">
-                    <input
-                      type="checkbox"
-                      checked={staffForm.canManagePurchases}
-                      onChange={(event) =>
-                        setStaffForm({ ...staffForm, canManagePurchases: event.target.checked })
-                      }
-                      disabled={creatingStaff}
-                    />
-                    Purchases
-                  </label>
+                  {STAFF_PRIVILEGE_OPTIONS.map(([field, label]) => (
+                    <label className="settings-checkbox-label" key={field}>
+                      <input
+                        type="checkbox"
+                        checked={staffForm[field]}
+                        onChange={(event) =>
+                          setStaffForm({ ...staffForm, [field]: event.target.checked })
+                        }
+                        disabled={creatingStaff}
+                      />
+                      {label}
+                    </label>
+                  ))}
                 </div>
               )}
               <input
@@ -2546,17 +2540,12 @@ const Settings = () => {
                       </span>
                     </div>
                     <div className="user-privilege-list" aria-label="Assigned privileges">
-                      {(row.role === 'admin' || row.can_refund) && <span>Refunds</span>}
-                      {(row.role === 'admin' || row.can_manage_inventory) && <span>Inventory</span>}
-                      {(row.role === 'admin' || row.can_view_reports) && <span>Reports</span>}
-                      {(row.role === 'admin' || row.can_manage_claims) && <span>Claims</span>}
-                      {(row.role === 'admin' || row.can_manage_purchases) && <span>Purchases</span>}
+                      {STAFF_PRIVILEGE_OPTIONS.map(([, , column, badge]) =>
+                        (row.role === 'admin' || row[column]) ? <span key={column}>{badge}</span> : null
+                      )}
                       {row.role !== 'admin' &&
-                        !row.can_refund &&
-                        !row.can_manage_inventory &&
-                        !row.can_view_reports &&
-                        !row.can_manage_claims &&
-                        !row.can_manage_purchases && <span className="muted">No extra privileges</span>}
+                        !STAFF_PRIVILEGE_OPTIONS.some(([, , column]) => row[column]) &&
+                        <span className="muted">No extra privileges</span>}
                     </div>
                   </div>
                   <div className="user-actions">
@@ -2673,13 +2662,7 @@ const Settings = () => {
                     <strong>Privileges</strong>
                     <span>Admin accounts retain full access.</span>
                   </div>
-                  {[
-                    ['canRefund', 'Process refunds'],
-                    ['canManageInventory', 'Manage inventory'],
-                    ['canViewReports', 'View reports'],
-                    ['canManageClaims', 'Submit insurance claims'],
-                    ['canManagePurchases', 'Purchases'],
-                  ].map(([field, label]) => (
+                  {STAFF_PRIVILEGE_OPTIONS.map(([field, label]) => (
                     <label className="settings-checkbox-label" key={field}>
                       <input
                         type="checkbox"

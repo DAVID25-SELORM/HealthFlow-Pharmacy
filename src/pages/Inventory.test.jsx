@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   importDrugs: vi.fn(),
   isDefaultCatalogDrug: vi.fn(),
   isSupabaseConfigured: vi.fn(),
+  getBranches: vi.fn(),
   notify: vi.fn(),
   parseExcelFile: vi.fn(),
   setSearchParams: vi.fn(),
@@ -46,6 +47,10 @@ vi.mock('../lib/supabase', () => ({
   isSupabaseConfigured: mocks.isSupabaseConfigured,
 }))
 
+vi.mock('../services/branchService', () => ({
+  getBranches: mocks.getBranches,
+}))
+
 vi.mock('../services/drugImportService', () => ({
   generateTemplate: mocks.generateTemplate,
   importDrugs: mocks.importDrugs,
@@ -75,7 +80,8 @@ describe('Inventory', () => {
   beforeEach(() => {
     vi.clearAllMocks()
 
-    mocks.useAuth.mockReturnValue({ role: 'admin' })
+    mocks.useAuth.mockReturnValue({ role: 'admin', canAdjustStock: true })
+    mocks.getBranches.mockResolvedValue([])
     mocks.useTenant.mockReturnValue({ tierLimits: { hasAdvancedInventory: true } })
     mocks.isSupabaseConfigured.mockReturnValue(true)
     mocks.getAllDrugs.mockResolvedValue([])

@@ -39,7 +39,18 @@ import { getFacilityLogo, getFacilityName } from '../../utils/facilityBranding'
 import './Sidebar.css'
 
 const Sidebar = ({ isOpen, onClose }) => {
-  const { role, canManageInventory, canViewReports, canManageClaims, canManagePurchases } = useAuth()
+  const {
+    role,
+    canManageInventory,
+    canViewReports,
+    canManageClaims,
+    canManagePurchases,
+    canProcessSales,
+    canManagePatients,
+    canManageAccounting,
+    canManageEpharmacy,
+    canViewActivityLog,
+  } = useAuth()
   const { organization, canUseClaims, canUsePurchases, canUseNhis, canUseAccounting } = useTenant()
   const facilityName = getFacilityName(organization)
   const facilityLogo = getFacilityLogo(organization) || '/app-logo-display.jpg'
@@ -52,8 +63,8 @@ const Sidebar = ({ isOpen, onClose }) => {
       roles: DASHBOARD_ROLES,
     },
     { path: '/inventory', icon: Package, label: 'Inventory', roles: INVENTORY_ROLES, allow: canManageInventory },
-    { path: '/sales', icon: ShoppingCart, label: 'Sales (POS)', roles: SALES_ROLES },
-    { path: '/patients', icon: Users, label: 'Patients', roles: PATIENT_ROLES },
+    { path: '/sales', icon: ShoppingCart, label: 'Sales (POS)', roles: SALES_ROLES, allow: canProcessSales },
+    { path: '/patients', icon: Users, label: 'Patients', roles: PATIENT_ROLES, allow: canManagePatients },
     { path: '/claims', icon: ClipboardList, label: 'Claims', roles: CLAIMS_ROLES, allow: canManageClaims, featureAllowed: canUseClaims },
     {
       path: '/purchases',
@@ -63,15 +74,15 @@ const Sidebar = ({ isOpen, onClose }) => {
       allow: canManagePurchases,
       featureAllowed: canUsePurchases,
     },
-    { path: '/e-pharmacy', icon: Building2, label: 'E-Pharmacy', roles: EPHARMACY_ROLES },
+    { path: '/e-pharmacy', icon: Building2, label: 'E-Pharmacy', roles: EPHARMACY_ROLES, allow: canManageEpharmacy },
     { path: '/nhis', icon: HeartPulse, label: 'NHIS', roles: NHIS_ROLES, featureAllowed: canUseNhis },
     { path: '/patient-care', icon: Activity, label: 'Patient Care', roles: PATIENT_CARE_ROLES },
     { path: '/reports', icon: BarChart3, label: 'Reports', roles: REPORT_ROLES, allow: canViewReports },
-    { path: '/accounting', icon: Wallet, label: 'Accounting', roles: ACCOUNTING_ROLES, featureAllowed: canUseAccounting },
+    { path: '/accounting', icon: Wallet, label: 'Accounting', roles: ACCOUNTING_ROLES, allow: canManageAccounting, featureAllowed: canUseAccounting },
     { path: '/settings', icon: Settings, label: 'Settings', roles: SETTINGS_ROLES },
     { path: '/offline-sync', icon: RefreshCcw, label: 'Offline Sync', roles: OFFLINE_SYNC_ROLES },
     { path: '/tenant-admin', icon: ShieldCheck, label: 'Tenant Admin', roles: ['super_admin'] },
-    { path: '/activity-log', icon: List, label: 'Activity Log', roles: ACTIVITY_LOG_ROLES },
+    { path: '/activity-log', icon: List, label: 'Activity Log', roles: ACTIVITY_LOG_ROLES, allow: canViewActivityLog },
   ]
 
   const visibleItems = menuItems.filter(

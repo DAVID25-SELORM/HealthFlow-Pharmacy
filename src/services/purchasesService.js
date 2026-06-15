@@ -266,7 +266,11 @@ export const createPurchase = async (purchaseData, items = []) => {
  * Finalises a draft purchase: updates drug stock and marks status = 'completed'.
  * Calls the complete_purchase Postgres RPC to guarantee atomicity.
  */
-export const completePurchase = async (id) => {
+export const completePurchase = async (id, { canApprove = false } = {}) => {
+  if (!canApprove) {
+    throw new Error('You do not have permission to approve purchases.')
+  }
+
   if (shouldUseBranchServer()) {
     return await updateBranchRecord('purchases', id, {
       status: 'completed',

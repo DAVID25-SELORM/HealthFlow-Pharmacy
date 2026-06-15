@@ -9,10 +9,15 @@ import {
 import { tryLogAuditEvent } from '../services/auditService'
 import { getPasswordRecoveryRedirectUrl } from '../config/appUrl'
 import {
+  ACCOUNTING_ROLES,
+  ACTIVITY_LOG_ROLES,
   CLAIMS_ROLES,
+  EPHARMACY_ROLES,
   INVENTORY_ROLES,
+  PATIENT_ROLES,
   PURCHASES_ROLES,
   REPORT_ROLES,
+  SALES_ROLES,
   hasRole,
 } from '../utils/roles'
 
@@ -28,20 +33,40 @@ const PROFILE_SELECT = `
   can_view_reports,
   can_manage_claims,
   can_manage_purchases,
+  can_process_sales,
+  can_manage_patients,
+  can_manage_accounting,
+  can_manage_epharmacy,
+  can_view_activity_log,
+  can_adjust_stock,
+  can_approve_purchases,
   is_active,
   organization_id,
   branch_id,
   branches (id, name, code, is_main),
   organizations (*)
 `
-const LEGACY_PROFILE_SELECT = PROFILE_SELECT.replace(/\s*can_manage_purchases,\s*/, '\n')
+const OPTIONAL_PRIVILEGE_COLUMNS = [
+  'can_manage_purchases',
+  'can_process_sales',
+  'can_manage_patients',
+  'can_manage_accounting',
+  'can_manage_epharmacy',
+  'can_view_activity_log',
+  'can_adjust_stock',
+  'can_approve_purchases',
+]
+const LEGACY_PROFILE_SELECT = OPTIONAL_PRIVILEGE_COLUMNS.reduce(
+  (columns, field) => columns.replace(new RegExp(`\\s*${field},\\s*`), '\n'),
+  PROFILE_SELECT
+)
 
-const isMissingPurchasesColumn = (error) => {
+const isMissingPrivilegeColumn = (error) => {
   const message = String(error?.message || error?.details || '').toLowerCase()
   return (
     error?.code === '42703' ||
     error?.code === 'PGRST204' ||
-    (message.includes('can_manage_purchases') && message.includes('column'))
+    (OPTIONAL_PRIVILEGE_COLUMNS.some((field) => message.includes(field)) && message.includes('column'))
   )
 }
 
@@ -54,7 +79,7 @@ const loadUserProfile = async (userId) => {
       .maybeSingle()
 
   const result = await runQuery(PROFILE_SELECT)
-  if (!result.error || !isMissingPurchasesColumn(result.error)) {
+  if (!result.error || !isMissingPrivilegeColumn(result.error)) {
     return result
   }
 
@@ -595,6 +620,15 @@ export const AuthProvider = ({ children }) => {
         (Object.prototype.hasOwnProperty.call(profile || {}, 'can_manage_purchases')
           ? Boolean(profile?.can_manage_purchases)
           : hasRole(resolveRole(profile, user), PURCHASES_ROLES)),
+      canProcessSales: hasRole(resolveRole(profile, user), SALES_ROLES) || Boolean(profile?.can_process_sales),
+      canManagePatients: hasRole(resolveRole(profile, user), PATIENT_ROLES) || Boolean(profile?.can_manage_patients),
+      canManageAccounting: hasRole(resolveRole(profile, user), ACCOUNTING_ROLES) || Boolean(profile?.can_manage_accounting),
+      canManageEpharmacy: hasRole(resolveRole(profile, user), EPHARMACY_ROLES) || Boolean(profile?.can_manage_epharmacy),
+      canViewActivityLog: hasRole(resolveRole(profile, user), ACTIVITY_LOG_ROLES) || Boolean(profile?.can_view_activity_log),
+      canAdjustStock: hasRole(resolveRole(profile, user), INVENTORY_ROLES) || Boolean(profile?.can_adjust_stock),
+      canApprovePurchases:
+        ['admin', 'super_admin'].includes(resolveRole(profile, user)) ||
+        Boolean(profile?.can_approve_purchases),
       signIn,
       signOut,
       requestPasswordReset,

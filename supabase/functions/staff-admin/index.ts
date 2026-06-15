@@ -258,6 +258,13 @@ const syncPublicUser = async (
     canViewReports?: boolean
     canManageClaims?: boolean
     canManagePurchases?: boolean
+    canProcessSales?: boolean
+    canManagePatients?: boolean
+    canManageAccounting?: boolean
+    canManageEpharmacy?: boolean
+    canViewActivityLog?: boolean
+    canAdjustStock?: boolean
+    canApprovePurchases?: boolean
     branchId?: string | null
   } = {}
 ) => {
@@ -331,6 +338,13 @@ const syncPublicUser = async (
       ...(typeof overrides.canViewReports === 'boolean' ? { can_view_reports: overrides.canViewReports } : {}),
       ...(typeof overrides.canManageClaims === 'boolean' ? { can_manage_claims: overrides.canManageClaims } : {}),
       ...(typeof overrides.canManagePurchases === 'boolean' ? { can_manage_purchases: overrides.canManagePurchases } : {}),
+      ...(typeof overrides.canProcessSales === 'boolean' ? { can_process_sales: overrides.canProcessSales } : {}),
+      ...(typeof overrides.canManagePatients === 'boolean' ? { can_manage_patients: overrides.canManagePatients } : {}),
+      ...(typeof overrides.canManageAccounting === 'boolean' ? { can_manage_accounting: overrides.canManageAccounting } : {}),
+      ...(typeof overrides.canManageEpharmacy === 'boolean' ? { can_manage_epharmacy: overrides.canManageEpharmacy } : {}),
+      ...(typeof overrides.canViewActivityLog === 'boolean' ? { can_view_activity_log: overrides.canViewActivityLog } : {}),
+      ...(typeof overrides.canAdjustStock === 'boolean' ? { can_adjust_stock: overrides.canAdjustStock } : {}),
+      ...(typeof overrides.canApprovePurchases === 'boolean' ? { can_approve_purchases: overrides.canApprovePurchases } : {}),
       ...(overrides.branchId !== undefined ? { branch_id: overrides.branchId } : {}),
       updated_at: new Date().toISOString(),
     },
@@ -344,7 +358,7 @@ const syncPublicUser = async (
   const { data: syncedProfile, error: syncedProfileError } = await adminClient
     .from('users')
     .select(
-      'id, email, full_name, phone, role, can_refund, can_manage_inventory, can_view_reports, can_manage_claims, can_manage_purchases, is_active, organization_id, branch_id'
+      'id, email, full_name, phone, role, can_refund, can_manage_inventory, can_view_reports, can_manage_claims, can_manage_purchases, can_process_sales, can_manage_patients, can_manage_accounting, can_manage_epharmacy, can_view_activity_log, can_adjust_stock, can_approve_purchases, is_active, organization_id, branch_id'
     )
     .eq('id', authUser.id)
     .single()
@@ -396,6 +410,13 @@ const upsertStaffUser = async (
   const canViewReports = typeof payload.canViewReports === 'boolean' ? payload.canViewReports : undefined
   const canManageClaims = typeof payload.canManageClaims === 'boolean' ? payload.canManageClaims : undefined
   const canManagePurchases = typeof payload.canManagePurchases === 'boolean' ? payload.canManagePurchases : undefined
+  const canProcessSales = typeof payload.canProcessSales === 'boolean' ? payload.canProcessSales : undefined
+  const canManagePatients = typeof payload.canManagePatients === 'boolean' ? payload.canManagePatients : undefined
+  const canManageAccounting = typeof payload.canManageAccounting === 'boolean' ? payload.canManageAccounting : undefined
+  const canManageEpharmacy = typeof payload.canManageEpharmacy === 'boolean' ? payload.canManageEpharmacy : undefined
+  const canViewActivityLog = typeof payload.canViewActivityLog === 'boolean' ? payload.canViewActivityLog : undefined
+  const canAdjustStock = typeof payload.canAdjustStock === 'boolean' ? payload.canAdjustStock : undefined
+  const canApprovePurchases = typeof payload.canApprovePurchases === 'boolean' ? payload.canApprovePurchases : undefined
   const requestedBranchId = normalizeText(payload.branchId) || null
 
   if (!email) {
@@ -485,6 +506,13 @@ const upsertStaffUser = async (
       canViewReports,
       canManageClaims,
       canManagePurchases,
+      canProcessSales,
+      canManagePatients,
+      canManageAccounting,
+      canManageEpharmacy,
+      canViewActivityLog,
+      canAdjustStock,
+      canApprovePurchases,
       branchId,
     })
 
@@ -521,6 +549,13 @@ const upsertStaffUser = async (
     canViewReports,
     canManageClaims,
     canManagePurchases,
+    canProcessSales,
+    canManagePatients,
+    canManageAccounting,
+    canManageEpharmacy,
+    canViewActivityLog,
+    canAdjustStock,
+    canApprovePurchases,
     branchId,
   })
 
@@ -742,6 +777,13 @@ const updateStaffUser = async (
   const canViewReports = typeof payload.canViewReports === 'boolean' ? payload.canViewReports : undefined
   const canManageClaims = typeof payload.canManageClaims === 'boolean' ? payload.canManageClaims : undefined
   const canManagePurchases = typeof payload.canManagePurchases === 'boolean' ? payload.canManagePurchases : undefined
+  const canProcessSales = typeof payload.canProcessSales === 'boolean' ? payload.canProcessSales : undefined
+  const canManagePatients = typeof payload.canManagePatients === 'boolean' ? payload.canManagePatients : undefined
+  const canManageAccounting = typeof payload.canManageAccounting === 'boolean' ? payload.canManageAccounting : undefined
+  const canManageEpharmacy = typeof payload.canManageEpharmacy === 'boolean' ? payload.canManageEpharmacy : undefined
+  const canViewActivityLog = typeof payload.canViewActivityLog === 'boolean' ? payload.canViewActivityLog : undefined
+  const canAdjustStock = typeof payload.canAdjustStock === 'boolean' ? payload.canAdjustStock : undefined
+  const canApprovePurchases = typeof payload.canApprovePurchases === 'boolean' ? payload.canApprovePurchases : undefined
   const requestedBranchId =
     payload.branchId === null ? null : normalizeText(payload.branchId) || undefined
 
@@ -855,6 +897,13 @@ const updateStaffUser = async (
     canViewReports,
     canManageClaims,
     canManagePurchases,
+    canProcessSales,
+    canManagePatients,
+    canManageAccounting,
+    canManageEpharmacy,
+    canViewActivityLog,
+    canAdjustStock,
+    canApprovePurchases,
     branchId,
   })
 

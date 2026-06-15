@@ -28,7 +28,7 @@ const SALES_SELECT_FIELDS = `
     *,
     drugs (name)
   ),
-  patients (id, full_name, phone, insurance_provider, insurance_id, folder_no)
+  patients (id, full_name, phone, insurance_provider, insurance_id)
 `
 const REPORT_DRUG_SELECT_FIELDS = `
   id,
@@ -188,9 +188,12 @@ type RequesterProfile = {
   can_manage_inventory: boolean
   can_view_reports: boolean
   can_manage_claims: boolean
+  can_manage_patients: boolean
+  can_manage_epharmacy: boolean
+  can_adjust_stock: boolean
 }
 
-const INVENTORY_ROLES = ['admin', 'pharmacist', 'technician', 'procurement', 'branch_manager']
+const INVENTORY_ROLES = ['admin', 'pharmacist', 'technician', 'procurement', 'inventory_officer', 'branch_manager']
 const SALES_ROLES = ['admin', 'pharmacist', 'assistant', 'cashier', 'technician', 'branch_manager']
 const CLAIMS_ROLES = ['admin', 'pharmacist', 'billing', 'claims_officer']
 const PATIENT_ROLES = [
@@ -220,7 +223,7 @@ const REPORT_ROLES = [
   'claims_officer',
 ]
 const NHIA_SETTINGS_ROLES = ['admin', 'pharmacist', 'branch_manager']
-const EPHARMACY_ROLES = ['admin', 'pharmacist', 'procurement', 'branch_manager']
+const EPHARMACY_ROLES = ['admin', 'pharmacist', 'procurement', 'inventory_officer', 'branch_manager']
 const EPHARMACY_REVIEW_ROLES = ['admin', 'pharmacist']
 // ✅ NHIS PHARMACY LEVEL PATCH START
 const VALID_PHARMACY_LEVELS = ['P1', 'P2', 'LCS', 'HP']
@@ -488,7 +491,7 @@ const getRequesterProfile = async (
 ): Promise<RequesterProfile | null> => {
   const { data, error } = await adminClient
     .from('users')
-    .select('id, role, organization_id, branch_id, can_manage_inventory, can_view_reports, can_manage_claims')
+    .select('id, role, organization_id, branch_id, can_manage_inventory, can_view_reports, can_manage_claims, can_manage_patients, can_manage_epharmacy, can_adjust_stock')
     .eq('id', userId)
     .maybeSingle()
 
@@ -508,6 +511,9 @@ const getRequesterProfile = async (
     can_manage_inventory: Boolean(data.can_manage_inventory),
     can_view_reports: Boolean(data.can_view_reports),
     can_manage_claims: Boolean(data.can_manage_claims),
+    can_manage_patients: Boolean(data.can_manage_patients),
+    can_manage_epharmacy: Boolean(data.can_manage_epharmacy),
+    can_adjust_stock: Boolean(data.can_adjust_stock),
   }
 }
 
@@ -613,6 +619,16 @@ const requireInventoryAccess = (requesterProfile: RequesterProfile, message: str
   }
 }
 
+const requireStockAdjustmentAccess = (requesterProfile: RequesterProfile, message: string) => {
+  if (
+    !INVENTORY_ROLES.includes(requesterProfile.role) &&
+    !requesterProfile.can_manage_inventory &&
+    !requesterProfile.can_adjust_stock
+  ) {
+    throw new Error(message)
+  }
+}
+
 const requireClaimsAccess = (requesterProfile: RequesterProfile, message: string) => {
   if (!CLAIMS_ROLES.includes(requesterProfile.role) && !requesterProfile.can_manage_claims) {
     throw new Error(message)
@@ -620,7 +636,11 @@ const requireClaimsAccess = (requesterProfile: RequesterProfile, message: string
 }
 
 const requirePatientAccess = (requesterProfile: RequesterProfile, message: string) => {
-  if (!PATIENT_ROLES.includes(requesterProfile.role) && !requesterProfile.can_manage_claims) {
+  if (
+    !PATIENT_ROLES.includes(requesterProfile.role) &&
+    !requesterProfile.can_manage_claims &&
+    !requesterProfile.can_manage_patients
+  ) {
     throw new Error(message)
   }
 }
@@ -674,7 +694,11 @@ const requireReportsAccess = (requesterProfile: RequesterProfile, message: strin
 }
 
 const requireEpharmacyAccess = (requesterProfile: RequesterProfile, message: string) => {
-  if (!EPHARMACY_ROLES.includes(requesterProfile.role) && !requesterProfile.can_manage_inventory) {
+  if (
+    !EPHARMACY_ROLES.includes(requesterProfile.role) &&
+    !requesterProfile.can_manage_inventory &&
+    !requesterProfile.can_manage_epharmacy
+  ) {
     throw new Error(message)
   }
 }
@@ -2601,7 +2625,7 @@ const createDrug = async (
   organizationId: string,
   payload: Record<string, unknown>
 ) => {
-  requireInventoryAccess(requesterProfile, 'Only inventory staff can add inventory items.')
+  requireStockAdjustmentAccess(requesterProfile, 'You do not have permission to adjust inventory stock.')
 
   const drugData = (payload.drug || {}) as Record<string, unknown>
   const batchNumber = normalizeText(drugData.batchNumber) || null
@@ -2619,7 +2643,7 @@ const updateDrug = async (
   organizationId: string,
   payload: Record<string, unknown>
 ) => {
-  requireInventoryAccess(requesterProfile, 'Only inventory staff can update inventory items.')
+  requireStockAdjustmentAccess(requesterProfile, 'You do not have permission to adjust inventory stock.')
 
   const drugId = assertRequiredText(payload.drugId, 'Drug ID')
   const existingDrug = await getDrugForOrganization(adminClient, organizationId, drugId)
@@ -2759,7 +2783,7 @@ const bulkImportDrugs = async (
   organizationId: string,
   payload: Record<string, unknown>
 ) => {
-  requireInventoryAccess(requesterProfile, 'Only inventory staff can import inventory items.')
+  requireStockAdjustmentAccess(requesterProfile, 'You do not have permission to adjust inventory stock.')
 
   const drugs = Array.isArray(payload.drugs) ? payload.drugs : []
   if (drugs.length === 0) {

@@ -1,6 +1,15 @@
 import { getCurrentSupabaseUser, invokeSupabaseFunction, supabase } from '../lib/supabase'
 import { assertRequiredText, normalizeText } from '../utils/validation'
-import { PURCHASES_ROLES, STAFF_ROLE_VALUES } from '../utils/roles'
+import {
+  ACCOUNTING_ROLES,
+  ACTIVITY_LOG_ROLES,
+  EPHARMACY_ROLES,
+  INVENTORY_ROLES,
+  PATIENT_ROLES,
+  PURCHASES_ROLES,
+  SALES_ROLES,
+  STAFF_ROLE_VALUES,
+} from '../utils/roles'
 import { normalizeGhanaRegion } from '../utils/ghanaRegions'
 import { tryLogAuditEvent } from './auditService'
 // ✅ NHIS PHARMACY LEVEL PATCH START
@@ -283,8 +292,21 @@ export const getUsers = async () => {
       .select(columns)
       .order('created_at', { ascending: false })
 
-  const columns = 'id, email, full_name, phone, role, can_refund, can_manage_inventory, can_view_reports, can_manage_claims, can_manage_purchases, is_active, branch_id, created_at, branches (id, name, code)'
-  const legacyColumns = columns.replace(', can_manage_purchases', '')
+  const optionalPrivilegeColumns = [
+    'can_manage_purchases',
+    'can_process_sales',
+    'can_manage_patients',
+    'can_manage_accounting',
+    'can_manage_epharmacy',
+    'can_view_activity_log',
+    'can_adjust_stock',
+    'can_approve_purchases',
+  ]
+  const columns = `id, email, full_name, phone, role, can_refund, can_manage_inventory, can_view_reports, can_manage_claims, ${optionalPrivilegeColumns.join(', ')}, is_active, branch_id, created_at, branches (id, name, code)`
+  const legacyColumns = optionalPrivilegeColumns.reduce(
+    (result, field) => result.replace(`, ${field}`, ''),
+    columns
+  )
   let { data, error } = await selectUsers(columns)
   const errorMessage = String(error?.message || error?.details || '').toLowerCase()
 
@@ -293,13 +315,20 @@ export const getUsers = async () => {
     (
       error.code === '42703' ||
       error.code === 'PGRST204' ||
-      (errorMessage.includes('can_manage_purchases') && errorMessage.includes('column'))
+      (optionalPrivilegeColumns.some((field) => errorMessage.includes(field)) && errorMessage.includes('column'))
     )
   ) {
     const legacyResult = await selectUsers(legacyColumns)
     data = (legacyResult.data || []).map((row) => ({
       ...row,
       can_manage_purchases: PURCHASES_ROLES.includes(row.role),
+      can_process_sales: SALES_ROLES.includes(row.role),
+      can_manage_patients: PATIENT_ROLES.includes(row.role),
+      can_manage_accounting: ACCOUNTING_ROLES.includes(row.role),
+      can_manage_epharmacy: EPHARMACY_ROLES.includes(row.role),
+      can_view_activity_log: ACTIVITY_LOG_ROLES.includes(row.role),
+      can_adjust_stock: INVENTORY_ROLES.includes(row.role),
+      can_approve_purchases: ['admin', 'pharmacist', 'branch_manager'].includes(row.role),
     }))
     error = legacyResult.error
   }
@@ -338,6 +367,13 @@ export const createStaffUser = async (staff) => {
     canViewReports: Boolean(staff.canViewReports),
     canManageClaims: Boolean(staff.canManageClaims),
     canManagePurchases: Boolean(staff.canManagePurchases),
+    canProcessSales: Boolean(staff.canProcessSales),
+    canManagePatients: Boolean(staff.canManagePatients),
+    canManageAccounting: Boolean(staff.canManageAccounting),
+    canManageEpharmacy: Boolean(staff.canManageEpharmacy),
+    canViewActivityLog: Boolean(staff.canViewActivityLog),
+    canAdjustStock: Boolean(staff.canAdjustStock),
+    canApprovePurchases: Boolean(staff.canApprovePurchases),
     branchId: requestedBranchId,
     password: temporaryPassword,
   })
@@ -383,6 +419,13 @@ export const updateStaffUser = async (id, staff) => {
     canViewReports: Boolean(staff.canViewReports),
     canManageClaims: Boolean(staff.canManageClaims),
     canManagePurchases: Boolean(staff.canManagePurchases),
+    canProcessSales: Boolean(staff.canProcessSales),
+    canManagePatients: Boolean(staff.canManagePatients),
+    canManageAccounting: Boolean(staff.canManageAccounting),
+    canManageEpharmacy: Boolean(staff.canManageEpharmacy),
+    canViewActivityLog: Boolean(staff.canViewActivityLog),
+    canAdjustStock: Boolean(staff.canAdjustStock),
+    canApprovePurchases: Boolean(staff.canApprovePurchases),
     password: temporaryPassword || undefined,
   })
 

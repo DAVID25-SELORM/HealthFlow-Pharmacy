@@ -51,7 +51,17 @@ const RouteFallback = () => (
 )
 
 function App() {
-  const { canManageInventory, canViewReports, canManageClaims, canManagePurchases } = useAuth()
+  const {
+    canManageInventory,
+    canViewReports,
+    canManageClaims,
+    canManagePurchases,
+    canProcessSales,
+    canManagePatients,
+    canManageAccounting,
+    canManageEpharmacy,
+    canViewActivityLog,
+  } = useAuth()
   const { canUseClaims, canUsePurchases, canUseNhis, canUseAccounting } = useTenant()
   return (
     <Router>
@@ -81,7 +91,7 @@ function App() {
             <Route
               path="sales"
               element={
-                <RoleRoute allowedRoles={SALES_ROLES}>
+                <RoleRoute allowedRoles={SALES_ROLES} allow={canProcessSales}>
                   <Sales />
                 </RoleRoute>
               }
@@ -89,7 +99,7 @@ function App() {
             <Route
               path="patients"
               element={
-                <RoleRoute allowedRoles={PATIENT_ROLES}>
+                <RoleRoute allowedRoles={PATIENT_ROLES} allow={canManagePatients}>
                   <Patients />
                 </RoleRoute>
               }
@@ -117,7 +127,7 @@ function App() {
             <Route
               path="e-pharmacy"
               element={
-                <RoleRoute allowedRoles={EPHARMACY_ROLES}>
+                <RoleRoute allowedRoles={EPHARMACY_ROLES} allow={canManageEpharmacy}>
                   <EPharmacy />
                 </RoleRoute>
               }
@@ -149,7 +159,7 @@ function App() {
             <Route
               path="accounting"
               element={
-                <RoleRoute allowedRoles={ACCOUNTING_ROLES} featureAllowed={canUseAccounting}>
+                <RoleRoute allowedRoles={ACCOUNTING_ROLES} allow={canManageAccounting} featureAllowed={canUseAccounting}>
                   <Accounting />
                 </RoleRoute>
               }
@@ -173,7 +183,7 @@ function App() {
             <Route
               path="activity-log"
               element={
-                <RoleRoute allowedRoles={ACTIVITY_LOG_ROLES}>
+                <RoleRoute allowedRoles={ACTIVITY_LOG_ROLES} allow={canViewActivityLog}>
                   <ActivityLog />
                 </RoleRoute>
               }

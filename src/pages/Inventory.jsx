@@ -120,7 +120,7 @@ const calculateMarkedUpPrice = (costPrice, markupPercent) => {
 }
 
 const Inventory = () => {
-  const { role, profile, branch, user } = useAuth()
+  const { role, profile, branch, user, canAdjustStock } = useAuth()
   const { notify } = useNotification()
   const { canUseNhis, canUseNhisTopups, tierLimits } = useTenant()
   const showNhisPricing = Boolean(canUseNhis || canUseNhisTopups)
@@ -465,11 +465,19 @@ const Inventory = () => {
   }
 
   const openAddModal = () => {
+    if (!canAdjustStock) {
+      notify('You do not have permission to adjust inventory stock.', 'warning')
+      return
+    }
     resetForm()
     setShowDrugModal(true)
   }
 
   const openEditModal = (drug) => {
+    if (!canAdjustStock) {
+      notify('You do not have permission to adjust inventory stock.', 'warning')
+      return
+    }
     setEditingDrugId(drug.id)
     setFormData(mapDrugToForm(drug))
     setPriceEditedManually(false)
@@ -477,6 +485,10 @@ const Inventory = () => {
   }
 
   const openTransferModal = (drug) => {
+    if (!canAdjustStock) {
+      notify('You do not have permission to adjust inventory stock.', 'warning')
+      return
+    }
     setTransferDrug(drug)
     setTransferForm({ destinationBranchId: '', quantity: '', notes: '' })
   }
@@ -507,6 +519,10 @@ const Inventory = () => {
 
   const handleSubmit = async (event) => {
     event.preventDefault()
+    if (!canAdjustStock) {
+      notify('You do not have permission to adjust inventory stock.', 'warning')
+      return
+    }
 
     try {
       setSubmitting(true)
@@ -631,6 +647,11 @@ const Inventory = () => {
   const handleFileSelect = async (event) => {
     const file = event.target.files?.[0]
     if (!file) return
+    if (!canAdjustStock) {
+      notify('You do not have permission to adjust inventory stock.', 'warning')
+      event.target.value = ''
+      return
+    }
 
     if (!tierLimits.hasAdvancedInventory) {
       notify('Bulk inventory import is available on Professional or Enterprise plans.', 'info')
@@ -777,21 +798,25 @@ const Inventory = () => {
             <Download size={20} />
             Download Template
           </button>
-          <label className="btn btn-secondary">
-            <Upload size={20} />
-            Import Excel
-            <input
-              type="file"
-              accept=".xlsx"
-              onChange={handleFileSelect}
-              style={{ display: 'none' }}
-              disabled={importing || !tierLimits.hasAdvancedInventory}
-            />
-          </label>
-          <button className="btn btn-primary" type="button" onClick={openAddModal}>
-            <Plus size={20} />
-            Add Drug
-          </button>
+          {canAdjustStock && (
+            <>
+              <label className="btn btn-secondary">
+                <Upload size={20} />
+                Import Excel
+                <input
+                  type="file"
+                  accept=".xlsx"
+                  onChange={handleFileSelect}
+                  style={{ display: 'none' }}
+                  disabled={importing || !tierLimits.hasAdvancedInventory}
+                />
+              </label>
+              <button className="btn btn-primary" type="button" onClick={openAddModal}>
+                <Plus size={20} />
+                Add Drug
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -904,15 +929,17 @@ const Inventory = () => {
                     </td>
                     <td>
                       <div className="action-buttons">
-                        <button
-                          className="icon-btn edit-btn"
-                          title={`Edit ${drug.name}`}
-                          type="button"
-                          onClick={() => openEditModal(drug)}
-                        >
-                          <Edit2 size={16} />
-                        </button>
-                        {availableDestinationBranches.length > 0 && Number.parseFloat(drug.quantity ?? 0) > 0 && (
+                        {canAdjustStock && (
+                          <button
+                            className="icon-btn edit-btn"
+                            title={`Edit ${drug.name}`}
+                            type="button"
+                            onClick={() => openEditModal(drug)}
+                          >
+                            <Edit2 size={16} />
+                          </button>
+                        )}
+                        {canAdjustStock && availableDestinationBranches.length > 0 && Number.parseFloat(drug.quantity ?? 0) > 0 && (
                           <button
                             className="icon-btn transfer-btn"
                             title={`Transfer ${drug.name} to another branch`}
@@ -922,7 +949,7 @@ const Inventory = () => {
                             <Truck size={16} />
                           </button>
                         )}
-                        {role === 'admin' && (
+                        {role === 'admin' && canAdjustStock && (
                           <button
                             className="icon-btn delete-btn"
                             title={`Delete ${drug.name}`}

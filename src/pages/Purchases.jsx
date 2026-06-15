@@ -93,7 +93,7 @@ const StatusBadge = ({ status }) => (
 )
 
 const Purchases = () => {
-  const { profile, branch, canManagePurchases } = useAuth()
+  const { profile, branch, canManagePurchases, canApprovePurchases } = useAuth()
   const { notify } = useNotification()
   const [searchParams, setSearchParams] = useSearchParams()
 
@@ -360,10 +360,14 @@ const Purchases = () => {
 
   // ── complete purchase ────────────────────────────────────────
   const handleComplete = async (purchase) => {
+    if (!canApprovePurchases) {
+      notify('You do not have permission to approve purchases.', 'warning')
+      return
+    }
     if (!window.confirm(`Complete purchase ${purchase.purchase_number}?\nThis will update drug stock and cannot be undone.`)) return
     try {
       setCompleting(purchase.id)
-      await completePurchase(purchase.id)
+      await completePurchase(purchase.id, { canApprove: canApprovePurchases })
       await loadAll()
       notify(`${purchase.purchase_number} completed — stock updated.`, 'success')
     } catch (err) {
@@ -526,6 +530,7 @@ const Purchases = () => {
                     </button>
                     {p.status === 'draft' && canWrite && (
                       <>
+                        {canApprovePurchases && (
                         <button
                           className="action-btn action-btn--complete"
                           title="Complete — update stock"
@@ -534,6 +539,7 @@ const Purchases = () => {
                         >
                           <CheckCircle2 size={14} />
                         </button>
+                        )}
                         <button
                           className="action-btn action-btn--cancel"
                           title="Cancel"
@@ -1011,6 +1017,7 @@ const Purchases = () => {
             <div className="modal-footer">
               {viewPurchase.status === 'draft' && canWrite && (
                 <>
+                  {canApprovePurchases && (
                   <button
                     className="btn btn-primary"
                     disabled={completing === viewPurchase.id}
@@ -1021,6 +1028,7 @@ const Purchases = () => {
                   >
                     <CheckCircle2 size={14} /> Complete &amp; Update Stock
                   </button>
+                  )}
                   <button
                     className="btn btn-danger"
                     disabled={cancelling === viewPurchase.id}
