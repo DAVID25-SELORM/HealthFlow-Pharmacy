@@ -64,6 +64,20 @@ const updateRecord = db.prepare(`
     AND entity_type = @entityType
 `)
 
+const deleteRecord = db.prepare(`
+  DELETE FROM offline_records
+  WHERE id = ?
+    AND entity_type = ?
+`)
+
+const deletePendingRecordOutbox = db.prepare(`
+  DELETE FROM sync_outbox
+  WHERE entity_id = ?
+    AND entity_type = ?
+    AND event_type = 'record.upsert'
+    AND status IN ('pending', 'failed')
+`)
+
 const insertOutbox = db.prepare(`
   INSERT INTO sync_outbox (
     id, event_type, entity_type, entity_id, payload_json, status, created_at, updated_at
@@ -607,6 +621,30 @@ export const saveOfflineRecord = db.transaction((entityType, payload = {}) => {
   }
 
   return getOfflineRecord(normalizedEntity, record.id)
+})
+
+export const deleteOfflineRecord = db.transaction((entityType, id) => {
+  const normalizedEntity = normalizeEntityType(entityType)
+  const existing = getOfflineRecord(normalizedEntity, id)
+  if (!existing) return null
+
+  const timestamp = nowIso()
+  deletePendingRecordOutbox.run(id, normalizedEntity)
+  deleteRecord.run(id, normalizedEntity)
+  insertOutbox.run({
+    id: createId(),
+    eventType: 'record.delete',
+    entityType: normalizedEntity,
+    entityId: id,
+    payloadJson: json({
+      entity_type: normalizedEntity,
+      local_id: id,
+    }),
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  })
+
+  return existing
 })
 
 export const importOfflineRecords = db.transaction((entityType, records = []) => {

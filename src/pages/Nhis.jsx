@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Plus, Search, X, Upload, Download, CheckCircle2,
   Send, Banknote, XCircle, Eye, FileSpreadsheet, HeartPulse,
-  Pencil, Paperclip, FileText, Users,
+  Pencil, Paperclip, FileText, Trash2, Users,
 } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { isSupabaseConfigured } from '../lib/supabase'
@@ -23,6 +23,7 @@ import {
   updateNhiaTariffItem,
   getNhisClaimStats,
   createNhisClaim,
+  deleteNhisClaim,
   updateNhisClaim,
   updateNhisClaimStatus,
   exportNhisClaimsFile,
@@ -557,6 +558,7 @@ const Nhis = () => {
   const ruleFileInputRef = useRef(null)
 
   const canWrite = hasRole(role, NHIS_ROLES)
+  const canDeleteNhisClaims = String(role || '').toLowerCase() === 'admin'
   const organizationType = normalizeOrganizationType(organization?.organization_type)
   const organizationId = organization?.id || profile?.organization_id || ''
   const isHospital = organizationType === 'hospital'
@@ -2101,6 +2103,29 @@ const Nhis = () => {
     }
   }
 
+  const handleDeleteClaim = async (claim) => {
+    if (!canDeleteNhisClaims) {
+      notify('Only an administrator can delete NHIS claims.', 'warning')
+      return
+    }
+    if (!window.confirm(`Permanently delete claim ${claim.claim_number}? This action cannot be undone.`)) {
+      return
+    }
+
+    try {
+      setUpdatingStatus(claim.id)
+      await deleteNhisClaim(claim.id, { role })
+      if (viewClaim?.id === claim.id) setViewClaim(null)
+      if (editingClaim?.id === claim.id) closeClaimModal()
+      await loadAll()
+      notify(`Claim ${claim.claim_number} deleted.`, 'success')
+    } catch (err) {
+      notify(err.message || 'Unable to delete claim.', 'error')
+    } finally {
+      setUpdatingStatus(null)
+    }
+  }
+
   // ── drug catalog CRUD ─────────────────────────────────────────
   const openAddDrug = () => {
     setEditingDrug(null)
@@ -2714,6 +2739,16 @@ const Nhis = () => {
                               <XCircle size={14} />
                             </button>
                           </>
+                        )}
+                        {canDeleteNhisClaims && (
+                          <button
+                            className="action-btn action-btn--cancel"
+                            title="Delete claim"
+                            disabled={updatingStatus === c.id}
+                            onClick={() => handleDeleteClaim(c)}
+                          >
+                            <Trash2 size={14} />
+                          </button>
                         )}
                       </td>
                     </tr>

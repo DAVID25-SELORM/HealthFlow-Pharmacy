@@ -22,6 +22,7 @@ import {
 import { tryLogAuditEvent } from './auditService'
 import {
   createBranchRecord,
+  deleteBranchRecord,
   getNhiaSettings as getBranchNhiaSettings,
   listBranchRecords,
   saveNhiaSettings as saveBranchNhiaSettings,
@@ -5954,6 +5955,37 @@ const toClaimItXmlElementName = (value, fallback = 'item') => {
   const normalized = String(value || '').replace(/[^A-Za-z0-9_.-]/g, '_')
   if (!normalized) return fallback
   return /^[A-Za-z_]/.test(normalized) ? normalized : `_${normalized}`
+}
+
+export const deleteNhisClaim = async (id, options = {}) => {
+  if (normalizeText(options.role).toLowerCase() !== 'admin') {
+    throw new Error('Only an administrator can delete NHIS claims.')
+  }
+
+  if (shouldUseBranchServer()) {
+    return await deleteBranchRecord('nhis/claims', id, { role: 'admin' })
+  }
+
+  const { data: claim, error } = await supabase
+    .from('nhis_claims')
+    .delete()
+    .eq('id', id)
+    .select('id, claim_number, prescription_file_path')
+    .single()
+
+  if (error) throw error
+
+  const prescriptionPath = normalizeText(claim?.prescription_file_path)
+  if (prescriptionPath && supabase.storage?.from) {
+    const { error: storageError } = await supabase.storage
+      .from(NHIS_PRESCRIPTION_BUCKET)
+      .remove([prescriptionPath])
+    if (storageError) {
+      console.warn('NHIS claim deleted, but its prescription storage object could not be removed.', storageError)
+    }
+  }
+
+  return claim
 }
 
 const getClaimItXmlItemName = (name) => {

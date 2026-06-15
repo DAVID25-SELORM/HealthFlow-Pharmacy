@@ -668,3 +668,12 @@ export const updateBranchRecord = async (resource, id, payload) => {
   })
   return response.data
 }
+
+export const deleteBranchRecord = async (resource, id, payload = {}) => {
+  const response = await branchFetch(`/api/${resource}/${id}`, {
+    method: 'DELETE',
+    body: JSON.stringify(payload),
+    timeoutMs: WRITE_BRANCH_REQUEST_TIMEOUT_MS,
+  })
+  return response.data || null
+}

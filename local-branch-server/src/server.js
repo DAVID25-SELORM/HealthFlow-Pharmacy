@@ -34,6 +34,7 @@ import {
   submitPendingNhiaClaims,
 } from './nhiaRepository.js'
 import {
+  deleteOfflineRecord,
   getOfflineRecord,
   listOfflineRecords,
   saveOfflineRecord,
@@ -500,6 +501,18 @@ app.put('/api/nhis/claims/:id', (request, response, next) => {
         id: request.params.id,
       }),
     })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.delete('/api/nhis/claims/:id', (request, response, next) => {
+  try {
+    if (String(request.body?.role || '').trim().toLowerCase() !== 'admin') {
+      response.status(403).json({ error: 'Only an administrator can delete NHIS claims.' })
+      return
+    }
+    response.json({ data: deleteOfflineRecord('nhis_claims', request.params.id) })
   } catch (error) {
     next(error)
   }

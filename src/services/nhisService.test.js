@@ -13,6 +13,7 @@ vi.mock('./auditService', () => ({
 
 vi.mock('./branchServerApi', () => ({
   createBranchRecord: vi.fn(),
+  deleteBranchRecord: vi.fn(),
   getNhiaSettings: vi.fn(),
   listBranchRecords: vi.fn(),
   saveNhiaSettings: vi.fn(),
@@ -53,6 +54,7 @@ import {
   buildNhisClaimItDirectXml,
   buildNhisClaimItXml,
   createNhisClaim,
+  deleteNhisClaim,
   exportNhisClaimsFile,
   generateHostedNhiaCcCode,
   generateBrowserClaimItBridgeCcCode,
@@ -74,7 +76,7 @@ import {
   validateNhisPrescriptionPdfFile,
 } from './nhisService'
 import { supabase } from '../lib/supabase'
-import { getNhiaSettings, listBranchRecords, saveNhiaSettings, shouldUseBranchServer, submitNhiaDirectPayload, updateBranchRecord } from './branchServerApi'
+import { deleteBranchRecord, getNhiaSettings, listBranchRecords, saveNhiaSettings, shouldUseBranchServer, submitNhiaDirectPayload, updateBranchRecord } from './branchServerApi'
 import { routeWrite } from './apiRouter'
 import { getConnectivityState } from './connectivityService'
 import { invokeTierAccess } from './tierAccessService'
@@ -3220,6 +3222,31 @@ describe('NHIS local and cloud claim reads', () => {
 })
 
 describe('NHIS claim status routing', () => {
+  it('blocks NHIS claim deletion for non-admin roles before any write', async () => {
+    await expect(deleteNhisClaim('claim-1', { role: 'claims_officer' }))
+      .rejects.toThrow('Only an administrator can delete NHIS claims.')
+
+    expect(deleteBranchRecord).not.toHaveBeenCalled()
+    expect(supabase.from).not.toHaveBeenCalled()
+  })
+
+  it('routes admin NHIS claim deletion through the local branch server', async () => {
+    shouldUseBranchServer.mockReturnValue(true)
+    deleteBranchRecord.mockResolvedValueOnce({
+      id: 'claim-1',
+      claim_number: 'NHIS-000001',
+    })
+
+    await expect(deleteNhisClaim('claim-1', { role: 'admin' })).resolves.toMatchObject({
+      id: 'claim-1',
+    })
+
+    expect(deleteBranchRecord).toHaveBeenCalledWith('nhis/claims', 'claim-1', {
+      role: 'admin',
+    })
+    expect(supabase.from).not.toHaveBeenCalled()
+  })
+
   it('does not report success when the live schema would discard an RX attachment', async () => {
     const updatePayloads = []
     const makeUpdateQuery = (response) => {

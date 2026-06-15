@@ -303,6 +303,27 @@ const syncRecordUpsert = async (supabase, row) => {
   }
 }
 
+const syncRecordDelete = async (supabase, row) => {
+  const payload = parseJson(row.payload_json, {})
+  const entityType = payload.entity_type || row.entity_type
+  const localId = payload.local_id || row.entity_id
+  const { data, error } = await supabase.rpc('branch_sync_delete_offline_record', {
+    p_sync_token: config.branchSyncToken,
+    p_entity_type: entityType,
+    p_local_id: localId,
+  })
+
+  if (error) throw error
+
+  const timestamp = nowIso()
+  markOutboxSynced.run(timestamp, timestamp, row.id)
+  return {
+    localId,
+    entityType,
+    deleted: Boolean(data?.deleted),
+  }
+}
+
 const runPendingOutboxSync = async ({ limit = 25 } = {}) => {
   const supabase = createSupabaseClient()
   const rows = pendingOutbox.all(Math.min(Math.max(Number(limit) || 25, 1), 1000))
@@ -324,6 +345,9 @@ const runPendingOutboxSync = async ({ limit = 25 } = {}) => {
         result.synced += 1
       } else if (row.event_type === 'record.upsert') {
         await syncRecordUpsert(supabase, row)
+        result.synced += 1
+      } else if (row.event_type === 'record.delete') {
+        await syncRecordDelete(supabase, row)
         result.synced += 1
       } else {
         throw new Error(`Unsupported sync event type: ${row.event_type}`)
