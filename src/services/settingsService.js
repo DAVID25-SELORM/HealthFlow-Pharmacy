@@ -311,10 +311,12 @@ export const getUsers = async () => {
   )
   let { data, error } = await selectUsers(columns)
   const errorMessage = String(error?.message || error?.details || '').toLowerCase()
+  const errorStatus = Number(error?.status || error?.statusCode || 0)
 
   if (
     error &&
     (
+      errorStatus === 400 ||
       error.code === '42703' ||
       error.code === 'PGRST204' ||
       (optionalPrivilegeColumns.some((field) => errorMessage.includes(field)) && errorMessage.includes('column'))

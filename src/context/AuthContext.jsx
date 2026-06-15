@@ -69,7 +69,9 @@ const LEGACY_PROFILE_SELECT = OPTIONAL_PRIVILEGE_COLUMNS.reduce(
 
 const isMissingPrivilegeColumn = (error) => {
   const message = String(error?.message || error?.details || '').toLowerCase()
+  const status = Number(error?.status || error?.statusCode || 0)
   return (
+    status === 400 ||
     error?.code === '42703' ||
     error?.code === 'PGRST204' ||
     (OPTIONAL_PRIVILEGE_COLUMNS.some((field) => message.includes(field)) && message.includes('column'))

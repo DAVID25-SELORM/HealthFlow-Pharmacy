@@ -84,6 +84,52 @@ const getIdentityClient = () => {
   })
 }
 
+const isMissingUserPrivilegeColumn = (error) => {
+  const message = String(error?.message || error?.details || '').toLowerCase()
+  const status = Number(error?.status || error?.statusCode || 0)
+  return (
+    status === 400 ||
+    error?.code === '42703' ||
+    error?.code === 'PGRST204' ||
+    message.includes('assigned_roles') ||
+    message.includes('can_delete_nhis_claims')
+  )
+}
+
+const getStaffAuthorizationProfile = async (client, userId) => {
+  const runQuery = async (columns) =>
+    await client
+      .from('users')
+      .select(columns)
+      .eq('id', userId)
+      .maybeSingle()
+
+  const result = await runQuery(
+    'id, role, assigned_roles, organization_id, branch_id, is_active, can_manage_claims, can_delete_nhis_claims'
+  )
+
+  if (!result.error || !isMissingUserPrivilegeColumn(result.error)) {
+    return result
+  }
+
+  const legacyResult = await runQuery(
+    'id, role, organization_id, branch_id, is_active, can_manage_claims'
+  )
+
+  return {
+    ...legacyResult,
+    data: legacyResult.data
+      ? {
+          ...legacyResult.data,
+          assigned_roles: [legacyResult.data.role].filter(Boolean),
+          can_delete_nhis_claims: ['admin', 'super_admin'].includes(
+            String(legacyResult.data.role || '').trim().toLowerCase()
+          ),
+        }
+      : legacyResult.data,
+  }
+}
+
 export const issueBranchUserSession = async ({ accessToken, activeRole }) => {
   const client = getIdentityClient()
   const { data: userData, error: userError } = await client.auth.getUser(accessToken)
@@ -91,13 +137,7 @@ export const issueBranchUserSession = async ({ accessToken, activeRole }) => {
     throw new Error('Unable to verify the signed-in staff member.')
   }
 
-  const { data: profile, error: profileError } = await client
-    .from('users')
-    .select(
-      'id, role, assigned_roles, organization_id, branch_id, is_active, can_manage_claims, can_delete_nhis_claims'
-    )
-    .eq('id', userData.user.id)
-    .maybeSingle()
+  const { data: profile, error: profileError } = await getStaffAuthorizationProfile(client, userData.user.id)
 
   if (profileError) throw profileError
   if (!profile || profile.is_active === false) {

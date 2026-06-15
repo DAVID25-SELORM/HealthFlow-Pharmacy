@@ -138,6 +138,18 @@ const createAdminClient = (supabaseUrl: string, serviceRoleKey: string) =>
     },
   })
 
+const isMissingUserPrivilegeColumn = (error: unknown) => {
+  const payload = error as { code?: string; status?: number; statusCode?: number; message?: string; details?: string }
+  const message = normalizeText(payload?.message || payload?.details).toLowerCase()
+  const status = Number(payload?.status || payload?.statusCode || 0)
+  return (
+    status === 400 ||
+    payload?.code === '42703' ||
+    payload?.code === 'PGRST204' ||
+    message.includes('assigned_roles')
+  )
+}
+
 const findAuthUserByEmail = async (
   adminClient: ReturnType<typeof createAdminClient>,
   email: string
@@ -172,11 +184,25 @@ const getRequesterProfile = async (
   adminClient: ReturnType<typeof createAdminClient>,
   userId: string
 ): Promise<RequesterProfile | null> => {
-  const { data, error } = await adminClient
-    .from('users')
-    .select('id, role, assigned_roles, organization_id')
-    .eq('id', userId)
-    .maybeSingle()
+  const runQuery = async (columns: string) =>
+    await adminClient
+      .from('users')
+      .select(columns)
+      .eq('id', userId)
+      .maybeSingle()
+
+  let { data, error } = await runQuery('id, role, assigned_roles, organization_id')
+
+  if (error && isMissingUserPrivilegeColumn(error)) {
+    const legacyResult = await runQuery('id, role, organization_id')
+    data = legacyResult.data
+      ? {
+          ...legacyResult.data,
+          assigned_roles: [legacyResult.data.role].filter(Boolean),
+        }
+      : legacyResult.data
+    error = legacyResult.error
+  }
 
   if (error) {
     throw error
