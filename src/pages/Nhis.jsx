@@ -10,6 +10,7 @@ import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
 import { formatAppDate } from '../utils/date'
 import { NHIS_ROLES, hasRole } from '../utils/roles'
+import { normalizeText } from '../utils/validation'
 import {
   getAllNhisDrugs,
   getNhisDrugByCode,
