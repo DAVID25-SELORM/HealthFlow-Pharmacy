@@ -45,6 +45,7 @@ const DEFAULT_CLAIMIT_SUBMIT_BASE_URL = 'http://localhost:31719/json-api'
 const DEFAULT_NHIA_MEMBER_LOOKUP_ENDPOINT = '/api/hmis/genCCC'
 const DEFAULT_CLAIMIT_CLAIM_ENDPOINT = '/claims'
 const DEFAULT_NHIA_INTEGRATION_MODE = 'claimit_assisted'
+const MAX_NHIA_CLAIM_READ_LIMIT = 100000
 const CLAIMIT_CXF_API_BLOCK_MESSAGE =
   'Direct CLAIM-it CXF import is not allowed by the API. Please export the CXF file and import it manually into CLAIM-it.'
 const CLAIMIT_MISSING_CLAIM_ID_MESSAGE =
@@ -1667,7 +1668,7 @@ const mapClaimRow = (row) => ({
 
 export const listNhiaClaims = ({ status = '', limit = 100 } = {}) => {
   const normalizedStatus = normalizeText(status).toLowerCase()
-  const cappedLimit = Math.min(Math.max(Number(limit) || 100, 1), 5000)
+  const cappedLimit = Math.min(Math.max(Number(limit) || 100, 1), MAX_NHIA_CLAIM_READ_LIMIT)
   const rows = normalizedStatus
     ? db.prepare(`${selectClaimsBase} WHERE status = ? ORDER BY created_at DESC LIMIT ?`).all(normalizedStatus, cappedLimit)
     : db.prepare(`${selectClaimsBase} ORDER BY created_at DESC LIMIT ?`).all(cappedLimit)
@@ -1837,7 +1838,7 @@ export const repairMissingNhiaClaimIds = (claimIds = []) => {
     : []
   const targetClaims = normalizedClaimIds.length
     ? resolveDirectSubmissionLocalClaims(normalizedClaimIds)
-    : listNhiaClaims({ limit: 5000 }).map((claim) => ({
+    : listNhiaClaims({ limit: MAX_NHIA_CLAIM_READ_LIMIT }).map((claim) => ({
         id: claim.id,
         claimNumber: claim.claimNumber,
         claimItClaimId: normalizeDirectSubmissionClaimId(claim.payload?.claimID || claim.payload?.claimItClaimId),

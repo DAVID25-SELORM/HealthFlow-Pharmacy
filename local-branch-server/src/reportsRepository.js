@@ -4,6 +4,8 @@ import { listLocalInventory } from './inventoryRepository.js'
 import { listOfflineRecords } from './offlineRecordsRepository.js'
 import { getNhiaSubmissionLogs, listNhiaClaims } from './nhiaRepository.js'
 
+const MAX_REPORT_READ_LIMIT = 100000
+
 const selectSales = db.prepare(`
   SELECT *
   FROM sales
@@ -171,17 +173,17 @@ export const getLocalReportBundle = (filters = {}) => {
     department: String(filters.department || filters.module || '').trim(),
   }
 
-  const patients = listOfflineRecords('patients', { limit: 5000 })
+  const patients = listOfflineRecords('patients', { limit: MAX_REPORT_READ_LIMIT })
   const patientMap = new Map(patients.map((patient) => [String(patient.id), patient]))
-  const sales = filterSales(selectSales.all(5000).map((sale) => mapSale(sale, patientMap)), normalizedFilters)
-  const claims = filterClaims(listOfflineRecords('claims', { limit: 5000 }), normalizedFilters)
+  const sales = filterSales(selectSales.all(MAX_REPORT_READ_LIMIT).map((sale) => mapSale(sale, patientMap)), normalizedFilters)
+  const claims = filterClaims(listOfflineRecords('claims', { limit: MAX_REPORT_READ_LIMIT }), normalizedFilters)
   const nhisClaims = filterClaims(
-    listNhiaClaims({ limit: 5000 }).map(normalizeNhisClaimForReport),
+    listNhiaClaims({ limit: MAX_REPORT_READ_LIMIT }).map(normalizeNhisClaimForReport),
     normalizedFilters
   )
   const drugs = filterInventory(listLocalInventory({ branchId: normalizedFilters.branch || config.branchId || '', limit: 20000 }), normalizedFilters)
-  const purchases = filterPurchases(listOfflineRecords('purchases', { limit: 5000 }), normalizedFilters)
-  const suppliers = listOfflineRecords('suppliers', { limit: 5000 })
+  const purchases = filterPurchases(listOfflineRecords('purchases', { limit: MAX_REPORT_READ_LIMIT }), normalizedFilters)
+  const suppliers = listOfflineRecords('suppliers', { limit: MAX_REPORT_READ_LIMIT })
   const submissionLogs = getNhiaSubmissionLogs({ limit: 200 }).filter((log) =>
     isInRange(log.createdAt, normalizedFilters.startDate, normalizedFilters.endDate)
   )
