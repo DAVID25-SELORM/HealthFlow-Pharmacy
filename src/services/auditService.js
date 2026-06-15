@@ -1,4 +1,16 @@
 import { getCurrentSupabaseUser, supabase } from '../lib/supabase'
+import { getStoredActiveRole } from '../utils/activeRole'
+
+// Additive accountability: stamp every audit event with the role the user was
+// actively working as when the action happened. Does not change any caller
+// behaviour — it only enriches the free-form audit `details` payload.
+const withActiveRole = (details = {}) => {
+  const activeRole = getStoredActiveRole()
+  if (!activeRole) {
+    return details || {}
+  }
+  return { active_role: activeRole, ...(details || {}) }
+}
 
 const isMissingRpcFunctionError = (error) => {
   const code = String(error?.code || '').toUpperCase()
@@ -32,17 +44,18 @@ const insertAuditEventDirectly = async ({
 }
 
 export const logAuditEvent = async ({ eventType, entityType, entityId, action, details = {} }) => {
+  const enrichedDetails = withActiveRole(details)
   const { error } = await supabase.rpc('log_audit_event', {
     p_event_type: eventType,
     p_entity_type: entityType,
     p_entity_id: entityId,
     p_action: action,
-    p_details: details,
+    p_details: enrichedDetails,
   })
 
   if (error) {
     if (isMissingRpcFunctionError(error)) {
-      await insertAuditEventDirectly({ eventType, entityType, entityId, action, details })
+      await insertAuditEventDirectly({ eventType, entityType, entityId, action, details: enrichedDetails })
       return
     }
 
