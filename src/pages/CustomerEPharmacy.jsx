@@ -282,7 +282,7 @@ const CustomerEPharmacy = () => {
       />
       <header className="customer-shop-header">
         <a className="customer-shop-brand" href="/shop">
-          <img src="/app-logo.png" alt="HealthFlow" />
+          <img src="/app-logo-display.jpg" alt="HealthFlow" width="640" height="320" />
           <div>
             <strong>HealthFlow Customer Pharmacy</strong>
             <span>Licensed facilities and pharmacist-reviewed orders</span>

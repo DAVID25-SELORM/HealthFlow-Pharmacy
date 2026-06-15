@@ -1,5 +1,11 @@
-const CACHE_NAME = 'healthflow-pharmacy-shell-v7'
-const APP_SHELL = ['/', '/index.html', '/app-logo.png', '/manifest.webmanifest']
+const CACHE_NAME = 'healthflow-pharmacy-shell-v8'
+const APP_SHELL = [
+  '/',
+  '/index.html',
+  '/app-logo-display.jpg',
+  '/app-icon-192.png',
+  '/manifest.webmanifest',
+]
 const isAppAssetRequest = (request) => {
   if (request.method !== 'GET') {
     return false

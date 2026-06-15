@@ -43,7 +43,7 @@ const Sidebar = ({ isOpen, onClose }) => {
   const { role, canManageInventory, canViewReports, canManageClaims } = useAuth()
   const { organization, canUseClaims, canUsePurchases, canUseNhis, canUseAccounting } = useTenant()
   const facilityName = getFacilityName(organization)
-  const facilityLogo = getFacilityLogo(organization) || '/app-logo.png'
+  const facilityLogo = getFacilityLogo(organization) || '/app-logo-display.jpg'
 
   const menuItems = [
     {

@@ -225,7 +225,13 @@ const Signup = () => {
       />
       <div className="signup-container">
         <div className="signup-header">
-          <img src="/app-logo.png" alt="HealthFlow logo" className="signup-brand-logo" />
+          <img
+            src="/app-logo-display.jpg"
+            alt="HealthFlow logo"
+            className="signup-brand-logo"
+            width="640"
+            height="320"
+          />
           <h1>HealthFlow</h1>
           <p>Pharmacy, Claims & Facility Operations Platform</p>
         </div>

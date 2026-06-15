@@ -127,7 +127,14 @@ const Login = () => {
         path="/login"
       />
       <div className="login-card">
-        <img src="/app-logo.png" alt="HealthFlow logo" className="auth-brand-logo" />
+        <img
+          src="/app-logo-display.jpg"
+          alt="HealthFlow logo"
+          className="auth-brand-logo"
+          width="640"
+          height="320"
+          fetchPriority="high"
+        />
         <h1>{mode === 'sign-in' ? 'Staff Portal' : 'HealthFlow'}</h1>
         <p className="subtitle">
           {mode === 'reset'
