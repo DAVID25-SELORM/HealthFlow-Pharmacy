@@ -3251,7 +3251,7 @@ describe('NHIS claim status routing', () => {
     })
     const claimTable = {
       select: vi.fn((columns = '') =>
-        String(columns).includes('status') ? existingClaimQuery : duplicateQuery
+        String(columns).trim() === '*' ? existingClaimQuery : duplicateQuery
       ),
       update: vi.fn((payload) => {
         updatePayloads.push(payload)
@@ -3310,8 +3310,7 @@ describe('NHIS claim status routing', () => {
       'Prescription file upload completed, but the NHIS claim attachment database fields are missing.'
     )
 
-    expect(updatePayloads).toHaveLength(1)
-    expect(updatePayloads[0]).toHaveProperty('claimit_attachment_file_name', 'prescription_NHIS-000001.pdf')
+    expect(updatePayloads).toHaveLength(0)
     expect(medicineTable.insert).not.toHaveBeenCalled()
   })
 

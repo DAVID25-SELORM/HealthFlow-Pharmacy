@@ -679,6 +679,15 @@ const stripOptionalClaimSchemaColumns = (payload, error = null) => {
   )
 }
 
+const stripUnavailableOptionalClaimSchemaColumns = (payload, existingRow) => {
+  if (!existingRow || typeof existingRow !== 'object') return { ...payload }
+
+  return stripClaimSchemaColumns(
+    payload,
+    OPTIONAL_CLAIM_SCHEMA_COLUMNS.filter((column) => !(column in existingRow))
+  )
+}
+
 const hasPrescriptionAttachmentPayload = (payload = {}) =>
   PRESCRIPTION_ATTACHMENT_SCHEMA_KEYS.some((key) => {
     const value = payload[key]
@@ -4468,14 +4477,18 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
 
   const { data: existingClaim, error: existingError } = await supabase
     .from('nhis_claims')
-    .select('id, claim_number, status')
+    .select('*')
     .eq('id', id)
     .single()
 
   if (existingError) throw existingError
 
   claimPayload = withClaimItAttachmentFileName(claimPayload, existingClaim.claim_number)
-  const { data: claim, error: claimError } = await updateNhisClaimWithSchemaFallback(id, claimPayload)
+  const schemaCompatiblePayload = stripUnavailableOptionalClaimSchemaColumns(claimPayload, existingClaim)
+  if (wouldDiscardPrescriptionAttachment(claimPayload, schemaCompatiblePayload)) {
+    throw buildMissingPrescriptionAttachmentSchemaError()
+  }
+  const { data: claim, error: claimError } = await updateNhisClaimWithSchemaFallback(id, schemaCompatiblePayload)
 
   if (claimError) throw claimError
 
