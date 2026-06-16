@@ -308,6 +308,18 @@ export const createSettings = async (settings) => {
 }
 
 export const getUsers = async () => {
+  try {
+    const response = await invokeStaffAdmin({ action: 'list_staff_users' })
+    if (Array.isArray(response.users)) {
+      return response.users
+    }
+  } catch (error) {
+    const message = String(error?.message || '').toLowerCase()
+    if (!message.includes('unsupported staff action') && !message.includes('view staff login activity')) {
+      console.warn('Unable to load staff auth metadata; falling back to public user rows.', error)
+    }
+  }
+
   const selectUsers = (columns) =>
     supabase
       .from('users')

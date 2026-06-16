@@ -26,6 +26,7 @@ const MAX_USER_PAGES = 10
 
 type StaffRole = (typeof STAFF_ROLES)[number]
 type StaffAction =
+  | 'list_staff_users'
   | 'upsert_staff_user'
   | 'set_staff_status'
   | 'set_refund_permission'
@@ -178,6 +179,41 @@ const findAuthUserByEmail = async (
   }
 
   return null
+}
+
+const listAuthUsersById = async (
+  adminClient: ReturnType<typeof createAdminClient>
+) => {
+  const usersById = new Map<string, {
+    id: string
+    email?: string | null
+    last_sign_in_at?: string | null
+  }>()
+
+  for (let page = 1; page <= MAX_USER_PAGES; page += 1) {
+    const { data, error } = await adminClient.auth.admin.listUsers({
+      page,
+      perPage: USERS_PER_PAGE,
+    })
+
+    if (error) {
+      throw error
+    }
+
+    ;(data.users || []).forEach((user) => {
+      usersById.set(user.id, {
+        id: user.id,
+        email: user.email,
+        last_sign_in_at: user.last_sign_in_at || null,
+      })
+    })
+
+    if (!data.users || data.users.length < USERS_PER_PAGE) {
+      break
+    }
+  }
+
+  return usersById
 }
 
 const getRequesterProfile = async (
@@ -411,6 +447,42 @@ const syncPublicUser = async (
   }
 
   return syncedProfile
+}
+
+const listStaffUsers = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  requesterProfile: RequesterProfile
+) => {
+  if (!requesterHasRole(requesterProfile, ['admin', 'super_admin'])) {
+    throw new Error('Only admin or super admin users can view staff login activity.')
+  }
+
+  let query = adminClient
+    .from('users')
+    .select(
+      'id, email, full_name, phone, role, assigned_roles, can_refund, can_manage_inventory, can_view_reports, can_manage_claims, can_manage_purchases, can_process_sales, can_manage_patients, can_manage_accounting, can_manage_epharmacy, can_view_activity_log, can_adjust_stock, can_approve_purchases, can_delete_nhis_claims, is_active, organization_id, branch_id, created_at, branches (id, name, code)'
+    )
+    .order('created_at', { ascending: false })
+
+  if (requesterProfile.role === 'admin') {
+    if (!requesterProfile.organization_id) {
+      throw new Error('Admin account is missing organization context.')
+    }
+    query = query.eq('organization_id', requesterProfile.organization_id)
+  }
+
+  const { data: users, error } = await query
+  if (error) {
+    throw error
+  }
+
+  const authUsersById = await listAuthUsersById(adminClient)
+  return {
+    users: (users || []).map((user) => ({
+      ...user,
+      last_sign_in_at: authUsersById.get(user.id)?.last_sign_in_at || null,
+    })),
+  }
 }
 
 const validateStaffBranch = async (
@@ -1004,6 +1076,10 @@ Deno.serve(async (request) => {
 
     const payload = (await request.json()) as Record<string, unknown>
     const action = normalizeText(payload.action) as StaffAction
+
+    if (action === 'list_staff_users') {
+      return json(await listStaffUsers(adminClient, requesterProfile))
+    }
 
     if (action === 'update_staff_user' || action === 'update_staff_access') {
       if (!requesterHasRole(requesterProfile, ['admin', 'super_admin'])) {

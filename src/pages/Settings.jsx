@@ -449,6 +449,8 @@ const NHIS_RETURN_ALERT_ROLE_OPTIONS = [
   ['assistant', 'MCA'],
 ]
 
+const formatStaffLastLogin = (value) => value ? formatAppDateTime(value) : 'Never signed in'
+
 const blankBranchForm = {
   name: '', code: '', phone: '', email: '', address: '', city: '', region: '',
 }
@@ -2644,6 +2646,9 @@ const Settings = () => {
                         Branch: {row.branches?.name || 'Not assigned'}
                       </span>
                     </div>
+                    <p className="user-login-meta">
+                      Last login: {formatStaffLastLogin(row.last_sign_in_at)}
+                    </p>
                     <div className="user-role-list" aria-label="Assigned roles">
                       {(Array.isArray(row.assigned_roles) && row.assigned_roles.length
                         ? row.assigned_roles
