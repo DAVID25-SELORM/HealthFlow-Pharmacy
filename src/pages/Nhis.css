@@ -946,6 +946,16 @@
   color: #92400e;
 }
 
+.nhia-readiness-section--info {
+  border-top: 1px solid rgba(14, 116, 144, 0.18);
+  padding-top: 0.55rem;
+  color: #0f766e;
+}
+
+.nhia-readiness-info-list {
+  color: #0f766e;
+}
+
 .nhia-readiness li + li {
   margin-top: 0.25rem;
 }

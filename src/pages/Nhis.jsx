@@ -76,6 +76,28 @@ import './Nhis.css'
 // ─── constants ────────────────────────────────────────────────────────────────
 
 const CLAIM_STATUS_TABS = ['all', 'served', 'submitted', 'paid', 'rejected']
+const CLAIM_LEVEL_MCA_INFO_PATTERNS = [
+  /^Patient /i,
+  /^Folder number/i,
+  /^Prescribing facility/i,
+  /^Prescriber /i,
+  /^Date of dispensing\/service/i,
+  /^NHIS member number/i,
+  /^Ghana Card/i,
+  /^NHIA CCC/i,
+  /^CCC/i,
+  /^Diagnosis/i,
+  /^Attach the scanned prescription/i,
+  /^Set the NHIA/i,
+  /^Pharmacy NHIS claims cannot include/i,
+]
+const MEDICINE_LEVEL_MCA_PATTERNS = [
+  /^Add at least one medicine/i,
+  /^Medicine \d+:/i,
+  /^High: duplicate medicine/i,
+  /^High: Medicine \d+:/i,
+  /^High: .*medicine/i,
+]
 const isLocalClaimItBridgeBaseUrl = (baseUrl = '') => {
   try {
     const hostname = new URL(String(baseUrl || '').trim()).hostname.toLowerCase()
@@ -86,6 +108,30 @@ const isLocalClaimItBridgeBaseUrl = (baseUrl = '') => {
       /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname)
   } catch {
     return false
+  }
+}
+
+const isMcaMedicineIssue = (issue = '') => {
+  const normalized = String(issue || '').trim()
+  if (!normalized) return false
+  if (CLAIM_LEVEL_MCA_INFO_PATTERNS.some((pattern) => pattern.test(normalized))) return false
+  return MEDICINE_LEVEL_MCA_PATTERNS.some((pattern) => pattern.test(normalized))
+}
+
+const splitMcaReadinessIssues = (readiness = {}) => {
+  const blockers = Array.isArray(readiness.blockers) ? readiness.blockers : []
+  const warnings = Array.isArray(readiness.warnings) ? readiness.warnings : []
+  const medicineBlockers = blockers.filter(isMcaMedicineIssue)
+  const claimCompletionBlockers = blockers.filter((issue) => !isMcaMedicineIssue(issue))
+  const medicineWarnings = warnings.filter(isMcaMedicineIssue)
+  const claimCompletionWarnings = warnings.filter((issue) => !isMcaMedicineIssue(issue))
+
+  return {
+    medicineBlockers,
+    medicineWarnings,
+    claimCompletionBlockers,
+    claimCompletionWarnings,
+    canSaveMedicines: medicineBlockers.length === 0,
   }
 }
 
@@ -1638,7 +1684,16 @@ const Nhis = () => {
 
   const readinessPassed = readiness.issues.length === 0
   const readinessBlocked = readiness.blockers.length > 0
-  const canSaveCommunityPharmacyClaim = readiness.blockers.length === 0
+  const mcaReadiness = useMemo(() => splitMcaReadinessIssues(readiness), [readiness])
+  const effectiveReadinessBlocked = isMedicineCounterAssistant
+    ? mcaReadiness.medicineBlockers.length > 0
+    : readinessBlocked
+  const effectiveReadinessPassed = isMedicineCounterAssistant
+    ? mcaReadiness.medicineBlockers.length === 0 && mcaReadiness.medicineWarnings.length === 0
+    : readinessPassed
+  const canSaveCommunityPharmacyClaim = isMedicineCounterAssistant
+    ? mcaReadiness.canSaveMedicines
+    : readiness.blockers.length === 0
 
   const handlePrescriptionPdfSelect = (event) => {
     const file = event.target.files?.[0]
@@ -1897,8 +1952,13 @@ const Nhis = () => {
 
   const handleSubmitClaim = async (e) => {
     e.preventDefault()
-    if (readiness.blockers.length) {
+    if (!isMedicineCounterAssistant && readiness.blockers.length) {
       setClaimError(`NHIS claim readiness check failed: ${readiness.blockers.slice(0, 5).join(' ')}`)
+      return
+    }
+
+    if (isMedicineCounterAssistant && mcaReadiness.medicineBlockers.length) {
+      setClaimError(`Medicine save check failed: ${mcaReadiness.medicineBlockers.slice(0, 5).join(' ')}`)
       return
     }
 
@@ -3808,17 +3868,61 @@ const Nhis = () => {
                   <strong>Total:</strong> {fmtCurrency(claimTotal)}
                 </div>
 
-                <div className={`nhia-readiness ${readinessBlocked ? 'nhia-readiness--fail' : 'nhia-readiness--pass'}`}>
+                <div className={`nhia-readiness ${effectiveReadinessBlocked ? 'nhia-readiness--fail' : 'nhia-readiness--pass'}`}>
                   <div className="nhia-readiness-header">
-                    {readinessBlocked ? <XCircle size={16} /> : <CheckCircle2 size={16} />}
-                    <strong>{isHospital ? 'NHIS Claim Scrub' : 'NHIS Pharmacy Check'}</strong>
-                    <span className="nhia-risk-score">
-                      Risk {readiness.riskScore ?? 0}% - {readiness.riskLevel || 'clean'}
-                    </span>
+                    {effectiveReadinessBlocked ? <XCircle size={16} /> : <CheckCircle2 size={16} />}
+                    <strong>
+                      {isMedicineCounterAssistant
+                        ? 'Medicine Save Check'
+                        : isHospital ? 'NHIS Claim Scrub' : 'NHIS Pharmacy Check'}
+                    </strong>
+                    {!isMedicineCounterAssistant && (
+                      <span className="nhia-risk-score">
+                        Risk {readiness.riskScore ?? 0}% - {readiness.riskLevel || 'clean'}
+                      </span>
+                    )}
                   </div>
-                  {readinessPassed ? (
+                  {isMedicineCounterAssistant ? (
+                    <>
+                      {mcaReadiness.canSaveMedicines ? (
+                        <p>Medicine changes can be saved. Claims officer/admin must complete claim details before submission.</p>
+                      ) : (
+                        <div className="nhia-readiness-section">
+                          <span className="nhia-readiness-label">Medicine blockers ({mcaReadiness.medicineBlockers.length})</span>
+                          <ul>
+                            {mcaReadiness.medicineBlockers.map((issue) => (
+                              <li key={issue}>{issue}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {mcaReadiness.medicineWarnings.length > 0 && (
+                        <div className="nhia-readiness-section">
+                          <span className="nhia-readiness-label">Medicine warnings ({mcaReadiness.medicineWarnings.length})</span>
+                          <ul className="nhia-readiness-warnings">
+                            {mcaReadiness.medicineWarnings.map((issue) => (
+                              <li key={issue}>{issue}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {(mcaReadiness.claimCompletionBlockers.length > 0 || mcaReadiness.claimCompletionWarnings.length > 0) && (
+                        <div className="nhia-readiness-section nhia-readiness-section--info">
+                          <span className="nhia-readiness-label">
+                            Claim completion needed ({mcaReadiness.claimCompletionBlockers.length + mcaReadiness.claimCompletionWarnings.length})
+                          </span>
+                          <p>These do not stop MCA medicine saving. Claims officer/admin must complete them before correction, export, or submission.</p>
+                          <ul className="nhia-readiness-info-list">
+                            {[...mcaReadiness.claimCompletionBlockers, ...mcaReadiness.claimCompletionWarnings].map((issue) => (
+                              <li key={issue}>{issue}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </>
+                  ) : effectiveReadinessPassed ? (
                     <p>{isHospital ? 'Ready for NHIS claim submission.' : 'Ready for NHIS pharmacy claim submission.'}</p>
-                  ) : !readinessBlocked ? (
+                  ) : !effectiveReadinessBlocked ? (
                     <>
                       <p>Can be saved now; claims officer must complete warnings before corrections/export.</p>
                       <div className="nhia-readiness-section">

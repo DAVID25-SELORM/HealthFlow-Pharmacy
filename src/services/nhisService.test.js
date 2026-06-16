@@ -2524,6 +2524,45 @@ describe('NHIS claim save attachment behavior', () => {
     expect(updateBranchRecord).not.toHaveBeenCalled()
   })
 
+  it('does not block MCA medicine saves on claim-completion fields', async () => {
+    updateBranchNhisClaimMedicines.mockResolvedValueOnce({
+      id: 'claim-1',
+      status: 'served',
+      total_amount: 10,
+    })
+
+    await expect(updateNhisClaim(
+      'claim-1',
+      {
+        ...baseClaim,
+        cccNo: '81416',
+        folderNo: '',
+        referringFacility: '',
+        physicianName: '',
+      },
+      [medicineWithTotal],
+      {
+        useBranchServer: true,
+        medicinesOnly: true,
+        providerClassLevel: 'D',
+        pharmacyLevel: 'P1',
+        nhisDrugCatalog: [{ code: 'NH001', category: 'A' }],
+      }
+    )).resolves.toMatchObject({
+      id: 'claim-1',
+      status: 'served',
+    })
+
+    expect(updateBranchNhisClaimMedicines).toHaveBeenCalledWith(
+      'claim-1',
+      expect.objectContaining({
+        nhis_claim_medicines: expect.any(Array),
+        total_amount: 10,
+      })
+    )
+    expect(updateBranchRecord).not.toHaveBeenCalled()
+  })
+
   it('blocks an inline CLAIM-it attachment larger than 3 MB before saving', async () => {
     shouldUseBranchServer.mockReturnValue(true)
     const oversizedPdf = Buffer.concat([

@@ -1620,6 +1620,57 @@ const getClaimRisk = (blockers = [], warnings = []) => {
   return { score, level }
 }
 
+const MCA_CLAIM_LEVEL_ISSUE_PATTERNS = [
+  /^Patient /i,
+  /^Folder number/i,
+  /^Prescribing facility/i,
+  /^Prescriber /i,
+  /^Date of dispensing\/service/i,
+  /^NHIS member number/i,
+  /^Ghana Card/i,
+  /^NHIA CCC/i,
+  /^CCC/i,
+  /^Diagnosis/i,
+  /^Attach the scanned prescription/i,
+  /^Set the NHIA/i,
+  /^Pharmacy NHIS claims cannot include/i,
+]
+const MCA_MEDICINE_LEVEL_ISSUE_PATTERNS = [
+  /^Add at least one medicine/i,
+  /^Medicine \d+:/i,
+  /^High: duplicate medicine/i,
+  /^High: Medicine \d+:/i,
+  /^High: .*medicine/i,
+]
+
+const isMcaMedicineReadinessIssue = (issue = '') => {
+  const normalized = String(issue || '').trim()
+  if (!normalized) return false
+  if (MCA_CLAIM_LEVEL_ISSUE_PATTERNS.some((pattern) => pattern.test(normalized))) return false
+  return MCA_MEDICINE_LEVEL_ISSUE_PATTERNS.some((pattern) => pattern.test(normalized))
+}
+
+const getMcaMedicineReadinessBlockers = (readiness = {}) =>
+  (Array.isArray(readiness.blockers) ? readiness.blockers : []).filter(isMcaMedicineReadinessIssue)
+
+const toNhisClaimMedicineRows = (medicines = []) =>
+  medicines.map((m) => ({
+    nhis_drug_id: m.nhisDrugId || null,
+    drug_code: normalizeText(m.drugCode) || null,
+    description: assertRequiredText(m.description, 'Medicine description'),
+    unit: normalizeText(m.unit) || 'unit',
+    unit_price: assertNonNegativeNumber(m.unitPrice, 'Unit price'),
+    dispensed_qty: assertNonNegativeNumber(m.dispensedQty, 'Dispensed qty'),
+    dispensary_date: m.dispensaryDate || null,
+    dose: normalizeText(m.dose) || null,
+    frequency: normalizeText(m.frequency) || null,
+    duration: normalizeText(m.duration) || null,
+    total_amount: assertNonNegativeNumber(m.totalAmount, 'Total amount'),
+    // NHIS pharmacy level fields
+    medicine_access_level: normalizeMedicineAccessLevel(m.medicineAccessLevel ?? m.medicine_access_level) || null,
+    required_pharmacy_level: normalizePharmacyLevel(m.requiredPharmacyLevel ?? m.required_pharmacy_level) || null,
+  }))
+
 // ✅ NHIS CLAIM LOGIC SEPARATION PATCH START
 const hasIcd10DiagnosisCode = (claimData = {}) => {
   const diagnosisDetails = normalizeDiagnosisDetails(claimData?.diagnosisDetails ?? claimData?.diagnosis_details)
@@ -4275,23 +4326,9 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
   }
 
   // Insert medicines
-  const medicineRows = medicines.map((m) => ({
-    claim_id:       claim.id,
-    nhis_drug_id:   m.nhisDrugId      || null,
-    drug_code:      normalizeText(m.drugCode)      || null,
-    description:    assertRequiredText(m.description, 'Medicine description'),
-    unit:           normalizeText(m.unit)           || 'unit',
-    unit_price:     assertNonNegativeNumber(m.unitPrice, 'Unit price'),
-    dispensed_qty:  assertNonNegativeNumber(m.dispensedQty, 'Dispensed qty'),
-    dispensary_date: m.dispensaryDate || null,
-    dose:           normalizeText(m.dose)           || null,
-    frequency:      normalizeText(m.frequency)      || null,
-    duration:       normalizeText(m.duration)       || null,
-    total_amount:   assertNonNegativeNumber(m.totalAmount, 'Total amount'),
-    // ✅ NHIS PHARMACY LEVEL PATCH START
-    medicine_access_level: normalizeMedicineAccessLevel(m.medicineAccessLevel ?? m.medicine_access_level) || null,
-    required_pharmacy_level: normalizePharmacyLevel(m.requiredPharmacyLevel ?? m.required_pharmacy_level) || null,
-    // ✅ NHIS PHARMACY LEVEL PATCH END
+  const medicineRows = toNhisClaimMedicineRows(medicines).map((row) => ({
+    ...row,
+    claim_id: claim.id,
   }))
 
   await insertNhisClaimMedicineRows(medicineRows)
@@ -4364,6 +4401,34 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
       tariffCateringOption: options.tariffCateringOption || options.tariff_catering_option,
     }
   )
+  if (options.medicinesOnly === true) {
+    const medicineBlockers = getMcaMedicineReadinessBlockers(readiness)
+    if (medicineBlockers.length) {
+      throw new Error(`Medicine save check failed: ${medicineBlockers.slice(0, 5).join(' ')}`)
+    }
+
+    const medicineRows = toNhisClaimMedicineRows(medicines)
+    const totalAmount = medicineRows.reduce((sum, row) => sum + Number(row.total_amount || 0), 0) +
+      tariffServices.reduce((sum, line) => sum + Number(line.totalAmount || 0), 0)
+    const medicinesOnlyPayload = {
+      nhis_claim_medicines: medicineRows,
+      total_amount: totalAmount,
+      updated_at: new Date().toISOString(),
+    }
+
+    if (options.useBranchServer || shouldUseBranchServer()) {
+      return await updateBranchNhisClaimMedicines(id, medicinesOnlyPayload)
+    }
+
+    const { data, error } = await supabase.rpc('serve_nhis_claim_medicines', {
+      p_claim_id: id,
+      p_medicines: medicineRows,
+      p_total_amount: totalAmount,
+    })
+    if (error) throw error
+    return data
+  }
+
   if (readiness.blockers.length) {
     throw new Error(`NHIS correction check failed: ${readiness.blockers.slice(0, 5).join(' ')}`)
   }
@@ -4394,24 +4459,7 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
     useBranchServer: options.useBranchServer,
   })
   const diagnosisDetails = getDiagnosisDetailsPayload(claimData)
-  const medicineRows = medicines.map((m) => ({
-    nhis_drug_id: m.nhisDrugId || null,
-    drug_code: normalizeText(m.drugCode) || null,
-    description: assertRequiredText(m.description, 'Medicine description'),
-    unit: normalizeText(m.unit) || 'unit',
-    unit_price: assertNonNegativeNumber(m.unitPrice, 'Unit price'),
-    dispensed_qty: assertNonNegativeNumber(m.dispensedQty, 'Dispensed qty'),
-    dispensary_date: m.dispensaryDate || null,
-    dose: normalizeText(m.dose) || null,
-    frequency: normalizeText(m.frequency) || null,
-    duration: normalizeText(m.duration) || null,
-    total_amount: assertNonNegativeNumber(m.totalAmount, 'Total amount'),
-    // ✅ NHIS PHARMACY LEVEL PATCH START
-    medicine_access_level: normalizeMedicineAccessLevel(m.medicineAccessLevel ?? m.medicine_access_level) || null,
-    required_pharmacy_level: normalizePharmacyLevel(m.requiredPharmacyLevel ?? m.required_pharmacy_level) || null,
-    // ✅ NHIS PHARMACY LEVEL PATCH END
-  }))
-
+  const medicineRows = toNhisClaimMedicineRows(medicines)
   let claimPayload = {
     patient_id: claimData.patientId || null,
     member_no: memberNo,
@@ -4452,26 +4500,6 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
     ) || null,
     ...getPrescriptionAttachmentPayload(claimData),
     updated_at: new Date().toISOString(),
-  }
-
-  if (options.medicinesOnly === true) {
-    const medicinesOnlyPayload = {
-      nhis_claim_medicines: medicineRows,
-      total_amount: totalAmount,
-      updated_at: claimPayload.updated_at,
-    }
-
-    if (options.useBranchServer || shouldUseBranchServer()) {
-      return await updateBranchNhisClaimMedicines(id, medicinesOnlyPayload)
-    }
-
-    const { data, error } = await supabase.rpc('serve_nhis_claim_medicines', {
-      p_claim_id: id,
-      p_medicines: medicineRows,
-      p_total_amount: totalAmount,
-    })
-    if (error) throw error
-    return data
   }
 
   if (options.useBranchServer || shouldUseBranchServer()) {
