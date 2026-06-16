@@ -303,9 +303,12 @@ const createDownloadUrl = async (
     return json({ error: 'Invalid backup path.' }, 400)
   }
 
+  // 1 hour: a backup file can be large and links may be clicked/shared a little
+  // later — a 60s expiry was too short and caused "token expired" download failures.
+  const BACKUP_DOWNLOAD_URL_TTL_SECONDS = 60 * 60
   const { data, error } = await adminClient.storage
     .from(BACKUP_BUCKET)
-    .createSignedUrl(requestedPath, 60)
+    .createSignedUrl(requestedPath, BACKUP_DOWNLOAD_URL_TTL_SECONDS)
 
   if (error) throw error
 
