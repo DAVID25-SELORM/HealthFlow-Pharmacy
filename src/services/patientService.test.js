@@ -168,6 +168,7 @@ describe('patientService local sync reads', () => {
         surname: 'Baria',
         other_names: 'Karim',
         member_no: '99441270',
+        service_date_from: '2026-06-15',
       }],
       visitStats: {
         '2df77f2d-ea44-4f14-966c-a0a7c213f86a': {
@@ -186,8 +187,8 @@ describe('patientService local sync reads', () => {
       expect.objectContaining({
         id: 'nhis-claim-claim-row-1',
         full_name: 'Baria Karim',
-        visits: 0,
-        lastVisit: null,
+        visits: 1,
+        lastVisit: '2026-06-15',
       }),
     ])
 

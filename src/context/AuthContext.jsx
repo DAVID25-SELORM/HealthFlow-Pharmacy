@@ -25,6 +25,7 @@ import { storeActiveRole } from '../utils/activeRole'
 
 const AuthContext = createContext(null)
 const FALLBACK_ROLE = 'assistant'
+const loggedSignInAuditKeys = new Set()
 const PROFILE_SELECT = `
   id,
   email,
@@ -119,6 +120,36 @@ const isSupabaseAuthFailure = (error) => {
 
 const resolveRole = (profile, authUser) =>
   profile?.role || authUser?.app_metadata?.role || authUser?.user_metadata?.role || FALLBACK_ROLE
+
+const getSignInAuditKey = (session, authUser, email = '') => {
+  const userId = authUser?.id || session?.user?.id || ''
+  const tokenTail = String(session?.access_token || '').slice(-16)
+  const expiresAt = session?.expires_at || ''
+  return [userId || email, tokenTail || expiresAt || email].filter(Boolean).join(':')
+}
+
+const recordSignInAuditEvent = async ({ session, authUser, email }) => {
+  const user = authUser || session?.user || null
+  const normalizedEmail = user?.email || email || ''
+  const auditKey = getSignInAuditKey(session, user, normalizedEmail)
+  if (auditKey && loggedSignInAuditKeys.has(auditKey)) {
+    return
+  }
+  if (auditKey) {
+    loggedSignInAuditKeys.add(auditKey)
+  }
+
+  await tryLogAuditEvent({
+    eventType: 'auth',
+    entityType: 'session',
+    entityId: null,
+    action: 'sign_in',
+    details: {
+      actor_user_id: user?.id || null,
+      email: normalizedEmail,
+    },
+  })
+}
 
 const resolveDisplayName = (profile, authUser) =>
   profile?.full_name || authUser?.user_metadata?.full_name || authUser?.email || 'Authenticated User'
@@ -498,6 +529,9 @@ export const AuthProvider = ({ children }) => {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, activeSession) => {
       scheduleAuthResolution(() => {
+        if (event === 'SIGNED_IN') {
+          void recordSignInAuditEvent({ session: activeSession })
+        }
         void resolveSessionState(activeSession, { event })
       })
     })
@@ -531,15 +565,10 @@ export const AuthProvider = ({ children }) => {
       throw error
     }
 
-    await tryLogAuditEvent({
-      eventType: 'auth',
-      entityType: 'session',
-      entityId: null,
-      action: 'sign_in',
-      details: {
-        actor_user_id: data?.user?.id || null,
-        email: data?.user?.email || normalizedEmail,
-      },
+    await recordSignInAuditEvent({
+      session: data?.session,
+      authUser: data?.user,
+      email: normalizedEmail,
     })
   }
 

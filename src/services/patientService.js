@@ -235,6 +235,34 @@ const nhisClaimToPatient = (claim = {}) => ({
   sourceClaimNumber: claim.claim_number || '',
 })
 
+const getNhisClaimVisitDate = (claim = {}) =>
+  claim.service_date || claim.service_date_from || claim.dispensing_date || claim.created_at || null
+
+const patientMatchesNhisClaim = (patient = {}, claim = {}) => {
+  const patientId = String(patient.id || patient.patient_id || '').trim()
+  const claimPatientId = String(claim.patient_id || '').trim()
+  if (patientId && claimPatientId && patientId === claimPatientId) return true
+
+  const patientMember = compactPatientLookup(patient.nhis_member_no || patient.insurance_id)
+  const claimMember = compactPatientLookup(claim.member_no || claim.insurance_id)
+  if (patientMember && claimMember && patientMember === claimMember) return true
+
+  const patientHin = compactPatientLookup(patient.nhis_hin)
+  const claimHin = compactPatientLookup(claim.hin)
+  if (patientHin && claimHin && patientHin === claimHin) return true
+
+  const patientPhone = compactPatientLookup(patient.phone)
+  const claimPhone = compactPatientLookup(claim.phone || claim.patient_phone)
+  if (patientPhone && claimPhone && patientPhone === claimPhone) return true
+
+  return false
+}
+
+const latestDateValue = (...values) =>
+  values
+    .filter(Boolean)
+    .sort((left, right) => new Date(right).getTime() - new Date(left).getTime())[0] || null
+
 const nhisClaimToPatientDetail = (claim = {}) => ({
   ...nhisClaimToPatient(claim),
   sales: [],
@@ -285,6 +313,7 @@ const mergePatients = (...groups) => {
 }
 
 export const normalizePatientWorkspaceData = (workspace = {}) => {
+  const nhisClaims = workspace.nhisClaims || []
   const claimPatients = (workspace.nhisClaims || [])
     .map(nhisClaimToPatient)
     .filter((patient) => patient.full_name || patient.nhis_member_no || patient.nhis_hin || patient.insurance_id)
@@ -292,10 +321,12 @@ export const normalizePatientWorkspaceData = (workspace = {}) => {
 
   return mergePatients(workspace.patients || [], claimPatients).map((patient) => {
     const stats = visitStats[patient.id] || {}
+    const matchingNhisClaims = nhisClaims.filter((claim) => patientMatchesNhisClaim(patient, claim))
+    const lastNhisVisit = latestDateValue(...matchingNhisClaims.map(getNhisClaimVisitDate))
     return {
       ...patient,
-      visits: Number(stats.visits || 0),
-      lastVisit: stats.lastVisit || null,
+      visits: Number(stats.visits || 0) + matchingNhisClaims.length,
+      lastVisit: latestDateValue(stats.lastVisit, lastNhisVisit),
     }
   })
 }
@@ -512,7 +543,14 @@ export const getPatientVisitCount = async (patientId) => {
     .eq('patient_id', patientId)
   
   if (error) throw error
-  return count
+
+  const { count: nhisCount, error: nhisError } = await supabase
+    .from('nhis_claims')
+    .select('*', { count: 'exact', head: true })
+    .eq('patient_id', patientId)
+
+  if (nhisError) throw nhisError
+  return Number(count || 0) + Number(nhisCount || 0)
 }
 
 // Get patient last visit
@@ -534,5 +572,15 @@ export const getPatientLastVisit = async (patientId) => {
     .maybeSingle()
   
   if (error && error.code !== 'PGRST116') throw error
-  return data?.sale_date || null
+
+  const { data: nhisData, error: nhisError } = await supabase
+    .from('nhis_claims')
+    .select('service_date_from, service_date, dispensing_date, created_at')
+    .eq('patient_id', patientId)
+    .order('service_date_from', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (nhisError && nhisError.code !== 'PGRST116') throw nhisError
+  return latestDateValue(data?.sale_date, getNhisClaimVisitDate(nhisData || {}))
 }
