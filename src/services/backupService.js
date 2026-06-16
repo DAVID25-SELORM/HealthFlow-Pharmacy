@@ -43,12 +43,23 @@ export const downloadOnlineBackup = async (backup) => {
     throw new Error('Online backup download URL was not returned.')
   }
 
+  const fileName = response.fileName || backup.fileName || 'healthflow-online-backup.json'
+  const fileResponse = await fetch(response.signedUrl)
+  if (!fileResponse.ok) {
+    throw new Error('Unable to download online backup. Please try again to generate a fresh link.')
+  }
+
+  const blob = await fileResponse.blob()
+  if (!blob.size) {
+    throw new Error('Online backup download was empty. Please create a fresh backup and try again.')
+  }
+
+  const objectUrl = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
-  anchor.href = response.signedUrl
-  anchor.setAttribute('download', response.fileName || backup.fileName || 'healthflow-online-backup.json')
-  anchor.setAttribute('target', '_blank')
-  anchor.setAttribute('rel', 'noopener noreferrer')
+  anchor.href = objectUrl
+  anchor.setAttribute('download', fileName)
   document.body.appendChild(anchor)
   anchor.click()
   document.body.removeChild(anchor)
+  URL.revokeObjectURL(objectUrl)
 }
