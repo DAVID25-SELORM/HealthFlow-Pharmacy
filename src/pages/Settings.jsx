@@ -21,6 +21,7 @@ import {
 } from '../services/branchServerApi'
 import { updateOrganization, getOrganizationStats } from '../services/organizationService'
 import { buildClaimItConfigPreview, getNhiaApiSettings, removeNhiaApiCredentials, saveNhiaApiSettings, testClaimItConnection, validateNhiaConfigForMode } from '../services/nhisService'
+import { createOnlineBackup, downloadOnlineBackup, listOnlineBackups } from '../services/backupService'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
 import { normalizeSubscriptionTier, useTenant } from '../context/TenantContext'
@@ -500,6 +501,10 @@ const Settings = () => {
   const [backupLoading, setBackupLoading] = useState(false)
   const [backupCreating, setBackupCreating] = useState(false)
   const [backupDownloading, setBackupDownloading] = useState('')
+  const [onlineBackups, setOnlineBackups] = useState([])
+  const [onlineBackupLoading, setOnlineBackupLoading] = useState(false)
+  const [onlineBackupCreating, setOnlineBackupCreating] = useState(false)
+  const [onlineBackupDownloading, setOnlineBackupDownloading] = useState('')
   const [nhiaApiForm, setNhiaApiForm] = useState(blankNhiaApiForm)
   const [nhiaCredentialState, setNhiaCredentialState] = useState(toNhiaCredentialState(blankNhiaApiForm))
   const [savingNhiaApi, setSavingNhiaApi] = useState(false)
@@ -541,6 +546,7 @@ const Settings = () => {
   const showNhiaProviderClassLevel = isHospitalOrganization && !isNhiaHospitalPharmacy
   const latestBackups = databaseStatus?.latestBackups || []
   const latestBackup = latestBackups[0] || null
+  const latestOnlineBackup = onlineBackups[0] || null
   // ✅ NHIA CONFIG PATCH END
 
   useEffect(() => {
@@ -550,6 +556,7 @@ const Settings = () => {
   useEffect(() => {
     if (isAdmin) {
       void loadDatabaseStatus({ silent: true })
+      void loadOnlineBackups({ silent: true })
     }
   }, [isAdmin])
 
@@ -692,6 +699,54 @@ const Settings = () => {
       notify(downloadError.message || 'Unable to download backup file.', 'error')
     } finally {
       setBackupDownloading('')
+    }
+  }
+
+  const loadOnlineBackups = async ({ silent = false } = {}) => {
+    try {
+      setOnlineBackupLoading(true)
+      const backups = await listOnlineBackups()
+      setOnlineBackups(backups)
+      if (!silent) {
+        notify('Online backup list refreshed.', 'success')
+      }
+    } catch (onlineError) {
+      if (!silent) {
+        notify(onlineError.message || 'Unable to read online backups.', 'error')
+      }
+    } finally {
+      setOnlineBackupLoading(false)
+    }
+  }
+
+  const handleCreateOnlineBackup = async () => {
+    try {
+      setOnlineBackupCreating(true)
+      const backup = await createOnlineBackup()
+      await loadOnlineBackups({ silent: true })
+      notify(`Online backup created: ${getBackupFileName(backup) || 'latest online backup'}`, 'success')
+    } catch (onlineError) {
+      notify(onlineError.message || 'Unable to create online backup.', 'error')
+    } finally {
+      setOnlineBackupCreating(false)
+    }
+  }
+
+  const handleDownloadOnlineBackup = async (backup) => {
+    const fileName = getBackupFileName(backup)
+    if (!fileName) {
+      notify('Online backup file name is missing.', 'error')
+      return
+    }
+
+    try {
+      setOnlineBackupDownloading(fileName)
+      await downloadOnlineBackup(backup)
+      notify(`Online backup download started: ${fileName}`, 'success')
+    } catch (onlineError) {
+      notify(onlineError.message || 'Unable to download online backup.', 'error')
+    } finally {
+      setOnlineBackupDownloading('')
     }
   }
 
@@ -1690,6 +1745,100 @@ const Settings = () => {
             <p className="settings-helper">
               Recovery file: local-branch-server/data/healthflow-branch.sqlite. Restore by stopping the branch server, replacing the SQLite file with a trusted backup, then starting the server again.
             </p>
+
+            <div className="online-backup-section">
+              <div className="online-backup-header">
+                <div>
+                  <h4>Online Cloud Backup</h4>
+                  <p className="settings-note">
+                    Create an admin-only facility snapshot in private Supabase Storage for online-only users.
+                  </p>
+                </div>
+                <span className="online-backup-count">
+                  {onlineBackups.length} saved
+                </span>
+              </div>
+
+              <div className="backup-status-grid">
+                <div>
+                  <span>Storage</span>
+                  <strong>Supabase</strong>
+                </div>
+                <div>
+                  <span>Latest</span>
+                  <strong>{latestOnlineBackup ? formatAppDateTime(latestOnlineBackup.createdAt || latestOnlineBackup.updatedAt) : '-'}</strong>
+                </div>
+                <div>
+                  <span>Type</span>
+                  <strong>JSON</strong>
+                </div>
+                <div>
+                  <span>Access</span>
+                  <strong>Admin only</strong>
+                </div>
+              </div>
+
+              <div className="backup-action-row">
+                <button
+                  className="btn btn-outline"
+                  type="button"
+                  onClick={() => loadOnlineBackups()}
+                  disabled={onlineBackupLoading}
+                >
+                  <RefreshCcw size={16} />
+                  {onlineBackupLoading ? 'Checking...' : 'Check Online'}
+                </button>
+                <button
+                  className="btn btn-primary"
+                  type="button"
+                  onClick={handleCreateOnlineBackup}
+                  disabled={onlineBackupCreating}
+                >
+                  <Database size={16} />
+                  {onlineBackupCreating ? 'Creating...' : 'Backup Online'}
+                </button>
+                <button
+                  className="btn btn-outline"
+                  type="button"
+                  onClick={() => handleDownloadOnlineBackup(latestOnlineBackup)}
+                  disabled={!latestOnlineBackup || Boolean(onlineBackupDownloading)}
+                >
+                  <Download size={16} />
+                  {onlineBackupDownloading ? 'Downloading...' : 'Download Online'}
+                </button>
+              </div>
+
+              {onlineBackups.length > 0 ? (
+                <div className="backup-list">
+                  {onlineBackups.map((backup) => {
+                    const fileName = getBackupFileName(backup)
+                    return (
+                      <div className="backup-list-row" key={backup.path || fileName}>
+                        <div>
+                          <strong>{fileName}</strong>
+                          <span>{formatBytes(backup.sizeBytes)} - {formatAppDateTime(backup.createdAt || backup.updatedAt)}</span>
+                        </div>
+                        <button
+                          className="btn btn-outline"
+                          type="button"
+                          onClick={() => handleDownloadOnlineBackup(backup)}
+                          disabled={onlineBackupDownloading === fileName}
+                        >
+                          <Download size={14} />
+                          Save
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className="backup-empty-state">No online backups found yet.</div>
+              )}
+
+              <p className="settings-helper">
+                Online backups are stored privately under facility-backups/&lt;organization-id&gt;/ and downloaded through short-lived signed links.
+              </p>
+            </div>
           </div>
         )}
 

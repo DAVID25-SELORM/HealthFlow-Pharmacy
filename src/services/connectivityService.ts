@@ -1,4 +1,6 @@
 // OFFLINE-FIRST PATCH START
+import { debugInfo } from '../utils/debugLog'
+
 const DEFAULT_BRANCH_SERVER_URL = 'http://localhost:4780'
 const RUNTIME_CONFIG_KEY = 'healthflow.branchServer.config.v1'
 const BRANCH_TOKEN_STORAGE_KEY = 'healthflow_branch_token'
@@ -110,7 +112,7 @@ const logMode = (nextState: ConnectivityState) => {
         : nextState.mode === CONNECTIVITY_MODES.OFFLINE_LOCAL
           ? '[LOCAL]'
           : '[OFFLINE]'
-  console.info(`${prefix} Connectivity mode: ${nextState.mode}`)
+  debugInfo(`${prefix} Connectivity mode: ${nextState.mode}`)
 }
 
 const resolveMode = (internetAvailable: boolean, branchServerAvailable: boolean): ConnectivityMode => {
@@ -155,7 +157,7 @@ export const refreshConnectivityState = async ({
         branchServerAvailable = true
       } catch (error) {
         if (!internetAvailable) {
-          console.info('[OFFLINE] Local branch server health check failed:', error)
+          debugInfo('[OFFLINE] Local branch server health check failed:', error)
         }
       }
     }
@@ -192,11 +194,11 @@ export const shouldPreferLocalApi = () => {
 
 if (typeof window !== 'undefined') {
   window.addEventListener('online', () => {
-    console.info('[SYNC] Browser came online; checking HealthFlow routes.')
+    debugInfo('[SYNC] Browser came online; checking HealthFlow routes.')
     void refreshConnectivityState({ probeLocal: true })
   })
   window.addEventListener('offline', () => {
-    console.info('[OFFLINE] Browser went offline; checking local branch server.')
+    debugInfo('[OFFLINE] Browser went offline; checking local branch server.')
     void refreshConnectivityState({ probeLocal: true })
   })
   void refreshConnectivityState({ probeLocal: true })

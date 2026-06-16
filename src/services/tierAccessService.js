@@ -1,5 +1,6 @@
 import { invokeSupabaseFunction } from '../lib/supabase'
 import { getStoredActiveRole } from '../utils/activeRole'
+import { debugLog } from '../utils/debugLog'
 
 const TIER_ACCESS_FUNCTION = 'tier-access'
 const REDACTED_VALUE = '[REDACTED]'
@@ -48,7 +49,7 @@ export const invokeTierAccess = async (payload) => {
   const requestPayload = activeRole && !payload?.activeRole
     ? { ...payload, activeRole }
     : payload
-  console.log('[TIER ACCESS REQUEST]', {
+  debugLog('[TIER ACCESS REQUEST]', {
     action: requestPayload?.action,
     organizationId: requestPayload?.organizationId || requestPayload?.organization_id,
     payload: redactPayload(requestPayload),

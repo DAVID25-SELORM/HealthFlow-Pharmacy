@@ -4,6 +4,7 @@ import {
   refreshConnectivityState,
   shouldPreferLocalApi,
 } from './connectivityService'
+import { debugInfo } from '../utils/debugLog'
 
 // ✅ OFFLINE-FIRST PATCH START
 export const API_MODES = CONNECTIVITY_MODES
@@ -12,7 +13,7 @@ export const getApiMode = () => getConnectivityState().mode
 
 export const shouldRouteToLocal = async () => {
   await refreshConnectivityState().catch((error) => {
-    console.info('[OFFLINE] Unable to refresh connectivity before routing:', error)
+    debugInfo('[OFFLINE] Unable to refresh connectivity before routing:', error)
   })
 
   return shouldPreferLocalApi()
@@ -50,7 +51,7 @@ export const routeRead = async <T>({
   fallback?: T
 }) => {
   if (await shouldRouteToLocal()) {
-    console.info(`[LOCAL] Reading ${label} from local branch server.`)
+    debugInfo(`[LOCAL] Reading ${label} from local branch server.`)
     return local()
   }
 
@@ -60,7 +61,7 @@ export const routeRead = async <T>({
   }
 
   try {
-    console.info(`[CLOUD] Reading ${label} from Supabase.`)
+    debugInfo(`[CLOUD] Reading ${label} from Supabase.`)
     return await cloud()
   } catch (error) {
     if (isNetworkLikeError(error)) {
@@ -87,7 +88,7 @@ export const routeWrite = async <T>({
   cloud: () => Promise<T>
 }) => {
   if (await shouldRouteToLocal()) {
-    console.info(`[LOCAL] Writing ${label} to local branch server queue.`)
+    debugInfo(`[LOCAL] Writing ${label} to local branch server queue.`)
     return local()
   }
 
@@ -97,7 +98,7 @@ export const routeWrite = async <T>({
   }
 
   try {
-    console.info(`[CLOUD] Writing ${label} to Supabase.`)
+    debugInfo(`[CLOUD] Writing ${label} to Supabase.`)
     return await cloud()
   } catch (error) {
     if (isNetworkLikeError(error)) {

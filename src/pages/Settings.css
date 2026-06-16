@@ -585,6 +585,37 @@
   text-align: center;
 }
 
+.online-backup-section {
+  border-top: 1px solid var(--gray-200);
+  display: grid;
+  gap: 0.85rem;
+  margin-top: 0.35rem;
+  padding-top: 0.95rem;
+}
+
+.online-backup-header {
+  align-items: flex-start;
+  display: flex;
+  gap: 0.85rem;
+  justify-content: space-between;
+}
+
+.online-backup-header h4 {
+  color: var(--gray-900);
+  font-size: 1rem;
+  margin: 0 0 0.2rem;
+}
+
+.online-backup-count {
+  background: rgba(16, 163, 127, 0.12);
+  border-radius: 999px;
+  color: var(--primary-dark);
+  flex: 0 0 auto;
+  font-size: 0.78rem;
+  font-weight: 800;
+  padding: 0.35rem 0.65rem;
+}
+
 /* Organization Card Styles */
 .org-info {
   display: flex;
@@ -925,6 +956,15 @@
 
   .backup-action-row {
     grid-template-columns: 1fr;
+  }
+
+  .online-backup-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .online-backup-count {
+    width: fit-content;
   }
 }
 
