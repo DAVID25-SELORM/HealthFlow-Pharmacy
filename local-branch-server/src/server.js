@@ -45,6 +45,11 @@ import {
   saveOfflineRecord,
 } from './offlineRecordsRepository.js'
 import {
+  buildMcaEditReopenFields,
+  canReopenMcaEditWindow,
+  isMcaEditWindowOpen,
+} from './mcaEditWindow.js'
+import {
   getPaymentStatus,
   handleHubtelWebhook,
   handlePaystackWebhook,
@@ -582,6 +587,15 @@ app.put('/api/nhis/claims/:id/medicines', requireBranchUserSession, (request, re
       response.status(404).json({ error: 'NHIS claim not found.' })
       return
     }
+    // MCA (assistant) may only add/remove medications within the edit window
+    // (24h from creation, or a 12h supervisor re-open). Other roles are
+    // unaffected. CC code, submission, and validation logic are not touched.
+    if (role === 'assistant' && !isMcaEditWindowOpen(existing)) {
+      response.status(403).json({
+        error: 'The 24-hour edit window for this claim has closed. Ask an admin or claims officer to re-open it.',
+      })
+      return
+    }
     response.json({
       data: saveOfflineRecord('nhis_claims', {
         ...existing,
@@ -608,6 +622,37 @@ app.delete('/api/nhis/claims/:id', requireBranchUserSession, (request, response,
       return
     }
     response.json({ data: deleteOfflineRecord('nhis_claims', request.params.id) })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// Admin / claims officer re-opens the MCA medication edit window for 12 hours.
+// Requires a reason. Does not change CC code, submission, or validation logic.
+app.post('/api/nhis/claims/:id/reopen-mca-edit', requireBranchUserSession, (request, response, next) => {
+  try {
+    const role = String(request.branchUser?.role || '').trim().toLowerCase()
+    if (!canReopenMcaEditWindow(role)) {
+      response.status(403).json({ error: 'Only an admin or claims officer can re-open the MCA edit window.' })
+      return
+    }
+    const reason = String(request.body?.reason || '').trim()
+    if (!reason) {
+      response.status(400).json({ error: 'A reason is required to re-open the MCA edit window.' })
+      return
+    }
+    const existing = getOfflineRecord('nhis_claims', request.params.id)
+    if (!existing) {
+      response.status(404).json({ error: 'NHIS claim not found.' })
+      return
+    }
+    response.json({
+      data: saveOfflineRecord('nhis_claims', {
+        ...existing,
+        ...buildMcaEditReopenFields({ reason, reopenedBy: request.branchUser?.id || request.branchUser?.userId || null }),
+        id: request.params.id,
+      }),
+    })
   } catch (error) {
     next(error)
   }

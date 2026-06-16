@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Plus, Search, X, Upload, Download, CheckCircle2,
   Send, Banknote, XCircle, Eye, FileSpreadsheet, HeartPulse,
-  Pencil, Paperclip, FileText, Trash2, Users,
+  Pencil, Paperclip, FileText, Trash2, Users, Clock,
 } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { isSupabaseConfigured } from '../lib/supabase'
@@ -45,8 +45,10 @@ import {
   generateNhiaCcCode as generateBranchNhiaCcCode,
   getNhiaLookupCardType,
   lookupNhiaMember as branchLookupNhiaMember,
+  reopenBranchMcaEditWindow,
   shouldUseBranchServer,
 } from '../services/branchServerApi'
+import { isMcaEditWindowOpen, canReopenMcaEditWindow } from '../utils/mcaEditWindow'
 import { getAllPatients, searchPatients } from '../services/patientService'
 import { getAllDrugs } from '../services/drugService'
 import { parseNhisDrugFile, generateNhisDrugTemplate } from '../services/nhisDrugImportService'
@@ -1252,6 +1254,13 @@ const Nhis = () => {
       return
     }
 
+    // MCA medication edits are limited to the 24h window (or a 12h supervisor
+    // re-open). The branch server also enforces this; this is early feedback.
+    if (isMedicineCounterAssistant && !isMcaEditWindowOpen(claim)) {
+      notify('The 24-hour edit window for this claim has closed. Ask an admin or claims officer to re-open it.', 'warning')
+      return
+    }
+
     setEditingClaim(claim)
     setClaimError('')
     setPatientSearch(formatPatientLookupName(claim))
@@ -2147,6 +2156,31 @@ const Nhis = () => {
     }
   }
 
+  // Admin / claims officer re-opens the MCA medication edit window for 12 hours.
+  const canReopenMca = canReopenMcaEditWindow(normalizedRole)
+  const handleReopenMcaEdit = async (claim) => {
+    if (!canReopenMca) {
+      notify('Only an admin or claims officer can re-open the MCA edit window.', 'warning')
+      return
+    }
+    const reason = window.prompt(`Re-open the MCA medication edit window for claim ${claim.claim_number} (12 hours)?\nEnter a reason:`)
+    if (reason === null) return
+    if (!reason.trim()) {
+      notify('A reason is required to re-open the MCA edit window.', 'warning')
+      return
+    }
+    try {
+      setUpdatingStatus(claim.id)
+      await reopenBranchMcaEditWindow(claim.id, reason.trim())
+      await loadAll()
+      notify(`MCA edit window re-opened for ${claim.claim_number} (12 hours).`, 'success')
+    } catch (err) {
+      notify(err.message || 'Unable to re-open the MCA edit window.', 'error')
+    } finally {
+      setUpdatingStatus(null)
+    }
+  }
+
   // ── drug catalog CRUD ─────────────────────────────────────────
   const openAddDrug = () => {
     setEditingDrug(null)
@@ -2733,6 +2767,16 @@ const Nhis = () => {
                             onClick={() => openEditClaim(c)}
                           >
                             <Pencil size={14} />
+                          </button>
+                        )}
+                        {canReopenMca && c.status === 'served' && !isMcaEditWindowOpen(c) && (
+                          <button
+                            className="action-btn action-btn--edit"
+                            title="Re-open MCA edit window (12 hours)"
+                            disabled={updatingStatus === c.id}
+                            onClick={() => handleReopenMcaEdit(c)}
+                          >
+                            <Clock size={14} />
                           </button>
                         )}
                         {c.status === 'served' && canWrite && (
