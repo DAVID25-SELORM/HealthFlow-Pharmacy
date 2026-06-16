@@ -156,6 +156,8 @@ const OPTIONAL_CLAIM_SCHEMA_COLUMNS = [
   'nhia_attendance_verification_source',
   'nhia_member_status',
   'nhia_member_lookup_payload',
+  'nhis_return_override_reason',
+  'nhis_return_previous_claim_id',
 ]
 const OPTIONAL_CLAIM_SCHEMA_FIELD_GROUPS = [
   ['patient_address', 'patientAddress'],
@@ -183,6 +185,8 @@ const OPTIONAL_CLAIM_SCHEMA_FIELD_GROUPS = [
   ['nhia_attendance_verification_source', 'attendanceVerificationSource'],
   ['nhia_member_status', 'nhiaMemberStatus'],
   ['nhia_member_lookup_payload', 'nhiaMemberLookupPayload'],
+  ['nhis_return_override_reason', 'nhisReturnOverrideReason'],
+  ['nhis_return_previous_claim_id', 'nhisReturnPreviousClaimId'],
 ]
 const OPTIONAL_CLAIM_SCHEMA_PAYLOAD_KEYS = [
   ...new Set([
@@ -4257,6 +4261,12 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
     ...getNhiaAttendancePayload(claimData),
     nhia_member_status: normalizeText(claimData.nhiaMemberStatus ?? claimData.nhia_member_status) || null,
     nhia_member_lookup_payload: claimData.nhiaMemberLookupPayload ?? claimData.nhia_member_lookup_payload ?? null,
+    nhis_return_override_reason: normalizeText(
+      claimData.nhisReturnOverrideReason ?? claimData.nhis_return_override_reason
+    ) || null,
+    nhis_return_previous_claim_id: normalizeText(
+      claimData.nhisReturnPreviousClaimId ?? claimData.nhis_return_previous_claim_id
+    ) || null,
     diagnosis:          normalizeText(claimData.diagnosis)         || null,
     diagnosis_details:  diagnosisDetails,
     service_date_from:  serviceDate                                || null,

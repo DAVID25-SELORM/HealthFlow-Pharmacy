@@ -200,6 +200,13 @@ export const REPORT_CATALOG = [
     description: 'NHIS medicine lines, quantities, tariffs, and claim linkage.',
   },
   {
+    id: 'nhis-patient-return-alerts',
+    tab: 'nhis',
+    category: 'nhis',
+    title: 'NHIS Patient Return Alerts',
+    description: 'Patients who returned within 24 hours, with same or different medicines supplied.',
+  },
+  {
     id: 'tariff-gdrg-services',
     tab: 'nhis',
     category: 'nhis',

@@ -8,7 +8,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
-import { formatAppDate } from '../utils/date'
+import { formatAppDate, formatAppDateTime } from '../utils/date'
 import { normalizeText } from '../utils/validation'
 import {
   getAllNhisDrugs,
@@ -70,6 +70,14 @@ import {
 } from '../utils/nhisPharmacyLevel'
 // ✅ NHIS PHARMACY LEVEL PATCH END
 import { DEFAULT_NHIS_DRUG_CATALOG } from '../data/nhisDefaultDrugCatalog'
+import { getPharmacySettings } from '../services/settingsService'
+import { tryLogAuditEvent } from '../services/auditService'
+import {
+  NHIS_RETURN_ALERT_REASONS,
+  canContinueNhisReturnAlert,
+  findNhisPatientReturnAlert,
+  normalizeNhisReturnAlertSettings,
+} from '../utils/nhisReturnAlert'
 import DiagnosisSelector from '../components/DiagnosisSelector/DiagnosisSelector'
 import './Nhis.css'
 
@@ -703,11 +711,16 @@ const Nhis = () => {
 
   // ─── direct NHIA API ─────────────────────────────────────────
   const [directNhiaSettings, setDirectNhiaSettings] = useState(null)
+  const [facilitySettings, setFacilitySettings] = useState(null)
   const [generatingCcCode, setGeneratingCcCode] = useState(false)
   const [lookingUpMember, setLookingUpMember] = useState(false)
   // Tracks the last member number we already looked up — prevents duplicate API calls
   // when the field loses focus without changing value.
   const lastLookedUpMemberRef = useRef('')
+  const [returnAlert, setReturnAlert] = useState(null)
+  const [returnAlertReason, setReturnAlertReason] = useState('Follow-up treatment')
+  const [returnAlertOtherReason, setReturnAlertOtherReason] = useState('')
+  const [returnAlertOverride, setReturnAlertOverride] = useState(null)
 
   // ── export modal ──────────────────────────────────────────────
   const [exportMonth, setExportMonth]   = useState(
@@ -824,6 +837,20 @@ const Nhis = () => {
   }, [organizationId])
 
   useEffect(() => { void refreshDirectNhiaApiStatus() }, [refreshDirectNhiaApiStatus])
+
+  useEffect(() => {
+    let cancelled = false
+    getPharmacySettings()
+      .then((settings) => {
+        if (!cancelled) setFacilitySettings(settings || null)
+      })
+      .catch(() => {
+        if (!cancelled) setFacilitySettings(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   // ── filtered claims ──────────────────────────────────────────
   const claimDateRange = useMemo(() => {
@@ -1234,6 +1261,77 @@ const Nhis = () => {
     return match?.category || ''
   }
 
+  const returnAlertSettings = useMemo(
+    () => normalizeNhisReturnAlertSettings(facilitySettings || {}),
+    [facilitySettings]
+  )
+
+  const getCurrentReturnAlertPatient = (patient = selectedClaimPatient, form = claimForm) => ({
+    ...patient,
+    memberNo: form.memberNo || patient?.nhis_member_no || patient?.member_no,
+    member_no: form.memberNo || patient?.member_no,
+    nhis_member_no: form.memberNo || patient?.nhis_member_no,
+    hin: form.hin || patient?.nhis_hin || patient?.hin,
+    nhis_hin: form.hin || patient?.nhis_hin,
+    phone: patient?.phone || patient?.mobile || '',
+  })
+
+  const buildReturnAlertForPatient = (patient, medicines = claimMedicines) =>
+    findNhisPatientReturnAlert({
+      currentPatient: getCurrentReturnAlertPatient(patient),
+      currentMedicines: medicines,
+      claims,
+      now: new Date(),
+      settings: returnAlertSettings,
+      editingClaimId: editingClaim?.id || '',
+    })
+
+  const getReturnAlertReasonText = () =>
+    returnAlertReason === 'Other'
+      ? normalizeText(returnAlertOtherReason)
+      : normalizeText(returnAlertReason)
+
+  const isReturnAlertOverrideFor = (alert) =>
+    Boolean(
+      alert &&
+        returnAlertOverride &&
+        returnAlertOverride.previousClaimId === alert.previousClaim?.id
+    )
+
+  const openReturnAlert = (alert) => {
+    setReturnAlert(alert)
+    setReturnAlertReason('Follow-up treatment')
+    setReturnAlertOtherReason('')
+  }
+
+  const closeReturnAlert = () => {
+    setReturnAlert(null)
+    setReturnAlertReason('Follow-up treatment')
+    setReturnAlertOtherReason('')
+  }
+
+  const continueReturnAlert = () => {
+    if (!returnAlert) return
+    if (!canContinueNhisReturnAlert(role, returnAlertSettings)) {
+      notify('Your role is not allowed to continue after a patient return alert.', 'error')
+      return
+    }
+    const reason = getReturnAlertReasonText()
+    if (returnAlertSettings.requireReason && !reason) {
+      notify('Select or enter a reason before continuing.', 'warning')
+      return
+    }
+    setReturnAlertOverride({
+      previousClaimId: returnAlert.previousClaim?.id || '',
+      previousClaimNumber: returnAlert.previousClaim?.claim_number || returnAlert.previousClaim?.claimNumber || '',
+      patientKey: `${claimForm.memberNo || ''}|${claimForm.hin || ''}`,
+      reason,
+      alert: returnAlert,
+      continuedAt: new Date().toISOString(),
+    })
+    closeReturnAlert()
+  }
+
   // ── select patient for claim ──────────────────────────────────
   const selectPatient = (patient) => {
     const memberNo = getPatientMemberNumber(patient)
@@ -1263,15 +1361,20 @@ const Nhis = () => {
     setPatientSearch(formatPatientLookupName(selectedPatient))
     setPatientSearchResults([])
     setPatientSearchError('')
+    setReturnAlertOverride(null)
+    const alert = buildReturnAlertForPatient(selectedPatient)
+    if (alert) openReturnAlert(alert)
   }
 
   const handlePatientSearchChange = (event) => {
     setSelectedClaimPatient(null)
+    setReturnAlertOverride(null)
     setPatientSearch(event.target.value)
   }
 
   const clearSelectedPatient = () => {
     setSelectedClaimPatient(null)
+    setReturnAlertOverride(null)
     setPatientSearch('')
     setPatientSearchResults([])
     setPatientSearchError('')
@@ -1962,6 +2065,15 @@ const Nhis = () => {
       return
     }
 
+    if (!editingClaim && returnAlertSettings.enabled) {
+      const alert = buildReturnAlertForPatient(selectedClaimPatient || claimForm, claimMedicines)
+      if (alert && !isReturnAlertOverrideFor(alert)) {
+        openReturnAlert(alert)
+        setClaimError('Patient return alert requires verification before saving this NHIS visit.')
+        return
+      }
+    }
+
     const duplicateClaimBlockers = buildNhisDuplicateClaimBlockers({
       currentClaim: claimForm,
       currentMedicines: claimMedicines,
@@ -2019,6 +2131,8 @@ const Nhis = () => {
       let successMessage = editingClaim
         ? (isMedicineCounterAssistant ? 'NHIS medicines saved.' : 'NHIS claim corrections saved.')
         : 'NHIS claim saved.'
+      let savedClaimRecord = null
+      const returnAlertOverrideSnapshot = returnAlertOverride
       if (editingClaim) {
         const savedClaim = await updateNhisClaim(editingClaim.id, payload, claimMedicines, {
           providerClassLevel,
@@ -2033,6 +2147,7 @@ const Nhis = () => {
           tariffCateringOption: activeTariffCateringOption,
           medicinesOnly: isMedicineCounterAssistant,
         })
+        savedClaimRecord = savedClaim || editingClaim
         const claimForSubmission = savedClaim || editingClaim
         const isServedClaim = normalizeText(claimForSubmission?.status || editingClaim.status).toLowerCase() === 'served'
         const hasReadablePrescriptionFile = Boolean(
@@ -2069,7 +2184,14 @@ const Nhis = () => {
           successMessage = 'NHIS claim corrections saved locally. CLAIM-it submission was skipped because no readable prescription attachment is on the claim.'
         }
       } else {
-        await createNhisClaim(payload, claimMedicines, {
+        const createPayload = returnAlertOverrideSnapshot?.alert
+          ? {
+              ...payload,
+              nhisReturnOverrideReason: returnAlertOverrideSnapshot.reason,
+              nhisReturnPreviousClaimId: returnAlertOverrideSnapshot.alert.previousClaim?.id || '',
+            }
+          : payload
+        savedClaimRecord = await createNhisClaim(createPayload, claimMedicines, {
           providerClassLevel,
           claimControlMode,
           useBranchServer: isBranchNhiaConfigSource,
@@ -2080,6 +2202,34 @@ const Nhis = () => {
           nhiaTariffServices: claimServices,
           tariffFacilityGroup: activeTariffFacilityGroup,
           tariffCateringOption: activeTariffCateringOption,
+        })
+      }
+
+      if (!editingClaim && returnAlertOverrideSnapshot?.alert) {
+        const alert = returnAlertOverrideSnapshot.alert
+        await tryLogAuditEvent({
+          eventType: 'nhis.patient_return_override',
+          entityType: 'nhis_claims',
+          entityId: savedClaimRecord?.id || '',
+          action: 'override',
+          details: {
+            patient: `${payload.surname || ''} ${payload.otherNames || ''}`.trim(),
+            member_no: payload.memberNo || '',
+            hin: payload.hin || '',
+            previous_visit_id: alert.previousClaim?.id || '',
+            previous_claim_number: alert.previousClaim?.claim_number || alert.previousClaim?.claimNumber || '',
+            current_visit_id: savedClaimRecord?.id || '',
+            current_claim_number: savedClaimRecord?.claim_number || savedClaimRecord?.claimNumber || '',
+            time_difference_minutes: alert.minutesSincePrevious,
+            time_difference_hours: alert.hoursSincePrevious,
+            same_medication_repeated: Boolean(alert.sameMedicationRepeated),
+            repeated_medicines: alert.repeatedMedicines || [],
+            previous_medicines: alert.previousMedicines || [],
+            current_medicines: alert.currentMedicines || [],
+            reason: returnAlertOverrideSnapshot.reason,
+            user_id: user?.id || '',
+            role,
+          },
         })
       }
 
@@ -2112,6 +2262,10 @@ const Nhis = () => {
     setTariffSearch('')
     setEditingClaim(null)
     setPrescriptionPdfFile(null)
+    setReturnAlert(null)
+    setReturnAlertOverride(null)
+    setReturnAlertReason('Follow-up treatment')
+    setReturnAlertOtherReason('')
   }
 
   // ── status updates ────────────────────────────────────────────
@@ -4181,6 +4335,95 @@ const Nhis = () => {
       {/* ══════════════════════════════════════════════════════════════
           VIEW CLAIM MODAL
       ══════════════════════════════════════════════════════════════ */}
+      {returnAlert && (
+        <div className="modal-overlay modal-overlay--top" onClick={(e) => e.target === e.currentTarget && closeReturnAlert()}>
+          <div className="modal-panel nhis-return-alert-modal">
+            <div className="modal-header">
+              <div>
+                <h2>Patient Return Alert</h2>
+                <p>This patient was here less than {returnAlertSettings.windowHours} hours ago.</p>
+              </div>
+              <button className="modal-close" type="button" onClick={closeReturnAlert}><X size={18} /></button>
+            </div>
+
+            <div className="nhis-return-alert-grid">
+              <div className="nhis-return-alert-panel">
+                <h3>Previous visit</h3>
+                <dl>
+                  <div><dt>Date/time</dt><dd>{formatAppDateTime(returnAlert.previousVisitAt)}</dd></div>
+                  <div><dt>Facility branch</dt><dd>{returnAlert.previousClaim?.branch_id || returnAlert.previousClaim?.branchId || 'Main branch'}</dd></div>
+                  <div><dt>Served by</dt><dd>{returnAlert.previousClaim?.created_by || returnAlert.previousClaim?.createdBy || '-'}</dd></div>
+                  <div><dt>Claim status</dt><dd>{returnAlert.previousClaim?.status || '-'}</dd></div>
+                  <div><dt>Matched by</dt><dd>{returnAlert.matchType}</dd></div>
+                  <div><dt>Time difference</dt><dd>{returnAlert.hoursSincePrevious} hours</dd></div>
+                </dl>
+                <h4>Medicines served</h4>
+                {returnAlert.previousMedicines.length ? (
+                  <ul className="nhis-return-alert-medicines">
+                    {returnAlert.previousMedicines.map((medicine, index) => (
+                      <li key={`${medicine.code || medicine.name}-${index}`}>
+                        <span>{medicine.name}</span>
+                        <strong>Qty {medicine.quantity || 0}</strong>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="patient-meta">No medicines recorded on previous visit.</p>
+                )}
+              </div>
+
+              <div className="nhis-return-alert-panel">
+                <h3>Current visit</h3>
+                <dl>
+                  <div><dt>Date/time</dt><dd>{formatAppDateTime(returnAlert.currentVisitAt)}</dd></div>
+                  <div><dt>Medication status</dt><dd>{returnAlert.sameMedicationRepeated ? 'Same medication repeated' : 'Different medication or none selected'}</dd></div>
+                </dl>
+                {returnAlert.sameMedicationRepeated && (
+                  <div className="nhis-return-alert-warning">
+                    Same medicine appears in the previous visit. The duplicate dispensing alert may also apply.
+                  </div>
+                )}
+                <label className="form-group">
+                  <span>Reason for continuing</span>
+                  <select
+                    value={returnAlertReason}
+                    onChange={(event) => setReturnAlertReason(event.target.value)}
+                    disabled={!returnAlertSettings.requireReason}
+                  >
+                    {NHIS_RETURN_ALERT_REASONS.map((reason) => (
+                      <option key={reason} value={reason}>{reason}</option>
+                    ))}
+                  </select>
+                </label>
+                {returnAlertReason === 'Other' && (
+                  <label className="form-group">
+                    <span>Other reason</span>
+                    <textarea
+                      value={returnAlertOtherReason}
+                      onChange={(event) => setReturnAlertOtherReason(event.target.value)}
+                      rows={3}
+                      placeholder="Enter reason"
+                    />
+                  </label>
+                )}
+              </div>
+            </div>
+
+            <div className="modal-actions">
+              <button className="btn btn-secondary" type="button" onClick={closeReturnAlert}>Cancel</button>
+              <button
+                className="btn btn-primary"
+                type="button"
+                onClick={continueReturnAlert}
+                disabled={!canContinueNhisReturnAlert(role, returnAlertSettings)}
+              >
+                Continue after verification
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {viewClaim && (
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setViewClaim(null)}>
           <div className="modal-panel modal-panel--view-claim">

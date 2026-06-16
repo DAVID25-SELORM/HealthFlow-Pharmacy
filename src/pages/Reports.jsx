@@ -81,6 +81,14 @@ const getPurchaseAmount = (purchase = {}) => numberValue(purchase.total_amount ?
 const normalizeStatus = (value) => String(value || 'unspecified').toLowerCase()
 const compact = (values) => values.filter((value) => value !== undefined && value !== null && value !== '').join(' | ')
 const uniqueCount = (values) => new Set(values.filter(Boolean).map((value) => String(value))).size
+const normalizeIdentifier = (value) => String(value || '').trim().toUpperCase().replace(/\s+/g, '')
+const getNhisPatientReturnKey = (claim = {}) =>
+  normalizeIdentifier(claim.hin) ||
+  normalizeIdentifier(claim.member_no || claim.memberNo || claim.nhis_member_no || claim.nhisMemberNo) ||
+  normalizeIdentifier(claim.patients?.phone || claim.phone || claim.patient_phone)
+const getMedicineCode = (line = {}) => normalizeIdentifier(line.drug_code || line.drugCode || line.nhia_code || line.nhiaCode)
+const getMedicineKey = (line = {}) => getMedicineCode(line) || String(getDrugName(line)).trim().toLowerCase()
+const getMedicineQuantity = (line = {}) => numberValue(line.dispensed_qty ?? line.dispensedQty ?? line.quantity)
 
 const buildBreakdownRows = (label, rows, getKey, getAmount) =>
   Object.values(
@@ -141,6 +149,52 @@ const getNhisMedicineLines = (claims) =>
       officer: getUserId(claim),
     }))
   )
+
+const getNhisPatientReturnRows = (claims) => {
+  const groups = new Map()
+  rowsOf(claims).forEach((claim) => {
+    const key = getNhisPatientReturnKey(claim)
+    const visitDate = new Date(getServiceDate(claim) || '')
+    if (!key || Number.isNaN(visitDate.getTime())) return
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key).push({ claim, visitDate })
+  })
+
+  const rows = []
+  groups.forEach((visits) => {
+    visits.sort((left, right) => left.visitDate - right.visitDate)
+    for (let index = 1; index < visits.length; index += 1) {
+      const previous = visits[index - 1]
+      const current = visits[index]
+      const diffMs = current.visitDate.getTime() - previous.visitDate.getTime()
+      if (diffMs < 0 || diffMs > 24 * 60 * 60 * 1000) continue
+      const previousMedicines = rowsOf(previous.claim.nhis_claim_medicines || previous.claim.items)
+      const currentMedicines = rowsOf(current.claim.nhis_claim_medicines || current.claim.items)
+      const previousKeys = new Set(previousMedicines.map(getMedicineKey).filter(Boolean))
+      const repeated = currentMedicines.filter((line) => previousKeys.has(getMedicineKey(line)))
+      rows.push({
+        patient: getPatientName(current.claim),
+        memberNo: current.claim.member_no || current.claim.memberNo || current.claim.nhis_member_no || '',
+        hin: current.claim.hin || '',
+        previousVisit: previous.visitDate.toISOString(),
+        currentVisit: current.visitDate.toISOString(),
+        timeDifferenceHours: Math.round((diffMs / (60 * 60 * 1000)) * 10) / 10,
+        previousClaim: getClaimNumber(previous.claim),
+        currentClaim: getClaimNumber(current.claim),
+        sameMedicationRepeated: repeated.length > 0,
+        repeatedMedicines: repeated.map(getDrugName).join(', '),
+        previousMedicines: previousMedicines.map((line) => `${getDrugName(line)} x ${getMedicineQuantity(line)}`).join('; '),
+        currentMedicines: currentMedicines.map((line) => `${getDrugName(line)} x ${getMedicineQuantity(line)}`).join('; '),
+        overrideReason: current.claim.nhis_return_override_reason || current.claim.returnOverrideReason || '',
+        previousStaff: getUserId(previous.claim),
+        currentStaff: getUserId(current.claim),
+        branch: getBranchId(current.claim),
+        status: getStatus(current.claim),
+      })
+    }
+  })
+  return rows.sort((left, right) => new Date(right.currentVisit) - new Date(left.currentVisit))
+}
 
 const getGdrgServiceLines = (claims) =>
   rowsOf(claims).flatMap((claim) =>
@@ -674,6 +728,28 @@ const getReportRows = (reportId, bundle, filters = {}) => {
         line.officer,
       ]),
     },
+    'nhis-patient-return-alerts': {
+      headers: ['Patient', 'Member No.', 'HIN', 'Previous Visit', 'Current Visit', 'Hours Since Previous', 'Previous Claim', 'Current Claim', 'Medication Repeated', 'Repeated Medicines', 'Previous Medicines', 'Current Medicines', 'Override Reason', 'Previous Staff', 'Current Staff', 'Branch', 'Claim Status'],
+      rows: getNhisPatientReturnRows(nhisClaims).map((row) => [
+        row.patient,
+        row.memberNo,
+        row.hin,
+        formatAppDateTime(row.previousVisit),
+        formatAppDateTime(row.currentVisit),
+        row.timeDifferenceHours,
+        row.previousClaim,
+        row.currentClaim,
+        row.sameMedicationRepeated ? 'Yes' : 'No',
+        row.repeatedMedicines,
+        row.previousMedicines,
+        row.currentMedicines,
+        row.overrideReason,
+        row.previousStaff,
+        row.currentStaff,
+        row.branch,
+        row.status,
+      ]),
+    },
     'tariff-gdrg-services': {
       headers: ['Claim No.', 'Patient', 'Date', 'Status', 'GDRG Code', 'Category', 'Service', 'Qty', 'Total', 'Branch', 'Officer'],
       rows: getGdrgServiceLines(nhisClaims).map((line) => [
@@ -872,6 +948,11 @@ const getReportSummaryRows = (reportId, bundle, visibleRows = []) => {
     'nhis-medicines-dispensed': [
       [`Medicine lines: ${getNhisMedicineLines(nhisClaims).length}`],
       [`Medicine value: ${money(getNhisMedicineLines(nhisClaims).reduce((sum, line) => sum + numberValue(line.totalPrice), 0))}`],
+    ],
+    'nhis-patient-return-alerts': [
+      [`Return alerts: ${getNhisPatientReturnRows(nhisClaims).length}`],
+      [`Same medication repeated: ${getNhisPatientReturnRows(nhisClaims).filter((row) => row.sameMedicationRepeated).length}`],
+      [`Different medication supplied: ${getNhisPatientReturnRows(nhisClaims).filter((row) => !row.sameMedicationRepeated).length}`],
     ],
     'tariff-gdrg-services': [
       [`GDRG/service lines: ${getGdrgServiceLines(nhisClaims).length}`],

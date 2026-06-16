@@ -99,6 +99,14 @@ const toForm = (row, organization) => {
   themeAccentColor: row?.theme_accent_color || '#f59e0b',
   customHeader: row?.custom_header || '',
   reportTemplate: row?.report_template || 'standard',
+  nhisReturnAlertEnabled: row?.nhis_return_alert_enabled !== false,
+  nhisReturnAlertWindowHours: [6, 12, 24, 48].includes(Number(row?.nhis_return_alert_window_hours))
+    ? Number(row?.nhis_return_alert_window_hours)
+    : 24,
+  nhisReturnAlertRequireReason: row?.nhis_return_alert_require_reason !== false,
+  nhisReturnAlertAllowedRoles: Array.isArray(row?.nhis_return_alert_allowed_roles) && row.nhis_return_alert_allowed_roles.length
+    ? row.nhis_return_alert_allowed_roles
+    : ['admin', 'claims_officer', 'assistant'],
   }
 }
 
@@ -433,6 +441,12 @@ const STAFF_PRIVILEGE_OPTIONS = [
   ['canAdjustStock', 'Adjust stock', 'can_adjust_stock', 'Stock adjustment'],
   ['canApprovePurchases', 'Approve purchases', 'can_approve_purchases', 'Purchase approval'],
   ['canDeleteNhisClaims', 'Delete NHIS claims', 'can_delete_nhis_claims', 'NHIS deletion'],
+]
+
+const NHIS_RETURN_ALERT_ROLE_OPTIONS = [
+  ['admin', 'Admin'],
+  ['claims_officer', 'Claims Officer'],
+  ['assistant', 'MCA'],
 ]
 
 const blankBranchForm = {
@@ -1339,6 +1353,67 @@ const Settings = () => {
                   disabled={!isAdmin}
                 />
               </label>
+            </div>
+            <div className="settings-card-inline">
+              <div className="settings-privileges-heading">
+                <strong>NHIS Patient Return Alert</strong>
+                <span>Warn staff when an NHIS patient returns within the selected window.</span>
+              </div>
+              <label className="settings-checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={formData.nhisReturnAlertEnabled}
+                  onChange={(event) => setFormData({ ...formData, nhisReturnAlertEnabled: event.target.checked })}
+                  disabled={!isAdmin}
+                />
+                Enable 24-hour patient return alert
+              </label>
+              <div className="settings-form-row">
+                <label className="settings-field">
+                  <span>Alert window</span>
+                  <select
+                    value={formData.nhisReturnAlertWindowHours}
+                    onChange={(event) => setFormData({ ...formData, nhisReturnAlertWindowHours: Number(event.target.value) })}
+                    disabled={!isAdmin || !formData.nhisReturnAlertEnabled}
+                  >
+                    <option value={6}>6 hours</option>
+                    <option value={12}>12 hours</option>
+                    <option value={24}>24 hours</option>
+                    <option value={48}>48 hours</option>
+                  </select>
+                </label>
+                <label className="settings-checkbox-label settings-checkbox-label--inline">
+                  <input
+                    type="checkbox"
+                    checked={formData.nhisReturnAlertRequireReason}
+                    onChange={(event) => setFormData({ ...formData, nhisReturnAlertRequireReason: event.target.checked })}
+                    disabled={!isAdmin || !formData.nhisReturnAlertEnabled}
+                  />
+                  Require reason before continuing
+                </label>
+              </div>
+              <div className="settings-roles-group">
+                <p className="settings-helper">Roles allowed to continue after verification</p>
+                <div className="settings-role-options">
+                  {NHIS_RETURN_ALERT_ROLE_OPTIONS.map(([value, label]) => (
+                    <label className="settings-checkbox-label" key={value}>
+                      <input
+                        type="checkbox"
+                        checked={(formData.nhisReturnAlertAllowedRoles || []).includes(value)}
+                        onChange={(event) => {
+                          const existing = formData.nhisReturnAlertAllowedRoles || []
+                          const nextRoles = event.target.checked
+                            ? [...new Set([...existing, value])]
+                            : existing.filter((roleValue) => roleValue !== value)
+                          setFormData({ ...formData, nhisReturnAlertAllowedRoles: nextRoles })
+                        }}
+                        disabled={!isAdmin || !formData.nhisReturnAlertEnabled}
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+              </div>
             </div>
             <textarea
               placeholder="Receipt footer message (optional)"

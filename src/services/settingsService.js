@@ -28,6 +28,10 @@ const OPTIONAL_SETTINGS_COLUMNS = [
   'theme_accent_color',
   'custom_header',
   'report_template',
+  'nhis_return_alert_enabled',
+  'nhis_return_alert_window_hours',
+  'nhis_return_alert_require_reason',
+  'nhis_return_alert_allowed_roles',
 ]
 
 // ✅ NHIS PHARMACY LEVEL PATCH START
@@ -143,6 +147,14 @@ export const updatePharmacySettings = async (id, settings) => {
     theme_accent_color: normalizeText(settings.themeAccentColor ?? settings.theme_accent_color) || null,
     custom_header: normalizeText(settings.customHeader ?? settings.custom_header) || null,
     report_template: normalizeText(settings.reportTemplate ?? settings.report_template) || null,
+    nhis_return_alert_enabled: settings.nhisReturnAlertEnabled !== false,
+    nhis_return_alert_window_hours: [6, 12, 24, 48].includes(Number(settings.nhisReturnAlertWindowHours))
+      ? Number(settings.nhisReturnAlertWindowHours)
+      : 24,
+    nhis_return_alert_require_reason: settings.nhisReturnAlertRequireReason !== false,
+    nhis_return_alert_allowed_roles: Array.isArray(settings.nhisReturnAlertAllowedRoles)
+      ? settings.nhisReturnAlertAllowedRoles
+      : ['admin', 'claims_officer', 'assistant'],
     updated_at: new Date().toISOString(),
   }
 
@@ -236,6 +248,16 @@ export const createSettings = async (settings) => {
     theme_accent_color: normalizeText(settings.theme_accent_color ?? settings.themeAccentColor) || null,
     custom_header: normalizeText(settings.custom_header ?? settings.customHeader) || null,
     report_template: normalizeText(settings.report_template ?? settings.reportTemplate) || null,
+    nhis_return_alert_enabled: settings.nhis_return_alert_enabled ?? settings.nhisReturnAlertEnabled ?? true,
+    nhis_return_alert_window_hours: [6, 12, 24, 48].includes(Number(settings.nhis_return_alert_window_hours ?? settings.nhisReturnAlertWindowHours))
+      ? Number(settings.nhis_return_alert_window_hours ?? settings.nhisReturnAlertWindowHours)
+      : 24,
+    nhis_return_alert_require_reason: settings.nhis_return_alert_require_reason ?? settings.nhisReturnAlertRequireReason ?? true,
+    nhis_return_alert_allowed_roles: Array.isArray(settings.nhis_return_alert_allowed_roles)
+      ? settings.nhis_return_alert_allowed_roles
+      : Array.isArray(settings.nhisReturnAlertAllowedRoles)
+        ? settings.nhisReturnAlertAllowedRoles
+        : ['admin', 'claims_officer', 'assistant'],
   }
 
   const organizationId =
