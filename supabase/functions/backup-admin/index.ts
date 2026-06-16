@@ -122,7 +122,9 @@ const ensureBucket = async (adminClient: ReturnType<typeof createAdminClient>) =
     fileSizeLimit: 1024 * 1024 * 250,
     allowedMimeTypes: ['application/json'],
   })
-  if (createError) throw createError
+  if (createError && !String(createError.message || '').toLowerCase().includes('already exists')) {
+    throw createError
+  }
 }
 
 const isMissingTableOrColumn = (error: unknown) => {
@@ -158,7 +160,7 @@ const readTableRows = async (
       if (isMissingTableOrColumn(error)) {
         return { table, rows: [], skipped: true, reason: error.message || 'Table or scope column unavailable.' }
       }
-      throw error
+      return { table, rows: [], skipped: true, reason: error.message || 'Unable to read table.' }
     }
 
     const pageRows = data || []
