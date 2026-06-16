@@ -8,6 +8,7 @@ import { createNhisClaim, getNhiaApiSettings } from '../services/nhisService'
 import { getAllPatients } from '../services/patientService'
 import { getPharmacySettings } from '../services/settingsService'
 import { getBranches } from '../services/branchService'
+import { getOnlinePaymentSettings, initiateOnlinePayment } from '../services/paymentService'
 import {
   createBranchSale,
   getBranchInventory,
@@ -189,7 +190,7 @@ const Sales = () => {
   const [isPatientSearchOpen, setIsPatientSearchOpen] = useState(false)
   const [highlightedPatientIndex, setHighlightedPatientIndex] = useState(0)
   const [paymentMethod, setPaymentMethod] = useState('cash')
-  const [paymentProvider, setPaymentProvider] = useState('paystack')
+  const [paymentProvider, setPaymentProvider] = useState('hubtel')
   const [paymentPhone, setPaymentPhone] = useState('')
   const [paymentEmail, setPaymentEmail] = useState('')
   const [received, setReceived] = useState('')
@@ -234,6 +235,7 @@ const Sales = () => {
     health: null,
   })
   const [nhiaSettings, setNhiaSettings] = useState(null)
+  const [onlinePaymentSettings, setOnlinePaymentSettings] = useState(null)
   const [branchServerBusy, setBranchServerBusy] = useState(false)
   const [branchSyncStatus, setBranchSyncStatus] = useState(null)
   const canProcessRefund =
@@ -255,6 +257,9 @@ const Sales = () => {
   const unsyncedOfflineSales = Number(offlineSalesSummary.unsynced || 0)
   const branchServerModeEnabled = isBranchServerEnabled()
   const localBranchServerAvailable = branchServerModeEnabled && branchServerStatus.online
+  const onlineCloudPaymentsEnabled = Boolean(onlinePaymentSettings?.enabled)
+  const preferredOnlinePaymentProvider =
+    onlinePaymentSettings?.defaultProvider === 'paystack' ? 'paystack' : 'hubtel'
   const posAdminMode = isAdmin && searchParams.get('mode') === 'admin'
   const selectedPatientForSale = useMemo(
     () => patients.find((patient) => patient.id === patientId) || null,
@@ -1114,6 +1119,32 @@ const Sales = () => {
     return () => window.clearInterval(interval)
   }, [refreshBranchServerStatus])
 
+  useEffect(() => {
+    let cancelled = false
+    if (!isOnline) {
+      setOnlinePaymentSettings(null)
+      return () => {
+        cancelled = true
+      }
+    }
+
+    getOnlinePaymentSettings()
+      .then((settings) => {
+        if (!cancelled) {
+          setOnlinePaymentSettings(settings)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setOnlinePaymentSettings(null)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [isOnline])
+
   const configureBranchServer = async () => {
     if (!isAdmin) {
       notify('Only admins can configure the local branch server.', 'warning')
@@ -1189,7 +1220,9 @@ const Sales = () => {
 
   const handlePaymentMethodChange = (method) => {
     setPaymentMethod(method)
-    if (method === 'card') {
+    if (method === 'momo') {
+      setPaymentProvider(preferredOnlinePaymentProvider)
+    } else if (method === 'card') {
       setPaymentProvider('paystack')
     }
 
@@ -1448,8 +1481,8 @@ const Sales = () => {
         return
       }
 
-      if (!localBranchServerAvailable) {
-        notify('Connect the local branch server before taking Mobile Money or Card payments.', 'warning')
+      if (!localBranchServerAvailable && !onlineCloudPaymentsEnabled) {
+        notify('Configure Online Payments in Settings or connect the local branch server before taking Mobile Money or Card payments.', 'warning')
         return
       }
 
@@ -1580,24 +1613,56 @@ const Sales = () => {
       })
 
       if (saleUsesOnlineProvider) {
-        const paymentResult = await initiateBranchPayment({
-          provider: paymentProvider,
-          paymentMethod,
-          salePayload,
-          customerPhone: paymentPhone,
-          customerEmail: paymentEmail,
-          returnUrl: window.location.href,
-        })
+        let cloudPendingSale = null
+        let paymentResult = null
+        if (localBranchServerAvailable) {
+          paymentResult = await initiateBranchPayment({
+            provider: paymentProvider,
+            paymentMethod,
+            salePayload,
+            customerPhone: paymentPhone,
+            customerEmail: paymentEmail,
+            returnUrl: window.location.href,
+          })
+        } else {
+          cloudPendingSale = await createSale({
+            ...salePayload,
+            paymentStatus: 'pending_payment',
+          })
+          const pendingSaleId = cloudPendingSale?.sale?.id || ''
+          const pendingSaleNumber = cloudPendingSale?.saleNumber || cloudPendingSale?.sale?.sale_number || ''
+          paymentResult = await initiateOnlinePayment({
+            provider: paymentProvider,
+            paymentMethod,
+            saleId: pendingSaleId,
+            saleNumber: pendingSaleNumber,
+            salePayload: {
+              ...salePayload,
+              saleId: pendingSaleId,
+              saleNumber: pendingSaleNumber,
+              amountPaid: total,
+              netAmount: total,
+            },
+            customerPhone: paymentPhone,
+            customerEmail: paymentEmail,
+            returnUrl: window.location.href,
+          })
+        }
 
         if (paymentResult?.authorizationUrl) {
           window.open(paymentResult.authorizationUrl, '_blank', 'noopener,noreferrer')
         }
 
-        const receiptData = buildReceiptData(paymentResult?.saleNumber || paymentResult?.sale?.saleNumber)
+        const receiptData = buildReceiptData(
+          paymentResult?.saleNumber ||
+            paymentResult?.sale?.saleNumber ||
+            cloudPendingSale?.saleNumber ||
+            cloudPendingSale?.sale?.sale_number
+        )
         setLastSale({
           ...receiptData,
-          offline: true,
-          branchServer: true,
+          offline: localBranchServerAvailable,
+          branchServer: localBranchServerAvailable,
           paymentStatus: 'pending_payment',
           paymentReference: paymentResult?.reference,
         })
@@ -1621,7 +1686,9 @@ const Sales = () => {
           'success',
           7000
         )
-        void refreshBranchServerStatus()
+        if (localBranchServerAvailable) {
+          void refreshBranchServerStatus()
+        }
         return
       }
 
@@ -2085,7 +2152,7 @@ const Sales = () => {
   const checkoutTotal = isNhiaClaimSale ? Math.min(nhisCoveredTotal, total) : total
   const nhiaPricingAdjustment = isNhiaClaimSale ? Math.max(total - checkoutTotal, 0) : 0
   const isInsuranceSale = paymentMethod === 'insurance' || isNhiaClaimSale
-  const onlinePaymentDisabled = !isOnline || !localBranchServerAvailable
+  const onlinePaymentDisabled = !isOnline || (!localBranchServerAvailable && !onlineCloudPaymentsEnabled)
   const servingNhisPatient = isInsuranceSale && isNhisPatient(selectedPatientForSale)
   const insuranceSplitAllowed = !isNhiaClaimSale && (!servingNhisPatient || canUseNhisTopups)
   const insuranceHasPatientDetails =
@@ -2743,7 +2810,7 @@ const Sales = () => {
                 type="button"
                 className={`payment-btn ${paymentMethod === 'momo' ? 'active' : ''}`}
                 disabled={onlinePaymentDisabled}
-                title={onlinePaymentDisabled ? 'Mobile Money requires internet and the local branch server.' : ''}
+                title={onlinePaymentDisabled ? 'Mobile Money requires internet and configured Online Payments or the local branch server.' : ''}
                 onClick={() => handlePaymentMethodChange('momo')}
               >
                 Mobile Money
@@ -2766,7 +2833,7 @@ const Sales = () => {
                 type="button"
                 className={`payment-btn ${paymentMethod === 'card' ? 'active' : ''}`}
                 disabled={onlinePaymentDisabled}
-                title={onlinePaymentDisabled ? 'Card payments require internet and the local branch server.' : ''}
+                title={onlinePaymentDisabled ? 'Card payments require internet and configured Online Payments or the local branch server.' : ''}
                 onClick={() => handlePaymentMethodChange('card')}
               >
                 Card
@@ -2782,8 +2849,8 @@ const Sales = () => {
                     value={paymentProvider}
                     onChange={(event) => setPaymentProvider(event.target.value)}
                   >
-                    <option value="paystack">Paystack</option>
                     <option value="hubtel">Hubtel</option>
+                    <option value="paystack">Paystack</option>
                   </select>
                 </div>
                 {(paymentMethod === 'momo' || paymentProvider === 'hubtel') && (

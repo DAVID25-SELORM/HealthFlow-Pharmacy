@@ -44,6 +44,11 @@ const normalizePatientTopUpMethod = (value) => {
   return normalized
 }
 
+const normalizeSalePaymentStatus = (value) =>
+  String(value || '').trim().toLowerCase() === 'pending_payment'
+    ? 'pending_payment'
+    : 'completed'
+
 const isSaleNumberDuplicateError = (error) => {
   const code = String(error?.code || '').toUpperCase()
   const message = [error?.message, error?.details, error?.hint]
@@ -224,6 +229,9 @@ export const createSale = async (saleData) => {
     }
 
     const totals = buildValidatedSaleTotals(saleData)
+    const paymentStatus = normalizeSalePaymentStatus(saleData.paymentStatus)
+    const recordedAmountPaid = paymentStatus === 'pending_payment' ? 0 : totals.amountPaid
+    const recordedChange = paymentStatus === 'pending_payment' ? 0 : totals.change
     const insuranceCoveredAmount = assertNonNegativeNumber(
       saleData.insuranceCoveredAmount ?? 0,
       'Insurance covered amount'
@@ -240,9 +248,9 @@ export const createSale = async (saleData) => {
       sale_payload: {
         patient_id: saleData.patientId || null,
         payment_method: totals.paymentMethod,
-        payment_status: 'completed',
-        amount_paid: totals.amountPaid,
-        change_given: totals.change,
+        payment_status: paymentStatus,
+        amount_paid: recordedAmountPaid,
+        change_given: recordedChange,
         notes: saleData.notes || null,
         sold_by: saleData.soldBy || null,
         sale_date: saleData.saleDate || new Date().toISOString(),
@@ -280,37 +288,40 @@ export const createSale = async (saleData) => {
         item_count: saleData.items.length,
         total_amount: totals.netAmount,
         payment_method: totals.paymentMethod,
+        payment_status: paymentStatus,
       },
     })
 
-    await syncCashSaleToCashbook({
-      saleId: txPayload.sale_id,
-      saleNumber: txPayload.sale_number,
-      paymentMethod: totals.paymentMethod,
-      soldBy: saleData.soldBy,
-      branchId: saleData.branchId || txPayload.branch_id,
-      netAmount: totals.netAmount,
-    })
+    if (paymentStatus === 'completed') {
+      await syncCashSaleToCashbook({
+        saleId: txPayload.sale_id,
+        saleNumber: txPayload.sale_number,
+        paymentMethod: totals.paymentMethod,
+        soldBy: saleData.soldBy,
+        branchId: saleData.branchId || txPayload.branch_id,
+        netAmount: totals.netAmount,
+      })
 
-    await syncInsuranceCashTopUpToCashbook({
-      saleId: txPayload.sale_id,
-      saleNumber: txPayload.sale_number,
-      topUpPaymentMethod: insuranceTopUpPaymentMethod,
-      soldBy: saleData.soldBy,
-      branchId: saleData.branchId || txPayload.branch_id,
-      topUpAmount: insuranceTopUpAmount,
-    })
+      await syncInsuranceCashTopUpToCashbook({
+        saleId: txPayload.sale_id,
+        saleNumber: txPayload.sale_number,
+        topUpPaymentMethod: insuranceTopUpPaymentMethod,
+        soldBy: saleData.soldBy,
+        branchId: saleData.branchId || txPayload.branch_id,
+        topUpAmount: insuranceTopUpAmount,
+      })
 
-    await syncInsuranceCashTopUpToShift({
-      shiftId: saleData.shiftId,
-      organizationId: saleData.organizationId,
-      branchId: saleData.branchId,
-      saleId: txPayload.sale_id,
-      saleNumber: txPayload.sale_number,
-      topUpPaymentMethod: insuranceTopUpPaymentMethod,
-      soldBy: saleData.soldBy,
-      topUpAmount: insuranceTopUpAmount,
-    })
+      await syncInsuranceCashTopUpToShift({
+        shiftId: saleData.shiftId,
+        organizationId: saleData.organizationId,
+        branchId: saleData.branchId,
+        saleId: txPayload.sale_id,
+        saleNumber: txPayload.sale_number,
+        topUpPaymentMethod: insuranceTopUpPaymentMethod,
+        soldBy: saleData.soldBy,
+        topUpAmount: insuranceTopUpAmount,
+      })
+    }
 
     return {
       sale: {

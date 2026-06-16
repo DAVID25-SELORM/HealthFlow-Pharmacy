@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { User, UserPlus, Lock, Bell, Building, Palette, Globe, GitBranch, Plus, KeyRound, Database, Download, RefreshCcw, Pencil, X } from 'lucide-react'
+import { User, UserPlus, Lock, Bell, Building, Palette, Globe, GitBranch, Plus, KeyRound, Database, Download, RefreshCcw, Pencil, X, CreditCard } from 'lucide-react'
 import { isSupabaseConfigured } from '../lib/supabase'
 import UpgradeGate from '../components/UpgradeGate'
 import GhanaRegionSelect from '../components/GhanaRegionSelect'
@@ -22,6 +22,7 @@ import {
 import { updateOrganization, getOrganizationStats } from '../services/organizationService'
 import { buildClaimItConfigPreview, getNhiaApiSettings, removeNhiaApiCredentials, saveNhiaApiSettings, testClaimItConnection, validateNhiaConfigForMode } from '../services/nhisService'
 import { createOnlineBackup, downloadOnlineBackup, listOnlineBackups } from '../services/backupService'
+import { getOnlinePaymentSettings, saveOnlinePaymentSettings } from '../services/paymentService'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
 import { normalizeSubscriptionTier, useTenant } from '../context/TenantContext'
@@ -42,6 +43,7 @@ import { PHARMACY_LEVELS } from '../utils/nhisPharmacyLevel'
 import './Settings.css'
 
 const NHIA_SECRET_MASK = '\u2022'.repeat(8)
+const PAYMENT_SECRET_MASK = '********'
 const NHIA_SECRET_FIELDS = new Set(['apiKey', 'apiSecret', 'username', 'password'])
 const NHIA_SECRET_MASK_VALUES = new Set([NHIA_SECRET_MASK, '\u2022'.repeat(12)])
 const isNhiaSecretMask = (value) => NHIA_SECRET_MASK_VALUES.has(String(value || '').trim())
@@ -401,6 +403,38 @@ const blankStaffForm = {
   branchId: '',
 }
 
+const blankPaymentSettingsForm = {
+  enabled: false,
+  defaultProvider: 'hubtel',
+  returnUrl: '',
+  hubtel: {
+    clientId: '',
+    clientSecret: '',
+    merchantAccountNumber: '',
+    webhookSecret: '',
+  },
+  paystack: {
+    publicKey: '',
+    secretKey: '',
+  },
+}
+
+const toPaymentSettingsForm = (settings = null) => ({
+  enabled: Boolean(settings?.enabled),
+  defaultProvider: settings?.defaultProvider === 'paystack' ? 'paystack' : 'hubtel',
+  returnUrl: settings?.returnUrl || '',
+  hubtel: {
+    clientId: settings?.hubtel?.clientId || '',
+    clientSecret: settings?.hubtel?.hasClientSecret ? PAYMENT_SECRET_MASK : '',
+    merchantAccountNumber: settings?.hubtel?.merchantAccountNumber || '',
+    webhookSecret: settings?.hubtel?.hasWebhookSecret ? PAYMENT_SECRET_MASK : '',
+  },
+  paystack: {
+    publicKey: settings?.paystack?.publicKey || '',
+    secretKey: settings?.paystack?.hasSecretKey ? PAYMENT_SECRET_MASK : '',
+  },
+})
+
 const toStaffEditForm = (row = {}) => ({
   id: row.id || '',
   fullName: row.full_name || '',
@@ -505,6 +539,9 @@ const Settings = () => {
   const [onlineBackupLoading, setOnlineBackupLoading] = useState(false)
   const [onlineBackupCreating, setOnlineBackupCreating] = useState(false)
   const [onlineBackupDownloading, setOnlineBackupDownloading] = useState('')
+  const [paymentSettingsForm, setPaymentSettingsForm] = useState(blankPaymentSettingsForm)
+  const [paymentSettingsLoading, setPaymentSettingsLoading] = useState(false)
+  const [paymentSettingsSaving, setPaymentSettingsSaving] = useState(false)
   const [nhiaApiForm, setNhiaApiForm] = useState(blankNhiaApiForm)
   const [nhiaCredentialState, setNhiaCredentialState] = useState(toNhiaCredentialState(blankNhiaApiForm))
   const [savingNhiaApi, setSavingNhiaApi] = useState(false)
@@ -557,6 +594,7 @@ const Settings = () => {
     if (isAdmin) {
       void loadDatabaseStatus({ silent: true })
       void loadOnlineBackups({ silent: true })
+      void loadPaymentSettings({ silent: true })
     }
   }, [isAdmin])
 
@@ -747,6 +785,50 @@ const Settings = () => {
       notify(onlineError.message || 'Unable to download online backup.', 'error')
     } finally {
       setOnlineBackupDownloading('')
+    }
+  }
+
+  const loadPaymentSettings = async ({ silent = false } = {}) => {
+    try {
+      setPaymentSettingsLoading(true)
+      const settings = await getOnlinePaymentSettings()
+      setPaymentSettingsForm(toPaymentSettingsForm(settings))
+      if (!silent) {
+        notify('Online payment settings refreshed.', 'success')
+      }
+    } catch (paymentError) {
+      if (!silent) {
+        notify(paymentError.message || 'Unable to read online payment settings.', 'error')
+      }
+    } finally {
+      setPaymentSettingsLoading(false)
+    }
+  }
+
+  const updatePaymentProviderForm = (provider, field, value) => {
+    setPaymentSettingsForm((current) => ({
+      ...current,
+      [provider]: {
+        ...current[provider],
+        [field]: value,
+      },
+    }))
+  }
+
+  const handleSavePaymentSettings = async (event) => {
+    event.preventDefault()
+    try {
+      setPaymentSettingsSaving(true)
+      setError('')
+      const saved = await saveOnlinePaymentSettings(paymentSettingsForm)
+      setPaymentSettingsForm(toPaymentSettingsForm(saved))
+      notify('Online payment settings saved.', 'success')
+    } catch (paymentError) {
+      const message = paymentError.message || 'Unable to save online payment settings.'
+      setError(message)
+      notify(message, 'error')
+    } finally {
+      setPaymentSettingsSaving(false)
     }
   }
 
@@ -1839,6 +1921,162 @@ const Settings = () => {
                 Online backups are stored privately under facility-backups/&lt;organization-id&gt;/ and downloaded through short-lived signed links.
               </p>
             </div>
+          </div>
+        )}
+
+        {isAdmin && (
+          <div className="settings-card settings-payment-card">
+            <div className="card-icon">
+              <CreditCard size={24} />
+            </div>
+            <div className="online-payment-header">
+              <div>
+                <h3>Online Payments</h3>
+                <p className="settings-note">
+                  Configure facility-level checkout providers. Hubtel is primary for Mobile Money; Paystack is the fallback provider.
+                </p>
+              </div>
+              <span className={`online-payment-state ${paymentSettingsForm.enabled ? 'enabled' : 'disabled'}`}>
+                {paymentSettingsForm.enabled ? 'Enabled' : 'Disabled'}
+              </span>
+            </div>
+
+            <form className="settings-form" onSubmit={handleSavePaymentSettings}>
+              <div className="payment-settings-toolbar">
+                <label className="settings-checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={paymentSettingsForm.enabled}
+                    onChange={(event) =>
+                      setPaymentSettingsForm({ ...paymentSettingsForm, enabled: event.target.checked })
+                    }
+                    disabled={paymentSettingsSaving}
+                  />
+                  Enable online payments
+                </label>
+                <label className="settings-field">
+                  <span>Default provider</span>
+                  <select
+                    value={paymentSettingsForm.defaultProvider}
+                    onChange={(event) =>
+                      setPaymentSettingsForm({ ...paymentSettingsForm, defaultProvider: event.target.value })
+                    }
+                    disabled={paymentSettingsSaving}
+                  >
+                    <option value="hubtel">Hubtel</option>
+                    <option value="paystack">Paystack</option>
+                  </select>
+                </label>
+              </div>
+
+              <div className="payment-provider-grid">
+                <section className="payment-provider-box payment-provider-box-primary">
+                  <div className="payment-provider-title">
+                    <strong>Hubtel</strong>
+                    <span>Primary Mobile Money</span>
+                  </div>
+                  <label className="settings-field">
+                    <span>Client ID</span>
+                    <input
+                      value={paymentSettingsForm.hubtel.clientId}
+                      onChange={(event) => updatePaymentProviderForm('hubtel', 'clientId', event.target.value)}
+                      placeholder="Hubtel client ID"
+                      disabled={paymentSettingsSaving}
+                    />
+                  </label>
+                  <label className="settings-field">
+                    <span>Client secret</span>
+                    <input
+                      type="password"
+                      value={paymentSettingsForm.hubtel.clientSecret}
+                      onChange={(event) => updatePaymentProviderForm('hubtel', 'clientSecret', event.target.value)}
+                      placeholder="Leave masked value to keep saved secret"
+                      autoComplete="new-password"
+                      disabled={paymentSettingsSaving}
+                    />
+                  </label>
+                  <label className="settings-field">
+                    <span>Merchant account number (optional)</span>
+                    <input
+                      value={paymentSettingsForm.hubtel.merchantAccountNumber}
+                      onChange={(event) => updatePaymentProviderForm('hubtel', 'merchantAccountNumber', event.target.value)}
+                      placeholder="Hubtel merchant account, if issued"
+                      disabled={paymentSettingsSaving}
+                    />
+                  </label>
+                  <label className="settings-field">
+                    <span>Webhook secret</span>
+                    <input
+                      type="password"
+                      value={paymentSettingsForm.hubtel.webhookSecret}
+                      onChange={(event) => updatePaymentProviderForm('hubtel', 'webhookSecret', event.target.value)}
+                      placeholder="Used to verify Hubtel callbacks"
+                      autoComplete="new-password"
+                      disabled={paymentSettingsSaving}
+                    />
+                  </label>
+                </section>
+
+                <section className="payment-provider-box">
+                  <div className="payment-provider-title">
+                    <strong>Paystack</strong>
+                    <span>Fallback / Card</span>
+                  </div>
+                  <label className="settings-field">
+                    <span>Public key</span>
+                    <input
+                      value={paymentSettingsForm.paystack.publicKey}
+                      onChange={(event) => updatePaymentProviderForm('paystack', 'publicKey', event.target.value)}
+                      placeholder="Paystack public key"
+                      disabled={paymentSettingsSaving}
+                    />
+                  </label>
+                  <label className="settings-field">
+                    <span>Secret key</span>
+                    <input
+                      type="password"
+                      value={paymentSettingsForm.paystack.secretKey}
+                      onChange={(event) => updatePaymentProviderForm('paystack', 'secretKey', event.target.value)}
+                      placeholder="Leave masked value to keep saved secret"
+                      autoComplete="new-password"
+                      disabled={paymentSettingsSaving}
+                    />
+                  </label>
+                  <label className="settings-field">
+                    <span>Return URL</span>
+                    <input
+                      value={paymentSettingsForm.returnUrl}
+                      onChange={(event) =>
+                        setPaymentSettingsForm({ ...paymentSettingsForm, returnUrl: event.target.value })
+                      }
+                      placeholder="Optional payment return URL"
+                      disabled={paymentSettingsSaving}
+                    />
+                  </label>
+                  <p className="settings-helper">
+                    Provider credentials are saved at facility level and used automatically by permitted online POS users.
+                  </p>
+                </section>
+              </div>
+
+              <div className="settings-save-bar">
+                <span>Cloud POS uses Hubtel first for Mobile Money. Local branch-server payments still work separately when available.</span>
+                <div className="payment-settings-actions">
+                  <button
+                    className="btn btn-outline"
+                    type="button"
+                    onClick={() => loadPaymentSettings()}
+                    disabled={paymentSettingsLoading || paymentSettingsSaving}
+                  >
+                    <RefreshCcw size={16} />
+                    {paymentSettingsLoading ? 'Checking...' : 'Refresh'}
+                  </button>
+                  <button className="btn btn-primary" type="submit" disabled={paymentSettingsSaving}>
+                    {paymentSettingsSaving ? 'Saving...' : 'Save Online Payments'}
+                  </button>
+                </div>
+              </div>
+            </form>
           </div>
         )}
 
