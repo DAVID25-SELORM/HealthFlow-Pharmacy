@@ -158,6 +158,9 @@ const OPTIONAL_CLAIM_SCHEMA_COLUMNS = [
   'nhia_member_lookup_payload',
   'nhis_return_override_reason',
   'nhis_return_previous_claim_id',
+  'serving_status',
+  'serving_reviewed_by',
+  'serving_reviewed_at',
 ]
 const OPTIONAL_CLAIM_SCHEMA_FIELD_GROUPS = [
   ['patient_address', 'patientAddress'],
@@ -187,6 +190,9 @@ const OPTIONAL_CLAIM_SCHEMA_FIELD_GROUPS = [
   ['nhia_member_lookup_payload', 'nhiaMemberLookupPayload'],
   ['nhis_return_override_reason', 'nhisReturnOverrideReason'],
   ['nhis_return_previous_claim_id', 'nhisReturnPreviousClaimId'],
+  ['serving_status', 'servingStatus'],
+  ['serving_reviewed_by', 'servingReviewedBy'],
+  ['serving_reviewed_at', 'servingReviewedAt'],
 ]
 const OPTIONAL_CLAIM_SCHEMA_PAYLOAD_KEYS = [
   ...new Set([
@@ -409,7 +415,10 @@ const NHIS_CLAIM_MEDICINES_SELECT = `
         id, nhis_drug_id, drug_code, description, unit,
         unit_price, dispensed_qty, dispensary_date,
         dose, frequency, duration, total_amount,
-        medicine_access_level, required_pharmacy_level
+        medicine_access_level, required_pharmacy_level,
+        prescribed_qty, served_qty, serving_status,
+        reason_if_not_fully_served, entered_by_claims_officer,
+        served_by_mca, entered_at, served_at
       )
     `
 
@@ -663,11 +672,30 @@ const isMissingOptionalClaimMedicineColumn = (error) => {
     error?.code === 'PGRST204' ||
     message.includes('schema cache') ||
     message.includes('medicine_access_level') ||
-    message.includes('required_pharmacy_level')
+    message.includes('required_pharmacy_level') ||
+    message.includes('prescribed_qty') ||
+    message.includes('served_qty') ||
+    message.includes('serving_status') ||
+    message.includes('reason_if_not_fully_served') ||
+    message.includes('entered_by_claims_officer') ||
+    message.includes('served_by_mca') ||
+    message.includes('entered_at') ||
+    message.includes('served_at')
   )
 }
 
-const OPTIONAL_CLAIM_MEDICINE_SCHEMA_COLUMNS = ['medicine_access_level', 'required_pharmacy_level']
+const OPTIONAL_CLAIM_MEDICINE_SCHEMA_COLUMNS = [
+  'medicine_access_level',
+  'required_pharmacy_level',
+  'prescribed_qty',
+  'served_qty',
+  'serving_status',
+  'reason_if_not_fully_served',
+  'entered_by_claims_officer',
+  'served_by_mca',
+  'entered_at',
+  'served_at',
+]
 
 const stripClaimSchemaColumns = (payload, columns = OPTIONAL_CLAIM_SCHEMA_COLUMNS) => {
   const stripped = { ...payload }
@@ -1657,23 +1685,94 @@ const isMcaMedicineReadinessIssue = (issue = '') => {
 const getMcaMedicineReadinessBlockers = (readiness = {}) =>
   (Array.isArray(readiness.blockers) ? readiness.blockers : []).filter(isMcaMedicineReadinessIssue)
 
+const normalizeMedicineServingStatus = (value, prescribedQty = 0, servedQty = 0) => {
+  const status = normalizeText(value).toLowerCase()
+  if (['not_available', 'not_served'].includes(status)) return status
+  if (status === 'fully_served' && servedQty >= prescribedQty) return 'fully_served'
+  if (status === 'partially_served' && servedQty > 0 && servedQty < prescribedQty) return 'partially_served'
+  if (servedQty <= 0) return 'pending'
+  return servedQty >= prescribedQty ? 'fully_served' : 'partially_served'
+}
+
+const getClaimServingStatus = (medicineRows = []) => {
+  if (!medicineRows.length) return 'not_served'
+  const statuses = medicineRows.map((row) => normalizeText(row.serving_status || 'pending'))
+  if (statuses.every((status) => status === 'fully_served')) return 'fully_served'
+  if (statuses.every((status) => ['not_available', 'not_served', 'pending'].includes(status))) return 'not_served'
+  if (statuses.some((status) => ['fully_served', 'partially_served'].includes(status))) return 'partially_served'
+  return 'pending'
+}
+
+const getMedicinePrescribedQty = (medicine = {}) => {
+  const value = medicine.prescribedQty ?? medicine.prescribed_qty ?? medicine.quantity ?? medicine.requestedQty
+  const fallback = medicine.dispensedQty ?? medicine.dispensed_qty ?? medicine.servedQty ?? medicine.served_qty ?? 0
+  return assertNonNegativeNumber(value ?? fallback, 'Prescribed qty')
+}
+
+const getMedicineServedQty = (medicine = {}) => {
+  const value = medicine.servedQty ?? medicine.served_qty ?? medicine.dispensedQty ?? medicine.dispensed_qty ?? 0
+  return assertNonNegativeNumber(value, 'Served qty')
+}
+
+const getMedicineServingStatusValue = (medicine = {}) =>
+  normalizeText(medicine.servingStatus ?? medicine.serving_status).toLowerCase()
+
+const isUnservedMedicineAuditLine = (medicine = {}) =>
+  ['not_available', 'not_served'].includes(getMedicineServingStatusValue(medicine))
+
+const getMedicineReadinessServedQty = (medicine = {}) =>
+  asNumber(medicine?.servedQty ?? medicine?.served_qty ?? medicine?.dispensedQty ?? medicine?.dispensed_qty)
+
+const getMedicineReadinessPrescribedQty = (medicine = {}) =>
+  asNumber(
+    medicine?.prescribedQty ??
+      medicine?.prescribed_qty ??
+      medicine?.quantity ??
+      medicine?.requestedQty ??
+      medicine?.dispensedQty ??
+      medicine?.dispensed_qty
+  )
+
 const toNhisClaimMedicineRows = (medicines = []) =>
-  medicines.map((m) => ({
-    nhis_drug_id: m.nhisDrugId || null,
-    drug_code: normalizeText(m.drugCode) || null,
-    description: assertRequiredText(m.description, 'Medicine description'),
-    unit: normalizeText(m.unit) || 'unit',
-    unit_price: assertNonNegativeNumber(m.unitPrice, 'Unit price'),
-    dispensed_qty: assertNonNegativeNumber(m.dispensedQty, 'Dispensed qty'),
-    dispensary_date: m.dispensaryDate || null,
-    dose: normalizeText(m.dose) || null,
-    frequency: normalizeText(m.frequency) || null,
-    duration: normalizeText(m.duration) || null,
-    total_amount: assertNonNegativeNumber(m.totalAmount, 'Total amount'),
-    // NHIS pharmacy level fields
-    medicine_access_level: normalizeMedicineAccessLevel(m.medicineAccessLevel ?? m.medicine_access_level) || null,
-    required_pharmacy_level: normalizePharmacyLevel(m.requiredPharmacyLevel ?? m.required_pharmacy_level) || null,
-  }))
+  medicines.map((m) => {
+    const prescribedQty = getMedicinePrescribedQty(m)
+    const servedQty = getMedicineServedQty(m)
+    const unitPrice = assertNonNegativeNumber(m.unitPrice, 'Unit price')
+    const servingStatus = normalizeMedicineServingStatus(
+      m.servingStatus ?? m.serving_status,
+      prescribedQty,
+      servedQty
+    )
+    const hasServedQuantityField = m.servedQty !== undefined || m.served_qty !== undefined
+    const totalAmount = assertNonNegativeNumber(
+      hasServedQuantityField ? unitPrice * servedQty : (m.totalAmount ?? unitPrice * servedQty),
+      'Total amount'
+    )
+    return {
+      nhis_drug_id: m.nhisDrugId || null,
+      drug_code: normalizeText(m.drugCode) || null,
+      description: assertRequiredText(m.description, 'Medicine description'),
+      unit: normalizeText(m.unit) || 'unit',
+      unit_price: unitPrice,
+      dispensed_qty: servedQty,
+      dispensary_date: m.dispensaryDate || null,
+      dose: normalizeText(m.dose) || null,
+      frequency: normalizeText(m.frequency) || null,
+      duration: normalizeText(m.duration) || null,
+      total_amount: totalAmount,
+      // NHIS pharmacy level fields
+      medicine_access_level: normalizeMedicineAccessLevel(m.medicineAccessLevel ?? m.medicine_access_level) || null,
+      required_pharmacy_level: normalizePharmacyLevel(m.requiredPharmacyLevel ?? m.required_pharmacy_level) || null,
+      prescribed_qty: prescribedQty,
+      served_qty: servedQty,
+      serving_status: servingStatus,
+      reason_if_not_fully_served: normalizeText(m.reasonIfNotFullyServed ?? m.reason_if_not_fully_served) || null,
+      entered_by_claims_officer: m.enteredByClaimsOfficer ?? m.entered_by_claims_officer ?? null,
+      served_by_mca: m.servedByMca ?? m.served_by_mca ?? null,
+      entered_at: m.enteredAt ?? m.entered_at ?? null,
+      served_at: m.servedAt ?? m.served_at ?? null,
+    }
+  })
 
 // ✅ NHIS CLAIM LOGIC SEPARATION PATCH START
 const hasIcd10DiagnosisCode = (claimData = {}) => {
@@ -1795,7 +1894,11 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
     (options.finalSubmission || options.enforceDiagnosisTreatmentMatch === true || requireMedicineDirections)
   const shouldCheckPrescribingLevel =
     options.finalSubmission || options.enforcePrescribingLevel === true || requireMedicineDirections
+  const claimableMedicines = (medicines || []).filter(
+    (medicine) => !isUnservedMedicineAuditLine(medicine) && getMedicineReadinessServedQty(medicine) > 0
+  )
   const hasMedicineClaims = medicines?.length > 0
+  const hasClaimableMedicineClaims = claimableMedicines.length > 0
   const shouldCheckHospitalProviderClass =
     isHospital &&
     (options.finalSubmission || options.enforceHospitalProviderLevel === true || tariffServices.length > 0)
@@ -1887,10 +1990,21 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
   if (!medicines?.length && (!isHospital || !tariffServices.length)) {
     blockers.push(isHospital ? 'Add at least one medicine or NHIA tariff service to the claim.' : 'Add at least one medicine to the claim.')
   } else {
+    if (
+      (options.finalSubmission || normalizeText(claimData?.status).toLowerCase() === 'served') &&
+      !hasClaimableMedicineClaims &&
+      (!isHospital || !tariffServices.length)
+    ) {
+      blockers.push('At least one served medicine is required before marking the NHIS claim ready.')
+    }
+
     medicines.forEach((medicine, index) => {
       const label = `Medicine ${index + 1}`
-      const quantity = asNumber(medicine?.dispensedQty ?? medicine?.dispensed_qty)
+      const quantity = getMedicineReadinessServedQty(medicine)
+      const prescribedQuantity = getMedicineReadinessPrescribedQty(medicine)
       const unitPrice = asNumber(medicine?.unitPrice ?? medicine?.unit_price)
+      const servingStatus = getMedicineServingStatusValue(medicine)
+      const isAuditOnlyUnservedLine = isUnservedMedicineAuditLine(medicine)
         // ✅ NHIS PHARMACY LEVEL PATCH START
         const catalogMedicine =
           medicineCatalogById.get(asText(medicine?.nhisDrugId ?? medicine?.nhis_drug_id)) ||
@@ -1912,7 +2026,20 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
       }
       if (!asText(medicine?.description)) blockers.push(`${label}: generic medicine name/description is required.`)
       if (!asText(medicine?.unit)) blockers.push(`${label}: unit of pricing is required.`)
-      if (!(quantity > 0)) blockers.push(`${label}: exact dispensed quantity must be greater than zero.`)
+      if (!(prescribedQuantity > 0)) blockers.push(`${label}: prescribed quantity must be greater than zero.`)
+      if (!isAuditOnlyUnservedLine && !(quantity > 0)) {
+        const message = servingStatus === 'pending'
+          ? `${label}: waiting for MCA served quantity.`
+          : `${label}: exact dispensed quantity must be greater than zero.`
+        if (options.finalSubmission || normalizeText(claimData?.status).toLowerCase() === 'served') {
+          blockers.push(message)
+        } else {
+          warnings.push(message)
+        }
+      }
+      if (isAuditOnlyUnservedLine && !asText(medicine?.reasonIfNotFullyServed ?? medicine?.reason_if_not_fully_served)) {
+        blockers.push(`${label}: reason is required when a medicine is not available or not served.`)
+      }
       if (!(unitPrice >= 0)) blockers.push(`${label}: NHIS unit price is required.`)
 
       const addDirectionIssue = (message) => {
@@ -1923,9 +2050,11 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
         }
       }
 
-      if (!asText(medicine?.dose)) addDirectionIssue('dose')
-      if (!asText(medicine?.frequency)) addDirectionIssue('dosage schedule/frequency')
-      if (!asText(medicine?.duration)) addDirectionIssue('duration')
+      if (!isAuditOnlyUnservedLine) {
+        if (!asText(medicine?.dose)) addDirectionIssue('dose')
+        if (!asText(medicine?.frequency)) addDirectionIssue('dosage schedule/frequency')
+        if (!asText(medicine?.duration)) addDirectionIssue('duration')
+      }
     })
   }
 
@@ -1992,14 +2121,14 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
   }
 
   if (shouldCheckDiagnosisTreatmentMatch) {
-    blockers.push(...getDiagnosisTreatmentMismatchBlockers(claimData, medicines, options.clinicalRules || DIAGNOSIS_TREATMENT_RULES, options))
+    blockers.push(...getDiagnosisTreatmentMismatchBlockers(claimData, claimableMedicines, options.clinicalRules || DIAGNOSIS_TREATMENT_RULES, options))
   }
 
   if (shouldRunClinicalScrub) {
-    const duplicateIssues = getDuplicateMedicineIssues(medicines, true)
-    const ageIssues = getAgeClinicalIssues(patientAge, medicines, claimData)
-    const drugDiagnosisIssues = getDrugDiagnosisIssues(claimData, medicines, true)
-    const quantityCostIssues = getQuantityCostIssues(claimData, medicines, true)
+    const duplicateIssues = getDuplicateMedicineIssues(claimableMedicines, true)
+    const ageIssues = getAgeClinicalIssues(patientAge, claimableMedicines, claimData)
+    const drugDiagnosisIssues = getDrugDiagnosisIssues(claimData, claimableMedicines, true)
+    const quantityCostIssues = getQuantityCostIssues(claimData, claimableMedicines, true)
 
     blockers.push(
       ...getGenderDiagnosisIssues(claimData),
@@ -4145,6 +4274,8 @@ export const getNhisClaimStats = async () => {
     const rows = await getAllNhisClaims()
     return {
       total: rows.length,
+      pending_serving: rows.filter((r) => r.status === 'pending_serving').length,
+      returned_for_review: rows.filter((r) => r.status === 'returned_for_review').length,
       served: rows.filter((r) => r.status === 'served').length,
       submitted: rows.filter((r) => r.status === 'submitted').length,
       paid: rows.filter((r) => r.status === 'paid').length,
@@ -4164,6 +4295,8 @@ export const getNhisClaimStats = async () => {
   const rows = data || []
   return {
     total:     rows.length,
+    pending_serving: rows.filter((r) => r.status === 'pending_serving').length,
+    returned_for_review: rows.filter((r) => r.status === 'returned_for_review').length,
     served:    rows.filter((r) => r.status === 'served').length,
     submitted: rows.filter((r) => r.status === 'submitted').length,
     paid:      rows.filter((r) => r.status === 'paid').length,
@@ -4224,7 +4357,8 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
   )
   const serviceDate = normalizeText(claimData.serviceDate || claimData.serviceDateFrom)
 
-  const medicineTotal = medicines.reduce((s, m) => s + Number(m.totalAmount || 0), 0)
+  const medicineRows = toNhisClaimMedicineRows(medicines)
+  const medicineTotal = medicineRows.reduce((s, m) => s + Number(m.total_amount || 0), 0)
   const serviceTotal = tariffServices.reduce((s, line) => s + Number(line.totalAmount || 0), 0)
   const totalAmount = medicineTotal + serviceTotal
   await assertNoDuplicateNhisClaimInStore({
@@ -4277,7 +4411,10 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
     physician_name:     normalizeText(claimData.physicianName)     || null,
     pre_auth_codes:     normalizeText(claimData.preAuthCodes)      || null,
     total_amount:       totalAmount,
-    status:             'served',
+    status:             normalizeText(claimData.status) || 'served',
+    serving_status:     normalizeText(claimData.servingStatus ?? claimData.serving_status) || null,
+    serving_reviewed_by: claimData.servingReviewedBy ?? claimData.serving_reviewed_by ?? null,
+    serving_reviewed_at: claimData.servingReviewedAt ?? claimData.serving_reviewed_at ?? null,
     notes:              normalizeText(claimData.notes)             || null,
     unserved_medicines_note: normalizeText(
       claimData.unservedMedicinesNote ?? claimData.unserved_medicines_note
@@ -4289,23 +4426,7 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
   if (options.useBranchServer || shouldUseBranchServer()) {
     return await createBranchRecord('nhis/claims', {
       ...claimPayload,
-      nhis_claim_medicines: medicines.map((m) => ({
-        nhis_drug_id: m.nhisDrugId || null,
-        drug_code: normalizeText(m.drugCode) || null,
-        description: assertRequiredText(m.description, 'Medicine description'),
-        unit: normalizeText(m.unit) || 'unit',
-        unit_price: assertNonNegativeNumber(m.unitPrice, 'Unit price'),
-        dispensed_qty: assertNonNegativeNumber(m.dispensedQty, 'Dispensed qty'),
-        dispensary_date: m.dispensaryDate || null,
-        dose: normalizeText(m.dose) || null,
-        frequency: normalizeText(m.frequency) || null,
-        duration: normalizeText(m.duration) || null,
-        total_amount: assertNonNegativeNumber(m.totalAmount, 'Total amount'),
-        // ✅ NHIS PHARMACY LEVEL PATCH START
-        medicine_access_level: normalizeMedicineAccessLevel(m.medicineAccessLevel ?? m.medicine_access_level) || null,
-        required_pharmacy_level: normalizePharmacyLevel(m.requiredPharmacyLevel ?? m.required_pharmacy_level) || null,
-        // ✅ NHIS PHARMACY LEVEL PATCH END
-      })),
+      nhis_claim_medicines: medicineRows,
       nhis_claim_services: tariffServices.map((service) => ({
         nhia_tariff_item_id: service.nhiaTariffItemId,
         tariff_version: service.tariffVersion,
@@ -4335,13 +4456,7 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
     claimPayload = claimItNamedPayload
   }
 
-  // Insert medicines
-  const medicineRows = toNhisClaimMedicineRows(medicines).map((row) => ({
-    ...row,
-    claim_id: claim.id,
-  }))
-
-  await insertNhisClaimMedicineRows(medicineRows)
+  await insertNhisClaimMedicineRows(medicineRows.map((row) => ({ ...row, claim_id: claim.id })))
 
   await insertNhisClaimServiceRows(toNhisClaimServiceRows(claim.id, tariffServices, claimData))
 
@@ -4423,6 +4538,8 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
     const medicinesOnlyPayload = {
       nhis_claim_medicines: medicineRows,
       total_amount: totalAmount,
+      status: 'returned_for_review',
+      serving_status: getClaimServingStatus(medicineRows),
       updated_at: new Date().toISOString(),
     }
 
@@ -4455,7 +4572,8 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
     options
   )
   const serviceDate = normalizeText(claimData.serviceDate || claimData.serviceDateFrom)
-  const medicineTotal = medicines.reduce((s, m) => s + Number(m.totalAmount || 0), 0)
+  const medicineRows = toNhisClaimMedicineRows(medicines)
+  const medicineTotal = medicineRows.reduce((s, m) => s + Number(m.total_amount || 0), 0)
   const serviceTotal = tariffServices.reduce((s, line) => s + Number(line.totalAmount || 0), 0)
   const totalAmount = medicineTotal + serviceTotal
   await assertNoDuplicateNhisClaimInStore({
@@ -4469,7 +4587,6 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
     useBranchServer: options.useBranchServer,
   })
   const diagnosisDetails = getDiagnosisDetailsPayload(claimData)
-  const medicineRows = toNhisClaimMedicineRows(medicines)
   let claimPayload = {
     patient_id: claimData.patientId || null,
     member_no: memberNo,
@@ -4504,6 +4621,10 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
     physician_name: normalizeText(claimData.physicianName) || null,
     pre_auth_codes: normalizeText(claimData.preAuthCodes) || null,
     total_amount: totalAmount,
+    ...(normalizeText(claimData.status) ? { status: normalizeText(claimData.status) } : {}),
+    serving_status: normalizeText(claimData.servingStatus ?? claimData.serving_status) || null,
+    serving_reviewed_by: claimData.servingReviewedBy ?? claimData.serving_reviewed_by ?? null,
+    serving_reviewed_at: claimData.servingReviewedAt ?? claimData.serving_reviewed_at ?? null,
     notes: normalizeText(claimData.notes) || null,
     unserved_medicines_note: normalizeText(
       claimData.unservedMedicinesNote ?? claimData.unserved_medicines_note

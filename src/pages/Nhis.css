@@ -465,6 +465,9 @@
 }
 
 .nhis-badge--served    { background: #fef3c7; color: #92400e; }
+.nhis-badge--pending_serving,
+.nhis-badge--serving_in_progress { background: #e0f2fe; color: #075985; }
+.nhis-badge--returned_for_review { background: #ede9fe; color: #5b21b6; }
 .nhis-badge--submitted { background: #dbeafe; color: #1e40af; }
 .nhis-badge--paid      { background: #dcfce7; color: #166534; }
 .nhis-badge--rejected  { background: #fee2e2; color: #991b1b; }
@@ -837,6 +840,16 @@
   align-items: flex-end;
   gap: 0.25rem;
   flex-shrink: 0;
+}
+
+.nhis-serving-note {
+  border: 1px solid #99f6e4;
+  border-radius: 8px;
+  background: #f0fdfa;
+  color: #115e59;
+  font-size: 0.85rem;
+  font-weight: 700;
+  padding: 0.75rem;
 }
 
 .nhis-internal-note {
@@ -1949,6 +1962,17 @@
 .nhis-badge--served {
   background: var(--amber-bg);
   color: #633806;
+}
+
+.nhis-badge--pending_serving,
+.nhis-badge--serving_in_progress {
+  background: #e0f2fe;
+  color: #075985;
+}
+
+.nhis-badge--returned_for_review {
+  background: #ede9fe;
+  color: #5b21b6;
 }
 
 .nhis-badge--submitted {

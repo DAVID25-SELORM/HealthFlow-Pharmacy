@@ -83,7 +83,31 @@ import './Nhis.css'
 
 // ─── constants ────────────────────────────────────────────────────────────────
 
-const CLAIM_STATUS_TABS = ['all', 'served', 'submitted', 'paid', 'rejected']
+const CLAIM_STATUS_TABS = ['all', 'pending_serving', 'returned_for_review', 'served', 'submitted', 'paid', 'rejected']
+const CLAIM_STATUS_LABELS = {
+  all: 'All',
+  pending_serving: 'Pending Serving',
+  serving_in_progress: 'Serving',
+  returned_for_review: 'For Review',
+  served: 'Claim Ready',
+  submitted: 'Submitted',
+  paid: 'Paid',
+  rejected: 'Rejected',
+}
+const MEDICINE_SERVING_STATUSES = [
+  { value: 'fully_served', label: 'Fully Served' },
+  { value: 'partially_served', label: 'Partially Served' },
+  { value: 'not_available', label: 'Not Available' },
+  { value: 'not_served', label: 'Not Served' },
+]
+const MEDICINE_NOT_FULLY_SERVED_REASONS = [
+  'Out of stock',
+  'Insufficient stock',
+  'Patient refused',
+  'Medicine changed',
+  'Entered by mistake',
+  'Other',
+]
 const CLAIM_LEVEL_MCA_INFO_PATTERNS = [
   /^Patient /i,
   /^Folder number/i,
@@ -224,7 +248,15 @@ const BLANK_MEDICINE = {
   description:   '',
   unit:          'unit',
   unitPrice:     '',
+  prescribedQty: '0',
+  servedQty:     '0',
   dispensedQty:  '0',
+  servingStatus: 'pending',
+  reasonIfNotFullyServed: '',
+  enteredByClaimsOfficer: '',
+  servedByMca: '',
+  enteredAt: '',
+  servedAt: '',
   dispensaryDate: new Date().toISOString().split('T')[0],
   dose:          '',
   frequency:     '',
@@ -260,6 +292,42 @@ const BLANK_NHIA_TARIFF = {
 
 const fmtCurrency = (n) =>
   `GHS ${Number(n || 0).toLocaleString('en-GH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+const getClaimStatusLabel = (status = '') => CLAIM_STATUS_LABELS[String(status || '').toLowerCase()] || status || 'Draft'
+
+const getMedicinePrescribedQty = (medicine = {}) =>
+  Number(medicine.prescribedQty ?? medicine.prescribed_qty ?? medicine.quantity ?? medicine.dispensedQty ?? medicine.dispensed_qty ?? 0) || 0
+
+const getMedicineServedQty = (medicine = {}) =>
+  Number(medicine.servedQty ?? medicine.served_qty ?? medicine.dispensedQty ?? medicine.dispensed_qty ?? 0) || 0
+
+const normalizeMedicineServingStatus = (value, prescribedQty = 0, servedQty = 0) => {
+  const status = String(value || '').trim().toLowerCase()
+  if (['not_available', 'not_served'].includes(status)) return status
+  if (status === 'fully_served' && servedQty >= prescribedQty) return 'fully_served'
+  if (status === 'partially_served' && servedQty > 0 && servedQty < prescribedQty) return 'partially_served'
+  if (servedQty <= 0) return 'pending'
+  return servedQty >= prescribedQty ? 'fully_served' : 'partially_served'
+}
+
+const getMedicineServingStatusLabel = (value = '') =>
+  MEDICINE_SERVING_STATUSES.find((status) => status.value === value)?.label ||
+  (value === 'pending' ? 'Pending' : value || 'Pending')
+
+const getClaimServingStatus = (medicines = []) => {
+  if (!medicines.length) return 'not_served'
+  const statuses = medicines.map((medicine) =>
+    normalizeMedicineServingStatus(
+      medicine.servingStatus ?? medicine.serving_status,
+      getMedicinePrescribedQty(medicine),
+      getMedicineServedQty(medicine)
+    )
+  )
+  if (statuses.every((status) => status === 'fully_served')) return 'fully_served'
+  if (statuses.every((status) => ['not_available', 'not_served', 'pending'].includes(status))) return 'not_served'
+  if (statuses.some((status) => ['fully_served', 'partially_served'].includes(status))) return 'partially_served'
+  return 'pending'
+}
 
 const toLocalIsoDate = (date = new Date()) => {
   const year = date.getFullYear()
@@ -677,7 +745,7 @@ const getPreferredTariffCateringOption = (settings) => {
 }
 
 const StatusBadge = ({ status }) => (
-  <span className={`nhis-badge nhis-badge--${status}`}>{status}</span>
+  <span className={`nhis-badge nhis-badge--${status}`}>{getClaimStatusLabel(status)}</span>
 )
 
 // ─── component ────────────────────────────────────────────────────────────────
@@ -720,7 +788,16 @@ const Nhis = () => {
   const [clinicalRules, setClinicalRules] = useState([])
   const [patients, setPatients]   = useState([])
   const [inventoryDrugs, setInventoryDrugs] = useState([])
-  const [stats, setStats]         = useState({ total: 0, served: 0, submitted: 0, paid: 0, rejected: 0, totalPaid: 0 })
+  const [stats, setStats]         = useState({
+    total: 0,
+    pending_serving: 0,
+    returned_for_review: 0,
+    served: 0,
+    submitted: 0,
+    paid: 0,
+    rejected: 0,
+    totalPaid: 0,
+  })
   const [loading, setLoading]     = useState(true)
   const [error, setError]         = useState('')
   const [catalogSeeding, setCatalogSeeding] = useState(false)
@@ -1552,7 +1629,19 @@ const Nhis = () => {
         description: medicine.description || '',
         unit: medicine.unit || 'unit',
         unitPrice: Number.parseFloat(medicine.unit_price || 0),
+        prescribedQty: Number.parseFloat(medicine.prescribed_qty ?? medicine.dispensed_qty ?? 0),
+        servedQty: Number.parseFloat(medicine.served_qty ?? medicine.dispensed_qty ?? 0),
         dispensedQty: Number.parseFloat(medicine.dispensed_qty || 0),
+        servingStatus: normalizeMedicineServingStatus(
+          medicine.serving_status,
+          Number.parseFloat(medicine.prescribed_qty ?? medicine.dispensed_qty ?? 0),
+          Number.parseFloat(medicine.served_qty ?? medicine.dispensed_qty ?? 0)
+        ),
+        reasonIfNotFullyServed: medicine.reason_if_not_fully_served || '',
+        enteredByClaimsOfficer: medicine.entered_by_claims_officer || '',
+        servedByMca: medicine.served_by_mca || '',
+        enteredAt: medicine.entered_at || '',
+        servedAt: medicine.served_at || '',
         dispensaryDate: medicine.dispensary_date || null,
         dose: medicine.dose || '',
         frequency: medicine.frequency || '',
@@ -1654,8 +1743,38 @@ const Nhis = () => {
   const addMedicineToList = () => {
     const qty   = Number.parseFloat(medForm.dispensedQty) || 0
     const price = Number.parseFloat(medForm.unitPrice)    || 0
-    if (!(qty > 0)) {
-      notify('Dispensed quantity is required.', 'warning')
+    const requestedServingStatus = String(medForm.servingStatus || '').toLowerCase()
+    const allowsZeroServedQty = isMedicineCounterAssistant && ['not_available', 'not_served'].includes(requestedServingStatus)
+    if (!(qty > 0) && !allowsZeroServedQty) {
+      notify(isMedicineCounterAssistant ? 'Served quantity is required.' : 'Prescribed quantity is required.', 'warning')
+      return
+    }
+    if (isMedicineCounterAssistant && editingMedicineIndex === null) {
+      notify('MCA users can only serve medicines entered by the Claims Officer.', 'warning')
+      return
+    }
+    const currentMedicine = editingMedicineIndex === null ? null : claimMedicines[editingMedicineIndex]
+    const prescribedQty = isMedicineCounterAssistant
+      ? getMedicinePrescribedQty(currentMedicine)
+      : qty
+    const servedQty = isMedicineCounterAssistant
+      ? qty
+      : getMedicineServedQty(currentMedicine)
+    const servingStatus = normalizeMedicineServingStatus(medForm.servingStatus, prescribedQty, servedQty)
+    if (
+      isMedicineCounterAssistant &&
+      ['not_available', 'not_served'].includes(servingStatus) &&
+      servedQty > 0
+    ) {
+      notify('Set served quantity to 0 when a medicine is not available or not served.', 'warning')
+      return
+    }
+    if (
+      isMedicineCounterAssistant &&
+      ['partially_served', 'not_available', 'not_served'].includes(servingStatus) &&
+      !String(medForm.reasonIfNotFullyServed || '').trim()
+    ) {
+      notify('Select a reason when a medicine is not fully served.', 'warning')
       return
     }
 
@@ -1665,12 +1784,22 @@ const Nhis = () => {
       description:   medForm.description,
       unit:          medForm.unit,
       unitPrice:     price,
-      dispensedQty:  qty,
+      prescribedQty,
+      servedQty,
+      dispensedQty:  servedQty,
+      servingStatus,
+      reasonIfNotFullyServed: ['partially_served', 'not_available', 'not_served'].includes(servingStatus)
+        ? medForm.reasonIfNotFullyServed
+        : '',
+      enteredByClaimsOfficer: medForm.enteredByClaimsOfficer || currentMedicine?.enteredByClaimsOfficer || currentMedicine?.entered_by_claims_officer || user?.id || '',
+      servedByMca: isMedicineCounterAssistant ? (user?.id || '') : (currentMedicine?.servedByMca || currentMedicine?.served_by_mca || ''),
+      enteredAt: medForm.enteredAt || currentMedicine?.enteredAt || currentMedicine?.entered_at || new Date().toISOString(),
+      servedAt: isMedicineCounterAssistant ? new Date().toISOString() : (currentMedicine?.servedAt || currentMedicine?.served_at || ''),
       dispensaryDate: medForm.dispensaryDate || null,
       dose:          medForm.dose,
       frequency:     medForm.frequency,
       duration:      medForm.duration,
-      totalAmount:   price * qty,
+      totalAmount:   price * servedQty,
       category:      medForm.category || getCatalogCategoryForMedicine(medForm),
       // ✅ NHIS PHARMACY LEVEL PATCH START
       medicineAccessLevel: medForm.medicineAccessLevel || null,
@@ -1720,7 +1849,19 @@ const Nhis = () => {
       description: medicine.description || '',
       unit: medicine.unit || 'unit',
       unitPrice: String(medicine.unitPrice ?? ''),
-      dispensedQty: String(medicine.dispensedQty ?? '0'),
+      prescribedQty: String(getMedicinePrescribedQty(medicine)),
+      servedQty: String(getMedicineServedQty(medicine)),
+      dispensedQty: String(isMedicineCounterAssistant ? getMedicineServedQty(medicine) : getMedicinePrescribedQty(medicine)),
+      servingStatus: normalizeMedicineServingStatus(
+        medicine.servingStatus ?? medicine.serving_status,
+        getMedicinePrescribedQty(medicine),
+        getMedicineServedQty(medicine)
+      ),
+      reasonIfNotFullyServed: medicine.reasonIfNotFullyServed || medicine.reason_if_not_fully_served || '',
+      enteredByClaimsOfficer: medicine.enteredByClaimsOfficer || medicine.entered_by_claims_officer || '',
+      servedByMca: medicine.servedByMca || medicine.served_by_mca || '',
+      enteredAt: medicine.enteredAt || medicine.entered_at || '',
+      servedAt: medicine.servedAt || medicine.served_at || '',
       dispensaryDate: medicine.dispensaryDate || new Date().toISOString().split('T')[0],
       dose: medicine.dose || '',
       frequency: medicine.frequency || '',
@@ -1781,7 +1922,7 @@ const Nhis = () => {
 
   const claimTotal = useMemo(
     () =>
-      claimMedicines.reduce((s, m) => s + Number(m.totalAmount || 0), 0) +
+      claimMedicines.reduce((s, m) => s + (Number(m.unitPrice || 0) * getMedicineServedQty(m)), 0) +
       claimServices.reduce((s, service) => s + Number(service.totalAmount || 0), 0),
     [claimMedicines, claimServices]
   )
@@ -2215,6 +2356,19 @@ const Nhis = () => {
         branchId: profile?.branch_id || branch?.id || null,
         createdBy: user?.id || null,
       }
+      if (!editingClaim) {
+        payload.status = 'pending_serving'
+        payload.servingStatus = 'pending'
+        payload.allowIncompleteReview = true
+      } else if (isMedicineCounterAssistant) {
+        payload.status = 'returned_for_review'
+        payload.servingStatus = getClaimServingStatus(claimMedicines)
+      } else if (['pending_serving', 'serving_in_progress', 'returned_for_review', 'partially_served', 'fully_served'].includes(String(editingClaim.status || '').toLowerCase())) {
+        payload.status = 'served'
+        payload.servingStatus = getClaimServingStatus(claimMedicines)
+        payload.servingReviewedBy = user?.id || null
+        payload.servingReviewedAt = new Date().toISOString()
+      }
       const payloadHasReadablePrescriptionFile = Boolean(
         payload.prescriptionFilePath ||
         payload.prescription_file_path ||
@@ -2225,8 +2379,8 @@ const Nhis = () => {
       )
 
       let successMessage = editingClaim
-        ? (isMedicineCounterAssistant ? 'NHIS medicines saved.' : 'NHIS claim corrections saved.')
-        : 'NHIS claim saved.'
+        ? (isMedicineCounterAssistant ? 'NHIS medicines saved for Claims Officer review.' : 'NHIS claim reviewed and marked ready.')
+        : 'NHIS prescription saved and sent to MCA for serving.'
       let savedClaimRecord = null
       const returnAlertOverrideSnapshot = returnAlertOverride
       if (editingClaim) {
@@ -2864,7 +3018,15 @@ const Nhis = () => {
               <span className="stat-value">{stats.total}</span>
             </div>
             <div className="stat-box pending">
-              <span className="stat-label">Served (pending)</span>
+              <span className="stat-label">Pending Serving</span>
+              <span className="stat-value">{stats.pending_serving || 0}</span>
+            </div>
+            <div className="stat-box pending">
+              <span className="stat-label">For Review</span>
+              <span className="stat-value">{stats.returned_for_review || 0}</span>
+            </div>
+            <div className="stat-box pending">
+              <span className="stat-label">Claim Ready</span>
               <span className="stat-value">{stats.served}</span>
             </div>
             <div className="stat-box">
@@ -2890,7 +3052,7 @@ const Nhis = () => {
                   className={`tab-btn ${claimTab === tab ? 'active' : ''}`}
                   onClick={() => setStatusTab(tab)}
                 >
-                  {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                  {getClaimStatusLabel(tab)}
                   {tab !== 'all' && stats[tab] > 0 && (
                     <span className="tab-count">{stats[tab]}</span>
                   )}
@@ -3069,7 +3231,11 @@ const Nhis = () => {
                         >
                           <Eye size={14} />
                         </button>
-                        {canServeNhisMedicines && (c.status === 'served' || canEditNhisClaimAnytime) && (
+                        {canServeNhisMedicines && (
+                          isMedicineCounterAssistant
+                            ? ['pending_serving', 'serving_in_progress', 'returned_for_review', 'served'].includes(c.status)
+                            : (['pending_serving', 'returned_for_review', 'served'].includes(c.status) || canEditNhisClaimAnytime)
+                        ) && (
                           <button
                             className="action-btn action-btn--edit"
                             title={isMedicineCounterAssistant ? 'Serve medicines' : canEditNhisClaimAnytime ? 'Edit claim' : 'Edit before submission/export'}
@@ -3979,19 +4145,21 @@ const Nhis = () => {
               <div className="nhis-claim-right">
                 <div className="nhis-medicines-header">
                   <h3 className="nhis-section-title">Medicines</h3>
-                  <button
-                    type="button"
-                    className="btn btn-primary btn-sm"
-                    onClick={() => {
-                      setEditingMedicineIndex(null)
-                      setMedForm(BLANK_MEDICINE)
-                      setMedCodeSearch('')
-                      setMedSearchResults([])
-                      setShowMedModal(true)
-                    }}
-                  >
-                    <Plus size={14} /> Add Medicine
-                  </button>
+                  {canWrite && (
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      onClick={() => {
+                        setEditingMedicineIndex(null)
+                        setMedForm(BLANK_MEDICINE)
+                        setMedCodeSearch('')
+                        setMedSearchResults([])
+                        setShowMedModal(true)
+                      }}
+                    >
+                      <Plus size={14} /> Add Medicine
+                    </button>
+                  )}
                 </div>
 
                 {claimMedicines.length === 0 ? (
@@ -4006,6 +4174,9 @@ const Nhis = () => {
                           <div className="medicine-meta">
                             {m.dispensedQty} × {m.unit} @ {fmtCurrency(m.unitPrice)}
                             {m.category && ` | NHIS Level: ${m.category}`}
+                            {` | Prescribed: ${getMedicinePrescribedQty(m)} ${m.unit}`}
+                            {` | Served: ${getMedicineServedQty(m)} ${m.unit}`}
+                            {` | ${getMedicineServingStatusLabel(normalizeMedicineServingStatus(m.servingStatus, getMedicinePrescribedQty(m), getMedicineServedQty(m)))}`}
                             {/* ✅ NHIS PHARMACY LEVEL PATCH START */}
                             {` | Access: ${m.medicineAccessLevel || 'Level not configured'}`}
                             {m.requiredPharmacyLevel && ` | Facility: ${m.requiredPharmacyLevel}`}
@@ -4016,18 +4187,20 @@ const Nhis = () => {
                           </div>
                         </div>
                         <div className="medicine-card-right">
-                          <div className="medicine-total">{fmtCurrency(m.totalAmount)}</div>
+                          <div className="medicine-total">{fmtCurrency(Number(m.unitPrice || 0) * getMedicineServedQty(m))}</div>
                           <button
                             className="action-btn action-btn--edit"
                             type="button"
-                            title="Edit medicine"
+                            title={isMedicineCounterAssistant ? 'Serve medicine' : 'Edit medicine'}
                             onClick={() => openEditMedicine(idx)}
                           >
                             <Pencil size={12} />
                           </button>
-                          <button className="action-btn action-btn--cancel" onClick={() => removeMedicine(idx)}>
-                            <X size={12} />
-                          </button>
+                          {canWrite && (
+                            <button className="action-btn action-btn--cancel" onClick={() => removeMedicine(idx)}>
+                              <X size={12} />
+                            </button>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -4231,7 +4404,7 @@ const Nhis = () => {
                     ? (isMedicineCounterAssistant
                         ? 'Save Medicines'
                         : directNhiaApiAvailable ? 'Save Corrections & Submit' : 'Save Corrections')
-                    : 'Save Claim'}
+                    : 'Send to MCA'}
               </button>
             </div>
           </div>
@@ -4275,6 +4448,7 @@ const Nhis = () => {
                       className="form-input"
                       placeholder="e.g. TAMSULCA1"
                       value={medCodeSearch || medForm.drugCode}
+                      disabled={isMedicineCounterAssistant}
                       onChange={(e) => {
                         setMedCodeSearch(e.target.value)
                         setMedForm((p) => ({ ...p, drugCode: e.target.value.toUpperCase(), nhisDrugId: '' }))
@@ -4301,7 +4475,7 @@ const Nhis = () => {
                   </div>
                   <button
                     className="btn btn-secondary btn-sm"
-                    disabled={medSearching}
+                    disabled={medSearching || isMedicineCounterAssistant}
                     onClick={handleDrugCodeSearch}
                   >
                     <Search size={14} />
@@ -4315,6 +4489,7 @@ const Nhis = () => {
                 <input
                   className="form-input"
                   value={medForm.description}
+                  disabled={isMedicineCounterAssistant}
                   onChange={(e) => setMedForm((p) => ({ ...p, description: e.target.value }))}
                 />
                 {medForm.unitPrice && (
@@ -4324,7 +4499,7 @@ const Nhis = () => {
 
               <div className="form-row">
                 <div className="form-group">
-                  <label>Dispensed Qty / Unit *</label>
+                  <label>{isMedicineCounterAssistant ? 'Served Qty / Unit *' : 'Prescribed Qty / Unit *'}</label>
                   <input
                     type="number"
                     min="0"
@@ -4339,6 +4514,7 @@ const Nhis = () => {
                   <input
                     className="form-input"
                     value={medForm.unit}
+                    disabled={isMedicineCounterAssistant}
                     onChange={(e) => setMedForm((p) => ({ ...p, unit: e.target.value }))}
                   />
                 </div>
@@ -4350,9 +4526,45 @@ const Nhis = () => {
                   type="date"
                   className="form-input"
                   value={medForm.dispensaryDate}
+                  disabled={!isMedicineCounterAssistant && editingMedicineIndex !== null}
                   onChange={(e) => setMedForm((p) => ({ ...p, dispensaryDate: e.target.value }))}
                 />
               </div>
+
+              {isMedicineCounterAssistant && (
+                <>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Serving status</label>
+                      <select
+                        className="form-input"
+                        value={medForm.servingStatus}
+                        onChange={(e) => setMedForm((p) => ({ ...p, servingStatus: e.target.value }))}
+                      >
+                        {MEDICINE_SERVING_STATUSES.map((status) => (
+                          <option key={status.value} value={status.value}>{status.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label>Reason if not fully served</label>
+                      <select
+                        className="form-input"
+                        value={medForm.reasonIfNotFullyServed}
+                        onChange={(e) => setMedForm((p) => ({ ...p, reasonIfNotFullyServed: e.target.value }))}
+                      >
+                        <option value="">Select reason</option>
+                        {MEDICINE_NOT_FULLY_SERVED_REASONS.map((reason) => (
+                          <option key={reason} value={reason}>{reason}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="nhis-serving-note">
+                    Prescribed quantity: {medForm.prescribedQty || 0} {medForm.unit || 'unit'}
+                  </div>
+                </>
+              )}
 
               <div className="nhis-section-divider">Prescription</div>
 
@@ -4363,6 +4575,7 @@ const Nhis = () => {
                     className="form-input"
                     placeholder="e.g. 1 tablet"
                     value={medForm.dose}
+                    disabled={isMedicineCounterAssistant}
                     onChange={(e) => setMedForm((p) => ({ ...p, dose: e.target.value }))}
                   />
                 </div>
@@ -4372,6 +4585,7 @@ const Nhis = () => {
                     list="nhis-frequency-options"
                     className="form-input"
                     value={medForm.frequency}
+                    disabled={isMedicineCounterAssistant}
                     onChange={(e) => setMedForm((p) => ({ ...p, frequency: e.target.value }))}
                     placeholder="Select or type frequency"
                   />
@@ -4387,6 +4601,7 @@ const Nhis = () => {
                     list="nhis-duration-options"
                     className="form-input"
                     value={medForm.duration}
+                    disabled={isMedicineCounterAssistant}
                     onChange={(e) => setMedForm((p) => ({ ...p, duration: e.target.value }))}
                     placeholder="Select or type duration"
                   />
@@ -4402,7 +4617,7 @@ const Nhis = () => {
 
             <div className="modal-footer">
               <div className="medicine-footer-total">
-                <span>Line Total</span>
+                <span>{isMedicineCounterAssistant ? 'Served Line Total' : 'Prescribed Value'}</span>
                 <strong>
                   {fmtCurrency(
                     (Number(medForm.unitPrice) || 0) * (Number(medForm.dispensedQty) || 0)

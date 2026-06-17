@@ -603,6 +603,8 @@ app.put('/api/nhis/claims/:id/medicines', requireBranchUserSession, (request, re
           ? request.body.nhis_claim_medicines
           : [],
         total_amount: Number(request.body?.total_amount || 0),
+        status: request.body?.status || existing.status || 'returned_for_review',
+        serving_status: request.body?.serving_status || existing.serving_status || null,
         updated_at: request.body?.updated_at || new Date().toISOString(),
         id: request.params.id,
       }),
