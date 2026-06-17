@@ -789,12 +789,11 @@
 }
 
 .medicines-list {
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  min-height: 0;
   max-height: 16rem;
 }
 
