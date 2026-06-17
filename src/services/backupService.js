@@ -1,4 +1,4 @@
-import { invokeSupabaseFunction } from '../lib/supabase'
+import { invokeSupabaseFunction, invokeSupabaseFunctionResponse } from '../lib/supabase'
 
 const BACKUP_ADMIN_FUNCTION = 'backup-admin'
 
@@ -34,22 +34,17 @@ export const downloadOnlineBackup = async (backup) => {
     throw new Error('Online backup path is missing.')
   }
 
-  const response = await invokeBackupAdmin({
-    action: 'create_online_backup_download_url',
-    path,
+  const response = await invokeSupabaseFunctionResponse(BACKUP_ADMIN_FUNCTION, {
+    body: {
+      action: 'download_online_backup',
+      path,
+    },
   })
 
-  if (!response.signedUrl) {
-    throw new Error('Online backup download URL was not returned.')
-  }
-
-  const fileName = response.fileName || backup.fileName || 'healthflow-online-backup.json'
-  const fileResponse = await fetch(response.signedUrl)
-  if (!fileResponse.ok) {
-    throw new Error('Unable to download online backup. Please try again to generate a fresh link.')
-  }
-
-  const blob = await fileResponse.blob()
+  const fileName = getFileNameFromContentDisposition(response.headers.get('Content-Disposition')) ||
+    backup.fileName ||
+    'healthflow-online-backup.json'
+  const blob = await response.blob()
   if (!blob.size) {
     throw new Error('Online backup download was empty. Please create a fresh backup and try again.')
   }
@@ -62,4 +57,37 @@ export const downloadOnlineBackup = async (backup) => {
   anchor.click()
   document.body.removeChild(anchor)
   URL.revokeObjectURL(objectUrl)
+}
+
+const getFileNameFromContentDisposition = (value) => {
+  const header = String(value || '')
+  const utf8Match = header.match(/filename\*=UTF-8''([^;]+)/i)
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1])
+    } catch {
+      return utf8Match[1]
+    }
+  }
+
+  const match = header.match(/filename="?([^";]+)"?/i)
+  return match?.[1] || ''
+}
+
+export const createOnlineBackupDownloadUrl = async (backup) => {
+  const path = String(backup?.path || '').trim()
+  if (!path) {
+    throw new Error('Online backup path is missing.')
+  }
+
+  const response = await invokeBackupAdmin({
+    action: 'create_online_backup_download_url',
+    path,
+  })
+
+  if (!response.signedUrl) {
+    throw new Error('Online backup download URL was not returned.')
+  }
+
+  return response
 }

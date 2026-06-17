@@ -419,6 +419,68 @@ export const invokeSupabaseFunction = async (name, options = {}) => {
   return result
 }
 
+export const invokeSupabaseFunctionResponse = async (name, options = {}) => {
+  if (!supabase) {
+    throw new Error('Supabase credentials are not configured.')
+  }
+
+  const createRequest = (accessToken) => {
+    const headers = {
+      apikey: supabaseKey,
+      Authorization: `Bearer ${accessToken}`,
+      ...(options.headers || {}),
+    }
+
+    const init = {
+      method: options.method || 'POST',
+      headers,
+    }
+
+    if (options.body !== undefined) {
+      headers['Content-Type'] = headers['Content-Type'] || 'application/json'
+      init.body = typeof options.body === 'string' ? options.body : JSON.stringify(options.body)
+    }
+
+    return fetch(`${supabaseUrl}/functions/v1/${name}`, init)
+  }
+
+  const session = await getValidFunctionSession()
+  if (!session?.access_token) {
+    throw new Error('Your session has expired. Please sign in again.')
+  }
+
+  let response = await createRequest(session.access_token)
+  if (response.status === 401) {
+    const refreshedSession = await getValidFunctionSession(true).catch(() => null)
+    if (!refreshedSession?.access_token) {
+      throw new Error('Your session has expired. Please sign in again.')
+    }
+    response = await createRequest(refreshedSession.access_token)
+  }
+
+  if (!response.ok) {
+    let message = ''
+    try {
+      const contentType = String(response.headers.get('Content-Type') || '').toLowerCase()
+      if (contentType.includes('application/json')) {
+        const body = await response.clone().json()
+        message = body?.error || body?.message || ''
+      } else {
+        message = await response.clone().text()
+      }
+    } catch {
+      message = ''
+    }
+
+    const error = new Error(message || `Supabase function "${name}" failed with status ${response.status}.`)
+    error.status = response.status
+    error.statusCode = response.status
+    throw error
+  }
+
+  return response
+}
+
 // Warning message in development
 if (!hasValidCredentials && import.meta.env.DEV) {
   console.warn(

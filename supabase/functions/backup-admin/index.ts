@@ -57,6 +57,9 @@ const json = (body: Record<string, unknown>, status = 200) =>
 
 const normalizeText = (value: unknown) => (typeof value === 'string' ? value.trim() : '')
 
+const toSafeFileName = (value: string) =>
+  normalizeText(value).replace(/[^a-zA-Z0-9._-]/g, '_') || 'healthflow-online-backup.json'
+
 const getFunctionEnv = () => {
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
   const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')
@@ -318,6 +321,44 @@ const createDownloadUrl = async (
   })
 }
 
+const downloadOnlineBackup = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  requesterProfile: RequesterProfile,
+  payload: Record<string, unknown>
+) => {
+  if (!requesterHasRole(requesterProfile, ['admin', 'super_admin'])) {
+    return json({ error: 'Only admin or super admin users can download online backups.' }, 403)
+  }
+  if (!requesterProfile.organization_id) {
+    return json({ error: 'Admin account is missing organization context.' }, 400)
+  }
+
+  const requestedPath = normalizeText(payload.path)
+  const allowedPrefix = `${requesterProfile.organization_id}/`
+  if (!requestedPath || !requestedPath.startsWith(allowedPrefix) || requestedPath.includes('..')) {
+    return json({ error: 'Invalid backup path.' }, 400)
+  }
+
+  const { data, error } = await adminClient.storage
+    .from(BACKUP_BUCKET)
+    .download(requestedPath)
+
+  if (error) throw error
+
+  const fileName = toSafeFileName(requestedPath.split('/').pop() || 'healthflow-online-backup.json')
+  return new Response(data, {
+    status: 200,
+    headers: {
+      ...corsHeaders,
+      'Content-Type': 'application/json',
+      'Content-Disposition': `attachment; filename="${fileName}"`,
+      'Access-Control-Expose-Headers': 'Content-Disposition, Content-Length',
+      'Content-Length': String(data.size),
+      'Cache-Control': 'no-store',
+    },
+  })
+}
+
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -357,6 +398,9 @@ Deno.serve(async (request) => {
     }
     if (action === 'create_online_backup_download_url') {
       return await createDownloadUrl(adminClient, requesterProfile, payload)
+    }
+    if (action === 'download_online_backup') {
+      return await downloadOnlineBackup(adminClient, requesterProfile, payload)
     }
 
     return json({ error: 'Unsupported backup action.' }, 400)
