@@ -224,7 +224,7 @@ const BLANK_MEDICINE = {
   description:   '',
   unit:          'unit',
   unitPrice:     '',
-  dispensedQty:  '1',
+  dispensedQty:  '0',
   dispensaryDate: new Date().toISOString().split('T')[0],
   dose:          '',
   frequency:     '',
@@ -457,6 +457,83 @@ const daysBetweenIsoDates = (fromDate, toDate) => {
   const to = new Date(toDate)
   if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return null
   return Math.floor((to.getTime() - from.getTime()) / 86400000)
+}
+
+const toNhisMedicineAlertDate = (value) => {
+  const raw = String(value || '').trim()
+  if (!raw) return null
+  const parsed = new Date(/^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T00:00:00` : raw)
+  return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
+const getClaimMedicineAlertDate = (claim = {}) =>
+  toNhisMedicineAlertDate(
+    claim.service_date_from ||
+      claim.serviceDateFrom ||
+      claim.service_date ||
+      claim.serviceDate ||
+      claim.dispensaryDate ||
+      claim.dispensary_date ||
+      claim.created_at ||
+      claim.createdAt
+  )
+
+const buildNhisAddMedicineDuplicateAlerts = ({
+  currentClaim,
+  currentMedicines,
+  candidateMedicine,
+  existingClaims,
+  editingClaimId,
+  editingMedicineIndex,
+  windowHours = 24,
+}) => {
+  const alerts = []
+  const candidateMedicineKey = getMedicineKey(candidateMedicine)
+  const candidateNameKey = getMedicineNameKey(candidateMedicine)
+  const candidateLabel = candidateMedicine.description || candidateMedicine.drugCode || 'This medicine'
+  const currentPatientKey = getClaimPatientKey(currentClaim)
+  const currentDate = toNhisMedicineAlertDate(
+    candidateMedicine.dispensaryDate || currentClaim.serviceDate || currentClaim.service_date || new Date()
+  ) || new Date()
+  const windowMs = Math.max(1, Number(windowHours) || 24) * 60 * 60 * 1000
+
+  ;(currentMedicines || []).forEach((medicine, index) => {
+    if (index === editingMedicineIndex) return
+    const sameMedicine = (
+      (candidateMedicineKey && candidateMedicineKey === getMedicineKey(medicine)) ||
+      (candidateNameKey && candidateNameKey === getMedicineNameKey(medicine))
+    )
+    if (sameMedicine) {
+      alerts.push(`${candidateLabel} is already on this open claim. Confirm this is intentional before adding another line.`)
+    }
+  })
+
+  if (!currentPatientKey) return [...new Set(alerts)]
+
+  ;(existingClaims || [])
+    .filter((claim) => claim.id !== editingClaimId)
+    .filter((claim) => getClaimPatientKey(claim) && getClaimPatientKey(claim) === currentPatientKey)
+    .forEach((claim) => {
+      const previousDate = getClaimMedicineAlertDate(claim)
+      if (!previousDate) return
+      const diffMs = currentDate.getTime() - previousDate.getTime()
+      if (diffMs < 0 || diffMs > windowMs) return
+
+      const existingMedicines = claim.nhis_claim_medicines || claim.medicines || claim.items || []
+      const match = existingMedicines.find((existingMedicine) => (
+        (candidateMedicineKey && candidateMedicineKey === getMedicineKey(existingMedicine)) ||
+        (candidateNameKey && candidateNameKey === getMedicineNameKey(existingMedicine))
+      ))
+      if (!match) return
+
+      const claimLabel = claim.claim_number || `${claim.surname || ''} ${claim.other_names || ''}`.trim() || 'a previous NHIS visit'
+      const hoursSinceLast = Math.round((diffMs / (60 * 60 * 1000)) * 10) / 10
+      alerts.push(
+        `${candidateLabel} was already dispensed for this patient on ${formatAppDateTime(previousDate)} (${claimLabel}), ${hoursSinceLast} hour(s) ago.`
+      )
+    })
+
+  return [...new Set(alerts)]
 }
 
 const buildNhisDuplicateWarnings = ({
@@ -1601,6 +1678,25 @@ const Nhis = () => {
       // ✅ NHIS PHARMACY LEVEL PATCH END
     }
 
+    const duplicateAlerts = buildNhisAddMedicineDuplicateAlerts({
+      currentClaim: claimForm,
+      currentMedicines: claimMedicines,
+      candidateMedicine: nextMedicine,
+      existingClaims: claims,
+      editingClaimId: editingClaim?.id,
+      editingMedicineIndex,
+      windowHours: returnAlertSettings.windowHours,
+    })
+    if (duplicateAlerts.length) {
+      const proceed = window.confirm(
+        `Duplicate medicine alert:\n\n${duplicateAlerts.slice(0, 5).join('\n')}\n\nContinue adding this medicine?`
+      )
+      if (!proceed) {
+        notify('Medicine was not added. Please verify the repeat dispensing first.', 'warning')
+        return
+      }
+    }
+
     setClaimMedicines((prev) => {
       if (editingMedicineIndex === null || editingMedicineIndex < 0 || editingMedicineIndex >= prev.length) {
         return [...prev, nextMedicine]
@@ -1624,7 +1720,7 @@ const Nhis = () => {
       description: medicine.description || '',
       unit: medicine.unit || 'unit',
       unitPrice: String(medicine.unitPrice ?? ''),
-      dispensedQty: String(medicine.dispensedQty ?? '1'),
+      dispensedQty: String(medicine.dispensedQty ?? '0'),
       dispensaryDate: medicine.dispensaryDate || new Date().toISOString().split('T')[0],
       dose: medicine.dose || '',
       frequency: medicine.frequency || '',
