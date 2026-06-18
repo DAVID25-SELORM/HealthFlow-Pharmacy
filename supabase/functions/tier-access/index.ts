@@ -257,6 +257,17 @@ const json = (body: Record<string, unknown>, status = 200) =>
   })
 
 const normalizeText = (value: unknown) => (typeof value === 'string' ? value.trim() : '')
+const normalizeHttpHeaderValue = (value: unknown) => {
+  let normalized = normalizeText(value).replace(/[\u0000-\u001F\u007F]/g, '')
+  if (
+    normalized.length >= 2 &&
+    ((normalized.startsWith('"') && normalized.endsWith('"')) ||
+      (normalized.startsWith("'") && normalized.endsWith("'")))
+  ) {
+    normalized = normalized.slice(1, -1).trim()
+  }
+  return normalized
+}
 
 const REDACTED_VALUE = '[REDACTED]'
 
@@ -3744,8 +3755,8 @@ const buildNhiaHeaders = (settings: Record<string, unknown>, contentType = 'appl
   const headers: Record<string, string> = { Accept: 'application/json', 'Content-Type': contentType }
   const mode = normalizeCredentialMode(settings.credentialMode)
   const applyBasicCredentialsHeader = () => {
-    const username = normalizeText(credentials.username)
-    const password = normalizeText(credentials.password)
+    const username = normalizeHttpHeaderValue(credentials.username)
+    const password = normalizeHttpHeaderValue(credentials.password)
     if ((username || password) && !headers.Authorization) {
       headers.Authorization = `Basic ${btoa(`${username}:${password}`)}`
     }
@@ -3756,21 +3767,21 @@ const buildNhiaHeaders = (settings: Record<string, unknown>, contentType = 'appl
     const headerName = configuredHeaderName || 'Authorization'
     const prefix = normalizeText(credentials.headerPrefix) ||
       (!configuredHeaderName && headerName.toLowerCase() === 'authorization' ? 'Bearer' : '')
-    const apiKey = normalizeText(credentials.apiKey)
+    const apiKey = normalizeHttpHeaderValue(credentials.apiKey)
     if (apiKey) headers[headerName] = prefix ? `${prefix} ${apiKey}` : apiKey
-    const apiSecret = normalizeText(credentials.apiSecret)
+    const apiSecret = normalizeHttpHeaderValue(credentials.apiSecret)
     const secretHeaderName = normalizeText(credentials.secretHeaderName) || 'x-api-secret'
     if (apiSecret) headers[secretHeaderName] = apiSecret
     applyBasicCredentialsHeader()
   } else if (mode === 'bearer_token') {
-    const token = normalizeText(credentials.apiKey || credentials.token)
+    const token = normalizeHttpHeaderValue(credentials.apiKey || credentials.token)
     if (token) headers.Authorization = `Bearer ${token}`
   } else if (mode === 'basic_auth') {
-    const username = normalizeText(credentials.username)
-    const password = normalizeText(credentials.password)
+    const username = normalizeHttpHeaderValue(credentials.username)
+    const password = normalizeHttpHeaderValue(credentials.password)
     if (username || password) headers.Authorization = `Basic ${btoa(`${username}:${password}`)}`
   } else if (mode === 'oauth_client') {
-    const token = normalizeText(credentials.accessToken || credentials.token || credentials.apiKey)
+    const token = normalizeHttpHeaderValue(credentials.accessToken || credentials.token || credentials.apiKey)
     if (token) headers.Authorization = `Bearer ${token}`
   }
 
@@ -3837,11 +3848,11 @@ const getScopedNhiaEligibilityCredentials = (
 
   return {
     apiKey: canUseOverride
-      ? overrideApiKey
-      : assertRequiredText(credentials.apiKey || credentials.token, 'NHIA CCC API key'),
+      ? normalizeHttpHeaderValue(overrideApiKey)
+      : assertRequiredText(normalizeHttpHeaderValue(credentials.apiKey || credentials.token), 'NHIA CCC API key'),
     apiSecret: canUseOverride
-      ? overrideApiSecret
-      : assertRequiredText(credentials.apiSecret, 'NHIA CCC API secret'),
+      ? normalizeHttpHeaderValue(overrideApiSecret)
+      : assertRequiredText(normalizeHttpHeaderValue(credentials.apiSecret), 'NHIA CCC API secret'),
     source: canUseOverride ? 'facility_scoped_env' : 'saved_configuration',
   }
 }

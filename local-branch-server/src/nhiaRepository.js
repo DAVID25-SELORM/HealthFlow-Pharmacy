@@ -123,6 +123,17 @@ const toMoney = (value, fallback = 0) => {
 const toBool = (value) => (value === true || value === 1 || value === '1' ? 1 : 0)
 
 const normalizeText = (value) => String(value || '').trim()
+const normalizeHttpHeaderValue = (value) => {
+  let normalized = normalizeText(value).replace(/[\u0000-\u001F\u007F]/g, '')
+  if (
+    normalized.length >= 2 &&
+    ((normalized.startsWith('"') && normalized.endsWith('"')) ||
+      (normalized.startsWith("'") && normalized.endsWith("'")))
+  ) {
+    normalized = normalized.slice(1, -1).trim()
+  }
+  return normalized
+}
 
 const normalizeAccreditationExpiryDate = (value) => {
   const raw = normalizeText(value)
@@ -2860,8 +2871,8 @@ export const lookupNhiaMember = async (memberNumber, { cardType } = {}) => {
   const endpointPath = getNhiaMemberLookupEndpointPath()
 
   const credentials = settings.credentials || {}
-  const apiKey = normalizeText(credentials.apiKey || credentials.token)
-  const apiSecret = normalizeText(credentials.apiSecret)
+  const apiKey = normalizeHttpHeaderValue(credentials.apiKey || credentials.token)
+  const apiSecret = normalizeHttpHeaderValue(credentials.apiSecret)
   const facilityCode = normalizeText(settings.facilityCode || settings.facility_code || config.nhiaFacilityCode)
   const apiKeyHeaderName = normalizeText(credentials.headerName) || 'x-nhia-apikey'
   const apiSecretHeaderName = normalizeText(credentials.secretHeaderName) || 'x-nhia-apisecret'
