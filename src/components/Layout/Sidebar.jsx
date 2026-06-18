@@ -115,6 +115,14 @@ const Sidebar = ({ isOpen, onClose }) => {
       <div className="sidebar-footer">
         <p>{facilityName}</p>
         <p className="developer">{organization?.organization_type || 'Facility'} workspace</p>
+        <a
+          className="sidebar-powered-by"
+          href="https://neondigitaltechnologies.com"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Powered by Neon Digital Technologies
+        </a>
       </div>
     </aside>
   )

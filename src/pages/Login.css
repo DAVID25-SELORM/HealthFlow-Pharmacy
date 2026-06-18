@@ -206,6 +206,24 @@
   line-height: 1.35;
 }
 
+.powered-by {
+  margin: 1.1rem 0 0;
+  color: var(--gray-500);
+  font-size: 0.74rem;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.powered-by a {
+  color: var(--primary-dark);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.powered-by a:hover {
+  text-decoration: underline;
+}
+
 @media (max-width: 520px) {
   .login-page {
     padding: 1rem;

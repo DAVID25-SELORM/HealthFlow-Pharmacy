@@ -94,6 +94,21 @@
   opacity: 0.8;
 }
 
+.sidebar-powered-by {
+  display: inline-block;
+  margin-top: 0.45rem;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.66rem;
+  font-weight: 600;
+  line-height: 1.35;
+  text-decoration: none;
+}
+
+.sidebar-powered-by:hover {
+  color: white;
+  text-decoration: underline;
+}
+
 @media (max-width: 1024px) {
   .sidebar {
     width: min(86vw, 320px);

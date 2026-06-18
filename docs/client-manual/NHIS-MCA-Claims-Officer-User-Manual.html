@@ -1,0 +1,598 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HealthFlow NHIS Manual - MCA and Claims Officer</title>
+  <style>
+    :root {
+      --ink: #18302c;
+      --muted: #61736e;
+      --teal: #087f6d;
+      --teal-dark: #075f53;
+      --mint: #e9f7f2;
+      --soft: #f7faf9;
+      --amber: #fff5dc;
+      --red: #fff0ef;
+      --line: #d9e5e1;
+      --paper: #ffffff;
+    }
+
+    * { box-sizing: border-box; }
+
+    html {
+      font-family: "Segoe UI", Arial, sans-serif;
+      color: var(--ink);
+      background: #e9efed;
+      line-height: 1.48;
+    }
+
+    body { margin: 0; }
+
+    main {
+      width: 210mm;
+      margin: 0 auto;
+      background: var(--paper);
+      box-shadow: 0 8px 30px rgba(20, 50, 45, 0.12);
+    }
+
+    .page {
+      min-height: 275mm;
+      padding: 15mm 18mm 17mm;
+      break-after: page;
+      page-break-after: always;
+    }
+
+    .page:last-child {
+      break-after: auto;
+      page-break-after: auto;
+    }
+
+    .cover {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 22mm 20mm 18mm;
+      border-top: 14mm solid var(--teal);
+      background: linear-gradient(180deg, #ffffff 0%, #f3fbf8 100%);
+    }
+
+    .cover-logo {
+      width: 118mm;
+      max-height: 35mm;
+      object-fit: contain;
+      object-position: left center;
+      margin-bottom: 24mm;
+    }
+
+    h1 {
+      margin: 0;
+      color: var(--teal-dark);
+      font-size: 31pt;
+      line-height: 1.05;
+    }
+
+    h2 {
+      margin: 8mm 0 4mm;
+      color: var(--teal-dark);
+      font-size: 21pt;
+      line-height: 1.15;
+    }
+
+    h3 {
+      margin: 7mm 0 2.5mm;
+      color: var(--ink);
+      font-size: 14pt;
+    }
+
+    h4 {
+      margin: 5mm 0 2mm;
+      color: var(--teal-dark);
+      font-size: 11pt;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    p { margin: 0 0 3.5mm; }
+
+    ul, ol {
+      margin: 0 0 4mm 6mm;
+      padding: 0;
+    }
+
+    li { margin-bottom: 1.8mm; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 4mm 0 6mm;
+      font-size: 9.5pt;
+    }
+
+    th, td {
+      border: 1px solid var(--line);
+      padding: 2.5mm;
+      vertical-align: top;
+      text-align: left;
+    }
+
+    th {
+      background: var(--mint);
+      color: var(--teal-dark);
+      font-weight: 700;
+    }
+
+    code, .mono {
+      font-family: Consolas, "Courier New", monospace;
+      background: #eef7f4;
+      color: #075f53;
+      border-radius: 4px;
+      padding: 0.6mm 1.1mm;
+    }
+
+    .page-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 3mm;
+      margin-bottom: 6mm;
+      color: var(--muted);
+      font-size: 9pt;
+    }
+
+    .page-header strong { color: var(--teal-dark); }
+
+    .lead {
+      color: var(--muted);
+      font-size: 12pt;
+      max-width: 170mm;
+    }
+
+    .cover-meta {
+      margin-top: 16mm;
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 4mm;
+      max-width: 150mm;
+    }
+
+    .meta-card,
+    .callout,
+    .step-card,
+    .summary-card {
+      border: 1px solid var(--line);
+      background: var(--soft);
+      border-radius: 8px;
+      padding: 4mm;
+    }
+
+    .meta-card span,
+    .summary-card span {
+      display: block;
+      color: var(--muted);
+      font-size: 9pt;
+    }
+
+    .meta-card strong,
+    .summary-card strong {
+      display: block;
+      color: var(--teal-dark);
+      font-size: 13pt;
+      margin-top: 1mm;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 4mm;
+      margin: 4mm 0 6mm;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 4mm;
+      margin: 4mm 0 6mm;
+    }
+
+    .callout {
+      border-left: 5px solid var(--teal);
+      background: var(--mint);
+    }
+
+    .callout.warning {
+      border-left-color: #d97706;
+      background: var(--amber);
+    }
+
+    .callout.danger {
+      border-left-color: #dc2626;
+      background: var(--red);
+    }
+
+    .badge {
+      display: inline-block;
+      background: var(--mint);
+      color: var(--teal-dark);
+      border: 1px solid #b8e2d8;
+      border-radius: 999px;
+      padding: 1mm 2.5mm;
+      font-size: 9pt;
+      font-weight: 700;
+      margin: 0 1mm 1.5mm 0;
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: 1fr 14mm 1fr 14mm 1fr;
+      align-items: center;
+      gap: 2mm;
+      margin: 5mm 0;
+    }
+
+    .flow-box {
+      border: 1px solid var(--line);
+      background: var(--soft);
+      border-radius: 8px;
+      padding: 4mm;
+      text-align: center;
+      font-weight: 700;
+      color: var(--teal-dark);
+    }
+
+    .arrow {
+      text-align: center;
+      color: var(--teal);
+      font-weight: 900;
+      font-size: 16pt;
+    }
+
+    .checklist li {
+      list-style: none;
+      position: relative;
+      padding-left: 6mm;
+    }
+
+    .checklist li::before {
+      content: "";
+      width: 3mm;
+      height: 3mm;
+      border: 2px solid var(--teal);
+      border-radius: 2px;
+      position: absolute;
+      left: 0;
+      top: 1.8mm;
+    }
+
+    .footer {
+      margin-top: 8mm;
+      padding-top: 3mm;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 8.5pt;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .powered-brand {
+      color: var(--teal-dark);
+      font-weight: 700;
+    }
+
+    @media print {
+      html, body { background: #ffffff; }
+      main {
+        width: auto;
+        margin: 0;
+        box-shadow: none;
+      }
+      .page {
+        min-height: auto;
+        padding: 14mm 16mm;
+      }
+      .cover { min-height: 270mm; }
+      a { color: inherit; text-decoration: none; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="page cover">
+      <div>
+        <img class="cover-logo" src="../../public/app-logo.png" alt="HealthFlow Pharmacy">
+        <h1>NHIS User Manual</h1>
+        <p class="lead">Medicine Counter Assistant and Claims Officer workflow guide for HealthFlow facilities.</p>
+        <div class="cover-meta">
+          <div class="meta-card"><span>Prepared for</span><strong>HealthFlow Clients</strong></div>
+          <div class="meta-card"><span>Module</span><strong>NHIS Claims</strong></div>
+          <div class="meta-card"><span>Audience</span><strong>MCA and Claims Officer</strong></div>
+          <div class="meta-card"><span>Version</span><strong>June 2026</strong></div>
+        </div>
+      </div>
+      <div class="callout">
+        <strong>Core rule:</strong> Claims Officer enters the prescription. MCA records what was actually served. Claims Officer reviews and finalizes.
+      </div>
+      <p class="powered-brand">Powered by Neon Digital Technologies | neondigitaltechnologies.com</p>
+    </section>
+
+    <section class="page">
+      <div class="page-header"><strong>HealthFlow NHIS</strong><span>Roles and Access</span></div>
+      <h2>Assigned Roles and Extra Privileges</h2>
+      <p class="lead">HealthFlow separates a staff member's work mode from extra permissions. This keeps NHIS work controlled without blocking authorized staff.</p>
+
+      <div class="grid">
+        <div class="step-card">
+          <h3>Assigned Roles</h3>
+          <p>Assigned roles are the main work modes a staff member can switch between.</p>
+          <span class="badge">Medicine Counter Assistant</span>
+          <span class="badge">Claims Officer</span>
+          <span class="badge">Administrator</span>
+          <p>If a staff member has more than one role, they choose the active role from the top bar.</p>
+        </div>
+        <div class="step-card">
+          <h3>Additional Privileges</h3>
+          <p>Privileges are extra permissions added on top of a role.</p>
+          <span class="badge">Refunds</span>
+          <span class="badge">Inventory</span>
+          <span class="badge">Purchases</span>
+          <span class="badge">Stock adjustment</span>
+          <span class="badge">NHIS deletion</span>
+          <p>Use privileges carefully, especially NHIS deletion and purchase approval.</p>
+        </div>
+      </div>
+
+      <div class="callout warning">
+        <strong>Important:</strong> If a staff member is in MCA mode, MCA restrictions still apply. To perform Claims Officer work, the staff member must be assigned the Claims Officer role and switch to that role.
+      </div>
+
+      <h3>Example</h3>
+      <p>Sarah can be assigned both <b>Medicine Counter Assistant</b> and <b>Claims Officer</b>. When Sarah works as MCA, she serves medicines only. When Sarah switches to Claims Officer, she can prepare and review claims.</p>
+
+      <table>
+        <thead>
+          <tr><th>Access Type</th><th>What It Controls</th><th>Example</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Assigned Role</td><td>The staff member's active work mode</td><td>MCA, Claims Officer</td></tr>
+          <tr><td>Additional Privilege</td><td>Extra access granted by admin</td><td>Purchases, refunds, NHIS deletion</td></tr>
+          <tr><td>Active Role</td><td>The role currently selected in the top bar</td><td>MCA mode or Claims Officer mode</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Role Safety Rules</h3>
+      <ul>
+        <li>Do not give NHIS deletion to ordinary staff.</li>
+        <li>Do not give purchase approval unless the person is authorized to approve purchases.</li>
+        <li>Assign the Claims Officer role for full claims-officer work. Do not rely only on the Claims privilege.</li>
+        <li>Facility NHIA credentials are configured once by admin and used by permitted users.</li>
+      </ul>
+      <div class="footer"><span>Powered by Neon Digital Technologies</span><span>neondigitaltechnologies.com</span></div>
+    </section>
+
+    <section class="page">
+      <div class="page-header"><strong>HealthFlow NHIS</strong><span>Claims Officer Workflow</span></div>
+      <h2>Claims Officer: Prepare and Send to MCA</h2>
+
+      <div class="flow">
+        <div class="flow-box">Register or select patient</div>
+        <div class="arrow">></div>
+        <div class="flow-box">Enter claim and medicines</div>
+        <div class="arrow">></div>
+        <div class="flow-box">Send to MCA</div>
+      </div>
+
+      <h3>1. Open NHIS Claims</h3>
+      <p>Go to <span class="mono">NHIS > Claims</span> and click <span class="mono">New Claim</span>.</p>
+
+      <h3>2. Enter Member Details</h3>
+      <ul class="checklist">
+        <li>NHIS member number or Ghana Card number</li>
+        <li>Card type and HIN</li>
+        <li>Surname and other names</li>
+        <li>Folder number</li>
+        <li>Gender and date of birth</li>
+        <li>Attendance details where applicable</li>
+      </ul>
+
+      <h3>3. Generate or Enter CC Code</h3>
+      <p>Use <span class="mono">Generate/Validate CC Code via NHIA</span>. The facility NHIA credentials are saved in Settings by the administrator.</p>
+
+      <h3>4. Enter Requested Medicines</h3>
+      <p>Click <span class="mono">Add Medicine</span> and enter the prescription details.</p>
+      <ul>
+        <li>Medicine code or name</li>
+        <li>Prescribed/requested quantity</li>
+        <li>Unit and unit price</li>
+        <li>Dose, frequency, and duration</li>
+      </ul>
+
+      <div class="callout">
+        <strong>Cost visibility:</strong> The Claims Officer should see the requested medicine cost before sending the claim to MCA.
+      </div>
+
+      <h3>5. Send to MCA</h3>
+      <p>Click <span class="mono">Send to MCA</span>. The claim status becomes <span class="mono">Pending Serving</span>.</p>
+
+      <div class="callout warning">
+        A pending-serving claim is not ready for submission. MCA must record served quantities first.
+      </div>
+
+      <div class="footer"><span>Powered by Neon Digital Technologies</span><span>Claims Officer Workflow</span></div>
+    </section>
+
+    <section class="page">
+      <div class="page-header"><strong>HealthFlow NHIS</strong><span>MCA Workflow</span></div>
+      <h2>MCA: Serve Medicines</h2>
+
+      <div class="flow">
+        <div class="flow-box">Open pending claim</div>
+        <div class="arrow">></div>
+        <div class="flow-box">Record actual serving</div>
+        <div class="arrow">></div>
+        <div class="flow-box">Save for review</div>
+      </div>
+
+      <h3>1. Open Pending Serving Claims</h3>
+      <p>Go to <span class="mono">NHIS > Claims</span> and open a claim with status <span class="mono">Pending Serving</span>.</p>
+
+      <h3>2. Review Prescribed Medicines</h3>
+      <p>The MCA sees the medicines entered by the Claims Officer. MCA should not freely add new medicines unless the facility policy allows it.</p>
+
+      <h3>3. Enter Actual Served Quantity</h3>
+      <p>For each medicine, click the serve/edit button and enter the quantity actually given to the patient.</p>
+
+      <table>
+        <thead>
+          <tr><th>Status</th><th>When to Use It</th><th>Required Action</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Fully Served</td><td>Patient received the full prescribed quantity</td><td>Enter full served quantity</td></tr>
+          <tr><td>Partially Served</td><td>Patient received some, but not all</td><td>Enter served quantity and reason</td></tr>
+          <tr><td>Not Available</td><td>Medicine is unavailable or stock is insufficient</td><td>Enter zero served quantity and reason</td></tr>
+          <tr><td>Not Served</td><td>Medicine should not be served</td><td>Enter zero served quantity and reason</td></tr>
+        </tbody>
+      </table>
+
+      <h3>4. Save Medicines</h3>
+      <p>Click <span class="mono">Save Medicines</span>. The claim is returned to the Claims Officer for review.</p>
+
+      <div class="callout">
+        <strong>Quantity rule:</strong> The Claims Officer's requested quantity stays as prescribed quantity. MCA records served quantity separately.
+      </div>
+
+      <table>
+        <thead>
+          <tr><th>Medicine</th><th>Prescribed Qty</th><th>Served Qty</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Paracetamol</td><td>20</td><td>20</td><td>Fully Served</td></tr>
+          <tr><td>Amoxicillin</td><td>21</td><td>0</td><td>Not Available</td></tr>
+          <tr><td>Vitamin C</td><td>30</td><td>15</td><td>Partially Served</td></tr>
+          <tr><td>Omeprazole</td><td>14</td><td>0</td><td>Not Served</td></tr>
+        </tbody>
+      </table>
+
+      <div class="footer"><span>Powered by Neon Digital Technologies</span><span>MCA Workflow</span></div>
+    </section>
+
+    <section class="page">
+      <div class="page-header"><strong>HealthFlow NHIS</strong><span>Review and Alerts</span></div>
+      <h2>Claims Officer Review and Safety Alerts</h2>
+
+      <h3>After MCA Serving</h3>
+      <p>The Claims Officer reviews the claim after MCA saves medicines.</p>
+      <ul class="checklist">
+        <li>Compare prescribed quantity against served quantity</li>
+        <li>Check reasons for partial or not served medicines</li>
+        <li>Confirm claim total</li>
+        <li>Confirm patient and CC details</li>
+        <li>Confirm prescriber details</li>
+        <li>Attach prescription where required</li>
+      </ul>
+
+      <div class="callout">
+        The final claim value is based on served medicines and served quantities, not only the requested medicine list.
+      </div>
+
+      <h3>Patient Return Alert</h3>
+      <p>HealthFlow may show a Patient Return Alert when the same patient visited within the configured window, such as 24 hours.</p>
+      <p>This alert appears even if the medicine is different.</p>
+      <ul>
+        <li>Review previous visit date and time</li>
+        <li>Review branch, staff, claim status, and medicines</li>
+        <li>Select a reason before continuing if required</li>
+      </ul>
+
+      <h3>Duplicate Medicine Alert</h3>
+      <p>If the same medicine is supplied again within the configured duplicate window, HealthFlow may show a duplicate medicine warning. This is separate from the Patient Return Alert.</p>
+
+      <h3>Common Override Reasons</h3>
+      <span class="badge">Follow-up treatment</span>
+      <span class="badge">Doctor changed medicine</span>
+      <span class="badge">Patient complaint</span>
+      <span class="badge">Emergency</span>
+      <span class="badge">Other</span>
+
+      <h3>When Not to Proceed</h3>
+      <div class="callout danger">
+        Do not finalize a claim if required patient details, prescriber details, served quantity, or attachment information is missing.
+      </div>
+
+      <div class="footer"><span>Powered by Neon Digital Technologies</span><span>Review and Alerts</span></div>
+    </section>
+
+    <section class="page">
+      <div class="page-header"><strong>HealthFlow NHIS</strong><span>Permissions and Troubleshooting</span></div>
+      <h2>What Each Role Can Do</h2>
+
+      <div class="grid">
+        <div class="summary-card">
+          <span>MCA can</span>
+          <strong>Serve medicines</strong>
+          <ul>
+            <li>Open pending serving claims</li>
+            <li>Record served quantity</li>
+            <li>Mark partial, not available, or not served</li>
+            <li>Save medicines for Claims Officer review</li>
+          </ul>
+        </div>
+        <div class="summary-card">
+          <span>MCA cannot</span>
+          <strong>Finalize NHIS claims</strong>
+          <ul>
+            <li>Generate or change CC code</li>
+            <li>Change patient NHIS details</li>
+            <li>Freely add new NHIS medicines by default</li>
+            <li>Delete NHIS claims</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="grid">
+        <div class="summary-card">
+          <span>Claims Officer can</span>
+          <strong>Prepare and review claims</strong>
+          <ul>
+            <li>Register/search NHIS patients</li>
+            <li>Generate or enter CC code</li>
+            <li>Enter requested medicines</li>
+            <li>Send to MCA</li>
+            <li>Review served medicines</li>
+          </ul>
+        </div>
+        <div class="summary-card">
+          <span>Admin can</span>
+          <strong>Control sensitive access</strong>
+          <ul>
+            <li>Assign roles and privileges</li>
+            <li>Configure NHIA credentials</li>
+            <li>Control NHIS deletion</li>
+            <li>Control purchase approval</li>
+          </ul>
+        </div>
+      </div>
+
+      <h3>Troubleshooting</h3>
+      <table>
+        <thead>
+          <tr><th>Situation</th><th>Meaning</th><th>What to Do</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Pending Serving</td><td>Claim is waiting for MCA</td><td>MCA should open and serve medicines</td></tr>
+          <tr><td>Returned for Review</td><td>MCA has saved serving details</td><td>Claims Officer should review and finalize</td></tr>
+          <tr><td>Claim total is zero</td><td>No served quantity recorded</td><td>MCA should enter served quantity</td></tr>
+          <tr><td>MCA cannot save</td><td>Serving data is incomplete</td><td>Check served quantity, status, and reason</td></tr>
+          <tr><td>Claims Officer cannot finalize</td><td>Required claim details are incomplete</td><td>Complete prescriber, patient, served, or attachment requirements</td></tr>
+        </tbody>
+      </table>
+
+      <div class="callout">
+        <strong>Best practice:</strong> Claims Officer enters the prescription. MCA records what was actually served. Claims Officer reviews and finalizes. Admin controls roles and sensitive privileges.
+      </div>
+
+      <div class="footer"><span>Powered by Neon Digital Technologies</span><span>neondigitaltechnologies.com</span></div>
+    </section>
+  </main>
+</body>
+</html>
