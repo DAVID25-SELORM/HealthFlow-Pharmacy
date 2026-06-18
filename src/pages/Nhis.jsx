@@ -295,11 +295,18 @@ const fmtCurrency = (n) =>
 
 const getClaimStatusLabel = (status = '') => CLAIM_STATUS_LABELS[String(status || '').toLowerCase()] || status || 'Draft'
 
-const getMedicinePrescribedQty = (medicine = {}) =>
-  Number(medicine.prescribedQty ?? medicine.prescribed_qty ?? medicine.quantity ?? medicine.dispensedQty ?? medicine.dispensed_qty ?? 0) || 0
+const compactMedicines = (medicines = []) =>
+  Array.isArray(medicines) ? medicines.filter((medicine) => medicine && typeof medicine === 'object') : []
 
-const getMedicineServedQty = (medicine = {}) =>
-  Number(medicine.servedQty ?? medicine.served_qty ?? medicine.dispensedQty ?? medicine.dispensed_qty ?? 0) || 0
+const getMedicinePrescribedQty = (medicine = {}) => {
+  medicine = medicine || {}
+  return Number(medicine.prescribedQty ?? medicine.prescribed_qty ?? medicine.quantity ?? medicine.dispensedQty ?? medicine.dispensed_qty ?? 0) || 0
+}
+
+const getMedicineServedQty = (medicine = {}) => {
+  medicine = medicine || {}
+  return Number(medicine.servedQty ?? medicine.served_qty ?? medicine.dispensedQty ?? medicine.dispensed_qty ?? 0) || 0
+}
 
 const normalizeMedicineServingStatus = (value, prescribedQty = 0, servedQty = 0) => {
   const status = String(value || '').trim().toLowerCase()
@@ -315,6 +322,7 @@ const getMedicineServingStatusLabel = (value = '') =>
   (value === 'pending' ? 'Pending' : value || 'Pending')
 
 const getClaimServingStatus = (medicines = []) => {
+  medicines = compactMedicines(medicines)
   if (!medicines.length) return 'not_served'
   const statuses = medicines.map((medicine) =>
     normalizeMedicineServingStatus(
@@ -1406,6 +1414,7 @@ const Nhis = () => {
   ])
 
   const getCatalogCategoryForMedicine = (medicine = {}) => {
+    medicine = medicine || {}
     const code = String(medicine.drugCode || medicine.drug_code || '').trim().toUpperCase()
     const id = String(medicine.nhisDrugId || medicine.nhis_drug_id || '').trim()
     const match = nhisDrugs.find((drug) =>
@@ -1623,7 +1632,7 @@ const Nhis = () => {
     })
     setPrescriptionPdfFile(null)
     setClaimMedicines(
-      (claim.nhis_claim_medicines || []).map((medicine) => ({
+      compactMedicines(claim.nhis_claim_medicines).map((medicine) => ({
         nhisDrugId: medicine.nhis_drug_id || '',
         drugCode: medicine.drug_code || '',
         description: medicine.description || '',
@@ -1922,7 +1931,7 @@ const Nhis = () => {
 
   const claimTotal = useMemo(
     () =>
-      claimMedicines.reduce((s, m) => s + (Number(m.unitPrice || 0) * getMedicineServedQty(m)), 0) +
+      compactMedicines(claimMedicines).reduce((s, m) => s + (Number(m.unitPrice || 0) * getMedicineServedQty(m)), 0) +
       claimServices.reduce((s, service) => s + Number(service.totalAmount || 0), 0),
     [claimMedicines, claimServices]
   )
@@ -4162,11 +4171,11 @@ const Nhis = () => {
                   )}
                 </div>
 
-                {claimMedicines.length === 0 ? (
+                {compactMedicines(claimMedicines).length === 0 ? (
                   <div className="no-medicines">No medicines added.</div>
                 ) : (
                   <div className="medicines-list">
-                    {claimMedicines.map((m, idx) => (
+                    {compactMedicines(claimMedicines).map((m, idx) => (
                       <div key={idx} className="medicine-card">
                         <div className="medicine-card-main">
                           <div className="medicine-code">{m.drugCode}</div>
