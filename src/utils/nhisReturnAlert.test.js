@@ -65,6 +65,43 @@ describe('NHIS patient return alert', () => {
     expect(alert.repeatedMedicines).toHaveLength(1)
   })
 
+  it('describes pending MCA claims as prescribed medicines awaiting serving', () => {
+    const alert = findNhisPatientReturnAlert({
+      currentPatient: { hin: 'HIN-1' },
+      currentMedicines: [{ drugCode: 'AMOX500', description: 'Amoxicillin', dispensedQty: 5 }],
+      claims: [
+        {
+          ...recentClaim,
+          status: 'pending_serving',
+          nhis_claim_medicines: [
+            {
+              drug_code: 'PARA500',
+              description: 'Paracetamol Tablet',
+              prescribed_qty: 30,
+              served_qty: 0,
+              serving_status: 'pending',
+            },
+          ],
+        },
+      ],
+      now: '2026-06-16T11:00:00.000Z',
+    })
+
+    expect(alert).toMatchObject({
+      previousVisitIsPendingServing: true,
+      previousMedicineHeading: 'Prescribed medicines awaiting MCA',
+      previousMedicineEmptyMessage: 'No prescribed medicines recorded on the pending claim.',
+      previousUserLabel: 'Created by',
+    })
+    expect(alert.previousVisitMessage).toContain('awaiting MCA serving')
+    expect(alert.previousMedicines[0]).toMatchObject({
+      name: 'Paracetamol Tablet',
+      prescribedQuantity: 30,
+      servedQuantity: 0,
+      servingStatus: 'pending',
+    })
+  })
+
   it('uses phone as fallback only when no stronger identifier exists', () => {
     const alert = findNhisPatientReturnAlert({
       currentPatient: { phone: '024 123 4567' },
@@ -102,4 +139,3 @@ describe('NHIS patient return alert', () => {
     expect(canContinueNhisReturnAlert('assistant', settings)).toBe(false)
   })
 })
-

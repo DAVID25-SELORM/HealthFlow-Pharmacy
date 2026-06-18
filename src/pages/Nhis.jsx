@@ -814,6 +814,9 @@ const StatusBadge = ({ status }) => (
   <span className={`nhis-badge nhis-badge--${status}`}>{getClaimStatusLabel(status)}</span>
 )
 
+const looksLikeUuid = (value) =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '').trim())
+
 // ─── component ────────────────────────────────────────────────────────────────
 
 const Nhis = () => {
@@ -1486,6 +1489,45 @@ const Nhis = () => {
     () => normalizeNhisReturnAlertSettings(facilitySettings || {}),
     [facilitySettings]
   )
+
+  const getReturnAlertBranchLabel = (claim = {}) => {
+    const label = normalizeText(
+      claim.branch_name ||
+        claim.branchName ||
+        claim.branch?.name ||
+        claim.facility_branch ||
+        claim.facilityBranch
+    )
+    if (label) return label
+
+    const claimBranchId = normalizeText(claim.branch_id || claim.branchId)
+    if (claimBranchId && normalizeText(branch?.id) === claimBranchId) {
+      return normalizeText(branch?.name || branch?.branch_name || branch?.code) || 'Current branch'
+    }
+    if (!claimBranchId || looksLikeUuid(claimBranchId)) return 'Recorded branch'
+    return claimBranchId
+  }
+
+  const getReturnAlertUserLabel = (claim = {}) => {
+    const label = normalizeText(
+      claim.served_by_name ||
+        claim.servedByName ||
+        claim.created_by_name ||
+        claim.createdByName ||
+        claim.user_name ||
+        claim.userName ||
+        claim.created_by_email ||
+        claim.createdByEmail
+    )
+    if (label) return label
+
+    const userId = normalizeText(claim.served_by || claim.servedBy || claim.created_by || claim.createdBy)
+    if (userId && normalizeText(user?.id) === userId) {
+      return normalizeText(profile?.full_name || profile?.fullName || user?.email) || 'Current user'
+    }
+    if (!userId || looksLikeUuid(userId)) return 'Recorded user'
+    return userId
+  }
 
   const getCurrentReturnAlertPatient = (patient = selectedClaimPatient, form = claimForm) => ({
     ...patient,
@@ -4795,7 +4837,7 @@ const Nhis = () => {
             <div className="modal-header">
               <div>
                 <h2>Patient Return Alert</h2>
-                <p>This patient was here less than {returnAlertSettings.windowHours} hours ago.</p>
+                <p>{returnAlert.previousVisitMessage || `This patient was here less than ${returnAlertSettings.windowHours} hours ago.`}</p>
               </div>
               <button className="modal-close" type="button" onClick={closeReturnAlert}><X size={18} /></button>
             </div>
@@ -4805,24 +4847,28 @@ const Nhis = () => {
                 <h3>Previous visit</h3>
                 <dl>
                   <div><dt>Date/time</dt><dd>{formatAppDateTime(returnAlert.previousVisitAt)}</dd></div>
-                  <div><dt>Facility branch</dt><dd>{returnAlert.previousClaim?.branch_id || returnAlert.previousClaim?.branchId || 'Main branch'}</dd></div>
-                  <div><dt>Served by</dt><dd>{returnAlert.previousClaim?.created_by || returnAlert.previousClaim?.createdBy || '-'}</dd></div>
-                  <div><dt>Claim status</dt><dd>{returnAlert.previousClaim?.status || '-'}</dd></div>
+                  <div><dt>Facility branch</dt><dd>{getReturnAlertBranchLabel(returnAlert.previousClaim)}</dd></div>
+                  <div><dt>{returnAlert.previousUserLabel || 'Served by'}</dt><dd>{getReturnAlertUserLabel(returnAlert.previousClaim)}</dd></div>
+                  <div><dt>Claim status</dt><dd>{getClaimStatusLabel(returnAlert.previousClaim?.status)}</dd></div>
                   <div><dt>Matched by</dt><dd>{returnAlert.matchType}</dd></div>
                   <div><dt>Time difference</dt><dd>{returnAlert.hoursSincePrevious} hours</dd></div>
                 </dl>
-                <h4>Medicines served</h4>
+                <h4>{returnAlert.previousMedicineHeading || 'Medicines served'}</h4>
                 {returnAlert.previousMedicines.length ? (
                   <ul className="nhis-return-alert-medicines">
                     {returnAlert.previousMedicines.map((medicine, index) => (
                       <li key={`${medicine.code || medicine.name}-${index}`}>
                         <span>{medicine.name}</span>
-                        <strong>Qty {medicine.quantity || 0}</strong>
+                        <strong>
+                          {returnAlert.previousVisitIsPendingServing
+                            ? `Prescribed ${medicine.prescribedQuantity || medicine.quantity || 0}`
+                            : `Served ${medicine.servedQuantity || medicine.quantity || 0}`}
+                        </strong>
                       </li>
                     ))}
                   </ul>
                 ) : (
-                  <p className="patient-meta">No medicines recorded on previous visit.</p>
+                  <p className="patient-meta">{returnAlert.previousMedicineEmptyMessage || 'No medicines recorded on previous visit.'}</p>
                 )}
               </div>
 

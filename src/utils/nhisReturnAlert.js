@@ -1,5 +1,6 @@
 const DEFAULT_RETURN_ALERT_WINDOW_HOURS = 24
 const DEFAULT_RETURN_ALERT_ROLES = ['admin', 'claims_officer', 'assistant']
+const PENDING_SERVING_STATUSES = new Set(['pending_serving', 'serving_in_progress'])
 export const NHIS_RETURN_ALERT_REASONS = [
   'Follow-up treatment',
   'Doctor changed medicine',
@@ -11,6 +12,10 @@ export const NHIS_RETURN_ALERT_REASONS = [
 const normalizeText = (value) => String(value || '').trim()
 const normalizeLower = (value) => normalizeText(value).toLowerCase()
 const digitsOnly = (value) => normalizeText(value).replace(/\D/g, '')
+const toNumber = (value, fallback = 0) => {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
 
 const normalizeMemberNumber = (value) => normalizeText(value).toUpperCase().replace(/\s+/g, '')
 const normalizePhone = (value) => {
@@ -98,14 +103,52 @@ const getMedicineCode = (medicine = {}) =>
 const getMedicineSummaryKey = (medicine = {}) => normalizeMemberNumber(medicine.code) || normalizeLower(medicine.name)
 
 export const summarizeNhisMedicines = (medicines = []) =>
-  (Array.isArray(medicines) ? medicines : []).map((medicine) => ({
-    code: getMedicineCode(medicine),
-    name: normalizeText(medicine.description || medicine.drugName || medicine.drug_name || medicine.name || 'Medicine'),
-    quantity: Number(medicine.dispensed_qty ?? medicine.dispensedQty ?? medicine.quantity ?? 0),
-  }))
+  (Array.isArray(medicines) ? medicines : []).map((medicine) => {
+    const prescribedQuantity = toNumber(
+      medicine.prescribed_qty ??
+        medicine.prescribedQty ??
+        medicine.quantity ??
+        medicine.dispensed_qty ??
+        medicine.dispensedQty
+    )
+    const servedQuantity = toNumber(
+      medicine.served_qty ??
+        medicine.servedQty ??
+        medicine.dispensed_qty ??
+        medicine.dispensedQty
+    )
+
+    return {
+      code: getMedicineCode(medicine),
+      name: normalizeText(medicine.description || medicine.drugName || medicine.drug_name || medicine.name || 'Medicine'),
+      quantity: servedQuantity || prescribedQuantity,
+      prescribedQuantity,
+      servedQuantity,
+      servingStatus: normalizeText(medicine.serving_status || medicine.servingStatus),
+    }
+  })
 
 const getClaimMedicines = (claim = {}) =>
   claim.nhis_claim_medicines || claim.medicines || claim.items || []
+
+const getClaimStatus = (claim = {}) => normalizeLower(claim.status)
+
+const getPreviousVisitSummary = (claim = {}) => {
+  const isPendingServing = PENDING_SERVING_STATUSES.has(getClaimStatus(claim))
+  return {
+    previousVisitIsPendingServing: isPendingServing,
+    previousVisitMessage: isPendingServing
+      ? 'This patient already has an NHIS claim awaiting MCA serving within the alert window.'
+      : '',
+    previousMedicineHeading: isPendingServing
+      ? 'Prescribed medicines awaiting MCA'
+      : 'Medicines served',
+    previousMedicineEmptyMessage: isPendingServing
+      ? 'No prescribed medicines recorded on the pending claim.'
+      : 'No medicines recorded on previous visit.',
+    previousUserLabel: isPendingServing ? 'Created by' : 'Served by',
+  }
+}
 
 const compareMedicines = (previousMedicines = [], currentMedicines = []) => {
   const previousKeys = new Set(summarizeNhisMedicines(previousMedicines).map(getMedicineSummaryKey).filter(Boolean))
@@ -154,6 +197,7 @@ export const findNhisPatientReturnAlert = ({
         matchType,
         previousMedicines: summarizeNhisMedicines(getClaimMedicines(claim)),
         currentMedicines: summarizeNhisMedicines(currentMedicines),
+        ...getPreviousVisitSummary(claim),
         ...medicineComparison,
       }
     })
