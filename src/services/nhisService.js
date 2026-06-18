@@ -221,6 +221,11 @@ const CLAIMIT_BRIDGE_QUEUE_KEY = 'healthflow.claimitBridgeQueue.v1'
 const CLAIMIT_CXF_API_BLOCK_MESSAGE =
   'Direct CLAIM-it CXF import is not allowed by the API. Please export the CXF file and import it manually into CLAIM-it.'
 const CLAIMIT_BRIDGE_RETRY_INTERVAL_MS = 60 * 1000
+const SUPABASE_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const toNullableUuid = (value) => {
+  const normalized = asText(value)
+  return SUPABASE_UUID_PATTERN.test(normalized) ? normalized : null
+}
 const NHIA_INTEGRATION_MODE_ALIASES = {
   cxf_export: 'claimit_export',
   claimit_export: 'claimit_export',
@@ -1749,7 +1754,7 @@ const toNhisClaimMedicineRows = (medicines = []) =>
       'Total amount'
     )
     return {
-      nhis_drug_id: m.nhisDrugId || null,
+      nhis_drug_id: toNullableUuid(m.nhisDrugId ?? m.nhis_drug_id),
       drug_code: normalizeText(m.drugCode) || null,
       description: assertRequiredText(m.description, 'Medicine description'),
       unit: normalizeText(m.unit) || 'unit',
@@ -1767,8 +1772,8 @@ const toNhisClaimMedicineRows = (medicines = []) =>
       served_qty: servedQty,
       serving_status: servingStatus,
       reason_if_not_fully_served: normalizeText(m.reasonIfNotFullyServed ?? m.reason_if_not_fully_served) || null,
-      entered_by_claims_officer: m.enteredByClaimsOfficer ?? m.entered_by_claims_officer ?? null,
-      served_by_mca: m.servedByMca ?? m.served_by_mca ?? null,
+      entered_by_claims_officer: toNullableUuid(m.enteredByClaimsOfficer ?? m.entered_by_claims_officer),
+      served_by_mca: toNullableUuid(m.servedByMca ?? m.served_by_mca),
       entered_at: m.enteredAt ?? m.entered_at ?? null,
       served_at: m.servedAt ?? m.served_at ?? null,
     }
