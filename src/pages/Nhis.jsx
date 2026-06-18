@@ -1001,14 +1001,32 @@ const Nhis = () => {
     }
   }, [canWrite, notify, organization?.can_use_nhis, isHospital, activeTariffFacilityGroup, activeTariffCateringOption])
 
+  const refreshClaimsOverview = useCallback(async () => {
+    if (!isSupabaseConfigured()) {
+      setError('Supabase is not configured.')
+      return
+    }
+    try {
+      setError('')
+      const [claimsData, statsData] = await Promise.all([
+        getAllNhisClaims({ limit: NHIS_CLAIMS_SCREEN_LIMIT }),
+        getNhisClaimStats(),
+      ])
+      setClaims(claimsData)
+      setStats(statsData)
+    } catch (err) {
+      setError(err.message || 'Unable to refresh NHIS claims.')
+    }
+  }, [])
+
   useEffect(() => { void loadAll() }, [loadAll])
 
   useEffect(() => startClaimItBridgeQueueAutoSync({
     onSynced: (result) => {
-      void loadAll()
+      void refreshClaimsOverview()
       notify(`${result.submitted} queued CLAIM-it claim${result.submitted === 1 ? '' : 's'} submitted.`, 'success')
     },
-  }), [loadAll, notify])
+  }), [notify, refreshClaimsOverview])
 
   const refreshDirectNhiaApiStatus = useCallback(async () => {
     try {
@@ -2506,7 +2524,7 @@ const Nhis = () => {
               ? 'NHIS claim corrections saved and queued for CLAIM-it bridge submission.'
               : 'NHIS claim corrections saved and submitted through CLAIM-it.'
           } catch (submitError) {
-            await loadAll()
+            await refreshClaimsOverview()
             setPrescriptionPdfFile(null)
             setEditingClaim(savedClaim || editingClaim)
             setClaimError(getNhisRequestErrorMessage(
@@ -2572,7 +2590,7 @@ const Nhis = () => {
 
       setShowNewClaimModal(false)
       resetClaimModal()
-      await loadAll()
+      await refreshClaimsOverview()
       notify(successMessage, 'success')
     } catch (err) {
       setClaimError(getNhisRequestErrorMessage(
@@ -2647,14 +2665,14 @@ const Nhis = () => {
           claim,
         })
         if (submitResult?.queued) {
-          await loadAll()
+          await refreshClaimsOverview()
           notify(`Claim ${claim.claim_number} queued for CLAIM-it bridge submission.`, 'info')
           return
         }
       } else {
         await updateNhisClaimStatus(claim.id, newStatus, '', user?.id || null)
       }
-        await loadAll()
+        await refreshClaimsOverview()
         notify(
         newStatus === 'submitted' && directNhiaApiAvailable && hasReadablePrescriptionFile
           ? `Claim ${claim.claim_number} submitted through CLAIM-it.`
@@ -2675,7 +2693,7 @@ const Nhis = () => {
       await updateNhisClaimStatus(rejectTarget.id, 'rejected', rejectReason.trim(), user?.id || null)
       setRejectTarget(null)
       setRejectReason('')
-      await loadAll()
+      await refreshClaimsOverview()
       notify(`Claim ${rejectTarget.claim_number} rejected.`, 'info')
     } catch (err) {
       notify(err.message || 'Unable to reject claim.', 'error')
@@ -2698,7 +2716,7 @@ const Nhis = () => {
       await deleteNhisClaim(claim.id, { role, canDeleteNhisClaims })
       if (viewClaim?.id === claim.id) setViewClaim(null)
       if (editingClaim?.id === claim.id) closeClaimModal()
-      await loadAll()
+      await refreshClaimsOverview()
       notify(`Claim ${claim.claim_number} deleted.`, 'success')
     } catch (err) {
       notify(err.message || 'Unable to delete claim.', 'error')
@@ -2723,7 +2741,7 @@ const Nhis = () => {
     try {
       setUpdatingStatus(claim.id)
       await reopenBranchMcaEditWindow(claim.id, reason.trim())
-      await loadAll()
+      await refreshClaimsOverview()
       notify(`MCA edit window re-opened for ${claim.claim_number} (12 hours).`, 'success')
     } catch (err) {
       notify(err.message || 'Unable to re-open the MCA edit window.', 'error')
@@ -2955,7 +2973,7 @@ const Nhis = () => {
       })
       const count = typeof exportResult === 'number' ? exportResult : exportResult?.count || 0
       setShowExportModal(false)
-      await loadAll()
+      await refreshClaimsOverview()
       notify(
         exportResult?.queued
           ? `${count} claims queued for CLAIM-it bridge submission for ${periodLabel}. They will retry automatically.`
