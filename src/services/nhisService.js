@@ -227,6 +227,42 @@ const toNullableUuid = (value) => {
   return SUPABASE_UUID_PATTERN.test(normalized) ? normalized : null
 }
 const toNullableTimestamp = (value) => normalizeText(value) || null
+const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+const DMY_DATE_PATTERN = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/
+const DEFAULT_NHIS_CLAIM_LIST_LIMIT = 500
+const toValidIsoDate = (year, month, day) => {
+  const parsed = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)))
+  if (
+    Number.isNaN(parsed.getTime()) ||
+    parsed.getUTCFullYear() !== Number(year) ||
+    parsed.getUTCMonth() + 1 !== Number(month) ||
+    parsed.getUTCDate() !== Number(day)
+  ) {
+    return ''
+  }
+  return [
+    parsed.getUTCFullYear(),
+    String(parsed.getUTCMonth() + 1).padStart(2, '0'),
+    String(parsed.getUTCDate()).padStart(2, '0'),
+  ].join('-')
+}
+const toNullableDate = (value) => {
+  const raw = normalizeText(value)
+  if (!raw) return null
+  if (ISO_DATE_PATTERN.test(raw)) {
+    const [year, month, day] = raw.split('-')
+    return toValidIsoDate(year, month, day) || null
+  }
+  const dmy = raw.match(DMY_DATE_PATTERN)
+  if (dmy) {
+    const [, day, month, year] = dmy
+    return toValidIsoDate(year, month, day) || null
+  }
+  if (raw.includes('/')) return null
+  const parsed = new Date(raw)
+  if (Number.isNaN(parsed.getTime())) return null
+  return toValidIsoDate(parsed.getFullYear(), parsed.getMonth() + 1, parsed.getDate()) || null
+}
 const NHIA_INTEGRATION_MODE_ALIASES = {
   cxf_export: 'claimit_export',
   claimit_export: 'claimit_export',
@@ -4090,10 +4126,15 @@ const hydrateNhisClaimsForUi = async (claims = []) =>
 
 const fetchNhisClaimsFromSupabase = async (filters = {}, { ascending = false } = {}) => {
   const buildQuery = (select = NHIS_CLAIM_MEDICINES_SELECT) => {
+    const requestedLimit = Number(filters.limit || DEFAULT_NHIS_CLAIM_LIST_LIMIT)
+    const limit = Number.isFinite(requestedLimit) && requestedLimit > 0
+      ? Math.min(Math.floor(requestedLimit), 100000)
+      : DEFAULT_NHIS_CLAIM_LIST_LIMIT
     let query = supabase
       .from('nhis_claims')
       .select(select)
       .order('created_at', { ascending })
+      .limit(limit)
 
     if (filters.status && filters.status !== 'all') {
       query = query.eq('status', filters.status)
@@ -4367,7 +4408,7 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
     claimData.cccNo ?? claimData.ccc_no ?? claimData.ccCode ?? claimData.cc_code,
     options
   )
-  const serviceDate = normalizeText(claimData.serviceDate || claimData.serviceDateFrom)
+  const serviceDate = toNullableDate(claimData.serviceDate || claimData.serviceDateFrom)
 
   const medicineRows = toNhisClaimMedicineRows(medicines)
   const medicineTotal = medicineRows.reduce((s, m) => s + Number(m.total_amount || 0), 0)
@@ -4396,7 +4437,7 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
     other_names:        normalizeText(claimData.otherNames)        || null,
     folder_no:          normalizeText(claimData.folderNo)          || null,
     gender:             normalizeText(claimData.gender)            || null,
-    date_of_birth:      claimData.dateOfBirth                      || null,
+    date_of_birth:      toNullableDate(claimData.dateOfBirth),
     patient_address:    isHospital ? normalizeText(claimData.patientAddress) || null : null,
     child_weight_kg:    isHospital && claimData.childWeightKg
       ? assertNonNegativeNumber(claimData.childWeightKg, 'Child weight')
@@ -4405,9 +4446,9 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
     nhia_transaction_id: normalizeText(
       claimData.nhiaTransactionId ?? claimData.nhia_transaction_id ?? claimData.transactionId ?? claimData.transaction_id
     ) || null,
-    nhia_eligibility_start_date: normalizeText(claimData.nhiaEligibilityStartDate ?? claimData.nhia_eligibility_start_date) || null,
-    nhia_eligibility_end_date: normalizeText(claimData.nhiaEligibilityEndDate ?? claimData.nhia_eligibility_end_date) || null,
-    nhia_attendance_date: normalizeText(claimData.nhiaAttendanceDate ?? claimData.nhia_attendance_date) || null,
+    nhia_eligibility_start_date: toNullableDate(claimData.nhiaEligibilityStartDate ?? claimData.nhia_eligibility_start_date),
+    nhia_eligibility_end_date: toNullableDate(claimData.nhiaEligibilityEndDate ?? claimData.nhia_eligibility_end_date),
+    nhia_attendance_date: toNullableDate(claimData.nhiaAttendanceDate ?? claimData.nhia_attendance_date),
     ...getNhiaAttendancePayload(claimData),
     nhia_member_status: normalizeText(claimData.nhiaMemberStatus ?? claimData.nhia_member_status) || null,
     nhia_member_lookup_payload: claimData.nhiaMemberLookupPayload ?? claimData.nhia_member_lookup_payload ?? null,
@@ -4419,8 +4460,8 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
     ) || null,
     diagnosis:          normalizeText(claimData.diagnosis)         || null,
     diagnosis_details:  diagnosisDetails,
-    service_date_from:  serviceDate                                || null,
-    service_date_to:    serviceDate                                || null,
+    service_date_from:  serviceDate,
+    service_date_to:    serviceDate,
     branch_id:          claimData.branchId                         || null,
     referring_facility: normalizeText(claimData.referringFacility) || null,
     referral_code:      normalizeText(claimData.referralCode)      || null,
@@ -4587,7 +4628,7 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
     claimData.cccNo ?? claimData.ccc_no ?? claimData.ccCode ?? claimData.cc_code,
     options
   )
-  const serviceDate = normalizeText(claimData.serviceDate || claimData.serviceDateFrom)
+  const serviceDate = toNullableDate(claimData.serviceDate || claimData.serviceDateFrom)
   const medicineRows = toNhisClaimMedicineRows(medicines)
   const medicineTotal = medicineRows.reduce((s, m) => s + Number(m.total_amount || 0), 0)
   const serviceTotal = tariffServices.reduce((s, line) => s + Number(line.totalAmount || 0), 0)
@@ -4612,7 +4653,7 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
     other_names: normalizeText(claimData.otherNames) || null,
     folder_no: normalizeText(claimData.folderNo) || null,
     gender: normalizeText(claimData.gender) || null,
-    date_of_birth: claimData.dateOfBirth || null,
+    date_of_birth: toNullableDate(claimData.dateOfBirth),
     patient_address: isHospital ? normalizeText(claimData.patientAddress) || null : null,
     child_weight_kg: isHospital && claimData.childWeightKg
       ? assertNonNegativeNumber(claimData.childWeightKg, 'Child weight')
@@ -4621,16 +4662,16 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
     nhia_transaction_id: normalizeText(
       claimData.nhiaTransactionId ?? claimData.nhia_transaction_id ?? claimData.transactionId ?? claimData.transaction_id
     ) || null,
-    nhia_eligibility_start_date: normalizeText(claimData.nhiaEligibilityStartDate ?? claimData.nhia_eligibility_start_date) || null,
-    nhia_eligibility_end_date: normalizeText(claimData.nhiaEligibilityEndDate ?? claimData.nhia_eligibility_end_date) || null,
-    nhia_attendance_date: normalizeText(claimData.nhiaAttendanceDate ?? claimData.nhia_attendance_date) || null,
+    nhia_eligibility_start_date: toNullableDate(claimData.nhiaEligibilityStartDate ?? claimData.nhia_eligibility_start_date),
+    nhia_eligibility_end_date: toNullableDate(claimData.nhiaEligibilityEndDate ?? claimData.nhia_eligibility_end_date),
+    nhia_attendance_date: toNullableDate(claimData.nhiaAttendanceDate ?? claimData.nhia_attendance_date),
     ...getNhiaAttendancePayload(claimData),
     nhia_member_status: normalizeText(claimData.nhiaMemberStatus ?? claimData.nhia_member_status) || null,
     nhia_member_lookup_payload: claimData.nhiaMemberLookupPayload ?? claimData.nhia_member_lookup_payload ?? null,
     diagnosis: normalizeText(claimData.diagnosis) || null,
     diagnosis_details: diagnosisDetails,
-    service_date_from: serviceDate || null,
-    service_date_to: serviceDate || null,
+    service_date_from: serviceDate,
+    service_date_to: serviceDate,
     branch_id: claimData.branchId || null,
     referring_facility: normalizeText(claimData.referringFacility) || null,
     referral_code: normalizeText(claimData.referralCode) || null,

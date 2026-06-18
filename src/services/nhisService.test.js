@@ -2407,12 +2407,16 @@ describe('NHIS claim save attachment behavior', () => {
       {
         ...claimWithoutPrescription,
         organizationId: '542fe9df-3211-4046-bd90-b101d249b7f9',
+        dateOfBirth: '14/05/1990',
+        serviceDate: '18/06/2026',
         cardType: 'GHANACARD',
         authId: 'AUTH-123',
         authType: 'NHIS',
         newCcc: 'true',
         otacCode: '987654',
-        nhiaAttendanceDate: '2026-05-14',
+        nhiaAttendanceDate: '18/06/2026',
+        nhiaEligibilityStartDate: '01/06/2026',
+        nhiaEligibilityEndDate: '30/06/2026',
         attendanceVerificationStatus: 'confirmed',
         attendanceVerificationSource: 'nehfams_manual',
         servingReviewedAt: '',
@@ -2428,12 +2432,17 @@ describe('NHIS claim save attachment behavior', () => {
     expect(claimTable.insert).toHaveBeenCalled()
     expect(claimTable.insert.mock.calls[0][0][0]).toMatchObject({
       organization_id: '542fe9df-3211-4046-bd90-b101d249b7f9',
+      date_of_birth: '1990-05-14',
+      service_date_from: '2026-06-18',
+      service_date_to: '2026-06-18',
       card_type: 'GHANACARD',
       nhia_auth_id: 'AUTH-123',
       nhia_auth_type: 'NHIS',
       nhia_new_ccc_status: 'yes',
       nhia_otac: '987654',
-      nhia_attendance_date: '2026-05-14',
+      nhia_attendance_date: '2026-06-18',
+      nhia_eligibility_start_date: '2026-06-01',
+      nhia_eligibility_end_date: '2026-06-30',
       nhia_attendance_verification_status: 'confirmed',
       nhia_attendance_verification_source: 'nehfams_manual',
       serving_reviewed_at: null,
@@ -3293,6 +3302,7 @@ describe('NHIS local and cloud claim reads', () => {
       order: vi.fn(() => query),
       eq: vi.fn(() => query),
       or: vi.fn(() => query),
+      limit: vi.fn(() => query),
       then: (resolve, reject) => Promise.resolve({ data: rows, error }).then(resolve, reject),
     }
     supabase.from.mockReturnValue(query)
@@ -3325,7 +3335,7 @@ describe('NHIS local and cloud claim reads', () => {
     ]
     shouldUseBranchServer.mockReturnValue(true)
     listBranchRecords.mockResolvedValueOnce(localRows)
-    mockCloudNhisClaimsQuery({ rows: cloudRows })
+    const query = mockCloudNhisClaimsQuery({ rows: cloudRows })
 
     await expect(getAllNhisClaims()).resolves.toEqual([
       localRows[0],
@@ -3334,6 +3344,7 @@ describe('NHIS local and cloud claim reads', () => {
 
     expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { limit: 100000 })
     expect(supabase.from).toHaveBeenCalledWith('nhis_claims')
+    expect(query.limit).toHaveBeenCalledWith(500)
   })
 
   it('does not revive a stale cloud status in a filtered view', async () => {

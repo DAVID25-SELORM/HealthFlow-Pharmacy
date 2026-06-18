@@ -85,6 +85,7 @@ import './Nhis.css'
 // ─── constants ────────────────────────────────────────────────────────────────
 
 const CLAIM_STATUS_TABS = ['all', 'pending_serving', 'returned_for_review', 'served', 'submitted', 'paid', 'rejected']
+const NHIS_CLAIMS_SCREEN_LIMIT = 500
 const CLAIM_STATUS_LABELS = {
   all: 'All',
   pending_serving: 'Pending Serving',
@@ -993,7 +994,7 @@ const Nhis = () => {
       setLoading(true)
       setError('')
       const [claimsData, drugsData, patientsData, statsData, rulesData, tariffData, inventoryData] = await Promise.all([
-        getAllNhisClaims(),
+        getAllNhisClaims({ limit: NHIS_CLAIMS_SCREEN_LIMIT }),
         getAllNhisDrugs(),
         getAllPatients(),
         getNhisClaimStats(),
