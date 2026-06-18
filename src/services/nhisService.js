@@ -4382,7 +4382,11 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
     useBranchServer: options.useBranchServer,
   })
   const diagnosisDetails = getDiagnosisDetailsPayload(claimData)
+  const organizationId = toNullableUuid(
+    claimData.organizationId ?? claimData.organization_id ?? options.organizationId ?? options.organization_id
+  )
   let claimPayload = {
+    ...(organizationId ? { organization_id: organizationId } : {}),
     patient_id:         claimData.patientId         || null,
     member_no:          memberNo,
     card_type:          normalizeText(claimData.cardType ?? claimData.card_type) || null,

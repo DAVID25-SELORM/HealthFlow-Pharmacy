@@ -2406,6 +2406,7 @@ describe('NHIS claim save attachment behavior', () => {
     await expect(createNhisClaim(
       {
         ...claimWithoutPrescription,
+        organizationId: '542fe9df-3211-4046-bd90-b101d249b7f9',
         cardType: 'GHANACARD',
         authId: 'AUTH-123',
         authType: 'NHIS',
@@ -2425,6 +2426,7 @@ describe('NHIS claim save attachment behavior', () => {
 
     expect(claimTable.insert).toHaveBeenCalled()
     expect(claimTable.insert.mock.calls[0][0][0]).toMatchObject({
+      organization_id: '542fe9df-3211-4046-bd90-b101d249b7f9',
       card_type: 'GHANACARD',
       nhia_auth_id: 'AUTH-123',
       nhia_auth_type: 'NHIS',

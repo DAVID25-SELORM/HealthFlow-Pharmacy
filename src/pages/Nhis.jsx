@@ -2433,6 +2433,8 @@ const Nhis = () => {
         ...claimForm,
         ...uploadedPrescription,
         organizationType,
+        organizationId,
+        organization_id: organizationId || null,
         providerClassLevel,
         branchId: profile?.branch_id || branch?.id || null,
         createdBy: user?.id || null,
