@@ -2617,7 +2617,7 @@ describe('NHIS claim save attachment behavior', () => {
     expect(updateBranchRecord).not.toHaveBeenCalled()
   })
 
-  it('does not block MCA medicine saves on claim-completion fields', async () => {
+  it('does not block MCA medicine saves on claim-completion or prescription-direction fields', async () => {
     updateBranchNhisClaimMedicines.mockResolvedValueOnce({
       id: 'claim-1',
       status: 'served',
@@ -2633,7 +2633,12 @@ describe('NHIS claim save attachment behavior', () => {
         referringFacility: '',
         physicianName: '',
       },
-      [medicineWithTotal],
+      [{
+        ...medicineWithTotal,
+        dose: '',
+        frequency: '',
+        duration: '',
+      }],
       {
         useBranchServer: true,
         medicinesOnly: true,

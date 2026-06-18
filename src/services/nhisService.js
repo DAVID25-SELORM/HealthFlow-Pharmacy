@@ -1722,11 +1722,17 @@ const MCA_MEDICINE_LEVEL_ISSUE_PATTERNS = [
   /^High: Medicine \d+:/i,
   /^High: .*medicine/i,
 ]
+const MCA_CLAIMS_OFFICER_MEDICINE_COMPLETION_PATTERNS = [
+  /^Medicine \d+: dose is (required|missing)/i,
+  /^Medicine \d+: dosage schedule\/frequency is (required|missing)/i,
+  /^Medicine \d+: duration is (required|missing)/i,
+]
 
 const isMcaMedicineReadinessIssue = (issue = '') => {
   const normalized = String(issue || '').trim()
   if (!normalized) return false
   if (MCA_CLAIM_LEVEL_ISSUE_PATTERNS.some((pattern) => pattern.test(normalized))) return false
+  if (MCA_CLAIMS_OFFICER_MEDICINE_COMPLETION_PATTERNS.some((pattern) => pattern.test(normalized))) return false
   return MCA_MEDICINE_LEVEL_ISSUE_PATTERNS.some((pattern) => pattern.test(normalized))
 }
 
