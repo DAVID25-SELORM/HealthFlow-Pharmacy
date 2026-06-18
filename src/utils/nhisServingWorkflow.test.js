@@ -3,6 +3,7 @@ import {
   canMcaOpenNhisClaimForServing,
   shouldApplyMcaEditWindowToClaim,
   shouldFinalizeNhisServingReview,
+  splitMcaReadinessIssues,
 } from './nhisServingWorkflow'
 
 describe('NHIS serving workflow status transitions', () => {
@@ -35,5 +36,53 @@ describe('NHIS serving workflow status transitions', () => {
     expect(shouldApplyMcaEditWindowToClaim('serving_in_progress')).toBe(false)
     expect(shouldApplyMcaEditWindowToClaim('returned_for_review')).toBe(false)
     expect(shouldApplyMcaEditWindowToClaim('served')).toBe(true)
+  })
+
+  it('keeps MCA serving blockers separate from claims officer prescription completion', () => {
+    const split = splitMcaReadinessIssues({
+      blockers: [
+        'Medicine 1: dose is required.',
+        'Medicine 1: dosage schedule/frequency is required.',
+        'Medicine 1: duration is required.',
+        'Medicine 1: exact dispensed quantity must be greater than zero.',
+      ],
+      warnings: [
+        'Medicine 1: waiting for MCA served quantity.',
+        'Medicine 1: Level not configured.',
+        'Prescriber name or ID is missing from the prescription.',
+      ],
+    })
+
+    expect(split.medicineBlockers).toEqual([
+      'Medicine 1: exact dispensed quantity must be greater than zero.',
+    ])
+    expect(split.claimCompletionBlockers).toEqual([
+      'Medicine 1: dose is required.',
+      'Medicine 1: dosage schedule/frequency is required.',
+      'Medicine 1: duration is required.',
+    ])
+    expect(split.medicineWarnings).toEqual([
+      'Medicine 1: waiting for MCA served quantity.',
+      'Medicine 1: Level not configured.',
+    ])
+    expect(split.claimCompletionWarnings).toEqual([
+      'Prescriber name or ID is missing from the prescription.',
+    ])
+    expect(split.canSaveMedicines).toBe(false)
+  })
+
+  it('does not block MCA medicine saving for missing prescription directions alone', () => {
+    const split = splitMcaReadinessIssues({
+      blockers: [
+        'Medicine 1: dose is required.',
+        'Medicine 1: dosage schedule/frequency is required.',
+        'Medicine 1: duration is required.',
+      ],
+      warnings: [],
+    })
+
+    expect(split.medicineBlockers).toEqual([])
+    expect(split.claimCompletionBlockers).toHaveLength(3)
+    expect(split.canSaveMedicines).toBe(true)
   })
 })

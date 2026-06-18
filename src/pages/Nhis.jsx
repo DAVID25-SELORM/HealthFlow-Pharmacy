@@ -53,6 +53,7 @@ import {
   canMcaOpenNhisClaimForServing,
   shouldApplyMcaEditWindowToClaim,
   shouldFinalizeNhisServingReview,
+  splitMcaReadinessIssues,
 } from '../utils/nhisServingWorkflow'
 import { getAllPatients, searchPatients } from '../services/patientService'
 import { getAllDrugs } from '../services/drugService'
@@ -114,28 +115,6 @@ const MEDICINE_NOT_FULLY_SERVED_REASONS = [
   'Entered by mistake',
   'Other',
 ]
-const CLAIM_LEVEL_MCA_INFO_PATTERNS = [
-  /^Patient /i,
-  /^Folder number/i,
-  /^Prescribing facility/i,
-  /^Prescriber /i,
-  /^Date of dispensing\/service/i,
-  /^NHIS member number/i,
-  /^Ghana Card/i,
-  /^NHIA CCC/i,
-  /^CCC/i,
-  /^Diagnosis/i,
-  /^Attach the scanned prescription/i,
-  /^Set the NHIA/i,
-  /^Pharmacy NHIS claims cannot include/i,
-]
-const MEDICINE_LEVEL_MCA_PATTERNS = [
-  /^Add at least one medicine/i,
-  /^Medicine \d+:/i,
-  /^High: duplicate medicine/i,
-  /^High: Medicine \d+:/i,
-  /^High: .*medicine/i,
-]
 const isLocalClaimItBridgeBaseUrl = (baseUrl = '') => {
   try {
     const hostname = new URL(String(baseUrl || '').trim()).hostname.toLowerCase()
@@ -146,30 +125,6 @@ const isLocalClaimItBridgeBaseUrl = (baseUrl = '') => {
       /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname)
   } catch {
     return false
-  }
-}
-
-const isMcaMedicineIssue = (issue = '') => {
-  const normalized = String(issue || '').trim()
-  if (!normalized) return false
-  if (CLAIM_LEVEL_MCA_INFO_PATTERNS.some((pattern) => pattern.test(normalized))) return false
-  return MEDICINE_LEVEL_MCA_PATTERNS.some((pattern) => pattern.test(normalized))
-}
-
-const splitMcaReadinessIssues = (readiness = {}) => {
-  const blockers = Array.isArray(readiness.blockers) ? readiness.blockers : []
-  const warnings = Array.isArray(readiness.warnings) ? readiness.warnings : []
-  const medicineBlockers = blockers.filter(isMcaMedicineIssue)
-  const claimCompletionBlockers = blockers.filter((issue) => !isMcaMedicineIssue(issue))
-  const medicineWarnings = warnings.filter(isMcaMedicineIssue)
-  const claimCompletionWarnings = warnings.filter((issue) => !isMcaMedicineIssue(issue))
-
-  return {
-    medicineBlockers,
-    medicineWarnings,
-    claimCompletionBlockers,
-    claimCompletionWarnings,
-    canSaveMedicines: medicineBlockers.length === 0,
   }
 }
 
