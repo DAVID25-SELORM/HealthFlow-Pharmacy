@@ -750,54 +750,60 @@ const buildMissingPrescriptionAttachmentSchemaError = () => {
   return error
 }
 
+const MAX_OPTIONAL_CLAIM_SCHEMA_FALLBACK_ATTEMPTS = OPTIONAL_CLAIM_SCHEMA_COLUMNS.length + 1
+
+const withOptionalClaimSchemaFallback = async (payload, write) => {
+  let writePayload = { ...payload }
+  const strippedColumns = new Set()
+
+  for (let attempt = 0; attempt < MAX_OPTIONAL_CLAIM_SCHEMA_FALLBACK_ATTEMPTS; attempt += 1) {
+    const result = await write(writePayload)
+    if (!result.error || !isMissingOptionalClaimColumn(result.error)) {
+      return result
+    }
+
+    const nextPayload = stripOptionalClaimSchemaColumns(writePayload, result.error)
+    Object.keys(writePayload).forEach((key) => {
+      if (!(key in nextPayload)) strippedColumns.add(key)
+    })
+
+    if (wouldDiscardPrescriptionAttachment(payload, nextPayload)) {
+      return { data: null, error: buildMissingPrescriptionAttachmentSchemaError() }
+    }
+
+    if (Object.keys(nextPayload).length === Object.keys(writePayload).length) {
+      const fallbackPayload = stripClaimSchemaColumns(writePayload, [...strippedColumns, ...OPTIONAL_CLAIM_SCHEMA_COLUMNS])
+      if (wouldDiscardPrescriptionAttachment(payload, fallbackPayload)) {
+        return { data: null, error: buildMissingPrescriptionAttachmentSchemaError() }
+      }
+      writePayload = fallbackPayload
+    } else {
+      writePayload = nextPayload
+    }
+  }
+
+  return await write(writePayload)
+}
+
 const insertNhisClaimWithSchemaFallback = async (payload) => {
-  const insertPayload = { ...payload }
-  const result = await supabase
-    .from('nhis_claims')
-    .insert([insertPayload])
-    .select()
-    .single()
-
-  if (!result.error || !isMissingOptionalClaimColumn(result.error)) {
-    return result
-  }
-
-  const fallbackPayload = stripOptionalClaimSchemaColumns(insertPayload, result.error)
-  if (wouldDiscardPrescriptionAttachment(insertPayload, fallbackPayload)) {
-    return { data: null, error: buildMissingPrescriptionAttachmentSchemaError() }
-  }
-
-  return await supabase
-    .from('nhis_claims')
-    .insert([fallbackPayload])
-    .select()
-    .single()
+  return await withOptionalClaimSchemaFallback(payload, async (insertPayload) =>
+    await supabase
+      .from('nhis_claims')
+      .insert([insertPayload])
+      .select()
+      .single()
+  )
 }
 
 const updateNhisClaimWithSchemaFallback = async (id, payload) => {
-  const updatePayload = { ...payload }
-  const result = await supabase
-    .from('nhis_claims')
-    .update(updatePayload)
-    .eq('id', id)
-    .select()
-    .single()
-
-  if (!result.error || !isMissingOptionalClaimColumn(result.error)) {
-    return result
-  }
-
-  const fallbackPayload = stripOptionalClaimSchemaColumns(updatePayload, result.error)
-  if (wouldDiscardPrescriptionAttachment(updatePayload, fallbackPayload)) {
-    return { data: null, error: buildMissingPrescriptionAttachmentSchemaError() }
-  }
-
-  return await supabase
-    .from('nhis_claims')
-    .update(fallbackPayload)
-    .eq('id', id)
-    .select()
-    .single()
+  return await withOptionalClaimSchemaFallback(payload, async (updatePayload) =>
+    await supabase
+      .from('nhis_claims')
+      .update(updatePayload)
+      .eq('id', id)
+      .select()
+      .single()
+  )
 }
 
 const getNhisDuplicatePatientKey = (claim = {}) => {

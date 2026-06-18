@@ -2437,6 +2437,82 @@ describe('NHIS claim save attachment behavior', () => {
     expect(medicineTable.insert).toHaveBeenCalled()
   })
 
+  it('keeps retrying cloud claim inserts when multiple optional columns are missing', async () => {
+    const insertedClaim = { id: 'claim-1', claim_number: 'NHIS-000001', status: 'served' }
+    const insertPayloads = []
+    const makeClaimInsertResult = (response) => ({
+      select: vi.fn(() => ({
+        single: vi.fn().mockResolvedValue(response),
+      })),
+    })
+    const duplicateQuery = {
+      eq: vi.fn(() => duplicateQuery),
+      neq: vi.fn(() => duplicateQuery),
+      limit: vi.fn().mockResolvedValue({ data: [], error: null }),
+    }
+    const claimTable = {
+      select: vi.fn(() => duplicateQuery),
+      insert: vi.fn((payload) => {
+        insertPayloads.push(payload[0])
+        if (insertPayloads.length === 1) {
+          return makeClaimInsertResult({
+            data: null,
+            error: {
+              code: 'PGRST204',
+              message: "Could not find the 'unserved_medicines_note' column of 'nhis_claims' in the schema cache",
+            },
+          })
+        }
+        if (insertPayloads.length === 2) {
+          return makeClaimInsertResult({
+            data: null,
+            error: {
+              code: 'PGRST204',
+              message: "Could not find the 'serving_status' column of 'nhis_claims' in the schema cache",
+            },
+          })
+        }
+        return makeClaimInsertResult({ data: insertedClaim, error: null })
+      }),
+    }
+    const medicineTable = {
+      insert: vi.fn().mockResolvedValue({ error: null }),
+    }
+    const serviceTable = {
+      insert: vi.fn().mockResolvedValue({ error: null }),
+    }
+
+    supabase.from.mockImplementation((table) => {
+      if (table === 'nhis_claims') return claimTable
+      if (table === 'nhis_claim_medicines') return medicineTable
+      if (table === 'nhis_claim_services') return serviceTable
+      return { update: vi.fn(() => ({ eq: vi.fn().mockResolvedValue({ error: null }) })) }
+    })
+
+    await expect(createNhisClaim(
+      {
+        ...claimWithoutPrescription,
+        unservedMedicinesNote: 'Could not serve one line.',
+        servingStatus: 'pending',
+      },
+      [medicineWithTotal],
+      {
+        providerClassLevel: 'D',
+        pharmacyLevel: 'P1',
+        nhisDrugCatalog: [{ code: 'NH001', category: 'A' }],
+      }
+    )).resolves.toEqual(insertedClaim)
+
+    expect(insertPayloads).toHaveLength(3)
+    expect(insertPayloads[0]).toHaveProperty('unserved_medicines_note')
+    expect(insertPayloads[0]).toHaveProperty('serving_status')
+    expect(insertPayloads[1]).not.toHaveProperty('unserved_medicines_note')
+    expect(insertPayloads[1]).toHaveProperty('serving_status')
+    expect(insertPayloads[2]).not.toHaveProperty('unserved_medicines_note')
+    expect(insertPayloads[2]).not.toHaveProperty('serving_status')
+    expect(medicineTable.insert).toHaveBeenCalled()
+  })
+
   it('still blocks save when a caller explicitly requires an RX attachment', async () => {
     await expect(createNhisClaim(
       claimWithoutPrescription,
