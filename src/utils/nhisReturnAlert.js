@@ -95,10 +95,6 @@ const getMatchType = (currentIdentifiers, previousIdentifiers) => {
 const getMedicineCode = (medicine = {}) =>
   normalizeMemberNumber(medicine.drugCode || medicine.drug_code || medicine.nhiaCode || medicine.nhia_code)
 
-const getMedicineName = (medicine = {}) =>
-  normalizeLower(medicine.description || medicine.drugName || medicine.drug_name || medicine.name)
-
-const getMedicineKey = (medicine = {}) => getMedicineCode(medicine) || getMedicineName(medicine)
 const getMedicineSummaryKey = (medicine = {}) => normalizeMemberNumber(medicine.code) || normalizeLower(medicine.name)
 
 export const summarizeNhisMedicines = (medicines = []) =>

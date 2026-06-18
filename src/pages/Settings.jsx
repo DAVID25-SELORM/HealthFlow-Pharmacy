@@ -403,8 +403,6 @@ const createBlankStaffForm = () => ({
   branchId: '',
 })
 
-const blankStaffForm = createBlankStaffForm()
-
 const blankPaymentSettingsForm = {
   enabled: false,
   defaultProvider: 'hubtel',
