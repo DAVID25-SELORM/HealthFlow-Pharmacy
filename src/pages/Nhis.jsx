@@ -49,7 +49,11 @@ import {
   shouldUseBranchServer,
 } from '../services/branchServerApi'
 import { isMcaEditWindowOpen, canReopenMcaEditWindow } from '../utils/mcaEditWindow'
-import { shouldFinalizeNhisServingReview } from '../utils/nhisServingWorkflow'
+import {
+  canMcaOpenNhisClaimForServing,
+  shouldApplyMcaEditWindowToClaim,
+  shouldFinalizeNhisServingReview,
+} from '../utils/nhisServingWorkflow'
 import { getAllPatients, searchPatients } from '../services/patientService'
 import { getAllDrugs } from '../services/drugService'
 import { parseNhisDrugFile, generateNhisDrugTemplate } from '../services/nhisDrugImportService'
@@ -1662,14 +1666,15 @@ const Nhis = () => {
   }
 
   const openEditClaim = (claim) => {
-    if (!canEditNhisClaimAnytime && claim.status !== 'served') {
+    const canOpenForMcaServing = isMedicineCounterAssistant && canMcaOpenNhisClaimForServing(claim.status)
+    if (!canOpenForMcaServing && !canEditNhisClaimAnytime && claim.status !== 'served') {
       notify('Only served NHIS claims can be edited before submission/export.', 'warning')
       return
     }
 
     // MCA medication edits are limited to the 24h window (or a 12h supervisor
     // re-open). The branch server also enforces this; this is early feedback.
-    if (isMedicineCounterAssistant && !isMcaEditWindowOpen(claim)) {
+    if (isMedicineCounterAssistant && shouldApplyMcaEditWindowToClaim(claim.status) && !isMcaEditWindowOpen(claim)) {
       notify('The 24-hour edit window for this claim has closed. Ask an admin or claims officer to re-open it.', 'warning')
       return
     }
@@ -3360,7 +3365,7 @@ const Nhis = () => {
                         </button>
                         {canServeNhisMedicines && (
                           isMedicineCounterAssistant
-                            ? ['pending_serving', 'serving_in_progress', 'returned_for_review', 'served'].includes(c.status)
+                            ? canMcaOpenNhisClaimForServing(c.status)
                             : (['pending_serving', 'returned_for_review', 'served'].includes(c.status) || canEditNhisClaimAnytime)
                         ) && (
                           <button
