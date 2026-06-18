@@ -418,6 +418,52 @@ const getPatientGender = (patient = {}) =>
 const getPatientDateOfBirth = (patient = {}) =>
   patient.date_of_birth || patient.dateOfBirth || patient.dob || ''
 
+const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+const DMY_DATE_PATTERN = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/
+
+const toValidIsoDate = (year, month, day) => {
+  const parsed = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)))
+  if (
+    Number.isNaN(parsed.getTime()) ||
+    parsed.getUTCFullYear() !== Number(year) ||
+    parsed.getUTCMonth() + 1 !== Number(month) ||
+    parsed.getUTCDate() !== Number(day)
+  ) {
+    return ''
+  }
+  return [
+    parsed.getUTCFullYear(),
+    String(parsed.getUTCMonth() + 1).padStart(2, '0'),
+    String(parsed.getUTCDate()).padStart(2, '0'),
+  ].join('-')
+}
+
+const normalizeDateOfBirthValue = (value) => {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  if (ISO_DATE_PATTERN.test(raw)) {
+    const [year, month, day] = raw.split('-')
+    return toValidIsoDate(year, month, day)
+  }
+  const dmy = raw.match(DMY_DATE_PATTERN)
+  if (dmy) {
+    const [, day, month, year] = dmy
+    return toValidIsoDate(year, month, day)
+  }
+  if (raw.includes('/')) return ''
+  const parsed = new Date(raw)
+  if (Number.isNaN(parsed.getTime())) return ''
+  return toValidIsoDate(parsed.getFullYear(), parsed.getMonth() + 1, parsed.getDate())
+}
+
+const formatDateOfBirthInputValue = (value) => {
+  const raw = String(value || '').trim()
+  const iso = normalizeDateOfBirthValue(raw)
+  if (!iso) return raw
+  const [year, month, day] = iso.split('-')
+  return `${day}/${month}/${year}`
+}
+
 const getPatientAddress = (patient = {}) =>
   patient.address || patient.patient_address || patient.patientAddress || ''
 
@@ -1524,7 +1570,7 @@ const Nhis = () => {
       surname:     nameParts.surname,
       otherNames:  nameParts.otherNames,
       gender:      getPatientGender(patient),
-      dateOfBirth: getPatientDateOfBirth(patient),
+      dateOfBirth: normalizeDateOfBirthValue(getPatientDateOfBirth(patient)),
       patientAddress: getPatientAddress(patient),
       folderNo:    getPatientFolderNo(patient) || prev.folderNo,
       memberNo:    normalizedMemberNo,
@@ -1606,7 +1652,7 @@ const Nhis = () => {
       otherNames: claim.other_names || '',
       folderNo: claim.folder_no || '',
       gender: claim.gender || '',
-      dateOfBirth: claim.date_of_birth || '',
+      dateOfBirth: normalizeDateOfBirthValue(claim.date_of_birth),
       patientAddress: claim.patient_address || '',
       childWeightKg: claim.child_weight_kg ?? '',
       cccNo: claim.ccc_no || '',
@@ -2161,7 +2207,7 @@ const Nhis = () => {
       hin: memberDetails.hin || '',
       surname: surname || prev.surname,
       otherNames: otherNames || prev.otherNames,
-      dateOfBirth: memberDetails.dateOfBirth || prev.dateOfBirth,
+      dateOfBirth: normalizeDateOfBirthValue(memberDetails.dateOfBirth) || prev.dateOfBirth,
       gender: normalizeNhisGender(memberDetails.gender) || prev.gender,
       ...(memberDetails.ccCode ? { cccNo: memberDetails.ccCode, ccCode: memberDetails.ccCode } : {}),
       authId: memberDetails.authId || prev.authId,
@@ -2328,6 +2374,12 @@ const Nhis = () => {
 
     if (isMedicineCounterAssistant && mcaReadiness.medicineBlockers.length) {
       setClaimError(`Medicine save check failed: ${mcaReadiness.medicineBlockers.slice(0, 5).join(' ')}`)
+      return
+    }
+
+    const normalizedDateOfBirth = normalizeDateOfBirthValue(claimForm.dateOfBirth)
+    if (claimForm.dateOfBirth && !normalizedDateOfBirth) {
+      setClaimError('Date of birth must be day/month/year, for example 18/06/2026.')
       return
     }
 
@@ -3943,8 +3995,35 @@ const Nhis = () => {
                     </div>
                     <div className="form-group">
                       <label>Date of Birth</label>
-                      <input type="date" className="form-input" value={claimForm.dateOfBirth}
-                        onChange={(e) => setClaimForm((p) => ({ ...p, dateOfBirth: e.target.value }))} />
+                      <input
+                        type="text"
+                        className="form-input"
+                        value={formatDateOfBirthInputValue(claimForm.dateOfBirth)}
+                        inputMode="numeric"
+                        placeholder="dd/mm/yyyy"
+                        pattern="\\d{1,2}/\\d{1,2}/\\d{4}"
+                        title="Enter date of birth as day/month/year, for example 18/06/2026"
+                        onChange={(e) => {
+                          const value = e.target.value
+                          setClaimForm((p) => ({
+                            ...p,
+                            dateOfBirth: normalizeDateOfBirthValue(value) || value,
+                          }))
+                        }}
+                        onBlur={(e) => {
+                          const value = e.target.value.trim()
+                          if (!value) {
+                            setClaimForm((p) => ({ ...p, dateOfBirth: '' }))
+                            return
+                          }
+                          const normalized = normalizeDateOfBirthValue(value)
+                          if (!normalized) {
+                            notify('Date of birth must be day/month/year, for example 18/06/2026.', 'warning')
+                            return
+                          }
+                          setClaimForm((p) => ({ ...p, dateOfBirth: normalized }))
+                        }}
+                      />
                     </div>
                   </div>
 
