@@ -226,6 +226,7 @@ const toNullableUuid = (value) => {
   const normalized = asText(value)
   return SUPABASE_UUID_PATTERN.test(normalized) ? normalized : null
 }
+const toNullableTimestamp = (value) => normalizeText(value) || null
 const NHIA_INTEGRATION_MODE_ALIASES = {
   cxf_export: 'claimit_export',
   claimit_export: 'claimit_export',
@@ -1780,8 +1781,8 @@ const toNhisClaimMedicineRows = (medicines = []) =>
       reason_if_not_fully_served: normalizeText(m.reasonIfNotFullyServed ?? m.reason_if_not_fully_served) || null,
       entered_by_claims_officer: toNullableUuid(m.enteredByClaimsOfficer ?? m.entered_by_claims_officer),
       served_by_mca: toNullableUuid(m.servedByMca ?? m.served_by_mca),
-      entered_at: m.enteredAt ?? m.entered_at ?? null,
-      served_at: m.servedAt ?? m.served_at ?? null,
+      entered_at: toNullableTimestamp(m.enteredAt ?? m.entered_at),
+      served_at: toNullableTimestamp(m.servedAt ?? m.served_at),
     }
   })
 
@@ -4429,7 +4430,7 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
     status:             normalizeText(claimData.status) || 'served',
     serving_status:     normalizeText(claimData.servingStatus ?? claimData.serving_status) || null,
     serving_reviewed_by: claimData.servingReviewedBy ?? claimData.serving_reviewed_by ?? null,
-    serving_reviewed_at: claimData.servingReviewedAt ?? claimData.serving_reviewed_at ?? null,
+    serving_reviewed_at: toNullableTimestamp(claimData.servingReviewedAt ?? claimData.serving_reviewed_at),
     notes:              normalizeText(claimData.notes)             || null,
     unserved_medicines_note: normalizeText(
       claimData.unservedMedicinesNote ?? claimData.unserved_medicines_note
@@ -4639,7 +4640,7 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
     ...(normalizeText(claimData.status) ? { status: normalizeText(claimData.status) } : {}),
     serving_status: normalizeText(claimData.servingStatus ?? claimData.serving_status) || null,
     serving_reviewed_by: claimData.servingReviewedBy ?? claimData.serving_reviewed_by ?? null,
-    serving_reviewed_at: claimData.servingReviewedAt ?? claimData.serving_reviewed_at ?? null,
+    serving_reviewed_at: toNullableTimestamp(claimData.servingReviewedAt ?? claimData.serving_reviewed_at),
     notes: normalizeText(claimData.notes) || null,
     unserved_medicines_note: normalizeText(
       claimData.unservedMedicinesNote ?? claimData.unserved_medicines_note

@@ -2415,8 +2415,9 @@ describe('NHIS claim save attachment behavior', () => {
         nhiaAttendanceDate: '2026-05-14',
         attendanceVerificationStatus: 'confirmed',
         attendanceVerificationSource: 'nehfams_manual',
+        servingReviewedAt: '',
       },
-      [medicineWithTotal],
+      [{ ...medicineWithTotal, enteredAt: '', servedAt: '' }],
       {
         providerClassLevel: 'D',
         pharmacyLevel: 'P1',
@@ -2435,8 +2436,13 @@ describe('NHIS claim save attachment behavior', () => {
       nhia_attendance_date: '2026-05-14',
       nhia_attendance_verification_status: 'confirmed',
       nhia_attendance_verification_source: 'nehfams_manual',
+      serving_reviewed_at: null,
     })
     expect(medicineTable.insert).toHaveBeenCalled()
+    expect(medicineTable.insert.mock.calls[0][0][0]).toMatchObject({
+      entered_at: null,
+      served_at: null,
+    })
   })
 
   it('keeps retrying cloud claim inserts when multiple optional columns are missing', async () => {
