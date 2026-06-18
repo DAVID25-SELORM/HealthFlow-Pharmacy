@@ -667,6 +667,7 @@
 .medicine-footer-total {
   margin-right: auto;
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   gap: 0.6rem;
   border: 1px solid rgba(5, 150, 105, 0.28);
@@ -692,6 +693,15 @@
   color: #022c22;
   font-size: 1.05rem;
   font-weight: 900;
+  white-space: nowrap;
+}
+
+.claim-footer-total small {
+  display: block;
+  color: var(--gray-600);
+  flex-basis: 100%;
+  font-size: 0.72rem;
+  font-weight: 700;
   white-space: nowrap;
 }
 
@@ -868,6 +878,14 @@
   min-height: 4.75rem;
 }
 
+.medicine-total-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.15rem;
+  min-width: 5.5rem;
+}
+
 .medicine-total {
   font-weight: 700;
   font-size: 0.95rem;
@@ -875,7 +893,33 @@
   white-space: nowrap;
 }
 
+.medicine-total span {
+  display: block;
+  color: var(--gray-500);
+  font-size: 0.62rem;
+  font-weight: 800;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.medicine-total strong {
+  font-size: 0.95rem;
+}
+
+.medicine-total--served {
+  color: var(--gray-600);
+  font-size: 0.82rem;
+}
+
+.medicine-total--served strong {
+  font-size: 0.82rem;
+}
+
 .medicines-total {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.2rem;
   margin-top: 0.25rem;
   padding: 0.85rem 1rem;
   border: 1px solid rgba(5, 150, 105, 0.28);
@@ -891,6 +935,12 @@
 .medicines-total strong {
   color: #022c22;
   font-weight: 800;
+}
+
+.medicines-total span {
+  color: var(--gray-600);
+  font-size: 0.75rem;
+  font-weight: 700;
 }
 
 .nhia-readiness {

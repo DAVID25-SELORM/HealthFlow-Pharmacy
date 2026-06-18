@@ -308,6 +308,17 @@ const getMedicineServedQty = (medicine = {}) => {
   return Number(medicine.servedQty ?? medicine.served_qty ?? medicine.dispensedQty ?? medicine.dispensed_qty ?? 0) || 0
 }
 
+const getMedicineUnitPrice = (medicine = {}) => {
+  medicine = medicine || {}
+  return Number(medicine.unitPrice ?? medicine.unit_price ?? 0) || 0
+}
+
+const getMedicinePrescribedAmount = (medicine = {}) =>
+  getMedicineUnitPrice(medicine) * getMedicinePrescribedQty(medicine)
+
+const getMedicineServedAmount = (medicine = {}) =>
+  getMedicineUnitPrice(medicine) * getMedicineServedQty(medicine)
+
 const normalizeMedicineServingStatus = (value, prescribedQty = 0, servedQty = 0) => {
   const status = String(value || '').trim().toLowerCase()
   if (['not_available', 'not_served'].includes(status)) return status
@@ -1931,10 +1942,19 @@ const Nhis = () => {
 
   const claimTotal = useMemo(
     () =>
-      compactMedicines(claimMedicines).reduce((s, m) => s + (Number(m.unitPrice || 0) * getMedicineServedQty(m)), 0) +
+      compactMedicines(claimMedicines).reduce((s, m) => s + getMedicineServedAmount(m), 0) +
       claimServices.reduce((s, service) => s + Number(service.totalAmount || 0), 0),
     [claimMedicines, claimServices]
   )
+
+  const requestedClaimTotal = useMemo(
+    () =>
+      compactMedicines(claimMedicines).reduce((s, m) => s + getMedicinePrescribedAmount(m), 0) +
+      claimServices.reduce((s, service) => s + Number(service.totalAmount || 0), 0),
+    [claimMedicines, claimServices]
+  )
+
+  const showRequestedClaimTotal = !isMedicineCounterAssistant && Math.abs(requestedClaimTotal - claimTotal) > 0.01
 
   const getDirectNhiaOptions = () => ({
     organizationId,
@@ -4196,7 +4216,18 @@ const Nhis = () => {
                           </div>
                         </div>
                         <div className="medicine-card-right">
-                          <div className="medicine-total">{fmtCurrency(Number(m.unitPrice || 0) * getMedicineServedQty(m))}</div>
+                          <div className="medicine-total-stack">
+                            {!isMedicineCounterAssistant && (
+                              <div className="medicine-total medicine-total--requested">
+                                <span>Requested</span>
+                                <strong>{fmtCurrency(getMedicinePrescribedAmount(m))}</strong>
+                              </div>
+                            )}
+                            <div className={`medicine-total ${!isMedicineCounterAssistant ? 'medicine-total--served' : ''}`}>
+                              {!isMedicineCounterAssistant && <span>Served</span>}
+                              <strong>{fmtCurrency(getMedicineServedAmount(m))}</strong>
+                            </div>
+                          </div>
                           <button
                             className="action-btn action-btn--edit"
                             type="button"
@@ -4297,7 +4328,18 @@ const Nhis = () => {
                 )}
 
                 <div className="medicines-total">
-                  <strong>Total:</strong> {fmtCurrency(claimTotal)}
+                  {showRequestedClaimTotal ? (
+                    <>
+                      <div>
+                        <strong>Requested Total:</strong> {fmtCurrency(requestedClaimTotal)}
+                      </div>
+                      <span>Served claim value: {fmtCurrency(claimTotal)}</span>
+                    </>
+                  ) : (
+                    <div>
+                      <strong>Total:</strong> {fmtCurrency(claimTotal)}
+                    </div>
+                  )}
                 </div>
 
                 <div className={`nhia-readiness ${effectiveReadinessBlocked ? 'nhia-readiness--fail' : 'nhia-readiness--pass'}`}>
@@ -4396,8 +4438,18 @@ const Nhis = () => {
 
             <div className="modal-footer">
               <div className="claim-footer-total">
-                <span>Claim Total</span>
-                <strong>{fmtCurrency(claimTotal)}</strong>
+                {showRequestedClaimTotal ? (
+                  <>
+                    <span>Requested Total</span>
+                    <strong>{fmtCurrency(requestedClaimTotal)}</strong>
+                    <small>Served claim value: {fmtCurrency(claimTotal)}</small>
+                  </>
+                ) : (
+                  <>
+                    <span>Claim Total</span>
+                    <strong>{fmtCurrency(claimTotal)}</strong>
+                  </>
+                )}
               </div>
               <button className="btn btn-secondary" onClick={closeClaimModal}>
                 Cancel
