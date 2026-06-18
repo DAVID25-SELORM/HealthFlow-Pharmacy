@@ -49,6 +49,7 @@ import {
   shouldUseBranchServer,
 } from '../services/branchServerApi'
 import { isMcaEditWindowOpen, canReopenMcaEditWindow } from '../utils/mcaEditWindow'
+import { shouldFinalizeNhisServingReview } from '../utils/nhisServingWorkflow'
 import { getAllPatients, searchPatients } from '../services/patientService'
 import { getAllDrugs } from '../services/drugService'
 import { parseNhisDrugFile, generateNhisDrugTemplate } from '../services/nhisDrugImportService'
@@ -2446,7 +2447,7 @@ const Nhis = () => {
       } else if (isMedicineCounterAssistant) {
         payload.status = 'returned_for_review'
         payload.servingStatus = getClaimServingStatus(claimMedicines)
-      } else if (['pending_serving', 'serving_in_progress', 'returned_for_review', 'partially_served', 'fully_served'].includes(String(editingClaim.status || '').toLowerCase())) {
+      } else if (shouldFinalizeNhisServingReview(editingClaim.status)) {
         payload.status = 'served'
         payload.servingStatus = getClaimServingStatus(claimMedicines)
         payload.servingReviewedBy = user?.id || null
