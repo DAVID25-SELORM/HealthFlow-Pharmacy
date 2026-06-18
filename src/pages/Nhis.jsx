@@ -4280,17 +4280,27 @@ const Nhis = () => {
                   <div className="no-medicines">No medicines added.</div>
                 ) : (
                   <div className="medicines-list">
-                    {compactMedicines(claimMedicines).map((m, idx) => (
-                      <div key={idx} className="medicine-card">
+                    {compactMedicines(claimMedicines).map((m, idx) => {
+                      const prescribedQty = getMedicinePrescribedQty(m)
+                      const servedQty = getMedicineServedQty(m)
+                      const servingStatus = normalizeMedicineServingStatus(m.servingStatus, prescribedQty, servedQty)
+                      const servingStatusLabel = getMedicineServingStatusLabel(servingStatus)
+
+                      return (
+                        <div key={idx} className="medicine-card">
                         <div className="medicine-card-main">
-                          <div className="medicine-code">{m.drugCode}</div>
+                          <div className="medicine-card-title-row">
+                            <div className="medicine-code">{m.drugCode}</div>
+                            <span className={`medicine-status-pill medicine-status-pill--${servingStatus}`}>
+                              {servingStatusLabel}
+                            </span>
+                          </div>
                           <div className="medicine-desc">{m.description}</div>
                           <div className="medicine-meta">
                             {m.dispensedQty} × {m.unit} @ {fmtCurrency(m.unitPrice)}
                             {m.category && ` | NHIS Level: ${m.category}`}
-                            {` | Prescribed: ${getMedicinePrescribedQty(m)} ${m.unit}`}
-                            {` | Served: ${getMedicineServedQty(m)} ${m.unit}`}
-                            {` | ${getMedicineServingStatusLabel(normalizeMedicineServingStatus(m.servingStatus, getMedicinePrescribedQty(m), getMedicineServedQty(m)))}`}
+                            {` | Prescribed: ${prescribedQty} ${m.unit}`}
+                            {` | Served: ${servedQty} ${m.unit}`}
                             {/* ✅ NHIS PHARMACY LEVEL PATCH START */}
                             {` | Access: ${m.medicineAccessLevel || 'Level not configured'}`}
                             {m.requiredPharmacyLevel && ` | Facility: ${m.requiredPharmacyLevel}`}
@@ -4299,6 +4309,16 @@ const Nhis = () => {
                             {m.frequency && ` | ${m.frequency}`}
                             {m.duration && ` for ${m.duration}`}
                           </div>
+                          {isMedicineCounterAssistant && servingStatus === 'pending' && (
+                            <div className="medicine-serve-hint">
+                              Use Serve to mark full, partial, not available, or not served.
+                            </div>
+                          )}
+                          {isMedicineCounterAssistant && m.reasonIfNotFullyServed && servingStatus !== 'fully_served' && (
+                            <div className="medicine-serve-hint medicine-serve-hint--reason">
+                              Reason: {m.reasonIfNotFullyServed}
+                            </div>
+                          )}
                         </div>
                         <div className="medicine-card-right">
                           <div className="medicine-total-stack">
@@ -4314,12 +4334,13 @@ const Nhis = () => {
                             </div>
                           </div>
                           <button
-                            className="action-btn action-btn--edit"
+                            className={`action-btn action-btn--edit ${isMedicineCounterAssistant ? 'medicine-serve-btn' : ''}`}
                             type="button"
-                            title={isMedicineCounterAssistant ? 'Serve medicine' : 'Edit medicine'}
+                            title={isMedicineCounterAssistant ? 'Serve or mark availability' : 'Edit medicine'}
                             onClick={() => openEditMedicine(idx)}
                           >
                             <Pencil size={12} />
+                            {isMedicineCounterAssistant && <span>Serve</span>}
                           </button>
                           {canWrite && (
                             <button className="action-btn action-btn--cancel" onClick={() => removeMedicine(idx)}>
@@ -4327,13 +4348,14 @@ const Nhis = () => {
                             </button>
                           )}
                         </div>
-                      </div>
-                    ))}
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
 
                 <div className="nhis-internal-note">
-                  <label>Medicines not served</label>
+                  <label>Optional internal note</label>
                   <textarea
                     className="form-input"
                     rows={3}
@@ -4342,7 +4364,7 @@ const Nhis = () => {
                       ...p,
                       unservedMedicinesNote: e.target.value,
                     }))}
-                    placeholder="Internal audit note only"
+                    placeholder="Optional note for medicines not served. Use each medicine's Serve button for the official status and reason."
                   />
                 </div>
 
@@ -4548,7 +4570,7 @@ const Nhis = () => {
                   ? (editingClaim && canWrite && directNhiaApiAvailable ? 'Submitting...' : 'Saving...')
                   : editingClaim
                     ? (isMedicineCounterAssistant
-                        ? 'Save Medicines'
+                        ? 'Complete Serving'
                         : directNhiaApiAvailable ? 'Save Corrections & Submit' : 'Save Corrections')
                     : 'Send to MCA'}
               </button>
@@ -4572,7 +4594,11 @@ const Nhis = () => {
         >
           <div className="modal-panel modal-panel--medicine">
             <div className="modal-header">
-              <h2>{editingMedicineIndex === null ? 'New Medicine' : 'Edit Medicine'}</h2>
+              <h2>
+                {isMedicineCounterAssistant
+                  ? 'Serve Medicine'
+                  : editingMedicineIndex === null ? 'New Medicine' : 'Edit Medicine'}
+              </h2>
               <button
                 className="modal-close"
                 onClick={() => {
@@ -4679,9 +4705,12 @@ const Nhis = () => {
 
               {isMedicineCounterAssistant && (
                 <>
+                  <div className="nhis-serving-guide">
+                    Choose how this prescribed medicine was handled. Use Not Available or Not Served with a reason when nothing was supplied.
+                  </div>
                   <div className="form-row">
                     <div className="form-group">
-                      <label>Serving status</label>
+                      <label>Serving result</label>
                       <select
                         className="form-input"
                         value={medForm.servingStatus}
@@ -4693,7 +4722,7 @@ const Nhis = () => {
                       </select>
                     </div>
                     <div className="form-group">
-                      <label>Reason if not fully served</label>
+                      <label>Reason for partial / not served</label>
                       <select
                         className="form-input"
                         value={medForm.reasonIfNotFullyServed}
