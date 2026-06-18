@@ -264,6 +264,15 @@
   font-size: 0.82rem;
 }
 
+.staff-autofill-decoy {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .user-login-meta {
   color: var(--gray-500);
   font-size: 0.78rem;

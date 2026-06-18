@@ -380,7 +380,7 @@ const withProductionClaimItBridgeDefaults = (form = {}) => {
   }
 }
 
-const blankStaffForm = {
+const createBlankStaffForm = () => ({
   fullName: '',
   email: '',
   phone: '',
@@ -401,7 +401,9 @@ const blankStaffForm = {
   canDeleteNhisClaims: false,
   temporaryPassword: '',
   branchId: '',
-}
+})
+
+const blankStaffForm = createBlankStaffForm()
 
 const blankPaymentSettingsForm = {
   enabled: false,
@@ -527,7 +529,7 @@ const Settings = () => {
 
   const [settingsId, setSettingsId] = useState('')
   const [formData, setFormData] = useState(toForm(null))
-  const [staffForm, setStaffForm] = useState(blankStaffForm)
+  const [staffForm, setStaffForm] = useState(() => createBlankStaffForm())
   const [users, setUsers] = useState([])
   const [orgStats, setOrgStats] = useState(null)
   const [branchTokenForm, setBranchTokenForm] = useState(() => getSavedBranchToken())
@@ -1183,7 +1185,7 @@ const Settings = () => {
         'success',
         5000
       )
-      setStaffForm(blankStaffForm)
+      setStaffForm(createBlankStaffForm())
       await loadSettings()
     } catch (createError) {
       setError(createError.message || 'Unable to create staff account.')
@@ -2869,9 +2871,27 @@ const Settings = () => {
               </p>
             )}
             <UpgradeGate locked={atUserLimit} feature={`More than ${tierLimits.maxUsers} users`} requiredTier="pro">
-            <form className="settings-form settings-staff-form" onSubmit={handleCreateStaff}>
+            <form className="settings-form settings-staff-form" onSubmit={handleCreateStaff} autoComplete="off">
+              <div className="staff-autofill-decoy" aria-hidden="true">
+                <input
+                  type="text"
+                  name="username"
+                  tabIndex={-1}
+                  autoComplete="username"
+                  readOnly
+                />
+                <input
+                  type="password"
+                  name="password"
+                  tabIndex={-1}
+                  autoComplete="current-password"
+                  readOnly
+                />
+              </div>
               <input
                 placeholder="Full name"
+                name="staff-onboarding-full-name"
+                autoComplete="off"
                 value={staffForm.fullName}
                 onChange={(event) =>
                   setStaffForm({ ...staffForm, fullName: event.target.value })
@@ -2881,6 +2901,8 @@ const Settings = () => {
               <input
                 type="email"
                 placeholder="Email address"
+                name="staff-onboarding-email"
+                autoComplete="off"
                 value={staffForm.email}
                 onChange={(event) =>
                   setStaffForm({ ...staffForm, email: event.target.value })
@@ -2890,6 +2912,8 @@ const Settings = () => {
               <div className="settings-form-row">
                 <input
                   placeholder="Phone (optional)"
+                  name="staff-onboarding-phone"
+                  autoComplete="off"
                   value={staffForm.phone}
                   onChange={(event) =>
                     setStaffForm({ ...staffForm, phone: event.target.value })
@@ -2970,6 +2994,8 @@ const Settings = () => {
                 type="password"
                 minLength={8}
                 placeholder="Temporary password"
+                name="staff-onboarding-temporary-password"
+                autoComplete="new-password"
                 value={staffForm.temporaryPassword}
                 onChange={(event) =>
                   setStaffForm({
