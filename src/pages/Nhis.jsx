@@ -942,8 +942,12 @@ const Nhis = () => {
 
   // ── status update ─────────────────────────────────────────────
   const [updatingStatus, setUpdatingStatus] = useState(null)
+  const [claimActionLoading, setClaimActionLoading] = useState(null)
   const [rejectTarget, setRejectTarget]     = useState(null)
   const [rejectReason, setRejectReason]     = useState('')
+  const isClaimActionBusy = (claimId, action = '') =>
+    claimActionLoading?.claimId === claimId && (!action || claimActionLoading.action === action)
+  const isClaimBusy = (claimId) => updatingStatus === claimId || claimActionLoading?.claimId === claimId
   const resolvedNhiaSettings = useMemo(
     () => applyNhiaFacilityDefaults(directNhiaSettings, organization),
     [directNhiaSettings, organization]
@@ -1678,11 +1682,14 @@ const Nhis = () => {
     }
 
     let claim = selectedClaim
+    setClaimActionLoading({ claimId: selectedClaim.id, action: 'edit' })
     try {
       claim = await hydrateClaimForAction(selectedClaim)
     } catch (err) {
       notify(err.message || 'Unable to load the full NHIS claim details.', 'error')
       return
+    } finally {
+      setClaimActionLoading(null)
     }
 
     // MCA medication edits are limited to the 24h window (or a 12h supervisor
@@ -1804,10 +1811,13 @@ const Nhis = () => {
   }
 
   const openViewClaim = async (claim) => {
+    setClaimActionLoading({ claimId: claim.id, action: 'view' })
     try {
       setViewClaim(await hydrateClaimForAction(claim))
     } catch (err) {
       notify(err.message || 'Unable to load the full NHIS claim details.', 'error')
+    } finally {
+      setClaimActionLoading(null)
     }
   }
 
@@ -2674,6 +2684,7 @@ const Nhis = () => {
   // ── status updates ────────────────────────────────────────────
   const handleStatusUpdate = async (claim, newStatus) => {
     try {
+      setUpdatingStatus(claim.id)
       const fullClaim = await hydrateClaimForAction(claim)
       if (newStatus === 'submitted') {
         const blockers = await validateNhisClaimFinalReadiness(
@@ -2702,7 +2713,6 @@ const Nhis = () => {
         }
       }
 
-      setUpdatingStatus(fullClaim.id)
       const hasReadablePrescriptionFile = Boolean(
         fullClaim.prescription_file_path ||
         fullClaim.prescription_file_url ||
@@ -3381,9 +3391,10 @@ const Nhis = () => {
                         <button
                           className="action-btn action-btn--view"
                           title="View"
+                          disabled={isClaimBusy(c.id)}
                           onClick={() => { void openViewClaim(c) }}
                         >
-                          <Eye size={14} />
+                          {isClaimActionBusy(c.id, 'view') ? <Clock size={14} /> : <Eye size={14} />}
                         </button>
                         {canServeNhisMedicines && (
                           isMedicineCounterAssistant
@@ -3393,17 +3404,17 @@ const Nhis = () => {
                           <button
                             className="action-btn action-btn--edit"
                             title={isMedicineCounterAssistant ? 'Serve medicines' : canEditNhisClaimAnytime ? 'Edit claim' : 'Edit before submission/export'}
-                            disabled={updatingStatus === c.id}
+                            disabled={isClaimBusy(c.id)}
                             onClick={() => { void openEditClaim(c) }}
                           >
-                            <Pencil size={14} />
+                            {isClaimActionBusy(c.id, 'edit') ? <Clock size={14} /> : <Pencil size={14} />}
                           </button>
                         )}
                         {canReopenMca && c.status === 'served' && !isMcaEditWindowOpen(c) && (
                           <button
                             className="action-btn action-btn--edit"
                             title="Re-open MCA edit window (12 hours)"
-                            disabled={updatingStatus === c.id}
+                            disabled={isClaimBusy(c.id)}
                             onClick={() => handleReopenMcaEdit(c)}
                           >
                             <Clock size={14} />
@@ -3413,7 +3424,7 @@ const Nhis = () => {
                           <button
                             className="action-btn action-btn--submit"
                             title={directNhiaApiAvailable ? 'Submit directly to NHIA' : 'Mark as Submitted'}
-                            disabled={updatingStatus === c.id}
+                            disabled={isClaimBusy(c.id)}
                             onClick={() => handleStatusUpdate(c, 'submitted')}
                           >
                             <Send size={14} />
@@ -3424,7 +3435,7 @@ const Nhis = () => {
                             <button
                               className="action-btn action-btn--complete"
                               title="Mark as Paid"
-                              disabled={updatingStatus === c.id}
+                              disabled={isClaimBusy(c.id)}
                               onClick={() => handleStatusUpdate(c, 'paid')}
                             >
                               <Banknote size={14} />
@@ -3432,7 +3443,7 @@ const Nhis = () => {
                             <button
                               className="action-btn action-btn--cancel"
                               title="Reject"
-                              disabled={updatingStatus === c.id}
+                              disabled={isClaimBusy(c.id)}
                               onClick={() => { setRejectTarget(c); setRejectReason('') }}
                             >
                               <XCircle size={14} />
@@ -3443,7 +3454,7 @@ const Nhis = () => {
                           <button
                             className="action-btn action-btn--cancel"
                             title="Delete claim"
-                            disabled={updatingStatus === c.id}
+                            disabled={isClaimBusy(c.id)}
                             onClick={() => handleDeleteClaim(c)}
                           >
                             <Trash2 size={14} />
