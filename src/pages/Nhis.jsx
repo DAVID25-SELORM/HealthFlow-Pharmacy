@@ -18,6 +18,7 @@ import {
   deleteNhisDrug,
   upsertNhisDrugs,
   getAllNhisClaims,
+  getNhisClaimForSubmission,
   getAllNhiaTariffItems,
   updateNhiaTariffItem,
   getNhisClaimStats,
@@ -976,7 +977,7 @@ const Nhis = () => {
       setLoading(true)
       setError('')
       const [claimsData, drugsData, patientsData, statsData, rulesData, tariffData, inventoryData] = await Promise.all([
-        getAllNhisClaims({ limit: NHIS_CLAIMS_SCREEN_LIMIT }),
+        getAllNhisClaims({ limit: NHIS_CLAIMS_SCREEN_LIMIT, includeDetails: false }),
         getAllNhisDrugs(),
         getAllPatients(),
         getNhisClaimStats(),
@@ -1032,7 +1033,7 @@ const Nhis = () => {
     try {
       setError('')
       const [claimsData, statsData] = await Promise.all([
-        getAllNhisClaims({ limit: NHIS_CLAIMS_SCREEN_LIMIT }),
+        getAllNhisClaims({ limit: NHIS_CLAIMS_SCREEN_LIMIT, includeDetails: false }),
         getNhisClaimStats(),
       ])
       setClaims(claimsData)
@@ -1040,6 +1041,14 @@ const Nhis = () => {
     } catch (err) {
       setError(err.message || 'Unable to refresh NHIS claims.')
     }
+  }, [])
+
+  const hydrateClaimForAction = useCallback(async (claim) => {
+    if (!claim?._summaryOnly) return claim
+    const fullClaim = await getNhisClaimForSubmission(claim.id)
+    const hydrated = { ...claim, ...fullClaim, _summaryOnly: false }
+    setClaims((current) => current.map((row) => (row.id === hydrated.id ? hydrated : row)))
+    return hydrated
   }, [])
 
   useEffect(() => { void loadAll() }, [loadAll])
@@ -1661,10 +1670,18 @@ const Nhis = () => {
     resetClaimModal()
   }
 
-  const openEditClaim = (claim) => {
-    const canOpenForMcaServing = isMedicineCounterAssistant && canMcaOpenNhisClaimForServing(claim.status)
-    if (!canOpenForMcaServing && !canEditNhisClaimAnytime && claim.status !== 'served') {
+  const openEditClaim = async (selectedClaim) => {
+    const canOpenForMcaServing = isMedicineCounterAssistant && canMcaOpenNhisClaimForServing(selectedClaim.status)
+    if (!canOpenForMcaServing && !canEditNhisClaimAnytime && selectedClaim.status !== 'served') {
       notify('Only served NHIS claims can be edited before submission/export.', 'warning')
+      return
+    }
+
+    let claim = selectedClaim
+    try {
+      claim = await hydrateClaimForAction(selectedClaim)
+    } catch (err) {
+      notify(err.message || 'Unable to load the full NHIS claim details.', 'error')
       return
     }
 
@@ -1784,6 +1801,14 @@ const Nhis = () => {
       }))
     )
     setShowNewClaimModal(true)
+  }
+
+  const openViewClaim = async (claim) => {
+    try {
+      setViewClaim(await hydrateClaimForAction(claim))
+    } catch (err) {
+      notify(err.message || 'Unable to load the full NHIS claim details.', 'error')
+    }
   }
 
   const handleDrugCodeSearch = async () => {
@@ -2649,17 +2674,18 @@ const Nhis = () => {
   // ── status updates ────────────────────────────────────────────
   const handleStatusUpdate = async (claim, newStatus) => {
     try {
+      const fullClaim = await hydrateClaimForAction(claim)
       if (newStatus === 'submitted') {
         const blockers = await validateNhisClaimFinalReadiness(
-          { ...claim, organizationType, providerClassLevel },
-          claim.nhis_claim_medicines || [],
+          { ...fullClaim, organizationType, providerClassLevel },
+          fullClaim.nhis_claim_medicines || [],
           {
             providerClassLevel,
             // ✅ NHIS PHARMACY LEVEL PATCH START
             pharmacyLevel: facilityPharmacyLevel,
             // ✅ NHIS PHARMACY LEVEL PATCH END
             nhisDrugCatalog: nhisDrugs,
-            nhiaTariffServices: claim.nhis_claim_services || [],
+            nhiaTariffServices: fullClaim.nhis_claim_services || [],
             currentNhiaTariffItems: nhiaTariffItems,
             tariffFacilityGroup: activeTariffFacilityGroup,
             tariffCateringOption: activeTariffCateringOption,
@@ -2676,30 +2702,30 @@ const Nhis = () => {
         }
       }
 
-      setUpdatingStatus(claim.id)
+      setUpdatingStatus(fullClaim.id)
       const hasReadablePrescriptionFile = Boolean(
-        claim.prescription_file_path ||
-        claim.prescription_file_url ||
-        claim.claimit_attachment_base64
+        fullClaim.prescription_file_path ||
+        fullClaim.prescription_file_url ||
+        fullClaim.claimit_attachment_base64
       )
       if (newStatus === 'submitted' && directNhiaApiAvailable && hasReadablePrescriptionFile) {
-        const submitResult = await submitNhisClaimDirect(claim.id, {
+        const submitResult = await submitNhisClaimDirect(fullClaim.id, {
           ...getDirectNhiaOptions(),
-          claim,
+          claim: fullClaim,
         })
         if (submitResult?.queued) {
           await refreshClaimsOverview()
-          notify(`Claim ${claim.claim_number} queued for CLAIM-it bridge submission.`, 'info')
+          notify(`Claim ${fullClaim.claim_number} queued for CLAIM-it bridge submission.`, 'info')
           return
         }
       } else {
-        await updateNhisClaimStatus(claim.id, newStatus, '', user?.id || null)
+        await updateNhisClaimStatus(fullClaim.id, newStatus, '', user?.id || null)
       }
         await refreshClaimsOverview()
         notify(
         newStatus === 'submitted' && directNhiaApiAvailable && hasReadablePrescriptionFile
-          ? `Claim ${claim.claim_number} submitted through CLAIM-it.`
-          : `Claim ${claim.claim_number} marked as ${newStatus}.`,
+          ? `Claim ${fullClaim.claim_number} submitted through CLAIM-it.`
+          : `Claim ${fullClaim.claim_number} marked as ${newStatus}.`,
         'success'
       )
     } catch (err) {
@@ -3355,7 +3381,7 @@ const Nhis = () => {
                         <button
                           className="action-btn action-btn--view"
                           title="View"
-                          onClick={() => setViewClaim(c)}
+                          onClick={() => { void openViewClaim(c) }}
                         >
                           <Eye size={14} />
                         </button>
@@ -3368,7 +3394,7 @@ const Nhis = () => {
                             className="action-btn action-btn--edit"
                             title={isMedicineCounterAssistant ? 'Serve medicines' : canEditNhisClaimAnytime ? 'Edit claim' : 'Edit before submission/export'}
                             disabled={updatingStatus === c.id}
-                            onClick={() => openEditClaim(c)}
+                            onClick={() => { void openEditClaim(c) }}
                           >
                             <Pencil size={14} />
                           </button>

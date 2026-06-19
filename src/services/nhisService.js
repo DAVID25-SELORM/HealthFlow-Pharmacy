@@ -473,6 +473,15 @@ const NHIS_CLAIM_MEDICINES_SELECT_BASIC = `
       )
     `
 
+const NHIS_CLAIM_LIST_SELECT = `
+      id, claim_number, patient_id, member_no, card_type, hin,
+      surname, other_names, folder_no, gender, date_of_birth,
+      service_date_from, service_date_to, branch_id, total_amount,
+      status, created_at, updated_at,
+      prescription_file_url, prescription_file_path, prescription_file_name,
+      nhis_claim_medicines ( id )
+    `
+
 const NHIS_CLAIM_SERVICE_SELECT = `
       id, nhia_tariff_item_id, tariff_version, facility_group, catering_option,
       mdc, gdrg_code, description, age_band, unit_price, quantity,
@@ -4131,7 +4140,9 @@ const hydrateNhisClaimsForUi = async (claims = []) =>
   await hydrateClaimsWithServiceLines(await hydrateClaimsWithMedicineLines(claims))
 
 const fetchNhisClaimsFromSupabase = async (filters = {}, { ascending = false } = {}) => {
-  const buildQuery = (select = NHIS_CLAIM_MEDICINES_SELECT) => {
+  const includeDetails = filters.includeDetails !== false
+  const defaultSelect = includeDetails ? NHIS_CLAIM_MEDICINES_SELECT : NHIS_CLAIM_LIST_SELECT
+  const buildQuery = (select = defaultSelect) => {
     const requestedLimit = Number(filters.limit || DEFAULT_NHIS_CLAIM_LIST_LIMIT)
     const limit = Number.isFinite(requestedLimit) && requestedLimit > 0
       ? Math.min(Math.floor(requestedLimit), 100000)
@@ -4163,10 +4174,17 @@ const fetchNhisClaimsFromSupabase = async (filters = {}, { ascending = false } =
   }
 
   let { data, error } = await buildQuery()
-  if (error && isMissingOptionalClaimMedicineColumn(error)) {
+  if (includeDetails && error && isMissingOptionalClaimMedicineColumn(error)) {
     ;({ data, error } = await buildQuery(NHIS_CLAIM_MEDICINES_SELECT_BASIC))
   }
   if (error) throw error
+  if (!includeDetails) {
+    return (data || []).map((claim) => ({
+      ...claim,
+      _summaryOnly: true,
+      nhis_claim_services: [],
+    }))
+  }
   return await hydrateNhisClaimsForUi(data || [])
 }
 
