@@ -546,6 +546,29 @@ const getMedicineNameKey = (medicine = {}) =>
 const getClaimServiceDate = (claim = {}) =>
   claim.serviceDate || claim.service_date_from || claim.dispensaryDate || claim.dispensary_date || ''
 
+const getClaimCreatedTimestamp = (claim = {}) =>
+  claim.created_at || claim.createdAt || claim.updated_at || claim.updatedAt || ''
+
+const formatNhisServiceDateTime = (claim = {}) => {
+  const serviceDate = getClaimServiceDate(claim)
+  if (!serviceDate) return '—'
+
+  const rawServiceDate = String(serviceDate).trim()
+  if (rawServiceDate.includes('T')) {
+    return formatAppDateTime(rawServiceDate)
+  }
+
+  const createdTimestamp = String(getClaimCreatedTimestamp(claim)).trim()
+  if (createdTimestamp.includes('T')) {
+    const timePart = createdTimestamp.split('T')[1]?.replace(/Z$/, '') || ''
+    if (timePart) {
+      return formatAppDateTime(`${rawServiceDate}T${timePart}`)
+    }
+  }
+
+  return formatAppDate(rawServiceDate)
+}
+
 const daysBetweenIsoDates = (fromDate, toDate) => {
   const from = new Date(fromDate)
   const to = new Date(toDate)
@@ -3290,7 +3313,7 @@ const Nhis = () => {
                     <th>Claim #</th>
                     <th>Patient</th>
                     <th>Member No / HIN</th>
-                    <th>Service Date</th>
+                    <th>Service Date / Time</th>
                     <th>Medicines</th>
                     <th>Rx File</th>
                     <th>Total</th>
@@ -3310,7 +3333,7 @@ const Nhis = () => {
                         {c.member_no && <div>{c.member_no}</div>}
                         {c.hin       && <div className="patient-meta">HIN: {c.hin}</div>}
                       </td>
-                      <td>{c.service_date_from ? formatAppDate(c.service_date_from) : '—'}</td>
+                      <td>{formatNhisServiceDateTime(c)}</td>
                       <td>{c.nhis_claim_medicines?.length || 0}</td>
                       <td>
                         {(c.prescription_file_path || c.prescription_file_url) ? (
@@ -4950,7 +4973,7 @@ const Nhis = () => {
               {isHospital && <div><strong>Child Weight:</strong> {viewClaim.child_weight_kg ? `${viewClaim.child_weight_kg} kg` : '—'}</div>}
               <div><strong>CCC / CC Code:</strong> {viewClaim.ccc_no || '—'}</div>
               {isHospital && <div><strong>Diagnoses:</strong> {viewClaim.diagnosis || '—'}</div>}
-              <div><strong>Date of Service:</strong> {viewClaim.service_date_from ? formatAppDate(viewClaim.service_date_from) : '—'}</div>
+              <div><strong>Date/time of Service:</strong> {formatNhisServiceDateTime(viewClaim)}</div>
               <div><strong>Prescribing Facility:</strong> {viewClaim.referring_facility || '—'}</div>
               <div><strong>Referral Code:</strong> {viewClaim.referral_code || '—'}</div>
               <div><strong>Prescriber:</strong> {viewClaim.physician_name || '—'}</div>
