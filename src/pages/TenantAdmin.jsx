@@ -6,7 +6,7 @@ import GhanaRegionSelect from '../components/GhanaRegionSelect'
 import { useSessionStorageState } from '../hooks/useSessionStorageState'
 import { formatAppDate } from '../utils/date'
 import { normalizeGhanaRegion } from '../utils/ghanaRegions'
-import { ROLE_OPTIONS } from '../utils/roles'
+import { ROLE_OPTIONS, normalizeAssignedRoles } from '../utils/roles'
 import {
   getTenantAdminDashboard,
   createPharmacyTenant,
@@ -269,11 +269,13 @@ const TenantAdmin = () => {
   }
 
   const openEditUser = (user) => {
+    const primaryRole = user.role || 'pharmacist'
     setEditUser(user)
     setEditUserForm({
       fullName: user.full_name || '',
       email: user.email || '',
-      role: user.role || 'pharmacist',
+      role: primaryRole,
+      assignedRoles: normalizeAssignedRoles(user.assigned_roles, primaryRole),
       isActive: user.is_active !== false,
     })
   }
@@ -881,7 +883,18 @@ const TenantAdmin = () => {
                                       <tr key={u.id}>
                                         <td>{u.full_name}</td>
                                         <td>{u.email}</td>
-                                        <td><span className={`role-badge role-${u.role}`}>{getRoleLabel(u.role)}</span></td>
+                                        <td>
+                                          <div className="tenant-user-role-stack">
+                                            <span className={`role-badge role-${u.role}`}>{getRoleLabel(u.role)}</span>
+                                            {normalizeAssignedRoles(u.assigned_roles, u.role)
+                                              .filter((assignedRole) => assignedRole !== u.role)
+                                              .map((assignedRole) => (
+                                                <span className="role-badge role-badge--secondary" key={assignedRole}>
+                                                  {getRoleLabel(assignedRole)}
+                                                </span>
+                                              ))}
+                                          </div>
+                                        </td>
                                         <td>
                                           <span className={`active-badge ${u.is_active ? 'active' : 'inactive'}`}>
                                             {u.is_active ? 'Active' : 'Inactive'}
@@ -954,7 +967,14 @@ const TenantAdmin = () => {
                     <label>Role</label>
                     <select
                       value={editUserForm.role}
-                      onChange={(e) => setEditUserForm({ ...editUserForm, role: e.target.value })}
+                      onChange={(e) => {
+                        const nextRole = e.target.value
+                        setEditUserForm({
+                          ...editUserForm,
+                          role: nextRole,
+                          assignedRoles: normalizeAssignedRoles(editUserForm.assignedRoles, nextRole),
+                        })
+                      }}
                     >
                       {ROLE_OPTIONS.map((option) => (
                         <option key={option.value} value={option.value}>
@@ -973,6 +993,35 @@ const TenantAdmin = () => {
                       <option value="inactive">Inactive</option>
                     </select>
                   </div>
+                </div>
+                <div className="tenant-form-group full-width tenant-assigned-roles-group">
+                  <label>Assigned roles</label>
+                  <div className="tenant-role-options">
+                    {ROLE_OPTIONS.map((option) => (
+                      <label className="tenant-role-checkbox" key={option.value}>
+                        <input
+                          type="checkbox"
+                          checked={normalizeAssignedRoles(editUserForm.assignedRoles, editUserForm.role).includes(option.value)}
+                          onChange={(e) => {
+                            const currentRoles = normalizeAssignedRoles(editUserForm.assignedRoles, editUserForm.role)
+                            setEditUserForm({
+                              ...editUserForm,
+                              assignedRoles: e.target.checked
+                                ? normalizeAssignedRoles([...currentRoles, option.value], editUserForm.role)
+                                : currentRoles.filter((assignedRole) =>
+                                    assignedRole !== option.value || assignedRole === editUserForm.role
+                                  ),
+                            })
+                          }}
+                          disabled={option.value === editUserForm.role}
+                        />
+                        <span>{option.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <p className="tenant-helper-text">
+                    The primary role is selected above. Tick extra roles to let staff switch active role after login.
+                  </p>
                 </div>
               </div>
 

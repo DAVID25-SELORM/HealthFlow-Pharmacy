@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import TenantAdmin from './TenantAdmin'
 
@@ -73,6 +73,65 @@ describe('TenantAdmin', () => {
     await waitFor(() => {
       expect(mocks.getOrganizationUsers).toHaveBeenCalledWith('org-1')
       expect(screen.getByText('Alice Mensah')).toBeInTheDocument()
+    })
+  })
+
+  it('allows tenant admin to assign extra staff roles', async () => {
+    window.sessionStorage.setItem('healthflow.tenantAdmin.expandedOrgId', JSON.stringify('org-1'))
+
+    mocks.getTenantAdminDashboard.mockResolvedValue({
+      organizations: [
+        {
+          id: 'org-1',
+          name: 'Alpha Pharmacy',
+          subdomain: 'alpha',
+          status: 'active',
+          subscription_tier: 'pro',
+          created_at: '2026-04-01T09:00:00.000Z',
+          email: 'hello@alpha.test',
+        },
+      ],
+      userCounts: { 'org-1': 1 },
+      branchCounts: { 'org-1': 1 },
+    })
+    mocks.getOrganizationUsers.mockResolvedValue([
+      {
+        id: 'user-1',
+        full_name: 'Alice Mensah',
+        email: 'alice@alpha.test',
+        role: 'assistant',
+        assigned_roles: ['assistant'],
+        is_active: true,
+        created_at: '2026-04-03T10:00:00.000Z',
+      },
+    ])
+    mocks.updateOrganizationUser.mockResolvedValue({
+      id: 'user-1',
+      full_name: 'Alice Mensah',
+      email: 'alice@alpha.test',
+      role: 'assistant',
+      assigned_roles: ['assistant', 'claims_officer'],
+      is_active: true,
+    })
+
+    render(<TenantAdmin />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Alice Mensah')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByTitle('Edit user'))
+    fireEvent.click(screen.getByLabelText('Claims Officer'))
+    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
+
+    await waitFor(() => {
+      expect(mocks.updateOrganizationUser).toHaveBeenCalledWith(
+        'user-1',
+        expect.objectContaining({
+          role: 'assistant',
+          assignedRoles: ['assistant', 'claims_officer'],
+        })
+      )
     })
   })
 })

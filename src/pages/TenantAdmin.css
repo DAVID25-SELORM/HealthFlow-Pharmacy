@@ -420,6 +420,19 @@
 .role-badge.role-claims_officer { background: #dcfce7; color: #15803d; }
 .role-badge.role-assistant { background: var(--gray-100); color: var(--gray-600); }
 
+.tenant-user-role-stack {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+  max-width: 220px;
+}
+
+.role-badge--secondary {
+  background: rgba(22, 160, 133, 0.1);
+  color: var(--primary-dark);
+}
+
 .tenant-admin-page .active-badge {
   display: inline-block;
   padding: 0.15rem 0.5rem;
@@ -591,6 +604,46 @@
   cursor: not-allowed;
 }
 
+.tenant-assigned-roles-group {
+  margin-top: 1rem;
+}
+
+.tenant-role-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid rgba(22, 160, 133, 0.18);
+  border-radius: var(--radius);
+  background: rgba(22, 160, 133, 0.04);
+}
+
+.tenant-role-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  color: var(--gray-700);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.tenant-role-checkbox input {
+  flex: 0 0 auto;
+}
+
+.tenant-role-checkbox span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.tenant-helper-text {
+  margin: 0.55rem 0 0;
+  color: var(--gray-500);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
 .edit-modal-footer {
   display: flex;
   justify-content: flex-end;
@@ -650,5 +703,9 @@
 
   .edit-modal-footer {
     flex-direction: column-reverse;
+  }
+
+  .tenant-role-options {
+    grid-template-columns: 1fr;
   }
 }

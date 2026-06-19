@@ -38,6 +38,11 @@ Sarah can have:
 
 If Sarah is in MCA mode, MCA restrictions apply. If Sarah switches to Claims Officer mode, Claims Officer actions become available.
 
+Where to assign multiple staff roles:
+
+- Super Admin: go to Tenant Admin, expand the facility, click Edit User, then tick extra roles under Assigned roles.
+- Facility Admin: go to Settings > Staff/User Management, edit the staff account, then update the staff roles and privileges.
+
 ### Additional Privileges
 
 Additional privileges are extra permissions added on top of a role.

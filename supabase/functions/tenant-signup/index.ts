@@ -17,7 +17,7 @@ const VALID_PHARMACY_LEVELS = ['P1', 'P2', 'LCS', 'HP'] as const
 // ✅ NHIS PHARMACY LEVEL PATCH END
 const ORGANIZATION_SELECT_FIELDS = '*'
 const TENANT_USER_SELECT_FIELDS =
-  'id, email, full_name, role, is_active, organization_id, created_at'
+  'id, email, full_name, role, assigned_roles, is_active, organization_id, created_at'
 
 type TenantSignupAction =
   | 'check_subdomain'

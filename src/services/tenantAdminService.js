@@ -395,6 +395,7 @@ export const updateOrganizationUser = async (userId, fields) => {
     fullName: normalizeText(fields.fullName),
     email: normalizeText(fields.email).toLowerCase(),
     role: normalizeText(fields.role).toLowerCase(),
+    assignedRoles: Array.isArray(fields.assignedRoles) ? fields.assignedRoles : [],
     isActive: Boolean(fields.isActive),
   })
 
