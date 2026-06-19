@@ -2485,7 +2485,7 @@ const Nhis = () => {
 
       let successMessage = editingClaim
         ? (isMedicineCounterAssistant ? 'NHIS medicines saved for Claims Officer review.' : 'NHIS claim reviewed and marked ready.')
-        : 'NHIS prescription saved and sent to MCA for serving.'
+        : 'NHIS prescription saved and sent to dispensary for serving.'
       let savedClaimRecord = null
       const returnAlertOverrideSnapshot = returnAlertOverride
       if (editingClaim) {
@@ -4590,7 +4590,7 @@ const Nhis = () => {
                     ? (isMedicineCounterAssistant
                         ? 'Complete Serving'
                         : directNhiaApiAvailable ? 'Save Corrections & Submit' : 'Save Corrections')
-                    : 'Send to MCA'}
+                    : 'Send to Dispensary'}
               </button>
             </div>
           </div>

@@ -127,14 +127,14 @@ Enter the prescribed/requested medicine details:
 - Frequency
 - Duration
 
-The Claims Officer can see the requested cost before sending to MCA.
+The Claims Officer can see the requested cost before sending to the dispensary.
 
-### 5. Send to MCA
+### 5. Send to Dispensary
 
 After entering the patient and medicine details, click:
 
 ```text
-Send to MCA
+Send to Dispensary
 ```
 
 The claim status becomes:
@@ -143,7 +143,7 @@ The claim status becomes:
 Pending Serving
 ```
 
-At this stage, the claim is not ready for submission. The MCA must serve the medicine first.
+At this stage, the claim is not ready for submission. The dispensary or assigned serving staff must serve the medicine first.
 
 ## MCA Workflow
 
