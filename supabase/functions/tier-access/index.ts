@@ -4379,6 +4379,61 @@ const buildNhisClaimNumber = () => {
   return `PHC-${stamp}-${suffix}`
 }
 
+const priceNhisClaimMedicinesFromCatalog = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+  medicines: Record<string, unknown>[]
+) => {
+  const catalogRows = await loadNhisDrugCatalogRows(adminClient, organizationId)
+  const lookups = buildNhisCatalogLookups(catalogRows)
+  const lookupsById = new Map<string, NhisCatalogLookup>()
+  const lookupsByCode = new Map<string, NhisCatalogLookup>()
+  for (const lookup of lookups) {
+    const id = normalizeText(lookup.row.id)
+    if (id) lookupsById.set(id, lookup)
+    lookupsByCode.set(lookup.code, lookup)
+  }
+
+  if (lookups.length === 0) {
+    throw new Error('No active NHIS medicine catalog is configured for this organization.')
+  }
+
+  return medicines.map((medicine, index) => {
+    const requestedId = normalizeText(medicine.nhisDrugId || medicine.nhis_drug_id)
+    const requestedCode = normalizeText(
+      medicine.nhiaCode || medicine.nhisCode || medicine.drugCode || medicine.code || medicine.drug_code
+    ).toUpperCase()
+    const lookup = (requestedId && lookupsById.get(requestedId)) ||
+      (requestedCode && lookupsByCode.get(requestedCode))
+
+    if (!lookup) {
+      throw new Error(`Medicine ${index + 1} must match an active NHIS catalog item.`)
+    }
+
+    const unitPrice = parseNonNegativeNumber(
+      lookup.unitPrice,
+      `Medicine ${index + 1} catalog price`
+    )
+    const quantity = parseNonNegativeNumber(
+      medicine.quantity ?? medicine.dispensedQty ?? medicine.dispensed_qty,
+      `Medicine ${index + 1} quantity`
+    )
+    const totalPrice = Number((unitPrice * quantity).toFixed(2))
+
+    return {
+      ...medicine,
+      nhisDrugId: normalizeText(lookup.row.id),
+      nhiaCode: lookup.code,
+      code: lookup.code,
+      name: lookup.description,
+      unit: lookup.unit,
+      unitPrice,
+      quantity,
+      totalPrice,
+    }
+  })
+}
+
 const submitNhisPharmacyClaim = async (
   adminClient: ReturnType<typeof createAdminClient>,
   requesterProfile: RequesterProfile,
@@ -4396,10 +4451,11 @@ const submitNhisPharmacyClaim = async (
   if (isHospital && !diagnosis) {
     throw new Error('Diagnosis is required for hospital claims.')
   }
-  const medicines = Array.isArray(claimData.medicines) ? claimData.medicines as Record<string, unknown>[] : []
-  if (!medicines.length) {
+  const requestedMedicines = Array.isArray(claimData.medicines) ? claimData.medicines as Record<string, unknown>[] : []
+  if (!requestedMedicines.length) {
     throw new Error('At least one medicine is required.')
   }
+  const medicines = await priceNhisClaimMedicinesFromCatalog(adminClient, organizationId, requestedMedicines)
   const services = isHospital && Array.isArray(claimData.services) ? claimData.services as Record<string, unknown>[] : []
 
   const serviceDate = normalizeText(claimData.dispensingDate || claimData.serviceDate) || new Date().toISOString().split('T')[0]
@@ -4470,6 +4526,7 @@ const submitNhisPharmacyClaim = async (
   const medicineRows = medicines.map((m) => ({
     claim_id: claimRow.id,
     organization_id: organizationId,
+    nhis_drug_id: normalizeText(m.nhisDrugId) || null,
     drug_code: normalizeText(m.nhiaCode || m.code) || null,
     description: normalizeText(m.name),
     unit: normalizeText(m.unit) || 'tablet',

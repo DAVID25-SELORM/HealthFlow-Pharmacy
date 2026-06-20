@@ -6,6 +6,7 @@ import { assertConfiguredForServer, config, isSupabaseSyncConfigured } from './c
 import { backupDatabase, closeDatabase, getDatabaseStatus } from './db.js'
 import { normalizePharmacyClaimLines } from './claimPricing.js'
 import { createClaimBridgeRouter } from './claimBridge.js'
+import { applyNhisCatalogPricing } from './nhisCatalogPricing.js'
 import {
   getBranchAuthCookie,
   issueBranchUserSession,
@@ -532,6 +533,9 @@ app.get('/api/nhis/claims', (request, response) => {
   response.json({ data: listOfflineRecords('nhis_claims', request.query) })
 })
 
+const priceOfflineNhisClaim = (claim) =>
+  applyNhisCatalogPricing(claim, listOfflineRecords('nhis_drugs', { limit: 100000 }))
+
 app.post('/api/nhis/claims', requireBranchUserSession, (request, response, next) => {
   try {
     const role = String(request.branchUser?.role || '').toLowerCase()
@@ -542,7 +546,7 @@ app.post('/api/nhis/claims', requireBranchUserSession, (request, response, next)
       response.status(403).json({ error: 'Only claims staff can create NHIS claims.' })
       return
     }
-    response.status(201).json({ data: saveOfflineRecord('nhis_claims', request.body || {}) })
+    response.status(201).json({ data: saveOfflineRecord('nhis_claims', priceOfflineNhisClaim(request.body || {})) })
   } catch (error) {
     next(error)
   }
@@ -560,11 +564,11 @@ app.put('/api/nhis/claims/:id', requireBranchUserSession, (request, response, ne
     }
     const existing = getOfflineRecord('nhis_claims', request.params.id)
     response.json({
-      data: saveOfflineRecord('nhis_claims', {
+      data: saveOfflineRecord('nhis_claims', priceOfflineNhisClaim({
         ...(existing || {}),
         ...(request.body || {}),
         id: request.params.id,
-      }),
+      })),
     })
   } catch (error) {
     next(error)
@@ -597,17 +601,16 @@ app.put('/api/nhis/claims/:id/medicines', requireBranchUserSession, (request, re
       return
     }
     response.json({
-      data: saveOfflineRecord('nhis_claims', {
+      data: saveOfflineRecord('nhis_claims', priceOfflineNhisClaim({
         ...existing,
         nhis_claim_medicines: Array.isArray(request.body?.nhis_claim_medicines)
           ? request.body.nhis_claim_medicines
           : [],
-        total_amount: Number(request.body?.total_amount || 0),
         status: request.body?.status || existing.status || 'returned_for_review',
         serving_status: request.body?.serving_status || existing.serving_status || null,
         updated_at: request.body?.updated_at || new Date().toISOString(),
         id: request.params.id,
-      }),
+      })),
     })
   } catch (error) {
     next(error)
