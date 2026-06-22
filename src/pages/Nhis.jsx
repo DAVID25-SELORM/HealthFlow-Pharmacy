@@ -319,12 +319,40 @@ const toLocalIsoDate = (date = new Date()) => {
 
 const todayIsoDate = () => toLocalIsoDate()
 const monthStartIsoDate = (date = new Date()) => toLocalIsoDate(new Date(date.getFullYear(), date.getMonth(), 1))
+const monthEndIsoDate = (date = new Date()) => toLocalIsoDate(new Date(date.getFullYear(), date.getMonth() + 1, 0))
+const previousMonthRange = (date = new Date()) => {
+  const previousMonth = new Date(date.getFullYear(), date.getMonth() - 1, 1)
+  return { from: monthStartIsoDate(previousMonth), to: monthEndIsoDate(previousMonth) }
+}
 const weekStartIsoDate = (date = new Date()) => {
   const start = new Date(date)
   const day = start.getDay()
   const offset = day === 0 ? 6 : day - 1
   start.setDate(start.getDate() - offset)
   return toLocalIsoDate(start)
+}
+
+const OPEN_CLAIM_STATUSES = new Set(['pending_serving', 'serving_in_progress', 'returned_for_review', 'served', 'submitted'])
+
+const getClaimServiceDateKey = (claim = {}) =>
+  String(claim.service_date_from || claim.serviceDate || claim.created_at || claim.createdAt || '').slice(0, 10)
+
+const formatClaimMonthLabel = (dateKey = '') => {
+  if (!dateKey) return 'an earlier period'
+  const [year, month] = dateKey.split('-').map(Number)
+  if (!year || !month) return 'an earlier period'
+  return new Date(year, month - 1, 1).toLocaleDateString('en-GB', {
+    month: 'long',
+    year: 'numeric',
+  })
+}
+
+const getClaimAgeDays = (dateKey = '') => {
+  if (!dateKey) return null
+  const started = new Date(`${dateKey}T00:00:00`)
+  if (Number.isNaN(started.getTime())) return null
+  const today = new Date(`${todayIsoDate()}T00:00:00`)
+  return Math.max(0, Math.floor((today.getTime() - started.getTime()) / 86400000))
 }
 
 const fmtFileSize = (bytes) => {
@@ -859,7 +887,7 @@ const Nhis = () => {
   const [claimTab, setClaimTab]         = useState('all')
   const [claimSearch, setClaimSearch]   = useState('')
   const [nhisPatientSearch, setNhisPatientSearch] = useState('')
-  const [claimDateFilter, setClaimDateFilter] = useState('all')
+  const [claimDateFilter, setClaimDateFilter] = useState('month')
   const [claimFromDate, setClaimFromDate] = useState(monthStartIsoDate())
   const [claimToDate, setClaimToDate] = useState(todayIsoDate())
 
@@ -1095,17 +1123,44 @@ const Nhis = () => {
     if (claimDateFilter === 'today') return { from: today, to: today }
     if (claimDateFilter === 'week') return { from: weekStartIsoDate(), to: today }
     if (claimDateFilter === 'month') return { from: monthStartIsoDate(), to: today }
+    if (claimDateFilter === 'previous_month') return previousMonthRange()
     if (claimDateFilter === 'custom') return { from: claimFromDate, to: claimToDate }
     return { from: '', to: '' }
   }, [claimDateFilter, claimFromDate, claimToDate])
+
+  const carriedOverClaims = useMemo(() => {
+    const currentMonthStart = monthStartIsoDate()
+    return claims.filter((claim) => {
+      const serviceDate = getClaimServiceDateKey(claim)
+      return OPEN_CLAIM_STATUSES.has(claim.status) && serviceDate && serviceDate < currentMonthStart
+    })
+  }, [claims])
+
+  const carriedOverStats = useMemo(() => {
+    const totalAmount = carriedOverClaims.reduce((sum, claim) => sum + (Number(claim.total_amount) || 0), 0)
+    const oldestDate = carriedOverClaims
+      .map(getClaimServiceDateKey)
+      .filter(Boolean)
+      .sort()[0] || ''
+    return {
+      count: carriedOverClaims.length,
+      totalAmount,
+      oldestDate,
+      oldestAgeDays: getClaimAgeDays(oldestDate),
+    }
+  }, [carriedOverClaims])
 
   const filteredClaims = useMemo(() => {
     const term = claimSearch.trim().toLowerCase()
     return claims.filter((c) => {
       if (claimTab !== 'all' && c.status !== claimTab) return false
-      const serviceDate = String(c.service_date_from || c.serviceDate || c.created_at || '').slice(0, 10)
-      if (claimDateRange.from && (!serviceDate || serviceDate < claimDateRange.from)) return false
-      if (claimDateRange.to && (!serviceDate || serviceDate > claimDateRange.to)) return false
+      if (claimDateFilter === 'open') {
+        if (!OPEN_CLAIM_STATUSES.has(c.status)) return false
+      } else {
+        const serviceDate = getClaimServiceDateKey(c)
+        if (claimDateRange.from && (!serviceDate || serviceDate < claimDateRange.from)) return false
+        if (claimDateRange.to && (!serviceDate || serviceDate > claimDateRange.to)) return false
+      }
       if (!term) return true
       return (
         (c.surname       || '').toLowerCase().includes(term) ||
@@ -1115,7 +1170,7 @@ const Nhis = () => {
         (c.hin           || '').toLowerCase().includes(term)
       )
     })
-  }, [claims, claimTab, claimSearch, claimDateRange])
+  }, [claims, claimTab, claimSearch, claimDateFilter, claimDateRange])
 
   const allNhisPatients = useMemo(() => {
     const merged = new Map()
@@ -3229,11 +3284,13 @@ const Nhis = () => {
                 onChange={(event) => setClaimDateFilter(event.target.value)}
                 aria-label="Filter claims by date"
               >
+                <option value="month">Current month</option>
+                <option value="previous_month">Previous month</option>
+                <option value="open">All open claims</option>
                 <option value="all">All dates</option>
                 <option value="today">Today</option>
                 <option value="week">This week</option>
-                <option value="month">This month</option>
-                <option value="custom">Custom</option>
+                <option value="custom">Custom date range</option>
               </select>
               {claimDateFilter === 'custom' && (
                 <>
@@ -3262,6 +3319,22 @@ const Nhis = () => {
               />
             </div>
           </div>
+
+          {carriedOverStats.count > 0 && claimDateFilter !== 'open' && (
+            <div className="nhis-carried-over-card">
+              <div>
+                <strong>{carriedOverStats.count} carried-over open claim{carriedOverStats.count === 1 ? '' : 's'}</strong>
+                <span>
+                  Oldest from {formatClaimMonthLabel(carriedOverStats.oldestDate)}
+                  {Number.isFinite(carriedOverStats.oldestAgeDays) ? `, pending ${carriedOverStats.oldestAgeDays} day${carriedOverStats.oldestAgeDays === 1 ? '' : 's'}` : ''}
+                  {' '}· {fmtCurrency(carriedOverStats.totalAmount)}
+                </span>
+              </div>
+              <button type="button" onClick={() => setClaimDateFilter('open')}>
+                View all open claims
+              </button>
+            </div>
+          )}
 
           {/* Claims table */}
           <div className="nhis-table-wrap">
@@ -3369,7 +3442,15 @@ const Nhis = () => {
                         {c.member_no && <div>{c.member_no}</div>}
                         {c.hin       && <div className="patient-meta">HIN: {c.hin}</div>}
                       </td>
-                      <td>{formatNhisServiceDateTime(c)}</td>
+                      <td>
+                        {formatNhisServiceDateTime(c)}
+                        {OPEN_CLAIM_STATUSES.has(c.status) && getClaimServiceDateKey(c) < monthStartIsoDate() && (
+                          <span className="nhis-carry-badge">
+                            Carried over from {formatClaimMonthLabel(getClaimServiceDateKey(c))}
+                            {Number.isFinite(getClaimAgeDays(getClaimServiceDateKey(c))) ? ` · ${getClaimAgeDays(getClaimServiceDateKey(c))}d` : ''}
+                          </span>
+                        )}
+                      </td>
                       <td>{c.nhis_claim_medicines?.length || 0}</td>
                       <td>
                         {(c.prescription_file_path || c.prescription_file_url) ? (

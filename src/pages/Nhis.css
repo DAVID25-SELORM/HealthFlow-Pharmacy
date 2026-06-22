@@ -266,6 +266,66 @@
   color: var(--gray-800);
 }
 
+.nhis-carried-over-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  margin: -0.65rem 0 1.25rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid #fed7aa;
+  border-left: 4px solid #f59e0b;
+  border-radius: var(--radius);
+  background: #fff7ed;
+  color: #7c2d12;
+}
+
+.nhis-carried-over-card div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.nhis-carried-over-card strong {
+  color: #7c2d12;
+  font-size: 0.9rem;
+}
+
+.nhis-carried-over-card span {
+  color: #9a3412;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.nhis-carried-over-card button {
+  flex-shrink: 0;
+  min-height: 34px;
+  border: 1px solid #fdba74;
+  border-radius: var(--radius);
+  background: white;
+  color: #9a3412;
+  padding: 0.4rem 0.7rem;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.nhis-carry-badge {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  margin-top: 0.35rem;
+  padding: 0.18rem 0.45rem;
+  border-radius: 999px;
+  background: #fff7ed;
+  color: #9a3412;
+  font-size: 0.68rem;
+  font-weight: 800;
+  white-space: normal;
+}
+
 .nhis-page .tab-count {
   display: inline-block;
   background: var(--primary);
@@ -1700,6 +1760,16 @@
   .nhis-controls {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .nhis-carried-over-card {
+    flex-direction: column;
+    align-items: stretch;
+    margin-top: 0;
+  }
+
+  .nhis-carried-over-card button {
+    width: 100%;
   }
 
   .nhis-page .form-row--3 {
