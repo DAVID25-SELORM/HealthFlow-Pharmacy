@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { isSupabaseConfigured, supabase } from '../lib/supabase'
+import { invokeTierAccess } from '../services/tierAccessService'
 import './ActivityLog.css'
 
 const ACTIVITY_LOG_TIMEZONE = 'Africa/Accra'
@@ -120,11 +121,27 @@ export default function ActivityLog() {
         return
       }
 
-      const { data, error: fetchError } = await supabase
-        .from('audit_logs')
-        .select('id, actor_user_id, actor_email, event_type, entity_type, action, details, created_at')
-        .order('created_at', { ascending: false })
-        .limit(200)
+      let data = []
+      let fetchError = null
+
+      try {
+        const result = await invokeTierAccess({ action: 'get_activity_logs', limit: 200 })
+        data = Array.isArray(result?.logs) ? result.logs : []
+      } catch (error) {
+        fetchError = error
+
+        const isUnsupportedAction = String(error?.message || '').toLowerCase().includes('unsupported action')
+        if (isUnsupportedAction) {
+          const fallbackResult = await supabase
+            .from('audit_logs')
+            .select('id, actor_user_id, actor_email, event_type, entity_type, action, details, created_at')
+            .order('created_at', { ascending: false })
+            .limit(200)
+
+          data = fallbackResult.data
+          fetchError = fallbackResult.error
+        }
+      }
 
       if (!isMounted) {
         return

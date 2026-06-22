@@ -138,6 +138,7 @@ type TierAccessAction =
   | 'update_epharmacy_listing_controls'
   | 'create_epharmacy_order'
   | 'update_epharmacy_order_status'
+  | 'get_activity_logs'
 
 const SUPPORTED_TIER_ACCESS_ACTIONS = [
   'get_drugs',
@@ -171,6 +172,7 @@ const SUPPORTED_TIER_ACCESS_ACTIONS = [
   'update_epharmacy_listing_controls',
   'create_epharmacy_order',
   'update_epharmacy_order_status',
+  'get_activity_logs',
 ]
 
 const NHIA_CC_CODE_ACTIONS = new Set([
@@ -192,6 +194,7 @@ type RequesterProfile = {
   can_manage_claims: boolean
   can_manage_patients: boolean
   can_manage_epharmacy: boolean
+  can_view_activity_log: boolean
   can_adjust_stock: boolean
 }
 
@@ -227,6 +230,7 @@ const REPORT_ROLES = [
 const NHIA_SETTINGS_ROLES = ['admin', 'pharmacist', 'branch_manager']
 const EPHARMACY_ROLES = ['admin', 'pharmacist', 'procurement', 'inventory_officer', 'branch_manager']
 const EPHARMACY_REVIEW_ROLES = ['admin', 'pharmacist']
+const ACTIVITY_LOG_ROLES = ['admin', 'branch_manager', 'super_admin']
 // ✅ NHIS PHARMACY LEVEL PATCH START
 const VALID_PHARMACY_LEVELS = ['P1', 'P2', 'LCS', 'HP']
 const VALID_MEDICINE_ACCESS_LEVELS = ['OTC', 'Prescription', 'Specialist', 'Controlled']
@@ -521,7 +525,7 @@ const getRequesterProfile = async (
       .eq('id', userId)
       .maybeSingle()
 
-  let { data, error } = await runQuery('id, role, assigned_roles, organization_id, branch_id, can_manage_inventory, can_view_reports, can_manage_claims, can_manage_patients, can_manage_epharmacy, can_adjust_stock')
+  let { data, error } = await runQuery('id, role, assigned_roles, organization_id, branch_id, can_manage_inventory, can_view_reports, can_manage_claims, can_manage_patients, can_manage_epharmacy, can_view_activity_log, can_adjust_stock')
 
   if (error && isMissingUserPrivilegeColumn(error)) {
     const legacyResult = await runQuery('id, role, organization_id, branch_id, can_manage_inventory, can_view_reports, can_manage_claims, can_manage_patients, can_manage_epharmacy, can_adjust_stock')
@@ -555,6 +559,7 @@ const getRequesterProfile = async (
     can_manage_claims: Boolean(data.can_manage_claims),
     can_manage_patients: Boolean(data.can_manage_patients),
     can_manage_epharmacy: Boolean(data.can_manage_epharmacy),
+    can_view_activity_log: Boolean(data.can_view_activity_log),
     can_adjust_stock: Boolean(data.can_adjust_stock),
   }
 }
@@ -771,6 +776,15 @@ const requireEpharmacyAccess = (requesterProfile: RequesterProfile, message: str
   }
 }
 
+const requireActivityLogAccess = (requesterProfile: RequesterProfile) => {
+  if (
+    !requesterHasAnyRole(requesterProfile, ACTIVITY_LOG_ROLES) &&
+    !requesterProfile.can_view_activity_log
+  ) {
+    throw new Error('You do not have permission to view activity logs.')
+  }
+}
+
 const normalizeEpharmacySaleClass = (value: unknown) => {
   const normalized = normalizeText(value).toLowerCase().replace(/\s+/g, '_')
   return VALID_EPHARMACY_SALE_CLASSES.includes(normalized) ? normalized : 'otc'
@@ -839,6 +853,48 @@ const tryWriteTierAuditEvent = async (
   } catch (error) {
     console.warn('tier-access audit warning:', getErrorMessage(error))
   }
+}
+
+const getActivityLogs = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  requesterProfile: RequesterProfile,
+  organizationId: string,
+  payload: Record<string, unknown>
+) => {
+  requireActivityLogAccess(requesterProfile)
+
+  const limit = Math.min(parsePositiveInteger(payload.limit, 200), 500)
+  const { data: staffRows, error: staffError } = await adminClient
+    .from('users')
+    .select('id')
+    .eq('organization_id', organizationId)
+
+  if (staffError) {
+    throw staffError
+  }
+
+  const staffIds = (staffRows || [])
+    .map((row) => normalizeText(row.id))
+    .filter(Boolean)
+
+  let query = adminClient
+    .from('audit_logs')
+    .select('id, actor_user_id, actor_email, event_type, entity_type, action, details, organization_id, created_at')
+    .order('created_at', { ascending: false })
+    .limit(limit)
+
+  if (staffIds.length) {
+    query = query.or(`organization_id.eq.${organizationId},actor_user_id.in.(${staffIds.join(',')})`)
+  } else {
+    query = query.eq('organization_id', organizationId)
+  }
+
+  const { data, error } = await query
+  if (error) {
+    throw error
+  }
+
+  return { logs: data || [] }
 }
 
 const getDrugCount = async (
@@ -5141,6 +5197,10 @@ Deno.serve(async (request) => {
           tierContext.tierLimits.hasClaims
         )
       )
+    }
+
+    if (action === 'get_activity_logs') {
+      return json(await getActivityLogs(adminClient, requesterProfile, organizationId, payload))
     }
 
     if (action === 'create_drug') {

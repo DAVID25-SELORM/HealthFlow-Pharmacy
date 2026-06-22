@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => {
 
   return {
     isSupabaseConfigured: vi.fn(),
+    invokeTierAccess: vi.fn(),
     queryBuilder,
     supabase: {
       from: vi.fn(() => queryBuilder),
@@ -24,6 +25,10 @@ const mocks = vi.hoisted(() => {
 vi.mock('../lib/supabase', () => ({
   isSupabaseConfigured: mocks.isSupabaseConfigured,
   supabase: mocks.supabase,
+}))
+
+vi.mock('../services/tierAccessService', () => ({
+  invokeTierAccess: mocks.invokeTierAccess,
 }))
 
 describe('ActivityLog', () => {
@@ -45,8 +50,8 @@ describe('ActivityLog', () => {
 
   it('renders logs and filters them with search', async () => {
     mocks.isSupabaseConfigured.mockReturnValue(true)
-    mocks.queryBuilder.limit.mockResolvedValue({
-      data: [
+    mocks.invokeTierAccess.mockResolvedValue({
+      logs: [
         {
           id: 'log-1',
           actor_user_id: 'user-1',
@@ -68,7 +73,6 @@ describe('ActivityLog', () => {
           created_at: '2026-04-24T11:00:00.000Z',
         },
       ],
-      error: null,
     })
 
     render(<ActivityLog />)
@@ -88,8 +92,8 @@ describe('ActivityLog', () => {
 
   it('uses details email when actor columns are empty', async () => {
     mocks.isSupabaseConfigured.mockReturnValue(true)
-    mocks.queryBuilder.limit.mockResolvedValue({
-      data: [
+    mocks.invokeTierAccess.mockResolvedValue({
+      logs: [
         {
           id: 'log-1',
           actor_user_id: null,
@@ -101,7 +105,6 @@ describe('ActivityLog', () => {
           created_at: '2026-05-09T17:49:41.000Z',
         },
       ],
-      error: null,
     })
 
     render(<ActivityLog />)
@@ -111,5 +114,33 @@ describe('ActivityLog', () => {
     })
 
     expect(screen.queryByText('Unknown')).not.toBeInTheDocument()
+  })
+
+  it('falls back to the direct audit table read for older tier-access deployments', async () => {
+    mocks.isSupabaseConfigured.mockReturnValue(true)
+    mocks.invokeTierAccess.mockRejectedValue(new Error('Unsupported action: get_activity_logs'))
+    mocks.queryBuilder.limit.mockResolvedValue({
+      data: [
+        {
+          id: 'log-1',
+          actor_user_id: 'user-1',
+          actor_email: 'admin@healthflow.test',
+          event_type: 'auth',
+          entity_type: 'session',
+          action: 'sign_in',
+          details: { email: 'admin@healthflow.test' },
+          created_at: '2026-06-22T08:00:00.000Z',
+        },
+      ],
+      error: null,
+    })
+
+    render(<ActivityLog />)
+
+    await waitFor(() => {
+      expect(screen.getByText(/showing 1 of 1 record/i)).toBeInTheDocument()
+    })
+
+    expect(mocks.supabase.from).toHaveBeenCalledWith('audit_logs')
   })
 })
