@@ -329,6 +329,42 @@ const redactTierAccessBody = (value: unknown): unknown => {
   )
 }
 
+const NHIS_SERVICE_TIME_ZONE = 'Africa/Accra'
+
+const toNhisCalendarDate = (value: unknown = new Date()) => {
+  const date = value instanceof Date ? value : new Date(String(value || ''))
+  if (Number.isNaN(date.getTime())) return ''
+
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: NHIS_SERVICE_TIME_ZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(date)
+    const part = (type: string) => parts.find((item) => item.type === type)?.value || ''
+    return [part('year'), part('month'), part('day')].filter(Boolean).join('-')
+  } catch {
+    return [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, '0'),
+      String(date.getDate()).padStart(2, '0'),
+    ].join('-')
+  }
+}
+
+const normalizeNhiaServiceDate = (value: unknown) => {
+  const raw = normalizeText(value)
+  if (!raw) return ''
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw
+  const dmy = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  if (dmy) {
+    const [, day, month, year] = dmy
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
+  }
+  return toNhisCalendarDate(raw)
+}
+
 const normalizeNhiaAccreditationExpiryDate = (value: unknown) => {
   const raw = normalizeText(value)
   if (!raw) return ''
@@ -2535,7 +2571,7 @@ const createClaim = async (
         insurance_provider: insuranceProvider,
         insurance_id: insuranceId,
         branch_id: branchId,
-        service_date: normalizeText(claimData.serviceDate) || new Date().toISOString().split('T')[0],
+        service_date: normalizeNhiaServiceDate(claimData.serviceDate) || toNhisCalendarDate(),
         total_amount: totalAmount,
         claim_status: 'pending',
         prescription_url: normalizeText(claimData.prescriptionUrl) || null,
@@ -2633,7 +2669,7 @@ const updateClaim = async (
     insurance_provider: insuranceProvider,
     insurance_id: insuranceId,
     branch_id: branchId,
-    service_date: normalizeText(claimData.serviceDate) || new Date().toISOString().split('T')[0],
+    service_date: normalizeNhiaServiceDate(claimData.serviceDate) || toNhisCalendarDate(),
     total_amount: totalAmount,
     prescription_url: normalizeText(claimData.prescriptionUrl) || null,
     notes: normalizeText(claimData.notes) || null,
@@ -4514,7 +4550,7 @@ const submitNhisPharmacyClaim = async (
   const medicines = await priceNhisClaimMedicinesFromCatalog(adminClient, organizationId, requestedMedicines)
   const services = isHospital && Array.isArray(claimData.services) ? claimData.services as Record<string, unknown>[] : []
 
-  const serviceDate = normalizeText(claimData.dispensingDate || claimData.serviceDate) || new Date().toISOString().split('T')[0]
+  const serviceDate = normalizeNhiaServiceDate(claimData.dispensingDate || claimData.serviceDate) || toNhisCalendarDate()
   const medicinesTotal = medicines.reduce((sum, m) => sum + Number(m.totalPrice || 0), 0)
   const servicesTotal = services.reduce((sum, s) => sum + Number(s.totalAmount || s.total_amount || 0), 0)
   const totalAmount = medicinesTotal + servicesTotal
@@ -4797,7 +4833,7 @@ const submitNhiaClaimsDirect = async (
   }
 }
 
-const toDateOnly = (value: string) => new Date(value).toISOString().split('T')[0]
+const toDateOnly = (value: string) => normalizeNhiaServiceDate(value) || toNhisCalendarDate(value)
 
 const getReportBundle = async (
   adminClient: ReturnType<typeof createAdminClient>,

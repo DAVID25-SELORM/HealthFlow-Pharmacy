@@ -87,6 +87,41 @@ const noStoreFrontendFiles = new Set([
   'manifest.webmanifest',
   'branch-runtime-config.js',
 ])
+const NHIS_SERVICE_TIME_ZONE = 'Africa/Accra'
+
+const toNhisCalendarDate = (value = new Date()) => {
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: NHIS_SERVICE_TIME_ZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(date)
+    const part = (type) => parts.find((item) => item.type === type)?.value || ''
+    return [part('year'), part('month'), part('day')].filter(Boolean).join('-')
+  } catch {
+    return [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, '0'),
+      String(date.getDate()).padStart(2, '0'),
+    ].join('-')
+  }
+}
+
+const normalizeNhiaServiceDate = (value) => {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw
+  const dmy = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  if (dmy) {
+    const [, day, month, year] = dmy
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
+  }
+  return toNhisCalendarDate(raw)
+}
 
 const setFrontendCacheHeaders = (response, filePath) => {
   const fileName = path.basename(filePath)
@@ -804,6 +839,7 @@ app.post('/api/nhis/pharmacy-claim', requireBranchUserSession, requireBranchClai
 
     const pricedLines = normalizePharmacyClaimLines({ medicines, services, isHospital })
     const totalAmount = pricedLines.totalAmount
+    const serviceDate = normalizeNhiaServiceDate(dispensingDate) || toNhisCalendarDate()
 
     // Generate CC code unless one was supplied by the caller.
     let ccCode = body.ccCode || null
@@ -813,7 +849,7 @@ app.post('/api/nhis/pharmacy-claim', requireBranchUserSession, requireBranchClai
         memberNumber,
         hin,
         diagnosis: isHospital ? diagnosis : undefined,
-        serviceDate: dispensingDate,
+        serviceDate,
         totalAmount,
         organizationType: isHospital ? 'hospital' : 'pharmacy',
       })
@@ -830,7 +866,7 @@ app.post('/api/nhis/pharmacy-claim', requireBranchUserSession, requireBranchClai
       ccCode: ccCode || null,
       diagnosis: isHospital ? diagnosis : null,
       organizationType: isHospital ? 'hospital' : 'pharmacy',
-      serviceDate: dispensingDate,
+      serviceDate,
       gender: gender || null,
       dateOfBirth: dateOfBirth || null,
       referralFacility: referralFacility || null,
@@ -849,7 +885,7 @@ app.post('/api/nhis/pharmacy-claim', requireBranchUserSession, requireBranchClai
         unit: m.unit || '',
         dosageForm: m.dosageForm || '',
         strength: m.strength || '',
-        dispensaryDate: dispensingDate,
+        dispensaryDate: serviceDate,
       })),
       // Hospital service/G-DRG lines stored in payload for branch server persistence.
       services: pricedLines.services.map((s) => ({
@@ -862,7 +898,7 @@ app.post('/api/nhis/pharmacy-claim', requireBranchUserSession, requireBranchClai
         facility_group: s.facilityGroup || s.facility_group || null,
         catering_option: s.cateringOption || s.catering_option || null,
         mdc: s.mdc || null,
-        service_date: dispensingDate,
+        service_date: serviceDate,
       })),
     })
 

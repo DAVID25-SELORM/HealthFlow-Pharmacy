@@ -229,7 +229,29 @@ const toNullableUuid = (value) => {
 const toNullableTimestamp = (value) => normalizeText(value) || null
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 const DMY_DATE_PATTERN = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/
+const NHIS_SERVICE_TIME_ZONE = 'Africa/Accra'
 const DEFAULT_NHIS_CLAIM_LIST_LIMIT = 500
+const toNhisCalendarDate = (value = new Date()) => {
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: NHIS_SERVICE_TIME_ZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(date)
+    const part = (type) => parts.find((item) => item.type === type)?.value || ''
+    return [part('year'), part('month'), part('day')].filter(Boolean).join('-')
+  } catch {
+    return [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, '0'),
+      String(date.getDate()).padStart(2, '0'),
+    ].join('-')
+  }
+}
 const toValidIsoDate = (year, month, day) => {
   const parsed = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)))
   if (
@@ -261,7 +283,7 @@ const toNullableDate = (value) => {
   if (raw.includes('/')) return null
   const parsed = new Date(raw)
   if (Number.isNaN(parsed.getTime())) return null
-  return toValidIsoDate(parsed.getFullYear(), parsed.getMonth() + 1, parsed.getDate()) || null
+  return toNhisCalendarDate(parsed) || null
 }
 const NHIA_INTEGRATION_MODE_ALIASES = {
   cxf_export: 'claimit_export',
@@ -4432,7 +4454,7 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
     claimData.cccNo ?? claimData.ccc_no ?? claimData.ccCode ?? claimData.cc_code,
     options
   )
-  const serviceDate = toNullableDate(claimData.serviceDate || claimData.serviceDateFrom)
+  const serviceDate = toNullableDate(claimData.serviceDate || claimData.serviceDateFrom) || toNhisCalendarDate()
 
   const medicineRows = toNhisClaimMedicineRows(medicines)
   const medicineTotal = medicineRows.reduce((s, m) => s + Number(m.total_amount || 0), 0)
@@ -4652,7 +4674,7 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
     claimData.cccNo ?? claimData.ccc_no ?? claimData.ccCode ?? claimData.cc_code,
     options
   )
-  const serviceDate = toNullableDate(claimData.serviceDate || claimData.serviceDateFrom)
+  const serviceDate = toNullableDate(claimData.serviceDate || claimData.serviceDateFrom) || toNhisCalendarDate()
   const medicineRows = toNhisClaimMedicineRows(medicines)
   const medicineTotal = medicineRows.reduce((s, m) => s + Number(m.total_amount || 0), 0)
   const serviceTotal = tariffServices.reduce((s, line) => s + Number(line.totalAmount || 0), 0)
@@ -4962,7 +4984,7 @@ export const normalizeNhisExportPeriod = (options = {}) => {
   }
 
   if (mode === 'partial') {
-    const toDate = normalizeText(options.toDate || options.dateTo || options.periodTo || generatedAt.slice(0, 10))
+    const toDate = normalizeText(options.toDate || options.dateTo || options.periodTo || toNullableDate(generatedAt))
     if (!isValidIsoDate(toDate)) {
       throw new Error('Partial export period must include a valid Up To date.')
     }
@@ -7460,7 +7482,7 @@ const markNhisServedClaimsSubmitted = async (claims) => {
 }
 
 const getDirectSubmissionPeriodForClaim = (claim = {}) => {
-  const serviceDate = getNhisClaimExportDate(claim) || new Date().toISOString().slice(0, 10)
+  const serviceDate = getNhisClaimExportDate(claim) || toNhisCalendarDate()
   return normalizeNhisExportPeriod({ mode: 'custom', fromDate: serviceDate, toDate: serviceDate })
 }
 

@@ -2408,7 +2408,7 @@ describe('NHIS claim save attachment behavior', () => {
         ...claimWithoutPrescription,
         organizationId: '542fe9df-3211-4046-bd90-b101d249b7f9',
         dateOfBirth: '14/05/1990',
-        serviceDate: '18/06/2026',
+        serviceDate: '2026-06-18T00:30:00.000Z',
         cardType: 'GHANACARD',
         authId: 'AUTH-123',
         authType: 'NHIS',
