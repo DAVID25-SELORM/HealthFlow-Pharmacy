@@ -4360,34 +4360,38 @@ export const getAllNhisClaims = async (filters = {}) => {
       return await listBranchRecords('nhis/claims', filters)
     }
 
-    const localRows = await listBranchRecords('nhis/claims', { limit: 100000 })
-    try {
-      const cloudRows = await fetchNhisClaimsFromSupabase(filters)
-      return filterNhisClaimRows(mergeNhisClaimRows(cloudRows, localRows), filters)
-    } catch (error) {
-      console.warn('[SYNC] Cloud NHIS claims read failed; using local cache.', error)
+    const [localResult, cloudResult] = await Promise.allSettled([
+      listBranchRecords('nhis/claims', { limit: 100000 }),
+      fetchNhisClaimsFromSupabase(filters),
+    ])
+    const localRows = localResult.status === 'fulfilled' ? (localResult.value || []) : []
+    if (cloudResult.status === 'rejected') {
+      console.warn('[SYNC] Cloud NHIS claims read failed; using local cache.', cloudResult.reason)
       return filterNhisClaimRows(localRows, filters)
     }
+    return filterNhisClaimRows(mergeNhisClaimRows(cloudResult.value, localRows), filters)
   }
 
   return await fetchNhisClaimsFromSupabase(filters)
 }
 
+const computeNhisClaimStats = (rows = []) => ({
+  total: rows.length,
+  pending_serving: rows.filter((r) => r.status === 'pending_serving').length,
+  returned_for_review: rows.filter((r) => r.status === 'returned_for_review').length,
+  served: rows.filter((r) => r.status === 'served').length,
+  submitted: rows.filter((r) => r.status === 'submitted').length,
+  paid: rows.filter((r) => r.status === 'paid').length,
+  rejected: rows.filter((r) => r.status === 'rejected').length,
+  totalPaid: rows
+    .filter((r) => r.status === 'paid')
+    .reduce((s, r) => s + Number(r.total_amount || 0), 0),
+})
+
 export const getNhisClaimStats = async () => {
   if (shouldUseBranchServer()) {
-    const rows = await getAllNhisClaims()
-    return {
-      total: rows.length,
-      pending_serving: rows.filter((r) => r.status === 'pending_serving').length,
-      returned_for_review: rows.filter((r) => r.status === 'returned_for_review').length,
-      served: rows.filter((r) => r.status === 'served').length,
-      submitted: rows.filter((r) => r.status === 'submitted').length,
-      paid: rows.filter((r) => r.status === 'paid').length,
-      rejected: rows.filter((r) => r.status === 'rejected').length,
-      totalPaid: rows
-        .filter((r) => r.status === 'paid')
-        .reduce((s, r) => s + Number(r.total_amount || 0), 0),
-    }
+    const rows = await listBranchRecords('nhis/claims', { limit: 100000 })
+    return computeNhisClaimStats(rows)
   }
 
   const { data, error } = await supabase
@@ -4395,20 +4399,7 @@ export const getNhisClaimStats = async () => {
     .select('status, total_amount')
 
   if (error) throw error
-
-  const rows = data || []
-  return {
-    total:     rows.length,
-    pending_serving: rows.filter((r) => r.status === 'pending_serving').length,
-    returned_for_review: rows.filter((r) => r.status === 'returned_for_review').length,
-    served:    rows.filter((r) => r.status === 'served').length,
-    submitted: rows.filter((r) => r.status === 'submitted').length,
-    paid:      rows.filter((r) => r.status === 'paid').length,
-    rejected:  rows.filter((r) => r.status === 'rejected').length,
-    totalPaid: rows
-      .filter((r) => r.status === 'paid')
-      .reduce((s, r) => s + Number(r.total_amount || 0), 0),
-  }
+  return computeNhisClaimStats(data || [])
 }
 
 /**
