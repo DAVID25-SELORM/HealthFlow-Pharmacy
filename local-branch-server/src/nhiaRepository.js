@@ -51,6 +51,43 @@ const CLAIMIT_CXF_API_BLOCK_MESSAGE =
 const CLAIMIT_MISSING_CLAIM_ID_MESSAGE =
   'CLAIM-it claimID is missing. Regenerate or repair the claim before direct API submission.'
 const SUPABASE_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i
+const NHIS_SERVICE_TIME_ZONE = 'Africa/Accra'
+const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+const DMY_DATE_PATTERN = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/
+
+const toNhisCalendarDate = (value = new Date()) => {
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: NHIS_SERVICE_TIME_ZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(date)
+    const part = (type) => parts.find((item) => item.type === type)?.value || ''
+    return [part('year'), part('month'), part('day')].filter(Boolean).join('-')
+  } catch {
+    return [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, '0'),
+      String(date.getDate()).padStart(2, '0'),
+    ].join('-')
+  }
+}
+
+const normalizeNhiaServiceDate = (value) => {
+  const raw = normalizeText(value)
+  if (!raw) return ''
+  if (ISO_DATE_PATTERN.test(raw)) return raw
+  const dmy = raw.match(DMY_DATE_PATTERN)
+  if (dmy) {
+    const [, day, month, year] = dmy
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
+  }
+  return toNhisCalendarDate(raw)
+}
 const DIAGNOSIS_TREATMENT_RULES = [
   {
     label: 'Malaria',
@@ -2022,7 +2059,7 @@ export const createNhiaClaim = db.transaction((claimData = {}, linkedSale = {}) 
       facilityGroup: normalizeText(service.facilityGroup || service.facility_group) || null,
       cateringOption: normalizeText(service.cateringOption || service.catering_option) || null,
       mdc: normalizeText(service.mdc) || null,
-      serviceDate: normalizeText(service.serviceDate || service.service_date || claimData.serviceDate) || null,
+      serviceDate: normalizeNhiaServiceDate(service.serviceDate || service.service_date || claimData.serviceDate) || null,
       payloadJson: json(service),
       createdAt: timestamp,
     }
@@ -2067,7 +2104,7 @@ export const createNhiaClaim = db.transaction((claimData = {}, linkedSale = {}) 
       claimData.unservedMedicinesNote || claimData.unserved_medicines_note
     ) || null,
     insuranceProvider: claimData.insuranceProvider || 'NHIA',
-    serviceDate: claimData.serviceDate || linkedSale.saleDate?.slice(0, 10) || timestamp.slice(0, 10),
+    serviceDate: normalizeNhiaServiceDate(claimData.serviceDate || linkedSale.saleDate || timestamp) || toNhisCalendarDate(),
     totalAmount,
     status: normalizeStatus(claimData.status || 'ready'),
     organizationId: claimData.organizationId || linkedSale.organizationId || config.organizationId,
@@ -2976,7 +3013,7 @@ export const generateNhiaCcCode = async (claimContext = {}) => {
       memberNumber: normalizeText(claimContext.memberNumber || claimContext.memberNo),
       hin: normalizeText(claimContext.hin) || null,
       diagnosis: normalizeText(claimContext.diagnosis) || null,
-      serviceDate: normalizeText(claimContext.serviceDate).slice(0, 10),
+      serviceDate: normalizeNhiaServiceDate(claimContext.serviceDate),
       totalAmount: Number(claimContext.totalAmount || 0),
     }],
     organizationType: normalizeOrganizationType(claimContext.organizationType || claimContext.organization_type),
@@ -2986,7 +3023,7 @@ export const generateNhiaCcCode = async (claimContext = {}) => {
       hin: normalizeText(claimContext.hin) || null,
     },
     diagnosis: normalizeText(claimContext.diagnosis) || null,
-    serviceDate: normalizeText(claimContext.serviceDate).slice(0, 10),
+    serviceDate: normalizeNhiaServiceDate(claimContext.serviceDate),
     requestedAt: nowIso(),
   }
 

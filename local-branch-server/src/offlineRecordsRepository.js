@@ -15,6 +15,33 @@ const ALLOWED_ENTITIES = new Set([
   'suppliers',
   'purchases',
 ])
+const NHIS_SERVICE_TIME_ZONE = 'Africa/Accra'
+const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+
+const toNhisCalendarDate = (value = new Date()) => {
+  const raw = String(value || '').trim()
+  if (ISO_DATE_PATTERN.test(raw)) return raw
+
+  const date = value instanceof Date ? value : new Date(raw)
+  if (Number.isNaN(date.getTime())) return ''
+
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: NHIS_SERVICE_TIME_ZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(date)
+    const part = (type) => parts.find((item) => item.type === type)?.value || ''
+    return [part('year'), part('month'), part('day')].filter(Boolean).join('-')
+  } catch {
+    return [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, '0'),
+      String(date.getDate()).padStart(2, '0'),
+    ].join('-')
+  }
+}
 
 const normalizeEntityType = (entityType) => {
   const normalized = String(entityType || '').trim()
@@ -335,14 +362,14 @@ const matchesFilters = (record, filters = {}) => {
 
   if (filters.month) {
     const month = String(filters.month)
-    const monthValue = record.submission_month || String(record.service_date_from || record.created_at || '').slice(0, 7)
+    const monthValue = record.submission_month || toNhisCalendarDate(record.service_date_from || record.created_at).slice(0, 7)
     if (monthValue !== month) {
       return false
     }
   }
 
   if (filters.fromDate || filters.toDate) {
-    const serviceDate = String(record.service_date_from || record.serviceDate || record.created_at || '').slice(0, 10)
+    const serviceDate = toNhisCalendarDate(record.service_date_from || record.serviceDate || record.created_at)
     if (!serviceDate) {
       return false
     }
@@ -416,7 +443,7 @@ const enrichRecord = (entityType, payload) => {
     return {
       claim_number: payload.claim_number || `NHIS-OFF-${timestamp.slice(2, 10).replace(/-/g, '')}-${id.slice(0, 4).toUpperCase()}`,
       status: payload.status || 'served',
-      submission_month: payload.submission_month || String(payload.service_date_from || timestamp).slice(0, 7),
+      submission_month: payload.submission_month || toNhisCalendarDate(payload.service_date_from || timestamp).slice(0, 7),
       ...base,
     }
   }
@@ -453,7 +480,7 @@ const indexClaimRecord = (record = {}, syncStatus = 'pending') => {
     patientName: record.patient_name || 'Offline patient',
     insuranceProvider: record.insurance_provider || 'Insurance',
     insuranceId: record.insurance_id || 'Offline',
-    serviceDate: record.service_date || timestamp.slice(0, 10),
+    serviceDate: record.service_date || toNhisCalendarDate(timestamp),
     totalAmount: Number(record.total_amount || 0),
     claimStatus: record.claim_status || record.status || 'pending',
     prescriptionUrl: record.prescription_url || null,

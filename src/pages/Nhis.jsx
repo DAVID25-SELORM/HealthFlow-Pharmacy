@@ -139,6 +139,30 @@ const isLocalAppOrigin = () => {
     /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname)
 }
 
+const getNhisCalendarDate = (value = new Date()) => {
+  const raw = String(value || '').trim()
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw
+
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Africa/Accra',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(date)
+    const part = (type) => parts.find((item) => item.type === type)?.value || ''
+    return [part('year'), part('month'), part('day')].filter(Boolean).join('-')
+  } catch {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+}
+
 const FREQUENCY_OPTIONS = [
   'OD',
   'BD',
@@ -186,7 +210,7 @@ const BLANK_CLAIM = {
   nhiaMemberLookupPayload: null,
   diagnosis:         '',
   diagnosisDetails:  [],
-  serviceDate:       new Date().toISOString().split('T')[0],
+  serviceDate:       getNhisCalendarDate(),
   referringFacility: '',
   referralCode:      '',
   physicianName:     '',
@@ -219,7 +243,7 @@ const BLANK_MEDICINE = {
   servedByMca: '',
   enteredAt: '',
   servedAt: '',
-  dispensaryDate: new Date().toISOString().split('T')[0],
+  dispensaryDate: getNhisCalendarDate(),
   dose:          '',
   frequency:     '',
   duration:      '',
@@ -311,10 +335,7 @@ const getClaimServingStatus = (medicines = []) => {
 }
 
 const toLocalIsoDate = (date = new Date()) => {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
+  return getNhisCalendarDate(date)
 }
 
 const todayIsoDate = () => toLocalIsoDate()
@@ -335,7 +356,7 @@ const weekStartIsoDate = (date = new Date()) => {
 const OPEN_CLAIM_STATUSES = new Set(['pending_serving', 'serving_in_progress', 'returned_for_review', 'served', 'submitted'])
 
 const getClaimServiceDateKey = (claim = {}) =>
-  String(claim.service_date_from || claim.serviceDate || claim.created_at || claim.createdAt || '').slice(0, 10)
+  getNhisCalendarDate(claim.service_date_from || claim.serviceDate || claim.created_at || claim.createdAt)
 
 const formatClaimMonthLabel = (dateKey = '') => {
   if (!dateKey) return 'an earlier period'
@@ -1794,7 +1815,7 @@ const Nhis = () => {
       nhiaMemberLookupPayload: claim.nhia_member_lookup_payload || null,
       diagnosis: claim.diagnosis || '',
       diagnosisDetails: claim.diagnosis_details || [],
-      serviceDate: claim.service_date_from || new Date().toISOString().split('T')[0],
+      serviceDate: claim.service_date_from || todayIsoDate(),
       referringFacility: claim.referring_facility || '',
       referralCode: claim.referral_code || '',
       physicianName: claim.physician_name || '',
@@ -2063,7 +2084,7 @@ const Nhis = () => {
       servedByMca: medicine.servedByMca || medicine.served_by_mca || '',
       enteredAt: medicine.enteredAt || medicine.entered_at || '',
       servedAt: medicine.servedAt || medicine.served_at || '',
-      dispensaryDate: medicine.dispensaryDate || new Date().toISOString().split('T')[0],
+      dispensaryDate: medicine.dispensaryDate || todayIsoDate(),
       dose: medicine.dose || '',
       frequency: medicine.frequency || '',
       duration: medicine.duration || '',
@@ -2098,7 +2119,7 @@ const Nhis = () => {
         ageBand: item.age_band || '',
         unitPrice: amount,
         quantity: 1,
-        serviceDate: claimForm.serviceDate || new Date().toISOString().split('T')[0],
+        serviceDate: claimForm.serviceDate || todayIsoDate(),
         totalAmount: amount,
         sourceFile: item.source_file || '',
         sourcePage: item.source_page || null,
@@ -2561,7 +2582,7 @@ const Nhis = () => {
         ? await uploadNhisPrescriptionPdf(prescriptionPdfFile, {
             organizationId: organization?.id,
             claimId: editingClaim?.id,
-            yearMonth: (claimForm.serviceDate || new Date().toISOString()).slice(0, 7),
+            yearMonth: (claimForm.serviceDate || todayIsoDate()).slice(0, 7),
           })
         : {}
       const payload = {

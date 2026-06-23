@@ -285,6 +285,13 @@ const toNullableDate = (value) => {
   if (Number.isNaN(parsed.getTime())) return null
   return toNhisCalendarDate(parsed) || null
 }
+const toNhisDateKey = (...values) => {
+  for (const value of values) {
+    const dateKey = toNullableDate(value)
+    if (dateKey) return dateKey
+  }
+  return ''
+}
 const NHIA_INTEGRATION_MODE_ALIASES = {
   cxf_export: 'claimit_export',
   claimit_export: 'claimit_export',
@@ -4257,14 +4264,12 @@ const nhisClaimMatchesListFilters = (claim = {}, filters = {}) => {
   if (filters.month) {
     const claimMonth = normalizeText(
       claim.submission_month ||
-      String(claim.service_date_from || claim.serviceDate || claim.created_at || '').slice(0, 7)
+      toNhisDateKey(claim.service_date_from, claim.serviceDate, claim.created_at).slice(0, 7)
     )
     if (claimMonth !== normalizeText(filters.month)) return false
   }
 
-  const serviceDate = String(
-    claim.service_date_from || claim.serviceDate || claim.created_at || ''
-  ).slice(0, 10)
+  const serviceDate = toNhisDateKey(claim.service_date_from, claim.serviceDate, claim.created_at)
   if (filters.fromDate && (!serviceDate || serviceDate < String(filters.fromDate))) return false
   if (filters.toDate && (!serviceDate || serviceDate > String(filters.toDate))) return false
   if (filters.id && claim.id !== filters.id) return false
@@ -4860,7 +4865,7 @@ const recordNhisPaidLedgerEntry = async (id, actorId = null) => {
       insurer_name: 'NHIS',
       approved_amount: approvedAmount,
       paid_amount: outstanding,
-      payment_date: new Date().toISOString().split('T')[0],
+      payment_date: toNhisCalendarDate(),
       payment_method: 'bank_transfer',
       notes: 'Marked paid from NHIS claims.',
       created_by: actorId || claim.created_by || null,
@@ -5993,7 +5998,7 @@ const getMonthEndDate = (yearMonth) => {
 }
 
 export const getNhisClaimExportDate = (claim = {}) =>
-  toClaimItDate(
+  toNhisDateKey(
     claim.service_date_from ||
     claim.serviceDate ||
     claim.service_date ||

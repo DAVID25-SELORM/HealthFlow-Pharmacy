@@ -4986,7 +4986,8 @@ const getReportBundle = async (
   const monthlyNhisSubmission = Object.values(
     nhisClaims.reduce<Record<string, Record<string, number | string>>>((acc, claim) => {
       const row = claim as Record<string, unknown>
-      const month = String(row.submission_month || row.service_date_from || row.service_date || row.created_at || '').slice(0, 7) || 'Unspecified'
+      const monthSource = normalizeText(row.submission_month) || normalizeNhiaServiceDate(row.service_date_from || row.service_date || row.created_at)
+      const month = monthSource.slice(0, 7) || 'Unspecified'
       if (!acc[month]) {
         acc[month] = { month, count: 0, totalAmount: 0, accepted: 0, rejected: 0, pending: 0 }
       }
