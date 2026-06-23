@@ -4,6 +4,7 @@ import {
   supabase,
   isSupabaseConfigured,
   markSupabaseAuthActive,
+  refreshSupabaseSessionOnce,
   subscribeSupabaseAuthExpired,
 } from '../lib/supabase'
 import { tryLogAuditEvent } from '../services/auditService'
@@ -271,15 +272,22 @@ export const AuthProvider = ({ children }) => {
 
     const refreshStoredSession = async (fallbackSession = null) => {
       try {
-        const { data, error } = await supabase.auth.refreshSession()
+        const { session: refreshedSession, error } = await refreshSupabaseSessionOnce()
         if (error) {
           throw error
         }
 
-        return data?.session || null
+        return refreshedSession || null
       } catch (refreshError) {
-        if (!isSupabaseAuthFailure(refreshError)) {
+        const isRateLimit = Number(refreshError?.status || refreshError?.statusCode || 0) === 429
+        if (!isSupabaseAuthFailure(refreshError) && !isRateLimit) {
           console.warn('Unable to refresh Supabase session:', refreshError)
+        }
+
+        // On rate limit, the session may still be valid — return it rather than
+        // treating the 429 as an auth failure and wiping the stored session.
+        if (isRateLimit && fallbackSession?.access_token && !isExpiredSession(fallbackSession, 0)) {
+          return fallbackSession
         }
 
         const storedSession = await getStoredSession()

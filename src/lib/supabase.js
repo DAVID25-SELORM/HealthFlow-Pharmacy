@@ -84,26 +84,28 @@ export const markSupabaseAuthActive = () => {
   authExpired = false
 }
 
-const refreshSessionOnce = async () => {
+export const refreshSupabaseSessionOnce = async () => {
   if (!supabaseClient) {
-    return null
+    return { session: null, error: null }
   }
 
   if (!refreshSessionPromise) {
     refreshSessionPromise = supabaseClient.auth
       .refreshSession()
       .then(({ data, error }) => {
-        if (error || !data?.session?.access_token) {
-          markAuthExpired()
-          return null
+        if (error) {
+          return { session: null, error }
+        }
+
+        if (!data?.session?.access_token) {
+          return { session: null, error: null }
         }
 
         authExpired = false
-        return data.session
+        return { session: data.session, error: null }
       })
-      .catch(() => {
-        markAuthExpired()
-        return null
+      .catch((error) => {
+        return { session: null, error }
       })
       .finally(() => {
         refreshSessionPromise = null
@@ -111,6 +113,22 @@ const refreshSessionOnce = async () => {
   }
 
   return refreshSessionPromise
+}
+
+const isRateLimitError = (error) =>
+  Number(error?.status || error?.statusCode || 0) === 429
+
+const refreshSessionOnce = async () => {
+  const { session, error } = await refreshSupabaseSessionOnce()
+
+  if (!session?.access_token) {
+    if (!isRateLimitError(error)) {
+      markAuthExpired()
+    }
+    return null
+  }
+
+  return session
 }
 
 const authRetryFetch = async (input, init = {}) => {
@@ -280,12 +298,12 @@ const getCurrentAuthSession = async () => {
 }
 
 const refreshFunctionSession = async (fallbackSession = null) => {
-  const { data, error } = await supabase.auth.refreshSession()
-  if (!error) {
-    if (data?.session?.access_token) {
-      return data.session
-    }
+  const { session, error } = await refreshSupabaseSessionOnce()
+  if (session?.access_token) {
+    return session
+  }
 
+  if (!error) {
     if (fallbackSession?.access_token && !isExpiredSession(fallbackSession)) {
       return fallbackSession
     }

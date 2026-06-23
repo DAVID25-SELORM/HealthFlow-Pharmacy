@@ -43,6 +43,12 @@ const mocks = vi.hoisted(() => {
     getAuthStateChangeCallback: () => authStateChangeCallback,
     markSupabaseAuthActive: vi.fn(),
     queryBuilder,
+    refreshSupabaseSessionOnce: vi.fn(() =>
+      auth.refreshSession().then(({ data, error }) => ({
+        session: data?.session || null,
+        error: error || null,
+      }))
+    ),
     subscription,
     supabase,
   }
@@ -52,6 +58,7 @@ vi.mock('../lib/supabase', () => ({
   clearSupabaseStoredSession: mocks.clearSupabaseStoredSession,
   isSupabaseConfigured: () => true,
   markSupabaseAuthActive: mocks.markSupabaseAuthActive,
+  refreshSupabaseSessionOnce: mocks.refreshSupabaseSessionOnce,
   subscribeSupabaseAuthExpired: vi.fn(() => vi.fn()),
   supabase: mocks.supabase,
 }))
