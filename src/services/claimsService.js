@@ -16,6 +16,7 @@ import { routeRead, routeWrite } from './apiRouter'
 import { invokeTierAccess } from './tierAccessService'
 import { normalizePatientWorkspaceData } from './patientService'
 import { getConnectivityState } from './connectivityService'
+import { formatAppDateKey } from '../utils/date'
 
 const buildValidatedClaimPayload = (claimData) => {
   const patientName = assertRequiredText(claimData.patientName, 'Patient name')
@@ -49,7 +50,7 @@ export const createClaim = async (claimData) => {
       patient_name: validated.patientName,
       insurance_provider: validated.insuranceProvider,
       insurance_id: validated.insuranceId,
-      service_date: claimData.serviceDate || new Date().toISOString().split('T')[0],
+      service_date: claimData.serviceDate || formatAppDateKey(),
       total_amount: validated.totalAmount,
       prescription_url: claimData.prescriptionUrl || null,
       notes: normalizeText(claimData.notes) || null,
@@ -79,7 +80,7 @@ export const createClaim = async (claimData) => {
         patientName: validated.patientName,
         insuranceProvider: validated.insuranceProvider,
         insuranceId: validated.insuranceId,
-        serviceDate: claimData.serviceDate || new Date().toISOString().split('T')[0],
+        serviceDate: claimData.serviceDate || formatAppDateKey(),
         prescriptionUrl: claimData.prescriptionUrl || null,
         notes: normalizeText(claimData.notes) || null,
         branchId: normalizeText(claimData.branchId) || null,
@@ -134,7 +135,7 @@ export const updateClaim = async (id, claimData) => {
       patient_name: validated.patientName,
       insurance_provider: validated.insuranceProvider,
       insurance_id: validated.insuranceId,
-      service_date: claimData.serviceDate || new Date().toISOString().split('T')[0],
+      service_date: claimData.serviceDate || formatAppDateKey(),
       total_amount: validated.totalAmount,
       prescription_url: claimData.prescriptionUrl || null,
       notes: normalizeText(claimData.notes) || null,
@@ -163,7 +164,7 @@ export const updateClaim = async (id, claimData) => {
         patientName: validated.patientName,
         insuranceProvider: validated.insuranceProvider,
         insuranceId: validated.insuranceId,
-        serviceDate: claimData.serviceDate || new Date().toISOString().split('T')[0],
+        serviceDate: claimData.serviceDate || formatAppDateKey(),
         prescriptionUrl: claimData.prescriptionUrl || null,
         notes: normalizeText(claimData.notes) || null,
         branchId: normalizeText(claimData.branchId) || null,

@@ -432,16 +432,17 @@ const enrichRecord = (entityType, payload) => {
 
   if (entityType === 'claims') {
     return {
-      claim_number: payload.claim_number || `BCL-${timestamp.slice(2, 10).replace(/-/g, '')}-${id.slice(0, 4).toUpperCase()}`,
-      claim_status: payload.claim_status || payload.status || 'pending',
-      submitted_at: payload.submitted_at || timestamp,
       ...base,
+      claim_number: payload.claim_number || `BCL-${toNhisCalendarDate(timestamp).slice(2, 10).replace(/-/g, '')}-${id.slice(0, 4).toUpperCase()}`,
+      claim_status: payload.claim_status || payload.status || 'pending',
+      service_date: payload.service_date || toNhisCalendarDate(timestamp),
+      submitted_at: payload.submitted_at || timestamp,
     }
   }
 
   if (entityType === 'nhis_claims') {
     return {
-      claim_number: payload.claim_number || `NHIS-OFF-${timestamp.slice(2, 10).replace(/-/g, '')}-${id.slice(0, 4).toUpperCase()}`,
+      claim_number: payload.claim_number || `NHIS-OFF-${toNhisCalendarDate(timestamp).slice(2, 10).replace(/-/g, '')}-${id.slice(0, 4).toUpperCase()}`,
       status: payload.status || 'served',
       submission_month: payload.submission_month || toNhisCalendarDate(payload.service_date_from || timestamp).slice(0, 7),
       ...base,
@@ -475,7 +476,7 @@ const indexClaimRecord = (record = {}, syncStatus = 'pending') => {
 
   upsertClaimRow.run({
     id: record.id,
-    claimNumber: record.claim_number || `BCL-${timestamp.slice(2, 10).replace(/-/g, '')}-${record.id.slice(0, 4).toUpperCase()}`,
+    claimNumber: record.claim_number || `BCL-${toNhisCalendarDate(timestamp).slice(2, 10).replace(/-/g, '')}-${record.id.slice(0, 4).toUpperCase()}`,
     patientId: record.patient_id || null,
     patientName: record.patient_name || 'Offline patient',
     insuranceProvider: record.insurance_provider || 'Insurance',

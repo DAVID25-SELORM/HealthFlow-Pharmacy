@@ -1,6 +1,34 @@
 import { createId, db, json, nowIso } from './db.js'
 import { config } from './config.js'
 
+const APP_TIME_ZONE = 'Africa/Accra'
+const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+
+const toAppDateKey = (value = new Date()) => {
+  const raw = String(value || '').trim()
+  if (ISO_DATE_PATTERN.test(raw)) return raw
+
+  const date = value instanceof Date ? value : new Date(raw)
+  if (Number.isNaN(date.getTime())) return ''
+
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: APP_TIME_ZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(date)
+    const part = (type) => parts.find((item) => item.type === type)?.value || ''
+    return [part('year'), part('month'), part('day')].filter(Boolean).join('-')
+  } catch {
+    return [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, '0'),
+      String(date.getDate()).padStart(2, '0'),
+    ].join('-')
+  }
+}
+
 const toMoney = (value, fallback = 0) => {
   const parsed = Number(value)
   if (!Number.isFinite(parsed)) {
@@ -29,7 +57,7 @@ const assertPositiveQuantity = (value, label) => {
 }
 
 const createClaimNumber = () => {
-  const datePart = new Date().toISOString().slice(2, 10).replace(/-/g, '')
+  const datePart = toAppDateKey().slice(2, 10).replace(/-/g, '')
   const randomPart = Math.random().toString(36).slice(2, 6).toUpperCase()
   return `BCL-${datePart}-${randomPart}`
 }
@@ -113,7 +141,7 @@ export const createLocalClaim = db.transaction((claimData, linkedSale = {}) => {
     patientName: assertRequiredText(claimData.patientName, 'Patient name'),
     insuranceProvider: assertRequiredText(claimData.insuranceProvider, 'Insurance provider'),
     insuranceId: assertRequiredText(claimData.insuranceId, 'Insurance ID'),
-    serviceDate: claimData.serviceDate || createdAt.slice(0, 10),
+    serviceDate: claimData.serviceDate || toAppDateKey(createdAt),
     totalAmount,
     prescriptionUrl: claimData.prescriptionUrl || null,
     notes: claimData.notes || null,

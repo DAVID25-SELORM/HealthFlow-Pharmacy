@@ -12,7 +12,7 @@ import {
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
 import { useTenant } from '../context/TenantContext'
-import { formatAppDate } from '../utils/date'
+import { formatAppDate, formatAppDateKey } from '../utils/date'
 import { getInsuranceProviderOptions } from '../utils/insuranceProviders'
 import { CLAIMS_ROLES, hasRole } from '../utils/roles'
 import UpgradeGate from '../components/UpgradeGate'
@@ -23,7 +23,7 @@ const blankForm = {
   patientName: '',
   insuranceProvider: '',
   insuranceId: '',
-  serviceDate: new Date().toISOString().split('T')[0],
+  serviceDate: formatAppDateKey(),
   notes: '',
 }
 
@@ -233,7 +233,7 @@ const Claims = () => {
   }
 
   const resetClaimForm = () => {
-    setFormData({ ...blankForm, serviceDate: new Date().toISOString().split('T')[0] })
+    setFormData({ ...blankForm, serviceDate: formatAppDateKey() })
     setClaimItems([])
     setSelectedDrugId('')
     setSelectedQty('1')
@@ -261,7 +261,7 @@ const Claims = () => {
       patientName: claimPatientName,
       insuranceProvider: claim.insurance_provider || '',
       insuranceId: claim.insurance_id || '',
-      serviceDate: claim.service_date || new Date().toISOString().split('T')[0],
+      serviceDate: claim.service_date || formatAppDateKey(),
       notes: claim.notes || '',
     })
     setPatientLookupTerm(claimPatientName)
