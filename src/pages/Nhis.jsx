@@ -183,7 +183,7 @@ const DURATION_OPTIONS = [
   '1 month',
 ]
 
-const BLANK_CLAIM = {
+const makeBlankClaim = () => ({
   patientId:         '',
   memberNo:          '',
   cardType:          '',
@@ -226,9 +226,9 @@ const BLANK_CLAIM = {
   claimitAttachmentBase64: '',
   notes:             '',
   unservedMedicinesNote: '',
-}
+})
 
-const BLANK_MEDICINE = {
+const makeBlankMedicine = () => ({
   nhisDrugId:    '',
   drugCode:      '',
   description:   '',
@@ -252,7 +252,7 @@ const BLANK_MEDICINE = {
   medicineAccessLevel: '',
   requiredPharmacyLevel: '',
   // ✅ NHIS PHARMACY LEVEL PATCH END
-}
+})
 
 const BLANK_NHIS_DRUG = {
   code: '', description: '', genericName: '', strength: '',
@@ -926,7 +926,7 @@ const Nhis = () => {
   const [viewClaim, setViewClaim]                   = useState(null)
 
   // ── new claim form ────────────────────────────────────────────
-  const [claimForm, setClaimForm]           = useState(BLANK_CLAIM)
+  const [claimForm, setClaimForm]           = useState(makeBlankClaim)
   const [claimMedicines, setClaimMedicines] = useState([])
   const [claimServices, setClaimServices]   = useState([])
   const [claimSubmitting, setClaimSubmitting] = useState(false)
@@ -942,7 +942,7 @@ const Nhis = () => {
   const [selectedClaimPatient, setSelectedClaimPatient] = useState(null)
 
   // ── medicine sub-modal ────────────────────────────────────────
-  const [medForm, setMedForm]           = useState(BLANK_MEDICINE)
+  const [medForm, setMedForm]           = useState(makeBlankMedicine)
   const [medCodeSearch, setMedCodeSearch] = useState('')
   const [medSearchResults, setMedSearchResults] = useState([])
   const [medSearching, setMedSearching] = useState(false)
@@ -1786,7 +1786,7 @@ const Nhis = () => {
       folder_no: claim.folder_no || '',
       sourceClaimNumber: claim.claim_number || '',
     })
-    setMedForm(BLANK_MEDICINE)
+    setMedForm(makeBlankMedicine())
     setEditingMedicineIndex(null)
     setClaimForm({
       patientId: claim.patient_id || '',
@@ -2055,7 +2055,7 @@ const Nhis = () => {
 
       return prev.map((medicine, index) => index === editingMedicineIndex ? nextMedicine : medicine)
     })
-    setMedForm(BLANK_MEDICINE)
+    setMedForm(makeBlankMedicine())
     setMedCodeSearch('')
     setEditingMedicineIndex(null)
     setShowMedModal(false)
@@ -2738,7 +2738,7 @@ const Nhis = () => {
   }
 
   const resetClaimModal = () => {
-    setClaimForm(BLANK_CLAIM)
+    setClaimForm(makeBlankClaim())
     setClaimMedicines([])
     setClaimServices([])
     setClaimError('')
@@ -2746,7 +2746,7 @@ const Nhis = () => {
     setPatientSearchResults([])
     setPatientSearchError('')
     setSelectedClaimPatient(null)
-    setMedForm(BLANK_MEDICINE)
+    setMedForm(makeBlankMedicine())
     setEditingMedicineIndex(null)
     setTariffSearch('')
     setEditingClaim(null)
@@ -4445,7 +4445,7 @@ const Nhis = () => {
                       className="btn btn-primary btn-sm"
                       onClick={() => {
                         setEditingMedicineIndex(null)
-                        setMedForm(BLANK_MEDICINE)
+                        setMedForm(makeBlankMedicine())
                         setMedCodeSearch('')
                         setMedSearchResults([])
                         setShowMedModal(true)
@@ -4982,7 +4982,7 @@ const Nhis = () => {
               <button
                 className="btn btn-secondary"
                 onClick={() => {
-                  setMedForm(BLANK_MEDICINE)
+                  setMedForm(makeBlankMedicine())
                   setMedCodeSearch('')
                   setMedSearchResults([])
                   setEditingMedicineIndex(null)

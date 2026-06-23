@@ -23,9 +23,9 @@ const blankForm = {
   patientName: '',
   insuranceProvider: '',
   insuranceId: '',
-  serviceDate: formatAppDateKey(),
   notes: '',
 }
+const makeBlankForm = () => ({ ...blankForm, serviceDate: formatAppDateKey() })
 
 const validClaimTabs = ['all', 'pending', 'approved', 'rejected']
 
@@ -88,7 +88,7 @@ const Claims = () => {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
-  const [formData, setFormData] = useState(blankForm)
+  const [formData, setFormData] = useState(makeBlankForm)
   const [claimItems, setClaimItems] = useState([])
   const [selectedDrugId, setSelectedDrugId] = useState('')
   const [selectedQty, setSelectedQty] = useState('1')
