@@ -91,7 +91,7 @@ import './Nhis.css'
 // ─── constants ────────────────────────────────────────────────────────────────
 
 const CLAIM_STATUS_TABS = ['all', 'pending_serving', 'returned_for_review', 'served', 'submitted', 'paid', 'rejected']
-const NHIS_CLAIMS_SCREEN_LIMIT = 500
+const NHIS_CLAIMS_SCREEN_LIMIT = 100000
 const CLAIM_STATUS_LABELS = {
   all: 'All',
   pending_serving: 'Pending Serving',

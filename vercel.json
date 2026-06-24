@@ -62,6 +62,14 @@
   ],
   "rewrites": [
     {
+      "source": "/hms-api/:path*",
+      "destination": "/api/hms-api/:path*"
+    },
+    {
+      "source": "/hms-api",
+      "destination": "/api/hms-api"
+    },
+    {
       "source": "/json-api/:path*",
       "destination": "/api/json-api/:path*"
     },
