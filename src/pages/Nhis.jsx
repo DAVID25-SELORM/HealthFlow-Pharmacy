@@ -17,7 +17,7 @@ import {
   updateNhisDrug,
   deleteNhisDrug,
   upsertNhisDrugs,
-  getAllNhisClaims,
+  getNhisClaimsPage,
   getNhisClaimForSubmission,
   getAllNhiaTariffItems,
   updateNhiaTariffItem,
@@ -91,7 +91,7 @@ import './Nhis.css'
 // ─── constants ────────────────────────────────────────────────────────────────
 
 const CLAIM_STATUS_TABS = ['all', 'pending_serving', 'returned_for_review', 'served', 'submitted', 'paid', 'rejected']
-const NHIS_CLAIMS_SCREEN_LIMIT = 2000
+const NHIS_CLAIMS_PAGE_SIZE = 100
 const CLAIM_STATUS_LABELS = {
   all: 'All',
   pending_serving: 'Pending Serving',
@@ -901,6 +901,9 @@ const Nhis = () => {
     totalPaid: 0,
   })
   const [loading, setLoading]     = useState(true)
+  const [claimsPageLoading, setClaimsPageLoading] = useState(false)
+  const [claimsPage, setClaimsPage] = useState(1)
+  const [claimsTotal, setClaimsTotal] = useState(0)
   const [error, setError]         = useState('')
   const [catalogSeeding, setCatalogSeeding] = useState(false)
 
@@ -1011,6 +1014,7 @@ const Nhis = () => {
   }, [searchParams])
 
   const setStatusTab = (tab) => {
+    setClaimsPage(1)
     setClaimTab(tab)
     const p = new URLSearchParams(searchParams)
     tab === 'all' ? p.delete('tab') : p.set('tab', tab)
@@ -1018,6 +1022,66 @@ const Nhis = () => {
   }
 
   const canEditNhisClaimAnytime = ['admin', 'claims_officer'].includes(normalizedRole)
+
+  const getClaimServerFilters = useCallback(() => {
+    const today = todayIsoDate()
+    let fromDate = ''
+    let toDate = ''
+    let openOnly = false
+
+    if (claimDateFilter === 'today') {
+      fromDate = today
+      toDate = today
+    } else if (claimDateFilter === 'week') {
+      fromDate = weekStartIsoDate()
+      toDate = today
+    } else if (claimDateFilter === 'month') {
+      fromDate = monthStartIsoDate()
+      toDate = today
+    } else if (claimDateFilter === 'previous_month') {
+      const previous = previousMonthRange()
+      fromDate = previous.from
+      toDate = previous.to
+    } else if (claimDateFilter === 'custom') {
+      fromDate = claimFromDate
+      toDate = claimToDate
+    } else if (claimDateFilter === 'open') {
+      openOnly = true
+    }
+
+    return {
+      includeDetails: false,
+      status: claimTab !== 'all' ? claimTab : undefined,
+      openOnly,
+      fromDate,
+      toDate,
+      searchTerm: claimSearch.trim(),
+    }
+  }, [claimDateFilter, claimFromDate, claimSearch, claimTab, claimToDate])
+
+  const loadClaimsPage = useCallback(async (page = 1) => {
+    if (!isSupabaseConfigured()) {
+      setClaims([])
+      setClaimsTotal(0)
+      return
+    }
+
+    try {
+      setClaimsPageLoading(true)
+      const result = await getNhisClaimsPage({
+        ...getClaimServerFilters(),
+        page,
+        pageSize: NHIS_CLAIMS_PAGE_SIZE,
+      })
+      setClaims(result.claims || [])
+      setClaimsTotal(Number(result.total || 0))
+      setClaimsPage(result.page || page)
+    } catch (err) {
+      setError(err.message || 'Unable to load NHIS claims.')
+    } finally {
+      setClaimsPageLoading(false)
+    }
+  }, [getClaimServerFilters])
 
   // ── load data ────────────────────────────────────────────────
   const loadAll = useCallback(async () => {
@@ -1029,8 +1093,7 @@ const Nhis = () => {
     try {
       setLoading(true)
       setError('')
-      const [claimsData, drugsData, patientsData, statsData, rulesData, tariffData, inventoryData] = await Promise.all([
-        getAllNhisClaims({ limit: NHIS_CLAIMS_SCREEN_LIMIT, includeDetails: false }),
+      const [drugsData, patientsData, statsData, rulesData, tariffData, inventoryData] = await Promise.all([
         getAllNhisDrugs(),
         getAllPatients(),
         getNhisClaimStats(),
@@ -1064,7 +1127,6 @@ const Nhis = () => {
         }
       }
 
-      setClaims(claimsData)
       setNhisDrugs(readyDrugsData)
       setPatients(patientsData)
       setStats(statsData)
@@ -1085,16 +1147,13 @@ const Nhis = () => {
     }
     try {
       setError('')
-      const [claimsData, statsData] = await Promise.all([
-        getAllNhisClaims({ limit: NHIS_CLAIMS_SCREEN_LIMIT, includeDetails: false }),
-        getNhisClaimStats(),
-      ])
-      setClaims(claimsData)
+      const statsData = await getNhisClaimStats()
+      await loadClaimsPage(claimsPage)
       setStats(statsData)
     } catch (err) {
       setError(err.message || 'Unable to refresh NHIS claims.')
     }
-  }, [])
+  }, [claimsPage, loadClaimsPage])
 
   const hydrateClaimForAction = useCallback(async (claim) => {
     if (!claim?._summaryOnly) return claim
@@ -1105,6 +1164,10 @@ const Nhis = () => {
   }, [])
 
   useEffect(() => { void loadAll() }, [loadAll])
+
+  useEffect(() => {
+    void loadClaimsPage(claimsPage)
+  }, [claimsPage, loadClaimsPage])
 
   useEffect(() => startClaimItBridgeQueueAutoSync({
     onSynced: (result) => {
@@ -1192,6 +1255,10 @@ const Nhis = () => {
       )
     })
   }, [claims, claimTab, claimSearch, claimDateFilter, claimDateRange])
+
+  const claimsTotalPages = Math.max(1, Math.ceil(claimsTotal / NHIS_CLAIMS_PAGE_SIZE))
+  const claimsShowingFrom = claimsTotal === 0 ? 0 : ((claimsPage - 1) * NHIS_CLAIMS_PAGE_SIZE) + 1
+  const claimsShowingTo = Math.min(claimsPage * NHIS_CLAIMS_PAGE_SIZE, claimsTotal)
 
   const allNhisPatients = useMemo(() => {
     const merged = new Map()
@@ -3302,7 +3369,10 @@ const Nhis = () => {
             <div className="nhis-date-filter">
               <select
                 value={claimDateFilter}
-                onChange={(event) => setClaimDateFilter(event.target.value)}
+                onChange={(event) => {
+                  setClaimsPage(1)
+                  setClaimDateFilter(event.target.value)
+                }}
                 aria-label="Filter claims by date"
               >
                 <option value="month">Current month</option>
@@ -3318,13 +3388,19 @@ const Nhis = () => {
                   <input
                     type="date"
                     value={claimFromDate}
-                    onChange={(event) => setClaimFromDate(event.target.value)}
+                    onChange={(event) => {
+                      setClaimsPage(1)
+                      setClaimFromDate(event.target.value)
+                    }}
                     aria-label="Claims from date"
                   />
                   <input
                     type="date"
                     value={claimToDate}
-                    onChange={(event) => setClaimToDate(event.target.value)}
+                    onChange={(event) => {
+                      setClaimsPage(1)
+                      setClaimToDate(event.target.value)
+                    }}
                     aria-label="Claims to date"
                   />
                 </>
@@ -3336,7 +3412,10 @@ const Nhis = () => {
                 className="search-input"
                 placeholder="Search by name, member no, claim #..."
                 value={claimSearch}
-                onChange={(e) => setClaimSearch(e.target.value)}
+                onChange={(e) => {
+                  setClaimsPage(1)
+                  setClaimSearch(e.target.value)
+                }}
               />
             </div>
           </div>
@@ -3357,10 +3436,35 @@ const Nhis = () => {
             </div>
           )}
 
+          <div className="nhis-pagination">
+            <span>
+              Showing {claimsShowingFrom}-{claimsShowingTo} of {claimsTotal} claim{claimsTotal === 1 ? '' : 's'}
+            </span>
+            <div className="nhis-pagination-actions">
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                disabled={claimsPageLoading || claimsPage <= 1}
+                onClick={() => setClaimsPage((page) => Math.max(1, page - 1))}
+              >
+                Previous
+              </button>
+              <span>Page {claimsPage} of {claimsTotalPages}</span>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                disabled={claimsPageLoading || claimsPage >= claimsTotalPages}
+                onClick={() => setClaimsPage((page) => Math.min(claimsTotalPages, page + 1))}
+              >
+                Next
+              </button>
+            </div>
+          </div>
+
           {/* Claims table */}
           <div className="nhis-table-wrap">
-            {loading ? (
-              <div className="nhis-empty">Loading claims...</div>
+            {loading || claimsPageLoading ? (
+              <div className="nhis-empty">{claimsPageLoading ? 'Loading claims page...' : 'Loading claims...'}</div>
             ) : filteredClaims.length === 0 ? (
               <div className="nhis-empty">
                 {visibleNhisPatients.length > 0 ? (

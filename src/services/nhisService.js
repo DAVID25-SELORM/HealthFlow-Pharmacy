@@ -4168,6 +4168,53 @@ const hydrateClaimsWithMedicineLines = async (claims = []) => {
 const hydrateNhisClaimsForUi = async (claims = []) =>
   await hydrateClaimsWithServiceLines(await hydrateClaimsWithMedicineLines(claims))
 
+const getNhisClaimPageOptions = (filters = {}) => {
+  const pageSize = Math.min(Math.max(Number.parseInt(String(filters.pageSize || filters.limit || DEFAULT_NHIS_CLAIM_LIST_LIMIT), 10) || DEFAULT_NHIS_CLAIM_LIST_LIMIT, 1), 500)
+  const page = Math.max(Number.parseInt(String(filters.page || 1), 10) || 1, 1)
+  const from = (page - 1) * pageSize
+  return {
+    page,
+    pageSize,
+    from,
+    to: from + pageSize - 1,
+  }
+}
+
+const applyNhisClaimFilters = (query, filters = {}) => {
+  if (filters.status && filters.status !== 'all') {
+    query = Array.isArray(filters.status)
+      ? query.in('status', filters.status)
+      : query.eq('status', filters.status)
+  }
+
+  if (filters.openOnly) {
+    query = query.in('status', ['pending_serving', 'serving_in_progress', 'returned_for_review', 'served', 'submitted'])
+  }
+
+  if (filters.month) {
+    query = query.eq('submission_month', filters.month)
+  }
+
+  if (filters.fromDate) {
+    query = query.gte('service_date_from', filters.fromDate)
+  }
+
+  if (filters.toDate) {
+    query = query.lte('service_date_from', filters.toDate)
+  }
+
+  if (filters.searchTerm) {
+    const term = sanitizeSearchTerm(filters.searchTerm)
+    if (term) {
+      query = query.or(
+        `surname.ilike.%${term}%,other_names.ilike.%${term}%,member_no.ilike.%${term}%,claim_number.ilike.%${term}%,hin.ilike.%${term}%`
+      )
+    }
+  }
+
+  return query
+}
+
 const fetchNhisClaimsFromSupabase = async (filters = {}, { ascending = false } = {}) => {
   const includeDetails = filters.includeDetails !== false
   const defaultSelect = includeDetails ? NHIS_CLAIM_MEDICINES_SELECT : NHIS_CLAIM_LIST_SELECT
@@ -4182,24 +4229,7 @@ const fetchNhisClaimsFromSupabase = async (filters = {}, { ascending = false } =
       .order('created_at', { ascending })
       .limit(limit)
 
-    if (filters.status && filters.status !== 'all') {
-      query = query.eq('status', filters.status)
-    }
-
-    if (filters.month) {
-      query = query.eq('submission_month', filters.month)
-    }
-
-    if (filters.searchTerm) {
-      const term = sanitizeSearchTerm(filters.searchTerm)
-      if (term) {
-        query = query.or(
-          `surname.ilike.%${term}%,other_names.ilike.%${term}%,member_no.ilike.%${term}%,claim_number.ilike.%${term}%,hin.ilike.%${term}%`
-        )
-      }
-    }
-
-    return query
+    return applyNhisClaimFilters(query, filters)
   }
 
   let { data, error } = await buildQuery()
@@ -4215,6 +4245,42 @@ const fetchNhisClaimsFromSupabase = async (filters = {}, { ascending = false } =
     }))
   }
   return await hydrateNhisClaimsForUi(data || [])
+}
+
+const fetchNhisClaimsPageFromSupabase = async (filters = {}, { ascending = false } = {}) => {
+  const includeDetails = filters.includeDetails !== false
+  const defaultSelect = includeDetails ? NHIS_CLAIM_MEDICINES_SELECT : NHIS_CLAIM_LIST_SELECT
+  const { page, pageSize, from, to } = getNhisClaimPageOptions(filters)
+  const buildQuery = (select = defaultSelect) =>
+    applyNhisClaimFilters(
+      supabase
+        .from('nhis_claims')
+        .select(select, { count: 'exact' })
+        .order('created_at', { ascending })
+        .range(from, to),
+      filters
+    )
+
+  let { data, error, count } = await buildQuery()
+  if (includeDetails && error && isMissingOptionalClaimMedicineColumn(error)) {
+    ;({ data, error, count } = await buildQuery(NHIS_CLAIM_MEDICINES_SELECT_BASIC))
+  }
+  if (error) throw error
+
+  const claims = includeDetails
+    ? await hydrateNhisClaimsForUi(data || [])
+    : (data || []).map((claim) => ({
+        ...claim,
+        _summaryOnly: true,
+        nhis_claim_services: [],
+      }))
+
+  return {
+    claims,
+    total: Number(count || 0),
+    page,
+    pageSize,
+  }
 }
 
 const getNhisClaimMergeKey = (claim = {}, index = 0) =>
@@ -4375,6 +4441,28 @@ export const getAllNhisClaims = async (filters = {}) => {
   return await fetchNhisClaimsFromSupabase(filters)
 }
 
+export const getNhisClaimsPage = async (filters = {}) => {
+  if (shouldUseBranchServer()) {
+    if (getConnectivityState().internetAvailable === false) {
+      const rows = await listBranchRecords('nhis/claims', {
+        ...filters,
+        limit: filters.pageSize || filters.limit || DEFAULT_NHIS_CLAIM_LIST_LIMIT,
+        offset: ((Number(filters.page || 1) - 1) * Number(filters.pageSize || filters.limit || DEFAULT_NHIS_CLAIM_LIST_LIMIT)) || 0,
+      })
+      return {
+        claims: rows,
+        total: rows.length,
+        page: Math.max(Number(filters.page || 1), 1),
+        pageSize: Number(filters.pageSize || filters.limit || DEFAULT_NHIS_CLAIM_LIST_LIMIT),
+      }
+    }
+
+    return await fetchNhisClaimsPageFromSupabase(filters)
+  }
+
+  return await fetchNhisClaimsPageFromSupabase(filters)
+}
+
 const computeNhisClaimStats = (rows = []) => ({
   total: rows.length,
   pending_serving: rows.filter((r) => r.status === 'pending_serving').length,
@@ -4388,10 +4476,28 @@ const computeNhisClaimStats = (rows = []) => ({
     .reduce((s, r) => s + Number(r.total_amount || 0), 0),
 })
 
+const normalizeNhisClaimStats = (stats = {}) => ({
+  total: Number(stats.total || 0),
+  pending_serving: Number(stats.pending_serving || 0),
+  returned_for_review: Number(stats.returned_for_review || 0),
+  served: Number(stats.served || 0),
+  submitted: Number(stats.submitted || 0),
+  paid: Number(stats.paid || 0),
+  rejected: Number(stats.rejected || 0),
+  totalPaid: Number(stats.total_paid ?? stats.totalPaid ?? 0),
+})
+
 export const getNhisClaimStats = async () => {
   if (shouldUseBranchServer()) {
     const rows = await listBranchRecords('nhis/claims', { limit: 100000 })
     return computeNhisClaimStats(rows)
+  }
+
+  const { data: statsData, error: statsError } = await supabase
+    .rpc('get_nhis_claim_stats')
+
+  if (!statsError && statsData?.[0]) {
+    return normalizeNhisClaimStats(statsData[0])
   }
 
   const { data, error } = await supabase

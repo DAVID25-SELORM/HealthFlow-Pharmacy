@@ -19,6 +19,31 @@ const PATIENT_INSURANCE_ID_UNIQUE_CONSTRAINTS = [
 
 const PATIENT_INSURANCE_ID_FIELDS = ['insurance_id', 'nhis_member_no', 'nhis_hin']
 
+const NHIS_CLAIM_PATIENT_LOOKUP_LIMIT = 1000
+
+const NHIS_CLAIM_PATIENT_SELECT = [
+  'id',
+  'claim_number',
+  'patient_id',
+  'member_no',
+  'hin',
+  'surname',
+  'other_names',
+  'phone',
+  'patient_phone',
+  'email',
+  'gender',
+  'date_of_birth',
+  'patient_address',
+  'insurance_provider',
+  'insurance_id',
+  'folder_no',
+  'service_date',
+  'service_date_from',
+  'dispensing_date',
+  'created_at',
+].join(', ')
+
 const normalizeInsuranceId = (provider, value) => {
   const insuranceId = normalizeText(value)
   if (normalizeText(provider).toLowerCase() !== 'nhis' || !insuranceId) {
@@ -280,8 +305,9 @@ const nhisClaimToPatientDetail = (claim = {}) => ({
 const fetchNhisClaimPatientsFromSupabase = async () => {
   const { data, error } = await supabase
     .from('nhis_claims')
-    .select('*')
-    .limit(5000)
+    .select(NHIS_CLAIM_PATIENT_SELECT)
+    .order('created_at', { ascending: false })
+    .limit(NHIS_CLAIM_PATIENT_LOOKUP_LIMIT)
 
   if (error) throw error
 

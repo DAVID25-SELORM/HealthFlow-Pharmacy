@@ -78,6 +78,23 @@
   font-size: 0.82rem;
 }
 
+.nhis-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0.75rem 0;
+  color: var(--gray-600);
+  font-size: 0.9rem;
+  flex-wrap: wrap;
+}
+
+.nhis-pagination-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
 /* Alert */
 .nhis-alert {
   margin-bottom: 1rem;
