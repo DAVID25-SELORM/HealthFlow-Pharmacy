@@ -69,6 +69,12 @@ Filters are sent to the database before pagination:
 
 When filters change, the page resets to page 1.
 
+Follow-up optimization added:
+
+- Claim search is debounced before hitting Supabase, reducing request bursts while typing.
+- Exact totals are fetched for a new filter set, then skipped on later page clicks to avoid repeated count scans.
+- Recently loaded pages are cached in memory for 60 seconds, so Page 1 -> Page 2 -> Page 1 does not immediately refetch.
+
 Local build signal after this pass:
 
 ```text
@@ -86,6 +92,7 @@ Likely slow paths identified from code review:
 - `nhis_claims` list loading without server-side pagination
 - `nhis_claims` search using partial text matches
 - Patient workspace loading when it merges patients and NHIS claim-derived patient records
+- Repeated exact counts for every paginated page request
 - Reports bundle generation because it loads and computes multiple report datasets
 - Dashboard sales history query for trend calculations
 
@@ -135,4 +142,4 @@ npm.cmd run build
 2. Convert Reports to lazy/on-demand report generation instead of loading the default bundle immediately.
 3. Optimize Patient page enrichment to avoid per-patient visit-count lookups where workspace stats already exist.
 4. Add a paginated Patient Care patient picker for large facilities.
-5. Consider a Supabase RPC for NHIS status counts so stats do not scan all claim rows client-side.
+5. Consider one RPC that returns NHIS page rows and filtered counts together for even fewer round trips.

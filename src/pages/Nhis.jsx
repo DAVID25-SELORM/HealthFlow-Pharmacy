@@ -92,6 +92,8 @@ import './Nhis.css'
 
 const CLAIM_STATUS_TABS = ['all', 'pending_serving', 'returned_for_review', 'served', 'submitted', 'paid', 'rejected']
 const NHIS_CLAIMS_PAGE_SIZE = 100
+const NHIS_CLAIMS_PAGE_CACHE_MS = 60000
+const NHIS_CLAIMS_SEARCH_DEBOUNCE_MS = 400
 const CLAIM_STATUS_LABELS = {
   all: 'All',
   pending_serving: 'Pending Serving',
@@ -101,6 +103,17 @@ const CLAIM_STATUS_LABELS = {
   submitted: 'Submitted',
   paid: 'Paid',
   rejected: 'Rejected',
+}
+
+const useDebouncedValue = (value, delayMs) => {
+  const [debouncedValue, setDebouncedValue] = useState(value)
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedValue(value), delayMs)
+    return () => window.clearTimeout(timer)
+  }, [value, delayMs])
+
+  return debouncedValue
 }
 const MEDICINE_SERVING_STATUSES = [
   { value: 'fully_served', label: 'Fully Served' },
@@ -910,6 +923,7 @@ const Nhis = () => {
   // ── claims filter ─────────────────────────────────────────────
   const [claimTab, setClaimTab]         = useState('all')
   const [claimSearch, setClaimSearch]   = useState('')
+  const debouncedClaimSearch = useDebouncedValue(claimSearch, NHIS_CLAIMS_SEARCH_DEBOUNCE_MS)
   const [nhisPatientSearch, setNhisPatientSearch] = useState('')
   const [claimDateFilter, setClaimDateFilter] = useState('month')
   const [claimFromDate, setClaimFromDate] = useState(monthStartIsoDate())
@@ -959,6 +973,8 @@ const Nhis = () => {
   const [editingTariff, setEditingTariff] = useState(null)
   const [tariffForm, setTariffForm] = useState(BLANK_NHIA_TARIFF)
   const [tariffSubmitting, setTariffSubmitting] = useState(false)
+  const claimsPageCacheRef = useRef(new Map())
+  const claimsFilterKeyRef = useRef('')
 
   // ── import modal ──────────────────────────────────────────────
   const [importRows, setImportRows]     = useState([])
@@ -1055,27 +1071,53 @@ const Nhis = () => {
       openOnly,
       fromDate,
       toDate,
-      searchTerm: claimSearch.trim(),
+      searchTerm: debouncedClaimSearch.trim(),
     }
-  }, [claimDateFilter, claimFromDate, claimSearch, claimTab, claimToDate])
+  }, [claimDateFilter, claimFromDate, debouncedClaimSearch, claimTab, claimToDate])
 
-  const loadClaimsPage = useCallback(async (page = 1) => {
+  const loadClaimsPage = useCallback(async (page = 1, options = {}) => {
     if (!isSupabaseConfigured()) {
       setClaims([])
       setClaimsTotal(0)
       return
     }
 
+    const filters = getClaimServerFilters()
+    const filterKey = JSON.stringify(filters)
+    const pageKey = `${filterKey}|page:${page}|size:${NHIS_CLAIMS_PAGE_SIZE}`
+    const cached = claimsPageCacheRef.current.get(pageKey)
+    const now = Date.now()
+    const sameFilter = claimsFilterKeyRef.current === filterKey
+    const shouldLoadTotal = !sameFilter || options.refreshTotal === true
+
+    if (!options.force && cached && now - cached.cachedAt < NHIS_CLAIMS_PAGE_CACHE_MS) {
+      setClaims(cached.claims || [])
+      if (cached.total != null) setClaimsTotal(Number(cached.total || 0))
+      setClaimsPage(cached.page || page)
+      claimsFilterKeyRef.current = filterKey
+      return
+    }
+
     try {
       setClaimsPageLoading(true)
       const result = await getNhisClaimsPage({
-        ...getClaimServerFilters(),
+        ...filters,
         page,
         pageSize: NHIS_CLAIMS_PAGE_SIZE,
+        includeTotal: shouldLoadTotal,
       })
       setClaims(result.claims || [])
-      setClaimsTotal(Number(result.total || 0))
+      if (result.total != null) {
+        setClaimsTotal(Number(result.total || 0))
+      }
       setClaimsPage(result.page || page)
+      claimsFilterKeyRef.current = filterKey
+      claimsPageCacheRef.current.set(pageKey, {
+        claims: result.claims || [],
+        total: result.total,
+        page: result.page || page,
+        cachedAt: now,
+      })
     } catch (err) {
       setError(err.message || 'Unable to load NHIS claims.')
     } finally {
@@ -1148,7 +1190,8 @@ const Nhis = () => {
     try {
       setError('')
       const statsData = await getNhisClaimStats()
-      await loadClaimsPage(claimsPage)
+      claimsPageCacheRef.current.clear()
+      await loadClaimsPage(claimsPage, { force: true, refreshTotal: true })
       setStats(statsData)
     } catch (err) {
       setError(err.message || 'Unable to refresh NHIS claims.')
@@ -1235,7 +1278,7 @@ const Nhis = () => {
   }, [carriedOverClaims])
 
   const filteredClaims = useMemo(() => {
-    const term = claimSearch.trim().toLowerCase()
+    const term = debouncedClaimSearch.trim().toLowerCase()
     return claims.filter((c) => {
       if (claimTab !== 'all' && c.status !== claimTab) return false
       if (claimDateFilter === 'open') {
@@ -1254,7 +1297,7 @@ const Nhis = () => {
         (c.hin           || '').toLowerCase().includes(term)
       )
     })
-  }, [claims, claimTab, claimSearch, claimDateFilter, claimDateRange])
+  }, [claims, claimTab, debouncedClaimSearch, claimDateFilter, claimDateRange])
 
   const claimsTotalPages = Math.max(1, Math.ceil(claimsTotal / NHIS_CLAIMS_PAGE_SIZE))
   const claimsShowingFrom = claimsTotal === 0 ? 0 : ((claimsPage - 1) * NHIS_CLAIMS_PAGE_SIZE) + 1
@@ -1283,7 +1326,7 @@ const Nhis = () => {
   }, [claims, patients])
 
   const visibleNhisPatients = useMemo(() => {
-    const term = claimSearch.trim().toLowerCase()
+    const term = debouncedClaimSearch.trim().toLowerCase()
     return allNhisPatients.filter((patient) => {
       if (!term) return true
       return (
@@ -1294,7 +1337,7 @@ const Nhis = () => {
         lookupMatches(getPatientPhone(patient), term)
       )
     })
-  }, [allNhisPatients, claimSearch])
+  }, [allNhisPatients, debouncedClaimSearch])
 
   const filteredNhisPatients = useMemo(() => {
     const term = nhisPatientSearch.trim().toLowerCase()

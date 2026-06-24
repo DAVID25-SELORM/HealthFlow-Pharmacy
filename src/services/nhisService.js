@@ -4251,11 +4251,12 @@ const fetchNhisClaimsPageFromSupabase = async (filters = {}, { ascending = false
   const includeDetails = filters.includeDetails !== false
   const defaultSelect = includeDetails ? NHIS_CLAIM_MEDICINES_SELECT : NHIS_CLAIM_LIST_SELECT
   const { page, pageSize, from, to } = getNhisClaimPageOptions(filters)
+  const selectOptions = filters.includeTotal === false ? {} : { count: 'exact' }
   const buildQuery = (select = defaultSelect) =>
     applyNhisClaimFilters(
       supabase
         .from('nhis_claims')
-        .select(select, { count: 'exact' })
+        .select(select, selectOptions)
         .order('created_at', { ascending })
         .range(from, to),
       filters
@@ -4277,7 +4278,7 @@ const fetchNhisClaimsPageFromSupabase = async (filters = {}, { ascending = false
 
   return {
     claims,
-    total: Number(count || 0),
+    total: count == null ? null : Number(count || 0),
     page,
     pageSize,
   }
