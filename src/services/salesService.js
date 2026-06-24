@@ -390,16 +390,17 @@ export const refundSale = async ({ saleId, reason, role, canRefund = false }) =>
 
 // Get all sales
 export const getAllSales = async (filters = {}) => {
+  const selectCols = filters.columns || `
+    *,
+    sale_items (
+      *,
+      drugs (name)
+    ),
+    patients (full_name)
+  `
   let query = supabase
     .from('sales')
-    .select(`
-      *,
-      sale_items (
-        *,
-        drugs (name)
-      ),
-      patients (full_name)
-    `)
+    .select(selectCols)
     .order('sale_date', { ascending: false })
   
   // Apply filters

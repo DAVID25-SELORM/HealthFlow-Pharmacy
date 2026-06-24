@@ -271,6 +271,7 @@ const Dashboard = () => {
           startDate: previousMonthStart.toISOString(),
           endDate: today.toISOString(),
           paymentStatus: 'completed',
+          columns: 'id, sale_date, net_amount, payment_status',
         }),
         getRecentSales(5),
         canViewOperationalMetrics ? getLowStockDrugs() : Promise.resolve([]),
@@ -656,8 +657,8 @@ const Dashboard = () => {
       {error && <div className="dashboard-alert">{error}</div>}
 
       <div className="stats-grid">
-        {statsCards.map((stat, index) => (
-          <div key={index} className={`stat-card ${stat.color}`}>
+        {statsCards.map((stat) => (
+          <div key={stat.title} className={`stat-card ${stat.color}`}>
             <div className="stat-icon">
               <stat.icon size={24} />
             </div>
