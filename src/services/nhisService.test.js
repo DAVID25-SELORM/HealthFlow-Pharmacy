@@ -688,16 +688,24 @@ describe('assessNhisClaimReadiness', () => {
       [{ ...baseMedicine, category: 'C', medicineAccessLevel: 'Prescription', requiredPharmacyLevel: 'P2' }],
       { enforcePrescribingLevel: true, providerClassLevel: 'B1', pharmacyLevel: 'P1' }
     )
-    const pharmacyLevelBlocked = assessNhisClaimReadiness(
+    const p1FullPharmacyAllowed = assessNhisClaimReadiness(
       baseClaim,
       [{ ...baseMedicine, category: 'A', medicineAccessLevel: 'Controlled', requiredPharmacyLevel: 'HP' }],
       { enforcePrescribingLevel: true, providerClassLevel: 'SM', pharmacyLevel: 'P1' }
+    )
+    const p2RestrictedPharmacyBlocked = assessNhisClaimReadiness(
+      baseClaim,
+      [{ ...baseMedicine, category: 'A', medicineAccessLevel: 'Controlled', requiredPharmacyLevel: 'HP' }],
+      { enforcePrescribingLevel: true, providerClassLevel: 'SM', pharmacyLevel: 'P2' }
     )
 
     expect(providerClassIgnored.blockers).not.toEqual(expect.arrayContaining([
       expect.stringContaining('requires NHIS prescribing level C'),
     ]))
-    expect(pharmacyLevelBlocked.blockers).toContain(
+    expect(p1FullPharmacyAllowed.blockers).not.toContain(
+      'Medicine 1: This medicine is not allowed for your pharmacy/facility level and may cause NHIS claim rejection.'
+    )
+    expect(p2RestrictedPharmacyBlocked.blockers).toContain(
       'Medicine 1: This medicine is not allowed for your pharmacy/facility level and may cause NHIS claim rejection.'
     )
   })

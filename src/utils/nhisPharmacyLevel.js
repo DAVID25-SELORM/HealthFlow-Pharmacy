@@ -16,14 +16,14 @@ export const MEDICINE_ACCESS_LEVELS = [
 const ACCESS_BY_PHARMACY_LEVEL = {
   LCS: ['OTC'],
   P2: ['OTC', 'Prescription'],
-  P1: ['OTC', 'Prescription'],
+  P1: ['OTC', 'Prescription', 'Specialist', 'Controlled'],
   HP: ['OTC', 'Prescription', 'Specialist', 'Controlled'],
 }
 
 const PHARMACY_LEVEL_RANK = {
   LCS: 1,
   P2: 2,
-  P1: 3,
+  P1: 4,
   HP: 4,
 }
 
