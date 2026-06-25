@@ -913,6 +913,7 @@ const Nhis = () => {
     submitted: 0,
     paid: 0,
     rejected: 0,
+    totalClaimValue: 0,
     totalPaid: 0,
   })
   const [loading, setLoading]     = useState(true)
@@ -3381,6 +3382,10 @@ const Nhis = () => {
             <div className="stat-box">
               <span className="stat-label">Total Claims</span>
               <span className="stat-value">{stats.total}</span>
+            </div>
+            <div className="stat-box approved">
+              <span className="stat-label">Claims Value</span>
+              <span className="stat-value">{fmtCurrency(stats.totalClaimValue)}</span>
             </div>
             <div className="stat-box pending">
               <span className="stat-label">Pending Serving</span>

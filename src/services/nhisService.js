@@ -4512,6 +4512,7 @@ const computeNhisClaimStats = (rows = []) => ({
   submitted: rows.filter((r) => r.status === 'submitted').length,
   paid: rows.filter((r) => r.status === 'paid').length,
   rejected: rows.filter((r) => r.status === 'rejected').length,
+  totalClaimValue: rows.reduce((s, r) => s + Number(r.total_amount || 0), 0),
   totalPaid: rows
     .filter((r) => r.status === 'paid')
     .reduce((s, r) => s + Number(r.total_amount || 0), 0),
@@ -4525,6 +4526,7 @@ const normalizeNhisClaimStats = (stats = {}) => ({
   submitted: Number(stats.submitted || 0),
   paid: Number(stats.paid || 0),
   rejected: Number(stats.rejected || 0),
+  totalClaimValue: Number(stats.total_claim_value ?? stats.totalClaimValue ?? 0),
   totalPaid: Number(stats.total_paid ?? stats.totalPaid ?? 0),
 })
 
