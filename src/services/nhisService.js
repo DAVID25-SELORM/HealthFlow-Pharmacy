@@ -4284,6 +4284,46 @@ const fetchNhisClaimsPageFromSupabase = async (filters = {}, { ascending = false
   }
 }
 
+const normalizeNhisClaimsPageRpcRow = (row = {}, fallback = {}) => {
+  const claims = Array.isArray(row.claims) ? row.claims : []
+  return {
+    claims: claims.map((claim) => ({
+      ...claim,
+      _summaryOnly: true,
+      nhis_claim_services: Array.isArray(claim.nhis_claim_services) ? claim.nhis_claim_services : [],
+      nhis_claim_medicines: Array.isArray(claim.nhis_claim_medicines) ? claim.nhis_claim_medicines : [],
+    })),
+    total: row.total == null ? null : Number(row.total || 0),
+    page: fallback.page,
+    pageSize: fallback.pageSize,
+    stats: row.total == null ? null : normalizeNhisClaimStats(row),
+  }
+}
+
+const fetchNhisClaimsPageViaRpc = async (filters = {}) => {
+  if (filters.includeDetails !== false) return null
+
+  const { page, pageSize } = getNhisClaimPageOptions(filters)
+  const term = sanitizeSearchTerm(filters.searchTerm || '')
+  const { data, error } = await supabase.rpc('get_nhis_claims_page', {
+    p_page: page,
+    p_page_size: pageSize,
+    p_status: filters.status && filters.status !== 'all' ? filters.status : null,
+    p_open_only: Boolean(filters.openOnly),
+    p_from_date: filters.fromDate || null,
+    p_to_date: filters.toDate || null,
+    p_search_term: term || null,
+    p_include_counts: filters.includeTotal !== false,
+  })
+
+  if (error) {
+    console.warn('[NHIS] Claim page RPC failed; falling back to REST range query.', error)
+    return null
+  }
+
+  return normalizeNhisClaimsPageRpcRow(data?.[0] || {}, { page, pageSize })
+}
+
 const getNhisClaimMergeKey = (claim = {}, index = 0) =>
   normalizeText(claim.id || claim.claim_number || claim.claimNumber) || `claim-row-${index}`
 
@@ -4458,10 +4498,10 @@ export const getNhisClaimsPage = async (filters = {}) => {
       }
     }
 
-    return await fetchNhisClaimsPageFromSupabase(filters)
+    return await fetchNhisClaimsPageViaRpc(filters) || await fetchNhisClaimsPageFromSupabase(filters)
   }
 
-  return await fetchNhisClaimsPageFromSupabase(filters)
+  return await fetchNhisClaimsPageViaRpc(filters) || await fetchNhisClaimsPageFromSupabase(filters)
 }
 
 const computeNhisClaimStats = (rows = []) => ({

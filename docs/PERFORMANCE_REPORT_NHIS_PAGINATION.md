@@ -74,6 +74,7 @@ Follow-up optimization added:
 - Claim search is debounced before hitting Supabase, reducing request bursts while typing.
 - Exact totals are fetched for a new filter set, then skipped on later page clicks to avoid repeated count scans.
 - Recently loaded pages are cached in memory for 60 seconds, so Page 1 -> Page 2 -> Page 1 does not immediately refetch.
+- A combined `get_nhis_claims_page()` RPC now returns paginated claim summaries and matching counts in one call when the production migration is installed.
 
 Local build signal after this pass:
 
@@ -112,6 +113,7 @@ Migration added:
 
 ```text
 supabase/migrations/20260624153000_optimize_nhis_claim_pagination.sql
+supabase/migrations/20260624165000_add_nhis_claims_page_rpc.sql
 ```
 
 Indexes added for:
@@ -125,7 +127,7 @@ Indexes added for:
 - `organization_id, hin`
 - Trigram search on claim number, member number, HIN, surname, and other names
 
-The migration also adds `public.get_nhis_claim_stats()` so status totals are aggregated in the database instead of pulling every claim row into the frontend just to count statuses.
+The first migration also adds `public.get_nhis_claim_stats()` so status totals are aggregated in the database instead of pulling every claim row into the frontend just to count statuses. The second migration adds `public.get_nhis_claims_page()` for combined page rows and matching counts.
 
 ## Verification
 
@@ -142,4 +144,4 @@ npm.cmd run build
 2. Convert Reports to lazy/on-demand report generation instead of loading the default bundle immediately.
 3. Optimize Patient page enrichment to avoid per-patient visit-count lookups where workspace stats already exist.
 4. Add a paginated Patient Care patient picker for large facilities.
-5. Consider one RPC that returns NHIS page rows and filtered counts together for even fewer round trips.
+5. After live timing, consider moving more list filters into specialized RPCs only if the current indexed query path still shows requests above 2 seconds.
