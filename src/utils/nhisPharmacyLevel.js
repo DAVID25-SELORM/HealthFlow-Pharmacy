@@ -60,7 +60,7 @@ export const assessMedicinePharmacyLevel = (medicine = {}, pharmacyLevel = '') =
     return {
       allowed: true,
       severity: 'info',
-      message: 'Level not configured',
+      message: facilityLevel === 'P1' ? '' : 'Level not configured',
       pharmacyLevel: facilityLevel,
       medicineAccessLevel: '',
       requiredPharmacyLevel: '',

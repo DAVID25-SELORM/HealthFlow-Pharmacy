@@ -108,7 +108,7 @@ $bytes = New-Object byte[] 32
 Optional strict CORS for local branch server `.env`:
 
 ```env
-ALLOWED_ORIGINS=http://localhost:5173,https://health-flow-pharmacy.vercel.app,http://192.168.1.10:4780
+ALLOWED_ORIGINS=http://localhost:5173,https://healthflowcloud.com,http://192.168.1.10:4780
 ```
 
 Leave `ALLOWED_ORIGINS` blank to allow localhost and private LAN origins only.

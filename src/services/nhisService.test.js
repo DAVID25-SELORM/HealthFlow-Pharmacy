@@ -710,6 +710,22 @@ describe('assessNhisClaimReadiness', () => {
     )
   })
 
+  it('does not warn P1 pharmacies when medicine access metadata is not configured', () => {
+    const p1Readiness = assessNhisClaimReadiness(
+      baseClaim,
+      [{ ...baseMedicine, medicineAccessLevel: '', requiredPharmacyLevel: '' }],
+      { enforcePrescribingLevel: true, pharmacyLevel: 'P1' }
+    )
+    const p2Readiness = assessNhisClaimReadiness(
+      baseClaim,
+      [{ ...baseMedicine, medicineAccessLevel: '', requiredPharmacyLevel: '' }],
+      { enforcePrescribingLevel: true, pharmacyLevel: 'P2' }
+    )
+
+    expect(p1Readiness.warnings).not.toContain('Medicine 1: Level not configured.')
+    expect(p2Readiness.warnings).toContain('Medicine 1: Level not configured.')
+  })
+
   it('uses hospital provider class levels for G-DRG and tariff access', () => {
     const claim = {
       ...baseClaim,

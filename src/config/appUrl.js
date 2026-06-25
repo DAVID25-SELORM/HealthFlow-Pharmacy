@@ -1,4 +1,4 @@
-const PRODUCTION_APP_URL = 'https://health-flow-pharmacy.vercel.app'
+const PRODUCTION_APP_URL = 'https://healthflowcloud.com'
 
 export const getPublicAppUrl = () => {
   const configuredUrl = import.meta.env.VITE_APP_URL?.trim()

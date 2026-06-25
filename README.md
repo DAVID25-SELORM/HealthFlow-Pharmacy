@@ -141,7 +141,7 @@ Quick start for multi-tenant setup:
 The production CLAIM-it/NHIA bridge for this deployment is served at:
 
 ```text
-https://health-flow-pharmacy.vercel.app/json-api
+https://healthflowcloud.com/json-api
 ```
 
 If `claimbridge.healthflowgh.com` is added as a Vercel custom domain for this project, the same bridge is available at:

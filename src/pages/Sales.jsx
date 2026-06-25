@@ -834,12 +834,13 @@ const Sales = () => {
     getEffectivePharmacyLevel(pharmacyInfo, organization, nhiaSettings)
 
   const validateDrugForFacilityLevel = (drug) => {
-    const check = assessMedicinePharmacyLevel(drug, getFacilityPharmacyLevel())
+    const facilityPharmacyLevel = getFacilityPharmacyLevel()
+    const check = assessMedicinePharmacyLevel(drug, facilityPharmacyLevel)
     if (!check.allowed) {
       notify(check.message, 'warning')
       return false
     }
-    if (check.message === 'Level not configured') {
+    if (facilityPharmacyLevel !== 'P1' && check.message === 'Level not configured') {
       notify('Level not configured', 'warning')
     }
     return true
@@ -2643,9 +2644,11 @@ const Sales = () => {
                         <span className="drug-nhis-price">NHIS GHS {nhisPrice.toFixed(2)}</span>
                       )}
                       {/* ✅ NHIS PHARMACY LEVEL PATCH START */}
-                      <span className="drug-batch">
-                        {drug.medicine_access_level || drug.required_pharmacy_level || 'Level not configured'}
-                      </span>
+                      {(drug.medicine_access_level || drug.required_pharmacy_level || getFacilityPharmacyLevel() !== 'P1') && (
+                        <span className="drug-batch">
+                          {drug.medicine_access_level || drug.required_pharmacy_level || 'Level not configured'}
+                        </span>
+                      )}
                       {/* ✅ NHIS PHARMACY LEVEL PATCH END */}
                       <span className={`drug-stock ${soldOut ? 'sold-out' : ''}`}>
                         {soldOut ? 'Out of stock' : `${remaining} in stock`}

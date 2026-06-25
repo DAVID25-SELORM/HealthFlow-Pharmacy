@@ -1606,7 +1606,7 @@ const Nhis = () => {
       const levelCheck = assessMedicinePharmacyLevel(medicine, facilityPharmacyLevel)
       const issues = []
       const warnings = []
-      if (!accessLevel && !requiredLevel) warnings.push('Level not configured.')
+      if (facilityPharmacyLevel !== 'P1' && !accessLevel && !requiredLevel) warnings.push('Level not configured.')
       if (!prescribingLevel && source === 'NHIS catalog') warnings.push('NHIS prescribing level is missing.')
       if (!levelCheck.allowed) issues.push(levelCheck.message)
       return {
@@ -4666,7 +4666,8 @@ const Nhis = () => {
                             {` | Prescribed: ${prescribedQty} ${m.unit}`}
                             {` | Served: ${servedQty} ${m.unit}`}
                             {/* ✅ NHIS PHARMACY LEVEL PATCH START */}
-                            {` | Access: ${m.medicineAccessLevel || 'Level not configured'}`}
+                            {(m.medicineAccessLevel || facilityPharmacyLevel !== 'P1') &&
+                              ` | Access: ${m.medicineAccessLevel || 'Level not configured'}`}
                             {m.requiredPharmacyLevel && ` | Facility: ${m.requiredPharmacyLevel}`}
                             {/* ✅ NHIS PHARMACY LEVEL PATCH END */}
                             {m.dose && ` | Dose: ${m.dose}`}

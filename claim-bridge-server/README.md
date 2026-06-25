@@ -16,7 +16,7 @@ CLAIM_BRIDGE_PUBLIC_PATH=/json-api
 CLAIMIT_UPSTREAM_BASE_URL=https://official-claimit-or-nhia-host.example.com
 CLAIM_BRIDGE_TOKEN=<long-random-production-token>
 CLAIM_BRIDGE_TOKEN_HEADER=x-claim-bridge-token
-ALLOWED_ORIGINS=https://health-flow-pharmacy.vercel.app
+ALLOWED_ORIGINS=https://healthflowcloud.com
 ```
 
 Optional upstream auth:

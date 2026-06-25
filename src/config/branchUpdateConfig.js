@@ -1,5 +1,5 @@
 export const BRANCH_UPDATE_MANIFEST_URL =
-  'https://health-flow-pharmacy.vercel.app/branch-updates/manifest.json'
+  'https://healthflowcloud.com/branch-updates/manifest.json'
 
 export const BRANCH_UPDATE_PUBLIC_KEY = [
   '-----BEGIN PUBLIC KEY-----',

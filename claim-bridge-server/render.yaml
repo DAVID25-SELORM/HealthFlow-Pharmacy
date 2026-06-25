@@ -9,7 +9,7 @@ services:
       - key: CLAIM_BRIDGE_PUBLIC_PATH
         value: /json-api
       - key: ALLOWED_ORIGINS
-        value: https://health-flow-pharmacy.vercel.app
+        value: https://healthflowcloud.com
       - key: CLAIM_BRIDGE_TIMEOUT_MS
         value: "30000"
       - key: CLAIM_BRIDGE_MAX_BODY_BYTES

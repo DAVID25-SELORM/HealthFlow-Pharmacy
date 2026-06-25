@@ -276,7 +276,7 @@ const CustomerEPharmacy = () => {
           '@type': 'Pharmacy',
           name: 'HealthFlow Customer Pharmacy',
           description: 'Licensed facilities and pharmacist-reviewed orders.',
-          url: 'https://health-flow-pharmacy.vercel.app/shop',
+          url: 'https://healthflowcloud.com/shop',
           medicalSpecialty: 'Pharmacy',
         }}
       />

@@ -21,4 +21,4 @@ Disallow: /tenant-admin
 Disallow: /activity-log
 Disallow: /offline-sync
 
-Sitemap: https://health-flow-pharmacy.vercel.app/sitemap.xml
+Sitemap: https://healthflowcloud.com/sitemap.xml

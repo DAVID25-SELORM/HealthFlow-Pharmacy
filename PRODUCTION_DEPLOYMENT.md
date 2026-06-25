@@ -2,7 +2,7 @@
 
 **Deployment Date**: April 15, 2026  
 **Developer**: David Gabion Selorm  
-**Live URL**: https://health-flow-pharmacy.vercel.app
+**Live URL**: https://healthflowcloud.com
 
 ---
 
@@ -140,7 +140,7 @@ supabase secrets set SERVICE_ROLE_KEY=[your-service-role-key]
 **Test as Admin User**:
 
 1. ✅ **Login**: 
-   - Go to https://health-flow-pharmacy.vercel.app
+   - Go to https://healthflowcloud.com
    - Sign in with admin credentials
    - Verify redirect to dashboard
 

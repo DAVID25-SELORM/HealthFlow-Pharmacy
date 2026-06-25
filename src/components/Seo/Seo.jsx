@@ -2,7 +2,7 @@ import { Helmet } from 'react-helmet-async'
 
 // Canonical public origin used for absolute URLs in tags/sitemap.
 // Override at build time with VITE_PUBLIC_SITE_URL when a custom domain is ready.
-const SITE_URL = (import.meta.env?.VITE_PUBLIC_SITE_URL || 'https://health-flow-pharmacy.vercel.app').replace(/\/+$/, '')
+const SITE_URL = (import.meta.env?.VITE_PUBLIC_SITE_URL || 'https://healthflowcloud.com').replace(/\/+$/, '')
 const DEFAULT_OG_IMAGE = '/app-logo.png'
 const SITE_NAME = 'HealthFlow'
 
