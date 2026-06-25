@@ -23,6 +23,14 @@
     <meta name="twitter:description" content="HealthFlow is a pharmacy, claims, NHIS, inventory, tariffs, and facility operations platform." />
     <meta name="twitter:image" content="https://healthflowcloud.com/app-logo.png" />
     <title>HealthFlow - Pharmacy, Claims & Facility Operations</title>
+    <script>
+      if (
+        window.location.hostname === 'health-flow-pharmacy.vercel.app' ||
+        window.location.hostname === 'healthflow-pharmacy.vercel.app'
+      ) {
+        window.location.replace('https://healthflowcloud.com' + window.location.pathname + window.location.search + window.location.hash)
+      }
+    </script>
     <script src="/branch-runtime-config.js"></script>
     <script type="module" crossorigin src="/assets/index-C3YMBx82.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/chunk-CaILmz35.js">

@@ -3,6 +3,30 @@
   "framework": "vite",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "health-flow-pharmacy.vercel.app"
+        }
+      ],
+      "destination": "https://healthflowcloud.com/:path*",
+      "permanent": true
+    },
+    {
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "healthflow-pharmacy.vercel.app"
+        }
+      ],
+      "destination": "https://healthflowcloud.com/:path*",
+      "permanent": true
+    }
+  ],
   "headers": [
     {
       "source": "/service-worker.js",
