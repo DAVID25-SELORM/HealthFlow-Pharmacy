@@ -3,15 +3,15 @@ import { Plus, Search, Phone, Mail, ShieldCheck } from 'lucide-react'
 import {
   addPatient,
   getPatientById,
-  getPatientLastVisit,
-  getPatientVisitCount,
   getPatientsWorkspace,
   searchPatients,
 } from '../services/patientService'
 import { isSupabaseConfigured } from '../lib/supabase'
+import { useAuth } from '../context/AuthContext'
 import { formatAppDate, formatAppDateTime } from '../utils/date'
 import { getInsuranceProviderOptions } from '../utils/insuranceProviders'
 import { normalizeNhiaMemberNumber } from '../utils/nhiaMemberNumber'
+import { logPerformance } from '../utils/performance'
 import './Patients.css'
 
 const SEARCH_DEBOUNCE_MS = 350
@@ -80,6 +80,7 @@ const getPatientInitials = (patient = {}) => {
 }
 
 const Patients = () => {
+  const { role } = useAuth()
   const [patients, setPatients] = useState([])
   const [searchTerm, setSearchTerm] = useState('')
   const [loading, setLoading] = useState(true)
@@ -111,34 +112,9 @@ const Patients = () => {
     return () => window.clearTimeout(timeoutId)
   }, [searchTerm])
 
-  const enrichPatients = async (records) => {
-    const enriched = await Promise.all(
-      records.map(async (patient) => {
-        if (
-          Object.prototype.hasOwnProperty.call(patient, 'visits') &&
-          Object.prototype.hasOwnProperty.call(patient, 'lastVisit')
-        ) {
-          return patient
-        }
-
-        const [visits, lastVisit] = await Promise.all([
-          getPatientVisitCount(patient.id),
-          getPatientLastVisit(patient.id),
-        ])
-
-        return {
-          ...patient,
-          visits: visits || 0,
-          lastVisit,
-        }
-      })
-    )
-
-    return enriched
-  }
-
   const loadPatients = async (term = '', options = {}) => {
     const { showFullPageLoader = true } = options
+    const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
     const requestId = patientsRequestRef.current + 1
     patientsRequestRef.current = requestId
 
@@ -161,13 +137,16 @@ const Patients = () => {
       }
 
       const rows = term.trim() ? await searchPatients(term) : await getPatientsWorkspace()
-      const enriched = await enrichPatients(rows)
 
       if (patientsRequestRef.current !== requestId) {
         return
       }
 
-      setPatients(enriched)
+      setPatients(rows)
+      logPerformance('patients.list', startedAt, role, {
+        rows: rows.length,
+        search: Boolean(term.trim()),
+      })
     } catch (loadError) {
       if (patientsRequestRef.current !== requestId) {
         return
@@ -249,7 +228,7 @@ const Patients = () => {
 
       setSelectedPatient({
         ...detail,
-        visits: patient.visits,
+        visits: patient.visits ?? (sales.length + claims.length),
         lastVisit: patient.lastVisit,
         sales,
         claims,
@@ -342,7 +321,7 @@ const Patients = () => {
                 </div>
                 <div className="stat">
                   <span className="stat-label">Total Visits</span>
-                  <span className="stat-value">{patient.visits}</span>
+                  <span className="stat-value">{patient.visits ?? 0}</span>
                 </div>
               </div>
               <button className="btn btn-outline" onClick={() => void openPatientHistory(patient)}>

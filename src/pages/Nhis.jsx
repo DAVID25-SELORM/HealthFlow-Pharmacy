@@ -68,6 +68,7 @@ import {
 } from '../utils/nhiaFacilityDefaults'
 import { getErrorMessage, isNetworkRequestError } from '../utils/requestErrors'
 import { getNhiaMemberFeedbackMessage } from '../utils/nhiaFeedback'
+import { logPerformance } from '../utils/performance'
 // ✅ NHIS PHARMACY LEVEL PATCH START
 import {
   PHARMACY_LEVELS,
@@ -91,7 +92,8 @@ import './Nhis.css'
 // ─── constants ────────────────────────────────────────────────────────────────
 
 const CLAIM_STATUS_TABS = ['all', 'pending_serving', 'returned_for_review', 'served', 'submitted', 'paid', 'rejected']
-const NHIS_CLAIMS_PAGE_SIZE = 100
+const NHIS_CLAIMS_DEFAULT_PAGE_SIZE = 100
+const NHIS_CLAIMS_PAGE_SIZE_OPTIONS = [50, 100, 200]
 const NHIS_CLAIMS_PAGE_CACHE_MS = 60000
 const NHIS_CLAIMS_SEARCH_DEBOUNCE_MS = 400
 const CLAIM_STATUS_LABELS = {
@@ -916,6 +918,7 @@ const Nhis = () => {
   const [loading, setLoading]     = useState(true)
   const [claimsPageLoading, setClaimsPageLoading] = useState(false)
   const [claimsPage, setClaimsPage] = useState(1)
+  const [claimsPageSize, setClaimsPageSize] = useState(NHIS_CLAIMS_DEFAULT_PAGE_SIZE)
   const [claimsTotal, setClaimsTotal] = useState(0)
   const [error, setError]         = useState('')
   const [catalogSeeding, setCatalogSeeding] = useState(false)
@@ -1076,6 +1079,7 @@ const Nhis = () => {
   }, [claimDateFilter, claimFromDate, debouncedClaimSearch, claimTab, claimToDate])
 
   const loadClaimsPage = useCallback(async (page = 1, options = {}) => {
+    const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
     if (!isSupabaseConfigured()) {
       setClaims([])
       setClaimsTotal(0)
@@ -1084,7 +1088,7 @@ const Nhis = () => {
 
     const filters = getClaimServerFilters()
     const filterKey = JSON.stringify(filters)
-    const pageKey = `${filterKey}|page:${page}|size:${NHIS_CLAIMS_PAGE_SIZE}`
+    const pageKey = `${filterKey}|page:${page}|size:${claimsPageSize}`
     const cached = claimsPageCacheRef.current.get(pageKey)
     const now = Date.now()
     const sameFilter = claimsFilterKeyRef.current === filterKey
@@ -1095,6 +1099,11 @@ const Nhis = () => {
       if (cached.total != null) setClaimsTotal(Number(cached.total || 0))
       setClaimsPage(cached.page || page)
       claimsFilterKeyRef.current = filterKey
+      logPerformance('nhis.claims.page.cache', startedAt, role, {
+        page,
+        pageSize: claimsPageSize,
+        rows: cached.claims?.length || 0,
+      })
       return
     }
 
@@ -1103,7 +1112,7 @@ const Nhis = () => {
       const result = await getNhisClaimsPage({
         ...filters,
         page,
-        pageSize: NHIS_CLAIMS_PAGE_SIZE,
+        pageSize: claimsPageSize,
         includeTotal: shouldLoadTotal,
       })
       setClaims(result.claims || [])
@@ -1118,12 +1127,18 @@ const Nhis = () => {
         page: result.page || page,
         cachedAt: now,
       })
+      logPerformance('nhis.claims.page', startedAt, role, {
+        page: result.page || page,
+        pageSize: claimsPageSize,
+        rows: result.claims?.length || 0,
+        counted: result.total != null,
+      })
     } catch (err) {
       setError(err.message || 'Unable to load NHIS claims.')
     } finally {
       setClaimsPageLoading(false)
     }
-  }, [getClaimServerFilters])
+  }, [claimsPageSize, getClaimServerFilters, role])
 
   // ── load data ────────────────────────────────────────────────
   const loadAll = useCallback(async () => {
@@ -1299,9 +1314,9 @@ const Nhis = () => {
     })
   }, [claims, claimTab, debouncedClaimSearch, claimDateFilter, claimDateRange])
 
-  const claimsTotalPages = Math.max(1, Math.ceil(claimsTotal / NHIS_CLAIMS_PAGE_SIZE))
-  const claimsShowingFrom = claimsTotal === 0 ? 0 : ((claimsPage - 1) * NHIS_CLAIMS_PAGE_SIZE) + 1
-  const claimsShowingTo = Math.min(claimsPage * NHIS_CLAIMS_PAGE_SIZE, claimsTotal)
+  const claimsTotalPages = Math.max(1, Math.ceil(claimsTotal / claimsPageSize))
+  const claimsShowingFrom = claimsTotal === 0 ? 0 : ((claimsPage - 1) * claimsPageSize) + 1
+  const claimsShowingTo = Math.min(claimsPage * claimsPageSize, claimsTotal)
 
   const allNhisPatients = useMemo(() => {
     const merged = new Map()
@@ -3484,6 +3499,23 @@ const Nhis = () => {
               Showing {claimsShowingFrom}-{claimsShowingTo} of {claimsTotal} claim{claimsTotal === 1 ? '' : 's'}
             </span>
             <div className="nhis-pagination-actions">
+              <label className="nhis-page-size">
+                <span>Rows</span>
+                <select
+                  value={claimsPageSize}
+                  onChange={(event) => {
+                    claimsPageCacheRef.current.clear()
+                    setClaimsPage(1)
+                    setClaimsPageSize(Number(event.target.value) || NHIS_CLAIMS_DEFAULT_PAGE_SIZE)
+                  }}
+                  disabled={claimsPageLoading}
+                  aria-label="Claims per page"
+                >
+                  {NHIS_CLAIMS_PAGE_SIZE_OPTIONS.map((size) => (
+                    <option key={size} value={size}>{size}</option>
+                  ))}
+                </select>
+              </label>
               <button
                 type="button"
                 className="btn btn-secondary btn-sm"

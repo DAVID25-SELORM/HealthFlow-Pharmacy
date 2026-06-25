@@ -30,6 +30,7 @@ import {
   getFacilityName,
   getReportFooter,
 } from '../utils/facilityBranding'
+import { logPerformance } from '../utils/performance'
 import UpgradeGate from '../components/UpgradeGate'
 import './Reports.css'
 
@@ -988,6 +989,7 @@ const Reports = () => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [bundle, setBundle] = useState(null)
+  const [hasGeneratedReports, setHasGeneratedReports] = useState(false)
   const [facilitySettings, setFacilitySettings] = useState(null)
 
   const brandingSource = { ...(organization || {}), ...(facilitySettings || {}) }
@@ -1060,6 +1062,7 @@ const Reports = () => {
   }
 
   const runReports = async (nextFilters = filters) => {
+    const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
     try {
       setLoading(true)
       setError('')
@@ -1083,6 +1086,10 @@ const Reports = () => {
         drug: nextFilters.drug,
       })
       setBundle(data)
+      setHasGeneratedReports(true)
+      logPerformance('reports.bundle', startedAt, role, {
+        source: data?.source || 'cloud',
+      })
     } catch (reportError) {
       console.error('Error generating reports:', reportError)
       setError(reportError.message || 'Unable to generate reports.')
@@ -1094,10 +1101,9 @@ const Reports = () => {
   useEffect(() => {
     if (!tierLimits.hasReports) {
       setBundle(null)
+      setHasGeneratedReports(false)
       return
     }
-
-    void runReports(FILTER_DEFAULTS)
   }, [tierLimits.hasReports])
 
   useEffect(() => {
@@ -1169,7 +1175,7 @@ const Reports = () => {
 
   const exportSelectedPdf = () => {
     if (!selectedReport) return
-    exportReportPdf({
+    void exportReportPdf({
       title: selectedReport.title,
       headers: reportData.headers,
       rows: reportData.rows,
@@ -1470,15 +1476,15 @@ const Reports = () => {
             />
           </label>
           <div className="reports-export-actions">
-            <button className="btn btn-outline" onClick={printSelectedReport} disabled={!selectedReport}>
+            <button className="btn btn-outline" onClick={printSelectedReport} disabled={!selectedReport || !hasGeneratedReports}>
               <Printer size={16} />
               Print
             </button>
-            <button className="btn btn-outline" onClick={exportSelectedPdf} disabled={!selectedReport}>
+            <button className="btn btn-outline" onClick={exportSelectedPdf} disabled={!selectedReport || !hasGeneratedReports}>
               <FileText size={16} />
               PDF
             </button>
-            <button className="btn btn-primary" onClick={exportSelectedCsv} disabled={!selectedReport}>
+            <button className="btn btn-primary" onClick={exportSelectedCsv} disabled={!selectedReport || !hasGeneratedReports}>
               <FileSpreadsheet size={16} />
               Excel/CSV
             </button>
@@ -1499,13 +1505,17 @@ const Reports = () => {
                 <button
                   className="btn btn-primary"
                   type="button"
-                  onClick={() => setSelectedReportId(report.id)}
+                  onClick={() => {
+                    setSelectedReportId(report.id)
+                    void runReports()
+                  }}
                 >
                   Generate
                 </button>
                 <button
                   className="btn btn-outline"
                   type="button"
+                  disabled={!hasGeneratedReports}
                   onClick={() => {
                     setSelectedReportId(report.id)
                     downloadCsv(
@@ -1534,7 +1544,9 @@ const Reports = () => {
           </div>
 
           {reportData.rows.length === 0 ? (
-            <div className="report-empty-state">No report data found for the selected filters.</div>
+            <div className="report-empty-state">
+              {hasGeneratedReports ? 'No report data found for the selected filters.' : 'Choose filters, then generate reports.'}
+            </div>
           ) : (
             <div className="report-table-wrap">
               <table className="report-table">

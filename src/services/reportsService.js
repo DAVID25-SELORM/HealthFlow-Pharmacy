@@ -1,4 +1,3 @@
-import jsPDF from 'jspdf'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { getBranchReportBundle, shouldUseBranchServer } from './branchServerApi'
 import { invokeTierAccess } from './tierAccessService'
@@ -396,7 +395,8 @@ export const downloadCsv = (filename, headers, rows, metadataRows = []) => {
   URL.revokeObjectURL(url)
 }
 
-export const exportReportPdf = ({ title, headers, rows, metadataRows = [] }) => {
+export const exportReportPdf = async ({ title, headers, rows, metadataRows = [] }) => {
+  const { default: jsPDF } = await import('jspdf')
   const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' })
   const margin = 36
   let y = margin

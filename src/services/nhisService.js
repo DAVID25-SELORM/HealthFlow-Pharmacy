@@ -1,5 +1,4 @@
 import { supabase } from '../lib/supabase'
-import { jsPDF } from 'jspdf'
 import { assertRequiredText, assertNonNegativeNumber, assertPositiveNumber, normalizeText, sanitizeSearchTerm } from '../utils/validation'
 import {
   normalizeNhiaMemberNumber,
@@ -3644,6 +3643,7 @@ const fileToBase64 = async (file) => {
 }
 
 const imageDataUrlToPdfBase64 = async (dataUrl, contentType) => {
+  const { jsPDF } = await import('jspdf')
   const dimensions = await getImageDimensions(dataUrl)
   const orientation = dimensions.width > dimensions.height ? 'landscape' : 'portrait'
   const doc = new jsPDF({ orientation, unit: 'pt', format: 'a4', compress: true })

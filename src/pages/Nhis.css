@@ -95,6 +95,22 @@
   gap: 0.6rem;
 }
 
+.nhis-page-size {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--gray-600);
+  font-size: 0.85rem;
+}
+
+.nhis-page-size select {
+  min-width: 4.75rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--gray-300);
+  border-radius: 6px;
+  background: #fff;
+}
+
 /* Alert */
 .nhis-alert {
   margin-bottom: 1rem;
