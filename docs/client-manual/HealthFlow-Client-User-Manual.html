@@ -1,0 +1,1346 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HealthFlow Pharmacy - Client User Manual</title>
+  <style>
+    :root {
+      --ink: #18302c;
+      --muted: #5d6d69;
+      --teal: #087f6d;
+      --teal-dark: #075f53;
+      --green: #4caa4b;
+      --mint: #e9f7f2;
+      --blue: #eaf3fb;
+      --amber: #fff5dc;
+      --red: #fff0ef;
+      --line: #d8e3df;
+      --paper: #ffffff;
+      --soft: #f6f9f8;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      font-family: "Segoe UI", Arial, sans-serif;
+      color: var(--ink);
+      background: #e9efed;
+      line-height: 1.45;
+    }
+
+    body {
+      margin: 0;
+    }
+
+    main {
+      width: 210mm;
+      margin: 0 auto;
+      background: var(--paper);
+      box-shadow: 0 8px 30px rgba(20, 50, 45, 0.12);
+    }
+
+    .page {
+      min-height: 275mm;
+      padding: 16mm 18mm 18mm;
+      position: relative;
+      break-after: auto;
+      page-break-after: auto;
+    }
+
+    .page + .page {
+      break-before: page;
+      page-break-before: always;
+    }
+
+    .cover {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 22mm 20mm 18mm;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.96), rgba(255,255,255,1)),
+        var(--paper);
+      border-top: 14mm solid var(--teal);
+    }
+
+    .cover-logo {
+      width: 126mm;
+      max-height: 36mm;
+      object-fit: contain;
+      object-position: left center;
+      margin-bottom: 24mm;
+    }
+
+    .cover h1 {
+      margin: 0;
+      color: var(--teal-dark);
+      font-size: 34pt;
+      line-height: 1.05;
+      font-weight: 750;
+      letter-spacing: 0;
+    }
+
+    .cover .subtitle {
+      margin: 7mm 0 0;
+      max-width: 145mm;
+      color: var(--muted);
+      font-size: 16pt;
+    }
+
+    .cover-band {
+      margin-top: 22mm;
+      padding: 9mm 10mm;
+      background: var(--mint);
+      border-left: 3mm solid var(--green);
+    }
+
+    .cover-band strong {
+      display: block;
+      color: var(--teal-dark);
+      font-size: 13pt;
+      margin-bottom: 2mm;
+    }
+
+    .cover-meta {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6mm 10mm;
+      padding-top: 10mm;
+      border-top: 1px solid var(--line);
+      font-size: 10pt;
+      color: var(--muted);
+    }
+
+    .cover-meta span {
+      display: block;
+      color: var(--ink);
+      font-weight: 650;
+      margin-top: 1mm;
+    }
+
+    .page-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 4mm;
+      margin-bottom: 8mm;
+      border-bottom: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 8.5pt;
+      text-transform: uppercase;
+    }
+
+    .page-header strong {
+      color: var(--teal);
+    }
+
+    h2 {
+      margin: 0 0 6mm;
+      color: var(--teal-dark);
+      font-size: 23pt;
+      line-height: 1.12;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin: 8mm 0 3mm;
+      color: var(--teal-dark);
+      font-size: 14pt;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    h4 {
+      margin: 5mm 0 2mm;
+      color: var(--ink);
+      font-size: 11pt;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 0 0 3.5mm;
+      font-size: 10.2pt;
+    }
+
+    ul,
+    ol {
+      margin: 2mm 0 4mm 6mm;
+      padding-left: 5mm;
+      font-size: 10pt;
+    }
+
+    li {
+      margin-bottom: 1.6mm;
+    }
+
+    a {
+      color: var(--teal-dark);
+    }
+
+    .lead {
+      max-width: 168mm;
+      color: var(--muted);
+      font-size: 12pt;
+      line-height: 1.5;
+      margin-bottom: 7mm;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6mm;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 5mm;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 2mm;
+      padding: 5mm;
+      background: var(--paper);
+      break-inside: avoid;
+    }
+
+    .panel h3,
+    .panel h4 {
+      margin-top: 0;
+    }
+
+    .panel p:last-child,
+    .panel ul:last-child,
+    .panel ol:last-child {
+      margin-bottom: 0;
+    }
+
+    .module {
+      border-top: 2mm solid var(--teal);
+      min-height: 40mm;
+    }
+
+    .module strong {
+      display: block;
+      margin-bottom: 2mm;
+      color: var(--teal-dark);
+      font-size: 11pt;
+    }
+
+    .module p {
+      font-size: 9.2pt;
+      color: var(--muted);
+    }
+
+    .callout {
+      margin: 5mm 0;
+      padding: 5mm 6mm;
+      border-left: 2.5mm solid var(--teal);
+      background: var(--mint);
+      break-inside: avoid;
+    }
+
+    .callout strong {
+      display: block;
+      margin-bottom: 1.5mm;
+      color: var(--teal-dark);
+    }
+
+    .callout.warning {
+      border-color: #e0a126;
+      background: var(--amber);
+    }
+
+    .callout.danger {
+      border-color: #cf5148;
+      background: var(--red);
+    }
+
+    .callout.info {
+      border-color: #3f86bd;
+      background: var(--blue);
+    }
+
+    .path {
+      display: inline-block;
+      padding: 1.2mm 2.3mm;
+      margin-bottom: 3mm;
+      border: 1px solid #b8d8cf;
+      border-radius: 1.5mm;
+      background: #f3fbf8;
+      color: var(--teal-dark);
+      font-size: 9pt;
+      font-weight: 650;
+    }
+
+    .steps {
+      counter-reset: item;
+      list-style: none;
+      margin-left: 0;
+      padding-left: 0;
+    }
+
+    .steps > li {
+      counter-increment: item;
+      position: relative;
+      min-height: 10mm;
+      padding: 1mm 0 3mm 11mm;
+      border-left: 1px solid var(--line);
+      margin-left: 4mm;
+    }
+
+    .steps > li::before {
+      content: counter(item);
+      position: absolute;
+      left: -4.5mm;
+      top: 0;
+      width: 8mm;
+      height: 8mm;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--teal);
+      color: white;
+      font-size: 8.5pt;
+      font-weight: 700;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 4mm 0 6mm;
+      font-size: 9.2pt;
+      break-inside: avoid;
+    }
+
+    th,
+    td {
+      padding: 3mm;
+      border: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--soft);
+      color: var(--teal-dark);
+      font-weight: 700;
+    }
+
+    .toc {
+      columns: 2;
+      column-gap: 12mm;
+      margin-top: 7mm;
+    }
+
+    .toc div {
+      display: flex;
+      gap: 3mm;
+      align-items: baseline;
+      padding: 2.5mm 0;
+      border-bottom: 1px dotted #b9c8c4;
+      break-inside: avoid;
+      font-size: 10pt;
+    }
+
+    .toc b {
+      color: var(--teal);
+      min-width: 8mm;
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: 1fr 10mm 1fr 10mm 1fr;
+      align-items: center;
+      gap: 2mm;
+      margin: 6mm 0;
+      break-inside: avoid;
+    }
+
+    .flow-box {
+      min-height: 23mm;
+      display: grid;
+      place-items: center;
+      padding: 4mm;
+      text-align: center;
+      border: 1px solid #aad2c7;
+      border-radius: 2mm;
+      background: var(--mint);
+      color: var(--teal-dark);
+      font-weight: 700;
+      font-size: 9.5pt;
+    }
+
+    .arrow {
+      text-align: center;
+      color: var(--teal);
+      font-size: 17pt;
+      font-weight: 700;
+    }
+
+    .checklist {
+      list-style: none;
+      margin-left: 0;
+      padding-left: 0;
+    }
+
+    .checklist li {
+      position: relative;
+      padding-left: 8mm;
+      margin-bottom: 2.5mm;
+    }
+
+    .checklist li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0.6mm;
+      width: 4mm;
+      height: 4mm;
+      border: 1px solid var(--teal);
+      background: white;
+    }
+
+    .form-lines {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6mm 10mm;
+      margin: 8mm 0;
+    }
+
+    .form-line {
+      min-height: 11mm;
+      border-bottom: 1px solid #788985;
+      color: var(--muted);
+      font-size: 8.5pt;
+    }
+
+    .footer {
+      position: absolute;
+      left: 18mm;
+      right: 18mm;
+      bottom: 8mm;
+      display: flex;
+      justify-content: space-between;
+      padding-top: 3mm;
+      border-top: 1px solid var(--line);
+      color: #71807c;
+      font-size: 8pt;
+    }
+
+    .small {
+      font-size: 8.8pt;
+      color: var(--muted);
+    }
+
+    .keep {
+      break-inside: avoid;
+    }
+
+    @page {
+      size: A4;
+      margin: 0;
+    }
+
+    @media print {
+      html,
+      body {
+        background: white;
+      }
+
+      main {
+        width: auto;
+        margin: 0;
+        box-shadow: none;
+      }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <section class="page cover">
+    <div>
+      <img class="cover-logo" src="../../public/app-logo.png" alt="HealthFlow Pharmacy">
+      <h1>Client User Manual</h1>
+      <p class="subtitle">A practical guide for pharmacy owners, administrators, pharmacists, cashiers, claims officers, inventory staff, and other authorized users.</p>
+
+      <div class="cover-band">
+        <strong>HealthFlow Pharmacy Management System</strong>
+        Daily operations, inventory, point of sale, patients, insurance claims, NHIS, purchasing, reports, accounting, e-pharmacy, and offline continuity.
+      </div>
+    </div>
+
+    <div class="cover-meta">
+      <div>Document version<span>1.0</span></div>
+      <div>Issue date<span>15 June 2026</span></div>
+      <div>Prepared for<span>HealthFlow clients</span></div>
+      <div>Classification<span>Client operations guide</span></div>
+    </div>
+  </section>
+
+  <section class="page">
+    <div class="page-header"><strong>HealthFlow Pharmacy</strong><span>About This Manual</span></div>
+    <h2>Welcome to HealthFlow</h2>
+    <p class="lead">HealthFlow brings the main activities of a pharmacy into one secure workspace. This manual explains the everyday tasks your team will perform and the controls that protect your records.</p>
+
+    <div class="callout">
+      <strong>Use the access given to you</strong>
+      Each user should sign in with their own account. Available menus and actions depend on the user's role. Do not share administrator accounts or passwords.
+    </div>
+
+    <h3>Who should use this guide?</h3>
+    <div class="grid-2">
+      <div class="panel">
+        <h4>Daily users</h4>
+        <p>Pharmacists, pharmacy technicians, medicine counter assistants, cashiers, claims officers, inventory officers, accounts officers, nurses, doctors, records officers, and other approved staff.</p>
+      </div>
+      <div class="panel">
+        <h4>Supervisors</h4>
+        <p>Administrators, pharmacy owners, branch managers, procurement officers, warehouse staff, billing officers, and facility managers.</p>
+      </div>
+    </div>
+
+    <h3>Before you begin</h3>
+    <div class="form-lines">
+      <div class="form-line">Facility name</div>
+      <div class="form-line">Branch name</div>
+      <div class="form-line">HealthFlow web address</div>
+      <div class="form-line">Local support contact</div>
+      <div class="form-line">Facility administrator</div>
+      <div class="form-line">Installation date</div>
+    </div>
+
+    <div class="callout warning">
+      <strong>Protect sensitive information</strong>
+      Patient records, prescriptions, NHIS information, prices, sales, and credentials are confidential. Only access records needed for your assigned work.
+    </div>
+
+    <h3>Contents</h3>
+    <div class="toc">
+      <div><b>01</b><span>Quick Start and Navigation</span></div>
+      <div><b>02</b><span>Roles and Access</span></div>
+      <div><b>03</b><span>Dashboard and Inventory</span></div>
+      <div><b>04</b><span>Sales and Shift Management</span></div>
+      <div><b>05</b><span>Patients and Purchases</span></div>
+      <div><b>06</b><span>Insurance Claims</span></div>
+      <div><b>07</b><span>NHIS and CCC Verification</span></div>
+      <div><b>08</b><span>CLAIM-it Transfer and CXF Export</span></div>
+      <div><b>09</b><span>Attachments and Claim Corrections</span></div>
+      <div><b>10</b><span>Patient Care and E-Pharmacy</span></div>
+      <div><b>11</b><span>Reports and Accounting</span></div>
+      <div><b>12</b><span>Settings and Administration</span></div>
+      <div><b>13</b><span>Online, Offline, and Sync</span></div>
+      <div><b>14</b><span>Troubleshooting and Checklists</span></div>
+    </div>
+    <div class="footer"><span>Client User Manual v1.0</span><span>HealthFlow Pharmacy</span></div>
+  </section>
+
+  <section class="page">
+    <div class="page-header"><strong>HealthFlow Pharmacy</strong><span>Quick Start</span></div>
+    <h2>1. Quick Start and Navigation</h2>
+
+    <h3>Sign in</h3>
+    <ol class="steps">
+      <li>Open the HealthFlow web address provided by your administrator.</li>
+      <li>Enter your registered email address and password.</li>
+      <li>Select your organization or branch when prompted.</li>
+      <li>Confirm that the correct facility and your name appear in the workspace.</li>
+    </ol>
+
+    <div class="callout info">
+      <strong>First sign-in</strong>
+      Change any temporary password immediately. If your role or branch is incorrect, stop and contact the facility administrator before recording transactions.
+    </div>
+
+    <h3>Main navigation</h3>
+    <div class="grid-3">
+      <div class="panel module"><strong>Dashboard</strong><p>Daily summary, alerts, quick actions, recent activity, and operational indicators.</p></div>
+      <div class="panel module"><strong>Inventory</strong><p>Medicines, batches, stock levels, prices, expiry dates, imports, and transfers.</p></div>
+      <div class="panel module"><strong>Sales (POS)</strong><p>Dispensing, checkout, payments, receipts, and cashier shifts.</p></div>
+      <div class="panel module"><strong>Patients</strong><p>Patient profiles, insurance details, contact information, and history.</p></div>
+      <div class="panel module"><strong>Claims</strong><p>General insurance claims, claim status, submission, and follow-up.</p></div>
+      <div class="panel module"><strong>Purchases</strong><p>Suppliers, purchase orders, invoices, received items, and stock updates.</p></div>
+      <div class="panel module"><strong>E-Pharmacy</strong><p>Licensed online inventory publishing and customer medicine requests.</p></div>
+      <div class="panel module"><strong>NHIS</strong><p>NHIS pharmacy claims, CCC verification, attachments, export, and transfer.</p></div>
+      <div class="panel module"><strong>Patient Care</strong><p>Vitals, refill management, follow-ups, birthdays, and patient messages.</p></div>
+      <div class="panel module"><strong>Reports</strong><p>Operational dashboards, filters, drill-downs, and exports.</p></div>
+      <div class="panel module"><strong>Accounting</strong><p>Shifts, receivables, payments, reconciliation, and financial summaries.</p></div>
+      <div class="panel module"><strong>Settings</strong><p>Facility profile, staff access, integrations, branding, and administration.</p></div>
+    </div>
+
+    <h3>Common screen controls</h3>
+    <table>
+      <thead><tr><th>Control</th><th>Purpose</th><th>Good practice</th></tr></thead>
+      <tbody>
+        <tr><td>Search</td><td>Find a medicine, patient, claim, supplier, or transaction.</td><td>Search before creating a new record to avoid duplicates.</td></tr>
+        <tr><td>Add / New</td><td>Create a new record.</td><td>Complete required fields marked with an asterisk.</td></tr>
+        <tr><td>Edit</td><td>Correct or update an existing record.</td><td>Confirm the record identity before changing it.</td></tr>
+        <tr><td>Save</td><td>Store current information.</td><td>Wait for the success message before closing the screen.</td></tr>
+        <tr><td>Export / Print</td><td>Produce a document or data file.</td><td>Check filters and date range before exporting.</td></tr>
+      </tbody>
+    </table>
+    <div class="footer"><span>Section 1</span><span>Quick Start and Navigation</span></div>
+  </section>
+
+  <section class="page">
+    <div class="page-header"><strong>HealthFlow Pharmacy</strong><span>Roles and Access</span></div>
+    <h2>2. Roles and Access</h2>
+    <p class="lead">HealthFlow uses role-based access. A user only sees the modules and actions needed for their work. Your facility administrator assigns roles.</p>
+
+    <table>
+      <thead><tr><th>Typical role</th><th>Main responsibilities</th></tr></thead>
+      <tbody>
+        <tr><td>Administrator</td><td>Facility settings, staff access, all modules, sensitive corrections, backups, and permanent NHIS claim deletion.</td></tr>
+        <tr><td>Pharmacist</td><td>Dispensing, clinical review, inventory, patients, claims, NHIS, and reports.</td></tr>
+        <tr><td>Pharmacy Technician / MCA</td><td>Dispensing support, inventory work, patient service, and permitted sales tasks.</td></tr>
+        <tr><td>Cashier</td><td>POS checkout, payment recording, receipts, and assigned shift activities.</td></tr>
+        <tr><td>Inventory / Procurement Officer</td><td>Stock records, purchase orders, batch receiving, transfers, and expiry monitoring.</td></tr>
+        <tr><td>Claims / Billing Officer</td><td>Insurance and NHIS claim preparation, verification, attachments, submission, and follow-up.</td></tr>
+        <tr><td>Accounts Officer</td><td>Accounting, receivables, reconciliation, payment records, and financial reports.</td></tr>
+        <tr><td>Branch Manager</td><td>Branch oversight, approved inventory and POS actions, reports, and offline sync monitoring.</td></tr>
+        <tr><td>Clinical / Records Staff</td><td>Patient records, vitals, medication history, follow-ups, and authorized claim support.</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout danger">
+      <strong>NHIS deletion is administrator-only</strong>
+      Rejecting a claim and deleting a claim are different actions. Authorized staff may reject a claim when appropriate. Only an administrator can permanently delete an NHIS claim, and deletion cannot be undone.
+    </div>
+
+    <h3>Account safety</h3>
+    <ul class="checklist">
+      <li>Use your own account for every transaction.</li>
+      <li>Never disclose your password, NHIA credentials, branch token, or verification codes.</li>
+      <li>Lock or sign out of HealthFlow when leaving the computer.</li>
+      <li>Do not use an administrator account for ordinary cashier work.</li>
+      <li>Report unexpected access, unfamiliar transactions, or suspicious prompts immediately.</li>
+    </ul>
+
+    <h3>When a menu is missing</h3>
+    <p>A missing menu usually means your role does not include that permission. Ask the administrator to review your assigned role. Do not use another person's account as a workaround.</p>
+    <div class="footer"><span>Section 2</span><span>Roles and Access</span></div>
+  </section>
+
+  <section class="page">
+    <div class="page-header"><strong>HealthFlow Pharmacy</strong><span>Dashboard and Inventory</span></div>
+    <h2>3. Dashboard and Inventory</h2>
+
+    <h3>Use the dashboard</h3>
+    <span class="path">Dashboard</span>
+    <p>The dashboard summarizes current activity. Depending on your role, it may show sales, claims, inventory alerts, recent transactions, low stock, expiring medicines, and quick actions.</p>
+    <ul>
+      <li>Review low-stock and expiry warnings at the start of the day.</li>
+      <li>Use date and branch filters where available.</li>
+      <li>Select a summary item to open the related detailed screen.</li>
+    </ul>
+
+    <h3>Add a medicine</h3>
+    <span class="path">Inventory &gt; Add Drug</span>
+    <ol class="steps">
+      <li>Search for the medicine first to avoid duplicates.</li>
+      <li>Select <b>Add Drug</b> and enter the medicine name, category, form, strength, and applicable codes.</li>
+      <li>Enter batch information, expiry date, quantity, cost price, selling price, and reorder level.</li>
+      <li>Review the details and save.</li>
+    </ol>
+
+    <h3>Receive or update stock</h3>
+    <p>Stock should normally be increased through a completed purchase or approved stock operation. Keep each batch separate when expiry dates or costs differ.</p>
+
+    <div class="grid-2">
+      <div class="panel">
+        <h4>Batch control</h4>
+        <ul>
+          <li>Record the correct batch number.</li>
+          <li>Use the printed expiry date.</li>
+          <li>Do not merge different batches.</li>
+          <li>Investigate negative or unusual quantities.</li>
+        </ul>
+      </div>
+      <div class="panel">
+        <h4>Price control</h4>
+        <ul>
+          <li>Confirm cost and selling prices.</li>
+          <li>Use approved NHIS prices and codes where applicable.</li>
+          <li>Restrict price changes to authorized staff.</li>
+          <li>Document stock adjustments.</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3>Import inventory from Excel</h3>
+    <span class="path">Inventory &gt; Import Excel</span>
+    <ol class="steps">
+      <li>Use the HealthFlow import template or the column format supplied during onboarding.</li>
+      <li>Upload the workbook and review the preview.</li>
+      <li>Correct rejected rows, duplicate codes, invalid dates, or missing prices.</li>
+      <li>Confirm the import only after the preview totals are correct.</li>
+    </ol>
+
+    <div class="callout warning">
+      <strong>Expiry and quantity accuracy</strong>
+      Inventory information affects dispensing, purchasing, alerts, claims, and reports. Never guess a batch, expiry date, medicine code, or quantity.
+    </div>
+    <div class="footer"><span>Section 3</span><span>Dashboard and Inventory</span></div>
+  </section>
+
+  <section class="page">
+    <div class="page-header"><strong>HealthFlow Pharmacy</strong><span>Sales</span></div>
+    <h2>4. Sales and Shift Management</h2>
+
+    <h3>Open a cashier shift</h3>
+    <span class="path">Sales (POS)</span>
+    <ol class="steps">
+      <li>Confirm the selected branch and terminal.</li>
+      <li>Select <b>Open Shift</b> or <b>Start POS</b>.</li>
+      <li>Enter the opening cash accurately.</li>
+      <li>Confirm before beginning sales.</li>
+    </ol>
+
+    <h3>Complete a sale</h3>
+    <ol class="steps">
+      <li>Search by medicine name, code, batch, or scan the barcode.</li>
+      <li>Select the correct medicine and batch. Confirm expiry, quantity, and price.</li>
+      <li>Add items to the cart and enter the quantity dispensed.</li>
+      <li>For insurance or NHIS transactions, link the correct patient and follow the claim workflow.</li>
+      <li>Select the payment method: cash, mobile money, card, insurance, or another configured option.</li>
+      <li>Review the total and select <b>Complete Sale</b>.</li>
+      <li>Issue or print the receipt where required.</li>
+    </ol>
+
+    <div class="callout warning">
+      <strong>Clinical responsibility remains with the dispenser</strong>
+      HealthFlow assists with records and warnings. The pharmacist or authorized professional must still confirm the medicine, dose, interactions, legal requirements, and appropriateness before dispensing.
+    </div>
+
+    <h3>Correct a cart before payment</h3>
+    <p>Edit the quantity or remove the item before completing the sale. After payment, follow your facility's authorized return, reversal, or correction process. Do not create an undocumented stock adjustment to hide an error.</p>
+
+    <h3>Close a shift</h3>
+    <ol class="steps">
+      <li>Finish or suspend all open sales.</li>
+      <li>Count cash and verify non-cash payment totals.</li>
+      <li>Select <b>Close Shift</b>.</li>
+      <li>Enter counted cash and a note for any difference.</li>
+      <li>Review the shift summary and confirm closure.</li>
+    </ol>
+
+    <h3>When the internet is unavailable</h3>
+    <p>If your branch has offline support, HealthFlow may offer <b>Save to Branch Server</b>, <b>Save Offline Sale</b>, or similar controls. Continue only when the screen confirms the sale was saved locally. Sync when connectivity returns.</p>
+
+    <div class="callout danger">
+      <strong>Do not repeat a sale after a slow response</strong>
+      First check the sales list or receipt status. Repeating the transaction can create duplicate sales and incorrect stock.
+    </div>
+    <div class="footer"><span>Section 4</span><span>Sales and Shift Management</span></div>
+  </section>
+
+  <section class="page">
+    <div class="page-header"><strong>HealthFlow Pharmacy</strong><span>Patients and Purchases</span></div>
+    <h2>5. Patients and Purchases</h2>
+
+    <h3>Create or update a patient</h3>
+    <span class="path">Patients &gt; Add Patient</span>
+    <ol class="steps">
+      <li>Search by name, phone, folder number, insurance number, NHIS number, or Ghana Card.</li>
+      <li>If no matching profile exists, select <b>Add Patient</b>.</li>
+      <li>Enter the full name, phone number, folder number, date of birth, gender, and other available details.</li>
+      <li>Add insurance or NHIS information exactly as shown on the member's records.</li>
+      <li>Review and save.</li>
+    </ol>
+
+    <div class="callout">
+      <strong>Avoid duplicate patient profiles</strong>
+      Always search before creating a patient. Duplicate profiles split prescription, refill, claim, and payment history.
+    </div>
+
+    <h3>View patient history</h3>
+    <p>Open the patient profile to review authorized details such as purchases, medicines, claims, vitals, refills, and follow-up information. Visibility depends on your role.</p>
+
+    <h3>Create a purchase order</h3>
+    <span class="path">Purchases &gt; New Purchase Order</span>
+    <ol class="steps">
+      <li>Select or add the supplier.</li>
+      <li>Enter the supplier invoice number and purchase date.</li>
+      <li>Add each medicine, quantity, batch, expiry date, and cost price.</li>
+      <li>Compare the item total with the supplier document.</li>
+      <li>Save the order, then complete or receive it when the physical stock has been verified.</li>
+    </ol>
+
+    <h3>Receiving checklist</h3>
+    <div class="grid-2">
+      <ul class="checklist">
+        <li>Supplier and invoice are correct.</li>
+        <li>Medicine and strength match the order.</li>
+        <li>Quantity received is correct.</li>
+        <li>Batch number is readable.</li>
+      </ul>
+      <ul class="checklist">
+        <li>Expiry date is acceptable.</li>
+        <li>Cost price is correct.</li>
+        <li>Damaged items are excluded.</li>
+        <li>Purchase total matches the invoice.</li>
+      </ul>
+    </div>
+
+    <div class="callout warning">
+      <strong>Complete purchases only after verification</strong>
+      Completing a purchase updates inventory. If the stock has not physically arrived or has not been checked, keep the order pending according to your facility procedure.
+    </div>
+    <div class="footer"><span>Section 5</span><span>Patients and Purchases</span></div>
+  </section>
+
+  <section class="page">
+    <div class="page-header"><strong>HealthFlow Pharmacy</strong><span>Insurance Claims</span></div>
+    <h2>6. Insurance Claims</h2>
+    <p class="lead">The general <b>Claims</b> module manages configured insurance providers. The separate <b>NHIS</b> module contains the specialized NHIA and CLAIM-it workflow.</p>
+
+    <div class="grid-2">
+      <div class="panel">
+        <h3>Claims module</h3>
+        <p>Use for general insurance claim creation, patient linkage, provider selection, submission status, payment tracking, and follow-up.</p>
+      </div>
+      <div class="panel">
+        <h3>NHIS module</h3>
+        <p>Use for NHIS member verification, CCC generation, medicine coding, prescription attachment, CLAIM-it transfer, and CXF export.</p>
+      </div>
+    </div>
+
+    <h3>Create a general insurance claim</h3>
+    <span class="path">Claims &gt; New Claim</span>
+    <ol class="steps">
+      <li>Select the patient and insurance provider.</li>
+      <li>Confirm the member or policy information.</li>
+      <li>Link the correct sale or add the approved claim items.</li>
+      <li>Attach supporting documents where required.</li>
+      <li>Review amount, service date, and claim details.</li>
+      <li>Save as draft or submit according to your facility's process.</li>
+    </ol>
+
+    <h3>Understand claim status</h3>
+    <table>
+      <thead><tr><th>Status</th><th>Meaning</th><th>Typical action</th></tr></thead>
+      <tbody>
+        <tr><td>Draft</td><td>Information is incomplete or still under review.</td><td>Edit and complete required fields.</td></tr>
+        <tr><td>Ready</td><td>Claim has passed local readiness checks.</td><td>Submit or export using the approved route.</td></tr>
+        <tr><td>Submitted</td><td>Claim has been sent to the insurer or processing system.</td><td>Monitor acknowledgement and status.</td></tr>
+        <tr><td>Accepted</td><td>Claim has been accepted for processing.</td><td>Track payment or reconciliation.</td></tr>
+        <tr><td>Rejected</td><td>Claim was declined or intentionally rejected.</td><td>Review reason and correct where permitted.</td></tr>
+        <tr><td>Paid</td><td>Payment has been recorded.</td><td>Reconcile against remittance.</td></tr>
+        <tr><td>Failed</td><td>Technical submission did not complete.</td><td>Read the error, correct the issue, and retry safely.</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout danger">
+      <strong>Never delete a claim to hide an error</strong>
+      Use correction, rejection, or audit notes. Permanent deletion is reserved for authorized administrators and should only be used for a genuinely invalid duplicate or test record.
+    </div>
+    <div class="footer"><span>Section 6</span><span>Insurance Claims</span></div>
+  </section>
+
+  <section class="page">
+    <div class="page-header"><strong>HealthFlow Pharmacy</strong><span>NHIS</span></div>
+    <h2>7. NHIS and CCC Verification</h2>
+
+    <h3>Create an NHIS claim</h3>
+    <span class="path">NHIS &gt; New Claim</span>
+    <ol class="steps">
+      <li>Search for the patient or enter the NHIS member number or Ghana Card number.</li>
+      <li>Select the correct card type.</li>
+      <li>Select <b>Generate/Validate CC Code via NHIA</b>.</li>
+      <li>Review the returned member name, HIN, gender, date of birth, and membership result.</li>
+      <li>Complete the folder number, service date, prescribing facility, referral information, prescriber, and authorization details.</li>
+      <li>Add the medicines and confirm NHIS codes, quantities, approved prices, dose, frequency, and duration.</li>
+      <li>Attach the scanned prescription when required.</li>
+      <li>Review the NHIS Pharmacy Check panel and resolve blockers.</li>
+      <li>Select <b>Save Claim</b>.</li>
+    </ol>
+
+    <h3>CCC generation</h3>
+    <p>CCC generation checks the member against the NHIA eligibility service using the facility's saved NHIA credentials. Each facility must use credentials officially issued for that facility.</p>
+
+    <div class="flow">
+      <div class="flow-box">HealthFlow screen</div>
+      <div class="arrow">&gt;</div>
+      <div class="flow-box">HealthFlow secure service</div>
+      <div class="arrow">&gt;</div>
+      <div class="flow-box">NHIA eligibility service</div>
+    </div>
+
+    <div class="callout info">
+      <strong>CCC generation is not claim submission</strong>
+      A successful CCC verifies attendance or eligibility information. The completed claim must still be saved and later transferred or exported using the approved CLAIM-it workflow.
+    </div>
+
+    <h3>Common CCC results</h3>
+    <table>
+      <thead><tr><th>Result</th><th>What to do</th></tr></thead>
+      <tbody>
+        <tr><td>CCC generated</td><td>Verify the member details, complete the claim, and save.</td></tr>
+        <tr><td>Membership inactive</td><td>Do not generate a claim code. Ask the member to contact NHIA or renew membership.</td></tr>
+        <tr><td>Member not found / invalid number</td><td>Check the card type and number, then try once more.</td></tr>
+        <tr><td>Facility credentials rejected</td><td>Ask the administrator to verify and re-save that facility's NHIA credentials in Settings.</td></tr>
+        <tr><td>Network or service unavailable</td><td>Keep the claim information, wait, and retry. Do not repeatedly click the button.</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout warning">
+      <strong>Do not share NHIA credentials</strong>
+      Credentials belong to the facility. Enter them only in the protected Settings screen and never send them through chat, screenshots, email, or printed manuals.
+    </div>
+    <div class="footer"><span>Section 7</span><span>NHIS and CCC Verification</span></div>
+  </section>
+
+  <section class="page">
+    <div class="page-header"><strong>HealthFlow Pharmacy</strong><span>CLAIM-it</span></div>
+    <h2>8. CLAIM-it Transfer and CXF Export</h2>
+
+    <h3>Direct transfer through the branch server</h3>
+    <p>Direct CLAIM-it transfer is an API operation. No claim file is moved. HealthFlow sends the claim information in the request body, including the CLAIM-it claim ID and supported attachment data.</p>
+
+    <div class="flow">
+      <div class="flow-box">HealthFlow browser</div>
+      <div class="arrow">&gt;</div>
+      <div class="flow-box">Local branch server</div>
+      <div class="arrow">&gt;</div>
+      <div class="flow-box">CLAIM-it on pharmacy computer</div>
+    </div>
+
+    <div class="callout danger">
+      <strong>The browser must not contact CLAIM-it directly</strong>
+      All direct CLAIM-it submissions must pass through the local HealthFlow branch server. Do not change local ports, service installation, tokens, or bridge addresses unless HealthFlow support instructs you.
+    </div>
+
+    <h3>Submit selected NHIS claims directly</h3>
+    <ol class="steps">
+      <li>Confirm that CLAIM-it and the HealthFlow branch server are running on the pharmacy computer.</li>
+      <li>Open <b>NHIS</b> and select the ready claim or claims.</li>
+      <li>Choose the configured direct transfer action.</li>
+      <li>Review the claim count and totals.</li>
+      <li>Submit once and wait for the CLAIM-it response.</li>
+      <li>Read the import report and correct any rejected fields before retrying.</li>
+    </ol>
+
+    <h3>CLAIM-it claim ID</h3>
+    <p>Every direct claim requires a CLAIM-it <b>claimID</b>. HealthFlow creates or preserves this identifier when the claim is prepared. If the identifier is missing, HealthFlow blocks submission and asks the user to regenerate or repair the claim.</p>
+
+    <h3>CXF export is manual import only</h3>
+    <p>A <b>.cxf</b> file is used for the separate manual import workflow. Export the CXF from HealthFlow, then import that file through the CLAIM-it user interface.</p>
+
+    <table>
+      <thead><tr><th>Method</th><th>What is transferred</th><th>User action</th></tr></thead>
+      <tbody>
+        <tr><td>Direct transfer</td><td>Claim JSON or XML sent through the local branch server.</td><td>Select claims and submit; no file movement.</td></tr>
+        <tr><td>Manual CXF import</td><td>A generated .cxf file containing the claim package.</td><td>Export from HealthFlow and import in CLAIM-it.</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout info">
+      <strong>Hosted HealthFlow and local CLAIM-it</strong>
+      The online HealthFlow website can generate CCC through the configured service. Direct CLAIM-it transfer still requires the local branch server because CLAIM-it runs on the pharmacy's own computer.
+    </div>
+    <div class="footer"><span>Section 8</span><span>CLAIM-it Transfer and CXF Export</span></div>
+  </section>
+
+  <section class="page">
+    <div class="page-header"><strong>HealthFlow Pharmacy</strong><span>Attachments and Corrections</span></div>
+    <h2>9. Attachments and Claim Corrections</h2>
+
+    <h3>Attach a scanned prescription</h3>
+    <span class="path">NHIS &gt; New Claim or Edit Claim &gt; Scanned Prescription</span>
+    <ol class="steps">
+      <li>Scan or photograph the full prescription clearly.</li>
+      <li>Select the attachment area and choose the file.</li>
+      <li>Wait until the file name and size appear in the claim.</li>
+      <li>Save the claim and wait for a success message.</li>
+      <li>Reopen the claim and confirm the attachment is still listed when the document is important to submission.</li>
+    </ol>
+
+    <div class="grid-2">
+      <div class="panel">
+        <h4>Supported files</h4>
+        <p>PDF, JPEG, or PNG, subject to the current screen limit. The NHIS claim screen indicates a maximum of 3 MB per prescription attachment.</p>
+      </div>
+      <div class="panel">
+        <h4>Image quality</h4>
+        <p>The patient's details, prescriber, facility, date, medicines, dose, signature, and authorization marks should be readable.</p>
+      </div>
+    </div>
+
+    <h3>Correct an existing NHIS claim</h3>
+    <ol class="steps">
+      <li>Open the claim and select the edit action.</li>
+      <li>Read the warning or validation panel.</li>
+      <li>Correct only the inaccurate or missing information.</li>
+      <li>Replace or add the prescription attachment if required.</li>
+      <li>Select <b>Save Corrections</b> and wait for confirmation.</li>
+      <li>Recheck readiness before export or submission.</li>
+    </ol>
+
+    <div class="callout warning">
+      <strong>A slow save does not always mean failure</strong>
+      Do not click Save repeatedly. Wait for the response, then check the claim list or reopen the claim before trying again. Repeated saves can create confusion or duplicate uploads.
+    </div>
+
+    <h3>Reject versus delete</h3>
+    <table>
+      <thead><tr><th>Action</th><th>Use when</th><th>Result</th></tr></thead>
+      <tbody>
+        <tr><td>Reject</td><td>The claim should remain in history but cannot proceed.</td><td>Status changes to rejected and the record remains auditable.</td></tr>
+        <tr><td>Delete</td><td>An administrator confirms the record is an invalid duplicate, test, or irrecoverable mistake.</td><td>The claim is permanently removed. This action is restricted to administrators.</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout danger">
+      <strong>Deletion cannot be undone</strong>
+      Verify the claim number, patient, service date, and reason before an administrator confirms permanent deletion.
+    </div>
+    <div class="footer"><span>Section 9</span><span>Attachments and Claim Corrections</span></div>
+  </section>
+
+  <section class="page">
+    <div class="page-header"><strong>HealthFlow Pharmacy</strong><span>Patient Care and E-Pharmacy</span></div>
+    <h2>10. Patient Care and E-Pharmacy</h2>
+
+    <h3>Patient Care</h3>
+    <span class="path">Patient Care</span>
+    <p>The Patient Care workspace supports services beyond a single sale. Available tabs and actions depend on the facility and user role.</p>
+
+    <div class="grid-2">
+      <div class="panel">
+        <h4>Vitals and records</h4>
+        <p>Find the patient, record authorized vital signs, add notes, and save. Confirm the patient identity before entering clinical information.</p>
+      </div>
+      <div class="panel">
+        <h4>Medication refills</h4>
+        <p>Create or review refill requests, confirm the medicine and schedule, and update the refill queue after service.</p>
+      </div>
+      <div class="panel">
+        <h4>Follow-ups</h4>
+        <p>Review due follow-ups, birthdays, adherence reminders, and approved communication tasks.</p>
+      </div>
+      <div class="panel">
+        <h4>Messages</h4>
+        <p>Use patient communication only for approved care and service purposes. Protect private information.</p>
+      </div>
+    </div>
+
+    <h3>E-Pharmacy</h3>
+    <span class="path">E-Pharmacy</span>
+    <p>The licensed e-pharmacy module allows approved facilities to publish eligible inventory and receive medicine requests or customer orders.</p>
+
+    <ol class="steps">
+      <li>Confirm that the facility registration and license information are current.</li>
+      <li>Select medicines approved for online visibility.</li>
+      <li>Review price, stock, restrictions, and prescription requirements before publishing.</li>
+      <li>Monitor incoming requests and verify the customer's details.</li>
+      <li>For prescription medicines, obtain and review the required prescription before fulfillment.</li>
+      <li>Update the request status through preparation, collection, delivery, or completion.</li>
+    </ol>
+
+    <div class="callout warning">
+      <strong>Restricted medicines</strong>
+      Publishing a medicine does not remove legal or professional controls. Prescription-only and restricted products must follow Ghanaian law, facility policy, and pharmacist review.
+    </div>
+    <div class="footer"><span>Section 10</span><span>Patient Care and E-Pharmacy</span></div>
+  </section>
+
+  <section class="page">
+    <div class="page-header"><strong>HealthFlow Pharmacy</strong><span>Reports and Accounting</span></div>
+    <h2>11. Reports and Accounting</h2>
+
+    <h3>Generate a report</h3>
+    <span class="path">Reports</span>
+    <ol class="steps">
+      <li>Select the report category or dashboard.</li>
+      <li>Choose the organization, branch, date range, status, and other filters.</li>
+      <li>Select <b>Generate</b> or apply the filters.</li>
+      <li>Review summary values and open drill-down details where available.</li>
+      <li>Export to PDF, Excel, or CSV, or print the report.</li>
+    </ol>
+
+    <div class="callout">
+      <strong>Reports reflect selected filters</strong>
+      Before sharing a report, confirm the date range, branch, payment type, claim status, and other active filters. Include these details when discussing totals.
+    </div>
+
+    <h3>Accounting workspace</h3>
+    <span class="path">Accounting</span>
+    <p>Authorized users can review shift totals, receivables, claims, payments, reconciliation, and accounting summaries.</p>
+    <ul>
+      <li>Match shift totals with cashier records and physical cash.</li>
+      <li>Match card and mobile money totals with provider statements.</li>
+      <li>Track insurer and NHIS receivables separately from cash sales.</li>
+      <li>Record payment references and dates accurately.</li>
+      <li>Investigate differences before marking reconciliation complete.</li>
+    </ul>
+
+    <h3>Exporting data safely</h3>
+    <div class="grid-2">
+      <div class="panel">
+        <h4>Before export</h4>
+        <ul>
+          <li>Confirm the intended recipient.</li>
+          <li>Use only the necessary date range.</li>
+          <li>Remove unnecessary patient information.</li>
+          <li>Check totals against the screen.</li>
+        </ul>
+      </div>
+      <div class="panel">
+        <h4>After export</h4>
+        <ul>
+          <li>Store files in an approved location.</li>
+          <li>Do not leave reports on public computers.</li>
+          <li>Do not send confidential files through unapproved channels.</li>
+          <li>Delete temporary copies securely.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer"><span>Section 11</span><span>Reports and Accounting</span></div>
+  </section>
+
+  <section class="page">
+    <div class="page-header"><strong>HealthFlow Pharmacy</strong><span>Administration</span></div>
+    <h2>12. Settings and Administration</h2>
+    <p class="lead">Settings are restricted to administrators because changes can affect the entire facility, billing, integrations, and staff access.</p>
+
+    <h3>Facility profile</h3>
+    <span class="path">Settings &gt; Facility / Organization</span>
+    <ul>
+      <li>Maintain the correct facility name, type, contact details, address, and logo.</li>
+      <li>Confirm branch information before assigning users or recording stock.</li>
+      <li>Keep license and accreditation details current.</li>
+      <li>Review the change before selecting <b>Save Settings</b>.</li>
+    </ul>
+
+    <h3>Staff and access</h3>
+    <ul>
+      <li>Create one account per person.</li>
+      <li>Assign the least privilege needed for the person's job.</li>
+      <li>Remove or suspend access promptly when staff leave or change roles.</li>
+      <li>Review administrator accounts regularly.</li>
+    </ul>
+
+    <h3>NHIA and CLAIM-it settings</h3>
+    <ul>
+      <li>Enter only credentials officially issued to the facility.</li>
+      <li>Keep CCC generation settings separate from CLAIM-it submission settings.</li>
+      <li>Test CCC verification after saving credentials.</li>
+      <li>Use the installed local branch server for direct CLAIM-it transfer.</li>
+      <li>Keep CXF export configured as manual file import where that workflow is used.</li>
+    </ul>
+
+    <div class="callout danger">
+      <strong>Do not change technical installation values casually</strong>
+      Branch tokens, local service addresses, CLAIM-it bridge values, ports, encryption keys, and service installation are managed during deployment. Contact HealthFlow support before changing them.
+    </div>
+
+    <h3>Backups</h3>
+    <ol class="steps">
+      <li>Use the configured backup controls at the agreed schedule.</li>
+      <li>Confirm the latest backup date and status.</li>
+      <li>Download or store recovery files only in an approved secure location.</li>
+      <li>Contact support before restoring data unless your administrator has an approved recovery procedure.</li>
+    </ol>
+
+    <div class="callout warning">
+      <strong>Backup is not the same as sync</strong>
+      Sync sends pending records between approved systems. A backup is a recovery copy. Your facility may need both.
+    </div>
+    <div class="footer"><span>Section 12</span><span>Settings and Administration</span></div>
+  </section>
+
+  <section class="page">
+    <div class="page-header"><strong>HealthFlow Pharmacy</strong><span>Connectivity</span></div>
+    <h2>13. Online, Offline, and Sync</h2>
+
+    <h3>Understand the operating modes</h3>
+    <table>
+      <thead><tr><th>Mode</th><th>Meaning</th><th>User action</th></tr></thead>
+      <tbody>
+        <tr><td>Online cloud</td><td>The browser is connected to HealthFlow's hosted data services.</td><td>Work normally and wait for success confirmations.</td></tr>
+        <tr><td>Online local sync</td><td>The branch server is available and can coordinate local operations and synchronization.</td><td>Use approved local actions and monitor sync status.</td></tr>
+        <tr><td>Offline local</td><td>Internet access is unavailable, but approved records can be saved locally.</td><td>Continue supported work and sync when connectivity returns.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Use Offline Sync</h3>
+    <span class="path">Offline Sync</span>
+    <ol class="steps">
+      <li>Review connection status, pending records, failed records, and last successful sync.</li>
+      <li>Select <b>Sync Now</b> only when the connection is stable.</li>
+      <li>Allow the process to finish without closing the browser or branch server.</li>
+      <li>Review failures and read the exact error before retrying.</li>
+      <li>Contact support if the same record fails repeatedly.</li>
+    </ol>
+
+    <div class="callout danger">
+      <strong>Do not reinstall or reconfigure the branch server during an outage</strong>
+      A temporary network or remote service problem does not normally require changing ports, tokens, credentials, Windows services, or CLAIM-it. Preserve the working installation and report the exact error.
+    </div>
+
+    <h3>Avoid duplicate records during slow connections</h3>
+    <ul class="checklist">
+      <li>Click Save, Submit, or Sync once.</li>
+      <li>Wait for a success or failure message.</li>
+      <li>Check the list before repeating the action.</li>
+      <li>Search by patient, claim number, sale number, or date.</li>
+      <li>Report duplicates instead of deleting them without authorization.</li>
+    </ul>
+
+    <h3>Local CLAIM-it availability</h3>
+    <p>CLAIM-it runs on the pharmacy computer. Direct transfer works only when the local CLAIM-it service and HealthFlow branch server are available. A hosted website cannot directly operate another computer's local CLAIM-it installation.</p>
+    <div class="footer"><span>Section 13</span><span>Online, Offline, and Sync</span></div>
+  </section>
+
+  <section class="page">
+    <div class="page-header"><strong>HealthFlow Pharmacy</strong><span>Troubleshooting</span></div>
+    <h2>14. Troubleshooting</h2>
+
+    <table>
+      <thead><tr><th>Problem</th><th>Check first</th><th>Recommended action</th></tr></thead>
+      <tbody>
+        <tr><td>Cannot sign in</td><td>Email, password, internet, and assigned organization.</td><td>Retry carefully, then use password recovery or contact the administrator.</td></tr>
+        <tr><td>Menu or button is missing</td><td>User role and selected branch.</td><td>Ask the administrator to review access. Do not use another account.</td></tr>
+        <tr><td>Save is slow</td><td>Whether a success message or new list item appears.</td><td>Wait and check the record before clicking again.</td></tr>
+        <tr><td>CCC cannot be generated</td><td>Member number, card type, membership status, facility credentials, and connectivity.</td><td>Correct the specific issue. Administrators should re-save credentials only when rejected.</td></tr>
+        <tr><td>Prescription attachment fails</td><td>File type, file size, connection, and whether the claim still exists.</td><td>Use PDF/JPEG/PNG within the displayed limit, then save once and reopen to verify.</td></tr>
+        <tr><td>Direct CLAIM-it submit fails</td><td>Branch server, CLAIM-it, claim readiness, and claimID.</td><td>Read the error. Repair missing claimID or correct claim data; do not send CXF through the API.</td></tr>
+        <tr><td>Offline records are pending</td><td>Internet and branch-server status.</td><td>Use Sync Now when stable and review failures.</td></tr>
+        <tr><td>Stock is incorrect</td><td>Recent purchases, sales, transfers, returns, and adjustments.</td><td>Trace the transaction history before an authorized correction.</td></tr>
+        <tr><td>Report total looks wrong</td><td>Date range, branch, status, and payment filters.</td><td>Reset filters and regenerate before reporting a defect.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Information to provide support</h3>
+    <ul class="checklist">
+      <li>Facility and branch name.</li>
+      <li>User role, not the user's password.</li>
+      <li>Date and time of the problem.</li>
+      <li>Screen or module where it occurred.</li>
+      <li>Claim number, sale number, or record ID when applicable.</li>
+      <li>Exact error message and a screenshot with secrets hidden.</li>
+      <li>Whether the computer was online, offline, or using the branch server.</li>
+      <li>Steps taken immediately before the error.</li>
+    </ul>
+
+    <div class="callout danger">
+      <strong>Never send secrets in a support screenshot</strong>
+      Hide passwords, NHIA API keys and secrets, branch tokens, encryption keys, patient documents, and other confidential values unless an approved secure support process specifically requires them.
+    </div>
+    <div class="footer"><span>Section 14</span><span>Troubleshooting</span></div>
+  </section>
+
+  <section class="page">
+    <div class="page-header"><strong>HealthFlow Pharmacy</strong><span>Operational Checklists</span></div>
+    <h2>Daily and Weekly Checklists</h2>
+
+    <div class="grid-2">
+      <div class="panel">
+        <h3>Opening checklist</h3>
+        <ul class="checklist">
+          <li>Sign in with your own account.</li>
+          <li>Confirm facility and branch.</li>
+          <li>Review low-stock and expiry alerts.</li>
+          <li>Confirm internet and branch-server status.</li>
+          <li>Open the cashier shift if assigned.</li>
+          <li>Check pending sync failures.</li>
+          <li>Confirm printer and scanner availability.</li>
+        </ul>
+      </div>
+      <div class="panel">
+        <h3>Closing checklist</h3>
+        <ul class="checklist">
+          <li>Complete or safely suspend open sales.</li>
+          <li>Close cashier shifts and count cash.</li>
+          <li>Review unsent claims and failed submissions.</li>
+          <li>Sync pending offline records.</li>
+          <li>Confirm daily totals and exceptions.</li>
+          <li>Complete scheduled backup checks.</li>
+          <li>Sign out and secure the workstation.</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3>Weekly administrator review</h3>
+    <div class="grid-2">
+      <ul class="checklist">
+        <li>Review user access and administrator accounts.</li>
+        <li>Review stock adjustments and negative quantities.</li>
+        <li>Review expiry and reorder reports.</li>
+        <li>Review claim failures, rejections, and receivables.</li>
+      </ul>
+      <ul class="checklist">
+        <li>Confirm backups and sync health.</li>
+        <li>Reconcile payment methods and cashier shifts.</li>
+        <li>Review pending purchases and supplier balances.</li>
+        <li>Document and escalate recurring system errors.</li>
+      </ul>
+    </div>
+
+    <h3>Staff acknowledgement</h3>
+    <p class="small">Use this section if your facility requires confirmation that staff received and reviewed the manual.</p>
+    <div class="form-lines">
+      <div class="form-line">Staff name</div>
+      <div class="form-line">Role</div>
+      <div class="form-line">Signature</div>
+      <div class="form-line">Date</div>
+      <div class="form-line">Administrator / trainer</div>
+      <div class="form-line">Training date</div>
+    </div>
+
+    <div class="callout">
+      <strong>Keep the manual available</strong>
+      Store the current PDF where staff can find it. Replace older copies after major HealthFlow updates or facility process changes.
+    </div>
+    <div class="footer"><span>Operational Checklists</span><span>HealthFlow Pharmacy</span></div>
+  </section>
+
+  <section class="page">
+    <div class="page-header"><strong>HealthFlow Pharmacy</strong><span>Support</span></div>
+    <h2>Support and Document Control</h2>
+
+    <h3>HealthFlow support</h3>
+    <div class="panel keep">
+      <p><b>Product:</b> HealthFlow Pharmacy Management System</p>
+      <p><b>Developer:</b> David Gabion Selorm</p>
+      <p><b>Email:</b> gabiondavidselorm@gmail.com</p>
+      <p><b>Business:</b> Neon Digital Technologies</p>
+      <p><b>Business email:</b> zittechgh@gmail.com</p>
+      <p><b>Website:</b> https://www.neondigitaltechnologies.com</p>
+    </div>
+
+    <h3>Facility support contacts</h3>
+    <div class="form-lines">
+      <div class="form-line">Facility administrator</div>
+      <div class="form-line">Phone</div>
+      <div class="form-line">Branch technical contact</div>
+      <div class="form-line">Phone</div>
+      <div class="form-line">NHIS / claims lead</div>
+      <div class="form-line">Phone</div>
+    </div>
+
+    <h3>Document control</h3>
+    <table>
+      <thead><tr><th>Version</th><th>Date</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td>1.0</td><td>15 June 2026</td><td>Initial client manual covering core pharmacy, claims, NHIS, CLAIM-it, offline, reporting, and administrative workflows.</td></tr>
+        <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+        <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout info">
+      <strong>Scope of this manual</strong>
+      The exact screens available to a client depend on the subscribed modules, configured facility type, branch setup, and user permissions. Facility policy and applicable law take priority over general examples in this guide.
+    </div>
+
+    <p class="small" style="margin-top: 18mm;">Copyright 2026 HealthFlow. All rights reserved.</p>
+    <div class="footer"><span>Client User Manual v1.0</span><span>End of Manual</span></div>
+  </section>
+</main>
+</body>
+</html>
