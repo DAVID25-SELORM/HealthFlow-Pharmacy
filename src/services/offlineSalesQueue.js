@@ -1,5 +1,6 @@
 import { createClaim } from './claimsService'
 import { createSale } from './salesService'
+import { decryptJson, encryptJson } from '../utils/browserEncryption'
 
 const DB_NAME = 'healthflow-offline'
 const DB_VERSION = 1
@@ -78,9 +79,24 @@ const saveOfflineSale = async (sale) => {
     ...sale,
     updatedAt: new Date().toISOString(),
   }
-  await runStoreRequest('readwrite', (store) => store.put(savedSale))
+  const protectedSale = {
+    id: savedSale.id,
+    status: savedSale.status || 'pending',
+    createdAt: savedSale.createdAt,
+    updatedAt: savedSale.updatedAt,
+    encryptedPayload: await encryptJson(savedSale),
+  }
+  await runStoreRequest('readwrite', (store) => store.put(protectedSale))
   dispatchQueueChanged()
   return savedSale
+}
+
+const unwrapOfflineSale = async (record) => {
+  if (!record?.encryptedPayload) {
+    return record
+  }
+
+  return await decryptJson(record.encryptedPayload)
 }
 
 const appendUniqueLine = (value, line) => {
@@ -149,8 +165,11 @@ export const queueOfflineSale = async ({
 }
 
 export const getOfflineSalesQueue = async () => {
-  const sales = await runStoreRequest('readonly', (store) => store.getAll())
-  return (sales || []).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
+  const records = await runStoreRequest('readonly', (store) => store.getAll())
+  const sales = await Promise.all((records || []).map((record) => unwrapOfflineSale(record)))
+  return sales
+    .filter(Boolean)
+    .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
 }
 
 export const getOfflineSalesSummary = async () => {

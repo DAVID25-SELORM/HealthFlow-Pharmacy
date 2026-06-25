@@ -1,3 +1,5 @@
+import { decryptJson, encryptJson } from '../utils/browserEncryption'
+
 const POS_CACHE_KEY = 'healthflow.offline.pos.snapshots.v1'
 const POS_DB_NAME = 'healthflow-offline-pos'
 const POS_DB_VERSION = 1
@@ -47,7 +49,7 @@ const readIndexedSnapshot = async (key) => {
   return await new Promise((resolve) => {
     const transaction = database.transaction(POS_STORE_NAME, 'readonly')
     const request = transaction.objectStore(POS_STORE_NAME).get(key)
-    request.onsuccess = () => resolve(request.result || null)
+    request.onsuccess = async () => resolve((await decryptJson(request.result)) || null)
     request.onerror = () => {
       console.warn('Unable to read offline POS IndexedDB cache:', request.error)
       resolve(null)
@@ -61,9 +63,11 @@ const writeIndexedSnapshot = async (key, snapshot) => {
     return false
   }
 
+  const protectedSnapshot = await encryptJson(snapshot)
+
   return await new Promise((resolve) => {
     const transaction = database.transaction(POS_STORE_NAME, 'readwrite')
-    const request = transaction.objectStore(POS_STORE_NAME).put(snapshot, key)
+    const request = transaction.objectStore(POS_STORE_NAME).put(protectedSnapshot, key)
     request.onsuccess = () => resolve(true)
     request.onerror = () => {
       console.warn('Unable to save offline POS IndexedDB cache:', request.error)
@@ -72,26 +76,27 @@ const writeIndexedSnapshot = async (key, snapshot) => {
   })
 }
 
-const readSnapshots = () => {
+const readSnapshots = async () => {
   if (!isBrowser()) {
     return {}
   }
 
   try {
-    return JSON.parse(window.localStorage.getItem(POS_CACHE_KEY) || '{}')
+    const parsed = JSON.parse(window.localStorage.getItem(POS_CACHE_KEY) || '{}')
+    return (await decryptJson(parsed)) || {}
   } catch (error) {
     console.warn('Unable to read offline POS cache:', error)
     return {}
   }
 }
 
-const writeSnapshots = (snapshots) => {
+const writeSnapshots = async (snapshots) => {
   if (!isBrowser()) {
     return
   }
 
   try {
-    window.localStorage.setItem(POS_CACHE_KEY, JSON.stringify(snapshots))
+    window.localStorage.setItem(POS_CACHE_KEY, JSON.stringify(await encryptJson(snapshots)))
   } catch (error) {
     console.warn('Unable to save offline POS cache:', error)
   }
@@ -133,7 +138,7 @@ export const loadOfflinePosSnapshot = async (userId) => {
     return indexedSnapshot
   }
 
-  const snapshots = readSnapshots()
+  const snapshots = await readSnapshots()
   return snapshots[key] || null
 }
 
@@ -142,7 +147,7 @@ export const saveOfflinePosSnapshot = async (userId, partialSnapshot) => {
     return null
   }
 
-  const snapshots = readSnapshots()
+  const snapshots = await readSnapshots()
   const key = getSnapshotKey(userId)
   const previous = (await readIndexedSnapshot(key)) || snapshots[key] || {}
   const { drugsCacheMode, ...snapshotPatch } = partialSnapshot
@@ -168,7 +173,7 @@ export const saveOfflinePosSnapshot = async (userId, partialSnapshot) => {
     drugs: Array.isArray(nextSnapshot.drugs) ? nextSnapshot.drugs.slice(0, 100) : nextSnapshot.drugs,
   }
   snapshots[key] = compactSnapshot
-  writeSnapshots(snapshots)
+  await writeSnapshots(snapshots)
   return nextSnapshot
 }
 
