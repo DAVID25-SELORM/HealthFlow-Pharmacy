@@ -200,6 +200,15 @@ export const AuthProvider = ({ children }) => {
     let mounted = true
     let handledInvalidSession = false
     let latestResolutionId = 0
+    // Serialize all Supabase auth operations to prevent concurrent Web Lock
+    // contention (the gotrue client uses a single lock per storage key).
+    let authOperationQueue = Promise.resolve()
+    const enqueueAuth = (fn) => {
+      authOperationQueue = authOperationQueue
+        .then(() => (mounted ? fn() : undefined))
+        .catch(() => {})
+      return authOperationQueue
+    }
 
     const isCurrentResolution = (resolutionId) =>
       mounted && resolutionId === latestResolutionId
@@ -432,44 +441,58 @@ export const AuthProvider = ({ children }) => {
           }
         }
 
-        let {
-          data: { user: validatedUser },
-          error: validateError,
-        } = await supabase.auth.getUser()
+        // Skip the extra getUser() network call for page-load events (BOOTSTRAP /
+        // INITIAL_SESSION / *_RECOVERED). The Supabase SDK already validated the
+        // session when it fired onAuthStateChange, so a second round-trip just
+        // holds the internal Web Lock for an extra 100–500 ms and causes lock
+        // contention under React Strict Mode's double-mount.  We still validate
+        // server-side for interactive sign-in events so revoked tokens are caught
+        // promptly.
+        const shouldValidateWithServer =
+          event !== 'BOOTSTRAP' &&
+          event !== 'INITIAL_SESSION' &&
+          !event.endsWith('_RECOVERED')
 
-        if (validateError && isSupabaseAuthFailure(validateError)) {
-          const refreshedSession = await refreshStoredSession(resolvedSession)
-          if (refreshedSession?.access_token) {
-            resolvedSession = refreshedSession
-            activeUser = refreshedSession.user || activeUser
+        if (shouldValidateWithServer) {
+          let {
+            data: { user: validatedUser },
+            error: validateError,
+          } = await supabase.auth.getUser()
 
-            const retryResult = await supabase.auth.getUser()
-            validatedUser = retryResult.data?.user || null
-            validateError = retryResult.error
-          } else {
+          if (validateError && isSupabaseAuthFailure(validateError)) {
+            const refreshedSession = await refreshStoredSession(resolvedSession)
+            if (refreshedSession?.access_token) {
+              resolvedSession = refreshedSession
+              activeUser = refreshedSession.user || activeUser
+
+              const retryResult = await supabase.auth.getUser()
+              validatedUser = retryResult.data?.user || null
+              validateError = retryResult.error
+            } else {
+              await resetInvalidSession(validateError, resolutionId, {
+                preserveExistingSession: false,
+              })
+              return
+            }
+          }
+
+          if (validateError && isSupabaseAuthFailure(validateError)) {
             await resetInvalidSession(validateError, resolutionId, {
-              preserveExistingSession: event !== 'BOOTSTRAP',
+              preserveExistingSession: false,
             })
             return
           }
-        }
 
-        if (validateError && isSupabaseAuthFailure(validateError)) {
-          await resetInvalidSession(validateError, resolutionId, {
-            preserveExistingSession: event !== 'BOOTSTRAP',
-          })
-          return
-        }
+          if (validateError) {
+            console.error('Unable to validate Supabase user:', validateError)
+          }
 
-        if (validateError) {
-          console.error('Unable to validate Supabase user:', validateError)
-        }
-
-        if (!validateError && validatedUser) {
-          activeUser = validatedUser
-          resolvedSession = {
-            ...resolvedSession,
-            user: validatedUser,
+          if (!validateError && validatedUser) {
+            activeUser = validatedUser
+            resolvedSession = {
+              ...resolvedSession,
+              user: validatedUser,
+            }
           }
         }
 
@@ -527,7 +550,7 @@ export const AuthProvider = ({ children }) => {
       await resolveSessionState(activeSession, { event: 'BOOTSTRAP' })
     }
 
-    void bootstrap()
+    enqueueAuth(bootstrap)
 
     if (!isSupabaseConfigured()) {
       return undefined
@@ -540,14 +563,16 @@ export const AuthProvider = ({ children }) => {
         if (event === 'SIGNED_IN') {
           void recordSignInAuditEvent({ session: activeSession })
         }
-        void resolveSessionState(activeSession, { event })
+        enqueueAuth(() => resolveSessionState(activeSession, { event }))
       })
     })
 
     const unsubscribeAuthExpired = subscribeSupabaseAuthExpired(() => {
-      const resolutionId = ++latestResolutionId
-      void resetInvalidSession('Supabase session expired.', resolutionId, {
-        preserveExistingSession: false,
+      enqueueAuth(() => {
+        const resolutionId = ++latestResolutionId
+        return resetInvalidSession('Supabase session expired.', resolutionId, {
+          preserveExistingSession: false,
+        })
       })
     })
 

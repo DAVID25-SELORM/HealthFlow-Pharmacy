@@ -40,7 +40,16 @@ const fullDateFormatter = new Intl.DateTimeFormat('en-GB', {
 const shortDayFormatter = new Intl.DateTimeFormat('en-US', { weekday: 'short' })
 const shortDateFormatter = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' })
 const DASHBOARD_CHART_MODE_KEY = 'healthflow.dashboard.chartMode'
+const DASHBOARD_CASH_INFLOW_PERIOD_KEY = 'healthflow.dashboard.cashInflowPeriod'
 const validChartModes = ['daily', 'weekly']
+const validCashInflowPeriods = ['today', 'yesterday', 'last7', 'month']
+
+const cashInflowPeriodOptions = [
+  { value: 'today', label: 'Today' },
+  { value: 'yesterday', label: 'Yesterday' },
+  { value: 'last7', label: 'Last 7 days' },
+  { value: 'month', label: 'This month' },
+]
 
 const startOfDay = (value) => {
   const date = new Date(value)
@@ -89,6 +98,78 @@ const filterSalesBetween = (sales, start, end) =>
     const saleDate = new Date(sale.sale_date)
     return saleDate >= start && saleDate <= end
   })
+
+const getCashInflowRange = (period, anchorDate = new Date()) => {
+  const today = startOfDay(anchorDate)
+
+  if (period === 'yesterday') {
+    const yesterday = addDays(today, -1)
+    return {
+      label: 'Yesterday',
+      start: startOfDay(yesterday),
+      end: endOfDay(yesterday),
+    }
+  }
+
+  if (period === 'last7') {
+    return {
+      label: 'Last 7 days',
+      start: startOfDay(addDays(today, -6)),
+      end: endOfDay(today),
+    }
+  }
+
+  if (period === 'month') {
+    return {
+      label: 'This month',
+      start: startOfMonth(today),
+      end: endOfDay(today),
+    }
+  }
+
+  return {
+    label: 'Today',
+    start: startOfDay(today),
+    end: endOfDay(today),
+  }
+}
+
+const buildCashInflowSummary = (sales, period, anchorDate = new Date()) => {
+  const range = getCashInflowRange(period, anchorDate)
+  const periodSales = filterSalesBetween(sales, range.start, range.end)
+  const byMethod = periodSales.reduce(
+    (summary, sale) => {
+      const method = String(sale.payment_method || 'cash').toLowerCase()
+      const amount = Number.parseFloat(sale.net_amount || 0)
+
+      if (method === 'cash' || method === 'momo' || method === 'card') {
+        summary[method] += amount
+      } else if (method === 'insurance') {
+        summary.insurance += amount
+      } else {
+        summary.other += amount
+      }
+
+      return summary
+    },
+    { cash: 0, momo: 0, card: 0, insurance: 0, other: 0 }
+  )
+
+  const totalCollected = byMethod.cash + byMethod.momo + byMethod.card + byMethod.other
+
+  return {
+    ...range,
+    totalCollected,
+    insuranceReceivable: byMethod.insurance,
+    transactionCount: periodSales.length,
+    methods: [
+      { label: 'Cash', value: byMethod.cash },
+      { label: 'Mobile money', value: byMethod.momo },
+      { label: 'Card', value: byMethod.card },
+      { label: 'Other', value: byMethod.other },
+    ],
+  }
+}
 
 const buildTrend = (current, previous, comparisonLabel) => {
   if (previous === 0) {
@@ -225,7 +306,15 @@ const Dashboard = () => {
       validate: (value) => validChartModes.includes(value),
     }
   )
+  const [cashInflowPeriod, setCashInflowPeriod] = useSessionStorageState(
+    DASHBOARD_CASH_INFLOW_PERIOD_KEY,
+    'today',
+    {
+      validate: (value) => validCashInflowPeriods.includes(value),
+    }
+  )
   const [stats, setStats] = useState(() => createEmptyStats())
+  const [salesHistory, setSalesHistory] = useState([])
   const [recentSales, setRecentSales] = useState([])
   const [recentClaims, setRecentClaims] = useState([])
 
@@ -257,6 +346,7 @@ const Dashboard = () => {
 
       if (!isSupabaseConfigured()) {
         setStats(createEmptyStats(today))
+        setSalesHistory([])
         setRecentSales([])
         setRecentClaims([])
         setError('Supabase is not configured. Update .env to enable dashboard analytics.')
@@ -271,7 +361,7 @@ const Dashboard = () => {
           startDate: previousMonthStart.toISOString(),
           endDate: today.toISOString(),
           paymentStatus: 'completed',
-          columns: 'id, sale_date, net_amount, payment_status',
+          columns: 'id, sale_date, net_amount, payment_status, payment_method',
         }),
         getRecentSales(5),
         canViewOperationalMetrics ? getLowStockDrugs() : Promise.resolve([]),
@@ -327,6 +417,7 @@ const Dashboard = () => {
         dailyChart: buildDailyChart(salesHistory, today),
         weeklyChart: buildWeeklyChart(salesHistory, today),
       })
+      setSalesHistory(salesHistory)
       setRecentSales(sales)
       setRecentClaims(claims)
 
@@ -336,6 +427,7 @@ const Dashboard = () => {
     } catch (loadError) {
       console.error('Error loading dashboard:', loadError)
       setStats(createEmptyStats(today))
+      setSalesHistory([])
       setRecentSales([])
       setRecentClaims([])
       setError('Unable to load dashboard data right now.')
@@ -404,6 +496,11 @@ const Dashboard = () => {
   const hasChartActivity = useMemo(
     () => chartData.some((item) => item.amount > 0),
     [chartData]
+  )
+
+  const cashInflowSummary = useMemo(
+    () => buildCashInflowSummary(salesHistory, cashInflowPeriod),
+    [cashInflowPeriod, salesHistory]
   )
 
   const quickActions = useMemo(() => {
@@ -673,6 +770,49 @@ const Dashboard = () => {
           </div>
         ))}
       </div>
+
+      <section className="cash-inflow-card">
+        <div className="section-header">
+          <div>
+            <h2>Cash Inflow</h2>
+            <span className="cash-inflow-period-label">
+              {cashInflowSummary.transactionCount} completed transaction
+              {cashInflowSummary.transactionCount === 1 ? '' : 's'}
+            </span>
+          </div>
+          <select
+            className="cash-inflow-select"
+            value={cashInflowPeriod}
+            onChange={(event) => setCashInflowPeriod(event.target.value)}
+            aria-label="Cash inflow period"
+          >
+            {cashInflowPeriodOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="cash-inflow-grid">
+          <div className="cash-inflow-total">
+            <span>{cashInflowSummary.label} collected</span>
+            <strong>GHS {currencyFormatter.format(cashInflowSummary.totalCollected)}</strong>
+          </div>
+
+          {cashInflowSummary.methods.map((method) => (
+            <div key={method.label} className="cash-inflow-method">
+              <span>{method.label}</span>
+              <strong>GHS {currencyFormatter.format(method.value)}</strong>
+            </div>
+          ))}
+
+          <div className="cash-inflow-method muted">
+            <span>Insurance receivable</span>
+            <strong>GHS {currencyFormatter.format(cashInflowSummary.insuranceReceivable)}</strong>
+          </div>
+        </div>
+      </section>
 
       <div className="chart-section">
         <div className="section-header">

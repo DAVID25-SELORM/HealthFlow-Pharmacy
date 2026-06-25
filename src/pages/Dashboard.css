@@ -466,6 +466,76 @@
   box-shadow: var(--shadow);
 }
 
+.cash-inflow-card {
+  padding: 1.4rem;
+  border-radius: 24px;
+  background: white;
+  box-shadow: var(--shadow);
+}
+
+.cash-inflow-period-label {
+  display: block;
+  margin-top: 0.25rem;
+  color: var(--gray-500);
+  font-size: 0.82rem;
+}
+
+.cash-inflow-select {
+  min-height: 38px;
+  padding: 0.45rem 0.8rem;
+  border: 1px solid var(--gray-300);
+  border-radius: 10px;
+  background: white;
+  color: var(--gray-800);
+  font-weight: 700;
+}
+
+.cash-inflow-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.35fr) repeat(5, minmax(120px, 1fr));
+  gap: 0.75rem;
+}
+
+.cash-inflow-total,
+.cash-inflow-method {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.9rem;
+  border: 1px solid rgba(17, 24, 39, 0.07);
+  border-radius: 14px;
+  background: var(--gray-50);
+}
+
+.cash-inflow-total {
+  background: linear-gradient(135deg, #179b82 0%, #106c62 100%);
+  color: white;
+}
+
+.cash-inflow-total span,
+.cash-inflow-method span {
+  color: inherit;
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.cash-inflow-total strong {
+  font-size: 1.45rem;
+  line-height: 1.15;
+}
+
+.cash-inflow-method strong {
+  color: var(--gray-900);
+  font-size: 1rem;
+}
+
+.cash-inflow-method.muted {
+  background: rgba(148, 163, 184, 0.12);
+}
+
 .chart-section {
   padding: 1.4rem;
 }
@@ -1109,6 +1179,53 @@
   padding: 0.95rem;
 }
 
+.cash-inflow-card {
+  padding: 0.95rem;
+  border-radius: 8px;
+}
+
+.cash-inflow-period-label {
+  font-size: 0.74rem;
+}
+
+.cash-inflow-select {
+  min-height: 32px;
+  border-color: var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  font-size: 0.75rem;
+}
+
+.cash-inflow-grid {
+  grid-template-columns: minmax(180px, 1.4fr) repeat(5, minmax(110px, 1fr));
+  gap: 0.55rem;
+}
+
+.cash-inflow-total,
+.cash-inflow-method {
+  padding: 0.7rem;
+  border-color: var(--line-soft);
+  border-radius: 8px;
+}
+
+.cash-inflow-total {
+  background: var(--teal);
+}
+
+.cash-inflow-total span,
+.cash-inflow-method span {
+  font-size: 0.66rem;
+}
+
+.cash-inflow-total strong {
+  font-size: 1.2rem;
+}
+
+.cash-inflow-method strong {
+  color: var(--ink);
+  font-size: 0.86rem;
+}
+
 .section-header,
 .dashboard .card-header {
   margin-bottom: 0.8rem;
@@ -1192,16 +1309,31 @@
   .dashboard .stats-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .cash-inflow-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 760px) {
   .hero-actions,
   .dashboard .stats-grid,
+  .cash-inflow-grid,
   .activity-grid {
     grid-template-columns: 1fr;
   }
 
   .dashboard-hero {
     padding: 0.85rem;
+  }
+
+  .cash-inflow-card .section-header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 0.7rem;
+  }
+
+  .cash-inflow-select {
+    width: 100%;
   }
 }
