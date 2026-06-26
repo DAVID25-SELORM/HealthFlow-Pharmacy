@@ -7,7 +7,6 @@ import {
   refreshSupabaseSessionOnce,
   subscribeSupabaseAuthExpired,
 } from '../lib/supabase'
-import { tryLogAuditEvent } from '../services/auditService'
 import { getPasswordRecoveryRedirectUrl } from '../config/appUrl'
 import {
   ACCOUNTING_ROLES,
@@ -26,9 +25,8 @@ import { storeActiveRole } from '../utils/activeRole'
 
 const AuthContext = createContext(null)
 const FALLBACK_ROLE = 'assistant'
-const loggedSignInAuditKeys = new Set()
 const AUTH_REQUEST_TIMEOUT_MS = 12000
-const PROFILE_REQUEST_TIMEOUT_MS = 15000
+const PROFILE_REQUEST_TIMEOUT_MS = 25000
 const PROFILE_SELECT = `
   id,
   email,
@@ -50,9 +48,7 @@ const PROFILE_SELECT = `
   can_delete_nhis_claims,
   is_active,
   organization_id,
-  branch_id,
-  branches (id, name, code, is_main),
-  organizations (*)
+  branch_id
 `
 const OPTIONAL_PRIVILEGE_COLUMNS = [
   'can_manage_purchases',
@@ -93,6 +89,55 @@ const withTimeout = (promise, label, timeoutMs) =>
       .finally(() => globalThis.clearTimeout(timeout))
   })
 
+const loadProfileRelations = async (profile) => {
+  const [organizationResult, branchResult] = await Promise.allSettled([
+    profile?.organization_id
+      ? withTimeout(
+          supabase
+            .from('organizations')
+            .select('*')
+            .eq('id', profile.organization_id)
+            .maybeSingle(),
+          'Organization loading',
+          PROFILE_REQUEST_TIMEOUT_MS
+        )
+      : Promise.resolve({ data: null, error: null }),
+    profile?.branch_id
+      ? withTimeout(
+          supabase
+            .from('branches')
+            .select('id, name, code, is_main')
+            .eq('id', profile.branch_id)
+            .maybeSingle(),
+          'Branch loading',
+          PROFILE_REQUEST_TIMEOUT_MS
+        )
+      : Promise.resolve({ data: null, error: null }),
+  ])
+
+  if (organizationResult.status === 'rejected') {
+    console.warn('Unable to load user organization:', organizationResult.reason)
+  }
+  if (branchResult.status === 'rejected') {
+    console.warn('Unable to load user branch:', branchResult.reason)
+  }
+
+  const organization =
+    organizationResult.status === 'fulfilled' && !organizationResult.value?.error
+      ? organizationResult.value?.data || null
+      : null
+  const branch =
+    branchResult.status === 'fulfilled' && !branchResult.value?.error
+      ? branchResult.value?.data || null
+      : null
+
+  return {
+    profile: profile ? { ...profile, organizations: organization, branches: branch } : null,
+    organization,
+    branch,
+  }
+}
+
 const loadUserProfile = async (userId) => {
   const runQuery = (columns) =>
     withTimeout(
@@ -106,11 +151,25 @@ const loadUserProfile = async (userId) => {
     )
 
   const result = await runQuery(PROFILE_SELECT)
-  if (!result.error || !isMissingPrivilegeColumn(result.error)) {
+  if (result.error && isMissingPrivilegeColumn(result.error)) {
+    const legacyResult = await runQuery(LEGACY_PROFILE_SELECT)
+    if (legacyResult.error) {
+      return legacyResult
+    }
+    return {
+      data: await loadProfileRelations(legacyResult.data),
+      error: null,
+    }
+  }
+
+  if (result.error) {
     return result
   }
 
-  return await runQuery(LEGACY_PROFILE_SELECT)
+  return {
+    data: await loadProfileRelations(result.data),
+    error: null,
+  }
 }
 
 const isSupabaseAuthFailure = (error) => {
@@ -138,36 +197,6 @@ const isSupabaseAuthFailure = (error) => {
 
 const resolveRole = (profile, authUser) =>
   profile?.role || authUser?.app_metadata?.role || authUser?.user_metadata?.role || FALLBACK_ROLE
-
-const getSignInAuditKey = (session, authUser, email = '') => {
-  const userId = authUser?.id || session?.user?.id || ''
-  const tokenTail = String(session?.access_token || '').slice(-16)
-  const expiresAt = session?.expires_at || ''
-  return [userId || email, tokenTail || expiresAt || email].filter(Boolean).join(':')
-}
-
-const recordSignInAuditEvent = async ({ session, authUser, email }) => {
-  const user = authUser || session?.user || null
-  const normalizedEmail = user?.email || email || ''
-  const auditKey = getSignInAuditKey(session, user, normalizedEmail)
-  if (auditKey && loggedSignInAuditKeys.has(auditKey)) {
-    return
-  }
-  if (auditKey) {
-    loggedSignInAuditKeys.add(auditKey)
-  }
-
-  await tryLogAuditEvent({
-    eventType: 'auth',
-    entityType: 'session',
-    entityId: null,
-    action: 'sign_in',
-    details: {
-      actor_user_id: user?.id || null,
-      email: normalizedEmail,
-    },
-  })
-}
 
 const resolveDisplayName = (profile, authUser) =>
   profile?.full_name || authUser?.user_metadata?.full_name || authUser?.email || 'Authenticated User'
@@ -369,9 +398,9 @@ export const AuthProvider = ({ children }) => {
       }
 
       return {
-        profile: data,
-        organization: data?.organizations || null,
-        branch: data?.branches || null,
+        profile: data?.profile || null,
+        organization: data?.organization || null,
+        branch: data?.branch || null,
       }
     }
 
@@ -597,9 +626,6 @@ export const AuthProvider = ({ children }) => {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, activeSession) => {
       scheduleAuthResolution(() => {
-        if (event === 'SIGNED_IN') {
-          void recordSignInAuditEvent({ session: activeSession })
-        }
         enqueueAuth(() => resolveSessionState(activeSession, { event }))
       })
     })
@@ -626,7 +652,7 @@ export const AuthProvider = ({ children }) => {
     }
 
     const normalizedEmail = email.trim()
-    const { data, error } = await withTimeout(
+    const { error } = await withTimeout(
       supabase.auth.signInWithPassword({
         email: normalizedEmail,
         password,
@@ -638,30 +664,12 @@ export const AuthProvider = ({ children }) => {
     if (error) {
       throw error
     }
-
-    void recordSignInAuditEvent({
-      session: data?.session,
-      authUser: data?.user,
-      email: normalizedEmail,
-    }).catch((auditError) => {
-      console.warn('Sign-in audit log failed:', auditError)
-    })
   }
 
   const signOut = async () => {
     if (!isSupabaseConfigured()) {
       return
     }
-
-    void tryLogAuditEvent({
-      eventType: 'auth',
-      entityType: 'session',
-      entityId: null,
-      action: 'sign_out',
-      details: {
-        email: user?.email || null,
-      },
-    })
 
     const { error } = await withTimeout(
       supabase.auth.signOut(),
@@ -715,10 +723,10 @@ export const AuthProvider = ({ children }) => {
       throw error
     }
 
-    setProfile(data || null)
-    setOrganization(data?.organizations || null)
-    setBranch(data?.branches || null)
-    return data || null
+    setProfile(data?.profile || null)
+    setOrganization(data?.organization || null)
+    setBranch(data?.branch || null)
+    return data?.profile || null
   }
 
   const primaryRole = resolveRole(profile, user)
