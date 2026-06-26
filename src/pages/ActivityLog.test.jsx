@@ -5,11 +5,13 @@ import ActivityLog from './ActivityLog'
 const mocks = vi.hoisted(() => {
   const queryBuilder = {
     select: vi.fn(),
+    eq: vi.fn(),
     order: vi.fn(),
     limit: vi.fn(),
   }
 
   queryBuilder.select.mockImplementation(() => queryBuilder)
+  queryBuilder.eq.mockImplementation(() => queryBuilder)
   queryBuilder.order.mockImplementation(() => queryBuilder)
 
   return {
@@ -25,6 +27,12 @@ const mocks = vi.hoisted(() => {
 vi.mock('../lib/supabase', () => ({
   isSupabaseConfigured: mocks.isSupabaseConfigured,
   supabase: mocks.supabase,
+}))
+
+vi.mock('../context/AuthContext', () => ({
+  useAuth: () => ({
+    organization_id: 'org-1',
+  }),
 }))
 
 vi.mock('../services/tierAccessService', () => ({

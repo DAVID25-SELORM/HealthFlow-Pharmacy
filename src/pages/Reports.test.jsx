@@ -213,7 +213,7 @@ describe('Reports', () => {
     expect(reportTableCard).toBeTruthy()
 
     fireEvent.click(screen.getAllByRole('button', { name: /^Generate$/i })[0])
-    expect(within(reportTableCard).getByText('SALE-001')).toBeInTheDocument()
+    expect(await within(reportTableCard).findByText('SALE-001')).toBeInTheDocument()
     expect(within(reportTableCard).getByText('SALE-002')).toBeInTheDocument()
 
     fireEvent.change(screen.getByLabelText(/search reports/i), { target: { value: 'Kojo' } })
@@ -242,7 +242,7 @@ describe('Reports', () => {
 
     const gdrgCard = screen.getByText('Tariff/GDRG Services Report').closest('.report-card')
     fireEvent.click(within(gdrgCard).getByRole('button', { name: /^Generate$/i }))
-    expect(screen.getByText('GDRG-01')).toBeInTheDocument()
+    expect(await screen.findByText('GDRG-01')).toBeInTheDocument()
     expect(screen.getByText('Consultation')).toBeInTheDocument()
   })
 
@@ -253,9 +253,14 @@ describe('Reports', () => {
       expect(screen.getByText('Drug Utilization Report')).toBeInTheDocument()
     })
 
+    fireEvent.click(screen.getByRole('button', { name: /Generate Reports/i }))
+    await waitFor(() => {
+      expect(mocks.getReportBundle).toHaveBeenCalled()
+    })
+
     expect(screen.getAllByText('Top 10 Dispensed Drugs').length).toBeGreaterThan(0)
     fireEvent.change(screen.getByLabelText(/fast search drug utilization/i), { target: { value: 'Amoxicillin' } })
-    expect(screen.getAllByText('2 patients').length).toBeGreaterThan(0)
+    expect((await screen.findAllByText('2 patients')).length).toBeGreaterThan(0)
 
     const amoxicillinButton = screen.getByRole('button', { name: /Amoxicillin Capsules/i })
     fireEvent.click(amoxicillinButton)
@@ -272,6 +277,11 @@ describe('Reports', () => {
 
     await waitFor(() => {
       expect(screen.getByLabelText(/fast search drug utilization/i)).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /Generate Reports/i }))
+    await waitFor(() => {
+      expect(mocks.getReportBundle).toHaveBeenCalled()
     })
 
     fireEvent.change(screen.getByLabelText(/fast search drug utilization/i), {
