@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertCircle, CheckCircle2, RefreshCcw, Server, UploadCloud } from 'lucide-react'
+import { AlertCircle, CheckCircle2, ClipboardCopy, RefreshCcw, Server, UploadCloud } from 'lucide-react'
 import {
   createNhiaBatch,
   checkBranchServerUpdates,
@@ -201,6 +201,7 @@ export default function OfflineSync() {
   const [setupClients, setSetupClients] = useState([])
   const [setupLoading, setSetupLoading] = useState(false)
   const [setupClientAction, setSetupClientAction] = useState('')
+  const [envCopied, setEnvCopied] = useState(false)
   const normalizedRole = String(role || '').toLowerCase()
   const canManageBranchToken = normalizedRole === 'admin' || normalizedRole === 'super_admin'
   const isSuperAdmin = normalizedRole === 'super_admin'
@@ -565,6 +566,22 @@ export default function OfflineSync() {
   const recentEventFailures = status?.recentFailures?.events || []
   const hasFailures = recentRecordFailures.length > 0 || recentEventFailures.length > 0
   const isConnected = Boolean(health?.ok)
+
+  const copyEnvBlock = useCallback((envText) => {
+    navigator.clipboard.writeText(envText).then(() => {
+      setEnvCopied(true)
+      setTimeout(() => setEnvCopied(false), 2500)
+    }).catch(() => {})
+  }, [])
+
+  const isNotConfigured = error === 'Local branch server is not configured in this browser.'
+  const isUnreachable = !isNotConfigured && Boolean(error)
+  const setupSteps = [
+    { label: 'Register sync client', done: setupClients.some((c) => c.isActive) },
+    { label: 'Paste .env on facility machine', done: Boolean(setupResult) },
+    { label: 'Start local branch server', done: isConnected },
+    { label: 'Verify data sync', done: isConnected && Number(status?.summary?.synced || 0) > 0 },
+  ]
   const branchUpdateMessage = updateStatus?.configured === false
     ? 'Automatic updates are not configured on this facility machine.'
     : updateStatus?.installerSupported === false
@@ -586,7 +603,26 @@ export default function OfflineSync() {
         </div>
       </div>
 
-      {error && <div className="offline-sync-alert">{error}</div>}
+      {isNotConfigured && (
+        <div className="offline-sync-getstarted">
+          <div className="offline-sync-getstarted-icon"><Server size={28} /></div>
+          <div>
+            <strong>Branch server not connected to this browser</strong>
+            <p>
+              {canManageBranchToken
+                ? 'Paste your branch token in the "Local Branch Token" section below to connect this browser to the local server.'
+                : 'Ask your administrator to connect this machine to the local branch server.'}
+              {isSuperAdmin && ' To set up a new machine, use the "Branch Sync Setup" section below.'}
+            </p>
+          </div>
+        </div>
+      )}
+      {isUnreachable && (
+        <div className="offline-sync-alert">
+          {error}
+          <span className="offline-sync-alert-hint">Make sure the HealthFlow local server is running on this machine (port 4780).</span>
+        </div>
+      )}
 
       {canManageBranchToken && (
         <section className="offline-sync-section branch-token-section">
@@ -795,8 +831,9 @@ export default function OfflineSync() {
           </div>
           {setupResult && (
             <div className="branch-setup-result">
-              <p>This setup is shown once. Re-registering the same client name rotates its sync token.</p>
-              <pre className="branch-setup-env">{`PORT=4780
+              <p>This setup block is shown once. Copy it now — re-registering the same client name rotates its sync token.</p>
+              <div className="branch-setup-env-wrapper">
+                <pre className="branch-setup-env">{`PORT=4780
 BRANCH_SERVER_TOKEN=${setupResult.branchServerToken}
 NHIA_CONFIG_SECRET_KEY=${setupResult.nhiaConfigSecretKey}
 ORGANIZATION_ID=${setupResult.organizationId}
@@ -808,8 +845,29 @@ HEALTHFLOW_UPDATE_MANIFEST_URL=${branchUpdateManifestUrl || '<your-signed-update
 HEALTHFLOW_UPDATE_PUBLIC_KEY=${branchUpdatePublicKey || '<your-update-public-key-with-escaped-newlines>'}
 HEALTHFLOW_UPDATE_AUTO_CHECK_HOURS=24
 HEALTHFLOW_UPDATE_AUTO_INSTALL=false`}</pre>
+                <button
+                  className="btn btn-outline btn-sm branch-setup-copy-btn"
+                  type="button"
+                  onClick={() => copyEnvBlock(`PORT=4780\nBRANCH_SERVER_TOKEN=${setupResult.branchServerToken}\nNHIA_CONFIG_SECRET_KEY=${setupResult.nhiaConfigSecretKey}\nORGANIZATION_ID=${setupResult.organizationId}\nBRANCH_ID=${setupResult.branchId}\nBRANCH_SYNC_TOKEN=${setupResult.branchSyncToken}\nSUPABASE_URL=${supabaseProjectUrl || '<your-supabase-project-url>'}\nSUPABASE_SYNC_KEY=${supabaseSyncKey || '<your-supabase-anon-or-publishable-key>'}\nHEALTHFLOW_UPDATE_MANIFEST_URL=${branchUpdateManifestUrl || '<your-signed-update-manifest-url>'}\nHEALTHFLOW_UPDATE_PUBLIC_KEY=${branchUpdatePublicKey || '<your-update-public-key-with-escaped-newlines>'}\nHEALTHFLOW_UPDATE_AUTO_CHECK_HOURS=24\nHEALTHFLOW_UPDATE_AUTO_INSTALL=false`)}
+                >
+                  <ClipboardCopy size={14} />
+                  {envCopied ? 'Copied!' : 'Copy'}
+                </button>
+              </div>
             </div>
           )}
+
+          <div className="branch-setup-checklist">
+            <strong>Setup progress</strong>
+            <ol>
+              {setupSteps.map((step) => (
+                <li key={step.label} className={step.done ? 'step-done' : 'step-pending'}>
+                  {step.done ? <CheckCircle2 size={15} /> : <AlertCircle size={15} />}
+                  {step.label}
+                </li>
+              ))}
+            </ol>
+          </div>
           <div className="branch-client-list">
             <div className="branch-client-list-header">
               <strong>Registered machines</strong>

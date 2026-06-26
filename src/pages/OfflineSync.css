@@ -57,6 +57,99 @@
   padding: 0.8rem 1rem;
 }
 
+.offline-sync-alert-hint {
+  display: block;
+  font-size: 0.85rem;
+  margin-top: 0.25rem;
+  opacity: 0.8;
+}
+
+.offline-sync-getstarted {
+  align-items: flex-start;
+  background: #f0f7ff;
+  border: 1px solid #bfdbfe;
+  border-radius: var(--radius);
+  color: #1e40af;
+  display: flex;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.offline-sync-getstarted-icon {
+  flex-shrink: 0;
+  opacity: 0.7;
+  padding-top: 0.1rem;
+}
+
+.offline-sync-getstarted strong {
+  display: block;
+  font-size: 0.95rem;
+  margin-bottom: 0.25rem;
+}
+
+.offline-sync-getstarted p {
+  color: #1e40af;
+  font-size: 0.88rem;
+  margin: 0;
+}
+
+.branch-setup-env-wrapper {
+  position: relative;
+}
+
+.branch-setup-copy-btn {
+  position: absolute;
+  right: 0.6rem;
+  top: 0.6rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: rgba(255,255,255,0.12);
+  border-color: rgba(255,255,255,0.25);
+  color: #fff;
+  font-size: 0.8rem;
+}
+
+.branch-setup-copy-btn:hover {
+  background: rgba(255,255,255,0.2);
+}
+
+.branch-setup-checklist {
+  border-top: 1px solid var(--gray-200);
+  padding: 1rem;
+}
+
+.branch-setup-checklist strong {
+  display: block;
+  font-size: 0.88rem;
+  margin-bottom: 0.6rem;
+  color: var(--gray-700);
+}
+
+.branch-setup-checklist ol {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.branch-setup-checklist li {
+  align-items: center;
+  display: flex;
+  font-size: 0.88rem;
+  gap: 0.4rem;
+}
+
+.branch-setup-checklist li.step-done {
+  color: #116b52;
+}
+
+.branch-setup-checklist li.step-pending {
+  color: var(--gray-500);
+}
+
 .offline-sync-actions {
   flex-wrap: wrap;
   gap: 0.6rem;

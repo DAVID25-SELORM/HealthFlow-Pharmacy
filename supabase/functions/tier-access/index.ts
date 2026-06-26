@@ -468,14 +468,11 @@ const PATIENT_WORKSPACE_PATIENT_SELECT_FIELDS = [
   'full_name',
   'phone',
   'email',
-  'folder_no',
   'gender',
   'date_of_birth',
   'address',
   'insurance_provider',
   'insurance_id',
-  'nhis_member_no',
-  'nhis_hin',
   'created_at',
 ].join(', ')
 
