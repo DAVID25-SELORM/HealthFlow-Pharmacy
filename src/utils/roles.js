@@ -64,6 +64,7 @@ export const REPORT_ROLES = [
 export const ACCOUNTING_ROLES = ['admin', 'accounts_officer']
 export const SETTINGS_ROLES = ['admin']
 export const ACTIVITY_LOG_ROLES = ['admin', 'branch_manager', 'super_admin']
+export const SYSTEM_HEALTH_ROLES = ['admin', 'branch_manager', 'super_admin']
 export const OFFLINE_SYNC_ROLES = ['admin', 'branch_manager', 'super_admin']
 export const PURCHASES_ROLES = [
   'admin',

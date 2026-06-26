@@ -17,6 +17,7 @@ import {
   REPORT_ROLES,
   SALES_ROLES,
   SETTINGS_ROLES,
+  SYSTEM_HEALTH_ROLES,
 } from './utils/roles'
 import './App.css'
 
@@ -33,6 +34,7 @@ const TenantAdmin = lazy(() => import('./pages/TenantAdmin'))
 const Login = lazy(() => import('./pages/Login'))
 const Signup = lazy(() => import('./pages/Signup'))
 const ActivityLog = lazy(() => import('./pages/ActivityLog'))
+const SystemHealth = lazy(() => import('./pages/SystemHealth'))
 const OfflineSync = lazy(() => import('./pages/OfflineSync'))
 const Purchases = lazy(() => import('./pages/Purchases'))
 const Nhis = lazy(() => import('./pages/Nhis'))
@@ -185,6 +187,14 @@ function App() {
               element={
                 <RoleRoute allowedRoles={ACTIVITY_LOG_ROLES} allow={canViewActivityLog}>
                   <ActivityLog />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="system-health"
+              element={
+                <RoleRoute allowedRoles={SYSTEM_HEALTH_ROLES}>
+                  <SystemHealth />
                 </RoleRoute>
               }
             />
