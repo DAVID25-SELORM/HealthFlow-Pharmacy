@@ -57,6 +57,7 @@ vi.mock('./tierAccessService', () => ({
 import {
   getAllPatients,
   getPatientsWorkspace,
+  getPatientsWorkspacePage,
   getPatientById,
   getPatientLastVisit,
   getPatientVisitCount,
@@ -223,6 +224,43 @@ describe('patientService local sync reads', () => {
     expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { searchTerm: '99441270', limit: 100 })
     expect(invokeTierAccess).toHaveBeenCalledWith({ action: 'get_patients_workspace' })
     expect(fromMock).not.toHaveBeenCalled()
+  })
+
+  it('loads a paged cloud patient workspace', async () => {
+    routeRead.mockImplementationOnce(async ({ cloud }) => await cloud())
+    invokeTierAccess.mockResolvedValueOnce({
+      patients: [{ id: 'cloud-patient-1', full_name: 'Cloud Patient' }],
+      nhisClaims: [],
+      visitStats: {},
+      total: 806,
+      page: 2,
+      pageSize: 100,
+    })
+
+    await expect(getPatientsWorkspacePage({
+      page: 2,
+      pageSize: 100,
+      searchTerm: 'Cloud',
+    })).resolves.toEqual({
+      patients: [
+        expect.objectContaining({
+          id: 'cloud-patient-1',
+          full_name: 'Cloud Patient',
+          visits: 0,
+          lastVisit: null,
+        }),
+      ],
+      total: 806,
+      page: 2,
+      pageSize: 100,
+    })
+
+    expect(invokeTierAccess).toHaveBeenCalledWith({
+      action: 'get_patients_workspace',
+      page: 2,
+      pageSize: 100,
+      searchTerm: 'Cloud',
+    })
   })
 
   it('keeps local patient search results when local sync has matches', async () => {

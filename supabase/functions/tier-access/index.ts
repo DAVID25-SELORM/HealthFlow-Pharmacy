@@ -459,6 +459,8 @@ const DEFAULT_CATALOG_IDENTITY_ERROR =
   'Default catalog medicines keep their shared name and catalog code. Update quantity or pricing instead.'
 const PATIENT_WORKSPACE_MAX_PATIENTS = 5000
 const PATIENT_WORKSPACE_MAX_NHIS_CLAIMS = 1000
+const PATIENT_WORKSPACE_DEFAULT_PAGE_SIZE = 100
+const PATIENT_WORKSPACE_MAX_PAGE_SIZE = 500
 const REPORT_BUNDLE_MAX_ROWS = 1000
 const REPORT_BUNDLE_MAX_NHIS_CLAIMS = 500
 
@@ -2473,21 +2475,37 @@ const getClaimsStatisticsFromRows = (rows: Record<string, unknown>[]) => ({
     ),
 })
 
+const sanitizePostgrestSearchTerm = (value: unknown) =>
+  normalizeText(value)
+    .replace(/[%_,()]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
 const getPatientVisitRows = async (
   adminClient: ReturnType<typeof createAdminClient>,
-  organizationId: string
+  organizationId: string,
+  patientIds: string[] = []
 ) => {
+  const scopedPatientIds = patientIds.map(normalizeText).filter(Boolean)
+  if (patientIds.length > 0 && scopedPatientIds.length === 0) return []
+
   const rows: Record<string, unknown>[] = []
   const pageSize = 1000
   let from = 0
 
   while (true) {
-    const { data, error } = await adminClient
+    let query = adminClient
       .from('sales')
       .select('patient_id, sale_date')
       .eq('organization_id', organizationId)
       .not('patient_id', 'is', null)
       .order('id')
+
+    if (scopedPatientIds.length > 0) {
+      query = query.in('patient_id', scopedPatientIds)
+    }
+
+    const { data, error } = await query
       .range(from, from + pageSize - 1)
 
     if (error) throw error
@@ -2503,32 +2521,87 @@ const getPatientVisitRows = async (
 const getPatientWorkspaceData = async (
   adminClient: ReturnType<typeof createAdminClient>,
   organizationId: string,
-  { includeVisitStats = true } = {}
+  {
+    includeVisitStats = true,
+    page,
+    pageSize,
+    searchTerm,
+  }: {
+    includeVisitStats?: boolean
+    page?: unknown
+    pageSize?: unknown
+    searchTerm?: unknown
+  } = {}
 ) => {
+  const hasPaging = page !== undefined || pageSize !== undefined || searchTerm !== undefined
+  const pageNumber = parsePositiveInteger(page, 1)
+  const resolvedPageSize = hasPaging
+    ? clampPositiveInteger(pageSize, PATIENT_WORKSPACE_DEFAULT_PAGE_SIZE, PATIENT_WORKSPACE_MAX_PAGE_SIZE)
+    : PATIENT_WORKSPACE_MAX_PATIENTS
+  const from = (pageNumber - 1) * resolvedPageSize
+  const to = from + resolvedPageSize - 1
+  const term = sanitizePostgrestSearchTerm(searchTerm)
+  const likeTerm = term ? `%${term}%` : ''
+
+  let patientsQuery = adminClient
+    .from('patients')
+    .select(PATIENT_WORKSPACE_PATIENT_SELECT_FIELDS, hasPaging ? { count: 'exact' } : undefined)
+    .eq('organization_id', organizationId)
+    .order('created_at', { ascending: false })
+
+  if (term) {
+    patientsQuery = patientsQuery.or([
+      `full_name.ilike.${likeTerm}`,
+      `phone.ilike.${likeTerm}`,
+      `email.ilike.${likeTerm}`,
+      `insurance_provider.ilike.${likeTerm}`,
+      `insurance_id.ilike.${likeTerm}`,
+    ].join(','))
+  }
+
+  patientsQuery = hasPaging
+    ? patientsQuery.range(from, to)
+    : patientsQuery.limit(PATIENT_WORKSPACE_MAX_PATIENTS)
+
+  let nhisClaimsQuery = adminClient
+    .from('nhis_claims')
+    .select(PATIENT_WORKSPACE_NHIS_CLAIM_SELECT_FIELDS)
+    .eq('organization_id', organizationId)
+    .order('created_at', { ascending: false })
+
+  if (term) {
+    nhisClaimsQuery = nhisClaimsQuery.or([
+      `surname.ilike.${likeTerm}`,
+      `other_names.ilike.${likeTerm}`,
+      `member_no.ilike.${likeTerm}`,
+      `hin.ilike.${likeTerm}`,
+      `claim_number.ilike.${likeTerm}`,
+      `folder_no.ilike.${likeTerm}`,
+    ].join(','))
+  }
+
+  nhisClaimsQuery = hasPaging
+    ? nhisClaimsQuery.range(from, to)
+    : nhisClaimsQuery.limit(PATIENT_WORKSPACE_MAX_NHIS_CLAIMS)
+
   const [
-    { data: patients, error: patientsError },
+    { data: patients, error: patientsError, count: patientsCount },
     { data: nhisClaims, error: nhisClaimsError },
-    visitRows,
   ] = await Promise.all([
-    adminClient
-      .from('patients')
-      .select(PATIENT_WORKSPACE_PATIENT_SELECT_FIELDS)
-      .eq('organization_id', organizationId)
-      .order('created_at', { ascending: false })
-      .limit(PATIENT_WORKSPACE_MAX_PATIENTS),
-    adminClient
-      .from('nhis_claims')
-      .select(PATIENT_WORKSPACE_NHIS_CLAIM_SELECT_FIELDS)
-      .eq('organization_id', organizationId)
-      .order('created_at', { ascending: false })
-      .limit(PATIENT_WORKSPACE_MAX_NHIS_CLAIMS),
-    includeVisitStats
-      ? getPatientVisitRows(adminClient, organizationId)
-      : Promise.resolve([]),
+    patientsQuery,
+    nhisClaimsQuery,
   ])
 
   if (patientsError) throw patientsError
   if (nhisClaimsError) throw nhisClaimsError
+
+  const visitRows = includeVisitStats
+    ? await getPatientVisitRows(
+      adminClient,
+      organizationId,
+      hasPaging ? (patients || []).map((patient) => normalizeText(patient.id)) : []
+    )
+    : []
 
   const visitStats = visitRows.reduce<Record<string, { visits: number; lastVisit: string | null }>>(
     (stats, row) => {
@@ -2553,6 +2626,9 @@ const getPatientWorkspaceData = async (
     patients: patients || [],
     nhisClaims: nhisClaims || [],
     visitStats,
+    total: hasPaging ? Number(patientsCount || 0) : undefined,
+    page: hasPaging ? pageNumber : undefined,
+    pageSize: hasPaging ? resolvedPageSize : undefined,
   }
 }
 
@@ -5190,7 +5266,11 @@ Deno.serve(async (request) => {
 
     if (action === 'get_patients_workspace') {
       requirePatientAccess(requesterProfile, 'Only patient-care staff can access patients.')
-      return json(await getPatientWorkspaceData(adminClient, organizationId))
+      return json(await getPatientWorkspaceData(adminClient, organizationId, {
+        page: payload.page,
+        pageSize: payload.pageSize || payload.page_size,
+        searchTerm: payload.searchTerm || payload.search_term,
+      }))
     }
 
     if (

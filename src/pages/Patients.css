@@ -112,6 +112,42 @@
   white-space: nowrap;
 }
 
+.patients-pagination {
+  align-items: center;
+  background: white;
+  border: 1px solid var(--gray-100);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  padding: 0.85rem 1rem;
+}
+
+.patients-pagination > span,
+.patients-pagination-actions > span {
+  color: var(--gray-600);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.patients-pagination-actions {
+  align-items: center;
+  display: flex;
+  gap: 0.75rem;
+}
+
+.patients-pagination .btn {
+  min-height: 36px;
+  padding: 0.5rem 0.75rem;
+}
+
+.patients-pagination .btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .patients-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
@@ -512,6 +548,15 @@
   .patients-page .search-container {
     padding: 0.85rem 1rem;
     margin-bottom: 1rem;
+  }
+
+  .patients-pagination {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .patients-pagination-actions {
+    justify-content: space-between;
   }
 
   .patients-grid {

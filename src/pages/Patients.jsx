@@ -3,8 +3,7 @@ import { Plus, Search, Phone, Mail, ShieldCheck } from 'lucide-react'
 import {
   addPatient,
   getPatientById,
-  getPatientsWorkspace,
-  searchPatients,
+  getPatientsWorkspacePage,
 } from '../services/patientService'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
@@ -15,6 +14,7 @@ import { logPerformance } from '../utils/performance'
 import './Patients.css'
 
 const SEARCH_DEBOUNCE_MS = 350
+const PATIENTS_PAGE_SIZE = 100
 
 const getSaleMedicineSummary = (sale) => {
   const names = (sale.sale_items || [])
@@ -82,6 +82,8 @@ const getPatientInitials = (patient = {}) => {
 const Patients = () => {
   const { role } = useAuth()
   const [patients, setPatients] = useState([])
+  const [patientsTotal, setPatientsTotal] = useState(0)
+  const [patientsPage, setPatientsPage] = useState(1)
   const [searchTerm, setSearchTerm] = useState('')
   const [loading, setLoading] = useState(true)
   const [searchLoading, setSearchLoading] = useState(false)
@@ -106,14 +108,14 @@ const Patients = () => {
     }
 
     const timeoutId = window.setTimeout(() => {
-      void loadPatients(searchTerm, { showFullPageLoader: false })
+      void loadPatients(searchTerm, { showFullPageLoader: false, page: 1 })
     }, SEARCH_DEBOUNCE_MS)
 
     return () => window.clearTimeout(timeoutId)
   }, [searchTerm])
 
   const loadPatients = async (term = '', options = {}) => {
-    const { showFullPageLoader = true } = options
+    const { showFullPageLoader = true, page = patientsPage } = options
     const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
     const requestId = patientsRequestRef.current + 1
     patientsRequestRef.current = requestId
@@ -131,20 +133,31 @@ const Patients = () => {
       if (!isSupabaseConfigured()) {
         if (patientsRequestRef.current === requestId) {
           setPatients([])
+          setPatientsTotal(0)
           setError('Supabase is not configured. Update .env to enable patient records.')
         }
         return
       }
 
-      const rows = term.trim() ? await searchPatients(term) : await getPatientsWorkspace()
+      const result = await getPatientsWorkspacePage({
+        page,
+        pageSize: PATIENTS_PAGE_SIZE,
+        searchTerm: term,
+      })
+      const rows = result.patients || []
 
       if (patientsRequestRef.current !== requestId) {
         return
       }
 
       setPatients(rows)
+      setPatientsTotal(Number(result.total || rows.length || 0))
+      setPatientsPage(Number(result.page || page || 1))
       logPerformance('patients.list', startedAt, role, {
         rows: rows.length,
+        total: Number(result.total || rows.length || 0),
+        page: Number(result.page || page || 1),
+        pageSize: PATIENTS_PAGE_SIZE,
         search: Boolean(term.trim()),
       })
     } catch (loadError) {
@@ -163,7 +176,14 @@ const Patients = () => {
   }
 
   const handleSearch = (event) => {
+    setPatientsPage(1)
     setSearchTerm(event.target.value)
+  }
+
+  const goToPatientsPage = (nextPage) => {
+    const safePage = Math.max(1, nextPage)
+    setPatientsPage(safePage)
+    void loadPatients(searchTerm, { showFullPageLoader: false, page: safePage })
   }
 
   const openAddPatientModal = () => {
@@ -188,7 +208,7 @@ const Patients = () => {
       await addPatient(formData)
       setShowModal(false)
       setFormData(initialForm)
-      await loadPatients(searchTerm)
+      await loadPatients(searchTerm, { page: patientsPage })
     } catch (submitError) {
       console.error('Error adding patient:', submitError)
       setError(submitError.message || 'Unable to add patient.')
@@ -247,6 +267,13 @@ const Patients = () => {
     }
   }
 
+  const patientsShowingFrom = patientsTotal === 0 ? 0 : ((patientsPage - 1) * PATIENTS_PAGE_SIZE) + 1
+  const patientsShowingTo = Math.min(
+    ((patientsPage - 1) * PATIENTS_PAGE_SIZE) + patients.length,
+    patientsTotal
+  )
+  const patientsTotalPages = Math.max(1, Math.ceil(patientsTotal / PATIENTS_PAGE_SIZE))
+
   if (loading) {
     return (
       <div className="patients-page">
@@ -281,6 +308,31 @@ const Patients = () => {
           onChange={handleSearch}
         />
         {searchLoading && <span className="search-status">Searching...</span>}
+      </div>
+
+      <div className="patients-pagination">
+        <span>
+          Showing {patientsShowingFrom}-{patientsShowingTo} of {patientsTotal} patient{patientsTotal === 1 ? '' : 's'}
+        </span>
+        <div className="patients-pagination-actions">
+          <button
+            type="button"
+            className="btn btn-outline"
+            disabled={searchLoading || patientsPage <= 1}
+            onClick={() => goToPatientsPage(patientsPage - 1)}
+          >
+            Previous
+          </button>
+          <span>Page {patientsPage} of {patientsTotalPages}</span>
+          <button
+            type="button"
+            className="btn btn-outline"
+            disabled={searchLoading || patientsPage >= patientsTotalPages}
+            onClick={() => goToPatientsPage(patientsPage + 1)}
+          >
+            Next
+          </button>
+        </div>
       </div>
 
       <div className="patients-grid">

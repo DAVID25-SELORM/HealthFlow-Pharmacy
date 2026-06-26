@@ -374,6 +374,51 @@ const fetchPatientsWorkspaceFromCloud = async () =>
     await invokeTierAccess({ action: 'get_patients_workspace' })
   )
 
+const normalizePatientsPageOptions = (options = {}) => {
+  const page = Math.max(Number.parseInt(String(options.page || 1), 10) || 1, 1)
+  const pageSize = Math.min(
+    Math.max(Number.parseInt(String(options.pageSize || 100), 10) || 100, 1),
+    500
+  )
+  return {
+    page,
+    pageSize,
+    searchTerm: sanitizeSearchTerm(options.searchTerm || ''),
+  }
+}
+
+const slicePatientPage = (rows = [], { page, pageSize }) => {
+  const from = (page - 1) * pageSize
+  return rows.slice(from, from + pageSize)
+}
+
+export const normalizePatientWorkspacePageData = (workspace = {}, fallback = {}) => {
+  const options = normalizePatientsPageOptions(fallback)
+  const patients = normalizePatientWorkspaceData(workspace).slice(0, options.pageSize)
+  const reportedTotal = Number(workspace.total)
+  return {
+    patients,
+    total: Number.isFinite(reportedTotal)
+      ? Math.max(reportedTotal, patients.length)
+      : patients.length,
+    page: Number(workspace.page || options.page),
+    pageSize: Number(workspace.pageSize || options.pageSize),
+  }
+}
+
+const fetchPatientsWorkspacePageFromCloud = async (options = {}) => {
+  const normalized = normalizePatientsPageOptions(options)
+  return normalizePatientWorkspacePageData(
+    await invokeTierAccess({
+      action: 'get_patients_workspace',
+      page: normalized.page,
+      pageSize: normalized.pageSize,
+      searchTerm: normalized.searchTerm || undefined,
+    }),
+    normalized
+  )
+}
+
 const listLocalNhisClaimPatients = async (filters = {}) => {
   const claims = await Promise.resolve(listBranchRecords('nhis/claims', filters)).catch(() => [])
   return (claims || [])
@@ -403,6 +448,53 @@ export const getPatientsWorkspace = async () =>
     cloud: fetchPatientsWorkspaceFromCloud,
     fallback: [],
   })
+
+export const getPatientsWorkspacePage = async (options = {}) => {
+  const normalized = normalizePatientsPageOptions(options)
+  return await routeRead({
+    label: 'patient workspace page',
+    local: async () => {
+      const [patients, nhisClaims] = await Promise.all([
+        listBranchRecords('patients', {
+          limit: 5000,
+          searchTerm: normalized.searchTerm || undefined,
+        }),
+        Promise.resolve(listBranchRecords('nhis/claims', {
+          limit: 5000,
+          searchTerm: normalized.searchTerm || undefined,
+        })).catch(() => []),
+      ])
+      const localPatients = normalizePatientWorkspaceData({ patients, nhisClaims })
+      if (localPatients.length || getConnectivityState().internetAvailable === false) {
+        const pagePatients = slicePatientPage(localPatients, normalized)
+        return {
+          patients: pagePatients,
+          total: localPatients.length,
+          page: normalized.page,
+          pageSize: normalized.pageSize,
+        }
+      }
+
+      try {
+        return await fetchPatientsWorkspacePageFromCloud(normalized)
+      } catch {
+        return {
+          patients: [],
+          total: 0,
+          page: normalized.page,
+          pageSize: normalized.pageSize,
+        }
+      }
+    },
+    cloud: async () => await fetchPatientsWorkspacePageFromCloud(normalized),
+    fallback: {
+      patients: [],
+      total: 0,
+      page: normalized.page,
+      pageSize: normalized.pageSize,
+    },
+  })
+}
 
 // Add new patient
 export const addPatient = async (patientData) => {
