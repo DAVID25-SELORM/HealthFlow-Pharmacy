@@ -985,6 +985,7 @@ const Reports = () => {
   const [activeTab, setActiveTab] = useState('overview')
   const [selectedReportId, setSelectedReportId] = useState('sales-summary')
   const [selectedDrug, setSelectedDrug] = useState('')
+  const [drugSearchTerm, setDrugSearchTerm] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -1044,8 +1045,14 @@ const Reports = () => {
     [normalizedBundle, analyticsFilters]
   )
   const drugAnalytics = useMemo(() => summarizeDrugUtilization(dispensingLines), [dispensingLines])
-  const fastSearchResult = drugAnalytics[0]
-  const topDrugs = drugAnalytics.slice(0, 10)
+  const searchedDrugAnalytics = useMemo(
+    () => drugSearchTerm
+      ? drugAnalytics.filter((drug) => matchesFilterText(drug.drug, drugSearchTerm))
+      : drugAnalytics,
+    [drugAnalytics, drugSearchTerm]
+  )
+  const fastSearchResult = searchedDrugAnalytics[0]
+  const topDrugs = searchedDrugAnalytics.slice(0, 10)
   const selectedDrugLines = useMemo(
     () => selectedDrug
       ? dispensingLines.filter((line) => matchesFilterText(line.drug, selectedDrug))
@@ -1057,7 +1064,8 @@ const Reports = () => {
   const updateFilter = (key, value) => {
     setFilters((current) => ({ ...current, [key]: value }))
     if (key === 'drug') {
-      setSelectedDrug(value)
+      setSelectedDrug('')
+      setDrugSearchTerm(value)
     }
   }
 
@@ -1315,10 +1323,29 @@ const Reports = () => {
               <input
                 type="search"
                 placeholder="Fast search drug utilization"
-                value={selectedDrug || filters.drug}
-                onChange={(event) => updateFilter('drug', event.target.value)}
+                value={drugSearchTerm}
+                onChange={(event) => {
+                  const nextSearch = event.target.value
+                  setDrugSearchTerm(nextSearch)
+                  if (normalizeKey(nextSearch) !== normalizeKey(selectedDrug)) {
+                    setSelectedDrug('')
+                  }
+                }}
                 aria-label="Fast search drug utilization"
               />
+              {drugSearchTerm && (
+                <button
+                  type="button"
+                  className="report-filter-clear"
+                  onClick={() => {
+                    setDrugSearchTerm('')
+                    setSelectedDrug('')
+                  }}
+                  aria-label="Clear drug utilization search"
+                >
+                  x
+                </button>
+              )}
             </label>
             <div className="drug-fast-stats">
               <div>
@@ -1373,7 +1400,7 @@ const Reports = () => {
                     className={selectedDrug && matchesFilterText(drug.drug, selectedDrug) ? 'active' : ''}
                     onClick={() => {
                       setSelectedDrug(drug.drug)
-                      setFilters((current) => ({ ...current, drug: drug.drug }))
+                      setDrugSearchTerm(drug.drug)
                       setActiveTab('analytics')
                       setSelectedReportId('drug-patient-drilldown')
                     }}
@@ -1401,7 +1428,12 @@ const Reports = () => {
               <button
                 type="button"
                 className="btn btn-primary"
+                disabled={!fastSearchResult && !selectedDrug}
                 onClick={() => {
+                  if (!selectedDrug && fastSearchResult?.drug) {
+                    setSelectedDrug(fastSearchResult.drug)
+                    setDrugSearchTerm(fastSearchResult.drug)
+                  }
                   setActiveTab('analytics')
                   setSelectedReportId('drug-patient-drilldown')
                 }}
