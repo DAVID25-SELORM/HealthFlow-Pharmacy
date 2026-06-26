@@ -457,8 +457,43 @@ const DEFAULT_CATALOG_DELETE_ERROR =
   'Default catalog medicines stay available to all pharmacies and cannot be deleted.'
 const DEFAULT_CATALOG_IDENTITY_ERROR =
   'Default catalog medicines keep their shared name and catalog code. Update quantity or pricing instead.'
+const PATIENT_WORKSPACE_MAX_PATIENTS = 5000
+const PATIENT_WORKSPACE_MAX_NHIS_CLAIMS = 1000
 const REPORT_BUNDLE_MAX_ROWS = 1000
 const REPORT_BUNDLE_MAX_NHIS_CLAIMS = 500
+
+const PATIENT_WORKSPACE_PATIENT_SELECT_FIELDS = [
+  'id',
+  'organization_id',
+  'branch_id',
+  'full_name',
+  'phone',
+  'email',
+  'folder_no',
+  'gender',
+  'date_of_birth',
+  'address',
+  'insurance_provider',
+  'insurance_id',
+  'nhis_member_no',
+  'nhis_hin',
+  'created_at',
+].join(', ')
+
+const PATIENT_WORKSPACE_NHIS_CLAIM_SELECT_FIELDS = [
+  'id',
+  'claim_number',
+  'patient_id',
+  'member_no',
+  'hin',
+  'surname',
+  'other_names',
+  'gender',
+  'date_of_birth',
+  'folder_no',
+  'service_date_from',
+  'created_at',
+].join(', ')
 
 const parseOptionalDate = (value: unknown) => {
   const normalized = normalizeText(value)
@@ -2481,14 +2516,16 @@ const getPatientWorkspaceData = async (
   ] = await Promise.all([
     adminClient
       .from('patients')
-      .select('*')
+      .select(PATIENT_WORKSPACE_PATIENT_SELECT_FIELDS)
       .eq('organization_id', organizationId)
-      .order('created_at', { ascending: false }),
+      .order('created_at', { ascending: false })
+      .limit(PATIENT_WORKSPACE_MAX_PATIENTS),
     adminClient
       .from('nhis_claims')
-      .select('*')
+      .select(PATIENT_WORKSPACE_NHIS_CLAIM_SELECT_FIELDS)
       .eq('organization_id', organizationId)
-      .limit(5000),
+      .order('created_at', { ascending: false })
+      .limit(PATIENT_WORKSPACE_MAX_NHIS_CLAIMS),
     includeVisitStats
       ? getPatientVisitRows(adminClient, organizationId)
       : Promise.resolve([]),
