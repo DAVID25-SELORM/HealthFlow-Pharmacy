@@ -57,6 +57,11 @@ policy_status AS (
     WHERE schemaname = 'public'
     GROUP BY tablename
 ),
+service_only_tables(table_name) AS (
+    VALUES
+        ('organization_nhia_integrations'),
+        ('branch_sync_clients')
+),
 required_functions(function_name) AS (
     VALUES
         ('create_sale_transaction'),
@@ -97,9 +102,10 @@ issue_rows AS (
         'REVIEW: no policy rows'
     FROM table_status
     LEFT JOIN policy_status ON policy_status.table_name = table_status.table_name
+    LEFT JOIN service_only_tables ON service_only_tables.table_name = table_status.table_name
     WHERE table_status.table_exists
       AND table_status.rls_enabled
-      AND table_status.table_name <> 'organization_nhia_integrations'
+      AND service_only_tables.table_name IS NULL
       AND COALESCE(policy_status.policy_count, 0) = 0
 
     UNION ALL
