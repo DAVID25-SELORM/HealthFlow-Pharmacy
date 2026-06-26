@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { isSupabaseConfigured, supabase } from '../lib/supabase'
 import { invokeTierAccess } from '../services/tierAccessService'
+import { useAuth } from '../context/AuthContext'
 import './ActivityLog.css'
 
 const ACTIVITY_LOG_TIMEZONE = 'Africa/Accra'
@@ -98,6 +99,7 @@ const toSearchBlob = (log) => {
 }
 
 export default function ActivityLog() {
+  const { organization_id: organizationId } = useAuth()
   const [logs, setLogs] = useState([])
   const [searchTerm, setSearchTerm] = useState('')
   const [loading, setLoading] = useState(true)
@@ -131,10 +133,11 @@ export default function ActivityLog() {
         fetchError = error
 
         const isUnsupportedAction = String(error?.message || '').toLowerCase().includes('unsupported action')
-        if (isUnsupportedAction) {
+        if (isUnsupportedAction && organizationId) {
           const fallbackResult = await supabase
             .from('audit_logs')
             .select('id, actor_user_id, actor_email, event_type, entity_type, action, details, created_at')
+            .eq('organization_id', organizationId)
             .order('created_at', { ascending: false })
             .limit(200)
 
@@ -170,7 +173,7 @@ export default function ActivityLog() {
     return () => {
       isMounted = false
     }
-  }, [])
+  }, [organizationId])
 
   const filteredLogs = useMemo(() => {
     const query = searchTerm.trim().toLowerCase()
