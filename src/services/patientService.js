@@ -31,11 +31,19 @@ const NHIS_CLAIM_PATIENT_SELECT = [
   'other_names',
   'gender',
   'date_of_birth',
-  'patient_address',
-  'insurance_provider',
-  'insurance_id',
   'folder_no',
   'service_date_from',
+  'created_at',
+].join(', ')
+
+const NHIS_CLAIM_PATIENT_MINIMAL_SELECT = [
+  'id',
+  'claim_number',
+  'patient_id',
+  'member_no',
+  'hin',
+  'surname',
+  'other_names',
   'created_at',
 ].join(', ')
 
@@ -298,11 +306,18 @@ const nhisClaimToPatientDetail = (claim = {}) => ({
 })
 
 const fetchNhisClaimPatientsFromSupabase = async () => {
-  const { data, error } = await supabase
+  const fetchClaimPatients = async (selectColumns) => await supabase
     .from('nhis_claims')
-    .select(NHIS_CLAIM_PATIENT_SELECT)
+    .select(selectColumns)
     .order('created_at', { ascending: false })
     .limit(NHIS_CLAIM_PATIENT_LOOKUP_LIMIT)
+
+  let { data, error } = await fetchClaimPatients(NHIS_CLAIM_PATIENT_SELECT)
+  if (error) {
+    const fallback = await fetchClaimPatients(NHIS_CLAIM_PATIENT_MINIMAL_SELECT)
+    data = fallback.data
+    error = fallback.error
+  }
 
   if (error) throw error
 

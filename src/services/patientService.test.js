@@ -331,8 +331,59 @@ describe('patientService local sync reads', () => {
     expect(fromMock).toHaveBeenCalledWith('nhis_claims')
     expect(nhisClaimQuery.select).toHaveBeenCalledWith(expect.not.stringContaining('phone'))
     expect(nhisClaimQuery.select).toHaveBeenCalledWith(expect.not.stringContaining('patient_phone'))
+    expect(nhisClaimQuery.select).toHaveBeenCalledWith(expect.not.stringContaining('patient_address'))
+    expect(nhisClaimQuery.select).toHaveBeenCalledWith(expect.not.stringContaining('insurance_provider'))
+    expect(nhisClaimQuery.select).toHaveBeenCalledWith(expect.not.stringContaining('insurance_id'))
     expect(nhisClaimQuery.select).toHaveBeenCalledWith(expect.not.stringContaining('service_date,'))
     expect(nhisClaimQuery.select).toHaveBeenCalledWith(expect.not.stringContaining('dispensing_date'))
+  })
+
+  it('falls back to minimal NHIS claim patient columns when production rejects optional columns', async () => {
+    routeRead.mockImplementationOnce(async ({ cloud }) => await cloud())
+
+    const patientQuery = {
+      select: vi.fn(() => patientQuery),
+      order: vi.fn(async () => ({ data: [], error: null })),
+    }
+    const rejectedNhisClaimQuery = {
+      select: vi.fn(() => rejectedNhisClaimQuery),
+      order: vi.fn(() => rejectedNhisClaimQuery),
+      limit: vi.fn(async () => ({
+        data: null,
+        error: { code: 'PGRST204', message: 'Column not found' },
+      })),
+    }
+    const fallbackNhisClaimQuery = {
+      select: vi.fn(() => fallbackNhisClaimQuery),
+      order: vi.fn(() => fallbackNhisClaimQuery),
+      limit: vi.fn(async () => ({
+        data: [{
+          id: 'claim-row-1',
+          claim_number: 'NHIS-002',
+          surname: 'Baria',
+          other_names: 'Karim',
+          member_no: '99441270',
+        }],
+        error: null,
+      })),
+    }
+
+    fromMock
+      .mockReturnValueOnce(patientQuery)
+      .mockReturnValueOnce(rejectedNhisClaimQuery)
+      .mockReturnValueOnce(fallbackNhisClaimQuery)
+
+    await expect(getAllPatients()).resolves.toEqual([
+      expect.objectContaining({
+        id: 'nhis-claim-claim-row-1',
+        full_name: 'Baria Karim',
+        nhis_member_no: '99441270',
+      }),
+    ])
+
+    expect(fallbackNhisClaimQuery.select).toHaveBeenCalledWith(
+      'id, claim_number, patient_id, member_no, hin, surname, other_names, created_at'
+    )
   })
 
   it('uses production-safe NHIS claim date columns when loading last visit', async () => {
