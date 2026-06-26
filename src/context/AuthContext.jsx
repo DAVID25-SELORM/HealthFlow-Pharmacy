@@ -27,6 +27,8 @@ import { storeActiveRole } from '../utils/activeRole'
 const AuthContext = createContext(null)
 const FALLBACK_ROLE = 'assistant'
 const loggedSignInAuditKeys = new Set()
+const AUTH_REQUEST_TIMEOUT_MS = 12000
+const PROFILE_REQUEST_TIMEOUT_MS = 15000
 const PROFILE_SELECT = `
   id,
   email,
@@ -80,13 +82,28 @@ const isMissingPrivilegeColumn = (error) => {
   )
 }
 
+const withTimeout = (promise, label, timeoutMs) =>
+  new Promise((resolve, reject) => {
+    const timeout = globalThis.setTimeout(() => {
+      reject(new Error(`${label} timed out. Please check your internet connection and try again.`))
+    }, timeoutMs)
+
+    Promise.resolve(promise)
+      .then(resolve, reject)
+      .finally(() => globalThis.clearTimeout(timeout))
+  })
+
 const loadUserProfile = async (userId) => {
   const runQuery = (columns) =>
-    supabase
-      .from('users')
-      .select(columns)
-      .eq('id', userId)
-      .maybeSingle()
+    withTimeout(
+      supabase
+        .from('users')
+        .select(columns)
+        .eq('id', userId)
+        .maybeSingle(),
+      'User profile loading',
+      PROFILE_REQUEST_TIMEOUT_MS
+    )
 
   const result = await runQuery(PROFILE_SELECT)
   if (!result.error || !isMissingPrivilegeColumn(result.error)) {
@@ -247,10 +264,15 @@ export const AuthProvider = ({ children }) => {
 
     const getStoredSession = async () => {
       try {
+        const sessionResult = await withTimeout(
+          supabase.auth.getSession(),
+          'Session loading',
+          AUTH_REQUEST_TIMEOUT_MS
+        )
         const {
           data: { session: storedSession },
           error,
-        } = await supabase.auth.getSession()
+        } = sessionResult
 
         if (error) {
           throw error
@@ -446,18 +468,29 @@ export const AuthProvider = ({ children }) => {
         // session when it fired onAuthStateChange, so a second round-trip just
         // holds the internal Web Lock for an extra 100–500 ms and causes lock
         // contention under React Strict Mode's double-mount.  We still validate
-        // server-side for interactive sign-in events so revoked tokens are caught
-        // promptly.
+        // server-side for interactive sign-in events and old sessions without
+        // expiry metadata so revoked/corrupt tokens are caught promptly.
+        const sessionHasExpiry = Boolean(Number(resolvedSession?.expires_at || 0))
+        const shouldPreserveOnValidationFailure =
+          hasExistingSession && !isSwitchingUsers && event !== 'SIGNED_IN'
         const shouldValidateWithServer =
-          event !== 'BOOTSTRAP' &&
-          event !== 'INITIAL_SESSION' &&
-          !event.endsWith('_RECOVERED')
+          !sessionHasExpiry ||
+          (
+            event !== 'BOOTSTRAP' &&
+            event !== 'INITIAL_SESSION' &&
+            !event.endsWith('_RECOVERED')
+          )
 
         if (shouldValidateWithServer) {
+          let validateResult = await withTimeout(
+            supabase.auth.getUser(),
+            'Session validation',
+            AUTH_REQUEST_TIMEOUT_MS
+          )
           let {
             data: { user: validatedUser },
             error: validateError,
-          } = await supabase.auth.getUser()
+          } = validateResult
 
           if (validateError && isSupabaseAuthFailure(validateError)) {
             const refreshedSession = await refreshStoredSession(resolvedSession)
@@ -465,12 +498,16 @@ export const AuthProvider = ({ children }) => {
               resolvedSession = refreshedSession
               activeUser = refreshedSession.user || activeUser
 
-              const retryResult = await supabase.auth.getUser()
+              const retryResult = await withTimeout(
+                supabase.auth.getUser(),
+                'Session validation retry',
+                AUTH_REQUEST_TIMEOUT_MS
+              )
               validatedUser = retryResult.data?.user || null
               validateError = retryResult.error
             } else {
               await resetInvalidSession(validateError, resolutionId, {
-                preserveExistingSession: false,
+                preserveExistingSession: shouldPreserveOnValidationFailure,
               })
               return
             }
@@ -478,7 +515,7 @@ export const AuthProvider = ({ children }) => {
 
           if (validateError && isSupabaseAuthFailure(validateError)) {
             await resetInvalidSession(validateError, resolutionId, {
-              preserveExistingSession: false,
+              preserveExistingSession: shouldPreserveOnValidationFailure,
             })
             return
           }
@@ -589,19 +626,25 @@ export const AuthProvider = ({ children }) => {
     }
 
     const normalizedEmail = email.trim()
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: normalizedEmail,
-      password,
-    })
+    const { data, error } = await withTimeout(
+      supabase.auth.signInWithPassword({
+        email: normalizedEmail,
+        password,
+      }),
+      'Sign in',
+      AUTH_REQUEST_TIMEOUT_MS
+    )
 
     if (error) {
       throw error
     }
 
-    await recordSignInAuditEvent({
+    void recordSignInAuditEvent({
       session: data?.session,
       authUser: data?.user,
       email: normalizedEmail,
+    }).catch((auditError) => {
+      console.warn('Sign-in audit log failed:', auditError)
     })
   }
 
@@ -610,7 +653,7 @@ export const AuthProvider = ({ children }) => {
       return
     }
 
-    await tryLogAuditEvent({
+    void tryLogAuditEvent({
       eventType: 'auth',
       entityType: 'session',
       entityId: null,
@@ -620,7 +663,11 @@ export const AuthProvider = ({ children }) => {
       },
     })
 
-    const { error } = await supabase.auth.signOut()
+    const { error } = await withTimeout(
+      supabase.auth.signOut(),
+      'Sign out',
+      AUTH_REQUEST_TIMEOUT_MS
+    )
     if (error) {
       throw error
     }
