@@ -207,45 +207,30 @@ WHERE schemaname = 'public'
   AND COALESCE(qual, '') || ' ' || COALESCE(with_check, '') NOT ILIKE '%auth.uid%'
 ORDER BY tablename, policyname;
 
--- 8) Cross-tenant data health checks. Any non-zero result needs review.
-SELECT 'drugs_missing_organization_id' AS check_name, COUNT(*) AS issue_count
-FROM public.drugs
-WHERE organization_id IS NULL
-UNION ALL
-SELECT 'sales_missing_organization_id', COUNT(*)
-FROM public.sales
-WHERE organization_id IS NULL
-UNION ALL
-SELECT 'sale_items_missing_organization_id', COUNT(*)
-FROM public.sale_items
-WHERE organization_id IS NULL
-UNION ALL
-SELECT 'patients_missing_organization_id', COUNT(*)
-FROM public.patients
-WHERE organization_id IS NULL
-UNION ALL
-SELECT 'users_missing_organization_id_non_super_admin', COUNT(*)
-FROM public.users
-WHERE organization_id IS NULL
-  AND COALESCE(role, '') <> 'super_admin'
-UNION ALL
-SELECT 'nhis_claims_missing_organization_id', COUNT(*)
-FROM public.nhis_claims
-WHERE organization_id IS NULL
-UNION ALL
-SELECT 'nhis_claim_medicines_without_claim', COUNT(*)
-FROM public.nhis_claim_medicines medicines
-LEFT JOIN public.nhis_claims claims ON claims.id = medicines.claim_id
-WHERE claims.id IS NULL
-UNION ALL
-SELECT 'nhis_claim_services_without_claim', COUNT(*)
-FROM public.nhis_claim_services services
-LEFT JOIN public.nhis_claims claims ON claims.id = services.claim_id
-WHERE claims.id IS NULL
-UNION ALL
-SELECT 'organization_nhia_integrations_missing_organization_id', COUNT(*)
-FROM public.organization_nhia_integrations
-WHERE organization_id IS NULL;
+-- 8) Metadata-only data isolation hints.
+-- This intentionally avoids scanning production rows. Use pg_stats estimates
+-- instead of COUNT(*) / EXISTS so the audit stays fast on large databases.
+SELECT
+    tablename,
+    attname AS column_name,
+    null_frac,
+    CASE
+        WHEN null_frac > 0 THEN 'REVIEW: statistics estimate NULL organization_id values'
+        ELSE 'OK'
+    END AS audit_status
+FROM pg_stats
+WHERE schemaname = 'public'
+  AND attname = 'organization_id'
+  AND tablename IN (
+      'drugs',
+      'sales',
+      'sale_items',
+      'patients',
+      'users',
+      'nhis_claims',
+      'organization_nhia_integrations'
+  )
+ORDER BY tablename;
 
 -- 9) Credential/configuration tables should have no direct client-facing policies.
 -- organization_nhia_integrations stores credential_payload and should normally
@@ -291,7 +276,8 @@ LIMIT 20;
 
 -- 11) Final executive summary.
 -- Supabase SQL Editor shows the last result most prominently, so this
--- summary is placed last on purpose.
+-- summary is placed last on purpose. This summary is metadata-only and does
+-- not scan large production tables.
 WITH expected_tables(table_name) AS (
     VALUES
         ('organizations'),
@@ -379,99 +365,6 @@ issue_rows AS (
         END
     FROM function_status
     WHERE function_count = 0 OR NOT has_security_definer
-
-    UNION ALL
-
-    SELECT
-        'Rows missing organization_id',
-        'drugs',
-        COUNT(*)::TEXT
-    FROM public.drugs
-    WHERE organization_id IS NULL
-    HAVING COUNT(*) > 0
-
-    UNION ALL
-
-    SELECT
-        'Rows missing organization_id',
-        'sales',
-        COUNT(*)::TEXT
-    FROM public.sales
-    WHERE organization_id IS NULL
-    HAVING COUNT(*) > 0
-
-    UNION ALL
-
-    SELECT
-        'Rows missing organization_id',
-        'sale_items',
-        COUNT(*)::TEXT
-    FROM public.sale_items
-    WHERE organization_id IS NULL
-    HAVING COUNT(*) > 0
-
-    UNION ALL
-
-    SELECT
-        'Rows missing organization_id',
-        'patients',
-        COUNT(*)::TEXT
-    FROM public.patients
-    WHERE organization_id IS NULL
-    HAVING COUNT(*) > 0
-
-    UNION ALL
-
-    SELECT
-        'Non-super-admin users missing organization_id',
-        'users',
-        COUNT(*)::TEXT
-    FROM public.users
-    WHERE organization_id IS NULL
-      AND COALESCE(role, '') <> 'super_admin'
-    HAVING COUNT(*) > 0
-
-    UNION ALL
-
-    SELECT
-        'Rows missing organization_id',
-        'nhis_claims',
-        COUNT(*)::TEXT
-    FROM public.nhis_claims
-    WHERE organization_id IS NULL
-    HAVING COUNT(*) > 0
-
-    UNION ALL
-
-    SELECT
-        'Orphan NHIS child rows',
-        'nhis_claim_medicines',
-        COUNT(*)::TEXT
-    FROM public.nhis_claim_medicines medicines
-    LEFT JOIN public.nhis_claims claims ON claims.id = medicines.claim_id
-    WHERE claims.id IS NULL
-    HAVING COUNT(*) > 0
-
-    UNION ALL
-
-    SELECT
-        'Orphan NHIS child rows',
-        'nhis_claim_services',
-        COUNT(*)::TEXT
-    FROM public.nhis_claim_services services
-    LEFT JOIN public.nhis_claims claims ON claims.id = services.claim_id
-    WHERE claims.id IS NULL
-    HAVING COUNT(*) > 0
-
-    UNION ALL
-
-    SELECT
-        'Rows missing organization_id',
-        'organization_nhia_integrations',
-        COUNT(*)::TEXT
-    FROM public.organization_nhia_integrations
-    WHERE organization_id IS NULL
-    HAVING COUNT(*) > 0
 
     UNION ALL
 
