@@ -3387,6 +3387,10 @@ const Nhis = () => {
               <span className="stat-label">Claims Value</span>
               <span className="stat-value">{fmtCurrency(stats.totalClaimValue)}</span>
             </div>
+            <div className="stat-box approved">
+              <span className="stat-label">Paid Value</span>
+              <span className="stat-value">{fmtCurrency(stats.totalPaid)}</span>
+            </div>
             <div className="stat-box pending">
               <span className="stat-label">Pending Serving</span>
               <span className="stat-value">{stats.pending_serving || 0}</span>
