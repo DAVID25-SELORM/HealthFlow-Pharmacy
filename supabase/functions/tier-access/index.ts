@@ -5067,7 +5067,7 @@ const getReportBundle = async (
   ] = await Promise.allSettled([
     adminClient
       .from('nhis_claims')
-      .select('*, nhis_claim_medicines (*), nhis_claim_services (*)')
+      .select('*')
       .eq('organization_id', organizationId)
       .gte('service_date_from', startDate || '1900-01-01')
       .lte('service_date_from', endDate || '2999-12-31')
@@ -5108,11 +5108,55 @@ const getReportBundle = async (
     return result.value.data || []
   }
 
-  const nhisClaims = getOptionalRows(nhisClaimsResult)
+  let nhisClaims = getOptionalRows(nhisClaimsResult) as Record<string, unknown>[]
   const purchases = getOptionalRows(purchasesResult)
   const suppliers = getOptionalRows(suppliersResult)
   const exportHistory = getOptionalRows(exportHistoryResult)
   const submissionLogs = getOptionalRows(submissionLogsResult)
+
+  const nhisClaimIds = nhisClaims
+    .map((claim) => normalizeText(claim.id))
+    .filter(Boolean)
+
+  if (nhisClaimIds.length) {
+    const [medicinesResult, servicesResult] = await Promise.allSettled([
+      adminClient
+        .from('nhis_claim_medicines')
+        .select('*')
+        .in('claim_id', nhisClaimIds),
+      adminClient
+        .from('nhis_claim_services')
+        .select('*')
+        .in('claim_id', nhisClaimIds),
+    ])
+
+    const medicines = getOptionalRows(medicinesResult)
+    const services = getOptionalRows(servicesResult)
+    const medicinesByClaim = medicines.reduce<Record<string, unknown[]>>((acc, row) => {
+      const claimId = normalizeText((row as Record<string, unknown>).claim_id)
+      if (!claimId) return acc
+      if (!acc[claimId]) acc[claimId] = []
+      acc[claimId].push(row)
+      return acc
+    }, {})
+    const servicesByClaim = services.reduce<Record<string, unknown[]>>((acc, row) => {
+      const claimId = normalizeText((row as Record<string, unknown>).claim_id)
+      if (!claimId) return acc
+      if (!acc[claimId]) acc[claimId] = []
+      acc[claimId].push(row)
+      return acc
+    }, {})
+
+    nhisClaims = nhisClaims.map((claim) => {
+      const claimId = normalizeText(claim.id)
+      return {
+        ...claim,
+        nhis_claim_medicines: medicinesByClaim[claimId] || [],
+        nhis_claim_services: servicesByClaim[claimId] || [],
+      }
+    })
+  }
+
   const monthlyNhisSubmission = Object.values(
     nhisClaims.reduce<Record<string, Record<string, number | string>>>((acc, claim) => {
       const row = claim as Record<string, unknown>
