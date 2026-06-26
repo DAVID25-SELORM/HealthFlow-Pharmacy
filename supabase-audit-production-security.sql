@@ -27,7 +27,16 @@ WITH expected_tables(table_name) AS (
         ('expenses'),
         ('cashbook_sessions'),
         ('cashbook_entries'),
-        ('claim_payments')
+        ('claim_payments'),
+        ('nhis_claims'),
+        ('nhis_claim_medicines'),
+        ('nhis_claim_services'),
+        ('nhis_claim_payments'),
+        ('nhis_drugs'),
+        ('nhia_configuration'),
+        ('organization_nhia_integrations'),
+        ('payment_attempts'),
+        ('branch_sync_clients')
 )
 SELECT
     expected_tables.table_name,
@@ -141,7 +150,16 @@ WHERE table_schema = 'public'
       'expenses',
       'cashbook_sessions',
       'cashbook_entries',
-      'claim_payments'
+      'claim_payments',
+      'nhis_claims',
+      'nhis_claim_medicines',
+      'nhis_claim_services',
+      'nhis_claim_payments',
+      'nhis_drugs',
+      'nhia_configuration',
+      'organization_nhia_integrations',
+      'payment_attempts',
+      'branch_sync_clients'
   )
 ORDER BY table_name, grantee, privilege_type;
 
@@ -174,7 +192,16 @@ WHERE schemaname = 'public'
       'expenses',
       'cashbook_sessions',
       'cashbook_entries',
-      'claim_payments'
+      'claim_payments',
+      'nhis_claims',
+      'nhis_claim_medicines',
+      'nhis_claim_services',
+      'nhis_claim_payments',
+      'nhis_drugs',
+      'nhia_configuration',
+      'organization_nhia_integrations',
+      'payment_attempts',
+      'branch_sync_clients'
   )
   AND COALESCE(qual, '') || ' ' || COALESCE(with_check, '') NOT ILIKE '%organization%'
   AND COALESCE(qual, '') || ' ' || COALESCE(with_check, '') NOT ILIKE '%auth.uid%'
@@ -200,9 +227,55 @@ UNION ALL
 SELECT 'users_missing_organization_id_non_super_admin', COUNT(*)
 FROM public.users
 WHERE organization_id IS NULL
-  AND COALESCE(role, '') <> 'super_admin';
+  AND COALESCE(role, '') <> 'super_admin'
+UNION ALL
+SELECT 'nhis_claims_missing_organization_id', COUNT(*)
+FROM public.nhis_claims
+WHERE organization_id IS NULL
+UNION ALL
+SELECT 'nhis_claim_medicines_without_claim', COUNT(*)
+FROM public.nhis_claim_medicines medicines
+LEFT JOIN public.nhis_claims claims ON claims.id = medicines.claim_id
+WHERE claims.id IS NULL
+UNION ALL
+SELECT 'nhis_claim_services_without_claim', COUNT(*)
+FROM public.nhis_claim_services services
+LEFT JOIN public.nhis_claims claims ON claims.id = services.claim_id
+WHERE claims.id IS NULL
+UNION ALL
+SELECT 'organization_nhia_integrations_missing_organization_id', COUNT(*)
+FROM public.organization_nhia_integrations
+WHERE organization_id IS NULL;
 
--- 9) Recent audit log activity to confirm logging is alive.
+-- 9) Credential/configuration tables should have no direct client-facing policies.
+-- organization_nhia_integrations stores credential_payload and should normally
+-- be accessed through service-role backend functions only.
+SELECT
+    tablename,
+    COUNT(*) AS client_policy_count,
+    COALESCE(STRING_AGG(policyname || ' [' || cmd || ']', ', ' ORDER BY policyname), '') AS policies,
+    CASE
+        WHEN COUNT(*) = 0 THEN 'OK: service-role only'
+        ELSE 'REVIEW: client policy exists'
+    END AS audit_status
+FROM pg_policies
+WHERE schemaname = 'public'
+  AND tablename IN ('organization_nhia_integrations')
+GROUP BY tablename
+UNION ALL
+SELECT
+    'organization_nhia_integrations',
+    0,
+    '',
+    'OK: service-role only'
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'organization_nhia_integrations'
+);
+
+-- 10) Recent audit log activity to confirm logging is alive.
 SELECT
     created_at,
     actor_email,
@@ -216,7 +289,7 @@ FROM public.audit_logs
 ORDER BY created_at DESC
 LIMIT 20;
 
--- 10) Final executive summary.
+-- 11) Final executive summary.
 -- Supabase SQL Editor shows the last result most prominently, so this
 -- summary is placed last on purpose.
 WITH expected_tables(table_name) AS (
@@ -239,7 +312,16 @@ WITH expected_tables(table_name) AS (
         ('expenses'),
         ('cashbook_sessions'),
         ('cashbook_entries'),
-        ('claim_payments')
+        ('claim_payments'),
+        ('nhis_claims'),
+        ('nhis_claim_medicines'),
+        ('nhis_claim_services'),
+        ('nhis_claim_payments'),
+        ('nhis_drugs'),
+        ('nhia_configuration'),
+        ('organization_nhia_integrations'),
+        ('payment_attempts'),
+        ('branch_sync_clients')
 ),
 table_status AS (
     SELECT
@@ -347,6 +429,59 @@ issue_rows AS (
     FROM public.users
     WHERE organization_id IS NULL
       AND COALESCE(role, '') <> 'super_admin'
+    HAVING COUNT(*) > 0
+
+    UNION ALL
+
+    SELECT
+        'Rows missing organization_id',
+        'nhis_claims',
+        COUNT(*)::TEXT
+    FROM public.nhis_claims
+    WHERE organization_id IS NULL
+    HAVING COUNT(*) > 0
+
+    UNION ALL
+
+    SELECT
+        'Orphan NHIS child rows',
+        'nhis_claim_medicines',
+        COUNT(*)::TEXT
+    FROM public.nhis_claim_medicines medicines
+    LEFT JOIN public.nhis_claims claims ON claims.id = medicines.claim_id
+    WHERE claims.id IS NULL
+    HAVING COUNT(*) > 0
+
+    UNION ALL
+
+    SELECT
+        'Orphan NHIS child rows',
+        'nhis_claim_services',
+        COUNT(*)::TEXT
+    FROM public.nhis_claim_services services
+    LEFT JOIN public.nhis_claims claims ON claims.id = services.claim_id
+    WHERE claims.id IS NULL
+    HAVING COUNT(*) > 0
+
+    UNION ALL
+
+    SELECT
+        'Rows missing organization_id',
+        'organization_nhia_integrations',
+        COUNT(*)::TEXT
+    FROM public.organization_nhia_integrations
+    WHERE organization_id IS NULL
+    HAVING COUNT(*) > 0
+
+    UNION ALL
+
+    SELECT
+        'Client-facing credential policies',
+        'organization_nhia_integrations',
+        COUNT(*)::TEXT
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'organization_nhia_integrations'
     HAVING COUNT(*) > 0
 )
 SELECT
