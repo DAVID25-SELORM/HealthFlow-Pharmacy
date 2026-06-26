@@ -29,18 +29,13 @@ const NHIS_CLAIM_PATIENT_SELECT = [
   'hin',
   'surname',
   'other_names',
-  'phone',
-  'patient_phone',
-  'email',
   'gender',
   'date_of_birth',
   'patient_address',
   'insurance_provider',
   'insurance_id',
   'folder_no',
-  'service_date',
   'service_date_from',
-  'dispensing_date',
   'created_at',
 ].join(', ')
 
@@ -603,7 +598,7 @@ export const getPatientLastVisit = async (patientId) => {
 
   const { data: nhisData, error: nhisError } = await supabase
     .from('nhis_claims')
-    .select('service_date_from, service_date, dispensing_date, created_at')
+    .select('service_date_from, created_at')
     .eq('patient_id', patientId)
     .order('service_date_from', { ascending: false })
     .limit(1)

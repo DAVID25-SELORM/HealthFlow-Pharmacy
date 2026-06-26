@@ -308,4 +308,56 @@ describe('patientService local sync reads', () => {
     expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { id: 'claim-row-1', limit: 1 })
     expect(fromMock).not.toHaveBeenCalled()
   })
+
+  it('uses production-safe NHIS claim columns when enriching cloud patients', async () => {
+    routeRead.mockImplementationOnce(async ({ cloud }) => await cloud())
+
+    const patientQuery = {
+      select: vi.fn(() => patientQuery),
+      order: vi.fn(async () => ({ data: [], error: null })),
+    }
+    const nhisClaimQuery = {
+      select: vi.fn(() => nhisClaimQuery),
+      order: vi.fn(() => nhisClaimQuery),
+      limit: vi.fn(async () => ({ data: [], error: null })),
+    }
+
+    fromMock
+      .mockReturnValueOnce(patientQuery)
+      .mockReturnValueOnce(nhisClaimQuery)
+
+    await expect(getAllPatients()).resolves.toEqual([])
+
+    expect(fromMock).toHaveBeenCalledWith('nhis_claims')
+    expect(nhisClaimQuery.select).toHaveBeenCalledWith(expect.not.stringContaining('phone'))
+    expect(nhisClaimQuery.select).toHaveBeenCalledWith(expect.not.stringContaining('patient_phone'))
+    expect(nhisClaimQuery.select).toHaveBeenCalledWith(expect.not.stringContaining('service_date,'))
+    expect(nhisClaimQuery.select).toHaveBeenCalledWith(expect.not.stringContaining('dispensing_date'))
+  })
+
+  it('uses production-safe NHIS claim date columns when loading last visit', async () => {
+    const patientId = '2df77f2d-ea44-4f14-966c-a0a7c213f86a'
+    const salesQuery = {
+      select: vi.fn(() => salesQuery),
+      eq: vi.fn(() => salesQuery),
+      order: vi.fn(() => salesQuery),
+      limit: vi.fn(() => salesQuery),
+      maybeSingle: vi.fn(async () => ({ data: { sale_date: '2026-06-14' }, error: null })),
+    }
+    const nhisClaimQuery = {
+      select: vi.fn(() => nhisClaimQuery),
+      eq: vi.fn(() => nhisClaimQuery),
+      order: vi.fn(() => nhisClaimQuery),
+      limit: vi.fn(() => nhisClaimQuery),
+      maybeSingle: vi.fn(async () => ({ data: { service_date_from: '2026-06-15' }, error: null })),
+    }
+
+    fromMock
+      .mockReturnValueOnce(salesQuery)
+      .mockReturnValueOnce(nhisClaimQuery)
+
+    await expect(getPatientLastVisit(patientId)).resolves.toBe('2026-06-15')
+
+    expect(nhisClaimQuery.select).toHaveBeenCalledWith('service_date_from, created_at')
+  })
 })
