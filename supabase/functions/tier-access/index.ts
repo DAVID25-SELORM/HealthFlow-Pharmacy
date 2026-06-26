@@ -465,7 +465,6 @@ const REPORT_BUNDLE_MAX_NHIS_CLAIMS = 500
 const PATIENT_WORKSPACE_PATIENT_SELECT_FIELDS = [
   'id',
   'organization_id',
-  'branch_id',
   'full_name',
   'phone',
   'email',
