@@ -457,6 +457,8 @@ const DEFAULT_CATALOG_DELETE_ERROR =
   'Default catalog medicines stay available to all pharmacies and cannot be deleted.'
 const DEFAULT_CATALOG_IDENTITY_ERROR =
   'Default catalog medicines keep their shared name and catalog code. Update quantity or pricing instead.'
+const REPORT_BUNDLE_MAX_ROWS = 1000
+const REPORT_BUNDLE_MAX_NHIS_CLAIMS = 500
 
 const parseOptionalDate = (value: unknown) => {
   const normalized = normalizeText(value)
@@ -4846,18 +4848,26 @@ const getReportBundle = async (
 
   const startDate = normalizeText(payload.startDate)
   const endDate = normalizeText(payload.endDate)
+  const reportLimit = clampPositiveInteger(payload.limit, REPORT_BUNDLE_MAX_ROWS, REPORT_BUNDLE_MAX_ROWS)
+  const nhisClaimLimit = clampPositiveInteger(
+    payload.nhisClaimLimit,
+    REPORT_BUNDLE_MAX_NHIS_CLAIMS,
+    REPORT_BUNDLE_MAX_NHIS_CLAIMS
+  )
 
   let salesQuery = adminClient
     .from('sales')
     .select(SALES_SELECT_FIELDS)
     .eq('organization_id', organizationId)
     .order('sale_date', { ascending: false })
+    .limit(reportLimit)
 
   let claimsQuery = adminClient
     .from('claims')
     .select(CLAIM_SELECT_FIELDS)
     .eq('organization_id', organizationId)
     .order('submitted_at', { ascending: false })
+    .limit(reportLimit)
 
   if (startDate) {
     salesQuery = salesQuery.gte('sale_date', `${startDate}T00:00:00`)
@@ -4878,19 +4888,26 @@ const getReportBundle = async (
   ] = await Promise.all([
     salesQuery,
     includeClaims ? claimsQuery : Promise.resolve({ data: [], error: null }),
-    adminClient.from('patients').select('*').eq('organization_id', organizationId),
+    adminClient
+      .from('patients')
+      .select('*')
+      .eq('organization_id', organizationId)
+      .order('created_at', { ascending: false })
+      .limit(reportLimit),
     adminClient
       .from('drugs')
       .select(REPORT_DRUG_SELECT_FIELDS)
       .eq('organization_id', organizationId)
       .eq('status', 'active')
       .or(`batch_number.is.null,batch_number.not.ilike.${DEFAULT_MEDICATION_BATCH_PREFIX}%,quantity.gt.0`)
-      .order('created_at', { ascending: false }),
+      .order('created_at', { ascending: false })
+      .limit(reportLimit),
     adminClient
       .from('drugs')
       .select(REPORT_DRUG_SELECT_FIELDS)
       .eq('organization_id', organizationId)
-      .or(`batch_number.is.null,batch_number.not.ilike.${DEFAULT_MEDICATION_BATCH_PREFIX}%,quantity.gt.0`),
+      .or(`batch_number.is.null,batch_number.not.ilike.${DEFAULT_MEDICATION_BATCH_PREFIX}%,quantity.gt.0`)
+      .limit(reportLimit),
   ])
 
   if (salesError) throw salesError
@@ -4945,24 +4962,28 @@ const getReportBundle = async (
       .eq('organization_id', organizationId)
       .gte('service_date_from', startDate || '1900-01-01')
       .lte('service_date_from', endDate || '2999-12-31')
-      .order('created_at', { ascending: false }),
+      .order('created_at', { ascending: false })
+      .limit(nhisClaimLimit),
     adminClient
       .from('purchases')
       .select('*, purchase_items (*)')
       .eq('organization_id', organizationId)
       .gte('purchase_date', startDate || '1900-01-01')
       .lte('purchase_date', endDate || '2999-12-31')
-      .order('purchase_date', { ascending: false }),
+      .order('purchase_date', { ascending: false })
+      .limit(reportLimit),
     adminClient
       .from('suppliers')
       .select('*')
       .eq('organization_id', organizationId)
-      .order('name', { ascending: true }),
+      .order('name', { ascending: true })
+      .limit(reportLimit),
     adminClient
       .from('nhia_claim_batches')
       .select('*')
       .eq('organization_id', organizationId)
-      .order('created_at', { ascending: false }),
+      .order('created_at', { ascending: false })
+      .limit(reportLimit),
     adminClient
       .from('nhia_submission_logs')
       .select('*')
