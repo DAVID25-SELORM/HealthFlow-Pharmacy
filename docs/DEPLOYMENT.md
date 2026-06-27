@@ -2,6 +2,20 @@
 
 This consolidated document preserves the complete contents of the related historical guides.
 
+## Production Health Monitoring
+
+The `Production Health` GitHub Actions workflow runs every 30 minutes. Public
+app and update-channel checks work immediately. Configure these repository
+secrets to enable authenticated login, Supabase Auth, and report-engine probes:
+
+- `HEALTHFLOW_SUPABASE_PUBLISHABLE_KEY`
+- `HEALTHFLOW_MONITOR_EMAIL`
+- `HEALTHFLOW_MONITOR_PASSWORD`
+
+Use a dedicated active staff account with report access and no administrative
+write duties. The monitor performs read-only checks and does not create sales,
+claims, patients, or audit events.
+
 ## Archived source: DEPLOYMENT_CHECKLIST.md
 
 # HealthFlow Deployment Checklist

@@ -57,14 +57,16 @@ Cloud:
 
 1. Make the app installable/cacheable as a PWA. (Done: app shell cache, manifest, and online/offline status.)
 2. Add first POS offline queue. (Done: offline sales are stored locally, sync on reconnect, and shift closing is blocked while sales are pending.)
-3. Refactor service calls behind app-owned APIs, starting with Sales.
+3. Refactor service calls behind app-owned APIs, starting with Sales. (Done: the POS page now uses `salesApi` to select cloud or branch operations.)
 4. Add a stronger local database and sync queue for inventory, patients, purchases, claims, and full shift close support.
 5. Add conflict handling, audit trails, and sync monitoring.
 6. Move to a local branch server for pharmacies with multiple offline computers.
 
 ## Next Practical Step
 
-Refactor the Sales module so the page does not depend directly on Supabase calls. Make it call a `salesApi` abstraction that can later choose between Supabase, the browser queue, or a local branch backend.
+Extend the app-owned API pattern to inventory and patient lookup, then move their
+offline writes into the branch sync queue with explicit pending, synced, and
+failed states.
 
 ## Current POS Offline Behavior
 

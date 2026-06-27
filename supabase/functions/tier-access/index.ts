@@ -118,6 +118,8 @@ type TierAccessAction =
   | 'approve_claim'
   | 'reject_claim'
   | 'get_report_bundle'
+  | 'get_report_health'
+  | 'get_report_nhis_page'
   | 'create_drug'
   | 'update_drug'
   | 'delete_drug'
@@ -152,6 +154,8 @@ const SUPPORTED_TIER_ACCESS_ACTIONS = [
   'approve_claim',
   'reject_claim',
   'get_report_bundle',
+  'get_report_health',
+  'get_report_nhis_page',
   'create_drug',
   'update_drug',
   'delete_drug',
@@ -464,7 +468,9 @@ const PATIENT_WORKSPACE_MAX_NHIS_CLAIMS = 1000
 const PATIENT_WORKSPACE_DEFAULT_PAGE_SIZE = 100
 const PATIENT_WORKSPACE_MAX_PAGE_SIZE = 500
 const REPORT_BUNDLE_MAX_ROWS = 1000
-const REPORT_BUNDLE_MAX_NHIS_CLAIMS = 500
+const REPORT_BUNDLE_MAX_NHIS_CLAIMS = 250
+const REPORT_BUNDLE_DEFAULT_NHIS_CLAIMS = 200
+const REPORT_AGGREGATE_PAGE_SIZE = 500
 
 const PATIENT_WORKSPACE_PATIENT_SELECT_FIELDS = [
   'id',
@@ -4948,6 +4954,167 @@ const submitNhiaClaimsDirect = async (
 
 const toDateOnly = (value: string) => normalizeNhiaServiceDate(value) || toNhisCalendarDate(value)
 
+const getReportNhisAggregate = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+  startDate: string,
+  endDate: string
+) => {
+  const monthly = new Map<string, Record<string, number | string>>()
+  let offset = 0
+  let count = 0
+  let totalAmount = 0
+  let approved = 0
+  let rejected = 0
+
+  while (true) {
+    let query = adminClient
+      .from('nhis_claims')
+      .select('id, status, total_amount, service_date_from, submission_month, created_at')
+      .eq('organization_id', organizationId)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + REPORT_AGGREGATE_PAGE_SIZE - 1)
+
+    if (startDate) query = query.gte('service_date_from', startDate)
+    if (endDate) query = query.lte('service_date_from', endDate)
+
+    const { data, error } = await query
+    if (error) throw error
+
+    const rows = data || []
+    rows.forEach((row) => {
+      const status = normalizeText(row.status).toLowerCase()
+      const amount = Number.parseFloat(String(row.total_amount || 0))
+      const monthSource =
+        normalizeText(row.submission_month) ||
+        normalizeNhiaServiceDate(row.service_date_from || row.created_at)
+      const month = monthSource.slice(0, 7) || 'Unspecified'
+      const current = monthly.get(month) || {
+        month,
+        count: 0,
+        totalAmount: 0,
+        accepted: 0,
+        rejected: 0,
+        pending: 0,
+      }
+
+      count += 1
+      totalAmount += amount
+      current.count = Number(current.count) + 1
+      current.totalAmount = Number(current.totalAmount) + amount
+      if (['accepted', 'approved', 'paid'].includes(status)) {
+        approved += 1
+        current.accepted = Number(current.accepted) + 1
+      } else if (['rejected', 'failed'].includes(status)) {
+        rejected += 1
+        current.rejected = Number(current.rejected) + 1
+      } else {
+        current.pending = Number(current.pending) + 1
+      }
+      monthly.set(month, current)
+    })
+
+    if (rows.length < REPORT_AGGREGATE_PAGE_SIZE) break
+    offset += REPORT_AGGREGATE_PAGE_SIZE
+  }
+
+  return {
+    count,
+    totalAmount,
+    approved,
+    rejected,
+    monthly: Array.from(monthly.values()).sort((a, b) =>
+      String(b.month).localeCompare(String(a.month))
+    ),
+  }
+}
+
+const attachNhisClaimLines = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  claims: Record<string, unknown>[]
+) => {
+  const claimIds = claims.map((claim) => normalizeText(claim.id)).filter(Boolean)
+  if (!claimIds.length) return claims
+
+  const [medicinesResult, servicesResult] = await Promise.all([
+    adminClient.from('nhis_claim_medicines').select('*').in('claim_id', claimIds),
+    adminClient.from('nhis_claim_services').select('*').in('claim_id', claimIds),
+  ])
+  if (medicinesResult.error) throw medicinesResult.error
+  if (servicesResult.error) throw servicesResult.error
+
+  const medicinesByClaim = (medicinesResult.data || []).reduce<Record<string, unknown[]>>((acc, row) => {
+    const claimId = normalizeText(row.claim_id)
+    if (!claimId) return acc
+    if (!acc[claimId]) acc[claimId] = []
+    acc[claimId].push(row)
+    return acc
+  }, {})
+  const servicesByClaim = (servicesResult.data || []).reduce<Record<string, unknown[]>>((acc, row) => {
+    const claimId = normalizeText(row.claim_id)
+    if (!claimId) return acc
+    if (!acc[claimId]) acc[claimId] = []
+    acc[claimId].push(row)
+    return acc
+  }, {})
+
+  return claims.map((claim) => {
+    const claimId = normalizeText(claim.id)
+    return {
+      ...claim,
+      nhis_claim_medicines: medicinesByClaim[claimId] || [],
+      nhis_claim_services: servicesByClaim[claimId] || [],
+    }
+  })
+}
+
+const getReportNhisPage = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  requesterProfile: RequesterProfile,
+  organizationId: string,
+  payload: Record<string, unknown>
+) => {
+  requireReportsAccess(requesterProfile, 'Only report staff can access NHIS reports.')
+
+  const startDate = normalizeText(payload.startDate)
+  const endDate = normalizeText(payload.endDate)
+  const offset = Math.max(0, Math.floor(Number(payload.offset) || 0))
+  const limit = clampPositiveInteger(
+    payload.limit,
+    REPORT_BUNDLE_DEFAULT_NHIS_CLAIMS,
+    REPORT_BUNDLE_MAX_NHIS_CLAIMS
+  )
+
+  let query = adminClient
+    .from('nhis_claims')
+    .select('*', { count: 'exact' })
+    .eq('organization_id', organizationId)
+    .order('created_at', { ascending: false })
+    .range(offset, offset + limit - 1)
+
+  if (startDate) query = query.gte('service_date_from', startDate)
+  if (endDate) query = query.lte('service_date_from', endDate)
+
+  const { data, error, count } = await query
+  if (error) throw error
+
+  const nhisClaims = await attachNhisClaimLines(
+    adminClient,
+    (data || []) as Record<string, unknown>[]
+  )
+  const total = count || 0
+
+  return {
+    nhisClaims,
+    pagination: {
+      offset,
+      limit,
+      total,
+      hasMore: offset + nhisClaims.length < total,
+    },
+  }
+}
+
 const getReportBundle = async (
   adminClient: ReturnType<typeof createAdminClient>,
   requesterProfile: RequesterProfile,
@@ -4963,7 +5130,7 @@ const getReportBundle = async (
   const reportLimit = clampPositiveInteger(payload.limit, REPORT_BUNDLE_MAX_ROWS, REPORT_BUNDLE_MAX_ROWS)
   const nhisClaimLimit = clampPositiveInteger(
     payload.nhisClaimLimit,
-    REPORT_BUNDLE_MAX_NHIS_CLAIMS,
+    REPORT_BUNDLE_DEFAULT_NHIS_CLAIMS,
     REPORT_BUNDLE_MAX_NHIS_CLAIMS
   )
 
@@ -5093,6 +5260,7 @@ const getReportBundle = async (
 
   const [
     nhisClaimsResult,
+    nhisAggregateResult,
     purchasesResult,
     suppliersResult,
     exportHistoryResult,
@@ -5100,12 +5268,13 @@ const getReportBundle = async (
   ] = await Promise.allSettled([
     adminClient
       .from('nhis_claims')
-      .select('*')
+      .select('*', { count: 'exact' })
       .eq('organization_id', organizationId)
       .gte('service_date_from', startDate || '1900-01-01')
       .lte('service_date_from', endDate || '2999-12-31')
       .order('created_at', { ascending: false })
       .limit(nhisClaimLimit),
+    getReportNhisAggregate(adminClient, organizationId, startDate, endDate),
     adminClient
       .from('purchases')
       .select('*, purchase_items (*)')
@@ -5133,15 +5302,41 @@ const getReportBundle = async (
       .limit(200),
   ])
 
-  const getOptionalRows = (result: PromiseSettledResult<{ data: unknown[] | null; error: unknown }>) => {
-    if (result.status !== 'fulfilled' || result.value.error) {
+  const getOptionalRows = (result: PromiseSettledResult<unknown>) => {
+    if (result.status !== 'fulfilled') {
       return []
     }
 
-    return result.value.data || []
+    const value = result.value as { data?: unknown[] | null; error?: unknown }
+    if (value.error) return []
+    return value.data || []
   }
 
-  let nhisClaims = getOptionalRows(nhisClaimsResult) as Record<string, unknown>[]
+  const nhisClaimsResponse =
+    nhisClaimsResult.status === 'fulfilled'
+      ? nhisClaimsResult.value as { data: unknown[] | null; error: unknown; count: number | null }
+      : null
+  let nhisClaims =
+    nhisClaimsResponse && !nhisClaimsResponse.error
+      ? (nhisClaimsResponse.data || []) as Record<string, unknown>[]
+      : []
+  const nhisAggregate =
+    nhisAggregateResult.status === 'fulfilled'
+      ? nhisAggregateResult.value as Awaited<ReturnType<typeof getReportNhisAggregate>>
+      : {
+          count: nhisClaims.length,
+          totalAmount: nhisClaims.reduce(
+            (sum, claim) => sum + Number.parseFloat(String(claim.total_amount || 0)),
+            0
+          ),
+          approved: 0,
+          rejected: 0,
+          monthly: [],
+        }
+  const nhisTotal =
+    nhisClaimsResponse
+      ? Number(nhisClaimsResponse.count || nhisAggregate.count)
+      : nhisAggregate.count
   const purchases = getOptionalRows(purchasesResult)
   const suppliers = getOptionalRows(suppliersResult)
   const exportHistory = getOptionalRows(exportHistoryResult)
@@ -5183,72 +5378,8 @@ const getReportBundle = async (
     }
   }
 
-  const nhisClaimIds = nhisClaims
-    .map((claim) => normalizeText(claim.id))
-    .filter(Boolean)
-
-  if (nhisClaimIds.length) {
-    const [medicinesResult, servicesResult] = await Promise.allSettled([
-      adminClient
-        .from('nhis_claim_medicines')
-        .select('*')
-        .in('claim_id', nhisClaimIds),
-      adminClient
-        .from('nhis_claim_services')
-        .select('*')
-        .in('claim_id', nhisClaimIds),
-    ])
-
-    const medicines = getOptionalRows(medicinesResult)
-    const services = getOptionalRows(servicesResult)
-    const medicinesByClaim = medicines.reduce<Record<string, unknown[]>>((acc, row) => {
-      const claimId = normalizeText((row as Record<string, unknown>).claim_id)
-      if (!claimId) return acc
-      if (!acc[claimId]) acc[claimId] = []
-      acc[claimId].push(row)
-      return acc
-    }, {})
-    const servicesByClaim = services.reduce<Record<string, unknown[]>>((acc, row) => {
-      const claimId = normalizeText((row as Record<string, unknown>).claim_id)
-      if (!claimId) return acc
-      if (!acc[claimId]) acc[claimId] = []
-      acc[claimId].push(row)
-      return acc
-    }, {})
-
-    nhisClaims = nhisClaims.map((claim) => {
-      const claimId = normalizeText(claim.id)
-      return {
-        ...claim,
-        nhis_claim_medicines: medicinesByClaim[claimId] || [],
-        nhis_claim_services: servicesByClaim[claimId] || [],
-      }
-    })
-  }
-
-  const monthlyNhisSubmission = Object.values(
-    nhisClaims.reduce<Record<string, Record<string, number | string>>>((acc, claim) => {
-      const row = claim as Record<string, unknown>
-      const monthSource = normalizeText(row.submission_month) || normalizeNhiaServiceDate(row.service_date_from || row.service_date || row.created_at)
-      const month = monthSource.slice(0, 7) || 'Unspecified'
-      if (!acc[month]) {
-        acc[month] = { month, count: 0, totalAmount: 0, accepted: 0, rejected: 0, pending: 0 }
-      }
-
-      const status = normalizeText(row.status || row.claim_status).toLowerCase()
-      acc[month].count = Number(acc[month].count || 0) + 1
-      acc[month].totalAmount =
-        Number(acc[month].totalAmount || 0) + Number.parseFloat(String(row.total_amount || 0))
-      if (['accepted', 'approved', 'paid'].includes(status)) {
-        acc[month].accepted = Number(acc[month].accepted || 0) + 1
-      } else if (['rejected', 'failed'].includes(status)) {
-        acc[month].rejected = Number(acc[month].rejected || 0) + 1
-      } else {
-        acc[month].pending = Number(acc[month].pending || 0) + 1
-      }
-      return acc
-    }, {})
-  )
+  nhisClaims = await attachNhisClaimLines(adminClient, nhisClaims)
+  const monthlyNhisSubmission = nhisAggregate.monthly
 
   return {
     sales: salesRows,
@@ -5264,6 +5395,14 @@ const getReportBundle = async (
     exportHistory,
     submissionLogs,
     monthlyNhisSubmission,
+    pagination: {
+      nhisClaims: {
+        offset: 0,
+        limit: nhisClaimLimit,
+        total: nhisTotal,
+        hasMore: nhisClaims.length < nhisTotal,
+      },
+    },
     staffActivity: [
       ...submissionLogs.map((log) => ({
         ...(log as Record<string, unknown>),
@@ -5297,15 +5436,12 @@ const getReportBundle = async (
         0
       ),
       claimsCount: claimRows.length,
-      nhisClaimsCount: nhisClaims.length,
+      nhisClaimsCount: nhisAggregate.count,
+      nhisClaimsAmount: nhisAggregate.totalAmount,
       approvedClaims: claimRows.filter((claim) => claim.claim_status === 'approved').length,
       rejectedClaims: claimRows.filter((claim) => claim.claim_status === 'rejected').length,
-      approvedNhisClaims: nhisClaims.filter((claim) =>
-        ['accepted', 'approved', 'paid'].includes(normalizeText((claim as Record<string, unknown>).status).toLowerCase())
-      ).length,
-      rejectedNhisClaims: nhisClaims.filter((claim) =>
-        ['rejected', 'failed'].includes(normalizeText((claim as Record<string, unknown>).status).toLowerCase())
-      ).length,
+      approvedNhisClaims: nhisAggregate.approved,
+      rejectedNhisClaims: nhisAggregate.rejected,
       lowStockCount: lowStock.length,
       expiredCount: expired.length,
       expiringCount: expiring.length,
@@ -5415,6 +5551,33 @@ const getReportDrugMatches = async (
   }
 
   return { sales, nhisClaims }
+}
+
+const getReportHealth = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  requesterProfile: RequesterProfile,
+  organizationId: string
+) => {
+  requireReportsAccess(requesterProfile, 'Only report staff can check report health.')
+
+  const startedAt = Date.now()
+  const checks = await Promise.all([
+    adminClient.from('sales').select('id', { count: 'exact', head: true }).eq('organization_id', organizationId),
+    adminClient.from('patients').select('id', { count: 'exact', head: true }).eq('organization_id', organizationId),
+    adminClient.from('nhis_claims').select('id', { count: 'exact', head: true }).eq('organization_id', organizationId),
+  ])
+  const failed = checks.find((result) => result.error)
+  if (failed?.error) throw failed.error
+
+  return {
+    ok: true,
+    durationMs: Date.now() - startedAt,
+    counts: {
+      sales: checks[0].count || 0,
+      patients: checks[1].count || 0,
+      nhisClaims: checks[2].count || 0,
+    },
+  }
 }
 
 Deno.serve(async (request) => {
@@ -5577,6 +5740,16 @@ Deno.serve(async (request) => {
           tierContext.tierLimits.hasClaims
         )
       )
+    }
+
+    if (action === 'get_report_health') {
+      await requireTierFeature(adminClient, organizationId, 'reports')
+      return json(await getReportHealth(adminClient, requesterProfile, organizationId))
+    }
+
+    if (action === 'get_report_nhis_page') {
+      await requireTierFeature(adminClient, organizationId, 'reports')
+      return json(await getReportNhisPage(adminClient, requesterProfile, organizationId, payload))
     }
 
     if (action === 'get_report_drug_matches') {

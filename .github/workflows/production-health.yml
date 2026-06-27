@@ -1,0 +1,32 @@
+name: Production Health
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Check production
+        env:
+          HEALTHFLOW_APP_URL: https://healthflowcloud.com
+          HEALTHFLOW_SUPABASE_URL: https://bcvmiwmhtvtqrvzdovin.supabase.co
+          HEALTHFLOW_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.HEALTHFLOW_SUPABASE_PUBLISHABLE_KEY }}
+          HEALTHFLOW_MONITOR_EMAIL: ${{ secrets.HEALTHFLOW_MONITOR_EMAIL }}
+          HEALTHFLOW_MONITOR_PASSWORD: ${{ secrets.HEALTHFLOW_MONITOR_PASSWORD }}
+        run: node scripts/production-health-check.mjs

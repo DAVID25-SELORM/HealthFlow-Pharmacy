@@ -49,19 +49,42 @@ const checkSupabase = async () => {
   }
 }
 
-const checkTierAccess = async () => {
+const checkAuthenticatedSession = async () => {
+  if (!isSupabaseConfigured()) {
+    return fail('Authenticated session', { summary: 'Supabase is not configured' })
+  }
+
   try {
     const startedAt = performance.now()
-    await invokeTierAccess({ action: 'get_activity_logs', limit: 1 })
-    const durationMs = Math.round(performance.now() - startedAt)
+    const { data, error } = await supabase.auth.getUser()
+    if (error) throw error
+    if (!data?.user?.id) throw new Error('No authenticated user was returned.')
 
-    return ok('Edge Function', {
-      summary: 'tier-access reachable',
-      detail: `Responded in ${durationMs} ms.`,
+    return ok('Authenticated session', {
+      summary: data.user.email || 'Signed in',
+      detail: `Auth verified in ${Math.round(performance.now() - startedAt)} ms.`,
     })
   } catch (error) {
-    return fail('Edge Function', {
-      summary: 'tier-access check failed',
+    return fail('Authenticated session', {
+      summary: 'Login session check failed',
+      detail: formatError(error),
+    })
+  }
+}
+
+const checkReportEngine = async () => {
+  try {
+    const startedAt = performance.now()
+    const result = await invokeTierAccess({ action: 'get_report_health' })
+    const durationMs = Math.round(performance.now() - startedAt)
+
+    return ok('Reports and Edge Function', {
+      summary: 'Report engine reachable',
+      detail: `Responded in ${durationMs} ms. ${Number(result?.counts?.nhisClaims || 0)} NHIS claims visible.`,
+    })
+  } catch (error) {
+    return fail('Reports and Edge Function', {
+      summary: 'Report engine check failed',
       detail: formatError(error),
     })
   }
@@ -127,6 +150,36 @@ const checkRecentAuditLog = async () => {
   }
 }
 
+const checkRecentNhisClaim = async () => {
+  if (!isSupabaseConfigured()) return warn('NHIS access', { summary: 'Skipped' })
+
+  try {
+    const claim = await latestRow(
+      'nhis_claims',
+      'id, claim_number, status, created_at',
+      'created_at'
+    )
+
+    if (!claim) {
+      return warn('NHIS access', {
+        summary: 'No NHIS claim found',
+        detail: 'The NHIS table is reachable but no claim is visible for this account.',
+      })
+    }
+
+    return ok('NHIS access', {
+      summary: claim.claim_number || 'Claim found',
+      detail: claim.status || 'NHIS claim reads are working.',
+      timestamp: claim.created_at,
+    })
+  } catch (error) {
+    return fail('NHIS access', {
+      summary: 'Could not read NHIS claims',
+      detail: formatError(error),
+    })
+  }
+}
+
 const checkLocalBranchServer = async () => {
   const config = getBranchServerConfig()
   if (!config.enabled || !config.token) {
@@ -158,8 +211,10 @@ const checkLocalBranchServer = async () => {
 export const getSystemHealth = async () => {
   const checks = await Promise.all([
     checkSupabase(),
-    checkTierAccess(),
+    checkAuthenticatedSession(),
+    checkReportEngine(),
     checkRecentSale(),
+    checkRecentNhisClaim(),
     checkRecentAuditLog(),
     checkLocalBranchServer(),
   ])

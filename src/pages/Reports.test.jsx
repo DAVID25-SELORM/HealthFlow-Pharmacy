@@ -12,6 +12,7 @@ import {
 
 const mocks = vi.hoisted(() => ({
   getReportBundle: vi.fn(),
+  getReportNhisPage: vi.fn(),
   getPharmacySettings: vi.fn(),
   useAuth: vi.fn(),
   useTenant: vi.fn(),
@@ -36,12 +37,21 @@ vi.mock('../services/reportsService', async () => {
     downloadCsv: vi.fn(),
     exportReportPdf: vi.fn(),
     getReportBundle: mocks.getReportBundle,
+    getReportNhisPage: mocks.getReportNhisPage,
     printReport: vi.fn(),
   }
 })
 
 const reportBundle = {
   source: 'test',
+  pagination: {
+    nhisClaims: {
+      offset: 0,
+      limit: 1,
+      total: 4,
+      hasMore: true,
+    },
+  },
   metrics: {
     salesCount: 2,
     salesAmount: 50,
@@ -200,6 +210,19 @@ describe('Reports', () => {
     })
     mocks.getPharmacySettings.mockResolvedValue({})
     mocks.getReportBundle.mockResolvedValue(reportBundle)
+    mocks.getReportNhisPage.mockResolvedValue({
+      nhisClaims: [{
+        ...reportBundle.nhisClaims[0],
+        id: 'nhis-2',
+        claim_number: 'NHIS-000002',
+      }],
+      pagination: {
+        offset: 3,
+        limit: 1,
+        total: 4,
+        hasMore: false,
+      },
+    })
   })
 
   it('generates report cards and filters the selected report rows by visible values', async () => {
@@ -308,6 +331,20 @@ describe('Reports', () => {
     fireEvent.click(screen.getByRole('tab', { name: /Drug Utilization/i }))
     expect(screen.getByRole('tab', { name: /Drug Utilization/i })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getAllByRole('heading', { name: 'Drug Utilization Report' }).length).toBeGreaterThan(0)
+  })
+
+  it('loads additional NHIS detail pages without regenerating the full bundle', async () => {
+    render(<Reports />)
+    fireEvent.click(screen.getByRole('button', { name: /Generate Reports/i }))
+    await waitFor(() => expect(mocks.getReportBundle).toHaveBeenCalledTimes(1))
+
+    fireEvent.click(screen.getByRole('tab', { name: /NHIS Claims/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Load more/i }))
+
+    await waitFor(() => expect(mocks.getReportNhisPage).toHaveBeenCalledWith(
+      expect.objectContaining({ offset: 3, limit: 1 })
+    ))
+    expect(mocks.getReportBundle).toHaveBeenCalledTimes(1)
   })
 
   it('opens the selected medicine drill down and shows unavailable tab feedback', async () => {

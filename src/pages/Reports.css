@@ -510,6 +510,14 @@
   white-space: nowrap;
 }
 
+.report-table-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  justify-content: flex-end;
+}
+
 .report-ledger-filters {
   display: flex;
   align-items: center;

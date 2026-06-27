@@ -20,6 +20,7 @@ import {
   exportReportPdf,
   getReportBundle,
   getReportDrugMatches,
+  getReportNhisPage,
   getVisibleReportCatalog,
   normalizeReportBundle,
   printReport,
@@ -56,7 +57,7 @@ const FILTER_DEFAULTS = {
   patientType: '',
   prescriber: '',
   facilityBranch: '',
-  nhisClaimLimit: 500,
+  nhisClaimLimit: 200,
 }
 
 const money = (value) => `GHS ${Number(value || 0).toFixed(2)}`
@@ -990,6 +991,7 @@ const Reports = () => {
   const [drugSearchTerm, setDrugSearchTerm] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
   const [loading, setLoading] = useState(false)
+  const [loadingMoreNhis, setLoadingMoreNhis] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [bundle, setBundle] = useState(null)
@@ -1157,6 +1159,44 @@ const Reports = () => {
       setLoading(false)
     }
   }, [filters, role, tierLimits.hasReports])
+
+  const loadMoreNhisClaims = useCallback(async () => {
+    if (loadingMoreNhis || !normalizedBundle.pagination?.nhisClaims?.hasMore) return
+
+    try {
+      setLoadingMoreNhis(true)
+      setError('')
+      const result = await getReportNhisPage({
+        startDate: filters.startDate,
+        endDate: filters.endDate,
+        offset: normalizedBundle.nhisClaims.length,
+        limit: normalizedBundle.pagination.nhisClaims.limit || 200,
+      })
+      const nextRows = result?.nhisClaims || []
+      setBundle((current) => {
+        const existing = current?.nhisClaims || []
+        const seen = new Set(existing.map((claim) => claim.id))
+        return {
+          ...(current || {}),
+          nhisClaims: [...existing, ...nextRows.filter((claim) => !seen.has(claim.id))],
+          pagination: {
+            ...(current?.pagination || {}),
+            nhisClaims: result?.pagination || current?.pagination?.nhisClaims,
+          },
+        }
+      })
+    } catch (loadError) {
+      setError(loadError.message || 'Unable to load more NHIS report rows.')
+    } finally {
+      setLoadingMoreNhis(false)
+    }
+  }, [
+    filters.endDate,
+    filters.startDate,
+    loadingMoreNhis,
+    normalizedBundle.nhisClaims.length,
+    normalizedBundle.pagination?.nhisClaims,
+  ])
 
   useEffect(() => {
     if (!notice) return undefined
@@ -1646,10 +1686,16 @@ const Reports = () => {
                   type="button"
                   onClick={() => {
                     setSelectedReportId(report.id)
-                    void runReports()
+                    if (!hasGeneratedReports) {
+                      void runReports()
+                    } else {
+                      window.requestAnimationFrame(() => {
+                        reportOutputRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+                      })
+                    }
                   }}
                 >
-                  Generate
+                  {hasGeneratedReports ? 'View' : 'Generate'}
                 </button>
                 <button
                   className="btn btn-outline"
@@ -1679,7 +1725,19 @@ const Reports = () => {
               <h3>{selectedReport?.title || 'Report Preview'}</h3>
               <p>{selectedReport?.description || 'Select a report to preview its generated rows.'}</p>
             </div>
-            <span className="report-table-count">{reportData.rows.length} rows</span>
+            <div className="report-table-actions">
+              <span className="report-table-count">{reportData.rows.length} rows</span>
+              {activeTab === 'nhis' && normalizedBundle.pagination?.nhisClaims?.hasMore && (
+                <button
+                  className="btn btn-outline"
+                  type="button"
+                  onClick={() => void loadMoreNhisClaims()}
+                  disabled={loadingMoreNhis}
+                >
+                  {loadingMoreNhis ? 'Loading...' : 'Load more'}
+                </button>
+              )}
+            </div>
           </div>
 
           {reportData.rows.length === 0 ? (

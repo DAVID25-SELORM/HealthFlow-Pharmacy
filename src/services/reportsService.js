@@ -315,6 +315,34 @@ export const getReportDrugMatches = async (filters = {}) => {
   })
 }
 
+export const getReportNhisPage = async (filters = {}) => {
+  if (shouldUseBranchServer()) {
+    const bundle = await getBranchReportBundle({
+      ...filters,
+      nhisClaimLimit: filters.limit || 200,
+    })
+    const nhisClaims = toArray(bundle?.nhisClaims || bundle?.nhis_claims)
+    return {
+      nhisClaims,
+      pagination: {
+        offset: Number(filters.offset || 0),
+        limit: Number(filters.limit || 200),
+        total: nhisClaims.length,
+        hasMore: false,
+      },
+    }
+  }
+
+  if (!isSupabaseConfigured()) {
+    throw new Error('Supabase is not configured. Use the local branch server or configure .env for cloud reports.')
+  }
+
+  return await invokeTierAccess({
+    action: 'get_report_nhis_page',
+    ...filters,
+  })
+}
+
 export const normalizeReportBundle = (bundle = {}) => {
   const sales = toArray(bundle.sales)
   const claims = toArray(bundle.claims)
@@ -345,6 +373,7 @@ export const normalizeReportBundle = (bundle = {}) => {
     exportHistory,
     submissionLogs,
     staffActivity,
+    pagination: bundle.pagination || {},
     metrics: {
       salesCount: sales.length,
       salesAmount: sales.reduce((sum, sale) => sum + Number(sale.net_amount ?? sale.netAmount ?? 0), 0),

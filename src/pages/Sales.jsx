@@ -2,7 +2,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Search, Trash2, Plus, Minus, ShoppingCart, Printer, Download, X } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { dispatchHealthflowDataChanged } from '../lib/appEvents'
-import { createSale, getRecentSales, getSaleById, refundSale } from '../services/salesService'
+import {
+  createPosSale,
+  getPosRecentSales,
+  getPosSaleById,
+  refundPosSale,
+} from '../services/salesApi'
 import { createClaim } from '../services/claimsService'
 import { createNhisClaim, getNhiaApiSettings } from '../services/nhisService'
 import { getAllPatients } from '../services/patientService'
@@ -10,11 +15,8 @@ import { getPharmacySettings } from '../services/settingsService'
 import { getBranches } from '../services/branchService'
 import { getOnlinePaymentSettings, initiateOnlinePayment } from '../services/paymentService'
 import {
-  createBranchSale,
   getBranchInventory,
   getBranchPosBootstrap,
-  getBranchRecentSales,
-  getBranchSale,
   getBranchServerConfig,
   getBranchServerHealth,
   getBranchSyncStatus,
@@ -487,7 +489,7 @@ const Sales = () => {
         })
         setLoading(false)
 
-        getRecentSales(RECENT_SALES_LIMIT)
+        getPosRecentSales(RECENT_SALES_LIMIT)
           .then((recent) => {
             if (!cancelled) {
               setRecentSales(recent || [])
@@ -1000,9 +1002,9 @@ const Sales = () => {
   const refreshRecentSales = async () => {
     try {
       setLoadingRecentSales(true)
-      const recent = localBranchServerAvailable
-        ? await getBranchRecentSales(RECENT_SALES_LIMIT)
-        : await getRecentSales(RECENT_SALES_LIMIT)
+      const recent = await getPosRecentSales(RECENT_SALES_LIMIT, {
+        useBranch: localBranchServerAvailable,
+      })
       setRecentSales(recent || [])
       void saveOfflinePosSnapshot(user?.id, { recentSales: recent || [] })
     } catch (refreshError) {
@@ -1626,7 +1628,7 @@ const Sales = () => {
             returnUrl: window.location.href,
           })
         } else {
-          cloudPendingSale = await createSale({
+          cloudPendingSale = await createPosSale({
             ...salePayload,
             paymentStatus: 'pending_payment',
           })
@@ -1708,10 +1710,10 @@ const Sales = () => {
                   saleDate: saleTimestamp,
                 })
               : null
-          const saleResult = await createBranchSale({
+          const saleResult = await createPosSale({
             ...salePayload,
             claimPayload: localClaimPayload,
-          })
+          }, { useBranch: true })
           let nhisReviewClaim = null
           let nhisReviewClaimError = null
           if (paymentMethod === 'nhia') {
@@ -1802,10 +1804,10 @@ const Sales = () => {
                     saleDate: saleTimestamp,
                   })
                 : null
-            const saleResult = await createBranchSale({
+            const saleResult = await createPosSale({
               ...salePayload,
               claimPayload: localClaimPayload,
-            })
+            }, { useBranch: true })
             const receiptData = buildReceiptData(saleResult.saleNumber)
             const claimMessage = saleResult.claimNumber
               ? ` Claim ${saleResult.claimNumber} was saved locally.`
@@ -1886,7 +1888,7 @@ const Sales = () => {
         return
       }
 
-      const saleResult = await createSale(salePayload)
+      const saleResult = await createPosSale(salePayload)
       const receiptData = buildReceiptData(saleResult.saleNumber)
       setLastSale(receiptData)
 
@@ -1974,7 +1976,7 @@ const Sales = () => {
     try {
       setRefundingSaleId(sale.id)
       setError('')
-      await refundSale({
+      await refundPosSale({
         saleId: sale.id,
         reason: reasonInput.trim() || null,
         role,
@@ -2092,9 +2094,9 @@ const Sales = () => {
     try {
       setReprintingSaleId(sale.id)
       setError('')
-      const fullSale = localBranchServerAvailable
-        ? await getBranchSale(sale.id)
-        : await getSaleById(sale.id)
+      const fullSale = await getPosSaleById(sale.id, {
+        useBranch: localBranchServerAvailable,
+      })
       const normalizedSale = fullSale.sale_number
         ? fullSale
         : {

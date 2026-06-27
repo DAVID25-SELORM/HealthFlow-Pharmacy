@@ -51,7 +51,7 @@ export default function SystemHealth() {
       <div className="system-health-header">
         <div>
           <h1>System Health</h1>
-          <p>Production checks for app access, database reads, recent activity, and local branch connectivity.</p>
+          <p>Production checks for login, database access, sales, NHIS, reports, activity logs, and local branch connectivity.</p>
         </div>
         <button className="system-health-refresh" type="button" onClick={() => void loadHealth()} disabled={loading}>
           <RefreshCcw size={17} />
