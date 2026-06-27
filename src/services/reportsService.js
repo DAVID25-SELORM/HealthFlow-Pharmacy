@@ -300,6 +300,21 @@ export const getReportBundle = async (filters = {}) => {
   })
 }
 
+export const getReportDrugMatches = async (filters = {}) => {
+  if (shouldUseBranchServer()) {
+    return await getBranchReportBundle({ ...filters, limit: 500, nhisClaimLimit: 500 })
+  }
+
+  if (!isSupabaseConfigured()) {
+    throw new Error('Supabase is not configured. Use the local branch server or configure .env for cloud reports.')
+  }
+
+  return await invokeTierAccess({
+    action: 'get_report_drug_matches',
+    ...filters,
+  })
+}
+
 export const normalizeReportBundle = (bundle = {}) => {
   const sales = toArray(bundle.sales)
   const claims = toArray(bundle.claims)

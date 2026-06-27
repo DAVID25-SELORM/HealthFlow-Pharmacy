@@ -19,6 +19,7 @@ import {
   downloadCsv,
   exportReportPdf,
   getReportBundle,
+  getReportDrugMatches,
   getVisibleReportCatalog,
   normalizeReportBundle,
   printReport,
@@ -55,7 +56,7 @@ const FILTER_DEFAULTS = {
   patientType: '',
   prescriber: '',
   facilityBranch: '',
-  nhisClaimLimit: 2000,
+  nhisClaimLimit: 500,
 }
 
 const money = (value) => `GHS ${Number(value || 0).toFixed(2)}`
@@ -992,6 +993,7 @@ const Reports = () => {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [bundle, setBundle] = useState(null)
+  const [drugSearchBundle, setDrugSearchBundle] = useState(null)
   const [hasGeneratedReports, setHasGeneratedReports] = useState(false)
   const [facilitySettings, setFacilitySettings] = useState(null)
   const lastServerDrugSearchRef = useRef('')
@@ -1004,7 +1006,12 @@ const Reports = () => {
   const canViewDrugAnalytics = reportCatalog.some((report) => report.tab === 'analytics')
   const canViewFullDrugAnalytics = canAccessReport(role, 'drug-utilization')
   const selectedReport = reportCatalog.find((report) => report.id === selectedReportId) || reportCatalog[0]
-  const normalizedBundle = useMemo(() => normalizeReportBundle(bundle || {}), [bundle])
+  const effectiveBundle = useMemo(() => (
+    drugSearchTerm.trim().length >= 3 && drugSearchBundle
+      ? { ...(bundle || {}), sales: drugSearchBundle.sales, nhisClaims: drugSearchBundle.nhisClaims }
+      : bundle
+  ), [bundle, drugSearchBundle, drugSearchTerm])
+  const normalizedBundle = useMemo(() => normalizeReportBundle(effectiveBundle || {}), [effectiveBundle])
   const analyticsFilters = useMemo(() => ({
     ...filters,
     drug: selectedDrug || filters.drug,
@@ -1176,10 +1183,14 @@ const Reports = () => {
 
     const timer = window.setTimeout(() => {
       lastServerDrugSearchRef.current = searchKey
-      void runReports({
+      void getReportDrugMatches({
         ...filters,
         drug: term,
-        nhisClaimLimit: 1000,
+        branchId: filters.branch,
+        userId: filters.staff,
+      }).then(setDrugSearchBundle).catch((searchError) => {
+        console.error('Error searching report medicines:', searchError)
+        setError(searchError.message || 'Unable to search medicine utilization.')
       })
     }, 500)
 
@@ -1190,7 +1201,6 @@ const Reports = () => {
     filters,
     hasGeneratedReports,
     loading,
-    runReports,
     searchedDrugAnalytics.length,
   ])
 
@@ -1383,14 +1393,6 @@ const Reports = () => {
           <label>
             <span>Drug/service category</span>
             <input value={filters.drugCategory} onChange={(event) => updateFilter('drugCategory', event.target.value)} placeholder="Category or GDRG" />
-          </label>
-          <label>
-            <span>Max NHIS claims to load</span>
-            <select value={filters.nhisClaimLimit || 2000} onChange={(event) => updateFilter('nhisClaimLimit', Number(event.target.value))}>
-              <option value={500}>500 claims</option>
-              <option value={1000}>1,000 claims</option>
-              <option value={2000}>2,000 claims (default)</option>
-            </select>
           </label>
         </div>
 

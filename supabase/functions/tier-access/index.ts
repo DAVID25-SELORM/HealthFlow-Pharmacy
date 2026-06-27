@@ -464,7 +464,7 @@ const PATIENT_WORKSPACE_MAX_NHIS_CLAIMS = 1000
 const PATIENT_WORKSPACE_DEFAULT_PAGE_SIZE = 100
 const PATIENT_WORKSPACE_MAX_PAGE_SIZE = 500
 const REPORT_BUNDLE_MAX_ROWS = 1000
-const REPORT_BUNDLE_MAX_NHIS_CLAIMS = 2000
+const REPORT_BUNDLE_MAX_NHIS_CLAIMS = 500
 
 const PATIENT_WORKSPACE_PATIENT_SELECT_FIELDS = [
   'id',
@@ -5321,6 +5321,102 @@ const getReportBundle = async (
   }
 }
 
+const getReportDrugMatches = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  requesterProfile: RequesterProfile,
+  organizationId: string,
+  payload: Record<string, unknown>
+) => {
+  requireReportsAccess(requesterProfile, 'Only report staff can access reports.')
+
+  const startDate = normalizeText(payload.startDate)
+  const endDate = normalizeText(payload.endDate)
+  const drugSearchTerm = toIlikeSearchTerm(payload.drug)
+  if (drugSearchTerm.length < 3) {
+    return { sales: [], nhisClaims: [] }
+  }
+
+  const pattern = `%${drugSearchTerm}%`
+  const [{ data: matchingDrugs, error: drugsError }, { data: matchingMedicines, error: medicinesError }] =
+    await Promise.all([
+      adminClient
+        .from('drugs')
+        .select('id')
+        .eq('organization_id', organizationId)
+        .ilike('name', pattern)
+        .limit(500),
+      adminClient
+        .from('nhis_claim_medicines')
+        .select('*')
+        .or(`description.ilike.${pattern},drug_code.ilike.${pattern}`)
+        .limit(500),
+    ])
+
+  if (drugsError) throw drugsError
+  if (medicinesError) throw medicinesError
+
+  const matchingDrugIds = (matchingDrugs || []).map((row) => normalizeText(row.id)).filter(Boolean)
+  const matchingClaimIds = Array.from(
+    new Set((matchingMedicines || []).map((row) => normalizeText(row.claim_id)).filter(Boolean))
+  )
+
+  let sales: unknown[] = []
+  if (matchingDrugIds.length) {
+    const { data: matchingSaleItems, error: saleItemsError } = await adminClient
+      .from('sale_items')
+      .select('sale_id')
+      .in('drug_id', matchingDrugIds)
+      .limit(500)
+    if (saleItemsError) throw saleItemsError
+
+    const saleIds = Array.from(
+      new Set((matchingSaleItems || []).map((row) => normalizeText(row.sale_id)).filter(Boolean))
+    )
+    if (saleIds.length) {
+      let salesQuery = adminClient
+        .from('sales')
+        .select(SALES_SELECT_FIELDS)
+        .eq('organization_id', organizationId)
+        .in('id', saleIds)
+        .order('sale_date', { ascending: false })
+      if (startDate) salesQuery = salesQuery.gte('sale_date', `${startDate}T00:00:00`)
+      if (endDate) salesQuery = salesQuery.lte('sale_date', `${endDate}T23:59:59`)
+      const { data, error } = await salesQuery
+      if (error) throw error
+      sales = data || []
+    }
+  }
+
+  let nhisClaims: Record<string, unknown>[] = []
+  if (matchingClaimIds.length) {
+    let claimsQuery = adminClient
+      .from('nhis_claims')
+      .select('*')
+      .eq('organization_id', organizationId)
+      .in('id', matchingClaimIds)
+      .order('created_at', { ascending: false })
+    if (startDate) claimsQuery = claimsQuery.gte('service_date_from', startDate)
+    if (endDate) claimsQuery = claimsQuery.lte('service_date_from', endDate)
+    const { data, error } = await claimsQuery
+    if (error) throw error
+
+    const medicinesByClaim = (matchingMedicines || []).reduce<Record<string, unknown[]>>((acc, row) => {
+      const claimId = normalizeText(row.claim_id)
+      if (!claimId) return acc
+      if (!acc[claimId]) acc[claimId] = []
+      acc[claimId].push(row)
+      return acc
+    }, {})
+    nhisClaims = (data || []).map((claim) => ({
+      ...claim,
+      nhis_claim_medicines: medicinesByClaim[normalizeText(claim.id)] || [],
+      nhis_claim_services: [],
+    }))
+  }
+
+  return { sales, nhisClaims }
+}
+
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -5481,6 +5577,11 @@ Deno.serve(async (request) => {
           tierContext.tierLimits.hasClaims
         )
       )
+    }
+
+    if (action === 'get_report_drug_matches') {
+      await requireTierFeature(adminClient, organizationId, 'reports')
+      return json(await getReportDrugMatches(adminClient, requesterProfile, organizationId, payload))
     }
 
     if (action === 'get_activity_logs') {
