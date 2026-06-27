@@ -261,6 +261,8 @@ const json = (body: Record<string, unknown>, status = 200) =>
   })
 
 const normalizeText = (value: unknown) => (typeof value === 'string' ? value.trim() : '')
+const toIlikeSearchTerm = (value: unknown) =>
+  normalizeText(value).replace(/[%_,()]/g, ' ').replace(/\s+/g, ' ').trim()
 const normalizeHttpHeaderValue = (value: unknown) => {
   let normalized = normalizeText(value).replace(/[\u0000-\u001F\u007F]/g, '')
   if (
@@ -4957,6 +4959,7 @@ const getReportBundle = async (
 
   const startDate = normalizeText(payload.startDate)
   const endDate = normalizeText(payload.endDate)
+  const drugSearchTerm = toIlikeSearchTerm(payload.drug)
   const reportLimit = clampPositiveInteger(payload.limit, REPORT_BUNDLE_MAX_ROWS, REPORT_BUNDLE_MAX_ROWS)
   const nhisClaimLimit = clampPositiveInteger(
     payload.nhisClaimLimit,
@@ -5113,6 +5116,42 @@ const getReportBundle = async (
   const suppliers = getOptionalRows(suppliersResult)
   const exportHistory = getOptionalRows(exportHistoryResult)
   const submissionLogs = getOptionalRows(submissionLogsResult)
+
+  if (drugSearchTerm.length >= 3) {
+    const medicinePattern = `%${drugSearchTerm}%`
+    const { data: matchingMedicines } = await adminClient
+      .from('nhis_claim_medicines')
+      .select('claim_id')
+      .or(`description.ilike.${medicinePattern},drug_code.ilike.${medicinePattern}`)
+      .limit(nhisClaimLimit)
+
+    const matchingClaimIds = Array.from(
+      new Set((matchingMedicines || []).map((row) => normalizeText(row.claim_id)).filter(Boolean))
+    )
+    const loadedClaimIds = new Set(nhisClaims.map((claim) => normalizeText(claim.id)).filter(Boolean))
+    const missingClaimIds = matchingClaimIds.filter((claimId) => !loadedClaimIds.has(claimId))
+
+    if (missingClaimIds.length) {
+      let matchingClaimsQuery = adminClient
+        .from('nhis_claims')
+        .select('*')
+        .eq('organization_id', organizationId)
+        .in('id', missingClaimIds)
+        .order('created_at', { ascending: false })
+        .limit(nhisClaimLimit)
+
+      if (startDate) {
+        matchingClaimsQuery = matchingClaimsQuery.gte('service_date_from', startDate)
+      }
+
+      if (endDate) {
+        matchingClaimsQuery = matchingClaimsQuery.lte('service_date_from', endDate)
+      }
+
+      const { data: matchingClaims } = await matchingClaimsQuery
+      nhisClaims = [...nhisClaims, ...((matchingClaims || []) as Record<string, unknown>[])]
+    }
+  }
 
   const nhisClaimIds = nhisClaims
     .map((claim) => normalizeText(claim.id))

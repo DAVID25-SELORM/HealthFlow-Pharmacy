@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   BarChart3,
   Calendar,
@@ -992,6 +992,7 @@ const Reports = () => {
   const [bundle, setBundle] = useState(null)
   const [hasGeneratedReports, setHasGeneratedReports] = useState(false)
   const [facilitySettings, setFacilitySettings] = useState(null)
+  const lastServerDrugSearchRef = useRef('')
 
   const brandingSource = { ...(organization || {}), ...(facilitySettings || {}) }
   const facilityName = getFacilityName(brandingSource)
@@ -1069,7 +1070,7 @@ const Reports = () => {
     }
   }
 
-  const runReports = async (nextFilters = filters) => {
+  const runReports = useCallback(async (nextFilters = filters) => {
     const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
     try {
       setLoading(true)
@@ -1092,6 +1093,7 @@ const Reports = () => {
         prescriber: nextFilters.prescriber,
         patientType: nextFilters.patientType,
         drug: nextFilters.drug,
+        nhisClaimLimit: nextFilters.nhisClaimLimit,
       })
       setBundle(data)
       setHasGeneratedReports(true)
@@ -1104,7 +1106,7 @@ const Reports = () => {
     } finally {
       setLoading(false)
     }
-  }
+  }, [filters, role, tierLimits.hasReports])
 
   useEffect(() => {
     if (!tierLimits.hasReports) {
@@ -1113,6 +1115,50 @@ const Reports = () => {
       return
     }
   }, [tierLimits.hasReports])
+
+  useEffect(() => {
+    const term = drugSearchTerm.trim()
+    const searchKey = [
+      term,
+      filters.startDate,
+      filters.endDate,
+      filters.branch,
+      filters.facilityBranch,
+      filters.patientType,
+      filters.prescriber,
+      filters.staff,
+    ].join('|')
+
+    if (
+      !canViewDrugAnalytics ||
+      !hasGeneratedReports ||
+      loading ||
+      term.length < 3 ||
+      searchedDrugAnalytics.length > 0 ||
+      lastServerDrugSearchRef.current === searchKey
+    ) {
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      lastServerDrugSearchRef.current = searchKey
+      void runReports({
+        ...filters,
+        drug: term,
+        nhisClaimLimit: 1000,
+      })
+    }, 500)
+
+    return () => window.clearTimeout(timer)
+  }, [
+    canViewDrugAnalytics,
+    drugSearchTerm,
+    filters,
+    hasGeneratedReports,
+    loading,
+    runReports,
+    searchedDrugAnalytics.length,
+  ])
 
   useEffect(() => {
     let cancelled = false
