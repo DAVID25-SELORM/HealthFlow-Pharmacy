@@ -55,6 +55,7 @@ const FILTER_DEFAULTS = {
   patientType: '',
   prescriber: '',
   facilityBranch: '',
+  nhisClaimLimit: 2000,
 }
 
 const money = (value) => `GHS ${Number(value || 0).toFixed(2)}`
@@ -1382,6 +1383,14 @@ const Reports = () => {
           <label>
             <span>Drug/service category</span>
             <input value={filters.drugCategory} onChange={(event) => updateFilter('drugCategory', event.target.value)} placeholder="Category or GDRG" />
+          </label>
+          <label>
+            <span>Max NHIS claims to load</span>
+            <select value={filters.nhisClaimLimit || 2000} onChange={(event) => updateFilter('nhisClaimLimit', Number(event.target.value))}>
+              <option value={500}>500 claims</option>
+              <option value={1000}>1,000 claims</option>
+              <option value={2000}>2,000 claims (default)</option>
+            </select>
           </label>
         </div>
 
