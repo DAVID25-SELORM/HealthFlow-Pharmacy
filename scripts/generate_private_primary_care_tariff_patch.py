@@ -11,7 +11,7 @@ PDF_PATH = pathlib.Path(
     r"C:\Users\RealTimeIT\Downloads\Private Primary Care Hospital (Catering Exclusive) Tariff JAN 2023 (1).pdf"
 )
 OUTPUT_PATH = pathlib.Path(
-    "supabase-patch-private-primary-care-hospital-exclusive-tariff-feb-2023.sql"
+    "supabase/legacy/supabase-patch-private-primary-care-hospital-exclusive-tariff-feb-2023.sql"
 )
 SOURCE_FILE = "Private Primary Care Hospital (Catering Exclusive) Tariff JAN 2023 (1).pdf"
 EXPECTED_ROW_COUNT = 617

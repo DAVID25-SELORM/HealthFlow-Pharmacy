@@ -3737,7 +3737,7 @@ export const uploadNhisPrescriptionPdf = async (file, options = {}) => {
   if (error) {
     const message = String(error.message || '').toLowerCase()
     if (message.includes('bucket') || message.includes('not found')) {
-      throw new Error('Prescription storage bucket is missing. Run supabase-patch-nhis-prescription-attachments.sql first.')
+      throw new Error('Prescription storage bucket is missing. Run supabase/legacy/supabase-patch-nhis-prescription-attachments.sql first.')
     }
     throw error
   }
@@ -4430,7 +4430,7 @@ const insertNhisClaimServiceRows = async (serviceRows) => {
 
   if (error) {
     if (isMissingClaimServicesTable(error)) {
-      throw new Error('NHIA tariff service lines need the claim-services SQL patch. Run supabase-patch-nhia-claim-services.sql, then save this hospital claim again.')
+      throw new Error('NHIA tariff service lines need the claim-services SQL patch. Run supabase/legacy/supabase-patch-nhia-claim-services.sql, then save this hospital claim again.')
     }
     throw error
   }

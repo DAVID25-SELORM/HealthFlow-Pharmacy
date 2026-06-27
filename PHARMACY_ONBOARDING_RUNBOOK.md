@@ -207,39 +207,39 @@ Recommended order:
 
 ```text
 supabase-schema.sql
-supabase-migration-multi-tenant-step1.sql
-supabase-migration-multi-tenant-step2-rls.sql
-supabase-migration-multi-tenant-step3-fixes.sql
-supabase-migration-branches.sql
-supabase-migration-purchases.sql
-supabase-migration-nhis.sql
-supabase-migration-accounting.sql
+supabase/legacy/supabase-migration-multi-tenant-step1.sql
+supabase/legacy/supabase-migration-multi-tenant-step2-rls.sql
+supabase/legacy/supabase-migration-multi-tenant-step3-fixes.sql
+supabase/legacy/supabase-migration-branches.sql
+supabase/legacy/supabase-migration-purchases.sql
+supabase/legacy/supabase-migration-nhis.sql
+supabase/legacy/supabase-migration-accounting.sql
 ```
 
 Then apply current patches used by the live app:
 
 ```text
-supabase-patch-branch-sync-rpcs.sql
-supabase-patch-inventory-workflow-controls.sql
-supabase-patch-commercial-billing-controls.sql
-supabase-patch-nhis-topup-controls.sql
-supabase-patch-diagnosis-catalog.sql
-supabase-patch-nhis-prescription-attachments.sql
-supabase-patch-accounting-defaults.sql
-supabase-patch-accounting-hardening.sql
-supabase-patch-shift-system.sql
-supabase-patch-sale-transaction-hardening.sql
-supabase-patch-refund-admin-and-clear-rooter.sql
-supabase-patch-refund-permission-and-reprints.sql
-supabase-patch-expanded-staff-roles.sql
-supabase-patch-organization-module-privileges.sql
-supabase-patch-organization-type.sql
-supabase-patch-nhia-readiness-fields.sql
-supabase-patch-nhia-api-integrations.sql
-supabase-patch-nhis-claims-officer-review.sql
+supabase/legacy/supabase-patch-branch-sync-rpcs.sql
+supabase/legacy/supabase-patch-inventory-workflow-controls.sql
+supabase/legacy/supabase-patch-commercial-billing-controls.sql
+supabase/legacy/supabase-patch-nhis-topup-controls.sql
+supabase/legacy/supabase-patch-diagnosis-catalog.sql
+supabase/legacy/supabase-patch-nhis-prescription-attachments.sql
+supabase/legacy/supabase-patch-accounting-defaults.sql
+supabase/legacy/supabase-patch-accounting-hardening.sql
+supabase/legacy/supabase-patch-shift-system.sql
+supabase/legacy/supabase-patch-sale-transaction-hardening.sql
+supabase/legacy/supabase-patch-refund-admin-and-clear-rooter.sql
+supabase/legacy/supabase-patch-refund-permission-and-reprints.sql
+supabase/legacy/supabase-patch-expanded-staff-roles.sql
+supabase/legacy/supabase-patch-organization-module-privileges.sql
+supabase/legacy/supabase-patch-organization-type.sql
+supabase/legacy/supabase-patch-nhia-readiness-fields.sql
+supabase/legacy/supabase-patch-nhia-api-integrations.sql
+supabase/legacy/supabase-patch-nhis-claims-officer-review.sql
 ```
 
-After applying `supabase-patch-diagnosis-catalog.sql`, seed the diagnosis dropdown catalog:
+After applying `supabase/legacy/supabase-patch-diagnosis-catalog.sql`, seed the diagnosis dropdown catalog:
 
 ```powershell
 cd "C:\Users\RealTimeIT\Desktop\APPS\HealthFlow Pharmacy"
@@ -464,7 +464,7 @@ cd "C:\HealthFlowPharmacy"
 npx.cmd supabase functions deploy tenant-signup
 ```
 
-- Confirm `supabase-patch-branch-sync-rpcs.sql` has already been applied in Supabase.
+- Confirm `supabase/legacy/supabase-patch-branch-sync-rpcs.sql` has already been applied in Supabase.
 - Sign in to HealthFlow as a `super_admin`.
 
 Registration steps:

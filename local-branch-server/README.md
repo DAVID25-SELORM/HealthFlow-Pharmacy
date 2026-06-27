@@ -22,7 +22,7 @@ HealthFlow is the master platform. Dispensing, claims, NHIS, inventory, tariffs,
 Before enabling branch sync, run this SQL patch in Supabase:
 
 ```text
-supabase-patch-branch-sync-rpcs.sql
+supabase/legacy/supabase-patch-branch-sync-rpcs.sql
 ```
 
 Then register each facility branch machine from HealthFlow:

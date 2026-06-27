@@ -118,15 +118,14 @@ npm run test
 
 Use these guides for production setup:
 
-- [MULTI_TENANT_MIGRATION_GUIDE.md](MULTI_TENANT_MIGRATION_GUIDE.md)
-- [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md)
+- [Deployment and readiness](docs/DEPLOYMENT.md)
+- [Branch server guide](docs/BRANCH_SERVER_GUIDE.md)
+- [Multi-tenant migration history](docs/MULTI_TENANT_HISTORY.md)
+- [Drug import guide](docs/DRUG_IMPORT.md)
+- [Receipt printing guide](docs/RECEIPT_PRINTING.md)
 - [SUPABASE_SETUP.md](SUPABASE_SETUP.md)
-- [WINDOWS_INSTALLATION.md](WINDOWS_INSTALLATION.md)
-- [LINUX_INSTALLATION.md](LINUX_INSTALLATION.md)
-- [BRANCH_SERVER_ARCHITECTURE.md](BRANCH_SERVER_ARCHITECTURE.md)
 - [BACKUP_AND_RECOVERY.md](BACKUP_AND_RECOVERY.md)
 - [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
-- [DEPLOYMENT_CHECKLIST.md](DEPLOYMENT_CHECKLIST.md)
 
 Quick start for multi-tenant setup:
 

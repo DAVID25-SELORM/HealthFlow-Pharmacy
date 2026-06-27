@@ -46,7 +46,7 @@ VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_xxxxx
 
 If your project already has tables from an earlier setup, do not rerun the full schema blindly.
 
-1. Open `supabase-migration-2026-04-14.sql`
+1. Open `supabase/legacy/supabase-migration-2026-04-14.sql`
 2. Run it in SQL Editor
 3. This migration adds:
    - RLS policies and numeric constraints (idempotent checks)
