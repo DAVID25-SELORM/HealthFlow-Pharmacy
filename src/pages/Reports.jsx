@@ -1470,7 +1470,13 @@ const Reports = () => {
               </button>
             </div>
             {topDrugs.length === 0 ? (
-              <div className="report-empty-state">No drug utilization data found for the selected filters.</div>
+              <div className="report-empty-state">
+                {!hasGeneratedReports
+                  ? 'Click Generate Reports to load drug utilization data.'
+                  : drugSearchTerm
+                    ? `No dispensing records found for "${drugSearchTerm}" in the selected period. Try a wider date range.`
+                    : 'No drug utilization data found for the selected filters.'}
+              </div>
             ) : (
               <div className="drug-chip-list">
                 {topDrugs.map((drug, index) => (

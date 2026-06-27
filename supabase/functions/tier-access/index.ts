@@ -4991,6 +4991,36 @@ const getReportBundle = async (
     claimsQuery = claimsQuery.lte('service_date', endDate)
   }
 
+  if (drugSearchTerm.length >= 3) {
+    const drugNamePattern = `%${drugSearchTerm}%`
+    const { data: matchingDrugs } = await adminClient
+      .from('drugs')
+      .select('id')
+      .eq('organization_id', organizationId)
+      .ilike('name', drugNamePattern)
+      .limit(500)
+
+    const matchingDrugIds = (matchingDrugs || []).map((d) => normalizeText(d.id)).filter(Boolean)
+
+    if (matchingDrugIds.length > 0) {
+      const { data: matchingSaleItems } = await adminClient
+        .from('sale_items')
+        .select('sale_id')
+        .in('drug_id', matchingDrugIds)
+        .limit(reportLimit)
+
+      const matchingSaleIds = Array.from(new Set((matchingSaleItems || []).map((row) => normalizeText(row.sale_id)).filter(Boolean)))
+
+      if (matchingSaleIds.length > 0) {
+        salesQuery = salesQuery.in('id', matchingSaleIds)
+      } else {
+        salesQuery = salesQuery.in('id', ['00000000-0000-0000-0000-000000000000'])
+      }
+    } else {
+      salesQuery = salesQuery.in('id', ['00000000-0000-0000-0000-000000000000'])
+    }
+  }
+
   const [
     { data: sales, error: salesError },
     { data: claims, error: claimsError },
