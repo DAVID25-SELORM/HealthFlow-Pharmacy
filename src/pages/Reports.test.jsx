@@ -310,6 +310,35 @@ describe('Reports', () => {
     expect(screen.getAllByRole('heading', { name: 'Drug Utilization Report' }).length).toBeGreaterThan(0)
   })
 
+  it('opens the selected medicine drill down and shows unavailable tab feedback', async () => {
+    const scrollIntoView = vi.fn()
+    Element.prototype.scrollIntoView = scrollIntoView
+    const { unmount } = render(<Reports />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Generate Reports/i }))
+    await waitFor(() => expect(mocks.getReportBundle).toHaveBeenCalled())
+
+    fireEvent.change(screen.getByLabelText(/fast search drug utilization/i), {
+      target: { value: 'Amoxicillin' },
+    })
+    fireEvent.click(await screen.findByRole('button', { name: /Amoxicillin Capsules/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Open Drill Down/i }))
+
+    expect(screen.getAllByRole('heading', { name: 'Patient-Level Drug Drill Down' }).length).toBeGreaterThan(0)
+    expect(screen.getByText(/Opened the patient drill down for Amoxicillin Capsules/i)).toBeInTheDocument()
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalled())
+
+    unmount()
+    mocks.useAuth.mockReturnValue({
+      role: 'cashier',
+      displayName: 'Cashier',
+      branch: { id: 'branch-1', name: 'Main Branch' },
+    })
+    render(<Reports />)
+    fireEvent.click(screen.getByRole('tab', { name: /NHIS Claims/i }))
+    expect(screen.getByText(/NHIS Claims is not available yet.*future update/i)).toBeInTheDocument()
+  })
+
   it('does not expose the drug analytics panel to roles without analytics reports', async () => {
     mocks.useAuth.mockReturnValue({
       role: 'cashier',

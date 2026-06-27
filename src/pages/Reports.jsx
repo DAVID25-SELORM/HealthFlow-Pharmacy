@@ -997,6 +997,7 @@ const Reports = () => {
   const [hasGeneratedReports, setHasGeneratedReports] = useState(false)
   const [facilitySettings, setFacilitySettings] = useState(null)
   const lastServerDrugSearchRef = useRef('')
+  const reportOutputRef = useRef(null)
 
   const brandingSource = { ...(organization || {}), ...(facilitySettings || {}) }
   const facilityName = getFacilityName(brandingSource)
@@ -1030,11 +1031,7 @@ const Reports = () => {
     [rawReportData.headers, filteredRows]
   )
 
-  const visibleTabs = useMemo(() => {
-    const tabIds = new Set(['overview'])
-    reportCatalog.forEach((report) => tabIds.add(report.tab))
-    return REPORT_TABS.filter((tab) => tabIds.has(tab.id))
-  }, [reportCatalog])
+  const visibleTabs = REPORT_TABS
 
   const filteredReportCards = useMemo(() => {
     const reports = activeTab === 'overview'
@@ -1089,7 +1086,7 @@ const Reports = () => {
       : reportCatalog.filter((report) => report.tab === tab.id)
 
     if (tabReports.length === 0) {
-      showNotice(`${tab.label} is not available for your role or facility plan.`)
+      showNotice(`${tab.label} is not available yet for your account. It is planned for a future update.`)
       return
     }
 
@@ -1102,6 +1099,25 @@ const Reports = () => {
       showNotice(`${tab.label} is open, but no report cards match the current search.`)
     }
   }, [hasGeneratedReports, reportCatalog, searchTerm, showNotice])
+
+  const openDrugDrillDown = useCallback((drugName) => {
+    const resolvedDrug = drugName || selectedDrug || fastSearchResult?.drug
+    if (!resolvedDrug) {
+      showNotice('Select a medicine first to open its patient drill down.')
+      return
+    }
+
+    setSelectedDrug(resolvedDrug)
+    setDrugSearchTerm(resolvedDrug)
+    setActiveTab('analytics')
+    setSelectedReportId('drug-patient-drilldown')
+    showNotice(`Opened the patient drill down for ${resolvedDrug}.`)
+
+    window.requestAnimationFrame(() => {
+      reportOutputRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+      reportOutputRef.current?.focus?.({ preventScroll: true })
+    })
+  }, [fastSearchResult?.drug, selectedDrug, showNotice])
 
   const runReports = useCallback(async (nextFilters = filters) => {
     const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
@@ -1495,12 +1511,7 @@ const Reports = () => {
                     type="button"
                     key={`${drug.drug}-${index}`}
                     className={selectedDrug && matchesFilterText(drug.drug, selectedDrug) ? 'active' : ''}
-                    onClick={() => {
-                      setSelectedDrug(drug.drug)
-                      setDrugSearchTerm(drug.drug)
-                      setActiveTab('analytics')
-                      setSelectedReportId('drug-patient-drilldown')
-                    }}
+                    onClick={() => openDrugDrillDown(drug.drug)}
                   >
                     <span>{drug.drug}</span>
                     <strong>{drug.patientsServed} patients</strong>
@@ -1526,14 +1537,7 @@ const Reports = () => {
                 type="button"
                 className="btn btn-primary"
                 disabled={!fastSearchResult && !selectedDrug}
-                onClick={() => {
-                  if (!selectedDrug && fastSearchResult?.drug) {
-                    setSelectedDrug(fastSearchResult.drug)
-                    setDrugSearchTerm(fastSearchResult.drug)
-                  }
-                  setActiveTab('analytics')
-                  setSelectedReportId('drug-patient-drilldown')
-                }}
+                onClick={() => openDrugDrillDown()}
               >
                 Open Drill Down
               </button>
@@ -1669,7 +1673,7 @@ const Reports = () => {
           ))}
         </div>
 
-        <div className="report-table-card">
+        <div className="report-table-card" ref={reportOutputRef} tabIndex={-1}>
           <div className="report-table-header">
             <div>
               <h3>{selectedReport?.title || 'Report Preview'}</h3>
