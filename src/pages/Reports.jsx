@@ -989,6 +989,7 @@ const Reports = () => {
   const [searchTerm, setSearchTerm] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
   const [bundle, setBundle] = useState(null)
   const [hasGeneratedReports, setHasGeneratedReports] = useState(false)
   const [facilitySettings, setFacilitySettings] = useState(null)
@@ -1070,11 +1071,36 @@ const Reports = () => {
     }
   }
 
+  const showNotice = useCallback((message) => {
+    setNotice(message)
+  }, [])
+
+  const handleTabClick = useCallback((tab) => {
+    const tabReports = tab.id === 'overview'
+      ? reportCatalog
+      : reportCatalog.filter((report) => report.tab === tab.id)
+
+    if (tabReports.length === 0) {
+      showNotice(`${tab.label} is not available for your role or facility plan.`)
+      return
+    }
+
+    setActiveTab(tab.id)
+    setSelectedReportId(tabReports[0].id)
+
+    if (!hasGeneratedReports) {
+      showNotice(`${tab.label} is open. Click Generate Reports to load data for this tab.`)
+    } else if (searchTerm && !tabReports.some((report) => includesTerm([report.title, report.description], searchTerm))) {
+      showNotice(`${tab.label} is open, but no report cards match the current search.`)
+    }
+  }, [hasGeneratedReports, reportCatalog, searchTerm, showNotice])
+
   const runReports = useCallback(async (nextFilters = filters) => {
     const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
     try {
       setLoading(true)
       setError('')
+      setNotice('')
 
       if (!tierLimits.hasReports) {
         setBundle(null)
@@ -1107,6 +1133,13 @@ const Reports = () => {
       setLoading(false)
     }
   }, [filters, role, tierLimits.hasReports])
+
+  useEffect(() => {
+    if (!notice) return undefined
+
+    const timer = window.setTimeout(() => setNotice(''), 7000)
+    return () => window.clearTimeout(timer)
+  }, [notice])
 
   useEffect(() => {
     if (!tierLimits.hasReports) {
@@ -1266,6 +1299,7 @@ const Reports = () => {
         </div>
 
         {error && <div className="reports-alert">{error}</div>}
+        {notice && <div className="reports-notice">{notice}</div>}
 
         <div className="reports-filter-panel">
           <label>
@@ -1535,7 +1569,7 @@ const Reports = () => {
               role="tab"
               aria-selected={activeTab === tab.id}
               className={activeTab === tab.id ? 'active' : ''}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => handleTabClick(tab)}
             >
               {tab.label}
             </button>
@@ -1570,7 +1604,13 @@ const Reports = () => {
         </div>
 
         <div className="reports-grid">
-          {filteredReportCards.map((report) => (
+          {filteredReportCards.length === 0 ? (
+            <div className="reports-empty-panel">
+              {searchTerm
+                ? 'No report cards match the current search. Clear the search or choose another tab.'
+                : 'No reports are available in this tab for your role or facility plan.'}
+            </div>
+          ) : filteredReportCards.map((report) => (
             <div key={report.id} className={`report-card ${selectedReport?.id === report.id ? 'selected' : ''}`}>
               <div className="report-icon">
                 <BarChart3 size={28} />
