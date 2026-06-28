@@ -84,6 +84,10 @@ export const config = {
     30,
     toNumber(process.env.INVENTORY_PULL_INTERVAL_SECONDS, 300)
   ),
+  offlineSessionHours: Math.min(
+    24 * 30,
+    Math.max(8, toNumber(process.env.OFFLINE_SESSION_HOURS, 24 * 30))
+  ),
   rateLimit: {
     enabled: !['0', 'false', 'no', 'off'].includes(
       String(process.env.RATE_LIMIT_ENABLED || 'true').trim().toLowerCase()

@@ -1,9 +1,9 @@
 {
-  "version": "1.2.7",
-  "releaseNotes": "Production-hardens offline setup and updates with real installer progress, application and SQLite rollback, post-restart health verification, readiness checks, and automatic Node.js LTS provisioning for first-time Windows setup.",
+  "version": "1.2.8",
+  "releaseNotes": "Adds long-outage verified staff sessions and bounded-memory snapshots for historical sales, staff roles and permissions, branches, organization profile, and pharmacy settings, with duplicate-safe local reconciliation and stronger readiness checks.",
   "channel": "stable",
-  "sha256": "daead3803622908172b74fad712dcfe0c9d927f7f7c2e8623970d22a17ac194b",
-  "publishedAt": "2026-06-28T20:38:25.7536576Z",
-  "packageUrl": "https://healthflowcloud.com/branch-updates/healthflow-branch-1.2.7.zip",
-  "signature": "wOtVrZsvUJdE0Bq2NnnvoXAkMhyFFeF2TbmjELkT3zWt45583b/P4ZyEJFqg/H05rPzkGmNi/8L8xpcsGTuWDQ=="
+  "sha256": "5df99be87eeb838014c77c1dfdeb1ae54f7d7d15145ec15de431b7927b375e55",
+  "publishedAt": "2026-06-28T21:09:23.3157528Z",
+  "packageUrl": "https://healthflowcloud.com/branch-updates/healthflow-branch-1.2.8.zip",
+  "signature": "hB4uPafTIOauvtcSRQa6IZOTqcNm0fKwAKe2Cgxi/d8Q5daGDhux01RlEjKZOO1gyeErSgtQGqgqx9CvhO+cBA=="
 }

@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import { config, isSupabaseSyncConfigured } from './config.js'
-import { getDatabaseStatus } from './db.js'
+import { getBranchMeta, getDatabaseStatus } from './db.js'
 import { getSyncStatus } from './supabaseSync.js'
 import { getUpdateStatus } from './updateManager.js'
 
@@ -18,6 +18,7 @@ export const getOfflineReadiness = ({ frontendIndex }) => {
   const updates = getUpdateStatus()
   const inventoryPulledAt = sync.inventory?.lastInventoryImportAt || null
   const referencePulledAt = sync.referenceData?.lastPulledAt || null
+  const operationalPulledAt = getBranchMeta('operational_data_last_pulled_at')
 
   const checks = [
     check('server', 'Local API process', true, `HealthFlow ${updates.currentVersion} is responding.`),
@@ -56,6 +57,20 @@ export const getOfflineReadiness = ({ frontendIndex }) => {
       referencePulledAt
         ? `Last reference pull: ${referencePulledAt}`
         : 'Facility/reference data has not completed an initial cloud pull.'
+    ),
+    check(
+      'operational_snapshot',
+      'Historical sales and staff snapshot',
+      Boolean(operationalPulledAt),
+      operationalPulledAt
+        ? `Last operational snapshot: ${operationalPulledAt}`
+        : 'Historical sales, staff, and facility settings have not completed an initial pull.'
+    ),
+    check(
+      'offline_session_window',
+      'Long-outage staff session window',
+      config.offlineSessionHours >= 24 * 7,
+      `Verified staff sessions remain valid locally for ${config.offlineSessionHours} hours.`
     ),
     check(
       'signed_updates',

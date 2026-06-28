@@ -170,11 +170,9 @@ const requestBranchUserSession = async (session = null) => {
 }
 
 const getVerifiedBranchUserSession = async () => {
-  const currentSession = await getCurrentSupabaseSession()
   const savedSession = readBranchUserSession()
-  if (savedSession?.userId === currentSession.user.id) {
-    return savedSession
-  }
+  if (savedSession) return savedSession
+  const currentSession = await getCurrentSupabaseSession()
   return await requestBranchUserSession(currentSession)
 }
 

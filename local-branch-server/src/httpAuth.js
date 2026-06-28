@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { config } from './config.js'
 
 export const BRANCH_AUTH_COOKIE = 'healthflow_branch_session'
-const BRANCH_USER_SESSION_TTL_SECONDS = 8 * 60 * 60
+const BRANCH_USER_SESSION_TTL_SECONDS = config.offlineSessionHours * 60 * 60
 
 const safeTokenEquals = (actual, expected) => {
   if (!actual || !expected) {

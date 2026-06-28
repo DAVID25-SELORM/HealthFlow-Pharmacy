@@ -6,6 +6,11 @@ import { getInventoryImportStatus, importInventorySnapshot } from './inventoryRe
 import { getNhiaSummary, importNhiaConfigurationSnapshot } from './nhiaRepository.js'
 import { importOfflineRecords } from './offlineRecordsRepository.js'
 import { streamSupabasePages } from './supabasePagination.js'
+import {
+  importMetadataSnapshot,
+  importSalesSnapshot,
+  importUsersSnapshot,
+} from './cloudSnapshotRepository.js'
 
 const pendingOutbox = db.prepare(`
   SELECT *
@@ -485,13 +490,19 @@ export const pullInventorySnapshot = async ({ forceFull = false } = {}) => {
   }
 }
 
-const importAll = async (supabase, table, importer, select = '*') => {
+const importAll = async (
+  supabase,
+  table,
+  importer,
+  select = '*',
+  organizationColumn = 'organization_id'
+) => {
   let imported = 0
   await streamSupabasePages({
     createQuery: () => {
       let query = supabase.from(table).select(select)
-      if (config.organizationId) {
-        query = query.eq('organization_id', config.organizationId)
+      if (config.organizationId && organizationColumn) {
+        query = query.eq(organizationColumn, config.organizationId)
       }
       return query
     },
@@ -545,6 +556,11 @@ export const pullReferenceData = async () => {
     nhisClaims: 0,
     nhiaConfigurations: 0,
     purchases: 0,
+    sales: 0,
+    staff: 0,
+    branches: 0,
+    organizations: 0,
+    settings: 0,
   }
 
   const [
@@ -556,6 +572,11 @@ export const pullReferenceData = async () => {
     nhisClaims,
     nhiaConfigurations,
     purchases,
+    sales,
+    staff,
+    branches,
+    organizations,
+    settings,
   ] =
     await withSupabaseNetworkContext(() =>
       Promise.all([
@@ -585,6 +606,25 @@ export const pullReferenceData = async () => {
           (page) => importOfflineRecords('purchases', page),
           '*, purchase_items (*)'
         ),
+        importAll(supabase, 'sales', importSalesSnapshot, '*, sale_items (*)'),
+        importAll(supabase, 'users', importUsersSnapshot),
+        importAll(
+          supabase,
+          'branches',
+          (page) => importMetadataSnapshot('branches_snapshot', page)
+        ),
+        importAll(
+          supabase,
+          'organizations',
+          (page) => importMetadataSnapshot('organization_snapshot', page),
+          '*',
+          'id'
+        ),
+        importOptionalAll(
+          supabase,
+          'pharmacy_settings',
+          (page) => importMetadataSnapshot('pharmacy_settings_snapshot', page)
+        ),
       ])
     )
 
@@ -596,6 +636,12 @@ export const pullReferenceData = async () => {
   result.nhisClaims = nhisClaims
   result.nhiaConfigurations = nhiaConfigurations
   result.purchases = purchases
+  result.sales = sales
+  result.staff = staff
+  result.branches = branches
+  result.organizations = organizations
+  result.settings = settings
+  setBranchMeta('operational_data_last_pulled_at', result.pulledAt)
   setBranchMeta('reference_data_last_pulled_at', result.pulledAt)
 
   return result

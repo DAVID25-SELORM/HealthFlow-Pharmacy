@@ -11,6 +11,10 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT,
   full_name TEXT,
   role TEXT,
+  assigned_roles_json TEXT NOT NULL DEFAULT '[]',
+  organization_id TEXT,
+  branch_id TEXT,
+  permissions_json TEXT NOT NULL DEFAULT '{}',
   is_active INTEGER NOT NULL DEFAULT 1,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -120,6 +124,7 @@ CREATE TABLE IF NOT EXISTS sales (
 
 CREATE INDEX IF NOT EXISTS idx_sales_sync_status ON sales(sync_status);
 CREATE INDEX IF NOT EXISTS idx_sales_date ON sales(sale_date);
+CREATE INDEX IF NOT EXISTS idx_sales_branch_date ON sales(branch_id, sale_date);
 
 CREATE TABLE IF NOT EXISTS sale_items (
   id TEXT PRIMARY KEY,
