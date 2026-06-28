@@ -5,7 +5,7 @@ import { db, parseJson, nowIso } from './db.js'
 import { getInventoryImportStatus, importInventorySnapshot } from './inventoryRepository.js'
 import { getNhiaSummary, importNhiaConfigurationSnapshot } from './nhiaRepository.js'
 import { importOfflineRecords } from './offlineRecordsRepository.js'
-import { fetchSupabasePages } from './supabasePagination.js'
+import { streamSupabasePages } from './supabasePagination.js'
 
 const pendingOutbox = db.prepare(`
   SELECT *
@@ -482,8 +482,9 @@ export const pullInventorySnapshot = async ({ forceFull = false } = {}) => {
   }
 }
 
-const selectAll = async (supabase, table, select = '*') => {
-  return fetchSupabasePages({
+const importAll = async (supabase, table, importer, select = '*') => {
+  let imported = 0
+  await streamSupabasePages({
     createQuery: () => {
       let query = supabase.from(table).select(select)
       if (config.organizationId) {
@@ -491,25 +492,30 @@ const selectAll = async (supabase, table, select = '*') => {
       }
       return query
     },
+    onPage: (page) => {
+      imported += Number(importer(page)?.imported || 0)
+    },
   })
+  return imported
 }
 
-const selectOptionalAll = async (supabase, table, select = '*') => {
+const importOptionalAll = async (supabase, table, importer, select = '*') => {
   try {
-    return await selectAll(supabase, table, select)
+    return await importAll(supabase, table, importer, select)
   } catch (error) {
     if (['42P01', 'PGRST205'].includes(error?.code)) {
-      return []
+      return 0
     }
     throw error
   }
 }
 
-const selectNhisClaims = async (supabase) => {
+const importNhisClaims = async (supabase) => {
   const selectWithServices = '*, nhis_claim_medicines (*), nhis_claim_services (*)'
+  const importer = (page) => importOfflineRecords('nhis_claims', page)
 
   try {
-    return await selectAll(supabase, 'nhis_claims', selectWithServices)
+    return await importAll(supabase, 'nhis_claims', importer, selectWithServices)
   } catch (error) {
     const message = String(error?.message || '')
     const missingServicesRelation =
@@ -520,7 +526,7 @@ const selectNhisClaims = async (supabase) => {
       throw error
     }
 
-    return selectAll(supabase, 'nhis_claims', '*, nhis_claim_medicines (*)')
+    return importAll(supabase, 'nhis_claims', importer, '*, nhis_claim_medicines (*)')
   }
 }
 
@@ -538,28 +544,55 @@ export const pullReferenceData = async () => {
     purchases: 0,
   }
 
-  const [patients, suppliers, claims, nhisDrugs, nhisClinicalRules, nhisClaims, nhiaConfigurations, purchases] =
+  const [
+    patients,
+    suppliers,
+    claims,
+    nhisDrugs,
+    nhisClinicalRules,
+    nhisClaims,
+    nhiaConfigurations,
+    purchases,
+  ] =
     await withSupabaseNetworkContext(() =>
       Promise.all([
-        selectAll(supabase, 'patients'),
-        selectAll(supabase, 'suppliers'),
-        selectAll(supabase, 'claims', '*, claim_items (*)'),
-        selectAll(supabase, 'nhis_drugs'),
-        selectOptionalAll(supabase, 'nhis_clinical_rules'),
-        selectNhisClaims(supabase),
-        selectOptionalAll(supabase, 'nhia_configuration'),
-        selectAll(supabase, 'purchases', '*, purchase_items (*)'),
+        importAll(supabase, 'patients', (page) => importOfflineRecords('patients', page)),
+        importAll(supabase, 'suppliers', (page) => importOfflineRecords('suppliers', page)),
+        importAll(
+          supabase,
+          'claims',
+          (page) => importOfflineRecords('claims', page),
+          '*, claim_items (*)'
+        ),
+        importAll(supabase, 'nhis_drugs', (page) => importOfflineRecords('nhis_drugs', page)),
+        importOptionalAll(
+          supabase,
+          'nhis_clinical_rules',
+          (page) => importOfflineRecords('nhis_clinical_rules', page)
+        ),
+        importNhisClaims(supabase),
+        importOptionalAll(
+          supabase,
+          'nhia_configuration',
+          importNhiaConfigurationSnapshot
+        ),
+        importAll(
+          supabase,
+          'purchases',
+          (page) => importOfflineRecords('purchases', page),
+          '*, purchase_items (*)'
+        ),
       ])
     )
 
-  result.patients = importOfflineRecords('patients', patients).imported
-  result.suppliers = importOfflineRecords('suppliers', suppliers).imported
-  result.claims = importOfflineRecords('claims', claims).imported
-  result.nhisDrugs = importOfflineRecords('nhis_drugs', nhisDrugs).imported
-  result.nhisClinicalRules = importOfflineRecords('nhis_clinical_rules', nhisClinicalRules).imported
-  result.nhisClaims = importOfflineRecords('nhis_claims', nhisClaims).imported
-  result.nhiaConfigurations = importNhiaConfigurationSnapshot(nhiaConfigurations).imported
-  result.purchases = importOfflineRecords('purchases', purchases).imported
+  result.patients = patients
+  result.suppliers = suppliers
+  result.claims = claims
+  result.nhisDrugs = nhisDrugs
+  result.nhisClinicalRules = nhisClinicalRules
+  result.nhisClaims = nhisClaims
+  result.nhiaConfigurations = nhiaConfigurations
+  result.purchases = purchases
 
   return result
 }

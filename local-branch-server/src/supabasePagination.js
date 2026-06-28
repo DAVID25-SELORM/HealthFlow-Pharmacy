@@ -1,31 +1,45 @@
 export const DEFAULT_SUPABASE_PAGE_SIZE = 1000
-export const DEFAULT_SUPABASE_MAX_ROWS = 20000
 
-export const fetchSupabasePages = async ({
+export const streamSupabasePages = async ({
   createQuery,
+  onPage,
   pageSize = DEFAULT_SUPABASE_PAGE_SIZE,
-  maxRows = DEFAULT_SUPABASE_MAX_ROWS,
 }) => {
   const normalizedPageSize = Math.max(1, Math.floor(Number(pageSize) || DEFAULT_SUPABASE_PAGE_SIZE))
-  const normalizedMaxRows = Math.max(1, Math.floor(Number(maxRows) || DEFAULT_SUPABASE_MAX_ROWS))
-  const rows = []
+  let cursor = null
+  let total = 0
+  let pages = 0
 
-  while (rows.length < normalizedMaxRows) {
-    const from = rows.length
-    const requested = Math.min(normalizedPageSize, normalizedMaxRows - from)
-    const { data, error } = await createQuery().range(from, from + requested - 1)
+  while (true) {
+    let query = createQuery().order('id', { ascending: true }).limit(normalizedPageSize)
+    if (cursor) {
+      query = query.gt('id', cursor)
+    }
 
+    const { data, error } = await query
     if (error) {
       throw error
     }
 
     const page = data || []
-    rows.push(...page)
+    if (!page.length) {
+      break
+    }
 
-    if (page.length < requested) {
+    const nextCursor = page.at(-1)?.id
+    if (!nextCursor || nextCursor === cursor) {
+      throw new Error('Supabase pagination requires a unique, non-empty id on every row.')
+    }
+
+    await onPage(page)
+    total += page.length
+    pages += 1
+    cursor = nextCursor
+
+    if (page.length < normalizedPageSize) {
       break
     }
   }
 
-  return rows
+  return { total, pages, cursor }
 }
