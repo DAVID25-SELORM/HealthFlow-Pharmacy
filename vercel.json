@@ -102,7 +102,7 @@
       "destination": "/api/json-api"
     },
     {
-      "source": "/((?!.*\\.).*)",
+      "source": "/((?!api(?:/|$)|hms-api(?:/|$)|json-api(?:/|$)|.*\\.).*)",
       "destination": "/index.html"
     }
   ]

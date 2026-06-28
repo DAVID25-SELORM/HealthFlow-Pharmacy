@@ -57,8 +57,8 @@ const fetchPage = async (label, url) => {
 }
 
 await fetchPage('HealthFlow Cloud', appUrl)
-await fetchJson('Claim bridge', `${appUrl}/api/json-api/health`, { optional: true })
-await fetchJson('HMS API', `${appUrl}/api/hms-api/health`, { optional: true })
+await fetchJson('Claim bridge', `${appUrl}/api/json-api/health`)
+await fetchJson('HMS API', `${appUrl}/api/hms-api/health`)
 await fetchJson('Branch update manifest', `${appUrl}/branch-updates/manifest.json`)
 
 const publishableKey =
