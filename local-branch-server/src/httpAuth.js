@@ -105,7 +105,7 @@ const getStaffAuthorizationProfile = async (client, userId) => {
       .maybeSingle()
 
   const result = await runQuery(
-    'id, role, assigned_roles, organization_id, branch_id, is_active, can_manage_claims, can_delete_nhis_claims'
+    'id, email, full_name, role, assigned_roles, organization_id, branch_id, is_active, can_manage_claims, can_delete_nhis_claims, can_refund, can_manage_purchases, can_approve_purchases, can_view_reports, can_view_activity_log'
   )
 
   if (!result.error || !isMissingUserPrivilegeColumn(result.error)) {
@@ -113,7 +113,7 @@ const getStaffAuthorizationProfile = async (client, userId) => {
   }
 
   const legacyResult = await runQuery(
-    'id, role, organization_id, branch_id, is_active, can_manage_claims'
+    'id, email, full_name, role, organization_id, branch_id, is_active, can_manage_claims'
   )
 
   return {
@@ -130,16 +130,7 @@ const getStaffAuthorizationProfile = async (client, userId) => {
   }
 }
 
-export const issueBranchUserSession = async ({ accessToken, activeRole }) => {
-  const client = getIdentityClient()
-  const { data: userData, error: userError } = await client.auth.getUser(accessToken)
-  if (userError || !userData?.user?.id) {
-    throw new Error('Unable to verify the signed-in staff member.')
-  }
-
-  const { data: profile, error: profileError } = await getStaffAuthorizationProfile(client, userData.user.id)
-
-  if (profileError) throw profileError
+const createBranchUserSession = (profile, activeRole, { offline = false } = {}) => {
   if (!profile || profile.is_active === false) {
     throw new Error('This staff account is disabled or unavailable.')
   }
@@ -151,9 +142,11 @@ export const issueBranchUserSession = async ({ accessToken, activeRole }) => {
   }
 
   const primaryRole = String(profile.role || '').trim().toLowerCase()
+  const cachedAssignedRoles = Array.isArray(profile.assignedRoles) ? profile.assignedRoles : []
   const assignedRoles = [...new Set([
     primaryRole,
     ...(Array.isArray(profile.assigned_roles) ? profile.assigned_roles : []),
+    ...cachedAssignedRoles,
   ].map((role) => String(role || '').trim().toLowerCase()).filter(Boolean))]
   const selectedRole = String(activeRole || primaryRole).trim().toLowerCase()
   if (!assignedRoles.includes(selectedRole)) {
@@ -169,6 +162,7 @@ export const issueBranchUserSession = async ({ accessToken, activeRole }) => {
     assignedRoles,
     canManageClaims: Boolean(profile.can_manage_claims),
     canDeleteNhisClaims: Boolean(profile.can_delete_nhis_claims),
+    offline,
     expiresAt,
   }
   const payloadPart = encodeSessionPart(payload)
@@ -178,8 +172,47 @@ export const issueBranchUserSession = async ({ accessToken, activeRole }) => {
     expiresAt,
     role: selectedRole,
     userId: profile.id,
+    offline,
+    user: {
+      id: profile.id,
+      email: profile.email || '',
+      fullName: profile.full_name || profile.fullName || profile.email || 'Staff member',
+    },
+    profile: {
+      id: profile.id,
+      email: profile.email || '',
+      full_name: profile.full_name || profile.fullName || profile.email || 'Staff member',
+      role: primaryRole,
+      assigned_roles: assignedRoles,
+      organization_id: profile.organization_id || profile.organizationId || '',
+      branch_id: profile.branch_id || profile.branchId || '',
+      is_active: profile.is_active !== false && profile.isActive !== false,
+      ...(profile.permissions || {}),
+    },
   }
 }
+
+export const issueBranchUserSession = async ({ accessToken, activeRole }) => {
+  const client = getIdentityClient()
+  const { data: userData, error: userError } = await client.auth.getUser(accessToken)
+  if (userError || !userData?.user?.id) {
+    throw new Error('Unable to verify the signed-in staff member.')
+  }
+
+  const { data: profile, error: profileError } = await getStaffAuthorizationProfile(client, userData.user.id)
+  if (profileError) throw profileError
+  return createBranchUserSession(profile, activeRole)
+}
+
+export const issueOfflineBranchUserSession = (profile, activeRole) =>
+  createBranchUserSession({
+    ...profile,
+    ...(profile.permissions || {}),
+    organization_id: profile.organizationId,
+    branch_id: profile.branchId,
+    assigned_roles: profile.assignedRoles,
+    is_active: profile.isActive,
+  }, activeRole, { offline: true })
 
 export const requireBranchUserSession = (request, response, next) => {
   const session = parseSignedSession(request.get('x-branch-user-session'))

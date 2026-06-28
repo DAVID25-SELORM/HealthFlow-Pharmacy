@@ -138,6 +138,17 @@ const readBranchUserSession = () => {
   }
 }
 
+export const getSavedOfflineStaffSession = () => {
+  const session = readBranchUserSession()
+  return session?.offline ? session : null
+}
+
+export const clearSavedBranchUserSession = () => {
+  if (typeof window !== 'undefined') {
+    window.localStorage.removeItem(BRANCH_USER_SESSION_STORAGE_KEY)
+  }
+}
+
 const getCurrentSupabaseSession = async () => {
   if (!supabase) {
     throw new Error('A verified staff session is required for local NHIS changes.')
@@ -343,6 +354,60 @@ export const waitForBranchUpdateCompletion = async ({
       lastStatus?.message ||
       'Timed out waiting for the branch update to complete.'
   )
+}
+
+export const signInToBranchOffline = async ({ email, pin, activeRole = '' }) => {
+  const response = await branchFetch('/api/auth/offline-login', {
+    method: 'POST',
+    body: JSON.stringify({ email, pin, activeRole }),
+  })
+  if (!response?.data?.token) {
+    throw new Error('The branch server did not return an offline staff session.')
+  }
+  window.localStorage.setItem(BRANCH_USER_SESSION_STORAGE_KEY, JSON.stringify(response.data))
+  return response.data
+}
+
+export const enrollBranchOfflinePin = async (pin) => {
+  const session = await getCurrentSupabaseSession()
+  const response = await branchFetch('/api/auth/offline-pin/enroll', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${session.access_token}` },
+    body: JSON.stringify({ pin, activeRole: getStoredActiveRole() }),
+  })
+  return response.data || response
+}
+
+export const listBranchOfflineAccess = async () => {
+  const response = await branchFetch('/api/auth/offline-access', {
+    requireUserSession: true,
+  })
+  return response.data || []
+}
+
+export const updateBranchOfflineAccess = async (userId, enabled) => {
+  const response = await branchFetch(`/api/auth/offline-access/${encodeURIComponent(userId)}`, {
+    method: 'PATCH',
+    requireUserSession: true,
+    body: JSON.stringify({ enabled }),
+  })
+  return response.data || response
+}
+
+export const resetBranchOfflinePin = async (userId) => {
+  const response = await branchFetch(`/api/auth/offline-access/${encodeURIComponent(userId)}/reset`, {
+    method: 'POST',
+    requireUserSession: true,
+    body: JSON.stringify({}),
+  })
+  return response.data || response
+}
+
+export const listBranchOfflineAuthAudit = async (limit = 100) => {
+  const response = await branchFetch(`/api/auth/offline-audit?limit=${encodeURIComponent(limit)}`, {
+    requireUserSession: true,
+  })
+  return response.data || []
 }
 
 export const searchBranchInventory = async ({ term = '', limit = 30 } = {}) => {

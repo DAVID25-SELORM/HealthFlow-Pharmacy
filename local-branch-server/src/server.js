@@ -10,9 +10,18 @@ import { applyNhisCatalogPricing } from './nhisCatalogPricing.js'
 import {
   getBranchAuthCookie,
   issueBranchUserSession,
+  issueOfflineBranchUserSession,
   requireBranchToken,
   requireBranchUserSession,
 } from './httpAuth.js'
+import {
+  authenticateOfflinePin,
+  enrollOfflinePin,
+  listOfflineAccessUsers,
+  listOfflineAuthAudit,
+  resetOfflinePin,
+  setOfflineAccess,
+} from './offlineAuthRepository.js'
 import {
   BRANCH_JSON_BODY_LIMIT,
   getBranchRequestErrorResponse,
@@ -360,7 +369,7 @@ const requireBranchClaimsAccess = (request, response, next) => {
 
 const requireBranchAdminAccess = (request, response, next) => {
   if (!['admin', 'super_admin'].includes(String(request.branchUser?.role || '').toLowerCase())) {
-    response.status(403).json({ error: 'Only an administrator can change NHIA settings.' })
+    response.status(403).json({ error: 'Only an administrator can perform this action.' })
     return
   }
   next()
@@ -384,6 +393,106 @@ app.post('/api/auth/user-session', async (request, response, next) => {
     next(error)
   }
 })
+
+app.post('/api/auth/offline-pin/enroll', async (request, response, next) => {
+  try {
+    const authorization = String(request.get('Authorization') || '')
+    const accessToken = authorization.replace(/^Bearer\s+/i, '').trim()
+    if (!accessToken) {
+      response.status(401).json({ error: 'Online staff verification is required to enroll an offline PIN.' })
+      return
+    }
+    const verified = await issueBranchUserSession({
+      accessToken,
+      activeRole: request.body?.activeRole,
+    })
+    response.json({
+      data: enrollOfflinePin({
+        userId: verified.userId,
+        pin: request.body?.pin,
+        ipAddress: request.ip,
+      }),
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.post('/api/auth/offline-login', (request, response, next) => {
+  try {
+    const user = authenticateOfflinePin({
+      email: request.body?.email,
+      pin: request.body?.pin,
+      ipAddress: request.ip,
+    })
+    response.json({
+      data: {
+        ...issueOfflineBranchUserSession(user, request.body?.activeRole),
+        organization: user.organization,
+        branch: user.branch,
+      },
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.get(
+  '/api/auth/offline-access',
+  requireBranchUserSession,
+  requireBranchAdminAccess,
+  (_request, response) => {
+    response.json({ data: listOfflineAccessUsers() })
+  }
+)
+
+app.patch(
+  '/api/auth/offline-access/:userId',
+  requireBranchUserSession,
+  requireBranchAdminAccess,
+  (request, response, next) => {
+    try {
+      response.json({
+        data: setOfflineAccess({
+          targetUserId: request.params.userId,
+          enabled: request.body?.enabled === true,
+          actorUserId: request.branchUser.userId,
+          ipAddress: request.ip,
+        }),
+      })
+    } catch (error) {
+      next(error)
+    }
+  }
+)
+
+app.post(
+  '/api/auth/offline-access/:userId/reset',
+  requireBranchUserSession,
+  requireBranchAdminAccess,
+  (request, response, next) => {
+    try {
+      response.json({
+        data: resetOfflinePin({
+          targetUserId: request.params.userId,
+          actorUserId: request.branchUser.userId,
+          ipAddress: request.ip,
+        }),
+      })
+    } catch (error) {
+      next(error)
+    }
+  }
+)
+
+app.get(
+  '/api/auth/offline-audit',
+  requireBranchUserSession,
+  requireBranchAdminAccess,
+  (request, response) => {
+    response.json({ data: listOfflineAuthAudit(request.query.limit) })
+  }
+)
 
 app.get('/api/database/status', (_request, response, next) => {
   try {

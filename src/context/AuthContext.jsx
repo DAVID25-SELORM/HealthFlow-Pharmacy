@@ -22,6 +22,11 @@ import {
   normalizeAssignedRoles,
 } from '../utils/roles'
 import { storeActiveRole } from '../utils/activeRole'
+import {
+  clearSavedBranchUserSession,
+  getSavedOfflineStaffSession,
+  signInToBranchOffline,
+} from '../services/branchServerApi'
 
 const AuthContext = createContext(null)
 const FALLBACK_ROLE = 'assistant'
@@ -267,6 +272,32 @@ export const AuthProvider = ({ children }) => {
       setLoading(value)
     }
 
+    const restoreOfflineAuth = () => {
+      const offlineSession = getSavedOfflineStaffSession()
+      if (!offlineSession?.user?.id || !offlineSession?.profile?.id) return false
+      sessionRef.current = offlineSession
+      setSession(offlineSession)
+      setUser({
+        id: offlineSession.user.id,
+        email: offlineSession.user.email,
+        user_metadata: { full_name: offlineSession.user.fullName },
+      })
+      setProfile(offlineSession.profile)
+      setOrganization(offlineSession.organization || (
+        offlineSession.profile.organization_id
+          ? { id: offlineSession.profile.organization_id }
+          : null
+      ))
+      setBranch(offlineSession.branch || (
+        offlineSession.profile.branch_id
+          ? { id: offlineSession.profile.branch_id }
+          : null
+      ))
+      setActiveRoleState(offlineSession.role || offlineSession.profile.role || FALLBACK_ROLE)
+      setLoading(false)
+      return true
+    }
+
     const clearAuthState = (resolutionId) => {
       if (!isCurrentResolution(resolutionId)) {
         return
@@ -383,7 +414,9 @@ export const AuthProvider = ({ children }) => {
       handledInvalidSession = true
       console.warn('Clearing invalid Supabase session.', reason)
       clearSupabaseStoredSession()
-      clearAuthState(resolutionId)
+      if (!restoreOfflineAuth()) {
+        clearAuthState(resolutionId)
+      }
     }
 
     const fetchProfile = async (activeUser) => {
@@ -435,7 +468,9 @@ export const AuthProvider = ({ children }) => {
         return
       }
 
-      clearAuthState(resolutionId)
+      if (!restoreOfflineAuth()) {
+        clearAuthState(resolutionId)
+      }
     }
 
     const resolveSessionState = async (activeSession, options = {}) => {
@@ -602,12 +637,14 @@ export const AuthProvider = ({ children }) => {
     const bootstrap = async () => {
       if (!isSupabaseConfigured()) {
         if (mounted) {
-          sessionRef.current = null
-          setSession(null)
-          setUser(null)
-          setProfile(null)
-          setOrganization(null)
-          setLoading(false)
+          if (!restoreOfflineAuth()) {
+            sessionRef.current = null
+            setSession(null)
+            setUser(null)
+            setProfile(null)
+            setOrganization(null)
+            setLoading(false)
+          }
         }
         return
       }
@@ -666,7 +703,35 @@ export const AuthProvider = ({ children }) => {
     }
   }
 
+  const signInOffline = async (email, pin) => {
+    const offlineSession = await signInToBranchOffline({
+      email: email.trim(),
+      pin,
+    })
+    sessionRef.current = offlineSession
+    setSession(offlineSession)
+    setUser({
+      id: offlineSession.user.id,
+      email: offlineSession.user.email,
+      user_metadata: { full_name: offlineSession.user.fullName },
+    })
+    setProfile(offlineSession.profile)
+    setOrganization(offlineSession.organization || null)
+    setBranch(offlineSession.branch || null)
+    setActiveRoleState(offlineSession.role || offlineSession.profile.role || FALLBACK_ROLE)
+  }
+
   const signOut = async () => {
+    clearSavedBranchUserSession()
+    if (session?.offline) {
+      sessionRef.current = null
+      setSession(null)
+      setUser(null)
+      setProfile(null)
+      setOrganization(null)
+      setBranch(null)
+      return
+    }
     if (!isSupabaseConfigured()) {
       return
     }
@@ -803,6 +868,7 @@ export const AuthProvider = ({ children }) => {
           Boolean(profile?.can_delete_nhis_claims)
         ),
       signIn,
+      signInOffline,
       signOut,
       requestPasswordReset,
       updatePassword,

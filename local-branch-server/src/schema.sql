@@ -15,9 +15,31 @@ CREATE TABLE IF NOT EXISTS users (
   organization_id TEXT,
   branch_id TEXT,
   permissions_json TEXT NOT NULL DEFAULT '{}',
+  offline_access_enabled INTEGER NOT NULL DEFAULT 0,
+  offline_pin_salt TEXT,
+  offline_pin_hash TEXT,
+  offline_pin_updated_at TEXT,
+  offline_failed_attempts INTEGER NOT NULL DEFAULT 0,
+  offline_locked_until TEXT,
   is_active INTEGER NOT NULL DEFAULT 1,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS local_audit_logs (
+  id TEXT PRIMARY KEY,
+  event_type TEXT NOT NULL,
+  actor_user_id TEXT,
+  target_user_id TEXT,
+  success INTEGER NOT NULL,
+  detail TEXT,
+  ip_address TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_local_audit_logs_created
+  ON local_audit_logs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_local_audit_logs_target
+  ON local_audit_logs(target_user_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS patients (
   id TEXT PRIMARY KEY,

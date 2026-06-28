@@ -356,6 +356,44 @@
   white-space: nowrap;
 }
 
+.offline-pin-enrollment {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+  gap: 0.75rem;
+  align-items: end;
+  margin: 1rem 0 0.65rem;
+}
+
+.offline-audit-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 1.25rem;
+}
+
+.offline-audit-list {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.offline-audit-row {
+  display: grid;
+  grid-template-columns: auto minmax(130px, 1fr) auto minmax(0, 2fr);
+  gap: 0.65rem;
+  align-items: center;
+  padding: 0.6rem 0;
+  border-top: 1px solid var(--gray-200);
+}
+
+@media (max-width: 760px) {
+  .offline-pin-enrollment,
+  .offline-audit-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 .user-privilege-list {
   display: flex;
   flex-wrap: wrap;

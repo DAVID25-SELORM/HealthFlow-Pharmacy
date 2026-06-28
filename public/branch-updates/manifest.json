@@ -1,9 +1,9 @@
 {
-  "version": "1.2.8",
-  "releaseNotes": "Adds long-outage verified staff sessions and bounded-memory snapshots for historical sales, staff roles and permissions, branches, organization profile, and pharmacy settings, with duplicate-safe local reconciliation and stronger readiness checks.",
+  "version": "1.2.9",
+  "releaseNotes": "Adds facility-wide offline staff PIN sign-in through the Local Branch Server, with salted scrypt verification, centralized administrator enable/reset/revoke controls, five-attempt lockout, local audit logging, and enforcement of synchronized staff roles and privileges. Cloud passwords are never stored locally.",
   "channel": "stable",
-  "sha256": "5df99be87eeb838014c77c1dfdeb1ae54f7d7d15145ec15de431b7927b375e55",
-  "publishedAt": "2026-06-28T21:09:23.3157528Z",
-  "packageUrl": "https://healthflowcloud.com/branch-updates/healthflow-branch-1.2.8.zip",
-  "signature": "hB4uPafTIOauvtcSRQa6IZOTqcNm0fKwAKe2Cgxi/d8Q5daGDhux01RlEjKZOO1gyeErSgtQGqgqx9CvhO+cBA=="
+  "sha256": "643d666800180c28a9ccf83dd9ce06c39b0ef606e62eea2de489bb22c087f0e7",
+  "publishedAt": "2026-06-28T21:59:30.7622552Z",
+  "packageUrl": "https://healthflowcloud.com/branch-updates/healthflow-branch-1.2.9.zip",
+  "signature": "9lTWTJPufkhZQ+D8VzuCkQekZUGwFUDPO2gvLAkXleefNYgDRmXYoYRUA3PPeEI659GlEryddP76Lfff666oCw=="
 }

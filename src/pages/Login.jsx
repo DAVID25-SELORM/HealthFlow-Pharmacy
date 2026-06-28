@@ -5,6 +5,7 @@ import { ArrowRight, Lock, Mail, ShoppingBag } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
+import { isBranchServerEnabled } from '../services/branchServerApi'
 import './Login.css'
 
 const LOGIN_BUILD_STAMP = 'HF-2026-06-08-branch-sync-v1'
@@ -42,7 +43,7 @@ const getRecoveryLinkError = () => {
 }
 
 const Login = () => {
-  const { signIn, signOut, requestPasswordReset, updatePassword, isAuthenticated, isConfigured, loading } = useAuth()
+  const { signIn, signInOffline, signOut, requestPasswordReset, updatePassword, isAuthenticated, isConfigured, loading } = useAuth()
   const { notify } = useNotification()
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
@@ -53,6 +54,7 @@ const Login = () => {
   const [mode, setMode] = useState(() =>
     getRecoveryLinkError() ? 'reset' : hasRecoveryHint() ? 'new-password' : 'sign-in'
   )
+  const offlineAvailable = isBranchServerEnabled()
 
   if (isAuthenticated && mode !== 'new-password') {
     return <Navigate to="/dashboard" replace />
@@ -107,11 +109,19 @@ const Login = () => {
       }
 
       if (!email.trim() || !password.trim()) {
-        setError('Email and password are required.')
+        setError(mode === 'offline' ? 'Email and offline PIN are required.' : 'Email and password are required.')
         return
       }
 
-      await signIn(email, password)
+      if (mode === 'offline') {
+        if (!/^\d{6,12}$/.test(password)) {
+          setError('Offline PIN must contain 6 to 12 digits.')
+          return
+        }
+        await signInOffline(email, password)
+      } else {
+        await signIn(email, password)
+      }
     } catch (authError) {
       setError(authError.message || 'Unable to sign in. Please check your credentials.')
     } finally {
@@ -145,7 +155,7 @@ const Login = () => {
         </p>
         <p className="login-build-stamp">Build {LOGIN_BUILD_STAMP}</p>
 
-        {!isConfigured && (
+        {!isConfigured && mode !== 'offline' && (
           <div className="login-alert">Supabase credentials are not configured in your .env file.</div>
         )}
 
@@ -175,15 +185,16 @@ const Login = () => {
 
           {mode !== 'reset' && (
             <label>
-              {mode === 'new-password' ? 'New Password' : 'Password'}
+              {mode === 'new-password' ? 'New Password' : mode === 'offline' ? 'Offline PIN' : 'Password'}
               <div className="input-wrap">
                 <Lock size={16} />
                 <input
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder={mode === 'new-password' ? 'Enter new password' : 'Enter password'}
-                  autoComplete={mode === 'new-password' ? 'new-password' : 'current-password'}
+                  placeholder={mode === 'new-password' ? 'Enter new password' : mode === 'offline' ? 'Enter your device PIN' : 'Enter password'}
+                  autoComplete={mode === 'new-password' ? 'new-password' : mode === 'offline' ? 'one-time-code' : 'current-password'}
+                  inputMode={mode === 'offline' ? 'numeric' : undefined}
                   required
                 />
               </div>
@@ -209,7 +220,7 @@ const Login = () => {
 
           <button
             type="submit"
-            disabled={submitting || !isConfigured || (mode === 'new-password' && loading)}
+            disabled={submitting || (mode !== 'offline' && !isConfigured) || (mode === 'new-password' && loading)}
           >
             {submitting
               ? 'Please wait...'
@@ -217,10 +228,12 @@ const Login = () => {
                 ? 'Send Password Reset Link'
                 : mode === 'new-password'
                   ? 'Update Password'
-                  : 'Sign in'}
+                  : mode === 'offline'
+                    ? 'Sign in offline'
+                    : 'Sign in'}
           </button>
 
-          {mode !== 'new-password' && (
+          {mode !== 'new-password' && mode !== 'offline' && (
             <button
               type="button"
               className="text-btn"
@@ -230,6 +243,32 @@ const Login = () => {
               }}
             >
               {mode === 'sign-in' ? 'Forgot password?' : 'Back to sign in'}
+            </button>
+          )}
+          {mode === 'sign-in' && offlineAvailable && (
+            <button
+              type="button"
+              className="text-btn"
+              onClick={() => {
+                setError('')
+                setPassword('')
+                setMode('offline')
+              }}
+            >
+              Sign in with offline PIN
+            </button>
+          )}
+          {mode === 'offline' && (
+            <button
+              type="button"
+              className="text-btn"
+              onClick={() => {
+                setError('')
+                setPassword('')
+                setMode('sign-in')
+              }}
+            >
+              Back to online sign in
             </button>
           )}
         </form>

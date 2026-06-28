@@ -16,8 +16,13 @@ import {
   downloadBranchDatabaseBackup,
   getBranchDatabaseStatus,
   getSavedBranchToken,
+  enrollBranchOfflinePin,
+  listBranchOfflineAccess,
+  listBranchOfflineAuthAudit,
+  resetBranchOfflinePin,
   saveBranchToken,
   testNhiaConfiguration as testBranchNhiaConfiguration,
+  updateBranchOfflineAccess,
 } from '../services/branchServerApi'
 import { updateOrganization, getOrganizationStats } from '../services/organizationService'
 import { buildClaimItConfigPreview, getNhiaApiSettings, removeNhiaApiCredentials, saveNhiaApiSettings, testClaimItConnection, validateNhiaConfigForMode } from '../services/nhisService'
@@ -551,6 +556,13 @@ const Settings = () => {
   const [creatingStaff, setCreatingStaff] = useState(false)
   const [editingStaff, setEditingStaff] = useState(null)
   const [savingStaff, setSavingStaff] = useState(false)
+  const [offlineAccessUsers, setOfflineAccessUsers] = useState([])
+  const [offlineAudit, setOfflineAudit] = useState([])
+  const [offlinePin, setOfflinePin] = useState('')
+  const [offlinePinConfirm, setOfflinePinConfirm] = useState('')
+  const [offlinePinSaving, setOfflinePinSaving] = useState(false)
+  const [offlineAccessLoading, setOfflineAccessLoading] = useState(false)
+  const [offlineAccessAction, setOfflineAccessAction] = useState('')
   const [error, setError] = useState('')
 
   // Branch state
@@ -595,8 +607,80 @@ const Settings = () => {
       void loadDatabaseStatus({ silent: true })
       void loadOnlineBackups({ silent: true })
       void loadPaymentSettings({ silent: true })
+      void loadOfflineAccess({ silent: true })
     }
   }, [isAdmin])
+
+  const loadOfflineAccess = async ({ silent = false } = {}) => {
+    try {
+      setOfflineAccessLoading(true)
+      const [access, audit] = await Promise.all([
+        listBranchOfflineAccess(),
+        listBranchOfflineAuthAudit(50),
+      ])
+      setOfflineAccessUsers(access)
+      setOfflineAudit(audit)
+    } catch (offlineError) {
+      if (!silent) {
+        notify(offlineError.message || 'Unable to load offline PIN access.', 'error')
+      }
+    } finally {
+      setOfflineAccessLoading(false)
+    }
+  }
+
+  const handleEnrollOfflinePin = async (event) => {
+    event.preventDefault()
+    if (!/^\d{6,12}$/.test(offlinePin)) {
+      notify('Offline PIN must contain 6 to 12 digits.', 'error')
+      return
+    }
+    if (offlinePin !== offlinePinConfirm) {
+      notify('Offline PIN entries do not match.', 'error')
+      return
+    }
+    try {
+      setOfflinePinSaving(true)
+      await enrollBranchOfflinePin(offlinePin)
+      setOfflinePin('')
+      setOfflinePinConfirm('')
+      notify('Offline PIN enrolled on this facility server.', 'success')
+      if (isAdmin) await loadOfflineAccess({ silent: true })
+    } catch (offlineError) {
+      notify(offlineError.message || 'Unable to enroll offline PIN.', 'error')
+    } finally {
+      setOfflinePinSaving(false)
+    }
+  }
+
+  const handleOfflineAccessToggle = async (staff, enabled) => {
+    const action = enabled ? 'enable' : 'revoke'
+    if (!enabled && !window.confirm(`Revoke offline PIN access for ${staff.fullName || staff.email}?`)) return
+    try {
+      setOfflineAccessAction(`${staff.id}:${action}`)
+      await updateBranchOfflineAccess(staff.id, enabled)
+      notify(`Offline PIN access ${enabled ? 'enabled' : 'revoked'}.`, 'success')
+      await loadOfflineAccess({ silent: true })
+    } catch (offlineError) {
+      notify(offlineError.message || `Unable to ${action} offline PIN access.`, 'error')
+    } finally {
+      setOfflineAccessAction('')
+    }
+  }
+
+  const handleOfflinePinReset = async (staff) => {
+    if (!window.confirm(`Reset the offline PIN for ${staff.fullName || staff.email}? They must enroll a new PIN while online.`)) return
+    try {
+      setOfflineAccessAction(`${staff.id}:reset`)
+      await resetBranchOfflinePin(staff.id)
+      notify('Offline PIN reset. The staff member must enroll again while online.', 'success')
+      await loadOfflineAccess({ silent: true })
+    } catch (offlineError) {
+      notify(offlineError.message || 'Unable to reset offline PIN.', 'error')
+    } finally {
+      setOfflineAccessAction('')
+    }
+  }
 
   const loadSettings = async () => {
     try {
@@ -3034,6 +3118,54 @@ const Settings = () => {
           </div>
         )}
 
+        <div className="settings-card settings-offline-pin-card">
+          <div className="card-icon">
+            <KeyRound size={24} />
+          </div>
+          <h3>My Offline PIN</h3>
+          <p>
+            Enroll one facility offline PIN for branch-server sign-in during an internet outage.
+            It works from every authorized computer connected to this facility server.
+            Your cloud password is never copied or stored locally.
+          </p>
+          <form className="offline-pin-enrollment" onSubmit={handleEnrollOfflinePin}>
+            <label className="settings-field">
+              <span>New offline PIN</span>
+              <input
+                type="password"
+                inputMode="numeric"
+                autoComplete="new-password"
+                minLength={6}
+                maxLength={12}
+                pattern="[0-9]{6,12}"
+                value={offlinePin}
+                onChange={(event) => setOfflinePin(event.target.value.replace(/\D/g, '').slice(0, 12))}
+                placeholder="6 to 12 digits"
+                required
+              />
+            </label>
+            <label className="settings-field">
+              <span>Confirm offline PIN</span>
+              <input
+                type="password"
+                inputMode="numeric"
+                autoComplete="new-password"
+                minLength={6}
+                maxLength={12}
+                pattern="[0-9]{6,12}"
+                value={offlinePinConfirm}
+                onChange={(event) => setOfflinePinConfirm(event.target.value.replace(/\D/g, '').slice(0, 12))}
+                placeholder="Repeat offline PIN"
+                required
+              />
+            </label>
+            <button className="btn btn-primary" type="submit" disabled={offlinePinSaving}>
+              {offlinePinSaving ? 'Enrolling...' : 'Enroll / replace offline PIN'}
+            </button>
+          </form>
+          <small>An administrator must enable your offline access before enrollment.</small>
+        </div>
+
         {isAdmin && (
           <div className="settings-card settings-user-management-card">
             <div className="card-icon">
@@ -3043,6 +3175,10 @@ const Settings = () => {
             <div className="user-list">
               {users.map((row) => (
                 <article key={row.id} className="user-row">
+                  {(() => {
+                    const offlineStaff = offlineAccessUsers.find((staff) => staff.id === row.id)
+                    return (
+                      <>
                   <div className="user-summary">
                     <div className="user-heading">
                       <strong>{row.full_name}</strong>
@@ -3060,6 +3196,19 @@ const Settings = () => {
                     <p className="user-login-meta">
                       Last login: {formatStaffLastLogin(row.last_sign_in_at)}
                     </p>
+                    <div className="user-meta">
+                      <span className={`user-status-badge ${offlineStaff?.offlineAccessEnabled ? 'active' : 'inactive'}`}>
+                        Offline: {offlineStaff?.offlineAccessEnabled ? 'Enabled' : 'Revoked'}
+                      </span>
+                      {offlineStaff?.offlineAccessEnabled && (
+                        <span className={`user-status-badge ${offlineStaff.offlinePinEnrolled ? 'active' : 'inactive'}`}>
+                          PIN: {offlineStaff.offlinePinEnrolled ? 'Enrolled' : 'Not enrolled'}
+                        </span>
+                      )}
+                      {offlineStaff?.offlineLockedUntil && new Date(offlineStaff.offlineLockedUntil) > new Date() && (
+                        <span className="user-status-badge inactive">Locked</span>
+                      )}
+                    </div>
                     <div className="user-role-list" aria-label="Assigned roles">
                       {(Array.isArray(row.assigned_roles) && row.assigned_roles.length
                         ? row.assigned_roles
@@ -3086,12 +3235,55 @@ const Settings = () => {
                       <Pencil size={15} />
                       Edit
                     </button>
+                    <button
+                      className="btn btn-outline"
+                      type="button"
+                      disabled={!offlineStaff || Boolean(offlineAccessAction)}
+                      onClick={() => handleOfflineAccessToggle(offlineStaff, !offlineStaff.offlineAccessEnabled)}
+                    >
+                      <Lock size={15} />
+                      {offlineStaff?.offlineAccessEnabled ? 'Revoke offline' : 'Enable offline'}
+                    </button>
+                    {offlineStaff?.offlineAccessEnabled && offlineStaff?.offlinePinEnrolled && (
+                      <button
+                        className="btn btn-outline"
+                        type="button"
+                        disabled={Boolean(offlineAccessAction)}
+                        onClick={() => handleOfflinePinReset(offlineStaff)}
+                      >
+                        <RefreshCcw size={15} />
+                        Reset PIN
+                      </button>
+                    )}
                   </div>
+                      </>
+                    )
+                  })()}
                 </article>
               ))}
               {users.length === 0 && (
                 <div className="user-list-empty">No staff accounts found for this facility.</div>
               )}
+            </div>
+            <div className="offline-audit-header">
+              <h4>Offline authentication audit</h4>
+              <button className="btn btn-outline" type="button" onClick={() => loadOfflineAccess()} disabled={offlineAccessLoading}>
+                <RefreshCcw size={15} />
+                {offlineAccessLoading ? 'Refreshing...' : 'Refresh'}
+              </button>
+            </div>
+            <div className="offline-audit-list">
+              {offlineAudit.map((entry) => (
+                <div key={entry.id} className="offline-audit-row">
+                  <span className={`user-status-badge ${entry.success ? 'active' : 'inactive'}`}>
+                    {entry.success ? 'Success' : 'Failed'}
+                  </span>
+                  <strong>{String(entry.event_type || '').replaceAll('.', ' ')}</strong>
+                  <small>{formatAppDateTime(entry.created_at)}</small>
+                  {entry.detail && <small>{entry.detail}</small>}
+                </div>
+              ))}
+              {!offlineAudit.length && <p className="muted">No offline authentication events recorded.</p>}
             </div>
           </div>
         )}
