@@ -1,0 +1,1 @@
+var e=new Set([`admin`,`super_admin`]),t=t=>e.has(String(t||``).toLowerCase()),n=(e,n,r,i={})=>{if(!t(r)||typeof console>`u`)return;let a=typeof performance<`u`?performance.now():Date.now(),o=Math.round(a-n);console.info(`[HealthFlow performance]`,{label:e,durationMs:o,...i})};export{n as t};

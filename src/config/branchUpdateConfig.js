@@ -3,6 +3,6 @@ export const BRANCH_UPDATE_MANIFEST_URL =
 
 export const BRANCH_UPDATE_PUBLIC_KEY = [
   '-----BEGIN PUBLIC KEY-----',
-  'MCowBQYDK2VwAyEAH7475EWXBCrrrzQFsbiirDR6zQlbh1Ycmu6H/fDdlII=',
+  'MCowBQYDK2VwAyEAfYvTqK9SXyxhoKHFNuwOJwpzaoc4LXSeTMW2bSWAhiY=',
   '-----END PUBLIC KEY-----',
 ].join('\n')

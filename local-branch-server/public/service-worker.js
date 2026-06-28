@@ -1,4 +1,4 @@
-const CACHE_NAME = 'healthflow-pharmacy-shell-v8'
+const CACHE_NAME = 'healthflow-pharmacy-shell-v9'
 const CANONICAL_APP_ORIGIN = 'https://healthflowcloud.com'
 const LEGACY_APP_HOSTS = new Set([
   'health-flow-pharmacy.vercel.app',
@@ -94,7 +94,14 @@ self.addEventListener('fetch', (event) => {
 
             return response
           })
-          .catch(() => cachedResponse || Response.error())
+          .catch(
+            () =>
+              cachedResponse ||
+              new Response('', {
+                status: 503,
+                statusText: 'Service Unavailable',
+              })
+          )
       }
 
       if (cachedResponse) {
@@ -114,7 +121,14 @@ self.addEventListener('fetch', (event) => {
 
           return response
         })
-        .catch(() => cachedResponse || Response.error())
+        .catch(
+          () =>
+            cachedResponse ||
+            new Response('', {
+              status: 503,
+              statusText: 'Service Unavailable',
+            })
+        )
     })
   )
 })

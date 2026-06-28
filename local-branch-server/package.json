@@ -1,7 +1,7 @@
 {
   "name": "healthflow-local-branch-server",
   "private": true,
-  "version": "1.2.5",
+  "version": "1.2.6",
   "type": "module",
   "description": "Local branch server for HealthFlow offline operations and Supabase sync.",
   "main": "src/server.js",

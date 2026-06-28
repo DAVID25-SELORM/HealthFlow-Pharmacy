@@ -1,9 +1,9 @@
 {
-  "version": "1.2.2",
-  "releaseNotes": "Fixes CLAIM-it period filtering so served claims without a service date use their creation date consistently in cloud and local branch workflows.",
+  "version": "1.2.6",
+  "releaseNotes": "Improves large branch synchronization with bounded-memory keyset streaming and removes the 20,000-row reference-data limit.",
   "channel": "stable",
-  "sha256": "0c1a0a5afacc359490f2f56bf92609fc34ab6170533b94aaf8b7a75c2d41637c",
-  "publishedAt": "2026-06-13T05:38:36.4062649Z",
-  "packageUrl": "https://healthflowcloud.com/branch-updates/healthflow-branch-1.2.2.zip",
-  "signature": "GpnTvLHW1mR2azHZQ4ik1p1DV9zVqYGv/MaACaAI8ivJPFD+cclabubGID9VyT3vTwrmNvD5Akx/DdcbaX+QCQ=="
+  "sha256": "014bcf45169abe65835f997eb4fce233d7dc2528b722ddcf4651b4f8222817bb",
+  "publishedAt": "2026-06-28T19:47:54.0928325Z",
+  "packageUrl": "https://healthflowcloud.com/branch-updates/healthflow-branch-1.2.6.zip",
+  "signature": "wYVW0XiPyk2FvqBBczNXGqpHaZA0vewJM2TkVqhgQyUlp8056U2pyfzKuJBYqYH4c2Ae8fmDdYwsatiAAlhuDQ=="
 }
