@@ -22,6 +22,8 @@ const isWeakPlaceholder = (value) => {
     normalized.includes('placeholder')
 }
 const DEFAULT_NHIA_ELIGIBILITY_BASE_URL = 'https://elig.nhia.gov.gh:5000'
+const DEFAULT_TLS_CERT_PATH = 'C:\\HealthFlowLocal\\certs\\server.crt'
+const DEFAULT_TLS_KEY_PATH = 'C:\\HealthFlowLocal\\certs\\server.key'
 
 const normalizePath = (value, fallback) => {
   const normalized = String(value || fallback || '').trim()
@@ -52,12 +54,15 @@ export const config = {
   port: toNumber(process.env.PORT, 4780),
   host: String(process.env.HOST || '127.0.0.1').trim(),
   tls: {
-    certPath: String(process.env.HEALTHFLOW_TLS_CERT_PATH || '').trim(),
-    keyPath: String(process.env.HEALTHFLOW_TLS_KEY_PATH || '').trim(),
-    enabled: Boolean(
-      String(process.env.HEALTHFLOW_TLS_CERT_PATH || '').trim() &&
-      String(process.env.HEALTHFLOW_TLS_KEY_PATH || '').trim()
-    ),
+    certPath: String(process.env.HEALTHFLOW_TLS_CERT_PATH || DEFAULT_TLS_CERT_PATH).trim(),
+    keyPath: String(process.env.HEALTHFLOW_TLS_KEY_PATH || DEFAULT_TLS_KEY_PATH).trim(),
+    lanHostname: String(
+      process.env.HEALTHFLOW_LAN_HOSTNAME ||
+      process.env.COMPUTERNAME ||
+      'server-pc'
+    ).trim().toLowerCase(),
+    lanIp: String(process.env.HEALTHFLOW_LAN_IP || '').trim(),
+    enabled: false,
   },
   branchServerToken: process.env.BRANCH_SERVER_TOKEN || '',
   allowedOrigins: (process.env.ALLOWED_ORIGINS || '')
@@ -234,17 +239,6 @@ export const config = {
 export const assertConfiguredForServer = () => {
   if (!config.branchServerToken || config.branchServerToken.includes('change-this')) {
     throw new Error('Set BRANCH_SERVER_TOKEN to a long random value before starting the server.')
-  }
-  if (Boolean(config.tls.certPath) !== Boolean(config.tls.keyPath)) {
-    throw new Error('Set both HEALTHFLOW_TLS_CERT_PATH and HEALTHFLOW_TLS_KEY_PATH, or neither.')
-  }
-  if (
-    !config.tls.enabled &&
-    !['127.0.0.1', 'localhost', '::1'].includes(config.host.toLowerCase())
-  ) {
-    throw new Error(
-      'HTTPS is required when the branch server accepts non-loopback connections. Configure HEALTHFLOW_TLS_CERT_PATH and HEALTHFLOW_TLS_KEY_PATH.'
-    )
   }
 
   if (config.claimBridge.enabled && !config.claimBridge.upstreamBaseUrl) {

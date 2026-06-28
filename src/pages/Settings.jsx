@@ -15,11 +15,13 @@ import {
   createBranchDatabaseBackup,
   downloadBranchDatabaseBackup,
   getBranchDatabaseStatus,
+  getBranchTlsStatus,
   getSavedBranchToken,
   enrollBranchOfflinePin,
   listBranchOfflineAccess,
   listBranchOfflineAuthAudit,
   resetBranchOfflinePin,
+  saveBranchTlsSettings,
   saveBranchToken,
   testNhiaConfiguration as testBranchNhiaConfiguration,
   updateBranchOfflineAccess,
@@ -563,6 +565,15 @@ const Settings = () => {
   const [offlinePinSaving, setOfflinePinSaving] = useState(false)
   const [offlineAccessLoading, setOfflineAccessLoading] = useState(false)
   const [offlineAccessAction, setOfflineAccessAction] = useState('')
+  const [tlsForm, setTlsForm] = useState({
+    lanHostname: 'server-pc',
+    lanIp: '',
+    certPath: 'C:\\HealthFlowLocal\\certs\\server.crt',
+    keyPath: 'C:\\HealthFlowLocal\\certs\\server.key',
+  })
+  const [tlsStatus, setTlsStatus] = useState(null)
+  const [tlsLoading, setTlsLoading] = useState(false)
+  const [tlsSaving, setTlsSaving] = useState(false)
   const [error, setError] = useState('')
 
   // Branch state
@@ -608,6 +619,7 @@ const Settings = () => {
       void loadOnlineBackups({ silent: true })
       void loadPaymentSettings({ silent: true })
       void loadOfflineAccess({ silent: true })
+      void loadTlsSettings({ silent: true })
     }
   }, [isAdmin])
 
@@ -626,6 +638,38 @@ const Settings = () => {
       }
     } finally {
       setOfflineAccessLoading(false)
+    }
+  }
+
+  const loadTlsSettings = async ({ silent = false } = {}) => {
+    try {
+      setTlsLoading(true)
+      const status = await getBranchTlsStatus()
+      setTlsStatus(status)
+      setTlsForm({
+        lanHostname: status.lanHostname || '',
+        lanIp: status.lanIp || '',
+        certPath: status.certPath || 'C:\\HealthFlowLocal\\certs\\server.crt',
+        keyPath: status.keyPath || 'C:\\HealthFlowLocal\\certs\\server.key',
+      })
+    } catch (tlsError) {
+      if (!silent) notify(tlsError.message || 'Unable to read Local Branch Server TLS status.', 'error')
+    } finally {
+      setTlsLoading(false)
+    }
+  }
+
+  const handleSaveTlsSettings = async (event) => {
+    event.preventDefault()
+    try {
+      setTlsSaving(true)
+      const result = await saveBranchTlsSettings(tlsForm)
+      setTlsStatus((current) => ({ ...current, ...tlsForm, restartRequired: true }))
+      notify(result.message || 'TLS settings saved. Restart the Local Branch Server.', 'success', 6000)
+    } catch (tlsError) {
+      notify(tlsError.message || 'Unable to save TLS settings.', 'error')
+    } finally {
+      setTlsSaving(false)
     }
   }
 
@@ -2750,6 +2794,86 @@ const Settings = () => {
                 )}
                 <button className="btn btn-primary" type="submit" disabled={savingNhiaApi}>
                   {savingNhiaApi ? 'Saving...' : 'Save NHIA API'}
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {isAdmin && (
+          <div className="settings-card branch-card">
+            <div className="card-icon">
+              <Lock size={24} />
+            </div>
+            <div className="tls-settings-heading">
+              <div>
+                <h3>Facility LAN TLS</h3>
+                <p className="settings-note">
+                  HTTPS is required when staff use offline mode from multiple facility computers.
+                </p>
+              </div>
+              <span className={`user-status-badge ${tlsStatus?.ready ? 'active' : 'inactive'}`}>
+                TLS: {tlsStatus?.status || (tlsLoading ? 'Checking...' : 'Not Configured')}
+              </span>
+            </div>
+            <form className="settings-form" onSubmit={handleSaveTlsSettings}>
+              <div className="settings-form-row">
+                <label className="settings-field">
+                  <span>LAN server hostname</span>
+                  <input
+                    value={tlsForm.lanHostname}
+                    onChange={(event) => setTlsForm({ ...tlsForm, lanHostname: event.target.value })}
+                    placeholder="server-pc"
+                  />
+                </label>
+                <label className="settings-field">
+                  <span>LAN server IP</span>
+                  <input
+                    value={tlsForm.lanIp}
+                    onChange={(event) => setTlsForm({ ...tlsForm, lanIp: event.target.value })}
+                    placeholder="192.168.1.10"
+                  />
+                </label>
+              </div>
+              <label className="settings-field">
+                <span>Certificate path</span>
+                <input
+                  value={tlsForm.certPath}
+                  onChange={(event) => setTlsForm({ ...tlsForm, certPath: event.target.value })}
+                  placeholder="C:\HealthFlowLocal\certs\server.crt"
+                />
+              </label>
+              <label className="settings-field">
+                <span>Private key path</span>
+                <input
+                  value={tlsForm.keyPath}
+                  onChange={(event) => setTlsForm({ ...tlsForm, keyPath: event.target.value })}
+                  placeholder="C:\HealthFlowLocal\certs\server.key"
+                />
+              </label>
+              {tlsStatus?.ready ? (
+                <p className="settings-note">
+                  Ready: {tlsStatus.publicUrl || 'HTTPS is active on the configured LAN address.'}
+                  {tlsStatus.certificateExpiresAt
+                    ? ` Certificate expires ${formatAppDateTime(tlsStatus.certificateExpiresAt)}.`
+                    : ''}
+                </p>
+              ) : (
+                <div className="settings-alert">
+                  {tlsStatus?.warning || 'TLS Not Configured. Multi-computer offline access requires a trusted TLS certificate.'}
+                  {tlsStatus?.error ? ` ${tlsStatus.error}` : ''}
+                </div>
+              )}
+              {tlsStatus?.restartRequired && (
+                <p className="settings-note">Restart the Local Branch Server to apply these settings.</p>
+              )}
+              <div className="settings-form-row">
+                <button className="btn btn-outline" type="button" onClick={() => loadTlsSettings()} disabled={tlsLoading}>
+                  <RefreshCcw size={15} />
+                  {tlsLoading ? 'Checking...' : 'Check TLS status'}
+                </button>
+                <button className="btn btn-primary" type="submit" disabled={tlsSaving}>
+                  {tlsSaving ? 'Saving...' : 'Save TLS settings'}
                 </button>
               </div>
             </form>

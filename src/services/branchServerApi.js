@@ -630,6 +630,19 @@ export const getBranchOfflineReadiness = async () => {
   return response.data || response
 }
 
+export const getBranchTlsStatus = async () => {
+  const response = await branchFetch('/api/tls/status')
+  return response.data || response
+}
+
+export const saveBranchTlsSettings = async (settings) => {
+  const response = await branchFetch('/api/tls/settings', {
+    method: 'PATCH',
+    body: JSON.stringify(settings),
+  })
+  return response.data || response
+}
+
 export const createBranchDatabaseBackup = async (label = 'manual') => {
   const response = await branchFetch('/api/database/backup', {
     method: 'POST',

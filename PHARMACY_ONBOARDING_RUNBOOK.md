@@ -267,7 +267,8 @@ Example branch server URL: https://healthflow-branch.facility.example:4780
 Plain HTTP is supported only on the branch server itself (`127.0.0.1`).
 Multi-computer access requires a certificate trusted by every staff computer.
 Set `HOST=0.0.0.0`, `HEALTHFLOW_TLS_CERT_PATH`, and
-`HEALTHFLOW_TLS_KEY_PATH`; the server refuses an insecure LAN binding.
+`HEALTHFLOW_TLS_KEY_PATH`. If the certificate is missing or invalid, the
+server reports `TLS Not Configured` and safely falls back to local-only mode.
 
 For Hubtel/Paystack webhooks, the payment provider must also reach the branch server over HTTPS. Use one of these:
 

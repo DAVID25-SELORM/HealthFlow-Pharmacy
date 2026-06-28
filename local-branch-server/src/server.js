@@ -30,6 +30,7 @@ import {
 } from './requestLimits.js'
 import { authorizeLocalOperationalRoute } from './localAuthorization.js'
 import { createOfflineLoginRateLimiter } from './offlineLoginRateLimit.js'
+import { getPublicTlsStatus, inspectTlsRuntime, saveTlsSettings } from './tlsSettings.js'
 import { createLocalClaim } from './claimsRepository.js'
 import { deleteLocalInventoryDrug, importInventorySnapshot, listLocalInventory, searchLocalInventory } from './inventoryRepository.js'
 import {
@@ -90,6 +91,13 @@ import {
 } from './updateManager.js'
 
 assertConfiguredForServer()
+const tlsRuntime = inspectTlsRuntime()
+config.tls.enabled = tlsRuntime.ready
+const effectiveHost = tlsRuntime.ready ? config.host : '127.0.0.1'
+if (!tlsRuntime.ready) {
+  console.warn(`TLS Not Configured: ${tlsRuntime.warning} Starting in local-only mode.`)
+  if (tlsRuntime.error) console.warn(`TLS certificate error: ${tlsRuntime.error}`)
+}
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -308,6 +316,7 @@ app.get('/health', requireBranchToken, (_request, response) => {
       integrity: database.integrity,
       sizeBytes: database.estimatedSizeBytes,
     },
+    tls: getPublicTlsStatus(tlsRuntime),
     nhia,
   })
 })
@@ -505,6 +514,28 @@ app.get(
   requireBranchAdminAccess,
   (request, response) => {
     response.json({ data: listOfflineAuthAudit(request.query.limit) })
+  }
+)
+
+app.get(
+  '/api/tls/status',
+  requireBranchUserSession,
+  requireBranchAdminAccess,
+  (_request, response) => {
+    response.json({ data: getPublicTlsStatus(tlsRuntime) })
+  }
+)
+
+app.patch(
+  '/api/tls/settings',
+  requireBranchUserSession,
+  requireBranchAdminAccess,
+  (request, response, next) => {
+    try {
+      response.json({ data: saveTlsSettings(request.body || {}) })
+    } catch (error) {
+      next(error)
+    }
   }
 )
 
@@ -1325,16 +1356,17 @@ app.use((error, _request, response, _next) => {
   response.status(errorResponse.status).json(errorResponse.body)
 })
 
-const server = config.tls.enabled
+const server = tlsRuntime.ready
   ? https.createServer({
-      cert: fs.readFileSync(path.resolve(config.tls.certPath)),
-      key: fs.readFileSync(path.resolve(config.tls.keyPath)),
+      cert: tlsRuntime.credentials.cert,
+      key: tlsRuntime.credentials.key,
     }, app)
   : app
 
-server.listen(config.port, config.host, () => {
-  const protocol = config.tls.enabled ? 'https' : 'http'
-  console.log(`HealthFlow local branch server listening on ${protocol}://${config.host}:${config.port}`)
+server.listen(config.port, effectiveHost, () => {
+  const protocol = tlsRuntime.ready ? 'https' : 'http'
+  console.log(`HealthFlow local branch server listening on ${protocol}://${effectiveHost}:${config.port}`)
+  console.log(`TLS status: ${tlsRuntime.status}${tlsRuntime.publicUrl ? ` (${tlsRuntime.publicUrl})` : ''}`)
   startSyncWorker()
   startUpdateScheduler()
 })

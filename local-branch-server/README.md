@@ -70,9 +70,11 @@ HEALTHFLOW_TLS_KEY_PATH=C:\HealthFlowLocal\tls\branch-server.key
 ALLOWED_ORIGINS=https://healthflow-branch.facility.example:4780
 ```
 
-Use a certificate trusted by every facility computer. Without TLS, HealthFlow
-binds to loopback only; it refuses a non-loopback listener so offline PINs and
-staff sessions cannot accidentally cross the LAN in plaintext.
+The default Windows paths are `C:\HealthFlowLocal\certs\server.crt` and
+`C:\HealthFlowLocal\certs\server.key`. Use a certificate trusted by every
+facility computer. When either file is missing or invalid, HealthFlow reports
+`TLS Not Configured` and starts in loopback-only mode so offline PINs and staff
+sessions cannot cross the LAN in plaintext.
 
 ## Signed Branch Updates
 

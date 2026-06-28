@@ -99,6 +99,10 @@ Required controls:
 - Never expose the branch API to the LAN over plain HTTP. Use loopback-only
   HTTP for a single computer, or configure `HOST=0.0.0.0` with
   `HEALTHFLOW_TLS_CERT_PATH` and `HEALTHFLOW_TLS_KEY_PATH`.
+- The default Windows certificate locations are
+  `C:\HealthFlowLocal\certs\server.crt` and
+  `C:\HealthFlowLocal\certs\server.key`. Missing or invalid files force
+  local-only mode and display `TLS Not Configured`.
 
 Generate tokens:
 

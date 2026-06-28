@@ -387,6 +387,13 @@
   border-top: 1px solid var(--gray-200);
 }
 
+.tls-settings-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
 @media (max-width: 760px) {
   .offline-pin-enrollment,
   .offline-audit-row {
