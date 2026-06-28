@@ -169,26 +169,52 @@ function Get-EnvValue {
   return ($match -split '=', 2)[1].Trim()
 }
 
+function Set-EnvValue {
+  param([string]$Name, [string]$Value)
+  $envPath = Join-Path $installServerDir '.env'
+  $content = Get-Content -LiteralPath $envPath -Raw
+  $line = "$Name=$Value"
+  if ($content -match "(?m)^$([regex]::Escape($Name))=.*$") {
+    $content = [regex]::Replace($content, "(?m)^$([regex]::Escape($Name))=.*$", $line)
+  } else {
+    $content = $content.TrimEnd() + "`r`n$line`r`n"
+  }
+  Set-Content -LiteralPath $envPath -Value $content -Encoding UTF8
+}
+
+function Initialize-BootstrapConfiguration {
+  $branchToken = Get-EnvValue -Name 'BRANCH_SERVER_TOKEN'
+  if (-not $branchToken -or $branchToken -match 'change[-_ ]?me|placeholder|your[-_ ]') {
+    $bytes = New-Object byte[] 32
+    [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+    Set-EnvValue -Name 'BRANCH_SERVER_TOKEN' -Value ([Convert]::ToBase64String($bytes))
+    Write-Host 'Generated a secure local branch server token.'
+  }
+  foreach ($name in @('ORGANIZATION_ID', 'BRANCH_ID', 'BRANCH_SYNC_TOKEN', 'SUPABASE_URL', 'SUPABASE_SYNC_KEY')) {
+    $value = Get-EnvValue -Name $name
+    if ($value -match 'change[-_ ]?me|placeholder|your[-_ ]') {
+      Set-EnvValue -Name $name -Value ''
+    }
+  }
+}
+
 function Assert-ProductionConfiguration {
-  $required = @(
-    'BRANCH_SERVER_TOKEN',
+  $cloudValues = @(
     'ORGANIZATION_ID',
     'BRANCH_ID',
     'BRANCH_SYNC_TOKEN',
     'SUPABASE_URL',
-    'SUPABASE_SYNC_KEY',
-    'HEALTHFLOW_UPDATE_MANIFEST_URL',
-    'HEALTHFLOW_UPDATE_PUBLIC_KEY'
+    'SUPABASE_SYNC_KEY'
   )
   $missing = @()
-  foreach ($name in $required) {
+  foreach ($name in $cloudValues) {
     $value = Get-EnvValue -Name $name
     if (-not $value -or $value -match 'change[-_ ]?me|placeholder|your[-_ ]') {
       $missing += $name
     }
   }
   if ($missing.Count -gt 0) {
-    throw "Production .env is incomplete. Configure: $($missing -join ', ')."
+    Write-Warning "Cloud synchronization is not configured yet: $($missing -join ', '). Complete Branch Sync Setup after installation."
   }
 }
 
@@ -292,6 +318,7 @@ New-Item -ItemType Directory -Force -Path $logsDir | Out-Null
 New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
 
 Copy-BranchServer
+Initialize-BootstrapConfiguration
 Assert-ProductionConfiguration
 Install-DependenciesIfNeeded
 

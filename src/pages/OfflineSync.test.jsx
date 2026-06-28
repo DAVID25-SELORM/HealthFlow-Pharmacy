@@ -130,7 +130,7 @@ describe('OfflineSync branch registration', () => {
     })
 
     const setupBlock = await screen.findByText(/PORT=4780/)
-    expect(setupBlock).toHaveTextContent('BRANCH_SERVER_TOKEN=')
+    expect(setupBlock).not.toHaveTextContent('BRANCH_SERVER_TOKEN=')
     expect(setupBlock).toHaveTextContent('NHIA_CONFIG_SECRET_KEY=')
     expect(setupBlock).toHaveTextContent('ORGANIZATION_ID=org-1')
     expect(setupBlock).toHaveTextContent('BRANCH_ID=branch-1')

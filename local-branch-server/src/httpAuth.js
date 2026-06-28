@@ -11,6 +11,22 @@ const selectCurrentStaff = db.prepare(`
   FROM users
   WHERE id = ?
 `)
+const cacheVerifiedStaff = db.prepare(`
+  INSERT INTO users (
+    id, email, full_name, role, assigned_roles_json, organization_id, branch_id,
+    permissions_json, is_active, updated_at
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  ON CONFLICT(id) DO UPDATE SET
+    email = excluded.email,
+    full_name = excluded.full_name,
+    role = excluded.role,
+    assigned_roles_json = excluded.assigned_roles_json,
+    organization_id = excluded.organization_id,
+    branch_id = excluded.branch_id,
+    permissions_json = excluded.permissions_json,
+    is_active = excluded.is_active,
+    updated_at = excluded.updated_at
+`)
 
 const safeTokenEquals = (actual, expected) => {
   if (!actual || !expected) {
@@ -214,6 +230,24 @@ export const issueBranchUserSession = async ({ accessToken, activeRole }) => {
 
   const { data: profile, error: profileError } = await getStaffAuthorizationProfile(client, userData.user.id)
   if (profileError) throw profileError
+  const permissionNames = [
+    'can_refund', 'can_manage_inventory', 'can_view_reports', 'can_manage_claims',
+    'can_manage_purchases', 'can_process_sales', 'can_manage_patients',
+    'can_manage_accounting', 'can_manage_epharmacy', 'can_view_activity_log',
+    'can_adjust_stock', 'can_approve_purchases', 'can_delete_nhis_claims',
+  ]
+  cacheVerifiedStaff.run(
+    profile.id,
+    profile.email || userData.user.email || null,
+    profile.full_name || profile.email || userData.user.email || 'Staff member',
+    profile.role || 'assistant',
+    JSON.stringify(profile.assigned_roles || [profile.role].filter(Boolean)),
+    profile.organization_id || null,
+    profile.branch_id || null,
+    JSON.stringify(Object.fromEntries(permissionNames.map((name) => [name, Boolean(profile[name])]))),
+    profile.is_active === false ? 0 : 1,
+    new Date().toISOString()
+  )
   return createBranchUserSession(profile, activeRole)
 }
 

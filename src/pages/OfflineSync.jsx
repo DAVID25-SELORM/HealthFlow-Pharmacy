@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AlertCircle, CheckCircle2, ClipboardCopy, RefreshCcw, Server, UploadCloud } from 'lucide-react'
 import {
+  applyBranchCloudConfiguration,
   createNhiaBatch,
   checkBranchServerUpdates,
   downloadNhiaBatchExport,
@@ -221,6 +222,7 @@ export default function OfflineSync() {
   const [setupLoading, setSetupLoading] = useState(false)
   const [setupClientAction, setSetupClientAction] = useState('')
   const [envCopied, setEnvCopied] = useState(false)
+  const [setupApplied, setSetupApplied] = useState(false)
   const [wizardOpen, setWizardOpen] = useState(false)
   const [wizardPhase, setWizardPhase] = useState('idle')
   const [wizardStepStatuses, setWizardStepStatuses] = useState(blankWizardStepStatuses)
@@ -448,21 +450,42 @@ export default function OfflineSync() {
     try {
       setSetupLoading(true)
       setSetupResult(null)
+      setSetupApplied(false)
       const branchSyncToken = setupForm.branchSyncToken.trim() || generateSetupToken()
-      const branchServerToken = generateSetupToken()
       const nhiaConfigSecretKey = generateSetupToken()
       const result = await registerBranchSyncClient({
         ...setupForm,
         branchSyncToken,
       })
       setSetupForm((current) => ({ ...current, branchSyncToken }))
-      setSetupResult({ ...result, branchServerToken, nhiaConfigSecretKey })
+      setSetupResult({ ...result, nhiaConfigSecretKey })
       await loadSetupClients(setupForm.organizationId)
       notify('Branch sync client registered. Save the one-time setup block on the facility machine.', 'success')
     } catch (setupError) {
       notify(setupError.message || 'Unable to register branch sync client.', 'error')
     } finally {
       setSetupLoading(false)
+    }
+  }
+
+  const applySetupToLocalServer = async () => {
+    if (!setupResult) return
+    try {
+      setSetupClientAction('apply-config')
+      const result = await applyBranchCloudConfiguration({
+        organizationId: setupResult.organizationId,
+        branchId: setupResult.branchId,
+        branchSyncToken: setupResult.branchSyncToken,
+        supabaseUrl: supabaseProjectUrl,
+        supabaseSyncKey,
+        nhiaConfigSecretKey: setupResult.nhiaConfigSecretKey,
+      })
+      setSetupApplied(true)
+      notify(result.message || 'Facility configuration applied. The local server is restarting.', 'success', 7000)
+    } catch (setupError) {
+      notify(setupError.message || 'Unable to apply configuration to the Local Branch Server.', 'error')
+    } finally {
+      setSetupClientAction('')
     }
   }
 
@@ -770,7 +793,7 @@ export default function OfflineSync() {
   const isUnreachable = !isNotConfigured && Boolean(error)
   const setupSteps = [
     { label: 'Register sync client', done: setupClients.some((c) => c.isActive) },
-    { label: 'Paste .env on facility machine', done: Boolean(setupResult) },
+    { label: 'Apply configuration to facility server', done: setupApplied },
     { label: 'Start local branch server', done: isConnected },
     { label: 'Verify data sync', done: isConnected && Number(status?.summary?.synced || 0) > 0 },
   ]
@@ -1034,7 +1057,6 @@ export default function OfflineSync() {
               <p>This setup block is shown once. Copy it now — re-registering the same client name rotates its sync token.</p>
               <div className="branch-setup-env-wrapper">
                 <pre className="branch-setup-env">{`PORT=4780
-BRANCH_SERVER_TOKEN=${setupResult.branchServerToken}
 NHIA_CONFIG_SECRET_KEY=${setupResult.nhiaConfigSecretKey}
 ORGANIZATION_ID=${setupResult.organizationId}
 BRANCH_ID=${setupResult.branchId}
@@ -1048,10 +1070,23 @@ HEALTHFLOW_UPDATE_AUTO_INSTALL=false`}</pre>
                 <button
                   className="btn btn-outline btn-sm branch-setup-copy-btn"
                   type="button"
-                  onClick={() => copyEnvBlock(`PORT=4780\nBRANCH_SERVER_TOKEN=${setupResult.branchServerToken}\nNHIA_CONFIG_SECRET_KEY=${setupResult.nhiaConfigSecretKey}\nORGANIZATION_ID=${setupResult.organizationId}\nBRANCH_ID=${setupResult.branchId}\nBRANCH_SYNC_TOKEN=${setupResult.branchSyncToken}\nSUPABASE_URL=${supabaseProjectUrl || '<your-supabase-project-url>'}\nSUPABASE_SYNC_KEY=${supabaseSyncKey || '<your-supabase-anon-or-publishable-key>'}\nHEALTHFLOW_UPDATE_MANIFEST_URL=${branchUpdateManifestUrl || '<your-signed-update-manifest-url>'}\nHEALTHFLOW_UPDATE_PUBLIC_KEY=${branchUpdatePublicKey || '<your-update-public-key-with-escaped-newlines>'}\nHEALTHFLOW_UPDATE_AUTO_CHECK_HOURS=24\nHEALTHFLOW_UPDATE_AUTO_INSTALL=false`)}
+                  onClick={() => copyEnvBlock(`PORT=4780\nNHIA_CONFIG_SECRET_KEY=${setupResult.nhiaConfigSecretKey}\nORGANIZATION_ID=${setupResult.organizationId}\nBRANCH_ID=${setupResult.branchId}\nBRANCH_SYNC_TOKEN=${setupResult.branchSyncToken}\nSUPABASE_URL=${supabaseProjectUrl || '<your-supabase-project-url>'}\nSUPABASE_SYNC_KEY=${supabaseSyncKey || '<your-supabase-anon-or-publishable-key>'}\nHEALTHFLOW_UPDATE_MANIFEST_URL=${branchUpdateManifestUrl || '<your-signed-update-manifest-url>'}\nHEALTHFLOW_UPDATE_PUBLIC_KEY=${branchUpdatePublicKey || '<your-update-public-key-with-escaped-newlines>'}\nHEALTHFLOW_UPDATE_AUTO_CHECK_HOURS=24\nHEALTHFLOW_UPDATE_AUTO_INSTALL=false`)}
                 >
                   <ClipboardCopy size={14} />
                   {envCopied ? 'Copied!' : 'Copy'}
+                </button>
+                <button
+                  className="btn btn-primary btn-sm"
+                  type="button"
+                  onClick={() => void applySetupToLocalServer()}
+                  disabled={
+                    setupClientAction === 'apply-config' ||
+                    !supabaseProjectUrl ||
+                    !supabaseSyncKey ||
+                    !isConnected
+                  }
+                >
+                  {setupClientAction === 'apply-config' ? 'Applying...' : 'Apply to Local Server'}
                 </button>
               </div>
             </div>

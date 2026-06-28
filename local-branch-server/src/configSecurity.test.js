@@ -71,4 +71,38 @@ describe('branch server transport security', () => {
       fs.rmSync(directory, { recursive: true, force: true })
     }
   })
+
+  it('validates and persists facility sync configuration without replacing the local server token', () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'healthflow-cloud-settings-'))
+    const envPath = path.join(directory, '.env')
+    fs.writeFileSync(envPath, 'BRANCH_SERVER_TOKEN=keep-local-token\n', 'utf8')
+    const tlsUrl = pathToFileURL(path.resolve('local-branch-server/src/tlsSettings.js')).href
+    const script = `
+      const fs = await import('node:fs');
+      const { saveCloudSyncSettings } = await import(${JSON.stringify(tlsUrl)});
+      const result = saveCloudSyncSettings({
+        organizationId: '11111111-1111-4111-8111-111111111111',
+        branchId: '22222222-2222-4222-8222-222222222222',
+        branchSyncToken: 'branch-sync-token-with-at-least-32-characters',
+        supabaseUrl: 'https://project.supabase.co',
+        supabaseSyncKey: 'publishable-key-with-sufficient-length',
+        nhiaConfigSecretKey: 'generated-nhia-key'
+      });
+      console.log(JSON.stringify({ result, content: fs.readFileSync(process.env.HEALTHFLOW_ENV_PATH, 'utf8') }));
+    `
+    try {
+      const output = execFileSync(process.execPath, ['--input-type=module', '--eval', script], {
+        cwd: path.resolve('local-branch-server'),
+        env: { ...process.env, HEALTHFLOW_ENV_PATH: envPath },
+        encoding: 'utf8',
+      })
+      const result = JSON.parse(output.trim().split(/\r?\n/).at(-1))
+      expect(result.result.restartRequired).toBe(true)
+      expect(result.content).toContain('BRANCH_SERVER_TOKEN=keep-local-token')
+      expect(result.content).toContain('ORGANIZATION_ID=11111111-1111-4111-8111-111111111111')
+      expect(result.content).toContain('SUPABASE_URL=https://project.supabase.co')
+    } finally {
+      fs.rmSync(directory, { recursive: true, force: true })
+    }
+  })
 })

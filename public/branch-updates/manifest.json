@@ -1,9 +1,9 @@
 {
-  "version": "1.4.0",
-  "releaseNotes": "Automates facility-wide offline deployment: elevated Windows service installation, per-facility CA and HTTPS server certificate provisioning, restricted key storage, private/domain firewall setup, scheduled certificate renewal, completion health checks, one-time workstation trust bundles, authenticated device registry and immediate revocation, plus admin download, renewal, status, and workstation controls.",
+  "version": "1.4.1",
+  "releaseNotes": "Completes zero-edit Windows bootstrap: generates the local branch token automatically, starts secure local HTTPS before cloud registration, caches the verified administrator locally for bootstrap authorization, and adds one-click Apply to Local Server for validated organization, branch, Supabase, sync, and NHIA configuration followed by service restart. Includes the automated TLS, renewal, workstation enrollment, and revocation controls from 1.4.0.",
   "channel": "stable",
-  "sha256": "59178e02a84dc4dd2949e9b1a7913ce427fc185efe70b4308c605cbc64738f82",
-  "publishedAt": "2026-06-28T23:44:02.5161329Z",
-  "packageUrl": "https://healthflowcloud.com/branch-updates/healthflow-branch-1.4.0.zip",
-  "signature": "LvOyntb03foT1kRdzaomCJ6uiDo8G0Zq5qSmwriqCF3mHgEBoa5N+NiIUgmcvuWozeKsCD7j+sVWiN0TinjUBA=="
+  "sha256": "bae92e1a84f7f084487a9de2daac1b057754e2169ea2434e630cda3ff5f0b398",
+  "publishedAt": "2026-06-28T23:55:59.9598892Z",
+  "packageUrl": "https://healthflowcloud.com/branch-updates/healthflow-branch-1.4.1.zip",
+  "signature": "tnF1j4LlTWTv/GJP4oEXipfJYNNEZLYUmWmEV69lK3ebhiSAjYHm1MjjB4zoSVs3CwoIotDEEKgZ6lvtIJ60DQ=="
 }

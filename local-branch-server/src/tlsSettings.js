@@ -151,3 +151,49 @@ export const saveTlsSettings = (input) => {
     message: 'TLS settings saved. Restart the HealthFlow Local Branch Server to apply them.',
   }
 }
+
+export const saveCloudSyncSettings = (input = {}) => {
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+  const organizationId = String(input.organizationId || '').trim()
+  const branchId = String(input.branchId || '').trim()
+  const branchSyncToken = String(input.branchSyncToken || '').trim()
+  const supabaseUrl = String(input.supabaseUrl || '').trim().replace(/\/+$/, '')
+  const supabaseSyncKey = String(input.supabaseSyncKey || '').trim()
+  const nhiaConfigSecretKey = String(input.nhiaConfigSecretKey || '').trim()
+  if (!uuidPattern.test(organizationId) || !uuidPattern.test(branchId)) {
+    throw Object.assign(new Error('Organization and branch IDs must be valid UUIDs.'), { status: 400 })
+  }
+  if (branchSyncToken.length < 32) {
+    throw Object.assign(new Error('Branch sync token is invalid.'), { status: 400 })
+  }
+  try {
+    const url = new URL(supabaseUrl)
+    if (url.protocol !== 'https:') throw new Error()
+  } catch {
+    throw Object.assign(new Error('Supabase URL must be a valid HTTPS URL.'), { status: 400 })
+  }
+  if (supabaseSyncKey.length < 20) {
+    throw Object.assign(new Error('Supabase publishable key is invalid.'), { status: 400 })
+  }
+
+  let content = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf8') : ''
+  const values = {
+    ORGANIZATION_ID: organizationId,
+    BRANCH_ID: branchId,
+    BRANCH_SYNC_TOKEN: branchSyncToken,
+    SUPABASE_URL: supabaseUrl,
+    SUPABASE_SYNC_KEY: supabaseSyncKey,
+    NHIA_CONFIG_SECRET_KEY: nhiaConfigSecretKey,
+  }
+  for (const [key, value] of Object.entries(values)) {
+    content = replaceEnvValue(content, key, value)
+  }
+  fs.writeFileSync(envPath, content, { encoding: 'utf8', mode: 0o600 })
+  return {
+    organizationId,
+    branchId,
+    supabaseUrl,
+    restartRequired: true,
+    message: 'Facility cloud synchronization settings saved. Restarting the Local Branch Server.',
+  }
+}

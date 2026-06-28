@@ -31,7 +31,7 @@ import {
 } from './requestLimits.js'
 import { authorizeLocalOperationalRoute } from './localAuthorization.js'
 import { createOfflineLoginRateLimiter } from './offlineLoginRateLimit.js'
-import { getPublicTlsStatus, inspectTlsRuntime, saveTlsSettings } from './tlsSettings.js'
+import { getPublicTlsStatus, inspectTlsRuntime, saveCloudSyncSettings, saveTlsSettings } from './tlsSettings.js'
 import {
   createWorkstationEnrollmentToken,
   enrollWorkstation,
@@ -556,6 +556,33 @@ app.patch(
   (request, response, next) => {
     try {
       response.json({ data: saveTlsSettings(request.body || {}) })
+    } catch (error) {
+      next(error)
+    }
+  }
+)
+
+app.post(
+  '/api/deployment/cloud-config',
+  requireBranchUserSession,
+  requireBranchAdminAccess,
+  (request, response, next) => {
+    try {
+      const saved = saveCloudSyncSettings(request.body || {})
+      response.json({ data: saved })
+      setTimeout(() => {
+        const restartScript = path.join(path.resolve(__dirname, '..'), 'scripts', 'restart-service.ps1')
+        const child = spawn('powershell.exe', [
+          '-NoProfile',
+          '-ExecutionPolicy', 'Bypass',
+          '-File', restartScript,
+        ], {
+          detached: true,
+          stdio: 'ignore',
+          windowsHide: true,
+        })
+        child.unref()
+      }, 500).unref()
     } catch (error) {
       next(error)
     }

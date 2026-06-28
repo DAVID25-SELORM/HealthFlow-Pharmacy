@@ -81,6 +81,11 @@ installer. It installs Node.js when needed, registers the Windows service,
 creates a per-facility root CA and server certificate, opens port 4780 only for
 Private/Domain networks, registers weekly renewal, enrolls the server computer,
 and creates `C:\HealthFlowLocal\HealthFlow-Connect-This-Computer.zip`.
+For a new facility it also generates the local branch token automatically and
+starts safely before cloud sync is configured. A super administrator then
+uses **Branch Sync Setup → Apply to Local Server**; HealthFlow validates and
+writes the facility identifiers and sync credentials and restarts the service.
+No manual `.env` editing is required for the normal Windows flow.
 
 For each additional workstation, an administrator downloads a fresh
 **Connect This Computer** bundle from Settings. Its enrollment token expires

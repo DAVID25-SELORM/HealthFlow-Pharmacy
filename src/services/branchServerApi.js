@@ -655,6 +655,15 @@ export const getBranchDeploymentStatus = async () => {
   return response.data || response
 }
 
+export const applyBranchCloudConfiguration = async (settings) => {
+  const response = await branchFetch('/api/deployment/cloud-config', {
+    method: 'POST',
+    body: JSON.stringify(settings),
+    timeoutMs: LONG_BRANCH_REQUEST_TIMEOUT_MS,
+  })
+  return response.data || response
+}
+
 export const renewBranchTlsCertificate = async () => {
   const response = await branchFetch('/api/deployment/tls/renew', {
     method: 'POST',

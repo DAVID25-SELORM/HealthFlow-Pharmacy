@@ -338,7 +338,9 @@ local-branch-server\Install-HealthFlow.cmd
 
 Approve the Windows administrator prompt. The installer provisions HTTPS,
 the service, firewall rule, renewal task, first workstation, and completion
-health checks. Additional computers use a fresh one-time **Connect This
+health checks. It generates the local branch token automatically. Complete
+cloud registration with **Branch Sync Setup → Apply to Local Server**; manual
+`.env` editing is retained only as a recovery procedure. Additional computers use a fresh one-time **Connect This
 Computer** bundle downloaded by an administrator from HealthFlow Settings.
 
 ## 9. Generate Secure Branch Tokens
