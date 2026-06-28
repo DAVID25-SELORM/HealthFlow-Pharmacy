@@ -177,55 +177,8 @@ export const createPurchase = async (purchaseData, items = []) => {
 
   const purchaseDate = purchaseData.purchaseDate || new Date().toISOString().split('T')[0]
   const totalAmount = items.reduce((sum, item) => sum + (item.netTotal || 0), 0)
-
-  if (shouldUseBranchServer()) {
-    return await createBranchRecord('purchases', {
-      supplier_id: purchaseData.supplierId || null,
-      supplier_name: normalizeText(purchaseData.supplierName) || null,
-      branch_id: normalizeText(purchaseData.branchId) || null,
-      invoice_number: normalizeText(purchaseData.invoiceNumber) || null,
-      purchase_date: purchaseDate,
-      total_amount: totalAmount,
-      status: 'draft',
-      notes: normalizeText(purchaseData.notes) || null,
-      purchase_items: items.map((item) => ({
-        drug_id: item.drugId || null,
-        drug_name: assertRequiredText(item.drugName, 'Drug name'),
-        brand_name: normalizeText(item.brandName) || null,
-        generic_name: normalizeText(item.genericName) || null,
-        sale_on_return: Boolean(item.saleOnReturn),
-        quantity: assertNonNegativeNumber(item.quantity, 'Quantity'),
-        unit: normalizeText(item.unit) || 'unit',
-        unit_cost: assertNonNegativeNumber(item.unitCost, 'Unit cost'),
-        discount_percent: item.discountPercent ? assertNonNegativeNumber(item.discountPercent, 'Discount') : 0,
-        net_total: assertNonNegativeNumber(item.netTotal, 'Net total'),
-        batch_number: normalizeText(item.batchNumber) || null,
-        expiry_date: item.expiryDate || null,
-      })),
-    })
-  }
-
-  // Insert the purchase header
-  const { data: purchase, error: purchaseError } = await supabase
-    .from('purchases')
-    .insert([{
-      supplier_id:    purchaseData.supplierId   || null,
-      supplier_name:  normalizeText(purchaseData.supplierName) || null,
-      branch_id:      normalizeText(purchaseData.branchId) || null,
-      invoice_number: normalizeText(purchaseData.invoiceNumber) || null,
-      purchase_date:  purchaseDate,
-      total_amount:   totalAmount,
-      status:         'draft',
-      notes:          normalizeText(purchaseData.notes) || null,
-    }])
-    .select()
-    .single()
-
-  if (purchaseError) throw purchaseError
-
-  // Insert line items
+  const purchaseId = normalizeText(purchaseData.id) || null
   const itemRows = items.map((item) => ({
-    purchase_id:      purchase.id,
     drug_id:          item.drugId   || null,
     drug_name:        assertRequiredText(item.drugName, 'Drug name'),
     brand_name:       normalizeText(item.brandName) || null,
@@ -240,9 +193,65 @@ export const createPurchase = async (purchaseData, items = []) => {
     expiry_date:      item.expiryDate || null,
   }))
 
+  if (shouldUseBranchServer()) {
+    return await createBranchRecord('purchases', {
+      ...(purchaseId ? { id: purchaseId } : {}),
+      supplier_id: purchaseData.supplierId || null,
+      supplier_name: normalizeText(purchaseData.supplierName) || null,
+      branch_id: normalizeText(purchaseData.branchId) || null,
+      invoice_number: normalizeText(purchaseData.invoiceNumber) || null,
+      purchase_date: purchaseDate,
+      total_amount: totalAmount,
+      status: 'draft',
+      notes: normalizeText(purchaseData.notes) || null,
+      purchase_items: itemRows,
+    })
+  }
+
+  let purchase = null
+  if (purchaseId) {
+    const { data: existingPurchase, error: existingError } = await supabase
+      .from('purchases')
+      .select('*, purchase_items (*)')
+      .eq('id', purchaseId)
+      .maybeSingle()
+    if (existingError) throw existingError
+    if (existingPurchase?.purchase_items?.length) {
+      return existingPurchase
+    }
+    purchase = existingPurchase || null
+  }
+
+  if (!purchase) {
+    const purchaseRow = {
+      ...(purchaseId ? { id: purchaseId } : {}),
+      supplier_id:    purchaseData.supplierId   || null,
+      supplier_name:  normalizeText(purchaseData.supplierName) || null,
+      branch_id:      normalizeText(purchaseData.branchId) || null,
+      invoice_number: normalizeText(purchaseData.invoiceNumber) || null,
+      purchase_date:  purchaseDate,
+      total_amount:   totalAmount,
+      status:         'draft',
+      notes:          normalizeText(purchaseData.notes) || null,
+    }
+    const { data: createdPurchase, error: purchaseError } = await supabase
+      .from('purchases')
+      .insert([purchaseRow])
+      .select()
+      .single()
+
+    if (purchaseError) throw purchaseError
+    purchase = createdPurchase
+  }
+
+  const purchaseItemRows = itemRows.map((item) => ({
+    ...item,
+    purchase_id:      purchase.id,
+  }))
+
   const { error: itemsError } = await supabase
     .from('purchase_items')
-    .insert(itemRows)
+    .insert(purchaseItemRows)
 
   if (itemsError) throw itemsError
 

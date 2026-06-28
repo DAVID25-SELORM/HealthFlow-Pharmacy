@@ -1,20 +1,32 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Plus, Search, Package, X, CheckCircle2, XCircle, Eye } from 'lucide-react'
+import {
+  Plus,
+  Search,
+  Package,
+  X,
+  CheckCircle2,
+  XCircle,
+  Eye,
+  RefreshCcw,
+} from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
 import { formatAppDate } from '../utils/date'
 import {
-  getAllSuppliers,
-  createSupplier,
-  getAllPurchases,
-  createPurchase,
-  completePurchase,
-  getPurchaseCompletionDetails,
-  cancelPurchase,
-  getPurchasesStats,
-} from '../services/purchasesService'
+  cancelPurchaseDraft,
+  completePurchaseDraft,
+  createPurchaseDraft,
+  createPurchaseSupplier,
+  getOfflinePurchasesSummary,
+  getPurchaseCompletionAudit,
+  getPurchaseStats,
+  listPurchases,
+  listSuppliers,
+  subscribeOfflinePurchasesQueue,
+  syncOfflinePurchases,
+} from '../services/purchasesApi'
 import { getAllDrugs } from '../services/drugService'
 import { getBranches } from '../services/branchService'
 import './Purchases.css'
@@ -93,8 +105,17 @@ const StatusBadge = ({ status }) => (
 )
 
 const Purchases = () => {
-  const { profile, branch, canManagePurchases, canApprovePurchases } = useAuth()
+  const {
+    profile,
+    branch,
+    organization,
+    user,
+    canManagePurchases,
+    canApprovePurchases,
+  } = useAuth()
   const { notify } = useNotification()
+  const organizationId =
+    organization?.id || organization?.organization_id || profile?.organization_id || ''
   const [searchParams, setSearchParams] = useSearchParams()
 
   const canWrite = canManagePurchases
@@ -120,6 +141,15 @@ const Purchases = () => {
   const [completionDetailsError, setCompletionDetailsError] = useState('')
   const [branches, setBranches]             = useState([])
   const [selectedBranchId, setSelectedBranchId] = useState('')
+  const [offlineSummary, setOfflineSummary] = useState({
+    pending: 0,
+    syncing: 0,
+    failed: 0,
+    synced: 0,
+    unsynced: 0,
+    total: 0,
+  })
+  const [syncingOfflinePurchases, setSyncingOfflinePurchases] = useState(false)
 
   // ── new purchase form ────────────────────────────────────────
   const [purchaseForm, setPurchaseForm] = useState(blankPurchaseForm)
@@ -153,10 +183,10 @@ const Purchases = () => {
       setLoading(true)
       setError('')
       const [purchasesData, suppliersData, drugsData, statsData] = await Promise.all([
-        getAllPurchases(),
-        getAllSuppliers(),
+        listPurchases(),
+        listSuppliers(),
         getAllDrugs({ useTierAccess: true, branchId: branchIdOverride || undefined }),
-        getPurchasesStats(),
+        getPurchaseStats(),
       ])
       setPurchases(purchasesData)
       setSuppliers(suppliersData)
@@ -170,6 +200,43 @@ const Purchases = () => {
   }
 
   useEffect(() => { void loadAll() }, [])
+
+  useEffect(() => {
+    const refreshSummary = async () => {
+      setOfflineSummary(await getOfflinePurchasesSummary({ organizationId }))
+    }
+    const syncOnReconnect = async () => {
+      if (!organizationId) return
+      try {
+        const summary = await getOfflinePurchasesSummary({ organizationId })
+        if (summary.unsynced <= 0) return
+        const result = await syncOfflinePurchases({ organizationId })
+        await refreshSummary()
+        if (result.synced > 0) {
+          notify(
+            `${result.synced} purchase draft${result.synced === 1 ? '' : 's'} synced.`,
+            'success'
+          )
+          await loadAll(selectedBranchId)
+        }
+      } catch (syncError) {
+        console.warn('Automatic offline purchase sync failed:', syncError)
+        await refreshSummary()
+      }
+    }
+
+    void refreshSummary()
+    const unsubscribe = subscribeOfflinePurchasesQueue(() => {
+      void refreshSummary()
+    })
+    window.addEventListener('online', syncOnReconnect)
+    if (navigator.onLine) void syncOnReconnect()
+
+    return () => {
+      unsubscribe()
+      window.removeEventListener('online', syncOnReconnect)
+    }
+  }, [organizationId])
 
   useEffect(() => {
     let cancelled = false
@@ -212,7 +279,7 @@ const Purchases = () => {
       try {
         setCompletionDetailsLoading(true)
         setCompletionDetailsError('')
-        const details = await getPurchaseCompletionDetails(viewPurchase)
+        const details = await getPurchaseCompletionAudit(viewPurchase)
         if (!cancelled) {
           setCompletionDetails(details)
         }
@@ -327,7 +394,7 @@ const Purchases = () => {
   const handleAddSupplierInline = async () => {
     if (!newSupplierName.trim()) return
     try {
-      const supplier = await createSupplier({ name: newSupplierName.trim() })
+      const supplier = await createPurchaseSupplier({ name: newSupplierName.trim() })
       setSuppliers((prev) => [supplier, ...prev])
       setPurchaseForm((prev) => ({ ...prev, supplierId: supplier.id, supplierName: supplier.name }))
       setNewSupplierName('')
@@ -345,12 +412,24 @@ const Purchases = () => {
     try {
       setSubmitting(true)
       setError('')
-      await createPurchase({ ...purchaseForm, branchId: selectedBranchId || undefined }, lineItems)
+      const result = await createPurchaseDraft(
+        { ...purchaseForm, branchId: selectedBranchId || undefined },
+        lineItems,
+        {
+          organizationId,
+          branchId: selectedBranchId || branch?.id || profile?.branch_id || null,
+          createdBy: user?.id || null,
+        }
+      )
       setShowNewModal(false)
       setPurchaseForm(blankPurchaseForm)
       setLineItems([])
-      await loadAll()
-      notify('Purchase saved as draft.', 'success')
+      if (result?.offlineQueued) {
+        notify('Purchase draft saved offline and will sync when connection returns.', 'success')
+      } else {
+        await loadAll()
+        notify('Purchase saved as draft.', 'success')
+      }
     } catch (err) {
       setError(err.message || 'Unable to save purchase.')
     } finally {
@@ -367,7 +446,7 @@ const Purchases = () => {
     if (!window.confirm(`Complete purchase ${purchase.purchase_number}?\nThis will update drug stock and cannot be undone.`)) return
     try {
       setCompleting(purchase.id)
-      await completePurchase(purchase.id, { canApprove: canApprovePurchases })
+      await completePurchaseDraft(purchase.id, { canApprove: canApprovePurchases })
       await loadAll()
       notify(`${purchase.purchase_number} completed — stock updated.`, 'success')
     } catch (err) {
@@ -382,7 +461,7 @@ const Purchases = () => {
     if (!window.confirm(`Cancel purchase ${purchase.purchase_number}?`)) return
     try {
       setCancelling(purchase.id)
-      await cancelPurchase(purchase.id)
+      await cancelPurchaseDraft(purchase.id)
       await loadAll()
       notify(`${purchase.purchase_number} cancelled.`, 'info')
     } catch (err) {
@@ -399,6 +478,33 @@ const Purchases = () => {
     setItemForm(blankItemForm)
     setDrugSearch('')
     setError('')
+  }
+
+  const handleOfflinePurchaseSync = async () => {
+    try {
+      setSyncingOfflinePurchases(true)
+      const result = await syncOfflinePurchases({ organizationId })
+      setOfflineSummary(await getOfflinePurchasesSummary({ organizationId }))
+      if (result.skipped) {
+        notify('Connect to the internet or local branch server before syncing.', 'warning')
+      } else if (result.failed > 0) {
+        notify(
+          `${result.failed} purchase draft${result.failed === 1 ? '' : 's'} could not sync. Retry shortly.`,
+          'error'
+        )
+      } else {
+        notify(
+          `${result.synced} purchase draft${result.synced === 1 ? '' : 's'} synced successfully.`,
+          'success'
+        )
+        await loadAll(selectedBranchId)
+      }
+    } catch (syncError) {
+      console.error('Unable to sync offline purchase drafts:', syncError)
+      notify(syncError.message || 'Unable to sync offline purchase drafts.', 'error')
+    } finally {
+      setSyncingOfflinePurchases(false)
+    }
   }
 
   // ── render ───────────────────────────────────────────────────
@@ -437,6 +543,30 @@ const Purchases = () => {
       </div>
 
       {error && <div className="purchases-alert" role="alert">{error}</div>}
+
+      {offlineSummary.unsynced > 0 && (
+        <div className="purchases-sync-banner" role="status">
+          <div>
+            <strong>Purchase drafts waiting to sync</strong>
+            <span>
+              {offlineSummary.unsynced} draft
+              {offlineSummary.unsynced === 1 ? '' : 's'} stored securely on this device.
+              {offlineSummary.failed > 0
+                ? ` ${offlineSummary.failed} need retry.`
+                : ' They will sync automatically when connection returns.'}
+            </span>
+          </div>
+          <button
+            type="button"
+            className="btn btn-outline"
+            onClick={handleOfflinePurchaseSync}
+            disabled={syncingOfflinePurchases}
+          >
+            <RefreshCcw size={16} />
+            {syncingOfflinePurchases ? 'Syncing...' : 'Sync Now'}
+          </button>
+        </div>
+      )}
 
       {/* Stats */}
       <div className="purchases-stats">
