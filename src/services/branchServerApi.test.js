@@ -17,6 +17,16 @@ const importBranchServerApi = async () => {
   return await import('./branchServerApi')
 }
 
+const saveAdminBranchSession = () => {
+  window.localStorage.setItem('healthflow.active-role.current', 'admin')
+  window.localStorage.setItem('healthflow_branch_user_session', JSON.stringify({
+    token: 'signed-admin-branch-user-session',
+    expiresAt: Math.floor(Date.now() / 1000) + 3600,
+    role: 'admin',
+    userId: 'admin-1',
+  }))
+}
+
 describe('branchServerApi', () => {
   beforeEach(() => {
     window.localStorage.clear()
@@ -51,6 +61,7 @@ describe('branchServerApi', () => {
   })
 
   it('sends the localStorage branch token on local branch API requests', async () => {
+    saveAdminBranchSession()
     const fetchMock = vi.fn(async (url) => {
       if (String(url).endsWith('/health')) {
         return new Response(JSON.stringify({ ok: true }), { status: 200 })
@@ -117,6 +128,7 @@ describe('branchServerApi', () => {
   })
 
   it('waits for a real terminal updater state across service restart responses', async () => {
+    saveAdminBranchSession()
     const states = [
       { state: 'backing_up', currentVersion: '1.2.6' },
       { state: 'verifying', currentVersion: '1.2.6' },

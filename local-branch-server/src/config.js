@@ -50,6 +50,15 @@ const resolveTrustProxy = () => {
 
 export const config = {
   port: toNumber(process.env.PORT, 4780),
+  host: String(process.env.HOST || '127.0.0.1').trim(),
+  tls: {
+    certPath: String(process.env.HEALTHFLOW_TLS_CERT_PATH || '').trim(),
+    keyPath: String(process.env.HEALTHFLOW_TLS_KEY_PATH || '').trim(),
+    enabled: Boolean(
+      String(process.env.HEALTHFLOW_TLS_CERT_PATH || '').trim() &&
+      String(process.env.HEALTHFLOW_TLS_KEY_PATH || '').trim()
+    ),
+  },
   branchServerToken: process.env.BRANCH_SERVER_TOKEN || '',
   allowedOrigins: (process.env.ALLOWED_ORIGINS || '')
     .split(',')
@@ -94,6 +103,10 @@ export const config = {
     ),
     windowMs: Math.max(1000, toNumber(process.env.RATE_LIMIT_WINDOW_MS, 60000)),
     maxRequests: Math.max(10, toNumber(process.env.RATE_LIMIT_MAX_REQUESTS, 600)),
+  },
+  offlineLoginRateLimit: {
+    windowMs: Math.max(60000, toNumber(process.env.OFFLINE_LOGIN_RATE_LIMIT_WINDOW_MS, 5 * 60 * 1000)),
+    maxRequests: Math.min(30, Math.max(5, toNumber(process.env.OFFLINE_LOGIN_RATE_LIMIT_MAX_REQUESTS, 10))),
   },
   branchSyncToken: process.env.BRANCH_SYNC_TOKEN || '',
   nhiaConfigSecretKey: process.env.NHIA_CONFIG_SECRET_KEY || process.env.NHIA_SECRET_KEY || '',
@@ -221,6 +234,17 @@ export const config = {
 export const assertConfiguredForServer = () => {
   if (!config.branchServerToken || config.branchServerToken.includes('change-this')) {
     throw new Error('Set BRANCH_SERVER_TOKEN to a long random value before starting the server.')
+  }
+  if (Boolean(config.tls.certPath) !== Boolean(config.tls.keyPath)) {
+    throw new Error('Set both HEALTHFLOW_TLS_CERT_PATH and HEALTHFLOW_TLS_KEY_PATH, or neither.')
+  }
+  if (
+    !config.tls.enabled &&
+    !['127.0.0.1', 'localhost', '::1'].includes(config.host.toLowerCase())
+  ) {
+    throw new Error(
+      'HTTPS is required when the branch server accepts non-loopback connections. Configure HEALTHFLOW_TLS_CERT_PATH and HEALTHFLOW_TLS_KEY_PATH.'
+    )
   }
 
   if (config.claimBridge.enabled && !config.claimBridge.upstreamBaseUrl) {

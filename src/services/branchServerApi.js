@@ -246,7 +246,7 @@ const branchFetch = async (path, options = {}) => {
 
   const {
     timeoutMs = DEFAULT_BRANCH_REQUEST_TIMEOUT_MS,
-    requireUserSession = false,
+    requireUserSession = true,
     ...fetchOptions
   } = options
   const userSession = requireUserSession ? await getVerifiedBranchUserSession() : null
@@ -359,6 +359,7 @@ export const waitForBranchUpdateCompletion = async ({
 export const signInToBranchOffline = async ({ email, pin, activeRole = '' }) => {
   const response = await branchFetch('/api/auth/offline-login', {
     method: 'POST',
+    requireUserSession: false,
     body: JSON.stringify({ email, pin, activeRole }),
   })
   if (!response?.data?.token) {
@@ -372,6 +373,7 @@ export const enrollBranchOfflinePin = async (pin) => {
   const session = await getCurrentSupabaseSession()
   const response = await branchFetch('/api/auth/offline-pin/enroll', {
     method: 'POST',
+    requireUserSession: false,
     headers: { Authorization: `Bearer ${session.access_token}` },
     body: JSON.stringify({ pin, activeRole: getStoredActiveRole() }),
   })

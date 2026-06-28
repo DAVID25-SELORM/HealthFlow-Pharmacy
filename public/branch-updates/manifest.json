@@ -1,9 +1,9 @@
 {
-  "version": "1.2.9",
-  "releaseNotes": "Adds facility-wide offline staff PIN sign-in through the Local Branch Server, with salted scrypt verification, centralized administrator enable/reset/revoke controls, five-attempt lockout, local audit logging, and enforcement of synchronized staff roles and privileges. Cloud passwords are never stored locally.",
+  "version": "1.3.0",
+  "releaseNotes": "Security release: validates every local API request against the current local staff record, immediately revokes reset/disabled offline sessions, enforces roles and explicit privileges server-side, audits dedicated offline-login throttling, and requires trusted TLS for non-loopback facility access.",
   "channel": "stable",
-  "sha256": "643d666800180c28a9ccf83dd9ce06c39b0ef606e62eea2de489bb22c087f0e7",
-  "publishedAt": "2026-06-28T21:59:30.7622552Z",
-  "packageUrl": "https://healthflowcloud.com/branch-updates/healthflow-branch-1.2.9.zip",
-  "signature": "9lTWTJPufkhZQ+D8VzuCkQekZUGwFUDPO2gvLAkXleefNYgDRmXYoYRUA3PPeEI659GlEryddP76Lfff666oCw=="
+  "sha256": "be15a15d0ce6fb0cd9f9d250ff37a09668d4743443b68611750d4fa1bb68dc28",
+  "publishedAt": "2026-06-28T22:33:44.8303216Z",
+  "packageUrl": "https://healthflowcloud.com/branch-updates/healthflow-branch-1.3.0.zip",
+  "signature": "NqYvmEW1kgTc/cEF9EScptXErHsvvcJC7LHL99hXctdQEPgXgEfsRcBxUwBkKgyUCRE1tG/4AD1xRPhwM8jUCw=="
 }

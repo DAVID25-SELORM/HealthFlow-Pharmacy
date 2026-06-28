@@ -1,5 +1,6 @@
 import express from 'express'
 import fs from 'node:fs'
+import https from 'node:https'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { assertConfiguredForServer, config, isSupabaseSyncConfigured } from './config.js'
@@ -16,6 +17,7 @@ import {
 } from './httpAuth.js'
 import {
   authenticateOfflinePin,
+  auditOfflineLoginRateLimited,
   enrollOfflinePin,
   listOfflineAccessUsers,
   listOfflineAuthAudit,
@@ -26,6 +28,8 @@ import {
   BRANCH_JSON_BODY_LIMIT,
   getBranchRequestErrorResponse,
 } from './requestLimits.js'
+import { authorizeLocalOperationalRoute } from './localAuthorization.js'
+import { createOfflineLoginRateLimiter } from './offlineLoginRateLimit.js'
 import { createLocalClaim } from './claimsRepository.js'
 import { deleteLocalInventoryDrug, importInventorySnapshot, listLocalInventory, searchLocalInventory } from './inventoryRepository.js'
 import {
@@ -152,7 +156,7 @@ if (config.trustProxy) {
 const rateLimitBuckets = new Map()
 
 const shouldRateLimit = (request) =>
-  request.path.startsWith('/api/') ||
+  (request.path.startsWith('/api/') && request.path !== '/api/auth/offline-login') ||
   request.path === config.claimBridge.publicPath ||
   request.path.startsWith(`${config.claimBridge.publicPath}/`)
 
@@ -193,6 +197,7 @@ setInterval(() => {
       rateLimitBuckets.delete(key)
     }
   }
+  rateLimitOfflineLogin.prune()
 }, Math.max(config.rateLimit.windowMs, 60000)).unref()
 // ✅ STATIC FRONTEND PATCH START
 if (fs.existsSync(frontendIndex)) {
@@ -218,7 +223,7 @@ const isLanOrigin = (url) =>
   url.hostname.startsWith('10.') ||
   /^172\.(1[6-9]|2\d|3[0-1])\./.test(url.hostname)
 
-const isAllowedOrigin = (origin) => {
+const isAllowedOrigin = (origin, request) => {
   if (!origin) {
     return true
   }
@@ -228,6 +233,10 @@ const isAllowedOrigin = (origin) => {
   }
 
   const normalizedOrigin = origin.replace(/\/+$/, '')
+  const requestOrigin = `${request.protocol}://${request.get('host')}`.replace(/\/+$/, '')
+  if (normalizedOrigin === requestOrigin) {
+    return true
+  }
 
   try {
     const url = new URL(normalizedOrigin)
@@ -256,7 +265,7 @@ const isAllowedOrigin = (origin) => {
 
 app.use((request, response, next) => {
   const origin = request.get('Origin') || ''
-  if (!isAllowedOrigin(origin)) {
+  if (!isAllowedOrigin(origin, request)) {
     response.status(403).json({ error: 'Origin is not allowed for this branch server.' })
     return
   }
@@ -314,7 +323,7 @@ app.get('/branch-runtime-config.js', (request, response) => {
     .send(
       `window.__HEALTHFLOW_BRANCH_SERVER__ = ${JSON.stringify({
         enabled: true,
-        url: `http://localhost:${config.port}`,
+        url: '',
         token: '',
         organizationId: config.organizationId,
         branchId: config.branchId,
@@ -418,7 +427,12 @@ app.post('/api/auth/offline-pin/enroll', async (request, response, next) => {
   }
 })
 
-app.post('/api/auth/offline-login', (request, response, next) => {
+const rateLimitOfflineLogin = createOfflineLoginRateLimiter({
+  ...config.offlineLoginRateLimit,
+  auditRateLimited: auditOfflineLoginRateLimited,
+})
+
+app.post('/api/auth/offline-login', rateLimitOfflineLogin, (request, response, next) => {
   try {
     const user = authenticateOfflinePin({
       email: request.body?.email,
@@ -493,6 +507,11 @@ app.get(
     response.json({ data: listOfflineAuthAudit(request.query.limit) })
   }
 )
+
+// Every operational API after the authentication endpoints requires a current,
+// locally revalidated staff identity. This makes account disablement, offline
+// revocation, PIN reset, and role changes effective across all workstations.
+app.use('/api', requireBranchUserSession, authorizeLocalOperationalRoute)
 
 app.get('/api/database/status', (_request, response, next) => {
   try {
@@ -1306,8 +1325,16 @@ app.use((error, _request, response, _next) => {
   response.status(errorResponse.status).json(errorResponse.body)
 })
 
-const server = app.listen(config.port, () => {
-  console.log(`HealthFlow local branch server listening on http://localhost:${config.port}`)
+const server = config.tls.enabled
+  ? https.createServer({
+      cert: fs.readFileSync(path.resolve(config.tls.certPath)),
+      key: fs.readFileSync(path.resolve(config.tls.keyPath)),
+    }, app)
+  : app
+
+server.listen(config.port, config.host, () => {
+  const protocol = config.tls.enabled ? 'https' : 'http'
+  console.log(`HealthFlow local branch server listening on ${protocol}://${config.host}:${config.port}`)
   startSyncWorker()
   startUpdateScheduler()
 })

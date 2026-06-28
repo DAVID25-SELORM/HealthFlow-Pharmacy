@@ -96,6 +96,9 @@ Required controls:
 - Allow only LAN/private origins to call the local server.
 - Open only port `4780` on the branch server computer.
 - Keep the branch server computer physically secured.
+- Never expose the branch API to the LAN over plain HTTP. Use loopback-only
+  HTTP for a single computer, or configure `HOST=0.0.0.0` with
+  `HEALTHFLOW_TLS_CERT_PATH` and `HEALTHFLOW_TLS_KEY_PATH`.
 
 Generate tokens:
 
@@ -108,10 +111,11 @@ $bytes = New-Object byte[] 32
 Optional strict CORS for local branch server `.env`:
 
 ```env
-ALLOWED_ORIGINS=http://localhost:5173,https://healthflowcloud.com,http://192.168.1.10:4780
+ALLOWED_ORIGINS=http://localhost:5173,https://healthflowcloud.com,https://healthflow-branch.facility.example:4780
 ```
 
-Leave `ALLOWED_ORIGINS` blank to allow localhost and private LAN origins only.
+Same-origin requests from the bundled HTTPS application are allowed
+automatically. List any additional trusted HTTPS origins explicitly.
 
 ## 5. Password And Account Rules
 
@@ -186,4 +190,3 @@ If a pharmacy account or local server token is suspected compromised:
 5. Review audit logs and sync outbox.
 6. Force users to reset passwords.
 7. Confirm no service role key was exposed.
-

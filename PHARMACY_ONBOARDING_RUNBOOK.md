@@ -261,8 +261,13 @@ One always-on computer: Branch Server Computer
 Other computers: Cashier/Staff Computers
 Network: Same LAN/Wi-Fi
 Branch server port: 4780
-Example branch server URL: http://192.168.1.10:4780
+Example branch server URL: https://healthflow-branch.facility.example:4780
 ```
+
+Plain HTTP is supported only on the branch server itself (`127.0.0.1`).
+Multi-computer access requires a certificate trusted by every staff computer.
+Set `HOST=0.0.0.0`, `HEALTHFLOW_TLS_CERT_PATH`, and
+`HEALTHFLOW_TLS_KEY_PATH`; the server refuses an insecure LAN binding.
 
 For Hubtel/Paystack webhooks, the payment provider must also reach the branch server over HTTPS. Use one of these:
 
@@ -352,6 +357,9 @@ Set these core values. The branch sync values come from section 13.
 
 ```env
 PORT=4780
+HOST=0.0.0.0
+HEALTHFLOW_TLS_CERT_PATH=C:\HealthFlowLocal\tls\branch-server.crt
+HEALTHFLOW_TLS_KEY_PATH=C:\HealthFlowLocal\tls\branch-server.key
 BRANCH_SERVER_TOKEN=<generated-branch-server-token>
 ALLOWED_ORIGINS=
 ORGANIZATION_ID=<from-branch-sync-setup>
@@ -367,6 +375,8 @@ SUPABASE_SYNC_KEY=your-supabase-anon-or-publishable-key
 Important:
 
 - `BRANCH_SERVER_TOKEN` lets cashier computers call the local server.
+- The TLS certificate must contain the DNS name staff computers use and must be
+  issued by a CA trusted by those computers. Do not bypass certificate warnings.
 - `BRANCH_SYNC_TOKEN` lets the local server sync with Supabase.
 - `SUPABASE_SYNC_KEY` should normally be the Supabase anon/publishable key.
 - Avoid putting a service role key on ordinary cashier laptops.

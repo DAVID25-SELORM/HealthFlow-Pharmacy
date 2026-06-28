@@ -190,6 +190,17 @@ export const authenticateOfflinePin = ({ email, pin, ipAddress }) => {
 export const listOfflineAuthAudit = (limit = 100) =>
   listAudit.all(Math.min(Math.max(Number(limit) || 100, 1), 500))
 
+export const auditOfflineLoginRateLimited = ({ email, ipAddress }) => {
+  const user = selectUserByEmail.get(String(email || '').trim())
+  audit({
+    eventType: 'offline_login.rate_limited',
+    targetUserId: user?.id || null,
+    success: false,
+    detail: 'Offline login request rejected by the dedicated rate limiter.',
+    ipAddress,
+  })
+}
+
 export const getOfflineAuthStatus = (userId) => {
   const user = selectUserById.get(userId)
   return user ? publicUser(user) : null

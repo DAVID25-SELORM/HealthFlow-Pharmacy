@@ -72,8 +72,10 @@ const insertSaleItem = db.prepare(`
 `)
 
 const permissionFields = [
-  'can_refund', 'can_manage_claims', 'can_manage_purchases',
-  'can_approve_purchases', 'can_view_reports', 'can_view_activity_log',
+  'can_refund', 'can_manage_inventory', 'can_view_reports', 'can_manage_claims',
+  'can_manage_purchases', 'can_process_sales', 'can_manage_patients',
+  'can_manage_accounting', 'can_manage_epharmacy', 'can_view_activity_log',
+  'can_adjust_stock', 'can_approve_purchases', 'can_delete_nhis_claims',
 ]
 
 export const importUsersSnapshot = db.transaction((rows = []) => {

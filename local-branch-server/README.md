@@ -61,6 +61,19 @@ SUPABASE_URL=<from-branch-sync-setup>
 SUPABASE_SYNC_KEY=<supabase-anon-or-publishable-key>
 ```
 
+For facility-wide access from multiple computers, TLS is mandatory:
+
+```env
+HOST=0.0.0.0
+HEALTHFLOW_TLS_CERT_PATH=C:\HealthFlowLocal\tls\branch-server.crt
+HEALTHFLOW_TLS_KEY_PATH=C:\HealthFlowLocal\tls\branch-server.key
+ALLOWED_ORIGINS=https://healthflow-branch.facility.example:4780
+```
+
+Use a certificate trusted by every facility computer. Without TLS, HealthFlow
+binds to loopback only; it refuses a non-loopback listener so offline PINs and
+staff sessions cannot accidentally cross the LAN in plaintext.
+
 ## Signed Branch Updates
 
 The hosted admin page can check and install updates on a connected localhost

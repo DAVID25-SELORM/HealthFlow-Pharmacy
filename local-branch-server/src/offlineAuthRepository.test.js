@@ -15,10 +15,14 @@ describe('offline PIN authentication', () => {
     const authUrl = pathToFileURL(
       path.resolve('local-branch-server/src/offlineAuthRepository.js')
     ).href
+    const httpAuthUrl = pathToFileURL(
+      path.resolve('local-branch-server/src/httpAuth.js')
+    ).href
     const script = `
       const { db, closeDatabase, getBranchMeta } = await import(${JSON.stringify(dbUrl)});
       const { importUsersSnapshot } = await import(${JSON.stringify(snapshotUrl)});
       const auth = await import(${JSON.stringify(authUrl)});
+      const httpAuth = await import(${JSON.stringify(httpAuthUrl)});
       importUsersSnapshot([{
         id: 'staff-1', email: 'staff@example.com', full_name: 'Staff One',
         role: 'cashier', assigned_roles: ['cashier', 'inventory'],
@@ -33,6 +37,24 @@ describe('offline PIN authentication', () => {
       const success = auth.authenticateOfflinePin({
         email: 'staff@example.com', pin: '654321'
       });
+      const session = httpAuth.issueOfflineBranchUserSession(success);
+      const validate = () => {
+        const result = { next: false, status: null, body: null };
+        const request = {
+          branchUser: null,
+          get: (name) => name === 'x-branch-user-session' ? session.token : ''
+        };
+        const response = {
+          status: (status) => { result.status = status; return response; },
+          json: (body) => { result.body = body; return response; }
+        };
+        httpAuth.requireBranchUserSession(request, response, () => { result.next = true; });
+        return result;
+      };
+      const validBeforeReset = validate();
+      auth.resetOfflinePin({ targetUserId: 'staff-1', actorUserId: 'admin-1' });
+      const revokedAfterReset = validate();
+      auth.enrollOfflinePin({ userId: 'staff-1', pin: '654321' });
       const failures = [];
       for (let attempt = 0; attempt < 5; attempt += 1) {
         try {
@@ -49,6 +71,8 @@ describe('offline PIN authentication', () => {
         stored,
         serverId: getBranchMeta('offline_auth_server_id'),
         success,
+        validBeforeReset,
+        revokedAfterReset,
         failures,
         row,
         events: audit.map((entry) => entry.event_type)
@@ -63,6 +87,8 @@ describe('offline PIN authentication', () => {
         env: {
           ...process.env,
           HEALTHFLOW_DB_PATH: path.join(directory, 'branch.sqlite'),
+          ORGANIZATION_ID: 'org-1',
+          BRANCH_ID: 'branch-1',
         },
         encoding: 'utf8',
       })
@@ -76,6 +102,8 @@ describe('offline PIN authentication', () => {
         assignedRoles: ['cashier', 'inventory'],
         permissions: { can_refund: true },
       })
+      expect(result.validBeforeReset).toMatchObject({ next: true, status: null })
+      expect(result.revokedAfterReset).toMatchObject({ next: false, status: 401 })
       expect(result.failures).toHaveLength(5)
       expect(result.failures.at(-1)).toMatchObject({ status: 423 })
       expect(result.row.offline_failed_attempts).toBe(0)
