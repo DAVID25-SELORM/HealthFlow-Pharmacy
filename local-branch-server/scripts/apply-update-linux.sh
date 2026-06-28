@@ -43,6 +43,9 @@ LOG_DIR="${LOG_DIR:-/var/log/healthflow-branch}"
 STATUS_PATH="${UPDATES_DIR}/status.json"
 WORK_DIR="$(mktemp -d "${PARENT_DIR}/update-work-XXXXXX")"
 BACKUP_DIR="${PARENT_DIR}/backup-$(date -u +%Y%m%d-%H%M%S)"
+APP_BACKUP_DIR="${BACKUP_DIR}/application"
+DATABASE_PATH="${HEALTHFLOW_DB_PATH:-${DATA_DIR}/healthflow-branch.sqlite}"
+DATABASE_BACKUP_PATH="${BACKUP_DIR}/database/$(basename "${DATABASE_PATH}")"
 LOG_PATH="${LOG_DIR}/update.log"
 PAYLOAD_DIR=""
 UPDATER_PATH="/usr/local/lib/healthflow/apply-update-linux.sh"
@@ -112,9 +115,18 @@ clear_application_files() {
 }
 
 restore_backup() {
-  [[ -d "${BACKUP_DIR}" ]] || return 0
+  [[ -d "${APP_BACKUP_DIR}" ]] || return 0
   clear_application_files
-  cp -a "${BACKUP_DIR}/." "${INSTALL_DIR}/"
+  cp -a "${APP_BACKUP_DIR}/." "${INSTALL_DIR}/"
+  if [[ -f "${DATABASE_BACKUP_PATH}" ]]; then
+    mkdir -p "$(dirname "${DATABASE_PATH}")"
+    rm -f -- "${DATABASE_PATH}" "${DATABASE_PATH}-wal" "${DATABASE_PATH}-shm"
+    for suffix in "" "-wal" "-shm"; do
+      if [[ -f "${DATABASE_BACKUP_PATH}${suffix}" ]]; then
+        cp -a "${DATABASE_BACKUP_PATH}${suffix}" "${DATABASE_PATH}${suffix}"
+      fi
+    done
+  fi
   chown -R "${SERVICE_USER}:${SERVICE_USER}" "${INSTALL_DIR}"
 }
 
@@ -126,7 +138,7 @@ trap cleanup EXIT
 
 failure_message=""
 run_update() {
-  write_status "installing" "Stopping ${SERVICE_NAME} and preparing the Linux update." || return 1
+  write_status "stopping_service" "Stopping ${SERVICE_NAME} and preparing the Linux update." || return 1
   stop_service || return 1
 
   unzip -q "${PACKAGE_PATH}" -d "${WORK_DIR}" || return 1
@@ -153,12 +165,21 @@ run_update() {
     return 1
   fi
 
-  mkdir -p "${BACKUP_DIR}" || return 1
+  write_status "backing_up" "Backing up the application and local database." || return 1
+  mkdir -p "${APP_BACKUP_DIR}" "$(dirname "${DATABASE_BACKUP_PATH}")" || return 1
   find "${INSTALL_DIR}" -mindepth 1 -maxdepth 1 \
     ! -name '.env' \
     ! -name 'updates' \
-    -exec cp -a --target-directory="${BACKUP_DIR}" -- {} + || return 1
+    -exec cp -a --target-directory="${APP_BACKUP_DIR}" -- {} + || return 1
+  if [[ -f "${DATABASE_PATH}" ]]; then
+    for suffix in "" "-wal" "-shm"; do
+      if [[ -f "${DATABASE_PATH}${suffix}" ]]; then
+        cp -a "${DATABASE_PATH}${suffix}" "${DATABASE_BACKUP_PATH}${suffix}" || return 1
+      fi
+    done
+  fi
 
+  write_status "installing_files" "Installing verified application files." || return 1
   clear_application_files || return 1
   find "${PAYLOAD_DIR}" -mindepth 1 -maxdepth 1 \
     ! -name '.env' \
@@ -169,10 +190,12 @@ run_update() {
     -exec cp -a --target-directory="${INSTALL_DIR}" -- {} + || return 1
 
   cd "${INSTALL_DIR}" || return 1
+  write_status "installing_dependencies" "Installing production dependencies." || return 1
   npm ci --omit=dev || return 1
   npm run rebuild:sqlite || return 1
   chown -R "${SERVICE_USER}:${SERVICE_USER}" "${INSTALL_DIR}" "${DATA_DIR}" || return 1
 
+  write_status "restarting" "Restarting ${SERVICE_NAME}." || return 1
   start_service || return 1
   systemctl is-active --quiet "${SERVICE_NAME}" || return 1
   BRANCH_TOKEN="$(sed -n 's/^BRANCH_SERVER_TOKEN=//p' "${INSTALL_DIR}/.env" | head -n 1)"
@@ -182,6 +205,7 @@ run_update() {
     printf 'BRANCH_SERVER_TOKEN is missing after restart.\n' >&2
     return 1
   fi
+  write_status "verifying" "Verifying the API and local database after restart." || return 1
   wait_for_health "${BRANCH_TOKEN}" "${PORT}" || return 1
   if [[ -f "${INSTALL_DIR}/scripts/apply-update-linux.sh" ]]; then
     install -o root -g root -m 0755 \

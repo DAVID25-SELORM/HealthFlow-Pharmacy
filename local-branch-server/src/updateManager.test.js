@@ -83,9 +83,11 @@ describe('branch update security', () => {
       pendingPackagePath: 'C:\\HealthFlowLocal\\local-branch-server\\updates\\pending-update.zip',
       expectedVersion: '1.1.0',
       serviceName: 'HealthFlowOfflineServer',
+      databasePath: 'C:\\HealthFlowLocal\\data\\healthflow-branch.sqlite',
     })
     expect(windows.command).toBe('powershell.exe')
     expect(windows.args).toContain('HealthFlowOfflineServer')
+    expect(windows.args).toContain('C:\\HealthFlowLocal\\data\\healthflow-branch.sqlite')
     expect(windows.windowsHide).toBe(true)
 
     expect(() =>

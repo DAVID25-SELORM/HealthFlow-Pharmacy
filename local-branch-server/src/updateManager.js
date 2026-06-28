@@ -20,6 +20,7 @@ export const getUpdateInstallerCommand = ({
   pendingPackagePath = packagePath,
   expectedVersion,
   serviceName = config.updates.serviceName,
+  databasePath = config.sqlitePath,
 }) => {
   if (platform === 'win32') {
     return {
@@ -38,6 +39,8 @@ export const getUpdateInstallerCommand = ({
         expectedVersion,
         '-ServiceName',
         serviceName,
+        '-DatabasePath',
+        databasePath,
       ],
       windowsHide: true,
     }
@@ -197,6 +200,9 @@ export const getUpdateStatus = () => ({
   ...readStatus(),
 })
 
+export const getUpdateTerminalState = (status = readStatus()) =>
+  ['installed', 'rolled_back', 'failed'].includes(String(status.state || '').toLowerCase())
+
 export const checkForUpdates = async () => {
   const manifest = await fetchManifest()
   const available = compareVersions(manifest.version, packageJson.version) > 0
@@ -275,6 +281,7 @@ export const installAvailableUpdate = async () => {
     const installer = getUpdateInstallerCommand({
       platform: process.platform,
       expectedVersion: normalizeVersion(manifest.version),
+      databasePath: config.sqlitePath,
     })
     const child = spawn(installer.command, installer.args, {
       detached: true,

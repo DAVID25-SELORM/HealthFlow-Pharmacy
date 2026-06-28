@@ -67,6 +67,7 @@ import {
   syncPendingOutbox,
 } from './supabaseSync.js'
 import { startSyncWorker, stopSyncWorker, waitForSyncWorkerIdle } from './syncWorker.js'
+import { getOfflineReadiness } from './offlineReadiness.js'
 import {
   checkForUpdates,
   getUpdateStatus,
@@ -387,6 +388,14 @@ app.post('/api/auth/user-session', async (request, response, next) => {
 app.get('/api/database/status', (_request, response, next) => {
   try {
     response.json({ data: getDatabaseStatus() })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.get('/api/offline/readiness', (_request, response, next) => {
+  try {
+    response.json({ data: getOfflineReadiness({ frontendIndex }) })
   } catch (error) {
     next(error)
   }

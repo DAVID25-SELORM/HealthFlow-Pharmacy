@@ -5,6 +5,7 @@ import {
   checkBranchServerUpdates,
   downloadNhiaBatchExport,
   getBranchInventory,
+  getBranchOfflineReadiness,
   getBranchServerConfig,
   getBranchServerHealth,
   getSavedBranchToken,
@@ -19,6 +20,7 @@ import {
   runBranchSync,
   saveBranchToken,
   submitPendingNhiaClaims,
+  waitForBranchUpdateCompletion,
 } from '../services/branchServerApi'
 import { getNhiaApiSettings, saveNhiaApiSettings } from '../services/nhisService'
 import { saveOfflinePosSnapshot } from '../services/offlinePosCache'
@@ -40,6 +42,23 @@ import {
   normalizeNhiaAccreditationExpiryDate,
 } from '../utils/nhiaFacilityDefaults'
 import './OfflineSync.css'
+
+const WIZARD_STEPS = [
+  { id: 'requirements',    label: 'Check system requirements',      detail: 'Verify the local server is reachable and healthy' },
+  { id: 'check-updates',   label: 'Check for updates',              detail: 'Compare installed version with the latest available' },
+  { id: 'download',        label: 'Download update package',        detail: 'Fetch signed package from HealthFlow update servers' },
+  { id: 'backup',          label: 'Backup current installation',    detail: 'Create a restore checkpoint before applying changes' },
+  { id: 'install',         label: 'Install HealthFlow components',  detail: 'Replace app, API, Node runtime, and dependencies' },
+  { id: 'database',        label: 'Create / update local database', detail: 'Run schema migrations and provision all required tables' },
+  { id: 'facility-data',   label: 'Synchronize operational data',   detail: 'Upload queued changes and download the branch inventory snapshot' },
+  { id: 'reference-data',  label: 'Download supported facility data', detail: 'Sync patients, suppliers, purchases, claims, and supported reference records' },
+  { id: 'nhia-config',     label: 'Configure NHIA & CLAIM-it',      detail: 'Verify NHIA credentials and endpoint configuration' },
+  { id: 'services',        label: 'Verify background server',       detail: 'Confirm the installed branch server and worker are responding' },
+  { id: 'health-checks',   label: 'Run health checks',              detail: 'Verify every component is operational before going offline' },
+]
+
+const WIZARD_STEP_TOTAL = WIZARD_STEPS.length
+const blankWizardStepStatuses = () => WIZARD_STEPS.map(() => ({ status: 'idle', note: '' }))
 
 const ENTITY_LABELS = {
   patients: 'Patients',
@@ -202,6 +221,12 @@ export default function OfflineSync() {
   const [setupLoading, setSetupLoading] = useState(false)
   const [setupClientAction, setSetupClientAction] = useState('')
   const [envCopied, setEnvCopied] = useState(false)
+  const [wizardOpen, setWizardOpen] = useState(false)
+  const [wizardPhase, setWizardPhase] = useState('idle')
+  const [wizardStepStatuses, setWizardStepStatuses] = useState(blankWizardStepStatuses)
+  const [wizardCurrentStep, setWizardCurrentStep] = useState(0)
+  const [wizardSummary, setWizardSummary] = useState(null)
+  const [wizardError, setWizardError] = useState('')
   const normalizedRole = String(role || '').toLowerCase()
   const canManageBranchToken = normalizedRole === 'admin' || normalizedRole === 'super_admin'
   const isSuperAdmin = normalizedRole === 'super_admin'
@@ -468,6 +493,173 @@ export default function OfflineSync() {
     notify(savedToken ? 'Branch token saved in this browser.' : 'Branch token removed from this browser.', 'success')
   }
 
+  const openWizard = () => {
+    setWizardOpen(true)
+    setWizardPhase('idle')
+    setWizardStepStatuses(blankWizardStepStatuses())
+    setWizardCurrentStep(0)
+    setWizardSummary(null)
+    setWizardError('')
+  }
+
+  const setWizardStep = (index, status, note = '') => {
+    setWizardCurrentStep(index)
+    setWizardStepStatuses((prev) => prev.map((s, i) => (i === index ? { status, note } : s)))
+  }
+
+  const runOfflineSetupWizard = async () => {
+    setWizardPhase('running')
+    setWizardError('')
+    let syncedCount = 0
+    let nhiaConfigured = false
+    let servicesOk = false
+    let serverVersion = ''
+    let hasUpdate = false
+
+    try {
+      // Step 0 — system requirements
+      setWizardStep(0, 'running', 'Connecting to local branch server…')
+      const health = await getBranchServerHealth()
+      serverVersion = health?.version || ''
+      setWizardStep(0, 'done', `Server${serverVersion ? ` v${serverVersion}` : ''} is healthy`)
+
+      // Step 1 — check for updates
+      setWizardStep(1, 'running', 'Contacting HealthFlow update server…')
+      const updateCheck = await checkBranchServerUpdates()
+      setUpdateStatus(updateCheck)
+      hasUpdate = Boolean(updateCheck?.available) &&
+        updateCheck?.installerSupported !== false &&
+        updateCheck?.installerReady !== false
+      setWizardStep(1, 'done', hasUpdate
+        ? `Update available: ${updateCheck.currentVersion} → ${updateCheck.latestVersion}`
+        : `Already on latest version${updateCheck?.currentVersion ? ` (${updateCheck.currentVersion})` : ''}`)
+
+      if (hasUpdate) {
+        setWizardStep(2, 'running', 'Downloading signed update package…')
+        const installResult = await installBranchServerUpdate()
+        setUpdateStatus(installResult)
+        await waitForBranchUpdateCompletion({
+          expectedVersion: updateCheck.latestVersion,
+          onStatus: (installerStatus) => {
+            setUpdateStatus(installerStatus)
+            const state = String(installerStatus?.state || '').toLowerCase()
+            const note = installerStatus?.message || 'Update is in progress.'
+
+            if (state === 'downloading') {
+              setWizardStep(2, 'running', note)
+            } else if (state === 'stopping_service' || state === 'backing_up') {
+              setWizardStep(2, 'done', 'Package downloaded and signature verified')
+              setWizardStep(3, 'running', note)
+            } else if (state === 'installing_files' || state === 'installing_dependencies') {
+              setWizardStep(2, 'done', 'Package downloaded and signature verified')
+              setWizardStep(3, 'done', 'Application and database restore points created')
+              setWizardStep(4, 'running', note)
+            } else if (state === 'restarting' || state === 'verifying') {
+              setWizardStep(3, 'done', 'Application and database restore points created')
+              setWizardStep(4, 'done', 'Application files and dependencies installed')
+              setWizardStep(5, 'running', note)
+            } else if (state === 'installed') {
+              setWizardStep(4, 'done', 'Application files and dependencies installed')
+              setWizardStep(5, 'done', 'Restarted API and database passed health verification')
+            }
+          },
+        })
+      } else {
+        const skip = !updateCheck?.available ? 'Already on latest version' : 'Manual install required on this platform'
+        setWizardStep(2, 'skipped', skip)
+        setWizardStep(3, 'skipped', skip)
+        setWizardStep(4, 'skipped', skip)
+        setWizardStep(5, 'done', 'Database schema is current')
+      }
+
+      // Step 6 — operational data
+      setWizardStep(6, 'running', 'Uploading queued changes and downloading branch inventory…')
+      const inventoryResult = await pullBranchInventory()
+      const syncResult = await runBranchSync()
+      const syncStatus = await getBranchSyncStatus()
+      syncedCount = Number(syncResult?.synced || 0) + Number(inventoryResult?.imported || 0)
+      setStatus(syncStatus)
+      setWizardStep(
+        6,
+        syncResult?.failed ? 'warning' : 'done',
+        `${inventoryResult?.imported || 0} inventory records downloaded; ${syncResult?.synced || 0} queued changes uploaded`
+      )
+
+      // Step 7 — supported facility and reference data
+      setWizardStep(7, 'running', 'Downloading supported facility and reference records…')
+      const referenceResult = await pullBranchReferenceData()
+      const referenceCount = Object.entries(referenceResult || {})
+        .filter(([key]) => key !== 'pulledAt')
+        .reduce((total, [, value]) => total + (Number(value) || 0), 0)
+      syncedCount += referenceCount
+      setWizardStep(7, 'done', `${referenceCount} facility/reference records downloaded`)
+
+      // Step 8 — NHIA config
+      setWizardStep(8, 'running', 'Verifying NHIA credentials and endpoint configuration…')
+      try {
+        const nhiaCheck = await getNhiaApiSettings({ organizationId: organization?.id || organization?.organization_id })
+        nhiaConfigured = Boolean(nhiaCheck?.facilityCode && nhiaCheck?.providerNumber)
+        if (nhiaConfigured) {
+          setNhiaSettings(nhiaCheck)
+          setNhiaForm(buildNhiaForm(nhiaCheck, organization))
+        }
+        setWizardStep(8, nhiaConfigured ? 'done' : 'warning',
+          nhiaConfigured
+            ? `Facility code ${nhiaCheck.facilityCode} · NHIA configured`
+            : 'NHIA credentials not set — configure in the NHIA / CLAIM-it section below')
+      } catch {
+        setWizardStep(8, 'warning', 'Could not verify NHIA settings — configure manually below')
+      }
+
+      // Step 9 — installed background server
+      setWizardStep(9, 'running', 'Verifying the installed background server…')
+      const postHealth = await getBranchServerHealth()
+      servicesOk = Boolean(postHealth?.ok)
+      serverVersion = postHealth?.version || serverVersion
+      setHealth(postHealth)
+      setWizardStep(9, servicesOk ? 'done' : 'warning',
+        servicesOk ? 'Local API and background sync worker are responding' : 'Background server health check failed')
+
+      // Step 10 — final health checks
+      setWizardStep(10, 'running', 'Running final system health verification…')
+      const finalStatus = await getBranchSyncStatus()
+      const readiness = await getBranchOfflineReadiness()
+      setStatus(finalStatus)
+      if (!readiness.ready) {
+        const failures = (readiness.checks || [])
+          .filter((item) => item.required && !item.passed)
+          .map((item) => item.label)
+        throw new Error(`Offline readiness checks failed: ${failures.join(', ') || 'unknown requirement'}.`)
+      }
+      setWizardStep(
+        10,
+        readiness.summary?.warnings ? 'warning' : 'done',
+        readiness.summary?.warnings
+          ? `Required checks passed with ${readiness.summary.warnings} warning(s)`
+          : 'All required offline readiness checks passed'
+      )
+
+      setWizardSummary({
+        serverVersion,
+        syncedCount,
+        nhiaConfigured,
+        servicesOk,
+        updateInstalled: hasUpdate,
+        readiness,
+      })
+      setWizardPhase('done')
+      notify('Offline setup checks completed successfully.', 'success')
+
+    } catch (wizardErr) {
+      const msg = wizardErr.message || 'Setup step failed.'
+      setWizardError(msg)
+      setWizardPhase('error')
+      setWizardStepStatuses((prev) =>
+        prev.map((s) => s.status === 'running' ? { status: 'error', note: msg } : s)
+      )
+    }
+  }
+
   const checkForBranchUpdates = async () => {
     try {
       setBusyAction('update-check')
@@ -720,6 +912,14 @@ export default function OfflineSync() {
               }
             >
               {busyAction === 'update-install' ? 'Starting...' : 'Download and Install'}
+            </button>
+            <button
+              className="btn btn-accent wizard-launch-btn"
+              type="button"
+              onClick={openWizard}
+              disabled={!isConnected || Boolean(busyAction)}
+            >
+              Offline Setup Wizard
             </button>
           </div>
         </section>
@@ -1619,6 +1819,108 @@ HEALTHFLOW_UPDATE_AUTO_INSTALL=false`}</pre>
       <p className="offline-sync-footnote">
         Branch server: {config.url || 'Not configured'}
       </p>
+
+      {wizardOpen && (
+        <div className="wizard-overlay" role="dialog" aria-modal="true" aria-label="Offline Setup Wizard">
+          <div className="wizard-modal">
+            <div className="wizard-header">
+              <div className="wizard-header-text">
+                <h2>Offline Setup Wizard</h2>
+                <p>This wizard finalizes and verifies an installed HealthFlow branch server.</p>
+              </div>
+              {wizardPhase !== 'running' && (
+                <button className="wizard-close-btn" type="button" aria-label="Close" onClick={() => setWizardOpen(false)}>✕</button>
+              )}
+            </div>
+
+            {wizardPhase === 'idle' && (
+              <div className="wizard-intro">
+                <p>The wizard performs <strong>{WIZARD_STEP_TOTAL} verified steps</strong> to update the installed local server, synchronize supported offline data, and run production readiness checks.</p>
+                <p>This typically takes <strong>5 – 15 minutes</strong> depending on your internet speed and data volume. Do not close the browser tab while the wizard runs.</p>
+                <div className="wizard-footer">
+                  <button className="btn btn-secondary" type="button" onClick={() => setWizardOpen(false)}>Cancel</button>
+                  <button className="btn btn-primary" type="button" onClick={() => void runOfflineSetupWizard()}>Start Setup</button>
+                </div>
+              </div>
+            )}
+
+            {(wizardPhase === 'running' || wizardPhase === 'done' || wizardPhase === 'error') && (
+              <>
+                <div className="wizard-progress-bar-wrap">
+                  <div
+                    className="wizard-progress-bar"
+                    style={{
+                      width: `${Math.round(
+                        (wizardStepStatuses.filter((s) => s.status !== 'idle' && s.status !== 'running').length / WIZARD_STEP_TOTAL) * 100
+                      )}%`,
+                    }}
+                  />
+                </div>
+                <p className="wizard-progress-label">
+                  Step {Math.min(wizardCurrentStep + 1, WIZARD_STEP_TOTAL)} of {WIZARD_STEP_TOTAL}
+                </p>
+
+                <ol className="wizard-steps">
+                  {WIZARD_STEPS.map((step, idx) => {
+                    const { status, note } = wizardStepStatuses[idx] || { status: 'idle', note: '' }
+                    return (
+                      <li key={step.id} className={`wizard-step wizard-step--${status}`}>
+                        <span className="wizard-step-icon" aria-hidden="true">
+                          {status === 'done'    && '✓'}
+                          {status === 'skipped' && '–'}
+                          {status === 'warning' && '⚠'}
+                          {status === 'error'   && '✕'}
+                          {status === 'running' && <span className="wizard-spinner" />}
+                          {status === 'idle'    && <span className="wizard-step-dot" />}
+                        </span>
+                        <span className="wizard-step-body">
+                          <span className="wizard-step-label">{step.label}</span>
+                          {note
+                            ? <span className="wizard-step-note">{note}</span>
+                            : status === 'idle' && <span className="wizard-step-note wizard-step-note--muted">{step.detail}</span>}
+                        </span>
+                      </li>
+                    )
+                  })}
+                </ol>
+
+                {wizardPhase === 'error' && wizardError && (
+                  <div className="wizard-error-banner">
+                    <strong>Setup failed:</strong> {wizardError}
+                    <br />
+                    <small>You can close this dialog, fix the issue, and run the wizard again.</small>
+                  </div>
+                )}
+
+                {wizardPhase === 'done' && wizardSummary && (
+                  <div className="wizard-summary">
+                    <h3>Setup Complete</h3>
+                    <ul>
+                      <li className="wizard-summary-ok">✓ Local server running{wizardSummary.serverVersion ? ` (v${wizardSummary.serverVersion})` : ''}</li>
+                      <li className="wizard-summary-ok">✓ Database ready</li>
+                      {wizardSummary.updateInstalled && <li className="wizard-summary-ok">✓ Software updated to latest version</li>}
+                      <li className="wizard-summary-ok">✓ Supported offline data synchronized ({wizardSummary.syncedCount.toLocaleString()} records processed)</li>
+                      <li className={wizardSummary.nhiaConfigured ? 'wizard-summary-ok' : 'wizard-summary-warn'}>
+                        {wizardSummary.nhiaConfigured ? '✓ NHIA configured' : '⚠ NHIA credentials need configuration'}
+                      </li>
+                      <li className={wizardSummary.servicesOk ? 'wizard-summary-ok' : 'wizard-summary-warn'}>
+                        {wizardSummary.servicesOk ? '✓ Background server responding' : '⚠ Background server requires attention'}
+                      </li>
+                      <li className="wizard-summary-ok">✓ Required offline readiness checks passed</li>
+                    </ul>
+                  </div>
+                )}
+
+                {(wizardPhase === 'done' || wizardPhase === 'error') && (
+                  <div className="wizard-footer">
+                    <button className="btn btn-primary" type="button" onClick={() => setWizardOpen(false)}>Close</button>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

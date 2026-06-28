@@ -1,6 +1,6 @@
 #Requires -RunAsAdministrator
 param(
-  [string]$InstallRoot = 'C:\HealthFlowPharmacy',
+  [string]$InstallRoot = 'C:\HealthFlowLocal',
   [string]$NssmPath = '',
   [string]$NodePath = '',
   [switch]$InstallDependencies,
@@ -156,6 +156,52 @@ function Install-DependenciesIfNeeded {
   }
 }
 
+function Get-EnvValue {
+  param([string]$Name)
+  $envPath = Join-Path $installServerDir '.env'
+  if (-not (Test-Path -LiteralPath $envPath)) { return '' }
+  $match = Get-Content -LiteralPath $envPath |
+    Where-Object { $_ -match "^\s*$([regex]::Escape($Name))\s*=" } |
+    Select-Object -First 1
+  if (-not $match) { return '' }
+  return ($match -split '=', 2)[1].Trim()
+}
+
+function Assert-ProductionConfiguration {
+  $required = @(
+    'BRANCH_SERVER_TOKEN',
+    'ORGANIZATION_ID',
+    'BRANCH_ID',
+    'BRANCH_SYNC_TOKEN',
+    'SUPABASE_URL',
+    'SUPABASE_SYNC_KEY',
+    'HEALTHFLOW_UPDATE_MANIFEST_URL',
+    'HEALTHFLOW_UPDATE_PUBLIC_KEY'
+  )
+  $missing = @()
+  foreach ($name in $required) {
+    $value = Get-EnvValue -Name $name
+    if (-not $value -or $value -match 'change[-_ ]?me|placeholder|your[-_ ]') {
+      $missing += $name
+    }
+  }
+  if ($missing.Count -gt 0) {
+    throw "Production .env is incomplete. Configure: $($missing -join ', ')."
+  }
+}
+
+function Assert-NodeVersion {
+  param([string]$Node)
+  $rawVersion = (& $Node --version)
+  if ($LASTEXITCODE -ne 0 -or $rawVersion -notmatch '^v(\d+)\.') {
+    throw 'Unable to determine the installed Node.js version.'
+  }
+  if ([int]$Matches[1] -lt 20) {
+    throw "HealthFlow requires Node.js 20 or newer. Found $rawVersion."
+  }
+  Write-Host "Node.js runtime: $rawVersion"
+}
+
 function Remove-OldStartupTasks {
   $taskNames = @('HealthFlow Branch Server', 'HealthFlow Branch Sync Worker')
   foreach ($taskName in $taskNames) {
@@ -236,12 +282,14 @@ IconIndex=220
 
 $nssm = Ensure-Nssm
 $node = Resolve-CommandPath -CommandName 'node.exe' -ProvidedPath $NodePath
+Assert-NodeVersion -Node $node
 
 New-Item -ItemType Directory -Force -Path $InstallRoot | Out-Null
 New-Item -ItemType Directory -Force -Path $logsDir | Out-Null
 New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
 
 Copy-BranchServer
+Assert-ProductionConfiguration
 Install-DependenciesIfNeeded
 
 $frontendIndex = Join-Path $installServerDir 'public\index.html'
@@ -258,6 +306,21 @@ foreach ($service in $services) {
 
 Create-DesktopShortcut
 
+$healthScript = Join-Path $installServerDir 'scripts\health-check.ps1'
+Write-Host 'Waiting for the installed service to become healthy...'
+$healthPassed = $false
+for ($attempt = 1; $attempt -le 15; $attempt += 1) {
+  Start-Sleep -Seconds 2
+  & powershell -NoProfile -ExecutionPolicy Bypass -File $healthScript -InstallRoot $InstallRoot
+  if ($LASTEXITCODE -eq 0) {
+    $healthPassed = $true
+    break
+  }
+}
+if (-not $healthPassed) {
+  throw 'HealthFlow service installation completed, but production health checks did not pass.'
+}
+
 Write-Host ''
 Write-Host 'HealthFlow Offline Branch Server service installed.'
 Write-Host "Install folder: $installServerDir"
@@ -266,5 +329,4 @@ Write-Host "Data folder:    $dataDir"
 Write-Host "NSSM path:      $nssm"
 Write-Host 'Desktop link:   HealthFlow Offline POS'
 Write-Host ''
-Write-Host 'Run this health check after a few seconds:'
-Write-Host "powershell -ExecutionPolicy Bypass -File `"$installServerDir\scripts\health-check.ps1`""
+Write-Host 'Production health checks passed.'

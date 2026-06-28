@@ -1,6 +1,6 @@
 param(
   [string]$BaseUrl = 'http://localhost:4780',
-  [string]$InstallRoot = 'C:\HealthFlowPharmacy',
+  [string]$InstallRoot = 'C:\HealthFlowLocal',
   [string]$BranchToken = ''
 )
 

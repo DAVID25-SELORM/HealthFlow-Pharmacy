@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import WebSocket from 'ws'
 import { config, isSupabaseSyncConfigured } from './config.js'
-import { db, parseJson, nowIso } from './db.js'
+import { db, getBranchMeta, parseJson, nowIso, setBranchMeta } from './db.js'
 import { getInventoryImportStatus, importInventorySnapshot } from './inventoryRepository.js'
 import { getNhiaSummary, importNhiaConfigurationSnapshot } from './nhiaRepository.js'
 import { importOfflineRecords } from './offlineRecordsRepository.js'
@@ -454,6 +454,9 @@ export const getSyncStatus = () => {
       events: failedEvents,
     },
     inventory: getInventoryImportStatus(),
+    referenceData: {
+      lastPulledAt: getBranchMeta('reference_data_last_pulled_at'),
+    },
     nhia: getNhiaSummary(),
   }
 }
@@ -593,6 +596,7 @@ export const pullReferenceData = async () => {
   result.nhisClaims = nhisClaims
   result.nhiaConfigurations = nhiaConfigurations
   result.purchases = purchases
+  setBranchMeta('reference_data_last_pulled_at', result.pulledAt)
 
   return result
 }

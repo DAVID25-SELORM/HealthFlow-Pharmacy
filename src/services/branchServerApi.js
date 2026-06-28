@@ -299,6 +299,54 @@ export const installBranchServerUpdate = async () => {
   return response.data || response
 }
 
+const UPDATE_TERMINAL_STATES = new Set(['installed', 'rolled_back', 'failed'])
+
+export const waitForBranchUpdateCompletion = async ({
+  expectedVersion = '',
+  timeoutMs = 15 * 60 * 1000,
+  pollIntervalMs = 2000,
+  onStatus = () => {},
+} = {}) => {
+  const deadline = Date.now() + timeoutMs
+  let lastStatus = null
+  let lastError = null
+
+  while (Date.now() < deadline) {
+    try {
+      const status = await getBranchUpdateStatus()
+      lastStatus = status
+      lastError = null
+      onStatus(status)
+
+      const state = String(status?.state || '').toLowerCase()
+      if (UPDATE_TERMINAL_STATES.has(state)) {
+        if (state !== 'installed') {
+          throw new Error(status?.message || `Branch update ended in state: ${state}.`)
+        }
+        if (expectedVersion && String(status?.currentVersion || '') !== String(expectedVersion)) {
+          throw new Error(
+            `Branch server restarted on version ${status?.currentVersion || 'unknown'}; expected ${expectedVersion}.`
+          )
+        }
+        return status
+      }
+    } catch (error) {
+      if (UPDATE_TERMINAL_STATES.has(String(lastStatus?.state || '').toLowerCase())) {
+        throw error
+      }
+      lastError = error
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
+  }
+
+  throw new Error(
+    lastError?.message ||
+      lastStatus?.message ||
+      'Timed out waiting for the branch update to complete.'
+  )
+}
+
 export const searchBranchInventory = async ({ term = '', limit = 30 } = {}) => {
   const params = new URLSearchParams()
   if (term) {
@@ -505,6 +553,13 @@ export const pullBranchReferenceData = async () =>
 
 export const getBranchDatabaseStatus = async () => {
   const response = await branchFetch('/api/database/status', {
+    timeoutMs: DEFAULT_BRANCH_REQUEST_TIMEOUT_MS,
+  })
+  return response.data || response
+}
+
+export const getBranchOfflineReadiness = async () => {
+  const response = await branchFetch('/api/offline/readiness', {
     timeoutMs: DEFAULT_BRANCH_REQUEST_TIMEOUT_MS,
   })
   return response.data || response

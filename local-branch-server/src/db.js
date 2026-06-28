@@ -114,6 +114,23 @@ const openHealthyDatabase = () => {
 
 export const db = openHealthyDatabase()
 
+const getBranchMetaStatement = db.prepare('SELECT value FROM branch_meta WHERE key = ?')
+const setBranchMetaStatement = db.prepare(`
+  INSERT INTO branch_meta (key, value, updated_at)
+  VALUES (?, ?, ?)
+  ON CONFLICT(key) DO UPDATE SET
+    value = excluded.value,
+    updated_at = excluded.updated_at
+`)
+
+export const getBranchMeta = (key, fallback = null) =>
+  getBranchMetaStatement.get(String(key || ''))?.value ?? fallback
+
+export const setBranchMeta = (key, value) => {
+  setBranchMetaStatement.run(String(key || ''), String(value ?? ''), new Date().toISOString())
+  return value
+}
+
 export const backupDatabase = (label = 'backup') => {
   const backupDir = path.join(path.dirname(config.sqlitePath), 'backups')
   fs.mkdirSync(backupDir, { recursive: true })

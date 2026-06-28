@@ -1,9 +1,9 @@
 {
-  "version": "1.2.6",
-  "releaseNotes": "Improves large branch synchronization with bounded-memory keyset streaming and removes the 20,000-row reference-data limit.",
+  "version": "1.2.7",
+  "releaseNotes": "Production-hardens offline setup and updates with real installer progress, application and SQLite rollback, post-restart health verification, readiness checks, and automatic Node.js LTS provisioning for first-time Windows setup.",
   "channel": "stable",
-  "sha256": "014bcf45169abe65835f997eb4fce233d7dc2528b722ddcf4651b4f8222817bb",
-  "publishedAt": "2026-06-28T19:47:54.0928325Z",
-  "packageUrl": "https://healthflowcloud.com/branch-updates/healthflow-branch-1.2.6.zip",
-  "signature": "wYVW0XiPyk2FvqBBczNXGqpHaZA0vewJM2TkVqhgQyUlp8056U2pyfzKuJBYqYH4c2Ae8fmDdYwsatiAAlhuDQ=="
+  "sha256": "daead3803622908172b74fad712dcfe0c9d927f7f7c2e8623970d22a17ac194b",
+  "publishedAt": "2026-06-28T20:38:25.7536576Z",
+  "packageUrl": "https://healthflowcloud.com/branch-updates/healthflow-branch-1.2.7.zip",
+  "signature": "wOtVrZsvUJdE0Bq2NnnvoXAkMhyFFeF2TbmjELkT3zWt45583b/P4ZyEJFqg/H05rPzkGmNi/8L8xpcsGTuWDQ=="
 }

@@ -116,6 +116,35 @@ describe('branchServerApi', () => {
     )
   })
 
+  it('waits for a real terminal updater state across service restart responses', async () => {
+    const states = [
+      { state: 'backing_up', currentVersion: '1.2.6' },
+      { state: 'verifying', currentVersion: '1.2.6' },
+      { state: 'installed', currentVersion: '1.2.7' },
+    ]
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ data: states.shift() }), { status: 200 })
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const {
+      saveBranchToken,
+      waitForBranchUpdateCompletion,
+    } = await importBranchServerApi()
+    saveBranchToken('facility-branch-token')
+    const observed = []
+
+    const status = await waitForBranchUpdateCompletion({
+      expectedVersion: '1.2.7',
+      pollIntervalMs: 1,
+      timeoutMs: 1000,
+      onStatus: (nextStatus) => observed.push(nextStatus.state),
+    })
+
+    expect(status.state).toBe('installed')
+    expect(observed).toEqual(['backing_up', 'verifying', 'installed'])
+  })
+
   it('maps NHIA member lookup aliases to the branch server payload', async () => {
     mocks.getSession.mockResolvedValue({
       data: {

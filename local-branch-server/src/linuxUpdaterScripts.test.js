@@ -33,5 +33,8 @@ describe('Linux signed updater scripts', () => {
     expect(updater).toContain('"http://127.0.0.1:${port}/health"')
     expect(updater).toContain('restore_backup')
     expect(updater).toContain('write_status "rolled_back"')
+    expect(updater).toContain('DATABASE_BACKUP_PATH=')
+    expect(updater).toContain('write_status "backing_up"')
+    expect(updater).toContain('write_status "verifying"')
   })
 })

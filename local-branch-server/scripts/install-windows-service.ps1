@@ -23,6 +23,41 @@ if (-not (Test-Path -LiteralPath $installer)) {
   throw "Installer not found: $installer"
 }
 
+if (-not $NodePath) {
+  $nodeCommand = Get-Command node.exe -ErrorAction SilentlyContinue
+  if ($nodeCommand) {
+    $NodePath = $nodeCommand.Source
+  } else {
+    $winget = Get-Command winget.exe -ErrorAction SilentlyContinue
+    if (-not $winget) {
+      throw 'Node.js is not installed and Windows Package Manager (winget) is unavailable. Install Node.js 20 or newer, then rerun this installer.'
+    }
+
+    Write-Host 'Node.js is not installed. Installing the current Node.js LTS runtime...'
+    & $winget.Source install `
+      --id OpenJS.NodeJS.LTS `
+      --exact `
+      --silent `
+      --accept-package-agreements `
+      --accept-source-agreements `
+      --disable-interactivity
+    if ($LASTEXITCODE -ne 0) {
+      throw "Node.js LTS installation failed with exit code $LASTEXITCODE."
+    }
+
+    $nodeCandidates = @(
+      (Join-Path $env:ProgramFiles 'nodejs\node.exe'),
+      (Join-Path ${env:ProgramFiles(x86)} 'nodejs\node.exe')
+    )
+    $NodePath = $nodeCandidates |
+      Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) } |
+      Select-Object -First 1
+    if (-not $NodePath) {
+      throw 'Node.js LTS installation completed, but node.exe could not be located.'
+    }
+  }
+}
+
 $arguments = @(
   '-ExecutionPolicy', 'Bypass',
   '-File', $installer,
@@ -33,9 +68,7 @@ if ($NssmPath) {
   $arguments += @('-NssmPath', $NssmPath)
 }
 
-if ($NodePath) {
-  $arguments += @('-NodePath', $NodePath)
-}
+$arguments += @('-NodePath', $NodePath)
 
 if ($InstallDependencies) {
   $arguments += '-InstallDependencies'

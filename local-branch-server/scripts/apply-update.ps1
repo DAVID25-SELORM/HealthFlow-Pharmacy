@@ -3,7 +3,8 @@ param(
   [Parameter(Mandatory = $true)][string]$InstallDir,
   [Parameter(Mandatory = $true)][string]$PackagePath,
   [Parameter(Mandatory = $true)][string]$ExpectedVersion,
-  [string]$ServiceName = 'HealthFlowOfflineServer'
+  [string]$ServiceName = 'HealthFlowOfflineServer',
+  [string]$DatabasePath = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -16,6 +17,12 @@ $workDir = Join-Path $parentDir ('update-work-' + [Guid]::NewGuid().ToString('N'
 $backupDir = Join-Path $parentDir ('backup-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
 $logDir = Join-Path $parentDir 'logs'
 $logPath = Join-Path $logDir 'update.log'
+$databaseBackupDir = Join-Path $backupDir 'database'
+$databaseBackupPath = if ($DatabasePath) {
+  Join-Path $databaseBackupDir ([System.IO.Path]::GetFileName($DatabasePath))
+} else {
+  ''
+}
 
 New-Item -ItemType Directory -Force -Path $updatesDir, $logDir | Out-Null
 
@@ -53,13 +60,63 @@ function Restore-Backup {
     Where-Object { $_.Name -notin @('.env', 'updates') } |
     Remove-Item -Recurse -Force
   Get-ChildItem -LiteralPath $backupDir -Force |
+    Where-Object { $_.Name -ne 'database' } |
     ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $installPath -Recurse -Force }
+  if ($DatabasePath -and (Test-Path -LiteralPath $databaseBackupPath)) {
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $DatabasePath) | Out-Null
+    foreach ($suffix in @('', '-wal', '-shm')) {
+      $target = "$DatabasePath$suffix"
+      $source = "$databaseBackupPath$suffix"
+      Remove-Item -LiteralPath $target -Force -ErrorAction SilentlyContinue
+      if (Test-Path -LiteralPath $source) {
+        Copy-Item -LiteralPath $source -Destination $target -Force
+      }
+    }
+  }
+}
+
+function Get-EnvValue {
+  param([string]$Name)
+  $envPath = Join-Path $installPath '.env'
+  if (-not (Test-Path -LiteralPath $envPath)) { return '' }
+  $match = Get-Content -LiteralPath $envPath |
+    Where-Object { $_ -match "^\s*$([regex]::Escape($Name))\s*=" } |
+    Select-Object -First 1
+  if (-not $match) { return '' }
+  return ($match -split '=', 2)[1].Trim()
+}
+
+function Wait-HealthFlowReady {
+  $token = Get-EnvValue -Name 'BRANCH_SERVER_TOKEN'
+  $port = Get-EnvValue -Name 'PORT'
+  if (-not $port) { $port = '4780' }
+  if (-not $token) { throw 'BRANCH_SERVER_TOKEN is missing after restart.' }
+
+  $deadline = (Get-Date).AddSeconds(60)
+  $lastError = ''
+  do {
+    try {
+      $health = Invoke-RestMethod `
+        -Uri "http://127.0.0.1:$port/health" `
+        -Headers @{ 'x-branch-token' = $token } `
+        -TimeoutSec 10
+      if ($health.ok -and $health.database.integrity -eq 'ok') {
+        return
+      }
+      $lastError = 'Health endpoint did not report a healthy database.'
+    } catch {
+      $lastError = $_.Exception.Message
+    }
+    Start-Sleep -Seconds 2
+  } while ((Get-Date) -lt $deadline)
+
+  throw "HealthFlow did not become ready after restart: $lastError"
 }
 
 Start-Sleep -Seconds 3
 
 try {
-  Write-UpdateStatus -State 'installing' -Message "Stopping $ServiceName and preparing the update."
+  Write-UpdateStatus -State 'stopping_service' -Message "Stopping $ServiceName and preparing the update."
   Stop-HealthFlowService
 
   New-Item -ItemType Directory -Force -Path $workDir, $backupDir | Out-Null
@@ -82,10 +139,21 @@ try {
     throw "Update archive version $payloadVersion does not match expected version $ExpectedVersion."
   }
 
+  Write-UpdateStatus -State 'backing_up' -Message 'Backing up the application and local database.'
   Get-ChildItem -LiteralPath $installPath -Force |
     Where-Object { $_.Name -notin @('.env', 'updates') } |
     ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $backupDir -Recurse -Force }
+  if ($DatabasePath -and (Test-Path -LiteralPath $DatabasePath)) {
+    New-Item -ItemType Directory -Force -Path $databaseBackupDir | Out-Null
+    foreach ($suffix in @('', '-wal', '-shm')) {
+      $source = "$DatabasePath$suffix"
+      if (Test-Path -LiteralPath $source) {
+        Copy-Item -LiteralPath $source -Destination "$databaseBackupPath$suffix" -Force
+      }
+    }
+  }
 
+  Write-UpdateStatus -State 'installing_files' -Message 'Installing verified application files.'
   Get-ChildItem -LiteralPath $installPath -Force |
     Where-Object { $_.Name -notin @('.env', 'updates') } |
     Remove-Item -Recurse -Force
@@ -94,6 +162,7 @@ try {
     ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $installPath -Recurse -Force }
 
   $npm = (Get-Command npm.cmd -ErrorAction Stop).Source
+  Write-UpdateStatus -State 'installing_dependencies' -Message 'Installing production dependencies.'
   Push-Location $installPath
   try {
     & $npm ci --omit=dev
@@ -104,12 +173,15 @@ try {
     Pop-Location
   }
 
+  Write-UpdateStatus -State 'restarting' -Message "Restarting $ServiceName."
   Start-HealthFlowService
-  Start-Sleep -Seconds 5
+  Start-Sleep -Seconds 3
   $service = Get-Service -Name $ServiceName
   if ($service.Status -ne 'Running') {
     throw "$ServiceName did not remain running after the update."
   }
+  Write-UpdateStatus -State 'verifying' -Message 'Verifying the API and local database after restart.'
+  Wait-HealthFlowReady
 
   Write-UpdateStatus -State 'installed' -Message "HealthFlow $ExpectedVersion installed successfully."
 } catch {
