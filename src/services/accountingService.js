@@ -1,5 +1,4 @@
 import { supabase } from '../lib/supabase'
-import { getUserBranchIdsByUserIds } from './branchService'
 import { getExpenseSummary } from './expenseService'
 import { getReceivablesSummary } from './receivablesService'
 import { getCashbookSummary } from './cashbookService'
@@ -23,26 +22,6 @@ const unwrapSettled = (result, fallback, label, warnings) => {
 
   warnings.push(label)
   return fallback()
-}
-
-const filterRowsByUserBranch = async (rows, userIdField, branchId) => {
-  if (!branchId) {
-    return rows
-  }
-
-  const rowsWithStoredBranch = rows.filter((row) => row.branch_id)
-  const rowsWithoutStoredBranch = rows.filter((row) => !row.branch_id)
-  const branchScopedRows = rowsWithStoredBranch.filter((row) => row.branch_id === branchId)
-
-  if (!rowsWithoutStoredBranch.length) {
-    return branchScopedRows
-  }
-
-  const branchMap = await getUserBranchIdsByUserIds(rows.map((row) => row[userIdField]))
-  return [
-    ...branchScopedRows,
-    ...rowsWithoutStoredBranch.filter((row) => branchMap[row[userIdField]] === branchId),
-  ]
 }
 
 export const getAccountingOverview = async (startDate, endDate, branchId = null) => {
@@ -77,59 +56,22 @@ export const getAccountingOverview = async (startDate, endDate, branchId = null)
 }
 
 const fetchSalesSummary = async (startDate, endDate, branchId) => {
-  const { data, error } = await supabase
-    .from('sales')
-    .select(`
-      net_amount,
-      payment_method,
-      sold_by,
-      branch_id,
-      sale_items (
-        quantity,
-        unit_price,
-        unit_cost_at_sale,
-        line_cost,
-        drug_id,
-        drugs (cost_price)
-      )
-    `)
-    .eq('payment_status', 'completed')
-    .gte('sale_date', `${startDate}T00:00:00`)
-    .lte('sale_date', `${endDate}T23:59:59`)
+  const { data, error } = await supabase.rpc('get_accounting_sales_summary', {
+    p_start_date: startDate,
+    p_end_date: endDate,
+    p_branch_id: branchId || null,
+  })
 
   if (error) throw error
 
-  const scopedSales = await filterRowsByUserBranch(data || [], 'sold_by', branchId)
-
-  const revenue = scopedSales.reduce((sum, sale) => sum + Number(sale.net_amount), 0)
-  const cogs = scopedSales.reduce((sum, sale) => {
-    const itemCogs = (sale.sale_items || []).reduce((itemSum, item) => {
-      const hasStoredLineCost = item.line_cost !== null && item.line_cost !== undefined
-      const storedLineCost = Number(item.line_cost)
-      if (hasStoredLineCost && Number.isFinite(storedLineCost)) {
-        return itemSum + storedLineCost
-      }
-
-      const hasStoredUnitCost =
-        item.unit_cost_at_sale !== null && item.unit_cost_at_sale !== undefined
-      const storedUnitCost = Number(item.unit_cost_at_sale)
-      if (hasStoredUnitCost && Number.isFinite(storedUnitCost)) {
-        return itemSum + (storedUnitCost * Number(item.quantity || 0))
-      }
-
-      const currentCost = Number(item.drugs?.cost_price || 0)
-      return itemSum + currentCost * Number(item.quantity)
-    }, 0)
-
-    return sum + itemCogs
-  }, 0)
-
-  const byMethod = scopedSales.reduce((acc, sale) => {
-    acc[sale.payment_method] = (acc[sale.payment_method] || 0) + Number(sale.net_amount)
-    return acc
-  }, {})
-
-  return { revenue, cogs, byMethod, count: scopedSales.length }
+  return {
+    revenue: Number(data?.revenue || 0),
+    cogs: Number(data?.cogs || 0),
+    byMethod: Object.fromEntries(
+      Object.entries(data?.byMethod || {}).map(([method, amount]) => [method, Number(amount || 0)])
+    ),
+    count: Number(data?.count || 0),
+  }
 }
 
 export const getBranchProfitAndLoss = async (startDate, endDate, branches = []) => {

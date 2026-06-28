@@ -5,6 +5,7 @@ import { db, parseJson, nowIso } from './db.js'
 import { getInventoryImportStatus, importInventorySnapshot } from './inventoryRepository.js'
 import { getNhiaSummary, importNhiaConfigurationSnapshot } from './nhiaRepository.js'
 import { importOfflineRecords } from './offlineRecordsRepository.js'
+import { fetchSupabasePages } from './supabasePagination.js'
 
 const pendingOutbox = db.prepare(`
   SELECT *
@@ -482,15 +483,15 @@ export const pullInventorySnapshot = async ({ forceFull = false } = {}) => {
 }
 
 const selectAll = async (supabase, table, select = '*') => {
-  let query = supabase.from(table).select(select)
-  if (config.organizationId) {
-    query = query.eq('organization_id', config.organizationId)
-  }
-  const { data, error } = await query.limit(20000)
-  if (error) {
-    throw error
-  }
-  return data || []
+  return fetchSupabasePages({
+    createQuery: () => {
+      let query = supabase.from(table).select(select)
+      if (config.organizationId) {
+        query = query.eq('organization_id', config.organizationId)
+      }
+      return query
+    },
+  })
 }
 
 const selectOptionalAll = async (supabase, table, select = '*') => {
