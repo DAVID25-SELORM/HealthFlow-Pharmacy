@@ -3,14 +3,15 @@ import { Plus, Search, Filter, Edit2, Trash2, Upload, Download, Truck } from 'lu
 import { useSearchParams } from 'react-router-dom'
 import { dispatchHealthflowDataChanged } from '../lib/appEvents'
 import {
-  getAllDrugs,
-  addDrug,
-  updateDrug,
-  deleteDrug,
   calculateDrugStatus,
+  createInventoryDrug,
+  deleteInventoryDrug,
+  getInventory,
   isDefaultCatalogDrug,
-  transferDrugToBranch,
-} from '../services/drugService'
+  isLocalInventoryEnabled,
+  transferInventoryDrug,
+  updateInventoryDrug,
+} from '../services/inventoryApi'
 import { parseExcelFile, validateImportData, importDrugs, generateTemplate } from '../services/drugImportService'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
@@ -19,7 +20,6 @@ import { useTenant } from '../context/TenantContext'
 import { formatAppDate } from '../utils/date'
 import { getPharmacySettings } from '../services/settingsService'
 import { getBranches } from '../services/branchService'
-import { getBranchInventory, isBranchServerEnabled } from '../services/branchServerApi'
 import { loadOfflinePosSnapshot, saveOfflinePosSnapshot } from '../services/offlinePosCache'
 import { getEffectiveSellingPrice, getNhisCatalogPrice, hasNhisCatalogPrice } from '../utils/drugPricing'
 // ✅ NHIS PHARMACY LEVEL PATCH START
@@ -208,7 +208,7 @@ const Inventory = () => {
       setError('')
 
       if (typeof navigator !== 'undefined' && !navigator.onLine) {
-        if (isBranchServerEnabled()) {
+        if (isLocalInventoryEnabled()) {
           try {
             await loadLocalInventory('', { notifyOnSuccess: false })
             return
@@ -240,7 +240,7 @@ const Inventory = () => {
       await loadDrugs(defaultBranchId, { manageLoading: false })
     } catch (error) {
       console.error('Error loading inventory:', error)
-      if (isBranchServerEnabled()) {
+      if (isLocalInventoryEnabled()) {
         try {
           await loadLocalInventory('', { notifyOnSuccess: true })
           return
@@ -262,7 +262,8 @@ const Inventory = () => {
 
   const loadLocalInventory = async (branchIdOverride = selectedBranchId, options = {}) => {
     const { notifyOnSuccess = true } = options
-    const data = await getBranchInventory({
+    const data = await getInventory({
+      source: 'branch',
       limit: 20000,
     })
     setBranches([])
@@ -293,7 +294,7 @@ const Inventory = () => {
       }
 
       if (typeof navigator !== 'undefined' && !navigator.onLine) {
-        if (isBranchServerEnabled()) {
+        if (isLocalInventoryEnabled()) {
           try {
             await loadLocalInventory(branchIdOverride, { notifyOnSuccess: false })
             return
@@ -308,7 +309,7 @@ const Inventory = () => {
         return
       }
 
-      const data = await getAllDrugs({
+      const data = await getInventory({
         includeCatalog: true,
         branchId: branchIdOverride || undefined,
       })
@@ -329,7 +330,7 @@ const Inventory = () => {
       }
     } catch (error) {
       console.error('Error loading drugs:', error)
-      if (isBranchServerEnabled()) {
+      if (isLocalInventoryEnabled()) {
         try {
           await loadLocalInventory(branchIdOverride, { notifyOnSuccess: true })
           return
@@ -533,11 +534,14 @@ const Inventory = () => {
       }
 
       if (editingDrugId) {
-        const updatedDrug = await updateDrug(editingDrugId, formData)
+        const updatedDrug = await updateInventoryDrug(editingDrugId, formData)
         setDrugs((current) => current.map((drug) => (drug.id === updatedDrug?.id ? updatedDrug : drug)))
         notify('Medicine updated successfully!', 'success')
       } else {
-        const createdDrug = await addDrug({ ...formData, branchId: selectedBranchId || undefined })
+        const createdDrug = await createInventoryDrug({
+          ...formData,
+          branchId: selectedBranchId || undefined,
+        })
         if (createdDrug?.id) {
           setDrugs((current) => [createdDrug, ...current.filter((drug) => drug.id !== createdDrug.id)])
         }
@@ -578,12 +582,12 @@ const Inventory = () => {
     }
 
     try {
-      if (!isSupabaseConfigured() && !isBranchServerEnabled()) {
+      if (!isSupabaseConfigured() && !isLocalInventoryEnabled()) {
         notify('Supabase not configured.', 'warning')
         return
       }
 
-      await deleteDrug(id)
+      await deleteInventoryDrug(id)
       await loadDrugs()
       dispatchHealthflowDataChanged()
       notify('Drug deleted successfully!', 'success')
@@ -605,7 +609,7 @@ const Inventory = () => {
 
     try {
       setTransferSubmitting(true)
-      await transferDrugToBranch({
+      await transferInventoryDrug({
         drugId: transferDrug.id,
         destinationBranchId: transferForm.destinationBranchId,
         quantity: transferForm.quantity,

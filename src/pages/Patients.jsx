@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { Plus, Search, Phone, Mail, ShieldCheck } from 'lucide-react'
 import {
-  addPatient,
-  getPatientById,
-  getPatientsWorkspacePage,
-} from '../services/patientService'
+  createPatientRecord,
+  getPatientRecord,
+  listPatientWorkspacePage,
+} from '../services/patientApi'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { formatAppDate, formatAppDateTime } from '../utils/date'
@@ -139,7 +139,7 @@ const Patients = () => {
         return
       }
 
-      const result = await getPatientsWorkspacePage({
+      const result = await listPatientWorkspacePage({
         page,
         pageSize: PATIENTS_PAGE_SIZE,
         searchTerm: term,
@@ -205,7 +205,7 @@ const Patients = () => {
       setSubmitting(true)
       setError('')
 
-      await addPatient(formData)
+      await createPatientRecord(formData)
       setShowModal(false)
       setFormData(initialForm)
       await loadPatients(searchTerm, { page: patientsPage })
@@ -234,7 +234,7 @@ const Patients = () => {
     setHistoryLoading(true)
 
     try {
-      const detail = await getPatientById(patient.id) || patient
+      const detail = await getPatientRecord(patient.id) || patient
       const sales = [...(detail.sales || [])].sort(
         (left, right) => new Date(right.sale_date) - new Date(left.sale_date)
       )

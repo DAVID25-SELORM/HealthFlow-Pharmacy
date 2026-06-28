@@ -64,9 +64,9 @@ Cloud:
 
 ## Next Practical Step
 
-Extend the app-owned API pattern to inventory and patient lookup, then move their
-offline writes into the branch sync queue with explicit pending, synced, and
-failed states.
+Move inventory and patient offline writes into the branch sync queue with explicit
+pending, synced, and failed states. Their pages now use app-owned API facades
+without changing the existing production routing behavior.
 
 ## Current POS Offline Behavior
 
