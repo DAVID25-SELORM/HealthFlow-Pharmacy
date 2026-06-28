@@ -16,6 +16,22 @@ describe('Windows production installer scripts', () => {
     expect(installer).toContain('Assert-NodeVersion')
     expect(installer).toContain('HealthFlow requires Node.js 20 or newer')
     expect(installer).toContain('production health checks did not pass')
+    expect(installer).toContain('provision-facility-tls.ps1')
+    expect(installer).toContain('HealthFlow TLS Certificate Renewal')
+    expect(installer).toContain('New-NetFirewallRule')
+  })
+
+  it('provisions a facility CA and creates a workstation enrollment bundle', () => {
+    const provisioner = readScript('provision-facility-tls.ps1')
+    const workstation = readScript('install-workstation-trust.ps1')
+
+    expect(provisioner).toContain('New-SelfSignedCertificate')
+    expect(provisioner).toContain('HealthFlow Facility Root')
+    expect(provisioner).toContain('Export-PfxCertificate')
+    expect(provisioner).toContain('HealthFlow-Connect-This-Computer.zip')
+    expect(provisioner).toContain('SetAccessRuleProtection')
+    expect(workstation).toContain("Cert:\\LocalMachine\\Root")
+    expect(workstation).toContain('HealthFlow Offline POS.url')
   })
 
   it('automatically installs the Node.js LTS runtime when it is missing', () => {

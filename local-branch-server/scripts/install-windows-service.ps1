@@ -3,6 +3,8 @@ param(
   [string]$InstallRoot = 'C:\HealthFlowLocal',
   [string]$NssmPath = '',
   [string]$NodePath = '',
+  [string]$LanHostname = $env:COMPUTERNAME,
+  [string]$LanIp = '',
   [switch]$InstallDependencies,
   [switch]$SkipCopy
 )
@@ -63,6 +65,10 @@ $arguments = @(
   '-File', $installer,
   '-InstallRoot', $InstallRoot
 )
+$arguments += @('-LanHostname', $LanHostname)
+if ($LanIp) {
+  $arguments += @('-LanIp', $LanIp)
+}
 
 if ($NssmPath) {
   $arguments += @('-NssmPath', $NssmPath)
@@ -108,4 +114,5 @@ Write-Host 'Startup:      Automatic'
 Write-Host 'Crash policy: Restart'
 Write-Host "App folder:   $targetServerDir"
 Write-Host "DB path:      $targetDbPath"
-Write-Host 'Open POS:     http://localhost:4780'
+Write-Host "Open POS:     https://$($LanHostname.ToLowerInvariant()):4780"
+Write-Host "Connect kit:  $(Join-Path $InstallRoot 'HealthFlow-Connect-This-Computer.zip')"

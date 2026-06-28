@@ -41,6 +41,29 @@ CREATE INDEX IF NOT EXISTS idx_local_audit_logs_created
 CREATE INDEX IF NOT EXISTS idx_local_audit_logs_target
   ON local_audit_logs(target_user_id, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS authorized_workstations (
+  id TEXT PRIMARY KEY,
+  secret_hash TEXT NOT NULL,
+  computer_name TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active',
+  first_seen_at TEXT NOT NULL,
+  last_seen_at TEXT NOT NULL,
+  last_user_id TEXT,
+  ip_address TEXT,
+  revoked_at TEXT,
+  revoked_by TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_authorized_workstations_status
+  ON authorized_workstations(status, last_seen_at DESC);
+
+CREATE TABLE IF NOT EXISTS workstation_enrollment_tokens (
+  token_hash TEXT PRIMARY KEY,
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  used_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS patients (
   id TEXT PRIMARY KEY,
   full_name TEXT NOT NULL,

@@ -394,6 +394,37 @@
   gap: 1rem;
 }
 
+.tls-deployment-actions,
+.tls-completion-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.tls-deployment-actions .btn {
+  width: auto;
+}
+
+.tls-workstation-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.75rem;
+  border-top: 1px solid var(--gray-200);
+  padding: 0.65rem 0;
+}
+
+.tls-workstation-row div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+@media (max-width: 760px) {
+  .tls-workstation-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 760px) {
   .offline-pin-enrollment,
   .offline-audit-row {

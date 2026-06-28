@@ -15,13 +15,17 @@ import {
   createBranchDatabaseBackup,
   downloadBranchDatabaseBackup,
   getBranchDatabaseStatus,
+  getBranchDeploymentStatus,
   getBranchTlsStatus,
   getSavedBranchToken,
   enrollBranchOfflinePin,
   listBranchOfflineAccess,
   listBranchOfflineAuthAudit,
   resetBranchOfflinePin,
+  renewBranchTlsCertificate,
+  revokeBranchWorkstation,
   saveBranchTlsSettings,
+  downloadBranchWorkstationBundle,
   saveBranchToken,
   testNhiaConfiguration as testBranchNhiaConfiguration,
   updateBranchOfflineAccess,
@@ -574,6 +578,8 @@ const Settings = () => {
   const [tlsStatus, setTlsStatus] = useState(null)
   const [tlsLoading, setTlsLoading] = useState(false)
   const [tlsSaving, setTlsSaving] = useState(false)
+  const [deploymentStatus, setDeploymentStatus] = useState(null)
+  const [deploymentAction, setDeploymentAction] = useState('')
   const [error, setError] = useState('')
 
   // Branch state
@@ -644,8 +650,12 @@ const Settings = () => {
   const loadTlsSettings = async ({ silent = false } = {}) => {
     try {
       setTlsLoading(true)
-      const status = await getBranchTlsStatus()
+      const [status, deployment] = await Promise.all([
+        getBranchTlsStatus(),
+        getBranchDeploymentStatus(),
+      ])
       setTlsStatus(status)
+      setDeploymentStatus(deployment)
       setTlsForm({
         lanHostname: status.lanHostname || '',
         lanIp: status.lanIp || '',
@@ -656,6 +666,45 @@ const Settings = () => {
       if (!silent) notify(tlsError.message || 'Unable to read Local Branch Server TLS status.', 'error')
     } finally {
       setTlsLoading(false)
+    }
+  }
+
+  const handleDownloadWorkstationBundle = async () => {
+    try {
+      setDeploymentAction('download')
+      await downloadBranchWorkstationBundle()
+      notify('Workstation enrollment bundle downloaded.', 'success')
+    } catch (deploymentError) {
+      notify(deploymentError.message || 'Unable to download workstation enrollment bundle.', 'error')
+    } finally {
+      setDeploymentAction('')
+    }
+  }
+
+  const handleRenewTlsCertificate = async () => {
+    if (!window.confirm('Renew the facility TLS certificate now? The Local Branch Server will restart briefly.')) return
+    try {
+      setDeploymentAction('renew')
+      const result = await renewBranchTlsCertificate()
+      notify(result.message || 'TLS certificate renewal started.', 'success', 6000)
+    } catch (deploymentError) {
+      notify(deploymentError.message || 'Unable to start TLS certificate renewal.', 'error')
+    } finally {
+      setDeploymentAction('')
+    }
+  }
+
+  const handleRevokeWorkstation = async (workstation) => {
+    if (!window.confirm(`Revoke offline access for ${workstation.computer_name}?`)) return
+    try {
+      setDeploymentAction(`revoke:${workstation.id}`)
+      await revokeBranchWorkstation(workstation.id)
+      notify('Workstation access revoked.', 'success')
+      await loadTlsSettings({ silent: true })
+    } catch (deploymentError) {
+      notify(deploymentError.message || 'Unable to revoke workstation.', 'error')
+    } finally {
+      setDeploymentAction('')
     }
   }
 
@@ -2877,6 +2926,66 @@ const Settings = () => {
                 </button>
               </div>
             </form>
+            <div className="tls-deployment-actions">
+              <button
+                className="btn btn-outline"
+                type="button"
+                onClick={handleDownloadWorkstationBundle}
+                disabled={!deploymentStatus?.workstationBundleReady || Boolean(deploymentAction)}
+              >
+                <Download size={15} />
+                {deploymentAction === 'download' ? 'Downloading...' : 'Connect This Computer'}
+              </button>
+              <button
+                className="btn btn-outline"
+                type="button"
+                onClick={handleRenewTlsCertificate}
+                disabled={!tlsStatus?.ready || Boolean(deploymentAction)}
+              >
+                <RefreshCcw size={15} />
+                {deploymentAction === 'renew' ? 'Starting...' : 'Renew Certificate'}
+              </button>
+            </div>
+            <div className="tls-completion-checks">
+              {Object.entries(deploymentStatus?.completionChecks || {}).map(([key, passed]) => (
+                <span key={key} className={`user-status-badge ${passed ? 'active' : 'inactive'}`}>
+                  {key.replace(/([A-Z])/g, ' $1')}: {passed ? 'Ready' : 'Needs attention'}
+                </span>
+              ))}
+            </div>
+            <div className="offline-audit-header">
+              <h4>Connected workstations</h4>
+              <small>{deploymentStatus?.workstations?.length || 0} enrolled</small>
+            </div>
+            <div className="offline-audit-list">
+              {(deploymentStatus?.workstations || []).map((workstation) => (
+                <div key={workstation.id} className="tls-workstation-row">
+                  <div>
+                    <strong>{workstation.computer_name}</strong>
+                    <small>
+                      Last seen {formatAppDateTime(workstation.last_seen_at)}
+                      {workstation.ip_address ? ` · ${workstation.ip_address}` : ''}
+                    </small>
+                  </div>
+                  <span className={`user-status-badge ${workstation.status === 'active' ? 'active' : 'inactive'}`}>
+                    {workstation.status}
+                  </span>
+                  {workstation.status === 'active' && (
+                    <button
+                      className="btn btn-outline btn-sm"
+                      type="button"
+                      onClick={() => handleRevokeWorkstation(workstation)}
+                      disabled={Boolean(deploymentAction)}
+                    >
+                      Revoke
+                    </button>
+                  )}
+                </div>
+              ))}
+              {!deploymentStatus?.workstations?.length && (
+                <p className="muted">No workstations have enrolled yet.</p>
+              )}
+            </div>
           </div>
         )}
 

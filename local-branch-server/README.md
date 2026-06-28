@@ -76,6 +76,18 @@ facility computer. When either file is missing or invalid, HealthFlow reports
 `TLS Not Configured` and starts in loopback-only mode so offline PINs and staff
 sessions cannot cross the LAN in plaintext.
 
+On Windows, `Install-HealthFlow.cmd` launches the elevated production
+installer. It installs Node.js when needed, registers the Windows service,
+creates a per-facility root CA and server certificate, opens port 4780 only for
+Private/Domain networks, registers weekly renewal, enrolls the server computer,
+and creates `C:\HealthFlowLocal\HealthFlow-Connect-This-Computer.zip`.
+
+For each additional workstation, an administrator downloads a fresh
+**Connect This Computer** bundle from Settings. Its enrollment token expires
+and can be used only once. Run `install-workstation-trust.ps1` as administrator
+on that computer. Revoking the workstation in Settings immediately prevents
+its stored device credential from calling local APIs.
+
 ## Signed Branch Updates
 
 The hosted admin page can check and install updates on a connected localhost

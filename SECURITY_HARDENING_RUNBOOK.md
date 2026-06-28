@@ -103,6 +103,10 @@ Required controls:
   `C:\HealthFlowLocal\certs\server.crt` and
   `C:\HealthFlowLocal\certs\server.key`. Missing or invalid files force
   local-only mode and display `TLS Not Configured`.
+- Workstation enrollment bundles contain a short-lived, one-time enrollment
+  token. Generate a fresh bundle for each computer, deliver it privately, and
+  delete the extracted bundle after installation.
+- Revoke lost or retired computers from **Settings → Facility LAN TLS**.
 
 Generate tokens:
 

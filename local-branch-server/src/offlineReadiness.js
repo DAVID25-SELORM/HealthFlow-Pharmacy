@@ -3,6 +3,7 @@ import { config, isSupabaseSyncConfigured } from './config.js'
 import { getBranchMeta, getDatabaseStatus } from './db.js'
 import { getSyncStatus } from './supabaseSync.js'
 import { getUpdateStatus } from './updateManager.js'
+import { getPublicTlsStatus, inspectTlsRuntime } from './tlsSettings.js'
 
 const check = (id, label, passed, detail, required = true) => ({
   id,
@@ -19,6 +20,7 @@ export const getOfflineReadiness = ({ frontendIndex }) => {
   const inventoryPulledAt = sync.inventory?.lastInventoryImportAt || null
   const referencePulledAt = sync.referenceData?.lastPulledAt || null
   const operationalPulledAt = getBranchMeta('operational_data_last_pulled_at')
+  const tls = getPublicTlsStatus(inspectTlsRuntime())
 
   const checks = [
     check('server', 'Local API process', true, `HealthFlow ${updates.currentVersion} is responding.`),
@@ -79,6 +81,15 @@ export const getOfflineReadiness = ({ frontendIndex }) => {
       updates.configured && updates.installerReady
         ? `Signed ${updates.channel} updates are configured.`
         : 'The signed update manifest, public key, or platform installer is not ready.'
+    ),
+    check(
+      'facility_tls',
+      'Facility HTTPS certificate',
+      tls.ready,
+      tls.ready
+        ? `TLS is ready at ${tls.publicUrl || 'the configured LAN address'}.`
+        : tls.warning,
+      false
     ),
     check(
       'failed_queue',

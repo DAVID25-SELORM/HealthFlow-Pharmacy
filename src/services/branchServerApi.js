@@ -6,12 +6,29 @@ import { getStoredActiveRole } from '../utils/activeRole'
 
 const DEFAULT_BRANCH_SERVER_URL = 'http://localhost:4780'
 const RUNTIME_CONFIG_KEY = 'healthflow.branchServer.config.v1'
+const WORKSTATION_ID_KEY = 'healthflow.workstation.id'
+const WORKSTATION_SECRET_KEY = 'healthflow.workstation.secret'
 export const BRANCH_TOKEN_STORAGE_KEY = 'healthflow_branch_token'
 export const BRANCH_USER_SESSION_STORAGE_KEY = 'healthflow_branch_user_session'
 const DEFAULT_BRANCH_REQUEST_TIMEOUT_MS = 1500
 const SEARCH_BRANCH_REQUEST_TIMEOUT_MS = 450
 const WRITE_BRANCH_REQUEST_TIMEOUT_MS = 8000
 const LONG_BRANCH_REQUEST_TIMEOUT_MS = 60000
+
+const captureWorkstationEnrollment = () => {
+  if (typeof window === 'undefined') return
+  const url = new URL(window.location.href)
+  const id = url.searchParams.get('workstationId') || ''
+  const secret = url.searchParams.get('workstationSecret') || ''
+  if (!id || !secret) return
+  window.localStorage.setItem(WORKSTATION_ID_KEY, id)
+  window.localStorage.setItem(WORKSTATION_SECRET_KEY, secret)
+  url.searchParams.delete('workstationId')
+  url.searchParams.delete('workstationSecret')
+  window.history.replaceState({}, document.title, `${url.pathname}${url.search}${url.hash}`)
+}
+
+captureWorkstationEnrollment()
 
 const readHostedConfig = () => {
   if (typeof window === 'undefined') {
@@ -119,6 +136,12 @@ const getBranchApiHeaders = (headers = {}) => ({
   'Content-Type': 'application/json',
   ...headers,
   'x-branch-token': getBranchRequestToken(),
+  ...(typeof window !== 'undefined' && window.localStorage.getItem(WORKSTATION_ID_KEY)
+    ? {
+        'x-healthflow-workstation-id': window.localStorage.getItem(WORKSTATION_ID_KEY),
+        'x-healthflow-workstation-secret': window.localStorage.getItem(WORKSTATION_SECRET_KEY) || '',
+      }
+    : {}),
 })
 
 const readBranchUserSession = () => {
@@ -582,32 +605,16 @@ export const getBranchReportBundle = async (filters = {}) => {
 }
 
 // ✅ SYNC POST TOKEN FIX START
-const getBranchSyncPostHeaders = () => ({
-  Accept: 'application/json',
-  'Content-Type': 'application/json',
-  'x-branch-token': getBranchRequestToken(),
-})
+const getBranchSyncPostHeaders = () => getBranchApiHeaders()
 // ✅ SYNC POST TOKEN FIX END
 
 const branchSyncPost = async (path) => {
-  if (!isBranchServerEnabled()) {
-    throw new Error('Local branch server mode is not enabled.')
-  }
-
-  const response = await fetchWithTimeout(`${getBranchServerUrl()}${path}`, {
+  return await branchFetch(path, {
     method: 'POST',
     headers: getBranchSyncPostHeaders(),
-  }, LONG_BRANCH_REQUEST_TIMEOUT_MS)
-
-  const body = await response.json().catch(() => ({}))
-  if (!response.ok) {
-    throw Object.assign(new Error(body?.error || 'Local branch server request failed.'), {
-      status: response.status,
-      endpoint: path,
-    })
-  }
-
-  return body
+    body: JSON.stringify({}),
+    timeoutMs: LONG_BRANCH_REQUEST_TIMEOUT_MS,
+  })
 }
 
 export const pullBranchInventory = async () =>
@@ -643,6 +650,50 @@ export const saveBranchTlsSettings = async (settings) => {
   return response.data || response
 }
 
+export const getBranchDeploymentStatus = async () => {
+  const response = await branchFetch('/api/deployment/status')
+  return response.data || response
+}
+
+export const renewBranchTlsCertificate = async () => {
+  const response = await branchFetch('/api/deployment/tls/renew', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  })
+  return response.data || response
+}
+
+export const revokeBranchWorkstation = async (id) => {
+  const response = await branchFetch(`/api/deployment/workstations/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
+  return response.data || response
+}
+
+export const downloadBranchWorkstationBundle = async () => {
+  const session = await getVerifiedBranchUserSession()
+  const response = await fetchWithTimeout(`${getBranchServerUrl()}/api/deployment/workstation-bundle`, {
+    method: 'POST',
+    headers: getBranchApiHeaders({
+      Accept: 'application/zip',
+      'x-branch-user-session': session.token,
+    }),
+  }, LONG_BRANCH_REQUEST_TIMEOUT_MS)
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}))
+    throw new Error(body?.error || 'Unable to download workstation enrollment bundle.')
+  }
+  const blob = await response.blob()
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = 'HealthFlow-Connect-This-Computer.zip'
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  URL.revokeObjectURL(url)
+}
+
 export const createBranchDatabaseBackup = async (label = 'manual') => {
   const response = await branchFetch('/api/database/backup', {
     method: 'POST',
@@ -665,10 +716,10 @@ export const downloadBranchDatabaseBackup = async (fileName) => {
   const response = await fetchWithTimeout(
     `${getBranchServerUrl()}/api/database/backups/${encodeURIComponent(normalizedFileName)}/download`,
     {
-      headers: {
+      headers: getBranchApiHeaders({
         Accept: 'application/octet-stream',
-        'x-branch-token': getBranchRequestToken(),
-      },
+        'x-branch-user-session': (await getVerifiedBranchUserSession()).token,
+      }),
     },
     LONG_BRANCH_REQUEST_TIMEOUT_MS
   )

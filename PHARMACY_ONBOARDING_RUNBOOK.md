@@ -329,6 +329,18 @@ C:\HealthFlowPharmacy
 
 Then run the same `npm install`, `npm.cmd run build`, `npm.cmd run build:offline`, and local branch server `npm install` commands.
 
+For the packaged Windows deployment, extract the signed HealthFlow branch
+package and run:
+
+```text
+local-branch-server\Install-HealthFlow.cmd
+```
+
+Approve the Windows administrator prompt. The installer provisions HTTPS,
+the service, firewall rule, renewal task, first workstation, and completion
+health checks. Additional computers use a fresh one-time **Connect This
+Computer** bundle downloaded by an administrator from HealthFlow Settings.
+
 ## 9. Generate Secure Branch Tokens
 
 Run this on the branch server computer:

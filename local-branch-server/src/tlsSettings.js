@@ -58,20 +58,29 @@ const replaceEnvValue = (content, key, value) => {
 export const inspectTlsRuntime = () => {
   const certExists = fs.existsSync(config.tls.certPath)
   const keyExists = fs.existsSync(config.tls.keyPath)
+  const pfxExists = Boolean(config.tls.pfxPath && fs.existsSync(config.tls.pfxPath))
   let certificateValid = false
   let error = ''
   let credentials = null
   let certificateExpiresAt = ''
   let hostnameMatches = false
 
-  if (certExists && keyExists) {
+  if ((certExists && keyExists) || pfxExists) {
     try {
-      credentials = {
-        cert: fs.readFileSync(config.tls.certPath),
-        key: fs.readFileSync(config.tls.keyPath),
-      }
+      credentials = pfxExists
+        ? {
+            pfx: fs.readFileSync(config.tls.pfxPath),
+            passphrase: config.tls.pfxPassphrase,
+          }
+        : {
+            cert: fs.readFileSync(config.tls.certPath),
+            key: fs.readFileSync(config.tls.keyPath),
+          }
       tls.createSecureContext(credentials)
-      const certificate = new crypto.X509Certificate(credentials.cert)
+      if (!certExists) {
+        throw new Error('The public server certificate is required for hostname and expiry validation.')
+      }
+      const certificate = new crypto.X509Certificate(fs.readFileSync(config.tls.certPath))
       const validFrom = new Date(certificate.validFrom).getTime()
       const validTo = new Date(certificate.validTo).getTime()
       const now = Date.now()
@@ -94,7 +103,7 @@ export const inspectTlsRuntime = () => {
     }
   }
 
-  const ready = certExists && keyExists && certificateValid
+  const ready = certExists && (keyExists || pfxExists) && certificateValid
   const lanAddress = config.tls.lanHostname || config.tls.lanIp
   return {
     ready,
@@ -102,6 +111,8 @@ export const inspectTlsRuntime = () => {
     mode: ready ? 'https' : 'local-only',
     certExists,
     keyExists,
+    pfxExists,
+    credentialFormat: pfxExists ? 'pfx' : 'pem',
     certificateValid,
     certificateExpiresAt,
     hostnameMatches,

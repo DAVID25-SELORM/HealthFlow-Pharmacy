@@ -2,6 +2,7 @@ import express from 'express'
 import fs from 'node:fs'
 import https from 'node:https'
 import path from 'node:path'
+import { execFileSync, spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { assertConfiguredForServer, config, isSupabaseSyncConfigured } from './config.js'
 import { backupDatabase, closeDatabase, getDatabaseStatus } from './db.js'
@@ -31,6 +32,13 @@ import {
 import { authorizeLocalOperationalRoute } from './localAuthorization.js'
 import { createOfflineLoginRateLimiter } from './offlineLoginRateLimit.js'
 import { getPublicTlsStatus, inspectTlsRuntime, saveTlsSettings } from './tlsSettings.js'
+import {
+  createWorkstationEnrollmentToken,
+  enrollWorkstation,
+  listAuthorizedWorkstations,
+  requireAuthorizedWorkstation,
+  revokeAuthorizedWorkstation,
+} from './workstationRepository.js'
 import { createLocalClaim } from './claimsRepository.js'
 import { deleteLocalInventoryDrug, importInventorySnapshot, listLocalInventory, searchLocalInventory } from './inventoryRepository.js'
 import {
@@ -283,7 +291,7 @@ app.use((request, response, next) => {
   response.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS')
   response.setHeader(
     'Access-Control-Allow-Headers',
-    'Content-Type, Authorization, x-branch-token, x-branch-user-session, x-paystack-signature, x-hubtel-signature, x-hubtel-webhook-signature, x-signature'
+    'Content-Type, Authorization, x-branch-token, x-branch-user-session, x-healthflow-workstation-id, x-healthflow-workstation-secret, x-paystack-signature, x-hubtel-signature, x-hubtel-webhook-signature, x-signature'
   )
   response.setHeader('X-Content-Type-Options', 'nosniff')
   response.setHeader('Referrer-Policy', 'no-referrer')
@@ -371,7 +379,22 @@ app.post('/api/payments/webhook/paystack', async (request, response, next) => {
   }
 })
 
+app.post('/api/workstations/enroll', (request, response, next) => {
+  try {
+    response.status(201).json({
+      data: enrollWorkstation({
+        enrollmentToken: request.body?.enrollmentToken,
+        computerName: request.body?.computerName,
+        ipAddress: request.ip,
+      }),
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
 app.use('/api', requireBranchToken)
+app.use('/api', requireAuthorizedWorkstation)
 
 const requireBranchClaimsAccess = (request, response, next) => {
   const role = String(request.branchUser?.role || '').toLowerCase()
@@ -539,10 +562,107 @@ app.patch(
   }
 )
 
+const getInstallRoot = () => path.resolve(__dirname, '..', '..')
+const getWorkstationBundlePath = () =>
+  path.join(getInstallRoot(), 'HealthFlow-Connect-This-Computer.zip')
+
+app.get(
+  '/api/deployment/status',
+  requireBranchUserSession,
+  requireBranchAdminAccess,
+  (_request, response) => {
+    const tls = getPublicTlsStatus(tlsRuntime)
+    response.json({
+      data: {
+        tls,
+        workstationBundleReady: fs.existsSync(getWorkstationBundlePath()),
+        workstationBundleName: 'HealthFlow-Connect-This-Computer.zip',
+        workstations: listAuthorizedWorkstations(),
+        completionChecks: {
+          serviceRunning: true,
+          tlsReady: tls.ready,
+          databaseHealthy: getDatabaseStatus().ok,
+          syncConfigured: isSupabaseSyncConfigured(),
+        },
+      },
+    })
+  }
+)
+
+app.post(
+  '/api/deployment/workstation-bundle',
+  requireBranchUserSession,
+  requireBranchAdminAccess,
+  (_request, response) => {
+    const enrollment = createWorkstationEnrollmentToken()
+    const builder = path.join(path.resolve(__dirname, '..'), 'scripts', 'build-workstation-bundle.ps1')
+    execFileSync('powershell.exe', [
+      '-NoProfile',
+      '-ExecutionPolicy', 'Bypass',
+      '-File', builder,
+      '-InstallRoot', getInstallRoot(),
+      '-EnrollmentToken', enrollment.token,
+    ], {
+      windowsHide: true,
+      stdio: 'ignore',
+    })
+    const bundlePath = getWorkstationBundlePath()
+    if (!fs.existsSync(bundlePath)) {
+      response.status(404).json({ error: 'Workstation enrollment bundle has not been generated.' })
+      return
+    }
+    response.download(bundlePath, 'HealthFlow-Connect-This-Computer.zip')
+  }
+)
+
+app.post(
+  '/api/deployment/tls/renew',
+  requireBranchUserSession,
+  requireBranchAdminAccess,
+  (_request, response) => {
+    const scriptPath = path.join(path.resolve(__dirname, '..'), 'scripts', 'provision-facility-tls.ps1')
+    const child = spawn('powershell.exe', [
+      '-NoProfile',
+      '-ExecutionPolicy', 'Bypass',
+      '-File', scriptPath,
+      '-InstallRoot', getInstallRoot(),
+      '-LanHostname', config.tls.lanHostname,
+      ...(config.tls.lanIp ? ['-LanIp', config.tls.lanIp] : []),
+      '-Force',
+    ], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+    })
+    child.unref()
+    response.status(202).json({
+      data: { started: true, message: 'TLS renewal started. The local server will restart when complete.' },
+    })
+  }
+)
+
+app.delete(
+  '/api/deployment/workstations/:id',
+  requireBranchUserSession,
+  requireBranchAdminAccess,
+  (request, response, next) => {
+    try {
+      response.json({
+        data: revokeAuthorizedWorkstation({
+          id: request.params.id,
+          actorUserId: request.branchUser.userId,
+        }),
+      })
+    } catch (error) {
+      next(error)
+    }
+  }
+)
+
 // Every operational API after the authentication endpoints requires a current,
 // locally revalidated staff identity. This makes account disablement, offline
 // revocation, PIN reset, and role changes effective across all workstations.
-app.use('/api', requireBranchUserSession, authorizeLocalOperationalRoute)
+app.use('/api', requireBranchUserSession, requireAuthorizedWorkstation, authorizeLocalOperationalRoute)
 
 app.get('/api/database/status', (_request, response, next) => {
   try {

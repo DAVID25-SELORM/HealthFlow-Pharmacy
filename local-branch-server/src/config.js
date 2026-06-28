@@ -56,6 +56,8 @@ export const config = {
   tls: {
     certPath: String(process.env.HEALTHFLOW_TLS_CERT_PATH || DEFAULT_TLS_CERT_PATH).trim(),
     keyPath: String(process.env.HEALTHFLOW_TLS_KEY_PATH || DEFAULT_TLS_KEY_PATH).trim(),
+    pfxPath: String(process.env.HEALTHFLOW_TLS_PFX_PATH || '').trim(),
+    pfxPassphrase: String(process.env.HEALTHFLOW_TLS_PFX_PASSPHRASE || ''),
     lanHostname: String(
       process.env.HEALTHFLOW_LAN_HOSTNAME ||
       process.env.COMPUTERNAME ||
@@ -65,6 +67,7 @@ export const config = {
     enabled: false,
   },
   branchServerToken: process.env.BRANCH_SERVER_TOKEN || '',
+  workstationEnrollmentToken: process.env.HEALTHFLOW_WORKSTATION_ENROLLMENT_TOKEN || '',
   allowedOrigins: (process.env.ALLOWED_ORIGINS || '')
     .split(',')
     .map((origin) => origin.trim().replace(/\/+$/, ''))

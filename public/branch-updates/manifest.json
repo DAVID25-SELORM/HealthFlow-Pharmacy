@@ -1,9 +1,9 @@
 {
-  "version": "1.3.1",
-  "releaseNotes": "Adds production TLS certificate support for facility-wide offline mode: validated default certificate/key paths, HTTPS startup, hostname/IP and expiry checks, safe loopback-only fallback with TLS status warnings, status/configuration APIs, and an administrator TLS settings screen. Certificate and key contents are never stored in the browser or repository.",
+  "version": "1.4.0",
+  "releaseNotes": "Automates facility-wide offline deployment: elevated Windows service installation, per-facility CA and HTTPS server certificate provisioning, restricted key storage, private/domain firewall setup, scheduled certificate renewal, completion health checks, one-time workstation trust bundles, authenticated device registry and immediate revocation, plus admin download, renewal, status, and workstation controls.",
   "channel": "stable",
-  "sha256": "e843ef761fd70bb53258a9c2fa1a0b283564cc952461c51148a1ed8a236c0122",
-  "publishedAt": "2026-06-28T23:01:14.1436823Z",
-  "packageUrl": "https://healthflowcloud.com/branch-updates/healthflow-branch-1.3.1.zip",
-  "signature": "KRv2jSx6gi0WgEKl5DCQr6CA/4jS1bhNI71UiK28IUnGqSbb+6gDXXQHDRTYJpMUWgTJkA/xW7j1s13/nqkFBw=="
+  "sha256": "59178e02a84dc4dd2949e9b1a7913ce427fc185efe70b4308c605cbc64738f82",
+  "publishedAt": "2026-06-28T23:44:02.5161329Z",
+  "packageUrl": "https://healthflowcloud.com/branch-updates/healthflow-branch-1.4.0.zip",
+  "signature": "LvOyntb03foT1kRdzaomCJ6uiDo8G0Zq5qSmwriqCF3mHgEBoa5N+NiIUgmcvuWozeKsCD7j+sVWiN0TinjUBA=="
 }

@@ -3,6 +3,8 @@ param(
   [string]$InstallRoot = 'C:\HealthFlowLocal',
   [string]$NssmPath = '',
   [string]$NodePath = '',
+  [string]$LanHostname = $env:COMPUTERNAME,
+  [string]$LanIp = '',
   [switch]$InstallDependencies,
   [switch]$SkipCopy
 )
@@ -270,9 +272,10 @@ function Install-NssmService {
 }
 
 function Create-DesktopShortcut {
+  param([string]$ServerUrl)
   $shortcutContent = @"
 [InternetShortcut]
-URL=http://localhost:4780
+URL=$ServerUrl
 IconFile=%SystemRoot%\System32\SHELL32.dll
 IconIndex=220
 "@
@@ -292,6 +295,19 @@ Copy-BranchServer
 Assert-ProductionConfiguration
 Install-DependenciesIfNeeded
 
+$tlsProvisioner = Join-Path $installServerDir 'scripts\provision-facility-tls.ps1'
+if (-not (Test-Path -LiteralPath $tlsProvisioner)) {
+  throw "TLS provisioner not found: $tlsProvisioner"
+}
+Write-Host 'Provisioning facility TLS certificate and workstation enrollment bundle...'
+& powershell -NoProfile -ExecutionPolicy Bypass -File $tlsProvisioner `
+  -InstallRoot $InstallRoot `
+  -LanHostname $LanHostname `
+  -LanIp $LanIp
+if ($LASTEXITCODE -ne 0) {
+  throw "Facility TLS provisioning failed with exit code $LASTEXITCODE."
+}
+
 $frontendIndex = Join-Path $installServerDir 'public\index.html'
 if (-not (Test-Path -LiteralPath $frontendIndex)) {
   Write-Warning "Offline POS bundle not found at $frontendIndex. Run npm.cmd run build:offline from the repo root before handover."
@@ -304,14 +320,39 @@ foreach ($service in $services) {
   Install-NssmService -Service $service -Nssm $nssm -Node $node
 }
 
-Create-DesktopShortcut
+$serverUrl = "https://$($LanHostname.ToLowerInvariant()):4780"
+Create-DesktopShortcut -ServerUrl $serverUrl
+
+$firewallName = 'HealthFlow Offline Server HTTPS'
+Remove-NetFirewallRule -DisplayName $firewallName -ErrorAction SilentlyContinue
+New-NetFirewallRule `
+  -DisplayName $firewallName `
+  -Direction Inbound `
+  -Action Allow `
+  -Protocol TCP `
+  -LocalPort 4780 `
+  -Profile Domain,Private | Out-Null
+
+$renewalTaskName = 'HealthFlow TLS Certificate Renewal'
+$renewalAction = New-ScheduledTaskAction `
+  -Execute 'powershell.exe' `
+  -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$tlsProvisioner`" -InstallRoot `"$InstallRoot`" -LanHostname `"$LanHostname`" -LanIp `"$LanIp`""
+$renewalTrigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At 3am
+$renewalPrincipal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+Register-ScheduledTask `
+  -TaskName $renewalTaskName `
+  -Action $renewalAction `
+  -Trigger $renewalTrigger `
+  -Principal $renewalPrincipal `
+  -Description 'Renews the HealthFlow facility TLS certificate before expiry.' `
+  -Force | Out-Null
 
 $healthScript = Join-Path $installServerDir 'scripts\health-check.ps1'
 Write-Host 'Waiting for the installed service to become healthy...'
 $healthPassed = $false
 for ($attempt = 1; $attempt -le 15; $attempt += 1) {
   Start-Sleep -Seconds 2
-  & powershell -NoProfile -ExecutionPolicy Bypass -File $healthScript -InstallRoot $InstallRoot
+  & powershell -NoProfile -ExecutionPolicy Bypass -File $healthScript -InstallRoot $InstallRoot -BaseUrl $serverUrl
   if ($LASTEXITCODE -eq 0) {
     $healthPassed = $true
     break
@@ -321,6 +362,17 @@ if (-not $healthPassed) {
   throw 'HealthFlow service installation completed, but production health checks did not pass.'
 }
 
+$workstationInstaller = Join-Path $InstallRoot 'workstation-enrollment\install-workstation-trust.ps1'
+if (-not (Test-Path -LiteralPath $workstationInstaller)) {
+  throw "Workstation trust installer not found: $workstationInstaller"
+}
+Write-Host 'Enrolling the branch server computer as the first authorized workstation...'
+& powershell -NoProfile -ExecutionPolicy Bypass -File $workstationInstaller `
+  -BundleRoot (Join-Path $InstallRoot 'workstation-enrollment')
+if ($LASTEXITCODE -ne 0) {
+  throw "Server workstation enrollment failed with exit code $LASTEXITCODE."
+}
+
 Write-Host ''
 Write-Host 'HealthFlow Offline Branch Server service installed.'
 Write-Host "Install folder: $installServerDir"
@@ -328,5 +380,7 @@ Write-Host "Logs folder:    $logsDir"
 Write-Host "Data folder:    $dataDir"
 Write-Host "NSSM path:      $nssm"
 Write-Host 'Desktop link:   HealthFlow Offline POS'
+Write-Host "HTTPS URL:      $serverUrl"
+Write-Host "Enroll bundle:  $(Join-Path $InstallRoot 'HealthFlow-Connect-This-Computer.zip')"
 Write-Host ''
 Write-Host 'Production health checks passed.'

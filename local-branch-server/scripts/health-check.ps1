@@ -75,20 +75,11 @@ try {
   $headers = @{ 'x-branch-token' = $BranchToken }
   $health = Invoke-WebRequest -Uri "$BaseUrl/health" -Headers $headers -UseBasicParsing -TimeoutSec 10
   Write-Check -Name 'Protected health endpoint' -Passed ($health.StatusCode -eq 200) -Detail "status=$($health.StatusCode)"
+  $healthBody = $health.Content | ConvertFrom-Json
+  Write-Check -Name 'Database integrity' -Passed ($healthBody.database.integrity -eq 'ok') -Detail "integrity=$($healthBody.database.integrity)"
+  Write-Check -Name 'Facility TLS ready' -Passed ($healthBody.tls.ready -eq $true) -Detail "status=$($healthBody.tls.status)"
 } catch {
   Write-Check -Name 'Protected health endpoint' -Passed $false -Detail $_.Exception.Message
-}
-
-if ($BranchToken) {
-  try {
-    $headers = @{ 'x-branch-token' = $BranchToken }
-    $sync = Invoke-WebRequest -Uri "$BaseUrl/api/sync/status" -Headers $headers -UseBasicParsing -TimeoutSec 10
-    Write-Check -Name 'Protected sync status endpoint' -Passed ($sync.StatusCode -eq 200) -Detail "status=$($sync.StatusCode)"
-  } catch {
-    Write-Check -Name 'Protected sync status endpoint' -Passed $false -Detail $_.Exception.Message
-  }
-} else {
-  Write-Check -Name 'Protected sync status endpoint' -Passed $false -Detail 'BRANCH_SERVER_TOKEN not provided or not found in .env'
 }
 
 Write-Host ''
