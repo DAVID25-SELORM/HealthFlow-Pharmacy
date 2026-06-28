@@ -1,14 +1,28 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Plus, Search, Filter, Edit2, Trash2, Upload, Download, Truck } from 'lucide-react'
+import {
+  Plus,
+  Search,
+  Filter,
+  Edit2,
+  Trash2,
+  Upload,
+  Download,
+  RefreshCcw,
+  Truck,
+} from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { dispatchHealthflowDataChanged } from '../lib/appEvents'
 import {
   calculateDrugStatus,
   createInventoryDrug,
   deleteInventoryDrug,
+  discardOfflineInventoryConflicts,
   getInventory,
+  getOfflineInventorySummary,
   isDefaultCatalogDrug,
   isLocalInventoryEnabled,
+  subscribeOfflineInventoryQueue,
+  syncOfflineInventory,
   transferInventoryDrug,
   updateInventoryDrug,
 } from '../services/inventoryApi'
@@ -122,7 +136,9 @@ const calculateMarkedUpPrice = (costPrice, markupPercent) => {
 const Inventory = () => {
   const { role, profile, branch, user, canAdjustStock } = useAuth()
   const { notify } = useNotification()
-  const { canUseNhis, canUseNhisTopups, tierLimits } = useTenant()
+  const { canUseNhis, canUseNhisTopups, organization, tierLimits } = useTenant()
+  const organizationId =
+    organization?.id || organization?.organization_id || profile?.organization_id || ''
   const showNhisPricing = Boolean(canUseNhis || canUseNhisTopups)
   const [searchParams, setSearchParams] = useSearchParams()
   const [showDrugModal, setShowDrugModal] = useState(false)
@@ -146,10 +162,66 @@ const Inventory = () => {
   const [transferForm, setTransferForm] = useState({ destinationBranchId: '', quantity: '', notes: '' })
   const [transferSubmitting, setTransferSubmitting] = useState(false)
   const [usingLocalInventory, setUsingLocalInventory] = useState(false)
+  const [offlineSummary, setOfflineSummary] = useState({
+    pending: 0,
+    syncing: 0,
+    failed: 0,
+    conflicted: 0,
+    synced: 0,
+    unsynced: 0,
+    total: 0,
+  })
+  const [syncingOfflineInventory, setSyncingOfflineInventory] = useState(false)
 
   useEffect(() => {
     void loadInitialInventory()
   }, [profile?.branch_id, branch?.id])
+
+  useEffect(() => {
+    const refreshSummary = async () => {
+      setOfflineSummary(await getOfflineInventorySummary({ organizationId }))
+    }
+    const syncOnReconnect = async () => {
+      if (!organizationId) return
+      try {
+        const summary = await getOfflineInventorySummary({ organizationId })
+        if (summary.unsynced <= 0) return
+        const result = await syncOfflineInventory({ organizationId })
+        await refreshSummary()
+        if (result.synced > 0) {
+          notify(
+            `${result.synced} inventory change${result.synced === 1 ? '' : 's'} synced.`,
+            'success'
+          )
+          await loadDrugs(selectedBranchId, { manageLoading: false })
+          dispatchHealthflowDataChanged()
+        }
+        if (result.conflicted > 0) {
+          notify(
+            `${result.conflicted} inventory change${result.conflicted === 1 ? '' : 's'} need manual review.`,
+            'warning'
+          )
+        }
+      } catch (syncError) {
+        console.warn('Automatic offline inventory sync failed:', syncError)
+        await refreshSummary()
+      }
+    }
+
+    void refreshSummary()
+    const unsubscribe = subscribeOfflineInventoryQueue(() => {
+      void refreshSummary()
+    })
+    window.addEventListener('online', syncOnReconnect)
+    if (navigator.onLine) {
+      void syncOnReconnect()
+    }
+
+    return () => {
+      unsubscribe()
+      window.removeEventListener('online', syncOnReconnect)
+    }
+  }, [organizationId])
 
   useEffect(() => {
     const routeSearch = searchParams.get('search') || ''
@@ -534,16 +606,43 @@ const Inventory = () => {
       }
 
       if (editingDrugId) {
-        const updatedDrug = await updateInventoryDrug(editingDrugId, formData)
-        setDrugs((current) => current.map((drug) => (drug.id === updatedDrug?.id ? updatedDrug : drug)))
-        notify('Medicine updated successfully!', 'success')
+        const editingDrug = drugs.find((drug) => drug.id === editingDrugId)
+        const updatedDrug = await updateInventoryDrug(editingDrugId, formData, {
+          organizationId,
+          branchId: selectedBranchId || branch?.id || profile?.branch_id || null,
+          createdBy: user?.id || null,
+          expectedUpdatedAt: editingDrug?.updated_at || null,
+        })
+        if (!updatedDrug?.offlineQueued) {
+          setDrugs((current) =>
+            current.map((drug) => (drug.id === updatedDrug?.id ? updatedDrug : drug))
+          )
+        }
+        notify(
+          updatedDrug?.offlineQueued
+            ? 'Inventory change saved offline and will sync when connection returns.'
+            : 'Medicine updated successfully!',
+          'success'
+        )
       } else {
         const createdDrug = await createInventoryDrug({
           ...formData,
           branchId: selectedBranchId || undefined,
+        }, {
+          organizationId,
+          branchId: selectedBranchId || branch?.id || profile?.branch_id || null,
+          createdBy: user?.id || null,
         })
-        if (createdDrug?.id) {
+        if (createdDrug?.id && !createdDrug?.offlineQueued) {
           setDrugs((current) => [createdDrug, ...current.filter((drug) => drug.id !== createdDrug.id)])
+        }
+        if (createdDrug?.offlineQueued) {
+          notify(
+            'New medicine saved offline and will sync when connection returns.',
+            'success'
+          )
+          closeDrugModal()
+          return
         }
         const revealedExisting = createdDrug?._saveAction === 'update_existing'
         setHighlightedDrugId(createdDrug?.id || '')
@@ -756,6 +855,61 @@ const Inventory = () => {
     setImportPreview(null)
   }
 
+  const handleOfflineInventorySync = async () => {
+    try {
+      setSyncingOfflineInventory(true)
+      const result = await syncOfflineInventory({ organizationId })
+      setOfflineSummary(await getOfflineInventorySummary({ organizationId }))
+      if (result.skipped) {
+        notify('Connect to the internet before syncing inventory changes.', 'warning')
+      } else if (result.conflicted > 0) {
+        notify(
+          `${result.conflicted} inventory change${result.conflicted === 1 ? '' : 's'} conflict with newer cloud stock. Review before editing again.`,
+          'warning'
+        )
+      } else if (result.failed > 0) {
+        notify(
+          `${result.failed} inventory change${result.failed === 1 ? '' : 's'} could not sync. Retry shortly.`,
+          'error'
+        )
+      } else {
+        notify(
+          `${result.synced} inventory change${result.synced === 1 ? '' : 's'} synced successfully.`,
+          'success'
+        )
+        await loadDrugs(selectedBranchId, { manageLoading: false })
+        dispatchHealthflowDataChanged()
+      }
+    } catch (syncError) {
+      console.error('Unable to sync offline inventory changes:', syncError)
+      notify(syncError.message || 'Unable to sync offline inventory changes.', 'error')
+    } finally {
+      setSyncingOfflineInventory(false)
+    }
+  }
+
+  const handleDiscardInventoryConflicts = async () => {
+    if (
+      !window.confirm(
+        'Discard offline inventory conflicts and keep the latest cloud stock values?'
+      )
+    ) {
+      return
+    }
+
+    try {
+      const discarded = await discardOfflineInventoryConflicts({ organizationId })
+      setOfflineSummary(await getOfflineInventorySummary({ organizationId }))
+      await loadDrugs(selectedBranchId, { manageLoading: false })
+      notify(
+        `${discarded} conflicted change${discarded === 1 ? '' : 's'} discarded. Cloud stock reloaded.`,
+        'info'
+      )
+    } catch (discardError) {
+      notify(discardError.message || 'Unable to discard inventory conflicts.', 'error')
+    }
+  }
+
   const handleSearchChange = (value) => {
     setSearchTerm(value)
     updateQueryParams(value.trim(), activeFilter)
@@ -859,6 +1013,44 @@ const Inventory = () => {
       {usingLocalInventory && (
         <div className="inventory-local-banner" role="status">
           Showing cached inventory from the local branch server.
+        </div>
+      )}
+
+      {offlineSummary.unsynced > 0 && (
+        <div className="inventory-sync-banner" role="status">
+          <div>
+            <strong>Inventory changes waiting to sync</strong>
+            <span>
+              {offlineSummary.unsynced} change
+              {offlineSummary.unsynced === 1 ? '' : 's'} stored securely on this device.
+              {offlineSummary.conflicted > 0
+                ? ` ${offlineSummary.conflicted} conflict with newer cloud stock and need review.`
+                : offlineSummary.failed > 0
+                  ? ` ${offlineSummary.failed} need retry.`
+                  : ' They will sync automatically when internet returns.'}
+            </span>
+          </div>
+          <div className="inventory-sync-actions">
+            {offlineSummary.conflicted > 0 && (
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={handleDiscardInventoryConflicts}
+                disabled={syncingOfflineInventory}
+              >
+                Discard conflicts
+              </button>
+            )}
+            <button
+              type="button"
+              className="btn btn-outline"
+              onClick={handleOfflineInventorySync}
+              disabled={syncingOfflineInventory}
+            >
+              <RefreshCcw size={16} />
+              {syncingOfflineInventory ? 'Syncing...' : 'Sync Now'}
+            </button>
+          </div>
         </div>
       )}
 

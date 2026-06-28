@@ -58,15 +58,15 @@ Cloud:
 1. Make the app installable/cacheable as a PWA. (Done: app shell cache, manifest, and online/offline status.)
 2. Add first POS offline queue. (Done: offline sales are stored locally, sync on reconnect, and shift closing is blocked while sales are pending.)
 3. Refactor service calls behind app-owned APIs, starting with Sales. (Done: the POS page now uses `salesApi` to select cloud or branch operations.)
-4. Add a stronger local database and sync queue for inventory, patients, purchases, claims, and full shift close support. (In progress: browser-only patient creation now uses an encrypted, tenant-bound queue with automatic and manual retry.)
+4. Add a stronger local database and sync queue for inventory, patients, purchases, claims, and full shift close support. (In progress: browser-only patient creation and inventory create/update operations now use encrypted, tenant-bound queues with automatic and manual retry. Inventory conflicts are detected before cloud writes.)
 5. Add conflict handling, audit trails, and sync monitoring.
 6. Move to a local branch server for pharmacies with multiple offline computers.
 
 ## Next Practical Step
 
-Add queued inventory adjustments with explicit pending, synced, and failed states.
-Patient creation now queues safely when neither cloud nor a branch server is
-available, while existing online and branch-server routing remains unchanged.
+Extend the same queue pattern to purchases, then add a consolidated sync monitor
+for browser queues. Offline inventory deletes and branch transfers remain blocked
+because those destructive, cross-branch operations require an online transaction.
 
 ## Current POS Offline Behavior
 
