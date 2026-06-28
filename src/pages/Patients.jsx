@@ -1,12 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
-import { Plus, Search, Phone, Mail, ShieldCheck } from 'lucide-react'
+import { Plus, Search, Phone, Mail, RefreshCcw, ShieldCheck } from 'lucide-react'
 import {
   createPatientRecord,
+  getOfflinePatientsSummary,
   getPatientRecord,
   listPatientWorkspacePage,
+  subscribeOfflinePatientsQueue,
+  syncOfflinePatients,
 } from '../services/patientApi'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
+import { useNotification } from '../context/NotificationContext'
 import { formatAppDate, formatAppDateTime } from '../utils/date'
 import { getInsuranceProviderOptions } from '../utils/insuranceProviders'
 import { normalizeNhiaMemberNumber } from '../utils/nhiaMemberNumber'
@@ -15,6 +19,14 @@ import './Patients.css'
 
 const SEARCH_DEBOUNCE_MS = 350
 const PATIENTS_PAGE_SIZE = 100
+const EMPTY_OFFLINE_SUMMARY = {
+  pending: 0,
+  syncing: 0,
+  failed: 0,
+  synced: 0,
+  unsynced: 0,
+  total: 0,
+}
 
 const getSaleMedicineSummary = (sale) => {
   const names = (sale.sale_items || [])
@@ -80,7 +92,9 @@ const getPatientInitials = (patient = {}) => {
 }
 
 const Patients = () => {
-  const { role } = useAuth()
+  const { branch, organization, role, user } = useAuth()
+  const { notify } = useNotification()
+  const organizationId = organization?.id || organization?.organization_id || ''
   const [patients, setPatients] = useState([])
   const [patientsTotal, setPatientsTotal] = useState(0)
   const [patientsPage, setPatientsPage] = useState(1)
@@ -92,6 +106,8 @@ const Patients = () => {
   const [selectedPatient, setSelectedPatient] = useState(null)
   const [historyLoading, setHistoryLoading] = useState(false)
   const [error, setError] = useState('')
+  const [offlineSummary, setOfflineSummary] = useState(EMPTY_OFFLINE_SUMMARY)
+  const [syncingOfflinePatients, setSyncingOfflinePatients] = useState(false)
   const [formData, setFormData] = useState(initialForm)
   const patientsRequestRef = useRef(0)
   const historyRequestRef = useRef(0)
@@ -100,6 +116,48 @@ const Patients = () => {
   useEffect(() => {
     void loadPatients()
   }, [])
+
+  useEffect(() => {
+    const refreshSummary = async () => {
+      setOfflineSummary(await getOfflinePatientsSummary({ organizationId }))
+    }
+    const syncOnReconnect = async () => {
+      if (!organizationId) return
+      try {
+        const summary = await getOfflinePatientsSummary({ organizationId })
+        if (summary.unsynced <= 0) return
+        const result = await syncOfflinePatients({ organizationId })
+        await refreshSummary()
+        if (result.synced > 0) {
+          notify(
+            `${result.synced} offline patient${result.synced === 1 ? '' : 's'} synced.`,
+            'success'
+          )
+          await loadPatients(searchTerm, {
+            showFullPageLoader: false,
+            page: patientsPage,
+          })
+        }
+      } catch (syncError) {
+        console.warn('Automatic offline patient sync failed:', syncError)
+        await refreshSummary()
+      }
+    }
+
+    void refreshSummary()
+    const unsubscribe = subscribeOfflinePatientsQueue(() => {
+      void refreshSummary()
+    })
+    window.addEventListener('online', syncOnReconnect)
+    if (navigator.onLine) {
+      void syncOnReconnect()
+    }
+
+    return () => {
+      unsubscribe()
+      window.removeEventListener('online', syncOnReconnect)
+    }
+  }, [organizationId])
 
   useEffect(() => {
     if (skipFirstSearchEffectRef.current) {
@@ -205,9 +263,18 @@ const Patients = () => {
       setSubmitting(true)
       setError('')
 
-      await createPatientRecord(formData)
+      const result = await createPatientRecord(formData, {
+        organizationId,
+        branchId: branch?.id || branch?.branch_id || null,
+        createdBy: user?.id || null,
+      })
       setShowModal(false)
       setFormData(initialForm)
+      if (result?.offlineQueued) {
+        notify('Patient saved offline and will sync when connection returns.', 'success')
+      } else {
+        notify('Patient saved successfully.', 'success')
+      }
       await loadPatients(searchTerm, { page: patientsPage })
     } catch (submitError) {
       console.error('Error adding patient:', submitError)
@@ -267,6 +334,36 @@ const Patients = () => {
     }
   }
 
+  const handleOfflinePatientSync = async () => {
+    try {
+      setSyncingOfflinePatients(true)
+      const result = await syncOfflinePatients({ organizationId })
+      setOfflineSummary(await getOfflinePatientsSummary({ organizationId }))
+      if (result.skipped) {
+        notify('Connect to the internet or local branch server before syncing.', 'warning')
+      } else if (result.failed > 0) {
+        notify(
+          `${result.failed} patient${result.failed === 1 ? '' : 's'} could not sync. Retry shortly.`,
+          'error'
+        )
+      } else {
+        notify(
+          `${result.synced} patient${result.synced === 1 ? '' : 's'} synced successfully.`,
+          'success'
+        )
+        await loadPatients(searchTerm, {
+          showFullPageLoader: false,
+          page: patientsPage,
+        })
+      }
+    } catch (syncError) {
+      console.error('Unable to sync offline patients:', syncError)
+      notify(syncError.message || 'Unable to sync offline patients.', 'error')
+    } finally {
+      setSyncingOfflinePatients(false)
+    }
+  }
+
   const patientsShowingFrom = patientsTotal === 0 ? 0 : ((patientsPage - 1) * PATIENTS_PAGE_SIZE) + 1
   const patientsShowingTo = Math.min(
     ((patientsPage - 1) * PATIENTS_PAGE_SIZE) + patients.length,
@@ -298,6 +395,30 @@ const Patients = () => {
       </div>
 
       {error && <div className="patient-alert">{error}</div>}
+
+      {offlineSummary.unsynced > 0 && (
+        <div className="patient-sync-banner" role="status">
+          <div>
+            <strong>Offline patients waiting to sync</strong>
+            <span>
+              {offlineSummary.unsynced} patient
+              {offlineSummary.unsynced === 1 ? '' : 's'} stored securely on this device.
+              {offlineSummary.failed > 0
+                ? ` ${offlineSummary.failed} need retry.`
+                : ' They will sync automatically when connection returns.'}
+            </span>
+          </div>
+          <button
+            type="button"
+            className="btn btn-outline"
+            onClick={handleOfflinePatientSync}
+            disabled={syncingOfflinePatients}
+          >
+            <RefreshCcw size={16} />
+            {syncingOfflinePatients ? 'Syncing...' : 'Sync Now'}
+          </button>
+        </div>
+      )}
 
       <div className="search-container">
         <Search size={18} />
