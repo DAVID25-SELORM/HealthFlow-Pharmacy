@@ -3766,7 +3766,16 @@ export const getNhisPrescriptionSignedUrl = async (path, expiresInSeconds = 5 * 
 }
 
 export const getAllNhiaTariffItems = async (filters = {}) => {
-  if (shouldUseBranchServer()) return []
+  if (shouldUseBranchServer()) {
+    return await listBranchRecords('nhia/tariffs', {
+      tariff_version: filters.tariffVersion || NHIA_TARIFF_VERSION,
+      facility_group: filters.facilityGroup || '',
+      catering_option: filters.cateringOption || '',
+      mdc: filters.mdc || '',
+      is_active: true,
+      limit: filters.limit || 5000,
+    })
+  }
 
   let query = supabase
     .from('nhia_tariff_items')

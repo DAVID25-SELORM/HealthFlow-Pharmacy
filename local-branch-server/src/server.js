@@ -863,6 +863,10 @@ app.get('/api/nhis/drugs', (request, response) => {
   response.json({ data: listOfflineRecords('nhis_drugs', request.query) })
 })
 
+app.get('/api/nhia/tariffs', (request, response) => {
+  response.json({ data: listOfflineRecords('nhia_tariff_items', request.query) })
+})
+
 app.post('/api/nhis/drugs', (request, response, next) => {
   try {
     response.status(201).json({ data: saveOfflineRecord('nhis_drugs', request.body || {}) })

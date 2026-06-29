@@ -3,7 +3,7 @@
 -- Private Primary Care Hospital catering-exclusive prices.
 -- ================================================================
 -- Run after:
---   supabase/legacy/supabase-patch-private-primary-care-hospital-exclusive-tariff-feb-2023.sql
+--   supabase/migrations/20260629160000_private_primary_care_hospital_exclusive_tariff_feb_2023.sql
 --
 -- Purpose:
 --   Uses the newly imported Private Primary Care Hospital / exclusive

@@ -127,6 +127,37 @@ describe('branchServerApi', () => {
     )
   })
 
+  it('loads the facility tariff catalog from the branch server with filters', async () => {
+    saveAdminBranchSession()
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({
+        data: [{ id: 'tariff-1', gdrg_code: 'OPDC01A', tariff_amount: 37.08 }],
+      }), { status: 200 })
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { listBranchRecords, saveBranchToken } = await importBranchServerApi()
+    saveBranchToken('facility-branch-token')
+
+    const tariffs = await listBranchRecords('nhia/tariffs', {
+      tariff_version: 'FEB 2023',
+      facility_group: 'Private Primary Care Hospital',
+      catering_option: 'exclusive',
+      limit: 5000,
+    })
+
+    expect(tariffs).toEqual([
+      { id: 'tariff-1', gdrg_code: 'OPDC01A', tariff_amount: 37.08 },
+    ])
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/nhia/tariffs?'),
+      expect.any(Object)
+    )
+    const requestedUrl = new URL(fetchMock.mock.calls[0][0])
+    expect(requestedUrl.searchParams.get('facility_group')).toBe('Private Primary Care Hospital')
+    expect(requestedUrl.searchParams.get('catering_option')).toBe('exclusive')
+  })
+
   it('waits for a real terminal updater state across service restart responses', async () => {
     saveAdminBranchSession()
     const states = [

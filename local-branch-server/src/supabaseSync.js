@@ -553,6 +553,7 @@ export const pullReferenceData = async () => {
     claims: 0,
     nhisDrugs: 0,
     nhisClinicalRules: 0,
+    nhiaTariffItems: 0,
     nhisClaims: 0,
     nhiaConfigurations: 0,
     purchases: 0,
@@ -569,6 +570,7 @@ export const pullReferenceData = async () => {
     claims,
     nhisDrugs,
     nhisClinicalRules,
+    nhiaTariffItems,
     nhisClaims,
     nhiaConfigurations,
     purchases,
@@ -593,6 +595,11 @@ export const pullReferenceData = async () => {
           supabase,
           'nhis_clinical_rules',
           (page) => importOfflineRecords('nhis_clinical_rules', page)
+        ),
+        importOptionalAll(
+          supabase,
+          'nhia_tariff_items',
+          (page) => importOfflineRecords('nhia_tariff_items', page)
         ),
         importNhisClaims(supabase),
         importOptionalAll(
@@ -633,6 +640,7 @@ export const pullReferenceData = async () => {
   result.claims = claims
   result.nhisDrugs = nhisDrugs
   result.nhisClinicalRules = nhisClinicalRules
+  result.nhiaTariffItems = nhiaTariffItems
   result.nhisClaims = nhisClaims
   result.nhiaConfigurations = nhiaConfigurations
   result.purchases = purchases

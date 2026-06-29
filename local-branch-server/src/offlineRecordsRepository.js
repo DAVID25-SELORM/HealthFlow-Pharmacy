@@ -11,6 +11,7 @@ const ALLOWED_ENTITIES = new Set([
   'claims',
   'nhis_drugs',
   'nhis_clinical_rules',
+  'nhia_tariff_items',
   'nhis_claims',
   'suppliers',
   'purchases',
@@ -387,6 +388,22 @@ const matchesFilters = (record, filters = {}) => {
 
   if (filters.id && record.id !== filters.id) {
     return false
+  }
+
+  for (const field of ['tariff_version', 'facility_group', 'catering_option', 'mdc']) {
+    const expected = String(filters[field] || '').trim()
+    if (expected && String(record[field] || '').trim() !== expected) {
+      return false
+    }
+  }
+
+  if (filters.is_active !== undefined && filters.is_active !== '') {
+    const expectedActive = ['1', 'true', 'yes'].includes(
+      String(filters.is_active).trim().toLowerCase()
+    )
+    if (Boolean(record.is_active) !== expectedActive) {
+      return false
+    }
   }
 
   const term = String(filters.searchTerm || filters.search || '').trim().toLowerCase()
