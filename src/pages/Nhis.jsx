@@ -13,6 +13,10 @@ import {
   formatNhisDateOfBirthInput,
   normalizeNhisDateOfBirth,
 } from '../utils/nhisDateOfBirth'
+import {
+  canSaveNhisIncompleteIntake,
+  getNhisIncompleteIntakeItems,
+} from '../utils/nhisIntakeWorkflow'
 import { normalizeText } from '../utils/validation'
 import {
   getAllNhisDrugs,
@@ -2343,6 +2347,17 @@ const Nhis = () => {
   const readinessPassed = readiness.issues.length === 0
   const readinessBlocked = readiness.blockers.length > 0
   const mcaReadiness = useMemo(() => splitMcaReadinessIssues(readiness), [readiness])
+  const canSaveIncompleteIntake = canSaveNhisIncompleteIntake({
+    isMedicineCounterAssistant,
+    isEditing: Boolean(editingClaim),
+    status: editingClaim?.status,
+    blockerCount: readiness.blockers.length,
+  })
+  const incompleteIntakeItems = getNhisIncompleteIntakeItems({
+    claim: claimForm,
+    medicines: compactMedicines(claimMedicines),
+    pendingFile: prescriptionPdfFile,
+  })
   const effectiveReadinessBlocked = isMedicineCounterAssistant
     ? mcaReadiness.medicineBlockers.length > 0
     : readinessBlocked
@@ -2351,7 +2366,7 @@ const Nhis = () => {
     : readinessPassed
   const canSaveCommunityPharmacyClaim = isMedicineCounterAssistant
     ? mcaReadiness.canSaveMedicines
-    : readiness.blockers.length === 0
+    : canSaveIncompleteIntake || readiness.blockers.length === 0
 
   const handlePrescriptionPdfSelect = (event) => {
     const file = event.target.files?.[0]
@@ -2610,7 +2625,7 @@ const Nhis = () => {
 
   const handleSubmitClaim = async (e) => {
     e.preventDefault()
-    if (!isMedicineCounterAssistant && readiness.blockers.length) {
+    if (!isMedicineCounterAssistant && readiness.blockers.length && !canSaveIncompleteIntake) {
       setClaimError(`NHIS claim readiness check failed: ${readiness.blockers.slice(0, 5).join(' ')}`)
       return
     }
@@ -2689,12 +2704,16 @@ const Nhis = () => {
       } else if (isMedicineCounterAssistant) {
         payload.status = 'returned_for_review'
         payload.servingStatus = getClaimServingStatus(claimMedicines)
-      } else if (shouldFinalizeNhisServingReview(editingClaim.status)) {
+      } else if (shouldFinalizeNhisServingReview(editingClaim.status) && readiness.blockers.length === 0) {
         payload.status = 'served'
         payload.servingStatus = getClaimServingStatus(claimMedicines)
         payload.servingReviewedBy = user?.id || null
         payload.servingReviewedAt = new Date().toISOString()
+      } else {
+        payload.status = editingClaim.status
+        payload.allowIncompleteReview = true
       }
+      payload.expectedUpdatedAt = editingClaim?.updated_at || editingClaim?.updatedAt || ''
       const payloadHasReadablePrescriptionFile = Boolean(
         payload.prescriptionFilePath ||
         payload.prescription_file_path ||
@@ -2705,8 +2724,16 @@ const Nhis = () => {
       )
 
       let successMessage = editingClaim
-        ? (isMedicineCounterAssistant ? 'NHIS medicines saved for Claims Officer review.' : 'NHIS claim reviewed and marked ready.')
-        : 'NHIS prescription saved and sent to dispensary for serving.'
+        ? (
+            isMedicineCounterAssistant
+              ? 'NHIS medicines saved for Claims Officer review.'
+              : canSaveIncompleteIntake && readiness.blockers.length
+                ? 'NHIS intake updates saved. The claim remains incomplete and available to the dispensary.'
+                : 'NHIS claim reviewed and marked ready.'
+          )
+        : incompleteIntakeItems.length
+          ? `NHIS claim sent to dispensary with incomplete intake: ${incompleteIntakeItems.join(' and ')}.`
+          : 'NHIS prescription saved and sent to dispensary for serving.'
       let savedClaimRecord = null
       const returnAlertOverrideSnapshot = returnAlertOverride
       if (editingClaim) {
@@ -2722,6 +2749,8 @@ const Nhis = () => {
           tariffFacilityGroup: activeTariffFacilityGroup,
           tariffCateringOption: activeTariffCateringOption,
           medicinesOnly: isMedicineCounterAssistant,
+          allowIncompleteReview: canSaveIncompleteIntake,
+          expectedUpdatedAt: editingClaim.updated_at || editingClaim.updatedAt || '',
         })
         savedClaimRecord = savedClaim || editingClaim
         const claimForSubmission = savedClaim || editingClaim
@@ -2808,6 +2837,20 @@ const Nhis = () => {
           },
         })
       }
+
+      await tryLogAuditEvent({
+        eventType: editingClaim ? 'nhis_claim.intake_updated' : 'nhis_claim.sent_to_dispensary',
+        entityType: 'nhis_claims',
+        entityId: savedClaimRecord?.id || editingClaim?.id || '',
+        action: editingClaim ? 'update_intake' : 'dispatch',
+        details: {
+          claim_number: savedClaimRecord?.claim_number || editingClaim?.claim_number || '',
+          medicine_count: compactMedicines(claimMedicines).length,
+          prescription_attached: incompleteIntakeItems.includes('prescription attachment') === false,
+          incomplete_items: incompleteIntakeItems,
+          status: savedClaimRecord?.status || payload.status || '',
+        },
+      })
 
       setShowNewClaimModal(false)
       resetClaimModal()
@@ -3621,7 +3664,16 @@ const Nhis = () => {
                           </span>
                         )}
                       </td>
-                      <td>{c.nhis_claim_medicines?.length || 0}</td>
+                      <td>
+                        {c.nhis_claim_medicines?.length || 0}
+                        {['pending_serving', 'serving_in_progress', 'returned_for_review'].includes(c.status) &&
+                          getNhisIncompleteIntakeItems({
+                            claim: c,
+                            medicines: c.nhis_claim_medicines || [],
+                          }).length > 0 && (
+                            <span className="nhis-incomplete-intake-badge">Incomplete Intake</span>
+                          )}
+                      </td>
                       <td>
                         {(c.prescription_file_path || c.prescription_file_url) ? (
                           <button
@@ -4174,6 +4226,15 @@ const Nhis = () => {
             </div>
 
             {claimError && <div className="nhis-alert nhis-alert--modal" role="alert">{claimError}</div>}
+            {incompleteIntakeItems.length > 0 && (
+              <div className="nhis-incomplete-intake-alert" role="status">
+                <strong>Incomplete Intake</strong>
+                <span>
+                  Missing {incompleteIntakeItems.join(' and ')}. This claim can be sent to the dispensary,
+                  but it cannot be finalized or submitted until required information is completed.
+                </span>
+              </div>
+            )}
 
             <div className="nhis-claim-body">
               {/* Left column */}
@@ -4901,7 +4962,9 @@ const Nhis = () => {
                   : editingClaim
                     ? (isMedicineCounterAssistant
                         ? 'Complete Serving'
-                        : directNhiaApiAvailable ? 'Save Corrections & Submit' : 'Save Corrections')
+                        : canSaveIncompleteIntake && readiness.blockers.length
+                          ? 'Save Intake Updates'
+                          : directNhiaApiAvailable ? 'Save Corrections & Submit' : 'Save Corrections')
                     : 'Send to Dispensary'}
               </button>
             </div>

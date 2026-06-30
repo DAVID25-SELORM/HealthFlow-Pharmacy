@@ -2588,6 +2588,8 @@ describe('NHIS claim save attachment behavior', () => {
       [medicineWithTotal],
       {
         useBranchServer: true,
+        allowIncompleteReview: true,
+        expectedUpdatedAt: '2026-06-30T12:00:00.000Z',
         providerClassLevel: 'D',
         pharmacyLevel: 'P1',
         nhisDrugCatalog: [{ code: 'NH001', category: 'A' }],
@@ -2602,10 +2604,52 @@ describe('NHIS claim save attachment behavior', () => {
       'claim-1',
       expect.objectContaining({
         claimit_attachment_file_name: 'prescription_NHIS-000001.pdf',
+        expected_updated_at: '2026-06-30T12:00:00.000Z',
         nhis_claim_medicines: expect.any(Array),
       })
     )
     expect(supabase.from).not.toHaveBeenCalledWith('nhis_claims')
+  })
+
+  it('saves an incomplete shared claim after dispatch without marking it ready', async () => {
+    updateBranchRecord.mockResolvedValueOnce({
+      id: 'claim-1',
+      claim_number: 'NHIS-000001',
+      status: 'pending_serving',
+      nhis_claim_medicines: [],
+    })
+
+    await expect(updateNhisClaim(
+      'claim-1',
+      {
+        ...claimWithoutPrescription,
+        status: 'pending_serving',
+        servingStatus: 'pending',
+      },
+      [],
+      {
+        useBranchServer: true,
+        allowIncompleteReview: true,
+        expectedUpdatedAt: '2026-06-30T12:00:00.000Z',
+        providerClassLevel: 'D',
+        pharmacyLevel: 'P1',
+        nhisDrugCatalog: [{ code: 'NH001', category: 'A' }],
+      }
+    )).resolves.toMatchObject({
+      id: 'claim-1',
+      status: 'pending_serving',
+      nhis_claim_medicines: [],
+    })
+
+    expect(updateBranchRecord).toHaveBeenCalledWith(
+      'nhis/claims',
+      'claim-1',
+      expect.objectContaining({
+        status: 'pending_serving',
+        expected_updated_at: '2026-06-30T12:00:00.000Z',
+        nhis_claim_medicines: [],
+      })
+    )
   })
 
   it('uses the medicines-only branch route for an MCA save', async () => {
@@ -2622,6 +2666,7 @@ describe('NHIS claim save attachment behavior', () => {
       {
         useBranchServer: true,
         medicinesOnly: true,
+        expectedUpdatedAt: '2026-06-30T12:00:00.000Z',
         providerClassLevel: 'D',
         pharmacyLevel: 'P1',
         nhisDrugCatalog: [{ code: 'NH001', category: 'A' }],
@@ -2636,6 +2681,7 @@ describe('NHIS claim save attachment behavior', () => {
       expect.objectContaining({
         nhis_claim_medicines: expect.any(Array),
         total_amount: 10,
+        expected_updated_at: '2026-06-30T12:00:00.000Z',
       })
     )
     expect(updateBranchRecord).not.toHaveBeenCalled()

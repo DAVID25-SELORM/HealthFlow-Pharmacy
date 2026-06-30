@@ -869,15 +869,29 @@ const insertNhisClaimWithSchemaFallback = async (payload) => {
   )
 }
 
-const updateNhisClaimWithSchemaFallback = async (id, payload) => {
-  return await withOptionalClaimSchemaFallback(payload, async (updatePayload) =>
-    await supabase
+const updateNhisClaimWithSchemaFallback = async (id, payload, expectedUpdatedAt = '') => {
+  const result = await withOptionalClaimSchemaFallback(payload, async (updatePayload) => {
+    let query = supabase
       .from('nhis_claims')
       .update(updatePayload)
       .eq('id', id)
-      .select()
-      .single()
-  )
+
+    if (expectedUpdatedAt) query = query.eq('updated_at', expectedUpdatedAt)
+
+    return expectedUpdatedAt
+      ? await query.select().maybeSingle()
+      : await query.select().single()
+  })
+
+  if (expectedUpdatedAt && !result.error && !result.data) {
+    const conflict = new Error(
+      'This claim was changed by another staff member after you opened it. Reload the claim before saving so their work is not overwritten.'
+    )
+    conflict.code = 'NHIS_CLAIM_CONFLICT'
+    return { data: null, error: conflict }
+  }
+
+  return result
 }
 
 const getNhisDuplicatePatientKey = (claim = {}) => {
@@ -4798,10 +4812,34 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
       status: 'returned_for_review',
       serving_status: getClaimServingStatus(medicineRows),
       updated_at: new Date().toISOString(),
+      expected_updated_at: normalizeText(
+        options.expectedUpdatedAt ??
+        claimData.expectedUpdatedAt ??
+        claimData.expected_updated_at
+      ) || null,
     }
 
     if (options.useBranchServer || shouldUseBranchServer()) {
       return await updateBranchNhisClaimMedicines(id, medicinesOnlyPayload)
+    }
+
+    if (medicinesOnlyPayload.expected_updated_at) {
+      const { data: currentClaim, error: currentClaimError } = await supabase
+        .from('nhis_claims')
+        .select('updated_at')
+        .eq('id', id)
+        .single()
+      if (currentClaimError) throw currentClaimError
+      if (
+        normalizeText(currentClaim?.updated_at) &&
+        normalizeText(currentClaim.updated_at) !== medicinesOnlyPayload.expected_updated_at
+      ) {
+        const conflict = new Error(
+          'This claim was changed by another staff member after you opened it. Reload the claim before saving so their work is not overwritten.'
+        )
+        conflict.code = 'NHIS_CLAIM_CONFLICT'
+        throw conflict
+      }
     }
 
     const { data, error } = await supabase.rpc('serve_nhis_claim_medicines', {
@@ -4813,7 +4851,12 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
     return data
   }
 
-  if (readiness.blockers.length) {
+  const allowIncompleteReview = Boolean(
+    options.allowIncompleteReview ||
+    claimData?.allowIncompleteReview ||
+    claimData?.reviewOnly
+  )
+  if (readiness.blockers.length && !allowIncompleteReview) {
     throw new Error(`NHIS correction check failed: ${readiness.blockers.slice(0, 5).join(' ')}`)
   }
 
@@ -4889,10 +4932,16 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
     ...getPrescriptionAttachmentPayload(claimData),
     updated_at: new Date().toISOString(),
   }
+  const expectedUpdatedAt = normalizeText(
+    options.expectedUpdatedAt ??
+    claimData.expectedUpdatedAt ??
+    claimData.expected_updated_at
+  )
 
   if (options.useBranchServer || shouldUseBranchServer()) {
     return await updateBranchRecord('nhis/claims', id, {
       ...claimPayload,
+      expected_updated_at: expectedUpdatedAt || null,
       nhis_claim_medicines: medicineRows,
       nhis_claim_services: tariffServices.map((service) => ({
         nhia_tariff_item_id: service.nhiaTariffItemId,
@@ -4926,7 +4975,11 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
   if (wouldDiscardPrescriptionAttachment(claimPayload, schemaCompatiblePayload)) {
     throw buildMissingPrescriptionAttachmentSchemaError()
   }
-  const { data: claim, error: claimError } = await updateNhisClaimWithSchemaFallback(id, schemaCompatiblePayload)
+  const { data: claim, error: claimError } = await updateNhisClaimWithSchemaFallback(
+    id,
+    schemaCompatiblePayload,
+    expectedUpdatedAt
+  )
 
   if (claimError) throw claimError
 

@@ -83,6 +83,22 @@ const audit = ({ eventType, actorUserId = null, targetUserId = null, success, de
   )
 }
 
+export const recordLocalAuditEvent = ({
+  eventType,
+  actorUserId = null,
+  targetId = null,
+  success = true,
+  detail = '',
+  ipAddress = '',
+}) => audit({
+  eventType,
+  actorUserId,
+  targetUserId: targetId,
+  success,
+  detail,
+  ipAddress,
+})
+
 const publicUser = (row) => {
   const organizations = parseJson(getBranchMeta('organization_snapshot'), []) || []
   const branches = parseJson(getBranchMeta('branches_snapshot'), []) || []

@@ -22,6 +22,7 @@ import {
   enrollOfflinePin,
   listOfflineAccessUsers,
   listOfflineAuthAudit,
+  recordLocalAuditEvent,
   resetOfflinePin,
   setOfflineAccess,
 } from './offlineAuthRepository.js'
@@ -900,7 +901,18 @@ app.post('/api/nhis/claims', requireBranchUserSession, (request, response, next)
       response.status(403).json({ error: 'Only claims staff can create NHIS claims.' })
       return
     }
-    response.status(201).json({ data: saveOfflineRecord('nhis_claims', priceOfflineNhisClaim(request.body || {})) })
+    const claim = saveOfflineRecord('nhis_claims', priceOfflineNhisClaim(request.body || {}))
+    recordLocalAuditEvent({
+      eventType: 'nhis_claim.sent_to_dispensary',
+      actorUserId: request.branchUser?.userId || null,
+      targetId: claim.id,
+      detail: JSON.stringify({
+        medicineCount: claim.nhis_claim_medicines?.length || 0,
+        prescriptionAttached: Boolean(claim.prescription_file_path || claim.prescription_file_url),
+      }),
+      ipAddress: request.ip,
+    })
+    response.status(201).json({ data: claim })
   } catch (error) {
     next(error)
   }
@@ -917,13 +929,41 @@ app.put('/api/nhis/claims/:id', requireBranchUserSession, (request, response, ne
       return
     }
     const existing = getOfflineRecord('nhis_claims', request.params.id)
-    response.json({
-      data: saveOfflineRecord('nhis_claims', priceOfflineNhisClaim({
-        ...(existing || {}),
-        ...(request.body || {}),
+    if (!existing) {
+      response.status(404).json({ error: 'NHIS claim not found.' })
+      return
+    }
+    const expectedUpdatedAt = String(
+      request.body?.expected_updated_at || request.body?.expectedUpdatedAt || ''
+    ).trim()
+    const currentUpdatedAt = String(existing.updated_at || existing.updatedAt || '').trim()
+    if (expectedUpdatedAt && currentUpdatedAt && expectedUpdatedAt !== currentUpdatedAt) {
+      response.status(409).json({
+        error: 'This claim was changed by another staff member after you opened it. Reload the claim before saving so their work is not overwritten.',
+        code: 'NHIS_CLAIM_CONFLICT',
+      })
+      return
+    }
+    const claimUpdates = { ...(request.body || {}) }
+    delete claimUpdates.expected_updated_at
+    delete claimUpdates.expectedUpdatedAt
+    const claim = saveOfflineRecord('nhis_claims', priceOfflineNhisClaim({
+        ...existing,
+        ...claimUpdates,
         id: request.params.id,
-      })),
+      }))
+    recordLocalAuditEvent({
+      eventType: 'nhis_claim.intake_updated',
+      actorUserId: request.branchUser?.userId || null,
+      targetId: claim.id,
+      detail: JSON.stringify({
+        medicineCount: claim.nhis_claim_medicines?.length || 0,
+        prescriptionAttached: Boolean(claim.prescription_file_path || claim.prescription_file_url),
+        status: claim.status,
+      }),
+      ipAddress: request.ip,
     })
+    response.json({ data: claim })
   } catch (error) {
     next(error)
   }
@@ -945,6 +985,17 @@ app.put('/api/nhis/claims/:id/medicines', requireBranchUserSession, (request, re
       response.status(404).json({ error: 'NHIS claim not found.' })
       return
     }
+    const expectedUpdatedAt = String(
+      request.body?.expected_updated_at || request.body?.expectedUpdatedAt || ''
+    ).trim()
+    const currentUpdatedAt = String(existing.updated_at || existing.updatedAt || '').trim()
+    if (expectedUpdatedAt && currentUpdatedAt && expectedUpdatedAt !== currentUpdatedAt) {
+      response.status(409).json({
+        error: 'This claim was changed by another staff member after you opened it. Reload the claim before saving so their work is not overwritten.',
+        code: 'NHIS_CLAIM_CONFLICT',
+      })
+      return
+    }
     // MCA (assistant) may only add/remove medications within the edit window
     // (24h from creation, or a 12h supervisor re-open). Other roles are
     // unaffected. CC code, submission, and validation logic are not touched.
@@ -954,8 +1005,7 @@ app.put('/api/nhis/claims/:id/medicines', requireBranchUserSession, (request, re
       })
       return
     }
-    response.json({
-      data: saveOfflineRecord('nhis_claims', priceOfflineNhisClaim({
+    const claim = saveOfflineRecord('nhis_claims', priceOfflineNhisClaim({
         ...existing,
         nhis_claim_medicines: Array.isArray(request.body?.nhis_claim_medicines)
           ? request.body.nhis_claim_medicines
@@ -964,8 +1014,19 @@ app.put('/api/nhis/claims/:id/medicines', requireBranchUserSession, (request, re
         serving_status: request.body?.serving_status || existing.serving_status || null,
         updated_at: request.body?.updated_at || new Date().toISOString(),
         id: request.params.id,
-      })),
+      }))
+    recordLocalAuditEvent({
+      eventType: 'nhis_claim.dispensary_updated',
+      actorUserId: request.branchUser?.userId || null,
+      targetId: claim.id,
+      detail: JSON.stringify({
+        medicineCount: claim.nhis_claim_medicines?.length || 0,
+        servingStatus: claim.serving_status,
+        status: claim.status,
+      }),
+      ipAddress: request.ip,
     })
+    response.json({ data: claim })
   } catch (error) {
     next(error)
   }
