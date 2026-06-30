@@ -1992,7 +1992,7 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
   const patientAge = calculateAge(dateOfBirth)
   const requireMedicineDirections = options.finalSubmission || options.requireMedicineDirections === true
   const requirePrescriptionAttachment = options.finalSubmission
-    ? options.requirePrescriptionAttachment !== false
+    ? (!isHospital || options.requirePrescriptionAttachment !== false)
     : options.requirePrescriptionAttachment === true
   const shouldCheckDiagnosisTreatmentMatch =
     isHospital &&
@@ -4595,7 +4595,12 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
     medicines,
     {
       enforcePrescribingLevel: true,
-      requirePrescriptionAttachment: options.requirePrescriptionAttachment === true,
+      requirePrescriptionAttachment:
+        options.requirePrescriptionAttachment === true ||
+        (
+          organizationType === 'pharmacy' &&
+          (normalizeText(claimData?.status).toLowerCase() || 'served') === 'served'
+        ),
       providerClassLevel,
       // ✅ NHIS PHARMACY LEVEL PATCH START
       pharmacyLevel: options.pharmacyLevel,
@@ -4784,7 +4789,9 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
       requireMedicineDirections: true,
       enforceDiagnosisTreatmentMatch: organizationType === 'hospital',
       enforcePrescribingLevel: true,
-      requirePrescriptionAttachment: options.requirePrescriptionAttachment === true,
+      requirePrescriptionAttachment:
+        options.requirePrescriptionAttachment === true ||
+        (organizationType === 'pharmacy' && normalizeText(claimData?.status).toLowerCase() === 'served'),
       providerClassLevel,
       // ✅ NHIS PHARMACY LEVEL PATCH START
       pharmacyLevel: options.pharmacyLevel,

@@ -26,6 +26,14 @@ describe('NHIS dispensary intake workflow', () => {
     expect(hasNhisPrescriptionAttachment({ claimit_attachment_base64: 'JVBERi0=' })).toBe(true)
   })
 
+  it('treats a pharmacy claim without an attachment as incomplete', () => {
+    expect(hasNhisPrescriptionAttachment({ status: 'served' })).toBe(false)
+    expect(hasNhisPrescriptionAttachment({
+      status: 'served',
+      prescription_file_path: 'rx/claim.pdf',
+    })).toBe(true)
+  })
+
   it('permits incomplete claims-staff saves without weakening MCA or final review checks', () => {
     expect(canSaveNhisIncompleteIntake({ isEditing: false, blockerCount: 5 })).toBe(true)
     expect(canSaveNhisIncompleteIntake({

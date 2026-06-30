@@ -12,8 +12,6 @@ export const hasNhisPrescriptionAttachment = (claim = {}, pendingFile = null) =>
     claim.prescription_file_path ||
     claim.prescriptionFileUrl ||
     claim.prescription_file_url ||
-    claim.prescriptionFileName ||
-    claim.prescription_file_name ||
     claim.claimitAttachmentBase64 ||
     claim.claimit_attachment_base64
   )

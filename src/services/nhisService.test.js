@@ -307,10 +307,11 @@ describe('assessNhisClaimReadiness', () => {
     )
   })
 
-  it('allows manual final status checks to skip the scanned prescription blocker', () => {
+  it('allows hospital final status checks to make the attachment optional', () => {
     const readiness = assessNhisClaimReadiness(
       {
         ...baseClaim,
+        organizationType: 'hospital',
         prescriptionFilePath: '',
         prescriptionFileName: '',
       },
@@ -2397,8 +2398,8 @@ describe('NHIS claim save attachment behavior', () => {
   }
   const medicineWithTotal = { ...baseMedicine, totalAmount: 10 }
 
-  it('saves a served NHIS claim without forcing an RX attachment', async () => {
-    const insertedClaim = { id: 'claim-1', claim_number: 'NHIS-000001', status: 'served' }
+  it('saves an attachment-free pharmacy intake while it is pending serving', async () => {
+    const insertedClaim = { id: 'claim-1', claim_number: 'NHIS-000001', status: 'pending_serving' }
     const claimInsertResult = {
       select: vi.fn(() => ({
         single: vi.fn().mockResolvedValue({ data: insertedClaim, error: null }),
@@ -2444,6 +2445,7 @@ describe('NHIS claim save attachment behavior', () => {
         attendanceVerificationStatus: 'confirmed',
         attendanceVerificationSource: 'nehfams_manual',
         servingReviewedAt: '',
+        status: 'pending_serving',
       },
       [{ ...medicineWithTotal, enteredAt: '', servedAt: '' }],
       {
@@ -2470,6 +2472,7 @@ describe('NHIS claim save attachment behavior', () => {
       nhia_attendance_verification_status: 'confirmed',
       nhia_attendance_verification_source: 'nehfams_manual',
       serving_reviewed_at: null,
+      status: 'pending_serving',
     })
     expect(medicineTable.insert).toHaveBeenCalled()
     expect(medicineTable.insert.mock.calls[0][0][0]).toMatchObject({
@@ -2478,8 +2481,23 @@ describe('NHIS claim save attachment behavior', () => {
     })
   })
 
+  it('blocks a pharmacy claim from becoming served without an attachment', async () => {
+    await expect(createNhisClaim(
+      {
+        ...claimWithoutPrescription,
+        status: 'served',
+      },
+      [medicineWithTotal],
+      {
+        providerClassLevel: 'D',
+        pharmacyLevel: 'P1',
+        nhisDrugCatalog: [{ code: 'NH001', category: 'A' }],
+      }
+    )).rejects.toThrow('Attach the scanned prescription PDF or JPEG')
+  })
+
   it('keeps retrying cloud claim inserts when multiple optional columns are missing', async () => {
-    const insertedClaim = { id: 'claim-1', claim_number: 'NHIS-000001', status: 'served' }
+    const insertedClaim = { id: 'claim-1', claim_number: 'NHIS-000001', status: 'pending_serving' }
     const insertPayloads = []
     const makeClaimInsertResult = (response) => ({
       select: vi.fn(() => ({
@@ -2535,6 +2553,7 @@ describe('NHIS claim save attachment behavior', () => {
         ...claimWithoutPrescription,
         unservedMedicinesNote: 'Could not serve one line.',
         servingStatus: 'pending',
+        status: 'pending_serving',
       },
       [medicineWithTotal],
       {

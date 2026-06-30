@@ -16,6 +16,7 @@ import {
 import {
   canSaveNhisIncompleteIntake,
   getNhisIncompleteIntakeItems,
+  hasNhisPrescriptionAttachment,
 } from '../utils/nhisIntakeWorkflow'
 import { normalizeText } from '../utils/validation'
 import {
@@ -823,8 +824,10 @@ const getPreferredTariffCateringOption = (settings) => {
   return ''
 }
 
-const StatusBadge = ({ status }) => (
-  <span className={`nhis-badge nhis-badge--${status}`}>{getClaimStatusLabel(status)}</span>
+const StatusBadge = ({ status, incomplete = false }) => (
+  <span className={`nhis-badge nhis-badge--${incomplete ? 'pending_serving' : status}`}>
+    {incomplete ? 'Incomplete' : getClaimStatusLabel(status)}
+  </span>
 )
 
 const looksLikeUuid = (value) =>
@@ -859,6 +862,9 @@ const Nhis = () => {
   const organizationType = normalizeOrganizationType(organization?.organization_type)
   const organizationId = organization?.id || profile?.organization_id || ''
   const isHospital = organizationType === 'hospital'
+  const isIncompletePharmacyClaim = (claim = {}) =>
+    !isHospital &&
+    !hasNhisPrescriptionAttachment(claim)
 
   // ── page sub-tab ─────────────────────────────────────────────
   const [pageTab, setPageTab] = useState('claims') // 'claims' | 'patients' | 'catalog' | 'gdrg' | 'review' | 'rules'
@@ -2378,7 +2384,7 @@ const Nhis = () => {
         requireMedicineDirections: Boolean(editingClaim),
         enforceDiagnosisTreatmentMatch: Boolean(editingClaim && isHospital),
         enforcePrescribingLevel: true,
-        requirePrescriptionAttachment: false,
+        requirePrescriptionAttachment: Boolean(editingClaim && !isHospital),
         claimControlMode,
         providerClassLevel,
         // ✅ NHIS PHARMACY LEVEL PATCH START
@@ -2804,6 +2810,7 @@ const Nhis = () => {
           medicinesOnly: isMedicineCounterAssistant,
           allowIncompleteReview: canSaveIncompleteIntake,
           expectedUpdatedAt: editingClaim.updated_at || editingClaim.updatedAt || '',
+          requirePrescriptionAttachment: !isHospital,
         })
         savedClaimRecord = savedClaim || editingClaim
         const claimForSubmission = savedClaim || editingClaim
@@ -2959,7 +2966,7 @@ const Nhis = () => {
             currentNhiaTariffItems: nhiaTariffItems,
             tariffFacilityGroup: activeTariffFacilityGroup,
             tariffCateringOption: activeTariffCateringOption,
-            requirePrescriptionAttachment: false,
+            requirePrescriptionAttachment: !isHospital,
           }
         )
 
@@ -3702,7 +3709,15 @@ const Nhis = () => {
                         )}
                       </td>
                       <td>{fmtCurrency(c.total_amount)}</td>
-                      <td><StatusBadge status={c.status} /></td>
+                      <td>
+                        <StatusBadge
+                          status={c.status}
+                          incomplete={c.status === 'served' && isIncompletePharmacyClaim(c)}
+                        />
+                        {['submitted', 'paid'].includes(c.status) && isIncompletePharmacyClaim(c) && (
+                          <span className="nhis-incomplete-intake-badge">Missing Attachment</span>
+                        )}
+                      </td>
                       <td className="nhis-actions">
                         <button
                           className="action-btn action-btn--view"
@@ -3739,8 +3754,12 @@ const Nhis = () => {
                         {c.status === 'served' && canWrite && (
                           <button
                             className="action-btn action-btn--submit"
-                            title={directNhiaApiAvailable ? 'Submit directly to NHIA' : 'Mark as Submitted'}
-                            disabled={isClaimBusy(c.id)}
+                            title={
+                              isIncompletePharmacyClaim(c)
+                                ? 'Attach the prescription before submitting this pharmacy claim'
+                                : directNhiaApiAvailable ? 'Submit directly to NHIA' : 'Mark as Submitted'
+                            }
+                            disabled={isClaimBusy(c.id) || isIncompletePharmacyClaim(c)}
                             onClick={() => handleStatusUpdate(c, 'submitted')}
                           >
                             <Send size={14} />
