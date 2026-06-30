@@ -943,6 +943,7 @@ const Nhis = () => {
   const [tariffForm, setTariffForm] = useState(BLANK_NHIA_TARIFF)
   const [tariffSubmitting, setTariffSubmitting] = useState(false)
   const claimsPageCacheRef = useRef(new Map())
+  const claimsTableRef = useRef(null)
   const claimsFilterKeyRef = useRef('')
 
   // ── import modal ──────────────────────────────────────────────
@@ -1283,6 +1284,58 @@ const Nhis = () => {
   const claimsTotalPages = Math.max(1, Math.ceil(claimsTotal / claimsPageSize))
   const claimsShowingFrom = claimsTotal === 0 ? 0 : ((claimsPage - 1) * claimsPageSize) + 1
   const claimsShowingTo = Math.min(claimsPage * claimsPageSize, claimsTotal)
+  const goToClaimsPage = (page) => {
+    const nextPage = Math.min(claimsTotalPages, Math.max(1, Number(page) || 1))
+    if (nextPage === claimsPage) return
+    setClaimsPage(nextPage)
+    window.requestAnimationFrame(() => {
+      claimsTableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }
+
+  const renderClaimsPagination = (placement) => (
+    <div className={`nhis-pagination nhis-pagination--${placement}`}>
+      <span>
+        Showing {claimsShowingFrom}-{claimsShowingTo} of {claimsTotal} claim{claimsTotal === 1 ? '' : 's'}
+      </span>
+      <div className="nhis-pagination-actions">
+        <label className="nhis-page-size">
+          <span>Rows</span>
+          <select
+            value={claimsPageSize}
+            onChange={(event) => {
+              claimsPageCacheRef.current.clear()
+              setClaimsPage(1)
+              setClaimsPageSize(Number(event.target.value) || NHIS_CLAIMS_DEFAULT_PAGE_SIZE)
+            }}
+            disabled={claimsPageLoading}
+            aria-label={`Claims per page (${placement})`}
+          >
+            {NHIS_CLAIMS_PAGE_SIZE_OPTIONS.map((size) => (
+              <option key={size} value={size}>{size}</option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm"
+          disabled={claimsPageLoading || claimsPage <= 1}
+          onClick={() => goToClaimsPage(claimsPage - 1)}
+        >
+          Previous
+        </button>
+        <span>Page {claimsPage} of {claimsTotalPages}</span>
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm"
+          disabled={claimsPageLoading || claimsPage >= claimsTotalPages}
+          onClick={() => goToClaimsPage(claimsPage + 1)}
+        >
+          Next
+        </button>
+      </div>
+    </div>
+  )
 
   const allNhisPatients = useMemo(() => {
     const merged = new Map()
@@ -3507,50 +3560,10 @@ const Nhis = () => {
             </div>
           )}
 
-          <div className="nhis-pagination">
-            <span>
-              Showing {claimsShowingFrom}-{claimsShowingTo} of {claimsTotal} claim{claimsTotal === 1 ? '' : 's'}
-            </span>
-            <div className="nhis-pagination-actions">
-              <label className="nhis-page-size">
-                <span>Rows</span>
-                <select
-                  value={claimsPageSize}
-                  onChange={(event) => {
-                    claimsPageCacheRef.current.clear()
-                    setClaimsPage(1)
-                    setClaimsPageSize(Number(event.target.value) || NHIS_CLAIMS_DEFAULT_PAGE_SIZE)
-                  }}
-                  disabled={claimsPageLoading}
-                  aria-label="Claims per page"
-                >
-                  {NHIS_CLAIMS_PAGE_SIZE_OPTIONS.map((size) => (
-                    <option key={size} value={size}>{size}</option>
-                  ))}
-                </select>
-              </label>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                disabled={claimsPageLoading || claimsPage <= 1}
-                onClick={() => setClaimsPage((page) => Math.max(1, page - 1))}
-              >
-                Previous
-              </button>
-              <span>Page {claimsPage} of {claimsTotalPages}</span>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                disabled={claimsPageLoading || claimsPage >= claimsTotalPages}
-                onClick={() => setClaimsPage((page) => Math.min(claimsTotalPages, page + 1))}
-              >
-                Next
-              </button>
-            </div>
-          </div>
+          {renderClaimsPagination('top')}
 
           {/* Claims table */}
-          <div className="nhis-table-wrap">
+          <div className="nhis-table-wrap" ref={claimsTableRef}>
             {loading || claimsPageLoading ? (
               <div className="nhis-empty">{claimsPageLoading ? 'Loading claims page...' : 'Loading claims...'}</div>
             ) : filteredClaims.length === 0 ? (
@@ -3770,64 +3783,13 @@ const Nhis = () => {
               </table>
             )}
           </div>
+          {renderClaimsPagination('bottom')}
           {!loading && filteredClaims.length > 0 && visibleNhisPatients.length > 0 && (
-            <div className="nhis-patient-list-section">
-              <div className="nhis-patient-fallback__header">
-                <strong>Known NHIS patients</strong>
-                <span>{visibleNhisPatients.length} shown</span>
-              </div>
-              <div className="nhis-patient-fallback">
-                <table className="nhis-table">
-                  <thead>
-                    <tr>
-                      <th>Patient</th>
-                      <th>Member No / HIN</th>
-                      <th>Details</th>
-                      <th>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {visibleNhisPatients.map((patient) => (
-                      <tr key={patientSearchKey(patient)}>
-                        <td>
-                          <div className="patient-name">{formatPatientLookupName(patient)}</div>
-                          {getPatientPhone(patient) && <div className="patient-meta">{getPatientPhone(patient)}</div>}
-                          {getPatientAddress(patient) && <div className="patient-meta">{getPatientAddress(patient)}</div>}
-                        </td>
-                        <td>
-                          {getPatientMemberNumber(patient) && (
-                            <div>{getPatientMemberNumber(patient)}</div>
-                          )}
-                          {getPatientHin(patient) && <div className="patient-meta">HIN: {getPatientHin(patient)}</div>}
-                        </td>
-                        <td>
-                          {getPatientFolderNo(patient) && <div>Folder: {getPatientFolderNo(patient)}</div>}
-                          {getPatientGender(patient) && <div className="patient-meta">Gender: {getPatientGender(patient)}</div>}
-                          {getPatientDateOfBirth(patient) && <div className="patient-meta">DOB: {formatAppDate(getPatientDateOfBirth(patient))}</div>}
-                          {getPatientInsuranceProvider(patient) && <div className="patient-meta">{getPatientInsuranceProvider(patient)}</div>}
-                          {!getPatientFolderNo(patient) &&
-                            !getPatientGender(patient) &&
-                            !getPatientDateOfBirth(patient) &&
-                            !getPatientInsuranceProvider(patient) && (
-                              <span className="patient-meta">-</span>
-                            )}
-                        </td>
-                        <td>
-                          {canWrite && (
-                            <button
-                              type="button"
-                              className="btn btn-primary btn-sm"
-                              onClick={() => openNewClaimForPatient(patient)}
-                            >
-                              <Plus size={14} /> New Claim
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+            <div className="nhis-known-patients-summary">
+              <span>{visibleNhisPatients.length} known NHIS patient{visibleNhisPatients.length === 1 ? '' : 's'} available</span>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setPageTab('patients')}>
+                Open Patients
+              </button>
             </div>
           )}
         </>
