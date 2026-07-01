@@ -203,6 +203,10 @@ const baseClaim = {
   physicianName: 'Dr Test',
   prescriptionFilePath: 'org/2026-05/claim/rx.pdf',
   prescriptionFileName: 'rx.pdf',
+  prescriptionDocumentType: 'prescription',
+  prescriptionVerified: true,
+  prescriptionVerifiedBy: '11111111-1111-4111-8111-111111111111',
+  prescriptionVerifiedAt: '2026-05-14T10:00:00.000Z',
   organizationType: 'pharmacy',
 }
 
@@ -304,6 +308,24 @@ describe('assessNhisClaimReadiness', () => {
 
     expect(readiness.blockers).toContain(
       'Attach the scanned prescription PDF or JPEG before saving/submitting this NHIS claim.'
+    )
+  })
+
+  it('blocks a receipt or unverified attachment from pharmacy completion', () => {
+    const readiness = assessNhisClaimReadiness(
+      {
+        ...baseClaim,
+        prescriptionDocumentType: 'receipt',
+        prescriptionVerified: false,
+        prescriptionVerifiedBy: '',
+        prescriptionVerifiedAt: '',
+      },
+      [baseMedicine],
+      { finalSubmission: true }
+    )
+
+    expect(readiness.blockers).toContain(
+      'Classify the attachment as Prescription and confirm that Claims staff verified it before completing/submitting this pharmacy claim.'
     )
   })
 
@@ -971,6 +993,10 @@ describe('CLAIM-it export helpers', () => {
     prescription_file_path: 'org/2026-05/claim/rx.pdf',
     prescription_file_type: 'application/pdf',
     prescription_file_size: 1024,
+    prescription_document_type: 'prescription',
+    prescription_verified: true,
+    prescription_verified_by: '11111111-1111-4111-8111-111111111111',
+    prescription_verified_at: '2026-05-14T10:00:00.000Z',
     total_amount: 10,
     nhis_claim_medicines: [
       {
@@ -2085,6 +2111,10 @@ describe('direct NHIA submission', () => {
     prescription_file_path: 'org/2026-05/claim/rx.pdf',
     prescription_file_name: 'rx.pdf',
     prescription_file_url: 'https://example.test/rx.pdf',
+    prescription_document_type: 'prescription',
+    prescription_verified: true,
+    prescription_verified_by: '11111111-1111-4111-8111-111111111111',
+    prescription_verified_at: '2026-05-14T10:00:00.000Z',
     total_amount: 10,
     nhis_claim_medicines: [
       {

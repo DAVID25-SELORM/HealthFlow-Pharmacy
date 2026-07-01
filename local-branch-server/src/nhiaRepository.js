@@ -22,7 +22,6 @@ const CREDENTIAL_MODES = new Set([
   'bearer_token',
   'basic_auth',
   'oauth_client',
-  'healthmanager_form',
   'custom',
   // ✅ NHIA API ARCHITECTURE PATCH END
 ])
@@ -394,9 +393,6 @@ const normalizeCredentialMode = (value) => {
     client_secret: 'oauth_client',
     username_password: 'basic_auth',
     certificate: 'custom',
-    healthmanager: 'healthmanager_form',
-    health_manager: 'healthmanager_form',
-    healthmanager_checkcc: 'healthmanager_form',
   }
   const normalizedMode = legacyModeMap[mode] || mode
   // ✅ NHIA API ARCHITECTURE PATCH END
@@ -2397,46 +2393,6 @@ const postWithCertificate = (url, body, settings) =>
 const getClaimSubmitBaseUrl = (settings) =>
   normalizeText(settings.claimitSubmitBaseUrl || settings.productionBaseUrl || settings.apiBaseUrl)
 
-const getClaimContextMemberNumber = (payload = {}) =>
-  normalizeText(
-    payload.memberNumber ||
-      payload.memberNo ||
-      payload.patient?.memberNumber ||
-      payload.patient?.memberNo ||
-      payload.claims?.[0]?.memberNumber ||
-      payload.claims?.[0]?.memberNo
-  )
-
-const buildHealthmanagerFormSubmission = (settings, payload = {}) => {
-  const credentials = settings.credentials || {}
-  const memberNumber = getClaimContextMemberNumber(payload)
-  if (!memberNumber) {
-    throw new Error('Healthmanager CC lookup requires a patient member number.')
-  }
-  const apiKey = assertRequiredText(credentials.apiKey, 'Healthmanager API key')
-  const apiSecret = assertRequiredText(credentials.apiSecret, 'Healthmanager API secret')
-  return new URLSearchParams({
-    unm: normalizeNhiaMemberNumber(memberNumber),
-    key: apiKey,
-    secret: apiSecret,
-  }).toString()
-}
-
-const validateSettingsForCcCode = (settings) => {
-  if (settings?.credentialMode !== 'healthmanager_form') {
-    validateSettingsForSubmission(settings)
-    return
-  }
-
-  if (!settings) {
-    throw new Error('NHIA settings are required before generating CCC/CC codes.')
-  }
-  assertRequiredText(getClaimSubmitBaseUrl(settings), 'Healthmanager base URL')
-  const credentials = settings.credentials || {}
-  assertRequiredText(credentials.apiKey, 'Healthmanager API key')
-  assertRequiredText(credentials.apiSecret, 'Healthmanager API secret')
-}
-
 const getClaimItTransportErrorMessage = (error, url) => {
   const code = normalizeText(error?.cause?.code || error?.code)
   const target = normalizeText(url)
@@ -2589,13 +2545,8 @@ const submitPayload = async (
   }
   const transportBaseUrl = getClaimItTransportBaseUrl(baseUrl, contentType)
   const url = `${transportBaseUrl}/${endpointPath.replace(/^\/+/, '')}`
-  const isHealthmanagerForm = settings.credentialMode === 'healthmanager_form'
   const isXml = normalizeText(contentType).toLowerCase().includes('xml')
-  const body = isHealthmanagerForm
-    ? buildHealthmanagerFormSubmission(settings, payload)
-    : isXml
-      ? payloadContent
-      : JSON.stringify(payload)
+  const body = isXml ? payloadContent : JSON.stringify(payload)
 
   if (settings.credentialMode === 'custom' && settings.credentials?.certPem && settings.credentials?.keyPem) {
     const response = await postWithCertificate(url, body, settings)
@@ -2608,11 +2559,6 @@ const submitPayload = async (
   }
 
   const headers = await buildClaimItSubmissionHeaders(settings, contentType)
-  if (isHealthmanagerForm) {
-    headers['Content-Type'] = 'application/x-www-form-urlencoded;charset=UTF-8'
-    headers.Accept = 'application/json, text/plain, */*'
-    delete headers.Authorization
-  }
 
   let response
   try {
@@ -2996,42 +2942,9 @@ export const generateNhiaCcCode = async (claimContext = {}) => {
     return { status: 'pending', source: 'pending', message: 'Pending CLAIM-it validation' }
   }
 
-  const payload = {
-    action: isClaimItBridgeMode(settings) ? 'generate_or_validate_cc_code' : 'generate_cc_code',
-    claimControlMode: settings.claimControlMode || (isClaimItBridgeMode(settings) ? 'claimit_bridge' : 'direct_api'),
-    facilityCode: settings.facilityCode,
-    providerNumber: settings.providerNumber,
-    submitterId: isClaimItBridgeMode(settings) ? undefined : settings.submitterId,
-    batch: {
-      organizationType: normalizeOrganizationType(claimContext.organizationType || claimContext.organization_type),
-      facilityCode: settings.facilityCode,
-      providerNumber: settings.providerNumber,
-      claimCount: 1,
-    },
-    claims: [{
-      patientName: normalizeText(claimContext.patientName),
-      memberNumber: normalizeText(claimContext.memberNumber || claimContext.memberNo),
-      hin: normalizeText(claimContext.hin) || null,
-      diagnosis: normalizeText(claimContext.diagnosis) || null,
-      serviceDate: normalizeNhiaServiceDate(claimContext.serviceDate),
-      totalAmount: Number(claimContext.totalAmount || 0),
-    }],
-    organizationType: normalizeOrganizationType(claimContext.organizationType || claimContext.organization_type),
-    patient: {
-      name: normalizeText(claimContext.patientName),
-      memberNumber: normalizeText(claimContext.memberNumber || claimContext.memberNo),
-      hin: normalizeText(claimContext.hin) || null,
-    },
-    diagnosis: normalizeText(claimContext.diagnosis) || null,
-    serviceDate: normalizeNhiaServiceDate(claimContext.serviceDate),
-    requestedAt: nowIso(),
-  }
-
-  const endpointPath = getCcEndpointPath(settings)
-
   // NHIA genCCC is the canonical CCC/CC generation endpoint. It must use the
   // eligibility API, not CLAIM-it claim submission routes such as /claims.
-  if (settings.credentialMode !== 'healthmanager_form') {
+  {
     const memberNumber = normalizeText(claimContext.memberNumber || claimContext.memberNo)
     if (memberNumber) {
       try {
@@ -3068,36 +2981,6 @@ export const generateNhiaCcCode = async (claimContext = {}) => {
     return { status: 'pending', source: 'pending', message: 'Pending CLAIM-it validation' }
   }
 
-  validateSettingsForCcCode(settings)
-
-  logSubmission({ action: 'cc_code.generate.start', status: 'pending', request: payload })
-  try {
-    const result = await submitPayload(settings, payload, endpointPath)
-    if (!result.ok) {
-      throw new Error(buildClaimItHttpError('NHIA API', result.httpStatus, result.body))
-    }
-    const ccCode = extractCcCode(result.body)
-    if (!ccCode) {
-      const memberDetails = mapNhiaMemberLookupResponse(result.body)
-      const failureMessage = getNhiaMemberLookupFailureMessage(memberDetails)
-      if (failureMessage) throw new Error(failureMessage)
-      return { status: 'pending', source: 'pending', message: 'Pending CLAIM-it validation', response: result.body }
-    }
-    logSubmission({
-      action: 'cc_code.generate.complete',
-      status: 'success',
-      httpStatus: result.httpStatus,
-      response: result.body,
-    })
-    return { ccCode, source: isClaimItBridgeMode(settings) ? 'claimit_bridge' : 'api', response: result.body }
-  } catch (error) {
-    logSubmission({
-      action: 'cc_code.generate.failed',
-      status: 'failed',
-      error: error.message || 'CCC/CC code generation failed.',
-    })
-    throw error
-  }
 }
 
 export const submitNhiaDirectPayload = async ({

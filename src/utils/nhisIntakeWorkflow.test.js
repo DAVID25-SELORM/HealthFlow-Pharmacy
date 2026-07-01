@@ -3,6 +3,7 @@ import {
   canSaveNhisIncompleteIntake,
   getNhisIncompleteIntakeItems,
   hasNhisPrescriptionAttachment,
+  hasVerifiedNhisPrescription,
 } from './nhisIntakeWorkflow'
 
 describe('NHIS dispensary intake workflow', () => {
@@ -31,6 +32,25 @@ describe('NHIS dispensary intake workflow', () => {
     expect(hasNhisPrescriptionAttachment({
       status: 'served',
       prescription_file_path: 'rx/claim.pdf',
+    })).toBe(true)
+  })
+
+  it('only treats a staff-verified prescription as complete', () => {
+    const attachment = { prescription_file_path: 'rx/claim.pdf' }
+    expect(hasVerifiedNhisPrescription(attachment)).toBe(false)
+    expect(hasVerifiedNhisPrescription({
+      ...attachment,
+      prescription_document_type: 'receipt',
+      prescription_verified: true,
+      prescription_verified_by: 'user-1',
+      prescription_verified_at: '2026-06-30T12:00:00.000Z',
+    })).toBe(false)
+    expect(hasVerifiedNhisPrescription({
+      ...attachment,
+      prescription_document_type: 'prescription',
+      prescription_verified: true,
+      prescription_verified_by: 'user-1',
+      prescription_verified_at: '2026-06-30T12:00:00.000Z',
     })).toBe(true)
   })
 

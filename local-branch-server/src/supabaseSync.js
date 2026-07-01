@@ -297,6 +297,23 @@ const syncRecordUpsert = async (supabase, row) => {
     throw error
   }
 
+  if (entityType === 'nhis_claims') {
+    const remoteId = data?.remote_id || record.id
+    const { error: verificationError } = await supabase
+      .from('nhis_claims')
+      .update({
+        prescription_document_type: record.prescription_document_type || null,
+        prescription_verified: record.prescription_verified === true,
+        prescription_verified_by: record.prescription_verified_by || null,
+        prescription_verified_at: record.prescription_verified_at || null,
+      })
+      .eq('id', remoteId)
+
+    if (verificationError) {
+      throw verificationError
+    }
+  }
+
   markOfflineRecordSynced.run(timestamp, timestamp, record.id, entityType)
   if (row.entity_id !== record.id) {
     markOfflineRecordSynced.run(timestamp, timestamp, row.entity_id, entityType)

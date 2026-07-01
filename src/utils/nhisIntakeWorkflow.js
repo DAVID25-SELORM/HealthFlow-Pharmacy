@@ -16,6 +16,14 @@ export const hasNhisPrescriptionAttachment = (claim = {}, pendingFile = null) =>
     claim.claimit_attachment_base64
   )
 
+export const hasVerifiedNhisPrescription = (claim = {}, pendingFile = null) =>
+  hasNhisPrescriptionAttachment(claim, pendingFile) &&
+  String(claim.prescriptionDocumentType || claim.prescription_document_type || '').trim().toLowerCase() ===
+    'prescription' &&
+  (claim.prescriptionVerified ?? claim.prescription_verified) === true &&
+  Boolean(claim.prescriptionVerifiedBy || claim.prescription_verified_by) &&
+  Boolean(claim.prescriptionVerifiedAt || claim.prescription_verified_at)
+
 export const getNhisIncompleteIntakeItems = ({
   claim = {},
   medicines = [],

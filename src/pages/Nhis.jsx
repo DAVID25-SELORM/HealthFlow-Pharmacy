@@ -16,7 +16,7 @@ import {
 import {
   canSaveNhisIncompleteIntake,
   getNhisIncompleteIntakeItems,
-  hasNhisPrescriptionAttachment,
+  hasVerifiedNhisPrescription,
 } from '../utils/nhisIntakeWorkflow'
 import { normalizeText } from '../utils/validation'
 import {
@@ -244,6 +244,10 @@ const makeBlankClaim = () => ({
   prescriptionFileName: '',
   prescriptionFileType: '',
   prescriptionFileSize: '',
+  prescriptionDocumentType: '',
+  prescriptionVerified: false,
+  prescriptionVerifiedBy: '',
+  prescriptionVerifiedAt: '',
   claimitAttachmentFileName: '',
   claimitAttachmentFileType: '',
   claimitAttachmentMimeType: '',
@@ -863,8 +867,7 @@ const Nhis = () => {
   const organizationId = organization?.id || profile?.organization_id || ''
   const isHospital = organizationType === 'hospital'
   const isIncompletePharmacyClaim = (claim = {}) =>
-    !isHospital &&
-    !hasNhisPrescriptionAttachment(claim)
+    !isHospital && !hasVerifiedNhisPrescription(claim)
 
   // ── page sub-tab ─────────────────────────────────────────────
   const [pageTab, setPageTab] = useState('claims') // 'claims' | 'patients' | 'catalog' | 'gdrg' | 'review' | 'rules'
@@ -1975,6 +1978,10 @@ const Nhis = () => {
       prescriptionFileName: claim.prescription_file_name || '',
       prescriptionFileType: claim.prescription_file_type || '',
       prescriptionFileSize: claim.prescription_file_size || '',
+      prescriptionDocumentType: claim.prescription_document_type || '',
+      prescriptionVerified: claim.prescription_verified === true,
+      prescriptionVerifiedBy: claim.prescription_verified_by || '',
+      prescriptionVerifiedAt: claim.prescription_verified_at || '',
       claimitAttachmentFileName: claim.claimit_attachment_file_name || '',
       claimitAttachmentFileType: claim.claimit_attachment_file_type || '',
       claimitAttachmentMimeType: claim.claimit_attachment_mime_type || '',
@@ -2385,6 +2392,7 @@ const Nhis = () => {
         enforceDiagnosisTreatmentMatch: Boolean(editingClaim && isHospital),
         enforcePrescribingLevel: true,
         requirePrescriptionAttachment: Boolean(editingClaim && !isHospital),
+        requireVerifiedPrescription: Boolean(editingClaim && !isHospital),
         claimControlMode,
         providerClassLevel,
         // ✅ NHIS PHARMACY LEVEL PATCH START
@@ -2453,6 +2461,10 @@ const Nhis = () => {
             : 'application/pdf'
       ),
       prescriptionFileSize: file.size,
+      prescriptionDocumentType: '',
+      prescriptionVerified: false,
+      prescriptionVerifiedBy: '',
+      prescriptionVerifiedAt: '',
       claimitAttachmentFileName: '',
       claimitAttachmentFileType: '',
       claimitAttachmentMimeType: '',
@@ -2470,6 +2482,10 @@ const Nhis = () => {
       prescriptionFileName: '',
       prescriptionFileType: '',
       prescriptionFileSize: '',
+      prescriptionDocumentType: '',
+      prescriptionVerified: false,
+      prescriptionVerifiedBy: '',
+      prescriptionVerifiedAt: '',
       claimitAttachmentFileName: '',
       claimitAttachmentFileType: '',
       claimitAttachmentMimeType: '',
@@ -2811,6 +2827,7 @@ const Nhis = () => {
           allowIncompleteReview: canSaveIncompleteIntake,
           expectedUpdatedAt: editingClaim.updated_at || editingClaim.updatedAt || '',
           requirePrescriptionAttachment: !isHospital,
+          requireVerifiedPrescription: !isHospital,
         })
         savedClaimRecord = savedClaim || editingClaim
         const claimForSubmission = savedClaim || editingClaim
@@ -2907,6 +2924,10 @@ const Nhis = () => {
           claim_number: savedClaimRecord?.claim_number || editingClaim?.claim_number || '',
           medicine_count: compactMedicines(claimMedicines).length,
           prescription_attached: incompleteIntakeItems.includes('prescription attachment') === false,
+          prescription_document_type: payload.prescriptionDocumentType || '',
+          prescription_verified: payload.prescriptionVerified === true,
+          prescription_verified_by: payload.prescriptionVerifiedBy || '',
+          prescription_verified_at: payload.prescriptionVerifiedAt || '',
           incomplete_items: incompleteIntakeItems,
           status: savedClaimRecord?.status || payload.status || '',
         },
@@ -2967,6 +2988,7 @@ const Nhis = () => {
             tariffFacilityGroup: activeTariffFacilityGroup,
             tariffCateringOption: activeTariffCateringOption,
             requirePrescriptionAttachment: !isHospital,
+            requireVerifiedPrescription: !isHospital,
           }
         )
 
@@ -4621,6 +4643,65 @@ const Nhis = () => {
                       <button type="button" className="action-btn action-btn--cancel" onClick={clearPrescriptionPdf}>
                         <X size={12} />
                       </button>
+                    </div>
+                  )}
+                  {(claimForm.prescriptionFileName ||
+                    claimForm.prescriptionFilePath ||
+                    claimForm.prescriptionFileUrl ||
+                    prescriptionPdfFile) && (
+                    <div className="form-row" style={{ marginTop: '0.75rem' }}>
+                      <div className="form-group">
+                        <label>Attachment Type *</label>
+                        <select
+                          className="form-input"
+                          value={claimForm.prescriptionDocumentType}
+                          disabled={!canWrite || isMedicineCounterAssistant}
+                          onChange={(event) => {
+                            const documentType = event.target.value
+                            setClaimForm((previous) => ({
+                              ...previous,
+                              prescriptionDocumentType: documentType,
+                              prescriptionVerified: false,
+                              prescriptionVerifiedBy: '',
+                              prescriptionVerifiedAt: '',
+                            }))
+                          }}
+                        >
+                          <option value="">Select attachment type</option>
+                          <option value="prescription">Prescription</option>
+                          <option value="receipt">Receipt / bill</option>
+                          <option value="lab_report">Lab report</option>
+                          <option value="other">Other</option>
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <label className="checkbox-label">
+                          <input
+                            type="checkbox"
+                            checked={claimForm.prescriptionVerified === true}
+                            disabled={
+                              !canWrite ||
+                              isMedicineCounterAssistant ||
+                              claimForm.prescriptionDocumentType !== 'prescription'
+                            }
+                            onChange={(event) => {
+                              const verified = event.target.checked
+                              setClaimForm((previous) => ({
+                                ...previous,
+                                prescriptionVerified: verified,
+                                prescriptionVerifiedBy: verified ? user?.id || '' : '',
+                                prescriptionVerifiedAt: verified ? new Date().toISOString() : '',
+                              }))
+                            }}
+                          />
+                          I verified this is the patient&apos;s prescription
+                        </label>
+                        <small>
+                          {claimForm.prescriptionVerified
+                            ? 'Verified prescription — eligible for pharmacy completion.'
+                            : 'Unverified files cannot complete or submit a pharmacy claim.'}
+                        </small>
+                      </div>
                     </div>
                   )}
                 </section>

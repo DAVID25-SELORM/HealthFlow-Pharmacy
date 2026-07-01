@@ -69,6 +69,13 @@ const hasPrescriptionAttachment = (claimData = {}, options = {}) => {
       getClaimField(claimData, 'prescriptionFileName', 'prescription_file_name')
   )
 }
+const hasVerifiedPrescriptionAttachment = (claimData = {}, options = {}) =>
+  hasPrescriptionAttachment(claimData, options) &&
+  getClaimField(claimData, 'prescriptionDocumentType', 'prescription_document_type').toLowerCase() ===
+    'prescription' &&
+  (claimData?.prescriptionVerified ?? claimData?.prescription_verified) === true &&
+  Boolean(getClaimField(claimData, 'prescriptionVerifiedBy', 'prescription_verified_by')) &&
+  Boolean(getClaimField(claimData, 'prescriptionVerifiedAt', 'prescription_verified_at'))
 const VALID_ORGANIZATION_TYPES = ['pharmacy', 'hospital']
 const MAX_DIAGNOSES_PER_CLAIM = 10
 const NHIS_CC_CODE_DIGITS = 5
@@ -143,6 +150,10 @@ const OPTIONAL_CLAIM_SCHEMA_COLUMNS = [
   'claimit_attachment_file_type',
   'claimit_attachment_mime_type',
   'claimit_attachment_base64',
+  'prescription_document_type',
+  'prescription_verified',
+  'prescription_verified_by',
+  'prescription_verified_at',
   'nhia_transaction_id',
   'nhia_eligibility_start_date',
   'nhia_eligibility_end_date',
@@ -175,6 +186,10 @@ const OPTIONAL_CLAIM_SCHEMA_FIELD_GROUPS = [
   ['claimit_attachment_file_type', 'claimitAttachmentFileType'],
   ['claimit_attachment_mime_type', 'claimitAttachmentMimeType'],
   ['claimit_attachment_base64', 'claimitAttachmentBase64'],
+  ['prescription_document_type', 'prescriptionDocumentType'],
+  ['prescription_verified', 'prescriptionVerified'],
+  ['prescription_verified_by', 'prescriptionVerifiedBy'],
+  ['prescription_verified_at', 'prescriptionVerifiedAt'],
   ['nhia_transaction_id', 'nhiaTransactionId'],
   ['nhia_eligibility_start_date', 'nhiaEligibilityStartDate'],
   ['nhia_eligibility_end_date', 'nhiaEligibilityEndDate'],
@@ -507,6 +522,8 @@ const NHIS_CLAIM_LIST_SELECT = `
       service_date_from, service_date_to, branch_id, total_amount,
       status, created_at, updated_at,
       prescription_file_url, prescription_file_path, prescription_file_name,
+      prescription_document_type, prescription_verified,
+      prescription_verified_by, prescription_verified_at,
       nhis_claim_medicines ( id )
     `
 
@@ -1994,6 +2011,9 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
   const requirePrescriptionAttachment = options.finalSubmission
     ? (!isHospital || options.requirePrescriptionAttachment !== false)
     : options.requirePrescriptionAttachment === true
+  const requireVerifiedPrescription =
+    !isHospital &&
+    (options.finalSubmission || options.requireVerifiedPrescription === true)
   const shouldCheckDiagnosisTreatmentMatch =
     isHospital &&
     (options.finalSubmission || options.enforceDiagnosisTreatmentMatch === true || requireMedicineDirections)
@@ -2090,6 +2110,15 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
     })
   ) {
     blockers.push('Attach the scanned prescription PDF or JPEG before saving/submitting this NHIS claim.')
+  } else if (
+    requireVerifiedPrescription &&
+    !hasVerifiedPrescriptionAttachment(claimData, {
+      allowPendingFile: !options.finalSubmission && options.allowPendingPrescriptionAttachment !== false,
+    })
+  ) {
+    blockers.push(
+      'Classify the attachment as Prescription and confirm that Claims staff verified it before completing/submitting this pharmacy claim.'
+    )
   }
 
   if (!medicines?.length && (!isHospital || !tariffServices.length)) {
@@ -3586,6 +3615,18 @@ const getPrescriptionAttachmentPayload = (claimData = {}) => {
       claimData.claimitAttachmentMimeType ?? claimData.claimit_attachment_mime_type
     ) || null,
     claimit_attachment_base64: attachmentBase64 || null,
+    prescription_document_type: normalizeText(
+      claimData.prescriptionDocumentType ?? claimData.prescription_document_type
+    ).toLowerCase() || null,
+    prescription_verified: Boolean(
+      claimData.prescriptionVerified ?? claimData.prescription_verified
+    ),
+    prescription_verified_by: toNullableUuid(
+      claimData.prescriptionVerifiedBy ?? claimData.prescription_verified_by
+    ),
+    prescription_verified_at: toNullableTimestamp(
+      claimData.prescriptionVerifiedAt ?? claimData.prescription_verified_at
+    ),
   }
 }
 
@@ -4344,7 +4385,33 @@ const fetchNhisClaimsPageViaRpc = async (filters = {}) => {
     return null
   }
 
-  return normalizeNhisClaimsPageRpcRow(data?.[0] || {}, { page, pageSize })
+  const normalizedPage = normalizeNhisClaimsPageRpcRow(data?.[0] || {}, { page, pageSize })
+  const claimIds = normalizedPage.claims.map((claim) => claim.id).filter(Boolean)
+  if (!claimIds.length) return normalizedPage
+
+  const { data: verificationRows, error: verificationError } = await supabase
+    .from('nhis_claims')
+    .select(`
+      id, prescription_document_type, prescription_verified,
+      prescription_verified_by, prescription_verified_at
+    `)
+    .in('id', claimIds)
+
+  if (verificationError) {
+    console.warn('[NHIS] Prescription verification metadata could not be loaded.', verificationError)
+    return normalizedPage
+  }
+
+  const verificationByClaimId = new Map(
+    (verificationRows || []).map((row) => [row.id, row])
+  )
+  return {
+    ...normalizedPage,
+    claims: normalizedPage.claims.map((claim) => ({
+      ...claim,
+      ...(verificationByClaimId.get(claim.id) || {}),
+    })),
+  }
 }
 
 const getNhisClaimMergeKey = (claim = {}, index = 0) =>
@@ -4601,6 +4668,12 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
           organizationType === 'pharmacy' &&
           (normalizeText(claimData?.status).toLowerCase() || 'served') === 'served'
         ),
+      requireVerifiedPrescription:
+        options.requireVerifiedPrescription === true ||
+        (
+          organizationType === 'pharmacy' &&
+          (normalizeText(claimData?.status).toLowerCase() || 'served') === 'served'
+        ),
       providerClassLevel,
       // ✅ NHIS PHARMACY LEVEL PATCH START
       pharmacyLevel: options.pharmacyLevel,
@@ -4791,6 +4864,9 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
       enforcePrescribingLevel: true,
       requirePrescriptionAttachment:
         options.requirePrescriptionAttachment === true ||
+        (organizationType === 'pharmacy' && normalizeText(claimData?.status).toLowerCase() === 'served'),
+      requireVerifiedPrescription:
+        options.requireVerifiedPrescription === true ||
         (organizationType === 'pharmacy' && normalizeText(claimData?.status).toLowerCase() === 'served'),
       providerClassLevel,
       // ✅ NHIS PHARMACY LEVEL PATCH START
