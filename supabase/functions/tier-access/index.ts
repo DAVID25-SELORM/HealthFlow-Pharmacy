@@ -3038,22 +3038,17 @@ const deleteDrug = async (
     throw new Error(DEFAULT_CATALOG_DELETE_ERROR)
   }
 
-  const { data, error } = await adminClient
-    .from('drugs')
-    .update({
-      status: 'inactive',
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', drugId)
-    .eq('organization_id', organizationId)
-    .select()
-    .single()
+  const { data, error } = await adminClient.rpc('recycle_inventory_drug', {
+    p_drug_id: drugId,
+    p_organization_id: organizationId,
+    p_deleted_by: requesterProfile.id,
+  })
 
   if (error) {
     throw error
   }
 
-  return data
+  return { ...existingDrug, status: 'inactive', recycle_bin_id: data?.id || null }
 }
 
 const bulkImportDrugs = async (

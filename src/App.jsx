@@ -41,6 +41,7 @@ const Nhis = lazy(() => import('./pages/Nhis'))
 const EPharmacy = lazy(() => import('./pages/EPharmacy'))
 const PatientCare = lazy(() => import('./pages/PatientCare'))
 const CustomerEPharmacy = lazy(() => import('./pages/CustomerEPharmacy'))
+const RecycleBin = lazy(() => import('./pages/RecycleBin'))
 
 const RouteFallback = () => (
   <div className="route-fallback" role="status" aria-live="polite">
@@ -187,6 +188,14 @@ function App() {
               element={
                 <RoleRoute allowedRoles={ACTIVITY_LOG_ROLES} allow={canViewActivityLog}>
                   <ActivityLog />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="recycle-bin"
+              element={
+                <RoleRoute allowedRoles={['admin', 'super_admin']}>
+                  <RecycleBin />
                 </RoleRoute>
               }
             />

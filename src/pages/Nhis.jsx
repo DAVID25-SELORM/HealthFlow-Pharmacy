@@ -34,6 +34,7 @@ import {
   getNhisClaimStats,
   createNhisClaim,
   deleteNhisClaim,
+  serveNhisClaimDirect,
   updateNhisClaim,
   updateNhisClaimStatus,
   exportNhisClaimsFile,
@@ -1349,6 +1350,14 @@ const Nhis = () => {
       </div>
     </div>
   )
+  const canServeClaimDirectly =
+    !isHospital &&
+    ['admin', 'super_admin', 'claims_officer'].includes(normalizedRole) &&
+    (
+      !editingClaim ||
+      ['draft', 'pending_serving', 'serving_in_progress', 'returned_for_review']
+        .includes(normalizeText(editingClaim.status).toLowerCase())
+    )
 
   const allNhisPatients = useMemo(() => {
     const merged = new Map()
@@ -2705,6 +2714,15 @@ const Nhis = () => {
   const handleSubmitClaim = async (e, intent = 'dispatch') => {
     e.preventDefault()
     const saveAsDraft = intent === 'save_details'
+    const serveDirectly = intent === 'serve_directly'
+    if (serveDirectly && compactMedicines(claimMedicines).length === 0) {
+      setClaimError('Add at least one medicine before serving directly.')
+      return
+    }
+    if (serveDirectly && shouldUseBranchServer()) {
+      setClaimError('Direct serving requires an online cloud connection so stock can be deducted safely.')
+      return
+    }
     if (!isMedicineCounterAssistant && readiness.blockers.length && !canSaveIncompleteIntake) {
       setClaimError(`NHIS claim readiness check failed: ${readiness.blockers.slice(0, 5).join(' ')}`)
       return
@@ -2818,7 +2836,9 @@ const Nhis = () => {
         payload.claimit_attachment_base64
       )
 
-      let successMessage = saveAsDraft
+      let successMessage = serveDirectly
+        ? 'Claim medicines served directly and inventory deducted.'
+        : saveAsDraft
         ? 'Claim details saved. The claim has not been sent to the dispensary.'
         : editingClaim
         ? (
@@ -2909,6 +2929,23 @@ const Nhis = () => {
         })
       }
 
+      if (serveDirectly) {
+        try {
+          const directServeResult = await serveNhisClaimDirect(savedClaimRecord?.id || editingClaim?.id)
+          savedClaimRecord = { ...(savedClaimRecord || {}), ...(directServeResult || {}) }
+          successMessage = readiness.blockers.length
+            ? 'Medicines served directly and inventory deducted. The claim remains incomplete until final-submission requirements are completed.'
+            : 'Medicines served directly, inventory deducted, and the claim marked ready.'
+        } catch (directServeError) {
+          await refreshClaimsOverview()
+          throw new Error(
+            `Claim details were saved, but direct serving did not complete and stock was not deducted: ${
+              directServeError.message || 'Direct serving failed.'
+            }`
+          )
+        }
+      }
+
       if (!editingClaim && returnAlertOverrideSnapshot?.alert) {
         const alert = returnAlertOverrideSnapshot.alert
         await tryLogAuditEvent({
@@ -2938,14 +2975,22 @@ const Nhis = () => {
       }
 
       await tryLogAuditEvent({
-        eventType: saveAsDraft
+        eventType: serveDirectly
+          ? 'nhis_claim.served_directly'
+          : saveAsDraft
           ? 'nhis_claim.details_saved'
           : editingClaim
             ? 'nhis_claim.intake_updated'
             : 'nhis_claim.sent_to_dispensary',
         entityType: 'nhis_claims',
         entityId: savedClaimRecord?.id || editingClaim?.id || '',
-        action: saveAsDraft ? 'save_details' : editingClaim ? 'update_intake' : 'dispatch',
+        action: serveDirectly
+          ? 'serve_directly'
+          : saveAsDraft
+            ? 'save_details'
+            : editingClaim
+              ? 'update_intake'
+              : 'dispatch',
         details: {
           claim_number: savedClaimRecord?.claim_number || editingClaim?.claim_number || '',
           medicine_count: compactMedicines(claimMedicines).length,
@@ -2956,6 +3001,8 @@ const Nhis = () => {
           prescription_verified_at: payload.prescriptionVerifiedAt || '',
           incomplete_items: incompleteIntakeItems,
           status: savedClaimRecord?.status || payload.status || '',
+          inventory_deducted: serveDirectly,
+          served_directly_by: serveDirectly ? user?.id || '' : '',
         },
       })
 
@@ -3081,7 +3128,7 @@ const Nhis = () => {
       notify('Only an administrator can delete NHIS claims.', 'warning')
       return
     }
-    if (!window.confirm(`Permanently delete claim ${claim.claim_number}? This action cannot be undone.`)) {
+    if (!window.confirm(`Move claim ${claim.claim_number} to the Recycle Bin? It can be restored by an administrator.`)) {
       return
     }
 
@@ -3091,7 +3138,7 @@ const Nhis = () => {
       if (viewClaim?.id === claim.id) setViewClaim(null)
       if (editingClaim?.id === claim.id) closeClaimModal()
       await refreshClaimsOverview()
-      notify(`Claim ${claim.claim_number} deleted.`, 'success')
+      notify(`Claim ${claim.claim_number} moved to the Recycle Bin.`, 'success')
     } catch (err) {
       notify(err.message || 'Unable to delete claim.', 'error')
     } finally {
@@ -5059,6 +5106,26 @@ const Nhis = () => {
                       : 'Save Details'}
                   </button>
                 )}
+              {canServeClaimDirectly && (
+                <button
+                  className="btn btn-secondary"
+                  disabled={
+                    claimSubmitting ||
+                    compactMedicines(claimMedicines).length === 0 ||
+                    shouldUseBranchServer()
+                  }
+                  title={
+                    shouldUseBranchServer()
+                      ? 'Direct serving requires an online cloud connection.'
+                      : 'Serve all entered medicine quantities now and deduct branch inventory.'
+                  }
+                  onClick={(event) => handleSubmitClaim(event, 'serve_directly')}
+                >
+                  {claimSubmitting && claimSubmitIntent === 'serve_directly'
+                    ? 'Serving & Deducting...'
+                    : 'Serve Directly'}
+                </button>
+              )}
               <button
                 className="btn btn-primary"
                 disabled={claimSubmitting || !canSaveCommunityPharmacyClaim}

@@ -1,0 +1,7 @@
+.recycle-bin { padding: 1.5rem; }
+.recycle-bin-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; overflow-x: auto; }
+.recycle-bin table { border-collapse: collapse; width: 100%; }
+.recycle-bin th, .recycle-bin td { border-bottom: 1px solid #edf0f3; padding: .8rem 1rem; text-align: left; }
+.recycle-bin th { background: #f8fafc; color: #475569; font-size: .8rem; text-transform: uppercase; }
+.recycle-bin-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.recycle-bin-empty { color: #64748b; padding: 2rem; text-align: center; }

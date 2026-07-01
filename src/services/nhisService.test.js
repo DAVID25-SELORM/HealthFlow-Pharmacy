@@ -4,6 +4,7 @@ import { inflateSync } from 'node:zlib'
 vi.mock('../lib/supabase', () => ({
   supabase: {
     from: vi.fn(),
+    rpc: vi.fn(),
   },
 }))
 
@@ -70,6 +71,7 @@ import {
   normalizeNhisGender,
   normalizeNhisExportPeriod,
   saveNhiaApiSettings,
+  serveNhisClaimDirect,
   submitNhisClaimDirect,
   updateNhisClaim,
   updateNhisClaimStatus,
@@ -3523,6 +3525,21 @@ describe('NHIS local and cloud claim reads', () => {
 })
 
 describe('NHIS claim status routing', () => {
+  it('serves a claim directly through the transactional stock RPC', async () => {
+    supabase.rpc.mockResolvedValueOnce({
+      data: { id: 'claim-1', status: 'served', total_amount: 10 },
+      error: null,
+    })
+
+    await expect(serveNhisClaimDirect('claim-1')).resolves.toMatchObject({
+      id: 'claim-1',
+      status: 'served',
+    })
+    expect(supabase.rpc).toHaveBeenCalledWith('serve_nhis_claim_direct', {
+      p_claim_id: 'claim-1',
+    })
+  })
+
   it('blocks NHIS claim deletion without the explicit permission before any write', async () => {
     await expect(deleteNhisClaim('claim-1', { role: 'claims_officer' }))
       .rejects.toThrow('You do not have permission to delete NHIS claims.')
@@ -3531,31 +3548,32 @@ describe('NHIS claim status routing', () => {
     expect(supabase.from).not.toHaveBeenCalled()
   })
 
-  it('routes admin NHIS claim deletion through the local branch server', async () => {
+  it('routes admin NHIS claim deletion through the recycle-bin RPC', async () => {
     shouldUseBranchServer.mockReturnValue(true)
-    deleteBranchRecord.mockResolvedValueOnce({
+    supabase.rpc.mockResolvedValueOnce({ data: {
       id: 'claim-1',
       claim_number: 'NHIS-000001',
-    })
+    }, error: null })
 
     await expect(deleteNhisClaim('claim-1', { role: 'admin' })).resolves.toMatchObject({
       id: 'claim-1',
     })
 
-    expect(deleteBranchRecord).toHaveBeenCalledWith('nhis/claims', 'claim-1')
+    expect(supabase.rpc).toHaveBeenCalledWith('recycle_nhis_claim', { p_claim_id: 'claim-1' })
+    expect(deleteBranchRecord).not.toHaveBeenCalled()
     expect(supabase.from).not.toHaveBeenCalled()
   })
 
   it('allows a claims officer with explicit NHIS deletion permission', async () => {
     shouldUseBranchServer.mockReturnValue(true)
-    deleteBranchRecord.mockResolvedValueOnce({ id: 'claim-1' })
+    supabase.rpc.mockResolvedValueOnce({ data: { id: 'claim-1' }, error: null })
 
     await expect(deleteNhisClaim('claim-1', {
       role: 'claims_officer',
       canDeleteNhisClaims: true,
     })).resolves.toMatchObject({ id: 'claim-1' })
 
-    expect(deleteBranchRecord).toHaveBeenCalledWith('nhis/claims', 'claim-1')
+    expect(supabase.rpc).toHaveBeenCalledWith('recycle_nhis_claim', { p_claim_id: 'claim-1' })
   })
 
   it('does not report success when the live schema would discard an RX attachment', async () => {

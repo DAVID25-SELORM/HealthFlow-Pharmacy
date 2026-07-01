@@ -17,6 +17,7 @@ import {
   Activity,
   RefreshCcw,
   MonitorCheck,
+  Trash2,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useTenant } from '../../context/TenantContext'
@@ -82,6 +83,7 @@ const Sidebar = ({ isOpen, onClose }) => {
     { path: '/reports', icon: BarChart3, label: 'Reports', roles: REPORT_ROLES, allow: canViewReports },
     { path: '/accounting', icon: Wallet, label: 'Accounting', roles: ACCOUNTING_ROLES, allow: canManageAccounting, featureAllowed: canUseAccounting },
     { path: '/settings', icon: Settings, label: 'Settings', roles: SETTINGS_ROLES },
+    { path: '/recycle-bin', icon: Trash2, label: 'Recycle Bin', roles: ['admin', 'super_admin'] },
     { path: '/system-health', icon: MonitorCheck, label: 'System Health', roles: SYSTEM_HEALTH_ROLES },
     { path: '/offline-sync', icon: RefreshCcw, label: 'Offline Sync', roles: OFFLINE_SYNC_ROLES },
     { path: '/tenant-admin', icon: ShieldCheck, label: 'Tenant Admin', roles: ['super_admin'] },

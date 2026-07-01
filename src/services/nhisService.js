@@ -21,7 +21,6 @@ import {
 import { tryLogAuditEvent } from './auditService'
 import {
   createBranchRecord,
-  deleteBranchRecord,
   getNhiaSettings as getBranchNhiaSettings,
   listBranchRecords,
   saveNhiaSettings as saveBranchNhiaSettings,
@@ -6538,30 +6537,21 @@ export const deleteNhisClaim = async (id, options = {}) => {
     throw new Error('You do not have permission to delete NHIS claims.')
   }
 
-  if (shouldUseBranchServer()) {
-    return await deleteBranchRecord('nhis/claims', id)
-  }
-
-  const { data: claim, error } = await supabase
-    .from('nhis_claims')
-    .delete()
-    .eq('id', id)
-    .select('id, claim_number, prescription_file_path')
-    .single()
+  const { data: claim, error } = await supabase.rpc('recycle_nhis_claim', {
+    p_claim_id: id,
+  })
 
   if (error) throw error
 
-  const prescriptionPath = normalizeText(claim?.prescription_file_path)
-  if (prescriptionPath && supabase.storage?.from) {
-    const { error: storageError } = await supabase.storage
-      .from(NHIS_PRESCRIPTION_BUCKET)
-      .remove([prescriptionPath])
-    if (storageError) {
-      console.warn('NHIS claim deleted, but its prescription storage object could not be removed.', storageError)
-    }
-  }
-
   return claim
+}
+
+export const serveNhisClaimDirect = async (id) => {
+  const { data, error } = await supabase.rpc('serve_nhis_claim_direct', {
+    p_claim_id: assertRequiredText(id, 'NHIS claim'),
+  })
+  if (error) throw error
+  return data
 }
 
 const getClaimItXmlItemName = (name) => {

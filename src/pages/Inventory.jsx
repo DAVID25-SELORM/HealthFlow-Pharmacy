@@ -676,7 +676,7 @@ const Inventory = () => {
       return
     }
 
-    if (!window.confirm('Are you sure you want to delete this drug?')) {
+    if (!window.confirm('Move this inventory item to the Recycle Bin? An administrator can restore it.')) {
       return
     }
 
@@ -689,7 +689,7 @@ const Inventory = () => {
       await deleteInventoryDrug(id)
       await loadDrugs()
       dispatchHealthflowDataChanged()
-      notify('Drug deleted successfully!', 'success')
+      notify('Inventory item moved to the Recycle Bin.', 'success')
     } catch (error) {
       console.error('Error deleting drug:', error)
       notify(`Error deleting drug: ${error.message}`, 'error')
