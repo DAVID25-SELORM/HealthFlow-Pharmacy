@@ -5002,7 +5002,10 @@ const Nhis = () => {
                     <>
                       {readiness.blockers.length > 0 && (
                         <div className="nhia-readiness-section">
-                          <span className="nhia-readiness-label">Blockers ({readiness.blockers.length})</span>
+                          <span className="nhia-readiness-label">
+                            Requirements before final submission ({readiness.blockers.length})
+                          </span>
+                          <p>These do not prevent Save Details or Send to Dispensary.</p>
                           <ul>
                             {readiness.blockers.map((issue) => (
                               <li key={issue}>{issue}</li>
