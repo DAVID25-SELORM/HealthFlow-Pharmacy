@@ -2720,7 +2720,7 @@ const Nhis = () => {
       return
     }
     if (serveDirectly && shouldUseBranchServer()) {
-      setClaimError('Direct serving requires an online cloud connection so stock can be deducted safely.')
+      setClaimError('Direct serving requires an online cloud connection so the serving record can be saved safely.')
       return
     }
     if (!isMedicineCounterAssistant && readiness.blockers.length && !canSaveIncompleteIntake) {
@@ -2837,7 +2837,7 @@ const Nhis = () => {
       )
 
       let successMessage = serveDirectly
-        ? 'Claim medicines served directly and inventory deducted.'
+        ? 'Claim medicines served directly.'
         : saveAsDraft
         ? 'Claim details saved. The claim has not been sent to the dispensary.'
         : editingClaim
@@ -2934,12 +2934,12 @@ const Nhis = () => {
           const directServeResult = await serveNhisClaimDirect(savedClaimRecord?.id || editingClaim?.id)
           savedClaimRecord = { ...(savedClaimRecord || {}), ...(directServeResult || {}) }
           successMessage = readiness.blockers.length
-            ? 'Medicines served directly and inventory deducted. The claim remains incomplete until final-submission requirements are completed.'
-            : 'Medicines served directly, inventory deducted, and the claim marked ready.'
+            ? 'Medicines served directly. The claim remains incomplete until final-submission requirements are completed.'
+            : 'Medicines served directly and the claim marked ready.'
         } catch (directServeError) {
           await refreshClaimsOverview()
           throw new Error(
-            `Claim details were saved, but direct serving did not complete and stock was not deducted: ${
+            `Claim details were saved, but direct serving did not complete: ${
               directServeError.message || 'Direct serving failed.'
             }`
           )
@@ -3001,7 +3001,7 @@ const Nhis = () => {
           prescription_verified_at: payload.prescriptionVerifiedAt || '',
           incomplete_items: incompleteIntakeItems,
           status: savedClaimRecord?.status || payload.status || '',
-          inventory_deducted: serveDirectly,
+          inventory_deducted: false,
           served_directly_by: serveDirectly ? user?.id || '' : '',
         },
       })
@@ -5117,12 +5117,12 @@ const Nhis = () => {
                   title={
                     shouldUseBranchServer()
                       ? 'Direct serving requires an online cloud connection.'
-                      : 'Serve all entered medicine quantities now and deduct branch inventory.'
+                      : 'Mark all entered medicine quantities as served without changing inventory stock.'
                   }
                   onClick={(event) => handleSubmitClaim(event, 'serve_directly')}
                 >
                   {claimSubmitting && claimSubmitIntent === 'serve_directly'
-                    ? 'Serving & Deducting...'
+                    ? 'Serving...'
                     : 'Serve Directly'}
                 </button>
               )}
