@@ -1,5 +1,18 @@
 # Offline Operations And Sync Roadmap
 
+## Implemented production baseline — 1 July 2026
+
+- Facility Local Branch Server with SQLite and sync outbox
+- One offline PIN per user, stored as a salted scrypt hash on the facility server
+- Five-attempt lockout for 15 minutes and local audit logging
+- Administrator enable, reset, revoke, and audit controls
+- Trusted HTTPS LAN mode with local-only fallback when TLS is unavailable
+- Automated Windows installation, certificate setup, and workstation enrollment
+- Signed update packages with rollback
+
+Future roadmap items must preserve these security boundaries and must never
+copy Supabase/cloud passwords into local storage.
+
 ## Recommended Direction
 
 For reliable pharmacy offline operations, use a local branch component instead of relying on browser caching alone.

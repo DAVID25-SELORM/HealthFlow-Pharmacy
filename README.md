@@ -31,14 +31,15 @@ Facility criteria remain separated:
 - **Multi-tenant architecture** - multiple facilities with isolated organization data.
 - **Facility onboarding** - self-service signup with trial setup.
 - **Inventory management** - stock levels, batch numbers, expiry dates, cost, and selling prices.
+- **Recoverable deletion** - administrator Recycle Bin for inventory items and NHIS claims.
 - **Excel import** - bulk import medicines from Excel files.
 - **Sales and POS** - cash, mobile money, insurance, and NHIA claim flows.
 - **Receipt printing** - professional receipts with browser print and PDF export.
-- **NHIS and claims** - NHIA member checks, CCC support, medicine claims, G-DRG/tariff workflows, and CLAIM-it exports.
+- **NHIS and claims** - NHIA member checks, CCC support, draft/dispatch/direct-serving workflows, prescription attachments, G-DRG/tariff workflows, and CLAIM-it exports. Direct NHIS serving bypasses MCA and does not change inventory.
 - **Patient records** - standard patients and NHIS patient lists.
 - **Reports and analytics** - sales, claims, inventory, and operational insights.
 - **Role-based access** - admin, pharmacist, claims officer, cashier, MCA, and other role levels.
-- **Branch server** - local SQLite, offline mode, LAN access, background cloud sync, and CLAIM-it bridge support.
+- **Branch server** - local SQLite, facility-wide offline PINs, trusted HTTPS LAN access, background cloud sync, signed updates, and CLAIM-it bridge support.
 - **Licensed E-Pharmacy** - inter-facility stock sharing plus a public customer storefront with progressive OTC and prescription checkout.
 
 ## Customer E-Pharmacy
@@ -119,6 +120,8 @@ npm run test
 Use these guides for production setup:
 
 - [Deployment and readiness](docs/DEPLOYMENT.md)
+- [Complete user manual](docs/USER_MANUAL.md)
+- [HealthFlow services](docs/SERVICES.md)
 - [Branch server guide](docs/BRANCH_SERVER_GUIDE.md)
 - [Multi-tenant migration history](docs/MULTI_TENANT_HISTORY.md)
 - [Drug import guide](docs/DRUG_IMPORT.md)

@@ -140,6 +140,20 @@ Supabase Free Plan includes:
 
 Perfect for testing and 5-10 pharmacies!
 
+## Current migration requirement
+
+Canonical migrations live in `supabase/migrations/` and must be applied in
+filename order. For the 1 July 2026 NHIS/recovery release, confirm migrations
+through:
+
+```text
+20260701150000_harden_recovery_and_direct_serving_actor.sql
+```
+
+The final behavior is intentional: direct NHIS serving bypasses MCA, does not
+change inventory, and privileged recovery/serving mutations require an active
+staff account.
+
 ---
 
 **Need help?** Contact David Gabion Selorm

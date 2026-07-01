@@ -16,6 +16,8 @@ The branch server is the local backend for facilities that need LAN/offline work
 - CLAIM-it bridge under `/json-api` when enabled.
 - SQLite persistence and background Supabase sync.
 - Payment webhook and hosted payment initiation routes.
+- Facility-wide offline PIN authentication, lockout, and local audit.
+- Trusted HTTPS LAN operation and workstation enrollment.
 
 ## Runtime Configuration
 
@@ -79,6 +81,10 @@ The code supports pharmacy and hospital/clinic-oriented NHIS workflows, includin
 - API and CLAIM-it bridge routes have an in-memory fixed-window rate limiter controlled by `RATE_LIMIT_*` settings.
 - NHIA secrets are encrypted using `NHIA_CONFIG_SECRET_KEY`.
 - Payment, SMTP, SMS, NHIA, and sync secrets are backend-only.
+- Cloud passwords are never stored for offline login. Offline PINs are stored
+  only as salted scrypt hashes on the facility server.
+- Missing/invalid TLS forces loopback-only access; multi-computer access
+  requires a trusted certificate and authorized workstation.
 
 ---
 

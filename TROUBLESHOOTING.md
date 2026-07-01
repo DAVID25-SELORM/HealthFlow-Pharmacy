@@ -1,5 +1,31 @@
 # HealthFlow Troubleshooting
 
+## NHIS direct serving asks for MCA or stock
+
+Confirm migrations through
+`20260701140000_bypass_mca_for_direct_nhis_serving.sql` are applied and refresh
+the deployed app. **Serve Directly** must mark the entered quantities served,
+bypass MCA, and leave inventory unchanged. **Send to Dispensary** is the action
+that creates MCA work.
+
+## Browser displays “Free up space to continue”
+
+This warning comes from browser/device storage pressure, not the HealthFlow
+server. Free disk space and clear unused site data carefully. Do not remove
+HealthFlow local data during an unsynchronized offline session.
+
+## TLS Not Configured
+
+Multi-computer offline access requires a trusted certificate at the configured
+paths. The Windows defaults are:
+
+```text
+C:\HealthFlowLocal\certs\server.crt
+C:\HealthFlowLocal\certs\server.key
+```
+
+Without both valid files, local-only fallback is intentional.
+
 ## Branch Server Not Opening
 
 Check:

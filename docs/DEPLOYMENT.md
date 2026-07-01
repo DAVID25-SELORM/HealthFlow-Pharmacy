@@ -16,6 +16,31 @@ Use a dedicated active staff account with report access and no administrative
 write duties. The monitor performs read-only checks and does not create sales,
 claims, patients, or audit events.
 
+## Current Production Database and Function Checklist
+
+Apply all canonical migrations in `supabase/migrations/` in filename order.
+For the 1 July 2026 release, explicitly confirm:
+
+- `20260701100000_add_recycle_bin.sql`
+- `20260701120000_add_direct_nhis_serving.sql`
+- `20260701130000_remove_inventory_from_direct_nhis_serving.sql`
+- `20260701140000_bypass_mca_for_direct_nhis_serving.sql`
+- `20260701150000_harden_recovery_and_direct_serving_actor.sql`
+
+The later migrations intentionally establish the final rule: direct NHIS
+serving bypasses MCA and never checks or changes inventory.
+
+Deploy the current `tier-access` function after database migrations:
+
+```powershell
+cd "D:\APPS\HealthFlow Pharmacy"
+.\node_modules\.bin\supabase.cmd login
+.\node_modules\.bin\supabase.cmd functions deploy tier-access --project-ref <production-project-ref>
+```
+
+Use the repository-local CLI. Confirm the project reference before deployment;
+do not assume the project currently linked on a different workstation.
+
 ## Archived source: DEPLOYMENT_CHECKLIST.md
 
 # HealthFlow Deployment Checklist
@@ -32,6 +57,12 @@ claims, patients, or audit events.
 - [ ] Configure payment providers only if used.
 - [ ] Configure SMTP/SMS only if client messaging is used.
 - [ ] Review `RATE_LIMIT_*` values for the facility LAN size.
+- [ ] Apply all Recycle Bin and direct-serving migrations.
+- [ ] Test Save Details, Send to Dispensary, and Serve Directly.
+- [ ] Confirm direct serving bypasses MCA and does not alter stock.
+- [ ] Confirm deleted claims/items can be restored from Recycle Bin.
+- [ ] Confirm TLS status is Ready before enabling multi-computer offline access.
+- [ ] Enroll and test one offline PIN without using a cloud password.
 
 ## Build
 

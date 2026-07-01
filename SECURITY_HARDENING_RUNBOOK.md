@@ -137,6 +137,17 @@ Recommended:
 - Do not share admin accounts.
 - Review staff roles monthly.
 
+### Facility Offline PINs
+
+- Never copy or cache a Supabase/cloud password for offline use.
+- Each staff member enrolls one 6–12 digit facility offline PIN while online.
+- The Local Branch Server stores only a salted scrypt hash.
+- Five failed attempts lock the PIN for 15 minutes.
+- Log every successful and failed offline login locally.
+- Administrators can enable, reset, and revoke offline access.
+- A PIN is valid only through the authorized facility server and trusted
+  facility computers; it is not a portable cloud credential.
+
 ## 6. Subscription And Access Security
 
 Do not rely only on hidden sidebar links.
@@ -177,8 +188,16 @@ Before each production push:
 cd "C:\Users\RealTimeIT\Desktop\APPS\HealthFlow Pharmacy"
 npm.cmd run test
 npm.cmd run build
+npm.cmd run build:offline
 rg -n "service_role|SUPABASE_SERVICE|private_key|BRANCH_SYNC_TOKEN" src public local-branch-server
 ```
+
+For an NHIS direct-serving release, verify that directly served claims:
+
+- have `direct_served_at` and `direct_served_by`;
+- are not editable by MCA;
+- do not create `stock_movements` or change `drugs.quantity`; and
+- still require mandatory pharmacy attachment/details before submission.
 
 For the local branch server:
 

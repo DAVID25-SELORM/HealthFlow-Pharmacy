@@ -307,11 +307,11 @@
           <div class="meta-card"><span>Prepared for</span><strong>HealthFlow Clients</strong></div>
           <div class="meta-card"><span>Module</span><strong>NHIS Claims</strong></div>
           <div class="meta-card"><span>Audience</span><strong>MCA and Claims Officer</strong></div>
-          <div class="meta-card"><span>Version</span><strong>June 2026</strong></div>
+          <div class="meta-card"><span>Version</span><strong>1 July 2026</strong></div>
         </div>
       </div>
       <div class="callout">
-        <strong>Core rule:</strong> Claims Officer enters the prescription. MCA records what was actually served. Claims Officer reviews and finalizes.
+        <strong>Core rule:</strong> Claims Officer may save details, send to MCA, or serve directly. MCA serves only claims sent to the dispensary.
       </div>
       <p class="powered-brand">Powered by Neon Digital Technologies | neondigitaltechnologies.com</p>
     </section>
@@ -374,14 +374,14 @@
 
     <section class="page">
       <div class="page-header"><strong>HealthFlow NHIS</strong><span>Claims Officer Workflow</span></div>
-      <h2>Claims Officer: Prepare and Send to Dispensary</h2>
+      <h2>Claims Officer: Save, Send, or Serve Directly</h2>
 
       <div class="flow">
         <div class="flow-box">Register or select patient</div>
         <div class="arrow">></div>
         <div class="flow-box">Enter claim and medicines</div>
         <div class="arrow">></div>
-        <div class="flow-box">Send to Dispensary</div>
+        <div class="flow-box">Save, Send, or Serve Directly</div>
       </div>
 
       <h3>1. Open NHIS Claims</h3>
@@ -413,11 +413,15 @@
         <strong>Cost visibility:</strong> The Claims Officer should see the requested medicine cost before sending the claim to the dispensary.
       </div>
 
-      <h3>5. Send to Dispensary</h3>
-      <p>Click <span class="mono">Send to Dispensary</span>. The claim status becomes <span class="mono">Pending Serving</span>.</p>
+      <h3>5. Choose the Next Action</h3>
+      <ul>
+        <li><b>Save Details:</b> save a draft without sending it.</li>
+        <li><b>Send to Dispensary:</b> create Pending Serving work for MCA.</li>
+        <li><b>Serve Directly:</b> mark all entered quantities fully served and move directly to Served / Claim Ready.</li>
+      </ul>
 
       <div class="callout warning">
-        A pending-serving claim is not ready for submission. The dispensary or assigned serving staff must record served quantities first.
+        Direct serving does not check or deduct inventory and does not wait for MCA. Pharmacy submission still requires the prescription attachment and all mandatory claim details.
       </div>
 
       <div class="footer"><span>Powered by Neon Digital Technologies</span><span>Claims Officer Workflow</span></div>
@@ -436,6 +440,7 @@
       </div>
 
       <h3>1. Open Pending Serving Claims</h3>
+      <p>Claims served directly by a Claims Officer are excluded from MCA work and cannot be edited in MCA mode.</p>
       <p>Go to <span class="mono">NHIS > Claims</span> and open a claim with status <span class="mono">Pending Serving</span>.</p>
 
       <h3>2. Review Prescribed Medicines</h3>
@@ -559,7 +564,9 @@
             <li>Register/search NHIS patients</li>
             <li>Generate or enter CC code</li>
             <li>Enter requested medicines</li>
+            <li>Save incomplete details without dispatch</li>
             <li>Send to Dispensary</li>
+            <li>Serve directly without inventory changes or MCA input</li>
             <li>Review served medicines</li>
           </ul>
         </div>
@@ -582,6 +589,7 @@
         </thead>
         <tbody>
           <tr><td>Pending Serving</td><td>Claim is waiting for MCA</td><td>MCA should open and serve medicines</td></tr>
+          <tr><td>Served Directly</td><td>Claims Officer completed serving</td><td>Do not send to MCA; complete remaining attachment/details before submission</td></tr>
           <tr><td>Returned for Review</td><td>MCA has saved serving details</td><td>Claims Officer should review and finalize</td></tr>
           <tr><td>Claim total is zero</td><td>No served quantity recorded</td><td>MCA should enter served quantity</td></tr>
           <tr><td>MCA cannot save</td><td>Serving data is incomplete</td><td>Check served quantity, status, and reason</td></tr>
@@ -590,7 +598,7 @@
       </table>
 
       <div class="callout">
-        <strong>Best practice:</strong> Claims Officer enters the prescription. MCA records what was actually served. Claims Officer reviews and finalizes. Admin controls roles and sensitive privileges.
+        <strong>Best practice:</strong> Claims Officer chooses Save Details, Send to Dispensary, or Serve Directly. MCA records serving only for dispatched claims. Admin controls roles and sensitive privileges.
       </div>
 
       <div class="footer"><span>Powered by Neon Digital Technologies</span><span>neondigitaltechnologies.com</span></div>

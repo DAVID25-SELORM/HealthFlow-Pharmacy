@@ -6,12 +6,14 @@ This manual explains how Medicine Counter Assistants (MCA) and Claims Officers s
 
 ## Key Principle
 
-HealthFlow separates two jobs:
+HealthFlow supports two controlled serving paths:
 
-- Claims Officer enters and prepares the NHIS claim.
-- MCA serves the medicines that were already entered by the Claims Officer.
+- Claims Officer enters and prepares the NHIS claim, then either sends it to
+  MCA/dispensary or serves it directly.
+- MCA serves medicines only when the claim is sent to the dispensary.
 
-The claim value is based on what the MCA actually serves, not just what the Claims Officer requested.
+The claim value is based on the quantity actually served. Direct serving marks
+the entered prescribed quantities served immediately and does not use inventory.
 
 Powered by Neon Digital Technologies - neondigitaltechnologies.com
 
@@ -129,21 +131,28 @@ Enter the prescribed/requested medicine details:
 
 The Claims Officer can see the requested cost before sending to the dispensary.
 
-### 5. Send to Dispensary
+### 5. Choose the Next Action
 
-After entering the patient and medicine details, click:
+The Claims Officer has three actions:
 
-```text
-Send to Dispensary
-```
+- **Save Details** — saves a draft without sending it.
+- **Send to Dispensary** — sends the same claim to MCA as **Pending Serving**.
+- **Serve Directly** — marks all entered medicine quantities fully served and
+  moves the claim directly to **Served / Claim Ready**.
 
-The claim status becomes:
+The intake may initially have medicines, an attachment, both, or neither. It
+can be reopened later to add/correct medicines or attach the prescription. A
+pharmacy claim cannot be finally submitted without its prescription attachment.
 
-```text
-Pending Serving
-```
+### 6. Direct Serving Rules
 
-At this stage, the claim is not ready for submission. The dispensary or assigned serving staff must serve the medicine first.
+- Direct serving requires at least one medicine with a positive quantity.
+- It does not check, add, or deduct HealthFlow stock.
+- It does not wait for MCA and is not shown as MCA work.
+- It is auditable and cannot be performed twice.
+- Claims Officer/admin can reopen it for corrections.
+- Submission remains blocked until all mandatory claim details and the
+  prescription attachment are complete.
 
 ## MCA Workflow
 
@@ -160,6 +169,9 @@ MCA should focus on claims with status:
 ```text
 Pending Serving
 ```
+
+Claims already served directly by a Claims Officer are excluded from MCA work
+and cannot be edited in MCA mode.
 
 ### 2. Open a Claim
 
@@ -292,6 +304,8 @@ Use this warning to prevent accidental repeated dispensing.
 - Fill NHIS patient details
 - Enter prescribed/requested medicines
 - Send claim to MCA
+- Save claim details without dispatch
+- Serve entered medicines directly without inventory changes
 - Review MCA served quantities
 - Approve claim after serving
 - Prepare claim for export/submission
@@ -325,7 +339,8 @@ Use this warning to prevent accidental repeated dispensing.
 
 - Do not let MCA work in Claims Officer mode unless assigned and intended.
 - Do not give NHIS deletion to ordinary staff.
-- Do not submit claims before MCA has served medicines.
+- Do not submit dispensary-routed claims before MCA has served medicines.
+- Do not send a directly served claim back to MCA.
 - Do not delete unserved medicines just to clean up the claim.
 - Do not share admin passwords.
 
@@ -334,6 +349,12 @@ Use this warning to prevent accidental repeated dispensing.
 ### Claim Is Pending Serving
 
 This means it is waiting for MCA to serve medicines.
+
+### Claim Was Served Directly
+
+This means the Claims Officer completed the serving stage. MCA input is neither
+required nor permitted. Complete any remaining claim details or attachment
+before final submission.
 
 ### Claim Is Returned for Review
 
@@ -363,8 +384,8 @@ Check that:
 ## Best Practice Summary
 
 ```text
-Claims Officer enters the prescription.
-MCA records what was actually served.
+Claims Officer saves, sends to MCA, or serves directly.
+MCA records serving only for claims sent to the dispensary.
 Claims Officer reviews and finalizes.
 Admin controls roles and sensitive privileges.
 ```

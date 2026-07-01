@@ -1,5 +1,13 @@
 # HealthFlow Backup and Recovery
 
+## Recycle Bin is not a backup
+
+HealthFlow archives deleted inventory items and NHIS claims in the
+administrator **Recycle Bin** so accidental deletions can be restored. This is
+short-term operational recovery, not disaster recovery. Continue scheduled
+Supabase and Local Branch Server backups, and do not permanently delete an
+archived record until retention requirements are satisfied.
+
 ## Database
 
 Main SQLite file:

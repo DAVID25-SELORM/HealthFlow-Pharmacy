@@ -1,9 +1,9 @@
 {
-  "version": "1.4.1",
-  "releaseNotes": "Completes zero-edit Windows bootstrap: generates the local branch token automatically, starts secure local HTTPS before cloud registration, caches the verified administrator locally for bootstrap authorization, and adds one-click Apply to Local Server for validated organization, branch, Supabase, sync, and NHIA configuration followed by service restart. Includes the automated TLS, renewal, workstation enrollment, and revocation controls from 1.4.0.",
+  "version": "1.4.2",
+  "releaseNotes": "Seven-day production rollup: performance and pagination hardening, offline security/TLS and zero-edit setup, hospital tariffs, NHIS date correction and incomplete intake, Save/Send/Serve Directly workflow with MCA bypass and no inventory dependency, Recycle Bin recovery, and refreshed manuals.",
   "channel": "stable",
-  "sha256": "bae92e1a84f7f084487a9de2daac1b057754e2169ea2434e630cda3ff5f0b398",
-  "publishedAt": "2026-06-28T23:55:59.9598892Z",
-  "packageUrl": "https://healthflowcloud.com/branch-updates/healthflow-branch-1.4.1.zip",
-  "signature": "tnF1j4LlTWTv/GJP4oEXipfJYNNEZLYUmWmEV69lK3ebhiSAjYHm1MjjB4zoSVs3CwoIotDEEKgZ6lvtIJ60DQ=="
+  "sha256": "75af1910237574c538aeb00231ffa27fa117c881f0107e4965a75a5c986f170a",
+  "publishedAt": "2026-07-01T19:31:51.9025147Z",
+  "packageUrl": "https://healthflowcloud.com/branch-updates/healthflow-branch-1.4.2.zip",
+  "signature": "LCt5UaNjHTHrr4otW1ySKV9mII/xAgWtyfnnj6ctlSepkM2rcCuso81xlARmGfC5fxkXvxYEr0EUjxsICvSQBA=="
 }

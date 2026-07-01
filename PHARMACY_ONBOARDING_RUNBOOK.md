@@ -9,6 +9,12 @@ There are two onboarding paths:
 
 Most new facilities should be onboarded in the cloud first. Add the local branch server only when the facility needs offline POS, LAN sharing, local inventory cache, local claims, or direct payment initiation from the branch machine.
 
+For facility-wide offline access, each staff member enrolls a separate offline
+PIN after the administrator enables access. HealthFlow stores only a salted
+scrypt hash on the Local Branch Server; cloud passwords are never copied.
+Confirm five-attempt/15-minute lockout, local audit logging, and administrator
+reset/revoke before handover.
+
 ## 1. Pre-Onboarding Information To Collect
 
 Collect these before touching the machine:
@@ -269,6 +275,12 @@ Multi-computer access requires a certificate trusted by every staff computer.
 Set `HOST=0.0.0.0`, `HEALTHFLOW_TLS_CERT_PATH`, and
 `HEALTHFLOW_TLS_KEY_PATH`. If the certificate is missing or invalid, the
 server reports `TLS Not Configured` and safely falls back to local-only mode.
+The standard automated Windows installation uses:
+
+```text
+C:\HealthFlowLocal\certs\server.crt
+C:\HealthFlowLocal\certs\server.key
+```
 
 For Hubtel/Paystack webhooks, the payment provider must also reach the branch server over HTTPS. Use one of these:
 

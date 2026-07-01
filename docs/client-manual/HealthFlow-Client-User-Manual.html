@@ -594,7 +594,7 @@
     <table>
       <thead><tr><th>Typical role</th><th>Main responsibilities</th></tr></thead>
       <tbody>
-        <tr><td>Administrator</td><td>Facility settings, staff access, all modules, sensitive corrections, backups, and permanent NHIS claim deletion.</td></tr>
+        <tr><td>Administrator</td><td>Facility settings, staff access, all modules, sensitive corrections, backups, Recycle Bin restore, and permanent deletion.</td></tr>
         <tr><td>Pharmacist</td><td>Dispensing, clinical review, inventory, patients, claims, NHIS, and reports.</td></tr>
         <tr><td>Pharmacy Technician / MCA</td><td>Dispensing support, inventory work, patient service, and permitted sales tasks.</td></tr>
         <tr><td>Cashier</td><td>POS checkout, payment recording, receipts, and assigned shift activities.</td></tr>
@@ -608,7 +608,7 @@
 
     <div class="callout danger">
       <strong>NHIS deletion is administrator-only</strong>
-      Rejecting a claim and deleting a claim are different actions. Authorized staff may reject a claim when appropriate. Only an administrator can permanently delete an NHIS claim, and deletion cannot be undone.
+      Rejecting and deleting are different actions. Deleted NHIS claims first move to the administrator Recycle Bin. Restore accidental deletions there; only permanent deletion from Recycle Bin cannot be undone.
     </div>
 
     <h3>Account safety</h3>
@@ -854,10 +854,24 @@
       <li>Review the returned member name, HIN, gender, date of birth, and membership result.</li>
       <li>Complete the folder number, service date, prescribing facility, referral information, prescriber, and authorization details.</li>
       <li>Add the medicines and confirm NHIS codes, quantities, approved prices, dose, frequency, and duration.</li>
-      <li>Attach the scanned prescription when required.</li>
+      <li>Attach the scanned prescription before final pharmacy-claim submission. Initial saving or dispensary dispatch may be incomplete.</li>
       <li>Review the NHIS Pharmacy Check panel and resolve blockers.</li>
-      <li>Select <b>Save Claim</b>.</li>
+      <li>Select <b>Save Details</b>, <b>Send to Dispensary</b>, or <b>Serve Directly</b>.</li>
     </ol>
+
+    <h3>Choose the correct claim action</h3>
+    <table>
+      <thead><tr><th>Action</th><th>Result</th></tr></thead>
+      <tbody>
+        <tr><td>Save Details</td><td>Saves a draft without sending it to the dispensary.</td></tr>
+        <tr><td>Send to Dispensary</td><td>Creates Pending Serving work for MCA. Missing medicines or attachment can be completed later on the same claim.</td></tr>
+        <tr><td>Serve Directly</td><td>Marks all entered quantities served, bypasses MCA, and moves the claim to Served / Claim Ready. It does not check or change inventory.</td></tr>
+      </tbody>
+    </table>
+    <div class="callout warning">
+      <strong>Direct serving does not remove final claim requirements</strong>
+      The Claims Officer may correct the claim later, but pharmacy submission remains blocked until the prescription attachment and other mandatory details are complete.
+    </div>
 
     <h3>CCC generation</h3>
     <p>CCC generation checks the member against the NHIA eligibility service using the facility's saved NHIA credentials. Each facility must use credentials officially issued for that facility.</p>
@@ -990,13 +1004,13 @@
       <thead><tr><th>Action</th><th>Use when</th><th>Result</th></tr></thead>
       <tbody>
         <tr><td>Reject</td><td>The claim should remain in history but cannot proceed.</td><td>Status changes to rejected and the record remains auditable.</td></tr>
-        <tr><td>Delete</td><td>An administrator confirms the record is an invalid duplicate, test, or irrecoverable mistake.</td><td>The claim is permanently removed. This action is restricted to administrators.</td></tr>
+        <tr><td>Delete</td><td>An administrator confirms the record is an invalid duplicate, test, or mistake.</td><td>The claim moves to Recycle Bin and can be restored until an administrator permanently deletes it there.</td></tr>
       </tbody>
     </table>
 
     <div class="callout danger">
-      <strong>Deletion cannot be undone</strong>
-      Verify the claim number, patient, service date, and reason before an administrator confirms permanent deletion.
+      <strong>Permanent deletion cannot be undone</strong>
+      Verify the archived claim number, patient, service date, and reason before permanently deleting it from Recycle Bin.
     </div>
     <div class="footer"><span>Section 9</span><span>Attachments and Claim Corrections</span></div>
   </section>
@@ -1124,6 +1138,14 @@
       <li>Review administrator accounts regularly.</li>
     </ul>
 
+    <h3>Recycle Bin</h3>
+    <span class="path">Recycle Bin</span>
+    <ul>
+      <li>Deleted inventory items and NHIS claims are archived instead of disappearing immediately.</li>
+      <li>Administrators can restore accidental deletions.</li>
+      <li>Use permanent deletion only after confirming the record is no longer required.</li>
+    </ul>
+
     <h3>NHIA and CLAIM-it settings</h3>
     <ul>
       <li>Enter only credentials officially issued to the facility.</li>
@@ -1176,6 +1198,14 @@
       <li>Review failures and read the exact error before retrying.</li>
       <li>Contact support if the same record fails repeatedly.</li>
     </ol>
+
+    <h3>Offline PIN and facility LAN security</h3>
+    <ul>
+      <li>Each staff member uses a separate 6–12 digit offline PIN; the cloud password is never copied locally.</li>
+      <li>Five failed attempts lock offline access for 15 minutes and every attempt is audited.</li>
+      <li>Administrators enable, reset, or revoke offline access in Settings.</li>
+      <li>Multi-computer access requires TLS status <b>Ready</b> and a trusted workstation enrollment. Without TLS, the branch server stays local-only.</li>
+    </ul>
 
     <div class="callout danger">
       <strong>Do not reinstall or reconfigure the branch server during an outage</strong>
@@ -1328,7 +1358,7 @@
       <thead><tr><th>Version</th><th>Date</th><th>Description</th></tr></thead>
       <tbody>
         <tr><td>1.0</td><td>15 June 2026</td><td>Initial client manual covering core pharmacy, claims, NHIS, CLAIM-it, offline, reporting, and administrative workflows.</td></tr>
-        <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+        <tr><td>1.1</td><td>1 July 2026</td><td>Added incomplete intake, Save/Send/Serve Directly, MCA bypass, Recycle Bin, facility offline PIN, and TLS guidance.</td></tr>
         <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
       </tbody>
     </table>
