@@ -72,8 +72,18 @@ export const splitMcaReadinessIssues = (readiness = {}) => {
 export const shouldFinalizeNhisServingReview = (status = '') =>
   NHIS_SERVING_REVIEW_FINALIZABLE_STATUSES.has(normalizeNhisServingStatus(status))
 
-export const canMcaOpenNhisClaimForServing = (status = '') =>
-  NHIS_MCA_OPENABLE_STATUSES.has(normalizeNhisServingStatus(status))
+export const isNhisClaimDirectlyServed = (claim = {}) =>
+  Boolean(claim?.direct_served_at || claim?.directServedAt)
+
+export const canMcaOpenNhisClaimForServing = (claimOrStatus = '') => {
+  if (claimOrStatus && typeof claimOrStatus === 'object') {
+    if (isNhisClaimDirectlyServed(claimOrStatus)) return false
+    return NHIS_MCA_OPENABLE_STATUSES.has(
+      normalizeNhisServingStatus(claimOrStatus.status)
+    )
+  }
+  return NHIS_MCA_OPENABLE_STATUSES.has(normalizeNhisServingStatus(claimOrStatus))
+}
 
 export const shouldApplyMcaEditWindowToClaim = (status = '') =>
   normalizeNhisServingStatus(status) === 'served'

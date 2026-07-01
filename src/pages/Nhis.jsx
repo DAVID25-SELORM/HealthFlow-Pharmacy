@@ -63,6 +63,7 @@ import {
 import { isMcaEditWindowOpen, canReopenMcaEditWindow } from '../utils/mcaEditWindow'
 import {
   canMcaOpenNhisClaimForServing,
+  isNhisClaimDirectlyServed,
   shouldApplyMcaEditWindowToClaim,
   shouldFinalizeNhisServingReview,
   splitMcaReadinessIssues,
@@ -1917,7 +1918,7 @@ const Nhis = () => {
   }
 
   const openEditClaim = async (selectedClaim) => {
-    const canOpenForMcaServing = isMedicineCounterAssistant && canMcaOpenNhisClaimForServing(selectedClaim.status)
+    const canOpenForMcaServing = isMedicineCounterAssistant && canMcaOpenNhisClaimForServing(selectedClaim)
     if (!canOpenForMcaServing && !canEditNhisClaimAnytime && selectedClaim.status !== 'served') {
       notify('Only served NHIS claims can be edited before submission/export.', 'warning')
       return
@@ -1932,6 +1933,11 @@ const Nhis = () => {
       return
     } finally {
       setClaimActionLoading(null)
+    }
+
+    if (isMedicineCounterAssistant && isNhisClaimDirectlyServed(claim)) {
+      notify('This claim was served directly by the Claims Officer and does not require MCA input.', 'warning')
+      return
     }
 
     // MCA medication edits are limited to the 24h window (or a 12h supervisor
@@ -3827,7 +3833,7 @@ const Nhis = () => {
                         </button>
                         {canServeNhisMedicines && (
                           isMedicineCounterAssistant
-                            ? canMcaOpenNhisClaimForServing(c.status)
+                            ? canMcaOpenNhisClaimForServing(c)
                             : (['pending_serving', 'returned_for_review', 'served'].includes(c.status) || canEditNhisClaimAnytime)
                         ) && (
                           <button
@@ -3839,7 +3845,7 @@ const Nhis = () => {
                             {isClaimActionBusy(c.id, 'edit') ? <Clock size={14} /> : <Pencil size={14} />}
                           </button>
                         )}
-                        {canReopenMca && c.status === 'served' && !isMcaEditWindowOpen(c) && (
+                        {canReopenMca && c.status === 'served' && !isNhisClaimDirectlyServed(c) && !isMcaEditWindowOpen(c) && (
                           <button
                             className="action-btn action-btn--edit"
                             title="Re-open MCA edit window (12 hours)"

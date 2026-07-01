@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   canMcaOpenNhisClaimForServing,
+  isNhisClaimDirectlyServed,
   shouldApplyMcaEditWindowToClaim,
   shouldFinalizeNhisServingReview,
   splitMcaReadinessIssues,
@@ -29,6 +30,17 @@ describe('NHIS serving workflow status transitions', () => {
     expect(canMcaOpenNhisClaimForServing('submitted')).toBe(false)
     expect(canMcaOpenNhisClaimForServing('paid')).toBe(false)
     expect(canMcaOpenNhisClaimForServing('rejected')).toBe(false)
+  })
+
+  it('keeps claims served directly by a Claims Officer out of the MCA workflow', () => {
+    const directClaim = {
+      status: 'served',
+      direct_served_at: '2026-07-01T12:00:00.000Z',
+    }
+
+    expect(isNhisClaimDirectlyServed(directClaim)).toBe(true)
+    expect(canMcaOpenNhisClaimForServing(directClaim)).toBe(false)
+    expect(canMcaOpenNhisClaimForServing({ status: 'served' })).toBe(true)
   })
 
   it('applies the MCA edit window only to served claims', () => {
