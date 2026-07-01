@@ -1,9 +1,21 @@
 const INTAKE_EDITABLE_STATUSES = new Set([
+  'draft',
   'pending_serving',
   'serving_in_progress',
 ])
 
 const normalizeStatus = (status = '') => String(status || '').trim().toLowerCase()
+
+export const getNhisIntakeSaveStatus = ({
+  intent = 'dispatch',
+  currentStatus = '',
+  isNew = false,
+} = {}) => {
+  if (intent === 'save_details') return 'draft'
+  const normalizedStatus = normalizeStatus(currentStatus)
+  if (isNew || normalizedStatus === 'draft') return 'pending_serving'
+  return normalizedStatus
+}
 
 export const hasNhisPrescriptionAttachment = (claim = {}, pendingFile = null) =>
   Boolean(

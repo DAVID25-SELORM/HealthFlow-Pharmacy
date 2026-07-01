@@ -15,6 +15,7 @@ import {
 } from '../utils/nhisDateOfBirth'
 import {
   canSaveNhisIncompleteIntake,
+  getNhisIntakeSaveStatus,
   getNhisIncompleteIntakeItems,
   hasVerifiedNhisPrescription,
 } from '../utils/nhisIntakeWorkflow'
@@ -100,13 +101,14 @@ import './Nhis.css'
 
 // ─── constants ────────────────────────────────────────────────────────────────
 
-const CLAIM_STATUS_TABS = ['all', 'pending_serving', 'returned_for_review', 'served', 'submitted', 'paid', 'rejected']
+const CLAIM_STATUS_TABS = ['all', 'draft', 'pending_serving', 'returned_for_review', 'served', 'submitted', 'paid', 'rejected']
 const NHIS_CLAIMS_DEFAULT_PAGE_SIZE = 100
 const NHIS_CLAIMS_PAGE_SIZE_OPTIONS = [50, 100, 200]
 const NHIS_CLAIMS_PAGE_CACHE_MS = 60000
 const NHIS_CLAIMS_SEARCH_DEBOUNCE_MS = 400
 const CLAIM_STATUS_LABELS = {
   all: 'All',
+  draft: 'Saved Details',
   pending_serving: 'Pending Serving',
   serving_in_progress: 'Serving',
   returned_for_review: 'For Review',
@@ -925,6 +927,7 @@ const Nhis = () => {
   const [claimMedicines, setClaimMedicines] = useState([])
   const [claimServices, setClaimServices]   = useState([])
   const [claimSubmitting, setClaimSubmitting] = useState(false)
+  const [claimSubmitIntent, setClaimSubmitIntent] = useState('')
   const [claimError, setClaimError]           = useState('')
   const [editingClaim, setEditingClaim]       = useState(null)
   const [prescriptionPdfFile, setPrescriptionPdfFile] = useState(null)
@@ -1271,6 +1274,7 @@ const Nhis = () => {
   const filteredClaims = useMemo(() => {
     const term = debouncedClaimSearch.trim().toLowerCase()
     return claims.filter((c) => {
+      if (isMedicineCounterAssistant && c.status === 'draft') return false
       if (claimTab !== 'all' && c.status !== claimTab) return false
       if (claimDateFilter === 'open') {
         if (!OPEN_CLAIM_STATUSES.has(c.status)) return false
@@ -1288,7 +1292,7 @@ const Nhis = () => {
         (c.hin           || '').toLowerCase().includes(term)
       )
     })
-  }, [claims, claimTab, debouncedClaimSearch, claimDateFilter, claimDateRange])
+  }, [claims, claimTab, debouncedClaimSearch, claimDateFilter, claimDateRange, isMedicineCounterAssistant])
 
   const claimsTotalPages = Math.max(1, Math.ceil(claimsTotal / claimsPageSize))
   const claimsShowingFrom = claimsTotal === 0 ? 0 : ((claimsPage - 1) * claimsPageSize) + 1
@@ -2698,8 +2702,9 @@ const Nhis = () => {
     }
   }
 
-  const handleSubmitClaim = async (e) => {
+  const handleSubmitClaim = async (e, intent = 'dispatch') => {
     e.preventDefault()
+    const saveAsDraft = intent === 'save_details'
     if (!isMedicineCounterAssistant && readiness.blockers.length && !canSaveIncompleteIntake) {
       setClaimError(`NHIS claim readiness check failed: ${readiness.blockers.slice(0, 5).join(' ')}`)
       return
@@ -2754,6 +2759,7 @@ const Nhis = () => {
 
     try {
       setClaimSubmitting(true)
+      setClaimSubmitIntent(intent)
       setClaimError('')
       const uploadedPrescription = prescriptionPdfFile
         ? await uploadNhisPrescriptionPdf(prescriptionPdfFile, {
@@ -2773,7 +2779,21 @@ const Nhis = () => {
         createdBy: user?.id || null,
       }
       if (!editingClaim) {
-        payload.status = 'pending_serving'
+        payload.status = getNhisIntakeSaveStatus({ intent, isNew: true })
+        payload.servingStatus = 'pending'
+        payload.allowIncompleteReview = true
+      } else if (saveAsDraft) {
+        payload.status = getNhisIntakeSaveStatus({
+          intent,
+          currentStatus: editingClaim.status,
+        })
+        payload.servingStatus = 'pending'
+        payload.allowIncompleteReview = true
+      } else if (normalizeText(editingClaim.status).toLowerCase() === 'draft') {
+        payload.status = getNhisIntakeSaveStatus({
+          intent,
+          currentStatus: editingClaim.status,
+        })
         payload.servingStatus = 'pending'
         payload.allowIncompleteReview = true
       } else if (isMedicineCounterAssistant) {
@@ -2798,7 +2818,9 @@ const Nhis = () => {
         payload.claimit_attachment_base64
       )
 
-      let successMessage = editingClaim
+      let successMessage = saveAsDraft
+        ? 'Claim details saved. The claim has not been sent to the dispensary.'
+        : editingClaim
         ? (
             isMedicineCounterAssistant
               ? 'NHIS medicines saved for Claims Officer review.'
@@ -2916,10 +2938,14 @@ const Nhis = () => {
       }
 
       await tryLogAuditEvent({
-        eventType: editingClaim ? 'nhis_claim.intake_updated' : 'nhis_claim.sent_to_dispensary',
+        eventType: saveAsDraft
+          ? 'nhis_claim.details_saved'
+          : editingClaim
+            ? 'nhis_claim.intake_updated'
+            : 'nhis_claim.sent_to_dispensary',
         entityType: 'nhis_claims',
         entityId: savedClaimRecord?.id || editingClaim?.id || '',
-        action: editingClaim ? 'update_intake' : 'dispatch',
+        action: saveAsDraft ? 'save_details' : editingClaim ? 'update_intake' : 'dispatch',
         details: {
           claim_number: savedClaimRecord?.claim_number || editingClaim?.claim_number || '',
           medicine_count: compactMedicines(claimMedicines).length,
@@ -2945,6 +2971,7 @@ const Nhis = () => {
       ))
     } finally {
       setClaimSubmitting(false)
+      setClaimSubmitIntent('')
     }
   }
 
@@ -3506,7 +3533,9 @@ const Nhis = () => {
           {/* Claim status tabs + search */}
           <div className="nhis-controls">
             <div className="nhis-tabs">
-              {CLAIM_STATUS_TABS.map((tab) => (
+              {CLAIM_STATUS_TABS
+                .filter((tab) => !isMedicineCounterAssistant || tab !== 'draft')
+                .map((tab) => (
                 <button
                   key={tab}
                   className={`tab-btn ${claimTab === tab ? 'active' : ''}`}
@@ -3517,7 +3546,7 @@ const Nhis = () => {
                     <span className="tab-count">{stats[tab]}</span>
                   )}
                 </button>
-              ))}
+                ))}
             </div>
             <div className="nhis-date-filter">
               <select
@@ -4233,8 +4262,9 @@ const Nhis = () => {
               <div className="nhis-incomplete-intake-alert" role="status">
                 <strong>Incomplete Intake</strong>
                 <span>
-                  Missing {incompleteIntakeItems.join(' and ')}. This claim can be sent to the dispensary,
-                  but it cannot be finalized or submitted until required information is completed.
+                  Missing {incompleteIntakeItems.join(' and ')}. Details can be saved without sending,
+                  or the incomplete claim can be sent to the dispensary. It cannot be finalized or
+                  submitted until required information is completed.
                 </span>
               </div>
             )}
@@ -5014,15 +5044,35 @@ const Nhis = () => {
               <button className="btn btn-secondary" onClick={closeClaimModal}>
                 Cancel
               </button>
+              {!isMedicineCounterAssistant &&
+                (!editingClaim || normalizeText(editingClaim.status).toLowerCase() === 'draft') && (
+                  <button
+                    className="btn btn-secondary"
+                    disabled={claimSubmitting || !canSaveCommunityPharmacyClaim}
+                    onClick={(event) => handleSubmitClaim(event, 'save_details')}
+                  >
+                    {claimSubmitting && claimSubmitIntent === 'save_details'
+                      ? 'Saving Details...'
+                      : 'Save Details'}
+                  </button>
+                )}
               <button
                 className="btn btn-primary"
                 disabled={claimSubmitting || !canSaveCommunityPharmacyClaim}
-                onClick={handleSubmitClaim}
+                onClick={(event) => handleSubmitClaim(event, 'dispatch')}
               >
                 {claimSubmitting
-                  ? (editingClaim && canWrite && directNhiaApiAvailable ? 'Submitting...' : 'Saving...')
+                  ? (
+                      claimSubmitIntent === 'dispatch' && (!editingClaim || editingClaim.status === 'draft')
+                        ? 'Sending...'
+                        : editingClaim && canWrite && directNhiaApiAvailable
+                          ? 'Submitting...'
+                          : 'Saving...'
+                    )
                   : editingClaim
-                    ? (isMedicineCounterAssistant
+                    ? (normalizeText(editingClaim.status).toLowerCase() === 'draft'
+                        ? 'Send to Dispensary'
+                        : isMedicineCounterAssistant
                         ? 'Complete Serving'
                         : canSaveIncompleteIntake && readiness.blockers.length
                           ? 'Save Intake Updates'

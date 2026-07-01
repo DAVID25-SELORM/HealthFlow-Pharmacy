@@ -1,12 +1,26 @@
 import { describe, expect, it } from 'vitest'
 import {
   canSaveNhisIncompleteIntake,
+  getNhisIntakeSaveStatus,
   getNhisIncompleteIntakeItems,
   hasNhisPrescriptionAttachment,
   hasVerifiedNhisPrescription,
 } from './nhisIntakeWorkflow'
 
 describe('NHIS dispensary intake workflow', () => {
+  it('separates saving details from dispatching the same claim', () => {
+    expect(getNhisIntakeSaveStatus({ intent: 'save_details', isNew: true })).toBe('draft')
+    expect(getNhisIntakeSaveStatus({ intent: 'dispatch', isNew: true })).toBe('pending_serving')
+    expect(getNhisIntakeSaveStatus({
+      intent: 'dispatch',
+      currentStatus: 'draft',
+    })).toBe('pending_serving')
+    expect(getNhisIntakeSaveStatus({
+      intent: 'dispatch',
+      currentStatus: 'returned_for_review',
+    })).toBe('returned_for_review')
+  })
+
   it('allows a claims officer to dispatch all four medicine/attachment combinations', () => {
     expect(getNhisIncompleteIntakeItems()).toEqual(['medicines', 'prescription attachment'])
     expect(getNhisIncompleteIntakeItems({
@@ -56,6 +70,11 @@ describe('NHIS dispensary intake workflow', () => {
 
   it('permits incomplete claims-staff saves without weakening MCA or final review checks', () => {
     expect(canSaveNhisIncompleteIntake({ isEditing: false, blockerCount: 5 })).toBe(true)
+    expect(canSaveNhisIncompleteIntake({
+      isEditing: true,
+      status: 'draft',
+      blockerCount: 5,
+    })).toBe(true)
     expect(canSaveNhisIncompleteIntake({
       isEditing: true,
       status: 'pending_serving',
