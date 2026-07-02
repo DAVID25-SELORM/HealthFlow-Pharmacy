@@ -113,8 +113,8 @@ export const getAllPatients = async () => {
     label: 'patients',
     local: async () => {
       const [localPatients, localNhisClaimPatients] = await Promise.all([
-        listBranchRecords('patients', { limit: 5000 }),
-        listLocalNhisClaimPatients({ limit: 5000 }),
+        listBranchRecords('patients', { limit: 100000 }),
+        listLocalNhisClaimPatients({ limit: 100000 }),
       ])
       const mergedLocalPatients = mergePatients(localPatients, localNhisClaimPatients)
       if (mergedLocalPatients.length || getConnectivityState().internetAvailable === false) {
@@ -271,15 +271,24 @@ const patientMatchesSearch = (patient, term) => {
     })
 }
 
-const patientSearchKey = (patient = {}) =>
-  compactPatientLookup([
-    patient.id,
-    patient.full_name,
-    patient.insurance_id,
-    patient.nhis_member_no,
-    patient.nhis_hin,
-    patient.folder_no,
-  ].filter(Boolean).join('|'))
+const patientIdentityAliases = (patient = {}) => {
+  const aliases = []
+  const add = (prefix, value) => {
+    const normalized = compactPatientLookup(value)
+    if (normalized) aliases.push(`${prefix}:${normalized}`)
+  }
+
+  add('id', patient.patient_id || patient.id)
+  add('member', patient.nhis_member_no || patient.insurance_id || patient.member_no)
+  add('hin', patient.nhis_hin || patient.hin)
+  if (patient.folder_no && patient.full_name) {
+    add('folder-name', `${patient.folder_no}|${patient.full_name}`)
+  }
+  if (patient.full_name && patient.date_of_birth) {
+    add('name-dob', `${patient.full_name}|${patient.date_of_birth}`)
+  }
+  return aliases
+}
 
 const SUPABASE_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -423,27 +432,34 @@ const fetchNhisClaimPatientsFromSupabase = async () => {
 }
 
 const mergePatients = (...groups) => {
-  const merged = new Map()
+  const merged = []
+  const aliasOwners = new Map()
   groups.flat().filter(Boolean).forEach((patient) => {
-    const key = patientSearchKey(patient)
-    if (!key) return
-    const existing = merged.get(key)
-    merged.set(key, existing
+    const aliases = patientIdentityAliases(patient)
+    if (!aliases.length) return
+    const existingIndex = aliases
+      .map((alias) => aliasOwners.get(alias))
+      .find((index) => index !== undefined)
+    const index = existingIndex ?? merged.length
+    const existing = merged[index]
+    merged[index] = existing
       ? {
-          ...patient,
-          ...existing,
-          full_name: existing.full_name || patient.full_name || '',
-          phone: existing.phone || patient.phone || '',
-          nhis_member_no: existing.nhis_member_no || patient.nhis_member_no || '',
-          nhis_hin: existing.nhis_hin || patient.nhis_hin || '',
-          insurance_id: existing.insurance_id || patient.insurance_id || '',
-          folder_no: existing.folder_no || patient.folder_no || '',
-          sourceClaimNumber: existing.sourceClaimNumber || patient.sourceClaimNumber || '',
-          source_claim_number: existing.source_claim_number || patient.source_claim_number || '',
-        }
-      : patient)
+        ...patient,
+        ...existing,
+        full_name: existing.full_name || patient.full_name || '',
+        phone: existing.phone || patient.phone || '',
+        nhis_member_no: existing.nhis_member_no || patient.nhis_member_no || '',
+        nhis_hin: existing.nhis_hin || patient.nhis_hin || '',
+        insurance_id: existing.insurance_id || patient.insurance_id || '',
+        folder_no: existing.folder_no || patient.folder_no || '',
+        sourceClaimNumber: existing.sourceClaimNumber || patient.sourceClaimNumber || '',
+        source_claim_number: existing.source_claim_number || patient.source_claim_number || '',
+      }
+      : patient
+    patientIdentityAliases(merged[index]).forEach((alias) => aliasOwners.set(alias, index))
+    aliases.forEach((alias) => aliasOwners.set(alias, index))
   })
-  return [...merged.values()]
+  return merged
 }
 
 export const normalizePatientWorkspaceData = (workspace = {}) => {
@@ -527,8 +543,8 @@ export const getPatientsWorkspace = async () =>
     label: 'patient workspace',
     local: async () => {
       const [patients, nhisClaims] = await Promise.all([
-        listBranchRecords('patients', { limit: 5000 }),
-        Promise.resolve(listBranchRecords('nhis/claims', { limit: 5000 })).catch(() => []),
+        listBranchRecords('patients', { limit: 100000 }),
+        Promise.resolve(listBranchRecords('nhis/claims', { limit: 100000 })).catch(() => []),
       ])
       const localWorkspace = normalizePatientWorkspaceData({ patients, nhisClaims })
       if (localWorkspace.length || getConnectivityState().internetAvailable === false) {
@@ -552,11 +568,11 @@ export const getPatientsWorkspacePage = async (options = {}) => {
     local: async () => {
       const [patients, nhisClaims] = await Promise.all([
         listBranchRecords('patients', {
-          limit: 5000,
+          limit: 100000,
           searchTerm: normalized.searchTerm || undefined,
         }),
         Promise.resolve(listBranchRecords('nhis/claims', {
-          limit: 5000,
+          limit: 100000,
           searchTerm: normalized.searchTerm || undefined,
         })).catch(() => []),
       ])
@@ -730,8 +746,8 @@ export const updatePatient = async (id, patientData) => {
 export const searchPatients = async (searchTerm) => {
   const term = sanitizeSearchTerm(searchTerm)
   if (await shouldRouteToLocal()) {
-    const localPatients = await listBranchRecords('patients', { searchTerm: term })
-    const localNhisClaimPatients = await listLocalNhisClaimPatients({ searchTerm: term, limit: 100 })
+    const localPatients = await listBranchRecords('patients', { searchTerm: term, limit: 100000 })
+    const localNhisClaimPatients = await listLocalNhisClaimPatients({ searchTerm: term, limit: 100000 })
     const mergedLocalPatients = mergePatients(localPatients, localNhisClaimPatients)
     if (mergedLocalPatients.length || getConnectivityState().internetAvailable === false) {
       return mergedLocalPatients

@@ -105,8 +105,8 @@ describe('patientService local sync reads', () => {
 
     await expect(getAllPatients()).resolves.toEqual(cloudPatients)
 
-    expect(listBranchRecords).toHaveBeenCalledWith('patients', { limit: 5000 })
-    expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { limit: 5000 })
+    expect(listBranchRecords).toHaveBeenCalledWith('patients', { limit: 100000 })
+    expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { limit: 100000 })
     expect(fromMock).toHaveBeenCalledWith('patients')
     expect(query.select).toHaveBeenCalledWith('*')
     expect(query.order).toHaveBeenCalledWith('created_at', { ascending: false })
@@ -120,8 +120,8 @@ describe('patientService local sync reads', () => {
 
     await expect(getAllPatients()).resolves.toEqual([])
 
-    expect(listBranchRecords).toHaveBeenCalledWith('patients', { limit: 5000 })
-    expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { limit: 5000 })
+    expect(listBranchRecords).toHaveBeenCalledWith('patients', { limit: 100000 })
+    expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { limit: 100000 })
     expect(fromMock).not.toHaveBeenCalled()
   })
 
@@ -151,8 +151,8 @@ describe('patientService local sync reads', () => {
       }),
     ])
 
-    expect(listBranchRecords).toHaveBeenCalledWith('patients', { limit: 5000 })
-    expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { limit: 5000 })
+    expect(listBranchRecords).toHaveBeenCalledWith('patients', { limit: 100000 })
+    expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { limit: 100000 })
     expect(fromMock).not.toHaveBeenCalled()
   })
 
@@ -220,8 +220,8 @@ describe('patientService local sync reads', () => {
       }),
     ])
 
-    expect(listBranchRecords).toHaveBeenCalledWith('patients', { searchTerm: '99441270' })
-    expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { searchTerm: '99441270', limit: 100 })
+    expect(listBranchRecords).toHaveBeenCalledWith('patients', { searchTerm: '99441270', limit: 100000 })
+    expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { searchTerm: '99441270', limit: 100000 })
     expect(invokeTierAccess).toHaveBeenCalledWith({ action: 'get_patients_workspace' })
     expect(fromMock).not.toHaveBeenCalled()
   })
@@ -263,6 +263,57 @@ describe('patientService local sync reads', () => {
     })
   })
 
+  it('paginates the complete local patient and NHIS-only patient index', async () => {
+    const registeredPatient = {
+      id: 'patient-1',
+      full_name: 'Registered Patient',
+      insurance_id: '10000001',
+    }
+    const nhisClaims = [
+      {
+        id: 'claim-matched',
+        patient_id: 'patient-1',
+        surname: 'Registered',
+        other_names: 'Patient',
+        member_no: '10000001',
+      },
+      ...Array.from({ length: 100 }, (_, index) => ({
+        id: `claim-${index + 1}`,
+        claim_number: `NHIS-${index + 1}`,
+        surname: 'NHIS',
+        other_names: `Patient ${index + 1}`,
+        member_no: String(20000000 + index),
+      })),
+    ]
+    listBranchRecords
+      .mockResolvedValueOnce([registeredPatient])
+      .mockResolvedValueOnce(nhisClaims)
+
+    await expect(getPatientsWorkspacePage({
+      page: 2,
+      pageSize: 100,
+    })).resolves.toEqual({
+      patients: [
+        expect.objectContaining({
+          full_name: 'NHIS Patient 100',
+          nhis_member_no: '20000099',
+        }),
+      ],
+      total: 101,
+      page: 2,
+      pageSize: 100,
+    })
+
+    expect(listBranchRecords).toHaveBeenCalledWith('patients', {
+      limit: 100000,
+      searchTerm: undefined,
+    })
+    expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', {
+      limit: 100000,
+      searchTerm: undefined,
+    })
+  })
+
   it('keeps local patient search results when local sync has matches', async () => {
     const localMatches = [
       { id: 'local-patient-1', full_name: 'Local Patient', nhis_member_no: '99441270' },
@@ -274,8 +325,8 @@ describe('patientService local sync reads', () => {
 
     await expect(searchPatients('99441270')).resolves.toEqual(localMatches)
 
-    expect(listBranchRecords).toHaveBeenCalledWith('patients', { searchTerm: '99441270' })
-    expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { searchTerm: '99441270', limit: 100 })
+    expect(listBranchRecords).toHaveBeenCalledWith('patients', { searchTerm: '99441270', limit: 100000 })
+    expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { searchTerm: '99441270', limit: 100000 })
     expect(fromMock).not.toHaveBeenCalled()
   })
 
@@ -304,8 +355,8 @@ describe('patientService local sync reads', () => {
       }),
     ])
 
-    expect(listBranchRecords).toHaveBeenCalledWith('patients', { searchTerm: 'GHA-000606820-8' })
-    expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { searchTerm: 'GHA-000606820-8', limit: 100 })
+    expect(listBranchRecords).toHaveBeenCalledWith('patients', { searchTerm: 'GHA-000606820-8', limit: 100000 })
+    expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { searchTerm: 'GHA-000606820-8', limit: 100000 })
     expect(fromMock).not.toHaveBeenCalled()
   })
 

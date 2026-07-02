@@ -2489,6 +2489,134 @@ const sanitizePostgrestSearchTerm = (value: unknown) =>
     .replace(/\s+/g, ' ')
     .trim()
 
+const normalizePatientIdentity = (value: unknown) =>
+  normalizeText(value).toLowerCase().replace(/[^a-z0-9]/g, '')
+
+const getPatientIdentityAliases = (row: Record<string, unknown>) => {
+  const aliases = new Set<string>()
+  const addAlias = (prefix: string, value: unknown) => {
+    const normalized = normalizePatientIdentity(value)
+    if (normalized) aliases.add(`${prefix}:${normalized}`)
+  }
+
+  addAlias('id', row.patient_id || row.id)
+  addAlias('member', row.member_no || row.nhis_member_no || row.insurance_id)
+  addAlias('hin', row.hin || row.nhis_hin)
+  addAlias('folder', row.folder_no)
+
+  const name = normalizePatientIdentity(
+    row.full_name || [row.surname, row.other_names].filter(Boolean).join(' ')
+  )
+  const dateOfBirth = normalizePatientIdentity(row.date_of_birth)
+  if (name && dateOfBirth) aliases.add(`name-dob:${name}:${dateOfBirth}`)
+
+  return aliases
+}
+
+const getNhisClaimPatientRow = (claim: Record<string, unknown>) => ({
+  id: normalizeText(claim.patient_id) || `nhis-claim-${normalizeText(claim.id || claim.claim_number)}`,
+  organization_id: claim.organization_id,
+  full_name: [claim.surname, claim.other_names].map(normalizeText).filter(Boolean).join(' '),
+  phone: '',
+  email: '',
+  gender: claim.gender,
+  date_of_birth: claim.date_of_birth,
+  address: '',
+  insurance_provider: 'NHIS',
+  insurance_id: claim.member_no || claim.hin || '',
+  nhis_member_no: claim.member_no || '',
+  nhis_hin: claim.hin || '',
+  folder_no: claim.folder_no || '',
+  source_claim_number: claim.claim_number || '',
+  created_at: claim.created_at,
+})
+
+const fetchAllWorkspaceRows = async (
+  createQuery: () => ReturnType<ReturnType<typeof createAdminClient>['from']>
+) => {
+  const rows: Record<string, unknown>[] = []
+  const batchSize = 1000
+  let from = 0
+
+  while (true) {
+    const { data, error } = await createQuery().range(from, from + batchSize - 1)
+    if (error) throw error
+    rows.push(...((data || []) as Record<string, unknown>[]))
+    if (!data || data.length < batchSize) break
+    from += batchSize
+  }
+
+  return rows
+}
+
+const buildCombinedPatientIndex = (
+  patients: Record<string, unknown>[],
+  nhisClaims: Record<string, unknown>[]
+) => {
+  const entries: Array<{
+    patient: Record<string, unknown>
+    aliases: Set<string>
+    nhisVisits: number
+    lastNhisVisit: string
+  }> = []
+  const aliasToEntry = new Map<string, number>()
+
+  const addOrMerge = (
+    patient: Record<string, unknown>,
+    aliases: Set<string>,
+    claim?: Record<string, unknown>
+  ) => {
+    const matchedIndex = [...aliases]
+      .map((alias) => aliasToEntry.get(alias))
+      .find((index) => index !== undefined)
+    const index = matchedIndex ?? entries.length
+    const visitDate = normalizeText(
+      claim?.service_date_from || claim?.created_at
+    )
+
+    if (matchedIndex === undefined) {
+      entries.push({
+        patient: { ...patient },
+        aliases: new Set(aliases),
+        nhisVisits: claim ? 1 : 0,
+        lastNhisVisit: visitDate,
+      })
+    } else {
+      const entry = entries[index]
+      entry.patient = {
+        ...patient,
+        ...entry.patient,
+        full_name: entry.patient.full_name || patient.full_name || '',
+        phone: entry.patient.phone || patient.phone || '',
+        email: entry.patient.email || patient.email || '',
+        insurance_id: entry.patient.insurance_id || patient.insurance_id || '',
+        nhis_member_no: entry.patient.nhis_member_no || patient.nhis_member_no || '',
+        nhis_hin: entry.patient.nhis_hin || patient.nhis_hin || '',
+        folder_no: entry.patient.folder_no || patient.folder_no || '',
+      }
+      aliases.forEach((alias) => entry.aliases.add(alias))
+      if (claim) {
+        entry.nhisVisits += 1
+        if (visitDate && (!entry.lastNhisVisit || visitDate > entry.lastNhisVisit)) {
+          entry.lastNhisVisit = visitDate
+        }
+      }
+    }
+
+    entries[index].aliases.forEach((alias) => aliasToEntry.set(alias, index))
+  }
+
+  patients.forEach((patient) =>
+    addOrMerge(patient, getPatientIdentityAliases(patient))
+  )
+  nhisClaims.forEach((claim) => {
+    const claimPatient = getNhisClaimPatientRow(claim)
+    addOrMerge(claimPatient, getPatientIdentityAliases({ ...claimPatient, ...claim }), claim)
+  })
+
+  return entries
+}
+
 const getPatientVisitRows = async (
   adminClient: ReturnType<typeof createAdminClient>,
   organizationId: string,
@@ -2547,71 +2675,73 @@ const getPatientWorkspaceData = async (
     ? clampPositiveInteger(pageSize, PATIENT_WORKSPACE_DEFAULT_PAGE_SIZE, PATIENT_WORKSPACE_MAX_PAGE_SIZE)
     : PATIENT_WORKSPACE_MAX_PATIENTS
   const from = (pageNumber - 1) * resolvedPageSize
-  const to = from + resolvedPageSize - 1
   const term = sanitizePostgrestSearchTerm(searchTerm)
-  const likeTerm = term ? `%${term}%` : ''
-
-  let patientsQuery = adminClient
-    .from('patients')
-    .select(PATIENT_WORKSPACE_PATIENT_SELECT_FIELDS, hasPaging ? { count: 'exact' } : undefined)
-    .eq('organization_id', organizationId)
-    .order('created_at', { ascending: false })
-
-  if (term) {
-    patientsQuery = patientsQuery.or([
-      `full_name.ilike.${likeTerm}`,
-      `phone.ilike.${likeTerm}`,
-      `email.ilike.${likeTerm}`,
-      `insurance_provider.ilike.${likeTerm}`,
-      `insurance_id.ilike.${likeTerm}`,
-    ].join(','))
-  }
-
-  patientsQuery = hasPaging
-    ? patientsQuery.range(from, to)
-    : patientsQuery.limit(PATIENT_WORKSPACE_MAX_PATIENTS)
-
-  let nhisClaimsQuery = adminClient
-    .from('nhis_claims')
-    .select(PATIENT_WORKSPACE_NHIS_CLAIM_SELECT_FIELDS)
-    .eq('organization_id', organizationId)
-    .order('created_at', { ascending: false })
-
-  if (term) {
-    nhisClaimsQuery = nhisClaimsQuery.or([
-      `surname.ilike.${likeTerm}`,
-      `other_names.ilike.${likeTerm}`,
-      `member_no.ilike.${likeTerm}`,
-      `hin.ilike.${likeTerm}`,
-      `claim_number.ilike.${likeTerm}`,
-      `folder_no.ilike.${likeTerm}`,
-    ].join(','))
-  }
-
-  nhisClaimsQuery = hasPaging
-    ? nhisClaimsQuery.range(from, to)
-    : nhisClaimsQuery.limit(PATIENT_WORKSPACE_MAX_NHIS_CLAIMS)
-
-  const [
-    { data: patients, error: patientsError, count: patientsCount },
-    { data: nhisClaims, error: nhisClaimsError },
-  ] = await Promise.all([
-    patientsQuery,
-    nhisClaimsQuery,
+  const [patients, nhisClaims] = await Promise.all([
+    fetchAllWorkspaceRows(() =>
+      adminClient
+        .from('patients')
+        .select(PATIENT_WORKSPACE_PATIENT_SELECT_FIELDS)
+        .eq('organization_id', organizationId)
+        .order('created_at', { ascending: false })
+    ),
+    fetchAllWorkspaceRows(() =>
+      adminClient
+        .from('nhis_claims')
+        .select(PATIENT_WORKSPACE_NHIS_CLAIM_SELECT_FIELDS)
+        .eq('organization_id', organizationId)
+        .order('created_at', { ascending: false })
+    ),
   ])
 
-  if (patientsError) throw patientsError
-  if (nhisClaimsError) throw nhisClaimsError
+  const normalizedTerm = normalizePatientIdentity(term)
+  const combinedEntries = buildCombinedPatientIndex(patients, nhisClaims)
+    .filter(({ patient }) => {
+      if (!normalizedTerm) return true
+      return [
+        patient.full_name,
+        patient.phone,
+        patient.email,
+        patient.insurance_provider,
+        patient.insurance_id,
+        patient.nhis_member_no,
+        patient.nhis_hin,
+        patient.folder_no,
+        patient.source_claim_number,
+      ].some((value) => normalizePatientIdentity(value).includes(normalizedTerm))
+    })
+    .sort((left, right) =>
+      normalizeText(right.lastNhisVisit || right.patient.created_at)
+        .localeCompare(normalizeText(left.lastNhisVisit || left.patient.created_at))
+    )
+
+  const pageEntries = hasPaging
+    ? combinedEntries.slice(from, from + resolvedPageSize)
+    : combinedEntries.slice(0, resolvedPageSize)
+  const pagePatients = pageEntries.map((entry) => entry.patient)
 
   const visitRows = includeVisitStats
     ? await getPatientVisitRows(
       adminClient,
       organizationId,
-      hasPaging ? (patients || []).map((patient) => normalizeText(patient.id)) : []
+      pagePatients.map((patient) => normalizeText(patient.id))
     )
     : []
 
-  const visitStats = visitRows.reduce<Record<string, { visits: number; lastVisit: string | null }>>(
+  const visitStats = pageEntries.reduce<Record<string, { visits: number; lastVisit: string | null }>>(
+    (stats, entry) => {
+      const patientId = normalizeText(entry.patient.id)
+      if (patientId) {
+        stats[patientId] = {
+          visits: entry.nhisVisits,
+          lastVisit: entry.lastNhisVisit || null,
+        }
+      }
+      return stats
+    },
+    {}
+  )
+
+  visitRows.reduce<Record<string, { visits: number; lastVisit: string | null }>>(
     (stats, row) => {
       const patientId = normalizeText(row.patient_id)
       if (!patientId) return stats
@@ -2627,14 +2757,14 @@ const getPatientWorkspaceData = async (
       }
       return stats
     },
-    {}
+    visitStats
   )
 
   return {
-    patients: patients || [],
-    nhisClaims: nhisClaims || [],
+    patients: pagePatients,
+    nhisClaims: [],
     visitStats,
-    total: hasPaging ? Number(patientsCount || 0) : undefined,
+    total: hasPaging ? combinedEntries.length : undefined,
     page: hasPaging ? pageNumber : undefined,
     pageSize: hasPaging ? resolvedPageSize : undefined,
   }

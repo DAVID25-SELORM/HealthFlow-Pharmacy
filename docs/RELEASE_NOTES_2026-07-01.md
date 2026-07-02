@@ -48,3 +48,11 @@
   unchanged; the new layer only asks the user to verify an already validated
   action.
 - Routine draft and detail saves remain prompt-free.
+
+## Complete patient pagination
+
+- Patient Records now builds one deduplicated index from registered patients
+  and NHIS claim-only patients before applying search or pagination.
+- Page totals include NHIS-only patients, and the same person is merged using
+  patient ID, NHIS member number, HIN, folder/name, or name/date of birth.
+- Local Branch Server reads no longer stop at 5,000 patient or NHIS records.
