@@ -45,6 +45,58 @@ const getSaleMedicineSummary = (sale) => {
   return `${firstName} + ${otherNames.length} more`
 }
 
+const getHistoryMedicineName = (medicine = {}) =>
+  medicine.description ||
+  medicine.drug_name ||
+  medicine.name ||
+  medicine.drugs?.name ||
+  medicine.drug_code ||
+  'Medicine'
+
+const getHistoryMedicineQuantity = (medicine = {}) => {
+  const prescribed = Number(medicine.prescribed_qty ?? medicine.prescribedQty)
+  const served = Number(
+    medicine.served_qty ??
+    medicine.servedQty ??
+    medicine.dispensed_qty ??
+    medicine.dispensedQty ??
+    medicine.quantity
+  )
+  const unit = medicine.unit || ''
+  const validPrescribed = Number.isFinite(prescribed) && prescribed > 0
+  const validServed = Number.isFinite(served) && served >= 0
+
+  if (validPrescribed && validServed) {
+    return `Prescribed ${prescribed}${unit ? ` ${unit}` : ''} · Served ${served}${unit ? ` ${unit}` : ''}`
+  }
+  if (validPrescribed) return `Prescribed ${prescribed}${unit ? ` ${unit}` : ''}`
+  if (validServed) return `Quantity ${served}${unit ? ` ${unit}` : ''}`
+  return ''
+}
+
+const HistoryMedicines = ({ medicines = [] }) => {
+  if (!medicines.length) {
+    return <span className="patient-history-no-medicines">No medicine lines recorded</span>
+  }
+
+  return (
+    <ul className="patient-history-medicines">
+      {medicines.map((medicine, index) => {
+        const status = medicine.serving_status || medicine.status || ''
+        return (
+          <li key={medicine.id || `${getHistoryMedicineName(medicine)}-${index}`}>
+            <strong>{getHistoryMedicineName(medicine)}</strong>
+            {getHistoryMedicineQuantity(medicine) && (
+              <span>{getHistoryMedicineQuantity(medicine)}</span>
+            )}
+            {status && <span className="patient-history-medicine-status">{status.replaceAll('_', ' ')}</span>}
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
 const initialForm = {
   fullName: '',
   phone: '',
@@ -763,6 +815,7 @@ const Patients = () => {
                                   {sale.sale_number}
                                 </span>
                                 <p>{formatAppDateTime(sale.sale_date)}</p>
+                                <HistoryMedicines medicines={sale.sale_items || []} />
                               </div>
                               <div className="patient-history-meta">
                                 <span>{sale.payment_method}</span>
@@ -792,6 +845,7 @@ const Patients = () => {
                               <div>
                                 <strong>{claim.claim_number}</strong>
                                 <p>{formatAppDate(claim.service_date)}</p>
+                                <HistoryMedicines medicines={claim.medicines || claim.claim_items || claim.nhis_claim_medicines || []} />
                               </div>
                               <div className="patient-history-meta">
                                 <span

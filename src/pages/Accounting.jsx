@@ -25,6 +25,7 @@ import {
 import { getAccountingOverview } from '../services/accountingService'
 import { useSessionStorageState } from '../hooks/useSessionStorageState'
 import { downloadCsv } from '../services/reportsService'
+import { confirmAction } from '../utils/actionConfirmation'
 import './Accounting.css'
 
 // â”€â”€ helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -377,6 +378,15 @@ const Accounting = () => {
     e.preventDefault()
     if (!todaySession) return
     if (!countedCash) return setError('Enter the counted cash amount.')
+    if (!confirmAction({
+      title: 'Close today’s cashbook session?',
+      details: [
+        { label: 'Counted cash', value: `GHS ${Number(countedCash).toFixed(2)}` },
+        { label: 'Notes', value: sessionNotes.trim() },
+      ],
+      warning: 'Closing locks the session for normal entry and records the final physical cash count.',
+      confirmText: 'close this cashbook session',
+    })) return
     try {
       setClosingSession(true)
       setError('')
@@ -401,6 +411,16 @@ const Accounting = () => {
     e.preventDefault()
     if (!todaySession) return setError('Open a session first.')
     if (!adjAmount || Number(adjAmount) <= 0) return setError('Enter a valid amount.')
+    if (!confirmAction({
+      title: 'Post this manual cashbook entry?',
+      details: [
+        { label: 'Direction', value: adjDirection === 'in' ? 'Cash in' : 'Cash out' },
+        { label: 'Amount', value: `GHS ${Number(adjAmount).toFixed(2)}` },
+        { label: 'Description', value: adjDesc.trim() },
+      ],
+      warning: 'This entry changes the recorded cashbook balance.',
+      confirmText: 'post this entry',
+    })) return
     try {
       setAddingEntry(true)
       setError('')
@@ -439,6 +459,20 @@ const Accounting = () => {
   const handleRecordPayment = async (e) => {
     e.preventDefault()
     if (!payingClaim) return
+    if (!confirmAction({
+      title: 'Record this insurer payment?',
+      details: [
+        { label: 'Claim', value: payingClaim.claim_number },
+        { label: 'Insurer', value: payingClaim.insurance_provider },
+        { label: 'Outstanding', value: `GHS ${Number(payingClaim.outstanding || 0).toFixed(2)}` },
+        { label: 'Payment', value: `GHS ${Number(paymentForm.paidAmount || 0).toFixed(2)}` },
+        { label: 'Date', value: paymentForm.paymentDate },
+        { label: 'Method', value: paymentForm.paymentMethod },
+        { label: 'Reference', value: paymentForm.paymentReference },
+      ],
+      warning: 'This updates the claim receivable and payment history.',
+      confirmText: 'record this payment',
+    })) return
     try {
       setSavingPayment(true)
       setError('')

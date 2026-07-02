@@ -16,6 +16,7 @@ import { isSupabaseConfigured } from '../lib/supabase'
 import { useNotification } from '../context/NotificationContext'
 import { useTenant } from '../context/TenantContext'
 import { formatAppDate } from '../utils/date'
+import { confirmAction } from '../utils/actionConfirmation'
 import {
   EPHARMACY_SALE_CLASSES,
   createEpharmacyOrder,
@@ -276,6 +277,18 @@ const EPharmacy = () => {
     if (nextStatus === 'cancelled') {
       note = window.prompt('Cancellation note') || 'Order cancelled'
     }
+
+    if (!confirmAction({
+      title: `Move this order to ${formatEpharmacyStatus(nextStatus)}?`,
+      details: [
+        { label: 'Order', value: order.order_number },
+        { label: 'Customer', value: order.customer_name || order.patient_name },
+        { label: 'Amount', value: `GHS ${Number(order.total_amount || 0).toFixed(2)}` },
+        { label: 'Reason', value: rejectionReason || note },
+      ],
+      warning: 'This status change is recorded and may affect fulfilment.',
+      confirmText: `mark the order as ${formatEpharmacyStatus(nextStatus)}`,
+    })) return
 
     try {
       setStatusUpdatingId(order.id)

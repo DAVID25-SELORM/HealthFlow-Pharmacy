@@ -310,11 +310,20 @@ export default function OfflineSync() {
     const loadSetupOptions = async () => {
       try {
         const options = await listBranchSyncSetupOptions()
+        const organizationId = options.organizations?.[0]?.id || ''
         setSetupOptions(options)
         setSetupForm((current) => ({
           ...current,
-          organizationId: current.organizationId || options.organizations?.[0]?.id || '',
+          organizationId: current.organizationId || organizationId,
         }))
+        if (organizationId) {
+          try {
+            setSetupClients(await listBranchSyncClients(organizationId))
+          } catch (clientsError) {
+            setSetupClients([])
+            notify(clientsError.message || 'Unable to load registered branch machines.', 'error')
+          }
+        }
       } catch (setupError) {
         notify(setupError.message || 'Unable to load branch setup options.', 'error')
       }

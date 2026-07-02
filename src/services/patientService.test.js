@@ -318,7 +318,7 @@ describe('patientService local sync reads', () => {
   })
 
   it('loads NHIS claim-derived patient details from local claim rows', async () => {
-    listBranchRecords.mockResolvedValueOnce([{
+    const selectedClaim = {
       id: 'claim-row-1',
       claim_number: 'NHIS-002',
       surname: 'Baria',
@@ -328,7 +328,17 @@ describe('patientService local sync reads', () => {
       status: 'served',
       service_date_from: '2026-05-14',
       total_amount: 45,
-    }])
+      nhis_claim_medicines: [{
+        id: 'medicine-1',
+        description: 'Amlodipine 10 mg',
+        prescribed_qty: 30,
+        served_qty: 30,
+        serving_status: 'fully_served',
+      }],
+    }
+    listBranchRecords
+      .mockResolvedValueOnce([selectedClaim])
+      .mockResolvedValueOnce([selectedClaim])
 
     await expect(getPatientById('nhis-claim-claim-row-1')).resolves.toMatchObject({
       id: 'nhis-claim-claim-row-1',
@@ -340,10 +350,17 @@ describe('patientService local sync reads', () => {
         claim_status: 'served',
         service_date: '2026-05-14',
         total_amount: 45,
+        claim_type: 'nhis',
+        medicines: [{
+          description: 'Amlodipine 10 mg',
+          prescribed_qty: 30,
+          served_qty: 30,
+        }],
       }],
     })
 
     expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { id: 'claim-row-1', limit: 1 })
+    expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { searchTerm: '99441270', limit: 500 })
     expect(fromMock).not.toHaveBeenCalled()
   })
 

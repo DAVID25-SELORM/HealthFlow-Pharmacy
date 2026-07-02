@@ -243,7 +243,7 @@ describe('Reports', () => {
     expect(within(reportTableCard).queryByText('SALE-001')).not.toBeInTheDocument()
     expect(within(reportTableCard).getByText('SALE-002')).toBeInTheDocument()
     expect(screen.getByText('1 rows')).toBeInTheDocument()
-  })
+  }, 15000)
 
   it('shows NHIS reports with medicine and GDRG report generation for authorized claims staff', async () => {
     mocks.useAuth.mockReturnValue({

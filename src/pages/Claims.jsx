@@ -15,6 +15,7 @@ import { useTenant } from '../context/TenantContext'
 import { formatAppDate, formatAppDateKey } from '../utils/date'
 import { getInsuranceProviderOptions } from '../utils/insuranceProviders'
 import { CLAIMS_ROLES, hasRole } from '../utils/roles'
+import { confirmAction } from '../utils/actionConfirmation'
 import UpgradeGate from '../components/UpgradeGate'
 import './Claims.css'
 
@@ -368,6 +369,17 @@ const Claims = () => {
   }
 
   const handleApprove = async (claim) => {
+    if (!confirmAction({
+      title: 'Approve this insurance claim?',
+      details: [
+        { label: 'Claim', value: claim.claim_number },
+        { label: 'Patient', value: claim.patient_name },
+        { label: 'Provider', value: claim.insurance_provider },
+        { label: 'Amount', value: `GHS ${Number(claim.total_amount || 0).toFixed(2)}` },
+      ],
+      warning: 'Approval changes the claim status and makes it available for receivables processing.',
+      confirmText: 'approve this claim',
+    })) return
     try {
       await approveClaim(claim.id, claim.total_amount)
       notify(`Claim ${claim.claim_number} approved.`, 'success')
@@ -392,6 +404,17 @@ const Claims = () => {
       notify('Rejection reason is required.', 'warning')
       return
     }
+
+    if (!confirmAction({
+      title: 'Reject this insurance claim?',
+      details: [
+        { label: 'Claim', value: claimToReject.claim_number },
+        { label: 'Patient', value: claimToReject.patient_name },
+        { label: 'Reason', value: rejectionReason.trim() },
+      ],
+      warning: 'The rejection and reason will be recorded in the claim history.',
+      confirmText: 'reject this claim',
+    })) return
 
     try {
       await rejectClaim(claimToReject.id, rejectionReason.trim())

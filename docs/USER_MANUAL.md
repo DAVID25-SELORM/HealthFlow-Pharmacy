@@ -5,6 +5,18 @@
 **Audience:** Facility administrators, pharmacists, claims officers, MCA staff,
 cashiers, inventory staff, accounting staff, and supervisors.
 
+## Review before consequential actions
+
+HealthFlow shows a final review message before actions that materially change
+clinical, financial, inventory, or fulfilment records. Read the identifiers,
+amounts, status, and warning before selecting **OK**.
+
+This review is used for claim approval/rejection, NHIS dispatch/direct serving/
+submission/payment, purchase completion, refunds, inventory removal, cashbook
+closure and adjustments, insurer payments, and e-pharmacy status changes.
+Selecting **Cancel** leaves the record unchanged. Normal draft/detail saves
+remain immediate so staff can continue work without unnecessary prompts.
+
 ## 1. Sign-in and roles
 
 - Every staff member must use an individual account.
@@ -36,6 +48,11 @@ was accidental. Permanent deletion is an administrator-only action.
 Search before creating a patient to avoid duplicates. General insurance claims
 remain in the **Claims** module. NHIA/NHIS medicine claims, CCC verification,
 attachments, tariffs, and CLAIM-it operations remain in the **NHIS** module.
+
+Select **View History** on a patient to see sales and claims with their medicine
+lines. NHIS entries show prescribed quantity, served quantity, and serving
+status. History is loaded only when opened so the main patient list remains
+fast.
 
 ## 5. NHIS pharmacy workflow
 
@@ -146,4 +163,3 @@ single-use **Connect This Computer** bundle.
 - Search before creating patients or claims.
 - Review incomplete claims and pending sync.
 - Close cashier shifts and verify backups according to facility policy.
-

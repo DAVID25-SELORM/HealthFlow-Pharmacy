@@ -14,6 +14,7 @@ import { isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
 import { formatAppDate } from '../utils/date'
+import { confirmAction } from '../utils/actionConfirmation'
 import {
   cancelPurchaseDraft,
   completePurchaseDraft,
@@ -443,7 +444,17 @@ const Purchases = () => {
       notify('You do not have permission to approve purchases.', 'warning')
       return
     }
-    if (!window.confirm(`Complete purchase ${purchase.purchase_number}?\nThis will update drug stock and cannot be undone.`)) return
+    if (!confirmAction({
+      title: 'Complete this purchase?',
+      details: [
+        { label: 'Purchase', value: purchase.purchase_number },
+        { label: 'Supplier', value: purchase.supplier_name || purchase.supplier?.name },
+        { label: 'Items', value: purchase.items?.length },
+        { label: 'Total', value: `GHS ${Number(purchase.total_amount || 0).toFixed(2)}` },
+      ],
+      warning: 'Completing this purchase updates inventory stock and cannot be undone.',
+      confirmText: 'complete the purchase and update stock',
+    })) return
     try {
       setCompleting(purchase.id)
       await completePurchaseDraft(purchase.id, { canApprove: canApprovePurchases })
@@ -458,7 +469,16 @@ const Purchases = () => {
 
   // ── cancel purchase ──────────────────────────────────────────
   const handleCancel = async (purchase) => {
-    if (!window.confirm(`Cancel purchase ${purchase.purchase_number}?`)) return
+    if (!confirmAction({
+      title: 'Cancel this purchase?',
+      details: [
+        { label: 'Purchase', value: purchase.purchase_number },
+        { label: 'Supplier', value: purchase.supplier_name || purchase.supplier?.name },
+        { label: 'Total', value: `GHS ${Number(purchase.total_amount || 0).toFixed(2)}` },
+      ],
+      warning: 'The draft will be cancelled and cannot later be completed.',
+      confirmText: 'cancel this purchase',
+    })) return
     try {
       setCancelling(purchase.id)
       await cancelPurchaseDraft(purchase.id)

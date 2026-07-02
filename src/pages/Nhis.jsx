@@ -20,6 +20,7 @@ import {
   hasVerifiedNhisPrescription,
 } from '../utils/nhisIntakeWorkflow'
 import { normalizeText } from '../utils/validation'
+import { confirmAction } from '../utils/actionConfirmation'
 import {
   getAllNhisDrugs,
   getNhisDrugByCode,
@@ -2781,6 +2782,33 @@ const Nhis = () => {
       }
     }
 
+    if (!saveAsDraft && !confirmAction({
+      title: serveDirectly
+        ? 'Serve this NHIS claim directly?'
+        : 'Send this NHIS claim to the dispensary?',
+      details: [
+        {
+          label: 'Patient',
+          value: [claimForm.surname, claimForm.otherNames].filter(Boolean).join(' '),
+        },
+        { label: 'Member number', value: claimForm.memberNumber || claimForm.hin },
+        { label: 'Medicines', value: compactMedicines(claimMedicines).length },
+        {
+          label: 'Prescription attached',
+          value: prescriptionPdfFile || hasVerifiedNhisPrescription(editingClaim || claimForm)
+            ? 'Yes'
+            : 'No',
+        },
+        { label: 'Readiness issues', value: readiness.blockers.length || 'None' },
+      ],
+      warning: serveDirectly
+        ? 'This records the medicines as served, bypasses MCA review, and does not add or deduct inventory stock. Final NHIS submission still requires all mandatory information.'
+        : 'The dispensary will receive this same claim record. Missing details can be added later, but final submission remains blocked until complete.',
+      confirmText: serveDirectly
+        ? 'serve this claim directly'
+        : 'send this claim to the dispensary',
+    })) return
+
     try {
       setClaimSubmitting(true)
       setClaimSubmitIntent(intent)
@@ -3081,6 +3109,31 @@ const Nhis = () => {
         }
       }
 
+      if (!confirmAction({
+        title: newStatus === 'submitted'
+          ? 'Submit this NHIS claim?'
+          : 'Mark this NHIS claim as paid?',
+        details: [
+          { label: 'Claim', value: fullClaim.claim_number },
+          {
+            label: 'Patient',
+            value: [fullClaim.surname, fullClaim.other_names || fullClaim.otherNames]
+              .filter(Boolean)
+              .join(' '),
+          },
+          {
+            label: 'Amount',
+            value: `GHS ${Number(fullClaim.total_claim_amount || fullClaim.total_amount || 0).toFixed(2)}`,
+          },
+        ],
+        warning: newStatus === 'submitted'
+          ? 'This performs the final readiness-controlled submission step and may send the claim through CLAIM-it when configured.'
+          : 'This records that payment has been received for the submitted claim.',
+        confirmText: newStatus === 'submitted'
+          ? 'submit this claim'
+          : 'mark this claim as paid',
+      })) return
+
       const hasReadablePrescriptionFile = Boolean(
         fullClaim.prescription_file_path ||
         fullClaim.prescription_file_url ||
@@ -3115,6 +3168,15 @@ const Nhis = () => {
 
   const handleRejectConfirm = async () => {
     if (!rejectReason.trim()) { notify('Rejection reason is required.', 'warning'); return }
+    if (!confirmAction({
+      title: 'Reject this NHIS claim?',
+      details: [
+        { label: 'Claim', value: rejectTarget?.claim_number },
+        { label: 'Reason', value: rejectReason.trim() },
+      ],
+      warning: 'The rejection and its reason will be recorded in the claim history.',
+      confirmText: 'reject this claim',
+    })) return
     try {
       setUpdatingStatus(rejectTarget.id)
       await updateNhisClaimStatus(rejectTarget.id, 'rejected', rejectReason.trim(), user?.id || null)
@@ -3134,9 +3196,19 @@ const Nhis = () => {
       notify('Only an administrator can delete NHIS claims.', 'warning')
       return
     }
-    if (!window.confirm(`Move claim ${claim.claim_number} to the Recycle Bin? It can be restored by an administrator.`)) {
-      return
-    }
+    if (!confirmAction({
+      title: 'Move this NHIS claim to the Recycle Bin?',
+      details: [
+        { label: 'Claim', value: claim.claim_number },
+        {
+          label: 'Patient',
+          value: [claim.surname, claim.other_names || claim.otherNames].filter(Boolean).join(' '),
+        },
+        { label: 'Status', value: claim.status },
+      ],
+      warning: 'The claim will leave the active workspace. An administrator can restore it.',
+      confirmText: 'move this claim to the Recycle Bin',
+    })) return
 
     try {
       setUpdatingStatus(claim.id)

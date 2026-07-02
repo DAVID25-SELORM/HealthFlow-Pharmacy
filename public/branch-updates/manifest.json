@@ -1,9 +1,9 @@
 {
-  "version": "1.4.2",
-  "releaseNotes": "Seven-day production rollup: performance and pagination hardening, offline security/TLS and zero-edit setup, hospital tariffs, NHIS date correction and incomplete intake, Save/Send/Serve Directly workflow with MCA bypass and no inventory dependency, Recycle Bin recovery, and refreshed manuals.",
+  "version": "1.4.3",
+  "releaseNotes": "Adds complete on-demand patient medication history for sales, insurance claims, and matching NHIS visits with prescribed and served quantities and serving status. Includes the complete seven-day production rollup from 1.4.2.",
   "channel": "stable",
-  "sha256": "75af1910237574c538aeb00231ffa27fa117c881f0107e4965a75a5c986f170a",
-  "publishedAt": "2026-07-01T19:31:51.9025147Z",
-  "packageUrl": "https://healthflowcloud.com/branch-updates/healthflow-branch-1.4.2.zip",
-  "signature": "LCt5UaNjHTHrr4otW1ySKV9mII/xAgWtyfnnj6ctlSepkM2rcCuso81xlARmGfC5fxkXvxYEr0EUjxsICvSQBA=="
+  "sha256": "fcc51fc9fc96d0eb84ec19ad57a5dd9b9c0b3298b225d3162c1282b2b67be64f",
+  "publishedAt": "2026-07-01T20:28:54.2455315Z",
+  "packageUrl": "https://healthflowcloud.com/branch-updates/healthflow-branch-1.4.3.zip",
+  "signature": "lqr+c58NeNkH3ZEDTDp4xDbs6lvJbHBt3fTttbCxyCVXR2DtjwOB4m9EPPXK0hCqmpQYbgdK4MiCAuoth4v6Ag=="
 }

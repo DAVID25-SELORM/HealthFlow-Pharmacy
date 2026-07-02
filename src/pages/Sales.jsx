@@ -30,6 +30,7 @@ import {
 } from '../services/branchServerApi'
 import { closeShift, getOpenShiftForUser, openShift } from '../services/shiftService'
 import { printReceipt, downloadReceiptPDF, formatSaleForReceipt } from '../services/receiptService'
+import { confirmAction } from '../utils/actionConfirmation'
 import {
   createOfflineSaleNumber,
   getOfflineSalesSummary,
@@ -1964,14 +1965,22 @@ const Sales = () => {
       return
     }
 
-    if (!window.confirm(`Refund sale ${sale.sale_number}?`)) {
-      return
-    }
-
     const reasonInput = window.prompt('Refund reason (optional):', '')
     if (reasonInput === null) {
       return
     }
+
+    if (!confirmAction({
+      title: 'Refund this sale?',
+      details: [
+        { label: 'Sale', value: sale.sale_number },
+        { label: 'Amount', value: `GHS ${Number(sale.net_amount || sale.total_amount || 0).toFixed(2)}` },
+        { label: 'Payment method', value: sale.payment_method },
+        { label: 'Reason', value: reasonInput.trim() || 'No reason supplied' },
+      ],
+      warning: 'The refund reverses the sale and restores its stock quantities.',
+      confirmText: 'process this refund',
+    })) return
 
     try {
       setRefundingSaleId(sale.id)

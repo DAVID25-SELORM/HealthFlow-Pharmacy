@@ -448,6 +448,45 @@
   font-size: 0.85rem;
 }
 
+.patient-history-medicines {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0.6rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.patient-history-medicines li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.5rem;
+  border-left: 3px solid var(--primary);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: var(--gray-50);
+  padding: 0.4rem 0.55rem;
+}
+
+.patient-history-medicines li strong {
+  flex-basis: 100%;
+  color: var(--gray-800);
+  font-size: 0.82rem;
+}
+
+.patient-history-medicines li span,
+.patient-history-no-medicines {
+  color: var(--gray-600);
+  font-size: 0.76rem;
+}
+
+.patient-history-medicine-status {
+  border-radius: 999px;
+  background: rgba(8, 127, 109, 0.1);
+  color: var(--primary-dark) !important;
+  padding: 0.1rem 0.4rem;
+  text-transform: capitalize;
+}
+
 .patient-history-meta {
   display: flex;
   flex-direction: column;

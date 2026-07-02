@@ -27,6 +27,7 @@ import {
   updateInventoryDrug,
 } from '../services/inventoryApi'
 import { parseExcelFile, validateImportData, importDrugs, generateTemplate } from '../services/drugImportService'
+import { confirmAction } from '../utils/actionConfirmation'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
@@ -676,9 +677,16 @@ const Inventory = () => {
       return
     }
 
-    if (!window.confirm('Move this inventory item to the Recycle Bin? An administrator can restore it.')) {
-      return
-    }
+    if (!confirmAction({
+      title: 'Move this inventory item to the Recycle Bin?',
+      details: [
+        { label: 'Medicine', value: targetDrug?.name },
+        { label: 'Batch', value: targetDrug?.batch_number },
+        { label: 'Quantity', value: targetDrug?.quantity },
+      ],
+      warning: 'The item will disappear from active inventory. An administrator can restore it.',
+      confirmText: 'move this item to the Recycle Bin',
+    })) return
 
     try {
       if (!isSupabaseConfigured() && !isLocalInventoryEnabled()) {

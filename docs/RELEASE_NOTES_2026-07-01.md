@@ -10,6 +10,9 @@
 - Database safeguards prevent MCA changes to directly served claims.
 - Date-of-birth entry no longer resets to a default date.
 - Long NHIS lists include bottom pagination controls.
+- Patient history now loads medicine lines on demand for sales, general
+  insurance claims, and all matching NHIS visits, including prescribed/served
+  quantities and serving status.
 
 ## Data recovery
 
@@ -20,8 +23,9 @@
 
 ## Offline and facility server
 
-- Prepared signed Local Branch Server release 1.4.2 containing the current
-  offline bundle and the complete seven-day update set.
+- Prepared signed Local Branch Server release 1.4.3 containing the current
+  offline bundle, the complete seven-day update set, and patient medication
+  history.
 - Added facility-wide offline PIN authentication using salted scrypt hashes.
 - Added lockout, rate limiting, audit logs, and admin enable/reset/revoke.
 - Added HTTPS/TLS startup detection and local-only fallback.
@@ -33,3 +37,14 @@
 - Refreshed production and offline bundles.
 - Release verification: lint, production build, offline build, and 410 automated
   tests passed.
+
+## Consequential-action review safeguards
+
+- Added a consistent final preview before high-impact clinical, financial,
+  inventory, purchase, refund, and fulfilment actions.
+- Preview messages identify the affected record and show relevant amounts,
+  parties, statuses, reasons, or quantities before execution.
+- NHIS readiness, CC/CCC handling, tariff logic, and stock behaviour are
+  unchanged; the new layer only asks the user to verify an already validated
+  action.
+- Routine draft and detail saves remain prompt-free.

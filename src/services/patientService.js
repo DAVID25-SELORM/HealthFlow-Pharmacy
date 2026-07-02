@@ -143,12 +143,23 @@ export const getPatientById = async (id) => {
         if (!claims.length) {
           throw new Error('NHIS claim patient not found in local branch server.')
         }
-        return nhisClaimToPatientDetail(claims[0])
+        const selectedClaim = claims[0]
+        const lookup = selectedClaim.member_no || selectedClaim.hin || selectedClaim.patient_id
+        const historyClaims = lookup
+          ? await listBranchRecords('nhis/claims', { searchTerm: lookup, limit: 500 })
+          : claims
+        const matchingClaims = historyClaims.filter((claim) =>
+          patientMatchesNhisClaim(nhisClaimToPatient(selectedClaim), claim)
+        )
+        return nhisClaimsToPatientDetail(
+          selectedClaim,
+          matchingClaims.length ? matchingClaims : claims
+        )
       },
       cloud: async () => {
         const query = supabase
           .from('nhis_claims')
-          .select('*')
+          .select('*, nhis_claim_medicines (*)')
 
         const { data, error } = isPersistedSupabasePatientId(claimKey)
           ? await query.eq('id', claimKey).maybeSingle()
@@ -156,7 +167,22 @@ export const getPatientById = async (id) => {
 
         if (error && error.code !== 'PGRST116') throw error
         if (!data) throw new Error('NHIS claim patient not found.')
-        return nhisClaimToPatientDetail(data)
+
+        const historyQueries = []
+        if (data.patient_id) {
+          historyQueries.push(fetchCloudNhisClaimHistory('patient_id', data.patient_id))
+        }
+        if (data.member_no) {
+          historyQueries.push(fetchCloudNhisClaimHistory('member_no', data.member_no))
+        }
+        if (data.hin) {
+          historyQueries.push(fetchCloudNhisClaimHistory('hin', data.hin))
+        }
+        const historyGroups = historyQueries.length
+          ? await Promise.all(historyQueries)
+          : [[data]]
+        const historyClaims = dedupeClaims([...historyGroups.flat(), data])
+        return nhisClaimsToPatientDetail(data, historyClaims)
       },
       fallback: null,
     })
@@ -169,7 +195,13 @@ export const getPatientById = async (id) => {
       if (!patients.length) {
         throw new Error('Patient not found in local branch server.')
       }
-      return patients[0]
+      const patient = patients[0]
+      const lookup = patient.nhis_member_no || patient.insurance_id || patient.nhis_hin
+      const nhisClaims = lookup
+        ? (await listBranchRecords('nhis/claims', { searchTerm: lookup, limit: 500 }))
+          .filter((claim) => patientMatchesNhisClaim(patient, claim))
+        : []
+      return mergePatientHistory(patient, nhisClaims)
     },
     cloud: async () => {
       const { data, error } = await supabase
@@ -183,13 +215,29 @@ export const getPatientById = async (id) => {
               drugs (name)
             )
           ),
-          claims (*)
+          claims (
+            *,
+            claim_items (*)
+          )
         `)
         .eq('id', id)
         .single()
 
       if (error) throw error
-      return data
+      const historyQueries = [
+        fetchCloudNhisClaimHistory('patient_id', id),
+      ]
+      if (data.nhis_member_no || data.insurance_id) {
+        historyQueries.push(fetchCloudNhisClaimHistory(
+          'member_no',
+          data.nhis_member_no || data.insurance_id
+        ))
+      }
+      if (data.nhis_hin) {
+        historyQueries.push(fetchCloudNhisClaimHistory('hin', data.nhis_hin))
+      }
+      const nhisClaims = dedupeClaims((await Promise.all(historyQueries)).flat())
+      return mergePatientHistory(data, nhisClaims)
     },
     fallback: null,
   })
@@ -293,16 +341,64 @@ const latestDateValue = (...values) =>
     .filter(Boolean)
     .sort((left, right) => new Date(right).getTime() - new Date(left).getTime())[0] || null
 
-const nhisClaimToPatientDetail = (claim = {}) => ({
+const nhisClaimToHistoryClaim = (claim = {}) => ({
+  id: claim.id || claim.claim_number,
+  claim_number: claim.claim_number || '',
+  claim_status: claim.claim_status || claim.status || '',
+  service_date: claim.service_date || claim.service_date_from || claim.dispensing_date || claim.created_at || '',
+  total_amount: claim.total_amount || 0,
+  claim_type: 'nhis',
+  medicines: claim.nhis_claim_medicines || claim.medicines || [],
+})
+
+const generalClaimToHistoryClaim = (claim = {}) => ({
+  ...claim,
+  claim_status: claim.claim_status || claim.status || '',
+  service_date: claim.service_date || claim.created_at || '',
+  claim_type: claim.claim_type || 'insurance',
+  medicines: claim.claim_items || claim.items || claim.medicines || [],
+})
+
+const dedupeClaims = (claims = []) => {
+  const rows = new Map()
+  claims.filter(Boolean).forEach((claim) => {
+    const key = String(claim.id || claim.claim_number || '').trim()
+    if (key && !rows.has(key)) rows.set(key, claim)
+  })
+  return [...rows.values()]
+}
+
+const sortHistoryClaims = (claims = []) =>
+  [...claims].sort(
+    (left, right) =>
+      new Date(getNhisClaimVisitDate(right) || 0) -
+      new Date(getNhisClaimVisitDate(left) || 0)
+  )
+
+const fetchCloudNhisClaimHistory = async (column, value) => {
+  if (!value) return []
+  const { data, error } = await supabase
+    .from('nhis_claims')
+    .select('*, nhis_claim_medicines (*)')
+    .eq(column, value)
+    .order('created_at', { ascending: false })
+    .limit(500)
+  if (error) throw error
+  return data || []
+}
+
+const mergePatientHistory = (patient = {}, nhisClaims = []) => ({
+  ...patient,
+  claims: [
+    ...(patient.claims || []).map(generalClaimToHistoryClaim),
+    ...sortHistoryClaims(nhisClaims).map(nhisClaimToHistoryClaim),
+  ],
+})
+
+const nhisClaimsToPatientDetail = (claim = {}, claims = [claim]) => ({
   ...nhisClaimToPatient(claim),
   sales: [],
-  claims: [{
-    id: claim.id || claim.claim_number,
-    claim_number: claim.claim_number || '',
-    claim_status: claim.claim_status || claim.status || '',
-    service_date: claim.service_date || claim.service_date_from || claim.dispensing_date || '',
-    total_amount: claim.total_amount || 0,
-  }],
+  claims: sortHistoryClaims(dedupeClaims(claims)).map(nhisClaimToHistoryClaim),
 })
 
 const fetchNhisClaimPatientsFromSupabase = async () => {
