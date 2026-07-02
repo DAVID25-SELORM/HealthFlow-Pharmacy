@@ -51,6 +51,7 @@ import { useNotification } from '../context/NotificationContext'
 import { useTenant } from '../context/TenantContext'
 import { useOnlineStatus } from '../hooks/useOnlineStatus'
 import { hasRole } from '../utils/roles'
+import { getInStockPosDrugs } from '../utils/posInventory'
 import {
   normalizeNhiaMemberNumber,
   validateNhiaMemberNumberFormat,
@@ -264,6 +265,7 @@ const Sales = () => {
   const preferredOnlinePaymentProvider =
     onlinePaymentSettings?.defaultProvider === 'paystack' ? 'paystack' : 'hubtel'
   const posAdminMode = isAdmin && searchParams.get('mode') === 'admin'
+  const visiblePosDrugs = useMemo(() => getInStockPosDrugs(drugs), [drugs])
   const selectedPatientForSale = useMemo(
     () => patients.find((patient) => patient.id === patientId) || null,
     [patients, patientId]
@@ -2622,7 +2624,7 @@ const Sales = () => {
                 <span>
                   {drugSearchLoading
                     ? 'Searching...'
-                    : `${drugs.length} result${drugs.length === 1 ? '' : 's'}`}
+                    : `${visiblePosDrugs.length} result${visiblePosDrugs.length === 1 ? '' : 's'}`}
                 </span>
               </div>
               <span className="drug-results-limit">Top {POS_DRUG_SEARCH_LIMIT}</span>
@@ -2631,10 +2633,10 @@ const Sales = () => {
               <p className="drug-results-empty">{drugSearchMessage}</p>
             ) : null}
             <div className="drug-grid" aria-busy={drugSearchLoading}>
-              {drugSearchLoading && drugs.length === 0 ? (
+              {drugSearchLoading && visiblePosDrugs.length === 0 ? (
                 <div className="drug-results-loading">Searching inventory...</div>
               ) : (
-                drugs.map((drug) => {
+                visiblePosDrugs.map((drug) => {
                   const reserved = getReservedQty(drug.id)
                   const remaining = Math.max(0, Number.parseFloat(drug.quantity || 0) - reserved)
                   const soldOut = remaining <= 0

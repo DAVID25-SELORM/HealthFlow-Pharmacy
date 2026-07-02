@@ -56,3 +56,8 @@
 - Page totals include NHIS-only patients, and the same person is merged using
   patient ID, NHIS member number, HIN, folder/name, or name/date of birth.
 - Local Branch Server reads no longer stop at 5,000 patient or NHIS records.
+
+## POS stock display
+
+- POS now filters zero, missing, invalid, and negative stock before rendering
+  medicine cards, including during cached and live inventory transitions.
