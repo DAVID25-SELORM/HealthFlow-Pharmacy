@@ -9,6 +9,7 @@ import {
   getExistingDrugSaveAction,
 } from '../_shared/drugInventory.ts'
 import { resolveTierAccess } from '../_shared/tier.ts'
+import { isPersistedPatientUuid } from '../_shared/patientWorkspace.ts'
 
 const USERS_PER_PAGE = 200
 const MAX_USER_PAGES = 10
@@ -2622,7 +2623,9 @@ const getPatientVisitRows = async (
   organizationId: string,
   patientIds: string[] = []
 ) => {
-  const scopedPatientIds = patientIds.map(normalizeText).filter(Boolean)
+  const scopedPatientIds = patientIds
+    .map(normalizeText)
+    .filter(isPersistedPatientUuid)
   if (patientIds.length > 0 && scopedPatientIds.length === 0) return []
 
   const rows: Record<string, unknown>[] = []
