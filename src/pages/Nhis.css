@@ -654,6 +654,133 @@
   overflow-y: auto;
 }
 
+.nhis-action-review-modal {
+  width: min(680px, calc(100vw - 2rem));
+}
+
+.nhis-action-review-eyebrow {
+  display: block;
+  margin-bottom: 0.2rem;
+  color: var(--primary-600);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.nhis-action-review-body {
+  display: grid;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem;
+  overflow-y: auto;
+}
+
+.nhis-action-review-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.nhis-action-review-summary > div {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.8rem;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  background: var(--gray-50);
+}
+
+.nhis-action-review-summary span,
+.nhis-action-review-medicine small {
+  color: var(--gray-500);
+  font-size: 0.75rem;
+}
+
+.review-value-ready { color: #166534; }
+.review-value-warning { color: #b45309; }
+
+.nhis-action-review-section {
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.nhis-action-review-section-heading,
+.nhis-action-review-medicine {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.nhis-action-review-section-heading {
+  padding: 0.75rem 1rem;
+  background: var(--gray-50);
+  border-bottom: 1px solid var(--gray-200);
+}
+
+.nhis-action-review-section-heading h3 { font-size: 0.9rem; }
+
+.nhis-action-review-section-heading span {
+  min-width: 1.6rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  background: var(--primary-100);
+  color: var(--primary-700);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.nhis-action-review-medicines {
+  max-height: 230px;
+  overflow-y: auto;
+}
+
+.nhis-action-review-medicine {
+  padding: 0.7rem 1rem;
+  border-bottom: 1px solid var(--gray-100);
+}
+
+.nhis-action-review-medicine:last-child { border-bottom: 0; }
+.nhis-action-review-medicine > div { display: grid; gap: 0.15rem; }
+.nhis-action-review-medicine > span { flex-shrink: 0; font-size: 0.8rem; }
+.nhis-action-review-empty { padding: 1rem; color: var(--gray-500); }
+
+.nhis-action-review-issues,
+.nhis-action-review-impact {
+  padding: 0.9rem 1rem;
+  border-radius: var(--radius);
+}
+
+.nhis-action-review-issues {
+  border: 1px solid #fed7aa;
+  background: #fff7ed;
+  color: #9a3412;
+}
+
+.nhis-action-review-issues ul {
+  margin: 0.5rem 0 0 1.1rem;
+  font-size: 0.82rem;
+}
+
+.nhis-action-review-impact {
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1e3a8a;
+}
+
+.nhis-action-review-impact p {
+  margin: 0.35rem 0 0;
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+@media (max-width: 560px) {
+  .nhis-action-review-summary { grid-template-columns: 1fr; }
+  .nhis-action-review-medicine { align-items: flex-start; flex-direction: column; gap: 0.35rem; }
+}
+
 .nhis-page .modal-header {
   display: flex;
   align-items: center;

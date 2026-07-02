@@ -39,6 +39,13 @@ prices, NHIS codes, and facility-level restrictions. POS sales reduce inventory
 and create auditable stock movements. NHIS claim serving is separate: it does
 not require or change HealthFlow inventory stock.
 
+Before using POS, enter the opening cash amount and select **Open Shift**.
+Until a shift is open, medicine search, selection, patient linking, refunds,
+and checkout remain locked. The Local Branch Server applies the same rule
+during an internet outage and validates that the open shift belongs to the
+signed-in staff member and assigned branch. Close the shift at handover or the
+end of duty and record the counted cash.
+
 When an administrator deletes an inventory item, HealthFlow archives it in
 **Recycle Bin** and makes it inactive. Restore it from Recycle Bin when deletion
 was accidental. Permanent deletion is an administrator-only action.

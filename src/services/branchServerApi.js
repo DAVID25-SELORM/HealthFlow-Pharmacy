@@ -930,6 +930,29 @@ export const createBranchRecord = async (resource, payload) => {
   return response.data
 }
 
+export const getBranchPosSession = async () => {
+  const response = await branchFetch('/api/pos-sessions/current')
+  return response.data || null
+}
+
+export const openBranchPosSession = async ({ branchId, openingCash = 0 } = {}) => {
+  const response = await branchFetch('/api/pos-sessions/open', {
+    method: 'POST',
+    body: JSON.stringify({ branchId, openingCash }),
+    timeoutMs: WRITE_BRANCH_REQUEST_TIMEOUT_MS,
+  })
+  return response.data || null
+}
+
+export const closeBranchPosSession = async ({ id, countedCash = 0, notes = '' } = {}) => {
+  const response = await branchFetch(`/api/pos-sessions/${encodeURIComponent(id)}/close`, {
+    method: 'POST',
+    body: JSON.stringify({ countedCash, notes }),
+    timeoutMs: WRITE_BRANCH_REQUEST_TIMEOUT_MS,
+  })
+  return response.data || null
+}
+
 export const updateBranchRecord = async (resource, id, payload) => {
   const response = await branchFetch(`/api/${resource}/${id}`, {
     method: 'PUT',

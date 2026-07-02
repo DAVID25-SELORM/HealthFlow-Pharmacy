@@ -932,6 +932,7 @@ const Nhis = () => {
   const [claimSubmitting, setClaimSubmitting] = useState(false)
   const [claimSubmitIntent, setClaimSubmitIntent] = useState('')
   const [claimError, setClaimError]           = useState('')
+  const [claimActionReview, setClaimActionReview] = useState(null)
   const [editingClaim, setEditingClaim]       = useState(null)
   const [prescriptionPdfFile, setPrescriptionPdfFile] = useState(null)
 
@@ -1914,6 +1915,7 @@ const Nhis = () => {
   }
 
   const closeClaimModal = () => {
+    setClaimActionReview(null)
     setShowNewClaimModal(false)
     resetClaimModal()
   }
@@ -2718,7 +2720,7 @@ const Nhis = () => {
     }
   }
 
-  const handleSubmitClaim = async (e, intent = 'dispatch') => {
+  const handleSubmitClaim = async (e, intent = 'dispatch', reviewConfirmed = false) => {
     e.preventDefault()
     const saveAsDraft = intent === 'save_details'
     const serveDirectly = intent === 'serve_directly'
@@ -2772,7 +2774,7 @@ const Nhis = () => {
       existingClaims: claims,
       editingClaimId: editingClaim?.id,
     })
-    if (duplicateWarnings.length) {
+    if (duplicateWarnings.length && saveAsDraft && !reviewConfirmed) {
       const proceed = window.confirm(
         `Possible duplicate claim or medicine detected:\n\n${duplicateWarnings.slice(0, 6).join('\n')}\n\nContinue anyway?`
       )
@@ -2782,32 +2784,10 @@ const Nhis = () => {
       }
     }
 
-    if (!saveAsDraft && !confirmAction({
-      title: serveDirectly
-        ? 'Serve this NHIS claim directly?'
-        : 'Send this NHIS claim to the dispensary?',
-      details: [
-        {
-          label: 'Patient',
-          value: [claimForm.surname, claimForm.otherNames].filter(Boolean).join(' '),
-        },
-        { label: 'Member number', value: claimForm.memberNumber || claimForm.hin },
-        { label: 'Medicines', value: compactMedicines(claimMedicines).length },
-        {
-          label: 'Prescription attached',
-          value: prescriptionPdfFile || hasVerifiedNhisPrescription(editingClaim || claimForm)
-            ? 'Yes'
-            : 'No',
-        },
-        { label: 'Readiness issues', value: readiness.blockers.length || 'None' },
-      ],
-      warning: serveDirectly
-        ? 'This records the medicines as served, bypasses MCA review, and does not add or deduct inventory stock. Final NHIS submission still requires all mandatory information.'
-        : 'The dispensary will receive this same claim record. Missing details can be added later, but final submission remains blocked until complete.',
-      confirmText: serveDirectly
-        ? 'serve this claim directly'
-        : 'send this claim to the dispensary',
-    })) return
+    if (!saveAsDraft && !reviewConfirmed) {
+      setClaimActionReview({ intent, duplicateWarnings })
+      return
+    }
 
     try {
       setClaimSubmitting(true)
@@ -5235,6 +5215,114 @@ const Nhis = () => {
       {/* ══════════════════════════════════════════════════════════════
           NEW MEDICINE SUB-MODAL
       ══════════════════════════════════════════════════════════════ */}
+      {claimActionReview && (
+        <div
+          className="modal-overlay modal-overlay--top"
+          onClick={(event) => event.target === event.currentTarget && setClaimActionReview(null)}
+        >
+          <section
+            className="modal-panel nhis-action-review-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="nhis-action-review-title"
+          >
+            <div className="modal-header">
+              <div>
+                <span className="nhis-action-review-eyebrow">Final review</span>
+                <h2 id="nhis-action-review-title">
+                  {claimActionReview.intent === 'serve_directly'
+                    ? 'Serve this claim directly?'
+                    : 'Send this claim to the dispensary?'}
+                </h2>
+              </div>
+              <button type="button" className="modal-close" onClick={() => setClaimActionReview(null)} aria-label="Close review">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="nhis-action-review-body">
+              <div className="nhis-action-review-summary">
+                <div><span>Patient</span><strong>{[claimForm.surname, claimForm.otherNames].filter(Boolean).join(' ') || 'Not entered'}</strong></div>
+                <div><span>Member number</span><strong>{claimForm.memberNumber || claimForm.hin || 'Not entered'}</strong></div>
+                <div><span>Requested total</span><strong>{fmtCurrency(requestedClaimTotal)}</strong></div>
+                <div>
+                  <span>Prescription</span>
+                  <strong className={prescriptionPdfFile || hasVerifiedNhisPrescription(editingClaim || claimForm) ? 'review-value-ready' : 'review-value-warning'}>
+                    {prescriptionPdfFile || hasVerifiedNhisPrescription(editingClaim || claimForm) ? 'Attached' : 'Not attached'}
+                  </strong>
+                </div>
+              </div>
+
+              <div className="nhis-action-review-section">
+                <div className="nhis-action-review-section-heading">
+                  <h3>Medicines</h3>
+                  <span>{compactMedicines(claimMedicines).length}</span>
+                </div>
+                <div className="nhis-action-review-medicines">
+                  {compactMedicines(claimMedicines).map((medicine, index) => (
+                    <div className="nhis-action-review-medicine" key={`${medicine.drugCode || medicine.description}-${index}`}>
+                      <div>
+                        <strong>{medicine.description || medicine.drugCode || `Medicine ${index + 1}`}</strong>
+                        <small>{medicine.drugCode || 'No medicine code'}</small>
+                      </div>
+                      <span>
+                        {getMedicinePrescribedQty(medicine)} {medicine.unit || 'unit'}
+                        {claimActionReview.intent === 'serve_directly' ? ' to be served' : ' requested'}
+                      </span>
+                    </div>
+                  ))}
+                  {compactMedicines(claimMedicines).length === 0 && (
+                    <p className="nhis-action-review-empty">No medicines have been entered.</p>
+                  )}
+                </div>
+              </div>
+
+              {readiness.blockers.length > 0 && (
+                <div className="nhis-action-review-issues" role="status">
+                  <strong>{readiness.blockers.length} readiness issue{readiness.blockers.length === 1 ? '' : 's'}</strong>
+                  <ul>
+                    {readiness.blockers.slice(0, 6).map((blocker) => <li key={blocker}>{blocker}</li>)}
+                  </ul>
+                </div>
+              )}
+
+              {claimActionReview.duplicateWarnings?.length > 0 && (
+                <div className="nhis-action-review-issues" role="alert">
+                  <strong>Possible duplicate detected</strong>
+                  <ul>
+                    {claimActionReview.duplicateWarnings.slice(0, 6).map((warning) => <li key={warning}>{warning}</li>)}
+                  </ul>
+                </div>
+              )}
+
+              <div className="nhis-action-review-impact">
+                <strong>What happens next</strong>
+                <p>
+                  {claimActionReview.intent === 'serve_directly'
+                    ? 'All entered quantities will be recorded as served. MCA review is bypassed and HealthFlow inventory stock is not added or deducted. Final NHIS submission remains blocked until mandatory information is complete.'
+                    : 'The dispensary receives this same claim record. Missing details may be added later, but the claim cannot be finalized or submitted until it is complete.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="modal-footer">
+              <button type="button" className="btn btn-secondary" onClick={() => setClaimActionReview(null)}>Go Back</button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  const intent = claimActionReview.intent
+                  setClaimActionReview(null)
+                  handleSubmitClaim({ preventDefault() {} }, intent, true)
+                }}
+              >
+                {claimActionReview.intent === 'serve_directly' ? 'Confirm & Serve Directly' : 'Confirm & Send'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
       {showMedModal && (
         <div
           className="modal-overlay modal-overlay--top"

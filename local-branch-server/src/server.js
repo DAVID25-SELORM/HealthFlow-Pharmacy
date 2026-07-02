@@ -80,7 +80,14 @@ import {
   initiatePayment,
 } from './paymentsRepository.js'
 import { getLocalReportBundle } from './reportsRepository.js'
-import { createLocalSale, getLocalSale, getRecentLocalSales } from './salesRepository.js'
+import {
+  closeLocalPosSession,
+  createLocalSale,
+  getLocalSale,
+  getOpenLocalPosSession,
+  getRecentLocalSales,
+  openLocalPosSession,
+} from './salesRepository.js'
 import {
   getSupabaseDiagnostics,
   getSyncStatus,
@@ -1442,9 +1449,50 @@ app.post('/api/inventory/import', (request, response, next) => {
   }
 })
 
+app.get('/api/pos-sessions/current', (request, response) => {
+  response.json({
+    data: getOpenLocalPosSession({ userId: request.branchUser.userId }),
+  })
+})
+
+app.post('/api/pos-sessions/open', (request, response, next) => {
+  try {
+    response.status(201).json({
+      data: openLocalPosSession({
+        userId: request.branchUser.userId,
+        organizationId: config.organizationId,
+        branchId: config.branchId || request.body?.branchId,
+        openingCash: request.body?.openingCash,
+      }),
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.post('/api/pos-sessions/:id/close', (request, response, next) => {
+  try {
+    response.json({
+      data: closeLocalPosSession({
+        id: request.params.id,
+        userId: request.branchUser.userId,
+        countedCash: request.body?.countedCash,
+        notes: request.body?.notes,
+      }),
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
 app.post('/api/sales', (request, response, next) => {
   try {
-    const result = createLocalSale(request.body || {})
+    const result = createLocalSale({
+      ...(request.body || {}),
+      soldBy: request.branchUser.userId,
+      organizationId: config.organizationId,
+      branchId: config.branchId || request.body?.branchId,
+    })
     const claimResult = request.body?.claimPayload
       ? createLocalClaim(request.body.claimPayload, result.sale)
       : null

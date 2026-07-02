@@ -34,6 +34,11 @@
 ## Performance and deployment
 
 - Added PostgreSQL accounting sales aggregation and supporting indexes.
+- POS now requires an explicit open cashier shift before medicine search,
+  selection, patient linking, refunds, or checkout in both cloud and offline
+  operation.
+- Local Branch Server 1.4.4 stores cashier sessions persistently and validates
+  the signed-in staff member and branch on every local sale.
 - Refreshed production and offline bundles.
 - Release verification: lint, production build, offline build, and 410 automated
   tests passed.

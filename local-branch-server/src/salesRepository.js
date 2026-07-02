@@ -28,6 +28,30 @@ const createSaleNumber = () => {
 }
 
 const getDrugForUpdate = db.prepare('SELECT * FROM drugs WHERE id = ?')
+const getOpenPosSessionForUser = db.prepare(`
+  SELECT * FROM local_pos_sessions
+  WHERE user_id = ? AND status = 'open'
+  ORDER BY opened_at DESC
+  LIMIT 1
+`)
+const getOpenPosSessionById = db.prepare(`
+  SELECT * FROM local_pos_sessions
+  WHERE id = ? AND user_id = ? AND branch_id = ? AND status = 'open'
+`)
+const insertPosSession = db.prepare(`
+  INSERT INTO local_pos_sessions (
+    id, user_id, organization_id, branch_id, opening_cash,
+    expected_cash, status, opened_at
+  ) VALUES (
+    @id, @userId, @organizationId, @branchId, @openingCash,
+    @openingCash, 'open', @openedAt
+  )
+`)
+const closePosSession = db.prepare(`
+  UPDATE local_pos_sessions
+  SET status = 'closed', counted_cash = @countedCash, notes = @notes, closed_at = @closedAt
+  WHERE id = @id AND user_id = @userId AND status = 'open'
+`)
 
 const insertSale = db.prepare(`
   INSERT INTO sales (
@@ -155,7 +179,7 @@ const buildSaleSyncPayload = ({ sale, items, paymentReference = '' }) => {
       sold_by: sale.soldBy,
       sale_date: sale.saleDate,
       discount: sale.discount,
-      shift_id: sale.shiftId,
+      shift_id: null,
       insurance_covered_amount: 0,
       insurance_top_up_amount: 0,
       insurance_top_up_payment_method: null,
@@ -169,6 +193,62 @@ const buildSaleSyncPayload = ({ sale, items, paymentReference = '' }) => {
       })),
     },
   }
+}
+
+const toPublicPosSession = (row) => row
+  ? {
+      id: row.id,
+      userId: row.user_id,
+      organizationId: row.organization_id,
+      branchId: row.branch_id,
+      openingCash: Number(row.opening_cash || 0),
+      expectedCash: Number(row.expected_cash || 0),
+      status: row.status,
+      openedAt: row.opened_at,
+      closedAt: row.closed_at,
+    }
+  : null
+
+export const getOpenLocalPosSession = ({ userId }) =>
+  toPublicPosSession(getOpenPosSessionForUser.get(String(userId || '').trim()))
+
+export const openLocalPosSession = ({ userId, organizationId, branchId, openingCash = 0 }) => {
+  const normalizedUserId = String(userId || '').trim()
+  const normalizedBranchId = String(branchId || '').trim()
+  if (!normalizedUserId || !normalizedBranchId) {
+    throw new Error('A user and branch are required to open a POS shift.')
+  }
+
+  const existing = getOpenPosSessionForUser.get(normalizedUserId)
+  if (existing) return toPublicPosSession(existing)
+
+  const session = {
+    id: createId(),
+    userId: normalizedUserId,
+    organizationId: String(organizationId || config.organizationId || '').trim() || null,
+    branchId: normalizedBranchId,
+    openingCash: toMoney(openingCash, 0),
+    openedAt: nowIso(),
+  }
+  if (session.openingCash < 0) {
+    throw new Error('Opening cash cannot be negative.')
+  }
+  insertPosSession.run(session)
+  return toPublicPosSession(getOpenPosSessionForUser.get(normalizedUserId))
+}
+
+export const closeLocalPosSession = ({ id, userId, countedCash = 0, notes = '' }) => {
+  const result = closePosSession.run({
+    id: String(id || '').trim(),
+    userId: String(userId || '').trim(),
+    countedCash: toMoney(countedCash, 0),
+    notes: String(notes || '').trim() || null,
+    closedAt: nowIso(),
+  })
+  if (result.changes !== 1) {
+    throw new Error('Open POS shift not found for this user.')
+  }
+  return { id, status: 'closed' }
 }
 
 export const createLocalSale = db.transaction((saleData) => {
@@ -186,6 +266,16 @@ export const createLocalSale = db.transaction((saleData) => {
     String(saleData.paymentStatus || '').trim().toLowerCase() === 'pending_payment'
       ? 'pending_payment'
       : 'completed'
+
+  const soldBy = String(saleData.soldBy || '').trim()
+  const branchId = String(saleData.branchId || config.branchId || '').trim()
+  const shiftId = String(saleData.shiftId || '').trim()
+  if (!soldBy || !branchId || !shiftId) {
+    throw new Error('Open a POS shift before completing sales.')
+  }
+  if (!getOpenPosSessionById.get(shiftId, soldBy, branchId)) {
+    throw new Error('The POS shift is not open for this user and branch.')
+  }
 
   const createdAt = nowIso()
   const saleId = createId()
@@ -284,8 +374,8 @@ export const createLocalSale = db.transaction((saleData) => {
     amountPaid,
     changeGiven,
     notes: saleData.notes || null,
-    soldBy: saleData.soldBy || null,
-    shiftId: saleData.shiftId || null,
+    soldBy,
+    shiftId,
     organizationId: saleData.organizationId || config.organizationId,
     branchId: saleData.branchId || config.branchId,
     saleDate: saleData.saleDate || createdAt,
@@ -325,7 +415,7 @@ export const createLocalSale = db.transaction((saleData) => {
         sold_by: sale.soldBy,
         sale_date: sale.saleDate,
         discount,
-        shift_id: sale.shiftId,
+        shift_id: null,
         insurance_covered_amount: insuranceCoveredAmount,
         insurance_top_up_amount: insuranceTopUpAmount,
         insurance_top_up_payment_method: insuranceTopUpPaymentMethod,

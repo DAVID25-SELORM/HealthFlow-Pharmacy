@@ -171,6 +171,24 @@ CREATE INDEX IF NOT EXISTS idx_sales_sync_status ON sales(sync_status);
 CREATE INDEX IF NOT EXISTS idx_sales_date ON sales(sale_date);
 CREATE INDEX IF NOT EXISTS idx_sales_branch_date ON sales(branch_id, sale_date);
 
+CREATE TABLE IF NOT EXISTS local_pos_sessions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  organization_id TEXT,
+  branch_id TEXT NOT NULL,
+  opening_cash REAL NOT NULL DEFAULT 0,
+  expected_cash REAL NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'closed')),
+  opened_at TEXT NOT NULL,
+  closed_at TEXT,
+  counted_cash REAL,
+  notes TEXT
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_local_pos_sessions_one_open_per_user
+  ON local_pos_sessions(user_id)
+  WHERE status = 'open';
+
 CREATE TABLE IF NOT EXISTS sale_items (
   id TEXT PRIMARY KEY,
   sale_id TEXT NOT NULL REFERENCES sales(id) ON DELETE CASCADE,

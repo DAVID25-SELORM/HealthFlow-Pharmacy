@@ -15,13 +15,16 @@ import { getPharmacySettings } from '../services/settingsService'
 import { getBranches } from '../services/branchService'
 import { getOnlinePaymentSettings, initiateOnlinePayment } from '../services/paymentService'
 import {
+  closeBranchPosSession,
   getBranchInventory,
+  getBranchPosSession,
   getBranchPosBootstrap,
   getBranchServerConfig,
   getBranchServerHealth,
   getBranchSyncStatus,
   initiateBranchPayment,
   isBranchServerEnabled,
+  openBranchPosSession,
   pullBranchInventory,
   pullBranchReferenceData,
   saveBranchServerConfig,
@@ -150,18 +153,18 @@ const mergePharmacySettingsWithOrganization = (settings, organization) => ({
   // ✅ NHIS PHARMACY LEVEL PATCH END
 })
 
-const createLocalPosShift = ({ branchId, branch, openingCash = 0, userId } = {}) => {
-  if (!branchId) {
+const mapBranchPosSession = (session, branch) => {
+  if (!session?.id || !session?.branchId) {
     return null
   }
 
   return {
-    id: `local-pos-${userId || 'staff'}-${branchId}`,
-    branch_id: branchId,
-    branches: branch || { id: branchId, name: 'Local branch' },
-    opening_cash: openingCash,
-    expected_cash: openingCash,
-    status: 'open',
+    id: session.id,
+    branch_id: session.branchId,
+    branches: branch || { id: session.branchId, name: 'Local branch' },
+    opening_cash: session.openingCash,
+    expected_cash: session.expectedCash,
+    status: session.status,
     isLocalPosShift: true,
   }
 }
@@ -265,7 +268,11 @@ const Sales = () => {
   const preferredOnlinePaymentProvider =
     onlinePaymentSettings?.defaultProvider === 'paystack' ? 'paystack' : 'hubtel'
   const posAdminMode = isAdmin && searchParams.get('mode') === 'admin'
-  const visiblePosDrugs = useMemo(() => getInStockPosDrugs(drugs), [drugs])
+  const posLocked = !activeShift?.id
+  const visiblePosDrugs = useMemo(
+    () => posLocked ? [] : getInStockPosDrugs(drugs),
+    [drugs, posLocked]
+  )
   const selectedPatientForSale = useMemo(
     () => patients.find((patient) => patient.id === patientId) || null,
     [patients, patientId]
@@ -314,23 +321,7 @@ const Sales = () => {
         profile?.branch_id ||
         profileBranch?.id ||
         ''
-      const cachedBranch =
-        cachedBranches.find((branch) => branch.id === cachedBranchId) ||
-        profileBranch ||
-        null
-      const cachedSnapshotShift =
-        snapshot.activeShift?.isLocalPosShift && !localBranchServerAvailable
-          ? null
-          : snapshot.activeShift
-      const cachedShift =
-        cachedSnapshotShift ||
-        (localBranchServerAvailable
-          ? createLocalPosShift({
-              branchId: cachedBranchId,
-              branch: cachedBranch,
-              userId: user?.id,
-            })
-          : null)
+      const cachedShift = localBranchServerAvailable ? null : snapshot.activeShift || null
 
       setPatients(snapshot.patients || [])
       setPharmacyInfo(snapshot.pharmacyInfo || fallbackPharmacyInfo)
@@ -360,11 +351,14 @@ const Sales = () => {
 
         if (localBranchServerAvailable) {
           try {
-            const bootstrap = await getBranchPosBootstrap({
-              inventoryLimit: POS_DRUG_SEARCH_LIMIT,
-              patientLimit: POS_BOOTSTRAP_PATIENT_LIMIT,
-              recentLimit: RECENT_SALES_LIMIT,
-            })
+            const [bootstrap, branchPosSession] = await Promise.all([
+              getBranchPosBootstrap({
+                inventoryLimit: POS_DRUG_SEARCH_LIMIT,
+                patientLimit: POS_BOOTSTRAP_PATIENT_LIMIT,
+                recentLimit: RECENT_SALES_LIMIT,
+              }),
+              getBranchPosSession(),
+            ])
 
             if (cancelled) {
               return
@@ -381,13 +375,7 @@ const Sales = () => {
               profileBranch ||
               snapshot?.branches?.find((branch) => branch.id === branchId) ||
               (branchId ? { id: branchId, name: 'Local branch' } : null)
-            const localShift =
-              snapshot?.activeShift ||
-              createLocalPosShift({
-                branchId,
-                branch: localBranch,
-                userId: user?.id,
-              })
+            const localShift = mapBranchPosSession(branchPosSession, localBranch)
             const nextBranches =
               snapshot?.branches?.length
                 ? snapshot.branches
@@ -536,7 +524,7 @@ const Sales = () => {
   }, [patientSearchTerm])
 
   useEffect(() => {
-    if (loading) {
+    if (loading || posLocked) {
       return undefined
     }
 
@@ -717,7 +705,15 @@ const Sales = () => {
       cancelled = true
       window.clearTimeout(timeout)
     }
-  }, [branchServerModeEnabled, effectiveBranchId, loading, localBranchServerAvailable, searchTerm, user?.id])
+  }, [
+    branchServerModeEnabled,
+    effectiveBranchId,
+    loading,
+    localBranchServerAvailable,
+    posLocked,
+    searchTerm,
+    user?.id,
+  ])
 
   useEffect(() => {
     const routeSearch = searchParams.get('search') || ''
@@ -853,6 +849,10 @@ const Sales = () => {
   // ✅ NHIS PHARMACY LEVEL PATCH END
 
   const addToCart = (drug) => {
+    if (posLocked) {
+      notify('Open a shift before selecting medicines.', 'warning')
+      return
+    }
     // ✅ NHIS PHARMACY LEVEL PATCH START
     if (!validateDrugForFacilityLevel(drug)) {
       return
@@ -1583,7 +1583,7 @@ const Sales = () => {
         insuranceTopUpPaymentMethod:
           saleIsInsuranceLike && patientTopUpAmount > 0 ? patientTopUpMethod : null,
         soldBy: user?.id || null,
-        shiftId: activeShift.isLocalPosShift ? null : activeShift.id,
+        shiftId: activeShift.id,
         organizationId: profile?.organization_id,
         branchId: activeShift.branch_id,
         saleDate: saleTimestamp,
@@ -2022,12 +2022,11 @@ const Sales = () => {
           fallbackBranch ||
           profile?.branches ||
           null
-        const shift = createLocalPosShift({
+        const session = await openBranchPosSession({
           branchId,
-          branch,
           openingCash: Number(openingCash || 0),
-          userId: user?.id,
         })
+        const shift = mapBranchPosSession(session, branch)
         if (!shift) {
           throw new Error('Select a branch before starting the local POS session.')
         }
@@ -2072,7 +2071,13 @@ const Sales = () => {
       setShiftBusy(true)
       setError('')
       if (activeShift.isLocalPosShift) {
+        await closeBranchPosSession({
+          id: activeShift.id,
+          countedCash: Number(countedCash || 0),
+          notes: shiftNotes,
+        })
         setActiveShift(null)
+        setCart([])
         setCountedCash('')
         setShiftNotes('')
         void saveOfflinePosSnapshot(user?.id, { activeShift: null })
@@ -2087,6 +2092,7 @@ const Sales = () => {
         closedBy: user?.id,
       })
       setActiveShift(null)
+      setCart([])
       setCountedCash('')
       setShiftNotes('')
       notify('Shift closed successfully.', 'success')
@@ -2526,7 +2532,8 @@ const Sales = () => {
                 type="text"
                 value={searchTerm}
                 onChange={(e) => handleSearchChange(e.target.value)}
-                placeholder="Search drug, batch number, or scan barcode..."
+                placeholder={posLocked ? 'Open a shift to search medicines' : 'Search drug, batch number, or scan barcode...'}
+                disabled={posLocked}
               />
           </div>
 
@@ -2552,6 +2559,7 @@ const Sales = () => {
                 }
                 value={patientSearchTerm}
                 placeholder="Walk-in customer"
+                disabled={posLocked}
                 onFocus={() => setIsPatientSearchOpen(true)}
                 onChange={(event) => handlePatientSearchChange(event.target.value)}
                 onKeyDown={handlePatientSearchKeyDown}
@@ -2567,7 +2575,7 @@ const Sales = () => {
                   <X size={16} />
                 </button>
               )}
-              {isPatientSearchOpen && (
+              {!posLocked && isPatientSearchOpen && (
                 <div id="sale-patient-options" className="patient-options" role="listbox">
                   <button
                     type="button"
@@ -2629,6 +2637,9 @@ const Sales = () => {
               </div>
               <span className="drug-results-limit">Top {POS_DRUG_SEARCH_LIMIT}</span>
             </div>
+            {posLocked ? (
+              <p className="drug-results-empty">Open a shift before searching or selecting medicines.</p>
+            ) : null}
             {drugSearchMessage && !drugSearchLoading ? (
               <p className="drug-results-empty">{drugSearchMessage}</p>
             ) : null}
@@ -2648,7 +2659,7 @@ const Sales = () => {
                       key={drug.id}
                       className="drug-card"
                       onClick={() => addToCart(drug)}
-                      disabled={soldOut}
+                      disabled={soldOut || posLocked}
                     >
                       <span className="drug-name">{drug.name}</span>
                       <span className="drug-batch">{drug.batch_number || 'No batch'}</span>
@@ -2705,7 +2716,7 @@ const Sales = () => {
                         <button
                           type="button"
                           className="refund-btn"
-                          disabled={processing || refundingSaleId === sale.id}
+                          disabled={posLocked || processing || refundingSaleId === sale.id}
                           onClick={() => handleRefundSale(sale)}
                         >
                           {refundingSaleId === sale.id ? 'Refunding...' : 'Refund'}
