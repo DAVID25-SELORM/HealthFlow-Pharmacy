@@ -68,7 +68,8 @@ Claims Officers have three distinct actions:
 1. **Save Details** saves a draft without sending it to the dispensary.
 2. **Send to Dispensary** sends the same claim to MCA/dispensary staff.
 3. **Serve Directly** marks all entered medicine quantities fully served and
-   moves the claim directly to **Served / Claim Ready**.
+   moves the claim directly to **Served / Claim Ready**. It is available to
+   authorized Claims Officers in both pharmacies and hospitals.
 
 An intake may be saved or sent with medicines, an attachment, both, or neither.
 The claim displays **Incomplete Intake** until required information is added.

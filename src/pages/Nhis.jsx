@@ -1354,7 +1354,6 @@ const Nhis = () => {
     </div>
   )
   const canServeClaimDirectly =
-    !isHospital &&
     ['admin', 'super_admin', 'claims_officer'].includes(normalizedRole) &&
     (
       !editingClaim ||
