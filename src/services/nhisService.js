@@ -226,6 +226,10 @@ const PRESCRIPTION_ATTACHMENT_SCHEMA_KEYS = [
 ]
 const CLAIMIT_EXPORT_FORMATS = ['cxf', 'xml', 'json', 'csv']
 const NHIA_TARIFF_VERSION = 'FEB 2023'
+export const TEMPORARY_UNIVERSAL_NHIA_TARIFF_SOURCE =
+  'Private Primary Care Hospital (Catering Exclusive) Tariff JAN 2023 (1).pdf'
+export const TEMPORARY_UNIVERSAL_NHIA_TARIFF_GROUP = 'Private Primary Care Hospital'
+export const TEMPORARY_UNIVERSAL_NHIA_TARIFF_CATERING = 'exclusive'
 const CLAIM_IT_MEDICINE_PRICE_VERSION = '2025-05-01.250531'
 const CLAIM_IT_SERVICE_TARIFF_VERSION = '2023-02-01.250531'
 const CLAIM_IT_POLICY_VERSION = 'cgs.2022-12-01.250531'
@@ -1391,6 +1395,28 @@ const normalizeTariffCatalogItem = (item = {}) => ({
   sourcePage: item.sourcePage ?? item.source_page ?? null,
 })
 
+export const isTemporaryUniversalNhiaTariff = (item = {}) =>
+  asText(item.sourceFile ?? item.source_file) === TEMPORARY_UNIVERSAL_NHIA_TARIFF_SOURCE
+
+export const getApplicableNhiaTariffItems = (
+  items = [],
+  { facilityGroup = '', cateringOption = '' } = {}
+) => {
+  const activeItems = (Array.isArray(items) ? items : []).filter((item) => item?.is_active !== false)
+  const exactItems = activeItems.filter((item) =>
+    (!facilityGroup || asText(item.facility_group ?? item.facilityGroup) === facilityGroup) &&
+    (!cateringOption || asText(item.catering_option ?? item.cateringOption) === cateringOption)
+  )
+  if (exactItems.length) return exactItems
+
+  return activeItems.filter((item) =>
+    asText(item.tariff_version ?? item.tariffVersion) === NHIA_TARIFF_VERSION &&
+    asText(item.facility_group ?? item.facilityGroup) === TEMPORARY_UNIVERSAL_NHIA_TARIFF_GROUP &&
+    asText(item.catering_option ?? item.cateringOption) === TEMPORARY_UNIVERSAL_NHIA_TARIFF_CATERING &&
+    isTemporaryUniversalNhiaTariff(item)
+  )
+}
+
 const getTariffCatalogKey = ({ tariffVersion, facilityGroup, cateringOption, gdrgCode } = {}) =>
   [
     asText(tariffVersion || NHIA_TARIFF_VERSION).toLowerCase(),
@@ -1937,6 +1963,7 @@ const getHospitalServiceKind = (service = {}) => {
 }
 
 const getHospitalTariffSetIssue = (service, expectedFacilityGroup, expectedCateringOption, label) => {
+  if (isTemporaryUniversalNhiaTariff(service)) return ''
   const serviceFacilityGroup = asText(service.facilityGroup ?? service.facility_group)
   const serviceCateringOption = asText(service.cateringOption ?? service.catering_option)
   if (expectedFacilityGroup && serviceFacilityGroup && serviceFacilityGroup !== expectedFacilityGroup) {
@@ -1949,6 +1976,7 @@ const getHospitalTariffSetIssue = (service, expectedFacilityGroup, expectedCater
 }
 
 const getHospitalTariffGroupMinimumLevel = (service = {}) => {
+  if (isTemporaryUniversalNhiaTariff(service)) return ''
   const text = normalizeMatchText(
     [
       service.facilityGroup,
@@ -3821,7 +3849,7 @@ export const getNhisPrescriptionSignedUrl = async (path, expiresInSeconds = 5 * 
 
 export const getAllNhiaTariffItems = async (filters = {}) => {
   if (shouldUseBranchServer()) {
-    return await listBranchRecords('nhia/tariffs', {
+    const rows = await listBranchRecords('nhia/tariffs', {
       tariff_version: filters.tariffVersion || NHIA_TARIFF_VERSION,
       facility_group: filters.facilityGroup || '',
       catering_option: filters.cateringOption || '',
@@ -3829,6 +3857,19 @@ export const getAllNhiaTariffItems = async (filters = {}) => {
       is_active: true,
       limit: filters.limit || 5000,
     })
+    if (
+      !rows.length &&
+      !filters._skipUniversalFallback &&
+      (filters.facilityGroup || filters.cateringOption)
+    ) {
+      return await getAllNhiaTariffItems({
+        ...filters,
+        facilityGroup: TEMPORARY_UNIVERSAL_NHIA_TARIFF_GROUP,
+        cateringOption: TEMPORARY_UNIVERSAL_NHIA_TARIFF_CATERING,
+        _skipUniversalFallback: true,
+      })
+    }
+    return rows
   }
 
   let query = supabase
@@ -3859,7 +3900,20 @@ export const getAllNhiaTariffItems = async (filters = {}) => {
     if (['42P01', 'PGRST205'].includes(error.code)) return []
     throw error
   }
-  return data || []
+  const rows = data || []
+  if (
+    !rows.length &&
+    !filters._skipUniversalFallback &&
+    (filters.facilityGroup || filters.cateringOption)
+  ) {
+    return await getAllNhiaTariffItems({
+      ...filters,
+      facilityGroup: TEMPORARY_UNIVERSAL_NHIA_TARIFF_GROUP,
+      cateringOption: TEMPORARY_UNIVERSAL_NHIA_TARIFF_CATERING,
+      _skipUniversalFallback: true,
+    })
+  }
+  return rows
 }
 
 export const updateNhiaTariffItem = async (id, tariffData = {}) => {

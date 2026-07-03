@@ -23,6 +23,7 @@ import { normalizeText } from '../utils/validation'
 import { confirmAction } from '../utils/actionConfirmation'
 import {
   getAllNhisDrugs,
+  getApplicableNhiaTariffItems,
   getNhisDrugByCode,
   createNhisDrug,
   updateNhisDrug,
@@ -1008,6 +1009,20 @@ const Nhis = () => {
   )
   const activeTariffFacilityGroup = getPreferredTariffFacilityGroup(resolvedNhiaSettings, organization)
   const activeTariffCateringOption = getPreferredTariffCateringOption(resolvedNhiaSettings)
+  const applicableTariffItems = useMemo(
+    () => getApplicableNhiaTariffItems(nhiaTariffItems, {
+      facilityGroup: activeTariffFacilityGroup,
+      cateringOption: activeTariffCateringOption,
+    }),
+    [nhiaTariffItems, activeTariffFacilityGroup, activeTariffCateringOption]
+  )
+  const usingTemporaryUniversalTariff = useMemo(() => {
+    if (!applicableTariffItems.length) return false
+    return !applicableTariffItems.some((item) =>
+      (!activeTariffFacilityGroup || item.facility_group === activeTariffFacilityGroup) &&
+      (!activeTariffCateringOption || item.catering_option === activeTariffCateringOption)
+    )
+  }, [applicableTariffItems, activeTariffFacilityGroup, activeTariffCateringOption])
 
   // ── sync tab from URL ────────────────────────────────────────
   useEffect(() => {
@@ -1520,10 +1535,8 @@ const Nhis = () => {
   const filteredTariffItems = useMemo(() => {
     const term = tariffSearch.trim().toLowerCase()
     if (!term) return []
-    return nhiaTariffItems
+    return applicableTariffItems
       .filter((item) => {
-        if (activeTariffFacilityGroup && item.facility_group !== activeTariffFacilityGroup) return false
-        if (activeTariffCateringOption && item.catering_option !== activeTariffCateringOption) return false
         return (
           lookupMatches(item.gdrg_code, term) ||
           lookupMatches(item.description, term) ||
@@ -1532,13 +1545,11 @@ const Nhis = () => {
         )
       })
       .slice(0, 10)
-  }, [nhiaTariffItems, tariffSearch, activeTariffFacilityGroup, activeTariffCateringOption])
+  }, [applicableTariffItems, tariffSearch])
 
   const filteredTariffCatalog = useMemo(() => {
     const term = tariffCatalogSearch.trim().toLowerCase()
-    const rows = nhiaTariffItems.filter((item) => {
-      if (activeTariffFacilityGroup && item.facility_group !== activeTariffFacilityGroup) return false
-      if (activeTariffCateringOption && item.catering_option !== activeTariffCateringOption) return false
+    const rows = applicableTariffItems.filter((item) => {
       if (!term) return true
       return (
         lookupMatches(item.gdrg_code, term) ||
@@ -1550,7 +1561,7 @@ const Nhis = () => {
       )
     })
     return rows.slice(0, 500)
-  }, [nhiaTariffItems, tariffCatalogSearch, activeTariffFacilityGroup, activeTariffCateringOption])
+  }, [applicableTariffItems, tariffCatalogSearch])
 
   const providerClassLevel = resolvedNhiaSettings?.providerClassLevel || resolvedNhiaSettings?.provider_class_level || ''
   const integrationMode = resolvedNhiaSettings?.integrationMode || resolvedNhiaSettings?.integration_mode || 'claimit_export'
@@ -4256,6 +4267,17 @@ const Nhis = () => {
       ══════════════════════════════════════════════════════════════ */}
       {pageTab === 'gdrg' && (
         <>
+          {usingTemporaryUniversalTariff && (
+            <div className="nhis-incomplete-intake-alert" role="status">
+              <strong>Temporary master tariff</strong>
+              <span>
+                The verified FEB 2023 Private Primary Care Hospital schedule is being used
+                temporarily for this hospital configuration. Provider-level, service and
+                clinical restrictions still apply. Replace it when NHIA publishes the
+                matching current tariff.
+              </span>
+            </div>
+          )}
           <div className="nhis-controls">
             <div className="search-box">
               <Search size={16} className="search-icon" />

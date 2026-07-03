@@ -2,6 +2,9 @@
 
 ## Claims and NHIS
 
+- Added temporary all-hospital tariff coverage using the verified 617-item FEB
+  2023 Private Primary Care Hospital exclusive schedule. Exact approved
+  facility-specific tariff sets automatically take priority when available.
 - Claims Officers can save details, send to dispensary, or serve directly.
 - Incomplete intakes can be dispatched and completed later on the same claim.
 - Pharmacy claims require a prescription attachment before final submission.

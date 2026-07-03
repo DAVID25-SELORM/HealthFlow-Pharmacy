@@ -73,6 +73,16 @@ Claims Officers have three distinct actions:
 
 An intake may be saved or sent with medicines, an attachment, both, or neither.
 The claim displays **Incomplete Intake** until required information is added.
+
+### Temporary hospital tariff coverage
+
+Until NHIA supplies the remaining current facility-specific schedules,
+HealthFlow uses the verified 617-item **FEB 2023 Private Primary Care Hospital
+(Catering Exclusive)** schedule as the temporary price master when a hospital's
+exact tariff set is unavailable. The application labels this fallback clearly.
+Hospital provider-class, service-type, diagnosis, age-band, and clinical
+controls still apply. When a matching approved tariff is loaded later,
+HealthFlow automatically prefers that facility-specific set.
 For pharmacy claims, a prescription attachment is mandatory before final
 submission, even though it is not mandatory for initial saving or dispatch.
 

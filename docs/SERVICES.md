@@ -26,7 +26,9 @@ branch, with role-based access and audit controls.
   attachments, audit history, and CLAIM-it/CXF workflows
 - Separate Claims Officer and MCA workflow
 - Draft saving, dispensary dispatch, or Claims Officer direct serving
-- Pharmacy-level medicine restrictions and hospital G-DRG/tariff services
+- Pharmacy-level medicine restrictions and hospital G-DRG/tariff services,
+  including an explicitly labelled temporary 617-item master-price fallback
+  until each current facility-specific NHIA schedule is supplied
 - Recoverable NHIS claim deletion and administrator-controlled permanent purge
 
 ### Reporting and accounting
@@ -79,4 +81,3 @@ branch, with role-based access and audit controls.
   coverage.
 - HealthFlow is not described as fully end-to-end encrypted because authorized
   backend services must process operational data for search and reporting.
-

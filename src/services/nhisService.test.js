@@ -60,6 +60,7 @@ import {
   exportNhisClaimsFile,
   generateHostedNhiaCcCode,
   generateBrowserClaimItBridgeCcCode,
+  getApplicableNhiaTariffItems,
   getAllNhisClaims,
   getNhisClaimExportDate,
   getAllNhisDrugs,
@@ -77,6 +78,7 @@ import {
   updateNhisClaimStatus,
   uploadNhisPrescriptionPdf,
   validateNhisPrescriptionPdfFile,
+  TEMPORARY_UNIVERSAL_NHIA_TARIFF_SOURCE,
 } from './nhisService'
 import { supabase } from '../lib/supabase'
 import {
@@ -655,6 +657,48 @@ describe('assessNhisClaimReadiness', () => {
     )
   })
 
+  it('falls back to the verified master tariff when a hospital-specific set is unavailable', () => {
+    const master = {
+      id: 'master-opd',
+      tariff_version: 'FEB 2023',
+      facility_group: 'Private Primary Care Hospital',
+      catering_option: 'exclusive',
+      gdrg_code: 'OPDC01A',
+      tariff_amount: 37.08,
+      source_file: TEMPORARY_UNIVERSAL_NHIA_TARIFF_SOURCE,
+      is_active: true,
+    }
+
+    expect(getApplicableNhiaTariffItems([master], {
+      facilityGroup: 'CHAG Primary Care Hospital',
+      cateringOption: 'inclusive',
+    })).toEqual([master])
+  })
+
+  it('prefers a matching hospital tariff set over the temporary master', () => {
+    const master = {
+      id: 'master-opd',
+      tariff_version: 'FEB 2023',
+      facility_group: 'Private Primary Care Hospital',
+      catering_option: 'exclusive',
+      gdrg_code: 'OPDC01A',
+      source_file: TEMPORARY_UNIVERSAL_NHIA_TARIFF_SOURCE,
+      is_active: true,
+    }
+    const matching = {
+      ...master,
+      id: 'chag-opd',
+      facility_group: 'CHAG Primary Care Hospital',
+      catering_option: 'inclusive',
+      source_file: 'Future approved CHAG tariff.pdf',
+    }
+
+    expect(getApplicableNhiaTariffItems([master, matching], {
+      facilityGroup: 'CHAG Primary Care Hospital',
+      cateringOption: 'inclusive',
+    })).toEqual([matching])
+  })
+
   it('blocks tariff services when patient age does not match the PDF age band', () => {
     const childWithAdultTariff = assessNhisClaimReadiness(
       { ...baseClaim, organizationType: 'hospital', diagnosis: 'General consultation', dateOfBirth: '2020-01-01' },
@@ -781,6 +825,45 @@ describe('assessNhisClaimReadiness', () => {
       'Service 1: OPDC01A requires hospital provider class D or higher, but Settings are C. Select an allowed G-DRG/tariff for this facility.'
     )
     expect(allowed.blockers).not.toEqual(expect.arrayContaining([
+      expect.stringContaining('requires hospital provider class D or higher'),
+    ]))
+  })
+
+  it('uses the temporary master price at lower hospital levels without removing service-level controls', () => {
+    const claim = {
+      ...baseClaim,
+      organizationType: 'hospital',
+      diagnosis: 'B50',
+      diagnosisDetails: [{ code: 'B50', label: 'Plasmodium falciparum malaria', source: 'ICD-10' }],
+    }
+    const temporaryMasterService = {
+      ...baseTariffService,
+      facilityGroup: 'Private Primary Care Hospital',
+      sourceFile: TEMPORARY_UNIVERSAL_NHIA_TARIFF_SOURCE,
+    }
+    const opd = assessNhisClaimReadiness(claim, [], {
+      enforcePrescribingLevel: true,
+      providerClassLevel: 'B1',
+      tariffFacilityGroup: 'CHAG Primary Care Hospital',
+      tariffCateringOption: 'inclusive',
+      nhiaTariffServices: [temporaryMasterService],
+    })
+    const procedure = assessNhisClaimReadiness(claim, [], {
+      enforcePrescribingLevel: true,
+      providerClassLevel: 'B1',
+      nhiaTariffServices: [{
+        ...temporaryMasterService,
+        gdrgCode: 'ASUR01A',
+        description: 'Operations of thyroid and parathyroid glands',
+      }],
+    })
+
+    expect(opd.blockers).not.toEqual(expect.arrayContaining([
+      expect.stringContaining('tariff belongs to'),
+      expect.stringContaining('tariff catering option'),
+      expect.stringContaining('requires hospital provider class D'),
+    ]))
+    expect(procedure.blockers).toEqual(expect.arrayContaining([
       expect.stringContaining('requires hospital provider class D or higher'),
     ]))
   })
