@@ -18,6 +18,7 @@ import {
   RefreshCcw,
   MonitorCheck,
   Trash2,
+  LifeBuoy,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useTenant } from '../../context/TenantContext'
@@ -86,6 +87,7 @@ const Sidebar = ({ isOpen, onClose }) => {
     { path: '/recycle-bin', icon: Trash2, label: 'Recycle Bin', roles: ['admin', 'super_admin'] },
     { path: '/system-health', icon: MonitorCheck, label: 'System Health', roles: SYSTEM_HEALTH_ROLES },
     { path: '/offline-sync', icon: RefreshCcw, label: 'Offline Sync', roles: OFFLINE_SYNC_ROLES },
+    { path: '/support', icon: LifeBuoy, label: 'Support', roles: ['admin', 'super_admin', 'pharmacist', 'cashier', 'assistant'] },
     { path: '/tenant-admin', icon: ShieldCheck, label: 'Tenant Admin', roles: ['super_admin'] },
     { path: '/activity-log', icon: List, label: 'Activity Log', roles: ACTIVITY_LOG_ROLES, allow: canViewActivityLog },
   ]

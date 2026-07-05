@@ -36,6 +36,7 @@ const Signup = lazy(() => import('./pages/Signup'))
 const ActivityLog = lazy(() => import('./pages/ActivityLog'))
 const SystemHealth = lazy(() => import('./pages/SystemHealth'))
 const OfflineSync = lazy(() => import('./pages/OfflineSync'))
+const Support = lazy(() => import('./pages/Support'))
 const Purchases = lazy(() => import('./pages/Purchases'))
 const Nhis = lazy(() => import('./pages/Nhis'))
 const EPharmacy = lazy(() => import('./pages/EPharmacy'))
@@ -215,6 +216,7 @@ function App() {
                 </RoleRoute>
               }
             />
+            <Route path="support" element={<Support />} />
           </Route>
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
