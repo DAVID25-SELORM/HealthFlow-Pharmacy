@@ -248,6 +248,8 @@ const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 const DMY_DATE_PATTERN = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/
 const NHIS_SERVICE_TIME_ZONE = 'Africa/Accra'
 const DEFAULT_NHIS_CLAIM_LIST_LIMIT = 500
+const NHIS_EXPORT_FETCH_PAGE_SIZE = 500
+const NHIS_EXPORT_RELATION_BATCH_SIZE = 200
 const toNhisCalendarDate = (value = new Date()) => {
   const date = value instanceof Date ? value : new Date(value)
   if (Number.isNaN(date.getTime())) return ''
@@ -4216,22 +4218,35 @@ export const upsertNhisDrugs = async (drugs, options = {}) => {
 
 // ─── NHIS Claims ─────────────────────────────────────────────────────────────
 
+const chunkArray = (items = [], size = NHIS_EXPORT_RELATION_BATCH_SIZE) => {
+  const chunks = []
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size))
+  }
+  return chunks
+}
+
 const hydrateClaimsWithServiceLines = async (claims = []) => {
   if (!claims.length || shouldUseBranchServer()) return claims
   const claimIds = claims.map((claim) => claim.id).filter(Boolean)
   if (!claimIds.length) return claims
 
-  const { data, error } = await supabase
-    .from('nhis_claim_services')
-    .select(`claim_id, ${NHIS_CLAIM_SERVICE_SELECT}`)
-    .in('claim_id', claimIds)
-    .order('created_at')
+  const data = []
+  for (const claimIdBatch of chunkArray(claimIds)) {
+    const { data: batchData, error } = await supabase
+      .from('nhis_claim_services')
+      .select(`claim_id, ${NHIS_CLAIM_SERVICE_SELECT}`)
+      .in('claim_id', claimIdBatch)
+      .order('created_at')
 
-  if (error) {
-    if (isMissingClaimServicesTable(error)) {
-      return claims.map((claim) => ({ ...claim, nhis_claim_services: [] }))
+    if (error) {
+      if (isMissingClaimServicesTable(error)) {
+        return claims.map((claim) => ({ ...claim, nhis_claim_services: [] }))
+      }
+      throw error
     }
-    throw error
+
+    data.push(...(batchData || []))
   }
 
   const linesByClaim = new Map()
@@ -4255,17 +4270,36 @@ const hydrateClaimsWithMedicineLines = async (claims = []) => {
     .filter(Boolean)
   if (!claimIds.length) return claims
 
-  const { data, error } = await supabase
-    .from('nhis_claim_medicines')
-    .select(`
-      id, claim_id, nhis_drug_id, drug_code, description, unit,
-      unit_price, dispensed_qty, dispensary_date,
-      dose, frequency, duration, total_amount
-    `)
-    .in('claim_id', claimIds)
-    .order('created_at')
+  const fullSelect = `
+    id, claim_id, nhis_drug_id, drug_code, description, unit,
+    unit_price, dispensed_qty, dispensary_date,
+    dose, frequency, duration, total_amount,
+    medicine_access_level, required_pharmacy_level,
+    prescribed_qty, served_qty, serving_status,
+    reason_if_not_fully_served, entered_by_claims_officer,
+    served_by_mca, entered_at, served_at
+  `
+  const basicSelect = `
+    id, claim_id, nhis_drug_id, drug_code, description, unit,
+    unit_price, dispensed_qty, dispensary_date,
+    dose, frequency, duration, total_amount
+  `
+  const fetchMedicineBatch = async (claimIdBatch, select = fullSelect) =>
+    await supabase
+      .from('nhis_claim_medicines')
+      .select(select)
+      .in('claim_id', claimIdBatch)
+      .order('created_at')
 
-  if (error) return claims
+  const data = []
+  for (const claimIdBatch of chunkArray(claimIds)) {
+    let { data: batchData, error } = await fetchMedicineBatch(claimIdBatch)
+    if (error && isMissingOptionalClaimMedicineColumn(error)) {
+      ;({ data: batchData, error } = await fetchMedicineBatch(claimIdBatch, basicSelect))
+    }
+    if (error) return claims
+    data.push(...(batchData || []))
+  }
 
   const linesByClaim = new Map()
   ;(data || []).forEach((line) => {
@@ -5359,6 +5393,9 @@ export const normalizeNhisExportPeriod = (options = {}) => {
 
 export const getNhisClaimsForPeriod = async (periodOptions = {}) => {
   const period = normalizeNhisExportPeriod(periodOptions)
+  const statuses = Array.isArray(periodOptions.statuses)
+    ? periodOptions.statuses.map((status) => normalizeText(status).toLowerCase()).filter(Boolean)
+    : []
   let localRows = []
 
   if (shouldUseBranchServer()) {
@@ -5378,11 +5415,22 @@ export const getNhisClaimsForPeriod = async (periodOptions = {}) => {
   }
 
   const fetchPeriodClaimsFromSupabase = async () => {
-    const buildQuery = (select = NHIS_CLAIM_MEDICINES_SELECT) => {
+    const buildQuery = (from, to) => {
       let query = supabase
         .from('nhis_claims')
-        .select(select)
+        .select('*')
         .order('created_at')
+
+      const supportsRange = typeof query.range === 'function'
+      query = supportsRange
+        ? query.range(from, to)
+        : (typeof query.limit === 'function' ? query.limit(NHIS_EXPORT_FETCH_PAGE_SIZE) : query)
+
+      if (statuses.length) {
+        query = typeof query.in === 'function'
+          ? query.in('status', statuses)
+          : query
+      }
 
       if (period.mode === 'month') {
         query = query.eq('submission_month', period.yearMonth)
@@ -5392,16 +5440,23 @@ export const getNhisClaimsForPeriod = async (periodOptions = {}) => {
           .lte('submission_month', period.toDate.slice(0, 7))
       }
 
-      return query
+      return { query, supportsRange }
     }
 
-    let { data, error } = await buildQuery()
-    if (error && isMissingOptionalClaimMedicineColumn(error)) {
-      ;({ data, error } = await buildQuery(NHIS_CLAIM_MEDICINES_SELECT_BASIC))
+    const rows = []
+    for (let from = 0; ; from += NHIS_EXPORT_FETCH_PAGE_SIZE) {
+      const to = from + NHIS_EXPORT_FETCH_PAGE_SIZE - 1
+      const { query, supportsRange } = buildQuery(from, to)
+      const { data, error } = await query
+      if (error) throw error
+      rows.push(...(data || []))
+      if (!supportsRange || !data || data.length < NHIS_EXPORT_FETCH_PAGE_SIZE) break
     }
 
-    if (error) throw error
-    const claims = await hydrateNhisClaimsForUi(data || [])
+    const filteredRows = statuses.length
+      ? rows.filter((claim) => statuses.includes(normalizeText(claim.status).toLowerCase()))
+      : rows
+    const claims = await hydrateNhisClaimsForUi(filteredRows)
     return period.mode === 'month'
       ? claims
       : claims.filter((claim) => nhisClaimMatchesExportPeriod(claim, period))
@@ -7947,8 +8002,11 @@ export const exportNhisClaimsFile = async (options = {}) => {
       period: period.label,
     })
   }
-  const periodClaims = await getNhisClaimsForPeriod(period)
   const exportableStatuses = directSubmit ? ['served'] : ['served', 'submitted']
+  const periodClaims = await getNhisClaimsForPeriod({
+    ...period,
+    statuses: exportableStatuses,
+  })
   const claims = periodClaims.filter((claim) =>
     exportableStatuses.includes(normalizeText(claim.status).toLowerCase())
   )
