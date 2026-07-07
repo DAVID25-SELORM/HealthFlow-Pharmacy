@@ -366,7 +366,8 @@ h6 { font-size: 0.875rem; }
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
-  z-index: 2200;
+  z-index: 5000;
+  pointer-events: none;
 }
 
 .toast-item {
@@ -382,6 +383,7 @@ h6 { font-size: 0.875rem; }
   justify-content: space-between;
   gap: 0.8rem;
   overflow: auto;
+  pointer-events: auto;
 }
 
 .toast-message {
@@ -391,14 +393,27 @@ h6 { font-size: 0.875rem; }
   white-space: pre-wrap;
 }
 
-.toast-item button {
+.toast-item .toast-dismiss {
+  align-items: center;
   border: none;
-  background: transparent;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
   color: inherit;
-  font-size: 1rem;
   cursor: pointer;
+  display: inline-flex;
   flex-shrink: 0;
-  line-height: 1.2;
+  height: 32px;
+  justify-content: center;
+  min-height: 32px;
+  padding: 0;
+  width: 32px;
+}
+
+.toast-item .toast-dismiss:hover,
+.toast-item .toast-dismiss:focus-visible {
+  background: rgba(255, 255, 255, 0.28);
+  outline: 2px solid rgba(255, 255, 255, 0.7);
+  outline-offset: 2px;
 }
 
 .toast-info {

@@ -1,4 +1,5 @@
-import { createContext, useCallback, useContext, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { X } from 'lucide-react'
 
 const NotificationContext = createContext(null)
 const DEFAULT_TOAST_DURATION_MS = 3500
@@ -47,6 +48,16 @@ export const NotificationProvider = ({ children }) => {
     [notify, removeToast]
   )
 
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key !== 'Escape') return
+      setToasts((current) => current.slice(0, -1))
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
+
   return (
     <NotificationContext.Provider value={value}>
       {children}
@@ -55,12 +66,13 @@ export const NotificationProvider = ({ children }) => {
           <div key={toast.id} className={`toast-item toast-${toast.type}`}>
             <span className="toast-message">{toast.message}</span>
             <button
+              className="toast-dismiss"
               type="button"
               onClick={() => removeToast(toast.id)}
               aria-label="Dismiss notification"
               title="Dismiss notification"
             >
-              x
+              <X size={16} />
             </button>
           </div>
         ))}
