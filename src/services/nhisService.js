@@ -976,14 +976,60 @@ const getNhisDuplicateLabel = (claim = {}) =>
 const getNhisDuplicateBlockMessage = (duplicate = {}) =>
   `Duplicate NHIS claim blocked: ${getNhisDuplicateLabel(duplicate)} has the same member/patient, service date, and total amount.`
 
-const assertNoDuplicateNhisClaimsForTransfer = (claims = []) => {
-  const seen = new Map()
+const buildNhisDuplicateClaimGroups = (claims = []) => {
+  const groupsByKey = new Map()
   for (const claim of claims) {
     const key = getNhisClaimDuplicateKey(claim)
     if (!key) continue
-    const existing = seen.get(key)
-    if (existing) throw new Error(getNhisDuplicateBlockMessage(existing))
-    seen.set(key, claim)
+    const group = groupsByKey.get(key) || {
+      key,
+      member: normalizeText(claim.member_no || claim.memberNo || claim.hin),
+      patientName: [claim.surname, claim.other_names || claim.otherNames].filter(Boolean).join(' ').trim(),
+      serviceDate: getNhisDuplicateServiceDate(claim),
+      totalAmount: Number(claim.total_amount ?? claim.totalAmount ?? 0),
+      claims: [],
+    }
+    group.claims.push(claim)
+    groupsByKey.set(key, group)
+  }
+
+  return Array.from(groupsByKey.values()).filter((group) => group.claims.length > 1)
+}
+
+export const isNhisDuplicateClaimsError = (error) =>
+  error?.code === 'NHIS_DUPLICATE_CLAIMS' && Array.isArray(error.duplicateGroups)
+
+const createNhisDuplicateClaimsError = (duplicateGroups = []) => {
+  const firstClaim = duplicateGroups[0]?.claims?.[0] || {}
+  const error = new Error(getNhisDuplicateBlockMessage(firstClaim))
+  error.code = 'NHIS_DUPLICATE_CLAIMS'
+  error.duplicateGroups = duplicateGroups.map((group) => ({
+    key: group.key,
+    member: group.member,
+    patientName: group.patientName,
+    serviceDate: group.serviceDate,
+    totalAmount: group.totalAmount,
+    claims: group.claims.map((claim) => ({
+      id: normalizeText(claim.id),
+      claim_number: normalizeText(claim.claim_number || claim.claimNumber),
+      surname: normalizeText(claim.surname),
+      other_names: normalizeText(claim.other_names || claim.otherNames),
+      member_no: normalizeText(claim.member_no || claim.memberNo),
+      hin: normalizeText(claim.hin),
+      folder_no: normalizeText(claim.folder_no || claim.folderNo),
+      service_date_from: normalizeText(claim.service_date_from || claim.serviceDate),
+      total_amount: Number(claim.total_amount ?? claim.totalAmount ?? 0),
+      status: normalizeText(claim.status),
+      created_at: normalizeText(claim.created_at || claim.createdAt),
+    })),
+  }))
+  return error
+}
+
+const assertNoDuplicateNhisClaimsForTransfer = (claims = []) => {
+  const duplicateGroups = buildNhisDuplicateClaimGroups(claims)
+  if (duplicateGroups.length) {
+    throw createNhisDuplicateClaimsError(duplicateGroups)
   }
 }
 

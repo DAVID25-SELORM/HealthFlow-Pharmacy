@@ -53,6 +53,7 @@ import {
   getNhisPrescriptionSignedUrl,
   generateHostedNhiaCcCode,
   getNhiaApiSettings,
+  isNhisDuplicateClaimsError,
   startClaimItBridgeQueueAutoSync,
 } from '../services/nhisService'
 import {
@@ -924,6 +925,7 @@ const Nhis = () => {
   const [showImportModal, setShowImportModal]       = useState(false)
   const [showRuleImportModal, setShowRuleImportModal] = useState(false)
   const [showExportModal, setShowExportModal]       = useState(false)
+  const [duplicateClaimGroups, setDuplicateClaimGroups] = useState([])
   const [viewClaim, setViewClaim]                   = useState(null)
 
   // ── new claim form ────────────────────────────────────────────
@@ -3441,6 +3443,7 @@ const Nhis = () => {
   const handleExport = async () => {
     try {
       setExporting(true)
+      setDuplicateClaimGroups([])
       const periodOptions = exportMode === 'custom'
         ? { mode: 'custom', fromDate: exportFromDate, toDate: exportToDate }
         : exportMode === 'partial'
@@ -3472,6 +3475,14 @@ const Nhis = () => {
         'success'
       )
     } catch (err) {
+      if (isNhisDuplicateClaimsError(err)) {
+        setDuplicateClaimGroups(err.duplicateGroups || [])
+        notify(
+          `${err.duplicateGroups?.length || 1} duplicate claim group${err.duplicateGroups?.length === 1 ? '' : 's'} found. Review and correct them before exporting.`,
+          'error'
+        )
+        return
+      }
       notify(getNhisRequestErrorMessage(err, 'Export failed.', 'Claims were not submitted/exported.'), 'error')
     } finally {
       setExporting(false)
@@ -6062,6 +6073,95 @@ const Nhis = () => {
               <button className="btn btn-primary" disabled={ruleImporting || !ruleImportRows.length} onClick={handleConfirmRuleImport}>
                 {ruleImporting ? 'Importing...' : `Import ${ruleImportRows.length} Rules`}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {duplicateClaimGroups.length > 0 && (
+        <div className="modal-overlay modal-overlay--top" onClick={(e) => e.target === e.currentTarget && setDuplicateClaimGroups([])}>
+          <div className="modal-panel modal-panel--duplicates">
+            <div className="modal-header">
+              <h2>Duplicate Claims Found</h2>
+              <button className="modal-close" onClick={() => setDuplicateClaimGroups([])}><X size={18} /></button>
+            </div>
+            <div className="duplicate-claims-body">
+              <div className="nhis-alert">
+                HealthFlow found {duplicateClaimGroups.length} duplicate group{duplicateClaimGroups.length === 1 ? '' : 's'} in this export batch.
+                Correct or remove one claim from each group before exporting.
+              </div>
+              {duplicateClaimGroups.map((group, groupIndex) => (
+                <section className="duplicate-claim-group" key={group.key || groupIndex}>
+                  <div className="duplicate-claim-group-header">
+                    <div>
+                      <h3>{group.patientName || 'Patient duplicate group'}</h3>
+                      <p>
+                        Member/HIN: {group.member || 'Not recorded'} · Service date: {group.serviceDate || 'Not recorded'} · Total: GHS {Number(group.totalAmount || 0).toFixed(2)}
+                      </p>
+                    </div>
+                    <span>{group.claims?.length || 0} claims</span>
+                  </div>
+                  <div className="duplicate-claim-table-wrap">
+                    <table className="nhis-table duplicate-claim-table">
+                      <thead>
+                        <tr>
+                          <th>Claim</th>
+                          <th>Patient</th>
+                          <th>Status</th>
+                          <th>Created</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(group.claims || []).map((claim) => {
+                          const claimForAction = { ...claim, _summaryOnly: true }
+                          return (
+                            <tr key={claim.id || claim.claim_number}>
+                              <td>{claim.claim_number || 'Unnumbered'}</td>
+                              <td>
+                                {[claim.surname, claim.other_names].filter(Boolean).join(' ') || 'Unknown'}
+                                <small>Folder: {claim.folder_no || '—'}</small>
+                              </td>
+                              <td><StatusBadge status={claim.status || 'served'} /></td>
+                              <td>{claim.created_at ? formatAppDateTime(claim.created_at) : '—'}</td>
+                              <td>
+                                <div className="duplicate-claim-actions">
+                                  <button
+                                    type="button"
+                                    className="action-btn"
+                                    title="View claim"
+                                    onClick={() => {
+                                      setDuplicateClaimGroups([])
+                                      void openViewClaim(claimForAction)
+                                    }}
+                                  >
+                                    <Eye size={14} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="action-btn action-btn--edit"
+                                    title="Edit claim"
+                                    onClick={() => {
+                                      setDuplicateClaimGroups([])
+                                      setShowExportModal(false)
+                                      void openEditClaim(claimForAction)
+                                    }}
+                                  >
+                                    <Pencil size={14} />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              ))}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setDuplicateClaimGroups([])}>Close</button>
             </div>
           </div>
         </div>
