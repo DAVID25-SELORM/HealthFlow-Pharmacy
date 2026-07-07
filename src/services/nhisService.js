@@ -532,6 +532,21 @@ const NHIS_CLAIM_LIST_SELECT = `
       nhis_claim_medicines ( id )
     `
 
+const NHIS_CLAIM_EXPORT_SELECT = `
+      id, organization_id, branch_id, claim_number, patient_id, member_no,
+      card_type, hin, surname, other_names, folder_no, gender, date_of_birth,
+      patient_address, child_weight_kg, service_date_from, service_date_to,
+      submission_month, status, created_at, updated_at, total_amount,
+      ccc_no, diagnosis, diagnosis_details, referring_facility, referral_code,
+      physician_name, pre_auth_codes, nhia_attendance_date, nhia_auth_id,
+      nhia_auth_type, nhia_new_ccc_status, nhia_otac,
+      nhia_attendance_verification_status, nhia_attendance_verification_source,
+      prescription_file_url, prescription_file_path, prescription_file_name,
+      prescription_file_type, prescription_file_size, prescription_document_type,
+      prescription_verified, prescription_verified_by, prescription_verified_at,
+      notes
+    `
+
 const NHIS_CLAIM_SERVICE_SELECT = `
       id, nhia_tariff_item_id, tariff_version, facility_group, catering_option,
       mdc, gdrg_code, description, age_band, unit_price, quantity,
@@ -5393,6 +5408,7 @@ export const normalizeNhisExportPeriod = (options = {}) => {
 
 export const getNhisClaimsForPeriod = async (periodOptions = {}) => {
   const period = normalizeNhisExportPeriod(periodOptions)
+  const organizationId = normalizeText(periodOptions.organizationId || periodOptions.organization_id)
   const statuses = Array.isArray(periodOptions.statuses)
     ? periodOptions.statuses.map((status) => normalizeText(status).toLowerCase()).filter(Boolean)
     : []
@@ -5418,8 +5434,12 @@ export const getNhisClaimsForPeriod = async (periodOptions = {}) => {
     const buildQuery = (from, to) => {
       let query = supabase
         .from('nhis_claims')
-        .select('*')
+        .select(NHIS_CLAIM_EXPORT_SELECT)
         .order('created_at')
+
+      if (organizationId) {
+        query = query.eq('organization_id', organizationId)
+      }
 
       const supportsRange = typeof query.range === 'function'
       query = supportsRange
@@ -8005,6 +8025,7 @@ export const exportNhisClaimsFile = async (options = {}) => {
   const exportableStatuses = directSubmit ? ['served'] : ['served', 'submitted']
   const periodClaims = await getNhisClaimsForPeriod({
     ...period,
+    organizationId: options.organizationId || options.organization_id,
     statuses: exportableStatuses,
   })
   const claims = periodClaims.filter((claim) =>
