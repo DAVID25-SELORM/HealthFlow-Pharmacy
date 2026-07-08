@@ -772,6 +772,21 @@
   text-align: center;
 }
 
+.readiness-queue-nav {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-right: auto;
+}
+
+.readiness-queue-nav span {
+  color: var(--gray-600);
+  font-size: 0.82rem;
+  font-weight: 800;
+  margin-right: 0.2rem;
+}
+
 .duplicate-claim-group {
   border: 1px solid var(--gray-200);
   border-radius: var(--radius);

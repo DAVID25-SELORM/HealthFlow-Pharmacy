@@ -650,6 +650,9 @@ const getReadinessIssueCategories = (issue = {}) => {
   return Array.from(categories)
 }
 
+const getReadinessIssueKey = (issue = {}) =>
+  normalizeLookupText(issue.id || issue.claim_number || issue.claimNumber || issue.patientName)
+
 const getTimestampMs = (value) => {
   const parsed = new Date(value || '')
   return Number.isNaN(parsed.getTime()) ? Number.POSITIVE_INFINITY : parsed.getTime()
@@ -985,6 +988,7 @@ const Nhis = () => {
   const [readinessIssueFilter, setReadinessIssueFilter] = useState('all')
   const [readinessFixedCount, setReadinessFixedCount] = useState(0)
   const [readinessChecking, setReadinessChecking] = useState(false)
+  const [readinessActiveClaimId, setReadinessActiveClaimId] = useState('')
   const [viewClaim, setViewClaim]                   = useState(null)
 
   // ── new claim form ────────────────────────────────────────────
@@ -1989,6 +1993,7 @@ const Nhis = () => {
     setClaimActionReview(null)
     setShowNewClaimModal(false)
     resetClaimModal()
+    setReadinessActiveClaimId('')
     if (duplicateClaimGroups.length > 0) {
       setShowDuplicateClaimReview(true)
     } else if (readinessClaimIssues.length > 0) {
@@ -2007,6 +2012,7 @@ const Nhis = () => {
     setReadinessClaimIssues([])
     setReadinessIssueFilter('all')
     setReadinessFixedCount(0)
+    setReadinessActiveClaimId('')
   }
 
   const returnToDuplicateClaimReview = () => {
@@ -3150,10 +3156,11 @@ const Nhis = () => {
       if (remainingReadinessIssues.length < readinessClaimIssues.length) {
         setReadinessFixedCount((count) => count + 1)
       }
-      if (remainingReadinessIssues.length > 0) {
-        setShowReadinessClaimReview(true)
+        if (remainingReadinessIssues.length > 0) {
+          setShowReadinessClaimReview(true)
+        }
       }
-      }
+      setReadinessActiveClaimId('')
       await refreshClaimsOverview()
       notify(successMessage, 'success')
     } catch (err) {
@@ -3629,6 +3636,18 @@ const Nhis = () => {
     )
   }, [readinessClaimIssues, readinessIssueFilter])
 
+  const readinessNavigation = useMemo(() => {
+    const issues = filteredReadinessClaimIssues.length ? filteredReadinessClaimIssues : readinessClaimIssues
+    const activeKey = normalizeLookupText(readinessActiveClaimId)
+    const activeIndex = issues.findIndex((issue) => getReadinessIssueKey(issue) === activeKey)
+    return {
+      issues,
+      activeIndex,
+      previous: activeIndex > 0 ? issues[activeIndex - 1] : null,
+      next: activeIndex >= 0 && activeIndex < issues.length - 1 ? issues[activeIndex + 1] : null,
+    }
+  }, [filteredReadinessClaimIssues, readinessActiveClaimId, readinessClaimIssues])
+
   const buildCurrentExportOptions = () => {
     const periodOptions = exportMode === 'custom'
       ? { mode: 'custom', fromDate: exportFromDate, toDate: exportToDate }
@@ -3699,6 +3718,16 @@ const Nhis = () => {
     } finally {
       setReadinessChecking(false)
     }
+  }
+
+  const openReadinessIssueForEdit = async (issue) => {
+    const claimForAction = { ...issue, _summaryOnly: true }
+    setReadinessActiveClaimId(getReadinessIssueKey(issue))
+    setShowReadinessClaimReview(false)
+    setShowExportModal(false)
+    const opened = await openEditClaim(claimForAction)
+    if (!opened) returnToReadinessClaimReview()
+    return opened
   }
 
   const handleExport = async () => {
@@ -5433,6 +5462,31 @@ const Nhis = () => {
                   </>
                 )}
               </div>
+              {editingClaim && readinessActiveClaimId && readinessNavigation.issues.length > 1 && (
+                <div className="readiness-queue-nav">
+                  <span>
+                    Issue {readinessNavigation.activeIndex >= 0 ? readinessNavigation.activeIndex + 1 : '-'} of {readinessNavigation.issues.length}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    disabled={claimSubmitting || !readinessNavigation.previous}
+                    title="Move to the previous issue in this correction queue"
+                    onClick={() => { void openReadinessIssueForEdit(readinessNavigation.previous) }}
+                  >
+                    Previous
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    disabled={claimSubmitting || !readinessNavigation.next}
+                    title="Move to the next issue in this correction queue"
+                    onClick={() => { void openReadinessIssueForEdit(readinessNavigation.next) }}
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
               <button className="btn btn-secondary" onClick={closeClaimModal}>
                 Cancel
               </button>
@@ -6440,11 +6494,7 @@ const Nhis = () => {
                                 className="action-btn action-btn--edit"
                                 title="Edit claim"
                                 onClick={() => {
-                                  setShowReadinessClaimReview(false)
-                                  setShowExportModal(false)
-                                  void openEditClaim(claimForAction).then((opened) => {
-                                    if (!opened) returnToReadinessClaimReview()
-                                  })
+                                  void openReadinessIssueForEdit(issue)
                                 }}
                               >
                                 <Pencil size={14} />
