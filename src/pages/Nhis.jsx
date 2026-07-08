@@ -54,6 +54,7 @@ import {
   generateHostedNhiaCcCode,
   getNhiaApiSettings,
   isNhisDuplicateClaimsError,
+  isNhisReadinessClaimsError,
   startClaimItBridgeQueueAutoSync,
 } from '../services/nhisService'
 import {
@@ -944,6 +945,8 @@ const Nhis = () => {
   const [duplicateClaimGroups, setDuplicateClaimGroups] = useState([])
   const [duplicateExportIssues, setDuplicateExportIssues] = useState([])
   const [showDuplicateClaimReview, setShowDuplicateClaimReview] = useState(false)
+  const [readinessClaimIssues, setReadinessClaimIssues] = useState([])
+  const [showReadinessClaimReview, setShowReadinessClaimReview] = useState(false)
   const [viewClaim, setViewClaim]                   = useState(null)
 
   // ── new claim form ────────────────────────────────────────────
@@ -1950,6 +1953,8 @@ const Nhis = () => {
     resetClaimModal()
     if (duplicateClaimGroups.length > 0) {
       setShowDuplicateClaimReview(true)
+    } else if (readinessClaimIssues.length > 0) {
+      setShowReadinessClaimReview(true)
     }
   }
 
@@ -1959,15 +1964,30 @@ const Nhis = () => {
     setDuplicateExportIssues([])
   }
 
+  const closeReadinessClaimReview = () => {
+    setShowReadinessClaimReview(false)
+    setReadinessClaimIssues([])
+  }
+
   const returnToDuplicateClaimReview = () => {
     if (duplicateClaimGroups.length > 0) {
       setShowDuplicateClaimReview(true)
     }
   }
 
+  const returnToReadinessClaimReview = () => {
+    if (readinessClaimIssues.length > 0) {
+      setShowReadinessClaimReview(true)
+    }
+  }
+
   const closeViewClaim = () => {
     setViewClaim(null)
-    returnToDuplicateClaimReview()
+    if (duplicateClaimGroups.length > 0) {
+      returnToDuplicateClaimReview()
+    } else {
+      returnToReadinessClaimReview()
+    }
   }
 
   const openEditClaim = async (selectedClaim) => {
@@ -3542,6 +3562,8 @@ const Nhis = () => {
       setDuplicateClaimGroups([])
       setDuplicateExportIssues([])
       setShowDuplicateClaimReview(false)
+      setReadinessClaimIssues([])
+      setShowReadinessClaimReview(false)
       const periodOptions = exportMode === 'custom'
         ? { mode: 'custom', fromDate: exportFromDate, toDate: exportToDate }
         : exportMode === 'partial'
@@ -3579,6 +3601,15 @@ const Nhis = () => {
         setShowDuplicateClaimReview(true)
         notify(
           `${err.duplicateGroups?.length || 1} duplicate claim group${err.duplicateGroups?.length === 1 ? '' : 's'} found${err.exportBlockingIssues?.length ? ' with other export blockers' : ''}. Review and correct them before exporting.`,
+          'error'
+        )
+        return
+      }
+      if (isNhisReadinessClaimsError(err)) {
+        setReadinessClaimIssues(err.readinessIssues || [])
+        setShowReadinessClaimReview(true)
+        notify(
+          `${err.readinessIssues?.length || 1} incomplete claim${err.readinessIssues?.length === 1 ? '' : 's'} found. Review and correct them before exporting.`,
           'error'
         )
         return
@@ -6175,6 +6206,100 @@ const Nhis = () => {
               <button className="btn btn-primary" disabled={ruleImporting || !ruleImportRows.length} onClick={handleConfirmRuleImport}>
                 {ruleImporting ? 'Importing...' : `Import ${ruleImportRows.length} Rules`}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showReadinessClaimReview && readinessClaimIssues.length > 0 && (
+        <div className="modal-overlay modal-overlay--top" onClick={(e) => e.target === e.currentTarget && closeReadinessClaimReview()}>
+          <div className="modal-panel modal-panel--duplicates">
+            <div className="modal-header">
+              <h2>Incomplete Claims Found</h2>
+              <button className="modal-close" onClick={closeReadinessClaimReview}><X size={18} /></button>
+            </div>
+            <div className="duplicate-claims-body">
+              <div className="nhis-alert">
+                HealthFlow found {readinessClaimIssues.length} claim{readinessClaimIssues.length === 1 ? '' : 's'} that must be corrected before export.
+              </div>
+              <div className="nhis-export-period-note">
+                Open each claim below and fix the listed issue. Export will continue after all required fields and attachments are complete.
+              </div>
+              <div className="duplicate-claim-table-wrap">
+                <table className="nhis-table duplicate-claim-table readiness-claim-table">
+                  <thead>
+                    <tr>
+                      <th>Claim</th>
+                      <th>Patient</th>
+                      <th>Service Date</th>
+                      <th>Issues to Fix</th>
+                      <th>Status</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {readinessClaimIssues.map((issue, index) => {
+                      const claimForAction = { ...issue, _summaryOnly: true }
+                      const patientName = issue.patientName || [issue.surname, issue.other_names].filter(Boolean).join(' ') || 'Unknown'
+                      const issueList = Array.isArray(issue.issues) ? issue.issues : []
+                      return (
+                        <tr key={issue.id || issue.claim_number || index}>
+                          <td>{issue.claim_number || 'Unnumbered'}</td>
+                          <td>
+                            {patientName}
+                            <small>Folder: {issue.folder_no || '-'}</small>
+                            <small>Member/HIN: {issue.member_no || issue.hin || '-'}</small>
+                          </td>
+                          <td>{formatNhisServiceDateTime(issue)}</td>
+                          <td>
+                            <ul className="readiness-issue-list">
+                              {(issueList.length ? issueList : ['Claim is incomplete for export.']).slice(0, 4).map((text, itemIndex) => (
+                                <li key={`${issue.id || index}-issue-${itemIndex}`}>{text}</li>
+                              ))}
+                            </ul>
+                            {issueList.length > 4 && <small>{issueList.length - 4} more issue{issueList.length - 4 === 1 ? '' : 's'}</small>}
+                          </td>
+                          <td><StatusBadge status={issue.status || 'served'} /></td>
+                          <td>
+                            <div className="duplicate-claim-actions">
+                              <button
+                                type="button"
+                                className="action-btn"
+                                title="View claim"
+                                onClick={() => {
+                                  setShowReadinessClaimReview(false)
+                                  void openViewClaim(claimForAction).then((opened) => {
+                                    if (!opened) returnToReadinessClaimReview()
+                                  })
+                                }}
+                              >
+                                <Eye size={14} />
+                              </button>
+                              <button
+                                type="button"
+                                className="action-btn action-btn--edit"
+                                title="Edit claim"
+                                onClick={() => {
+                                  setShowReadinessClaimReview(false)
+                                  setShowExportModal(false)
+                                  void openEditClaim(claimForAction).then((opened) => {
+                                    if (!opened) returnToReadinessClaimReview()
+                                  })
+                                }}
+                              >
+                                <Pencil size={14} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={closeReadinessClaimReview}>Close</button>
             </div>
           </div>
         </div>

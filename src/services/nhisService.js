@@ -999,6 +999,9 @@ const buildNhisDuplicateClaimGroups = (claims = []) => {
 export const isNhisDuplicateClaimsError = (error) =>
   error?.code === 'NHIS_DUPLICATE_CLAIMS' && Array.isArray(error.duplicateGroups)
 
+export const isNhisReadinessClaimsError = (error) =>
+  error?.code === 'NHIS_READINESS_CLAIMS' && Array.isArray(error.readinessIssues)
+
 const createNhisDuplicateClaimsError = (duplicateGroups = [], extra = {}) => {
   const firstClaim = duplicateGroups[0]?.claims?.[0] || {}
   const error = new Error(getNhisDuplicateBlockMessage(firstClaim))
@@ -1028,7 +1031,36 @@ const createNhisDuplicateClaimsError = (duplicateGroups = [], extra = {}) => {
   return error
 }
 
-const assertNoDuplicateNhisClaimsForTransfer = (claims = []) => {
+const summarizeNhisReadinessClaim = (claim = {}, issues = []) => ({
+  id: normalizeText(claim.id),
+  claim_number: normalizeText(claim.claim_number || claim.claimNumber),
+  surname: normalizeText(claim.surname),
+  other_names: normalizeText(claim.other_names || claim.otherNames),
+  patientName: [claim.surname, claim.other_names || claim.otherNames].filter(Boolean).join(' ').trim(),
+  member_no: normalizeText(claim.member_no || claim.memberNo),
+  hin: normalizeText(claim.hin),
+  folder_no: normalizeText(claim.folder_no || claim.folderNo),
+  service_date_from: normalizeText(claim.service_date_from || claim.serviceDate),
+  total_amount: Number(claim.total_amount ?? claim.totalAmount ?? 0),
+  status: normalizeText(claim.status),
+  created_at: normalizeText(claim.created_at || claim.createdAt),
+  updated_at: normalizeText(claim.updated_at || claim.updatedAt),
+  issues: Array.isArray(issues) ? issues.filter(Boolean).map(String) : [],
+})
+
+const createNhisReadinessClaimsError = (incompleteClaims = []) => {
+  const readinessIssues = incompleteClaims.map(({ claim, issues }) => summarizeNhisReadinessClaim(claim, issues))
+  const first = readinessIssues[0] || {}
+  const error = new Error(
+    `NHIA readiness checklist failed for ${readinessIssues.length} claim(s). ` +
+    `${first.claim_number || 'First claim'}: ${(first.issues || []).slice(0, 3).join(' ')}`
+  )
+  error.code = 'NHIS_READINESS_CLAIMS'
+  error.readinessIssues = readinessIssues
+  return error
+}
+
+const _assertNoDuplicateNhisClaimsForTransfer = (claims = []) => {
   const duplicateGroups = buildNhisDuplicateClaimGroups(claims)
   if (duplicateGroups.length) {
     throw createNhisDuplicateClaimsError(duplicateGroups)
@@ -7926,11 +7958,7 @@ const assertNhisClaimsReadyForFinalSubmission = async (claims, organizationType,
     .filter((item) => item.issues.length)
 
   if (incompleteClaims.length) {
-    const first = incompleteClaims[0]
-    throw new Error(
-      `NHIA readiness checklist failed for ${incompleteClaims.length} claim(s). ` +
-      `${first.claim.claim_number || 'First claim'}: ${first.issues.slice(0, 3).join(' ')}`
-    )
+    throw createNhisReadinessClaimsError(incompleteClaims)
   }
 }
 
@@ -7950,7 +7978,12 @@ const getNhisMissingCxfAttachmentIssues = (claims = []) => {
       id: normalizeText(claim.id),
       claim_number: normalizeText(claim.claim_number || claim.claimNumber),
       patientName: [claim.surname, claim.other_names || claim.otherNames].filter(Boolean).join(' ').trim(),
+      issues: ['Attach the scanned prescription PDF or JPEG before exporting this NHIS claim.'],
     })),
+    readinessIssues: missingClaims.map((claim) => summarizeNhisReadinessClaim(
+      claim,
+      ['Attach the scanned prescription PDF or JPEG before exporting this NHIS claim.']
+    )),
     total: missingClaims.length,
   }]
 }
@@ -7965,6 +7998,16 @@ const collectNhisExportBlockingIssues = async (claims, organizationType, options
       type: 'readiness',
       title: 'Incomplete claim details',
       message: error?.message || 'One or more claims failed the NHIA readiness checklist.',
+      claims: isNhisReadinessClaimsError(error)
+        ? error.readinessIssues.slice(0, 8).map((claim) => ({
+            id: claim.id,
+            claim_number: claim.claim_number,
+            patientName: claim.patientName,
+            issues: claim.issues,
+          }))
+        : [],
+      total: isNhisReadinessClaimsError(error) ? error.readinessIssues.length : undefined,
+      readinessIssues: isNhisReadinessClaimsError(error) ? error.readinessIssues : [],
     })
   }
 
@@ -7986,6 +8029,46 @@ const collectNhisExportBlockingIssues = async (claims, organizationType, options
   }
 
   return issues
+}
+
+const throwNhisExportBlockingIssues = (issues = []) => {
+  const claimIssuesByKey = new Map()
+
+  for (const issue of issues) {
+    const readinessIssues = Array.isArray(issue.readinessIssues) && issue.readinessIssues.length
+      ? issue.readinessIssues
+      : Array.isArray(issue.claims)
+        ? issue.claims.map((claim) => ({
+            ...claim,
+            issues: Array.isArray(claim.issues) && claim.issues.length ? claim.issues : [issue.message].filter(Boolean),
+          }))
+        : []
+
+    for (const claim of readinessIssues) {
+      const key = normalizeText(claim.id || claim.claim_number || claim.patientName)
+      if (!key) continue
+      const current = claimIssuesByKey.get(key)
+      if (!current) {
+        claimIssuesByKey.set(key, {
+          claim,
+          issues: Array.isArray(claim.issues) ? claim.issues : [],
+        })
+      } else {
+        current.issues = Array.from(new Set([
+          ...current.issues,
+          ...(Array.isArray(claim.issues) ? claim.issues : []),
+        ]))
+      }
+    }
+  }
+
+  const incompleteClaims = Array.from(claimIssuesByKey.values())
+  if (incompleteClaims.length) {
+    throw createNhisReadinessClaimsError(incompleteClaims)
+  }
+
+  const first = issues[0]
+  throw new Error(first?.message || 'One or more export blockers must be fixed before exporting.')
 }
 
 const markNhisServedClaimsSubmitted = async (claims) => {
@@ -8148,7 +8231,15 @@ export const exportNhisClaimsFile = async (options = {}) => {
     })
     throw createNhisDuplicateClaimsError(duplicateGroups, { exportBlockingIssues })
   }
-  await assertNhisClaimsReadyForFinalSubmission(claims, organizationType, options)
+  const exportBlockingIssues = await collectNhisExportBlockingIssues(claims, organizationType, {
+    ...options,
+    format,
+    directSubmit,
+    exportPeriod: period,
+  })
+  if (exportBlockingIssues.length) {
+    throwNhisExportBlockingIssues(exportBlockingIssues)
+  }
 
   if (directSubmit) {
     const result = await submitNhisClaimsDirect(claims, period, {

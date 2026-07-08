@@ -14,6 +14,38 @@ const TYPE_LABELS = {
   nhis_claim: 'NHIS claim',
 }
 
+const getRecordSnapshot = (record = {}) => record.snapshot?.record || record.snapshot || {}
+
+const getRecycleRecordIdentity = (record = {}) => {
+  const snapshot = getRecordSnapshot(record)
+  const claimNumber = snapshot.claim_number || record.display_name || ''
+  const patientName = [snapshot.surname, snapshot.other_names].filter(Boolean).join(' ').trim()
+    || snapshot.patient_name
+    || snapshot.patientName
+    || ''
+  const memberNumber = snapshot.member_no || snapshot.memberNo || snapshot.hin || ''
+  const folderNumber = snapshot.folder_no || snapshot.folderNo || ''
+
+  if (record.entity_type !== 'nhis_claim') {
+    return {
+      primary: record.display_name,
+      secondary: '',
+      meta: '',
+      confirmLabel: record.display_name,
+    }
+  }
+
+  return {
+    primary: claimNumber || 'NHIS claim',
+    secondary: patientName,
+    meta: [
+      folderNumber ? `Folder: ${folderNumber}` : '',
+      memberNumber ? `Member/HIN: ${memberNumber}` : '',
+    ].filter(Boolean).join(' | '),
+    confirmLabel: [claimNumber, patientName].filter(Boolean).join(' - ') || record.display_name,
+  }
+}
+
 const RecycleBin = () => {
   const { notify } = useNotification()
   const [records, setRecords] = useState([])
@@ -36,12 +68,13 @@ const RecycleBin = () => {
   useEffect(() => { void load() }, [load])
 
   const restore = async (record) => {
-    if (!window.confirm(`Restore ${record.display_name}?`)) return
+    const identity = getRecycleRecordIdentity(record)
+    if (!window.confirm(`Restore ${identity.confirmLabel}?`)) return
     try {
       setBusyId(record.id)
       await restoreDeletedRecord(record.id)
       await load()
-      notify(`${record.display_name} restored.`, 'success')
+      notify(`${identity.confirmLabel} restored.`, 'success')
     } catch (restoreError) {
       notify(restoreError.message || 'Unable to restore this record.', 'error')
     } finally {
@@ -50,12 +83,13 @@ const RecycleBin = () => {
   }
 
   const removePermanently = async (record) => {
-    if (!window.confirm(`Permanently delete ${record.display_name}? This cannot be undone.`)) return
+    const identity = getRecycleRecordIdentity(record)
+    if (!window.confirm(`Permanently delete ${identity.confirmLabel}? This cannot be undone.`)) return
     try {
       setBusyId(record.id)
       await permanentlyDeleteRecord(record.id)
       await load()
-      notify(`${record.display_name} permanently deleted.`, 'success')
+      notify(`${identity.confirmLabel} permanently deleted.`, 'success')
     } catch (deleteError) {
       notify(deleteError.message || 'Unable to permanently delete this record.', 'error')
     } finally {
@@ -83,21 +117,30 @@ const RecycleBin = () => {
               <tr><th>Type</th><th>Name / Number</th><th>Deleted</th><th>Actions</th></tr>
             </thead>
             <tbody>
-              {records.map((record) => (
-                <tr key={record.id}>
-                  <td>{TYPE_LABELS[record.entity_type] || record.entity_type}</td>
-                  <td><strong>{record.display_name}</strong></td>
-                  <td>{formatAppDateTime(record.deleted_at)}</td>
-                  <td className="recycle-bin-actions">
-                    <button className="btn btn-secondary btn-sm" disabled={busyId === record.id} onClick={() => restore(record)}>
-                      <RotateCcw size={14} /> Restore
-                    </button>
-                    <button className="btn btn-danger btn-sm" disabled={busyId === record.id} onClick={() => removePermanently(record)}>
-                      <Trash2 size={14} /> Delete Permanently
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {records.map((record) => {
+                const identity = getRecycleRecordIdentity(record)
+                return (
+                  <tr key={record.id}>
+                    <td>{TYPE_LABELS[record.entity_type] || record.entity_type}</td>
+                    <td>
+                      <div className="recycle-record-identity">
+                        <strong>{identity.primary}</strong>
+                        {identity.secondary && <span>{identity.secondary}</span>}
+                        {identity.meta && <small>{identity.meta}</small>}
+                      </div>
+                    </td>
+                    <td>{formatAppDateTime(record.deleted_at)}</td>
+                    <td className="recycle-bin-actions">
+                      <button className="btn btn-secondary btn-sm" disabled={busyId === record.id} onClick={() => restore(record)}>
+                        <RotateCcw size={14} /> Restore
+                      </button>
+                      <button className="btn btn-danger btn-sm" disabled={busyId === record.id} onClick={() => removePermanently(record)}>
+                        <Trash2 size={14} /> Delete Permanently
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         )}

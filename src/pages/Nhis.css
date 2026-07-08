@@ -751,6 +751,24 @@
   margin-top: 0.15rem;
 }
 
+.readiness-claim-table td {
+  vertical-align: top;
+}
+
+.readiness-issue-list {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0;
+  max-width: 34rem;
+  padding-left: 1rem;
+}
+
+.readiness-issue-list li {
+  color: var(--gray-800);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
 .duplicate-claim-actions {
   align-items: center;
   display: flex;

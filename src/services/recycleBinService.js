@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 export const getDeletedRecords = async () => {
   const { data, error } = await supabase
     .from('deleted_records')
-    .select('id, entity_type, entity_id, display_name, deleted_at, deleted_by')
+    .select('*')
     .order('deleted_at', { ascending: false })
   if (error) throw error
   return data || []
