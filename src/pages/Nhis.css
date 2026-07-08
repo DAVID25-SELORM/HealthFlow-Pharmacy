@@ -656,7 +656,7 @@
 
 .nhis-page .modal-panel--duplicates {
   width: 100%;
-  max-width: min(980px, calc(100vw - 2rem));
+  max-width: min(1180px, calc(100vw - 2rem));
 }
 
 .duplicate-claims-body {
@@ -719,6 +719,52 @@
   align-items: center;
   display: flex;
   gap: 0.35rem;
+  min-width: 10rem;
+}
+
+.duplicate-recommendation {
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
+  padding: 0.32rem 0.5rem;
+  white-space: nowrap;
+}
+
+.duplicate-recommendation--keep {
+  background: #e8f7ef;
+  color: #166534;
+}
+
+.duplicate-recommendation--remove {
+  background: #fff4e5;
+  color: #9a6100;
+}
+
+.duplicate-keep-button {
+  align-items: center;
+  background: #e8f7ef;
+  border: 1px solid #b8e4ca;
+  border-radius: 6px;
+  color: #166534;
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 0.76rem;
+  font-weight: 800;
+  gap: 0.25rem;
+  min-height: 1.75rem;
+  padding: 0.35rem 0.55rem;
+  white-space: nowrap;
+}
+
+.duplicate-keep-button:hover:not(:disabled) {
+  background: #d9f2e5;
+}
+
+.duplicate-keep-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .nhis-action-review-modal {

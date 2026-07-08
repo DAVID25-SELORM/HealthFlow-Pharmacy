@@ -2935,6 +2935,8 @@ describe('duplicate NHIS claim prevention', () => {
       prescription_file_name: 'rx.pdf',
       prescription_file_url: 'https://example.test/rx.pdf',
       total_amount: 10,
+      created_at: '2026-05-14T09:00:00.000Z',
+      updated_at: '2026-05-14T09:05:00.000Z',
       nhis_claim_medicines: [{
         drug_code: 'NH001',
         description: 'Artemether Lumefantrine Tablet',
@@ -2981,7 +2983,20 @@ describe('duplicate NHIS claim prevention', () => {
       providerClassLevel: 'D',
       pharmacyLevel: 'P1',
       nhisDrugCatalog: [{ code: 'NH001', category: 'A' }],
-    })).rejects.toThrow('Duplicate NHIS claim blocked')
+    })).rejects.toMatchObject({
+      code: 'NHIS_DUPLICATE_CLAIMS',
+      duplicateGroups: [
+        expect.objectContaining({
+          claims: expect.arrayContaining([
+            expect.objectContaining({
+              claim_number: 'NHIS-000001',
+              created_at: '2026-05-14T09:00:00.000Z',
+              updated_at: '2026-05-14T09:05:00.000Z',
+            }),
+          ]),
+        }),
+      ],
+    })
   })
 })
 

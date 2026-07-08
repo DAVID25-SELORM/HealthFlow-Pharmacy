@@ -1021,6 +1021,7 @@ const createNhisDuplicateClaimsError = (duplicateGroups = []) => {
       total_amount: Number(claim.total_amount ?? claim.totalAmount ?? 0),
       status: normalizeText(claim.status),
       created_at: normalizeText(claim.created_at || claim.createdAt),
+      updated_at: normalizeText(claim.updated_at || claim.updatedAt),
     })),
   }))
   return error

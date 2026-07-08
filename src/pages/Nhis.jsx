@@ -591,6 +591,9 @@ const getClaimServiceDate = (claim = {}) =>
 const getClaimCreatedTimestamp = (claim = {}) =>
   claim.created_at || claim.createdAt || claim.updated_at || claim.updatedAt || ''
 
+const getClaimUpdatedTimestamp = (claim = {}) =>
+  claim.updated_at || claim.updatedAt || claim.created_at || claim.createdAt || ''
+
 const formatNhisServiceDateTime = (claim = {}) => {
   const serviceDate = getClaimServiceDate(claim)
   if (!serviceDate) return '—'
@@ -610,6 +613,19 @@ const formatNhisServiceDateTime = (claim = {}) => {
 
   return formatAppDate(rawServiceDate)
 }
+
+const getTimestampMs = (value) => {
+  const parsed = new Date(value || '')
+  return Number.isNaN(parsed.getTime()) ? Number.POSITIVE_INFINITY : parsed.getTime()
+}
+
+const getLikelyOriginalClaimId = (claims = []) =>
+  [...claims]
+    .sort((a, b) => {
+      const createdDiff = getTimestampMs(getClaimCreatedTimestamp(a)) - getTimestampMs(getClaimCreatedTimestamp(b))
+      if (createdDiff !== 0) return createdDiff
+      return String(a.claim_number || '').localeCompare(String(b.claim_number || ''))
+    })[0]?.id || ''
 
 const daysBetweenIsoDates = (fromDate, toDate) => {
   const from = new Date(fromDate)
@@ -3237,6 +3253,58 @@ const Nhis = () => {
       notify(`Claim ${claim.claim_number} moved to the Recycle Bin.`, 'success')
     } catch (err) {
       notify(err.message || 'Unable to delete claim.', 'error')
+    } finally {
+      setUpdatingStatus(null)
+    }
+  }
+
+  const handleKeepDuplicateClaim = async (group, keepClaim) => {
+    if (!canDeleteNhisClaims) {
+      notify('Only an administrator can resolve duplicates by moving claims to the Recycle Bin.', 'warning')
+      return
+    }
+
+    const claimsToRecycle = (group.claims || []).filter((claim) => claim.id && claim.id !== keepClaim.id)
+    if (!keepClaim?.id || claimsToRecycle.length === 0) {
+      notify('There are no other duplicate claims to move.', 'info')
+      return
+    }
+
+    if (!confirmAction({
+      title: 'Keep this NHIS claim and recycle the duplicates?',
+      details: [
+        { label: 'Keep', value: keepClaim.claim_number || 'Selected claim' },
+        {
+          label: 'Move to Recycle Bin',
+          value: claimsToRecycle.map((claim) => claim.claim_number || 'Unnumbered').join(', '),
+        },
+        {
+          label: 'Patient',
+          value: group.patientName || [keepClaim.surname, keepClaim.other_names || keepClaim.otherNames].filter(Boolean).join(' '),
+        },
+        { label: 'Service date', value: group.serviceDate || getClaimServiceDate(keepClaim) || 'Not recorded' },
+      ],
+      warning: 'Only the selected claim will remain active. The other duplicate claim(s) can be restored by an administrator from the Recycle Bin.',
+      confirmText: 'keep this claim and recycle the others',
+    })) return
+
+    try {
+      setUpdatingStatus(keepClaim.id)
+      await Promise.all(claimsToRecycle.map((claim) => deleteNhisClaim(claim.id, { role, canDeleteNhisClaims })))
+      const nextDuplicateGroups = duplicateClaimGroups
+        .map((currentGroup) => {
+          const sameGroup = currentGroup === group || Boolean(group.key && currentGroup.key === group.key)
+          if (!sameGroup) return currentGroup
+          const remainingClaims = (currentGroup.claims || []).filter((claim) => claim.id === keepClaim.id)
+          return { ...currentGroup, claims: remainingClaims }
+        })
+        .filter((currentGroup) => (currentGroup.claims || []).length > 1)
+      setDuplicateClaimGroups(nextDuplicateGroups)
+      if (nextDuplicateGroups.length === 0) setShowDuplicateClaimReview(false)
+      await refreshClaimsOverview()
+      notify(`Kept ${keepClaim.claim_number || 'the selected claim'} and moved ${claimsToRecycle.length} duplicate claim${claimsToRecycle.length === 1 ? '' : 's'} to the Recycle Bin.`, 'success')
+    } catch (err) {
+      notify(err.message || 'Unable to resolve duplicate claims.', 'error')
     } finally {
       setUpdatingStatus(null)
     }
@@ -6120,79 +6188,105 @@ const Nhis = () => {
                 HealthFlow found {duplicateClaimGroups.length} duplicate group{duplicateClaimGroups.length === 1 ? '' : 's'} in this export batch.
                 Correct or remove one claim from each group before exporting.
               </div>
-              {duplicateClaimGroups.map((group, groupIndex) => (
-                <section className="duplicate-claim-group" key={group.key || groupIndex}>
-                  <div className="duplicate-claim-group-header">
-                    <div>
-                      <h3>{group.patientName || 'Patient duplicate group'}</h3>
-                      <p>
-                        Member/HIN: {group.member || 'Not recorded'} · Service date: {group.serviceDate || 'Not recorded'} · Total: GHS {Number(group.totalAmount || 0).toFixed(2)}
-                      </p>
+              {duplicateClaimGroups.map((group, groupIndex) => {
+                const groupClaims = group.claims || []
+                const likelyOriginalClaimId = getLikelyOriginalClaimId(groupClaims)
+                return (
+                  <section className="duplicate-claim-group" key={group.key || groupIndex}>
+                    <div className="duplicate-claim-group-header">
+                      <div>
+                        <h3>{group.patientName || 'Patient duplicate group'}</h3>
+                        <p>
+                          Member/HIN: {group.member || 'Not recorded'} · Service date: {group.serviceDate || 'Not recorded'} · Total: GHS {Number(group.totalAmount || 0).toFixed(2)}
+                        </p>
+                      </div>
+                      <span>{groupClaims.length} claims</span>
                     </div>
-                    <span>{group.claims?.length || 0} claims</span>
-                  </div>
-                  <div className="duplicate-claim-table-wrap">
-                    <table className="nhis-table duplicate-claim-table">
-                      <thead>
-                        <tr>
-                          <th>Claim</th>
-                          <th>Patient</th>
-                          <th>Status</th>
-                          <th>Created</th>
-                          <th>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(group.claims || []).map((claim) => {
-                          const claimForAction = { ...claim, _summaryOnly: true }
-                          return (
-                            <tr key={claim.id || claim.claim_number}>
-                              <td>{claim.claim_number || 'Unnumbered'}</td>
-                              <td>
-                                {[claim.surname, claim.other_names].filter(Boolean).join(' ') || 'Unknown'}
-                                <small>Folder: {claim.folder_no || '—'}</small>
-                              </td>
-                              <td><StatusBadge status={claim.status || 'served'} /></td>
-                              <td>{claim.created_at ? formatAppDateTime(claim.created_at) : '—'}</td>
-                              <td>
-                                <div className="duplicate-claim-actions">
-                                  <button
-                                    type="button"
-                                    className="action-btn"
-                                    title="View claim"
-                                    onClick={() => {
-                                      setShowDuplicateClaimReview(false)
-                                      void openViewClaim(claimForAction).then((opened) => {
-                                        if (!opened) returnToDuplicateClaimReview()
-                                      })
-                                    }}
-                                  >
-                                    <Eye size={14} />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="action-btn action-btn--edit"
-                                    title="Edit claim"
-                                    onClick={() => {
-                                      setShowDuplicateClaimReview(false)
-                                      setShowExportModal(false)
-                                      void openEditClaim(claimForAction).then((opened) => {
-                                        if (!opened) returnToDuplicateClaimReview()
-                                      })
-                                    }}
-                                  >
-                                    <Pencil size={14} />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </section>
-              ))}
+                    <div className="duplicate-claim-table-wrap">
+                      <table className="nhis-table duplicate-claim-table">
+                        <thead>
+                          <tr>
+                            <th>Claim</th>
+                            <th>Patient</th>
+                            <th>Service Date</th>
+                            <th>Created Date</th>
+                            <th>Last Updated</th>
+                            <th>Recommendation</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {groupClaims.map((claim) => {
+                            const claimForAction = { ...claim, _summaryOnly: true }
+                            const isLikelyOriginal = claim.id && claim.id === likelyOriginalClaimId
+                            return (
+                              <tr key={claim.id || claim.claim_number}>
+                                <td>{claim.claim_number || 'Unnumbered'}</td>
+                                <td>
+                                  {[claim.surname, claim.other_names].filter(Boolean).join(' ') || 'Unknown'}
+                                  <small>Folder: {claim.folder_no || '—'}</small>
+                                </td>
+                                <td>{formatNhisServiceDateTime(claim)}</td>
+                                <td>{getClaimCreatedTimestamp(claim) ? formatAppDateTime(getClaimCreatedTimestamp(claim)) : '—'}</td>
+                                <td>{getClaimUpdatedTimestamp(claim) ? formatAppDateTime(getClaimUpdatedTimestamp(claim)) : '—'}</td>
+                                <td>
+                                  <span className={`duplicate-recommendation ${isLikelyOriginal ? 'duplicate-recommendation--keep' : 'duplicate-recommendation--remove'}`}>
+                                    {isLikelyOriginal ? 'Likely original' : 'Likely duplicate'}
+                                  </span>
+                                </td>
+                                <td><StatusBadge status={claim.status || 'served'} /></td>
+                                <td>
+                                  <div className="duplicate-claim-actions">
+                                    <button
+                                      type="button"
+                                      className="duplicate-keep-button"
+                                      disabled={!canDeleteNhisClaims || Boolean(updatingStatus)}
+                                      title={canDeleteNhisClaims ? 'Keep this claim and move the others to Recycle Bin' : 'Only an administrator can resolve duplicates'}
+                                      onClick={() => {
+                                        void handleKeepDuplicateClaim(group, claimForAction)
+                                      }}
+                                    >
+                                      <CheckCircle2 size={14} /> Keep this
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="action-btn"
+                                      title="View claim"
+                                      onClick={() => {
+                                        setShowDuplicateClaimReview(false)
+                                        void openViewClaim(claimForAction).then((opened) => {
+                                          if (!opened) returnToDuplicateClaimReview()
+                                        })
+                                      }}
+                                    >
+                                      <Eye size={14} />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="action-btn action-btn--edit"
+                                      title="Edit claim"
+                                      onClick={() => {
+                                        setShowDuplicateClaimReview(false)
+                                        setShowExportModal(false)
+                                        void openEditClaim(claimForAction).then((opened) => {
+                                          if (!opened) returnToDuplicateClaimReview()
+                                        })
+                                      }}
+                                    >
+                                      <Pencil size={14} />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+                )
+              })}
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={closeDuplicateClaimReview}>Close</button>
