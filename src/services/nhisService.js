@@ -8196,17 +8196,10 @@ const submitNhisClaimsDirect = async (claims, period, options = {}) => {
 /**
  * Generates an XML/JSON CLAIM-it HMS Toolkit batch, or a review CSV, and triggers download.
  */
-export const exportNhisClaimsFile = async (options = {}) => {
+const getNhisExportClaimsAndBlockers = async (options = {}) => {
   const period = normalizeNhisExportPeriod(options)
   const format = normalizeClaimItExportFormat(options.format || options.exportFormat || options.export_format || 'cxf')
   const directSubmit = Boolean(options.directSubmit && format !== 'cxf')
-  if (options.directSubmit && format === 'cxf') {
-    console.info('[NHIS submission route]', {
-      route: 'manual_cxf_export_required',
-      exportFormat: format,
-      period: period.label,
-    })
-  }
   const exportableStatuses = directSubmit ? ['served'] : ['served', 'submitted']
   const periodClaims = await getNhisClaimsForPeriod({
     ...period,
@@ -8221,22 +8214,64 @@ export const exportNhisClaimsFile = async (options = {}) => {
     throw new Error(`No ${statusLabel} claims found for ${period.label}.`)
   }
   const organizationType = normalizeOrganizationType(options.organizationType)
-  const duplicateGroups = buildNhisDuplicateClaimGroups(claims)
-  if (duplicateGroups.length) {
-    const exportBlockingIssues = await collectNhisExportBlockingIssues(claims, organizationType, {
-      ...options,
-      format,
-      directSubmit,
-      exportPeriod: period,
-    })
-    throw createNhisDuplicateClaimsError(duplicateGroups, { exportBlockingIssues })
-  }
-  const exportBlockingIssues = await collectNhisExportBlockingIssues(claims, organizationType, {
+  const blockerOptions = {
     ...options,
     format,
     directSubmit,
     exportPeriod: period,
-  })
+  }
+  const duplicateGroups = buildNhisDuplicateClaimGroups(claims)
+  const exportBlockingIssues = await collectNhisExportBlockingIssues(claims, organizationType, blockerOptions)
+  return {
+    period,
+    format,
+    directSubmit,
+    claims,
+    organizationType,
+    duplicateGroups,
+    exportBlockingIssues,
+  }
+}
+
+export const checkNhisExportReadiness = async (options = {}) => {
+  const readiness = await getNhisExportClaimsAndBlockers(options)
+  if (readiness.duplicateGroups.length) {
+    throw createNhisDuplicateClaimsError(readiness.duplicateGroups, {
+      exportBlockingIssues: readiness.exportBlockingIssues,
+    })
+  }
+  if (readiness.exportBlockingIssues.length) {
+    throwNhisExportBlockingIssues(readiness.exportBlockingIssues)
+  }
+  return {
+    count: readiness.claims.length,
+    period: readiness.period,
+    format: readiness.format,
+    directSubmit: readiness.directSubmit,
+  }
+}
+
+export const exportNhisClaimsFile = async (options = {}) => {
+  const {
+    period,
+    format,
+    directSubmit,
+    claims,
+    organizationType,
+    duplicateGroups,
+    exportBlockingIssues,
+  } = await getNhisExportClaimsAndBlockers(options)
+
+  if (options.directSubmit && format === 'cxf') {
+    console.info('[NHIS submission route]', {
+      route: 'manual_cxf_export_required',
+      exportFormat: format,
+      period: period.label,
+    })
+  }
+  if (duplicateGroups.length) {
+    throw createNhisDuplicateClaimsError(duplicateGroups, { exportBlockingIssues })
+  }
   if (exportBlockingIssues.length) {
     throwNhisExportBlockingIssues(exportBlockingIssues)
   }

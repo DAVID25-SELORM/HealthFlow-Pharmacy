@@ -40,6 +40,7 @@ import {
   updateNhisClaim,
   updateNhisClaimStatus,
   exportNhisClaimsFile,
+  checkNhisExportReadiness,
   submitNhisClaimDirect,
   assessNhisClaimReadiness,
   validateNhisClaimFinalReadiness,
@@ -112,6 +113,15 @@ const NHIS_CLAIMS_DEFAULT_PAGE_SIZE = 100
 const NHIS_CLAIMS_PAGE_SIZE_OPTIONS = [50, 100, 200]
 const NHIS_CLAIMS_PAGE_CACHE_MS = 60000
 const NHIS_CLAIMS_SEARCH_DEBOUNCE_MS = 400
+const READINESS_FILTERS = [
+  { id: 'all', label: 'All issues' },
+  { id: 'attachment', label: 'Attachment problems' },
+  { id: 'verification', label: 'Unverified prescription' },
+  { id: 'prescriber', label: 'Prescriber' },
+  { id: 'diagnosis', label: 'Diagnosis' },
+  { id: 'medicine', label: 'Medicine' },
+  { id: 'other', label: 'Other' },
+]
 const CLAIM_STATUS_LABELS = {
   all: 'All',
   draft: 'Saved Details',
@@ -615,6 +625,31 @@ const formatNhisServiceDateTime = (claim = {}) => {
   return formatAppDate(rawServiceDate)
 }
 
+const getReadinessIssueCategories = (issue = {}) => {
+  const text = (Array.isArray(issue.issues) ? issue.issues : [])
+    .join(' ')
+    .toLowerCase()
+  const categories = new Set()
+
+  if (/\battach|attachment|prescription file|scanned|pdf|jpeg|png|document type\b/.test(text)) {
+    categories.add('attachment')
+  }
+  if (/\bverify|verified|unverified\b/.test(text)) {
+    categories.add('verification')
+  }
+  if (/\bprescriber|physician|provider|referral|ccc|authorization|authorisation\b/.test(text)) {
+    categories.add('prescriber')
+  }
+  if (/\bdiagnosis|icd|treatment\b/.test(text)) {
+    categories.add('diagnosis')
+  }
+  if (/\bmedicine|drug|quantity|dispensed|served|dosage|level\b/.test(text)) {
+    categories.add('medicine')
+  }
+  if (!categories.size) categories.add('other')
+  return Array.from(categories)
+}
+
 const getTimestampMs = (value) => {
   const parsed = new Date(value || '')
   return Number.isNaN(parsed.getTime()) ? Number.POSITIVE_INFINITY : parsed.getTime()
@@ -947,6 +982,9 @@ const Nhis = () => {
   const [showDuplicateClaimReview, setShowDuplicateClaimReview] = useState(false)
   const [readinessClaimIssues, setReadinessClaimIssues] = useState([])
   const [showReadinessClaimReview, setShowReadinessClaimReview] = useState(false)
+  const [readinessIssueFilter, setReadinessIssueFilter] = useState('all')
+  const [readinessFixedCount, setReadinessFixedCount] = useState(0)
+  const [readinessChecking, setReadinessChecking] = useState(false)
   const [viewClaim, setViewClaim]                   = useState(null)
 
   // ── new claim form ────────────────────────────────────────────
@@ -1967,6 +2005,8 @@ const Nhis = () => {
   const closeReadinessClaimReview = () => {
     setShowReadinessClaimReview(false)
     setReadinessClaimIssues([])
+    setReadinessIssueFilter('all')
+    setReadinessFixedCount(0)
   }
 
   const returnToDuplicateClaimReview = () => {
@@ -3099,17 +3139,20 @@ const Nhis = () => {
         setShowDuplicateClaimReview(true)
       } else if (readinessClaimIssues.length > 0) {
         const correctedClaimId = savedClaimRecord?.id || editingClaim?.id || ''
-        const correctedClaimNumber = savedClaimRecord?.claim_number || editingClaim?.claim_number || ''
-        const remainingReadinessIssues = readinessClaimIssues.filter((issue) =>
-          (correctedClaimId && issue.id === correctedClaimId) ||
-          (correctedClaimNumber && issue.claim_number === correctedClaimNumber)
-            ? false
-            : true
-        )
-        setReadinessClaimIssues(remainingReadinessIssues)
-        if (remainingReadinessIssues.length > 0) {
-          setShowReadinessClaimReview(true)
-        }
+      const correctedClaimNumber = savedClaimRecord?.claim_number || editingClaim?.claim_number || ''
+      const remainingReadinessIssues = readinessClaimIssues.filter((issue) =>
+        (correctedClaimId && issue.id === correctedClaimId) ||
+        (correctedClaimNumber && issue.claim_number === correctedClaimNumber)
+          ? false
+          : true
+      )
+      setReadinessClaimIssues(remainingReadinessIssues)
+      if (remainingReadinessIssues.length < readinessClaimIssues.length) {
+        setReadinessFixedCount((count) => count + 1)
+      }
+      if (remainingReadinessIssues.length > 0) {
+        setShowReadinessClaimReview(true)
+      }
       }
       await refreshClaimsOverview()
       notify(successMessage, 'success')
@@ -3569,6 +3612,95 @@ const Nhis = () => {
   }
 
   // ── export ────────────────────────────────────────────────────
+  const readinessIssueCounts = useMemo(() => {
+    const counts = { all: readinessClaimIssues.length }
+    for (const issue of readinessClaimIssues) {
+      for (const category of getReadinessIssueCategories(issue)) {
+        counts[category] = (counts[category] || 0) + 1
+      }
+    }
+    return counts
+  }, [readinessClaimIssues])
+
+  const filteredReadinessClaimIssues = useMemo(() => {
+    if (readinessIssueFilter === 'all') return readinessClaimIssues
+    return readinessClaimIssues.filter((issue) =>
+      getReadinessIssueCategories(issue).includes(readinessIssueFilter)
+    )
+  }, [readinessClaimIssues, readinessIssueFilter])
+
+  const buildCurrentExportOptions = () => {
+    const periodOptions = exportMode === 'custom'
+      ? { mode: 'custom', fromDate: exportFromDate, toDate: exportToDate }
+      : exportMode === 'partial'
+        ? { mode: 'partial', toDate: exportToDate }
+        : { mode: 'month', yearMonth: exportMonth }
+    const submitDirectApi = directNhiaApiAvailable && exportRoute === 'direct_api'
+    const selectedFormat = submitDirectApi ? 'json' : exportFormat
+    return {
+      periodOptions,
+      submitDirectApi,
+      selectedFormat,
+      requestOptions: {
+        ...periodOptions,
+        ...getDirectNhiaOptions(),
+        directSubmit: submitDirectApi,
+        format: selectedFormat,
+        directPayloadFormat: submitDirectApi ? 'json' : selectedFormat,
+      },
+    }
+  }
+
+  const applyExportReadinessError = (err, fallbackPrefix = 'Readiness check failed.') => {
+    if (isNhisDuplicateClaimsError(err)) {
+      setReadinessClaimIssues([])
+      setShowReadinessClaimReview(false)
+      setDuplicateClaimGroups(err.duplicateGroups || [])
+      setDuplicateExportIssues(err.exportBlockingIssues || [])
+      setShowDuplicateClaimReview(true)
+      notify(
+        `${err.duplicateGroups?.length || 1} duplicate claim group${err.duplicateGroups?.length === 1 ? '' : 's'} found${err.exportBlockingIssues?.length ? ' with other export blockers' : ''}. Review and correct them before exporting.`,
+        'error'
+      )
+      return true
+    }
+    if (isNhisReadinessClaimsError(err)) {
+      setDuplicateClaimGroups([])
+      setDuplicateExportIssues([])
+      setShowDuplicateClaimReview(false)
+      setReadinessClaimIssues(err.readinessIssues || [])
+      setReadinessIssueFilter('all')
+      setShowReadinessClaimReview(true)
+      notify(
+        `${err.readinessIssues?.length || 1} incomplete claim${err.readinessIssues?.length === 1 ? '' : 's'} found. Review and correct them before exporting.`,
+        'error'
+      )
+      return true
+    }
+    notify(getNhisRequestErrorMessage(err, fallbackPrefix, 'Claims were not submitted/exported.'), 'error')
+    return false
+  }
+
+  const handleCheckExportReadiness = async ({ keepModalOpen = false } = {}) => {
+    try {
+      setReadinessChecking(true)
+      setDuplicateClaimGroups([])
+      setDuplicateExportIssues([])
+      setShowDuplicateClaimReview(false)
+      const { requestOptions } = buildCurrentExportOptions()
+      const result = await checkNhisExportReadiness(requestOptions)
+      setReadinessClaimIssues([])
+      setReadinessIssueFilter('all')
+      setShowReadinessClaimReview(false)
+      notify(`${result.count} claim${result.count === 1 ? '' : 's'} ready for export.`, 'success')
+      if (!keepModalOpen) setShowExportModal(false)
+    } catch (err) {
+      applyExportReadinessError(err)
+    } finally {
+      setReadinessChecking(false)
+    }
+  }
+
   const handleExport = async () => {
     try {
       setExporting(true)
@@ -3576,26 +3708,15 @@ const Nhis = () => {
       setDuplicateExportIssues([])
       setShowDuplicateClaimReview(false)
       setReadinessClaimIssues([])
+      setReadinessFixedCount(0)
       setShowReadinessClaimReview(false)
-      const periodOptions = exportMode === 'custom'
-        ? { mode: 'custom', fromDate: exportFromDate, toDate: exportToDate }
-        : exportMode === 'partial'
-          ? { mode: 'partial', toDate: exportToDate }
-          : { mode: 'month', yearMonth: exportMonth }
+      const { submitDirectApi, selectedFormat, requestOptions } = buildCurrentExportOptions()
       const periodLabel = exportMode === 'custom'
         ? `${exportFromDate} to ${exportToDate}`
         : exportMode === 'partial'
           ? `${exportToDate.slice(0, 7)}-01 to ${exportToDate}`
           : exportMonth
-      const submitDirectApi = directNhiaApiAvailable && exportRoute === 'direct_api'
-      const selectedFormat = submitDirectApi ? 'json' : exportFormat
-      const exportResult = await exportNhisClaimsFile({
-        ...periodOptions,
-        ...getDirectNhiaOptions(),
-        directSubmit: submitDirectApi,
-        format: selectedFormat,
-        directPayloadFormat: submitDirectApi ? 'json' : selectedFormat,
-      })
+      const exportResult = await exportNhisClaimsFile(requestOptions)
       const count = typeof exportResult === 'number' ? exportResult : exportResult?.count || 0
       setShowExportModal(false)
       await refreshClaimsOverview()
@@ -3608,26 +3729,7 @@ const Nhis = () => {
         'success'
       )
     } catch (err) {
-      if (isNhisDuplicateClaimsError(err)) {
-        setDuplicateClaimGroups(err.duplicateGroups || [])
-        setDuplicateExportIssues(err.exportBlockingIssues || [])
-        setShowDuplicateClaimReview(true)
-        notify(
-          `${err.duplicateGroups?.length || 1} duplicate claim group${err.duplicateGroups?.length === 1 ? '' : 's'} found${err.exportBlockingIssues?.length ? ' with other export blockers' : ''}. Review and correct them before exporting.`,
-          'error'
-        )
-        return
-      }
-      if (isNhisReadinessClaimsError(err)) {
-        setReadinessClaimIssues(err.readinessIssues || [])
-        setShowReadinessClaimReview(true)
-        notify(
-          `${err.readinessIssues?.length || 1} incomplete claim${err.readinessIssues?.length === 1 ? '' : 's'} found. Review and correct them before exporting.`,
-          'error'
-        )
-        return
-      }
-      notify(getNhisRequestErrorMessage(err, 'Export failed.', 'Claims were not submitted/exported.'), 'error')
+      applyExportReadinessError(err, 'Export failed.')
     } finally {
       setExporting(false)
     }
@@ -5012,6 +5114,12 @@ const Nhis = () => {
                             ? 'Verified prescription — eligible for pharmacy completion.'
                             : 'Unverified files cannot complete or submit a pharmacy claim.'}
                         </small>
+                        {claimForm.prescriptionVerified && claimForm.prescriptionVerifiedAt && (
+                          <small className="prescription-audit-note">
+                            Verification recorded {formatAppDateTime(claimForm.prescriptionVerifiedAt)}
+                            {claimForm.prescriptionVerifiedBy ? ` by ${claimForm.prescriptionVerifiedBy}` : ''}.
+                          </small>
+                        )}
                       </div>
                     </div>
                   )}
@@ -6239,9 +6347,44 @@ const Nhis = () => {
               <div className="nhis-alert">
                 HealthFlow found {readinessClaimIssues.length} claim{readinessClaimIssues.length === 1 ? '' : 's'} that must be corrected before export.
               </div>
+              <div className="readiness-review-toolbar">
+                <div className="readiness-progress">
+                  <strong>{readinessClaimIssues.length}</strong> remaining
+                  {readinessFixedCount > 0 && <span>{readinessFixedCount} fixed in this session</span>}
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  disabled={readinessChecking || !exportPeriodReady}
+                  onClick={() => { void handleCheckExportReadiness({ keepModalOpen: true }) }}
+                >
+                  <Search size={14} /> {readinessChecking ? 'Rechecking...' : 'Recheck Remaining Claims'}
+                </button>
+              </div>
               <div className="nhis-export-period-note">
                 Open each claim below and fix the listed issue. Export will continue after all required fields and attachments are complete.
               </div>
+              <div className="readiness-filter-tabs" aria-label="Filter incomplete claims">
+                {READINESS_FILTERS.map((filter) => {
+                  const count = readinessIssueCounts[filter.id] || 0
+                  return (
+                    <button
+                      key={filter.id}
+                      type="button"
+                      className={readinessIssueFilter === filter.id ? 'active' : ''}
+                      disabled={count === 0 && filter.id !== 'all'}
+                      onClick={() => setReadinessIssueFilter(filter.id)}
+                    >
+                      {filter.label} <span>{count}</span>
+                    </button>
+                  )
+                })}
+              </div>
+              {readinessIssueFilter === 'attachment' && (
+                <div className="nhis-export-period-note">
+                  Attachment view shows claims that need a scanned prescription, attachment type, or prescription verification.
+                </div>
+              )}
               <div className="duplicate-claim-table-wrap">
                 <table className="nhis-table duplicate-claim-table readiness-claim-table">
                   <thead>
@@ -6255,7 +6398,7 @@ const Nhis = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {readinessClaimIssues.map((issue, index) => {
+                    {filteredReadinessClaimIssues.map((issue, index) => {
                       const claimForAction = { ...issue, _summaryOnly: true }
                       const patientName = issue.patientName || [issue.surname, issue.other_names].filter(Boolean).join(' ') || 'Unknown'
                       const issueList = Array.isArray(issue.issues) ? issue.issues : []
@@ -6314,6 +6457,9 @@ const Nhis = () => {
                   </tbody>
                 </table>
               </div>
+              {filteredReadinessClaimIssues.length === 0 && (
+                <div className="readiness-empty">No claims match this filter.</div>
+              )}
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={closeReadinessClaimReview}>Close</button>
@@ -6573,6 +6719,13 @@ const Nhis = () => {
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setShowExportModal(false)}>Cancel</button>
+              <button
+                className="btn btn-secondary"
+                disabled={exporting || readinessChecking || !exportPeriodReady}
+                onClick={() => { void handleCheckExportReadiness({ keepModalOpen: true }) }}
+              >
+                <CheckCircle2 size={14} /> {readinessChecking ? 'Checking...' : 'Export Readiness Check'}
+              </button>
               <button className="btn btn-primary" disabled={exporting || !exportPeriodReady} onClick={handleExport}>
                 {exporting
                   ? (directNhiaApiAvailable && exportRoute === 'direct_api' ? 'Submitting...' : 'Exporting...')

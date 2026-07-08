@@ -703,6 +703,75 @@
   padding: 0.75rem 0.9rem;
 }
 
+.readiness-review-toolbar {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: space-between;
+}
+
+.readiness-progress {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  color: var(--gray-700);
+  font-size: 0.9rem;
+}
+
+.readiness-progress strong {
+  color: var(--gray-900);
+  font-size: 1.05rem;
+}
+
+.readiness-progress span {
+  color: #166534;
+  font-weight: 800;
+}
+
+.readiness-filter-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.readiness-filter-tabs button {
+  align-items: center;
+  background: #fff;
+  border: 1px solid var(--gray-200);
+  border-radius: 999px;
+  color: var(--gray-700);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 0.78rem;
+  font-weight: 800;
+  gap: 0.35rem;
+  padding: 0.42rem 0.65rem;
+}
+
+.readiness-filter-tabs button.active {
+  background: #e8f7ef;
+  border-color: #7dd3a8;
+  color: #166534;
+}
+
+.readiness-filter-tabs button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.readiness-filter-tabs span {
+  color: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.readiness-empty {
+  color: var(--gray-600);
+  padding: 1rem;
+  text-align: center;
+}
+
 .duplicate-claim-group {
   border: 1px solid var(--gray-200);
   border-radius: var(--radius);
@@ -767,6 +836,12 @@
   color: var(--gray-800);
   font-size: 0.82rem;
   line-height: 1.35;
+}
+
+.prescription-audit-note {
+  color: var(--gray-600);
+  display: block;
+  margin-top: 0.25rem;
 }
 
 .duplicate-claim-actions {
