@@ -1426,6 +1426,15 @@ const Nhis = () => {
     return counts
   }, [claims, claimTab, isMedicineCounterAssistant])
 
+  const activeClaimIssueFilter = CLAIM_ISSUE_FILTERS.find((filter) => filter.id === claimIssueFilter)
+  const firstFilteredIssueClaim = claimIssueFilter === 'all'
+    ? filteredClaims.find((claim) => getNhisClaimIssueBadges(claim).length > 0)
+    : filteredClaims[0]
+  const openFirstClaimIssue = async () => {
+    if (!firstFilteredIssueClaim) return
+    await openEditClaim(firstFilteredIssueClaim)
+  }
+
   const claimsTotalPages = Math.max(1, Math.ceil(claimsTotal / claimsPageSize))
   const claimsShowingFrom = claimsTotal === 0 ? 0 : ((claimsPage - 1) * claimsPageSize) + 1
   const claimsShowingTo = Math.min(claimsPage * claimsPageSize, claimsTotal)
@@ -4089,6 +4098,15 @@ const Nhis = () => {
                   </button>
                 )
               })}
+              <button
+                type="button"
+                className="claim-issue-filter-action"
+                disabled={!firstFilteredIssueClaim}
+                onClick={() => { void openFirstClaimIssue() }}
+              >
+                <Pencil size={13} />
+                Open first {claimIssueFilter === 'all' ? 'issue' : activeClaimIssueFilter?.label?.toLowerCase() || 'issue'}
+              </button>
             </div>
           </div>
 

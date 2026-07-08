@@ -2639,6 +2639,16 @@
   opacity: 0.45;
 }
 
+.claim-issue-filter-tabs .claim-issue-filter-action {
+  background: #f0fdfa;
+  border-color: #5eead4;
+  color: var(--teal-dark);
+}
+
+.claim-issue-filter-action svg {
+  flex-shrink: 0;
+}
+
 .claim-issue-filter-tabs span {
   color: inherit;
   font-variant-numeric: tabular-nums;
