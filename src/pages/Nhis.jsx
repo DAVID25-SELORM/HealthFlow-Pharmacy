@@ -123,6 +123,13 @@ const READINESS_FILTERS = [
   { id: 'medicine', label: 'Medicine' },
   { id: 'other', label: 'Other' },
 ]
+const CLAIM_ISSUE_FILTERS = [
+  { id: 'all', label: 'All issues' },
+  { id: 'missing-attachment', label: 'Missing attachment' },
+  { id: 'attachment-type', label: 'Set attachment type' },
+  { id: 'unverified', label: 'Unverified prescription' },
+  { id: 'incomplete-intake', label: 'Incomplete intake' },
+]
 const CLAIM_STATUS_LABELS = {
   all: 'All',
   draft: 'Saved Details',
@@ -986,6 +993,7 @@ const Nhis = () => {
 
   // ── claims filter ─────────────────────────────────────────────
   const [claimTab, setClaimTab]         = useState('all')
+  const [claimIssueFilter, setClaimIssueFilter] = useState('all')
   const [claimSearch, setClaimSearch]   = useState('')
   const debouncedClaimSearch = useDebouncedValue(claimSearch, NHIS_CLAIMS_SEARCH_DEBOUNCE_MS)
   const [nhisPatientSearch, setNhisPatientSearch] = useState('')
@@ -1122,6 +1130,7 @@ const Nhis = () => {
   const setStatusTab = (tab) => {
     setClaimsPage(1)
     setClaimTab(tab)
+    setClaimIssueFilter('all')
     const p = new URLSearchParams(searchParams)
     tab === 'all' ? p.delete('tab') : p.set('tab', tab)
     setSearchParams(p, { replace: true })
@@ -1384,6 +1393,7 @@ const Nhis = () => {
     return claims.filter((c) => {
       if (isMedicineCounterAssistant && c.status === 'draft') return false
       if (claimTab !== 'all' && c.status !== claimTab) return false
+      if (claimIssueFilter !== 'all' && !getNhisClaimIssueBadges(c).some((badge) => badge.key === claimIssueFilter)) return false
       if (claimDateFilter === 'open') {
         if (!OPEN_CLAIM_STATUSES.has(c.status)) return false
       } else {
@@ -1400,7 +1410,21 @@ const Nhis = () => {
         (c.hin           || '').toLowerCase().includes(term)
       )
     })
-  }, [claims, claimTab, debouncedClaimSearch, claimDateFilter, claimDateRange, isMedicineCounterAssistant])
+  }, [claims, claimTab, claimIssueFilter, debouncedClaimSearch, claimDateFilter, claimDateRange, isMedicineCounterAssistant])
+
+  const claimIssueCounts = useMemo(() => {
+    const counts = { all: 0 }
+    for (const claim of claims) {
+      if (isMedicineCounterAssistant && claim.status === 'draft') continue
+      if (claimTab !== 'all' && claim.status !== claimTab) continue
+      const badges = getNhisClaimIssueBadges(claim)
+      if (badges.length > 0) counts.all += 1
+      for (const badge of badges) {
+        counts[badge.key] = (counts[badge.key] || 0) + 1
+      }
+    }
+    return counts
+  }, [claims, claimTab, isMedicineCounterAssistant])
 
   const claimsTotalPages = Math.max(1, Math.ceil(claimsTotal / claimsPageSize))
   const claimsShowingFrom = claimsTotal === 0 ? 0 : ((claimsPage - 1) * claimsPageSize) + 1
@@ -3997,6 +4021,7 @@ const Nhis = () => {
                 value={claimDateFilter}
                 onChange={(event) => {
                   setClaimsPage(1)
+                  setClaimIssueFilter('all')
                   setClaimDateFilter(event.target.value)
                 }}
                 aria-label="Filter claims by date"
@@ -4016,6 +4041,7 @@ const Nhis = () => {
                     value={claimFromDate}
                     onChange={(event) => {
                       setClaimsPage(1)
+                      setClaimIssueFilter('all')
                       setClaimFromDate(event.target.value)
                     }}
                     aria-label="Claims from date"
@@ -4025,6 +4051,7 @@ const Nhis = () => {
                     value={claimToDate}
                     onChange={(event) => {
                       setClaimsPage(1)
+                      setClaimIssueFilter('all')
                       setClaimToDate(event.target.value)
                     }}
                     aria-label="Claims to date"
@@ -4043,6 +4070,25 @@ const Nhis = () => {
                   setClaimSearch(e.target.value)
                 }}
               />
+            </div>
+            <div className="claim-issue-filter-tabs" aria-label="Filter claims by issue">
+              {CLAIM_ISSUE_FILTERS.map((filter) => {
+                const count = claimIssueCounts[filter.id] || 0
+                return (
+                  <button
+                    key={filter.id}
+                    type="button"
+                    className={claimIssueFilter === filter.id ? 'active' : ''}
+                    disabled={filter.id !== 'all' && count === 0}
+                    onClick={() => {
+                      setClaimsPage(1)
+                      setClaimIssueFilter(filter.id)
+                    }}
+                  >
+                    {filter.label} <span>{count}</span>
+                  </button>
+                )
+              })}
             </div>
           </div>
 
