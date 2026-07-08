@@ -919,6 +919,12 @@ export default function OfflineSync() {
           <div className="branch-update-message">
             {branchUpdateMessage}
           </div>
+          <div className="branch-update-install-note">
+            <strong>First-time installation is separate.</strong>
+            <span>
+              Use Branch Sync Setup and the facility installer to connect a new local server. These buttons update an already installed local server.
+            </span>
+          </div>
           {updateStatus?.releaseNotes && (
             <p className="branch-update-notes">{updateStatus.releaseNotes}</p>
           )}

@@ -148,6 +148,15 @@ Do not expose port `4780` directly to the public internet.
 
 ## Update Process
 
+The **Check for Updates** and **Download and Install** buttons in Offline Sync
+update an already installed and connected local branch server/offline app. They
+do not perform the first-time installation. First-time setup uses the branch
+installer plus **Branch Sync Setup**.
+
+Keep token names distinct: `BRANCH_SERVER_TOKEN` protects local branch server
+API calls from browsers and scripts; `BRANCH_SYNC_TOKEN` registers the local
+server for Supabase sync.
+
 1. Stop the service.
 2. Back up `C:\HealthFlowLocal\data\healthflow-branch.sqlite`.
 3. Pull/copy the updated app.

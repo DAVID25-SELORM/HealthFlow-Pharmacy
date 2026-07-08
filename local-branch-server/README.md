@@ -107,6 +107,12 @@ the application, installs the update, and restarts it. `.env`, SQLite data,
 and logs are preserved. A failed install restores the previous application
 version.
 
+These controls are for updating an already installed and connected local
+branch server. First-time installation still uses the Windows/Linux branch
+installer and **Branch Sync Setup**. Keep the two tokens distinct:
+`BRANCH_SERVER_TOKEN` protects local API calls from browsers and scripts,
+while `BRANCH_SYNC_TOKEN` registers the local server for Supabase sync.
+
 Configure every facility server with the same update public key:
 
 ```env

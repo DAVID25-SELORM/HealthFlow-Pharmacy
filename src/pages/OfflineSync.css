@@ -355,6 +355,27 @@
   padding: 0 1rem 1rem;
 }
 
+.branch-update-install-note {
+  align-items: flex-start;
+  background: #eef7ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 0.5rem;
+  color: #1e3a8a;
+  display: grid;
+  gap: 0.2rem;
+  margin: 0 1rem 1rem;
+  padding: 0.75rem;
+}
+
+.branch-update-install-note strong {
+  font-size: 0.86rem;
+}
+
+.branch-update-install-note span {
+  color: #1d4ed8;
+  font-size: 0.82rem;
+}
+
 .branch-update-notes {
   color: var(--gray-600);
   white-space: pre-wrap;
