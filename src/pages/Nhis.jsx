@@ -3139,23 +3139,24 @@ const Nhis = () => {
         },
       })
 
+      const wasReadinessCorrection = readinessClaimIssues.length > 0
       setShowNewClaimModal(false)
       resetClaimModal()
       if (duplicateClaimGroups.length > 0) {
         setShowDuplicateClaimReview(true)
-      } else if (readinessClaimIssues.length > 0) {
+      } else if (wasReadinessCorrection) {
         const correctedClaimId = savedClaimRecord?.id || editingClaim?.id || ''
-      const correctedClaimNumber = savedClaimRecord?.claim_number || editingClaim?.claim_number || ''
-      const remainingReadinessIssues = readinessClaimIssues.filter((issue) =>
-        (correctedClaimId && issue.id === correctedClaimId) ||
-        (correctedClaimNumber && issue.claim_number === correctedClaimNumber)
-          ? false
-          : true
-      )
-      setReadinessClaimIssues(remainingReadinessIssues)
-      if (remainingReadinessIssues.length < readinessClaimIssues.length) {
-        setReadinessFixedCount((count) => count + 1)
-      }
+        const correctedClaimNumber = savedClaimRecord?.claim_number || editingClaim?.claim_number || ''
+        const remainingReadinessIssues = readinessClaimIssues.filter((issue) =>
+          (correctedClaimId && issue.id === correctedClaimId) ||
+          (correctedClaimNumber && issue.claim_number === correctedClaimNumber)
+            ? false
+            : true
+        )
+        setReadinessClaimIssues(remainingReadinessIssues)
+        if (remainingReadinessIssues.length < readinessClaimIssues.length) {
+          setReadinessFixedCount((count) => count + 1)
+        }
         if (remainingReadinessIssues.length > 0) {
           setShowReadinessClaimReview(true)
         }
@@ -3163,6 +3164,13 @@ const Nhis = () => {
       setReadinessActiveClaimId('')
       await refreshClaimsOverview()
       notify(successMessage, 'success')
+      if (wasReadinessCorrection) {
+        await handleCheckExportReadiness({
+          keepModalOpen: true,
+          preserveFilter: true,
+          showExportModalOnReady: true,
+        })
+      }
     } catch (err) {
       setClaimError(getNhisRequestErrorMessage(
         err,
@@ -3670,7 +3678,8 @@ const Nhis = () => {
     }
   }
 
-  const applyExportReadinessError = (err, fallbackPrefix = 'Readiness check failed.') => {
+  const applyExportReadinessError = (err, fallbackPrefix = 'Readiness check failed.', options = {}) => {
+    const { preserveFilter = false } = options
     if (isNhisDuplicateClaimsError(err)) {
       setReadinessClaimIssues([])
       setShowReadinessClaimReview(false)
@@ -3688,7 +3697,7 @@ const Nhis = () => {
       setDuplicateExportIssues([])
       setShowDuplicateClaimReview(false)
       setReadinessClaimIssues(err.readinessIssues || [])
-      setReadinessIssueFilter('all')
+      if (!preserveFilter) setReadinessIssueFilter('all')
       setShowReadinessClaimReview(true)
       notify(
         `${err.readinessIssues?.length || 1} incomplete claim${err.readinessIssues?.length === 1 ? '' : 's'} found. Review and correct them before exporting.`,
@@ -3700,7 +3709,11 @@ const Nhis = () => {
     return false
   }
 
-  const handleCheckExportReadiness = async ({ keepModalOpen = false } = {}) => {
+  const handleCheckExportReadiness = async ({
+    keepModalOpen = false,
+    preserveFilter = false,
+    showExportModalOnReady = false,
+  } = {}) => {
     try {
       setReadinessChecking(true)
       setDuplicateClaimGroups([])
@@ -3709,12 +3722,18 @@ const Nhis = () => {
       const { requestOptions } = buildCurrentExportOptions()
       const result = await checkNhisExportReadiness(requestOptions)
       setReadinessClaimIssues([])
-      setReadinessIssueFilter('all')
+      if (!preserveFilter) setReadinessIssueFilter('all')
       setShowReadinessClaimReview(false)
-      notify(`${result.count} claim${result.count === 1 ? '' : 's'} ready for export.`, 'success')
+      notify(
+        showExportModalOnReady
+          ? `All clear. ${result.count} claim${result.count === 1 ? '' : 's'} ready for export.`
+          : `${result.count} claim${result.count === 1 ? '' : 's'} ready for export.`,
+        'success'
+      )
+      if (showExportModalOnReady) setShowExportModal(true)
       if (!keepModalOpen) setShowExportModal(false)
     } catch (err) {
-      applyExportReadinessError(err)
+      applyExportReadinessError(err, 'Readiness check failed.', { preserveFilter })
     } finally {
       setReadinessChecking(false)
     }
