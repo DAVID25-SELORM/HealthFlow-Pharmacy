@@ -3097,6 +3097,19 @@ const Nhis = () => {
       resetClaimModal()
       if (duplicateClaimGroups.length > 0) {
         setShowDuplicateClaimReview(true)
+      } else if (readinessClaimIssues.length > 0) {
+        const correctedClaimId = savedClaimRecord?.id || editingClaim?.id || ''
+        const correctedClaimNumber = savedClaimRecord?.claim_number || editingClaim?.claim_number || ''
+        const remainingReadinessIssues = readinessClaimIssues.filter((issue) =>
+          (correctedClaimId && issue.id === correctedClaimId) ||
+          (correctedClaimNumber && issue.claim_number === correctedClaimNumber)
+            ? false
+            : true
+        )
+        setReadinessClaimIssues(remainingReadinessIssues)
+        if (remainingReadinessIssues.length > 0) {
+          setShowReadinessClaimReview(true)
+        }
       }
       await refreshClaimsOverview()
       notify(successMessage, 'success')
@@ -5907,7 +5920,11 @@ const Nhis = () => {
             </table>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={closeViewClaim}>
-                {duplicateClaimGroups.length > 0 ? 'Back to duplicates' : 'Close'}
+                {duplicateClaimGroups.length > 0
+                  ? 'Back to duplicates'
+                  : readinessClaimIssues.length > 0
+                    ? 'Back to incomplete claims'
+                    : 'Close'}
               </button>
             </div>
           </div>
