@@ -926,6 +926,7 @@ const Nhis = () => {
   const [showRuleImportModal, setShowRuleImportModal] = useState(false)
   const [showExportModal, setShowExportModal]       = useState(false)
   const [duplicateClaimGroups, setDuplicateClaimGroups] = useState([])
+  const [showDuplicateClaimReview, setShowDuplicateClaimReview] = useState(false)
   const [viewClaim, setViewClaim]                   = useState(null)
 
   // ── new claim form ────────────────────────────────────────────
@@ -1930,13 +1931,32 @@ const Nhis = () => {
     setClaimActionReview(null)
     setShowNewClaimModal(false)
     resetClaimModal()
+    if (duplicateClaimGroups.length > 0) {
+      setShowDuplicateClaimReview(true)
+    }
+  }
+
+  const closeDuplicateClaimReview = () => {
+    setShowDuplicateClaimReview(false)
+    setDuplicateClaimGroups([])
+  }
+
+  const returnToDuplicateClaimReview = () => {
+    if (duplicateClaimGroups.length > 0) {
+      setShowDuplicateClaimReview(true)
+    }
+  }
+
+  const closeViewClaim = () => {
+    setViewClaim(null)
+    returnToDuplicateClaimReview()
   }
 
   const openEditClaim = async (selectedClaim) => {
     const canOpenForMcaServing = isMedicineCounterAssistant && canMcaOpenNhisClaimForServing(selectedClaim)
     if (!canOpenForMcaServing && !canEditNhisClaimAnytime && selectedClaim.status !== 'served') {
       notify('Only served NHIS claims can be edited before submission/export.', 'warning')
-      return
+      return false
     }
 
     let claim = selectedClaim
@@ -1945,21 +1965,21 @@ const Nhis = () => {
       claim = await hydrateClaimForAction(selectedClaim)
     } catch (err) {
       notify(err.message || 'Unable to load the full NHIS claim details.', 'error')
-      return
+      return false
     } finally {
       setClaimActionLoading(null)
     }
 
     if (isMedicineCounterAssistant && isNhisClaimDirectlyServed(claim)) {
       notify('This claim was served directly by the Claims Officer and does not require MCA input.', 'warning')
-      return
+      return false
     }
 
     // MCA medication edits are limited to the 24h window (or a 12h supervisor
     // re-open). The branch server also enforces this; this is early feedback.
     if (isMedicineCounterAssistant && shouldApplyMcaEditWindowToClaim(claim.status) && !isMcaEditWindowOpen(claim)) {
       notify('The 24-hour edit window for this claim has closed. Ask an admin or claims officer to re-open it.', 'warning')
-      return
+      return false
     }
 
     setEditingClaim(claim)
@@ -2075,14 +2095,17 @@ const Nhis = () => {
       }))
     )
     setShowNewClaimModal(true)
+    return true
   }
 
   const openViewClaim = async (claim) => {
     setClaimActionLoading({ claimId: claim.id, action: 'view' })
     try {
       setViewClaim(await hydrateClaimForAction(claim))
+      return true
     } catch (err) {
       notify(err.message || 'Unable to load the full NHIS claim details.', 'error')
+      return false
     } finally {
       setClaimActionLoading(null)
     }
@@ -3034,6 +3057,9 @@ const Nhis = () => {
 
       setShowNewClaimModal(false)
       resetClaimModal()
+      if (duplicateClaimGroups.length > 0) {
+        setShowDuplicateClaimReview(true)
+      }
       await refreshClaimsOverview()
       notify(successMessage, 'success')
     } catch (err) {
@@ -3205,7 +3231,7 @@ const Nhis = () => {
     try {
       setUpdatingStatus(claim.id)
       await deleteNhisClaim(claim.id, { role, canDeleteNhisClaims })
-      if (viewClaim?.id === claim.id) setViewClaim(null)
+      if (viewClaim?.id === claim.id) closeViewClaim()
       if (editingClaim?.id === claim.id) closeClaimModal()
       await refreshClaimsOverview()
       notify(`Claim ${claim.claim_number} moved to the Recycle Bin.`, 'success')
@@ -3444,6 +3470,7 @@ const Nhis = () => {
     try {
       setExporting(true)
       setDuplicateClaimGroups([])
+      setShowDuplicateClaimReview(false)
       const periodOptions = exportMode === 'custom'
         ? { mode: 'custom', fromDate: exportFromDate, toDate: exportToDate }
         : exportMode === 'partial'
@@ -3477,6 +3504,7 @@ const Nhis = () => {
     } catch (err) {
       if (isNhisDuplicateClaimsError(err)) {
         setDuplicateClaimGroups(err.duplicateGroups || [])
+        setShowDuplicateClaimReview(true)
         notify(
           `${err.duplicateGroups?.length || 1} duplicate claim group${err.duplicateGroups?.length === 1 ? '' : 's'} found. Review and correct them before exporting.`,
           'error'
@@ -5688,11 +5716,11 @@ const Nhis = () => {
       )}
 
       {viewClaim && (
-        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setViewClaim(null)}>
+        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && closeViewClaim()}>
           <div className="modal-panel modal-panel--view-claim">
             <div className="modal-header">
               <h2>{viewClaim.claim_number} <StatusBadge status={viewClaim.status} /></h2>
-              <button className="modal-close" onClick={() => setViewClaim(null)}><X size={18} /></button>
+              <button className="modal-close" onClick={closeViewClaim}><X size={18} /></button>
             </div>
             <div className="view-claim-grid">
               <div><strong>Patient:</strong> {viewClaim.surname} {viewClaim.other_names || ''}</div>
@@ -5775,7 +5803,9 @@ const Nhis = () => {
               </tfoot>
             </table>
             <div className="modal-footer">
-              <button className="btn btn-secondary" onClick={() => setViewClaim(null)}>Close</button>
+              <button className="btn btn-secondary" onClick={closeViewClaim}>
+                {duplicateClaimGroups.length > 0 ? 'Back to duplicates' : 'Close'}
+              </button>
             </div>
           </div>
         </div>
@@ -6078,12 +6108,12 @@ const Nhis = () => {
         </div>
       )}
 
-      {duplicateClaimGroups.length > 0 && (
-        <div className="modal-overlay modal-overlay--top" onClick={(e) => e.target === e.currentTarget && setDuplicateClaimGroups([])}>
+      {showDuplicateClaimReview && duplicateClaimGroups.length > 0 && (
+        <div className="modal-overlay modal-overlay--top" onClick={(e) => e.target === e.currentTarget && closeDuplicateClaimReview()}>
           <div className="modal-panel modal-panel--duplicates">
             <div className="modal-header">
               <h2>Duplicate Claims Found</h2>
-              <button className="modal-close" onClick={() => setDuplicateClaimGroups([])}><X size={18} /></button>
+              <button className="modal-close" onClick={closeDuplicateClaimReview}><X size={18} /></button>
             </div>
             <div className="duplicate-claims-body">
               <div className="nhis-alert">
@@ -6131,8 +6161,10 @@ const Nhis = () => {
                                     className="action-btn"
                                     title="View claim"
                                     onClick={() => {
-                                      setDuplicateClaimGroups([])
-                                      void openViewClaim(claimForAction)
+                                      setShowDuplicateClaimReview(false)
+                                      void openViewClaim(claimForAction).then((opened) => {
+                                        if (!opened) returnToDuplicateClaimReview()
+                                      })
                                     }}
                                   >
                                     <Eye size={14} />
@@ -6142,9 +6174,11 @@ const Nhis = () => {
                                     className="action-btn action-btn--edit"
                                     title="Edit claim"
                                     onClick={() => {
-                                      setDuplicateClaimGroups([])
+                                      setShowDuplicateClaimReview(false)
                                       setShowExportModal(false)
-                                      void openEditClaim(claimForAction)
+                                      void openEditClaim(claimForAction).then((opened) => {
+                                        if (!opened) returnToDuplicateClaimReview()
+                                      })
                                     }}
                                   >
                                     <Pencil size={14} />
@@ -6161,7 +6195,7 @@ const Nhis = () => {
               ))}
             </div>
             <div className="modal-footer">
-              <button className="btn btn-secondary" onClick={() => setDuplicateClaimGroups([])}>Close</button>
+              <button className="btn btn-secondary" onClick={closeDuplicateClaimReview}>Close</button>
             </div>
           </div>
         </div>
