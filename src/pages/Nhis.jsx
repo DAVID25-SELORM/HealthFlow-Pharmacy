@@ -992,6 +992,7 @@ const Nhis = () => {
   const [claimsTotal, setClaimsTotal] = useState(0)
   const [claimIssueCounts, setClaimIssueCounts] = useState({ all: 0 })
   const [claimIssueCountsLoading, setClaimIssueCountsLoading] = useState(false)
+  const [openingFirstClaimIssue, setOpeningFirstClaimIssue] = useState(false)
   const [error, setError]         = useState('')
   const [catalogSeeding, setCatalogSeeding] = useState(false)
 
@@ -1446,12 +1447,36 @@ const Nhis = () => {
   }, [claims, claimTab, claimIssueFilter, debouncedClaimSearch, claimDateFilter, claimDateRange, isMedicineCounterAssistant])
 
   const activeClaimIssueFilter = CLAIM_ISSUE_FILTERS.find((filter) => filter.id === claimIssueFilter)
-  const firstFilteredIssueClaim = claimIssueFilter === 'all'
-    ? filteredClaims.find((claim) => getNhisClaimIssueBadges(claim).length > 0)
-    : filteredClaims[0]
+  const activeClaimIssueCount = claimIssueFilter === 'all'
+    ? claimIssueCounts.all || 0
+    : claimIssueFilter === 'any'
+      ? claimIssueCounts.all || 0
+      : claimIssueCounts[claimIssueFilter] || 0
   const openFirstClaimIssue = async () => {
-    if (!firstFilteredIssueClaim) return
-    await openEditClaim(firstFilteredIssueClaim)
+    if (openingFirstClaimIssue) return
+    const issueFilter = claimIssueFilter === 'all' ? 'any' : claimIssueFilter
+
+    try {
+      setOpeningFirstClaimIssue(true)
+      const result = await getNhisClaimsPage({
+        ...getClaimServerFilters({ includeIssueFilter: false }),
+        issueFilter,
+        page: 1,
+        pageSize: 1,
+        includeTotal: false,
+      })
+      const firstIssueClaim = result.claims?.[0]
+      if (!firstIssueClaim) {
+        notify('No matching NHIS claim issue was found for the current filters.', 'info')
+        await loadClaimIssueCounts({ force: true })
+        return
+      }
+      await openEditClaim(firstIssueClaim)
+    } catch (err) {
+      notify(err.message || 'Unable to open the first NHIS claim issue.', 'error')
+    } finally {
+      setOpeningFirstClaimIssue(false)
+    }
   }
 
   const claimsTotalPages = Math.max(1, Math.ceil(claimsTotal / claimsPageSize))
@@ -4124,11 +4149,13 @@ const Nhis = () => {
               <button
                 type="button"
                 className="claim-issue-filter-action"
-                disabled={!firstFilteredIssueClaim}
+                disabled={openingFirstClaimIssue || activeClaimIssueCount === 0}
                 onClick={() => { void openFirstClaimIssue() }}
               >
                 <Pencil size={13} />
-                Open first {claimIssueFilter === 'all' ? 'issue' : activeClaimIssueFilter?.label?.toLowerCase() || 'issue'}
+                {openingFirstClaimIssue
+                  ? 'Opening issue...'
+                  : `Open first ${claimIssueFilter === 'all' ? 'issue' : activeClaimIssueFilter?.label?.toLowerCase() || 'issue'}`}
               </button>
             </div>
           </div>
