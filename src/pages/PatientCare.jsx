@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Activity,
   Bell,
@@ -23,6 +23,8 @@ const STORAGE_KEYS = {
 }
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000
+const LOCAL_RECORD_SOURCE = 'local_device'
+const LOCAL_MESSAGE_STATUS = 'Queued locally'
 
 const tabs = [
   { id: 'overview', label: 'Overview', icon: Activity },
@@ -86,8 +88,10 @@ const loadStoredList = (key) => {
 const saveStoredList = (key, value) => {
   try {
     localStorage.setItem(key, JSON.stringify(value))
+    return true
   } catch {
     // Storage can be unavailable in private or locked-down browser sessions.
+    return false
   }
 }
 
@@ -200,6 +204,7 @@ function PatientCare() {
   const [refillForm, setRefillForm] = useState(emptyRefillForm)
   const [followUpForm, setFollowUpForm] = useState(emptyFollowUpForm)
   const [messageForm, setMessageForm] = useState(emptyMessageForm)
+  const [storageWarning, setStorageWarning] = useState('')
 
   useEffect(() => {
     let cancelled = false
@@ -223,10 +228,18 @@ function PatientCare() {
     }
   }, [])
 
-  useEffect(() => saveStoredList(STORAGE_KEYS.vitals, vitals), [vitals])
-  useEffect(() => saveStoredList(STORAGE_KEYS.refills, refills), [refills])
-  useEffect(() => saveStoredList(STORAGE_KEYS.followUps, followUps), [followUps])
-  useEffect(() => saveStoredList(STORAGE_KEYS.messages, messages), [messages])
+  const persistCareList = useCallback((key, value) => {
+    if (saveStoredList(key, value)) {
+      setStorageWarning('')
+      return
+    }
+    setStorageWarning('Patient Care records could not be saved on this device. Browser storage may be blocked.')
+  }, [])
+
+  useEffect(() => persistCareList(STORAGE_KEYS.vitals, vitals), [persistCareList, vitals])
+  useEffect(() => persistCareList(STORAGE_KEYS.refills, refills), [persistCareList, refills])
+  useEffect(() => persistCareList(STORAGE_KEYS.followUps, followUps), [followUps, persistCareList])
+  useEffect(() => persistCareList(STORAGE_KEYS.messages, messages), [messages, persistCareList])
 
   const patientMap = useMemo(() => {
     const map = new Map()
@@ -291,6 +304,7 @@ function PatientCare() {
       ...vitalsForm,
       bmi: calcBmi(vitalsForm.weight, vitalsForm.height),
       recordedAt: new Date().toISOString(),
+      source: LOCAL_RECORD_SOURCE,
     }
     setVitals((current) => [row, ...current])
     setVitalsForm(emptyVitalsForm)
@@ -308,6 +322,7 @@ function PatientCare() {
       daysSupplied,
       refillDate: daysSupplied ? addDays(refillForm.dispensedDate, daysSupplied) : refillForm.dispensedDate,
       createdAt: new Date().toISOString(),
+      source: LOCAL_RECORD_SOURCE,
     }
     setRefills((current) => [row, ...current])
     setRefillForm(emptyRefillForm)
@@ -316,7 +331,12 @@ function PatientCare() {
   const addFollowUp = (event) => {
     event.preventDefault()
     if (!followUpForm.patientId || !followUpForm.dueDate) return
-    setFollowUps((current) => [{ id: createId(), ...followUpForm, createdAt: new Date().toISOString() }, ...current])
+    setFollowUps((current) => [{
+      id: createId(),
+      ...followUpForm,
+      createdAt: new Date().toISOString(),
+      source: LOCAL_RECORD_SOURCE,
+    }, ...current])
     setFollowUpForm(emptyFollowUpForm)
   }
 
@@ -324,7 +344,14 @@ function PatientCare() {
     event.preventDefault()
     if (!messageForm.patientId || !messageForm.message.trim()) return
     setMessages((current) => [
-      { id: createId(), ...messageForm, status: 'Queued', createdAt: new Date().toISOString() },
+      {
+        id: createId(),
+        ...messageForm,
+        status: LOCAL_MESSAGE_STATUS,
+        deliveryStatus: 'local_only',
+        createdAt: new Date().toISOString(),
+        source: LOCAL_RECORD_SOURCE,
+      },
       ...current,
     ])
     setMessageForm(emptyMessageForm)
@@ -362,6 +389,12 @@ function PatientCare() {
       </div>
 
       {patientError && <div className="care-alert" role="alert">{patientError}</div>}
+      {storageWarning && <div className="care-alert" role="alert">{storageWarning}</div>}
+
+      <div className="care-local-notice" role="status">
+        <strong>Local workstation records</strong>
+        <span>Vitals, refills, follow-ups, and patient messages are saved on this device. Message entries are not sent until a messaging service is connected.</span>
+      </div>
 
       <div className="care-tabs" role="tablist" aria-label="Patient care tabs">
         {tabs.map((tab) => (
@@ -474,7 +507,7 @@ function PatientCare() {
           <section className="care-panel">
             <div className="care-panel-header">
               <h2>Record Vitals</h2>
-              <span>BMI {calcBmi(vitalsForm.weight, vitalsForm.height) || '-'}</span>
+              <span>BMI {calcBmi(vitalsForm.weight, vitalsForm.height) || '-'} - Local</span>
             </div>
             <form className="care-form" onSubmit={addVital}>
               <label>
@@ -509,7 +542,7 @@ function PatientCare() {
           <section className="care-panel">
             <div className="care-panel-header">
               <h2>Vitals History</h2>
-              <span>{vitals.length} records</span>
+              <span>{vitals.length} local records</span>
             </div>
             <div className="care-table-wrap">
               <table className="care-table">
@@ -543,7 +576,7 @@ function PatientCare() {
           <section className="care-panel">
             <div className="care-panel-header">
               <h2>Medication Refill</h2>
-              <span>{refills.length} active</span>
+              <span>{refills.length} local</span>
             </div>
             <form className="care-form" onSubmit={addRefill}>
               <label>Patient<select value={refillForm.patientId} onChange={(event) => setRefillForm({ ...refillForm, patientId: event.target.value })}>{selectPatientOptions()}</select></label>
@@ -648,7 +681,7 @@ function PatientCare() {
           <section className="care-panel">
             <div className="care-panel-header">
               <h2>Follow-up Registry</h2>
-              <span>{followUps.length} records</span>
+              <span>{followUps.length} local records</span>
             </div>
             <form className="care-form" onSubmit={addFollowUp}>
               <label>Patient<select value={followUpForm.patientId} onChange={(event) => setFollowUpForm({ ...followUpForm, patientId: event.target.value })}>{selectPatientOptions()}</select></label>
@@ -701,7 +734,7 @@ function PatientCare() {
           <section className="care-panel">
             <div className="care-panel-header">
               <h2>Patient Message</h2>
-              <span>{messages.length} queued</span>
+              <span>{messages.length} local queue</span>
             </div>
             <form className="care-form" onSubmit={sendMessage}>
               <label>Patient<select value={messageForm.patientId} onChange={(event) => setMessageForm({ ...messageForm, patientId: event.target.value })}>{selectPatientOptions()}</select></label>
@@ -712,7 +745,7 @@ function PatientCare() {
               <label>Message<textarea rows="5" value={messageForm.message} onChange={(event) => setMessageForm({ ...messageForm, message: event.target.value })} /></label>
               <button type="submit" className="btn btn-primary">
                 <Send size={16} />
-                Queue Message
+                Save to Local Queue
               </button>
             </form>
           </section>
@@ -735,7 +768,7 @@ function PatientCare() {
                         <td><strong>{patientName(patient)}</strong><span>{formatAppDate(row.createdAt)}</span></td>
                         <td>{row.channel}</td>
                         <td className="care-message-cell">{row.message}</td>
-                        <td>{renderStatus(row.status, 'neutral')}</td>
+                        <td>{renderStatus(row.status || LOCAL_MESSAGE_STATUS, 'warning')}</td>
                       </tr>
                     )
                   })}

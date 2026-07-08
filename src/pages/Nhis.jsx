@@ -6194,6 +6194,9 @@ const Nhis = () => {
                   ? ' Other export blockers were also found; fix all issues before exporting.'
                   : ' Correct or remove one claim from each group before exporting.'}
               </div>
+              <div className="nhis-export-period-note">
+                Export period uses service/submission month. Entered Date and Last Edited only show when the claim was created or corrected.
+              </div>
               {duplicateExportIssues.length > 0 && (
                 <div className="nhis-export-blocker-summary" role="alert">
                   <h3>Other Export Blockers</h3>
@@ -6234,9 +6237,9 @@ const Nhis = () => {
                           <tr>
                             <th>Claim</th>
                             <th>Patient</th>
-                            <th>Service Date</th>
-                            <th>Created Date</th>
-                            <th>Last Updated</th>
+                            <th>Service Date (Export Period)</th>
+                            <th>Entered Date</th>
+                            <th>Last Edited</th>
                             <th>Recommendation</th>
                             <th>Status</th>
                             <th>Actions</th>

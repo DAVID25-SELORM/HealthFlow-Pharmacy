@@ -19,6 +19,25 @@
   padding: 0.8rem 1rem;
 }
 
+.care-local-notice {
+  align-items: flex-start;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  color: #1e3a8a;
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.8rem 1rem;
+}
+
+.care-local-notice strong {
+  flex-shrink: 0;
+}
+
+.care-local-notice span {
+  color: #1d4ed8;
+}
+
 .care-tabs {
   align-items: center;
   display: flex;
