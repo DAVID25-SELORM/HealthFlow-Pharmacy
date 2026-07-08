@@ -4979,13 +4979,13 @@ const Nhis = () => {
                             checked={claimForm.prescriptionVerified === true}
                             disabled={
                               !canWrite ||
-                              isMedicineCounterAssistant ||
-                              claimForm.prescriptionDocumentType !== 'prescription'
+                              isMedicineCounterAssistant
                             }
                             onChange={(event) => {
                               const verified = event.target.checked
                               setClaimForm((previous) => ({
                                 ...previous,
+                                prescriptionDocumentType: verified ? 'prescription' : previous.prescriptionDocumentType,
                                 prescriptionVerified: verified,
                                 prescriptionVerifiedBy: verified ? user?.id || '' : '',
                                 prescriptionVerifiedAt: verified ? new Date().toISOString() : '',
