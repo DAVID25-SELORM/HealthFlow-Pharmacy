@@ -35,6 +35,7 @@ import {
   getAllNhiaTariffItems,
   updateNhiaTariffItem,
   getNhisClaimStats,
+  getNhisClaimIssueCounts,
   createNhisClaim,
   deleteNhisClaim,
   serveNhisClaimDirect,
@@ -124,7 +125,8 @@ const READINESS_FILTERS = [
   { id: 'other', label: 'Other' },
 ]
 const CLAIM_ISSUE_FILTERS = [
-  { id: 'all', label: 'All issues' },
+  { id: 'all', label: 'All claims' },
+  { id: 'any', label: 'All issues' },
   { id: 'missing-attachment', label: 'Missing attachment' },
   { id: 'attachment-type', label: 'Set attachment type' },
   { id: 'unverified', label: 'Unverified prescription' },
@@ -988,6 +990,8 @@ const Nhis = () => {
   const [claimsPage, setClaimsPage] = useState(1)
   const [claimsPageSize, setClaimsPageSize] = useState(NHIS_CLAIMS_DEFAULT_PAGE_SIZE)
   const [claimsTotal, setClaimsTotal] = useState(0)
+  const [claimIssueCounts, setClaimIssueCounts] = useState({ all: 0 })
+  const [claimIssueCountsLoading, setClaimIssueCountsLoading] = useState(false)
   const [error, setError]         = useState('')
   const [catalogSeeding, setCatalogSeeding] = useState(false)
 
@@ -1138,7 +1142,8 @@ const Nhis = () => {
 
   const canEditNhisClaimAnytime = ['admin', 'claims_officer'].includes(normalizedRole)
 
-  const getClaimServerFilters = useCallback(() => {
+  const getClaimServerFilters = useCallback((options = {}) => {
+    const { includeIssueFilter = false } = options
     const today = todayIsoDate()
     let fromDate = ''
     let toDate = ''
@@ -1171,8 +1176,9 @@ const Nhis = () => {
       fromDate,
       toDate,
       searchTerm: debouncedClaimSearch.trim(),
+      ...(includeIssueFilter && claimIssueFilter !== 'all' ? { issueFilter: claimIssueFilter } : {}),
     }
-  }, [claimDateFilter, claimFromDate, debouncedClaimSearch, claimTab, claimToDate])
+  }, [claimDateFilter, claimFromDate, claimIssueFilter, debouncedClaimSearch, claimTab, claimToDate])
 
   const loadClaimsPage = useCallback(async (page = 1, options = {}) => {
     const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
@@ -1182,7 +1188,7 @@ const Nhis = () => {
       return
     }
 
-    const filters = getClaimServerFilters()
+    const filters = getClaimServerFilters({ includeIssueFilter: true })
     const filterKey = JSON.stringify(filters)
     const pageKey = `${filterKey}|page:${page}|size:${claimsPageSize}`
     const cached = claimsPageCacheRef.current.get(pageKey)
@@ -1235,6 +1241,27 @@ const Nhis = () => {
       setClaimsPageLoading(false)
     }
   }, [claimsPageSize, getClaimServerFilters, role])
+
+  const loadClaimIssueCounts = useCallback(async () => {
+    if (!isSupabaseConfigured()) {
+      setClaimIssueCounts({ all: 0 })
+      return
+    }
+
+    try {
+      setClaimIssueCountsLoading(true)
+      const counts = await getNhisClaimIssueCounts({
+        ...getClaimServerFilters(),
+        organizationType,
+      })
+      setClaimIssueCounts(counts || { all: 0 })
+    } catch (countError) {
+      console.warn('[NHIS] Claim issue counts could not be loaded.', countError)
+      setClaimIssueCounts({ all: 0 })
+    } finally {
+      setClaimIssueCountsLoading(false)
+    }
+  }, [getClaimServerFilters, organizationType])
 
   // ── load data ────────────────────────────────────────────────
   const loadAll = useCallback(async () => {
@@ -1303,11 +1330,12 @@ const Nhis = () => {
       const statsData = await getNhisClaimStats()
       claimsPageCacheRef.current.clear()
       await loadClaimsPage(claimsPage, { force: true, refreshTotal: true })
+      await loadClaimIssueCounts()
       setStats(statsData)
     } catch (err) {
       setError(err.message || 'Unable to refresh NHIS claims.')
     }
-  }, [claimsPage, loadClaimsPage])
+  }, [claimsPage, loadClaimIssueCounts, loadClaimsPage])
 
   const hydrateClaimForAction = useCallback(async (claim) => {
     if (!claim?._summaryOnly) return claim
@@ -1322,6 +1350,10 @@ const Nhis = () => {
   useEffect(() => {
     void loadClaimsPage(claimsPage)
   }, [claimsPage, loadClaimsPage])
+
+  useEffect(() => {
+    void loadClaimIssueCounts()
+  }, [loadClaimIssueCounts])
 
   useEffect(() => startClaimItBridgeQueueAutoSync({
     onSynced: (result) => {
@@ -1393,7 +1425,8 @@ const Nhis = () => {
     return claims.filter((c) => {
       if (isMedicineCounterAssistant && c.status === 'draft') return false
       if (claimTab !== 'all' && c.status !== claimTab) return false
-      if (claimIssueFilter !== 'all' && !getNhisClaimIssueBadges(c).some((badge) => badge.key === claimIssueFilter)) return false
+      if (claimIssueFilter === 'any' && getNhisClaimIssueBadges(c).length === 0) return false
+      if (claimIssueFilter !== 'all' && claimIssueFilter !== 'any' && !getNhisClaimIssueBadges(c).some((badge) => badge.key === claimIssueFilter)) return false
       if (claimDateFilter === 'open') {
         if (!OPEN_CLAIM_STATUSES.has(c.status)) return false
       } else {
@@ -1411,20 +1444,6 @@ const Nhis = () => {
       )
     })
   }, [claims, claimTab, claimIssueFilter, debouncedClaimSearch, claimDateFilter, claimDateRange, isMedicineCounterAssistant])
-
-  const claimIssueCounts = useMemo(() => {
-    const counts = { all: 0 }
-    for (const claim of claims) {
-      if (isMedicineCounterAssistant && claim.status === 'draft') continue
-      if (claimTab !== 'all' && claim.status !== claimTab) continue
-      const badges = getNhisClaimIssueBadges(claim)
-      if (badges.length > 0) counts.all += 1
-      for (const badge of badges) {
-        counts[badge.key] = (counts[badge.key] || 0) + 1
-      }
-    }
-    return counts
-  }, [claims, claimTab, isMedicineCounterAssistant])
 
   const activeClaimIssueFilter = CLAIM_ISSUE_FILTERS.find((filter) => filter.id === claimIssueFilter)
   const firstFilteredIssueClaim = claimIssueFilter === 'all'
@@ -4082,7 +4101,11 @@ const Nhis = () => {
             </div>
             <div className="claim-issue-filter-tabs" aria-label="Filter claims by issue">
               {CLAIM_ISSUE_FILTERS.map((filter) => {
-                const count = claimIssueCounts[filter.id] || 0
+                const count = filter.id === 'all'
+                  ? claimsTotal
+                  : filter.id === 'any'
+                    ? claimIssueCounts.all || 0
+                    : claimIssueCounts[filter.id] || 0
                 return (
                   <button
                     key={filter.id}
@@ -4094,7 +4117,7 @@ const Nhis = () => {
                       setClaimIssueFilter(filter.id)
                     }}
                   >
-                    {filter.label} <span>{count}</span>
+                    {filter.label} <span>{claimIssueCountsLoading ? '...' : count}</span>
                   </button>
                 )
               })}

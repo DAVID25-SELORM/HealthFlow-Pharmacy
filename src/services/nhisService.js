@@ -64,8 +64,11 @@ const hasPrescriptionAttachment = (claimData = {}, options = {}) => {
   if (hasSavedFile) return true
 
   return Boolean(
-    options.allowPendingFile &&
-      getClaimField(claimData, 'prescriptionFileName', 'prescription_file_name')
+    getClaimField(claimData, 'claimitAttachmentBase64', 'claimit_attachment_base64') ||
+      (
+        options.allowPendingFile &&
+        getClaimField(claimData, 'prescriptionFileName', 'prescription_file_name')
+      )
   )
 }
 const hasVerifiedPrescriptionAttachment = (claimData = {}, options = {}) =>
@@ -529,6 +532,17 @@ const NHIS_CLAIM_LIST_SELECT = `
       prescription_file_url, prescription_file_path, prescription_file_name,
       prescription_document_type, prescription_verified,
       prescription_verified_by, prescription_verified_at,
+      claimit_attachment_base64,
+      nhis_claim_medicines ( id )
+    `
+
+const NHIS_CLAIM_ISSUE_COUNT_SELECT = `
+      id, status, service_date_from, submission_month,
+      surname, other_names, member_no, claim_number, hin,
+      prescription_file_url, prescription_file_path, prescription_file_name,
+      prescription_document_type, prescription_verified,
+      prescription_verified_by, prescription_verified_at,
+      claimit_attachment_base64,
       nhis_claim_medicines ( id )
     `
 
@@ -4497,6 +4511,44 @@ const fetchNhisClaimsPageFromSupabase = async (filters = {}, { ascending = false
   const includeDetails = filters.includeDetails !== false
   const defaultSelect = includeDetails ? NHIS_CLAIM_MEDICINES_SELECT : NHIS_CLAIM_LIST_SELECT
   const { page, pageSize, from, to } = getNhisClaimPageOptions(filters)
+  const issueFilter = normalizeText(filters.issueFilter || filters.issue_filter)
+  if (issueFilter && issueFilter !== 'all') {
+    const buildIssueQuery = (select = defaultSelect) =>
+      applyNhisClaimFilters(
+        supabase
+          .from('nhis_claims')
+          .select(select)
+          .order('created_at', { ascending })
+          .limit(100000),
+        filters
+      )
+
+    let { data, error } = await buildIssueQuery()
+    if (includeDetails && error && isMissingOptionalClaimMedicineColumn(error)) {
+      ;({ data, error } = await buildIssueQuery(NHIS_CLAIM_MEDICINES_SELECT_BASIC))
+    }
+    if (error) throw error
+
+    const allClaims = includeDetails
+      ? await hydrateNhisClaimsForUi(data || [])
+      : (data || []).map((claim) => ({
+          ...claim,
+          _summaryOnly: true,
+          nhis_claim_services: [],
+        }))
+    const matchingClaims = allClaims.filter((claim) => {
+      const issueKeys = getNhisClaimIssueKeys(claim, filters)
+      return issueFilter === 'any' ? issueKeys.size > 0 : issueKeys.has(issueFilter)
+    })
+
+    return {
+      claims: matchingClaims.slice(from, to + 1),
+      total: matchingClaims.length,
+      page,
+      pageSize,
+    }
+  }
+
   const selectOptions = filters.includeTotal === false ? {} : { count: 'exact' }
   const buildQuery = (select = defaultSelect) =>
     applyNhisClaimFilters(
@@ -4548,6 +4600,7 @@ const normalizeNhisClaimsPageRpcRow = (row = {}, fallback = {}) => {
 
 const fetchNhisClaimsPageViaRpc = async (filters = {}) => {
   if (filters.includeDetails !== false) return null
+  if (normalizeText(filters.issueFilter || filters.issue_filter) && normalizeText(filters.issueFilter || filters.issue_filter) !== 'all') return null
 
   const { page, pageSize } = getNhisClaimPageOptions(filters)
   const term = sanitizeSearchTerm(filters.searchTerm || '')
@@ -4757,6 +4810,27 @@ export const getAllNhisClaims = async (filters = {}) => {
 export const getNhisClaimsPage = async (filters = {}) => {
   if (shouldUseBranchServer()) {
     if (getConnectivityState().internetAvailable === false) {
+      const issueFilter = normalizeText(filters.issueFilter || filters.issue_filter)
+      if (issueFilter && issueFilter !== 'all') {
+        const { page, pageSize, from, to } = getNhisClaimPageOptions(filters)
+        const rows = await listBranchRecords('nhis/claims', {
+          ...filters,
+          limit: 100000,
+          offset: 0,
+        })
+        const matchingRows = filterNhisClaimRows(rows || [], filters)
+          .filter((claim) => {
+            const issueKeys = getNhisClaimIssueKeys(claim, filters)
+            return issueFilter === 'any' ? issueKeys.size > 0 : issueKeys.has(issueFilter)
+          })
+        return {
+          claims: matchingRows.slice(from, to + 1),
+          total: matchingRows.length,
+          page,
+          pageSize,
+        }
+      }
+
       const rows = await listBranchRecords('nhis/claims', {
         ...filters,
         limit: filters.pageSize || filters.limit || DEFAULT_NHIS_CLAIM_LIST_LIMIT,
@@ -4774,6 +4848,83 @@ export const getNhisClaimsPage = async (filters = {}) => {
   }
 
   return await fetchNhisClaimsPageViaRpc(filters) || await fetchNhisClaimsPageFromSupabase(filters)
+}
+
+const getNhisClaimIssueKeys = (claim = {}, options = {}) => {
+  const isHospital = normalizeOrganizationType(options.organizationType || options.organization_type) === 'hospital'
+  const issueKeys = new Set()
+  const status = normalizeText(claim.status).toLowerCase()
+  const needsExportReadiness = !isHospital && ['served', 'submitted', 'paid'].includes(status)
+
+  if (needsExportReadiness) {
+    if (!hasPrescriptionAttachment(claim)) {
+      issueKeys.add('missing-attachment')
+    } else if (getClaimField(claim, 'prescriptionDocumentType', 'prescription_document_type').toLowerCase() !== 'prescription') {
+      issueKeys.add('attachment-type')
+    } else if (!hasVerifiedPrescriptionAttachment(claim)) {
+      issueKeys.add('unverified')
+    }
+  }
+
+  if (['pending_serving', 'serving_in_progress', 'returned_for_review'].includes(status)) {
+    const medicines = Array.isArray(claim.nhis_claim_medicines) ? claim.nhis_claim_medicines : []
+    if (!medicines.length || !hasPrescriptionAttachment(claim)) {
+      issueKeys.add('incomplete-intake')
+    }
+  }
+
+  return issueKeys
+}
+
+const computeNhisClaimIssueCounts = (claims = [], options = {}) => {
+  const counts = {
+    all: 0,
+    'missing-attachment': 0,
+    'attachment-type': 0,
+    unverified: 0,
+    'incomplete-intake': 0,
+  }
+
+  for (const claim of claims) {
+    const issueKeys = getNhisClaimIssueKeys(claim, options)
+    if (issueKeys.size > 0) counts.all += 1
+    for (const key of issueKeys) {
+      counts[key] = (counts[key] || 0) + 1
+    }
+  }
+
+  return counts
+}
+
+const fetchNhisClaimIssueCountRowsFromSupabase = async (filters = {}) => {
+  const buildQuery = () =>
+    applyNhisClaimFilters(
+      supabase
+        .from('nhis_claims')
+        .select(NHIS_CLAIM_ISSUE_COUNT_SELECT)
+        .order('created_at', { ascending: false })
+        .limit(100000),
+      filters
+    )
+
+  const { data, error } = await buildQuery()
+  if (error) throw error
+  return data || []
+}
+
+export const getNhisClaimIssueCounts = async (filters = {}) => {
+  const options = {
+    organizationType: filters.organizationType || filters.organization_type,
+  }
+
+  if (shouldUseBranchServer()) {
+    const rows = getConnectivityState().internetAvailable === false
+      ? await listBranchRecords('nhis/claims', { ...filters, limit: 100000 })
+      : await getAllNhisClaims({ ...filters, limit: 100000, includeDetails: false })
+    return computeNhisClaimIssueCounts(filterNhisClaimRows(rows || [], filters), options)
+  }
+
+  return computeNhisClaimIssueCounts(await fetchNhisClaimIssueCountRowsFromSupabase(filters), options)
 }
 
 const computeNhisClaimStats = (rows = []) => ({
