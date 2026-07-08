@@ -942,6 +942,7 @@ const Nhis = () => {
   const [showRuleImportModal, setShowRuleImportModal] = useState(false)
   const [showExportModal, setShowExportModal]       = useState(false)
   const [duplicateClaimGroups, setDuplicateClaimGroups] = useState([])
+  const [duplicateExportIssues, setDuplicateExportIssues] = useState([])
   const [showDuplicateClaimReview, setShowDuplicateClaimReview] = useState(false)
   const [viewClaim, setViewClaim]                   = useState(null)
 
@@ -1955,6 +1956,7 @@ const Nhis = () => {
   const closeDuplicateClaimReview = () => {
     setShowDuplicateClaimReview(false)
     setDuplicateClaimGroups([])
+    setDuplicateExportIssues([])
   }
 
   const returnToDuplicateClaimReview = () => {
@@ -3538,6 +3540,7 @@ const Nhis = () => {
     try {
       setExporting(true)
       setDuplicateClaimGroups([])
+      setDuplicateExportIssues([])
       setShowDuplicateClaimReview(false)
       const periodOptions = exportMode === 'custom'
         ? { mode: 'custom', fromDate: exportFromDate, toDate: exportToDate }
@@ -3572,9 +3575,10 @@ const Nhis = () => {
     } catch (err) {
       if (isNhisDuplicateClaimsError(err)) {
         setDuplicateClaimGroups(err.duplicateGroups || [])
+        setDuplicateExportIssues(err.exportBlockingIssues || [])
         setShowDuplicateClaimReview(true)
         notify(
-          `${err.duplicateGroups?.length || 1} duplicate claim group${err.duplicateGroups?.length === 1 ? '' : 's'} found. Review and correct them before exporting.`,
+          `${err.duplicateGroups?.length || 1} duplicate claim group${err.duplicateGroups?.length === 1 ? '' : 's'} found${err.exportBlockingIssues?.length ? ' with other export blockers' : ''}. Review and correct them before exporting.`,
           'error'
         )
         return
@@ -6186,8 +6190,30 @@ const Nhis = () => {
             <div className="duplicate-claims-body">
               <div className="nhis-alert">
                 HealthFlow found {duplicateClaimGroups.length} duplicate group{duplicateClaimGroups.length === 1 ? '' : 's'} in this export batch.
-                Correct or remove one claim from each group before exporting.
+                {duplicateExportIssues.length > 0
+                  ? ' Other export blockers were also found; fix all issues before exporting.'
+                  : ' Correct or remove one claim from each group before exporting.'}
               </div>
+              {duplicateExportIssues.length > 0 && (
+                <div className="nhis-export-blocker-summary" role="alert">
+                  <h3>Other Export Blockers</h3>
+                  <ul>
+                    {duplicateExportIssues.map((issue, index) => (
+                      <li key={`${issue.type || 'issue'}-${index}`}>
+                        <strong>{issue.title || 'Export blocker'}:</strong> {issue.message}
+                        {Array.isArray(issue.claims) && issue.claims.length > 0 && (
+                          <small>
+                            Examples: {issue.claims.map((claim) =>
+                              claim.claim_number || claim.patientName || 'Unnumbered claim'
+                            ).join(', ')}
+                            {issue.total > issue.claims.length ? `, plus ${issue.total - issue.claims.length} more` : ''}
+                          </small>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {duplicateClaimGroups.map((group, groupIndex) => {
                 const groupClaims = group.claims || []
                 const likelyOriginalClaimId = getLikelyOriginalClaimId(groupClaims)

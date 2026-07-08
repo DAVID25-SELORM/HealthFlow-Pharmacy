@@ -2998,6 +2998,89 @@ describe('duplicate NHIS claim prevention', () => {
       ],
     })
   })
+
+  it('reports other export blockers together with duplicate claims', async () => {
+    const sourceClaim = {
+      id: 'claim-1',
+      claim_number: 'NHIS-000001',
+      status: 'served',
+      organization_type: 'hospital',
+      member_no: '12345678',
+      surname: 'Mensah',
+      other_names: 'Ama',
+      folder_no: 'F001',
+      date_of_birth: '1990-01-01',
+      patient_address: 'Accra',
+      ccc_no: 'CC-12345',
+      diagnosis: 'Malaria',
+      diagnosis_details: [{ code: 'B50', label: 'Plasmodium falciparum malaria', source: 'ICD-10' }],
+      service_date_from: '2026-05-14',
+      service_date_to: '2026-05-14',
+      referring_facility: 'Westpoint Chemist',
+      physician_name: 'Dr Test',
+      total_amount: 10,
+      nhis_claim_medicines: [{
+        drug_code: 'NH001',
+        description: 'Artemether Lumefantrine Tablet',
+        unit: 'tablet',
+        unit_price: 1,
+        dispensed_qty: 10,
+        dose: '1 tablet',
+        frequency: 'BD',
+        duration: '3 days',
+        total_amount: 10,
+        category: 'A',
+      }],
+    }
+    const duplicateClaim = {
+      ...sourceClaim,
+      id: 'claim-2',
+      claim_number: 'NHIS-000002',
+    }
+    const claimsQuery = {
+      order: vi.fn(() => claimsQuery),
+      gte: vi.fn(() => claimsQuery),
+      lte: vi.fn().mockResolvedValue({ data: [sourceClaim, duplicateClaim], error: null }),
+    }
+    const serviceLinesQuery = {
+      in: vi.fn(() => serviceLinesQuery),
+      order: vi.fn().mockResolvedValue({ data: [], error: null }),
+    }
+    supabase.from.mockImplementation((table) => {
+      if (table === 'nhis_claims') {
+        return { select: vi.fn(() => claimsQuery) }
+      }
+      if (table === 'nhis_claim_services') {
+        return { select: vi.fn(() => serviceLinesQuery) }
+      }
+      return { select: vi.fn(() => ({ in: vi.fn().mockReturnThis(), eq: vi.fn().mockResolvedValue({ data: [], error: null }) })) }
+    })
+
+    await expect(exportNhisClaimsFile({
+      mode: 'custom',
+      fromDate: '2026-05-14',
+      toDate: '2026-05-14',
+      format: 'cxf',
+      organizationType: 'hospital',
+      providerClassLevel: 'D',
+      providerLevelCode: 'PVT-PHC-CE',
+      facilityName: 'Westpoint Chemist',
+      providerNumber: '03-05-01954',
+      facilityCode: '03-05-001',
+      credentialCode: '03-05-001-02-01954-11-P1-2-011225',
+      accreditationExpiryDate: '2026-12-31',
+      claimsOfficerName: 'Claims Officer',
+      nhisDrugCatalog: [{ code: 'NH001', category: 'A' }],
+    })).rejects.toMatchObject({
+      code: 'NHIS_DUPLICATE_CLAIMS',
+      exportBlockingIssues: expect.arrayContaining([
+        expect.objectContaining({
+          type: 'attachment',
+          message: expect.stringContaining('missing prescription attachments'),
+        }),
+      ]),
+    })
+  })
 })
 
 describe('NHIA API settings source routing', () => {

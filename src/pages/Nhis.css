@@ -667,6 +667,32 @@
   padding: 1rem;
 }
 
+.nhis-export-blocker-summary {
+  background: #fff7ed;
+  border: 1px solid #fdba74;
+  border-radius: var(--radius);
+  color: #7c2d12;
+  padding: 0.9rem 1rem;
+}
+
+.nhis-export-blocker-summary h3 {
+  font-size: 0.98rem;
+  margin: 0 0 0.5rem;
+}
+
+.nhis-export-blocker-summary ul {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.nhis-export-blocker-summary small {
+  color: #9a3412;
+  display: block;
+  margin-top: 0.25rem;
+}
+
 .duplicate-claim-group {
   border: 1px solid var(--gray-200);
   border-radius: var(--radius);

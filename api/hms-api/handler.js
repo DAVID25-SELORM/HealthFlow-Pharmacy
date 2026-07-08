@@ -172,10 +172,7 @@ const assertItems = (items) => {
       throw Object.assign(new Error(`Item ${index + 1} price cannot be negative.`), { status: 400 })
     }
 
-    const totalPrice = toNumber(item.total_price ?? item.totalPrice, quantity * unitPrice)
-    if (totalPrice < 0) {
-      throw Object.assign(new Error(`Item ${index + 1} total price cannot be negative.`), { status: 400 })
-    }
+    const totalPrice = Math.round(quantity * unitPrice * 100) / 100
 
     return {
       drug_id: normalizeNullableText(item.drug_id ?? item.drugId),

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   AlertTriangle,
   Bell,
@@ -91,23 +91,12 @@ const announcements = [
   },
 ]
 
-const initialTickets = [
-  {
-    number: 'HF-20260704-00125',
-    subject: 'Claim batch stuck in validation',
-    category: 'NHIA Claims',
-    priority: 'High',
-    status: 'In Progress',
-    updatedAt: '2026-07-04T10:20:00Z',
-  },
-  {
-    number: 'HF-20260703-00118',
-    subject: 'Receipt printer not detected',
-    category: 'Pharmacy',
-    priority: 'Medium',
-    status: 'Waiting for User',
-    updatedAt: '2026-07-03T16:45:00Z',
-  },
+const SUPPORT_TICKETS_KEY = 'healthflow.support.tickets.v1'
+const SUPPORT_CHAT_KEY = 'healthflow.support.chat.v1'
+const SUPPORT_SEQUENCE_KEY = 'healthflow.support.ticketSequence.v1'
+
+const initialChatMessages = [
+  { from: 'support', text: 'HealthFlow Support is ready. Share what is happening and we will guide you.' },
 ]
 
 const featureRequests = [
@@ -152,6 +141,37 @@ const buildTicketNumber = (sequence) => {
   return `HF-${dateKey}-${String(sequence).padStart(5, '0')}`
 }
 
+const readStoredList = (key, fallback = []) => {
+  if (typeof window === 'undefined') return fallback
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(key) || '[]')
+    return Array.isArray(parsed) ? parsed : fallback
+  } catch {
+    return fallback
+  }
+}
+
+const writeStoredList = (key, value) => {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value))
+  } catch {
+    // Storage can be blocked in private or locked-down browser sessions.
+  }
+}
+
+const getNextTicketSequence = () => {
+  if (typeof window === 'undefined') return 1
+  try {
+    const current = Number.parseInt(window.localStorage.getItem(SUPPORT_SEQUENCE_KEY) || '0', 10)
+    const next = Number.isFinite(current) && current > 0 ? current + 1 : 1
+    window.localStorage.setItem(SUPPORT_SEQUENCE_KEY, String(next))
+    return next
+  } catch {
+    return Date.now() % 100000
+  }
+}
+
 const defaultTicket = {
   subject: '',
   category: 'NHIA Claims',
@@ -166,16 +186,25 @@ export default function Support() {
   const { notify } = useNotification()
   const [ticket, setTicket] = useState(defaultTicket)
   const [attachments, setAttachments] = useState([])
-  const [tickets, setTickets] = useState(initialTickets)
+  const [tickets, setTickets] = useState(() => readStoredList(SUPPORT_TICKETS_KEY))
   const [query, setQuery] = useState('')
   const [chatMessage, setChatMessage] = useState('')
-  const [chatMessages, setChatMessages] = useState([
-    { from: 'support', text: 'HealthFlow Support is ready. Share what is happening and we will guide you.' },
-  ])
+  const [chatMessages, setChatMessages] = useState(() => {
+    const stored = readStoredList(SUPPORT_CHAT_KEY)
+    return stored.length ? stored : initialChatMessages
+  })
   const [supportOnline] = useState(() => typeof navigator !== 'undefined' ? navigator.onLine : true)
   const [aiQuestion, setAiQuestion] = useState('')
   const [aiSuggestion, setAiSuggestion] = useState('')
   const [remoteRequested, setRemoteRequested] = useState(false)
+
+  useEffect(() => {
+    writeStoredList(SUPPORT_TICKETS_KEY, tickets)
+  }, [tickets])
+
+  useEffect(() => {
+    writeStoredList(SUPPORT_CHAT_KEY, chatMessages)
+  }, [chatMessages])
 
   const diagnostics = useMemo(() => {
     const localServerVersion = getStoredValue(
@@ -224,7 +253,7 @@ export default function Support() {
       return
     }
 
-    const number = buildTicketNumber(tickets.length + 126)
+    const number = buildTicketNumber(getNextTicketSequence())
     const nextTicket = {
       number,
       subject: ticket.subject.trim(),
@@ -235,6 +264,7 @@ export default function Support() {
       description: ticket.description.trim(),
       attachments: attachments.map((file) => ({ name: file.name, size: file.size, type: file.type })),
       diagnostics,
+      source: 'local_device',
     }
     setTickets((current) => [nextTicket, ...current])
     setTicket(defaultTicket)
@@ -257,7 +287,7 @@ export default function Support() {
       },
     ])
     if (!supportOnline) {
-      const number = buildTicketNumber(tickets.length + 126)
+      const number = buildTicketNumber(getNextTicketSequence())
       setTickets((current) => [
         {
           number,
@@ -268,6 +298,7 @@ export default function Support() {
           updatedAt: new Date().toISOString(),
           description: message,
           diagnostics,
+          source: 'local_device',
         },
         ...current,
       ])
@@ -472,6 +503,11 @@ export default function Support() {
             <FileText size={22} />
           </div>
           <div className="support-ticket-list">
+            {tickets.length === 0 && (
+              <div className="support-empty-state">
+                No support tickets have been created on this device yet.
+              </div>
+            )}
             {tickets.map((item) => (
               <article key={item.number}>
                 <div>

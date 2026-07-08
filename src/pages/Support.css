@@ -319,6 +319,14 @@
   padding: 0.85rem;
 }
 
+.support-empty-state {
+  border: 1px dashed var(--gray-300);
+  border-radius: var(--radius);
+  color: var(--gray-600);
+  font-weight: 700;
+  padding: 0.9rem;
+}
+
 .support-article-list span,
 .support-announcement-list span {
   color: var(--primary);

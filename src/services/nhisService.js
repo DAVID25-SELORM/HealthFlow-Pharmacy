@@ -999,7 +999,7 @@ const buildNhisDuplicateClaimGroups = (claims = []) => {
 export const isNhisDuplicateClaimsError = (error) =>
   error?.code === 'NHIS_DUPLICATE_CLAIMS' && Array.isArray(error.duplicateGroups)
 
-const createNhisDuplicateClaimsError = (duplicateGroups = []) => {
+const createNhisDuplicateClaimsError = (duplicateGroups = [], extra = {}) => {
   const firstClaim = duplicateGroups[0]?.claims?.[0] || {}
   const error = new Error(getNhisDuplicateBlockMessage(firstClaim))
   error.code = 'NHIS_DUPLICATE_CLAIMS'
@@ -1024,6 +1024,7 @@ const createNhisDuplicateClaimsError = (duplicateGroups = []) => {
       updated_at: normalizeText(claim.updated_at || claim.updatedAt),
     })),
   }))
+  error.exportBlockingIssues = Array.isArray(extra.exportBlockingIssues) ? extra.exportBlockingIssues : []
   return error
 }
 
@@ -7933,6 +7934,60 @@ const assertNhisClaimsReadyForFinalSubmission = async (claims, organizationType,
   }
 }
 
+const getNhisMissingCxfAttachmentIssues = (claims = []) => {
+  const missingClaims = claims.filter((claim) =>
+    !normalizeText(claim.claimit_attachment_base64) &&
+    !normalizeText(claim.prescription_file_path) &&
+    !normalizeText(claim.prescription_file_url)
+  )
+  if (!missingClaims.length) return []
+
+  return [{
+    type: 'attachment',
+    title: 'Missing prescription attachments',
+    message: `${missingClaims.length} claim${missingClaims.length === 1 ? '' : 's'} missing prescription attachments required for CXF export.`,
+    claims: missingClaims.slice(0, 8).map((claim) => ({
+      id: normalizeText(claim.id),
+      claim_number: normalizeText(claim.claim_number || claim.claimNumber),
+      patientName: [claim.surname, claim.other_names || claim.otherNames].filter(Boolean).join(' ').trim(),
+    })),
+    total: missingClaims.length,
+  }]
+}
+
+const collectNhisExportBlockingIssues = async (claims, organizationType, options = {}) => {
+  const issues = []
+
+  try {
+    await assertNhisClaimsReadyForFinalSubmission(claims, organizationType, options)
+  } catch (error) {
+    issues.push({
+      type: 'readiness',
+      title: 'Incomplete claim details',
+      message: error?.message || 'One or more claims failed the NHIA readiness checklist.',
+    })
+  }
+
+  const format = normalizeClaimItExportFormat(options.format || options.exportFormat || options.export_format || 'cxf')
+  const directSubmit = Boolean(options.directSubmit && format !== 'cxf')
+  if (!directSubmit && format === 'cxf') {
+    issues.push(...getNhisMissingCxfAttachmentIssues(claims))
+
+    try {
+      const payload = buildNhisClaimItExportPayload(claims, options)
+      assertClaimItCxfExportConfigured({ ...options, ...payload })
+    } catch (error) {
+      issues.push({
+        type: 'configuration',
+        title: 'Missing CXF configuration',
+        message: error?.message || 'CLAIM-it CXF export configuration is incomplete.',
+      })
+    }
+  }
+
+  return issues
+}
+
 const markNhisServedClaimsSubmitted = async (claims) => {
   await markNhisClaimsSubmittedByRoute(claims)
 }
@@ -8083,7 +8138,16 @@ export const exportNhisClaimsFile = async (options = {}) => {
     throw new Error(`No ${statusLabel} claims found for ${period.label}.`)
   }
   const organizationType = normalizeOrganizationType(options.organizationType)
-  assertNoDuplicateNhisClaimsForTransfer(claims)
+  const duplicateGroups = buildNhisDuplicateClaimGroups(claims)
+  if (duplicateGroups.length) {
+    const exportBlockingIssues = await collectNhisExportBlockingIssues(claims, organizationType, {
+      ...options,
+      format,
+      directSubmit,
+      exportPeriod: period,
+    })
+    throw createNhisDuplicateClaimsError(duplicateGroups, { exportBlockingIssues })
+  }
   await assertNhisClaimsReadyForFinalSubmission(claims, organizationType, options)
 
   if (directSubmit) {
