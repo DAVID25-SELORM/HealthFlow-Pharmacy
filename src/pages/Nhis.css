@@ -2575,6 +2575,38 @@
   font-weight: 700;
 }
 
+.claim-issue-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.35rem;
+}
+
+.claim-issue-badge {
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1;
+  padding: 0.28rem 0.42rem;
+  white-space: nowrap;
+}
+
+.claim-issue-badge--danger {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.claim-issue-badge--warning {
+  background: #fff7ed;
+  color: #9a3412;
+}
+
+.claim-issue-badge--info {
+  background: #e0f2fe;
+  color: #075985;
+}
+
 .patient-meta {
   color: var(--muted);
   font-size: 0.68rem;

@@ -17,6 +17,7 @@ import {
   canSaveNhisIncompleteIntake,
   getNhisIntakeSaveStatus,
   getNhisIncompleteIntakeItems,
+  hasNhisPrescriptionAttachment,
   hasVerifiedNhisPrescription,
 } from '../utils/nhisIntakeWorkflow'
 import { normalizeText } from '../utils/validation'
@@ -930,6 +931,29 @@ const Nhis = () => {
   const isHospital = organizationType === 'hospital'
   const isIncompletePharmacyClaim = (claim = {}) =>
     !isHospital && !hasVerifiedNhisPrescription(claim)
+  const getNhisClaimIssueBadges = (claim = {}) => {
+    const badges = []
+    const status = normalizeText(claim.status).toLowerCase()
+    const needsExportReadiness = !isHospital && ['served', 'submitted', 'paid'].includes(status)
+    if (needsExportReadiness) {
+      if (!hasNhisPrescriptionAttachment(claim)) {
+        badges.push({ key: 'missing-attachment', label: 'Missing attachment', tone: 'danger' })
+      } else if (String(claim.prescription_document_type || claim.prescriptionDocumentType || '').trim().toLowerCase() !== 'prescription') {
+        badges.push({ key: 'attachment-type', label: 'Set attachment type', tone: 'warning' })
+      } else if (!hasVerifiedNhisPrescription(claim)) {
+        badges.push({ key: 'unverified', label: 'Unverified prescription', tone: 'warning' })
+      }
+    }
+    if (['pending_serving', 'serving_in_progress', 'returned_for_review'].includes(status) &&
+      getNhisIncompleteIntakeItems({
+        claim,
+        medicines: claim.nhis_claim_medicines || [],
+      }).length > 0
+    ) {
+      badges.push({ key: 'incomplete-intake', label: 'Incomplete intake', tone: 'info' })
+    }
+    return badges
+  }
 
   // ── page sub-tab ─────────────────────────────────────────────
   const [pageTab, setPageTab] = useState('claims') // 'claims' | 'patients' | 'catalog' | 'gdrg' | 'review' | 'rules'
@@ -4135,12 +4159,23 @@ const Nhis = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredClaims.map((c) => (
+                  {filteredClaims.map((c) => {
+                    const issueBadges = getNhisClaimIssueBadges(c)
+                    return (
                     <tr key={c.id}>
                       <td className="claim-number">{c.claim_number}</td>
                       <td>
                         <div className="patient-name">{c.surname} {c.other_names || ''}</div>
                         {c.folder_no && <div className="patient-meta">Folder: {c.folder_no}</div>}
+                        {issueBadges.length > 0 && (
+                          <div className="claim-issue-badges">
+                            {issueBadges.map((badge) => (
+                              <span key={badge.key} className={`claim-issue-badge claim-issue-badge--${badge.tone}`}>
+                                {badge.label}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </td>
                       <td>
                         {c.member_no && <div>{c.member_no}</div>}
@@ -4185,9 +4220,6 @@ const Nhis = () => {
                           status={c.status}
                           incomplete={c.status === 'served' && isIncompletePharmacyClaim(c)}
                         />
-                        {['submitted', 'paid'].includes(c.status) && isIncompletePharmacyClaim(c) && (
-                          <span className="nhis-incomplete-intake-badge">Missing Attachment</span>
-                        )}
                       </td>
                       <td className="nhis-actions">
                         <button
@@ -4268,7 +4300,8 @@ const Nhis = () => {
                         )}
                       </td>
                     </tr>
-                  ))}
+                    )
+                  })}
                 </tbody>
               </table>
             )}
