@@ -2654,6 +2654,127 @@
   font-variant-numeric: tabular-nums;
 }
 
+.nhis-readiness-summary {
+  background: #fff;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  display: grid;
+  gap: 0.75rem;
+  margin: 0.85rem 0;
+  padding: 0.85rem;
+}
+
+.nhis-readiness-summary.has-issues {
+  border-color: #fed7aa;
+  background: #fffbeb;
+}
+
+.nhis-readiness-summary.is-ready {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.nhis-readiness-summary-main {
+  align-items: center;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.nhis-readiness-summary-main > div:first-child {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.nhis-readiness-kicker {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.nhis-readiness-summary-main strong {
+  color: var(--ink);
+  font-size: 0.95rem;
+}
+
+.nhis-readiness-summary-main small {
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
+.nhis-readiness-summary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  justify-content: flex-end;
+}
+
+.nhis-readiness-summary-grid {
+  display: grid;
+  gap: 0.55rem;
+  grid-template-columns: repeat(5, minmax(120px, 1fr));
+}
+
+.nhis-readiness-summary-card {
+  background: #fff;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  color: var(--ink);
+  cursor: pointer;
+  display: grid;
+  gap: 0.35rem;
+  min-height: 68px;
+  padding: 0.7rem;
+  text-align: left;
+}
+
+.nhis-readiness-summary-card span {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.nhis-readiness-summary-card strong {
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.nhis-readiness-summary-card--danger {
+  border-color: #fecaca;
+}
+
+.nhis-readiness-summary-card--danger strong {
+  color: #991b1b;
+}
+
+.nhis-readiness-summary-card--warning {
+  border-color: #fed7aa;
+}
+
+.nhis-readiness-summary-card--warning strong {
+  color: #9a3412;
+}
+
+.nhis-readiness-summary-card--info {
+  border-color: #bae6fd;
+}
+
+.nhis-readiness-summary-card--info strong {
+  color: #075985;
+}
+
+.nhis-readiness-summary-card--neutral strong {
+  color: var(--teal-dark);
+}
+
+.nhis-readiness-summary-card:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .patient-meta {
   color: var(--muted);
   font-size: 0.68rem;
@@ -2859,6 +2980,10 @@
   .nhis-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .nhis-readiness-summary-grid {
+    grid-template-columns: repeat(3, minmax(120px, 1fr));
+  }
 }
 
 @media (max-width: 768px) {
@@ -2872,6 +2997,19 @@
 
   .nhis-page .search-box {
     max-width: none;
+  }
+
+  .nhis-readiness-summary-main {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .nhis-readiness-summary-actions {
+    justify-content: flex-start;
+  }
+
+  .nhis-readiness-summary-grid {
+    grid-template-columns: 1fr;
   }
 
   .nhis-table {

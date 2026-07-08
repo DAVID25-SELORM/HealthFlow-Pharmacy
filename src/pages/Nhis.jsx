@@ -1452,9 +1452,51 @@ const Nhis = () => {
     : claimIssueFilter === 'any'
       ? claimIssueCounts.all || 0
       : claimIssueCounts[claimIssueFilter] || 0
-  const openFirstClaimIssue = async () => {
+  const claimViewReadinessLabel = useMemo(() => {
+    if (claimDateFilter === 'open') return 'All open claims'
+    if (claimDateFilter === 'all') return 'All dates'
+    if (claimDateRange.from && claimDateRange.to && claimDateRange.from === claimDateRange.to) {
+      return formatAppDate(claimDateRange.from)
+    }
+    if (claimDateRange.from && claimDateRange.to) {
+      return `${formatAppDate(claimDateRange.from)} to ${formatAppDate(claimDateRange.to)}`
+    }
+    if (claimDateRange.from) return `From ${formatAppDate(claimDateRange.from)}`
+    if (claimDateRange.to) return `Up to ${formatAppDate(claimDateRange.to)}`
+    return 'Current filters'
+  }, [claimDateFilter, claimDateRange])
+
+  const claimViewReadinessItems = useMemo(() => ([
+    {
+      key: 'missing-attachment',
+      label: 'Missing prescription',
+      count: claimIssueCounts['missing-attachment'] || 0,
+      tone: 'danger',
+    },
+    {
+      key: 'attachment-type',
+      label: 'Set attachment type',
+      count: claimIssueCounts['attachment-type'] || 0,
+      tone: 'warning',
+    },
+    {
+      key: 'unverified-prescription',
+      label: 'Unverified prescription',
+      count: claimIssueCounts['unverified-prescription'] || 0,
+      tone: 'warning',
+    },
+    {
+      key: 'incomplete-intake',
+      label: 'Incomplete intake',
+      count: claimIssueCounts['incomplete-intake'] || 0,
+      tone: 'info',
+    },
+  ]), [claimIssueCounts])
+
+  const openFirstClaimIssue = async (issueFilterOverride = '') => {
     if (openingFirstClaimIssue) return
-    const issueFilter = claimIssueFilter === 'all' ? 'any' : claimIssueFilter
+    const selectedIssueFilter = issueFilterOverride || claimIssueFilter
+    const issueFilter = selectedIssueFilter === 'all' ? 'any' : selectedIssueFilter
 
     try {
       setOpeningFirstClaimIssue(true)
@@ -1477,6 +1519,12 @@ const Nhis = () => {
     } finally {
       setOpeningFirstClaimIssue(false)
     }
+  }
+
+  const reviewClaimIssueFilter = async (issueFilter) => {
+    setClaimsPage(1)
+    setClaimIssueFilter(issueFilter)
+    await openFirstClaimIssue(issueFilter)
   }
 
   const claimsTotalPages = Math.max(1, Math.ceil(claimsTotal / claimsPageSize))
@@ -4156,6 +4204,66 @@ const Nhis = () => {
                 {openingFirstClaimIssue
                   ? 'Opening issue...'
                   : `Open first ${claimIssueFilter === 'all' ? 'issue' : activeClaimIssueFilter?.label?.toLowerCase() || 'issue'}`}
+              </button>
+            </div>
+          </div>
+
+          <div className={`nhis-readiness-summary ${claimIssueCounts.all > 0 ? 'has-issues' : 'is-ready'}`}>
+            <div className="nhis-readiness-summary-main">
+              <div>
+                <span className="nhis-readiness-kicker">Current claim view readiness</span>
+                <strong>
+                  {claimIssueCountsLoading
+                    ? 'Checking claim issues...'
+                    : claimIssueCounts.all > 0
+                      ? `${claimIssueCounts.all} claim issue${claimIssueCounts.all === 1 ? '' : 's'} need attention`
+                      : 'No claim issues found in this view'}
+                </strong>
+                <small>
+                  {claimViewReadinessLabel} · {claimsTotal} claim{claimsTotal === 1 ? '' : 's'} in the current filters.
+                  {' '}Run the final export readiness check before downloading the CLAIM-it file.
+                </small>
+              </div>
+              <div className="nhis-readiness-summary-actions">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={openingFirstClaimIssue || claimIssueCounts.all === 0}
+                  onClick={() => { void reviewClaimIssueFilter('any') }}
+                >
+                  <Pencil size={14} /> Review first issue
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={readinessChecking || !exportPeriodReady}
+                  onClick={() => setShowExportModal(true)}
+                >
+                  <CheckCircle2 size={14} /> Final export check
+                </button>
+              </div>
+            </div>
+            <div className="nhis-readiness-summary-grid">
+              {claimViewReadinessItems.map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  className={`nhis-readiness-summary-card nhis-readiness-summary-card--${item.tone}`}
+                  disabled={claimIssueCountsLoading || item.count === 0 || openingFirstClaimIssue}
+                  onClick={() => { void reviewClaimIssueFilter(item.key) }}
+                >
+                  <span>{item.label}</span>
+                  <strong>{claimIssueCountsLoading ? '...' : item.count}</strong>
+                </button>
+              ))}
+              <button
+                type="button"
+                className={`nhis-readiness-summary-card nhis-readiness-summary-card--${duplicateClaimGroups.length > 0 ? 'danger' : 'neutral'}`}
+                disabled={readinessChecking}
+                onClick={() => { void handleCheckExportReadiness({ showExportModalOnReady: true }) }}
+              >
+                <span>Duplicate scan</span>
+                <strong>{readinessChecking ? '...' : duplicateClaimGroups.length > 0 ? duplicateClaimGroups.length : 'Check'}</strong>
               </button>
             </div>
           </div>
