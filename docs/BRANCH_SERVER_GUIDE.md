@@ -148,10 +148,13 @@ Do not expose port `4780` directly to the public internet.
 
 ## Update Process
 
-The **Check for Updates** and **Download and Install** buttons in Offline Sync
-update an already installed and connected local branch server/offline app. They
-do not perform the first-time installation. First-time setup uses the branch
-installer plus **Branch Sync Setup**.
+The **Download and Install** button in Offline Sync downloads the first-time
+workstation installer for users who do not already have a local branch server.
+After the installer runs, **Branch Sync Setup** registers the machine for cloud
+sync and the Offline Setup Wizard verifies readiness.
+
+The **Check for Updates** and **Download Update** buttons update an already
+installed and connected local branch server/offline app.
 
 Keep token names distinct: `BRANCH_SERVER_TOKEN` protects local branch server
 API calls from browsers and scripts; `BRANCH_SYNC_TOKEN` registers the local

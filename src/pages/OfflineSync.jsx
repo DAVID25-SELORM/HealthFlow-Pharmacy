@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertCircle, CheckCircle2, ClipboardCopy, RefreshCcw, Server, UploadCloud } from 'lucide-react'
+import { AlertCircle, CheckCircle2, ClipboardCopy, Download, RefreshCcw, Server, UploadCloud } from 'lucide-react'
 import {
   applyBranchCloudConfiguration,
   createNhiaBatch,
@@ -36,6 +36,7 @@ import { useNotification } from '../context/NotificationContext'
 import {
   BRANCH_UPDATE_MANIFEST_URL,
   BRANCH_UPDATE_PUBLIC_KEY,
+  HEALTHFLOW_INSTALLER_URL,
 } from '../config/branchUpdateConfig'
 import { readSignatureFileAsDataUrl } from '../utils/imageUpload'
 import {
@@ -777,6 +778,51 @@ export default function OfflineSync() {
     URL.revokeObjectURL(url)
   }
 
+  const downloadInstallerDetails = () => {
+    const lines = [
+      'HealthFlow installation details',
+      '',
+      `Generated: ${new Date().toISOString()}`,
+      `Facility: ${organization?.name || organization?.pharmacy_name || 'Not selected'}`,
+      `Organization ID: ${organization?.id || organization?.organization_id || 'Not available'}`,
+      `Branch: ${branch?.name || profile?.branch_name || 'Main branch'}`,
+      `Branch ID: ${branch?.id || profile?.branch_id || 'Generated during setup'}`,
+      `Requested by: ${user?.email || profile?.email || profile?.full_name || 'Current user'}`,
+      '',
+      'Installer package',
+      `Download URL: ${HEALTHFLOW_INSTALLER_URL}`,
+      '',
+      'What the installer sets up',
+      '- HealthFlow local branch server',
+      '- Offline app bundle and desktop shortcut',
+      '- Local SQLite database',
+      '- Windows service/startup configuration',
+      '- Local API token and protected browser connection',
+      '- TLS/workstation enrollment for facility LAN use',
+      '',
+      'After installation',
+      '- Use Branch Sync Setup to register this machine for cloud sync.',
+      '- Keep BRANCH_SERVER_TOKEN for local API access.',
+      '- Keep BRANCH_SYNC_TOKEN for Supabase synchronization.',
+      '- Run Offline Setup Wizard to verify health, sync, NHIA settings, and readiness.',
+      '',
+    ]
+
+    downloadTextFile({
+      content: lines.join('\n'),
+      contentType: 'text/plain;charset=utf-8',
+      fileName: 'HealthFlow-installation-details.txt',
+    })
+  }
+
+  const openInstallerDownload = () => {
+    if (!HEALTHFLOW_INSTALLER_URL) {
+      notify('Installer download URL is not configured for this deployment.', 'warning')
+      return
+    }
+    window.open(HEALTHFLOW_INSTALLER_URL, '_blank', 'noopener,noreferrer')
+  }
+
   const exportNhiaBatch = async (format) => {
     await runAction('nhia-export', `NHIA ${format.toUpperCase()} export`, async () => {
       const batch = await createNhiaBatch({ exportFormat: format })
@@ -826,6 +872,37 @@ export default function OfflineSync() {
           <span>{isConnected ? 'Connected' : 'Disconnected'}</span>
         </div>
       </div>
+
+      <section className="offline-sync-section install-healthflow-section">
+        <div className="offline-sync-section-header">
+          <div>
+            <h2>Install HealthFlow on this Computer</h2>
+            <p>Download the full installer for a new workstation. No existing local branch server is required.</p>
+          </div>
+        </div>
+        <div className="install-healthflow-grid">
+          <div>
+            <span>Installer includes</span>
+            <strong>Local server, offline app, database, service, shortcut</strong>
+          </div>
+          <div>
+            <span>Setup details</span>
+            <strong>Facility, branch, tokens, sync, updates, health checks</strong>
+          </div>
+          <div>
+            <span>After install</span>
+            <strong>Run Branch Sync Setup and Offline Setup Wizard</strong>
+          </div>
+        </div>
+        <div className="install-healthflow-actions">
+          <button className="btn btn-primary" type="button" onClick={openInstallerDownload}>
+            <Download size={16} /> Download and Install
+          </button>
+          <button className="btn btn-outline" type="button" onClick={downloadInstallerDetails}>
+            <ClipboardCopy size={16} /> Download Setup Details
+          </button>
+        </div>
+      </section>
 
       {isNotConfigured && (
         <div className="offline-sync-getstarted">
@@ -879,7 +956,7 @@ export default function OfflineSync() {
           <div className="offline-sync-section-header">
             <div>
               <h2>Local App Updates</h2>
-              <p>Securely update the localhost server and offline app without replacing facility data or credentials.</p>
+              <p>Securely update an installed localhost server and offline app without replacing facility data or credentials.</p>
             </div>
           </div>
           <div className="branch-update-grid">
@@ -920,9 +997,9 @@ export default function OfflineSync() {
             {branchUpdateMessage}
           </div>
           <div className="branch-update-install-note">
-            <strong>First-time installation is separate.</strong>
+            <strong>Installed app updates only.</strong>
             <span>
-              Use Branch Sync Setup and the facility installer to connect a new local server. These buttons update an already installed local server.
+              Use Download and Install above for a new computer. These controls update an already installed local server.
             </span>
           </div>
           {updateStatus?.releaseNotes && (
@@ -949,7 +1026,7 @@ export default function OfflineSync() {
                 updateStatus?.installerReady === false
               }
             >
-              {busyAction === 'update-install' ? 'Starting...' : 'Download and Install'}
+              {busyAction === 'update-install' ? 'Starting...' : 'Download Update'}
             </button>
             <button
               className="btn btn-accent wizard-launch-btn"

@@ -107,11 +107,12 @@ the application, installs the update, and restarts it. `.env`, SQLite data,
 and logs are preserved. A failed install restores the previous application
 version.
 
-These controls are for updating an already installed and connected local
-branch server. First-time installation still uses the Windows/Linux branch
-installer and **Branch Sync Setup**. Keep the two tokens distinct:
-`BRANCH_SERVER_TOKEN` protects local API calls from browsers and scripts,
-while `BRANCH_SYNC_TOKEN` registers the local server for Supabase sync.
+In Offline Sync, **Download and Install** downloads the first-time workstation
+installer for users who do not already have a local branch server. **Check for
+Updates** and **Download Update** update an already installed and connected
+local branch server. Keep the two tokens distinct: `BRANCH_SERVER_TOKEN`
+protects local API calls from browsers and scripts, while `BRANCH_SYNC_TOKEN`
+registers the local server for Supabase sync.
 
 Configure every facility server with the same update public key:
 
@@ -349,7 +350,7 @@ sudo bash scripts/install-linux-service.sh
 sudo systemctl restart healthflow-branch
 ```
 
-After that bootstrap, **Check for Updates** and **Download and Install** work
+After that bootstrap, **Check for Updates** and **Download Update** work
 from the HealthFlow Offline Sync page on Linux and Windows.
 
 The service starts automatically on boot and restarts if Node exits. Follow logs:

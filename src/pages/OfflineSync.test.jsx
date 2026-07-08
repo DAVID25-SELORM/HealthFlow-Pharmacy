@@ -179,11 +179,13 @@ describe('OfflineSync branch registration', () => {
 
     render(<OfflineSync />)
 
+    expect(screen.getByRole('heading', { name: 'Install HealthFlow on this Computer' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Download and Install' })).toBeInTheDocument()
     await screen.findByText('HealthFlow 1.1.0 is available.')
     fireEvent.click(screen.getByRole('button', { name: 'Check for Updates' }))
     await waitFor(() => expect(mocks.checkBranchServerUpdates).toHaveBeenCalledTimes(1))
 
-    fireEvent.click(screen.getByRole('button', { name: 'Download and Install' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Download Update' }))
     await waitFor(() => expect(mocks.installBranchServerUpdate).toHaveBeenCalledTimes(1))
     expect(mocks.notify).toHaveBeenCalledWith(
       'Update installation started. The localhost app will restart briefly.',

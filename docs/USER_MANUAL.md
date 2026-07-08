@@ -133,15 +133,18 @@ every sale line to the browser.
 The Local Branch Server supports local SQLite operation, synchronization, and
 facility-wide LAN access.
 
-- First-time installation is handled by an administrator or technician using
-  the branch installer/setup flow. It is not started by **Download and
-  Install** in Offline Sync.
+- **Download and Install** in Offline Sync downloads the first-time HealthFlow
+  workstation installer for a new computer. The installer sets up the local
+  branch server, offline app, local database, service/startup entry, shortcut,
+  local API token, and workstation connection pieces.
+- **Download Setup Details** saves the facility/setup notes needed during
+  installation and handover.
 - **Branch Sync Setup** registers the facility machine for cloud sync and can
-  generate the `BRANCH_SYNC_TOKEN` used by the local server.
+  generate the `BRANCH_SYNC_TOKEN` used by the local server after installation.
 - The **Local Branch Token** saved in the browser is the local API access token
   used for protected calls to the branch server.
-- **Check for Updates** and **Download and Install** update an already
-  installed and connected local branch server/offline app.
+- **Check for Updates** and **Download Update** update an already installed and
+  connected local branch server/offline app.
 
 - Each user enrolls a separate 6–12 digit offline PIN.
 - Only a salted scrypt hash is stored on the facility branch server.
