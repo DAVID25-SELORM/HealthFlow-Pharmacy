@@ -3001,7 +3001,7 @@ const Nhis = () => {
       return
     }
     if (!isMedicineCounterAssistant && readiness.blockers.length && !canSaveIncompleteIntake) {
-      setClaimError(`NHIS claim readiness check failed: ${readiness.blockers.slice(0, 5).join(' ')}`)
+      setClaimError(`NHIS claim scrub failed: ${readiness.blockers.slice(0, 5).join(' ')}`)
       return
     }
 
@@ -3827,7 +3827,7 @@ const Nhis = () => {
     }
   }
 
-  const applyExportReadinessError = (err, fallbackPrefix = 'Readiness check failed.', options = {}) => {
+  const applyExportReadinessError = (err, fallbackPrefix = 'Claim scrub failed.', options = {}) => {
     const { preserveFilter = false } = options
     if (isNhisDuplicateClaimsError(err)) {
       setReadinessClaimIssues([])
@@ -3882,7 +3882,7 @@ const Nhis = () => {
       if (showExportModalOnReady) setShowExportModal(true)
       if (!keepModalOpen) setShowExportModal(false)
     } catch (err) {
-      applyExportReadinessError(err, 'Readiness check failed.', { preserveFilter })
+      applyExportReadinessError(err, 'Claim scrub failed.', { preserveFilter })
     } finally {
       setReadinessChecking(false)
     }
@@ -4211,7 +4211,7 @@ const Nhis = () => {
           <div className={`nhis-readiness-summary ${claimIssueCounts.all > 0 ? 'has-issues' : 'is-ready'}`}>
             <div className="nhis-readiness-summary-main">
               <div>
-                <span className="nhis-readiness-kicker">Current claim view readiness</span>
+                <span className="nhis-readiness-kicker">NHIS Claims Scrubber</span>
                 <strong>
                   {claimIssueCountsLoading
                     ? 'Checking claim issues...'
@@ -4221,7 +4221,7 @@ const Nhis = () => {
                 </strong>
                 <small>
                   {claimViewReadinessLabel} · {claimsTotal} claim{claimsTotal === 1 ? '' : 's'} in the current filters.
-                  {' '}Run the final export readiness check before downloading the CLAIM-it file.
+                  {' '}Run the final claims scrub before downloading the CLAIM-it file.
                 </small>
               </div>
               <div className="nhis-readiness-summary-actions">
@@ -4451,6 +4451,14 @@ const Nhis = () => {
                           onClick={() => { void openViewClaim(c) }}
                         >
                           {isClaimActionBusy(c.id, 'view') ? <Clock size={14} /> : <Eye size={14} />}
+                        </button>
+                        <button
+                          className="action-btn action-btn--view"
+                          title="Scrub Claim"
+                          disabled={isClaimBusy(c.id)}
+                          onClick={() => { void openEditClaim(c) }}
+                        >
+                          {isClaimActionBusy(c.id, 'edit') ? <Clock size={14} /> : <HeartPulse size={14} />}
                         </button>
                         {canServeNhisMedicines && (
                           isMedicineCounterAssistant
@@ -4718,12 +4726,12 @@ const Nhis = () => {
 
           <section className="nhis-review-section">
             <div className="nhis-review-heading">
-              <h3>Claim readiness</h3>
+              <h3>Claim scrub</h3>
               <span>{claims.length} claims reviewed</span>
             </div>
             <div className="nhis-table-wrap">
               {configReview.claimRows.filter((row) => row.blockers.length || row.warnings.length).length === 0 ? (
-                <div className="nhis-review-ok">No claim readiness issues found.</div>
+                <div className="nhis-review-ok">No claim scrub issues found.</div>
               ) : (
                 <table className="nhis-table">
                   <thead>
@@ -6668,7 +6676,7 @@ const Nhis = () => {
         <div className="modal-overlay modal-overlay--top" onClick={(e) => e.target === e.currentTarget && closeReadinessClaimReview()}>
           <div className="modal-panel modal-panel--duplicates">
             <div className="modal-header">
-              <h2>Incomplete Claims Found</h2>
+              <h2>Claims Scrub Issues Found</h2>
               <button className="modal-close" onClick={closeReadinessClaimReview}><X size={18} /></button>
             </div>
             <div className="duplicate-claims-body">
@@ -6686,11 +6694,11 @@ const Nhis = () => {
                   disabled={readinessChecking || !exportPeriodReady}
                   onClick={() => { void handleCheckExportReadiness({ keepModalOpen: true }) }}
                 >
-                  <Search size={14} /> {readinessChecking ? 'Rechecking...' : 'Recheck Remaining Claims'}
+                  <Search size={14} /> {readinessChecking ? 'Scrubbing...' : 'Scrub Remaining Claims'}
                 </button>
               </div>
               <div className="nhis-export-period-note">
-                Open each claim below and fix the listed issue. Export will continue after all required fields and attachments are complete.
+                Open each claim below and fix the listed scrub issue. Export will continue after all required fields, attachments, and clinical checks are complete.
               </div>
               <div className="readiness-filter-tabs" aria-label="Filter incomplete claims">
                 {READINESS_FILTERS.map((filter) => {
@@ -7048,7 +7056,7 @@ const Nhis = () => {
                 disabled={exporting || readinessChecking || !exportPeriodReady}
                 onClick={() => { void handleCheckExportReadiness({ keepModalOpen: true }) }}
               >
-                <CheckCircle2 size={14} /> {readinessChecking ? 'Checking...' : 'Export Readiness Check'}
+                <CheckCircle2 size={14} /> {readinessChecking ? 'Scrubbing...' : 'Scrub All Claims'}
               </button>
               <button className="btn btn-primary" disabled={exporting || !exportPeriodReady} onClick={handleExport}>
                 {exporting
