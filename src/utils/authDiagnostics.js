@@ -61,8 +61,11 @@ export const timeAuthOperation = async (label, details, operation) => {
   try {
     const result = await operation()
     logAuthDiagnostic(label, {
-      event: 'success',
+      event: result?.error ? 'response-error' : 'success',
       durationMs: Math.round(performance.now() - startedAt),
+      errorName: result?.error?.name || '',
+      errorStatus: result?.error?.status || result?.error?.statusCode || '',
+      errorMessage: result?.error?.message || '',
       ...details,
     })
     return result

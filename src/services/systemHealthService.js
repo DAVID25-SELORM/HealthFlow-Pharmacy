@@ -1,4 +1,6 @@
 import { isSupabaseConfigured, supabase } from '../lib/supabase'
+import { getStoredActiveRole } from '../utils/activeRole'
+import { REPORT_ROLES, hasRole } from '../utils/roles'
 import { getBranchServerConfig, getBranchServerHealth } from './branchServerApi'
 import { invokeTierAccess } from './tierAccessService'
 
@@ -176,7 +178,10 @@ const checkAuthenticatedSession = async () => {
 }
 
 const checkReportEngine = async (options = {}) => {
-  if (options.canViewReports === false) {
+  const activeRole = String(options.activeRole || getStoredActiveRole() || '').trim().toLowerCase()
+  const roleCannotViewReports = activeRole ? !hasRole(activeRole, REPORT_ROLES) : false
+
+  if (options.canViewReports === false || roleCannotViewReports) {
     return warn('Reports and Edge Function', {
       summary: 'Skipped',
       detail: 'The active role does not have report access.',

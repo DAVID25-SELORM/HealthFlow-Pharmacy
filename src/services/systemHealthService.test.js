@@ -41,11 +41,17 @@ vi.mock('./branchServerApi', () => ({
   getBranchServerHealth: mocks.getBranchServerHealth,
 }))
 
+vi.mock('../utils/activeRole', () => ({
+  getStoredActiveRole: vi.fn(() => ''),
+}))
+
 import { getSystemHealth } from './systemHealthService'
+import { getStoredActiveRole } from '../utils/activeRole'
 
 describe('getSystemHealth', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    getStoredActiveRole.mockReturnValue('')
     mocks.rows.clear()
     vi.stubEnv('VITE_SUPABASE_URL', 'https://project-ref.supabase.co')
     vi.stubEnv('VITE_SUPABASE_PUBLISHABLE_KEY', 'publishable-key')
@@ -118,6 +124,20 @@ describe('getSystemHealth', () => {
 
   it('skips report health for active roles without report access', async () => {
     const health = await getSystemHealth({ canViewReports: false })
+    const reportCheck = health.checks.find((check) => check.label === 'Reports and Edge Function')
+
+    expect(reportCheck).toMatchObject({
+      status: 'warn',
+      summary: 'Skipped',
+    })
+    expect(mocks.invokeTierAccess).not.toHaveBeenCalledWith({ action: 'get_report_health' })
+    expect(mocks.invokeTierAccess).toHaveBeenCalledWith({ action: 'get_activity_logs', limit: 1 })
+  })
+
+  it('skips report health when stored active role is assistant even if permission options are missing', async () => {
+    getStoredActiveRole.mockReturnValue('assistant')
+
+    const health = await getSystemHealth()
     const reportCheck = health.checks.find((check) => check.label === 'Reports and Edge Function')
 
     expect(reportCheck).toMatchObject({
