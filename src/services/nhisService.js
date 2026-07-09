@@ -524,7 +524,7 @@ const NHIS_CLAIM_MEDICINES_SELECT_BASIC = `
       )
     `
 
-const NHIS_CLAIM_LIST_SELECT = `
+const NHIS_CLAIM_LIST_BASE_SELECT = `
       id, claim_number, patient_id, member_no, card_type, hin,
       surname, other_names, folder_no, gender, date_of_birth,
       service_date_from, service_date_to, branch_id, total_amount,
@@ -532,7 +532,11 @@ const NHIS_CLAIM_LIST_SELECT = `
       prescription_file_url, prescription_file_path, prescription_file_name,
       prescription_document_type, prescription_verified,
       prescription_verified_by, prescription_verified_at,
-      claimit_attachment_base64,
+      claimit_attachment_base64
+    `
+
+const NHIS_CLAIM_LIST_SELECT = `
+      ${NHIS_CLAIM_LIST_BASE_SELECT},
       nhis_claim_medicines ( id )
     `
 
@@ -542,8 +546,7 @@ const NHIS_CLAIM_ISSUE_COUNT_SELECT = `
       prescription_file_url, prescription_file_path, prescription_file_name,
       prescription_document_type, prescription_verified,
       prescription_verified_by, prescription_verified_at,
-      claimit_attachment_base64,
-      nhis_claim_medicines ( id )
+      claimit_attachment_base64
     `
 
 const NHIS_CLAIM_EXPORT_SELECT = `
@@ -4428,6 +4431,28 @@ const hydrateClaimsWithMedicineLines = async (claims = []) => {
 const hydrateNhisClaimsForUi = async (claims = []) =>
   await hydrateClaimsWithServiceLines(await hydrateClaimsWithMedicineLines(claims))
 
+const attachMedicineExistenceToClaims = async (claims = []) => {
+  const claimIds = claims.map((claim) => claim?.id).filter(Boolean)
+  if (!claimIds.length) return claims
+
+  const claimIdsWithMedicines = new Set()
+  for (const claimIdBatch of chunkArray(claimIds, 200)) {
+    const { data, error } = await supabase
+      .from('nhis_claim_medicines')
+      .select('claim_id')
+      .in('claim_id', claimIdBatch)
+    if (error) throw error
+    for (const row of data || []) {
+      if (row.claim_id) claimIdsWithMedicines.add(row.claim_id)
+    }
+  }
+
+  return claims.map((claim) => ({
+    ...claim,
+    _hasMedicineLines: claimIdsWithMedicines.has(claim.id),
+  }))
+}
+
 const getNhisClaimPageOptions = (filters = {}) => {
   const pageSize = Math.min(Math.max(Number.parseInt(String(filters.pageSize || filters.limit || DEFAULT_NHIS_CLAIM_LIST_LIMIT), 10) || DEFAULT_NHIS_CLAIM_LIST_LIMIT, 1), 500)
   const page = Math.max(Number.parseInt(String(filters.page || 1), 10) || 1, 1)
@@ -4513,36 +4538,42 @@ const fetchNhisClaimsPageFromSupabase = async (filters = {}, { ascending = false
   const { page, pageSize, from, to } = getNhisClaimPageOptions(filters)
   const issueFilter = normalizeText(filters.issueFilter || filters.issue_filter)
   if (issueFilter && issueFilter !== 'all') {
-    const buildIssueQuery = (select = defaultSelect) =>
-      applyNhisClaimFilters(
+    const scanPageSize = 1000
+    const maxRows = 100000
+    const scannedClaims = []
+
+    for (let scanFrom = 0; scanFrom < maxRows; scanFrom += scanPageSize) {
+      const scanTo = Math.min(scanFrom + scanPageSize - 1, maxRows - 1)
+      const { data, error } = await applyNhisClaimFilters(
         supabase
           .from('nhis_claims')
-          .select(select)
+          .select(NHIS_CLAIM_LIST_BASE_SELECT)
           .order('created_at', { ascending })
-          .limit(100000),
+          .range(scanFrom, scanTo),
         filters
       )
-
-    let { data, error } = await buildIssueQuery()
-    if (includeDetails && error && isMissingOptionalClaimMedicineColumn(error)) {
-      ;({ data, error } = await buildIssueQuery(NHIS_CLAIM_MEDICINES_SELECT_BASIC))
+      if (error) throw error
+      const batch = data || []
+      scannedClaims.push(...batch)
+      if (batch.length < scanPageSize) break
     }
-    if (error) throw error
 
-    const allClaims = includeDetails
-      ? await hydrateNhisClaimsForUi(data || [])
-      : (data || []).map((claim) => ({
+    const issueClaims = await attachMedicineExistenceToClaims(scannedClaims)
+    const matchingClaims = issueClaims.filter((claim) => {
+      const issueKeys = getNhisClaimIssueKeys(claim, filters)
+      return issueFilter === 'any' ? issueKeys.size > 0 : issueKeys.has(issueFilter)
+    })
+    const pageClaims = matchingClaims.slice(from, to + 1)
+    const claims = includeDetails
+      ? await hydrateNhisClaimsForUi(pageClaims)
+      : pageClaims.map((claim) => ({
           ...claim,
           _summaryOnly: true,
           nhis_claim_services: [],
         }))
-    const matchingClaims = allClaims.filter((claim) => {
-      const issueKeys = getNhisClaimIssueKeys(claim, filters)
-      return issueFilter === 'any' ? issueKeys.size > 0 : issueKeys.has(issueFilter)
-    })
 
     return {
-      claims: matchingClaims.slice(from, to + 1),
+      claims,
       total: matchingClaims.length,
       page,
       pageSize,
@@ -4868,7 +4899,8 @@ const getNhisClaimIssueKeys = (claim = {}, options = {}) => {
 
   if (['pending_serving', 'serving_in_progress', 'returned_for_review'].includes(status)) {
     const medicines = Array.isArray(claim.nhis_claim_medicines) ? claim.nhis_claim_medicines : []
-    if (!medicines.length || !hasPrescriptionAttachment(claim)) {
+    const hasMedicineLines = medicines.length > 0 || claim._hasMedicineLines === true
+    if (!hasMedicineLines || !hasPrescriptionAttachment(claim)) {
       issueKeys.add('incomplete-intake')
     }
   }
@@ -4897,19 +4929,27 @@ const computeNhisClaimIssueCounts = (claims = [], options = {}) => {
 }
 
 const fetchNhisClaimIssueCountRowsFromSupabase = async (filters = {}) => {
-  const buildQuery = () =>
-    applyNhisClaimFilters(
+  const pageSize = 1000
+  const maxRows = 100000
+  const rows = []
+
+  for (let from = 0; from < maxRows; from += pageSize) {
+    const to = Math.min(from + pageSize - 1, maxRows - 1)
+    const { data, error } = await applyNhisClaimFilters(
       supabase
         .from('nhis_claims')
         .select(NHIS_CLAIM_ISSUE_COUNT_SELECT)
         .order('created_at', { ascending: false })
-        .limit(100000),
+        .range(from, to),
       filters
     )
+    if (error) throw error
+    const batch = data || []
+    rows.push(...batch)
+    if (batch.length < pageSize) break
+  }
 
-  const { data, error } = await buildQuery()
-  if (error) throw error
-  return data || []
+  return attachMedicineExistenceToClaims(rows)
 }
 
 export const getNhisClaimIssueCounts = async (filters = {}) => {
