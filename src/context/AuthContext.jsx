@@ -27,11 +27,13 @@ import {
   getSavedOfflineStaffSession,
   signInToBranchOffline,
 } from '../services/branchServerApi'
+import { logAuthDiagnostic, timeAuthOperation } from '../utils/authDiagnostics'
 
 const AuthContext = createContext(null)
 const FALLBACK_ROLE = 'assistant'
 const AUTH_REQUEST_TIMEOUT_MS = 12000
 const PROFILE_REQUEST_TIMEOUT_MS = 25000
+const AUTH_SERVICE_UNREACHABLE_MESSAGE = 'Unable to reach authentication service. Please try again.'
 const PROFILE_SELECT = `
   id,
   email,
@@ -206,13 +208,63 @@ const isTransientSupabaseAuthFailure = (error) => {
 
   return (
     name === 'aborterror' ||
+    name === 'authserviceunavailableerror' ||
     message.includes('failed to fetch') ||
     message.includes('networkerror') ||
     message.includes('load failed') ||
     message.includes('timed out') ||
     message.includes('internet connection') ||
-    message.includes('cors')
+    message.includes('cors') ||
+    message.includes('unable to reach authentication service')
   )
+}
+
+const wait = (ms) => new Promise((resolve) => globalThis.setTimeout(resolve, ms))
+
+const normalizeTransientAuthError = (error) => {
+  if (!isTransientSupabaseAuthFailure(error)) {
+    return error
+  }
+
+  const normalizedError = new Error(AUTH_SERVICE_UNREACHABLE_MESSAGE)
+  normalizedError.cause = error
+  normalizedError.name = 'AuthServiceUnavailableError'
+  return normalizedError
+}
+
+const runAuthOperationWithRetry = async (
+  label,
+  operation,
+  { attempts = 2, retryDelayMs = 800, details = {} } = {}
+) => {
+  let lastError = null
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const attemptDetails = { ...details, attempt, attempts }
+
+    try {
+      const result = await timeAuthOperation(label, attemptDetails, operation)
+      if (result?.error && isTransientSupabaseAuthFailure(result.error)) {
+        throw result.error
+      }
+      return result
+    } catch (error) {
+      lastError = error
+      if (attempt >= attempts || !isTransientSupabaseAuthFailure(error)) {
+        throw normalizeTransientAuthError(error)
+      }
+
+      logAuthDiagnostic(label, {
+        event: 'retry',
+        retryInMs: retryDelayMs * attempt,
+        errorMessage: error?.message || '',
+        ...attemptDetails,
+      })
+      await wait(retryDelayMs * attempt)
+    }
+  }
+
+  throw normalizeTransientAuthError(lastError)
 }
 
 const resolveRole = (profile, authUser) =>
@@ -339,10 +391,10 @@ export const AuthProvider = ({ children }) => {
 
     const getStoredSession = async () => {
       try {
-        const sessionResult = await withTimeout(
-          supabase.auth.getSession(),
-          'Session loading',
-          AUTH_REQUEST_TIMEOUT_MS
+        const sessionResult = await runAuthOperationWithRetry(
+          'auth.getStoredSession',
+          () => supabase.auth.getSession(),
+          { attempts: 2 }
         )
         const {
           data: { session: storedSession },
@@ -559,14 +611,25 @@ export const AuthProvider = ({ children }) => {
             event !== 'BOOTSTRAP' &&
             event !== 'INITIAL_SESSION' &&
             !event.endsWith('_RECOVERED')
-          )
+        )
 
         if (shouldValidateWithServer) {
-          let validateResult = await withTimeout(
-            supabase.auth.getUser(),
-            'Session validation',
-            AUTH_REQUEST_TIMEOUT_MS
-          )
+          let validateResult
+          try {
+            validateResult = await runAuthOperationWithRetry(
+              'auth.validateUser',
+              () => supabase.auth.getUser(),
+              {
+                attempts: shouldPreserveOnValidationFailure ? 1 : 2,
+                details: { event },
+              }
+            )
+          } catch (validationRequestError) {
+            validateResult = {
+              data: { user: null },
+              error: validationRequestError,
+            }
+          }
           let {
             data: { user: validatedUser },
             error: validateError,
@@ -578,11 +641,19 @@ export const AuthProvider = ({ children }) => {
               resolvedSession = refreshedSession
               activeUser = refreshedSession.user || activeUser
 
-              const retryResult = await withTimeout(
-                supabase.auth.getUser(),
-                'Session validation retry',
-                AUTH_REQUEST_TIMEOUT_MS
-              )
+              let retryResult
+              try {
+                retryResult = await runAuthOperationWithRetry(
+                  'auth.validateUserAfterRefresh',
+                  () => supabase.auth.getUser(),
+                  { attempts: 2, details: { event } }
+                )
+              } catch (validationRetryError) {
+                retryResult = {
+                  data: { user: null },
+                  error: validationRetryError,
+                }
+              }
               validatedUser = retryResult.data?.user || null
               validateError = retryResult.error
             } else {
@@ -707,17 +778,17 @@ export const AuthProvider = ({ children }) => {
     }
 
     const normalizedEmail = email.trim()
-    const { error } = await withTimeout(
-      supabase.auth.signInWithPassword({
+    const { error } = await runAuthOperationWithRetry(
+      'auth.signInWithPassword',
+      () => supabase.auth.signInWithPassword({
         email: normalizedEmail,
         password,
       }),
-      'Sign in',
-      AUTH_REQUEST_TIMEOUT_MS
+      { attempts: 2, details: { emailDomain: normalizedEmail.split('@')[1] || '' } }
     )
 
     if (error) {
-      throw error
+      throw normalizeTransientAuthError(error)
     }
   }
 

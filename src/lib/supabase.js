@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { isNetworkRequestError } from '../utils/requestErrors'
+import { logAuthDiagnostic, timeAuthOperation } from '../utils/authDiagnostics'
 
 // Get environment variables
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
@@ -28,6 +29,20 @@ const hasValidCredentials =
 export const supabaseAuthStorageKey = hasValidCredentials
   ? getDefaultStorageKey(supabaseUrl)
   : ''
+
+logAuthDiagnostic('supabase.init', {
+  hasUrl: Boolean(supabaseUrl),
+  hasPublishableKey: Boolean(import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY),
+  hasAnonKey: Boolean(import.meta.env.VITE_SUPABASE_ANON_KEY),
+  hasValidCredentials: Boolean(hasValidCredentials),
+  projectHost: (() => {
+    try {
+      return supabaseUrl ? new URL(supabaseUrl).hostname : ''
+    } catch {
+      return ''
+    }
+  })(),
+})
 
 const SUPABASE_AUTH_EXPIRED_EVENT = 'healthflow:supabase-auth-expired'
 let authExpired = false
@@ -90,8 +105,11 @@ export const refreshSupabaseSessionOnce = async () => {
   }
 
   if (!refreshSessionPromise) {
-    refreshSessionPromise = supabaseClient.auth
-      .refreshSession()
+    refreshSessionPromise = timeAuthOperation(
+      'supabase.auth.refreshSession',
+      {},
+      () => supabaseClient.auth.refreshSession()
+    )
       .then(({ data, error }) => {
         if (error) {
           return { session: null, error }
@@ -235,14 +253,24 @@ const isSupabaseAuthFailure = (error) => {
 }
 
 const invokeFunctionWithToken = async (name, options, accessToken) => {
+  const body = options?.body && typeof options.body === 'object' ? options.body : {}
+  const diagnostics = {
+    functionName: name,
+    action: body.action,
+    activeRole: body.activeRole,
+    organizationId: body.organizationId || body.organization_id,
+  }
+
   try {
-    return await supabase.functions.invoke(name, {
-      ...options,
-      headers: {
-        ...(options.headers || {}),
-        Authorization: `Bearer ${accessToken}`,
-      },
-    })
+    return await timeAuthOperation('supabase.function.invoke', diagnostics, () =>
+      supabase.functions.invoke(name, {
+        ...options,
+        headers: {
+          ...(options.headers || {}),
+          Authorization: `Bearer ${accessToken}`,
+        },
+      })
+    )
   } catch (error) {
     return {
       data: null,
@@ -290,7 +318,7 @@ const getCurrentAuthSession = async () => {
   const {
     data: { session },
     error: sessionError,
-  } = await supabase.auth.getSession()
+  } = await timeAuthOperation('supabase.auth.getSession', {}, () => supabase.auth.getSession())
 
   if (sessionError) {
     throw sessionError
@@ -371,7 +399,7 @@ export const getCurrentSupabaseUser = async () => {
   let {
     data: { user },
     error,
-  } = await supabase.auth.getUser()
+  } = await timeAuthOperation('supabase.auth.getUser', {}, () => supabase.auth.getUser())
 
   if (error && isSupabaseAuthFailure(error)) {
     const refreshedSession = await refreshFunctionSession(session).catch(() => null)
@@ -379,7 +407,7 @@ export const getCurrentSupabaseUser = async () => {
       throw error
     }
 
-    const retryResult = await supabase.auth.getUser()
+    const retryResult = await timeAuthOperation('supabase.auth.getUser.retry', {}, () => supabase.auth.getUser())
     user = retryResult.data?.user || null
     error = retryResult.error
   }

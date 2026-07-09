@@ -103,6 +103,26 @@ const RoleProbe = () => {
   )
 }
 
+const SignInProbe = ({ onResult }) => {
+  const { signIn } = useAuth()
+
+  return (
+    <button
+      type="button"
+      onClick={async () => {
+        try {
+          await signIn('staff@example.com', 'password')
+          onResult('ok')
+        } catch (error) {
+          onResult(error.message)
+        }
+      }}
+    >
+      Sign in
+    </button>
+  )
+}
+
 describe('AuthProvider', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -226,6 +246,32 @@ describe('AuthProvider', () => {
       expect(screen.getByTestId('auth-state')).toHaveTextContent('signed-in:Admin User')
     })
     expect(mocks.auth.getUser).toHaveBeenCalledTimes(2)
+  })
+
+  it('retries transient sign-in failures and shows a reachable-service message', async () => {
+    const onResult = vi.fn()
+    mocks.auth.getSession.mockResolvedValue({ data: { session: null }, error: null })
+    mocks.auth.signInWithPassword
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+
+    render(
+      <AuthProvider>
+        <SignInProbe onResult={onResult} />
+      </AuthProvider>
+    )
+
+    await screen.findByText('Sign in')
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('Sign in'))
+      await new Promise((resolve) => setTimeout(resolve, 900))
+    })
+
+    await waitFor(() => {
+      expect(onResult).toHaveBeenCalledWith('Unable to reach authentication service. Please try again.')
+    })
+    expect(mocks.auth.signInWithPassword).toHaveBeenCalledTimes(2)
   })
 
   it('finishes bootstrap as signed out when the stored session cannot be read', async () => {
