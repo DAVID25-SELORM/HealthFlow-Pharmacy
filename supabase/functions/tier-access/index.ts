@@ -957,24 +957,39 @@ const getActivityLogs = async (
     .map((row) => normalizeText(row.id))
     .filter(Boolean)
 
-  let query = adminClient
+  const auditLogSelect = 'id, actor_user_id, actor_email, event_type, entity_type, action, details, organization_id, created_at'
+  const { data: organizationLogs, error: organizationLogsError } = await adminClient
     .from('audit_logs')
-    .select('id, actor_user_id, actor_email, event_type, entity_type, action, details, organization_id, created_at')
+    .select(auditLogSelect)
+    .eq('organization_id', organizationId)
     .order('created_at', { ascending: false })
     .limit(limit)
 
-  if (staffIds.length) {
-    query = query.or(`organization_id.eq.${organizationId},actor_user_id.in.(${staffIds.join(',')})`)
-  } else {
-    query = query.eq('organization_id', organizationId)
+  if (organizationLogsError) {
+    throw organizationLogsError
   }
 
-  const { data, error } = await query
-  if (error) {
-    throw error
+  let logs = organizationLogs || []
+
+  if (logs.length < limit && staffIds.length) {
+    const { data: legacyActorLogs, error: legacyActorLogsError } = await adminClient
+      .from('audit_logs')
+      .select(auditLogSelect)
+      .in('actor_user_id', staffIds)
+      .is('organization_id', null)
+      .order('created_at', { ascending: false })
+      .limit(limit - logs.length)
+
+    if (legacyActorLogsError) {
+      throw legacyActorLogsError
+    }
+
+    logs = [...logs, ...(legacyActorLogs || [])]
+      .sort((left, right) => new Date(right.created_at || 0).getTime() - new Date(left.created_at || 0).getTime())
+      .slice(0, limit)
   }
 
-  return { logs: data || [] }
+  return { logs }
 }
 
 const getDrugCount = async (
