@@ -168,6 +168,8 @@ export const supabase = hasValidCredentials
       auth: {
         persistSession: true,
         autoRefreshToken: true,
+        detectSessionInUrl: true,
+        flowType: 'pkce',
         storageKey: supabaseAuthStorageKey,
       },
       global: {
