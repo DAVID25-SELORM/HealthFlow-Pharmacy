@@ -23,23 +23,27 @@ const statusMeta = {
 const getStatusMeta = (status) => statusMeta[status] || statusMeta.warn
 
 export default function SystemHealth() {
-  const { canViewReports } = useAuth()
+  const { canViewReports, loading: authLoading, role } = useAuth()
   const [health, setHealth] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   const loadHealth = useCallback(async () => {
+    if (authLoading || !role) {
+      return
+    }
+
     try {
       setLoading(true)
       setError('')
-      setHealth(await getSystemHealth({ canViewReports }))
+      setHealth(await getSystemHealth({ canViewReports, activeRole: role }))
     } catch (loadError) {
       setHealth(null)
       setError(loadError.message || 'Unable to load system health.')
     } finally {
       setLoading(false)
     }
-  }, [canViewReports])
+  }, [authLoading, canViewReports, role])
 
   useEffect(() => {
     void loadHealth()

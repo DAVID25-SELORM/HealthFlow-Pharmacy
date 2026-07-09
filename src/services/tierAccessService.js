@@ -4,6 +4,16 @@ import { debugLog } from '../utils/debugLog'
 
 const TIER_ACCESS_FUNCTION = 'tier-access'
 const REDACTED_VALUE = '[REDACTED]'
+const inFlightReadRequests = new Map()
+
+const isReadOnlyAction = (action = '') => {
+  const normalized = String(action || '').toLowerCase()
+  return (
+    normalized.startsWith('get_') ||
+    normalized.startsWith('list_') ||
+    normalized.startsWith('search_')
+  )
+}
 
 const shouldRedactField = (key = '') => {
   const normalized = String(key).toLowerCase().replace(/[^a-z0-9]/g, '')
@@ -44,20 +54,16 @@ const stringifyForLog = (value) => {
   }
 }
 
-export const invokeTierAccess = async (payload) => {
-  const activeRole = getStoredActiveRole()
-  const requestPayload = activeRole && !payload?.activeRole
-    ? { ...payload, activeRole }
-    : payload
-  debugLog('[TIER ACCESS REQUEST]', {
-    action: requestPayload?.action,
-    organizationId: requestPayload?.organizationId || requestPayload?.organization_id,
-    payload: redactPayload(requestPayload),
-  })
+const getStablePayloadKey = (payload) => {
+  try {
+    return JSON.stringify(payload, Object.keys(payload || {}).sort())
+  } catch {
+    return ''
+  }
+}
 
-  const { data, error } = await invokeSupabaseFunction(TIER_ACCESS_FUNCTION, {
-    body: requestPayload,
-  })
+const resolveTierAccessResponse = async (requestPromise) => {
+  const { data, error } = await requestPromise
 
   if (error) {
     console.error('[TIER ACCESS ERROR BODY]', stringifyForLog({
@@ -75,4 +81,46 @@ export const invokeTierAccess = async (payload) => {
   }
 
   return data
+}
+
+export const invokeTierAccess = async (payload) => {
+  const activeRole = getStoredActiveRole()
+  const requestPayload = activeRole && !payload?.activeRole
+    ? { ...payload, activeRole }
+    : payload
+  const shouldDedupe = isReadOnlyAction(requestPayload?.action)
+  const dedupeKey = shouldDedupe ? getStablePayloadKey(requestPayload) : ''
+
+  if (dedupeKey && inFlightReadRequests.has(dedupeKey)) {
+    debugLog('[TIER ACCESS DEDUPED]', {
+      action: requestPayload?.action,
+      organizationId: requestPayload?.organizationId || requestPayload?.organization_id,
+    })
+    return inFlightReadRequests.get(dedupeKey)
+  }
+
+  debugLog('[TIER ACCESS REQUEST]', {
+    action: requestPayload?.action,
+    organizationId: requestPayload?.organizationId || requestPayload?.organization_id,
+    payload: redactPayload(requestPayload),
+  })
+
+  const requestPromise = invokeSupabaseFunction(TIER_ACCESS_FUNCTION, {
+    body: requestPayload,
+  })
+
+  if (dedupeKey) {
+    inFlightReadRequests.set(
+      dedupeKey,
+      resolveTierAccessResponse(requestPromise).finally(() => {
+        inFlightReadRequests.delete(dedupeKey)
+      })
+    )
+  }
+
+  if (dedupeKey) {
+    return inFlightReadRequests.get(dedupeKey)
+  }
+
+  return resolveTierAccessResponse(requestPromise)
 }

@@ -5,6 +5,7 @@ import {
   isSupabaseConfigured,
   markSupabaseAuthActive,
   refreshSupabaseSessionOnce,
+  setCachedSupabaseSession,
   subscribeSupabaseAuthExpired,
 } from '../lib/supabase'
 import { getPasswordRecoveryRedirectUrl } from '../config/appUrl'
@@ -342,6 +343,7 @@ export const AuthProvider = ({ children }) => {
     const restoreOfflineAuth = () => {
       const offlineSession = getSavedOfflineStaffSession()
       if (!offlineSession?.user?.id || !offlineSession?.profile?.id) return false
+      setCachedSupabaseSession(null)
       sessionRef.current = offlineSession
       setSession(offlineSession)
       setUser({
@@ -371,6 +373,7 @@ export const AuthProvider = ({ children }) => {
       }
 
       sessionRef.current = null
+      setCachedSupabaseSession(null)
       setSession(null)
       setUser(null)
       setProfile(null)
@@ -576,6 +579,7 @@ export const AuthProvider = ({ children }) => {
       if (activeUser && isRecoverySession) {
         if (isCurrentResolution(resolutionId)) {
           sessionRef.current = resolvedSession
+          setCachedSupabaseSession(resolvedSession)
           setSession(resolvedSession)
           setUser(activeUser)
           setProfile(null)
@@ -714,6 +718,7 @@ export const AuthProvider = ({ children }) => {
 
       if (isCurrentResolution(resolutionId)) {
         sessionRef.current = resolvedSession
+        setCachedSupabaseSession(resolvedSession)
         setSession(resolvedSession)
         setUser(activeUser)
         setProfile(activeProfile)
@@ -728,6 +733,7 @@ export const AuthProvider = ({ children }) => {
         if (mounted) {
           if (!restoreOfflineAuth()) {
             sessionRef.current = null
+            setCachedSupabaseSession(null)
             setSession(null)
             setUser(null)
             setProfile(null)
@@ -798,6 +804,7 @@ export const AuthProvider = ({ children }) => {
       pin,
     })
     sessionRef.current = offlineSession
+    setCachedSupabaseSession(null)
     setSession(offlineSession)
     setUser({
       id: offlineSession.user.id,
@@ -814,6 +821,7 @@ export const AuthProvider = ({ children }) => {
     clearSavedBranchUserSession()
     if (session?.offline) {
       sessionRef.current = null
+      setCachedSupabaseSession(null)
       setSession(null)
       setUser(null)
       setProfile(null)
@@ -833,6 +841,8 @@ export const AuthProvider = ({ children }) => {
     if (error) {
       throw error
     }
+    sessionRef.current = null
+    setCachedSupabaseSession(null)
   }
 
   const requestPasswordReset = async (email) => {

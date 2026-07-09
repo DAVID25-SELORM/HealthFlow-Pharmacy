@@ -49,6 +49,7 @@ const mocks = vi.hoisted(() => {
         error: error || null,
       }))
     ),
+    setCachedSupabaseSession: vi.fn(),
     subscription,
     supabase,
   }
@@ -59,6 +60,7 @@ vi.mock('../lib/supabase', () => ({
   isSupabaseConfigured: () => true,
   markSupabaseAuthActive: mocks.markSupabaseAuthActive,
   refreshSupabaseSessionOnce: mocks.refreshSupabaseSessionOnce,
+  setCachedSupabaseSession: mocks.setCachedSupabaseSession,
   subscribeSupabaseAuthExpired: vi.fn(() => vi.fn()),
   supabase: mocks.supabase,
 }))

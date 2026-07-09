@@ -35,6 +35,7 @@ const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
     canManageInventory,
     canManageClaims,
     canViewReports,
+    loading: authLoading,
     signOut,
   } = useAuth()
   const { canUseClaims, tierLimits } = useTenant()
@@ -49,6 +50,7 @@ const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
   const canUseInventorySearch = canManageInventory || hasRole(role, INVENTORY_ROLES)
   const canUseClaimAlerts = canManageClaims || hasRole(role, CLAIMS_ROLES)
   const canViewSystemHealth = hasRole(role, SYSTEM_HEALTH_ROLES)
+  const authReady = !authLoading && Boolean(role)
   const searchTarget = canUseInventorySearch ? '/inventory' : '/sales'
 
   const notificationCount = useMemo(
@@ -87,7 +89,7 @@ const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
   }, [canViewSystemHealth, systemHealth, systemHealthLoading])
 
   const loadAlerts = useCallback(async () => {
-    if (!isSupabaseConfigured() || (!canUseInventorySearch && !canUseClaimAlerts)) {
+    if (!authReady || !isSupabaseConfigured() || (!canUseInventorySearch && !canUseClaimAlerts)) {
       setAlerts([])
       return
     }
@@ -134,17 +136,17 @@ const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
       console.error('Unable to load top bar alerts:', error)
       setAlerts([])
     }
-  }, [canUseClaimAlerts, canUseClaims, canUseInventorySearch, tierLimits.hasClaims])
+  }, [authReady, canUseClaimAlerts, canUseClaims, canUseInventorySearch, tierLimits.hasClaims])
 
   const loadSystemHealth = useCallback(async () => {
-    if (!canViewSystemHealth) {
+    if (!authReady || !canViewSystemHealth) {
       setSystemHealth(null)
       return
     }
 
     try {
       setSystemHealthLoading(true)
-      setSystemHealth(await getSystemHealth({ canViewReports }))
+      setSystemHealth(await getSystemHealth({ canViewReports, activeRole: role }))
     } catch (error) {
       console.warn('Unable to load top bar system health:', error)
       setSystemHealth({
@@ -155,7 +157,7 @@ const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
     } finally {
       setSystemHealthLoading(false)
     }
-  }, [canViewReports, canViewSystemHealth])
+  }, [authReady, canViewReports, canViewSystemHealth, role])
 
   useEffect(() => {
     const params = new URLSearchParams(location.search)
@@ -170,17 +172,25 @@ const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
   }, [location.pathname, location.search])
 
   useEffect(() => {
+    if (!authReady) {
+      return
+    }
+
     void loadAlerts()
-  }, [loadAlerts])
+  }, [authReady, loadAlerts])
 
   useEffect(() => {
+    if (!authReady) {
+      return undefined
+    }
+
     void loadSystemHealth()
     if (!canViewSystemHealth) return undefined
     const interval = window.setInterval(() => {
       void loadSystemHealth()
     }, 5 * 60 * 1000)
     return () => window.clearInterval(interval)
-  }, [canViewSystemHealth, loadSystemHealth])
+  }, [authReady, canViewSystemHealth, loadSystemHealth])
 
   useEffect(() => {
     const unsubscribe = subscribeConnectivity(setConnectivity)

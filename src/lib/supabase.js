@@ -47,6 +47,15 @@ logAuthDiagnostic('supabase.init', {
 const SUPABASE_AUTH_EXPIRED_EVENT = 'healthflow:supabase-auth-expired'
 let authExpired = false
 let refreshSessionPromise = null
+let cachedAuthSession = null
+
+const cacheAuthSession = (session) => {
+  cachedAuthSession = session?.access_token ? session : null
+  return cachedAuthSession
+}
+
+export const setCachedSupabaseSession = (session) => cacheAuthSession(session)
+export const getCachedSupabaseSession = () => cachedAuthSession
 
 const dispatchAuthExpired = () => {
   if (typeof window === 'undefined') {
@@ -92,6 +101,7 @@ const createExpiredAuthResponse = () =>
 
 const markAuthExpired = () => {
   authExpired = true
+  cacheAuthSession(null)
   dispatchAuthExpired()
 }
 
@@ -116,10 +126,12 @@ export const refreshSupabaseSessionOnce = async () => {
         }
 
         if (!data?.session?.access_token) {
+          cacheAuthSession(null)
           return { session: null, error: null }
         }
 
         authExpired = false
+        cacheAuthSession(data.session)
         return { session: data.session, error: null }
       })
       .catch((error) => {
@@ -197,6 +209,8 @@ export const supabase = hasValidCredentials
   : null
 
 export const clearSupabaseStoredSession = () => {
+  cacheAuthSession(null)
+
   if (typeof window === 'undefined' || !supabaseAuthStorageKey) {
     return
   }
@@ -315,6 +329,10 @@ const getFunctionErrorMessage = async (error) => {
 }
 
 const getCurrentAuthSession = async () => {
+  if (cachedAuthSession?.access_token && !isExpiredSession(cachedAuthSession, FUNCTION_TOKEN_REFRESH_WINDOW_SECONDS)) {
+    return cachedAuthSession
+  }
+
   const {
     data: { session },
     error: sessionError,
@@ -324,7 +342,7 @@ const getCurrentAuthSession = async () => {
     throw sessionError
   }
 
-  return session || null
+  return cacheAuthSession(session) || null
 }
 
 const refreshFunctionSession = async (fallbackSession = null) => {
@@ -354,7 +372,7 @@ const refreshFunctionSession = async (fallbackSession = null) => {
 }
 
 const getValidFunctionSession = async (forceRefresh = false) => {
-  const session = await getCurrentAuthSession()
+  const session = forceRefresh ? await getCurrentAuthSession() : cachedAuthSession || await getCurrentAuthSession()
 
   if (forceRefresh) {
     return refreshFunctionSession(session)

@@ -122,6 +122,60 @@ describe('invokeSupabaseFunction', () => {
     expect(result.error?.message).toContain('Unable to reach Supabase function "tier-access"')
   })
 
+  it('reuses the cached AuthContext session for repeated function calls', async () => {
+    const activeSession = {
+      access_token: 'cached-token',
+      expires_at: Math.floor(NOW.getTime() / 1000) + 3600,
+      user: { id: 'user-1', email: 'admin@example.com' },
+    }
+
+    const getSession = vi.fn().mockResolvedValue({
+      data: { session: activeSession },
+      error: null,
+    })
+    const invoke = vi.fn().mockResolvedValue({
+      data: { ok: true },
+      error: null,
+    })
+    const createClient = vi.fn(() => ({
+      auth: {
+        getSession,
+        getUser: vi.fn(),
+        refreshSession: vi.fn(),
+      },
+      functions: {
+        invoke,
+      },
+    }))
+
+    vi.doMock('@supabase/supabase-js', () => ({
+      createClient,
+    }))
+
+    const { invokeSupabaseFunction, setCachedSupabaseSession } = await import('./supabase')
+    setCachedSupabaseSession(activeSession)
+
+    await invokeSupabaseFunction('tier-access', { body: { action: 'first' } })
+    await invokeSupabaseFunction('tier-access', { body: { action: 'second' } })
+
+    expect(getSession).not.toHaveBeenCalled()
+    expect(invoke).toHaveBeenCalledTimes(2)
+    expect(invoke).toHaveBeenNthCalledWith(
+      1,
+      'tier-access',
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer cached-token' }),
+      })
+    )
+    expect(invoke).toHaveBeenNthCalledWith(
+      2,
+      'tier-access',
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer cached-token' }),
+      })
+    )
+  })
+
   it('surfaces Supabase function 400 response details', async () => {
     const activeSession = {
       access_token: 'active-token',
