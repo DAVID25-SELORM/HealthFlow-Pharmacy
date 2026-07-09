@@ -63,6 +63,7 @@ import {
   getApplicableNhiaTariffItems,
   getAllNhisClaims,
   getNhisClaimExportDate,
+  getNhisExportScrubWarnings,
   getAllNhisDrugs,
   getNhisDrugByCode,
   getNhisClaimsForPeriod,
@@ -1930,6 +1931,14 @@ describe('CLAIM-it export helpers', () => {
       if (table === 'nhis_claim_services') {
         return { select: vi.fn(() => serviceLinesQuery) }
       }
+      if (table === 'nhis_clinical_rules') {
+        const clinicalRulesQuery = {
+          eq: vi.fn(() => clinicalRulesQuery),
+          in: vi.fn(() => clinicalRulesQuery),
+          order: vi.fn().mockResolvedValue({ data: [], error: null }),
+        }
+        return { select: vi.fn(() => clinicalRulesQuery) }
+      }
       return { select: vi.fn(() => ({ in: vi.fn().mockReturnThis(), eq: vi.fn().mockResolvedValue({ data: [], error: null }) })) }
     })
     URL.createObjectURL = vi.fn(() => 'blob:nhis-export')
@@ -1990,6 +1999,14 @@ describe('CLAIM-it export helpers', () => {
       }
       if (table === 'nhis_claim_services') {
         return { select: vi.fn(() => serviceLinesQuery) }
+      }
+      if (table === 'nhis_clinical_rules') {
+        const clinicalRulesQuery = {
+          eq: vi.fn(() => clinicalRulesQuery),
+          in: vi.fn(() => clinicalRulesQuery),
+          order: vi.fn().mockResolvedValue({ data: [], error: null }),
+        }
+        return { select: vi.fn(() => clinicalRulesQuery) }
       }
       return { select: vi.fn(() => ({ in: vi.fn().mockReturnThis(), eq: vi.fn().mockResolvedValue({ data: [], error: null }) })) }
     })
@@ -2997,6 +3014,88 @@ describe('duplicate NHIS claim prevention', () => {
         }),
       ],
     })
+  })
+
+  it('returns scrub warnings for exportable claims without blocking the batch', async () => {
+    const warningClaim = {
+      id: 'claim-warning-1',
+      claim_number: 'NHIS-000010',
+      status: 'served',
+      organization_type: 'hospital',
+      member_no: '12345678',
+      surname: 'Mensah',
+      other_names: 'Ama',
+      folder_no: 'F001',
+      date_of_birth: '2020-01-01',
+      patient_address: 'Accra',
+      ccc_no: '12345',
+      diagnosis: 'Malaria',
+      diagnosis_details: [{ code: 'B50', label: 'Plasmodium falciparum malaria', source: 'ICD-10' }],
+      service_date_from: '2026-05-14',
+      service_date_to: '2026-05-14',
+      referring_facility: 'Westpoint Chemist',
+      physician_name: 'Dr Test',
+      total_amount: 10,
+      nhis_claim_medicines: [{
+        nhis_drug_id: 'drug-1',
+        drug_code: 'NH001',
+        description: 'Artemether Lumefantrine Tablet',
+        unit: 'tablet',
+        unit_price: 1,
+        dispensed_qty: 10,
+        dose: '1 tablet',
+        frequency: 'BD',
+        duration: '3 days',
+        total_amount: 10,
+        category: 'A',
+      }],
+    }
+    const claimsQuery = {
+      order: vi.fn(() => claimsQuery),
+      gte: vi.fn(() => claimsQuery),
+      lte: vi.fn().mockResolvedValue({ data: [warningClaim], error: null }),
+    }
+    const serviceLinesQuery = {
+      in: vi.fn(() => serviceLinesQuery),
+      order: vi.fn().mockResolvedValue({ data: [], error: null }),
+    }
+    supabase.from.mockImplementation((table) => {
+      if (table === 'nhis_claims') {
+        return { select: vi.fn(() => claimsQuery) }
+      }
+      if (table === 'nhis_claim_services') {
+        return { select: vi.fn(() => serviceLinesQuery) }
+      }
+      if (table === 'nhis_clinical_rules') {
+        const clinicalRulesQuery = {
+          eq: vi.fn(() => clinicalRulesQuery),
+          in: vi.fn(() => clinicalRulesQuery),
+          order: vi.fn().mockResolvedValue({ data: [], error: null }),
+        }
+        return { select: vi.fn(() => clinicalRulesQuery) }
+      }
+      return { select: vi.fn(() => ({ in: vi.fn().mockReturnThis(), eq: vi.fn().mockResolvedValue({ data: [], error: null }) })) }
+    })
+
+    const warnings = await getNhisExportScrubWarnings({
+      mode: 'custom',
+      fromDate: '2026-05-14',
+      toDate: '2026-05-14',
+      format: 'json',
+      organizationType: 'hospital',
+      providerClassLevel: 'D',
+      pharmacyLevel: 'P1',
+      nhisDrugCatalog: [{ id: 'drug-1', code: 'NH001', category: 'A' }],
+    })
+
+    expect(warnings).toEqual([
+      expect.objectContaining({
+        claim_number: 'NHIS-000010',
+        issues: expect.arrayContaining([
+          'Child weight is missing for a child patient.',
+        ]),
+      }),
+    ])
   })
 
   it('reports other export blockers together with duplicate claims', async () => {

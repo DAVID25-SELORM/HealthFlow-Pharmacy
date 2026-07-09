@@ -43,6 +43,7 @@ import {
   updateNhisClaimStatus,
   exportNhisClaimsFile,
   checkNhisExportReadiness,
+  getNhisExportScrubWarnings,
   submitNhisClaimDirect,
   assessNhisClaimReadiness,
   validateNhisClaimFinalReadiness,
@@ -1042,6 +1043,9 @@ const Nhis = () => {
   const [readinessFixedCount, setReadinessFixedCount] = useState(0)
   const [readinessChecking, setReadinessChecking] = useState(false)
   const [readinessActiveClaimId, setReadinessActiveClaimId] = useState('')
+  const [scrubWarningClaims, setScrubWarningClaims] = useState([])
+  const [scrubWarningOverrideReason, setScrubWarningOverrideReason] = useState('')
+  const [showScrubWarningOverride, setShowScrubWarningOverride] = useState(false)
   const [viewClaim, setViewClaim]                   = useState(null)
 
   // ── new claim form ────────────────────────────────────────────
@@ -3963,7 +3967,7 @@ const Nhis = () => {
     return opened
   }
 
-  const handleExport = async () => {
+  const handleExport = async (warningOverrideReason = '') => {
     try {
       setExporting(true)
       setDuplicateClaimGroups([])
@@ -3978,8 +3982,45 @@ const Nhis = () => {
         : exportMode === 'partial'
           ? `${exportToDate.slice(0, 7)}-01 to ${exportToDate}`
           : exportMonth
+      const overrideReason = normalizeText(warningOverrideReason)
+      await checkNhisExportReadiness(requestOptions)
+      const warningClaims = await getNhisExportScrubWarnings(requestOptions)
+      if (warningClaims.length && !overrideReason) {
+        setScrubWarningClaims(warningClaims)
+        setScrubWarningOverrideReason('')
+        setShowScrubWarningOverride(true)
+        notify(
+          `${warningClaims.length} claim${warningClaims.length === 1 ? '' : 's'} have scrub warnings. Enter an override reason before exporting.`,
+          'warning'
+        )
+        return
+      }
+      if (warningClaims.length && overrideReason) {
+        await tryLogAuditEvent({
+          eventType: 'nhis_claim.scrub_warning_override',
+          entityType: 'nhis_claims',
+          entityId: '',
+          action: 'override_warnings_for_export',
+          details: {
+            reason: overrideReason,
+            warning_summary: getScrubIssueAuditSummary(warningClaims),
+            period: requestOptions.mode === 'custom'
+              ? { mode: 'custom', fromDate: requestOptions.fromDate, toDate: requestOptions.toDate }
+              : requestOptions.mode === 'partial'
+                ? { mode: 'partial', toDate: requestOptions.toDate }
+                : { mode: 'month', yearMonth: requestOptions.yearMonth },
+            format: selectedFormat,
+            direct_submit: submitDirectApi,
+            user_id: user?.id || '',
+            role,
+          },
+        })
+      }
       const exportResult = await exportNhisClaimsFile(requestOptions)
       const count = typeof exportResult === 'number' ? exportResult : exportResult?.count || 0
+      setShowScrubWarningOverride(false)
+      setScrubWarningClaims([])
+      setScrubWarningOverrideReason('')
       setShowExportModal(false)
       await refreshClaimsOverview()
       notify(
@@ -7009,6 +7050,91 @@ const Nhis = () => {
         </div>
       )}
 
+      {showScrubWarningOverride && scrubWarningClaims.length > 0 && (
+        <div className="modal-overlay modal-overlay--top" onClick={(e) => e.target === e.currentTarget && setShowScrubWarningOverride(false)}>
+          <div className="modal-panel modal-panel--duplicates">
+            <div className="modal-header">
+              <h2>Scrub Warnings Need Review</h2>
+              <button className="modal-close" onClick={() => setShowScrubWarningOverride(false)}><X size={18} /></button>
+            </div>
+            <div className="duplicate-claims-body">
+              <div className="nhis-alert">
+                HealthFlow found {scrubWarningClaims.length} claim{scrubWarningClaims.length === 1 ? '' : 's'} with warnings. These are not hard errors, but a claims officer/admin must record why export should continue.
+              </div>
+              <div className="duplicate-claim-table-wrap">
+                <table className="nhis-table duplicate-claim-table readiness-claim-table">
+                  <thead>
+                    <tr>
+                      <th>Claim</th>
+                      <th>Patient</th>
+                      <th>Warnings</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {scrubWarningClaims.slice(0, 25).map((issue, index) => {
+                      const patientName = issue.patientName || [issue.surname, issue.other_names].filter(Boolean).join(' ') || 'Unknown'
+                      return (
+                        <tr key={issue.id || issue.claim_number || index}>
+                          <td>{issue.claim_number || 'Unnumbered'}</td>
+                          <td>
+                            {patientName}
+                            <small>Member/HIN: {issue.member_no || issue.hin || '-'}</small>
+                          </td>
+                          <td>
+                            <ul className="readiness-issue-list">
+                              {(issue.issues || []).slice(0, 3).map((text, itemIndex) => (
+                                <li key={`${issue.id || index}-warning-${itemIndex}`}>{text}</li>
+                              ))}
+                            </ul>
+                            {(issue.issues || []).length > 3 && <small>{issue.issues.length - 3} more warning{issue.issues.length - 3 === 1 ? '' : 's'}</small>}
+                          </td>
+                          <td>
+                            <button
+                              type="button"
+                              className="action-btn action-btn--edit"
+                              title="Open claim scrub"
+                              onClick={() => { void handleScrubClaim({ ...issue, _summaryOnly: true }) }}
+                            >
+                              <HeartPulse size={14} />
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {scrubWarningClaims.length > 25 && (
+                <div className="nhis-export-period-note">
+                  Showing first 25 warning claims. The override reason applies to all {scrubWarningClaims.length} warning claim{scrubWarningClaims.length === 1 ? '' : 's'}.
+                </div>
+              )}
+              <div className="form-group">
+                <label>Override reason</label>
+                <textarea
+                  className="form-input"
+                  rows={3}
+                  value={scrubWarningOverrideReason}
+                  onChange={(event) => setScrubWarningOverrideReason(event.target.value)}
+                  placeholder="Example: Warnings reviewed against prescription and clinical notes; proceed with export."
+                />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setShowScrubWarningOverride(false)}>Cancel</button>
+              <button
+                className="btn btn-primary"
+                disabled={exporting || !normalizeText(scrubWarningOverrideReason)}
+                onClick={() => { void handleExport(scrubWarningOverrideReason) }}
+              >
+                {exporting ? 'Exporting...' : 'Approve Warnings & Export'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showExportModal && (
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowExportModal(false)}>
           <div className="modal-panel modal-panel--export">
@@ -7123,7 +7249,7 @@ const Nhis = () => {
               >
                 <CheckCircle2 size={14} /> {readinessChecking ? 'Scrubbing...' : 'Scrub All Claims'}
               </button>
-              <button className="btn btn-primary" disabled={exporting || !exportPeriodReady} onClick={handleExport}>
+              <button className="btn btn-primary" disabled={exporting || !exportPeriodReady} onClick={() => { void handleExport() }}>
                 {exporting
                   ? (directNhiaApiAvailable && exportRoute === 'direct_api' ? 'Submitting...' : 'Exporting...')
                   : <><Download size={14} /> {directNhiaApiAvailable && exportRoute === 'direct_api' ? 'Submit Direct API' : 'Export CXF'}</>}

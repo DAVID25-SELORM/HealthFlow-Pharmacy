@@ -8106,7 +8106,7 @@ const downloadTextFile = ({ content, contentType, fileName }) => {
   URL.revokeObjectURL(url)
 }
 
-const assertNhisClaimsReadyForFinalSubmission = async (claims, organizationType, options = {}) => {
+const getNhisClaimsFinalSubmissionReadiness = async (claims, organizationType, options = {}) => {
   const clinicalRules = organizationType === 'hospital' ? await getAllNhisClinicalRules() : DIAGNOSIS_TREATMENT_RULES
   const { providerClassLevel, nhisDrugCatalog } = await getNhisReadinessContext({ organizationType }, options)
   const allTariffServices = claims.flatMap((claim) => claim.nhis_claim_services || [])
@@ -8114,10 +8114,8 @@ const assertNhisClaimsReadyForFinalSubmission = async (claims, organizationType,
     allTariffServices,
     options.currentNhiaTariffItems ?? options.nhiaTariffCatalog
   )
-  const incompleteClaims = claims
-    .map((claim) => ({
-      claim,
-      issues: assessNhisClaimReadiness(
+  const readinessClaims = claims.map((claim) => {
+    const readiness = assessNhisClaimReadiness(
         {
           ...claim,
           organizationType: claim.organization_type || organizationType,
@@ -8144,13 +8142,45 @@ const assertNhisClaimsReadyForFinalSubmission = async (claims, organizationType,
           nhiaTariffServices: claim.nhis_claim_services || [],
           currentNhiaTariffItems,
         }
-      ).blockers,
-    }))
-    .filter((item) => item.issues.length)
+      )
+    return {
+      claim,
+      blockers: readiness.blockers || [],
+      warnings: readiness.warnings || [],
+    }
+  })
+
+  return {
+    incompleteClaims: readinessClaims
+      .filter((item) => item.blockers.length)
+      .map(({ claim, blockers }) => ({ claim, issues: blockers })),
+    warningClaims: readinessClaims
+      .filter((item) => item.warnings.length)
+      .map(({ claim, warnings }) => ({ claim, issues: warnings })),
+  }
+}
+
+const assertNhisClaimsReadyForFinalSubmission = async (claims, organizationType, options = {}) => {
+  const { incompleteClaims } = await getNhisClaimsFinalSubmissionReadiness(claims, organizationType, options)
 
   if (incompleteClaims.length) {
     throw createNhisReadinessClaimsError(incompleteClaims)
   }
+}
+
+export const getNhisExportScrubWarnings = async (options = {}) => {
+  const readiness = await getNhisExportClaimsAndBlockers(options)
+  const { warningClaims } = await getNhisClaimsFinalSubmissionReadiness(
+    readiness.claims,
+    readiness.organizationType,
+    {
+      ...options,
+      format: readiness.format,
+      directSubmit: readiness.directSubmit,
+      exportPeriod: readiness.period,
+    }
+  )
+  return warningClaims.map(({ claim, issues }) => summarizeNhisReadinessClaim(claim, issues))
 }
 
 const getNhisMissingCxfAttachmentIssues = (claims = []) => {
