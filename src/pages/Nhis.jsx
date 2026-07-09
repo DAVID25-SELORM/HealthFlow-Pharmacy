@@ -124,6 +124,22 @@ const READINESS_FILTERS = [
   { id: 'medicine', label: 'Medicine' },
   { id: 'other', label: 'Other' },
 ]
+const getScrubIssueAuditSummary = (issues = []) => ({
+  total: issues.length,
+  claim_numbers: issues.slice(0, 20).map((issue) => issue.claim_number || issue.claimNumber || issue.id || 'Unnumbered'),
+  issue_count: issues.reduce((count, issue) => count + (Array.isArray(issue.issues) ? issue.issues.length : 1), 0),
+})
+
+const getDuplicateScrubAuditSummary = (groups = []) => ({
+  total_groups: groups.length,
+  total_claims: groups.reduce((count, group) => count + (Array.isArray(group.claims) ? group.claims.length : 0), 0),
+  examples: groups.slice(0, 10).map((group) => ({
+    patient: group.patientName || '',
+    member: group.member || '',
+    service_date: group.serviceDate || '',
+    claims: (group.claims || []).slice(0, 6).map((claim) => claim.claim_number || claim.id || 'Unnumbered'),
+  })),
+})
 const CLAIM_ISSUE_FILTERS = [
   { id: 'all', label: 'All claims' },
   { id: 'any', label: 'All issues' },
@@ -3863,13 +3879,28 @@ const Nhis = () => {
     preserveFilter = false,
     showExportModalOnReady = false,
   } = {}) => {
+    const { requestOptions, periodOptions, selectedFormat, submitDirectApi } = buildCurrentExportOptions()
     try {
       setReadinessChecking(true)
       setDuplicateClaimGroups([])
       setDuplicateExportIssues([])
       setShowDuplicateClaimReview(false)
-      const { requestOptions } = buildCurrentExportOptions()
       const result = await checkNhisExportReadiness(requestOptions)
+      await tryLogAuditEvent({
+        eventType: 'nhis_claim.scrub_batch',
+        entityType: 'nhis_claims',
+        entityId: '',
+        action: 'scrub_all_claims',
+        details: {
+          result: 'passed',
+          count: result.count,
+          period: periodOptions,
+          format: selectedFormat,
+          direct_submit: submitDirectApi,
+          user_id: user?.id || '',
+          role,
+        },
+      })
       setReadinessClaimIssues([])
       if (!preserveFilter) setReadinessIssueFilter('all')
       setShowReadinessClaimReview(false)
@@ -3882,10 +3913,44 @@ const Nhis = () => {
       if (showExportModalOnReady) setShowExportModal(true)
       if (!keepModalOpen) setShowExportModal(false)
     } catch (err) {
+      await tryLogAuditEvent({
+        eventType: 'nhis_claim.scrub_batch',
+        entityType: 'nhis_claims',
+        entityId: '',
+        action: 'scrub_all_claims',
+        details: {
+          result: 'failed',
+          period: periodOptions,
+          format: selectedFormat,
+          direct_submit: submitDirectApi,
+          duplicate_summary: isNhisDuplicateClaimsError(err) ? getDuplicateScrubAuditSummary(err.duplicateGroups || []) : null,
+          readiness_summary: isNhisReadinessClaimsError(err) ? getScrubIssueAuditSummary(err.readinessIssues || []) : null,
+          export_blocker_count: Array.isArray(err.exportBlockingIssues) ? err.exportBlockingIssues.length : 0,
+          message: err.message || '',
+          user_id: user?.id || '',
+          role,
+        },
+      })
       applyExportReadinessError(err, 'Claim scrub failed.', { preserveFilter })
     } finally {
       setReadinessChecking(false)
     }
+  }
+
+  const handleScrubClaim = async (claim) => {
+    await tryLogAuditEvent({
+      eventType: 'nhis_claim.scrub_claim',
+      entityType: 'nhis_claims',
+      entityId: claim?.id || '',
+      action: 'open_claim_scrub',
+      details: {
+        claim_number: claim?.claim_number || claim?.claimNumber || '',
+        status: claim?.status || '',
+        user_id: user?.id || '',
+        role,
+      },
+    })
+    return openEditClaim(claim)
   }
 
   const openReadinessIssueForEdit = async (issue) => {
@@ -4456,7 +4521,7 @@ const Nhis = () => {
                           className="action-btn action-btn--view"
                           title="Scrub Claim"
                           disabled={isClaimBusy(c.id)}
-                          onClick={() => { void openEditClaim(c) }}
+                          onClick={() => { void handleScrubClaim(c) }}
                         >
                           {isClaimActionBusy(c.id, 'edit') ? <Clock size={14} /> : <HeartPulse size={14} />}
                         </button>
