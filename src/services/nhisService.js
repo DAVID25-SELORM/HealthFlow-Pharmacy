@@ -2150,7 +2150,7 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
   const patientAge = calculateAge(dateOfBirth)
   const requireMedicineDirections = options.finalSubmission || options.requireMedicineDirections === true
   const requirePrescriptionAttachment = options.finalSubmission
-    ? (!isHospital || options.requirePrescriptionAttachment !== false)
+    ? (!isHospital || options.requirePrescriptionAttachment === true)
     : options.requirePrescriptionAttachment === true
   const requireVerifiedPrescription =
     !isHospital &&
@@ -8222,7 +8222,9 @@ export const getNhisExportScrubWarnings = async (options = {}) => {
   return warningClaims.map(({ claim, issues }) => summarizeNhisReadinessClaim(claim, issues))
 }
 
-const getNhisMissingCxfAttachmentIssues = (claims = []) => {
+const getNhisMissingCxfAttachmentIssues = (claims = [], organizationType = '') => {
+  if (normalizeOrganizationType(organizationType) === 'hospital') return []
+
   const missingClaims = claims.filter((claim) =>
     !normalizeText(claim.claimit_attachment_base64) &&
     !normalizeText(claim.prescription_file_path) &&
@@ -8274,7 +8276,7 @@ const collectNhisExportBlockingIssues = async (claims, organizationType, options
   const format = normalizeClaimItExportFormat(options.format || options.exportFormat || options.export_format || 'cxf')
   const directSubmit = Boolean(options.directSubmit && format !== 'cxf')
   if (!directSubmit && format === 'cxf') {
-    issues.push(...getNhisMissingCxfAttachmentIssues(claims))
+    issues.push(...getNhisMissingCxfAttachmentIssues(claims, organizationType))
 
     try {
       const payload = buildNhisClaimItExportPayload(claims, options)
