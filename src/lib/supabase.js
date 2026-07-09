@@ -48,14 +48,21 @@ const SUPABASE_AUTH_EXPIRED_EVENT = 'healthflow:supabase-auth-expired'
 let authExpired = false
 let refreshSessionPromise = null
 let cachedAuthSession = null
+let cachedAuthUser = null
 
 const cacheAuthSession = (session) => {
   cachedAuthSession = session?.access_token ? session : null
+  cachedAuthUser = cachedAuthSession?.user?.id ? cachedAuthSession.user : null
   return cachedAuthSession
 }
 
 export const setCachedSupabaseSession = (session) => cacheAuthSession(session)
 export const getCachedSupabaseSession = () => cachedAuthSession
+export const setCachedSupabaseUser = (user) => {
+  cachedAuthUser = user?.id ? user : null
+  return cachedAuthUser
+}
+export const getCachedSupabaseUser = () => cachedAuthUser
 
 const dispatchAuthExpired = () => {
   if (typeof window === 'undefined') {
@@ -102,6 +109,7 @@ const createExpiredAuthResponse = () =>
 const markAuthExpired = () => {
   authExpired = true
   cacheAuthSession(null)
+  setCachedSupabaseUser(null)
   dispatchAuthExpired()
 }
 
@@ -210,6 +218,7 @@ export const supabase = hasValidCredentials
 
 export const clearSupabaseStoredSession = () => {
   cacheAuthSession(null)
+  setCachedSupabaseUser(null)
 
   if (typeof window === 'undefined' || !supabaseAuthStorageKey) {
     return
@@ -414,6 +423,14 @@ export const getCurrentSupabaseUser = async () => {
     return null
   }
 
+  if (cachedAuthUser?.id && session.user?.id === cachedAuthUser.id) {
+    return cachedAuthUser
+  }
+
+  if (session.user?.id) {
+    return setCachedSupabaseUser(session.user)
+  }
+
   let {
     data: { user },
     error,
@@ -434,7 +451,7 @@ export const getCurrentSupabaseUser = async () => {
     throw error
   }
 
-  return user || null
+  return setCachedSupabaseUser(user) || null
 }
 
 export const invokeSupabaseFunction = async (name, options = {}) => {

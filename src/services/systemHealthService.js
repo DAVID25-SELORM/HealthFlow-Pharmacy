@@ -1,4 +1,4 @@
-import { isSupabaseConfigured, supabase } from '../lib/supabase'
+import { getCurrentSupabaseUser, isSupabaseConfigured, supabase } from '../lib/supabase'
 import { getStoredActiveRole } from '../utils/activeRole'
 import { REPORT_ROLES, hasRole } from '../utils/roles'
 import { getBranchServerConfig, getBranchServerHealth } from './branchServerApi'
@@ -161,12 +161,11 @@ const checkAuthenticatedSession = async () => {
 
   try {
     const startedAt = performance.now()
-    const { data, error } = await supabase.auth.getUser()
-    if (error) throw error
-    if (!data?.user?.id) throw new Error('No authenticated user was returned.')
+    const user = await getCurrentSupabaseUser()
+    if (!user?.id) throw new Error('No authenticated user was returned.')
 
     return ok('Authenticated session', {
-      summary: data.user.email || 'Signed in',
+      summary: user.email || 'Signed in',
       detail: `Auth verified in ${Math.round(performance.now() - startedAt)} ms.`,
     })
   } catch (error) {

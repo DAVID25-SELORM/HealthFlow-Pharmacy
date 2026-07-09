@@ -2654,6 +2654,23 @@
   font-variant-numeric: tabular-nums;
 }
 
+.nhis-loading-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 10px 0;
+  color: #0f766e;
+  font-size: 0.82rem;
+}
+
+.nhis-loading-strip span {
+  border: 1px solid #99f6e4;
+  background: #f0fdfa;
+  border-radius: 999px;
+  padding: 5px 10px;
+}
+
 .nhis-readiness-summary {
   background: #fff;
   border: 1px solid var(--line-soft);

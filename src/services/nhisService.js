@@ -3116,7 +3116,9 @@ export const generateBrowserClaimItBridgeCcCode = async (settings = {}, claimCon
   )
 }
 
-const loadHostedNhiaApiSettings = async ({ organizationId = '', mode = '', forceRefresh = false } = {}) => {
+const hostedNhiaSettingsRequests = new Map()
+
+const loadHostedNhiaApiSettingsFromCloud = async ({ organizationId = '', mode = '' } = {}) => {
   let hostedError = null
   let hostedSettings = null
   try {
@@ -3129,12 +3131,10 @@ const loadHostedNhiaApiSettings = async ({ organizationId = '', mode = '', force
     hostedError = error
   }
 
-  const cachedSettings = forceRefresh ? null : readCachedNhiaApiSettings(organizationId)
-  const selectedSettings = hostedSettings || cachedSettings
-  if (selectedSettings) {
-    const nhiaConfig = normalizeNhiaConfig(selectedSettings, {
+  if (hostedSettings) {
+    const nhiaConfig = normalizeNhiaConfig(hostedSettings, {
       mode,
-      source: hostedSettings ? 'cloud_supabase' : 'local_cache',
+      source: 'cloud_supabase',
       organizationId,
     })
     writeCachedNhiaApiSettings(nhiaConfig, organizationId)
@@ -3156,6 +3156,45 @@ const loadHostedNhiaApiSettings = async ({ organizationId = '', mode = '', force
 
   if (hostedError) throw hostedError
   return null
+}
+
+const loadHostedNhiaApiSettings = async ({ organizationId = '', mode = '', forceRefresh = false } = {}) => {
+  const cachedSettings = forceRefresh ? null : readCachedNhiaApiSettings(organizationId)
+  if (cachedSettings) {
+    const nhiaConfig = normalizeNhiaConfig(cachedSettings, {
+      mode,
+      source: 'local_cache',
+      organizationId,
+    })
+    logNhiaConfigEvent('load', {
+      organizationId,
+      branchId: nhiaConfig.branchId,
+      mode,
+      configSource: 'local_cache',
+      endpoint: 'localStorage',
+      hasApiKey: nhiaConfig.hasApiKey,
+      hasApiSecret: nhiaConfig.hasApiSecret,
+      apiBaseUrl: nhiaConfig.apiBaseUrl,
+      memberLookupEndpointPath: nhiaConfig.memberLookupEndpointPath,
+      credentialMode: nhiaConfig.credentialMode,
+    })
+    return nhiaConfig
+  }
+
+  const requestKey = `${organizationId || 'default'}|${mode || 'cloud'}`
+  if (!forceRefresh && hostedNhiaSettingsRequests.has(requestKey)) {
+    return hostedNhiaSettingsRequests.get(requestKey)
+  }
+
+  const request = loadHostedNhiaApiSettingsFromCloud({ organizationId, mode })
+  if (!forceRefresh) {
+    hostedNhiaSettingsRequests.set(requestKey, request.finally(() => {
+      hostedNhiaSettingsRequests.delete(requestKey)
+    }))
+    return hostedNhiaSettingsRequests.get(requestKey)
+  }
+
+  return request
 }
 
 export const getNhiaApiSettings = async (options = {}) => {

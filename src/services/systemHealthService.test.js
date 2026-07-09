@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
+  getCurrentSupabaseUser: vi.fn(),
   getUser: vi.fn(),
   invokeTierAccess: vi.fn(),
   getBranchServerConfig: vi.fn(),
@@ -23,6 +24,7 @@ const createQuery = (table) => {
 }
 
 vi.mock('../lib/supabase', () => ({
+  getCurrentSupabaseUser: mocks.getCurrentSupabaseUser,
   isSupabaseConfigured: () => true,
   supabase: {
     auth: {
@@ -63,6 +65,10 @@ describe('getSystemHealth', () => {
     mocks.getUser.mockResolvedValue({
       data: { user: { id: 'user-1', email: 'monitor@healthflow.test' } },
       error: null,
+    })
+    mocks.getCurrentSupabaseUser.mockResolvedValue({
+      id: 'user-1',
+      email: 'monitor@healthflow.test',
     })
     mocks.invokeTierAccess.mockImplementation(async ({ action }) => {
       if (action === 'get_activity_logs') {

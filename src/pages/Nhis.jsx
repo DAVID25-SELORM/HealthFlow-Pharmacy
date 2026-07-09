@@ -1096,6 +1096,8 @@ const Nhis = () => {
   // ─── direct NHIA API ─────────────────────────────────────────
   const [directNhiaSettings, setDirectNhiaSettings] = useState(null)
   const [facilitySettings, setFacilitySettings] = useState(null)
+  const [nhiaSettingsLoading, setNhiaSettingsLoading] = useState(false)
+  const [facilitySettingsLoading, setFacilitySettingsLoading] = useState(false)
   const [generatingCcCode, setGeneratingCcCode] = useState(false)
   const [lookingUpMember, setLookingUpMember] = useState(false)
   // Tracks the last member number we already looked up — prevents duplicate API calls
@@ -1385,10 +1387,13 @@ const Nhis = () => {
 
   const refreshDirectNhiaApiStatus = useCallback(async () => {
     try {
+      setNhiaSettingsLoading(true)
       const settings = await getNhiaApiSettings({ organizationId })
       setDirectNhiaSettings(settings || null)
     } catch {
       setDirectNhiaSettings(null)
+    } finally {
+      setNhiaSettingsLoading(false)
     }
   }, [organizationId])
 
@@ -1396,12 +1401,16 @@ const Nhis = () => {
 
   useEffect(() => {
     let cancelled = false
+    setFacilitySettingsLoading(true)
     getPharmacySettings()
       .then((settings) => {
         if (!cancelled) setFacilitySettings(settings || null)
       })
       .catch(() => {
         if (!cancelled) setFacilitySettings(null)
+      })
+      .finally(() => {
+        if (!cancelled) setFacilitySettingsLoading(false)
       })
     return () => {
       cancelled = true
@@ -4313,6 +4322,16 @@ const Nhis = () => {
               </button>
             </div>
           </div>
+
+          {(loading || claimsPageLoading || claimIssueCountsLoading || nhiaSettingsLoading || facilitySettingsLoading) && (
+            <div className="nhis-loading-strip" role="status" aria-live="polite">
+              {loading && <span>Loading NHIS workspace...</span>}
+              {claimsPageLoading && <span>Refreshing claims...</span>}
+              {claimIssueCountsLoading && <span>Checking claim issues...</span>}
+              {nhiaSettingsLoading && <span>Loading NHIA facility settings...</span>}
+              {facilitySettingsLoading && <span>Loading facility profile...</span>}
+            </div>
+          )}
 
           <div className={`nhis-readiness-summary ${claimIssueCounts.all > 0 ? 'has-issues' : 'is-ready'}`}>
             <div className="nhis-readiness-summary-main">
