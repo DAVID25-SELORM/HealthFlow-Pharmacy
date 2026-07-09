@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Menu, Search, Bell, LogOut, Wifi, WifiOff } from 'lucide-react'
+import { Menu, Search, Bell, LogOut, Wifi, WifiOff, MonitorCheck } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { subscribeToHealthflowDataChanged } from '../../lib/appEvents'
@@ -9,13 +9,14 @@ import { useOnlineStatus } from '../../hooks/useOnlineStatus'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { getClaimsStatistics } from '../../services/claimsService'
 import { getExpiringDrugs, getLowStockDrugs } from '../../services/drugService'
+import { getSystemHealth } from '../../services/systemHealthService'
 import {
   CONNECTIVITY_MODES,
   getConnectivityState,
   refreshConnectivityState,
   subscribeConnectivity,
 } from '../../services/connectivityService'
-import { CLAIMS_ROLES, INVENTORY_ROLES, hasRole } from '../../utils/roles'
+import { CLAIMS_ROLES, INVENTORY_ROLES, SYSTEM_HEALTH_ROLES, hasRole } from '../../utils/roles'
 import { getRoleLabel } from '../../utils/roleLabels'
 import './TopBar.css'
 
@@ -23,6 +24,8 @@ const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
   const [quickSearch, setQuickSearch] = useState('')
   const [alertsOpen, setAlertsOpen] = useState(false)
   const [alerts, setAlerts] = useState([])
+  const [systemHealth, setSystemHealth] = useState(null)
+  const [systemHealthLoading, setSystemHealthLoading] = useState(false)
   const {
     displayName,
     role,
@@ -44,6 +47,7 @@ const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
   const avatarName = encodeURIComponent(displayName)
   const canUseInventorySearch = canManageInventory || hasRole(role, INVENTORY_ROLES)
   const canUseClaimAlerts = canManageClaims || hasRole(role, CLAIMS_ROLES)
+  const canViewSystemHealth = hasRole(role, SYSTEM_HEALTH_ROLES)
   const searchTarget = canUseInventorySearch ? '/inventory' : '/sales'
 
   const notificationCount = useMemo(
@@ -63,6 +67,23 @@ const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
     if (connectivity.mode === CONNECTIVITY_MODES.ONLINE_LOCAL_SYNC) return 'local-sync'
     return 'offline'
   }, [connectivity.mode])
+
+  const systemHealthMeta = useMemo(() => {
+    if (!canViewSystemHealth) return null
+    if (systemHealthLoading && !systemHealth) {
+      return { label: 'Checking', className: 'checking', title: 'Checking system health' }
+    }
+    if (systemHealth?.status === 'ok') {
+      return { label: 'Healthy', className: 'ok', title: 'System health is healthy' }
+    }
+    if (systemHealth?.status === 'fail') {
+      return { label: 'Issue', className: 'fail', title: 'System health needs attention' }
+    }
+    if (systemHealth?.status === 'warn') {
+      return { label: 'Review', className: 'warn', title: 'System health should be reviewed' }
+    }
+    return { label: 'Health', className: 'unknown', title: 'Open system health' }
+  }, [canViewSystemHealth, systemHealth, systemHealthLoading])
 
   const loadAlerts = useCallback(async () => {
     if (!isSupabaseConfigured() || (!canUseInventorySearch && !canUseClaimAlerts)) {
@@ -114,6 +135,27 @@ const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
     }
   }, [canUseClaimAlerts, canUseClaims, canUseInventorySearch, tierLimits.hasClaims])
 
+  const loadSystemHealth = useCallback(async () => {
+    if (!canViewSystemHealth) {
+      setSystemHealth(null)
+      return
+    }
+
+    try {
+      setSystemHealthLoading(true)
+      setSystemHealth(await getSystemHealth())
+    } catch (error) {
+      console.warn('Unable to load top bar system health:', error)
+      setSystemHealth({
+        status: 'warn',
+        checks: [],
+        checkedAt: new Date().toISOString(),
+      })
+    } finally {
+      setSystemHealthLoading(false)
+    }
+  }, [canViewSystemHealth])
+
   useEffect(() => {
     const params = new URLSearchParams(location.search)
     const routeSearch = params.get('search') || ''
@@ -129,6 +171,15 @@ const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
   useEffect(() => {
     void loadAlerts()
   }, [loadAlerts])
+
+  useEffect(() => {
+    void loadSystemHealth()
+    if (!canViewSystemHealth) return undefined
+    const interval = window.setInterval(() => {
+      void loadSystemHealth()
+    }, 5 * 60 * 1000)
+    return () => window.clearInterval(interval)
+  }, [canViewSystemHealth, loadSystemHealth])
 
   useEffect(() => {
     const unsubscribe = subscribeConnectivity(setConnectivity)
@@ -228,6 +279,18 @@ const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
       </div>
 
       <div className="topbar-actions">
+        {systemHealthMeta && (
+          <button
+            type="button"
+            className={`system-health-topbar-badge ${systemHealthMeta.className}`}
+            title={systemHealthMeta.title}
+            onClick={() => navigate('/system-health')}
+          >
+            <MonitorCheck size={15} />
+            <span>System: {systemHealthMeta.label}</span>
+          </button>
+        )}
+
         <span
           className={`connection-status ${connectionClass}`}
           title={connectionLabel}

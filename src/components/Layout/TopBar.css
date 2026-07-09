@@ -118,6 +118,45 @@
   color: #991b1b;
 }
 
+.system-health-topbar-badge {
+  align-items: center;
+  background: #f8fafc;
+  border: 1px solid var(--gray-200);
+  border-radius: 999px;
+  color: var(--gray-700);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 0.76rem;
+  font-weight: 800;
+  gap: 0.35rem;
+  min-height: 34px;
+  padding: 0 0.7rem;
+  white-space: nowrap;
+}
+
+.system-health-topbar-badge.ok {
+  background: #ecfdf5;
+  border-color: #bbf7d0;
+  color: #166534;
+}
+
+.system-health-topbar-badge.warn,
+.system-health-topbar-badge.checking {
+  background: #fffbeb;
+  border-color: #fde68a;
+  color: #92400e;
+}
+
+.system-health-topbar-badge.fail {
+  background: #fee2e2;
+  border-color: #fecaca;
+  color: #991b1b;
+}
+
+.system-health-topbar-badge:hover {
+  filter: brightness(0.98);
+}
+
 .notification-btn {
   position: relative;
   background: none;
@@ -314,6 +353,15 @@
     min-height: 32px;
     padding: 0 0.55rem;
     font-size: 0.74rem;
+  }
+
+  .system-health-topbar-badge {
+    min-height: 32px;
+    padding: 0 0.55rem;
+  }
+
+  .system-health-topbar-badge span {
+    display: none;
   }
 
   .user-profile {
