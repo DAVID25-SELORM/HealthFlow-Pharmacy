@@ -58,9 +58,21 @@ describe('getSystemHealth', () => {
       data: { user: { id: 'user-1', email: 'monitor@healthflow.test' } },
       error: null,
     })
-    mocks.invokeTierAccess.mockResolvedValue({
-      ok: true,
-      counts: { sales: 4, patients: 8, nhisClaims: 3 },
+    mocks.invokeTierAccess.mockImplementation(async ({ action }) => {
+      if (action === 'get_activity_logs') {
+        return {
+          logs: [{
+            id: 'log-1',
+            event_type: 'sale.completed',
+            entity_type: 'sales',
+            created_at: '2026-06-27T10:00:00Z',
+          }],
+        }
+      }
+      return {
+        ok: true,
+        counts: { sales: 4, patients: 8, nhisClaims: 3 },
+      }
     })
     mocks.getBranchServerConfig.mockReturnValue({ enabled: false, token: '' })
     mocks.rows.set('sales', {
@@ -100,6 +112,7 @@ describe('getSystemHealth', () => {
       'Local branch server',
     ]))
     expect(mocks.invokeTierAccess).toHaveBeenCalledWith({ action: 'get_report_health' })
+    expect(mocks.invokeTierAccess).toHaveBeenCalledWith({ action: 'get_activity_logs', limit: 1 })
     expect(health.status).toBe('warn')
   })
 })

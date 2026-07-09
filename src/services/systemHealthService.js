@@ -227,11 +227,21 @@ const checkRecentAuditLog = async () => {
   if (!isSupabaseConfigured()) return warn('Recent activity log', { summary: 'Skipped' })
 
   try {
-    const log = await latestRow(
-      'audit_logs',
-      'id, event_type, entity_type, action, created_at',
-      'created_at'
-    )
+    let log = null
+
+    try {
+      const result = await invokeTierAccess({ action: 'get_activity_logs', limit: 1 })
+      log = Array.isArray(result?.logs) ? result.logs[0] || null : null
+    } catch (error) {
+      const unsupportedAction = String(error?.message || '').toLowerCase().includes('unsupported action')
+      if (!unsupportedAction) throw error
+
+      log = await latestRow(
+        'audit_logs',
+        'id, event_type, entity_type, action, created_at',
+        'created_at'
+      )
+    }
 
     if (!log) {
       return warn('Recent activity log', {
