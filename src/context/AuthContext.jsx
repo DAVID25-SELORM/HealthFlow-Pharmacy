@@ -200,6 +200,21 @@ const isSupabaseAuthFailure = (error) => {
   )
 }
 
+const isTransientSupabaseAuthFailure = (error) => {
+  const name = String(error?.name || '').toLowerCase()
+  const message = String(error?.message || '').toLowerCase()
+
+  return (
+    name === 'aborterror' ||
+    message.includes('failed to fetch') ||
+    message.includes('networkerror') ||
+    message.includes('load failed') ||
+    message.includes('timed out') ||
+    message.includes('internet connection') ||
+    message.includes('cors')
+  )
+}
+
 const resolveRole = (profile, authUser) =>
   profile?.role || authUser?.app_metadata?.role || authUser?.user_metadata?.role || FALLBACK_ROLE
 
@@ -340,7 +355,7 @@ export const AuthProvider = ({ children }) => {
 
         return storedSession || null
       } catch (sessionError) {
-        if (!isSupabaseAuthFailure(sessionError)) {
+        if (!isSupabaseAuthFailure(sessionError) && !isTransientSupabaseAuthFailure(sessionError)) {
           console.warn('Unable to re-check Supabase session:', sessionError)
         }
 
@@ -371,13 +386,14 @@ export const AuthProvider = ({ children }) => {
         return refreshedSession || null
       } catch (refreshError) {
         const isRateLimit = Number(refreshError?.status || refreshError?.statusCode || 0) === 429
-        if (!isSupabaseAuthFailure(refreshError) && !isRateLimit) {
+        const isTransient = isTransientSupabaseAuthFailure(refreshError)
+        if (!isSupabaseAuthFailure(refreshError) && !isRateLimit && !isTransient) {
           console.warn('Unable to refresh Supabase session:', refreshError)
         }
 
         // On rate limit, the session may still be valid — return it rather than
         // treating the 429 as an auth failure and wiping the stored session.
-        if (isRateLimit && fallbackSession?.access_token && !isExpiredSession(fallbackSession, 0)) {
+        if ((isRateLimit || isTransient) && fallbackSession?.access_token && !isExpiredSession(fallbackSession, 0)) {
           return fallbackSession
         }
 
@@ -584,7 +600,9 @@ export const AuthProvider = ({ children }) => {
             return
           }
 
-          if (validateError) {
+          if (validateError && isTransientSupabaseAuthFailure(validateError) && shouldPreserveOnValidationFailure) {
+            console.warn('Supabase session validation failed transiently; keeping current session.', validateError)
+          } else if (validateError) {
             console.error('Unable to validate Supabase user:', validateError)
           }
 

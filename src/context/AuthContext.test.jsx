@@ -509,6 +509,63 @@ describe('AuthProvider', () => {
     expect(mocks.clearSupabaseStoredSession).not.toHaveBeenCalled()
   })
 
+  it('keeps the current session when Supabase auth validation temporarily fails to fetch', async () => {
+    const validUser = {
+      id: 'admin-user',
+      email: 'admin@example.com',
+      app_metadata: { role: 'admin' },
+      user_metadata: { full_name: 'Admin User' },
+    }
+    const validSession = {
+      access_token: 'fresh-token',
+      user: validUser,
+    }
+
+    mocks.auth.getSession.mockResolvedValue({
+      data: { session: validSession },
+      error: null,
+    })
+    mocks.auth.getUser
+      .mockResolvedValueOnce({
+        data: { user: validUser },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: { user: null },
+        error: new TypeError('Failed to fetch'),
+      })
+    mocks.queryBuilder.maybeSingle.mockResolvedValue({
+      data: {
+        id: validUser.id,
+        email: validUser.email,
+        full_name: 'Admin User',
+        role: 'admin',
+        is_active: true,
+      },
+      error: null,
+    })
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId('auth-state')).toHaveTextContent('signed-in:Admin User')
+    })
+
+    await act(async () => {
+      mocks.getAuthStateChangeCallback()?.('TOKEN_REFRESHED', validSession)
+      await Promise.resolve()
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('auth-state')).toHaveTextContent('signed-in:Admin User')
+    })
+    expect(mocks.clearSupabaseStoredSession).not.toHaveBeenCalled()
+  })
+
   it('does not remount protected content for a background token refresh', async () => {
     const states = []
     const validUser = {
