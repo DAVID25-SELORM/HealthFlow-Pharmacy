@@ -6,8 +6,52 @@ const ok = (label, details = {}) => ({ label, status: 'ok', ...details })
 const warn = (label, details = {}) => ({ label, status: 'warn', ...details })
 const fail = (label, details = {}) => ({ label, status: 'fail', ...details })
 
+const HEALTH_TIMEOUT_MS = 8000
+const AUTH_WARN_MS = 2500
+const REST_WARN_MS = 3000
+
+const getSupabaseUrl = () => (import.meta.env.VITE_SUPABASE_URL || '').replace(/\/+$/, '')
+const getSupabaseKey = () =>
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+  import.meta.env.VITE_SUPABASE_ANON_KEY ||
+  ''
+
 const formatError = (error) =>
   error?.message || error?.error_description || 'Check failed.'
+
+const timedFetch = async (url, options = {}, timeoutMs = HEALTH_TIMEOUT_MS) => {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
+  const startedAt = performance.now()
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    })
+    return {
+      response,
+      durationMs: Math.round(performance.now() - startedAt),
+    }
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+const getLatencyStatus = (durationMs, warnAtMs) =>
+  durationMs >= warnAtMs ? 'warn' : 'ok'
+
+const latencyCheck = (label, durationMs, warnAtMs, details = {}) => {
+  const payload = {
+    ...details,
+    summary: durationMs >= warnAtMs ? 'Slow response' : 'Responsive',
+    detail: `${details.detailPrefix || 'Responded'} in ${durationMs} ms.`,
+  }
+  delete payload.detailPrefix
+  return getLatencyStatus(durationMs, warnAtMs) === 'warn'
+    ? warn(label, payload)
+    : ok(label, payload)
+}
 
 const latestRow = async (table, select, orderColumn) => {
   const { data, error } = await supabase
@@ -44,6 +88,65 @@ const checkSupabase = async () => {
   } catch (error) {
     return fail('Supabase connection', {
       summary: 'Database check failed',
+      detail: formatError(error),
+    })
+  }
+}
+
+const checkSupabaseAuthEndpoint = async () => {
+  const supabaseUrl = getSupabaseUrl()
+  const supabaseKey = getSupabaseKey()
+  if (!supabaseUrl || !supabaseKey) {
+    return fail('Supabase Auth endpoint', {
+      summary: 'Not configured',
+      detail: 'The app is missing Supabase URL or publishable key.',
+    })
+  }
+
+  try {
+    const { response, durationMs } = await timedFetch(`${supabaseUrl}/auth/v1/health`, {
+      headers: { apikey: supabaseKey },
+    })
+    if (!response.ok) {
+      const text = await response.text().catch(() => '')
+      throw new Error(`HTTP ${response.status}${text ? `: ${text.slice(0, 120)}` : ''}`)
+    }
+
+    return latencyCheck('Supabase Auth endpoint', durationMs, AUTH_WARN_MS, {
+      detailPrefix: 'Auth health responded',
+    })
+  } catch (error) {
+    return fail('Supabase Auth endpoint', {
+      summary: 'Auth health check failed',
+      detail: formatError(error),
+    })
+  }
+}
+
+const checkSupabaseRestLatency = async () => {
+  if (!isSupabaseConfigured()) {
+    return fail('Supabase REST latency', {
+      summary: 'Not configured',
+      detail: 'The app is missing Supabase environment settings.',
+    })
+  }
+
+  try {
+    const startedAt = performance.now()
+    const { error } = await supabase
+      .from('organizations')
+      .select('id')
+      .limit(1)
+
+    if (error) throw error
+
+    const durationMs = Math.round(performance.now() - startedAt)
+    return latencyCheck('Supabase REST latency', durationMs, REST_WARN_MS, {
+      detailPrefix: 'Database API responded',
+    })
+  } catch (error) {
+    return fail('Supabase REST latency', {
+      summary: 'REST check failed',
       detail: formatError(error),
     })
   }
@@ -211,6 +314,8 @@ const checkLocalBranchServer = async () => {
 export const getSystemHealth = async () => {
   const checks = await Promise.all([
     checkSupabase(),
+    checkSupabaseAuthEndpoint(),
+    checkSupabaseRestLatency(),
     checkAuthenticatedSession(),
     checkReportEngine(),
     checkRecentSale(),

@@ -47,6 +47,13 @@ describe('getSystemHealth', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.rows.clear()
+    vi.stubEnv('VITE_SUPABASE_URL', 'https://project-ref.supabase.co')
+    vi.stubEnv('VITE_SUPABASE_PUBLISHABLE_KEY', 'publishable-key')
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      text: async () => '{"ok":true}',
+    })))
     mocks.getUser.mockResolvedValue({
       data: { user: { id: 'user-1', email: 'monitor@healthflow.test' } },
       error: null,
@@ -83,6 +90,8 @@ describe('getSystemHealth', () => {
 
     expect(labels).toEqual(expect.arrayContaining([
       'Supabase connection',
+      'Supabase Auth endpoint',
+      'Supabase REST latency',
       'Authenticated session',
       'Reports and Edge Function',
       'Recent sale',
