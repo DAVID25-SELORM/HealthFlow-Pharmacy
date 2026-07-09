@@ -115,4 +115,16 @@ describe('getSystemHealth', () => {
     expect(mocks.invokeTierAccess).toHaveBeenCalledWith({ action: 'get_activity_logs', limit: 1 })
     expect(health.status).toBe('warn')
   })
+
+  it('skips report health for active roles without report access', async () => {
+    const health = await getSystemHealth({ canViewReports: false })
+    const reportCheck = health.checks.find((check) => check.label === 'Reports and Edge Function')
+
+    expect(reportCheck).toMatchObject({
+      status: 'warn',
+      summary: 'Skipped',
+    })
+    expect(mocks.invokeTierAccess).not.toHaveBeenCalledWith({ action: 'get_report_health' })
+    expect(mocks.invokeTierAccess).toHaveBeenCalledWith({ action: 'get_activity_logs', limit: 1 })
+  })
 })

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Activity, AlertTriangle, CheckCircle2, RefreshCcw, XCircle } from 'lucide-react'
 import { getSystemHealth } from '../services/systemHealthService'
+import { useAuth } from '../context/AuthContext'
 import { formatAppDateTime } from '../utils/date'
 import './SystemHealth.css'
 
@@ -22,6 +23,7 @@ const statusMeta = {
 const getStatusMeta = (status) => statusMeta[status] || statusMeta.warn
 
 export default function SystemHealth() {
+  const { canViewReports } = useAuth()
   const [health, setHealth] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -30,14 +32,14 @@ export default function SystemHealth() {
     try {
       setLoading(true)
       setError('')
-      setHealth(await getSystemHealth())
+      setHealth(await getSystemHealth({ canViewReports }))
     } catch (loadError) {
       setHealth(null)
       setError(loadError.message || 'Unable to load system health.')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [canViewReports])
 
   useEffect(() => {
     void loadHealth()

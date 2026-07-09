@@ -34,6 +34,7 @@ const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
     branch,
     canManageInventory,
     canManageClaims,
+    canViewReports,
     signOut,
   } = useAuth()
   const { canUseClaims, tierLimits } = useTenant()
@@ -143,7 +144,7 @@ const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
 
     try {
       setSystemHealthLoading(true)
-      setSystemHealth(await getSystemHealth())
+      setSystemHealth(await getSystemHealth({ canViewReports }))
     } catch (error) {
       console.warn('Unable to load top bar system health:', error)
       setSystemHealth({
@@ -154,7 +155,7 @@ const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
     } finally {
       setSystemHealthLoading(false)
     }
-  }, [canViewSystemHealth])
+  }, [canViewReports, canViewSystemHealth])
 
   useEffect(() => {
     const params = new URLSearchParams(location.search)

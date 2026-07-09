@@ -175,7 +175,14 @@ const checkAuthenticatedSession = async () => {
   }
 }
 
-const checkReportEngine = async () => {
+const checkReportEngine = async (options = {}) => {
+  if (options.canViewReports === false) {
+    return warn('Reports and Edge Function', {
+      summary: 'Skipped',
+      detail: 'The active role does not have report access.',
+    })
+  }
+
   try {
     const startedAt = performance.now()
     const result = await invokeTierAccess({ action: 'get_report_health' })
@@ -321,13 +328,13 @@ const checkLocalBranchServer = async () => {
   }
 }
 
-export const getSystemHealth = async () => {
+export const getSystemHealth = async (options = {}) => {
   const checks = await Promise.all([
     checkSupabase(),
     checkSupabaseAuthEndpoint(),
     checkSupabaseRestLatency(),
     checkAuthenticatedSession(),
-    checkReportEngine(),
+    checkReportEngine(options),
     checkRecentSale(),
     checkRecentNhisClaim(),
     checkRecentAuditLog(),
