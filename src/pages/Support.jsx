@@ -394,7 +394,14 @@ export default function Support() {
             <label className="support-upload">
               <Upload size={20} />
               <span>Attach screenshots, PDFs, Excel files, error reports, or CLAIM-it logs</span>
-              <input type="file" multiple accept="image/*,.pdf,.xls,.xlsx,.csv,.txt,.log,.json" onChange={handleFiles} />
+              <input
+                id="support-attachments"
+                name="supportAttachments"
+                type="file"
+                multiple
+                accept="image/*,.pdf,.xls,.xlsx,.csv,.txt,.log,.json"
+                onChange={handleFiles}
+              />
             </label>
             {attachments.length > 0 && (
               <div className="support-file-list">
@@ -438,7 +445,14 @@ export default function Support() {
             <Sparkles size={22} />
           </div>
           <div className="support-ai">
-            <textarea value={aiQuestion} onChange={(event) => setAiQuestion(event.target.value)} rows={3} placeholder="Describe the issue..." />
+            <textarea
+              id="support-ai-question"
+              name="supportAiQuestion"
+              value={aiQuestion}
+              onChange={(event) => setAiQuestion(event.target.value)}
+              rows={3}
+              placeholder="Describe the issue..."
+            />
             <button className="btn btn-secondary" type="button" onClick={runAiAssistant}>
               <Search size={16} /> Search Help
             </button>
@@ -462,7 +476,14 @@ export default function Support() {
             ))}
           </div>
           <div className="support-chat-compose">
-            <input value={chatMessage} onChange={(event) => setChatMessage(event.target.value)} placeholder="Type a message" onKeyDown={(event) => event.key === 'Enter' && sendChat()} />
+            <input
+              id="support-chat-message"
+              name="supportChatMessage"
+              value={chatMessage}
+              onChange={(event) => setChatMessage(event.target.value)}
+              placeholder="Type a message"
+              onKeyDown={(event) => event.key === 'Enter' && sendChat()}
+            />
             <button type="button" className="btn btn-primary" onClick={sendChat} aria-label="Send chat message" title="Send chat message">
               <Send size={17} />
             </button>
@@ -481,7 +502,13 @@ export default function Support() {
           </div>
           <div className="support-search">
             <Search size={17} />
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search articles" />
+            <input
+              id="support-knowledge-search"
+              name="supportKnowledgeSearch"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search articles"
+            />
           </div>
           <div className="support-article-list">
             {filteredArticles.map((article) => (

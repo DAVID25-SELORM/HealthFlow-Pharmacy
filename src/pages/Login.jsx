@@ -172,6 +172,8 @@ const Login = () => {
               <div className="input-wrap">
                 <Mail size={16} />
                 <input
+                  id="login-email"
+                  name="email"
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -189,6 +191,8 @@ const Login = () => {
               <div className="input-wrap">
                 <Lock size={16} />
                 <input
+                  id={mode === 'new-password' ? 'login-new-password' : mode === 'offline' ? 'login-offline-pin' : 'login-password'}
+                  name={mode === 'new-password' ? 'newPassword' : mode === 'offline' ? 'offlinePin' : 'password'}
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -207,6 +211,8 @@ const Login = () => {
               <div className="input-wrap">
                 <Lock size={16} />
                 <input
+                  id="login-confirm-password"
+                  name="confirmPassword"
                   type="password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}

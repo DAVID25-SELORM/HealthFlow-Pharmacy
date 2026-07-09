@@ -331,12 +331,14 @@ const CustomerEPharmacy = () => {
               <label>
                 <Search size={18} />
                 <input
+                  id="customer-shop-search"
+                  name="customerShopSearch"
                   value={searchTerm}
                   onChange={(event) => setSearchTerm(event.target.value)}
                   placeholder="Search medicine, brand, generic name, or category"
                 />
               </label>
-              <select value={facilityFilter} onChange={(event) => setFacilityFilter(event.target.value)}>
+              <select id="customer-facility-filter" name="customerFacilityFilter" value={facilityFilter} onChange={(event) => setFacilityFilter(event.target.value)}>
                 <option value="">All licensed facilities</option>
                 {marketplace.facilities.map((facility) => (
                   <option key={facility.id} value={facility.id}>{facility.name}</option>
@@ -398,6 +400,8 @@ const CustomerEPharmacy = () => {
                 <div className="customer-input-icon">
                   <Mail size={17} />
                   <input
+                    id="customer-email"
+                    name="email"
                     type="email"
                     value={email}
                     onChange={(event) => setEmail(event.target.value)}
@@ -447,21 +451,21 @@ const CustomerEPharmacy = () => {
             ) : (
               <form onSubmit={handleSaveProfile}>
                 <div className="customer-form-grid">
-                  <label>Full legal name<input value={profileForm.fullName} onChange={(e) => setProfileForm((p) => ({ ...p, fullName: e.target.value }))} required /></label>
-                  <label>Mobile number<input type="tel" value={profileForm.phone} onChange={(e) => setProfileForm((p) => ({ ...p, phone: e.target.value }))} required /></label>
-                  <label>Date of birth<input type="date" value={profileForm.dateOfBirth} onChange={(e) => setProfileForm((p) => ({ ...p, dateOfBirth: e.target.value }))} /></label>
-                  <label>Gender<select value={profileForm.gender} onChange={(e) => setProfileForm((p) => ({ ...p, gender: e.target.value }))}><option value="">Select</option><option value="female">Female</option><option value="male">Male</option><option value="other">Other</option><option value="prefer_not_to_say">Prefer not to say</option></select></label>
-                  <label>Identity type<select value={profileForm.identityType} onChange={(e) => setProfileForm((p) => ({ ...p, identityType: e.target.value }))}><option value="ghana_card">Ghana Card</option><option value="passport">Passport</option><option value="other">Other ID</option></select></label>
-                  <label>Identity number<input value={profileForm.identityNumber} onChange={(e) => setProfileForm((p) => ({ ...p, identityNumber: e.target.value }))} /></label>
-                  <label className="wide">Residential address<input value={profileForm.address} onChange={(e) => setProfileForm((p) => ({ ...p, address: e.target.value }))} /></label>
-                  <label>City<input value={profileForm.city} onChange={(e) => setProfileForm((p) => ({ ...p, city: e.target.value }))} /></label>
-                  <label>Region<input value={profileForm.region} onChange={(e) => setProfileForm((p) => ({ ...p, region: e.target.value }))} /></label>
-                  <label>Digital address<input value={profileForm.digitalAddress} onChange={(e) => setProfileForm((p) => ({ ...p, digitalAddress: e.target.value }))} /></label>
-                  <label>Allergies<input value={profileForm.allergies} onChange={(e) => setProfileForm((p) => ({ ...p, allergies: e.target.value }))} /></label>
-                  <label className="wide">Current medicines<input value={profileForm.currentMedications} onChange={(e) => setProfileForm((p) => ({ ...p, currentMedications: e.target.value }))} /></label>
+                  <label>Full legal name<input name="fullName" autoComplete="name" value={profileForm.fullName} onChange={(e) => setProfileForm((p) => ({ ...p, fullName: e.target.value }))} required /></label>
+                  <label>Mobile number<input name="phone" type="tel" autoComplete="tel" value={profileForm.phone} onChange={(e) => setProfileForm((p) => ({ ...p, phone: e.target.value }))} required /></label>
+                  <label>Date of birth<input name="dateOfBirth" type="date" autoComplete="bday" value={profileForm.dateOfBirth} onChange={(e) => setProfileForm((p) => ({ ...p, dateOfBirth: e.target.value }))} /></label>
+                  <label>Gender<select name="gender" value={profileForm.gender} onChange={(e) => setProfileForm((p) => ({ ...p, gender: e.target.value }))}><option value="">Select</option><option value="female">Female</option><option value="male">Male</option><option value="other">Other</option><option value="prefer_not_to_say">Prefer not to say</option></select></label>
+                  <label>Identity type<select name="identityType" value={profileForm.identityType} onChange={(e) => setProfileForm((p) => ({ ...p, identityType: e.target.value }))}><option value="ghana_card">Ghana Card</option><option value="passport">Passport</option><option value="other">Other ID</option></select></label>
+                  <label>Identity number<input name="identityNumber" value={profileForm.identityNumber} onChange={(e) => setProfileForm((p) => ({ ...p, identityNumber: e.target.value }))} /></label>
+                  <label className="wide">Residential address<input name="address" autoComplete="street-address" value={profileForm.address} onChange={(e) => setProfileForm((p) => ({ ...p, address: e.target.value }))} /></label>
+                  <label>City<input name="city" autoComplete="address-level2" value={profileForm.city} onChange={(e) => setProfileForm((p) => ({ ...p, city: e.target.value }))} /></label>
+                  <label>Region<input name="region" autoComplete="address-level1" value={profileForm.region} onChange={(e) => setProfileForm((p) => ({ ...p, region: e.target.value }))} /></label>
+                  <label>Digital address<input name="digitalAddress" value={profileForm.digitalAddress} onChange={(e) => setProfileForm((p) => ({ ...p, digitalAddress: e.target.value }))} /></label>
+                  <label>Allergies<input name="allergies" value={profileForm.allergies} onChange={(e) => setProfileForm((p) => ({ ...p, allergies: e.target.value }))} /></label>
+                  <label className="wide">Current medicines<input name="currentMedications" value={profileForm.currentMedications} onChange={(e) => setProfileForm((p) => ({ ...p, currentMedications: e.target.value }))} /></label>
                 </div>
-                <label className="customer-consent"><input type="checkbox" checked={profileForm.termsAccepted} onChange={(e) => setProfileForm((p) => ({ ...p, termsAccepted: e.target.checked }))} required /> I accept the customer E-Pharmacy terms.</label>
-                <label className="customer-consent"><input type="checkbox" checked={profileForm.privacyConsent} onChange={(e) => setProfileForm((p) => ({ ...p, privacyConsent: e.target.checked }))} required /> I consent to pharmacists reviewing information supplied for my orders.</label>
+                <label className="customer-consent"><input name="termsAccepted" type="checkbox" checked={profileForm.termsAccepted} onChange={(e) => setProfileForm((p) => ({ ...p, termsAccepted: e.target.checked }))} required /> I accept the customer E-Pharmacy terms.</label>
+                <label className="customer-consent"><input name="privacyConsent" type="checkbox" checked={profileForm.privacyConsent} onChange={(e) => setProfileForm((p) => ({ ...p, privacyConsent: e.target.checked }))} required /> I consent to pharmacists reviewing information supplied for my orders.</label>
                 <button className="btn btn-primary" type="submit" disabled={busy === 'profile'}>{busy === 'profile' ? 'Saving...' : 'Save profile'}</button>
               </form>
             )}
@@ -493,6 +497,8 @@ const CustomerEPharmacy = () => {
                     <label>
                       Full legal name
                       <input
+                        name="checkoutFullName"
+                        autoComplete="name"
                         value={profileForm.fullName}
                         onChange={(e) => setProfileForm((p) => ({ ...p, fullName: e.target.value }))}
                         required
@@ -501,7 +507,9 @@ const CustomerEPharmacy = () => {
                     <label>
                       Mobile number
                       <input
+                        name="checkoutPhone"
                         type="tel"
+                        autoComplete="tel"
                         value={profileForm.phone}
                         onChange={(e) => setProfileForm((p) => ({ ...p, phone: e.target.value }))}
                         required
@@ -511,19 +519,19 @@ const CustomerEPharmacy = () => {
                 </fieldset>
 
                 <div className="customer-form-grid">
-                  <label>Quantity<input type="number" min="1" max={selectedListing.available_quantity} value={orderForm.quantity} onChange={(e) => setOrderForm((o) => ({ ...o, quantity: e.target.value }))} required /></label>
-                  <label>Fulfillment<select value={orderForm.fulfillmentMethod} onChange={(e) => setOrderForm((o) => ({ ...o, fulfillmentMethod: e.target.value }))}><option value="pickup">Pickup</option>{selectedListing.epharmacy_delivery_enabled && <option value="delivery">Delivery</option>}</select></label>
-                  <label>Payment method<select value={orderForm.paymentMethod} onChange={(e) => setOrderForm((o) => ({ ...o, paymentMethod: e.target.value }))}><option value="momo">MoMo</option><option value="paystack">Paystack</option><option value="card">Card</option><option value="account_transfer">Account transfer</option><option value="cash_on_delivery">Cash on delivery</option></select></label>
-                  <label>Ordering for<select value={orderForm.orderingFor} onChange={(e) => setOrderForm((o) => ({ ...o, orderingFor: e.target.value }))}><option value="self">Myself</option><option value="child">My child</option><option value="dependent">A dependent</option><option value="other">Another person</option></select></label>
+                  <label>Quantity<input name="quantity" type="number" min="1" max={selectedListing.available_quantity} value={orderForm.quantity} onChange={(e) => setOrderForm((o) => ({ ...o, quantity: e.target.value }))} required /></label>
+                  <label>Fulfillment<select name="fulfillmentMethod" value={orderForm.fulfillmentMethod} onChange={(e) => setOrderForm((o) => ({ ...o, fulfillmentMethod: e.target.value }))}><option value="pickup">Pickup</option>{selectedListing.epharmacy_delivery_enabled && <option value="delivery">Delivery</option>}</select></label>
+                  <label>Payment method<select name="paymentMethod" value={orderForm.paymentMethod} onChange={(e) => setOrderForm((o) => ({ ...o, paymentMethod: e.target.value }))}><option value="momo">MoMo</option><option value="paystack">Paystack</option><option value="card">Card</option><option value="account_transfer">Account transfer</option><option value="cash_on_delivery">Cash on delivery</option></select></label>
+                  <label>Ordering for<select name="orderingFor" value={orderForm.orderingFor} onChange={(e) => setOrderForm((o) => ({ ...o, orderingFor: e.target.value }))}><option value="self">Myself</option><option value="child">My child</option><option value="dependent">A dependent</option><option value="other">Another person</option></select></label>
                 </div>
 
                 {requirements.requiresPatientDetails && (
                   <fieldset>
                     <legend>Patient details</legend>
                     <div className="customer-form-grid">
-                      <label>Patient full name<input value={orderForm.orderingFor === 'self' ? profileForm.fullName : orderForm.patientName} onChange={(e) => setOrderForm((o) => ({ ...o, patientName: e.target.value }))} disabled={orderForm.orderingFor === 'self'} required /></label>
-                      <label>Patient date of birth<input type="date" value={orderForm.orderingFor === 'self' ? profileForm.dateOfBirth : orderForm.patientDateOfBirth} onChange={(e) => setOrderForm((o) => ({ ...o, patientDateOfBirth: e.target.value }))} disabled={orderForm.orderingFor === 'self'} required /></label>
-                      {orderForm.orderingFor !== 'self' && <label>Relationship<input value={orderForm.patientRelationship} onChange={(e) => setOrderForm((o) => ({ ...o, patientRelationship: e.target.value }))} required /></label>}
+                      <label>Patient full name<input name="patientName" autoComplete="name" value={orderForm.orderingFor === 'self' ? profileForm.fullName : orderForm.patientName} onChange={(e) => setOrderForm((o) => ({ ...o, patientName: e.target.value }))} disabled={orderForm.orderingFor === 'self'} required /></label>
+                      <label>Patient date of birth<input name="patientDateOfBirth" type="date" autoComplete="bday" value={orderForm.orderingFor === 'self' ? profileForm.dateOfBirth : orderForm.patientDateOfBirth} onChange={(e) => setOrderForm((o) => ({ ...o, patientDateOfBirth: e.target.value }))} disabled={orderForm.orderingFor === 'self'} required /></label>
+                      {orderForm.orderingFor !== 'self' && <label>Relationship<input name="patientRelationship" value={orderForm.patientRelationship} onChange={(e) => setOrderForm((o) => ({ ...o, patientRelationship: e.target.value }))} required /></label>}
                     </div>
                   </fieldset>
                 )}
@@ -535,7 +543,9 @@ const CustomerEPharmacy = () => {
                       <label>
                         Your date of birth
                         <input
+                          name="clinicalDateOfBirth"
                           type="date"
+                          autoComplete="bday"
                           value={profileForm.dateOfBirth}
                           onChange={(e) => setProfileForm((p) => ({ ...p, dateOfBirth: e.target.value }))}
                           required
@@ -544,6 +554,7 @@ const CustomerEPharmacy = () => {
                       <label>
                         Gender
                         <select
+                          name="clinicalGender"
                           value={profileForm.gender}
                           onChange={(e) => setProfileForm((p) => ({ ...p, gender: e.target.value }))}
                           required
@@ -558,6 +569,7 @@ const CustomerEPharmacy = () => {
                       <label>
                         Identity type
                         <select
+                          name="clinicalIdentityType"
                           value={profileForm.identityType}
                           onChange={(e) => setProfileForm((p) => ({ ...p, identityType: e.target.value }))}
                           required
@@ -570,19 +582,20 @@ const CustomerEPharmacy = () => {
                       <label>
                         Identity number
                         <input
+                          name="clinicalIdentityNumber"
                           value={profileForm.identityNumber}
                           onChange={(e) => setProfileForm((p) => ({ ...p, identityNumber: e.target.value }))}
                           required
                         />
                       </label>
-                      <label>Allergies<input value={profileForm.allergies} onChange={(e) => setProfileForm((p) => ({ ...p, allergies: e.target.value }))} required /></label>
-                      <label>Current medicines<input value={profileForm.currentMedications} onChange={(e) => setProfileForm((p) => ({ ...p, currentMedications: e.target.value }))} required /></label>
-                      <label className="wide">Symptoms or pharmacist note<textarea rows="3" value={orderForm.clinicalNotes} onChange={(e) => setOrderForm((o) => ({ ...o, clinicalNotes: e.target.value }))} /></label>
+                      <label>Allergies<input name="clinicalAllergies" value={profileForm.allergies} onChange={(e) => setProfileForm((p) => ({ ...p, allergies: e.target.value }))} required /></label>
+                      <label>Current medicines<input name="clinicalCurrentMedications" value={profileForm.currentMedications} onChange={(e) => setProfileForm((p) => ({ ...p, currentMedications: e.target.value }))} required /></label>
+                      <label className="wide">Symptoms or pharmacist note<textarea name="clinicalNotes" rows="3" value={orderForm.clinicalNotes} onChange={(e) => setOrderForm((o) => ({ ...o, clinicalNotes: e.target.value }))} /></label>
                     </div>
                     <label className="customer-file-upload">
                       <Upload size={18} />
                       <span>{prescription ? prescription.name : 'Upload prescription (PDF or image, max 8MB)'}</span>
-                      <input type="file" accept=".pdf,image/jpeg,image/png,image/webp" onChange={(e) => setPrescription(e.target.files?.[0] || null)} required />
+                      <input name="prescription" type="file" accept=".pdf,image/jpeg,image/png,image/webp" onChange={(e) => setPrescription(e.target.files?.[0] || null)} required />
                     </label>
                   </fieldset>
                 )}
@@ -591,16 +604,16 @@ const CustomerEPharmacy = () => {
                   <fieldset>
                     <legend>Delivery address</legend>
                     <div className="customer-form-grid">
-                      <label className="wide">Address<input value={orderForm.deliveryAddress} onChange={(e) => setOrderForm((o) => ({ ...o, deliveryAddress: e.target.value }))} required /></label>
-                      <label>City<input value={orderForm.deliveryCity} onChange={(e) => setOrderForm((o) => ({ ...o, deliveryCity: e.target.value }))} required /></label>
-                      <label>Region<input value={orderForm.deliveryRegion} onChange={(e) => setOrderForm((o) => ({ ...o, deliveryRegion: e.target.value }))} required /></label>
-                      <label>Digital address<input value={orderForm.deliveryDigitalAddress} onChange={(e) => setOrderForm((o) => ({ ...o, deliveryDigitalAddress: e.target.value }))} /></label>
+                      <label className="wide">Address<input name="deliveryAddress" autoComplete="street-address" value={orderForm.deliveryAddress} onChange={(e) => setOrderForm((o) => ({ ...o, deliveryAddress: e.target.value }))} required /></label>
+                      <label>City<input name="deliveryCity" autoComplete="address-level2" value={orderForm.deliveryCity} onChange={(e) => setOrderForm((o) => ({ ...o, deliveryCity: e.target.value }))} required /></label>
+                      <label>Region<input name="deliveryRegion" autoComplete="address-level1" value={orderForm.deliveryRegion} onChange={(e) => setOrderForm((o) => ({ ...o, deliveryRegion: e.target.value }))} required /></label>
+                      <label>Digital address<input name="deliveryDigitalAddress" value={orderForm.deliveryDigitalAddress} onChange={(e) => setOrderForm((o) => ({ ...o, deliveryDigitalAddress: e.target.value }))} /></label>
                     </div>
                   </fieldset>
                 )}
 
-                <label className="customer-consent"><input type="checkbox" checked={profileForm.termsAccepted} onChange={(e) => setProfileForm((p) => ({ ...p, termsAccepted: e.target.checked }))} required /> I accept the order and medicine-safety terms.</label>
-                <label className="customer-consent"><input type="checkbox" checked={profileForm.privacyConsent} onChange={(e) => setProfileForm((p) => ({ ...p, privacyConsent: e.target.checked }))} required /> I consent to pharmacist review of the submitted information.</label>
+                <label className="customer-consent"><input name="orderTermsAccepted" type="checkbox" checked={profileForm.termsAccepted} onChange={(e) => setProfileForm((p) => ({ ...p, termsAccepted: e.target.checked }))} required /> I accept the order and medicine-safety terms.</label>
+                <label className="customer-consent"><input name="orderPrivacyConsent" type="checkbox" checked={profileForm.privacyConsent} onChange={(e) => setProfileForm((p) => ({ ...p, privacyConsent: e.target.checked }))} required /> I consent to pharmacist review of the submitted information.</label>
 
                 <div className="customer-checkout-total">
                   <span>Estimated total</span>

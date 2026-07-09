@@ -262,6 +262,8 @@ const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
         <form className="topbar-search-container" onSubmit={handleSearchSubmit}>
           <Search size={20} className="topbar-search-icon" />
           <input
+            id="topbar-search"
+            name="topbarSearch"
             type="text"
             placeholder="Search drugs or scan barcode..."
             className="topbar-search-input"
@@ -353,6 +355,8 @@ const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
               <label className="active-role-switcher">
                 <span className="sr-only">Active role</span>
                 <select
+                  id="active-role"
+                  name="activeRole"
                   value={role}
                   onChange={(event) => setActiveRole(event.target.value)}
                   title="Switch active role"
