@@ -114,9 +114,9 @@ describe('getSystemHealth', () => {
     const labels = health.checks.map((check) => check.label)
 
     expect(labels).toEqual(expect.arrayContaining([
-      'Supabase connection',
-      'Supabase Auth endpoint',
-      'Supabase REST latency',
+      'HealthFlow Cloud connection',
+      'HealthFlow sign-in service',
+      'HealthFlow Cloud API',
       'Authenticated session',
       'Reports and Edge Function',
       'Recent sale',
@@ -161,7 +161,7 @@ describe('getSystemHealth', () => {
 
     expect(labels).toEqual(expect.arrayContaining([
       'Network connection',
-      'Supabase Auth endpoint',
+      'HealthFlow sign-in service',
       'Authenticated session',
       'Local branch server',
     ]))

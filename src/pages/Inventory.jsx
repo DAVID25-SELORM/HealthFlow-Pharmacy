@@ -297,7 +297,7 @@ const Inventory = () => {
       }
 
       if (!isSupabaseConfigured()) {
-        console.warn('Supabase not configured, using sample data')
+        console.warn('HealthFlow Cloud not configured, using sample data')
         setSampleData()
         return
       }
@@ -361,7 +361,7 @@ const Inventory = () => {
       if (manageLoading) setLoading(true)
       setError('')
       if (!isSupabaseConfigured()) {
-        console.warn('Supabase not configured, using sample data')
+        console.warn('HealthFlow Cloud not configured, using sample data')
         setSampleData()
         return
       }
@@ -602,7 +602,7 @@ const Inventory = () => {
       setSubmitting(true)
 
       if (!isSupabaseConfigured()) {
-        notify('Supabase not configured. Please update your .env file.', 'warning')
+        notify('HealthFlow Cloud not configured. Please update your .env file.', 'warning')
         return
       }
 
@@ -690,7 +690,7 @@ const Inventory = () => {
 
     try {
       if (!isSupabaseConfigured() && !isLocalInventoryEnabled()) {
-        notify('Supabase not configured.', 'warning')
+        notify('HealthFlow Cloud not configured.', 'warning')
         return
       }
 
@@ -803,7 +803,7 @@ const Inventory = () => {
     }
 
     if (!isSupabaseConfigured()) {
-      notify('Supabase not configured. Please update your .env file.', 'warning')
+      notify('HealthFlow Cloud not configured. Please update your .env file.', 'warning')
       return
     }
 

@@ -349,7 +349,7 @@ const Dashboard = () => {
         setSalesHistory([])
         setRecentSales([])
         setRecentClaims([])
-        setError('Supabase is not configured. Update .env to enable dashboard analytics.')
+        setError('HealthFlow Cloud is not configured. Update .env to enable dashboard analytics.')
         return
       }
 

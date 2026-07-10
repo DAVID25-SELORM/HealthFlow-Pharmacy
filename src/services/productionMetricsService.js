@@ -41,6 +41,20 @@ let history = null
 
 const nowIso = () => new Date().toISOString()
 
+const isMetricsConsoleEnabled = () => {
+  const envValue = String(import.meta.env.VITE_HEALTHFLOW_METRICS_CONSOLE || '').toLowerCase()
+  if (envValue === 'true') return true
+  if (envValue === 'false') return false
+  if (typeof window === 'undefined') return false
+  return window.localStorage.getItem('healthflow_metrics_console') === 'true'
+}
+
+const logMetrics = (...args) => {
+  if (isMetricsConsoleEnabled()) {
+    console.info(...args)
+  }
+}
+
 const readJson = (key, fallback) => {
   if (typeof window === 'undefined') return fallback
   try {
@@ -165,7 +179,7 @@ export const recordTierAccessEnd = ({ action = 'unknown', durationMs = 0, succes
     metrics.failedRequests = metrics.failedRequests.slice(0, MAX_RECENT_FAILURES)
   }
 
-  console.info('[HealthFlow metrics] tier-access', {
+  logMetrics('[HealthFlow metrics] api', {
     action: stats.action,
     averageMs: stats.averageMs,
     lastMs: stats.lastMs,
@@ -190,7 +204,7 @@ export const recordCacheEvent = (name, event) => {
 
 export const recordRetry = (label = 'request') => {
   metrics.retryCount += 1
-  console.info('[HealthFlow metrics] retry', { label, retryCount: metrics.retryCount })
+  logMetrics('[HealthFlow metrics] retry', { label, retryCount: metrics.retryCount })
   emit()
 }
 
@@ -215,7 +229,7 @@ export const recordPollingRun = ({ label = 'system-health', durationMs = 0, stat
     finishedAt,
   })
   metrics.polling.runs = metrics.polling.runs.slice(0, MAX_POLL_RUNS)
-  console.info('[HealthFlow metrics] polling', {
+  logMetrics('[HealthFlow metrics] polling', {
     label,
     durationMs: roundedDuration,
     status,

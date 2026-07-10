@@ -183,9 +183,9 @@ const latestRow = async (table, select, orderColumn) => {
 
 const checkSupabase = async () => {
   if (!isSupabaseConfigured()) {
-    return fail('Supabase connection', {
+    return fail('HealthFlow Cloud connection', {
       summary: 'Not configured',
-      detail: 'The app is missing Supabase environment settings.',
+      detail: 'The app is missing HealthFlow Cloud environment settings.',
     })
   }
 
@@ -197,12 +197,12 @@ const checkSupabase = async () => {
 
     if (error) throw error
 
-    return ok('Supabase connection', {
+    return ok('HealthFlow Cloud connection', {
       summary: 'Reachable',
-      detail: 'The app can reach the production database.',
+      detail: 'The app can reach the HealthFlow Cloud workspace.',
     })
   } catch (error) {
-    return failFromError('Supabase connection', 'Database check failed', error)
+    return failFromError('HealthFlow Cloud connection', 'Cloud check failed', error)
   }
 }
 
@@ -210,9 +210,9 @@ const checkSupabaseAuthEndpoint = async (options = {}) => {
   const supabaseUrl = getSupabaseUrl()
   const supabaseKey = getSupabaseKey()
   if (!supabaseUrl || !supabaseKey) {
-    return fail('Supabase Auth endpoint', {
+    return fail('HealthFlow sign-in service', {
       summary: 'Not configured',
-      detail: 'The app is missing Supabase URL or publishable key.',
+      detail: 'The app is missing HealthFlow Cloud sign-in settings.',
     })
   }
 
@@ -230,19 +230,19 @@ const checkSupabaseAuthEndpoint = async (options = {}) => {
       throw new Error(`HTTP ${response.status}${text ? `: ${text.slice(0, 120)}` : ''}`)
     }
 
-    return latencyCheck('Supabase Auth endpoint', durationMs, AUTH_WARN_MS, {
-      detailPrefix: 'Auth health responded',
+    return latencyCheck('HealthFlow sign-in service', durationMs, AUTH_WARN_MS, {
+      detailPrefix: 'Sign-in service responded',
     })
   } catch (error) {
-    return failFromError('Supabase Auth endpoint', 'Auth health check failed', error)
+    return failFromError('HealthFlow sign-in service', 'Sign-in check failed', error)
   }
 }
 
 const checkSupabaseRestLatency = async () => {
   if (!isSupabaseConfigured()) {
-    return fail('Supabase REST latency', {
+    return fail('HealthFlow Cloud API', {
       summary: 'Not configured',
-      detail: 'The app is missing Supabase environment settings.',
+      detail: 'The app is missing HealthFlow Cloud environment settings.',
     })
   }
 
@@ -256,17 +256,17 @@ const checkSupabaseRestLatency = async () => {
     if (error) throw error
 
     const durationMs = Math.round(performance.now() - startedAt)
-    return latencyCheck('Supabase REST latency', durationMs, REST_WARN_MS, {
-      detailPrefix: 'Database API responded',
+    return latencyCheck('HealthFlow Cloud API', durationMs, REST_WARN_MS, {
+      detailPrefix: 'Cloud API responded',
     })
   } catch (error) {
-    return failFromError('Supabase REST latency', 'REST check failed', error)
+    return failFromError('HealthFlow Cloud API', 'Cloud API check failed', error)
   }
 }
 
 const checkAuthenticatedSession = async () => {
   if (!isSupabaseConfigured()) {
-    return fail('Authenticated session', { summary: 'Supabase is not configured' })
+    return fail('Authenticated session', { summary: 'HealthFlow Cloud sign-in is not configured' })
   }
 
   try {

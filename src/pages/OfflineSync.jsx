@@ -803,7 +803,7 @@ export default function OfflineSync() {
       'After installation',
       '- Use Branch Sync Setup to register this machine for cloud sync.',
       '- Keep BRANCH_SERVER_TOKEN for local API access.',
-      '- Keep BRANCH_SYNC_TOKEN for Supabase synchronization.',
+      '- Keep BRANCH_SYNC_TOKEN for HealthFlow Cloud synchronization.',
       '- Run Offline Setup Wizard to verify health, sync, NHIA settings, and readiness.',
       '',
     ]
@@ -1045,7 +1045,7 @@ export default function OfflineSync() {
           <div className="offline-sync-section-header">
             <div>
               <h2>Branch Sync Setup</h2>
-              <p>Register one pharmacy machine with Supabase and then place the returned values in its local server .env.</p>
+              <p>Register one pharmacy machine with HealthFlow Cloud and then place the returned values in its local server .env.</p>
             </div>
           </div>
           <div className="branch-setup-grid">
@@ -1142,7 +1142,7 @@ export default function OfflineSync() {
             >
               {setupLoading ? 'Registering...' : 'Register Sync Client'}
             </button>
-            <span>Run this once per pharmacy machine. Supabase stores only the token hash.</span>
+            <span>Run this once per pharmacy machine. HealthFlow Cloud stores only the token hash.</span>
           </div>
           {setupResult && (
             <div className="branch-setup-result">
@@ -1861,7 +1861,7 @@ HEALTHFLOW_UPDATE_AUTO_INSTALL=false`}</pre>
         <div className="offline-sync-section-header">
           <div>
             <h2>Outbox Events</h2>
-            <p>Sync events waiting to be pushed to Supabase.</p>
+            <p>Sync events waiting to be pushed to HealthFlow Cloud.</p>
           </div>
         </div>
         <div className="sync-record-grid">

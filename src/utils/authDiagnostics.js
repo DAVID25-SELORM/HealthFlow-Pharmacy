@@ -36,8 +36,8 @@ const isAuthDiagnosticsEnabled = () => {
   if (envValue === 'false') return false
   if (envValue === 'true') return true
 
-  if (typeof window === 'undefined') return true
-  return window.localStorage.getItem('healthflow_auth_diagnostics') !== 'false'
+  if (typeof window === 'undefined') return false
+  return window.localStorage.getItem('healthflow_auth_diagnostics') === 'true'
 }
 
 export const logAuthDiagnostic = (label, details = {}) => {

@@ -118,7 +118,7 @@ export default function ActivityLog() {
 
       if (!isSupabaseConfigured()) {
         setLogs([])
-        setError('Supabase is not configured. Update .env to enable activity logs.')
+        setError('HealthFlow Cloud is not configured. Update .env to enable activity logs.')
         setLoading(false)
         return
       }

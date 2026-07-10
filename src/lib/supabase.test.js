@@ -87,7 +87,7 @@ describe('invokeSupabaseFunction', () => {
     )
   })
 
-  it('maps Supabase function fetch failures to actionable errors', async () => {
+  it('maps cloud function fetch failures to actionable errors', async () => {
     const activeSession = {
       access_token: 'active-token',
       expires_at: Math.floor(NOW.getTime() / 1000) + 3600,
@@ -119,7 +119,7 @@ describe('invokeSupabaseFunction', () => {
       body: { action: 'submit_nhia_claims_direct' },
     })
 
-    expect(result.error?.message).toContain('Unable to reach Supabase function "tier-access"')
+    expect(result.error?.message).toContain('Unable to reach the HealthFlow Cloud service "tier-access"')
   })
 
   it('reuses the cached AuthContext session for repeated function calls', async () => {

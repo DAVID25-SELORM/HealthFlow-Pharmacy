@@ -151,7 +151,7 @@ const Signup = () => {
     }
 
     if (!isConfigured) {
-      setError('Supabase credentials are not configured.')
+      setError('HealthFlow Cloud credentials are not configured.')
       return
     }
 
@@ -238,7 +238,7 @@ const Signup = () => {
 
         {!isConfigured && (
           <div className="error-message">
-            <span>Error: Supabase credentials are not configured.</span>
+            <span>Error: HealthFlow Cloud credentials are not configured.</span>
           </div>
         )}
 

@@ -439,7 +439,7 @@ const Sales = () => {
 
         if (!isSupabaseConfigured()) {
           if (!snapshot) {
-            setError('Supabase is not configured. Update .env to enable sales.')
+            setError('HealthFlow Cloud is not configured. Update .env to enable sales.')
             setLoading(false)
           }
           return
@@ -1831,7 +1831,7 @@ const Sales = () => {
             setNhiaDiagnosisDetails([])
             selectPatientForSale(null)
             notify(
-              `Sale saved to the local branch server.${claimMessage} It will sync to Supabase when internet returns.`,
+              `Sale saved to the local branch server.${claimMessage} It will sync to HealthFlow Cloud when internet returns.`,
               'success'
             )
             setShowReceipt(true)

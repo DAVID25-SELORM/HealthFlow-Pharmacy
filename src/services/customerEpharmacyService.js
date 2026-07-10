@@ -13,7 +13,7 @@ const ALLOWED_PRESCRIPTION_TYPES = new Set([
 
 const invokeCustomerFunction = async (body) => {
   if (!supabase) {
-    throw new Error('Supabase credentials are not configured.')
+    throw new Error('HealthFlow Cloud credentials are not configured.')
   }
 
   const { data, error } = await supabase.functions.invoke(FUNCTION_NAME, { body })
@@ -55,7 +55,7 @@ export const createCustomerOrder = async (order) =>
 
 export const signInCustomerWithProvider = async (provider) => {
   if (!supabase) {
-    throw new Error('Supabase credentials are not configured.')
+    throw new Error('HealthFlow Cloud credentials are not configured.')
   }
   if (!['google', 'apple'].includes(provider)) {
     throw new Error('Unsupported social sign-in provider.')
@@ -74,7 +74,7 @@ export const signInCustomerWithProvider = async (provider) => {
 
 export const sendCustomerMagicLink = async (email) => {
   if (!supabase) {
-    throw new Error('Supabase credentials are not configured.')
+    throw new Error('HealthFlow Cloud credentials are not configured.')
   }
   const normalizedEmail = String(email || '').trim().toLowerCase()
   if (!normalizedEmail || !normalizedEmail.includes('@')) {

@@ -291,7 +291,7 @@ export const getReportBundle = async (filters = {}) => {
   }
 
   if (!isSupabaseConfigured()) {
-    throw new Error('Supabase is not configured. Use the local branch server or configure .env for cloud reports.')
+    throw new Error('HealthFlow Cloud is not configured. Use the local branch server or configure .env for cloud reports.')
   }
 
   return await invokeTierAccess({
@@ -306,7 +306,7 @@ export const getReportDrugMatches = async (filters = {}) => {
   }
 
   if (!isSupabaseConfigured()) {
-    throw new Error('Supabase is not configured. Use the local branch server or configure .env for cloud reports.')
+    throw new Error('HealthFlow Cloud is not configured. Use the local branch server or configure .env for cloud reports.')
   }
 
   return await invokeTierAccess({
@@ -334,7 +334,7 @@ export const getReportNhisPage = async (filters = {}) => {
   }
 
   if (!isSupabaseConfigured()) {
-    throw new Error('Supabase is not configured. Use the local branch server or configure .env for cloud reports.')
+    throw new Error('HealthFlow Cloud is not configured. Use the local branch server or configure .env for cloud reports.')
   }
 
   return await invokeTierAccess({

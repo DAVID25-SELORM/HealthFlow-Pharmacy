@@ -781,7 +781,7 @@ const Settings = () => {
       setError('')
 
       if (!isSupabaseConfigured()) {
-        setError('Supabase is not configured. Update .env to enable settings.')
+        setError('HealthFlow Cloud is not configured. Update .env to enable settings.')
         return
       }
 
@@ -1201,7 +1201,7 @@ const Settings = () => {
       }).catch(() => null)
       const effectiveNhiaApiSettings = readBackNhiaApiSettings || savedNhiaApiSettings || {}
       if (import.meta.env.DEV) {
-        console.info('Saving NHIA API config Supabase response/error', {
+        console.info('Saving NHIA API config cloud response/error', {
           response: summarizeNhiaSettingsForLog(effectiveNhiaApiSettings),
           error: null,
         })
@@ -1273,7 +1273,7 @@ const Settings = () => {
       }
     } catch (saveError) {
       if (import.meta.env.DEV) {
-        console.error('Saving NHIA API config Supabase response/error', {
+        console.error('Saving NHIA API config cloud response/error', {
           response: null,
           error: {
             table: 'nhia_configuration',
@@ -2010,7 +2010,7 @@ const Settings = () => {
                 <div>
                   <h4>Online Cloud Backup</h4>
                   <p className="settings-note">
-                    Create an admin-only facility snapshot in private Supabase Storage for online-only users.
+                    Create an admin-only facility snapshot in private HealthFlow Cloud Storage for online-only users.
                   </p>
                 </div>
                 <span className="online-backup-count">
@@ -2021,7 +2021,7 @@ const Settings = () => {
               <div className="backup-status-grid">
                 <div>
                   <span>Storage</span>
-                  <strong>Supabase</strong>
+                  <strong>HealthFlow Cloud</strong>
                 </div>
                 <div>
                   <span>Latest</span>

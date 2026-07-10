@@ -142,7 +142,7 @@ const EPharmacy = () => {
 
   const loadMarketplace = async (filters = {}) => {
     if (!isSupabaseConfigured()) {
-      setError('Supabase is not configured.')
+      setError('HealthFlow Cloud is not configured.')
       setLoading(false)
       return
     }

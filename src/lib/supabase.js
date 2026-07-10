@@ -235,7 +235,7 @@ export const clearSupabaseStoredSession = () => {
       window.localStorage.removeItem(key)
       window.sessionStorage.removeItem(key)
     } catch (error) {
-      console.warn('Unable to clear stored Supabase session key:', key, error)
+      console.warn('Unable to clear stored HealthFlow Cloud session key:', key, error)
     }
   }
 }
@@ -298,7 +298,7 @@ const invokeFunctionWithToken = async (name, options, accessToken) => {
     return {
       data: null,
       error: isNetworkRequestError(error)
-        ? new Error(`Unable to reach Supabase function "${name}". Check internet access and Supabase configuration, then try again.`)
+        ? new Error(`Unable to reach the HealthFlow Cloud service "${name}". Check internet access and cloud configuration, then try again.`)
         : error,
     }
   }
@@ -415,7 +415,7 @@ const getValidUserSession = async () => {
 
 export const getCurrentSupabaseUser = async () => {
   if (!supabase) {
-    throw new Error('Supabase credentials are not configured.')
+    throw new Error('HealthFlow Cloud credentials are not configured.')
   }
 
   const session = await getValidUserSession()
@@ -456,7 +456,7 @@ export const getCurrentSupabaseUser = async () => {
 
 export const invokeSupabaseFunction = async (name, options = {}) => {
   if (!supabase) {
-    throw new Error('Supabase credentials are not configured.')
+    throw new Error('HealthFlow Cloud credentials are not configured.')
   }
 
   const session = await getValidFunctionSession()
@@ -504,7 +504,7 @@ export const invokeSupabaseFunction = async (name, options = {}) => {
 
 export const invokeSupabaseFunctionResponse = async (name, options = {}) => {
   if (!supabase) {
-    throw new Error('Supabase credentials are not configured.')
+    throw new Error('HealthFlow Cloud credentials are not configured.')
   }
 
   const createRequest = (accessToken) => {
@@ -555,7 +555,7 @@ export const invokeSupabaseFunctionResponse = async (name, options = {}) => {
       message = ''
     }
 
-    const error = new Error(message || `Supabase function "${name}" failed with status ${response.status}.`)
+    const error = new Error(message || `HealthFlow Cloud service "${name}" failed with status ${response.status}.`)
     error.status = response.status
     error.statusCode = response.status
     throw error
@@ -567,7 +567,7 @@ export const invokeSupabaseFunctionResponse = async (name, options = {}) => {
 // Warning message in development
 if (!hasValidCredentials && import.meta.env.DEV) {
   console.warn(
-    'Supabase credentials not configured. Using sample data. Update your .env file to enable database features.'
+    'HealthFlow Cloud credentials not configured. Using sample data. Update your .env file to enable cloud features.'
   )
 }
 

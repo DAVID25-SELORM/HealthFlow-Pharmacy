@@ -44,13 +44,13 @@ describe('ActivityLog', () => {
     vi.clearAllMocks()
   })
 
-  it('shows a setup error when Supabase is unavailable', async () => {
+  it('shows a setup error when HealthFlow Cloud is unavailable', async () => {
     mocks.isSupabaseConfigured.mockReturnValue(false)
 
     render(<ActivityLog />)
 
     await waitFor(() => {
-      expect(screen.getByText(/supabase is not configured/i)).toBeInTheDocument()
+      expect(screen.getByText(/healthflow cloud is not configured/i)).toBeInTheDocument()
     })
 
     expect(mocks.supabase.from).not.toHaveBeenCalled()

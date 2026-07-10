@@ -156,7 +156,7 @@ const Login = () => {
         <p className="login-build-stamp">Build {LOGIN_BUILD_STAMP}</p>
 
         {!isConfigured && mode !== 'offline' && (
-          <div className="login-alert">Supabase credentials are not configured in your .env file.</div>
+          <div className="login-alert">HealthFlow Cloud credentials are not configured in your .env file.</div>
         )}
 
         {error && <div className="login-alert">{error}</div>}

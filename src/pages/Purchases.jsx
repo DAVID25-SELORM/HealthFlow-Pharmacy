@@ -176,7 +176,7 @@ const Purchases = () => {
   // ── load data ────────────────────────────────────────────────
   const loadAll = async (branchIdOverride = selectedBranchId) => {
     if (!isSupabaseConfigured()) {
-      setError('Supabase is not configured.')
+      setError('HealthFlow Cloud is not configured.')
       setLoading(false)
       return
     }

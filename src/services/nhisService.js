@@ -872,7 +872,7 @@ const wouldDiscardPrescriptionAttachment = (payload, fallbackPayload) =>
 
 const buildMissingPrescriptionAttachmentSchemaError = () => {
   const error = new Error(
-    'Prescription file upload completed, but the NHIS claim attachment database fields are missing. Run the latest Supabase migrations, then save the claim again.'
+    'Prescription file upload completed, but the NHIS claim attachment database fields are missing. Run the latest HealthFlow Cloud migrations, then save the claim again.'
   )
   error.code = 'NHIS_ATTACHMENT_SCHEMA_MISSING'
   return error
@@ -2463,7 +2463,7 @@ export const getAllNhisClinicalRules = async () => {
 export const upsertNhisClinicalRules = async (rules, actorId = null) => {
   if (!rules?.length) throw new Error('No clinical rules to import.')
   if (shouldUseBranchServer()) {
-    throw new Error('Clinical rule import requires Supabase access.')
+    throw new Error('Clinical rule import requires HealthFlow Cloud access.')
   }
 
   const rows = normalizeClinicalRules(rules).map((rule) => ({
@@ -2905,7 +2905,7 @@ const summarizeNhiaApiSettingsForLog = (settings = null) => ({
 
 const summarizeNhiaApiErrorForLog = (error) => ({
   table: NHIA_API_CONFIG_TABLE,
-  message: error?.message || String(error || 'Unknown Supabase error'),
+  message: error?.message || String(error || 'Unknown HealthFlow Cloud error'),
   code: error?.code || error?.status || error?.statusCode || '',
   details: error?.details || '',
   missingFields: Array.isArray(error?.missingFields) ? error.missingFields : [],
@@ -3945,7 +3945,7 @@ export const uploadNhisPrescriptionPdf = async (file, options = {}) => {
     }
   }
   if (!supabase?.storage) {
-    throw new Error('Supabase storage is not configured for prescription attachments.')
+    throw new Error('HealthFlow Cloud storage is not configured for prescription attachments.')
   }
 
   const organizationId = sanitizeStoragePathSegment(options.organizationId, 'unknown-org')
@@ -3990,7 +3990,7 @@ export const uploadNhisPrescriptionPdf = async (file, options = {}) => {
 export const getNhisPrescriptionSignedUrl = async (path, expiresInSeconds = 5 * 60) => {
   const cleanPath = normalizeText(path)
   if (!cleanPath) throw new Error('Prescription file path is missing.')
-  if (!supabase?.storage) throw new Error('Supabase storage is not configured.')
+  if (!supabase?.storage) throw new Error('HealthFlow Cloud storage is not configured.')
 
   const { data, error } = await supabase.storage
     .from(NHIS_PRESCRIPTION_BUCKET)
@@ -4074,7 +4074,7 @@ export const updateNhiaTariffItem = async (id, tariffData = {}) => {
   const tariffAmount = assertNonNegativeNumber(tariffData.tariffAmount ?? tariffData.tariff_amount, 'Tariff amount')
 
   if (shouldUseBranchServer()) {
-    throw new Error('Editing G-DRG tariffs requires online Supabase access.')
+    throw new Error('Editing G-DRG tariffs requires online HealthFlow Cloud access.')
   }
 
   const { data, error } = await supabase

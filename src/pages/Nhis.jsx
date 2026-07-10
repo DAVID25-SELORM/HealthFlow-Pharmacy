@@ -1289,7 +1289,7 @@ const Nhis = () => {
   // ── load data ────────────────────────────────────────────────
   const loadAll = useCallback(async () => {
     if (!isSupabaseConfigured()) {
-      setError('Supabase is not configured.')
+      setError('HealthFlow Cloud is not configured.')
       setLoading(false)
       return
     }
@@ -1345,7 +1345,7 @@ const Nhis = () => {
 
   const refreshClaimsOverview = useCallback(async () => {
     if (!isSupabaseConfigured()) {
-      setError('Supabase is not configured.')
+      setError('HealthFlow Cloud is not configured.')
       return
     }
     try {

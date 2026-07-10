@@ -244,7 +244,7 @@ const Patients = () => {
         if (patientsRequestRef.current === requestId) {
           setPatients([])
           setPatientsTotal(0)
-          setError('Supabase is not configured. Update .env to enable patient records.')
+          setError('HealthFlow Cloud is not configured. Update .env to enable patient records.')
         }
         return
       }

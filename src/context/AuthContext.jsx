@@ -414,7 +414,7 @@ export const AuthProvider = ({ children }) => {
         return storedSession || null
       } catch (sessionError) {
         if (!isSupabaseAuthFailure(sessionError) && !isTransientSupabaseAuthFailure(sessionError)) {
-          console.warn('Unable to re-check Supabase session:', sessionError)
+          console.warn('Unable to re-check HealthFlow Cloud session:', sessionError)
         }
 
         return null
@@ -446,7 +446,7 @@ export const AuthProvider = ({ children }) => {
         const isRateLimit = Number(refreshError?.status || refreshError?.statusCode || 0) === 429
         const isTransient = isTransientSupabaseAuthFailure(refreshError)
         if (!isSupabaseAuthFailure(refreshError) && !isRateLimit && !isTransient) {
-          console.warn('Unable to refresh Supabase session:', refreshError)
+          console.warn('Unable to refresh HealthFlow Cloud session:', refreshError)
         }
 
         // On rate limit, the session may still be valid — return it rather than
@@ -475,7 +475,7 @@ export const AuthProvider = ({ children }) => {
     ) => {
       const storedSession = await getStoredSession()
       if (preserveExistingSession && sessionRef.current && storedSession?.access_token) {
-        console.warn('Supabase session check failed transiently; keeping current session.', reason)
+        console.warn('HealthFlow Cloud session check failed transiently; keeping current session.', reason)
         keepCurrentAuthState(resolutionId)
         return
       }
@@ -486,7 +486,7 @@ export const AuthProvider = ({ children }) => {
       }
 
       handledInvalidSession = true
-      console.warn('Clearing invalid Supabase session.', reason)
+      console.warn('Clearing invalid HealthFlow Cloud session.', reason)
       clearSupabaseStoredSession()
       if (!restoreOfflineAuth()) {
         clearAuthState(resolutionId)
@@ -674,9 +674,9 @@ export const AuthProvider = ({ children }) => {
           }
 
           if (validateError && isTransientSupabaseAuthFailure(validateError) && shouldPreserveOnValidationFailure) {
-            console.warn('Supabase session validation failed transiently; keeping current session.', validateError)
+            console.warn('HealthFlow Cloud session validation failed transiently; keeping current session.', validateError)
           } else if (validateError) {
-            console.error('Unable to validate Supabase user:', validateError)
+            console.error('Unable to validate HealthFlow Cloud user:', validateError)
           }
 
           if (!validateError && validatedUser) {
@@ -765,7 +765,7 @@ export const AuthProvider = ({ children }) => {
     const unsubscribeAuthExpired = subscribeSupabaseAuthExpired(() => {
       enqueueAuth(() => {
         const resolutionId = ++latestResolutionId
-        return resetInvalidSession('Supabase session expired.', resolutionId, {
+        return resetInvalidSession('HealthFlow Cloud session expired.', resolutionId, {
           preserveExistingSession: false,
         })
       })
@@ -780,7 +780,7 @@ export const AuthProvider = ({ children }) => {
 
   const signIn = async (email, password) => {
     if (!isSupabaseConfigured()) {
-      throw new Error('Supabase credentials are not configured.')
+      throw new Error('HealthFlow Cloud credentials are not configured.')
     }
 
     const normalizedEmail = email.trim()
@@ -850,7 +850,7 @@ export const AuthProvider = ({ children }) => {
 
   const requestPasswordReset = async (email) => {
     if (!isSupabaseConfigured()) {
-      throw new Error('Supabase credentials are not configured.')
+      throw new Error('HealthFlow Cloud credentials are not configured.')
     }
 
     const normalizedEmail = email.trim()
@@ -869,7 +869,7 @@ export const AuthProvider = ({ children }) => {
 
   const updatePassword = async (password) => {
     if (!isSupabaseConfigured()) {
-      throw new Error('Supabase credentials are not configured.')
+      throw new Error('HealthFlow Cloud credentials are not configured.')
     }
 
     const { error } = await supabase.auth.updateUser({ password })

@@ -7,7 +7,7 @@ const ProtectedRoute = ({ children }) => {
   if (!isConfigured) {
     return (
       <div style={{ padding: '2rem' }}>
-        <h2>Supabase Setup Required</h2>
+        <h2>HealthFlow Cloud Setup Required</h2>
         <p>Configure VITE_SUPABASE_URL and either VITE_SUPABASE_PUBLISHABLE_KEY or VITE_SUPABASE_ANON_KEY in your .env file.</p>
       </div>
     )
