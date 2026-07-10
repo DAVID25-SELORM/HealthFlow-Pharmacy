@@ -186,4 +186,51 @@ describe('getSystemHealth', () => {
       })
     )
   })
+
+  it('treats auth health DNS failures as warning-only when authenticated checks still work', async () => {
+    fetch.mockRejectedValueOnce(new TypeError('ERR_NAME_NOT_RESOLVED'))
+
+    const health = await getSystemHealth({ force: true })
+    const authCheck = health.checks.find((check) => check.label === 'HealthFlow sign-in service')
+
+    expect(authCheck).toMatchObject({
+      status: 'warn',
+      countsAsFailureSignal: true,
+      summary: 'Network unavailable',
+    })
+    expect(health.status).toBe('warn')
+    expect(mocks.getCurrentSupabaseUser).toHaveBeenCalled()
+    expect(mocks.invokeTierAccess).toHaveBeenCalledWith({ action: 'get_report_health' })
+  })
+
+  it('marks health as failed only when auth health and another independent check fail', async () => {
+    fetch.mockRejectedValueOnce(new TypeError('ERR_NAME_NOT_RESOLVED'))
+    mocks.invokeTierAccess.mockImplementation(async ({ action }) => {
+      if (action === 'get_report_health') {
+        throw new Error('Report service unavailable')
+      }
+      if (action === 'get_activity_logs') {
+        return {
+          logs: [{
+            id: 'log-1',
+            event_type: 'sale.completed',
+            entity_type: 'sales',
+            created_at: '2026-06-27T10:00:00Z',
+          }],
+        }
+      }
+      return { ok: true }
+    })
+
+    const health = await getSystemHealth({ force: true, activeRole: 'admin' })
+
+    expect(health.status).toBe('fail')
+    expect(health.checks.find((check) => check.label === 'HealthFlow sign-in service')).toMatchObject({
+      status: 'warn',
+      countsAsFailureSignal: true,
+    })
+    expect(health.checks.find((check) => check.label === 'Reports and Edge Function')).toMatchObject({
+      status: 'fail',
+    })
+  })
 })

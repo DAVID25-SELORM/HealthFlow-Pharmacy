@@ -14,6 +14,11 @@ import { invokeTierAccess } from './tierAccessService'
 const ok = (label, details = {}) => ({ label, status: 'ok', ...details })
 const warn = (label, details = {}) => ({ label, status: 'warn', ...details })
 const fail = (label, details = {}) => ({ label, status: 'fail', ...details })
+const warningFailureSignal = (label, details = {}) =>
+  warn(label, {
+    countsAsFailureSignal: true,
+    ...details,
+  })
 
 const HEALTH_TIMEOUT_MS = 12000
 const HEALTH_CACHE_MS = 5 * 60 * 1000
@@ -95,6 +100,14 @@ const normalizeHealthError = (error) => {
 const failFromError = (label, summary, error) => {
   const networkError = normalizeHealthError(error)
   return fail(label, {
+    summary: isNetworkRequestError(error) ? 'Network unavailable' : summary,
+    detail: formatError(networkError),
+  })
+}
+
+const warningSignalFromError = (label, summary, error) => {
+  const networkError = normalizeHealthError(error)
+  return warningFailureSignal(label, {
     summary: isNetworkRequestError(error) ? 'Network unavailable' : summary,
     detail: formatError(networkError),
   })
@@ -209,7 +222,7 @@ const checkSupabaseAuthEndpoint = async (options = {}) => {
   const supabaseUrl = getConfiguredCloudUrl()
   const supabaseKey = getSupabaseKey()
   if (!supabaseUrl || !supabaseKey) {
-    return fail('HealthFlow sign-in service', {
+    return warningFailureSignal('HealthFlow sign-in service', {
       summary: 'Not configured',
       detail: 'The app is missing HealthFlow Cloud sign-in settings.',
     })
@@ -233,7 +246,7 @@ const checkSupabaseAuthEndpoint = async (options = {}) => {
       detailPrefix: 'Sign-in service responded',
     })
   } catch (error) {
-    return failFromError('HealthFlow sign-in service', 'Sign-in check failed', error)
+    return warningSignalFromError('HealthFlow sign-in service', 'Sign-in check failed', error)
   }
 }
 
@@ -457,12 +470,14 @@ const buildSystemHealth = async (options = {}) => {
 
   const checks = await Promise.all([...baseChecks, ...fullChecks])
 
-  const hasFailure = checks.some((check) => check.status === 'fail')
+  const failureSignals = checks.filter(
+    (check) => check.status === 'fail' || check.countsAsFailureSignal
+  )
   const hasWarning = checks.some((check) => check.status === 'warn')
 
   return {
     checkedAt: new Date().toISOString(),
-    status: hasFailure ? 'fail' : hasWarning ? 'warn' : 'ok',
+    status: failureSignals.length >= 2 ? 'fail' : hasWarning || failureSignals.length ? 'warn' : 'ok',
     checks,
   }
 }
@@ -498,8 +513,10 @@ export const getSystemHealth = async (options = {}) => {
       cachedHealth = health
       cachedHealthKey = healthInFlightKey
       cachedHealthAt = Date.now()
-      const hasFailure = health.checks?.some((check) => check.status === 'fail')
-      if (hasFailure) {
+      const failureSignals = (health.checks || []).filter(
+        (check) => check.status === 'fail' || check.countsAsFailureSignal
+      )
+      if (failureSignals.length >= 2) {
         failureCount += 1
         nextAllowedCheckAt = Date.now() + getBackoffMs()
         recordRetry('system-health')
