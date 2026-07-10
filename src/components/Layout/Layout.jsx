@@ -3,6 +3,7 @@ import { Outlet, useLocation } from 'react-router-dom'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { getPharmacySettings } from '../../services/settingsService'
 import Seo from '../Seo/Seo'
+import ProductionMetricsMonitor from '../Diagnostics/ProductionMetricsMonitor'
 import Sidebar from './Sidebar'
 import TopBar from './TopBar'
 import './Layout.css'
@@ -65,6 +66,7 @@ const Layout = () => {
   return (
     <div className={`app-layout ${isSidebarOpen ? 'sidebar-open' : ''}`}>
       <Seo noindex title="Workspace" />
+      <ProductionMetricsMonitor />
       <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
       <button
         type="button"

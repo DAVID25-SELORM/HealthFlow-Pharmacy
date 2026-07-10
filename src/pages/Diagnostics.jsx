@@ -91,6 +91,58 @@ export default function Diagnostics() {
         />
       </section>
 
+      {metrics.activeAlerts.length > 0 && (
+        <section className="diagnostics-panel diagnostics-alert-panel">
+          <div className="diagnostics-panel-header">
+            <h2>Active Monitoring Alerts</h2>
+            <span>{metrics.activeAlerts.length} active</span>
+          </div>
+          <div className="diagnostics-list">
+            {metrics.activeAlerts.map((alert) => (
+              <div key={alert.id} className="diagnostics-list-row">
+                <strong>{alert.title}</strong>
+                <span>{alert.detail}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <section className="diagnostics-panel">
+        <div className="diagnostics-panel-header">
+          <h2>Rolling History</h2>
+          <span>{metrics.history.samples.length} sample{metrics.history.samples.length === 1 ? '' : 's'}</span>
+        </div>
+        <div className="diagnostics-table-wrap">
+          <table className="diagnostics-table">
+            <thead>
+              <tr>
+                <th>Window</th>
+                <th>Avg Latency</th>
+                <th>Peak Concurrency</th>
+                <th>Retry Delta</th>
+                <th>Avg Cache Hit</th>
+                <th>Failed Request Peak</th>
+                <th>Avg Polling Time</th>
+              </tr>
+            </thead>
+            <tbody>
+              {metrics.history.windows.map((window) => (
+                <tr key={window.label}>
+                  <td>{window.label}</td>
+                  <td>{formatMs(window.averageApiLatencyMs)}</td>
+                  <td>{window.peakConcurrentRequests}</td>
+                  <td>{window.retryCountDelta}</td>
+                  <td>{formatPercent(window.averageCacheHitRate)}</td>
+                  <td>{window.failedRequestPeak}</td>
+                  <td>{formatMs(window.pollingAverageMs)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <section className="diagnostics-panel">
         <div className="diagnostics-panel-header">
           <h2>Current Polling Status</h2>

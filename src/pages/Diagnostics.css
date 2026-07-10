@@ -102,6 +102,11 @@
   padding: 1rem;
 }
 
+.diagnostics-alert-panel {
+  border-color: #ffd4ce;
+  border-left: 5px solid #bd2d1f;
+}
+
 .diagnostics-panel h2 {
   font-size: 1rem;
 }
