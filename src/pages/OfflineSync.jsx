@@ -33,6 +33,7 @@ import {
 } from '../services/tenantAdminService'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
+import { getConfiguredCloudUrl } from '../lib/supabase'
 import {
   BRANCH_UPDATE_MANIFEST_URL,
   BRANCH_UPDATE_PUBLIC_KEY,
@@ -135,7 +136,7 @@ const blankNhiaForm = {
   },
 }
 
-const supabaseProjectUrl = import.meta.env.VITE_SUPABASE_URL || ''
+const healthflowCloudSyncUrl = getConfiguredCloudUrl()
 const supabaseSyncKey =
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
   import.meta.env.VITE_SUPABASE_ANON_KEY ||
@@ -486,7 +487,7 @@ export default function OfflineSync() {
         organizationId: setupResult.organizationId,
         branchId: setupResult.branchId,
         branchSyncToken: setupResult.branchSyncToken,
-        supabaseUrl: supabaseProjectUrl,
+        supabaseUrl: healthflowCloudSyncUrl,
         supabaseSyncKey,
         nhiaConfigSecretKey: setupResult.nhiaConfigSecretKey,
       })
@@ -1153,7 +1154,7 @@ NHIA_CONFIG_SECRET_KEY=${setupResult.nhiaConfigSecretKey}
 ORGANIZATION_ID=${setupResult.organizationId}
 BRANCH_ID=${setupResult.branchId}
 BRANCH_SYNC_TOKEN=${setupResult.branchSyncToken}
-SUPABASE_URL=${supabaseProjectUrl || '<your-supabase-project-url>'}
+SUPABASE_URL=${healthflowCloudSyncUrl || '<your-healthflow-cloud-url>'}
 SUPABASE_SYNC_KEY=${supabaseSyncKey || '<your-supabase-anon-or-publishable-key>'}
 HEALTHFLOW_UPDATE_MANIFEST_URL=${branchUpdateManifestUrl || '<your-signed-update-manifest-url>'}
 HEALTHFLOW_UPDATE_PUBLIC_KEY=${branchUpdatePublicKey || '<your-update-public-key-with-escaped-newlines>'}
@@ -1162,7 +1163,7 @@ HEALTHFLOW_UPDATE_AUTO_INSTALL=false`}</pre>
                 <button
                   className="btn btn-outline btn-sm branch-setup-copy-btn"
                   type="button"
-                  onClick={() => copyEnvBlock(`PORT=4780\nNHIA_CONFIG_SECRET_KEY=${setupResult.nhiaConfigSecretKey}\nORGANIZATION_ID=${setupResult.organizationId}\nBRANCH_ID=${setupResult.branchId}\nBRANCH_SYNC_TOKEN=${setupResult.branchSyncToken}\nSUPABASE_URL=${supabaseProjectUrl || '<your-supabase-project-url>'}\nSUPABASE_SYNC_KEY=${supabaseSyncKey || '<your-supabase-anon-or-publishable-key>'}\nHEALTHFLOW_UPDATE_MANIFEST_URL=${branchUpdateManifestUrl || '<your-signed-update-manifest-url>'}\nHEALTHFLOW_UPDATE_PUBLIC_KEY=${branchUpdatePublicKey || '<your-update-public-key-with-escaped-newlines>'}\nHEALTHFLOW_UPDATE_AUTO_CHECK_HOURS=24\nHEALTHFLOW_UPDATE_AUTO_INSTALL=false`)}
+                  onClick={() => copyEnvBlock(`PORT=4780\nNHIA_CONFIG_SECRET_KEY=${setupResult.nhiaConfigSecretKey}\nORGANIZATION_ID=${setupResult.organizationId}\nBRANCH_ID=${setupResult.branchId}\nBRANCH_SYNC_TOKEN=${setupResult.branchSyncToken}\nSUPABASE_URL=${healthflowCloudSyncUrl || '<your-healthflow-cloud-url>'}\nSUPABASE_SYNC_KEY=${supabaseSyncKey || '<your-supabase-anon-or-publishable-key>'}\nHEALTHFLOW_UPDATE_MANIFEST_URL=${branchUpdateManifestUrl || '<your-signed-update-manifest-url>'}\nHEALTHFLOW_UPDATE_PUBLIC_KEY=${branchUpdatePublicKey || '<your-update-public-key-with-escaped-newlines>'}\nHEALTHFLOW_UPDATE_AUTO_CHECK_HOURS=24\nHEALTHFLOW_UPDATE_AUTO_INSTALL=false`)}
                 >
                   <ClipboardCopy size={14} />
                   {envCopied ? 'Copied!' : 'Copy'}
@@ -1173,7 +1174,7 @@ HEALTHFLOW_UPDATE_AUTO_INSTALL=false`}</pre>
                   onClick={() => void applySetupToLocalServer()}
                   disabled={
                     setupClientAction === 'apply-config' ||
-                    !supabaseProjectUrl ||
+                    !healthflowCloudSyncUrl ||
                     !supabaseSyncKey ||
                     !isConnected
                   }

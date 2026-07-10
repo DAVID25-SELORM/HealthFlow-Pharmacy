@@ -24,6 +24,8 @@ const createQuery = (table) => {
 }
 
 vi.mock('../lib/supabase', () => ({
+  getConfiguredCloudUrl: () =>
+    (import.meta.env.VITE_HEALTHFLOW_CLOUD_URL || import.meta.env.VITE_SUPABASE_URL || '').replace(/\/+$/, ''),
   getCurrentSupabaseUser: mocks.getCurrentSupabaseUser,
   isSupabaseConfigured: () => true,
   supabase: {
@@ -170,5 +172,18 @@ describe('getSystemHealth', () => {
     expect(labels).not.toContain('Recent sale')
     expect(labels).not.toContain('NHIS access')
     expect(mocks.invokeTierAccess).not.toHaveBeenCalled()
+  })
+
+  it('checks the HealthFlow gateway URL when configured', async () => {
+    vi.stubEnv('VITE_HEALTHFLOW_CLOUD_URL', 'https://api.healthflowcloud.com/')
+
+    await getSystemHealth({ scope: 'summary', canViewReports: true, activeRole: 'admin', force: true })
+
+    expect(fetch).toHaveBeenCalledWith(
+      'https://api.healthflowcloud.com/auth/v1/health',
+      expect.objectContaining({
+        headers: { apikey: 'publishable-key' },
+      })
+    )
   })
 })

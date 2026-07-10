@@ -18,6 +18,40 @@ describe('invokeSupabaseFunction', () => {
     vi.clearAllMocks()
   })
 
+  it('uses the HealthFlow gateway URL when it is configured', async () => {
+    vi.stubEnv('VITE_HEALTHFLOW_CLOUD_URL', 'https://api.healthflowcloud.com/')
+    vi.stubEnv('VITE_SUPABASE_PUBLISHABLE_KEY', '')
+
+    const createClient = vi.fn(() => ({
+      auth: {
+        getSession: vi.fn(),
+        getUser: vi.fn(),
+        refreshSession: vi.fn(),
+      },
+      functions: {
+        invoke: vi.fn(),
+      },
+    }))
+
+    vi.doMock('@supabase/supabase-js', () => ({
+      createClient,
+    }))
+
+    const { getConfiguredCloudUrl, supabaseAuthStorageKey } = await import('./supabase')
+
+    expect(getConfiguredCloudUrl()).toBe('https://api.healthflowcloud.com')
+    expect(createClient).toHaveBeenCalledWith(
+      'https://api.healthflowcloud.com',
+      'anon-key',
+      expect.objectContaining({
+        auth: expect.objectContaining({
+          storageKey: 'sb-project-ref-auth-token',
+        }),
+      })
+    )
+    expect(supabaseAuthStorageKey).toBe('sb-project-ref-auth-token')
+  })
+
   it('reuses the latest stored session when a refresh races with another tab', async () => {
     const expiringSession = {
       access_token: 'stale-token',

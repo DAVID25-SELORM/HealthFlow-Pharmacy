@@ -1,4 +1,4 @@
-import { getCurrentSupabaseUser, isSupabaseConfigured, supabase } from '../lib/supabase'
+import { getConfiguredCloudUrl, getCurrentSupabaseUser, isSupabaseConfigured, supabase } from '../lib/supabase'
 import { isNetworkRequestError } from '../utils/requestErrors'
 import { getStoredActiveRole } from '../utils/activeRole'
 import { REPORT_ROLES, hasRole } from '../utils/roles'
@@ -35,7 +35,6 @@ let pollAbortController = null
 let pollOptions = null
 const pollSubscribers = new Set()
 
-const getSupabaseUrl = () => (import.meta.env.VITE_SUPABASE_URL || '').replace(/\/+$/, '')
 const getSupabaseKey = () =>
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
   import.meta.env.VITE_SUPABASE_ANON_KEY ||
@@ -207,7 +206,7 @@ const checkSupabase = async () => {
 }
 
 const checkSupabaseAuthEndpoint = async (options = {}) => {
-  const supabaseUrl = getSupabaseUrl()
+  const supabaseUrl = getConfiguredCloudUrl()
   const supabaseKey = getSupabaseKey()
   if (!supabaseUrl || !supabaseKey) {
     return fail('HealthFlow sign-in service', {

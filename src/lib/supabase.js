@@ -3,10 +3,19 @@ import { isNetworkRequestError } from '../utils/requestErrors'
 import { logAuthDiagnostic, timeAuthOperation } from '../utils/authDiagnostics'
 
 // Get environment variables
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+const normalizeUrl = (url) => String(url || '').trim().replace(/\/+$/, '')
+
+const providerSupabaseUrl = normalizeUrl(import.meta.env.VITE_SUPABASE_URL)
+const healthflowCloudUrl = normalizeUrl(import.meta.env.VITE_HEALTHFLOW_CLOUD_URL)
+const supabaseUrl = healthflowCloudUrl || providerSupabaseUrl
 const supabaseKey =
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
   import.meta.env.VITE_SUPABASE_ANON_KEY
+
+const isConfiguredUrl = (url) =>
+  Boolean(url) &&
+  !url.includes('your_supabase') &&
+  url.startsWith('http')
 
 const getDefaultStorageKey = (url) => {
   try {
@@ -20,22 +29,27 @@ const getDefaultStorageKey = (url) => {
 
 // Check if credentials are properly configured
 const hasValidCredentials =
-  supabaseUrl &&
+  isConfiguredUrl(supabaseUrl) &&
   supabaseKey &&
-  !supabaseUrl.includes('your_supabase') &&
-  !supabaseKey.includes('your_supabase') &&
-  supabaseUrl.startsWith('http')
+  !supabaseKey.includes('your_supabase')
+
+const storageKeySourceUrl = isConfiguredUrl(providerSupabaseUrl)
+  ? providerSupabaseUrl
+  : supabaseUrl
+
+export const getConfiguredCloudUrl = () => supabaseUrl
 
 export const supabaseAuthStorageKey = hasValidCredentials
-  ? getDefaultStorageKey(supabaseUrl)
+  ? getDefaultStorageKey(storageKeySourceUrl)
   : ''
 
 logAuthDiagnostic('supabase.init', {
   hasUrl: Boolean(supabaseUrl),
+  usesHealthFlowGateway: Boolean(healthflowCloudUrl),
   hasPublishableKey: Boolean(import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY),
   hasAnonKey: Boolean(import.meta.env.VITE_SUPABASE_ANON_KEY),
   hasValidCredentials: Boolean(hasValidCredentials),
-  projectHost: (() => {
+  cloudHost: (() => {
     try {
       return supabaseUrl ? new URL(supabaseUrl).hostname : ''
     } catch {
