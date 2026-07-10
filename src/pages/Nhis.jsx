@@ -1855,14 +1855,15 @@ const Nhis = () => {
   const isBranchNhiaConfigSource = ['local_branch_server', 'local_cache'].includes(
     resolvedNhiaSettings?.configSource || resolvedNhiaSettings?.source
   )
-  const shouldUseOfflineNhiaUrl = shouldUseBranchServer() || isBranchNhiaConfigSource
+  const isBranchServerEnabled = shouldUseBranchServer()
+  const shouldUseOfflineNhiaUrl = isBranchServerEnabled
   const effectiveMemberLookupEndpointPath = memberLookupEndpointPath ||
-    (shouldUseOfflineNhiaUrl ? '/api/hmis/genCCC' : '')
+    (isBranchServerEnabled || isBranchNhiaConfigSource ? '/api/hmis/genCCC' : '')
   const nhiaCcCodeApiAvailable = Boolean(
     (resolvedNhiaSettings?.directApiEnabled ||
       integrationMode === 'claimit_assisted' ||
       ['claimit_bridge', 'claimit_bridge_ccc', 'direct_api'].includes(claimControlMode)) &&
-      (nhiaApiBaseUrl || shouldUseOfflineNhiaUrl) &&
+      (nhiaApiBaseUrl || isBranchServerEnabled || isBranchNhiaConfigSource) &&
       effectiveMemberLookupEndpointPath
   )
   const canGenerateNhiaCcCode = Boolean(nhiaCcCodeApiAvailable && integrationMode !== 'claimit_export')
@@ -2969,7 +2970,7 @@ const Nhis = () => {
         serviceDate: claimForm.serviceDate,
         totalAmount: claimTotal,
       }
-      const generateCcCode = shouldUseOfflineNhiaUrl
+      const generateCcCode = isBranchServerEnabled
         ? generateBranchNhiaCcCode
         : generateHostedNhiaCcCode
       const result = await generateCcCode(claimContext)
@@ -3168,7 +3169,7 @@ const Nhis = () => {
         const savedClaim = await updateNhisClaim(editingClaim.id, payload, claimMedicines, {
           providerClassLevel,
           claimControlMode,
-          useBranchServer: isBranchNhiaConfigSource,
+          useBranchServer: isBranchServerEnabled,
           // ✅ NHIS PHARMACY LEVEL PATCH START
           pharmacyLevel: facilityPharmacyLevel,
           // ✅ NHIS PHARMACY LEVEL PATCH END
@@ -3229,7 +3230,7 @@ const Nhis = () => {
         savedClaimRecord = await createNhisClaim(createPayload, claimMedicines, {
           providerClassLevel,
           claimControlMode,
-          useBranchServer: isBranchNhiaConfigSource,
+          useBranchServer: isBranchServerEnabled,
           // ✅ NHIS PHARMACY LEVEL PATCH START
           pharmacyLevel: facilityPharmacyLevel,
           // ✅ NHIS PHARMACY LEVEL PATCH END
