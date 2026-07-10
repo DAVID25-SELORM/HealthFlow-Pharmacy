@@ -3,6 +3,12 @@ import { isNetworkRequestError } from '../utils/requestErrors'
 import { getStoredActiveRole } from '../utils/activeRole'
 import { REPORT_ROLES, hasRole } from '../utils/roles'
 import { getBranchServerConfig, getBranchServerHealth } from './branchServerApi'
+import {
+  recordCacheEvent,
+  recordPollingRun,
+  recordRetry,
+  setPollingStatus,
+} from './productionMetricsService'
 import { invokeTierAccess } from './tierAccessService'
 
 const ok = (label, details = {}) => ({ label, status: 'ok', ...details })
@@ -467,21 +473,26 @@ export const getSystemHealth = async (options = {}) => {
   const cacheKey = getHealthCacheKey(options)
 
   if (isBrowserOffline()) {
+    recordCacheEvent('system-health', 'miss')
     return createOfflineHealth()
   }
 
   if (!options.force && cachedHealth && cachedHealthKey === cacheKey && now - cachedHealthAt < HEALTH_CACHE_MS) {
+    recordCacheEvent('system-health', 'hit')
     return cachedHealth
   }
 
   if (!options.force && now < nextAllowedCheckAt) {
+    recordCacheEvent('system-health backoff', 'hit')
     return createBackoffHealth(nextAllowedCheckAt)
   }
 
   if (healthInFlight) {
+    recordCacheEvent('system-health in-flight', 'hit')
     return healthInFlight
   }
 
+  recordCacheEvent('system-health', 'miss')
   healthInFlightKey = cacheKey
   healthInFlight = buildSystemHealth(options)
     .then((health) => {
@@ -492,6 +503,7 @@ export const getSystemHealth = async (options = {}) => {
       if (hasFailure) {
         failureCount += 1
         nextAllowedCheckAt = Date.now() + getBackoffMs()
+        recordRetry('system-health')
       } else {
         failureCount = 0
         nextAllowedCheckAt = 0
@@ -501,6 +513,7 @@ export const getSystemHealth = async (options = {}) => {
     .catch((error) => {
       failureCount += 1
       nextAllowedCheckAt = Date.now() + getBackoffMs()
+      recordRetry('system-health')
       throw normalizeHealthError(error)
     })
     .finally(() => {
@@ -546,6 +559,10 @@ const stopSystemHealthPolling = () => {
 
   pollRunning = false
   pollOptions = null
+  setPollingStatus({
+    active: false,
+    subscriberCount: pollSubscribers.size,
+  })
 }
 
 const runSystemHealthPoll = async () => {
@@ -553,11 +570,24 @@ const runSystemHealthPoll = async () => {
 
   if (isBrowserOffline()) {
     emitPolledHealth(createOfflineHealth())
+    setPollingStatus({
+      active: Boolean(pollTimer),
+      subscriberCount: pollSubscribers.size,
+      lastStatus: 'offline',
+    })
     return
   }
 
   pollRunning = true
   pollAbortController = new AbortController()
+  const startedAt = performance.now()
+  setPollingStatus({
+    active: true,
+    intervalMs: HEALTH_CACHE_MS,
+    subscriberCount: pollSubscribers.size,
+    lastStartedAt: new Date().toISOString(),
+    lastStatus: 'running',
+  })
 
   try {
     const health = await getSystemHealth({
@@ -566,6 +596,11 @@ const runSystemHealthPoll = async () => {
       signal: pollAbortController.signal,
     })
     emitPolledHealth(health)
+    recordPollingRun({
+      label: 'system-health',
+      durationMs: performance.now() - startedAt,
+      status: health.status || 'ok',
+    })
   } catch (error) {
     console.warn('Unable to load polled system health:', normalizeHealthError(error))
     emitPolledHealth(cachedHealth || {
@@ -578,9 +613,19 @@ const runSystemHealthPoll = async () => {
         }),
       ],
     })
+    recordPollingRun({
+      label: 'system-health',
+      durationMs: performance.now() - startedAt,
+      status: 'failed',
+    })
   } finally {
     pollRunning = false
     pollAbortController = null
+    setPollingStatus({
+      active: Boolean(pollTimer),
+      intervalMs: HEALTH_CACHE_MS,
+      subscriberCount: pollSubscribers.size,
+    })
   }
 }
 
@@ -594,6 +639,11 @@ export const subscribeSystemHealthPolling = (subscriber, options = {}) => {
     canViewReports: options.canViewReports,
     activeRole: options.activeRole,
   }
+  setPollingStatus({
+    active: Boolean(pollTimer),
+    intervalMs: HEALTH_CACHE_MS,
+    subscriberCount: pollSubscribers.size,
+  })
 
   if (cachedHealth) {
     subscriber(cachedHealth)
@@ -604,10 +654,20 @@ export const subscribeSystemHealthPolling = (subscriber, options = {}) => {
     pollTimer = window.setInterval(() => {
       void runSystemHealthPoll()
     }, HEALTH_CACHE_MS)
+    setPollingStatus({
+      active: true,
+      intervalMs: HEALTH_CACHE_MS,
+      subscriberCount: pollSubscribers.size,
+    })
   }
 
   return () => {
     pollSubscribers.delete(subscriber)
+    setPollingStatus({
+      active: Boolean(pollTimer),
+      intervalMs: HEALTH_CACHE_MS,
+      subscriberCount: pollSubscribers.size,
+    })
     if (pollSubscribers.size === 0) {
       stopSystemHealthPolling()
     }

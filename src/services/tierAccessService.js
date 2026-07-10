@@ -1,6 +1,11 @@
 import { invokeSupabaseFunction } from '../lib/supabase'
 import { getStoredActiveRole } from '../utils/activeRole'
 import { debugLog } from '../utils/debugLog'
+import {
+  recordCacheEvent,
+  recordTierAccessEnd,
+  recordTierAccessStart,
+} from './productionMetricsService'
 
 const TIER_ACCESS_FUNCTION = 'tier-access'
 const REDACTED_VALUE = '[REDACTED]'
@@ -83,6 +88,26 @@ const resolveTierAccessResponse = async (requestPromise) => {
   return data
 }
 
+const resolveMeasuredTierAccessResponse = async (action, requestPromise, startedAt) => {
+  try {
+    const response = await resolveTierAccessResponse(requestPromise)
+    recordTierAccessEnd({
+      action,
+      durationMs: performance.now() - startedAt,
+      success: true,
+    })
+    return response
+  } catch (error) {
+    recordTierAccessEnd({
+      action,
+      durationMs: performance.now() - startedAt,
+      success: false,
+      error,
+    })
+    throw error
+  }
+}
+
 export const invokeTierAccess = async (payload) => {
   const activeRole = getStoredActiveRole()
   const requestPayload = activeRole && !payload?.activeRole
@@ -92,11 +117,16 @@ export const invokeTierAccess = async (payload) => {
   const dedupeKey = shouldDedupe ? getStablePayloadKey(requestPayload) : ''
 
   if (dedupeKey && inFlightReadRequests.has(dedupeKey)) {
+    recordCacheEvent('tier-access in-flight', 'hit')
     debugLog('[TIER ACCESS DEDUPED]', {
       action: requestPayload?.action,
       organizationId: requestPayload?.organizationId || requestPayload?.organization_id,
     })
     return inFlightReadRequests.get(dedupeKey)
+  }
+
+  if (dedupeKey) {
+    recordCacheEvent('tier-access in-flight', 'miss')
   }
 
   debugLog('[TIER ACCESS REQUEST]', {
@@ -105,6 +135,9 @@ export const invokeTierAccess = async (payload) => {
     payload: redactPayload(requestPayload),
   })
 
+  const action = requestPayload?.action || 'unknown'
+  const startedAt = performance.now()
+  recordTierAccessStart(action)
   const requestPromise = invokeSupabaseFunction(TIER_ACCESS_FUNCTION, {
     body: requestPayload,
   })
@@ -112,7 +145,7 @@ export const invokeTierAccess = async (payload) => {
   if (dedupeKey) {
     inFlightReadRequests.set(
       dedupeKey,
-      resolveTierAccessResponse(requestPromise).finally(() => {
+      resolveMeasuredTierAccessResponse(action, requestPromise, startedAt).finally(() => {
         inFlightReadRequests.delete(dedupeKey)
       })
     )
@@ -122,5 +155,5 @@ export const invokeTierAccess = async (payload) => {
     return inFlightReadRequests.get(dedupeKey)
   }
 
-  return resolveTierAccessResponse(requestPromise)
+  return resolveMeasuredTierAccessResponse(action, requestPromise, startedAt)
 }

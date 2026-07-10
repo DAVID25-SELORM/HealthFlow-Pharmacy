@@ -35,6 +35,7 @@ const Login = lazy(() => import('./pages/Login'))
 const Signup = lazy(() => import('./pages/Signup'))
 const ActivityLog = lazy(() => import('./pages/ActivityLog'))
 const SystemHealth = lazy(() => import('./pages/SystemHealth'))
+const Diagnostics = lazy(() => import('./pages/Diagnostics'))
 const OfflineSync = lazy(() => import('./pages/OfflineSync'))
 const Support = lazy(() => import('./pages/Support'))
 const Purchases = lazy(() => import('./pages/Purchases'))
@@ -205,6 +206,14 @@ function App() {
               element={
                 <RoleRoute allowedRoles={SYSTEM_HEALTH_ROLES}>
                   <SystemHealth />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="diagnostics"
+              element={
+                <RoleRoute allowedRoles={['super_admin']}>
+                  <Diagnostics />
                 </RoleRoute>
               }
             />

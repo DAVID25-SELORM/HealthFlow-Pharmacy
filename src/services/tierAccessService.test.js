@@ -14,10 +14,12 @@ vi.mock('../utils/activeRole', () => ({
 }))
 
 import { invokeTierAccess } from './tierAccessService'
+import { getProductionMetricsSnapshot, resetProductionMetrics } from './productionMetricsService'
 
 describe('invokeTierAccess', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    resetProductionMetrics()
     mocks.getStoredActiveRole.mockReturnValue('admin')
   })
 
@@ -39,6 +41,16 @@ describe('invokeTierAccess', () => {
     expect(mocks.invokeSupabaseFunction).toHaveBeenCalledTimes(1)
     expect(mocks.invokeSupabaseFunction).toHaveBeenCalledWith('tier-access', {
       body: { action: 'get_claims_statistics', activeRole: 'admin' },
+    })
+    const metrics = getProductionMetricsSnapshot()
+    expect(metrics.concurrentRequests).toBe(0)
+    expect(metrics.tierAccess.find((item) => item.action === 'get_claims_statistics')).toMatchObject({
+      count: 1,
+      failures: 0,
+    })
+    expect(metrics.cache.find((item) => item.name === 'tier-access in-flight')).toMatchObject({
+      hits: 1,
+      misses: 1,
     })
   })
 
