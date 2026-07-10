@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Activity, AlertTriangle, CheckCircle2, RefreshCcw, XCircle } from 'lucide-react'
 import { getSystemHealth } from '../services/systemHealthService'
 import { useAuth } from '../context/AuthContext'
@@ -27,26 +27,45 @@ export default function SystemHealth() {
   const [health, setHealth] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const abortRef = useRef(null)
 
   const loadHealth = useCallback(async () => {
     if (authLoading || !role) {
       return
     }
 
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+
     try {
       setLoading(true)
       setError('')
-      setHealth(await getSystemHealth({ canViewReports, activeRole: role }))
+      setHealth(await getSystemHealth({
+        canViewReports,
+        activeRole: role,
+        force: true,
+        scope: 'full',
+        signal: controller.signal,
+      }))
     } catch (loadError) {
+      if (controller.signal.aborted) {
+        return
+      }
       setHealth(null)
       setError(loadError.message || 'Unable to load system health.')
     } finally {
-      setLoading(false)
+      if (!controller.signal.aborted) {
+        setLoading(false)
+      }
     }
   }, [authLoading, canViewReports, role])
 
   useEffect(() => {
     void loadHealth()
+    return () => {
+      abortRef.current?.abort()
+    }
   }, [loadHealth])
 
   const overall = getStatusMeta(health?.status)

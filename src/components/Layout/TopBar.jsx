@@ -9,7 +9,7 @@ import { useOnlineStatus } from '../../hooks/useOnlineStatus'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { getClaimsStatistics } from '../../services/claimsService'
 import { getExpiringDrugs, getLowStockDrugs } from '../../services/drugService'
-import { getSystemHealth } from '../../services/systemHealthService'
+import { subscribeSystemHealthPolling } from '../../services/systemHealthService'
 import {
   CONNECTIVITY_MODES,
   getConnectivityState,
@@ -138,27 +138,6 @@ const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
     }
   }, [authReady, canUseClaimAlerts, canUseClaims, canUseInventorySearch, tierLimits.hasClaims])
 
-  const loadSystemHealth = useCallback(async () => {
-    if (!authReady || !canViewSystemHealth) {
-      setSystemHealth(null)
-      return
-    }
-
-    try {
-      setSystemHealthLoading(true)
-      setSystemHealth(await getSystemHealth({ canViewReports, activeRole: role }))
-    } catch (error) {
-      console.warn('Unable to load top bar system health:', error)
-      setSystemHealth({
-        status: 'warn',
-        checks: [],
-        checkedAt: new Date().toISOString(),
-      })
-    } finally {
-      setSystemHealthLoading(false)
-    }
-  }, [authReady, canViewReports, canViewSystemHealth, role])
-
   useEffect(() => {
     const params = new URLSearchParams(location.search)
     const routeSearch = params.get('search') || ''
@@ -180,17 +159,21 @@ const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
   }, [authReady, loadAlerts])
 
   useEffect(() => {
-    if (!authReady) {
+    if (!authReady || !canViewSystemHealth) {
+      setSystemHealth(null)
+      setSystemHealthLoading(false)
       return undefined
     }
 
-    void loadSystemHealth()
-    if (!canViewSystemHealth) return undefined
-    const interval = window.setInterval(() => {
-      void loadSystemHealth()
-    }, 5 * 60 * 1000)
-    return () => window.clearInterval(interval)
-  }, [authReady, canViewSystemHealth, loadSystemHealth])
+    setSystemHealthLoading(true)
+    return subscribeSystemHealthPolling(
+      (health) => {
+        setSystemHealth(health)
+        setSystemHealthLoading(false)
+      },
+      { canViewReports, activeRole: role }
+    )
+  }, [authReady, canViewReports, canViewSystemHealth, role])
 
   useEffect(() => {
     const unsubscribe = subscribeConnectivity(setConnectivity)

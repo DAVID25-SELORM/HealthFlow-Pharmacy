@@ -1,4 +1,5 @@
 import { getCurrentSupabaseUser, isSupabaseConfigured, supabase } from '../lib/supabase'
+import { isNetworkRequestError } from '../utils/requestErrors'
 import { getStoredActiveRole } from '../utils/activeRole'
 import { REPORT_ROLES, hasRole } from '../utils/roles'
 import { getBranchServerConfig, getBranchServerHealth } from './branchServerApi'
@@ -8,9 +9,25 @@ const ok = (label, details = {}) => ({ label, status: 'ok', ...details })
 const warn = (label, details = {}) => ({ label, status: 'warn', ...details })
 const fail = (label, details = {}) => ({ label, status: 'fail', ...details })
 
-const HEALTH_TIMEOUT_MS = 8000
+const HEALTH_TIMEOUT_MS = 12000
+const HEALTH_CACHE_MS = 5 * 60 * 1000
+const HEALTH_BACKOFF_BASE_MS = 30 * 1000
+const HEALTH_BACKOFF_MAX_MS = 5 * 60 * 1000
 const AUTH_WARN_MS = 2500
 const REST_WARN_MS = 3000
+
+let cachedHealth = null
+let cachedHealthKey = ''
+let cachedHealthAt = 0
+let healthInFlight = null
+let healthInFlightKey = ''
+let failureCount = 0
+let nextAllowedCheckAt = 0
+let pollTimer = null
+let pollRunning = false
+let pollAbortController = null
+let pollOptions = null
+const pollSubscribers = new Set()
 
 const getSupabaseUrl = () => (import.meta.env.VITE_SUPABASE_URL || '').replace(/\/+$/, '')
 const getSupabaseKey = () =>
@@ -21,10 +38,100 @@ const getSupabaseKey = () =>
 const formatError = (error) =>
   error?.message || error?.error_description || 'Check failed.'
 
+const isBrowserOffline = () =>
+  typeof navigator !== 'undefined' && navigator.onLine === false
+
+const createNetworkCheck = () =>
+  isBrowserOffline()
+    ? warn('Network connection', {
+        summary: 'Offline',
+        detail: 'This browser is offline. Health checks will resume when the internet connection returns.',
+      })
+    : ok('Network connection', {
+        summary: 'Online',
+        detail: 'Browser network status is online.',
+      })
+
+const createOfflineHealth = () => ({
+  checkedAt: new Date().toISOString(),
+  status: 'warn',
+  checks: [createNetworkCheck()],
+})
+
+const createBackoffHealth = (retryAt) => ({
+  checkedAt: cachedHealth?.checkedAt || new Date().toISOString(),
+  status: cachedHealth?.status || 'warn',
+  checks: cachedHealth?.checks?.length
+    ? cachedHealth.checks
+    : [
+        warn('System health', {
+          summary: 'Waiting to retry',
+          detail: `Previous health check failed. Next automatic retry is scheduled at ${new Date(retryAt).toLocaleTimeString()}.`,
+        }),
+      ],
+})
+
+const getHealthCacheKey = (options = {}) => [
+  options.scope || 'full',
+  options.activeRole || '',
+  options.canViewReports === false ? 'no-reports' : 'reports',
+].join('|')
+
+const getBackoffMs = () =>
+  Math.min(HEALTH_BACKOFF_BASE_MS * (2 ** Math.max(0, failureCount - 1)), HEALTH_BACKOFF_MAX_MS)
+
+const normalizeHealthError = (error) => {
+  if (isNetworkRequestError(error)) {
+    return new Error('Network connection unavailable. Health checks will retry when the connection is stable.')
+  }
+  return error
+}
+
+const failFromError = (label, summary, error) => {
+  const networkError = normalizeHealthError(error)
+  return fail(label, {
+    summary: isNetworkRequestError(error) ? 'Network unavailable' : summary,
+    detail: formatError(networkError),
+  })
+}
+
+const withTimeout = async (promise, label, timeoutMs = HEALTH_TIMEOUT_MS) => {
+  let timeoutId
+  const setTimer = typeof window !== 'undefined' && typeof window.setTimeout === 'function'
+    ? window.setTimeout.bind(window)
+    : setTimeout
+  const clearTimer = typeof window !== 'undefined' && typeof window.clearTimeout === 'function'
+    ? window.clearTimeout.bind(window)
+    : clearTimeout
+
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timeoutId = setTimer(
+          () => reject(new Error(`${label} timed out after ${Math.round(timeoutMs / 1000)} seconds.`)),
+          timeoutMs
+        )
+      }),
+    ])
+  } finally {
+    if (timeoutId) {
+      clearTimer(timeoutId)
+    }
+  }
+}
+
 const timedFetch = async (url, options = {}, timeoutMs = HEALTH_TIMEOUT_MS) => {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
   const startedAt = performance.now()
+
+  if (options.signal?.aborted) {
+    controller.abort()
+  }
+
+  const abortFromParent = () => controller.abort()
+  options.signal?.addEventListener?.('abort', abortFromParent, { once: true })
 
   try {
     const response = await fetch(url, {
@@ -37,6 +144,7 @@ const timedFetch = async (url, options = {}, timeoutMs = HEALTH_TIMEOUT_MS) => {
     }
   } finally {
     clearTimeout(timeout)
+    options.signal?.removeEventListener?.('abort', abortFromParent)
   }
 }
 
@@ -88,14 +196,11 @@ const checkSupabase = async () => {
       detail: 'The app can reach the production database.',
     })
   } catch (error) {
-    return fail('Supabase connection', {
-      summary: 'Database check failed',
-      detail: formatError(error),
-    })
+    return failFromError('Supabase connection', 'Database check failed', error)
   }
 }
 
-const checkSupabaseAuthEndpoint = async () => {
+const checkSupabaseAuthEndpoint = async (options = {}) => {
   const supabaseUrl = getSupabaseUrl()
   const supabaseKey = getSupabaseKey()
   if (!supabaseUrl || !supabaseKey) {
@@ -106,9 +211,14 @@ const checkSupabaseAuthEndpoint = async () => {
   }
 
   try {
-    const { response, durationMs } = await timedFetch(`${supabaseUrl}/auth/v1/health`, {
-      headers: { apikey: supabaseKey },
-    })
+    const { response, durationMs } = await timedFetch(
+      `${supabaseUrl}/auth/v1/health`,
+      {
+        headers: { apikey: supabaseKey },
+        signal: options.signal,
+      },
+      options.timeoutMs || HEALTH_TIMEOUT_MS
+    )
     if (!response.ok) {
       const text = await response.text().catch(() => '')
       throw new Error(`HTTP ${response.status}${text ? `: ${text.slice(0, 120)}` : ''}`)
@@ -118,10 +228,7 @@ const checkSupabaseAuthEndpoint = async () => {
       detailPrefix: 'Auth health responded',
     })
   } catch (error) {
-    return fail('Supabase Auth endpoint', {
-      summary: 'Auth health check failed',
-      detail: formatError(error),
-    })
+    return failFromError('Supabase Auth endpoint', 'Auth health check failed', error)
   }
 }
 
@@ -147,10 +254,7 @@ const checkSupabaseRestLatency = async () => {
       detailPrefix: 'Database API responded',
     })
   } catch (error) {
-    return fail('Supabase REST latency', {
-      summary: 'REST check failed',
-      detail: formatError(error),
-    })
+    return failFromError('Supabase REST latency', 'REST check failed', error)
   }
 }
 
@@ -169,10 +273,7 @@ const checkAuthenticatedSession = async () => {
       detail: `Auth verified in ${Math.round(performance.now() - startedAt)} ms.`,
     })
   } catch (error) {
-    return fail('Authenticated session', {
-      summary: 'Login session check failed',
-      detail: formatError(error),
-    })
+    return failFromError('Authenticated session', 'Login session check failed', error)
   }
 }
 
@@ -189,7 +290,11 @@ const checkReportEngine = async (options = {}) => {
 
   try {
     const startedAt = performance.now()
-    const result = await invokeTierAccess({ action: 'get_report_health' })
+    const result = await withTimeout(
+      invokeTierAccess({ action: 'get_report_health' }),
+      'Report health check',
+      options.timeoutMs || HEALTH_TIMEOUT_MS
+    )
     const durationMs = Math.round(performance.now() - startedAt)
 
     return ok('Reports and Edge Function', {
@@ -197,10 +302,7 @@ const checkReportEngine = async (options = {}) => {
       detail: `Responded in ${durationMs} ms. ${Number(result?.counts?.nhisClaims || 0)} NHIS claims visible.`,
     })
   } catch (error) {
-    return fail('Reports and Edge Function', {
-      summary: 'Report engine check failed',
-      detail: formatError(error),
-    })
+    return failFromError('Reports and Edge Function', 'Report engine check failed', error)
   }
 }
 
@@ -227,10 +329,7 @@ const checkRecentSale = async () => {
       timestamp: sale.sale_date,
     })
   } catch (error) {
-    return fail('Recent sale', {
-      summary: 'Could not read sales',
-      detail: formatError(error),
-    })
+    return failFromError('Recent sale', 'Could not read sales', error)
   }
 }
 
@@ -241,7 +340,11 @@ const checkRecentAuditLog = async () => {
     let log = null
 
     try {
-      const result = await invokeTierAccess({ action: 'get_activity_logs', limit: 1 })
+      const result = await withTimeout(
+        invokeTierAccess({ action: 'get_activity_logs', limit: 1 }),
+        'Activity log check',
+        HEALTH_TIMEOUT_MS
+      )
       log = Array.isArray(result?.logs) ? result.logs[0] || null : null
     } catch (error) {
       const unsupportedAction = String(error?.message || '').toLowerCase().includes('unsupported action')
@@ -267,10 +370,7 @@ const checkRecentAuditLog = async () => {
       timestamp: log.created_at,
     })
   } catch (error) {
-    return fail('Recent activity log', {
-      summary: 'Could not read audit logs',
-      detail: formatError(error),
-    })
+    return failFromError('Recent activity log', 'Could not read audit logs', error)
   }
 }
 
@@ -297,10 +397,7 @@ const checkRecentNhisClaim = async () => {
       timestamp: claim.created_at,
     })
   } catch (error) {
-    return fail('NHIS access', {
-      summary: 'Could not read NHIS claims',
-      detail: formatError(error),
-    })
+    return failFromError('NHIS access', 'Could not read NHIS claims', error)
   }
 }
 
@@ -332,18 +429,28 @@ const checkLocalBranchServer = async () => {
   }
 }
 
-export const getSystemHealth = async (options = {}) => {
-  const checks = await Promise.all([
-    checkSupabase(),
-    checkSupabaseAuthEndpoint(),
-    checkSupabaseRestLatency(),
+const buildSystemHealth = async (options = {}) => {
+  const scope = options.scope || 'full'
+  const isSummaryScope = scope === 'summary'
+  const baseChecks = [
+    createNetworkCheck(),
+    checkSupabaseAuthEndpoint(options),
     checkAuthenticatedSession(),
-    checkReportEngine(options),
-    checkRecentSale(),
-    checkRecentNhisClaim(),
-    checkRecentAuditLog(),
     checkLocalBranchServer(),
-  ])
+  ]
+
+  const fullChecks = isSummaryScope
+    ? []
+    : [
+        checkSupabase(),
+        checkSupabaseRestLatency(),
+        checkReportEngine(options),
+        checkRecentSale(),
+        checkRecentNhisClaim(),
+        checkRecentAuditLog(),
+      ]
+
+  const checks = await Promise.all([...baseChecks, ...fullChecks])
 
   const hasFailure = checks.some((check) => check.status === 'fail')
   const hasWarning = checks.some((check) => check.status === 'warn')
@@ -352,5 +459,157 @@ export const getSystemHealth = async (options = {}) => {
     checkedAt: new Date().toISOString(),
     status: hasFailure ? 'fail' : hasWarning ? 'warn' : 'ok',
     checks,
+  }
+}
+
+export const getSystemHealth = async (options = {}) => {
+  const now = Date.now()
+  const cacheKey = getHealthCacheKey(options)
+
+  if (isBrowserOffline()) {
+    return createOfflineHealth()
+  }
+
+  if (!options.force && cachedHealth && cachedHealthKey === cacheKey && now - cachedHealthAt < HEALTH_CACHE_MS) {
+    return cachedHealth
+  }
+
+  if (!options.force && now < nextAllowedCheckAt) {
+    return createBackoffHealth(nextAllowedCheckAt)
+  }
+
+  if (healthInFlight) {
+    return healthInFlight
+  }
+
+  healthInFlightKey = cacheKey
+  healthInFlight = buildSystemHealth(options)
+    .then((health) => {
+      cachedHealth = health
+      cachedHealthKey = healthInFlightKey
+      cachedHealthAt = Date.now()
+      const hasFailure = health.checks?.some((check) => check.status === 'fail')
+      if (hasFailure) {
+        failureCount += 1
+        nextAllowedCheckAt = Date.now() + getBackoffMs()
+      } else {
+        failureCount = 0
+        nextAllowedCheckAt = 0
+      }
+      return health
+    })
+    .catch((error) => {
+      failureCount += 1
+      nextAllowedCheckAt = Date.now() + getBackoffMs()
+      throw normalizeHealthError(error)
+    })
+    .finally(() => {
+      healthInFlight = null
+      healthInFlightKey = ''
+    })
+
+  return healthInFlight
+}
+
+export const resetSystemHealthCache = () => {
+  stopSystemHealthPolling()
+  pollSubscribers.clear()
+  cachedHealth = null
+  cachedHealthKey = ''
+  cachedHealthAt = 0
+  healthInFlight = null
+  healthInFlightKey = ''
+  failureCount = 0
+  nextAllowedCheckAt = 0
+}
+
+const emitPolledHealth = (health) => {
+  pollSubscribers.forEach((subscriber) => {
+    try {
+      subscriber(health)
+    } catch (error) {
+      console.warn('System health subscriber failed:', error)
+    }
+  })
+}
+
+const stopSystemHealthPolling = () => {
+  if (pollTimer) {
+    window.clearInterval(pollTimer)
+    pollTimer = null
+  }
+
+  if (pollAbortController) {
+    pollAbortController.abort()
+    pollAbortController = null
+  }
+
+  pollRunning = false
+  pollOptions = null
+}
+
+const runSystemHealthPoll = async () => {
+  if (pollRunning || !pollOptions) return
+
+  if (isBrowserOffline()) {
+    emitPolledHealth(createOfflineHealth())
+    return
+  }
+
+  pollRunning = true
+  pollAbortController = new AbortController()
+
+  try {
+    const health = await getSystemHealth({
+      ...pollOptions,
+      scope: 'summary',
+      signal: pollAbortController.signal,
+    })
+    emitPolledHealth(health)
+  } catch (error) {
+    console.warn('Unable to load polled system health:', normalizeHealthError(error))
+    emitPolledHealth(cachedHealth || {
+      checkedAt: new Date().toISOString(),
+      status: 'warn',
+      checks: [
+        warn('System health', {
+          summary: 'Check failed',
+          detail: formatError(normalizeHealthError(error)),
+        }),
+      ],
+    })
+  } finally {
+    pollRunning = false
+    pollAbortController = null
+  }
+}
+
+export const subscribeSystemHealthPolling = (subscriber, options = {}) => {
+  if (typeof window === 'undefined') {
+    return () => {}
+  }
+
+  pollSubscribers.add(subscriber)
+  pollOptions = {
+    canViewReports: options.canViewReports,
+    activeRole: options.activeRole,
+  }
+
+  if (cachedHealth) {
+    subscriber(cachedHealth)
+  }
+
+  if (!pollTimer) {
+    void runSystemHealthPoll()
+    pollTimer = window.setInterval(() => {
+      void runSystemHealthPoll()
+    }, HEALTH_CACHE_MS)
+  }
+
+  return () => {
+    pollSubscribers.delete(subscriber)
+    if (pollSubscribers.size === 0) {
+      stopSystemHealthPolling()
+    }
   }
 }

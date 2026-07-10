@@ -47,12 +47,13 @@ vi.mock('../utils/activeRole', () => ({
   getStoredActiveRole: vi.fn(() => ''),
 }))
 
-import { getSystemHealth } from './systemHealthService'
+import { getSystemHealth, resetSystemHealthCache } from './systemHealthService'
 import { getStoredActiveRole } from '../utils/activeRole'
 
 describe('getSystemHealth', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    resetSystemHealthCache()
     getStoredActiveRole.mockReturnValue('')
     mocks.rows.clear()
     vi.stubEnv('VITE_SUPABASE_URL', 'https://project-ref.supabase.co')
@@ -152,5 +153,22 @@ describe('getSystemHealth', () => {
     })
     expect(mocks.invokeTierAccess).not.toHaveBeenCalledWith({ action: 'get_report_health' })
     expect(mocks.invokeTierAccess).toHaveBeenCalledWith({ action: 'get_activity_logs', limit: 1 })
+  })
+
+  it('uses lightweight checks for top-bar summary health', async () => {
+    const health = await getSystemHealth({ scope: 'summary', canViewReports: true, activeRole: 'admin' })
+    const labels = health.checks.map((check) => check.label)
+
+    expect(labels).toEqual(expect.arrayContaining([
+      'Network connection',
+      'Supabase Auth endpoint',
+      'Authenticated session',
+      'Local branch server',
+    ]))
+    expect(labels).not.toContain('Reports and Edge Function')
+    expect(labels).not.toContain('Recent activity log')
+    expect(labels).not.toContain('Recent sale')
+    expect(labels).not.toContain('NHIS access')
+    expect(mocks.invokeTierAccess).not.toHaveBeenCalled()
   })
 })

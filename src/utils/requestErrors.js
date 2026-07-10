@@ -23,6 +23,10 @@ export const isNetworkRequestError = (error) => {
     text.includes('network error') ||
     text.includes('load failed') ||
     text.includes('unable to reach') ||
+    text.includes('err_name_not_resolved') ||
+    text.includes('err_internet_disconnected') ||
+    text.includes('name_not_resolved') ||
+    text.includes('internet disconnected') ||
     text.includes('aborted') ||
     text.includes('offline') ||
     text.includes('internet')
