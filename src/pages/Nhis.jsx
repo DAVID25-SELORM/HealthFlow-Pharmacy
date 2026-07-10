@@ -2970,7 +2970,23 @@ const Nhis = () => {
         serviceDate: claimForm.serviceDate,
         totalAmount: claimTotal,
       }
-      const generateCcCode = isBranchServerEnabled
+      const cccRoute = isBranchServerEnabled ? 'local_branch' : 'cloud'
+      await tryLogAuditEvent({
+        eventType: 'nhis_claim.ccc_generation',
+        entityType: 'nhis_claims',
+        entityId: editingClaim?.id || claimForm.id || null,
+        action: 'generate_ccc_started',
+        details: {
+          route: cccRoute,
+          card_type: selectedCardType,
+          claim_control_mode: claimControlMode,
+          integration_mode: integrationMode,
+          config_source: resolvedNhiaSettings?.configSource || resolvedNhiaSettings?.source || '',
+          user_id: user?.id || '',
+          role,
+        },
+      })
+      const generateCcCode = cccRoute === 'local_branch'
         ? generateBranchNhiaCcCode
         : generateHostedNhiaCcCode
       const result = await generateCcCode(claimContext)
@@ -3000,6 +3016,21 @@ const Nhis = () => {
         { ...prev, cccNo: ccCode, ccCode },
         memberDetails || null
       ))
+      await tryLogAuditEvent({
+        eventType: 'nhis_claim.ccc_generation',
+        entityType: 'nhis_claims',
+        entityId: editingClaim?.id || claimForm.id || null,
+        action: 'generate_ccc_succeeded',
+        details: {
+          route: cccRoute,
+          card_type: selectedCardType,
+          source: result.source || '',
+          claim_control_mode: claimControlMode,
+          integration_mode: integrationMode,
+          user_id: user?.id || '',
+          role,
+        },
+      })
       notify(
         result.source === 'claimit_bridge'
           ? 'CCC/CC code returned by CLAIM-it.'
@@ -3009,6 +3040,21 @@ const Nhis = () => {
         'success'
       )
     } catch (err) {
+      await tryLogAuditEvent({
+        eventType: 'nhis_claim.ccc_generation',
+        entityType: 'nhis_claims',
+        entityId: editingClaim?.id || claimForm.id || null,
+        action: 'generate_ccc_failed',
+        details: {
+          route: isBranchServerEnabled ? 'local_branch' : 'cloud',
+          card_type: selectedCardType,
+          claim_control_mode: claimControlMode,
+          integration_mode: integrationMode,
+          message: getErrorMessage(err),
+          user_id: user?.id || '',
+          role,
+        },
+      })
       notify(
         getNhiaMemberFeedbackMessage(err.message, 'Unable to generate CCC/CC code.'),
         'error'
@@ -3903,7 +3949,7 @@ const Nhis = () => {
       await tryLogAuditEvent({
         eventType: 'nhis_claim.scrub_batch',
         entityType: 'nhis_claims',
-        entityId: '',
+        entityId: null,
         action: 'scrub_all_claims',
         details: {
           result: 'passed',
@@ -3930,7 +3976,7 @@ const Nhis = () => {
       await tryLogAuditEvent({
         eventType: 'nhis_claim.scrub_batch',
         entityType: 'nhis_claims',
-        entityId: '',
+        entityId: null,
         action: 'scrub_all_claims',
         details: {
           result: 'failed',
@@ -4009,7 +4055,7 @@ const Nhis = () => {
         await tryLogAuditEvent({
           eventType: 'nhis_claim.scrub_warning_override',
           entityType: 'nhis_claims',
-          entityId: '',
+          entityId: null,
           action: 'override_warnings_for_export',
           details: {
             reason: overrideReason,

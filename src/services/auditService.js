@@ -25,6 +25,50 @@ const isMissingAuditOrganizationColumnError = (error) => {
   return code === '42703' || code === 'PGRST204' || message.includes('organization_id')
 }
 
+export const uuidOrNull = (value) => {
+  if (value === undefined || value === null) {
+    return null
+  }
+
+  const normalized = String(value).trim()
+  if (!normalized) {
+    return null
+  }
+
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalized)
+    ? normalized
+    : null
+}
+
+const AUDIT_UUID_DETAIL_KEYS = new Set([
+  'user_id',
+  'organization_id',
+  'branch_id',
+  'claim_id',
+  'patient_id',
+  'encounter_id',
+  'prescription_id',
+])
+
+const sanitizeAuditDetails = (details) => {
+  if (!details || typeof details !== 'object' || Array.isArray(details)) {
+    return details || {}
+  }
+
+  return Object.fromEntries(
+    Object.entries(details).map(([key, value]) => [
+      key,
+      AUDIT_UUID_DETAIL_KEYS.has(key) ? uuidOrNull(value) : value,
+    ])
+  )
+}
+
+const debugAuditPayload = (payload) => {
+  if (import.meta.env.DEV) {
+    console.log('Audit payload', payload)
+  }
+}
+
 const getCurrentUserOrganizationId = async (userId) => {
   if (!userId) {
     return null
@@ -52,21 +96,24 @@ const insertAuditEventDirectly = async ({
   organizationId = null,
 }) => {
   const user = await getCurrentSupabaseUser()
+  const safeEntityId = uuidOrNull(entityId)
+  const safeOrganizationId = uuidOrNull(organizationId)
+  const safeDetails = sanitizeAuditDetails(details)
 
   const row = {
-    actor_user_id: user?.id || null,
+    actor_user_id: uuidOrNull(user?.id),
     actor_email: user?.email || null,
     event_type: eventType,
     entity_type: entityType,
-    entity_id: entityId || null,
+    entity_id: safeEntityId,
     action,
-    details: details || {},
+    details: safeDetails,
   }
 
-  const scopedRow = organizationId ? { ...row, organization_id: organizationId } : row
+  const scopedRow = safeOrganizationId ? { ...row, organization_id: safeOrganizationId } : row
   let { error } = await supabase.from('audit_logs').insert(scopedRow)
 
-  if (error && organizationId && isMissingAuditOrganizationColumnError(error)) {
+  if (error && safeOrganizationId && isMissingAuditOrganizationColumnError(error)) {
     const retryResult = await supabase.from('audit_logs').insert(row)
     error = retryResult.error
   }
@@ -77,21 +124,32 @@ const insertAuditEventDirectly = async ({
 }
 
 export const logAuditEvent = async ({ eventType, entityType, entityId, action, details = {} }) => {
-  const enrichedDetails = withActiveRole(details)
+  const safeEntityId = uuidOrNull(entityId)
+  const enrichedDetails = sanitizeAuditDetails(withActiveRole(details))
   const currentUser = await getCurrentSupabaseUser()
-  const organizationId = await getCurrentUserOrganizationId(currentUser?.id)
-  const { error } = await supabase.rpc('log_audit_event', {
+  const organizationId = uuidOrNull(await getCurrentUserOrganizationId(currentUser?.id))
+  const payload = {
     p_event_type: eventType,
     p_entity_type: entityType,
-    p_entity_id: entityId,
+    p_entity_id: safeEntityId,
     p_action: action,
     p_details: enrichedDetails,
     p_organization_id: organizationId,
-  })
+  }
+  debugAuditPayload(payload)
+
+  const { error } = await supabase.rpc('log_audit_event', payload)
 
   if (error) {
     if (isMissingRpcFunctionError(error)) {
-      await insertAuditEventDirectly({ eventType, entityType, entityId, action, details: enrichedDetails, organizationId })
+      await insertAuditEventDirectly({
+        eventType,
+        entityType,
+        entityId: safeEntityId,
+        action,
+        details: enrichedDetails,
+        organizationId,
+      })
       return
     }
 
