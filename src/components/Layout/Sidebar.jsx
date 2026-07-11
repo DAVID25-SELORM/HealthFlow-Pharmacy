@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom'
+import { Link, NavLink } from 'react-router-dom'
 import {
   X,
   Home,
@@ -124,6 +124,9 @@ const Sidebar = ({ isOpen, onClose }) => {
       <div className="sidebar-footer">
         <p>{facilityName}</p>
         <p className="developer">{organization?.organization_type || 'Facility'} workspace</p>
+        <Link className="sidebar-terms-link" to="/terms" onClick={onClose}>
+          Terms and Conditions
+        </Link>
         <a
           className="sidebar-powered-by"
           href="https://neondigitaltechnologies.com"

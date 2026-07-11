@@ -33,6 +33,7 @@ const Settings = lazy(() => import('./pages/Settings'))
 const TenantAdmin = lazy(() => import('./pages/TenantAdmin'))
 const Login = lazy(() => import('./pages/Login'))
 const Signup = lazy(() => import('./pages/Signup'))
+const Terms = lazy(() => import('./pages/Terms'))
 const ActivityLog = lazy(() => import('./pages/ActivityLog'))
 const SystemHealth = lazy(() => import('./pages/SystemHealth'))
 const Diagnostics = lazy(() => import('./pages/Diagnostics'))
@@ -74,6 +75,7 @@ function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
+          <Route path="/terms" element={<Terms />} />
           <Route path="/shop" element={<CustomerEPharmacy />} />
           <Route
             path="/"

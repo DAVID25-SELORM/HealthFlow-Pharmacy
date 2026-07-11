@@ -296,6 +296,9 @@ const Login = () => {
             </Link>
           </div>
         )}
+        <p className="login-terms-note">
+          By signing in, you agree to the <Link to="/terms">HealthFlow Terms and Conditions</Link>.
+        </p>
         <p className="powered-by">
           Powered by{' '}
           <a href="https://neondigitaltechnologies.com" target="_blank" rel="noreferrer">

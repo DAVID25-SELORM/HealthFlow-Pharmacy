@@ -206,6 +206,24 @@
   line-height: 1.35;
 }
 
+.login-terms-note {
+  margin: 1rem 0 0;
+  color: var(--gray-600);
+  font-size: 0.74rem;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.login-terms-note a {
+  color: var(--primary-dark);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.login-terms-note a:hover {
+  text-decoration: underline;
+}
+
 .powered-by {
   margin: 1.1rem 0 0;
   color: var(--gray-500);
