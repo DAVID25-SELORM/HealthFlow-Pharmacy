@@ -26,6 +26,9 @@ const HEALTH_BACKOFF_BASE_MS = 30 * 1000
 const HEALTH_BACKOFF_MAX_MS = 5 * 60 * 1000
 const AUTH_WARN_MS = 2500
 const REST_WARN_MS = 3000
+const AUTH_DNS_BACKOFF_THRESHOLD = 3
+const AUTH_DNS_BACKOFF_BASE_MS = 60 * 1000
+const AUTH_DNS_BACKOFF_MAX_MS = 30 * 60 * 1000
 
 let cachedHealth = null
 let cachedHealthKey = ''
@@ -38,6 +41,12 @@ let pollTimer = null
 let pollRunning = false
 let pollAbortController = null
 let pollOptions = null
+let pollStartedAt = null
+let recoveryListenersAttached = false
+let authHealthConsecutiveDnsFailures = 0
+let authHealthLastSuccessAt = null
+let authHealthLastDnsFailureAt = null
+let authHealthNextAllowedAt = 0
 const pollSubscribers = new Set()
 
 const getSupabaseKey = () =>
@@ -50,6 +59,102 @@ const formatError = (error) =>
 
 const isBrowserOffline = () =>
   typeof navigator !== 'undefined' && navigator.onLine === false
+
+const getBrowserDiagnostics = () => {
+  const connection = typeof navigator !== 'undefined'
+    ? navigator.connection || navigator.mozConnection || navigator.webkitConnection
+    : null
+
+  return {
+    online: typeof navigator === 'undefined' ? true : navigator.onLine !== false,
+    visibility: typeof document === 'undefined' ? 'unknown' : document.visibilityState || 'unknown',
+    connection: connection
+      ? {
+          effectiveType: connection.effectiveType || '',
+          downlink: connection.downlink ?? null,
+          rtt: connection.rtt ?? null,
+          saveData: Boolean(connection.saveData),
+        }
+      : null,
+  }
+}
+
+const getAuthHealthDiagnostics = (healthUrl = '') => ({
+  healthUrl,
+  ...getBrowserDiagnostics(),
+  lastSuccess: authHealthLastSuccessAt,
+  lastDnsFailure: authHealthLastDnsFailureAt,
+  consecutiveDnsFailures: authHealthConsecutiveDnsFailures,
+  nextRetryAt: authHealthNextAllowedAt ? new Date(authHealthNextAllowedAt).toISOString() : null,
+})
+
+const logAuthHealthProbe = (diagnostics) => {
+  if (import.meta.env.DEV || import.meta.env.VITE_HEALTHFLOW_AUTH_HEALTH_DEBUG === 'true') {
+    console.log({
+      healthUrl: diagnostics.healthUrl,
+      online: diagnostics.online,
+      visibility: diagnostics.visibility,
+      lastSuccess: diagnostics.lastSuccess,
+      consecutiveFailures: diagnostics.consecutiveDnsFailures,
+    })
+  }
+}
+
+const isDnsResolutionError = (error) => {
+  const message = String(error?.message || error || '').toLowerCase()
+  const name = String(error?.name || '').toLowerCase()
+  return (
+    message.includes('err_name_not_resolved') ||
+    message.includes('name_not_resolved') ||
+    message.includes('dns') ||
+    message.includes('getaddrinfo') ||
+    name.includes('dns')
+  )
+}
+
+const getAuthDnsBackoffMs = () =>
+  Math.min(
+    AUTH_DNS_BACKOFF_BASE_MS * (2 ** Math.max(0, authHealthConsecutiveDnsFailures - AUTH_DNS_BACKOFF_THRESHOLD)),
+    AUTH_DNS_BACKOFF_MAX_MS
+  )
+
+const resetAuthHealthDnsBackoff = () => {
+  authHealthConsecutiveDnsFailures = 0
+  authHealthLastDnsFailureAt = null
+  authHealthNextAllowedAt = 0
+}
+
+const handleHealthNetworkRecovery = () => {
+  if (isBrowserOffline()) return
+  authHealthNextAllowedAt = 0
+  if (pollTimer && !pollRunning) {
+    void runSystemHealthPoll()
+  }
+}
+
+const handleHealthVisibilityChange = () => {
+  if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+    handleHealthNetworkRecovery()
+  }
+}
+
+const attachRecoveryListeners = () => {
+  if (recoveryListenersAttached || typeof window === 'undefined') return
+  window.addEventListener('online', handleHealthNetworkRecovery)
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', handleHealthVisibilityChange)
+  }
+  recoveryListenersAttached = true
+}
+
+const detachRecoveryListeners = () => {
+  if (!recoveryListenersAttached || typeof window === 'undefined') return
+  window.removeEventListener('online', handleHealthNetworkRecovery)
+  if (typeof document !== 'undefined') {
+    document.removeEventListener('visibilitychange', handleHealthVisibilityChange)
+  }
+  recoveryListenersAttached = false
+}
 
 const createNetworkCheck = () =>
   isBrowserOffline()
@@ -105,9 +210,10 @@ const failFromError = (label, summary, error) => {
   })
 }
 
-const warningSignalFromError = (label, summary, error) => {
+const warningSignalFromError = (label, summary, error, details = {}) => {
   const networkError = normalizeHealthError(error)
   return warningFailureSignal(label, {
+    ...details,
     summary: isNetworkRequestError(error) ? 'Network unavailable' : summary,
     detail: formatError(networkError),
   })
@@ -221,16 +327,29 @@ const checkSupabase = async () => {
 const checkSupabaseAuthEndpoint = async (options = {}) => {
   const supabaseUrl = getConfiguredCloudUrl()
   const supabaseKey = getSupabaseKey()
+  const healthUrl = supabaseUrl ? `${supabaseUrl}/auth/v1/health` : ''
+  const diagnostics = getAuthHealthDiagnostics(healthUrl)
+  logAuthHealthProbe(diagnostics)
+
   if (!supabaseUrl || !supabaseKey) {
     return warningFailureSignal('HealthFlow sign-in service', {
       summary: 'Not configured',
       detail: 'The app is missing HealthFlow Cloud sign-in settings.',
+      diagnostics,
+    })
+  }
+
+  if (authHealthNextAllowedAt && Date.now() < authHealthNextAllowedAt) {
+    return warningFailureSignal('HealthFlow sign-in service', {
+      summary: 'DNS backoff',
+      detail: `The sign-in health probe is paused after repeated DNS failures. Authenticated HealthFlow requests can continue; next probe is scheduled at ${new Date(authHealthNextAllowedAt).toLocaleTimeString()}.`,
+      diagnostics: getAuthHealthDiagnostics(healthUrl),
     })
   }
 
   try {
     const { response, durationMs } = await timedFetch(
-      `${supabaseUrl}/auth/v1/health`,
+      healthUrl,
       {
         headers: { apikey: supabaseKey },
         signal: options.signal,
@@ -242,11 +361,34 @@ const checkSupabaseAuthEndpoint = async (options = {}) => {
       throw new Error(`HTTP ${response.status}${text ? `: ${text.slice(0, 120)}` : ''}`)
     }
 
+    authHealthLastSuccessAt = new Date().toISOString()
+    resetAuthHealthDnsBackoff()
     return latencyCheck('HealthFlow sign-in service', durationMs, AUTH_WARN_MS, {
       detailPrefix: 'Sign-in service responded',
+      diagnostics: getAuthHealthDiagnostics(healthUrl),
     })
   } catch (error) {
-    return warningSignalFromError('HealthFlow sign-in service', 'Sign-in check failed', error)
+    if (isDnsResolutionError(error)) {
+      authHealthConsecutiveDnsFailures += 1
+      authHealthLastDnsFailureAt = new Date().toISOString()
+      if (authHealthConsecutiveDnsFailures >= AUTH_DNS_BACKOFF_THRESHOLD) {
+        authHealthNextAllowedAt = Date.now() + getAuthDnsBackoffMs()
+      }
+
+      return warningFailureSignal('HealthFlow sign-in service', {
+        summary: 'DNS lookup failed',
+        detail: formatError(normalizeHealthError(error)),
+        errorKind: 'dns',
+        diagnostics: getAuthHealthDiagnostics(healthUrl),
+      })
+    }
+
+    return warningSignalFromError(
+      'HealthFlow sign-in service',
+      'Sign-in check failed',
+      error,
+      { diagnostics: getAuthHealthDiagnostics(healthUrl) }
+    )
   }
 }
 
@@ -550,6 +692,9 @@ export const resetSystemHealthCache = () => {
   healthInFlightKey = ''
   failureCount = 0
   nextAllowedCheckAt = 0
+  pollStartedAt = null
+  resetAuthHealthDnsBackoff()
+  authHealthLastSuccessAt = null
 }
 
 const emitPolledHealth = (health) => {
@@ -575,6 +720,8 @@ const stopSystemHealthPolling = () => {
 
   pollRunning = false
   pollOptions = null
+  pollStartedAt = null
+  detachRecoveryListeners()
   setPollingStatus({
     active: false,
     subscriberCount: pollSubscribers.size,
@@ -601,8 +748,10 @@ const runSystemHealthPoll = async () => {
     active: true,
     intervalMs: HEALTH_CACHE_MS,
     subscriberCount: pollSubscribers.size,
+    startedAt: pollStartedAt,
     lastStartedAt: new Date().toISOString(),
     lastStatus: 'running',
+    authHealth: getAuthHealthDiagnostics(getConfiguredCloudUrl() ? `${getConfiguredCloudUrl()}/auth/v1/health` : ''),
   })
 
   try {
@@ -641,6 +790,8 @@ const runSystemHealthPoll = async () => {
       active: Boolean(pollTimer),
       intervalMs: HEALTH_CACHE_MS,
       subscriberCount: pollSubscribers.size,
+      startedAt: pollStartedAt,
+      authHealth: getAuthHealthDiagnostics(getConfiguredCloudUrl() ? `${getConfiguredCloudUrl()}/auth/v1/health` : ''),
     })
   }
 }
@@ -659,6 +810,8 @@ export const subscribeSystemHealthPolling = (subscriber, options = {}) => {
     active: Boolean(pollTimer),
     intervalMs: HEALTH_CACHE_MS,
     subscriberCount: pollSubscribers.size,
+    startedAt: pollStartedAt,
+    authHealth: getAuthHealthDiagnostics(getConfiguredCloudUrl() ? `${getConfiguredCloudUrl()}/auth/v1/health` : ''),
   })
 
   if (cachedHealth) {
@@ -670,10 +823,13 @@ export const subscribeSystemHealthPolling = (subscriber, options = {}) => {
     pollTimer = window.setInterval(() => {
       void runSystemHealthPoll()
     }, HEALTH_CACHE_MS)
+    pollStartedAt = new Date().toISOString()
+    attachRecoveryListeners()
     setPollingStatus({
       active: true,
       intervalMs: HEALTH_CACHE_MS,
       subscriberCount: pollSubscribers.size,
+      startedAt: pollStartedAt,
     })
   }
 

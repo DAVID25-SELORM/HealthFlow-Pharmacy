@@ -49,7 +49,7 @@ vi.mock('../utils/activeRole', () => ({
   getStoredActiveRole: vi.fn(() => ''),
 }))
 
-import { getSystemHealth, resetSystemHealthCache } from './systemHealthService'
+import { getSystemHealth, resetSystemHealthCache, subscribeSystemHealthPolling } from './systemHealthService'
 import { getStoredActiveRole } from '../utils/activeRole'
 
 describe('getSystemHealth', () => {
@@ -196,7 +196,12 @@ describe('getSystemHealth', () => {
     expect(authCheck).toMatchObject({
       status: 'warn',
       countsAsFailureSignal: true,
-      summary: 'Network unavailable',
+      summary: 'DNS lookup failed',
+      errorKind: 'dns',
+    })
+    expect(authCheck.diagnostics).toMatchObject({
+      consecutiveDnsFailures: 1,
+      online: true,
     })
     expect(health.status).toBe('warn')
     expect(mocks.getCurrentSupabaseUser).toHaveBeenCalled()
@@ -228,9 +233,57 @@ describe('getSystemHealth', () => {
     expect(health.checks.find((check) => check.label === 'HealthFlow sign-in service')).toMatchObject({
       status: 'warn',
       countsAsFailureSignal: true,
+      errorKind: 'dns',
     })
     expect(health.checks.find((check) => check.label === 'Reports and Edge Function')).toMatchObject({
       status: 'fail',
     })
+  })
+
+  it('backs off the auth health probe after repeated DNS failures while other checks continue', async () => {
+    fetch
+      .mockRejectedValueOnce(new TypeError('ERR_NAME_NOT_RESOLVED'))
+      .mockRejectedValueOnce(new TypeError('ERR_NAME_NOT_RESOLVED'))
+      .mockRejectedValueOnce(new TypeError('ERR_NAME_NOT_RESOLVED'))
+
+    await getSystemHealth({ force: true })
+    await getSystemHealth({ force: true })
+    const third = await getSystemHealth({ force: true })
+    const fourth = await getSystemHealth({ force: true })
+
+    expect(fetch).toHaveBeenCalledTimes(3)
+    expect(third.checks.find((check) => check.label === 'HealthFlow sign-in service')).toMatchObject({
+      summary: 'DNS lookup failed',
+      diagnostics: expect.objectContaining({
+        consecutiveDnsFailures: 3,
+      }),
+    })
+    expect(fourth.checks.find((check) => check.label === 'HealthFlow sign-in service')).toMatchObject({
+      summary: 'DNS backoff',
+      diagnostics: expect.objectContaining({
+        consecutiveDnsFailures: 3,
+      }),
+    })
+    expect(mocks.getCurrentSupabaseUser).toHaveBeenCalledTimes(4)
+    expect(fourth.status).toBe('warn')
+  })
+
+  it('uses one polling interval for multiple subscribers', () => {
+    const setIntervalSpy = vi.spyOn(window, 'setInterval')
+    const clearIntervalSpy = vi.spyOn(window, 'clearInterval')
+
+    const unsubscribeA = subscribeSystemHealthPolling(() => {}, { activeRole: 'admin' })
+    const unsubscribeB = subscribeSystemHealthPolling(() => {}, { activeRole: 'admin' })
+
+    expect(setIntervalSpy).toHaveBeenCalledTimes(1)
+
+    unsubscribeA()
+    expect(clearIntervalSpy).not.toHaveBeenCalled()
+
+    unsubscribeB()
+    expect(clearIntervalSpy).toHaveBeenCalledTimes(1)
+
+    setIntervalSpy.mockRestore()
+    clearIntervalSpy.mockRestore()
   })
 })
