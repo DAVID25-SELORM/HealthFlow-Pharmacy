@@ -1085,6 +1085,9 @@ const Nhis = () => {
   const claimsPageCacheRef = useRef(new Map())
   const claimsTableRef = useRef(null)
   const claimsFilterKeyRef = useRef('')
+  const patientIndexLoadPromiseRef = useRef(null)
+  const patientIndexLoadedRef = useRef(false)
+  const inventoryDrugsLoadPromiseRef = useRef(null)
 
   // ── import modal ──────────────────────────────────────────────
   const [importRows, setImportRows]     = useState([])
@@ -1289,6 +1292,25 @@ const Nhis = () => {
   }, [getClaimServerFilters, organizationType])
 
   // ── load data ────────────────────────────────────────────────
+  const ensurePatientIndexLoaded = useCallback(async () => {
+    if (patientIndexLoadedRef.current) return []
+    if (!patientIndexLoadPromiseRef.current) {
+      patientIndexLoadPromiseRef.current = getAllPatients()
+        .catch((patientLoadError) => {
+          console.warn('[NHIS] Patient index could not be preloaded.', patientLoadError)
+          return []
+        })
+        .finally(() => {
+          patientIndexLoadPromiseRef.current = null
+        })
+    }
+
+    const loadedPatients = await patientIndexLoadPromiseRef.current
+    setPatients(loadedPatients || [])
+    patientIndexLoadedRef.current = true
+    return loadedPatients || []
+  }, [])
+
   const loadAll = useCallback(async () => {
     if (!isSupabaseConfigured()) {
       setError('HealthFlow Cloud is not configured.')
@@ -1298,7 +1320,7 @@ const Nhis = () => {
     try {
       setLoading(true)
       setError('')
-      const [drugsData, statsData, rulesData, tariffData, inventoryData] = await Promise.all([
+      const [drugsData, statsData, rulesData, tariffData] = await Promise.all([
         getAllNhisDrugs(),
         getNhisClaimStats(),
         getAllNhisClinicalRules(),
@@ -1306,7 +1328,6 @@ const Nhis = () => {
           facilityGroup: activeTariffFacilityGroup,
           cateringOption: activeTariffCateringOption,
         }),
-        getAllDrugs({ includeCatalog: true, useTierAccess: true }).catch(() => []),
       ])
 
       let readyDrugsData = drugsData
@@ -1335,19 +1356,13 @@ const Nhis = () => {
       setStats(statsData)
       setClinicalRules(rulesData)
       setNhiaTariffItems(tariffData)
-      setInventoryDrugs(inventoryData)
-      void getAllPatients()
-        .then(setPatients)
-        .catch((patientLoadError) => {
-          console.warn('[NHIS] Patient index could not be preloaded.', patientLoadError)
-          setPatients([])
-        })
+      void ensurePatientIndexLoaded()
     } catch (err) {
       setError(err.message || 'Unable to load NHIS data.')
     } finally {
       setLoading(false)
     }
-  }, [canWrite, notify, organization?.can_use_nhis, isHospital, activeTariffFacilityGroup, activeTariffCateringOption])
+  }, [canWrite, notify, organization?.can_use_nhis, isHospital, activeTariffFacilityGroup, activeTariffCateringOption, ensurePatientIndexLoaded])
 
   const refreshClaimsOverview = useCallback(async () => {
     if (!isSupabaseConfigured()) {
@@ -1365,6 +1380,24 @@ const Nhis = () => {
       setError(err.message || 'Unable to refresh NHIS claims.')
     }
   }, [claimsPage, loadClaimIssueCounts, loadClaimsPage])
+
+  const ensureInventoryDrugsLoaded = useCallback(async () => {
+    if (inventoryDrugs.length > 0) return inventoryDrugs
+    if (!inventoryDrugsLoadPromiseRef.current) {
+      inventoryDrugsLoadPromiseRef.current = getAllDrugs({ includeCatalog: true, useTierAccess: true })
+        .catch((inventoryLoadError) => {
+          console.warn('[NHIS] Inventory catalog could not be preloaded.', inventoryLoadError)
+          return []
+        })
+        .finally(() => {
+          inventoryDrugsLoadPromiseRef.current = null
+        })
+    }
+
+    const loadedInventoryDrugs = await inventoryDrugsLoadPromiseRef.current
+    setInventoryDrugs(loadedInventoryDrugs || [])
+    return loadedInventoryDrugs || []
+  }, [inventoryDrugs])
 
   const hydrateClaimForAction = useCallback(async (claim) => {
     if (!claim?._summaryOnly) return claim
@@ -2166,12 +2199,14 @@ const Nhis = () => {
   const openNewClaimModal = () => {
     resetClaimModal()
     setShowNewClaimModal(true)
+    void ensureInventoryDrugsLoaded()
   }
 
   const openNewClaimForPatient = (patient) => {
     resetClaimModal()
     selectPatient(patient)
     setShowNewClaimModal(true)
+    void ensureInventoryDrugsLoaded()
   }
 
   const closeClaimModal = () => {
@@ -2222,6 +2257,7 @@ const Nhis = () => {
   }
 
   const openEditClaim = async (selectedClaim) => {
+    void ensureInventoryDrugsLoaded()
     const canOpenForMcaServing = isMedicineCounterAssistant && canMcaOpenNhisClaimForServing(selectedClaim)
     if (!canOpenForMcaServing && !canEditNhisClaimAnytime && selectedClaim.status !== 'served') {
       notify('Only served NHIS claims can be edited before submission/export.', 'warning')
