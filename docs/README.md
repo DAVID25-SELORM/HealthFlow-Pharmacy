@@ -4,7 +4,7 @@
 
 - [Complete user manual](USER_MANUAL.md)
 - [HealthFlow services](SERVICES.md)
-- [NHIS MCA and Claims Officer manual](client-manual/NHIS-MCA-Claims-Officer-User-Manual.md)
+- [NHIS Dispensary and Claims Officer manual](client-manual/NHIS-MCA-Claims-Officer-User-Manual.md)
 - [1 July 2026 release notes](RELEASE_NOTES_2026-07-01.md)
 - [Seven-day production review](SEVEN_DAY_PRODUCTION_REVIEW_2026-07-01.md)
 - [Deployment and readiness](DEPLOYMENT.md)

@@ -1003,7 +1003,7 @@ app.put('/api/nhis/claims/:id/medicines', requireBranchUserSession, (request, re
       })
       return
     }
-    // MCA (assistant) may only add/remove medications within the edit window
+    // Dispensary users may only add/remove medications within the edit window
     // (24h from creation, or a 12h supervisor re-open). Other roles are
     // unaffected. CC code, submission, and validation logic are not touched.
     if (role === 'assistant' && !isMcaEditWindowOpen(existing)) {
@@ -1054,18 +1054,18 @@ app.delete('/api/nhis/claims/:id', requireBranchUserSession, (request, response,
   }
 })
 
-// Admin / claims officer re-opens the MCA medication edit window for 12 hours.
+// Admin / claims officer re-opens the dispensary medication edit window for 12 hours.
 // Requires a reason. Does not change CC code, submission, or validation logic.
 app.post('/api/nhis/claims/:id/reopen-mca-edit', requireBranchUserSession, (request, response, next) => {
   try {
     const role = String(request.branchUser?.role || '').trim().toLowerCase()
     if (!canReopenMcaEditWindow(role)) {
-      response.status(403).json({ error: 'Only an admin or claims officer can re-open the MCA edit window.' })
+      response.status(403).json({ error: 'Only an admin or claims officer can re-open the dispensary correction window.' })
       return
     }
     const reason = String(request.body?.reason || '').trim()
     if (!reason) {
-      response.status(400).json({ error: 'A reason is required to re-open the MCA edit window.' })
+      response.status(400).json({ error: 'A reason is required to re-open the dispensary correction window.' })
       return
     }
     const existing = getOfflineRecord('nhis_claims', request.params.id)

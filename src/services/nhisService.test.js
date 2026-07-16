@@ -2821,7 +2821,7 @@ describe('NHIS claim save attachment behavior', () => {
     )
   })
 
-  it('uses the medicines-only branch route for an MCA save', async () => {
+  it('uses the medicines-only branch route for a dispensary save', async () => {
     updateBranchNhisClaimMedicines.mockResolvedValueOnce({
       id: 'claim-1',
       status: 'served',
@@ -2856,7 +2856,7 @@ describe('NHIS claim save attachment behavior', () => {
     expect(updateBranchRecord).not.toHaveBeenCalled()
   })
 
-  it('does not block MCA medicine saves on claim-completion or prescription-direction fields', async () => {
+  it('does not block dispensary medicine saves on claim-completion or prescription-direction fields', async () => {
     updateBranchNhisClaimMedicines.mockResolvedValueOnce({
       id: 'claim-1',
       status: 'served',

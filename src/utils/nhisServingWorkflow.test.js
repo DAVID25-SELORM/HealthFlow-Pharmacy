@@ -8,31 +8,31 @@ import {
 } from './nhisServingWorkflow'
 
 describe('NHIS serving workflow status transitions', () => {
-  it('does not finalize claims that are still awaiting MCA serving', () => {
+  it('does not finalize claims that are still awaiting dispensary serving', () => {
     expect(shouldFinalizeNhisServingReview('pending_serving')).toBe(false)
     expect(shouldFinalizeNhisServingReview('serving_in_progress')).toBe(false)
   })
 
-  it('finalizes only claims returned from MCA serving for claims officer review', () => {
+  it('finalizes only claims returned from dispensary serving for claims officer review', () => {
     expect(shouldFinalizeNhisServingReview('returned_for_review')).toBe(true)
     expect(shouldFinalizeNhisServingReview('partially_served')).toBe(true)
     expect(shouldFinalizeNhisServingReview('fully_served')).toBe(true)
   })
 
-  it('allows MCA users to open claims that are in the serving workflow', () => {
+  it('allows dispensary users to open claims that are in the serving workflow', () => {
     expect(canMcaOpenNhisClaimForServing('pending_serving')).toBe(true)
     expect(canMcaOpenNhisClaimForServing('serving_in_progress')).toBe(true)
     expect(canMcaOpenNhisClaimForServing('returned_for_review')).toBe(true)
     expect(canMcaOpenNhisClaimForServing('served')).toBe(true)
   })
 
-  it('does not allow MCA users to open completed submission states for serving', () => {
+  it('does not allow dispensary users to open completed submission states for serving', () => {
     expect(canMcaOpenNhisClaimForServing('submitted')).toBe(false)
     expect(canMcaOpenNhisClaimForServing('paid')).toBe(false)
     expect(canMcaOpenNhisClaimForServing('rejected')).toBe(false)
   })
 
-  it('keeps claims served directly by a Claims Officer out of the MCA workflow', () => {
+  it('keeps claims served directly by a Claims Officer out of the dispensary workflow', () => {
     const directClaim = {
       status: 'served',
       direct_served_at: '2026-07-01T12:00:00.000Z',
@@ -43,14 +43,14 @@ describe('NHIS serving workflow status transitions', () => {
     expect(canMcaOpenNhisClaimForServing({ status: 'served' })).toBe(true)
   })
 
-  it('applies the MCA edit window only to served claims', () => {
+  it('applies the dispensary edit window only to served claims', () => {
     expect(shouldApplyMcaEditWindowToClaim('pending_serving')).toBe(false)
     expect(shouldApplyMcaEditWindowToClaim('serving_in_progress')).toBe(false)
     expect(shouldApplyMcaEditWindowToClaim('returned_for_review')).toBe(false)
     expect(shouldApplyMcaEditWindowToClaim('served')).toBe(true)
   })
 
-  it('keeps MCA serving blockers separate from claims officer prescription completion', () => {
+  it('keeps dispensary serving blockers separate from claims officer prescription completion', () => {
     const split = splitMcaReadinessIssues({
       blockers: [
         'Medicine 1: dose is required.',
@@ -59,7 +59,7 @@ describe('NHIS serving workflow status transitions', () => {
         'Medicine 1: exact dispensed quantity must be greater than zero.',
       ],
       warnings: [
-        'Medicine 1: waiting for MCA served quantity.',
+        'Medicine 1: waiting for dispensary served quantity.',
         'Medicine 1: Level not configured.',
         'Prescriber name or ID is missing from the prescription.',
       ],
@@ -74,7 +74,7 @@ describe('NHIS serving workflow status transitions', () => {
       'Medicine 1: duration is required.',
     ])
     expect(split.medicineWarnings).toEqual([
-      'Medicine 1: waiting for MCA served quantity.',
+      'Medicine 1: waiting for dispensary served quantity.',
       'Medicine 1: Level not configured.',
     ])
     expect(split.claimCompletionWarnings).toEqual([
@@ -83,7 +83,7 @@ describe('NHIS serving workflow status transitions', () => {
     expect(split.canSaveMedicines).toBe(false)
   })
 
-  it('does not block MCA medicine saving for missing prescription directions alone', () => {
+  it('does not block dispensary medicine saving for missing prescription directions alone', () => {
     const split = splitMcaReadinessIssues({
       blockers: [
         'Medicine 1: dose is required.',

@@ -2,7 +2,7 @@ export const ROLE_OPTIONS = [
   { value: 'admin', label: 'Administrator' },
   { value: 'pharmacist', label: 'Pharmacist' },
   { value: 'technician', label: 'Pharmacy Technician' },
-  { value: 'assistant', label: 'Medicine Counter Assistant' },
+  { value: 'assistant', label: 'Dispensary Assistant' },
   { value: 'cashier', label: 'Cashier' },
   { value: 'inventory_officer', label: 'Inventory Officer' },
   { value: 'claims_officer', label: 'Claims Officer' },

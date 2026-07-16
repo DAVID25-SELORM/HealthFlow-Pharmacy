@@ -2,7 +2,7 @@
 
 **Version:** 1.1  
 **Updated:** 1 July 2026  
-**Audience:** Facility administrators, pharmacists, claims officers, MCA staff,
+**Audience:** Facility administrators, pharmacists, claims officers, dispensary staff,
 cashiers, inventory staff, accounting staff, and supervisors.
 
 ## Review before consequential actions
@@ -66,7 +66,7 @@ fast.
 Claims Officers have three distinct actions:
 
 1. **Save Details** saves a draft without sending it to the dispensary.
-2. **Send to Dispensary** sends the same claim to MCA/dispensary staff.
+2. **Send to Dispensary** sends the same claim to dispensary staff.
 3. **Serve Directly** marks all entered medicine quantities fully served and
    moves the claim directly to **Served / Claim Ready**. It is available to
    authorized Claims Officers in both pharmacies and hospitals.
@@ -91,24 +91,24 @@ submission, even though it is not mandatory for initial saving or dispatch.
 - Available to an authorized Claims Officer or administrator.
 - Requires at least one medicine with a positive prescribed quantity.
 - Does not check, add, or deduct inventory stock.
-- Does not wait for MCA input and does not appear as MCA work.
+- Does not wait for dispensary input and does not appear as dispensary work.
 - Is recorded once with the staff member and timestamp.
 - Claims Officer/admin may reopen the claim for corrections.
 - Final submission remains blocked until mandatory patient, prescriber,
   authorization, attachment, and other readiness requirements are complete.
 
-### Dispensary/MCA serving
+### Dispensary serving
 
-MCA opens **Pending Serving** claims, records the actual served quantity and
+Dispensary opens **Pending Serving** claims, records the actual served quantity and
 status for each medicine, and saves the work for Claims Officer review. Partial,
-unavailable, and not-served lines require the appropriate reason. MCA cannot
+unavailable, and not-served lines require the appropriate reason. Dispensary cannot
 change claims already served directly by a Claims Officer.
 
 ### Existing claims
 
 Existing claims retain their current status and data. Only claims using **Serve
 Directly** receive the direct-serving marker. Ordinary pending claims continue
-through MCA; ordinary previously served claims retain the existing review/edit
+through dispensary; ordinary previously served claims retain the existing review/edit
 window.
 
 ## 6. NHIS corrections, attachments, and deletion
@@ -179,8 +179,8 @@ single-use **Connect This Computer** bundle.
 | Situation | Action |
 | --- | --- |
 | Incomplete Intake | Reopen the same claim and complete missing information. |
-| Pending Serving | MCA/dispensary has not completed serving. |
-| Directly served claim appears to MCA | Refresh after deployment; report if it remains editable. |
+| Pending Serving | dispensary has not completed serving. |
+| Directly served claim appears to dispensary | Refresh after deployment; report if it remains editable. |
 | Claim cannot be submitted | Resolve the readiness blockers, especially the pharmacy prescription attachment. |
 | Browser says free up space | Free device/browser storage; this is a machine storage warning. |
 | Offline login is locked | Wait 15 minutes or ask an administrator to reset/revoke access. |

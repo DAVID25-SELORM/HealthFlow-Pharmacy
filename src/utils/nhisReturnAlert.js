@@ -138,10 +138,10 @@ const getPreviousVisitSummary = (claim = {}) => {
   return {
     previousVisitIsPendingServing: isPendingServing,
     previousVisitMessage: isPendingServing
-      ? 'This patient already has an NHIS claim awaiting MCA serving within the alert window.'
+      ? 'This patient already has an NHIS claim awaiting dispensary serving within the alert window.'
       : '',
     previousMedicineHeading: isPendingServing
-      ? 'Prescribed medicines awaiting MCA'
+      ? 'Prescribed medicines awaiting dispensary'
       : 'Medicines served',
     previousMedicineEmptyMessage: isPendingServing
       ? 'No prescribed medicines recorded on the pending claim.'

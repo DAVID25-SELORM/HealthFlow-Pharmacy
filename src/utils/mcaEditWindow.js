@@ -1,4 +1,4 @@
-// Pure helpers for the MCA (Medicine Counter Assistant) medication edit window.
+// Pure helpers for the dispensary medication edit window.
 // Mirrors local-branch-server/src/mcaEditWindow.js. The server is the source of
 // truth and enforces this; the frontend uses it only to show/hide controls and
 // give early feedback. Touches no CC-code, submission, or validation logic.

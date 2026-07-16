@@ -973,7 +973,7 @@ export const updateBranchNhisClaimMedicines = async (id, payload) => {
   return response.data
 }
 
-// Admin / claims officer re-opens the MCA medication edit window for 12 hours.
+// Admin / claims officer re-opens the dispensary medication edit window for 12 hours.
 export const reopenBranchMcaEditWindow = async (id, reason) => {
   const response = await branchFetch(`/api/nhis/claims/${encodeURIComponent(id)}/reopen-mca-edit`, {
     method: 'POST',

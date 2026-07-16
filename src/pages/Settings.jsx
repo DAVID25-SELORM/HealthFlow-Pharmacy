@@ -492,7 +492,7 @@ const STAFF_PRIVILEGE_OPTIONS = [
 const NHIS_RETURN_ALERT_ROLE_OPTIONS = [
   ['admin', 'Admin'],
   ['claims_officer', 'Claims Officer'],
-  ['assistant', 'MCA'],
+  ['assistant', 'Dispensary Assistant'],
 ]
 
 const formatStaffLastLogin = (value) => value ? formatAppDateTime(value) : 'Never signed in'

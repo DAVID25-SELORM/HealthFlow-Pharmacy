@@ -1,4 +1,4 @@
--- Align the cloud NHIS claim status constraint with the Claims Officer -> MCA
+-- Align the cloud NHIS claim status constraint with the Claims Officer -> dispensary
 -- serving workflow used by the application.
 
 alter table if exists public.nhis_claims

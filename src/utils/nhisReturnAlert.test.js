@@ -65,7 +65,7 @@ describe('NHIS patient return alert', () => {
     expect(alert.repeatedMedicines).toHaveLength(1)
   })
 
-  it('describes pending MCA claims as prescribed medicines awaiting serving', () => {
+  it('describes pending dispensary claims as prescribed medicines awaiting serving', () => {
     const alert = findNhisPatientReturnAlert({
       currentPatient: { hin: 'HIN-1' },
       currentMedicines: [{ drugCode: 'AMOX500', description: 'Amoxicillin', dispensedQty: 5 }],
@@ -89,11 +89,11 @@ describe('NHIS patient return alert', () => {
 
     expect(alert).toMatchObject({
       previousVisitIsPendingServing: true,
-      previousMedicineHeading: 'Prescribed medicines awaiting MCA',
+      previousMedicineHeading: 'Prescribed medicines awaiting dispensary',
       previousMedicineEmptyMessage: 'No prescribed medicines recorded on the pending claim.',
       previousUserLabel: 'Created by',
     })
-    expect(alert.previousVisitMessage).toContain('awaiting MCA serving')
+    expect(alert.previousVisitMessage).toContain('awaiting dispensary serving')
     expect(alert.previousMedicines[0]).toMatchObject({
       name: 'Paracetamol Tablet',
       prescribedQuantity: 30,

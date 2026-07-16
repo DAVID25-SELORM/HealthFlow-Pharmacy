@@ -7,8 +7,9 @@ It runs on a facility laptop or a small branch computer on the local network. Th
 HealthFlow is the master platform. Dispensing, claims, NHIS, inventory, tariffs, and branch server workflows are modules under the same platform.
 
 NHIS direct serving is a claims-status operation only. It does not check or
-deduct local/cloud inventory and bypasses MCA after the Claims Officer serves
-the claim. Claims explicitly sent to the dispensary continue through MCA.
+deduct local/cloud inventory and bypasses the dispensary queue after the
+Claims Officer serves the claim. Claims explicitly sent to the dispensary
+continue through the dispensary workflow.
 
 ## First supported slice
 

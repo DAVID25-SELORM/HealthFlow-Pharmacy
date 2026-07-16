@@ -1,7 +1,7 @@
 export const ROLE_LABELS = {
   admin: 'Administrator',
   pharmacist: 'Pharmacist',
-  assistant: 'Medicine Counter Assistant',
+  assistant: 'Dispensary Assistant',
   technician: 'Pharmacy Technician',
   cashier: 'Cashier',
   inventory_officer: 'Inventory Officer',

@@ -2304,7 +2304,7 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
       if (!(prescribedQuantity > 0)) blockers.push(`${label}: prescribed quantity must be greater than zero.`)
       if (!isAuditOnlyUnservedLine && !(quantity > 0)) {
         const message = servingStatus === 'pending'
-          ? `${label}: waiting for MCA served quantity.`
+          ? `${label}: waiting for dispensary served quantity.`
           : `${label}: exact dispensed quantity must be greater than zero.`
         if (options.finalSubmission || normalizeText(claimData?.status).toLowerCase() === 'served') {
           blockers.push(message)

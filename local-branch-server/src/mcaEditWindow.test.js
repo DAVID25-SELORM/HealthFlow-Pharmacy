@@ -10,7 +10,7 @@ import {
 const H = 60 * 60 * 1000
 const now = Date.parse('2026-06-14T12:00:00.000Z')
 
-describe('MCA edit window', () => {
+describe('dispensary edit window', () => {
   it('is open within 24h of creation', () => {
     const claim = { created_at: new Date(now - 1 * H).toISOString() }
     expect(isMcaEditWindowOpen(claim, now)).toBe(true)

@@ -68,7 +68,7 @@ describe('NHIS dispensary intake workflow', () => {
     })).toBe(true)
   })
 
-  it('permits incomplete claims-staff saves without weakening MCA or final review checks', () => {
+  it('permits incomplete claims-staff saves without weakening dispensary or final review checks', () => {
     expect(canSaveNhisIncompleteIntake({ isEditing: false, blockerCount: 5 })).toBe(true)
     expect(canSaveNhisIncompleteIntake({
       isEditing: true,

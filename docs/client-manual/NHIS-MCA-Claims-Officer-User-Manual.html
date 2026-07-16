@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>HealthFlow NHIS Manual - MCA and Claims Officer</title>
+  <title>HealthFlow NHIS Manual - Dispensary and Claims Officer</title>
   <style>
     :root {
       --ink: #18302c;
@@ -302,16 +302,16 @@
       <div>
         <img class="cover-logo" src="../../public/app-logo.png" alt="HealthFlow Pharmacy">
         <h1>NHIS User Manual</h1>
-        <p class="lead">Medicine Counter Assistant and Claims Officer workflow guide for HealthFlow facilities.</p>
+        <p class="lead">Dispensary Assistant and Claims Officer workflow guide for HealthFlow facilities.</p>
         <div class="cover-meta">
           <div class="meta-card"><span>Prepared for</span><strong>HealthFlow Clients</strong></div>
           <div class="meta-card"><span>Module</span><strong>NHIS Claims</strong></div>
-          <div class="meta-card"><span>Audience</span><strong>MCA and Claims Officer</strong></div>
+          <div class="meta-card"><span>Audience</span><strong>Dispensary and Claims Officer</strong></div>
           <div class="meta-card"><span>Version</span><strong>1 July 2026</strong></div>
         </div>
       </div>
       <div class="callout">
-        <strong>Core rule:</strong> Claims Officer may save details, send to MCA, or serve directly. MCA serves only claims sent to the dispensary.
+        <strong>Core rule:</strong> Claims Officer may save details, send to dispensary, or serve directly. dispensary serves only claims sent to the dispensary.
       </div>
       <p class="powered-brand">Powered by Neon Digital Technologies | neondigitaltechnologies.com</p>
     </section>
@@ -325,7 +325,7 @@
         <div class="step-card">
           <h3>Assigned Roles</h3>
           <p>Assigned roles are the main work modes a staff member can switch between.</p>
-          <span class="badge">Medicine Counter Assistant</span>
+          <span class="badge">Dispensary Assistant</span>
           <span class="badge">Claims Officer</span>
           <span class="badge">Administrator</span>
           <p>If a staff member has more than one role, they choose the active role from the top bar.</p>
@@ -345,20 +345,20 @@
       </div>
 
       <div class="callout warning">
-        <strong>Important:</strong> If a staff member is in MCA mode, MCA restrictions still apply. To perform Claims Officer work, the staff member must be assigned the Claims Officer role and switch to that role.
+        <strong>Important:</strong> If a staff member is in dispensary mode, dispensary restrictions still apply. To perform Claims Officer work, the staff member must be assigned the Claims Officer role and switch to that role.
       </div>
 
       <h3>Example</h3>
-      <p>Sarah can be assigned both <b>Medicine Counter Assistant</b> and <b>Claims Officer</b>. When Sarah works as MCA, she serves medicines only. When Sarah switches to Claims Officer, she can prepare and review claims.</p>
+      <p>Sarah can be assigned both <b>Dispensary Assistant</b> and <b>Claims Officer</b>. When Sarah works as dispensary, she serves medicines only. When Sarah switches to Claims Officer, she can prepare and review claims.</p>
 
       <table>
         <thead>
           <tr><th>Access Type</th><th>What It Controls</th><th>Example</th></tr>
         </thead>
         <tbody>
-          <tr><td>Assigned Role</td><td>The staff member's active work mode</td><td>MCA, Claims Officer</td></tr>
+          <tr><td>Assigned Role</td><td>The staff member's active work mode</td><td>dispensary, Claims Officer</td></tr>
           <tr><td>Additional Privilege</td><td>Extra access granted by admin</td><td>Purchases, refunds, NHIS deletion</td></tr>
-          <tr><td>Active Role</td><td>The role currently selected in the top bar</td><td>MCA mode or Claims Officer mode</td></tr>
+          <tr><td>Active Role</td><td>The role currently selected in the top bar</td><td>dispensary mode or Claims Officer mode</td></tr>
         </tbody>
       </table>
 
@@ -416,20 +416,20 @@
       <h3>5. Choose the Next Action</h3>
       <ul>
         <li><b>Save Details:</b> save a draft without sending it.</li>
-        <li><b>Send to Dispensary:</b> create Pending Serving work for MCA.</li>
+        <li><b>Send to Dispensary:</b> create Pending Serving work for dispensary.</li>
         <li><b>Serve Directly:</b> mark all entered quantities fully served and move directly to Served / Claim Ready.</li>
       </ul>
 
       <div class="callout warning">
-        Direct serving does not check or deduct inventory and does not wait for MCA. Pharmacy submission still requires the prescription attachment and all mandatory claim details.
+        Direct serving does not check or deduct inventory and does not wait for dispensary. Pharmacy submission still requires the prescription attachment and all mandatory claim details.
       </div>
 
       <div class="footer"><span>Powered by Neon Digital Technologies</span><span>Claims Officer Workflow</span></div>
     </section>
 
     <section class="page">
-      <div class="page-header"><strong>HealthFlow NHIS</strong><span>MCA Workflow</span></div>
-      <h2>MCA: Serve Medicines</h2>
+      <div class="page-header"><strong>HealthFlow NHIS</strong><span>Dispensary Workflow</span></div>
+      <h2>Dispensary: Serve Medicines</h2>
 
       <div class="flow">
         <div class="flow-box">Open pending claim</div>
@@ -440,11 +440,11 @@
       </div>
 
       <h3>1. Open Pending Serving Claims</h3>
-      <p>Claims served directly by a Claims Officer are excluded from MCA work and cannot be edited in MCA mode.</p>
+      <p>Claims served directly by a Claims Officer are excluded from dispensary work and cannot be edited in dispensary mode.</p>
       <p>Go to <span class="mono">NHIS > Claims</span> and open a claim with status <span class="mono">Pending Serving</span>.</p>
 
       <h3>2. Review Prescribed Medicines</h3>
-      <p>The MCA sees the medicines entered by the Claims Officer. MCA should not freely add new medicines unless the facility policy allows it.</p>
+      <p>The dispensary assistant sees the medicines entered by the Claims Officer. Dispensary should not freely add new medicines unless the facility policy allows it.</p>
 
       <h3>3. Enter Actual Served Quantity</h3>
       <p>For each medicine, click the serve/edit button and enter the quantity actually given to the patient.</p>
@@ -465,7 +465,7 @@
       <p>Click <span class="mono">Save Medicines</span>. The claim is returned to the Claims Officer for review.</p>
 
       <div class="callout">
-        <strong>Quantity rule:</strong> The Claims Officer's requested quantity stays as prescribed quantity. MCA records served quantity separately.
+        <strong>Quantity rule:</strong> The Claims Officer's requested quantity stays as prescribed quantity. dispensary records served quantity separately.
       </div>
 
       <table>
@@ -480,15 +480,15 @@
         </tbody>
       </table>
 
-      <div class="footer"><span>Powered by Neon Digital Technologies</span><span>MCA Workflow</span></div>
+      <div class="footer"><span>Powered by Neon Digital Technologies</span><span>Dispensary Workflow</span></div>
     </section>
 
     <section class="page">
       <div class="page-header"><strong>HealthFlow NHIS</strong><span>Review and Alerts</span></div>
       <h2>Claims Officer Review and Safety Alerts</h2>
 
-      <h3>After MCA Serving</h3>
-      <p>The Claims Officer reviews the claim after MCA saves medicines.</p>
+      <h3>After Dispensary Serving</h3>
+      <p>The Claims Officer reviews the claim after dispensary saves medicines.</p>
       <ul class="checklist">
         <li>Compare prescribed quantity against served quantity</li>
         <li>Check reasons for partial or not served medicines</li>
@@ -535,7 +535,7 @@
 
       <div class="grid">
         <div class="summary-card">
-          <span>MCA can</span>
+          <span>Dispensary can</span>
           <strong>Serve medicines</strong>
           <ul>
             <li>Open pending serving claims</li>
@@ -545,7 +545,7 @@
           </ul>
         </div>
         <div class="summary-card">
-          <span>MCA cannot</span>
+          <span>Dispensary cannot</span>
           <strong>Finalize NHIS claims</strong>
           <ul>
             <li>Generate or change CC code</li>
@@ -566,7 +566,7 @@
             <li>Enter requested medicines</li>
             <li>Save incomplete details without dispatch</li>
             <li>Send to Dispensary</li>
-            <li>Serve directly without inventory changes or MCA input</li>
+            <li>Serve directly without inventory changes or dispensary input</li>
             <li>Review served medicines</li>
           </ul>
         </div>
@@ -588,17 +588,17 @@
           <tr><th>Situation</th><th>Meaning</th><th>What to Do</th></tr>
         </thead>
         <tbody>
-          <tr><td>Pending Serving</td><td>Claim is waiting for MCA</td><td>MCA should open and serve medicines</td></tr>
-          <tr><td>Served Directly</td><td>Claims Officer completed serving</td><td>Do not send to MCA; complete remaining attachment/details before submission</td></tr>
-          <tr><td>Returned for Review</td><td>MCA has saved serving details</td><td>Claims Officer should review and finalize</td></tr>
-          <tr><td>Claim total is zero</td><td>No served quantity recorded</td><td>MCA should enter served quantity</td></tr>
-          <tr><td>MCA cannot save</td><td>Serving data is incomplete</td><td>Check served quantity, status, and reason</td></tr>
+          <tr><td>Pending Serving</td><td>Claim is waiting for dispensary</td><td>Dispensary should open and serve medicines</td></tr>
+          <tr><td>Served Directly</td><td>Claims Officer completed serving</td><td>Do not send to dispensary; complete remaining attachment/details before submission</td></tr>
+          <tr><td>Returned for Review</td><td>dispensary has saved serving details</td><td>Claims Officer should review and finalize</td></tr>
+          <tr><td>Claim total is zero</td><td>No served quantity recorded</td><td>Dispensary should enter served quantity</td></tr>
+          <tr><td>Dispensary cannot save</td><td>Serving data is incomplete</td><td>Check served quantity, status, and reason</td></tr>
           <tr><td>Claims Officer cannot finalize</td><td>Required claim details are incomplete</td><td>Complete prescriber, patient, served, or attachment requirements</td></tr>
         </tbody>
       </table>
 
       <div class="callout">
-        <strong>Best practice:</strong> Claims Officer chooses Save Details, Send to Dispensary, or Serve Directly. MCA records serving only for dispatched claims. Admin controls roles and sensitive privileges.
+        <strong>Best practice:</strong> Claims Officer chooses Save Details, Send to Dispensary, or Serve Directly. dispensary records serving only for dispatched claims. Admin controls roles and sensitive privileges.
       </div>
 
       <div class="footer"><span>Powered by Neon Digital Technologies</span><span>neondigitaltechnologies.com</span></div>

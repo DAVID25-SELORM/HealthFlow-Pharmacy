@@ -1,4 +1,4 @@
--- Adds the Claims Officer -> MCA serving workflow metadata without changing
+-- Adds the Claims Officer -> dispensary serving workflow metadata without changing
 -- the existing claimable dispensed_qty contract.
 
 alter table if exists public.nhis_claims

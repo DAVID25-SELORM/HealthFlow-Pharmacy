@@ -1,5 +1,5 @@
 -- A claim served directly by a Claims Officer is complete at the dispensary
--- stage. MCA users must not reopen or replace its medicine-serving records.
+-- stage. Dispensary users must not reopen or replace its medicine-serving records.
 -- Claims Officers and administrators retain their existing correction access.
 
 create or replace function public.prevent_mca_changes_to_direct_nhis_serving()
@@ -33,7 +33,7 @@ begin
   where id = auth.uid();
 
   if lower(coalesce(v_actor_role, '')) = 'assistant' then
-    raise exception 'This claim was served directly by the Claims Officer and does not require MCA input.';
+    raise exception 'This claim was served directly by the Claims Officer and does not require dispensary input.';
   end if;
 
   if tg_op = 'DELETE' then
@@ -54,4 +54,4 @@ execute function public.prevent_mca_changes_to_direct_nhis_serving();
 revoke all on function public.prevent_mca_changes_to_direct_nhis_serving() from public;
 
 comment on function public.prevent_mca_changes_to_direct_nhis_serving() is
-  'Prevents MCA users from modifying medicines on claims already served directly by Claims Officers.';
+  'Prevents dispensary users from modifying medicines on claims already served directly by Claims Officers.';

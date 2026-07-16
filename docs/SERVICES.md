@@ -24,7 +24,7 @@ branch, with role-based access and audit controls.
 - General insurance claims and receivables
 - NHIS member lookup, CCC/CC support, patient records, medicine claims,
   attachments, audit history, and CLAIM-it/CXF workflows
-- Separate Claims Officer and MCA workflow
+- Separate Claims Officer and dispensary workflow
 - Draft saving, dispensary dispatch, or Claims Officer direct serving
 - Pharmacy-level medicine restrictions and hospital G-DRG/tariff services,
   including an explicitly labelled temporary 617-item master-price fallback

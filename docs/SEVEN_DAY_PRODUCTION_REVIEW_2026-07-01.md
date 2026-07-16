@@ -13,7 +13,7 @@ Reviewed 69 commits covering:
 - facility offline PIN, TLS, workstation enrollment, and signed updates;
 - hospital tariff deployment;
 - NHIS date-of-birth correction, incomplete intake, attachment enforcement,
-  draft/dispatch/direct serving, Recycle Bin, and MCA bypass; and
+  draft/dispatch/direct serving, Recycle Bin, and dispensary bypass; and
 - current user, service, deployment, security, backup, and troubleshooting
   documentation.
 
@@ -45,8 +45,8 @@ Reviewed 69 commits covering:
 ## Final operational behavior
 
 - **Save Details** keeps an NHIS draft.
-- **Send to Dispensary** creates MCA work.
-- **Serve Directly** completes the serving stage without MCA or inventory.
+- **Send to Dispensary** creates dispensary work.
+- **Serve Directly** completes the serving stage without dispensary or inventory.
 - Pharmacy submission still requires the prescription attachment and mandatory
   claim details.
 - Deleted inventory items and NHIS claims are recoverable by administrators.

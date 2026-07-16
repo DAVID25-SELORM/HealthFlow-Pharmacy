@@ -2234,11 +2234,11 @@ const Nhis = () => {
     }
 
     if (isMedicineCounterAssistant && isNhisClaimDirectlyServed(claim)) {
-      notify('This claim was served directly by the Claims Officer and does not require MCA input.', 'warning')
+      notify('This claim was served directly by the Claims Officer and does not require dispensary input.', 'warning')
       return false
     }
 
-    // MCA medication edits are limited to the 24h window (or a 12h supervisor
+    // Dispensary medication edits are limited to the 24h window (or a 12h supervisor
     // re-open). The branch server also enforces this; this is early feedback.
     if (isMedicineCounterAssistant && shouldApplyMcaEditWindowToClaim(claim.status) && !isMcaEditWindowOpen(claim)) {
       notify('The 24-hour edit window for this claim has closed. Ask an admin or claims officer to re-open it.', 'warning')
@@ -2449,7 +2449,7 @@ const Nhis = () => {
       return
     }
     if (isMedicineCounterAssistant && editingMedicineIndex === null) {
-      notify('MCA users can only serve medicines entered by the Claims Officer.', 'warning')
+      notify('Dispensary users can only serve medicines entered by the Claims Officer.', 'warning')
       return
     }
     const currentMedicine = editingMedicineIndex === null ? null : claimMedicines[editingMedicineIndex]
@@ -2927,7 +2927,7 @@ const Nhis = () => {
 
   const handleGenerateCcCode = async () => {
     if (!canEditNhisPatientDetails) {
-      notify('Medicine Counter Assistants cannot generate or change NHIA CC codes.', 'error')
+      notify('Dispensary assistants cannot generate or change NHIA CC codes.', 'error')
       return
     }
     if (!canGenerateNhiaCcCode) {
@@ -3628,26 +3628,26 @@ const Nhis = () => {
     }
   }
 
-  // Admin / claims officer re-opens the MCA medication edit window for 12 hours.
+  // Admin / claims officer re-opens the dispensary medication edit window for 12 hours.
   const canReopenMca = canReopenMcaEditWindow(normalizedRole)
   const handleReopenMcaEdit = async (claim) => {
     if (!canReopenMca) {
-      notify('Only an admin or claims officer can re-open the MCA edit window.', 'warning')
+      notify('Only an admin or claims officer can re-open the dispensary correction window.', 'warning')
       return
     }
-    const reason = window.prompt(`Re-open the MCA medication edit window for claim ${claim.claim_number} (12 hours)?\nEnter a reason:`)
+    const reason = window.prompt(`Re-open the dispensary correction window for claim ${claim.claim_number} (12 hours)?\nEnter a reason:`)
     if (reason === null) return
     if (!reason.trim()) {
-      notify('A reason is required to re-open the MCA edit window.', 'warning')
+      notify('A reason is required to re-open the dispensary correction window.', 'warning')
       return
     }
     try {
       setUpdatingStatus(claim.id)
       await reopenBranchMcaEditWindow(claim.id, reason.trim())
       await refreshClaimsOverview()
-      notify(`MCA edit window re-opened for ${claim.claim_number} (12 hours).`, 'success')
+      notify(`Dispensary correction window re-opened for ${claim.claim_number} (12 hours).`, 'success')
     } catch (err) {
-      notify(err.message || 'Unable to re-open the MCA edit window.', 'error')
+      notify(err.message || 'Unable to re-open the dispensary correction window.', 'error')
     } finally {
       setUpdatingStatus(null)
     }
@@ -4649,7 +4649,7 @@ const Nhis = () => {
                         {canReopenMca && c.status === 'served' && !isNhisClaimDirectlyServed(c) && !isMcaEditWindowOpen(c) && (
                           <button
                             className="action-btn action-btn--edit"
-                            title="Re-open MCA edit window (12 hours)"
+                            title="Re-open dispensary correction window (12 hours)"
                             disabled={isClaimBusy(c.id)}
                             onClick={() => handleReopenMcaEdit(c)}
                           >
@@ -5847,7 +5847,7 @@ const Nhis = () => {
                           <span className="nhia-readiness-label">
                             Claim completion needed ({mcaReadiness.claimCompletionBlockers.length + mcaReadiness.claimCompletionWarnings.length})
                           </span>
-                          <p>These do not stop MCA medicine saving. Claims officer/admin must complete them before correction, export, or submission.</p>
+                          <p>These do not stop dispensary medicine saving. Claims officer/admin must complete them before correction, export, or submission.</p>
                           <ul className="nhia-readiness-info-list">
                             {[...mcaReadiness.claimCompletionBlockers, ...mcaReadiness.claimCompletionWarnings].map((issue) => (
                               <li key={issue}>{issue}</li>
@@ -6091,7 +6091,7 @@ const Nhis = () => {
                 <strong>What happens next</strong>
                 <p>
                   {claimActionReview.intent === 'serve_directly'
-                    ? 'All entered quantities will be recorded as served. MCA review is bypassed and HealthFlow inventory stock is not added or deducted. Final NHIS submission remains blocked until mandatory information is complete.'
+                    ? 'All entered quantities will be recorded as served. Dispensary review is bypassed and HealthFlow inventory stock is not added or deducted. Final NHIS submission remains blocked until mandatory information is complete.'
                     : 'The dispensary receives this same claim record. Missing details may be added later, but the claim cannot be finalized or submitted until it is complete.'}
                 </p>
               </div>

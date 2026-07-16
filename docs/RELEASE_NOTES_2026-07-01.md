@@ -8,9 +8,9 @@
 - Claims Officers can save details, send to dispensary, or serve directly.
 - Incomplete intakes can be dispatched and completed later on the same claim.
 - Pharmacy claims require a prescription attachment before final submission.
-- Direct serving bypasses MCA, marks all entered quantities served, and does not
+- Direct serving bypasses the dispensary queue, marks all entered quantities served, and does not
   depend on or modify inventory.
-- Database safeguards prevent MCA changes to directly served claims.
+- Database safeguards prevent dispensary changes to directly served claims.
 - Date-of-birth entry no longer resets to a default date.
 - Long NHIS lists include bottom pagination controls.
 - Patient history now loads medicine lines on demand for sales, general

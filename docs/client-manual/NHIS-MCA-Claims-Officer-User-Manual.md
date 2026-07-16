@@ -1,16 +1,16 @@
 # HealthFlow NHIS User Manual
 
-## MCA and Claims Officer Workflow
+## Dispensary and Claims Officer Workflow
 
-This manual explains how Medicine Counter Assistants (MCA) and Claims Officers should use the NHIS module in HealthFlow.
+This manual explains how Dispensary Assistants and Claims Officers should use the NHIS module in HealthFlow.
 
 ## Key Principle
 
 HealthFlow supports two controlled serving paths:
 
 - Claims Officer enters and prepares the NHIS claim, then either sends it to
-  MCA/dispensary or serves it directly.
-- MCA serves medicines only when the claim is sent to the dispensary.
+  dispensary or serves it directly.
+- dispensary serves medicines only when the claim is sent to the dispensary.
 
 The claim value is based on the quantity actually served. Direct serving marks
 the entered prescribed quantities served immediately and does not use inventory.
@@ -25,7 +25,7 @@ Assigned roles are the main work modes a staff member can switch between.
 
 Examples:
 
-- Medicine Counter Assistant
+- Dispensary Assistant
 - Claims Officer
 - Administrator
 
@@ -35,10 +35,10 @@ Example:
 
 Sarah can have:
 
-- Medicine Counter Assistant
+- Dispensary Assistant
 - Claims Officer
 
-If Sarah is in MCA mode, MCA restrictions apply. If Sarah switches to Claims Officer mode, Claims Officer actions become available.
+If Sarah is in dispensary mode, dispensary restrictions apply. If Sarah switches to Claims Officer mode, Claims Officer actions become available.
 
 Where to assign multiple staff roles:
 
@@ -65,7 +65,7 @@ Important:
 - Use Assigned Roles for job mode switching.
 - Use Additional Privileges for extra access.
 - Do not give NHIS deletion or purchase approval unless the staff member is trusted to perform those actions.
-- A staff member in MCA mode should not get full Claims Officer behavior just because they have a claims privilege. Assign the Claims Officer role if they must perform Claims Officer work.
+- A staff member in dispensary mode should not get full Claims Officer behavior just because they have a claims privilege. Assign the Claims Officer role if they must perform Claims Officer work.
 
 ## Claims Officer Workflow
 
@@ -136,7 +136,7 @@ The Claims Officer can see the requested cost before sending to the dispensary.
 The Claims Officer has three actions:
 
 - **Save Details** — saves a draft without sending it.
-- **Send to Dispensary** — sends the same claim to MCA as **Pending Serving**.
+- **Send to Dispensary** — sends the same claim to dispensary as **Pending Serving**.
 - **Serve Directly** — marks all entered medicine quantities fully served and
   moves the claim directly to **Served / Claim Ready**.
 
@@ -148,13 +148,13 @@ pharmacy claim cannot be finally submitted without its prescription attachment.
 
 - Direct serving requires at least one medicine with a positive quantity.
 - It does not check, add, or deduct HealthFlow stock.
-- It does not wait for MCA and is not shown as MCA work.
+- It does not wait for dispensary and is not shown as dispensary work.
 - It is auditable and cannot be performed twice.
 - Claims Officer/admin can reopen it for corrections.
 - Submission remains blocked until all mandatory claim details and the
   prescription attachment are complete.
 
-## MCA Workflow
+## Dispensary Workflow
 
 ### 1. Open NHIS
 
@@ -164,26 +164,26 @@ Go to:
 NHIS > Claims
 ```
 
-MCA should focus on claims with status:
+Dispensary should focus on claims with status:
 
 ```text
 Pending Serving
 ```
 
-Claims already served directly by a Claims Officer are excluded from MCA work
-and cannot be edited in MCA mode.
+Claims already served directly by a Claims Officer are excluded from dispensary work
+and cannot be edited in dispensary mode.
 
 ### 2. Open a Claim
 
 Click the edit/serve button on the pending claim.
 
-The MCA will see the medicines entered by the Claims Officer.
+The Dispensary will see the medicines entered by the Claims Officer.
 
 ### 3. Serve Medicines
 
-For each medicine, MCA should click the medicine edit/serve button and enter what was actually served.
+For each medicine, Dispensary should click the medicine edit/serve button and enter what was actually served.
 
-MCA can mark each medicine as:
+Dispensary can mark each medicine as:
 
 - Fully Served
 - Partially Served
@@ -194,7 +194,7 @@ MCA can mark each medicine as:
 
 The Claims Officer's requested quantity remains as the prescribed quantity.
 
-The MCA enters the served quantity separately.
+The Dispensary enters the served quantity separately.
 
 Example:
 
@@ -232,9 +232,9 @@ Save Medicines
 
 The claim is returned for Claims Officer review.
 
-## Claims Officer Review After MCA Serving
+## Claims Officer Review After Dispensary Serving
 
-After MCA saves medicines, the Claims Officer reviews the claim.
+After dispensary saves medicines, the Claims Officer reviews the claim.
 
 Check:
 
@@ -281,7 +281,7 @@ Use this warning to prevent accidental repeated dispensing.
 
 ## What Each Role Can Do
 
-### MCA Can
+### Dispensary can
 
 - View NHIS claim serving details
 - Serve medicines entered by Claims Officer
@@ -289,7 +289,7 @@ Use this warning to prevent accidental repeated dispensing.
 - Mark medicine as fully served, partially served, not available, or not served
 - Save medicines for Claims Officer review
 
-### MCA Cannot
+### Dispensary cannot
 
 - Generate or change CC code
 - Freely add new NHIS medicines by default
@@ -303,10 +303,10 @@ Use this warning to prevent accidental repeated dispensing.
 - Generate or enter CC code
 - Fill NHIS patient details
 - Enter prescribed/requested medicines
-- Send claim to MCA
+- Send claim to dispensary
 - Save claim details without dispatch
 - Serve entered medicines directly without inventory changes
-- Review MCA served quantities
+- Review dispensary served quantities
 - Approve claim after serving
 - Prepare claim for export/submission
 
@@ -330,17 +330,17 @@ Use this warning to prevent accidental repeated dispensing.
 ### Do
 
 - Claims Officer should enter the prescribed/requested medicines.
-- MCA should enter only the actual served quantity.
+- Dispensary should enter only the actual served quantity.
 - Use partial/not served reasons honestly.
 - Review served quantities before final submission.
 - Keep NHIA credentials at facility level through Settings.
 
 ### Don't
 
-- Do not let MCA work in Claims Officer mode unless assigned and intended.
+- Do not let dispensary work in Claims Officer mode unless assigned and intended.
 - Do not give NHIS deletion to ordinary staff.
-- Do not submit dispensary-routed claims before MCA has served medicines.
-- Do not send a directly served claim back to MCA.
+- Do not submit dispensary-routed claims before dispensary has served medicines.
+- Do not send a directly served claim back to dispensary.
 - Do not delete unserved medicines just to clean up the claim.
 - Do not share admin passwords.
 
@@ -348,23 +348,23 @@ Use this warning to prevent accidental repeated dispensing.
 
 ### Claim Is Pending Serving
 
-This means it is waiting for MCA to serve medicines.
+This means it is waiting for dispensary to serve medicines.
 
 ### Claim Was Served Directly
 
-This means the Claims Officer completed the serving stage. MCA input is neither
+This means the Claims Officer completed the serving stage. dispensary input is neither
 required nor permitted. Complete any remaining claim details or attachment
 before final submission.
 
 ### Claim Is Returned for Review
 
-This means MCA has saved serving details and Claims Officer must review it.
+This means dispensary has saved serving details and Claims Officer must review it.
 
 ### Claim Total Is Zero
 
-Check whether MCA entered served quantity. Requested quantity alone does not create the claim amount.
+Check whether dispensary entered served quantity. Requested quantity alone does not create the claim amount.
 
-### MCA Cannot Save
+### Dispensary cannot Save
 
 Check that:
 
@@ -376,7 +376,7 @@ Check that:
 
 Check that:
 
-- MCA has served at least one medicine, or marked the medicines correctly.
+- dispensary has served at least one medicine, or marked the medicines correctly.
 - Required patient details are complete.
 - Required prescriber details are complete.
 - Required attachments are present where needed.
@@ -384,8 +384,8 @@ Check that:
 ## Best Practice Summary
 
 ```text
-Claims Officer saves, sends to MCA, or serves directly.
-MCA records serving only for claims sent to the dispensary.
+Claims Officer saves, sends to dispensary, or serves directly.
+dispensary records serving only for claims sent to the dispensary.
 Claims Officer reviews and finalizes.
 Admin controls roles and sensitive privileges.
 ```

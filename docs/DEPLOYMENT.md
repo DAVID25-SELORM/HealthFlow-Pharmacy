@@ -28,7 +28,7 @@ For the 1 July 2026 release, explicitly confirm:
 - `20260701150000_harden_recovery_and_direct_serving_actor.sql`
 
 The later migrations intentionally establish the final rule: direct NHIS
-serving bypasses MCA and never checks or changes inventory.
+serving bypasses the dispensary queue and never checks or changes inventory.
 
 Deploy the current `tier-access` function after database migrations:
 
@@ -59,7 +59,7 @@ do not assume the project currently linked on a different workstation.
 - [ ] Review `RATE_LIMIT_*` values for the facility LAN size.
 - [ ] Apply all Recycle Bin and direct-serving migrations.
 - [ ] Test Save Details, Send to Dispensary, and Serve Directly.
-- [ ] Confirm direct serving bypasses MCA and does not alter stock.
+- [ ] Confirm direct serving bypasses the dispensary queue and does not alter stock.
 - [ ] Confirm deleted claims/items can be restored from Recycle Bin.
 - [ ] Confirm TLS status is Ready before enabling multi-computer offline access.
 - [ ] Enroll and test one offline PIN without using a cloud password.
