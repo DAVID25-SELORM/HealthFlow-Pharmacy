@@ -20,6 +20,8 @@ const PATIENT_INSURANCE_ID_UNIQUE_CONSTRAINTS = [
 const PATIENT_INSURANCE_ID_FIELDS = ['insurance_id', 'nhis_member_no', 'nhis_hin']
 
 const NHIS_CLAIM_PATIENT_LOOKUP_LIMIT = 1000
+const PATIENT_TYPEAHEAD_LIMIT = 80
+const NHIS_CLAIM_PATIENT_TYPEAHEAD_LIMIT = 120
 
 const NHIS_CLAIM_PATIENT_SELECT = [
   'id',
@@ -746,8 +748,14 @@ export const updatePatient = async (id, patientData) => {
 export const searchPatients = async (searchTerm) => {
   const term = sanitizeSearchTerm(searchTerm)
   if (await shouldRouteToLocal()) {
-    const localPatients = await listBranchRecords('patients', { searchTerm: term, limit: 100000 })
-    const localNhisClaimPatients = await listLocalNhisClaimPatients({ searchTerm: term, limit: 100000 })
+    const localPatients = await listBranchRecords('patients', {
+      searchTerm: term,
+      limit: PATIENT_TYPEAHEAD_LIMIT,
+    })
+    const localNhisClaimPatients = await listLocalNhisClaimPatients({
+      searchTerm: term,
+      limit: NHIS_CLAIM_PATIENT_TYPEAHEAD_LIMIT,
+    })
     const mergedLocalPatients = mergePatients(localPatients, localNhisClaimPatients)
     if (mergedLocalPatients.length || getConnectivityState().internetAvailable === false) {
       return mergedLocalPatients

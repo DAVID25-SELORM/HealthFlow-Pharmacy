@@ -4969,7 +4969,10 @@ const computeNhisClaimIssueCounts = (claims = [], options = {}) => {
 
 const fetchNhisClaimIssueCountRowsFromSupabase = async (filters = {}) => {
   const pageSize = 1000
-  const maxRows = 100000
+  const requestedMaxRows = Number(filters.issueCountMaxRows || filters.maxRows || 100000)
+  const maxRows = Number.isFinite(requestedMaxRows) && requestedMaxRows > 0
+    ? Math.min(Math.floor(requestedMaxRows), 100000)
+    : 100000
   const rows = []
 
   for (let from = 0; from < maxRows; from += pageSize) {
@@ -4995,11 +4998,15 @@ export const getNhisClaimIssueCounts = async (filters = {}) => {
   const options = {
     organizationType: filters.organizationType || filters.organization_type,
   }
+  const requestedMaxRows = Number(filters.issueCountMaxRows || filters.maxRows || 100000)
+  const maxRows = Number.isFinite(requestedMaxRows) && requestedMaxRows > 0
+    ? Math.min(Math.floor(requestedMaxRows), 100000)
+    : 100000
 
   if (shouldUseBranchServer()) {
     const rows = getConnectivityState().internetAvailable === false
-      ? await listBranchRecords('nhis/claims', { ...filters, limit: 100000 })
-      : await getAllNhisClaims({ ...filters, limit: 100000, includeDetails: false })
+      ? await listBranchRecords('nhis/claims', { ...filters, limit: maxRows })
+      : await getAllNhisClaims({ ...filters, limit: maxRows, includeDetails: false })
     return computeNhisClaimIssueCounts(filterNhisClaimRows(rows || [], filters), options)
   }
 

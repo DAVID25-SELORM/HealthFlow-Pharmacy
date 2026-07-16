@@ -116,6 +116,7 @@ const NHIS_CLAIMS_DEFAULT_PAGE_SIZE = 100
 const NHIS_CLAIMS_PAGE_SIZE_OPTIONS = [50, 100, 200]
 const NHIS_CLAIMS_PAGE_CACHE_MS = 60000
 const NHIS_CLAIMS_SEARCH_DEBOUNCE_MS = 400
+const NHIS_CLAIM_ISSUE_BADGE_SCAN_LIMIT = 3000
 const READINESS_FILTERS = [
   { id: 'all', label: 'All issues' },
   { id: 'attachment', label: 'Attachment problems' },
@@ -1276,6 +1277,7 @@ const Nhis = () => {
       const counts = await getNhisClaimIssueCounts({
         ...getClaimServerFilters(),
         organizationType,
+        issueCountMaxRows: NHIS_CLAIM_ISSUE_BADGE_SCAN_LIMIT,
       })
       setClaimIssueCounts(counts || { all: 0 })
     } catch (countError) {
@@ -1296,9 +1298,8 @@ const Nhis = () => {
     try {
       setLoading(true)
       setError('')
-      const [drugsData, patientsData, statsData, rulesData, tariffData, inventoryData] = await Promise.all([
+      const [drugsData, statsData, rulesData, tariffData, inventoryData] = await Promise.all([
         getAllNhisDrugs(),
-        getAllPatients(),
         getNhisClaimStats(),
         getAllNhisClinicalRules(),
         getAllNhiaTariffItems({
@@ -1331,11 +1332,16 @@ const Nhis = () => {
       }
 
       setNhisDrugs(readyDrugsData)
-      setPatients(patientsData)
       setStats(statsData)
       setClinicalRules(rulesData)
       setNhiaTariffItems(tariffData)
       setInventoryDrugs(inventoryData)
+      void getAllPatients()
+        .then(setPatients)
+        .catch((patientLoadError) => {
+          console.warn('[NHIS] Patient index could not be preloaded.', patientLoadError)
+          setPatients([])
+        })
     } catch (err) {
       setError(err.message || 'Unable to load NHIS data.')
     } finally {
@@ -1353,7 +1359,7 @@ const Nhis = () => {
       const statsData = await getNhisClaimStats()
       claimsPageCacheRef.current.clear()
       await loadClaimsPage(claimsPage, { force: true, refreshTotal: true })
-      await loadClaimIssueCounts()
+      void loadClaimIssueCounts()
       setStats(statsData)
     } catch (err) {
       setError(err.message || 'Unable to refresh NHIS claims.')

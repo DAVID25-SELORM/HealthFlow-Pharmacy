@@ -220,8 +220,8 @@ describe('patientService local sync reads', () => {
       }),
     ])
 
-    expect(listBranchRecords).toHaveBeenCalledWith('patients', { searchTerm: '99441270', limit: 100000 })
-    expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { searchTerm: '99441270', limit: 100000 })
+    expect(listBranchRecords).toHaveBeenCalledWith('patients', { searchTerm: '99441270', limit: 80 })
+    expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { searchTerm: '99441270', limit: 120 })
     expect(invokeTierAccess).toHaveBeenCalledWith({ action: 'get_patients_workspace' })
     expect(fromMock).not.toHaveBeenCalled()
   })
@@ -325,8 +325,8 @@ describe('patientService local sync reads', () => {
 
     await expect(searchPatients('99441270')).resolves.toEqual(localMatches)
 
-    expect(listBranchRecords).toHaveBeenCalledWith('patients', { searchTerm: '99441270', limit: 100000 })
-    expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { searchTerm: '99441270', limit: 100000 })
+    expect(listBranchRecords).toHaveBeenCalledWith('patients', { searchTerm: '99441270', limit: 80 })
+    expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { searchTerm: '99441270', limit: 120 })
     expect(fromMock).not.toHaveBeenCalled()
   })
 
@@ -355,8 +355,8 @@ describe('patientService local sync reads', () => {
       }),
     ])
 
-    expect(listBranchRecords).toHaveBeenCalledWith('patients', { searchTerm: 'GHA-000606820-8', limit: 100000 })
-    expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { searchTerm: 'GHA-000606820-8', limit: 100000 })
+    expect(listBranchRecords).toHaveBeenCalledWith('patients', { searchTerm: 'GHA-000606820-8', limit: 80 })
+    expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { searchTerm: 'GHA-000606820-8', limit: 120 })
     expect(fromMock).not.toHaveBeenCalled()
   })
 
