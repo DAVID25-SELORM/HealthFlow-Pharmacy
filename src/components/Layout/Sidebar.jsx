@@ -133,7 +133,7 @@ const Sidebar = ({ isOpen, onClose }) => {
           target="_blank"
           rel="noreferrer"
         >
-          Powered by Neon Digital Technologies
+          Powered by Daventra Technologies
         </a>
       </div>
     </aside>

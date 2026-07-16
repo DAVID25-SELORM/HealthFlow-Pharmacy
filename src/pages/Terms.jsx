@@ -31,7 +31,7 @@ const sections = [
     body: [
       'HealthFlow helps prepare, validate, export, or submit NHIS and CLAIM-it related data based on the information entered by users and the configuration provided by the facility.',
       'The facility remains responsible for confirming claim accuracy, eligibility, diagnosis, treatment, attachments, tariffs, quantities, prices, credentials, and submission readiness before export or submission.',
-      'HealthFlow and Neon Digital Technologies are not responsible for claim rejection, delayed reimbursement, penalties, audit findings, or losses caused by incorrect facility data, missing attachments, wrong configuration, external system downtime, NHIA/CLAIM-it rule changes, or user action.',
+      'HealthFlow and Daventra Technologies are not responsible for claim rejection, delayed reimbursement, penalties, audit findings, or losses caused by incorrect facility data, missing attachments, wrong configuration, external system downtime, NHIA/CLAIM-it rule changes, or user action.',
     ],
   },
   {
@@ -72,14 +72,14 @@ const sections = [
   {
     title: '10. Limitation of Liability',
     body: [
-      'To the fullest extent permitted by law, HealthFlow and Neon Digital Technologies will not be liable for indirect, incidental, special, consequential, punitive, or business losses, including lost profits, lost revenue, claim rejection, reimbursement delay, data entry mistakes, downtime, or loss of goodwill.',
+      'To the fullest extent permitted by law, HealthFlow and Daventra Technologies will not be liable for indirect, incidental, special, consequential, punitive, or business losses, including lost profits, lost revenue, claim rejection, reimbursement delay, data entry mistakes, downtime, or loss of goodwill.',
       'Where liability cannot legally be excluded, total liability is limited to the amount paid by the facility for HealthFlow services during the three months immediately before the event giving rise to the claim.',
     ],
   },
   {
     title: '11. Indemnity',
     body: [
-      'The facility agrees to indemnify and hold HealthFlow and Neon Digital Technologies harmless from claims, losses, penalties, damages, or expenses arising from user entries, facility configuration, misuse, unauthorized access, regulatory breach, clinical decisions, submitted claims, or violation of these Terms.',
+      'The facility agrees to indemnify and hold HealthFlow and Daventra Technologies harmless from claims, losses, penalties, damages, or expenses arising from user entries, facility configuration, misuse, unauthorized access, regulatory breach, clinical decisions, submitted claims, or violation of these Terms.',
     ],
   },
   {
@@ -92,7 +92,7 @@ const sections = [
   {
     title: '13. Contact',
     body: [
-      'For support or questions, contact Neon Digital Technologies at support@neondigitaltechnologies.com or 0247654381.',
+      'For support or questions, contact Daventra Technologies at support@neondigitaltechnologies.com or 0247654381.',
     ],
   },
 ]
@@ -109,7 +109,7 @@ export default function Terms() {
         <Link to="/login" className="terms-back">Back to sign in</Link>
         <h1>HealthFlow Terms and Conditions</h1>
         <p>
-          Last updated: {LAST_UPDATED}. These terms protect HealthFlow, Neon Digital Technologies,
+          Last updated: {LAST_UPDATED}. These terms protect HealthFlow, Daventra Technologies,
           subscribing facilities, and authorized users by setting clear software-use responsibilities.
         </p>
       </section>

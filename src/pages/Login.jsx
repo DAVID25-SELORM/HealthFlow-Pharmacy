@@ -302,7 +302,7 @@ const Login = () => {
         <p className="powered-by">
           Powered by{' '}
           <a href="https://neondigitaltechnologies.com" target="_blank" rel="noreferrer">
-            Neon Digital Technologies
+            Daventra Technologies
           </a>
         </p>
       </div>

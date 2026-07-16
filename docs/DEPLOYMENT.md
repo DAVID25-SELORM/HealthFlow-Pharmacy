@@ -372,7 +372,7 @@ Before announcing to users:
 
 **Developer**: David Gabion Selorm  
 **Email**: gabiondavidselorm@gmail.com  
-**Company**: Neon Digital Technologies  
+**Company**: Daventra Technologies
 **Website**: https://www.neondigitaltechnologies.com  
 **Business Email**: zittechgh@gmail.com  
 **Phone**: +233247654381

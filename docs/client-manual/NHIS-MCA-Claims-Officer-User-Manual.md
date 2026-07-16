@@ -15,7 +15,7 @@ HealthFlow supports two controlled serving paths:
 The claim value is based on the quantity actually served. Direct serving marks
 the entered prescribed quantities served immediately and does not use inventory.
 
-Powered by Neon Digital Technologies - neondigitaltechnologies.com
+Powered by Daventra Technologies - neondigitaltechnologies.com
 
 ## Roles and Privileges
 
