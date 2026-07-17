@@ -6,26 +6,6 @@
   width: 100%;
 }
 
-.system-health-header {
-  align-items: flex-start;
-  display: flex;
-  gap: 1rem;
-  justify-content: space-between;
-}
-
-.system-health-header h1 {
-  color: var(--gray-900);
-  font-size: 1.85rem;
-  line-height: 1.2;
-  margin: 0;
-}
-
-.system-health-header p {
-  color: var(--gray-600);
-  margin: 0.35rem 0 0;
-  max-width: 720px;
-}
-
 .system-health-refresh {
   align-items: center;
   background: var(--primary);
@@ -105,6 +85,10 @@
   margin: 0.1rem 0;
 }
 
+.system-health-overall strong .hf-status-badge {
+  font-size: 0.82rem;
+}
+
 .system-health-grid {
   display: grid;
   gap: 1rem;
@@ -164,17 +148,8 @@
   margin: 0;
 }
 
-.system-health-empty {
-  background: white;
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow);
-  color: var(--gray-600);
-  padding: 1.25rem;
-  text-align: center;
-}
-
 @media (max-width: 720px) {
-  .system-health-header {
+  .system-health-page .hf-page-header {
     flex-direction: column;
   }
 

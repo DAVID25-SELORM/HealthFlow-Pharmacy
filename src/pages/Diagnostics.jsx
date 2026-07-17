@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Activity, AlertTriangle, Gauge, RefreshCcw, Server } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { DataTable, EmptyState, PageHeader, StatCard, StatusBadge, Toolbar } from '../components/ui'
 import {
   getProductionMetricsSnapshot,
   subscribeProductionMetrics,
@@ -12,14 +13,16 @@ const formatMs = (value) => `${Math.round(Number(value) || 0)} ms`
 const formatPercent = (value) => `${Math.round(Number(value) || 0)}%`
 
 const MetricCard = ({ label, value, detail, icon: Icon = Gauge }) => (
-  <article className="diagnostics-card">
+  <StatCard
+    className="diagnostics-card"
+    label={label}
+    value={value}
+    meta={detail}
+  >
     <div className="diagnostics-card-icon">
       <Icon size={20} />
     </div>
-    <span>{label}</span>
-    <strong>{value}</strong>
-    {detail && <small>{detail}</small>}
-  </article>
+  </StatCard>
 )
 
 export default function Diagnostics() {
@@ -42,27 +45,50 @@ export default function Diagnostics() {
   if (role !== 'super_admin') {
     return (
       <div className="diagnostics-page">
-        <div className="diagnostics-alert">Only Super Admin can view production diagnostics.</div>
+        <EmptyState
+          title="Super Admin access required"
+          description="Only Super Admin can view production diagnostics."
+        />
       </div>
     )
   }
 
+  const historyColumns = [
+    { key: 'label', header: 'Window' },
+    { key: 'averageApiLatencyMs', header: 'Avg Latency', render: (item) => formatMs(item.averageApiLatencyMs) },
+    { key: 'peakConcurrentRequests', header: 'Peak Concurrency' },
+    { key: 'retryCountDelta', header: 'Retry Delta' },
+    { key: 'averageCacheHitRate', header: 'Avg Cache Hit', render: (item) => formatPercent(item.averageCacheHitRate) },
+    { key: 'failedRequestPeak', header: 'Failed Request Peak' },
+    { key: 'pollingAverageMs', header: 'Avg Polling Time', render: (item) => formatMs(item.pollingAverageMs) },
+  ]
+
+  const endpointColumns = [
+    { key: 'action', header: 'Action' },
+    { key: 'averageMs', header: 'Average', render: (item) => formatMs(item.averageMs) },
+    { key: 'maxMs', header: 'Slowest', render: (item) => formatMs(item.maxMs) },
+    { key: 'lastMs', header: 'Last', render: (item) => formatMs(item.lastMs) },
+    { key: 'count', header: 'Calls' },
+    { key: 'failures', header: 'Failures' },
+  ]
+
   return (
     <div className="diagnostics-page">
-      <div className="diagnostics-header">
-        <div>
-          <h1>Production Diagnostics</h1>
-          <p>Live browser-side metrics for API latency, polling, failures, retries, and cache behavior.</p>
-        </div>
-        <button
-          type="button"
-          className="diagnostics-refresh"
-          onClick={() => setMetrics(getProductionMetricsSnapshot())}
-        >
-          <RefreshCcw size={17} />
-          Refresh
-        </button>
-      </div>
+      <PageHeader
+        eyebrow="Super Admin"
+        title="Production Diagnostics"
+        description="Live browser-side metrics for API latency, polling, failures, retries, and cache behavior."
+        actions={(
+          <button
+            type="button"
+            className="diagnostics-refresh"
+            onClick={() => setMetrics(getProductionMetricsSnapshot())}
+          >
+            <RefreshCcw size={17} />
+            Refresh
+          </button>
+        )}
+      />
 
       <section className="diagnostics-grid">
         <MetricCard
@@ -93,10 +119,11 @@ export default function Diagnostics() {
 
       {metrics.activeAlerts.length > 0 && (
         <section className="diagnostics-panel diagnostics-alert-panel">
-          <div className="diagnostics-panel-header">
-            <h2>Active Monitoring Alerts</h2>
-            <span>{metrics.activeAlerts.length} active</span>
-          </div>
+          <Toolbar
+            className="diagnostics-panel-toolbar"
+            title="Active Monitoring Alerts"
+            actions={<StatusBadge tone="danger">{metrics.activeAlerts.length} active</StatusBadge>}
+          />
           <div className="diagnostics-list">
             {metrics.activeAlerts.map((alert) => (
               <div key={alert.id} className="diagnostics-list-row">
@@ -108,48 +135,31 @@ export default function Diagnostics() {
         </section>
       )}
 
-      <section className="diagnostics-panel">
-        <div className="diagnostics-panel-header">
-          <h2>Rolling History</h2>
-          <span>{metrics.history.samples.length} sample{metrics.history.samples.length === 1 ? '' : 's'}</span>
-        </div>
-        <div className="diagnostics-table-wrap">
-          <table className="diagnostics-table">
-            <thead>
-              <tr>
-                <th>Window</th>
-                <th>Avg Latency</th>
-                <th>Peak Concurrency</th>
-                <th>Retry Delta</th>
-                <th>Avg Cache Hit</th>
-                <th>Failed Request Peak</th>
-                <th>Avg Polling Time</th>
-              </tr>
-            </thead>
-            <tbody>
-              {metrics.history.windows.map((window) => (
-                <tr key={window.label}>
-                  <td>{window.label}</td>
-                  <td>{formatMs(window.averageApiLatencyMs)}</td>
-                  <td>{window.peakConcurrentRequests}</td>
-                  <td>{window.retryCountDelta}</td>
-                  <td>{formatPercent(window.averageCacheHitRate)}</td>
-                  <td>{window.failedRequestPeak}</td>
-                  <td>{formatMs(window.pollingAverageMs)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      <section className="diagnostics-section">
+        <Toolbar
+          className="diagnostics-panel-toolbar"
+          title="Rolling History"
+          description={`${metrics.history.samples.length} sample${metrics.history.samples.length === 1 ? '' : 's'}`}
+        />
+        <DataTable
+          columns={historyColumns}
+          rows={metrics.history.windows}
+          getRowKey={(item) => item.label}
+          emptyState={<EmptyState title="No history yet" description="Diagnostics history will appear after metrics are sampled." />}
+          minWidth="820px"
+        />
       </section>
 
-      <section className="diagnostics-panel">
-        <div className="diagnostics-panel-header">
-          <h2>Current Polling Status</h2>
-          <span className={`diagnostics-status ${metrics.polling.active ? 'active' : 'idle'}`}>
-            {metrics.polling.active ? 'Active' : 'Idle'}
-          </span>
-        </div>
+      <section className="diagnostics-section">
+        <Toolbar
+          className="diagnostics-panel-toolbar"
+          title="Current Polling Status"
+          actions={(
+            <StatusBadge tone={metrics.polling.active ? 'success' : 'neutral'}>
+              {metrics.polling.active ? 'Active' : 'Idle'}
+            </StatusBadge>
+          )}
+        />
         <div className="diagnostics-polling-grid">
           <div>
             <span>Interval</span>
@@ -170,41 +180,19 @@ export default function Diagnostics() {
         </div>
       </section>
 
-      <section className="diagnostics-panel">
-        <div className="diagnostics-panel-header">
-          <h2>Slowest Tier-Access Actions</h2>
-          <span>{metrics.slowestEndpoints.length} tracked</span>
-        </div>
-        <div className="diagnostics-table-wrap">
-          <table className="diagnostics-table">
-            <thead>
-              <tr>
-                <th>Action</th>
-                <th>Average</th>
-                <th>Slowest</th>
-                <th>Last</th>
-                <th>Calls</th>
-                <th>Failures</th>
-              </tr>
-            </thead>
-            <tbody>
-              {metrics.slowestEndpoints.length ? metrics.slowestEndpoints.map((item) => (
-                <tr key={item.action}>
-                  <td>{item.action}</td>
-                  <td>{formatMs(item.averageMs)}</td>
-                  <td>{formatMs(item.maxMs)}</td>
-                  <td>{formatMs(item.lastMs)}</td>
-                  <td>{item.count}</td>
-                  <td>{item.failures}</td>
-                </tr>
-              )) : (
-                <tr>
-                  <td colSpan="6">No tier-access calls recorded yet.</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+      <section className="diagnostics-section">
+        <Toolbar
+          className="diagnostics-panel-toolbar"
+          title="Slowest Tier-Access Actions"
+          description={`${metrics.slowestEndpoints.length} tracked`}
+        />
+        <DataTable
+          columns={endpointColumns}
+          rows={metrics.slowestEndpoints}
+          getRowKey={(item) => item.action}
+          emptyState={<EmptyState title="No tier-access calls recorded yet" description="Tracked action timings will appear after requests run." />}
+          minWidth="760px"
+        />
       </section>
 
       <section className="diagnostics-columns">

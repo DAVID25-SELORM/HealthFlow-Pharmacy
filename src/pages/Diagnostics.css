@@ -6,31 +6,6 @@
   width: 100%;
 }
 
-.diagnostics-header,
-.diagnostics-panel-header {
-  align-items: flex-start;
-  display: flex;
-  gap: 1rem;
-  justify-content: space-between;
-}
-
-.diagnostics-header h1,
-.diagnostics-panel h2 {
-  color: var(--gray-900);
-  margin: 0;
-}
-
-.diagnostics-header h1 {
-  font-size: 1.85rem;
-  line-height: 1.2;
-}
-
-.diagnostics-header p {
-  color: var(--gray-600);
-  margin: 0.35rem 0 0;
-  max-width: 760px;
-}
-
 .diagnostics-refresh {
   align-items: center;
   background: var(--primary);
@@ -54,7 +29,6 @@
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
-.diagnostics-card,
 .diagnostics-panel {
   background: white;
   border: 1px solid var(--gray-200);
@@ -63,10 +37,7 @@
 }
 
 .diagnostics-card {
-  display: grid;
-  gap: 0.35rem;
   min-height: 150px;
-  padding: 1rem;
 }
 
 .diagnostics-card-icon {
@@ -77,56 +48,31 @@
   display: flex;
   height: 38px;
   justify-content: center;
+  order: -1;
   width: 38px;
 }
 
-.diagnostics-card span,
-.diagnostics-card small,
-.diagnostics-panel-header span,
 .diagnostics-polling-grid span,
 .diagnostics-list-row span,
 .diagnostics-panel p {
   color: var(--gray-600);
 }
 
-.diagnostics-card strong {
-  color: var(--gray-900);
-  font-size: 1.55rem;
-}
-
-.diagnostics-card small {
-  font-size: 0.84rem;
-}
-
 .diagnostics-panel {
   padding: 1rem;
+}
+
+.diagnostics-panel-toolbar {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  margin-bottom: 0.85rem;
+  padding: 0;
 }
 
 .diagnostics-alert-panel {
   border-color: #ffd4ce;
   border-left: 5px solid #bd2d1f;
-}
-
-.diagnostics-panel h2 {
-  font-size: 1rem;
-}
-
-.diagnostics-status {
-  border-radius: 999px;
-  font-size: 0.78rem;
-  font-weight: 800;
-  padding: 0.25rem 0.55rem;
-  text-transform: uppercase;
-}
-
-.diagnostics-status.active {
-  background: #e7f8ef;
-  color: #0f8a63;
-}
-
-.diagnostics-status.idle {
-  background: var(--gray-100);
-  color: var(--gray-600);
 }
 
 .diagnostics-polling-grid {
@@ -147,31 +93,6 @@
 
 .diagnostics-polling-grid strong {
   color: var(--gray-900);
-}
-
-.diagnostics-table-wrap {
-  margin-top: 0.85rem;
-  overflow-x: auto;
-}
-
-.diagnostics-table {
-  border-collapse: collapse;
-  min-width: 720px;
-  width: 100%;
-}
-
-.diagnostics-table th,
-.diagnostics-table td {
-  border-bottom: 1px solid var(--gray-200);
-  color: var(--gray-700);
-  padding: 0.7rem 0.55rem;
-  text-align: left;
-}
-
-.diagnostics-table th {
-  color: var(--gray-500);
-  font-size: 0.76rem;
-  text-transform: uppercase;
 }
 
 .diagnostics-columns {
@@ -206,7 +127,7 @@
 }
 
 @media (max-width: 720px) {
-  .diagnostics-header {
+  .diagnostics-page .hf-page-header {
     flex-direction: column;
   }
 

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Activity, AlertTriangle, CheckCircle2, RefreshCcw, XCircle } from 'lucide-react'
 import { getSystemHealth } from '../services/systemHealthService'
 import { useAuth } from '../context/AuthContext'
+import { EmptyState, PageHeader, StatusBadge } from '../components/ui'
 import { formatAppDateTime } from '../utils/date'
 import './SystemHealth.css'
 
@@ -73,16 +74,17 @@ export default function SystemHealth() {
 
   return (
     <div className="system-health-page">
-      <div className="system-health-header">
-        <div>
-          <h1>System Health</h1>
-          <p>Production checks for login, database access, sales, NHIS, reports, activity logs, and local branch connectivity.</p>
-        </div>
-        <button className="system-health-refresh" type="button" onClick={() => void loadHealth()} disabled={loading}>
-          <RefreshCcw size={17} />
-          {loading ? 'Checking...' : 'Refresh'}
-        </button>
-      </div>
+      <PageHeader
+        eyebrow="Operations"
+        title="System Health"
+        description="Production checks for login, database access, sales, NHIS, reports, activity logs, and local branch connectivity."
+        actions={(
+          <button className="system-health-refresh" type="button" onClick={() => void loadHealth()} disabled={loading}>
+            <RefreshCcw size={17} />
+            {loading ? 'Checking...' : 'Refresh'}
+          </button>
+        )}
+      />
 
       {error && <div className="system-health-alert">{error}</div>}
 
@@ -92,7 +94,13 @@ export default function SystemHealth() {
         </div>
         <div>
           <span>Overall status</span>
-          <strong>{loading ? 'Checking' : overall.label}</strong>
+          <strong>
+            {loading ? 'Checking' : (
+              <StatusBadge tone={health?.status === 'ok' ? 'success' : health?.status === 'fail' ? 'danger' : 'warning'}>
+                {overall.label}
+              </StatusBadge>
+            )}
+          </strong>
           <small>
             {health?.checkedAt ? `Last checked ${formatAppDateTime(health.checkedAt)}` : 'Waiting for first check'}
           </small>
@@ -119,7 +127,10 @@ export default function SystemHealth() {
       </div>
 
       {!loading && !health?.checks?.length && !error && (
-        <div className="system-health-empty">No health checks returned.</div>
+        <EmptyState
+          title="No health checks returned"
+          description="Refresh the page to run the operational checks again."
+        />
       )}
     </div>
   )
