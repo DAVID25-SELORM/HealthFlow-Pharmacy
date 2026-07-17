@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { isSupabaseConfigured, supabase } from '../lib/supabase'
 import { invokeTierAccess } from '../services/tierAccessService'
 import { useAuth } from '../context/AuthContext'
+import { DataTable, EmptyState, LoadingState, PageHeader, Toolbar } from '../components/ui'
 import './ActivityLog.css'
 
 const ACTIVITY_LOG_TIMEZONE = 'Africa/Accra'
@@ -184,13 +185,60 @@ export default function ActivityLog() {
     return logs.filter((log) => toSearchBlob(log).includes(query))
   }, [logs, searchTerm])
 
-  if (loading) return <div className="activity-log">Loading activity logs...</div>
+  const columns = [
+    {
+      key: 'created_at',
+      header: 'Time',
+      render: (log) => formatTimestamp(log.created_at),
+    },
+    {
+      key: 'actor',
+      header: 'User',
+      render: (log) => getLogActor(log),
+    },
+    {
+      key: 'event_type',
+      header: 'Event',
+      render: (log) => log.event_type || '-',
+    },
+    {
+      key: 'entity_type',
+      header: 'Entity',
+      render: (log) => log.entity_type || '-',
+    },
+    {
+      key: 'action',
+      header: 'Action',
+      render: (log) => log.action || '-',
+    },
+    {
+      key: 'details',
+      header: 'Details',
+      render: (log) => {
+        const details = formatDetails(log.details)
+        return (
+          <span className="activity-log-details" title={details}>
+            {details || '-'}
+          </span>
+        )
+      },
+    },
+  ]
+
   if (error) return <div className="activity-log error">{error}</div>
 
   return (
     <div className="activity-log">
-      <div className="activity-log-header">
-        <h2>Activity Log</h2>
+      <PageHeader
+        eyebrow="Administration"
+        title="Activity Log"
+        description="Review recent system actions, user activity, and operational audit events."
+      />
+
+      <Toolbar
+        title="Audit records"
+        description={`Showing ${filteredLogs.length} of ${logs.length} record${logs.length === 1 ? '' : 's'}.`}
+      >
         <input
           type="search"
           className="activity-log-search"
@@ -199,49 +247,17 @@ export default function ActivityLog() {
           onChange={(event) => setSearchTerm(event.target.value)}
           aria-label="Search activity logs"
         />
-      </div>
+      </Toolbar>
 
-      <p className="activity-log-meta">
-        Showing {filteredLogs.length} of {logs.length} record{logs.length === 1 ? '' : 's'}.
-      </p>
-
-      <table>
-        <thead>
-          <tr>
-            <th>Time</th>
-            <th>User</th>
-            <th>Event</th>
-            <th>Entity</th>
-            <th>Action</th>
-            <th>Details</th>
-          </tr>
-        </thead>
-        <tbody>
-          {filteredLogs.length === 0 ? (
-            <tr>
-              <td className="activity-log-empty" colSpan={6}>
-                No activity records matched your search.
-              </td>
-            </tr>
-          ) : (
-            filteredLogs.map((log) => {
-              const details = formatDetails(log.details)
-              return (
-                <tr key={log.id}>
-                  <td>{formatTimestamp(log.created_at)}</td>
-                  <td>{getLogActor(log)}</td>
-                  <td>{log.event_type || '-'}</td>
-                  <td>{log.entity_type || '-'}</td>
-                  <td>{log.action || '-'}</td>
-                  <td className="activity-log-details" title={details}>
-                    {details || '-'}
-                  </td>
-                </tr>
-              )
-            })
-          )}
-        </tbody>
-      </table>
+      <DataTable
+        columns={columns}
+        rows={filteredLogs}
+        getRowKey={(log) => log.id}
+        loading={loading}
+        loadingState={<LoadingState title="Loading activity logs" description="Fetching recent audit events..." />}
+        emptyState={<EmptyState title="No activity records found" description="Try adjusting your search term." />}
+        minWidth="980px"
+      />
     </div>
   )
 }

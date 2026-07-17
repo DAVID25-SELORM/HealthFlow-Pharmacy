@@ -7,6 +7,7 @@ import {
   permanentlyDeleteRecord,
   restoreDeletedRecord,
 } from '../services/recycleBinService'
+import { DataTable, EmptyState, LoadingState, PageHeader, StatusBadge } from '../components/ui'
 import './RecycleBin.css'
 
 const TYPE_LABELS = {
@@ -97,54 +98,68 @@ const RecycleBin = () => {
     }
   }
 
+  const columns = [
+    {
+      key: 'type',
+      header: 'Type',
+      render: (record) => (
+        <StatusBadge tone={record.entity_type === 'nhis_claim' ? 'info' : 'neutral'}>
+          {TYPE_LABELS[record.entity_type] || record.entity_type}
+        </StatusBadge>
+      ),
+    },
+    {
+      key: 'identity',
+      header: 'Name / Number',
+      render: (record) => {
+        const identity = getRecycleRecordIdentity(record)
+        return (
+          <div className="recycle-record-identity">
+            <strong>{identity.primary}</strong>
+            {identity.secondary && <span>{identity.secondary}</span>}
+            {identity.meta && <small>{identity.meta}</small>}
+          </div>
+        )
+      },
+    },
+    {
+      key: 'deleted_at',
+      header: 'Deleted',
+      render: (record) => formatAppDateTime(record.deleted_at),
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      render: (record) => (
+        <div className="recycle-bin-actions">
+          <button className="btn btn-secondary btn-sm" disabled={busyId === record.id} onClick={() => restore(record)}>
+            <RotateCcw size={14} /> Restore
+          </button>
+          <button className="btn btn-danger btn-sm" disabled={busyId === record.id} onClick={() => removePermanently(record)}>
+            <Trash2 size={14} /> Delete Permanently
+          </button>
+        </div>
+      ),
+    },
+  ]
+
   return (
     <div className="recycle-bin">
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">Recycle Bin</h1>
-          <p className="page-subtitle">Restore deleted inventory items and NHIS claims, or remove them permanently.</p>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="Administration"
+        title="Recycle Bin"
+        description="Restore deleted inventory items and NHIS claims, or remove them permanently."
+      />
       {error && <div className="nhis-alert" role="alert">{error}</div>}
-      <div className="recycle-bin-card">
-        {loading ? (
-          <div className="recycle-bin-empty">Loading deleted records…</div>
-        ) : records.length === 0 ? (
-          <div className="recycle-bin-empty">The Recycle Bin is empty.</div>
-        ) : (
-          <table>
-            <thead>
-              <tr><th>Type</th><th>Name / Number</th><th>Deleted</th><th>Actions</th></tr>
-            </thead>
-            <tbody>
-              {records.map((record) => {
-                const identity = getRecycleRecordIdentity(record)
-                return (
-                  <tr key={record.id}>
-                    <td>{TYPE_LABELS[record.entity_type] || record.entity_type}</td>
-                    <td>
-                      <div className="recycle-record-identity">
-                        <strong>{identity.primary}</strong>
-                        {identity.secondary && <span>{identity.secondary}</span>}
-                        {identity.meta && <small>{identity.meta}</small>}
-                      </div>
-                    </td>
-                    <td>{formatAppDateTime(record.deleted_at)}</td>
-                    <td className="recycle-bin-actions">
-                      <button className="btn btn-secondary btn-sm" disabled={busyId === record.id} onClick={() => restore(record)}>
-                        <RotateCcw size={14} /> Restore
-                      </button>
-                      <button className="btn btn-danger btn-sm" disabled={busyId === record.id} onClick={() => removePermanently(record)}>
-                        <Trash2 size={14} /> Delete Permanently
-                      </button>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        )}
-      </div>
+      <DataTable
+        columns={columns}
+        rows={records}
+        getRowKey={(record) => record.id}
+        loading={loading}
+        loadingState={<LoadingState title="Loading deleted records" description="Checking recoverable records..." />}
+        emptyState={<EmptyState title="The Recycle Bin is empty" description="Deleted inventory items and NHIS claims will appear here." />}
+        minWidth="760px"
+      />
     </div>
   )
 }
