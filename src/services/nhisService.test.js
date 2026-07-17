@@ -589,6 +589,42 @@ describe('assessNhisClaimReadiness', () => {
     )
   })
 
+  it('blocks obvious diagnosis-treatment mismatches for hospital tariff services', () => {
+    const malariaWithObstetricProcedure = assessNhisClaimReadiness(
+      { ...baseClaim, organizationType: 'hospital', diagnosis: 'Uncomplicated malaria' },
+      [{ ...baseMedicine, drugCode: 'ARTLUM1', description: 'Artemether Lumefantrine Tablet', category: 'A' }],
+      {
+        finalSubmission: true,
+        providerClassLevel: 'D',
+        nhiaTariffServices: [{
+          ...baseTariffService,
+          description: 'Caesarean section theatre fee',
+          gdrgCode: 'OBSC01',
+        }],
+      }
+    )
+    const pregnancyWithProstateProcedure = assessNhisClaimReadiness(
+      { ...baseClaim, organizationType: 'hospital', diagnosis: 'Pregnancy antenatal care' },
+      [],
+      {
+        finalSubmission: true,
+        providerClassLevel: 'D',
+        nhiaTariffServices: [{
+          ...baseTariffService,
+          description: 'Prostate surgery package',
+          gdrgCode: 'SURG01',
+        }],
+      }
+    )
+
+    expect(malariaWithObstetricProcedure.blockers).toContain(
+      'Diagnosis-Treatment Mismatch: selected treatment/procedure is not clinically compatible with the recorded malaria diagnosis. Review the diagnosis or treatment before submitting this claim.'
+    )
+    expect(pregnancyWithProstateProcedure.blockers).toContain(
+      'Diagnosis-Treatment Mismatch: selected treatment/procedure is not clinically compatible with the recorded pregnancy/obstetric diagnosis. Review the diagnosis or treatment before submitting this claim.'
+    )
+  })
+
   it('allows hospital claims with only NHIA tariff services and validates service metadata', () => {
     const readiness = assessNhisClaimReadiness(
       { ...baseClaim, organizationType: 'hospital', diagnosis: 'General consultation' },

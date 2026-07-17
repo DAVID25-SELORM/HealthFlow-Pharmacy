@@ -1457,6 +1457,32 @@ const MAJOR_PROCEDURE_KEYWORDS = [
 const SIMPLE_DIAGNOSIS_KEYWORDS = ['malaria', 'headache', 'urti', 'cold', 'gastroenteritis']
 const PROCEDURE_DIAGNOSIS_KEYWORDS = ['appendicitis', 'fracture', 'trauma', 'obstetric', 'delivery', 'surgical', 'tumour', 'tumor']
 const CHRONIC_DIAGNOSIS_KEYWORDS = ['hypertension', 'diabetes', 'diabetic', 'asthma', 'hiv', 'ckd', 'kidney']
+const DIAGNOSIS_PROCEDURE_CONFLICT_RULES = [
+  {
+    diagnosis: ['malaria', 'plasmodium', 'b50', 'b51', 'b52', 'b53', 'b54'],
+    procedure: ['caesarean', 'cesarean', 'c-section', 'delivery', 'labour', 'obstetric', 'prostate', 'prostatic', 'chemotherapy', 'radiotherapy'],
+    allowedDiagnosis: ['pregnancy', 'pregnant', 'labour', 'delivery', 'obstetric', 'prostate', 'prostatic', 'cancer', 'malignant', 'neoplasm', 'tumour', 'tumor'],
+    label: 'malaria diagnosis',
+  },
+  {
+    diagnosis: ['pregnancy', 'pregnant', 'antenatal', 'labour', 'delivery', 'obstetric'],
+    procedure: ['prostate', 'prostatic', 'testicular', 'testis'],
+    allowedDiagnosis: ['prostate', 'prostatic', 'testicular', 'testis'],
+    label: 'pregnancy/obstetric diagnosis',
+  },
+  {
+    diagnosis: ['asthma', 'wheeze', 'bronchospasm', 'j45', 'j46'],
+    procedure: ['chemotherapy', 'radiotherapy', 'oncology'],
+    allowedDiagnosis: ['cancer', 'malignant', 'neoplasm', 'tumour', 'tumor', 'oncology'],
+    label: 'asthma diagnosis',
+  },
+  {
+    diagnosis: ['hypertension', 'blood pressure', 'hypertensive', 'i10', 'i11', 'i12', 'i13', 'i15'],
+    procedure: ['insulin administration', 'diabetes clinic', 'diabetic'],
+    allowedDiagnosis: ['diabetes', 'diabetic', 'e10', 'e11', 'e12', 'e13', 'e14'],
+    label: 'hypertension diagnosis',
+  },
+]
 
 const calculateAge = (dateOfBirth) => {
   if (!dateOfBirth) return null
@@ -1872,6 +1898,15 @@ const getProcedureMismatchIssues = (claimData = {}, options = {}, strict = false
     .map(getClaimItemText)
     .join(' ')
   if (!diagnosisText || !procedureText) return []
+  const conflictMessages = DIAGNOSIS_PROCEDURE_CONFLICT_RULES
+    .filter((rule) => includesAnyTerm(diagnosisText, rule.diagnosis))
+    .filter((rule) => includesAnyTerm(procedureText, rule.procedure))
+    .filter((rule) => !includesAnyTerm(diagnosisText, rule.allowedDiagnosis))
+    .map((rule) =>
+      `Diagnosis-Treatment Mismatch: selected treatment/procedure is not clinically compatible with the recorded ${rule.label}. Review the diagnosis or treatment before submitting this claim.`
+    )
+
+  if (conflictMessages.length) return [...new Set(conflictMessages)]
   if (!includesAnyTerm(procedureText, MAJOR_PROCEDURE_KEYWORDS)) return []
   if (!includesAnyTerm(diagnosisText, SIMPLE_DIAGNOSIS_KEYWORDS)) return []
   if (includesAnyTerm(diagnosisText, PROCEDURE_DIAGNOSIS_KEYWORDS)) return []
