@@ -914,28 +914,40 @@ const getSettingValue = (settings, camelKey, snakeKey) =>
   settings?.[camelKey] ?? settings?.[snakeKey] ?? ''
 
 const getPreferredTariffFacilityGroup = (settings, organization) => {
-  const explicitGroup =
-    getSettingValue(settings, 'tariffFacilityGroup', 'tariff_facility_group') ||
-    getSettingValue(settings, 'nhiaTariffFacilityGroup', 'nhia_tariff_facility_group') ||
-    organization?.tariff_facility_group ||
-    organization?.nhia_tariff_facility_group
-
-  if (explicitGroup) return explicitGroup
-
   const providerType =
     getSettingValue(settings, 'providerTypeDescription', 'provider_type_description') ||
     organization?.provider_type_description ||
     organization?.providerTypeDescription ||
     ''
   const normalizedProvider = compactLookupText(providerType)
+  const explicitGroup =
+    getSettingValue(settings, 'tariffFacilityGroup', 'tariff_facility_group') ||
+    getSettingValue(settings, 'nhiaTariffFacilityGroup', 'nhia_tariff_facility_group') ||
+    organization?.tariff_facility_group ||
+    organization?.nhia_tariff_facility_group
+
+  if (explicitGroup) {
+    const normalizedExplicitGroup = compactLookupText(explicitGroup)
+    if (
+      normalizedExplicitGroup.includes('chagprimarycarehospital') ||
+      (
+        normalizedExplicitGroup.includes('chag') &&
+        normalizedExplicitGroup.includes('primary') &&
+        normalizedExplicitGroup.includes('hospital')
+      )
+    ) {
+      return 'Private Primary Care Hospital'
+    }
+    return explicitGroup
+  }
 
   if (normalizedProvider.includes('privateprimarycarehospital') ||
       (normalizedProvider.includes('private') && normalizedProvider.includes('primary') && normalizedProvider.includes('hospital'))) {
     return 'Private Primary Care Hospital'
   }
 
-  if (normalizedProvider.includes('chag') && normalizedProvider.includes('primary') && normalizedProvider.includes('hospital')) {
-    return 'CHAG Primary Care Hospital'
+  if (normalizedProvider.includes('primary') && normalizedProvider.includes('hospital')) {
+    return 'Private Primary Care Hospital'
   }
 
   if (normalizedProvider.includes('healthcenters') || normalizedProvider.includes('healthcentre')) {
