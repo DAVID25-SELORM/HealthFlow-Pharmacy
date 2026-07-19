@@ -54,6 +54,7 @@ export const normalizeNhiaFacilityType = (value, fallback = '') => {
 
 const NHIA_HOSPITAL_FACILITY_TYPES = ['Hospital', 'Clinic', 'Maternity', 'Hospital Pharmacy']
 const NHIA_PHARMACY_FACILITY_TYPES = ['Pharmacy', 'Chemical Seller']
+export const NHIA_PROVIDER_CLASS_LEVELS = ['B1', 'B2', 'C', 'D', 'M', 'SM']
 
 const normalizeOrganizationType = (value) =>
   normalizeText(value).toLowerCase() === 'hospital' ? 'hospital' : 'pharmacy'
@@ -82,9 +83,214 @@ export const normalizeNhiaPharmacyFacilityLevel = (value, fallback = '') => {
 
 export const normalizeNhiaProviderClassLevel = (value, fallback = '') => {
   const code = normalizeCode(value)
-  return ['B1', 'B2', 'C', 'D', 'M', 'SM'].includes(code) ? code : fallback
+  return NHIA_PROVIDER_CLASS_LEVELS.includes(code) ? code : fallback
 }
 // ✅ NHIA CONFIG PATCH END
+
+export const NHIA_PROVIDER_PROFILES = [
+  {
+    id: 'community_pharmacy',
+    displayName: 'Pharmacy',
+    organizationTypes: ['pharmacy'],
+    facilityType: 'Pharmacy',
+    allowedProviderClassLevels: [],
+    defaultPharmacyFacilityLevels: ['P1', 'P2', 'LCS'],
+    defaultTariffFacilityGroup: '',
+    claimScope: 'Pharmacy medicine claims',
+  },
+  {
+    id: 'hospital_pharmacy',
+    displayName: 'Hospital Pharmacy',
+    organizationTypes: ['hospital'],
+    facilityType: 'Hospital Pharmacy',
+    allowedProviderClassLevels: [],
+    defaultPharmacyFacilityLevels: ['HP'],
+    defaultTariffFacilityGroup: '',
+    claimScope: 'Hospital pharmacy medicines',
+  },
+  {
+    id: 'tertiary_care_hospital',
+    displayName: 'Tertiary care hospital',
+    organizationTypes: ['hospital'],
+    facilityType: 'Hospital',
+    allowedProviderClassLevels: ['SM'],
+    defaultTariffFacilityGroup: 'Tertiary care hospital',
+    claimScope: 'Specialist hospital services',
+  },
+  {
+    id: 'secondary_care_hospital',
+    displayName: 'Secondary care hospital',
+    organizationTypes: ['hospital'],
+    facilityType: 'Hospital',
+    allowedProviderClassLevels: ['M', 'SM'],
+    defaultTariffFacilityGroup: 'Secondary care hospital',
+    claimScope: 'Secondary hospital services',
+  },
+  {
+    id: 'primary_care_hospital',
+    displayName: 'Primary care hospital',
+    organizationTypes: ['hospital'],
+    facilityType: 'Hospital',
+    allowedProviderClassLevels: ['D', 'M', 'SM'],
+    defaultTariffFacilityGroup: 'Private Primary Care Hospital',
+    claimScope: 'Primary hospital services',
+  },
+  {
+    id: 'private_primary_care_hospital',
+    displayName: 'Private Primary Care Hospital',
+    organizationTypes: ['hospital'],
+    facilityType: 'Hospital',
+    allowedProviderClassLevels: ['D', 'M', 'SM'],
+    defaultTariffFacilityGroup: 'Private Primary Care Hospital',
+    claimScope: 'Private primary hospital services',
+  },
+  {
+    id: 'chag_primary_care_hospital',
+    displayName: 'CHAG Primary Care Hospital',
+    organizationTypes: ['hospital'],
+    facilityType: 'Hospital',
+    allowedProviderClassLevels: ['D', 'M', 'SM'],
+    defaultTariffFacilityGroup: 'Private Primary Care Hospital',
+    claimScope: 'CHAG primary hospital services',
+  },
+  {
+    id: 'health_centre_clinic',
+    displayName: 'Health centers (Public, Private, CHAG)',
+    organizationTypes: ['hospital'],
+    facilityType: 'Clinic',
+    allowedProviderClassLevels: ['C', 'D', 'M', 'SM'],
+    defaultTariffFacilityGroup: 'Health centers (Public, Private, CHAG)',
+    claimScope: 'Health centre and clinic services',
+  },
+  {
+    id: 'maternity_homes',
+    displayName: 'Maternity homes',
+    organizationTypes: ['hospital'],
+    facilityType: 'Maternity',
+    allowedProviderClassLevels: ['C', 'D', 'M', 'SM'],
+    defaultTariffFacilityGroup: 'Maternity homes',
+    claimScope: 'Maternity services',
+  },
+  {
+    id: 'private_clinics',
+    displayName: 'Private clinics',
+    organizationTypes: ['hospital'],
+    facilityType: 'Clinic',
+    allowedProviderClassLevels: ['B2', 'C', 'D', 'M', 'SM'],
+    defaultTariffFacilityGroup: 'Private clinics',
+    claimScope: 'Clinic services',
+  },
+  {
+    id: 'dental_clinics',
+    displayName: 'Dental clinics',
+    organizationTypes: ['hospital'],
+    facilityType: 'Clinic',
+    allowedProviderClassLevels: ['C', 'D', 'M', 'SM'],
+    defaultTariffFacilityGroup: 'Dental clinics',
+    claimScope: 'Dental services',
+  },
+  {
+    id: 'eye_centers',
+    displayName: 'Eye centers',
+    organizationTypes: ['hospital'],
+    facilityType: 'Clinic',
+    allowedProviderClassLevels: ['C', 'D', 'M', 'SM'],
+    defaultTariffFacilityGroup: 'Eye centers',
+    claimScope: 'Eye care services',
+  },
+  {
+    id: 'diagnostic_centers',
+    displayName: 'Diagnostic centers',
+    organizationTypes: ['hospital'],
+    facilityType: 'Clinic',
+    allowedProviderClassLevels: ['C', 'D', 'M', 'SM'],
+    defaultTariffFacilityGroup: 'Diagnostic centers',
+    claimScope: 'Diagnostic services',
+  },
+  {
+    id: 'chps_compounds',
+    displayName: 'CHPS Compounds',
+    organizationTypes: ['hospital'],
+    facilityType: 'Clinic',
+    allowedProviderClassLevels: ['C', 'D', 'M', 'SM'],
+    defaultTariffFacilityGroup: 'CHPS Compounds',
+    claimScope: 'CHPS services',
+  },
+  {
+    id: 'clinic',
+    displayName: 'Clinic',
+    organizationTypes: ['hospital'],
+    facilityType: 'Clinic',
+    allowedProviderClassLevels: ['B2', 'C', 'D', 'M', 'SM'],
+    defaultTariffFacilityGroup: 'Private clinics',
+    claimScope: 'Clinic services',
+  },
+  {
+    id: 'hospital',
+    displayName: 'Hospital',
+    organizationTypes: ['hospital'],
+    facilityType: 'Hospital',
+    allowedProviderClassLevels: NHIA_PROVIDER_CLASS_LEVELS,
+    defaultTariffFacilityGroup: '',
+    claimScope: 'Hospital services',
+  },
+]
+
+const getProviderProfileSearchText = (profile = {}) =>
+  [profile.id, profile.displayName, profile.facilityType, profile.defaultTariffFacilityGroup]
+    .map(normalizeIdentity)
+    .filter(Boolean)
+
+export const getNhiaProviderProfileByDescription = (value = '') => {
+  const normalized = normalizeIdentity(value)
+  if (!normalized) return null
+  return NHIA_PROVIDER_PROFILES.find((profile) =>
+    getProviderProfileSearchText(profile).some((candidate) => candidate === normalized)
+  ) || null
+}
+
+export const getNhiaProviderProfileOptionsForOrganization = (organizationType = 'pharmacy') => {
+  const normalizedOrganizationType = normalizeOrganizationType(organizationType)
+  return NHIA_PROVIDER_PROFILES.filter((profile) =>
+    profile.organizationTypes.includes(normalizedOrganizationType)
+  )
+}
+
+export const getNhiaProviderClassLevelsForProviderType = (providerTypeDescription = '', organizationType = 'pharmacy') => {
+  if (normalizeOrganizationType(organizationType) !== 'hospital') return []
+  const profile = getNhiaProviderProfileByDescription(providerTypeDescription)
+  return profile?.allowedProviderClassLevels?.length
+    ? profile.allowedProviderClassLevels
+    : NHIA_PROVIDER_CLASS_LEVELS
+}
+
+export const getNhiaProviderProfileValidation = ({
+  providerTypeDescription = '',
+  providerClassLevel = '',
+  organizationType = 'pharmacy',
+} = {}) => {
+  const normalizedOrganizationType = normalizeOrganizationType(organizationType)
+  const profile = getNhiaProviderProfileByDescription(providerTypeDescription)
+  const providerLevel = normalizeNhiaProviderClassLevel(providerClassLevel)
+
+  if (!profile || normalizedOrganizationType !== 'hospital' || !providerLevel) {
+    return { valid: true, profile, allowedProviderClassLevels: [] }
+  }
+
+  const allowedProviderClassLevels = getNhiaProviderClassLevelsForProviderType(
+    providerTypeDescription,
+    normalizedOrganizationType
+  )
+  const valid = allowedProviderClassLevels.includes(providerLevel)
+  return {
+    valid,
+    profile,
+    allowedProviderClassLevels,
+    message: valid
+      ? ''
+      : `${profile.displayName} can use provider class ${allowedProviderClassLevels.join(', ')}. Select an allowed provider class/level before saving.`,
+  }
+}
 
 const KNOWN_NHIA_FACILITIES = [
   {

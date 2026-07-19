@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { applyNhiaFacilityDefaults, hasNhiaFacilitySettings } from './nhiaFacilityDefaults'
+import {
+  applyNhiaFacilityDefaults,
+  getNhiaProviderClassLevelsForProviderType,
+  getNhiaProviderProfileOptionsForOrganization,
+  getNhiaProviderProfileValidation,
+  hasNhiaFacilitySettings,
+} from './nhiaFacilityDefaults'
 
 describe('NHIA facility defaults', () => {
   it('seeds Westpoint CLAIM-it codes from the organization identity', () => {
@@ -25,6 +31,27 @@ describe('NHIA facility defaults', () => {
     expect(resolved.facilityCode).toBe('custom-facility')
     expect(resolved.providerNumber).toBe('custom-provider')
     expect(resolved.providerTypeDescription).toBe('Private clinics')
+  })
+
+  it('preserves legacy custom provider type descriptions without converting them', () => {
+    const resolved = applyNhiaFacilityDefaults({
+      facilityCode: 'district-facility',
+      providerTypeDescription: 'District Hospital',
+      providerClassLevel: 'D',
+    }, {
+      name: 'District Hospital',
+      organization_type: 'hospital',
+    })
+    const validation = getNhiaProviderProfileValidation({
+      providerTypeDescription: resolved.providerTypeDescription,
+      providerClassLevel: resolved.providerClassLevel,
+      organizationType: 'hospital',
+    })
+
+    expect(resolved.providerTypeDescription).toBe('District Hospital')
+    expect(resolved.providerClassLevel).toBe('D')
+    expect(validation.valid).toBe(true)
+    expect(validation.profile).toBeNull()
   })
 
   it('uses organization NHIA fields for any configured facility', () => {
@@ -100,5 +127,43 @@ describe('NHIA facility defaults', () => {
     expect(resolved.facilityType).toBe('Hospital')
     expect(resolved.pharmacyFacilityLevel).toBe('')
     expect(resolved.providerClassLevel).toBe('B2')
+  })
+
+  it('limits provider type options to the active organization type', () => {
+    const hospitalOptions = getNhiaProviderProfileOptionsForOrganization('hospital')
+    const pharmacyOptions = getNhiaProviderProfileOptionsForOrganization('pharmacy')
+
+    expect(hospitalOptions.map((profile) => profile.displayName)).toContain('Dental clinics')
+    expect(hospitalOptions.map((profile) => profile.displayName)).toContain('Private Primary Care Hospital')
+    expect(hospitalOptions.map((profile) => profile.displayName)).not.toContain('Pharmacy')
+    expect(pharmacyOptions.map((profile) => profile.displayName)).toEqual(['Pharmacy'])
+  })
+
+  it('derives allowed provider class levels from the provider type profile', () => {
+    expect(getNhiaProviderClassLevelsForProviderType('Dental clinics', 'hospital')).toEqual(['C', 'D', 'M', 'SM'])
+    expect(getNhiaProviderClassLevelsForProviderType('Private Primary Care Hospital', 'hospital')).toEqual(['D', 'M', 'SM'])
+  })
+
+  it('flags invalid provider type and class combinations without changing the saved values', () => {
+    const result = getNhiaProviderProfileValidation({
+      providerTypeDescription: 'Dental clinics',
+      providerClassLevel: 'B1',
+      organizationType: 'hospital',
+    })
+
+    expect(result.valid).toBe(false)
+    expect(result.message).toContain('Dental clinics')
+    expect(result.allowedProviderClassLevels).toEqual(['C', 'D', 'M', 'SM'])
+  })
+
+  it('accepts valid provider type and class combinations', () => {
+    const result = getNhiaProviderProfileValidation({
+      providerTypeDescription: 'Dental clinics',
+      providerClassLevel: 'C',
+      organizationType: 'hospital',
+    })
+
+    expect(result.valid).toBe(true)
+    expect(result.message).toBe('')
   })
 })

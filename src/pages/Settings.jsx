@@ -45,6 +45,10 @@ import { formatAppDateTime } from '../utils/date'
 import {
   applyNhiaFacilityDefaults,
   getNhiaFacilityTypesForOrganization,
+  getNhiaProviderClassLevelsForProviderType,
+  getNhiaProviderProfileByDescription,
+  getNhiaProviderProfileOptionsForOrganization,
+  getNhiaProviderProfileValidation,
   normalizeNhiaAccreditationExpiryDate,
   normalizeNhiaFacilityTypeForOrganization,
 } from '../utils/nhiaFacilityDefaults'
@@ -599,6 +603,33 @@ const Settings = () => {
   const isHospitalOrganization = selectedOrganizationType === 'hospital'
   const nhiaFacilityTypeOptions = getNhiaFacilityTypesForOrganization(organizationType)
   const nhiaFacilityType = normalizeNhiaFacilityTypeForOrganization(nhiaApiForm.facilityType, organizationType)
+  const nhiaProviderTypeOptions = getNhiaProviderProfileOptionsForOrganization(organizationType)
+  const nhiaProviderTypeOptionsWithCurrent = nhiaApiForm.providerTypeDescription &&
+    !nhiaProviderTypeOptions.some((profile) => profile.displayName === nhiaApiForm.providerTypeDescription)
+      ? [
+          {
+            id: 'current-provider-type',
+            displayName: nhiaApiForm.providerTypeDescription,
+            claimScope: 'Saved provider type',
+            defaultTariffFacilityGroup: '',
+          },
+          ...nhiaProviderTypeOptions,
+        ]
+      : nhiaProviderTypeOptions
+  const activeNhiaProviderProfile = getNhiaProviderProfileByDescription(nhiaApiForm.providerTypeDescription)
+  const providerClassLevelOptions = getNhiaProviderClassLevelsForProviderType(
+    nhiaApiForm.providerTypeDescription,
+    organizationType
+  )
+  const providerClassLevelOptionsWithCurrent = nhiaApiForm.providerClassLevel &&
+    !providerClassLevelOptions.includes(nhiaApiForm.providerClassLevel)
+      ? [nhiaApiForm.providerClassLevel, ...providerClassLevelOptions]
+      : providerClassLevelOptions
+  const nhiaProviderProfileValidation = getNhiaProviderProfileValidation({
+    providerTypeDescription: nhiaApiForm.providerTypeDescription,
+    providerClassLevel: nhiaApiForm.providerClassLevel,
+    organizationType,
+  })
   const claimItPreview = buildClaimItConfigPreview({
     ...nhiaApiForm,
     facilityType: nhiaFacilityType,
@@ -1131,6 +1162,14 @@ const Settings = () => {
     try {
       setSavingNhiaApi(true)
       setError('')
+      const providerProfileCheck = getNhiaProviderProfileValidation({
+        providerTypeDescription: nhiaApiForm.providerTypeDescription,
+        providerClassLevel: nhiaApiForm.providerClassLevel,
+        organizationType,
+      })
+      if (!providerProfileCheck.valid) {
+        throw new Error(providerProfileCheck.message)
+      }
       logNhiaSettingsDebug('save started', {
         organizationId: organization?.id || organization?.organization_id || nhiaApiForm.organizationId || nhiaApiForm.organization_id,
         source: 'settings_form',
@@ -2684,14 +2723,16 @@ const Settings = () => {
                     onChange={(event) => updateNhiaApiForm('providerClassLevel', event.target.value)}
                   >
                     <option value="">Hospital provider class / level</option>
-                    <option value="B1">B1</option>
-                    <option value="B2">B2</option>
-                    <option value="C">C</option>
-                    <option value="D">D</option>
-                    <option value="M">M</option>
-                    <option value="SM">SM</option>
+                    {providerClassLevelOptionsWithCurrent.map((providerClassLevel) => (
+                      <option key={providerClassLevel} value={providerClassLevel}>
+                        {providerClassLevel}
+                      </option>
+                    ))}
                   </select>
                 </div>
+              )}
+              {showNhiaProviderClassLevel && !nhiaProviderProfileValidation.valid && (
+                <p className="settings-alert">{nhiaProviderProfileValidation.message}</p>
               )}
               <div className="settings-form-row">
                 <select
@@ -2699,22 +2740,11 @@ const Settings = () => {
                   onChange={(event) => updateNhiaApiForm('providerTypeDescription', event.target.value)}
                 >
                   <option value="">Provider type description</option>
-                  <option value="Tertiary care hospital">Tertiary care hospital</option>
-                  <option value="Secondary care hospital">Secondary care hospital</option>
-                  <option value="Primary care hospital">Primary care hospital</option>
-                  <option value="Private Primary Care Hospital">Private Primary Care Hospital</option>
-                  <option value="CHAG Primary Care Hospital">CHAG Primary Care Hospital</option>
-                  <option value="Health centers (Public, Private, CHAG)">Health centers (Public, Private, CHAG)</option>
-                  <option value="Maternity homes">Maternity homes</option>
-                  <option value="Private clinics">Private clinics</option>
-                  <option value="Dental clinics">Dental clinics</option>
-                  <option value="Eye centers">Eye centers</option>
-                  <option value="Diagnostic centers">Diagnostic centers</option>
-                  <option value="CHPS Compounds">CHPS Compounds</option>
-                  <option value="Pharmacy">Community Pharmacy</option>
-                  <option value="Hospital Pharmacy">Hospital Pharmacy</option>
-                  <option value="Clinic">Clinic</option>
-                  <option value="Hospital">Hospital</option>
+                  {nhiaProviderTypeOptionsWithCurrent.map((profile) => (
+                    <option key={profile.id} value={profile.displayName}>
+                      {profile.displayName === 'Pharmacy' ? 'Community Pharmacy' : profile.displayName}
+                    </option>
+                  ))}
                 </select>
                 <select
                   value={nhiaApiForm.admissionPaymentOption}
@@ -2725,6 +2755,11 @@ const Settings = () => {
                   <option value="not_applicable">Not applicable</option>
                 </select>
               </div>
+              {activeNhiaProviderProfile && (
+                <p className="settings-helper">
+                  Provider profile: {activeNhiaProviderProfile.claimScope}. Tariff set: {activeNhiaProviderProfile.defaultTariffFacilityGroup || 'configured separately'}.
+                </p>
+              )}
 
               {/* ── 5. Claims officer ── */}
               <div className="settings-form-row">
