@@ -844,13 +844,49 @@
   gap: 0.3rem;
   margin: 0;
   max-width: 34rem;
-  padding-left: 1rem;
+  padding-left: 0;
 }
 
 .readiness-issue-list li {
+  align-items: flex-start;
   color: var(--gray-800);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
   font-size: 0.82rem;
   line-height: 1.35;
+  list-style: none;
+}
+
+.readiness-issue-chip,
+.readiness-issue-type {
+  border-radius: 999px;
+  flex: 0 0 auto;
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1;
+  padding: 0.22rem 0.38rem;
+  text-transform: uppercase;
+}
+
+.readiness-issue-chip--error {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.readiness-issue-chip--warning {
+  background: #ffedd5;
+  color: #9a3412;
+}
+
+.readiness-issue-chip--info {
+  background: #e0f2fe;
+  color: #075985;
+}
+
+.readiness-issue-type {
+  background: #f1f5f9;
+  color: #334155;
 }
 
 .prescription-audit-note {

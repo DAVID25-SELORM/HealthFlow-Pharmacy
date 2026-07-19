@@ -123,6 +123,8 @@ const READINESS_FILTERS = [
   { id: 'verification', label: 'Unverified prescription' },
   { id: 'prescriber', label: 'Prescriber' },
   { id: 'diagnosis', label: 'Diagnosis' },
+  { id: 'clinical', label: 'Clinical rules' },
+  { id: 'tariff', label: 'Tariff/G-DRG' },
   { id: 'medicine', label: 'Medicine' },
   { id: 'other', label: 'Other' },
 ]
@@ -147,7 +149,7 @@ const CLAIM_ISSUE_FILTERS = [
   { id: 'any', label: 'All issues' },
   { id: 'missing-attachment', label: 'Missing attachment' },
   { id: 'attachment-type', label: 'Set attachment type' },
-  { id: 'unverified', label: 'Unverified prescription' },
+  { id: 'unverified-prescription', label: 'Unverified prescription' },
   { id: 'incomplete-intake', label: 'Incomplete intake' },
 ]
 const CLAIM_STATUS_LABELS = {
@@ -671,11 +673,41 @@ const getReadinessIssueCategories = (issue = {}) => {
   if (/\bdiagnosis|icd|treatment\b/.test(text)) {
     categories.add('diagnosis')
   }
+  if (/\bclinical|risk|critical|age-restricted|gender|pregnancy|obstetric|prostate|infection|antibiotic|antimicrobial|chronic|specialist|supporting diagnosis|supporting malaria|bp reading|glucose|hba1c\b/.test(text)) {
+    categories.add('clinical')
+  }
+  if (/\bg-drg|gdrg|tariff|service \d+|procedure|investigation|provider class|facility group|catering\b/.test(text)) {
+    categories.add('tariff')
+  }
   if (/\bmedicine|drug|quantity|dispensed|served|dosage|level\b/.test(text)) {
     categories.add('medicine')
   }
   if (!categories.size) categories.add('other')
   return Array.from(categories)
+}
+
+const getReadinessIssueSeverity = (text = '') => {
+  const normalized = String(text || '').toLowerCase()
+  if (/\bcritical\b|must|required|cannot|not allowed|does not appear to match|not clinically compatible|before submission|before exporting|blocked|exact dispensed quantity|greater than zero/.test(normalized)) {
+    return 'error'
+  }
+  if (/\bhigh\b|warning|warn|unusual|confirm|should|missing|review|not supported|not explained/.test(normalized)) {
+    return 'warning'
+  }
+  return 'info'
+}
+
+const getReadinessIssueLabel = (text = '') => {
+  const normalized = String(text || '').toLowerCase()
+  if (/\bdiagnosis[-\s]treatment|not clinically compatible|does not appear to match|supporting diagnosis|not explained by the recorded diagnosis/.test(normalized)) return 'Diagnosis-treatment'
+  if (/\bg-drg|gdrg|tariff|service \d+|procedure|investigation|provider class|facility group|catering/.test(normalized)) return 'Tariff/G-DRG'
+  if (/\battach|attachment|prescription file|scanned|pdf|jpeg|png|document type\b/.test(normalized)) return 'Attachment'
+  if (/\bverify|verified|unverified\b/.test(normalized)) return 'Verification'
+  if (/\bprescriber|physician|referral|authorization|authorisation\b/.test(normalized)) return 'Prescriber'
+  if (/\bccc|cc code|nhis member|ghana card|folder number|patient surname|date of dispensing|service is required/.test(normalized)) return 'Required field'
+  if (/\bmedicine|drug|quantity|dispensed|served|dosage|dose|frequency|duration|level\b/.test(normalized)) return 'Medicine'
+  if (/\bage|gender|pregnancy|prostate|child|pediatric\b/.test(normalized)) return 'Age/gender'
+  return 'General'
 }
 
 const getReadinessIssueKey = (issue = {}) =>
@@ -968,7 +1000,7 @@ const Nhis = () => {
       } else if (String(claim.prescription_document_type || claim.prescriptionDocumentType || '').trim().toLowerCase() !== 'prescription') {
         badges.push({ key: 'attachment-type', label: 'Set attachment type', tone: 'warning' })
       } else if (!hasVerifiedNhisPrescription(claim)) {
-        badges.push({ key: 'unverified', label: 'Unverified prescription', tone: 'warning' })
+        badges.push({ key: 'unverified-prescription', label: 'Unverified prescription', tone: 'warning' })
       }
     }
     if (['pending_serving', 'serving_in_progress', 'returned_for_review'].includes(status) &&
@@ -2751,7 +2783,8 @@ const Nhis = () => {
       claimMedicines,
       {
         requireMedicineDirections: Boolean(editingClaim),
-        enforceDiagnosisTreatmentMatch: Boolean(editingClaim && isHospital),
+        enforceDiagnosisTreatmentMatch: Boolean(isHospital),
+        enforceClinicalScrub: Boolean(isHospital),
         enforcePrescribingLevel: true,
         requirePrescriptionAttachment: Boolean(editingClaim && !isHospital),
         requireVerifiedPrescription: Boolean(editingClaim && !isHospital),
@@ -6963,9 +6996,18 @@ const Nhis = () => {
                           <td>{formatNhisServiceDateTime(issue)}</td>
                           <td>
                             <ul className="readiness-issue-list">
-                              {(issueList.length ? issueList : ['Claim is incomplete for export.']).slice(0, 4).map((text, itemIndex) => (
-                                <li key={`${issue.id || index}-issue-${itemIndex}`}>{text}</li>
-                              ))}
+                              {(issueList.length ? issueList : ['Claim is incomplete for export.']).slice(0, 4).map((text, itemIndex) => {
+                                const severity = getReadinessIssueSeverity(text)
+                                return (
+                                  <li key={`${issue.id || index}-issue-${itemIndex}`}>
+                                    <span className={`readiness-issue-chip readiness-issue-chip--${severity}`}>
+                                      {severity === 'error' ? 'Error' : severity === 'warning' ? 'Warning' : 'Info'}
+                                    </span>
+                                    <span className="readiness-issue-type">{getReadinessIssueLabel(text)}</span>
+                                    <span>{text}</span>
+                                  </li>
+                                )
+                              })}
                             </ul>
                             {issueList.length > 4 && <small>{issueList.length - 4} more issue{issueList.length - 4 === 1 ? '' : 's'}</small>}
                           </td>

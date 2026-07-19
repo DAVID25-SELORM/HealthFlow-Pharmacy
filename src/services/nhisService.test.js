@@ -63,6 +63,7 @@ import {
   generateBrowserClaimItBridgeCcCode,
   getApplicableNhiaTariffItems,
   getAllNhisClaims,
+  getNhisClaimIssueCounts,
   getNhisClaimExportDate,
   getNhisExportScrubWarnings,
   getAllNhisDrugs,
@@ -333,6 +334,43 @@ describe('assessNhisClaimReadiness', () => {
     expect(readiness.blockers).toContain(
       'Classify the attachment as Prescription and confirm that Claims staff verified it before completing/submitting this pharmacy claim.'
     )
+  })
+
+  it('counts unverified prescription issues using the page filter key', async () => {
+    const claimsQuery = {
+      order: vi.fn(() => claimsQuery),
+      range: vi.fn().mockResolvedValue({
+        data: [{
+          id: 'claim-unverified-1',
+          status: 'served',
+          service_date_from: '2026-05-14',
+          surname: 'Mensah',
+          other_names: 'Ama',
+          member_no: '12345678',
+          claim_number: 'NHIS-000020',
+          prescription_file_path: 'org/rx.pdf',
+          prescription_document_type: 'prescription',
+          prescription_verified: false,
+          prescription_verified_by: '',
+          prescription_verified_at: '',
+        }],
+        error: null,
+      }),
+    }
+    const medicineQuery = {
+      in: vi.fn().mockResolvedValue({ data: [{ claim_id: 'claim-unverified-1' }], error: null }),
+    }
+    supabase.from.mockImplementation((table) => {
+      if (table === 'nhis_claims') return { select: vi.fn(() => claimsQuery) }
+      if (table === 'nhis_claim_medicines') return { select: vi.fn(() => medicineQuery) }
+      return { select: vi.fn(() => ({ in: vi.fn().mockResolvedValue({ data: [], error: null }) })) }
+    })
+
+    const counts = await getNhisClaimIssueCounts({ organizationType: 'pharmacy' })
+
+    expect(counts.all).toBe(1)
+    expect(counts['unverified-prescription']).toBe(1)
+    expect(counts.unverified).toBeUndefined()
   })
 
   it('allows hospital final status checks to make the attachment optional', () => {

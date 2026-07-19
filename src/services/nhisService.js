@@ -4967,7 +4967,7 @@ const getNhisClaimIssueKeys = (claim = {}, options = {}) => {
     } else if (getClaimField(claim, 'prescriptionDocumentType', 'prescription_document_type').toLowerCase() !== 'prescription') {
       issueKeys.add('attachment-type')
     } else if (!hasVerifiedPrescriptionAttachment(claim)) {
-      issueKeys.add('unverified')
+      issueKeys.add('unverified-prescription')
     }
   }
 
@@ -4987,7 +4987,7 @@ const computeNhisClaimIssueCounts = (claims = [], options = {}) => {
     all: 0,
     'missing-attachment': 0,
     'attachment-type': 0,
-    unverified: 0,
+    'unverified-prescription': 0,
     'incomplete-intake': 0,
   }
 
