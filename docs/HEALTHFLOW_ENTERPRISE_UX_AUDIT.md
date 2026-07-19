@@ -224,6 +224,10 @@ Recommended first UI changes:
 - Standardize issue cards and action icons.
 - Improve table row density and column priority.
 
+Future clinical intelligence:
+- See `docs/NHIS_CLAIM_INTELLIGENCE_ROADMAP.md` for the proposed diagnosis, laboratory, treatment, procedure, age, gender, admission, and referral scrubber roadmap.
+- Keep this roadmap separate from current CCC, pricing, export format, duplicate detection, and NHIS submission behavior until explicitly approved.
+
 ### Sales POS
 
 Strengths:
