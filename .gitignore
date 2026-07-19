@@ -18,6 +18,7 @@ dist-ssr
 .npm-cache/
 .supabase-cli/
 scripts/output/
+release/installers/
 data/*.sqlite
 data/*.sqlite-shm
 data/*.sqlite-wal

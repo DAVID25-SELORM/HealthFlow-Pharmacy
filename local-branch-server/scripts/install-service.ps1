@@ -6,6 +6,7 @@ param(
   [string]$LanHostname = $env:COMPUTERNAME,
   [string]$LanIp = '',
   [switch]$InstallDependencies,
+  [switch]$OfflineOnly,
   [switch]$SkipCopy
 )
 
@@ -75,6 +76,10 @@ function Ensure-Nssm {
     Copy-Item -LiteralPath $resolved -Destination (Join-Path $nssmInstallDir 'nssm.exe') -Force
     return (Join-Path $nssmInstallDir 'nssm.exe')
   } catch {
+    if ($OfflineOnly) {
+      throw 'NSSM is not bundled with this installer. Rebuild the HealthFlow installer with deployment\windows\nssm\win64\nssm.exe before handover.'
+    }
+
     Write-Warning 'Bundled NSSM was not found. Downloading NSSM 2.24...'
     New-Item -ItemType Directory -Force -Path $nssmInstallDir | Out-Null
     $zipPath = Join-Path $env:TEMP 'nssm-2.24.zip'
@@ -128,7 +133,7 @@ function Copy-BranchServer {
     return
   }
 
-  $excluded = @('data', 'logs', 'node_modules', '.env')
+  $excluded = @('data', 'logs', '.env')
   Get-ChildItem -LiteralPath $sourceServerDir -Force |
     Where-Object { $_.Name -notin $excluded } |
     ForEach-Object {
@@ -143,6 +148,10 @@ function Install-DependenciesIfNeeded {
   if ((Test-Path -LiteralPath $nodeModules) -and -not $InstallDependencies) {
     Write-Host 'node_modules already exists. Skipping npm install.'
     return
+  }
+
+  if ($OfflineOnly) {
+    throw 'Production dependencies are not bundled with this installer. Rebuild the HealthFlow installer so node_modules is included before handover.'
   }
 
   $npmPath = Resolve-CommandPath -CommandName 'npm.cmd' -ProvidedPath ''

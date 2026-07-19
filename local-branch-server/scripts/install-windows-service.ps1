@@ -6,6 +6,7 @@ param(
   [string]$LanHostname = $env:COMPUTERNAME,
   [string]$LanIp = '',
   [switch]$InstallDependencies,
+  [switch]$OfflineOnly,
   [switch]$SkipCopy
 )
 
@@ -38,10 +39,25 @@ if (-not (Test-Path -LiteralPath $installer)) {
 }
 
 if (-not $NodePath) {
+  $bundledNodeCandidates = @(
+    (Join-Path $sourceServerDir 'runtime\node\node.exe'),
+    (Join-Path $sourceServerDir 'vendor\node\node.exe'),
+    (Join-Path $sourceServerDir 'node\node.exe')
+  )
+  $NodePath = $bundledNodeCandidates |
+    Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) } |
+    Select-Object -First 1
+}
+
+if (-not $NodePath) {
   $nodeCommand = Get-Command node.exe -ErrorAction SilentlyContinue
   if ($nodeCommand) {
     $NodePath = $nodeCommand.Source
   } else {
+    if ($OfflineOnly) {
+      throw 'Node.js runtime is not bundled and is not installed on this computer. Rebuild the HealthFlow installer with the bundled Node runtime before handover.'
+    }
+
     $winget = Get-Command winget.exe -ErrorAction SilentlyContinue
     if (-not $winget) {
       throw 'Node.js is not installed and Windows Package Manager (winget) is unavailable. Install Node.js 20 or newer, then rerun this installer.'
@@ -90,6 +106,10 @@ $arguments += @('-NodePath', $NodePath)
 
 if ($InstallDependencies) {
   $arguments += '-InstallDependencies'
+}
+
+if ($OfflineOnly) {
+  $arguments += '-OfflineOnly'
 }
 
 if ($SkipCopy) {

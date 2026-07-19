@@ -19,6 +19,7 @@
     "uninstall:service": "powershell -ExecutionPolicy Bypass -File scripts\\uninstall-service.ps1",
     "install:windows-service": "powershell -ExecutionPolicy Bypass -File scripts\\install-windows-service.ps1",
     "uninstall:windows-service": "powershell -ExecutionPolicy Bypass -File scripts\\uninstall-windows-service.ps1",
+    "build:offline-installer": "powershell -ExecutionPolicy Bypass -File scripts\\build-offline-installer-package.ps1 -DownloadNodeRuntime",
     "restart:service": "powershell -ExecutionPolicy Bypass -File scripts\\restart-service.ps1",
     "start:local-server": "scripts\\start-local-server.bat",
     "health:check": "powershell -ExecutionPolicy Bypass -File scripts\\health-check.ps1",

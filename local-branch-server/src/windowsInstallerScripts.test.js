@@ -37,10 +37,39 @@ describe('Windows production installer scripts', () => {
   it('automatically installs the Node.js LTS runtime when it is missing', () => {
     const installer = readScript('install-windows-service.ps1')
 
+    expect(installer).toContain("runtime\\node\\node.exe")
     expect(installer).toContain('Node.js is not installed')
     expect(installer).toContain('OpenJS.NodeJS.LTS')
     expect(installer).toContain('--accept-package-agreements')
     expect(installer).toContain("'nodejs\\node.exe'")
+  })
+
+  it('supports a complete offline first-time installer package', () => {
+    const elevatedInstaller = readScript('install-windows-service.ps1')
+    const serviceInstaller = readScript('install-service.ps1')
+    const launcher = readScript('../Install-HealthFlow.cmd')
+    const packageBuilder = readScript('build-offline-installer-package.ps1')
+
+    expect(launcher).toContain('-OfflineOnly')
+    expect(launcher).not.toContain('-InstallDependencies')
+    expect(elevatedInstaller).toContain('[switch]$OfflineOnly')
+    expect(elevatedInstaller).toContain('Node.js runtime is not bundled')
+    expect(elevatedInstaller).toContain('$arguments += \'-OfflineOnly\'')
+
+    expect(serviceInstaller).toContain('[switch]$OfflineOnly')
+    expect(serviceInstaller).toContain("throw 'NSSM is not bundled with this installer")
+    expect(serviceInstaller).toContain("throw 'Production dependencies are not bundled")
+    expect(serviceInstaller).toContain("$excluded = @('data', 'logs', '.env')")
+    expect(serviceInstaller).toContain('node_modules already exists. Skipping npm install.')
+
+    expect(packageBuilder).toContain('npm.cmd run build:offline')
+    expect(packageBuilder).toContain('latest-v22.x')
+    expect(packageBuilder).toContain('runtime\\node')
+    expect(packageBuilder).toContain("$nodeExe = Join-Path $runtimeDir 'node.exe'")
+    expect(packageBuilder).toContain("$npmCliPath = Join-Path $runtimeDir 'node_modules\\npm\\bin\\npm-cli.js'")
+    expect(packageBuilder).toContain('& $nodeExe $npmCliPath ci --omit=dev')
+    expect(packageBuilder).toContain('HealthFlow-Offline-Installer-')
+    expect(packageBuilder).toContain('VITE_HEALTHFLOW_INSTALLER_URL=')
   })
 
   describe('post-install launch of the app on a fresh install only', () => {

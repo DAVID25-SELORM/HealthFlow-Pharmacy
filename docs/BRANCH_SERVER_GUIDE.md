@@ -150,8 +150,24 @@ Do not expose port `4780` directly to the public internet.
 
 The **Download and Install** button in Offline Sync downloads the first-time
 workstation installer for users who do not already have a local branch server.
-After the installer runs, **Branch Sync Setup** registers the machine for cloud
-sync and the Offline Setup Wizard verifies readiness.
+Publish only the self-contained package created by:
+
+```powershell
+cd local-branch-server
+npm run build:offline-installer
+```
+
+That package contains the offline browser app, local branch server, production
+dependencies, portable Node.js runtime, bundled NSSM service helper, SQLite data
+folder setup, Windows service setup, desktop shortcut, TLS provisioning, and
+workstation enrollment tools. After the installer runs, **Branch Sync Setup**
+registers the machine for cloud sync and the Offline Setup Wizard verifies
+readiness. Once the facility has been permitted and synced, supported workflows
+can continue offline without internet.
+
+After uploading `HealthFlow-Offline-Installer-<version>.zip` to the approved
+HTTPS download location, set production `VITE_HEALTHFLOW_INSTALLER_URL` to that
+exact ZIP URL and redeploy the cloud app.
 
 The **Check for Updates** and **Download Update** buttons update an already
 installed and connected local branch server/offline app.

@@ -109,11 +109,30 @@ and logs are preserved. A failed install restores the previous application
 version.
 
 In Offline Sync, **Download and Install** downloads the first-time workstation
-installer for users who do not already have a local branch server. **Check for
-Updates** and **Download Update** update an already installed and connected
-local branch server. Keep the two tokens distinct: `BRANCH_SERVER_TOKEN`
-protects local API calls from browsers and scripts, while `BRANCH_SYNC_TOKEN`
-registers the local server for Supabase sync.
+installer for users who do not already have a local branch server. The published
+installer ZIP must be the self-contained package built by
+`npm run build:offline-installer` from this folder. It includes the offline app,
+local branch server, production dependencies, bundled Node.js runtime, bundled
+NSSM service helper, database/service setup, desktop shortcut, TLS provisioning,
+and workstation enrollment tools. After a facility is permitted and synced once,
+supported workflows can continue offline without internet.
+
+**Check for Updates** and **Download Update** update an already installed and
+connected local branch server. Keep the two tokens distinct:
+`BRANCH_SERVER_TOKEN` protects local API calls from browsers and scripts, while
+`BRANCH_SYNC_TOKEN` registers the local server for Supabase sync.
+
+Build the first-time installer package:
+
+```powershell
+cd local-branch-server
+npm run build:offline-installer
+```
+
+The script writes `release\installers\HealthFlow-Offline-Installer-<version>.zip`
+and a `.sha256.txt` checksum. Upload the ZIP to the approved HTTPS download
+location, then set production `VITE_HEALTHFLOW_INSTALLER_URL` to that exact
+download URL before deploying the cloud app.
 
 Configure every facility server with the same update public key:
 
@@ -169,7 +188,10 @@ npm run sync -- --once
 
 For production branch computers, install HealthFlow as a Windows background service. Cashiers should not need PowerShell after this setup.
 
-NSSM is bundled at `local-branch-server\deployment\windows\nssm\win64\nssm.exe` and handled by the installer. If it is missing and internet is available, `install-service.ps1` downloads NSSM automatically as a recovery fallback.
+NSSM is bundled at `local-branch-server\deployment\windows\nssm\win64\nssm.exe`
+and handled by the installer. The one-click first-time installer runs in
+offline-only mode and will fail clearly if Node.js, NSSM, or production
+dependencies were not bundled before handover.
 
 ### Pharmacy Machine Installation
 
