@@ -673,10 +673,10 @@ const getReadinessIssueCategories = (issue = {}) => {
   if (/\bdiagnosis|icd|treatment\b/.test(text)) {
     categories.add('diagnosis')
   }
-  if (/\bclinical|risk|critical|age-restricted|gender|pregnancy|obstetric|prostate|infection|antibiotic|antimicrobial|chronic|specialist|supporting diagnosis|supporting malaria|bp reading|glucose|hba1c\b/.test(text)) {
+  if (/\bclinical|risk|critical|age-restricted|gender|pregnancy|obstetric|prostate|infection|antibiotic|antimicrobial|chronic|specialist|supporting diagnosis|supporting malaria|diagnosis-lab|lab review|typhoid|widal|bp reading|glucose|hba1c\b/.test(text)) {
     categories.add('clinical')
   }
-  if (/\bg-drg|gdrg|tariff|service \d+|procedure|investigation|provider class|facility group|catering\b/.test(text)) {
+  if (/\bg-drg|gdrg|tariff|service \d+|procedure|investigation|laboratory|lab|provider class|facility group|catering\b/.test(text)) {
     categories.add('tariff')
   }
   if (/\bmedicine|drug|quantity|dispensed|served|dosage|level\b/.test(text)) {
@@ -700,6 +700,7 @@ const getReadinessIssueSeverity = (text = '') => {
 const getReadinessIssueLabel = (text = '') => {
   const normalized = String(text || '').toLowerCase()
   if (/\bdiagnosis[-\s]treatment|not clinically compatible|does not appear to match|supporting diagnosis|not explained by the recorded diagnosis/.test(normalized)) return 'Diagnosis-treatment'
+  if (/\bdiagnosis[-\s]lab|lab review|laboratory|investigation|typhoid|widal|blood film|rdt\b/.test(normalized)) return 'Lab/investigation'
   if (/\bg-drg|gdrg|tariff|service \d+|procedure|investigation|provider class|facility group|catering/.test(normalized)) return 'Tariff/G-DRG'
   if (/\battach|attachment|prescription file|scanned|pdf|jpeg|png|document type\b/.test(normalized)) return 'Attachment'
   if (/\bverify|verified|unverified\b/.test(normalized)) return 'Verification'

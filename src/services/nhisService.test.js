@@ -611,6 +611,44 @@ describe('assessNhisClaimReadiness', () => {
     )
   })
 
+  it('warns when a hospital malaria-only claim includes a typhoid lab service', () => {
+    const readiness = assessNhisClaimReadiness(
+      { ...baseClaim, organizationType: 'hospital', diagnosis: 'Plasmodium falciparum malaria' },
+      [{ ...baseMedicine, drugCode: 'ARTLUM1', description: 'Artemether Lumefantrine Tablet', category: 'A' }],
+      {
+        finalSubmission: true,
+        providerClassLevel: 'D',
+        nhiaTariffServices: [{
+          ...baseTariffService,
+          description: 'Typhoid test',
+          gdrgCode: 'INE149',
+        }],
+      }
+    )
+
+    expect(readiness.warnings).toEqual(expect.arrayContaining([
+      expect.stringContaining('Diagnosis-Lab Review: Typhoid/Widal testing is unusual for a malaria-only diagnosis.'),
+    ]))
+  })
+
+  it('allows typhoid lab services when the supporting diagnosis is also recorded', () => {
+    const readiness = assessNhisClaimReadiness(
+      { ...baseClaim, organizationType: 'hospital', diagnosis: 'Plasmodium falciparum malaria; suspected typhoid fever' },
+      [{ ...baseMedicine, drugCode: 'ARTLUM1', description: 'Artemether Lumefantrine Tablet', category: 'A' }],
+      {
+        finalSubmission: true,
+        providerClassLevel: 'D',
+        nhiaTariffServices: [{
+          ...baseTariffService,
+          description: 'Typhoid test',
+          gdrgCode: 'INE149',
+        }],
+      }
+    )
+
+    expect(readiness.warnings.join(' ')).not.toContain('Typhoid/Widal testing is unusual for a malaria-only diagnosis')
+  })
+
   it('blocks unsupported major procedures when procedure data is supplied', () => {
     const readiness = assessNhisClaimReadiness(
       { ...baseClaim, organizationType: 'hospital', diagnosis: 'Mild malaria' },

@@ -1436,6 +1436,27 @@ const SUPPORTING_INVESTIGATION_RULES = [
   },
 ]
 
+const UNUSUAL_INVESTIGATION_RULES = [
+  {
+    diagnosisLabel: 'Malaria',
+    diagnosis: ['malaria', 'plasmodium', 'b50', 'b51', 'b52', 'b53', 'b54'],
+    investigation: ['typhoid', 'widal', 'enteric fever', 'salmonella'],
+    associatedDiagnosis: ['typhoid', 'enteric fever', 'salmonella'],
+    expectedInvestigations: ['Malaria RDT', 'Blood film / microscopy'],
+    message:
+      'Diagnosis-Lab Review: Typhoid/Widal testing is unusual for a malaria-only diagnosis. Add typhoid/enteric fever as an additional diagnosis or remove the lab if it was selected in error.',
+  },
+  {
+    diagnosisLabel: 'Typhoid fever',
+    diagnosis: ['typhoid', 'enteric fever', 'salmonella'],
+    investigation: ['malaria test', 'malaria rdt', 'rdt', 'blood film', 'mp test'],
+    associatedDiagnosis: ['malaria', 'plasmodium'],
+    expectedInvestigations: ['Widal', 'Blood culture', 'CBC / full blood count'],
+    message:
+      'Diagnosis-Lab Review: Malaria testing is unusual for a typhoid-only diagnosis. Add malaria as an additional diagnosis or remove the lab if it was selected in error.',
+  },
+]
+
 const GENDER_CONFLICT_RULES = [
   {
     gender: 'male',
@@ -1890,6 +1911,41 @@ const getSupportingInvestigationIssues = (claimData = {}, options = {}, strict =
     .filter((rule) => includesAnyTerm(diagnosisText, rule.diagnosis))
     .filter((rule) => !investigationText || !includesAnyTerm(investigationText, rule.investigations))
     .map((rule) => rule.message)
+}
+
+const getInvestigationMismatchWarnings = (claimData = {}, options = {}, strict = false) => {
+  if (!strict) return []
+  const diagnosisText = getDiagnosisMatchText(claimData)
+  if (!diagnosisText) return []
+
+  const explicitInvestigations = getClaimItems(claimData, options, ['labs', 'labInvestigations', 'investigations', 'claimInvestigations'])
+  const serviceInvestigations = getClaimItems(claimData, options, ['services', 'claimServices', 'nhiaTariffServices'])
+  const investigations = [...explicitInvestigations, ...serviceInvestigations]
+  if (!investigations.length) return []
+
+  const warnings = []
+  for (const investigation of investigations) {
+    const investigationText = getClaimItemText(investigation)
+    if (!investigationText) continue
+
+    UNUSUAL_INVESTIGATION_RULES
+      .filter((rule) => includesAnyTerm(diagnosisText, rule.diagnosis))
+      .filter((rule) => includesAnyTerm(investigationText, rule.investigation))
+      .filter((rule) => !includesAnyTerm(diagnosisText, rule.associatedDiagnosis))
+      .forEach((rule) => {
+        const serviceName = asText(
+          typeof investigation === 'string'
+            ? investigation
+            : investigation.description || investigation.label || investigation.name || investigation.gdrgCode || investigation.gdrg_code
+        ) || 'Selected investigation'
+        addUnique(
+          warnings,
+          `${rule.message} Service: ${serviceName}. Expected for ${rule.diagnosisLabel}: ${rule.expectedInvestigations.join(', ')}.`
+        )
+      })
+  }
+
+  return warnings
 }
 
 const getProcedureMismatchIssues = (claimData = {}, options = {}, strict = false) => {
@@ -2453,6 +2509,7 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
       ...ageIssues.warnings,
       ...drugDiagnosisIssues.warnings,
       ...quantityCostIssues.warnings,
+      ...getInvestigationMismatchWarnings(claimData, { ...options, claimServices: tariffServices }, true),
       ...getSupportingInvestigationIssues(claimData, { ...options, claimServices: tariffServices }, true),
       ...getChronicDiseaseWarnings(claimData, options, true)
     )
