@@ -244,7 +244,7 @@ const baseTariffService = {
 }
 
 const mismatchBlocker =
-  'Malaria: treatment does not appear to match the diagnosis. Correct the diagnosis or add a matching medicine before saving corrections/submission.'
+  'no matching Malaria medicine/category was found. Reason: correct the diagnosis or add a medicine/category that matches the recorded diagnosis before saving corrections/submission.'
 
 describe('assessNhisClaimReadiness', () => {
   it('warns about dose, frequency, and duration while serving patients', () => {
@@ -462,7 +462,9 @@ describe('assessNhisClaimReadiness', () => {
       { requireMedicineDirections: true }
     )
 
-    expect(readiness.blockers).toContain(mismatchBlocker)
+    expect(readiness.blockers).toEqual(expect.arrayContaining([
+      expect.stringContaining(mismatchBlocker),
+    ]))
   })
 
   it('blocks extra medicines that are not explained by any recorded diagnosis', () => {
@@ -490,8 +492,28 @@ describe('assessNhisClaimReadiness', () => {
       { requireMedicineDirections: true, providerClassLevel: 'D' }
     )
 
-    expect(readiness.blockers).not.toContain(mismatchBlocker)
+    expect(readiness.blockers.join(' ')).not.toContain(mismatchBlocker)
     expect(readiness.blockers.join(' ')).not.toContain('Medicine 2: Paracetamol Tablet appears to be')
+  })
+
+  it('does not present pain or fever support rules as diagnoses', () => {
+    const readiness = assessNhisClaimReadiness(
+      {
+        ...baseClaim,
+        organizationType: 'hospital',
+        diagnosis: 'Typhoid fever; Plasmodium falciparum malaria',
+      },
+      [
+        { ...baseMedicine, drugCode: 'ARTLUM1', description: 'Artemether Lumefantrine Tablet' },
+        { ...baseMedicine, drugCode: 'CEFTR1', description: 'Ceftriaxone Injection' },
+      ],
+      { requireMedicineDirections: true, providerClassLevel: 'D' }
+    )
+
+    expect(readiness.blockers).toContain(
+      'Typhoid fever and Plasmodium falciparum malaria are associated with fever, but no analgesic/antipyretic medicine was found. Reason: add a pain/fever-relief medicine or document why none was required before saving corrections/submission.'
+    )
+    expect(readiness.blockers.join(' ')).not.toContain('Pain or fever: treatment does not appear to match the diagnosis')
   })
 
   it('blocks final submission when medicines exist but diagnosis has no clinical rule coverage', () => {
@@ -513,7 +535,9 @@ describe('assessNhisClaimReadiness', () => {
       { finalSubmission: true, clinicalRules: [] }
     )
 
-    expect(readiness.blockers).toContain(mismatchBlocker)
+    expect(readiness.blockers).toEqual(expect.arrayContaining([
+      expect.stringContaining(mismatchBlocker),
+    ]))
   })
 
   it('matches clinical rules using selected ICD diagnosis details', () => {
@@ -528,7 +552,9 @@ describe('assessNhisClaimReadiness', () => {
       { requireMedicineDirections: true }
     )
 
-    expect(readiness.blockers).toContain(mismatchBlocker)
+    expect(readiness.blockers).toEqual(expect.arrayContaining([
+      expect.stringContaining(mismatchBlocker),
+    ]))
   })
 
   it('blocks age and gender clinical conflicts before hospital correction submission', () => {

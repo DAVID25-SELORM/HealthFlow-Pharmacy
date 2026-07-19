@@ -254,6 +254,61 @@ const normalizeClinicalRules = (rules = []) =>
     .map(normalizeClinicalRule)
     .filter((rule) => rule.isActive && rule.label && rule.diagnosis.length && (rule.treatments.length || rule.drugCodes.length))
 
+const splitDiagnoses = (value) =>
+  normalizeText(value)
+    .split(/[;\n|]/)
+    .map(normalizeText)
+    .filter(Boolean)
+
+const getClaimDiagnosisLabels = (claim = {}) => {
+  const labels = [
+    ...normalizeDiagnosisDetails(claim.diagnosis_details || claim.diagnosisDetails || claim.payload?.diagnosis_details || claim.payload?.diagnosisDetails)
+      .map((diagnosis) => diagnosis.label),
+    ...splitDiagnoses(claim.diagnosis || claim.payload?.diagnosis),
+  ]
+  const seen = new Set()
+  return labels.filter((label) => {
+    const key = normalizeMatchText(label)
+    if (!key || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+const getRuleDiagnosisLabels = (claim = {}, rule = {}) => {
+  const diagnosisLabels = getClaimDiagnosisLabels(claim)
+  const matchingLabels = diagnosisLabels.filter((label) => {
+    const normalizedLabel = normalizeMatchText(label)
+    return rule.diagnosis.some((keyword) => normalizedLabel.includes(normalizeMatchText(keyword)))
+  })
+
+  return matchingLabels.length ? matchingLabels : diagnosisLabels
+}
+
+const formatDiagnosisList = (diagnoses = []) => {
+  if (!diagnoses.length) return 'the recorded diagnosis'
+  if (diagnoses.length === 1) return diagnoses[0]
+  return `${diagnoses.slice(0, -1).join(', ')} and ${diagnoses[diagnoses.length - 1]}`
+}
+
+const getTreatmentCategoryLabel = (rule = {}) => {
+  if (normalizeMatchText(rule.label) === 'pain or fever') return 'analgesic/antipyretic medicine'
+  return `${rule.label} medicine/category`
+}
+
+const getDiagnosisTreatmentMismatchMessage = (claim = {}, rule = {}) => {
+  const isPainOrFeverRule = normalizeMatchText(rule.label) === 'pain or fever'
+  const diagnoses = isPainOrFeverRule
+    ? getClaimDiagnosisLabels(claim)
+    : getRuleDiagnosisLabels(claim, rule)
+  const diagnosisLabel = formatDiagnosisList(diagnoses)
+  if (isPainOrFeverRule) {
+    return `${diagnosisLabel} ${diagnoses.length === 1 ? 'is' : 'are'} associated with fever, but no analgesic/antipyretic medicine was found. Reason: add a pain/fever-relief medicine or document why none was required before final submission/export.`
+  }
+
+  return `${diagnosisLabel}: no matching ${getTreatmentCategoryLabel(rule)} was found. Reason: correct the diagnosis or add a medicine/category that matches the recorded diagnosis before final submission/export.`
+}
+
 const assertRequiredText = (value, label) => {
   const normalized = normalizeText(value)
   if (!normalized) {
@@ -2246,7 +2301,7 @@ const getDiagnosisTreatmentMismatchBlockers = (claim, items = [], rules = getCli
       const keywordMatches = rule.treatments.length && rule.treatments.some((keyword) => treatmentText.includes(normalizeMatchText(keyword)))
       return !codeMatches && !keywordMatches
     })
-    .map((rule) => `${rule.label}: treatment does not appear to match the diagnosis. Correct the diagnosis or add a matching medicine before final submission/export.`)
+    .map((rule) => getDiagnosisTreatmentMismatchMessage(claim, rule))
 }
 
 const validateClaimForSubmission = (claim, settings) => {

@@ -1266,6 +1266,55 @@ const getDiagnosisMatchText = (claimData) => {
   ].filter(Boolean).join(' '))
 }
 
+const getClaimDiagnosisLabels = (claimData = {}) => {
+  const labels = [
+    ...normalizeDiagnosisDetails(claimData?.diagnosisDetails ?? claimData?.diagnosis_details)
+      .map((diagnosis) => diagnosis.label),
+    ...splitDiagnoses(getClaimField(claimData, 'diagnosis')),
+  ]
+  const seen = new Set()
+  return labels.filter((label) => {
+    const key = normalizeMatchText(label)
+    if (!key || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+const getRuleDiagnosisLabels = (claimData = {}, rule = {}) => {
+  const diagnosisLabels = getClaimDiagnosisLabels(claimData)
+  const matchingLabels = diagnosisLabels.filter((label) => {
+    const normalizedLabel = normalizeMatchText(label)
+    return rule.diagnosis.some((keyword) => normalizedLabel.includes(normalizeMatchText(keyword)))
+  })
+
+  return matchingLabels.length ? matchingLabels : diagnosisLabels
+}
+
+const formatDiagnosisList = (diagnoses = []) => {
+  if (!diagnoses.length) return 'the recorded diagnosis'
+  if (diagnoses.length === 1) return diagnoses[0]
+  return `${diagnoses.slice(0, -1).join(', ')} and ${diagnoses[diagnoses.length - 1]}`
+}
+
+const getTreatmentCategoryLabel = (rule = {}) => {
+  if (normalizeMatchText(rule.label) === 'pain or fever') return 'analgesic/antipyretic medicine'
+  return `${rule.label} medicine/category`
+}
+
+const getDiagnosisTreatmentMismatchMessage = (claimData = {}, rule = {}) => {
+  const isPainOrFeverRule = normalizeMatchText(rule.label) === 'pain or fever'
+  const diagnoses = isPainOrFeverRule
+    ? getClaimDiagnosisLabels(claimData)
+    : getRuleDiagnosisLabels(claimData, rule)
+  const diagnosisLabel = formatDiagnosisList(diagnoses)
+  if (isPainOrFeverRule) {
+    return `${diagnosisLabel} ${diagnoses.length === 1 ? 'is' : 'are'} associated with fever, but no analgesic/antipyretic medicine was found. Reason: add a pain/fever-relief medicine or document why none was required before saving corrections/submission.`
+  }
+
+  return `${diagnosisLabel}: no matching ${getTreatmentCategoryLabel(rule)} was found. Reason: correct the diagnosis or add a medicine/category that matches the recorded diagnosis before saving corrections/submission.`
+}
+
 const ruleMatchesTreatment = (rule, treatmentText, treatmentCodes = new Set()) => {
   const codeMatches = rule.drugCodes.length && rule.drugCodes.some((code) => treatmentCodes.has(code))
   const keywordMatches = rule.treatments.length && rule.treatments.some((keyword) => treatmentText.includes(normalizeMatchText(keyword)))
@@ -1326,7 +1375,7 @@ const getDiagnosisTreatmentMismatchBlockers = (claimData, medicines = [], rules 
       if (rule.severity !== 'block') return false
       return !ruleMatchesTreatment(rule, treatmentText, treatmentCodes)
     })
-    .map((rule) => `${rule.label}: treatment does not appear to match the diagnosis. Correct the diagnosis or add a matching medicine before saving corrections/submission.`)
+    .map((rule) => getDiagnosisTreatmentMismatchMessage(claimData, rule))
 
   ;(medicines || []).forEach((medicine, index) => {
     const medicineText = getMedicineMismatchReviewText(medicine)
