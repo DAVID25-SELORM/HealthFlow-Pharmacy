@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import OfflineSync from './OfflineSync'
 
 const mocks = vi.hoisted(() => ({
@@ -190,6 +190,200 @@ describe('OfflineSync branch registration', () => {
     expect(mocks.notify).toHaveBeenCalledWith(
       'Update installation started. The localhost app will restart briefly.',
       'success'
+    )
+  })
+
+  const NOT_CONFIGURED_MESSAGE =
+    'The HealthFlow Offline installer has not been configured for this environment. Contact system administration.'
+  const CONFIGURED_INSTALLER_URL = 'https://cdn.healthflowgh.com/releases/HealthFlow-Offline-2.4.0.zip'
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it('refuses to open the installer when no environment variable is configured (default state)', async () => {
+    // No vi.stubEnv call: this exercises the real current default, where
+    // VITE_HEALTHFLOW_INSTALLER_URL is unset in this repository.
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+
+    render(<OfflineSync />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Download and Install' }))
+
+    await waitFor(() => expect(mocks.notify).toHaveBeenCalledWith(NOT_CONFIGURED_MESSAGE, 'error'))
+    expect(openSpy).not.toHaveBeenCalled()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('refuses to open the installer when the environment variable is an empty string', async () => {
+    vi.resetModules()
+    vi.stubEnv('VITE_HEALTHFLOW_INSTALLER_URL', '')
+    const { default: FreshOfflineSync } = await import('./OfflineSync')
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+
+    render(<FreshOfflineSync />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Download and Install' }))
+
+    await waitFor(() => expect(mocks.notify).toHaveBeenCalledWith(NOT_CONFIGURED_MESSAGE, 'error'))
+    expect(openSpy).not.toHaveBeenCalled()
+  })
+
+  it('refuses to open the installer when the environment variable equals the known placeholder', async () => {
+    vi.resetModules()
+    vi.stubEnv(
+      'VITE_HEALTHFLOW_INSTALLER_URL',
+      'https://healthflowcloud.com/downloads/HealthFlow-Installer.zip'
+    )
+    const { default: FreshOfflineSync } = await import('./OfflineSync')
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+
+    render(<FreshOfflineSync />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Download and Install' }))
+
+    await waitFor(() => expect(mocks.notify).toHaveBeenCalledWith(NOT_CONFIGURED_MESSAGE, 'error'))
+    expect(openSpy).not.toHaveBeenCalled()
+  })
+
+  it('refuses to open a configured but malformed installer URL', async () => {
+    vi.resetModules()
+    vi.stubEnv('VITE_HEALTHFLOW_INSTALLER_URL', 'not a url')
+    const { default: FreshOfflineSync } = await import('./OfflineSync')
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+
+    render(<FreshOfflineSync />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Download and Install' }))
+
+    await waitFor(() => expect(mocks.notify).toHaveBeenCalledWith(NOT_CONFIGURED_MESSAGE, 'error'))
+    expect(openSpy).not.toHaveBeenCalled()
+  })
+
+  it('refuses to open a configured installer URL using an unsafe protocol', async () => {
+    vi.resetModules()
+    vi.stubEnv('VITE_HEALTHFLOW_INSTALLER_URL', 'http://cdn.healthflowgh.com/HealthFlow-Offline.zip')
+    const { default: FreshOfflineSync } = await import('./OfflineSync')
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+
+    render(<FreshOfflineSync />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Download and Install' }))
+
+    await waitFor(() => expect(mocks.notify).toHaveBeenCalledWith(NOT_CONFIGURED_MESSAGE, 'error'))
+    expect(openSpy).not.toHaveBeenCalled()
+  })
+
+  it('opens an explicitly configured, reachable installer URL (existing working behavior unchanged)', async () => {
+    vi.resetModules()
+    vi.stubEnv('VITE_HEALTHFLOW_INSTALLER_URL', CONFIGURED_INSTALLER_URL)
+    const { default: FreshOfflineSync } = await import('./OfflineSync')
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+
+    render(<FreshOfflineSync />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Download and Install' }))
+
+    await waitFor(() => expect(openSpy).toHaveBeenCalledTimes(1))
+    expect(openSpy).toHaveBeenCalledWith(CONFIGURED_INSTALLER_URL, '_blank', 'noopener,noreferrer')
+    expect(fetchMock).toHaveBeenCalledWith(CONFIGURED_INSTALLER_URL, expect.objectContaining({ method: 'HEAD' }))
+    expect(mocks.notify).not.toHaveBeenCalledWith(NOT_CONFIGURED_MESSAGE, 'error')
+    expect(mocks.notify).not.toHaveBeenCalledWith(
+      'Installer availability could not be verified before opening. Proceeding with the configured download.',
+      'warning'
+    )
+  })
+
+  it('does not open an explicitly configured installer URL that returns 404', async () => {
+    vi.resetModules()
+    vi.stubEnv('VITE_HEALTHFLOW_INSTALLER_URL', CONFIGURED_INSTALLER_URL)
+    const { default: FreshOfflineSync } = await import('./OfflineSync')
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 404 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+
+    render(<FreshOfflineSync />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Download and Install' }))
+
+    await waitFor(() =>
+      expect(mocks.notify).toHaveBeenCalledWith(
+        'The installer package could not be found at the configured location. Contact system administration.',
+        'error'
+      )
+    )
+    expect(openSpy).not.toHaveBeenCalled()
+  })
+
+  it('does not open an explicitly configured installer URL that returns 410', async () => {
+    vi.resetModules()
+    vi.stubEnv('VITE_HEALTHFLOW_INSTALLER_URL', CONFIGURED_INSTALLER_URL)
+    const { default: FreshOfflineSync } = await import('./OfflineSync')
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 410 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+
+    render(<FreshOfflineSync />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Download and Install' }))
+
+    await waitFor(() =>
+      expect(mocks.notify).toHaveBeenCalledWith(
+        'The installer package could not be found at the configured location. Contact system administration.',
+        'error'
+      )
+    )
+    expect(openSpy).not.toHaveBeenCalled()
+  })
+
+  it.each([405, 401, 403, 408, 409, 425, 429, 500, 502, 503])(
+    'treats HTTP %i as inconclusive — opens the installer with a warning instead of blocking it',
+    async (status) => {
+      vi.resetModules()
+      vi.stubEnv('VITE_HEALTHFLOW_INSTALLER_URL', CONFIGURED_INSTALLER_URL)
+      const { default: FreshOfflineSync } = await import('./OfflineSync')
+      const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status }))
+      vi.stubGlobal('fetch', fetchMock)
+      const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+
+      render(<FreshOfflineSync />)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Download and Install' }))
+
+      await waitFor(() => expect(openSpy).toHaveBeenCalledTimes(1))
+      expect(openSpy).toHaveBeenCalledWith(CONFIGURED_INSTALLER_URL, '_blank', 'noopener,noreferrer')
+      expect(mocks.notify).toHaveBeenCalledWith(
+        'Installer availability could not be verified before opening. Proceeding with the configured download.',
+        'warning'
+      )
+      expect(mocks.notify).not.toHaveBeenCalledWith(
+        'The installer package could not be found at the configured location. Contact system administration.',
+        'error'
+      )
+    }
+  )
+
+  it('opens an explicitly configured installer URL when the check is inconclusive, and says so', async () => {
+    vi.resetModules()
+    vi.stubEnv('VITE_HEALTHFLOW_INSTALLER_URL', CONFIGURED_INSTALLER_URL)
+    const { default: FreshOfflineSync } = await import('./OfflineSync')
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'))
+    vi.stubGlobal('fetch', fetchMock)
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+
+    render(<FreshOfflineSync />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Download and Install' }))
+
+    await waitFor(() => expect(openSpy).toHaveBeenCalledTimes(1))
+    expect(openSpy).toHaveBeenCalledWith(CONFIGURED_INSTALLER_URL, '_blank', 'noopener,noreferrer')
+    expect(mocks.notify).toHaveBeenCalledWith(
+      'Installer availability could not be verified before opening. Proceeding with the configured download.',
+      'warning'
     )
   })
 })

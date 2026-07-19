@@ -37,7 +37,10 @@ import { getConfiguredCloudUrl } from '../lib/supabase'
 import {
   BRANCH_UPDATE_MANIFEST_URL,
   BRANCH_UPDATE_PUBLIC_KEY,
+  HEALTHFLOW_INSTALLER_DETAILS_VALUE,
   HEALTHFLOW_INSTALLER_URL,
+  HEALTHFLOW_INSTALLER_URL_CONFIGURED,
+  validateHealthflowInstallerUrl,
 } from '../config/branchUpdateConfig'
 import { readSignatureFileAsDataUrl } from '../utils/imageUpload'
 import {
@@ -791,7 +794,7 @@ export default function OfflineSync() {
       `Requested by: ${user?.email || profile?.email || profile?.full_name || 'Current user'}`,
       '',
       'Installer package',
-      `Download URL: ${HEALTHFLOW_INSTALLER_URL}`,
+      `Download URL: ${HEALTHFLOW_INSTALLER_DETAILS_VALUE}`,
       '',
       'What the installer sets up',
       '- HealthFlow local branch server',
@@ -816,11 +819,57 @@ export default function OfflineSync() {
     })
   }
 
-  const openInstallerDownload = () => {
-    if (!HEALTHFLOW_INSTALLER_URL) {
-      notify('Installer download URL is not configured for this deployment.', 'warning')
+  const INSTALLER_NOT_CONFIGURED_MESSAGE =
+    'The HealthFlow Offline installer has not been configured for this environment. Contact system administration.'
+  const INSTALLER_CONFIRMED_MISSING_MESSAGE =
+    'The installer package could not be found at the configured location. Contact system administration.'
+  const INSTALLER_UNVERIFIED_MESSAGE =
+    'Installer availability could not be verified before opening. Proceeding with the configured download.'
+
+  // Only 404/410 are unambiguous "this resource does not exist" responses.
+  // Every other non-OK status a HEAD request can return is consistent with a
+  // perfectly valid installer that simply couldn't be pre-verified from the
+  // browser (HEAD unsupported, CDN/bot-protection, rate limiting, or a
+  // transient server error) and must not block a deliberately configured URL.
+  const INSTALLER_CONFIRMED_MISSING_STATUSES = [404, 410]
+
+  const openInstallerDownload = async () => {
+    // A missing, blank, or placeholder URL is never opened — it is not
+    // evidence that a real installer package exists anywhere.
+    if (!HEALTHFLOW_INSTALLER_URL_CONFIGURED) {
+      notify(INSTALLER_NOT_CONFIGURED_MESSAGE, 'error')
       return
     }
+
+    const validation = validateHealthflowInstallerUrl(HEALTHFLOW_INSTALLER_URL)
+    if (!validation.valid) {
+      console.warn(`Installer URL failed validation (${validation.reason}); refusing to open.`)
+      notify(INSTALLER_NOT_CONFIGURED_MESSAGE, 'error')
+      return
+    }
+
+    // Best-effort availability check only. fetch() follows redirects by
+    // default, so a 3xx never reaches this code as a 3xx — only its final
+    // resolved status does, subject to the same classification below.
+    try {
+      const response = await fetch(HEALTHFLOW_INSTALLER_URL, { method: 'HEAD', mode: 'cors' })
+      if (INSTALLER_CONFIRMED_MISSING_STATUSES.includes(response.status)) {
+        notify(INSTALLER_CONFIRMED_MISSING_MESSAGE, 'error')
+        return
+      }
+      if (!response.ok) {
+        console.warn(
+          `Installer availability check returned HTTP ${response.status}; proceeding with the configured download.`
+        )
+        notify(INSTALLER_UNVERIFIED_MESSAGE, 'warning')
+      }
+    } catch {
+      console.warn(
+        'Installer availability could not be pre-verified (network or CORS); opening the configured URL anyway.'
+      )
+      notify(INSTALLER_UNVERIFIED_MESSAGE, 'warning')
+    }
+
     window.open(HEALTHFLOW_INSTALLER_URL, '_blank', 'noopener,noreferrer')
   }
 
@@ -896,7 +945,7 @@ export default function OfflineSync() {
           </div>
         </div>
         <div className="install-healthflow-actions">
-          <button className="btn btn-primary" type="button" onClick={openInstallerDownload}>
+          <button className="btn btn-primary" type="button" onClick={() => void openInstallerDownload()}>
             <Download size={16} /> Download and Install
           </button>
           <button className="btn btn-outline" type="button" onClick={downloadInstallerDetails}>
