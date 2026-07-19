@@ -130,6 +130,7 @@ const getAllDrugsViaTierAccess = async (includeCatalog = false, branchId = null)
 export const getAllDrugs = async (options = {}) => {
   const includeCatalog = Boolean(options.includeCatalog)
   const useTierAccess = Boolean(options.useTierAccess)
+  const preferDirectRead = Boolean(options.preferDirectRead)
   const branchId = normalizeText(options.branchId) || null
 
   // ✅ OFFLINE-FIRST PATCH START
@@ -137,6 +138,11 @@ export const getAllDrugs = async (options = {}) => {
     label: 'inventory',
     local: async () => await getBranchInventory({ limit: 20000 }),
     cloud: async () => {
+      if (preferDirectRead) {
+        const drugs = await getAllDrugsDirectly(branchId)
+        return includeCatalog ? drugs : drugs.filter(shouldShowDrugOutsideInventory)
+      }
+
       if (includeCatalog || useTierAccess || branchId) {
         return getAllDrugsViaTierAccess(includeCatalog, branchId)
       }

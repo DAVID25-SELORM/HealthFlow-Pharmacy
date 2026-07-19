@@ -1384,7 +1384,7 @@ const Nhis = () => {
   const ensureInventoryDrugsLoaded = useCallback(async () => {
     if (inventoryDrugs.length > 0) return inventoryDrugs
     if (!inventoryDrugsLoadPromiseRef.current) {
-      inventoryDrugsLoadPromiseRef.current = getAllDrugs({ includeCatalog: true, useTierAccess: true })
+      inventoryDrugsLoadPromiseRef.current = getAllDrugs({ includeCatalog: true, preferDirectRead: true })
         .catch((inventoryLoadError) => {
           console.warn('[NHIS] Inventory catalog could not be preloaded.', inventoryLoadError)
           return []

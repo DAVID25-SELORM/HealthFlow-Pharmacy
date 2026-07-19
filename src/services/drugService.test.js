@@ -170,6 +170,41 @@ describe('drugService catalog handling', () => {
     expect(fromMock).not.toHaveBeenCalled()
   })
 
+  it('can use a direct read for heavy catalog preloads without invoking tier-access', async () => {
+    const queryBuilder = createDirectDrugQuery([
+      {
+        id: 'catalog-stocked',
+        name: 'Catalog Stocked',
+        batch_number: 'PDF-IMP-00001',
+        quantity: 0,
+        status: 'active',
+      },
+      {
+        id: 'inactive-stock',
+        name: 'Inactive Stock',
+        batch_number: 'BT-002',
+        quantity: 10,
+        status: 'inactive',
+      },
+    ])
+
+    await expect(
+      getAllDrugs({ includeCatalog: true, preferDirectRead: true })
+    ).resolves.toEqual([
+      {
+        id: 'catalog-stocked',
+        name: 'Catalog Stocked',
+        batch_number: 'PDF-IMP-00001',
+        quantity: 0,
+        status: 'active',
+      },
+    ])
+
+    expect(fromMock).toHaveBeenCalledWith('drugs')
+    expect(queryBuilder.select).toHaveBeenCalledWith('*')
+    expect(invokeTierAccess).not.toHaveBeenCalled()
+  })
+
   it('rejects script-like drug names before saving', async () => {
     await expect(addDrug({
       name: '<script>alert(1)</script>',
