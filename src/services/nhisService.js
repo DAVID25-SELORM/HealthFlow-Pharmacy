@@ -381,6 +381,8 @@ const NHIA_API_SETTINGS_CACHE_FIELDS = [
   'facility_type',
   'pharmacyFacilityLevel',
   'pharmacy_facility_level',
+  'providerTypeDescription',
+  'provider_type_description',
   'providerClassLevel',
   'provider_class_level',
   'providerLevelCode',

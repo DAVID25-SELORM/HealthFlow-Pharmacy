@@ -3674,6 +3674,61 @@ describe('NHIA API settings source routing', () => {
     })
   })
 
+  it('keeps provider type description in the NHIA settings cache and restores it', async () => {
+    invokeTierAccess.mockResolvedValueOnce({
+      settings: {
+        organizationId: 'org-1',
+        facilityCode: 'FAC-1',
+        providerTypeDescription: 'Dental clinics',
+        provider_type_description: 'Dental clinics',
+        hasApiKey: true,
+        hasApiSecret: true,
+        accreditationExpiryDate: '2026-12-31',
+        claimsOfficerName: 'Claims Officer',
+      },
+    }).mockResolvedValueOnce({
+      settings: {
+        organizationId: 'org-1',
+        facilityCode: 'FAC-1',
+        providerTypeDescription: 'Dental clinics',
+        provider_type_description: 'Dental clinics',
+        hasApiKey: true,
+        hasApiSecret: true,
+        accreditationExpiryDate: '2026-12-31',
+        claimsOfficerName: 'Claims Officer',
+      },
+    })
+
+    await expect(saveNhiaApiSettings({
+      ...completeClaimItSettings,
+      organizationId: 'org-1',
+      facilityCode: 'FAC-1',
+      providerTypeDescription: 'Dental clinics',
+      provider_type_description: 'Dental clinics',
+      credentials: {
+        apiKey: 'saved-key',
+        apiSecret: 'saved-secret',
+      },
+    }, { organizationId: 'org-1' })).resolves.toMatchObject({
+      providerTypeDescription: 'Dental clinics',
+      provider_type_description: 'Dental clinics',
+    })
+
+    const cachedSettings = JSON.parse(window.localStorage.getItem('healthflow.nhiaApiSettings.v3:org-1'))?.settings
+    expect(cachedSettings).toMatchObject({
+      providerTypeDescription: 'Dental clinics',
+      provider_type_description: 'Dental clinics',
+    })
+
+    invokeTierAccess.mockClear()
+
+    await expect(getNhiaApiSettings({ organizationId: 'org-1' })).resolves.toMatchObject({
+      providerTypeDescription: 'Dental clinics',
+      provider_type_description: 'Dental clinics',
+    })
+    expect(invokeTierAccess).not.toHaveBeenCalled()
+  })
+
   it('saves NHIA settings locally in local-sync mode and reports cloud sync pending', async () => {
     shouldUseBranchServer.mockReturnValue(true)
     saveNhiaSettings.mockResolvedValueOnce({
