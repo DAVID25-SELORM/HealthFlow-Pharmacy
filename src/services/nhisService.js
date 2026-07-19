@@ -1559,11 +1559,68 @@ const normalizeTariffCatalogItem = (item = {}) => ({
 export const isTemporaryUniversalNhiaTariff = (item = {}) =>
   asText(item.sourceFile ?? item.source_file) === TEMPORARY_UNIVERSAL_NHIA_TARIFF_SOURCE
 
+const getHospitalServiceKindFromText = (service = {}) => {
+  const text = normalizeMatchText([
+    service.gdrgCode,
+    service.gdrg_code,
+    service.mdc,
+    service.description,
+    service.facilityGroup,
+    service.facility_group,
+  ].filter(Boolean).join(' '))
+  if (text.includes('inpatient') || text.includes('admission') || text.includes('ward') || text.includes('alos')) return 'inpatient'
+  if (['investigation', 'laboratory', 'lab', 'x ray', 'xray', 'scan', 'ultrasound'].some((term) => text.includes(normalizeMatchText(term)))) return 'investigation'
+  if (['procedure', 'surgery', 'operation', 'theatre', 'incision', 'excision'].some((term) => text.includes(normalizeMatchText(term)))) return 'procedure'
+  if (text.includes('zoom')) return 'zoom'
+  if (text.includes('referral') || text.includes('referred')) return 'referral'
+  if (['opd', 'out patient', 'outpatient', 'consultation'].some((term) => text.includes(term))) return 'opd'
+  return 'tariff'
+}
+
+const getHospitalTariffGroupMinimumLevelFromText = (service = {}) => {
+  if (isTemporaryUniversalNhiaTariff(service)) return ''
+  const text = normalizeMatchText(
+    [
+      service.facilityGroup,
+      service.facility_group,
+      service.tariffGroup,
+      service.tariff_group,
+      service.providerTypeDescription,
+      service.provider_type_description,
+    ].filter(Boolean).join(' ')
+  )
+  if (!text) return ''
+
+  const match = HOSPITAL_TARIFF_GROUP_MINIMUM_LEVELS.find((rule) =>
+    rule.terms.some((term) => text.includes(normalizeMatchText(term)))
+  )
+  return match?.level || ''
+}
+
+export const isNhiaTariffItemAllowedForProviderClass = (item = {}, providerClassLevel = '') => {
+  const providerLevel = normalizeClaimItProviderClassLevel(providerClassLevel)
+  if (!providerLevel) return true
+
+  const normalizedItem = normalizeTariffCatalogItem(item)
+  const allowedLevels = normalizedItem.allowedProviderClassLevels
+  if (allowedLevels.length && !allowedLevels.includes(providerLevel)) return false
+
+  const minimumLevel = getHighestHospitalProviderClassLevel([
+    normalizedItem.minimumProviderClassLevel,
+    getHospitalTariffGroupMinimumLevelFromText(item),
+    HOSPITAL_SERVICE_KIND_MINIMUM_LEVELS[getHospitalServiceKindFromText(item)],
+  ])
+
+  return !minimumLevel || canHospitalProviderAccessLevel(providerLevel, minimumLevel)
+}
+
 export const getApplicableNhiaTariffItems = (
   items = [],
-  { facilityGroup = '', cateringOption = '' } = {}
+  { facilityGroup = '', cateringOption = '', providerClassLevel = '' } = {}
 ) => {
-  const activeItems = (Array.isArray(items) ? items : []).filter((item) => item?.is_active !== false)
+  const activeItems = (Array.isArray(items) ? items : [])
+    .filter((item) => item?.is_active !== false)
+    .filter((item) => isNhiaTariffItemAllowedForProviderClass(item, providerClassLevel))
   const exactItems = activeItems.filter((item) =>
     (!facilityGroup || asText(item.facility_group ?? item.facilityGroup) === facilityGroup) &&
     (!cateringOption || asText(item.catering_option ?? item.cateringOption) === cateringOption)
@@ -2150,21 +2207,7 @@ const getConfiguredTariffCateringOption = (options = {}) =>
   )
 
 const getHospitalServiceKind = (service = {}) => {
-  const text = normalizeMatchText([
-    service.gdrgCode,
-    service.gdrg_code,
-    service.mdc,
-    service.description,
-    service.facilityGroup,
-    service.facility_group,
-  ].filter(Boolean).join(' '))
-  if (includesAnyTerm(text, ['inpatient', 'admission', 'ward', 'alos'])) return 'inpatient'
-  if (includesAnyTerm(text, ['investigation', 'laboratory', 'lab', 'x ray', 'xray', 'scan', 'ultrasound'])) return 'investigation'
-  if (includesAnyTerm(text, ['procedure', 'surgery', 'operation', 'theatre', 'incision', 'excision'])) return 'procedure'
-  if (includesAnyTerm(text, ['zoom'])) return 'zoom'
-  if (includesAnyTerm(text, ['referral', 'referred'])) return 'referral'
-  if (includesAnyTerm(text, ['opd', 'out patient', 'outpatient', 'consultation'])) return 'opd'
-  return 'tariff'
+  return getHospitalServiceKindFromText(service)
 }
 
 const getHospitalTariffSetIssue = (service, expectedFacilityGroup, expectedCateringOption, label) => {
@@ -2181,21 +2224,7 @@ const getHospitalTariffSetIssue = (service, expectedFacilityGroup, expectedCater
 }
 
 const getHospitalTariffGroupMinimumLevel = (service = {}) => {
-  if (isTemporaryUniversalNhiaTariff(service)) return ''
-  const text = normalizeMatchText(
-    [
-      service.facilityGroup,
-      service.facility_group,
-      service.providerTypeDescription,
-      service.provider_type_description,
-    ].filter(Boolean).join(' ')
-  )
-  if (!text) return ''
-
-  const match = HOSPITAL_TARIFF_GROUP_MINIMUM_LEVELS.find((rule) =>
-    rule.terms.some((term) => text.includes(normalizeMatchText(term)))
-  )
-  return match?.level || ''
+  return getHospitalTariffGroupMinimumLevelFromText(service)
 }
 
 const getHospitalProviderClassIssue = (service = {}, providerClassLevel = '', serviceKind = 'tariff', label = 'Service') => {

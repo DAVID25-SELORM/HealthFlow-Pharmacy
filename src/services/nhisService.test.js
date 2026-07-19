@@ -830,6 +830,58 @@ describe('assessNhisClaimReadiness', () => {
     })).toEqual([matching])
   })
 
+  it('filters the hospital tariff catalog by configured provider class level', () => {
+    const levelDService = {
+      id: 'level-d-opd',
+      tariff_version: 'FEB 2023',
+      facility_group: 'Private Primary Care Hospital',
+      catering_option: 'exclusive',
+      gdrg_code: 'OPDC01A',
+      description: 'General OPD consultation',
+      provider_class_level: 'D',
+      tariff_amount: 37.08,
+      is_active: true,
+    }
+    const specialistOnlyService = {
+      ...levelDService,
+      id: 'specialist-only',
+      gdrg_code: 'SPEC01',
+      description: 'Specialist procedure',
+      allowed_provider_class_levels: ['SM'],
+    }
+
+    expect(getApplicableNhiaTariffItems([levelDService, specialistOnlyService], {
+      facilityGroup: 'Private Primary Care Hospital',
+      cateringOption: 'exclusive',
+      providerClassLevel: 'D',
+    })).toEqual([levelDService])
+  })
+
+  it('does not offer tariff services below their minimum provider class', () => {
+    const levelDProcedure = {
+      id: 'level-d-procedure',
+      tariff_version: 'FEB 2023',
+      facility_group: 'Private Primary Care Hospital',
+      catering_option: 'exclusive',
+      gdrg_code: 'PROC01',
+      description: 'Minor theatre procedure',
+      minimum_provider_class_level: 'D',
+      tariff_amount: 120,
+      is_active: true,
+    }
+
+    expect(getApplicableNhiaTariffItems([levelDProcedure], {
+      facilityGroup: 'Private Primary Care Hospital',
+      cateringOption: 'exclusive',
+      providerClassLevel: 'C',
+    })).toEqual([])
+    expect(getApplicableNhiaTariffItems([levelDProcedure], {
+      facilityGroup: 'Private Primary Care Hospital',
+      cateringOption: 'exclusive',
+      providerClassLevel: 'D',
+    })).toEqual([levelDProcedure])
+  })
+
   it('blocks tariff services when patient age does not match the PDF age band', () => {
     const childWithAdultTariff = assessNhisClaimReadiness(
       { ...baseClaim, organizationType: 'hospital', diagnosis: 'General consultation', dateOfBirth: '2020-01-01' },

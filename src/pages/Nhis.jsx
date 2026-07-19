@@ -25,6 +25,7 @@ import { confirmAction } from '../utils/actionConfirmation'
 import {
   getAllNhisDrugs,
   getApplicableNhiaTariffItems,
+  isNhiaTariffItemAllowedForProviderClass,
   getNhisDrugByCode,
   createNhisDrug,
   updateNhisDrug,
@@ -1170,12 +1171,14 @@ const Nhis = () => {
   )
   const activeTariffFacilityGroup = getPreferredTariffFacilityGroup(resolvedNhiaSettings, organization)
   const activeTariffCateringOption = getPreferredTariffCateringOption(resolvedNhiaSettings)
+  const providerClassLevel = resolvedNhiaSettings?.providerClassLevel || resolvedNhiaSettings?.provider_class_level || ''
   const applicableTariffItems = useMemo(
     () => getApplicableNhiaTariffItems(nhiaTariffItems, {
       facilityGroup: activeTariffFacilityGroup,
       cateringOption: activeTariffCateringOption,
+      providerClassLevel,
     }),
-    [nhiaTariffItems, activeTariffFacilityGroup, activeTariffCateringOption]
+    [nhiaTariffItems, activeTariffFacilityGroup, activeTariffCateringOption, providerClassLevel]
   )
   const usingTemporaryUniversalTariff = useMemo(() => {
     if (!applicableTariffItems.length) return false
@@ -1878,7 +1881,6 @@ const Nhis = () => {
     return rows.slice(0, 500)
   }, [applicableTariffItems, tariffCatalogSearch])
 
-  const providerClassLevel = resolvedNhiaSettings?.providerClassLevel || resolvedNhiaSettings?.provider_class_level || ''
   const integrationMode = resolvedNhiaSettings?.integrationMode || resolvedNhiaSettings?.integration_mode || 'claimit_export'
   const validationMode = resolvedNhiaSettings?.validationMode || resolvedNhiaSettings?.validation_mode || 'validate_before_submit'
   const claimControlMode = resolvedNhiaSettings?.claimControlMode || resolvedNhiaSettings?.claim_control_mode || (integrationMode === 'claimit_bridge' ? 'claimit_bridge' : 'manual')
@@ -2657,6 +2659,13 @@ const Nhis = () => {
   }
 
   const addTariffServiceToClaim = (item) => {
+    if (!isNhiaTariffItemAllowedForProviderClass(item, providerClassLevel)) {
+      notify(
+        `This G-DRG/tariff is not available for provider level ${providerClassLevel || 'not configured'}.`,
+        'warning'
+      )
+      return
+    }
     const amount = Number.parseFloat(item.tariff_amount || 0) || 0
     setClaimServices((prev) => ([
       ...prev,
