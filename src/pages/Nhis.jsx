@@ -2863,6 +2863,40 @@ const Nhis = () => {
   }
 
   // ── add medicine to claim ─────────────────────────────────────
+  const closeMedicineModal = ({ force = false } = {}) => {
+    if (!force) {
+      const hasMedicineWork = Boolean(
+        editingMedicineIndex !== null ||
+        medCodeSearch ||
+        medSearchResults.length > 0 ||
+        [
+          'nhisDrugId',
+          'drugCode',
+          'description',
+          'dose',
+          'frequency',
+          'duration',
+          'reasonIfNotFullyServed',
+        ].some((field) => normalizeText(medForm[field])) ||
+        Number(medForm.dispensedQty) > 0 ||
+        normalizeText(medForm.dispensaryDate) !== getNhisCalendarDate()
+      )
+      if (hasMedicineWork) {
+        const shouldClose = confirmAction({
+          title: 'Discard this medicine entry?',
+          warning: 'Unsaved medicine details will be lost. Add or save the medicine first if you want to keep it.',
+          confirmText: 'discard this medicine',
+        })
+        if (!shouldClose) return
+      }
+    }
+    setShowMedModal(false)
+    setEditingMedicineIndex(null)
+    setMedForm(makeBlankMedicine())
+    setMedCodeSearch('')
+    setMedSearchResults([])
+  }
+
   const addMedicineToList = () => {
     const qty   = Number.parseFloat(medForm.dispensedQty) || 0
     const price = Number.parseFloat(medForm.unitPrice)    || 0
@@ -2958,8 +2992,11 @@ const Nhis = () => {
     })
     setMedForm(makeBlankMedicine())
     setMedCodeSearch('')
+    setMedSearchResults([])
     setEditingMedicineIndex(null)
-    setShowMedModal(false)
+    if (editingMedicineIndex !== null) {
+      setShowMedModal(false)
+    }
   }
 
   const openEditMedicine = (index) => {
@@ -6857,12 +6894,6 @@ const Nhis = () => {
       {showMedModal && (
         <div
           className="modal-overlay modal-overlay--top"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              setShowMedModal(false)
-              setEditingMedicineIndex(null)
-            }
-          }}
         >
           <div className="modal-panel modal-panel--medicine">
             <div className="modal-header">
@@ -6873,10 +6904,7 @@ const Nhis = () => {
               </h2>
               <button
                 className="modal-close"
-                onClick={() => {
-                  setShowMedModal(false)
-                  setEditingMedicineIndex(null)
-                }}
+                onClick={() => closeMedicineModal()}
               >
                 <X size={18} />
               </button>
@@ -7082,6 +7110,9 @@ const Nhis = () => {
               >
                 Clear
               </button>
+              <button className="btn btn-secondary" onClick={() => closeMedicineModal()}>
+                Done
+              </button>
               <button className="btn btn-primary" onClick={addMedicineToList}>
                 {editingMedicineIndex === null ? '+ Add' : 'Save Medicine'}
               </button>
@@ -7094,7 +7125,7 @@ const Nhis = () => {
           VIEW CLAIM MODAL
       ══════════════════════════════════════════════════════════════ */}
       {returnAlert && (
-        <div className="modal-overlay modal-overlay--top" onClick={(e) => e.target === e.currentTarget && closeReturnAlert()}>
+        <div className="modal-overlay modal-overlay--top">
           <div className="modal-panel nhis-return-alert-modal">
             <div className="modal-header">
               <div>
@@ -7290,7 +7321,7 @@ const Nhis = () => {
           ADD / EDIT DRUG MODAL
       ══════════════════════════════════════════════════════════════ */}
       {editingTariff && (
-        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && closeTariffModal()}>
+        <div className="modal-overlay">
           <div className="modal-panel modal-panel--drug">
             <div className="modal-header">
               <h2>Edit G-DRG Tariff</h2>
@@ -7373,7 +7404,7 @@ const Nhis = () => {
       )}
 
       {showDrugCatalogModal && (
-        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowDrugCatalogModal(false)}>
+        <div className="modal-overlay">
           <div className="modal-panel modal-panel--drug">
             <div className="modal-header">
               <h2>{editingDrug ? 'Edit Drug' : 'Add NHIS Drug'}</h2>
@@ -7479,7 +7510,7 @@ const Nhis = () => {
           IMPORT PREVIEW MODAL
       ══════════════════════════════════════════════════════════════ */}
       {showImportModal && (
-        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowImportModal(false)}>
+        <div className="modal-overlay">
           <div className="modal-panel modal-panel--import">
             <div className="modal-header">
               <h2>Import Preview — {importRows.length} drugs</h2>
@@ -7534,7 +7565,7 @@ const Nhis = () => {
           MONTHLY EXPORT MODAL
       ══════════════════════════════════════════════════════════════ */}
       {showRuleImportModal && (
-        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowRuleImportModal(false)}>
+        <div className="modal-overlay">
           <div className="modal-panel modal-panel--import">
             <div className="modal-header">
               <h2>Clinical Rule Preview — {ruleImportRows.length} rules</h2>
@@ -7865,7 +7896,7 @@ const Nhis = () => {
       )}
 
       {showScrubWarningOverride && scrubWarningClaims.length > 0 && (
-        <div className="modal-overlay modal-overlay--top" onClick={(e) => e.target === e.currentTarget && setShowScrubWarningOverride(false)}>
+        <div className="modal-overlay modal-overlay--top">
           <div className="modal-panel modal-panel--duplicates">
             <div className="modal-header">
               <h2>Scrub Warnings Need Review</h2>
@@ -7950,7 +7981,7 @@ const Nhis = () => {
       )}
 
       {showExportModal && (
-        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowExportModal(false)}>
+        <div className="modal-overlay">
           <div className="modal-panel modal-panel--export">
             <div className="modal-header">
               <h2>{directNhiaApiAvailable ? 'NHIS Claim Transfer' : 'Claims Batch Export'}</h2>
@@ -8077,7 +8108,7 @@ const Nhis = () => {
           REJECT MODAL
       ══════════════════════════════════════════════════════════════ */}
       {rejectTarget && (
-        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setRejectTarget(null)}>
+        <div className="modal-overlay">
           <div className="modal-panel modal-panel--export">
             <div className="modal-header">
               <h2>Reject Claim {rejectTarget.claim_number}</h2>
