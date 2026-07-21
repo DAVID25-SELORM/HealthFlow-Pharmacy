@@ -12,6 +12,8 @@ const ALLOWED_ENTITIES = new Set([
   'nhis_drugs',
   'nhis_clinical_rules',
   'nhia_tariff_items',
+  'nhis_prescribers',
+  'nhis_prescribing_facilities',
   'nhis_claims',
   'suppliers',
   'purchases',

@@ -173,6 +173,14 @@ const OPTIONAL_CLAIM_SCHEMA_COLUMNS = [
   'serving_status',
   'serving_reviewed_by',
   'serving_reviewed_at',
+  'prescriber_id',
+  'prescribing_facility_id',
+  'prescription_date',
+  'prescription_reference',
+  'prescriber_name_snapshot',
+  'prescriber_license_snapshot',
+  'prescribing_facility_name_snapshot',
+  'prescribing_facility_code_snapshot',
 ]
 const OPTIONAL_CLAIM_SCHEMA_FIELD_GROUPS = [
   ['patient_address', 'patientAddress'],
@@ -209,6 +217,14 @@ const OPTIONAL_CLAIM_SCHEMA_FIELD_GROUPS = [
   ['serving_status', 'servingStatus'],
   ['serving_reviewed_by', 'servingReviewedBy'],
   ['serving_reviewed_at', 'servingReviewedAt'],
+  ['prescriber_id', 'prescriberId'],
+  ['prescribing_facility_id', 'prescribingFacilityId'],
+  ['prescription_date', 'prescriptionDate'],
+  ['prescription_reference', 'prescriptionReference'],
+  ['prescriber_name_snapshot', 'prescriberNameSnapshot'],
+  ['prescriber_license_snapshot', 'prescriberLicenseSnapshot'],
+  ['prescribing_facility_name_snapshot', 'prescribingFacilityNameSnapshot'],
+  ['prescribing_facility_code_snapshot', 'prescribingFacilityCodeSnapshot'],
 ]
 const OPTIONAL_CLAIM_SCHEMA_PAYLOAD_KEYS = [
   ...new Set([
@@ -719,6 +735,21 @@ const getNhiaAttendancePayload = (claimData = {}) => ({
     claimData.attendanceVerificationSource ??
       claimData.nhiaAttendanceVerificationSource ??
       claimData.nhia_attendance_verification_source
+  ) || null,
+})
+
+const getNhisPrescriptionSourcePayload = (claimData = {}) => ({
+  prescriber_id: toNullableUuid(claimData.prescriberId ?? claimData.prescriber_id),
+  prescribing_facility_id: toNullableUuid(claimData.prescribingFacilityId ?? claimData.prescribing_facility_id),
+  prescription_date: toNullableDate(claimData.prescriptionDate ?? claimData.prescription_date),
+  prescription_reference: normalizeText(claimData.prescriptionReference ?? claimData.prescription_reference) || null,
+  prescriber_name_snapshot: normalizeText(claimData.prescriberNameSnapshot ?? claimData.prescriber_name_snapshot) || null,
+  prescriber_license_snapshot: normalizeText(claimData.prescriberLicenseSnapshot ?? claimData.prescriber_license_snapshot) || null,
+  prescribing_facility_name_snapshot: normalizeText(
+    claimData.prescribingFacilityNameSnapshot ?? claimData.prescribing_facility_name_snapshot
+  ) || null,
+  prescribing_facility_code_snapshot: normalizeText(
+    claimData.prescribingFacilityCodeSnapshot ?? claimData.prescribing_facility_code_snapshot
   ) || null,
 })
 
@@ -5350,6 +5381,7 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
     referral_code:      normalizeText(claimData.referralCode)      || null,
     physician_name:     normalizeText(claimData.physicianName)     || null,
     pre_auth_codes:     normalizeText(claimData.preAuthCodes)      || null,
+    ...getNhisPrescriptionSourcePayload(claimData),
     total_amount:       totalAmount,
     status:             normalizeText(claimData.status) || 'served',
     serving_status:     normalizeText(claimData.servingStatus ?? claimData.serving_status) || null,
@@ -5594,6 +5626,7 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
     referral_code: normalizeText(claimData.referralCode) || null,
     physician_name: normalizeText(claimData.physicianName) || null,
     pre_auth_codes: normalizeText(claimData.preAuthCodes) || null,
+    ...getNhisPrescriptionSourcePayload(claimData),
     total_amount: totalAmount,
     ...(normalizeText(claimData.status) ? { status: normalizeText(claimData.status) } : {}),
     serving_status: normalizeText(claimData.servingStatus ?? claimData.serving_status) || null,

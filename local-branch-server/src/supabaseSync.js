@@ -272,6 +272,36 @@ const syncNhisDrugUpsert = async (supabase, row, record) => {
   }
 }
 
+const NHIS_PRESCRIBING_RECORD_ENTITIES = new Set([
+  'nhis_prescribers',
+  'nhis_prescribing_facilities',
+])
+
+const syncNhisPrescribingRecordUpsert = async (supabase, row, entityType, record) => {
+  const { data, error } = await supabase.rpc('branch_sync_upsert_nhis_prescribing_record', {
+    p_sync_token: config.branchSyncToken,
+    p_entity_type: entityType,
+    p_local_id: record.id,
+    p_record: stripLocalFields(record),
+  })
+
+  if (error) {
+    throw error
+  }
+
+  const timestamp = nowIso()
+  markOfflineRecordSynced.run(timestamp, timestamp, record.id, entityType)
+  if (row.entity_id !== record.id) {
+    markOfflineRecordSynced.run(timestamp, timestamp, row.entity_id, entityType)
+  }
+  markOutboxSynced.run(timestamp, timestamp, row.id)
+  return {
+    localId: record.id,
+    entityType,
+    remoteId: data?.remote_id || record.id,
+  }
+}
+
 const syncRecordUpsert = async (supabase, row) => {
   const payload = parseJson(row.payload_json, {})
   const entityType = payload.entity_type || row.entity_type
@@ -284,6 +314,10 @@ const syncRecordUpsert = async (supabase, row) => {
 
   if (entityType === 'nhis_drugs') {
     return await syncNhisDrugUpsert(supabase, row, record)
+  }
+
+  if (NHIS_PRESCRIBING_RECORD_ENTITIES.has(entityType)) {
+    return await syncNhisPrescribingRecordUpsert(supabase, row, entityType, record)
   }
 
   const { data, error } = await supabase.rpc('branch_sync_upsert_offline_record', {
@@ -571,6 +605,8 @@ export const pullReferenceData = async () => {
     nhisDrugs: 0,
     nhisClinicalRules: 0,
     nhiaTariffItems: 0,
+    nhisPrescribers: 0,
+    nhisPrescribingFacilities: 0,
     nhisClaims: 0,
     nhiaConfigurations: 0,
     purchases: 0,
@@ -588,6 +624,8 @@ export const pullReferenceData = async () => {
     nhisDrugs,
     nhisClinicalRules,
     nhiaTariffItems,
+    nhisPrescribers,
+    nhisPrescribingFacilities,
     nhisClaims,
     nhiaConfigurations,
     purchases,
@@ -617,6 +655,16 @@ export const pullReferenceData = async () => {
           supabase,
           'nhia_tariff_items',
           (page) => importOfflineRecords('nhia_tariff_items', page)
+        ),
+        importOptionalAll(
+          supabase,
+          'nhis_prescribers',
+          (page) => importOfflineRecords('nhis_prescribers', page)
+        ),
+        importOptionalAll(
+          supabase,
+          'nhis_prescribing_facilities',
+          (page) => importOfflineRecords('nhis_prescribing_facilities', page)
         ),
         importNhisClaims(supabase),
         importOptionalAll(
@@ -658,6 +706,8 @@ export const pullReferenceData = async () => {
   result.nhisDrugs = nhisDrugs
   result.nhisClinicalRules = nhisClinicalRules
   result.nhiaTariffItems = nhiaTariffItems
+  result.nhisPrescribers = nhisPrescribers
+  result.nhisPrescribingFacilities = nhisPrescribingFacilities
   result.nhisClaims = nhisClaims
   result.nhiaConfigurations = nhiaConfigurations
   result.purchases = purchases

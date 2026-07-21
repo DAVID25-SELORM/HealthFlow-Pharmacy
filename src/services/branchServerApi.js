@@ -925,7 +925,7 @@ export const createBranchRecord = async (resource, payload) => {
     method: 'POST',
     body: JSON.stringify(payload || {}),
     timeoutMs: WRITE_BRANCH_REQUEST_TIMEOUT_MS,
-    requireUserSession: resource === 'nhis/claims',
+    requireUserSession: ['nhis/claims', 'nhis/prescribers', 'nhis/prescribing-facilities'].includes(resource),
   })
   return response.data
 }
@@ -958,7 +958,7 @@ export const updateBranchRecord = async (resource, id, payload) => {
     method: 'PUT',
     body: JSON.stringify(payload || {}),
     timeoutMs: WRITE_BRANCH_REQUEST_TIMEOUT_MS,
-    requireUserSession: resource === 'nhis/claims',
+    requireUserSession: ['nhis/claims', 'nhis/prescribers', 'nhis/prescribing-facilities'].includes(resource),
   })
   return response.data
 }

@@ -46,7 +46,7 @@ const runSyncWorkerBody = async () => {
         `Inventory snapshot imported ${inventoryResult.imported} drug(s) at ${inventoryResult.importedAt}.`
       )
       console.log(
-        `Reference data pulled: ${referenceResult.patients} patient(s), ${referenceResult.claims} claim(s), ${referenceResult.nhisClaims} NHIS claim(s), ${referenceResult.nhiaConfigurations} NHIA config(s), ${referenceResult.purchases} purchase(s).`
+        `Reference data pulled: ${referenceResult.patients} patient(s), ${referenceResult.claims} claim(s), ${referenceResult.nhisClaims} NHIS claim(s), ${referenceResult.nhisPrescribers || 0} prescriber(s), ${referenceResult.nhisPrescribingFacilities || 0} prescribing facilities, ${referenceResult.nhiaConfigurations} NHIA config(s), ${referenceResult.purchases} purchase(s).`
       )
     }
   } catch (error) {

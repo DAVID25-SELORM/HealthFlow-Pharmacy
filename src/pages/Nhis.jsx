@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Plus, Search, X, Upload, Download, CheckCircle2,
   Send, Banknote, XCircle, Eye, FileSpreadsheet, HeartPulse,
-  Pencil, Paperclip, FileText, Trash2, Users, Clock,
+  Pencil, Paperclip, FileText, Trash2, Users, Clock, Stethoscope, Building2,
 } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { isSupabaseConfigured } from '../lib/supabase'
@@ -78,6 +78,19 @@ import {
   splitMcaReadinessIssues,
 } from '../utils/nhisServingWorkflow'
 import { getAllPatients, searchPatients } from '../services/patientService'
+import {
+  NHIS_PRESCRIBER_TYPES,
+  NHIS_PRESCRIBING_FACILITY_TYPES,
+  buildNhisPrescriptionSourceSnapshot,
+  createNhisPrescriber,
+  createNhisPrescribingFacility,
+  deactivateNhisPrescriber,
+  deactivateNhisPrescribingFacility,
+  getNhisPrescriberDisplayName,
+  getNhisPrescribingFacilityDisplayName,
+  listNhisPrescribers,
+  listNhisPrescribingFacilities,
+} from '../services/nhisPrescribingRecordsService'
 import { getAllDrugs } from '../services/drugService'
 import { parseNhisDrugFile, generateNhisDrugTemplate } from '../services/nhisDrugImportService'
 import { parseNhisClinicalRuleFile, generateNhisClinicalRuleTemplate } from '../services/nhisClinicalRuleImportService'
@@ -297,6 +310,14 @@ const makeBlankClaim = () => ({
   prescriptionVerified: false,
   prescriptionVerifiedBy: '',
   prescriptionVerifiedAt: '',
+  prescriberId: '',
+  prescribingFacilityId: '',
+  prescriptionDate: '',
+  prescriptionReference: '',
+  prescriberNameSnapshot: '',
+  prescriberLicenseSnapshot: '',
+  prescribingFacilityNameSnapshot: '',
+  prescribingFacilityCodeSnapshot: '',
   claimitAttachmentFileName: '',
   claimitAttachmentFileType: '',
   claimitAttachmentMimeType: '',
@@ -304,6 +325,38 @@ const makeBlankClaim = () => ({
   notes:             '',
   unservedMedicinesNote: '',
 })
+
+const BLANK_NHIS_PRESCRIBER = {
+  fullName: '',
+  title: '',
+  professionalType: 'Doctor',
+  licenseNumber: '',
+  phone: '',
+  email: '',
+  primaryFacilityId: '',
+  specialty: '',
+  status: 'active',
+  verificationStatus: 'unverified',
+  notes: '',
+}
+
+const BLANK_NHIS_PRESCRIBING_FACILITY = {
+  facilityName: '',
+  facilityType: 'Clinic',
+  nhiaFacilityCode: '',
+  providerNumber: '',
+  ownershipType: '',
+  address: '',
+  region: '',
+  district: '',
+  town: '',
+  phone: '',
+  email: '',
+  contactPerson: '',
+  status: 'active',
+  verificationStatus: 'unverified',
+  notes: '',
+}
 
 const makeBlankMedicine = () => ({
   nhisDrugId:    '',
@@ -1037,6 +1090,8 @@ const Nhis = () => {
   const [nhiaTariffItems, setNhiaTariffItems] = useState([])
   const [clinicalRules, setClinicalRules] = useState([])
   const [patients, setPatients]   = useState([])
+  const [prescribers, setPrescribers] = useState([])
+  const [prescribingFacilities, setPrescribingFacilities] = useState([])
   const [inventoryDrugs, setInventoryDrugs] = useState([])
   const [stats, setStats]         = useState({
     total: 0,
@@ -1066,6 +1121,8 @@ const Nhis = () => {
   const [claimSearch, setClaimSearch]   = useState('')
   const debouncedClaimSearch = useDebouncedValue(claimSearch, NHIS_CLAIMS_SEARCH_DEBOUNCE_MS)
   const [nhisPatientSearch, setNhisPatientSearch] = useState('')
+  const [prescriberSearch, setPrescriberSearch] = useState('')
+  const [facilitySearch, setFacilitySearch] = useState('')
   const [claimDateFilter, setClaimDateFilter] = useState('month')
   const [claimFromDate, setClaimFromDate] = useState(monthStartIsoDate())
   const [claimToDate, setClaimToDate] = useState(todayIsoDate())
@@ -1128,6 +1185,11 @@ const Nhis = () => {
   const [editingTariff, setEditingTariff] = useState(null)
   const [tariffForm, setTariffForm] = useState(BLANK_NHIA_TARIFF)
   const [tariffSubmitting, setTariffSubmitting] = useState(false)
+  const [prescriberForm, setPrescriberForm] = useState(BLANK_NHIS_PRESCRIBER)
+  const [facilityForm, setFacilityForm] = useState(BLANK_NHIS_PRESCRIBING_FACILITY)
+  const [prescribingRecordsLoading, setPrescribingRecordsLoading] = useState(false)
+  const [prescriberSubmitting, setPrescriberSubmitting] = useState(false)
+  const [facilitySubmitting, setFacilitySubmitting] = useState(false)
   const claimsPageCacheRef = useRef(new Map())
   const claimsTableRef = useRef(null)
   const claimsFilterKeyRef = useRef('')
@@ -1359,6 +1421,23 @@ const Nhis = () => {
     return loadedPatients || []
   }, [])
 
+  const loadPrescribingRecords = useCallback(async () => {
+    try {
+      setPrescribingRecordsLoading(true)
+      const [facilityRows, prescriberRows] = await Promise.all([
+        listNhisPrescribingFacilities({ status: 'all', limit: 1000 }),
+        listNhisPrescribers({ status: 'all', limit: 1000 }),
+      ])
+      setPrescribingFacilities(facilityRows || [])
+      setPrescribers(prescriberRows || [])
+    } catch (recordsError) {
+      console.warn('[NHIS] Prescriber/facility records could not be loaded.', recordsError)
+      notify(recordsError.message || 'Unable to load NHIS prescriber records.', 'warning')
+    } finally {
+      setPrescribingRecordsLoading(false)
+    }
+  }, [notify])
+
   const loadAll = useCallback(async () => {
     if (!isSupabaseConfigured()) {
       setError('HealthFlow Cloud is not configured.')
@@ -1405,12 +1484,13 @@ const Nhis = () => {
       setClinicalRules(rulesData)
       setNhiaTariffItems(tariffData)
       void ensurePatientIndexLoaded()
+      void loadPrescribingRecords()
     } catch (err) {
       setError(err.message || 'Unable to load NHIS data.')
     } finally {
       setLoading(false)
     }
-  }, [canWrite, notify, organization?.can_use_nhis, isHospital, activeTariffFacilityGroup, activeTariffCateringOption, ensurePatientIndexLoaded])
+  }, [canWrite, notify, organization?.can_use_nhis, isHospital, activeTariffFacilityGroup, activeTariffCateringOption, ensurePatientIndexLoaded, loadPrescribingRecords])
 
   const refreshClaimsOverview = useCallback(async () => {
     if (!isSupabaseConfigured()) {
@@ -1428,6 +1508,133 @@ const Nhis = () => {
       setError(err.message || 'Unable to refresh NHIS claims.')
     }
   }, [claimsPage, loadClaimIssueCounts, loadClaimsPage])
+
+  const filteredPrescribingFacilities = useMemo(() => {
+    const term = normalizeText(facilitySearch).toLowerCase()
+    if (!term) return prescribingFacilities
+    return prescribingFacilities.filter((facility) =>
+      [
+        facility.facility_name,
+        facility.nhia_facility_code,
+        facility.provider_number,
+        facility.facility_type,
+        facility.region,
+        facility.district,
+        facility.town,
+      ].some((value) => normalizeText(value).toLowerCase().includes(term))
+    )
+  }, [facilitySearch, prescribingFacilities])
+
+  const filteredPrescribers = useMemo(() => {
+    const term = normalizeText(prescriberSearch).toLowerCase()
+    if (!term) return prescribers
+    return prescribers.filter((prescriber) =>
+      [
+        prescriber.full_name,
+        prescriber.license_number,
+        prescriber.professional_type,
+        prescriber.specialty,
+        prescriber.phone,
+      ].some((value) => normalizeText(value).toLowerCase().includes(term))
+    )
+  }, [prescriberSearch, prescribers])
+
+  const claimFacilityOptions = useMemo(
+    () => prescribingFacilities.filter((facility) => normalizeText(facility.status).toLowerCase() !== 'inactive'),
+    [prescribingFacilities]
+  )
+
+  const claimPrescriberOptions = useMemo(
+    () => prescribers.filter((prescriber) => normalizeText(prescriber.status).toLowerCase() !== 'inactive'),
+    [prescribers]
+  )
+
+  const getRecordOptions = () => ({
+    organizationId,
+    branchId: profile?.branch_id || branch?.id || null,
+    userId: user?.id || null,
+  })
+
+  const handleSelectPrescribingFacility = (facilityId) => {
+    const facility = prescribingFacilities.find((row) => row.id === facilityId) || null
+    setClaimForm((previous) => ({
+      ...previous,
+      ...buildNhisPrescriptionSourceSnapshot({
+        facility,
+        prescriber: prescribers.find((row) => row.id === previous.prescriberId) || null,
+      }),
+      prescribingFacilityId: facility?.id || '',
+    }))
+  }
+
+  const handleSelectPrescriber = (prescriberId) => {
+    const prescriber = prescribers.find((row) => row.id === prescriberId) || null
+    const facility = prescribingFacilities.find((row) => row.id === claimForm.prescribingFacilityId) ||
+      prescribingFacilities.find((row) => row.id === prescriber?.primary_facility_id) ||
+      null
+    setClaimForm((previous) => ({
+      ...previous,
+      ...buildNhisPrescriptionSourceSnapshot({ facility, prescriber }),
+      prescriberId: prescriber?.id || '',
+      prescribingFacilityId: facility?.id || previous.prescribingFacilityId || '',
+    }))
+  }
+
+  const handleCreatePrescribingFacility = async (event) => {
+    event.preventDefault()
+    try {
+      setFacilitySubmitting(true)
+      const saved = await createNhisPrescribingFacility(facilityForm, getRecordOptions())
+      setPrescribingFacilities((previous) => [saved, ...previous.filter((row) => row.id !== saved.id)])
+      setFacilityForm(BLANK_NHIS_PRESCRIBING_FACILITY)
+      notify('Prescribing facility saved.', 'success')
+    } catch (submitError) {
+      notify(submitError.message || 'Unable to save prescribing facility.', 'error')
+    } finally {
+      setFacilitySubmitting(false)
+    }
+  }
+
+  const handleCreatePrescriber = async (event) => {
+    event.preventDefault()
+    try {
+      setPrescriberSubmitting(true)
+      const saved = await createNhisPrescriber(prescriberForm, getRecordOptions())
+      setPrescribers((previous) => [saved, ...previous.filter((row) => row.id !== saved.id)])
+      setPrescriberForm(BLANK_NHIS_PRESCRIBER)
+      notify('Prescriber saved.', 'success')
+    } catch (submitError) {
+      notify(submitError.message || 'Unable to save prescriber.', 'error')
+    } finally {
+      setPrescriberSubmitting(false)
+    }
+  }
+
+  const handleDeactivatePrescribingFacility = async (facility) => {
+    try {
+      const saved = await deactivateNhisPrescribingFacility(facility.id, {
+        ...getRecordOptions(),
+        record: facility,
+      })
+      setPrescribingFacilities((previous) => previous.map((row) => row.id === saved.id ? saved : row))
+      notify('Prescribing facility deactivated.', 'success')
+    } catch (submitError) {
+      notify(submitError.message || 'Unable to deactivate prescribing facility.', 'error')
+    }
+  }
+
+  const handleDeactivatePrescriber = async (prescriber) => {
+    try {
+      const saved = await deactivateNhisPrescriber(prescriber.id, {
+        ...getRecordOptions(),
+        record: prescriber,
+      })
+      setPrescribers((previous) => previous.map((row) => row.id === saved.id ? saved : row))
+      notify('Prescriber deactivated.', 'success')
+    } catch (submitError) {
+      notify(submitError.message || 'Unable to deactivate prescriber.', 'error')
+    }
+  }
 
   const ensureInventoryDrugsLoaded = useCallback(async () => {
     if (inventoryDrugs.length > 0) return inventoryDrugs
@@ -2388,6 +2595,14 @@ const Nhis = () => {
       prescriptionVerified: claim.prescription_verified === true,
       prescriptionVerifiedBy: claim.prescription_verified_by || '',
       prescriptionVerifiedAt: claim.prescription_verified_at || '',
+      prescriberId: claim.prescriber_id || '',
+      prescribingFacilityId: claim.prescribing_facility_id || '',
+      prescriptionDate: claim.prescription_date || '',
+      prescriptionReference: claim.prescription_reference || '',
+      prescriberNameSnapshot: claim.prescriber_name_snapshot || claim.physician_name || '',
+      prescriberLicenseSnapshot: claim.prescriber_license_snapshot || '',
+      prescribingFacilityNameSnapshot: claim.prescribing_facility_name_snapshot || claim.referring_facility || '',
+      prescribingFacilityCodeSnapshot: claim.prescribing_facility_code_snapshot || '',
       claimitAttachmentFileName: claim.claimit_attachment_file_name || '',
       claimitAttachmentFileType: claim.claimit_attachment_file_type || '',
       claimitAttachmentMimeType: claim.claimit_attachment_mime_type || '',
@@ -4288,6 +4503,18 @@ const Nhis = () => {
           <Users size={16} /> NHIS Patients
         </button>
         <button
+          className={`nhis-page-tab ${pageTab === 'prescribers' ? 'active' : ''}`}
+          onClick={() => setPageTab('prescribers')}
+        >
+          <Stethoscope size={16} /> Prescribers
+        </button>
+        <button
+          className={`nhis-page-tab ${pageTab === 'facilities' ? 'active' : ''}`}
+          onClick={() => setPageTab('facilities')}
+        >
+          <Building2 size={16} /> Prescribing Facilities
+        </button>
+        <button
           className={`nhis-page-tab ${pageTab === 'catalog' ? 'active' : ''}`}
           onClick={() => setPageTab('catalog')}
         >
@@ -4894,6 +5121,216 @@ const Nhis = () => {
                         ) : (
                           <span className="patient-meta">-</span>
                         )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </>
+      )}
+
+      {pageTab === 'prescribers' && (
+        <>
+          <div className="nhis-controls">
+            <div className="search-box">
+              <Search size={16} className="search-icon" />
+              <input
+                className="search-input"
+                placeholder="Search prescribers by name, license, type, specialty..."
+                value={prescriberSearch}
+                onChange={(event) => setPrescriberSearch(event.target.value)}
+              />
+            </div>
+            <span className="catalog-count">{filteredPrescribers.length} prescribers</span>
+            <button type="button" className="btn btn-secondary" onClick={loadPrescribingRecords} disabled={prescribingRecordsLoading}>
+              Refresh
+            </button>
+          </div>
+
+          {canWrite && (
+            <form className="nhis-card nhis-record-form" onSubmit={handleCreatePrescriber}>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Full Name *</label>
+                  <input className="form-input" value={prescriberForm.fullName} onChange={(event) => setPrescriberForm((p) => ({ ...p, fullName: event.target.value }))} required />
+                </div>
+                <div className="form-group">
+                  <label>Professional Type</label>
+                  <select className="form-input" value={prescriberForm.professionalType} onChange={(event) => setPrescriberForm((p) => ({ ...p, professionalType: event.target.value }))}>
+                    {NHIS_PRESCRIBER_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>License / ID</label>
+                  <input className="form-input" value={prescriberForm.licenseNumber} onChange={(event) => setPrescriberForm((p) => ({ ...p, licenseNumber: event.target.value }))} />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Primary Facility</label>
+                  <select className="form-input" value={prescriberForm.primaryFacilityId} onChange={(event) => setPrescriberForm((p) => ({ ...p, primaryFacilityId: event.target.value }))}>
+                    <option value="">Not linked</option>
+                    {claimFacilityOptions.map((facility) => (
+                      <option key={facility.id} value={facility.id}>{getNhisPrescribingFacilityDisplayName(facility)}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>Phone</label>
+                  <input className="form-input" value={prescriberForm.phone} onChange={(event) => setPrescriberForm((p) => ({ ...p, phone: event.target.value }))} />
+                </div>
+                <div className="form-group">
+                  <label>Specialty</label>
+                  <input className="form-input" value={prescriberForm.specialty} onChange={(event) => setPrescriberForm((p) => ({ ...p, specialty: event.target.value }))} />
+                </div>
+              </div>
+              <div className="modal-actions">
+                <button type="submit" className="btn btn-primary" disabled={prescriberSubmitting}>
+                  <Plus size={16} /> {prescriberSubmitting ? 'Saving...' : 'Add Prescriber'}
+                </button>
+              </div>
+            </form>
+          )}
+
+          <div className="nhis-table-wrap">
+            {prescribingRecordsLoading ? (
+              <div className="nhis-empty">Loading prescribers...</div>
+            ) : filteredPrescribers.length === 0 ? (
+              <div className="nhis-empty"><Stethoscope size={40} /><p>No prescribers found.</p></div>
+            ) : (
+              <table className="nhis-table">
+                <thead>
+                  <tr>
+                    <th>Prescriber</th>
+                    <th>Type</th>
+                    <th>Primary Facility</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredPrescribers.map((prescriber) => {
+                    const facility = prescribingFacilities.find((row) => row.id === prescriber.primary_facility_id)
+                    return (
+                      <tr key={prescriber.id}>
+                        <td>
+                          <div className="patient-name">{prescriber.full_name}</div>
+                          {prescriber.license_number && <div className="patient-meta">License: {prescriber.license_number}</div>}
+                          {prescriber.phone && <div className="patient-meta">{prescriber.phone}</div>}
+                        </td>
+                        <td>{prescriber.professional_type || '-'}</td>
+                        <td>{facility ? getNhisPrescribingFacilityDisplayName(facility) : '-'}</td>
+                        <td><StatusBadge status={prescriber.status || 'active'} /></td>
+                        <td>
+                          {canWrite && normalizeText(prescriber.status).toLowerCase() !== 'inactive' ? (
+                            <button type="button" className="btn btn-danger btn-sm" onClick={() => handleDeactivatePrescriber(prescriber)}>
+                              <Trash2 size={14} /> Deactivate
+                            </button>
+                          ) : '-'}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </>
+      )}
+
+      {pageTab === 'facilities' && (
+        <>
+          <div className="nhis-controls">
+            <div className="search-box">
+              <Search size={16} className="search-icon" />
+              <input
+                className="search-input"
+                placeholder="Search facilities by name, code, region, district..."
+                value={facilitySearch}
+                onChange={(event) => setFacilitySearch(event.target.value)}
+              />
+            </div>
+            <span className="catalog-count">{filteredPrescribingFacilities.length} facilities</span>
+            <button type="button" className="btn btn-secondary" onClick={loadPrescribingRecords} disabled={prescribingRecordsLoading}>
+              Refresh
+            </button>
+          </div>
+
+          {canWrite && (
+            <form className="nhis-card nhis-record-form" onSubmit={handleCreatePrescribingFacility}>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Facility Name *</label>
+                  <input className="form-input" value={facilityForm.facilityName} onChange={(event) => setFacilityForm((p) => ({ ...p, facilityName: event.target.value }))} required />
+                </div>
+                <div className="form-group">
+                  <label>Facility Type</label>
+                  <select className="form-input" value={facilityForm.facilityType} onChange={(event) => setFacilityForm((p) => ({ ...p, facilityType: event.target.value }))}>
+                    {NHIS_PRESCRIBING_FACILITY_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>NHIA Facility Code</label>
+                  <input className="form-input" value={facilityForm.nhiaFacilityCode} onChange={(event) => setFacilityForm((p) => ({ ...p, nhiaFacilityCode: event.target.value }))} />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Provider Number</label>
+                  <input className="form-input" value={facilityForm.providerNumber} onChange={(event) => setFacilityForm((p) => ({ ...p, providerNumber: event.target.value }))} />
+                </div>
+                <div className="form-group">
+                  <label>Region</label>
+                  <input className="form-input" value={facilityForm.region} onChange={(event) => setFacilityForm((p) => ({ ...p, region: event.target.value }))} />
+                </div>
+                <div className="form-group">
+                  <label>District</label>
+                  <input className="form-input" value={facilityForm.district} onChange={(event) => setFacilityForm((p) => ({ ...p, district: event.target.value }))} />
+                </div>
+              </div>
+              <div className="modal-actions">
+                <button type="submit" className="btn btn-primary" disabled={facilitySubmitting}>
+                  <Plus size={16} /> {facilitySubmitting ? 'Saving...' : 'Add Facility'}
+                </button>
+              </div>
+            </form>
+          )}
+
+          <div className="nhis-table-wrap">
+            {prescribingRecordsLoading ? (
+              <div className="nhis-empty">Loading prescribing facilities...</div>
+            ) : filteredPrescribingFacilities.length === 0 ? (
+              <div className="nhis-empty"><Building2 size={40} /><p>No prescribing facilities found.</p></div>
+            ) : (
+              <table className="nhis-table">
+                <thead>
+                  <tr>
+                    <th>Facility</th>
+                    <th>Type</th>
+                    <th>Location</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredPrescribingFacilities.map((facility) => (
+                    <tr key={facility.id}>
+                      <td>
+                        <div className="patient-name">{facility.facility_name}</div>
+                        {facility.nhia_facility_code && <div className="patient-meta">NHIA: {facility.nhia_facility_code}</div>}
+                        {facility.provider_number && <div className="patient-meta">Provider: {facility.provider_number}</div>}
+                      </td>
+                      <td>{facility.facility_type || '-'}</td>
+                      <td>{[facility.town, facility.district, facility.region].filter(Boolean).join(', ') || '-'}</td>
+                      <td><StatusBadge status={facility.status || 'active'} /></td>
+                      <td>
+                        {canWrite && normalizeText(facility.status).toLowerCase() !== 'inactive' ? (
+                          <button type="button" className="btn btn-danger btn-sm" onClick={() => handleDeactivatePrescribingFacility(facility)}>
+                            <Trash2 size={14} /> Deactivate
+                          </button>
+                        ) : '-'}
                       </td>
                     </tr>
                   ))}
@@ -5584,15 +6021,42 @@ const Nhis = () => {
                   <h3 className="nhis-section-title">Prescription Source</h3>
                   <div className="form-row">
                     <div className="form-group">
+                      <label>Saved Facility</label>
+                      <select
+                        className="form-input"
+                        value={claimForm.prescribingFacilityId}
+                        onChange={(event) => handleSelectPrescribingFacility(event.target.value)}
+                      >
+                        <option value="">Select saved facility</option>
+                        {claimFacilityOptions.map((facility) => (
+                          <option key={facility.id} value={facility.id}>
+                            {getNhisPrescribingFacilityDisplayName(facility)}
+                            {facility.nhia_facility_code ? ` - ${facility.nhia_facility_code}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="form-group">
                       <label>Prescribing Facility *</label>
                       <input className="form-input" value={claimForm.referringFacility}
                         required
                         onChange={(e) => setClaimForm((p) => ({ ...p, referringFacility: e.target.value }))} />
                     </div>
+                  </div>
+                  <div className="form-row">
                     <div className="form-group">
                       <label>Referral Code / CCC</label>
                       <input className="form-input" value={claimForm.referralCode}
                         onChange={(e) => setClaimForm((p) => ({ ...p, referralCode: e.target.value }))} />
+                    </div>
+                    <div className="form-group">
+                      <label>Prescription Date</label>
+                      <input
+                        className="form-input"
+                        type="date"
+                        value={claimForm.prescriptionDate}
+                        onChange={(e) => setClaimForm((p) => ({ ...p, prescriptionDate: e.target.value }))}
+                      />
                     </div>
                   </div>
                 </section>
@@ -5602,14 +6066,40 @@ const Nhis = () => {
                   <h3 className="nhis-section-title">Prescription Authorization</h3>
                   <div className="form-row">
                     <div className="form-group">
+                      <label>Saved Prescriber</label>
+                      <select
+                        className="form-input"
+                        value={claimForm.prescriberId}
+                        onChange={(event) => handleSelectPrescriber(event.target.value)}
+                      >
+                        <option value="">Select saved prescriber</option>
+                        {claimPrescriberOptions.map((prescriber) => (
+                          <option key={prescriber.id} value={prescriber.id}>
+                            {getNhisPrescriberDisplayName(prescriber)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="form-group">
                       <label>Prescriber Name / ID *</label>
                       <input className="form-input" value={claimForm.physicianName}
                         onChange={(e) => setClaimForm((p) => ({ ...p, physicianName: e.target.value }))} />
                     </div>
+                  </div>
+                  <div className="form-row">
                     <div className="form-group">
                       <label>Pre-authorization Code(s)</label>
                       <input className="form-input" value={claimForm.preAuthCodes}
                         onChange={(e) => setClaimForm((p) => ({ ...p, preAuthCodes: e.target.value }))} />
+                    </div>
+                    <div className="form-group">
+                      <label>Prescription Reference</label>
+                      <input
+                        className="form-input"
+                        value={claimForm.prescriptionReference}
+                        onChange={(e) => setClaimForm((p) => ({ ...p, prescriptionReference: e.target.value }))}
+                        placeholder="Prescription number, if shown"
+                      />
                     </div>
                   </div>
                 </section>

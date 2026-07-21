@@ -389,6 +389,10 @@
   color: var(--gray-500);
 }
 
+.nhis-record-form {
+  margin-bottom: 1rem;
+}
+
 /* Table */
 .nhis-table-wrap {
   background: white;

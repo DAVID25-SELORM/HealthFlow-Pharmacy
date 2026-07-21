@@ -871,6 +871,14 @@ app.get('/api/nhis/drugs', (request, response) => {
   response.json({ data: listOfflineRecords('nhis_drugs', request.query) })
 })
 
+app.get('/api/nhis/prescribers', (request, response) => {
+  response.json({ data: listOfflineRecords('nhis_prescribers', request.query) })
+})
+
+app.get('/api/nhis/prescribing-facilities', (request, response) => {
+  response.json({ data: listOfflineRecords('nhis_prescribing_facilities', request.query) })
+})
+
 app.get('/api/nhia/tariffs', (request, response) => {
   response.json({ data: listOfflineRecords('nhia_tariff_items', request.query) })
 })
@@ -886,6 +894,38 @@ app.post('/api/nhis/drugs', (request, response, next) => {
 app.put('/api/nhis/drugs/:id', (request, response, next) => {
   try {
     response.json({ data: saveOfflineRecord('nhis_drugs', { ...(request.body || {}), id: request.params.id }) })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.post('/api/nhis/prescribers', requireBranchUserSession, (request, response, next) => {
+  try {
+    response.status(201).json({ data: saveOfflineRecord('nhis_prescribers', request.body || {}) })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.put('/api/nhis/prescribers/:id', requireBranchUserSession, (request, response, next) => {
+  try {
+    response.json({ data: saveOfflineRecord('nhis_prescribers', { ...(request.body || {}), id: request.params.id }) })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.post('/api/nhis/prescribing-facilities', requireBranchUserSession, (request, response, next) => {
+  try {
+    response.status(201).json({ data: saveOfflineRecord('nhis_prescribing_facilities', request.body || {}) })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.put('/api/nhis/prescribing-facilities/:id', requireBranchUserSession, (request, response, next) => {
+  try {
+    response.json({ data: saveOfflineRecord('nhis_prescribing_facilities', { ...(request.body || {}), id: request.params.id }) })
   } catch (error) {
     next(error)
   }
