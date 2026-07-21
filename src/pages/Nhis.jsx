@@ -1580,6 +1580,63 @@ const Nhis = () => {
     }))
   }
 
+  const findMatchingPrescribingFacility = (value) => {
+    const term = normalizeText(value).toLowerCase()
+    if (!term) return null
+    return claimFacilityOptions.find((facility) => {
+      const name = getNhisPrescribingFacilityDisplayName(facility).toLowerCase()
+      const code = normalizeText(facility.nhia_facility_code ?? facility.nhiaFacilityCode).toLowerCase()
+      return term === name || (code && term === code) || (code && term === `${name} - ${code}`)
+    }) || null
+  }
+
+  const findMatchingPrescriber = (value) => {
+    const term = normalizeText(value).toLowerCase()
+    if (!term) return null
+    return claimPrescriberOptions.find((prescriber) => {
+      const displayName = getNhisPrescriberDisplayName(prescriber).toLowerCase()
+      const fullName = normalizeText(prescriber.full_name ?? prescriber.fullName).toLowerCase()
+      const license = normalizeText(prescriber.license_number ?? prescriber.licenseNumber).toLowerCase()
+      return term === displayName || term === fullName || (license && term === license)
+    }) || null
+  }
+
+  const handlePrescribingFacilityTextChange = (value) => {
+    const facility = findMatchingPrescribingFacility(value)
+    if (facility) {
+      handleSelectPrescribingFacility(facility.id)
+      return
+    }
+    setClaimForm((previous) => ({
+      ...previous,
+      referringFacility: value,
+      prescribingFacilityId: '',
+      prescribing_facility_id: null,
+      prescribingFacilityNameSnapshot: value,
+      prescribing_facility_name_snapshot: normalizeText(value) || null,
+      prescribingFacilityCodeSnapshot: '',
+      prescribing_facility_code_snapshot: null,
+    }))
+  }
+
+  const handlePrescriberTextChange = (value) => {
+    const prescriber = findMatchingPrescriber(value)
+    if (prescriber) {
+      handleSelectPrescriber(prescriber.id)
+      return
+    }
+    setClaimForm((previous) => ({
+      ...previous,
+      physicianName: value,
+      prescriberId: '',
+      prescriber_id: null,
+      prescriberNameSnapshot: value,
+      prescriber_name_snapshot: normalizeText(value) || null,
+      prescriberLicenseSnapshot: '',
+      prescriber_license_snapshot: null,
+    }))
+  }
+
   const handleCreatePrescribingFacility = async (event) => {
     event.preventDefault()
     try {
@@ -6038,9 +6095,26 @@ const Nhis = () => {
                     </div>
                     <div className="form-group">
                       <label>Prescribing Facility *</label>
-                      <input className="form-input" value={claimForm.referringFacility}
+                      <input
+                        className="form-input"
+                        value={claimForm.referringFacility}
+                        list="nhis-prescribing-facility-suggestions"
                         required
-                        onChange={(e) => setClaimForm((p) => ({ ...p, referringFacility: e.target.value }))} />
+                        onChange={(e) => handlePrescribingFacilityTextChange(e.target.value)}
+                      />
+                      <datalist id="nhis-prescribing-facility-suggestions">
+                        {claimFacilityOptions.map((facility) => {
+                          const name = getNhisPrescribingFacilityDisplayName(facility)
+                          const code = normalizeText(facility.nhia_facility_code ?? facility.nhiaFacilityCode)
+                          return (
+                            <option
+                              key={facility.id}
+                              value={name}
+                              label={code ? `${code} - ${facility.facility_type || 'Saved facility'}` : facility.facility_type || 'Saved facility'}
+                            />
+                          )
+                        })}
+                      </datalist>
                     </div>
                   </div>
                   <div className="form-row">
@@ -6082,8 +6156,23 @@ const Nhis = () => {
                     </div>
                     <div className="form-group">
                       <label>Prescriber Name / ID *</label>
-                      <input className="form-input" value={claimForm.physicianName}
-                        onChange={(e) => setClaimForm((p) => ({ ...p, physicianName: e.target.value }))} />
+                      <input
+                        className="form-input"
+                        value={claimForm.physicianName}
+                        list="nhis-prescriber-suggestions"
+                        onChange={(e) => handlePrescriberTextChange(e.target.value)}
+                      />
+                      <datalist id="nhis-prescriber-suggestions">
+                        {claimPrescriberOptions.map((prescriber) => (
+                          <option
+                            key={prescriber.id}
+                            value={getNhisPrescriberDisplayName(prescriber)}
+                            label={prescriber.primary_facility_id
+                              ? getNhisPrescribingFacilityDisplayName(prescribingFacilities.find((row) => row.id === prescriber.primary_facility_id) || {})
+                              : prescriber.professional_type || 'Saved prescriber'}
+                          />
+                        ))}
+                      </datalist>
                     </div>
                   </div>
                   <div className="form-row">
