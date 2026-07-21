@@ -2507,6 +2507,51 @@ const Nhis = () => {
   }
 
   // ── medicine code search ──────────────────────────────────────
+  const hasClaimModalWork = () => {
+    if (editingClaim || selectedClaimPatient || prescriptionPdfFile) return true
+    if (claimMedicines.length > 0 || claimServices.length > 0) return true
+    if (claimForm.diagnosisDetails?.length > 0) return true
+    const draftFields = [
+      'patientId',
+      'memberNo',
+      'cardType',
+      'hin',
+      'surname',
+      'otherNames',
+      'folderNo',
+      'gender',
+      'dateOfBirth',
+      'patientAddress',
+      'childWeightKg',
+      'cccNo',
+      'authId',
+      'newCcc',
+      'otacCode',
+      'attendanceVerificationStatus',
+      'nhiaTransactionId',
+      'nhiaEligibilityStartDate',
+      'nhiaEligibilityEndDate',
+      'nhiaAttendanceDate',
+      'nhiaMemberStatus',
+      'diagnosis',
+      'referringFacility',
+      'referralCode',
+      'physicianName',
+      'preAuthCodes',
+      'prescriptionFileUrl',
+      'prescriptionFilePath',
+      'prescriptionFileName',
+      'prescriptionDocumentType',
+      'prescriberId',
+      'prescribingFacilityId',
+      'prescriptionDate',
+      'prescriptionReference',
+      'notes',
+      'unservedMedicinesNote',
+    ]
+    return draftFields.some((field) => normalizeText(claimForm[field]))
+  }
+
   const openNewClaimModal = () => {
     resetClaimModal()
     setShowNewClaimModal(true)
@@ -2520,7 +2565,25 @@ const Nhis = () => {
     void ensureInventoryDrugsLoaded()
   }
 
-  const closeClaimModal = () => {
+  const closeClaimModal = ({ force = false } = {}) => {
+    if (!force && hasClaimModalWork()) {
+      const shouldClose = confirmAction({
+        title: 'Discard this NHIS claim work?',
+        details: [
+          {
+            label: 'Patient',
+            value: [claimForm.surname, claimForm.otherNames].filter(Boolean).join(' ') || 'Not saved yet',
+          },
+          {
+            label: 'Member number',
+            value: claimForm.memberNo || claimForm.hin || 'Not entered',
+          },
+        ],
+        warning: 'Unsaved entries in this claim form will be lost. Use Save Details first if you want to keep the work.',
+        confirmText: 'discard this work',
+      })
+      if (!shouldClose) return
+    }
     setClaimActionReview(null)
     setShowNewClaimModal(false)
     resetClaimModal()
@@ -3935,7 +3998,7 @@ const Nhis = () => {
       setUpdatingStatus(claim.id)
       await deleteNhisClaim(claim.id, { role, canDeleteNhisClaims })
       if (viewClaim?.id === claim.id) closeViewClaim()
-      if (editingClaim?.id === claim.id) closeClaimModal()
+      if (editingClaim?.id === claim.id) closeClaimModal({ force: true })
       await refreshClaimsOverview()
       notify(`Claim ${claim.claim_number} moved to the Recycle Bin.`, 'success')
     } catch (err) {
@@ -5707,7 +5770,7 @@ const Nhis = () => {
       )}
 
       {showNewClaimModal && (
-        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && closeClaimModal()}>
+        <div className="modal-overlay">
           <div className="modal-panel modal-panel--nhis-claim">
             <div className="modal-header">
               <h2>{editingClaim ? `Edit NHIS Claim ${editingClaim.claim_number}` : 'Add New NHIS Claim'}</h2>
