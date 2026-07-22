@@ -163,6 +163,10 @@ const getDuplicateScrubAuditSummary = (groups = []) => ({
     claims: (group.claims || []).slice(0, 6).map((claim) => claim.claim_number || claim.id || 'Unnumbered'),
   })),
 })
+const isValidPrescribingFacilityRecord = (facility) =>
+  Boolean(facility && facility.id && getNhisPrescribingFacilityDisplayName(facility))
+const isValidPrescriberRecord = (prescriber) =>
+  Boolean(prescriber && prescriber.id && getNhisPrescriberDisplayName(prescriber))
 const CLAIM_ISSUE_FILTERS = [
   { id: 'all', label: 'All claims' },
   { id: 'any', label: 'All issues' },
@@ -1438,8 +1442,8 @@ const Nhis = () => {
         listNhisPrescribingFacilities({ status: 'all', limit: 1000 }),
         listNhisPrescribers({ status: 'all', limit: 1000 }),
       ])
-      setPrescribingFacilities((facilityRows || []).filter((row) => row && row.id))
-      setPrescribers((prescriberRows || []).filter((row) => row && row.id))
+      setPrescribingFacilities((facilityRows || []).filter(isValidPrescribingFacilityRecord))
+      setPrescribers((prescriberRows || []).filter(isValidPrescriberRecord))
     } catch (recordsError) {
       console.warn('[NHIS] Prescriber/facility records could not be loaded.', recordsError)
       notify(recordsError.message || 'Unable to load NHIS prescriber records.', 'warning')
@@ -1553,9 +1557,7 @@ const Nhis = () => {
 
   const claimFacilityOptions = useMemo(
     () => prescribingFacilities.filter((facility) =>
-      facility &&
-      facility.id &&
-      getNhisPrescribingFacilityDisplayName(facility) &&
+      isValidPrescribingFacilityRecord(facility) &&
       normalizeText(facility.status).toLowerCase() !== 'inactive'
     ),
     [prescribingFacilities]
@@ -1563,9 +1565,7 @@ const Nhis = () => {
 
   const claimPrescriberOptions = useMemo(
     () => prescribers.filter((prescriber) =>
-      prescriber &&
-      prescriber.id &&
-      getNhisPrescriberDisplayName(prescriber) &&
+      isValidPrescriberRecord(prescriber) &&
       normalizeText(prescriber.status).toLowerCase() !== 'inactive'
     ),
     [prescribers]
@@ -1664,7 +1664,10 @@ const Nhis = () => {
     try {
       setFacilitySubmitting(true)
       const saved = await createNhisPrescribingFacility(facilityForm, getRecordOptions())
-      setPrescribingFacilities((previous) => [saved, ...previous.filter((row) => row.id !== saved.id)])
+      setPrescribingFacilities((previous) =>
+        [saved, ...previous.filter((row) => row && row.id !== saved?.id)]
+          .filter(isValidPrescribingFacilityRecord)
+      )
       setFacilityForm(BLANK_NHIS_PRESCRIBING_FACILITY)
       notify('Prescribing facility saved.', 'success')
     } catch (submitError) {
@@ -1679,7 +1682,10 @@ const Nhis = () => {
     try {
       setPrescriberSubmitting(true)
       const saved = await createNhisPrescriber(prescriberForm, getRecordOptions())
-      setPrescribers((previous) => [saved, ...previous.filter((row) => row.id !== saved.id)])
+      setPrescribers((previous) =>
+        [saved, ...previous.filter((row) => row && row.id !== saved?.id)]
+          .filter(isValidPrescriberRecord)
+      )
       setPrescriberForm(BLANK_NHIS_PRESCRIBER)
       notify('Prescriber saved.', 'success')
     } catch (submitError) {
@@ -1695,7 +1701,11 @@ const Nhis = () => {
         ...getRecordOptions(),
         record: facility,
       })
-      setPrescribingFacilities((previous) => previous.map((row) => row.id === saved.id ? saved : row))
+      setPrescribingFacilities((previous) =>
+        previous
+          .map((row) => row?.id === saved?.id ? saved : row)
+          .filter(isValidPrescribingFacilityRecord)
+      )
       notify('Prescribing facility deactivated.', 'success')
     } catch (submitError) {
       notify(submitError.message || 'Unable to deactivate prescribing facility.', 'error')
@@ -1708,7 +1718,11 @@ const Nhis = () => {
         ...getRecordOptions(),
         record: prescriber,
       })
-      setPrescribers((previous) => previous.map((row) => row.id === saved.id ? saved : row))
+      setPrescribers((previous) =>
+        previous
+          .map((row) => row?.id === saved?.id ? saved : row)
+          .filter(isValidPrescriberRecord)
+      )
       notify('Prescriber deactivated.', 'success')
     } catch (submitError) {
       notify(submitError.message || 'Unable to deactivate prescriber.', 'error')
