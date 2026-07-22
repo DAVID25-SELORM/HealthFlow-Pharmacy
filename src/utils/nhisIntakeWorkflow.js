@@ -36,6 +36,18 @@ export const hasVerifiedNhisPrescription = (claim = {}, pendingFile = null) =>
   Boolean(claim.prescriptionVerifiedBy || claim.prescription_verified_by) &&
   Boolean(claim.prescriptionVerifiedAt || claim.prescription_verified_at)
 
+export const getNhisPrescriptionAttachmentReview = (claim = {}, pendingFile = null) => {
+  const attached = hasNhisPrescriptionAttachment(claim, pendingFile)
+  const verified = hasVerifiedNhisPrescription(claim, pendingFile)
+
+  return {
+    attached,
+    verified,
+    label: attached ? (verified ? 'Attached and verified' : 'Attached') : 'Not attached',
+    readyClass: attached ? 'review-value-ready' : 'review-value-warning',
+  }
+}
+
 export const getNhisIncompleteIntakeItems = ({
   claim = {},
   medicines = [],

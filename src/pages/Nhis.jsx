@@ -17,6 +17,7 @@ import {
   canSaveNhisIncompleteIntake,
   getNhisIntakeSaveStatus,
   getNhisIncompleteIntakeItems,
+  getNhisPrescriptionAttachmentReview,
   hasNhisPrescriptionAttachment,
   hasVerifiedNhisPrescription,
 } from '../utils/nhisIntakeWorkflow'
@@ -3222,6 +3223,10 @@ const Nhis = () => {
   const readinessPassed = readiness.issues.length === 0
   const readinessBlocked = readiness.blockers.length > 0
   const mcaReadiness = useMemo(() => splitMcaReadinessIssues(readiness), [readiness])
+  const prescriptionAttachmentReview = useMemo(
+    () => getNhisPrescriptionAttachmentReview(claimForm, prescriptionPdfFile),
+    [claimForm, prescriptionPdfFile]
+  )
   const canSaveIncompleteIntake = canSaveNhisIncompleteIntake({
     isMedicineCounterAssistant,
     isEditing: Boolean(editingClaim),
@@ -6915,12 +6920,8 @@ const Nhis = () => {
                 <div><span>Requested total</span><strong>{fmtCurrency(requestedClaimTotal)}</strong></div>
                 <div>
                   <span>Prescription</span>
-                  <strong className={hasNhisPrescriptionAttachment(claimForm, prescriptionPdfFile) ? 'review-value-ready' : 'review-value-warning'}>
-                    {hasNhisPrescriptionAttachment(claimForm, prescriptionPdfFile)
-                      ? hasVerifiedNhisPrescription(claimForm, prescriptionPdfFile)
-                        ? 'Attached and verified'
-                        : 'Attached'
-                      : 'Not attached'}
+                  <strong className={prescriptionAttachmentReview.readyClass}>
+                    {prescriptionAttachmentReview.label}
                   </strong>
                 </div>
               </div>

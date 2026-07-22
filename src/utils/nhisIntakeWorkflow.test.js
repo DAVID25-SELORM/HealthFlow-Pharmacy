@@ -3,6 +3,7 @@ import {
   canSaveNhisIncompleteIntake,
   getNhisIntakeSaveStatus,
   getNhisIncompleteIntakeItems,
+  getNhisPrescriptionAttachmentReview,
   hasNhisPrescriptionAttachment,
   hasVerifiedNhisPrescription,
 } from './nhisIntakeWorkflow'
@@ -66,6 +67,39 @@ describe('NHIS dispensary intake workflow', () => {
       prescription_verified_by: 'user-1',
       prescription_verified_at: '2026-06-30T12:00:00.000Z',
     })).toBe(true)
+  })
+
+  it('labels final review attachments without confusing attachment with verification', () => {
+    expect(getNhisPrescriptionAttachmentReview()).toMatchObject({
+      attached: false,
+      verified: false,
+      label: 'Not attached',
+      readyClass: 'review-value-warning',
+    })
+    expect(getNhisPrescriptionAttachmentReview({}, { name: 'rx.pdf' })).toMatchObject({
+      attached: true,
+      verified: false,
+      label: 'Attached',
+      readyClass: 'review-value-ready',
+    })
+    expect(getNhisPrescriptionAttachmentReview({ prescription_file_path: 'rx/claim.pdf' })).toMatchObject({
+      attached: true,
+      verified: false,
+      label: 'Attached',
+      readyClass: 'review-value-ready',
+    })
+    expect(getNhisPrescriptionAttachmentReview({
+      prescription_file_path: 'rx/claim.pdf',
+      prescription_document_type: 'prescription',
+      prescription_verified: true,
+      prescription_verified_by: 'user-1',
+      prescription_verified_at: '2026-06-30T12:00:00.000Z',
+    })).toMatchObject({
+      attached: true,
+      verified: true,
+      label: 'Attached and verified',
+      readyClass: 'review-value-ready',
+    })
   })
 
   it('permits incomplete claims-staff saves without weakening dispensary or final review checks', () => {
