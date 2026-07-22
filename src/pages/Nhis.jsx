@@ -48,6 +48,10 @@ import {
   submitNhisClaimDirect,
   assessNhisClaimReadiness,
   validateNhisClaimFinalReadiness,
+  HOSPITAL_ENCOUNTER_OUTCOME_OPTIONS,
+  HOSPITAL_NO_MEDICINE_REASON_OPTIONS,
+  HOSPITAL_NO_LAB_REASON_OPTIONS,
+  HOSPITAL_NO_PROCEDURE_REASON_OPTIONS,
   getAllNhisClinicalRules,
   upsertNhisClinicalRules,
   normalizeOrganizationType,
@@ -324,6 +328,11 @@ const makeBlankClaim = () => ({
   claimitAttachmentBase64: '',
   notes:             '',
   unservedMedicinesNote: '',
+  encounterOutcome: '',
+  noMedicineReason: '',
+  noLabReason: '',
+  noProcedureReason: '',
+  externalPrescriptionStatus: '',
 })
 
 const BLANK_NHIS_PRESCRIBER = {
@@ -2548,6 +2557,11 @@ const Nhis = () => {
       'prescriptionReference',
       'notes',
       'unservedMedicinesNote',
+      'encounterOutcome',
+      'noMedicineReason',
+      'noLabReason',
+      'noProcedureReason',
+      'externalPrescriptionStatus',
     ]
     return draftFields.some((field) => normalizeText(claimForm[field]))
   }
@@ -2729,6 +2743,11 @@ const Nhis = () => {
       claimitAttachmentBase64: claim.claimit_attachment_base64 || '',
       notes: claim.notes || '',
       unservedMedicinesNote: claim.unserved_medicines_note || '',
+      encounterOutcome: claim.encounter_outcome || '',
+      noMedicineReason: claim.no_medicine_reason || '',
+      noLabReason: claim.no_lab_reason || '',
+      noProcedureReason: claim.no_procedure_reason || '',
+      externalPrescriptionStatus: claim.external_prescription_status || '',
     })
     setPrescriptionPdfFile(null)
     setClaimMedicines(
@@ -6173,6 +6192,77 @@ const Nhis = () => {
                   </div>
                 </section>
 
+                {isHospital && (
+                  <section className="nhis-section">
+                    <h3 className="nhis-section-title">Encounter Outcome</h3>
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label>Outcome</label>
+                        <select
+                          className="form-input"
+                          value={claimForm.encounterOutcome}
+                          onChange={(e) => setClaimForm((p) => ({ ...p, encounterOutcome: e.target.value }))}
+                        >
+                          {HOSPITAL_ENCOUNTER_OUTCOME_OPTIONS.map((option) => (
+                            <option key={option.value || 'blank'} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <label>No medicine reason</label>
+                        <select
+                          className="form-input"
+                          value={claimForm.noMedicineReason}
+                          onChange={(e) => setClaimForm((p) => ({ ...p, noMedicineReason: e.target.value }))}
+                        >
+                          {HOSPITAL_NO_MEDICINE_REASON_OPTIONS.map((option) => (
+                            <option key={option.value || 'blank'} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label>No laboratory reason</label>
+                        <select
+                          className="form-input"
+                          value={claimForm.noLabReason}
+                          onChange={(e) => setClaimForm((p) => ({ ...p, noLabReason: e.target.value }))}
+                        >
+                          {HOSPITAL_NO_LAB_REASON_OPTIONS.map((option) => (
+                            <option key={option.value || 'blank'} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <label>No procedure reason</label>
+                        <select
+                          className="form-input"
+                          value={claimForm.noProcedureReason}
+                          onChange={(e) => setClaimForm((p) => ({ ...p, noProcedureReason: e.target.value }))}
+                        >
+                          {HOSPITAL_NO_PROCEDURE_REASON_OPTIONS.map((option) => (
+                            <option key={option.value || 'blank'} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    {claimForm.encounterOutcome === 'external_prescription' && (
+                      <div className="form-row">
+                        <div className="form-group">
+                          <label>External prescription status</label>
+                          <input
+                            className="form-input"
+                            value={claimForm.externalPrescriptionStatus}
+                            placeholder="Issued to patient / sent to external pharmacy"
+                            onChange={(e) => setClaimForm((p) => ({ ...p, externalPrescriptionStatus: e.target.value }))}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </section>
+                )}
+
                 {/* Referral */}
                 <section className="nhis-section">
                   <h3 className="nhis-section-title">Prescription Source</h3>
@@ -6672,6 +6762,16 @@ const Nhis = () => {
                         </div>
                       )}
                     </>
+                  )}
+                  {readiness.information?.length > 0 && (
+                    <div className="nhia-readiness-section nhia-readiness-section--info">
+                      <span className="nhia-readiness-label">Documented context ({readiness.information.length})</span>
+                      <ul className="nhia-readiness-info-list">
+                        {readiness.information.map((issue) => (
+                          <li key={issue}>{issue}</li>
+                        ))}
+                      </ul>
+                    </div>
                   )}
                 </div>
               </div>

@@ -651,7 +651,9 @@ const insertClaim = db.prepare(`
     member_number, card_type, hin, cc_code,
     nhia_auth_id, nhia_auth_type, nhia_new_ccc_status, nhia_otac, nhia_attendance_date,
     nhia_attendance_verification_status, nhia_attendance_verification_source,
-    diagnosis, diagnosis_details_json, unserved_medicines_note, insurance_provider, service_date, total_amount, status,
+    diagnosis, diagnosis_details_json, unserved_medicines_note,
+    encounter_outcome, no_medicine_reason, no_lab_reason, no_procedure_reason, external_prescription_status,
+    insurance_provider, service_date, total_amount, status,
     payload_json, organization_id, branch_id, created_by, created_at, updated_at
   )
   VALUES (
@@ -659,7 +661,9 @@ const insertClaim = db.prepare(`
     @memberNumber, @cardType, @hin, @ccCode,
     @nhiaAuthId, @nhiaAuthType, @nhiaNewCccStatus, @nhiaOtac, @nhiaAttendanceDate,
     @nhiaAttendanceVerificationStatus, @nhiaAttendanceVerificationSource,
-    @diagnosis, @diagnosisDetailsJson, @unservedMedicinesNote, @insuranceProvider, @serviceDate, @totalAmount, @status,
+    @diagnosis, @diagnosisDetailsJson, @unservedMedicinesNote,
+    @encounterOutcome, @noMedicineReason, @noLabReason, @noProcedureReason, @externalPrescriptionStatus,
+    @insuranceProvider, @serviceDate, @totalAmount, @status,
     @payloadJson, @organizationId, @branchId, @createdBy, @createdAt, @updatedAt
   )
 `)
@@ -1717,6 +1721,11 @@ const mapClaimRow = (row) => ({
   diagnosis: row.diagnosis || '',
   diagnosisDetails: parseJson(row.diagnosis_details_json, []),
   unservedMedicinesNote: row.unserved_medicines_note || '',
+  encounterOutcome: row.encounter_outcome || '',
+  noMedicineReason: row.no_medicine_reason || '',
+  noLabReason: row.no_lab_reason || '',
+  noProcedureReason: row.no_procedure_reason || '',
+  externalPrescriptionStatus: row.external_prescription_status || '',
   insuranceProvider: row.insurance_provider,
   serviceDate: row.service_date,
   totalAmount: row.total_amount,
@@ -2154,6 +2163,21 @@ export const createNhiaClaim = db.transaction((claimData = {}, linkedSale = {}) 
     unservedMedicinesNote: normalizeText(
       claimData.unservedMedicinesNote || claimData.unserved_medicines_note
     ) || null,
+    encounterOutcome: organizationType === 'hospital'
+      ? normalizeText(claimData.encounterOutcome || claimData.encounter_outcome) || null
+      : null,
+    noMedicineReason: organizationType === 'hospital'
+      ? normalizeText(claimData.noMedicineReason || claimData.no_medicine_reason) || null
+      : null,
+    noLabReason: organizationType === 'hospital'
+      ? normalizeText(claimData.noLabReason || claimData.no_lab_reason) || null
+      : null,
+    noProcedureReason: organizationType === 'hospital'
+      ? normalizeText(claimData.noProcedureReason || claimData.no_procedure_reason) || null
+      : null,
+    externalPrescriptionStatus: organizationType === 'hospital'
+      ? normalizeText(claimData.externalPrescriptionStatus || claimData.external_prescription_status) || null
+      : null,
     insuranceProvider: claimData.insuranceProvider || 'NHIA',
     serviceDate: normalizeNhiaServiceDate(claimData.serviceDate || linkedSale.saleDate || timestamp) || toNhisCalendarDate(),
     totalAmount,
@@ -2265,6 +2289,7 @@ const getClinicalRulesForSubmission = () => {
 const getDiagnosisTreatmentMismatchBlockers = (claim, items = [], rules = getClinicalRulesForSubmission()) => {
   const diagnosis = normalizeMatchText(claim.diagnosis || claim.payload?.diagnosis)
   if (!diagnosis) return []
+  if (!(items || []).length) return []
 
   const matchedRules = normalizeClinicalRules(rules).filter((rule) =>
     rule.diagnosis.some((keyword) => diagnosis.includes(keyword))

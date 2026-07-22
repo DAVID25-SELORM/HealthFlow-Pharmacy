@@ -181,6 +181,11 @@ const OPTIONAL_CLAIM_SCHEMA_COLUMNS = [
   'prescriber_license_snapshot',
   'prescribing_facility_name_snapshot',
   'prescribing_facility_code_snapshot',
+  'encounter_outcome',
+  'no_medicine_reason',
+  'no_lab_reason',
+  'no_procedure_reason',
+  'external_prescription_status',
 ]
 const OPTIONAL_CLAIM_SCHEMA_FIELD_GROUPS = [
   ['patient_address', 'patientAddress'],
@@ -225,6 +230,11 @@ const OPTIONAL_CLAIM_SCHEMA_FIELD_GROUPS = [
   ['prescriber_license_snapshot', 'prescriberLicenseSnapshot'],
   ['prescribing_facility_name_snapshot', 'prescribingFacilityNameSnapshot'],
   ['prescribing_facility_code_snapshot', 'prescribingFacilityCodeSnapshot'],
+  ['encounter_outcome', 'encounterOutcome'],
+  ['no_medicine_reason', 'noMedicineReason'],
+  ['no_lab_reason', 'noLabReason'],
+  ['no_procedure_reason', 'noProcedureReason'],
+  ['external_prescription_status', 'externalPrescriptionStatus'],
 ]
 const OPTIONAL_CLAIM_SCHEMA_PAYLOAD_KEYS = [
   ...new Set([
@@ -471,6 +481,60 @@ const NHIA_API_SETTINGS_CACHE_FIELDS = [
   'exportFormat',
   'export_format',
 ]
+
+export const HOSPITAL_ENCOUNTER_OUTCOME_OPTIONS = [
+  { value: '', label: 'Not recorded' },
+  { value: 'treated_discharged', label: 'Treated and discharged' },
+  { value: 'advice_only', label: 'Advice only' },
+  { value: 'observation', label: 'Observation / review only' },
+  { value: 'follow_up', label: 'Follow-up arranged' },
+  { value: 'awaiting_lab_result', label: 'Awaiting laboratory result' },
+  { value: 'lab_only', label: 'Laboratory only' },
+  { value: 'procedure_only', label: 'Procedure only' },
+  { value: 'external_prescription', label: 'External prescription issued' },
+  { value: 'referred', label: 'Referred to another facility' },
+  { value: 'admitted', label: 'Admitted' },
+  { value: 'patient_declined', label: 'Patient declined treatment/service' },
+  { value: 'no_treatment_indicated', label: 'No treatment clinically indicated' },
+]
+
+export const HOSPITAL_NO_MEDICINE_REASON_OPTIONS = [
+  { value: '', label: 'Not recorded' },
+  { value: 'not_clinically_indicated', label: 'Not clinically indicated' },
+  { value: 'external_prescription_issued', label: 'External prescription issued' },
+  { value: 'medicine_unavailable', label: 'Medicine unavailable' },
+  { value: 'patient_declined', label: 'Patient declined' },
+  { value: 'contraindication_or_allergy', label: 'Contraindication / allergy' },
+  { value: 'awaiting_lab_result', label: 'Awaiting laboratory result' },
+  { value: 'referred', label: 'Referred' },
+  { value: 'admitted', label: 'Admitted' },
+  { value: 'already_on_treatment', label: 'Already on treatment' },
+  { value: 'advice_only', label: 'Advice only' },
+  { value: 'other', label: 'Other documented reason' },
+]
+
+export const HOSPITAL_NO_LAB_REASON_OPTIONS = [
+  { value: '', label: 'Not recorded' },
+  { value: 'not_clinically_indicated', label: 'Not clinically indicated' },
+  { value: 'recent_result_available', label: 'Recent result available' },
+  { value: 'clinical_diagnosis_sufficient', label: 'Clinical diagnosis sufficient' },
+  { value: 'patient_declined', label: 'Patient declined' },
+  { value: 'test_unavailable', label: 'Test unavailable' },
+  { value: 'referred', label: 'Referred' },
+  { value: 'emergency_treatment_first', label: 'Emergency treatment given first' },
+  { value: 'other', label: 'Other documented reason' },
+]
+
+export const HOSPITAL_NO_PROCEDURE_REASON_OPTIONS = [
+  { value: '', label: 'Not recorded' },
+  { value: 'not_clinically_indicated', label: 'Not clinically indicated' },
+  { value: 'patient_declined', label: 'Patient declined' },
+  { value: 'facility_unavailable', label: 'Facility unavailable' },
+  { value: 'referred', label: 'Referred' },
+  { value: 'scheduled_later', label: 'Scheduled later' },
+  { value: 'other', label: 'Other documented reason' },
+]
+
 const NHIA_SECRET_MASK_VALUES = new Set(['\u2022'.repeat(8), '\u2022'.repeat(12)])
 const NHIA_SECRET_FIELDS = new Set(['apiKey', 'apiSecret', 'username', 'password'])
 const isNhiaSecretMask = (value) => NHIA_SECRET_MASK_VALUES.has(normalizeText(value))
@@ -579,6 +643,8 @@ const NHIS_CLAIM_EXPORT_SELECT = `
       prescription_file_url, prescription_file_path, prescription_file_name,
       prescription_file_type, prescription_file_size, prescription_document_type,
       prescription_verified, prescription_verified_by, prescription_verified_at,
+      encounter_outcome, no_medicine_reason, no_lab_reason,
+      no_procedure_reason, external_prescription_status,
       notes
     `
 
@@ -1331,6 +1397,51 @@ const formatDiagnosisList = (diagnoses = []) => {
 const getTreatmentCategoryLabel = (rule = {}) => {
   if (normalizeMatchText(rule.label) === 'pain or fever') return 'analgesic/antipyretic medicine'
   return `${rule.label} medicine/category`
+}
+
+const getOptionLabel = (options = [], value = '') =>
+  options.find((option) => option.value === asText(value))?.label || asText(value)
+
+const getHospitalEncounterOutcome = (claimData = {}) =>
+  asText(claimData?.encounterOutcome ?? claimData?.encounter_outcome)
+
+const getHospitalNoMedicineReason = (claimData = {}) =>
+  asText(claimData?.noMedicineReason ?? claimData?.no_medicine_reason)
+
+const HOSPITAL_NO_INTERNAL_MEDICINE_OUTCOMES = new Set([
+  'advice_only',
+  'observation',
+  'follow_up',
+  'awaiting_lab_result',
+  'lab_only',
+  'procedure_only',
+  'external_prescription',
+  'referred',
+  'admitted',
+  'patient_declined',
+  'no_treatment_indicated',
+])
+
+const hasHospitalNoMedicineExplanation = (claimData = {}) =>
+  Boolean(
+    HOSPITAL_NO_INTERNAL_MEDICINE_OUTCOMES.has(getHospitalEncounterOutcome(claimData)) ||
+      getHospitalNoMedicineReason(claimData) ||
+      asText(claimData?.externalPrescriptionStatus ?? claimData?.external_prescription_status)
+  )
+
+const getHospitalNoMedicineExplanationMessage = (claimData = {}) => {
+  const outcome = getHospitalEncounterOutcome(claimData)
+  const noMedicineReason = getHospitalNoMedicineReason(claimData)
+  const externalStatus = asText(claimData?.externalPrescriptionStatus ?? claimData?.external_prescription_status)
+  const details = [
+    outcome ? `outcome: ${getOptionLabel(HOSPITAL_ENCOUNTER_OUTCOME_OPTIONS, outcome)}` : '',
+    noMedicineReason ? `reason: ${getOptionLabel(HOSPITAL_NO_MEDICINE_REASON_OPTIONS, noMedicineReason)}` : '',
+    externalStatus ? `external prescription: ${externalStatus}` : '',
+  ].filter(Boolean).join('; ')
+
+  return details
+    ? `No internal medicine was dispensed. This is documented by ${details}.`
+    : 'No medicine was dispensed. Add an encounter outcome or no-medicine reason if treatment was deferred, referred, declined, unavailable, or not clinically indicated.'
 }
 
 const getDiagnosisTreatmentMismatchMessage = (claimData = {}, rule = {}) => {
@@ -2339,6 +2450,7 @@ const getHospitalProviderClassIssue = (service = {}, providerClassLevel = '', se
 export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}) => {
   const blockers = []
   const warnings = []
+  const information = []
   const tariffServices = normalizeNhiaTariffServiceLines(getNhiaTariffServices(claimData, options), claimData)
   const dateOfBirth = getClaimField(claimData, 'dateOfBirth', 'date_of_birth')
   const childWeight = getClaimField(claimData, 'childWeightKg', 'child_weight_kg')
@@ -2597,7 +2709,17 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
     })
   }
 
-  if (shouldCheckDiagnosisTreatmentMatch) {
+  if (shouldCheckDiagnosisTreatmentMatch && !hasClaimableMedicineClaims) {
+    const shouldExplainNoMedicine = tariffServices.length > 0 || getDiagnosisMatchText(claimData)
+    if (shouldExplainNoMedicine) {
+      const message = getHospitalNoMedicineExplanationMessage(claimData)
+      if (hasHospitalNoMedicineExplanation(claimData)) {
+        information.push(message)
+      } else if (tariffServices.length > 0) {
+        warnings.push(message)
+      }
+    }
+  } else if (shouldCheckDiagnosisTreatmentMatch) {
     blockers.push(...getDiagnosisTreatmentMismatchBlockers(claimData, claimableMedicines, options.clinicalRules || DIAGNOSIS_TREATMENT_RULES, options))
   }
 
@@ -2631,6 +2753,7 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
   return {
     blockers,
     warnings,
+    information,
     issues: [...blockers, ...warnings],
     riskScore: risk.score,
     riskLevel: risk.level,
@@ -5391,6 +5514,21 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
     unserved_medicines_note: normalizeText(
       claimData.unservedMedicinesNote ?? claimData.unserved_medicines_note
     ) || null,
+    encounter_outcome: isHospital
+      ? normalizeText(claimData.encounterOutcome ?? claimData.encounter_outcome) || null
+      : null,
+    no_medicine_reason: isHospital
+      ? normalizeText(claimData.noMedicineReason ?? claimData.no_medicine_reason) || null
+      : null,
+    no_lab_reason: isHospital
+      ? normalizeText(claimData.noLabReason ?? claimData.no_lab_reason) || null
+      : null,
+    no_procedure_reason: isHospital
+      ? normalizeText(claimData.noProcedureReason ?? claimData.no_procedure_reason) || null
+      : null,
+    external_prescription_status: isHospital
+      ? normalizeText(claimData.externalPrescriptionStatus ?? claimData.external_prescription_status) || null
+      : null,
     ...getPrescriptionAttachmentPayload(claimData),
     created_by:         claimData.createdBy                        || null,
   }
@@ -5636,6 +5774,21 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
     unserved_medicines_note: normalizeText(
       claimData.unservedMedicinesNote ?? claimData.unserved_medicines_note
     ) || null,
+    encounter_outcome: isHospital
+      ? normalizeText(claimData.encounterOutcome ?? claimData.encounter_outcome) || null
+      : null,
+    no_medicine_reason: isHospital
+      ? normalizeText(claimData.noMedicineReason ?? claimData.no_medicine_reason) || null
+      : null,
+    no_lab_reason: isHospital
+      ? normalizeText(claimData.noLabReason ?? claimData.no_lab_reason) || null
+      : null,
+    no_procedure_reason: isHospital
+      ? normalizeText(claimData.noProcedureReason ?? claimData.no_procedure_reason) || null
+      : null,
+    external_prescription_status: isHospital
+      ? normalizeText(claimData.externalPrescriptionStatus ?? claimData.external_prescription_status) || null
+      : null,
     ...getPrescriptionAttachmentPayload(claimData),
     updated_at: new Date().toISOString(),
   }

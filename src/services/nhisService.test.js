@@ -516,6 +516,52 @@ describe('assessNhisClaimReadiness', () => {
     expect(readiness.blockers.join(' ')).not.toContain('Pain or fever: treatment does not appear to match the diagnosis')
   })
 
+  it('does not block hospital service-only claims when the encounter outcome explains no internal medicine', () => {
+    const readiness = assessNhisClaimReadiness(
+      {
+        ...baseClaim,
+        organizationType: 'hospital',
+        diagnosis: 'Typhoid fever; Plasmodium falciparum malaria',
+        encounterOutcome: 'external_prescription',
+        noMedicineReason: 'external_prescription_issued',
+        externalPrescriptionStatus: 'Issued to patient for community pharmacy collection',
+      },
+      [],
+      {
+        finalSubmission: true,
+        providerClassLevel: 'D',
+        nhiaTariffServices: [baseTariffService],
+      }
+    )
+
+    expect(readiness.blockers.join(' ')).not.toContain('no analgesic/antipyretic medicine was found')
+    expect(readiness.blockers.join(' ')).not.toContain('no matching')
+    expect(readiness.information).toContain(
+      'No internal medicine was dispensed. This is documented by outcome: External prescription issued; reason: External prescription issued; external prescription: Issued to patient for community pharmacy collection.'
+    )
+  })
+
+  it('warns instead of blocking when a hospital service-only claim has no no-medicine explanation', () => {
+    const readiness = assessNhisClaimReadiness(
+      {
+        ...baseClaim,
+        organizationType: 'hospital',
+        diagnosis: 'Typhoid fever; Plasmodium falciparum malaria',
+      },
+      [],
+      {
+        finalSubmission: true,
+        providerClassLevel: 'D',
+        nhiaTariffServices: [baseTariffService],
+      }
+    )
+
+    expect(readiness.blockers.join(' ')).not.toContain('no analgesic/antipyretic medicine was found')
+    expect(readiness.warnings).toContain(
+      'No medicine was dispensed. Add an encounter outcome or no-medicine reason if treatment was deferred, referred, declined, unavailable, or not clinically indicated.'
+    )
+  })
+
   it('blocks final submission when medicines exist but diagnosis has no clinical rule coverage', () => {
     const readiness = assessNhisClaimReadiness(
       { ...baseClaim, organizationType: 'hospital', diagnosis: 'Unmapped diagnosis' },
