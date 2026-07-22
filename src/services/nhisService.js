@@ -1408,6 +1408,12 @@ const getHospitalEncounterOutcome = (claimData = {}) =>
 const getHospitalNoMedicineReason = (claimData = {}) =>
   asText(claimData?.noMedicineReason ?? claimData?.no_medicine_reason)
 
+const getHospitalNoLabReason = (claimData = {}) =>
+  asText(claimData?.noLabReason ?? claimData?.no_lab_reason)
+
+const getHospitalNoProcedureReason = (claimData = {}) =>
+  asText(claimData?.noProcedureReason ?? claimData?.no_procedure_reason)
+
 const HOSPITAL_NO_INTERNAL_MEDICINE_OUTCOMES = new Set([
   'advice_only',
   'observation',
@@ -1422,11 +1428,29 @@ const HOSPITAL_NO_INTERNAL_MEDICINE_OUTCOMES = new Set([
   'no_treatment_indicated',
 ])
 
+const HOSPITAL_NO_INTERNAL_LAB_OUTCOMES = new Set([
+  'advice_only',
+  'observation',
+  'follow_up',
+  'awaiting_lab_result',
+  'external_prescription',
+  'referred',
+  'admitted',
+  'patient_declined',
+  'no_treatment_indicated',
+])
+
 const hasHospitalNoMedicineExplanation = (claimData = {}) =>
   Boolean(
     HOSPITAL_NO_INTERNAL_MEDICINE_OUTCOMES.has(getHospitalEncounterOutcome(claimData)) ||
       getHospitalNoMedicineReason(claimData) ||
       asText(claimData?.externalPrescriptionStatus ?? claimData?.external_prescription_status)
+  )
+
+const hasHospitalNoLabExplanation = (claimData = {}) =>
+  Boolean(
+    HOSPITAL_NO_INTERNAL_LAB_OUTCOMES.has(getHospitalEncounterOutcome(claimData)) ||
+      getHospitalNoLabReason(claimData)
   )
 
 const getHospitalNoMedicineExplanationMessage = (claimData = {}) => {
@@ -1442,6 +1466,25 @@ const getHospitalNoMedicineExplanationMessage = (claimData = {}) => {
   return details
     ? `No internal medicine was dispensed. This is documented by ${details}.`
     : 'No medicine was dispensed. Add an encounter outcome or no-medicine reason if treatment was deferred, referred, declined, unavailable, or not clinically indicated.'
+}
+
+const getHospitalNoLabExplanationMessage = (claimData = {}) => {
+  const outcome = getHospitalEncounterOutcome(claimData)
+  const noLabReason = getHospitalNoLabReason(claimData)
+  const details = [
+    outcome ? `outcome: ${getOptionLabel(HOSPITAL_ENCOUNTER_OUTCOME_OPTIONS, outcome)}` : '',
+    noLabReason ? `reason: ${getOptionLabel(HOSPITAL_NO_LAB_REASON_OPTIONS, noLabReason)}` : '',
+  ].filter(Boolean).join('; ')
+
+  return details
+    ? `No internal laboratory investigation was recorded. This is documented by ${details}.`
+    : 'No laboratory investigation was recorded. Add an encounter outcome or no-lab reason if testing was deferred, declined, referred, unavailable, or not clinically indicated.'
+}
+
+const getHospitalNoProcedureExplanationMessage = (claimData = {}) => {
+  const noProcedureReason = getHospitalNoProcedureReason(claimData)
+  if (!noProcedureReason) return ''
+  return `No internal procedure was recorded. This is documented by reason: ${getOptionLabel(HOSPITAL_NO_PROCEDURE_REASON_OPTIONS, noProcedureReason)}.`
 }
 
 const getDiagnosisTreatmentMismatchMessage = (claimData = {}, rule = {}) => {
@@ -2709,12 +2752,18 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
     })
   }
 
+  if (isHospital) {
+    const hasProcedureService = tariffServices.some((service) => getHospitalServiceKind(service) === 'procedure')
+    const noProcedureMessage = !hasProcedureService ? getHospitalNoProcedureExplanationMessage(claimData) : ''
+    if (noProcedureMessage) addUnique(information, noProcedureMessage)
+  }
+
   if (shouldCheckDiagnosisTreatmentMatch && !hasClaimableMedicineClaims) {
     const shouldExplainNoMedicine = tariffServices.length > 0 || getDiagnosisMatchText(claimData)
     if (shouldExplainNoMedicine) {
       const message = getHospitalNoMedicineExplanationMessage(claimData)
       if (hasHospitalNoMedicineExplanation(claimData)) {
-        information.push(message)
+        addUnique(information, message)
       } else if (tariffServices.length > 0) {
         warnings.push(message)
       }
@@ -2728,6 +2777,11 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
     const ageIssues = getAgeClinicalIssues(patientAge, claimableMedicines, claimData)
     const drugDiagnosisIssues = getDrugDiagnosisIssues(claimData, claimableMedicines, true)
     const quantityCostIssues = getQuantityCostIssues(claimData, claimableMedicines, true)
+    const supportingInvestigationIssues = getSupportingInvestigationIssues(
+      claimData,
+      { ...options, claimServices: tariffServices },
+      true
+    )
 
     blockers.push(
       ...getGenderDiagnosisIssues(claimData),
@@ -2743,9 +2797,13 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
       ...drugDiagnosisIssues.warnings,
       ...quantityCostIssues.warnings,
       ...getInvestigationMismatchWarnings(claimData, { ...options, claimServices: tariffServices }, true),
-      ...getSupportingInvestigationIssues(claimData, { ...options, claimServices: tariffServices }, true),
       ...getChronicDiseaseWarnings(claimData, options, true)
     )
+    if (supportingInvestigationIssues.length && isHospital && hasHospitalNoLabExplanation(claimData)) {
+      addUnique(information, getHospitalNoLabExplanationMessage(claimData))
+    } else {
+      warnings.push(...supportingInvestigationIssues)
+    }
   }
 
   const risk = getClaimRisk(blockers, warnings)

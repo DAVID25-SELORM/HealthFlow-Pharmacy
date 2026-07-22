@@ -562,6 +562,46 @@ describe('assessNhisClaimReadiness', () => {
     )
   })
 
+  it('uses documented no-lab and no-procedure pathways instead of false hospital scrub warnings', () => {
+    const readiness = assessNhisClaimReadiness(
+      {
+        ...baseClaim,
+        organizationType: 'hospital',
+        diagnosis: 'Plasmodium falciparum malaria',
+        encounterOutcome: 'treated_discharged',
+        noLabReason: 'clinical_diagnosis_sufficient',
+        noProcedureReason: 'not_clinically_indicated',
+      },
+      [
+        {
+          ...baseMedicine,
+          drugCode: 'ARTLUM1',
+          description: 'Artemether Lumefantrine Tablet',
+        },
+        {
+          ...baseMedicine,
+          drugCode: 'PARA1',
+          description: 'Paracetamol Tablet',
+        },
+      ],
+      {
+        finalSubmission: true,
+        providerClassLevel: 'D',
+        nhiaTariffServices: [baseTariffService],
+      }
+    )
+
+    expect(readiness.warnings).not.toContain(
+      'Malaria: supporting malaria test/RDT or blood film should be documented before final submission.'
+    )
+    expect(readiness.information).toContain(
+      'No internal laboratory investigation was recorded. This is documented by outcome: Treated and discharged; reason: Clinical diagnosis sufficient.'
+    )
+    expect(readiness.information).toContain(
+      'No internal procedure was recorded. This is documented by reason: Not clinically indicated.'
+    )
+  })
+
   it('blocks final submission when medicines exist but diagnosis has no clinical rule coverage', () => {
     const readiness = assessNhisClaimReadiness(
       { ...baseClaim, organizationType: 'hospital', diagnosis: 'Unmapped diagnosis' },
