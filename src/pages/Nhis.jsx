@@ -6915,8 +6915,12 @@ const Nhis = () => {
                 <div><span>Requested total</span><strong>{fmtCurrency(requestedClaimTotal)}</strong></div>
                 <div>
                   <span>Prescription</span>
-                  <strong className={prescriptionPdfFile || hasVerifiedNhisPrescription(editingClaim || claimForm) ? 'review-value-ready' : 'review-value-warning'}>
-                    {prescriptionPdfFile || hasVerifiedNhisPrescription(editingClaim || claimForm) ? 'Attached' : 'Not attached'}
+                  <strong className={hasNhisPrescriptionAttachment(claimForm, prescriptionPdfFile) ? 'review-value-ready' : 'review-value-warning'}>
+                    {hasNhisPrescriptionAttachment(claimForm, prescriptionPdfFile)
+                      ? hasVerifiedNhisPrescription(claimForm, prescriptionPdfFile)
+                        ? 'Attached and verified'
+                        : 'Attached'
+                      : 'Not attached'}
                   </strong>
                 </div>
               </div>
