@@ -609,6 +609,10 @@
   z-index: 1100;
 }
 
+.nhis-page .nhis-discard-overlay {
+  z-index: 1200;
+}
+
 .nhis-page .modal-panel {
   background: white;
   border-radius: var(--radius-lg);
@@ -656,6 +660,103 @@
   width: 100%;
   max-width: 460px;
   overflow-y: auto;
+}
+
+.nhis-page .nhis-discard-modal {
+  width: min(440px, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  max-height: calc(100dvh - 2rem);
+}
+
+.nhis-page .nhis-discard-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  padding: 1.25rem 1.4rem 1rem;
+  border-bottom: 1px solid var(--gray-200);
+}
+
+.nhis-page .nhis-discard-icon {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 999px;
+  background: #fff7ed;
+  color: #c2410c;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.nhis-page .nhis-discard-eyebrow {
+  display: block;
+  margin-bottom: 0.2rem;
+  color: #b45309;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.nhis-page .nhis-discard-header h2 {
+  margin: 0;
+  color: var(--gray-900);
+  font-size: 1.05rem;
+  line-height: 1.25;
+}
+
+.nhis-page .nhis-discard-header .modal-close {
+  margin-left: auto;
+}
+
+.nhis-page .nhis-discard-body {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1rem 1.4rem;
+  color: var(--gray-700);
+}
+
+.nhis-page .nhis-discard-details {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.75rem;
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.nhis-page .nhis-discard-details div {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.nhis-page .nhis-discard-details span {
+  color: var(--gray-500);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.nhis-page .nhis-discard-details strong {
+  color: var(--gray-900);
+  font-size: 0.86rem;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.nhis-page .nhis-discard-warning {
+  margin: 0;
+  padding: 0.75rem;
+  border: 1px solid #fed7aa;
+  border-radius: 8px;
+  background: #fff7ed;
+  color: #9a3412;
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.nhis-page .nhis-discard-footer {
+  justify-content: flex-end;
 }
 
 .nhis-page .modal-panel--duplicates {
@@ -2302,6 +2403,22 @@
 @media (max-width: 520px) {
   .nhis-page .modal-header h2 {
     font-size: 0.95rem;
+  }
+
+  .nhis-page .nhis-discard-header,
+  .nhis-page .nhis-discard-body {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .nhis-page .nhis-discard-details div {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+
+  .nhis-page .nhis-discard-details strong {
+    text-align: left;
   }
 
   .medicine-card {

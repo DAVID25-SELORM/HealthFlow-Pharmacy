@@ -3,6 +3,7 @@ import {
   Plus, Search, X, Upload, Download, CheckCircle2,
   Send, Banknote, XCircle, Eye, FileSpreadsheet, HeartPulse,
   Pencil, Paperclip, FileText, Trash2, Users, Clock, Stethoscope, Building2,
+  AlertTriangle,
 } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { isSupabaseConfigured } from '../lib/supabase'
@@ -1165,6 +1166,7 @@ const Nhis = () => {
   const [scrubWarningOverrideReason, setScrubWarningOverrideReason] = useState('')
   const [showScrubWarningOverride, setShowScrubWarningOverride] = useState(false)
   const [viewClaim, setViewClaim]                   = useState(null)
+  const [discardConfirmation, setDiscardConfirmation] = useState(null)
 
   // ── new claim form ────────────────────────────────────────────
   const [claimForm, setClaimForm]           = useState(makeBlankClaim)
@@ -2606,9 +2608,21 @@ const Nhis = () => {
     void ensureInventoryDrugsLoaded()
   }
 
+  const finishCloseClaimModal = () => {
+    setClaimActionReview(null)
+    setShowNewClaimModal(false)
+    resetClaimModal()
+    setReadinessActiveClaimId('')
+    if (duplicateClaimGroups.length > 0) {
+      setShowDuplicateClaimReview(true)
+    } else if (readinessClaimIssues.length > 0) {
+      setShowReadinessClaimReview(true)
+    }
+  }
+
   const closeClaimModal = ({ force = false } = {}) => {
     if (!force && hasClaimModalWork()) {
-      const shouldClose = confirmAction({
+      setDiscardConfirmation({
         title: 'Discard this NHIS claim work?',
         details: [
           {
@@ -2621,19 +2635,13 @@ const Nhis = () => {
           },
         ],
         warning: 'Unsaved entries in this claim form will be lost. Use Save Details first if you want to keep the work.',
-        confirmText: 'discard this work',
+        confirmText: 'Discard work',
+        cancelText: 'Keep editing',
+        onConfirm: finishCloseClaimModal,
       })
-      if (!shouldClose) return
+      return
     }
-    setClaimActionReview(null)
-    setShowNewClaimModal(false)
-    resetClaimModal()
-    setReadinessActiveClaimId('')
-    if (duplicateClaimGroups.length > 0) {
-      setShowDuplicateClaimReview(true)
-    } else if (readinessClaimIssues.length > 0) {
-      setShowReadinessClaimReview(true)
-    }
+    finishCloseClaimModal()
   }
 
   const closeDuplicateClaimReview = () => {
@@ -2909,6 +2917,14 @@ const Nhis = () => {
   }
 
   // ── add medicine to claim ─────────────────────────────────────
+  const finishCloseMedicineModal = () => {
+    setShowMedModal(false)
+    setEditingMedicineIndex(null)
+    setMedForm(makeBlankMedicine())
+    setMedCodeSearch('')
+    setMedSearchResults([])
+  }
+
   const closeMedicineModal = ({ force = false } = {}) => {
     if (!force) {
       const hasMedicineWork = Boolean(
@@ -2928,19 +2944,17 @@ const Nhis = () => {
         normalizeText(medForm.dispensaryDate) !== getNhisCalendarDate()
       )
       if (hasMedicineWork) {
-        const shouldClose = confirmAction({
+        setDiscardConfirmation({
           title: 'Discard this medicine entry?',
           warning: 'Unsaved medicine details will be lost. Add or save the medicine first if you want to keep it.',
-          confirmText: 'discard this medicine',
+          confirmText: 'Discard medicine',
+          cancelText: 'Keep editing',
+          onConfirm: finishCloseMedicineModal,
         })
-        if (!shouldClose) return
+        return
       }
     }
-    setShowMedModal(false)
-    setEditingMedicineIndex(null)
-    setMedForm(makeBlankMedicine())
-    setMedCodeSearch('')
-    setMedSearchResults([])
+    finishCloseMedicineModal()
   }
 
   const addMedicineToList = () => {
@@ -6914,6 +6928,75 @@ const Nhis = () => {
       {/* ══════════════════════════════════════════════════════════════
           NEW MEDICINE SUB-MODAL
       ══════════════════════════════════════════════════════════════ */}
+      {discardConfirmation && (
+        <div
+          className="modal-overlay modal-overlay--top nhis-discard-overlay"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setDiscardConfirmation(null)
+          }}
+        >
+          <section
+            className="modal-panel nhis-discard-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="nhis-discard-title"
+          >
+            <div className="nhis-discard-header">
+              <div className="nhis-discard-icon" aria-hidden="true">
+                <AlertTriangle size={22} />
+              </div>
+              <div>
+                <span className="nhis-discard-eyebrow">Unsaved changes</span>
+                <h2 id="nhis-discard-title">{discardConfirmation.title}</h2>
+              </div>
+              <button
+                type="button"
+                className="modal-close"
+                onClick={() => setDiscardConfirmation(null)}
+                aria-label="Keep editing"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="nhis-discard-body">
+              {discardConfirmation.details?.length > 0 && (
+                <div className="nhis-discard-details">
+                  {discardConfirmation.details
+                    .filter((detail) => detail?.value)
+                    .map((detail) => (
+                      <div key={detail.label}>
+                        <span>{detail.label}</span>
+                        <strong>{detail.value}</strong>
+                      </div>
+                    ))}
+                </div>
+              )}
+              {discardConfirmation.warning && (
+                <p className="nhis-discard-warning">{discardConfirmation.warning}</p>
+              )}
+            </div>
+
+            <div className="modal-footer nhis-discard-footer">
+              <button type="button" className="btn btn-secondary" onClick={() => setDiscardConfirmation(null)}>
+                {discardConfirmation.cancelText || 'Keep editing'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger"
+                onClick={() => {
+                  const onConfirm = discardConfirmation.onConfirm
+                  setDiscardConfirmation(null)
+                  onConfirm?.()
+                }}
+              >
+                {discardConfirmation.confirmText || 'Discard'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
       {claimActionReview && (
         <div
           className="modal-overlay modal-overlay--top"
