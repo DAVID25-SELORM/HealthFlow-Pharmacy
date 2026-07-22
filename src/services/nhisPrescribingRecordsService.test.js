@@ -26,6 +26,8 @@ import {
   buildNhisPrescriptionSourceSnapshot,
   createNhisPrescriber,
   createNhisPrescribingFacility,
+  getNhisPrescriberDisplayName,
+  getNhisPrescribingFacilityDisplayName,
   normalizeNhisPrescriberPayload,
   normalizeNhisPrescribingFacilityPayload,
 } from './nhisPrescribingRecordsService'
@@ -92,6 +94,27 @@ describe('NHIS prescribing records service', () => {
       prescribing_facility_code_snapshot: 'KBTH',
       prescriber_name_snapshot: 'Dr Ama Test',
       prescriber_license_snapshot: 'MDC-123',
+    })
+  })
+
+  it('keeps prescriber and facility suggestions safe when a saved row is missing', () => {
+    expect(getNhisPrescribingFacilityDisplayName(null)).toBe('')
+    expect(getNhisPrescribingFacilityDisplayName({ facilityName: 'KBTH' })).toBe('KBTH')
+    expect(getNhisPrescriberDisplayName(null)).toBe('')
+    expect(getNhisPrescriberDisplayName({ fullName: 'Dr Duke Gyemah' })).toBe('Dr Duke Gyemah')
+    expect(getNhisPrescriberDisplayName({
+      full_name: 'Dr Duke Gyemah',
+      license_number: 'MDC-100',
+    })).toBe('Dr Duke Gyemah (MDC-100)')
+
+    expect(buildNhisPrescriptionSourceSnapshot({
+      facility: null,
+      prescriber: null,
+    })).toMatchObject({
+      referringFacility: '',
+      physicianName: '',
+      prescribingFacilityId: '',
+      prescriberId: '',
     })
   })
 

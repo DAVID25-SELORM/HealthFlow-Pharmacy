@@ -129,12 +129,15 @@ export const normalizeNhisPrescriberPayload = (prescriber = {}, options = {}) =>
   updated_by: toNullableUuid(prescriber.updatedBy ?? prescriber.updated_by ?? options.userId),
 })
 
-export const getNhisPrescribingFacilityDisplayName = (facility = {}) =>
-  normalizeText(facility.facility_name ?? facility.facilityName)
+export const getNhisPrescribingFacilityDisplayName = (facility = {}) => {
+  const record = facility || {}
+  return normalizeText(record.facility_name ?? record.facilityName)
+}
 
 export const getNhisPrescriberDisplayName = (prescriber = {}) => {
-  const name = normalizeText(prescriber.full_name ?? prescriber.fullName)
-  const license = normalizeText(prescriber.license_number ?? prescriber.licenseNumber)
+  const record = prescriber || {}
+  const name = normalizeText(record.full_name ?? record.fullName)
+  const license = normalizeText(record.license_number ?? record.licenseNumber)
   return license ? `${name} (${license})` : name
 }
 

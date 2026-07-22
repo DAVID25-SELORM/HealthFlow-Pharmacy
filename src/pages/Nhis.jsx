@@ -1438,8 +1438,8 @@ const Nhis = () => {
         listNhisPrescribingFacilities({ status: 'all', limit: 1000 }),
         listNhisPrescribers({ status: 'all', limit: 1000 }),
       ])
-      setPrescribingFacilities(facilityRows || [])
-      setPrescribers(prescriberRows || [])
+      setPrescribingFacilities((facilityRows || []).filter((row) => row && row.id))
+      setPrescribers((prescriberRows || []).filter((row) => row && row.id))
     } catch (recordsError) {
       console.warn('[NHIS] Prescriber/facility records could not be loaded.', recordsError)
       notify(recordsError.message || 'Unable to load NHIS prescriber records.', 'warning')
@@ -1521,8 +1521,9 @@ const Nhis = () => {
 
   const filteredPrescribingFacilities = useMemo(() => {
     const term = normalizeText(facilitySearch).toLowerCase()
-    if (!term) return prescribingFacilities
-    return prescribingFacilities.filter((facility) =>
+    const validFacilities = prescribingFacilities.filter((facility) => facility && facility.id)
+    if (!term) return validFacilities
+    return validFacilities.filter((facility) =>
       [
         facility.facility_name,
         facility.nhia_facility_code,
@@ -1537,8 +1538,9 @@ const Nhis = () => {
 
   const filteredPrescribers = useMemo(() => {
     const term = normalizeText(prescriberSearch).toLowerCase()
-    if (!term) return prescribers
-    return prescribers.filter((prescriber) =>
+    const validPrescribers = prescribers.filter((prescriber) => prescriber && prescriber.id)
+    if (!term) return validPrescribers
+    return validPrescribers.filter((prescriber) =>
       [
         prescriber.full_name,
         prescriber.license_number,
@@ -1550,12 +1552,22 @@ const Nhis = () => {
   }, [prescriberSearch, prescribers])
 
   const claimFacilityOptions = useMemo(
-    () => prescribingFacilities.filter((facility) => normalizeText(facility.status).toLowerCase() !== 'inactive'),
+    () => prescribingFacilities.filter((facility) =>
+      facility &&
+      facility.id &&
+      getNhisPrescribingFacilityDisplayName(facility) &&
+      normalizeText(facility.status).toLowerCase() !== 'inactive'
+    ),
     [prescribingFacilities]
   )
 
   const claimPrescriberOptions = useMemo(
-    () => prescribers.filter((prescriber) => normalizeText(prescriber.status).toLowerCase() !== 'inactive'),
+    () => prescribers.filter((prescriber) =>
+      prescriber &&
+      prescriber.id &&
+      getNhisPrescriberDisplayName(prescriber) &&
+      normalizeText(prescriber.status).toLowerCase() !== 'inactive'
+    ),
     [prescribers]
   )
 
