@@ -399,6 +399,11 @@ const makeBlankMedicine = () => ({
   // ✅ NHIS PHARMACY LEVEL PATCH END
 })
 
+const makeBlankMedicineForDate = (dispensaryDate) => ({
+  ...makeBlankMedicine(),
+  dispensaryDate: dispensaryDate || getNhisCalendarDate(),
+})
+
 const BLANK_NHIS_DRUG = {
   code: '', description: '', genericName: '', strength: '',
   dosageForm: '', category: '', unit: 'unit', unitPrice: '',
@@ -1188,6 +1193,7 @@ const Nhis = () => {
 
   // ── medicine sub-modal ────────────────────────────────────────
   const [medForm, setMedForm]           = useState(makeBlankMedicine)
+  const [medicineEntryDate, setMedicineEntryDate] = useState(getNhisCalendarDate)
   const [medCodeSearch, setMedCodeSearch] = useState('')
   const [medSearchResults, setMedSearchResults] = useState([])
   const [medSearching, setMedSearching] = useState(false)
@@ -2934,6 +2940,7 @@ const Nhis = () => {
     setShowMedModal(false)
     setEditingMedicineIndex(null)
     setMedForm(makeBlankMedicine())
+    setMedicineEntryDate(getNhisCalendarDate())
     setMedCodeSearch('')
     setMedSearchResults([])
   }
@@ -2953,8 +2960,7 @@ const Nhis = () => {
           'duration',
           'reasonIfNotFullyServed',
         ].some((field) => normalizeText(medForm[field])) ||
-        Number(medForm.dispensedQty) > 0 ||
-        normalizeText(medForm.dispensaryDate) !== getNhisCalendarDate()
+        Number(medForm.dispensedQty) > 0
       )
       if (hasMedicineWork) {
         setDiscardConfirmation({
@@ -3063,7 +3069,9 @@ const Nhis = () => {
 
       return prev.map((medicine, index) => index === editingMedicineIndex ? nextMedicine : medicine)
     })
-    setMedForm(makeBlankMedicine())
+    const nextEntryDate = medForm.dispensaryDate || medicineEntryDate || getNhisCalendarDate()
+    setMedicineEntryDate(nextEntryDate)
+    setMedForm(makeBlankMedicineForDate(nextEntryDate))
     setMedCodeSearch('')
     setMedSearchResults([])
     setEditingMedicineIndex(null)
@@ -3105,6 +3113,7 @@ const Nhis = () => {
       requiredPharmacyLevel: medicine.requiredPharmacyLevel || medicine.required_pharmacy_level || '',
       // ✅ NHIS PHARMACY LEVEL PATCH END
     })
+    setMedicineEntryDate(medicine.dispensaryDate || todayIsoDate())
     setMedCodeSearch('')
     setMedSearchResults([])
     setEditingMedicineIndex(index)
@@ -6542,8 +6551,10 @@ const Nhis = () => {
                       type="button"
                       className="btn btn-primary btn-sm"
                       onClick={() => {
+                        const nextEntryDate = getNhisCalendarDate()
                         setEditingMedicineIndex(null)
-                        setMedForm(makeBlankMedicine())
+                        setMedicineEntryDate(nextEntryDate)
+                        setMedForm(makeBlankMedicineForDate(nextEntryDate))
                         setMedCodeSearch('')
                         setMedSearchResults([])
                         setShowMedModal(true)
@@ -7226,7 +7237,10 @@ const Nhis = () => {
                   className="form-input"
                   value={medForm.dispensaryDate}
                   disabled={!isMedicineCounterAssistant && editingMedicineIndex !== null}
-                  onChange={(e) => setMedForm((p) => ({ ...p, dispensaryDate: e.target.value }))}
+                  onChange={(e) => {
+                    setMedicineEntryDate(e.target.value)
+                    setMedForm((p) => ({ ...p, dispensaryDate: e.target.value }))
+                  }}
                 />
               </div>
 
@@ -7329,7 +7343,7 @@ const Nhis = () => {
               <button
                 className="btn btn-secondary"
                 onClick={() => {
-                  setMedForm(makeBlankMedicine())
+                  setMedForm(makeBlankMedicineForDate(medicineEntryDate))
                   setMedCodeSearch('')
                   setMedSearchResults([])
                   setEditingMedicineIndex(null)
