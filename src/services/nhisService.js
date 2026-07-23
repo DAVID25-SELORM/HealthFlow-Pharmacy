@@ -613,8 +613,7 @@ const NHIS_CLAIM_LIST_BASE_SELECT = `
       status, created_at, updated_at,
       prescription_file_url, prescription_file_path, prescription_file_name,
       prescription_document_type, prescription_verified,
-      prescription_verified_by, prescription_verified_at,
-      claimit_attachment_base64
+      prescription_verified_by, prescription_verified_at
     `
 
 const NHIS_CLAIM_LIST_SELECT = `
@@ -4845,28 +4844,6 @@ const hydrateClaimsWithMedicineLines = async (claims = []) => {
 const hydrateNhisClaimsForUi = async (claims = []) =>
   await hydrateClaimsWithServiceLines(await hydrateClaimsWithMedicineLines(claims))
 
-const attachMedicineExistenceToClaims = async (claims = []) => {
-  const claimIds = claims.map((claim) => claim?.id).filter(Boolean)
-  if (!claimIds.length) return claims
-
-  const claimIdsWithMedicines = new Set()
-  for (const claimIdBatch of chunkArray(claimIds, 200)) {
-    const { data, error } = await supabase
-      .from('nhis_claim_medicines')
-      .select('claim_id')
-      .in('claim_id', claimIdBatch)
-    if (error) throw error
-    for (const row of data || []) {
-      if (row.claim_id) claimIdsWithMedicines.add(row.claim_id)
-    }
-  }
-
-  return claims.map((claim) => ({
-    ...claim,
-    _hasMedicineLines: claimIdsWithMedicines.has(claim.id),
-  }))
-}
-
 const getNhisClaimPageOptions = (filters = {}) => {
   const pageSize = Math.min(Math.max(Number.parseInt(String(filters.pageSize || filters.limit || DEFAULT_NHIS_CLAIM_LIST_LIMIT), 10) || DEFAULT_NHIS_CLAIM_LIST_LIMIT, 1), 500)
   const page = Math.max(Number.parseInt(String(filters.page || 1), 10) || 1, 1)
@@ -4952,32 +4929,16 @@ const fetchNhisClaimsPageFromSupabase = async (filters = {}, { ascending = false
   const { page, pageSize, from, to } = getNhisClaimPageOptions(filters)
   const issueFilter = normalizeText(filters.issueFilter || filters.issue_filter)
   if (issueFilter && issueFilter !== 'all') {
-    const scanPageSize = 1000
-    const maxRows = 100000
-    const scannedClaims = []
-
-    for (let scanFrom = 0; scanFrom < maxRows; scanFrom += scanPageSize) {
-      const scanTo = Math.min(scanFrom + scanPageSize - 1, maxRows - 1)
-      const { data, error } = await applyNhisClaimFilters(
-        supabase
-          .from('nhis_claims')
-          .select(NHIS_CLAIM_LIST_BASE_SELECT)
-          .order('created_at', { ascending })
-          .range(scanFrom, scanTo),
-        filters
-      )
-      if (error) throw error
-      const batch = data || []
-      scannedClaims.push(...batch)
-      if (batch.length < scanPageSize) break
-    }
-
-    const issueClaims = await attachMedicineExistenceToClaims(scannedClaims)
-    const matchingClaims = issueClaims.filter((claim) => {
-      const issueKeys = getNhisClaimIssueKeys(claim, filters)
-      return issueFilter === 'any' ? issueKeys.size > 0 : issueKeys.has(issueFilter)
+    const issuePage = await fetchNhisIssueFilteredClaimsPageFromSupabase(filters, {
+      ascending,
+      includeDetails,
+      issueFilter,
+      from,
+      to,
+      page,
+      pageSize,
     })
-    const pageClaims = matchingClaims.slice(from, to + 1)
+    const pageClaims = issuePage.claims || []
     const claims = includeDetails
       ? await hydrateNhisClaimsForUi(pageClaims)
       : pageClaims.map((claim) => ({
@@ -4988,7 +4949,7 @@ const fetchNhisClaimsPageFromSupabase = async (filters = {}, { ascending = false
 
     return {
       claims,
-      total: matchingClaims.length,
+      total: issuePage.total,
       page,
       pageSize,
     }
@@ -5408,6 +5369,139 @@ const countNhisIssueRowsForStatuses = async (
   const { count, error } = await query
   if (error) throw error
   return Number(count || 0)
+}
+
+const NHIS_INCOMPLETE_INTAKE_MISSING_ATTACHMENT = 'incomplete-intake:missing-attachment'
+const NHIS_INCOMPLETE_INTAKE_NO_MEDICINE = 'incomplete-intake:no-medicine'
+
+const getNhisIssueQuerySpecs = (issueFilter = 'any', filters = {}) => {
+  const isHospital = normalizeOrganizationType(filters.organizationType || filters.organization_type) === 'hospital'
+  const exportSpecs = isHospital ? [] : [
+    {
+      key: 'missing-attachment',
+      statuses: NHIS_EXPORT_READINESS_STATUSES,
+      refine: applyNhisAttachmentMissingFilter,
+    },
+    {
+      key: 'attachment-type',
+      statuses: NHIS_EXPORT_READINESS_STATUSES,
+      refine: (query) =>
+        applyNhisAttachmentPresentFilter(query)
+          .or('prescription_document_type.is.null,prescription_document_type.not.ilike.prescription'),
+    },
+    {
+      key: 'unverified-prescription',
+      statuses: NHIS_EXPORT_READINESS_STATUSES,
+      refine: (query) =>
+        applyNhisAttachmentPresentFilter(query)
+          .ilike('prescription_document_type', 'prescription')
+          .or('prescription_verified.is.null,prescription_verified.eq.false'),
+    },
+  ]
+  const intakeSpecs = [
+    {
+      key: NHIS_INCOMPLETE_INTAKE_MISSING_ATTACHMENT,
+      statuses: NHIS_INTAKE_STATUSES,
+      refine: applyNhisAttachmentMissingFilter,
+    },
+    {
+      key: NHIS_INCOMPLETE_INTAKE_NO_MEDICINE,
+      statuses: NHIS_INTAKE_STATUSES,
+      select: `${NHIS_CLAIM_LIST_BASE_SELECT}, nhis_claim_medicines!left(id)`,
+      countSelect: 'id, nhis_claim_medicines!left(id)',
+      refine: (query) =>
+        applyNhisAttachmentPresentFilter(query)
+          .is('nhis_claim_medicines.id', null),
+    },
+  ]
+
+  if (issueFilter === 'missing-attachment') return exportSpecs.filter((spec) => spec.key === issueFilter)
+  if (issueFilter === 'attachment-type') return exportSpecs.filter((spec) => spec.key === issueFilter)
+  if (issueFilter === 'unverified-prescription') return exportSpecs.filter((spec) => spec.key === issueFilter)
+  if (issueFilter === 'incomplete-intake') return intakeSpecs
+  if (issueFilter === 'any') return [...exportSpecs, ...intakeSpecs]
+  return []
+}
+
+const fetchNhisIssueSpecRowsFromSupabase = async (filters = {}, spec = {}, {
+  ascending = false,
+  from = 0,
+  to = 99,
+} = {}) => {
+  const select = spec.select || NHIS_CLAIM_LIST_SELECT
+  const baseQuery = supabase
+    .from('nhis_claims')
+    .select(select, { count: 'exact' })
+    .order('created_at', { ascending })
+    .range(from, to)
+
+  const query = spec.refine(applyNhisIssueBaseFilters(baseQuery, filters, spec.statuses || []))
+  const { data, error, count } = await query
+  if (error) throw error
+
+  return {
+    claims: data || [],
+    total: Number(count || 0),
+  }
+}
+
+const fetchNhisIssueFilteredClaimsPageFromSupabase = async (filters = {}, {
+  ascending = false,
+  issueFilter = 'any',
+  from = 0,
+  to = 99,
+  page = 1,
+  pageSize = 100,
+} = {}) => {
+  const specs = getNhisIssueQuerySpecs(issueFilter, filters)
+  if (!specs.length) return { claims: [], total: 0, page, pageSize }
+
+  if (specs.length === 1) {
+    const result = await fetchNhisIssueSpecRowsFromSupabase(filters, specs[0], {
+      ascending,
+      from,
+      to,
+    })
+    return { ...result, page, pageSize }
+  }
+
+  const counts = []
+  for (const spec of specs) {
+    counts.push(await countNhisIssueRowsForStatuses(
+      filters,
+      spec.statuses || [],
+      spec.refine,
+      spec.countSelect || 'id'
+    ))
+  }
+
+  const total = counts.reduce((sum, count) => sum + Number(count || 0), 0)
+  const claims = []
+  let skipped = 0
+  let remainingFrom = from
+  const needed = to - from + 1
+
+  for (let index = 0; index < specs.length && claims.length < needed; index += 1) {
+    const specCount = counts[index] || 0
+    if (remainingFrom >= specCount) {
+      remainingFrom -= specCount
+      skipped += specCount
+      continue
+    }
+
+    const specFrom = remainingFrom
+    const specTo = Math.min(specCount - 1, specFrom + needed - claims.length - 1)
+    const result = await fetchNhisIssueSpecRowsFromSupabase(filters, specs[index], {
+      ascending,
+      from: specFrom,
+      to: specTo,
+    })
+    claims.push(...result.claims)
+    skipped += specCount
+    remainingFrom = Math.max(from - skipped, 0)
+  }
+
+  return { claims, total, page, pageSize }
 }
 
 const getNhisClaimIssueCountsFromSupabase = async (filters = {}) => {

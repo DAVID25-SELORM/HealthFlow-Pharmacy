@@ -63,6 +63,7 @@ import {
   generateBrowserClaimItBridgeCcCode,
   getApplicableNhiaTariffItems,
   getAllNhisClaims,
+  getNhisClaimsPage,
   getNhisClaimIssueCounts,
   getNhisClaimExportDate,
   getNhisExportScrubWarnings,
@@ -4262,6 +4263,64 @@ describe('NHIS local and cloud claim reads', () => {
     await expect(getAllNhisClaims({ status: 'served' })).resolves.toEqual([
       cloudRows[1],
     ])
+  })
+
+  it('does not select embedded attachment Base64 for normal paginated claim lists', async () => {
+    const query = {
+      select: vi.fn(() => query),
+      order: vi.fn(() => query),
+      range: vi.fn().mockResolvedValue({
+        data: [{ id: 'claim-page-row', status: 'served' }],
+        error: null,
+        count: 1,
+      }),
+    }
+    supabase.from.mockReturnValue(query)
+    supabase.rpc.mockResolvedValueOnce({ data: null, error: new Error('RPC unavailable') })
+
+    await expect(getNhisClaimsPage({ includeDetails: false, page: 1, pageSize: 100 })).resolves.toMatchObject({
+      claims: [expect.objectContaining({ id: 'claim-page-row' })],
+      total: 1,
+    })
+
+    expect(query.select.mock.calls[0][0]).not.toContain('claimit_attachment_base64')
+    expect(query.range).toHaveBeenCalledWith(0, 99)
+  })
+
+  it('uses server-filtered issue pages instead of scanning 100,000 claim rows', async () => {
+    const query = {
+      select: vi.fn(() => query),
+      order: vi.fn(() => query),
+      range: vi.fn(() => query),
+      in: vi.fn(() => query),
+      eq: vi.fn(() => query),
+      gte: vi.fn(() => query),
+      lte: vi.fn(() => query),
+      or: vi.fn(() => query),
+      is: vi.fn(() => query),
+      then: (resolve, reject) => Promise.resolve({
+        data: [{ id: 'missing-rx-claim', status: 'served' }],
+        error: null,
+        count: 1,
+      }).then(resolve, reject),
+    }
+    supabase.from.mockReturnValue(query)
+
+    await expect(getNhisClaimsPage({
+      includeDetails: false,
+      issueFilter: 'missing-attachment',
+      organizationType: 'pharmacy',
+      page: 1,
+      pageSize: 100,
+    })).resolves.toMatchObject({
+      claims: [expect.objectContaining({ id: 'missing-rx-claim' })],
+      total: 1,
+    })
+
+    expect(query.select.mock.calls[0][0]).not.toContain('claimit_attachment_base64')
+    expect(query.select.mock.calls[0][1]).toMatchObject({ count: 'exact' })
+    expect(query.range).toHaveBeenCalledTimes(1)
+    expect(query.range).toHaveBeenCalledWith(0, 99)
   })
 
   it('uses only the filtered local cache when internet is unavailable', async () => {
