@@ -1209,6 +1209,7 @@ const Nhis = () => {
   const claimsPageCacheRef = useRef(new Map())
   const claimsTableRef = useRef(null)
   const claimsFilterKeyRef = useRef('')
+  const claimIssueCountsLoadPromiseRef = useRef(null)
   const patientIndexLoadPromiseRef = useRef(null)
   const patientIndexLoadedRef = useRef(false)
   const inventoryDrugsLoadPromiseRef = useRef(null)
@@ -1401,18 +1402,30 @@ const Nhis = () => {
       return
     }
 
+    if (claimIssueCountsLoadPromiseRef.current) {
+      return claimIssueCountsLoadPromiseRef.current
+    }
+
     try {
       setClaimIssueCountsLoading(true)
-      const counts = await getNhisClaimIssueCounts({
+      const countRequest = getNhisClaimIssueCounts({
         ...getClaimServerFilters(),
         organizationType,
         issueCountMaxRows: NHIS_CLAIM_ISSUE_BADGE_SCAN_LIMIT,
       })
+      claimIssueCountsLoadPromiseRef.current = countRequest
+      const counts = await countRequest
       setClaimIssueCounts(counts || { all: 0 })
     } catch (countError) {
-      console.warn('[NHIS] Claim issue counts could not be loaded.', countError)
+      console.warn('[NHIS] Claim issue counts could not be loaded.', {
+        code: countError?.code || null,
+        message: countError?.message || String(countError),
+        details: countError?.details || null,
+        hint: countError?.hint || null,
+      })
       setClaimIssueCounts({ all: 0 })
     } finally {
+      claimIssueCountsLoadPromiseRef.current = null
       setClaimIssueCountsLoading(false)
     }
   }, [getClaimServerFilters, organizationType])

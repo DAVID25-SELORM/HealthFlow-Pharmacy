@@ -336,34 +336,32 @@ describe('assessNhisClaimReadiness', () => {
     )
   })
 
-  it('counts unverified prescription issues using the page filter key', async () => {
-    const claimsQuery = {
-      order: vi.fn(() => claimsQuery),
-      range: vi.fn().mockResolvedValue({
-        data: [{
-          id: 'claim-unverified-1',
-          status: 'served',
-          service_date_from: '2026-05-14',
-          surname: 'Mensah',
-          other_names: 'Ama',
-          member_no: '12345678',
-          claim_number: 'NHIS-000020',
-          prescription_file_path: 'org/rx.pdf',
-          prescription_document_type: 'prescription',
-          prescription_verified: false,
-          prescription_verified_by: '',
-          prescription_verified_at: '',
-        }],
-        error: null,
+  it('counts unverified prescription issues using exact counts without selecting Base64', async () => {
+    const selects = []
+    const makeCountQuery = (count) => {
+      const query = Promise.resolve({ count, error: null })
+      query.in = vi.fn(() => query)
+      query.eq = vi.fn(() => query)
+      query.gte = vi.fn(() => query)
+      query.lte = vi.fn(() => query)
+      query.or = vi.fn(() => query)
+      query.is = vi.fn(() => query)
+      query.ilike = vi.fn(() => query)
+      return query
+    }
+    const countQueries = [
+      makeCountQuery(2), // attached
+      makeCountQuery(2), // prescription typed
+      makeCountQuery(1), // verified prescription
+      makeCountQuery(0), // missing attachment
+      makeCountQuery(0), // incomplete intake total
+      makeCountQuery(0), // complete intake
+    ]
+    supabase.from.mockReturnValue({
+      select: vi.fn((select) => {
+        selects.push(select)
+        return countQueries.shift()
       }),
-    }
-    const medicineQuery = {
-      in: vi.fn().mockResolvedValue({ data: [{ claim_id: 'claim-unverified-1' }], error: null }),
-    }
-    supabase.from.mockImplementation((table) => {
-      if (table === 'nhis_claims') return { select: vi.fn(() => claimsQuery) }
-      if (table === 'nhis_claim_medicines') return { select: vi.fn(() => medicineQuery) }
-      return { select: vi.fn(() => ({ in: vi.fn().mockResolvedValue({ data: [], error: null }) })) }
     })
 
     const counts = await getNhisClaimIssueCounts({ organizationType: 'pharmacy' })
@@ -371,6 +369,47 @@ describe('assessNhisClaimReadiness', () => {
     expect(counts.all).toBe(1)
     expect(counts['unverified-prescription']).toBe(1)
     expect(counts.unverified).toBeUndefined()
+    expect(selects.join('\n')).not.toContain('claimit_attachment_base64')
+  })
+
+  it('uses server exact counts so issue totals can exceed 1,000 while date filters remain applied', async () => {
+    const queries = []
+    const makeCountQuery = (count) => {
+      const query = Promise.resolve({ count, error: null })
+      query.in = vi.fn(() => query)
+      query.eq = vi.fn(() => query)
+      query.gte = vi.fn(() => query)
+      query.lte = vi.fn(() => query)
+      query.or = vi.fn(() => query)
+      query.is = vi.fn(() => query)
+      query.ilike = vi.fn(() => query)
+      queries.push(query)
+      return query
+    }
+    const countQueries = [
+      makeCountQuery(1250), // attached
+      makeCountQuery(1250), // prescription typed
+      makeCountQuery(0), // verified prescription
+      makeCountQuery(0), // missing attachment
+      makeCountQuery(0), // incomplete intake total
+      makeCountQuery(0), // complete intake
+    ]
+    supabase.from.mockReturnValue({
+      select: vi.fn(() => countQueries.shift()),
+    })
+
+    const counts = await getNhisClaimIssueCounts({
+      organizationType: 'pharmacy',
+      fromDate: '2026-06-01',
+      toDate: '2026-06-30',
+      issueCountMaxRows: 1000,
+    })
+
+    expect(counts.all).toBe(1250)
+    expect(counts['unverified-prescription']).toBe(1250)
+    expect(queries.some((query) => query.range?.mock?.calls?.length)).toBe(false)
+    expect(queries.every((query) => query.gte.mock.calls.some((call) => call[0] === 'service_date_from' && call[1] === '2026-06-01'))).toBe(true)
+    expect(queries.every((query) => query.lte.mock.calls.some((call) => call[0] === 'service_date_from' && call[1] === '2026-06-30'))).toBe(true)
   })
 
   it('allows hospital final status checks to make the attachment optional', () => {

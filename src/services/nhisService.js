@@ -622,15 +622,6 @@ const NHIS_CLAIM_LIST_SELECT = `
       nhis_claim_medicines ( id )
     `
 
-const NHIS_CLAIM_ISSUE_COUNT_SELECT = `
-      id, status, service_date_from, submission_month,
-      surname, other_names, member_no, claim_number, hin,
-      prescription_file_url, prescription_file_path, prescription_file_name,
-      prescription_document_type, prescription_verified,
-      prescription_verified_by, prescription_verified_at,
-      claimit_attachment_base64
-    `
-
 const NHIS_CLAIM_EXPORT_SELECT = `
       id, organization_id, branch_id, claim_number, patient_id, member_no,
       card_type, hin, surname, other_names, folder_no, gender, date_of_birth,
@@ -5351,31 +5342,118 @@ const computeNhisClaimIssueCounts = (claims = [], options = {}) => {
   return counts
 }
 
-const fetchNhisClaimIssueCountRowsFromSupabase = async (filters = {}) => {
-  const pageSize = 1000
-  const requestedMaxRows = Number(filters.issueCountMaxRows || filters.maxRows || 100000)
-  const maxRows = Number.isFinite(requestedMaxRows) && requestedMaxRows > 0
-    ? Math.min(Math.floor(requestedMaxRows), 100000)
-    : 100000
-  const rows = []
+const NHIS_EXPORT_READINESS_STATUSES = ['served', 'submitted', 'paid']
+const NHIS_INTAKE_STATUSES = ['pending_serving', 'serving_in_progress', 'returned_for_review']
+const NHIS_OPEN_CLAIM_STATUSES = ['pending_serving', 'serving_in_progress', 'returned_for_review', 'served', 'submitted']
 
-  for (let from = 0; from < maxRows; from += pageSize) {
-    const to = Math.min(from + pageSize - 1, maxRows - 1)
-    const { data, error } = await applyNhisClaimFilters(
-      supabase
-        .from('nhis_claims')
-        .select(NHIS_CLAIM_ISSUE_COUNT_SELECT)
-        .order('created_at', { ascending: false })
-        .range(from, to),
-      filters
-    )
-    if (error) throw error
-    const batch = data || []
-    rows.push(...batch)
-    if (batch.length < pageSize) break
+const resolveNhisIssueStatuses = (filters = {}, issueStatuses = []) => {
+  const allowedStatuses = new Set(issueStatuses)
+  let statuses = issueStatuses
+
+  if (filters.openOnly) {
+    statuses = statuses.filter((status) => NHIS_OPEN_CLAIM_STATUSES.includes(status))
   }
 
-  return attachMedicineExistenceToClaims(rows)
+  if (filters.status && filters.status !== 'all') {
+    const selectedStatuses = Array.isArray(filters.status) ? filters.status : [filters.status]
+    statuses = selectedStatuses.filter((status) => allowedStatuses.has(status))
+  }
+
+  return statuses
+}
+
+const applyNhisAttachmentPresentFilter = (query) =>
+  query.or(
+    [
+      'prescription_file_url.not.is.null',
+      'prescription_file_path.not.is.null',
+      'prescription_file_name.not.is.null',
+      'claimit_attachment_base64.not.is.null',
+    ].join(',')
+  )
+
+const applyNhisAttachmentMissingFilter = (query) =>
+  query
+    .is('prescription_file_url', null)
+    .is('prescription_file_path', null)
+    .is('prescription_file_name', null)
+    .is('claimit_attachment_base64', null)
+
+const applyNhisIssueBaseFilters = (query, filters = {}, statuses = []) => {
+  query = applyNhisClaimFilters(query, {
+    ...filters,
+    status: statuses.length ? statuses : filters.status,
+    openOnly: false,
+    issueFilter: undefined,
+    issueCountMaxRows: undefined,
+    maxRows: undefined,
+  })
+  return query
+}
+
+const countNhisIssueRowsForStatuses = async (
+  filters = {},
+  statuses = [],
+  refine = (query) => query,
+  select = 'id'
+) => {
+  const resolvedStatuses = resolveNhisIssueStatuses(filters, statuses)
+  if (statuses.length > 0 && resolvedStatuses.length === 0) return 0
+
+  const baseQuery = supabase
+    .from('nhis_claims')
+    .select(select, { count: 'exact', head: true })
+
+  const query = refine(applyNhisIssueBaseFilters(baseQuery, filters, resolvedStatuses))
+  const { count, error } = await query
+  if (error) throw error
+  return Number(count || 0)
+}
+
+const getNhisClaimIssueCountsFromSupabase = async (filters = {}) => {
+  const organizationType = filters.organizationType || filters.organization_type
+  const isHospital = normalizeOrganizationType(organizationType) === 'hospital'
+  const counts = {
+    all: 0,
+    'missing-attachment': 0,
+    'attachment-type': 0,
+    'unverified-prescription': 0,
+    'incomplete-intake': 0,
+  }
+
+  if (!isHospital) {
+    const [attached, prescriptionTyped, verifiedPrescription, missingAttachment] = await Promise.all([
+      countNhisIssueRowsForStatuses(filters, NHIS_EXPORT_READINESS_STATUSES, applyNhisAttachmentPresentFilter),
+      countNhisIssueRowsForStatuses(filters, NHIS_EXPORT_READINESS_STATUSES, (query) =>
+        applyNhisAttachmentPresentFilter(query).ilike('prescription_document_type', 'prescription')
+      ),
+      countNhisIssueRowsForStatuses(filters, NHIS_EXPORT_READINESS_STATUSES, (query) =>
+        applyNhisAttachmentPresentFilter(query)
+          .ilike('prescription_document_type', 'prescription')
+          .eq('prescription_verified', true)
+      ),
+      countNhisIssueRowsForStatuses(filters, NHIS_EXPORT_READINESS_STATUSES, applyNhisAttachmentMissingFilter),
+    ])
+
+    counts['missing-attachment'] = missingAttachment
+    counts['attachment-type'] = Math.max(attached - prescriptionTyped, 0)
+    counts['unverified-prescription'] = Math.max(prescriptionTyped - verifiedPrescription, 0)
+  }
+
+  const [incompleteTotal, completeIntake] = await Promise.all([
+    countNhisIssueRowsForStatuses(filters, NHIS_INTAKE_STATUSES),
+    countNhisIssueRowsForStatuses(
+      filters,
+      NHIS_INTAKE_STATUSES,
+      applyNhisAttachmentPresentFilter,
+      'id, nhis_claim_medicines!inner(id)'
+    ),
+  ])
+
+  counts['incomplete-intake'] = Math.max(incompleteTotal - completeIntake, 0)
+  counts.all = Object.values(counts).reduce((sum, count) => sum + Number(count || 0), 0)
+
+  return counts
 }
 
 export const getNhisClaimIssueCounts = async (filters = {}) => {
@@ -5394,7 +5472,7 @@ export const getNhisClaimIssueCounts = async (filters = {}) => {
     return computeNhisClaimIssueCounts(filterNhisClaimRows(rows || [], filters), options)
   }
 
-  return computeNhisClaimIssueCounts(await fetchNhisClaimIssueCountRowsFromSupabase(filters), options)
+  return getNhisClaimIssueCountsFromSupabase(filters)
 }
 
 const computeNhisClaimStats = (rows = []) => ({
