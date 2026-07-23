@@ -181,6 +181,12 @@ const OPTIONAL_CLAIM_SCHEMA_COLUMNS = [
   'prescriber_license_snapshot',
   'prescribing_facility_name_snapshot',
   'prescribing_facility_code_snapshot',
+  'prescription_entered_by',
+  'prescription_entered_at',
+  'prescription_updated_by',
+  'prescription_updated_at',
+  'prescription_entry_user_name',
+  'prescription_update_user_name',
   'encounter_outcome',
   'no_medicine_reason',
   'no_lab_reason',
@@ -230,6 +236,12 @@ const OPTIONAL_CLAIM_SCHEMA_FIELD_GROUPS = [
   ['prescriber_license_snapshot', 'prescriberLicenseSnapshot'],
   ['prescribing_facility_name_snapshot', 'prescribingFacilityNameSnapshot'],
   ['prescribing_facility_code_snapshot', 'prescribingFacilityCodeSnapshot'],
+  ['prescription_entered_by', 'prescriptionEnteredBy'],
+  ['prescription_entered_at', 'prescriptionEnteredAt'],
+  ['prescription_updated_by', 'prescriptionUpdatedBy'],
+  ['prescription_updated_at', 'prescriptionUpdatedAt'],
+  ['prescription_entry_user_name', 'prescriptionEntryUserName'],
+  ['prescription_update_user_name', 'prescriptionUpdateUserName'],
   ['encounter_outcome', 'encounterOutcome'],
   ['no_medicine_reason', 'noMedicineReason'],
   ['no_lab_reason', 'noLabReason'],
@@ -613,11 +625,32 @@ const NHIS_CLAIM_LIST_BASE_SELECT = `
       status, created_at, updated_at,
       prescription_file_url, prescription_file_path, prescription_file_name,
       prescription_document_type, prescription_verified,
-      prescription_verified_by, prescription_verified_at
+      prescription_verified_by, prescription_verified_at,
+      prescription_reference, prescriber_name_snapshot,
+      prescribing_facility_name_snapshot, prescription_entered_by,
+      prescription_entered_at, prescription_updated_by, prescription_updated_at,
+      prescription_entry_user_name, prescription_update_user_name
+    `
+
+const NHIS_CLAIM_LIST_BASE_SELECT_LEGACY = `
+      id, claim_number, patient_id, member_no, card_type, hin,
+      surname, other_names, folder_no, gender, date_of_birth,
+      service_date_from, service_date_to, branch_id, total_amount,
+      status, created_at, updated_at,
+      prescription_file_url, prescription_file_path, prescription_file_name,
+      prescription_document_type, prescription_verified,
+      prescription_verified_by, prescription_verified_at,
+      prescription_reference, prescriber_name_snapshot,
+      prescribing_facility_name_snapshot
     `
 
 const NHIS_CLAIM_LIST_SELECT = `
       ${NHIS_CLAIM_LIST_BASE_SELECT},
+      nhis_claim_medicines ( id )
+    `
+
+const NHIS_CLAIM_LIST_SELECT_LEGACY = `
+      ${NHIS_CLAIM_LIST_BASE_SELECT_LEGACY},
       nhis_claim_medicines ( id )
     `
 
@@ -806,6 +839,16 @@ const getNhisPrescriptionSourcePayload = (claimData = {}) => ({
   ) || null,
   prescribing_facility_code_snapshot: normalizeText(
     claimData.prescribingFacilityCodeSnapshot ?? claimData.prescribing_facility_code_snapshot
+  ) || null,
+  prescription_entered_by: toNullableUuid(claimData.prescriptionEnteredBy ?? claimData.prescription_entered_by),
+  prescription_entered_at: toNullableTimestamp(claimData.prescriptionEnteredAt ?? claimData.prescription_entered_at),
+  prescription_updated_by: toNullableUuid(claimData.prescriptionUpdatedBy ?? claimData.prescription_updated_by),
+  prescription_updated_at: toNullableTimestamp(claimData.prescriptionUpdatedAt ?? claimData.prescription_updated_at),
+  prescription_entry_user_name: normalizeText(
+    claimData.prescriptionEntryUserName ?? claimData.prescription_entry_user_name
+  ) || null,
+  prescription_update_user_name: normalizeText(
+    claimData.prescriptionUpdateUserName ?? claimData.prescription_update_user_name
   ) || null,
 })
 
@@ -4883,7 +4926,7 @@ const applyNhisClaimFilters = (query, filters = {}) => {
     const term = sanitizeSearchTerm(filters.searchTerm)
     if (term) {
       query = query.or(
-        `surname.ilike.%${term}%,other_names.ilike.%${term}%,member_no.ilike.%${term}%,claim_number.ilike.%${term}%,hin.ilike.%${term}%`
+        `surname.ilike.%${term}%,other_names.ilike.%${term}%,member_no.ilike.%${term}%,claim_number.ilike.%${term}%,hin.ilike.%${term}%,prescription_reference.ilike.%${term}%,prescriber_name_snapshot.ilike.%${term}%,physician_name.ilike.%${term}%,prescribing_facility_name_snapshot.ilike.%${term}%,referring_facility.ilike.%${term}%`
       )
     }
   }
@@ -4911,6 +4954,8 @@ const fetchNhisClaimsFromSupabase = async (filters = {}, { ascending = false } =
   let { data, error } = await buildQuery()
   if (includeDetails && error && isMissingOptionalClaimMedicineColumn(error)) {
     ;({ data, error } = await buildQuery(NHIS_CLAIM_MEDICINES_SELECT_BASIC))
+  } else if (!includeDetails && error && isMissingOptionalClaimColumn(error)) {
+    ;({ data, error } = await buildQuery(NHIS_CLAIM_LIST_SELECT_LEGACY))
   }
   if (error) throw error
   if (!includeDetails) {
@@ -4969,6 +5014,8 @@ const fetchNhisClaimsPageFromSupabase = async (filters = {}, { ascending = false
   let { data, error, count } = await buildQuery()
   if (includeDetails && error && isMissingOptionalClaimMedicineColumn(error)) {
     ;({ data, error, count } = await buildQuery(NHIS_CLAIM_MEDICINES_SELECT_BASIC))
+  } else if (!includeDetails && error && isMissingOptionalClaimColumn(error)) {
+    ;({ data, error, count } = await buildQuery(NHIS_CLAIM_LIST_SELECT_LEGACY))
   }
   if (error) throw error
 
@@ -5429,14 +5476,23 @@ const fetchNhisIssueSpecRowsFromSupabase = async (filters = {}, spec = {}, {
   to = 99,
 } = {}) => {
   const select = spec.select || NHIS_CLAIM_LIST_SELECT
-  const baseQuery = supabase
-    .from('nhis_claims')
-    .select(select, { count: 'exact' })
-    .order('created_at', { ascending })
-    .range(from, to)
+  const buildQuery = (selectedColumns = select) => {
+    const baseQuery = supabase
+      .from('nhis_claims')
+      .select(selectedColumns, { count: 'exact' })
+      .order('created_at', { ascending })
+      .range(from, to)
 
-  const query = spec.refine(applyNhisIssueBaseFilters(baseQuery, filters, spec.statuses || []))
-  const { data, error, count } = await query
+    return spec.refine(applyNhisIssueBaseFilters(baseQuery, filters, spec.statuses || []))
+  }
+
+  let { data, error, count } = await buildQuery()
+  if (error && isMissingOptionalClaimColumn(error)) {
+    const fallbackSelect = select.includes('nhis_claim_medicines!left')
+      ? `${NHIS_CLAIM_LIST_BASE_SELECT_LEGACY}, nhis_claim_medicines!left(id)`
+      : NHIS_CLAIM_LIST_SELECT_LEGACY
+    ;({ data, error, count } = await buildQuery(fallbackSelect))
+  }
   if (error) throw error
 
   return {

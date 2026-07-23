@@ -328,6 +328,12 @@ const makeBlankClaim = () => ({
   prescriberLicenseSnapshot: '',
   prescribingFacilityNameSnapshot: '',
   prescribingFacilityCodeSnapshot: '',
+  prescriptionEnteredBy: '',
+  prescriptionEnteredAt: '',
+  prescriptionUpdatedBy: '',
+  prescriptionUpdatedAt: '',
+  prescriptionEntryUserName: '',
+  prescriptionUpdateUserName: '',
   claimitAttachmentFileName: '',
   claimitAttachmentFileType: '',
   claimitAttachmentMimeType: '',
@@ -1878,7 +1884,14 @@ const Nhis = () => {
         (c.other_names   || '').toLowerCase().includes(term) ||
         (c.member_no     || '').toLowerCase().includes(term) ||
         (c.claim_number  || '').toLowerCase().includes(term) ||
-        (c.hin           || '').toLowerCase().includes(term)
+        (c.hin           || '').toLowerCase().includes(term) ||
+        (c.prescription_reference || '').toLowerCase().includes(term) ||
+        (c.prescriber_name_snapshot || '').toLowerCase().includes(term) ||
+        (c.physician_name || '').toLowerCase().includes(term) ||
+        (c.prescribing_facility_name_snapshot || '').toLowerCase().includes(term) ||
+        (c.referring_facility || '').toLowerCase().includes(term) ||
+        (c.prescription_entry_user_name || '').toLowerCase().includes(term) ||
+        (c.prescription_update_user_name || '').toLowerCase().includes(term)
       )
     })
   }, [claims, claimTab, claimIssueFilter, debouncedClaimSearch, claimDateFilter, claimDateRange, isMedicineCounterAssistant])
@@ -2449,6 +2462,28 @@ const Nhis = () => {
     return userId
   }
 
+  const getCurrentPrescriptionActorLabel = () =>
+    normalizeText(
+      profile?.full_name ||
+        profile?.fullName ||
+        profile?.name ||
+        user?.email ||
+        user?.id
+    )
+
+  const hasPrescriptionTraceDetails = (form = claimForm, uploadedPrescription = {}) =>
+    Boolean(
+      normalizeText(form.prescriptionReference) ||
+        normalizeText(form.physicianName) ||
+        normalizeText(form.prescriberNameSnapshot) ||
+        normalizeText(form.referringFacility) ||
+        normalizeText(form.prescribingFacilityNameSnapshot) ||
+        normalizeText(form.prescriptionDate) ||
+        normalizeText(form.prescriptionFileName) ||
+        normalizeText(uploadedPrescription.prescriptionFileName) ||
+        normalizeText(uploadedPrescription.prescription_file_name)
+    )
+
   const getCurrentReturnAlertPatient = (patient = selectedClaimPatient, form = claimForm) => ({
     ...patient,
     memberNo: form.memberNo || patient?.nhis_member_no || patient?.member_no,
@@ -2791,6 +2826,12 @@ const Nhis = () => {
       prescriberLicenseSnapshot: claim.prescriber_license_snapshot || '',
       prescribingFacilityNameSnapshot: claim.prescribing_facility_name_snapshot || claim.referring_facility || '',
       prescribingFacilityCodeSnapshot: claim.prescribing_facility_code_snapshot || '',
+      prescriptionEnteredBy: claim.prescription_entered_by || '',
+      prescriptionEnteredAt: claim.prescription_entered_at || '',
+      prescriptionUpdatedBy: claim.prescription_updated_by || '',
+      prescriptionUpdatedAt: claim.prescription_updated_at || '',
+      prescriptionEntryUserName: claim.prescription_entry_user_name || '',
+      prescriptionUpdateUserName: claim.prescription_update_user_name || '',
       claimitAttachmentFileName: claim.claimit_attachment_file_name || '',
       claimitAttachmentFileType: claim.claimit_attachment_file_type || '',
       claimitAttachmentMimeType: claim.claimit_attachment_mime_type || '',
@@ -3699,6 +3740,10 @@ const Nhis = () => {
             yearMonth: (claimForm.serviceDate || todayIsoDate()).slice(0, 7),
           })
         : {}
+      const prescriptionTraceAt = new Date().toISOString()
+      const prescriptionTraceActorId = user?.id || null
+      const prescriptionTraceActorName = getCurrentPrescriptionActorLabel()
+      const shouldRecordPrescriptionTrace = hasPrescriptionTraceDetails(claimForm, uploadedPrescription)
       const payload = {
         ...claimForm,
         ...uploadedPrescription,
@@ -3708,6 +3753,14 @@ const Nhis = () => {
         providerClassLevel,
         branchId: profile?.branch_id || branch?.id || null,
         createdBy: user?.id || null,
+      }
+      if (shouldRecordPrescriptionTrace) {
+        payload.prescriptionEnteredBy = claimForm.prescriptionEnteredBy || editingClaim?.prescription_entered_by || prescriptionTraceActorId
+        payload.prescriptionEnteredAt = claimForm.prescriptionEnteredAt || editingClaim?.prescription_entered_at || prescriptionTraceAt
+        payload.prescriptionEntryUserName = claimForm.prescriptionEntryUserName || editingClaim?.prescription_entry_user_name || prescriptionTraceActorName
+        payload.prescriptionUpdatedBy = prescriptionTraceActorId
+        payload.prescriptionUpdatedAt = prescriptionTraceAt
+        payload.prescriptionUpdateUserName = prescriptionTraceActorName
       }
       if (!editingClaim) {
         payload.status = getNhisIntakeSaveStatus({ intent, isNew: true })
@@ -3912,12 +3965,44 @@ const Nhis = () => {
           prescription_verified: payload.prescriptionVerified === true,
           prescription_verified_by: payload.prescriptionVerifiedBy || '',
           prescription_verified_at: payload.prescriptionVerifiedAt || '',
+          prescription_reference: payload.prescriptionReference || '',
+          prescriber: payload.prescriberNameSnapshot || payload.physicianName || '',
+          prescribing_facility: payload.prescribingFacilityNameSnapshot || payload.referringFacility || '',
+          prescription_entered_by: payload.prescriptionEnteredBy || '',
+          prescription_entered_by_name: payload.prescriptionEntryUserName || '',
+          prescription_updated_by: payload.prescriptionUpdatedBy || '',
+          prescription_updated_by_name: payload.prescriptionUpdateUserName || '',
           incomplete_items: incompleteIntakeItems,
           status: savedClaimRecord?.status || payload.status || '',
           inventory_deducted: false,
           served_directly_by: serveDirectly ? user?.id || '' : '',
         },
       })
+
+      if (shouldRecordPrescriptionTrace) {
+        await tryLogAuditEvent({
+          eventType: 'nhis_claim.prescription_trace',
+          entityType: 'nhis_claims',
+          entityId: savedClaimRecord?.id || editingClaim?.id || '',
+          action: editingClaim ? 'prescription_updated' : 'prescription_entered',
+          details: {
+            claim_number: savedClaimRecord?.claim_number || editingClaim?.claim_number || '',
+            prescription_reference: payload.prescriptionReference || '',
+            prescriber: payload.prescriberNameSnapshot || payload.physicianName || '',
+            prescriber_license: payload.prescriberLicenseSnapshot || '',
+            prescribing_facility: payload.prescribingFacilityNameSnapshot || payload.referringFacility || '',
+            prescribing_facility_code: payload.prescribingFacilityCodeSnapshot || '',
+            prescription_date: payload.prescriptionDate || '',
+            prescription_file_name: payload.prescriptionFileName || '',
+            entered_by: payload.prescriptionEnteredBy || '',
+            entered_by_name: payload.prescriptionEntryUserName || '',
+            updated_by: payload.prescriptionUpdatedBy || '',
+            updated_by_name: payload.prescriptionUpdateUserName || '',
+            user_id: user?.id || '',
+            role,
+          },
+        })
+      }
 
       const wasReadinessCorrection = readinessClaimIssues.length > 0
       setShowNewClaimModal(false)
@@ -6446,6 +6531,18 @@ const Nhis = () => {
                         onChange={(e) => setClaimForm((p) => ({ ...p, prescriptionReference: e.target.value }))}
                         placeholder="Prescription number, if shown"
                       />
+                      {(claimForm.prescriptionEntryUserName || claimForm.prescriptionEnteredAt) && (
+                        <small className="prescription-audit-note">
+                          Entered by {claimForm.prescriptionEntryUserName || 'Recorded user'}
+                          {claimForm.prescriptionEnteredAt ? ` on ${formatAppDateTime(claimForm.prescriptionEnteredAt)}` : ''}.
+                        </small>
+                      )}
+                      {(claimForm.prescriptionUpdateUserName || claimForm.prescriptionUpdatedAt) && (
+                        <small className="prescription-audit-note">
+                          Last updated by {claimForm.prescriptionUpdateUserName || 'Recorded user'}
+                          {claimForm.prescriptionUpdatedAt ? ` on ${formatAppDateTime(claimForm.prescriptionUpdatedAt)}` : ''}.
+                        </small>
+                      )}
                     </div>
                   </div>
                 </section>
@@ -7480,6 +7577,11 @@ const Nhis = () => {
               <div><strong>Prescribing Facility:</strong> {viewClaim.referring_facility || '—'}</div>
               <div><strong>Referral Code:</strong> {viewClaim.referral_code || '—'}</div>
               <div><strong>Prescriber:</strong> {viewClaim.physician_name || '—'}</div>
+              <div><strong>Prescription Reference:</strong> {viewClaim.prescription_reference || '—'}</div>
+              <div><strong>Prescription Entered By:</strong> {viewClaim.prescription_entry_user_name || viewClaim.prescription_entered_by || '—'}</div>
+              <div><strong>Prescription Entered At:</strong> {viewClaim.prescription_entered_at ? formatAppDateTime(viewClaim.prescription_entered_at) : '—'}</div>
+              <div><strong>Prescription Last Updated By:</strong> {viewClaim.prescription_update_user_name || viewClaim.prescription_updated_by || '—'}</div>
+              <div><strong>Prescription Last Updated At:</strong> {viewClaim.prescription_updated_at ? formatAppDateTime(viewClaim.prescription_updated_at) : '—'}</div>
               <div><strong>Pre-auth Codes:</strong> {viewClaim.pre_auth_codes || '—'}</div>
               <div><strong>Medicines Not Served:</strong> {viewClaim.unserved_medicines_note || '-'}</div>
               <div>
