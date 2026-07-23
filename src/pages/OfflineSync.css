@@ -97,6 +97,32 @@
   border-color: #b9ded4;
 }
 
+.installer-config-status {
+  align-items: center;
+  border: 1px solid #f2d27a;
+  background: #fff9e8;
+  border-radius: var(--radius);
+  color: #7a5510;
+  display: inline-flex;
+  font-size: 0.86rem;
+  font-weight: 700;
+  gap: 0.4rem;
+  padding: 0.5rem 0.7rem;
+  white-space: nowrap;
+}
+
+.installer-config-status.configured {
+  background: #eefbf7;
+  border-color: #b9ded4;
+  color: #116b52;
+}
+
+.installer-config-status.missing {
+  background: #fff9e8;
+  border-color: #f2d27a;
+  color: #7a5510;
+}
+
 .install-healthflow-grid {
   display: grid;
   gap: 0.75rem;
@@ -123,6 +149,13 @@
   color: var(--gray-900);
   font-size: 0.9rem;
   line-height: 1.35;
+}
+
+.installer-config-note {
+  border-top: 1px solid var(--gray-200);
+  color: var(--gray-600);
+  font-size: 0.88rem;
+  padding: 0.85rem 1rem 0;
 }
 
 .install-healthflow-actions {

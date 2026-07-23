@@ -909,6 +909,13 @@ export default function OfflineSync() {
       : updateStatus?.installerReady === false
         ? 'The update helper is not installed. Rerun the branch service installer once.'
         : updateStatus?.message || 'Check for a signed HealthFlow branch update.'
+  const installerUrlValidation = HEALTHFLOW_INSTALLER_URL_CONFIGURED
+    ? validateHealthflowInstallerUrl(HEALTHFLOW_INSTALLER_URL)
+    : { valid: false, reason: 'not-configured' }
+  const installerConfigured = HEALTHFLOW_INSTALLER_URL_CONFIGURED && installerUrlValidation.valid
+  const installerStatusText = installerConfigured
+    ? 'Production installer configured'
+    : 'Installer not configured for this deployment'
 
   return (
     <div className="offline-sync-page">
@@ -929,6 +936,10 @@ export default function OfflineSync() {
             <h2>Install HealthFlow on this Computer</h2>
             <p>Download the full installer for a new workstation. No existing local branch server is required.</p>
           </div>
+          <div className={`installer-config-status ${installerConfigured ? 'configured' : 'missing'}`}>
+            {installerConfigured ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
+            <span>{installerStatusText}</span>
+          </div>
         </div>
         <div className="install-healthflow-grid">
           <div>
@@ -943,6 +954,11 @@ export default function OfflineSync() {
             <span>After install</span>
             <strong>Run Branch Sync Setup and Offline Setup Wizard</strong>
           </div>
+        </div>
+        <div className="installer-config-note">
+          {installerConfigured
+            ? 'Users can download the approved installer from this page. First-time offline use still requires setup and initial sync.'
+            : 'Publish the installer ZIP and set VITE_HEALTHFLOW_INSTALLER_URL before users can download it here.'}
         </div>
         <div className="install-healthflow-actions">
           <button className="btn btn-primary" type="button" onClick={() => void openInstallerDownload()}>
