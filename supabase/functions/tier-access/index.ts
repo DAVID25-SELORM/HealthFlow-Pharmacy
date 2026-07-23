@@ -317,6 +317,10 @@ const NHIA_SETTINGS_ROLES = ['admin', 'pharmacist', 'branch_manager']
 const EPHARMACY_ROLES = ['admin', 'pharmacist', 'procurement', 'inventory_officer', 'branch_manager']
 const EPHARMACY_REVIEW_ROLES = ['admin', 'pharmacist']
 const ACTIVITY_LOG_ROLES = ['admin', 'branch_manager', 'super_admin']
+const PLATFORM_ACTIONS_WITHOUT_ORGANIZATION = new Set([
+  'get_activity_logs',
+  'get_report_health',
+])
 // ✅ NHIS PHARMACY LEVEL PATCH START
 const VALID_PHARMACY_LEVELS = ['P1', 'P2', 'LCS', 'HP']
 const VALID_MEDICINE_ACCESS_LEVELS = ['OTC', 'Prescription', 'Specialist', 'Controlled']
@@ -777,7 +781,7 @@ const requireRequester = async (
     return { error: json({ error: 'Unable to determine your organization context.' }, 403) }
   }
 
-  if (!requesterProfile.organization_id) {
+  if (!requesterProfile.organization_id && !isSuperAdminRequester(requesterProfile)) {
     return { error: json({ error: 'Current account is missing organization context.' }, 400) }
   }
 
@@ -829,6 +833,9 @@ const requesterHasAnyRole = (requesterProfile: RequesterProfile, roles: string[]
     : roles.some((role) =>
         role === requesterProfile.role || requesterProfile.assigned_roles.includes(role)
       )
+
+const isSuperAdminRequester = (requesterProfile: RequesterProfile) =>
+  requesterHasAnyRole(requesterProfile, ['super_admin'])
 
 const applyRequestedActiveRole = (
   requesterProfile: RequesterProfile,
@@ -1031,6 +1038,21 @@ const getActivityLogs = async (
 
   const limit = Math.min(parsePositiveInteger(payload.limit, 200), 500)
   const auditLogSelect = 'id, actor_user_id, actor_email, event_type, entity_type, action, details, organization_id, created_at'
+
+  if (!organizationId && isSuperAdminRequester(requesterProfile)) {
+    const { data: platformLogs, error: platformLogsError } = await adminClient
+      .from('audit_logs')
+      .select(auditLogSelect)
+      .order('created_at', { ascending: false })
+      .limit(limit)
+
+    if (platformLogsError) {
+      throw platformLogsError
+    }
+
+    return { logs: platformLogs || [] }
+  }
+
   const { data: organizationLogs, error: organizationLogsError } = await adminClient
     .from('audit_logs')
     .select(auditLogSelect)
@@ -5794,11 +5816,13 @@ const getReportHealth = async (
   requireReportsAccess(requesterProfile, 'Only report staff can check report health.')
 
   const startedAt = Date.now()
-  const checks = await Promise.all([
-    adminClient.from('sales').select('id', { count: 'exact', head: true }).eq('organization_id', organizationId),
-    adminClient.from('patients').select('id', { count: 'exact', head: true }).eq('organization_id', organizationId),
-    adminClient.from('nhis_claims').select('id', { count: 'exact', head: true }).eq('organization_id', organizationId),
-  ])
+  const checks = await Promise.all(
+    [
+      adminClient.from('sales').select('id', { count: 'exact', head: true }),
+      adminClient.from('patients').select('id', { count: 'exact', head: true }),
+      adminClient.from('nhis_claims').select('id', { count: 'exact', head: true }),
+    ].map((query) => (organizationId ? query.eq('organization_id', organizationId) : query))
+  )
   const failed = checks.find((result) => result.error)
   if (failed?.error) throw failed.error
 
@@ -5863,7 +5887,14 @@ Deno.serve(async (request) => {
       requesterResult.requesterProfile,
       payload.activeRole || payload.active_role
     )
-    const { organizationId } = requesterResult
+    const organizationId = requesterResult.organizationId || ''
+
+    if (!organizationId && !PLATFORM_ACTIONS_WITHOUT_ORGANIZATION.has(action)) {
+      return json(
+        { error: 'This platform account must select a tenant organization to run this action.' },
+        400
+      )
+    }
 
     if (action === 'get_drugs') {
       return json({ drugs: await getDrugs(adminClient, requesterProfile, organizationId, payload) })

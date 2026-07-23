@@ -31,7 +31,7 @@ vi.mock('../lib/supabase', () => ({
 
 vi.mock('../context/AuthContext', () => ({
   useAuth: () => ({
-    organization_id: 'org-1',
+    organization: { id: 'org-1' },
   }),
 }))
 

@@ -100,7 +100,8 @@ const toSearchBlob = (log) => {
 }
 
 export default function ActivityLog() {
-  const { organization_id: organizationId } = useAuth()
+  const { organization } = useAuth()
+  const organizationId = organization?.id || ''
   const [logs, setLogs] = useState([])
   const [searchTerm, setSearchTerm] = useState('')
   const [loading, setLoading] = useState(true)

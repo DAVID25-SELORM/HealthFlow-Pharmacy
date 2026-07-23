@@ -11,7 +11,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useTenant } from '../context/TenantContext'
-import { getPharmacySettings } from '../services/settingsService'
+import { getPharmacyBrandingSettings } from '../services/settingsService'
 import {
   REPORT_TABS,
   buildReportHeaderRows,
@@ -1262,7 +1262,7 @@ const Reports = () => {
 
   useEffect(() => {
     let cancelled = false
-    getPharmacySettings()
+    getPharmacyBrandingSettings()
       .then((settings) => {
         if (!cancelled) setFacilitySettings(settings)
       })

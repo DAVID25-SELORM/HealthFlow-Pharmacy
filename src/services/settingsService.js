@@ -140,6 +140,27 @@ export const getPharmacyThemeSettings = async () => {
   return data || null
 }
 
+export const getPharmacyBrandingSettings = async () => {
+  const organizationId = await getCurrentOrganizationId()
+  let query = supabase
+    .from('pharmacy_settings')
+    .select('pharmacy_name,logo_url,slogan,receipt_footer,report_footer,theme_primary_color,theme_secondary_color,theme_accent_color')
+    .order('updated_at', { ascending: false })
+    .limit(1)
+
+  if (organizationId) {
+    query = query.eq('organization_id', organizationId)
+  }
+
+  const { data, error } = await query.maybeSingle()
+
+  if (error) {
+    throw error
+  }
+
+  return data || null
+}
+
 export const updatePharmacySettings = async (id, settings) => {
   const payload = {
     pharmacy_name: normalizeText(settings.pharmacyName),

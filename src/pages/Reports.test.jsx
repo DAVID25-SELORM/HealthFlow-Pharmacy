@@ -13,7 +13,7 @@ import {
 const mocks = vi.hoisted(() => ({
   getReportBundle: vi.fn(),
   getReportNhisPage: vi.fn(),
-  getPharmacySettings: vi.fn(),
+  getPharmacyBrandingSettings: vi.fn(),
   useAuth: vi.fn(),
   useTenant: vi.fn(),
 }))
@@ -27,7 +27,7 @@ vi.mock('../context/TenantContext', () => ({
 }))
 
 vi.mock('../services/settingsService', () => ({
-  getPharmacySettings: mocks.getPharmacySettings,
+  getPharmacyBrandingSettings: mocks.getPharmacyBrandingSettings,
 }))
 
 vi.mock('../services/reportsService', async () => {
@@ -208,7 +208,7 @@ describe('Reports', () => {
         hasReports: true,
       },
     })
-    mocks.getPharmacySettings.mockResolvedValue({})
+    mocks.getPharmacyBrandingSettings.mockResolvedValue({})
     mocks.getReportBundle.mockResolvedValue(reportBundle)
     mocks.getReportNhisPage.mockResolvedValue({
       nhisClaims: [{

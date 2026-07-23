@@ -11,9 +11,11 @@ export { normalizeSubscriptionTier, TIER_LIMITS }
 const TenantContext = createContext(null)
 
 export const TenantProvider = ({ children }) => {
-  const { organization, loading } = useAuth()
+  const { organization, loading, role } = useAuth()
 
   const value = useMemo(() => {
+    const isPlatformSuperAdmin = String(role || '').toLowerCase() === 'super_admin'
+
     if (loading) {
       return {
         organization: null,
@@ -33,6 +35,29 @@ export const TenantProvider = ({ children }) => {
         canUseAccounting: false,
         canUseMultiBranch: false,
         loading: true,
+      }
+    }
+
+    if (isPlatformSuperAdmin && !organization) {
+      return {
+        organization: null,
+        organizationId: null,
+        isTrialActive: false,
+        isSubscriptionActive: true,
+        isSuspended: false,
+        daysUntilTrialExpires: null,
+        tierLimits: TIER_LIMITS.enterprise,
+        planCode: 'platform',
+        billingStatus: 'platform',
+        supportLevel: 'enterprise',
+        organizationType: 'platform',
+        canUseClaims: true,
+        canUsePurchases: true,
+        canUseNhis: true,
+        canUseNhisTopups: true,
+        canUseAccounting: true,
+        canUseMultiBranch: true,
+        loading: false,
       }
     }
 
@@ -86,7 +111,7 @@ export const TenantProvider = ({ children }) => {
       canUseAccounting: Boolean(organization.can_use_accounting),
       canUseMultiBranch: Boolean(organization.can_use_multi_branch),
     }
-  }, [organization, loading])
+  }, [organization, loading, role])
 
   return <TenantContext.Provider value={value}>{children}</TenantContext.Provider>
 }
