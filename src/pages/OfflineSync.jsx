@@ -31,6 +31,10 @@ import {
   listBranchSyncSetupOptions,
   registerBranchSyncClient,
 } from '../services/tenantAdminService'
+import {
+  getActiveOfflineInstallerRelease,
+  requestOfflineInstallerDownload,
+} from '../services/offlineInstallerReleaseService'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
 import { getConfiguredCloudUrl } from '../lib/supabase'
@@ -87,6 +91,15 @@ const formatDateTime = (value) => {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '-'
   return date.toLocaleString()
+}
+
+const formatBytes = (bytes) => {
+  const value = Number(bytes || 0)
+  if (!value) return '-'
+  if (value >= 1024 * 1024 * 1024) return `${(value / 1024 / 1024 / 1024).toFixed(2)} GB`
+  if (value >= 1024 * 1024) return `${(value / 1024 / 1024).toFixed(2)} MB`
+  if (value >= 1024) return `${(value / 1024).toFixed(2)} KB`
+  return `${value} B`
 }
 
 const getSummaryTotal = (summary, key) => Number(summary?.[key] || 0)
@@ -201,6 +214,8 @@ export default function OfflineSync() {
   const { organization, role, user, profile, branch } = useAuth()
   const { notify } = useNotification()
   const [config, setConfig] = useState(() => getBranchServerConfig())
+  const [installerRelease, setInstallerRelease] = useState(null)
+  const [installerReleaseLoading, setInstallerReleaseLoading] = useState(true)
   const [branchTokenForm, setBranchTokenForm] = useState(() => getSavedBranchToken())
   const [health, setHealth] = useState(null)
   const [status, setStatus] = useState(null)
@@ -306,6 +321,26 @@ export default function OfflineSync() {
   useEffect(() => {
     void refreshStatus({ silent: true })
   }, [refreshStatus])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadInstallerRelease = async () => {
+      try {
+        setInstallerReleaseLoading(true)
+        const release = await getActiveOfflineInstallerRelease()
+        if (!cancelled) setInstallerRelease(release)
+      } finally {
+        if (!cancelled) setInstallerReleaseLoading(false)
+      }
+    }
+
+    void loadInstallerRelease()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     if (!isSuperAdmin) {
@@ -794,7 +829,10 @@ export default function OfflineSync() {
       `Requested by: ${user?.email || profile?.email || profile?.full_name || 'Current user'}`,
       '',
       'Installer package',
-      `Download URL: ${HEALTHFLOW_INSTALLER_DETAILS_VALUE}`,
+      `Download URL: ${installerDetailsValue}`,
+      `Version: ${installerRelease?.version || 'Configured at deployment'}`,
+      `File size: ${installerRelease?.fileSize ? formatBytes(installerRelease.fileSize) : 'Not available'}`,
+      `Published: ${installerRelease?.publishedAt ? formatDateTime(installerRelease.publishedAt) : 'Not available'}`,
       '',
       'What the installer sets up',
       '- HealthFlow local branch server',
@@ -836,23 +874,37 @@ export default function OfflineSync() {
   const openInstallerDownload = async () => {
     // A missing, blank, or placeholder URL is never opened — it is not
     // evidence that a real installer package exists anywhere.
-    if (!HEALTHFLOW_INSTALLER_URL_CONFIGURED) {
+    if (!effectiveInstallerConfigured) {
       notify(INSTALLER_NOT_CONFIGURED_MESSAGE, 'error')
       return
     }
 
-    const validation = validateHealthflowInstallerUrl(HEALTHFLOW_INSTALLER_URL)
+    const validation = validateHealthflowInstallerUrl(effectiveInstallerUrl)
     if (!validation.valid) {
       console.warn(`Installer URL failed validation (${validation.reason}); refusing to open.`)
       notify(INSTALLER_NOT_CONFIGURED_MESSAGE, 'error')
       return
     }
 
+    let downloadUrl = effectiveInstallerUrl
+    if (installerRelease?.id) {
+      try {
+        const download = await requestOfflineInstallerDownload()
+        if (download?.downloadUrl) {
+          downloadUrl = download.downloadUrl
+        }
+      } catch (error) {
+        console.warn('[Offline installer] Secure download request failed; falling back to configured URL.', {
+          message: error?.message || 'request failed',
+        })
+      }
+    }
+
     // Best-effort availability check only. fetch() follows redirects by
     // default, so a 3xx never reaches this code as a 3xx — only its final
     // resolved status does, subject to the same classification below.
     try {
-      const response = await fetch(HEALTHFLOW_INSTALLER_URL, { method: 'HEAD', mode: 'cors' })
+      const response = await fetch(downloadUrl, { method: 'HEAD', mode: 'cors' })
       if (INSTALLER_CONFIRMED_MISSING_STATUSES.includes(response.status)) {
         notify(INSTALLER_CONFIRMED_MISSING_MESSAGE, 'error')
         return
@@ -870,7 +922,7 @@ export default function OfflineSync() {
       notify(INSTALLER_UNVERIFIED_MESSAGE, 'warning')
     }
 
-    window.open(HEALTHFLOW_INSTALLER_URL, '_blank', 'noopener,noreferrer')
+    window.open(downloadUrl, '_blank', 'noopener,noreferrer')
   }
 
   const exportNhiaBatch = async (format) => {
@@ -909,13 +961,20 @@ export default function OfflineSync() {
       : updateStatus?.installerReady === false
         ? 'The update helper is not installed. Rerun the branch service installer once.'
         : updateStatus?.message || 'Check for a signed HealthFlow branch update.'
-  const installerUrlValidation = HEALTHFLOW_INSTALLER_URL_CONFIGURED
-    ? validateHealthflowInstallerUrl(HEALTHFLOW_INSTALLER_URL)
+  const effectiveInstallerUrl = installerRelease?.downloadUrl || HEALTHFLOW_INSTALLER_URL
+  const effectiveInstallerConfigured = Boolean(installerRelease?.downloadUrl) || HEALTHFLOW_INSTALLER_URL_CONFIGURED
+  const installerDetailsValue = installerRelease?.downloadUrl || HEALTHFLOW_INSTALLER_DETAILS_VALUE
+  const installerUrlValidation = effectiveInstallerConfigured
+    ? validateHealthflowInstallerUrl(effectiveInstallerUrl)
     : { valid: false, reason: 'not-configured' }
-  const installerConfigured = HEALTHFLOW_INSTALLER_URL_CONFIGURED && installerUrlValidation.valid
+  const installerConfigured = effectiveInstallerConfigured && installerUrlValidation.valid
   const installerStatusText = installerConfigured
-    ? 'Production installer configured'
-    : 'Installer not configured for this deployment'
+    ? installerRelease
+      ? `Offline installer ${installerRelease.version} available`
+      : 'Production installer configured'
+    : installerReleaseLoading
+      ? 'Checking installer availability'
+      : 'Installer downloads unavailable'
 
   return (
     <div className="offline-sync-page">
@@ -933,8 +992,8 @@ export default function OfflineSync() {
       <section className="offline-sync-section install-healthflow-section">
         <div className="offline-sync-section-header">
           <div>
-            <h2>Install HealthFlow on this Computer</h2>
-            <p>Download the full installer for a new workstation. No existing local branch server is required.</p>
+            <h2>Install HealthFlow Offline</h2>
+            <p>Install HealthFlow on this computer for approved offline use.</p>
           </div>
           <div className={`installer-config-status ${installerConfigured ? 'configured' : 'missing'}`}>
             {installerConfigured ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
@@ -944,24 +1003,30 @@ export default function OfflineSync() {
         <div className="install-healthflow-grid">
           <div>
             <span>Installer includes</span>
-            <strong>Local server, offline app, database, service, shortcut</strong>
-          </div>
-          <div>
-            <span>Setup details</span>
-            <strong>Facility, branch, tokens, sync, updates, health checks</strong>
+            <strong>Local server, offline database, sync tools, desktop shortcut</strong>
           </div>
           <div>
             <span>After install</span>
-            <strong>Run Branch Sync Setup and Offline Setup Wizard</strong>
+            <strong>Connect this computer to your facility and download data</strong>
+          </div>
+          <div>
+            <span>Ready for offline work</span>
+            <strong>Verify setup, then open local HealthFlow</strong>
           </div>
         </div>
         <div className="installer-config-note">
           {installerConfigured
-            ? 'Users can download the approved installer from this page. First-time offline use still requires setup and initial sync.'
-            : 'Publish the installer ZIP and set VITE_HEALTHFLOW_INSTALLER_URL before users can download it here.'}
+            ? installerRelease
+              ? `Version ${installerRelease.version}. File size ${formatBytes(installerRelease.fileSize)}. Published ${formatDateTime(installerRelease.publishedAt)}.${installerRelease.releaseNotes ? ' Release notes available.' : ''}`
+              : 'Download the approved installer, complete setup, and run the first sync while internet is available.'
+            : 'Offline installer downloads are currently unavailable. Please contact HealthFlow support.'}
         </div>
         <div className="install-healthflow-actions">
-          <button className="btn btn-primary" type="button" onClick={() => void openInstallerDownload()}>
+          <button
+            className="btn btn-primary"
+            type="button"
+            onClick={() => void openInstallerDownload()}
+          >
             <Download size={16} /> Download and Install
           </button>
           <button className="btn btn-outline" type="button" onClick={downloadInstallerDetails}>

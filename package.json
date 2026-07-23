@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "build:offline": "vite build --outDir local-branch-server/public --emptyOutDir && node scripts/remove-offline-update-artifacts.mjs",
+    "disable:offline-installer": "node scripts/disable-offline-installer.mjs",
+    "release:offline-installer": "node scripts/release-offline-installer.mjs",
     "preview": "vite preview",
     "lint": "eslint .",
     "preflight": "npm run lint && npm run test && npm run build",

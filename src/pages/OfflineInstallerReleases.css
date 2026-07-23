@@ -1,0 +1,224 @@
+.offline-installer-release-page {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.offline-installer-release-header,
+.offline-installer-release-card {
+  background: #fff;
+  border: 1px solid #dce9e5;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 12px 30px rgba(15, 76, 68, 0.06);
+}
+
+.offline-installer-release-header,
+.active-release-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.offline-installer-release-header h1,
+.offline-installer-release-card h2 {
+  margin: 0;
+  color: #143b36;
+}
+
+.offline-installer-release-header p,
+.offline-installer-release-card p {
+  margin: 6px 0 0;
+  color: #64748b;
+}
+
+.release-eyebrow {
+  display: block;
+  margin-bottom: 4px;
+  color: #0f766e;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.active-release-actions,
+.installer-form-actions,
+.row-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.installer-release-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.manifest-import-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid #cce7df;
+  border-radius: 8px;
+  background: #f0fdfa;
+}
+
+.manifest-import-panel p {
+  margin-top: 4px;
+}
+
+.manifest-import-panel code {
+  color: #0f766e;
+  font-weight: 800;
+}
+
+.manifest-import-button {
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.manifest-import-button input {
+  display: none;
+}
+
+.installer-release-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: #334155;
+  font-weight: 700;
+}
+
+.installer-release-form input,
+.installer-release-form textarea,
+.installer-release-form select {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font: inherit;
+}
+
+.installer-release-form .wide,
+.installer-enable-check,
+.installer-form-actions {
+  grid-column: 1 / -1;
+}
+
+.installer-enable-check {
+  flex-direction: row !important;
+  align-items: center;
+}
+
+.installer-enable-check input {
+  width: auto;
+}
+
+.installer-release-table {
+  display: flex;
+  flex-direction: column;
+  margin-top: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.installer-release-row {
+  display: grid;
+  grid-template-columns: 0.9fr 1.45fr 0.7fr 0.75fr 0.75fr 1fr;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.installer-release-row:last-child {
+  border-bottom: 0;
+}
+
+.installer-release-row.header {
+  background: #f8fafc;
+  color: #475569;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.installer-release-row small {
+  display: block;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.release-enabled {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #047857;
+  font-weight: 800;
+}
+
+.release-disabled {
+  color: #64748b;
+  font-weight: 700;
+}
+
+.release-state {
+  font-weight: 800;
+  text-transform: capitalize;
+}
+
+.release-state.published {
+  color: #047857;
+}
+
+.release-state.validated {
+  color: #0369a1;
+}
+
+.release-state.superseded,
+.release-state.disabled {
+  color: #64748b;
+}
+
+.btn-warning {
+  background: #fff7ed;
+  border-color: #fed7aa;
+  color: #9a3412;
+}
+
+.btn-success {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  color: #047857;
+}
+
+.btn-icon {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  justify-content: center;
+}
+
+@media (max-width: 900px) {
+  .offline-installer-release-header,
+  .active-release-card {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .installer-release-form,
+  .installer-release-row,
+  .manifest-import-panel {
+    grid-template-columns: 1fr;
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

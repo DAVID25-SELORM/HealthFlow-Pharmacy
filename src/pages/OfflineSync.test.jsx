@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   listBranchSyncClients: vi.fn(),
   registerBranchSyncClient: vi.fn(),
   deactivateBranchSyncClient: vi.fn(),
+  getActiveOfflineInstallerRelease: vi.fn(),
 }))
 
 vi.mock('../context/AuthContext', () => ({
@@ -67,10 +68,15 @@ vi.mock('../services/offlinePosCache', () => ({
   saveOfflinePosSnapshot: vi.fn(),
 }))
 
+vi.mock('../services/offlineInstallerReleaseService', () => ({
+  getActiveOfflineInstallerRelease: mocks.getActiveOfflineInstallerRelease,
+}))
+
 describe('OfflineSync branch registration', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.getBranchServerConfig.mockReturnValue({ enabled: false, token: '', url: '' })
+    mocks.getActiveOfflineInstallerRelease.mockResolvedValue(null)
     mocks.listBranchSyncSetupOptions.mockResolvedValue({
       organizations: [
         {
@@ -179,7 +185,7 @@ describe('OfflineSync branch registration', () => {
 
     render(<OfflineSync />)
 
-    expect(screen.getByRole('heading', { name: 'Install HealthFlow on this Computer' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Install HealthFlow Offline' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Download and Install' })).toBeInTheDocument()
     await screen.findByText('HealthFlow 1.1.0 is available.')
     fireEvent.click(screen.getByRole('button', { name: 'Check for Updates' }))

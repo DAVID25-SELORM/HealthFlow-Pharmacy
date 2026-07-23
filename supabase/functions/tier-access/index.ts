@@ -222,6 +222,7 @@ type TierAccessAction =
   | 'update_epharmacy_listing_controls'
   | 'create_epharmacy_order'
   | 'update_epharmacy_order_status'
+  | 'request_offline_installer_download'
   | 'get_activity_logs'
 
 const SUPPORTED_TIER_ACCESS_ACTIONS = [
@@ -258,6 +259,7 @@ const SUPPORTED_TIER_ACCESS_ACTIONS = [
   'update_epharmacy_listing_controls',
   'create_epharmacy_order',
   'update_epharmacy_order_status',
+  'request_offline_installer_download',
   'get_activity_logs',
 ]
 
@@ -561,7 +563,6 @@ const REPORT_AGGREGATE_PAGE_SIZE = 500
 const PATIENT_WORKSPACE_PATIENT_SELECT_FIELDS = [
   'id',
   'organization_id',
-  'branch_id',
   'full_name',
   'phone',
   'email',
@@ -570,10 +571,6 @@ const PATIENT_WORKSPACE_PATIENT_SELECT_FIELDS = [
   'address',
   'insurance_provider',
   'insurance_id',
-  'nhis_member_no',
-  'nhis_hin',
-  'folder_no',
-  'last_visit_at',
   'created_at',
 ].join(', ')
 
@@ -1025,6 +1022,85 @@ const tryWriteTierAuditEvent = async (
     })
   } catch (error) {
     console.warn('tier-access audit warning:', getErrorMessage(error))
+  }
+}
+
+const requestOfflineInstallerDownload = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  requesterProfile: RequesterProfile,
+  organizationId: string
+) => {
+  const { data: release, error } = await adminClient
+    .from('offline_installer_releases')
+    .select('id, version, download_url, file_name, file_size, release_notes, storage_bucket, storage_path, download_count, published_at, enabled, state, channel')
+    .eq('enabled', true)
+    .eq('state', 'published')
+    .eq('channel', 'stable')
+    .order('published_at', { ascending: false, nullsFirst: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (error) throw error
+  if (!release) {
+    throw new Error('Offline installer downloads are currently unavailable.')
+  }
+
+  let downloadUrl = normalizeText(release.download_url)
+  let source = 'url'
+  let expiresAt: string | null = null
+  const storageBucket = normalizeText(release.storage_bucket)
+  const storagePath = normalizeText(release.storage_path)
+
+  if (storageBucket && storagePath) {
+    const expiresInSeconds = 10 * 60
+    const { data, error: signedUrlError } = await adminClient.storage
+      .from(storageBucket)
+      .createSignedUrl(storagePath, expiresInSeconds)
+
+    if (signedUrlError) throw signedUrlError
+    if (!data?.signedUrl) {
+      throw new Error('Unable to prepare offline installer download.')
+    }
+    downloadUrl = data.signedUrl
+    source = 'signed_storage'
+    expiresAt = new Date(Date.now() + expiresInSeconds * 1000).toISOString()
+  }
+
+  if (!downloadUrl) {
+    throw new Error('Offline installer download is not configured.')
+  }
+
+  await adminClient
+    .from('offline_installer_releases')
+    .update({
+      download_count: (Number(release.download_count || 0) || 0) + 1,
+      last_downloaded_at: new Date().toISOString(),
+    })
+    .eq('id', release.id)
+
+  await tryWriteTierAuditEvent(adminClient, requesterProfile, organizationId, {
+    eventType: 'offline_installer_release',
+    entityType: 'offline_installer_release',
+    entityId: release.id,
+    action: 'installer_release.download_requested',
+    details: {
+      version: release.version,
+      file_name: release.file_name,
+      source,
+    },
+  })
+
+  return {
+    downloadUrl,
+    expiresAt,
+    source,
+    release: {
+      version: release.version,
+      fileName: release.file_name,
+      fileSize: release.file_size,
+      publishedAt: release.published_at,
+      releaseNotes: release.release_notes || '',
+    },
   }
 }
 
@@ -6106,6 +6182,10 @@ Deno.serve(async (request) => {
 
     if (action === 'update_epharmacy_order_status') {
       return json(await updateEpharmacyOrderStatus(adminClient, requesterProfile, organizationId, payload))
+    }
+
+    if (action === 'request_offline_installer_download') {
+      return json(await requestOfflineInstallerDownload(adminClient, requesterProfile, organizationId))
     }
 
     return json(

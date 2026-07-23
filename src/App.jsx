@@ -37,6 +37,7 @@ const Terms = lazy(() => import('./pages/Terms'))
 const ActivityLog = lazy(() => import('./pages/ActivityLog'))
 const SystemHealth = lazy(() => import('./pages/SystemHealth'))
 const Diagnostics = lazy(() => import('./pages/Diagnostics'))
+const OfflineInstallerReleases = lazy(() => import('./pages/OfflineInstallerReleases'))
 const OfflineSync = lazy(() => import('./pages/OfflineSync'))
 const Support = lazy(() => import('./pages/Support'))
 const Purchases = lazy(() => import('./pages/Purchases'))
@@ -216,6 +217,14 @@ function App() {
               element={
                 <RoleRoute allowedRoles={['super_admin']}>
                   <Diagnostics />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="offline-installer-releases"
+              element={
+                <RoleRoute allowedRoles={['super_admin']}>
+                  <OfflineInstallerReleases />
                 </RoleRoute>
               }
             />
