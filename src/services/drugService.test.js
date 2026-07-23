@@ -133,7 +133,9 @@ describe('drugService catalog handling', () => {
     ])
 
     expect(fromMock).toHaveBeenCalledWith('drugs')
-    expect(queryBuilder.select).toHaveBeenCalledWith('*')
+    expect(queryBuilder.select).not.toHaveBeenCalledWith('*')
+    expect(queryBuilder.select.mock.calls[0][0]).toContain('name')
+    expect(queryBuilder.select.mock.calls[0][0]).toContain('quantity')
     expect(queryBuilder.order).toHaveBeenCalledWith('name')
     expect(queryBuilder.order).toHaveBeenCalledWith('id')
     expect(queryBuilder.range).toHaveBeenCalledWith(0, 999)
@@ -201,7 +203,8 @@ describe('drugService catalog handling', () => {
     ])
 
     expect(fromMock).toHaveBeenCalledWith('drugs')
-    expect(queryBuilder.select).toHaveBeenCalledWith('*')
+    expect(queryBuilder.select).not.toHaveBeenCalledWith('*')
+    expect(queryBuilder.select.mock.calls[0][0]).toContain('nhis_price')
     expect(invokeTierAccess).not.toHaveBeenCalled()
   })
 

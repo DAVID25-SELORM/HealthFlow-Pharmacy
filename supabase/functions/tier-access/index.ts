@@ -51,6 +51,87 @@ const REPORT_DRUG_SELECT_FIELDS = `
   status,
   created_at
 `
+const INVENTORY_DRUG_SELECT_FIELDS = `
+  id,
+  organization_id,
+  branch_id,
+  name,
+  brand_name,
+  generic_name,
+  batch_number,
+  expiry_date,
+  quantity,
+  unit,
+  price,
+  cost_price,
+  nhis_code,
+  nhis_price,
+  nhis_unit,
+  is_nhis_listed,
+  medicine_access_level,
+  required_pharmacy_level,
+  supplier,
+  category,
+  description,
+  reorder_level,
+  status,
+  sale_on_return,
+  created_at,
+  updated_at
+`
+const REPORT_NHIS_CLAIM_SELECT_FIELDS = `
+  id,
+  organization_id,
+  branch_id,
+  claim_number,
+  patient_id,
+  member_no,
+  card_type,
+  hin,
+  surname,
+  other_names,
+  folder_no,
+  gender,
+  date_of_birth,
+  patient_address,
+  child_weight_kg,
+  service_date_from,
+  service_date_to,
+  submission_month,
+  status,
+  created_at,
+  updated_at,
+  total_amount,
+  ccc_no,
+  diagnosis,
+  diagnosis_details,
+  encounter_outcome,
+  no_medicine_reason,
+  no_lab_reason,
+  no_procedure_reason,
+  external_prescription_status,
+  referring_facility,
+  referral_code,
+  physician_name,
+  pre_auth_codes,
+  nhia_attendance_date,
+  nhia_auth_id,
+  nhia_auth_type,
+  nhia_new_ccc_status,
+  nhia_otac,
+  nhia_attendance_verification_status,
+  nhia_attendance_verification_source,
+  prescription_file_url,
+  prescription_file_path,
+  prescription_file_name,
+  prescription_file_type,
+  prescription_file_size,
+  prescription_document_type,
+  prescription_verified,
+  prescription_verified_by,
+  prescription_verified_at,
+  notes
+`
 const EPHARMACY_ORG_SELECT_FIELDS = `
   id,
   name,
@@ -476,6 +557,7 @@ const REPORT_AGGREGATE_PAGE_SIZE = 500
 const PATIENT_WORKSPACE_PATIENT_SELECT_FIELDS = [
   'id',
   'organization_id',
+  'branch_id',
   'full_name',
   'phone',
   'email',
@@ -484,6 +566,10 @@ const PATIENT_WORKSPACE_PATIENT_SELECT_FIELDS = [
   'address',
   'insurance_provider',
   'insurance_id',
+  'nhis_member_no',
+  'nhis_hin',
+  'folder_no',
+  'last_visit_at',
   'created_at',
 ].join(', ')
 
@@ -944,19 +1030,6 @@ const getActivityLogs = async (
   requireActivityLogAccess(requesterProfile)
 
   const limit = Math.min(parsePositiveInteger(payload.limit, 200), 500)
-  const { data: staffRows, error: staffError } = await adminClient
-    .from('users')
-    .select('id')
-    .eq('organization_id', organizationId)
-
-  if (staffError) {
-    throw staffError
-  }
-
-  const staffIds = (staffRows || [])
-    .map((row) => normalizeText(row.id))
-    .filter(Boolean)
-
   const auditLogSelect = 'id, actor_user_id, actor_email, event_type, entity_type, action, details, organization_id, created_at'
   const { data: organizationLogs, error: organizationLogsError } = await adminClient
     .from('audit_logs')
@@ -971,7 +1044,24 @@ const getActivityLogs = async (
 
   let logs = organizationLogs || []
 
-  if (logs.length < limit && staffIds.length) {
+  if (logs.length < limit) {
+    const { data: staffRows, error: staffError } = await adminClient
+      .from('users')
+      .select('id')
+      .eq('organization_id', organizationId)
+
+    if (staffError) {
+      throw staffError
+    }
+
+    const staffIds = (staffRows || [])
+      .map((row) => normalizeText(row.id))
+      .filter(Boolean)
+
+    if (!staffIds.length) {
+      return { logs }
+    }
+
     const { data: legacyActorLogs, error: legacyActorLogsError } = await adminClient
       .from('audit_logs')
       .select(auditLogSelect)
@@ -1396,7 +1486,7 @@ const getDrugs = async (
   let from = 0
   let query = adminClient
     .from('drugs')
-    .select('*')
+    .select(INVENTORY_DRUG_SELECT_FIELDS)
     .eq('organization_id', organizationId)
     .eq('status', 'active')
 
@@ -5230,7 +5320,7 @@ const getReportNhisPage = async (
 
   let query = adminClient
     .from('nhis_claims')
-    .select('*', { count: 'exact' })
+    .select(REPORT_NHIS_CLAIM_SELECT_FIELDS, { count: 'exact' })
     .eq('organization_id', organizationId)
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1)
@@ -5342,7 +5432,7 @@ const getReportBundle = async (
     includeClaims ? claimsQuery : Promise.resolve({ data: [], error: null }),
     adminClient
       .from('patients')
-      .select('*')
+      .select(PATIENT_WORKSPACE_PATIENT_SELECT_FIELDS)
       .eq('organization_id', organizationId)
       .order('created_at', { ascending: false })
       .limit(reportLimit),
@@ -5411,7 +5501,7 @@ const getReportBundle = async (
   ] = await Promise.allSettled([
     adminClient
       .from('nhis_claims')
-      .select('*', { count: 'exact' })
+      .select(REPORT_NHIS_CLAIM_SELECT_FIELDS, { count: 'exact' })
       .eq('organization_id', organizationId)
       .gte('service_date_from', startDate || '1900-01-01')
       .lte('service_date_from', endDate || '2999-12-31')
@@ -5502,7 +5592,7 @@ const getReportBundle = async (
     if (missingClaimIds.length) {
       let matchingClaimsQuery = adminClient
         .from('nhis_claims')
-        .select('*')
+        .select(REPORT_NHIS_CLAIM_SELECT_FIELDS)
         .eq('organization_id', organizationId)
         .in('id', missingClaimIds)
         .order('created_at', { ascending: false })
@@ -5670,7 +5760,7 @@ const getReportDrugMatches = async (
   if (matchingClaimIds.length) {
     let claimsQuery = adminClient
       .from('nhis_claims')
-      .select('*')
+      .select(REPORT_NHIS_CLAIM_SELECT_FIELDS)
       .eq('organization_id', organizationId)
       .in('id', matchingClaimIds)
       .order('created_at', { ascending: false })

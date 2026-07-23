@@ -16,6 +16,34 @@ export const DEFAULT_MEDICATION_BATCH_PREFIX = 'PDF-IMP-'
 const DRUGS_PER_PAGE = 1000
 const DEFAULT_SEARCH_LIMIT = 30
 const MAX_SEARCH_LIMIT = 100
+const DRUG_LIST_SELECT = [
+  'id',
+  'organization_id',
+  'branch_id',
+  'name',
+  'brand_name',
+  'generic_name',
+  'batch_number',
+  'expiry_date',
+  'quantity',
+  'unit',
+  'price',
+  'cost_price',
+  'nhis_code',
+  'nhis_price',
+  'nhis_unit',
+  'is_nhis_listed',
+  'medicine_access_level',
+  'required_pharmacy_level',
+  'supplier',
+  'category',
+  'description',
+  'reorder_level',
+  'status',
+  'sale_on_return',
+  'created_at',
+  'updated_at',
+].join(', ')
 
 export const isDefaultCatalogDrug = (drug) =>
   String(drug?.batch_number || drug?.batch || '').toUpperCase().startsWith(DEFAULT_MEDICATION_BATCH_PREFIX)
@@ -85,7 +113,7 @@ const getAllDrugsDirectly = async (branchId = null) => {
     const to = from + DRUGS_PER_PAGE - 1
     let query = supabase
       .from('drugs')
-      .select('*')
+      .select(DRUG_LIST_SELECT)
       .order('name')
       .order('id')
 
@@ -168,7 +196,7 @@ const getSearchLimit = (value) => {
 export const getDrugById = async (id) => {
   const { data, error } = await supabase
     .from('drugs')
-    .select('*')
+    .select(DRUG_LIST_SELECT)
     .eq('id', id)
     .single()
   
@@ -370,7 +398,7 @@ export const searchDrugs = async (searchTerm, options = {}) => {
 
   let query = supabase
     .from('drugs')
-    .select('*')
+    .select(DRUG_LIST_SELECT)
     .eq('status', 'active')
     .order('name')
     .order('id')
@@ -428,7 +456,7 @@ export const getLowStockDrugs = async () => {
     cloud: async () => {
       const { data, error } = await supabase
         .from('low_stock_drugs')
-        .select('*')
+        .select(DRUG_LIST_SELECT)
 
       if (error) throw error
       return (data || []).filter(shouldAlertForDrug)
@@ -456,7 +484,7 @@ export const getExpiringDrugs = async () => {
     cloud: async () => {
       const { data, error } = await supabase
         .from('expiring_soon_drugs')
-        .select('*')
+        .select(DRUG_LIST_SELECT)
 
       if (error) throw error
       return (data || []).filter(shouldAlertForDrug)
@@ -470,7 +498,7 @@ export const getExpiringDrugs = async () => {
 export const getExpiredDrugs = async () => {
   const { data, error } = await supabase
     .from('expired_drugs')
-    .select('*')
+    .select(DRUG_LIST_SELECT)
   
   if (error) throw error
   return (data || []).filter(shouldAlertForDrug)
