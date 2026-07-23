@@ -107,6 +107,41 @@ That request came from the patient workspace NHIS-claim patient merge, not from 
 
 No live browser/API waterfall was captured in this environment because measuring authenticated production pages requires a real logged-in session and browser instrumentation against the deployed app.
 
+## NHIS Issue Query Plan
+
+Follow-up optimization removed embedded attachment payloads from NHIS list and issue-count queries. Ordinary claim lists and issue dashboards must not select `claimit_attachment_base64`; that field remains available only to full claim/export/submission paths that actually need the document payload.
+
+Code paths:
+
+- Main claims list: `getNhisClaimsPage()` -> `fetchNhisClaimsPageFromSupabase()` in `src/services/nhisService.js`
+- Issue-filtered claim tabs: `fetchNhisIssueFilteredClaimsPageFromSupabase()`
+- Issue badge counts: `getNhisClaimIssueCountsFromSupabase()`
+- Issue rules/specs: `getNhisIssueQuerySpecs()`
+
+Issue cards and filters:
+
+| UI count/filter | Query design | Attachment payload selected? | Supporting index |
+| --- | --- | --- | --- |
+| Missing attachment | Exact count over export-ready statuses where prescription URL/path/name and Base64 are all null | No | `idx_nhis_claims_issue_missing_prescription` |
+| Set attachment type | Exact counts over attached claims, comparing attached claims vs claims marked as prescription documents | No | `idx_nhis_claims_issue_prescription_metadata` |
+| Unverified prescription | Exact counts over attached prescription documents where verification is null/false | No | `idx_nhis_claims_issue_prescription_metadata` |
+| Incomplete intake | Exact count over intake statuses minus claims with attachment metadata and at least one medicine row | No | `idx_nhis_claims_issue_intake_status` plus existing medicine relationship indexes |
+| All issues | Composes the lightweight issue specs above, then pages within those specs instead of scanning large browser-side batches | No | Same indexes as each issue spec |
+
+Expected complexity:
+
+- The main claims list remains page-sized and server-paginated.
+- Issue badges are server-side exact counts with narrow predicates.
+- Issue tabs fetch only the visible page range instead of loading thousands of claims into the browser.
+- A count failure should not break the main claims list; the user should see a retryable issue-count warning while normal claim work continues.
+
+Operational verification after deployment:
+
+- Browser Network tab should show no `claimit_attachment_base64` in NHIS list or issue-count `select` parameters.
+- NHIS issue tabs should not request 1,000 to 100,000 claim rows just to calculate counts.
+- HTTP 500 or statement-timeout errors from issue counts should no longer block the claims table.
+- Pagination should be checked on page 1, middle pages, and the last page for missing or repeated claims.
+
 ## Database Indexes Added
 
 Migration added:
@@ -114,6 +149,7 @@ Migration added:
 ```text
 supabase/migrations/20260624153000_optimize_nhis_claim_pagination.sql
 supabase/migrations/20260624165000_add_nhis_claims_page_rpc.sql
+supabase/migrations/20260723010000_optimize_nhis_issue_filter_indexes.sql
 ```
 
 Indexes added for:
