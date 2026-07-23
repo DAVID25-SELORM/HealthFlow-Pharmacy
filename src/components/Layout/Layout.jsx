@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { isSupabaseConfigured } from '../../lib/supabase'
-import { getPharmacySettings } from '../../services/settingsService'
+import { getPharmacyThemeSettings } from '../../services/settingsService'
 import Seo from '../Seo/Seo'
 import ProductionMetricsMonitor from '../Diagnostics/ProductionMetricsMonitor'
 import Sidebar from './Sidebar'
@@ -33,7 +33,7 @@ const Layout = () => {
     }
 
     let cancelled = false
-    getPharmacySettings()
+    getPharmacyThemeSettings()
       .then((settings) => {
         if (cancelled || !settings) return
         const root = document.documentElement
