@@ -76,9 +76,10 @@ describe('offlineInstallerReleaseService', () => {
       enabled: true,
     })
     expect(from).toHaveBeenCalledWith('offline_installer_releases')
-    expect(query.eq).toHaveBeenCalledWith('state', 'published')
     expect(query.eq).toHaveBeenCalledWith('enabled', true)
-    expect(query.eq).toHaveBeenCalledWith('channel', 'stable')
+    expect(query.eq).not.toHaveBeenCalledWith('state', 'published')
+    expect(query.eq).not.toHaveBeenCalledWith('channel', 'stable')
+    expect(query.select).toHaveBeenCalledWith(expect.not.stringContaining('state'))
   })
 
   it('returns null when runtime release loading fails so env fallback can continue', async () => {
@@ -87,14 +88,8 @@ describe('offlineInstallerReleaseService', () => {
     await expect(getActiveOfflineInstallerRelease()).resolves.toBeNull()
   })
 
-  it('falls back to legacy release fields when lifecycle columns are not migrated yet', async () => {
-    const currentQuery = makeQuery({
-      error: {
-        code: '42703',
-        message: 'column offline_installer_releases.state does not exist',
-      },
-    })
-    const legacyQuery = makeQuery({
+  it('uses schema-compatible fields for runtime reads before lifecycle columns are migrated', async () => {
+    const query = makeQuery({
       data: {
         id: 'release-legacy',
         version: '1.4.4',
@@ -107,7 +102,7 @@ describe('offlineInstallerReleaseService', () => {
         published_at: '2026-07-23T00:00:00Z',
       },
     })
-    from.mockReturnValueOnce(currentQuery).mockReturnValueOnce(legacyQuery)
+    from.mockReturnValue(query)
 
     await expect(getActiveOfflineInstallerRelease()).resolves.toMatchObject({
       id: 'release-legacy',
@@ -115,19 +110,13 @@ describe('offlineInstallerReleaseService', () => {
       enabled: true,
       version: '1.4.4',
     })
-    expect(currentQuery.eq).toHaveBeenCalledWith('state', 'published')
-    expect(legacyQuery.eq).toHaveBeenCalledWith('enabled', true)
-    expect(legacyQuery.select).toHaveBeenCalledWith(expect.not.stringContaining('state'))
+    expect(query.eq).toHaveBeenCalledWith('enabled', true)
+    expect(query.eq).not.toHaveBeenCalledWith('state', 'published')
+    expect(query.select).toHaveBeenCalledWith(expect.not.stringContaining('state'))
   })
 
-  it('lists legacy release rows when lifecycle columns are not migrated yet', async () => {
-    const currentQuery = makeQuery({
-      error: {
-        code: '42703',
-        message: 'column offline_installer_releases.state does not exist',
-      },
-    })
-    const legacyQuery = makeQuery({
+  it('lists release rows using schema-compatible fields before lifecycle columns are migrated', async () => {
+    const query = makeQuery({
       data: [{
         id: 'release-legacy',
         version: '1.4.4',
@@ -139,10 +128,10 @@ describe('offlineInstallerReleaseService', () => {
         published_at: '2026-07-23T00:00:00Z',
       }],
     })
-    from.mockReturnValueOnce(currentQuery).mockReturnValueOnce(legacyQuery)
+    from.mockReturnValue(query)
 
     await expect(listOfflineInstallerReleases()).resolves.toHaveLength(1)
-    expect(legacyQuery.select).toHaveBeenCalledWith(expect.not.stringContaining('state'))
+    expect(query.select).toHaveBeenCalledWith(expect.not.stringContaining('state'))
   })
 
   it('normalizes release form input for saving', () => {

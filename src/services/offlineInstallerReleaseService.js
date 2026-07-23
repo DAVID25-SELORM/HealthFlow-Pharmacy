@@ -65,21 +65,6 @@ export const INSTALLER_RELEASE_STATES = {
 const isPublishedRelease = (row) =>
   row?.state === INSTALLER_RELEASE_STATES.PUBLISHED || row?.enabled === true
 
-const isMissingInstallerLifecycleColumn = (error) => {
-  const message = String(error?.message || '').toLowerCase()
-  return (
-    error?.code === '42703' &&
-    (
-      message.includes('offline_installer_releases.state') ||
-      message.includes('offline_installer_releases.channel') ||
-      message.includes('offline_installer_releases.validation_status') ||
-      message.includes('offline_installer_releases.manifest') ||
-      message.includes('offline_installer_releases.storage_bucket') ||
-      message.includes('offline_installer_releases.storage_path')
-    )
-  )
-}
-
 const normalizeInstallerRelease = (row, { includeDisabled = false } = {}) => {
   if (!row || (!includeDisabled && !isPublishedRelease(row))) return null
 
@@ -121,25 +106,13 @@ const normalizeInstallerRelease = (row, { includeDisabled = false } = {}) => {
 }
 
 export const getActiveOfflineInstallerRelease = async () => {
-  let { data, error } = await supabase
+  const { data, error } = await supabase
     .from('offline_installer_releases')
-    .select(OFFLINE_INSTALLER_RELEASE_FIELDS)
-    .eq('state', INSTALLER_RELEASE_STATES.PUBLISHED)
+    .select(OFFLINE_INSTALLER_RELEASE_LEGACY_FIELDS)
     .eq('enabled', true)
-    .eq('channel', 'stable')
     .order('published_at', { ascending: false, nullsFirst: false })
     .limit(1)
     .maybeSingle()
-
-  if (error && isMissingInstallerLifecycleColumn(error)) {
-    ;({ data, error } = await supabase
-      .from('offline_installer_releases')
-      .select(OFFLINE_INSTALLER_RELEASE_LEGACY_FIELDS)
-      .eq('enabled', true)
-      .order('published_at', { ascending: false, nullsFirst: false })
-      .limit(1)
-      .maybeSingle())
-  }
 
   if (error) {
     console.warn('[Offline installer] Runtime release config could not be loaded.', {
@@ -155,19 +128,11 @@ export const getActiveOfflineInstallerRelease = async () => {
 }
 
 export const listOfflineInstallerReleases = async () => {
-  let { data, error } = await supabase
+  const { data, error } = await supabase
     .from('offline_installer_releases')
-    .select(OFFLINE_INSTALLER_RELEASE_FIELDS)
+    .select(OFFLINE_INSTALLER_RELEASE_LEGACY_FIELDS)
     .order('published_at', { ascending: false, nullsFirst: false })
     .order('created_at', { ascending: false })
-
-  if (error && isMissingInstallerLifecycleColumn(error)) {
-    ;({ data, error } = await supabase
-      .from('offline_installer_releases')
-      .select(OFFLINE_INSTALLER_RELEASE_LEGACY_FIELDS)
-      .order('published_at', { ascending: false, nullsFirst: false })
-      .order('created_at', { ascending: false }))
-  }
 
   if (error) throw error
   return (data || []).map((row) => normalizeInstallerRelease(row, { includeDisabled: true })).filter(Boolean)
