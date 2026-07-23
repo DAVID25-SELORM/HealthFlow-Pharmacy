@@ -6007,7 +6007,9 @@ Deno.serve(async (request) => {
     }
 
     if (action === 'get_report_health') {
-      await requireTierFeature(adminClient, organizationId, 'reports')
+      if (organizationId) {
+        await requireTierFeature(adminClient, organizationId, 'reports')
+      }
       return json(await getReportHealth(adminClient, requesterProfile, organizationId))
     }
 
