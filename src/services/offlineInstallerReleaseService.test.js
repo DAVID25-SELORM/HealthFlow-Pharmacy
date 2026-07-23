@@ -23,6 +23,7 @@ import {
   enableOfflineInstallerRelease,
   getActiveOfflineInstallerRelease,
   INSTALLER_RELEASE_STATES,
+  listOfflineInstallerReleases,
   saveOfflineInstallerRelease,
   requestOfflineInstallerDownload,
   validateOfflineInstallerReleasePayload,
@@ -39,6 +40,7 @@ const makeQuery = ({ data = null, error = null } = {}) => {
     update: vi.fn(() => query),
     upsert: vi.fn(() => query),
     single: vi.fn(async () => ({ data, error })),
+    then: vi.fn((resolve, reject) => Promise.resolve({ data, error }).then(resolve, reject)),
   }
   return query
 }
@@ -83,6 +85,64 @@ describe('offlineInstallerReleaseService', () => {
     from.mockReturnValue(makeQuery({ error: { code: '42P01', message: 'missing table' } }))
 
     await expect(getActiveOfflineInstallerRelease()).resolves.toBeNull()
+  })
+
+  it('falls back to legacy release fields when lifecycle columns are not migrated yet', async () => {
+    const currentQuery = makeQuery({
+      error: {
+        code: '42703',
+        message: 'column offline_installer_releases.state does not exist',
+      },
+    })
+    const legacyQuery = makeQuery({
+      data: {
+        id: 'release-legacy',
+        version: '1.4.4',
+        download_url: 'https://downloads.healthflowcloud.com/HealthFlow-Offline-Installer-1.4.4.zip',
+        file_name: 'HealthFlow-Offline-Installer-1.4.4.zip',
+        file_size: 47219500,
+        sha256: 'a'.repeat(64),
+        release_notes: 'Legacy release row',
+        enabled: true,
+        published_at: '2026-07-23T00:00:00Z',
+      },
+    })
+    from.mockReturnValueOnce(currentQuery).mockReturnValueOnce(legacyQuery)
+
+    await expect(getActiveOfflineInstallerRelease()).resolves.toMatchObject({
+      id: 'release-legacy',
+      state: 'published',
+      enabled: true,
+      version: '1.4.4',
+    })
+    expect(currentQuery.eq).toHaveBeenCalledWith('state', 'published')
+    expect(legacyQuery.eq).toHaveBeenCalledWith('enabled', true)
+    expect(legacyQuery.select).toHaveBeenCalledWith(expect.not.stringContaining('state'))
+  })
+
+  it('lists legacy release rows when lifecycle columns are not migrated yet', async () => {
+    const currentQuery = makeQuery({
+      error: {
+        code: '42703',
+        message: 'column offline_installer_releases.state does not exist',
+      },
+    })
+    const legacyQuery = makeQuery({
+      data: [{
+        id: 'release-legacy',
+        version: '1.4.4',
+        download_url: 'https://downloads.healthflowcloud.com/HealthFlow-Offline-Installer-1.4.4.zip',
+        file_name: 'HealthFlow-Offline-Installer-1.4.4.zip',
+        file_size: 47219500,
+        sha256: 'a'.repeat(64),
+        enabled: true,
+        published_at: '2026-07-23T00:00:00Z',
+      }],
+    })
+    from.mockReturnValueOnce(currentQuery).mockReturnValueOnce(legacyQuery)
+
+    await expect(listOfflineInstallerReleases()).resolves.toHaveLength(1)
+    expect(legacyQuery.select).toHaveBeenCalledWith(expect.not.stringContaining('state'))
   })
 
   it('normalizes release form input for saving', () => {

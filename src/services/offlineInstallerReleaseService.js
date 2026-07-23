@@ -36,6 +36,23 @@ export const OFFLINE_INSTALLER_RELEASE_FIELDS = [
   'updated_by',
 ].join(',')
 
+const OFFLINE_INSTALLER_RELEASE_LEGACY_FIELDS = [
+  'id',
+  'version',
+  'download_url',
+  'file_name',
+  'file_size',
+  'sha256',
+  'release_notes',
+  'enabled',
+  'published_at',
+  'published_by',
+  'created_at',
+  'created_by',
+  'updated_at',
+  'updated_by',
+].join(',')
+
 export const INSTALLER_RELEASE_STATES = {
   DRAFT: 'draft',
   UPLOADED: 'uploaded',
@@ -47,6 +64,21 @@ export const INSTALLER_RELEASE_STATES = {
 
 const isPublishedRelease = (row) =>
   row?.state === INSTALLER_RELEASE_STATES.PUBLISHED || row?.enabled === true
+
+const isMissingInstallerLifecycleColumn = (error) => {
+  const message = String(error?.message || '').toLowerCase()
+  return (
+    error?.code === '42703' &&
+    (
+      message.includes('offline_installer_releases.state') ||
+      message.includes('offline_installer_releases.channel') ||
+      message.includes('offline_installer_releases.validation_status') ||
+      message.includes('offline_installer_releases.manifest') ||
+      message.includes('offline_installer_releases.storage_bucket') ||
+      message.includes('offline_installer_releases.storage_path')
+    )
+  )
+}
 
 const normalizeInstallerRelease = (row, { includeDisabled = false } = {}) => {
   if (!row || (!includeDisabled && !isPublishedRelease(row))) return null
@@ -89,7 +121,7 @@ const normalizeInstallerRelease = (row, { includeDisabled = false } = {}) => {
 }
 
 export const getActiveOfflineInstallerRelease = async () => {
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('offline_installer_releases')
     .select(OFFLINE_INSTALLER_RELEASE_FIELDS)
     .eq('state', INSTALLER_RELEASE_STATES.PUBLISHED)
@@ -98,6 +130,16 @@ export const getActiveOfflineInstallerRelease = async () => {
     .order('published_at', { ascending: false, nullsFirst: false })
     .limit(1)
     .maybeSingle()
+
+  if (error && isMissingInstallerLifecycleColumn(error)) {
+    ;({ data, error } = await supabase
+      .from('offline_installer_releases')
+      .select(OFFLINE_INSTALLER_RELEASE_LEGACY_FIELDS)
+      .eq('enabled', true)
+      .order('published_at', { ascending: false, nullsFirst: false })
+      .limit(1)
+      .maybeSingle())
+  }
 
   if (error) {
     console.warn('[Offline installer] Runtime release config could not be loaded.', {
@@ -113,11 +155,19 @@ export const getActiveOfflineInstallerRelease = async () => {
 }
 
 export const listOfflineInstallerReleases = async () => {
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('offline_installer_releases')
     .select(OFFLINE_INSTALLER_RELEASE_FIELDS)
     .order('published_at', { ascending: false, nullsFirst: false })
     .order('created_at', { ascending: false })
+
+  if (error && isMissingInstallerLifecycleColumn(error)) {
+    ;({ data, error } = await supabase
+      .from('offline_installer_releases')
+      .select(OFFLINE_INSTALLER_RELEASE_LEGACY_FIELDS)
+      .order('published_at', { ascending: false, nullsFirst: false })
+      .order('created_at', { ascending: false }))
+  }
 
   if (error) throw error
   return (data || []).map((row) => normalizeInstallerRelease(row, { includeDisabled: true })).filter(Boolean)
