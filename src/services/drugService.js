@@ -456,7 +456,7 @@ export const getLowStockDrugs = async () => {
     cloud: async () => {
       const { data, error } = await supabase
         .from('low_stock_drugs')
-        .select(DRUG_LIST_SELECT)
+        .select('*')
 
       if (error) throw error
       return (data || []).filter(shouldAlertForDrug)
@@ -484,7 +484,7 @@ export const getExpiringDrugs = async () => {
     cloud: async () => {
       const { data, error } = await supabase
         .from('expiring_soon_drugs')
-        .select(DRUG_LIST_SELECT)
+        .select('*')
 
       if (error) throw error
       return (data || []).filter(shouldAlertForDrug)
@@ -498,7 +498,7 @@ export const getExpiringDrugs = async () => {
 export const getExpiredDrugs = async () => {
   const { data, error } = await supabase
     .from('expired_drugs')
-    .select(DRUG_LIST_SELECT)
+    .select('*')
   
   if (error) throw error
   return (data || []).filter(shouldAlertForDrug)
