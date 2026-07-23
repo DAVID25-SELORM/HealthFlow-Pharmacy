@@ -51,12 +51,12 @@ export const TenantProvider = ({ children }) => {
         billingStatus: 'platform',
         supportLevel: 'enterprise',
         organizationType: 'platform',
-        canUseClaims: true,
-        canUsePurchases: true,
-        canUseNhis: true,
-        canUseNhisTopups: true,
-        canUseAccounting: true,
-        canUseMultiBranch: true,
+        canUseClaims: false,
+        canUsePurchases: false,
+        canUseNhis: false,
+        canUseNhisTopups: false,
+        canUseAccounting: false,
+        canUseMultiBranch: false,
         loading: false,
       }
     }
