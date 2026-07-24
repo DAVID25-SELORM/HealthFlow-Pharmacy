@@ -84,6 +84,12 @@
   white-space: nowrap;
 }
 
+.manifest-import-button.disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+  pointer-events: none;
+}
+
 .manifest-import-button input {
   display: none;
 }

@@ -3,6 +3,10 @@ import { validateHealthflowInstallerUrl } from '../config/branchUpdateConfig'
 import { tryLogAuditEvent } from './auditService'
 import { invokeTierAccess } from './tierAccessService'
 
+export const OFFLINE_INSTALLER_PRIVATE_BUCKET = 'healthflow-offline-installers'
+export const OFFLINE_INSTALLER_FILE_PATTERN = /^HealthFlow-Offline-Installer-([0-9A-Za-z][0-9A-Za-z._-]*)\.zip$/
+const OFFLINE_INSTALLER_PRIVATE_DOWNLOAD_BASE = 'https://healthflowcloud.com/offline-installer'
+
 export const OFFLINE_INSTALLER_RELEASE_FIELDS = [
   'id',
   'version',
@@ -185,10 +189,101 @@ export const buildOfflineInstallerReleaseFromManifest = (manifest) => {
   }
 }
 
-export const validateOfflineInstallerReleasePayload = (payload, { requireUrl = true } = {}) => {
+export const extractOfflineInstallerVersionFromFileName = (fileName) => {
+  const normalized = String(fileName || '').trim()
+  const match = normalized.match(OFFLINE_INSTALLER_FILE_PATTERN)
+  if (!match) {
+    throw new Error('Installer ZIP must be named HealthFlow-Offline-Installer-<version>.zip.')
+  }
+  return match[1]
+}
+
+export const calculateOfflineInstallerSha256 = async (file) => {
+  if (!file || typeof file.arrayBuffer !== 'function') {
+    throw new Error('Select a valid installer ZIP file.')
+  }
+  const buffer = await file.arrayBuffer()
+  const digest = await crypto.subtle.digest('SHA-256', buffer)
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('')
+}
+
+export const buildOfflineInstallerReleaseFromZipFile = async (
+  file,
+  {
+    bucket = OFFLINE_INSTALLER_PRIVATE_BUCKET,
+    channel = 'stable',
+    releaseNotes = '',
+  } = {}
+) => {
+  const fileName = String(file?.name || '').trim()
+  const version = extractOfflineInstallerVersionFromFileName(fileName)
+  if (!fileName.toLowerCase().endsWith('.zip')) {
+    throw new Error('Offline installer upload must be a ZIP file.')
+  }
+  const fileSize = Number(file?.size || 0)
+  if (!Number.isFinite(fileSize) || fileSize <= 0) {
+    throw new Error('Offline installer ZIP is empty.')
+  }
+  const sha256 = await calculateOfflineInstallerSha256(file)
+  const storagePath = `releases/${version}/${fileName}`
+  const downloadUrl = `${OFFLINE_INSTALLER_PRIVATE_DOWNLOAD_BASE}/${encodeURIComponent(fileName)}`
+  return {
+    version,
+    downloadUrl,
+    fileName,
+    fileSize,
+    sha256,
+    releaseNotes,
+    state: INSTALLER_RELEASE_STATES.UPLOADED,
+    channel,
+    validationStatus: 'not_validated',
+    validationCheckedAt: null,
+    validationError: null,
+    manifest: {
+      version,
+      file_name: fileName,
+      file_size_bytes: fileSize,
+      sha256,
+      installer_type: 'offline-installer',
+      storage_bucket: bucket,
+      storage_path: storagePath,
+      uploaded_at: new Date().toISOString(),
+    },
+    storageBucket: bucket,
+    storagePath,
+    installerType: 'offline-installer',
+  }
+}
+
+export const uploadOfflineInstallerReleaseZip = async (
+  file,
+  options = {}
+) => {
+  const release = await buildOfflineInstallerReleaseFromZipFile(file, options)
+  const { error } = await supabase.storage
+    .from(release.storageBucket)
+    .upload(release.storagePath, file, {
+      cacheControl: '3600',
+      contentType: 'application/zip',
+      upsert: false,
+    })
+
+  if (error) throw error
+  return release
+}
+
+export const validateOfflineInstallerReleasePayload = (
+  payload,
+  { requireUrl = true, requireReleaseNotes = false } = {}
+) => {
   const validation = validateHealthflowInstallerUrl(payload.download_url)
   if (requireUrl && !validation.valid) {
     throw new Error(`Installer download URL is invalid: ${validation.reason}.`)
+  }
+  if (requireReleaseNotes && !String(payload.release_notes || '').trim()) {
+    throw new Error('Release notes are required before publishing an installer release.')
   }
   if (!payload.version || !/^[0-9A-Za-z][0-9A-Za-z._-]*$/.test(payload.version)) {
     throw new Error('Installer version is missing or invalid.')
@@ -236,6 +331,7 @@ export const saveOfflineInstallerRelease = async (release, { validate = false } 
     throw new Error('Save as validated first, then publish the release.')
   }
   if (validate) {
+    validateOfflineInstallerReleasePayload(payload, { requireUrl: true, requireReleaseNotes: true })
     payload.state = INSTALLER_RELEASE_STATES.VALIDATED
     payload.validation_status = 'valid'
     payload.validation_checked_at = new Date().toISOString()
@@ -283,7 +379,7 @@ export const validateSavedOfflineInstallerRelease = async (id) => {
 
   try {
     const payload = buildOfflineInstallerReleasePayload(row)
-    validateOfflineInstallerReleasePayload(payload, { requireUrl: true })
+    validateOfflineInstallerReleasePayload(payload, { requireUrl: true, requireReleaseNotes: true })
     if ([INSTALLER_RELEASE_STATES.DISABLED, INSTALLER_RELEASE_STATES.SUPERSEDED].includes(row.state)) {
       throw new Error('Disabled or superseded releases cannot be validated for publishing.')
     }

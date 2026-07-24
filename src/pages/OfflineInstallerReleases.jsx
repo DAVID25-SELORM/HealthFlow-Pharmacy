@@ -9,6 +9,7 @@ import {
   INSTALLER_RELEASE_STATES,
   listOfflineInstallerReleases,
   saveOfflineInstallerRelease,
+  uploadOfflineInstallerReleaseZip,
   validateSavedOfflineInstallerRelease,
 } from '../services/offlineInstallerReleaseService'
 import './OfflineInstallerReleases.css'
@@ -92,6 +93,27 @@ export default function OfflineInstallerReleases() {
       notify('Installer manifest imported. Add the HTTPS ZIP URL, then save and validate.', 'success')
     } catch (error) {
       notify(error.message || 'Unable to import installer manifest.', 'error')
+    }
+  }
+
+  const uploadInstallerZip = async (event) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    setSaving(true)
+    try {
+      const uploadedRelease = await uploadOfflineInstallerReleaseZip(file, {
+        releaseNotes: form.releaseNotes,
+        channel: form.channel || 'stable',
+      })
+      await saveOfflineInstallerRelease(uploadedRelease)
+      setForm(blankForm)
+      await loadReleases()
+      notify('Installer ZIP uploaded privately. Validate it, then publish when ready.', 'success')
+    } catch (error) {
+      notify(error.message || 'Unable to upload installer ZIP.', 'error')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -221,6 +243,19 @@ export default function OfflineInstallerReleases() {
 
       <section className="offline-installer-release-card">
         <h2>Register Installer Version</h2>
+        <div className="manifest-import-panel installer-upload-panel">
+          <div>
+            <strong>Upload installer ZIP</strong>
+            <p>
+              Choose <code>HealthFlow-Offline-Installer-&lt;version&gt;.zip</code>. HealthFlow calculates the version,
+              file size, and SHA-256, stores the ZIP privately, then creates a draft release.
+            </p>
+          </div>
+          <label className={`btn btn-primary manifest-import-button${saving ? ' disabled' : ''}`}>
+            <UploadCloud size={16} /> Upload ZIP
+            <input type="file" accept="application/zip,.zip" onChange={uploadInstallerZip} disabled={saving} />
+          </label>
+        </div>
         <div className="manifest-import-panel">
           <div>
             <strong>Import release manifest</strong>

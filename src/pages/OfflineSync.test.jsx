@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   registerBranchSyncClient: vi.fn(),
   deactivateBranchSyncClient: vi.fn(),
   getActiveOfflineInstallerRelease: vi.fn(),
+  requestOfflineInstallerDownload: vi.fn(),
 }))
 
 vi.mock('../context/AuthContext', () => ({
@@ -70,6 +71,7 @@ vi.mock('../services/offlinePosCache', () => ({
 
 vi.mock('../services/offlineInstallerReleaseService', () => ({
   getActiveOfflineInstallerRelease: mocks.getActiveOfflineInstallerRelease,
+  requestOfflineInstallerDownload: mocks.requestOfflineInstallerDownload,
 }))
 
 describe('OfflineSync branch registration', () => {
@@ -77,6 +79,7 @@ describe('OfflineSync branch registration', () => {
     vi.clearAllMocks()
     mocks.getBranchServerConfig.mockReturnValue({ enabled: false, token: '', url: '' })
     mocks.getActiveOfflineInstallerRelease.mockResolvedValue(null)
+    mocks.requestOfflineInstallerDownload.mockResolvedValue(null)
     mocks.listBranchSyncSetupOptions.mockResolvedValue({
       organizations: [
         {
@@ -391,5 +394,66 @@ describe('OfflineSync branch registration', () => {
       'Installer availability could not be verified before opening. Proceeding with the configured download.',
       'warning'
     )
+  })
+
+  it('uses a secure signed URL for runtime installer releases', async () => {
+    mocks.getActiveOfflineInstallerRelease.mockResolvedValue({
+      id: 'release-1',
+      version: '2.1.0',
+      downloadUrl: 'https://healthflowcloud.com/offline-installer/HealthFlow-Offline-Installer-2.1.0.zip',
+      fileName: 'HealthFlow-Offline-Installer-2.1.0.zip',
+      fileSize: 180000000,
+      publishedAt: '2026-07-24T00:00:00Z',
+    })
+    mocks.requestOfflineInstallerDownload.mockResolvedValue({
+      downloadUrl: 'https://signed.example.test/installer.zip?token=short-lived',
+      expiresAt: '2026-07-24T00:10:00Z',
+    })
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+
+    render(<OfflineSync />)
+
+    await screen.findByText('Offline installer 2.1.0 available')
+    fireEvent.click(screen.getByRole('button', { name: 'Download and Install' }))
+
+    await waitFor(() => expect(mocks.requestOfflineInstallerDownload).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(openSpy).toHaveBeenCalledWith(
+      'https://signed.example.test/installer.zip?token=short-lived',
+      '_blank',
+      'noopener,noreferrer'
+    ))
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://signed.example.test/installer.zip?token=short-lived',
+      expect.objectContaining({ method: 'HEAD' })
+    )
+  })
+
+  it('does not fall back to a stored runtime URL when secure download preparation fails', async () => {
+    mocks.getActiveOfflineInstallerRelease.mockResolvedValue({
+      id: 'release-1',
+      version: '2.1.0',
+      downloadUrl: 'https://healthflowcloud.com/offline-installer/HealthFlow-Offline-Installer-2.1.0.zip',
+      fileName: 'HealthFlow-Offline-Installer-2.1.0.zip',
+      fileSize: 180000000,
+      publishedAt: '2026-07-24T00:00:00Z',
+    })
+    mocks.requestOfflineInstallerDownload.mockRejectedValue(new Error('storage unavailable'))
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+
+    render(<OfflineSync />)
+
+    await screen.findByText('Offline installer 2.1.0 available')
+    fireEvent.click(screen.getByRole('button', { name: 'Download and Install' }))
+
+    await waitFor(() => expect(mocks.notify).toHaveBeenCalledWith(
+      'Unable to prepare the secure installer download. Please contact HealthFlow support.',
+      'error'
+    ))
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(openSpy).not.toHaveBeenCalled()
   })
 })

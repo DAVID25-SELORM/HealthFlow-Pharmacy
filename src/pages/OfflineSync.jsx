@@ -892,11 +892,16 @@ export default function OfflineSync() {
         const download = await requestOfflineInstallerDownload()
         if (download?.downloadUrl) {
           downloadUrl = download.downloadUrl
+        } else {
+          notify('Unable to prepare the secure installer download. Please contact HealthFlow support.', 'error')
+          return
         }
       } catch (error) {
-        console.warn('[Offline installer] Secure download request failed; falling back to configured URL.', {
+        console.warn('[Offline installer] Secure download request failed.', {
           message: error?.message || 'request failed',
         })
+        notify('Unable to prepare the secure installer download. Please contact HealthFlow support.', 'error')
+        return
       }
     }
 
