@@ -4884,8 +4884,69 @@ const hydrateClaimsWithMedicineLines = async (claims = []) => {
   }))
 }
 
+const resolveNhisUserNameMap = async (userIds = []) => {
+  if (!userIds.length || shouldUseBranchServer()) return new Map()
+  const uniqueIds = [...new Set(userIds.map(normalizeText).filter(Boolean))]
+  if (!uniqueIds.length) return new Map()
+
+  const users = []
+  for (const userIdBatch of chunkArray(uniqueIds, 100)) {
+    const { data, error } = await supabase
+      .from('users')
+      .select('id, full_name, email')
+      .in('id', userIdBatch)
+
+    if (error) return new Map()
+    users.push(...(data || []))
+  }
+
+  return new Map(users.map((row) => [
+    normalizeText(row.id),
+    normalizeText(row.full_name || row.email || row.id),
+  ]))
+}
+
+const hydrateClaimsWithServingActorNames = async (claims = []) => {
+  if (!claims.length || shouldUseBranchServer()) return claims
+
+  const userIds = []
+  claims.forEach((claim) => {
+    userIds.push(
+      claim.direct_served_by,
+      claim.prescription_entered_by,
+      claim.prescription_updated_by
+    )
+    ;(claim.nhis_claim_medicines || []).forEach((medicine) => {
+      userIds.push(medicine.entered_by_claims_officer, medicine.served_by_mca)
+    })
+  })
+
+  const userNameMap = await resolveNhisUserNameMap(userIds)
+  if (!userNameMap.size) return claims
+
+  const getUserName = (userId) => userNameMap.get(normalizeText(userId)) || ''
+
+  return claims.map((claim) => ({
+    ...claim,
+    direct_served_by_name: getUserName(claim.direct_served_by),
+    prescription_entry_user_name:
+      claim.prescription_entry_user_name || getUserName(claim.prescription_entered_by),
+    prescription_update_user_name:
+      claim.prescription_update_user_name || getUserName(claim.prescription_updated_by),
+    nhis_claim_medicines: (claim.nhis_claim_medicines || []).map((medicine) => ({
+      ...medicine,
+      entered_by_claims_officer_name: getUserName(medicine.entered_by_claims_officer),
+      served_by_mca_name:
+        getUserName(medicine.served_by_mca) ||
+        getUserName(claim.direct_served_by),
+    })),
+  }))
+}
+
 const hydrateNhisClaimsForUi = async (claims = []) =>
-  await hydrateClaimsWithServiceLines(await hydrateClaimsWithMedicineLines(claims))
+  await hydrateClaimsWithServingActorNames(
+    await hydrateClaimsWithServiceLines(await hydrateClaimsWithMedicineLines(claims))
+  )
 
 const getNhisClaimPageOptions = (filters = {}) => {
   const pageSize = Math.min(Math.max(Number.parseInt(String(filters.pageSize || filters.limit || DEFAULT_NHIS_CLAIM_LIST_LIMIT), 10) || DEFAULT_NHIS_CLAIM_LIST_LIMIT, 1), 500)

@@ -7583,6 +7583,8 @@ const Nhis = () => {
               <div><strong>Prescription Last Updated By:</strong> {viewClaim.prescription_update_user_name || viewClaim.prescription_updated_by || '—'}</div>
               <div><strong>Prescription Last Updated At:</strong> {viewClaim.prescription_updated_at ? formatAppDateTime(viewClaim.prescription_updated_at) : '—'}</div>
               <div><strong>Pre-auth Codes:</strong> {viewClaim.pre_auth_codes || '—'}</div>
+              <div><strong>Served Directly By:</strong> {viewClaim.direct_served_by_name || viewClaim.direct_served_by || '-'}</div>
+              <div><strong>Served Directly At:</strong> {viewClaim.direct_served_at ? formatAppDateTime(viewClaim.direct_served_at) : '-'}</div>
               <div><strong>Medicines Not Served:</strong> {viewClaim.unserved_medicines_note || '-'}</div>
               <div>
                 <strong>Prescription File:</strong>{' '}
@@ -7604,6 +7606,8 @@ const Nhis = () => {
                   <th>Unit</th>
                   <th>Unit Price</th>
                   <th>Total</th>
+                  <th>Served By</th>
+                  <th>Served At</th>
                   <th>Dose</th>
                   <th>Frequency</th>
                   <th>Duration</th>
@@ -7618,6 +7622,8 @@ const Nhis = () => {
                     <td>{m.unit}</td>
                     <td>{fmtCurrency(m.unit_price)}</td>
                     <td>{fmtCurrency(m.total_amount)}</td>
+                    <td>{m.served_by_mca_name || m.served_by_mca || viewClaim.direct_served_by_name || '-'}</td>
+                    <td>{m.served_at ? formatAppDateTime(m.served_at) : '-'}</td>
                     <td>{m.dose || '—'}</td>
                     <td>{m.frequency || '—'}</td>
                     <td>{m.duration || '—'}</td>
@@ -7631,7 +7637,7 @@ const Nhis = () => {
                     <td>service</td>
                     <td>{fmtCurrency(service.unit_price)}</td>
                     <td>{fmtCurrency(service.total_amount)}</td>
-                    <td colSpan={3}>
+                    <td colSpan={5}>
                       {service.mdc || 'NHIA tariff'} {service.facility_group ? `- ${service.facility_group}` : ''}
                       {service.catering_option ? ` | ${service.catering_option}` : ''}
                       {service.age_band ? ` | ${service.age_band}` : ''}
@@ -7643,7 +7649,7 @@ const Nhis = () => {
               <tfoot>
                 <tr>
                   <td colSpan={5} className="total-label">Claim Total</td>
-                  <td colSpan={4} className="total-value">{fmtCurrency(viewClaim.total_amount)}</td>
+                  <td colSpan={6} className="total-value">{fmtCurrency(viewClaim.total_amount)}</td>
                 </tr>
               </tfoot>
             </table>
