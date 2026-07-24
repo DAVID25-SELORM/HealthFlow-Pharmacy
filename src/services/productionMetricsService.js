@@ -96,6 +96,7 @@ const getCacheTotals = () => {
   return {
     hits,
     misses,
+    total,
     hitRate: total ? Math.round((hits / total) * 100) : 0,
   }
 }
@@ -351,15 +352,21 @@ export const evaluateProductionMetricAlerts = () => {
     }
   }
 
+  const recentCacheSamples = getRecentMinuteSamples(PRODUCTION_METRIC_THRESHOLDS.latencyConsecutiveMinutes)
+  const enoughCacheSamples = recentCacheSamples.length >= PRODUCTION_METRIC_THRESHOLDS.latencyConsecutiveMinutes
   const cacheTotals = getCacheTotals()
   if (
-    cacheTotals.hits + cacheTotals.misses >= 10 &&
-    cacheTotals.hitRate < PRODUCTION_METRIC_THRESHOLDS.cacheHitRatePercent
+    enoughCacheSamples &&
+    cacheTotals.total >= 50 &&
+    recentCacheSamples.every((sample) =>
+      Number(sample.cacheHitRate || 0) < PRODUCTION_METRIC_THRESHOLDS.cacheHitRatePercent
+    )
   ) {
     alerts.push(createAlert(
       'cache-hit-rate',
       'Cache hit rate is low',
-      `Cache hit rate is ${cacheTotals.hitRate}%; threshold is ${PRODUCTION_METRIC_THRESHOLDS.cacheHitRatePercent}%.`
+      `Cache hit rate stayed below ${PRODUCTION_METRIC_THRESHOLDS.cacheHitRatePercent}% for ${PRODUCTION_METRIC_THRESHOLDS.latencyConsecutiveMinutes} minutes. Current rate is ${cacheTotals.hitRate}%.`,
+      'info'
     ))
   }
 

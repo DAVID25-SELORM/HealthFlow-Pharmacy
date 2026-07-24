@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   evaluateProductionMetricAlerts,
   getProductionMetricsHistory,
+  recordCacheEvent,
   recordProductionMetricsSample,
   recordTierAccessEnd,
   resetProductionMetrics,
@@ -44,6 +45,32 @@ describe('productionMetricsService', () => {
     expect(evaluateProductionMetricAlerts()).toEqual(expect.arrayContaining([
       expect.objectContaining({
         id: 'latency-5-minutes',
+      }),
+    ]))
+  })
+
+  it('does not raise cache hit alerts until low cache performance is sustained', () => {
+    for (let index = 0; index < 49; index += 1) {
+      recordCacheEvent('tier-access in-flight', 'miss')
+    }
+
+    for (let index = 0; index < 5; index += 1) {
+      vi.setSystemTime(new Date(Date.UTC(2026, 6, 10, 8, index, 0)))
+      recordProductionMetricsSample({ force: true })
+    }
+
+    expect(evaluateProductionMetricAlerts()).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'cache-hit-rate' }),
+    ]))
+
+    recordCacheEvent('tier-access in-flight', 'miss')
+    vi.setSystemTime(new Date('2026-07-10T08:05:00Z'))
+    recordProductionMetricsSample({ force: true })
+
+    expect(evaluateProductionMetricAlerts()).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'cache-hit-rate',
+        severity: 'info',
       }),
     ]))
   })

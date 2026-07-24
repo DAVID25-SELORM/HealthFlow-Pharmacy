@@ -21,7 +21,8 @@ export default function ProductionMetricsMonitor() {
       recordProductionMetricsSample()
       const alerts = filterNewProductionMetricAlerts(evaluateProductionMetricAlerts())
       alerts.forEach((alert) => {
-        notify(`${alert.title}: ${alert.detail}`, alert.severity || 'warning', 0)
+        const duration = alert.severity === 'info' ? 10000 : 0
+        notify(`${alert.title}: ${alert.detail}`, alert.severity || 'warning', duration)
       })
     }
 
