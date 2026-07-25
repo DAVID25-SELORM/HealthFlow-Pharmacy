@@ -13,6 +13,7 @@ export const OFFLINE_INSTALLER_PRIVATE_BUCKET = 'healthflow-offline-installers'
 export const OFFLINE_INSTALLER_FILE_PATTERN = /^HealthFlow-Offline-Installer-([0-9A-Za-z][0-9A-Za-z._-]*)\.zip$/
 const OFFLINE_INSTALLER_PRIVATE_DOWNLOAD_BASE = 'https://healthflowcloud.com/offline-installer'
 const STANDARD_STORAGE_UPLOAD_LIMIT_BYTES = 50 * 1024 * 1024
+const RESUMABLE_STORAGE_CHUNK_SIZE_BYTES = 6 * 1024 * 1024
 const ZIP_EOCD_SIGNATURE = 0x06054b50
 const ZIP_CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50
 
@@ -639,7 +640,8 @@ export const uploadOfflineInstallerReleaseZipResumable = (release, file) => new 
       contentType: 'application/zip',
       cacheControl: '3600',
     },
-    uploadDataDuringCreation: true,
+    chunkSize: RESUMABLE_STORAGE_CHUNK_SIZE_BYTES,
+    uploadDataDuringCreation: false,
     removeFingerprintOnSuccess: true,
     onError: reject,
     onSuccess: resolve,

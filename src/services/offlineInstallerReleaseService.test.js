@@ -404,7 +404,8 @@ describe('offlineInstallerReleaseService', () => {
     expect(storageFrom).not.toHaveBeenCalled()
     expect(TusUpload).toHaveBeenCalledWith(file, expect.objectContaining({
       endpoint: 'https://project-ref.supabase.co/storage/v1/upload/resumable',
-      uploadDataDuringCreation: true,
+      chunkSize: 6 * 1024 * 1024,
+      uploadDataDuringCreation: false,
       removeFingerprintOnSuccess: true,
       headers: expect.objectContaining({
         apikey: 'anon-key-1',
