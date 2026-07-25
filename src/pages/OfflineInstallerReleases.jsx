@@ -47,6 +47,12 @@ const formatDate = (value) => {
 
 const formatChannel = (value) => String(value || 'stable').replace(/_/g, ' ')
 
+const formatChecksum = (value) => {
+  const checksum = String(value || '').trim()
+  if (!checksum) return 'Checksum not recorded'
+  return `${checksum.slice(0, 12)}...${checksum.slice(-8)}`
+}
+
 const canPublishRelease = (release) => (
   release?.state === INSTALLER_RELEASE_STATES.VALIDATED &&
   release?.validationStatus === 'valid' &&
@@ -121,9 +127,13 @@ export default function OfflineInstallerReleases() {
         channel: form.channel || 'stable',
       })
       await saveOfflineInstallerRelease(uploadedRelease)
-      setForm(blankForm)
+      setForm((current) => ({
+        ...blankForm,
+        ...uploadedRelease,
+        releaseNotes: current.releaseNotes || uploadedRelease.releaseNotes || '',
+      }))
       await loadReleases()
-      notify('Installer ZIP uploaded privately. Validate it, then publish when ready.', 'success')
+      notify('Installer ZIP uploaded privately. Add release notes, validate it, then publish when ready.', 'success')
     } catch (error) {
       notify(error.message || 'Unable to upload installer ZIP.', 'error')
     } finally {
@@ -367,7 +377,11 @@ export default function OfflineInstallerReleases() {
                   <small>{Number(release.downloadCount || 0)} download request{Number(release.downloadCount || 0) === 1 ? '' : 's'}</small>
                 </span>
                 <span>{release.fileName}</span>
-                <span>{formatBytes(release.fileSize)}</span>
+                <span>
+                  {formatBytes(release.fileSize)}
+                  <small>{Number(release.fileSize || 0).toLocaleString()} bytes</small>
+                  <small title={release.sha256 || ''}>{formatChecksum(release.sha256)}</small>
+                </span>
                 <span className={`release-state ${release.state}`}>
                   {release.enabled ? <><CheckCircle2 size={14} /> Published</> : release.state}
                 </span>
