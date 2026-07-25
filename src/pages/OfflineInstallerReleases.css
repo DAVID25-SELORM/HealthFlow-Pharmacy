@@ -138,7 +138,7 @@
 
 .installer-release-row {
   display: grid;
-  grid-template-columns: 0.9fr 1.45fr 0.7fr 0.75fr 0.75fr 1fr;
+  grid-template-columns: 0.85fr 1.35fr 0.65fr 0.65fr 0.65fr 0.85fr 1fr;
   gap: 12px;
   align-items: center;
   padding: 12px 14px;
@@ -174,6 +174,55 @@
 .release-disabled {
   color: #64748b;
   font-weight: 700;
+}
+
+.release-channel {
+  color: #0f766e;
+  font-weight: 800;
+  text-transform: capitalize;
+}
+
+.release-validation-report {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.validation-check {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #f8fafc;
+}
+
+.validation-check strong {
+  color: #334155;
+  font-size: 0.78rem;
+}
+
+.validation-check span {
+  color: #64748b;
+  font-size: 0.78rem;
+}
+
+.validation-check.pass {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.validation-check.warn {
+  border-color: #fed7aa;
+  background: #fff7ed;
+}
+
+.validation-check.fail {
+  border-color: #fecaca;
+  background: #fef2f2;
 }
 
 .release-state {
@@ -226,5 +275,9 @@
     grid-template-columns: 1fr;
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .release-validation-report {
+    grid-template-columns: 1fr;
   }
 }

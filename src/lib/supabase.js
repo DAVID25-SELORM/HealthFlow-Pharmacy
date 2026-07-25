@@ -38,6 +38,7 @@ const storageKeySourceUrl = isConfiguredUrl(providerSupabaseUrl)
   : supabaseUrl
 
 export const getConfiguredCloudUrl = () => supabaseUrl
+export const getConfiguredSupabaseKey = () => supabaseKey
 
 export const supabaseAuthStorageKey = hasValidCredentials
   ? getDefaultStorageKey(storageKeySourceUrl)

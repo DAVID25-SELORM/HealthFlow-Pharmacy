@@ -6,6 +6,7 @@ import {
   disableOfflineInstallerRelease,
   enableOfflineInstallerRelease,
   buildOfflineInstallerReleaseFromManifest,
+  INSTALLER_RELEASE_CHANNELS,
   INSTALLER_RELEASE_STATES,
   listOfflineInstallerReleases,
   saveOfflineInstallerRelease,
@@ -42,6 +43,19 @@ const formatDate = (value) => {
   if (!value) return '-'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? '-' : date.toLocaleString()
+}
+
+const formatChannel = (value) => String(value || 'stable').replace(/_/g, ' ')
+
+const canPublishRelease = (release) => (
+  release?.state === INSTALLER_RELEASE_STATES.VALIDATED &&
+  release?.validationStatus === 'valid' &&
+  Number(release?.validationCriticalCount || 0) === 0
+)
+
+const validationTone = (check) => {
+  if (check?.result === 'pass') return 'pass'
+  return check?.severity === 'critical' ? 'fail' : 'warn'
 }
 
 export default function OfflineInstallerReleases() {
@@ -292,7 +306,11 @@ export default function OfflineInstallerReleases() {
           </label>
           <label>
             <span>Channel</span>
-            <input value={form.channel} readOnly />
+            <select value={form.channel} onChange={(event) => updateForm('channel', event.target.value)}>
+              <option value={INSTALLER_RELEASE_CHANNELS.INTERNAL}>Internal</option>
+              <option value={INSTALLER_RELEASE_CHANNELS.PILOT}>Pilot</option>
+              <option value={INSTALLER_RELEASE_CHANNELS.STABLE}>Stable</option>
+            </select>
           </label>
           <label>
             <span>Private storage bucket</span>
@@ -337,6 +355,7 @@ export default function OfflineInstallerReleases() {
               <span>File</span>
               <span>Size</span>
               <span>State</span>
+              <span>Channel</span>
               <span>Validation</span>
               <span>Actions</span>
             </div>
@@ -352,8 +371,10 @@ export default function OfflineInstallerReleases() {
                 <span className={`release-state ${release.state}`}>
                   {release.enabled ? <><CheckCircle2 size={14} /> Published</> : release.state}
                 </span>
+                <span className="release-channel">{formatChannel(release.channel)}</span>
                 <span className={release.validationStatus === 'valid' ? 'release-enabled' : 'release-disabled'}>
                   {release.validationStatus}
+                  <small>{Number(release.validationCriticalCount || 0)} critical, {Number(release.validationWarningCount || 0)} warning</small>
                   {release.validationError && <small>{release.validationError}</small>}
                 </span>
                 <span className="row-actions">
@@ -371,12 +392,22 @@ export default function OfflineInstallerReleases() {
                       <CheckCircle2 size={15} />
                     </button>
                   )}
-                  {!release.enabled && release.state === INSTALLER_RELEASE_STATES.VALIDATED && release.validationStatus === 'valid' && (
+                  {!release.enabled && canPublishRelease(release) && (
                     <button className="btn btn-icon" type="button" title="Publish this release" disabled={saving} onClick={() => void enableRelease(release)}>
                       <RotateCcw size={15} />
                     </button>
                   )}
                 </span>
+                {Array.isArray(release.validationReport) && release.validationReport.length > 0 && (
+                  <div className="release-validation-report">
+                    {release.validationReport.map((check, index) => (
+                      <div className={`validation-check ${validationTone(check)}`} key={`${release.id}-check-${index}`}>
+                        <strong>{check.name}</strong>
+                        <span>{check.message}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>

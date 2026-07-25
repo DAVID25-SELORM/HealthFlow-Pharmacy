@@ -1,11 +1,37 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { from, storageFrom, upload, invokeTierAccess } = vi.hoisted(() => ({
+const {
+  from,
+  storageFrom,
+  upload,
+  download,
+  insert,
+  getUser,
+  invokeTierAccess,
+  tusStart,
+  tusState,
+  TusUpload,
+} = vi.hoisted(() => {
+  const tusState = { file: null, options: null }
+  const tusStart = vi.fn()
+  const TusUpload = vi.fn(function TusUploadMock(file, options) {
+    tusState.file = file
+    tusState.options = options
+    return { start: tusStart }
+  })
+  return {
   from: vi.fn(),
   storageFrom: vi.fn(),
   upload: vi.fn(),
+  download: vi.fn(),
+  insert: vi.fn(),
+  getUser: vi.fn(),
   invokeTierAccess: vi.fn(),
-}))
+    tusStart,
+    tusState,
+    TusUpload,
+  }
+})
 
 vi.mock('../lib/supabase', () => ({
   supabase: {
@@ -13,7 +39,17 @@ vi.mock('../lib/supabase', () => ({
     storage: {
       from: storageFrom,
     },
+    auth: {
+      getUser,
+    },
   },
+  getCachedSupabaseSession: () => ({ access_token: 'access-token-1' }),
+  getConfiguredCloudUrl: () => 'https://project-ref.supabase.co',
+  getConfiguredSupabaseKey: () => 'anon-key-1',
+}))
+
+vi.mock('tus-js-client', () => ({
+  Upload: TusUpload,
 }))
 
 vi.mock('./auditService', () => ({
@@ -37,6 +73,7 @@ import {
   saveOfflineInstallerRelease,
   requestOfflineInstallerDownload,
   uploadOfflineInstallerReleaseZip,
+  validateOfflineInstallerArchive,
   validateOfflineInstallerReleasePayload,
   validateSavedOfflineInstallerRelease,
 } from './offlineInstallerReleaseService'
@@ -49,6 +86,7 @@ const makeQuery = ({ data = null, error = null } = {}) => {
     limit: vi.fn(() => query),
     maybeSingle: vi.fn(async () => ({ data, error })),
     update: vi.fn(() => query),
+    insert: vi.fn(() => query),
     upsert: vi.fn(() => query),
     single: vi.fn(async () => ({ data, error })),
     then: vi.fn((resolve, reject) => Promise.resolve({ data, error }).then(resolve, reject)),
@@ -56,12 +94,82 @@ const makeQuery = ({ data = null, error = null } = {}) => {
   return query
 }
 
+const concatUint8Arrays = (parts) => {
+  const total = parts.reduce((sum, part) => sum + part.length, 0)
+  const output = new Uint8Array(total)
+  let offset = 0
+  for (const part of parts) {
+    output.set(part, offset)
+    offset += part.length
+  }
+  return output
+}
+
+const makeTestZip = (entryNames) => {
+  const encoder = new TextEncoder()
+  const localParts = []
+  const centralParts = []
+  let localOffset = 0
+
+  for (const name of entryNames) {
+    const nameBytes = encoder.encode(name)
+    const local = new Uint8Array(30 + nameBytes.length)
+    const localView = new DataView(local.buffer)
+    localView.setUint32(0, 0x04034b50, true)
+    localView.setUint16(26, nameBytes.length, true)
+    local.set(nameBytes, 30)
+    localParts.push(local)
+
+    const central = new Uint8Array(46 + nameBytes.length)
+    const centralView = new DataView(central.buffer)
+    centralView.setUint32(0, 0x02014b50, true)
+    centralView.setUint16(28, nameBytes.length, true)
+    centralView.setUint32(42, localOffset, true)
+    central.set(nameBytes, 46)
+    centralParts.push(central)
+    localOffset += local.length
+  }
+
+  const centralDirectory = concatUint8Arrays(centralParts)
+  const end = new Uint8Array(22)
+  const endView = new DataView(end.buffer)
+  endView.setUint32(0, 0x06054b50, true)
+  endView.setUint16(8, entryNames.length, true)
+  endView.setUint16(10, entryNames.length, true)
+  endView.setUint32(12, centralDirectory.length, true)
+  endView.setUint32(16, localOffset, true)
+  return concatUint8Arrays([...localParts, centralDirectory, end])
+}
+
+const REQUIRED_ZIP_ENTRIES = [
+  'local-branch-server/Install-HealthFlow.cmd',
+  'local-branch-server/package.json',
+  'local-branch-server/public/index.html',
+  'local-branch-server/scripts/install-windows-service.ps1',
+  'local-branch-server/scripts/start-healthflow-offline.cmd',
+  'local-branch-server/src/schema.sql',
+  'local-branch-server/src/server.js',
+]
+
+const makeInstallerFile = (entries = REQUIRED_ZIP_ENTRIES) => {
+  const bytes = makeTestZip(entries)
+  return new File([bytes], 'HealthFlow-Offline-Installer-2.5.0.zip', { type: 'application/zip' })
+}
+
 describe('offlineInstallerReleaseService', () => {
   beforeEach(() => {
     from.mockReset()
     storageFrom.mockReset()
     upload.mockReset()
+    download.mockReset()
+    insert.mockReset()
+    getUser.mockReset()
+    getUser.mockResolvedValue({ data: { user: { id: 'user-1' } }, error: null })
     invokeTierAccess.mockReset()
+    tusStart.mockReset()
+    TusUpload.mockClear()
+    tusState.file = null
+    tusState.options = null
   })
 
   it('loads the active runtime installer release', async () => {
@@ -143,8 +251,14 @@ describe('offlineInstallerReleaseService', () => {
     })
     from.mockReturnValue(query)
 
+    const fullQuery = makeQuery({ error: { code: '42703', message: 'column state does not exist' } })
+    const legacyQuery = query
+    from.mockReset()
+    from.mockReturnValueOnce(fullQuery).mockReturnValueOnce(legacyQuery)
+
     await expect(listOfflineInstallerReleases()).resolves.toHaveLength(1)
-    expect(query.select).toHaveBeenCalledWith(expect.not.stringContaining('state'))
+    expect(fullQuery.select).toHaveBeenCalledWith(expect.stringContaining('state'))
+    expect(legacyQuery.select).toHaveBeenCalledWith(expect.not.stringContaining('state'))
   })
 
   it('normalizes release form input for saving', () => {
@@ -169,6 +283,10 @@ describe('offlineInstallerReleaseService', () => {
       validation_status: 'not_validated',
       validation_checked_at: null,
       validation_error: null,
+      validation_report: [],
+      validation_critical_count: 0,
+      validation_warning_count: 0,
+      validation_info_count: 0,
       manifest: {},
       storage_bucket: null,
       storage_path: null,
@@ -270,6 +388,38 @@ describe('offlineInstallerReleaseService', () => {
     )
   })
 
+  it('uses resumable upload for large installer ZIPs', async () => {
+    const file = new File(['healthflow-offline'], 'HealthFlow-Offline-Installer-2.1.0.zip', {
+      type: 'application/zip',
+    })
+    Object.defineProperty(file, 'size', { value: 60 * 1024 * 1024 })
+    tusStart.mockImplementation(() => tusState.options.onSuccess())
+
+    await expect(uploadOfflineInstallerReleaseZip(file)).resolves.toMatchObject({
+      version: '2.1.0',
+      storageBucket: 'healthflow-offline-installers',
+      storagePath: 'releases/2.1.0/HealthFlow-Offline-Installer-2.1.0.zip',
+    })
+
+    expect(storageFrom).not.toHaveBeenCalled()
+    expect(TusUpload).toHaveBeenCalledWith(file, expect.objectContaining({
+      endpoint: 'https://project-ref.supabase.co/storage/v1/upload/resumable',
+      uploadDataDuringCreation: true,
+      removeFingerprintOnSuccess: true,
+      headers: expect.objectContaining({
+        apikey: 'anon-key-1',
+        authorization: 'Bearer access-token-1',
+      }),
+      metadata: expect.objectContaining({
+        bucketName: 'healthflow-offline-installers',
+        objectName: 'releases/2.1.0/HealthFlow-Offline-Installer-2.1.0.zip',
+        contentType: 'application/zip',
+        cacheControl: '3600',
+      }),
+    }))
+    expect(tusStart).toHaveBeenCalledTimes(1)
+  })
+
   it('rejects manifest checksum mismatch before saving', () => {
     expect(() => validateOfflineInstallerReleasePayload({
       version: '2.1.0',
@@ -349,7 +499,8 @@ describe('offlineInstallerReleaseService', () => {
     })
   })
 
-  it('publishes only a validated release and supersedes the previous stable release', async () => {
+  it('publishes only a validated release and supersedes the previous release in the same channel', async () => {
+    const targetQuery = makeQuery({ data: { id: 'release-2', channel: 'pilot' } })
     const disableQuery = makeQuery()
     const publishQuery = makeQuery({
       data: {
@@ -361,12 +512,12 @@ describe('offlineInstallerReleaseService', () => {
         sha256: 'b'.repeat(64),
         release_notes: null,
         state: 'published',
-        channel: 'stable',
+        channel: 'pilot',
         validation_status: 'valid',
         enabled: true,
       },
     })
-    from.mockReturnValueOnce(disableQuery).mockReturnValueOnce(publishQuery)
+    from.mockReturnValueOnce(targetQuery).mockReturnValueOnce(disableQuery).mockReturnValueOnce(publishQuery)
 
     await expect(enableOfflineInstallerRelease('release-2')).resolves.toMatchObject({
       version: '2.1.0',
@@ -374,12 +525,14 @@ describe('offlineInstallerReleaseService', () => {
       enabled: true,
     })
     expect(disableQuery.update).toHaveBeenCalledWith({ enabled: false, state: 'superseded' })
+    expect(disableQuery.eq).toHaveBeenCalledWith('channel', 'pilot')
     expect(publishQuery.update).toHaveBeenCalledWith(expect.objectContaining({
       enabled: true,
       state: 'published',
     }))
     expect(publishQuery.eq).toHaveBeenCalledWith('state', 'validated')
     expect(publishQuery.eq).toHaveBeenCalledWith('validation_status', 'valid')
+    expect(publishQuery.eq).toHaveBeenCalledWith('validation_critical_count', 0)
   })
 
   it('validates a saved release and stores a valid result', async () => {
@@ -516,6 +669,144 @@ describe('offlineInstallerReleaseService', () => {
       validation_status: 'invalid',
       validation_error: 'Installer file name must be HealthFlow-Offline-Installer-2.2.0.zip.',
       enabled: false,
+    }))
+  })
+
+  it('deep-validates a private installer ZIP and records warnings without blocking publish readiness', async () => {
+    const file = makeInstallerFile()
+    const sha256 = await calculateOfflineInstallerSha256(file)
+
+    await expect(validateOfflineInstallerArchive({
+      file,
+      release: {
+        version: '2.5.0',
+        downloadUrl: 'https://healthflowcloud.com/offline-installer/HealthFlow-Offline-Installer-2.5.0.zip',
+        fileName: 'HealthFlow-Offline-Installer-2.5.0.zip',
+        fileSize: file.size,
+        sha256,
+        releaseNotes: 'Private release validation.',
+        installerType: 'offline-installer',
+      },
+    })).resolves.toMatchObject({
+      validationStatus: 'valid',
+      counts: {
+        critical: 0,
+        warning: expect.any(Number),
+      },
+      report: expect.arrayContaining([
+        expect.objectContaining({ name: 'Required files present', result: 'pass' }),
+        expect.objectContaining({ name: 'Recommended files present', result: 'warn' }),
+      ]),
+    })
+  })
+
+  it('rejects corrupted or truncated installer ZIP archives', async () => {
+    const file = new File(['not-a-zip'], 'HealthFlow-Offline-Installer-2.5.0.zip', { type: 'application/zip' })
+    const sha256 = await calculateOfflineInstallerSha256(file)
+
+    await expect(validateOfflineInstallerArchive({
+      file,
+      release: {
+        version: '2.5.0',
+        downloadUrl: 'https://healthflowcloud.com/offline-installer/HealthFlow-Offline-Installer-2.5.0.zip',
+        fileName: 'HealthFlow-Offline-Installer-2.5.0.zip',
+        fileSize: file.size,
+        sha256,
+        releaseNotes: 'Corrupt package test.',
+      },
+    })).rejects.toThrow('Installer ZIP is too small')
+  })
+
+  it('flags checksum mismatch, missing required files, and prohibited secret files as critical validation failures', async () => {
+    const file = makeInstallerFile([
+      'local-branch-server/Install-HealthFlow.cmd',
+      'local-branch-server/.env',
+    ])
+
+    await expect(validateOfflineInstallerArchive({
+      file,
+      release: {
+        version: '2.5.0',
+        downloadUrl: 'https://healthflowcloud.com/offline-installer/HealthFlow-Offline-Installer-2.5.0.zip',
+        fileName: 'HealthFlow-Offline-Installer-2.5.0.zip',
+        fileSize: file.size,
+        sha256: '0'.repeat(64),
+        releaseNotes: 'Bad package test.',
+      },
+    })).resolves.toMatchObject({
+      validationStatus: 'invalid',
+      counts: { critical: expect.any(Number) },
+      report: expect.arrayContaining([
+        expect.objectContaining({ name: 'SHA-256 checksum matches', result: 'fail' }),
+        expect.objectContaining({ name: 'Required files present', result: 'fail' }),
+        expect.objectContaining({ name: 'Sensitive-file scan passed', result: 'fail' }),
+      ]),
+    })
+  })
+
+  it('downloads the private ZIP when validating a saved release', async () => {
+    const file = makeInstallerFile()
+    const sha256 = await calculateOfflineInstallerSha256(file)
+    download.mockResolvedValue({ data: file, error: null })
+    storageFrom.mockReturnValue({ download })
+
+    const loadQuery = makeQuery({
+      data: {
+        id: 'release-private',
+        version: '2.5.0',
+        download_url: 'https://healthflowcloud.com/offline-installer/HealthFlow-Offline-Installer-2.5.0.zip',
+        file_name: 'HealthFlow-Offline-Installer-2.5.0.zip',
+        file_size: file.size,
+        sha256,
+        release_notes: 'Private release validation.',
+        state: 'uploaded',
+        channel: 'stable',
+        validation_status: 'not_validated',
+        manifest: {
+          version: '2.5.0',
+          file_name: 'HealthFlow-Offline-Installer-2.5.0.zip',
+          file_size_bytes: file.size,
+          sha256,
+          installer_type: 'offline-installer',
+        },
+        storage_bucket: 'healthflow-offline-installers',
+        storage_path: 'releases/2.5.0/HealthFlow-Offline-Installer-2.5.0.zip',
+        installer_type: 'offline-installer',
+        enabled: false,
+      },
+    })
+    const updateQuery = makeQuery({
+      data: {
+        id: 'release-private',
+        version: '2.5.0',
+        download_url: 'https://healthflowcloud.com/offline-installer/HealthFlow-Offline-Installer-2.5.0.zip',
+        file_name: 'HealthFlow-Offline-Installer-2.5.0.zip',
+        file_size: file.size,
+        sha256,
+        release_notes: 'Private release validation.',
+        state: 'validated',
+        channel: 'stable',
+        validation_status: 'valid',
+        validation_report: [],
+        validation_critical_count: 0,
+        validation_warning_count: 1,
+        validation_info_count: 0,
+        enabled: false,
+      },
+    })
+    from.mockReturnValueOnce(loadQuery).mockReturnValueOnce(updateQuery)
+
+    await expect(validateSavedOfflineInstallerRelease('release-private')).resolves.toMatchObject({
+      state: 'validated',
+      validationStatus: 'valid',
+    })
+    expect(storageFrom).toHaveBeenCalledWith('healthflow-offline-installers')
+    expect(download).toHaveBeenCalledWith('releases/2.5.0/HealthFlow-Offline-Installer-2.5.0.zip')
+    expect(updateQuery.update).toHaveBeenCalledWith(expect.objectContaining({
+      validation_status: 'valid',
+      validation_critical_count: 0,
+      validation_warning_count: expect.any(Number),
+      validated_by: 'user-1',
     }))
   })
 

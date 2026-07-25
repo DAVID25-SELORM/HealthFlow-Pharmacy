@@ -1,11 +1,70 @@
-import { supabase } from '../lib/supabase'
+import * as tus from 'tus-js-client'
 import { validateHealthflowInstallerUrl } from '../config/branchUpdateConfig'
 import { tryLogAuditEvent } from './auditService'
 import { invokeTierAccess } from './tierAccessService'
+import {
+  getCachedSupabaseSession,
+  getConfiguredCloudUrl,
+  getConfiguredSupabaseKey,
+  supabase,
+} from '../lib/supabase'
 
 export const OFFLINE_INSTALLER_PRIVATE_BUCKET = 'healthflow-offline-installers'
 export const OFFLINE_INSTALLER_FILE_PATTERN = /^HealthFlow-Offline-Installer-([0-9A-Za-z][0-9A-Za-z._-]*)\.zip$/
 const OFFLINE_INSTALLER_PRIVATE_DOWNLOAD_BASE = 'https://healthflowcloud.com/offline-installer'
+const STANDARD_STORAGE_UPLOAD_LIMIT_BYTES = 50 * 1024 * 1024
+const ZIP_EOCD_SIGNATURE = 0x06054b50
+const ZIP_CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50
+
+export const INSTALLER_RELEASE_CHANNELS = {
+  INTERNAL: 'internal',
+  PILOT: 'pilot',
+  STABLE: 'stable',
+}
+
+export const INSTALLER_VALIDATION_SEVERITIES = {
+  CRITICAL: 'critical',
+  WARNING: 'warning',
+  INFO: 'informational',
+}
+
+export const REQUIRED_INSTALLER_ZIP_ENTRIES = [
+  'local-branch-server/Install-HealthFlow.cmd',
+  'local-branch-server/package.json',
+  'local-branch-server/public/index.html',
+  'local-branch-server/scripts/install-windows-service.ps1',
+  'local-branch-server/scripts/start-healthflow-offline.cmd',
+  'local-branch-server/src/schema.sql',
+  'local-branch-server/src/server.js',
+]
+
+const RECOMMENDED_INSTALLER_ZIP_ENTRIES = [
+  'local-branch-server/runtime/node/node.exe',
+  'local-branch-server/README.md',
+]
+
+const PROHIBITED_INSTALLER_ENTRY_PATTERNS = [
+  { pattern: /(^|\/)\.env$/i, label: 'Environment file' },
+  { pattern: /(^|\/)\.env\.(?!example$)[^/]+$/i, label: 'Environment file' },
+  { pattern: /service[-_]?role/i, label: 'Service-role key reference' },
+  { pattern: /branch[-_]?token/i, label: 'Branch token reference' },
+  { pattern: /(^|\/)([^/]+\.)?(sqlite|sqlite3|db|db3)$/i, label: 'Local database file' },
+  { pattern: /(^|\/)(id_rsa|id_dsa|id_ecdsa|id_ed25519|private[-_]?key)(\.|$)/i, label: 'Private key file' },
+  { pattern: /\.(pem|pfx|p12|key)$/i, label: 'Private certificate or key' },
+  { pattern: /(^|\/)(\.vite|\.turbo|\.next|coverage|\.cache)(\/|$)/i, label: 'Development cache' },
+]
+
+export const INSTALLER_INSTALLATION_STATUSES = [
+  'download_requested',
+  'installer_started',
+  'installer_completed',
+  'service_started',
+  'machine_registered',
+  'initial_sync_started',
+  'initial_sync_completed',
+  'readiness_passed',
+  'installation_failed',
+]
 
 export const OFFLINE_INSTALLER_RELEASE_FIELDS = [
   'id',
@@ -20,6 +79,11 @@ export const OFFLINE_INSTALLER_RELEASE_FIELDS = [
   'validation_status',
   'validation_checked_at',
   'validation_error',
+  'validation_report',
+  'validation_critical_count',
+  'validation_warning_count',
+  'validation_info_count',
+  'validated_by',
   'manifest',
   'storage_bucket',
   'storage_path',
@@ -69,6 +133,11 @@ export const INSTALLER_RELEASE_STATES = {
 const isPublishedRelease = (row) =>
   row?.state === INSTALLER_RELEASE_STATES.PUBLISHED || row?.enabled === true
 
+const hasReleaseSchemaDriftError = (error) => {
+  const message = String(error?.message || error?.details || '')
+  return error?.code === '42703' || /column .* does not exist/i.test(message)
+}
+
 const normalizeInstallerRelease = (row, { includeDisabled = false } = {}) => {
   if (!row || (!includeDisabled && !isPublishedRelease(row))) return null
 
@@ -88,6 +157,11 @@ const normalizeInstallerRelease = (row, { includeDisabled = false } = {}) => {
     validationStatus: row.validation_status || 'not_validated',
     validationCheckedAt: row.validation_checked_at,
     validationError: row.validation_error || '',
+    validationReport: Array.isArray(row.validation_report) ? row.validation_report : [],
+    validationCriticalCount: Number(row.validation_critical_count || 0),
+    validationWarningCount: Number(row.validation_warning_count || 0),
+    validationInfoCount: Number(row.validation_info_count || 0),
+    validatedBy: row.validated_by || null,
     manifest: row.manifest || {},
     storageBucket: row.storage_bucket || '',
     storagePath: row.storage_path || '',
@@ -132,11 +206,16 @@ export const getActiveOfflineInstallerRelease = async () => {
 }
 
 export const listOfflineInstallerReleases = async () => {
-  const { data, error } = await supabase
+  const runQuery = (fields) => supabase
     .from('offline_installer_releases')
-    .select(OFFLINE_INSTALLER_RELEASE_LEGACY_FIELDS)
+    .select(fields)
     .order('published_at', { ascending: false, nullsFirst: false })
     .order('created_at', { ascending: false })
+
+  let { data, error } = await runQuery(OFFLINE_INSTALLER_RELEASE_FIELDS)
+  if (error && hasReleaseSchemaDriftError(error)) {
+    ;({ data, error } = await runQuery(OFFLINE_INSTALLER_RELEASE_LEGACY_FIELDS))
+  }
 
   if (error) throw error
   return (data || []).map((row) => normalizeInstallerRelease(row, { includeDisabled: true })).filter(Boolean)
@@ -154,6 +233,12 @@ export const buildOfflineInstallerReleasePayload = (release) => ({
   validation_status: String(release.validationStatus || release.validation_status || 'not_validated').trim(),
   validation_checked_at: release.validationCheckedAt || release.validation_checked_at || null,
   validation_error: release.validationError || release.validation_error || null,
+  validation_report: Array.isArray(release.validationReport || release.validation_report)
+    ? (release.validationReport || release.validation_report)
+    : [],
+  validation_critical_count: Number(release.validationCriticalCount || release.validation_critical_count || 0),
+  validation_warning_count: Number(release.validationWarningCount || release.validation_warning_count || 0),
+  validation_info_count: Number(release.validationInfoCount || release.validation_info_count || 0),
   manifest: release.manifest || {},
   storage_bucket: String(release.storageBucket || release.storage_bucket || '').trim() || null,
   storage_path: String(release.storagePath || release.storage_path || '').trim() || null,
@@ -209,6 +294,258 @@ export const calculateOfflineInstallerSha256 = async (file) => {
     .join('')
 }
 
+const decodeZipEntryName = (bytes) => {
+  try {
+    return new TextDecoder('utf-8', { fatal: false }).decode(bytes)
+  } catch {
+    return Array.from(bytes).map((byte) => String.fromCharCode(byte)).join('')
+  }
+}
+
+export const listZipEntries = async (fileOrBlob) => {
+  if (!fileOrBlob || typeof fileOrBlob.arrayBuffer !== 'function') {
+    throw new Error('Select a readable installer ZIP file.')
+  }
+  const buffer = await fileOrBlob.arrayBuffer()
+  if (buffer.byteLength < 22) {
+    throw new Error('Installer ZIP is too small to contain a valid archive.')
+  }
+
+  const view = new DataView(buffer)
+  const minOffset = Math.max(0, buffer.byteLength - 65557)
+  let eocdOffset = -1
+  for (let offset = buffer.byteLength - 22; offset >= minOffset; offset -= 1) {
+    if (view.getUint32(offset, true) === ZIP_EOCD_SIGNATURE) {
+      eocdOffset = offset
+      break
+    }
+  }
+  if (eocdOffset < 0) {
+    throw new Error('Installer ZIP central directory could not be found.')
+  }
+
+  const entryCount = view.getUint16(eocdOffset + 10, true)
+  const centralDirectorySize = view.getUint32(eocdOffset + 12, true)
+  const centralDirectoryOffset = view.getUint32(eocdOffset + 16, true)
+  if (
+    centralDirectoryOffset <= 0 ||
+    centralDirectorySize <= 0 ||
+    centralDirectoryOffset + centralDirectorySize > buffer.byteLength
+  ) {
+    throw new Error('Installer ZIP central directory is truncated or invalid.')
+  }
+
+  const entries = []
+  let offset = centralDirectoryOffset
+  for (let index = 0; index < entryCount; index += 1) {
+    if (offset + 46 > buffer.byteLength || view.getUint32(offset, true) !== ZIP_CENTRAL_DIRECTORY_SIGNATURE) {
+      throw new Error('Installer ZIP entry table is truncated or invalid.')
+    }
+    const compressedSize = view.getUint32(offset + 20, true)
+    const uncompressedSize = view.getUint32(offset + 24, true)
+    const fileNameLength = view.getUint16(offset + 28, true)
+    const extraLength = view.getUint16(offset + 30, true)
+    const commentLength = view.getUint16(offset + 32, true)
+    const fileNameOffset = offset + 46
+    const nextOffset = fileNameOffset + fileNameLength + extraLength + commentLength
+    if (fileNameOffset + fileNameLength > buffer.byteLength || nextOffset > buffer.byteLength) {
+      throw new Error('Installer ZIP entry name table is truncated.')
+    }
+    const nameBytes = new Uint8Array(buffer, fileNameOffset, fileNameLength)
+    const name = decodeZipEntryName(nameBytes).replace(/\\/g, '/')
+    entries.push({
+      name,
+      compressedSize,
+      uncompressedSize,
+      isDirectory: name.endsWith('/'),
+    })
+    offset = nextOffset
+  }
+  return entries
+}
+
+const buildValidationCheck = ({ name, result, severity, message }) => ({
+  name,
+  result,
+  severity,
+  message,
+})
+
+const countValidationChecks = (report = []) => ({
+  critical: report.filter((check) => check.severity === INSTALLER_VALIDATION_SEVERITIES.CRITICAL && check.result !== 'pass').length,
+  warning: report.filter((check) => check.severity === INSTALLER_VALIDATION_SEVERITIES.WARNING && check.result !== 'pass').length,
+  info: report.filter((check) => check.severity === INSTALLER_VALIDATION_SEVERITIES.INFO && check.result !== 'pass').length,
+})
+
+const validateEntriesAgainstRelease = ({ entries, payload, actualSize, actualSha256 }) => {
+  const names = new Set(entries.map((entry) => entry.name))
+  const report = []
+  const expectedVersion = extractOfflineInstallerVersionFromFileName(payload.file_name)
+
+  report.push(buildValidationCheck({
+    name: 'Uploaded object exists',
+    result: actualSize > 0 ? 'pass' : 'fail',
+    severity: INSTALLER_VALIDATION_SEVERITIES.CRITICAL,
+    message: actualSize > 0 ? 'Installer archive is available.' : 'Installer archive could not be loaded.',
+  }))
+  report.push(buildValidationCheck({
+    name: 'File size matches',
+    result: Number(payload.file_size) === Number(actualSize) ? 'pass' : 'fail',
+    severity: INSTALLER_VALIDATION_SEVERITIES.CRITICAL,
+    message: Number(payload.file_size) === Number(actualSize)
+      ? 'Recorded file size matches the uploaded archive.'
+      : 'Recorded file size does not match the uploaded archive.',
+  }))
+  report.push(buildValidationCheck({
+    name: 'SHA-256 checksum matches',
+    result: String(payload.sha256).toLowerCase() === String(actualSha256).toLowerCase() ? 'pass' : 'fail',
+    severity: INSTALLER_VALIDATION_SEVERITIES.CRITICAL,
+    message: String(payload.sha256).toLowerCase() === String(actualSha256).toLowerCase()
+      ? 'Recorded checksum matches the uploaded archive.'
+      : 'Recorded checksum does not match the uploaded archive.',
+  }))
+  report.push(buildValidationCheck({
+    name: 'Archive readable',
+    result: entries.length > 0 ? 'pass' : 'fail',
+    severity: INSTALLER_VALIDATION_SEVERITIES.CRITICAL,
+    message: entries.length > 0
+      ? `ZIP central directory is readable with ${entries.length} entries.`
+      : 'ZIP archive has no readable entries.',
+  }))
+  report.push(buildValidationCheck({
+    name: 'Filename version verified',
+    result: expectedVersion === payload.version ? 'pass' : 'fail',
+    severity: INSTALLER_VALIDATION_SEVERITIES.CRITICAL,
+    message: expectedVersion === payload.version
+      ? 'Filename version matches release version.'
+      : 'Filename version does not match release version.',
+  }))
+
+  const missingRequired = REQUIRED_INSTALLER_ZIP_ENTRIES.filter((entry) => !names.has(entry))
+  report.push(buildValidationCheck({
+    name: 'Required files present',
+    result: missingRequired.length === 0 ? 'pass' : 'fail',
+    severity: INSTALLER_VALIDATION_SEVERITIES.CRITICAL,
+    message: missingRequired.length === 0
+      ? 'Required installer files are present.'
+      : `Missing required installer files: ${missingRequired.join(', ')}`,
+  }))
+
+  const missingRecommended = RECOMMENDED_INSTALLER_ZIP_ENTRIES.filter((entry) => !names.has(entry))
+  report.push(buildValidationCheck({
+    name: 'Recommended files present',
+    result: missingRecommended.length === 0 ? 'pass' : 'warn',
+    severity: INSTALLER_VALIDATION_SEVERITIES.WARNING,
+    message: missingRecommended.length === 0
+      ? 'Recommended installer files are present.'
+      : `Recommended installer files were not found: ${missingRecommended.join(', ')}`,
+  }))
+
+  const prohibited = entries
+    .map((entry) => entry.name)
+    .filter((entryName) => PROHIBITED_INSTALLER_ENTRY_PATTERNS.some(({ pattern }) => pattern.test(entryName)))
+  report.push(buildValidationCheck({
+    name: 'Sensitive-file scan passed',
+    result: prohibited.length === 0 ? 'pass' : 'fail',
+    severity: INSTALLER_VALIDATION_SEVERITIES.CRITICAL,
+    message: prohibited.length === 0
+      ? 'No prohibited secret, token, database, certificate, or cache filenames were found.'
+      : `Prohibited installer entries were found: ${prohibited.slice(0, 8).join(', ')}${prohibited.length > 8 ? ', ...' : ''}`,
+  }))
+
+  const manifest = payload.manifest && typeof payload.manifest === 'object' ? payload.manifest : {}
+  const manifestChecks = [
+    !manifest.version || manifest.version === payload.version,
+    !manifest.file_name || manifest.file_name === payload.file_name,
+    !manifest.file_size_bytes || Number(manifest.file_size_bytes) === Number(actualSize),
+    !manifest.sha256 || String(manifest.sha256).toLowerCase() === String(actualSha256).toLowerCase(),
+  ]
+  report.push(buildValidationCheck({
+    name: 'Manifest matches metadata',
+    result: manifestChecks.every(Boolean) ? 'pass' : 'fail',
+    severity: INSTALLER_VALIDATION_SEVERITIES.CRITICAL,
+    message: manifestChecks.every(Boolean)
+      ? 'Package manifest metadata matches the uploaded archive.'
+      : 'Package manifest metadata does not match the uploaded archive.',
+  }))
+
+  report.push(buildValidationCheck({
+    name: 'Installer type supported',
+    result: !payload.installer_type || payload.installer_type === 'offline-installer' ? 'pass' : 'fail',
+    severity: INSTALLER_VALIDATION_SEVERITIES.CRITICAL,
+    message: !payload.installer_type || payload.installer_type === 'offline-installer'
+      ? 'Installer type is supported.'
+      : 'Installer type is not supported.',
+  }))
+  report.push(buildValidationCheck({
+    name: 'Target platform supported',
+    result: names.has('local-branch-server/Install-HealthFlow.cmd') ? 'pass' : 'warn',
+    severity: INSTALLER_VALIDATION_SEVERITIES.WARNING,
+    message: names.has('local-branch-server/Install-HealthFlow.cmd')
+      ? 'Windows installer entry point is present.'
+      : 'Windows installer entry point was not found.',
+  }))
+  report.push(buildValidationCheck({
+    name: 'Release notes present',
+    result: String(payload.release_notes || '').trim() ? 'pass' : 'fail',
+    severity: INSTALLER_VALIDATION_SEVERITIES.CRITICAL,
+    message: String(payload.release_notes || '').trim()
+      ? 'Release notes are present.'
+      : 'Release notes are required before publication.',
+  }))
+
+  return report
+}
+
+export const validateOfflineInstallerArchive = async ({ file, release }) => {
+  const payload = buildOfflineInstallerReleasePayload(release)
+  validateOfflineInstallerReleasePayload(payload, { requireUrl: true })
+  const [actualSha256, entries] = await Promise.all([
+    calculateOfflineInstallerSha256(file),
+    listZipEntries(file),
+  ])
+  const report = validateEntriesAgainstRelease({
+    entries,
+    payload,
+    actualSize: Number(file?.size || 0),
+    actualSha256,
+  })
+  const counts = countValidationChecks(report)
+  return {
+    report,
+    counts,
+    validationStatus: counts.critical > 0 ? 'invalid' : 'valid',
+    validationError: counts.critical > 0
+      ? report.find((check) => check.severity === INSTALLER_VALIDATION_SEVERITIES.CRITICAL && check.result !== 'pass')?.message
+      : null,
+  }
+}
+
+const validateExternalInstallerMetadata = (release) => {
+  const payload = buildOfflineInstallerReleasePayload(release)
+  validateOfflineInstallerReleasePayload(payload, { requireUrl: true, requireReleaseNotes: true })
+  const report = [
+    buildValidationCheck({
+      name: 'Metadata is valid',
+      result: 'pass',
+      severity: INSTALLER_VALIDATION_SEVERITIES.CRITICAL,
+      message: 'Release metadata is internally consistent.',
+    }),
+    buildValidationCheck({
+      name: 'Archive validation skipped',
+      result: 'warn',
+      severity: INSTALLER_VALIDATION_SEVERITIES.WARNING,
+      message: 'This release uses an external HTTPS URL, so the private ZIP contents could not be inspected.',
+    }),
+  ]
+  const counts = countValidationChecks(report)
+  return {
+    report,
+    counts,
+    validationStatus: 'valid',
+    validationError: null,
+  }
+}
 export const buildOfflineInstallerReleaseFromZipFile = async (
   file,
   {
@@ -262,6 +599,11 @@ export const uploadOfflineInstallerReleaseZip = async (
   options = {}
 ) => {
   const release = await buildOfflineInstallerReleaseFromZipFile(file, options)
+  if (Number(file?.size || 0) > STANDARD_STORAGE_UPLOAD_LIMIT_BYTES) {
+    await uploadOfflineInstallerReleaseZipResumable(release, file)
+    return release
+  }
+
   const { error } = await supabase.storage
     .from(release.storageBucket)
     .upload(release.storagePath, file, {
@@ -273,6 +615,38 @@ export const uploadOfflineInstallerReleaseZip = async (
   if (error) throw error
   return release
 }
+
+export const uploadOfflineInstallerReleaseZipResumable = (release, file) => new Promise((resolve, reject) => {
+  const cloudUrl = String(getConfiguredCloudUrl() || '').replace(/\/+$/, '')
+  const supabaseKey = getConfiguredSupabaseKey()
+  const accessToken = getCachedSupabaseSession()?.access_token
+
+  if (!cloudUrl || !supabaseKey || !accessToken) {
+    reject(new Error('Unable to start large installer upload because the authenticated Supabase session is not ready.'))
+    return
+  }
+
+  const upload = new tus.Upload(file, {
+    endpoint: `${cloudUrl}/storage/v1/upload/resumable`,
+    retryDelays: [0, 1000, 3000, 5000],
+    headers: {
+      apikey: supabaseKey,
+      authorization: `Bearer ${accessToken}`,
+    },
+    metadata: {
+      bucketName: release.storageBucket,
+      objectName: release.storagePath,
+      contentType: 'application/zip',
+      cacheControl: '3600',
+    },
+    uploadDataDuringCreation: true,
+    removeFingerprintOnSuccess: true,
+    onError: reject,
+    onSuccess: resolve,
+  })
+
+  upload.start()
+})
 
 export const validateOfflineInstallerReleasePayload = (
   payload,
@@ -378,19 +752,36 @@ export const validateSavedOfflineInstallerRelease = async (id) => {
   }
 
   try {
-    const payload = buildOfflineInstallerReleasePayload(row)
-    validateOfflineInstallerReleasePayload(payload, { requireUrl: true, requireReleaseNotes: true })
     if ([INSTALLER_RELEASE_STATES.DISABLED, INSTALLER_RELEASE_STATES.SUPERSEDED].includes(row.state)) {
       throw new Error('Disabled or superseded releases cannot be validated for publishing.')
     }
+
+    let validationResult
+    if (row.storage_bucket && row.storage_path) {
+      const { data: archive, error: downloadError } = await supabase.storage
+        .from(row.storage_bucket)
+        .download(row.storage_path)
+      if (downloadError) throw downloadError
+      validationResult = await validateOfflineInstallerArchive({ file: archive, release: row })
+    } else {
+      validationResult = validateExternalInstallerMetadata(row)
+    }
+
+    const { data: userData } = await supabase.auth.getUser()
+    const { report, counts, validationStatus, validationError } = validationResult
 
     const { data, error } = await supabase
       .from('offline_installer_releases')
       .update({
         ...baseUpdate,
-        state: INSTALLER_RELEASE_STATES.VALIDATED,
-        validation_status: 'valid',
-        validation_error: null,
+        state: validationStatus === 'valid' ? INSTALLER_RELEASE_STATES.VALIDATED : row.state,
+        validation_status: validationStatus,
+        validation_error: validationError,
+        validation_report: report,
+        validation_critical_count: counts.critical,
+        validation_warning_count: counts.warning,
+        validation_info_count: counts.info,
+        validated_by: userData?.user?.id || null,
         enabled: false,
       })
       .eq('id', id)
@@ -406,7 +797,9 @@ export const validateSavedOfflineInstallerRelease = async (id) => {
       details: {
         version: data?.version,
         file_name: data?.file_name,
-        validation_status: 'valid',
+        validation_status: data?.validation_status,
+        validation_critical_count: data?.validation_critical_count || 0,
+        validation_warning_count: data?.validation_warning_count || 0,
       },
     })
     return normalizeInstallerRelease(data, { includeDisabled: true })
@@ -418,6 +811,15 @@ export const validateSavedOfflineInstallerRelease = async (id) => {
         ...baseUpdate,
         validation_status: 'invalid',
         validation_error: message,
+        validation_report: [buildValidationCheck({
+          name: 'Validation failed',
+          result: 'fail',
+          severity: INSTALLER_VALIDATION_SEVERITIES.CRITICAL,
+          message,
+        })],
+        validation_critical_count: 1,
+        validation_warning_count: 0,
+        validation_info_count: 0,
         enabled: false,
       })
       .eq('id', id)
@@ -464,11 +866,20 @@ export const disableOfflineInstallerRelease = async (id) => {
 }
 
 export const enableOfflineInstallerRelease = async (id) => {
+  const { data: targetRelease, error: targetError } = await supabase
+    .from('offline_installer_releases')
+    .select('id, channel')
+    .eq('id', id)
+    .single()
+
+  if (targetError) throw targetError
+  const channel = targetRelease?.channel || 'stable'
+
   const { error: disableError } = await supabase
     .from('offline_installer_releases')
     .update({ enabled: false, state: INSTALLER_RELEASE_STATES.SUPERSEDED })
     .eq('enabled', true)
-    .eq('channel', 'stable')
+    .eq('channel', channel)
 
   if (disableError) throw disableError
 
@@ -482,6 +893,7 @@ export const enableOfflineInstallerRelease = async (id) => {
     .eq('id', id)
     .eq('state', INSTALLER_RELEASE_STATES.VALIDATED)
     .eq('validation_status', 'valid')
+    .eq('validation_critical_count', 0)
     .select(OFFLINE_INSTALLER_RELEASE_FIELDS)
     .single()
 
@@ -495,6 +907,7 @@ export const enableOfflineInstallerRelease = async (id) => {
       version: data?.version,
       file_name: data?.file_name,
       sha256: data?.sha256,
+      channel: data?.channel || channel,
     },
   })
   return normalizeInstallerRelease(data, { includeDisabled: true })
@@ -515,4 +928,54 @@ export const requestOfflineInstallerDownload = async () => {
       releaseNotes: release.releaseNotes || release.release_notes || '',
     },
   }
+}
+
+
+
+
+export const recordOfflineInstallerInstallationStatus = async ({
+  releaseId,
+  status,
+  organizationId = null,
+  branchId = null,
+  syncClientId = null,
+  installerVersion = '',
+  machineLabel = '',
+  details = {},
+} = {}) => {
+  if (!INSTALLER_INSTALLATION_STATUSES.includes(status)) {
+    throw new Error('Unsupported offline installer installation status.')
+  }
+  const safeDetails = Object.fromEntries(
+    Object.entries(details || {}).filter(([key]) => !/(token|secret|password|signed|authorization|header|url)/i.test(key))
+  )
+  const { data: userData } = await supabase.auth.getUser()
+  const payload = {
+    release_id: releaseId || null,
+    organization_id: organizationId || null,
+    branch_id: branchId || null,
+    sync_client_id: syncClientId || null,
+    event_status: status,
+    installer_version: installerVersion || null,
+    machine_label: machineLabel || null,
+    details: safeDetails,
+    created_by: userData?.user?.id || null,
+  }
+
+  const { data, error } = await supabase
+    .from('offline_installer_installation_events')
+    .insert(payload)
+    .select('id, event_status, created_at')
+    .single()
+
+  if (error) {
+    console.warn('[Offline installer] Installation status could not be recorded.', {
+      code: error.code,
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+    })
+    return null
+  }
+  return data
 }

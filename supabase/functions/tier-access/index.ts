@@ -1090,6 +1090,24 @@ const requestOfflineInstallerDownload = async (
     },
   })
 
+  try {
+    await adminClient
+      .from('offline_installer_installation_events')
+      .insert({
+        release_id: release.id,
+        organization_id: organizationId || null,
+        event_status: 'download_requested',
+        installer_version: release.version || null,
+        details: {
+          file_name: release.file_name,
+          source,
+        },
+        created_by: requesterProfile.id || null,
+      })
+  } catch (eventError) {
+    console.warn('offline installer event warning:', getErrorMessage(eventError))
+  }
+
   return {
     downloadUrl,
     expiresAt,
