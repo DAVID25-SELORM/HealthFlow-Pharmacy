@@ -46,7 +46,7 @@ const RECOMMENDED_INSTALLER_ZIP_ENTRIES = [
 
 const PROHIBITED_INSTALLER_ENTRY_PATTERNS = [
   { pattern: /(^|\/)\.env$/i, label: 'Environment file' },
-  { pattern: /(^|\/)\.env\.(?!example$)[^/]+$/i, label: 'Environment file' },
+  { pattern: /(^|\/)\.env\.(?![^/]*example$)[^/]+$/i, label: 'Environment file' },
   { pattern: /service[-_]?role/i, label: 'Service-role key reference' },
   { pattern: /branch[-_]?token/i, label: 'Branch token reference' },
   { pattern: /(^|\/)([^/]+\.)?(sqlite|sqlite3|db|db3)$/i, label: 'Local database file' },

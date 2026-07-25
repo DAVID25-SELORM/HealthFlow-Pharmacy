@@ -745,6 +745,30 @@ describe('offlineInstallerReleaseService', () => {
     })
   })
 
+  it('allows environment example templates while still passing sensitive-file validation', async () => {
+    const file = makeInstallerFile([
+      ...REQUIRED_ZIP_ENTRIES,
+      'local-branch-server/.env.linux.example',
+    ])
+    const sha256 = await calculateOfflineInstallerSha256(file)
+
+    await expect(validateOfflineInstallerArchive({
+      file,
+      release: {
+        version: '2.5.0',
+        downloadUrl: 'https://healthflowcloud.com/offline-installer/HealthFlow-Offline-Installer-2.5.0.zip',
+        fileName: 'HealthFlow-Offline-Installer-2.5.0.zip',
+        fileSize: file.size,
+        sha256,
+        releaseNotes: 'Template package test.',
+      },
+    })).resolves.toMatchObject({
+      report: expect.arrayContaining([
+        expect.objectContaining({ name: 'Sensitive-file scan passed', result: 'pass' }),
+      ]),
+    })
+  })
+
   it('downloads the private ZIP when validating a saved release', async () => {
     const file = makeInstallerFile()
     const sha256 = await calculateOfflineInstallerSha256(file)
