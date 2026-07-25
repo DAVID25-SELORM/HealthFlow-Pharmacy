@@ -39,6 +39,21 @@ const storageKeySourceUrl = isConfiguredUrl(providerSupabaseUrl)
 
 export const getConfiguredCloudUrl = () => supabaseUrl
 export const getConfiguredSupabaseKey = () => supabaseKey
+export const getConfiguredSupabaseStorageUrl = () => {
+  const sourceUrl = isConfiguredUrl(providerSupabaseUrl) ? providerSupabaseUrl : supabaseUrl
+  try {
+    const url = new URL(sourceUrl)
+    if (url.hostname.endsWith('.supabase.co') && !url.hostname.includes('.storage.')) {
+      const [projectRef = ''] = url.hostname.split('.')
+      if (projectRef) {
+        url.hostname = `${projectRef}.storage.supabase.co`
+      }
+    }
+    return normalizeUrl(url.toString())
+  } catch {
+    return normalizeUrl(sourceUrl)
+  }
+}
 
 export const supabaseAuthStorageKey = hasValidCredentials
   ? getDefaultStorageKey(storageKeySourceUrl)

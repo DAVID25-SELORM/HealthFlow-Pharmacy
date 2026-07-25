@@ -37,9 +37,14 @@ describe('invokeSupabaseFunction', () => {
       createClient,
     }))
 
-    const { getConfiguredCloudUrl, supabaseAuthStorageKey } = await import('./supabase')
+    const {
+      getConfiguredCloudUrl,
+      getConfiguredSupabaseStorageUrl,
+      supabaseAuthStorageKey,
+    } = await import('./supabase')
 
     expect(getConfiguredCloudUrl()).toBe('https://api.healthflowcloud.com')
+    expect(getConfiguredSupabaseStorageUrl()).toBe('https://project-ref.storage.supabase.co')
     expect(createClient).toHaveBeenCalledWith(
       'https://api.healthflowcloud.com',
       'anon-key',

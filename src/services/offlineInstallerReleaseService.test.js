@@ -44,7 +44,7 @@ vi.mock('../lib/supabase', () => ({
     },
   },
   getCachedSupabaseSession: () => ({ access_token: 'access-token-1' }),
-  getConfiguredCloudUrl: () => 'https://project-ref.supabase.co',
+  getConfiguredSupabaseStorageUrl: () => 'https://project-ref.storage.supabase.co',
   getConfiguredSupabaseKey: () => 'anon-key-1',
 }))
 
@@ -403,7 +403,7 @@ describe('offlineInstallerReleaseService', () => {
 
     expect(storageFrom).not.toHaveBeenCalled()
     expect(TusUpload).toHaveBeenCalledWith(file, expect.objectContaining({
-      endpoint: 'https://project-ref.supabase.co/storage/v1/upload/resumable',
+      endpoint: 'https://project-ref.storage.supabase.co/storage/v1/upload/resumable',
       chunkSize: 6 * 1024 * 1024,
       uploadDataDuringCreation: false,
       removeFingerprintOnSuccess: true,

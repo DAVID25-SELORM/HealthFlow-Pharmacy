@@ -4,8 +4,8 @@ import { tryLogAuditEvent } from './auditService'
 import { invokeTierAccess } from './tierAccessService'
 import {
   getCachedSupabaseSession,
-  getConfiguredCloudUrl,
   getConfiguredSupabaseKey,
+  getConfiguredSupabaseStorageUrl,
   supabase,
 } from '../lib/supabase'
 
@@ -618,17 +618,17 @@ export const uploadOfflineInstallerReleaseZip = async (
 }
 
 export const uploadOfflineInstallerReleaseZipResumable = (release, file) => new Promise((resolve, reject) => {
-  const cloudUrl = String(getConfiguredCloudUrl() || '').replace(/\/+$/, '')
+  const storageUrl = String(getConfiguredSupabaseStorageUrl() || '').replace(/\/+$/, '')
   const supabaseKey = getConfiguredSupabaseKey()
   const accessToken = getCachedSupabaseSession()?.access_token
 
-  if (!cloudUrl || !supabaseKey || !accessToken) {
+  if (!storageUrl || !supabaseKey || !accessToken) {
     reject(new Error('Unable to start large installer upload because the authenticated Supabase session is not ready.'))
     return
   }
 
   const upload = new tus.Upload(file, {
-    endpoint: `${cloudUrl}/storage/v1/upload/resumable`,
+    endpoint: `${storageUrl}/storage/v1/upload/resumable`,
     retryDelays: [0, 1000, 3000, 5000],
     headers: {
       apikey: supabaseKey,
