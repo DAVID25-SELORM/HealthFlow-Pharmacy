@@ -16,16 +16,16 @@ const mocks = vi.hoisted(() => ({
   deactivateBranchSyncClient: vi.fn(),
   getActiveOfflineInstallerRelease: vi.fn(),
   requestOfflineInstallerDownload: vi.fn(),
+  useAuth: vi.fn(),
+  useTenant: vi.fn(),
 }))
 
 vi.mock('../context/AuthContext', () => ({
-  useAuth: () => ({
-    organization: null,
-    role: 'super_admin',
-    user: { id: 'user-1' },
-    profile: null,
-    branch: null,
-  }),
+  useAuth: mocks.useAuth,
+}))
+
+vi.mock('../context/TenantContext', () => ({
+  useTenant: mocks.useTenant,
 }))
 
 vi.mock('../context/NotificationContext', () => ({
@@ -78,6 +78,14 @@ describe('OfflineSync branch registration', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.getBranchServerConfig.mockReturnValue({ enabled: false, token: '', url: '' })
+    mocks.useAuth.mockReturnValue({
+      organization: null,
+      role: 'super_admin',
+      user: { id: 'user-1' },
+      profile: null,
+      branch: null,
+    })
+    mocks.useTenant.mockReturnValue({ canUseOfflineInstaller: false })
     mocks.getActiveOfflineInstallerRelease.mockResolvedValue(null)
     mocks.requestOfflineInstallerDownload.mockResolvedValue(null)
     mocks.listBranchSyncSetupOptions.mockResolvedValue({
@@ -224,6 +232,28 @@ describe('OfflineSync branch registration', () => {
     await waitFor(() => expect(mocks.notify).toHaveBeenCalledWith(NOT_CONFIGURED_MESSAGE, 'error'))
     expect(openSpy).not.toHaveBeenCalled()
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('hides installer downloads from facility users until Super Admin enables the privilege', async () => {
+    mocks.useAuth.mockReturnValue({
+      organization: { id: 'org-1' },
+      role: 'admin',
+      user: { id: 'user-1' },
+      profile: { organization_id: 'org-1' },
+      branch: null,
+    })
+    mocks.useTenant.mockReturnValue({ canUseOfflineInstaller: false })
+    vi.stubEnv('VITE_HEALTHFLOW_INSTALLER_URL', CONFIGURED_INSTALLER_URL)
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+
+    render(<OfflineSync />)
+
+    expect(screen.getByRole('button', { name: 'Download and Install' })).toBeDisabled()
+    expect(screen.getByText(
+      'Offline installer downloads are not enabled for this facility. Please contact HealthFlow support.'
+    )).toBeInTheDocument()
+    expect(mocks.getActiveOfflineInstallerRelease).not.toHaveBeenCalled()
+    expect(openSpy).not.toHaveBeenCalled()
   })
 
   it('refuses to open the installer when the environment variable is an empty string', async () => {

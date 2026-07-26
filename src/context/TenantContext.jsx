@@ -34,6 +34,7 @@ export const TenantProvider = ({ children }) => {
         canUseNhisTopups: false,
         canUseAccounting: false,
         canUseMultiBranch: false,
+        canUseOfflineInstaller: false,
         loading: true,
       }
     }
@@ -57,6 +58,7 @@ export const TenantProvider = ({ children }) => {
         canUseNhisTopups: false,
         canUseAccounting: false,
         canUseMultiBranch: false,
+        canUseOfflineInstaller: false,
         loading: false,
       }
     }
@@ -79,6 +81,7 @@ export const TenantProvider = ({ children }) => {
         canUseNhisTopups: false,
         canUseAccounting: false,
         canUseMultiBranch: false,
+        canUseOfflineInstaller: false,
         loading: false,
       }
     }
@@ -110,6 +113,7 @@ export const TenantProvider = ({ children }) => {
       canUseNhisTopups: Boolean(organization.can_use_nhis_topups),
       canUseAccounting: Boolean(organization.can_use_accounting),
       canUseMultiBranch: Boolean(organization.can_use_multi_branch),
+      canUseOfflineInstaller: Boolean(organization.can_use_offline_installer),
     }
   }, [organization, loading, role])
 

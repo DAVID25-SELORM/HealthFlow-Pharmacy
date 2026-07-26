@@ -221,6 +221,7 @@ export const createPharmacyTenant = async ({ pharmacy, admin }) =>
       canUseNhisTopups: Boolean(pharmacy.canUseNhis && pharmacy.canUseNhisTopups),
       canUseAccounting: Boolean(pharmacy.canUseAccounting),
       canUseMultiBranch: Boolean(pharmacy.canUseMultiBranch),
+      canUseOfflineInstaller: Boolean(pharmacy.canUseOfflineInstaller),
       nextPaymentDueAt: pharmacy.nextPaymentDueAt || null,
       billingNotes: normalizeText(pharmacy.billingNotes) || null,
     },
@@ -347,6 +348,8 @@ export const updateOrganizationDetails = async (orgId, fields) => {
       fields.canUseAccounting !== undefined ? Boolean(fields.canUseAccounting) : undefined,
     canUseMultiBranch:
       fields.canUseMultiBranch !== undefined ? Boolean(fields.canUseMultiBranch) : undefined,
+    canUseOfflineInstaller:
+      fields.canUseOfflineInstaller !== undefined ? Boolean(fields.canUseOfflineInstaller) : undefined,
     billingNotes:
       fields.billingNotes !== undefined ? normalizeText(fields.billingNotes) || null : undefined,
     lastPaymentAt:

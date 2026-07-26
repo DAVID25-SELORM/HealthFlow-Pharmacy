@@ -1165,6 +1165,10 @@ const updateTenantOrganization = async (
       organizationInput.canUseMultiBranch !== undefined
         ? Boolean(organizationInput.canUseMultiBranch)
         : null,
+    can_use_offline_installer:
+      organizationInput.canUseOfflineInstaller !== undefined
+        ? Boolean(organizationInput.canUseOfflineInstaller)
+        : null,
     billing_notes:
       organizationInput.billingNotes !== undefined
         ? normalizeText(organizationInput.billingNotes) || null
@@ -1210,6 +1214,7 @@ const updateTenantOrganization = async (
       key !== 'can_use_nhis_topups' &&
       key !== 'can_use_accounting' &&
       key !== 'can_use_multi_branch' &&
+      key !== 'can_use_offline_installer' &&
       key !== 'billing_notes' &&
       key !== 'last_payment_at' &&
       key !== 'next_payment_due_at'
@@ -1278,6 +1283,10 @@ const updateTenantOrganization = async (
 
   if (organizationInput.canUseMultiBranch === undefined) {
     delete updatePayload.can_use_multi_branch
+  }
+
+  if (organizationInput.canUseOfflineInstaller === undefined) {
+    delete updatePayload.can_use_offline_installer
   }
 
   if (organizationInput.billingNotes === undefined) {
@@ -1532,6 +1541,7 @@ const bootstrapOrganization = async (
           ),
           can_use_accounting: Boolean(organizationInput.canUseAccounting),
           can_use_multi_branch: Boolean(organizationInput.canUseMultiBranch),
+          can_use_offline_installer: Boolean(organizationInput.canUseOfflineInstaller),
           billing_notes: normalizeText(organizationInput.billingNotes) || null,
           last_payment_at: lastPaymentAt,
           next_payment_due_at: nextPaymentDueAt,

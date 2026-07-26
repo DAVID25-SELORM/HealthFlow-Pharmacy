@@ -36,6 +36,7 @@ import {
   requestOfflineInstallerDownload,
 } from '../services/offlineInstallerReleaseService'
 import { useAuth } from '../context/AuthContext'
+import { useTenant } from '../context/TenantContext'
 import { useNotification } from '../context/NotificationContext'
 import { getConfiguredCloudUrl } from '../lib/supabase'
 import {
@@ -212,6 +213,7 @@ const getDefaultBranchName = (organization) =>
 
 export default function OfflineSync() {
   const { organization, role, user, profile, branch } = useAuth()
+  const { canUseOfflineInstaller } = useTenant()
   const { notify } = useNotification()
   const [config, setConfig] = useState(() => getBranchServerConfig())
   const [installerRelease, setInstallerRelease] = useState(null)
@@ -252,6 +254,7 @@ export default function OfflineSync() {
   const normalizedRole = String(role || '').toLowerCase()
   const canManageBranchToken = normalizedRole === 'admin' || normalizedRole === 'super_admin'
   const isSuperAdmin = normalizedRole === 'super_admin'
+  const canDownloadOfflineInstaller = isSuperAdmin || canUseOfflineInstaller
 
   const refreshStatus = useCallback(async ({ silent = false } = {}) => {
     const nextConfig = getBranchServerConfig()
@@ -325,6 +328,14 @@ export default function OfflineSync() {
   useEffect(() => {
     let cancelled = false
 
+    if (!canDownloadOfflineInstaller) {
+      setInstallerRelease(null)
+      setInstallerReleaseLoading(false)
+      return () => {
+        cancelled = true
+      }
+    }
+
     const loadInstallerRelease = async () => {
       try {
         setInstallerReleaseLoading(true)
@@ -340,7 +351,7 @@ export default function OfflineSync() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [canDownloadOfflineInstaller])
 
   useEffect(() => {
     if (!isSuperAdmin) {
@@ -863,6 +874,8 @@ export default function OfflineSync() {
     'The installer package could not be found at the configured location. Contact system administration.'
   const INSTALLER_UNVERIFIED_MESSAGE =
     'Installer availability could not be verified before opening. Proceeding with the configured download.'
+  const INSTALLER_NOT_ALLOWED_MESSAGE =
+    'Offline installer downloads are not enabled for this facility. Please contact HealthFlow support.'
 
   // Only 404/410 are unambiguous "this resource does not exist" responses.
   // Every other non-OK status a HEAD request can return is consistent with a
@@ -872,6 +885,11 @@ export default function OfflineSync() {
   const INSTALLER_CONFIRMED_MISSING_STATUSES = [404, 410]
 
   const openInstallerDownload = async () => {
+    if (!canDownloadOfflineInstaller) {
+      notify(INSTALLER_NOT_ALLOWED_MESSAGE, 'error')
+      return
+    }
+
     // A missing, blank, or placeholder URL is never opened — it is not
     // evidence that a real installer package exists anywhere.
     if (!effectiveInstallerConfigured) {
@@ -967,7 +985,9 @@ export default function OfflineSync() {
         ? 'The update helper is not installed. Rerun the branch service installer once.'
         : updateStatus?.message || 'Check for a signed HealthFlow branch update.'
   const effectiveInstallerUrl = installerRelease?.downloadUrl || HEALTHFLOW_INSTALLER_URL
-  const effectiveInstallerConfigured = Boolean(installerRelease?.downloadUrl) || HEALTHFLOW_INSTALLER_URL_CONFIGURED
+  const effectiveInstallerConfigured =
+    canDownloadOfflineInstaller &&
+    (Boolean(installerRelease?.downloadUrl) || HEALTHFLOW_INSTALLER_URL_CONFIGURED)
   const installerDetailsValue = installerRelease?.downloadUrl || HEALTHFLOW_INSTALLER_DETAILS_VALUE
   const installerUrlValidation = effectiveInstallerConfigured
     ? validateHealthflowInstallerUrl(effectiveInstallerUrl)
@@ -1024,17 +1044,25 @@ export default function OfflineSync() {
             ? installerRelease
               ? `Version ${installerRelease.version}. File size ${formatBytes(installerRelease.fileSize)}. Published ${formatDateTime(installerRelease.publishedAt)}.${installerRelease.releaseNotes ? ' Release notes available.' : ''}`
               : 'Download the approved installer, complete setup, and run the first sync while internet is available.'
-            : 'Offline installer downloads are currently unavailable. Please contact HealthFlow support.'}
+            : canDownloadOfflineInstaller
+              ? 'Offline installer downloads are currently unavailable. Please contact HealthFlow support.'
+              : INSTALLER_NOT_ALLOWED_MESSAGE}
         </div>
         <div className="install-healthflow-actions">
           <button
             className="btn btn-primary"
             type="button"
+            disabled={!canDownloadOfflineInstaller}
             onClick={() => void openInstallerDownload()}
           >
             <Download size={16} /> Download and Install
           </button>
-          <button className="btn btn-outline" type="button" onClick={downloadInstallerDetails}>
+          <button
+            className="btn btn-outline"
+            type="button"
+            disabled={!canDownloadOfflineInstaller}
+            onClick={downloadInstallerDetails}
+          >
             <ClipboardCopy size={16} /> Download Setup Details
           </button>
         </div>

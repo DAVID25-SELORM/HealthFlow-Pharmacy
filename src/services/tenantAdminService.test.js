@@ -10,10 +10,12 @@ vi.mock('../lib/supabase', () => ({
 }))
 
 import {
+  createPharmacyTenant,
   deactivateBranchSyncClient,
   listBranchSyncClients,
   listBranchSyncSetupOptions,
   registerBranchSyncClient,
+  updateOrganizationDetails,
 } from './tenantAdminService'
 
 describe('tenantAdminService branch sync administration', () => {
@@ -114,6 +116,63 @@ describe('tenantAdminService branch sync administration', () => {
         organizationId: 'org-1',
         syncClientId: 'client-1',
       },
+    })
+  })
+
+  it('sends the offline installer privilege when creating a tenant', async () => {
+    mocks.invokeSupabaseFunction.mockResolvedValue({
+      data: { organization: { id: 'org-1' } },
+      error: null,
+    })
+
+    await createPharmacyTenant({
+      pharmacy: {
+        name: 'Ark Pharmacy',
+        organizationType: 'pharmacy',
+        subdomain: 'ark',
+        subscriptionTier: 'basic',
+        planCode: 'starter',
+        billingStatus: 'trial',
+        supportLevel: 'standard',
+        canUseOfflineInstaller: true,
+      },
+      admin: {
+        fullName: 'Admin User',
+        email: 'admin@example.com',
+        phone: '',
+        temporaryPassword: 'temporary-password',
+      },
+    })
+
+    expect(mocks.invokeSupabaseFunction).toHaveBeenCalledWith('tenant-signup', {
+      body: expect.objectContaining({
+        action: 'create_tenant',
+        organization: expect.objectContaining({
+          canUseOfflineInstaller: true,
+        }),
+      }),
+    })
+  })
+
+  it('sends the offline installer privilege when updating organization details', async () => {
+    mocks.invokeSupabaseFunction.mockResolvedValue({
+      data: { organization: { id: 'org-1', can_use_offline_installer: true } },
+      error: null,
+    })
+
+    await updateOrganizationDetails('org-1', {
+      name: 'Ark Pharmacy',
+      canUseOfflineInstaller: true,
+    })
+
+    expect(mocks.invokeSupabaseFunction).toHaveBeenCalledWith('tenant-signup', {
+      body: expect.objectContaining({
+        action: 'update_tenant_organization',
+        orgId: 'org-1',
+        organization: expect.objectContaining({
+          canUseOfflineInstaller: true,
+        }),
+      }),
     })
   })
 })

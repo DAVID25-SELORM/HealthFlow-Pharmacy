@@ -745,7 +745,7 @@ const getOrganizationTierContext = async (
 ) => {
   const { data: organization, error } = await adminClient
     .from('organizations')
-    .select('id, status, billing_status, subscription_tier, trial_ends_at, subscription_ends_at, can_use_claims')
+    .select('id, status, billing_status, subscription_tier, trial_ends_at, subscription_ends_at, can_use_claims, can_use_offline_installer')
     .eq('id', organizationId)
     .maybeSingle()
 
@@ -757,7 +757,10 @@ const getOrganizationTierContext = async (
     throw new Error('Organization not found.')
   }
 
-  return resolveTierAccess(organization)
+  return {
+    ...resolveTierAccess(organization),
+    canUseOfflineInstaller: Boolean(organization.can_use_offline_installer),
+  }
 }
 
 const requireRequester = async (
@@ -1061,6 +1064,9 @@ const requestOfflineInstallerDownload = async (
     const tierContext = await getOrganizationTierContext(adminClient, organizationId)
     if (tierContext.isSuspended) {
       throw new Error('This pharmacy is locked. Contact platform support to restore access.')
+    }
+    if (!isSuperAdminRequester(requesterProfile) && !tierContext.canUseOfflineInstaller) {
+      throw new Error('Offline installer downloads are not enabled for this facility. Contact HealthFlow support.')
     }
   }
 

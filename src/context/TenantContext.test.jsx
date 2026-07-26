@@ -23,6 +23,8 @@ const TenantProbe = () => {
       <dd>{tenant.canUsePurchases ? 'yes' : 'no'}</dd>
       <dt>NHIS</dt>
       <dd>{tenant.canUseNhis ? 'yes' : 'no'}</dd>
+      <dt>Offline installer</dt>
+      <dd>{tenant.canUseOfflineInstaller ? 'yes' : 'no'}</dd>
     </dl>
   )
 }
@@ -45,5 +47,28 @@ describe('TenantContext', () => {
     expect(screen.getByText('Reports').nextSibling).toHaveTextContent('yes')
     expect(screen.getByText('Purchases').nextSibling).toHaveTextContent('no')
     expect(screen.getByText('NHIS').nextSibling).toHaveTextContent('no')
+    expect(screen.getByText('Offline installer').nextSibling).toHaveTextContent('no')
+  })
+
+  it('exposes the tenant offline installer privilege from the organization record', () => {
+    mocks.useAuth.mockReturnValue({
+      organization: {
+        id: 'org-1',
+        status: 'active',
+        billing_status: 'active',
+        subscription_tier: 'pro',
+        can_use_offline_installer: true,
+      },
+      loading: false,
+      role: 'admin',
+    })
+
+    render(
+      <TenantProvider>
+        <TenantProbe />
+      </TenantProvider>
+    )
+
+    expect(screen.getByText('Offline installer').nextSibling).toHaveTextContent('yes')
   })
 })

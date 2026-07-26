@@ -43,6 +43,7 @@ const blankPharmacy = {
   canUseNhisTopups: false,
   canUseAccounting: false,
   canUseMultiBranch: false,
+  canUseOfflineInstaller: false,
   nextPaymentDueAt: '',
   billingNotes: '',
 }
@@ -255,6 +256,7 @@ const TenantAdmin = () => {
       canUseNhisTopups: Boolean(org.can_use_nhis_topups),
       canUseAccounting: Boolean(org.can_use_accounting),
       canUseMultiBranch: Boolean(org.can_use_multi_branch),
+      canUseOfflineInstaller: Boolean(org.can_use_offline_installer),
       billingNotes: org.billing_notes || '',
       lastPaymentAt: org.last_payment_at ? org.last_payment_at.split('T')[0] : '',
       nextPaymentDueAt: org.next_payment_due_at ? org.next_payment_due_at.split('T')[0] : '',
@@ -325,7 +327,8 @@ const TenantAdmin = () => {
         Boolean(updatedOrganization?.can_use_nhis_topups) !==
           Boolean(editForm.canUseNhis && editForm.canUseNhisTopups) ||
         Boolean(updatedOrganization?.can_use_accounting) !== Boolean(editForm.canUseAccounting) ||
-        Boolean(updatedOrganization?.can_use_multi_branch) !== Boolean(editForm.canUseMultiBranch)
+        Boolean(updatedOrganization?.can_use_multi_branch) !== Boolean(editForm.canUseMultiBranch) ||
+        Boolean(updatedOrganization?.can_use_offline_installer) !== Boolean(editForm.canUseOfflineInstaller)
       ) {
         throw new Error('Module privileges were not saved. Deploy the latest tenant-signup function and try again.')
       }
@@ -670,6 +673,14 @@ const TenantAdmin = () => {
                       onChange={(e) => setPharmacy({ ...pharmacy, canUseMultiBranch: e.target.checked })}
                     />
                     Multi-branch
+                  </label>
+                  <label className="tenant-checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={pharmacy.canUseOfflineInstaller}
+                      onChange={(e) => setPharmacy({ ...pharmacy, canUseOfflineInstaller: e.target.checked })}
+                    />
+                    Offline installer downloads
                   </label>
                 </div>
                 <div className="tenant-form-group full-width">
@@ -1310,6 +1321,14 @@ const TenantAdmin = () => {
                         onChange={(e) => setEditForm({ ...editForm, canUseMultiBranch: e.target.checked })}
                       />
                       Multi-branch
+                    </label>
+                    <label className="tenant-checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(editForm.canUseOfflineInstaller)}
+                        onChange={(e) => setEditForm({ ...editForm, canUseOfflineInstaller: e.target.checked })}
+                      />
+                      Offline installer downloads
                     </label>
                   </div>
                   <div className="tenant-form-group full-width">
