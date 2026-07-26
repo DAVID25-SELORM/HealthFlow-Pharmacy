@@ -67,6 +67,7 @@ import {
   calculateOfflineInstallerSha256,
   enableOfflineInstallerRelease,
   extractOfflineInstallerVersionFromFileName,
+  findUnsafeZipEntryPaths,
   getActiveOfflineInstallerRelease,
   INSTALLER_RELEASE_STATES,
   listOfflineInstallerReleases,
@@ -537,35 +538,42 @@ describe('offlineInstallerReleaseService', () => {
   })
 
   it('validates a saved release and stores a valid result', async () => {
+    const file = makeInstallerFile()
+    const sha256 = await calculateOfflineInstallerSha256(file)
+    download.mockResolvedValue({ data: file, error: null })
+    storageFrom.mockReturnValue({ download })
+
     const loadQuery = makeQuery({
       data: {
         id: 'release-3',
-        version: '2.2.0',
-        download_url: 'https://downloads.healthflowcloud.com/HealthFlow-Offline-Installer-2.2.0.zip',
-        file_name: 'HealthFlow-Offline-Installer-2.2.0.zip',
-        file_size: 180000000,
-        sha256: 'c'.repeat(64),
+        version: '2.5.0',
+        download_url: 'https://healthflowcloud.com/offline-installer/HealthFlow-Offline-Installer-2.5.0.zip',
+        file_name: 'HealthFlow-Offline-Installer-2.5.0.zip',
+        file_size: file.size,
+        sha256,
         release_notes: 'Validated installer package.',
         state: 'uploaded',
         channel: 'stable',
         validation_status: 'not_validated',
         manifest: {
-          version: '2.2.0',
-          file_name: 'HealthFlow-Offline-Installer-2.2.0.zip',
-          file_size_bytes: 180000000,
-          sha256: 'c'.repeat(64),
+          version: '2.5.0',
+          file_name: 'HealthFlow-Offline-Installer-2.5.0.zip',
+          file_size_bytes: file.size,
+          sha256,
         },
+        storage_bucket: 'healthflow-offline-installers',
+        storage_path: 'releases/2.5.0/HealthFlow-Offline-Installer-2.5.0.zip',
         enabled: false,
       },
     })
     const updateQuery = makeQuery({
       data: {
         id: 'release-3',
-        version: '2.2.0',
-        download_url: 'https://downloads.healthflowcloud.com/HealthFlow-Offline-Installer-2.2.0.zip',
-        file_name: 'HealthFlow-Offline-Installer-2.2.0.zip',
-        file_size: 180000000,
-        sha256: 'c'.repeat(64),
+        version: '2.5.0',
+        download_url: 'https://healthflowcloud.com/offline-installer/HealthFlow-Offline-Installer-2.5.0.zip',
+        file_name: 'HealthFlow-Offline-Installer-2.5.0.zip',
+        file_size: file.size,
+        sha256,
         state: 'validated',
         channel: 'stable',
         validation_status: 'valid',
@@ -745,6 +753,42 @@ describe('offlineInstallerReleaseService', () => {
     })
   })
 
+  it('rejects ZIP entries that could escape the installer extraction folder', async () => {
+    const file = makeInstallerFile([
+      ...REQUIRED_ZIP_ENTRIES,
+      '../outside.ps1',
+      'local-branch-server/../../Windows/System32/evil.dll',
+      'C:/Windows/System32/evil.dll',
+    ])
+    const sha256 = await calculateOfflineInstallerSha256(file)
+
+    await expect(validateOfflineInstallerArchive({
+      file,
+      release: {
+        version: '2.5.0',
+        downloadUrl: 'https://healthflowcloud.com/offline-installer/HealthFlow-Offline-Installer-2.5.0.zip',
+        fileName: 'HealthFlow-Offline-Installer-2.5.0.zip',
+        fileSize: file.size,
+        sha256,
+        releaseNotes: 'Path safety package test.',
+      },
+    })).resolves.toMatchObject({
+      validationStatus: 'invalid',
+      report: expect.arrayContaining([
+        expect.objectContaining({
+          name: 'Archive paths are safe',
+          result: 'fail',
+          severity: 'critical',
+        }),
+      ]),
+    })
+
+    expect(findUnsafeZipEntryPaths([
+      { name: 'local-branch-server/Install-HealthFlow.cmd' },
+      { name: '..\\outside.ps1' },
+    ])).toEqual(['../outside.ps1'])
+  })
+
   it('allows environment example templates while still passing sensitive-file validation', async () => {
     const file = makeInstallerFile([
       ...REQUIRED_ZIP_ENTRIES,
@@ -832,6 +876,57 @@ describe('offlineInstallerReleaseService', () => {
       validation_critical_count: 0,
       validation_warning_count: expect.any(Number),
       validated_by: 'user-1',
+    }))
+  })
+
+  it('does not validate external installer URLs without private archive inspection', async () => {
+    const loadQuery = makeQuery({
+      data: {
+        id: 'external-release',
+        version: '2.5.0',
+        download_url: 'https://downloads.healthflowcloud.com/HealthFlow-Offline-Installer-2.5.0.zip',
+        file_name: 'HealthFlow-Offline-Installer-2.5.0.zip',
+        file_size: 180000000,
+        sha256: 'd'.repeat(64),
+        release_notes: 'External URL package test.',
+        state: 'uploaded',
+        channel: 'stable',
+        validation_status: 'not_validated',
+        manifest: {},
+        storage_bucket: null,
+        storage_path: null,
+        enabled: false,
+      },
+    })
+    const updateQuery = makeQuery({
+      data: {
+        id: 'external-release',
+        version: '2.5.0',
+        download_url: 'https://downloads.healthflowcloud.com/HealthFlow-Offline-Installer-2.5.0.zip',
+        file_name: 'HealthFlow-Offline-Installer-2.5.0.zip',
+        file_size: 180000000,
+        sha256: 'd'.repeat(64),
+        release_notes: 'External URL package test.',
+        state: 'uploaded',
+        channel: 'stable',
+        validation_status: 'invalid',
+        validation_error: 'Upload the installer ZIP to private HealthFlow storage before validation. External URLs cannot be published.',
+        validation_report: [],
+        validation_critical_count: 1,
+        enabled: false,
+      },
+    })
+    from.mockReturnValueOnce(loadQuery).mockReturnValueOnce(updateQuery)
+
+    await expect(validateSavedOfflineInstallerRelease('external-release')).resolves.toMatchObject({
+      validationStatus: 'invalid',
+      validationError: 'Upload the installer ZIP to private HealthFlow storage before validation. External URLs cannot be published.',
+    })
+    expect(download).not.toHaveBeenCalled()
+    expect(updateQuery.update).toHaveBeenCalledWith(expect.objectContaining({
+      validation_status: 'invalid',
+      validation_critical_count: 1,
+      enabled: false,
     }))
   })
 

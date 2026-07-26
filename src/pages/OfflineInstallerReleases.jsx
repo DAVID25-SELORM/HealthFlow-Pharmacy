@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CheckCircle2, ClipboardCopy, Download, RotateCcw, Save, ToggleLeft, UploadCloud } from 'lucide-react'
+import { CheckCircle2, ClipboardCopy, Download, Pencil, RotateCcw, Save, ToggleLeft, UploadCloud } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
 import {
@@ -53,6 +53,38 @@ const formatChecksum = (value) => {
   return `${checksum.slice(0, 12)}...${checksum.slice(-8)}`
 }
 
+const buildDefaultReleaseNotes = (version) => [
+  `HealthFlow Offline Installer${version ? ` v${version}` : ''}`,
+  '',
+  '- Production offline installer release',
+  '- Private installer storage',
+  '- Signed download URLs for facility users',
+  '- Offline branch server installation',
+  '- Workstation registration',
+  '- Offline synchronization support',
+  '- Installer validation and release lifecycle management',
+].join('\n')
+
+const releaseToForm = (release, current = {}) => {
+  if (!release) return blankForm
+  const releaseNotes = current.releaseNotes || release.releaseNotes || buildDefaultReleaseNotes(release.version)
+  return {
+    ...blankForm,
+    version: release.version || '',
+    downloadUrl: release.downloadUrl || '',
+    fileName: release.fileName || '',
+    fileSize: release.fileSize || '',
+    sha256: release.sha256 || '',
+    releaseNotes,
+    state: release.state || INSTALLER_RELEASE_STATES.DRAFT,
+    channel: release.channel || 'stable',
+    validationStatus: release.validationStatus || 'not_validated',
+    manifest: release.manifest || {},
+    storageBucket: release.storageBucket || '',
+    storagePath: release.storagePath || '',
+  }
+}
+
 const canPublishRelease = (release) => (
   release?.state === INSTALLER_RELEASE_STATES.VALIDATED &&
   release?.validationStatus === 'valid' &&
@@ -81,7 +113,20 @@ export default function OfflineInstallerReleases() {
   const loadReleases = async () => {
     setLoading(true)
     try {
-      setReleases(await listOfflineInstallerReleases())
+      const nextReleases = await listOfflineInstallerReleases()
+      setReleases(nextReleases)
+      setForm((current) => {
+        if (current.version) return current
+        const editableRelease = nextReleases.find((release) =>
+          !release.enabled &&
+          [
+            INSTALLER_RELEASE_STATES.UPLOADED,
+            INSTALLER_RELEASE_STATES.DRAFT,
+            INSTALLER_RELEASE_STATES.VALIDATED,
+          ].includes(release.state)
+        )
+        return editableRelease ? releaseToForm(editableRelease, current) : current
+      })
     } catch (error) {
       notify(error.message || 'Unable to load offline installer releases.', 'error')
     } finally {
@@ -126,12 +171,8 @@ export default function OfflineInstallerReleases() {
         releaseNotes: form.releaseNotes,
         channel: form.channel || 'stable',
       })
-      await saveOfflineInstallerRelease(uploadedRelease)
-      setForm((current) => ({
-        ...blankForm,
-        ...uploadedRelease,
-        releaseNotes: current.releaseNotes || uploadedRelease.releaseNotes || '',
-      }))
+      const savedRelease = await saveOfflineInstallerRelease(uploadedRelease)
+      setForm((current) => releaseToForm(savedRelease || uploadedRelease, current))
       await loadReleases()
       notify('Installer ZIP uploaded privately. Add release notes, validate it, then publish when ready.', 'success')
     } catch (error) {
@@ -145,8 +186,8 @@ export default function OfflineInstallerReleases() {
     event.preventDefault()
     setSaving(true)
     try {
-      await saveOfflineInstallerRelease(form, { validate })
-      setForm(blankForm)
+      const savedRelease = await saveOfflineInstallerRelease(form, { validate })
+      setForm(releaseToForm(savedRelease))
       await loadReleases()
       notify(validate ? 'Offline installer release validated.' : 'Offline installer release saved.', 'success')
     } catch (error) {
@@ -312,6 +353,7 @@ export default function OfflineInstallerReleases() {
             <select value={form.state} onChange={(event) => updateForm('state', event.target.value)}>
               <option value={INSTALLER_RELEASE_STATES.DRAFT}>Draft</option>
               <option value={INSTALLER_RELEASE_STATES.UPLOADED}>Uploaded</option>
+              <option value={INSTALLER_RELEASE_STATES.VALIDATED}>Validated</option>
             </select>
           </label>
           <label>
@@ -392,6 +434,9 @@ export default function OfflineInstallerReleases() {
                   {release.validationError && <small>{release.validationError}</small>}
                 </span>
                 <span className="row-actions">
+                  <button className="btn btn-icon" type="button" title="Load release into form" onClick={() => setForm(releaseToForm(release))}>
+                    <Pencil size={15} />
+                  </button>
                   <button className="btn btn-icon" type="button" title="Copy download URL" onClick={() => void copyDownloadUrl(release.downloadUrl)}>
                     <ClipboardCopy size={15} />
                   </button>

@@ -319,9 +319,17 @@ const NHIA_SETTINGS_ROLES = ['admin', 'pharmacist', 'branch_manager']
 const EPHARMACY_ROLES = ['admin', 'pharmacist', 'procurement', 'inventory_officer', 'branch_manager']
 const EPHARMACY_REVIEW_ROLES = ['admin', 'pharmacist']
 const ACTIVITY_LOG_ROLES = ['admin', 'branch_manager', 'super_admin']
+const OFFLINE_INSTALLER_DOWNLOAD_ROLES = [
+  'super_admin',
+  'admin',
+  'branch_manager',
+  'inventory_officer',
+  'pharmacist',
+]
 const PLATFORM_ACTIONS_WITHOUT_ORGANIZATION = new Set([
   'get_activity_logs',
   'get_report_health',
+  'request_offline_installer_download',
 ])
 // ✅ NHIS PHARMACY LEVEL PATCH START
 const VALID_PHARMACY_LEVELS = ['P1', 'P2', 'LCS', 'HP']
@@ -955,6 +963,24 @@ const requireActivityLogAccess = (requesterProfile: RequesterProfile) => {
   }
 }
 
+const requireOfflineInstallerDownloadAccess = (
+  requesterProfile: RequesterProfile,
+  organizationId: string
+) => {
+  if (isSuperAdminRequester(requesterProfile)) return
+
+  if (!organizationId) {
+    throw new Error('Current account is missing organization context.')
+  }
+
+  if (
+    !requesterHasAnyRole(requesterProfile, OFFLINE_INSTALLER_DOWNLOAD_ROLES) &&
+    !requesterProfile.can_manage_inventory
+  ) {
+    throw new Error('Only authorized facility administrators can download the offline installer.')
+  }
+}
+
 const normalizeEpharmacySaleClass = (value: unknown) => {
   const normalized = normalizeText(value).toLowerCase().replace(/\s+/g, '_')
   return VALID_EPHARMACY_SALE_CLASSES.includes(normalized) ? normalized : 'otc'
@@ -1030,6 +1056,14 @@ const requestOfflineInstallerDownload = async (
   requesterProfile: RequesterProfile,
   organizationId: string
 ) => {
+  requireOfflineInstallerDownloadAccess(requesterProfile, organizationId)
+  if (organizationId) {
+    const tierContext = await getOrganizationTierContext(adminClient, organizationId)
+    if (tierContext.isSuspended) {
+      throw new Error('This pharmacy is locked. Contact platform support to restore access.')
+    }
+  }
+
   const { data: release, error } = await adminClient
     .from('offline_installer_releases')
     .select('id, version, download_url, file_name, file_size, release_notes, storage_bucket, storage_path, download_count, published_at, enabled, state, channel')

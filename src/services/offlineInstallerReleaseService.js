@@ -55,6 +55,20 @@ const PROHIBITED_INSTALLER_ENTRY_PATTERNS = [
   { pattern: /(^|\/)(\.vite|\.turbo|\.next|coverage|\.cache)(\/|$)/i, label: 'Development cache' },
 ]
 
+const normalizeZipEntryPath = (entryName) =>
+  String(entryName || '')
+    .replace(/\\/g, '/')
+    .replace(/\/+/g, '/')
+    .trim()
+
+export const findUnsafeZipEntryPaths = (entries = []) => entries
+  .map((entry) => normalizeZipEntryPath(entry?.name || entry))
+  .filter((entryName) => {
+    if (!entryName || entryName.includes('\u0000')) return true
+    if (entryName.startsWith('/') || /^[a-z]:/i.test(entryName)) return true
+    return entryName.split('/').some((part) => part === '..')
+  })
+
 export const INSTALLER_INSTALLATION_STATUSES = [
   'download_requested',
   'installer_started',
@@ -382,6 +396,7 @@ const validateEntriesAgainstRelease = ({ entries, payload, actualSize, actualSha
   const names = new Set(entries.map((entry) => entry.name))
   const report = []
   const expectedVersion = extractOfflineInstallerVersionFromFileName(payload.file_name)
+  const unsafePaths = findUnsafeZipEntryPaths(entries)
 
   report.push(buildValidationCheck({
     name: 'Uploaded object exists',
@@ -412,6 +427,14 @@ const validateEntriesAgainstRelease = ({ entries, payload, actualSize, actualSha
     message: entries.length > 0
       ? `ZIP central directory is readable with ${entries.length} entries.`
       : 'ZIP archive has no readable entries.',
+  }))
+  report.push(buildValidationCheck({
+    name: 'Archive paths are safe',
+    result: unsafePaths.length === 0 ? 'pass' : 'fail',
+    severity: INSTALLER_VALIDATION_SEVERITIES.CRITICAL,
+    message: unsafePaths.length === 0
+      ? 'ZIP entries stay inside the installer extraction folder.'
+      : `Unsafe ZIP entry paths were found: ${unsafePaths.slice(0, 8).join(', ')}${unsafePaths.length > 8 ? ', ...' : ''}`,
   }))
   report.push(buildValidationCheck({
     name: 'Filename version verified',
@@ -534,17 +557,17 @@ const validateExternalInstallerMetadata = (release) => {
     }),
     buildValidationCheck({
       name: 'Archive validation skipped',
-      result: 'warn',
-      severity: INSTALLER_VALIDATION_SEVERITIES.WARNING,
-      message: 'This release uses an external HTTPS URL, so the private ZIP contents could not be inspected.',
+      result: 'fail',
+      severity: INSTALLER_VALIDATION_SEVERITIES.CRITICAL,
+      message: 'Upload the installer ZIP to private HealthFlow storage before validation. External URLs cannot be published.',
     }),
   ]
   const counts = countValidationChecks(report)
   return {
     report,
     counts,
-    validationStatus: 'valid',
-    validationError: null,
+    validationStatus: 'invalid',
+    validationError: 'Upload the installer ZIP to private HealthFlow storage before validation. External URLs cannot be published.',
   }
 }
 export const buildOfflineInstallerReleaseFromZipFile = async (
