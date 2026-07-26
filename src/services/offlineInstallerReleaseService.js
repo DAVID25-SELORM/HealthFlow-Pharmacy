@@ -16,6 +16,9 @@ const STANDARD_STORAGE_UPLOAD_LIMIT_BYTES = 50 * 1024 * 1024
 const RESUMABLE_STORAGE_CHUNK_SIZE_BYTES = 6 * 1024 * 1024
 const ZIP_EOCD_SIGNATURE = 0x06054b50
 const ZIP_CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50
+const MAX_OFFLINE_INSTALLER_UNCOMPRESSED_BYTES = 4 * 1024 * 1024 * 1024
+const MAX_OFFLINE_INSTALLER_ZIP_ENTRIES = 20000
+const MAX_OFFLINE_INSTALLER_ENTRY_COMPRESSION_RATIO = 1000
 
 export const INSTALLER_RELEASE_CHANNELS = {
   INTERNAL: 'internal',
@@ -69,6 +72,13 @@ export const findUnsafeZipEntryPaths = (entries = []) => entries
     return entryName.split('/').some((part) => part === '..')
   })
 
+export const findArchiveBombEntries = (entries = []) => entries.filter((entry) => {
+  const compressedSize = Number(entry?.compressedSize || 0)
+  const uncompressedSize = Number(entry?.uncompressedSize || 0)
+  if (compressedSize <= 0 || uncompressedSize <= 0) return false
+  return uncompressedSize / compressedSize > MAX_OFFLINE_INSTALLER_ENTRY_COMPRESSION_RATIO
+})
+
 export const INSTALLER_INSTALLATION_STATUSES = [
   'download_requested',
   'installer_started',
@@ -99,6 +109,9 @@ export const OFFLINE_INSTALLER_RELEASE_FIELDS = [
   'validation_warning_count',
   'validation_info_count',
   'validated_by',
+  'approved_by',
+  'approved_at',
+  'approval_notes',
   'manifest',
   'storage_bucket',
   'storage_path',
@@ -177,6 +190,9 @@ const normalizeInstallerRelease = (row, { includeDisabled = false } = {}) => {
     validationWarningCount: Number(row.validation_warning_count || 0),
     validationInfoCount: Number(row.validation_info_count || 0),
     validatedBy: row.validated_by || null,
+    approvedBy: row.approved_by || null,
+    approvedAt: row.approved_at || null,
+    approvalNotes: row.approval_notes || '',
     manifest: row.manifest || {},
     storageBucket: row.storage_bucket || '',
     storagePath: row.storage_path || '',
@@ -397,6 +413,11 @@ const validateEntriesAgainstRelease = ({ entries, payload, actualSize, actualSha
   const report = []
   const expectedVersion = extractOfflineInstallerVersionFromFileName(payload.file_name)
   const unsafePaths = findUnsafeZipEntryPaths(entries)
+  const bombEntries = findArchiveBombEntries(entries)
+  const totalUncompressedSize = entries.reduce((sum, entry) => sum + Number(entry?.uncompressedSize || 0), 0)
+  const withinArchiveSizeLimits = entries.length <= MAX_OFFLINE_INSTALLER_ZIP_ENTRIES
+    && totalUncompressedSize <= MAX_OFFLINE_INSTALLER_UNCOMPRESSED_BYTES
+    && bombEntries.length === 0
 
   report.push(buildValidationCheck({
     name: 'Uploaded object exists',
@@ -435,6 +456,14 @@ const validateEntriesAgainstRelease = ({ entries, payload, actualSize, actualSha
     message: unsafePaths.length === 0
       ? 'ZIP entries stay inside the installer extraction folder.'
       : `Unsafe ZIP entry paths were found: ${unsafePaths.slice(0, 8).join(', ')}${unsafePaths.length > 8 ? ', ...' : ''}`,
+  }))
+  report.push(buildValidationCheck({
+    name: 'Archive size is within safe limits',
+    result: withinArchiveSizeLimits ? 'pass' : 'fail',
+    severity: INSTALLER_VALIDATION_SEVERITIES.CRITICAL,
+    message: withinArchiveSizeLimits
+      ? `Archive has ${entries.length} entries and ${(totalUncompressedSize / (1024 * 1024 * 1024)).toFixed(2)} GB uncompressed.`
+      : `Archive exceeds safe limits (${entries.length} entries, ${(totalUncompressedSize / (1024 * 1024 * 1024)).toFixed(2)} GB uncompressed${bombEntries.length ? `, ${bombEntries.length} entries with extreme compression ratios` : ''}).`,
   }))
   report.push(buildValidationCheck({
     name: 'Filename version verified',
@@ -731,10 +760,6 @@ export const saveOfflineInstallerRelease = async (release, { validate = false } 
   }
   if (validate) {
     validateOfflineInstallerReleasePayload(payload, { requireUrl: true, requireReleaseNotes: true })
-    payload.state = INSTALLER_RELEASE_STATES.VALIDATED
-    payload.validation_status = 'valid'
-    payload.validation_checked_at = new Date().toISOString()
-    payload.validation_error = null
   }
   payload.enabled = false
 
@@ -760,6 +785,9 @@ export const saveOfflineInstallerRelease = async (release, { validate = false } 
       validation_status: payload.validation_status,
     },
   })
+  if (validate) {
+    return validateSavedOfflineInstallerRelease(data.id)
+  }
   return normalizeInstallerRelease(data, { includeDisabled: true })
 }
 
@@ -890,23 +918,108 @@ export const disableOfflineInstallerRelease = async (id) => {
   return normalizeInstallerRelease(data, { includeDisabled: true })
 }
 
-export const enableOfflineInstallerRelease = async (id) => {
+export const approveOfflineInstallerRelease = async (id, { notes = '' } = {}) => {
+  const { data: userData } = await supabase.auth.getUser()
+  const approverId = userData?.user?.id || null
+
   const { data: targetRelease, error: targetError } = await supabase
     .from('offline_installer_releases')
-    .select('id, channel')
+    .select('id, state, validation_status, validation_critical_count, validated_by')
+    .eq('id', id)
+    .single()
+
+  if (targetError) throw targetError
+
+  if (
+    targetRelease.state !== INSTALLER_RELEASE_STATES.VALIDATED ||
+    targetRelease.validation_status !== 'valid' ||
+    Number(targetRelease.validation_critical_count || 0) > 0
+  ) {
+    throw new Error('Only a fully validated release can be approved for publish.')
+  }
+  if (approverId && targetRelease.validated_by && approverId === targetRelease.validated_by) {
+    throw new Error('The approver must be a different Super Admin than the one who validated this release.')
+  }
+
+  const { data, error } = await supabase
+    .from('offline_installer_releases')
+    .update({
+      approved_by: approverId,
+      approved_at: new Date().toISOString(),
+      approval_notes: String(notes || '').trim() || null,
+    })
+    .eq('id', id)
+    .select(OFFLINE_INSTALLER_RELEASE_FIELDS)
+    .single()
+
+  if (error) throw error
+  await tryLogAuditEvent({
+    eventType: 'offline_installer_release',
+    entityType: 'offline_installer_release',
+    entityId: id,
+    action: 'installer_release.approved',
+    details: {
+      version: data?.version,
+      file_name: data?.file_name,
+    },
+  })
+  return normalizeInstallerRelease(data, { includeDisabled: true })
+}
+
+const tryRecordOfflineInstallerPublishEvent = async (event) => {
+  try {
+    const { error } = await supabase.from('offline_installer_release_publish_events').insert(event)
+    if (error) throw error
+  } catch (error) {
+    console.warn('[Offline installer] Publish event could not be recorded.', {
+      code: error?.code,
+      message: error?.message,
+    })
+  }
+}
+
+const publishOfflineInstallerReleaseInternal = async (id, { action, reason = '' } = {}) => {
+  const { data: targetRelease, error: targetError } = await supabase
+    .from('offline_installer_releases')
+    .select('id, channel, state, validation_status, validation_critical_count, approved_by')
     .eq('id', id)
     .single()
 
   if (targetError) throw targetError
   const channel = targetRelease?.channel || 'stable'
+  const trimmedReason = String(reason || '').trim()
 
-  const { error: disableError } = await supabase
+  if (action === 'rollback') {
+    if (targetRelease.state !== INSTALLER_RELEASE_STATES.SUPERSEDED) {
+      throw new Error('Only a previously published release can be rolled back to.')
+    }
+    if (targetRelease.validation_status !== 'valid' || Number(targetRelease.validation_critical_count || 0) > 0) {
+      throw new Error('Only a validated release can be rolled back to.')
+    }
+    if (!trimmedReason) {
+      throw new Error('A rollback reason is required for the release history.')
+    }
+  } else {
+    if (targetRelease.state !== INSTALLER_RELEASE_STATES.VALIDATED) {
+      throw new Error('Only a validated release can be published.')
+    }
+    if (targetRelease.validation_status !== 'valid' || Number(targetRelease.validation_critical_count || 0) > 0) {
+      throw new Error('This release has not passed validation.')
+    }
+    if (!targetRelease.approved_by) {
+      throw new Error('This release must be approved by a second reviewer before it can be published.')
+    }
+  }
+
+  const { data: disabledRows, error: disableError } = await supabase
     .from('offline_installer_releases')
     .update({ enabled: false, state: INSTALLER_RELEASE_STATES.SUPERSEDED })
     .eq('enabled', true)
     .eq('channel', channel)
+    .select('id')
 
   if (disableError) throw disableError
+  const previousReleaseId = disabledRows?.[0]?.id || null
 
   const { data, error } = await supabase
     .from('offline_installer_releases')
@@ -916,27 +1029,44 @@ export const enableOfflineInstallerRelease = async (id) => {
       published_at: new Date().toISOString(),
     })
     .eq('id', id)
-    .eq('state', INSTALLER_RELEASE_STATES.VALIDATED)
-    .eq('validation_status', 'valid')
-    .eq('validation_critical_count', 0)
+    .eq('state', action === 'rollback' ? INSTALLER_RELEASE_STATES.SUPERSEDED : INSTALLER_RELEASE_STATES.VALIDATED)
     .select(OFFLINE_INSTALLER_RELEASE_FIELDS)
     .single()
 
   if (error) throw error
+
+  const { data: userData } = await supabase.auth.getUser()
+  await tryRecordOfflineInstallerPublishEvent({
+    release_id: id,
+    previous_release_id: previousReleaseId,
+    channel,
+    action,
+    reason: trimmedReason || null,
+    performed_by: userData?.user?.id || null,
+  })
+
   await tryLogAuditEvent({
     eventType: 'offline_installer_release',
     entityType: 'offline_installer_release',
     entityId: id,
-    action: 'installer_release.enabled',
+    action: action === 'rollback' ? 'installer_release.rolled_back' : 'installer_release.enabled',
     details: {
       version: data?.version,
       file_name: data?.file_name,
       sha256: data?.sha256,
       channel: data?.channel || channel,
+      previous_release_id: previousReleaseId,
+      reason: trimmedReason || null,
     },
   })
   return normalizeInstallerRelease(data, { includeDisabled: true })
 }
+
+export const enableOfflineInstallerRelease = (id) =>
+  publishOfflineInstallerReleaseInternal(id, { action: 'publish' })
+
+export const rollbackOfflineInstallerRelease = (id, { reason = '' } = {}) =>
+  publishOfflineInstallerReleaseInternal(id, { action: 'rollback', reason })
 
 export const requestOfflineInstallerDownload = async () => {
   const response = await invokeTierAccess({ action: 'request_offline_installer_download' })

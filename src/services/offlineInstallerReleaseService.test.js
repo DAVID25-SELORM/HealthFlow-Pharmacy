@@ -61,16 +61,19 @@ vi.mock('./tierAccessService', () => ({
 }))
 
 import {
+  approveOfflineInstallerRelease,
   buildOfflineInstallerReleaseFromManifest,
   buildOfflineInstallerReleaseFromZipFile,
   buildOfflineInstallerReleasePayload,
   calculateOfflineInstallerSha256,
   enableOfflineInstallerRelease,
   extractOfflineInstallerVersionFromFileName,
+  findArchiveBombEntries,
   findUnsafeZipEntryPaths,
   getActiveOfflineInstallerRelease,
   INSTALLER_RELEASE_STATES,
   listOfflineInstallerReleases,
+  rollbackOfflineInstallerRelease,
   saveOfflineInstallerRelease,
   requestOfflineInstallerDownload,
   uploadOfflineInstallerReleaseZip,
@@ -137,6 +140,44 @@ const makeTestZip = (entryNames) => {
   endView.setUint32(0, 0x06054b50, true)
   endView.setUint16(8, entryNames.length, true)
   endView.setUint16(10, entryNames.length, true)
+  endView.setUint32(12, centralDirectory.length, true)
+  endView.setUint32(16, localOffset, true)
+  return concatUint8Arrays([...localParts, centralDirectory, end])
+}
+
+const makeTestZipWithSizes = (entries) => {
+  const encoder = new TextEncoder()
+  const localParts = []
+  const centralParts = []
+  let localOffset = 0
+
+  for (const entry of entries) {
+    const nameBytes = encoder.encode(entry.name)
+    const local = new Uint8Array(30 + nameBytes.length)
+    const localView = new DataView(local.buffer)
+    localView.setUint32(0, 0x04034b50, true)
+    localView.setUint16(26, nameBytes.length, true)
+    local.set(nameBytes, 30)
+    localParts.push(local)
+
+    const central = new Uint8Array(46 + nameBytes.length)
+    const centralView = new DataView(central.buffer)
+    centralView.setUint32(0, 0x02014b50, true)
+    centralView.setUint32(20, entry.compressedSize || 0, true)
+    centralView.setUint32(24, entry.uncompressedSize || 0, true)
+    centralView.setUint16(28, nameBytes.length, true)
+    centralView.setUint32(42, localOffset, true)
+    central.set(nameBytes, 46)
+    centralParts.push(central)
+    localOffset += local.length
+  }
+
+  const centralDirectory = concatUint8Arrays(centralParts)
+  const end = new Uint8Array(22)
+  const endView = new DataView(end.buffer)
+  endView.setUint32(0, 0x06054b50, true)
+  endView.setUint16(8, entries.length, true)
+  endView.setUint16(10, entries.length, true)
   endView.setUint32(12, centralDirectory.length, true)
   endView.setUint32(16, localOffset, true)
   return concatUint8Arrays([...localParts, centralDirectory, end])
@@ -464,46 +505,88 @@ describe('offlineInstallerReleaseService', () => {
     expect(from).not.toHaveBeenCalled()
   })
 
-  it('marks a saved release as validated without publishing it', async () => {
-    const data = {
+  it('saves then runs deep validation when Save and Validate is requested', async () => {
+    const file = makeInstallerFile()
+    const sha256 = await calculateOfflineInstallerSha256(file)
+    download.mockResolvedValue({ data: file, error: null })
+    storageFrom.mockReturnValue({ download })
+
+    const savedData = {
       id: 'release-1',
       version: '2.1.0',
       download_url: 'https://downloads.healthflowcloud.com/HealthFlow-Offline-Installer-2.1.0.zip',
       file_name: 'HealthFlow-Offline-Installer-2.1.0.zip',
-      file_size: 176000000,
-      sha256: 'b'.repeat(64),
-      release_notes: null,
-      state: 'validated',
+      file_size: file.size,
+      sha256,
+      release_notes: 'Initial private installer.',
+      state: 'uploaded',
       channel: 'stable',
-      validation_status: 'valid',
+      validation_status: 'not_validated',
+      manifest: {
+        version: '2.1.0',
+        file_name: 'HealthFlow-Offline-Installer-2.1.0.zip',
+        file_size_bytes: file.size,
+        sha256,
+      },
+      storage_bucket: 'healthflow-offline-installers',
+      storage_path: 'releases/2.1.0/HealthFlow-Offline-Installer-2.1.0.zip',
       enabled: false,
     }
-    const query = makeQuery({ data })
-    from.mockReturnValue(query)
+    const saveQuery = makeQuery({ data: savedData })
+    const loadQuery = makeQuery({ data: savedData })
+    const updateQuery = makeQuery({
+      data: {
+        ...savedData,
+        state: 'validated',
+        validation_status: 'valid',
+        validation_error: null,
+        validated_by: 'user-1',
+      },
+    })
+    from.mockReturnValueOnce(saveQuery).mockReturnValueOnce(loadQuery).mockReturnValueOnce(updateQuery)
 
     await expect(saveOfflineInstallerRelease({
       version: '2.1.0',
       downloadUrl: 'https://downloads.healthflowcloud.com/HealthFlow-Offline-Installer-2.1.0.zip',
       fileName: 'HealthFlow-Offline-Installer-2.1.0.zip',
-      fileSize: 176000000,
-      sha256: 'b'.repeat(64),
+      fileSize: file.size,
+      sha256,
       releaseNotes: 'Initial private installer.',
+      state: 'uploaded',
+      manifest: savedData.manifest,
+      storageBucket: 'healthflow-offline-installers',
+      storagePath: 'releases/2.1.0/HealthFlow-Offline-Installer-2.1.0.zip',
     }, { validate: true })).resolves.toMatchObject({
       version: '2.1.0',
       state: 'validated',
       validationStatus: 'valid',
       enabled: false,
     })
-    expect(query.upsert.mock.calls[0][0]).toMatchObject({
-      state: 'validated',
-      validation_status: 'valid',
+    expect(saveQuery.upsert.mock.calls[0][0]).toMatchObject({
+      state: 'uploaded',
       enabled: false,
     })
+    expect(saveQuery.upsert.mock.calls[0][0]).not.toHaveProperty('validation_status', 'valid')
+    expect(download).toHaveBeenCalledWith('releases/2.1.0/HealthFlow-Offline-Installer-2.1.0.zip')
+    expect(updateQuery.update).toHaveBeenCalledWith(expect.objectContaining({
+      state: 'validated',
+      validation_status: 'valid',
+      validated_by: 'user-1',
+    }))
   })
 
-  it('publishes only a validated release and supersedes the previous release in the same channel', async () => {
-    const targetQuery = makeQuery({ data: { id: 'release-2', channel: 'pilot' } })
-    const disableQuery = makeQuery()
+  it('publishes only a validated, approved release and records a publish event', async () => {
+    const targetQuery = makeQuery({
+      data: {
+        id: 'release-2',
+        channel: 'pilot',
+        state: 'validated',
+        validation_status: 'valid',
+        validation_critical_count: 0,
+        approved_by: 'approver-1',
+      },
+    })
+    const disableQuery = makeQuery({ data: [{ id: 'previous-release-1' }] })
     const publishQuery = makeQuery({
       data: {
         id: 'release-2',
@@ -519,7 +602,11 @@ describe('offlineInstallerReleaseService', () => {
         enabled: true,
       },
     })
-    from.mockReturnValueOnce(targetQuery).mockReturnValueOnce(disableQuery).mockReturnValueOnce(publishQuery)
+    const eventQuery = makeQuery({ data: null, error: null })
+    from.mockReturnValueOnce(targetQuery)
+      .mockReturnValueOnce(disableQuery)
+      .mockReturnValueOnce(publishQuery)
+      .mockReturnValueOnce(eventQuery)
 
     await expect(enableOfflineInstallerRelease('release-2')).resolves.toMatchObject({
       version: '2.1.0',
@@ -533,8 +620,137 @@ describe('offlineInstallerReleaseService', () => {
       state: 'published',
     }))
     expect(publishQuery.eq).toHaveBeenCalledWith('state', 'validated')
-    expect(publishQuery.eq).toHaveBeenCalledWith('validation_status', 'valid')
-    expect(publishQuery.eq).toHaveBeenCalledWith('validation_critical_count', 0)
+    expect(eventQuery.insert).toHaveBeenCalledWith(expect.objectContaining({
+      release_id: 'release-2',
+      previous_release_id: 'previous-release-1',
+      channel: 'pilot',
+      action: 'publish',
+      performed_by: 'user-1',
+    }))
+  })
+
+  it('refuses to publish a release that has not been approved by a second reviewer', async () => {
+    const targetQuery = makeQuery({
+      data: {
+        id: 'release-5',
+        channel: 'stable',
+        state: 'validated',
+        validation_status: 'valid',
+        validation_critical_count: 0,
+        approved_by: null,
+      },
+    })
+    from.mockReturnValueOnce(targetQuery)
+
+    await expect(enableOfflineInstallerRelease('release-5')).rejects.toThrow(
+      'must be approved by a second reviewer'
+    )
+  })
+
+  it('approves a validated release for publish', async () => {
+    const targetQuery = makeQuery({
+      data: {
+        id: 'release-6',
+        state: 'validated',
+        validation_status: 'valid',
+        validation_critical_count: 0,
+        validated_by: 'validator-1',
+      },
+    })
+    const updateQuery = makeQuery({
+      data: {
+        id: 'release-6',
+        version: '2.6.0',
+        download_url: 'https://downloads.healthflowcloud.com/HealthFlow-Offline-Installer-2.6.0.zip',
+        state: 'validated',
+        approved_by: 'user-1',
+        approved_at: '2026-07-26T00:00:00Z',
+      },
+    })
+    from.mockReturnValueOnce(targetQuery).mockReturnValueOnce(updateQuery)
+
+    await expect(approveOfflineInstallerRelease('release-6', { notes: 'Looks good' })).resolves.toMatchObject({
+      approvedBy: 'user-1',
+    })
+    expect(updateQuery.update).toHaveBeenCalledWith(expect.objectContaining({
+      approved_by: 'user-1',
+      approval_notes: 'Looks good',
+    }))
+  })
+
+  it('refuses self-approval by the same reviewer who validated the release', async () => {
+    const targetQuery = makeQuery({
+      data: {
+        id: 'release-7',
+        state: 'validated',
+        validation_status: 'valid',
+        validation_critical_count: 0,
+        validated_by: 'user-1',
+      },
+    })
+    from.mockReturnValueOnce(targetQuery)
+
+    await expect(approveOfflineInstallerRelease('release-7')).rejects.toThrow(
+      'must be a different Super Admin'
+    )
+  })
+
+  it('rolls back to a previously superseded release and records the reason', async () => {
+    const targetQuery = makeQuery({
+      data: {
+        id: 'release-old',
+        channel: 'stable',
+        state: 'superseded',
+        validation_status: 'valid',
+        validation_critical_count: 0,
+      },
+    })
+    const disableQuery = makeQuery({ data: [{ id: 'release-current' }] })
+    const publishQuery = makeQuery({
+      data: {
+        id: 'release-old',
+        version: '2.0.0',
+        download_url: 'https://downloads.healthflowcloud.com/HealthFlow-Offline-Installer-2.0.0.zip',
+        state: 'published',
+        channel: 'stable',
+        enabled: true,
+      },
+    })
+    const eventQuery = makeQuery({ data: null, error: null })
+    from.mockReturnValueOnce(targetQuery)
+      .mockReturnValueOnce(disableQuery)
+      .mockReturnValueOnce(publishQuery)
+      .mockReturnValueOnce(eventQuery)
+
+    await expect(
+      rollbackOfflineInstallerRelease('release-old', { reason: 'New version broke sync' })
+    ).resolves.toMatchObject({
+      version: '2.0.0',
+      state: 'published',
+    })
+    expect(publishQuery.eq).toHaveBeenCalledWith('state', 'superseded')
+    expect(eventQuery.insert).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'rollback',
+      reason: 'New version broke sync',
+      previous_release_id: 'release-current',
+    }))
+  })
+
+  it('requires a reason before rolling back to a superseded release', async () => {
+    const targetQuery = makeQuery({
+      data: {
+        id: 'release-old',
+        channel: 'stable',
+        state: 'superseded',
+        validation_status: 'valid',
+        validation_critical_count: 0,
+      },
+    })
+    from.mockReturnValueOnce(targetQuery)
+
+    await expect(
+      rollbackOfflineInstallerRelease('release-old', { reason: '  ' })
+    ).rejects.toThrow('A rollback reason is required')
   })
 
   it('validates a saved release and stores a valid result', async () => {
@@ -787,6 +1003,36 @@ describe('offlineInstallerReleaseService', () => {
       { name: 'local-branch-server/Install-HealthFlow.cmd' },
       { name: '..\\outside.ps1' },
     ])).toEqual(['../outside.ps1'])
+  })
+
+  it('rejects archives with entries that decompress far beyond their compressed size', async () => {
+    const entries = REQUIRED_ZIP_ENTRIES.map((name) => ({ name, compressedSize: 100, uncompressedSize: 100 }))
+    entries.push({ name: 'local-branch-server/bomb.bin', compressedSize: 100, uncompressedSize: 500000 })
+    const bytes = makeTestZipWithSizes(entries)
+    const file = new File([bytes], 'HealthFlow-Offline-Installer-2.5.0.zip', { type: 'application/zip' })
+    const sha256 = await calculateOfflineInstallerSha256(file)
+
+    await expect(validateOfflineInstallerArchive({
+      file,
+      release: {
+        version: '2.5.0',
+        downloadUrl: 'https://healthflowcloud.com/offline-installer/HealthFlow-Offline-Installer-2.5.0.zip',
+        fileName: 'HealthFlow-Offline-Installer-2.5.0.zip',
+        fileSize: file.size,
+        sha256,
+        releaseNotes: 'Archive bomb test.',
+      },
+    })).resolves.toMatchObject({
+      validationStatus: 'invalid',
+      report: expect.arrayContaining([
+        expect.objectContaining({ name: 'Archive size is within safe limits', result: 'fail', severity: 'critical' }),
+      ]),
+    })
+
+    expect(findArchiveBombEntries([
+      { compressedSize: 100, uncompressedSize: 100 },
+      { compressedSize: 100, uncompressedSize: 500000 },
+    ])).toHaveLength(1)
   })
 
   it('allows environment example templates while still passing sensitive-file validation', async () => {

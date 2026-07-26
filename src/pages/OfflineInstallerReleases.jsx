@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CheckCircle2, ClipboardCopy, Download, Pencil, RotateCcw, Save, ToggleLeft, UploadCloud } from 'lucide-react'
+import { CheckCircle2, ClipboardCopy, Download, History, Pencil, RotateCcw, Save, ShieldCheck, ToggleLeft, UploadCloud } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
 import {
+  approveOfflineInstallerRelease,
   disableOfflineInstallerRelease,
   enableOfflineInstallerRelease,
+  rollbackOfflineInstallerRelease,
   buildOfflineInstallerReleaseFromManifest,
   INSTALLER_RELEASE_CHANNELS,
   INSTALLER_RELEASE_STATES,
@@ -85,11 +87,21 @@ const releaseToForm = (release, current = {}) => {
   }
 }
 
+const canApproveRelease = (release) => (
+  release?.state === INSTALLER_RELEASE_STATES.VALIDATED &&
+  release?.validationStatus === 'valid' &&
+  Number(release?.validationCriticalCount || 0) === 0 &&
+  !release?.approvedBy
+)
+
 const canPublishRelease = (release) => (
   release?.state === INSTALLER_RELEASE_STATES.VALIDATED &&
   release?.validationStatus === 'valid' &&
-  Number(release?.validationCriticalCount || 0) === 0
+  Number(release?.validationCriticalCount || 0) === 0 &&
+  Boolean(release?.approvedBy)
 )
+
+const canRollBackToRelease = (release) => release?.state === INSTALLER_RELEASE_STATES.SUPERSEDED
 
 const validationTone = (check) => {
   if (check?.result === 'pass') return 'pass'
@@ -189,7 +201,15 @@ export default function OfflineInstallerReleases() {
       const savedRelease = await saveOfflineInstallerRelease(form, { validate })
       setForm(releaseToForm(savedRelease))
       await loadReleases()
-      notify(validate ? 'Offline installer release validated.' : 'Offline installer release saved.', 'success')
+      if (validate) {
+        if (savedRelease?.validationStatus === 'valid') {
+          notify('Offline installer release validated.', 'success')
+        } else {
+          notify(savedRelease?.validationError || 'Installer release validation failed.', 'error')
+        }
+      } else {
+        notify('Offline installer release saved.', 'success')
+      }
     } catch (error) {
       notify(error.message || 'Unable to save offline installer release.', 'error')
     } finally {
@@ -219,6 +239,43 @@ export default function OfflineInstallerReleases() {
       notify(`Offline installer ${release.version} is now published.`, 'success')
     } catch (error) {
       notify(error.message || 'Unable to enable installer release.', 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const approveRelease = async (release) => {
+    const notes = window.prompt(`Approve offline installer ${release.version} for publish? Add optional notes:`, '')
+    if (notes === null) return
+    setSaving(true)
+    try {
+      await approveOfflineInstallerRelease(release.id, { notes })
+      await loadReleases()
+      notify(`Offline installer ${release.version} approved for publish.`, 'success')
+    } catch (error) {
+      notify(error.message || 'Unable to approve installer release.', 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const rollbackToRelease = async (release) => {
+    const reason = window.prompt(
+      `Roll back offline installer downloads to version ${release.version}? Enter a reason for the release history:`,
+      ''
+    )
+    if (reason === null) return
+    if (!reason.trim()) {
+      notify('A rollback reason is required.', 'error')
+      return
+    }
+    setSaving(true)
+    try {
+      await rollbackOfflineInstallerRelease(release.id, { reason: reason.trim() })
+      await loadReleases()
+      notify(`Rolled back offline installer downloads to version ${release.version}.`, 'success')
+    } catch (error) {
+      notify(error.message || 'Unable to roll back installer release.', 'error')
     } finally {
       setSaving(false)
     }
@@ -353,8 +410,8 @@ export default function OfflineInstallerReleases() {
             <select value={form.state} onChange={(event) => updateForm('state', event.target.value)}>
               <option value={INSTALLER_RELEASE_STATES.DRAFT}>Draft</option>
               <option value={INSTALLER_RELEASE_STATES.UPLOADED}>Uploaded</option>
-              <option value={INSTALLER_RELEASE_STATES.VALIDATED}>Validated</option>
             </select>
+            <small>Use &quot;Save and Validate&quot; to reach Validated -- it cannot be set manually.</small>
           </label>
           <label>
             <span>Channel</span>
@@ -432,6 +489,9 @@ export default function OfflineInstallerReleases() {
                   {release.validationStatus}
                   <small>{Number(release.validationCriticalCount || 0)} critical, {Number(release.validationWarningCount || 0)} warning</small>
                   {release.validationError && <small>{release.validationError}</small>}
+                  {release.state === INSTALLER_RELEASE_STATES.VALIDATED && (
+                    <small>{release.approvedBy ? 'Approved for publish' : 'Awaiting second-reviewer approval'}</small>
+                  )}
                 </span>
                 <span className="row-actions">
                   <button className="btn btn-icon" type="button" title="Load release into form" onClick={() => setForm(releaseToForm(release))}>
@@ -451,9 +511,19 @@ export default function OfflineInstallerReleases() {
                       <CheckCircle2 size={15} />
                     </button>
                   )}
+                  {!release.enabled && canApproveRelease(release) && (
+                    <button className="btn btn-icon" type="button" title="Approve for publish" disabled={saving} onClick={() => void approveRelease(release)}>
+                      <ShieldCheck size={15} />
+                    </button>
+                  )}
                   {!release.enabled && canPublishRelease(release) && (
                     <button className="btn btn-icon" type="button" title="Publish this release" disabled={saving} onClick={() => void enableRelease(release)}>
                       <RotateCcw size={15} />
+                    </button>
+                  )}
+                  {!release.enabled && canRollBackToRelease(release) && (
+                    <button className="btn btn-icon" type="button" title="Roll back to this version" disabled={saving} onClick={() => void rollbackToRelease(release)}>
+                      <History size={15} />
                     </button>
                   )}
                 </span>
