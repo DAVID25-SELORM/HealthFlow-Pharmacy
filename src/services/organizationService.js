@@ -1,4 +1,4 @@
-import { getCurrentSupabaseUser, invokeSupabaseFunction, supabase } from '../lib/supabase'
+import { getCurrentSupabaseUser, invokeSupabaseFunctionPublic, supabase } from '../lib/supabase'
 import { assertRequiredText, normalizeText } from '../utils/validation'
 import { normalizeGhanaRegion } from '../utils/ghanaRegions'
 // ✅ NHIS PHARMACY LEVEL PATCH START
@@ -34,7 +34,7 @@ const normalizeOrganizationType = (value) => {
 }
 
 const invokeTenantSignup = async (payload) => {
-  const { data, error } = await invokeSupabaseFunction(TENANT_SIGNUP_FUNCTION, {
+  const { data, error } = await invokeSupabaseFunctionPublic(TENANT_SIGNUP_FUNCTION, {
     body: payload,
   })
 

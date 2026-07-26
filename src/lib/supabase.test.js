@@ -8,6 +8,7 @@ describe('invokeSupabaseFunction', () => {
     vi.useFakeTimers()
     vi.setSystemTime(NOW)
     vi.stubEnv('VITE_SUPABASE_URL', 'https://project-ref.supabase.co')
+    vi.stubEnv('VITE_SUPABASE_PUBLISHABLE_KEY', '')
     vi.stubEnv('VITE_SUPABASE_ANON_KEY', 'anon-key')
   })
 
@@ -265,6 +266,74 @@ describe('invokeSupabaseFunction', () => {
     expect(result.error?.status).toBe(400)
     expect(result.error?.missingFields).toEqual(['claimsOfficerName'])
     expect(result.error?.details).toEqual(responseBody.received)
+  })
+
+  it('allows approved public tenant signup actions without reading a user session', async () => {
+    const getSession = vi.fn()
+    const invoke = vi.fn().mockResolvedValue({
+      data: { ok: true },
+      error: null,
+    })
+    const createClient = vi.fn(() => ({
+      auth: {
+        getSession,
+        getUser: vi.fn(),
+        refreshSession: vi.fn(),
+      },
+      functions: {
+        invoke,
+      },
+    }))
+
+    vi.doMock('@supabase/supabase-js', () => ({
+      createClient,
+    }))
+
+    const { invokeSupabaseFunctionPublic } = await import('./supabase')
+
+    const result = await invokeSupabaseFunctionPublic('tenant-signup', {
+      body: { action: 'register_signup' },
+    })
+
+    expect(result).toEqual({ data: { ok: true }, error: null })
+    expect(getSession).not.toHaveBeenCalled()
+    expect(invoke).toHaveBeenCalledWith(
+      'tenant-signup',
+      expect.objectContaining({
+        body: { action: 'register_signup' },
+        headers: expect.objectContaining({
+          Authorization: 'Bearer anon-key',
+        }),
+      })
+    )
+  })
+
+  it('blocks unapproved public function actions before invoking the network', async () => {
+    const invoke = vi.fn()
+    const createClient = vi.fn(() => ({
+      auth: {
+        getSession: vi.fn(),
+        getUser: vi.fn(),
+        refreshSession: vi.fn(),
+      },
+      functions: {
+        invoke,
+      },
+    }))
+
+    vi.doMock('@supabase/supabase-js', () => ({
+      createClient,
+    }))
+
+    const { invokeSupabaseFunctionPublic } = await import('./supabase')
+
+    await expect(
+      invokeSupabaseFunctionPublic('tenant-signup', {
+        body: { action: 'create_tenant' },
+      })
+    ).rejects.toThrow('does not allow anonymous access')
+
+    expect(invoke).not.toHaveBeenCalled()
   })
 
   it('refreshes before reading the current user when the stored session is expired', async () => {

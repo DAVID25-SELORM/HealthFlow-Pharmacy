@@ -334,6 +334,19 @@ const invokeFunctionWithToken = async (name, options, accessToken) => {
   }
 }
 
+const PUBLIC_FUNCTION_ACTIONS = {
+  'tenant-signup': new Set(['check_subdomain', 'register_signup']),
+}
+
+const assertPublicFunctionAllowed = (name, options = {}) => {
+  const action = options?.body && typeof options.body === 'object' ? options.body.action : ''
+  const allowedActions = PUBLIC_FUNCTION_ACTIONS[name]
+
+  if (!allowedActions?.has(action)) {
+    throw new Error(`HealthFlow Cloud service "${name}" does not allow anonymous access for this action.`)
+  }
+}
+
 const isUnauthorizedFunctionError = (error) =>
   error?.name === 'FunctionsHttpError' && Number(error?.context?.status || 0) === 401
 
@@ -484,6 +497,28 @@ export const getCurrentSupabaseUser = async () => {
   return setCachedSupabaseUser(user) || null
 }
 
+const finalizeFunctionResult = async (result) => {
+  if (!result.error) {
+    return result
+  }
+
+  const functionError = await getFunctionErrorMessage(result.error)
+  if (functionError?.message) {
+    const error = new Error(functionError.message)
+    error.status = functionError.status
+    error.statusCode = functionError.status
+    error.body = functionError.body
+    error.details = functionError.body?.details || functionError.body?.received || ''
+    error.missingFields = functionError.body?.missingFields || functionError.body?.missing_fields || []
+    return {
+      ...result,
+      error,
+    }
+  }
+
+  return result
+}
+
 export const invokeSupabaseFunction = async (name, options = {}) => {
   if (!supabase) {
     throw new Error('HealthFlow Cloud credentials are not configured.')
@@ -515,21 +550,22 @@ export const invokeSupabaseFunction = async (name, options = {}) => {
     }
   }
 
-  const functionError = await getFunctionErrorMessage(result.error)
-  if (functionError?.message) {
-    const error = new Error(functionError.message)
-    error.status = functionError.status
-    error.statusCode = functionError.status
-    error.body = functionError.body
-    error.details = functionError.body?.details || functionError.body?.received || ''
-    error.missingFields = functionError.body?.missingFields || functionError.body?.missing_fields || []
-    return {
-      ...result,
-      error,
-    }
+  return finalizeFunctionResult(result)
+}
+
+// For calls that must work before a user has a session at all (e.g. subdomain
+// availability checks and account registration during signup). The target
+// action must not require caller identity -- it must authorize itself using
+// the service-role key server-side instead of trusting the caller's JWT.
+export const invokeSupabaseFunctionPublic = async (name, options = {}) => {
+  if (!supabase) {
+    throw new Error('HealthFlow Cloud credentials are not configured.')
   }
 
-  return result
+  assertPublicFunctionAllowed(name, options)
+
+  const result = await invokeFunctionWithToken(name, options, supabaseKey)
+  return finalizeFunctionResult(result)
 }
 
 export const invokeSupabaseFunctionResponse = async (name, options = {}) => {

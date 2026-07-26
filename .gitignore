@@ -18,6 +18,7 @@ dist-ssr
 .npm-cache/
 .supabase-cli/
 scripts/output/
+.tmp-docs-scripts/
 release/installers/
 local-branch-server/public/downloads/
 data/*.sqlite
