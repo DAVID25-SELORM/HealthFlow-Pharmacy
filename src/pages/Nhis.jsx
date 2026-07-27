@@ -79,6 +79,7 @@ import { isMcaEditWindowOpen, canReopenMcaEditWindow } from '../utils/mcaEditWin
 import {
   canMcaOpenNhisClaimForServing,
   isNhisClaimDirectlyServed,
+  markNhisMedicinesServedDirectly,
   shouldApplyMcaEditWindowToClaim,
   shouldFinalizeNhisServingReview,
   splitMcaReadinessIssues,
@@ -2036,7 +2037,7 @@ const Nhis = () => {
     ['admin', 'super_admin', 'claims_officer'].includes(normalizedRole) &&
     (
       !editingClaim ||
-      ['draft', 'pending_serving', 'serving_in_progress', 'returned_for_review']
+      ['draft', 'pending_serving', 'serving_in_progress', 'returned_for_review', 'claim_ready', 'served']
         .includes(normalizeText(editingClaim.status).toLowerCase())
     )
 
@@ -3660,11 +3661,17 @@ const Nhis = () => {
     }
   }
 
-  const handleSubmitClaim = async (e, intent = 'dispatch', reviewConfirmed = false) => {
+  const handleSubmitClaim = async (e, intent = 'dispatch', reviewConfirmed = false, medicinesOverride = null) => {
     e.preventDefault()
     const saveAsDraft = intent === 'save_details'
     const serveDirectly = intent === 'serve_directly'
-    if (serveDirectly && compactMedicines(claimMedicines).length === 0) {
+    const effectiveClaimMedicines = serveDirectly
+      ? markNhisMedicinesServedDirectly(medicinesOverride || claimMedicines, {
+          actorId: user?.id || '',
+        })
+      : (medicinesOverride || claimMedicines)
+
+    if (serveDirectly && compactMedicines(effectiveClaimMedicines).length === 0) {
       setClaimError('Add at least one medicine before serving directly.')
       return
     }
@@ -3689,7 +3696,7 @@ const Nhis = () => {
     }
 
     if (!editingClaim && returnAlertSettings.enabled) {
-      const alert = buildReturnAlertForPatient(selectedClaimPatient || claimForm, claimMedicines)
+      const alert = buildReturnAlertForPatient(selectedClaimPatient || claimForm, effectiveClaimMedicines)
       if (alert && !isReturnAlertOverrideFor(alert)) {
         openReturnAlert(alert)
         setClaimError('Patient return alert requires verification before saving this NHIS visit.')
@@ -3699,7 +3706,7 @@ const Nhis = () => {
 
     const duplicateClaimBlockers = buildNhisDuplicateClaimBlockers({
       currentClaim: claimForm,
-      currentMedicines: claimMedicines,
+      currentMedicines: effectiveClaimMedicines,
       existingClaims: claims,
       editingClaimId: editingClaim?.id,
     })
@@ -3710,7 +3717,7 @@ const Nhis = () => {
 
     const duplicateWarnings = buildNhisDuplicateWarnings({
       currentClaim: claimForm,
-      currentMedicines: claimMedicines,
+      currentMedicines: effectiveClaimMedicines,
       existingClaims: claims,
       editingClaimId: editingClaim?.id,
     })
@@ -3782,10 +3789,10 @@ const Nhis = () => {
         payload.allowIncompleteReview = true
       } else if (isMedicineCounterAssistant) {
         payload.status = 'returned_for_review'
-        payload.servingStatus = getClaimServingStatus(claimMedicines)
+        payload.servingStatus = getClaimServingStatus(effectiveClaimMedicines)
       } else if (shouldFinalizeNhisServingReview(editingClaim.status) && readiness.blockers.length === 0) {
         payload.status = 'served'
-        payload.servingStatus = getClaimServingStatus(claimMedicines)
+        payload.servingStatus = getClaimServingStatus(effectiveClaimMedicines)
         payload.servingReviewedBy = user?.id || null
         payload.servingReviewedAt = new Date().toISOString()
       } else {
@@ -3820,7 +3827,7 @@ const Nhis = () => {
       let savedClaimRecord = null
       const returnAlertOverrideSnapshot = returnAlertOverride
       if (editingClaim) {
-        const savedClaim = await updateNhisClaim(editingClaim.id, payload, claimMedicines, {
+        const savedClaim = await updateNhisClaim(editingClaim.id, payload, effectiveClaimMedicines, {
           providerClassLevel,
           claimControlMode,
           useBranchServer: isBranchServerEnabled,
@@ -3881,7 +3888,7 @@ const Nhis = () => {
               nhisReturnPreviousClaimId: returnAlertOverrideSnapshot.alert.previousClaim?.id || '',
             }
           : payload
-        savedClaimRecord = await createNhisClaim(createPayload, claimMedicines, {
+        savedClaimRecord = await createNhisClaim(createPayload, effectiveClaimMedicines, {
           providerClassLevel,
           claimControlMode,
           useBranchServer: isBranchServerEnabled,
@@ -3959,7 +3966,7 @@ const Nhis = () => {
               : 'dispatch',
         details: {
           claim_number: savedClaimRecord?.claim_number || editingClaim?.claim_number || '',
-          medicine_count: compactMedicines(claimMedicines).length,
+          medicine_count: compactMedicines(effectiveClaimMedicines).length,
           prescription_attached: incompleteIntakeItems.includes('prescription attachment') === false,
           prescription_document_type: payload.prescriptionDocumentType || '',
           prescription_verified: payload.prescriptionVerified === true,
@@ -7215,8 +7222,14 @@ const Nhis = () => {
                 className="btn btn-primary"
                 onClick={() => {
                   const intent = claimActionReview.intent
+                  const medicinesToSave = intent === 'serve_directly'
+                    ? markNhisMedicinesServedDirectly(claimMedicines, {
+                        actorId: user?.id || '',
+                      })
+                    : null
                   setClaimActionReview(null)
-                  handleSubmitClaim({ preventDefault() {} }, intent, true)
+                  if (medicinesToSave) setClaimMedicines(medicinesToSave)
+                  handleSubmitClaim({ preventDefault() {} }, intent, true, medicinesToSave)
                 }}
               >
                 {claimActionReview.intent === 'serve_directly' ? 'Confirm & Serve Directly' : 'Confirm & Send'}
@@ -8081,6 +8094,17 @@ const Nhis = () => {
                               >
                                 <Pencil size={14} />
                               </button>
+                              {canReopenMca && issue.status === 'served' && !isNhisClaimDirectlyServed(issue) && !isMcaEditWindowOpen(issue) && (
+                                <button
+                                  type="button"
+                                  className="action-btn action-btn--edit"
+                                  title="Re-open dispensary correction window (12 hours)"
+                                  disabled={isClaimBusy(issue.id)}
+                                  onClick={() => handleReopenMcaEdit(issue)}
+                                >
+                                  <Clock size={14} />
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>

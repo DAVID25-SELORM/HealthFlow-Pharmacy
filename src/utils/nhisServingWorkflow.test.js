@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   canMcaOpenNhisClaimForServing,
   isNhisClaimDirectlyServed,
+  markNhisMedicinesServedDirectly,
   shouldApplyMcaEditWindowToClaim,
   shouldFinalizeNhisServingReview,
   splitMcaReadinessIssues,
@@ -96,5 +97,47 @@ describe('NHIS serving workflow status transitions', () => {
     expect(split.medicineBlockers).toEqual([])
     expect(split.claimCompletionBlockers).toHaveLength(3)
     expect(split.canSaveMedicines).toBe(true)
+  })
+
+  it('marks requested quantities as served for direct claims officer serving', () => {
+    const servedAt = '2026-07-27T10:00:00.000Z'
+    const medicines = markNhisMedicinesServedDirectly([
+      {
+        drugCode: 'NIFEDITA3',
+        unitPrice: 0.3,
+        prescribedQty: 14,
+        servedQty: 0,
+        dispensedQty: 0,
+        servingStatus: 'pending',
+      },
+      {
+        drugCode: 'ALLOPITA1',
+        unitPrice: 5.14,
+        dispensedQty: 1,
+        servingStatus: 'pending',
+      },
+    ], {
+      actorId: 'claims-officer-id',
+      servedAt,
+    })
+
+    expect(medicines[0]).toMatchObject({
+      prescribedQty: 14,
+      servedQty: 14,
+      dispensedQty: 14,
+      servingStatus: 'fully_served',
+      servedByMca: 'claims-officer-id',
+      servedAt,
+      totalAmount: 4.2,
+    })
+    expect(medicines[1]).toMatchObject({
+      prescribedQty: 1,
+      servedQty: 1,
+      dispensedQty: 1,
+      servingStatus: 'fully_served',
+      servedByMca: 'claims-officer-id',
+      servedAt,
+      totalAmount: 5.14,
+    })
   })
 })

@@ -121,7 +121,22 @@ describe('NHIS dispensary intake workflow', () => {
     })).toBe(true)
     expect(canSaveNhisIncompleteIntake({
       isEditing: true,
+      status: 'served',
+      blockerCount: 2,
+    })).toBe(true)
+    expect(canSaveNhisIncompleteIntake({
+      isEditing: true,
+      status: 'claim_ready',
+      blockerCount: 2,
+    })).toBe(true)
+    expect(canSaveNhisIncompleteIntake({
+      isEditing: true,
       status: 'returned_for_review',
+      blockerCount: 0,
+    })).toBe(false)
+    expect(canSaveNhisIncompleteIntake({
+      isEditing: true,
+      status: 'served',
       blockerCount: 0,
     })).toBe(false)
     expect(canSaveNhisIncompleteIntake({

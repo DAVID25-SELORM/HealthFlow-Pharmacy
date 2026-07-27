@@ -87,3 +87,44 @@ export const canMcaOpenNhisClaimForServing = (claimOrStatus = '') => {
 
 export const shouldApplyMcaEditWindowToClaim = (status = '') =>
   normalizeNhisServingStatus(status) === 'served'
+
+const toNumber = (value) => {
+  const parsed = Number.parseFloat(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+const normalizeMedicineLineServingStatus = (value, prescribedQty = 0, servedQty = 0) => {
+  const status = normalizeNhisServingStatus(value)
+  if (['not_available', 'not_served'].includes(status)) return status
+  if (status === 'fully_served' && servedQty >= prescribedQty) return 'fully_served'
+  if (status === 'partially_served' && servedQty > 0 && servedQty < prescribedQty) return 'partially_served'
+  if (servedQty <= 0) return 'pending'
+  return servedQty >= prescribedQty ? 'fully_served' : 'partially_served'
+}
+
+export const markNhisMedicinesServedDirectly = (
+  medicines = [],
+  { actorId = '', servedAt = new Date().toISOString() } = {}
+) =>
+  (Array.isArray(medicines) ? medicines : []).map((medicine) => {
+    const prescribedQty = toNumber(
+      medicine?.prescribedQty ??
+      medicine?.prescribed_qty ??
+      medicine?.dispensedQty ??
+      medicine?.dispensed_qty
+    )
+    const existingServedQty = toNumber(medicine?.servedQty ?? medicine?.served_qty)
+    const servedQty = existingServedQty > 0 ? existingServedQty : prescribedQty
+    const unitPrice = toNumber(medicine?.unitPrice ?? medicine?.unit_price)
+
+    return {
+      ...medicine,
+      prescribedQty,
+      servedQty,
+      dispensedQty: servedQty,
+      servingStatus: normalizeMedicineLineServingStatus('fully_served', prescribedQty, servedQty),
+      servedByMca: medicine?.servedByMca || medicine?.served_by_mca || actorId || '',
+      servedAt: medicine?.servedAt || medicine?.served_at || servedAt,
+      totalAmount: unitPrice * servedQty,
+    }
+  })

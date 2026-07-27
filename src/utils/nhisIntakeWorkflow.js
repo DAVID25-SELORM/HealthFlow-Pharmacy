@@ -4,6 +4,11 @@ const INTAKE_EDITABLE_STATUSES = new Set([
   'serving_in_progress',
 ])
 
+const SCRUB_CORRECTION_STATUSES = new Set([
+  'served',
+  'claim_ready',
+])
+
 const normalizeStatus = (status = '') => String(status || '').trim().toLowerCase()
 
 export const getNhisIntakeSaveStatus = ({
@@ -69,5 +74,6 @@ export const canSaveNhisIncompleteIntake = ({
   if (!isEditing) return true
   const normalizedStatus = normalizeStatus(status)
   if (INTAKE_EDITABLE_STATUSES.has(normalizedStatus)) return true
+  if (SCRUB_CORRECTION_STATUSES.has(normalizedStatus) && Number(blockerCount) > 0) return true
   return normalizedStatus === 'returned_for_review' && Number(blockerCount) > 0
 }
