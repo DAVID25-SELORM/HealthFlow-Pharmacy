@@ -381,11 +381,12 @@
 
 @media print {
   body > * {
-    display: none !important;
+    visibility: hidden !important;
   }
 
   .receipt-container.receipt-print-mode {
     display: block !important;
+    visibility: visible !important;
     position: fixed;
     inset: 0;
     width: 100%;
