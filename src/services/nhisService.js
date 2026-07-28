@@ -4800,13 +4800,17 @@ export const checkNhisActiveMedicationOverlap = async ({
   serviceDate = null,
   currentClaimId = null,
   currentOrganizationId = null,
+  genericName = '',
+  strength = '',
+  dosageForm = '',
 } = {}) => {
   if (shouldUseBranchServer()) {
     return { available: false, alerts: [], reason: 'offline_branch' }
   }
 
   const normalizedMedicineCode = normalizeText(medicineCode).toUpperCase()
-  if (!normalizedMedicineCode || (!normalizeText(memberNo) && !normalizeText(hin))) {
+  const normalizedGenericName = normalizeText(genericName)
+  if ((!normalizedMedicineCode && !normalizedGenericName) || (!normalizeText(memberNo) && !normalizeText(hin))) {
     return { available: true, alerts: [] }
   }
 
@@ -4817,6 +4821,9 @@ export const checkNhisActiveMedicationOverlap = async ({
     p_service_date: serviceDate || null,
     p_current_claim_id: currentClaimId || null,
     p_current_organization_id: currentOrganizationId || null,
+    p_generic_name: normalizedGenericName || null,
+    p_strength: normalizeText(strength) || null,
+    p_dosage_form: normalizeText(dosageForm) || null,
   })
 
   if (error) {

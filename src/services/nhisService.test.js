@@ -4214,6 +4214,9 @@ describe('NHIS active medication overlap check', () => {
       serviceDate: '2026-07-28',
       currentClaimId: '11111111-1111-4111-8111-111111111111',
       currentOrganizationId: '22222222-2222-4222-8222-222222222222',
+      genericName: 'Paracetamol',
+      strength: '500 mg',
+      dosageForm: 'Tablet',
     })
 
     expect(result).toEqual({ available: true, alerts })
@@ -4224,7 +4227,31 @@ describe('NHIS active medication overlap check', () => {
       p_service_date: '2026-07-28',
       p_current_claim_id: '11111111-1111-4111-8111-111111111111',
       p_current_organization_id: '22222222-2222-4222-8222-222222222222',
+      p_generic_name: 'Paracetamol',
+      p_strength: '500 mg',
+      p_dosage_form: 'Tablet',
     })
+  })
+
+  it('can run an ingredient-level advisory when medicine code is unavailable', async () => {
+    supabase.rpc.mockResolvedValueOnce({
+      data: [{ severity: 'warning', match_type: 'same_ingredient' }],
+      error: null,
+    })
+
+    const result = await checkNhisActiveMedicationOverlap({
+      memberNo: '123',
+      genericName: 'Paracetamol',
+      dosageForm: 'Tablet',
+    })
+
+    expect(result.alerts).toEqual([{ severity: 'warning', match_type: 'same_ingredient' }])
+    expect(supabase.rpc).toHaveBeenCalledWith('check_nhis_active_medication_overlap', expect.objectContaining({
+      p_medicine_code: '',
+      p_generic_name: 'Paracetamol',
+      p_strength: null,
+      p_dosage_form: 'Tablet',
+    }))
   })
 
   it('fails open when the database RPC has not been deployed yet', async () => {

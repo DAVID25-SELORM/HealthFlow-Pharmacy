@@ -385,6 +385,9 @@ const makeBlankMedicine = () => ({
   nhisDrugId:    '',
   drugCode:      '',
   description:   '',
+  genericName:   '',
+  strength:      '',
+  dosageForm:    '',
   unit:          'unit',
   unitPrice:     '',
   prescribedQty: '0',
@@ -899,6 +902,9 @@ const buildNhisActiveMedicationOverlapMessage = (alerts = []) => {
 
   const lines = visibleAlerts.map((alert, index) => {
     const medicine = alert.medicine_description || alert.medicine_code || `Medicine ${index + 1}`
+    const matchText = alert.match_type === 'same_ingredient'
+      ? 'Similar active ingredient'
+      : 'Same medicine code'
     const previousDate = alert.previous_dispensed_date
       ? formatAppDate(alert.previous_dispensed_date)
       : 'Not recorded'
@@ -912,6 +918,7 @@ const buildNhisActiveMedicationOverlapMessage = (alerts = []) => {
 
     return [
       `${index + 1}. ${medicine}`,
+      `Match: ${matchText}`,
       `Previous dispensing: ${previousDate}`,
       `Calculated treatment end: ${endDate}`,
       `Remaining coverage: ${remainingText}`,
@@ -921,7 +928,7 @@ const buildNhisActiveMedicationOverlapMessage = (alerts = []) => {
 
   return [
     'Potential active medication duplication',
-    'This member appears to have an active supply of the same medicine code. Review before adding this medicine.',
+    'This member may already have active medicine coverage. Review before adding this medicine.',
     ...lines,
   ].join('\n\n')
 }
@@ -2968,6 +2975,9 @@ const Nhis = () => {
           nhisDrugId:  drug.id,
           drugCode:    drug.code,
           description: drug.description,
+          genericName: drug.generic_name || '',
+          strength:    drug.strength || '',
+          dosageForm:  drug.dosage_form || '',
           unit:        drug.unit,
           unitPrice:   String(drug.unit_price),
           category:    drug.category || '',
@@ -3008,6 +3018,9 @@ const Nhis = () => {
       nhisDrugId:   drug.id,
       drugCode:     drug.code,
       description:  drug.description,
+      genericName:  drug.generic_name || '',
+      strength:     drug.strength || '',
+      dosageForm:   drug.dosage_form || '',
       unit:         drug.unit,
       unitPrice:    String(drug.unit_price),
       category:     drug.category || '',
@@ -3155,6 +3168,9 @@ const Nhis = () => {
         serviceDate: nextMedicine.dispensaryDate || claimForm.serviceDate || null,
         currentClaimId: editingClaim?.id || null,
         currentOrganizationId: organizationId || null,
+        genericName: nextMedicine.genericName || medForm.genericName || '',
+        strength: nextMedicine.strength || medForm.strength || '',
+        dosageForm: nextMedicine.dosageForm || medForm.dosageForm || '',
       })
       const overlapAlerts = overlapResult?.alerts || []
       if (overlapAlerts.length) {
