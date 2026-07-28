@@ -4853,6 +4853,142 @@ export const checkNhisActiveMedicationOverlap = async ({
 
 // ─── NHIS Claims ─────────────────────────────────────────────────────────────
 
+const isMissingMedicationOverlapBatchRpcError = (error = {}) => {
+  const message = normalizeText(error.message || error.details || error.hint).toLowerCase()
+  return (
+    error.code === '42883' ||
+    message.includes('check_nhis_active_medication_overlap_batch') ||
+    (message.includes('function') && message.includes('does not exist'))
+  )
+}
+
+const formatNhisActiveMedicationExportWarning = (alert = {}) => {
+  const medicine = normalizeText(alert.medicine_description || alert.medicine_code) || 'This medicine'
+  const matchText = {
+    same_ingredient: 'similar active ingredient',
+    possible_completion_supply: 'possible completion supply',
+    partial_previous_supply: 'previous partial supply',
+    early_refill_review: 'early refill review',
+    exact_code: 'same medicine code',
+  }[alert.match_type] || 'same medicine code'
+  const remainingDays = Number(alert.remaining_days || 0)
+  const remainingText = remainingDays > 0
+    ? `${remainingDays} treatment day(s) may still remain`
+    : 'active treatment coverage may overlap'
+  const riskScore = Number(alert.risk_score || 0)
+  const riskText = riskScore > 0 ? ` Risk score ${riskScore}/100.` : ''
+  const actionText = normalizeText(alert.recommended_action)
+  return [
+    `Active medication review: ${medicine} has ${matchText}; ${remainingText}.`,
+    riskText.trim(),
+    actionText ? `Action: ${actionText}` : '',
+  ].filter(Boolean).join(' ')
+}
+
+const buildNhisActiveMedicationBatchItems = (claims = [], options = {}) => {
+  const currentOrganizationId = normalizeText(options.organizationId || options.organization_id)
+  const items = []
+  for (const claim of claims || []) {
+    const medicines = claim.nhis_claim_medicines || claim.medicines || []
+    const memberNo = normalizeText(claim.member_no || claim.memberNo)
+    const hin = normalizeText(claim.hin)
+    if (!memberNo && !hin) continue
+
+    for (const medicine of medicines) {
+      const medicineCode = normalizeText(medicine.drug_code || medicine.drugCode).toUpperCase()
+      const genericName = normalizeText(medicine.generic_name || medicine.genericName)
+      const servedQuantity = asNumber(medicine.served_qty ?? medicine.servedQty ?? medicine.dispensed_qty ?? medicine.dispensedQty)
+      if (!(servedQuantity > 0)) continue
+      if (!medicineCode && !genericName) continue
+
+      items.push({
+        claim_id: normalizeText(claim.id) || null,
+        member_no: memberNo || null,
+        hin: hin || null,
+        medicine_code: medicineCode || null,
+        service_date: normalizeText(medicine.dispensary_date || medicine.dispensaryDate || claim.service_date_from || claim.serviceDate) || null,
+        current_organization_id: currentOrganizationId || normalizeText(claim.organization_id || claim.organizationId) || null,
+        generic_name: genericName || null,
+        strength: normalizeText(medicine.strength),
+        dosage_form: normalizeText(medicine.dosage_form || medicine.dosageForm),
+        requested_quantity: servedQuantity,
+        dose: normalizeText(medicine.dose),
+        frequency: normalizeText(medicine.frequency),
+        duration: normalizeText(medicine.duration),
+      })
+    }
+  }
+  return items
+}
+
+const mergeNhisReadinessSummaries = (groups = []) => {
+  const byClaim = new Map()
+  for (const group of groups.flat()) {
+    if (!group) continue
+    const key = normalizeText(group.id || group.claim_number || group.claimNumber)
+    if (!key) continue
+    const existing = byClaim.get(key)
+    if (!existing) {
+      byClaim.set(key, {
+        ...group,
+        issues: Array.isArray(group.issues) ? [...new Set(group.issues)] : [],
+      })
+      continue
+    }
+    existing.issues = [...new Set([
+      ...(existing.issues || []),
+      ...(Array.isArray(group.issues) ? group.issues : []),
+    ])]
+  }
+  return Array.from(byClaim.values())
+}
+
+const getNhisExportActiveMedicationWarnings = async (claims = [], options = {}) => {
+  if (shouldUseBranchServer()) return []
+  const items = buildNhisActiveMedicationBatchItems(claims, options)
+  if (!items.length) return []
+
+  try {
+    const response = await supabase.rpc('check_nhis_active_medication_overlap_batch', {
+      p_items: items,
+    })
+    const { data, error } = response || {}
+    if (error) {
+      if (isMissingMedicationOverlapBatchRpcError(error)) return []
+      console.warn('[NHIS] Active medication batch scrub failed.', {
+        code: error?.code || null,
+        message: error?.message || 'Unknown error',
+      })
+      return []
+    }
+
+    const alertsByClaimId = new Map()
+    ;(Array.isArray(data) ? data : []).forEach((alert) => {
+      const claimId = normalizeText(alert.input_claim_id)
+      if (!claimId) return
+      const alerts = alertsByClaimId.get(claimId) || []
+      alerts.push(alert)
+      alertsByClaimId.set(claimId, alerts)
+    })
+
+    return claims
+      .map((claim) => {
+        const alerts = alertsByClaimId.get(normalizeText(claim.id)) || []
+        if (!alerts.length) return null
+        return summarizeNhisReadinessClaim(
+          claim,
+          alerts.map(formatNhisActiveMedicationExportWarning)
+        )
+      })
+      .filter(Boolean)
+  } catch (error) {
+    console.warn('[NHIS] Active medication batch scrub could not run.', {
+      message: error?.message || 'Unknown error',
+    })
+    return []
+  }
+}
+
 const chunkArray = (items = [], size = NHIS_EXPORT_RELATION_BATCH_SIZE) => {
   const chunks = []
   for (let index = 0; index < items.length; index += size) {
@@ -8998,7 +9134,9 @@ export const getNhisExportScrubWarnings = async (options = {}) => {
       exportPeriod: readiness.period,
     }
   )
-  return warningClaims.map(({ claim, issues }) => summarizeNhisReadinessClaim(claim, issues))
+  const readinessWarnings = warningClaims.map(({ claim, issues }) => summarizeNhisReadinessClaim(claim, issues))
+  const activeMedicationWarnings = await getNhisExportActiveMedicationWarnings(readiness.claims, options)
+  return mergeNhisReadinessSummaries([readinessWarnings, activeMedicationWarnings])
 }
 
 const getNhisMissingCxfAttachmentIssues = (claims = [], organizationType = '') => {

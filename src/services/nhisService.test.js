@@ -3451,6 +3451,202 @@ describe('duplicate NHIS claim prevention', () => {
     ])
   })
 
+  it('adds active-medication overlap advisories to export scrub warnings without blocking export', async () => {
+    const claimId = '11111111-1111-4111-8111-111111111111'
+    const warningClaim = {
+      id: claimId,
+      claim_number: 'NHIS-000011',
+      status: 'served',
+      organization_id: '22222222-2222-4222-8222-222222222222',
+      organization_type: 'hospital',
+      member_no: '12345678',
+      surname: 'Mensah',
+      other_names: 'Ama',
+      folder_no: 'F001',
+      date_of_birth: '1990-01-01',
+      patient_address: 'Accra',
+      ccc_no: '12345',
+      diagnosis: 'Malaria',
+      diagnosis_details: [{ code: 'B50', label: 'Plasmodium falciparum malaria', source: 'ICD-10' }],
+      service_date_from: '2026-05-14',
+      service_date_to: '2026-05-14',
+      referring_facility: 'Westpoint Hospital',
+      physician_name: 'Dr Test',
+      total_amount: 10,
+      nhis_claim_medicines: [{
+        nhis_drug_id: 'drug-1',
+        drug_code: 'PARA500',
+        description: 'Paracetamol Tablet 500mg',
+        generic_name: 'Paracetamol',
+        unit: 'tablet',
+        unit_price: 1,
+        dispensed_qty: 10,
+        dose: '1 tablet',
+        frequency: 'BD',
+        duration: '5 days',
+        total_amount: 10,
+        category: 'A',
+      }],
+    }
+    const claimsQuery = {
+      order: vi.fn(() => claimsQuery),
+      gte: vi.fn(() => claimsQuery),
+      lte: vi.fn().mockResolvedValue({ data: [warningClaim], error: null }),
+    }
+    const serviceLinesQuery = {
+      in: vi.fn(() => serviceLinesQuery),
+      order: vi.fn().mockResolvedValue({ data: [], error: null }),
+    }
+    supabase.from.mockImplementation((table) => {
+      if (table === 'nhis_claims') {
+        return { select: vi.fn(() => claimsQuery) }
+      }
+      if (table === 'nhis_claim_services') {
+        return { select: vi.fn(() => serviceLinesQuery) }
+      }
+      if (table === 'nhis_clinical_rules') {
+        const clinicalRulesQuery = {
+          eq: vi.fn(() => clinicalRulesQuery),
+          in: vi.fn(() => clinicalRulesQuery),
+          order: vi.fn().mockResolvedValue({ data: [], error: null }),
+        }
+        return { select: vi.fn(() => clinicalRulesQuery) }
+      }
+      return { select: vi.fn(() => ({ in: vi.fn().mockReturnThis(), eq: vi.fn().mockResolvedValue({ data: [], error: null }) })) }
+    })
+    supabase.rpc.mockResolvedValueOnce({
+      data: [{
+        input_claim_id: claimId,
+        severity: 'warning',
+        match_type: 'early_refill_review',
+        medicine_code: 'PARA500',
+        medicine_description: 'Paracetamol Tablet 500mg',
+        remaining_days: 4,
+        risk_score: 70,
+        recommended_action: 'Confirm refill reason before export.',
+      }],
+      error: null,
+    })
+
+    const warnings = await getNhisExportScrubWarnings({
+      mode: 'custom',
+      fromDate: '2026-05-14',
+      toDate: '2026-05-14',
+      format: 'json',
+      organizationType: 'hospital',
+      providerClassLevel: 'D',
+      pharmacyLevel: 'P1',
+      nhisDrugCatalog: [{ id: 'drug-1', code: 'PARA500', category: 'A' }],
+    })
+
+    expect(supabase.rpc).toHaveBeenCalledWith('check_nhis_active_medication_overlap_batch', {
+      p_items: [expect.objectContaining({
+        claim_id: claimId,
+        member_no: '12345678',
+        medicine_code: 'PARA500',
+        generic_name: 'Paracetamol',
+        requested_quantity: 10,
+        service_date: '2026-05-14',
+      })],
+    })
+    expect(warnings).toEqual([
+      expect.objectContaining({
+        id: claimId,
+        claim_number: 'NHIS-000011',
+        issues: expect.arrayContaining([
+          expect.stringContaining('Active medication review: Paracetamol Tablet 500mg has early refill review'),
+          expect.stringContaining('Confirm refill reason before export.'),
+        ]),
+      }),
+    ])
+  })
+
+  it('keeps normal export scrub warnings when the active-medication batch RPC is unavailable', async () => {
+    const warningClaim = {
+      id: '33333333-3333-4333-8333-333333333333',
+      claim_number: 'NHIS-000012',
+      status: 'served',
+      organization_type: 'hospital',
+      member_no: '12345678',
+      surname: 'Mensah',
+      other_names: 'Ama',
+      folder_no: 'F001',
+      date_of_birth: '2020-01-01',
+      patient_address: 'Accra',
+      ccc_no: '12345',
+      diagnosis: 'Malaria',
+      diagnosis_details: [{ code: 'B50', label: 'Plasmodium falciparum malaria', source: 'ICD-10' }],
+      service_date_from: '2026-05-14',
+      service_date_to: '2026-05-14',
+      referring_facility: 'Westpoint Hospital',
+      physician_name: 'Dr Test',
+      total_amount: 10,
+      nhis_claim_medicines: [{
+        nhis_drug_id: 'drug-1',
+        drug_code: 'PARA500',
+        description: 'Paracetamol Tablet 500mg',
+        unit: 'tablet',
+        unit_price: 1,
+        dispensed_qty: 10,
+        dose: '1 tablet',
+        frequency: 'BD',
+        duration: '5 days',
+        total_amount: 10,
+        category: 'A',
+      }],
+    }
+    const claimsQuery = {
+      order: vi.fn(() => claimsQuery),
+      gte: vi.fn(() => claimsQuery),
+      lte: vi.fn().mockResolvedValue({ data: [warningClaim], error: null }),
+    }
+    const serviceLinesQuery = {
+      in: vi.fn(() => serviceLinesQuery),
+      order: vi.fn().mockResolvedValue({ data: [], error: null }),
+    }
+    supabase.from.mockImplementation((table) => {
+      if (table === 'nhis_claims') {
+        return { select: vi.fn(() => claimsQuery) }
+      }
+      if (table === 'nhis_claim_services') {
+        return { select: vi.fn(() => serviceLinesQuery) }
+      }
+      if (table === 'nhis_clinical_rules') {
+        const clinicalRulesQuery = {
+          eq: vi.fn(() => clinicalRulesQuery),
+          in: vi.fn(() => clinicalRulesQuery),
+          order: vi.fn().mockResolvedValue({ data: [], error: null }),
+        }
+        return { select: vi.fn(() => clinicalRulesQuery) }
+      }
+      return { select: vi.fn(() => ({ in: vi.fn().mockReturnThis(), eq: vi.fn().mockResolvedValue({ data: [], error: null }) })) }
+    })
+    supabase.rpc.mockResolvedValueOnce({
+      data: null,
+      error: { code: '42883', message: 'function check_nhis_active_medication_overlap_batch does not exist' },
+    })
+
+    const warnings = await getNhisExportScrubWarnings({
+      mode: 'custom',
+      fromDate: '2026-05-14',
+      toDate: '2026-05-14',
+      format: 'json',
+      organizationType: 'hospital',
+      providerClassLevel: 'D',
+      pharmacyLevel: 'P1',
+      nhisDrugCatalog: [{ id: 'drug-1', code: 'PARA500', category: 'A' }],
+    })
+
+    expect(warnings).toEqual([
+      expect.objectContaining({
+        claim_number: 'NHIS-000012',
+        issues: expect.arrayContaining([
+          'Child weight is missing for a child patient.',
+        ]),
+      }),
+    ])
+  })
+
   it('reports other export blockers together with duplicate claims', async () => {
     const sourceClaim = {
       id: 'claim-1',
