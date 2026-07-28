@@ -39,6 +39,7 @@ import {
   updateNhiaTariffItem,
   getNhisClaimStats,
   getNhisClaimIssueCounts,
+  checkNhisActiveMedicationOverlap,
   createNhisClaim,
   deleteNhisClaim,
   serveNhisClaimDirect,
@@ -890,6 +891,48 @@ const buildNhisAddMedicineDuplicateAlerts = ({
     })
 
   return [...new Set(alerts)]
+}
+
+const buildNhisActiveMedicationOverlapMessage = (alerts = []) => {
+  const visibleAlerts = (Array.isArray(alerts) ? alerts : []).slice(0, 3)
+  if (!visibleAlerts.length) return ''
+
+  const lines = visibleAlerts.map((alert, index) => {
+    const medicine = alert.medicine_description || alert.medicine_code || `Medicine ${index + 1}`
+    const previousDate = alert.previous_dispensed_date
+      ? formatAppDate(alert.previous_dispensed_date)
+      : 'Not recorded'
+    const endDate = alert.coverage_end_date
+      ? formatAppDate(alert.coverage_end_date)
+      : 'Not recorded'
+    const remainingDays = Number(alert.remaining_days || 0)
+    const remainingText = remainingDays > 0
+      ? `${remainingDays} day(s) remaining`
+      : 'active coverage may still overlap'
+
+    return [
+      `${index + 1}. ${medicine}`,
+      `Previous dispensing: ${previousDate}`,
+      `Calculated treatment end: ${endDate}`,
+      `Remaining coverage: ${remainingText}`,
+      `Source: ${alert.source_label || 'Another participating HealthFlow facility'}`,
+    ].join('\n')
+  })
+
+  return [
+    'Potential active medication duplication',
+    'This member appears to have an active supply of the same medicine code. Review before adding this medicine.',
+    ...lines,
+  ].join('\n\n')
+}
+
+const promptNhisMedicationOverlapOverride = (alerts = []) => {
+  const message = buildNhisActiveMedicationOverlapMessage(alerts)
+  if (!message) return ''
+  const reason = window.prompt(
+    `${message}\n\nEnter the authorised reason to continue, or leave blank to cancel.`
+  )
+  return normalizeText(reason)
 }
 
 const buildNhisDuplicateWarnings = ({
@@ -3018,7 +3061,7 @@ const Nhis = () => {
     finishCloseMedicineModal()
   }
 
-  const addMedicineToList = () => {
+  const addMedicineToList = async () => {
     const qty   = Number.parseFloat(medForm.dispensedQty) || 0
     const price = Number.parseFloat(medForm.unitPrice)    || 0
     const requestedServingStatus = String(medForm.servingStatus || '').toLowerCase()
@@ -3102,6 +3145,52 @@ const Nhis = () => {
         notify('Medicine was not added. Please verify the repeat dispensing first.', 'warning')
         return
       }
+    }
+
+    try {
+      const overlapResult = await checkNhisActiveMedicationOverlap({
+        memberNo: claimForm.memberNo,
+        hin: claimForm.hin,
+        medicineCode: nextMedicine.drugCode,
+        serviceDate: nextMedicine.dispensaryDate || claimForm.serviceDate || null,
+        currentClaimId: editingClaim?.id || null,
+        currentOrganizationId: organizationId || null,
+      })
+      const overlapAlerts = overlapResult?.alerts || []
+      if (overlapAlerts.length) {
+        const overrideReason = promptNhisMedicationOverlapOverride(overlapAlerts)
+        if (!overrideReason) {
+          notify('Medicine was not added. Review the active medication alert before continuing.', 'warning')
+          return
+        }
+        await tryLogAuditEvent({
+          eventType: 'nhis_claim.active_medication_overlap_override',
+          entityType: 'nhis_claims',
+          entityId: editingClaim?.id || null,
+          action: 'override_active_medication_overlap',
+          details: {
+            medicine_code: nextMedicine.drugCode || '',
+            medicine_description: nextMedicine.description || '',
+            member_no: claimForm.memberNo || '',
+            hin: claimForm.hin || '',
+            service_date: nextMedicine.dispensaryDate || claimForm.serviceDate || '',
+            override_reason: overrideReason,
+            alert_count: overlapAlerts.length,
+            previous_claim_references: overlapAlerts
+              .map((alert) => alert.previous_claim_reference)
+              .filter(Boolean)
+              .slice(0, 5),
+          },
+        })
+      } else if (overlapResult && overlapResult.available === false) {
+        notify('Cross-facility active medication check is not available for this session. Local checks will still continue.', 'warning')
+      }
+    } catch (overlapError) {
+      console.warn('[NHIS] Active medication overlap check failed.', {
+        code: overlapError?.code || null,
+        message: overlapError?.message || 'Unknown error',
+      })
+      notify('Cross-facility active medication check could not be completed. Local checks will still continue.', 'warning')
     }
 
     setClaimMedicines((prev) => {

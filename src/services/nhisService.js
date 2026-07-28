@@ -4784,6 +4784,54 @@ export const upsertNhisDrugs = async (drugs, options = {}) => {
   return rows.length
 }
 
+const isMissingMedicationOverlapRpcError = (error = {}) => {
+  const message = normalizeText(error.message || error.details || error.hint).toLowerCase()
+  return (
+    error.code === '42883' ||
+    message.includes('check_nhis_active_medication_overlap') ||
+    (message.includes('function') && message.includes('does not exist'))
+  )
+}
+
+export const checkNhisActiveMedicationOverlap = async ({
+  memberNo = '',
+  hin = '',
+  medicineCode = '',
+  serviceDate = null,
+  currentClaimId = null,
+  currentOrganizationId = null,
+} = {}) => {
+  if (shouldUseBranchServer()) {
+    return { available: false, alerts: [], reason: 'offline_branch' }
+  }
+
+  const normalizedMedicineCode = normalizeText(medicineCode).toUpperCase()
+  if (!normalizedMedicineCode || (!normalizeText(memberNo) && !normalizeText(hin))) {
+    return { available: true, alerts: [] }
+  }
+
+  const { data, error } = await supabase.rpc('check_nhis_active_medication_overlap', {
+    p_member_no: normalizeText(memberNo) || null,
+    p_hin: normalizeText(hin) || null,
+    p_medicine_code: normalizedMedicineCode,
+    p_service_date: serviceDate || null,
+    p_current_claim_id: currentClaimId || null,
+    p_current_organization_id: currentOrganizationId || null,
+  })
+
+  if (error) {
+    if (isMissingMedicationOverlapRpcError(error)) {
+      return { available: false, alerts: [], reason: 'rpc_not_deployed' }
+    }
+    throw error
+  }
+
+  return {
+    available: true,
+    alerts: Array.isArray(data) ? data : [],
+  }
+}
+
 // ─── NHIS Claims ─────────────────────────────────────────────────────────────
 
 const chunkArray = (items = [], size = NHIS_EXPORT_RELATION_BATCH_SIZE) => {

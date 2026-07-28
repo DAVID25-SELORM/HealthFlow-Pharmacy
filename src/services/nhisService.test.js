@@ -55,6 +55,7 @@ import {
   buildNhisClaimItCxf,
   buildNhisClaimItDirectXml,
   buildNhisClaimItXml,
+  checkNhisActiveMedicationOverlap,
   checkNhisExportReadiness,
   createNhisClaim,
   deleteNhisClaim,
@@ -4193,6 +4194,68 @@ describe('NHIS drug catalog routing', () => {
 
     expect(listBranchRecords).toHaveBeenCalledWith('nhis/drugs', { searchTerm: 'nh002', limit: 1 })
     expect(supabase.from).toHaveBeenCalledWith('nhis_drugs')
+  })
+})
+
+describe('NHIS active medication overlap check', () => {
+  it('calls the privacy-minimized overlap RPC with normalized medicine and claim context', async () => {
+    const alerts = [{
+      severity: 'strong_warning',
+      medicine_code: 'PARA500',
+      source_label: 'Another participating HealthFlow facility',
+      previous_claim_reference: null,
+    }]
+    supabase.rpc.mockResolvedValueOnce({ data: alerts, error: null })
+
+    const result = await checkNhisActiveMedicationOverlap({
+      memberNo: ' NHIS-001 ',
+      hin: ' HIN-001 ',
+      medicineCode: ' para500 ',
+      serviceDate: '2026-07-28',
+      currentClaimId: '11111111-1111-4111-8111-111111111111',
+      currentOrganizationId: '22222222-2222-4222-8222-222222222222',
+    })
+
+    expect(result).toEqual({ available: true, alerts })
+    expect(supabase.rpc).toHaveBeenCalledWith('check_nhis_active_medication_overlap', {
+      p_member_no: 'NHIS-001',
+      p_hin: 'HIN-001',
+      p_medicine_code: 'PARA500',
+      p_service_date: '2026-07-28',
+      p_current_claim_id: '11111111-1111-4111-8111-111111111111',
+      p_current_organization_id: '22222222-2222-4222-8222-222222222222',
+    })
+  })
+
+  it('fails open when the database RPC has not been deployed yet', async () => {
+    supabase.rpc.mockResolvedValueOnce({
+      data: null,
+      error: { code: '42883', message: 'function check_nhis_active_medication_overlap does not exist' },
+    })
+
+    await expect(checkNhisActiveMedicationOverlap({
+      memberNo: '123',
+      medicineCode: 'PARA500',
+    })).resolves.toEqual({
+      available: false,
+      alerts: [],
+      reason: 'rpc_not_deployed',
+    })
+  })
+
+  it('does not call cloud overlap checks in branch-server mode', async () => {
+    shouldUseBranchServer.mockReturnValueOnce(true)
+
+    await expect(checkNhisActiveMedicationOverlap({
+      memberNo: '123',
+      medicineCode: 'PARA500',
+    })).resolves.toEqual({
+      available: false,
+      alerts: [],
+      reason: 'offline_branch',
+    })
+
+    expect(supabase.rpc).not.toHaveBeenCalled()
   })
 })
 
