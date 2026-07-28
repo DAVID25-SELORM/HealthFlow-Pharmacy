@@ -942,7 +942,7 @@ const buildNhisActiveMedicationOverlapMessage = (alerts = []) => {
   })
 
   return [
-    'Potential active medication duplication',
+    'ACTIVE MEDICATION ALERT',
     'This member may already have active medicine coverage. Review before adding this medicine.',
     ...lines,
   ].join('\n\n')
