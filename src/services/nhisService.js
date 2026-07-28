@@ -4803,6 +4803,10 @@ export const checkNhisActiveMedicationOverlap = async ({
   genericName = '',
   strength = '',
   dosageForm = '',
+  requestedQuantity = null,
+  dose = '',
+  frequency = '',
+  duration = '',
 } = {}) => {
   if (shouldUseBranchServer()) {
     return { available: false, alerts: [], reason: 'offline_branch' }
@@ -4813,6 +4817,10 @@ export const checkNhisActiveMedicationOverlap = async ({
   if ((!normalizedMedicineCode && !normalizedGenericName) || (!normalizeText(memberNo) && !normalizeText(hin))) {
     return { available: true, alerts: [] }
   }
+  const requestedQuantityText = requestedQuantity === null || requestedQuantity === undefined
+    ? ''
+    : String(requestedQuantity).trim()
+  const requestedQuantityNumber = requestedQuantityText ? Number(requestedQuantityText) : null
 
   const { data, error } = await supabase.rpc('check_nhis_active_medication_overlap', {
     p_member_no: normalizeText(memberNo) || null,
@@ -4824,6 +4832,10 @@ export const checkNhisActiveMedicationOverlap = async ({
     p_generic_name: normalizedGenericName || null,
     p_strength: normalizeText(strength) || null,
     p_dosage_form: normalizeText(dosageForm) || null,
+    p_requested_quantity: Number.isFinite(requestedQuantityNumber) ? requestedQuantityNumber : null,
+    p_dose: normalizeText(dose) || null,
+    p_frequency: normalizeText(frequency) || null,
+    p_duration: normalizeText(duration) || null,
   })
 
   if (error) {

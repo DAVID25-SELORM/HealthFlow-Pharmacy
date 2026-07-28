@@ -902,9 +902,13 @@ const buildNhisActiveMedicationOverlapMessage = (alerts = []) => {
 
   const lines = visibleAlerts.map((alert, index) => {
     const medicine = alert.medicine_description || alert.medicine_code || `Medicine ${index + 1}`
-    const matchText = alert.match_type === 'same_ingredient'
-      ? 'Similar active ingredient'
-      : 'Same medicine code'
+    const matchText = {
+      same_ingredient: 'Similar active ingredient',
+      possible_completion_supply: 'Possible completion supply',
+      partial_previous_supply: 'Previous partial supply',
+      early_refill_review: 'Early refill review',
+      exact_code: 'Same medicine code',
+    }[alert.match_type] || 'Same medicine code'
     const previousDate = alert.previous_dispensed_date
       ? formatAppDate(alert.previous_dispensed_date)
       : 'Not recorded'
@@ -915,6 +919,14 @@ const buildNhisActiveMedicationOverlapMessage = (alerts = []) => {
     const remainingText = remainingDays > 0
       ? `${remainingDays} day(s) remaining`
       : 'active coverage may still overlap'
+    const riskScore = Number(alert.risk_score)
+    const riskText = Number.isFinite(riskScore) && riskScore > 0
+      ? `Risk score: ${riskScore}/100`
+      : ''
+    const recommendedAction = normalizeText(alert.recommended_action)
+    const reasonLines = Array.isArray(alert.risk_reasons)
+      ? alert.risk_reasons.map((reason) => normalizeText(reason)).filter(Boolean).slice(0, 4)
+      : []
 
     return [
       `${index + 1}. ${medicine}`,
@@ -923,7 +935,10 @@ const buildNhisActiveMedicationOverlapMessage = (alerts = []) => {
       `Calculated treatment end: ${endDate}`,
       `Remaining coverage: ${remainingText}`,
       `Source: ${alert.source_label || 'Another participating HealthFlow facility'}`,
-    ].join('\n')
+      riskText,
+      recommendedAction ? `Recommended action: ${recommendedAction}` : '',
+      ...reasonLines.map((reason) => `Reason: ${reason}`),
+    ].filter(Boolean).join('\n')
   })
 
   return [
@@ -3171,6 +3186,10 @@ const Nhis = () => {
         genericName: nextMedicine.genericName || medForm.genericName || '',
         strength: nextMedicine.strength || medForm.strength || '',
         dosageForm: nextMedicine.dosageForm || medForm.dosageForm || '',
+        requestedQuantity: nextMedicine.dispensedQty,
+        dose: nextMedicine.dose,
+        frequency: nextMedicine.frequency,
+        duration: nextMedicine.duration,
       })
       const overlapAlerts = overlapResult?.alerts || []
       if (overlapAlerts.length) {

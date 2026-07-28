@@ -4217,6 +4217,10 @@ describe('NHIS active medication overlap check', () => {
       genericName: 'Paracetamol',
       strength: '500 mg',
       dosageForm: 'Tablet',
+      requestedQuantity: '14',
+      dose: '1 tablet',
+      frequency: 'BD',
+      duration: '7 days',
     })
 
     expect(result).toEqual({ available: true, alerts })
@@ -4230,7 +4234,40 @@ describe('NHIS active medication overlap check', () => {
       p_generic_name: 'Paracetamol',
       p_strength: '500 mg',
       p_dosage_form: 'Tablet',
+      p_requested_quantity: 14,
+      p_dose: '1 tablet',
+      p_frequency: 'BD',
+      p_duration: '7 days',
     })
+  })
+
+  it('preserves refill and risk-advisory fields returned by the overlap RPC', async () => {
+    const alerts = [{
+      severity: 'info',
+      match_type: 'possible_completion_supply',
+      remaining_days: 5,
+      risk_score: 25,
+      risk_reasons: ['Requested quantity may be completing a previous partial fill.'],
+      recommended_action: 'Confirm this is a completion supply for medicine previously not fully served.',
+    }]
+    supabase.rpc.mockResolvedValueOnce({ data: alerts, error: null })
+
+    const result = await checkNhisActiveMedicationOverlap({
+      memberNo: '123',
+      medicineCode: 'PARA500',
+      requestedQuantity: 3,
+      dose: '1 tablet',
+      frequency: 'OD',
+      duration: '3 days',
+    })
+
+    expect(result).toEqual({ available: true, alerts })
+    expect(supabase.rpc).toHaveBeenCalledWith('check_nhis_active_medication_overlap', expect.objectContaining({
+      p_requested_quantity: 3,
+      p_dose: '1 tablet',
+      p_frequency: 'OD',
+      p_duration: '3 days',
+    }))
   })
 
   it('can run an ingredient-level advisory when medicine code is unavailable', async () => {
@@ -4251,6 +4288,7 @@ describe('NHIS active medication overlap check', () => {
       p_generic_name: 'Paracetamol',
       p_strength: null,
       p_dosage_form: 'Tablet',
+      p_requested_quantity: null,
     }))
   })
 
