@@ -47,7 +47,7 @@ import {
   updateNhisClaimStatus,
   exportNhisClaimsFile,
   checkNhisExportReadiness,
-  getNhisExportScrubWarnings,
+  prepareNhisClaimsExport,
   submitNhisClaimDirect,
   assessNhisClaimReadiness,
   validateNhisClaimFinalReadiness,
@@ -1325,6 +1325,8 @@ const Nhis = () => {
   const [exportFormat, setExportFormat] = useState('cxf')
   const [exportRoute, setExportRoute] = useState('cxf_export')
   const [exporting, setExporting]       = useState(false)
+  const [exportProgress, setExportProgress] = useState('')
+  const exportInFlightRef = useRef(false)
 
   // ── status update ─────────────────────────────────────────────
   const [updatingStatus, setUpdatingStatus] = useState(null)
@@ -4674,6 +4676,15 @@ const Nhis = () => {
     }
   }
 
+  const getExportProgressLabel = (progress = {}) => {
+    const stage = normalizeText(progress.stage)
+    if (!stage) return ''
+    if (progress.total && Number.isFinite(Number(progress.current))) {
+      return `${stage}: ${progress.current} of ${progress.total}`
+    }
+    return stage
+  }
+
   const applyExportReadinessError = (err, fallbackPrefix = 'Claim scrub failed.', options = {}) => {
     const { preserveFilter = false } = options
     if (isNhisDuplicateClaimsError(err)) {
@@ -4795,8 +4806,14 @@ const Nhis = () => {
   }
 
   const handleExport = async (warningOverrideReason = '') => {
+    if (exportInFlightRef.current) {
+      notify('Export is already running. Please wait for it to finish.', 'info')
+      return
+    }
     try {
+      exportInFlightRef.current = true
       setExporting(true)
+      setExportProgress('Preparing export')
       setDuplicateClaimGroups([])
       setDuplicateExportIssues([])
       setShowDuplicateClaimReview(false)
@@ -4810,8 +4827,18 @@ const Nhis = () => {
           ? `${exportToDate.slice(0, 7)}-01 to ${exportToDate}`
           : exportMonth
       const overrideReason = normalizeText(warningOverrideReason)
-      await checkNhisExportReadiness(requestOptions)
-      const warningClaims = await getNhisExportScrubWarnings(requestOptions)
+      const progressOptions = {
+        ...requestOptions,
+        onProgress: (progress) => setExportProgress(getExportProgressLabel(progress)),
+        onTiming: (entry) => {
+          if (entry?.durationMs >= 1000 && typeof console !== 'undefined') {
+            console.info('[NHIS export timing]', entry)
+          }
+        },
+      }
+      const preparedReadiness = await prepareNhisClaimsExport(progressOptions)
+      await checkNhisExportReadiness({ ...progressOptions, preparedReadiness })
+      const warningClaims = preparedReadiness.warningClaims || []
       if (warningClaims.length && !overrideReason) {
         setScrubWarningClaims(warningClaims)
         setScrubWarningOverrideReason('')
@@ -4843,7 +4870,7 @@ const Nhis = () => {
           },
         })
       }
-      const exportResult = await exportNhisClaimsFile(requestOptions)
+      const exportResult = await exportNhisClaimsFile({ ...progressOptions, preparedReadiness })
       const count = typeof exportResult === 'number' ? exportResult : exportResult?.count || 0
       setShowScrubWarningOverride(false)
       setScrubWarningClaims([])
@@ -4861,7 +4888,9 @@ const Nhis = () => {
     } catch (err) {
       applyExportReadinessError(err, 'Export failed.')
     } finally {
+      exportInFlightRef.current = false
       setExporting(false)
+      setExportProgress('')
     }
   }
 
@@ -8579,6 +8608,11 @@ const Nhis = () => {
                       onChange={(e) => setExportToDate(e.target.value)}
                     />
                   </div>
+                </div>
+              )}
+              {exporting && exportProgress && (
+                <div className="nhis-export-period-note" role="status" aria-live="polite">
+                  {exportProgress}
                 </div>
               )}
             </div>

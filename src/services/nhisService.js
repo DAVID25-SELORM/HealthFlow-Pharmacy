@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabase'
 import { assertRequiredText, assertNonNegativeNumber, assertPositiveNumber, normalizeText, sanitizeSearchTerm } from '../utils/validation'
 import {
+  isGhanaCardNumber,
   normalizeNhiaMemberNumber,
   validateNhiaMemberNumberFormat,
 } from '../utils/nhiaMemberNumber'
@@ -7701,6 +7702,38 @@ const normalizeClaimDiagnosesForExport = (claim = {}, organizationType = 'pharma
   }))
 }
 
+const CLAIM_IT_ALPHA_CARD_SERIAL_RE = /^[A-Za-z]{5}[A-Za-z0-9-]*$/
+
+const isClaimItAlphaCardSerial = (value) =>
+  CLAIM_IT_ALPHA_CARD_SERIAL_RE.test(normalizeText(value))
+
+const resolveClaimItMemberIdentifiers = (claim = {}) => {
+  const rawMemberNo = normalizeNhiaMemberNumber(claim.member_no || claim.memberNo)
+  const rawHin = normalizeNhiaMemberNumber(claim.hin)
+  const rawCardSerialNo = normalizeNhiaMemberNumber(claim.card_serial_no || claim.cardSerialNo)
+  const memberNoIsGhanaCard = isGhanaCardNumber(rawMemberNo)
+  const hinIsNumeric = /^\d+$/.test(rawHin)
+  const memberNoIsNumeric = /^\d+$/.test(rawMemberNo)
+  const memberNo = memberNoIsGhanaCard && hinIsNumeric
+    ? rawHin
+    : rawMemberNo || (hinIsNumeric ? rawHin : '')
+
+  let cardSerialNo = ''
+  if (isClaimItAlphaCardSerial(rawCardSerialNo)) {
+    cardSerialNo = rawCardSerialNo
+  }
+
+  return {
+    memberNo,
+    cardSerialNo,
+    rawMemberNo,
+    rawHin,
+    rawCardSerialNo,
+    memberNoIsGhanaCard,
+    memberNoIsNumeric,
+  }
+}
+
 const getClaimItPrescriptionAttachmentForPayload = (claim = {}) => {
   const claimItBase64 = normalizeClaimItAttachmentBase64(claim.claimit_attachment_base64)
   const claimNumber = normalizeText(claim.claim_number)
@@ -7766,6 +7799,7 @@ export const buildNhisClaimItExportPayload = (claims = [], options = {}) => {
     const medicines = (claim.nhis_claim_medicines || []).map(normalizeClaimMedicineForExport)
     const tariffServices = (claim.nhis_claim_services || []).map(normalizeClaimServiceForExport)
     const prescriptionAttachment = getClaimItPrescriptionAttachmentForPayload(claim)
+    const memberIdentifiers = resolveClaimItMemberIdentifiers(claim)
 
     return {
       id: normalizeText(claim.id),
@@ -7775,7 +7809,8 @@ export const buildNhisClaimItExportPayload = (claims = [], options = {}) => {
       ccCode: normalizeNhisCcCode(claim.ccc_no),
       patient: {
         id: normalizeText(claim.patient_id),
-        memberNumber: normalizeText(claim.member_no),
+        memberNumber: memberIdentifiers.memberNo,
+        cardSerialNo: memberIdentifiers.cardSerialNo,
         hin: normalizeText(claim.hin),
         surname: normalizeText(claim.surname),
         otherNames: normalizeText(claim.other_names),
@@ -8556,7 +8591,7 @@ const buildClaimItRows = async (payload) => {
       signedByuserID: null,
       signedByrole: null,
       memberNo: normalizeText(claim.patient.memberNumber),
-      cardSerialNo: normalizeText(claim.patient.hin),
+      cardSerialNo: normalizeText(claim.patient.cardSerialNo),
       surname: normalizeText(claim.patient.surname).toLowerCase(),
       otherNames: normalizeText(claim.patient.otherNames).toLowerCase(),
       dateOfBirth: claim.patient.dateOfBirth,
@@ -9020,7 +9055,10 @@ export const assertClaimItCxfExportConfigured = (options = {}) => {
 
 const createNhisExportFile = async (claims, period, options = {}) => {
   const format = normalizeClaimItExportFormat(options.format)
+  const timing = options.exportTiming
   if (format === 'csv') {
+    emitNhisExportProgress(options, 'Generating CSV', { current: claims.length, total: claims.length })
+    timing?.mark('building CSV export', { claimCount: claims.length })
     return {
       content: buildNhisMonthlyCsv(claims, options),
       contentType: 'text/csv;charset=utf-8;',
@@ -9028,19 +9066,32 @@ const createNhisExportFile = async (claims, period, options = {}) => {
     }
   }
 
+  emitNhisExportProgress(options, 'Building CLAIM-it payload', { current: 0, total: claims.length })
   const payload = buildNhisClaimItExportPayload(claims, { ...options, exportPeriod: period })
+  timing?.mark('building CLAIM-it payload', { claimCount: claims.length })
   if (format === 'cxf') assertClaimItCxfExportConfigured({ ...options, ...payload })
   if (format === 'cxf') {
-    const claimsForPayload = await hydrateNhisPrescriptionUrlsForTransfer(claims)
+    const claimsForPayload = await hydrateNhisPrescriptionUrlsForTransfer(claims, options)
+    timing?.mark('loading prescription signed URLs', { claimCount: claimsForPayload.length })
     const cxfPayload = buildNhisClaimItExportPayload(claimsForPayload, { ...options, exportPeriod: period })
+    emitNhisExportProgress(options, 'Compressing CXF', { current: claimsForPayload.length, total: claimsForPayload.length })
+    const content = await buildNhisClaimItCxf(cxfPayload)
+    timing?.mark('generating CXF archive', {
+      claimCount: claimsForPayload.length,
+      bytes: content?.length || content?.byteLength || 0,
+    })
     return {
-      content: await buildNhisClaimItCxf(cxfPayload),
+      content,
       contentType: 'application/octet-stream',
       fileName: buildClaimItCxfFileName(cxfPayload),
     }
   }
 
   const isClaimItXml = format === 'xml'
+  emitNhisExportProgress(options, isClaimItXml ? 'Generating XML' : 'Generating JSON', {
+    current: claims.length,
+    total: claims.length,
+  })
   return {
     content: isClaimItXml ? buildNhisClaimItXml(payload) : JSON.stringify(payload, null, 2),
     contentType: isClaimItXml ? 'application/xml;charset=utf-8;' : 'application/json;charset=utf-8;',
@@ -9048,7 +9099,7 @@ const createNhisExportFile = async (claims, period, options = {}) => {
   }
 }
 
-const downloadTextFile = ({ content, contentType, fileName }) => {
+const downloadTextFile = ({ content, contentType, fileName }, options = {}) => {
   const blob = new Blob([content], { type: contentType })
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
@@ -9058,6 +9109,11 @@ const downloadTextFile = ({ content, contentType, fileName }) => {
   anchor.click()
   document.body.removeChild(anchor)
   URL.revokeObjectURL(url)
+  options.exportTiming?.mark('triggering browser download', {
+    fileName,
+    bytes: blob.size,
+  })
+  emitNhisExportProgress(options, 'Download ready', { fileName, bytes: blob.size })
 }
 
 const getNhisClaimsFinalSubmissionReadiness = async (claims, organizationType, options = {}) => {
@@ -9124,6 +9180,12 @@ const assertNhisClaimsReadyForFinalSubmission = async (claims, organizationType,
 
 export const getNhisExportScrubWarnings = async (options = {}) => {
   const readiness = await getNhisExportClaimsAndBlockers(options)
+  const readinessWarnings = await getNhisExportScrubWarningsForClaims(readiness, options)
+  const activeMedicationWarnings = await getNhisExportActiveMedicationWarnings(readiness.claims, options)
+  return mergeNhisReadinessSummaries([readinessWarnings, activeMedicationWarnings])
+}
+
+const getNhisExportScrubWarningsForClaims = async (readiness, options = {}) => {
   const { warningClaims } = await getNhisClaimsFinalSubmissionReadiness(
     readiness.claims,
     readiness.organizationType,
@@ -9134,9 +9196,7 @@ export const getNhisExportScrubWarnings = async (options = {}) => {
       exportPeriod: readiness.period,
     }
   )
-  const readinessWarnings = warningClaims.map(({ claim, issues }) => summarizeNhisReadinessClaim(claim, issues))
-  const activeMedicationWarnings = await getNhisExportActiveMedicationWarnings(readiness.claims, options)
-  return mergeNhisReadinessSummaries([readinessWarnings, activeMedicationWarnings])
+  return warningClaims.map(({ claim, issues }) => summarizeNhisReadinessClaim(claim, issues))
 }
 
 const getNhisMissingCxfAttachmentIssues = (claims = [], organizationType = '') => {
@@ -9167,6 +9227,58 @@ const getNhisMissingCxfAttachmentIssues = (claims = [], organizationType = '') =
   }]
 }
 
+const getNhisCxfMemberIdentifierIssues = (claims = []) => {
+  const invalidClaims = claims.flatMap((claim) => {
+    const identifiers = resolveClaimItMemberIdentifiers(claim)
+    const issues = []
+    if (
+      identifiers.cardSerialNo &&
+      identifiers.memberNo &&
+      identifiers.cardSerialNo === identifiers.memberNo &&
+      identifiers.memberNoIsNumeric
+    ) {
+      issues.push('Card Serial No. cannot repeat the numeric NHIS/HIN membership number.')
+    }
+    if (/^\d+$/.test(identifiers.cardSerialNo)) {
+      issues.push('Card Serial No. cannot be a purely numeric NHIS/HIN membership number.')
+    }
+    if (
+      identifiers.rawCardSerialNo &&
+      !isClaimItAlphaCardSerial(identifiers.rawCardSerialNo)
+    ) {
+      issues.push('Card Serial No. must be blank or a CLAIM-it card serial beginning with five alphabetic characters.')
+    }
+    if (identifiers.memberNoIsGhanaCard && !/^\d+$/.test(identifiers.rawHin)) {
+      issues.push('Ghana Card-linked claims must also have the numeric NHIS/HIN membership number in the HIN field before CXF export.')
+    }
+    if (!issues.length) return []
+    return [{
+      id: normalizeText(claim.id),
+      claim_number: normalizeText(claim.claim_number || claim.claimNumber),
+      patientName: [claim.surname, claim.other_names || claim.otherNames].filter(Boolean).join(' ').trim(),
+      memberNo: identifiers.memberNo,
+      cardSerialNo: identifiers.cardSerialNo,
+      issues,
+    }]
+  })
+
+  if (!invalidClaims.length) return []
+
+  return [{
+    type: 'member_identifiers',
+    title: 'Invalid member/card identifiers',
+    message: `${invalidClaims.length} claim${invalidClaims.length === 1 ? '' : 's'} have member/card identifier values that CLAIM-it will reject.`,
+    claims: invalidClaims.slice(0, 8),
+    readinessIssues: invalidClaims.map((claim) => ({
+      id: claim.id,
+      claim_number: claim.claim_number,
+      patientName: claim.patientName,
+      issues: claim.issues,
+    })),
+    total: invalidClaims.length,
+  }]
+}
+
 const collectNhisExportBlockingIssues = async (claims, organizationType, options = {}) => {
   const issues = []
 
@@ -9194,6 +9306,7 @@ const collectNhisExportBlockingIssues = async (claims, organizationType, options
   const directSubmit = Boolean(options.directSubmit && format !== 'cxf')
   if (!directSubmit && format === 'cxf') {
     issues.push(...getNhisMissingCxfAttachmentIssues(claims, organizationType))
+    issues.push(...getNhisCxfMemberIdentifierIssues(claims))
 
     try {
       const payload = buildNhisClaimItExportPayload(claims, options)
@@ -9254,27 +9367,94 @@ const markNhisServedClaimsSubmitted = async (claims) => {
   await markNhisClaimsSubmittedByRoute(claims)
 }
 
+const getNhisExportNow = () =>
+  typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now()
+
+const emitNhisExportProgress = (options = {}, stage, metadata = {}) => {
+  if (typeof options.onProgress === 'function') {
+    options.onProgress({ stage, ...metadata })
+  }
+}
+
+const createNhisExportTiming = (options = {}) => {
+  const timings = []
+  const startedAt = getNhisExportNow()
+  let previousAt = startedAt
+
+  const mark = (stage, metadata = {}) => {
+    const now = getNhisExportNow()
+    const entry = {
+      stage,
+      durationMs: Math.round(now - previousAt),
+      totalMs: Math.round(now - startedAt),
+      ...metadata,
+    }
+    timings.push(entry)
+    previousAt = now
+    if (typeof options.onTiming === 'function') options.onTiming(entry, timings)
+    if (options.debugNhisExportTimings && typeof console !== 'undefined') {
+      console.info('[NHIS CXF export timing]', entry)
+    }
+    return entry
+  }
+
+  return { mark, timings, startedAt }
+}
+
 const getDirectSubmissionPeriodForClaim = (claim = {}) => {
   const serviceDate = getNhisClaimExportDate(claim) || toNhisCalendarDate()
   return normalizeNhisExportPeriod({ mode: 'custom', fromDate: serviceDate, toDate: serviceDate })
 }
 
-const hydrateNhisPrescriptionUrlsForTransfer = async (claims = []) => {
+const hydrateNhisPrescriptionUrlsForTransfer = async (claims = [], options = {}) => {
   if (shouldUseBranchServer()) return claims
 
-  return await Promise.all(
-    claims.map(async (claim) => {
-      if (!normalizeText(claim.prescription_file_path) || normalizeText(claim.prescription_file_url)) {
-        return claim
-      }
-
-      const signedUrl = await getNhisPrescriptionSignedUrl(claim.prescription_file_path, 60 * 60)
-      return {
-        ...claim,
-        prescription_file_url: signedUrl,
-      }
-    })
+  const claimsNeedingUrls = claims.filter((claim) =>
+    normalizeText(claim.prescription_file_path) && !normalizeText(claim.prescription_file_url)
   )
+  if (!claimsNeedingUrls.length) return claims
+
+  emitNhisExportProgress(options, 'Processing attachments', {
+    current: 0,
+    total: claimsNeedingUrls.length,
+  })
+
+  const uniquePaths = Array.from(new Set(
+    claimsNeedingUrls
+      .map((claim) => normalizeText(claim.prescription_file_path))
+      .filter(Boolean)
+  ))
+  const signedUrlsByPath = new Map()
+  const storage = supabase.storage.from('nhis-prescriptions')
+
+  if (typeof storage.createSignedUrls === 'function') {
+    const { data, error } = await storage.createSignedUrls(uniquePaths, 60 * 60)
+    if (error) throw error
+    ;(data || []).forEach((item, index) => {
+      const path = normalizeText(item?.path || uniquePaths[index])
+      const signedUrl = normalizeText(item?.signedUrl || item?.signedURL)
+      if (path && signedUrl) signedUrlsByPath.set(path, signedUrl)
+    })
+  } else {
+    await Promise.all(uniquePaths.map(async (path) => {
+      const signedUrl = await getNhisPrescriptionSignedUrl(path, 60 * 60)
+      if (signedUrl) signedUrlsByPath.set(path, signedUrl)
+    }))
+  }
+
+  emitNhisExportProgress(options, 'Processing attachments', {
+    current: claimsNeedingUrls.length,
+    total: claimsNeedingUrls.length,
+  })
+
+  return claims.map((claim) => {
+    const path = normalizeText(claim.prescription_file_path)
+    if (!path || normalizeText(claim.prescription_file_url)) return claim
+    const signedUrl = signedUrlsByPath.get(path)
+    return signedUrl ? { ...claim, prescription_file_url: signedUrl } : claim
+  })
 }
 
 const buildHostedDirectSubmissionPayload = async (payload, options = {}) => {
@@ -9314,7 +9494,7 @@ const submitNhisClaimsDirect = async (claims, period, options = {}) => {
   }
   const requiresBranchClaimIt = isClaimItBridgeMode(integrationMode)
   const claimsForSubmission = directApiSource === 'hosted'
-    ? await hydrateNhisPrescriptionUrlsForTransfer(claims)
+    ? await hydrateNhisPrescriptionUrlsForTransfer(claims, options)
     : claims
   const payload = buildNhisClaimItExportPayload(claimsForSubmission, {
     ...options,
@@ -9376,6 +9556,8 @@ const submitNhisClaimsDirect = async (claims, period, options = {}) => {
  * Generates an XML/JSON CLAIM-it HMS Toolkit batch, or a review CSV, and triggers download.
  */
 const getNhisExportClaimsAndBlockers = async (options = {}) => {
+  emitNhisExportProgress(options, 'Loading claims')
+  const timing = options.exportTiming
   const period = normalizeNhisExportPeriod(options)
   const format = normalizeClaimItExportFormat(options.format || options.exportFormat || options.export_format || 'cxf')
   const directSubmit = Boolean(options.directSubmit && format !== 'cxf')
@@ -9385,6 +9567,7 @@ const getNhisExportClaimsAndBlockers = async (options = {}) => {
     organizationId: options.organizationId || options.organization_id,
     statuses: exportableStatuses,
   })
+  timing?.mark('loading claims', { rowCount: periodClaims.length })
   const claims = periodClaims.filter((claim) =>
     exportableStatuses.includes(normalizeText(claim.status).toLowerCase())
   )
@@ -9400,7 +9583,10 @@ const getNhisExportClaimsAndBlockers = async (options = {}) => {
     exportPeriod: period,
   }
   const duplicateGroups = buildNhisDuplicateClaimGroups(claims)
+  timing?.mark('checking duplicate groups', { duplicateGroupCount: duplicateGroups.length })
+  emitNhisExportProgress(options, 'Checking export blockers', { current: 0, total: claims.length })
   const exportBlockingIssues = await collectNhisExportBlockingIssues(claims, organizationType, blockerOptions)
+  timing?.mark('checking export blockers', { blockerCount: exportBlockingIssues.length })
   return {
     period,
     format,
@@ -9412,8 +9598,39 @@ const getNhisExportClaimsAndBlockers = async (options = {}) => {
   }
 }
 
+export const prepareNhisClaimsExport = async (options = {}) => {
+  const exportTiming = options.exportTiming || createNhisExportTiming(options)
+  const preparedOptions = { ...options, exportTiming }
+  const readiness = await getNhisExportClaimsAndBlockers(preparedOptions)
+  if (readiness.duplicateGroups.length || readiness.exportBlockingIssues.length) {
+    exportTiming.mark('skipping warning checks due to blockers', {
+      duplicateGroupCount: readiness.duplicateGroups.length,
+      blockerCount: readiness.exportBlockingIssues.length,
+    })
+    return {
+      ...readiness,
+      warningClaims: [],
+      exportTiming,
+    }
+  }
+  emitNhisExportProgress(preparedOptions, 'Checking scrub warnings', {
+    current: 0,
+    total: readiness.claims.length,
+  })
+  const readinessWarnings = await getNhisExportScrubWarningsForClaims(readiness, preparedOptions)
+  const activeMedicationWarnings = await getNhisExportActiveMedicationWarnings(readiness.claims, preparedOptions)
+  const warningClaims = mergeNhisReadinessSummaries([readinessWarnings, activeMedicationWarnings])
+  exportTiming.mark('checking scrub warnings', { warningCount: warningClaims.length })
+
+  return {
+    ...readiness,
+    warningClaims,
+    exportTiming,
+  }
+}
+
 export const checkNhisExportReadiness = async (options = {}) => {
-  const readiness = await getNhisExportClaimsAndBlockers(options)
+  const readiness = options.preparedReadiness || await getNhisExportClaimsAndBlockers(options)
   if (readiness.duplicateGroups.length) {
     throw createNhisDuplicateClaimsError(readiness.duplicateGroups, {
       exportBlockingIssues: readiness.exportBlockingIssues,
@@ -9439,7 +9656,10 @@ export const exportNhisClaimsFile = async (options = {}) => {
     organizationType,
     duplicateGroups,
     exportBlockingIssues,
-  } = await getNhisExportClaimsAndBlockers(options)
+    exportTiming,
+  } = options.preparedReadiness || await prepareNhisClaimsExport(options)
+  const fileTiming = exportTiming || createNhisExportTiming(options)
+  const exportOptions = { ...options, exportTiming: fileTiming }
 
   if (options.directSubmit && format === 'cxf') {
     console.info('[NHIS submission route]', {
@@ -9457,7 +9677,7 @@ export const exportNhisClaimsFile = async (options = {}) => {
 
   if (directSubmit) {
     const result = await submitNhisClaimsDirect(claims, period, {
-      ...options,
+      ...exportOptions,
       organizationType,
       action: 'nhis.direct_batch_submit',
     })
@@ -9472,7 +9692,8 @@ export const exportNhisClaimsFile = async (options = {}) => {
     period: period.label,
     claimCount: claims.length,
   })
-  downloadTextFile(await createNhisExportFile(claims, period, { ...options, format, organizationType }))
+  const file = await createNhisExportFile(claims, period, { ...exportOptions, format, organizationType })
+  downloadTextFile(file, exportOptions)
 
   return claims.length
 }
