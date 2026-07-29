@@ -4041,7 +4041,7 @@ describe('duplicate NHIS claim prevention', () => {
     })
   })
 
-  it('blocks CXF export when a Ghana Card claim is missing a 10-digit HIN/member mapping', async () => {
+  it('blocks CXF export when a Ghana Card claim is missing a numeric HIN/member mapping', async () => {
     const sourceClaim = {
       id: 'claim-1',
       claim_number: 'NHIS-000001',
@@ -4117,14 +4117,14 @@ describe('duplicate NHIS claim prevention', () => {
         expect.objectContaining({
           claim_number: 'NHIS-000001',
           issues: expect.arrayContaining([
-            'Ghana Card-linked claims must also have the 10-digit NHIS/HIN membership number in the HIN field before CXF export.',
+            'Ghana Card-linked claims must also have the numeric NHIS/HIN membership number in the HIN field before CXF export.',
           ]),
         }),
       ]),
     })
   })
 
-  it('blocks CXF export when a Ghana Card claim has an 8-digit HIN instead of a 10-digit HIN', async () => {
+  it('exports Ghana Card-linked members with an 8-digit verified HIN as member number and blank card serial', async () => {
     const sourceClaim = {
       id: 'claim-1',
       claim_number: 'NHIS-000001',
@@ -4165,45 +4165,30 @@ describe('duplicate NHIS claim prevention', () => {
         category: 'A',
       }],
     }
-    const claimsQuery = {
-      order: vi.fn(() => claimsQuery),
-      gte: vi.fn(() => claimsQuery),
-      lte: vi.fn().mockResolvedValue({ data: [sourceClaim], error: null }),
-    }
-    const serviceLinesQuery = {
-      in: vi.fn(() => serviceLinesQuery),
-      order: vi.fn().mockResolvedValue({ data: [], error: null }),
-    }
-    supabase.from.mockImplementation((table) => {
-      if (table === 'nhis_claims') return { select: vi.fn(() => claimsQuery) }
-      if (table === 'nhis_claim_services') return { select: vi.fn(() => serviceLinesQuery) }
-      return { select: vi.fn(() => ({ in: vi.fn().mockReturnThis(), eq: vi.fn().mockResolvedValue({ data: [], error: null }) })) }
-    })
-
-    await expect(exportNhisClaimsFile({
-      mode: 'custom',
-      fromDate: '2026-05-14',
-      toDate: '2026-05-14',
-      format: 'cxf',
+    const payload = buildNhisClaimItExportPayload([
+      sourceClaim,
+    ], {
+      yearMonth: '2026-05',
       organizationType: 'pharmacy',
-      providerLevelCode: 'PVT-PHC-CE',
+      facilityCode: '03-05-001-02-01954-11-P1-2-011225',
       facilityName: 'Westpoint Chemist',
       providerNumber: '03-05-01954',
-      facilityCode: '03-05-001',
-      credentialCode: '03-05-001-02-01954-11-P1-2-011225',
-      accreditationExpiryDate: '2026-12-31',
+      providerTypeDescription: 'Pharmacy',
       claimsOfficerName: 'Claims Officer',
-      nhisDrugCatalog: [{ code: 'NH001', category: 'A' }],
-    })).rejects.toMatchObject({
-      code: 'NHIS_READINESS_CLAIMS',
-      readinessIssues: expect.arrayContaining([
-        expect.objectContaining({
-          claim_number: 'NHIS-000001',
-          issues: expect.arrayContaining([
-            'Ghana Card-linked claims must also have the 10-digit NHIS/HIN membership number in the HIN field before CXF export.',
-          ]),
-        }),
-      ]),
+      submitterId: 'admin',
+      generatedAt: '2026-05-20T14:58:02.000Z',
+    })
+
+    expect(payload.claims[0].patient).toMatchObject({
+      memberNumber: '43180659',
+      cardSerialNo: '',
+    })
+
+    const inflated = inflateSync(Buffer.from((await buildNhisClaimItCxf(payload)).slice(3)))
+    const savedClaim = JSON.parse(inflateSync(extractSerializedClaimBuffer(inflated)).toString('utf8'))
+    expect(savedClaim.memberInfo).toMatchObject({
+      memberNo: '43180659',
+      cardSerialNo: '',
     })
   })
 
