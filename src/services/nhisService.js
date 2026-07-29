@@ -7703,6 +7703,7 @@ const normalizeClaimDiagnosesForExport = (claim = {}, organizationType = 'pharma
 }
 
 const CLAIM_IT_ALPHA_CARD_SERIAL_RE = /^[A-Za-z]{5}[A-Za-z0-9-]*$/
+const NHIS_HIN_RE = /^\d{10}$/
 
 const isClaimItAlphaCardSerial = (value) =>
   CLAIM_IT_ALPHA_CARD_SERIAL_RE.test(normalizeText(value))
@@ -7712,11 +7713,11 @@ const resolveClaimItMemberIdentifiers = (claim = {}) => {
   const rawHin = normalizeNhiaMemberNumber(claim.hin)
   const rawCardSerialNo = normalizeNhiaMemberNumber(claim.card_serial_no || claim.cardSerialNo)
   const memberNoIsGhanaCard = isGhanaCardNumber(rawMemberNo)
-  const hinIsNumeric = /^\d+$/.test(rawHin)
+  const hinIsValid = NHIS_HIN_RE.test(rawHin)
   const memberNoIsNumeric = /^\d+$/.test(rawMemberNo)
-  const memberNo = memberNoIsGhanaCard && hinIsNumeric
+  const memberNo = memberNoIsGhanaCard && hinIsValid
     ? rawHin
-    : rawMemberNo || (hinIsNumeric ? rawHin : '')
+    : rawMemberNo || (hinIsValid ? rawHin : '')
 
   let cardSerialNo = ''
   if (isClaimItAlphaCardSerial(rawCardSerialNo)) {
@@ -7731,6 +7732,7 @@ const resolveClaimItMemberIdentifiers = (claim = {}) => {
     rawCardSerialNo,
     memberNoIsGhanaCard,
     memberNoIsNumeric,
+    hinIsValid,
   }
 }
 
@@ -9248,8 +9250,8 @@ const getNhisCxfMemberIdentifierIssues = (claims = []) => {
     ) {
       issues.push('Card Serial No. must be blank or a CLAIM-it card serial beginning with five alphabetic characters.')
     }
-    if (identifiers.memberNoIsGhanaCard && !/^\d+$/.test(identifiers.rawHin)) {
-      issues.push('Ghana Card-linked claims must also have the numeric NHIS/HIN membership number in the HIN field before CXF export.')
+    if (identifiers.memberNoIsGhanaCard && !identifiers.hinIsValid) {
+      issues.push('Ghana Card-linked claims must also have the 10-digit NHIS/HIN membership number in the HIN field before CXF export.')
     }
     if (!issues.length) return []
     return [{

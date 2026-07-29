@@ -1397,7 +1397,7 @@ describe('CLAIM-it export helpers', () => {
     status: 'served',
     organization_type: 'hospital',
     member_no: 'GHA-123456789-0',
-    hin: '12345678',
+    hin: '0029996622',
     surname: 'Mensah',
     other_names: 'Ama',
     folder_no: 'F001',
@@ -1765,12 +1765,12 @@ describe('CLAIM-it export helpers', () => {
     })
   })
 
-  it('exports Ghana Card-linked members with numeric HIN as member number and blank card serial', async () => {
+  it('exports Ghana Card-linked members with 10-digit HIN as member number and blank card serial', async () => {
     const payload = buildNhisClaimItExportPayload([
       {
         ...claim,
         member_no: 'GHA-725620852-3',
-        hin: '43180659',
+        hin: '0029996622',
         prescription_file_url: 'https://example.test/rx.pdf',
       },
     ], {
@@ -1786,14 +1786,14 @@ describe('CLAIM-it export helpers', () => {
     })
 
     expect(payload.claims[0].patient).toMatchObject({
-      memberNumber: '43180659',
+      memberNumber: '0029996622',
       cardSerialNo: '',
     })
 
     const inflated = inflateSync(Buffer.from((await buildNhisClaimItCxf(payload)).slice(3)))
     const savedClaim = JSON.parse(inflateSync(extractSerializedClaimBuffer(inflated)).toString('utf8'))
     expect(savedClaim.memberInfo).toMatchObject({
-      memberNo: '43180659',
+      memberNo: '0029996622',
       cardSerialNo: '',
     })
   })
@@ -1801,7 +1801,7 @@ describe('CLAIM-it export helpers', () => {
   it('does not swap member number and card serial in mixed CLAIM-it CXF batches', () => {
     const payload = buildNhisClaimItExportPayload([
       { ...claim, claim_number: 'NHIS-000001', member_no: '46672601', hin: '46672601' },
-      { ...claim, claim_number: 'NHIS-000002', member_no: 'GHA-725620852-3', hin: '43180659' },
+      { ...claim, claim_number: 'NHIS-000002', member_no: 'GHA-725620852-3', hin: '0029996622' },
       { ...claim, claim_number: 'NHIS-000003', member_no: '66803121', hin: '' },
       { ...claim, claim_number: 'NHIS-000004', member_no: '', hin: '' },
     ], {
@@ -1812,7 +1812,7 @@ describe('CLAIM-it export helpers', () => {
 
     expect(payload.claims.map((item) => item.patient)).toEqual([
       expect.objectContaining({ memberNumber: '46672601', cardSerialNo: '' }),
-      expect.objectContaining({ memberNumber: '43180659', cardSerialNo: '' }),
+      expect.objectContaining({ memberNumber: '0029996622', cardSerialNo: '' }),
       expect.objectContaining({ memberNumber: '66803121', cardSerialNo: '' }),
       expect.objectContaining({ memberNumber: '', cardSerialNo: '' }),
     ])
@@ -1824,7 +1824,7 @@ describe('CLAIM-it export helpers', () => {
       {
         ...claim,
         member_no: '66803121',
-        hin: '43180659',
+        hin: '0029996622',
       },
     ], {
       yearMonth: '2026-05',
@@ -1900,7 +1900,7 @@ describe('CLAIM-it export helpers', () => {
         prescriptionLevelID: 'P1',
       },
       memberInfo: {
-        memberNo: '12345678',
+        memberNo: '0029996622',
         cardSerialNo: '',
         surname: 'mensah',
       },
@@ -4041,7 +4041,7 @@ describe('duplicate NHIS claim prevention', () => {
     })
   })
 
-  it('blocks CXF export when a Ghana Card claim is missing numeric HIN/member mapping', async () => {
+  it('blocks CXF export when a Ghana Card claim is missing a 10-digit HIN/member mapping', async () => {
     const sourceClaim = {
       id: 'claim-1',
       claim_number: 'NHIS-000001',
@@ -4117,7 +4117,90 @@ describe('duplicate NHIS claim prevention', () => {
         expect.objectContaining({
           claim_number: 'NHIS-000001',
           issues: expect.arrayContaining([
-            'Ghana Card-linked claims must also have the numeric NHIS/HIN membership number in the HIN field before CXF export.',
+            'Ghana Card-linked claims must also have the 10-digit NHIS/HIN membership number in the HIN field before CXF export.',
+          ]),
+        }),
+      ]),
+    })
+  })
+
+  it('blocks CXF export when a Ghana Card claim has an 8-digit HIN instead of a 10-digit HIN', async () => {
+    const sourceClaim = {
+      id: 'claim-1',
+      claim_number: 'NHIS-000001',
+      status: 'served',
+      organization_type: 'pharmacy',
+      member_no: 'GHA-725620852-3',
+      hin: '43180659',
+      surname: 'Mensah',
+      other_names: 'Ama',
+      folder_no: 'F001',
+      date_of_birth: '1990-01-01',
+      patient_address: 'Accra',
+      ccc_no: 'CC-12345',
+      diagnosis: 'Malaria',
+      diagnosis_details: [{ code: 'B50', label: 'Plasmodium falciparum malaria', source: 'ICD-10' }],
+      service_date_from: '2026-05-14',
+      service_date_to: '2026-05-14',
+      referring_facility: 'Westpoint Chemist',
+      physician_name: 'Dr Test',
+      prescription_file_url: 'https://example.test/rx.pdf',
+      prescription_file_path: 'org/rx.pdf',
+      prescription_document_type: 'prescription',
+      prescription_verified: true,
+      total_amount: 10,
+      nhis_claim_medicines: [{
+        nhisDrugId: 'drug-1',
+        nhis_drug_id: 'drug-1',
+        drugCode: 'NH001',
+        drug_code: 'NH001',
+        description: 'Artemether Lumefantrine Tablet',
+        unit: 'tablet',
+        unit_price: 1,
+        dispensed_qty: 10,
+        dose: '1 tablet',
+        frequency: 'BD',
+        duration: '3 days',
+        total_amount: 10,
+        category: 'A',
+      }],
+    }
+    const claimsQuery = {
+      order: vi.fn(() => claimsQuery),
+      gte: vi.fn(() => claimsQuery),
+      lte: vi.fn().mockResolvedValue({ data: [sourceClaim], error: null }),
+    }
+    const serviceLinesQuery = {
+      in: vi.fn(() => serviceLinesQuery),
+      order: vi.fn().mockResolvedValue({ data: [], error: null }),
+    }
+    supabase.from.mockImplementation((table) => {
+      if (table === 'nhis_claims') return { select: vi.fn(() => claimsQuery) }
+      if (table === 'nhis_claim_services') return { select: vi.fn(() => serviceLinesQuery) }
+      return { select: vi.fn(() => ({ in: vi.fn().mockReturnThis(), eq: vi.fn().mockResolvedValue({ data: [], error: null }) })) }
+    })
+
+    await expect(exportNhisClaimsFile({
+      mode: 'custom',
+      fromDate: '2026-05-14',
+      toDate: '2026-05-14',
+      format: 'cxf',
+      organizationType: 'pharmacy',
+      providerLevelCode: 'PVT-PHC-CE',
+      facilityName: 'Westpoint Chemist',
+      providerNumber: '03-05-01954',
+      facilityCode: '03-05-001',
+      credentialCode: '03-05-001-02-01954-11-P1-2-011225',
+      accreditationExpiryDate: '2026-12-31',
+      claimsOfficerName: 'Claims Officer',
+      nhisDrugCatalog: [{ code: 'NH001', category: 'A' }],
+    })).rejects.toMatchObject({
+      code: 'NHIS_READINESS_CLAIMS',
+      readinessIssues: expect.arrayContaining([
+        expect.objectContaining({
+          claim_number: 'NHIS-000001',
+          issues: expect.arrayContaining([
+            'Ghana Card-linked claims must also have the 10-digit NHIS/HIN membership number in the HIN field before CXF export.',
           ]),
         }),
       ]),
