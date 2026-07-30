@@ -1392,7 +1392,27 @@ const Nhis = () => {
   const [exportRoute, setExportRoute] = useState('cxf_export')
   const [exporting, setExporting]       = useState(false)
   const [exportProgress, setExportProgress] = useState('')
+  const [exportStartedAt, setExportStartedAt] = useState(null)
+  const [exportElapsedSeconds, setExportElapsedSeconds] = useState(0)
   const exportInFlightRef = useRef(false)
+  // Caches the readiness computed by the first (check) call to handleExport
+  // so the second (approve) call, triggered by a separate click on the scrub
+  // warning dialog, does not redo the same claim/blocker/warning loading a
+  // second time. Invalidated on every fresh check, on dialog cancel, on any
+  // claim edit made from the review flow, and always after being consumed —
+  // it must never be reused beyond the single approval it was computed for.
+  const preparedReadinessCacheRef = useRef(null)
+
+  useEffect(() => {
+    if (!exporting || !exportStartedAt) {
+      setExportElapsedSeconds(0)
+      return undefined
+    }
+    const tick = () => setExportElapsedSeconds(Math.max(0, Math.round((Date.now() - exportStartedAt) / 1000)))
+    tick()
+    const intervalId = setInterval(tick, 1000)
+    return () => clearInterval(intervalId)
+  }, [exporting, exportStartedAt])
 
   // ── status update ─────────────────────────────────────────────
   const [updatingStatus, setUpdatingStatus] = useState(null)
@@ -4884,6 +4904,9 @@ const Nhis = () => {
   }
 
   const handleScrubClaim = async (claim) => {
+    // The claim's data may change from here — any cached readiness from a
+    // prior export check is no longer trustworthy.
+    preparedReadinessCacheRef.current = null
     await tryLogAuditEvent({
       eventType: 'nhis_claim.scrub_claim',
       entityType: 'nhis_claims',
@@ -4900,6 +4923,8 @@ const Nhis = () => {
   }
 
   const openReadinessIssueForEdit = async (issue) => {
+    // Same reasoning as handleScrubClaim above.
+    preparedReadinessCacheRef.current = null
     const claimForAction = { ...issue, _summaryOnly: true }
     setReadinessActiveClaimId(getReadinessIssueKey(issue))
     setShowReadinessClaimReview(false)
@@ -4910,13 +4935,19 @@ const Nhis = () => {
   }
 
   const handleExport = async (warningOverrideReason = '') => {
+    // Synchronous ref check, before any awaited work — the approval action
+    // can only ever invoke the export pipeline once at a time.
     if (exportInFlightRef.current) {
       notify('Export is already running. Please wait for it to finish.', 'info')
       return
     }
+    const exportRunId = crypto.randomUUID()
+    const overrideReason = normalizeText(warningOverrideReason)
+    let lastStage = 'starting export'
     try {
       exportInFlightRef.current = true
       setExporting(true)
+      setExportStartedAt(Date.now())
       setExportProgress('Preparing export')
       setDuplicateClaimGroups([])
       setDuplicateExportIssues([])
@@ -4930,20 +4961,38 @@ const Nhis = () => {
         : exportMode === 'partial'
           ? `${exportToDate.slice(0, 7)}-01 to ${exportToDate}`
           : exportMonth
-      const overrideReason = normalizeText(warningOverrideReason)
       const progressOptions = {
         ...requestOptions,
-        onProgress: (progress) => setExportProgress(getExportProgressLabel(progress)),
+        exportRunId,
+        onProgress: (progress) => {
+          lastStage = getExportProgressLabel(progress) || lastStage
+          setExportProgress(lastStage)
+        },
         onTiming: (entry) => {
           if (entry?.durationMs >= 1000 && typeof console !== 'undefined') {
-            console.info('[NHIS export timing]', entry)
+            console.info(`[NHIS export timing] [${exportRunId}]`, entry)
           }
         },
       }
-      const preparedReadiness = await prepareNhisClaimsExport(progressOptions)
-      await checkNhisExportReadiness({ ...progressOptions, preparedReadiness })
+
+      // Reuse the readiness computed by the check that just showed the scrub
+      // warning dialog, instead of recomputing claims/blockers/warnings a
+      // second time for the same click-through. Only trusted when the export
+      // options are unchanged and an override reason is actually present —
+      // i.e. this really is the immediate follow-up to that specific check.
+      const cacheFingerprint = JSON.stringify({ requestOptions, selectedFormat, submitDirectApi })
+      const cached = preparedReadinessCacheRef.current
+      const canReuseCache = Boolean(overrideReason) && cached && cached.fingerprint === cacheFingerprint
+      let preparedReadiness
+      if (canReuseCache) {
+        preparedReadiness = cached.preparedReadiness
+      } else {
+        preparedReadiness = await prepareNhisClaimsExport(progressOptions)
+        await checkNhisExportReadiness({ ...progressOptions, preparedReadiness })
+      }
       const warningClaims = preparedReadiness.warningClaims || []
       if (warningClaims.length && !overrideReason) {
+        preparedReadinessCacheRef.current = { fingerprint: cacheFingerprint, preparedReadiness }
         setScrubWarningClaims(warningClaims)
         setScrubWarningOverrideReason('')
         setScrubWarningSearch('')
@@ -4954,6 +5003,8 @@ const Nhis = () => {
         )
         return
       }
+      // Consumed — never reused beyond this single approval.
+      preparedReadinessCacheRef.current = null
       if (warningClaims.length && overrideReason) {
         await tryLogAuditEvent({
           eventType: 'nhis_claim.scrub_warning_override',
@@ -4972,6 +5023,7 @@ const Nhis = () => {
             direct_submit: submitDirectApi,
             user_id: user?.id || '',
             role,
+            export_run_id: exportRunId,
           },
         })
       }
@@ -4992,11 +5044,17 @@ const Nhis = () => {
         'success'
       )
     } catch (err) {
-      applyExportReadinessError(err, 'Export failed.')
+      preparedReadinessCacheRef.current = null
+      const isStructuredReadinessError = isNhisDuplicateClaimsError(err) || isNhisReadinessClaimsError(err)
+      applyExportReadinessError(
+        err,
+        isStructuredReadinessError ? 'Export failed.' : `Export failed while ${lastStage.toLowerCase()}.`
+      )
     } finally {
       exportInFlightRef.current = false
       setExporting(false)
       setExportProgress('')
+      setExportStartedAt(null)
     }
   }
 
@@ -8603,6 +8661,7 @@ const Nhis = () => {
                 onClick={() => {
                   setShowScrubWarningOverride(false)
                   setScrubWarningSearch('')
+                  preparedReadinessCacheRef.current = null
                 }}
               >
                 <X size={18} />
@@ -8688,13 +8747,21 @@ const Nhis = () => {
                   placeholder="Example: Warnings reviewed against prescription and clinical notes; proceed with export."
                 />
               </div>
+              {exporting && (
+                <div className="nhis-export-period-note" role="status" aria-live="polite">
+                  {exportProgress || 'Preparing export'}
+                  {exportElapsedSeconds > 0 ? ` — ${exportElapsedSeconds}s elapsed` : ''}
+                </div>
+              )}
             </div>
             <div className="modal-footer">
               <button
                 className="btn btn-secondary"
+                disabled={exporting}
                 onClick={() => {
                   setShowScrubWarningOverride(false)
                   setScrubWarningSearch('')
+                  preparedReadinessCacheRef.current = null
                 }}
               >
                 Cancel
@@ -8704,7 +8771,7 @@ const Nhis = () => {
                 disabled={exporting || !normalizeText(scrubWarningOverrideReason)}
                 onClick={() => { void handleExport(scrubWarningOverrideReason) }}
               >
-                {exporting ? 'Exporting...' : 'Approve Warnings & Export'}
+                {exporting ? (exportProgress || 'Exporting...') : 'Approve Warnings & Export'}
               </button>
             </div>
           </div>
@@ -8818,6 +8885,7 @@ const Nhis = () => {
               {exporting && exportProgress && (
                 <div className="nhis-export-period-note" role="status" aria-live="polite">
                   {exportProgress}
+                  {exportElapsedSeconds > 0 ? ` — ${exportElapsedSeconds}s elapsed` : ''}
                 </div>
               )}
             </div>

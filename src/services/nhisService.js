@@ -295,6 +295,37 @@ const DEFAULT_NHIS_CLAIM_LIST_LIMIT = 500
 const NHIS_EXPORT_FETCH_PAGE_SIZE = 500
 const NHIS_EXPORT_RELATION_BATCH_SIZE = 200
 const NHIS_PRESCRIPTION_SIGNED_URL_BATCH_SIZE = 500
+// Bounded so a large batch downloads real files in parallel without opening
+// hundreds of simultaneous connections to storage.
+const NHIS_ATTACHMENT_DOWNLOAD_CONCURRENCY = 6
+// Bounded so multiple signed-URL chunks (each already under the provider's
+// 1000-item limit) resolve concurrently instead of strictly one at a time.
+const NHIS_SIGNED_URL_CHUNK_CONCURRENCY = 3
+
+// Runs `mapper` over `items` with at most `limit` calls in flight at once.
+// Order of `results` matches `items`; a mapper rejection does not cancel
+// sibling work already in flight, so every item is always attempted.
+const mapWithConcurrency = async (items, limit, mapper) => {
+  const results = new Array(items.length)
+  const errors = new Array(items.length)
+  let nextIndex = 0
+  const boundedLimit = Math.max(1, Math.min(limit, items.length || 1))
+  const worker = async () => {
+    for (;;) {
+      const index = nextIndex
+      nextIndex += 1
+      if (index >= items.length) return
+      try {
+        results[index] = await mapper(items[index], index)
+      } catch (error) {
+        errors[index] = error
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: boundedLimit }, worker))
+  return { results, errors }
+}
+
 const toNhisCalendarDate = (value = new Date()) => {
   const date = value instanceof Date ? value : new Date(value)
   if (Number.isNaN(date.getTime())) return ''
@@ -8522,7 +8553,7 @@ const buildClaimItSerializedClaim = ({
 const compressClaimItSerializedClaim = async (serializedClaim) =>
   await deflateClaimItPayload(JSON.stringify(serializedClaim))
 
-const buildClaimItRows = async (payload) => {
+const buildClaimItRows = async (payload, runtimeOptions = {}) => {
   const generatedAt = toClaimItDateTime(payload.createdAt)
   const signedByName = normalizeText(payload.claimsOfficerName) || 'HealthFlow'
   const signedByUsername = normalizeText(payload.submitterId) || signedByName
@@ -8553,6 +8584,70 @@ const buildClaimItRows = async (payload) => {
   const validationZclaims = []
   const validationClaimContexts = []
   const attachmentDiagnostics = []
+
+  // Pre-fetch every unique prescription attachment with bounded concurrency
+  // before the per-claim loop below, instead of downloading serially inside
+  // it. Two+ claims sharing the same storage path (a documented, already-
+  // supported case elsewhere in this file) are only fetched once. The loop
+  // below, its row structure, and the per-attachment compression call are
+  // unchanged — only the timing of the network fetch moves earlier.
+  const timing = runtimeOptions.exportTiming
+  const runId = runtimeOptions.exportRunId || ''
+  const attachmentCacheByKey = new Map()
+  const attachmentTasks = []
+  const seenAttachmentKeys = new Set()
+  payload.claims.forEach((claim, claimIndex) => {
+    const attachment = claim.prescriptionAttachment
+    if (!attachment) return
+    const cacheKey = attachment.storagePath || attachment.url || `claim-index-${claimIndex}`
+    if (seenAttachmentKeys.has(cacheKey)) return
+    seenAttachmentKeys.add(cacheKey)
+    attachmentTasks.push({ cacheKey, attachment, claimNumber: claim.claimNumber })
+  })
+
+  if (attachmentTasks.length) {
+    const totalAttachments = attachmentTasks.length
+    let completedAttachments = 0
+    emitNhisExportProgress(runtimeOptions, 'Downloading prescription attachments', {
+      current: 0,
+      total: totalAttachments,
+    })
+    if (typeof console !== 'undefined') {
+      console.info(`[NHIS CXF]${runId ? ` [${runId}]` : ''} Downloading ${totalAttachments} unique prescription attachment(s), concurrency ${NHIS_ATTACHMENT_DOWNLOAD_CONCURRENCY}`)
+    }
+    const attachmentStartedAt = getNhisExportNow()
+    await mapWithConcurrency(attachmentTasks, NHIS_ATTACHMENT_DOWNLOAD_CONCURRENCY, async (task) => {
+      const taskStartedAt = getNhisExportNow()
+      try {
+        const result = await prepareClaimItAttachmentPdfPayload(task.attachment)
+        attachmentCacheByKey.set(task.cacheKey, { result })
+        if (typeof console !== 'undefined') {
+          console.info(`[NHIS CXF]${runId ? ` [${runId}]` : ''} Downloaded attachment for ${task.claimNumber} in ${Math.round(getNhisExportNow() - taskStartedAt)} ms`)
+        }
+      } catch (error) {
+        // Recorded, not thrown here — mapWithConcurrency must not let one
+        // failure cancel sibling downloads already in flight. The main loop
+        // below throws a clear, claim-identifying error for this entry.
+        attachmentCacheByKey.set(task.cacheKey, { error })
+        if (typeof console !== 'undefined') {
+          console.warn(`[NHIS CXF]${runId ? ` [${runId}]` : ''} Failed attachment for ${task.claimNumber}: ${error?.message || error}`)
+        }
+      } finally {
+        completedAttachments += 1
+        emitNhisExportProgress(runtimeOptions, 'Downloading prescription attachments', {
+          current: completedAttachments,
+          total: totalAttachments,
+        })
+      }
+    })
+    timing?.mark('downloading prescription attachments', {
+      attachmentCount: totalAttachments,
+      concurrency: NHIS_ATTACHMENT_DOWNLOAD_CONCURRENCY,
+    })
+    if (typeof console !== 'undefined') {
+      console.info(`[NHIS CXF]${runId ? ` [${runId}]` : ''} Completed ${totalAttachments} attachment(s) in ${Math.round(getNhisExportNow() - attachmentStartedAt)} ms`)
+    }
+  }
 
   for (const [claimIndex, claim] of payload.claims.entries()) {
     if (claim.prescriptionAttachment) {
@@ -8716,7 +8811,16 @@ const buildClaimItRows = async (payload) => {
 
     if (claim.prescriptionAttachment) {
       const attachmentId = getClaimItGuid(claimGuid, 'prescription-attachment')
-      const attachmentPayload = await prepareClaimItAttachmentPdfPayload(claim.prescriptionAttachment)
+      const attachment = claim.prescriptionAttachment
+      const cacheKey = attachment.storagePath || attachment.url || `claim-index-${claimIndex}`
+      const cached = attachmentCacheByKey.get(cacheKey)
+      if (!cached) {
+        throw new Error(`${claim.claimNumber}: prescription attachment could not be prepared for CLAIM-it CXF export.`)
+      }
+      if (cached.error) {
+        throw cached.error
+      }
+      const attachmentPayload = cached.result
       attachmentDiagnostics.push({
         claimNumber: claim.claimNumber,
         attachmentID: attachmentId,
@@ -8842,8 +8946,8 @@ const buildClaimItMeta = (payload, rows) => {
   }
 }
 
-const buildNhisClaimItCxfBundle = async (payload) => {
-  const rows = await buildClaimItRows(payload)
+const buildNhisClaimItCxfBundle = async (payload, runtimeOptions = {}) => {
+  const rows = await buildClaimItRows(payload, runtimeOptions)
   const generatedAt = toClaimItDateTime(payload.createdAt)
   const meta = buildClaimItMeta(payload, rows)
   const data = {
@@ -8942,9 +9046,21 @@ const buildNhisClaimItDirectJsonPayload = async (payload) => {
   }
 }
 
-export const buildNhisClaimItCxf = async (payload) => {
-  const serialized = phpSerializeBytes(await buildNhisClaimItCxfBundle(payload))
+export const buildNhisClaimItCxf = async (payload, runtimeOptions = {}) => {
+  const timing = runtimeOptions.exportTiming
+  const runId = runtimeOptions.exportRunId || ''
+  const bundle = await buildNhisClaimItCxfBundle(payload, runtimeOptions)
+  const serialized = phpSerializeBytes(bundle)
+  timing?.mark('serializing CXF bundle', { bytes: serialized?.length || 0 })
+  emitNhisExportProgress(runtimeOptions, 'Compressing CXF archive', {
+    current: payload.claims?.length || 0,
+    total: payload.claims?.length || 0,
+  })
+  const compressStartedAt = getNhisExportNow()
   const compressed = await deflateClaimItPayload(serialized)
+  if (typeof console !== 'undefined') {
+    console.info(`[NHIS CXF]${runId ? ` [${runId}]` : ''} Compressed final archive in ${Math.round(getNhisExportNow() - compressStartedAt)} ms`)
+  }
   const output = new Uint8Array(compressed.length + 3)
   output.set([0x01, 0x02, 0x19], 0)
   output.set(compressed, 3)
@@ -9090,8 +9206,11 @@ const createNhisExportFile = async (claims, period, options = {}) => {
     const claimsForPayload = await hydrateNhisPrescriptionUrlsForTransfer(claims, options)
     timing?.mark('loading prescription signed URLs', { claimCount: claimsForPayload.length })
     const cxfPayload = buildNhisClaimItExportPayload(claimsForPayload, { ...options, exportPeriod: period })
-    emitNhisExportProgress(options, 'Compressing CXF', { current: claimsForPayload.length, total: claimsForPayload.length })
-    const content = await buildNhisClaimItCxf(cxfPayload)
+    // Progress for attachment downloads and compression is now emitted from
+    // inside buildNhisClaimItCxf itself, at the point each stage actually
+    // happens, instead of a single misleading "Compressing" label covering
+    // the whole call.
+    const content = await buildNhisClaimItCxf(cxfPayload, options)
     timing?.mark('generating CXF archive', {
       claimCount: claimsForPayload.length,
       bytes: content?.length || content?.byteLength || 0,
@@ -9453,22 +9572,30 @@ const hydrateNhisPrescriptionUrlsForTransfer = async (claims = [], options = {})
 
   if (typeof storage.createSignedUrls === 'function') {
     const chunks = chunkArray(uniquePaths, NHIS_PRESCRIPTION_SIGNED_URL_BATCH_SIZE)
-    for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex += 1) {
-      const chunk = chunks[chunkIndex]
-      try {
-        const { data, error } = await storage.createSignedUrls(chunk, 60 * 60)
-        if (error) throw error
-        ;(data || []).forEach((item, index) => {
-          const path = normalizeText(item?.path || chunk[index])
-          const signedUrl = normalizeText(item?.signedUrl || item?.signedURL)
-          if (path && signedUrl) signedUrlsByPath.set(path, signedUrl)
-        })
-      } catch (error) {
-        throw new Error(
-          `Unable to prepare prescription attachment links for export. ` +
-          `Storage signing chunk ${chunkIndex + 1} of ${chunks.length} failed: ${error?.message || error}`
-        )
+    const runId = options.exportRunId || ''
+    const { errors } = await mapWithConcurrency(chunks, NHIS_SIGNED_URL_CHUNK_CONCURRENCY, async (chunk, chunkIndex) => {
+      if (typeof console !== 'undefined') {
+        console.info(`[NHIS CXF]${runId ? ` [${runId}]` : ''} Creating signed URLs chunk ${chunkIndex + 1}/${chunks.length}, ${chunk.length} paths`)
       }
+      const chunkStartedAt = getNhisExportNow()
+      const { data, error } = await storage.createSignedUrls(chunk, 60 * 60)
+      if (error) throw error
+      ;(data || []).forEach((item, index) => {
+        const path = normalizeText(item?.path || chunk[index])
+        const signedUrl = normalizeText(item?.signedUrl || item?.signedURL)
+        if (path && signedUrl) signedUrlsByPath.set(path, signedUrl)
+      })
+      if (typeof console !== 'undefined') {
+        console.info(`[NHIS CXF]${runId ? ` [${runId}]` : ''} Completed signed URLs chunk ${chunkIndex + 1}/${chunks.length} in ${Math.round(getNhisExportNow() - chunkStartedAt).toLocaleString()} ms`)
+      }
+    })
+    const firstFailedIndex = errors.findIndex(Boolean)
+    if (firstFailedIndex !== -1) {
+      const error = errors[firstFailedIndex]
+      throw new Error(
+        `Unable to prepare prescription attachment links for export. ` +
+        `Storage signing chunk ${firstFailedIndex + 1} of ${chunks.length} failed: ${error?.message || error}`
+      )
     }
   } else {
     await Promise.all(uniquePaths.map(async (path) => {

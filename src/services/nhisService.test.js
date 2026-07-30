@@ -2095,6 +2095,129 @@ describe('CLAIM-it export helpers', () => {
     )
   })
 
+  it('downloads a prescription attachment shared by two claims only once', async () => {
+    const pdfBytes = Buffer.from('%PDF-1.4\n%%EOF')
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      arrayBuffer: async () => pdfBytes.buffer.slice(pdfBytes.byteOffset, pdfBytes.byteOffset + pdfBytes.byteLength),
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    const sharedUrl = 'https://example.test/rx/shared.pdf'
+    const payload = buildNhisClaimItExportPayload(
+      [
+        { ...claim, id: 'claim-a', claim_number: 'NHIS-000001', prescription_file_path: 'rx/shared.pdf', prescription_file_url: sharedUrl },
+        { ...claim, id: 'claim-b', claim_number: 'NHIS-000002', member_no: '87654321', hin: '87654321', prescription_file_path: 'rx/shared.pdf', prescription_file_url: sharedUrl },
+      ],
+      {
+        yearMonth: '2026-05',
+        organizationType: 'pharmacy',
+        facilityCode: '03-05-001-02-01954-11-P1-2-011225',
+        facilityName: 'Westpoint Chemist',
+        providerNumber: '03-05-01954',
+        providerTypeDescription: 'Pharmacy',
+        claimsOfficerName: 'Claims Officer',
+        submitterId: 'admin',
+        generatedAt: '2026-05-20T14:58:02.000Z',
+      }
+    )
+
+    await buildNhisClaimItCxf(payload)
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledWith(sharedUrl)
+  })
+
+  it('attempts every attachment even when one fails, and names the failing claim without silently excluding it', async () => {
+    const pdfBytes = Buffer.from('%PDF-1.4\n%%EOF')
+    const fetchMock = vi.fn(async (url) => {
+      if (url === 'https://example.test/rx/broken.pdf') {
+        throw new TypeError('Failed to fetch')
+      }
+      return {
+        ok: true,
+        status: 200,
+        arrayBuffer: async () => pdfBytes.buffer.slice(pdfBytes.byteOffset, pdfBytes.byteOffset + pdfBytes.byteLength),
+      }
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const payload = buildNhisClaimItExportPayload(
+      [
+        { ...claim, id: 'claim-ok', claim_number: 'NHIS-000010', prescription_file_path: 'rx/good.pdf', prescription_file_url: 'https://example.test/rx/good.pdf' },
+        { ...claim, id: 'claim-broken', claim_number: 'NHIS-000011', member_no: '87654322', hin: '87654322', prescription_file_path: 'rx/broken.pdf', prescription_file_url: 'https://example.test/rx/broken.pdf' },
+      ],
+      {
+        yearMonth: '2026-05',
+        organizationType: 'pharmacy',
+        facilityCode: '03-05-001-02-01954-11-P1-2-011225',
+        facilityName: 'Westpoint Chemist',
+        providerNumber: '03-05-01954',
+        providerTypeDescription: 'Pharmacy',
+        claimsOfficerName: 'Claims Officer',
+        submitterId: 'admin',
+        generatedAt: '2026-05-20T14:58:02.000Z',
+      }
+    )
+
+    try {
+      await expect(buildNhisClaimItCxf(payload)).rejects.toThrow('NHIS-000011')
+      // The good claim's fetch was still attempted — one failure does not
+      // cancel the sibling download already in flight.
+      expect(fetchMock).toHaveBeenCalledWith('https://example.test/rx/good.pdf')
+      expect(fetchMock).toHaveBeenCalledWith('https://example.test/rx/broken.pdf')
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+
+  it('downloads distinct prescription attachments with bounded concurrency, not strictly one at a time', async () => {
+    const pdfBytes = Buffer.from('%PDF-1.4\n%%EOF')
+    let inFlight = 0
+    let maxObservedConcurrency = 0
+    const fetchMock = vi.fn(async () => {
+      inFlight += 1
+      maxObservedConcurrency = Math.max(maxObservedConcurrency, inFlight)
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      inFlight -= 1
+      return {
+        ok: true,
+        status: 200,
+        arrayBuffer: async () => pdfBytes.buffer.slice(pdfBytes.byteOffset, pdfBytes.byteOffset + pdfBytes.byteLength),
+      }
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const claims = Array.from({ length: 10 }, (_, index) => {
+      const itemNumber = String(index + 1).padStart(6, '0')
+      return {
+        ...claim,
+        id: `claim-${itemNumber}`,
+        claim_number: `NHIS-${itemNumber}`,
+        member_no: `12${itemNumber}`,
+        hin: `12${itemNumber}`,
+        prescription_file_path: `rx/${itemNumber}.pdf`,
+        prescription_file_url: `https://example.test/rx/${itemNumber}.pdf`,
+      }
+    })
+    const payload = buildNhisClaimItExportPayload(claims, {
+      yearMonth: '2026-05',
+      organizationType: 'pharmacy',
+      facilityCode: '03-05-001-02-01954-11-P1-2-011225',
+      facilityName: 'Westpoint Chemist',
+      providerNumber: '03-05-01954',
+      providerTypeDescription: 'Pharmacy',
+      claimsOfficerName: 'Claims Officer',
+      submitterId: 'admin',
+      generatedAt: '2026-05-20T14:58:02.000Z',
+    })
+
+    await buildNhisClaimItCxf(payload)
+
+    expect(fetchMock).toHaveBeenCalledTimes(10)
+    expect(maxObservedConcurrency).toBeGreaterThan(1)
+    expect(maxObservedConcurrency).toBeLessThanOrEqual(6)
+  })
+
   it('exports CLAIM-it CXF without blocking when a claim only has unreadable attachment metadata', async () => {
     const payload = buildNhisClaimItExportPayload([
       {
