@@ -57,11 +57,13 @@ const asText = (value) => String(value ?? '').trim()
 const asNumber = (value) => Number.parseFloat(value)
 const getClaimField = (claim, camelKey, snakeKey = camelKey) =>
   asText(claim?.[camelKey] ?? claim?.[snakeKey])
-const hasPrescriptionAttachment = (claimData = {}, options = {}) => {
-  const hasSavedFile = Boolean(
+const hasSavedPrescriptionFileReference = (claimData = {}) =>
+  Boolean(
     getClaimField(claimData, 'prescriptionFilePath', 'prescription_file_path') ||
       getClaimField(claimData, 'prescriptionFileUrl', 'prescription_file_url')
   )
+const hasPrescriptionAttachment = (claimData = {}, options = {}) => {
+  const hasSavedFile = hasSavedPrescriptionFileReference(claimData)
   if (hasSavedFile) return true
 
   return Boolean(
@@ -292,6 +294,7 @@ const NHIS_SERVICE_TIME_ZONE = 'Africa/Accra'
 const DEFAULT_NHIS_CLAIM_LIST_LIMIT = 500
 const NHIS_EXPORT_FETCH_PAGE_SIZE = 500
 const NHIS_EXPORT_RELATION_BATCH_SIZE = 200
+const NHIS_PRESCRIPTION_SIGNED_URL_BATCH_SIZE = 500
 const toNhisCalendarDate = (value = new Date()) => {
   const date = value instanceof Date ? value : new Date(value)
   if (Number.isNaN(date.getTime())) return ''
@@ -5433,13 +5436,19 @@ const nhisClaimMatchesListFilters = (claim = {}, filters = {}) => {
 
   const searchTerm = normalizeText(filters.searchTerm || filters.search).toLowerCase()
   if (searchTerm) {
+    const surname = normalizeText(claim.surname)
+    const otherNames = normalizeText(claim.other_names)
+    const fullName = [surname, otherNames].filter(Boolean).join(' ')
+    const reverseFullName = [otherNames, surname].filter(Boolean).join(' ')
     const matchesSearch = [
       claim.patient_name,
       claim.claim_number,
       claim.member_no,
       claim.hin,
-      claim.surname,
-      claim.other_names,
+      surname,
+      otherNames,
+      fullName,
+      reverseFullName,
     ].some((value) => String(value || '').toLowerCase().includes(searchTerm))
     if (!matchesSearch) return false
   }
@@ -5558,14 +5567,16 @@ export const getNhisClaimsPage = async (filters = {}) => {
 
       const rows = await listBranchRecords('nhis/claims', {
         ...filters,
-        limit: filters.pageSize || filters.limit || DEFAULT_NHIS_CLAIM_LIST_LIMIT,
-        offset: ((Number(filters.page || 1) - 1) * Number(filters.pageSize || filters.limit || DEFAULT_NHIS_CLAIM_LIST_LIMIT)) || 0,
+        limit: 100000,
+        offset: 0,
       })
+      const { page, pageSize, from, to } = getNhisClaimPageOptions(filters)
+      const matchingRows = filterNhisClaimRows(rows || [], filters)
       return {
-        claims: rows,
-        total: rows.length,
-        page: Math.max(Number(filters.page || 1), 1),
-        pageSize: Number(filters.pageSize || filters.limit || DEFAULT_NHIS_CLAIM_LIST_LIMIT),
+        claims: matchingRows.slice(from, to + 1),
+        total: matchingRows.length,
+        page,
+        pageSize,
       }
     }
 
@@ -5582,7 +5593,7 @@ const getNhisClaimIssueKeys = (claim = {}, options = {}) => {
   const needsExportReadiness = !isHospital && ['served', 'submitted', 'paid'].includes(status)
 
   if (needsExportReadiness) {
-    if (!hasPrescriptionAttachment(claim)) {
+    if (!hasSavedPrescriptionFileReference(claim)) {
       issueKeys.add('missing-attachment')
     } else if (getClaimField(claim, 'prescriptionDocumentType', 'prescription_document_type').toLowerCase() !== 'prescription') {
       issueKeys.add('attachment-type')
@@ -5594,7 +5605,7 @@ const getNhisClaimIssueKeys = (claim = {}, options = {}) => {
   if (['pending_serving', 'serving_in_progress', 'returned_for_review'].includes(status)) {
     const medicines = Array.isArray(claim.nhis_claim_medicines) ? claim.nhis_claim_medicines : []
     const hasMedicineLines = medicines.length > 0 || claim._hasMedicineLines === true
-    if (!hasMedicineLines || !hasPrescriptionAttachment(claim)) {
+    if (!hasMedicineLines || !hasSavedPrescriptionFileReference(claim)) {
       issueKeys.add('incomplete-intake')
     }
   }
@@ -5647,8 +5658,6 @@ const applyNhisAttachmentPresentFilter = (query) =>
     [
       'prescription_file_url.not.is.null',
       'prescription_file_path.not.is.null',
-      'prescription_file_name.not.is.null',
-      'claimit_attachment_base64.not.is.null',
     ].join(',')
   )
 
@@ -5656,8 +5665,6 @@ const applyNhisAttachmentMissingFilter = (query) =>
   query
     .is('prescription_file_url', null)
     .is('prescription_file_path', null)
-    .is('prescription_file_name', null)
-    .is('claimit_attachment_base64', null)
 
 const applyNhisIssueBaseFilters = (query, filters = {}, statuses = []) => {
   query = applyNhisClaimFilters(query, {
@@ -9211,11 +9218,7 @@ const getNhisExportScrubWarningsForClaims = async (readiness, options = {}) => {
 const getNhisMissingCxfAttachmentIssues = (claims = [], organizationType = '') => {
   if (normalizeOrganizationType(organizationType) === 'hospital') return []
 
-  const missingClaims = claims.filter((claim) =>
-    !normalizeText(claim.claimit_attachment_base64) &&
-    !normalizeText(claim.prescription_file_path) &&
-    !normalizeText(claim.prescription_file_url)
-  )
+  const missingClaims = claims.filter((claim) => !hasSavedPrescriptionFileReference(claim))
   if (!missingClaims.length) return []
 
   return [{
@@ -9417,6 +9420,13 @@ const getDirectSubmissionPeriodForClaim = (claim = {}) => {
   return normalizeNhisExportPeriod({ mode: 'custom', fromDate: serviceDate, toDate: serviceDate })
 }
 
+// Rejects empty/whitespace paths (normalizeText already reduces these to ''),
+// the literal strings a bad serialization can leave behind, and path
+// traversal sequences. Storage paths for this bucket are always
+// "<claimId>/<fileName>"-shaped, so a bare ".." segment is never legitimate.
+const isValidNhisPrescriptionStoragePath = (path) =>
+  Boolean(path) && path !== 'null' && path !== 'undefined' && !path.includes('..')
+
 const hydrateNhisPrescriptionUrlsForTransfer = async (claims = [], options = {}) => {
   if (shouldUseBranchServer()) return claims
 
@@ -9430,22 +9440,36 @@ const hydrateNhisPrescriptionUrlsForTransfer = async (claims = [], options = {})
     total: claimsNeedingUrls.length,
   })
 
+  const invalidPathClaims = claimsNeedingUrls.filter(
+    (claim) => !isValidNhisPrescriptionStoragePath(normalizeText(claim.prescription_file_path))
+  )
   const uniquePaths = Array.from(new Set(
     claimsNeedingUrls
       .map((claim) => normalizeText(claim.prescription_file_path))
-      .filter(Boolean)
+      .filter(isValidNhisPrescriptionStoragePath)
   ))
   const signedUrlsByPath = new Map()
   const storage = supabase.storage.from('nhis-prescriptions')
 
   if (typeof storage.createSignedUrls === 'function') {
-    const { data, error } = await storage.createSignedUrls(uniquePaths, 60 * 60)
-    if (error) throw error
-    ;(data || []).forEach((item, index) => {
-      const path = normalizeText(item?.path || uniquePaths[index])
-      const signedUrl = normalizeText(item?.signedUrl || item?.signedURL)
-      if (path && signedUrl) signedUrlsByPath.set(path, signedUrl)
-    })
+    const chunks = chunkArray(uniquePaths, NHIS_PRESCRIPTION_SIGNED_URL_BATCH_SIZE)
+    for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex += 1) {
+      const chunk = chunks[chunkIndex]
+      try {
+        const { data, error } = await storage.createSignedUrls(chunk, 60 * 60)
+        if (error) throw error
+        ;(data || []).forEach((item, index) => {
+          const path = normalizeText(item?.path || chunk[index])
+          const signedUrl = normalizeText(item?.signedUrl || item?.signedURL)
+          if (path && signedUrl) signedUrlsByPath.set(path, signedUrl)
+        })
+      } catch (error) {
+        throw new Error(
+          `Unable to prepare prescription attachment links for export. ` +
+          `Storage signing chunk ${chunkIndex + 1} of ${chunks.length} failed: ${error?.message || error}`
+        )
+      }
+    }
   } else {
     await Promise.all(uniquePaths.map(async (path) => {
       const signedUrl = await getNhisPrescriptionSignedUrl(path, 60 * 60)
@@ -9457,6 +9481,28 @@ const hydrateNhisPrescriptionUrlsForTransfer = async (claims = [], options = {})
     current: claimsNeedingUrls.length,
     total: claimsNeedingUrls.length,
   })
+
+  // A path that never resolved to a signed URL — because the storage API
+  // returned fewer items than requested, or the stored path itself was
+  // invalid — must never be silently dropped. The claim would otherwise
+  // reach the CXF payload with no prescription attached and no indication
+  // why. Surface exactly which claims are affected instead.
+  const unresolvedClaims = [
+    ...invalidPathClaims,
+    ...claimsNeedingUrls.filter((claim) => {
+      const path = normalizeText(claim.prescription_file_path)
+      return isValidNhisPrescriptionStoragePath(path) && !signedUrlsByPath.has(path)
+    }),
+  ]
+  if (unresolvedClaims.length) {
+    const claimList = unresolvedClaims
+      .map((claim) => normalizeText(claim.claim_number || claim.claimNumber) || 'unnumbered claim')
+      .join(', ')
+    throw new Error(
+      `Unable to prepare prescription attachment links for export. ` +
+      `${unresolvedClaims.length} claim${unresolvedClaims.length === 1 ? '' : 's'} could not be resolved to a valid attachment: ${claimList}.`
+    )
+  }
 
   return claims.map((claim) => {
     const path = normalizeText(claim.prescription_file_path)

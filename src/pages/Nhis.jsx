@@ -804,6 +804,64 @@ const getReadinessIssueLabel = (text = '') => {
 const getReadinessIssueKey = (issue = {}) =>
   normalizeLookupText(issue.id || issue.claim_number || issue.claimNumber || issue.patientName)
 
+const readinessIssueMatchesSearch = (issue = {}, searchTerm = '') => {
+  const term = normalizeLookupText(searchTerm).trim()
+  if (!term) return true
+  const patientName = issue.patientName || [issue.surname, issue.other_names].filter(Boolean).join(' ')
+  const values = [
+    issue.claim_number,
+    issue.claimNumber,
+    patientName,
+    issue.surname,
+    issue.other_names,
+    issue.member_no,
+    issue.memberNo,
+    issue.hin,
+    issue.folder_no,
+    issue.folderNo,
+    issue.ccc_no,
+    issue.cccNo,
+    issue.status,
+    ...(Array.isArray(issue.issues) ? issue.issues : []),
+  ]
+  return values.some((value) => lookupMatches(value, term))
+}
+
+const duplicateClaimGroupMatchesSearch = (group = {}, searchTerm = '') => {
+  const term = normalizeLookupText(searchTerm).trim()
+  if (!term) return true
+  const groupValues = [
+    group.patientName,
+    group.member,
+    group.serviceDate,
+    group.totalAmount,
+    group.key,
+  ]
+  const claimValues = (group.claims || []).flatMap((claim) => [
+    claim.claim_number,
+    claim.claimNumber,
+    claim.surname,
+    claim.other_names,
+    [claim.surname, claim.other_names].filter(Boolean).join(' '),
+    [claim.other_names, claim.surname].filter(Boolean).join(' '),
+    claim.member_no,
+    claim.memberNo,
+    claim.hin,
+    claim.folder_no,
+    claim.folderNo,
+    claim.ccc_no,
+    claim.cccNo,
+    claim.status,
+    claim.service_date_from,
+    claim.serviceDateFrom,
+    claim.created_at,
+    claim.createdAt,
+    claim.updated_at,
+    claim.updatedAt,
+  ])
+  return [...groupValues, ...claimValues].some((value) => lookupMatches(value, term))
+}
+
 const getTimestampMs = (value) => {
   const parsed = new Date(value || '')
   return Number.isNaN(parsed.getTime()) ? Number.POSITIVE_INFINITY : parsed.getTime()
@@ -1238,13 +1296,16 @@ const Nhis = () => {
   const [duplicateClaimGroups, setDuplicateClaimGroups] = useState([])
   const [duplicateExportIssues, setDuplicateExportIssues] = useState([])
   const [showDuplicateClaimReview, setShowDuplicateClaimReview] = useState(false)
+  const [duplicateClaimSearch, setDuplicateClaimSearch] = useState('')
   const [readinessClaimIssues, setReadinessClaimIssues] = useState([])
   const [showReadinessClaimReview, setShowReadinessClaimReview] = useState(false)
   const [readinessIssueFilter, setReadinessIssueFilter] = useState('all')
+  const [readinessIssueSearch, setReadinessIssueSearch] = useState('')
   const [readinessFixedCount, setReadinessFixedCount] = useState(0)
   const [readinessChecking, setReadinessChecking] = useState(false)
   const [readinessActiveClaimId, setReadinessActiveClaimId] = useState('')
   const [scrubWarningClaims, setScrubWarningClaims] = useState([])
+  const [scrubWarningSearch, setScrubWarningSearch] = useState('')
   const [scrubWarningOverrideReason, setScrubWarningOverrideReason] = useState('')
   const [showScrubWarningOverride, setShowScrubWarningOverride] = useState(false)
   const [viewClaim, setViewClaim]                   = useState(null)
@@ -1952,9 +2013,15 @@ const Nhis = () => {
         if (claimDateRange.to && (!serviceDate || serviceDate > claimDateRange.to)) return false
       }
       if (!term) return true
+      const surname = (c.surname || '').toLowerCase()
+      const otherNames = (c.other_names || '').toLowerCase()
+      const fullName = [surname, otherNames].filter(Boolean).join(' ')
+      const reverseFullName = [otherNames, surname].filter(Boolean).join(' ')
       return (
-        (c.surname       || '').toLowerCase().includes(term) ||
-        (c.other_names   || '').toLowerCase().includes(term) ||
+        surname.includes(term) ||
+        otherNames.includes(term) ||
+        fullName.includes(term) ||
+        reverseFullName.includes(term) ||
         (c.member_no     || '').toLowerCase().includes(term) ||
         (c.claim_number  || '').toLowerCase().includes(term) ||
         (c.hin           || '').toLowerCase().includes(term) ||
@@ -2775,12 +2842,14 @@ const Nhis = () => {
     setShowDuplicateClaimReview(false)
     setDuplicateClaimGroups([])
     setDuplicateExportIssues([])
+    setDuplicateClaimSearch('')
   }
 
   const closeReadinessClaimReview = () => {
     setShowReadinessClaimReview(false)
     setReadinessClaimIssues([])
     setReadinessIssueFilter('all')
+    setReadinessIssueSearch('')
     setReadinessFixedCount(0)
     setReadinessActiveClaimId('')
   }
@@ -4640,12 +4709,21 @@ const Nhis = () => {
     return counts
   }, [readinessClaimIssues])
 
+  const filteredDuplicateClaimGroups = useMemo(() =>
+    duplicateClaimGroups.filter((group) => duplicateClaimGroupMatchesSearch(group, duplicateClaimSearch)),
+  [duplicateClaimGroups, duplicateClaimSearch])
+
   const filteredReadinessClaimIssues = useMemo(() => {
-    if (readinessIssueFilter === 'all') return readinessClaimIssues
-    return readinessClaimIssues.filter((issue) =>
-      getReadinessIssueCategories(issue).includes(readinessIssueFilter)
-    )
-  }, [readinessClaimIssues, readinessIssueFilter])
+    return readinessClaimIssues.filter((issue) => {
+      const matchesFilter = readinessIssueFilter === 'all' ||
+        getReadinessIssueCategories(issue).includes(readinessIssueFilter)
+      return matchesFilter && readinessIssueMatchesSearch(issue, readinessIssueSearch)
+    })
+  }, [readinessClaimIssues, readinessIssueFilter, readinessIssueSearch])
+
+  const filteredScrubWarningClaims = useMemo(() =>
+    scrubWarningClaims.filter((issue) => readinessIssueMatchesSearch(issue, scrubWarningSearch)),
+  [scrubWarningClaims, scrubWarningSearch])
 
   const readinessNavigation = useMemo(() => {
     const issues = filteredReadinessClaimIssues.length ? filteredReadinessClaimIssues : readinessClaimIssues
@@ -4658,6 +4736,26 @@ const Nhis = () => {
       next: activeIndex >= 0 && activeIndex < issues.length - 1 ? issues[activeIndex + 1] : null,
     }
   }, [filteredReadinessClaimIssues, readinessActiveClaimId, readinessClaimIssues])
+  const activeReadinessCorrection = useMemo(() => {
+    if (!editingClaim || !readinessActiveClaimId) return null
+    const issue = readinessNavigation.activeIndex >= 0
+      ? readinessNavigation.issues[readinessNavigation.activeIndex]
+      : readinessClaimIssues.find((item) => getReadinessIssueKey(item) === readinessActiveClaimId)
+    if (!issue) return null
+    const issueList = Array.isArray(issue.issues) && issue.issues.length
+      ? issue.issues
+      : ['Review this claim and complete the missing export requirements.']
+    const patientName = issue.patientName || [issue.surname, issue.other_names].filter(Boolean).join(' ') || 'Unknown patient'
+    return {
+      claimNumber: issue.claim_number || issue.claimNumber || editingClaim.claim_number || 'Unnumbered claim',
+      patientName,
+      member: issue.member_no || issue.memberNo || issue.hin || '-',
+      folder: issue.folder_no || issue.folderNo || '-',
+      issues: issueList,
+      position: readinessNavigation.activeIndex >= 0 ? readinessNavigation.activeIndex + 1 : null,
+      total: readinessNavigation.issues.length || readinessClaimIssues.length,
+    }
+  }, [editingClaim, readinessActiveClaimId, readinessClaimIssues, readinessNavigation])
 
   const buildCurrentExportOptions = () => {
     const periodOptions = exportMode === 'custom'
@@ -4697,6 +4795,7 @@ const Nhis = () => {
       setShowReadinessClaimReview(false)
       setDuplicateClaimGroups(err.duplicateGroups || [])
       setDuplicateExportIssues(err.exportBlockingIssues || [])
+      setDuplicateClaimSearch('')
       setShowDuplicateClaimReview(true)
       notify(
         `${err.duplicateGroups?.length || 1} duplicate claim group${err.duplicateGroups?.length === 1 ? '' : 's'} found${err.exportBlockingIssues?.length ? ' with other export blockers' : ''}. Review and correct them before exporting.`,
@@ -4847,6 +4946,7 @@ const Nhis = () => {
       if (warningClaims.length && !overrideReason) {
         setScrubWarningClaims(warningClaims)
         setScrubWarningOverrideReason('')
+        setScrubWarningSearch('')
         setShowScrubWarningOverride(true)
         notify(
           `${warningClaims.length} claim${warningClaims.length === 1 ? '' : 's'} have scrub warnings. Enter an override reason before exporting.`,
@@ -4880,6 +4980,7 @@ const Nhis = () => {
       setShowScrubWarningOverride(false)
       setScrubWarningClaims([])
       setScrubWarningOverrideReason('')
+      setScrubWarningSearch('')
       setShowExportModal(false)
       await refreshClaimsOverview()
       notify(
@@ -6159,6 +6260,42 @@ const Nhis = () => {
                   or the incomplete claim can be sent to the dispensary. It cannot be finalized or
                   submitted until required information is completed.
                 </span>
+              </div>
+            )}
+            {activeReadinessCorrection && (
+              <div className="nhis-correction-context" role="status">
+                <div className="nhis-correction-context__header">
+                  <div>
+                    <span>Correction from scrub review</span>
+                    <strong>{activeReadinessCorrection.claimNumber}</strong>
+                  </div>
+                  {activeReadinessCorrection.position && activeReadinessCorrection.total > 1 && (
+                    <small>
+                      Issue {activeReadinessCorrection.position} of {activeReadinessCorrection.total}
+                    </small>
+                  )}
+                </div>
+                <div className="nhis-correction-context__meta">
+                  <span>{activeReadinessCorrection.patientName}</span>
+                  <span>Member/HIN: {activeReadinessCorrection.member}</span>
+                  <span>Folder: {activeReadinessCorrection.folder}</span>
+                </div>
+                <ul className="nhis-correction-context__issues">
+                  {activeReadinessCorrection.issues.slice(0, 6).map((text, index) => {
+                    const severity = getReadinessIssueSeverity(text)
+                    return (
+                      <li key={`${activeReadinessCorrection.claimNumber}-${index}`}>
+                        <span className={`readiness-issue-chip readiness-issue-chip--${severity}`}>
+                          {severity === 'error' ? 'Error' : severity === 'warning' ? 'Warning' : 'Info'}
+                        </span>
+                        <span>{text}</span>
+                      </li>
+                    )
+                  })}
+                </ul>
+                {activeReadinessCorrection.issues.length > 6 && (
+                  <small>{activeReadinessCorrection.issues.length - 6} more issue{activeReadinessCorrection.issues.length - 6 === 1 ? '' : 's'} in the scrub review.</small>
+                )}
               </div>
             )}
 
@@ -8183,6 +8320,16 @@ const Nhis = () => {
                   Attachment view shows claims that need a scanned prescription, attachment type, or prescription verification.
                 </div>
               )}
+              <div className="readiness-search-control">
+                <Search size={15} />
+                <input
+                  type="search"
+                  value={readinessIssueSearch}
+                  onChange={(event) => setReadinessIssueSearch(event.target.value)}
+                  placeholder="Search by claim, patient, member/HIN, folder, CCC, or issue..."
+                  aria-label="Search scrub issue claims"
+                />
+              </div>
               <div className="duplicate-claim-table-wrap">
                 <table className="nhis-table duplicate-claim-table readiness-claim-table">
                   <thead>
@@ -8244,23 +8391,26 @@ const Nhis = () => {
                               </button>
                               <button
                                 type="button"
-                                className="action-btn action-btn--edit"
-                                title="Edit claim"
+                                className="action-btn action-btn--edit readiness-action-btn"
+                                title="Open correction"
+                                aria-label={`Open correction for ${issue.claim_number || patientName}`}
                                 onClick={() => {
                                   void openReadinessIssueForEdit(issue)
                                 }}
                               >
                                 <Pencil size={14} />
+                                <span>Open correction</span>
                               </button>
                               {canReopenMca && issue.status === 'served' && !isNhisClaimDirectlyServed(issue) && !isMcaEditWindowOpen(issue) && (
                                 <button
                                   type="button"
-                                  className="action-btn action-btn--edit"
+                                  className="action-btn action-btn--edit readiness-action-btn"
                                   title="Re-open dispensary correction window (12 hours)"
                                   disabled={isClaimBusy(issue.id)}
                                   onClick={() => handleReopenMcaEdit(issue)}
                                 >
                                   <Clock size={14} />
+                                  <span>Re-open dispensary</span>
                                 </button>
                               )}
                             </div>
@@ -8272,7 +8422,9 @@ const Nhis = () => {
                 </table>
               </div>
               {filteredReadinessClaimIssues.length === 0 && (
-                <div className="readiness-empty">No claims match this filter.</div>
+                <div className="readiness-empty">
+                  No claims match this filter{readinessIssueSearch ? ' and search.' : '.'}
+                </div>
               )}
             </div>
             <div className="modal-footer">
@@ -8299,6 +8451,16 @@ const Nhis = () => {
               <div className="nhis-export-period-note">
                 Export period uses service/submission month. Entered Date and Last Edited only show when the claim was created or corrected.
               </div>
+              <div className="readiness-search-control">
+                <Search size={15} />
+                <input
+                  type="search"
+                  value={duplicateClaimSearch}
+                  onChange={(event) => setDuplicateClaimSearch(event.target.value)}
+                  placeholder="Search duplicate groups by claim, patient, member/HIN, folder, CCC, date, or status..."
+                  aria-label="Search duplicate claim groups"
+                />
+              </div>
               {duplicateExportIssues.length > 0 && (
                 <div className="nhis-export-blocker-summary" role="alert">
                   <h3>Other Export Blockers</h3>
@@ -8319,7 +8481,7 @@ const Nhis = () => {
                   </ul>
                 </div>
               )}
-              {duplicateClaimGroups.map((group, groupIndex) => {
+              {filteredDuplicateClaimGroups.map((group, groupIndex) => {
                 const groupClaims = group.claims || []
                 const likelyOriginalClaimId = getLikelyOriginalClaimId(groupClaims)
                 return (
@@ -8418,6 +8580,11 @@ const Nhis = () => {
                   </section>
                 )
               })}
+              {filteredDuplicateClaimGroups.length === 0 && (
+                <div className="readiness-empty">
+                  No duplicate groups match this search.
+                </div>
+              )}
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={closeDuplicateClaimReview}>Close</button>
@@ -8431,11 +8598,29 @@ const Nhis = () => {
           <div className="modal-panel modal-panel--duplicates">
             <div className="modal-header">
               <h2>Scrub Warnings Need Review</h2>
-              <button className="modal-close" onClick={() => setShowScrubWarningOverride(false)}><X size={18} /></button>
+              <button
+                className="modal-close"
+                onClick={() => {
+                  setShowScrubWarningOverride(false)
+                  setScrubWarningSearch('')
+                }}
+              >
+                <X size={18} />
+              </button>
             </div>
             <div className="duplicate-claims-body">
               <div className="nhis-alert">
                 HealthFlow found {scrubWarningClaims.length} claim{scrubWarningClaims.length === 1 ? '' : 's'} with warnings. These are not hard errors, but a claims officer/admin must record why export should continue.
+              </div>
+              <div className="readiness-search-control">
+                <Search size={15} />
+                <input
+                  type="search"
+                  value={scrubWarningSearch}
+                  onChange={(event) => setScrubWarningSearch(event.target.value)}
+                  placeholder="Search warning claims by claim, patient, member/HIN, folder, or warning..."
+                  aria-label="Search scrub warning claims"
+                />
               </div>
               <div className="duplicate-claim-table-wrap">
                 <table className="nhis-table duplicate-claim-table readiness-claim-table">
@@ -8448,7 +8633,7 @@ const Nhis = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {scrubWarningClaims.slice(0, 25).map((issue, index) => {
+                    {filteredScrubWarningClaims.slice(0, 25).map((issue, index) => {
                       const patientName = issue.patientName || [issue.surname, issue.other_names].filter(Boolean).join(' ') || 'Unknown'
                       return (
                         <tr key={issue.id || issue.claim_number || index}>
@@ -8468,11 +8653,13 @@ const Nhis = () => {
                           <td>
                             <button
                               type="button"
-                              className="action-btn action-btn--edit"
-                              title="Open claim scrub"
+                              className="action-btn action-btn--edit readiness-action-btn"
+                              title="Review warning"
+                              aria-label={`Review warning for ${issue.claim_number || patientName}`}
                               onClick={() => { void handleScrubClaim({ ...issue, _summaryOnly: true }) }}
                             >
                               <HeartPulse size={14} />
+                              <span>Review warning</span>
                             </button>
                           </td>
                         </tr>
@@ -8481,9 +8668,14 @@ const Nhis = () => {
                   </tbody>
                 </table>
               </div>
-              {scrubWarningClaims.length > 25 && (
+              {filteredScrubWarningClaims.length === 0 && (
+                <div className="readiness-empty">
+                  No warning claims match this search.
+                </div>
+              )}
+              {filteredScrubWarningClaims.length > 25 && (
                 <div className="nhis-export-period-note">
-                  Showing first 25 warning claims. The override reason applies to all {scrubWarningClaims.length} warning claim{scrubWarningClaims.length === 1 ? '' : 's'}.
+                  Showing first 25 matching warning claims. The override reason applies to all {scrubWarningClaims.length} warning claim{scrubWarningClaims.length === 1 ? '' : 's'}.
                 </div>
               )}
               <div className="form-group">
@@ -8498,7 +8690,15 @@ const Nhis = () => {
               </div>
             </div>
             <div className="modal-footer">
-              <button className="btn btn-secondary" onClick={() => setShowScrubWarningOverride(false)}>Cancel</button>
+              <button
+                className="btn btn-secondary"
+                onClick={() => {
+                  setShowScrubWarningOverride(false)
+                  setScrubWarningSearch('')
+                }}
+              >
+                Cancel
+              </button>
               <button
                 className="btn btn-primary"
                 disabled={exporting || !normalizeText(scrubWarningOverrideReason)}

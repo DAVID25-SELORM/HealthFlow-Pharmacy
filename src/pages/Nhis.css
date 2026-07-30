@@ -835,6 +835,30 @@
   font-weight: 800;
 }
 
+.readiness-search-control {
+  align-items: center;
+  background: #fff;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  color: var(--gray-500);
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.55rem 0.75rem;
+}
+
+.readiness-search-control input {
+  border: 0;
+  color: var(--gray-800);
+  flex: 1;
+  font-size: 0.88rem;
+  min-width: 12rem;
+  outline: 0;
+}
+
+.readiness-search-control input::placeholder {
+  color: var(--gray-500);
+}
+
 .readiness-filter-tabs {
   display: flex;
   flex-wrap: wrap;
@@ -892,6 +916,67 @@
   margin-right: 0.2rem;
 }
 
+.nhis-correction-context {
+  display: grid;
+  gap: 0.7rem;
+  margin: 0.75rem 1rem 0;
+  padding: 0.85rem 1rem;
+  border: 1px solid #bfdbfe;
+  border-left: 4px solid #2563eb;
+  border-radius: 0.65rem;
+  background: #eff6ff;
+  color: #1e3a8a;
+}
+
+.nhis-correction-context__header,
+.nhis-correction-context__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.nhis-correction-context__header div {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.nhis-correction-context__header span,
+.nhis-correction-context__header small,
+.nhis-correction-context__meta {
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.nhis-correction-context__header strong {
+  color: #111827;
+  font-size: 0.98rem;
+}
+
+.nhis-correction-context__meta {
+  justify-content: flex-start;
+  color: #334155;
+}
+
+.nhis-correction-context__issues {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+}
+
+.nhis-correction-context__issues li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.35rem;
+  color: #1f2937;
+  font-size: 0.84rem;
+  line-height: 1.35;
+  list-style: none;
+}
+
 .duplicate-claim-group {
   border: 1px solid var(--gray-200);
   border-radius: var(--radius);
@@ -942,6 +1027,22 @@
 
 .readiness-claim-table td {
   vertical-align: top;
+}
+
+.nhis-page .readiness-action-btn {
+  gap: 0.35rem;
+  height: 2rem;
+  min-height: 2rem;
+  min-width: 0;
+  padding: 0 0.65rem;
+  white-space: nowrap;
+  width: auto;
+}
+
+.nhis-page .readiness-action-btn span {
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .readiness-issue-list {

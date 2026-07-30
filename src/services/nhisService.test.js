@@ -2755,6 +2755,470 @@ describe('CLAIM-it export helpers', () => {
     clickSpy.mockRestore()
   })
 
+  it('splits more than 1000 prescription attachment paths into safe signing batches', async () => {
+    const claims = Array.from({ length: 1001 }, (_, index) => {
+      const itemNumber = String(index + 1).padStart(6, '0')
+      return {
+        ...claim,
+        id: `claim-${itemNumber}`,
+        claim_number: `NHIS-${itemNumber}`,
+        member_no: `12${itemNumber}`,
+        hin: `12${itemNumber}`,
+        status: 'submitted',
+        organization_type: 'pharmacy',
+        diagnosis: '',
+        prescription_file_path: `rx/${itemNumber}.pdf`,
+        total_amount: 10,
+        nhis_claim_medicines: [
+          {
+            nhis_drug_id: 'drug-1',
+            drug_code: 'NH001',
+            description: 'Artemether Lumefantrine Tablet',
+            unit: 'tablet',
+            unit_price: 1,
+            dispensed_qty: 10,
+            dispensary_date: '2026-05-14',
+            dose: '1 tablet',
+            frequency: 'BD',
+            duration: '3 days',
+            total_amount: 10,
+            category: 'A',
+          },
+        ],
+      }
+    })
+    const claimsQuery = {
+      order: vi.fn(() => claimsQuery),
+      gte: vi.fn(() => claimsQuery),
+      lte: vi.fn().mockResolvedValue({ data: claims, error: null }),
+    }
+    const serviceLinesQuery = {
+      in: vi.fn(() => serviceLinesQuery),
+      order: vi.fn().mockResolvedValue({ data: [], error: null }),
+    }
+    supabase.from.mockImplementation((table) => {
+      if (table === 'nhis_claims') {
+        return { select: vi.fn(() => claimsQuery) }
+      }
+      if (table === 'nhis_claim_services') {
+        return { select: vi.fn(() => serviceLinesQuery) }
+      }
+      if (table === 'nhis_clinical_rules') {
+        const clinicalRulesQuery = {
+          eq: vi.fn(() => clinicalRulesQuery),
+          in: vi.fn(() => clinicalRulesQuery),
+          order: vi.fn().mockResolvedValue({ data: [], error: null }),
+        }
+        return { select: vi.fn(() => clinicalRulesQuery) }
+      }
+      return { select: vi.fn(() => ({ in: vi.fn().mockReturnThis(), eq: vi.fn().mockResolvedValue({ data: [], error: null }) })) }
+    })
+    const createSignedUrls = vi.fn(async (paths) => ({
+      data: paths.map((path) => ({ path, signedUrl: `https://example.test/${path}` })),
+      error: null,
+    }))
+    supabase.storage = {
+      from: vi.fn(() => ({ createSignedUrls })),
+    }
+    URL.createObjectURL = vi.fn(() => 'blob:nhis-export')
+    URL.revokeObjectURL = vi.fn()
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+
+    const count = await exportNhisClaimsFile({
+      mode: 'custom',
+      fromDate: '2026-05-14',
+      toDate: '2026-05-14',
+      format: 'cxf',
+      organizationType: 'pharmacy',
+      providerClassLevel: 'D',
+      pharmacyLevel: 'P1',
+      pharmacyFacilityLevel: 'P1',
+      facilityName: 'Westpoint Chemist',
+      facilityCode: '03-05-001-02-01954-11-P1-2-011225',
+      providerNumber: '03-05-01954',
+      providerTypeDescription: 'Pharmacy',
+      accreditationExpiryDate: '2026-12-31',
+      claimsOfficerName: 'Claims Officer',
+      submitterId: 'admin',
+      nhisDrugCatalog: [{ id: 'drug-1', code: 'NH001', category: 'A' }],
+    })
+
+    expect(count).toBe(1001)
+    expect(createSignedUrls).toHaveBeenCalledTimes(3)
+    expect(createSignedUrls.mock.calls.map(([paths]) => paths.length)).toEqual([500, 500, 1])
+    expect(clickSpy).toHaveBeenCalled()
+    clickSpy.mockRestore()
+  })
+
+  it('reports the failing prescription attachment signing batch without starting the download', async () => {
+    const claims = Array.from({ length: 501 }, (_, index) => {
+      const itemNumber = String(index + 1).padStart(6, '0')
+      return {
+        ...claim,
+        id: `claim-${itemNumber}`,
+        claim_number: `NHIS-${itemNumber}`,
+        member_no: `12${itemNumber}`,
+        hin: `12${itemNumber}`,
+        status: 'submitted',
+        organization_type: 'pharmacy',
+        diagnosis: '',
+        prescription_file_path: `rx/${itemNumber}.pdf`,
+        total_amount: 10,
+        nhis_claim_medicines: [
+          {
+            nhis_drug_id: 'drug-1',
+            drug_code: 'NH001',
+            description: 'Artemether Lumefantrine Tablet',
+            unit: 'tablet',
+            unit_price: 1,
+            dispensed_qty: 10,
+            dispensary_date: '2026-05-14',
+            dose: '1 tablet',
+            frequency: 'BD',
+            duration: '3 days',
+            total_amount: 10,
+            category: 'A',
+          },
+        ],
+      }
+    })
+    const claimsQuery = {
+      order: vi.fn(() => claimsQuery),
+      gte: vi.fn(() => claimsQuery),
+      lte: vi.fn().mockResolvedValue({ data: claims, error: null }),
+    }
+    const serviceLinesQuery = {
+      in: vi.fn(() => serviceLinesQuery),
+      order: vi.fn().mockResolvedValue({ data: [], error: null }),
+    }
+    supabase.from.mockImplementation((table) => {
+      if (table === 'nhis_claims') return { select: vi.fn(() => claimsQuery) }
+      if (table === 'nhis_claim_services') return { select: vi.fn(() => serviceLinesQuery) }
+      if (table === 'nhis_clinical_rules') {
+        const clinicalRulesQuery = {
+          eq: vi.fn(() => clinicalRulesQuery),
+          in: vi.fn(() => clinicalRulesQuery),
+          order: vi.fn().mockResolvedValue({ data: [], error: null }),
+        }
+        return { select: vi.fn(() => clinicalRulesQuery) }
+      }
+      return { select: vi.fn(() => ({ in: vi.fn().mockReturnThis(), eq: vi.fn().mockResolvedValue({ data: [], error: null }) })) }
+    })
+    const createSignedUrls = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: Array.from({ length: 500 }, (_, index) => {
+          const itemNumber = String(index + 1).padStart(6, '0')
+          return { path: `rx/${itemNumber}.pdf`, signedUrl: `https://example.test/rx/${itemNumber}.pdf` }
+        }),
+        error: null,
+      })
+      .mockResolvedValueOnce({ data: null, error: new Error('body/paths must NOT have more than 1000 items') })
+    supabase.storage = {
+      from: vi.fn(() => ({ createSignedUrls })),
+    }
+    URL.createObjectURL = vi.fn(() => 'blob:nhis-export')
+
+    await expect(exportNhisClaimsFile({
+      mode: 'custom',
+      fromDate: '2026-05-14',
+      toDate: '2026-05-14',
+      format: 'cxf',
+      organizationType: 'pharmacy',
+      providerClassLevel: 'D',
+      pharmacyLevel: 'P1',
+      pharmacyFacilityLevel: 'P1',
+      facilityName: 'Westpoint Chemist',
+      facilityCode: '03-05-001-02-01954-11-P1-2-011225',
+      providerNumber: '03-05-01954',
+      providerTypeDescription: 'Pharmacy',
+      accreditationExpiryDate: '2026-12-31',
+      claimsOfficerName: 'Claims Officer',
+      submitterId: 'admin',
+      nhisDrugCatalog: [{ id: 'drug-1', code: 'NH001', category: 'A' }],
+    })).rejects.toThrow('Storage signing chunk 2 of 2 failed')
+
+    expect(createSignedUrls).toHaveBeenCalledTimes(2)
+    expect(URL.createObjectURL).not.toHaveBeenCalled()
+  })
+
+  const buildAttachmentTestClaim = (overrides = {}) => ({
+    id: 'claim-1',
+    claim_number: 'NHIS-000001',
+    status: 'submitted',
+    organization_type: 'pharmacy',
+    member_no: '12345678',
+    hin: '12345678',
+    surname: 'Mensah',
+    other_names: 'Ama',
+    folder_no: 'F001',
+    gender: 'female',
+    date_of_birth: '1990-01-01',
+    patient_address: 'Accra',
+    ccc_no: 'CC-12345',
+    diagnosis: 'Malaria',
+    diagnosis_details: [{ code: 'B50', label: 'Plasmodium falciparum malaria', source: 'ICD-10' }],
+    service_date_from: '2026-05-14',
+    service_date_to: '2026-05-14',
+    referring_facility: 'Westpoint Chemist',
+    physician_name: 'Dr Test',
+    total_amount: 10,
+    nhis_claim_medicines: [
+      {
+        nhis_drug_id: 'drug-1',
+        drug_code: 'NH001',
+        description: 'Artemether Lumefantrine Tablet',
+        unit: 'tablet',
+        unit_price: 1,
+        dispensed_qty: 10,
+        dispensary_date: '2026-05-14',
+        dose: '1 tablet',
+        frequency: 'BD',
+        duration: '3 days',
+        total_amount: 10,
+        category: 'A',
+      },
+    ],
+    ...overrides,
+  })
+
+  it('never silently proceeds when the storage response omits a requested attachment path', async () => {
+    const claimWithUrl = buildAttachmentTestClaim({
+      id: 'claim-resolved',
+      claim_number: 'NHIS-000010',
+      prescription_file_path: 'rx/resolved.pdf',
+      prescription_document_type: 'prescription',
+      prescription_verified: true,
+      prescription_verified_by: '11111111-1111-4111-8111-111111111111',
+      prescription_verified_at: '2026-05-14T10:00:00.000Z',
+    })
+    const claimMissingFromResponse = buildAttachmentTestClaim({
+      id: 'claim-unresolved',
+      claim_number: 'NHIS-000011',
+      member_no: '87654321',
+      hin: '87654321',
+      total_amount: 11,
+      prescription_file_path: 'rx/unresolved.pdf',
+    })
+    const claims = [claimWithUrl, claimMissingFromResponse]
+    const claimsQuery = {
+      order: vi.fn(() => claimsQuery),
+      gte: vi.fn(() => claimsQuery),
+      lte: vi.fn().mockResolvedValue({ data: claims, error: null }),
+    }
+    const serviceLinesQuery = {
+      in: vi.fn(() => serviceLinesQuery),
+      order: vi.fn().mockResolvedValue({ data: [], error: null }),
+    }
+    supabase.from.mockImplementation((table) => {
+      if (table === 'nhis_claims') return { select: vi.fn(() => claimsQuery) }
+      if (table === 'nhis_claim_services') return { select: vi.fn(() => serviceLinesQuery) }
+      return { select: vi.fn(() => ({ in: vi.fn().mockReturnThis(), eq: vi.fn().mockResolvedValue({ data: [], error: null }) })) }
+    })
+    // No error from the storage API — it simply returns fewer signed URLs
+    // than paths requested, which a naive implementation would silently drop.
+    const createSignedUrls = vi.fn().mockResolvedValue({
+      data: [{ path: 'rx/resolved.pdf', signedUrl: 'https://example.test/rx/resolved.pdf' }],
+      error: null,
+    })
+    supabase.storage = {
+      from: vi.fn(() => ({ createSignedUrls })),
+    }
+    URL.createObjectURL = vi.fn(() => 'blob:nhis-export')
+
+    await expect(exportNhisClaimsFile({
+      mode: 'custom',
+      fromDate: '2026-05-14',
+      toDate: '2026-05-14',
+      format: 'cxf',
+      organizationType: 'pharmacy',
+      providerClassLevel: 'D',
+      pharmacyLevel: 'P1',
+      pharmacyFacilityLevel: 'P1',
+      facilityName: 'Westpoint Chemist',
+      facilityCode: '03-05-001-02-01954-11-P1-2-011225',
+      providerNumber: '03-05-01954',
+      providerTypeDescription: 'Pharmacy',
+      accreditationExpiryDate: '2026-12-31',
+      claimsOfficerName: 'Claims Officer',
+      submitterId: 'admin',
+      nhisDrugCatalog: [{ id: 'drug-1', code: 'NH001', category: 'A' }],
+    })).rejects.toThrow('NHIS-000011')
+
+    expect(URL.createObjectURL).not.toHaveBeenCalled()
+  })
+
+  it('removes invalid prescription attachment paths before requesting signed URLs, and still flags the affected claim', async () => {
+    const validClaim = buildAttachmentTestClaim({
+      id: 'claim-valid',
+      claim_number: 'NHIS-000020',
+      prescription_file_path: 'rx/good.pdf',
+      prescription_document_type: 'prescription',
+      prescription_verified: true,
+      prescription_verified_by: '11111111-1111-4111-8111-111111111111',
+      prescription_verified_at: '2026-05-14T10:00:00.000Z',
+    })
+    const corruptedClaim = buildAttachmentTestClaim({
+      id: 'claim-corrupted',
+      claim_number: 'NHIS-000021',
+      member_no: '87654322',
+      hin: '87654322',
+      total_amount: 11,
+      // Simulates corrupted/placeholder data rather than a real storage path.
+      prescription_file_path: 'null',
+      prescription_document_type: 'prescription',
+      prescription_verified: true,
+      prescription_verified_by: '11111111-1111-4111-8111-111111111111',
+      prescription_verified_at: '2026-05-14T10:00:00.000Z',
+    })
+    const claims = [validClaim, corruptedClaim]
+    const claimsQuery = {
+      order: vi.fn(() => claimsQuery),
+      gte: vi.fn(() => claimsQuery),
+      lte: vi.fn().mockResolvedValue({ data: claims, error: null }),
+    }
+    const serviceLinesQuery = {
+      in: vi.fn(() => serviceLinesQuery),
+      order: vi.fn().mockResolvedValue({ data: [], error: null }),
+    }
+    supabase.from.mockImplementation((table) => {
+      if (table === 'nhis_claims') return { select: vi.fn(() => claimsQuery) }
+      if (table === 'nhis_claim_services') return { select: vi.fn(() => serviceLinesQuery) }
+      return { select: vi.fn(() => ({ in: vi.fn().mockReturnThis(), eq: vi.fn().mockResolvedValue({ data: [], error: null }) })) }
+    })
+    const createSignedUrls = vi.fn().mockResolvedValue({
+      data: [{ path: 'rx/good.pdf', signedUrl: 'https://example.test/rx/good.pdf' }],
+      error: null,
+    })
+    supabase.storage = {
+      from: vi.fn(() => ({ createSignedUrls })),
+    }
+    URL.createObjectURL = vi.fn(() => 'blob:nhis-export')
+
+    await expect(exportNhisClaimsFile({
+      mode: 'custom',
+      fromDate: '2026-05-14',
+      toDate: '2026-05-14',
+      format: 'cxf',
+      organizationType: 'pharmacy',
+      providerClassLevel: 'D',
+      pharmacyLevel: 'P1',
+      pharmacyFacilityLevel: 'P1',
+      facilityName: 'Westpoint Chemist',
+      facilityCode: '03-05-001-02-01954-11-P1-2-011225',
+      providerNumber: '03-05-01954',
+      providerTypeDescription: 'Pharmacy',
+      accreditationExpiryDate: '2026-12-31',
+      claimsOfficerName: 'Claims Officer',
+      submitterId: 'admin',
+      nhisDrugCatalog: [{ id: 'drug-1', code: 'NH001', category: 'A' }],
+    })).rejects.toThrow('NHIS-000021')
+
+    // The invalid path never reached the storage API — only the valid one did.
+    expect(createSignedUrls).toHaveBeenCalledWith(['rx/good.pdf'], 60 * 60)
+    expect(URL.createObjectURL).not.toHaveBeenCalled()
+  })
+
+  it('identifies every claim missing a prescription attachment in a mixed batch, not just the first', async () => {
+    const claimWithAttachment = buildAttachmentTestClaim({
+      id: 'claim-has-attachment',
+      claim_number: 'NHIS-000030',
+      status: 'served',
+      prescription_file_path: 'org/2026-05/claim/rx.pdf',
+      prescription_file_url: 'https://example.test/org/2026-05/claim/rx.pdf',
+      prescription_document_type: 'prescription',
+      prescription_verified: true,
+      prescription_verified_by: '11111111-1111-4111-8111-111111111111',
+      prescription_verified_at: '2026-05-14T10:00:00.000Z',
+    })
+    const firstMissingClaim = buildAttachmentTestClaim({
+      id: 'claim-missing-1',
+      claim_number: 'NHIS-000031',
+      member_no: '87654323',
+      hin: '87654323',
+      status: 'served',
+      total_amount: 11,
+    })
+    const secondMissingClaim = buildAttachmentTestClaim({
+      id: 'claim-missing-2',
+      claim_number: 'NHIS-000032',
+      member_no: '87654324',
+      hin: '87654324',
+      status: 'served',
+      total_amount: 12,
+    })
+    const claims = [claimWithAttachment, firstMissingClaim, secondMissingClaim]
+    const claimsQuery = {
+      order: vi.fn(() => claimsQuery),
+      gte: vi.fn(() => claimsQuery),
+      lte: vi.fn().mockResolvedValue({ data: claims, error: null }),
+    }
+    const serviceLinesQuery = {
+      in: vi.fn(() => serviceLinesQuery),
+      order: vi.fn().mockResolvedValue({ data: [], error: null }),
+    }
+    supabase.from.mockImplementation((table) => {
+      if (table === 'nhis_claims') return { select: vi.fn(() => claimsQuery) }
+      if (table === 'nhis_claim_services') return { select: vi.fn(() => serviceLinesQuery) }
+      return { select: vi.fn(() => ({ in: vi.fn().mockReturnThis(), eq: vi.fn().mockResolvedValue({ data: [], error: null }) })) }
+    })
+
+    await expect(exportNhisClaimsFile({
+      mode: 'custom',
+      fromDate: '2026-05-14',
+      toDate: '2026-05-14',
+      format: 'cxf',
+      organizationType: 'pharmacy',
+      providerClassLevel: 'D',
+      pharmacyLevel: 'P1',
+      pharmacyFacilityLevel: 'P1',
+      facilityName: 'Westpoint Chemist',
+      facilityCode: '03-05-001-02-01954-11-P1-2-011225',
+      providerNumber: '03-05-01954',
+      providerTypeDescription: 'Pharmacy',
+      accreditationExpiryDate: '2026-12-31',
+      claimsOfficerName: 'Claims Officer',
+      submitterId: 'admin',
+      nhisDrugCatalog: [{ id: 'drug-1', code: 'NH001', category: 'A' }],
+    })).rejects.toMatchObject({
+      code: 'NHIS_READINESS_CLAIMS',
+      readinessIssues: expect.arrayContaining([
+        expect.objectContaining({ claim_number: 'NHIS-000031' }),
+        expect.objectContaining({ claim_number: 'NHIS-000032' }),
+      ]),
+    })
+
+    let caughtError
+    try {
+      await exportNhisClaimsFile({
+        mode: 'custom',
+        fromDate: '2026-05-14',
+        toDate: '2026-05-14',
+        format: 'cxf',
+        organizationType: 'pharmacy',
+        providerClassLevel: 'D',
+        pharmacyLevel: 'P1',
+        pharmacyFacilityLevel: 'P1',
+        facilityName: 'Westpoint Chemist',
+        facilityCode: '03-05-001-02-01954-11-P1-2-011225',
+        providerNumber: '03-05-01954',
+        providerTypeDescription: 'Pharmacy',
+        accreditationExpiryDate: '2026-12-31',
+        claimsOfficerName: 'Claims Officer',
+        submitterId: 'admin',
+        nhisDrugCatalog: [{ id: 'drug-1', code: 'NH001', category: 'A' }],
+      })
+    } catch (error) {
+      caughtError = error
+    }
+    // Exactly the two offending claims are flagged — the claim that already
+    // has an attachment must not appear, and neither claim is dropped.
+    expect(caughtError.readinessIssues.map((issue) => issue.claim_number).sort()).toEqual([
+      'NHIS-000031',
+      'NHIS-000032',
+    ])
+  })
+
   it('keeps CXF on the manual export route even when direct submit is requested', async () => {
     const servedClaim = {
       ...claim,
@@ -4104,6 +4568,95 @@ describe('duplicate NHIS claim prevention', () => {
     })
   })
 
+  it('blocks pharmacy CXF export when only legacy Base64 exists without a saved prescription file', async () => {
+    const sourceClaim = {
+      id: 'claim-1',
+      claim_number: 'NHIS-000001',
+      status: 'served',
+      organization_type: 'pharmacy',
+      member_no: '12345678',
+      surname: 'Mensah',
+      other_names: 'Ama',
+      folder_no: 'F001',
+      date_of_birth: '1990-01-01',
+      patient_address: 'Accra',
+      ccc_no: 'CC-12345',
+      diagnosis: 'Malaria',
+      diagnosis_details: [{ code: 'B50', label: 'Plasmodium falciparum malaria', source: 'ICD-10' }],
+      service_date_from: '2026-05-14',
+      service_date_to: '2026-05-14',
+      referring_facility: 'Westpoint Chemist',
+      physician_name: 'Dr Test',
+      prescription_document_type: 'prescription',
+      prescription_verified: true,
+      claimit_attachment_base64: Buffer.from('%PDF-1.4\n%%EOF', 'utf8').toString('base64'),
+      total_amount: 10,
+      nhis_claim_medicines: [{
+        nhisDrugId: 'drug-1',
+        nhis_drug_id: 'drug-1',
+        drugCode: 'NH001',
+        drug_code: 'NH001',
+        description: 'Artemether Lumefantrine Tablet',
+        unit: 'tablet',
+        unit_price: 1,
+        dispensed_qty: 10,
+        dose: '1 tablet',
+        frequency: 'BD',
+        duration: '3 days',
+        total_amount: 10,
+        category: 'A',
+      }],
+    }
+    const claimsQuery = {
+      order: vi.fn(() => claimsQuery),
+      gte: vi.fn(() => claimsQuery),
+      lte: vi.fn().mockResolvedValue({ data: [sourceClaim], error: null }),
+    }
+    const serviceLinesQuery = {
+      in: vi.fn(() => serviceLinesQuery),
+      order: vi.fn().mockResolvedValue({ data: [], error: null }),
+    }
+    supabase.from.mockImplementation((table) => {
+      if (table === 'nhis_claims') return { select: vi.fn(() => claimsQuery) }
+      if (table === 'nhis_claim_services') return { select: vi.fn(() => serviceLinesQuery) }
+      return { select: vi.fn(() => ({ in: vi.fn().mockReturnThis(), eq: vi.fn().mockResolvedValue({ data: [], error: null }) })) }
+    })
+    supabase.storage = {
+      from: vi.fn(() => ({ createSignedUrls: vi.fn() })),
+    }
+    URL.createObjectURL = vi.fn(() => 'blob:nhis-export')
+
+    await expect(exportNhisClaimsFile({
+      mode: 'custom',
+      fromDate: '2026-05-14',
+      toDate: '2026-05-14',
+      format: 'cxf',
+      organizationType: 'pharmacy',
+      providerClassLevel: 'D',
+      providerLevelCode: 'PVT-PHC-CE',
+      facilityName: 'Westpoint Chemist',
+      providerNumber: '03-05-01954',
+      facilityCode: '03-05-001',
+      credentialCode: '03-05-001-02-01954-11-P1-2-011225',
+      accreditationExpiryDate: '2026-12-31',
+      claimsOfficerName: 'Claims Officer',
+      nhisDrugCatalog: [{ code: 'NH001', category: 'A' }],
+    })).rejects.toMatchObject({
+      code: 'NHIS_READINESS_CLAIMS',
+      readinessIssues: expect.arrayContaining([
+        expect.objectContaining({
+          claim_number: 'NHIS-000001',
+          issues: expect.arrayContaining([
+            'Attach the scanned prescription PDF or JPEG before exporting this NHIS claim.',
+          ]),
+        }),
+      ]),
+    })
+
+    expect(supabase.storage.from).not.toHaveBeenCalled()
+    expect(URL.createObjectURL).not.toHaveBeenCalled()
+  })
+
   it('blocks CXF export when a Ghana Card claim is missing a numeric HIN/member mapping', async () => {
     const sourceClaim = {
       id: 'claim-1',
@@ -5186,6 +5739,45 @@ describe('NHIS local and cloud claim reads', () => {
 
     expect(listBranchRecords).toHaveBeenCalledWith('nhis/claims', { status: 'served' })
     expect(supabase.from).not.toHaveBeenCalled()
+  })
+
+  it('matches full patient names in the offline paginated claim list', async () => {
+    const localRows = [
+      {
+        id: 'full-name-match',
+        status: 'served',
+        surname: 'Gyimah',
+        other_names: 'Mercy',
+        member_no: '12345678',
+        created_at: '2026-06-12T08:00:00Z',
+      },
+      {
+        id: 'other-patient',
+        status: 'served',
+        surname: 'Mensah',
+        other_names: 'Ama',
+        member_no: '87654321',
+        created_at: '2026-06-11T08:00:00Z',
+      },
+    ]
+    shouldUseBranchServer.mockReturnValue(true)
+    getConnectivityState.mockReturnValueOnce({
+      mode: 'OFFLINE_LOCAL',
+      internetAvailable: false,
+      branchServerAvailable: true,
+      checkedAt: Date.now(),
+    })
+    listBranchRecords.mockResolvedValueOnce(localRows)
+
+    await expect(getNhisClaimsPage({
+      includeDetails: false,
+      searchTerm: 'Gyimah Mercy',
+      page: 1,
+      pageSize: 100,
+    })).resolves.toMatchObject({
+      claims: [expect.objectContaining({ id: 'full-name-match' })],
+      total: 1,
+    })
   })
 
   it('falls back to local claims when the cloud read fails', async () => {
