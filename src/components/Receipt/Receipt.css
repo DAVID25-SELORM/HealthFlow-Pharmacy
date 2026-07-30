@@ -380,37 +380,224 @@
 }
 
 @media print {
-  body > * {
-    visibility: hidden !important;
+  html,
+  body {
+    width: 80mm;
+    min-width: 80mm;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+  }
+
+  @page {
+    size: 80mm auto;
+    margin: 3mm;
+  }
+
+  .sales-page > :not(.receipt-container) {
+    display: none !important;
+  }
+
+  .receipt-modal-overlay,
+  .receipt-preview,
+  .receipt-modal {
+    display: none !important;
   }
 
   .receipt-container.receipt-print-mode {
     display: block !important;
-    visibility: visible !important;
-    position: fixed;
-    inset: 0;
-    width: 100%;
-    margin: 0;
-    background: white;
-    z-index: 9999;
+    position: static !important;
+    width: 74mm !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    background: #fff !important;
+    color: #000 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 
+  .receipt-container.receipt-print-mode .receipt-content {
+    width: 74mm !important;
+    max-width: 74mm !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    color: #000 !important;
+    font-family: Arial, Helvetica, sans-serif !important;
+    font-size: 10.5pt !important;
+    line-height: 1.28 !important;
+  }
+
+  .receipt-container.receipt-print-mode,
   .receipt-container.receipt-print-mode * {
-    visibility: visible;
+    text-shadow: none !important;
+    filter: none !important;
   }
 
-  .receipt-content {
-    width: 190mm;
-    max-width: none;
-    min-height: 260mm;
-    margin: 0 auto;
-    border-radius: 0 0 12px 12px;
-    box-shadow: none;
+  .receipt-container.receipt-print-mode .receipt-brand,
+  .receipt-container.receipt-print-mode .receipt-pharmacy-card,
+  .receipt-container.receipt-print-mode .receipt-sale-strip,
+  .receipt-container.receipt-print-mode .receipt-items,
+  .receipt-container.receipt-print-mode .receipt-summary,
+  .receipt-container.receipt-print-mode .receipt-payment,
+  .receipt-container.receipt-print-mode .receipt-footer,
+  .receipt-container.receipt-print-mode .receipt-dashed {
+    margin-left: 0 !important;
+    margin-right: 0 !important;
   }
 
-  @page {
-    size: A4;
-    margin: 10mm;
+  .receipt-container.receipt-print-mode .receipt-brand,
+  .receipt-container.receipt-print-mode .receipt-sale-strip,
+  .receipt-container.receipt-print-mode .payment-card,
+  .receipt-container.receipt-print-mode .receipt-footer {
+    display: block !important;
+  }
+
+  .receipt-container.receipt-print-mode .receipt-brand {
+    padding: 0 0 8px !important;
+    border-bottom: 1px solid #000 !important;
+    text-align: center !important;
+  }
+
+  .receipt-container.receipt-print-mode .brand-left {
+    display: block !important;
+  }
+
+  .receipt-container.receipt-print-mode .brand-mark,
+  .receipt-container.receipt-print-mode .brand-thanks,
+  .receipt-container.receipt-print-mode .receipt-pharmacy-logo,
+  .receipt-container.receipt-print-mode .receipt-qr,
+  .receipt-container.receipt-print-mode .payment-icon,
+  .receipt-container.receipt-print-mode .receipt-bottom-bar,
+  .receipt-container.receipt-print-mode .receipt-developer-credit {
+    display: none !important;
+  }
+
+  .receipt-container.receipt-print-mode .receipt-brand h2 {
+    color: #000 !important;
+    font-size: 15pt !important;
+    line-height: 1.1 !important;
+  }
+
+  .receipt-container.receipt-print-mode .receipt-brand p,
+  .receipt-container.receipt-print-mode .receipt-slogan,
+  .receipt-container.receipt-print-mode .pharmacy-contact,
+  .receipt-container.receipt-print-mode .sale-meta span,
+  .receipt-container.receipt-print-mode .receipt-total-lines span,
+  .receipt-container.receipt-print-mode .payment-lines span,
+  .receipt-container.receipt-print-mode .footer-note,
+  .receipt-container.receipt-print-mode .custom-footer,
+  .receipt-container.receipt-print-mode .print-timestamp {
+    color: #000 !important;
+    font-size: 9pt !important;
+  }
+
+  .receipt-container.receipt-print-mode .receipt-pharmacy-card {
+    padding: 8px 0 !important;
+  }
+
+  .receipt-container.receipt-print-mode .receipt-pharmacy-card h3 {
+    color: #000 !important;
+    margin-bottom: 4px !important;
+    font-size: 12pt !important;
+  }
+
+  .receipt-container.receipt-print-mode .pharmacy-contact {
+    gap: 3px !important;
+  }
+
+  .receipt-container.receipt-print-mode .pharmacy-contact span {
+    display: block !important;
+  }
+
+  .receipt-container.receipt-print-mode .pharmacy-contact svg,
+  .receipt-container.receipt-print-mode .section-title svg,
+  .receipt-container.receipt-print-mode .sale-type {
+    display: none !important;
+  }
+
+  .receipt-container.receipt-print-mode .receipt-dashed {
+    border-top: 1px dashed #000 !important;
+  }
+
+  .receipt-container.receipt-print-mode .receipt-sale-strip {
+    padding: 8px 0 !important;
+    border-bottom: 1px solid #000 !important;
+  }
+
+  .receipt-container.receipt-print-mode .sale-meta,
+  .receipt-container.receipt-print-mode .receipt-total-lines,
+  .receipt-container.receipt-print-mode .payment-lines {
+    gap: 4px !important;
+  }
+
+  .receipt-container.receipt-print-mode .sale-meta div,
+  .receipt-container.receipt-print-mode .receipt-total-lines div,
+  .receipt-container.receipt-print-mode .payment-lines div {
+    display: flex !important;
+    justify-content: space-between !important;
+    gap: 8px !important;
+  }
+
+  .receipt-container.receipt-print-mode .section-title {
+    margin: 8px 0 6px !important;
+    color: #000 !important;
+    font-size: 10pt !important;
+  }
+
+  .receipt-container.receipt-print-mode .receipt-items-table {
+    min-width: 0 !important;
+    font-size: 8.5pt !important;
+  }
+
+  .receipt-container.receipt-print-mode .receipt-items-table th,
+  .receipt-container.receipt-print-mode .receipt-items-table td {
+    padding: 4px 2px !important;
+    color: #000 !important;
+    background: #fff !important;
+    border-bottom: 1px solid #bbb !important;
+  }
+
+  .receipt-container.receipt-print-mode .receipt-items-table td span {
+    color: #000 !important;
+    font-size: 8pt !important;
+  }
+
+  .receipt-container.receipt-print-mode .receipt-summary {
+    padding: 8px 0 0 !important;
+  }
+
+  .receipt-container.receipt-print-mode .receipt-total-lines {
+    max-width: none !important;
+  }
+
+  .receipt-container.receipt-print-mode .receipt-grand-total {
+    margin-top: 6px !important;
+    padding: 6px 0 !important;
+    color: #000 !important;
+    background: #fff !important;
+    border-top: 1px solid #000 !important;
+    border-radius: 0 !important;
+  }
+
+  .receipt-container.receipt-print-mode .receipt-grand-total strong {
+    color: #000 !important;
+    font-size: 12pt !important;
+  }
+
+  .receipt-container.receipt-print-mode .payment-card {
+    padding: 8px 0 !important;
+    border: 0 !important;
+    background: #fff !important;
+  }
+
+  .receipt-container.receipt-print-mode .receipt-footer {
+    padding: 8px 0 0 !important;
+    text-align: center !important;
   }
 }
 
