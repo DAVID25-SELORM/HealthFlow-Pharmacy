@@ -142,6 +142,7 @@ const NHIS_CLAIM_ISSUE_BADGE_SCAN_LIMIT = 3000
 const READINESS_FILTERS = [
   { id: 'all', label: 'All issues' },
   { id: 'attachment', label: 'Attachment problems' },
+  { id: 'identifier', label: 'Member/HIN' },
   { id: 'verification', label: 'Unverified prescription' },
   { id: 'prescriber', label: 'Prescriber' },
   { id: 'diagnosis', label: 'Diagnosis' },
@@ -749,6 +750,9 @@ const getReadinessIssueCategories = (issue = {}) => {
   if (/\battach|attachment|prescription file|scanned|pdf|jpeg|png|document type\b/.test(text)) {
     categories.add('attachment')
   }
+  if (/\bhin|ghana card|member\/card|member identifier|member no|membership number|card serial\b/.test(text)) {
+    categories.add('identifier')
+  }
   if (/\bverify|verified|unverified\b/.test(text)) {
     categories.add('verification')
   }
@@ -790,6 +794,7 @@ const getReadinessIssueLabel = (text = '') => {
   if (/\battach|attachment|prescription file|scanned|pdf|jpeg|png|document type\b/.test(normalized)) return 'Attachment'
   if (/\bverify|verified|unverified\b/.test(normalized)) return 'Verification'
   if (/\bprescriber|physician|referral|authorization|authorisation\b/.test(normalized)) return 'Prescriber'
+  if (/\bhin|member\/card|member identifier|membership number|card serial\b/.test(normalized)) return 'Member/HIN'
   if (/\bccc|cc code|nhis member|ghana card|folder number|patient surname|date of dispensing|service is required/.test(normalized)) return 'Required field'
   if (/\bmedicine|drug|quantity|dispensed|served|dosage|dose|frequency|duration|level\b/.test(normalized)) return 'Medicine'
   if (/\bage|gender|pregnancy|prostate|child|pediatric\b/.test(normalized)) return 'Age/gender'

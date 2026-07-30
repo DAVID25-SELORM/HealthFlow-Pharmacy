@@ -2589,12 +2589,14 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
       .filter(([code]) => code)
   )
   // ✅ NHIS PHARMACY LEVEL PATCH END
-  const memberNumberIssue = validateMemberNumberFormat(
-    getClaimField(claimData, 'memberNo', 'member_no'),
-    options
-  )
+  const memberNumber = getClaimField(claimData, 'memberNo', 'member_no')
+  const hin = getClaimField(claimData, 'hin')
+  const memberNumberIssue = validateMemberNumberFormat(memberNumber, options)
 
   if (memberNumberIssue) blockers.push(memberNumberIssue)
+  if (options.finalSubmission && isGhanaCardNumber(memberNumber) && !/^\d+$/.test(String(hin || '').trim())) {
+    blockers.push('Ghana Card-linked claims must have the numeric NHIS/HIN membership number in the HIN field before CXF export.')
+  }
   if (shouldCheckHospitalProviderClass && !hospitalProviderClassLevel) {
     blockers.push('Set the NHIA hospital provider class/level in Settings before saving/submitting hospital claims.')
   }

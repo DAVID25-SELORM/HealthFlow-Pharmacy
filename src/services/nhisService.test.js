@@ -1302,6 +1302,49 @@ describe('assessNhisClaimReadiness', () => {
     expect(readiness.blockers).toContain('NHIS member number must contain exactly 8 digits.')
   })
 
+  it('does not block a saved Ghana Card claim for missing HIN before final export', () => {
+    const readiness = assessNhisClaimReadiness(
+      { ...baseClaim, memberNo: 'GHA-123456789-0', hin: '' },
+      [baseMedicine]
+    )
+
+    expect(readiness.blockers).not.toContain(
+      'Ghana Card-linked claims must have the numeric NHIS/HIN membership number in the HIN field before CXF export.'
+    )
+  })
+
+  it('requires numeric HIN for Ghana Card-linked claims before final CXF export', () => {
+    const readiness = assessNhisClaimReadiness(
+      { ...baseClaim, memberNo: 'GHA-123456789-0', hin: '' },
+      [baseMedicine],
+      { finalSubmission: true }
+    )
+
+    expect(readiness.blockers).toContain(
+      'Ghana Card-linked claims must have the numeric NHIS/HIN membership number in the HIN field before CXF export.'
+    )
+  })
+
+  it('accepts existing numeric HIN lengths for Ghana Card-linked final export readiness', () => {
+    const eightDigitHin = assessNhisClaimReadiness(
+      { ...baseClaim, memberNo: 'GHA-123456789-0', hin: '46265798' },
+      [baseMedicine],
+      { finalSubmission: true }
+    )
+    const tenDigitHin = assessNhisClaimReadiness(
+      { ...baseClaim, memberNo: 'GHA-123456789-0', hin: '0029996622' },
+      [baseMedicine],
+      { finalSubmission: true }
+    )
+
+    expect(eightDigitHin.blockers).not.toContain(
+      'Ghana Card-linked claims must have the numeric NHIS/HIN membership number in the HIN field before CXF export.'
+    )
+    expect(tenDigitHin.blockers).not.toContain(
+      'Ghana Card-linked claims must have the numeric NHIS/HIN membership number in the HIN field before CXF export.'
+    )
+  })
+
   it('requires CCC/CC code before serving a claim', () => {
     const readiness = assessNhisClaimReadiness(
       { ...baseClaim, cccNo: '' },
