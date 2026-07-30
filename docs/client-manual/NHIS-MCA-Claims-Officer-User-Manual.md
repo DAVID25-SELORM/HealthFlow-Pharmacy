@@ -42,8 +42,8 @@ If Sarah is in dispensary mode, dispensary restrictions apply. If Sarah switches
 
 Where to assign multiple staff roles:
 
-- Super Admin: go to Tenant Admin, expand the facility, click Edit User, then tick extra roles under Assigned roles.
 - Facility Admin: go to Settings > Staff/User Management, edit the staff account, then update the staff roles and privileges.
+- If a role is missing and your facility cannot update it, contact HealthFlow support.
 
 ### Additional Privileges
 
