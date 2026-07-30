@@ -1302,6 +1302,26 @@ describe('assessNhisClaimReadiness', () => {
     expect(readiness.blockers).toContain('NHIS member number must contain exactly 8 digits.')
   })
 
+  it('warns about a missing prescriber before final export', () => {
+    const readiness = assessNhisClaimReadiness(
+      { ...baseClaim, physicianName: '' },
+      [baseMedicine]
+    )
+
+    expect(readiness.warnings).toContain('Prescriber name or ID is missing from the prescription.')
+    expect(readiness.blockers).not.toContain('Prescriber name or ID is missing from the prescription.')
+  })
+
+  it('requires prescriber before final export', () => {
+    const readiness = assessNhisClaimReadiness(
+      { ...baseClaim, physicianName: '' },
+      [baseMedicine],
+      { finalSubmission: true }
+    )
+
+    expect(readiness.blockers).toContain('Prescriber name or ID is missing from the prescription.')
+  })
+
   it('does not block a saved Ghana Card claim for missing HIN before final export', () => {
     const readiness = assessNhisClaimReadiness(
       { ...baseClaim, memberNo: 'GHA-123456789-0', hin: '' },

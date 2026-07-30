@@ -2635,7 +2635,12 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
   if (!getClaimField(claimData, 'serviceDate', 'service_date_from')) blockers.push('Date of dispensing/service is required.')
   if (!getClaimField(claimData, 'referringFacility', 'referring_facility')) blockers.push('Prescribing facility is required.')
   if (!getClaimField(claimData, 'physicianName', 'physician_name')) {
-    warnings.push('Prescriber name or ID is missing from the prescription.')
+    const prescriberIssue = 'Prescriber name or ID is missing from the prescription.'
+    if (options.finalSubmission) {
+      blockers.push(prescriberIssue)
+    } else {
+      warnings.push(prescriberIssue)
+    }
   }
   if (
     requirePrescriptionAttachment &&
