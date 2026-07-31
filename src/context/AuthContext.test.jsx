@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => {
     signOut: vi.fn(),
     resetPasswordForEmail: vi.fn(),
     updateUser: vi.fn(),
+    exchangeCodeForSession: vi.fn(),
   }
 
   const supabase = {
@@ -141,6 +142,10 @@ describe('AuthProvider', () => {
         name: 'AuthApiError',
         message: 'refresh token is invalid',
       },
+    })
+    mocks.auth.exchangeCodeForSession.mockResolvedValue({
+      data: { session: null },
+      error: null,
     })
   })
 
@@ -862,5 +867,42 @@ describe('AuthProvider', () => {
     expect(mocks.queryBuilder.maybeSingle).not.toHaveBeenCalled()
     expect(mocks.auth.signOut).not.toHaveBeenCalled()
     expect(mocks.clearSupabaseStoredSession).not.toHaveBeenCalled()
+  })
+
+  it('exchanges a PKCE password recovery code before showing the reset session', async () => {
+    window.history.replaceState({}, '', '/login?mode=recovery&code=recovery-code-123')
+    const recoveryUser = {
+      id: 'recovery-user',
+      email: 'recovery@example.com',
+      app_metadata: {},
+      user_metadata: {},
+    }
+    const recoverySession = {
+      access_token: 'recovery-token',
+      user: recoveryUser,
+    }
+
+    mocks.auth.exchangeCodeForSession.mockResolvedValue({
+      data: { session: recoverySession },
+      error: null,
+    })
+    mocks.auth.getSession.mockResolvedValue({
+      data: { session: null },
+      error: null,
+    })
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId('auth-state')).toHaveTextContent('signed-in:recovery@example.com')
+    })
+    expect(mocks.auth.exchangeCodeForSession).toHaveBeenCalledWith('recovery-code-123')
+    expect(mocks.auth.getUser).not.toHaveBeenCalled()
+    expect(mocks.queryBuilder.maybeSingle).not.toHaveBeenCalled()
+    expect(window.location.search).toBe('?mode=recovery')
   })
 })

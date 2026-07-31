@@ -291,11 +291,47 @@ const hasPasswordRecoveryHint = () => {
 
   const params = new URLSearchParams(window.location.search)
   const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''))
-  return params.get('mode') === 'recovery' || hash.get('type') === 'recovery'
+  return (
+    params.get('mode') === 'recovery' ||
+    hash.get('type') === 'recovery' ||
+    (window.location.pathname === '/login' && Boolean(params.get('code')))
+  )
 }
 
 const isPasswordRecoveryEvent = (event) =>
   event === 'PASSWORD_RECOVERY' || (hasPasswordRecoveryHint() && event === 'BOOTSTRAP')
+
+const getPasswordRecoveryCode = () => {
+  if (typeof window === 'undefined') {
+    return ''
+  }
+
+  const params = new URLSearchParams(window.location.search)
+  if (params.get('mode') !== 'recovery') {
+    return ''
+  }
+
+  return params.get('code') || ''
+}
+
+const clearPasswordRecoveryCodeFromUrl = () => {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  const params = new URLSearchParams(window.location.search)
+  if (!params.has('code')) {
+    return
+  }
+
+  params.delete('code')
+  const nextQuery = params.toString()
+  window.history.replaceState(
+    {},
+    '',
+    `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ''}${window.location.hash || ''}`
+  )
+}
 
 const isExpiredSession = (activeSession, windowSeconds = 30) => {
   const expiresAt = Number(activeSession?.expires_at || 0)
@@ -742,6 +778,28 @@ export const AuthProvider = ({ children }) => {
           }
         }
         return
+      }
+
+      const recoveryCode = getPasswordRecoveryCode()
+      if (recoveryCode && typeof supabase.auth.exchangeCodeForSession === 'function') {
+        try {
+          const { data, error } = await runAuthOperationWithRetry(
+            'auth.exchangePasswordRecoveryCode',
+            () => supabase.auth.exchangeCodeForSession(recoveryCode),
+            { attempts: 2 }
+          )
+
+          if (error) {
+            throw error
+          }
+
+          clearPasswordRecoveryCodeFromUrl()
+          await resolveSessionState(data?.session || null, { event: 'BOOTSTRAP' })
+          return
+        } catch (recoveryError) {
+          console.warn('Unable to verify HealthFlow password reset link:', recoveryError)
+          clearPasswordRecoveryCodeFromUrl()
+        }
       }
 
       const activeSession = await getStoredSession()
