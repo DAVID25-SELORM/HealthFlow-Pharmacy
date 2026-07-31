@@ -4905,7 +4905,7 @@ const isMissingMedicationOverlapBatchRpcError = (error = {}) => {
   )
 }
 
-const formatNhisActiveMedicationExportWarning = (alert = {}) => {
+const formatNhisActiveMedicationExportBlocker = (alert = {}) => {
   const medicine = normalizeText(alert.medicine_description || alert.medicine_code) || 'This medicine'
   const matchText = {
     same_ingredient: 'similar active ingredient',
@@ -4922,7 +4922,7 @@ const formatNhisActiveMedicationExportWarning = (alert = {}) => {
   const riskText = riskScore > 0 ? ` Risk score ${riskScore}/100.` : ''
   const actionText = normalizeText(alert.recommended_action)
   return [
-    `Active medication review: ${medicine} has ${matchText}; ${remainingText}.`,
+    `Active medication blocked: ${medicine} has ${matchText}; ${remainingText}. NHIA may reject or reduce payment for an early refill.`,
     riskText.trim(),
     actionText ? `Action: ${actionText}` : '',
   ].filter(Boolean).join(' ')
@@ -4986,7 +4986,7 @@ const mergeNhisReadinessSummaries = (groups = []) => {
   return Array.from(byClaim.values())
 }
 
-const getNhisExportActiveMedicationWarnings = async (claims = [], options = {}) => {
+const getNhisExportActiveMedicationBlockers = async (claims = [], options = {}) => {
   if (shouldUseBranchServer()) return []
   const items = buildNhisActiveMedicationBatchItems(claims, options)
   if (!items.length) return []
@@ -5024,7 +5024,7 @@ const getNhisExportActiveMedicationWarnings = async (claims = [], options = {}) 
         if (!alerts.length) return null
         return summarizeNhisReadinessClaim(
           claim,
-          alerts.map(formatNhisActiveMedicationExportWarning)
+          alerts.map(formatNhisActiveMedicationExportBlocker)
         )
       })
       .filter(Boolean)
@@ -9364,8 +9364,7 @@ const assertNhisClaimsReadyForFinalSubmission = async (claims, organizationType,
 export const getNhisExportScrubWarnings = async (options = {}) => {
   const readiness = await getNhisExportClaimsAndBlockers(options)
   const readinessWarnings = await getNhisExportScrubWarningsForClaims(readiness, options)
-  const activeMedicationWarnings = await getNhisExportActiveMedicationWarnings(readiness.claims, options)
-  return mergeNhisReadinessSummaries([readinessWarnings, activeMedicationWarnings])
+  return mergeNhisReadinessSummaries([readinessWarnings])
 }
 
 const getNhisExportScrubWarningsForClaims = async (readiness, options = {}) => {
@@ -9497,6 +9496,18 @@ const collectNhisExportBlockingIssues = async (claims, organizationType, options
         message: error?.message || 'CLAIM-it CXF export configuration is incomplete.',
       })
     }
+  }
+
+  const activeMedicationIssues = await getNhisExportActiveMedicationBlockers(claims, options)
+  if (activeMedicationIssues.length) {
+    issues.push({
+      type: 'active_medication',
+      title: 'Active medication refill too early',
+      message: `${activeMedicationIssues.length} claim${activeMedicationIssues.length === 1 ? '' : 's'} have active medication coverage still remaining. Correct the claim or wait until coverage ends before export.`,
+      claims: activeMedicationIssues.slice(0, 8),
+      total: activeMedicationIssues.length,
+      readinessIssues: activeMedicationIssues,
+    })
   }
 
   return issues
@@ -9848,8 +9859,7 @@ export const prepareNhisClaimsExport = async (options = {}) => {
     total: readiness.claims.length,
   })
   const readinessWarnings = await getNhisExportScrubWarningsForClaims(readiness, preparedOptions)
-  const activeMedicationWarnings = await getNhisExportActiveMedicationWarnings(readiness.claims, preparedOptions)
-  const warningClaims = mergeNhisReadinessSummaries([readinessWarnings, activeMedicationWarnings])
+  const warningClaims = mergeNhisReadinessSummaries([readinessWarnings])
   exportTiming.mark('checking scrub warnings', { warningCount: warningClaims.length })
 
   return {

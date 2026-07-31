@@ -4481,7 +4481,7 @@ describe('duplicate NHIS claim prevention', () => {
     ])
   })
 
-  it('adds active-medication overlap advisories to export scrub warnings without blocking export', async () => {
+  it('blocks export when active-medication coverage remains before the next refill is due', async () => {
     const claimId = '11111111-1111-4111-8111-111111111111'
     const warningClaim = {
       id: claimId,
@@ -4558,16 +4558,21 @@ describe('duplicate NHIS claim prevention', () => {
       error: null,
     })
 
-    const warnings = await getNhisExportScrubWarnings({
-      mode: 'custom',
-      fromDate: '2026-05-14',
-      toDate: '2026-05-14',
-      format: 'json',
-      organizationType: 'hospital',
-      providerClassLevel: 'D',
-      pharmacyLevel: 'P1',
-      nhisDrugCatalog: [{ id: 'drug-1', code: 'PARA500', category: 'A' }],
-    })
+    let readinessError
+    try {
+      await checkNhisExportReadiness({
+        mode: 'custom',
+        fromDate: '2026-05-14',
+        toDate: '2026-05-14',
+        format: 'json',
+        organizationType: 'hospital',
+        providerClassLevel: 'D',
+        pharmacyLevel: 'P1',
+        nhisDrugCatalog: [{ id: 'drug-1', code: 'PARA500', category: 'A' }],
+      })
+    } catch (error) {
+      readinessError = error
+    }
 
     expect(supabase.rpc).toHaveBeenCalledWith('check_nhis_active_medication_overlap_batch', {
       p_items: [expect.objectContaining({
@@ -4579,12 +4584,14 @@ describe('duplicate NHIS claim prevention', () => {
         service_date: '2026-05-14',
       })],
     })
-    expect(warnings).toEqual([
+    expect(readinessError).toMatchObject({ code: 'NHIS_READINESS_CLAIMS' })
+    expect(readinessError.readinessIssues).toEqual([
       expect.objectContaining({
         id: claimId,
         claim_number: 'NHIS-000011',
         issues: expect.arrayContaining([
-          expect.stringContaining('Active medication review: Paracetamol Tablet 500mg has early refill review'),
+          expect.stringContaining('Active medication blocked: Paracetamol Tablet 500mg has early refill review'),
+          expect.stringContaining('NHIA may reject or reduce payment for an early refill.'),
           expect.stringContaining('Confirm refill reason before export.'),
         ]),
       }),
@@ -4682,21 +4689,27 @@ describe('duplicate NHIS claim prevention', () => {
         error: null,
       })
 
-    const warnings = await getNhisExportScrubWarnings({
-      mode: 'custom',
-      fromDate: '2026-05-14',
-      toDate: '2026-05-14',
-      format: 'json',
-      organizationType: 'hospital',
-      providerClassLevel: 'D',
-      pharmacyLevel: 'P1',
-      nhisDrugCatalog: [{ id: 'drug-1', code: 'PARA500', category: 'A' }],
-    })
+    let readinessError
+    try {
+      await checkNhisExportReadiness({
+        mode: 'custom',
+        fromDate: '2026-05-14',
+        toDate: '2026-05-14',
+        format: 'json',
+        organizationType: 'hospital',
+        providerClassLevel: 'D',
+        pharmacyLevel: 'P1',
+        nhisDrugCatalog: [{ id: 'drug-1', code: 'PARA500', category: 'A' }],
+      })
+    } catch (error) {
+      readinessError = error
+    }
 
     expect(supabase.rpc).toHaveBeenCalledTimes(2)
     expect(supabase.rpc.mock.calls[0][1].p_items).toHaveLength(150)
     expect(supabase.rpc.mock.calls[1][1].p_items).toHaveLength(1)
-    expect(warnings).toEqual(expect.arrayContaining([
+    expect(readinessError).toMatchObject({ code: 'NHIS_READINESS_CLAIMS' })
+    expect(readinessError.readinessIssues).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: claims[0].id }),
       expect.objectContaining({ id: claims[150].id }),
     ]))
