@@ -376,6 +376,46 @@ describe('assessNhisClaimReadiness', () => {
     expect(selects.join('\n')).not.toContain('claimit_attachment_base64')
   })
 
+  it('counts missing attachments across open pharmacy claim statuses while keeping verification checks final-only', async () => {
+    const queries = []
+    const makeCountQuery = (count, label) => {
+      const query = Promise.resolve({ count, error: null })
+      query._label = label
+      query.in = vi.fn(() => query)
+      query.eq = vi.fn(() => query)
+      query.gte = vi.fn(() => query)
+      query.lte = vi.fn(() => query)
+      query.or = vi.fn(() => query)
+      query.is = vi.fn(() => query)
+      query.ilike = vi.fn(() => query)
+      queries.push(query)
+      return query
+    }
+    const countQueries = [
+      makeCountQuery(4, 'attached'),
+      makeCountQuery(4, 'prescriptionTyped'),
+      makeCountQuery(3, 'verifiedPrescription'),
+      makeCountQuery(6, 'missingAttachment'),
+      makeCountQuery(0, 'incompleteTotal'),
+      makeCountQuery(0, 'completeIntake'),
+    ]
+    supabase.from.mockReturnValue({
+      select: vi.fn(() => countQueries.shift()),
+    })
+
+    const counts = await getNhisClaimIssueCounts({ organizationType: 'pharmacy' })
+
+    const finalStatuses = ['served', 'submitted', 'paid']
+    const openStatuses = ['pending_serving', 'serving_in_progress', 'returned_for_review', 'served', 'submitted']
+    const missingAttachmentQuery = queries.find((query) => query._label === 'missingAttachment')
+    const verifiedPrescriptionQuery = queries.find((query) => query._label === 'verifiedPrescription')
+
+    expect(counts['missing-attachment']).toBe(6)
+    expect(counts['unverified-prescription']).toBe(1)
+    expect(missingAttachmentQuery.in).toHaveBeenCalledWith('status', openStatuses)
+    expect(verifiedPrescriptionQuery.in).toHaveBeenCalledWith('status', finalStatuses)
+  })
+
   it('uses server exact counts so issue totals can exceed 1,000 while date filters remain applied', async () => {
     const queries = []
     const makeCountQuery = (count) => {

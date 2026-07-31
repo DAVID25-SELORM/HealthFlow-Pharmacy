@@ -5626,14 +5626,13 @@ const getNhisClaimIssueKeys = (claim = {}, options = {}) => {
   const isHospital = normalizeOrganizationType(options.organizationType || options.organization_type) === 'hospital'
   const issueKeys = new Set()
   const status = normalizeText(claim.status).toLowerCase()
-  const needsExportReadiness = !isHospital && ['served', 'submitted', 'paid'].includes(status)
 
-  if (needsExportReadiness) {
+  if (!isHospital && NHIS_OPEN_CLAIM_STATUSES.includes(status)) {
     if (!hasSavedPrescriptionFileReference(claim)) {
       issueKeys.add('missing-attachment')
     } else if (getClaimField(claim, 'prescriptionDocumentType', 'prescription_document_type').toLowerCase() !== 'prescription') {
       issueKeys.add('attachment-type')
-    } else if (!hasVerifiedPrescriptionAttachment(claim)) {
+    } else if (NHIS_EXPORT_READINESS_STATUSES.includes(status) && !hasVerifiedPrescriptionAttachment(claim)) {
       issueKeys.add('unverified-prescription')
     }
   }
@@ -5741,7 +5740,7 @@ const getNhisIssueQuerySpecs = (issueFilter = 'any', filters = {}) => {
   const exportSpecs = isHospital ? [] : [
     {
       key: 'missing-attachment',
-      statuses: NHIS_EXPORT_READINESS_STATUSES,
+      statuses: NHIS_OPEN_CLAIM_STATUSES,
       refine: applyNhisAttachmentMissingFilter,
     },
     {
@@ -5897,7 +5896,7 @@ const getNhisClaimIssueCountsFromSupabase = async (filters = {}) => {
           .ilike('prescription_document_type', 'prescription')
           .eq('prescription_verified', true)
       ),
-      countNhisIssueRowsForStatuses(filters, NHIS_EXPORT_READINESS_STATUSES, applyNhisAttachmentMissingFilter),
+      countNhisIssueRowsForStatuses(filters, NHIS_OPEN_CLAIM_STATUSES, applyNhisAttachmentMissingFilter),
     ])
 
     counts['missing-attachment'] = missingAttachment
