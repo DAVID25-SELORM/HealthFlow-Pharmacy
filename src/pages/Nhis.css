@@ -1029,6 +1029,19 @@
   vertical-align: top;
 }
 
+.readiness-claim-table th:last-child,
+.readiness-claim-table td:last-child {
+  width: 6.75rem;
+}
+
+.readiness-claim-actions {
+  align-items: center;
+  display: flex;
+  gap: 0.35rem;
+  justify-content: flex-start;
+  min-width: 6.25rem;
+}
+
 .nhis-page .readiness-action-btn {
   gap: 0.35rem;
   height: 2rem;
@@ -1043,6 +1056,13 @@
   font-size: 0.75rem;
   font-weight: 700;
   line-height: 1;
+}
+
+.readiness-claim-actions .readiness-action-btn {
+  flex: 0 0 2rem;
+  justify-content: center;
+  padding: 0;
+  width: 2rem;
 }
 
 .readiness-issue-list {

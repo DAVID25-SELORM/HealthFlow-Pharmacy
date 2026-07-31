@@ -8509,11 +8509,12 @@ const Nhis = () => {
                           </td>
                           <td><StatusBadge status={issue.status || 'served'} /></td>
                           <td>
-                            <div className="duplicate-claim-actions">
+                            <div className="readiness-claim-actions">
                               <button
                                 type="button"
                                 className="action-btn action-btn--view readiness-action-btn"
                                 title="View claim"
+                                aria-label={`View claim ${issue.claim_number || patientName}`}
                                 onClick={() => {
                                   setShowReadinessClaimReview(false)
                                   void openViewClaim(claimForAction).then((opened) => {
@@ -8522,7 +8523,6 @@ const Nhis = () => {
                                 }}
                               >
                                 <Eye size={14} />
-                                <span>View</span>
                               </button>
                               <button
                                 type="button"
@@ -8534,7 +8534,6 @@ const Nhis = () => {
                                 }}
                               >
                                 <Pencil size={14} />
-                                <span>Correct</span>
                               </button>
                               {canReopenMca && issue.status === 'served' && !isNhisClaimDirectlyServed(issue) && !isMcaEditWindowOpen(issue) && (
                                 <button
@@ -8546,7 +8545,6 @@ const Nhis = () => {
                                   onClick={() => handleReopenMcaEdit(issue)}
                                 >
                                   <Clock size={14} />
-                                  <span>Reopen</span>
                                 </button>
                               )}
                             </div>
