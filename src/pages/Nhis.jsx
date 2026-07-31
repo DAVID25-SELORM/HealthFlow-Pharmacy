@@ -1011,13 +1011,12 @@ const buildNhisActiveMedicationOverlapMessage = (alerts = []) => {
   ].join('\n\n')
 }
 
-const promptNhisMedicationOverlapOverride = (alerts = []) => {
+const showNhisMedicationOverlapBlockAlert = (alerts = []) => {
   const message = buildNhisActiveMedicationOverlapMessage(alerts)
-  if (!message) return ''
-  const reason = window.prompt(
-    `${message}\n\nEnter the authorised reason to continue, or leave blank to cancel.`
+  if (!message) return
+  window.alert(
+    `${message}\n\nThis medicine cannot be added or served while active coverage remains. Correct the previous record, wait until coverage ends, or contact a claims officer/admin for review.`
   )
-  return normalizeText(reason)
 }
 
 const buildNhisDuplicateWarnings = ({
@@ -3289,23 +3288,18 @@ const Nhis = () => {
       })
       const overlapAlerts = overlapResult?.alerts || []
       if (overlapAlerts.length) {
-        const overrideReason = promptNhisMedicationOverlapOverride(overlapAlerts)
-        if (!overrideReason) {
-          notify('Medicine was not added. Review the active medication alert before continuing.', 'warning')
-          return
-        }
+        showNhisMedicationOverlapBlockAlert(overlapAlerts)
         await tryLogAuditEvent({
-          eventType: 'nhis_claim.active_medication_overlap_override',
+          eventType: 'nhis_claim.active_medication_overlap_blocked',
           entityType: 'nhis_claims',
           entityId: editingClaim?.id || null,
-          action: 'override_active_medication_overlap',
+          action: 'block_active_medication_overlap',
           details: {
             medicine_code: nextMedicine.drugCode || '',
             medicine_description: nextMedicine.description || '',
             member_no: claimForm.memberNo || '',
             hin: claimForm.hin || '',
             service_date: nextMedicine.dispensaryDate || claimForm.serviceDate || '',
-            override_reason: overrideReason,
             alert_count: overlapAlerts.length,
             previous_claim_references: overlapAlerts
               .map((alert) => alert.previous_claim_reference)
@@ -3313,6 +3307,8 @@ const Nhis = () => {
               .slice(0, 5),
           },
         })
+        notify('Medicine was not added because active medication coverage still remains.', 'error')
+        return
       } else if (overlapResult && overlapResult.available === false) {
         notify('Cross-facility active medication check is not available for this session. Local checks will still continue.', 'warning')
       }
