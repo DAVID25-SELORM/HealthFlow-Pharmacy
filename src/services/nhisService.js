@@ -8244,16 +8244,27 @@ const toClaimItAttachmentFileType = (attachment = {}) => {
   return 'pdf'
 }
 
+const CLAIMIT_ATTACHMENT_FETCH_TIMEOUT_MS = 20000
+
 const fetchClaimItAttachmentBytes = async (attachment = {}) => {
   const sourceUrl = normalizeText(attachment.url)
   if (!sourceUrl) {
     throw new Error('CLAIM-it CXF export cannot include a prescription attachment without a readable file URL.')
   }
 
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
+  const timeoutId = controller
+    ? setTimeout(() => controller.abort(), CLAIMIT_ATTACHMENT_FETCH_TIMEOUT_MS)
+    : null
+
   try {
-    const response = await fetch(sourceUrl)
+    const response = await fetch(sourceUrl, controller ? { signal: controller.signal } : undefined)
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`)
+      const error = new Error(`HTTP ${response.status}`)
+      // A 5xx is the storage provider's own transient failure. A 4xx (e.g. an
+      // expired or malformed signed URL) will not resolve on retry.
+      error.isTransientClaimItAttachmentFailure = response.status >= 500
+      throw error
     }
     const bytes = new Uint8Array(await response.arrayBuffer())
     if (!bytes.length) {
@@ -8262,7 +8273,24 @@ const fetchClaimItAttachmentBytes = async (attachment = {}) => {
     return bytes
   } catch (error) {
     const fileName = normalizeText(attachment.fileName) || 'prescription attachment'
-    throw new Error(`Unable to include ${fileName} in CLAIM-it CXF export: ${error.message}`)
+    const isTimeout = error?.name === 'AbortError'
+    // A network-level failure — offline, DNS, connection reset, a QUIC
+    // protocol error, or this function's own timeout — is transient: the
+    // identical request often succeeds moments later. A validation failure
+    // (empty file, unreadable format) is not transient: it fails the same
+    // way on every retry, so retrying it would only waste time.
+    const isTransient = isTimeout ||
+      error?.isTransientClaimItAttachmentFailure === true ||
+      error instanceof TypeError
+    const wrapped = new Error(
+      isTimeout
+        ? `Unable to include ${fileName} in CLAIM-it CXF export: request timed out after ${CLAIMIT_ATTACHMENT_FETCH_TIMEOUT_MS / 1000}s.`
+        : `Unable to include ${fileName} in CLAIM-it CXF export: ${error.message}`
+    )
+    wrapped.isTransientClaimItAttachmentFailure = isTransient
+    throw wrapped
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId)
   }
 }
 
@@ -8619,7 +8647,22 @@ const buildClaimItRows = async (payload, runtimeOptions = {}) => {
     await mapWithConcurrency(attachmentTasks, NHIS_ATTACHMENT_DOWNLOAD_CONCURRENCY, async (task) => {
       const taskStartedAt = getNhisExportNow()
       try {
-        const result = await prepareClaimItAttachmentPdfPayload(task.attachment)
+        let result
+        try {
+          result = await prepareClaimItAttachmentPdfPayload(task.attachment)
+        } catch (firstError) {
+          // A transient failure (network blip, connection reset, timeout)
+          // gets exactly one retry after a short backoff — the identical
+          // request very often succeeds the second time. A non-transient
+          // failure (empty file, invalid PDF, expired URL) is never
+          // retried: it would fail the same way again and only waste time.
+          if (firstError?.isTransientClaimItAttachmentFailure !== true) throw firstError
+          if (typeof console !== 'undefined') {
+            console.warn(`[NHIS CXF]${runId ? ` [${runId}]` : ''} Transient failure for ${task.claimNumber}, retrying once: ${firstError?.message || firstError}`)
+          }
+          await new Promise((resolve) => setTimeout(resolve, 750))
+          result = await prepareClaimItAttachmentPdfPayload(task.attachment)
+        }
         attachmentCacheByKey.set(task.cacheKey, { result })
         if (typeof console !== 'undefined') {
           console.info(`[NHIS CXF]${runId ? ` [${runId}]` : ''} Downloaded attachment for ${task.claimNumber} in ${Math.round(getNhisExportNow() - taskStartedAt)} ms`)

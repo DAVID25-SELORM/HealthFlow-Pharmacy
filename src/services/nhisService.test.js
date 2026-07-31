@@ -2125,14 +2125,15 @@ describe('CLAIM-it export helpers', () => {
     await buildNhisClaimItCxf(payload)
 
     expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(fetchMock).toHaveBeenCalledWith(sharedUrl)
+    expect(fetchMock).toHaveBeenCalledWith(sharedUrl, expect.objectContaining({ signal: expect.any(AbortSignal) }))
   })
 
-  it('attempts every attachment even when one fails, and names the failing claim without silently excluding it', async () => {
+  it('attempts every attachment even when one permanently fails, and names the failing claim without silently excluding it', async () => {
     const pdfBytes = Buffer.from('%PDF-1.4\n%%EOF')
     const fetchMock = vi.fn(async (url) => {
+      // A 404 is not transient — it must not be retried.
       if (url === 'https://example.test/rx/broken.pdf') {
-        throw new TypeError('Failed to fetch')
+        return { ok: false, status: 404 }
       }
       return {
         ok: true,
@@ -2164,11 +2165,82 @@ describe('CLAIM-it export helpers', () => {
       await expect(buildNhisClaimItCxf(payload)).rejects.toThrow('NHIS-000011')
       // The good claim's fetch was still attempted — one failure does not
       // cancel the sibling download already in flight.
-      expect(fetchMock).toHaveBeenCalledWith('https://example.test/rx/good.pdf')
-      expect(fetchMock).toHaveBeenCalledWith('https://example.test/rx/broken.pdf')
+      const calledUrls = fetchMock.mock.calls.map(([url]) => url)
+      expect(calledUrls).toContain('https://example.test/rx/good.pdf')
+      // A 404 is a non-transient (permanent) failure — exactly one attempt,
+      // no retry wasted on a request that cannot succeed.
+      expect(calledUrls.filter((url) => url === 'https://example.test/rx/broken.pdf')).toHaveLength(1)
     } finally {
       warnSpy.mockRestore()
     }
+  })
+
+  it('retries a transient attachment download failure once and succeeds', async () => {
+    const pdfBytes = Buffer.from('%PDF-1.4\n%%EOF')
+    let attempts = 0
+    const fetchMock = vi.fn(async () => {
+      attempts += 1
+      if (attempts === 1) {
+        // Simulates a QUIC/connection-level failure exactly as seen in
+        // production — a rejected fetch, not an HTTP error response.
+        throw new TypeError('Failed to fetch')
+      }
+      return {
+        ok: true,
+        status: 200,
+        arrayBuffer: async () => pdfBytes.buffer.slice(pdfBytes.byteOffset, pdfBytes.byteOffset + pdfBytes.byteLength),
+      }
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const payload = buildNhisClaimItExportPayload(
+      [{ ...claim, id: 'claim-a', claim_number: 'NHIS-000020', prescription_file_path: 'rx/flaky.pdf', prescription_file_url: 'https://example.test/rx/flaky.pdf' }],
+      {
+        yearMonth: '2026-05',
+        organizationType: 'pharmacy',
+        facilityCode: '03-05-001-02-01954-11-P1-2-011225',
+        facilityName: 'Westpoint Chemist',
+        providerNumber: '03-05-01954',
+        providerTypeDescription: 'Pharmacy',
+        claimsOfficerName: 'Claims Officer',
+        submitterId: 'admin',
+        generatedAt: '2026-05-20T14:58:02.000Z',
+      }
+    )
+
+    try {
+      await buildNhisClaimItCxf(payload)
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Transient failure for NHIS-000020, retrying once'))
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+
+  it('does not retry a non-transient attachment failure (empty file)', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      arrayBuffer: async () => new ArrayBuffer(0),
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    const payload = buildNhisClaimItExportPayload(
+      [{ ...claim, id: 'claim-a', claim_number: 'NHIS-000021', prescription_file_path: 'rx/empty.pdf', prescription_file_url: 'https://example.test/rx/empty.pdf' }],
+      {
+        yearMonth: '2026-05',
+        organizationType: 'pharmacy',
+        facilityCode: '03-05-001-02-01954-11-P1-2-011225',
+        facilityName: 'Westpoint Chemist',
+        providerNumber: '03-05-01954',
+        providerTypeDescription: 'Pharmacy',
+        claimsOfficerName: 'Claims Officer',
+        submitterId: 'admin',
+        generatedAt: '2026-05-20T14:58:02.000Z',
+      }
+    )
+
+    await expect(buildNhisClaimItCxf(payload)).rejects.toThrow('downloaded file is empty')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
   it('downloads distinct prescription attachments with bounded concurrency, not strictly one at a time', async () => {
