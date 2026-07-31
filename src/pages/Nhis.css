@@ -1145,10 +1145,13 @@
 }
 
 .duplicate-claim-actions {
-  align-items: center;
+  align-items: flex-start;
   display: flex;
+  flex-wrap: wrap;
   gap: 0.35rem;
-  min-width: 10rem;
+  justify-content: flex-start;
+  min-width: 8.5rem;
+  max-width: 13rem;
 }
 
 .duplicate-recommendation {

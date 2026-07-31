@@ -8534,18 +8534,19 @@ const Nhis = () => {
                                 }}
                               >
                                 <Pencil size={14} />
-                                <span>Correct issue</span>
+                                <span>Correct</span>
                               </button>
                               {canReopenMca && issue.status === 'served' && !isNhisClaimDirectlyServed(issue) && !isMcaEditWindowOpen(issue) && (
                                 <button
                                   type="button"
                                   className="action-btn action-btn--edit readiness-action-btn"
                                   title="Re-open dispensary correction window (12 hours)"
+                                  aria-label={`Re-open dispensary correction window for ${issue.claim_number || patientName}`}
                                   disabled={isClaimBusy(issue.id)}
                                   onClick={() => handleReopenMcaEdit(issue)}
                                 >
                                   <Clock size={14} />
-                                  <span>Re-open dispensary</span>
+                                  <span>Reopen</span>
                                 </button>
                               )}
                             </div>
