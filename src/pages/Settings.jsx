@@ -325,7 +325,7 @@ const mergeNhiaSaveReadback = (submitted = {}, saved = {}) => ({
   facilityType: getFirstNhiaValue(saved?.facilityType, saved?.facility_type, submitted.facilityType),
   pharmacyFacilityLevel: getFirstNhiaValue(saved?.pharmacyFacilityLevel, saved?.pharmacy_facility_level, submitted.pharmacyFacilityLevel),
   providerLevelCode: getFirstNhiaValue(saved?.providerLevelCode, saved?.provider_level_code, submitted.providerLevelCode),
-  credentialCode: getFirstNhiaValue(saved?.credentialCode, saved?.credential_code, saved?.facilityCode, saved?.facility_code, submitted.credentialCode),
+  credentialCode: getFirstNhiaValue(saved?.credentialCode, saved?.credential_code, submitted.credentialCode),
   licenseNumber: getFirstNhiaValue(saved?.licenseNumber, saved?.license_number, submitted.licenseNumber),
   providerTypeDescription: getFirstNhiaValue(saved?.providerTypeDescription, saved?.provider_type_description, submitted.providerTypeDescription),
   providerClassLevel: getFirstNhiaValue(saved?.providerClassLevel, saved?.provider_class_level, submitted.providerClassLevel),

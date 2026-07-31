@@ -3080,7 +3080,7 @@ const normalizeNhiaConfig = (settings = null, {
   const facilityCode = normalizeText(raw.facilityCode || raw.facility_code)
   const hpn = normalizeText(raw.hpn || raw.HPN || raw.providerNumber || raw.provider_number || raw.providerId || raw.provider_id)
   const hpCode = normalizeText(raw.hpCode || raw.hp_code || raw.HPCode || raw.facilityCode || raw.facility_code)
-  const credentialCode = normalizeText(raw.credentialCode || raw.credential_code || facilityCode)
+  const credentialCode = normalizeText(raw.credentialCode || raw.credential_code)
   const schemeName = normalizeText(raw.schemeName || raw.scheme_name) || 'National Health Insurance'
   const facilityType = normalizeText(raw.facilityType || raw.facility_type)
   const pharmacyFacilityLevel = normalizeText(raw.pharmacyFacilityLevel || raw.pharmacy_facility_level)

@@ -83,6 +83,7 @@ import {
   updateNhisClaim,
   updateNhisClaimStatus,
   uploadNhisPrescriptionPdf,
+  validateNhiaConfigForMode,
   validateNhisPrescriptionPdfFile,
   TEMPORARY_UNIVERSAL_NHIA_TARIFF_SOURCE,
 } from './nhisService'
@@ -5488,6 +5489,59 @@ describe('NHIA API settings source routing', () => {
       provider_type_description: 'Dental clinics',
     })
     expect(invokeTierAccess).not.toHaveBeenCalled()
+  })
+
+  it('does not treat facility code as the CLAIM-it credential code', async () => {
+    invokeTierAccess.mockResolvedValueOnce({
+      settings: {
+        organizationId: 'org-1',
+        providerId: '03-05-09386',
+        providerNumber: '03-05-09386',
+        facilityCode: '03-05-09386',
+        hasApiKey: true,
+        hasApiSecret: true,
+        accreditationExpiryDate: '2027-08-01',
+        claimsOfficerName: 'Claims Officer',
+      },
+    })
+
+    await expect(getNhiaApiSettings({ organizationId: 'org-1' })).resolves.toMatchObject({
+      providerNumber: '03-05-09386',
+      facilityCode: '03-05-09386',
+      credentialCode: '',
+    })
+
+    expect(validateNhiaConfigForMode({
+      providerId: '03-05-09386',
+      providerNumber: '03-05-09386',
+      facilityCode: '03-05-09386',
+      hasApiKey: true,
+      hasApiSecret: true,
+      accreditationExpiryDate: '2027-08-01',
+      claimsOfficerName: 'Claims Officer',
+    })).toMatchObject({
+      valid: false,
+      missing: expect.arrayContaining(['credentialCode']),
+    })
+  })
+
+  it('accepts the current Health Light CLAIM-it credential code with saved API credentials', () => {
+    expect(validateNhiaConfigForMode({
+      providerId: '03-05-09386',
+      providerNumber: '03-05-09386',
+      facilityCode: '03-05-09386',
+      credentialCode: '03-05-001-02-09386-11-P1-2-011025',
+      accreditationExpiryDate: '2027-08-01',
+      claimsOfficerName: 'Claims Officer',
+      hasApiKey: true,
+      hasApiSecret: true,
+      integrationMode: 'claimit_assisted',
+      apiBaseUrl: 'https://elig.nhia.gov.gh:5000',
+      memberLookupEndpoint: '/api/hmis/genCCC',
+    })).toMatchObject({
+      valid: true,
+      missing: [],
+    })
   })
 
   it('saves NHIA settings locally in local-sync mode and reports cloud sync pending', async () => {
