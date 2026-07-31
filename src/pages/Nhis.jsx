@@ -1023,12 +1023,15 @@ const buildNhisActiveMedicationOverlapMessage = (alerts = []) => {
   ].join('\n\n')
 }
 
-const showNhisMedicationOverlapBlockAlert = (alerts = []) => {
+const showNhisMedicationOverlapBlockAlert = (alerts = [], notifyFn = null) => {
   const message = buildNhisActiveMedicationOverlapMessage(alerts)
   if (!message) return
-  window.alert(
-    `${message}\n\nThis medicine cannot be added or served while active coverage remains. Correct the previous record, wait until coverage ends, or contact a claims officer/admin for review.`
-  )
+  const fullMessage = `${message}\n\nThis medicine cannot be added or served while active coverage remains. Correct the previous record, wait until coverage ends, or contact a claims officer/admin for review.`
+  if (typeof notifyFn === 'function') {
+    notifyFn(fullMessage, 'error')
+    return
+  }
+  console.warn('[NHIS] Active medication overlap blocked:', fullMessage)
 }
 
 const buildNhisDuplicateWarnings = ({
@@ -1319,6 +1322,8 @@ const Nhis = () => {
   const [scrubWarningOverrideReason, setScrubWarningOverrideReason] = useState('')
   const [showScrubWarningOverride, setShowScrubWarningOverride] = useState(false)
   const [viewClaim, setViewClaim]                   = useState(null)
+  const [reopenDispensaryClaim, setReopenDispensaryClaim] = useState(null)
+  const [reopenDispensaryReason, setReopenDispensaryReason] = useState('')
   const [discardConfirmation, setDiscardConfirmation] = useState(null)
 
   // ── new claim form ────────────────────────────────────────────
@@ -3299,7 +3304,7 @@ const Nhis = () => {
       })
       const overlapAlerts = overlapResult?.alerts || []
       if (overlapAlerts.length) {
-        showNhisMedicationOverlapBlockAlert(overlapAlerts)
+        showNhisMedicationOverlapBlockAlert(overlapAlerts, notify)
         await tryLogAuditEvent({
           eventType: 'nhis_claim.active_medication_overlap_blocked',
           entityType: 'nhis_claims',
@@ -4568,15 +4573,27 @@ const Nhis = () => {
       notify('Only an admin or claims officer can re-open the dispensary correction window.', 'warning')
       return
     }
-    const reason = window.prompt(`Re-open the dispensary correction window for claim ${claim.claim_number} (12 hours)?\nEnter a reason:`)
-    if (reason === null) return
-    if (!reason.trim()) {
+    setReopenDispensaryClaim(claim)
+    setReopenDispensaryReason('')
+  }
+
+  const closeReopenDispensaryModal = () => {
+    setReopenDispensaryClaim(null)
+    setReopenDispensaryReason('')
+  }
+
+  const confirmReopenMcaEdit = async () => {
+    const claim = reopenDispensaryClaim
+    if (!claim) return
+    const reason = reopenDispensaryReason.trim()
+    if (!reason) {
       notify('A reason is required to re-open the dispensary correction window.', 'warning')
       return
     }
     try {
       setUpdatingStatus(claim.id)
-      await reopenBranchMcaEditWindow(claim.id, reason.trim())
+      await reopenBranchMcaEditWindow(claim.id, reason)
+      closeReopenDispensaryModal()
       await refreshClaimsOverview()
       notify(`Dispensary correction window re-opened for ${claim.claim_number} (12 hours).`, 'success')
     } catch (err) {
@@ -7987,11 +8004,63 @@ const Nhis = () => {
         </div>
       )}
 
+      {reopenDispensaryClaim && (
+        <div className="modal-overlay modal-overlay--top" onClick={(e) => e.target === e.currentTarget && closeReopenDispensaryModal()}>
+          <div className="modal-panel modal-panel--export">
+            <div className="modal-header">
+              <div>
+                <h2>Re-open dispensary correction</h2>
+                <p className="modal-subtitle">
+                  Claim {reopenDispensaryClaim.claim_number || 'selected claim'} will be re-opened for 12 hours.
+                </p>
+              </div>
+              <button className="modal-close" onClick={closeReopenDispensaryModal}><X size={18} /></button>
+            </div>
+            <div className="export-body">
+              <div className="export-info">
+                Enter the reason before allowing the dispensary to correct served quantities.
+              </div>
+              <label className="form-group">
+                <span>Reason *</span>
+                <textarea
+                  className="form-input"
+                  rows={4}
+                  value={reopenDispensaryReason}
+                  onChange={(event) => setReopenDispensaryReason(event.target.value)}
+                  placeholder="Example: Claims officer requested quantity correction before export."
+                  autoFocus
+                />
+              </label>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" type="button" onClick={closeReopenDispensaryModal}>
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary"
+                type="button"
+                disabled={isClaimBusy(reopenDispensaryClaim.id)}
+                onClick={() => { void confirmReopenMcaEdit() }}
+              >
+                Re-open
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {viewClaim && (
-        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && closeViewClaim()}>
+        <div className="modal-overlay modal-overlay--top" onClick={(e) => e.target === e.currentTarget && closeViewClaim()}>
           <div className="modal-panel modal-panel--view-claim">
             <div className="modal-header">
-              <h2>{viewClaim.claim_number} <StatusBadge status={viewClaim.status} /></h2>
+              <div>
+                <h2>{viewClaim.claim_number} <StatusBadge status={viewClaim.status} /></h2>
+                {(duplicateClaimGroups.length > 0 || readinessClaimIssues.length > 0) && (
+                  <p className="modal-subtitle">
+                    Review mode: use the back button below to return to the issue list.
+                  </p>
+                )}
+              </div>
               <button className="modal-close" onClick={closeViewClaim}><X size={18} /></button>
             </div>
             <div className="view-claim-grid">
@@ -8090,7 +8159,7 @@ const Nhis = () => {
                 {duplicateClaimGroups.length > 0
                   ? 'Back to duplicates'
                   : readinessClaimIssues.length > 0
-                    ? 'Back to incomplete claims'
+                    ? 'Back to scrub issues'
                     : 'Close'}
               </button>
             </div>
@@ -8516,6 +8585,7 @@ const Nhis = () => {
                                 title="View claim"
                                 aria-label={`View claim ${issue.claim_number || patientName}`}
                                 onClick={() => {
+                                  setShowExportModal(false)
                                   setShowReadinessClaimReview(false)
                                   void openViewClaim(claimForAction).then((opened) => {
                                     if (!opened) returnToReadinessClaimReview()
