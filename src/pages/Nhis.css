@@ -1053,6 +1053,49 @@
   padding-left: 0;
 }
 
+.readiness-issue-category-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-bottom: 0.45rem;
+}
+
+.readiness-issue-category {
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1;
+  padding: 0.28rem 0.48rem;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.readiness-issue-category--attachment,
+.readiness-issue-category--identifier {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.readiness-issue-category--prescriber,
+.readiness-issue-category--verification,
+.readiness-issue-category--medicine {
+  background: #ffedd5;
+  color: #9a3412;
+}
+
+.readiness-issue-category--diagnosis,
+.readiness-issue-category--clinical,
+.readiness-issue-category--tariff {
+  background: #e0f2fe;
+  color: #075985;
+}
+
+.readiness-issue-category--other {
+  background: #f1f5f9;
+  color: #334155;
+}
+
 .readiness-issue-list li {
   align-items: flex-start;
   color: var(--gray-800);
@@ -1149,6 +1192,31 @@
 }
 
 .duplicate-keep-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.duplicate-recycle-button {
+  align-items: center;
+  background: #fee2e2;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  color: #991b1b;
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 0.76rem;
+  font-weight: 800;
+  gap: 0.25rem;
+  min-height: 1.75rem;
+  padding: 0.35rem 0.55rem;
+  white-space: nowrap;
+}
+
+.duplicate-recycle-button:hover:not(:disabled) {
+  background: #fecaca;
+}
+
+.duplicate-recycle-button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
 }

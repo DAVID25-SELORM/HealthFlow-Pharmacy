@@ -775,6 +775,18 @@ const getReadinessIssueCategories = (issue = {}) => {
   return Array.from(categories)
 }
 
+const READINESS_CATEGORY_LABELS = {
+  attachment: 'Attachment',
+  identifier: 'Member/HIN',
+  verification: 'Verification',
+  prescriber: 'Prescriber',
+  diagnosis: 'Diagnosis',
+  clinical: 'Clinical',
+  tariff: 'Tariff/G-DRG',
+  medicine: 'Medicine',
+  other: 'Other',
+}
+
 const getReadinessIssueSeverity = (text = '') => {
   const normalized = String(text || '').toLowerCase()
   if (/\bcritical\b|must|required|cannot|not allowed|does not appear to match|not clinically compatible|before submission|before exporting|blocked|exact dispensed quantity|greater than zero/.test(normalized)) {
@@ -1214,13 +1226,12 @@ const Nhis = () => {
   const getNhisClaimIssueBadges = (claim = {}) => {
     const badges = []
     const status = normalizeText(claim.status).toLowerCase()
-    const needsExportReadiness = !isHospital && ['served', 'submitted', 'paid'].includes(status)
-    if (needsExportReadiness) {
+    if (!isHospital) {
       if (!hasNhisPrescriptionAttachment(claim)) {
         badges.push({ key: 'missing-attachment', label: 'Missing attachment', tone: 'danger' })
       } else if (String(claim.prescription_document_type || claim.prescriptionDocumentType || '').trim().toLowerCase() !== 'prescription') {
         badges.push({ key: 'attachment-type', label: 'Set attachment type', tone: 'warning' })
-      } else if (!hasVerifiedNhisPrescription(claim)) {
+      } else if (['served', 'submitted', 'paid'].includes(status) && !hasVerifiedNhisPrescription(claim)) {
         badges.push({ key: 'unverified-prescription', label: 'Unverified prescription', tone: 'warning' })
       }
     }
@@ -4486,6 +4497,65 @@ const Nhis = () => {
       notify(`Kept ${keepClaim.claim_number || 'the selected claim'} and moved ${claimsToRecycle.length} duplicate claim${claimsToRecycle.length === 1 ? '' : 's'} to the Recycle Bin.`, 'success')
     } catch (err) {
       notify(err.message || 'Unable to resolve duplicate claims.', 'error')
+    } finally {
+      setUpdatingStatus(null)
+    }
+  }
+
+  const handleRecycleDuplicateClaim = async (group, duplicateClaim) => {
+    if (!canDeleteNhisClaims) {
+      notify('Only an administrator can move duplicate NHIS claims to the Recycle Bin.', 'warning')
+      return
+    }
+
+    if (!duplicateClaim?.id) {
+      notify('This duplicate claim cannot be moved because its record ID is missing.', 'warning')
+      return
+    }
+
+    const remainingClaims = (group.claims || []).filter((claim) => claim.id && claim.id !== duplicateClaim.id)
+    if (remainingClaims.length === 0) {
+      notify('At least one claim must remain active in the duplicate group.', 'warning')
+      return
+    }
+
+    if (!confirmAction({
+      title: 'Move this duplicate claim to the Recycle Bin?',
+      details: [
+        { label: 'Move', value: duplicateClaim.claim_number || 'Selected duplicate' },
+        {
+          label: 'Keep active',
+          value: remainingClaims.map((claim) => claim.claim_number || 'Unnumbered').join(', '),
+        },
+        {
+          label: 'Patient',
+          value: group.patientName || [duplicateClaim.surname, duplicateClaim.other_names || duplicateClaim.otherNames].filter(Boolean).join(' '),
+        },
+        { label: 'Service date', value: group.serviceDate || getClaimServiceDate(duplicateClaim) || 'Not recorded' },
+      ],
+      warning: 'This only moves the selected duplicate to the Recycle Bin. An administrator can restore it if needed.',
+      confirmText: 'move this duplicate to the Recycle Bin',
+    })) return
+
+    try {
+      setUpdatingStatus(duplicateClaim.id)
+      await deleteNhisClaim(duplicateClaim.id, { role, canDeleteNhisClaims })
+      const nextDuplicateGroups = duplicateClaimGroups
+        .map((currentGroup) => {
+          const sameGroup = currentGroup === group || Boolean(group.key && currentGroup.key === group.key)
+          if (!sameGroup) return currentGroup
+          return {
+            ...currentGroup,
+            claims: (currentGroup.claims || []).filter((claim) => claim.id !== duplicateClaim.id),
+          }
+        })
+        .filter((currentGroup) => (currentGroup.claims || []).length > 1)
+      setDuplicateClaimGroups(nextDuplicateGroups)
+      if (nextDuplicateGroups.length === 0) setShowDuplicateClaimReview(false)
+      await refreshClaimsOverview()
+      notify(`${duplicateClaim.claim_number || 'The duplicate claim'} moved to the Recycle Bin.`, 'success')
+    } catch (err) {
+      notify(err.message || 'Unable to move duplicate claim to the Recycle Bin.', 'error')
     } finally {
       setUpdatingStatus(null)
     }
@@ -8401,6 +8471,7 @@ const Nhis = () => {
                       const claimForAction = { ...issue, _summaryOnly: true }
                       const patientName = issue.patientName || [issue.surname, issue.other_names].filter(Boolean).join(' ') || 'Unknown'
                       const issueList = Array.isArray(issue.issues) ? issue.issues : []
+                      const issueCategories = getReadinessIssueCategories(issue)
                       return (
                         <tr key={issue.id || issue.claim_number || index}>
                           <td>{issue.claim_number || 'Unnumbered'}</td>
@@ -8411,8 +8482,18 @@ const Nhis = () => {
                           </td>
                           <td>{formatNhisServiceDateTime(issue)}</td>
                           <td>
+                            <div className="readiness-issue-category-list" aria-label="Issue categories">
+                              {issueCategories.map((category) => (
+                                <span
+                                  key={`${issue.id || issue.claim_number || index}-${category}`}
+                                  className={`readiness-issue-category readiness-issue-category--${category}`}
+                                >
+                                  {READINESS_CATEGORY_LABELS[category] || category}
+                                </span>
+                              ))}
+                            </div>
                             <ul className="readiness-issue-list">
-                              {(issueList.length ? issueList : ['Claim is incomplete for export.']).slice(0, 4).map((text, itemIndex) => {
+                              {(issueList.length ? issueList : ['Claim is incomplete for export.']).map((text, itemIndex) => {
                                 const severity = getReadinessIssueSeverity(text)
                                 return (
                                   <li key={`${issue.id || index}-issue-${itemIndex}`}>
@@ -8425,7 +8506,6 @@ const Nhis = () => {
                                 )
                               })}
                             </ul>
-                            {issueList.length > 4 && <small>{issueList.length - 4} more issue{issueList.length - 4 === 1 ? '' : 's'}</small>}
                           </td>
                           <td><StatusBadge status={issue.status || 'served'} /></td>
                           <td>
@@ -8595,6 +8675,17 @@ const Nhis = () => {
                                       }}
                                     >
                                       <CheckCircle2 size={14} /> Keep this
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="duplicate-recycle-button"
+                                      disabled={!canDeleteNhisClaims || Boolean(updatingStatus) || groupClaims.length <= 1}
+                                      title={canDeleteNhisClaims ? 'Move only this duplicate claim to the Recycle Bin' : 'Only an administrator can resolve duplicates'}
+                                      onClick={() => {
+                                        void handleRecycleDuplicateClaim(group, claimForAction)
+                                      }}
+                                    >
+                                      <Trash2 size={14} /> Recycle this
                                     </button>
                                     <button
                                       type="button"
