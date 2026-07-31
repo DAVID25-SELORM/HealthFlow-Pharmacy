@@ -8512,7 +8512,7 @@ const Nhis = () => {
                             <div className="duplicate-claim-actions">
                               <button
                                 type="button"
-                                className="action-btn"
+                                className="action-btn action-btn--view readiness-action-btn"
                                 title="View claim"
                                 onClick={() => {
                                   setShowReadinessClaimReview(false)
@@ -8522,18 +8522,19 @@ const Nhis = () => {
                                 }}
                               >
                                 <Eye size={14} />
+                                <span>View</span>
                               </button>
                               <button
                                 type="button"
                                 className="action-btn action-btn--edit readiness-action-btn"
-                                title="Open correction"
-                                aria-label={`Open correction for ${issue.claim_number || patientName}`}
+                                title="Correct issue"
+                                aria-label={`Correct issue for ${issue.claim_number || patientName}`}
                                 onClick={() => {
                                   void openReadinessIssueForEdit(issue)
                                 }}
                               >
                                 <Pencil size={14} />
-                                <span>Open correction</span>
+                                <span>Correct issue</span>
                               </button>
                               {canReopenMca && issue.status === 'served' && !isNhisClaimDirectlyServed(issue) && !isMcaEditWindowOpen(issue) && (
                                 <button
@@ -8689,7 +8690,7 @@ const Nhis = () => {
                                     </button>
                                     <button
                                       type="button"
-                                      className="action-btn"
+                                      className="action-btn action-btn--view readiness-action-btn"
                                       title="View claim"
                                       onClick={() => {
                                         setShowDuplicateClaimReview(false)
@@ -8699,10 +8700,11 @@ const Nhis = () => {
                                       }}
                                     >
                                       <Eye size={14} />
+                                      <span>View</span>
                                     </button>
                                     <button
                                       type="button"
-                                      className="action-btn action-btn--edit"
+                                      className="action-btn action-btn--edit readiness-action-btn"
                                       title="Edit claim"
                                       onClick={() => {
                                         setShowDuplicateClaimReview(false)
@@ -8713,6 +8715,7 @@ const Nhis = () => {
                                       }}
                                     >
                                       <Pencil size={14} />
+                                      <span>Edit</span>
                                     </button>
                                   </div>
                                 </td>
