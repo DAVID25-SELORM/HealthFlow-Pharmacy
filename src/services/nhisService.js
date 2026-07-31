@@ -294,6 +294,7 @@ const NHIS_SERVICE_TIME_ZONE = 'Africa/Accra'
 const DEFAULT_NHIS_CLAIM_LIST_LIMIT = 500
 const NHIS_EXPORT_FETCH_PAGE_SIZE = 500
 const NHIS_EXPORT_RELATION_BATCH_SIZE = 200
+const NHIS_ACTIVE_MEDICATION_RPC_BATCH_SIZE = 150
 const NHIS_PRESCRIPTION_SIGNED_URL_BATCH_SIZE = 500
 // Bounded so a large batch downloads real files in parallel without opening
 // hundreds of simultaneous connections to storage.
@@ -4991,21 +4992,25 @@ const getNhisExportActiveMedicationWarnings = async (claims = [], options = {}) 
   if (!items.length) return []
 
   try {
-    const response = await supabase.rpc('check_nhis_active_medication_overlap_batch', {
-      p_items: items,
-    })
-    const { data, error } = response || {}
-    if (error) {
-      if (isMissingMedicationOverlapBatchRpcError(error)) return []
-      console.warn('[NHIS] Active medication batch scrub failed.', {
-        code: error?.code || null,
-        message: error?.message || 'Unknown error',
+    const data = []
+    for (const itemBatch of chunkArray(items, NHIS_ACTIVE_MEDICATION_RPC_BATCH_SIZE)) {
+      const response = await supabase.rpc('check_nhis_active_medication_overlap_batch', {
+        p_items: itemBatch,
       })
-      return []
+      const { data: batchData, error } = response || {}
+      if (error) {
+        if (isMissingMedicationOverlapBatchRpcError(error)) return []
+        console.warn('[NHIS] Active medication batch scrub failed.', {
+          code: error?.code || null,
+          message: error?.message || 'Unknown error',
+        })
+        return []
+      }
+      if (Array.isArray(batchData)) data.push(...batchData)
     }
 
     const alertsByClaimId = new Map()
-    ;(Array.isArray(data) ? data : []).forEach((alert) => {
+    data.forEach((alert) => {
       const claimId = normalizeText(alert.input_claim_id)
       if (!claimId) return
       const alerts = alertsByClaimId.get(claimId) || []

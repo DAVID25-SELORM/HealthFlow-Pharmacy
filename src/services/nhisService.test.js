@@ -4591,6 +4591,117 @@ describe('duplicate NHIS claim prevention', () => {
     ])
   })
 
+  it('splits active-medication export scrub requests so large batches do not exceed RPC payload limits', async () => {
+    const claims = Array.from({ length: 151 }, (_, index) => {
+      const claimNumber = String(index + 1).padStart(6, '0')
+      return {
+        id: `11111111-1111-4111-8111-${String(index + 1).padStart(12, '0')}`,
+        claim_number: `NHIS-${claimNumber}`,
+        status: 'served',
+        organization_id: '22222222-2222-4222-8222-222222222222',
+        organization_type: 'hospital',
+        member_no: `12345${claimNumber}`,
+        surname: 'Mensah',
+        other_names: `Patient ${index + 1}`,
+        folder_no: `F${claimNumber}`,
+        date_of_birth: '1990-01-01',
+        patient_address: 'Accra',
+        ccc_no: `C${claimNumber}`,
+        diagnosis: 'Malaria',
+        diagnosis_details: [{ code: 'B50', label: 'Plasmodium falciparum malaria', source: 'ICD-10' }],
+        service_date_from: '2026-05-14',
+        service_date_to: '2026-05-14',
+        referring_facility: 'Westpoint Hospital',
+        physician_name: 'Dr Test',
+        total_amount: 10,
+        nhis_claim_medicines: [{
+          nhis_drug_id: 'drug-1',
+          drug_code: 'PARA500',
+          description: 'Paracetamol Tablet 500mg',
+          generic_name: 'Paracetamol',
+          unit: 'tablet',
+          unit_price: 1,
+          served_qty: 10,
+          dose: '1 tablet',
+          frequency: 'BD',
+          duration: '5 days',
+          total_amount: 10,
+          category: 'A',
+        }],
+      }
+    })
+    const claimsQuery = {
+      order: vi.fn(() => claimsQuery),
+      gte: vi.fn(() => claimsQuery),
+      lte: vi.fn().mockResolvedValue({ data: claims, error: null }),
+    }
+    const serviceLinesQuery = {
+      in: vi.fn(() => serviceLinesQuery),
+      order: vi.fn().mockResolvedValue({ data: [], error: null }),
+    }
+    supabase.from.mockImplementation((table) => {
+      if (table === 'nhis_claims') {
+        return { select: vi.fn(() => claimsQuery) }
+      }
+      if (table === 'nhis_claim_services') {
+        return { select: vi.fn(() => serviceLinesQuery) }
+      }
+      if (table === 'nhis_clinical_rules') {
+        const clinicalRulesQuery = {
+          eq: vi.fn(() => clinicalRulesQuery),
+          in: vi.fn(() => clinicalRulesQuery),
+          order: vi.fn().mockResolvedValue({ data: [], error: null }),
+        }
+        return { select: vi.fn(() => clinicalRulesQuery) }
+      }
+      return { select: vi.fn(() => ({ in: vi.fn().mockReturnThis(), eq: vi.fn().mockResolvedValue({ data: [], error: null }) })) }
+    })
+    supabase.rpc
+      .mockResolvedValueOnce({
+        data: [{
+          input_claim_id: claims[0].id,
+          severity: 'warning',
+          match_type: 'early_refill_review',
+          medicine_code: 'PARA500',
+          medicine_description: 'Paracetamol Tablet 500mg',
+          remaining_days: 4,
+          risk_score: 70,
+        }],
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: [{
+          input_claim_id: claims[150].id,
+          severity: 'warning',
+          match_type: 'early_refill_review',
+          medicine_code: 'PARA500',
+          medicine_description: 'Paracetamol Tablet 500mg',
+          remaining_days: 2,
+          risk_score: 55,
+        }],
+        error: null,
+      })
+
+    const warnings = await getNhisExportScrubWarnings({
+      mode: 'custom',
+      fromDate: '2026-05-14',
+      toDate: '2026-05-14',
+      format: 'json',
+      organizationType: 'hospital',
+      providerClassLevel: 'D',
+      pharmacyLevel: 'P1',
+      nhisDrugCatalog: [{ id: 'drug-1', code: 'PARA500', category: 'A' }],
+    })
+
+    expect(supabase.rpc).toHaveBeenCalledTimes(2)
+    expect(supabase.rpc.mock.calls[0][1].p_items).toHaveLength(150)
+    expect(supabase.rpc.mock.calls[1][1].p_items).toHaveLength(1)
+    expect(warnings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: claims[0].id }),
+      expect.objectContaining({ id: claims[150].id }),
+    ]))
+  })
+
   it('keeps normal export scrub warnings when the active-medication batch RPC is unavailable', async () => {
     const warningClaim = {
       id: '33333333-3333-4333-8333-333333333333',
