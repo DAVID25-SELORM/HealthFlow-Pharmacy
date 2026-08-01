@@ -4896,6 +4896,42 @@ export const checkNhisActiveMedicationOverlap = async ({
 
 // ─── NHIS Claims ─────────────────────────────────────────────────────────────
 
+export const getNhisPatientActiveMedications = async ({
+  memberNo = '',
+  hin = '',
+  serviceDate = null,
+  currentClaimId = null,
+  currentOrganizationId = null,
+} = {}) => {
+  if (shouldUseBranchServer()) {
+    return { available: false, alerts: [], reason: 'offline_branch' }
+  }
+
+  if (!normalizeText(memberNo) && !normalizeText(hin)) {
+    return { available: true, alerts: [] }
+  }
+
+  const { data, error } = await supabase.rpc('get_nhis_patient_active_medications', {
+    p_member_no: normalizeText(memberNo) || null,
+    p_hin: normalizeText(hin) || null,
+    p_service_date: serviceDate || null,
+    p_current_claim_id: currentClaimId || null,
+    p_current_organization_id: currentOrganizationId || null,
+  })
+
+  if (error) {
+    if (isMissingMedicationOverlapRpcError(error)) {
+      return { available: false, alerts: [], reason: 'rpc_not_deployed' }
+    }
+    throw error
+  }
+
+  return {
+    available: true,
+    alerts: Array.isArray(data) ? data : [],
+  }
+}
+
 const isMissingMedicationOverlapBatchRpcError = (error = {}) => {
   const message = normalizeText(error.message || error.details || error.hint).toLowerCase()
   return (
@@ -4918,11 +4954,36 @@ const formatNhisActiveMedicationExportBlocker = (alert = {}) => {
   const remainingText = remainingDays > 0
     ? `${remainingDays} treatment day(s) may still remain`
     : 'active treatment coverage may overlap'
+  const previousDate = normalizeText(alert.previous_dispensed_date || alert.previousDispensedDate)
+  const coverageEndDate = normalizeText(alert.coverage_end_date || alert.coverageEndDate)
+  const sourceLabel = normalizeText(alert.source_label || alert.sourceLabel)
+  const quantitySupplied = alert.previous_quantity_supplied ?? alert.previousQuantitySupplied
+  const previousDose = normalizeText(alert.previous_dose ?? alert.previousDose)
+  const previousFrequency = normalizeText(alert.previous_frequency ?? alert.previousFrequency)
+  const administrationsPerDay = Number(alert.calculated_administrations_per_day ?? alert.calculatedAdministrationsPerDay)
+  const treatmentDays = Number(alert.calculated_treatment_days ?? alert.calculatedTreatmentDays)
+  const detailText = [
+    quantitySupplied !== null && quantitySupplied !== undefined && `${quantitySupplied}` !== ''
+      ? `previous quantity ${quantitySupplied}`
+      : '',
+    previousDose ? `dose ${previousDose}` : '',
+    previousFrequency ? `frequency ${previousFrequency}` : '',
+    Number.isFinite(administrationsPerDay) && administrationsPerDay > 0
+      ? `${administrationsPerDay} administration(s)/day`
+      : '',
+    Number.isFinite(treatmentDays) && treatmentDays > 0
+      ? `${treatmentDays} calculated treatment day(s)`
+      : '',
+  ].filter(Boolean).join('; ')
   const riskScore = Number(alert.risk_score || 0)
   const riskText = riskScore > 0 ? ` Risk score ${riskScore}/100.` : ''
   const actionText = normalizeText(alert.recommended_action)
   return [
     `Active medication blocked: ${medicine} has ${matchText}; ${remainingText}. NHIA may reject or reduce payment for an early refill.`,
+    previousDate ? `Previous dispensing date: ${previousDate}.` : '',
+    detailText ? `Calculation: ${detailText}.` : '',
+    coverageEndDate ? `Expected completion date: ${coverageEndDate}.` : '',
+    sourceLabel ? `Source: ${sourceLabel}.` : '',
     riskText.trim(),
     actionText ? `Action: ${actionText}` : '',
   ].filter(Boolean).join(' ')

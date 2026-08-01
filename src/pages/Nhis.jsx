@@ -23,7 +23,6 @@ import {
   hasVerifiedNhisPrescription,
 } from '../utils/nhisIntakeWorkflow'
 import { normalizeText } from '../utils/validation'
-import { confirmAction } from '../utils/actionConfirmation'
 import {
   getAllNhisDrugs,
   getApplicableNhiaTariffItems,
@@ -40,6 +39,7 @@ import {
   getNhisClaimStats,
   getNhisClaimIssueCounts,
   checkNhisActiveMedicationOverlap,
+  getNhisPatientActiveMedications,
   createNhisClaim,
   deleteNhisClaim,
   serveNhisClaimDirect,
@@ -994,6 +994,22 @@ const buildNhisActiveMedicationOverlapMessage = (alerts = []) => {
     const remainingText = remainingDays > 0
       ? `${remainingDays} day(s) remaining`
       : 'active coverage may still overlap'
+    const quantitySupplied = alert.previous_quantity_supplied ?? alert.previousQuantitySupplied
+    const previousDose = normalizeText(alert.previous_dose ?? alert.previousDose)
+    const previousFrequency = normalizeText(alert.previous_frequency ?? alert.previousFrequency)
+    const administrationsPerDay = Number(alert.calculated_administrations_per_day ?? alert.calculatedAdministrationsPerDay)
+    const treatmentDays = Number(alert.calculated_treatment_days ?? alert.calculatedTreatmentDays)
+    const quantityText = quantitySupplied !== null && quantitySupplied !== undefined && `${quantitySupplied}` !== ''
+      ? `Quantity supplied: ${quantitySupplied}`
+      : ''
+    const doseText = previousDose ? `Dose: ${previousDose}` : ''
+    const frequencyText = previousFrequency ? `Frequency: ${previousFrequency}` : ''
+    const administrationsText = Number.isFinite(administrationsPerDay) && administrationsPerDay > 0
+      ? `Calculated administrations/day: ${administrationsPerDay}`
+      : ''
+    const treatmentDaysText = Number.isFinite(treatmentDays) && treatmentDays > 0
+      ? `Calculated treatment days: ${treatmentDays}`
+      : ''
     const riskScore = Number(alert.risk_score)
     const riskText = Number.isFinite(riskScore) && riskScore > 0
       ? `Risk score: ${riskScore}/100`
@@ -1007,6 +1023,11 @@ const buildNhisActiveMedicationOverlapMessage = (alerts = []) => {
       `${index + 1}. ${medicine}`,
       `Match: ${matchText}`,
       `Previous dispensing: ${previousDate}`,
+      quantityText,
+      doseText,
+      frequencyText,
+      administrationsText,
+      treatmentDaysText,
       `Calculated treatment end: ${endDate}`,
       `Remaining coverage: ${remainingText}`,
       `Source: ${alert.source_label || 'Another participating HealthFlow facility'}`,
@@ -1325,6 +1346,20 @@ const Nhis = () => {
   const [reopenDispensaryClaim, setReopenDispensaryClaim] = useState(null)
   const [reopenDispensaryReason, setReopenDispensaryReason] = useState('')
   const [discardConfirmation, setDiscardConfirmation] = useState(null)
+  const [actionConfirmation, setActionConfirmation] = useState(null)
+  const actionConfirmationResolverRef = useRef(null)
+
+  const closeActionConfirmation = useCallback((confirmed = false) => {
+    const resolver = actionConfirmationResolverRef.current
+    actionConfirmationResolverRef.current = null
+    setActionConfirmation(null)
+    if (resolver) resolver(Boolean(confirmed))
+  }, [])
+
+  const requestActionConfirmation = useCallback((options) => new Promise((resolve) => {
+    actionConfirmationResolverRef.current = resolve
+    setActionConfirmation(options)
+  }), [])
 
   // ── new claim form ────────────────────────────────────────────
   const [claimForm, setClaimForm]           = useState(makeBlankClaim)
@@ -1343,6 +1378,15 @@ const Nhis = () => {
   const [patientSearchError, setPatientSearchError] = useState('')
   const [patientSearching, setPatientSearching] = useState(false)
   const [selectedClaimPatient, setSelectedClaimPatient] = useState(null)
+  const [patientActiveMedicationState, setPatientActiveMedicationState] = useState({
+    loading: false,
+    checked: false,
+    available: true,
+    alerts: [],
+    reason: '',
+    error: '',
+  })
+  const activeMedicationPatientCheckRef = useRef(0)
 
   // ── medicine sub-modal ────────────────────────────────────────
   const [medForm, setMedForm]           = useState(makeBlankMedicine)
@@ -2726,6 +2770,103 @@ const Nhis = () => {
   }
 
   // ── select patient for claim ──────────────────────────────────
+  const resetPatientActiveMedicationState = useCallback(() => {
+    activeMedicationPatientCheckRef.current += 1
+    setPatientActiveMedicationState({
+      loading: false,
+      checked: false,
+      available: true,
+      alerts: [],
+      reason: '',
+      error: '',
+    })
+  }, [])
+
+  const getActiveMedicationUnavailableMessage = useCallback((reason = '') => {
+    if (reason === 'offline_branch') {
+      return 'Cross-facility active medicine check is unavailable while this browser is using the local branch server. Local checks still continue.'
+    }
+    if (reason === 'rpc_not_deployed') {
+      return 'Cross-facility active medicine check is waiting for the latest database patch. Local checks still continue.'
+    }
+    return 'Cross-facility active medicine check could not be completed. Local checks still continue.'
+  }, [])
+
+  const runPatientActiveMedicationCheck = useCallback(async ({
+    memberNo = claimForm.memberNo,
+    hin = claimForm.hin,
+    serviceDate = claimForm.serviceDate || todayIsoDate(),
+    currentClaimId = editingClaim?.id || null,
+    silent = false,
+  } = {}) => {
+    const effectiveMemberNo = normalizeText(memberNo)
+    const effectiveHin = normalizeText(hin)
+    if (!effectiveMemberNo && !effectiveHin) {
+      resetPatientActiveMedicationState()
+      return
+    }
+
+    const requestId = activeMedicationPatientCheckRef.current + 1
+    activeMedicationPatientCheckRef.current = requestId
+    setPatientActiveMedicationState((prev) => ({
+      ...prev,
+      loading: true,
+      checked: true,
+      error: '',
+    }))
+
+    try {
+      const result = await getNhisPatientActiveMedications({
+        memberNo: effectiveMemberNo,
+        hin: effectiveHin,
+        serviceDate,
+        currentClaimId,
+        currentOrganizationId: organizationId || null,
+      })
+      if (activeMedicationPatientCheckRef.current !== requestId) return
+      const alerts = Array.isArray(result?.alerts) ? result.alerts : []
+      setPatientActiveMedicationState({
+        loading: false,
+        checked: true,
+        available: result?.available !== false,
+        alerts,
+        reason: result?.reason || '',
+        error: '',
+      })
+      if (!silent && result?.available === false) {
+        notify(getActiveMedicationUnavailableMessage(result.reason), 'warning')
+      } else if (!silent && alerts.length) {
+        notify(`HealthFlow found ${alerts.length} active medicine record${alerts.length === 1 ? '' : 's'} for this patient.`, 'warning')
+      }
+    } catch (error) {
+      if (activeMedicationPatientCheckRef.current !== requestId) return
+      console.warn('[NHIS] Patient active medication check failed.', {
+        code: error?.code || null,
+        message: error?.message || 'Unknown error',
+      })
+      setPatientActiveMedicationState({
+        loading: false,
+        checked: true,
+        available: false,
+        alerts: [],
+        reason: '',
+        error: error?.message || 'Patient active medication check failed.',
+      })
+      if (!silent) {
+        notify(getActiveMedicationUnavailableMessage(), 'warning')
+      }
+    }
+  }, [
+    claimForm.hin,
+    claimForm.memberNo,
+    claimForm.serviceDate,
+    editingClaim?.id,
+    getActiveMedicationUnavailableMessage,
+    notify,
+    organizationId,
+    resetPatientActiveMedicationState,
+  ])
+
   const selectPatient = (patient) => {
     const memberNo = getPatientMemberNumber(patient)
     const normalizedMemberNo = normalizeNhiaMemberNumber(memberNo)
@@ -2755,6 +2896,13 @@ const Nhis = () => {
     setPatientSearchResults([])
     setPatientSearchError('')
     setReturnAlertOverride(null)
+    runPatientActiveMedicationCheck({
+      memberNo: normalizedMemberNo,
+      hin: getPatientHin(patient),
+      serviceDate: claimForm.serviceDate || todayIsoDate(),
+      currentClaimId: editingClaim?.id || null,
+      silent: true,
+    })
     const alert = buildReturnAlertForPatient(selectedPatient)
     if (alert) openReturnAlert(alert)
   }
@@ -2762,12 +2910,14 @@ const Nhis = () => {
   const handlePatientSearchChange = (event) => {
     setSelectedClaimPatient(null)
     setReturnAlertOverride(null)
+    resetPatientActiveMedicationState()
     setPatientSearch(event.target.value)
   }
 
   const clearSelectedPatient = () => {
     setSelectedClaimPatient(null)
     setReturnAlertOverride(null)
+    resetPatientActiveMedicationState()
     setPatientSearch('')
     setPatientSearchResults([])
     setPatientSearchError('')
@@ -3277,9 +3427,17 @@ const Nhis = () => {
       windowHours: returnAlertSettings.windowHours,
     })
     if (duplicateAlerts.length) {
-      const proceed = window.confirm(
-        `Duplicate medicine alert:\n\n${duplicateAlerts.slice(0, 5).join('\n')}\n\nContinue adding this medicine?`
-      )
+      const proceed = await requestActionConfirmation({
+        eyebrow: 'Duplicate medicine alert',
+        title: 'Continue adding this medicine?',
+        details: duplicateAlerts.slice(0, 5).map((alert, index) => ({
+          label: `Alert ${index + 1}`,
+          value: alert,
+        })),
+        warning: 'HealthFlow found possible repeat dispensing for this patient. Review before continuing.',
+        confirmText: 'Continue',
+        cancelText: 'Review first',
+      })
       if (!proceed) {
         notify('Medicine was not added. Please verify the repeat dispensing first.', 'warning')
         return
@@ -3954,9 +4112,17 @@ const Nhis = () => {
       editingClaimId: editingClaim?.id,
     })
     if (duplicateWarnings.length && saveAsDraft && !reviewConfirmed) {
-      const proceed = window.confirm(
-        `Possible duplicate claim or medicine detected:\n\n${duplicateWarnings.slice(0, 6).join('\n')}\n\nContinue anyway?`
-      )
+      const proceed = await requestActionConfirmation({
+        eyebrow: 'Duplicate review',
+        title: 'Continue saving this claim?',
+        details: duplicateWarnings.slice(0, 6).map((warning, index) => ({
+          label: `Warning ${index + 1}`,
+          value: warning,
+        })),
+        warning: 'HealthFlow found possible duplicate claim or medicine details. Review before saving.',
+        confirmText: 'Continue',
+        cancelText: 'Go back',
+      })
       if (!proceed) {
         setClaimError(`Possible duplicate found: ${duplicateWarnings[0]}`)
         return
@@ -4340,7 +4506,8 @@ const Nhis = () => {
         }
       }
 
-      if (!confirmAction({
+      if (!(await requestActionConfirmation({
+        eyebrow: 'NHIS claim status',
         title: newStatus === 'submitted'
           ? 'Submit this NHIS claim?'
           : 'Mark this NHIS claim as paid?',
@@ -4361,9 +4528,10 @@ const Nhis = () => {
           ? 'This performs the final readiness-controlled submission step and may send the claim through CLAIM-it when configured.'
           : 'This records that payment has been received for the submitted claim.',
         confirmText: newStatus === 'submitted'
-          ? 'submit this claim'
-          : 'mark this claim as paid',
-      })) return
+          ? 'Submit claim'
+          : 'Mark as paid',
+        cancelText: 'Cancel',
+      }))) return
 
       const hasReadablePrescriptionFile = Boolean(
         fullClaim.prescription_file_path ||
@@ -4399,15 +4567,17 @@ const Nhis = () => {
 
   const handleRejectConfirm = async () => {
     if (!rejectReason.trim()) { notify('Rejection reason is required.', 'warning'); return }
-    if (!confirmAction({
+    if (!(await requestActionConfirmation({
+      eyebrow: 'NHIS claim rejection',
       title: 'Reject this NHIS claim?',
       details: [
         { label: 'Claim', value: rejectTarget?.claim_number },
         { label: 'Reason', value: rejectReason.trim() },
       ],
       warning: 'The rejection and its reason will be recorded in the claim history.',
-      confirmText: 'reject this claim',
-    })) return
+      confirmText: 'Reject claim',
+      cancelText: 'Cancel',
+    }))) return
     try {
       setUpdatingStatus(rejectTarget.id)
       await updateNhisClaimStatus(rejectTarget.id, 'rejected', rejectReason.trim(), user?.id || null)
@@ -4427,7 +4597,8 @@ const Nhis = () => {
       notify('Only an administrator can delete NHIS claims.', 'warning')
       return
     }
-    if (!confirmAction({
+    if (!(await requestActionConfirmation({
+      eyebrow: 'Recycle Bin',
       title: 'Move this NHIS claim to the Recycle Bin?',
       details: [
         { label: 'Claim', value: claim.claim_number },
@@ -4438,8 +4609,9 @@ const Nhis = () => {
         { label: 'Status', value: claim.status },
       ],
       warning: 'The claim will leave the active workspace. An administrator can restore it.',
-      confirmText: 'move this claim to the Recycle Bin',
-    })) return
+      confirmText: 'Move to Recycle Bin',
+      cancelText: 'Cancel',
+    }))) return
 
     try {
       setUpdatingStatus(claim.id)
@@ -4467,7 +4639,8 @@ const Nhis = () => {
       return
     }
 
-    if (!confirmAction({
+    if (!(await requestActionConfirmation({
+      eyebrow: 'Duplicate resolution',
       title: 'Keep this NHIS claim and recycle the duplicates?',
       details: [
         { label: 'Keep', value: keepClaim.claim_number || 'Selected claim' },
@@ -4482,8 +4655,9 @@ const Nhis = () => {
         { label: 'Service date', value: group.serviceDate || getClaimServiceDate(keepClaim) || 'Not recorded' },
       ],
       warning: 'Only the selected claim will remain active. The other duplicate claim(s) can be restored by an administrator from the Recycle Bin.',
-      confirmText: 'keep this claim and recycle the others',
-    })) return
+      confirmText: 'Keep selected claim',
+      cancelText: 'Cancel',
+    }))) return
 
     try {
       setUpdatingStatus(keepClaim.id)
@@ -4524,7 +4698,8 @@ const Nhis = () => {
       return
     }
 
-    if (!confirmAction({
+    if (!(await requestActionConfirmation({
+      eyebrow: 'Duplicate resolution',
       title: 'Move this duplicate claim to the Recycle Bin?',
       details: [
         { label: 'Move', value: duplicateClaim.claim_number || 'Selected duplicate' },
@@ -4539,8 +4714,9 @@ const Nhis = () => {
         { label: 'Service date', value: group.serviceDate || getClaimServiceDate(duplicateClaim) || 'Not recorded' },
       ],
       warning: 'This only moves the selected duplicate to the Recycle Bin. An administrator can restore it if needed.',
-      confirmText: 'move this duplicate to the Recycle Bin',
-    })) return
+      confirmText: 'Delete duplicate',
+      cancelText: 'Cancel',
+    }))) return
 
     try {
       setUpdatingStatus(duplicateClaim.id)
@@ -4651,7 +4827,17 @@ const Nhis = () => {
   }
 
   const handleDeleteDrug = async (drug) => {
-    if (!window.confirm(`Remove "${drug.description}" from the NHIS catalog?`)) return
+    if (!(await requestActionConfirmation({
+      eyebrow: 'NHIS catalog',
+      title: 'Remove this medicine from the NHIS catalog?',
+      details: [
+        { label: 'Medicine', value: drug.description },
+        { label: 'Code', value: drug.drug_code || drug.code },
+      ],
+      warning: 'This removes the catalog item from the active NHIS catalog view.',
+      confirmText: 'Remove medicine',
+      cancelText: 'Cancel',
+    }))) return
     try {
       await deleteNhisDrug(drug.id)
       const fresh = await getAllNhisDrugs()
@@ -6486,29 +6672,100 @@ const Nhis = () => {
                         </div>
                       )}
                       {selectedClaimPatient && (
-                        <div className="selected-patient-card">
-                          <div>
-                            <strong>{formatPatientLookupName(selectedClaimPatient)}</strong>
-                            <div className="selected-patient-meta">
-                              {[
-                                getPatientMemberNumber(selectedClaimPatient)
-                                  ? `Member: ${getPatientMemberNumber(selectedClaimPatient)}`
-                                  : '',
-                                getPatientHin(selectedClaimPatient) ? `HIN: ${getPatientHin(selectedClaimPatient)}` : '',
-                                getPatientFolderNo(selectedClaimPatient) ? `Folder: ${getPatientFolderNo(selectedClaimPatient)}` : '',
-                                getPatientPhone(selectedClaimPatient) || '',
-                                selectedClaimPatient.sourceClaimNumber ? `Previous claim: ${selectedClaimPatient.sourceClaimNumber}` : '',
-                              ].filter(Boolean).join(' | ')}
+                        <>
+                          <div className="selected-patient-card">
+                            <div>
+                              <strong>{formatPatientLookupName(selectedClaimPatient)}</strong>
+                              <div className="selected-patient-meta">
+                                {[
+                                  getPatientMemberNumber(selectedClaimPatient)
+                                    ? `Member: ${getPatientMemberNumber(selectedClaimPatient)}`
+                                    : '',
+                                  getPatientHin(selectedClaimPatient) ? `HIN: ${getPatientHin(selectedClaimPatient)}` : '',
+                                  getPatientFolderNo(selectedClaimPatient) ? `Folder: ${getPatientFolderNo(selectedClaimPatient)}` : '',
+                                  getPatientPhone(selectedClaimPatient) || '',
+                                  selectedClaimPatient.sourceClaimNumber ? `Previous claim: ${selectedClaimPatient.sourceClaimNumber}` : '',
+                                ].filter(Boolean).join(' | ')}
+                              </div>
                             </div>
+                            <button
+                              type="button"
+                              className="selected-patient-change"
+                              onClick={clearSelectedPatient}
+                            >
+                              Change
+                            </button>
                           </div>
-                          <button
-                            type="button"
-                            className="selected-patient-change"
-                            onClick={clearSelectedPatient}
-                          >
-                            Change
-                          </button>
-                        </div>
+                          <div className={`nhis-active-meds-panel ${
+                            patientActiveMedicationState.alerts.length ? 'nhis-active-meds-panel--warning' : ''
+                          }`}>
+                            <div className="nhis-active-meds-panel__header">
+                              <div>
+                                <strong>Active Medicines</strong>
+                                <span>
+                                  {patientActiveMedicationState.loading
+                                    ? 'Checking cross-facility history...'
+                                    : patientActiveMedicationState.alerts.length
+                                      ? `${patientActiveMedicationState.alerts.length} active medicine record${patientActiveMedicationState.alerts.length === 1 ? '' : 's'} found`
+                                      : patientActiveMedicationState.checked
+                                        ? 'No active medicine coverage found'
+                                        : 'Check this patient before dispensing'}
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                className="selected-patient-change"
+                                disabled={patientActiveMedicationState.loading}
+                                onClick={() => runPatientActiveMedicationCheck({ silent: false })}
+                              >
+                                <HeartPulse size={14} />
+                                Check
+                              </button>
+                            </div>
+                            {!patientActiveMedicationState.available && (
+                              <div className="nhis-active-meds-message">
+                                {getActiveMedicationUnavailableMessage(patientActiveMedicationState.reason)}
+                              </div>
+                            )}
+                            {patientActiveMedicationState.error && (
+                              <div className="nhis-active-meds-message">
+                                {getActiveMedicationUnavailableMessage()}
+                              </div>
+                            )}
+                            {patientActiveMedicationState.alerts.length > 0 && (
+                              <div className="nhis-active-meds-list">
+                                {patientActiveMedicationState.alerts.slice(0, 5).map((alert, index) => {
+                                  const previousDate = normalizeText(alert.previous_dispensed_date || alert.previousDispensedDate)
+                                  const coverageEnd = normalizeText(alert.coverage_end_date || alert.coverageEndDate)
+                                  const quantity = alert.previous_quantity_supplied ?? alert.previousQuantitySupplied
+                                  const dose = normalizeText(alert.previous_dose || alert.previousDose)
+                                  const frequency = normalizeText(alert.previous_frequency || alert.previousFrequency)
+                                  const administrationsPerDay = alert.calculated_administrations_per_day ?? alert.calculatedAdministrationsPerDay
+                                  const treatmentDays = alert.calculated_treatment_days ?? alert.calculatedTreatmentDays
+                                  const sourceLabel = normalizeText(alert.source_label || alert.sourceLabel)
+                                  const previousClaim = normalizeText(alert.previous_claim_reference || alert.previousClaimReference)
+                                  return (
+                                    <div className="nhis-active-meds-item" key={`${alert.medicine_code || alert.medicineCode || index}-${previousDate}-${coverageEnd}`}>
+                                      <strong>{alert.medicine_description || alert.medicineDescription || alert.medicine_code || alert.medicineCode || 'Medicine'}</strong>
+                                      <div className="nhis-active-meds-grid">
+                                        {previousDate && <span>Previous dispensing: {formatAppDate(previousDate)}</span>}
+                                        {quantity !== null && quantity !== undefined && `${quantity}` !== '' && <span>Quantity supplied: {quantity}</span>}
+                                        {dose && <span>Dose: {dose}</span>}
+                                        {frequency && <span>Frequency: {frequency}</span>}
+                                        {administrationsPerDay && <span>Administrations/day: {administrationsPerDay}</span>}
+                                        {treatmentDays && <span>Treatment days: {treatmentDays}</span>}
+                                        {coverageEnd && <span>Expected completion: {formatAppDate(coverageEnd)}</span>}
+                                        <span>Remaining: {Number(alert.remaining_days || alert.remainingDays || 0)} day(s)</span>
+                                        {sourceLabel && <span>Source: {sourceLabel}</span>}
+                                        {previousClaim && <span>Reference: {previousClaim}</span>}
+                                      </div>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        </>
                       )}
                     </div>
                   </div>
@@ -7492,6 +7749,69 @@ const Nhis = () => {
       {/* ══════════════════════════════════════════════════════════════
           NEW MEDICINE SUB-MODAL
       ══════════════════════════════════════════════════════════════ */}
+      {actionConfirmation && (
+        <div
+          className="modal-overlay modal-overlay--top nhis-discard-overlay"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) closeActionConfirmation(false)
+          }}
+        >
+          <section
+            className="modal-panel nhis-discard-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="nhis-action-confirmation-title"
+          >
+            <div className="nhis-discard-header">
+              <div className="nhis-discard-icon" aria-hidden="true">
+                <AlertTriangle size={22} />
+              </div>
+              <div>
+                <span className="nhis-discard-eyebrow">
+                  {actionConfirmation.eyebrow || 'Review action'}
+                </span>
+                <h2 id="nhis-action-confirmation-title">{actionConfirmation.title}</h2>
+              </div>
+              <button
+                type="button"
+                className="modal-close"
+                onClick={() => closeActionConfirmation(false)}
+                aria-label={actionConfirmation.cancelText || 'Cancel'}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="nhis-discard-body">
+              {actionConfirmation.details?.length > 0 && (
+                <div className="nhis-discard-details">
+                  {actionConfirmation.details
+                    .filter((detail) => detail && String(detail.value || '').trim())
+                    .map((detail) => (
+                      <div key={`${detail.label}-${detail.value}`}>
+                        <span>{detail.label}</span>
+                        <strong>{detail.value}</strong>
+                      </div>
+                    ))}
+                </div>
+              )}
+              {actionConfirmation.warning && (
+                <p className="nhis-discard-warning">{actionConfirmation.warning}</p>
+              )}
+            </div>
+
+            <div className="modal-footer nhis-discard-footer">
+              <button type="button" className="btn btn-secondary" onClick={() => closeActionConfirmation(false)}>
+                {actionConfirmation.cancelText || 'Cancel'}
+              </button>
+              <button type="button" className="btn btn-primary" onClick={() => closeActionConfirmation(true)}>
+                {actionConfirmation.confirmText || 'Continue'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
       {discardConfirmation && (
         <div
           className="modal-overlay modal-overlay--top nhis-discard-overlay"
@@ -8750,12 +9070,12 @@ const Nhis = () => {
                                       type="button"
                                       className="duplicate-recycle-button"
                                       disabled={!canDeleteNhisClaims || Boolean(updatingStatus) || groupClaims.length <= 1}
-                                      title={canDeleteNhisClaims ? 'Move only this duplicate claim to the Recycle Bin' : 'Only an administrator can resolve duplicates'}
+                                      title={canDeleteNhisClaims ? 'Delete only this duplicate claim by moving it to the Recycle Bin' : 'Only an administrator can resolve duplicates'}
                                       onClick={() => {
                                         void handleRecycleDuplicateClaim(group, claimForAction)
                                       }}
                                     >
-                                      <Trash2 size={14} /> Recycle this
+                                      <Trash2 size={14} /> Delete duplicate
                                     </button>
                                     <button
                                       type="button"

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { inflateSync } from 'node:zlib'
 
 vi.mock('../lib/supabase', () => ({
@@ -56,6 +57,7 @@ import {
   buildNhisClaimItDirectXml,
   buildNhisClaimItXml,
   checkNhisActiveMedicationOverlap,
+  getNhisPatientActiveMedications,
   checkNhisExportReadiness,
   createNhisClaim,
   deleteNhisClaim,
@@ -4592,7 +4594,15 @@ describe('duplicate NHIS claim prevention', () => {
         match_type: 'early_refill_review',
         medicine_code: 'PARA500',
         medicine_description: 'Paracetamol Tablet 500mg',
+        previous_dispensed_date: '2026-05-10',
+        coverage_end_date: '2026-05-14',
         remaining_days: 4,
+        source_label: 'This HealthFlow facility',
+        previous_quantity_supplied: 10,
+        previous_dose: '1 tablet',
+        previous_frequency: 'BD',
+        calculated_administrations_per_day: 2,
+        calculated_treatment_days: 5,
         risk_score: 70,
         recommended_action: 'Confirm refill reason before export.',
       }],
@@ -4633,6 +4643,10 @@ describe('duplicate NHIS claim prevention', () => {
         issues: expect.arrayContaining([
           expect.stringContaining('Active medication blocked: Paracetamol Tablet 500mg has early refill review'),
           expect.stringContaining('NHIA may reject or reduce payment for an early refill.'),
+          expect.stringContaining('Previous dispensing date: 2026-05-10.'),
+          expect.stringContaining('Calculation: previous quantity 10; dose 1 tablet; frequency BD; 2 administration(s)/day; 5 calculated treatment day(s).'),
+          expect.stringContaining('Expected completion date: 2026-05-14.'),
+          expect.stringContaining('Source: This HealthFlow facility.'),
           expect.stringContaining('Confirm refill reason before export.'),
         ]),
       }),
@@ -5933,6 +5947,11 @@ describe('NHIS active medication overlap check', () => {
       risk_score: 25,
       risk_reasons: ['Requested quantity may be completing a previous partial fill.'],
       recommended_action: 'Confirm this is a completion supply for medicine previously not fully served.',
+      previous_quantity_supplied: 6,
+      previous_dose: '1',
+      previous_frequency: '4 hourly',
+      calculated_administrations_per_day: 6,
+      calculated_treatment_days: 1,
     }]
     supabase.rpc.mockResolvedValueOnce({ data: alerts, error: null })
 
@@ -5952,6 +5971,36 @@ describe('NHIS active medication overlap check', () => {
       p_frequency: 'OD',
       p_duration: '3 days',
     }))
+  })
+
+  it('ships the database regression rules for hourly frequency and daily partial dispensing', () => {
+    const migration = readFileSync(
+      'supabase/migrations/20260731113000_fix_nhis_active_medication_daily_coverage.sql',
+      'utf8'
+    )
+
+    expect(migration).toContain("'\\m4[-\\s]*(hourly|hour|hours|hr|hrs|hrly|h)\\M' then 6::numeric")
+    expect(migration).toContain("'\\m6[-\\s]*(hourly|hour|hours|hr|hrs|hrly|h)\\M' then 4::numeric")
+    expect(migration).toContain("'\\m8[-\\s]*(hourly|hour|hours|hr|hrs|hrly|h)\\M' then 3::numeric")
+    expect(migration).toContain("'\\m12[-\\s]*(hourly|hour|hours|hr|hrs|hrly|h)\\M' then 2::numeric")
+    expect(migration).toContain("'\\m24[-\\s]*(hourly|hour|hours|hr|hrs|hrly|h)\\M' then 1::numeric")
+    expect(migration).toMatch(/served_quantity\s*\/\s*\(\s*candidate_lines\.frequency_per_day\s*\*\s*candidate_lines\.dose_units\s*\)/)
+    expect(migration).toContain('ceil(measured_lines.treatment_days_supplied)::integer')
+    expect(migration).toContain('v_service_date > matched_lines.dispensed_date')
+    expect(migration).toContain('c.id <> p_current_claim_id')
+    expect(migration).toContain("(matched_lines.dispensed_date + (matched_lines.coverage_days - 1))::date >= v_service_date")
+  })
+
+  it('ships the future-dated active-medication comparison guard', () => {
+    const migration = readFileSync(
+      'supabase/migrations/20260801100000_fix_nhis_active_medication_future_dispensing_window.sql',
+      'utf8'
+    )
+
+    expect(migration).toContain('coalesce(m.dispensary_date, c.service_date_from, c.created_at::date) <= v_service_date')
+    expect(migration).toContain('c.id <> p_current_claim_id')
+    expect(migration).toContain('v_service_date > matched_lines.dispensed_date')
+    expect(migration).toContain("'\\m4[-\\s]*(hourly|hour|hours|hr|hrs|hrly|h)\\M' then 6::numeric")
   })
 
   it('can run an ingredient-level advisory when medicine code is unavailable', async () => {
@@ -6005,6 +6054,96 @@ describe('NHIS active medication overlap check', () => {
     })
 
     expect(supabase.rpc).not.toHaveBeenCalled()
+  })
+
+  it('loads patient-level active medication summary with member, HIN, date, and organization context', async () => {
+    const alerts = [{
+      medicine_code: 'PARA500',
+      medicine_description: 'Paracetamol 500 mg tablet',
+      previous_dispensed_date: '2026-07-10',
+      coverage_end_date: '2026-07-14',
+      remaining_days: 4,
+      source_label: 'Another participating HealthFlow facility',
+      previous_claim_reference: null,
+      previous_quantity_supplied: 10,
+      previous_dose: '1',
+      previous_frequency: 'BD',
+      calculated_administrations_per_day: 2,
+      calculated_treatment_days: 5,
+    }]
+    supabase.rpc.mockResolvedValueOnce({ data: alerts, error: null })
+
+    const result = await getNhisPatientActiveMedications({
+      memberNo: ' 12345678 ',
+      hin: ' 0029996622 ',
+      serviceDate: '2026-07-11',
+      currentClaimId: '11111111-1111-4111-8111-111111111111',
+      currentOrganizationId: '22222222-2222-4222-8222-222222222222',
+    })
+
+    expect(result).toEqual({ available: true, alerts })
+    expect(supabase.rpc).toHaveBeenCalledWith('get_nhis_patient_active_medications', {
+      p_member_no: '12345678',
+      p_hin: '0029996622',
+      p_service_date: '2026-07-11',
+      p_current_claim_id: '11111111-1111-4111-8111-111111111111',
+      p_current_organization_id: '22222222-2222-4222-8222-222222222222',
+    })
+  })
+
+  it('does not run the patient-level active medication summary without a member identifier', async () => {
+    await expect(getNhisPatientActiveMedications()).resolves.toEqual({
+      available: true,
+      alerts: [],
+    })
+
+    expect(supabase.rpc).not.toHaveBeenCalled()
+  })
+
+  it('fails open when the patient-level active medication RPC has not been deployed yet', async () => {
+    supabase.rpc.mockResolvedValueOnce({
+      data: null,
+      error: { code: '42883', message: 'function get_nhis_patient_active_medications does not exist' },
+    })
+
+    await expect(getNhisPatientActiveMedications({
+      memberNo: '12345678',
+    })).resolves.toEqual({
+      available: false,
+      alerts: [],
+      reason: 'rpc_not_deployed',
+    })
+  })
+
+  it('does not call patient-level cloud active medication summary in branch-server mode', async () => {
+    shouldUseBranchServer.mockReturnValueOnce(true)
+
+    await expect(getNhisPatientActiveMedications({
+      memberNo: '12345678',
+    })).resolves.toEqual({
+      available: false,
+      alerts: [],
+      reason: 'offline_branch',
+    })
+
+    expect(supabase.rpc).not.toHaveBeenCalled()
+  })
+
+  it('ships the patient-level active medication summary with cross-facility privacy and calculation details', () => {
+    const migration = readFileSync(
+      'supabase/migrations/20260801120000_add_nhis_patient_active_medication_summary.sql',
+      'utf8'
+    )
+
+    expect(migration).toContain('create or replace function public.get_nhis_patient_active_medications')
+    expect(migration).toContain('Another participating HealthFlow facility')
+    expect(migration).toContain('This HealthFlow facility')
+    expect(migration).toContain('then coalesce(visible_lines.claim_number, visible_lines.claim_id::text)')
+    expect(migration).toContain('else null')
+    expect(migration).toContain('served_quantity / (candidate_lines.frequency_per_day * candidate_lines.dose_units)')
+    expect(migration).toContain('c.id <> p_current_claim_id')
+    expect(migration).toContain("'\\m4[-\\s]*(hourly|hour|hours|hr|hrs|hrly|h)\\M' then 6::numeric")
+    expect(migration).toContain('grant execute on function public.get_nhis_patient_active_medications')
   })
 })
 
