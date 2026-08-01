@@ -1142,9 +1142,24 @@
   color: #075985;
 }
 
+.readiness-issue-category--not_included,
+.readiness-issue-category--status {
+  background: #fef3c7;
+  color: #92400e;
+}
+
 .readiness-issue-category--other {
   background: #f1f5f9;
   color: #334155;
+}
+
+.readiness-export-note {
+  color: #92400e;
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1.25;
+  margin-top: 0.3rem;
 }
 
 .readiness-issue-list li {

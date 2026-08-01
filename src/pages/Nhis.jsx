@@ -141,6 +141,8 @@ const NHIS_CLAIMS_SEARCH_DEBOUNCE_MS = 400
 const NHIS_CLAIM_ISSUE_BADGE_SCAN_LIMIT = 3000
 const READINESS_FILTERS = [
   { id: 'all', label: 'All issues' },
+  { id: 'not_included', label: 'Not included in CXF' },
+  { id: 'status', label: 'Not yet served/submitted' },
   { id: 'attachment', label: 'Attachment problems' },
   { id: 'identifier', label: 'Member/HIN' },
   { id: 'verification', label: 'Unverified prescription' },
@@ -741,12 +743,25 @@ const formatNhisServiceDateTime = (claim = {}) => {
   return formatAppDate(rawServiceDate)
 }
 
+const isReadinessIssueNotIncluded = (issue = {}) => (
+  issue.exportInclusion === 'not_included' ||
+  issue.export_inclusion === 'not_included' ||
+  issue.exportInclusionReason === 'status_not_exportable' ||
+  issue.export_inclusion_reason === 'status_not_exportable'
+)
+
 const getReadinessIssueCategories = (issue = {}) => {
   const text = (Array.isArray(issue.issues) ? issue.issues : [])
     .join(' ')
     .toLowerCase()
   const categories = new Set()
 
+  if (isReadinessIssueNotIncluded(issue) || /\bnot included in (this )?cxf\b|\bnot included in the export\b/.test(text)) {
+    categories.add('not_included')
+  }
+  if (/\bnot yet ready for export\b/.test(text)) {
+    categories.add('status')
+  }
   if (/\battach|attachment|prescription file|scanned|pdf|jpeg|png|document type\b/.test(text)) {
     categories.add('attachment')
   }
@@ -776,6 +791,8 @@ const getReadinessIssueCategories = (issue = {}) => {
 }
 
 const READINESS_CATEGORY_LABELS = {
+  not_included: 'Not included',
+  status: 'Not yet served/submitted',
   attachment: 'Attachment',
   identifier: 'Member/HIN',
   verification: 'Verification',
@@ -4998,6 +5015,13 @@ const Nhis = () => {
     return counts
   }, [readinessClaimIssues])
 
+  const readinessNotIncludedCount = useMemo(
+    () => readinessClaimIssues.filter(isReadinessIssueNotIncluded).length,
+    [readinessClaimIssues]
+  )
+
+  const readinessExportBlockingCount = Math.max(0, readinessClaimIssues.length - readinessNotIncludedCount)
+
   const filteredDuplicateClaimGroups = useMemo(() =>
     duplicateClaimGroups.filter((group) => duplicateClaimGroupMatchesSearch(group, duplicateClaimSearch)),
   [duplicateClaimGroups, duplicateClaimSearch])
@@ -8791,15 +8815,27 @@ const Nhis = () => {
               <h2>Claims Scrub Issues Found</h2>
               <button className="modal-close" onClick={closeReadinessClaimReview}><X size={18} /></button>
             </div>
-            <div className="duplicate-claims-body">
-              <div className="nhis-alert">
-                HealthFlow found {readinessClaimIssues.length} claim{readinessClaimIssues.length === 1 ? '' : 's'} that must be corrected before export.
-              </div>
-              <div className="readiness-review-toolbar">
-                <div className="readiness-progress">
-                  <strong>{readinessClaimIssues.length}</strong> remaining
-                  {readinessFixedCount > 0 && <span>{readinessFixedCount} fixed in this session</span>}
+              <div className="duplicate-claims-body">
+                <div className="nhis-alert">
+                  HealthFlow found {readinessClaimIssues.length} claim{readinessClaimIssues.length === 1 ? '' : 's'} in this period with scrub issues.
+                  {readinessExportBlockingCount > 0 && (
+                    <> {readinessExportBlockingCount} exportable claim{readinessExportBlockingCount === 1 ? '' : 's'} must be corrected before export.</>
+                  )}
+                  {readinessNotIncludedCount > 0 && (
+                    <> {readinessNotIncludedCount} open claim{readinessNotIncludedCount === 1 ? ' is' : 's are'} listed for correction but {readinessNotIncludedCount === 1 ? 'is' : 'are'} not included in this CXF until served/submitted.</>
+                  )}
                 </div>
+                <div className="readiness-review-toolbar">
+                  <div className="readiness-progress">
+                    <strong>{readinessClaimIssues.length}</strong> shown
+                    {readinessExportBlockingCount > 0 && (
+                      <span>{readinessExportBlockingCount} blocking export</span>
+                    )}
+                    {readinessNotIncludedCount > 0 && (
+                      <span>{readinessNotIncludedCount} not included yet</span>
+                    )}
+                    {readinessFixedCount > 0 && <span>{readinessFixedCount} fixed in this session</span>}
+                  </div>
                 <button
                   type="button"
                   className="btn btn-secondary btn-sm"
@@ -8810,7 +8846,7 @@ const Nhis = () => {
                 </button>
               </div>
               <div className="nhis-export-period-note">
-                Open each claim below and fix the listed scrub issue. Export will continue after all required fields, attachments, and clinical checks are complete.
+                Served/submitted claims must be corrected before export. Draft, pending serving, and returned claims are shown for correction, but they are not included in the CXF until their status becomes served/submitted.
               </div>
               <div className="readiness-filter-tabs" aria-label="Filter incomplete claims">
                 {READINESS_FILTERS.map((filter) => {
@@ -8896,7 +8932,12 @@ const Nhis = () => {
                               })}
                             </ul>
                           </td>
-                          <td><StatusBadge status={issue.status || 'served'} /></td>
+                          <td>
+                            <StatusBadge status={issue.status || 'served'} />
+                            {isReadinessIssueNotIncluded(issue) && (
+                              <small className="readiness-export-note">Not included in CXF yet</small>
+                            )}
+                          </td>
                           <td>
                             <div className="readiness-claim-actions">
                               <button
