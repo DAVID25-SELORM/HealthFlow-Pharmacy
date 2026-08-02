@@ -421,9 +421,11 @@ describe('assessNhisClaimReadiness', () => {
     expect(verifiedPrescriptionQuery.in).toHaveBeenCalledWith('status', finalStatuses)
   })
 
-  it('counts intake as incomplete when a medicine line exists but nothing has been dispensed yet', async () => {
-    const makeCountQuery = (count) => {
+  it('counts intake as incomplete when a medicine line exists but nothing has been dispensed yet, including draft claims', async () => {
+    const labeled = []
+    const makeCountQuery = (count, label) => {
       const query = Promise.resolve({ count, error: null })
+      query._label = label
       query.in = vi.fn(() => query)
       query.eq = vi.fn(() => query)
       query.gte = vi.fn(() => query)
@@ -431,10 +433,12 @@ describe('assessNhisClaimReadiness', () => {
       query.or = vi.fn(() => query)
       query.is = vi.fn(() => query)
       query.ilike = vi.fn(() => query)
+      labeled.push(query)
       return query
     }
-    const makeDataQuery = (data) => {
+    const makeDataQuery = (data, label) => {
       const query = Promise.resolve({ data, error: null })
+      query._label = label
       query.in = vi.fn(() => query)
       query.eq = vi.fn(() => query)
       query.gte = vi.fn(() => query)
@@ -442,6 +446,7 @@ describe('assessNhisClaimReadiness', () => {
       query.or = vi.fn(() => query)
       query.is = vi.fn(() => query)
       query.ilike = vi.fn(() => query)
+      labeled.push(query)
       return query
     }
     // 10 claims total in intake statuses; 5 of those have an attachment and at
@@ -452,12 +457,12 @@ describe('assessNhisClaimReadiness', () => {
       makeCountQuery(4), // prescription typed
       makeCountQuery(4), // verified prescription
       makeCountQuery(0), // missing attachment
-      makeCountQuery(10), // incomplete intake total
+      makeCountQuery(10, 'incompleteTotal'), // incomplete intake total
       makeCountQuery(5), // has attachment + medicine
       makeDataQuery([
         { id: 'claim-undispensed-1', nhis_claim_medicines: [{ served_qty: 0, dispensed_qty: 0 }] },
         { id: 'claim-undispensed-2', nhis_claim_medicines: [{ served_qty: null, dispensed_qty: 0 }] },
-      ]), // undispensed intake candidates
+      ], 'undispensedCandidates'), // undispensed intake candidates
     ]
     supabase.from.mockImplementation(() => ({
       select: vi.fn(() => queries.shift()),
@@ -468,6 +473,12 @@ describe('assessNhisClaimReadiness', () => {
     // complete intake = 5 (attachment + medicine) - 2 (undispensed) = 3
     // incomplete-intake = 10 (total) - 3 (complete) = 7
     expect(counts['incomplete-intake']).toBe(7)
+
+    const intakeTotalQuery = labeled.find((query) => query._label === 'incompleteTotal')
+    const undispensedCandidatesQuery = labeled.find((query) => query._label === 'undispensedCandidates')
+    const draftIntakeStatuses = ['draft', 'pending_serving', 'serving_in_progress', 'returned_for_review']
+    expect(intakeTotalQuery.in).toHaveBeenCalledWith('status', draftIntakeStatuses)
+    expect(undispensedCandidatesQuery.in).toHaveBeenCalledWith('status', draftIntakeStatuses)
   })
 
   it('uses server exact counts so issue totals can exceed 1,000 while date filters remain applied', async () => {

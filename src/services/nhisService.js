@@ -5698,7 +5698,7 @@ const getNhisClaimIssueKeys = (claim = {}, options = {}) => {
     }
   }
 
-  if (['pending_serving', 'serving_in_progress', 'returned_for_review'].includes(status)) {
+  if (['draft', 'pending_serving', 'serving_in_progress', 'returned_for_review'].includes(status)) {
     const medicines = Array.isArray(claim.nhis_claim_medicines) ? claim.nhis_claim_medicines : []
     const hasMedicineLines = medicines.length > 0 || claim._hasMedicineLines === true
     // A prescribed medicine line existing isn't the same as it being dispensed —
@@ -5737,7 +5737,7 @@ const computeNhisClaimIssueCounts = (claims = [], options = {}) => {
 }
 
 const NHIS_EXPORT_READINESS_STATUSES = ['served', 'submitted', 'paid']
-const NHIS_INTAKE_STATUSES = ['pending_serving', 'serving_in_progress', 'returned_for_review']
+const NHIS_INTAKE_STATUSES = ['draft', 'pending_serving', 'serving_in_progress', 'returned_for_review']
 const NHIS_OPEN_CLAIM_STATUSES = ['pending_serving', 'serving_in_progress', 'returned_for_review', 'served', 'submitted']
 const NHIS_ATTACHMENT_REVIEW_STATUSES = ['draft', ...NHIS_OPEN_CLAIM_STATUSES]
 
