@@ -81,18 +81,7 @@ export const EPHARMACY_ROLES = [
   'inventory_officer',
   'branch_manager',
 ]
-export const PATIENT_CARE_ROLES = [
-  'admin',
-  'pharmacist',
-  'assistant',
-  'technician',
-  'branch_manager',
-  'billing',
-  'claims_officer',
-  'nurse',
-  'doctor',
-  'records_officer',
-]
+export const PATIENT_CARE_ROLES = PATIENT_ROLES
 
 export const hasRole = (role, roles = []) => {
   const normalizedRole = String(role || '').toLowerCase()

@@ -151,7 +151,7 @@ function App() {
             <Route
               path="patient-care"
               element={
-                <RoleRoute allowedRoles={PATIENT_CARE_ROLES}>
+                <RoleRoute allowedRoles={PATIENT_CARE_ROLES} allow={canManagePatients}>
                   <PatientCare />
                 </RoleRoute>
               }
