@@ -5688,7 +5688,7 @@ const getNhisClaimIssueKeys = (claim = {}, options = {}) => {
   const issueKeys = new Set()
   const status = normalizeText(claim.status).toLowerCase()
 
-  if (!isHospital && NHIS_OPEN_CLAIM_STATUSES.includes(status)) {
+  if (!isHospital && NHIS_ATTACHMENT_REVIEW_STATUSES.includes(status)) {
     if (!hasSavedPrescriptionFileReference(claim)) {
       issueKeys.add('missing-attachment')
     } else if (getClaimField(claim, 'prescriptionDocumentType', 'prescription_document_type').toLowerCase() !== 'prescription') {
@@ -5732,6 +5732,7 @@ const computeNhisClaimIssueCounts = (claims = [], options = {}) => {
 const NHIS_EXPORT_READINESS_STATUSES = ['served', 'submitted', 'paid']
 const NHIS_INTAKE_STATUSES = ['pending_serving', 'serving_in_progress', 'returned_for_review']
 const NHIS_OPEN_CLAIM_STATUSES = ['pending_serving', 'serving_in_progress', 'returned_for_review', 'served', 'submitted']
+const NHIS_ATTACHMENT_REVIEW_STATUSES = ['draft', ...NHIS_OPEN_CLAIM_STATUSES]
 
 const resolveNhisIssueStatuses = (filters = {}, issueStatuses = []) => {
   const allowedStatuses = new Set(issueStatuses)
@@ -5754,6 +5755,7 @@ const applyNhisAttachmentPresentFilter = (query) =>
     [
       'prescription_file_url.not.is.null',
       'prescription_file_path.not.is.null',
+      'claimit_attachment_base64.not.is.null',
     ].join(',')
   )
 
@@ -5761,6 +5763,7 @@ const applyNhisAttachmentMissingFilter = (query) =>
   query
     .is('prescription_file_url', null)
     .is('prescription_file_path', null)
+    .is('claimit_attachment_base64', null)
 
 const applyNhisIssueBaseFilters = (query, filters = {}, statuses = []) => {
   query = applyNhisClaimFilters(query, {
@@ -5801,7 +5804,7 @@ const getNhisIssueQuerySpecs = (issueFilter = 'any', filters = {}) => {
   const exportSpecs = isHospital ? [] : [
     {
       key: 'missing-attachment',
-      statuses: NHIS_OPEN_CLAIM_STATUSES,
+      statuses: NHIS_ATTACHMENT_REVIEW_STATUSES,
       refine: applyNhisAttachmentMissingFilter,
     },
     {
@@ -5957,7 +5960,7 @@ const getNhisClaimIssueCountsFromSupabase = async (filters = {}) => {
           .ilike('prescription_document_type', 'prescription')
           .eq('prescription_verified', true)
       ),
-      countNhisIssueRowsForStatuses(filters, NHIS_OPEN_CLAIM_STATUSES, applyNhisAttachmentMissingFilter),
+    countNhisIssueRowsForStatuses(filters, NHIS_ATTACHMENT_REVIEW_STATUSES, applyNhisAttachmentMissingFilter),
     ])
 
     counts['missing-attachment'] = missingAttachment

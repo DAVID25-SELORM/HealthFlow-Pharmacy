@@ -378,7 +378,7 @@ describe('assessNhisClaimReadiness', () => {
     expect(selects.join('\n')).not.toContain('claimit_attachment_base64')
   })
 
-  it('counts missing attachments across open pharmacy claim statuses while keeping verification checks final-only', async () => {
+  it('counts missing attachments across reviewable pharmacy claim statuses while keeping verification checks final-only', async () => {
     const queries = []
     const makeCountQuery = (count, label) => {
       const query = Promise.resolve({ count, error: null })
@@ -408,13 +408,14 @@ describe('assessNhisClaimReadiness', () => {
     const counts = await getNhisClaimIssueCounts({ organizationType: 'pharmacy' })
 
     const finalStatuses = ['served', 'submitted', 'paid']
-    const openStatuses = ['pending_serving', 'serving_in_progress', 'returned_for_review', 'served', 'submitted']
+    const attachmentReviewStatuses = ['draft', 'pending_serving', 'serving_in_progress', 'returned_for_review', 'served', 'submitted']
     const missingAttachmentQuery = queries.find((query) => query._label === 'missingAttachment')
     const verifiedPrescriptionQuery = queries.find((query) => query._label === 'verifiedPrescription')
 
     expect(counts['missing-attachment']).toBe(6)
     expect(counts['unverified-prescription']).toBe(1)
-    expect(missingAttachmentQuery.in).toHaveBeenCalledWith('status', openStatuses)
+    expect(missingAttachmentQuery.in).toHaveBeenCalledWith('status', attachmentReviewStatuses)
+    expect(missingAttachmentQuery.is).toHaveBeenCalledWith('claimit_attachment_base64', null)
     expect(verifiedPrescriptionQuery.in).toHaveBeenCalledWith('status', finalStatuses)
   })
 
@@ -6270,6 +6271,14 @@ describe('NHIS local and cloud claim reads', () => {
 
     expect(query.select.mock.calls[0][0]).not.toContain('claimit_attachment_base64')
     expect(query.select.mock.calls[0][1]).toMatchObject({ count: 'exact' })
+    expect(query.in).toHaveBeenCalledWith('status', [
+      'draft',
+      'pending_serving',
+      'serving_in_progress',
+      'returned_for_review',
+      'served',
+      'submitted',
+    ])
     expect(query.range).toHaveBeenCalledTimes(1)
     expect(query.range).toHaveBeenCalledWith(0, 99)
   })
