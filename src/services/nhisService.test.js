@@ -6613,6 +6613,76 @@ describe('NHIS local and cloud claim reads', () => {
     expect(query.range).toHaveBeenCalledWith(0, 99)
   })
 
+  it('matches a full two-word patient name in the REST fallback path (RPC unavailable)', async () => {
+    const orCalls = []
+    const query = {
+      select: vi.fn(() => query),
+      order: vi.fn(() => query),
+      range: vi.fn(() => query),
+      or: vi.fn((filterString) => {
+        orCalls.push(filterString)
+        return query
+      }),
+      then: (resolve, reject) => Promise.resolve({
+        data: [{ id: 'full-name-match', status: 'served', surname: 'Ayim', other_names: 'Emma' }],
+        error: null,
+        count: 1,
+      }).then(resolve, reject),
+    }
+    supabase.from.mockReturnValue(query)
+    supabase.rpc.mockResolvedValueOnce({ data: null, error: new Error('RPC unavailable') })
+
+    await expect(getNhisClaimsPage({
+      includeDetails: false,
+      searchTerm: 'ayim emma',
+      page: 1,
+      pageSize: 100,
+    })).resolves.toMatchObject({
+      claims: [expect.objectContaining({ id: 'full-name-match' })],
+      total: 1,
+    })
+
+    // Each word must be required independently (one .or() group per word),
+    // since neither "ayim" nor "emma" alone was previously enough to search
+    // by a two-word full name split across surname/other_names.
+    expect(orCalls).toHaveLength(2)
+    expect(orCalls[0]).toContain('surname.ilike.%ayim%')
+    expect(orCalls[1]).toContain('surname.ilike.%emma%')
+  })
+
+  it('keeps a single-word search unchanged in the REST fallback path', async () => {
+    const orCalls = []
+    const query = {
+      select: vi.fn(() => query),
+      order: vi.fn(() => query),
+      range: vi.fn(() => query),
+      or: vi.fn((filterString) => {
+        orCalls.push(filterString)
+        return query
+      }),
+      then: (resolve, reject) => Promise.resolve({
+        data: [{ id: 'single-word-match', status: 'served', surname: 'Ayim' }],
+        error: null,
+        count: 1,
+      }).then(resolve, reject),
+    }
+    supabase.from.mockReturnValue(query)
+    supabase.rpc.mockResolvedValueOnce({ data: null, error: new Error('RPC unavailable') })
+
+    await expect(getNhisClaimsPage({
+      includeDetails: false,
+      searchTerm: 'ayim',
+      page: 1,
+      pageSize: 100,
+    })).resolves.toMatchObject({
+      claims: [expect.objectContaining({ id: 'single-word-match' })],
+      total: 1,
+    })
+
+    expect(orCalls).toHaveLength(1)
+    expect(orCalls[0]).toContain('surname.ilike.%ayim%')
+  })
+
   it('uses server-filtered issue pages instead of scanning 100,000 claim rows', async () => {
     const query = {
       select: vi.fn(() => query),

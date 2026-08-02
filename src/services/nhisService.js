@@ -5296,11 +5296,17 @@ const applyNhisClaimFilters = (query, filters = {}) => {
 
   if (filters.searchTerm) {
     const term = sanitizeSearchTerm(filters.searchTerm)
-    if (term) {
+    // A full name like "Ayim Emma" is split across two columns (surname,
+    // other_names), so neither one alone contains the two-word term and a
+    // single .or() across those columns would match nothing. PostgREST's
+    // filter syntax can't concatenate columns, so each word is required to
+    // match somewhere independently — for a single-word term this is
+    // unchanged from before (one .or() group, same columns).
+    term.split(/\s+/).filter(Boolean).forEach((word) => {
       query = query.or(
-        `surname.ilike.%${term}%,other_names.ilike.%${term}%,member_no.ilike.%${term}%,claim_number.ilike.%${term}%,hin.ilike.%${term}%,prescription_reference.ilike.%${term}%,prescriber_name_snapshot.ilike.%${term}%,physician_name.ilike.%${term}%,prescribing_facility_name_snapshot.ilike.%${term}%,referring_facility.ilike.%${term}%`
+        `surname.ilike.%${word}%,other_names.ilike.%${word}%,member_no.ilike.%${word}%,claim_number.ilike.%${word}%,hin.ilike.%${word}%,prescription_reference.ilike.%${word}%,prescriber_name_snapshot.ilike.%${word}%,physician_name.ilike.%${word}%,prescribing_facility_name_snapshot.ilike.%${word}%,referring_facility.ilike.%${word}%`
       )
-    }
+    })
   }
 
   return query
