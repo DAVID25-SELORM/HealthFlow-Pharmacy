@@ -5701,7 +5701,14 @@ const getNhisClaimIssueKeys = (claim = {}, options = {}) => {
   if (['pending_serving', 'serving_in_progress', 'returned_for_review'].includes(status)) {
     const medicines = Array.isArray(claim.nhis_claim_medicines) ? claim.nhis_claim_medicines : []
     const hasMedicineLines = medicines.length > 0 || claim._hasMedicineLines === true
-    if (!hasMedicineLines || !hasSavedPrescriptionFileReference(claim)) {
+    // A prescribed medicine line existing isn't the same as it being dispensed —
+    // only treat intake as complete once at least one line has actually been
+    // served. When medicine lines weren't loaded (summary-only fetch), we can't
+    // verify dispensed status, so don't flag a false positive from that alone.
+    const hasDispensedMedicine = medicines.length > 0
+      ? medicines.some((medicine) => getMedicineReadinessServedQty(medicine) > 0)
+      : true
+    if (!hasMedicineLines || !hasDispensedMedicine || !hasSavedPrescriptionFileReference(claim)) {
       issueKeys.add('incomplete-intake')
     }
   }
@@ -5777,6 +5784,29 @@ const applyNhisIssueBaseFilters = (query, filters = {}, statuses = []) => {
   return query
 }
 
+// A prescribed medicine line existing isn't the same as it being dispensed.
+// PostgREST can't cleanly express "no related row satisfies X" as a pushdown
+// filter through an embedded relation, so this fetches the (small, bounded —
+// intake statuses are an in-progress working queue, not historical archive)
+// candidate set and filters client-side using the same servedQty check the
+// readiness engine already uses.
+const fetchNhisIncompleteIntakeUndispensedClaims = async (filters = {}) => {
+  const resolvedStatuses = resolveNhisIssueStatuses(filters, NHIS_INTAKE_STATUSES)
+  if (NHIS_INTAKE_STATUSES.length > 0 && resolvedStatuses.length === 0) return []
+
+  const baseQuery = supabase
+    .from('nhis_claims')
+    .select('id, nhis_claim_medicines!inner(served_qty, dispensed_qty)')
+
+  const query = applyNhisAttachmentPresentFilter(applyNhisIssueBaseFilters(baseQuery, filters, resolvedStatuses))
+  const { data, error } = await query
+  if (error) throw error
+
+  return (data || []).filter((claim) =>
+    !(claim.nhis_claim_medicines || []).some((medicine) => getMedicineReadinessServedQty(medicine) > 0)
+  )
+}
+
 const countNhisIssueRowsForStatuses = async (
   filters = {},
   statuses = [],
@@ -5798,8 +5828,9 @@ const countNhisIssueRowsForStatuses = async (
 
 const NHIS_INCOMPLETE_INTAKE_MISSING_ATTACHMENT = 'incomplete-intake:missing-attachment'
 const NHIS_INCOMPLETE_INTAKE_NO_MEDICINE = 'incomplete-intake:no-medicine'
+const NHIS_INCOMPLETE_INTAKE_UNDISPENSED = 'incomplete-intake:undispensed'
 
-const getNhisIssueQuerySpecs = (issueFilter = 'any', filters = {}) => {
+const getNhisIssueQuerySpecs = async (issueFilter = 'any', filters = {}) => {
   const isHospital = normalizeOrganizationType(filters.organizationType || filters.organization_type) === 'hospital'
   const exportSpecs = isHospital ? [] : [
     {
@@ -5843,7 +5874,24 @@ const getNhisIssueQuerySpecs = (issueFilter = 'any', filters = {}) => {
   if (issueFilter === 'missing-attachment') return exportSpecs.filter((spec) => spec.key === issueFilter)
   if (issueFilter === 'attachment-type') return exportSpecs.filter((spec) => spec.key === issueFilter)
   if (issueFilter === 'unverified-prescription') return exportSpecs.filter((spec) => spec.key === issueFilter)
-  if (issueFilter === 'incomplete-intake') return intakeSpecs
+  if (issueFilter === 'incomplete-intake' || issueFilter === 'any') {
+    // "No medicine rows" (above) only catches claims that never got a
+    // prescribed line. A claim can also have medicine lines that were
+    // prescribed but never actually dispensed — PostgREST can't express "no
+    // related row satisfies X" as a pushdown filter, so resolve the matching
+    // claim IDs client-side (reusing the same servedQty check the readiness
+    // engine and issue-count badges use) and filter on that exact ID list.
+    const undispensedClaims = await fetchNhisIncompleteIntakeUndispensedClaims(filters)
+    if (undispensedClaims.length) {
+      const undispensedIds = undispensedClaims.map((claim) => claim.id)
+      intakeSpecs.push({
+        key: NHIS_INCOMPLETE_INTAKE_UNDISPENSED,
+        statuses: NHIS_INTAKE_STATUSES,
+        refine: (query) => applyNhisAttachmentPresentFilter(query).in('id', undispensedIds),
+      })
+    }
+    if (issueFilter === 'incomplete-intake') return intakeSpecs
+  }
   if (issueFilter === 'any') return [...exportSpecs, ...intakeSpecs]
   return []
 }
@@ -5887,7 +5935,7 @@ const fetchNhisIssueFilteredClaimsPageFromSupabase = async (filters = {}, {
   page = 1,
   pageSize = 100,
 } = {}) => {
-  const specs = getNhisIssueQuerySpecs(issueFilter, filters)
+  const specs = await getNhisIssueQuerySpecs(issueFilter, filters)
   if (!specs.length) return { claims: [], total: 0, page, pageSize }
 
   if (specs.length === 1) {
@@ -5968,7 +6016,7 @@ const getNhisClaimIssueCountsFromSupabase = async (filters = {}) => {
     counts['unverified-prescription'] = Math.max(prescriptionTyped - verifiedPrescription, 0)
   }
 
-  const [incompleteTotal, completeIntake] = await Promise.all([
+  const [incompleteTotal, hasAttachmentAndMedicine, undispensedIntakeClaims] = await Promise.all([
     countNhisIssueRowsForStatuses(filters, NHIS_INTAKE_STATUSES),
     countNhisIssueRowsForStatuses(
       filters,
@@ -5976,8 +6024,13 @@ const getNhisClaimIssueCountsFromSupabase = async (filters = {}) => {
       applyNhisAttachmentPresentFilter,
       'id, nhis_claim_medicines!inner(id)'
     ),
+    fetchNhisIncompleteIntakeUndispensedClaims(filters),
   ])
 
+  // "Complete" intake requires an attachment, at least one medicine line, AND
+  // at least one of those lines actually dispensed — a prescribed-but-not-yet-
+  // served line still means intake isn't finished.
+  const completeIntake = Math.max(hasAttachmentAndMedicine - undispensedIntakeClaims.length, 0)
   counts['incomplete-intake'] = Math.max(incompleteTotal - completeIntake, 0)
   counts.all = Object.values(counts).reduce((sum, count) => sum + Number(count || 0), 0)
 

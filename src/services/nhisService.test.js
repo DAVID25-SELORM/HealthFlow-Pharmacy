@@ -361,7 +361,8 @@ describe('assessNhisClaimReadiness', () => {
       makeCountQuery(1), // verified prescription
       makeCountQuery(0), // missing attachment
       makeCountQuery(0), // incomplete intake total
-      makeCountQuery(0), // complete intake
+      makeCountQuery(0), // has attachment + medicine
+      makeCountQuery(0), // undispensed intake candidates
     ]
     supabase.from.mockReturnValue({
       select: vi.fn((select) => {
@@ -399,7 +400,8 @@ describe('assessNhisClaimReadiness', () => {
       makeCountQuery(3, 'verifiedPrescription'),
       makeCountQuery(6, 'missingAttachment'),
       makeCountQuery(0, 'incompleteTotal'),
-      makeCountQuery(0, 'completeIntake'),
+      makeCountQuery(0, 'hasAttachmentAndMedicine'),
+      makeCountQuery(0, 'undispensedIntakeCandidates'),
     ]
     supabase.from.mockReturnValue({
       select: vi.fn(() => countQueries.shift()),
@@ -417,6 +419,55 @@ describe('assessNhisClaimReadiness', () => {
     expect(missingAttachmentQuery.in).toHaveBeenCalledWith('status', attachmentReviewStatuses)
     expect(missingAttachmentQuery.is).toHaveBeenCalledWith('claimit_attachment_base64', null)
     expect(verifiedPrescriptionQuery.in).toHaveBeenCalledWith('status', finalStatuses)
+  })
+
+  it('counts intake as incomplete when a medicine line exists but nothing has been dispensed yet', async () => {
+    const makeCountQuery = (count) => {
+      const query = Promise.resolve({ count, error: null })
+      query.in = vi.fn(() => query)
+      query.eq = vi.fn(() => query)
+      query.gte = vi.fn(() => query)
+      query.lte = vi.fn(() => query)
+      query.or = vi.fn(() => query)
+      query.is = vi.fn(() => query)
+      query.ilike = vi.fn(() => query)
+      return query
+    }
+    const makeDataQuery = (data) => {
+      const query = Promise.resolve({ data, error: null })
+      query.in = vi.fn(() => query)
+      query.eq = vi.fn(() => query)
+      query.gte = vi.fn(() => query)
+      query.lte = vi.fn(() => query)
+      query.or = vi.fn(() => query)
+      query.is = vi.fn(() => query)
+      query.ilike = vi.fn(() => query)
+      return query
+    }
+    // 10 claims total in intake statuses; 5 of those have an attachment and at
+    // least one medicine line; of those 5, 2 have medicine lines that were
+    // prescribed but never actually dispensed (servedQty/dispensedQty both 0).
+    const queries = [
+      makeCountQuery(4), // attached
+      makeCountQuery(4), // prescription typed
+      makeCountQuery(4), // verified prescription
+      makeCountQuery(0), // missing attachment
+      makeCountQuery(10), // incomplete intake total
+      makeCountQuery(5), // has attachment + medicine
+      makeDataQuery([
+        { id: 'claim-undispensed-1', nhis_claim_medicines: [{ served_qty: 0, dispensed_qty: 0 }] },
+        { id: 'claim-undispensed-2', nhis_claim_medicines: [{ served_qty: null, dispensed_qty: 0 }] },
+      ]), // undispensed intake candidates
+    ]
+    supabase.from.mockImplementation(() => ({
+      select: vi.fn(() => queries.shift()),
+    }))
+
+    const counts = await getNhisClaimIssueCounts({ organizationType: 'pharmacy' })
+
+    // complete intake = 5 (attachment + medicine) - 2 (undispensed) = 3
+    // incomplete-intake = 10 (total) - 3 (complete) = 7
+    expect(counts['incomplete-intake']).toBe(7)
   })
 
   it('uses server exact counts so issue totals can exceed 1,000 while date filters remain applied', async () => {
@@ -439,7 +490,8 @@ describe('assessNhisClaimReadiness', () => {
       makeCountQuery(0), // verified prescription
       makeCountQuery(0), // missing attachment
       makeCountQuery(0), // incomplete intake total
-      makeCountQuery(0), // complete intake
+      makeCountQuery(0), // has attachment + medicine
+      makeCountQuery(0), // undispensed intake candidates
     ]
     supabase.from.mockReturnValue({
       select: vi.fn(() => countQueries.shift()),
