@@ -9576,6 +9576,38 @@ const collectNhisExportBlockingIssues = async (claims, organizationType, options
   return issues
 }
 
+// Claims in the selected period that haven't reached served/submitted status yet
+// never enter collectNhisExportBlockingIssues (it only ever sees export-eligible
+// claims). Report them as their own blocking issue, reusing the same readiness
+// checks already run for final submission, so a period is never silently missing
+// claims from its export/scrub report just because they're still in progress.
+const getNhisNotYetReadyClaimsIssue = async (notYetReadyClaims = [], organizationType, options = {}) => {
+  if (!notYetReadyClaims.length) return null
+
+  const { incompleteClaims } = await getNhisClaimsFinalSubmissionReadiness(notYetReadyClaims, organizationType, options)
+  const extraBlockersByClaimId = new Map(
+    incompleteClaims.map(({ claim, issues }) => [normalizeText(claim.id), issues])
+  )
+
+  const readinessIssues = notYetReadyClaims.map((claim) => {
+    const statusLabel = normalizeText(claim.status) || 'draft'
+    const extraBlockers = extraBlockersByClaimId.get(normalizeText(claim.id)) || []
+    return summarizeNhisReadinessClaim(claim, [
+      `Not yet ready for export (claim status: ${statusLabel}).`,
+      ...extraBlockers,
+    ])
+  })
+
+  return {
+    type: 'not_yet_ready',
+    title: 'Claims not yet served or submitted',
+    message: `${notYetReadyClaims.length} claim${notYetReadyClaims.length === 1 ? '' : 's'} in this period are not yet served/submitted and are not included in the export.`,
+    claims: readinessIssues.slice(0, 8),
+    total: notYetReadyClaims.length,
+    readinessIssues,
+  }
+}
+
 const throwNhisExportBlockingIssues = (issues = []) => {
   const claimIssuesByKey = new Map()
 
@@ -9866,19 +9898,24 @@ const getNhisExportClaimsAndBlockers = async (options = {}) => {
   const format = normalizeClaimItExportFormat(options.format || options.exportFormat || options.export_format || 'cxf')
   const directSubmit = Boolean(options.directSubmit && format !== 'cxf')
   const exportableStatuses = directSubmit ? ['served'] : ['served', 'submitted']
+  // Fetch every claim in the period regardless of status (no `statuses` filter) so
+  // claims still in draft/pending_serving/returned_for_review are visible to the
+  // same validation pass instead of being silently excluded before any check runs.
   const periodClaims = await getNhisClaimsForPeriod({
     ...period,
     organizationId: options.organizationId || options.organization_id,
-    statuses: exportableStatuses,
   })
   timing?.mark('loading claims', { rowCount: periodClaims.length })
-  const claims = periodClaims.filter((claim) =>
-    exportableStatuses.includes(normalizeText(claim.status).toLowerCase())
-  )
-  if (!claims.length) {
+  if (!periodClaims.length) {
     const statusLabel = directSubmit ? 'served' : 'served or submitted'
     throw new Error(`No ${statusLabel} claims found for ${period.label}.`)
   }
+  const claims = periodClaims.filter((claim) =>
+    exportableStatuses.includes(normalizeText(claim.status).toLowerCase())
+  )
+  const notYetReadyClaims = periodClaims.filter((claim) =>
+    !exportableStatuses.includes(normalizeText(claim.status).toLowerCase())
+  )
   const organizationType = normalizeOrganizationType(options.organizationType)
   const blockerOptions = {
     ...options,
@@ -9889,13 +9926,18 @@ const getNhisExportClaimsAndBlockers = async (options = {}) => {
   const duplicateGroups = buildNhisDuplicateClaimGroups(claims)
   timing?.mark('checking duplicate groups', { duplicateGroupCount: duplicateGroups.length })
   emitNhisExportProgress(options, 'Checking export blockers', { current: 0, total: claims.length })
-  const exportBlockingIssues = await collectNhisExportBlockingIssues(claims, organizationType, blockerOptions)
+  const exportBlockingIssues = claims.length
+    ? await collectNhisExportBlockingIssues(claims, organizationType, blockerOptions)
+    : []
+  const notYetReadyIssue = await getNhisNotYetReadyClaimsIssue(notYetReadyClaims, organizationType, blockerOptions)
+  if (notYetReadyIssue) exportBlockingIssues.push(notYetReadyIssue)
   timing?.mark('checking export blockers', { blockerCount: exportBlockingIssues.length })
   return {
     period,
     format,
     directSubmit,
     claims,
+    notYetReadyClaims,
     organizationType,
     duplicateGroups,
     exportBlockingIssues,

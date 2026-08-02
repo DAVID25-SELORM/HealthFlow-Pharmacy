@@ -5269,6 +5269,152 @@ describe('duplicate NHIS claim prevention', () => {
   })
 })
 
+describe('NHIS export/scrub period status coverage', () => {
+  const cleanServedClaim = {
+    id: 'claim-served-1',
+    claim_number: 'NHIS-000001',
+    status: 'served',
+    organization_type: 'hospital',
+    member_no: '12345678',
+    surname: 'Mensah',
+    other_names: 'Ama',
+    folder_no: 'F001',
+    date_of_birth: '1990-01-01',
+    patient_address: 'Accra',
+    ccc_no: 'CC-12345',
+    diagnosis: 'Malaria',
+    diagnosis_details: [{ code: 'B50', label: 'Plasmodium falciparum malaria', source: 'ICD-10' }],
+    service_date_from: '2026-05-14',
+    service_date_to: '2026-05-14',
+    referring_facility: 'Westpoint Hospital',
+    physician_name: 'Dr Test',
+    total_amount: 10,
+    nhis_claim_medicines: [{
+      nhisDrugId: 'drug-1',
+      nhis_drug_id: 'drug-1',
+      drugCode: 'NH001',
+      drug_code: 'NH001',
+      description: 'Artemether Lumefantrine Tablet',
+      unit: 'tablet',
+      unit_price: 1,
+      dispensed_qty: 10,
+      dose: '1 tablet',
+      frequency: 'BD',
+      duration: '3 days',
+      total_amount: 10,
+      category: 'A',
+    }],
+  }
+  const incompleteDraftClaim = {
+    id: 'claim-draft-1',
+    claim_number: 'NHIS-000002',
+    status: 'draft',
+    organization_type: 'pharmacy',
+    surname: 'Owusu',
+    other_names: 'Kofi',
+    service_date_from: '2026-05-14',
+    service_date_to: '2026-05-14',
+    total_amount: 0,
+    nhis_claim_medicines: [],
+  }
+  const exportOptions = {
+    mode: 'custom',
+    fromDate: '2026-05-14',
+    toDate: '2026-05-14',
+    format: 'cxf',
+    organizationType: 'hospital',
+    providerClassLevel: 'D',
+    providerLevelCode: 'PVT-PHC-CE',
+    facilityName: 'Westpoint Hospital',
+    providerNumber: '03-05-01954',
+    facilityCode: '03-05-001',
+    credentialCode: '03-05-001-02-01954-11-P1-2-011225',
+    accreditationExpiryDate: '2026-12-31',
+    claimsOfficerName: 'Claims Officer',
+    pharmacyLevel: 'P1',
+    nhisDrugCatalog: [{ id: 'drug-1', code: 'NH001', category: 'A' }],
+  }
+
+  const mockClaimsQuery = (rows) => {
+    const claimsQuery = {
+      order: vi.fn(() => claimsQuery),
+      gte: vi.fn(() => claimsQuery),
+      lte: vi.fn().mockResolvedValue({ data: rows, error: null }),
+    }
+    const serviceLinesQuery = {
+      in: vi.fn(() => serviceLinesQuery),
+      order: vi.fn().mockResolvedValue({ data: [], error: null }),
+    }
+    supabase.from.mockImplementation((table) => {
+      if (table === 'nhis_claims') return { select: vi.fn(() => claimsQuery) }
+      if (table === 'nhis_claim_services') return { select: vi.fn(() => serviceLinesQuery) }
+      if (table === 'nhis_clinical_rules') {
+        const clinicalRulesQuery = {
+          eq: vi.fn(() => clinicalRulesQuery),
+          in: vi.fn(() => clinicalRulesQuery),
+          order: vi.fn().mockResolvedValue({ data: [], error: null }),
+        }
+        return { select: vi.fn(() => clinicalRulesQuery) }
+      }
+      return { select: vi.fn(() => ({ in: vi.fn().mockReturnThis(), eq: vi.fn().mockResolvedValue({ data: [], error: null }) })) }
+    })
+    return claimsQuery
+  }
+
+  it('succeeds as before when every claim in the period is already served/submitted', async () => {
+    mockClaimsQuery([cleanServedClaim])
+
+    await expect(checkNhisExportReadiness(exportOptions)).resolves.toMatchObject({
+      count: 1,
+      format: 'cxf',
+    })
+  })
+
+  it('blocks export and reports the not-yet-ready claim even when other claims in the period are clean', async () => {
+    mockClaimsQuery([cleanServedClaim, incompleteDraftClaim])
+
+    let caught = null
+    try {
+      await checkNhisExportReadiness(exportOptions)
+    } catch (error) {
+      caught = error
+    }
+
+    expect(caught).not.toBeNull()
+    expect(caught.code).toBe('NHIS_READINESS_CLAIMS')
+    const draftIssue = caught.readinessIssues.find((issue) => issue.claim_number === 'NHIS-000002')
+    expect(draftIssue).toBeTruthy()
+    expect(draftIssue.issues.join(' ')).toMatch(/not yet ready for export/i)
+    expect(draftIssue.issues.join(' ')).toMatch(/status: draft/i)
+    // The clean served claim must not be reported as a blocker.
+    expect(caught.readinessIssues.find((issue) => issue.claim_number === 'NHIS-000001')).toBeFalsy()
+  })
+
+  it('reports not-yet-ready claims instead of the generic "no claims found" error when none are served/submitted', async () => {
+    mockClaimsQuery([incompleteDraftClaim])
+
+    let caught = null
+    try {
+      await checkNhisExportReadiness(exportOptions)
+    } catch (error) {
+      caught = error
+    }
+
+    expect(caught).not.toBeNull()
+    expect(caught.message).not.toMatch(/No served or submitted claims found/i)
+    expect(caught.code).toBe('NHIS_READINESS_CLAIMS')
+    expect(caught.readinessIssues.map((issue) => issue.claim_number)).toContain('NHIS-000002')
+  })
+
+  it('still throws the generic "no claims found" error when the period has zero claims', async () => {
+    mockClaimsQuery([])
+
+    await expect(checkNhisExportReadiness(exportOptions)).rejects.toThrow(
+      /No served or submitted claims found/i
+    )
+  })
+})
+
 describe('NHIA API settings source routing', () => {
   const completeClaimItSettings = {
     providerId: 'PROVIDER-1',

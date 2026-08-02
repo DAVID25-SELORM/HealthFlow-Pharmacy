@@ -1478,6 +1478,7 @@ const Nhis = () => {
   // claim edit made from the review flow, and always after being consumed —
   // it must never be reused beyond the single approval it was computed for.
   const preparedReadinessCacheRef = useRef(null)
+  const exportIssueReviewAckRef = useRef('')
 
   useEffect(() => {
     if (!exporting || !exportStartedAt) {
@@ -5092,6 +5093,24 @@ const Nhis = () => {
     }
   }
 
+  const getExportIssueReviewKey = (requestOptions = {}) => JSON.stringify({
+    mode: requestOptions.mode || '',
+    fromDate: requestOptions.fromDate || '',
+    toDate: requestOptions.toDate || '',
+    yearMonth: requestOptions.yearMonth || '',
+    format: requestOptions.format || '',
+    directSubmit: Boolean(requestOptions.directSubmit),
+    organizationType,
+  })
+
+  const handleContinueExportAfterIssueReview = () => {
+    const { requestOptions } = buildCurrentExportOptions()
+    exportIssueReviewAckRef.current = getExportIssueReviewKey(requestOptions)
+    setShowReadinessClaimReview(false)
+    setShowExportModal(true)
+    window.setTimeout(() => { void handleExport() }, 0)
+  }
+
   const getExportProgressLabel = (progress = {}) => {
     const stage = normalizeText(progress.stage)
     if (!stage) return ''
@@ -5144,6 +5163,10 @@ const Nhis = () => {
       setDuplicateClaimGroups([])
       setDuplicateExportIssues([])
       setShowDuplicateClaimReview(false)
+      // checkNhisExportReadiness is the single source of truth for which claims
+      // block export — it already validates every claim in the period (any
+      // status), not just served/submitted ones. Its readinessIssues feed the
+      // review modal below via applyExportReadinessError on failure.
       const result = await checkNhisExportReadiness(requestOptions)
       await tryLogAuditEvent({
         eventType: 'nhis_claim.scrub_batch',
@@ -5200,6 +5223,7 @@ const Nhis = () => {
     // The claim's data may change from here — any cached readiness from a
     // prior export check is no longer trustworthy.
     preparedReadinessCacheRef.current = null
+    exportIssueReviewAckRef.current = ''
     await tryLogAuditEvent({
       eventType: 'nhis_claim.scrub_claim',
       entityType: 'nhis_claims',
@@ -5218,6 +5242,7 @@ const Nhis = () => {
   const openReadinessIssueForEdit = async (issue) => {
     // Same reasoning as handleScrubClaim above.
     preparedReadinessCacheRef.current = null
+    exportIssueReviewAckRef.current = ''
     const claimForAction = { ...issue, _summaryOnly: true }
     setReadinessActiveClaimId(getReadinessIssueKey(issue))
     setShowReadinessClaimReview(false)
@@ -5249,6 +5274,7 @@ const Nhis = () => {
       setReadinessFixedCount(0)
       setShowReadinessClaimReview(false)
       const { submitDirectApi, selectedFormat, requestOptions } = buildCurrentExportOptions()
+      const cacheFingerprint = JSON.stringify({ requestOptions, selectedFormat, submitDirectApi })
       const periodLabel = exportMode === 'custom'
         ? `${exportFromDate} to ${exportToDate}`
         : exportMode === 'partial'
@@ -5273,7 +5299,6 @@ const Nhis = () => {
       // second time for the same click-through. Only trusted when the export
       // options are unchanged and an override reason is actually present —
       // i.e. this really is the immediate follow-up to that specific check.
-      const cacheFingerprint = JSON.stringify({ requestOptions, selectedFormat, submitDirectApi })
       const cached = preparedReadinessCacheRef.current
       const canReuseCache = Boolean(overrideReason) && cached && cached.fingerprint === cacheFingerprint
       let preparedReadiness
@@ -5344,6 +5369,7 @@ const Nhis = () => {
         isStructuredReadinessError ? 'Export failed.' : `Export failed while ${lastStage.toLowerCase()}.`
       )
     } finally {
+      exportIssueReviewAckRef.current = ''
       exportInFlightRef.current = false
       setExporting(false)
       setExportProgress('')
@@ -8993,6 +9019,16 @@ const Nhis = () => {
               )}
             </div>
             <div className="modal-footer">
+              {readinessExportBlockingCount === 0 && readinessNotIncludedCount > 0 && (
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={exporting || readinessChecking}
+                  onClick={handleContinueExportAfterIssueReview}
+                >
+                  Continue Export
+                </button>
+              )}
               <button className="btn btn-secondary" onClick={closeReadinessClaimReview}>Close</button>
             </div>
           </div>
