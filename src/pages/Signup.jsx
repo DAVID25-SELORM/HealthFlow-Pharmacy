@@ -7,6 +7,7 @@ import {
   registerOrganizationSignup,
 } from '../services/organizationService'
 import GhanaRegionSelect from '../components/GhanaRegionSelect'
+import PasswordVisibilityCheckbox from '../components/PasswordVisibilityCheckbox'
 import { readLogoFileAsDataUrl } from '../utils/imageUpload'
 // ✅ NHIS PHARMACY LEVEL PATCH START
 import { PHARMACY_LEVELS } from '../utils/nhisPharmacyLevel'
@@ -46,6 +47,8 @@ const Signup = () => {
   const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const facilityLabel = organizationType === 'hospital' ? 'Hospital / Clinic' : 'Community Pharmacy'
   const facilityNamePlaceholder = organizationType === 'hospital' ? 'ABC Hospital' : 'ABC Community Pharmacy'
   const facilityEmailPlaceholder = organizationType === 'hospital' ? 'info@facility.com' : 'info@pharmacy.com'
@@ -502,7 +505,7 @@ const Signup = () => {
             <div className="form-group">
               <label htmlFor="password">Password *</label>
               <input
-                type="password"
+                type={showPassword ? 'text' : 'password'}
                 id="password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
@@ -510,17 +513,27 @@ const Signup = () => {
                 required
                 minLength={6}
               />
+              <PasswordVisibilityCheckbox
+                id="signup-password-visibility"
+                visible={showPassword}
+                onChange={setShowPassword}
+              />
             </div>
 
             <div className="form-group">
               <label htmlFor="confirmPassword">Confirm Password *</label>
               <input
-                type="password"
+                type={showConfirmPassword ? 'text' : 'password'}
                 id="confirmPassword"
                 value={confirmPassword}
                 onChange={(event) => setConfirmPassword(event.target.value)}
                 placeholder="Re-enter password"
                 required
+              />
+              <PasswordVisibilityCheckbox
+                id="signup-confirm-password-visibility"
+                visible={showConfirmPassword}
+                onChange={setShowConfirmPassword}
               />
             </div>
 

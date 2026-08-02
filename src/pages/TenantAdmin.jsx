@@ -3,6 +3,7 @@ import { getRoleLabel } from '../utils/roleLabels'
 import { Building2, GitBranch, Plus, Users, ChevronDown, ChevronUp, Eye, Pencil, Trash2 } from 'lucide-react'
 import { useNotification } from '../context/NotificationContext'
 import GhanaRegionSelect from '../components/GhanaRegionSelect'
+import PasswordVisibilityCheckbox from '../components/PasswordVisibilityCheckbox'
 import { useSessionStorageState } from '../hooks/useSessionStorageState'
 import { formatAppDate } from '../utils/date'
 import { normalizeGhanaRegion } from '../utils/ghanaRegions'
@@ -19,6 +20,7 @@ import {
   checkSubdomainAvailable,
 } from '../services/tenantAdminService'
 import { readLogoFileAsDataUrl } from '../utils/imageUpload'
+import { requestAppPrompt } from '../utils/appDialog'
 import './TenantAdmin.css'
 
 const blankPharmacy = {
@@ -85,6 +87,7 @@ const TenantAdmin = () => {
   const [showCreate, setShowCreate] = useState(false)
   const [pharmacy, setPharmacy] = useState(blankPharmacy)
   const [admin, setAdmin] = useState(blankAdmin)
+  const [showTemporaryPassword, setShowTemporaryPassword] = useState(false)
   const [creating, setCreating] = useState(false)
   const [subdomainOk, setSubdomainOk] = useState(null)
   const [checkingSubdomain, setCheckingSubdomain] = useState(false)
@@ -344,9 +347,15 @@ const TenantAdmin = () => {
 
   const handleDeletePharmacy = async (org) => {
     const facilityLabel = formatOrganizationType(org.organization_type).toLowerCase()
-    const confirmation = window.prompt(
-      `Permanently delete "${org.name}" and all of its ${facilityLabel} data?\n\nType the facility name exactly to confirm.`
-    )
+    const confirmation = await requestAppPrompt({
+      title: `Permanently delete "${org.name}"?`,
+      message: `Type the facility name exactly to confirm deletion of this ${facilityLabel} and its data.`,
+      label: 'Facility name',
+      placeholder: org.name,
+      required: true,
+      warning: 'This action is permanent and cannot be undone.',
+      confirmText: 'delete permanently',
+    })
 
     if (confirmation === null) {
       return
@@ -728,12 +737,17 @@ const TenantAdmin = () => {
                 <div className="tenant-form-group">
                   <label>Temporary Password *</label>
                   <input
-                    type="password"
+                    type={showTemporaryPassword ? 'text' : 'password'}
                     minLength={8}
                     placeholder="Min 8 characters"
                     value={admin.temporaryPassword}
                     onChange={(e) => setAdmin({ ...admin, temporaryPassword: e.target.value })}
                     required
+                  />
+                  <PasswordVisibilityCheckbox
+                    id="tenant-admin-temporary-password-visibility"
+                    visible={showTemporaryPassword}
+                    onChange={setShowTemporaryPassword}
                   />
                 </div>
               </div>

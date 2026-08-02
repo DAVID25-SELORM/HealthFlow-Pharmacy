@@ -490,3 +490,20 @@ h6 { font-size: 0.875rem; }
     max-width: 100%;
   }
 }
+
+.password-visibility-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 400;
+  color: var(--gray-600);
+  cursor: pointer;
+}
+
+.password-visibility-checkbox input[type='checkbox'] {
+  width: auto;
+  margin: 0;
+  cursor: pointer;
+}
