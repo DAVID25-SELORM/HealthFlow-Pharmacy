@@ -48,6 +48,7 @@ import {
   exportNhisClaimsFile,
   checkNhisExportReadiness,
   prepareNhisClaimsExport,
+  prepareNhisSingleClaimExport,
   submitNhisClaimDirect,
   assessNhisClaimReadiness,
   validateNhisClaimFinalReadiness,
@@ -1479,6 +1480,10 @@ const Nhis = () => {
   // it must never be reused beyond the single approval it was computed for.
   const preparedReadinessCacheRef = useRef(null)
   const exportIssueReviewAckRef = useRef('')
+  // Tracks whether the scrub-warning override modal's "Approve Warnings &
+  // Export" button should resume the batch export flow or a specific
+  // single-claim export — set by whichever flow opens that shared modal.
+  const exportResumeTargetRef = useRef({ type: 'batch' })
 
   useEffect(() => {
     if (!exporting || !exportStartedAt) {
@@ -5310,6 +5315,7 @@ const Nhis = () => {
       }
       const warningClaims = preparedReadiness.warningClaims || []
       if (warningClaims.length && !overrideReason) {
+        exportResumeTargetRef.current = { type: 'batch' }
         preparedReadinessCacheRef.current = { fingerprint: cacheFingerprint, preparedReadiness }
         setScrubWarningClaims(warningClaims)
         setScrubWarningOverrideReason('')
@@ -5371,6 +5377,120 @@ const Nhis = () => {
     } finally {
       exportIssueReviewAckRef.current = ''
       exportInFlightRef.current = false
+      setExporting(false)
+      setExportProgress('')
+      setExportStartedAt(null)
+    }
+  }
+
+  // Exports one claim through the exact same readiness/blocking/warning
+  // pipeline as handleExport above (via prepareNhisSingleClaimExport, which
+  // feeds getNhisExportClaimsAndBlockers an explicit one-claim list instead
+  // of a date period) — no export rule differs between this and a batch
+  // export. Shares exportInFlightRef/preparedReadinessCacheRef with the
+  // batch flow so the two can never run concurrently or clobber each other's
+  // cached readiness.
+  const handleExportSingleClaim = async (claim, warningOverrideReason = '') => {
+    if (exportInFlightRef.current) {
+      notify('Export is already running. Please wait for it to finish.', 'info')
+      return
+    }
+    const exportRunId = crypto.randomUUID()
+    const overrideReason = normalizeText(warningOverrideReason)
+    const requestOptions = { ...getDirectNhiaOptions(), format: 'cxf' }
+    const cacheFingerprint = JSON.stringify({ singleClaimId: claim.id, requestOptions })
+    let lastStage = 'starting export'
+    try {
+      exportInFlightRef.current = true
+      setClaimActionLoading({ claimId: claim.id, action: 'export' })
+      setExporting(true)
+      setExportStartedAt(Date.now())
+      setExportProgress('Preparing export')
+      setDuplicateClaimGroups([])
+      setDuplicateExportIssues([])
+      setShowDuplicateClaimReview(false)
+      setReadinessClaimIssues([])
+      setReadinessFixedCount(0)
+      setShowReadinessClaimReview(false)
+      const progressOptions = {
+        ...requestOptions,
+        exportRunId,
+        onProgress: (progress) => {
+          lastStage = getExportProgressLabel(progress) || lastStage
+          setExportProgress(lastStage)
+        },
+        onTiming: (entry) => {
+          if (entry?.durationMs >= 1000 && typeof console !== 'undefined') {
+            console.info(`[NHIS export timing] [${exportRunId}]`, entry)
+          }
+        },
+      }
+
+      const cached = preparedReadinessCacheRef.current
+      const canReuseCache = Boolean(overrideReason) && cached && cached.fingerprint === cacheFingerprint
+      let preparedReadiness
+      if (canReuseCache) {
+        preparedReadiness = cached.preparedReadiness
+      } else {
+        preparedReadiness = await prepareNhisSingleClaimExport(claim.id, progressOptions)
+        await checkNhisExportReadiness({ ...progressOptions, preparedReadiness })
+      }
+      const warningClaims = preparedReadiness.warningClaims || []
+      if (warningClaims.length && !overrideReason) {
+        exportResumeTargetRef.current = { type: 'single', claim }
+        preparedReadinessCacheRef.current = { fingerprint: cacheFingerprint, preparedReadiness }
+        setScrubWarningClaims(warningClaims)
+        setScrubWarningOverrideReason('')
+        setScrubWarningSearch('')
+        setShowScrubWarningOverride(true)
+        notify(
+          `${warningClaims.length} claim${warningClaims.length === 1 ? '' : 's'} have scrub warnings. Enter an override reason before exporting.`,
+          'warning'
+        )
+        return
+      }
+      preparedReadinessCacheRef.current = null
+      if (warningClaims.length && overrideReason) {
+        await tryLogAuditEvent({
+          eventType: 'nhis_claim.scrub_warning_override',
+          entityType: 'nhis_claims',
+          entityId: claim.id,
+          action: 'override_warnings_for_export',
+          details: {
+            reason: overrideReason,
+            warning_summary: getScrubIssueAuditSummary(warningClaims),
+            claim_number: claim.claim_number || claim.claimNumber || '',
+            format: 'cxf',
+            user_id: user?.id || '',
+            role,
+            export_run_id: exportRunId,
+          },
+        })
+      }
+      const exportResult = await exportNhisClaimsFile({ ...progressOptions, preparedReadiness })
+      const count = typeof exportResult === 'number' ? exportResult : exportResult?.count || 0
+      setShowScrubWarningOverride(false)
+      setScrubWarningClaims([])
+      setScrubWarningOverrideReason('')
+      setScrubWarningSearch('')
+      await refreshClaimsOverview()
+      notify(
+        count
+          ? `Claim ${claim.claim_number || claim.claimNumber || ''} exported as CXF. Manual CLAIM-it import required.`
+          : 'Export completed.',
+        'success'
+      )
+    } catch (err) {
+      preparedReadinessCacheRef.current = null
+      const isStructuredReadinessError = isNhisDuplicateClaimsError(err) || isNhisReadinessClaimsError(err)
+      applyExportReadinessError(
+        err,
+        isStructuredReadinessError ? 'Export failed.' : `Export failed while ${lastStage.toLowerCase()}.`
+      )
+    } finally {
+      exportIssueReviewAckRef.current = ''
+      exportInFlightRef.current = false
+      setClaimActionLoading(null)
       setExporting(false)
       setExportProgress('')
       setExportStartedAt(null)
@@ -5926,6 +6046,14 @@ const Nhis = () => {
                           onClick={() => { void handleScrubClaim(c) }}
                         >
                           {isClaimActionBusy(c.id, 'edit') ? <Clock size={14} /> : <HeartPulse size={14} />}
+                        </button>
+                        <button
+                          className="action-btn action-btn--view"
+                          title="Export claim (CXF)"
+                          disabled={isClaimBusy(c.id)}
+                          onClick={() => { void handleExportSingleClaim(c) }}
+                        >
+                          {isClaimActionBusy(c.id, 'export') ? <Clock size={14} /> : <Download size={14} />}
                         </button>
                         {canServeNhisMedicines && (
                           isMedicineCounterAssistant
@@ -9325,7 +9453,14 @@ const Nhis = () => {
               <button
                 className="btn btn-primary"
                 disabled={exporting || !normalizeText(scrubWarningOverrideReason)}
-                onClick={() => { void handleExport(scrubWarningOverrideReason) }}
+                onClick={() => {
+                  const resumeTarget = exportResumeTargetRef.current
+                  if (resumeTarget?.type === 'single' && resumeTarget.claim) {
+                    void handleExportSingleClaim(resumeTarget.claim, scrubWarningOverrideReason)
+                  } else {
+                    void handleExport(scrubWarningOverrideReason)
+                  }
+                }}
               >
                 {exporting ? (exportProgress || 'Exporting...') : 'Approve Warnings & Export'}
               </button>

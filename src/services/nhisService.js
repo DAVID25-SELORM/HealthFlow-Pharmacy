@@ -9947,17 +9947,25 @@ const submitNhisClaimsDirect = async (claims, period, options = {}) => {
 const getNhisExportClaimsAndBlockers = async (options = {}) => {
   emitNhisExportProgress(options, 'Loading claims')
   const timing = options.exportTiming
-  const period = normalizeNhisExportPeriod(options)
   const format = normalizeClaimItExportFormat(options.format || options.exportFormat || options.export_format || 'cxf')
   const directSubmit = Boolean(options.directSubmit && format !== 'cxf')
   const exportableStatuses = directSubmit ? ['served'] : ['served', 'submitted']
+  // A single-claim export (options.explicitClaims) supplies its own claim list
+  // and a period derived from that claim's own service date, bypassing the
+  // period-based DB query below — every check after this point (partition,
+  // duplicate groups, blocking issues, not-yet-ready) runs identically for
+  // both batch and single-claim export, so no export rule differs between them.
+  const hasExplicitClaims = Array.isArray(options.explicitClaims)
+  const period = options.explicitPeriod || normalizeNhisExportPeriod(options)
   // Fetch every claim in the period regardless of status (no `statuses` filter) so
   // claims still in draft/pending_serving/returned_for_review are visible to the
   // same validation pass instead of being silently excluded before any check runs.
-  const periodClaims = await getNhisClaimsForPeriod({
-    ...period,
-    organizationId: options.organizationId || options.organization_id,
-  })
+  const periodClaims = hasExplicitClaims
+    ? options.explicitClaims
+    : await getNhisClaimsForPeriod({
+        ...period,
+        organizationId: options.organizationId || options.organization_id,
+      })
   timing?.mark('loading claims', { rowCount: periodClaims.length })
   if (!periodClaims.length) {
     const statusLabel = directSubmit ? 'served' : 'served or submitted'
@@ -9995,6 +10003,22 @@ const getNhisExportClaimsAndBlockers = async (options = {}) => {
     duplicateGroups,
     exportBlockingIssues,
   }
+}
+
+// Export a single claim through the exact same pipeline as batch export
+// (readiness, blocking issues, duplicate-group check, CXF/CSV/XML generation)
+// by handing getNhisExportClaimsAndBlockers an explicit one-claim list and a
+// period derived from that claim's own service date — no export rule differs
+// between this and a batch export; see getDirectSubmissionPeriodForClaim for
+// the equivalent pattern already used for single-claim direct-API submission.
+export const prepareNhisSingleClaimExport = async (claimId, options = {}) => {
+  const claim = options.claim || await getNhisClaimForSubmission(claimId)
+  const period = getDirectSubmissionPeriodForClaim(claim)
+  return await prepareNhisClaimsExport({
+    ...options,
+    explicitClaims: [claim],
+    explicitPeriod: period,
+  })
 }
 
 export const prepareNhisClaimsExport = async (options = {}) => {

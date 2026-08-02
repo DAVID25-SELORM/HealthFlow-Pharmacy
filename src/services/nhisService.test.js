@@ -79,6 +79,7 @@ import {
   normalizeNhisGender,
   normalizeNhisExportPeriod,
   prepareNhisClaimsExport,
+  prepareNhisSingleClaimExport,
   saveNhiaApiSettings,
   serveNhisClaimDirect,
   submitNhisClaimDirect,
@@ -5475,6 +5476,170 @@ describe('NHIS export/scrub period status coverage', () => {
     await expect(checkNhisExportReadiness(exportOptions)).rejects.toThrow(
       /No served or submitted claims found/i
     )
+  })
+})
+
+describe('single-claim export reuses the exact batch export pipeline', () => {
+  const cleanServedClaim = {
+    id: 'claim-served-solo',
+    claim_number: 'NHIS-000010',
+    status: 'served',
+    organization_type: 'hospital',
+    member_no: '12345678',
+    surname: 'Mensah',
+    other_names: 'Ama',
+    folder_no: 'F001',
+    date_of_birth: '1990-01-01',
+    patient_address: 'Accra',
+    ccc_no: 'CC-12345',
+    diagnosis: 'Malaria',
+    diagnosis_details: [{ code: 'B50', label: 'Plasmodium falciparum malaria', source: 'ICD-10' }],
+    service_date_from: '2026-05-14',
+    service_date_to: '2026-05-14',
+    referring_facility: 'Westpoint Hospital',
+    physician_name: 'Dr Test',
+    total_amount: 10,
+    nhis_claim_medicines: [{
+      nhisDrugId: 'drug-1',
+      nhis_drug_id: 'drug-1',
+      drugCode: 'NH001',
+      drug_code: 'NH001',
+      description: 'Artemether Lumefantrine Tablet',
+      unit: 'tablet',
+      unit_price: 1,
+      dispensed_qty: 10,
+      dose: '1 tablet',
+      frequency: 'BD',
+      duration: '3 days',
+      total_amount: 10,
+      category: 'A',
+    }],
+  }
+  const incompleteDraftClaim = {
+    id: 'claim-draft-solo',
+    claim_number: 'NHIS-000011',
+    status: 'draft',
+    organization_type: 'pharmacy',
+    surname: 'Owusu',
+    other_names: 'Kofi',
+    service_date_from: '2026-05-14',
+    service_date_to: '2026-05-14',
+    total_amount: 0,
+    nhis_claim_medicines: [],
+  }
+  const exportOptions = {
+    format: 'cxf',
+    organizationType: 'hospital',
+    providerClassLevel: 'D',
+    providerLevelCode: 'PVT-PHC-CE',
+    facilityName: 'Westpoint Hospital',
+    providerNumber: '03-05-01954',
+    facilityCode: '03-05-001',
+    credentialCode: '03-05-001-02-01954-11-P1-2-011225',
+    accreditationExpiryDate: '2026-12-31',
+    claimsOfficerName: 'Claims Officer',
+    pharmacyLevel: 'P1',
+    nhisDrugCatalog: [{ id: 'drug-1', code: 'NH001', category: 'A' }],
+  }
+
+  const mockSupportingTables = () => {
+    supabase.from.mockImplementation((table) => {
+      if (table === 'nhis_claims') {
+        throw new Error('single-claim export must not query the claims-list/period endpoint')
+      }
+      if (table === 'nhis_claim_services') {
+        const serviceLinesQuery = {
+          in: vi.fn(() => serviceLinesQuery),
+          order: vi.fn().mockResolvedValue({ data: [], error: null }),
+        }
+        return { select: vi.fn(() => serviceLinesQuery) }
+      }
+      if (table === 'nhis_clinical_rules') {
+        const clinicalRulesQuery = {
+          eq: vi.fn(() => clinicalRulesQuery),
+          in: vi.fn(() => clinicalRulesQuery),
+          order: vi.fn().mockResolvedValue({ data: [], error: null }),
+        }
+        return { select: vi.fn(() => clinicalRulesQuery) }
+      }
+      return { select: vi.fn(() => ({ in: vi.fn().mockReturnThis(), eq: vi.fn().mockResolvedValue({ data: [], error: null }) })) }
+    })
+  }
+
+  it('exports a clean single claim via explicitClaims without ever querying the period claims list', async () => {
+    mockSupportingTables()
+
+    await expect(checkNhisExportReadiness({
+      ...exportOptions,
+      explicitClaims: [cleanServedClaim],
+    })).resolves.toMatchObject({ count: 1, format: 'cxf' })
+  })
+
+  it('blocks a single not-yet-ready claim with the exact same rule batch export uses', async () => {
+    mockSupportingTables()
+
+    let caught = null
+    try {
+      await checkNhisExportReadiness({
+        ...exportOptions,
+        explicitClaims: [incompleteDraftClaim],
+      })
+    } catch (error) {
+      caught = error
+    }
+
+    expect(caught).not.toBeNull()
+    expect(caught.code).toBe('NHIS_READINESS_CLAIMS')
+    const draftIssue = caught.readinessIssues.find((issue) => issue.claim_number === 'NHIS-000011')
+    expect(draftIssue.issues.join(' ')).toMatch(/not yet ready for export/i)
+  })
+
+  it('prepareNhisSingleClaimExport fetches the claim and feeds it through the same pipeline', async () => {
+    mockSupportingTables()
+
+    const readiness = await prepareNhisSingleClaimExport('claim-served-solo', {
+      ...exportOptions,
+      claim: cleanServedClaim,
+    })
+
+    expect(readiness.claims).toHaveLength(1)
+    expect(readiness.claims[0].id).toBe('claim-served-solo')
+    expect(readiness.exportBlockingIssues).toEqual([])
+  })
+
+  it('regression: batch (period-derived) export is unaffected when explicitClaims is not provided', async () => {
+    const claimsQuery = {
+      order: vi.fn(() => claimsQuery),
+      gte: vi.fn(() => claimsQuery),
+      lte: vi.fn().mockResolvedValue({ data: [cleanServedClaim], error: null }),
+    }
+    supabase.from.mockImplementation((table) => {
+      if (table === 'nhis_claims') return { select: vi.fn(() => claimsQuery) }
+      if (table === 'nhis_claim_services') {
+        const serviceLinesQuery = {
+          in: vi.fn(() => serviceLinesQuery),
+          order: vi.fn().mockResolvedValue({ data: [], error: null }),
+        }
+        return { select: vi.fn(() => serviceLinesQuery) }
+      }
+      if (table === 'nhis_clinical_rules') {
+        const clinicalRulesQuery = {
+          eq: vi.fn(() => clinicalRulesQuery),
+          in: vi.fn(() => clinicalRulesQuery),
+          order: vi.fn().mockResolvedValue({ data: [], error: null }),
+        }
+        return { select: vi.fn(() => clinicalRulesQuery) }
+      }
+      return { select: vi.fn(() => ({ in: vi.fn().mockReturnThis(), eq: vi.fn().mockResolvedValue({ data: [], error: null }) })) }
+    })
+
+    await expect(checkNhisExportReadiness({
+      ...exportOptions,
+      mode: 'custom',
+      fromDate: '2026-05-14',
+      toDate: '2026-05-14',
+    })).resolves.toMatchObject({ count: 1, format: 'cxf' })
+    expect(claimsQuery.lte).toHaveBeenCalled()
   })
 })
 
