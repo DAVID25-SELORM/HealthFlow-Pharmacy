@@ -1601,6 +1601,7 @@ const Nhis = () => {
     if (!options.force && cached && now - cached.cachedAt < NHIS_CLAIMS_PAGE_CACHE_MS) {
       setClaims(cached.claims || [])
       if (cached.total != null) setClaimsTotal(Number(cached.total || 0))
+      if (cached.stats) setStats(cached.stats)
       setClaimsPage(cached.page || page)
       claimsFilterKeyRef.current = filterKey
       logPerformance('nhis.claims.page.cache', startedAt, role, {
@@ -1623,11 +1624,22 @@ const Nhis = () => {
       if (result.total != null) {
         setClaimsTotal(Number(result.total || 0))
       }
+      // The page RPC already computes per-status counts scoped to the same
+      // status/date/search filters as the claims it returns (see
+      // get_nhis_claims_page), so the tab badges above the list always match
+      // what clicking them will actually show. Falls back to whatever stats
+      // are already in state (the all-time load from loadAll) when this
+      // particular fetch didn't request/receive them — e.g. issue-filter
+      // browsing, which uses a different query path with no stats attached.
+      if (result.stats) {
+        setStats(result.stats)
+      }
       setClaimsPage(result.page || page)
       claimsFilterKeyRef.current = filterKey
       claimsPageCacheRef.current.set(pageKey, {
         claims: result.claims || [],
         total: result.total,
+        stats: result.stats || null,
         page: result.page || page,
         cachedAt: now,
       })
