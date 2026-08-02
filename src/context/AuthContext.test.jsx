@@ -78,6 +78,16 @@ const Probe = () => {
   )
 }
 
+const RecoveryErrorProbe = () => {
+  const { passwordRecoveryError, loading } = useAuth()
+
+  return (
+    <div data-testid="recovery-error-state">
+      {loading ? 'loading' : passwordRecoveryError || 'none'}
+    </div>
+  )
+}
+
 const StateRecorder = ({ states }) => {
   const { displayName, isAuthenticated, loading } = useAuth()
   states.push(loading ? 'loading' : isAuthenticated ? `signed-in:${displayName}` : 'signed-out')
@@ -903,6 +913,38 @@ describe('AuthProvider', () => {
     expect(mocks.auth.exchangeCodeForSession).toHaveBeenCalledWith('recovery-code-123')
     expect(mocks.auth.getUser).not.toHaveBeenCalled()
     expect(mocks.queryBuilder.maybeSingle).not.toHaveBeenCalled()
+    expect(window.location.search).toBe('?mode=recovery')
+  })
+
+  it('surfaces a recovery error instead of leaving the user stuck when the code exchange fails', async () => {
+    window.history.replaceState({}, '', '/login?mode=recovery&code=recovery-code-456')
+
+    mocks.auth.exchangeCodeForSession.mockResolvedValue({
+      data: { session: null },
+      error: { message: 'invalid request: both auth code and code verifier should be non-empty' },
+    })
+    mocks.auth.getSession.mockResolvedValue({
+      data: { session: null },
+      error: null,
+    })
+
+    render(
+      <AuthProvider>
+        <Probe />
+        <RecoveryErrorProbe />
+      </AuthProvider>
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId('auth-state')).toHaveTextContent('signed-out')
+    })
+    await waitFor(() => {
+      expect(screen.getByTestId('recovery-error-state')).not.toHaveTextContent('none')
+    })
+    expect(screen.getByTestId('recovery-error-state')).toHaveTextContent(
+      /could not be verified/i
+    )
+    // The failed code must not be left sitting in the URL for a retry loop.
     expect(window.location.search).toBe('?mode=recovery')
   })
 })

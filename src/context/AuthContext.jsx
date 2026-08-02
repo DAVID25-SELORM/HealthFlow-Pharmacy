@@ -350,6 +350,12 @@ export const AuthProvider = ({ children }) => {
   const [branch, setBranch] = useState(null)
   const [activeRole, setActiveRoleState] = useState(FALLBACK_ROLE)
   const [loading, setLoading] = useState(true)
+  // Set when a password-recovery link's code can't be exchanged for a session
+  // (expired, already used, or opened in a different browser than the one
+  // that requested it — PKCE requires the same browser). Login.jsx surfaces
+  // this instead of leaving the user stuck on a "still verifying" message
+  // that would otherwise never resolve.
+  const [passwordRecoveryError, setPasswordRecoveryError] = useState('')
   const sessionRef = useRef(null)
 
   useEffect(() => {
@@ -799,6 +805,11 @@ export const AuthProvider = ({ children }) => {
         } catch (recoveryError) {
           console.warn('Unable to verify HealthFlow password reset link:', recoveryError)
           clearPasswordRecoveryCodeFromUrl()
+          if (mounted) {
+            setPasswordRecoveryError(
+              'This password reset link could not be verified. It may have expired, already been used, or was opened in a different browser than the one used to request it. Request a fresh link below.'
+            )
+          }
         }
       }
 
@@ -1034,8 +1045,9 @@ export const AuthProvider = ({ children }) => {
       updatePassword,
       refreshProfile,
       isConfigured: isSupabaseConfigured(),
+      passwordRecoveryError,
     }),
-    [session, user, profile, organization, branch, loading, activeRole, assignedRoles, primaryRole]
+    [session, user, profile, organization, branch, loading, activeRole, assignedRoles, primaryRole, passwordRecoveryError]
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

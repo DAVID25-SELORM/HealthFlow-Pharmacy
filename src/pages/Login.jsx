@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import Seo from '../components/Seo/Seo'
+import PasswordVisibilityCheckbox from '../components/PasswordVisibilityCheckbox'
 import { ArrowRight, Lock, Mail, ShoppingBag } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
@@ -43,18 +44,38 @@ const getRecoveryLinkError = () => {
 }
 
 const Login = () => {
-  const { signIn, signInOffline, signOut, requestPasswordReset, updatePassword, isAuthenticated, isConfigured, loading } = useAuth()
+  const {
+    signIn, signInOffline, signOut, requestPasswordReset, updatePassword,
+    isAuthenticated, isConfigured, loading, passwordRecoveryError,
+  } = useAuth()
   const { notify } = useNotification()
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(() => getRecoveryLinkError())
   const [mode, setMode] = useState(() =>
     getRecoveryLinkError() ? 'reset' : hasRecoveryHint() ? 'new-password' : 'sign-in'
   )
   const offlineAvailable = isBranchServerEnabled()
+
+  // The recovery code exchange happens asynchronously in AuthContext after
+  // this page has already rendered in 'new-password' mode (based on the URL
+  // alone). If that exchange fails — expired/used link, or opened in a
+  // different browser than the one that requested it — isAuthenticated will
+  // just stay false forever with no other signal, leaving the user stuck on
+  // a "still being verified" message that never resolves. Surface the real
+  // reason instead, and drop back to 'reset' mode so they can request a
+  // fresh link right away.
+  useEffect(() => {
+    if (passwordRecoveryError && mode === 'new-password') {
+      setError(passwordRecoveryError)
+      setMode('reset')
+    }
+  }, [passwordRecoveryError, mode])
 
   if (isAuthenticated && mode !== 'new-password') {
     return <Navigate to="/dashboard" replace />
@@ -193,7 +214,7 @@ const Login = () => {
                 <input
                   id={mode === 'new-password' ? 'login-new-password' : mode === 'offline' ? 'login-offline-pin' : 'login-password'}
                   name={mode === 'new-password' ? 'newPassword' : mode === 'offline' ? 'offlinePin' : 'password'}
-                  type="password"
+                  type={mode !== 'offline' && showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder={mode === 'new-password' ? 'Enter new password' : mode === 'offline' ? 'Enter your device PIN' : 'Enter password'}
@@ -202,6 +223,13 @@ const Login = () => {
                   required
                 />
               </div>
+              {mode !== 'offline' && (
+                <PasswordVisibilityCheckbox
+                  id="login-password-visibility"
+                  visible={showPassword}
+                  onChange={setShowPassword}
+                />
+              )}
             </label>
           )}
 
@@ -213,7 +241,7 @@ const Login = () => {
                 <input
                   id="login-confirm-password"
                   name="confirmPassword"
-                  type="password"
+                  type={showConfirmPassword ? 'text' : 'password'}
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="Re-enter new password"
@@ -221,6 +249,11 @@ const Login = () => {
                   required
                 />
               </div>
+              <PasswordVisibilityCheckbox
+                id="login-confirm-password-visibility"
+                visible={showConfirmPassword}
+                onChange={setShowConfirmPassword}
+              />
             </label>
           )}
 
