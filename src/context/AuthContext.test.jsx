@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => {
     signInWithPassword: vi.fn(),
     signOut: vi.fn(),
     resetPasswordForEmail: vi.fn(),
+    verifyOtp: vi.fn(),
     updateUser: vi.fn(),
     exchangeCodeForSession: vi.fn(),
   }
@@ -154,6 +155,10 @@ describe('AuthProvider', () => {
       },
     })
     mocks.auth.exchangeCodeForSession.mockResolvedValue({
+      data: { session: null },
+      error: null,
+    })
+    mocks.auth.verifyOtp.mockResolvedValue({
       data: { session: null },
       error: null,
     })
@@ -877,6 +882,73 @@ describe('AuthProvider', () => {
     expect(mocks.queryBuilder.maybeSingle).not.toHaveBeenCalled()
     expect(mocks.auth.signOut).not.toHaveBeenCalled()
     expect(mocks.clearSupabaseStoredSession).not.toHaveBeenCalled()
+  })
+
+  it('verifies a browser-independent recovery token opened on another device', async () => {
+    window.history.replaceState(
+      {},
+      '',
+      '/login?mode=recovery&type=recovery&token_hash=phone-recovery-token'
+    )
+    const recoveryUser = {
+      id: 'phone-recovery-user',
+      email: 'phone@example.com',
+      app_metadata: {},
+      user_metadata: {},
+    }
+    const recoverySession = {
+      access_token: 'phone-recovery-session',
+      user: recoveryUser,
+    }
+    mocks.auth.verifyOtp.mockResolvedValue({
+      data: { session: recoverySession, user: recoveryUser },
+      error: null,
+    })
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId('auth-state')).toHaveTextContent('signed-in:phone@example.com')
+    })
+    expect(mocks.auth.verifyOtp).toHaveBeenCalledWith({
+      token_hash: 'phone-recovery-token',
+      type: 'recovery',
+    })
+    expect(mocks.auth.exchangeCodeForSession).not.toHaveBeenCalled()
+    expect(mocks.auth.getUser).not.toHaveBeenCalled()
+    expect(mocks.queryBuilder.maybeSingle).not.toHaveBeenCalled()
+    expect(window.location.search).toBe('?mode=recovery')
+  })
+
+  it('clears an invalid browser-independent recovery token and shows a controlled error', async () => {
+    window.history.replaceState(
+      {},
+      '',
+      '/login?mode=recovery&type=recovery&token_hash=expired-phone-token'
+    )
+    mocks.auth.verifyOtp.mockResolvedValue({
+      data: { session: null },
+      error: { message: 'Token has expired or is invalid' },
+    })
+    mocks.auth.getSession.mockResolvedValue({ data: { session: null }, error: null })
+
+    render(
+      <AuthProvider>
+        <Probe />
+        <RecoveryErrorProbe />
+      </AuthProvider>
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId('recovery-error-state')).toHaveTextContent(/expired or already been used/i)
+    })
+    expect(mocks.auth.verifyOtp).toHaveBeenCalledTimes(1)
+    expect(mocks.auth.exchangeCodeForSession).not.toHaveBeenCalled()
+    expect(window.location.search).toBe('?mode=recovery')
   })
 
   it('uses the PKCE session resolved by Supabase without exchanging the recovery code twice', async () => {

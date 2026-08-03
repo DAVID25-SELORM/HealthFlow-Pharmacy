@@ -236,6 +236,12 @@ otp_expiry = 3600
 # admin_email = "admin@email.com"
 # sender_name = "Admin"
 
+# Browser-independent recovery links can be opened on a phone even when the
+# reset was requested from a facility workstation.
+[auth.email.template.recovery]
+subject = "Reset your HealthFlow password"
+content_path = "./supabase/templates/recovery.html"
+
 # Uncomment to customize email template
 # [auth.email.template.invite]
 # subject = "You have been invited"

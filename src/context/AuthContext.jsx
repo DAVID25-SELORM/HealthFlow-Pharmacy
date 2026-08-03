@@ -314,17 +314,32 @@ const getPasswordRecoveryCode = () => {
   return params.get('code') || ''
 }
 
-const clearPasswordRecoveryCodeFromUrl = () => {
+const getPasswordRecoveryTokenHash = () => {
+  if (typeof window === 'undefined') {
+    return ''
+  }
+
+  const params = new URLSearchParams(window.location.search)
+  if (params.get('mode') !== 'recovery' || params.get('type') !== 'recovery') {
+    return ''
+  }
+
+  return params.get('token_hash') || ''
+}
+
+const clearPasswordRecoverySecretsFromUrl = () => {
   if (typeof window === 'undefined') {
     return
   }
 
   const params = new URLSearchParams(window.location.search)
-  if (!params.has('code')) {
+  if (!params.has('code') && !params.has('token_hash') && !params.has('type')) {
     return
   }
 
   params.delete('code')
+  params.delete('token_hash')
+  params.delete('type')
   const nextQuery = params.toString()
   window.history.replaceState(
     {},
@@ -786,16 +801,42 @@ export const AuthProvider = ({ children }) => {
         return
       }
 
+      // Token-hash recovery is independent of the browser that requested the
+      // email, so staff can open the link on their phone. Normal authentication
+      // remains PKCE; this explicit verification is only for recovery links.
+      const recoveryTokenHash = getPasswordRecoveryTokenHash()
+      if (recoveryTokenHash) {
+        clearPasswordRecoverySecretsFromUrl()
+        const { data, error } = await supabase.auth.verifyOtp({
+          token_hash: recoveryTokenHash,
+          type: 'recovery',
+        })
+
+        if (error || !data?.session) {
+          if (mounted) {
+            setPasswordRecoveryError(
+              'This password reset link could not be verified. It may have expired or already been used. Request a fresh link below.'
+            )
+          }
+          await resolveSessionState(null, { event: 'BOOTSTRAP' })
+          return
+        }
+
+        setPasswordRecoveryError('')
+        await resolveSessionState(data.session, { event: 'PASSWORD_RECOVERY' })
+        return
+      }
+
       // Supabase PKCE initialization owns the one-time code exchange when
-      // detectSessionInUrl is enabled. A second manual exchange consumes the
-      // same code again and can leave recovery stuck in verification.
+      // detectSessionInUrl is enabled. Keep this fallback for recovery emails
+      // issued before the browser-independent template was activated.
       const recoveryCode = getPasswordRecoveryCode()
       const activeSession = await getStoredSession()
       if (recoveryCode) {
-        clearPasswordRecoveryCodeFromUrl()
+        clearPasswordRecoverySecretsFromUrl()
         if (!activeSession && mounted) {
           setPasswordRecoveryError(
-            'This password reset link could not be verified. It may have expired, already been used, or was opened in a different browser than the one used to request it. Request a fresh link below.'
+            'This password reset link could not be verified. It may have expired or already been used. Request a fresh link below.'
           )
         }
       }
