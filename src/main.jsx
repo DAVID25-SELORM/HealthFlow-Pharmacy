@@ -5,6 +5,7 @@ import App from './App.jsx'
 import { AuthProvider } from './context/AuthContext'
 import { TenantProvider } from './context/TenantContext'
 import { NotificationProvider } from './context/NotificationContext'
+import AppDialogProvider from './components/AppDialog/AppDialogProvider'
 import registerServiceWorker from './registerServiceWorker'
 import './index.css'
 
@@ -14,7 +15,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       <NotificationProvider>
         <AuthProvider>
           <TenantProvider>
-            <App />
+            <AppDialogProvider>
+              <App />
+            </AppDialogProvider>
           </TenantProvider>
         </AuthProvider>
       </NotificationProvider>
