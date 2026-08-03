@@ -879,7 +879,7 @@ describe('AuthProvider', () => {
     expect(mocks.clearSupabaseStoredSession).not.toHaveBeenCalled()
   })
 
-  it('exchanges a PKCE password recovery code before showing the reset session', async () => {
+  it('uses the PKCE session resolved by Supabase without exchanging the recovery code twice', async () => {
     window.history.replaceState({}, '', '/login?mode=recovery&code=recovery-code-123')
     const recoveryUser = {
       id: 'recovery-user',
@@ -892,12 +892,8 @@ describe('AuthProvider', () => {
       user: recoveryUser,
     }
 
-    mocks.auth.exchangeCodeForSession.mockResolvedValue({
-      data: { session: recoverySession },
-      error: null,
-    })
     mocks.auth.getSession.mockResolvedValue({
-      data: { session: null },
+      data: { session: recoverySession },
       error: null,
     })
 
@@ -910,19 +906,15 @@ describe('AuthProvider', () => {
     await waitFor(() => {
       expect(screen.getByTestId('auth-state')).toHaveTextContent('signed-in:recovery@example.com')
     })
-    expect(mocks.auth.exchangeCodeForSession).toHaveBeenCalledWith('recovery-code-123')
+    expect(mocks.auth.exchangeCodeForSession).not.toHaveBeenCalled()
     expect(mocks.auth.getUser).not.toHaveBeenCalled()
     expect(mocks.queryBuilder.maybeSingle).not.toHaveBeenCalled()
     expect(window.location.search).toBe('?mode=recovery')
   })
 
-  it('surfaces a recovery error instead of leaving the user stuck when the code exchange fails', async () => {
+  it('surfaces a recovery error when Supabase cannot resolve the recovery code', async () => {
     window.history.replaceState({}, '', '/login?mode=recovery&code=recovery-code-456')
 
-    mocks.auth.exchangeCodeForSession.mockResolvedValue({
-      data: { session: null },
-      error: { message: 'invalid request: both auth code and code verifier should be non-empty' },
-    })
     mocks.auth.getSession.mockResolvedValue({
       data: { session: null },
       error: null,
@@ -944,6 +936,7 @@ describe('AuthProvider', () => {
     expect(screen.getByTestId('recovery-error-state')).toHaveTextContent(
       /could not be verified/i
     )
+    expect(mocks.auth.exchangeCodeForSession).not.toHaveBeenCalled()
     // The failed code must not be left sitting in the URL for a retry loop.
     expect(window.location.search).toBe('?mode=recovery')
   })

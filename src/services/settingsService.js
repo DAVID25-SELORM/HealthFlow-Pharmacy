@@ -10,6 +10,26 @@ import {
   SALES_ROLES,
   STAFF_ROLE_VALUES,
 } from '../utils/roles'
+
+const normalizeStaffPassword = (value, { optional = false } = {}) => {
+  if (optional && (value === undefined || value === null || value === '')) {
+    return ''
+  }
+
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new Error('Temporary password is required.')
+  }
+
+  if (value !== value.trim()) {
+    throw new Error('Temporary password cannot start or end with spaces.')
+  }
+
+  if (value.length < 8) {
+    throw new Error('Temporary password must be at least 8 characters.')
+  }
+
+  return value
+}
 import { normalizeGhanaRegion } from '../utils/ghanaRegions'
 import { tryLogAuditEvent } from './auditService'
 // ✅ NHIS PHARMACY LEVEL PATCH START
@@ -425,7 +445,7 @@ export const getUsers = async () => {
 export const createStaffUser = async (staff) => {
   const fullName = assertRequiredText(staff.fullName, 'Full name')
   const email = assertRequiredText(staff.email, 'Email').toLowerCase()
-  const temporaryPassword = assertRequiredText(staff.temporaryPassword, 'Temporary password')
+  const temporaryPassword = normalizeStaffPassword(staff.temporaryPassword)
   const role = normalizeText(staff.role || 'assistant').toLowerCase()
   const assignedRoles = [...new Set([role, ...(Array.isArray(staff.assignedRoles) ? staff.assignedRoles : [])])]
     .map((assignedRole) => normalizeText(assignedRole).toLowerCase())
@@ -434,10 +454,6 @@ export const createStaffUser = async (staff) => {
 
   if (!STAFF_ROLE_VALUES.includes(role)) {
     throw new Error('Select a valid staff role.')
-  }
-
-  if (temporaryPassword.length < 8) {
-    throw new Error('Temporary password must be at least 8 characters.')
   }
 
   const requestedBranchId = normalizeText(staff.branchId) || null
@@ -485,13 +501,10 @@ export const updateStaffUser = async (id, staff) => {
   const assignedRoles = [...new Set([role, ...(Array.isArray(staff.assignedRoles) ? staff.assignedRoles : [])])]
     .map((assignedRole) => normalizeText(assignedRole).toLowerCase())
     .filter((assignedRole) => STAFF_ROLE_VALUES.includes(assignedRole))
-  const temporaryPassword = normalizeText(staff.temporaryPassword)
+  const temporaryPassword = normalizeStaffPassword(staff.temporaryPassword, { optional: true })
 
   if (!STAFF_ROLE_VALUES.includes(role)) {
     throw new Error('Select a valid staff role.')
-  }
-  if (temporaryPassword && temporaryPassword.length < 8) {
-    throw new Error('Temporary password must be at least 8 characters.')
   }
 
   const requestedBranchId = normalizeText(staff.branchId) || null

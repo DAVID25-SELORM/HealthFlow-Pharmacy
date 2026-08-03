@@ -786,34 +786,19 @@ export const AuthProvider = ({ children }) => {
         return
       }
 
+      // Supabase PKCE initialization owns the one-time code exchange when
+      // detectSessionInUrl is enabled. A second manual exchange consumes the
+      // same code again and can leave recovery stuck in verification.
       const recoveryCode = getPasswordRecoveryCode()
-      if (recoveryCode && typeof supabase.auth.exchangeCodeForSession === 'function') {
-        try {
-          const { data, error } = await runAuthOperationWithRetry(
-            'auth.exchangePasswordRecoveryCode',
-            () => supabase.auth.exchangeCodeForSession(recoveryCode),
-            { attempts: 2 }
+      const activeSession = await getStoredSession()
+      if (recoveryCode) {
+        clearPasswordRecoveryCodeFromUrl()
+        if (!activeSession && mounted) {
+          setPasswordRecoveryError(
+            'This password reset link could not be verified. It may have expired, already been used, or was opened in a different browser than the one used to request it. Request a fresh link below.'
           )
-
-          if (error) {
-            throw error
-          }
-
-          clearPasswordRecoveryCodeFromUrl()
-          await resolveSessionState(data?.session || null, { event: 'BOOTSTRAP' })
-          return
-        } catch (recoveryError) {
-          console.warn('Unable to verify HealthFlow password reset link:', recoveryError)
-          clearPasswordRecoveryCodeFromUrl()
-          if (mounted) {
-            setPasswordRecoveryError(
-              'This password reset link could not be verified. It may have expired, already been used, or was opened in a different browser than the one used to request it. Request a fresh link below.'
-            )
-          }
         }
       }
-
-      const activeSession = await getStoredSession()
       await resolveSessionState(activeSession, { event: 'BOOTSTRAP' })
     }
 

@@ -59,6 +59,26 @@ const json = (body: Record<string, unknown>, status = 200) =>
 
 const normalizeText = (value: unknown) => (typeof value === 'string' ? value.trim() : '')
 
+const readStaffPassword = (value: unknown, { optional = false } = {}) => {
+  if (optional && (value === undefined || value === null || value === '')) {
+    return ''
+  }
+
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new Error('Temporary password is required.')
+  }
+
+  if (value !== value.trim()) {
+    throw new Error('Temporary password cannot start or end with spaces.')
+  }
+
+  if (value.length < 8) {
+    throw new Error('Temporary password must be at least 8 characters.')
+  }
+
+  return value
+}
+
 const isValidRole = (value: string): value is StaffRole =>
   STAFF_ROLES.includes(value as StaffRole)
 
@@ -517,7 +537,7 @@ const upsertStaffUser = async (
   const email = normalizeText(payload.email).toLowerCase()
   const fullName = normalizeText(payload.fullName)
   const phone = normalizeText(payload.phone) || null
-  const password = normalizeText(payload.password)
+  const password = readStaffPassword(payload.password)
   const roleCandidate = normalizeText(payload.role).toLowerCase()
   const assignedRoles = isValidRole(roleCandidate)
     ? normalizeAssignedRoles(payload.assignedRoles, roleCandidate)
@@ -544,10 +564,6 @@ const upsertStaffUser = async (
 
   if (!fullName) {
     throw new Error('Full name is required.')
-  }
-
-  if (!password || password.length < 8) {
-    throw new Error('Temporary password must be at least 8 characters.')
   }
 
   if (!isValidRole(roleCandidate)) {
@@ -897,7 +913,7 @@ const updateStaffUser = async (
   const phone = normalizeText(payload.phone) || null
   const isActive =
     typeof payload.isActive === 'boolean' ? Boolean(payload.isActive) : undefined
-  const password = normalizeText(payload.password)
+  const password = readStaffPassword(payload.password, { optional: true })
   const canRefund = typeof payload.canRefund === 'boolean' ? payload.canRefund : undefined
   const canManageInventory = typeof payload.canManageInventory === 'boolean' ? payload.canManageInventory : undefined
   const canViewReports = typeof payload.canViewReports === 'boolean' ? payload.canViewReports : undefined
@@ -928,9 +944,6 @@ const updateStaffUser = async (
 
   if (!isValidRole(roleCandidate)) {
     throw new Error(staffRoleMessage())
-  }
-  if (password && password.length < 8) {
-    throw new Error('Temporary password must be at least 8 characters.')
   }
 
   const { data: targetProfile, error: targetProfileError } = await adminClient

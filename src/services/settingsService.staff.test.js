@@ -150,4 +150,30 @@ describe('settingsService staff administration', () => {
 
     expect(invokeSupabaseFunction).not.toHaveBeenCalled()
   })
+
+  it('preserves every valid password character exactly', async () => {
+    const password = 'Exact! Pass#2026'
+
+    await createStaffUser({
+      fullName: 'Ama Mensah',
+      email: 'ama@example.com',
+      role: 'assistant',
+      temporaryPassword: password,
+    })
+
+    expect(invokeSupabaseFunction.mock.calls[0][1].body.password).toBe(password)
+  })
+
+  it('rejects leading or trailing password spaces instead of silently changing the credential', async () => {
+    await expect(
+      createStaffUser({
+        fullName: 'Ama Mensah',
+        email: 'ama@example.com',
+        role: 'assistant',
+        temporaryPassword: ' Temporary123 ',
+      })
+    ).rejects.toThrow('Temporary password cannot start or end with spaces.')
+
+    expect(invokeSupabaseFunction).not.toHaveBeenCalled()
+  })
 })
