@@ -1,5 +1,6 @@
 .recycle-bin { padding: 1.5rem; }
 .recycle-bin-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.recycle-bin-error { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .recycle-record-identity { display: grid; gap: .18rem; }
 .recycle-record-identity span { color: #334155; font-weight: 600; }
 .recycle-record-identity small { color: #64748b; font-size: .78rem; }

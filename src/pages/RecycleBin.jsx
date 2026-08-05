@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { RotateCcw, Trash2 } from 'lucide-react'
 import { useNotification } from '../context/NotificationContext'
 import { formatAppDateTime } from '../utils/date'
+import { requestAppConfirmation } from '../utils/appDialog'
 import {
   getDeletedRecords,
   permanentlyDeleteRecord,
@@ -70,7 +71,10 @@ const RecycleBin = () => {
 
   const restore = async (record) => {
     const identity = getRecycleRecordIdentity(record)
-    if (!window.confirm(`Restore ${identity.confirmLabel}?`)) return
+    if (!(await requestAppConfirmation({
+      title: `Restore ${identity.confirmLabel}?`,
+      confirmText: 'restore this record',
+    }))) return
     try {
       setBusyId(record.id)
       await restoreDeletedRecord(record.id)
@@ -85,7 +89,11 @@ const RecycleBin = () => {
 
   const removePermanently = async (record) => {
     const identity = getRecycleRecordIdentity(record)
-    if (!window.confirm(`Permanently delete ${identity.confirmLabel}? This cannot be undone.`)) return
+    if (!(await requestAppConfirmation({
+      title: `Permanently delete ${identity.confirmLabel}?`,
+      warning: 'This cannot be undone.',
+      confirmText: 'delete permanently',
+    }))) return
     try {
       setBusyId(record.id)
       await permanentlyDeleteRecord(record.id)
@@ -150,7 +158,14 @@ const RecycleBin = () => {
         title="Recycle Bin"
         description="Restore deleted inventory items and NHIS claims, or remove them permanently."
       />
-      {error && <div className="nhis-alert" role="alert">{error}</div>}
+      {error && (
+        <div className="nhis-alert recycle-bin-error" role="alert">
+          <span>{error}</span>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => void load()}>
+            Try again
+          </button>
+        </div>
+      )}
       <DataTable
         columns={columns}
         rows={records}
