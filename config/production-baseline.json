@@ -1,0 +1,18 @@
+{
+  "baselineId": "healthflow-production-baseline-2026-08",
+  "commit": "f29d41f345d96d998ded21258768285ca361f4b7",
+  "capturedAt": "2026-08-05T04:15:32Z",
+  "frontendVersion": "1.0.0",
+  "migrationCount": 74,
+  "edgeFunctionCount": 8,
+  "testFileCount": 88,
+  "criticalFiles": {
+    "src/services/nhisService.js": "89c6626e14df33b4bc626064685a5d9f8ab5ffbc50f37a627e66aad947a886a8",
+    "src/context/AuthContext.jsx": "206a4971b3c8e7d024159fa86b01806164bcf841ba9297a9456314a26333ff48",
+    "src/services/recycleBinService.js": "94f0fd814bda811b3c234769426d57257a0f8120e90df8bffc87ae9ebfbcabe9",
+    "src/services/offlineInstallerReleaseService.js": "d656396c7cce60b3e007ffec4f4aa4f8d63f931ab022cbef3cdcdc02755c9c13",
+    "src/services/settingsService.js": "c57579353d48eef51ab1fff0ca71fd8e65145f78a1480c03b0b71eba8f9c15a1",
+    "supabase/functions/tier-access/index.ts": "5d3c443ff6051f1fa46b568dce56cc982772b0699bdac583c55477cf503f4bc0",
+    "supabase/functions/staff-admin/index.ts": "1003e6ea0e987d12db4a6e0c4d927c27493a57fdb9011440958f3e24c0bb3127"
+  }
+}

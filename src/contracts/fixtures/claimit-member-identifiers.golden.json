@@ -1,0 +1,14 @@
+{
+  "ordinary": {
+    "input": { "member_no": "46672601", "hin": "46672601" },
+    "expected": { "memberNumber": "46672601", "cardSerialNo": "" }
+  },
+  "ghanaCard": {
+    "input": { "member_no": "GHA-725620852-3", "hin": "0029996622" },
+    "expected": { "memberNumber": "0029996622", "cardSerialNo": "" }
+  },
+  "ghanaCardEightDigitHin": {
+    "input": { "member_no": "GHA-001933731-5", "hin": "55849537" },
+    "expected": { "memberNumber": "55849537", "cardSerialNo": "" }
+  }
+}

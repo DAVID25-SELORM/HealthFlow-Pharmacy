@@ -1,0 +1,10 @@
+# Critical production behavior requires explicit owner review.
+/src/services/nhisService.js @DAVID25-SELORM
+/src/context/AuthContext.jsx @DAVID25-SELORM
+/src/services/settingsService.js @DAVID25-SELORM
+/src/services/recycleBinService.js @DAVID25-SELORM
+/src/services/offlineInstallerReleaseService.js @DAVID25-SELORM
+/supabase/functions/ @DAVID25-SELORM
+/supabase/migrations/ @DAVID25-SELORM
+/src/contracts/ @DAVID25-SELORM
+/config/production-baseline.json @DAVID25-SELORM

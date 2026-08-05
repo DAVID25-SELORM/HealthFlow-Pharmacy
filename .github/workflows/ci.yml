@@ -23,6 +23,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Verify protected production baseline
+        run: npm run protect:baseline
+
+      - name: Validate migrations
+        run: npm run protect:migrations
+
+      - name: Run production contract tests
+        run: npm run test:contracts
+
       - name: Run lint
         run: npm run lint
 
