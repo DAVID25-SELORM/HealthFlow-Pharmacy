@@ -369,7 +369,7 @@ const Claims = () => {
   }
 
   const handleApprove = async (claim) => {
-    if (!confirmAction({
+    if (!(await confirmAction({
       title: 'Approve this insurance claim?',
       details: [
         { label: 'Claim', value: claim.claim_number },
@@ -379,7 +379,7 @@ const Claims = () => {
       ],
       warning: 'Approval changes the claim status and makes it available for receivables processing.',
       confirmText: 'approve this claim',
-    })) return
+    }))) return
     try {
       await approveClaim(claim.id, claim.total_amount)
       notify(`Claim ${claim.claim_number} approved.`, 'success')
@@ -405,7 +405,7 @@ const Claims = () => {
       return
     }
 
-    if (!confirmAction({
+    if (!(await confirmAction({
       title: 'Reject this insurance claim?',
       details: [
         { label: 'Claim', value: claimToReject.claim_number },
@@ -414,7 +414,7 @@ const Claims = () => {
       ],
       warning: 'The rejection and reason will be recorded in the claim history.',
       confirmText: 'reject this claim',
-    })) return
+    }))) return
 
     try {
       await rejectClaim(claimToReject.id, rejectionReason.trim())

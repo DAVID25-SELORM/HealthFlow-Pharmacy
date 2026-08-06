@@ -34,6 +34,7 @@ import {
 import { closeShift, getOpenShiftForUser, openShift } from '../services/shiftService'
 import { printReceipt, downloadReceiptPDF, formatSaleForReceipt } from '../services/receiptService'
 import { confirmAction } from '../utils/actionConfirmation'
+import { requestAppPrompt } from '../utils/appDialog'
 import {
   createOfflineSaleNumber,
   getOfflineSalesSummary,
@@ -1158,12 +1159,24 @@ const Sales = () => {
     }
 
     const currentConfig = getBranchServerConfig()
-    const url = window.prompt('Local branch server URL:', currentConfig.url || 'http://localhost:4780')
+    const url = await requestAppPrompt({
+      title: 'Local branch server URL',
+      label: 'Server URL',
+      defaultValue: currentConfig.url || 'http://localhost:4780',
+      placeholder: 'http://localhost:4780',
+      confirmText: 'Continue',
+    })
     if (url === null) {
       return
     }
 
-    const token = window.prompt('Local branch server token:', currentConfig.token || '')
+    const token = await requestAppPrompt({
+      title: 'Local branch server token',
+      label: 'Branch token',
+      defaultValue: currentConfig.token || '',
+      placeholder: 'Paste the local branch token',
+      confirmText: 'Save settings',
+    })
     if (token === null) {
       return
     }
@@ -1967,12 +1980,18 @@ const Sales = () => {
       return
     }
 
-    const reasonInput = window.prompt('Refund reason (optional):', '')
+    const reasonInput = await requestAppPrompt({
+      title: 'Refund reason',
+      label: 'Reason',
+      placeholder: 'Optional reason for this refund',
+      confirmText: 'Continue',
+      multiline: true,
+    })
     if (reasonInput === null) {
       return
     }
 
-    if (!confirmAction({
+    if (!(await confirmAction({
       title: 'Refund this sale?',
       details: [
         { label: 'Sale', value: sale.sale_number },
@@ -1982,7 +2001,7 @@ const Sales = () => {
       ],
       warning: 'The refund reverses the sale and restores its stock quantities.',
       confirmText: 'process this refund',
-    })) return
+    }))) return
 
     try {
       setRefundingSaleId(sale.id)

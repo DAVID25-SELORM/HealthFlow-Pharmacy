@@ -25,6 +25,7 @@ import {
 } from '../services/branchServerApi'
 import { getNhiaApiSettings, saveNhiaApiSettings } from '../services/nhisService'
 import { saveOfflinePosSnapshot } from '../services/offlinePosCache'
+import { requestAppConfirmation } from '../utils/appDialog'
 import {
   deactivateBranchSyncClient,
   listBranchSyncClients,
@@ -33,6 +34,7 @@ import {
 } from '../services/tenantAdminService'
 import {
   getActiveOfflineInstallerRelease,
+  recordOfflineInstallerInstallationStatus,
   requestOfflineInstallerDownload,
 } from '../services/offlineInstallerReleaseService'
 import { useAuth } from '../context/AuthContext'
@@ -519,6 +521,13 @@ export default function OfflineSync() {
       })
       setSetupForm((current) => ({ ...current, branchSyncToken }))
       setSetupResult({ ...result, nhiaConfigSecretKey })
+      await recordOfflineInstallerInstallationStatus({
+        status: 'machine_registered',
+        organizationId: result.organizationId,
+        branchId: result.branchId,
+        syncClientId: result.syncClientId,
+        machineLabel: setupForm.name,
+      }).catch(() => {})
       await loadSetupClients(setupForm.organizationId)
       notify('Branch sync client registered. Save the one-time setup block on the facility machine.', 'success')
     } catch (setupError) {
@@ -550,9 +559,11 @@ export default function OfflineSync() {
   }
 
   const deactivateSetupClient = async (client) => {
-    if (!window.confirm(`Deactivate ${client.name}? This machine will stop syncing until it is registered again.`)) {
-      return
-    }
+    if (!(await requestAppConfirmation({
+      title: `Deactivate ${client.name}?`,
+      warning: 'This machine will stop syncing until it is registered again.',
+      confirmText: 'deactivate this machine',
+    }))) return
 
     try {
       setSetupClientAction(client.id)
@@ -757,9 +768,11 @@ export default function OfflineSync() {
   }
 
   const installBranchUpdate = async () => {
-    if (!window.confirm('Install the HealthFlow branch update now? The localhost app will restart briefly.')) {
-      return
-    }
+    if (!(await requestAppConfirmation({
+      title: 'Install the HealthFlow branch update now?',
+      warning: 'The localhost app will restart briefly while the update is applied.',
+      confirmText: 'install this update',
+    }))) return
 
     try {
       setBusyAction('update-install')
@@ -1311,6 +1324,12 @@ export default function OfflineSync() {
           {setupResult && (
             <div className="branch-setup-result">
               <p>This setup block is shown once. Copy it now — re-registering the same client name rotates its sync token.</p>
+              {setupResult.activationExpiresAt && (
+                <p className="branch-setup-expiry-note">
+                  This credential must reach the facility server and complete its first sync by{' '}
+                  {formatDateTime(setupResult.activationExpiresAt)} — unused setup blocks expire automatically.
+                </p>
+              )}
               <div className="branch-setup-env-wrapper">
                 <pre className="branch-setup-env">{`PORT=4780
 NHIA_CONFIG_SECRET_KEY=${setupResult.nhiaConfigSecretKey}
@@ -1377,6 +1396,9 @@ HEALTHFLOW_UPDATE_AUTO_INSTALL=false`}</pre>
                     </span>
                   </div>
                   <span>{client.lastSeenAt ? `Last seen ${formatDateTime(client.lastSeenAt)}` : 'Never connected'}</span>
+                  <span className={`setup-status setup-status-${client.setupStatus || 'not_started'}`}>
+                    {client.setupStatusLabel || 'Not started'}
+                  </span>
                   <span className={client.isActive ? 'sync-client-active' : 'sync-client-inactive'}>
                     {client.isActive ? 'Active' : 'Inactive'}
                   </span>

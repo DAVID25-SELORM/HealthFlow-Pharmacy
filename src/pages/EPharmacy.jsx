@@ -17,6 +17,7 @@ import { useNotification } from '../context/NotificationContext'
 import { useTenant } from '../context/TenantContext'
 import { formatAppDate } from '../utils/date'
 import { confirmAction } from '../utils/actionConfirmation'
+import { requestAppPrompt } from '../utils/appDialog'
 import {
   EPHARMACY_SALE_CLASSES,
   createEpharmacyOrder,
@@ -270,15 +271,27 @@ const EPharmacy = () => {
     let note = ''
 
     if (nextStatus === 'rejected') {
-      rejectionReason = window.prompt('Rejection reason') || ''
+      rejectionReason = await requestAppPrompt({
+        title: 'Reject this e-pharmacy order',
+        label: 'Rejection reason',
+        placeholder: 'Enter the reason for rejection',
+        required: true,
+        confirmText: 'Continue',
+      }) || ''
       if (!rejectionReason.trim()) return
     }
 
     if (nextStatus === 'cancelled') {
-      note = window.prompt('Cancellation note') || 'Order cancelled'
+      note = await requestAppPrompt({
+        title: 'Cancel this e-pharmacy order',
+        label: 'Cancellation note',
+        defaultValue: 'Order cancelled',
+        placeholder: 'Enter a cancellation note',
+        confirmText: 'Continue',
+      }) || 'Order cancelled'
     }
 
-    if (!confirmAction({
+    if (!(await confirmAction({
       title: `Move this order to ${formatEpharmacyStatus(nextStatus)}?`,
       details: [
         { label: 'Order', value: order.order_number },
@@ -288,7 +301,7 @@ const EPharmacy = () => {
       ],
       warning: 'This status change is recorded and may affect fulfilment.',
       confirmText: `mark the order as ${formatEpharmacyStatus(nextStatus)}`,
-    })) return
+    }))) return
 
     try {
       setStatusUpdatingId(order.id)

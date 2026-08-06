@@ -384,14 +384,21 @@
   body {
     width: 80mm;
     min-width: 80mm;
+    height: auto !important;
     margin: 0 !important;
     padding: 0 !important;
     background: #fff !important;
+    color: #000 !important;
+    overflow: visible !important;
   }
 
   @page {
     size: 80mm auto;
     margin: 3mm;
+  }
+
+  body * {
+    visibility: hidden !important;
   }
 
   .sales-page > :not(.receipt-container) {
@@ -406,7 +413,9 @@
 
   .receipt-container.receipt-print-mode {
     display: block !important;
-    position: static !important;
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
     width: 74mm !important;
     min-width: 0 !important;
     margin: 0 !important;
@@ -416,6 +425,11 @@
     color: #000 !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
+  }
+
+  .receipt-container.receipt-print-mode,
+  .receipt-container.receipt-print-mode * {
+    visibility: visible !important;
   }
 
   .receipt-container.receipt-print-mode .receipt-content {
@@ -428,14 +442,10 @@
     box-shadow: none !important;
     color: #000 !important;
     font-family: Arial, Helvetica, sans-serif !important;
-    font-size: 10.5pt !important;
-    line-height: 1.28 !important;
-  }
-
-  .receipt-container.receipt-print-mode,
-  .receipt-container.receipt-print-mode * {
-    text-shadow: none !important;
-    filter: none !important;
+    font-size: 10pt !important;
+    line-height: 1.22 !important;
+    break-inside: auto !important;
+    page-break-inside: auto !important;
   }
 
   .receipt-container.receipt-print-mode .receipt-brand,
@@ -448,6 +458,14 @@
   .receipt-container.receipt-print-mode .receipt-dashed {
     margin-left: 0 !important;
     margin-right: 0 !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  .receipt-container.receipt-print-mode * {
+    box-shadow: none !important;
+    text-shadow: none !important;
+    filter: none !important;
   }
 
   .receipt-container.receipt-print-mode .receipt-brand,
@@ -551,7 +569,8 @@
 
   .receipt-container.receipt-print-mode .receipt-items-table {
     min-width: 0 !important;
-    font-size: 8.5pt !important;
+    table-layout: fixed !important;
+    font-size: 8.25pt !important;
   }
 
   .receipt-container.receipt-print-mode .receipt-items-table th,
@@ -560,11 +579,13 @@
     color: #000 !important;
     background: #fff !important;
     border-bottom: 1px solid #bbb !important;
+    vertical-align: top !important;
+    overflow-wrap: anywhere !important;
   }
 
   .receipt-container.receipt-print-mode .receipt-items-table td span {
     color: #000 !important;
-    font-size: 8pt !important;
+    font-size: 7.8pt !important;
   }
 
   .receipt-container.receipt-print-mode .receipt-summary {

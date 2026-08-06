@@ -493,7 +493,7 @@
 
 .branch-client-row {
   border-top: 1px solid var(--gray-100);
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 0.9fr) minmax(0, 0.9fr) auto auto;
   padding: 0.75rem 0;
 }
 
@@ -511,6 +511,22 @@
 .sync-client-inactive {
   color: #9f3020 !important;
   font-weight: 700;
+}
+
+.setup-status {
+  font-weight: 600;
+}
+
+.setup-status-not_started {
+  color: var(--gray-600) !important;
+}
+
+.setup-status-readiness_passed {
+  color: #116b52 !important;
+}
+
+.setup-status-installation_failed {
+  color: #9f3020 !important;
 }
 
 .nhia-settings-grid label {

@@ -33,6 +33,7 @@ import {
 import { updateOrganization, getOrganizationStats } from '../services/organizationService'
 import { buildClaimItConfigPreview, getNhiaApiSettings, removeNhiaApiCredentials, saveNhiaApiSettings, testClaimItConnection, validateNhiaConfigForMode } from '../services/nhisService'
 import { createOnlineBackup, downloadOnlineBackup, listOnlineBackups } from '../services/backupService'
+import { requestAppConfirmation } from '../utils/appDialog'
 import { getOnlinePaymentSettings, saveOnlinePaymentSettings } from '../services/paymentService'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
@@ -713,7 +714,11 @@ const Settings = () => {
   }
 
   const handleRenewTlsCertificate = async () => {
-    if (!window.confirm('Renew the facility TLS certificate now? The Local Branch Server will restart briefly.')) return
+    if (!(await requestAppConfirmation({
+      title: 'Renew the facility TLS certificate now?',
+      warning: 'The Local Branch Server will restart briefly.',
+      confirmText: 'renew certificate',
+    }))) return
     try {
       setDeploymentAction('renew')
       const result = await renewBranchTlsCertificate()
@@ -726,7 +731,11 @@ const Settings = () => {
   }
 
   const handleRevokeWorkstation = async (workstation) => {
-    if (!window.confirm(`Revoke offline access for ${workstation.computer_name}?`)) return
+    if (!(await requestAppConfirmation({
+      title: `Revoke offline access for ${workstation.computer_name}?`,
+      warning: 'This workstation will need to be enrolled again before offline access works.',
+      confirmText: 'revoke access',
+    }))) return
     try {
       setDeploymentAction(`revoke:${workstation.id}`)
       await revokeBranchWorkstation(workstation.id)
@@ -779,7 +788,11 @@ const Settings = () => {
 
   const handleOfflineAccessToggle = async (staff, enabled) => {
     const action = enabled ? 'enable' : 'revoke'
-    if (!enabled && !window.confirm(`Revoke offline PIN access for ${staff.fullName || staff.email}?`)) return
+    if (!enabled && !(await requestAppConfirmation({
+      title: `Revoke offline PIN access for ${staff.fullName || staff.email}?`,
+      warning: 'This staff member will not be able to use offline PIN login until access is enabled again.',
+      confirmText: 'revoke PIN access',
+    }))) return
     try {
       setOfflineAccessAction(`${staff.id}:${action}`)
       await updateBranchOfflineAccess(staff.id, enabled)
@@ -793,7 +806,11 @@ const Settings = () => {
   }
 
   const handleOfflinePinReset = async (staff) => {
-    if (!window.confirm(`Reset the offline PIN for ${staff.fullName || staff.email}? They must enroll a new PIN while online.`)) return
+    if (!(await requestAppConfirmation({
+      title: `Reset the offline PIN for ${staff.fullName || staff.email}?`,
+      warning: 'They must enroll a new PIN while online.',
+      confirmText: 'reset offline PIN',
+    }))) return
     try {
       setOfflineAccessAction(`${staff.id}:reset`)
       await resetBranchOfflinePin(staff.id)

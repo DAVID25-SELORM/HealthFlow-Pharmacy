@@ -677,7 +677,7 @@ const Inventory = () => {
       return
     }
 
-    if (!confirmAction({
+    if (!(await confirmAction({
       title: 'Move this inventory item to the Recycle Bin?',
       details: [
         { label: 'Medicine', value: targetDrug?.name },
@@ -686,7 +686,7 @@ const Inventory = () => {
       ],
       warning: 'The item will disappear from active inventory. An administrator can restore it.',
       confirmText: 'move this item to the Recycle Bin',
-    })) return
+    }))) return
 
     try {
       if (!isSupabaseConfigured() && !isLocalInventoryEnabled()) {
@@ -897,13 +897,11 @@ const Inventory = () => {
   }
 
   const handleDiscardInventoryConflicts = async () => {
-    if (
-      !window.confirm(
-        'Discard offline inventory conflicts and keep the latest cloud stock values?'
-      )
-    ) {
-      return
-    }
+    if (!(await confirmAction({
+      title: 'Discard offline inventory conflicts?',
+      warning: 'HealthFlow will keep the latest cloud stock values and remove the conflicted offline changes.',
+      confirmText: 'discard these conflicts',
+    }))) return
 
     try {
       const discarded = await discardOfflineInventoryConflicts({ organizationId })

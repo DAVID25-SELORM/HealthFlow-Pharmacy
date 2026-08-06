@@ -444,7 +444,7 @@ const Purchases = () => {
       notify('You do not have permission to approve purchases.', 'warning')
       return
     }
-    if (!confirmAction({
+    if (!(await confirmAction({
       title: 'Complete this purchase?',
       details: [
         { label: 'Purchase', value: purchase.purchase_number },
@@ -454,7 +454,7 @@ const Purchases = () => {
       ],
       warning: 'Completing this purchase updates inventory stock and cannot be undone.',
       confirmText: 'complete the purchase and update stock',
-    })) return
+    }))) return
     try {
       setCompleting(purchase.id)
       await completePurchaseDraft(purchase.id, { canApprove: canApprovePurchases })
@@ -469,7 +469,7 @@ const Purchases = () => {
 
   // ── cancel purchase ──────────────────────────────────────────
   const handleCancel = async (purchase) => {
-    if (!confirmAction({
+    if (!(await confirmAction({
       title: 'Cancel this purchase?',
       details: [
         { label: 'Purchase', value: purchase.purchase_number },
@@ -478,7 +478,7 @@ const Purchases = () => {
       ],
       warning: 'The draft will be cancelled and cannot later be completed.',
       confirmText: 'cancel this purchase',
-    })) return
+    }))) return
     try {
       setCancelling(purchase.id)
       await cancelPurchaseDraft(purchase.id)

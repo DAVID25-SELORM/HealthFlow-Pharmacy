@@ -122,6 +122,7 @@ describe('OfflineSync branch registration', () => {
       organizationId: 'org-1',
       branchId: 'branch-1',
       branchSyncToken: 'sync-token-returned-by-server',
+      activationExpiresAt: '2026-07-28T12:00:00Z',
     })
   })
 
@@ -154,6 +155,7 @@ describe('OfflineSync branch registration', () => {
     expect(setupBlock).toHaveTextContent('BRANCH_SYNC_TOKEN=sync-token-returned-by-server')
     expect(setupBlock).toHaveTextContent('SUPABASE_URL=')
     expect(setupBlock).toHaveTextContent('SUPABASE_SYNC_KEY=')
+    expect(screen.getByText(/unused setup blocks expire automatically/i)).toBeInTheDocument()
   })
 
   it('checks and starts a signed localhost update from the admin controls', async () => {
@@ -192,8 +194,6 @@ describe('OfflineSync branch registration', () => {
       state: 'installing',
       restartRequired: true,
     })
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
-
     render(<OfflineSync />)
 
     expect(screen.getByRole('heading', { name: 'Install HealthFlow Offline' })).toBeInTheDocument()
@@ -202,6 +202,10 @@ describe('OfflineSync branch registration', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Check for Updates' }))
     await waitFor(() => expect(mocks.checkBranchServerUpdates).toHaveBeenCalledTimes(1))
 
+    window.addEventListener('healthflow:app-dialog', (event) => {
+      event.detail.markHandled()
+      event.detail.resolve(true)
+    }, { once: true })
     fireEvent.click(screen.getByRole('button', { name: 'Download Update' }))
     await waitFor(() => expect(mocks.installBranchServerUpdate).toHaveBeenCalledTimes(1))
     expect(mocks.notify).toHaveBeenCalledWith(

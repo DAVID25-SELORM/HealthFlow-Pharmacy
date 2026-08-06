@@ -851,6 +851,16 @@ const registerBranchSyncClient = async (
     throw rpcError
   }
 
+  const { data: createdClient, error: createdClientError } = await adminClient
+    .from('branch_sync_clients')
+    .select('activation_expires_at')
+    .eq('id', syncClientId)
+    .maybeSingle()
+
+  if (createdClientError) {
+    throw createdClientError
+  }
+
   return {
     syncClientId,
     organizationId,
@@ -858,7 +868,20 @@ const registerBranchSyncClient = async (
     branchName: branch.name || null,
     branchCreated,
     branchSyncToken: token,
+    activationExpiresAt: createdClient?.activation_expires_at || null,
   }
+}
+
+const OFFLINE_SETUP_STATUS_LABELS: Record<string, string> = {
+  download_requested: 'Installer downloaded',
+  installer_started: 'Installing',
+  installer_completed: 'Installed',
+  service_started: 'Service running',
+  machine_registered: 'Machine registered',
+  initial_sync_started: 'Syncing',
+  initial_sync_completed: 'Sync complete',
+  readiness_passed: 'Offline ready',
+  installation_failed: 'Setup failed',
 }
 
 const listBranchSyncClients = async (
@@ -887,22 +910,49 @@ const listBranchSyncClients = async (
 
   if (error) throw error
 
+  const clientIds = (data || []).map((client) => client.id)
+  const latestSetupStatusByClient = new Map<string, string>()
+
+  if (clientIds.length > 0) {
+    const { data: setupEvents, error: setupEventsError } = await adminClient
+      .from('offline_installer_installation_events')
+      .select('sync_client_id, event_status, created_at')
+      .in('sync_client_id', clientIds)
+      .order('created_at', { ascending: false })
+
+    if (setupEventsError) throw setupEventsError
+
+    for (const event of setupEvents || []) {
+      const syncClientId = normalizeText(event.sync_client_id)
+      if (syncClientId && !latestSetupStatusByClient.has(syncClientId)) {
+        latestSetupStatusByClient.set(syncClientId, event.event_status)
+      }
+    }
+  }
+
   return {
-    clients: (data || []).map((client) => ({
-      id: client.id,
-      name: client.name,
-      organizationId: client.organization_id,
-      branchId: client.branch_id,
-      branchName: Array.isArray(client.branches)
-        ? client.branches[0]?.name || ''
-        : (client.branches as Record<string, unknown> | null)?.name || '',
-      branchCode: Array.isArray(client.branches)
-        ? client.branches[0]?.code || ''
-        : (client.branches as Record<string, unknown> | null)?.code || '',
-      isActive: client.is_active !== false,
-      createdAt: client.created_at,
-      lastSeenAt: client.last_seen_at,
-    })),
+    clients: (data || []).map((client) => {
+      const setupStatus = latestSetupStatusByClient.get(client.id) || null
+      return {
+        id: client.id,
+        name: client.name,
+        organizationId: client.organization_id,
+        branchId: client.branch_id,
+        branchName: Array.isArray(client.branches)
+          ? client.branches[0]?.name || ''
+          : (client.branches as Record<string, unknown> | null)?.name || '',
+        branchCode: Array.isArray(client.branches)
+          ? client.branches[0]?.code || ''
+          : (client.branches as Record<string, unknown> | null)?.code || '',
+        isActive: client.is_active !== false,
+        createdAt: client.created_at,
+        lastSeenAt: client.last_seen_at,
+        setupStatus,
+        setupStatusLabel: setupStatus
+          ? OFFLINE_SETUP_STATUS_LABELS[setupStatus] || setupStatus
+          : 'Not started',
+      }
+    }),
   }
 }
 

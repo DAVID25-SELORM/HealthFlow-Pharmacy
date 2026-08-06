@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { CheckCircle2, ClipboardCopy, Download, History, Pencil, RotateCcw, Save, ShieldCheck, ToggleLeft, UploadCloud } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
+import { requestAppPrompt } from '../utils/appDialog'
 import {
   approveOfflineInstallerRelease,
   disableOfflineInstallerRelease,
@@ -245,7 +246,13 @@ export default function OfflineInstallerReleases() {
   }
 
   const approveRelease = async (release) => {
-    const notes = window.prompt(`Approve offline installer ${release.version} for publish? Add optional notes:`, '')
+    const notes = await requestAppPrompt({
+      title: `Approve offline installer ${release.version}?`,
+      label: 'Approval notes',
+      placeholder: 'Optional notes for the release history',
+      confirmText: 'Approve',
+      multiline: true,
+    })
     if (notes === null) return
     setSaving(true)
     try {
@@ -260,10 +267,15 @@ export default function OfflineInstallerReleases() {
   }
 
   const rollbackToRelease = async (release) => {
-    const reason = window.prompt(
-      `Roll back offline installer downloads to version ${release.version}? Enter a reason for the release history:`,
-      ''
-    )
+    const reason = await requestAppPrompt({
+      title: `Roll back downloads to version ${release.version}?`,
+      label: 'Rollback reason',
+      placeholder: 'Enter a reason for the release history',
+      required: true,
+      confirmText: 'Roll back',
+      multiline: true,
+      warning: 'This changes the active installer shown to facilities.',
+    })
     if (reason === null) return
     if (!reason.trim()) {
       notify('A rollback reason is required.', 'error')

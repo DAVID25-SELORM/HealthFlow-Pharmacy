@@ -321,7 +321,11 @@ const Accounting = () => {
   }
 
   const handleCancelExpense = async (id) => {
-    if (!window.confirm('Cancel this expense record?')) return
+    if (!(await confirmAction({
+      title: 'Cancel this expense record?',
+      warning: 'The expense will be marked as cancelled and removed from active totals.',
+      confirmText: 'cancel this expense',
+    }))) return
     try {
       await cancelExpense(id)
       notify('Expense cancelled.', 'info')
@@ -378,7 +382,7 @@ const Accounting = () => {
     e.preventDefault()
     if (!todaySession) return
     if (!countedCash) return setError('Enter the counted cash amount.')
-    if (!confirmAction({
+    if (!(await confirmAction({
       title: 'Close today’s cashbook session?',
       details: [
         { label: 'Counted cash', value: `GHS ${Number(countedCash).toFixed(2)}` },
@@ -386,7 +390,7 @@ const Accounting = () => {
       ],
       warning: 'Closing locks the session for normal entry and records the final physical cash count.',
       confirmText: 'close this cashbook session',
-    })) return
+    }))) return
     try {
       setClosingSession(true)
       setError('')
@@ -411,7 +415,7 @@ const Accounting = () => {
     e.preventDefault()
     if (!todaySession) return setError('Open a session first.')
     if (!adjAmount || Number(adjAmount) <= 0) return setError('Enter a valid amount.')
-    if (!confirmAction({
+    if (!(await confirmAction({
       title: 'Post this manual cashbook entry?',
       details: [
         { label: 'Direction', value: adjDirection === 'in' ? 'Cash in' : 'Cash out' },
@@ -420,7 +424,7 @@ const Accounting = () => {
       ],
       warning: 'This entry changes the recorded cashbook balance.',
       confirmText: 'post this entry',
-    })) return
+    }))) return
     try {
       setAddingEntry(true)
       setError('')
@@ -459,7 +463,7 @@ const Accounting = () => {
   const handleRecordPayment = async (e) => {
     e.preventDefault()
     if (!payingClaim) return
-    if (!confirmAction({
+    if (!(await confirmAction({
       title: 'Record this insurer payment?',
       details: [
         { label: 'Claim', value: payingClaim.claim_number },
@@ -472,7 +476,7 @@ const Accounting = () => {
       ],
       warning: 'This updates the claim receivable and payment history.',
       confirmText: 'record this payment',
-    })) return
+    }))) return
     try {
       setSavingPayment(true)
       setError('')
