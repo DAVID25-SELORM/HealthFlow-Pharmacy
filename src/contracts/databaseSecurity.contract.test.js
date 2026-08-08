@@ -40,4 +40,18 @@ describe('protected database security contracts', () => {
     expect(sql).toContain('nhis_prescribers_select_org')
     expect(sql).toContain('nhis_prescribers_write_org')
   })
+
+  it('prevents users from changing their own tenant, role, status, or privileges', () => {
+    const sql = migration('20260806100000_prevent_user_self_privilege_escalation.sql')
+    expect(sql).toContain('prevent_user_self_privilege_escalation')
+    expect(sql).toMatch(/before update on public\.users/i)
+    expect(sql).toContain("'assigned_roles'")
+    expect(sql).toContain("'organization_id'")
+    expect(sql).toContain("'branch_id'")
+    expect(sql).toContain("'is_active'")
+    expect(sql).toContain("'can_delete_nhis_claims'")
+    expect(sql).toMatch(/auth\.uid\(\) <> old\.id/i)
+    expect(sql).toMatch(/errcode = '42501'/i)
+    expect(sql).toMatch(/revoke all on function public\.prevent_user_self_privilege_escalation\(\) from authenticated/i)
+  })
 })

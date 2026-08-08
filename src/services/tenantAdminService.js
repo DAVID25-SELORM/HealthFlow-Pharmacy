@@ -130,6 +130,12 @@ export const getTenantAdminDashboard = async () => {
   }
 }
 
+export const checkOrganizationReadiness = async (organizationId) =>
+  invokeFunction(TENANT_SIGNUP_FUNCTION, {
+    action: 'check_organization_readiness',
+    organizationId: normalizeText(organizationId),
+  })
+
 export const listBranchSyncSetupOptions = async () => {
   const response = await invokeFunction(TENANT_SIGNUP_FUNCTION, {
     action: 'list_branch_sync_setup_options',

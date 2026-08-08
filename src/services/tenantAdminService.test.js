@@ -10,6 +10,7 @@ vi.mock('../lib/supabase', () => ({
 }))
 
 import {
+  checkOrganizationReadiness,
   createPharmacyTenant,
   deactivateBranchSyncClient,
   listBranchSyncClients,
@@ -50,6 +51,29 @@ describe('tenantAdminService branch sync administration', () => {
       status: 'active',
       subscription_tier: 'pro',
     })
+  })
+
+  it('checks the machine-verifiable organization readiness contract', async () => {
+    mocks.invokeSupabaseFunction.mockResolvedValue({
+      data: {
+        contract: 'ORG-READY-001',
+        organizationId: 'org-1',
+        ready: true,
+        blockers: [],
+        warnings: [],
+      },
+      error: null,
+    })
+
+    const result = await checkOrganizationReadiness(' org-1 ')
+
+    expect(mocks.invokeSupabaseFunction).toHaveBeenCalledWith('tenant-signup', {
+      body: {
+        action: 'check_organization_readiness',
+        organizationId: 'org-1',
+      },
+    })
+    expect(result).toMatchObject({ contract: 'ORG-READY-001', ready: true })
   })
 
   it('registers a machine only through the protected tenant function', async () => {

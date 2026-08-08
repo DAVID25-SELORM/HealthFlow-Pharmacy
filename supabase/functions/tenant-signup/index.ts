@@ -23,6 +23,7 @@ type TenantSignupAction =
   | 'check_subdomain'
   | 'register_signup'
   | 'create_tenant'
+  | 'check_organization_readiness'
   | 'get_tenant_admin_dashboard'
   | 'get_tenant_users'
   | 'update_tenant_organization'
@@ -36,6 +37,14 @@ type RequesterProfile = {
   id: string
   role: string
   organization_id: string | null
+}
+
+type OrganizationReadiness = {
+  contract: 'ORG-READY-001'
+  organizationId: string
+  ready: boolean
+  blockers: string[]
+  warnings: string[]
 }
 
 const json = (body: Record<string, unknown>, status = 200) =>
@@ -1468,6 +1477,88 @@ const checkSubdomain = async (
   }
 }
 
+const checkOrganizationReadiness = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  organizationIdInput: unknown
+): Promise<OrganizationReadiness> => {
+  const organizationId = normalizeText(organizationIdInput)
+  if (!organizationId) throw new Error('Organization ID is required.')
+
+  const blockers: string[] = []
+  const warnings: string[] = []
+  const [organizationResult, adminsResult, branchesResult, settingsResult, drugsResult] =
+    await Promise.all([
+      adminClient
+        .from('organizations')
+        .select('id, status, owner_user_id, can_use_nhis')
+        .eq('id', organizationId)
+        .maybeSingle(),
+      adminClient
+        .from('users')
+        .select('id, branch_id')
+        .eq('organization_id', organizationId)
+        .eq('role', 'admin')
+        .eq('is_active', true),
+      adminClient
+        .from('branches')
+        .select('id')
+        .eq('organization_id', organizationId)
+        .eq('is_main', true)
+        .eq('is_active', true),
+      adminClient
+        .from('pharmacy_settings')
+        .select('organization_id')
+        .eq('organization_id', organizationId)
+        .limit(1),
+      adminClient
+        .from('drugs')
+        .select('id', { count: 'exact', head: true })
+        .eq('organization_id', organizationId),
+    ])
+
+  for (const result of [organizationResult, adminsResult, branchesResult, settingsResult, drugsResult]) {
+    if (result.error) throw result.error
+  }
+
+  const organization = organizationResult.data
+  const admins = adminsResult.data || []
+  const mainBranches = branchesResult.data || []
+
+  if (!organization) blockers.push('Organization record is missing.')
+  if (organization && !['active', 'trial'].includes(normalizeText(organization.status).toLowerCase())) {
+    blockers.push('Organization is not active or in trial.')
+  }
+  if (!admins.length) blockers.push('No active organization administrator exists.')
+  if (organization && !organization.owner_user_id) {
+    blockers.push('Organization owner is missing.')
+  } else if (organization?.owner_user_id && !admins.some((admin) => admin.id === organization.owner_user_id)) {
+    blockers.push('Organization owner is not an active administrator.')
+  }
+  if (mainBranches.length !== 1) blockers.push('Exactly one active main branch is required.')
+  if (admins.some((admin) => !admin.branch_id)) blockers.push('An active administrator has no branch assignment.')
+  if (!(settingsResult.data || []).length) blockers.push('Facility settings are missing.')
+  if ((drugsResult.count || 0) === 0) warnings.push('The default medication catalogue is empty.')
+
+  if (organization?.can_use_nhis) {
+    const nhiaResult = await adminClient
+      .from('nhia_configuration')
+      .select('id')
+      .eq('organization_id', organizationId)
+      .is('branch_id', null)
+      .limit(1)
+    if (nhiaResult.error) throw nhiaResult.error
+    if (!(nhiaResult.data || []).length) blockers.push('NHIA configuration is missing.')
+  }
+
+  return {
+    contract: 'ORG-READY-001',
+    organizationId,
+    ready: blockers.length === 0,
+    blockers,
+    warnings,
+  }
+}
+
 const bootstrapOrganization = async (
   adminClient: ReturnType<typeof createAdminClient>,
   payload: Record<string, unknown>,
@@ -1558,6 +1649,7 @@ const bootstrapOrganization = async (
 
   let organizationId: string | null = null
   let authUserId: string | null = null
+  let mainBranchId: string | null = null
 
   try {
     const { data: organization, error: organizationError } = await adminClient
@@ -1608,6 +1700,28 @@ const bootstrapOrganization = async (
 
     organizationId = organization.id
 
+    const { data: mainBranch, error: mainBranchError } = await adminClient
+      .from('branches')
+      .insert([{
+        organization_id: organizationId,
+        name: `${organizationName} Main branch`,
+        code: 'MAIN',
+        phone: normalizeText(organizationInput.phone) || null,
+        email: normalizeText(organizationInput.email) || adminEmail,
+        address: normalizeText(organizationInput.address) || null,
+        city: normalizeText(organizationInput.city) || null,
+        region: normalizeGhanaRegion(organizationInput.region) || null,
+        is_main: true,
+        is_active: true,
+      }])
+      .select('id')
+      .single()
+
+    if (mainBranchError || !mainBranch) {
+      throw mainBranchError || new Error('Unable to create the main branch.')
+    }
+    mainBranchId = mainBranch.id
+
     const { data: createdUserData, error: createUserError } =
       await adminClient.auth.admin.createUser({
         email: adminEmail,
@@ -1636,6 +1750,7 @@ const bootstrapOrganization = async (
         phone: normalizeText(adminUserInput.phone) || null,
         role: 'admin',
         organization_id: organizationId,
+        branch_id: mainBranchId,
         is_active: true,
       },
     ])
@@ -1687,6 +1802,11 @@ const bootstrapOrganization = async (
       pharmacy_level: pharmacyLevel || null,
     }, adminFullName)
 
+    const readiness = await checkOrganizationReadiness(adminClient, organizationId)
+    if (!readiness.ready) {
+      throw new Error(`Organization provisioning did not complete: ${readiness.blockers.join(' ')}`)
+    }
+
     return {
       organization,
       user: {
@@ -1695,7 +1815,9 @@ const bootstrapOrganization = async (
         full_name: adminFullName,
         role: 'admin',
         organization_id: organizationId,
+        branch_id: mainBranchId,
       },
+      readiness,
     }
   } catch (error) {
     if (authUserId) {
@@ -1770,7 +1892,7 @@ Deno.serve(async (request) => {
       return json(await registerSignup(adminClient, payload))
     }
 
-    if (action === 'create_tenant') {
+    if (action === 'create_tenant' || action === 'check_organization_readiness') {
       const { supabaseUrl, supabaseAnonKey, serviceRoleKey } = getFunctionEnv(true)
       const adminClient = createAdminClient(supabaseUrl, serviceRoleKey)
       const authorizationResult = await requireSuperAdmin(
@@ -1782,6 +1904,10 @@ Deno.serve(async (request) => {
 
       if ('error' in authorizationResult) {
         return authorizationResult.error
+      }
+
+      if (action === 'check_organization_readiness') {
+        return json(await checkOrganizationReadiness(adminClient, payload.organizationId))
       }
 
       return json(await createTenant(adminClient, payload))
