@@ -19,6 +19,7 @@ import { getProductionMetricsSnapshot, resetProductionMetrics } from './producti
 describe('invokeTierAccess', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.useRealTimers()
     resetProductionMetrics()
     mocks.getStoredActiveRole.mockReturnValue('admin')
   })
@@ -62,6 +63,44 @@ describe('invokeTierAccess', () => {
       invokeTierAccess({ action: 'save_nhia_api_settings' }),
     ])
 
+    expect(mocks.invokeSupabaseFunction).toHaveBeenCalledTimes(2)
+  })
+
+  it('retries an idempotent read after a temporary 503', async () => {
+    vi.useFakeTimers()
+    mocks.invokeSupabaseFunction
+      .mockResolvedValueOnce({ data: null, error: { status: 503, message: 'Service unavailable' } })
+      .mockResolvedValueOnce({ data: { total: 7 }, error: null })
+
+    const request = invokeTierAccess({ action: 'get_claims_statistics' })
+    await vi.advanceTimersByTimeAsync(500)
+
+    await expect(request).resolves.toEqual({ total: 7 })
+    expect(mocks.invokeSupabaseFunction).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not retry a write after a temporary 503', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    mocks.invokeSupabaseFunction.mockResolvedValue({
+      data: null,
+      error: { status: 503, message: 'Service unavailable' },
+    })
+
+    await expect(invokeTierAccess({ action: 'save_nhia_api_settings' })).rejects.toMatchObject({ status: 503 })
+    expect(mocks.invokeSupabaseFunction).toHaveBeenCalledTimes(1)
+    errorSpy.mockRestore()
+  })
+
+  it('retries an idempotent check after a temporary network failure', async () => {
+    vi.useFakeTimers()
+    mocks.invokeSupabaseFunction
+      .mockResolvedValueOnce({ data: null, error: new TypeError('Failed to fetch') })
+      .mockResolvedValueOnce({ data: { ready: true }, error: null })
+
+    const request = invokeTierAccess({ action: 'check_organization_readiness' })
+    await vi.advanceTimersByTimeAsync(500)
+
+    await expect(request).resolves.toEqual({ ready: true })
     expect(mocks.invokeSupabaseFunction).toHaveBeenCalledTimes(2)
   })
 })

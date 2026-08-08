@@ -1,6 +1,7 @@
 import { invokeSupabaseFunction } from '../lib/supabase'
 import { getStoredActiveRole } from '../utils/activeRole'
 import { debugLog } from '../utils/debugLog'
+import { isNetworkRequestError } from '../utils/requestErrors'
 import {
   recordCacheEvent,
   recordTierAccessEnd,
@@ -10,13 +11,15 @@ import {
 const TIER_ACCESS_FUNCTION = 'tier-access'
 const REDACTED_VALUE = '[REDACTED]'
 const inFlightReadRequests = new Map()
+const TRANSIENT_RETRY_DELAYS_MS = [500, 1500]
 
 const isReadOnlyAction = (action = '') => {
   const normalized = String(action || '').toLowerCase()
   return (
     normalized.startsWith('get_') ||
     normalized.startsWith('list_') ||
-    normalized.startsWith('search_')
+    normalized.startsWith('search_') ||
+    normalized.startsWith('check_')
   )
 }
 
@@ -51,14 +54,6 @@ const redactPayload = (value) => {
   )
 }
 
-const stringifyForLog = (value) => {
-  try {
-    return JSON.stringify(value ?? null, null, 2)
-  } catch {
-    return String(value)
-  }
-}
-
 const getStablePayloadKey = (payload) => {
   try {
     return JSON.stringify(payload, Object.keys(payload || {}).sort())
@@ -67,17 +62,39 @@ const getStablePayloadKey = (payload) => {
   }
 }
 
+const isTransientReadFailure = (error) => {
+  const status = Number(error?.status || error?.statusCode || error?.context?.status || 0)
+  return isNetworkRequestError(error) || [502, 503, 504].includes(status)
+}
+
+const wait = (delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs))
+
+const executeTierAccessRequest = async (requestPayload) => {
+  const readOnly = isReadOnlyAction(requestPayload?.action)
+  let attempt = 0
+
+  while (true) {
+    const { data, error } = await invokeSupabaseFunction(TIER_ACCESS_FUNCTION, {
+      body: requestPayload,
+    })
+
+    if (!error) return { data, error: null }
+    if (!readOnly || !isTransientReadFailure(error) || attempt >= TRANSIENT_RETRY_DELAYS_MS.length) {
+      return { data, error }
+    }
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      return { data, error }
+    }
+
+    await wait(TRANSIENT_RETRY_DELAYS_MS[attempt])
+    attempt += 1
+  }
+}
+
 const resolveTierAccessResponse = async (requestPromise) => {
   const { data, error } = await requestPromise
 
   if (error) {
-    console.error('[TIER ACCESS ERROR BODY]', stringifyForLog({
-      message: error?.message || '',
-      status: error?.status || error?.statusCode || '',
-      body: error?.body || null,
-      details: error?.details || null,
-      missingFields: error?.missingFields || [],
-    }))
     throw error
   }
 
@@ -138,9 +155,7 @@ export const invokeTierAccess = async (payload) => {
   const action = requestPayload?.action || 'unknown'
   const startedAt = performance.now()
   recordTierAccessStart(action)
-  const requestPromise = invokeSupabaseFunction(TIER_ACCESS_FUNCTION, {
-    body: requestPayload,
-  })
+  const requestPromise = executeTierAccessRequest(requestPayload)
 
   if (dedupeKey) {
     inFlightReadRequests.set(

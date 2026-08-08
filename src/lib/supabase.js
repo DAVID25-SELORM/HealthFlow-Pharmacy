@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { isNetworkRequestError } from '../utils/requestErrors'
+import { logRequestFailure } from '../utils/requestDiagnostics'
 import { logAuthDiagnostic, timeAuthOperation } from '../utils/authDiagnostics'
 
 // Get environment variables
@@ -312,6 +313,7 @@ const invokeFunctionWithToken = async (name, options, accessToken) => {
     action: body.action,
     activeRole: body.activeRole,
     organizationId: body.organizationId || body.organization_id,
+    branchId: body.branchId || body.branch_id,
   }
 
   try {
@@ -529,6 +531,7 @@ export const invokeSupabaseFunction = async (name, options = {}) => {
     throw new Error('Your session has expired. Please sign in again.')
   }
 
+  const startedAt = performance.now()
   let result = await invokeFunctionWithToken(name, options, session.access_token)
   if (!result.error) {
     return result
@@ -550,7 +553,18 @@ export const invokeSupabaseFunction = async (name, options = {}) => {
     }
   }
 
-  return finalizeFunctionResult(result)
+  const finalized = await finalizeFunctionResult(result)
+  if (finalized.error) {
+    const body = options?.body && typeof options.body === 'object' ? options.body : {}
+    logRequestFailure(`edge-function:${name}`, finalized.error, {
+      endpoint: `/functions/v1/${name}`,
+      method: 'POST',
+      organizationId: body.organizationId || body.organization_id || null,
+      branchId: body.branchId || body.branch_id || null,
+      durationMs: performance.now() - startedAt,
+    })
+  }
+  return finalized
 }
 
 // For calls that must work before a user has a session at all (e.g. subdomain

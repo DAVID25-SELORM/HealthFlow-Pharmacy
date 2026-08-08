@@ -34,7 +34,13 @@ vi.mock('../utils/activeRole', () => ({
   getStoredActiveRole: mocks.getStoredActiveRole,
 }))
 
-import { logAuditEvent, tryLogAuditEvent, uuidOrNull } from './auditService'
+import {
+  flushPendingAuditEvents,
+  getPendingAuditEventCount,
+  logAuditEvent,
+  tryLogAuditEvent,
+  uuidOrNull,
+} from './auditService'
 
 describe('auditService', () => {
   beforeEach(() => {
@@ -97,11 +103,47 @@ describe('auditService', () => {
       action: 'scrub_all_claims',
     })).resolves.toBeUndefined()
 
-    expect(warnSpy).toHaveBeenCalledWith(
-      'Audit log failed:',
-      'invalid input syntax for type uuid: ""'
-    )
+    expect(getPendingAuditEventCount()).toBe(0)
     warnSpy.mockRestore()
+  })
+
+  it('queues network audit failures and retries them after recovery', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    mocks.rpc
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce({ error: null })
+
+    await expect(tryLogAuditEvent({
+      eventType: 'nhis_claim.saved',
+      entityType: 'nhis_claims',
+      entityId: '11111111-1111-4111-8111-111111111111',
+      action: 'save',
+    })).resolves.toBeUndefined()
+
+    expect(getPendingAuditEventCount()).toBe(1)
+    await flushPendingAuditEvents()
+    expect(getPendingAuditEventCount()).toBe(0)
+    expect(mocks.rpc).toHaveBeenCalledTimes(2)
+    errorSpy.mockRestore()
+  })
+
+  it('drops a permanently invalid queued event so later audit retries can continue', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    mocks.rpc
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce({ error: { code: '22023', message: 'Invalid audit payload' } })
+
+    await tryLogAuditEvent({
+      eventType: 'nhis_claim.saved',
+      entityType: 'nhis_claims',
+      entityId: '11111111-1111-4111-8111-111111111111',
+      action: 'save',
+    })
+
+    expect(getPendingAuditEventCount()).toBe(1)
+    await flushPendingAuditEvents()
+    expect(getPendingAuditEventCount()).toBe(0)
+    errorSpy.mockRestore()
   })
 
   it('returns null for blank UUID values', () => {

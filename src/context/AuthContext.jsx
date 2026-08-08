@@ -372,6 +372,7 @@ export const AuthProvider = ({ children }) => {
   // that would otherwise never resolve.
   const [passwordRecoveryError, setPasswordRecoveryError] = useState('')
   const sessionRef = useRef(null)
+  const signInRequestsRef = useRef(new Map())
 
   useEffect(() => {
     let mounted = true
@@ -873,24 +874,36 @@ export const AuthProvider = ({ children }) => {
     }
   }, [])
 
-  const signIn = async (email, password) => {
+  const signIn = (email, password) => {
     if (!isSupabaseConfigured()) {
-      throw new Error('HealthFlow Cloud credentials are not configured.')
+      return Promise.reject(new Error('HealthFlow Cloud credentials are not configured.'))
     }
 
     const normalizedEmail = email.trim()
-    const { error } = await runAuthOperationWithRetry(
+    const requestKey = `${normalizedEmail.toLowerCase()}\u0000${password}`
+    const pendingRequest = signInRequestsRef.current.get(requestKey)
+    if (pendingRequest) {
+      return pendingRequest
+    }
+
+    const request = runAuthOperationWithRetry(
       'auth.signInWithPassword',
       () => supabase.auth.signInWithPassword({
         email: normalizedEmail,
         password,
       }),
       { attempts: 2, details: { emailDomain: normalizedEmail.split('@')[1] || '' } }
-    )
+    ).then(({ error }) => {
+      if (error) {
+        throw normalizeTransientAuthError(error)
+      }
+    })
 
-    if (error) {
-      throw normalizeTransientAuthError(error)
-    }
+    const trackedRequest = request.finally(() => {
+      signInRequestsRef.current.delete(requestKey)
+    })
+    signInRequestsRef.current.set(requestKey, trackedRequest)
+    return trackedRequest
   }
 
   const signInOffline = async (email, pin) => {

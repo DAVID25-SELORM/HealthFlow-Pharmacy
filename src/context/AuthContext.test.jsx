@@ -298,6 +298,90 @@ describe('AuthProvider', () => {
     expect(mocks.auth.signInWithPassword).toHaveBeenCalledTimes(2)
   })
 
+  it('coalesces concurrent sign-in attempts into one password request', async () => {
+    let resolveSignIn
+    const pendingSignIn = new Promise((resolve) => {
+      resolveSignIn = resolve
+    })
+    mocks.auth.getSession.mockResolvedValue({ data: { session: null }, error: null })
+    mocks.auth.signInWithPassword.mockReturnValue(pendingSignIn)
+
+    const results = []
+    const ConcurrentSignInProbe = () => {
+      const { signIn } = useAuth()
+      return (
+        <button
+          type="button"
+          onClick={() => {
+            results.push(signIn('staff@example.com', 'password'))
+            results.push(signIn('staff@example.com', 'password'))
+          }}
+        >
+          Sign in twice
+        </button>
+      )
+    }
+
+    render(
+      <AuthProvider>
+        <ConcurrentSignInProbe />
+      </AuthProvider>
+    )
+
+    await screen.findByText('Sign in twice')
+    fireEvent.click(screen.getByText('Sign in twice'))
+
+    expect(mocks.auth.signInWithPassword).toHaveBeenCalledTimes(1)
+    expect(results).toHaveLength(2)
+
+    resolveSignIn({ data: { user: null, session: null }, error: null })
+    await act(async () => {
+      await Promise.all(results)
+    })
+  })
+
+  it('does not coalesce concurrent sign-in attempts with corrected credentials', async () => {
+    mocks.auth.getSession.mockResolvedValue({ data: { session: null }, error: null })
+    mocks.auth.signInWithPassword.mockResolvedValue({
+      data: { user: null, session: null },
+      error: { status: 400, message: 'Invalid login credentials' },
+    })
+
+    const CorrectedSignInProbe = () => {
+      const { signIn } = useAuth()
+      return (
+        <button
+          type="button"
+          onClick={() => {
+            void signIn('staff@example.com', 'wrong-password').catch(() => {})
+            void signIn('staff@example.com', 'corrected-password').catch(() => {})
+          }}
+        >
+          Correct password
+        </button>
+      )
+    }
+
+    render(
+      <AuthProvider>
+        <CorrectedSignInProbe />
+      </AuthProvider>
+    )
+
+    await screen.findByText('Correct password')
+    fireEvent.click(screen.getByText('Correct password'))
+
+    await waitFor(() => expect(mocks.auth.signInWithPassword).toHaveBeenCalledTimes(2))
+    expect(mocks.auth.signInWithPassword).toHaveBeenNthCalledWith(1, {
+      email: 'staff@example.com',
+      password: 'wrong-password',
+    })
+    expect(mocks.auth.signInWithPassword).toHaveBeenNthCalledWith(2, {
+      email: 'staff@example.com',
+      password: 'corrected-password',
+    })
+  })
+
   it('finishes bootstrap as signed out when the stored session cannot be read', async () => {
     mocks.auth.getSession.mockRejectedValue({
       status: 401,

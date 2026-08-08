@@ -1,5 +1,11 @@
 import { getCurrentSupabaseUser, supabase } from '../lib/supabase'
 import { getStoredActiveRole } from '../utils/activeRole'
+import { isNetworkRequestError } from '../utils/requestErrors'
+import { logRequestFailure } from '../utils/requestDiagnostics'
+
+const MAX_PENDING_AUDIT_EVENTS = 100
+const pendingAuditEvents = []
+let auditFlushPromise = null
 
 // Additive accountability: stamp every audit event with the role the user was
 // actively working as when the action happened. Does not change any caller
@@ -161,6 +167,49 @@ export const tryLogAuditEvent = async (payload) => {
   try {
     await logAuditEvent(payload)
   } catch (error) {
-    console.warn('Audit log failed:', error.message)
+    logRequestFailure('audit-log', error, {
+      endpoint: '/rest/v1/rpc/log_audit_event',
+      method: 'POST',
+    })
+    if (isNetworkRequestError(error)) {
+      if (pendingAuditEvents.length >= MAX_PENDING_AUDIT_EVENTS) pendingAuditEvents.shift()
+      pendingAuditEvents.push(payload)
+    }
   }
+}
+
+export const flushPendingAuditEvents = async () => {
+  if (auditFlushPromise || pendingAuditEvents.length === 0) return auditFlushPromise
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return undefined
+
+  auditFlushPromise = (async () => {
+    while (pendingAuditEvents.length > 0) {
+      const payload = pendingAuditEvents[0]
+      try {
+        await logAuditEvent(payload)
+        pendingAuditEvents.shift()
+      } catch (error) {
+        logRequestFailure('audit-log-retry', error, {
+          endpoint: '/rest/v1/rpc/log_audit_event',
+          method: 'POST',
+        })
+        if (isNetworkRequestError(error)) {
+          break
+        }
+        pendingAuditEvents.shift()
+      }
+    }
+  })().finally(() => {
+    auditFlushPromise = null
+  })
+
+  return auditFlushPromise
+}
+
+export const getPendingAuditEventCount = () => pendingAuditEvents.length
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => {
+    void flushPendingAuditEvents()
+  })
 }
