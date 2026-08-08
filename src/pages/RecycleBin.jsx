@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
-import { RotateCcw, Trash2 } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { RotateCcw, Search, Trash2, X } from 'lucide-react'
 import { useNotification } from '../context/NotificationContext'
 import { formatAppDateTime } from '../utils/date'
 import { requestAppConfirmation } from '../utils/appDialog'
@@ -17,6 +17,57 @@ const TYPE_LABELS = {
 }
 
 const getRecordSnapshot = (record = {}) => record.snapshot?.record || record.snapshot || {}
+
+export const filterRecycleBinRecords = (records = [], filters = {}, now = new Date()) => {
+  const searchTerm = String(filters.searchTerm || '').trim().toLocaleLowerCase()
+  const entityType = filters.entityType || 'all'
+  const deletedWithin = filters.deletedWithin || 'all'
+  const nowTime = now.getTime()
+  const ageLimits = {
+    today: 24 * 60 * 60 * 1000,
+    '7_days': 7 * 24 * 60 * 60 * 1000,
+    '30_days': 30 * 24 * 60 * 60 * 1000,
+  }
+
+  return records.filter((record) => {
+    if (entityType !== 'all' && record.entity_type !== entityType) return false
+
+    if (deletedWithin !== 'all') {
+      const deletedAt = new Date(record.deleted_at).getTime()
+      const ageLimit = ageLimits[deletedWithin]
+      if (!Number.isFinite(deletedAt) || !ageLimit || deletedAt > nowTime || nowTime - deletedAt > ageLimit) {
+        return false
+      }
+    }
+
+    if (!searchTerm) return true
+
+    const snapshot = getRecordSnapshot(record)
+    const patientFullName = [snapshot.surname, snapshot.other_names].filter(Boolean).join(' ')
+    const searchableValues = [
+      record.display_name,
+      record.entity_type,
+      TYPE_LABELS[record.entity_type],
+      snapshot.claim_number,
+      snapshot.surname,
+      snapshot.other_names,
+      patientFullName,
+      snapshot.patient_name,
+      snapshot.patientName,
+      snapshot.member_no,
+      snapshot.memberNo,
+      snapshot.hin,
+      snapshot.folder_no,
+      snapshot.folderNo,
+      snapshot.name,
+      snapshot.generic_name,
+      snapshot.brand_name,
+      snapshot.code,
+    ]
+
+    return searchableValues.some((value) => String(value || '').toLocaleLowerCase().includes(searchTerm))
+  })
+}
 
 const getRecycleRecordIdentity = (record = {}) => {
   const snapshot = getRecordSnapshot(record)
@@ -54,6 +105,23 @@ const RecycleBin = () => {
   const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState('')
   const [error, setError] = useState('')
+  const [searchTerm, setSearchTerm] = useState('')
+  const [entityType, setEntityType] = useState('all')
+  const [deletedWithin, setDeletedWithin] = useState('all')
+
+  const filteredRecords = useMemo(() => filterRecycleBinRecords(records, {
+    searchTerm,
+    entityType,
+    deletedWithin,
+  }), [deletedWithin, entityType, records, searchTerm])
+
+  const hasActiveFilters = Boolean(searchTerm.trim()) || entityType !== 'all' || deletedWithin !== 'all'
+
+  const clearFilters = () => {
+    setSearchTerm('')
+    setEntityType('all')
+    setDeletedWithin('all')
+  }
 
   const load = useCallback(async () => {
     try {
@@ -166,13 +234,54 @@ const RecycleBin = () => {
           </button>
         </div>
       )}
+      <div className="recycle-bin-toolbar" aria-label="Recycle Bin filters">
+        <label className="recycle-bin-search">
+          <Search size={17} aria-hidden="true" />
+          <span className="sr-only">Search deleted records</span>
+          <input
+            type="search"
+            value={searchTerm}
+            onChange={(event) => setSearchTerm(event.target.value)}
+            placeholder="Search claim, patient, member/HIN, folder, or item..."
+          />
+        </label>
+        <label className="recycle-bin-filter">
+          <span>Type</span>
+          <select value={entityType} onChange={(event) => setEntityType(event.target.value)}>
+            <option value="all">All records</option>
+            <option value="nhis_claim">NHIS claims</option>
+            <option value="inventory_drug">Inventory items</option>
+          </select>
+        </label>
+        <label className="recycle-bin-filter">
+          <span>Deleted</span>
+          <select value={deletedWithin} onChange={(event) => setDeletedWithin(event.target.value)}>
+            <option value="all">Any time</option>
+            <option value="today">Past 24 hours</option>
+            <option value="7_days">Past 7 days</option>
+            <option value="30_days">Past 30 days</option>
+          </select>
+        </label>
+        {hasActiveFilters && (
+          <button type="button" className="btn btn-secondary btn-sm recycle-bin-clear" onClick={clearFilters}>
+            <X size={14} /> Clear
+          </button>
+        )}
+      </div>
+      {!loading && !error && (
+        <div className="recycle-bin-result-count" role="status">
+          Showing {filteredRecords.length} of {records.length} deleted records
+        </div>
+      )}
       <DataTable
         columns={columns}
-        rows={records}
+        rows={filteredRecords}
         getRowKey={(record) => record.id}
         loading={loading}
         loadingState={<LoadingState title="Loading deleted records" description="Checking recoverable records..." />}
-        emptyState={<EmptyState title="The Recycle Bin is empty" description="Deleted inventory items and NHIS claims will appear here." />}
+        emptyState={hasActiveFilters
+          ? <EmptyState title="No deleted records match" description="Change or clear the search filters to see other records." />
+          : <EmptyState title="The Recycle Bin is empty" description="Deleted inventory items and NHIS claims will appear here." />}
         minWidth="760px"
       />
     </div>

@@ -79,9 +79,12 @@ import {
 } from '../services/branchServerApi'
 import { isMcaEditWindowOpen, canReopenMcaEditWindow } from '../utils/mcaEditWindow'
 import {
+  canCorrectDirectServedNhisMedicine,
+  canNhisClaimBeServedDirectly,
   canMcaOpenNhisClaimForServing,
   isNhisClaimDirectlyServed,
   markNhisMedicinesServedDirectly,
+  markNhisMedicineFullyServed,
   shouldApplyMcaEditWindowToClaim,
   shouldFinalizeNhisServingReview,
   splitMcaReadinessIssues,
@@ -1388,6 +1391,10 @@ const Nhis = () => {
   const [claimError, setClaimError]           = useState('')
   const [claimActionReview, setClaimActionReview] = useState(null)
   const [editingClaim, setEditingClaim]       = useState(null)
+  const canCorrectDirectServedMedicine = canCorrectDirectServedNhisMedicine({
+    claim: editingClaim,
+    role: normalizedRole,
+  })
   const [prescriptionPdfFile, setPrescriptionPdfFile] = useState(null)
 
   // ── patient lookup (for claim form) ──────────────────────────
@@ -2286,13 +2293,10 @@ const Nhis = () => {
       </div>
     </div>
   )
-  const canServeClaimDirectly =
-    ['admin', 'super_admin', 'claims_officer'].includes(normalizedRole) &&
-    (
-      !editingClaim ||
-      ['draft', 'pending_serving', 'serving_in_progress', 'returned_for_review', 'claim_ready', 'served']
-        .includes(normalizeText(editingClaim.status).toLowerCase())
-    )
+  const canServeClaimDirectly = canNhisClaimBeServedDirectly({
+    claim: editingClaim,
+    role: normalizedRole,
+  })
 
   const allNhisPatients = useMemo(() => {
     const merged = new Map()
@@ -3404,7 +3408,9 @@ const Nhis = () => {
       : qty
     const servedQty = isMedicineCounterAssistant
       ? qty
-      : getMedicineServedQty(currentMedicine)
+      : canCorrectDirectServedMedicine && currentMedicine
+        ? Number.parseFloat(medForm.servedQty) || 0
+        : getMedicineServedQty(currentMedicine)
     const servingStatus = normalizeMedicineServingStatus(medForm.servingStatus, prescribedQty, servedQty)
     if (
       isMedicineCounterAssistant &&
@@ -4090,6 +4096,17 @@ const Nhis = () => {
     e.preventDefault()
     const saveAsDraft = intent === 'save_details'
     const serveDirectly = intent === 'serve_directly'
+    if (serveDirectly && editingClaim && !canNhisClaimBeServedDirectly({
+      claim: editingClaim,
+      role: normalizedRole,
+    })) {
+      setClaimError(
+        isNhisClaimDirectlyServed(editingClaim)
+          ? 'This claim was already served directly. Use Save Intake Updates to save corrections without serving it again.'
+          : 'This claim cannot be served directly in its current state.'
+      )
+      return
+    }
     const effectiveClaimMedicines = serveDirectly
       ? markNhisMedicinesServedDirectly(medicinesOverride || claimMedicines, {
           actorId: user?.id || '',
@@ -8336,6 +8353,36 @@ const Nhis = () => {
                     Prescribed quantity: {medForm.prescribedQty || 0} {medForm.unit || 'unit'}
                   </div>
                 </>
+              )}
+
+              {canCorrectDirectServedMedicine && editingMedicineIndex !== null && (
+                <div className="nhis-direct-serving-correction">
+                  <div>
+                    <strong>Direct-service correction</strong>
+                    <span>
+                      Served {medForm.servedQty || 0} of {medForm.dispensedQty || 0} {medForm.unit || 'unit'}.
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    disabled={!(Number(medForm.dispensedQty) > 0)}
+                    onClick={() => {
+                      const corrected = markNhisMedicineFullyServed({
+                        ...medForm,
+                        prescribedQty: medForm.dispensedQty,
+                      })
+                      setMedForm((current) => ({
+                        ...current,
+                        servedQty: String(corrected.servedQty),
+                        servingStatus: corrected.servingStatus,
+                        reasonIfNotFullyServed: '',
+                      }))
+                    }}
+                  >
+                    Set Fully Served
+                  </button>
+                </div>
               )}
 
               <div className="nhis-section-divider">Prescription</div>

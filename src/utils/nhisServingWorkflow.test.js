@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+  canCorrectDirectServedNhisMedicine,
+  canNhisClaimBeServedDirectly,
   canMcaOpenNhisClaimForServing,
   isNhisClaimDirectlyServed,
   markNhisMedicinesServedDirectly,
+  markNhisMedicineFullyServed,
   shouldApplyMcaEditWindowToClaim,
   shouldFinalizeNhisServingReview,
   splitMcaReadinessIssues,
@@ -42,6 +45,63 @@ describe('NHIS serving workflow status transitions', () => {
     expect(isNhisClaimDirectlyServed(directClaim)).toBe(true)
     expect(canMcaOpenNhisClaimForServing(directClaim)).toBe(false)
     expect(canMcaOpenNhisClaimForServing({ status: 'served' })).toBe(true)
+  })
+
+  it('does not offer direct serving again after a claim was already served directly', () => {
+    expect(canNhisClaimBeServedDirectly({
+      role: 'claims_officer',
+      claim: {
+        status: 'served',
+        direct_served_at: '2026-08-08T10:00:00.000Z',
+      },
+    })).toBe(false)
+
+    expect(canNhisClaimBeServedDirectly({
+      role: 'admin',
+      claim: { status: 'served' },
+    })).toBe(true)
+  })
+
+  it('keeps direct serving restricted to its existing authorized roles and statuses', () => {
+    expect(canNhisClaimBeServedDirectly({ role: 'assistant', claim: { status: 'draft' } })).toBe(false)
+    expect(canNhisClaimBeServedDirectly({ role: 'admin', claim: { status: 'paid' } })).toBe(false)
+    expect(canNhisClaimBeServedDirectly({ role: 'admin', claim: { status: 'draft' } })).toBe(true)
+    expect(canNhisClaimBeServedDirectly({ role: 'claims_officer' })).toBe(true)
+  })
+
+  it('allows only authorized direct-serving roles to correct an already direct-served medicine', () => {
+    const claim = { status: 'served', direct_served_at: '2026-08-08T10:00:00.000Z' }
+
+    expect(canCorrectDirectServedNhisMedicine({ role: 'admin', claim })).toBe(true)
+    expect(canCorrectDirectServedNhisMedicine({ role: 'claims_officer', claim })).toBe(true)
+    expect(canCorrectDirectServedNhisMedicine({ role: 'assistant', claim })).toBe(false)
+    expect(canCorrectDirectServedNhisMedicine({ role: 'admin', claim: { status: 'served' } })).toBe(false)
+  })
+
+  it('stages the full prescribed quantity without changing medicine pricing or directions', () => {
+    expect(markNhisMedicineFullyServed({
+      drugCode: 'PARACETA1',
+      prescribedQty: 84,
+      servedQty: 28,
+      dispensedQty: 28,
+      servingStatus: 'partially_served',
+      reasonIfNotFullyServed: 'Partial stock',
+      unitPrice: 0.12,
+      dose: '2 tablets',
+      frequency: 'TDS',
+      duration: '7 days',
+    })).toEqual({
+      drugCode: 'PARACETA1',
+      prescribedQty: 84,
+      servedQty: 84,
+      dispensedQty: 84,
+      servingStatus: 'fully_served',
+      reasonIfNotFullyServed: '',
+      unitPrice: 0.12,
+      dose: '2 tablets',
+      frequency: 'TDS',
+      duration: '7 days',
+    })
   })
 
   it('applies the dispensary edit window only to served claims', () => {

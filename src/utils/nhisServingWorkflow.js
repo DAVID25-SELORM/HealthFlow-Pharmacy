@@ -11,6 +11,21 @@ const NHIS_MCA_OPENABLE_STATUSES = new Set([
   'served',
 ])
 
+const NHIS_DIRECT_SERVING_ROLES = new Set([
+  'admin',
+  'super_admin',
+  'claims_officer',
+])
+
+const NHIS_DIRECT_SERVING_STATUSES = new Set([
+  'draft',
+  'pending_serving',
+  'serving_in_progress',
+  'returned_for_review',
+  'claim_ready',
+  'served',
+])
+
 const CLAIM_LEVEL_MCA_INFO_PATTERNS = [
   /^Patient /i,
   /^Folder number/i,
@@ -74,6 +89,35 @@ export const shouldFinalizeNhisServingReview = (status = '') =>
 
 export const isNhisClaimDirectlyServed = (claim = {}) =>
   Boolean(claim?.direct_served_at || claim?.directServedAt)
+
+export const canNhisClaimBeServedDirectly = ({ claim = null, role = '' } = {}) => {
+  if (!NHIS_DIRECT_SERVING_ROLES.has(normalizeNhisServingStatus(role))) return false
+  if (!claim) return true
+  if (isNhisClaimDirectlyServed(claim)) return false
+  return NHIS_DIRECT_SERVING_STATUSES.has(normalizeNhisServingStatus(claim.status))
+}
+
+export const canCorrectDirectServedNhisMedicine = ({ claim = null, role = '' } = {}) =>
+  NHIS_DIRECT_SERVING_ROLES.has(normalizeNhisServingStatus(role)) &&
+  isNhisClaimDirectlyServed(claim)
+
+export const markNhisMedicineFullyServed = (medicine = {}) => {
+  const prescribedQty = toNumber(
+    medicine?.prescribedQty ??
+    medicine?.prescribed_qty ??
+    medicine?.dispensedQty ??
+    medicine?.dispensed_qty
+  )
+
+  return {
+    ...medicine,
+    prescribedQty,
+    servedQty: prescribedQty,
+    dispensedQty: prescribedQty,
+    servingStatus: normalizeMedicineLineServingStatus('fully_served', prescribedQty, prescribedQty),
+    reasonIfNotFullyServed: '',
+  }
+}
 
 export const canMcaOpenNhisClaimForServing = (claimOrStatus = '') => {
   if (claimOrStatus && typeof claimOrStatus === 'object') {

@@ -1830,6 +1830,36 @@
   padding: 0.7rem 0.8rem;
 }
 
+.nhis-direct-serving-correction {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border: 1px solid #a7f3d0;
+  border-radius: 8px;
+  background: #ecfdf5;
+  color: #065f46;
+  padding: 0.75rem;
+}
+
+.nhis-direct-serving-correction > div {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.nhis-direct-serving-correction span {
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+@media (max-width: 640px) {
+  .nhis-direct-serving-correction {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
 .nhis-page .medicine-serve-btn {
   width: auto;
   min-width: 4.65rem;
