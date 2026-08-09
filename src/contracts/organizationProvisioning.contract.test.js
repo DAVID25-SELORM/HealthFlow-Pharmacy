@@ -22,4 +22,16 @@ describe('ORG-READY-001 provisioning contract', () => {
     expect(source).toContain("action === 'create_tenant' || action === 'check_organization_readiness'")
     expect(source).toContain('const authorizationResult = await requireSuperAdmin')
   })
+
+  it('keeps tenant creation compatible when only the optional installer privilege column is absent', () => {
+    expect(source).toContain("isMissingColumnError(organizationResult.error, 'can_use_offline_installer')")
+    expect(source).toContain('const { can_use_offline_installer: _unsupported, ...compatibleInsert }')
+  })
+
+  it('reports the exact provisioning stage without returning submitted tenant data', () => {
+    expect(source).toContain("let provisioningStage = 'create organization'")
+    expect(source).toContain("provisioningStage = 'create administrator login'")
+    expect(source).toContain("provisioningStage = 'verify organization readiness'")
+    expect(source).toContain('return json({ error: message, code: code || null, stage: stage || null }, 400)')
+  })
 })

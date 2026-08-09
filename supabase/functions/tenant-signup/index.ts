@@ -58,6 +58,25 @@ const json = (body: Record<string, unknown>, status = 200) =>
 
 const normalizeText = (value: unknown) => (typeof value === 'string' ? value.trim() : '')
 
+const getErrorMessage = (error: unknown) => {
+  if (error instanceof Error) return error.message
+  if (error && typeof error === 'object' && 'message' in error) {
+    return normalizeText((error as { message?: unknown }).message)
+  }
+  return ''
+}
+
+const getErrorCode = (error: unknown) =>
+  error && typeof error === 'object' && 'code' in error
+    ? normalizeText((error as { code?: unknown }).code)
+    : ''
+
+const isMissingColumnError = (error: unknown, column: string) => {
+  const message = getErrorMessage(error).toLowerCase()
+  const code = getErrorCode(error)
+  return ['42703', 'PGRST204'].includes(code) && message.includes(column.toLowerCase())
+}
+
 const GHANA_REGIONS = [
   'Ahafo',
   'Ashanti',
@@ -1650,12 +1669,10 @@ const bootstrapOrganization = async (
   let organizationId: string | null = null
   let authUserId: string | null = null
   let mainBranchId: string | null = null
+  let provisioningStage = 'create organization'
 
   try {
-    const { data: organization, error: organizationError } = await adminClient
-      .from('organizations')
-      .insert([
-        {
+    const organizationInsert = {
           name: organizationName,
           organization_type: organizationType,
           subdomain,
@@ -1689,10 +1706,26 @@ const bootstrapOrganization = async (
           next_payment_due_at: nextPaymentDueAt,
           trial_ends_at: trialEndsAt,
           subscription_ends_at: subscriptionEndsAt,
-        },
-      ])
+        }
+
+    let organizationResult = await adminClient
+      .from('organizations')
+      .insert([organizationInsert])
       .select(ORGANIZATION_SELECT_FIELDS)
       .single()
+
+    // Older linked projects may not yet have the optional installer privilege
+    // column. Preserve tenant creation and default downloads to disabled there.
+    if (isMissingColumnError(organizationResult.error, 'can_use_offline_installer')) {
+      const { can_use_offline_installer: _unsupported, ...compatibleInsert } = organizationInsert
+      organizationResult = await adminClient
+        .from('organizations')
+        .insert([compatibleInsert])
+        .select(ORGANIZATION_SELECT_FIELDS)
+        .single()
+    }
+
+    const { data: organization, error: organizationError } = organizationResult
 
     if (organizationError) {
       throw organizationError
@@ -1700,6 +1733,7 @@ const bootstrapOrganization = async (
 
     organizationId = organization.id
 
+    provisioningStage = 'create main branch'
     const { data: mainBranch, error: mainBranchError } = await adminClient
       .from('branches')
       .insert([{
@@ -1722,6 +1756,7 @@ const bootstrapOrganization = async (
     }
     mainBranchId = mainBranch.id
 
+    provisioningStage = 'create administrator login'
     const { data: createdUserData, error: createUserError } =
       await adminClient.auth.admin.createUser({
         email: adminEmail,
@@ -1742,6 +1777,7 @@ const bootstrapOrganization = async (
 
     authUserId = createdUserData.user.id
 
+    provisioningStage = 'create administrator profile'
     const { error: publicUserError } = await adminClient.from('users').insert([
       {
         id: authUserId,
@@ -1759,6 +1795,7 @@ const bootstrapOrganization = async (
       throw publicUserError
     }
 
+    provisioningStage = 'assign organization owner'
     const { error: ownerError } = await adminClient
       .from('organizations')
       .update({
@@ -1771,6 +1808,7 @@ const bootstrapOrganization = async (
       throw ownerError
     }
 
+    provisioningStage = 'create facility settings'
     const { error: settingsError } = await adminClient.from('pharmacy_settings').insert([
       {
         organization_id: organizationId,
@@ -1793,8 +1831,10 @@ const bootstrapOrganization = async (
       throw settingsError
     }
 
+    provisioningStage = 'seed medication catalogue'
     await seedDefaultMedicationCatalog(adminClient, organizationId)
 
+    provisioningStage = 'seed NHIA configuration'
     await seedNhiaConfiguration(adminClient, {
       id: organizationId,
       organization_type: organizationType,
@@ -1802,6 +1842,7 @@ const bootstrapOrganization = async (
       pharmacy_level: pharmacyLevel || null,
     }, adminFullName)
 
+    provisioningStage = 'verify organization readiness'
     const readiness = await checkOrganizationReadiness(adminClient, organizationId)
     if (!readiness.ready) {
       throw new Error(`Organization provisioning did not complete: ${readiness.blockers.join(' ')}`)
@@ -1838,7 +1879,11 @@ const bootstrapOrganization = async (
       }
     }
 
-    throw error
+    const message = getErrorMessage(error) || 'Unexpected tenant provisioning error.'
+    const code = getErrorCode(error)
+    const stagedError = new Error(`Tenant creation failed while attempting to ${provisioningStage}: ${message}`)
+    Object.assign(stagedError, { code, stage: provisioningStage })
+    throw stagedError
   }
 }
 
@@ -1970,7 +2015,11 @@ Deno.serve(async (request) => {
     return json({ error: 'Unsupported tenant signup action.' }, 400)
   } catch (error) {
     console.error('tenant-signup error:', error)
-    const message = error instanceof Error ? error.message : 'Unexpected tenant signup error.'
-    return json({ error: message }, 400)
+    const message = getErrorMessage(error) || 'Unexpected tenant signup error.'
+    const code = getErrorCode(error)
+    const stage = error && typeof error === 'object' && 'stage' in error
+      ? normalizeText((error as { stage?: unknown }).stage)
+      : ''
+    return json({ error: message, code: code || null, stage: stage || null }, 400)
   }
 })
