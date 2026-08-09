@@ -55,6 +55,7 @@ const PROFILE_SELECT = `
   can_adjust_stock,
   can_approve_purchases,
   can_delete_nhis_claims,
+  can_manage_restricted_inventory,
   is_active,
   organization_id,
   branch_id
@@ -70,6 +71,7 @@ const OPTIONAL_PRIVILEGE_COLUMNS = [
   'can_approve_purchases',
   'assigned_roles',
   'can_delete_nhis_claims',
+  'can_manage_restricted_inventory',
 ]
 const LEGACY_PROFILE_SELECT = OPTIONAL_PRIVILEGE_COLUMNS.reduce(
   (columns, field) => columns.replace(new RegExp(`\\s*${field},\\s*`), '\n'),
@@ -1076,6 +1078,12 @@ export const AuthProvider = ({ children }) => {
         (
           ['admin', 'super_admin'].includes(currentRole) ||
           Boolean(profile?.can_delete_nhis_claims)
+        ),
+      canManageRestrictedInventory:
+        ['super_admin', 'compliance_admin', 'compliance_officer'].includes(currentRole) ||
+        (
+          ['admin', 'supervisor'].includes(currentRole) &&
+          Boolean(profile?.can_manage_restricted_inventory)
         ),
       signIn,
       signInOffline,

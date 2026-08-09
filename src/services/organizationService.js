@@ -12,7 +12,7 @@ import { normalizePharmacyLevel } from '../utils/nhisPharmacyLevel'
 
 const TENANT_SIGNUP_FUNCTION = 'tenant-signup'
 const DEFAULT_MEDICATION_BATCH_PREFIX = 'PDF-IMP-'
-const VALID_ORGANIZATION_TYPES = ['pharmacy', 'hospital']
+const VALID_ORGANIZATION_TYPES = ['pharmacy', 'hospital', 'chemical_shop']
 
 // ✅ NHIS PHARMACY LEVEL PATCH START
 const isMissingPharmacyLevelColumnError = (error) => {

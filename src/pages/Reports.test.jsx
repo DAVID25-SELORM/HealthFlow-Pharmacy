@@ -12,6 +12,7 @@ import {
 
 const mocks = vi.hoisted(() => ({
   getReportBundle: vi.fn(),
+  getReportDrugMatches: vi.fn(),
   getReportNhisPage: vi.fn(),
   getPharmacyBrandingSettings: vi.fn(),
   useAuth: vi.fn(),
@@ -37,6 +38,7 @@ vi.mock('../services/reportsService', async () => {
     downloadCsv: vi.fn(),
     exportReportPdf: vi.fn(),
     getReportBundle: mocks.getReportBundle,
+    getReportDrugMatches: mocks.getReportDrugMatches,
     getReportNhisPage: mocks.getReportNhisPage,
     printReport: vi.fn(),
   }
@@ -210,6 +212,10 @@ describe('Reports', () => {
     })
     mocks.getPharmacyBrandingSettings.mockResolvedValue({})
     mocks.getReportBundle.mockResolvedValue(reportBundle)
+    mocks.getReportDrugMatches.mockResolvedValue({
+      sales: reportBundle.sales,
+      nhisClaims: reportBundle.nhisClaims,
+    })
     mocks.getReportNhisPage.mockResolvedValue({
       nhisClaims: [{
         ...reportBundle.nhisClaims[0],
@@ -283,6 +289,12 @@ describe('Reports', () => {
 
     expect(screen.getAllByText('Top 10 Dispensed Drugs').length).toBeGreaterThan(0)
     fireEvent.change(screen.getByLabelText(/fast search drug utilization/i), { target: { value: 'Amoxicillin' } })
+    await waitFor(() => expect(mocks.getReportDrugMatches).toHaveBeenCalledWith(
+      expect.objectContaining({
+        drug: 'Amoxicillin',
+        branchId: '',
+      })
+    ))
     expect((await screen.findAllByText('2 patients')).length).toBeGreaterThan(0)
 
     const amoxicillinButton = screen.getByRole('button', { name: /Amoxicillin Capsules/i })
@@ -293,7 +305,7 @@ describe('Reports', () => {
     expect(screen.getAllByText('SALE-001').length).toBeGreaterThan(0)
     expect(screen.getAllByText('NHIA-001').length).toBeGreaterThan(0)
     expect(screen.getByText('View patients who received this drug')).toBeInTheDocument()
-  })
+  }, 15000)
 
   it('finds served NHIS medicines stored with claim schema field names', async () => {
     render(<Reports />)

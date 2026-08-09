@@ -1,5 +1,9 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
+import {
+  isChemicalShopMedicineAllowed,
+  isChemicalShopOrganizationType,
+} from '../_shared/chemicalShopInventory.ts'
 
 const BLOCKED_CLASSES = new Set(['restricted', 'controlled', 'narcotic'])
 const PAYMENT_METHODS = new Set(['momo', 'paystack', 'card', 'cash_on_delivery', 'account_transfer'])
@@ -75,7 +79,7 @@ const loadMarketplace = async (
 
   const { data: facilities, error: facilitiesError } = await admin
     .from('organizations')
-    .select('id, name, address, city, region, phone, license_number, epharmacy_pickup_enabled, epharmacy_delivery_enabled, epharmacy_minimum_order_amount')
+    .select('id, name, organization_type, address, city, region, phone, license_number, epharmacy_pickup_enabled, epharmacy_delivery_enabled, epharmacy_minimum_order_amount')
     .eq('epharmacy_enabled', true)
     .eq('epharmacy_license_status', 'registered')
     .in('status', ['active', 'trial'])
@@ -96,7 +100,7 @@ const loadMarketplace = async (
     .select(`
       id, organization_id, branch_id, name, brand_name, generic_name, batch_number,
       expiry_date, quantity, unit, price, category, description, reorder_level, status,
-      medicine_access_level, epharmacy_customer_visible, epharmacy_requires_prescription,
+      medicine_access_level, chemical_shop_sale_permitted, epharmacy_customer_visible, epharmacy_requires_prescription,
       epharmacy_sale_class, epharmacy_pickup_enabled, epharmacy_delivery_enabled,
       epharmacy_warning, branches(id, name, code)
     `)
@@ -121,6 +125,10 @@ const loadMarketplace = async (
   if (error) throw error
   const facilityMap = new Map(facilityRows.map((facility) => [text(facility.id), facility]))
   const listings = ((data || []) as Record<string, unknown>[])
+    .filter((row) => {
+      const facility = facilityMap.get(text(row.organization_id))
+      return !isChemicalShopOrganizationType(facility?.organization_type) || isChemicalShopMedicineAllowed(row)
+    })
     .map((row) => mapListing(row, facilityMap))
     .filter((row) => row.available_quantity > 0 && !BLOCKED_CLASSES.has(row.sale_class))
 
@@ -218,7 +226,7 @@ const createOrder = async (
   const sellerOrganizationId = text(input.sellerOrganizationId)
   const { data: seller, error: sellerError } = await admin
     .from('organizations')
-    .select('id, name, epharmacy_enabled, epharmacy_license_status, epharmacy_pickup_enabled, epharmacy_delivery_enabled, epharmacy_minimum_order_amount')
+    .select('id, name, organization_type, epharmacy_enabled, epharmacy_license_status, epharmacy_pickup_enabled, epharmacy_delivery_enabled, epharmacy_minimum_order_amount')
     .eq('id', sellerOrganizationId)
     .eq('epharmacy_enabled', true)
     .eq('epharmacy_license_status', 'registered')
@@ -239,7 +247,7 @@ const createOrder = async (
   const drugIds = [...new Set(items.map((item) => text(item.drugId)).filter(Boolean))]
   const { data: drugs, error: drugsError } = await admin
     .from('drugs')
-    .select('id, organization_id, branch_id, name, brand_name, generic_name, batch_number, expiry_date, quantity, unit, price, reorder_level, status, epharmacy_customer_visible, epharmacy_requires_prescription, epharmacy_sale_class')
+    .select('id, organization_id, branch_id, name, brand_name, generic_name, batch_number, expiry_date, quantity, unit, price, reorder_level, status, medicine_access_level, chemical_shop_sale_permitted, epharmacy_customer_visible, epharmacy_requires_prescription, epharmacy_sale_class')
     .eq('organization_id', sellerOrganizationId)
     .eq('status', 'active')
     .in('id', drugIds)
@@ -250,6 +258,9 @@ const createOrder = async (
   const orderItems = items.map((item) => {
     const drug = drugMap.get(text(item.drugId))
     if (!drug) throw new Error('A selected medicine is no longer available.')
+    if (isChemicalShopOrganizationType(seller.organization_type) && !isChemicalShopMedicineAllowed(drug)) {
+      throw new Error(`${drug.name} is not permitted for Chemical Shop ordering.`)
+    }
     const saleClass = text(drug.epharmacy_sale_class).toLowerCase() || 'otc'
     if (BLOCKED_CLASSES.has(saleClass)) throw new Error(`${drug.name} cannot be ordered online.`)
     if (!drug.epharmacy_customer_visible) throw new Error(`${drug.name} is not published for customer ordering.`)

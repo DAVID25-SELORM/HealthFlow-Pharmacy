@@ -1231,7 +1231,6 @@ const Reports = () => {
       !hasGeneratedReports ||
       loading ||
       term.length < 3 ||
-      searchedDrugAnalytics.length > 0 ||
       lastServerDrugSearchRef.current === searchKey
     ) {
       return
@@ -1257,7 +1256,6 @@ const Reports = () => {
     filters,
     hasGeneratedReports,
     loading,
-    searchedDrugAnalytics.length,
   ])
 
   useEffect(() => {

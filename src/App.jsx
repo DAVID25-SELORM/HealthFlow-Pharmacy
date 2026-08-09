@@ -46,6 +46,7 @@ const EPharmacy = lazy(() => import('./pages/EPharmacy'))
 const PatientCare = lazy(() => import('./pages/PatientCare'))
 const CustomerEPharmacy = lazy(() => import('./pages/CustomerEPharmacy'))
 const RecycleBin = lazy(() => import('./pages/RecycleBin'))
+const RestrictedInventory = lazy(() => import('./pages/RestrictedInventory'))
 
 const RouteFallback = () => (
   <div className="route-fallback" role="status" aria-live="polite">
@@ -68,6 +69,7 @@ function App() {
     canManageAccounting,
     canManageEpharmacy,
     canViewActivityLog,
+    canManageRestrictedInventory,
   } = useAuth()
   const { canUseClaims, canUsePurchases, canUseNhis, canUseAccounting } = useTenant()
   return (
@@ -201,6 +203,17 @@ function App() {
               element={
                 <RoleRoute allowedRoles={['admin', 'super_admin']}>
                   <RecycleBin />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="restricted-inventory"
+              element={
+                <RoleRoute
+                  allowedRoles={['super_admin', 'compliance_admin', 'compliance_officer']}
+                  allow={canManageRestrictedInventory}
+                >
+                  <RestrictedInventory />
                 </RoleRoute>
               }
             />

@@ -10,6 +10,10 @@ import {
 } from '../_shared/drugInventory.ts'
 import { resolveTierAccess } from '../_shared/tier.ts'
 import { isPersistedPatientUuid } from '../_shared/patientWorkspace.ts'
+import {
+  isChemicalShopMedicineAllowed,
+  isChemicalShopOrganizationType,
+} from '../_shared/chemicalShopInventory.ts'
 
 const USERS_PER_PAGE = 200
 const MAX_USER_PAGES = 10
@@ -27,7 +31,7 @@ const SALES_SELECT_FIELDS = `
   *,
   sale_items (
     *,
-    drugs (name)
+    drugs (name, medicine_access_level, chemical_shop_sale_permitted, epharmacy_sale_class)
   ),
   patients (id, full_name, phone, insurance_provider, insurance_id)
 `
@@ -49,6 +53,9 @@ const REPORT_DRUG_SELECT_FIELDS = `
   category,
   reorder_level,
   status,
+  medicine_access_level,
+  chemical_shop_sale_permitted,
+  epharmacy_sale_class,
   created_at
 `
 const INVENTORY_DRUG_SELECT_FIELDS = `
@@ -69,6 +76,8 @@ const INVENTORY_DRUG_SELECT_FIELDS = `
   nhis_unit,
   is_nhis_listed,
   medicine_access_level,
+  chemical_shop_sale_permitted,
+  epharmacy_sale_class,
   required_pharmacy_level,
   supplier,
   category,
@@ -187,6 +196,19 @@ const EPHARMACY_DRUG_SELECT_FIELDS = `
   epharmacy_updated_at,
   branches (id, name, code)
 `
+
+const isChemicalShopOrganization = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  organizationId: string
+) => {
+  const { data, error } = await adminClient
+    .from('organizations')
+    .select('organization_type')
+    .eq('id', organizationId)
+    .maybeSingle()
+  if (error) throw error
+  return isChemicalShopOrganizationType(data?.organization_type)
+}
 
 type TierAccessAction =
   | 'get_drugs'
@@ -1622,6 +1644,7 @@ const getDrugs = async (
   organizationId: string,
   payload: Record<string, unknown>
 ) => {
+  const chemicalShop = await isChemicalShopOrganization(adminClient, organizationId)
   const branchId = await getBranchIdForInventoryRequest(adminClient, organizationId, requesterProfile, payload)
   const includeCatalog = Boolean(payload.includeCatalog)
   const searchTerm = normalizeText(payload.searchTerm)
@@ -1698,9 +1721,10 @@ const getDrugs = async (
     }
   }
 
+  const visibleRows = chemicalShop ? rows.filter(isChemicalShopMedicineAllowed) : rows
   const pricedRows = searchTerm || inStockOnly
-    ? rows
-    : await enrichDrugsWithNhisCatalog(adminClient, organizationId, rows)
+    ? visibleRows
+    : await enrichDrugsWithNhisCatalog(adminClient, organizationId, visibleRows)
 
   if (includeCatalog) {
     return pricedRows
@@ -3307,6 +3331,14 @@ const createDrug = async (
     branchId: normalizeText(drugData.branchId),
   })
   const drugPayload = buildDrugCreatePayload(organizationId, branchId, drugData, batchNumber)
+  if (
+    await isChemicalShopOrganization(adminClient, organizationId) &&
+    !isChemicalShopMedicineAllowed(drugPayload)
+  ) {
+    throw new Error(
+      'Chemical Shops can add only medicines explicitly classified as OTC or approved for Chemical Shop sale.'
+    )
+  }
   return await saveDrugForOrganization(adminClient, organizationId, branchId, drugPayload)
 }
 
@@ -3388,6 +3420,14 @@ const updateDrug = async (
     updatePayload.is_nhis_listed = Boolean(drugData.isNhisListed)
   }
 
+  if (Object.prototype.hasOwnProperty.call(drugData, 'chemicalShopSalePermitted')) {
+    updatePayload.chemical_shop_sale_permitted = Boolean(drugData.chemicalShopSalePermitted)
+  }
+
+  if (Object.prototype.hasOwnProperty.call(drugData, 'epharmacySaleClass')) {
+    updatePayload.epharmacy_sale_class = normalizeText(drugData.epharmacySaleClass) || null
+  }
+
   // ✅ NHIS PHARMACY LEVEL PATCH START
   if (Object.prototype.hasOwnProperty.call(drugData, 'medicineAccessLevel')) {
     updatePayload.medicine_access_level = normalizeMedicineAccessLevelForSave(drugData.medicineAccessLevel)
@@ -3395,6 +3435,15 @@ const updateDrug = async (
 
   if (Object.prototype.hasOwnProperty.call(drugData, 'requiredPharmacyLevel')) {
     updatePayload.required_pharmacy_level = normalizePharmacyLevelForSave(drugData.requiredPharmacyLevel)
+  }
+
+  if (
+    await isChemicalShopOrganization(adminClient, organizationId) &&
+    !isChemicalShopMedicineAllowed({ ...existingDrug, ...updatePayload })
+  ) {
+    throw new Error(
+      'This medicine is restricted for Chemical Shops. Use Restricted Inventory for compliance review.'
+    )
   }
   // ✅ NHIS PHARMACY LEVEL PATCH END
 
@@ -3484,6 +3533,7 @@ const bulkImportDrugs = async (
     requesterProfile,
     payload
   )
+  const chemicalShop = await isChemicalShopOrganization(adminClient, organizationId)
 
   const normalizedRows = drugs.map((item) => {
     const row = item as Record<string, unknown>
@@ -3506,6 +3556,9 @@ const bulkImportDrugs = async (
           : parseNonNegativeNumber(row.nhis_price, 'NHIS price'),
       nhis_unit: normalizeText(row.nhis_unit) || null,
       is_nhis_listed: Boolean(row.is_nhis_listed),
+      medicine_access_level: normalizeMedicineAccessLevelForSave(row.medicine_access_level),
+      chemical_shop_sale_permitted: Boolean(row.chemical_shop_sale_permitted),
+      epharmacy_sale_class: normalizeText(row.epharmacy_sale_class) || null,
       supplier: normalizeText(row.supplier) || null,
       category: normalizeText(row.category) || null,
       description: normalizeText(row.description) || null,
@@ -3516,6 +3569,11 @@ const bulkImportDrugs = async (
 
   for (const drug of normalizedRows) {
     try {
+      if (chemicalShop && !isChemicalShopMedicineAllowed(drug)) {
+        throw new Error(
+          'Chemical Shops can import only medicines explicitly classified as OTC or approved for Chemical Shop sale.'
+        )
+      }
       const { action, drug: savedDrug } = await saveDrugForOrganization(adminClient, organizationId, branchId, drug)
       results.successful.push(savedDrug)
 
@@ -3544,6 +3602,10 @@ const syncNhisDrugsToInventory = async (
   payload: Record<string, unknown>
 ) => {
   requireNhisCatalogAccess(requesterProfile, 'Only NHIS or inventory staff can sync NHIS medicines to inventory.')
+
+  if (await isChemicalShopOrganization(adminClient, organizationId)) {
+    throw new Error('NHIS medicine catalogue sync is not available for Chemical Shop inventory.')
+  }
 
   const drugs = Array.isArray(payload.drugs) ? payload.drugs : []
   if (drugs.length === 0) {
@@ -5522,6 +5584,7 @@ const getReportBundle = async (
     REPORT_BUNDLE_DEFAULT_NHIS_CLAIMS,
     REPORT_BUNDLE_MAX_NHIS_CLAIMS
   )
+  const chemicalShop = await isChemicalShopOrganization(adminClient, organizationId)
 
   let salesQuery = adminClient
     .from('sales')
@@ -5551,12 +5614,15 @@ const getReportBundle = async (
     const drugNamePattern = `%${drugSearchTerm}%`
     const { data: matchingDrugs } = await adminClient
       .from('drugs')
-      .select('id')
+      .select('id, medicine_access_level, chemical_shop_sale_permitted, epharmacy_sale_class')
       .eq('organization_id', organizationId)
       .ilike('name', drugNamePattern)
       .limit(500)
 
-    const matchingDrugIds = (matchingDrugs || []).map((d) => normalizeText(d.id)).filter(Boolean)
+    const matchingDrugIds = (matchingDrugs || [])
+      .filter((drug) => !chemicalShop || isChemicalShopMedicineAllowed(drug))
+      .map((d) => normalizeText(d.id))
+      .filter(Boolean)
 
     if (matchingDrugIds.length > 0) {
       const { data: matchingSaleItems } = await adminClient
@@ -5614,16 +5680,30 @@ const getReportBundle = async (
   if (activeDrugsError) throw activeDrugsError
   if (allDrugsError) throw allDrugsError
 
-  const salesRows = sales || []
+  const salesRows = (sales || []).map((sale) => {
+    if (!chemicalShop) return sale
+    return {
+      ...sale,
+      sale_items: ((sale.sale_items as Record<string, unknown>[] | null) || [])
+        .filter((item) => {
+          const drug = item.drugs as Record<string, unknown> | null
+          return Boolean(drug) && isChemicalShopMedicineAllowed(drug)
+        }),
+    }
+  })
   const claimRows = claims || []
   const patientRows = patients || []
   const activeDrugRows = activeDrugs || []
   const allDrugRows = allDrugs || []
   const reportVisibleActiveDrugRows = activeDrugRows.filter(
-    (drug) => !isDefaultMedicationBatchNumber(drug.batch_number) || Number(drug.quantity || 0) > 0
+    (drug) =>
+      (!chemicalShop || isChemicalShopMedicineAllowed(drug)) &&
+      (!isDefaultMedicationBatchNumber(drug.batch_number) || Number(drug.quantity || 0) > 0)
   )
   const reportVisibleAllDrugRows = allDrugRows.filter(
-    (drug) => !isDefaultMedicationBatchNumber(drug.batch_number) || Number(drug.quantity || 0) > 0
+    (drug) =>
+      (!chemicalShop || isChemicalShopMedicineAllowed(drug)) &&
+      (!isDefaultMedicationBatchNumber(drug.batch_number) || Number(drug.quantity || 0) > 0)
   )
 
   const now = new Date()
@@ -5666,7 +5746,7 @@ const getReportBundle = async (
     getReportNhisAggregate(adminClient, organizationId, startDate, endDate),
     adminClient
       .from('purchases')
-      .select('*, purchase_items (*)')
+      .select('*, purchase_items (*, drugs (medicine_access_level, chemical_shop_sale_permitted, epharmacy_sale_class))')
       .eq('organization_id', organizationId)
       .gte('purchase_date', startDate || '1900-01-01')
       .lte('purchase_date', endDate || '2999-12-31')
@@ -5726,7 +5806,18 @@ const getReportBundle = async (
     nhisClaimsResponse
       ? Number(nhisClaimsResponse.count || nhisAggregate.count)
       : nhisAggregate.count
-  const purchases = getOptionalRows(purchasesResult)
+  const purchases = getOptionalRows(purchasesResult).map((purchase) => {
+    if (!chemicalShop) return purchase
+    const row = purchase as Record<string, unknown>
+    return {
+      ...row,
+      purchase_items: ((row.purchase_items as Record<string, unknown>[] | null) || [])
+        .filter((item) => {
+          const drug = item.drugs as Record<string, unknown> | null
+          return Boolean(drug) && isChemicalShopMedicineAllowed(drug)
+        }),
+    }
+  })
   const suppliers = getOptionalRows(suppliersResult)
   const exportHistory = getOptionalRows(exportHistoryResult)
   const submissionLogs = getOptionalRows(submissionLogsResult)
@@ -5856,83 +5947,131 @@ const getReportDrugMatches = async (
 
   const startDate = normalizeText(payload.startDate)
   const endDate = normalizeText(payload.endDate)
+  const scopedBranchId = resolveScopedBranchId(requesterProfile, payload)
   const drugSearchTerm = toIlikeSearchTerm(payload.drug)
+  const chemicalShop = await isChemicalShopOrganization(adminClient, organizationId)
   if (drugSearchTerm.length < 3) {
     return { sales: [], nhisClaims: [] }
   }
 
   const pattern = `%${drugSearchTerm}%`
-  const [{ data: matchingDrugs, error: drugsError }, { data: matchingMedicines, error: medicinesError }] =
-    await Promise.all([
-      adminClient
+  const chunkValues = <T,>(values: T[], size = 100) => {
+    const chunks: T[][] = []
+    for (let index = 0; index < values.length; index += size) {
+      chunks.push(values.slice(index, index + size))
+    }
+    return chunks
+  }
+
+  const matchingDrugs = await fetchAllWorkspaceRows(() =>
+    adminClient
         .from('drugs')
-        .select('id')
+        .select('id, medicine_access_level, chemical_shop_sale_permitted, epharmacy_sale_class')
         .eq('organization_id', organizationId)
         .ilike('name', pattern)
-        .limit(500),
-      adminClient
-        .from('nhis_claim_medicines')
-        .select('*')
-        .or(`description.ilike.${pattern},drug_code.ilike.${pattern}`)
-        .limit(500),
-    ])
-
-  if (drugsError) throw drugsError
-  if (medicinesError) throw medicinesError
-
-  const matchingDrugIds = (matchingDrugs || []).map((row) => normalizeText(row.id)).filter(Boolean)
-  const matchingClaimIds = Array.from(
-    new Set((matchingMedicines || []).map((row) => normalizeText(row.claim_id)).filter(Boolean))
   )
+
+  const matchingDrugIds = (matchingDrugs || [])
+    .filter((drug) => !chemicalShop || isChemicalShopMedicineAllowed(drug))
+    .map((row) => normalizeText(row.id))
+    .filter(Boolean)
 
   let sales: unknown[] = []
   if (matchingDrugIds.length) {
-    const { data: matchingSaleItems, error: saleItemsError } = await adminClient
-      .from('sale_items')
-      .select('sale_id')
-      .in('drug_id', matchingDrugIds)
-      .limit(500)
-    if (saleItemsError) throw saleItemsError
+    const matchingSaleItems = (
+      await Promise.all(chunkValues(matchingDrugIds).map((drugIds) =>
+        fetchAllWorkspaceRows(() =>
+          adminClient.from('sale_items').select('sale_id').in('drug_id', drugIds)
+        )
+      ))
+    ).flat()
 
     const saleIds = Array.from(
       new Set((matchingSaleItems || []).map((row) => normalizeText(row.sale_id)).filter(Boolean))
     )
     if (saleIds.length) {
-      let salesQuery = adminClient
-        .from('sales')
-        .select(SALES_SELECT_FIELDS)
-        .eq('organization_id', organizationId)
-        .in('id', saleIds)
-        .order('sale_date', { ascending: false })
-      if (startDate) salesQuery = salesQuery.gte('sale_date', `${startDate}T00:00:00`)
-      if (endDate) salesQuery = salesQuery.lte('sale_date', `${endDate}T23:59:59`)
-      const { data, error } = await salesQuery
-      if (error) throw error
-      sales = data || []
+      const saleGroups = await Promise.all(chunkValues(saleIds).map((ids) =>
+        fetchAllWorkspaceRows(() => {
+          let query = adminClient
+            .from('sales')
+            .select(SALES_SELECT_FIELDS)
+            .eq('organization_id', organizationId)
+            .in('id', ids)
+            .order('sale_date', { ascending: false })
+          if (scopedBranchId) query = query.eq('branch_id', scopedBranchId)
+          if (startDate) query = query.gte('sale_date', `${startDate}T00:00:00`)
+          if (endDate) query = query.lte('sale_date', `${endDate}T23:59:59`)
+          return query
+        })
+      ))
+      sales = saleGroups.flat().map((sale) => {
+        if (!chemicalShop) return sale
+        return {
+          ...sale,
+          sale_items: ((sale.sale_items as Record<string, unknown>[] | null) || [])
+            .filter((item) => {
+              const drug = item.drugs as Record<string, unknown> | null
+              return Boolean(drug) && isChemicalShopMedicineAllowed(drug)
+            }),
+        }
+      })
     }
   }
 
+  // Chemical Shops do not have an NHIS dispensing surface. Avoid exposing
+  // historical restricted medicine descriptions through report search.
+  if (chemicalShop) return { sales, nhisClaims: [] }
+
+  const scopedClaims = await fetchAllWorkspaceRows(() => {
+    let query = adminClient
+      .from('nhis_claims')
+      .select('id')
+      .eq('organization_id', organizationId)
+    if (scopedBranchId) query = query.eq('branch_id', scopedBranchId)
+    if (startDate) query = query.gte('service_date_from', startDate)
+    if (endDate) query = query.lte('service_date_from', endDate)
+    return query
+  })
+  const scopedClaimIds = scopedClaims.map((claim) => normalizeText(claim.id)).filter(Boolean)
+  const matchingMedicines = (
+    await Promise.all(chunkValues(scopedClaimIds).map((claimIds) =>
+      fetchAllWorkspaceRows(() =>
+        adminClient
+          .from('nhis_claim_medicines')
+          .select('*')
+          .in('claim_id', claimIds)
+          .or(`description.ilike.${pattern},drug_code.ilike.${pattern}`)
+      )
+    ))
+  ).flat()
+  const matchingClaimIds = Array.from(
+    new Set(matchingMedicines.map((row) => normalizeText(row.claim_id)).filter(Boolean))
+  )
+
   let nhisClaims: Record<string, unknown>[] = []
   if (matchingClaimIds.length) {
-    let claimsQuery = adminClient
-      .from('nhis_claims')
-      .select(REPORT_NHIS_CLAIM_SELECT_FIELDS)
-      .eq('organization_id', organizationId)
-      .in('id', matchingClaimIds)
-      .order('created_at', { ascending: false })
-    if (startDate) claimsQuery = claimsQuery.gte('service_date_from', startDate)
-    if (endDate) claimsQuery = claimsQuery.lte('service_date_from', endDate)
-    const { data, error } = await claimsQuery
-    if (error) throw error
+    const claimGroups = await Promise.all(chunkValues(matchingClaimIds).map((ids) =>
+      fetchAllWorkspaceRows(() => {
+        let query = adminClient
+          .from('nhis_claims')
+          .select(REPORT_NHIS_CLAIM_SELECT_FIELDS)
+          .eq('organization_id', organizationId)
+          .in('id', ids)
+          .order('created_at', { ascending: false })
+        if (scopedBranchId) query = query.eq('branch_id', scopedBranchId)
+        return query
+      })
+    ))
+    const claims = claimGroups.flat()
 
-    const medicinesByClaim = (matchingMedicines || []).reduce<Record<string, unknown[]>>((acc, row) => {
+    const medicinesByClaim = matchingMedicines.reduce<Record<string, unknown[]>>((acc, row) => {
       const claimId = normalizeText(row.claim_id)
       if (!claimId) return acc
       if (!acc[claimId]) acc[claimId] = []
       acc[claimId].push(row)
       return acc
     }, {})
-    nhisClaims = (data || []).map((claim) => ({
+    nhisClaims = claims.map((claim) => ({
       ...claim,
       nhis_claim_medicines: medicinesByClaim[normalizeText(claim.id)] || [],
       nhis_claim_services: [],

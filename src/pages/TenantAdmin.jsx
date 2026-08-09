@@ -71,8 +71,12 @@ const formatBillingStatus = (value) =>
     .replace(/_/g, ' ')
     .replace(/\b\w/g, (char) => char.toUpperCase())
 
-const formatOrganizationType = (value) =>
-  String(value || 'pharmacy') === 'hospital' ? 'Hospital' : 'Pharmacy'
+const formatOrganizationType = (value) => {
+  const normalized = String(value || 'pharmacy')
+  if (normalized === 'hospital') return 'Hospital'
+  if (normalized === 'chemical_shop') return 'Chemical Shop'
+  return 'Pharmacy'
+}
 
 const TenantAdmin = () => {
   const { notify } = useNotification()
@@ -459,6 +463,7 @@ const TenantAdmin = () => {
                   >
                     <option value="pharmacy">Community Pharmacy</option>
                     <option value="hospital">Hospital / Clinic</option>
+                    <option value="chemical_shop">Chemical Shop</option>
                   </select>
                 </div>
                 <div className="tenant-form-group">
@@ -1089,6 +1094,7 @@ const TenantAdmin = () => {
                     >
                       <option value="pharmacy">Community Pharmacy</option>
                       <option value="hospital">Hospital / Clinic</option>
+                      <option value="chemical_shop">Chemical Shop</option>
                     </select>
                   </div>
                   <div className="tenant-form-group full-width">

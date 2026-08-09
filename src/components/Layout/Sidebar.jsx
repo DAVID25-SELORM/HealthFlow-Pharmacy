@@ -21,6 +21,7 @@ import {
   LifeBuoy,
   Gauge,
   Download,
+  ShieldAlert,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useTenant } from '../../context/TenantContext'
@@ -56,6 +57,7 @@ const Sidebar = ({ isOpen, onClose }) => {
     canManageAccounting,
     canManageEpharmacy,
     canViewActivityLog,
+    canManageRestrictedInventory,
   } = useAuth()
   const { organization, canUseClaims, canUsePurchases, canUseNhis, canUseAccounting } = useTenant()
   const facilityName = getFacilityName(organization)
@@ -87,6 +89,16 @@ const Sidebar = ({ isOpen, onClose }) => {
     { path: '/accounting', icon: Wallet, label: 'Accounting', roles: ACCOUNTING_ROLES, allow: canManageAccounting, featureAllowed: canUseAccounting },
     { path: '/settings', icon: Settings, label: 'Settings', roles: SETTINGS_ROLES },
     { path: '/recycle-bin', icon: Trash2, label: 'Recycle Bin', roles: ['admin', 'super_admin'] },
+    {
+      path: '/restricted-inventory',
+      icon: ShieldAlert,
+      label: 'Restricted Inventory',
+      roles: ['super_admin', 'compliance_admin', 'compliance_officer'],
+      allow: canManageRestrictedInventory,
+      featureAllowed:
+        organization?.organization_type === 'chemical_shop' ||
+        ['super_admin', 'compliance_admin', 'compliance_officer'].includes(role),
+    },
     { path: '/system-health', icon: MonitorCheck, label: 'System Health', roles: SYSTEM_HEALTH_ROLES },
     { path: '/diagnostics', icon: Gauge, label: 'Diagnostics', roles: ['super_admin'] },
     { path: '/offline-installer-releases', icon: Download, label: 'Installer Releases', roles: ['super_admin'] },

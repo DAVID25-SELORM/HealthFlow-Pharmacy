@@ -11,7 +11,7 @@ const VALID_STATUSES = ['trial', 'active', 'suspended', 'cancelled'] as const
 const VALID_PLAN_CODES = ['starter', 'professional', 'premium'] as const
 const VALID_BILLING_STATUSES = ['trial', 'active', 'past_due', 'suspended', 'cancelled'] as const
 const VALID_SUPPORT_LEVELS = ['standard', 'priority', 'premium'] as const
-const VALID_ORGANIZATION_TYPES = ['pharmacy', 'hospital'] as const
+const VALID_ORGANIZATION_TYPES = ['pharmacy', 'hospital', 'chemical_shop'] as const
 // ✅ NHIS PHARMACY LEVEL PATCH START
 const VALID_PHARMACY_LEVELS = ['P1', 'P2', 'LCS', 'HP'] as const
 // ✅ NHIS PHARMACY LEVEL PATCH END
@@ -236,7 +236,7 @@ const normalizeOrganizationType = (
     return normalized as (typeof VALID_ORGANIZATION_TYPES)[number]
   }
 
-  throw new Error('Organization type must be pharmacy or hospital.')
+  throw new Error('Organization type must be pharmacy, hospital, or chemical shop.')
 }
 
 // ✅ NHIS PHARMACY LEVEL PATCH START

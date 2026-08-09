@@ -8,7 +8,7 @@ const VALID_TIERS = ['trial', 'basic', 'pro', 'enterprise']
 const VALID_PLAN_CODES = ['starter', 'professional', 'premium']
 const VALID_BILLING_STATUSES = ['trial', 'active', 'past_due', 'suspended', 'cancelled']
 const VALID_SUPPORT_LEVELS = ['standard', 'priority', 'premium']
-const VALID_ORGANIZATION_TYPES = ['pharmacy', 'hospital']
+const VALID_ORGANIZATION_TYPES = ['pharmacy', 'hospital', 'chemical_shop']
 
 const normalizeText = (value) => (typeof value === 'string' ? value.trim() : '')
 
