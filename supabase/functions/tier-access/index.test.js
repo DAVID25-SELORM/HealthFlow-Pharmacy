@@ -26,3 +26,19 @@ describe('tier-access patient workspace compatibility', () => {
     expect(patientSelect).toContain("'insurance_id'")
   })
 })
+
+describe('tier-access report query bounds', () => {
+  it('chunks large report medicine and sale ID filters', async () => {
+    const source = await fs.readFile(functionSourcePath, 'utf8')
+    const reportBundle = source.slice(
+      source.indexOf('const getReportBundle = async'),
+      source.indexOf('const getReportDrugMatches = async')
+    )
+
+    expect(source).toContain('const chunkValues = <T,>(values: T[], size = 100)')
+    expect(reportBundle).toContain('chunkValues(matchingDrugIds)')
+    expect(reportBundle).toContain('chunkValues(matchingSaleIds)')
+    expect(reportBundle).not.toContain("salesQuery.in('id', matchingSaleIds)")
+    expect(reportBundle).not.toContain(".in('drug_id', matchingDrugIds)")
+  })
+})

@@ -641,6 +641,14 @@ const parsePositiveInteger = (value: unknown, fallback: number) => {
 const clampPositiveInteger = (value: unknown, fallback: number, max: number) =>
   Math.min(parsePositiveInteger(value, fallback), max)
 
+const chunkValues = <T,>(values: T[], size = 100) => {
+  const chunks: T[][] = []
+  for (let index = 0; index < values.length; index += size) {
+    chunks.push(values.slice(index, index + size))
+  }
+  return chunks
+}
+
 const parseNonNegativeNumber = (value: unknown, label: string) => {
   const parsed = Number.parseFloat(String(value ?? ''))
   if (!Number.isFinite(parsed) || parsed < 0) {
@@ -5586,12 +5594,21 @@ const getReportBundle = async (
   )
   const chemicalShop = await isChemicalShopOrganization(adminClient, organizationId)
 
-  let salesQuery = adminClient
-    .from('sales')
-    .select(SALES_SELECT_FIELDS)
-    .eq('organization_id', organizationId)
-    .order('sale_date', { ascending: false })
-    .limit(reportLimit)
+  const buildSalesQuery = (saleIds: string[] | null = null) => {
+    let query = adminClient
+      .from('sales')
+      .select(SALES_SELECT_FIELDS)
+      .eq('organization_id', organizationId)
+      .order('sale_date', { ascending: false })
+      .limit(reportLimit)
+
+    if (startDate) query = query.gte('sale_date', `${startDate}T00:00:00`)
+    if (endDate) query = query.lte('sale_date', `${endDate}T23:59:59`)
+    if (saleIds) query = query.in('id', saleIds)
+    return query
+  }
+
+  let salesRequest: PromiseLike<{ data: unknown[] | null; error: unknown }> = buildSalesQuery()
 
   let claimsQuery = adminClient
     .from('claims')
@@ -5601,12 +5618,10 @@ const getReportBundle = async (
     .limit(reportLimit)
 
   if (startDate) {
-    salesQuery = salesQuery.gte('sale_date', `${startDate}T00:00:00`)
     claimsQuery = claimsQuery.gte('service_date', startDate)
   }
 
   if (endDate) {
-    salesQuery = salesQuery.lte('sale_date', `${endDate}T23:59:59`)
     claimsQuery = claimsQuery.lte('service_date', endDate)
   }
 
@@ -5625,21 +5640,41 @@ const getReportBundle = async (
       .filter(Boolean)
 
     if (matchingDrugIds.length > 0) {
-      const { data: matchingSaleItems } = await adminClient
-        .from('sale_items')
-        .select('sale_id')
-        .in('drug_id', matchingDrugIds)
-        .limit(reportLimit)
+      const matchingSaleItemGroups = await Promise.all(
+        chunkValues(matchingDrugIds).map((drugIds) =>
+          adminClient
+            .from('sale_items')
+            .select('sale_id')
+            .in('drug_id', drugIds)
+            .limit(reportLimit)
+        )
+      )
+      const matchingSaleItems = matchingSaleItemGroups.flatMap(({ data, error }) => {
+        if (error) throw error
+        return data || []
+      })
 
-      const matchingSaleIds = Array.from(new Set((matchingSaleItems || []).map((row) => normalizeText(row.sale_id)).filter(Boolean)))
+      const matchingSaleIds = Array.from(new Set(matchingSaleItems.map((row) => normalizeText(row.sale_id)).filter(Boolean)))
 
       if (matchingSaleIds.length > 0) {
-        salesQuery = salesQuery.in('id', matchingSaleIds)
+        salesRequest = Promise.all(
+          chunkValues(matchingSaleIds).map((saleIds) => buildSalesQuery(saleIds))
+        ).then((groups) => {
+          const rows = groups.flatMap(({ data, error }) => {
+            if (error) throw error
+            return data || []
+          })
+          rows.sort((left, right) =>
+            normalizeText((right as Record<string, unknown>).sale_date)
+              .localeCompare(normalizeText((left as Record<string, unknown>).sale_date))
+          )
+          return { data: rows.slice(0, reportLimit), error: null }
+        })
       } else {
-        salesQuery = salesQuery.in('id', ['00000000-0000-0000-0000-000000000000'])
+        salesRequest = Promise.resolve({ data: [], error: null })
       }
     } else {
-      salesQuery = salesQuery.in('id', ['00000000-0000-0000-0000-000000000000'])
+      salesRequest = Promise.resolve({ data: [], error: null })
     }
   }
 
@@ -5650,7 +5685,7 @@ const getReportBundle = async (
     { data: activeDrugs, error: activeDrugsError },
     { data: allDrugs, error: allDrugsError },
   ] = await Promise.all([
-    salesQuery,
+    salesRequest,
     includeClaims ? claimsQuery : Promise.resolve({ data: [], error: null }),
     adminClient
       .from('patients')
@@ -5955,14 +5990,6 @@ const getReportDrugMatches = async (
   }
 
   const pattern = `%${drugSearchTerm}%`
-  const chunkValues = <T,>(values: T[], size = 100) => {
-    const chunks: T[][] = []
-    for (let index = 0; index < values.length; index += size) {
-      chunks.push(values.slice(index, index + size))
-    }
-    return chunks
-  }
-
   const matchingDrugs = await fetchAllWorkspaceRows(() =>
     adminClient
         .from('drugs')
