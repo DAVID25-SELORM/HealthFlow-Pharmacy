@@ -31,7 +31,7 @@ const SALES_SELECT_FIELDS = `
   *,
   sale_items (
     *,
-    drugs (name, generic_name, strength, dosage_form, medicine_access_level, chemical_shop_sale_permitted, epharmacy_sale_class)
+    drugs (name, generic_name, medicine_access_level, chemical_shop_sale_permitted, epharmacy_sale_class)
   ),
   patients (id, full_name, phone, insurance_provider, insurance_id),
   branches (id, name, code),
@@ -43,8 +43,6 @@ const REPORT_DRUG_SELECT_FIELDS = `
   branch_id,
   name,
   generic_name,
-  strength,
-  dosage_form,
   batch_number,
   expiry_date,
   quantity,

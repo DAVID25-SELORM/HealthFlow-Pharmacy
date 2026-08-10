@@ -36,4 +36,11 @@ describe('report branch and organisation security contract', () => {
     expect(source).toContain(".eq('organization_id', organizationId)")
     expect(source).toContain('served_by_user: servingUsersById.get(servingUserId) || null')
   })
+
+  it('uses only columns available on the production inventory drugs table', () => {
+    expect(source).not.toContain('drugs (name, generic_name, strength, dosage_form')
+    const reportDrugSelect = source.match(/const REPORT_DRUG_SELECT_FIELDS = `([\s\S]*?)`/)?.[1] || ''
+    expect(reportDrugSelect).not.toMatch(/^\s*strength,?\s*$/m)
+    expect(reportDrugSelect).not.toMatch(/^\s*dosage_form,?\s*$/m)
+  })
 })
