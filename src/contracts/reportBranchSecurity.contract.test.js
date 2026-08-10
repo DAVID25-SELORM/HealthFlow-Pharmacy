@@ -28,4 +28,12 @@ describe('report branch and organisation security contract', () => {
   it('counts only completed POS transactions in medicine search results', () => {
     expect(source).toContain("normalizeText(row.payment_status) === 'completed'")
   })
+
+  it('matches punctuated medicine names consistently and resolves NHIS serving staff', () => {
+    expect(source).toContain('matchesReportSearchTokens')
+    expect(source).toContain("drugSearchTerm.split(' ')[0]")
+    expect(source).toContain(".select('id, full_name')")
+    expect(source).toContain(".eq('organization_id', organizationId)")
+    expect(source).toContain('served_by_user: servingUsersById.get(servingUserId) || null')
+  })
 })

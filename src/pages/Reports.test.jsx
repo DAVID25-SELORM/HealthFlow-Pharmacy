@@ -154,6 +154,7 @@ const reportBundle = {
         description: 'Insulin premixed (30/70) HM Injection, 100 units/mL in 10 mL',
         dispensed_qty: 6,
         served_by_mca: 'staff-2',
+        served_by_user: { id: 'staff-2', full_name: 'Mavis Mensah' },
         unit: 'Vial',
         unit_price: 84.42,
         total_amount: 506.52,
@@ -332,6 +333,8 @@ describe('Reports', () => {
     expect(screen.getAllByText('6 Vial')).toHaveLength(2)
     expect(screen.getByText('ARMAH ABRAHAM NII ADAMAH')).toBeInTheDocument()
     expect(screen.getByText('NHIS-000016')).toBeInTheDocument()
+    expect(screen.getByText('Mavis Mensah')).toBeInTheDocument()
+    expect(screen.queryByText('staff-2')).not.toBeInTheDocument()
   })
 
   it('keeps report tabs and preview navigation in sync', async () => {

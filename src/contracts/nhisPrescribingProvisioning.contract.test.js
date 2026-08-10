@@ -17,6 +17,14 @@ const organizationWideMigration = readFileSync(resolve(
   process.cwd(),
   'supabase/migrations/20260810220000_make_nhis_prescribing_registers_organization_wide.sql'
 ), 'utf8')
+const reconciliationMigration = readFileSync(resolve(
+  process.cwd(),
+  'supabase/migrations/20260810223000_reconcile_nhis_prescribing_registers_from_claims.sql'
+), 'utf8')
+const automaticRegistrationMigration = readFileSync(resolve(
+  process.cwd(),
+  'supabase/migrations/20260810224000_auto_register_nhis_prescription_sources.sql'
+), 'utf8')
 
 describe('NHIS prescribing records provisioning and isolation', () => {
   it('provides an idempotent tenant-owned facility provisioner without fabricating prescribers', () => {
@@ -45,6 +53,26 @@ describe('NHIS prescribing records provisioning and isolation', () => {
     expect(organizationWideMigration).toContain('viewer.organization_id = nhis_prescribing_facilities.organization_id')
     expect(organizationWideMigration).not.toContain('branch_id = viewer.branch_id')
     expect(organizationWideMigration).toContain('viewer.is_active = true')
+  })
+
+  it('reconciles claim snapshots into organization-owned rows without fabricating values', () => {
+    expect(reconciliationMigration).toContain('coalesce(prescriber_name_snapshot, physician_name)')
+    expect(reconciliationMigration).toContain('coalesce(prescribing_facility_name_snapshot, referring_facility)')
+    expect(reconciliationMigration).toMatch(/existing\.organization_id = source\.organization_id/i)
+    expect(reconciliationMigration).toMatch(/prescriber\.organization_id = claim\.organization_id/i)
+    expect(reconciliationMigration).toMatch(/facility\.organization_id = claim\.organization_id/i)
+    expect(reconciliationMigration).not.toContain('Created by canonical NHIS organization provisioning.')
+  })
+
+  it('automatically registers future claim sources within the claim organization', () => {
+    expect(automaticRegistrationMigration).toContain('before insert or update of')
+    expect(automaticRegistrationMigration).toContain('new.organization_id')
+    expect(automaticRegistrationMigration).toContain('facility.organization_id = new.organization_id')
+    expect(automaticRegistrationMigration).toContain('prescriber.organization_id = new.organization_id')
+    expect(automaticRegistrationMigration).toContain('pg_advisory_xact_lock')
+    expect(automaticRegistrationMigration).toContain('on conflict (prescriber_id, facility_id) do nothing')
+    expect(automaticRegistrationMigration).toContain("lower(v_facility_name) not in")
+    expect(automaticRegistrationMigration).toContain("lower(v_prescriber_name) not in")
   })
 
   it('keeps offline snapshots within the configured organization', () => {

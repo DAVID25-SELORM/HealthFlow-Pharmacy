@@ -1079,9 +1079,9 @@ const Reports = () => {
   const normalizedBundle = useMemo(() => normalizeReportBundle(effectiveBundle || {}), [effectiveBundle])
   const analyticsFilters = useMemo(() => ({
     ...filters,
-    drug: selectedDrug || filters.drug,
+    drug: selectedDrug || drugSearchTerm || filters.drug,
     patientType: canViewFullDrugAnalytics ? filters.patientType : 'NHIS',
-  }), [canViewFullDrugAnalytics, filters, selectedDrug])
+  }), [canViewFullDrugAnalytics, drugSearchTerm, filters, selectedDrug])
   const rawReportData = useMemo(
     () => (selectedReport ? getReportRows(selectedReport.id, normalizedBundle, analyticsFilters) : { headers: [], rows: [] }),
     [selectedReport, normalizedBundle, analyticsFilters]

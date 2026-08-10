@@ -391,6 +391,13 @@ const json = (body: Record<string, unknown>, status = 200) =>
 const normalizeText = (value: unknown) => (typeof value === 'string' ? value.trim() : '')
 const toIlikeSearchTerm = (value: unknown) =>
   normalizeText(value).replace(/[%_,()]/g, ' ').replace(/\s+/g, ' ').trim()
+const normalizeReportSearchText = (value: unknown) =>
+  normalizeText(value).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim()
+const matchesReportSearchTokens = (value: unknown, searchTerm: string) => {
+  const haystack = normalizeReportSearchText(value)
+  const tokens = normalizeReportSearchText(searchTerm).split(' ').filter(Boolean)
+  return tokens.length > 0 && tokens.every((token) => haystack.includes(token))
+}
 const normalizeHttpHeaderValue = (value: unknown) => {
   let normalized = normalizeText(value).replace(/[\u0000-\u001F\u007F]/g, '')
   if (
@@ -5498,7 +5505,8 @@ const getReportNhisAggregate = async (
 
 const attachNhisClaimLines = async (
   adminClient: ReturnType<typeof createAdminClient>,
-  claims: Record<string, unknown>[]
+  claims: Record<string, unknown>[],
+  organizationId: string
 ) => {
   const claimIds = claims.map((claim) => normalizeText(claim.id)).filter(Boolean)
   if (!claimIds.length) return claims
@@ -5510,7 +5518,28 @@ const attachNhisClaimLines = async (
   if (medicinesResult.error) throw medicinesResult.error
   if (servicesResult.error) throw servicesResult.error
 
-  const medicinesByClaim = (medicinesResult.data || []).reduce<Record<string, unknown[]>>((acc, row) => {
+  const medicineRows = medicinesResult.data || []
+  const servingUserIds = Array.from(new Set(medicineRows.flatMap((row) => [
+    normalizeText(row.served_by_mca),
+    normalizeText(row.entered_by_claims_officer),
+  ]).filter(Boolean)))
+  const servingUsers = servingUserIds.length
+    ? await fetchAllWorkspaceRows(() => adminClient
+        .from('users')
+        .select('id, full_name')
+        .eq('organization_id', organizationId)
+        .in('id', servingUserIds))
+    : []
+  const servingUsersById = new Map(servingUsers.map((user) => [normalizeText(user.id), user]))
+  const enrichedMedicineRows = medicineRows.map((row) => {
+    const servingUserId = normalizeText(row.served_by_mca || row.entered_by_claims_officer)
+    return {
+      ...row,
+      served_by_user: servingUsersById.get(servingUserId) || null,
+    }
+  })
+
+  const medicinesByClaim = enrichedMedicineRows.reduce<Record<string, unknown[]>>((acc, row) => {
     const claimId = normalizeText(row.claim_id)
     if (!claimId) return acc
     if (!acc[claimId]) acc[claimId] = []
@@ -5569,7 +5598,8 @@ const getReportNhisPage = async (
 
   const nhisClaims = await attachNhisClaimLines(
     adminClient,
-    (data || []) as Record<string, unknown>[]
+    (data || []) as Record<string, unknown>[],
+    organizationId
   )
   const total = count || 0
 
@@ -5877,7 +5907,7 @@ const getReportBundle = async (
   const submissionLogs = getOptionalRows(submissionLogsResult)
 
   if (drugSearchTerm.length >= 3) {
-    const medicinePattern = `%${drugSearchTerm}%`
+    const medicinePattern = `%${drugSearchTerm.split(' ')[0]}%`
     const { data: matchingMedicines } = await adminClient
       .from('nhis_claim_medicines')
       .select('claim_id')
@@ -5913,7 +5943,7 @@ const getReportBundle = async (
     }
   }
 
-  nhisClaims = await attachNhisClaimLines(adminClient, nhisClaims)
+  nhisClaims = await attachNhisClaimLines(adminClient, nhisClaims, organizationId)
   const monthlyNhisSubmission = nhisAggregate.monthly
 
   return {
@@ -6012,14 +6042,14 @@ const getReportDrugMatches = async (
     return { sales: [], nhisClaims: [] }
   }
 
-  const pattern = `%${drugSearchTerm}%`
-  const matchingDrugs = await fetchAllWorkspaceRows(() =>
+  const pattern = `%${drugSearchTerm.split(' ')[0]}%`
+  const matchingDrugs = (await fetchAllWorkspaceRows(() =>
     adminClient
         .from('drugs')
-        .select('id, medicine_access_level, chemical_shop_sale_permitted, epharmacy_sale_class')
+        .select('id, name, medicine_access_level, chemical_shop_sale_permitted, epharmacy_sale_class')
         .eq('organization_id', organizationId)
         .ilike('name', pattern)
-  )
+  )).filter((drug) => matchesReportSearchTokens(drug.name, drugSearchTerm))
 
   const matchingDrugIds = (matchingDrugs || [])
     .filter((drug) => !chemicalShop || isChemicalShopMedicineAllowed(drug))
@@ -6104,7 +6134,10 @@ const getReportDrugMatches = async (
           .or(`description.ilike.${pattern},drug_code.ilike.${pattern}`)
       )
     ))
-  ).flat()
+  ).flat().filter((medicine) => matchesReportSearchTokens(
+    `${normalizeText(medicine.description)} ${normalizeText(medicine.drug_code)}`,
+    drugSearchTerm
+  ))
   const matchingClaimIds = Array.from(
     new Set(matchingMedicines.map((row) => normalizeText(row.claim_id)).filter(Boolean))
   )
@@ -6148,6 +6181,7 @@ const getReportDrugMatches = async (
         nhis_claim_medicines: medicinesByClaim[normalizeText(claim.id)] || [],
         nhis_claim_services: [],
       }))
+    nhisClaims = await attachNhisClaimLines(adminClient, nhisClaims, organizationId)
   }
 
   return { sales, nhisClaims }
