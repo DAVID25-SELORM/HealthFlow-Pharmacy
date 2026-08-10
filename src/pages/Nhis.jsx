@@ -6345,7 +6345,7 @@ const Nhis = () => {
             {prescribingRecordsLoading ? (
               <div className="nhis-empty">Loading prescribers...</div>
             ) : filteredPrescribers.length === 0 ? (
-              <div className="nhis-empty"><Stethoscope size={40} /><p>No prescribers found.</p></div>
+              <div className="nhis-empty"><Stethoscope size={40} /><p>No prescribers registered. Add the doctor or authorized clinician who issued the prescription.</p></div>
             ) : (
               <table className="nhis-table">
                 <thead>
@@ -6409,7 +6409,7 @@ const Nhis = () => {
             <form className="nhis-card nhis-record-form" onSubmit={handleCreatePrescribingFacility}>
               <div className="form-row">
                 <div className="form-group">
-                  <label>Facility Name *</label>
+                  <label>Originating Facility Name *</label>
                   <input className="form-input" value={facilityForm.facilityName} onChange={(event) => setFacilityForm((p) => ({ ...p, facilityName: event.target.value }))} required />
                 </div>
                 <div className="form-group">
@@ -6449,7 +6449,7 @@ const Nhis = () => {
             {prescribingRecordsLoading ? (
               <div className="nhis-empty">Loading prescribing facilities...</div>
             ) : filteredPrescribingFacilities.length === 0 ? (
-              <div className="nhis-empty"><Building2 size={40} /><p>No prescribing facilities found.</p></div>
+              <div className="nhis-empty"><Building2 size={40} /><p>No prescribing facilities registered. Add the external hospital, clinic, or facility where the prescription originated.</p></div>
             ) : (
               <table className="nhis-table">
                 <thead>

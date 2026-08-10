@@ -1505,7 +1505,7 @@ const checkOrganizationReadiness = async (
 
   const blockers: string[] = []
   const warnings: string[] = []
-  const [organizationResult, adminsResult, branchesResult, settingsResult, drugsResult] =
+  const [organizationResult, adminsResult, branchesResult, settingsResult, drugsResult, facilitiesResult, prescribersResult] =
     await Promise.all([
       adminClient
         .from('organizations')
@@ -1533,9 +1533,17 @@ const checkOrganizationReadiness = async (
         .from('drugs')
         .select('id', { count: 'exact', head: true })
         .eq('organization_id', organizationId),
+      adminClient
+        .from('nhis_prescribing_facilities')
+        .select('id', { count: 'exact', head: true })
+        .eq('organization_id', organizationId),
+      adminClient
+        .from('nhis_prescribers')
+        .select('id', { count: 'exact', head: true })
+        .eq('organization_id', organizationId),
     ])
 
-  for (const result of [organizationResult, adminsResult, branchesResult, settingsResult, drugsResult]) {
+  for (const result of [organizationResult, adminsResult, branchesResult, settingsResult, drugsResult, facilitiesResult, prescribersResult]) {
     if (result.error) throw result.error
   }
 
@@ -1567,6 +1575,8 @@ const checkOrganizationReadiness = async (
       .limit(1)
     if (nhiaResult.error) throw nhiaResult.error
     if (!(nhiaResult.data || []).length) blockers.push('NHIA configuration is missing.')
+    if ((facilitiesResult.count || 0) === 0) warnings.push('No external prescribing facility has been added yet.')
+    if ((prescribersResult.count || 0) === 0) warnings.push('No organization prescriber has been added yet.')
   }
 
   return {

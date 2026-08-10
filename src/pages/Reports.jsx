@@ -36,12 +36,16 @@ import { logPerformance } from '../utils/performance'
 import UpgradeGate from '../components/UpgradeGate'
 import './Reports.css'
 
-const today = new Date().toISOString().split('T')[0]
-const firstOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
-  .toISOString()
-  .split('T')[0]
+const localDateInput = (date) => [
+  date.getFullYear(),
+  String(date.getMonth() + 1).padStart(2, '0'),
+  String(date.getDate()).padStart(2, '0'),
+].join('-')
+const today = localDateInput(new Date())
+const firstOfMonth = localDateInput(new Date(new Date().getFullYear(), new Date().getMonth(), 1))
 
 const FILTER_DEFAULTS = {
+  periodPreset: 'this_month',
   startDate: firstOfMonth,
   endDate: today,
   branch: '',
@@ -54,8 +58,10 @@ const FILTER_DEFAULTS = {
   claimStatus: '',
   drugCategory: '',
   drug: '',
+  patient: '',
   patientType: '',
   prescriber: '',
+  servedBy: '',
   facilityBranch: '',
   nhisClaimLimit: 200,
 }
@@ -73,7 +79,7 @@ const getPatientName = (row = {}) =>
   'Walk-in Customer'
 const getServiceDate = (row = {}) =>
   row.service_date || row.serviceDate || row.service_date_from || row.serviceDateFrom || row.created_at || row.createdAt
-const getBranchId = (row = {}) => row.branch_id || row.branchId || row.branch?.name || 'Main'
+const getBranchId = (row = {}) => row.branches?.name || row.branch?.name || row.branch_name || row.branchName || row.branch_id || row.branchId || 'Main'
 const getUserId = (row = {}) => row.created_by || row.createdBy || row.sold_by || row.soldBy || row.userId || row.user_id || ''
 const numberValue = (value) => {
   const parsed = Number(value || 0)
@@ -93,6 +99,37 @@ const getNhisPatientReturnKey = (claim = {}) =>
 const getMedicineCode = (line = {}) => normalizeIdentifier(line.drug_code || line.drugCode || line.nhia_code || line.nhiaCode)
 const getMedicineKey = (line = {}) => getMedicineCode(line) || String(getDrugName(line)).trim().toLowerCase()
 const getMedicineQuantity = (line = {}) => numberValue(line.dispensed_qty ?? line.dispensedQty ?? line.quantity)
+
+const toLocalDateInput = (date) => {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+const getPresetRange = (preset, now = new Date()) => {
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const end = new Date(start)
+  if (preset === 'today') return { startDate: toLocalDateInput(start), endDate: toLocalDateInput(end) }
+  if (preset === 'this_week') start.setDate(start.getDate() - ((start.getDay() + 6) % 7))
+  if (preset === 'this_month') start.setDate(1)
+  if (preset === 'last_month') {
+    start.setMonth(start.getMonth() - 1, 1)
+    end.setDate(0)
+  }
+  if (preset === 'this_quarter') start.setMonth(Math.floor(start.getMonth() / 3) * 3, 1)
+  if (preset === 'last_quarter') {
+    const quarterStart = Math.floor(start.getMonth() / 3) * 3
+    start.setMonth(quarterStart - 3, 1)
+    end.setMonth(quarterStart, 0)
+  }
+  if (preset === 'this_year') start.setMonth(0, 1)
+  if (preset === 'last_year') {
+    start.setFullYear(start.getFullYear() - 1, 0, 1)
+    end.setFullYear(end.getFullYear() - 1, 11, 31)
+  }
+  return { startDate: toLocalDateInput(start), endDate: toLocalDateInput(end) }
+}
 
 const buildBreakdownRows = (label, rows, getKey, getAmount) =>
   Object.values(
@@ -239,6 +276,12 @@ const getDepartment = (row = {}) =>
   row.department || row.department_name || row.departmentName || row.module || row.service_department || row.serviceDepartment || ''
 const getPrescriber = (row = {}) =>
   row.prescriber || row.prescriber_name || row.prescriberName || row.physician_name || row.physicianName || row.doctor_name || row.doctorName || ''
+const getServedByUserId = (row = {}, item = {}) =>
+  item.served_by_mca || item.servedByMca || row.sold_by || row.soldBy || row.served_by || row.servedBy || row.created_by || row.createdBy || ''
+const getServedByName = (row = {}, item = {}) =>
+  item.served_by_user?.full_name || item.servedByUser?.fullName || row.served_by_user?.full_name ||
+  row.servedByUser?.fullName || row.served_by_name || row.servedByName || row.sold_by_name ||
+  row.soldByName || row.prescription_update_user_name || row.prescriptionUpdateUserName || getServedByUserId(row, item)
 const getDiagnosis = (row = {}) => {
   const details = rowsOf(row.diagnosis_details || row.diagnosisDetails)
     .map((diagnosis) => diagnosis.label || diagnosis.name || diagnosis.diagnosis || diagnosis.code)
@@ -289,6 +332,7 @@ const getDispensingLines = (bundle) => {
         nhiaCode: item.nhis_code || item.nhia_code || item.nhiaCode || drug.nhis_code || drug.nhia_code || '',
         patientId: getPatientId(sale),
         patient: getPatientName(sale),
+        patientSearch: compact([getPatientName(sale), getFolderNo(sale), sale.patients?.insurance_id, sale.patients?.nhis_member_no]),
         folderNo: getFolderNo(sale),
         patientType: getPatientType(sale),
         quantity,
@@ -301,6 +345,9 @@ const getDispensingLines = (bundle) => {
         prescriber: getPrescriber(sale),
         department: getDepartment(sale),
         diagnosis: getDiagnosis(sale),
+        strengthForm: compact([drug.strength, drug.dosage_form || drug.dosageForm]),
+        servedByUserId: getServedByUserId(sale, item),
+        servedByName: getServedByName(sale, item),
       }
     })
   )
@@ -320,6 +367,7 @@ const getDispensingLines = (bundle) => {
         nhiaCode: item.nhia_code || item.nhiaCode || item.drug_code || item.drugCode || item.code || drug.nhis_code || '',
         patientId: getPatientId(claim),
         patient: getPatientName(claim),
+        patientSearch: compact([getPatientName(claim), getFolderNo(claim), claim.member_no, claim.hin]),
         folderNo: getFolderNo(claim),
         patientType: 'NHIS',
         quantity,
@@ -332,6 +380,9 @@ const getDispensingLines = (bundle) => {
         prescriber: getPrescriber(claim),
         department: getDepartment(claim),
         diagnosis: getDiagnosis(claim),
+        strengthForm: compact([item.strength, item.dosage_form || item.dosageForm]),
+        servedByUserId: getServedByUserId(claim, item),
+        servedByName: getServedByName(claim, item),
       }
     })
   )
@@ -345,9 +396,12 @@ const matchesFilterText = (value, expected) =>
 const filterDispensingLines = (lines, filters = {}) =>
   rowsOf(lines).filter((line) => (
     matchesFilterText(line.drug, filters.drug || filters.drugCategory) &&
+    matchesFilterText(line.patientSearch, filters.patient) &&
     matchesFilterText(line.patientType, filters.patientType) &&
     matchesFilterText(line.department, filters.department) &&
-    matchesFilterText(line.prescriber, filters.prescriber || filters.staff) &&
+    matchesFilterText(line.prescriber, filters.prescriber) &&
+    (matchesFilterText(line.servedByName, filters.servedBy || filters.staff) ||
+      matchesFilterText(line.servedByUserId, filters.servedBy || filters.staff)) &&
     matchesFilterText(line.branch, filters.facilityBranch || filters.branch)
   ))
 
@@ -363,6 +417,8 @@ const summarizeDrugUtilization = (lines) =>
           prescriptions: new Set(),
           revenue: 0,
           nhisValue: 0,
+          posQuantity: 0,
+          nhisQuantity: 0,
           unit: line.unit,
           lastDate: '',
           prescribers: {},
@@ -374,6 +430,8 @@ const summarizeDrugUtilization = (lines) =>
       summary[key].quantity += numberValue(line.quantity)
       summary[key].revenue += numberValue(line.revenue)
       summary[key].nhisValue += numberValue(line.nhisValue)
+      if (line.source === 'NHIS') summary[key].nhisQuantity += numberValue(line.quantity)
+      else summary[key].posQuantity += numberValue(line.quantity)
       if (line.unit && summary[key].unit === 'unit') summary[key].unit = line.unit
       if (String(line.date || '') > String(summary[key].lastDate || '')) summary[key].lastDate = line.date
       if (line.prescriber) summary[key].prescribers[line.prescriber] = (summary[key].prescribers[line.prescriber] || 0) + 1
@@ -470,11 +528,13 @@ const getReportRows = (reportId, bundle, filters = {}) => {
 
   const definitions = {
     'drug-utilization': {
-      headers: ['Drug', 'Patients Served', 'Quantity Dispensed', 'Unit', 'Prescriptions', 'Revenue', 'NHIS Value', 'Last Dispensed', 'Top Prescribers'],
+      headers: ['Drug', 'Patients Served', 'Quantity Dispensed', 'POS Quantity', 'NHIS Quantity', 'Unit', 'Prescriptions', 'Total Value', 'NHIS Value', 'Last Dispensed', 'Top Prescribers'],
       rows: drugSummary.map((drug) => [
         drug.drug,
         drug.patientsServed,
         drug.quantity,
+        drug.posQuantity,
+        drug.nhisQuantity,
         drug.unit || 'unit',
         drug.prescriptionsCount,
         money(drug.revenue),
@@ -484,7 +544,7 @@ const getReportRows = (reportId, bundle, filters = {}) => {
       ]),
     },
     'drug-patient-drilldown': {
-      headers: ['Date', 'Patient', 'Folder No.', 'Patient Type', 'Drug', 'Quantity', 'Unit', 'Prescriber', 'Department', 'Branch', 'Source', 'Record No.'],
+      headers: ['Date', 'Patient', 'Folder No.', 'Patient Type', 'Drug', 'Strength/Form', 'Quantity', 'Unit', 'Prescriber', 'Served By', 'Department', 'Branch', 'Source', 'Record No.'],
       rows: dispensingLines
         .sort((left, right) => String(right.date || '').localeCompare(String(left.date || '')))
         .map((line) => [
@@ -493,9 +553,11 @@ const getReportRows = (reportId, bundle, filters = {}) => {
           line.folderNo,
           line.patientType,
           line.drug,
+          line.strengthForm,
           line.quantity,
           line.unit,
           line.prescriber,
+          line.servedByName,
           line.department,
           line.branch,
           line.source,
@@ -1071,7 +1133,18 @@ const Reports = () => {
   const visibleDrugPatientLines = selectedDrugLines.slice(0, selectedDrug ? 50 : 8)
 
   const updateFilter = (key, value) => {
-    setFilters((current) => ({ ...current, [key]: value }))
+    setFilters((current) => {
+      if (key === 'periodPreset') {
+        return value === 'custom'
+          ? { ...current, periodPreset: value }
+          : { ...current, periodPreset: value, ...getPresetRange(value) }
+      }
+      return {
+        ...current,
+        [key]: value,
+        ...(['startDate', 'endDate'].includes(key) ? { periodPreset: 'custom' } : {}),
+      }
+    })
     if (key === 'drug') {
       setSelectedDrug('')
       setDrugSearchTerm(value)
@@ -1143,6 +1216,8 @@ const Reports = () => {
         branchId: nextFilters.branch,
         userId: nextFilters.staff,
         prescriber: nextFilters.prescriber,
+        patient: nextFilters.patient,
+        servedBy: nextFilters.servedBy,
         patientType: nextFilters.patientType,
         drug: nextFilters.drug,
         nhisClaimLimit: nextFilters.nhisClaimLimit,
@@ -1169,6 +1244,7 @@ const Reports = () => {
       const result = await getReportNhisPage({
         startDate: filters.startDate,
         endDate: filters.endDate,
+        branchId: filters.branch,
         offset: normalizedBundle.nhisClaims.length,
         limit: normalizedBundle.pagination.nhisClaims.limit || 200,
       })
@@ -1192,6 +1268,7 @@ const Reports = () => {
     }
   }, [
     filters.endDate,
+    filters.branch,
     filters.startDate,
     loadingMoreNhis,
     normalizedBundle.nhisClaims.length,
@@ -1224,6 +1301,8 @@ const Reports = () => {
       filters.patientType,
       filters.prescriber,
       filters.staff,
+      filters.patient,
+      filters.servedBy,
     ].join('|')
 
     if (
@@ -1243,6 +1322,8 @@ const Reports = () => {
         drug: term,
         branchId: filters.branch,
         userId: filters.staff,
+        patient: filters.patient,
+        servedBy: filters.servedBy,
       }).then(setDrugSearchBundle).catch((searchError) => {
         console.error('Error searching report medicines:', searchError)
         setError(searchError.message || 'Unable to search medicine utilization.')
@@ -1368,6 +1449,20 @@ const Reports = () => {
 
         <div className="reports-filter-panel">
           <label>
+            <span>Period</span>
+            <select value={filters.periodPreset} onChange={(event) => updateFilter('periodPreset', event.target.value)}>
+              <option value="today">Today</option>
+              <option value="this_week">This Week</option>
+              <option value="this_month">This Month</option>
+              <option value="last_month">Last Month</option>
+              <option value="this_quarter">This Quarter</option>
+              <option value="last_quarter">Last Quarter</option>
+              <option value="this_year">This Year</option>
+              <option value="last_year">Last Year</option>
+              <option value="custom">Custom</option>
+            </select>
+          </label>
+          <label>
             <span>Date range</span>
             <div className="reports-date-pair">
               <Calendar size={16} />
@@ -1397,6 +1492,10 @@ const Reports = () => {
             </select>
           </label>
           <label>
+            <span>Patient</span>
+            <input value={filters.patient} onChange={(event) => updateFilter('patient', event.target.value)} placeholder="Name, folder or member number" />
+          </label>
+          <label>
             <span>Facility</span>
             <input value={filters.facility} onChange={(event) => updateFilter('facility', event.target.value)} placeholder="Current facility" />
           </label>
@@ -1411,6 +1510,10 @@ const Reports = () => {
           <label>
             <span>Prescriber</span>
             <input value={filters.prescriber} onChange={(event) => updateFilter('prescriber', event.target.value)} placeholder="Doctor or prescriber" />
+          </label>
+          <label>
+            <span>Served By</span>
+            <input value={filters.servedBy} onChange={(event) => updateFilter('servedBy', event.target.value)} placeholder="Dispensing staff name or ID" />
           </label>
           <label>
             <span>Payment type</span>
@@ -1567,7 +1670,7 @@ const Reports = () => {
                 <h2>{selectedDrug ? `${selectedDrug} - Patients Given This Drug` : 'Recent Patient Drug Recipients'}</h2>
                 <p>
                   {selectedDrug
-                    ? `${selectedDrugLines.length} dispensing record${selectedDrugLines.length === 1 ? '' : 's'} found for ${selectedDrug}.`
+                    ? `Total matching records: ${selectedDrugLines.length}. Showing: 1-${Math.min(visibleDrugPatientLines.length, selectedDrugLines.length)} for ${selectedDrug}.`
                     : 'Select a drug above to see exactly which patients received it.'}
                 </p>
               </div>
@@ -1590,6 +1693,7 @@ const Reports = () => {
                     <th>Patient Type</th>
                     <th>Quantity</th>
                     <th>Prescriber</th>
+                    <th>Served By</th>
                     <th>Source</th>
                     <th>Record No.</th>
                   </tr>
@@ -1603,6 +1707,7 @@ const Reports = () => {
                       <td>{line.patientType || '-'}</td>
                       <td>{line.quantity} {line.unit || ''}</td>
                       <td>{line.prescriber || '-'}</td>
+                      <td>{line.servedByName || '-'}</td>
                       <td>{line.source || '-'}</td>
                       <td>{line.recordNo || '-'}</td>
                     </tr>
@@ -1657,7 +1762,7 @@ const Reports = () => {
             </button>
             <button className="btn btn-primary" onClick={exportSelectedCsv} disabled={!selectedReport || !hasGeneratedReports}>
               <FileSpreadsheet size={16} />
-              Excel/CSV
+              Export All CSV
             </button>
           </div>
         </div>

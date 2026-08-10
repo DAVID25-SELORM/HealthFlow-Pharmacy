@@ -30,6 +30,7 @@ import {
   signInToBranchOffline,
 } from '../services/branchServerApi'
 import { logAuthDiagnostic, timeAuthOperation } from '../utils/authDiagnostics'
+import { recordSessionActivity, startSessionIdleMonitor } from '../utils/sessionIdleManager'
 
 const AuthContext = createContext(null)
 const FALLBACK_ROLE = 'assistant'
@@ -895,10 +896,11 @@ export const AuthProvider = ({ children }) => {
         password,
       }),
       { attempts: 2, details: { emailDomain: normalizedEmail.split('@')[1] || '' } }
-    ).then(({ error }) => {
+    ).then(({ data, error }) => {
       if (error) {
         throw normalizeTransientAuthError(error)
       }
+      recordSessionActivity(data?.user?.id)
     })
 
     const trackedRequest = request.finally(() => {
@@ -913,6 +915,7 @@ export const AuthProvider = ({ children }) => {
       email: email.trim(),
       pin,
     })
+    recordSessionActivity(offlineSession.user.id)
     sessionRef.current = offlineSession
     setCachedSupabaseSession(null)
     setCachedSupabaseUser(null)
@@ -957,6 +960,31 @@ export const AuthProvider = ({ children }) => {
     setCachedSupabaseSession(null)
     setCachedSupabaseUser(null)
   }
+
+  useEffect(() => {
+    if (!session || !user?.id) return undefined
+
+    return startSessionIdleMonitor({
+      userId: user.id,
+      onIdle: async () => {
+        try {
+          await signOut()
+        } catch (error) {
+          console.warn('Unable to reach the authentication service during inactivity logout.', error)
+          clearSavedBranchUserSession()
+          clearSupabaseStoredSession()
+          sessionRef.current = null
+          setCachedSupabaseSession(null)
+          setCachedSupabaseUser(null)
+          setSession(null)
+          setUser(null)
+          setProfile(null)
+          setOrganization(null)
+          setBranch(null)
+        }
+      },
+    })
+  }, [session, user?.id])
 
   const requestPasswordReset = async (email) => {
     if (!isSupabaseConfigured()) {

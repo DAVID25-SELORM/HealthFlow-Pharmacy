@@ -28,6 +28,8 @@ import {
   createNhisPrescribingFacility,
   getNhisPrescriberDisplayName,
   getNhisPrescribingFacilityDisplayName,
+  listNhisPrescribers,
+  listNhisPrescribingFacilities,
   normalizeNhisPrescriberPayload,
   normalizeNhisPrescribingFacilityPayload,
 } from './nhisPrescribingRecordsService'
@@ -162,5 +164,27 @@ describe('NHIS prescribing records service', () => {
       organization_id: '542fe9df-3211-4046-bd90-b101d249b7f9',
       full_name: 'Dr Ama Test',
     })
+  })
+
+  it('reloads saved organization records through RLS-protected master tables', async () => {
+    const facilityRows = [{ id: 'facility-1', organization_id: 'org-1', facility_name: 'Korle Bu OPD' }]
+    const prescriberRows = [{ id: 'prescriber-1', organization_id: 'org-1', full_name: 'Dr Ama Test' }]
+    const listQuery = (rows) => {
+      const query = {
+        select: vi.fn(() => query),
+        order: vi.fn(() => query),
+        limit: vi.fn(() => Promise.resolve({ data: rows, error: null })),
+      }
+      return query
+    }
+
+    supabase.from.mockImplementation((table) => {
+      if (table === 'nhis_prescribing_facilities') return listQuery(facilityRows)
+      if (table === 'nhis_prescribers') return listQuery(prescriberRows)
+      throw new Error(`Unexpected table: ${table}`)
+    })
+
+    await expect(listNhisPrescribingFacilities({ status: 'all' })).resolves.toEqual(facilityRows)
+    await expect(listNhisPrescribers({ status: 'all' })).resolves.toEqual(prescriberRows)
   })
 })

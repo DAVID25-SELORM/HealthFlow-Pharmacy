@@ -97,6 +97,9 @@ const reportBundle = {
       patients: { full_name: 'Ama Mensah' },
       payment_method: 'cash',
       payment_status: 'completed',
+      sold_by: 'staff-1',
+      served_by_user: { full_name: 'Adwoa Dispenser' },
+      branches: { id: 'branch-1', name: 'Main Branch' },
       net_amount: 30,
       total_amount: 30,
       sale_items: [
@@ -143,12 +146,14 @@ const reportBundle = {
       total_amount: 587.52,
       service_date_from: '2026-06-09',
       physician_name: 'DR. ANGELINA KUMI',
+      branches: { id: 'branch-1', name: 'Main Branch' },
       folder_no: '833357',
       nhis_claim_medicines: [{
         id: 'nhis-insulin-line',
         drug_code: 'INPRMIIN1',
         description: 'Insulin premixed (30/70) HM Injection, 100 units/mL in 10 mL',
         dispensed_qty: 6,
+        served_by_mca: 'staff-2',
         unit: 'Vial',
         unit_price: 84.42,
         total_amount: 506.52,
@@ -300,7 +305,7 @@ describe('Reports', () => {
     const amoxicillinButton = screen.getByRole('button', { name: /Amoxicillin Capsules/i })
     fireEvent.click(amoxicillinButton)
     expect(screen.getByText('Amoxicillin Capsules - Patients Given This Drug')).toBeInTheDocument()
-    expect(screen.getByText('2 dispensing records found for Amoxicillin Capsules.')).toBeInTheDocument()
+    expect(screen.getByText('Total matching records: 2. Showing: 1-2 for Amoxicillin Capsules.')).toBeInTheDocument()
     expect(screen.getAllByText('Ama Mensah').length).toBeGreaterThan(0)
     expect(screen.getAllByText('SALE-001').length).toBeGreaterThan(0)
     expect(screen.getAllByText('NHIA-001').length).toBeGreaterThan(0)
@@ -343,6 +348,37 @@ describe('Reports', () => {
     fireEvent.click(screen.getByRole('tab', { name: /Drug Utilization/i }))
     expect(screen.getByRole('tab', { name: /Drug Utilization/i })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getAllByRole('heading', { name: 'Drug Utilization Report' }).length).toBeGreaterThan(0)
+  })
+
+  it('filters patient, prescriber, and serving staff independently', async () => {
+    render(<Reports />)
+    fireEvent.click(screen.getByRole('button', { name: /Generate Reports/i }))
+    await waitFor(() => expect(mocks.getReportBundle).toHaveBeenCalled())
+
+    fireEvent.change(screen.getByLabelText(/^Patient$/i), { target: { value: 'Ama Mensah' } })
+    fireEvent.change(screen.getByLabelText(/^Prescriber$/i), { target: { value: 'DR. ANGELINA' } })
+    fireEvent.change(screen.getByLabelText(/^Served By$/i), { target: { value: 'staff-2' } })
+    fireEvent.change(screen.getByLabelText(/fast search drug utilization/i), { target: { value: 'Insulin' } })
+
+    await waitFor(() => expect(mocks.getReportDrugMatches).toHaveBeenCalledWith(expect.objectContaining({
+      patient: 'Ama Mensah',
+      prescriber: 'DR. ANGELINA',
+      servedBy: 'staff-2',
+    })))
+  })
+
+  it('applies local-time period presets and shows friendly branch and served-by values', async () => {
+    render(<Reports />)
+    fireEvent.change(screen.getByLabelText(/^Period$/i), { target: { value: 'this_year' } })
+    expect(screen.getByLabelText(/^Period$/i)).toHaveValue('this_year')
+
+    fireEvent.click(screen.getByRole('button', { name: /Generate Reports/i }))
+    await waitFor(() => expect(mocks.getReportBundle).toHaveBeenCalled())
+    fireEvent.click(screen.getByRole('tab', { name: /Drug Utilization/i }))
+    const drilldown = screen.getByText('Patient-Level Drug Drill Down').closest('.report-card')
+    fireEvent.click(within(drilldown).getByRole('button', { name: /View/i }))
+    expect(await screen.findAllByText('Main Branch')).not.toHaveLength(0)
+    expect(await screen.findAllByText('Adwoa Dispenser')).not.toHaveLength(0)
   })
 
   it('loads additional NHIS detail pages without regenerating the full bundle', async () => {

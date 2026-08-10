@@ -901,7 +901,11 @@ app.put('/api/nhis/drugs/:id', (request, response, next) => {
 
 app.post('/api/nhis/prescribers', requireBranchUserSession, (request, response, next) => {
   try {
-    response.status(201).json({ data: saveOfflineRecord('nhis_prescribers', request.body || {}) })
+    response.status(201).json({ data: saveOfflineRecord('nhis_prescribers', {
+      ...(request.body || {}),
+      organization_id: config.organizationId || request.branchUser?.organizationId,
+      branch_id: config.branchId || request.branchUser?.branchId || null,
+    }) })
   } catch (error) {
     next(error)
   }
@@ -909,7 +913,11 @@ app.post('/api/nhis/prescribers', requireBranchUserSession, (request, response, 
 
 app.put('/api/nhis/prescribers/:id', requireBranchUserSession, (request, response, next) => {
   try {
-    response.json({ data: saveOfflineRecord('nhis_prescribers', { ...(request.body || {}), id: request.params.id }) })
+    response.json({ data: saveOfflineRecord('nhis_prescribers', {
+      ...(request.body || {}), id: request.params.id,
+      organization_id: config.organizationId || request.branchUser?.organizationId,
+      branch_id: config.branchId || request.branchUser?.branchId || null,
+    }) })
   } catch (error) {
     next(error)
   }
@@ -917,7 +925,11 @@ app.put('/api/nhis/prescribers/:id', requireBranchUserSession, (request, respons
 
 app.post('/api/nhis/prescribing-facilities', requireBranchUserSession, (request, response, next) => {
   try {
-    response.status(201).json({ data: saveOfflineRecord('nhis_prescribing_facilities', request.body || {}) })
+    response.status(201).json({ data: saveOfflineRecord('nhis_prescribing_facilities', {
+      ...(request.body || {}),
+      organization_id: config.organizationId || request.branchUser?.organizationId,
+      branch_id: config.branchId || request.branchUser?.branchId || null,
+    }) })
   } catch (error) {
     next(error)
   }
@@ -925,7 +937,11 @@ app.post('/api/nhis/prescribing-facilities', requireBranchUserSession, (request,
 
 app.put('/api/nhis/prescribing-facilities/:id', requireBranchUserSession, (request, response, next) => {
   try {
-    response.json({ data: saveOfflineRecord('nhis_prescribing_facilities', { ...(request.body || {}), id: request.params.id }) })
+    response.json({ data: saveOfflineRecord('nhis_prescribing_facilities', {
+      ...(request.body || {}), id: request.params.id,
+      organization_id: config.organizationId || request.branchUser?.organizationId,
+      branch_id: config.branchId || request.branchUser?.branchId || null,
+    }) })
   } catch (error) {
     next(error)
   }

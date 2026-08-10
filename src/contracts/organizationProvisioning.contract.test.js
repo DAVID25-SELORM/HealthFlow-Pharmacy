@@ -16,6 +16,9 @@ describe('ORG-READY-001 provisioning contract', () => {
     expect(source).toContain('const readiness = await checkOrganizationReadiness')
     expect(source).toContain('if (!readiness.ready)')
     expect(source).toContain("blockers.push('Organization owner is missing.')")
+    expect(source).toContain("warnings.push('No external prescribing facility has been added yet.')")
+    expect(source).toContain("warnings.push('No organization prescriber has been added yet.')")
+    expect(source).not.toContain("provisioningStage = 'provision NHIS prescribing facility'")
   })
 
   it('keeps readiness access behind the existing super-admin authorization', () => {

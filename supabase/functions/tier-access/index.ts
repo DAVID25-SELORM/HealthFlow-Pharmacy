@@ -31,15 +31,20 @@ const SALES_SELECT_FIELDS = `
   *,
   sale_items (
     *,
-    drugs (name, medicine_access_level, chemical_shop_sale_permitted, epharmacy_sale_class)
+    drugs (name, generic_name, strength, dosage_form, medicine_access_level, chemical_shop_sale_permitted, epharmacy_sale_class)
   ),
-  patients (id, full_name, phone, insurance_provider, insurance_id)
+  patients (id, full_name, phone, insurance_provider, insurance_id),
+  branches (id, name, code),
+  served_by_user:sold_by (id, full_name)
 `
 const REPORT_DRUG_SELECT_FIELDS = `
   id,
   organization_id,
   branch_id,
   name,
+  generic_name,
+  strength,
+  dosage_form,
   batch_number,
   expiry_date,
   quantity,
@@ -139,7 +144,8 @@ const REPORT_NHIS_CLAIM_SELECT_FIELDS = `
   prescription_verified,
   prescription_verified_by,
   prescription_verified_at,
-  notes
+  notes,
+  branches (id, name, code)
 `
 const EPHARMACY_ORG_SELECT_FIELDS = `
   id,
@@ -5417,7 +5423,8 @@ const getReportNhisAggregate = async (
   adminClient: ReturnType<typeof createAdminClient>,
   organizationId: string,
   startDate: string,
-  endDate: string
+  endDate: string,
+  branchId = ''
 ) => {
   const monthly = new Map<string, Record<string, number | string>>()
   let offset = 0
@@ -5436,6 +5443,7 @@ const getReportNhisAggregate = async (
 
     if (startDate) query = query.gte('service_date_from', startDate)
     if (endDate) query = query.lte('service_date_from', endDate)
+    if (branchId) query = query.eq('branch_id', branchId)
 
     const { data, error } = await query
     if (error) throw error
@@ -5537,6 +5545,7 @@ const getReportNhisPage = async (
 
   const startDate = normalizeText(payload.startDate)
   const endDate = normalizeText(payload.endDate)
+  const scopedBranchId = resolveScopedBranchId(requesterProfile, payload)
   const offset = Math.max(0, Math.floor(Number(payload.offset) || 0))
   const limit = clampPositiveInteger(
     payload.limit,
@@ -5551,6 +5560,7 @@ const getReportNhisPage = async (
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1)
 
+  if (scopedBranchId) query = query.eq('branch_id', scopedBranchId)
   if (startDate) query = query.gte('service_date_from', startDate)
   if (endDate) query = query.lte('service_date_from', endDate)
 
@@ -5585,6 +5595,7 @@ const getReportBundle = async (
 
   const startDate = normalizeText(payload.startDate)
   const endDate = normalizeText(payload.endDate)
+  const scopedBranchId = resolveScopedBranchId(requesterProfile, payload)
   const drugSearchTerm = toIlikeSearchTerm(payload.drug)
   const reportLimit = clampPositiveInteger(payload.limit, REPORT_BUNDLE_MAX_ROWS, REPORT_BUNDLE_MAX_ROWS)
   const nhisClaimLimit = clampPositiveInteger(
@@ -5604,6 +5615,7 @@ const getReportBundle = async (
 
     if (startDate) query = query.gte('sale_date', `${startDate}T00:00:00`)
     if (endDate) query = query.lte('sale_date', `${endDate}T23:59:59`)
+    if (scopedBranchId) query = query.eq('branch_id', scopedBranchId)
     if (saleIds) query = query.in('id', saleIds)
     return query
   }
@@ -5624,6 +5636,7 @@ const getReportBundle = async (
   if (endDate) {
     claimsQuery = claimsQuery.lte('service_date', endDate)
   }
+  if (scopedBranchId) claimsQuery = claimsQuery.eq('branch_id', scopedBranchId)
 
   if (drugSearchTerm.length >= 3) {
     const drugNamePattern = `%${drugSearchTerm}%`
@@ -5691,12 +5704,14 @@ const getReportBundle = async (
       .from('patients')
       .select(PATIENT_WORKSPACE_PATIENT_SELECT_FIELDS)
       .eq('organization_id', organizationId)
+      .match(scopedBranchId ? { branch_id: scopedBranchId } : {})
       .order('created_at', { ascending: false })
       .limit(reportLimit),
     adminClient
       .from('drugs')
       .select(REPORT_DRUG_SELECT_FIELDS)
       .eq('organization_id', organizationId)
+      .match(scopedBranchId ? { branch_id: scopedBranchId } : {})
       .eq('status', 'active')
       .or(`batch_number.is.null,batch_number.not.ilike.${DEFAULT_MEDICATION_BATCH_PREFIX}%,quantity.gt.0`)
       .order('created_at', { ascending: false })
@@ -5705,6 +5720,7 @@ const getReportBundle = async (
       .from('drugs')
       .select(REPORT_DRUG_SELECT_FIELDS)
       .eq('organization_id', organizationId)
+      .match(scopedBranchId ? { branch_id: scopedBranchId } : {})
       .or(`batch_number.is.null,batch_number.not.ilike.${DEFAULT_MEDICATION_BATCH_PREFIX}%,quantity.gt.0`)
       .limit(reportLimit),
   ])
@@ -5774,15 +5790,17 @@ const getReportBundle = async (
       .from('nhis_claims')
       .select(REPORT_NHIS_CLAIM_SELECT_FIELDS, { count: 'exact' })
       .eq('organization_id', organizationId)
+      .match(scopedBranchId ? { branch_id: scopedBranchId } : {})
       .gte('service_date_from', startDate || '1900-01-01')
       .lte('service_date_from', endDate || '2999-12-31')
       .order('created_at', { ascending: false })
       .limit(nhisClaimLimit),
-    getReportNhisAggregate(adminClient, organizationId, startDate, endDate),
+    getReportNhisAggregate(adminClient, organizationId, startDate, endDate, scopedBranchId),
     adminClient
       .from('purchases')
       .select('*, purchase_items (*, drugs (medicine_access_level, chemical_shop_sale_permitted, epharmacy_sale_class))')
       .eq('organization_id', organizationId)
+      .match(scopedBranchId ? { branch_id: scopedBranchId } : {})
       .gte('purchase_date', startDate || '1900-01-01')
       .lte('purchase_date', endDate || '2999-12-31')
       .order('purchase_date', { ascending: false })
@@ -5797,6 +5815,7 @@ const getReportBundle = async (
       .from('nhia_claim_batches')
       .select('*')
       .eq('organization_id', organizationId)
+      .match(scopedBranchId ? { branch_id: scopedBranchId } : {})
       .order('created_at', { ascending: false })
       .limit(reportLimit),
     adminClient
@@ -5887,6 +5906,7 @@ const getReportBundle = async (
       if (endDate) {
         matchingClaimsQuery = matchingClaimsQuery.lte('service_date_from', endDate)
       }
+      if (scopedBranchId) matchingClaimsQuery = matchingClaimsQuery.eq('branch_id', scopedBranchId)
 
       const { data: matchingClaims } = await matchingClaimsQuery
       nhisClaims = [...nhisClaims, ...((matchingClaims || []) as Record<string, unknown>[])]
@@ -5984,6 +6004,9 @@ const getReportDrugMatches = async (
   const endDate = normalizeText(payload.endDate)
   const scopedBranchId = resolveScopedBranchId(requesterProfile, payload)
   const drugSearchTerm = toIlikeSearchTerm(payload.drug)
+  const patientTerm = toIlikeSearchTerm(payload.patient)
+  const prescriberTerm = toIlikeSearchTerm(payload.prescriber)
+  const servedByTerm = toIlikeSearchTerm(payload.servedBy || payload.staff || payload.userId)
   const chemicalShop = await isChemicalShopOrganization(adminClient, organizationId)
   if (drugSearchTerm.length < 3) {
     return { sales: [], nhisClaims: [] }
@@ -6031,7 +6054,18 @@ const getReportDrugMatches = async (
           return query
         })
       ))
-      sales = saleGroups.flat().map((sale) => {
+      sales = saleGroups.flat().filter((sale) => {
+        const row = sale as Record<string, unknown>
+        const patient = row.patients as Record<string, unknown> | null
+        const servedBy = row.served_by_user as Record<string, unknown> | null
+        const patientHaystack = [patient?.full_name, patient?.folder_number, patient?.insurance_id, patient?.nhis_member_no]
+          .map(normalizeText).join(' ')
+        const servedByHaystack = [row.sold_by, servedBy?.full_name].map(normalizeText).join(' ')
+        return normalizeText(row.payment_status) === 'completed' &&
+          (!patientTerm || patientHaystack.includes(patientTerm)) &&
+          (!prescriberTerm || normalizeText(row.prescriber_name || row.physician_name).includes(prescriberTerm)) &&
+          (!servedByTerm || servedByHaystack.includes(servedByTerm))
+      }).map((sale) => {
         if (!chemicalShop) return sale
         return {
           ...sale,
@@ -6098,11 +6132,22 @@ const getReportDrugMatches = async (
       acc[claimId].push(row)
       return acc
     }, {})
-    nhisClaims = claims.map((claim) => ({
-      ...claim,
-      nhis_claim_medicines: medicinesByClaim[normalizeText(claim.id)] || [],
-      nhis_claim_services: [],
-    }))
+    nhisClaims = claims.filter((claim) => {
+      const patientHaystack = [claim.surname, claim.other_names, claim.folder_no, claim.member_no, claim.hin]
+        .map(normalizeText).join(' ')
+      const claimMedicines = medicinesByClaim[normalizeText(claim.id)] || []
+      const servedByHaystack = claimMedicines.flatMap((medicine) => {
+        const row = medicine as Record<string, unknown>
+        return [row.served_by_mca, row.entered_by_claims_officer]
+      }).map(normalizeText).join(' ')
+      return (!patientTerm || patientHaystack.includes(patientTerm)) &&
+        (!prescriberTerm || normalizeText(claim.physician_name).includes(prescriberTerm)) &&
+        (!servedByTerm || servedByHaystack.includes(servedByTerm))
+    }).map((claim) => ({
+        ...claim,
+        nhis_claim_medicines: medicinesByClaim[normalizeText(claim.id)] || [],
+        nhis_claim_services: [],
+      }))
   }
 
   return { sales, nhisClaims }
