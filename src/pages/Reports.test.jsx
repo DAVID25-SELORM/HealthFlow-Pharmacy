@@ -313,6 +313,26 @@ describe('Reports', () => {
     expect(screen.getByText('View patients who received this drug')).toBeInTheDocument()
   }, 15000)
 
+  it('keeps drill-down rows visible when a delayed server search returns no additional rows', async () => {
+    mocks.getReportDrugMatches.mockResolvedValue({ sales: [], nhisClaims: [] })
+    render(<Reports />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Generate Reports/i }))
+    await waitFor(() => expect(mocks.getReportBundle).toHaveBeenCalled())
+
+    fireEvent.change(screen.getByLabelText(/fast search drug utilization/i), {
+      target: { value: 'Amoxicillin Capsules' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Amoxicillin Capsules/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Open Drill Down/i }))
+
+    await waitFor(() => expect(mocks.getReportDrugMatches).toHaveBeenCalled())
+    expect(screen.getByText('Amoxicillin Capsules - Patients Given This Drug')).toBeInTheDocument()
+    expect(screen.getAllByText('Ama Mensah').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('SALE-001').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('NHIA-001').length).toBeGreaterThan(0)
+  })
+
   it('finds served NHIS medicines stored with claim schema field names', async () => {
     render(<Reports />)
 

@@ -69,6 +69,18 @@ const FILTER_DEFAULTS = {
 const money = (value) => `GHS ${Number(value || 0).toFixed(2)}`
 const text = (value, fallback = '-') => value || fallback
 const rowsOf = (value) => (Array.isArray(value) ? value : [])
+const mergeReportRows = (baseRows, searchRows) => {
+  const merged = new Map()
+  rowsOf(baseRows).forEach((row, index) => {
+    const key = row?.id || row?.sale_number || row?.saleNumber || row?.claim_number || row?.claimNumber || `base-${index}`
+    merged.set(String(key), row)
+  })
+  rowsOf(searchRows).forEach((row, index) => {
+    const key = row?.id || row?.sale_number || row?.saleNumber || row?.claim_number || row?.claimNumber || `search-${index}`
+    merged.set(String(key), row)
+  })
+  return Array.from(merged.values())
+}
 const getStatus = (row = {}) => row.status || row.claim_status || row.claimStatus || ''
 const getClaimNumber = (row = {}) => row.claim_number || row.claimNumber || row.localSaleNumber || row.id
 const getPatientName = (row = {}) =>
@@ -1061,6 +1073,7 @@ const Reports = () => {
   const [hasGeneratedReports, setHasGeneratedReports] = useState(false)
   const [facilitySettings, setFacilitySettings] = useState(null)
   const lastServerDrugSearchRef = useRef('')
+  const activeServerDrugSearchRef = useRef('')
   const reportOutputRef = useRef(null)
 
   const brandingSource = { ...(organization || {}), ...(facilitySettings || {}) }
@@ -1073,7 +1086,11 @@ const Reports = () => {
   const selectedReport = reportCatalog.find((report) => report.id === selectedReportId) || reportCatalog[0]
   const effectiveBundle = useMemo(() => (
     drugSearchTerm.trim().length >= 3 && drugSearchBundle
-      ? { ...(bundle || {}), sales: drugSearchBundle.sales, nhisClaims: drugSearchBundle.nhisClaims }
+      ? {
+          ...(bundle || {}),
+          sales: mergeReportRows(bundle?.sales, drugSearchBundle.sales),
+          nhisClaims: mergeReportRows(bundle?.nhisClaims, drugSearchBundle.nhisClaims),
+        }
       : bundle
   ), [bundle, drugSearchBundle, drugSearchTerm])
   const normalizedBundle = useMemo(() => normalizeReportBundle(effectiveBundle || {}), [effectiveBundle])
@@ -1315,6 +1332,7 @@ const Reports = () => {
       return
     }
 
+    activeServerDrugSearchRef.current = searchKey
     const timer = window.setTimeout(() => {
       lastServerDrugSearchRef.current = searchKey
       void getReportDrugMatches({
@@ -1324,7 +1342,12 @@ const Reports = () => {
         userId: filters.staff,
         patient: filters.patient,
         servedBy: filters.servedBy,
-      }).then(setDrugSearchBundle).catch((searchError) => {
+      }).then((searchBundle) => {
+        if (activeServerDrugSearchRef.current === searchKey) {
+          setDrugSearchBundle(searchBundle)
+        }
+      }).catch((searchError) => {
+        if (activeServerDrugSearchRef.current !== searchKey) return
         console.error('Error searching report medicines:', searchError)
         setError(searchError.message || 'Unable to search medicine utilization.')
       })
