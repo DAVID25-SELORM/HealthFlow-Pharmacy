@@ -55,6 +55,7 @@ import {
   buildNhisClaimItExportPayload,
   buildNhisClaimItCxf,
   buildNhisClaimItDirectXml,
+  buildNhisClaimCorrectionChanges,
   buildNhisClaimItXml,
   checkNhisActiveMedicationOverlap,
   getNhisPatientActiveMedications,
@@ -194,6 +195,35 @@ const mockNhisClaimDuplicateAndUpdateQueries = ({ duplicates = [] } = {}) => {
   })
   return { claimQuery, updateQuery }
 }
+
+describe('buildNhisClaimCorrectionChanges', () => {
+  it('preserves previous and new values for every changed sensitive field', () => {
+    const changes = buildNhisClaimCorrectionChanges(
+      { physician_name: 'Dr Wrong', diagnosis: 'A01', member_no: 'OLD' },
+      { physician_name: 'Dr Correct', diagnosis: 'B02', member_no: 'NEW' },
+      [{ description: 'Old medicine', dispensed_qty: 1 }],
+      [{ description: 'New medicine', dispensed_qty: 2 }]
+    )
+
+    expect(changes).toEqual(expect.arrayContaining([
+      { field: 'physician_name', previousValue: 'Dr Wrong', newValue: 'Dr Correct' },
+      { field: 'diagnosis', previousValue: 'A01', newValue: 'B02' },
+      { field: 'member_no', previousValue: 'OLD', newValue: 'NEW' },
+    ]))
+    expect(changes.find((change) => change.field === 'medicines')).toEqual({
+      field: 'medicines',
+      previousValue: [{ description: 'Old medicine', dispensed_qty: 1 }],
+      newValue: [{ description: 'New medicine', dispensed_qty: 2 }],
+    })
+  })
+
+  it('does not create entries for unchanged values', () => {
+    expect(buildNhisClaimCorrectionChanges(
+      { physician_name: 'Dr Same' },
+      { physician_name: 'Dr Same' }
+    )).toEqual([])
+  })
+})
 
 describe('normalizeNhisGender', () => {
   it('maps NHIA gender values to claim form option values', () => {
@@ -1624,6 +1654,20 @@ describe('CLAIM-it export helpers', () => {
     })
     expect(payload.claims[0].medicines[0].code).toBe('NH001')
     expect(payload.claims[0].prescriptionAttachment).toBeNull()
+  })
+
+  it('exports the corrected prescriber and removes the old prescriber from the new payload and XML', () => {
+    const correctedClaim = { ...claim, physician_name: 'Dr Correct Prescriber' }
+    const payload = buildNhisClaimItExportPayload([correctedClaim], {
+      yearMonth: '2026-05',
+      organizationType: 'hospital',
+      generatedAt: '2026-05-15T00:00:00.000Z',
+    })
+    const xml = buildNhisClaimItXml(payload)
+
+    expect(payload.claims[0].service.prescriberNameOrId).toBe('Dr Correct Prescriber')
+    expect(xml).toContain('Dr Correct Prescriber')
+    expect(xml).not.toContain('Dr Test')
   })
 
   it('defaults CLAIM-it version fields for direct JSON submissions', () => {
@@ -4002,6 +4046,96 @@ describe('NHIS claim save attachment behavior', () => {
     prescriptionFileName: '',
   }
   const medicineWithTotal = { ...baseMedicine, totalAmount: 10 }
+
+  it('requires a reason before any privileged correction work begins', async () => {
+    await expect(updateNhisClaim('claim-1', baseClaim, [medicineWithTotal], {
+      privilegedCorrection: true,
+    })).rejects.toThrow('Reason for correction is required')
+    expect(supabase.from).not.toHaveBeenCalled()
+    expect(supabase.rpc).not.toHaveBeenCalled()
+  })
+
+  it('blocks privileged correction on the offline branch path before mutation', async () => {
+    await expect(updateNhisClaim('claim-1', baseClaim, [medicineWithTotal], {
+      privilegedCorrection: true,
+      correctionReason: 'Correct wrong prescriber',
+      useBranchServer: true,
+    })).rejects.toThrow('require an online cloud connection')
+    expect(updateBranchRecord).not.toHaveBeenCalled()
+    expect(supabase.rpc).not.toHaveBeenCalled()
+  })
+
+  it('routes privileged corrections through one authoritative RPC without direct child writes', async () => {
+    const existingClaim = {
+      id: 'claim-1',
+      claim_number: 'NHIS-000001',
+      updated_at: '2026-06-30T12:00:00.000Z',
+      physician_name: 'Dr Wrong',
+      prescriber_name_snapshot: 'Dr Wrong',
+      prescription_file_path: 'org/rx.pdf',
+      prescription_file_name: 'rx.pdf',
+      prescription_document_type: 'prescription',
+      prescription_verified: true,
+    }
+    const claimQuery = {
+      select: vi.fn(() => claimQuery),
+      eq: vi.fn(() => claimQuery),
+      neq: vi.fn(() => claimQuery),
+      limit: vi.fn().mockResolvedValue({ data: [], error: null }),
+      single: vi.fn().mockResolvedValue({ data: existingClaim, error: null }),
+      update: vi.fn(),
+      delete: vi.fn(),
+    }
+    supabase.from.mockImplementation((table) => {
+      if (table === 'nhis_claims') return claimQuery
+      return { update: vi.fn(), delete: vi.fn(), insert: vi.fn() }
+    })
+    supabase.rpc.mockResolvedValueOnce({
+      data: {
+        claim: { ...existingClaim, physician_name: 'Dr Correct', prescriber_name_snapshot: 'Dr Correct' },
+        medicines: [],
+        services: [],
+        audit: [{ field_name: 'physician_name' }],
+      },
+      error: null,
+    })
+
+    await expect(updateNhisClaim('claim-1', {
+      ...baseClaim,
+      physicianName: 'Dr Correct',
+      prescriberNameSnapshot: 'Dr Correct',
+      cccNo: '81416',
+      status: 'served',
+    }, [], {
+      privilegedCorrection: true,
+      correctionReason: 'Wrong prescriber captured',
+      expectedUpdatedAt: existingClaim.updated_at,
+      allowIncompleteReview: true,
+      providerClassLevel: 'D',
+      pharmacyLevel: 'P1',
+      nhisDrugCatalog: [],
+    })).resolves.toMatchObject({
+      physician_name: 'Dr Correct',
+      prescriber_name_snapshot: 'Dr Correct',
+      correction_audit: [{ field_name: 'physician_name' }],
+    })
+
+    expect(supabase.rpc).toHaveBeenCalledWith('correct_nhis_claim_privileged', expect.objectContaining({
+      p_claim_id: 'claim-1',
+      p_reason: 'Wrong prescriber captured',
+      p_expected_updated_at: existingClaim.updated_at,
+      p_claim_patch: expect.objectContaining({
+        physician_name: 'Dr Correct',
+        prescriber_name_snapshot: 'Dr Correct',
+      }),
+    }))
+    const rpcPayload = supabase.rpc.mock.calls[0][1]
+    expect(rpcPayload).not.toHaveProperty('organization_id')
+    expect(rpcPayload).not.toHaveProperty('actor_role')
+    expect(rpcPayload).not.toHaveProperty('previous_values')
+    expect(claimQuery.update).not.toHaveBeenCalled()
+    expect(claimQuery.delete).not.toHaveBeenCalled()
+  })
 
   it('saves an attachment-free pharmacy intake while it is pending serving', async () => {
     const insertedClaim = { id: 'claim-1', claim_number: 'NHIS-000001', status: 'pending_serving' }

@@ -78,6 +78,20 @@
   font-size: 0.82rem;
 }
 
+.nhis-correction-audit {
+  margin: 0 1.25rem 1rem;
+  border: 1px solid #f0c36a;
+  border-radius: 10px;
+  background: #fffaf0;
+}
+
+.nhis-correction-audit details { margin-top: 0.75rem; }
+.nhis-correction-audit summary { cursor: pointer; font-weight: 600; }
+.nhis-correction-history { margin-top: 0.5rem; max-height: 240px; overflow: auto; }
+.nhis-correction-history > div { display: grid; gap: 0.2rem; padding: 0.6rem 0; border-top: 1px solid #eadfca; }
+.nhis-correction-history strong { text-transform: capitalize; }
+.nhis-correction-history small { color: #6b7280; }
+
 .nhis-pagination {
   display: flex;
   align-items: center;

@@ -55,6 +55,38 @@ const throwFriendlyNhisPatientError = (error) => {
 
 const asText = (value) => String(value ?? '').trim()
 const asNumber = (value) => Number.parseFloat(value)
+
+const AUDITED_NHIS_CLAIM_FIELDS = [
+  'patient_id', 'member_no', 'card_type', 'hin', 'surname', 'other_names',
+  'folder_no', 'gender', 'date_of_birth', 'patient_address', 'child_weight_kg',
+  'ccc_no', 'diagnosis', 'diagnosis_details', 'service_date_from', 'service_date_to',
+  'referring_facility', 'referral_code', 'physician_name', 'pre_auth_codes',
+  'prescriber_id', 'prescriber_name_snapshot', 'prescriber_license_snapshot',
+  'prescribing_facility_id', 'prescribing_facility_name_snapshot',
+  'prescribing_facility_code_snapshot', 'prescription_date', 'prescription_reference',
+  'prescription_file_path', 'prescription_file_name', 'prescription_document_type',
+  'prescription_verified', 'notes', 'unserved_medicines_note', 'total_amount',
+]
+
+const comparableAuditValue = (value) => value === undefined ? null : value
+
+export const buildNhisClaimCorrectionChanges = (before = {}, after = {}, beforeMedicines = [], afterMedicines = [], beforeServices = [], afterServices = []) => {
+  const changes = AUDITED_NHIS_CLAIM_FIELDS.flatMap((field) => {
+    const previousValue = comparableAuditValue(before[field])
+    const newValue = comparableAuditValue(after[field])
+    return JSON.stringify(previousValue) === JSON.stringify(newValue)
+      ? []
+      : [{ field, previousValue, newValue }]
+  })
+  const appendCollection = (field, previousValue, newValue) => {
+    if (JSON.stringify(previousValue || []) !== JSON.stringify(newValue || [])) {
+      changes.push({ field, previousValue: previousValue || [], newValue: newValue || [] })
+    }
+  }
+  appendCollection('medicines', beforeMedicines, afterMedicines)
+  appendCollection('services_tariffs', beforeServices, afterServices)
+  return changes
+}
 const getClaimField = (claim, camelKey, snakeKey = camelKey) =>
   asText(claim?.[camelKey] ?? claim?.[snakeKey])
 const hasSavedPrescriptionFileReference = (claimData = {}) =>
@@ -6326,6 +6358,14 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
 }
 
 export const updateNhisClaim = async (id, claimData, medicines, options = {}) => {
+  const privilegedCorrection = options.privilegedCorrection === true
+  const correctionReason = normalizeText(options.correctionReason ?? claimData.correctionReason)
+  if (privilegedCorrection && !correctionReason) {
+    throw new Error('Reason for correction is required before saving a previously saved claim.')
+  }
+  if (privilegedCorrection && (options.useBranchServer || shouldUseBranchServer())) {
+    throw new Error('Privileged claim corrections require an online cloud connection so the immutable audit history can be recorded safely.')
+  }
   const organizationType = normalizeOrganizationType(claimData?.organizationType ?? claimData?.organization_type)
   const tariffServices = normalizeNhiaTariffServiceLines(
     options.nhiaTariffServices ?? claimData?.nhiaTariffServices ?? claimData?.nhis_claim_services ?? [],
@@ -6558,6 +6598,36 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
   if (wouldDiscardPrescriptionAttachment(claimPayload, schemaCompatiblePayload)) {
     throw buildMissingPrescriptionAttachmentSchemaError()
   }
+
+  if (privilegedCorrection) {
+    const serviceRows = toNhisClaimServiceRows(id, tariffServices, claimData)
+    const { data: correctionResult, error: correctionError } = await supabase.rpc(
+      'correct_nhis_claim_privileged',
+      {
+        p_claim_id: id,
+        p_claim_patch: schemaCompatiblePayload,
+        p_medicines: medicineRows,
+        p_services: serviceRows,
+        p_reason: correctionReason,
+        p_expected_updated_at: expectedUpdatedAt || null,
+      }
+    )
+    if (correctionError) {
+      if (correctionError.code === '40001' || /modified by another user/i.test(correctionError.message || '')) {
+        const conflict = new Error('This claim was modified by another user. Reload the latest version before saving.')
+        conflict.code = 'NHIS_CLAIM_CONFLICT'
+        throw conflict
+      }
+      throw correctionError
+    }
+    return {
+      ...(correctionResult?.claim || {}),
+      nhis_claim_medicines: correctionResult?.medicines || medicineRows,
+      nhis_claim_services: correctionResult?.services || serviceRows,
+      correction_audit: correctionResult?.audit || [],
+    }
+  }
+
   const { data: claim, error: claimError } = await updateNhisClaimWithSchemaFallback(
     id,
     schemaCompatiblePayload,
@@ -6613,6 +6683,16 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
   })
 
   return claim
+}
+
+export const getNhisClaimCorrectionHistory = async (claimId) => {
+  const { data, error } = await supabase
+    .from('nhis_claim_corrections')
+    .select('id, claim_id, actor_user_id, actor_role, field_name, previous_value, new_value, reason, created_at')
+    .eq('claim_id', claimId)
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  return data || []
 }
 
 const recordNhisPaidLedgerEntry = async (id, actorId = null) => {

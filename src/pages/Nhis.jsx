@@ -44,6 +44,7 @@ import {
   deleteNhisClaim,
   serveNhisClaimDirect,
   updateNhisClaim,
+  getNhisClaimCorrectionHistory,
   updateNhisClaimStatus,
   exportNhisClaimsFile,
   checkNhisExportReadiness,
@@ -1391,6 +1392,8 @@ const Nhis = () => {
   const [claimError, setClaimError]           = useState('')
   const [claimActionReview, setClaimActionReview] = useState(null)
   const [editingClaim, setEditingClaim]       = useState(null)
+  const [correctionReason, setCorrectionReason] = useState('')
+  const [correctionHistory, setCorrectionHistory] = useState([])
   const canCorrectDirectServedMedicine = canCorrectDirectServedNhisMedicine({
     claim: editingClaim,
     role: normalizedRole,
@@ -3131,6 +3134,14 @@ const Nhis = () => {
     }
 
     setEditingClaim(claim)
+    setCorrectionReason('')
+    if (canEditNhisClaimAnytime && !shouldUseBranchServer()) {
+      getNhisClaimCorrectionHistory(claim.id)
+        .then(setCorrectionHistory)
+        .catch(() => setCorrectionHistory([]))
+    } else {
+      setCorrectionHistory([])
+    }
     setClaimError('')
     setPatientSearch(formatPatientLookupName(claim))
     setSelectedClaimPatient({
@@ -4094,6 +4105,10 @@ const Nhis = () => {
 
   const handleSubmitClaim = async (e, intent = 'dispatch', reviewConfirmed = false, medicinesOverride = null) => {
     e.preventDefault()
+    if (editingClaim && canEditNhisClaimAnytime && !normalizeText(correctionReason)) {
+      setClaimError('Enter a reason for correction before saving this previously saved claim.')
+      return
+    }
     const saveAsDraft = intent === 'save_details'
     const serveDirectly = intent === 'serve_directly'
     if (serveDirectly && editingClaim && !canNhisClaimBeServedDirectly({
@@ -4293,6 +4308,8 @@ const Nhis = () => {
           expectedUpdatedAt: editingClaim.updated_at || editingClaim.updatedAt || '',
           requirePrescriptionAttachment: !isHospital,
           requireVerifiedPrescription: !isHospital,
+          privilegedCorrection: canEditNhisClaimAnytime,
+          correctionReason,
         })
         savedClaimRecord = savedClaim || editingClaim
         const claimForSubmission = savedClaim || editingClaim
@@ -4518,6 +4535,8 @@ const Nhis = () => {
     setEditingMedicineIndex(null)
     setTariffSearch('')
     setEditingClaim(null)
+    setCorrectionReason('')
+    setCorrectionHistory([])
     setPrescriptionPdfFile(null)
     setReturnAlert(null)
     setReturnAlertOverride(null)
@@ -7849,6 +7868,33 @@ const Nhis = () => {
                 </div>
               </div>
             </div>
+
+            {editingClaim && canEditNhisClaimAnytime && (
+              <section className="nhis-section nhis-correction-audit">
+                <h3 className="nhis-section-title">Reason for correction *</h3>
+                <textarea
+                  className="form-input"
+                  rows={3}
+                  value={correctionReason}
+                  onChange={(event) => setCorrectionReason(event.target.value)}
+                  placeholder="Example: Wrong prescriber entered during initial claim capture."
+                />
+                {correctionHistory.length > 0 && (
+                  <details>
+                    <summary>Claim Correction History ({correctionHistory.length})</summary>
+                    <div className="nhis-correction-history">
+                      {correctionHistory.map((entry) => (
+                        <div key={entry.id}>
+                          <strong>{String(entry.field_name || '').replaceAll('_', ' ')}</strong>
+                          <span>{JSON.stringify(entry.previous_value)} → {JSON.stringify(entry.new_value)}</span>
+                          <small>{entry.actor_role} ({entry.actor_user_id}) · {formatAppDateTime(entry.created_at)} · {entry.reason}</small>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
+              </section>
+            )}
 
             <div className="modal-footer">
               <div className="claim-footer-total">
