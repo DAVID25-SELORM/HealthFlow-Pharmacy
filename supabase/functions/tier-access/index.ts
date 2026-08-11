@@ -5496,24 +5496,33 @@ const attachNhisClaimLines = async (
   const claimIds = claims.map((claim) => normalizeText(claim.id)).filter(Boolean)
   if (!claimIds.length) return claims
 
-  const [medicinesResult, servicesResult] = await Promise.all([
-    adminClient.from('nhis_claim_medicines').select('*').in('claim_id', claimIds),
-    adminClient.from('nhis_claim_services').select('*').in('claim_id', claimIds),
+  const [medicineGroups, serviceGroups] = await Promise.all([
+    Promise.all(chunkValues(claimIds).map((ids) =>
+      fetchAllWorkspaceRows(() =>
+        adminClient.from('nhis_claim_medicines').select('*').in('claim_id', ids)
+      )
+    )),
+    Promise.all(chunkValues(claimIds).map((ids) =>
+      fetchAllWorkspaceRows(() =>
+        adminClient.from('nhis_claim_services').select('*').in('claim_id', ids)
+      )
+    )),
   ])
-  if (medicinesResult.error) throw medicinesResult.error
-  if (servicesResult.error) throw servicesResult.error
 
-  const medicineRows = medicinesResult.data || []
+  const medicineRows = medicineGroups.flat()
+  const serviceRows = serviceGroups.flat()
   const servingUserIds = Array.from(new Set(medicineRows.flatMap((row) => [
     normalizeText(row.served_by_mca),
     normalizeText(row.entered_by_claims_officer),
   ]).filter(Boolean)))
   const servingUsers = servingUserIds.length
-    ? await fetchAllWorkspaceRows(() => adminClient
-        .from('users')
-        .select('id, full_name')
-        .eq('organization_id', organizationId)
-        .in('id', servingUserIds))
+    ? (await Promise.all(chunkValues(servingUserIds).map((ids) =>
+        fetchAllWorkspaceRows(() => adminClient
+          .from('users')
+          .select('id, full_name')
+          .eq('organization_id', organizationId)
+          .in('id', ids))
+      ))).flat()
     : []
   const servingUsersById = new Map(servingUsers.map((user) => [normalizeText(user.id), user]))
   const enrichedMedicineRows = medicineRows.map((row) => {
@@ -5531,7 +5540,7 @@ const attachNhisClaimLines = async (
     acc[claimId].push(row)
     return acc
   }, {})
-  const servicesByClaim = (servicesResult.data || []).reduce<Record<string, unknown[]>>((acc, row) => {
+  const servicesByClaim = serviceRows.reduce<Record<string, unknown[]>>((acc, row) => {
     const claimId = normalizeText(row.claim_id)
     if (!claimId) return acc
     if (!acc[claimId]) acc[claimId] = []
@@ -5905,25 +5914,30 @@ const getReportBundle = async (
     const missingClaimIds = matchingClaimIds.filter((claimId) => !loadedClaimIds.has(claimId))
 
     if (missingClaimIds.length) {
-      let matchingClaimsQuery = adminClient
-        .from('nhis_claims')
-        .select(REPORT_NHIS_CLAIM_SELECT_FIELDS)
-        .eq('organization_id', organizationId)
-        .in('id', missingClaimIds)
-        .order('created_at', { ascending: false })
-        .limit(nhisClaimLimit)
+      const matchingClaimGroups = await Promise.all(chunkValues(missingClaimIds).map((ids) =>
+        fetchAllWorkspaceRows(() => {
+          let matchingClaimsQuery = adminClient
+            .from('nhis_claims')
+            .select(REPORT_NHIS_CLAIM_SELECT_FIELDS)
+            .eq('organization_id', organizationId)
+            .in('id', ids)
+            .order('created_at', { ascending: false })
 
-      if (startDate) {
-        matchingClaimsQuery = matchingClaimsQuery.gte('service_date_from', startDate)
-      }
+          if (startDate) {
+            matchingClaimsQuery = matchingClaimsQuery.gte('service_date_from', startDate)
+          }
 
-      if (endDate) {
-        matchingClaimsQuery = matchingClaimsQuery.lte('service_date_from', endDate)
-      }
-      if (scopedBranchId) matchingClaimsQuery = matchingClaimsQuery.eq('branch_id', scopedBranchId)
-
-      const { data: matchingClaims } = await matchingClaimsQuery
-      nhisClaims = [...nhisClaims, ...((matchingClaims || []) as Record<string, unknown>[])]
+          if (endDate) {
+            matchingClaimsQuery = matchingClaimsQuery.lte('service_date_from', endDate)
+          }
+          if (scopedBranchId) matchingClaimsQuery = matchingClaimsQuery.eq('branch_id', scopedBranchId)
+          return matchingClaimsQuery
+        })
+      ))
+      const matchingClaims = matchingClaimGroups.flat()
+        .sort((left, right) => normalizeText(right.created_at).localeCompare(normalizeText(left.created_at)))
+        .slice(0, nhisClaimLimit)
+      nhisClaims = [...nhisClaims, ...(matchingClaims as Record<string, unknown>[])]
     }
   }
 

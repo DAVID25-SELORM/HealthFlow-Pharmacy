@@ -10,8 +10,27 @@ const normalizeErrorText = (error) => [
   .toLowerCase()
 
 export const getErrorMessage = (error, fallback = 'Request failed.') => {
-  const message = typeof error === 'string' ? error : error?.message
-  return String(message || fallback)
+  if (typeof error === 'string' && error.trim()) return error
+
+  const candidates = [
+    error?.message,
+    error?.error,
+    error?.details,
+    error?.body?.error,
+    error?.body?.message,
+  ]
+
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim() && candidate !== '[object Object]') {
+      return candidate
+    }
+    if (candidate && typeof candidate === 'object' && candidate !== error) {
+      const nested = getErrorMessage(candidate, '')
+      if (nested) return nested
+    }
+  }
+
+  return fallback
 }
 
 export const isNetworkRequestError = (error) => {

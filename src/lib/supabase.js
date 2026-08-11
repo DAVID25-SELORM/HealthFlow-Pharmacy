@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { isNetworkRequestError } from '../utils/requestErrors'
+import { getErrorMessage, isNetworkRequestError } from '../utils/requestErrors'
 import { logRequestFailure } from '../utils/requestDiagnostics'
 import { logAuthDiagnostic, timeAuthOperation } from '../utils/authDiagnostics'
 
@@ -366,7 +366,7 @@ const getFunctionErrorMessage = async (error) => {
     if (contentType.includes('application/json')) {
       const body = await cloned.json()
       return {
-        message: body?.error || body?.message || '',
+        message: getErrorMessage(body, ''),
         status,
         body,
       }

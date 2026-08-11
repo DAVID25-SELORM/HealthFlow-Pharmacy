@@ -33,6 +33,7 @@ import {
   getReportFooter,
 } from '../utils/facilityBranding'
 import { logPerformance } from '../utils/performance'
+import { getErrorMessage } from '../utils/requestErrors'
 import UpgradeGate from '../components/UpgradeGate'
 import './Reports.css'
 
@@ -1256,7 +1257,7 @@ const Reports = () => {
       })
     } catch (reportError) {
       console.error('Error generating reports:', reportError)
-      setError(reportError.message || 'Unable to generate reports.')
+      setError(getErrorMessage(reportError, 'Unable to generate reports.'))
     } finally {
       setLoading(false)
     }

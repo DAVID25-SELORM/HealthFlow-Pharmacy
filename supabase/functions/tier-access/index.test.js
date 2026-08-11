@@ -57,4 +57,23 @@ describe('tier-access report query bounds', () => {
     expect(reportBundle).not.toContain("salesQuery.in('id', matchingSaleIds)")
     expect(reportBundle).not.toContain(".in('drug_id', matchingDrugIds)")
   })
+
+  it('chunks every NHIS report ID lookup to keep PostgREST URLs bounded', async () => {
+    const source = await fs.readFile(functionSourcePath, 'utf8')
+    const attachLines = source.slice(
+      source.indexOf('const attachNhisClaimLines = async'),
+      source.indexOf('const getReportBundle = async')
+    )
+    const reportBundle = source.slice(
+      source.indexOf('const getReportBundle = async'),
+      source.indexOf('const getReportDrugMatches = async')
+    )
+
+    expect(attachLines).toContain('chunkValues(claimIds)')
+    expect(attachLines).toContain('chunkValues(servingUserIds)')
+    expect(attachLines).not.toContain(".in('claim_id', claimIds)")
+    expect(attachLines).not.toContain(".in('id', servingUserIds)")
+    expect(reportBundle).toContain('chunkValues(missingClaimIds)')
+    expect(reportBundle).not.toContain(".in('id', missingClaimIds)")
+  })
 })
