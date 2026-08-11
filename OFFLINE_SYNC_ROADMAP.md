@@ -82,6 +82,35 @@ Purchase completion, purchase cancellation, inventory deletion, and branch
 transfers remain online-only because they post stock or perform destructive state
 changes that require an online transaction.
 
+## Offline v2 Technical Debt — Audited NHIS Duration Repair
+
+The production pre-export duration repair workflow intentionally requires a
+cloud connection so the claim update and immutable audit record are committed
+in one database transaction. A future Offline v2 implementation must preserve
+that guarantee rather than calling the current cloud RPC opportunistically.
+
+Required design:
+
+- Save the corrected NHIS medicine duration and parent claim version locally.
+- Append an immutable local audit/outbox event in the same local transaction.
+- Include organization, branch, user, device/workstation, event timestamp,
+  medicine and claim identifiers, previous value, new value, and whether the
+  correction was automatic or manual.
+- Give every repair event a stable client-generated idempotency key.
+- When connectivity returns, submit the claim repair and audit event together
+  through a cloud transaction that verifies organization ownership and the
+  expected previous value.
+- Enforce a unique cloud constraint on the idempotency key so retries cannot
+  duplicate an audit entry.
+- Mark the local outbox event synced only after the cloud transaction commits;
+  retain failed/conflicted events for visible manual resolution.
+- Treat a cloud value that no longer matches the recorded previous value as a
+  conflict. Never overwrite it silently.
+
+Acceptance criteria include offline creation, process/device restart, repeated
+sync attempts, concurrent cloud edits, and confirmation that exactly one audit
+record exists after eventual successful synchronization.
+
 ## Current POS Offline Behavior
 
 - If internet drops while the POS has cached data and an open shift, the cashier can save sales offline.

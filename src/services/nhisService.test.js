@@ -1701,6 +1701,77 @@ describe('CLAIM-it export helpers', () => {
     ],
   }
 
+  it('repairs a realistic mixed-duration batch before producing CLAIM-it CXF', async () => {
+    const sourceDurations = ['1 month', '2 months', '2 weeks', '90', '30 days', 'until finished']
+    const sourceMedicines = sourceDurations.map((duration, index) => ({
+      ...claim.nhis_claim_medicines[0],
+      id: `medicine-${index + 1}`,
+      drug_code: `NH${String(index + 1).padStart(3, '0')}`,
+      description: `Duration fixture medicine ${index + 1}`,
+      duration,
+    }))
+    const review = buildNhisDurationRepairReview([{
+      ...claim,
+      nhis_claim_medicines: sourceMedicines,
+    }])
+
+    expect(review).toMatchObject({
+      claimsScanned: 1,
+      valuesScanned: 6,
+      alreadyValid: 1,
+      automaticallyCorrected: 4,
+      manualReview: 1,
+    })
+    expect(review.repairRows.map((row) => row.proposedValue)).toEqual([
+      '30 days', '60 days', '14 days', '90 days', '',
+    ])
+
+    const repairedMedicines = sourceMedicines.map((medicine) => {
+      const analysis = analyzeNhisDurationForRepair(medicine.duration)
+      return {
+        ...medicine,
+        duration: analysis.status === 'automatic'
+          ? analysis.proposedValue
+          : analysis.status === 'manual'
+            ? '15 days'
+            : medicine.duration,
+      }
+    })
+    const repairedReview = buildNhisDurationRepairReview([{
+      ...claim,
+      nhis_claim_medicines: repairedMedicines,
+    }])
+    expect(repairedReview.repairRows).toHaveLength(0)
+    expect(repairedReview.alreadyValid).toBe(6)
+
+    const payload = buildNhisClaimItExportPayload([{
+      ...claim,
+      organization_type: 'pharmacy',
+      nhis_claim_medicines: repairedMedicines,
+      total_amount: repairedMedicines.reduce((sum, medicine) => sum + medicine.total_amount, 0),
+    }], {
+      yearMonth: '2026-05',
+      organizationType: 'pharmacy',
+      facilityCode: '03-05-001-02-01954-11-P1-2-011225',
+      facilityName: 'Westpoint Chemist',
+      providerNumber: '03-05-01954',
+      providerTypeDescription: 'Pharmacy',
+      accreditationDateGenerated: '2025-12-29',
+      claimsOfficerName: 'Claims Officer',
+      submitterId: 'admin',
+      generatedAt: '2026-05-20T14:58:02.000Z',
+    })
+    const inflatedText = inflateSync(Buffer.from((await buildNhisClaimItCxf(payload)).slice(3))).toString('latin1')
+
+    expect(payload.claims[0].medicines.map((medicine) => medicine.duration)).toEqual([
+      '30 days', '60 days', '14 days', '90 days', '30 days', '15 days',
+    ])
+    expect(inflatedText).toContain('s:13:"duration_unit";s:4:"DAYS"')
+    expect(inflatedText).not.toContain('month')
+    expect(inflatedText).not.toContain('week')
+    expect(inflatedText).not.toContain('until finished')
+  })
+
   it('builds a CLAIM-it JSON payload with diagnoses and medicines', () => {
     const payload = buildNhisClaimItExportPayload([claim], {
       yearMonth: '2026-05',
