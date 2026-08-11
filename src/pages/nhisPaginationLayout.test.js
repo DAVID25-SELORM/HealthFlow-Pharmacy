@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 const readSource = (path) => readFileSync(new URL(path, import.meta.url), 'utf8')
 
 describe('NHIS claims pagination layout', () => {
-  it('offers short and extended prescription duration presets', () => {
+  it('offers only CLAIM-it-compatible day duration presets', () => {
     const source = readSource('./Nhis.jsx')
     const durationOptions = source.slice(
       source.indexOf('const DURATION_OPTIONS = ['),
@@ -17,7 +17,9 @@ describe('NHIS claims pagination layout', () => {
     expect(durationOptions).toContain("'90 days'")
     expect(durationOptions).toContain("'120 days'")
     expect(durationOptions).toContain("'180 days'")
-    expect(durationOptions).toContain("'12 months'")
+    expect(durationOptions).toContain("'365 days'")
+    expect(durationOptions).not.toContain("'1 month'")
+    expect(durationOptions).not.toContain("'1 week'")
   })
 
   it('renders page controls above and below the claims table', () => {

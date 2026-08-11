@@ -287,25 +287,15 @@ const DURATION_OPTIONS = [
   '21 days',
   '28 days',
   '30 days',
+  '42 days',
   '45 days',
+  '56 days',
   '60 days',
+  '84 days',
   '90 days',
   '120 days',
   '180 days',
   '365 days',
-  '1 week',
-  '2 weeks',
-  '3 weeks',
-  '4 weeks',
-  '6 weeks',
-  '8 weeks',
-  '12 weeks',
-  '1 month',
-  '2 months',
-  '3 months',
-  '4 months',
-  '6 months',
-  '12 months',
 ]
 
 const makeBlankClaim = () => ({
@@ -716,6 +706,12 @@ const parseClaimDurationDays = (duration) => {
   if (value.includes('week')) return Math.round(amount * 7)
   if (value.includes('month')) return Math.round(amount * 30)
   return Math.round(amount)
+}
+
+const formatClaimDurationAsDays = (duration) => {
+  const days = parseClaimDurationDays(duration)
+  if (!days) return String(duration ?? '').trim()
+  return `${days} day${days === 1 ? '' : 's'}`
 }
 
 const getClaimPatientKey = (claim = {}) => {
@@ -3479,7 +3475,7 @@ const Nhis = () => {
       dispensaryDate: medForm.dispensaryDate || null,
       dose:          medForm.dose,
       frequency:     medForm.frequency,
-      duration:      medForm.duration,
+      duration:      formatClaimDurationAsDays(medForm.duration),
       totalAmount:   price * servedQty,
       category:      medForm.category || getCatalogCategoryForMedicine(medForm),
       // ✅ NHIS PHARMACY LEVEL PATCH START
@@ -8488,7 +8484,8 @@ const Nhis = () => {
                     value={medForm.duration}
                     disabled={isMedicineCounterAssistant}
                     onChange={(e) => setMedForm((p) => ({ ...p, duration: e.target.value }))}
-                    placeholder="Select or type duration"
+                    onBlur={(e) => setMedForm((p) => ({ ...p, duration: formatClaimDurationAsDays(e.target.value) }))}
+                    placeholder="Select or type number of days"
                   />
                   <datalist id="nhis-duration-options">
                     {DURATION_OPTIONS.map((option) => (

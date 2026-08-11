@@ -2133,6 +2133,16 @@ const parseDurationDays = (duration) => {
   return Math.round(amount)
 }
 
+export const normalizeClaimItDurationForExport = (duration) => {
+  const days = parseDurationDays(duration)
+  if (!days) return { value: null, unit: null, desc: null }
+  return {
+    value: Number(days).toFixed(2),
+    unit: 'DAYS',
+    desc: `${days} Days`,
+  }
+}
+
 const parseFrequencyPerDay = (frequency) => {
   const value = normalizeMatchText(frequency)
   if (!value) return null
@@ -2800,6 +2810,9 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
         if (!asText(medicine?.dose)) addDirectionIssue('dose')
         if (!asText(medicine?.frequency)) addDirectionIssue('dosage schedule/frequency')
         if (!asText(medicine?.duration)) addDirectionIssue('duration')
+        else if (!parseDurationDays(medicine.duration)) {
+          blockers.push(`${label}: duration must contain a valid number of days.`)
+        }
       }
     })
   }
@@ -9012,6 +9025,7 @@ const buildClaimItRows = async (payload, runtimeOptions = {}) => {
 
     claim.medicines.forEach((medicine, medicineIndex) => {
       const medicineServiceDate = getClaimItLineServiceDate(medicine.dispensaryDate, serviceDate, serviceDate, dateTo)
+      const claimItDuration = normalizeClaimItDurationForExport(medicine.duration)
       const medicineEntry = {
         _entry_id: String((claimIndex + 1) * 10000 + medicineIndex + 1),
         _claim_id: claimGuid,
@@ -9028,9 +9042,9 @@ const buildClaimItRows = async (payload, runtimeOptions = {}) => {
         frequency_value: parseFrequencyValue(medicine.frequency),
         frequency_unit: 'DAILY',
         frequency_desc: normalizeText(medicine.frequency).toLowerCase(),
-        duration_value: parseDirectionsNumber(medicine.duration),
-        duration_unit: 'DAYS',
-        duration_desc: normalizeText(medicine.duration).toLowerCase(),
+        duration_value: claimItDuration.value,
+        duration_unit: claimItDuration.unit,
+        duration_desc: claimItDuration.desc,
       }
       claimMedicineEntries.push(medicineEntry)
       medicineentries.push(medicineEntry)

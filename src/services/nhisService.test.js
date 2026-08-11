@@ -71,6 +71,7 @@ import {
   getNhisClaimIssueCounts,
   getNhisClaimExportDate,
   getClaimItCredentialUsageRows,
+  normalizeClaimItDurationForExport,
   getNhisExportScrubWarnings,
   getAllNhisDrugs,
   getNhisDrugByCode,
@@ -1592,6 +1593,23 @@ describe('assessNhisClaimReadiness', () => {
 })
 
 describe('CLAIM-it export helpers', () => {
+  it('serializes all medicine durations as CLAIM-it day values', () => {
+    expect(normalizeClaimItDurationForExport('1 month')).toEqual({
+      value: '30.00', unit: 'DAYS', desc: '30 Days',
+    })
+    expect(normalizeClaimItDurationForExport('2 months')).toEqual({
+      value: '60.00', unit: 'DAYS', desc: '60 Days',
+    })
+    expect(normalizeClaimItDurationForExport('12 weeks')).toEqual({
+      value: '84.00', unit: 'DAYS', desc: '84 Days',
+    })
+    expect(normalizeClaimItDurationForExport('90')).toEqual({
+      value: '90.00', unit: 'DAYS', desc: '90 Days',
+    })
+    expect(normalizeClaimItDurationForExport('90 days')).toEqual({
+      value: '90.00', unit: 'DAYS', desc: '90 Days',
+    })
+  })
   it('groups credential usage once across the exported service-date range', () => {
     expect(getClaimItCredentialUsageRows('CREDENTIAL-1', [
       { minDOSP: '2026-06-19', maxDOSP: '2026-06-20' },
@@ -2114,6 +2132,9 @@ describe('CLAIM-it export helpers', () => {
     expect(inflatedText).toContain('s:14:"accreditations"')
     expect(inflatedText).toContain('s:13:"dateGenerated";s:10:"2025-12-29"')
     expect(inflatedText).toContain('s:14:"accreditations";a:21:')
+    expect(inflatedText).toContain('s:14:"duration_value";s:4:"3.00"')
+    expect(inflatedText).toContain('s:13:"duration_unit";s:4:"DAYS"')
+    expect(inflatedText).toContain('s:13:"duration_desc";s:6:"3 Days"')
     expect(inflatedText).toContain('s:10:"expiryDate";s:10:"2026-11-30"')
     expect(inflatedText).toContain('s:27:"doctrine_migration_versions"')
     const attachmentData = extractAttachmentDataBuffer(inflated)
