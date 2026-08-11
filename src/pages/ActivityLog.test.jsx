@@ -42,6 +42,7 @@ vi.mock('../services/tierAccessService', () => ({
 describe('ActivityLog', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.queryBuilder.limit.mockResolvedValue({ data: [], error: null })
   })
 
   it('shows a setup error when HealthFlow Cloud is unavailable', async () => {
@@ -58,8 +59,8 @@ describe('ActivityLog', () => {
 
   it('renders logs and filters them with search', async () => {
     mocks.isSupabaseConfigured.mockReturnValue(true)
-    mocks.invokeTierAccess.mockResolvedValue({
-      logs: [
+    mocks.queryBuilder.limit.mockResolvedValue({
+      data: [
         {
           id: 'log-1',
           actor_user_id: 'user-1',
@@ -81,6 +82,7 @@ describe('ActivityLog', () => {
           created_at: '2026-04-24T11:00:00.000Z',
         },
       ],
+      error: null,
     })
 
     render(<ActivityLog />)
@@ -100,8 +102,8 @@ describe('ActivityLog', () => {
 
   it('uses details email when actor columns are empty', async () => {
     mocks.isSupabaseConfigured.mockReturnValue(true)
-    mocks.invokeTierAccess.mockResolvedValue({
-      logs: [
+    mocks.queryBuilder.limit.mockResolvedValue({
+      data: [
         {
           id: 'log-1',
           actor_user_id: null,
@@ -113,6 +115,7 @@ describe('ActivityLog', () => {
           created_at: '2026-05-09T17:49:41.000Z',
         },
       ],
+      error: null,
     })
 
     render(<ActivityLog />)
@@ -124,9 +127,8 @@ describe('ActivityLog', () => {
     expect(screen.queryByText('Unknown')).not.toBeInTheDocument()
   })
 
-  it('falls back to the direct audit table read for older tier-access deployments', async () => {
+  it('loads facility activity directly through organization-scoped RLS', async () => {
     mocks.isSupabaseConfigured.mockReturnValue(true)
-    mocks.invokeTierAccess.mockRejectedValue(new Error('Unsupported action: get_activity_logs'))
     mocks.queryBuilder.limit.mockResolvedValue({
       data: [
         {
@@ -150,5 +152,7 @@ describe('ActivityLog', () => {
     })
 
     expect(mocks.supabase.from).toHaveBeenCalledWith('audit_logs')
+    expect(mocks.queryBuilder.eq).toHaveBeenCalledWith('organization_id', 'org-1')
+    expect(mocks.invokeTierAccess).not.toHaveBeenCalled()
   })
 })

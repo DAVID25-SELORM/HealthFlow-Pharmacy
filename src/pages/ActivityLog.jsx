@@ -128,23 +128,25 @@ export default function ActivityLog() {
       let data = []
       let fetchError = null
 
-      try {
-        const result = await invokeTierAccess({ action: 'get_activity_logs', limit: 200 })
-        data = Array.isArray(result?.logs) ? result.logs : []
-      } catch (error) {
-        fetchError = error
+      if (organizationId) {
+        // Facility activity is already protected by audit_logs RLS. Reading it
+        // directly avoids an unnecessary Edge Function hop and keeps this page
+        // available even when the shared function is busy serving larger jobs.
+        const result = await supabase
+          .from('audit_logs')
+          .select('id, actor_user_id, actor_email, event_type, entity_type, action, details, created_at')
+          .eq('organization_id', organizationId)
+          .order('created_at', { ascending: false })
+          .limit(200)
 
-        const isUnsupportedAction = String(error?.message || '').toLowerCase().includes('unsupported action')
-        if (isUnsupportedAction && organizationId) {
-          const fallbackResult = await supabase
-            .from('audit_logs')
-            .select('id, actor_user_id, actor_email, event_type, entity_type, action, details, created_at')
-            .eq('organization_id', organizationId)
-            .order('created_at', { ascending: false })
-            .limit(200)
-
-          data = fallbackResult.data
-          fetchError = fallbackResult.error
+        data = result.data
+        fetchError = result.error
+      } else {
+        try {
+          const result = await invokeTierAccess({ action: 'get_activity_logs', limit: 200 })
+          data = Array.isArray(result?.logs) ? result.logs : []
+        } catch (error) {
+          fetchError = error
         }
       }
 
