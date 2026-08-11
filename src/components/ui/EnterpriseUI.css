@@ -126,7 +126,10 @@
 
 .hf-table-scroll {
   max-width: 100%;
-  overflow-x: auto;
+  max-height: min(42rem, 62dvh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .hf-data-table {

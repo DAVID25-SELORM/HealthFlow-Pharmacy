@@ -1172,6 +1172,19 @@ const Reports = () => {
     setNotice(message)
   }, [])
 
+  const scrollToReportOutput = useCallback(() => {
+    window.requestAnimationFrame(() => {
+      reportOutputRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+      reportOutputRef.current?.focus?.({ preventScroll: true })
+    })
+  }, [])
+
+  const openReportPreview = useCallback((reportId, tabId) => {
+    if (tabId) setActiveTab(tabId)
+    setSelectedReportId(reportId)
+    scrollToReportOutput()
+  }, [scrollToReportOutput])
+
   const handleTabClick = useCallback((tab) => {
     const tabReports = tab.id === 'overview'
       ? reportCatalog
@@ -1205,11 +1218,8 @@ const Reports = () => {
     setSelectedReportId('drug-patient-drilldown')
     showNotice(`Opened the patient drill down for ${resolvedDrug}.`)
 
-    window.requestAnimationFrame(() => {
-      reportOutputRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
-      reportOutputRef.current?.focus?.({ preventScroll: true })
-    })
-  }, [fastSearchResult?.drug, selectedDrug, showNotice])
+    scrollToReportOutput()
+  }, [fastSearchResult?.drug, scrollToReportOutput, selectedDrug, showNotice])
 
   const runReports = useCallback(async (nextFilters = filters) => {
     const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
@@ -1652,10 +1662,7 @@ const Reports = () => {
               <button
                 type="button"
                 className="btn btn-outline"
-                onClick={() => {
-                  setActiveTab('analytics')
-                  setSelectedReportId('top-dispensed-drugs')
-                }}
+                onClick={() => openReportPreview('top-dispensed-drugs', 'analytics')}
               >
                 View Report
               </button>
@@ -1811,13 +1818,11 @@ const Reports = () => {
                   className="btn btn-primary"
                   type="button"
                   onClick={() => {
-                    setSelectedReportId(report.id)
                     if (!hasGeneratedReports) {
+                      setSelectedReportId(report.id)
                       void runReports()
                     } else {
-                      window.requestAnimationFrame(() => {
-                        reportOutputRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
-                      })
+                      openReportPreview(report.id, report.tab)
                     }
                   }}
                 >

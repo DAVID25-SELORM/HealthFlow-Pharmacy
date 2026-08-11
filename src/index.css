@@ -113,10 +113,24 @@ table {
 [class*="table-wrap"],
 [class*="table-wrapper"],
 .table-container,
-.sync-failure-tables {
+.sync-failure-tables,
+.hf-table-scroll {
   max-width: 100%;
-  overflow-x: auto;
+  max-height: min(42rem, 62dvh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   -webkit-overflow-scrolling: touch;
+}
+
+[class*="table-wrap"] table thead th,
+[class*="table-wrapper"] table thead th,
+.table-container table thead th,
+.sync-failure-tables table thead th,
+.hf-table-scroll table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
 }
 
 .modal-overlay,

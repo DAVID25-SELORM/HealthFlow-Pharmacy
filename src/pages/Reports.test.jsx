@@ -447,6 +447,24 @@ describe('Reports', () => {
     expect(screen.getByText(/NHIS Claims is not available yet.*future update/i)).toBeInTheDocument()
   })
 
+  it('opens and focuses the Top 10 dispensed drugs report', async () => {
+    const scrollIntoView = vi.fn()
+    const focus = vi.fn()
+    Element.prototype.scrollIntoView = scrollIntoView
+    HTMLElement.prototype.focus = focus
+    render(<Reports />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Generate Reports/i }))
+    await waitFor(() => expect(mocks.getReportBundle).toHaveBeenCalled())
+    fireEvent.click(screen.getByRole('button', { name: 'View Report' }))
+
+    expect(screen.getAllByRole('heading', { name: 'Top 10 Dispensed Drugs' }).length).toBeGreaterThan(0)
+    await waitFor(() => {
+      expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' })
+      expect(focus).toHaveBeenCalled()
+    })
+  })
+
   it('does not expose the drug analytics panel to roles without analytics reports', async () => {
     mocks.useAuth.mockReturnValue({
       role: 'cashier',
