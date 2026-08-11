@@ -283,10 +283,28 @@ const FREQUENCY_OPTIONS = [
 ]
 const DURATION_OPTIONS = [
   ...Array.from({ length: 14 }, (_, index) => `${index + 1} day${index === 0 ? '' : 's'}`),
+  '21 days',
+  '28 days',
+  '30 days',
+  '45 days',
+  '60 days',
+  '90 days',
+  '120 days',
+  '180 days',
+  '365 days',
   '1 week',
   '2 weeks',
   '3 weeks',
+  '4 weeks',
+  '6 weeks',
+  '8 weeks',
+  '12 weeks',
   '1 month',
+  '2 months',
+  '3 months',
+  '4 months',
+  '6 months',
+  '12 months',
 ]
 
 const makeBlankClaim = () => ({
