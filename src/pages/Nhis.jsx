@@ -50,6 +50,9 @@ import {
   checkNhisExportReadiness,
   prepareNhisClaimsExport,
   prepareNhisSingleClaimExport,
+  buildNhisDurationRepairReview,
+  analyzeNhisDurationForRepair,
+  applyNhisDurationRepairs,
   submitNhisClaimDirect,
   assessNhisClaimReadiness,
   validateNhisClaimFinalReadiness,
@@ -1497,6 +1500,9 @@ const Nhis = () => {
   const [scrubWarningSearch, setScrubWarningSearch] = useState('')
   const [scrubWarningOverrideReason, setScrubWarningOverrideReason] = useState('')
   const [showScrubWarningOverride, setShowScrubWarningOverride] = useState(false)
+  const [durationRepairReview, setDurationRepairReview] = useState(null)
+  const [durationRepairValues, setDurationRepairValues] = useState({})
+  const [durationRepairSaving, setDurationRepairSaving] = useState(false)
   const [viewClaim, setViewClaim]                   = useState(null)
   const [reopenDispensaryClaim, setReopenDispensaryClaim] = useState(null)
   const [reopenDispensaryReason, setReopenDispensaryReason] = useState('')
@@ -1627,6 +1633,7 @@ const Nhis = () => {
   // Export" button should resume the batch export flow or a specific
   // single-claim export — set by whichever flow opens that shared modal.
   const exportResumeTargetRef = useRef({ type: 'batch' })
+  const durationRepairResumeTargetRef = useRef({ type: 'batch' })
 
   useEffect(() => {
     if (!exporting || !exportStartedAt) {
@@ -5307,6 +5314,73 @@ const Nhis = () => {
     return stage
   }
 
+  const requestDurationRepairReview = (preparedReadiness, resumeTarget = { type: 'batch' }) => {
+    const review = preparedReadiness?.durationRepairReview
+      || buildNhisDurationRepairReview(preparedReadiness?.claims || [])
+    if (!review.repairRows.length) return false
+    const initialValues = {}
+    review.repairRows.forEach((row) => {
+      initialValues[row.medicineId || `${row.claimId}:${row.medicineIndex}`] = row.proposedValue || ''
+    })
+    durationRepairResumeTargetRef.current = resumeTarget
+    setDurationRepairReview(review)
+    setDurationRepairValues(initialValues)
+    setShowExportModal(false)
+    notify(
+      `${review.repairRows.length} medicine duration${review.repairRows.length === 1 ? '' : 's'} must be reviewed before export.`,
+      review.manualReview ? 'error' : 'warning'
+    )
+    return true
+  }
+
+  const handleApplyDurationRepairs = async () => {
+    if (!durationRepairReview) return
+    const repairs = durationRepairReview.repairRows.map((row) => {
+      const key = row.medicineId || `${row.claimId}:${row.medicineIndex}`
+      return {
+        ...row,
+        newValue: normalizeText(durationRepairValues[key]),
+        repairType: row.status === 'automatic' ? 'automatic' : 'manual',
+      }
+    })
+    const invalidRows = repairs.filter((repair) => (
+      !repair.medicineId || analyzeNhisDurationForRepair(repair.newValue).status !== 'valid'
+    ))
+    if (invalidRows.length) {
+      notify(
+        `${invalidRows.length} duration${invalidRows.length === 1 ? '' : 's'} still need a positive whole number followed by day or days.`,
+        'error'
+      )
+      return
+    }
+
+    try {
+      setDurationRepairSaving(true)
+      const repaired = await applyNhisDurationRepairs(repairs)
+      preparedReadinessCacheRef.current = null
+      setDurationRepairReview(null)
+      setDurationRepairValues({})
+      await refreshClaimsOverview()
+      notify(
+        `${repaired.length} medicine duration${repaired.length === 1 ? '' : 's'} repaired and audited. Rescanning before export.`,
+        'success'
+      )
+      const resumeTarget = durationRepairResumeTargetRef.current
+      window.setTimeout(() => {
+        if (resumeTarget?.type === 'single' && resumeTarget.claim) {
+          void handleExportSingleClaim(resumeTarget.claim)
+        } else {
+          setShowExportModal(true)
+          void handleExport()
+        }
+      }, 0)
+    } catch (err) {
+      notify(getNhisRequestErrorMessage(err, 'Duration repair failed.', 'No medicine durations were changed.'), 'error')
+    } finally {
+      setDurationRepairSaving(false)
+    }
+  }
+
   const applyExportReadinessError = (err, fallbackPrefix = 'Claim scrub failed.', options = {}) => {
     const { preserveFilter = false } = options
     if (isNhisDuplicateClaimsError(err)) {
@@ -5354,7 +5428,9 @@ const Nhis = () => {
       // block export — it already validates every claim in the period (any
       // status), not just served/submitted ones. Its readinessIssues feed the
       // review modal below via applyExportReadinessError on failure.
-      const result = await checkNhisExportReadiness(requestOptions)
+      const preparedReadiness = await prepareNhisClaimsExport(requestOptions)
+      if (requestDurationRepairReview(preparedReadiness, { type: 'batch' })) return
+      const result = await checkNhisExportReadiness({ ...requestOptions, preparedReadiness })
       await tryLogAuditEvent({
         eventType: 'nhis_claim.scrub_batch',
         entityType: 'nhis_claims',
@@ -5493,6 +5569,7 @@ const Nhis = () => {
         preparedReadiness = cached.preparedReadiness
       } else {
         preparedReadiness = await prepareNhisClaimsExport(progressOptions)
+        if (requestDurationRepairReview(preparedReadiness, { type: 'batch' })) return
         await checkNhisExportReadiness({ ...progressOptions, preparedReadiness })
       }
       const warningClaims = preparedReadiness.warningClaims || []
@@ -5615,6 +5692,7 @@ const Nhis = () => {
         preparedReadiness = cached.preparedReadiness
       } else {
         preparedReadiness = await prepareNhisSingleClaimExport(claim.id, progressOptions)
+        if (requestDurationRepairReview(preparedReadiness, { type: 'single', claim })) return
         await checkNhisExportReadiness({ ...progressOptions, preparedReadiness })
       }
       const warningClaims = preparedReadiness.warningClaims || []
@@ -9824,6 +9902,92 @@ const Nhis = () => {
       {/* ══════════════════════════════════════════════════════════════
           REJECT MODAL
       ══════════════════════════════════════════════════════════════ */}
+      {durationRepairReview && (
+        <div className="modal-overlay">
+          <div className="modal-panel modal-panel--duration-repair">
+            <div className="modal-header">
+              <div>
+                <h2>Pre-Export Duration Review</h2>
+                <small>Corrections are saved to HealthFlow and audited before the batch is generated.</small>
+              </div>
+              <button
+                className="modal-close"
+                disabled={durationRepairSaving}
+                onClick={() => {
+                  setDurationRepairReview(null)
+                  setDurationRepairValues({})
+                }}
+              ><X size={18} /></button>
+            </div>
+            <div className="duration-repair-body">
+              <div className="duration-repair-summary">
+                <div><strong>{durationRepairReview.claimsScanned}</strong><span>Claims scanned</span></div>
+                <div><strong>{durationRepairReview.alreadyValid}</strong><span>Already valid</span></div>
+                <div><strong>{durationRepairReview.automaticallyCorrected}</strong><span>Safe corrections</span></div>
+                <div className={durationRepairReview.manualReview ? 'has-warning' : ''}>
+                  <strong>{durationRepairReview.manualReview}</strong><span>Manual review</span>
+                </div>
+              </div>
+              <p className="duration-repair-note">
+                Exact weeks use 7 days, exact months use 30 days, and bare whole numbers are treated as days only because this is the medicine duration field. Ambiguous values are never guessed.
+              </p>
+              <div className="duration-repair-table-wrap">
+                <table className="data-table duration-repair-table">
+                  <thead>
+                    <tr><th>Claim</th><th>Medicine</th><th>Previous</th><th>Correct duration</th><th>Method</th></tr>
+                  </thead>
+                  <tbody>
+                    {durationRepairReview.repairRows.map((row) => {
+                      const key = row.medicineId || `${row.claimId}:${row.medicineIndex}`
+                      return (
+                        <tr key={key}>
+                          <td>{row.claimNumber}</td>
+                          <td><strong>{row.medicineCode || '—'}</strong><small>{row.medicineName}</small></td>
+                          <td>{row.originalValue || <em>Missing</em>}</td>
+                          <td>
+                            <input
+                              className="form-input duration-repair-input"
+                              value={durationRepairValues[key] || ''}
+                              readOnly={row.status === 'automatic'}
+                              placeholder="e.g. 90 days"
+                              onChange={(event) => setDurationRepairValues((current) => ({
+                                ...current,
+                                [key]: event.target.value,
+                              }))}
+                            />
+                            <small>{row.reason}</small>
+                          </td>
+                          <td><span className={`duration-repair-method duration-repair-method--${row.status}`}>
+                            {row.status === 'automatic' ? 'Automatic' : 'Manual'}
+                          </span></td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button
+                className="btn btn-secondary"
+                disabled={durationRepairSaving}
+                onClick={() => {
+                  setDurationRepairReview(null)
+                  setDurationRepairValues({})
+                }}
+              >Cancel Export</button>
+              <button
+                className="btn btn-primary"
+                disabled={durationRepairSaving}
+                onClick={() => { void handleApplyDurationRepairs() }}
+              >
+                <CheckCircle2 size={14} /> {durationRepairSaving ? 'Saving repairs...' : 'Apply Repairs & Rescan'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {rejectTarget && (
         <div className="modal-overlay">
           <div className="modal-panel modal-panel--export">

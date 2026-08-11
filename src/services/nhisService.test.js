@@ -71,6 +71,8 @@ import {
   getNhisClaimIssueCounts,
   getNhisClaimExportDate,
   getClaimItCredentialUsageRows,
+  analyzeNhisDurationForRepair,
+  buildNhisDurationRepairReview,
   normalizeClaimItDurationForExport,
   getNhisExportScrubWarnings,
   getAllNhisDrugs,
@@ -1608,6 +1610,39 @@ describe('CLAIM-it export helpers', () => {
     })
     expect(normalizeClaimItDurationForExport('90 days')).toEqual({
       value: '90.00', unit: 'DAYS', desc: '90 Days',
+    })
+  })
+  it('classifies only unambiguous legacy durations for automatic repair', () => {
+    expect(analyzeNhisDurationForRepair('90 days').status).toBe('valid')
+    expect(analyzeNhisDurationForRepair('1 month')).toMatchObject({ status: 'automatic', proposedValue: '30 days' })
+    expect(analyzeNhisDurationForRepair('2 months')).toMatchObject({ status: 'automatic', proposedValue: '60 days' })
+    expect(analyzeNhisDurationForRepair('2 weeks')).toMatchObject({ status: 'automatic', proposedValue: '14 days' })
+    expect(analyzeNhisDurationForRepair('90')).toMatchObject({ status: 'automatic', proposedValue: '90 days' })
+    expect(analyzeNhisDurationForRepair('about 2 months').status).toBe('manual')
+    expect(analyzeNhisDurationForRepair('2-3 weeks').status).toBe('manual')
+    expect(analyzeNhisDurationForRepair('').status).toBe('manual')
+  })
+  it('builds a per-medicine duration repair review for an existing batch', () => {
+    const review = buildNhisDurationRepairReview([
+      {
+        id: 'claim-1', claim_number: 'CLM-001',
+        nhis_claim_medicines: [
+          { id: 'med-1', drug_code: 'A', duration: '5 days' },
+          { id: 'med-2', drug_code: 'B', duration: '2 months' },
+        ],
+      },
+      {
+        id: 'claim-2', claim_number: 'CLM-002',
+        nhis_claim_medicines: [{ id: 'med-3', drug_code: 'C', duration: 'until finished' }],
+      },
+    ])
+    expect(review).toMatchObject({
+      claimsScanned: 2, valuesScanned: 3, alreadyValid: 1,
+      automaticallyCorrected: 1, manualReview: 1,
+    })
+    expect(review.repairRows).toHaveLength(2)
+    expect(review.repairRows[0]).toMatchObject({
+      claimId: 'claim-1', medicineId: 'med-2', proposedValue: '60 days',
     })
   })
   it('groups credential usage once across the exported service-date range', () => {

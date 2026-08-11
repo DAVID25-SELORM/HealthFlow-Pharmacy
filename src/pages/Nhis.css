@@ -2629,6 +2629,73 @@
   white-space: nowrap;
 }
 
+.modal-panel--duration-repair {
+  width: min(1080px, 94vw);
+  max-height: 90vh;
+}
+
+.duration-repair-body {
+  min-height: 0;
+  padding: 1rem 1.25rem;
+  overflow: hidden;
+}
+
+.duration-repair-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.duration-repair-summary > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  background: var(--gray-50);
+}
+
+.duration-repair-summary strong { font-size: 1.15rem; }
+.duration-repair-summary span { color: var(--gray-600); font-size: 0.75rem; }
+.duration-repair-summary .has-warning { border-color: #fbbf24; background: #fffbeb; }
+
+.duration-repair-note {
+  margin: 0.75rem 0;
+  color: var(--gray-600);
+  font-size: 0.8rem;
+}
+
+.duration-repair-table-wrap {
+  max-height: min(50vh, 440px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+}
+
+.duration-repair-table { min-width: 780px; }
+.duration-repair-table thead { position: sticky; top: 0; z-index: 2; background: white; }
+.duration-repair-table td { vertical-align: top; }
+.duration-repair-table td > small { display: block; margin-top: 0.15rem; color: var(--gray-500); }
+.duration-repair-input { min-width: 9rem; }
+.duration-repair-input[readonly] { background: var(--gray-50); }
+
+.duration-repair-method {
+  display: inline-flex;
+  padding: 0.2rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.duration-repair-method--automatic { background: #dcfce7; color: #166534; }
+.duration-repair-method--manual { background: #fef3c7; color: #92400e; }
+
+@media (max-width: 700px) {
+  .duration-repair-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
 .nhis-services-panel {
   border-top: 1px solid var(--gray-200);
   margin-top: 1rem;

@@ -2143,6 +2143,105 @@ export const normalizeClaimItDurationForExport = (duration) => {
   }
 }
 
+export const analyzeNhisDurationForRepair = (duration) => {
+  const originalValue = normalizeText(duration)
+  const value = originalValue.toLowerCase().replace(/\s+/g, ' ').trim()
+  if (!value) {
+    return { status: 'manual', originalValue, proposedValue: '', reason: 'Duration is missing.' }
+  }
+
+  const validMatch = value.match(/^(\d+)\s+days?$/)
+  if (validMatch && Number(validMatch[1]) > 0) {
+    return { status: 'valid', originalValue, proposedValue: originalValue, days: Number(validMatch[1]) }
+  }
+
+  const bareNumberMatch = value.match(/^(\d+)$/)
+  if (bareNumberMatch && Number(bareNumberMatch[1]) > 0) {
+    const days = Number(bareNumberMatch[1])
+    return {
+      status: 'automatic',
+      originalValue,
+      proposedValue: `${days} day${days === 1 ? '' : 's'}`,
+      days,
+      reason: 'Bare number in the medicine duration field.',
+    }
+  }
+
+  const measuredMatch = value.match(/^(\d+)\s*(weeks?|months?)$/)
+  if (measuredMatch && Number(measuredMatch[1]) > 0) {
+    const amount = Number(measuredMatch[1])
+    const days = measuredMatch[2].startsWith('week') ? amount * 7 : amount * 30
+    return {
+      status: 'automatic',
+      originalValue,
+      proposedValue: `${days} day${days === 1 ? '' : 's'}`,
+      days,
+      reason: measuredMatch[2].startsWith('week')
+        ? 'Exact week duration converted at 7 days per week.'
+        : 'Exact month duration converted at 30 days per month.',
+    }
+  }
+
+  return {
+    status: 'manual',
+    originalValue,
+    proposedValue: '',
+    reason: 'The value is ambiguous or is not a supported CLAIM-it day duration.',
+  }
+}
+
+export const buildNhisDurationRepairReview = (claims = []) => {
+  const rows = []
+  ;(claims || []).forEach((claim) => {
+    const medicines = claim.nhis_claim_medicines || claim.medicines || []
+    medicines.forEach((medicine, medicineIndex) => {
+      const analysis = analyzeNhisDurationForRepair(medicine.duration)
+      rows.push({
+        ...analysis,
+        claimId: claim.id,
+        claimNumber: claim.claim_number || claim.claimNumber || claim.id,
+        medicineId: medicine.id,
+        medicineIndex,
+        medicineCode: medicine.drug_code || medicine.drugCode || '',
+        medicineName: medicine.description || medicine.generic_name || medicine.drug_name || 'Medicine',
+      })
+    })
+  })
+  return {
+    claimsScanned: (claims || []).length,
+    valuesScanned: rows.length,
+    alreadyValid: rows.filter((row) => row.status === 'valid').length,
+    automaticallyCorrected: rows.filter((row) => row.status === 'automatic').length,
+    manualReview: rows.filter((row) => row.status === 'manual').length,
+    rows,
+    repairRows: rows.filter((row) => row.status !== 'valid'),
+  }
+}
+
+export const applyNhisDurationRepairs = async (repairs = []) => {
+  if (!Array.isArray(repairs) || !repairs.length) return []
+  if (shouldUseBranchServer()) {
+    throw new Error('Duration repair requires an online cloud connection so every correction can be recorded in the immutable audit trail.')
+  }
+  const payload = repairs.map((repair) => {
+    const analyzed = analyzeNhisDurationForRepair(repair.newValue || repair.proposedValue)
+    if (analyzed.status !== 'valid') {
+      throw new Error('Every repaired duration must be a positive whole number followed by day or days.')
+    }
+    return {
+      medicine_id: repair.medicineId,
+      old_duration: repair.originalValue || null,
+      new_duration: `${analyzed.days} day${analyzed.days === 1 ? '' : 's'}`,
+      repair_type: repair.repairType || (repair.status === 'automatic' ? 'automatic' : 'manual'),
+    }
+  })
+  const { data, error } = await supabase.rpc('repair_nhis_claim_medicine_durations', {
+    p_repairs: payload,
+  })
+  if (error) throw error
+  return Array.isArray(data) ? data : []
+}
+
 const parseFrequencyPerDay = (frequency) => {
   const value = normalizeMatchText(frequency)
   if (!value) return null
@@ -10140,6 +10239,7 @@ export const prepareNhisClaimsExport = async (options = {}) => {
   const exportTiming = options.exportTiming || createNhisExportTiming(options)
   const preparedOptions = { ...options, exportTiming }
   const readiness = await getNhisExportClaimsAndBlockers(preparedOptions)
+  const durationRepairReview = buildNhisDurationRepairReview(readiness.claims)
   if (readiness.duplicateGroups.length || readiness.exportBlockingIssues.length) {
     exportTiming.mark('skipping warning checks due to blockers', {
       duplicateGroupCount: readiness.duplicateGroups.length,
@@ -10147,6 +10247,7 @@ export const prepareNhisClaimsExport = async (options = {}) => {
     })
     return {
       ...readiness,
+      durationRepairReview,
       warningClaims: [],
       exportTiming,
     }
@@ -10161,6 +10262,7 @@ export const prepareNhisClaimsExport = async (options = {}) => {
 
   return {
     ...readiness,
+    durationRepairReview,
     warningClaims,
     exportTiming,
   }
@@ -10168,6 +10270,10 @@ export const prepareNhisClaimsExport = async (options = {}) => {
 
 export const checkNhisExportReadiness = async (options = {}) => {
   const readiness = options.preparedReadiness || await getNhisExportClaimsAndBlockers(options)
+  const durationRepairReview = readiness.durationRepairReview || buildNhisDurationRepairReview(readiness.claims)
+  if (durationRepairReview.repairRows.length) {
+    throw new Error(`${durationRepairReview.repairRows.length} medicine duration value(s) require repair before export.`)
+  }
   if (readiness.duplicateGroups.length) {
     throw createNhisDuplicateClaimsError(readiness.duplicateGroups, {
       exportBlockingIssues: readiness.exportBlockingIssues,
@@ -10193,6 +10299,7 @@ export const exportNhisClaimsFile = async (options = {}) => {
     organizationType,
     duplicateGroups,
     exportBlockingIssues,
+    durationRepairReview,
     exportTiming,
   } = options.preparedReadiness || await prepareNhisClaimsExport(options)
   const fileTiming = exportTiming || createNhisExportTiming(options)
@@ -10210,6 +10317,9 @@ export const exportNhisClaimsFile = async (options = {}) => {
   }
   if (exportBlockingIssues.length) {
     throwNhisExportBlockingIssues(exportBlockingIssues)
+  }
+  if ((durationRepairReview || buildNhisDurationRepairReview(claims)).repairRows.length) {
+    throw new Error('Medicine duration repair and review must be completed before export.')
   }
 
   if (directSubmit) {
