@@ -48,5 +48,7 @@ describe('NHIS claims pagination layout', () => {
     expect(source).toContain('All duration issues resolved — Ready to export')
     expect(source).toContain('Apply Corrections & Continue')
     expect(source).toContain('[30, 60, 90, 180].map')
+    expect(source).toContain('normalizeNhisManualDurationCorrection(enteredValue)')
+    expect(source).toContain('onBlur={() => {')
   })
 })

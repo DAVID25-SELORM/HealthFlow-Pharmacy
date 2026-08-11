@@ -51,7 +51,7 @@ import {
   prepareNhisClaimsExport,
   prepareNhisSingleClaimExport,
   buildNhisDurationRepairReview,
-  analyzeNhisDurationForRepair,
+  normalizeNhisManualDurationCorrection,
   applyNhisDurationRepairs,
   submitNhisClaimDirect,
   assessNhisClaimReadiness,
@@ -5320,9 +5320,11 @@ const Nhis = () => {
   const durationRepairEvaluatedRows = (durationRepairReview?.rows || []).map((row) => {
     const key = getDurationRepairRowKey(row)
     const enteredValue = normalizeText(durationRepairValues[key] ?? row.proposedValue)
-    const manualReady = row.status === 'manual'
-      && analyzeNhisDurationForRepair(enteredValue).status === 'valid'
-    return { ...row, key, enteredValue, manualReady }
+    const canonicalManualValue = row.status === 'manual'
+      ? normalizeNhisManualDurationCorrection(enteredValue)
+      : null
+    const manualReady = row.status === 'manual' && Boolean(canonicalManualValue)
+    return { ...row, key, enteredValue, canonicalManualValue, manualReady }
   })
   const durationRepairUnresolvedCount = durationRepairEvaluatedRows.filter((row) => (
     row.status === 'manual' && !row.manualReady
@@ -5378,14 +5380,17 @@ const Nhis = () => {
     if (!durationRepairReview) return
     const repairs = durationRepairReview.repairRows.map((row) => {
       const key = row.medicineId || `${row.claimId}:${row.medicineIndex}`
+      const enteredValue = normalizeText(durationRepairValues[key])
       return {
         ...row,
-        newValue: normalizeText(durationRepairValues[key]),
+        newValue: row.status === 'manual'
+          ? normalizeNhisManualDurationCorrection(enteredValue)
+          : enteredValue,
         repairType: row.status === 'automatic' ? 'automatic' : 'manual',
       }
     })
     const invalidRows = repairs.filter((repair) => (
-      !repair.medicineId || analyzeNhisDurationForRepair(repair.newValue).status !== 'valid'
+      !repair.medicineId || !repair.newValue
     ))
     if (invalidRows.length) {
       setDurationRepairFilter('manual')
@@ -10033,6 +10038,17 @@ const Nhis = () => {
                                 ...current,
                                 [row.key]: event.target.value,
                               }))}
+                              onBlur={() => {
+                                const canonicalValue = normalizeNhisManualDurationCorrection(
+                                  durationRepairValues[row.key]
+                                )
+                                if (canonicalValue) {
+                                  setDurationRepairValues((current) => ({
+                                    ...current,
+                                    [row.key]: canonicalValue,
+                                  }))
+                                }
+                              }}
                             />
                             {row.status === 'manual' && (
                               <div className="duration-repair-quick-actions" aria-label="Quick duration values">

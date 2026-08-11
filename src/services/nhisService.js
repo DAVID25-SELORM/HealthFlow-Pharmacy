@@ -2143,6 +2143,16 @@ export const normalizeClaimItDurationForExport = (duration) => {
   }
 }
 
+export const normalizeNhisManualDurationCorrection = (duration) => {
+  const value = normalizeText(duration).trim()
+  const match = value.match(/^(\d+)\s*days?$/i)
+  if (!match) return null
+
+  const days = Number(match[1])
+  if (!Number.isSafeInteger(days) || days <= 0) return null
+  return `${days} day${days === 1 ? '' : 's'}`
+}
+
 export const analyzeNhisDurationForRepair = (duration) => {
   const originalValue = normalizeText(duration)
   const value = originalValue.toLowerCase().replace(/\s+/g, ' ').trim()

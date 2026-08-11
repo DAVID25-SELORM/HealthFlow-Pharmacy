@@ -74,6 +74,7 @@ import {
   analyzeNhisDurationForRepair,
   buildNhisDurationRepairReview,
   normalizeClaimItDurationForExport,
+  normalizeNhisManualDurationCorrection,
   getNhisExportScrubWarnings,
   getAllNhisDrugs,
   getNhisDrugByCode,
@@ -1630,6 +1631,22 @@ describe('CLAIM-it export helpers', () => {
     expect(analyzeNhisDurationForRepair('30DAYD').status).toBe('manual')
     expect(analyzeNhisDurationForRepair('START').status).toBe('manual')
     expect(analyzeNhisDurationForRepair('').status).toBe('manual')
+  })
+  it('canonicalizes safe manual day corrections and rejects malformed values', () => {
+    expect(normalizeNhisManualDurationCorrection('1 DAY')).toBe('1 day')
+    expect(normalizeNhisManualDurationCorrection('1 DAYS')).toBe('1 day')
+    expect(normalizeNhisManualDurationCorrection('1 day')).toBe('1 day')
+    expect(normalizeNhisManualDurationCorrection('30 DAY')).toBe('30 days')
+    expect(normalizeNhisManualDurationCorrection('30 DAYS')).toBe('30 days')
+    expect(normalizeNhisManualDurationCorrection('30day')).toBe('30 days')
+    expect(normalizeNhisManualDurationCorrection('30days')).toBe('30 days')
+    expect(normalizeNhisManualDurationCorrection('  30   days  ')).toBe('30 days')
+    expect(normalizeNhisManualDurationCorrection('30DAYD')).toBeNull()
+    expect(normalizeNhisManualDurationCorrection('START')).toBeNull()
+    expect(normalizeNhisManualDurationCorrection('1 day5')).toBeNull()
+    expect(normalizeNhisManualDurationCorrection('0 days')).toBeNull()
+    expect(normalizeNhisManualDurationCorrection('2 weeks')).toBeNull()
+    expect(normalizeNhisManualDurationCorrection('90')).toBeNull()
   })
   it('builds a per-medicine duration repair review for an existing batch', () => {
     const review = buildNhisDurationRepairReview([
