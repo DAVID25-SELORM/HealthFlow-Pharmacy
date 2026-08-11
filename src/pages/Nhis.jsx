@@ -9922,10 +9922,11 @@ const Nhis = () => {
             <div className="duration-repair-body">
               <div className="duration-repair-summary">
                 <div><strong>{durationRepairReview.claimsScanned}</strong><span>Claims scanned</span></div>
-                <div><strong>{durationRepairReview.alreadyValid}</strong><span>Already valid</span></div>
-                <div><strong>{durationRepairReview.automaticallyCorrected}</strong><span>Safe corrections</span></div>
+                <div><strong>{durationRepairReview.valuesScanned}</strong><span>Medicine durations checked</span></div>
+                <div><strong>{durationRepairReview.alreadyValid}</strong><span>Durations already valid</span></div>
+                <div><strong>{durationRepairReview.automaticallyCorrected}</strong><span>Safe duration corrections</span></div>
                 <div className={durationRepairReview.manualReview ? 'has-warning' : ''}>
-                  <strong>{durationRepairReview.manualReview}</strong><span>Manual review</span>
+                  <strong>{durationRepairReview.manualReview}</strong><span>Durations needing review</span>
                 </div>
               </div>
               <p className="duration-repair-note">
@@ -9941,8 +9942,8 @@ const Nhis = () => {
                       const key = row.medicineId || `${row.claimId}:${row.medicineIndex}`
                       return (
                         <tr key={key}>
-                          <td>{row.claimNumber}</td>
-                          <td><strong>{row.medicineCode || '—'}</strong><small>{row.medicineName}</small></td>
+                          <td className="duration-repair-claim">{row.claimNumber}</td>
+                          <td className="duration-repair-medicine"><strong>{row.medicineCode || '—'}</strong><small>{row.medicineName}</small></td>
                           <td>{row.originalValue || <em>Missing</em>}</td>
                           <td>
                             <input

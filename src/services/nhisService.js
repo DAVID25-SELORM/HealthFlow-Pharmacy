@@ -2150,9 +2150,20 @@ export const analyzeNhisDurationForRepair = (duration) => {
     return { status: 'manual', originalValue, proposedValue: '', reason: 'Duration is missing.' }
   }
 
-  const validMatch = value.match(/^(\d+)\s+days?$/)
-  if (validMatch && Number(validMatch[1]) > 0) {
-    return { status: 'valid', originalValue, proposedValue: originalValue, days: Number(validMatch[1]) }
+  const dayMatch = value.match(/^(\d+)\s*days?$/)
+  if (dayMatch && Number(dayMatch[1]) > 0) {
+    const days = Number(dayMatch[1])
+    const proposedValue = `${days} day${days === 1 ? '' : 's'}`
+    if (originalValue === proposedValue) {
+      return { status: 'valid', originalValue, proposedValue, days }
+    }
+    return {
+      status: 'automatic',
+      originalValue,
+      proposedValue,
+      days,
+      reason: 'Day duration formatting normalized for CLAIM-it.',
+    }
   }
 
   const bareNumberMatch = value.match(/^(\d+)$/)
