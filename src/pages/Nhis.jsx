@@ -110,6 +110,7 @@ import { parseNhisClinicalRuleFile, generateNhisClinicalRuleTemplate } from '../
 import { isGhanaCardNumber, normalizeNhiaMemberNumber } from '../utils/nhiaMemberNumber'
 import {
   applyNhiaFacilityDefaults,
+  getNhiaAccreditationDateGenerated,
   getNhiaAccreditationExpiryDate,
   hasNhiaFacilitySettings,
 } from '../utils/nhiaFacilityDefaults'
@@ -3698,6 +3699,7 @@ const Nhis = () => {
     credentialCode: resolvedNhiaSettings?.credentialCode || resolvedNhiaSettings?.credential_code || resolvedNhiaSettings?.facilityCode || '',
     licenseNumber: resolvedNhiaSettings?.licenseNumber || resolvedNhiaSettings?.license_number || organization?.license_number || '',
     accreditationExpiryDate: getNhiaAccreditationExpiryDate(resolvedNhiaSettings),
+    accreditationDateGenerated: getNhiaAccreditationDateGenerated(resolvedNhiaSettings),
     _inferredProviderClassLevel: resolvedNhiaSettings?._inferredProviderClassLevel,
     _inferredPharmacyFacilityLevel: resolvedNhiaSettings?._inferredPharmacyFacilityLevel,
     // ✅ NHIA CONFIG PATCH END

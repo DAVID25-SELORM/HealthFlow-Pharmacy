@@ -50,6 +50,7 @@ import {
   getNhiaProviderProfileByDescription,
   getNhiaProviderProfileOptionsForOrganization,
   getNhiaProviderProfileValidation,
+  getNhiaAccreditationDateGenerated,
   normalizeNhiaAccreditationExpiryDate,
   normalizeNhiaFacilityTypeForOrganization,
 } from '../utils/nhiaFacilityDefaults'
@@ -142,6 +143,7 @@ const blankNhiaApiForm = {
   credentialCode: '',
   licenseNumber: '',
   accreditationExpiryDate: '',
+  accreditationDateGenerated: '',
   // ✅ NHIA CONFIG PATCH END
   // ✅ NHIA API ARCHITECTURE PATCH START
   integrationMode: 'claimit_assisted',
@@ -249,6 +251,7 @@ const toNhiaApiForm = (settings, organization) => {
     memberLookupEndpointPath: resolved.memberLookupEndpointPath || resolved.member_lookup_endpoint_path || resolved.memberLookupEndpoint || resolved.member_lookup_endpoint || '/api/hmis/genCCC',
     claimitSubmitBaseUrl: isNhiaEligibilityBaseUrl(resolvedClaimItSubmitBaseUrl) ? '' : resolvedClaimItSubmitBaseUrl,
     accreditationExpiryDate: normalizeDateInputValue(resolved.accreditationExpiryDate),
+    accreditationDateGenerated: normalizeDateInputValue(getNhiaAccreditationDateGenerated(resolved)),
     hasApiKey,
     hasApiSecret,
     hasUsername,
@@ -337,6 +340,12 @@ const mergeNhiaSaveReadback = (submitted = {}, saved = {}) => ({
     saved?.accreditationExpiry,
     saved?.nhiaAccreditationExpiry,
     submitted.accreditationExpiryDate
+  ),
+  accreditationDateGenerated: getFirstNhiaValue(
+    saved?.accreditationDateGenerated,
+    saved?.accreditationGeneratedDate,
+    saved?.accreditation_date_generated,
+    submitted.accreditationDateGenerated
   ),
 })
 
@@ -1212,6 +1221,7 @@ const Settings = () => {
           ? ''
           : nhiaApiForm.claimitSubmitBaseUrl
       const accreditationExpiryDate = normalizeDateInputValue(nhiaApiForm.accreditationExpiryDate)
+      const accreditationDateGenerated = normalizeDateInputValue(nhiaApiForm.accreditationDateGenerated)
       const nhiaOrganizationId = organization?.id || organization?.organization_id || nhiaApiForm.organizationId || nhiaApiForm.organization_id
       const credentialPayload = buildNhiaCredentialsPayload(nhiaApiForm.credentials)
       const preservedCredentials = {
@@ -1223,6 +1233,7 @@ const Settings = () => {
         organizationId: nhiaOrganizationId,
         organization_id: nhiaOrganizationId,
         accreditationExpiryDate,
+        accreditationDateGenerated,
         claims_officer_name: nhiaApiForm.claimsOfficerName,
         facilityType: nhiaFacilityType,
         pharmacyFacilityLevel: isHospitalOrganization ? '' : nhiaApiForm.pharmacyFacilityLevel,
@@ -1269,6 +1280,9 @@ const Settings = () => {
           effectiveNhiaApiSettings?.accreditation_expiry_date ??
           effectiveNhiaApiSettings?.expiryDate
       )
+      const savedAccreditationDateGenerated = normalizeDateInputValue(
+        getNhiaAccreditationDateGenerated(effectiveNhiaApiSettings)
+      )
       const savedClaimsOfficerName = effectiveNhiaApiSettings?.claimsOfficerName ?? effectiveNhiaApiSettings?.claims_officer_name
       const hasSavedApiKey = getSavedNhiaCredentialFlag(
         effectiveNhiaApiSettings,
@@ -1292,6 +1306,7 @@ const Settings = () => {
         hasApiKey: hasSavedApiKey,
         hasApiSecret: hasSavedApiSecret,
         accreditationExpiryDate: savedAccreditationExpiryDate || accreditationExpiryDate,
+        accreditationDateGenerated: savedAccreditationDateGenerated || accreditationDateGenerated,
         claimsOfficerName: savedClaimsOfficerName !== undefined
           ? savedClaimsOfficerName
           : nhiaApiForm.claimsOfficerName,
@@ -2725,6 +2740,13 @@ const Settings = () => {
                   placeholder="License number"
                   value={nhiaApiForm.licenseNumber}
                   onChange={(event) => updateNhiaApiForm('licenseNumber', event.target.value)}
+                />
+                <input
+                  type="date"
+                  aria-label="Accreditation generated date"
+                  title="Original dateGenerated from the NHIA accreditation record"
+                  value={nhiaApiForm.accreditationDateGenerated}
+                  onChange={(event) => updateNhiaApiForm('accreditationDateGenerated', normalizeDateInputValue(event.target.value))}
                 />
                 <input
                   type="date"

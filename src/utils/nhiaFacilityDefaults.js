@@ -40,6 +40,18 @@ export const getNhiaAccreditationExpiryDate = (...sources) =>
     }).find(Boolean)
   )
 
+export const getNhiaAccreditationDateGenerated = (...sources) =>
+  normalizeNhiaAccreditationExpiryDate(
+    sources.map((source) => {
+      if (!source || typeof source !== 'object') return source
+      return getFirstText(
+        source.accreditationDateGenerated,
+        source.accreditationGeneratedDate,
+        source.accreditation_date_generated
+      )
+    }).find(Boolean)
+  )
+
 export const normalizeNhiaFacilityType = (value, fallback = '') => {
   const normalized = normalizeText(value).toLowerCase()
   // Check hospital pharmacy before plain hospital to avoid misclassification.
@@ -461,6 +473,7 @@ export const applyNhiaFacilityDefaults = (settings = null, organization = null) 
     credentialCode,
     licenseNumber: getFirstText(source.licenseNumber, source.license_number, org.license_number),
     accreditationExpiryDate: getNhiaAccreditationExpiryDate(source, org),
+    accreditationDateGenerated: getNhiaAccreditationDateGenerated(source, org),
     _inferredProviderClassLevel: !normalizeNhiaProviderClassLevel(rawProviderClassLevel) && Boolean(providerClassLevel),
     _inferredPharmacyFacilityLevel: !normalizeNhiaPharmacyFacilityLevel(rawPharmacyFacilityLevel) && Boolean(pharmacyFacilityLevel),
     // ✅ NHIA CONFIG PATCH END

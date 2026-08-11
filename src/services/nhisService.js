@@ -13,6 +13,7 @@ import {
 } from '../utils/nhisPharmacyLevel'
 // ✅ NHIA CONFIG PATCH START
 import {
+  getNhiaAccreditationDateGenerated,
   getNhiaAccreditationExpiryDate,
   normalizeNhiaFacilityTypeForOrganization,
   normalizeNhiaPharmacyFacilityLevel,
@@ -501,6 +502,9 @@ const NHIA_API_SETTINGS_CACHE_FIELDS = [
   'accreditationExpiry',
   'nhiaAccreditationExpiry',
   'accreditation_expiry_date',
+  'accreditationDateGenerated',
+  'accreditationGeneratedDate',
+  'accreditation_date_generated',
   'claimsOfficerName',
   'claims_officer_name',
   'admissionPaymentOption',
@@ -633,6 +637,7 @@ const NHIA_CONFIG_DEFAULTS = {
   hpCode: '',
   credentialCode: '',
   accreditationExpiryDate: '',
+  accreditationDateGenerated: '',
   claimsOfficerName: '',
   apiBaseUrl: DEFAULT_NHIA_API_BASE_URL,
   claimitSubmitBaseUrl: DEFAULT_CLAIMIT_SUBMIT_BASE_URL,
@@ -832,6 +837,7 @@ export const buildClaimItConfigPreview = (settings = {}, options = {}) => {
     credentialCode,
     licenseNumber: normalizeText(payload.licenseNumber || payload.license_number),
     accreditationExpiryDate: getNhiaAccreditationExpiryDate(payload),
+    accreditationDateGenerated: getNhiaAccreditationDateGenerated(payload),
   }
 }
 // ✅ NHIA CONFIG PATCH END
@@ -3165,6 +3171,8 @@ const normalizeNhiaConfig = (settings = null, {
     license_number: licenseNumber,
     accreditationExpiryDate: getNhiaAccreditationExpiryDate(raw),
     accreditation_expiry_date: getNhiaAccreditationExpiryDate(raw),
+    accreditationDateGenerated: getNhiaAccreditationDateGenerated(raw),
+    accreditation_date_generated: getNhiaAccreditationDateGenerated(raw),
     claimsOfficerName: normalizeText(raw.claimsOfficerName || raw.claims_officer_name),
     claims_officer_name: normalizeText(raw.claims_officer_name || raw.claimsOfficerName),
     providerTypeDescription,
@@ -7243,8 +7251,6 @@ const getClaimItDbStruct = () => ({
     ccd_prescriptionLevelCode: 'varchar(255)',
     ccd_cateringStatusCode: 'varchar(255)',
     ccd_effectiveDate: 'date',
-    accred_effectiveDate: 'date',
-    accred_providerID: 'varchar(255)',
     facilityTypeCode: 'varchar(255)',
     ownershipTypeCode: 'varchar(255)',
     cateringStatusCode: 'varchar(255)',
@@ -7627,9 +7633,20 @@ const getClaimItAccreditationRows = (payload, rows) => {
     cateringStatusCode: claimRow.cateringStatusCode || 'CE',
     prescriptionLevelID: claimRow.prescriptionLevelID || getClaimItPrescriptionLevel(payload),
     facilityName: normalizeText(payload.facilityName) || 'Facility',
-    dateGenerated: toClaimItDate(payload.createdAt),
+    dateGenerated: getNhiaAccreditationDateGenerated(payload),
     expiryDate: getNhiaAccreditationExpiryDate(payload) || getClaimItExpiryDate(effectiveDate, payload.createdAt),
     credentialCode,
+  }]
+}
+
+export const getClaimItCredentialUsageRows = (credentialCode, claims = []) => {
+  if (!credentialCode || !claims.length) return []
+  const minimumDates = claims.map((claim) => claim.minDOSP).filter(Boolean).sort()
+  const maximumDates = claims.map((claim) => claim.maxDOSP).filter(Boolean).sort()
+  return [{
+    credentialCode,
+    minDOSP: minimumDates[0] || '',
+    maxDOSP: maximumDates.at(-1) || '',
   }]
 }
 
@@ -8128,6 +8145,7 @@ export const buildNhisClaimItExportPayload = (claims = [], options = {}) => {
     credentialCode,
     licenseNumber: normalizeText(options.licenseNumber || options.license_number),
     accreditationExpiryDate: getNhiaAccreditationExpiryDate(options),
+    accreditationDateGenerated: getNhiaAccreditationDateGenerated(options),
     // ✅ NHIA CONFIG PATCH END
     facilityCode: normalizeText(options.facilityCode),
     providerNumber: normalizeText(options.providerNumber),
@@ -9180,11 +9198,7 @@ const buildClaimItMeta = (payload, rows) => {
     servVersions: servVersions.length ? servVersions : [null],
     appVersion: CLAIM_IT_APP_VERSION,
     accreditations,
-    credUsage: credentialCode ? rows.claims.map((claim) => ({
-      credentialCode,
-      minDOSP: claim.minDOSP,
-      maxDOSP: claim.maxDOSP,
-    })) : [],
+    credUsage: getClaimItCredentialUsageRows(credentialCode, rows.claims),
     [typeOfService]: [{
       typeOfService,
       vol: String(rows.claims.length),
@@ -9426,6 +9440,7 @@ export const assertClaimItCxfExportConfigured = (options = {}) => {
   const accreditationExpiryDate = getNhiaAccreditationExpiryDate(options)
   logNhiaAccreditationExpiryDate('export validation config', accreditationExpiryDate)
   if (!accreditationExpiryDate) missing.push('accreditationExpiryDate')
+  if (!getNhiaAccreditationDateGenerated(options)) missing.push('accreditationDateGenerated')
   if (!normalizeText(options.claimsOfficerName || options.claims_officer_name)) missing.push('claimsOfficerName')
   if (isHospitalFacility && options._inferredProviderClassLevel) missing.push('providerClassLevel (confirm in Settings)')
   if (isPharmacy && options._inferredPharmacyFacilityLevel) missing.push('pharmacyFacilityLevel (confirm inferred P1 in Settings)')

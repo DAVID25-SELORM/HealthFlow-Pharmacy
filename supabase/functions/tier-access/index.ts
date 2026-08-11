@@ -533,6 +533,19 @@ const getNhiaAccreditationExpiryDate = (...sources: unknown[]) =>
     }).find(Boolean)
   )
 
+const getNhiaAccreditationDateGenerated = (...sources: unknown[]) =>
+  normalizeNhiaAccreditationExpiryDate(
+    sources.map((source) => {
+      if (!source || typeof source !== 'object') return source
+      const payload = source as Record<string, unknown>
+      return normalizeText(
+        payload.accreditationDateGenerated ||
+          payload.accreditationGeneratedDate ||
+          payload.accreditation_date_generated
+      )
+    }).find(Boolean)
+  )
+
 const normalizeOrganizationType = (value: unknown) => {
   const normalized = normalizeText(value).toLowerCase()
   return normalized === 'hospital' ? 'hospital' : 'pharmacy'
@@ -3935,6 +3948,7 @@ const mapNhiaSettingsRow = async (row: Record<string, unknown> | null, includeCr
     credentialCode: row.credential_code || row.facility_code || '',
     licenseNumber: row.license_number || '',
     accreditationExpiryDate: getNhiaAccreditationExpiryDate(row),
+    accreditationDateGenerated: getNhiaAccreditationDateGenerated(row),
     // ✅ NHIA CONFIG PATCH END
     // ✅ NHIA API ARCHITECTURE PATCH START
     integrationMode: row.integration_mode || 'claimit_export',
@@ -4212,6 +4226,7 @@ const saveNhiaApiSettings = async (
   })
 
   const accreditationExpiryDate = getNhiaAccreditationExpiryDate(settings)
+  const accreditationDateGenerated = getNhiaAccreditationDateGenerated(settings)
   const claimsOfficerName = normalizeText(settings.claimsOfficerName ?? settings.claims_officer_name)
   const facilityCode = normalizeText(settings.facilityCode || settings.facility_code)
   const providerNumber = normalizeText(settings.providerNumber || settings.provider_number || settings.providerId || settings.provider_id)
@@ -4239,6 +4254,7 @@ const saveNhiaApiSettings = async (
     credential_code: credentialCode || null,
     license_number: licenseNumber || null,
     accreditation_expiry_date: accreditationExpiryDate || null,
+    accreditation_date_generated: accreditationDateGenerated || null,
     // ✅ NHIA CONFIG PATCH END
     // ✅ NHIA API ARCHITECTURE PATCH START
     integration_mode: normalizeText(settings.integrationMode || settings.integration_mode || settings.nhiaApiMode || settings.nhia_api_mode) || 'claimit_export',

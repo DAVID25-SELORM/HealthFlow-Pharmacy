@@ -52,6 +52,7 @@ import {
 import { readSignatureFileAsDataUrl } from '../utils/imageUpload'
 import {
   applyNhiaFacilityDefaults,
+  getNhiaAccreditationDateGenerated,
   normalizeNhiaAccreditationExpiryDate,
 } from '../utils/nhiaFacilityDefaults'
 import './OfflineSync.css'
@@ -119,6 +120,7 @@ const blankNhiaForm = {
   providerTypeDescription: '',
   providerClassLevel: '',
   accreditationExpiryDate: '',
+  accreditationDateGenerated: '',
   claimsOfficerName: '',
   admissionPaymentOption: 'nhis_pays_admission',
   claimitValidationEnabled: true,
@@ -176,6 +178,7 @@ const buildNhiaForm = (settings, organization) => {
     ...blankNhiaForm,
     ...resolved,
     accreditationExpiryDate: normalizeNhiaAccreditationExpiryDate(resolved.accreditationExpiryDate),
+    accreditationDateGenerated: getNhiaAccreditationDateGenerated(resolved),
     memberLookupEndpointPath: resolved.memberLookupEndpointPath || resolved.member_lookup_endpoint_path || resolved.memberLookupEndpoint || '/api/hmis/genCCC',
     claimitSubmitBaseUrl: resolved.claimitSubmitBaseUrl || resolved.claimit_submit_base_url || resolved.productionBaseUrl || resolved.production_base_url || '',
     credentials: {
@@ -817,6 +820,7 @@ export default function OfflineSync() {
         ...nhiaForm,
         organizationId: organization?.id || organization?.organization_id || nhiaForm.organizationId || nhiaForm.organization_id,
         accreditationExpiryDate: normalizeNhiaAccreditationExpiryDate(nhiaForm.accreditationExpiryDate),
+        accreditationDateGenerated: getNhiaAccreditationDateGenerated(nhiaForm),
       }, { organizationId: organization?.id || organization?.organization_id || nhiaForm.organizationId || nhiaForm.organization_id })
       const reloaded = await getNhiaApiSettings({ organizationId: organization?.id || organization?.organization_id || nhiaForm.organizationId || nhiaForm.organization_id })
       setNhiaSettings(reloaded || saved)
@@ -1619,6 +1623,14 @@ HEALTHFLOW_UPDATE_AUTO_INSTALL=false`}</pre>
               <option value="patient_pays_admission">Patient pays admission</option>
               <option value="not_applicable">Not applicable</option>
             </select>
+          </label>
+          <label>
+            <span>Accreditation Generated Date</span>
+            <input
+              type="date"
+              value={nhiaForm.accreditationDateGenerated}
+              onChange={(event) => updateNhiaForm('accreditationDateGenerated', normalizeNhiaAccreditationExpiryDate(event.target.value))}
+            />
           </label>
           <label>
             <span>Accreditation Expiry Date</span>

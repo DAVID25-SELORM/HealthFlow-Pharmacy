@@ -70,6 +70,7 @@ import {
   getNhisClaimsPage,
   getNhisClaimIssueCounts,
   getNhisClaimExportDate,
+  getClaimItCredentialUsageRows,
   getNhisExportScrubWarnings,
   getAllNhisDrugs,
   getNhisDrugByCode,
@@ -1591,6 +1592,17 @@ describe('assessNhisClaimReadiness', () => {
 })
 
 describe('CLAIM-it export helpers', () => {
+  it('groups credential usage once across the exported service-date range', () => {
+    expect(getClaimItCredentialUsageRows('CREDENTIAL-1', [
+      { minDOSP: '2026-06-19', maxDOSP: '2026-06-20' },
+      { minDOSP: '2026-06-16', maxDOSP: '2026-06-18' },
+      { minDOSP: '2026-06-21', maxDOSP: '2026-06-21' },
+    ])).toEqual([{
+      credentialCode: 'CREDENTIAL-1',
+      minDOSP: '2026-06-16',
+      maxDOSP: '2026-06-21',
+    }])
+  })
   const pdfBase64 = Buffer.from('%PDF-1.4\n%%EOF', 'utf8').toString('base64')
   const claim = {
     id: 'claim-1',
@@ -1810,6 +1822,7 @@ describe('CLAIM-it export helpers', () => {
       facilityName: 'Westpoint Chemist',
       providerNumber: '03-05-01954',
       providerTypeDescription: 'Pharmacy',
+      accreditationDateGenerated: '2025-12-29',
       claimsOfficerName: 'Claims Officer',
       submitterId: 'admin',
       generatedAt: '2026-05-20T14:58:02.000Z',
@@ -1877,6 +1890,9 @@ describe('CLAIM-it export helpers', () => {
       credentialCode: '03-05-001-02-01954-11-P1-2-011225',
       licenseNumber: 'LIC-100',
       accreditationExpiryDate: '2026-12-31',
+      accreditationDateGenerated: '2025-12-29',
+      accreditationDateGenerated: '2025-12-29',
+      accreditationDateGenerated: '2025-12-29',
       providerTypeDescription: 'Private clinics',
       providerClassLevel: 'B2',
       claimsOfficerName: 'David Selorm Gabion',
@@ -1930,6 +1946,9 @@ describe('CLAIM-it export helpers', () => {
       credentialCode: 'HOSP-001-B2',
       providerLevelCode: 'PVT-HOS-CE',
       accreditationExpiryDate: '2026-12-31',
+      accreditationDateGenerated: '2025-12-29',
+      accreditationDateGenerated: '2025-12-29',
+      accreditationDateGenerated: '2025-12-29',
       claimsOfficerName: 'Claims Officer',
       claims: [{ medicines: [{ code: 'NH001' }] }],
     })).not.toThrow()
@@ -1962,6 +1981,7 @@ describe('CLAIM-it export helpers', () => {
       facilityName: 'Westpoint Chemist',
       providerNumber: '03-05-01954',
       providerTypeDescription: 'Pharmacy',
+      accreditationDateGenerated: '2025-12-29',
       claimsOfficerName: 'Claims Officer',
       submitterId: 'admin',
       generatedAt: '2026-05-20T14:58:02.000Z',
@@ -1995,6 +2015,7 @@ describe('CLAIM-it export helpers', () => {
       facilityName: 'Westpoint Chemist',
       providerNumber: '03-05-01954',
       providerTypeDescription: 'Pharmacy',
+      accreditationDateGenerated: '2025-12-29',
       claimsOfficerName: 'Claims Officer',
       submitterId: 'admin',
       generatedAt: '2026-05-20T14:58:02.000Z',
@@ -2075,6 +2096,7 @@ describe('CLAIM-it export helpers', () => {
       claimsOfficerName: 'Claims Officer',
       submitterId: 'admin',
       generatedAt: '2026-05-20T14:58:02.000Z',
+      accreditationDateGenerated: '2025-12-29',
     })
 
     const cxf = await buildNhisClaimItCxf(payload)
@@ -2094,6 +2116,8 @@ describe('CLAIM-it export helpers', () => {
     expect(inflatedText).toContain('s:4:"data";a:13')
     expect(inflatedText).toContain('s:10:"dbVersions";a:28')
     expect(inflatedText).toContain('s:14:"accreditations"')
+    expect(inflatedText).toContain('s:13:"dateGenerated";s:10:"2025-12-29"')
+    expect(inflatedText).toContain('s:14:"accreditations";a:21:')
     expect(inflatedText).toContain('s:10:"expiryDate";s:10:"2026-11-30"')
     expect(inflatedText).toContain('s:27:"doctrine_migration_versions"')
     const attachmentData = extractAttachmentDataBuffer(inflated)
@@ -2892,6 +2916,8 @@ describe('CLAIM-it export helpers', () => {
       providerNumber: '03-05-01954',
       providerTypeDescription: 'Pharmacy',
       accreditationExpiryDate: '2026-12-31',
+      accreditationDateGenerated: '2025-12-29',
+      accreditationDateGenerated: '2025-12-29',
       claimsOfficerName: 'Claims Officer',
       submitterId: 'admin',
       nhisDrugCatalog: [{ id: 'drug-1', code: 'NH001', category: 'A' }],
@@ -2971,6 +2997,8 @@ describe('CLAIM-it export helpers', () => {
       providerNumber: '03-05-01954',
       providerTypeDescription: 'Pharmacy',
       accreditationExpiryDate: '2026-12-31',
+      accreditationDateGenerated: '2025-12-29',
+      accreditationDateGenerated: '2025-12-29',
       claimsOfficerName: 'Claims Officer',
       submitterId: 'admin',
       nhisDrugCatalog: [{ id: 'drug-1', code: 'NH001', category: 'A' }],
@@ -3091,6 +3119,7 @@ describe('CLAIM-it export helpers', () => {
       providerNumber: '03-05-01954',
       providerTypeDescription: 'Pharmacy',
       accreditationExpiryDate: '2026-12-31',
+      accreditationDateGenerated: '2025-12-29',
       claimsOfficerName: 'Claims Officer',
       submitterId: 'admin',
       nhisDrugCatalog: [{ id: 'drug-1', code: 'NH001', category: 'A' }],
@@ -3185,6 +3214,7 @@ describe('CLAIM-it export helpers', () => {
       providerNumber: '03-05-01954',
       providerTypeDescription: 'Pharmacy',
       accreditationExpiryDate: '2026-12-31',
+      accreditationDateGenerated: '2025-12-29',
       claimsOfficerName: 'Claims Officer',
       submitterId: 'admin',
       nhisDrugCatalog: [{ id: 'drug-1', code: 'NH001', category: 'A' }],
@@ -3280,6 +3310,7 @@ describe('CLAIM-it export helpers', () => {
       providerNumber: '03-05-01954',
       providerTypeDescription: 'Pharmacy',
       accreditationExpiryDate: '2026-12-31',
+      accreditationDateGenerated: '2025-12-29',
       claimsOfficerName: 'Claims Officer',
       submitterId: 'admin',
       nhisDrugCatalog: [{ id: 'drug-1', code: 'NH001', category: 'A' }],
@@ -3387,6 +3418,7 @@ describe('CLAIM-it export helpers', () => {
       providerNumber: '03-05-01954',
       providerTypeDescription: 'Pharmacy',
       accreditationExpiryDate: '2026-12-31',
+      accreditationDateGenerated: '2025-12-29',
       claimsOfficerName: 'Claims Officer',
       submitterId: 'admin',
       nhisDrugCatalog: [{ id: 'drug-1', code: 'NH001', category: 'A' }],
@@ -3456,6 +3488,7 @@ describe('CLAIM-it export helpers', () => {
       providerNumber: '03-05-01954',
       providerTypeDescription: 'Pharmacy',
       accreditationExpiryDate: '2026-12-31',
+      accreditationDateGenerated: '2025-12-29',
       claimsOfficerName: 'Claims Officer',
       submitterId: 'admin',
       nhisDrugCatalog: [{ id: 'drug-1', code: 'NH001', category: 'A' }],
@@ -3524,6 +3557,7 @@ describe('CLAIM-it export helpers', () => {
       providerNumber: '03-05-01954',
       providerTypeDescription: 'Pharmacy',
       accreditationExpiryDate: '2026-12-31',
+      accreditationDateGenerated: '2025-12-29',
       claimsOfficerName: 'Claims Officer',
       submitterId: 'admin',
       nhisDrugCatalog: [{ id: 'drug-1', code: 'NH001', category: 'A' }],
@@ -3551,6 +3585,7 @@ describe('CLAIM-it export helpers', () => {
         providerNumber: '03-05-01954',
         providerTypeDescription: 'Pharmacy',
         accreditationExpiryDate: '2026-12-31',
+        accreditationDateGenerated: '2025-12-29',
         claimsOfficerName: 'Claims Officer',
         submitterId: 'admin',
         nhisDrugCatalog: [{ id: 'drug-1', code: 'NH001', category: 'A' }],
@@ -3634,6 +3669,7 @@ describe('CLAIM-it export helpers', () => {
       providerNumber: '03-05-01954',
       providerTypeDescription: 'Pharmacy',
       accreditationExpiryDate: '2026-12-31',
+      accreditationDateGenerated: '2025-12-29',
       claimsOfficerName: 'Claims Officer',
       submitterId: 'admin',
       nhisDrugCatalog: [{ id: 'drug-1', code: 'NH001', category: 'A' }],
@@ -3707,6 +3743,7 @@ describe('direct NHIA submission', () => {
     providerNumber: '03-05-01954',
     providerTypeDescription: 'Pharmacy',
     accreditationExpiryDate: '2026-12-31',
+    accreditationDateGenerated: '2025-12-29',
     claimsOfficerName: 'Claims Officer',
     submitterId: 'admin',
     nhisDrugCatalog: [{ code: 'NH001', category: 'A' }],
@@ -5128,6 +5165,7 @@ describe('duplicate NHIS claim prevention', () => {
       facilityCode: '03-05-001',
       credentialCode: '03-05-001-02-01954-11-P1-2-011225',
       accreditationExpiryDate: '2026-12-31',
+      accreditationDateGenerated: '2025-12-29',
       claimsOfficerName: 'Claims Officer',
       nhisDrugCatalog: [{ code: 'NH001', category: 'A' }],
     })).rejects.toMatchObject({
@@ -5212,6 +5250,7 @@ describe('duplicate NHIS claim prevention', () => {
       facilityCode: '03-05-001',
       credentialCode: '03-05-001-02-01954-11-P1-2-011225',
       accreditationExpiryDate: '2026-12-31',
+      accreditationDateGenerated: '2025-12-29',
       claimsOfficerName: 'Claims Officer',
       nhisDrugCatalog: [{ code: 'NH001', category: 'A' }],
     })).rejects.toMatchObject({
@@ -5298,6 +5337,7 @@ describe('duplicate NHIS claim prevention', () => {
       facilityCode: '03-05-001',
       credentialCode: '03-05-001-02-01954-11-P1-2-011225',
       accreditationExpiryDate: '2026-12-31',
+      accreditationDateGenerated: '2025-12-29',
       claimsOfficerName: 'Claims Officer',
       nhisDrugCatalog: [{ code: 'NH001', category: 'A' }],
     })).rejects.toMatchObject({
@@ -5457,6 +5497,7 @@ describe('duplicate NHIS claim prevention', () => {
       facilityCode: '03-05-001',
       credentialCode: '03-05-001-02-01954-11-P1-2-011225',
       accreditationExpiryDate: '2026-12-31',
+      accreditationDateGenerated: '2025-12-29',
       claimsOfficerName: 'Claims Officer',
       pharmacyLevel: 'P1',
       nhisDrugCatalog: [{ id: 'drug-1', code: 'NH001', category: 'A' }],
@@ -5528,6 +5569,8 @@ describe('NHIS export/scrub period status coverage', () => {
     facilityCode: '03-05-001',
     credentialCode: '03-05-001-02-01954-11-P1-2-011225',
     accreditationExpiryDate: '2026-12-31',
+    accreditationDateGenerated: '2025-12-29',
+    accreditationDateGenerated: '2025-12-29',
     claimsOfficerName: 'Claims Officer',
     pharmacyLevel: 'P1',
     nhisDrugCatalog: [{ id: 'drug-1', code: 'NH001', category: 'A' }],
@@ -5671,6 +5714,7 @@ describe('single-claim export reuses the exact batch export pipeline', () => {
     facilityCode: '03-05-001',
     credentialCode: '03-05-001-02-01954-11-P1-2-011225',
     accreditationExpiryDate: '2026-12-31',
+    accreditationDateGenerated: '2025-12-29',
     claimsOfficerName: 'Claims Officer',
     pharmacyLevel: 'P1',
     nhisDrugCatalog: [{ id: 'drug-1', code: 'NH001', category: 'A' }],
@@ -5783,6 +5827,7 @@ describe('NHIA API settings source routing', () => {
     providerNumber: 'PROVIDER-1',
     credentialCode: 'CRED-1',
     accreditationExpiryDate: '2026-12-31',
+    accreditationDateGenerated: '2025-12-29',
     claimsOfficerName: 'Claims Officer',
   }
 
@@ -5956,6 +6001,8 @@ describe('NHIA API settings source routing', () => {
         hasApiKey: true,
         hasApiSecret: true,
         accreditationExpiryDate: '2026-12-31',
+        accreditationDateGenerated: '2025-12-29',
+        accreditationDateGenerated: '2025-12-29',
         claimsOfficerName: 'Claims Officer',
       },
     }).mockResolvedValueOnce({
@@ -5978,12 +6025,14 @@ describe('NHIA API settings source routing', () => {
         apiSecret: 'saved-secret',
       },
       accreditationExpiryDate: '2026-12-31',
+      accreditationDateGenerated: '2025-12-29',
       claimsOfficerName: 'Claims Officer',
     }, { organizationId: 'org-1' })).resolves.toMatchObject({
       facilityCode: 'FAC-1',
       hasApiKey: true,
       hasApiSecret: true,
       accreditationExpiryDate: '2026-12-31',
+      accreditationDateGenerated: '2025-12-29',
     })
 
     expect(invokeTierAccess).toHaveBeenNthCalledWith(2, expect.objectContaining({
@@ -6009,6 +6058,7 @@ describe('NHIA API settings source routing', () => {
         hasApiKey: true,
         hasApiSecret: true,
         accreditationExpiryDate: '2026-12-31',
+        accreditationDateGenerated: '2025-12-29',
         claimsOfficerName: 'Claims Officer',
       },
     }).mockResolvedValueOnce({
@@ -6020,6 +6070,7 @@ describe('NHIA API settings source routing', () => {
         hasApiKey: true,
         hasApiSecret: true,
         accreditationExpiryDate: '2026-12-31',
+        accreditationDateGenerated: '2025-12-29',
         claimsOfficerName: 'Claims Officer',
       },
     })
