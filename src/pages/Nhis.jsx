@@ -298,6 +298,124 @@ const DURATION_OPTIONS = [
   '365 days',
 ]
 
+const CompactSuggestionInput = ({
+  value,
+  onValueChange,
+  options,
+  placeholder,
+  disabled = false,
+  required = false,
+  onBlur,
+  placement = 'bottom',
+  ariaLabel,
+}) => {
+  const [isOpen, setIsOpen] = useState(false)
+  const [activeIndex, setActiveIndex] = useState(-1)
+  const normalizedOptions = useMemo(() => {
+    const seen = new Set()
+    return options
+      .map((option) => (typeof option === 'string'
+        ? { value: option, label: option, description: '' }
+        : {
+            value: String(option.value || ''),
+            label: String(option.label || option.value || ''),
+            description: String(option.description || ''),
+          }))
+      .filter((option) => {
+        const key = option.value.trim().toLowerCase()
+        if (!key || seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+  }, [options])
+  const filteredOptions = useMemo(() => {
+    const query = String(value || '').trim().toLowerCase()
+    if (!query) return normalizedOptions
+    return normalizedOptions.filter((option) => (
+      option.label.toLowerCase().includes(query)
+      || option.description.toLowerCase().includes(query)
+    ))
+  }, [normalizedOptions, value])
+
+  const selectOption = (option) => {
+    onValueChange(option.value)
+    setIsOpen(false)
+    setActiveIndex(-1)
+  }
+
+  return (
+    <div className="nhis-compact-combobox">
+      <input
+        className="form-input"
+        value={value}
+        disabled={disabled}
+        required={required}
+        placeholder={placeholder}
+        aria-label={ariaLabel}
+        role="combobox"
+        aria-autocomplete="list"
+        aria-expanded={isOpen && filteredOptions.length > 0}
+        onFocus={() => {
+          setIsOpen(true)
+          setActiveIndex(-1)
+        }}
+        onBlur={() => {
+          setIsOpen(false)
+          onBlur?.(value)
+        }}
+        onChange={(event) => {
+          onValueChange(event.target.value)
+          setIsOpen(true)
+          setActiveIndex(-1)
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') {
+            setIsOpen(false)
+            setActiveIndex(-1)
+            return
+          }
+          if (!filteredOptions.length) return
+          if (event.key === 'ArrowDown') {
+            event.preventDefault()
+            setIsOpen(true)
+            setActiveIndex((current) => (current + 1) % filteredOptions.length)
+          } else if (event.key === 'ArrowUp') {
+            event.preventDefault()
+            setIsOpen(true)
+            setActiveIndex((current) => (current <= 0 ? filteredOptions.length - 1 : current - 1))
+          } else if (event.key === 'Enter' && isOpen && activeIndex >= 0) {
+            event.preventDefault()
+            selectOption(filteredOptions[activeIndex])
+          }
+        }}
+      />
+      {isOpen && filteredOptions.length > 0 && (
+        <div
+          className={`nhis-compact-suggestions nhis-compact-suggestions--${placement}`}
+          role="listbox"
+        >
+          {filteredOptions.map((option, index) => (
+            <button
+              key={option.value}
+              type="button"
+              role="option"
+              aria-selected={index === activeIndex}
+              className={`nhis-compact-suggestion${index === activeIndex ? ' is-active' : ''}`}
+              onMouseDown={(event) => {
+                event.preventDefault()
+                selectOption(option)
+              }}
+            >
+              <span>{option.label}</span>
+              {option.description && <small>{option.description}</small>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 const makeBlankClaim = () => ({
   patientId:         '',
   memberNo:          '',
@@ -7379,26 +7497,21 @@ const Nhis = () => {
                     </div>
                     <div className="form-group">
                       <label>Prescribing Facility *</label>
-                      <input
-                        className="form-input"
+                      <CompactSuggestionInput
                         value={claimForm.referringFacility}
-                        list="nhis-prescribing-facility-suggestions"
                         required
-                        onChange={(e) => handlePrescribingFacilityTextChange(e.target.value)}
-                      />
-                      <datalist id="nhis-prescribing-facility-suggestions">
-                        {claimFacilityOptions.map((facility) => {
+                        ariaLabel="Prescribing facility"
+                        onValueChange={handlePrescribingFacilityTextChange}
+                        options={claimFacilityOptions.map((facility) => {
                           const name = getNhisPrescribingFacilityDisplayName(facility)
                           const code = normalizeText(facility.nhia_facility_code ?? facility.nhiaFacilityCode)
-                          return (
-                            <option
-                              key={facility.id}
-                              value={name}
-                              label={code ? `${code} - ${facility.facility_type || 'Saved facility'}` : facility.facility_type || 'Saved facility'}
-                            />
-                          )
+                          return {
+                            value: name,
+                            label: name,
+                            description: code ? `${code} - ${facility.facility_type || 'Saved facility'}` : facility.facility_type || 'Saved facility',
+                          }
                         })}
-                      </datalist>
+                      />
                     </div>
                   </div>
                   <div className="form-row">
@@ -7440,23 +7553,18 @@ const Nhis = () => {
                     </div>
                     <div className="form-group">
                       <label>Prescriber Name / ID *</label>
-                      <input
-                        className="form-input"
+                      <CompactSuggestionInput
                         value={claimForm.physicianName}
-                        list="nhis-prescriber-suggestions"
-                        onChange={(e) => handlePrescriberTextChange(e.target.value)}
-                      />
-                      <datalist id="nhis-prescriber-suggestions">
-                        {claimPrescriberOptions.map((prescriber) => (
-                          <option
-                            key={prescriber.id}
-                            value={getNhisPrescriberDisplayName(prescriber)}
-                            label={prescriber.primary_facility_id
+                        ariaLabel="Prescriber name or ID"
+                        onValueChange={handlePrescriberTextChange}
+                        options={claimPrescriberOptions.map((prescriber) => ({
+                          value: getNhisPrescriberDisplayName(prescriber),
+                          label: getNhisPrescriberDisplayName(prescriber),
+                          description: prescriber.primary_facility_id
                               ? getNhisPrescribingFacilityDisplayName(prescribingFacilities.find((row) => row.id === prescriber.primary_facility_id) || {})
-                              : prescriber.professional_type || 'Saved prescriber'}
-                          />
-                        ))}
-                      </datalist>
+                              : prescriber.professional_type || 'Saved prescriber',
+                        }))}
+                      />
                     </div>
                   </div>
                   <div className="form-row">
@@ -8462,36 +8570,28 @@ const Nhis = () => {
                 </div>
                 <div className="form-group">
                   <label>Frequency</label>
-                  <input
-                    list="nhis-frequency-options"
-                    className="form-input"
+                  <CompactSuggestionInput
                     value={medForm.frequency}
                     disabled={isMedicineCounterAssistant}
-                    onChange={(e) => setMedForm((p) => ({ ...p, frequency: e.target.value }))}
+                    onValueChange={(value) => setMedForm((p) => ({ ...p, frequency: value }))}
+                    options={FREQUENCY_OPTIONS}
                     placeholder="Select or type frequency"
+                    ariaLabel="Medicine frequency"
+                    placement="top"
                   />
-                  <datalist id="nhis-frequency-options">
-                    {FREQUENCY_OPTIONS.map((option) => (
-                      <option key={option} value={option}>{option}</option>
-                    ))}
-                  </datalist>
                 </div>
                 <div className="form-group">
                   <label>Duration</label>
-                  <input
-                    list="nhis-duration-options"
-                    className="form-input"
+                  <CompactSuggestionInput
                     value={medForm.duration}
                     disabled={isMedicineCounterAssistant}
-                    onChange={(e) => setMedForm((p) => ({ ...p, duration: e.target.value }))}
-                    onBlur={(e) => setMedForm((p) => ({ ...p, duration: formatClaimDurationAsDays(e.target.value) }))}
+                    onValueChange={(value) => setMedForm((p) => ({ ...p, duration: value }))}
+                    onBlur={(value) => setMedForm((p) => ({ ...p, duration: formatClaimDurationAsDays(value) }))}
+                    options={DURATION_OPTIONS}
                     placeholder="Select or type number of days"
+                    ariaLabel="Medicine duration"
+                    placement="top"
                   />
-                  <datalist id="nhis-duration-options">
-                    {DURATION_OPTIONS.map((option) => (
-                      <option key={option} value={option}>{option}</option>
-                    ))}
-                  </datalist>
                 </div>
               </div>
 
