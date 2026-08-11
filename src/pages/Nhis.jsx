@@ -1503,6 +1503,7 @@ const Nhis = () => {
   const [durationRepairReview, setDurationRepairReview] = useState(null)
   const [durationRepairValues, setDurationRepairValues] = useState({})
   const [durationRepairSaving, setDurationRepairSaving] = useState(false)
+  const [durationRepairFilter, setDurationRepairFilter] = useState('all')
   const [viewClaim, setViewClaim]                   = useState(null)
   const [reopenDispensaryClaim, setReopenDispensaryClaim] = useState(null)
   const [reopenDispensaryReason, setReopenDispensaryReason] = useState('')
@@ -1634,6 +1635,7 @@ const Nhis = () => {
   // single-claim export — set by whichever flow opens that shared modal.
   const exportResumeTargetRef = useRef({ type: 'batch' })
   const durationRepairResumeTargetRef = useRef({ type: 'batch' })
+  const durationRepairTableRef = useRef(null)
 
   useEffect(() => {
     if (!exporting || !exportStartedAt) {
@@ -5314,6 +5316,43 @@ const Nhis = () => {
     return stage
   }
 
+  const getDurationRepairRowKey = (row) => row.medicineId || `${row.claimId}:${row.medicineIndex}`
+  const durationRepairEvaluatedRows = (durationRepairReview?.rows || []).map((row) => {
+    const key = getDurationRepairRowKey(row)
+    const enteredValue = normalizeText(durationRepairValues[key] ?? row.proposedValue)
+    const manualReady = row.status === 'manual'
+      && analyzeNhisDurationForRepair(enteredValue).status === 'valid'
+    return { ...row, key, enteredValue, manualReady }
+  })
+  const durationRepairUnresolvedCount = durationRepairEvaluatedRows.filter((row) => (
+    row.status === 'manual' && !row.manualReady
+  )).length
+  const durationRepairCorrectionsReadyCount = durationRepairEvaluatedRows.filter((row) => (
+    row.status === 'automatic' || row.manualReady
+  )).length
+  const durationRepairVisibleRows = durationRepairEvaluatedRows.filter((row) => {
+    if (durationRepairFilter === 'valid') return row.status === 'valid'
+    if (durationRepairFilter === 'automatic') return row.status === 'automatic' || row.manualReady
+    if (durationRepairFilter === 'manual') return row.status === 'manual' && !row.manualReady
+    return true
+  })
+
+  const focusDurationRepairRows = (focusFirstUnresolved = false) => {
+    window.setTimeout(() => {
+      durationRepairTableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      if (focusFirstUnresolved) {
+        durationRepairTableRef.current
+          ?.querySelector('[data-duration-unresolved="true"]')
+          ?.focus()
+      }
+    }, 0)
+  }
+
+  const selectDurationRepairFilter = (filter) => {
+    setDurationRepairFilter(filter)
+    focusDurationRepairRows(filter === 'manual')
+  }
+
   const requestDurationRepairReview = (preparedReadiness, resumeTarget = { type: 'batch' }) => {
     const review = preparedReadiness?.durationRepairReview
       || buildNhisDurationRepairReview(preparedReadiness?.claims || [])
@@ -5325,7 +5364,9 @@ const Nhis = () => {
     durationRepairResumeTargetRef.current = resumeTarget
     setDurationRepairReview(review)
     setDurationRepairValues(initialValues)
+    setDurationRepairFilter(review.manualReview ? 'manual' : 'automatic')
     setShowExportModal(false)
+    if (review.manualReview) focusDurationRepairRows(true)
     notify(
       `${review.repairRows.length} medicine duration${review.repairRows.length === 1 ? '' : 's'} must be reviewed before export.`,
       review.manualReview ? 'error' : 'warning'
@@ -5347,6 +5388,8 @@ const Nhis = () => {
       !repair.medicineId || analyzeNhisDurationForRepair(repair.newValue).status !== 'valid'
     ))
     if (invalidRows.length) {
+      setDurationRepairFilter('manual')
+      focusDurationRepairRows(true)
       notify(
         `${invalidRows.length} duration${invalidRows.length === 1 ? '' : 's'} still need a positive whole number followed by day or days.`,
         'error'
@@ -5360,6 +5403,7 @@ const Nhis = () => {
       preparedReadinessCacheRef.current = null
       setDurationRepairReview(null)
       setDurationRepairValues({})
+      setDurationRepairFilter('all')
       await refreshClaimsOverview()
       notify(
         `${repaired.length} medicine duration${repaired.length === 1 ? '' : 's'} repaired and audited. Rescanning before export.`,
@@ -9916,56 +9960,117 @@ const Nhis = () => {
                 onClick={() => {
                   setDurationRepairReview(null)
                   setDurationRepairValues({})
+                  setDurationRepairFilter('all')
                 }}
               ><X size={18} /></button>
             </div>
             <div className="duration-repair-body">
               <div className="duration-repair-summary">
                 <div><strong>{durationRepairReview.claimsScanned}</strong><span>Claims scanned</span></div>
-                <div><strong>{durationRepairReview.valuesScanned}</strong><span>Medicine durations checked</span></div>
-                <div><strong>{durationRepairReview.alreadyValid}</strong><span>Durations already valid</span></div>
-                <div><strong>{durationRepairReview.automaticallyCorrected}</strong><span>Safe duration corrections</span></div>
-                <div className={durationRepairReview.manualReview ? 'has-warning' : ''}>
-                  <strong>{durationRepairReview.manualReview}</strong><span>Durations needing review</span>
-                </div>
+                <button
+                  type="button"
+                  className={durationRepairFilter === 'all' ? 'is-active' : ''}
+                  onClick={() => selectDurationRepairFilter('all')}
+                ><strong>{durationRepairReview.valuesScanned}</strong><span>Medicine durations checked</span></button>
+                <button
+                  type="button"
+                  className={durationRepairFilter === 'valid' ? 'is-active' : ''}
+                  onClick={() => selectDurationRepairFilter('valid')}
+                ><strong>{durationRepairReview.alreadyValid}</strong><span>Durations already valid</span></button>
+                <button
+                  type="button"
+                  className={durationRepairFilter === 'automatic' ? 'is-active' : ''}
+                  onClick={() => selectDurationRepairFilter('automatic')}
+                ><strong>{durationRepairCorrectionsReadyCount}</strong><span>Safe/corrected durations</span></button>
+                <button
+                  type="button"
+                  className={`${durationRepairUnresolvedCount ? 'has-warning' : 'is-resolved'}${durationRepairFilter === 'manual' ? ' is-active' : ''}`}
+                  onClick={() => selectDurationRepairFilter('manual')}
+                ><strong>{durationRepairUnresolvedCount}</strong><span>Durations needing review</span></button>
               </div>
               <p className="duration-repair-note">
                 Exact weeks use 7 days, exact months use 30 days, and bare whole numbers are treated as days only because this is the medicine duration field. Ambiguous values are never guessed.
               </p>
-              <div className="duration-repair-table-wrap">
+              {durationRepairUnresolvedCount === 0 && (
+                <div className="duration-repair-ready" role="status">
+                  <CheckCircle2 size={17} /> All duration issues resolved — Ready to export
+                </div>
+              )}
+              <div className="duration-repair-filter-bar">
+                <strong>
+                  Showing {durationRepairVisibleRows.length.toLocaleString()} of {durationRepairReview.valuesScanned.toLocaleString()} medicine durations
+                </strong>
+                {durationRepairFilter !== 'all' && (
+                  <button type="button" onClick={() => selectDurationRepairFilter('all')}>Show all / Clear filter</button>
+                )}
+              </div>
+              <div className="duration-repair-table-wrap" ref={durationRepairTableRef}>
                 <table className="data-table duration-repair-table">
                   <thead>
                     <tr><th>Claim</th><th>Medicine</th><th>Previous</th><th>Correct duration</th><th>Method</th></tr>
                   </thead>
                   <tbody>
-                    {durationRepairReview.repairRows.map((row) => {
-                      const key = row.medicineId || `${row.claimId}:${row.medicineIndex}`
+                    {durationRepairVisibleRows.map((row) => {
+                      const isUnresolved = row.status === 'manual' && !row.manualReady
+                      const displayStatus = row.status === 'valid'
+                        ? 'Valid'
+                        : row.status === 'automatic'
+                          ? 'Automatic'
+                          : row.manualReady ? 'Ready' : 'Needs review'
                       return (
-                        <tr key={key}>
+                        <tr key={row.key} className={isUnresolved ? 'duration-repair-row--unresolved' : ''}>
                           <td className="duration-repair-claim">{row.claimNumber}</td>
                           <td className="duration-repair-medicine"><strong>{row.medicineCode || '—'}</strong><small>{row.medicineName}</small></td>
                           <td>{row.originalValue || <em>Missing</em>}</td>
                           <td>
                             <input
-                              className="form-input duration-repair-input"
-                              value={durationRepairValues[key] || ''}
-                              readOnly={row.status === 'automatic'}
+                              className={`form-input duration-repair-input${isUnresolved && row.enteredValue ? ' is-invalid' : ''}`}
+                              value={row.status === 'valid' ? row.originalValue : (durationRepairValues[row.key] || '')}
+                              readOnly={row.status !== 'manual'}
                               placeholder="e.g. 90 days"
+                              data-duration-unresolved={isUnresolved ? 'true' : undefined}
                               onChange={(event) => setDurationRepairValues((current) => ({
                                 ...current,
-                                [key]: event.target.value,
+                                [row.key]: event.target.value,
                               }))}
                             />
-                            <small>{row.reason}</small>
+                            {row.status === 'manual' && (
+                              <div className="duration-repair-quick-actions" aria-label="Quick duration values">
+                                {[30, 60, 90, 180].map((days) => (
+                                  <button
+                                    type="button"
+                                    key={days}
+                                    onClick={() => setDurationRepairValues((current) => ({
+                                      ...current,
+                                      [row.key]: `${days} days`,
+                                    }))}
+                                  >{days} days</button>
+                                ))}
+                              </div>
+                            )}
+                            <small className={isUnresolved ? 'duration-repair-validation-error' : ''}>
+                              {isUnresolved && row.enteredValue
+                                ? 'Use a positive whole number followed by day or days.'
+                                : row.manualReady
+                                  ? 'Valid manual correction.'
+                                  : row.reason}
+                            </small>
                           </td>
-                          <td><span className={`duration-repair-method duration-repair-method--${row.status}`}>
-                            {row.status === 'automatic' ? 'Automatic' : 'Manual'}
+                          <td><span className={`duration-repair-method duration-repair-method--${isUnresolved ? 'manual' : row.status === 'manual' ? 'ready' : row.status}`}>
+                            {displayStatus}
                           </span></td>
                         </tr>
                       )
                     })}
                   </tbody>
                 </table>
+                {durationRepairVisibleRows.length === 0 && (
+                  <div className="duration-repair-empty">
+                    {durationRepairFilter === 'manual'
+                      ? 'No unresolved durations remain.'
+                      : 'No medicine durations match this filter.'}
+                  </div>
+                )}
               </div>
             </div>
             <div className="modal-footer">
@@ -9975,6 +10080,7 @@ const Nhis = () => {
                 onClick={() => {
                   setDurationRepairReview(null)
                   setDurationRepairValues({})
+                  setDurationRepairFilter('all')
                 }}
               >Cancel Export</button>
               <button
@@ -9982,7 +10088,11 @@ const Nhis = () => {
                 disabled={durationRepairSaving}
                 onClick={() => { void handleApplyDurationRepairs() }}
               >
-                <CheckCircle2 size={14} /> {durationRepairSaving ? 'Saving repairs...' : 'Apply Repairs & Rescan'}
+                <CheckCircle2 size={14} /> {durationRepairSaving
+                  ? 'Saving corrections...'
+                  : durationRepairUnresolvedCount
+                    ? `Resolve ${durationRepairUnresolvedCount} Duration${durationRepairUnresolvedCount === 1 ? '' : 's'} to Continue`
+                    : 'Apply Corrections & Continue'}
               </button>
             </div>
           </div>

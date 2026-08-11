@@ -39,4 +39,14 @@ describe('NHIS claims pagination layout', () => {
     expect(source).toContain("onClick={() => setPageTab('patients')}")
     expect(source).not.toContain('className="nhis-patient-list-section"')
   })
+
+  it('turns duration review counts into inline correction filters', () => {
+    const source = readSource('./Nhis.jsx')
+    expect(source).toContain("selectDurationRepairFilter('manual')")
+    expect(source).toContain('data-duration-unresolved={isUnresolved')
+    expect(source).toContain('Show all / Clear filter')
+    expect(source).toContain('All duration issues resolved — Ready to export')
+    expect(source).toContain('Apply Corrections & Continue')
+    expect(source).toContain('[30, 60, 90, 180].map')
+  })
 })
