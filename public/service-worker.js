@@ -1,4 +1,4 @@
-const CACHE_NAME = 'healthflow-pharmacy-shell-v9'
+const CACHE_NAME = 'healthflow-pharmacy-shell-v10'
 const CANONICAL_APP_ORIGIN = 'https://healthflowcloud.com'
 const LEGACY_APP_HOSTS = new Set([
   'health-flow-pharmacy.vercel.app',
@@ -98,6 +98,17 @@ self.addEventListener('fetch', (event) => {
             }
 
             if (['script', 'style'].includes(request.destination) && event.clientId) {
+              try {
+                const currentShell = await fetch(`/index.html?__healthflow_sw_refresh=${Date.now()}`, {
+                  cache: 'reload',
+                })
+                if (currentShell.ok) {
+                  const cache = await caches.open(CACHE_NAME)
+                  await cache.put('/index.html', currentShell.clone())
+                }
+              } catch {
+                // The client-side recovery still performs a cache-busted reload.
+              }
               const client = await self.clients.get(event.clientId)
               client?.postMessage({
                 type: 'HEALTHFLOW_ASSET_MISS',
