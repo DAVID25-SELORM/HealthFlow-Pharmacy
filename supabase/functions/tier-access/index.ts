@@ -1668,16 +1668,6 @@ const getDrugs = async (
   const includeCatalog = Boolean(payload.includeCatalog)
   const searchTerm = normalizeText(payload.searchTerm)
   const inStockOnly = Boolean(payload.inStockOnly)
-  const shouldMaintainCatalog = includeCatalog && !searchTerm && !inStockOnly
-
-  if (shouldMaintainCatalog) {
-    try {
-      await syncDefaultMedicationCatalog(adminClient, organizationId, branchId)
-    } catch (error) {
-      // Never block core inventory visibility when catalog sync hits legacy-data issues.
-      console.error('tier-access catalog sync warning:', error)
-    }
-  }
 
   const limit = clampPositiveInteger(payload.limit, 0, 100)
   const rows = []
@@ -1741,15 +1731,12 @@ const getDrugs = async (
   }
 
   const visibleRows = chemicalShop ? rows.filter(isChemicalShopMedicineAllowed) : rows
-  const pricedRows = searchTerm || inStockOnly
-    ? visibleRows
-    : await enrichDrugsWithNhisCatalog(adminClient, organizationId, visibleRows)
 
   if (includeCatalog) {
-    return pricedRows
+    return visibleRows
   }
 
-  return pricedRows.filter(
+  return visibleRows.filter(
     (row) => !isDefaultMedicationBatchNumber(row.batch_number) || Number(row.quantity || 0) > 0
   )
 }

@@ -90,6 +90,17 @@ describe('Inventory', () => {
     mocks.isDefaultCatalogDrug.mockReturnValue(false)
   })
 
+  it('loads stock without triggering full reference-catalog maintenance', async () => {
+    render(<Inventory />)
+
+    await waitFor(() => {
+      expect(mocks.getAllDrugs).toHaveBeenCalledWith({
+        includeCatalog: false,
+        branchId: undefined,
+      })
+    })
+  })
+
   it('auto-calculates selling price from cost price until the price is edited manually', async () => {
     render(<Inventory />)
 

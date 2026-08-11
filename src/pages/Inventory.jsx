@@ -383,7 +383,9 @@ const Inventory = () => {
       }
 
       const data = await getInventory({
-        includeCatalog: true,
+        // Inventory is a stock view. Loading the full zero-quantity reference
+        // catalog here makes every page visit unnecessarily expensive.
+        includeCatalog: false,
         branchId: branchIdOverride || undefined,
       })
       setDrugs(data)
