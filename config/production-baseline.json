@@ -12,7 +12,7 @@
     "src/services/recycleBinService.js": "94f0fd814bda811b3c234769426d57257a0f8120e90df8bffc87ae9ebfbcabe9",
     "src/services/offlineInstallerReleaseService.js": "d656396c7cce60b3e007ffec4f4aa4f8d63f931ab022cbef3cdcdc02755c9c13",
     "src/services/settingsService.js": "c57579353d48eef51ab1fff0ca71fd8e65145f78a1480c03b0b71eba8f9c15a1",
-    "supabase/functions/tier-access/index.ts": "133702111e9334ad07d0f34907f987d74b8ee5cd743e4e24b6be5b367da2e3c5",
+    "supabase/functions/tier-access/index.ts": "8d226a1d58e75b200486e4db18b3a04a2ccca59998c346c3bd96da2ec3c339fa",
     "supabase/functions/staff-admin/index.ts": "1003e6ea0e987d12db4a6e0c4d927c27493a57fdb9011440958f3e24c0bb3127"
   }
 }

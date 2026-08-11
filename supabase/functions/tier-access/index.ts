@@ -5719,7 +5719,6 @@ const getReportBundle = async (
       .from('patients')
       .select(PATIENT_WORKSPACE_PATIENT_SELECT_FIELDS)
       .eq('organization_id', organizationId)
-      .match(scopedBranchId ? { branch_id: scopedBranchId } : {})
       .order('created_at', { ascending: false })
       .limit(reportLimit),
     adminClient

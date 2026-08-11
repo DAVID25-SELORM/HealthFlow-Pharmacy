@@ -28,6 +28,22 @@ describe('tier-access patient workspace compatibility', () => {
 })
 
 describe('tier-access report query bounds', () => {
+  it('does not branch-filter patients because the live patients table has no branch_id', async () => {
+    const source = await fs.readFile(functionSourcePath, 'utf8')
+    const reportBundle = source.slice(
+      source.indexOf('const getReportBundle = async'),
+      source.indexOf('const getReportDrugMatches = async')
+    )
+    const patientQueryStart = reportBundle.indexOf(".from('patients')")
+    const patientQuery = reportBundle.slice(
+      patientQueryStart,
+      reportBundle.indexOf(".from('drugs')", patientQueryStart)
+    )
+
+    expect(patientQuery).toContain(".eq('organization_id', organizationId)")
+    expect(patientQuery).not.toContain('branch_id')
+  })
+
   it('chunks large report medicine and sale ID filters', async () => {
     const source = await fs.readFile(functionSourcePath, 'utf8')
     const reportBundle = source.slice(

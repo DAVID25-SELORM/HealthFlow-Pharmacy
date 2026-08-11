@@ -19,6 +19,21 @@ describe('report branch and organisation security contract', () => {
     expect(source.match(/if \(scopedBranchId\).*\.eq\('branch_id', scopedBranchId\)/g)?.length).toBeGreaterThanOrEqual(5)
   })
 
+  it('keeps organization-owned patients free of invalid branch predicates', () => {
+    const reportBundle = source.slice(
+      source.indexOf('const getReportBundle = async'),
+      source.indexOf('const getReportDrugMatches = async')
+    )
+    const patientQueryStart = reportBundle.indexOf(".from('patients')")
+    const patientQuery = reportBundle.slice(
+      patientQueryStart,
+      reportBundle.indexOf(".from('drugs')", patientQueryStart)
+    )
+
+    expect(patientQuery).toContain(".eq('organization_id', organizationId)")
+    expect(patientQuery).not.toContain('branch_id')
+  })
+
   it('keeps patient, prescriber, and serving-staff filters separate on the server', () => {
     expect(source).toContain('const patientTerm = toIlikeSearchTerm(payload.patient)')
     expect(source).toContain('const prescriberTerm = toIlikeSearchTerm(payload.prescriber)')

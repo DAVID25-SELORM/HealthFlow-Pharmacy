@@ -8,7 +8,7 @@ This change extends the existing Reports → Drug Utilization implementation. It
 
 Every cloud report endpoint resolves its effective branch as `requesterProfile.branch_id || requestedBranchId`. A branch-assigned user therefore cannot widen scope with an empty branch or substitute another branch ID. Organisation-wide users may select an organisation-owned branch or all branches. Parent sales and NHIS claims remain constrained by the authenticated organisation before child line records are attached.
 
-The same resolved scope is applied to the report bundle, NHIS pagination, NHIS aggregate totals, medicine search, purchases, inventory, patients, and export-batch results. Chemical Shop catalogue filtering remains in place.
+The same resolved scope is applied to branch-owned report records, including sales, claims, drugs, NHIS pagination and aggregates, medicine search, purchases, inventory, and export batches. Patients are organization-owned in the production schema and have no `branch_id`; their lookup remains organization-scoped and only enriches already branch-scoped report records. Chemical Shop catalogue filtering remains in place.
 
 ## Data and inclusion rules
 
@@ -30,7 +30,7 @@ The same resolved scope is applied to the report bundle, NHIS pagination, NHIS a
 
 ## Characterization
 
-`src/pages/Reports.test.jsx` covers filter separation, period presets, friendly names, existing role behavior, NHIS/POS combination, and drill-down behavior. `src/contracts/reportBranchSecurity.contract.test.js` protects authenticated branch precedence, organisation predicates, independent server filters, and completed-POS inclusion. Existing tier-access characterization, contract tests, lint, and production build remain required gates.
+`src/pages/Reports.test.jsx` covers filter separation, period presets, friendly names, existing role behavior, NHIS/POS combination, and drill-down behavior. `src/contracts/reportBranchSecurity.contract.test.js` protects authenticated branch precedence, organisation predicates, independent server filters, completed-POS inclusion, and the absence of invalid patient branch predicates. `supabase/functions/tier-access/index.test.js` also characterizes compatibility with the production patients schema. Existing tier-access characterization, contract tests, lint, and production build remain required gates.
 
 ## Rollback
 
