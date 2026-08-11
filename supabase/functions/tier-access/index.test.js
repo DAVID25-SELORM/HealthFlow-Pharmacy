@@ -51,7 +51,8 @@ describe('tier-access report query bounds', () => {
       source.indexOf('const getReportDrugMatches = async')
     )
 
-    expect(source).toContain('const chunkValues = <T,>(values: T[], size = 100)')
+    expect(source).toContain('const POSTGREST_FILTER_CHUNK_SIZE = 40')
+    expect(source).toContain('size = POSTGREST_FILTER_CHUNK_SIZE')
     expect(reportBundle).toContain('chunkValues(matchingDrugIds)')
     expect(reportBundle).toContain('chunkValues(matchingSaleIds)')
     expect(reportBundle).not.toContain("salesQuery.in('id', matchingSaleIds)")

@@ -32,7 +32,7 @@ The same resolved scope is applied to branch-owned report records, including sal
 
 `src/pages/Reports.test.jsx` covers filter separation, period presets, friendly names, existing role behavior, NHIS/POS combination, and drill-down behavior. `src/contracts/reportBranchSecurity.contract.test.js` protects authenticated branch precedence, organisation predicates, independent server filters, completed-POS inclusion, and the absence of invalid patient branch predicates. `supabase/functions/tier-access/index.test.js` also characterizes compatibility with the production patients schema. Existing tier-access characterization, contract tests, lint, and production build remain required gates.
 
-Large organizations are handled with bounded PostgREST filters. NHIS claim, medicine/service line, serving-user, and search hydration lookups chunk UUID lists so report generation does not exceed gateway URL limits. Edge Function error objects are normalized into readable messages rather than `[object Object]`.
+Large organizations are handled with bounded PostgREST filters. NHIS claim, medicine/service line, serving-user, and search hydration lookups chunk UUID lists in groups of 40 so the encoded IDs and nested report select clauses remain below gateway request-line limits, including custom and historical date ranges. Edge Function error objects are normalized into readable messages rather than `[object Object]`.
 
 ## Rollback
 

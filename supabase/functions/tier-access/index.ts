@@ -600,6 +600,9 @@ const REPORT_BUNDLE_MAX_ROWS = 1000
 const REPORT_BUNDLE_MAX_NHIS_CLAIMS = 250
 const REPORT_BUNDLE_DEFAULT_NHIS_CLAIMS = 200
 const REPORT_AGGREGATE_PAGE_SIZE = 500
+// UUID filters share the request URL with long nested report select clauses.
+// Keep batches below common proxy request-line limits after URL encoding.
+const POSTGREST_FILTER_CHUNK_SIZE = 40
 
 const PATIENT_WORKSPACE_PATIENT_SELECT_FIELDS = [
   'id',
@@ -652,7 +655,7 @@ const parsePositiveInteger = (value: unknown, fallback: number) => {
 const clampPositiveInteger = (value: unknown, fallback: number, max: number) =>
   Math.min(parsePositiveInteger(value, fallback), max)
 
-const chunkValues = <T,>(values: T[], size = 100) => {
+const chunkValues = <T,>(values: T[], size = POSTGREST_FILTER_CHUNK_SIZE) => {
   const chunks: T[][] = []
   for (let index = 0; index < values.length; index += size) {
     chunks.push(values.slice(index, index + size))
