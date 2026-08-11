@@ -44,6 +44,25 @@ const notifyServiceWorkerAboutLoadedAssets = (registration) => {
 }
 
 let serviceWorkerReloading = false
+const ASSET_RECOVERY_RELOAD_KEY = 'healthflow_asset_recovery_reload_at'
+const ASSET_RECOVERY_RELOAD_COOLDOWN_MS = 30_000
+
+const watchForMissingDeploymentAssets = () => {
+  navigator.serviceWorker.addEventListener('message', (event) => {
+    if (event.data?.type !== 'HEALTHFLOW_ASSET_MISS' || serviceWorkerReloading) {
+      return
+    }
+
+    const lastReloadAt = Number(window.sessionStorage.getItem(ASSET_RECOVERY_RELOAD_KEY) || 0)
+    if (Date.now() - lastReloadAt < ASSET_RECOVERY_RELOAD_COOLDOWN_MS) {
+      return
+    }
+
+    window.sessionStorage.setItem(ASSET_RECOVERY_RELOAD_KEY, String(Date.now()))
+    serviceWorkerReloading = true
+    window.location.reload()
+  })
+}
 
 const requestWaitingServiceWorkerActivation = (registration) => {
   if (registration?.waiting) {
@@ -78,6 +97,8 @@ const registerServiceWorker = () => {
   if (!import.meta.env.PROD || !('serviceWorker' in navigator)) {
     return
   }
+
+  watchForMissingDeploymentAssets()
 
   window.addEventListener('load', () => {
     navigator.serviceWorker

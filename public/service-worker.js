@@ -86,10 +86,24 @@ self.addEventListener('fetch', (event) => {
 
       if (preferNetwork) {
         return fetch(request)
-          .then((response) => {
+          .then(async (response) => {
             if (response.ok) {
               const responseCopy = response.clone()
               caches.open(CACHE_NAME).then((cache) => cache.put(request, responseCopy))
+              return response
+            }
+
+            if (cachedResponse) {
+              return cachedResponse
+            }
+
+            if (['script', 'style'].includes(request.destination) && event.clientId) {
+              const client = await self.clients.get(event.clientId)
+              client?.postMessage({
+                type: 'HEALTHFLOW_ASSET_MISS',
+                url: request.url,
+                status: response.status,
+              })
             }
 
             return response
