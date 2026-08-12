@@ -530,7 +530,7 @@ const makeBlankMedicine = () => ({
   unitPrice:     '',
   prescribedQty: '0',
   servedQty:     '0',
-  dispensedQty:  '0',
+  dispensedQty:  '',
   servingStatus: 'pending',
   reasonIfNotFullyServed: '',
   enteredByClaimsOfficer: '',
@@ -8586,6 +8586,7 @@ const Nhis = () => {
                     step="0.5"
                     className="form-input"
                     value={medForm.dispensedQty}
+                    placeholder="0"
                     onChange={(e) => setMedForm((p) => ({ ...p, dispensedQty: e.target.value }))}
                   />
                 </div>

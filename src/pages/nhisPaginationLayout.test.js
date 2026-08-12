@@ -22,6 +22,18 @@ describe('NHIS claims pagination layout', () => {
     expect(durationOptions).not.toContain("'1 week'")
   })
 
+  it('shows prescribed quantity zero as a replaceable placeholder', () => {
+    const source = readSource('./Nhis.jsx')
+    const blankMedicine = source.slice(
+      source.indexOf('const makeBlankMedicine = () => ({'),
+      source.indexOf('const makeBlankMedicineForDate')
+    )
+
+    expect(blankMedicine).toContain("dispensedQty:  ''")
+    expect(source).toContain('value={medForm.dispensedQty}')
+    expect(source).toContain('placeholder="0"')
+  })
+
   it('renders page controls above and below the claims table', () => {
     const source = readSource('./Nhis.jsx')
     expect(source).toContain("{renderClaimsPagination('top')}")
