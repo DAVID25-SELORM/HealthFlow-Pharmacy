@@ -6501,9 +6501,6 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
 export const updateNhisClaim = async (id, claimData, medicines, options = {}) => {
   const privilegedCorrection = options.privilegedCorrection === true
   const correctionReason = normalizeText(options.correctionReason ?? claimData.correctionReason)
-  if (privilegedCorrection && !correctionReason) {
-    throw new Error('Reason for correction is required before saving a previously saved claim.')
-  }
   if (privilegedCorrection && (options.useBranchServer || shouldUseBranchServer())) {
     throw new Error('Privileged claim corrections require an online cloud connection so the immutable audit history can be recorded safely.')
   }

@@ -4231,14 +4231,6 @@ describe('NHIS claim save attachment behavior', () => {
   }
   const medicineWithTotal = { ...baseMedicine, totalAmount: 10 }
 
-  it('requires a reason before any privileged correction work begins', async () => {
-    await expect(updateNhisClaim('claim-1', baseClaim, [medicineWithTotal], {
-      privilegedCorrection: true,
-    })).rejects.toThrow('Reason for correction is required')
-    expect(supabase.from).not.toHaveBeenCalled()
-    expect(supabase.rpc).not.toHaveBeenCalled()
-  })
-
   it('blocks privileged correction on the offline branch path before mutation', async () => {
     await expect(updateNhisClaim('claim-1', baseClaim, [medicineWithTotal], {
       privilegedCorrection: true,

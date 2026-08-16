@@ -34,6 +34,12 @@ describe('NHIS claims pagination layout', () => {
     expect(source).toContain('placeholder="0"')
   })
 
+  it('keeps the privileged correction reason optional', () => {
+    const source = readSource('./Nhis.jsx')
+    expect(source).toContain('Reason for correction (optional)')
+    expect(source).not.toContain('Enter a reason for correction before saving this previously saved claim.')
+  })
+
   it('renders page controls above and below the claims table', () => {
     const source = readSource('./Nhis.jsx')
     expect(source).toContain("{renderClaimsPagination('top')}")

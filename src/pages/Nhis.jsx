@@ -4248,10 +4248,6 @@ const Nhis = () => {
 
   const handleSubmitClaim = async (e, intent = 'dispatch', reviewConfirmed = false, medicinesOverride = null) => {
     e.preventDefault()
-    if (editingClaim && canEditNhisClaimAnytime && !normalizeText(correctionReason)) {
-      setClaimError('Enter a reason for correction before saving this previously saved claim.')
-      return
-    }
     const saveAsDraft = intent === 'save_details'
     const serveDirectly = intent === 'serve_directly'
     if (serveDirectly && editingClaim && !canNhisClaimBeServedDirectly({
@@ -8122,7 +8118,7 @@ const Nhis = () => {
 
             {editingClaim && canEditNhisClaimAnytime && (
               <section className="nhis-section nhis-correction-audit">
-                <h3 className="nhis-section-title">Reason for correction *</h3>
+                <h3 className="nhis-section-title">Reason for correction (optional)</h3>
                 <textarea
                   className="form-input"
                   rows={3}
