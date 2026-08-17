@@ -40,6 +40,18 @@ describe('NHIS claims pagination layout', () => {
     expect(source).not.toContain('Enter a reason for correction before saving this previously saved claim.')
   })
 
+  it('recalculates claim serving status after a privileged medicine correction', () => {
+    const source = readSource('./Nhis.jsx')
+    const correctionFallback = source.slice(
+      source.indexOf("payload.status = editingClaim.status"),
+      source.indexOf('payload.expectedUpdatedAt')
+    )
+
+    expect(correctionFallback).toContain(
+      'payload.servingStatus = getClaimServingStatus(effectiveClaimMedicines)'
+    )
+  })
+
   it('renders page controls above and below the claims table', () => {
     const source = readSource('./Nhis.jsx')
     expect(source).toContain("{renderClaimsPagination('top')}")

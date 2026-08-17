@@ -4401,6 +4401,7 @@ const Nhis = () => {
         payload.servingReviewedAt = new Date().toISOString()
       } else {
         payload.status = editingClaim.status
+        payload.servingStatus = getClaimServingStatus(effectiveClaimMedicines)
         payload.allowIncompleteReview = true
       }
       payload.expectedUpdatedAt = editingClaim?.updated_at || editingClaim?.updatedAt || ''
