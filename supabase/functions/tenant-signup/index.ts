@@ -12,6 +12,7 @@ const VALID_PLAN_CODES = ['starter', 'professional', 'premium'] as const
 const VALID_BILLING_STATUSES = ['trial', 'active', 'past_due', 'suspended', 'cancelled'] as const
 const VALID_SUPPORT_LEVELS = ['standard', 'priority', 'premium'] as const
 const VALID_ORGANIZATION_TYPES = ['pharmacy', 'hospital', 'chemical_shop'] as const
+const VALID_NHIS_TOP_UP_POLICIES = ['not_allowed', 'allowed', 'required_when_nhis_below_selling_value'] as const
 // ✅ NHIS PHARMACY LEVEL PATCH START
 const VALID_PHARMACY_LEVELS = ['P1', 'P2', 'LCS', 'HP'] as const
 // ✅ NHIS PHARMACY LEVEL PATCH END
@@ -57,6 +58,14 @@ const json = (body: Record<string, unknown>, status = 200) =>
   })
 
 const normalizeText = (value: unknown) => (typeof value === 'string' ? value.trim() : '')
+const normalizeNhisTopUpPolicy = (value: unknown, fallback = 'not_allowed') => {
+  const normalized = normalizeText(value).toLowerCase()
+  if (!normalized) return fallback
+  if (!VALID_NHIS_TOP_UP_POLICIES.includes(normalized as typeof VALID_NHIS_TOP_UP_POLICIES[number])) {
+    throw new Error('Select a valid NHIS top-up policy.')
+  }
+  return normalized
+}
 
 const getErrorMessage = (error: unknown) => {
   if (error instanceof Error) return error.message
@@ -1235,6 +1244,10 @@ const updateTenantOrganization = async (
       organizationInput.canUseNhisTopups !== undefined
         ? Boolean(organizationInput.canUseNhis && organizationInput.canUseNhisTopups)
         : null,
+    nhis_top_up_policy:
+      organizationInput.nhisTopUpPolicy !== undefined
+        ? normalizeNhisTopUpPolicy(organizationInput.nhisTopUpPolicy)
+        : null,
     can_use_accounting:
       organizationInput.canUseAccounting !== undefined
         ? Boolean(organizationInput.canUseAccounting)
@@ -1290,6 +1303,7 @@ const updateTenantOrganization = async (
       key !== 'can_use_purchases' &&
       key !== 'can_use_nhis' &&
       key !== 'can_use_nhis_topups' &&
+      key !== 'nhis_top_up_policy' &&
       key !== 'can_use_accounting' &&
       key !== 'can_use_multi_branch' &&
       key !== 'can_use_offline_installer' &&
@@ -1353,6 +1367,9 @@ const updateTenantOrganization = async (
 
   if (organizationInput.canUseNhisTopups === undefined) {
     delete updatePayload.can_use_nhis_topups
+  }
+  if (organizationInput.nhisTopUpPolicy === undefined) {
+    delete updatePayload.nhis_top_up_policy
   }
 
   if (organizationInput.canUseAccounting === undefined) {
@@ -1707,6 +1724,10 @@ const bootstrapOrganization = async (
           can_use_nhis: Boolean(organizationInput.canUseNhis),
           can_use_nhis_topups: Boolean(
             organizationInput.canUseNhis && organizationInput.canUseNhisTopups
+          ),
+          nhis_top_up_policy: normalizeNhisTopUpPolicy(
+            organizationInput.nhisTopUpPolicy,
+            organizationInput.canUseNhisTopups ? 'allowed' : 'not_allowed'
           ),
           can_use_accounting: Boolean(organizationInput.canUseAccounting),
           can_use_multi_branch: Boolean(organizationInput.canUseMultiBranch),

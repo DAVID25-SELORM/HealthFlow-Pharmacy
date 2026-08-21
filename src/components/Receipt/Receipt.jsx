@@ -225,13 +225,31 @@ const Receipt = forwardRef(({ saleData, pharmacyInfo, mode = 'preview' }, ref) =
                     <strong>{insuranceDetails.insuranceId}</strong>
                   </div>
                   <div>
-                    <span>Insurance Covered</span>
+                    <span>NHIS Covered</span>
                     <strong>{formatCurrency(insuranceDetails.coveredAmount || 0)}</strong>
                   </div>
                   <div>
                     <span>Patient Top-Up</span>
                     <strong>{formatCurrency(insuranceDetails.patientTopUp || 0)}</strong>
                   </div>
+                  {Number(insuranceDetails.privateNonNhisAmount || 0) > 0 && (
+                    <div>
+                      <span>Private / Non-NHIS</span>
+                      <strong>{formatCurrency(insuranceDetails.privateNonNhisAmount)}</strong>
+                    </div>
+                  )}
+                  {Number(insuranceDetails.policyAdjustmentAmount || 0) > 0 && (
+                    <div>
+                      <span>NHIS Policy Adjustment</span>
+                      <strong>{formatCurrency(insuranceDetails.policyAdjustmentAmount)}</strong>
+                    </div>
+                  )}
+                  {insuranceDetails.patientDueAmount !== undefined && (
+                    <div>
+                      <span>Patient Due</span>
+                      <strong>{formatCurrency(insuranceDetails.patientDueAmount)}</strong>
+                    </div>
+                  )}
                   {insuranceDetails.patientTopUpMethod && (
                     <div>
                       <span>Top-Up Paid By</span>

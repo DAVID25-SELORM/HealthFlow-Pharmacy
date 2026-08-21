@@ -9,6 +9,7 @@ const VALID_PLAN_CODES = ['starter', 'professional', 'premium']
 const VALID_BILLING_STATUSES = ['trial', 'active', 'past_due', 'suspended', 'cancelled']
 const VALID_SUPPORT_LEVELS = ['standard', 'priority', 'premium']
 const VALID_ORGANIZATION_TYPES = ['pharmacy', 'hospital', 'chemical_shop']
+const VALID_NHIS_TOP_UP_POLICIES = ['not_allowed', 'allowed', 'required_when_nhis_below_selling_value']
 
 const normalizeText = (value) => (typeof value === 'string' ? value.trim() : '')
 
@@ -62,6 +63,9 @@ const normalizeChoice = (value, validValues, fallback, label) => {
 
 const normalizeOrganizationType = (value, fallback = 'pharmacy') =>
   normalizeChoice(value, VALID_ORGANIZATION_TYPES, fallback, 'organization type')
+
+const normalizeNhisTopUpPolicy = (value, fallback = 'not_allowed') =>
+  normalizeChoice(value, VALID_NHIS_TOP_UP_POLICIES, fallback, 'NHIS top-up policy')
 
 const normalizeOptionalIsoDate = (value) => {
   const normalized = normalizeText(value)
@@ -225,6 +229,10 @@ export const createPharmacyTenant = async ({ pharmacy, admin }) =>
       canUsePurchases: Boolean(pharmacy.canUsePurchases),
       canUseNhis: Boolean(pharmacy.canUseNhis),
       canUseNhisTopups: Boolean(pharmacy.canUseNhis && pharmacy.canUseNhisTopups),
+      nhisTopUpPolicy: normalizeNhisTopUpPolicy(
+        pharmacy.nhisTopUpPolicy,
+        pharmacy.canUseNhisTopups ? 'allowed' : 'not_allowed'
+      ),
       canUseAccounting: Boolean(pharmacy.canUseAccounting),
       canUseMultiBranch: Boolean(pharmacy.canUseMultiBranch),
       canUseOfflineInstaller: Boolean(pharmacy.canUseOfflineInstaller),
@@ -349,6 +357,10 @@ export const updateOrganizationDetails = async (orgId, fields) => {
     canUseNhisTopups:
       fields.canUseNhisTopups !== undefined
         ? Boolean(fields.canUseNhis && fields.canUseNhisTopups)
+        : undefined,
+    nhisTopUpPolicy:
+      fields.nhisTopUpPolicy !== undefined
+        ? normalizeNhisTopUpPolicy(fields.nhisTopUpPolicy)
         : undefined,
     canUseAccounting:
       fields.canUseAccounting !== undefined ? Boolean(fields.canUseAccounting) : undefined,

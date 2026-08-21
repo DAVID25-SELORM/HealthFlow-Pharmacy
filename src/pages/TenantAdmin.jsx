@@ -43,6 +43,7 @@ const blankPharmacy = {
   canUsePurchases: false,
   canUseNhis: false,
   canUseNhisTopups: false,
+  nhisTopUpPolicy: 'not_allowed',
   canUseAccounting: false,
   canUseMultiBranch: false,
   canUseOfflineInstaller: false,
@@ -261,6 +262,7 @@ const TenantAdmin = () => {
       canUsePurchases: Boolean(org.can_use_purchases),
       canUseNhis: Boolean(org.can_use_nhis),
       canUseNhisTopups: Boolean(org.can_use_nhis_topups),
+      nhisTopUpPolicy: org.nhis_top_up_policy || (org.can_use_nhis_topups ? 'allowed' : 'not_allowed'),
       canUseAccounting: Boolean(org.can_use_accounting),
       canUseMultiBranch: Boolean(org.can_use_multi_branch),
       canUseOfflineInstaller: Boolean(org.can_use_offline_installer),
@@ -671,6 +673,18 @@ const TenantAdmin = () => {
                       onChange={(e) => setPharmacy({ ...pharmacy, canUseNhisTopups: e.target.checked })}
                     />
                     NHIS top-ups
+                  </label>
+                  <label className="tenant-checkbox-label">
+                    NHIS top-up policy
+                    <select
+                      value={pharmacy.nhisTopUpPolicy}
+                      disabled={!pharmacy.canUseNhis}
+                      onChange={(e) => setPharmacy({ ...pharmacy, nhisTopUpPolicy: e.target.value })}
+                    >
+                      <option value="not_allowed">Not allowed</option>
+                      <option value="allowed">Allowed</option>
+                      <option value="required_when_nhis_below_selling_value">Required when NHIS is lower</option>
+                    </select>
                   </label>
                   <label className="tenant-checkbox-label">
                     <input
@@ -1325,6 +1339,18 @@ const TenantAdmin = () => {
                         onChange={(e) => setEditForm({ ...editForm, canUseNhisTopups: e.target.checked })}
                       />
                       NHIS top-ups
+                    </label>
+                    <label className="tenant-checkbox-label">
+                      NHIS top-up policy
+                      <select
+                        value={editForm.nhisTopUpPolicy || 'not_allowed'}
+                        disabled={!editForm.canUseNhis}
+                        onChange={(e) => setEditForm({ ...editForm, nhisTopUpPolicy: e.target.value })}
+                      >
+                        <option value="not_allowed">Not allowed</option>
+                        <option value="allowed">Allowed</option>
+                        <option value="required_when_nhis_below_selling_value">Required when NHIS is lower</option>
+                      </select>
                     </label>
                     <label className="tenant-checkbox-label">
                       <input

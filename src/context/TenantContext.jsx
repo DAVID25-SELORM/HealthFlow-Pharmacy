@@ -5,6 +5,7 @@ import {
   resolveTierAccess,
   TIER_LIMITS,
 } from '../utils/subscription'
+import { normalizeNhisTopUpPolicy } from '../utils/nhisSplitSettlement'
 
 export { normalizeSubscriptionTier, TIER_LIMITS }
 
@@ -32,6 +33,7 @@ export const TenantProvider = ({ children }) => {
         canUsePurchases: false,
         canUseNhis: false,
         canUseNhisTopups: false,
+        nhisTopUpPolicy: 'not_allowed',
         canUseAccounting: false,
         canUseMultiBranch: false,
         canUseOfflineInstaller: false,
@@ -56,6 +58,7 @@ export const TenantProvider = ({ children }) => {
         canUsePurchases: false,
         canUseNhis: false,
         canUseNhisTopups: false,
+        nhisTopUpPolicy: 'not_allowed',
         canUseAccounting: false,
         canUseMultiBranch: false,
         canUseOfflineInstaller: false,
@@ -79,6 +82,7 @@ export const TenantProvider = ({ children }) => {
         canUsePurchases: false,
         canUseNhis: false,
         canUseNhisTopups: false,
+        nhisTopUpPolicy: 'not_allowed',
         canUseAccounting: false,
         canUseMultiBranch: false,
         canUseOfflineInstaller: false,
@@ -111,6 +115,9 @@ export const TenantProvider = ({ children }) => {
       canUsePurchases: Boolean(organization.can_use_purchases),
       canUseNhis: Boolean(organization.can_use_nhis),
       canUseNhisTopups: Boolean(organization.can_use_nhis_topups),
+      nhisTopUpPolicy: normalizeNhisTopUpPolicy(organization.nhis_top_up_policy, {
+        legacyTopUpsEnabled: Boolean(organization.can_use_nhis_topups),
+      }),
       canUseAccounting: Boolean(organization.can_use_accounting),
       canUseMultiBranch: Boolean(organization.can_use_multi_branch),
       canUseOfflineInstaller: Boolean(organization.can_use_offline_installer),

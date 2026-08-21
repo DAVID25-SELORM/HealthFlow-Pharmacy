@@ -153,6 +153,15 @@ CREATE TABLE IF NOT EXISTS sales (
   net_amount REAL NOT NULL,
   payment_method TEXT NOT NULL,
   payment_status TEXT NOT NULL DEFAULT 'completed',
+  insurance_covered_amount REAL NOT NULL DEFAULT 0,
+  insurance_top_up_amount REAL NOT NULL DEFAULT 0,
+  insurance_top_up_payment_method TEXT,
+  nhis_covered_amount REAL NOT NULL DEFAULT 0,
+  nhis_top_up_amount REAL NOT NULL DEFAULT 0,
+  private_non_nhis_amount REAL NOT NULL DEFAULT 0,
+  nhis_policy_adjustment_amount REAL NOT NULL DEFAULT 0,
+  nhis_top_up_policy TEXT,
+  patient_payment_method TEXT,
   amount_paid REAL,
   change_given REAL,
   notes TEXT,
@@ -197,6 +206,11 @@ CREATE TABLE IF NOT EXISTS sale_items (
   quantity REAL NOT NULL,
   unit_price REAL NOT NULL,
   total_price REAL NOT NULL,
+  nhis_settlement TEXT,
+  nhis_covered_amount REAL NOT NULL DEFAULT 0,
+  patient_top_up_amount REAL NOT NULL DEFAULT 0,
+  private_amount REAL NOT NULL DEFAULT 0,
+  policy_adjustment_amount REAL NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 

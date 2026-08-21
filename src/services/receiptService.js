@@ -225,10 +225,17 @@ export const generateReceiptPDF = (saleData, pharmacyInfo) => {
   doc.text('PAYMENT DETAILS', margin, y)
   y += 7
   doc.setDrawColor(184, 222, 211)
+  const nhisSplitLineCount = saleData.insuranceDetails
+    ? [
+        saleData.insuranceDetails.privateNonNhisAmount,
+        saleData.insuranceDetails.policyAdjustmentAmount,
+        saleData.insuranceDetails.patientDueAmount !== undefined ? 1 : 0,
+      ].filter((value) => value === 1 || Number(value || 0) > 0).length
+    : 0
   const paymentDetailsHeight = saleData.insuranceDetails
     ? saleData.insuranceDetails.patientTopUpMethod
-      ? 78
-      : 70
+      ? 78 + nhisSplitLineCount * 9
+      : 70 + nhisSplitLineCount * 9
     : 34
   doc.roundedRect(margin, y, pageWidth - margin * 2, paymentDetailsHeight, 2, 2)
   labelValue('Payment Mode', saleData.paymentMethod?.toUpperCase() || 'N/A', margin + 34, y + 11, 62)
@@ -239,8 +246,21 @@ export const generateReceiptPDF = (saleData, pharmacyInfo) => {
     labelValue('Insurance ID', saleData.insuranceDetails.insuranceId || 'N/A', margin + 34, y + 47, 62)
     labelValue('Insurance Covered', money(saleData.insuranceDetails.coveredAmount || 0), margin + 34, y + 56, 62)
     labelValue('Patient Top-Up', money(saleData.insuranceDetails.patientTopUp || 0), margin + 34, y + 65, 62)
+    let splitOffset = 74
+    if (Number(saleData.insuranceDetails.privateNonNhisAmount || 0) > 0) {
+      labelValue('Private / Non-NHIS', money(saleData.insuranceDetails.privateNonNhisAmount), margin + 34, y + splitOffset, 62)
+      splitOffset += 9
+    }
+    if (Number(saleData.insuranceDetails.policyAdjustmentAmount || 0) > 0) {
+      labelValue('NHIS Policy Adjustment', money(saleData.insuranceDetails.policyAdjustmentAmount), margin + 34, y + splitOffset, 62)
+      splitOffset += 9
+    }
+    if (saleData.insuranceDetails.patientDueAmount !== undefined) {
+      labelValue('Patient Due', money(saleData.insuranceDetails.patientDueAmount), margin + 34, y + splitOffset, 62)
+      splitOffset += 9
+    }
     if (saleData.insuranceDetails.patientTopUpMethod) {
-      labelValue('Top-Up Paid By', saleData.insuranceDetails.patientTopUpMethod.toUpperCase(), margin + 34, y + 74, 62)
+      labelValue('Top-Up Paid By', saleData.insuranceDetails.patientTopUpMethod.toUpperCase(), margin + 34, y + splitOffset, 62)
     }
   }
 

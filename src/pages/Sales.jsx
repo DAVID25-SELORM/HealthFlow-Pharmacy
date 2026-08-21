@@ -73,6 +73,7 @@ import {
 import Receipt from '../components/Receipt/Receipt'
 import DiagnosisSelector from '../components/DiagnosisSelector/DiagnosisSelector'
 import { getEffectiveSellingPrice, getNhisCatalogPrice, hasNhisCatalogPrice } from '../utils/drugPricing'
+import { calculateNhisSplitSettlement } from '../utils/nhisSplitSettlement'
 import { DEFAULT_FACILITY_NAME } from '../utils/facilityBranding'
 import './Sales.css'
 
@@ -129,9 +130,9 @@ const getNhisCalendarDate = (value = new Date()) => {
 const getNhisCoveredUnitPrice = (item) => {
   const retailPrice = Number.parseFloat(item?.price) || 0
   const nhisPrice = Number.parseFloat(item?.nhisPrice)
-  return Number.isFinite(nhisPrice) && nhisPrice > 0
+  return item?.nhisCode && Number.isFinite(nhisPrice) && nhisPrice > 0
     ? Math.min(nhisPrice, retailPrice)
-    : retailPrice
+    : 0
 }
 
 const splitPatientNameForNhis = (patient) => {
@@ -201,7 +202,7 @@ const Sales = () => {
   const [searchParams, setSearchParams] = useSearchParams()
   const { user, displayName, role, profile, organization } = useAuth()
   const { notify } = useNotification()
-  const { canUseNhisTopups } = useTenant()
+  const { canUseNhisTopups, nhisTopUpPolicy } = useTenant()
   const isOnline = useOnlineStatus()
   const [drugs, setDrugs] = useState([])
   const [drugSearchLoading, setDrugSearchLoading] = useState(false)
@@ -831,11 +832,14 @@ const Sales = () => {
     return Math.max(0, calculateSubtotal() - calculateSaleDiscount())
   }
 
-  const calculateNhisCoveredTotal = () => {
-    return cart.reduce((sum, item) => {
-      return sum + getNhisCoveredUnitPrice(item) * item.quantity
-    }, 0)
-  }
+  const calculateNhisSettlement = () => calculateNhisSplitSettlement({
+    items: cart,
+    discount: calculateSaleDiscount(),
+    topUpPolicy: nhisTopUpPolicy,
+    legacyTopUpsEnabled: canUseNhisTopups,
+  })
+
+  const calculateNhisCoveredTotal = () => calculateNhisSettlement().nhisCoveredAmount
 
   const calculateChange = () => {
     const total = calculateTotal()
@@ -1276,17 +1280,20 @@ const Sales = () => {
     }
 
     const total = calculateTotal()
+    const nhisSettlement = calculateNhisSettlement()
     const shouldUseNhisTopUpPricing =
       method !== 'nhia' && isNhisPatient(selectedPatientForSale) && canUseNhisTopups
     const coveredAmount =
       method === 'nhia'
-        ? Math.min(calculateNhisCoveredTotal(), total)
+        ? nhisSettlement.nhisCoveredAmount
         : shouldUseNhisTopUpPricing
           ? calculateNhisCoveredTotal()
           : total
     setInsuranceCoverage(formatAmountInput(Math.min(coveredAmount, total)))
     setPatientTopUp(
-      shouldUseNhisTopUpPricing ? formatAmountInput(Math.max(total - coveredAmount, 0)) : '0.00'
+      method === 'nhia'
+        ? formatAmountInput(nhisSettlement.patientDueAmount)
+        : shouldUseNhisTopUpPricing ? formatAmountInput(Math.max(total - coveredAmount, 0)) : '0.00'
     )
     setPatientTopUpMethod('cash')
   }
@@ -1390,10 +1397,12 @@ const Sales = () => {
 
   const buildNhiaReviewClaim = ({
     saleNumber,
-    soldItems,
+    settlementLines,
     retailTotal,
     claimTotal,
-    pricingAdjustment,
+    patientTopUpAmount,
+    privateNonNhisAmount,
+    policyAdjustmentAmount,
     branchId,
     saleDate,
   }) => {
@@ -1404,7 +1413,9 @@ const Sales = () => {
     const servedAt = saleDate || new Date().toISOString()
     const serviceDate = getNhisCalendarDate(servedAt)
     const { surname, otherNames } = splitPatientNameForNhis(selectedPatientForSale)
-    const medicines = soldItems.map((item) => {
+    const medicines = settlementLines
+      .filter((item) => item.nhisCoveredAmount > 0)
+      .map((item) => {
       const unitPrice = getNhisCoveredUnitPrice(item)
       const totalAmount = Number((unitPrice * item.quantity).toFixed(2))
       return {
@@ -1428,7 +1439,7 @@ const Sales = () => {
         requiredPharmacyLevel: item.requiredPharmacyLevel || null,
         // ✅ NHIS PHARMACY LEVEL PATCH END
       }
-    })
+      })
 
     return {
       claimData: {
@@ -1462,8 +1473,14 @@ const Sales = () => {
           'Pending claims officer review before CLAIM-it submission.',
           `Retail sale total: GHS ${retailTotal.toFixed(2)}`,
           `NHIS covered amount: GHS ${claimTotal.toFixed(2)}`,
-          pricingAdjustment > 0
-            ? `NHIS pricing adjustment: GHS ${pricingAdjustment.toFixed(2)}`
+          patientTopUpAmount > 0
+            ? `Patient NHIS top-up: GHS ${patientTopUpAmount.toFixed(2)}`
+            : null,
+          privateNonNhisAmount > 0
+            ? `Private/non-NHIS medicines: GHS ${privateNonNhisAmount.toFixed(2)}`
+            : null,
+          policyAdjustmentAmount > 0
+            ? `NHIS policy adjustment (not charged to patient): GHS ${policyAdjustmentAmount.toFixed(2)}`
             : null,
         ].filter(Boolean).join('\n'),
       },
@@ -1476,8 +1493,8 @@ const Sales = () => {
     return claimPayload ? await createClaim(claimPayload) : null
   }
 
-  const assertNhiaPosMedicationCoverage = async (serviceDate) => {
-    for (const item of cart) {
+  const assertNhiaPosMedicationCoverage = async (serviceDate, settlementLines) => {
+    for (const item of settlementLines.filter((line) => line.nhisCoveredAmount > 0)) {
       const result = await checkNhisActiveMedicationOverlap({
         memberNo: selectedNhiaMemberNumber,
         hin: selectedPatientForSale?.nhis_hin || '',
@@ -1513,19 +1530,16 @@ const Sales = () => {
     const amountPaid = Number.parseFloat(received) || 0
     const saleIsNhiaClaim = paymentMethod === 'nhia'
     const saleUsesOnlineProvider = paymentMethod === 'momo' || paymentMethod === 'card'
-    const nhiaCoveredAmount = saleIsNhiaClaim
-      ? Math.min(calculateNhisCoveredTotal(), retailNetTotal)
-      : retailNetTotal
-    const nhiaPricingAdjustment = saleIsNhiaClaim
-      ? Math.max(retailNetTotal - nhiaCoveredAmount, 0)
-      : 0
-    const total = saleIsNhiaClaim ? nhiaCoveredAmount : retailNetTotal
-    const recordedSaleDiscount = saleDiscount + nhiaPricingAdjustment
+    const nhisSettlement = calculateNhisSettlement()
+    const nhiaCoveredAmount = saleIsNhiaClaim ? nhisSettlement.nhisCoveredAmount : retailNetTotal
+    const nhiaPricingAdjustment = saleIsNhiaClaim ? nhisSettlement.policyAdjustmentAmount : 0
+    const total = retailNetTotal
+    const recordedSaleDiscount = saleDiscount
     const saleIsInsuranceLike = paymentMethod === 'insurance' || saleIsNhiaClaim
     const insuranceSplitAllowed = !saleIsNhiaClaim && (!servingNhisPatient || canUseNhisTopups)
     const insuranceCoveredAmount =
       saleIsNhiaClaim
-        ? total
+        ? nhiaCoveredAmount
         : paymentMethod === 'insurance' && !insuranceSplitAllowed
         ? total
         : Number.parseFloat(insuranceCoverage) || 0
@@ -1533,6 +1547,13 @@ const Sales = () => {
       saleIsNhiaClaim || (paymentMethod === 'insurance' && !insuranceSplitAllowed)
         ? 0
         : Number.parseFloat(patientTopUp) || 0
+    const nhisPatientTopUpAmount = saleIsNhiaClaim
+      ? nhisSettlement.patientTopUpAmount
+      : patientTopUpAmount
+    const privateNonNhisAmount = saleIsNhiaClaim ? nhisSettlement.privateNonNhisAmount : 0
+    const patientDueAmount = saleIsNhiaClaim
+      ? nhisSettlement.patientDueAmount
+      : patientTopUpAmount
 
     if (paymentMethod === 'cash' && amountPaid < total) {
       notify('Received amount must be at least the total for cash payments.', 'warning')
@@ -1590,8 +1611,11 @@ const Sales = () => {
         return
       }
 
-      if (Math.abs(insuranceCoveredAmount + patientTopUpAmount - total) > 0.01) {
-        notify('Insurance cover and patient top-up must add up to the sale total.', 'warning')
+      const accountedAmount = saleIsNhiaClaim
+        ? insuranceCoveredAmount + patientDueAmount + nhiaPricingAdjustment
+        : insuranceCoveredAmount + patientTopUpAmount
+      if (Math.abs(accountedAmount - total) > 0.01) {
+        notify('The settlement buckets must add up to the sale total.', 'warning')
         return
       }
 
@@ -1606,7 +1630,7 @@ const Sales = () => {
       setError('')
       const saleTimestamp = new Date().toISOString()
       if (saleIsNhiaClaim) {
-        await assertNhiaPosMedicationCoverage(getNhisCalendarDate(saleTimestamp))
+        await assertNhiaPosMedicationCoverage(getNhisCalendarDate(saleTimestamp), nhisSettlement.lines)
       }
       const soldItems = cart.map((item) => ({
         drugId: item.drugId,
@@ -1628,14 +1652,14 @@ const Sales = () => {
         patientId: patientId || null,
         paymentMethod,
         discount: recordedSaleDiscount,
-        amountPaid: paymentMethod === 'cash' ? amountPaid : total,
+        amountPaid: paymentMethod === 'cash' ? amountPaid : saleIsNhiaClaim ? patientDueAmount : total,
         change: paymentMethod === 'cash' ? calculateChange() : 0,
         notes:
           saleIsInsuranceLike
             ? buildInsuranceSaleNotes({
                 total,
                 coverage: insuranceCoveredAmount,
-                topUp: patientTopUpAmount,
+                topUp: patientDueAmount,
                 topUpMethod: patientTopUpMethod,
                 retailTotal: retailNetTotal,
                 pricingAdjustment: nhiaPricingAdjustment,
@@ -1644,9 +1668,16 @@ const Sales = () => {
         insuranceCoveredAmount:
           saleIsInsuranceLike ? insuranceCoveredAmount : null,
         insuranceTopUpAmount:
-          saleIsInsuranceLike ? patientTopUpAmount : null,
+          saleIsInsuranceLike ? patientDueAmount : null,
         insuranceTopUpPaymentMethod:
-          saleIsInsuranceLike && patientTopUpAmount > 0 ? patientTopUpMethod : null,
+          saleIsInsuranceLike && patientDueAmount > 0 ? patientTopUpMethod : null,
+        nhisCoveredAmount: saleIsNhiaClaim ? nhiaCoveredAmount : null,
+        nhisTopUpAmount: saleIsNhiaClaim ? nhisPatientTopUpAmount : null,
+        privateNonNhisAmount: saleIsNhiaClaim ? privateNonNhisAmount : null,
+        nhisPolicyAdjustmentAmount: saleIsNhiaClaim ? nhiaPricingAdjustment : null,
+        nhisTopUpPolicy: saleIsNhiaClaim ? nhisSettlement.policy : null,
+        patientPaymentMethod: saleIsNhiaClaim && patientDueAmount > 0 ? patientTopUpMethod : null,
+        nhisSettlementLines: saleIsNhiaClaim ? nhisSettlement.lines : null,
         soldBy: user?.id || null,
         shiftId: activeShift.id,
         organizationId: profile?.organization_id,
@@ -1667,7 +1698,7 @@ const Sales = () => {
         discount: recordedSaleDiscount,
         netAmount: total,
         paymentMethod: paymentMethod,
-        amountPaid: paymentMethod === 'cash' ? amountPaid : total,
+        amountPaid: paymentMethod === 'cash' ? amountPaid : saleIsNhiaClaim ? patientDueAmount : total,
         change: paymentMethod === 'cash' ? calculateChange() : 0,
         patient: selectedPatientForSale,
         insuranceDetails:
@@ -1676,8 +1707,11 @@ const Sales = () => {
                 provider: selectedPatientForSale.insurance_provider,
                 insuranceId: selectedPatientForSale.insurance_id,
                 coveredAmount: insuranceCoveredAmount,
-                patientTopUp: patientTopUpAmount,
-                patientTopUpMethod: patientTopUpAmount > 0 ? patientTopUpMethod : null,
+                patientTopUp: nhisPatientTopUpAmount,
+                privateNonNhisAmount,
+                patientDueAmount,
+                policyAdjustmentAmount: nhiaPricingAdjustment,
+                patientTopUpMethod: patientDueAmount > 0 ? patientTopUpMethod : null,
               }
             : null,
         soldBy: displayName || user?.email,
@@ -1787,10 +1821,12 @@ const Sales = () => {
           if (paymentMethod === 'nhia') {
             const reviewClaim = buildNhiaReviewClaim({
               saleNumber: saleResult.saleNumber,
-              soldItems,
+              settlementLines: nhisSettlement.lines,
               retailTotal: retailNetTotal,
               claimTotal: insuranceCoveredAmount,
-              pricingAdjustment: nhiaPricingAdjustment,
+              patientTopUpAmount: nhisPatientTopUpAmount,
+              privateNonNhisAmount,
+              policyAdjustmentAmount: nhiaPricingAdjustment,
               branchId: activeShift.branch_id,
               saleDate: saleTimestamp,
             })
@@ -1803,7 +1839,7 @@ const Sales = () => {
                     useBranchServer: true,
                     // ✅ NHIS PHARMACY LEVEL PATCH START
                     pharmacyLevel: getFacilityPharmacyLevel(),
-                    drugCatalog: soldItems,
+                    drugCatalog: nhisSettlement.lines.filter((line) => line.nhisCoveredAmount > 0),
                     // ✅ NHIS PHARMACY LEVEL PATCH END
                   }
                 )
@@ -2238,10 +2274,11 @@ const Sales = () => {
   const saleDiscount = calculateSaleDiscount()
   const total = calculateTotal()
   const change = calculateChange()
-  const nhisCoveredTotal = calculateNhisCoveredTotal()
+  const nhisSettlement = calculateNhisSettlement()
+  const nhisCoveredTotal = nhisSettlement.nhisCoveredAmount
   const isNhiaClaimSale = paymentMethod === 'nhia'
-  const checkoutTotal = isNhiaClaimSale ? Math.min(nhisCoveredTotal, total) : total
-  const nhiaPricingAdjustment = isNhiaClaimSale ? Math.max(total - checkoutTotal, 0) : 0
+  const checkoutTotal = isNhiaClaimSale ? nhisSettlement.patientDueAmount : total
+  const nhiaPricingAdjustment = isNhiaClaimSale ? nhisSettlement.policyAdjustmentAmount : 0
   const isInsuranceSale = paymentMethod === 'insurance' || isNhiaClaimSale
   const onlinePaymentDisabled = !isOnline || (!localBranchServerAvailable && !onlineCloudPaymentsEnabled)
   const servingNhisPatient = isInsuranceSale && isNhisPatient(selectedPatientForSale)
@@ -2280,7 +2317,9 @@ const Sales = () => {
         ? insuranceCoverage
         : formatAmountInput(coverage)
     const nextTopUp = insuranceSplitAllowed
-      ? formatAmountInput(Math.max(total - coverage, 0))
+      ? isNhiaClaimSale
+        ? formatAmountInput(nhisSettlement.patientDueAmount)
+        : formatAmountInput(Math.max(total - coverage, 0))
       : '0.00'
 
     if (insuranceCoverage !== nextCoverage) {
@@ -2298,6 +2337,7 @@ const Sales = () => {
     isInsuranceSale,
     isNhiaClaimSale,
     nhisCoveredTotal,
+    nhisSettlement.patientDueAmount,
     patientTopUp,
     paymentMethod,
     servingNhisPatient,
@@ -2892,7 +2932,7 @@ const Sales = () => {
             </div>
 
             <div className="total-section">
-              <span className="total-label">{isNhiaClaimSale ? 'NHIS Covered Total' : 'Net Total'}</span>
+              <span className="total-label">{isNhiaClaimSale ? 'Patient Due Now' : 'Net Total'}</span>
               <span className="total-amount">GHS {checkoutTotal.toFixed(2)}</span>
             </div>
 
@@ -3048,9 +3088,15 @@ const Sales = () => {
                   {isNhiaClaimSale && (
                     <div className="nhis-price-summary">
                       <span>Normal total: GHS {total.toFixed(2)}</span>
-                      <strong>NHIS covered claim: GHS {checkoutTotal.toFixed(2)}</strong>
+                      <strong>NHIS covered claim: GHS {nhisSettlement.nhisCoveredAmount.toFixed(2)}</strong>
+                      {nhisSettlement.patientTopUpAmount > 0 && (
+                        <span>NHIS top-up: GHS {nhisSettlement.patientTopUpAmount.toFixed(2)}</span>
+                      )}
+                      {nhisSettlement.privateNonNhisAmount > 0 && (
+                        <span>Private/non-NHIS: GHS {nhisSettlement.privateNonNhisAmount.toFixed(2)}</span>
+                      )}
                       {nhiaPricingAdjustment > 0 && (
-                        <span>Pricing adjustment: GHS {nhiaPricingAdjustment.toFixed(2)}</span>
+                        <span>Policy adjustment (not charged): GHS {nhiaPricingAdjustment.toFixed(2)}</span>
                       )}
                     </div>
                   )}
@@ -3109,6 +3155,20 @@ const Sales = () => {
                       <label htmlFor="patient-top-up-method">Top-Up Paid By</label>
                       <select
                         id="patient-top-up-method"
+                        value={patientTopUpMethod}
+                        onChange={(event) => setPatientTopUpMethod(event.target.value)}
+                      >
+                        <option value="cash">Cash</option>
+                        <option value="momo">Mobile Money</option>
+                        <option value="card">Card</option>
+                      </select>
+                    </div>
+                  )}
+                  {isNhiaClaimSale && nhisSettlement.patientDueAmount > 0 && (
+                    <div className="cash-field cash-field-input insurance-top-up-method">
+                      <label htmlFor="nhia-patient-payment-method">Patient Payment Method</label>
+                      <select
+                        id="nhia-patient-payment-method"
                         value={patientTopUpMethod}
                         onChange={(event) => setPatientTopUpMethod(event.target.value)}
                       >
