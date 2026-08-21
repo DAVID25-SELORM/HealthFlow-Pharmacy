@@ -54,15 +54,15 @@ begin
     );
     v_definition := replace(v_definition,
       'insurance_covered_amount, insurance_top_up_amount, insurance_top_up_payment_method',
-      'insurance_covered_amount, insurance_top_up_amount, insurance_top_up_payment_method,\n        nhis_covered_amount, nhis_top_up_amount, private_non_nhis_amount,\n        nhis_policy_adjustment_amount, nhis_top_up_policy, patient_payment_method'
+      E'insurance_covered_amount, insurance_top_up_amount, insurance_top_up_payment_method,\n        nhis_covered_amount, nhis_top_up_amount, private_non_nhis_amount,\n        nhis_policy_adjustment_amount, nhis_top_up_policy, patient_payment_method'
     );
     v_definition := replace(v_definition,
       'insurance_covered_value, insurance_top_up_value, insurance_top_up_method_value',
-      'insurance_covered_value, insurance_top_up_value, insurance_top_up_method_value,\n        nhis_covered_value, nhis_top_up_value, private_non_nhis_value,\n        nhis_policy_adjustment_value, nhis_top_up_policy_value, patient_payment_method_value'
+      E'insurance_covered_value, insurance_top_up_value, insurance_top_up_method_value,\n        nhis_covered_value, nhis_top_up_value, private_non_nhis_value,\n        nhis_policy_adjustment_value, nhis_top_up_policy_value, patient_payment_method_value'
     );
     v_definition := replace(v_definition,
       'total_price, unit_cost_at_sale, line_cost',
-      'total_price, unit_cost_at_sale, line_cost,\n            nhis_settlement, nhis_covered_amount, patient_top_up_amount, private_amount, policy_adjustment_amount'
+      E'total_price, unit_cost_at_sale, line_cost,\n            nhis_settlement, nhis_covered_amount, patient_top_up_amount, private_amount, policy_adjustment_amount'
     );
     v_definition := replace(v_definition,
       'item_cost, (item_quantity * item_cost)',
@@ -71,7 +71,8 @@ begin
 
     if v_definition not like '%nhis_policy_adjustment_amount%'
        or v_definition not like '%patient_payment_method_value%'
-       or v_definition not like '%nhis_settlement%' then
+       or v_definition not like '%nhis_settlement%'
+       or v_definition like E'%\\n%' then
       raise exception 'Split-settlement replacement failed for %', v_name;
     end if;
     execute v_definition;
