@@ -77,4 +77,11 @@ describe('protected database security contracts', () => {
     expect(sql).toMatch(/revoke all on function public\.correct_nhis_claim_privileged.*from public, anon/i)
     expect(sql).toMatch(/grant execute on function public\.correct_nhis_claim_privileged.*to authenticated/i)
   })
+
+  it('does not permit a privileged correction to rewrite finalized external claims', () => {
+    const sql = migration('20260819100000_prevent_final_nhis_claim_corrections.sql')
+    expect(sql).toContain("in (''submitted'', ''paid'', ''approved'', ''accepted'')")
+    expect(sql).toContain('externally submitted or finalized')
+    expect(sql).toContain("using errcode = ''22023''")
+  })
 })

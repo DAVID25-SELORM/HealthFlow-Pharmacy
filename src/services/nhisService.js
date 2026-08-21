@@ -2133,6 +2133,39 @@ const parseDurationDays = (duration) => {
   return Math.round(amount)
 }
 
+const STRICT_NHIS_DURATION_PATTERN = /^([1-9]\d*) (day|days|week|weeks|month|months)$/
+
+// New/changed medicine directions must be exact. The existing permissive
+// parser remains exclusively for reviewing and repairing historical claims.
+export const validateNhisMedicineDurationInput = (duration) => {
+  const value = normalizeText(duration)
+  const match = value.match(STRICT_NHIS_DURATION_PATTERN)
+  if (!match) {
+    return 'Invalid duration. Use “1 day”, “24 days”, “1 week”, “2 weeks”, “1 month”, or “2 months”.'
+  }
+  const amount = Number(match[1])
+  const unit = match[2]
+  if ((amount === 1 && !['day', 'week', 'month'].includes(unit)) ||
+      (amount > 1 && !['days', 'weeks', 'months'].includes(unit))) {
+    return 'Invalid duration. Singular and plural must match the number, for example “1 week” or “2 weeks”.'
+  }
+  return ''
+}
+
+const assertNhisMedicineDurationInputs = (medicines = [], options = {}) => {
+  const existingDurations = new Map((options.existingMedicines || []).map((medicine) => [
+    String(medicine?.id || ''),
+    normalizeText(medicine?.duration),
+  ]))
+  ;(medicines || []).forEach((medicine, index) => {
+    const issue = validateNhisMedicineDurationInput(medicine?.duration)
+    if (!issue) return
+    const sourceId = String(medicine?.sourceMedicineId || '')
+    if (sourceId && existingDurations.get(sourceId) === normalizeText(medicine?.duration)) return
+    throw new Error(`Medicine ${index + 1}: ${issue}`)
+  })
+}
+
 export const normalizeClaimItDurationForExport = (duration) => {
   const days = parseDurationDays(duration)
   if (!days) return { value: null, unit: null, desc: null }
@@ -6287,6 +6320,7 @@ export const getNhisClaimStats = async () => {
  * Also saves HIN/member_no back to the patient record if patient_id is provided.
  */
 export const createNhisClaim = async (claimData, medicines, options = {}) => {
+  assertNhisMedicineDurationInputs(medicines)
   const organizationType = normalizeOrganizationType(claimData?.organizationType ?? claimData?.organization_type)
   const tariffServices = normalizeNhiaTariffServiceLines(
     options.nhiaTariffServices ?? claimData?.nhiaTariffServices ?? claimData?.nhis_claim_services ?? [],
@@ -6503,6 +6537,12 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
   const correctionReason = normalizeText(options.correctionReason ?? claimData.correctionReason)
   if (privilegedCorrection && (options.useBranchServer || shouldUseBranchServer())) {
     throw new Error('Privileged claim corrections require an online cloud connection so the immutable audit history can be recorded safely.')
+  }
+  // Dispensary-only saves update serving information, not prescription
+  // directions. They must remain able to serve older rows whose direction
+  // fields are blank or use legacy duration formatting.
+  if (!options.medicinesOnly) {
+    assertNhisMedicineDurationInputs(medicines, { existingMedicines: options.existingMedicines })
   }
   const organizationType = normalizeOrganizationType(claimData?.organizationType ?? claimData?.organization_type)
   const tariffServices = normalizeNhiaTariffServiceLines(

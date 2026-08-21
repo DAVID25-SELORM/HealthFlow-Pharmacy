@@ -22,6 +22,10 @@ import {
   hasNhisPrescriptionAttachment,
   hasVerifiedNhisPrescription,
 } from '../utils/nhisIntakeWorkflow'
+import {
+  canCorrectNhisClaimStatus,
+  canPrivilegedCorrectNhisClaim,
+} from '../utils/nhisPrivilegedCorrection'
 import { normalizeText } from '../utils/validation'
 import {
   getAllNhisDrugs,
@@ -67,6 +71,7 @@ import {
   normalizeNhisGender,
   uploadNhisPrescriptionPdf,
   validateNhisPrescriptionPdfFile,
+  validateNhisMedicineDurationInput,
   getNhisPrescriptionSignedUrl,
   generateHostedNhiaCcCode,
   getNhiaApiSettings,
@@ -1173,12 +1178,17 @@ const buildNhisActiveMedicationOverlapMessage = (alerts = []) => {
       ? `Risk score: ${riskScore}/100`
       : ''
     const recommendedAction = normalizeText(alert.recommended_action)
+    const dateQualityWarning = normalizeText(alert.date_quality_warning || alert.dateQualityWarning)
+    const sourceLabel = normalizeText(alert.source_label) || 'Another participating HealthFlow facility'
     const reasonLines = Array.isArray(alert.risk_reasons)
       ? alert.risk_reasons.map((reason) => normalizeText(reason)).filter(Boolean).slice(0, 4)
       : []
 
     return [
       `${index + 1}. ${medicine}`,
+      alert.previous_dispensed_date
+        ? `Possible duplicate dispensing: ${medicine} was served to this patient at ${sourceLabel} on ${previousDate}.`
+        : '',
       `Match: ${matchText}`,
       `Previous dispensing: ${previousDate}`,
       quantityText,
@@ -1188,7 +1198,8 @@ const buildNhisActiveMedicationOverlapMessage = (alerts = []) => {
       treatmentDaysText,
       `Calculated treatment end: ${endDate}`,
       `Remaining coverage: ${remainingText}`,
-      `Source: ${alert.source_label || 'Another participating HealthFlow facility'}`,
+      `Source: ${sourceLabel}`,
+      dateQualityWarning ? 'Dispensing date requires review.' : '',
       riskText,
       recommendedAction ? `Recommended action: ${recommendedAction}` : '',
       ...reasonLines.map((reason) => `Reason: ${reason}`),
@@ -1383,6 +1394,7 @@ const Nhis = () => {
     profile,
     branch,
     organization,
+    assignedRoles,
     canDeleteNhisClaims,
     canViewReports,
   } = useAuth()
@@ -1392,11 +1404,21 @@ const Nhis = () => {
   const ruleFileInputRef = useRef(null)
 
   const normalizedRole = String(role || '').toLowerCase()
-  const isMedicineCounterAssistant = normalizedRole === 'assistant'
-  const canWrite = !isMedicineCounterAssistant && (
-    ['admin', 'super_admin', 'pharmacist', 'billing', 'claims_officer', 'records_officer']
-      .includes(normalizedRole) ||
-    Boolean(profile?.can_manage_claims)
+  const canEditNhisClaimAnytime = canPrivilegedCorrectNhisClaim({
+    activeRole: normalizedRole,
+    assignedRoles,
+  })
+  const privilegedNhisActionRole = canEditNhisClaimAnytime ? 'claims_officer' : normalizedRole
+  // A staff member may have Claims Officer as an assigned role while their
+  // currently selected role is Assistant. Privileged correction access must
+  // follow the same role set as the server RPC, not the display role alone.
+  const isMedicineCounterAssistant = normalizedRole === 'assistant' && !canEditNhisClaimAnytime
+  const canWrite = canEditNhisClaimAnytime || (
+    !isMedicineCounterAssistant && (
+      ['admin', 'super_admin', 'pharmacist', 'billing', 'claims_officer', 'records_officer']
+        .includes(normalizedRole) ||
+      Boolean(profile?.can_manage_claims)
+    )
   )
   const canServeNhisMedicines = canWrite || isMedicineCounterAssistant
   const canEditNhisPatientDetails = canWrite
@@ -1536,7 +1558,7 @@ const Nhis = () => {
   const [correctionHistory, setCorrectionHistory] = useState([])
   const canCorrectDirectServedMedicine = canCorrectDirectServedNhisMedicine({
     claim: editingClaim,
-    role: normalizedRole,
+    role: privilegedNhisActionRole,
   })
   const [prescriptionPdfFile, setPrescriptionPdfFile] = useState(null)
 
@@ -1693,8 +1715,6 @@ const Nhis = () => {
     tab === 'all' ? p.delete('tab') : p.set('tab', tab)
     setSearchParams(p, { replace: true })
   }
-
-  const canEditNhisClaimAnytime = ['admin', 'claims_officer'].includes(normalizedRole)
 
   const getClaimServerFilters = useCallback((options = {}) => {
     const { includeIssueFilter = false } = options
@@ -2440,7 +2460,7 @@ const Nhis = () => {
   )
   const canServeClaimDirectly = canNhisClaimBeServedDirectly({
     claim: editingClaim,
-    role: normalizedRole,
+    role: privilegedNhisActionRole,
   })
 
   const allNhisPatients = useMemo(() => {
@@ -3247,7 +3267,13 @@ const Nhis = () => {
   const openEditClaim = async (selectedClaim) => {
     void ensureInventoryDrugsLoaded()
     const canOpenForMcaServing = isMedicineCounterAssistant && canMcaOpenNhisClaimForServing(selectedClaim)
-    if (!canOpenForMcaServing && !canEditNhisClaimAnytime && selectedClaim.status !== 'served') {
+    const canPrivilegedCorrectSelectedClaim =
+      canEditNhisClaimAnytime && canCorrectNhisClaimStatus(selectedClaim.status)
+    if (canEditNhisClaimAnytime && !canPrivilegedCorrectSelectedClaim) {
+      notify('This claim has already been externally submitted or finalized and cannot be corrected in place.', 'warning')
+      return false
+    }
+    if (!canOpenForMcaServing && !canPrivilegedCorrectSelectedClaim && selectedClaim.status !== 'served') {
       notify('Only served NHIS claims can be edited before submission/export.', 'warning')
       return false
     }
@@ -3366,6 +3392,8 @@ const Nhis = () => {
     setPrescriptionPdfFile(null)
     setClaimMedicines(
       compactMedicines(claim.nhis_claim_medicines).map((medicine) => ({
+        sourceMedicineId: medicine.id || '',
+        originalDuration: medicine.duration || '',
         nhisDrugId: medicine.nhis_drug_id || '',
         drugCode: medicine.drug_code || '',
         description: medicine.description || '',
@@ -3546,6 +3574,16 @@ const Nhis = () => {
     const qty   = Number.parseFloat(medForm.dispensedQty) || 0
     const price = Number.parseFloat(medForm.unitPrice)    || 0
     const requestedServingStatus = String(medForm.servingStatus || '').toLowerCase()
+    const currentMedicine = editingMedicineIndex === null ? null : claimMedicines[editingMedicineIndex]
+    const retainsHistoricalDuration = Boolean(
+      currentMedicine?.sourceMedicineId &&
+      currentMedicine.originalDuration === medForm.duration
+    )
+    const durationIssue = validateNhisMedicineDurationInput(medForm.duration)
+    if (durationIssue && !retainsHistoricalDuration) {
+      notify(durationIssue, 'warning')
+      return
+    }
     const allowsZeroServedQty = isMedicineCounterAssistant && ['not_available', 'not_served'].includes(requestedServingStatus)
     if (!(qty > 0) && !allowsZeroServedQty) {
       notify(isMedicineCounterAssistant ? 'Served quantity is required.' : 'Prescribed quantity is required.', 'warning')
@@ -3555,7 +3593,6 @@ const Nhis = () => {
       notify('Dispensary users can only serve medicines entered by the Claims Officer.', 'warning')
       return
     }
-    const currentMedicine = editingMedicineIndex === null ? null : claimMedicines[editingMedicineIndex]
     const prescribedQty = isMedicineCounterAssistant
       ? getMedicinePrescribedQty(currentMedicine)
       : qty
@@ -3583,6 +3620,8 @@ const Nhis = () => {
     }
 
     const nextMedicine = {
+      sourceMedicineId: currentMedicine?.sourceMedicineId || medForm.sourceMedicineId || '',
+      originalDuration: currentMedicine?.originalDuration || medForm.originalDuration || '',
       nhisDrugId:    medForm.nhisDrugId   || null,
       drugCode:      medForm.drugCode,
       description:   medForm.description,
@@ -3602,7 +3641,7 @@ const Nhis = () => {
       dispensaryDate: medForm.dispensaryDate || null,
       dose:          medForm.dose,
       frequency:     medForm.frequency,
-      duration:      formatClaimDurationAsDays(medForm.duration),
+      duration:      retainsHistoricalDuration ? medForm.duration : formatClaimDurationAsDays(medForm.duration),
       totalAmount:   price * servedQty,
       category:      medForm.category || getCatalogCategoryForMedicine(medForm),
       // ✅ NHIS PHARMACY LEVEL PATCH START
@@ -3711,6 +3750,8 @@ const Nhis = () => {
     if (!medicine) return
 
     setMedForm({
+      sourceMedicineId: medicine.sourceMedicineId || '',
+      originalDuration: medicine.originalDuration || medicine.duration || '',
       nhisDrugId: medicine.nhisDrugId || '',
       drugCode: medicine.drugCode || '',
       description: medicine.description || '',
@@ -3921,7 +3962,7 @@ const Nhis = () => {
     isEditing: Boolean(editingClaim),
     status: editingClaim?.status,
     blockerCount: readiness.blockers.length,
-  })
+  }) || (canEditNhisClaimAnytime && canCorrectNhisClaimStatus(editingClaim?.status))
   const incompleteIntakeItems = getNhisIncompleteIntakeItems({
     claim: claimForm,
     medicines: compactMedicines(claimMedicines),
@@ -4252,7 +4293,7 @@ const Nhis = () => {
     const serveDirectly = intent === 'serve_directly'
     if (serveDirectly && editingClaim && !canNhisClaimBeServedDirectly({
       claim: editingClaim,
-      role: normalizedRole,
+      role: privilegedNhisActionRole,
     })) {
       setClaimError(
         isNhisClaimDirectlyServed(editingClaim)
@@ -4450,6 +4491,7 @@ const Nhis = () => {
           requireVerifiedPrescription: !isHospital,
           privilegedCorrection: canEditNhisClaimAnytime,
           correctionReason,
+          existingMedicines: editingClaim.nhis_claim_medicines || editingClaim.medicines || [],
         })
         savedClaimRecord = savedClaim || editingClaim
         const claimForSubmission = savedClaim || editingClaim
@@ -6364,7 +6406,8 @@ const Nhis = () => {
                         {canServeNhisMedicines && (
                           isMedicineCounterAssistant
                             ? canMcaOpenNhisClaimForServing(c)
-                            : (['pending_serving', 'returned_for_review', 'served'].includes(c.status) || canEditNhisClaimAnytime)
+                            : (['pending_serving', 'returned_for_review', 'served'].includes(c.status) ||
+                              (canEditNhisClaimAnytime && canCorrectNhisClaimStatus(c.status)))
                         ) && (
                           <button
                             className="action-btn action-btn--edit"
@@ -7228,6 +7271,7 @@ const Nhis = () => {
                                   const treatmentDays = alert.calculated_treatment_days ?? alert.calculatedTreatmentDays
                                   const sourceLabel = normalizeText(alert.source_label || alert.sourceLabel)
                                   const previousClaim = normalizeText(alert.previous_claim_reference || alert.previousClaimReference)
+                                  const dateQualityWarning = normalizeText(alert.date_quality_warning || alert.dateQualityWarning)
                                   return (
                                     <div className="nhis-active-meds-item" key={`${alert.medicine_code || alert.medicineCode || index}-${previousDate}-${coverageEnd}`}>
                                       <strong>{alert.medicine_description || alert.medicineDescription || alert.medicine_code || alert.medicineCode || 'Medicine'}</strong>
@@ -7241,6 +7285,7 @@ const Nhis = () => {
                                         {coverageEnd && <span>Expected completion: {formatAppDate(coverageEnd)}</span>}
                                         <span>Remaining: {Number(alert.remaining_days || alert.remainingDays || 0)} day(s)</span>
                                         {sourceLabel && <span>Source: {sourceLabel}</span>}
+                                        {dateQualityWarning && <span>Dispensing date requires review.</span>}
                                         {previousClaim && <span>Reference: {previousClaim}</span>}
                                       </div>
                                     </div>
@@ -8711,7 +8756,6 @@ const Nhis = () => {
                     value={medForm.duration}
                     disabled={isMedicineCounterAssistant}
                     onValueChange={(value) => setMedForm((p) => ({ ...p, duration: value }))}
-                    onBlur={(value) => setMedForm((p) => ({ ...p, duration: formatClaimDurationAsDays(value) }))}
                     options={DURATION_OPTIONS}
                     placeholder="Select or type number of days"
                     ariaLabel="Medicine duration"

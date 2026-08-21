@@ -93,6 +93,7 @@ import {
   updateNhisClaimStatus,
   uploadNhisPrescriptionPdf,
   validateNhiaConfigForMode,
+  validateNhisMedicineDurationInput,
   validateNhisPrescriptionPdfFile,
   TEMPORARY_UNIVERSAL_NHIA_TARIFF_SOURCE,
 } from './nhisService'
@@ -1596,6 +1597,15 @@ describe('assessNhisClaimReadiness', () => {
 })
 
 describe('CLAIM-it export helpers', () => {
+  it('requires exact duration syntax for newly entered or changed medicines', () => {
+    expect(validateNhisMedicineDurationInput('1 day')).toBe('')
+    expect(validateNhisMedicineDurationInput('2 weeks')).toBe('')
+    expect(validateNhisMedicineDurationInput('1 months')).toMatch(/singular and plural/i)
+    expect(validateNhisMedicineDurationInput('2 week')).toMatch(/singular and plural/i)
+    expect(validateNhisMedicineDurationInput('30days')).toMatch(/invalid duration/i)
+    expect(validateNhisMedicineDurationInput('0 days')).toMatch(/invalid duration/i)
+  })
+
   it('serializes all medicine durations as CLAIM-it day values', () => {
     expect(normalizeClaimItDurationForExport('1 month')).toEqual({
       value: '30.00', unit: 'DAYS', desc: '30 Days',
