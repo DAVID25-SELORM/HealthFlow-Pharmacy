@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Search, Trash2, Plus, Minus, ShoppingCart, Printer, Download, X } from 'lucide-react'
+import { Search, Trash2, Plus, Minus, ShoppingCart, Printer, Download, X, CheckCircle2, ArrowLeft } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { dispatchHealthflowDataChanged } from '../lib/appEvents'
 import {
@@ -232,6 +232,8 @@ const Sales = () => {
   const [error, setError] = useState('')
   const [lastSale, setLastSale] = useState(null)
   const [showReceipt, setShowReceipt] = useState(false)
+  const [showSaleConfirmation, setShowSaleConfirmation] = useState(false)
+  const [confirmingSale, setConfirmingSale] = useState(false)
   const [pharmacyInfo, setPharmacyInfo] = useState(null)
   const [branches, setBranches] = useState([])
   const [activeShift, setActiveShift] = useState(null)
@@ -1514,7 +1516,7 @@ const Sales = () => {
     }
   }
 
-  const handleCompleteSale = async () => {
+  const handleCompleteSale = async (confirmed = false) => {
     if (!cart.length) {
       return
     }
@@ -1624,6 +1626,15 @@ const Sales = () => {
         return
       }
     }
+
+    // This is intentionally after validation and before every stock, payment,
+    // accounting, claim, queue, or audit write below.
+    if (!confirmed) {
+      setShowSaleConfirmation(true)
+      return
+    }
+
+    setShowSaleConfirmation(false)
 
     try {
       setProcessing(true)
@@ -2270,6 +2281,19 @@ const Sales = () => {
     setShowReceipt(false)
   }
 
+  const confirmSaleCompletion = async () => {
+    if (confirmingSale || processing) {
+      return
+    }
+
+    setConfirmingSale(true)
+    try {
+      await handleCompleteSale(true)
+    } finally {
+      setConfirmingSale(false)
+    }
+  }
+
   const subtotal = calculateSubtotal()
   const saleDiscount = calculateSaleDiscount()
   const total = calculateTotal()
@@ -2289,6 +2313,15 @@ const Sales = () => {
       selectedPatientForSale?.insurance_provider &&
         (isNhiaClaimSale ? selectedNhiaMemberNumber : selectedPatientForSale?.insurance_id)
     )
+  const confirmationPatientLabel = selectedPatientForSale
+    ? formatPatientOption(selectedPatientForSale)
+    : 'Walk-in customer'
+  const confirmationBranchLabel = branches.find((branch) => branch.id === activeShift?.branch_id)?.name || 'Current branch'
+  const confirmationAmountPaid = paymentMethod === 'cash'
+    ? Number.parseFloat(received) || 0
+    : isNhiaClaimSale
+      ? nhisSettlement.patientDueAmount
+      : total
 
   useEffect(() => {
     if (!isInsuranceSale) {
@@ -2358,6 +2391,68 @@ const Sales = () => {
     <div className="sales-page">
       {/* Hidden Receipt for Printing */}
       {lastSale && <Receipt mode="print" saleData={lastSale} pharmacyInfo={pharmacyInfo} />}
+
+      {showSaleConfirmation && (
+        <div className="sale-confirmation-overlay" role="dialog" aria-modal="true" aria-labelledby="sale-confirmation-title">
+          <div className="sale-confirmation-modal">
+            <header className="sale-confirmation-header">
+              <div>
+                <p>Review sale</p>
+                <h2 id="sale-confirmation-title">Confirm before completing</h2>
+              </div>
+              <button
+                type="button"
+                className="close-btn"
+                onClick={() => setShowSaleConfirmation(false)}
+                disabled={confirmingSale || processing}
+                aria-label="Return to sale editing"
+              >
+                <X size={20} />
+              </button>
+            </header>
+            <div className="sale-confirmation-body">
+              <div className="sale-confirmation-meta">
+                <span><strong>Customer</strong>{confirmationPatientLabel}</span>
+                <span><strong>Sale type</strong>{isNhiaClaimSale ? 'NHIS split settlement' : paymentMethod}</span>
+                <span><strong>Branch</strong>{confirmationBranchLabel}</span>
+                <span><strong>Cashier</strong>{displayName || user?.email || 'Current user'}</span>
+              </div>
+              <div className="sale-confirmation-items">
+                {cart.map((item) => (
+                  <div key={item.drugId}>
+                    <span>{item.name}</span>
+                    <span>{item.quantity} × GHS {Number(item.price || 0).toFixed(2)}</span>
+                    <strong>GHS {(Number(item.quantity || 0) * Number(item.price || 0)).toFixed(2)}</strong>
+                  </div>
+                ))}
+              </div>
+              <div className="sale-confirmation-summary">
+                <div><span>Subtotal</span><strong>GHS {subtotal.toFixed(2)}</strong></div>
+                <div><span>Discount</span><strong>GHS {saleDiscount.toFixed(2)}</strong></div>
+                <div className="sale-confirmation-total"><span>Total</span><strong>GHS {total.toFixed(2)}</strong></div>
+                <div><span>Payment method</span><strong>{paymentMethod.toUpperCase()}</strong></div>
+                <div><span>Amount paid</span><strong>GHS {confirmationAmountPaid.toFixed(2)}</strong></div>
+                {paymentMethod === 'cash' && <div><span>Change due</span><strong>GHS {change.toFixed(2)}</strong></div>}
+                {isNhiaClaimSale && (
+                  <>
+                    <div><span>NHIS covered</span><strong>GHS {nhisSettlement.nhisCoveredAmount.toFixed(2)}</strong></div>
+                    {nhisSettlement.patientTopUpAmount > 0 && <div><span>NHIS top-up</span><strong>GHS {nhisSettlement.patientTopUpAmount.toFixed(2)}</strong></div>}
+                    {nhisSettlement.privateNonNhisAmount > 0 && <div><span>Private / non-NHIS</span><strong>GHS {nhisSettlement.privateNonNhisAmount.toFixed(2)}</strong></div>}
+                  </>
+                )}
+              </div>
+            </div>
+            <footer className="sale-confirmation-actions">
+              <button type="button" className="sale-confirmation-back" onClick={() => setShowSaleConfirmation(false)} disabled={confirmingSale || processing}>
+                <ArrowLeft size={18} /> Back / Edit
+              </button>
+              <button type="button" className="sale-confirmation-submit" onClick={confirmSaleCompletion} disabled={confirmingSale || processing}>
+                <CheckCircle2 size={18} /> {confirmingSale || processing ? 'Completing sale…' : 'Confirm & Complete Sale'}
+              </button>
+            </footer>
+          </div>
+        </div>
+      )}
 
       {/* Receipt Modal */}
       {showReceipt && lastSale && (

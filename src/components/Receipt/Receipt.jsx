@@ -35,12 +35,15 @@ const Receipt = forwardRef(({ saleData, pharmacyInfo, mode = 'preview' }, ref) =
   }
 
   const printedAt = formatAppDateTime(new Date(), { hour12: true })
-  const receiptQrValue = encodeURIComponent(`${saleNumber || 'receipt'}-${netAmount || 0}`)
-  const receiptQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=110x110&data=${receiptQrValue}`
   const pharmacySlogan = String(pharmacyInfo?.slogan || '').trim()
   const facilityName = getFacilityName(pharmacyInfo)
   const facilityWebsite = getFacilityWebsite(pharmacyInfo)
   const receiptFooter = getReceiptFooter(pharmacyInfo)
+  const isNhisSettlement = String(paymentMethod || '').toLowerCase() === 'nhia'
+  const insuranceCoveredAmount = Number(insuranceDetails?.coveredAmount || 0)
+  const patientTopUpAmount = Number(insuranceDetails?.patientTopUp || 0)
+  const privateNonNhisAmount = Number(insuranceDetails?.privateNonNhisAmount || 0)
+  const policyAdjustmentAmount = Number(insuranceDetails?.policyAdjustmentAmount || 0)
 
   return (
     <div ref={ref} className={`receipt-container receipt-${mode}-mode`}>
@@ -224,29 +227,33 @@ const Receipt = forwardRef(({ saleData, pharmacyInfo, mode = 'preview' }, ref) =
                     <span>Insurance ID</span>
                     <strong>{insuranceDetails.insuranceId}</strong>
                   </div>
-                  <div>
-                    <span>NHIS Covered</span>
-                    <strong>{formatCurrency(insuranceDetails.coveredAmount || 0)}</strong>
-                  </div>
-                  <div>
-                    <span>Patient Top-Up</span>
-                    <strong>{formatCurrency(insuranceDetails.patientTopUp || 0)}</strong>
-                  </div>
-                  {Number(insuranceDetails.privateNonNhisAmount || 0) > 0 && (
+                  {insuranceCoveredAmount > 0 && (
                     <div>
-                      <span>Private / Non-NHIS</span>
-                      <strong>{formatCurrency(insuranceDetails.privateNonNhisAmount)}</strong>
+                      <span>{isNhisSettlement ? 'NHIS Covered' : 'Insurance Covered'}</span>
+                      <strong>{formatCurrency(insuranceCoveredAmount)}</strong>
                     </div>
                   )}
-                  {Number(insuranceDetails.policyAdjustmentAmount || 0) > 0 && (
+                  {patientTopUpAmount > 0 && (
+                    <div>
+                      <span>{isNhisSettlement ? 'NHIS Top-Up' : 'Patient Top-Up'}</span>
+                      <strong>{formatCurrency(patientTopUpAmount)}</strong>
+                    </div>
+                  )}
+                  {privateNonNhisAmount > 0 && (
+                    <div>
+                      <span>Private / Non-NHIS</span>
+                      <strong>{formatCurrency(privateNonNhisAmount)}</strong>
+                    </div>
+                  )}
+                  {policyAdjustmentAmount > 0 && (
                     <div>
                       <span>NHIS Policy Adjustment</span>
-                      <strong>{formatCurrency(insuranceDetails.policyAdjustmentAmount)}</strong>
+                      <strong>{formatCurrency(policyAdjustmentAmount)}</strong>
                     </div>
                   )}
                   {insuranceDetails.patientDueAmount !== undefined && (
                     <div>
-                      <span>Patient Due</span>
+                      <span>Patient Paid</span>
                       <strong>{formatCurrency(insuranceDetails.patientDueAmount)}</strong>
                     </div>
                   )}
@@ -265,7 +272,6 @@ const Receipt = forwardRef(({ saleData, pharmacyInfo, mode = 'preview' }, ref) =
         <div className="receipt-dashed" />
 
         <footer className="receipt-footer">
-          <img className="receipt-qr" src={receiptQrUrl} alt="" />
           <div className="footer-message">
             <p className="thank-you">Thank you for your patronage!</p>
             <p className="footer-note">Please keep this receipt for your records.</p>

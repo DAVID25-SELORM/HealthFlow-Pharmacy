@@ -309,9 +309,7 @@
 }
 
 .receipt-footer {
-  display: grid;
-  grid-template-columns: 120px 1fr;
-  gap: 28px;
+  display: block;
   align-items: center;
   padding: 20px 0 28px;
 }
