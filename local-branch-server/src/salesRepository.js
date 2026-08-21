@@ -511,11 +511,6 @@ export const createLocalSale = db.transaction((saleData) => {
           patient_top_up_amount: item.patientTopUpAmount,
           private_amount: item.privateAmount,
           policy_adjustment_amount: item.policyAdjustmentAmount,
-          nhis_settlement: item.nhisSettlement,
-          nhis_covered_amount: item.nhisCoveredAmount,
-          patient_top_up_amount: item.patientTopUpAmount,
-          private_amount: item.privateAmount,
-          policy_adjustment_amount: item.policyAdjustmentAmount,
         })),
       },
     }

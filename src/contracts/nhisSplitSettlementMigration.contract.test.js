@@ -20,4 +20,11 @@ describe('NHIS split-settlement migration contract', () => {
     )
     expect(migration).toContain("position(E'\\\\n' in v_definition) > 0")
   })
+
+  it('is safe to rerun after one sale function was already patched', () => {
+    expect(migration).toContain('Do not append the settlement fields a second time on retry.')
+    expect(migration).toContain("v_definition like '%nhis_covered_value NUMERIC(12, 2);%'")
+    expect(migration).toContain('has an incomplete split-settlement patch')
+    expect(migration).toContain('continue;')
+  })
 })

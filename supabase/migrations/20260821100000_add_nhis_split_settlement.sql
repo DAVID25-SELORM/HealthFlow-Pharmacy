@@ -33,6 +33,20 @@ begin
     v_signature := v_name::regprocedure;
     select pg_get_functiondef(v_signature) into v_definition;
 
+    -- A SQL-editor run can apply the first function before a later function
+    -- fails.  Do not append the settlement fields a second time on retry.
+    if v_definition like '%nhis_covered_value NUMERIC(12, 2);%'
+       or v_definition like '%nhis_settlement, nhis_covered_amount, patient_top_up_amount, private_amount, policy_adjustment_amount%' then
+      if v_definition like '%nhis_covered_value NUMERIC(12, 2);%'
+         and v_definition like '%patient_payment_method_value TEXT;%'
+         and v_definition like '%nhis_policy_adjustment_amount%'
+         and v_definition like '%nhis_settlement, nhis_covered_amount, patient_top_up_amount, private_amount, policy_adjustment_amount%' then
+        continue;
+      end if;
+
+      raise exception 'Sale transaction definition for % has an incomplete split-settlement patch', v_name;
+    end if;
+
     if v_definition not like '%insurance_top_up_method_value TEXT;%'
        or v_definition not like '%insurance_covered_value := COALESCE%'
        or v_definition not like '%insurance_covered_amount, insurance_top_up_amount, insurance_top_up_payment_method%'
