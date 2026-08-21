@@ -9,7 +9,11 @@ import {
   refundPosSale,
 } from '../services/salesApi'
 import { createClaim } from '../services/claimsService'
-import { createNhisClaim, getNhiaApiSettings } from '../services/nhisService'
+import {
+  checkNhisActiveMedicationOverlap,
+  createNhisClaim,
+  getNhiaApiSettings,
+} from '../services/nhisService'
 import { getAllPatients } from '../services/patientService'
 import { getPharmacySettings } from '../services/settingsService'
 import { getBranches } from '../services/branchService'
@@ -108,6 +112,19 @@ const getNhiaMemberNumber = (patient) =>
   patient?.insurance_id || patient?.nhis_member_no || patient?.nhis_hin || ''
 
 const validateNhiaMemberNumber = validateNhiaMemberNumberFormat
+
+const getNhisCalendarDate = (value = new Date()) => {
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Accra',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date)
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]))
+  return `${values.year}-${values.month}-${values.day}`
+}
 
 const getNhisCoveredUnitPrice = (item) => {
   const retailPrice = Number.parseFloat(item?.price) || 0
@@ -1384,7 +1401,8 @@ const Sales = () => {
       return null
     }
 
-    const serviceDate = (saleDate || new Date().toISOString()).split('T')[0]
+    const servedAt = saleDate || new Date().toISOString()
+    const serviceDate = getNhisCalendarDate(servedAt)
     const { surname, otherNames } = splitPatientNameForNhis(selectedPatientForSale)
     const medicines = soldItems.map((item) => {
       const unitPrice = getNhisCoveredUnitPrice(item)
@@ -1397,6 +1415,10 @@ const Sales = () => {
         unitPrice,
         dispensedQty: item.quantity,
         dispensaryDate: serviceDate,
+        prescribedQty: item.quantity,
+        servedQty: item.quantity,
+        servingStatus: 'fully_served',
+        servedAt,
         dose: '',
         frequency: '',
         duration: '',
@@ -1431,6 +1453,8 @@ const Sales = () => {
         branchId,
         createdBy: user?.id || null,
         allowIncompleteReview: true,
+        status: 'returned_for_review',
+        servingStatus: 'fully_served',
         notes: [
           saleNumber
             ? `Auto-created from POS NHIA sale ${saleNumber}.`
@@ -1450,6 +1474,27 @@ const Sales = () => {
   const createInsuranceClaimForSale = async (claimArgs) => {
     const claimPayload = buildInsuranceClaimPayload(claimArgs)
     return claimPayload ? await createClaim(claimPayload) : null
+  }
+
+  const assertNhiaPosMedicationCoverage = async (serviceDate) => {
+    for (const item of cart) {
+      const result = await checkNhisActiveMedicationOverlap({
+        memberNo: selectedNhiaMemberNumber,
+        hin: selectedPatientForSale?.nhis_hin || '',
+        medicineCode: item.nhisCode || '',
+        genericName: item.genericName || item.name || '',
+        serviceDate,
+        currentOrganizationId: organization?.id || profile?.organization_id || null,
+        requestedQuantity: item.quantity,
+        allowCloudWhenBranch: true,
+      })
+      if (!result?.available) {
+        throw new Error('NHIS active-medication verification is unavailable. Do not complete this NHIA sale until the check can be performed.')
+      }
+      if (result.alerts?.length) {
+        throw new Error('This patient has active coverage for a selected medicine. Review the NHIS claim before completing this sale.')
+      }
+    }
   }
 
   const handleCompleteSale = async () => {
@@ -1524,6 +1569,10 @@ const Sales = () => {
       }
 
       if (saleIsNhiaClaim) {
+        if (!isNhisPatient(selectedPatientForSale)) {
+          notify('NHIA claim sales require a patient whose insurance provider is NHIS.', 'warning')
+          return
+        }
         const memberNumberError = validateNhiaMemberNumber(selectedNhiaMemberNumber, nhiaSettings || {})
         if (memberNumberError) {
           notify(memberNumberError, 'warning')
@@ -1556,6 +1605,9 @@ const Sales = () => {
       setProcessing(true)
       setError('')
       const saleTimestamp = new Date().toISOString()
+      if (saleIsNhiaClaim) {
+        await assertNhiaPosMedicationCoverage(getNhisCalendarDate(saleTimestamp))
+      }
       const soldItems = cart.map((item) => ({
         drugId: item.drugId,
         name: item.name,

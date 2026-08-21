@@ -5056,8 +5056,9 @@ export const checkNhisActiveMedicationOverlap = async ({
   dose = '',
   frequency = '',
   duration = '',
+  allowCloudWhenBranch = false,
 } = {}) => {
-  if (shouldUseBranchServer()) {
+  if (shouldUseBranchServer() && !allowCloudWhenBranch) {
     return { available: false, alerts: [], reason: 'offline_branch' }
   }
 
@@ -6320,7 +6321,10 @@ export const getNhisClaimStats = async () => {
  * Also saves HIN/member_no back to the patient record if patient_id is provided.
  */
 export const createNhisClaim = async (claimData, medicines, options = {}) => {
-  assertNhisMedicineDurationInputs(medicines)
+  const allowIncompleteReview = Boolean(claimData?.allowIncompleteReview || claimData?.reviewOnly)
+  if (!allowIncompleteReview) {
+    assertNhisMedicineDurationInputs(medicines)
+  }
   const organizationType = normalizeOrganizationType(claimData?.organizationType ?? claimData?.organization_type)
   const tariffServices = normalizeNhiaTariffServiceLines(
     options.nhiaTariffServices ?? claimData?.nhiaTariffServices ?? claimData?.nhis_claim_services ?? [],
@@ -6331,7 +6335,6 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
     tariffServices,
     options.currentNhiaTariffItems ?? options.nhiaTariffCatalog
   )
-  const allowIncompleteReview = Boolean(claimData?.allowIncompleteReview || claimData?.reviewOnly)
   const readiness = assessNhisClaimReadiness(
     { ...claimData, organizationType, providerClassLevel },
     medicines,
@@ -6366,15 +6369,19 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
 
   const isHospital = organizationType === 'hospital'
   assertRequiredText(claimData.surname, 'Surname')
-  assertRequiredText(claimData.folderNo, 'Folder number')
-  assertRequiredText(claimData.referringFacility, 'Prescribing facility')
+  if (!allowIncompleteReview) {
+    assertRequiredText(claimData.folderNo, 'Folder number')
+    assertRequiredText(claimData.referringFacility, 'Prescribing facility')
+  }
   const memberNo = normalizeNhiaMemberNumber(
     assertRequiredText(claimData.memberNo, 'NHIS member number or Ghana Card number')
   )
-  const cccNo = normalizeOptionalNhisCcCodeForMode(
-    claimData.cccNo ?? claimData.ccc_no ?? claimData.ccCode ?? claimData.cc_code,
-    options
-  )
+  const cccNo = allowIncompleteReview
+    ? ''
+    : normalizeOptionalNhisCcCodeForMode(
+        claimData.cccNo ?? claimData.ccc_no ?? claimData.ccCode ?? claimData.cc_code,
+        options
+      )
   const serviceDate = toNullableDate(claimData.serviceDate || claimData.serviceDateFrom) || toNhisCalendarDate()
 
   const medicineRows = toNhisClaimMedicineRows(medicines)

@@ -6763,6 +6763,22 @@ describe('NHIS active medication overlap check', () => {
     expect(supabase.rpc).not.toHaveBeenCalled()
   })
 
+  it('can require a cloud overlap check before a branch-backed NHIA sale', async () => {
+    shouldUseBranchServer.mockReturnValueOnce(true)
+    supabase.rpc.mockResolvedValueOnce({ data: [], error: null })
+
+    await expect(checkNhisActiveMedicationOverlap({
+      memberNo: '123',
+      medicineCode: 'PARA500',
+      allowCloudWhenBranch: true,
+    })).resolves.toEqual({ available: true, alerts: [] })
+
+    expect(supabase.rpc).toHaveBeenCalledWith('check_nhis_active_medication_overlap', expect.objectContaining({
+      p_member_no: '123',
+      p_medicine_code: 'PARA500',
+    }))
+  })
+
   it('loads patient-level active medication summary with member, HIN, date, and organization context', async () => {
     const alerts = [{
       medicine_code: 'PARA500',
