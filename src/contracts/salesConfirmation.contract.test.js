@@ -28,5 +28,6 @@ describe('POS sale confirmation contract', () => {
     expect(receipt).toContain("<span>Patient Paid</span>")
     expect(receipt).toContain("<span>Private / Non-NHIS</span>")
     expect(receipt).not.toContain('api.qrserver.com')
+    expect(receipt).toContain("isNhisSettlement ? 'NHIS Covered' : 'Insurance Covered'")
   })
 })

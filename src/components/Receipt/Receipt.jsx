@@ -39,11 +39,14 @@ const Receipt = forwardRef(({ saleData, pharmacyInfo, mode = 'preview' }, ref) =
   const facilityName = getFacilityName(pharmacyInfo)
   const facilityWebsite = getFacilityWebsite(pharmacyInfo)
   const receiptFooter = getReceiptFooter(pharmacyInfo)
-  const isNhisSettlement = String(paymentMethod || '').toLowerCase() === 'nhia'
   const insuranceCoveredAmount = Number(insuranceDetails?.coveredAmount || 0)
   const patientTopUpAmount = Number(insuranceDetails?.patientTopUp || 0)
   const privateNonNhisAmount = Number(insuranceDetails?.privateNonNhisAmount || 0)
   const policyAdjustmentAmount = Number(insuranceDetails?.policyAdjustmentAmount || 0)
+  const isNhisSettlement = String(paymentMethod || '').toLowerCase() === 'nhia'
+    || insuranceCoveredAmount > 0
+    || privateNonNhisAmount > 0
+    || policyAdjustmentAmount > 0
 
   return (
     <div ref={ref} className={`receipt-container receipt-${mode}-mode`}>

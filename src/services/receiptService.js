@@ -225,44 +225,33 @@ export const generateReceiptPDF = (saleData, pharmacyInfo) => {
   doc.text('PAYMENT DETAILS', margin, y)
   y += 7
   doc.setDrawColor(184, 222, 211)
-  const nhisSplitLineCount = saleData.insuranceDetails
-    ? [
-        saleData.insuranceDetails.privateNonNhisAmount,
-        saleData.insuranceDetails.policyAdjustmentAmount,
-        saleData.insuranceDetails.patientDueAmount !== undefined ? 1 : 0,
-      ].filter((value) => value === 1 || Number(value || 0) > 0).length
-    : 0
-  const paymentDetailsHeight = saleData.insuranceDetails
-    ? saleData.insuranceDetails.patientTopUpMethod
-      ? 78 + nhisSplitLineCount * 9
-      : 70 + nhisSplitLineCount * 9
-    : 34
-  doc.roundedRect(margin, y, pageWidth - margin * 2, paymentDetailsHeight, 2, 2)
-  labelValue('Payment Mode', saleData.paymentMethod?.toUpperCase() || 'N/A', margin + 34, y + 11, 62)
-  labelValue('Amount Paid', money(saleData.amountPaid), margin + 34, y + 20, 62)
-  labelValue('Change', money(saleData.change || 0), margin + 34, y + 29, 62)
-  if (saleData.insuranceDetails) {
-    labelValue('Insurance Provider', saleData.insuranceDetails.provider || 'N/A', margin + 34, y + 38, 62)
-    labelValue('Insurance ID', saleData.insuranceDetails.insuranceId || 'N/A', margin + 34, y + 47, 62)
-    labelValue('Insurance Covered', money(saleData.insuranceDetails.coveredAmount || 0), margin + 34, y + 56, 62)
-    labelValue('Patient Top-Up', money(saleData.insuranceDetails.patientTopUp || 0), margin + 34, y + 65, 62)
-    let splitOffset = 74
-    if (Number(saleData.insuranceDetails.privateNonNhisAmount || 0) > 0) {
-      labelValue('Private / Non-NHIS', money(saleData.insuranceDetails.privateNonNhisAmount), margin + 34, y + splitOffset, 62)
-      splitOffset += 9
-    }
-    if (Number(saleData.insuranceDetails.policyAdjustmentAmount || 0) > 0) {
-      labelValue('NHIS Policy Adjustment', money(saleData.insuranceDetails.policyAdjustmentAmount), margin + 34, y + splitOffset, 62)
-      splitOffset += 9
-    }
-    if (saleData.insuranceDetails.patientDueAmount !== undefined) {
-      labelValue('Patient Due', money(saleData.insuranceDetails.patientDueAmount), margin + 34, y + splitOffset, 62)
-      splitOffset += 9
-    }
-    if (saleData.insuranceDetails.patientTopUpMethod) {
-      labelValue('Top-Up Paid By', saleData.insuranceDetails.patientTopUpMethod.toUpperCase(), margin + 34, y + splitOffset, 62)
-    }
+  const insuranceDetails = saleData.insuranceDetails
+  const nhisCoveredAmount = Number(insuranceDetails?.coveredAmount || 0)
+  const nhisTopUpAmount = Number(insuranceDetails?.patientTopUp || 0)
+  const privateNonNhisAmount = Number(insuranceDetails?.privateNonNhisAmount || 0)
+  const policyAdjustmentAmount = Number(insuranceDetails?.policyAdjustmentAmount || 0)
+  const isNhisSettlement = String(saleData.paymentMethod || '').toLowerCase() === 'nhia'
+    || nhisCoveredAmount > 0
+    || privateNonNhisAmount > 0
+    || policyAdjustmentAmount > 0
+  const paymentRows = [
+    ['Payment Mode', saleData.paymentMethod?.toUpperCase() || 'N/A'],
+    ['Amount Paid', money(saleData.amountPaid)],
+    ['Change', money(saleData.change || 0)],
+  ]
+  if (insuranceDetails) {
+    paymentRows.push(['Insurance Provider', insuranceDetails.provider || 'N/A'])
+    if (insuranceDetails.insuranceId) paymentRows.push(['Insurance ID', insuranceDetails.insuranceId])
+    if (nhisCoveredAmount > 0) paymentRows.push([isNhisSettlement ? 'NHIS Covered' : 'Insurance Covered', money(nhisCoveredAmount)])
+    if (nhisTopUpAmount > 0) paymentRows.push([isNhisSettlement ? 'NHIS Top-Up' : 'Patient Top-Up', money(nhisTopUpAmount)])
+    if (privateNonNhisAmount > 0) paymentRows.push(['Private / Non-NHIS', money(privateNonNhisAmount)])
+    if (policyAdjustmentAmount > 0) paymentRows.push(['NHIS Policy Adjustment', money(policyAdjustmentAmount)])
+    if (Number(insuranceDetails.patientDueAmount || 0) > 0) paymentRows.push(['Patient Paid', money(insuranceDetails.patientDueAmount)])
+    if (insuranceDetails.patientTopUpMethod) paymentRows.push(['Top-Up Paid By', insuranceDetails.patientTopUpMethod.toUpperCase()])
   }
+  const paymentDetailsHeight = Math.max(34, paymentRows.length * 9 + 10)
+  doc.roundedRect(margin, y, pageWidth - margin * 2, paymentDetailsHeight, 2, 2)
+  paymentRows.forEach(([label, value], index) => labelValue(label, value, margin + 34, y + 11 + index * 9, 62))
 
   y += paymentDetailsHeight + 14
   doc.setDrawColor(196, 211, 207)
@@ -326,6 +315,12 @@ export const printReceipt = () => {
  * Get receipt data from sale
  */
 export const formatSaleForReceipt = (sale, items, patient = null, soldByName = null) => {
+  const nhisCoveredAmount = Number(sale.nhis_covered_amount ?? sale.nhisCoveredAmount ?? 0)
+  const nhisTopUpAmount = Number(sale.nhis_top_up_amount ?? sale.nhisTopUpAmount ?? 0)
+  const privateNonNhisAmount = Number(sale.private_non_nhis_amount ?? sale.privateNonNhisAmount ?? 0)
+  const policyAdjustmentAmount = Number(sale.nhis_policy_adjustment_amount ?? sale.nhisPolicyAdjustmentAmount ?? 0)
+  const hasNhisSettlement = nhisCoveredAmount > 0 || nhisTopUpAmount > 0 || privateNonNhisAmount > 0 || policyAdjustmentAmount > 0
+
   return {
     saleNumber: sale.sale_number,
     saleDate: sale.sale_date || sale.created_at,
@@ -337,6 +332,18 @@ export const formatSaleForReceipt = (sale, items, patient = null, soldByName = n
     amountPaid: sale.amount_paid,
     change: sale.change_given || 0,
     patient: patient,
+    insuranceDetails: hasNhisSettlement
+      ? {
+          provider: patient?.insurance_provider || 'NHIS',
+          insuranceId: patient?.insurance_id || patient?.nhis_hin || null,
+          coveredAmount: nhisCoveredAmount,
+          patientTopUp: nhisTopUpAmount,
+          privateNonNhisAmount,
+          policyAdjustmentAmount,
+          patientDueAmount: nhisTopUpAmount + privateNonNhisAmount,
+          patientTopUpMethod: sale.patient_payment_method ?? sale.patientPaymentMethod ?? null,
+        }
+      : null,
     soldBy: soldByName,
   }
 }
