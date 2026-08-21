@@ -88,7 +88,6 @@ import {
 } from '../services/branchServerApi'
 import { isMcaEditWindowOpen, canReopenMcaEditWindow } from '../utils/mcaEditWindow'
 import {
-  canCorrectDirectServedNhisMedicine,
   canNhisClaimBeServedDirectly,
   canMcaOpenNhisClaimForServing,
   isNhisClaimDirectlyServed,
@@ -1556,10 +1555,6 @@ const Nhis = () => {
   const [editingClaim, setEditingClaim]       = useState(null)
   const [correctionReason, setCorrectionReason] = useState('')
   const [correctionHistory, setCorrectionHistory] = useState([])
-  const canCorrectDirectServedMedicine = canCorrectDirectServedNhisMedicine({
-    claim: editingClaim,
-    role: privilegedNhisActionRole,
-  })
   const [prescriptionPdfFile, setPrescriptionPdfFile] = useState(null)
 
   // ── patient lookup (for claim form) ──────────────────────────
@@ -3596,10 +3591,20 @@ const Nhis = () => {
     const prescribedQty = isMedicineCounterAssistant
       ? getMedicinePrescribedQty(currentMedicine)
       : qty
+    const previousPrescribedQty = getMedicinePrescribedQty(currentMedicine)
+    const previousServedQty = getMedicineServedQty(currentMedicine)
+    const wasFullyServed = previousServedQty > 0 && previousServedQty === previousPrescribedQty
+    const synchronizeCorrectedServedQty =
+      canEditNhisClaimAnytime &&
+      currentMedicine &&
+      wasFullyServed &&
+      qty !== previousPrescribedQty
     const servedQty = isMedicineCounterAssistant
       ? qty
-      : canCorrectDirectServedMedicine && currentMedicine
-        ? Number.parseFloat(medForm.servedQty) || 0
+      : canEditNhisClaimAnytime && currentMedicine
+        ? synchronizeCorrectedServedQty
+          ? qty
+          : Number.parseFloat(medForm.servedQty) || 0
         : getMedicineServedQty(currentMedicine)
     const servingStatus = normalizeMedicineServingStatus(medForm.servingStatus, prescribedQty, servedQty)
     if (
@@ -8695,14 +8700,25 @@ const Nhis = () => {
                 </>
               )}
 
-              {canCorrectDirectServedMedicine && editingMedicineIndex !== null && (
+              {canEditNhisClaimAnytime && editingMedicineIndex !== null && (
                 <div className="nhis-direct-serving-correction">
                   <div>
-                    <strong>Direct-service correction</strong>
+                    <strong>Claim amount correction</strong>
                     <span>
-                      Served {medForm.servedQty || 0} of {medForm.dispensedQty || 0} {medForm.unit || 'unit'}.
+                      Claim amount is calculated from served quantity. A fully served line follows a corrected prescribed quantity automatically; enter the served quantity below for a partial correction.
                     </span>
                   </div>
+                  <label className="form-group nhis-served-quantity-correction">
+                    <span>Served quantity</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.5"
+                      className="form-input"
+                      value={medForm.servedQty}
+                      onChange={(e) => setMedForm((current) => ({ ...current, servedQty: e.target.value }))}
+                    />
+                  </label>
                   <button
                     type="button"
                     className="btn btn-secondary"
@@ -8768,10 +8784,18 @@ const Nhis = () => {
 
             <div className="modal-footer">
               <div className="medicine-footer-total">
-                <span>{isMedicineCounterAssistant ? 'Served Line Total' : 'Prescribed Value'}</span>
+                <span>{
+                  isMedicineCounterAssistant || (canEditNhisClaimAnytime && editingMedicineIndex !== null)
+                    ? 'Claim Line Total'
+                    : 'Prescribed Value'
+                }</span>
                 <strong>
                   {fmtCurrency(
-                    (Number(medForm.unitPrice) || 0) * (Number(medForm.dispensedQty) || 0)
+                    (Number(medForm.unitPrice) || 0) * (
+                      isMedicineCounterAssistant || (canEditNhisClaimAnytime && editingMedicineIndex !== null)
+                        ? (Number(medForm.servedQty) || 0)
+                        : (Number(medForm.dispensedQty) || 0)
+                    )
                   )}
                 </strong>
               </div>

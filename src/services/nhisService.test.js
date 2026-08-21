@@ -4252,6 +4252,11 @@ describe('NHIS claim save attachment behavior', () => {
   })
 
   it('routes privileged corrections through one authoritative RPC without direct child writes', async () => {
+    const correctedMedicine = {
+      ...baseMedicine,
+      servedQty: 5,
+      totalAmount: 999,
+    }
     const existingClaim = {
       id: 'claim-1',
       claim_number: 'NHIS-000001',
@@ -4279,7 +4284,7 @@ describe('NHIS claim save attachment behavior', () => {
     supabase.rpc.mockResolvedValueOnce({
       data: {
         claim: { ...existingClaim, physician_name: 'Dr Correct', prescriber_name_snapshot: 'Dr Correct' },
-        medicines: [],
+        medicines: [{ ...correctedMedicine, total_amount: 5 }],
         services: [],
         audit: [{ field_name: 'physician_name' }],
       },
@@ -4292,7 +4297,7 @@ describe('NHIS claim save attachment behavior', () => {
       prescriberNameSnapshot: 'Dr Correct',
       cccNo: '81416',
       status: 'served',
-    }, [], {
+    }, [correctedMedicine], {
       privilegedCorrection: true,
       correctionReason: 'Wrong prescriber captured',
       expectedUpdatedAt: existingClaim.updated_at,
@@ -4319,6 +4324,14 @@ describe('NHIS claim save attachment behavior', () => {
     expect(rpcPayload).not.toHaveProperty('organization_id')
     expect(rpcPayload).not.toHaveProperty('actor_role')
     expect(rpcPayload).not.toHaveProperty('previous_values')
+    expect(rpcPayload.p_medicines).toEqual([
+      expect.objectContaining({
+        unit_price: 1,
+        dispensed_qty: 5,
+        served_qty: 5,
+        total_amount: 5,
+      }),
+    ])
     expect(claimQuery.update).not.toHaveBeenCalled()
     expect(claimQuery.delete).not.toHaveBeenCalled()
   })

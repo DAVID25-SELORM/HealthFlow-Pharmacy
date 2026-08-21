@@ -2658,11 +2658,10 @@ const toNhisClaimMedicineRows = (medicines = []) =>
       prescribedQty,
       servedQty
     )
-    const hasServedQuantityField = m.servedQty !== undefined || m.served_qty !== undefined
-    const totalAmount = assertNonNegativeNumber(
-      hasServedQuantityField ? unitPrice * servedQty : (m.totalAmount ?? unitPrice * servedQty),
-      'Total amount'
-    )
+    // A claim medicine amount is always the authoritative catalog/unit price
+    // multiplied by the quantity actually served. Never carry a client or
+    // historical total forward after a medicine correction.
+    const totalAmount = assertNonNegativeNumber(unitPrice * servedQty, 'Total amount')
     return {
       nhis_drug_id: toNullableUuid(m.nhisDrugId ?? m.nhis_drug_id),
       drug_code: normalizeText(m.drugCode) || null,
