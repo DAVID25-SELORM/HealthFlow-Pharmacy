@@ -27,4 +27,10 @@ describe('NHIS split-settlement migration contract', () => {
     expect(migration).toContain('has an incomplete split-settlement patch')
     expect(migration).toContain('continue;')
   })
+
+  it('fails closed instead of silently skipping an unexpected refund function', () => {
+    expect(migration).toContain('Already patched by a previous successful SQL-editor run.')
+    expect(migration).toContain('Unexpected refund-sale definition; refusing split-settlement refund patch')
+    expect(migration).toContain('v_sale.patient_payment_method, v_sale.insurance_top_up_payment_method')
+  })
 })

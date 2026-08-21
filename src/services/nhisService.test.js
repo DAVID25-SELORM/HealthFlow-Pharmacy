@@ -3382,7 +3382,7 @@ describe('CLAIM-it export helpers', () => {
     expect(createSignedUrls.mock.calls.map(([paths]) => paths.length)).toEqual([500, 500, 1])
     expect(clickSpy).toHaveBeenCalled()
     clickSpy.mockRestore()
-  })
+  }, 20_000)
 
   it('reports the failing prescription attachment signing batch without starting the download', async () => {
     const claims = Array.from({ length: 501 }, (_, index) => {

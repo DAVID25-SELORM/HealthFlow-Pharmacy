@@ -100,12 +100,23 @@ do $$
 declare v_definition text;
 begin
   select pg_get_functiondef('public.refund_sale_transaction(uuid,text)'::regprocedure) into v_definition;
-  if v_definition like '%insurance_top_up_payment_method%' then
+  if v_definition like '%v_sale.patient_payment_method, v_sale.insurance_top_up_payment_method%' then
+    -- Already patched by a previous successful SQL-editor run.
+    null;
+  elsif v_definition like '%insurance_top_up_payment_method%' then
     v_definition := replace(v_definition,
       E'ELSIF LOWER(COALESCE(v_sale.payment_method, '''')) = ''insurance''\n    AND LOWER(COALESCE(v_sale.insurance_top_up_payment_method, '''')) = ''cash'' THEN\n    v_cash_refund_amount := COALESCE(v_sale.insurance_top_up_amount, 0);',
       E'ELSIF LOWER(COALESCE(v_sale.payment_method, '''')) = ''insurance''\n    AND LOWER(COALESCE(v_sale.patient_payment_method, v_sale.insurance_top_up_payment_method, '''')) = ''cash'' THEN\n    v_cash_refund_amount := CASE\n      WHEN COALESCE(v_sale.nhis_covered_amount, 0) > 0\n        THEN COALESCE(v_sale.nhis_top_up_amount, 0) + COALESCE(v_sale.private_non_nhis_amount, 0)\n      ELSE COALESCE(v_sale.insurance_top_up_amount, 0)\n    END;'
     );
+
+    if v_definition not like '%v_sale.patient_payment_method, v_sale.insurance_top_up_payment_method%'
+       or v_definition not like '%COALESCE(v_sale.nhis_top_up_amount, 0) + COALESCE(v_sale.private_non_nhis_amount, 0)%' then
+      raise exception 'Unexpected refund-sale definition; refusing split-settlement refund patch';
+    end if;
+
     execute v_definition;
+  else
+    raise exception 'Unexpected refund-sale definition; refusing split-settlement refund patch';
   end if;
 end;
 $$;
