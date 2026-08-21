@@ -72,7 +72,7 @@ begin
     if v_definition not like '%nhis_policy_adjustment_amount%'
        or v_definition not like '%patient_payment_method_value%'
        or v_definition not like '%nhis_settlement%'
-       or v_definition like E'%\\n%' then
+       or position(E'\\n' in v_definition) > 0 then
       raise exception 'Split-settlement replacement failed for %', v_name;
     end if;
     execute v_definition;

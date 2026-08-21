@@ -18,6 +18,6 @@ describe('NHIS split-settlement migration contract', () => {
     expect(migration).toContain(
       "E'total_price, unit_cost_at_sale, line_cost,\\n"
     )
-    expect(migration).toContain("v_definition like E'%\\\\n%'")
+    expect(migration).toContain("position(E'\\\\n' in v_definition) > 0")
   })
 })
