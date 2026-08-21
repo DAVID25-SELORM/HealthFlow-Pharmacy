@@ -1516,7 +1516,10 @@ const Sales = () => {
     }
   }
 
-  const handleCompleteSale = async (confirmed = false) => {
+  // React supplies the click event as the first argument to an onClick handler.
+  // Accept an explicit options object so a click event can never be mistaken for
+  // confirmation and bypass the review screen.
+  const handleCompleteSale = async ({ confirmed = false } = {}) => {
     if (!cart.length) {
       return
     }
@@ -2288,7 +2291,7 @@ const Sales = () => {
 
     setConfirmingSale(true)
     try {
-      await handleCompleteSale(true)
+      await handleCompleteSale({ confirmed: true })
     } finally {
       setConfirmingSale(false)
     }
