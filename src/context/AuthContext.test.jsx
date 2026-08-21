@@ -1096,4 +1096,27 @@ describe('AuthProvider', () => {
     // The failed code must not be left sitting in the URL for a retry loop.
     expect(window.location.search).toBe('?mode=recovery')
   })
+
+  it('surfaces a recovery error when a legacy recovery redirect has no resolved session', async () => {
+    window.history.replaceState({}, '', '/login?mode=recovery')
+    mocks.auth.getSession.mockResolvedValue({
+      data: { session: null },
+      error: null,
+    })
+
+    render(
+      <AuthProvider>
+        <Probe />
+        <RecoveryErrorProbe />
+      </AuthProvider>
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId('recovery-error-state')).toHaveTextContent(
+        /could not be verified/i
+      )
+    })
+    expect(mocks.auth.verifyOtp).not.toHaveBeenCalled()
+    expect(window.location.search).toBe('?mode=recovery')
+  })
 })

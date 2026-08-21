@@ -835,14 +835,22 @@ export const AuthProvider = ({ children }) => {
       // detectSessionInUrl is enabled. Keep this fallback for recovery emails
       // issued before the browser-independent template was activated.
       const recoveryCode = getPasswordRecoveryCode()
+      const hasRecoveryHint = hasPasswordRecoveryHint()
       const activeSession = await getStoredSession()
       if (recoveryCode) {
         clearPasswordRecoverySecretsFromUrl()
-        if (!activeSession && mounted) {
-          setPasswordRecoveryError(
-            'This password reset link could not be verified. It may have expired or already been used. Request a fresh link below.'
-          )
-        }
+      }
+
+      // Some legacy recovery redirects arrive with only the recovery hint by
+      // the time this app loads (the SDK has already attempted the exchange).
+      // getSession() waits for that SDK initialization, so an absent session
+      // here is terminal rather than a state the password form can recover
+      // from. Report it explicitly instead of allowing Login to retain the
+      // misleading "still being verified" state.
+      if (hasRecoveryHint && !activeSession && mounted) {
+        setPasswordRecoveryError(
+          'This password reset link could not be verified. It may have expired or already been used. Request a fresh link below.'
+        )
       }
       await resolveSessionState(activeSession, { event: 'BOOTSTRAP' })
     }
