@@ -2931,6 +2931,10 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
 
       if (!asText(medicine?.nhisDrugId ?? medicine?.nhis_drug_id) || !asText(medicine?.drugCode ?? medicine?.drug_code)) {
         blockers.push(`${label}: select a medicine from the NHIS catalog.`)
+      } else if (!catalogMedicine?.id) {
+        const code = asText(medicine?.drugCode ?? medicine?.drug_code).toUpperCase()
+        const name = asText(medicine?.description) || `Medicine ${index + 1}`
+        blockers.push(`${name} (${code}) is not available as an active NHIS catalogue item for this facility.`)
       }
       if (!asText(medicine?.description)) blockers.push(`${label}: generic medicine name/description is required.`)
       if (!asText(medicine?.unit)) blockers.push(`${label}: unit of pricing is required.`)
@@ -5030,6 +5034,11 @@ export const upsertNhisDrugs = async (drugs, options = {}) => {
   })
 
   return rows.length
+}
+
+export const provisionNhisCatalog = async () => {
+  if (shouldUseBranchServer()) return { insertedCodes: [], source: 'offline_branch' }
+  return await invokeTierAccess({ action: 'provision_nhis_catalog' })
 }
 
 const isMissingMedicationOverlapRpcError = (error = {}) => {

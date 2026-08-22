@@ -14,6 +14,7 @@ import {
   isChemicalShopMedicineAllowed,
   isChemicalShopOrganizationType,
 } from '../_shared/chemicalShopInventory.ts'
+import { provisionNhisCatalogForOrganization } from '../_shared/nhisCatalogProvisioning.ts'
 
 const USERS_PER_PAGE = 200
 const MAX_USER_PAGES = 10
@@ -250,6 +251,7 @@ type TierAccessAction =
   | 'update_epharmacy_order_status'
   | 'request_offline_installer_download'
   | 'get_activity_logs'
+  | 'provision_nhis_catalog'
 
 const SUPPORTED_TIER_ACCESS_ACTIONS = [
   'get_drugs',
@@ -287,6 +289,7 @@ const SUPPORTED_TIER_ACCESS_ACTIONS = [
   'update_epharmacy_order_status',
   'request_offline_installer_download',
   'get_activity_logs',
+  'provision_nhis_catalog',
 ]
 
 const NHIA_CC_CODE_ACTIONS = new Set([
@@ -6446,6 +6449,21 @@ Deno.serve(async (request) => {
 
     if (action === 'sync_nhis_drugs_to_inventory') {
       return json(await syncNhisDrugsToInventory(adminClient, requesterProfile, organizationId, payload))
+    }
+
+    if (action === 'provision_nhis_catalog') {
+      requireClaimsAccess(requesterProfile, 'Only claims staff can repair the NHIS medicine catalogue.')
+      const { data: organization, error } = await adminClient
+        .from('organizations')
+        .select('can_use_nhis')
+        .eq('id', organizationId)
+        .maybeSingle()
+      if (error) throw error
+      if (!organization?.can_use_nhis) throw new Error('NHIS is not enabled for this organization.')
+      return json(await provisionNhisCatalogForOrganization(adminClient, organizationId, {
+        actorUserId: requesterProfile.id,
+        source: 'nhis_workspace',
+      }))
     }
 
     if (action === 'get_nhia_api_settings') {

@@ -1,6 +1,7 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
 import { buildDefaultMedicationRowsForOrganization } from '../_shared/defaultMedicationCatalog.ts'
+import { provisionNhisCatalogForOrganization } from '../_shared/nhisCatalogProvisioning.ts'
 
 const USERS_PER_PAGE = 200
 const MAX_USER_PAGES = 10
@@ -1522,7 +1523,7 @@ const checkOrganizationReadiness = async (
 
   const blockers: string[] = []
   const warnings: string[] = []
-  const [organizationResult, adminsResult, branchesResult, settingsResult, drugsResult, facilitiesResult, prescribersResult] =
+  const [organizationResult, adminsResult, branchesResult, settingsResult, drugsResult, nhisDrugsResult, facilitiesResult, prescribersResult] =
     await Promise.all([
       adminClient
         .from('organizations')
@@ -1551,6 +1552,11 @@ const checkOrganizationReadiness = async (
         .select('id', { count: 'exact', head: true })
         .eq('organization_id', organizationId),
       adminClient
+        .from('nhis_drugs')
+        .select('id', { count: 'exact', head: true })
+        .eq('organization_id', organizationId)
+        .eq('is_active', true),
+      adminClient
         .from('nhis_prescribing_facilities')
         .select('id', { count: 'exact', head: true })
         .eq('organization_id', organizationId),
@@ -1560,7 +1566,7 @@ const checkOrganizationReadiness = async (
         .eq('organization_id', organizationId),
     ])
 
-  for (const result of [organizationResult, adminsResult, branchesResult, settingsResult, drugsResult, facilitiesResult, prescribersResult]) {
+  for (const result of [organizationResult, adminsResult, branchesResult, settingsResult, drugsResult, nhisDrugsResult, facilitiesResult, prescribersResult]) {
     if (result.error) throw result.error
   }
 
@@ -1584,6 +1590,7 @@ const checkOrganizationReadiness = async (
   if ((drugsResult.count || 0) === 0) warnings.push('The default medication catalogue is empty.')
 
   if (organization?.can_use_nhis) {
+    if ((nhisDrugsResult.count || 0) === 0) blockers.push('Active NHIS medicine catalogue is missing.')
     const nhiaResult = await adminClient
       .from('nhia_configuration')
       .select('id')
@@ -1864,6 +1871,14 @@ const bootstrapOrganization = async (
 
     provisioningStage = 'seed medication catalogue'
     await seedDefaultMedicationCatalog(adminClient, organizationId)
+
+    if (organizationInput.canUseNhis === true) {
+      provisioningStage = 'seed NHIS medicine catalogue'
+      await provisionNhisCatalogForOrganization(adminClient, organizationId, {
+        actorUserId: authUserId,
+        source: 'tenant_signup',
+      })
+    }
 
     provisioningStage = 'seed NHIA configuration'
     await seedNhiaConfiguration(adminClient, {

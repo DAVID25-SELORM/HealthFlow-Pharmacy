@@ -18,6 +18,9 @@ describe('ORG-READY-001 provisioning contract', () => {
     expect(source).toContain("blockers.push('Organization owner is missing.')")
     expect(source).toContain("warnings.push('No external prescribing facility has been added yet.')")
     expect(source).toContain("warnings.push('No organization prescriber has been added yet.')")
+    expect(source).toContain("blockers.push('Active NHIS medicine catalogue is missing.')")
+    expect(source).toContain("provisioningStage = 'seed NHIS medicine catalogue'")
+    expect(source).toContain('provisionNhisCatalogForOrganization')
     expect(source).not.toContain("provisioningStage = 'provision NHIS prescribing facility'")
   })
 

@@ -36,6 +36,7 @@ import {
   updateNhisDrug,
   deleteNhisDrug,
   upsertNhisDrugs,
+  provisionNhisCatalog,
   getNhisClaimsPage,
   getNhisClaimForSubmission,
   getAllNhiaTariffItems,
@@ -1916,15 +1917,16 @@ const Nhis = () => {
       let readyDrugsData = drugsData
       if (
         canWrite &&
-        drugsData.length === 0 &&
         DEFAULT_NHIS_DRUG_CATALOG.length > 0 &&
         organization?.can_use_nhis !== false
       ) {
         try {
           setCatalogSeeding(true)
-          await upsertNhisDrugs(DEFAULT_NHIS_DRUG_CATALOG, { syncInventory: false })
+          const provisioned = await provisionNhisCatalog()
           readyDrugsData = await getAllNhisDrugs()
-          notify(`Loaded ${readyDrugsData.length} default NHIS medicines into this facility.`, 'success')
+          if (provisioned.insertedCodes?.length) {
+            notify(`Restored ${provisioned.insertedCodes.length} missing NHIS catalogue medicines for this facility.`, 'success')
+          }
         } catch (seedError) {
           notify(
             seedError.message || 'NHIS medicine catalog is empty. Import the NHIS drug template before adding medicines.',
