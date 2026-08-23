@@ -13,6 +13,9 @@ const NotificationHarness = () => {
       <button type="button" onClick={() => notify('Quick info.', 'info', 500)}>
         Show info
       </button>
+      <button type="button" onClick={() => notify('Review this blocking alert.', 'error', 0)}>
+        Show blocking alert
+      </button>
     </div>
   )
 }
@@ -56,5 +59,21 @@ describe('NotificationProvider', () => {
       vi.advanceTimersByTime(500)
     })
     expect(screen.queryByText('Quick info.')).not.toBeInTheDocument()
+  })
+
+  it('keeps an explicitly persistent error visible until the user dismisses it', () => {
+    vi.useFakeTimers()
+    renderNotifications()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show blocking alert' }))
+    expect(screen.getByText('Review this blocking alert.')).toBeInTheDocument()
+
+    act(() => {
+      vi.advanceTimersByTime(30_000)
+    })
+    expect(screen.getByText('Review this blocking alert.')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss notification' }))
+    expect(screen.queryByText('Review this blocking alert.')).not.toBeInTheDocument()
   })
 })

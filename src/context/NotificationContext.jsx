@@ -12,6 +12,13 @@ const getToastDuration = (type, duration) => {
     return 0
   }
 
+  // A caller can opt a non-warning toast into explicit acknowledgement. This
+  // is used for blocking clinical alerts where the user must be able to read
+  // the details before deciding when to dismiss them.
+  if (duration === 0) {
+    return 0
+  }
+
   const parsedDuration = Number(duration)
   return Number.isFinite(parsedDuration) && parsedDuration > 0
     ? parsedDuration

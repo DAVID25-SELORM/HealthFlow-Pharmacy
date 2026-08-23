@@ -1218,7 +1218,9 @@ const showNhisMedicationOverlapBlockAlert = (alerts = [], notifyFn = null) => {
   if (!message) return
   const fullMessage = `${message}\n\nThis medicine cannot be added or served while active coverage remains. Correct the previous record, wait until coverage ends, or contact a claims officer/admin for review.`
   if (typeof notifyFn === 'function') {
-    notifyFn(fullMessage, 'error')
+    // This is a blocking duplicate/active-medication decision, not a transient
+    // status update. Keep it visible until the user explicitly dismisses it.
+    notifyFn(fullMessage, 'error', 0)
     return
   }
   console.warn('[NHIS] Active medication overlap blocked:', fullMessage)
