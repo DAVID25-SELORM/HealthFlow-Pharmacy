@@ -859,6 +859,13 @@ const getNhisCcCodeIssue = (value) => {
   return ''
 }
 
+const getNhisCcCodeExportIssue = (value) => {
+  const digits = normalizeNhisCcCode(value)
+  if (!digits) return 'CCC/CC code is required before export.'
+  if (digits.length !== NHIS_CC_CODE_DIGITS) return `CCC/CC code must contain exactly ${NHIS_CC_CODE_DIGITS} digits before export.`
+  return ''
+}
+
 const assertNhisCcCode = (value) => {
   const issue = getNhisCcCodeIssue(value)
   if (issue) throw new Error(issue)
@@ -2850,9 +2857,11 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
   if (isHospital && patientAge !== null && patientAge < 12 && !(asNumber(childWeight) > 0)) {
     warnings.push('Child weight is missing for a child patient.')
   }
-  const cccNoIssue = shouldAllowPendingClaimControl(options) && !normalizeNhisCcCode(cccNo)
-    ? ''
-    : getNhisCcCodeIssue(cccNo)
+  const cccNoIssue = options.requireCccCodeForExport === true
+    ? getNhisCcCodeExportIssue(cccNo)
+    : shouldAllowPendingClaimControl(options) && !normalizeNhisCcCode(cccNo)
+      ? ''
+      : getNhisCcCodeIssue(cccNo)
   if (cccNoIssue) blockers.push(cccNoIssue)
   if (!diagnosis && isHospital) {
     blockers.push('Diagnosis is required for hospital NHIS claims.')
@@ -8236,6 +8245,20 @@ const getClaimItPrescriptionAttachmentForPayload = (claim = {}) => {
 }
 
 export const buildNhisClaimItExportPayload = (claims = [], options = {}) => {
+  const invalidCccClaims = claims
+    .map((claim) => ({
+      claim,
+      issue: getNhisCcCodeExportIssue(claim?.ccc_no ?? claim?.cccNo ?? claim?.cc_code ?? claim?.ccCode),
+    }))
+    .filter(({ issue }) => issue)
+
+  if (invalidCccClaims.length) {
+    const affectedClaims = invalidCccClaims
+      .map(({ claim, issue }) => `${normalizeText(claim?.claim_number || claim?.claimNumber) || 'Unnumbered claim'}: ${issue}`)
+      .join(' ')
+    throw new Error(`Cannot export NHIS claim${invalidCccClaims.length === 1 ? '' : 's'} without a valid CCC/CC code. ${affectedClaims}`)
+  }
+
   const generatedAt = options.generatedAt || new Date().toISOString()
   const exportPeriod = options.exportPeriod || normalizeNhisExportPeriod({
     ...options,
@@ -9720,6 +9743,9 @@ const getNhisClaimsFinalSubmissionReadiness = async (claims, organizationType, o
         claim.nhis_claim_medicines || [],
         {
           finalSubmission: true,
+          // A CC/CCC may be pending while a claim is being drafted in a live
+          // bridge flow, but no output or direct submission may include it.
+          requireCccCodeForExport: true,
           clinicalRules,
           enforcePrescribingLevel: true,
           providerClassLevel,

@@ -1527,6 +1527,16 @@ describe('assessNhisClaimReadiness', () => {
     expect(readiness.blockers).toContain('CCC/CC code must contain exactly 5 digits.')
   })
 
+  it('does not allow a bridge-mode claim with a pending CCC/CC code to pass export readiness', () => {
+    const readiness = assessNhisClaimReadiness(
+      { ...baseClaim, cccNo: '' },
+      [baseMedicine],
+      { finalSubmission: true, claimControlMode: 'claimit_bridge', requireCccCodeForExport: true }
+    )
+
+    expect(readiness.blockers).toContain('CCC/CC code is required before export.')
+  })
+
   it('only asks for child weight on hospital child claims', () => {
     const childClaim = {
       ...baseClaim,
@@ -1826,6 +1836,18 @@ describe('CLAIM-it export helpers', () => {
     })
     expect(payload.claims[0].medicines[0].code).toBe('NH001')
     expect(payload.claims[0].prescriptionAttachment).toBeNull()
+  })
+
+  it('refuses every CLAIM-it export payload when any claim lacks a valid CCC/CC code', () => {
+    expect(() => buildNhisClaimItExportPayload([
+      { ...claim, claim_number: 'NHIS-MISSING-CCC', ccc_no: '' },
+      { ...claim, claim_number: 'NHIS-BAD-CCC', ccc_no: '1234' },
+    ], {
+      yearMonth: '2026-05',
+      organizationType: 'hospital',
+    })).toThrow(
+      'Cannot export NHIS claims without a valid CCC/CC code. NHIS-MISSING-CCC: CCC/CC code is required before export. NHIS-BAD-CCC: CCC/CC code must contain exactly 5 digits before export.'
+    )
   })
 
   it('exports the corrected prescriber and removes the old prescriber from the new payload and XML', () => {
