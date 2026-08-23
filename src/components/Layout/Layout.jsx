@@ -10,9 +10,23 @@ import './Layout.css'
 
 const isHexColor = (value) => /^#[0-9a-f]{6}$/i.test(String(value || '').trim())
 
+const pageTitles = {
+  '/dashboard': 'Dashboard',
+  '/inventory': 'Inventory',
+  '/sales': 'Sales (POS)',
+  '/patients': 'Patients',
+  '/claims': 'Claims',
+  '/purchases': 'Purchases',
+  '/nhis': 'NHIS',
+  '/reports': 'Reports',
+  '/accounting': 'Accounting',
+  '/settings': 'Settings',
+}
+
 const Layout = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const location = useLocation()
+  const pageTitle = pageTitles[location.pathname] || 'HealthFlow'
 
   useEffect(() => {
     setIsSidebarOpen(false)
@@ -78,6 +92,7 @@ const Layout = () => {
         <TopBar
           isSidebarOpen={isSidebarOpen}
           onMenuToggle={() => setIsSidebarOpen((current) => !current)}
+          pageTitle={pageTitle}
         />
         <main className="page-content">
           <Outlet />

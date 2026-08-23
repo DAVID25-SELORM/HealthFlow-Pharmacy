@@ -645,15 +645,91 @@
   }
 
   .claims-tabs {
-    flex-direction: column;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding: 0.4rem;
+    scrollbar-width: thin;
+  }
+
+  .claims-page .tab-btn {
+    flex: 0 0 auto;
+    min-width: max-content;
   }
 
   .claims-page .table-container {
-    overflow-x: auto;
+    max-height: none;
+    overflow: visible;
   }
 
-  .claims-table {
-    min-width: 900px;
+  .claims-table,
+  .claims-table tbody,
+  .claims-table tr,
+  .claims-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .claims-table thead {
+    display: none;
+  }
+
+  .claims-table tbody {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .claims-table tbody tr {
+    overflow: hidden;
+    border: 1px solid var(--gray-200);
+    border-radius: var(--radius-lg);
+    background: white;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .claims-table td {
+    display: grid;
+    grid-template-columns: minmax(7.5rem, 40%) minmax(0, 1fr);
+    gap: 0.75rem;
+    align-items: center;
+    min-width: 0;
+    padding: 0.7rem 0.85rem;
+    border-bottom: 1px solid var(--gray-100);
+    overflow-wrap: anywhere;
+  }
+
+  .claims-table td::before {
+    color: var(--gray-600);
+    content: '';
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
+
+  .claims-table td:nth-child(1)::before { content: 'Claim number'; }
+  .claims-table td:nth-child(2)::before { content: 'Patient'; }
+  .claims-table td:nth-child(3)::before { content: 'Insurance'; }
+  .claims-table td:nth-child(4)::before { content: 'Amount'; }
+  .claims-table td:nth-child(5)::before { content: 'Service date'; }
+  .claims-table td:nth-child(6)::before { content: 'Status'; }
+  .claims-table td:nth-child(7)::before { content: 'Actions'; }
+
+  .claims-table td:last-child {
+    border-bottom: 0;
+  }
+
+  .claims-table td[colspan] {
+    display: block;
+    text-align: center;
+  }
+
+  .claims-table td[colspan]::before {
+    display: none;
+  }
+
+  .claims-page .action-buttons {
+    justify-content: flex-end;
+    flex-wrap: wrap;
   }
 
   .claims-page .form-row {
@@ -670,7 +746,12 @@
     grid-template-columns: 1fr;
   }
 
-  .claims-page .tab-btn {
-    flex-basis: 100%;
+  .claims-table td {
+    grid-template-columns: 1fr;
+    gap: 0.3rem;
+  }
+
+  .claims-page .action-buttons {
+    justify-content: flex-start;
   }
 }

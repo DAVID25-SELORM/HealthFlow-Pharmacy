@@ -1,4 +1,12 @@
 :root {
+  /* Shared layout rhythm for responsive screens and components. */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+
   /* Primary Colors */
   --primary: #16a085;
   --primary-dark: #129678;
@@ -96,6 +104,11 @@ select,
 input[type="button"],
 input[type="submit"] {
   min-height: 44px;
+}
+
+:where(button, a, input, select, textarea):focus-visible {
+  outline: 3px solid rgba(22, 160, 133, 0.46);
+  outline-offset: 2px;
 }
 
 table {
@@ -502,6 +515,17 @@ h6 { font-size: 0.875rem; }
   .btn,
   button {
     max-width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
   }
 }
 

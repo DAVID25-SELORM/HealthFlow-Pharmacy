@@ -3,6 +3,7 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 const salesCss = readFileSync(resolve(process.cwd(), 'src/pages/Sales.css'), 'utf8')
+const salesPage = readFileSync(resolve(process.cwd(), 'src/pages/Sales.jsx'), 'utf8')
 
 describe('sales POS mobile layout contract', () => {
   it('keeps the POS mode switcher and branch-server actions touch friendly', () => {
@@ -21,5 +22,14 @@ describe('sales POS mobile layout contract', () => {
     expect(salesCss).toContain('@media (max-width: 380px)')
     expect(salesCss).toContain('.payment-btn:last-child {\n    grid-column: auto;')
     expect(salesCss).toContain('.item-controls {\n    grid-template-columns: 1fr;\n    align-items: stretch;')
+  })
+
+  it('keeps the product catalogue primary and opens checkout as a mobile cart sheet', () => {
+    expect(salesPage).toContain("const [mobileCartOpen, setMobileCartOpen] = useState(false)")
+    expect(salesPage).toContain('className="mobile-cart-bar"')
+    expect(salesPage).toContain('className="mobile-cart-close"')
+    expect(salesCss).toContain('.mobile-cart-open .checkout-section')
+    expect(salesCss).toContain('position: fixed;')
+    expect(salesCss).toContain('inset: 0;')
   })
 })

@@ -20,7 +20,7 @@ import { CLAIMS_ROLES, INVENTORY_ROLES, SYSTEM_HEALTH_ROLES, hasRole } from '../
 import { getRoleLabel } from '../../utils/roleLabels'
 import './TopBar.css'
 
-const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
+const TopBar = ({ isSidebarOpen, onMenuToggle, pageTitle }) => {
   const [quickSearch, setQuickSearch] = useState('')
   const [alertsOpen, setAlertsOpen] = useState(false)
   const [alerts, setAlerts] = useState([])
@@ -252,6 +252,7 @@ const TopBar = ({ isSidebarOpen, onMenuToggle }) => {
         >
           <Menu size={20} />
         </button>
+        <span className="topbar-page-title">{pageTitle}</span>
 
         <form className="topbar-search-container" onSubmit={handleSearchSubmit}>
           <Search size={20} className="topbar-search-icon" />

@@ -234,6 +234,7 @@ const Sales = () => {
   const [showReceipt, setShowReceipt] = useState(false)
   const [showSaleConfirmation, setShowSaleConfirmation] = useState(false)
   const [confirmingSale, setConfirmingSale] = useState(false)
+  const [mobileCartOpen, setMobileCartOpen] = useState(false)
   const [pharmacyInfo, setPharmacyInfo] = useState(null)
   const [branches, setBranches] = useState([])
   const [activeShift, setActiveShift] = useState(null)
@@ -1633,6 +1634,7 @@ const Sales = () => {
     // This is intentionally after validation and before every stock, payment,
     // accounting, claim, queue, or audit write below.
     if (!confirmed) {
+      setMobileCartOpen(false)
       setShowSaleConfirmation(true)
       return
     }
@@ -2391,7 +2393,7 @@ const Sales = () => {
   }
 
   return (
-    <div className="sales-page">
+    <div className={`sales-page ${mobileCartOpen ? 'mobile-cart-open' : ''}`}>
       {/* Hidden Receipt for Printing */}
       {lastSale && <Receipt mode="print" saleData={lastSale} pharmacyInfo={pharmacyInfo} />}
 
@@ -2943,6 +2945,14 @@ const Sales = () => {
           <div className="cart-header">
             <h3>Selected Items</h3>
             <span className="item-count">{cartCount} items</span>
+            <button
+              type="button"
+              className="mobile-cart-close"
+              onClick={() => setMobileCartOpen(false)}
+              aria-label="Close cart"
+            >
+              <X size={18} />
+            </button>
           </div>
 
           <div className="cart-items">
@@ -3305,6 +3315,17 @@ const Sales = () => {
           </div>
         </div>
       </div>
+
+      <button
+        type="button"
+        className="mobile-cart-bar"
+        onClick={() => setMobileCartOpen(true)}
+        aria-label={`View cart with ${cartCount} item${cartCount === 1 ? '' : 's'} totaling GHS ${checkoutTotal.toFixed(2)}`}
+      >
+        <ShoppingCart size={19} />
+        <span>View Cart ({cartCount})</span>
+        <strong>GHS {checkoutTotal.toFixed(2)}</strong>
+      </button>
     </div>
   )
 }

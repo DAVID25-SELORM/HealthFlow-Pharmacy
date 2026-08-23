@@ -663,14 +663,14 @@ const Purchases = () => {
             <tbody>
               {filteredPurchases.map((p) => (
                 <tr key={p.id}>
-                  <td className="po-number">{p.purchase_number}</td>
-                  <td>{p.supplier_name || '—'}</td>
-                  <td>{p.invoice_number || '—'}</td>
-                  <td>{formatAppDate(p.purchase_date)}</td>
-                  <td>{p.purchase_items?.length || 0}</td>
-                  <td>{fmtCurrency(p.total_amount)}</td>
-                  <td><StatusBadge status={p.status} /></td>
-                  <td className="purchases-actions">
+                  <td className="po-number" data-label="Purchase order">{p.purchase_number}</td>
+                  <td data-label="Supplier">{p.supplier_name || '—'}</td>
+                  <td data-label="Invoice">{p.invoice_number || '—'}</td>
+                  <td data-label="Date">{formatAppDate(p.purchase_date)}</td>
+                  <td data-label="Items">{p.purchase_items?.length || 0}</td>
+                  <td data-label="Total">{fmtCurrency(p.total_amount)}</td>
+                  <td data-label="Status"><StatusBadge status={p.status} /></td>
+                  <td className="purchases-actions" data-label="Actions">
                     <button
                       className="action-btn action-btn--view"
                       title="View details"

@@ -765,4 +765,85 @@
     flex-direction: column;
     align-items: stretch;
   }
+
+  .purchases-tabs {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+  }
+
+  .purchases-page .tab-btn {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .purchases-table-wrap {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .purchases-table,
+  .purchases-table tbody,
+  .purchases-table tr,
+  .purchases-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .purchases-table thead {
+    display: none;
+  }
+
+  .purchases-table tbody {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .purchases-table tbody tr {
+    overflow: hidden;
+    border: 1px solid var(--gray-200);
+    border-radius: var(--radius-lg);
+    background: white;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .purchases-table td {
+    display: grid;
+    grid-template-columns: minmax(7.5rem, 40%) minmax(0, 1fr);
+    gap: 0.75rem;
+    align-items: center;
+    min-width: 0;
+    padding: 0.7rem 0.85rem;
+    border-bottom: 1px solid var(--gray-100);
+    overflow-wrap: anywhere;
+  }
+
+  .purchases-table td::before {
+    content: attr(data-label);
+    color: var(--gray-600);
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
+
+  .purchases-table td:last-child {
+    border-bottom: 0;
+  }
+
+  .purchases-table .purchases-actions {
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 480px) {
+  .purchases-table td {
+    grid-template-columns: 1fr;
+    gap: 0.3rem;
+  }
+
+  .purchases-table .purchases-actions {
+    justify-content: flex-start;
+  }
 }

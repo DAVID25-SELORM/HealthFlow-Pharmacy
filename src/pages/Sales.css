@@ -7,6 +7,11 @@
   width: 100%;
 }
 
+.mobile-cart-bar,
+.mobile-cart-close {
+  display: none;
+}
+
 .sale-confirmation-overlay {
   position: fixed;
   inset: 0;
@@ -1392,6 +1397,90 @@
 }
 
 @media (max-width: 768px) {
+  .sales-page {
+    padding-bottom: 5.5rem;
+  }
+
+  .mobile-cart-bar {
+    position: fixed;
+    right: max(0.75rem, env(safe-area-inset-right));
+    bottom: max(0.75rem, env(safe-area-inset-bottom));
+    left: max(0.75rem, env(safe-area-inset-left));
+    z-index: 900;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.65rem;
+    min-height: 52px;
+    border: 0;
+    border-radius: 14px;
+    padding: 0.65rem 0.9rem;
+    background: var(--primary);
+    box-shadow: 0 12px 28px rgba(11, 85, 71, 0.3);
+    color: white;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .mobile-cart-bar span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 800;
+  }
+
+  .mobile-cart-bar strong {
+    white-space: nowrap;
+  }
+
+  .mobile-cart-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    min-height: 38px;
+    margin-left: auto;
+    border: 1px solid var(--gray-200);
+    border-radius: 999px;
+    background: white;
+    color: var(--gray-700);
+  }
+
+  .mobile-cart-open .checkout-section {
+    position: fixed;
+    inset: 0;
+    z-index: 1200;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: 0;
+    background: white;
+  }
+
+  .mobile-cart-open .cart-header {
+    display: flex;
+    align-items: center;
+    flex: 0 0 auto;
+  }
+
+  .mobile-cart-open .cart-items {
+    flex: 1 1 auto;
+    max-height: none;
+    min-height: 0;
+  }
+
+  .mobile-cart-open .checkout-summary {
+    flex: 0 0 auto;
+    max-height: 58dvh;
+    overflow: auto;
+    border-top: 1px solid var(--gray-200);
+  }
+
+  .mobile-cart-open .mobile-cart-bar {
+    display: none;
+  }
+
   .sale-confirmation-overlay {
     padding: 0;
     align-items: stretch;

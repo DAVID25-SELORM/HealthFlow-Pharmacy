@@ -1117,21 +1117,21 @@ const Inventory = () => {
 
                 return (
                   <tr key={drug.id} className={drug.id === highlightedDrugId ? 'highlighted-drug-row' : ''}>
-                    <td className="drug-name">
+                    <td className="drug-name" data-label="Medicine">
                       {drug.name}
                       {drug.sale_on_return && <div className="drug-subtext">Sale on return</div>}
                     </td>
-                    <td>{batchNumber}</td>
-                    <td>{drug.supplier || '-'}</td>
-                    <td>{expiryDate ? formatAppDate(expiryDate) : 'N/A'}</td>
-                    <td>{quantity}</td>
-                    <td>GHS {price.toFixed(2)}</td>
-                    {showNhisPricing && <td>{hasNhisCatalogPrice(drug) ? `GHS ${nhisPrice.toFixed(2)}` : '-'}</td>}
-                    <td className="total-cell">GHS {total}</td>
-                    <td>
+                    <td data-label="Batch">{batchNumber}</td>
+                    <td data-label="Supplier">{drug.supplier || '-'}</td>
+                    <td data-label="Expiry">{expiryDate ? formatAppDate(expiryDate) : 'N/A'}</td>
+                    <td data-label="Stock">{quantity}</td>
+                    <td data-label="Selling price">GHS {price.toFixed(2)}</td>
+                    {showNhisPricing && <td data-label="NHIS price">{hasNhisCatalogPrice(drug) ? `GHS ${nhisPrice.toFixed(2)}` : '-'}</td>}
+                    <td className="total-cell" data-label="Total value">GHS {total}</td>
+                    <td data-label="Status">
                       <span className={`status-badge ${status.class}`}>{status.label}</span>
                     </td>
-                    <td>
+                    <td data-label="Actions">
                       <div className="action-buttons">
                         {canAdjustStock && (
                           <button
