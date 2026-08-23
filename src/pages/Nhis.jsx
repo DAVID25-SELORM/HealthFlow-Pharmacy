@@ -1198,7 +1198,7 @@ const buildNhisActiveMedicationOverlapMessage = (alerts = []) => {
       treatmentDaysText,
       `Calculated treatment end: ${endDate}`,
       `Remaining coverage: ${remainingText}`,
-      `Source: ${sourceLabel}`,
+      `Serving facility: ${sourceLabel}`,
       dateQualityWarning ? 'Dispensing date requires review.' : '',
       riskText,
       recommendedAction ? `Recommended action: ${recommendedAction}` : '',
@@ -7299,7 +7299,7 @@ const Nhis = () => {
                                         {treatmentDays && <span>Treatment days: {treatmentDays}</span>}
                                         {coverageEnd && <span>Expected completion: {formatAppDate(coverageEnd)}</span>}
                                         <span>Remaining: {Number(alert.remaining_days || alert.remainingDays || 0)} day(s)</span>
-                                        {sourceLabel && <span>Source: {sourceLabel}</span>}
+                                        {sourceLabel && <span>Serving facility: {sourceLabel}</span>}
                                         {dateQualityWarning && <span>Dispensing date requires review.</span>}
                                         {previousClaim && <span>Reference: {previousClaim}</span>}
                                       </div>

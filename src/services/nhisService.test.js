@@ -6642,7 +6642,7 @@ describe('NHIS active medication overlap check', () => {
     const alerts = [{
       severity: 'strong_warning',
       medicine_code: 'PARA500',
-      source_label: 'Another participating HealthFlow facility',
+      source_label: 'West Point Pharmacy',
       previous_claim_reference: null,
     }]
     supabase.rpc.mockResolvedValueOnce({ data: alerts, error: null })
@@ -6821,7 +6821,7 @@ describe('NHIS active medication overlap check', () => {
       previous_dispensed_date: '2026-07-10',
       coverage_end_date: '2026-07-14',
       remaining_days: 4,
-      source_label: 'Another participating HealthFlow facility',
+      source_label: 'West Point Pharmacy',
       previous_claim_reference: null,
       previous_quantity_supplied: 10,
       previous_dose: '1',
