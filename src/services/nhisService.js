@@ -695,7 +695,7 @@ const NHIS_CLAIM_LIST_BASE_SELECT = `
       id, claim_number, patient_id, member_no, card_type, hin,
       surname, other_names, folder_no, gender, date_of_birth,
       service_date_from, service_date_to, branch_id, total_amount,
-      status, created_at, updated_at,
+      status, created_at, updated_at, ccc_no,
       prescription_file_url, prescription_file_path, prescription_file_name,
       prescription_document_type, prescription_verified,
       prescription_verified_by, prescription_verified_at,
@@ -709,7 +709,7 @@ const NHIS_CLAIM_LIST_BASE_SELECT_LEGACY = `
       id, claim_number, patient_id, member_no, card_type, hin,
       surname, other_names, folder_no, gender, date_of_birth,
       service_date_from, service_date_to, branch_id, total_amount,
-      status, created_at, updated_at,
+      status, created_at, updated_at, ccc_no,
       prescription_file_url, prescription_file_path, prescription_file_name,
       prescription_document_type, prescription_verified,
       prescription_verified_by, prescription_verified_at,
@@ -5683,7 +5683,7 @@ const fetchNhisClaimsPageViaRpc = async (filters = {}) => {
     .from('nhis_claims')
     .select(`
       id, prescription_document_type, prescription_verified,
-      prescription_verified_by, prescription_verified_at
+      prescription_verified_by, prescription_verified_at, ccc_no
     `)
     .in('id', claimIds)
 

@@ -6995,6 +6995,7 @@ describe('NHIS local and cloud claim reads', () => {
     })
 
     expect(query.select.mock.calls[0][0]).not.toContain('claimit_attachment_base64')
+    expect(query.select.mock.calls[0][0]).toContain('ccc_no')
     expect(query.range).toHaveBeenCalledWith(0, 99)
   })
 
