@@ -52,6 +52,14 @@ describe('NHIS claims pagination layout', () => {
     )
   })
 
+  it('allows only privileged claim correctors to amend an existing medicine dispensing date', () => {
+    const source = readSource('./Nhis.jsx')
+
+    expect(source).toContain("' (privileged correction)'")
+    expect(source).toContain('editingMedicineIndex !== null &&\n                    !canEditNhisClaimAnytime')
+    expect(source).toContain('This correction is recorded in the claim audit history.')
+  })
+
   it('renders page controls above and below the claims table', () => {
     const source = readSource('./Nhis.jsx')
     expect(source).toContain("{renderClaimsPagination('top')}")

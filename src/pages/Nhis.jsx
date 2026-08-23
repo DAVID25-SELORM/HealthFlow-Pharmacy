@@ -8651,17 +8651,31 @@ const Nhis = () => {
               </div>
 
               <div className="form-group">
-                <label>Dispensary Date</label>
+                <label>
+                  Dispensary Date
+                  {canEditNhisClaimAnytime && editingMedicineIndex !== null
+                    ? ' (privileged correction)'
+                    : ''}
+                </label>
                 <input
                   type="date"
                   className="form-input"
                   value={medForm.dispensaryDate}
-                  disabled={!isMedicineCounterAssistant && editingMedicineIndex !== null}
+                  disabled={
+                    !isMedicineCounterAssistant &&
+                    editingMedicineIndex !== null &&
+                    !canEditNhisClaimAnytime
+                  }
                   onChange={(e) => {
                     setMedicineEntryDate(e.target.value)
                     setMedForm((p) => ({ ...p, dispensaryDate: e.target.value }))
                   }}
                 />
+                {canEditNhisClaimAnytime && editingMedicineIndex !== null && (
+                  <span className="unit-price-hint">
+                    This correction is recorded in the claim audit history. It cannot be saved after external submission or finalization.
+                  </span>
+                )}
               </div>
 
               {isMedicineCounterAssistant && (
