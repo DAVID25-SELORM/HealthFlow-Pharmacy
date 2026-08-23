@@ -60,6 +60,15 @@ describe('NHIS claims pagination layout', () => {
     expect(source).toContain('This correction is recorded in the claim audit history.')
   })
 
+  it('aligns manual CCC entry with privileged Admin and Claims Officer correction access', () => {
+    const source = readSource('./Nhis.jsx')
+
+    expect(source).toContain('const canManuallyEditCcCode = canEditNhisClaimAnytime ||')
+    expect(source).toContain("assignedRole || '').trim().toLowerCase() === 'super_admin'")
+    expect(source).toContain('Manual CC/CCC entry is restricted to an Admin, Claims Officer, or Super Admin.')
+    expect(source).not.toContain("const canManuallyEditCcCode = role === 'admin' || role === 'super_admin'")
+  })
+
   it('renders page controls above and below the claims table', () => {
     const source = readSource('./Nhis.jsx')
     expect(source).toContain("{renderClaimsPagination('top')}")

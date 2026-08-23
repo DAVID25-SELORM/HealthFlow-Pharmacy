@@ -2681,7 +2681,13 @@ const Nhis = () => {
     isLocalClaimItBridgeProfile &&
     isLocalClaimItBridgeUrl &&
     !isLocalAppOrigin()
-  const canManuallyEditCcCode = role === 'admin' || role === 'super_admin'
+  // Manual CCC entry is a controlled correction. Keep its role rule aligned
+  // with the privileged claim-correction path, including assigned roles.
+  const canManuallyEditCcCode = canEditNhisClaimAnytime ||
+    normalizedRole === 'super_admin' ||
+    (Array.isArray(assignedRoles) && assignedRoles.some(
+      (assignedRole) => String(assignedRole || '').trim().toLowerCase() === 'super_admin'
+    ))
   const allowsDirectNhiaSubmission = ['claimit_bridge', 'direct_nhia_api', 'hybrid'].includes(integrationMode)
   const directNhiaApiAvailable = Boolean(
     allowsDirectNhiaSubmission &&
@@ -7463,7 +7469,7 @@ const Nhis = () => {
                         )}
                       </div>
                       {claimControlMode === 'manual' && !canManuallyEditCcCode && (
-                        <div className="patient-meta">Manual CC/CCC entry is restricted to admin users.</div>
+                        <div className="patient-meta">Manual CC/CCC entry is restricted to an Admin, Claims Officer, or Super Admin.</div>
                       )}
                       {claimControlMode !== 'manual' && !canGenerateNhiaCcCode && (
                         <div className="patient-meta">
