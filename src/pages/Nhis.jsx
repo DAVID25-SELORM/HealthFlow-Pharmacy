@@ -8468,9 +8468,10 @@ const Nhis = () => {
             </div>
 
             <div className="nhis-action-review-body">
-              <div className="nhis-action-review-summary">
-                <div><span>Patient</span><strong>{[claimForm.surname, claimForm.otherNames].filter(Boolean).join(' ') || 'Not entered'}</strong></div>
-                <div><span>Member number</span><strong>{claimForm.memberNumber || claimForm.hin || 'Not entered'}</strong></div>
+                <div className="nhis-action-review-summary">
+                  <div><span>Patient</span><strong>{[claimForm.surname, claimForm.otherNames].filter(Boolean).join(' ') || 'Not entered'}</strong></div>
+                <div><span>Member number</span><strong>{claimForm.memberNo || claimForm.hin || 'Not entered'}</strong></div>
+                <div><span>CCC / CC Code</span><strong>{claimForm.cccNo || 'Not entered'}</strong></div>
                 <div><span>Requested total</span><strong>{fmtCurrency(requestedClaimTotal)}</strong></div>
                 <div>
                   <span>Prescription</span>

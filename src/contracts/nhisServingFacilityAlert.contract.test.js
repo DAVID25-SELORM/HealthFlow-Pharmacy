@@ -3,7 +3,6 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 const nhisPage = readFileSync(resolve(process.cwd(), 'src/pages/Nhis.jsx'), 'utf8')
-const nhisService = readFileSync(resolve(process.cwd(), 'src/services/nhisService.js'), 'utf8')
 const migration = readFileSync(
   resolve(process.cwd(), 'supabase/migrations/20260823100000_expose_active_medication_serving_facility.sql'),
   'utf8'
