@@ -6393,12 +6393,12 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
   const memberNo = normalizeNhiaMemberNumber(
     assertRequiredText(claimData.memberNo, 'NHIS member number or Ghana Card number')
   )
-  const cccNo = allowIncompleteReview
+  const enteredCccNo = claimData.cccNo ?? claimData.ccc_no ?? claimData.ccCode ?? claimData.cc_code
+  // Incomplete intake permits a genuinely pending CCC, but must never discard
+  // a CCC that the user already entered before direct serving.
+  const cccNo = allowIncompleteReview && !normalizeNhisCcCode(enteredCccNo)
     ? ''
-    : normalizeOptionalNhisCcCodeForMode(
-        claimData.cccNo ?? claimData.ccc_no ?? claimData.ccCode ?? claimData.cc_code,
-        options
-      )
+    : normalizeOptionalNhisCcCodeForMode(enteredCccNo, options)
   const serviceDate = toNullableDate(claimData.serviceDate || claimData.serviceDateFrom) || toNhisCalendarDate()
 
   const medicineRows = toNhisClaimMedicineRows(medicines)

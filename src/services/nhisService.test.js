@@ -4414,6 +4414,7 @@ describe('NHIS claim save attachment behavior', () => {
         prescriberLicenseSnapshot: 'MDC-12345',
         servingReviewedAt: '',
         status: 'pending_serving',
+        allowIncompleteReview: true,
       },
       [{ ...medicineWithTotal, enteredAt: '', servedAt: '' }],
       {
@@ -4430,6 +4431,7 @@ describe('NHIS claim save attachment behavior', () => {
       service_date_from: '2026-06-18',
       service_date_to: '2026-06-18',
       card_type: 'GHANACARD',
+      ccc_no: '12345',
       nhia_auth_id: 'AUTH-123',
       nhia_auth_type: 'NHIS',
       nhia_new_ccc_status: 'yes',
