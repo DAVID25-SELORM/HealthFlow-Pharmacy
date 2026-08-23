@@ -6352,6 +6352,7 @@ const Nhis = () => {
                       <td>
                         {c.member_no && <div>{c.member_no}</div>}
                         {c.hin       && <div className="patient-meta">HIN: {c.hin}</div>}
+                        <div className="patient-meta">CCC: {c.ccc_no || '—'}</div>
                       </td>
                       <td>
                         {formatNhisServiceDateTime(c)}
