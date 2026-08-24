@@ -18,9 +18,10 @@ export const normalizeNhiaMemberNumber = (value) => {
 
   const compact = compactGhanaCardValue(text)
   const digits = digitsOnly(compact.slice(3))
-  return digits.length === DEFAULT_GHANA_CARD_DIGITS
-    ? `GHA-${digits.slice(0, 9)}-${digits.slice(9)}`
-    : compact
+  // Format while typing as well as after the full Ghana Card number is
+  // entered: GHA-#########-#. This keeps the visible input unambiguous and
+  // avoids requiring users to add either hyphen themselves.
+  return `GHA-${digits.slice(0, 9)}${digits.length > 9 ? `-${digits.slice(9, DEFAULT_GHANA_CARD_DIGITS)}` : ''}`
 }
 
 export const validateNhiaMemberNumberFormat = (

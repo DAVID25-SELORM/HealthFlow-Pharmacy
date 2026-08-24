@@ -7336,13 +7336,16 @@ const Nhis = () => {
                             handleMemberLookup(normalized, claimForm.cardType || getNhiaLookupCardType(normalized))
                           }
                         }}
-                        onChange={(e) => setClaimForm((p) => ({
-                          ...p,
-                          memberNo: e.target.value,
-                          hin: normalizeNhiaMemberNumber(p.hin) === normalizeNhiaMemberNumber(p.memberNo)
-                            ? ''
-                            : p.hin,
-                        }))} />
+                        onChange={(e) => {
+                          const memberNo = normalizeNhiaMemberNumber(e.target.value)
+                          setClaimForm((p) => ({
+                            ...p,
+                            memberNo,
+                            hin: normalizeNhiaMemberNumber(p.hin) === normalizeNhiaMemberNumber(p.memberNo)
+                              ? ''
+                              : p.hin,
+                          }))
+                        }} />
                       {lookingUpMember && (
                         <div className="patient-meta">Verifying member with NHIA...</div>
                       )}
