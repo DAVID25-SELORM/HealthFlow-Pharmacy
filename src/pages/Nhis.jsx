@@ -9,6 +9,8 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
+import { confirmAction } from '../utils/actionConfirmation'
+import { clearUnsavedDraft, loadUnsavedDraft, saveUnsavedDraft } from '../services/unsavedDraftRecovery'
 import { formatAppDate, formatAppDateTime } from '../utils/date'
 import {
   formatNhisDateOfBirthInput,
@@ -1559,6 +1561,7 @@ const Nhis = () => {
   const [correctionReason, setCorrectionReason] = useState('')
   const [correctionHistory, setCorrectionHistory] = useState([])
   const [prescriptionPdfFile, setPrescriptionPdfFile] = useState(null)
+  const nhisDraftRecoveryReadyRef = useRef(false)
 
   // ── patient lookup (for claim form) ──────────────────────────
   const [patientSearch, setPatientSearch] = useState('')
@@ -3183,6 +3186,73 @@ const Nhis = () => {
     return draftFields.some((field) => normalizeText(claimForm[field]))
   }
 
+  // Only a new, not-yet-saved claim is recoverable. Existing claims already
+  // have Save Details for durable server-side drafts; restoring an old edit
+  // locally could overwrite a newer correction made by another authorised user.
+  useEffect(() => {
+    const recoveryKey = `${user?.id || ''}:${organizationId}`
+    if (!user?.id || !organizationId || nhisDraftRecoveryReadyRef.current === recoveryKey) return
+    let cancelled = false
+    const restore = async () => {
+      const draft = await loadUnsavedDraft({
+        userId: user.id,
+        organizationId,
+        scope: 'new-nhis-claim',
+      })
+      if (cancelled) return
+      nhisDraftRecoveryReadyRef.current = recoveryKey
+      if (!draft?.claimForm || (!draft.claimMedicines?.length && !draft.claimServices?.length && !draft.selectedClaimPatient && !draft.hasFormWork)) return
+      const resume = await confirmAction({
+        title: 'Resume unfinished NHIS claim?',
+        details: [
+          { label: 'Patient', value: draft.patientLabel || 'Not selected' },
+          { label: 'Saved', value: draft.savedAt ? new Date(draft.savedAt).toLocaleString() : 'Earlier on this device' },
+        ],
+        warning: 'This draft has not been saved or submitted. Review all details and reattach any prescription file before saving.',
+        confirmText: 'Resume claim',
+      })
+      if (cancelled) return
+      if (!resume) {
+        clearUnsavedDraft({ userId: user.id, organizationId, scope: 'new-nhis-claim' })
+        return
+      }
+      setClaimForm(draft.claimForm)
+      setClaimMedicines(Array.isArray(draft.claimMedicines) ? draft.claimMedicines : [])
+      setClaimServices(Array.isArray(draft.claimServices) ? draft.claimServices : [])
+      setSelectedClaimPatient(draft.selectedClaimPatient || null)
+      setShowNewClaimModal(true)
+      notify('Your unfinished NHIS claim has been restored. Review it and reattach any prescription file before saving.', 'info')
+    }
+    void restore()
+    return () => { cancelled = true }
+  }, [notify, organizationId, user?.id])
+
+  useEffect(() => {
+    if (nhisDraftRecoveryReadyRef.current !== `${user?.id || ''}:${organizationId}` || !showNewClaimModal || editingClaim || claimSubmitting) return
+    const hasFormWork = hasClaimModalWork()
+    if (!hasFormWork) {
+      clearUnsavedDraft({ userId: user?.id, organizationId, scope: 'new-nhis-claim' })
+      return
+    }
+    const timer = window.setTimeout(() => {
+      void saveUnsavedDraft({
+        userId: user?.id,
+        organizationId,
+        scope: 'new-nhis-claim',
+        payload: {
+          savedAt: new Date().toISOString(),
+          claimForm,
+          claimMedicines,
+          claimServices,
+          selectedClaimPatient,
+          patientLabel: [claimForm.surname, claimForm.otherNames].filter(Boolean).join(' ') || selectedClaimPatient?.full_name || '',
+          hasFormWork,
+        },
+      })
+    }, 500)
+    return () => window.clearTimeout(timer)
+  }, [claimForm, claimMedicines, claimServices, claimSubmitting, editingClaim, organizationId, selectedClaimPatient, showNewClaimModal, user?.id])
+
   const openNewClaimModal = () => {
     resetClaimModal()
     setShowNewClaimModal(true)
@@ -3197,6 +3267,7 @@ const Nhis = () => {
   }
 
   const finishCloseClaimModal = () => {
+    clearUnsavedDraft({ userId: user?.id, organizationId, scope: 'new-nhis-claim' })
     setClaimActionReview(null)
     setShowNewClaimModal(false)
     resetClaimModal()
@@ -4674,6 +4745,9 @@ const Nhis = () => {
 
       const wasReadinessCorrection = readinessClaimIssues.length > 0
       setShowNewClaimModal(false)
+      if (!editingClaim) {
+        clearUnsavedDraft({ userId: user?.id, organizationId, scope: 'new-nhis-claim' })
+      }
       resetClaimModal()
       if (duplicateClaimGroups.length > 0) {
         setShowDuplicateClaimReview(true)

@@ -29,7 +29,7 @@ describe('NHIS sales POS contract', () => {
   it('blocks the sale before stock movement when cross-facility coverage cannot be cleared', () => {
     expect(salesSource).toContain('const assertNhiaPosMedicationCoverage = async')
     expect(salesSource).toContain('allowCloudWhenBranch: true')
-    expect(salesSource).toContain('await assertNhiaPosMedicationCoverage(getNhisCalendarDate(saleTimestamp))')
+    expect(salesSource).toContain('await assertNhiaPosMedicationCoverage(getNhisCalendarDate(saleTimestamp), nhisSettlement.lines)')
     expect(salesSource).toContain('NHIS active-medication verification is unavailable.')
     expect(nhisServiceSource).toContain('allowCloudWhenBranch = false')
     expect(nhisServiceSource).toContain('shouldUseBranchServer() && !allowCloudWhenBranch')

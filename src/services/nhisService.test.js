@@ -3925,7 +3925,7 @@ describe('direct NHIA submission', () => {
     accreditationDateGenerated: '2025-12-29',
     claimsOfficerName: 'Claims Officer',
     submitterId: 'admin',
-    nhisDrugCatalog: [{ code: 'NH001', category: 'A' }],
+    nhisDrugCatalog: [{ id: 'drug-1', code: 'NH001', category: 'A' }],
   }
   const directClaim = {
     id: 'claim-1',
@@ -4420,7 +4420,7 @@ describe('NHIS claim save attachment behavior', () => {
       {
         providerClassLevel: 'D',
         pharmacyLevel: 'P1',
-        nhisDrugCatalog: [{ code: 'NH001', category: 'A' }],
+        nhisDrugCatalog: [{ id: 'drug-1', code: 'NH001', category: 'A' }],
       }
     )).resolves.toEqual(insertedClaim)
 
@@ -4471,7 +4471,7 @@ describe('NHIS claim save attachment behavior', () => {
       {
         providerClassLevel: 'D',
         pharmacyLevel: 'P1',
-        nhisDrugCatalog: [{ code: 'NH001', category: 'A' }],
+        nhisDrugCatalog: [{ id: 'drug-1', code: 'NH001', category: 'A' }],
       }
     )).rejects.toThrow('Attach the scanned prescription PDF or JPEG')
   })
@@ -4539,7 +4539,7 @@ describe('NHIS claim save attachment behavior', () => {
       {
         providerClassLevel: 'D',
         pharmacyLevel: 'P1',
-        nhisDrugCatalog: [{ code: 'NH001', category: 'A' }],
+        nhisDrugCatalog: [{ id: 'drug-1', code: 'NH001', category: 'A' }],
       }
     )).resolves.toEqual(insertedClaim)
 
@@ -4749,7 +4749,7 @@ describe('NHIS claim save attachment behavior', () => {
       {
         providerClassLevel: 'D',
         pharmacyLevel: 'P1',
-        nhisDrugCatalog: [{ code: 'NH001', category: 'A' }],
+        nhisDrugCatalog: [{ id: 'drug-1', code: 'NH001', category: 'A' }],
       }
     )).rejects.toThrow('attachment is larger than 3 MB')
   })
@@ -4772,7 +4772,7 @@ describe('duplicate NHIS claim prevention', () => {
       [{ ...baseMedicine, totalAmount: 10 }],
       {
         pharmacyLevel: 'P1',
-        nhisDrugCatalog: [{ code: 'NH001', category: 'A' }],
+        nhisDrugCatalog: [{ id: 'drug-1', code: 'NH001', category: 'A' }],
       }
     )).rejects.toThrow('Duplicate NHIS claim blocked')
   })

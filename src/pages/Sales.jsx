@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Search, Trash2, Plus, Minus, ShoppingCart, Printer, Download, X, CheckCircle2, ArrowLeft } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { dispatchHealthflowDataChanged } from '../lib/appEvents'
@@ -53,6 +53,7 @@ import {
   loadOfflinePosSnapshot,
   saveOfflinePosSnapshot,
 } from '../services/offlinePosCache'
+import { clearUnsavedDraft, loadUnsavedDraft, saveUnsavedDraft } from '../services/unsavedDraftRecovery'
 import { searchDrugs } from '../services/drugService'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
@@ -231,6 +232,7 @@ const Sales = () => {
   // This is only copied into the separate NHIS review claim; it never
   // changes the completed POS sale or its accounting entries.
   const [nhiaCccNo, setNhiaCccNo] = useState('')
+  const posDraftRecoveryReadyRef = useRef(false)
   const [loading, setLoading] = useState(true)
   const [processing, setProcessing] = useState(false)
   const [error, setError] = useState('')
@@ -1094,6 +1096,82 @@ const Sales = () => {
     },
     [effectiveBranchId, isOnline, notify, refreshOfflineSalesSummary, searchTerm, user?.id]
   )
+
+  const draftOrganizationId = organization?.id || profile?.organization_id || ''
+
+  // A cart is only a local working copy. It never creates a sale, deducts
+  // stock, or queues an offline transaction until the existing confirmation
+  // flow completes successfully.
+  useEffect(() => {
+    if (loading || posDraftRecoveryReadyRef.current || !user?.id || !draftOrganizationId) return
+    let cancelled = false
+    const restore = async () => {
+      const draft = await loadUnsavedDraft({
+        userId: user.id,
+        organizationId: draftOrganizationId,
+        scope: 'pos-cart',
+      })
+      if (cancelled) return
+      posDraftRecoveryReadyRef.current = true
+      if (!draft?.cart?.length) return
+      const resume = await confirmAction({
+        title: 'Resume unfinished sale?',
+        details: [
+          { label: 'Items', value: `${draft.cart.length}` },
+          { label: 'Saved', value: draft.savedAt ? new Date(draft.savedAt).toLocaleString() : 'Earlier on this device' },
+        ],
+        warning: 'This is a local draft only. Review stock, prices, patient and payment details before completing the sale.',
+        confirmText: 'Resume sale',
+      })
+      if (cancelled) return
+      if (!resume) {
+        clearUnsavedDraft({ userId: user.id, organizationId: draftOrganizationId, scope: 'pos-cart' })
+        return
+      }
+      const validCart = draft.cart
+        .filter((item) => item?.id && Number(item.quantity) > 0 && Number(item.price) >= 0)
+        .map((item) => ({ ...item, quantity: Math.max(1, Math.floor(Number(item.quantity))) }))
+      setCart(validCart)
+      setPatientId(draft.patientId || '')
+      setPaymentMethod(draft.paymentMethod || 'cash')
+      setPaymentProvider(draft.paymentProvider || 'hubtel')
+      setPaymentPhone(draft.paymentPhone || '')
+      setPaymentEmail(draft.paymentEmail || '')
+      setReceived(draft.received || '')
+      setDiscountType(draft.discountType || 'amount')
+      setDiscountValue(draft.discountValue || '')
+      setInsuranceCoverage(draft.insuranceCoverage || '')
+      setPatientTopUp(draft.patientTopUp || '')
+      setPatientTopUpMethod(draft.patientTopUpMethod || 'cash')
+      setNhiaDiagnosis(draft.nhiaDiagnosis || '')
+      setNhiaDiagnosisDetails(Array.isArray(draft.nhiaDiagnosisDetails) ? draft.nhiaDiagnosisDetails : [])
+      setNhiaCccNo(draft.nhiaCccNo || '')
+      notify('Your unfinished sale has been restored. Review it before completing.', 'info')
+    }
+    void restore()
+    return () => { cancelled = true }
+  }, [draftOrganizationId, loading, notify, user?.id])
+
+  useEffect(() => {
+    if (!posDraftRecoveryReadyRef.current || !user?.id || !draftOrganizationId || processing || showReceipt) return
+    if (!cart.length) {
+      clearUnsavedDraft({ userId: user.id, organizationId: draftOrganizationId, scope: 'pos-cart' })
+      return
+    }
+    const timer = window.setTimeout(() => {
+      void saveUnsavedDraft({
+        userId: user.id,
+        organizationId: draftOrganizationId,
+        scope: 'pos-cart',
+        payload: {
+          savedAt: new Date().toISOString(), cart, patientId, paymentMethod, paymentProvider,
+          paymentPhone, paymentEmail, received, discountType, discountValue, insuranceCoverage,
+          patientTopUp, patientTopUpMethod, nhiaDiagnosis, nhiaDiagnosisDetails, nhiaCccNo,
+        },
+      })
+    }, 500)
+    return () => window.clearTimeout(timer)
+  }, [cart, discountType, discountValue, draftOrganizationId, insuranceCoverage, nhiaCccNo, nhiaDiagnosis, nhiaDiagnosisDetails, patientId, patientTopUp, patientTopUpMethod, paymentEmail, paymentMethod, paymentPhone, paymentProvider, processing, received, showReceipt, user?.id])
   const selectedNhiaMemberNumber = getNhiaMemberNumber(selectedPatientForSale)
 
   useEffect(() => {
