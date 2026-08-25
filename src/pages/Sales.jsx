@@ -13,6 +13,7 @@ import {
   checkNhisActiveMedicationOverlap,
   createNhisClaim,
   getNhiaApiSettings,
+  normalizeNhisCcCode,
 } from '../services/nhisService'
 import { getAllPatients } from '../services/patientService'
 import { getPharmacySettings } from '../services/settingsService'
@@ -227,6 +228,9 @@ const Sales = () => {
   const [patientTopUpMethod, setPatientTopUpMethod] = useState('cash')
   const [nhiaDiagnosis, setNhiaDiagnosis] = useState('')
   const [nhiaDiagnosisDetails, setNhiaDiagnosisDetails] = useState([])
+  // This is only copied into the separate NHIS review claim; it never
+  // changes the completed POS sale or its accounting entries.
+  const [nhiaCccNo, setNhiaCccNo] = useState('')
   const [loading, setLoading] = useState(true)
   const [processing, setProcessing] = useState(false)
   const [error, setError] = useState('')
@@ -761,6 +765,8 @@ const Sales = () => {
   }
 
   const selectPatientForSale = (patient) => {
+    // A CCC belongs to one member; never carry it forward when the patient changes.
+    setNhiaCccNo('')
     if (!patient) {
       setPatientId('')
       setPatientSearchTerm('')
@@ -1279,6 +1285,7 @@ const Sales = () => {
       setPatientTopUpMethod('cash')
       setNhiaDiagnosis('')
       setNhiaDiagnosisDetails([])
+      setNhiaCccNo('')
       return
     }
 
@@ -1455,7 +1462,7 @@ const Sales = () => {
         gender: selectedPatientForSale.gender || '',
         dateOfBirth: selectedPatientForSale.date_of_birth || '',
         patientAddress: selectedPatientForSale.address || '',
-        cccNo: '',
+        cccNo: normalizeNhisCcCode(nhiaCccNo).slice(0, 5),
         diagnosis: isHospital ? nhiaDiagnosis.trim() : '',
         diagnosisDetails: isHospital ? nhiaDiagnosisDetails : [],
         serviceDate,
@@ -1603,6 +1610,12 @@ const Sales = () => {
         const memberNumberError = validateNhiaMemberNumber(selectedNhiaMemberNumber, nhiaSettings || {})
         if (memberNumberError) {
           notify(memberNumberError, 'warning')
+          return
+        }
+
+        const enteredCccNo = normalizeNhisCcCode(nhiaCccNo)
+        if (enteredCccNo && enteredCccNo.length !== 5) {
+          notify('CCC / CC Code must contain exactly 5 digits, or be left blank for claims-officer review.', 'warning')
           return
         }
 
@@ -1799,6 +1812,7 @@ const Sales = () => {
         setPatientTopUpMethod('cash')
         setNhiaDiagnosis('')
         setNhiaDiagnosisDetails([])
+        setNhiaCccNo('')
         setPaymentPhone('')
         setPaymentEmail('')
         selectPatientForSale(null)
@@ -1888,6 +1902,7 @@ const Sales = () => {
           setPatientTopUpMethod('cash')
           setNhiaDiagnosis('')
           setNhiaDiagnosisDetails([])
+          setNhiaCccNo('')
           selectPatientForSale(null)
           const syncMessage = isOnline
             ? ' Review records have been queued for sync.'
@@ -1946,6 +1961,7 @@ const Sales = () => {
             setPatientTopUpMethod('cash')
             setNhiaDiagnosis('')
             setNhiaDiagnosisDetails([])
+            setNhiaCccNo('')
             selectPatientForSale(null)
             notify(
               `Sale saved to the local branch server.${claimMessage} It will sync to HealthFlow Cloud when internet returns.`,
@@ -2001,6 +2017,7 @@ const Sales = () => {
         setPatientTopUpMethod('cash')
         setNhiaDiagnosis('')
         setNhiaDiagnosisDetails([])
+        setNhiaCccNo('')
         selectPatientForSale(null)
         await refreshOfflineSalesSummary()
         notify('Sale saved offline. Keep this shift open until it syncs when internet returns.', 'success')
@@ -2049,6 +2066,7 @@ const Sales = () => {
       setPatientTopUpMethod('cash')
       setNhiaDiagnosis('')
       setNhiaDiagnosisDetails([])
+      setNhiaCccNo('')
       selectPatientForSale(null)
       
       notify(`Sale completed successfully.${claimMessage}`, 'success')
@@ -3206,6 +3224,21 @@ const Sales = () => {
                       {nhiaPricingAdjustment > 0 && (
                         <span>Policy adjustment (not charged): GHS {nhiaPricingAdjustment.toFixed(2)}</span>
                       )}
+                    </div>
+                  )}
+                  {isNhiaClaimSale && (
+                    <div className="cash-field cash-field-input">
+                      <label htmlFor="nhia-ccc-no">CCC / CC Code</label>
+                      <input
+                        id="nhia-ccc-no"
+                        className="form-input"
+                        inputMode="numeric"
+                        maxLength={5}
+                        pattern="[0-9]{0,5}"
+                        value={nhiaCccNo}
+                        onChange={(event) => setNhiaCccNo(normalizeNhisCcCode(event.target.value).slice(0, 5))}
+                        placeholder="Optional — required before export"
+                      />
                     </div>
                   )}
                   {servingNhisPatient && !isNhiaClaimSale && (

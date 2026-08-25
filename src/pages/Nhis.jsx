@@ -4169,7 +4169,6 @@ const Nhis = () => {
       return
     }
     if (!canGenerateNhiaCcCode) {
-      setClaimForm((prev) => ({ ...prev, cccNo: '' }))
       notify(
         integrationMode === 'claimit_export'
           ? 'CLAIM-it CXF export mode does not generate live NHIA CCC codes. Select a live NHIA/CLAIM-it API mode in Settings, or enter the CC/CCC manually.'
@@ -4234,12 +4233,10 @@ const Nhis = () => {
         setClaimForm((prev) => applyMemberDetailsToForm(prev, memberDetails))
       }
       if (result?.eligibilityError) {
-        setClaimForm((prev) => ({ ...prev, cccNo: '', ccCode: '' }))
         notify(getNhiaMemberFeedbackMessage(result.eligibilityError), 'warning')
         return
       }
       if (result?.status === 'pending' || result?.source === 'pending') {
-        setClaimForm((prev) => ({ ...prev, cccNo: '' }))
         notify(result.message || 'Pending NHIA CCC verification.', 'info')
         return
       }
