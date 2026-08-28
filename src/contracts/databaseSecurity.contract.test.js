@@ -19,6 +19,16 @@ describe('protected database security contracts', () => {
     expect(sql).toContain('permanently_delete_record')
   })
 
+  it('recycles NHIS claim dependencies atomically and preserves them for restore', () => {
+    const sql = migration('20260828100000_fix_nhis_claim_recycle_dependencies.sql')
+    expect(sql).toMatch(/select \* into v_claim[\s\S]*for update/i)
+    expect(sql).toMatch(/'medicines'[\s\S]*'services'[\s\S]*'corrections'[\s\S]*'duration_repairs'/i)
+    expect(sql).toMatch(/delete from public\.nhis_duration_repair_audit[\s\S]*delete from public\.nhis_claim_corrections[\s\S]*delete from public\.nhis_claim_medicines[\s\S]*delete from public\.nhis_claim_services[\s\S]*delete from public\.nhis_claims/i)
+    expect(sql).toMatch(/insert into public\.nhis_claim_medicines[\s\S]*insert into public\.nhis_claim_services[\s\S]*insert into public\.nhis_claim_corrections[\s\S]*insert into public\.nhis_duration_repair_audit/i)
+    expect(sql).toMatch(/revoke all on function public\.recycle_nhis_claim\(uuid\) from public/i)
+    expect(sql).toMatch(/grant execute on function public\.recycle_nhis_claim\(uuid\) to authenticated/i)
+  })
+
   it('keeps offline installer releases restricted by publication and super-admin policies', () => {
     const sql = migration('20260723130000_create_offline_installer_releases.sql')
     expect(sql).toMatch(/alter table public\.offline_installer_releases enable row level security/i)
