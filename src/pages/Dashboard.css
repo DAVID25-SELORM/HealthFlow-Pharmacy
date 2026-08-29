@@ -1306,6 +1306,13 @@
 }
 
 @media (max-width: 1180px) {
+  /* This rule must live after the compact redesign declarations above. The
+     earlier responsive rule was being overridden by the later desktop grid,
+     leaving a 280px second column squeezed into phone viewports. */
+  .dashboard-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .dashboard .stats-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1325,6 +1332,31 @@
 
   .dashboard-hero {
     padding: 0.85rem;
+    overflow: hidden;
+  }
+
+  .hero-copy,
+  .hero-panel,
+  .hero-pharmacy-brand,
+  .hero-action,
+  .cash-inflow-card,
+  .chart-section,
+  .activity-card {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .hero-pharmacy-brand {
+    align-items: flex-start;
+  }
+
+  .hero-copy h1,
+  .hero-subtitle,
+  .hero-pharmacy-copy,
+  .hero-action-copy,
+  .hero-panel-card,
+  .activity-item {
+    overflow-wrap: anywhere;
   }
 
   .cash-inflow-card .section-header {
@@ -1335,5 +1367,42 @@
 
   .cash-inflow-select {
     width: 100%;
+  }
+}
+
+@media (max-width: 420px) {
+  .dashboard {
+    gap: 0.75rem;
+  }
+
+  .dashboard-hero,
+  .dashboard .stat-card,
+  .chart-section,
+  .activity-card,
+  .cash-inflow-card {
+    padding: 0.75rem;
+  }
+
+  .hero-pharmacy-brand {
+    padding: 0.6rem;
+  }
+
+  .hero-pharmacy-logo,
+  .hero-pharmacy-logo-placeholder {
+    width: 38px;
+    height: 38px;
+  }
+
+  .hero-action {
+    padding: 0.65rem;
+  }
+
+  .hero-feature-pills {
+    align-items: stretch;
+  }
+
+  .feature-pill {
+    max-width: 100%;
+    white-space: normal;
   }
 }

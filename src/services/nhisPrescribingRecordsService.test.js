@@ -23,6 +23,7 @@ vi.mock('./auditService', () => ({
 
 import { supabase } from '../lib/supabase'
 import {
+  applyNhisPrescribingFacilitySnapshot,
   buildNhisPrescriptionSourceSnapshot,
   createNhisPrescriber,
   createNhisPrescribingFacility,
@@ -117,6 +118,54 @@ describe('NHIS prescribing records service', () => {
       physicianName: '',
       prescribingFacilityId: '',
       prescriberId: '',
+    })
+  })
+
+  it('preserves a manually entered prescriber when the facility is selected afterward', () => {
+    const updated = applyNhisPrescribingFacilitySnapshot({
+      physicianName: 'Dr Akosua Mensah',
+      prescriberId: '',
+      prescriber_id: null,
+      prescriberNameSnapshot: 'Dr Akosua Mensah',
+      prescriber_name_snapshot: 'Dr Akosua Mensah',
+      prescriberLicenseSnapshot: '',
+      prescriber_license_snapshot: null,
+    }, {
+      id: '11111111-1111-4111-8111-111111111111',
+      facility_name: 'Koforidua Polyclinic',
+      nhia_facility_code: 'KPH',
+    })
+
+    expect(updated).toMatchObject({
+      physicianName: 'Dr Akosua Mensah',
+      prescriberNameSnapshot: 'Dr Akosua Mensah',
+      prescriber_name_snapshot: 'Dr Akosua Mensah',
+      referringFacility: 'Koforidua Polyclinic',
+      prescribingFacilityId: '11111111-1111-4111-8111-111111111111',
+      prescribing_facility_code_snapshot: 'KPH',
+    })
+  })
+
+  it('preserves a selected saved prescriber when the facility changes', () => {
+    const updated = applyNhisPrescribingFacilitySnapshot({
+      physicianName: 'Dr Akosua Mensah (MDC-456)',
+      prescriberId: '22222222-2222-4222-8222-222222222222',
+      prescriber_id: '22222222-2222-4222-8222-222222222222',
+      prescriberNameSnapshot: 'Dr Akosua Mensah',
+      prescriber_name_snapshot: 'Dr Akosua Mensah',
+      prescriberLicenseSnapshot: 'MDC-456',
+      prescriber_license_snapshot: 'MDC-456',
+    }, {
+      id: '11111111-1111-4111-8111-111111111111',
+      facility_name: 'Koforidua Polyclinic',
+    })
+
+    expect(updated).toMatchObject({
+      physicianName: 'Dr Akosua Mensah (MDC-456)',
+      prescriberId: '22222222-2222-4222-8222-222222222222',
+      prescriber_id: '22222222-2222-4222-8222-222222222222',
+      prescriberLicenseSnapshot: 'MDC-456',
+      referringFacility: 'Koforidua Polyclinic',
     })
   })
 

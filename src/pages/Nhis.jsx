@@ -104,6 +104,7 @@ import { getAllPatients, searchPatients } from '../services/patientService'
 import {
   NHIS_PRESCRIBER_TYPES,
   NHIS_PRESCRIBING_FACILITY_TYPES,
+  applyNhisPrescribingFacilitySnapshot,
   buildNhisPrescriptionSourceSnapshot,
   createNhisPrescriber,
   createNhisPrescribingFacility,
@@ -1554,6 +1555,8 @@ const Nhis = () => {
   const [claimMedicines, setClaimMedicines] = useState([])
   const [claimServices, setClaimServices]   = useState([])
   const [claimSubmitting, setClaimSubmitting] = useState(false)
+  const [medicineAdding, setMedicineAdding] = useState(false)
+  const medicineAddingRef = useRef(false)
   const [claimSubmitIntent, setClaimSubmitIntent] = useState('')
   const [claimError, setClaimError]           = useState('')
   const [claimActionReview, setClaimActionReview] = useState(null)
@@ -2028,14 +2031,7 @@ const Nhis = () => {
 
   const handleSelectPrescribingFacility = (facilityId) => {
     const facility = prescribingFacilities.find((row) => row.id === facilityId) || null
-    setClaimForm((previous) => ({
-      ...previous,
-      ...buildNhisPrescriptionSourceSnapshot({
-        facility,
-        prescriber: prescribers.find((row) => row.id === previous.prescriberId) || null,
-      }),
-      prescribingFacilityId: facility?.id || '',
-    }))
+    setClaimForm((previous) => applyNhisPrescribingFacilitySnapshot(previous, facility))
   }
 
   const handleSelectPrescriber = (prescriberId) => {
@@ -3647,6 +3643,14 @@ const Nhis = () => {
   }
 
   const addMedicineToList = async () => {
+    // State updates do not disable the button until React renders again. Keep a
+    // synchronous lock as well so two clicks in the same render cycle cannot
+    // both finish the asynchronous duplicate/overlap checks and append a row.
+    if (medicineAddingRef.current) return
+    medicineAddingRef.current = true
+    setMedicineAdding(true)
+
+    try {
     const qty   = Number.parseFloat(medForm.dispensedQty) || 0
     const price = Number.parseFloat(medForm.unitPrice)    || 0
     const requestedServingStatus = String(medForm.servingStatus || '').toLowerCase()
@@ -3828,6 +3832,10 @@ const Nhis = () => {
     setEditingMedicineIndex(null)
     if (editingMedicineIndex !== null) {
       setShowMedModal(false)
+    }
+    } finally {
+      medicineAddingRef.current = false
+      setMedicineAdding(false)
     }
   }
 
@@ -8900,7 +8908,9 @@ const Nhis = () => {
                 </strong>
               </div>
               <button
+                type="button"
                 className="btn btn-secondary"
+                disabled={medicineAdding}
                 onClick={() => {
                   setMedForm(makeBlankMedicineForDate(medicineEntryDate))
                   setMedCodeSearch('')
@@ -8910,11 +8920,13 @@ const Nhis = () => {
               >
                 Clear
               </button>
-              <button className="btn btn-secondary" onClick={() => closeMedicineModal()}>
+              <button type="button" className="btn btn-secondary" disabled={medicineAdding} onClick={() => closeMedicineModal()}>
                 Done
               </button>
-              <button className="btn btn-primary" onClick={addMedicineToList}>
-                {editingMedicineIndex === null ? '+ Add' : 'Save Medicine'}
+              <button type="button" className="btn btn-primary" disabled={medicineAdding} onClick={addMedicineToList}>
+                {medicineAdding
+                  ? (editingMedicineIndex === null ? 'Adding...' : 'Saving...')
+                  : (editingMedicineIndex === null ? '+ Add' : 'Save Medicine')}
               </button>
             </div>
           </div>

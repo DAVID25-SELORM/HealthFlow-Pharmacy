@@ -339,3 +339,20 @@ export const buildNhisPrescriptionSourceSnapshot = ({ facility = null, prescribe
   prescriberLicenseSnapshot: normalizeText(prescriber?.license_number ?? prescriber?.licenseNumber) || '',
   prescriber_license_snapshot: normalizeText(prescriber?.license_number ?? prescriber?.licenseNumber) || null,
 })
+
+// Facility selection must not replace a doctor entered before the facility.
+// buildNhisPrescriptionSourceSnapshot intentionally describes both halves of
+// the source, so use this narrower merge when only the facility has changed.
+export const applyNhisPrescribingFacilitySnapshot = (claimForm = {}, facility = null) => {
+  const snapshot = buildNhisPrescriptionSourceSnapshot({ facility })
+  return {
+    ...claimForm,
+    prescribingFacilityId: snapshot.prescribingFacilityId,
+    prescribing_facility_id: snapshot.prescribing_facility_id,
+    referringFacility: snapshot.referringFacility,
+    prescribingFacilityNameSnapshot: snapshot.prescribingFacilityNameSnapshot,
+    prescribing_facility_name_snapshot: snapshot.prescribing_facility_name_snapshot,
+    prescribingFacilityCodeSnapshot: snapshot.prescribingFacilityCodeSnapshot,
+    prescribing_facility_code_snapshot: snapshot.prescribing_facility_code_snapshot,
+  }
+}
