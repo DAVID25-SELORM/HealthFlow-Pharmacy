@@ -293,7 +293,7 @@ const TopBar = ({ isSidebarOpen, onMenuToggle, pageTitle }) => {
           title={connectionLabel}
         >
           {connectivity.mode === CONNECTIVITY_MODES.OFFLINE_NO_SERVER ? <WifiOff size={16} /> : <Wifi size={16} />}
-          {connectionLabel}
+          <span className="connection-status-label">{connectionLabel}</span>
         </span>
 
         <div className="topbar-alerts" ref={alertsRef}>

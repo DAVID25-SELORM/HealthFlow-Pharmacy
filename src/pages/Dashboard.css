@@ -1335,6 +1335,37 @@
     overflow: hidden;
   }
 
+  .hero-eyebrow,
+  .hero-action-description,
+  .hero-panel-card-hint,
+  .hero-feature-pills {
+    display: none;
+  }
+
+  .hero-pharmacy-brand {
+    margin-top: 0;
+  }
+
+  .hero-copy h1 {
+    margin-top: 0.65rem;
+  }
+
+  .hero-meta {
+    flex-wrap: nowrap;
+    max-width: 100%;
+    overflow-x: auto;
+    padding-bottom: 0.2rem;
+    scrollbar-width: thin;
+  }
+
+  .hero-chip {
+    flex: 0 0 auto;
+  }
+
+  .hero-panel-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .hero-copy,
   .hero-panel,
   .hero-pharmacy-brand,
@@ -1395,6 +1426,52 @@
 
   .hero-action {
     padding: 0.65rem;
+  }
+
+  .hero-actions,
+  .dashboard .stats-grid,
+  .cash-inflow-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .hero-action {
+    min-height: 58px;
+    gap: 0.5rem;
+  }
+
+  .hero-action-icon {
+    width: 30px;
+    height: 30px;
+  }
+
+  .hero-action-arrow {
+    display: none;
+  }
+
+  .hero-panel {
+    padding: 0.7rem;
+  }
+
+  .hero-panel-caption,
+  .dashboard .stat-subtitle,
+  .dashboard .stat-trend {
+    display: none;
+  }
+
+  .hero-panel-card,
+  .dashboard .stat-card,
+  .cash-inflow-total,
+  .cash-inflow-method {
+    min-height: 0;
+    padding: 0.65rem;
+  }
+
+  .dashboard .stat-card {
+    gap: 0.45rem;
+  }
+
+  .cash-inflow-total {
+    grid-column: 1 / -1;
   }
 
   .hero-feature-pills {

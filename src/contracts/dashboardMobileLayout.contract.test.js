@@ -25,4 +25,13 @@ describe('dashboard mobile layout', () => {
     expect(phoneRules).toContain('width: 100%;')
     expect(phoneRules).toContain('overflow-wrap: anywhere;')
   })
+
+  it('reduces secondary dashboard detail instead of crowding the phone viewport', () => {
+    const phoneStart = dashboardCss.lastIndexOf('@media (max-width: 760px)')
+    const phoneRules = dashboardCss.slice(phoneStart)
+
+    expect(phoneRules).toMatch(/\.hero-action-description,[\s\S]*\.hero-feature-pills[\s\S]*display:\s*none;/)
+    expect(phoneRules).toMatch(/\.hero-panel-grid\s*\{[^}]*repeat\(2, minmax\(0, 1fr\)\)/s)
+    expect(phoneRules).toMatch(/\.hero-actions,[\s\S]*\.dashboard \.stats-grid,[\s\S]*\.cash-inflow-grid[\s\S]*repeat\(2, minmax\(0, 1fr\)\)/)
+  })
 })
