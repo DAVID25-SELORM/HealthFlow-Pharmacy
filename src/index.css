@@ -498,6 +498,23 @@ h6 { font-size: 0.875rem; }
   h1 { font-size: 1.45rem; }
   h2 { font-size: 1.25rem; }
 
+  /* Shared narrow-phone guardrail for pages that expose several header
+     actions. Stacking keeps every control readable and touchable without
+     changing which actions are available or how they behave. */
+  .header-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.5rem;
+    width: 100%;
+  }
+
+  .header-actions > .btn,
+  .header-actions > button,
+  .header-actions > a {
+    justify-content: center;
+    width: 100%;
+  }
+
   .modal-overlay,
   .modal-backdrop,
   .acc-modal-backdrop,
