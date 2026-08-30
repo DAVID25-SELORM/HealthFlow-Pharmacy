@@ -1924,35 +1924,37 @@ const Nhis = () => {
         }),
       ])
 
-      let readyDrugsData = drugsData
+      setNhisDrugs(drugsData)
+      setStats(statsData)
+      setClinicalRules(rulesData)
+      setNhiaTariffItems(tariffData)
+      setLoading(false)
+      void ensurePatientIndexLoaded()
+      void loadPrescribingRecords()
+
       if (
         canWrite &&
         DEFAULT_NHIS_DRUG_CATALOG.length > 0 &&
         organization?.can_use_nhis !== false
       ) {
-        try {
-          setCatalogSeeding(true)
-          const provisioned = await provisionNhisCatalog()
-          readyDrugsData = await getAllNhisDrugs()
-          if (provisioned.insertedCodes?.length) {
-            notify(`Restored ${provisioned.insertedCodes.length} missing NHIS catalogue medicines for this facility.`, 'success')
+        void (async () => {
+          try {
+            setCatalogSeeding(true)
+            const provisioned = await provisionNhisCatalog()
+            if (provisioned.insertedCodes?.length) {
+              setNhisDrugs(await getAllNhisDrugs())
+              notify(`Restored ${provisioned.insertedCodes.length} missing NHIS catalogue medicines for this facility.`, 'success')
+            }
+          } catch (seedError) {
+            notify(
+              seedError.message || 'NHIS medicine catalog is empty. Import the NHIS drug template before adding medicines.',
+              'warning'
+            )
+          } finally {
+            setCatalogSeeding(false)
           }
-        } catch (seedError) {
-          notify(
-            seedError.message || 'NHIS medicine catalog is empty. Import the NHIS drug template before adding medicines.',
-            'warning'
-          )
-        } finally {
-          setCatalogSeeding(false)
-        }
+        })()
       }
-
-      setNhisDrugs(readyDrugsData)
-      setStats(statsData)
-      setClinicalRules(rulesData)
-      setNhiaTariffItems(tariffData)
-      void ensurePatientIndexLoaded()
-      void loadPrescribingRecords()
     } catch (err) {
       setError(err.message || 'Unable to load NHIS data.')
     } finally {

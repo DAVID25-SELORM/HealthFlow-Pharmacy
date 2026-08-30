@@ -3689,63 +3689,107 @@ const syncNhisDrugsToInventory = async (
     }))
   )
 
-  let upserted = 0
+  const existingRows: Record<string, unknown>[] = []
+  let existingFrom = 0
+  while (true) {
+    let existingQuery = adminClient
+      .from('drugs')
+      .select('*')
+      .eq('organization_id', organizationId)
+
+    const scopedBranchIds = branchIds.filter(Boolean) as string[]
+    existingQuery = scopedBranchIds.length > 0
+      ? existingQuery.in('branch_id', scopedBranchIds)
+      : existingQuery.is('branch_id', null)
+
+    const { data: existingPage, error: existingError } = await existingQuery
+      .range(existingFrom, existingFrom + 999)
+
+    if (existingError) throw existingError
+    existingRows.push(...((existingPage || []) as Record<string, unknown>[]))
+    if ((existingPage || []).length < 1000) break
+    existingFrom += 1000
+  }
+
+  const branchKey = (value: unknown) => normalizeText(value) || '__unassigned__'
+  const codeKey = (branchId: unknown, code: unknown) => `${branchKey(branchId)}::${normalizeText(code)}`
+  const nameKey = (branchId: unknown, name: unknown) => `${branchKey(branchId)}::${normalizeText(name)}`
+  const identityKey = (branchId: unknown, name: unknown, batch: unknown) =>
+    `${nameKey(branchId, name)}::${normalizeText(batch)}`
+  const byPriority = (left: Record<string, unknown>, right: Record<string, unknown>) =>
+    Number(right.quantity || 0) - Number(left.quantity || 0) ||
+    String(right.updated_at || '').localeCompare(String(left.updated_at || ''))
+  const byRecent = (left: Record<string, unknown>, right: Record<string, unknown>) =>
+    String(right.updated_at || '').localeCompare(String(left.updated_at || ''))
+
+  const activeByCode = new Map<string, Record<string, unknown>>()
+  const activeByName = new Map<string, Record<string, unknown>>()
+  const byIdentity = new Map<string, Record<string, unknown>>()
+  for (const existing of [...existingRows].sort(byRecent)) {
+    const identity = identityKey(existing.branch_id, existing.name, existing.batch_number)
+    if (!byIdentity.has(identity)) byIdentity.set(identity, existing)
+  }
+  for (const existing of [...existingRows].filter((row) => row.status === 'active').sort(byPriority)) {
+    const code = codeKey(existing.branch_id, existing.nhis_code)
+    const name = nameKey(existing.branch_id, existing.name)
+    if (normalizeText(existing.nhis_code) && !activeByCode.has(code)) activeByCode.set(code, existing)
+    if (!activeByName.has(name)) activeByName.set(name, existing)
+  }
+
+  const updates: Array<{ id: unknown; values: Record<string, unknown> }> = []
+  const inserts: Record<string, unknown>[] = []
   for (const row of rows) {
-    const branchId = normalizeText(row.branch_id) || null
     const existingDrug =
-      (await findActiveDrugByNhisCode(adminClient, organizationId, branchId, String(row.nhis_code))) ||
-      (await findActiveDrugByName(adminClient, organizationId, branchId, String(row.name))) ||
-      (await findDrugByIdentity(
-        adminClient,
-        organizationId,
-        branchId,
-        String(row.name),
-        String(row.batch_number)
-      ))
+      activeByCode.get(codeKey(row.branch_id, row.nhis_code)) ||
+      activeByName.get(nameKey(row.branch_id, row.name)) ||
+      byIdentity.get(identityKey(row.branch_id, row.name, row.batch_number))
 
-    if (existingDrug) {
-      const existingPrice = Number(existingDrug.price ?? 0)
-      const { error } = await adminClient
-        .from('drugs')
-        .update({
-          nhis_code: row.nhis_code,
-          nhis_price: row.nhis_price,
-          nhis_unit: row.nhis_unit,
-          is_nhis_listed: true,
-          name: normalizeText(existingDrug.name) || row.name,
-          batch_number: normalizeText(existingDrug.batch_number) || row.batch_number,
-          expiry_date: existingDrug.expiry_date || row.expiry_date,
-          quantity: existingDrug.quantity ?? row.quantity,
-          unit: normalizeText(existingDrug.unit) || row.unit,
-          price: existingPrice > 0 ? existingDrug.price : row.price,
-          cost_price: existingDrug.cost_price ?? row.cost_price,
-          supplier: normalizeText(existingDrug.supplier) || row.supplier,
-          category: normalizeText(existingDrug.category) || row.category,
-          description: normalizeText(existingDrug.description) || row.description,
-          status: 'active',
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', existingDrug.id)
-        .eq('organization_id', organizationId)
-
-      if (error) {
-        throw error
-      }
-
-      upserted += 1
+    if (!existingDrug) {
+      inserts.push(row)
       continue
     }
 
-    const { error } = await adminClient.from('drugs').insert([row])
-
-    if (error) {
-      throw error
-    }
-
-    upserted += 1
+    const existingPrice = Number(existingDrug.price ?? 0)
+    updates.push({
+      id: existingDrug.id,
+      values: {
+        nhis_code: row.nhis_code,
+        nhis_price: row.nhis_price,
+        nhis_unit: row.nhis_unit,
+        is_nhis_listed: true,
+        name: normalizeText(existingDrug.name) || row.name,
+        batch_number: normalizeText(existingDrug.batch_number) || row.batch_number,
+        expiry_date: existingDrug.expiry_date || row.expiry_date,
+        quantity: existingDrug.quantity ?? row.quantity,
+        unit: normalizeText(existingDrug.unit) || row.unit,
+        price: existingPrice > 0 ? existingDrug.price : row.price,
+        cost_price: existingDrug.cost_price ?? row.cost_price,
+        supplier: normalizeText(existingDrug.supplier) || row.supplier,
+        category: normalizeText(existingDrug.category) || row.category,
+        description: normalizeText(existingDrug.description) || row.description,
+        status: 'active',
+        updated_at: new Date().toISOString(),
+      },
+    })
   }
 
-  return { upserted, branches: branchIds.length }
+  for (const updateChunk of chunkValues(updates, 25)) {
+    await Promise.all(updateChunk.map(async ({ id, values }) => {
+      const { error } = await adminClient
+        .from('drugs')
+        .update(values)
+        .eq('id', id)
+        .eq('organization_id', organizationId)
+      if (error) throw error
+    }))
+  }
+
+  for (const insertChunk of chunkValues(inserts, 100)) {
+    const { error } = await adminClient.from('drugs').insert(insertChunk)
+    if (error) throw error
+  }
+
+  return { upserted: updates.length + inserts.length, branches: branchIds.length }
 }
 
 const normalizeCredentialMode = (value: unknown) => {
@@ -6472,20 +6516,48 @@ Deno.serve(async (request) => {
         .eq('is_active', true)
       if (catalogError) throw catalogError
 
-      // Catalogue repair and inventory mirroring are one user-facing action.
-      // Always sync the complete active catalogue, even when no NHIS codes were
-      // missing, so older organizations whose mirror step never ran are healed.
-      const inventoryResult = await syncNhisDrugsToInventory(
+      const branchIds = await getBranchIdsForInventorySync(
         adminClient,
-        requesterProfile,
         organizationId,
-        { drugs: activeCatalog || [] }
+        requesterProfile,
+        {}
       )
+      const scopedBranchIds = branchIds.filter(Boolean) as string[]
+      let inventoryCountQuery = adminClient
+        .from('drugs')
+        .select('id', { count: 'exact', head: true })
+        .eq('organization_id', organizationId)
+        .eq('is_nhis_listed', true)
+        .eq('status', 'active')
+
+      inventoryCountQuery = scopedBranchIds.length > 0
+        ? inventoryCountQuery.in('branch_id', scopedBranchIds)
+        : inventoryCountQuery.is('branch_id', null)
+
+      const { count: inventoryCount, error: inventoryCountError } = await inventoryCountQuery
+      if (inventoryCountError) throw inventoryCountError
+
+      const expectedInventoryCount = (activeCatalog || []).length * branchIds.length
+      const inventoryNeedsRepair =
+        (catalogResult.insertedCodes?.length || 0) > 0 ||
+        (inventoryCount || 0) < expectedInventoryCount
+
+      // Older organizations may be missing the inventory mirror. Repair it once,
+      // then keep routine NHIS workspace loads on the inexpensive count check.
+      const inventoryResult = inventoryNeedsRepair
+        ? await syncNhisDrugsToInventory(
+            adminClient,
+            requesterProfile,
+            organizationId,
+            { drugs: activeCatalog || [] }
+          )
+        : { upserted: 0, branches: branchIds.length }
 
       return json({
         ...catalogResult,
         inventoryUpserted: inventoryResult.upserted,
         inventoryBranches: inventoryResult.branches,
+        inventoryRepairSkipped: !inventoryNeedsRepair,
       })
     }
 
