@@ -599,7 +599,8 @@ const seedNhiaConfiguration = async (
 
 const seedDefaultMedicationCatalog = async (
   adminClient: ReturnType<typeof createAdminClient>,
-  organizationId: string
+  organizationId: string,
+  branchId: string | null = null
 ) => {
   const { data: existingDrugs, error } = await adminClient
     .from('drugs')
@@ -617,6 +618,7 @@ const seedDefaultMedicationCatalog = async (
   )
 
   const missingRows = buildDefaultMedicationRowsForOrganization(organizationId, existingBatchNumbers)
+    .map((row) => ({ ...row, branch_id: branchId }))
   for (let index = 0; index < missingRows.length; index += DEFAULT_CATALOG_SYNC_BATCH_SIZE) {
     const batch = missingRows.slice(index, index + DEFAULT_CATALOG_SYNC_BATCH_SIZE)
     const { error: insertError } = await adminClient.from('drugs').insert(batch)
@@ -1870,7 +1872,7 @@ const bootstrapOrganization = async (
     }
 
     provisioningStage = 'seed medication catalogue'
-    await seedDefaultMedicationCatalog(adminClient, organizationId)
+    await seedDefaultMedicationCatalog(adminClient, organizationId, mainBranchId)
 
     if (organizationInput.canUseNhis === true) {
       provisioningStage = 'seed NHIS medicine catalogue'

@@ -14,4 +14,10 @@ describe('Inventory read performance contract', () => {
     expect(getDrugsBody).toContain(".eq('organization_id', organizationId)")
     expect(getDrugsBody).toContain(".eq('status', 'active')")
   })
+
+  it('repairs missing regular catalogue rows through a separate idempotent action', () => {
+    expect(tierAccess).toContain("action === 'provision_default_medication_catalog'")
+    expect(tierAccess).toContain('syncDefaultMedicationCatalog(adminClient, organizationId, branchId)')
+    expect(getDrugsBody).not.toContain('provision_default_medication_catalog')
+  })
 })

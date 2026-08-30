@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   getBranches: vi.fn(),
   notify: vi.fn(),
   parseExcelFile: vi.fn(),
+  provisionDefaultMedicationCatalog: vi.fn(),
   setSearchParams: vi.fn(),
   updateDrug: vi.fn(),
   useAuth: vi.fn(),
@@ -64,6 +65,7 @@ vi.mock('../services/drugService', () => ({
   deleteDrug: mocks.deleteDrug,
   getAllDrugs: mocks.getAllDrugs,
   isDefaultCatalogDrug: mocks.isDefaultCatalogDrug,
+  provisionDefaultMedicationCatalog: mocks.provisionDefaultMedicationCatalog,
   updateDrug: mocks.updateDrug,
 }))
 
@@ -86,6 +88,7 @@ describe('Inventory', () => {
     mocks.isSupabaseConfigured.mockReturnValue(true)
     mocks.getAllDrugs.mockResolvedValue([])
     mocks.getPharmacySettings.mockResolvedValue({ default_markup_percent: 25 })
+    mocks.provisionDefaultMedicationCatalog.mockResolvedValue({ inserted: 0, reactivated: 0, claimed: 0 })
     mocks.calculateDrugStatus.mockReturnValue({ class: 'good', label: 'Good Stock' })
     mocks.isDefaultCatalogDrug.mockReturnValue(false)
   })

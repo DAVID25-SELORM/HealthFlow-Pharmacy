@@ -4,6 +4,7 @@ import {
   deleteDrug,
   getAllDrugs,
   isDefaultCatalogDrug,
+  provisionDefaultMedicationCatalog,
   transferDrugToBranch,
   updateDrug,
 } from './drugService'
@@ -124,7 +125,7 @@ export const transferInventoryDrug = async (transfer) => {
   return transferDrugToBranch(transfer)
 }
 
-export { calculateDrugStatus, isDefaultCatalogDrug }
+export { calculateDrugStatus, isDefaultCatalogDrug, provisionDefaultMedicationCatalog }
 export {
   discardOfflineInventoryConflicts,
   getOfflineInventorySummary,

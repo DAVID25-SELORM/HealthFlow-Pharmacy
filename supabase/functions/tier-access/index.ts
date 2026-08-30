@@ -233,6 +233,7 @@ type TierAccessAction =
   | 'update_drug'
   | 'delete_drug'
   | 'bulk_import_drugs'
+  | 'provision_default_medication_catalog'
   | 'sync_nhis_drugs_to_inventory'
   | 'get_nhia_api_settings'
   | 'save_nhia_api_settings'
@@ -271,6 +272,7 @@ const SUPPORTED_TIER_ACCESS_ACTIONS = [
   'update_drug',
   'delete_drug',
   'bulk_import_drugs',
+  'provision_default_medication_catalog',
   'sync_nhis_drugs_to_inventory',
   'get_nhia_api_settings',
   'save_nhia_api_settings',
@@ -1405,6 +1407,12 @@ const syncDefaultMedicationCatalog = async (
     if (insertError) {
       throw insertError
     }
+  }
+
+  return {
+    inserted: missingRows.length,
+    reactivated: inactiveCatalogIds.length,
+    claimed: claimableCatalogIds.length,
   }
 }
 
@@ -6489,6 +6497,20 @@ Deno.serve(async (request) => {
     if (action === 'bulk_import_drugs') {
       await requireTierFeature(adminClient, organizationId, 'advanced_inventory')
       return json(await bulkImportDrugs(adminClient, requesterProfile, organizationId, payload))
+    }
+
+    if (action === 'provision_default_medication_catalog') {
+      requireInventoryAccess(
+        requesterProfile,
+        'Only inventory staff can repair the regular medication catalogue.'
+      )
+      const branchId = await getBranchIdForInventoryRequest(
+        adminClient,
+        organizationId,
+        requesterProfile,
+        payload
+      )
+      return json(await syncDefaultMedicationCatalog(adminClient, organizationId, branchId))
     }
 
     if (action === 'sync_nhis_drugs_to_inventory') {

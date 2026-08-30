@@ -30,5 +30,6 @@ describe('inventory mobile layout contract', () => {
     expect(inventoryPage).toContain("value: 'nhis_catalog'")
     expect(inventoryPage).toContain("return 'Regular catalogue'")
     expect(inventoryPage).toContain("return 'NHIS catalogue'")
+    expect(inventoryPage).toContain('void repairDefaultCatalog(defaultBranchId)')
   })
 })

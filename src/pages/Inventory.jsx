@@ -21,6 +21,7 @@ import {
   getOfflineInventorySummary,
   isDefaultCatalogDrug,
   isLocalInventoryEnabled,
+  provisionDefaultMedicationCatalog,
   subscribeOfflineInventoryQueue,
   syncOfflineInventory,
   transferInventoryDrug,
@@ -325,6 +326,7 @@ const Inventory = () => {
       setBranches(branchRows)
       setSelectedBranchId(defaultBranchId)
       await loadDrugs(defaultBranchId, { manageLoading: false })
+      void repairDefaultCatalog(defaultBranchId)
     } catch (error) {
       console.error('Error loading inventory:', error)
       if (isLocalInventoryEnabled()) {
@@ -437,6 +439,21 @@ const Inventory = () => {
       notify(error.message || 'Unable to load inventory right now.', 'error')
     } finally {
       if (manageLoading) setLoading(false)
+    }
+  }
+
+  const repairDefaultCatalog = async (branchIdOverride) => {
+    try {
+      const result = await provisionDefaultMedicationCatalog(branchIdOverride || null)
+      if ((result?.inserted || 0) > 0 || (result?.reactivated || 0) > 0 || (result?.claimed || 0) > 0) {
+        await loadDrugs(branchIdOverride, { manageLoading: false })
+        notify(
+          `Restored ${result.inserted || 0} missing regular catalogue medicine${result.inserted === 1 ? '' : 's'}.`,
+          'success'
+        )
+      }
+    } catch (catalogError) {
+      console.warn('Unable to repair the regular medication catalogue:', catalogError)
     }
   }
 
@@ -743,6 +760,7 @@ const Inventory = () => {
   const handleBranchChange = async (branchId) => {
     setSelectedBranchId(branchId)
     await loadDrugs(branchId)
+    void repairDefaultCatalog(branchId)
   }
 
   const handleTransferSubmit = async (event) => {

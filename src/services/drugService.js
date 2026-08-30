@@ -183,6 +183,12 @@ export const getAllDrugs = async (options = {}) => {
   // ✅ OFFLINE-FIRST PATCH END
 }
 
+export const provisionDefaultMedicationCatalog = async (branchId = null) => {
+  const payload = { action: 'provision_default_medication_catalog' }
+  if (branchId) payload.branchId = branchId
+  return await invokeTierAccess(payload)
+}
+
 const getSearchLimit = (value) => {
   const parsed = Number.parseInt(String(value ?? ''), 10)
   if (!Number.isFinite(parsed) || parsed <= 0) {

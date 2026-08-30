@@ -24,6 +24,7 @@ vi.mock('./drugService', () => ({
   deleteDrug: vi.fn(),
   getAllDrugs: vi.fn(),
   isDefaultCatalogDrug: vi.fn(),
+  provisionDefaultMedicationCatalog: vi.fn(),
   transferDrugToBranch: vi.fn(),
   updateDrug: vi.fn(),
 }))
