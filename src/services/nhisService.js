@@ -2309,7 +2309,7 @@ const parseFrequencyPerDay = (frequency) => {
   if (/\b(qid|qds|four times)\b/.test(value)) return 4
   if (/\b(tds|tid|three times)\b/.test(value)) return 3
   if (/\b(bd|bid|twice|two times)\b/.test(value)) return 2
-  if (/\b(od|daily|once|nocte|night)\b/.test(value)) return 1
+  if (/\b(od|daily|once|mane|morning|nocte|night)\b/.test(value)) return 1
   const hourlyMatch = value.match(/\b(\d+)\s*hour/)
   if (hourlyMatch) {
     const hours = Number(hourlyMatch[1])
@@ -7366,7 +7366,7 @@ const parseFrequencyValue = (value) => {
   if (/\b(qid|qds|four)\b/.test(text)) return '4.00'
   if (/\b(tid|tds|three)\b/.test(text)) return '3.00'
   if (/\b(bid|bd|twice|two)\b/.test(text)) return '2.00'
-  if (/\b(od|daily|once)\b/.test(text)) return '1.00'
+  if (/\b(od|daily|once|mane|morning|nocte|night)\b/.test(text)) return '1.00'
   return parseDirectionsNumber(text, '1.00')
 }
 

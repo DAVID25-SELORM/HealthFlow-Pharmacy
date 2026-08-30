@@ -290,6 +290,7 @@ const FREQUENCY_OPTIONS = [
   'TID',
   'QID',
   'QD',
+  'MANE',
   'NOCTE',
   'STAT',
   'PRN',
