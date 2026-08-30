@@ -250,9 +250,31 @@
   background: white;
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow);
-  overflow: hidden;
+  overflow: auto;
+  scrollbar-color: var(--gray-400) var(--gray-100);
+  scrollbar-width: auto;
+  scrollbar-gutter: stable;
   margin-bottom: 1.5rem;
   max-width: 100%;
+}
+
+.inventory-page .table-container::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+.inventory-page .table-container::-webkit-scrollbar-track {
+  background: var(--gray-100);
+}
+
+.inventory-page .table-container::-webkit-scrollbar-thumb {
+  border: 3px solid var(--gray-100);
+  border-radius: 999px;
+  background: var(--gray-400);
+}
+
+.inventory-page .table-container::-webkit-scrollbar-thumb:hover {
+  background: var(--gray-500);
 }
 
 .inventory-table {

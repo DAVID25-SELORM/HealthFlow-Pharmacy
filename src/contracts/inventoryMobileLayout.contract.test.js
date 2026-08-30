@@ -6,6 +6,13 @@ const inventoryPage = readFileSync(resolve(process.cwd(), 'src/pages/Inventory.j
 const inventoryCss = readFileSync(resolve(process.cwd(), 'src/pages/Inventory.css'), 'utf8')
 
 describe('inventory mobile layout contract', () => {
+  it('keeps every paginated desktop row reachable through an explicit table scrollbar', () => {
+    expect(inventoryCss).toContain('.inventory-page .table-container {')
+    expect(inventoryCss).toContain('overflow: auto;')
+    expect(inventoryCss).toContain('.inventory-page .table-container::-webkit-scrollbar')
+    expect(inventoryCss).toContain('scrollbar-gutter: stable;')
+  })
+
   it('uses the existing inventory data as labelled cards on mobile', () => {
     expect(inventoryPage).toContain('data-label="Medicine"')
     expect(inventoryPage).toContain('data-label="Selling price"')
