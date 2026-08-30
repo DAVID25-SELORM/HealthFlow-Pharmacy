@@ -29,6 +29,7 @@ import {
   canPrivilegedCorrectNhisClaim,
 } from '../utils/nhisPrivilegedCorrection'
 import { normalizeText } from '../utils/validation'
+import { autoSpaceDoseValue } from '../utils/prescriptionDirections'
 import {
   getAllNhisDrugs,
   getApplicableNhiaTariffItems,
@@ -289,6 +290,7 @@ const FREQUENCY_OPTIONS = [
   'TID',
   'QID',
   'QD',
+  'NOCTE',
   'STAT',
   'PRN',
   ...Array.from({ length: 12 }, (_, index) => `${index + 1} hourly`),
@@ -8859,7 +8861,10 @@ const Nhis = () => {
                     placeholder="e.g. 1 tablet"
                     value={medForm.dose}
                     disabled={isMedicineCounterAssistant}
-                    onChange={(e) => setMedForm((p) => ({ ...p, dose: e.target.value }))}
+                    onChange={(e) => setMedForm((p) => ({
+                      ...p,
+                      dose: autoSpaceDoseValue(e.target.value),
+                    }))}
                   />
                 </div>
                 <div className="form-group">

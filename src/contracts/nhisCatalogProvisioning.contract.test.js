@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import fs from 'node:fs'
 
 const provisioning = fs.readFileSync('supabase/functions/_shared/nhisCatalogProvisioning.ts', 'utf8')
+const tierAccess = fs.readFileSync('supabase/functions/tier-access/index.ts', 'utf8')
 const service = fs.readFileSync('src/services/nhisService.js', 'utf8')
 const migration = fs.readFileSync('supabase/migrations/20260822100000_improve_nhis_catalog_validation_error.sql', 'utf8')
 
@@ -16,6 +17,18 @@ describe('NHIS catalogue provisioning contract', () => {
     expect(provisioning).toContain('inactiveCodes')
     expect(provisioning).toContain('incompleteCodes')
     expect(provisioning).toContain("event_type: 'nhis_catalog.provisioned'")
+  })
+
+  it('repairs the inventory mirror from the complete active catalogue even when no codes are missing', () => {
+    const actionStart = tierAccess.indexOf("if (action === 'provision_nhis_catalog')")
+    const nextAction = tierAccess.indexOf("if (action === 'get_nhia_api_settings')", actionStart)
+    const action = tierAccess.slice(actionStart, nextAction)
+
+    expect(action).toContain(".from('nhis_drugs')")
+    expect(action).toContain(".eq('is_active', true)")
+    expect(action).toContain('await syncNhisDrugsToInventory(')
+    expect(action).toContain('{ drugs: activeCatalog || [] }')
+    expect(action).toContain('inventoryUpserted: inventoryResult.upserted')
   })
 
   it('blocks every unresolved claim line with an actionable facility-specific message before saving', () => {

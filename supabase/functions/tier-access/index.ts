@@ -6460,10 +6460,33 @@ Deno.serve(async (request) => {
         .maybeSingle()
       if (error) throw error
       if (!organization?.can_use_nhis) throw new Error('NHIS is not enabled for this organization.')
-      return json(await provisionNhisCatalogForOrganization(adminClient, organizationId, {
+
+      const catalogResult = await provisionNhisCatalogForOrganization(adminClient, organizationId, {
         actorUserId: requesterProfile.id,
         source: 'nhis_workspace',
-      }))
+      })
+      const { data: activeCatalog, error: catalogError } = await adminClient
+        .from('nhis_drugs')
+        .select('code, description, generic_name, strength, dosage_form, category, unit, unit_price')
+        .eq('organization_id', organizationId)
+        .eq('is_active', true)
+      if (catalogError) throw catalogError
+
+      // Catalogue repair and inventory mirroring are one user-facing action.
+      // Always sync the complete active catalogue, even when no NHIS codes were
+      // missing, so older organizations whose mirror step never ran are healed.
+      const inventoryResult = await syncNhisDrugsToInventory(
+        adminClient,
+        requesterProfile,
+        organizationId,
+        { drugs: activeCatalog || [] }
+      )
+
+      return json({
+        ...catalogResult,
+        inventoryUpserted: inventoryResult.upserted,
+        inventoryBranches: inventoryResult.branches,
+      })
     }
 
     if (action === 'get_nhia_api_settings') {
