@@ -384,6 +384,7 @@
 .inventory-page .page-buttons {
   display: flex;
   gap: 0.5rem;
+  align-items: center;
 }
 
 .inventory-page .page-btn {
@@ -401,6 +402,19 @@
   background: var(--primary);
   color: white;
   border-color: var(--primary);
+}
+
+.inventory-page .page-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.inventory-page .page-current {
+  min-width: 7rem;
+  color: var(--gray-700);
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-align: center;
 }
 
 .inventory-page .page-btn:disabled {
@@ -855,6 +869,11 @@
     gap: 1rem;
   }
 
+  .inventory-page .page-buttons {
+    width: 100%;
+    justify-content: space-between;
+  }
+
   .inventory-page .form-actions {
     flex-direction: column-reverse;
   }
@@ -1203,11 +1222,6 @@
   border-color: var(--line);
   border-radius: 7px;
   font-size: 0.76rem;
-}
-
-.inventory-page .page-btn:disabled {
-  background: var(--teal);
-  border-color: var(--teal);
 }
 
 .inventory-page .modal-overlay {

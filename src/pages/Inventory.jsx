@@ -95,6 +95,8 @@ const filterOptions = [
   { value: 'expired', label: 'Expired' },
 ]
 
+const INVENTORY_PAGE_SIZE = 25
+
 const mapDrugToForm = (drug) => {
   const nhisPrice = getNhisCatalogPrice(drug)
   const hasCatalogPrice = hasNhisCatalogPrice(drug)
@@ -151,6 +153,7 @@ const Inventory = () => {
   const [importing, setImporting] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [activeFilter, setActiveFilter] = useState('all')
+  const [currentPage, setCurrentPage] = useState(1)
   const [highlightedDrugId, setHighlightedDrugId] = useState('')
   const [error, setError] = useState('')
   const [formData, setFormData] = useState(emptyDrugForm)
@@ -496,6 +499,21 @@ const Inventory = () => {
       return 0
     })
   }, [activeFilter, drugs, highlightedDrugId, searchTerm])
+
+  const totalPages = Math.max(1, Math.ceil(visibleDrugs.length / INVENTORY_PAGE_SIZE))
+  const safeCurrentPage = Math.min(currentPage, totalPages)
+  const pageStartIndex = (safeCurrentPage - 1) * INVENTORY_PAGE_SIZE
+  const paginatedDrugs = visibleDrugs.slice(pageStartIndex, pageStartIndex + INVENTORY_PAGE_SIZE)
+  const showingFrom = visibleDrugs.length === 0 ? 0 : pageStartIndex + 1
+  const showingTo = Math.min(pageStartIndex + INVENTORY_PAGE_SIZE, visibleDrugs.length)
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [activeFilter, highlightedDrugId, searchTerm])
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages)
+  }, [currentPage, totalPages])
 
   const stockSummary = useMemo(() => {
     const activeStockRows = drugs.filter((drug) => {
@@ -1106,7 +1124,7 @@ const Inventory = () => {
                 </td>
               </tr>
             ) : (
-              visibleDrugs.map((drug) => {
+              paginatedDrugs.map((drug) => {
                 const status = getStatusBadge(drug)
                 const quantity = Number.parseFloat(drug.quantity ?? 0) || 0
                 const price = getEffectiveSellingPrice(drug)
@@ -1176,11 +1194,27 @@ const Inventory = () => {
 
       <div className="pagination">
         <span className="page-info">
-          Showing {visibleDrugs.length === 0 ? 0 : 1}-{visibleDrugs.length} of {drugs.length} items
+          Showing {showingFrom}-{showingTo} of {visibleDrugs.length} item{visibleDrugs.length === 1 ? '' : 's'}
         </span>
-        <div className="page-buttons">
-          <button className="page-btn" disabled>
-            1
+        <div className="page-buttons" aria-label="Inventory pagination">
+          <button
+            className="page-btn page-btn-nav"
+            type="button"
+            disabled={safeCurrentPage === 1}
+            onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+          >
+            Previous
+          </button>
+          <span className="page-current" aria-live="polite">
+            Page {safeCurrentPage} of {totalPages}
+          </span>
+          <button
+            className="page-btn page-btn-nav"
+            type="button"
+            disabled={safeCurrentPage === totalPages}
+            onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+          >
+            Next
           </button>
         </div>
       </div>

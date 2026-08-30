@@ -13,4 +13,14 @@ describe('inventory mobile layout contract', () => {
     expect(inventoryCss).toContain('content: attr(data-label);')
     expect(inventoryCss).toContain('.inventory-table thead {\n    display: none;')
   })
+
+  it('paginates the complete filtered medicine list with mobile-friendly navigation', () => {
+    expect(inventoryPage).toContain('const INVENTORY_PAGE_SIZE = 25')
+    expect(inventoryPage).toContain('const paginatedDrugs = visibleDrugs.slice(')
+    expect(inventoryPage).toContain('paginatedDrugs.map((drug) =>')
+    expect(inventoryPage).toContain('Page {safeCurrentPage} of {totalPages}')
+    expect(inventoryPage).toContain('Previous')
+    expect(inventoryPage).toContain('Next')
+    expect(inventoryCss).toContain('.inventory-page .page-current')
+  })
 })
