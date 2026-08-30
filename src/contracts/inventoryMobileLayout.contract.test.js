@@ -23,4 +23,12 @@ describe('inventory mobile layout contract', () => {
     expect(inventoryPage).toContain('Next')
     expect(inventoryCss).toContain('.inventory-page .page-current')
   })
+
+  it('shows and distinguishes both regular and NHIS medication catalogues', () => {
+    expect(inventoryPage).toContain('includeCatalog: true')
+    expect(inventoryPage).toContain("value: 'regular_catalog'")
+    expect(inventoryPage).toContain("value: 'nhis_catalog'")
+    expect(inventoryPage).toContain("return 'Regular catalogue'")
+    expect(inventoryPage).toContain("return 'NHIS catalogue'")
+  })
 })

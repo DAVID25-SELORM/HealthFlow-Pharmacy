@@ -89,6 +89,9 @@ const categoryOptions = [
 
 const filterOptions = [
   { value: 'all', label: 'All Medicines' },
+  { value: 'stocked', label: 'Stocked Medicines' },
+  { value: 'regular_catalog', label: 'Regular Catalogue' },
+  { value: 'nhis_catalog', label: 'NHIS Catalogue' },
   { value: 'good', label: 'Good Stock' },
   { value: 'low', label: 'Low Stock' },
   { value: 'expiring', label: 'Expiring Soon' },
@@ -96,6 +99,14 @@ const filterOptions = [
 ]
 
 const INVENTORY_PAGE_SIZE = 25
+
+const isNhisCatalogDrug = (drug) => Boolean(drug?.is_nhis_listed || drug?.nhis_code)
+
+const getDrugSourceLabel = (drug) => {
+  if (isNhisCatalogDrug(drug)) return 'NHIS catalogue'
+  if (isDefaultCatalogDrug(drug)) return 'Regular catalogue'
+  return ''
+}
 
 const mapDrugToForm = (drug) => {
   const nhisPrice = getNhisCatalogPrice(drug)
@@ -386,9 +397,10 @@ const Inventory = () => {
       }
 
       const data = await getInventory({
-        // Inventory is a stock view. Loading the full zero-quantity reference
-        // catalog here makes every page visit unnecessarily expensive.
-        includeCatalog: false,
+        // Pagination keeps the combined regular and NHIS catalogues manageable.
+        // Include zero-stock reference medicines so staff can find and stock
+        // items from either catalogue directly from Inventory.
+        includeCatalog: true,
         branchId: branchIdOverride || undefined,
       })
       setDrugs(data)
@@ -483,8 +495,12 @@ const Inventory = () => {
         .toLowerCase()
       const matchesSearch =
         !normalizedTerm || searchableText.includes(normalizedTerm)
-      const matchesFilter =
-        activeFilter === 'all' || calculateDrugStatus(drug) === activeFilter
+      const quantity = Number.parseFloat(drug.quantity ?? 0) || 0
+      const matchesFilter = activeFilter === 'all' ||
+        (activeFilter === 'stocked' && quantity > 0) ||
+        (activeFilter === 'regular_catalog' && isDefaultCatalogDrug(drug)) ||
+        (activeFilter === 'nhis_catalog' && isNhisCatalogDrug(drug)) ||
+        calculateDrugStatus(drug) === activeFilter
 
       return matchesSearch && matchesFilter
     })
@@ -1132,11 +1148,13 @@ const Inventory = () => {
                 const total = (quantity * price).toFixed(2)
                 const batchNumber = drug.batch_number || drug.batch || 'N/A'
                 const expiryDate = drug.expiry_date || drug.expiry
+                const sourceLabel = getDrugSourceLabel(drug)
 
                 return (
                   <tr key={drug.id} className={drug.id === highlightedDrugId ? 'highlighted-drug-row' : ''}>
                     <td className="drug-name" data-label="Medicine">
                       {drug.name}
+                      {sourceLabel && <div className="drug-subtext">{sourceLabel}</div>}
                       {drug.sale_on_return && <div className="drug-subtext">Sale on return</div>}
                     </td>
                     <td data-label="Batch">{batchNumber}</td>

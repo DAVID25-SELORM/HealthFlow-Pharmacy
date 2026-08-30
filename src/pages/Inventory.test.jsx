@@ -90,12 +90,12 @@ describe('Inventory', () => {
     mocks.isDefaultCatalogDrug.mockReturnValue(false)
   })
 
-  it('loads stock without triggering full reference-catalog maintenance', async () => {
+  it('loads both regular and NHIS reference medicines without triggering catalogue maintenance', async () => {
     render(<Inventory />)
 
     await waitFor(() => {
       expect(mocks.getAllDrugs).toHaveBeenCalledWith({
-        includeCatalog: false,
+        includeCatalog: true,
         branchId: undefined,
       })
     })
