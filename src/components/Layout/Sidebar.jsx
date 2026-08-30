@@ -43,6 +43,7 @@ import {
   hasRole,
 } from '../../utils/roles'
 import { getFacilityLogo, getFacilityName } from '../../utils/facilityBranding'
+import { preloadRouteModule } from '../../routes/routeModules'
 import './Sidebar.css'
 
 const Sidebar = ({ isOpen, onClose }) => {
@@ -127,6 +128,9 @@ const Sidebar = ({ isOpen, onClose }) => {
             key={item.path}
             to={item.path}
             onClick={onClose}
+            onMouseEnter={() => preloadRouteModule(item.path)}
+            onFocus={() => preloadRouteModule(item.path)}
+            onTouchStart={() => preloadRouteModule(item.path)}
             className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
           >
             <item.icon size={20} />

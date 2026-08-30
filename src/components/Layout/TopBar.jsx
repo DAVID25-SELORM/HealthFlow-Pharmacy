@@ -20,6 +20,15 @@ import { CLAIMS_ROLES, INVENTORY_ROLES, SYSTEM_HEALTH_ROLES, hasRole } from '../
 import { getRoleLabel } from '../../utils/roleLabels'
 import './TopBar.css'
 
+const scheduleNonCriticalWork = (callback, timeout = 1500) => {
+  if (typeof window.requestIdleCallback === 'function') {
+    const idleId = window.requestIdleCallback(callback, { timeout })
+    return () => window.cancelIdleCallback(idleId)
+  }
+  const timeoutId = window.setTimeout(callback, Math.min(timeout, 500))
+  return () => window.clearTimeout(timeoutId)
+}
+
 const TopBar = ({ isSidebarOpen, onMenuToggle, pageTitle }) => {
   const [quickSearch, setQuickSearch] = useState('')
   const [alertsOpen, setAlertsOpen] = useState(false)
@@ -152,10 +161,12 @@ const TopBar = ({ isSidebarOpen, onMenuToggle, pageTitle }) => {
 
   useEffect(() => {
     if (!authReady) {
-      return
+      return undefined
     }
 
-    void loadAlerts()
+    return scheduleNonCriticalWork(() => {
+      void loadAlerts()
+    })
   }, [authReady, loadAlerts])
 
   useEffect(() => {
@@ -165,20 +176,33 @@ const TopBar = ({ isSidebarOpen, onMenuToggle, pageTitle }) => {
       return undefined
     }
 
-    setSystemHealthLoading(true)
-    return subscribeSystemHealthPolling(
-      (health) => {
-        setSystemHealth(health)
-        setSystemHealthLoading(false)
-      },
-      { canViewReports, activeRole: role }
-    )
+    let unsubscribe = null
+    const cancelScheduledCheck = scheduleNonCriticalWork(() => {
+      setSystemHealthLoading(true)
+      unsubscribe = subscribeSystemHealthPolling(
+        (health) => {
+          setSystemHealth(health)
+          setSystemHealthLoading(false)
+        },
+        { canViewReports, activeRole: role }
+      )
+    }, 2000)
+
+    return () => {
+      cancelScheduledCheck()
+      unsubscribe?.()
+    }
   }, [authReady, canViewReports, canViewSystemHealth, role])
 
   useEffect(() => {
     const unsubscribe = subscribeConnectivity(setConnectivity)
-    void refreshConnectivityState()
-    return unsubscribe
+    const cancelRefresh = scheduleNonCriticalWork(() => {
+      void refreshConnectivityState()
+    }, 1000)
+    return () => {
+      cancelRefresh()
+      unsubscribe()
+    }
   }, [isOnline])
 
   useEffect(() => {
