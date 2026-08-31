@@ -6,6 +6,7 @@ import { DataTable, EmptyState, LoadingState, PageHeader, Toolbar } from '../com
 import './ActivityLog.css'
 
 const ACTIVITY_LOG_TIMEZONE = 'Africa/Accra'
+const ACTIVITY_LOG_PAGE_SIZE = 100
 const activityLogDateTimeFormatter = new Intl.DateTimeFormat('en-GB', {
   dateStyle: 'medium',
   timeStyle: 'medium',
@@ -104,6 +105,10 @@ export default function ActivityLog() {
   const organizationId = organization?.id || ''
   const [logs, setLogs] = useState([])
   const [searchTerm, setSearchTerm] = useState('')
+  const [fromDate, setFromDate] = useState('')
+  const [toDate, setToDate] = useState('')
+  const [page, setPage] = useState(1)
+  const [totalRecords, setTotalRecords] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -126,25 +131,44 @@ export default function ActivityLog() {
       }
 
       let data = []
+      let total = 0
       let fetchError = null
+      const from = (page - 1) * ACTIVITY_LOG_PAGE_SIZE
+      const to = from + ACTIVITY_LOG_PAGE_SIZE - 1
 
       if (organizationId) {
         // Facility activity is already protected by audit_logs RLS. Reading it
         // directly avoids an unnecessary Edge Function hop and keeps this page
         // available even when the shared function is busy serving larger jobs.
-        const result = await supabase
+        let query = supabase
           .from('audit_logs')
-          .select('id, actor_user_id, actor_email, event_type, entity_type, action, details, created_at')
+          .select('id, actor_user_id, actor_email, event_type, entity_type, action, details, created_at', { count: 'exact' })
           .eq('organization_id', organizationId)
           .order('created_at', { ascending: false })
-          .limit(200)
+
+        if (fromDate) query = query.gte('created_at', `${fromDate}T00:00:00+00:00`)
+        if (toDate) {
+          const exclusiveEnd = new Date(`${toDate}T00:00:00Z`)
+          exclusiveEnd.setUTCDate(exclusiveEnd.getUTCDate() + 1)
+          query = query.lt('created_at', exclusiveEnd.toISOString())
+        }
+
+        const result = await query.range(from, to)
 
         data = result.data
+        total = Number(result.count || 0)
         fetchError = result.error
       } else {
         try {
-          const result = await invokeTierAccess({ action: 'get_activity_logs', limit: 200 })
+          const result = await invokeTierAccess({
+            action: 'get_activity_logs',
+            page,
+            pageSize: ACTIVITY_LOG_PAGE_SIZE,
+            fromDate: fromDate || null,
+            toDate: toDate || null,
+          })
           data = Array.isArray(result?.logs) ? result.logs : []
+          total = Number(result?.total || data.length)
         } catch (error) {
           fetchError = error
         }
@@ -159,6 +183,7 @@ export default function ActivityLog() {
         const hasPermissionIssue = fetchError.code === '42501' || message.includes('permission')
 
         setLogs([])
+        setTotalRecords(0)
         setError(
           hasPermissionIssue
             ? 'You do not have permission to view activity logs.'
@@ -169,6 +194,7 @@ export default function ActivityLog() {
       }
 
       setLogs(Array.isArray(data) ? data : [])
+      setTotalRecords(total)
       setLoading(false)
     }
 
@@ -177,7 +203,11 @@ export default function ActivityLog() {
     return () => {
       isMounted = false
     }
-  }, [organizationId])
+  }, [fromDate, organizationId, page, toDate])
+
+  const totalPages = Math.max(1, Math.ceil(totalRecords / ACTIVITY_LOG_PAGE_SIZE))
+  const showingFrom = totalRecords === 0 ? 0 : (page - 1) * ACTIVITY_LOG_PAGE_SIZE + 1
+  const showingTo = Math.min(page * ACTIVITY_LOG_PAGE_SIZE, totalRecords)
 
   const filteredLogs = useMemo(() => {
     const query = searchTerm.trim().toLowerCase()
@@ -240,16 +270,28 @@ export default function ActivityLog() {
 
       <Toolbar
         title="Audit records"
-        description={`Showing ${filteredLogs.length} of ${logs.length} record${logs.length === 1 ? '' : 's'}.`}
+        description={searchTerm.trim()
+          ? `Showing ${filteredLogs.length} matching record${filteredLogs.length === 1 ? '' : 's'} on this page.`
+          : `Showing ${showingFrom}-${showingTo} of ${totalRecords} records.`}
       >
-        <input
-          type="search"
-          className="activity-log-search"
-          placeholder="Search logs..."
-          value={searchTerm}
-          onChange={(event) => setSearchTerm(event.target.value)}
-          aria-label="Search activity logs"
-        />
+        <div className="activity-log-filters">
+          <label>
+            <span>From</span>
+            <input type="date" value={fromDate} max={toDate || undefined} onChange={(event) => { setFromDate(event.target.value); setPage(1) }} />
+          </label>
+          <label>
+            <span>To</span>
+            <input type="date" value={toDate} min={fromDate || undefined} onChange={(event) => { setToDate(event.target.value); setPage(1) }} />
+          </label>
+          <input
+            type="search"
+            className="activity-log-search"
+            placeholder="Search this page..."
+            value={searchTerm}
+            onChange={(event) => setSearchTerm(event.target.value)}
+            aria-label="Search activity logs"
+          />
+        </div>
       </Toolbar>
 
       <DataTable
@@ -261,6 +303,14 @@ export default function ActivityLog() {
         emptyState={<EmptyState title="No activity records found" description="Try adjusting your search term." />}
         minWidth="980px"
       />
+
+      <div className="activity-log-pagination">
+        <span>Page {page} of {totalPages}</span>
+        <div>
+          <button type="button" disabled={loading || page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}>Previous</button>
+          <button type="button" disabled={loading || page >= totalPages} onClick={() => setPage((current) => Math.min(totalPages, current + 1))}>Next</button>
+        </div>
+      </div>
     </div>
   )
 }

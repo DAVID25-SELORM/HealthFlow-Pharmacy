@@ -1232,22 +1232,37 @@ const getActivityLogs = async (
 ) => {
   requireActivityLogAccess(requesterProfile)
 
-  const limit = Math.min(parsePositiveInteger(payload.limit, 200), 500)
+  const page = parsePositiveInteger(payload.page, 1)
+  const pageSize = Math.min(parsePositiveInteger(payload.pageSize ?? payload.limit, 100), 500)
+  const from = (page - 1) * pageSize
+  const to = from + pageSize - 1
+  const fromDate = normalizeText(payload.fromDate)
+  const toDate = normalizeText(payload.toDate)
   const auditLogSelect = 'id, actor_user_id, actor_email, event_type, entity_type, action, details, organization_id, created_at'
 
   if (!organizationId && isSuperAdminRequester(requesterProfile)) {
-    const { data: platformLogs, error: platformLogsError } = await adminClient
+    let platformQuery = adminClient
       .from('audit_logs')
-      .select(auditLogSelect)
+      .select(auditLogSelect, { count: 'exact' })
       .order('created_at', { ascending: false })
-      .limit(limit)
+
+    if (fromDate) platformQuery = platformQuery.gte('created_at', `${fromDate}T00:00:00+00:00`)
+    if (toDate) {
+      const exclusiveEnd = new Date(`${toDate}T00:00:00Z`)
+      exclusiveEnd.setUTCDate(exclusiveEnd.getUTCDate() + 1)
+      platformQuery = platformQuery.lt('created_at', exclusiveEnd.toISOString())
+    }
+
+    const { data: platformLogs, error: platformLogsError, count } = await platformQuery.range(from, to)
 
     if (platformLogsError) {
       throw platformLogsError
     }
 
-    return { logs: platformLogs || [] }
+    return { logs: platformLogs || [], total: count || 0, page, pageSize }
   }
+
+  const limit = pageSize
 
   const { data: organizationLogs, error: organizationLogsError } = await adminClient
     .from('audit_logs')

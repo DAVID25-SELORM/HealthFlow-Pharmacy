@@ -7,12 +7,16 @@ const mocks = vi.hoisted(() => {
     select: vi.fn(),
     eq: vi.fn(),
     order: vi.fn(),
-    limit: vi.fn(),
+    gte: vi.fn(),
+    lt: vi.fn(),
+    range: vi.fn(),
   }
 
   queryBuilder.select.mockImplementation(() => queryBuilder)
   queryBuilder.eq.mockImplementation(() => queryBuilder)
   queryBuilder.order.mockImplementation(() => queryBuilder)
+  queryBuilder.gte.mockImplementation(() => queryBuilder)
+  queryBuilder.lt.mockImplementation(() => queryBuilder)
 
   return {
     isSupabaseConfigured: vi.fn(),
@@ -42,7 +46,7 @@ vi.mock('../services/tierAccessService', () => ({
 describe('ActivityLog', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mocks.queryBuilder.limit.mockResolvedValue({ data: [], error: null })
+    mocks.queryBuilder.range.mockResolvedValue({ data: [], error: null, count: 0 })
   })
 
   it('shows a setup error when HealthFlow Cloud is unavailable', async () => {
@@ -59,7 +63,7 @@ describe('ActivityLog', () => {
 
   it('renders logs and filters them with search', async () => {
     mocks.isSupabaseConfigured.mockReturnValue(true)
-    mocks.queryBuilder.limit.mockResolvedValue({
+    mocks.queryBuilder.range.mockResolvedValue({
       data: [
         {
           id: 'log-1',
@@ -83,12 +87,13 @@ describe('ActivityLog', () => {
         },
       ],
       error: null,
+      count: 2,
     })
 
     render(<ActivityLog />)
 
     await waitFor(() => {
-      expect(screen.getByText(/showing 2 of 2 records/i)).toBeInTheDocument()
+      expect(screen.getByText(/showing 1-2 of 2 records/i)).toBeInTheDocument()
     })
 
     fireEvent.change(screen.getByRole('searchbox', { name: /search activity logs/i }), {
@@ -96,13 +101,13 @@ describe('ActivityLog', () => {
     })
 
     await waitFor(() => {
-      expect(screen.getByText(/showing 1 of 2 records/i)).toBeInTheDocument()
+      expect(screen.getByText(/showing 1 matching record on this page/i)).toBeInTheDocument()
     })
   })
 
   it('uses details email when actor columns are empty', async () => {
     mocks.isSupabaseConfigured.mockReturnValue(true)
-    mocks.queryBuilder.limit.mockResolvedValue({
+    mocks.queryBuilder.range.mockResolvedValue({
       data: [
         {
           id: 'log-1',
@@ -116,6 +121,7 @@ describe('ActivityLog', () => {
         },
       ],
       error: null,
+      count: 1,
     })
 
     render(<ActivityLog />)
@@ -129,7 +135,7 @@ describe('ActivityLog', () => {
 
   it('loads facility activity directly through organization-scoped RLS', async () => {
     mocks.isSupabaseConfigured.mockReturnValue(true)
-    mocks.queryBuilder.limit.mockResolvedValue({
+    mocks.queryBuilder.range.mockResolvedValue({
       data: [
         {
           id: 'log-1',
@@ -143,16 +149,38 @@ describe('ActivityLog', () => {
         },
       ],
       error: null,
+      count: 1,
     })
 
     render(<ActivityLog />)
 
     await waitFor(() => {
-      expect(screen.getByText(/showing 1 of 1 record/i)).toBeInTheDocument()
+      expect(screen.getByText(/showing 1-1 of 1 records/i)).toBeInTheDocument()
     })
 
     expect(mocks.supabase.from).toHaveBeenCalledWith('audit_logs')
     expect(mocks.queryBuilder.eq).toHaveBeenCalledWith('organization_id', 'org-1')
+    expect(mocks.queryBuilder.range).toHaveBeenCalledWith(0, 99)
     expect(mocks.invokeTierAccess).not.toHaveBeenCalled()
+  })
+
+  it('loads later pages and applies an inclusive date range on the server', async () => {
+    mocks.isSupabaseConfigured.mockReturnValue(true)
+    mocks.queryBuilder.range.mockResolvedValue({ data: [], error: null, count: 250 })
+
+    render(<ActivityLog />)
+
+    await waitFor(() => expect(screen.getByText('Page 1 of 3')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+    await waitFor(() => expect(mocks.queryBuilder.range).toHaveBeenLastCalledWith(100, 199))
+
+    fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-08-01' } })
+    fireEvent.change(screen.getByLabelText('To'), { target: { value: '2026-08-15' } })
+
+    await waitFor(() => {
+      expect(mocks.queryBuilder.gte).toHaveBeenCalledWith('created_at', '2026-08-01T00:00:00+00:00')
+      expect(mocks.queryBuilder.lt).toHaveBeenCalledWith('created_at', '2026-08-16T00:00:00.000Z')
+      expect(mocks.queryBuilder.range).toHaveBeenLastCalledWith(0, 99)
+    })
   })
 })
