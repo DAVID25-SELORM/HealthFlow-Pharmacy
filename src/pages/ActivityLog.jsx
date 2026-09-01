@@ -108,7 +108,7 @@ export default function ActivityLog() {
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
   const [page, setPage] = useState(1)
-  const [totalRecords, setTotalRecords] = useState(0)
+  const [hasNextPage, setHasNextPage] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -131,10 +131,10 @@ export default function ActivityLog() {
       }
 
       let data = []
-      let total = 0
+      let hasMore = false
       let fetchError = null
       const from = (page - 1) * ACTIVITY_LOG_PAGE_SIZE
-      const to = from + ACTIVITY_LOG_PAGE_SIZE - 1
+      const lookAheadTo = from + ACTIVITY_LOG_PAGE_SIZE
 
       if (organizationId) {
         // Facility activity is already protected by audit_logs RLS. Reading it
@@ -142,7 +142,7 @@ export default function ActivityLog() {
         // available even when the shared function is busy serving larger jobs.
         let query = supabase
           .from('audit_logs')
-          .select('id, actor_user_id, actor_email, event_type, entity_type, action, details, created_at', { count: 'exact' })
+          .select('id, actor_user_id, actor_email, event_type, entity_type, action, details, created_at')
           .eq('organization_id', organizationId)
           .order('created_at', { ascending: false })
 
@@ -153,10 +153,11 @@ export default function ActivityLog() {
           query = query.lt('created_at', exclusiveEnd.toISOString())
         }
 
-        const result = await query.range(from, to)
+        const result = await query.range(from, lookAheadTo)
 
-        data = result.data
-        total = Number(result.count || 0)
+        const rows = Array.isArray(result.data) ? result.data : []
+        hasMore = rows.length > ACTIVITY_LOG_PAGE_SIZE
+        data = rows.slice(0, ACTIVITY_LOG_PAGE_SIZE)
         fetchError = result.error
       } else {
         try {
@@ -168,7 +169,7 @@ export default function ActivityLog() {
             toDate: toDate || null,
           })
           data = Array.isArray(result?.logs) ? result.logs : []
-          total = Number(result?.total || data.length)
+          hasMore = page * ACTIVITY_LOG_PAGE_SIZE < Number(result?.total || data.length)
         } catch (error) {
           fetchError = error
         }
@@ -183,7 +184,7 @@ export default function ActivityLog() {
         const hasPermissionIssue = fetchError.code === '42501' || message.includes('permission')
 
         setLogs([])
-        setTotalRecords(0)
+        setHasNextPage(false)
         setError(
           hasPermissionIssue
             ? 'You do not have permission to view activity logs.'
@@ -194,7 +195,7 @@ export default function ActivityLog() {
       }
 
       setLogs(Array.isArray(data) ? data : [])
-      setTotalRecords(total)
+      setHasNextPage(hasMore)
       setLoading(false)
     }
 
@@ -205,9 +206,8 @@ export default function ActivityLog() {
     }
   }, [fromDate, organizationId, page, toDate])
 
-  const totalPages = Math.max(1, Math.ceil(totalRecords / ACTIVITY_LOG_PAGE_SIZE))
-  const showingFrom = totalRecords === 0 ? 0 : (page - 1) * ACTIVITY_LOG_PAGE_SIZE + 1
-  const showingTo = Math.min(page * ACTIVITY_LOG_PAGE_SIZE, totalRecords)
+  const showingFrom = logs.length === 0 ? 0 : (page - 1) * ACTIVITY_LOG_PAGE_SIZE + 1
+  const showingTo = logs.length === 0 ? 0 : showingFrom + logs.length - 1
 
   const filteredLogs = useMemo(() => {
     const query = searchTerm.trim().toLowerCase()
@@ -272,7 +272,7 @@ export default function ActivityLog() {
         title="Audit records"
         description={searchTerm.trim()
           ? `Showing ${filteredLogs.length} matching record${filteredLogs.length === 1 ? '' : 's'} on this page.`
-          : `Showing ${showingFrom}-${showingTo} of ${totalRecords} records.`}
+          : `Showing records ${showingFrom}-${showingTo}${hasNextPage ? ' (more available)' : ''}.`}
       >
         <div className="activity-log-filters">
           <label>
@@ -305,10 +305,10 @@ export default function ActivityLog() {
       />
 
       <div className="activity-log-pagination">
-        <span>Page {page} of {totalPages}</span>
+        <span>Page {page}</span>
         <div>
           <button type="button" disabled={loading || page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}>Previous</button>
-          <button type="button" disabled={loading || page >= totalPages} onClick={() => setPage((current) => Math.min(totalPages, current + 1))}>Next</button>
+          <button type="button" disabled={loading || !hasNextPage} onClick={() => setPage((current) => current + 1)}>Next</button>
         </div>
       </div>
     </div>

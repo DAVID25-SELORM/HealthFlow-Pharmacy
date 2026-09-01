@@ -93,7 +93,7 @@ describe('ActivityLog', () => {
     render(<ActivityLog />)
 
     await waitFor(() => {
-      expect(screen.getByText(/showing 1-2 of 2 records/i)).toBeInTheDocument()
+      expect(screen.getByText(/showing records 1-2/i)).toBeInTheDocument()
     })
 
     fireEvent.change(screen.getByRole('searchbox', { name: /search activity logs/i }), {
@@ -155,24 +155,36 @@ describe('ActivityLog', () => {
     render(<ActivityLog />)
 
     await waitFor(() => {
-      expect(screen.getByText(/showing 1-1 of 1 records/i)).toBeInTheDocument()
+      expect(screen.getByText(/showing records 1-1/i)).toBeInTheDocument()
     })
 
     expect(mocks.supabase.from).toHaveBeenCalledWith('audit_logs')
     expect(mocks.queryBuilder.eq).toHaveBeenCalledWith('organization_id', 'org-1')
-    expect(mocks.queryBuilder.range).toHaveBeenCalledWith(0, 99)
+    expect(mocks.queryBuilder.select).toHaveBeenCalledWith(
+      'id, actor_user_id, actor_email, event_type, entity_type, action, details, created_at'
+    )
+    expect(mocks.queryBuilder.range).toHaveBeenCalledWith(0, 100)
     expect(mocks.invokeTierAccess).not.toHaveBeenCalled()
   })
 
   it('loads later pages and applies an inclusive date range on the server', async () => {
     mocks.isSupabaseConfigured.mockReturnValue(true)
-    mocks.queryBuilder.range.mockResolvedValue({ data: [], error: null, count: 250 })
+    const lookAheadRows = Array.from({ length: 101 }, (_, index) => ({
+      id: `log-${index}`,
+      actor_email: 'admin@healthflow.test',
+      event_type: 'sale',
+      entity_type: 'sales',
+      action: 'create',
+      details: {},
+      created_at: '2026-08-15T12:00:00.000Z',
+    }))
+    mocks.queryBuilder.range.mockResolvedValue({ data: lookAheadRows, error: null })
 
     render(<ActivityLog />)
 
-    await waitFor(() => expect(screen.getByText('Page 1 of 3')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Page 1')).toBeInTheDocument())
     fireEvent.click(screen.getByRole('button', { name: 'Next' }))
-    await waitFor(() => expect(mocks.queryBuilder.range).toHaveBeenLastCalledWith(100, 199))
+    await waitFor(() => expect(mocks.queryBuilder.range).toHaveBeenLastCalledWith(100, 200))
 
     fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-08-01' } })
     fireEvent.change(screen.getByLabelText('To'), { target: { value: '2026-08-15' } })
@@ -180,7 +192,7 @@ describe('ActivityLog', () => {
     await waitFor(() => {
       expect(mocks.queryBuilder.gte).toHaveBeenCalledWith('created_at', '2026-08-01T00:00:00+00:00')
       expect(mocks.queryBuilder.lt).toHaveBeenCalledWith('created_at', '2026-08-16T00:00:00.000Z')
-      expect(mocks.queryBuilder.range).toHaveBeenLastCalledWith(0, 99)
+      expect(mocks.queryBuilder.range).toHaveBeenLastCalledWith(0, 100)
     })
   })
 })
