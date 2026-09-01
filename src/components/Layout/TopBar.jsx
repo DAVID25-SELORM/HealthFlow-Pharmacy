@@ -10,6 +10,8 @@ import { isSupabaseConfigured } from '../../lib/supabase'
 import { getClaimsStatistics } from '../../services/claimsService'
 import { getExpiringDrugs, getLowStockDrugs } from '../../services/drugService'
 import { subscribeSystemHealthPolling } from '../../services/systemHealthService'
+import { getActiveOrganizations } from '../../services/tierAccessService'
+import { formatActiveOrganizationsNotice } from '../../utils/organizationActivity'
 import {
   CONNECTIVITY_MODES,
   getConnectivityState,
@@ -36,6 +38,8 @@ const TopBar = ({ isSidebarOpen, onMenuToggle, pageTitle }) => {
   const [systemHealth, setSystemHealth] = useState(null)
   const [systemHealthLoading, setSystemHealthLoading] = useState(false)
   const {
+    session,
+    user,
     displayName,
     role,
     assignedRoles = [],
@@ -54,6 +58,7 @@ const TopBar = ({ isSidebarOpen, onMenuToggle, pageTitle }) => {
   const navigate = useNavigate()
   const location = useLocation()
   const alertsRef = useRef(null)
+  const activeOrganizationsNoticeRef = useRef('')
 
   const avatarName = encodeURIComponent(displayName)
   const canUseInventorySearch = canManageInventory || hasRole(role, INVENTORY_ROLES)
@@ -61,6 +66,43 @@ const TopBar = ({ isSidebarOpen, onMenuToggle, pageTitle }) => {
   const canViewSystemHealth = hasRole(role, SYSTEM_HEALTH_ROLES)
   const authReady = !authLoading && Boolean(role)
   const searchTarget = canUseInventorySearch ? '/inventory' : '/sales'
+
+  useEffect(() => {
+    if (!authReady || role !== 'super_admin' || !isOnline || !isSupabaseConfigured()) return undefined
+
+    const signedInAt = user?.last_sign_in_at || session?.user?.last_sign_in_at || ''
+    const noticeKey = `${user?.id || session?.user?.id || 'super-admin'}:${signedInAt}`
+    if (!signedInAt || activeOrganizationsNoticeRef.current === noticeKey) return undefined
+
+    const storageKey = 'healthflow-active-organizations-notice'
+    if (window.sessionStorage.getItem(storageKey) === noticeKey) {
+      activeOrganizationsNoticeRef.current = noticeKey
+      return undefined
+    }
+
+    activeOrganizationsNoticeRef.current = noticeKey
+    let cancelled = false
+
+    void getActiveOrganizations({ windowMinutes: 15 })
+      .then((result) => {
+        if (cancelled) return
+        window.sessionStorage.setItem(storageKey, noticeKey)
+        notify(
+          formatActiveOrganizationsNotice(result.organizations, result.windowMinutes),
+          result.organizations.length ? 'success' : 'info',
+          12000
+        )
+      })
+      .catch((error) => {
+        if (cancelled) return
+        console.warn('Active organizations notice failed:', error)
+        notify('Unable to check which organizations are currently active.', 'info', 8000)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [authReady, isOnline, notify, role, session?.user?.id, session?.user?.last_sign_in_at, user?.id, user?.last_sign_in_at])
 
   const notificationCount = useMemo(
     () => alerts.filter((alert) => alert.count > 0).length,

@@ -252,6 +252,7 @@ type TierAccessAction =
   | 'update_epharmacy_order_status'
   | 'request_offline_installer_download'
   | 'get_activity_logs'
+  | 'get_active_organizations'
   | 'provision_nhis_catalog'
 
 const SUPPORTED_TIER_ACCESS_ACTIONS = [
@@ -291,6 +292,7 @@ const SUPPORTED_TIER_ACCESS_ACTIONS = [
   'update_epharmacy_order_status',
   'request_offline_installer_download',
   'get_activity_logs',
+  'get_active_organizations',
   'provision_nhis_catalog',
 ]
 
@@ -359,6 +361,7 @@ const OFFLINE_INSTALLER_DOWNLOAD_ROLES = [
 ]
 const PLATFORM_ACTIONS_WITHOUT_ORGANIZATION = new Set([
   'get_activity_logs',
+  'get_active_organizations',
   'get_report_health',
   'request_offline_installer_download',
 ])
@@ -1313,6 +1316,65 @@ const getActivityLogs = async (
   }
 
   return { logs }
+}
+
+const getActiveOrganizations = async (
+  adminClient: ReturnType<typeof createAdminClient>,
+  requesterProfile: RequesterProfile,
+  payload: Record<string, unknown>
+) => {
+  if (!isSuperAdminRequester(requesterProfile)) {
+    throw new Error('Only a platform administrator can view active organizations.')
+  }
+
+  const windowMinutes = Math.min(parsePositiveInteger(payload.windowMinutes, 15), 1440)
+  const since = new Date(Date.now() - windowMinutes * 60 * 1000).toISOString()
+  const activityLimit = 5000
+  const { data: activityRows, error: activityError } = await adminClient
+    .from('audit_logs')
+    .select('organization_id, created_at')
+    .not('organization_id', 'is', null)
+    .gte('created_at', since)
+    .order('created_at', { ascending: false })
+    .limit(activityLimit)
+
+  if (activityError) throw activityError
+
+  const latestActivityByOrganization = new Map<string, string>()
+  for (const row of activityRows || []) {
+    const organizationId = normalizeText(row.organization_id)
+    if (organizationId && !latestActivityByOrganization.has(organizationId)) {
+      latestActivityByOrganization.set(organizationId, normalizeText(row.created_at))
+    }
+  }
+
+  const organizationIds = [...latestActivityByOrganization.keys()]
+  if (!organizationIds.length) {
+    return { organizations: [], windowMinutes, since, truncated: false }
+  }
+
+  const { data: organizations, error: organizationsError } = await adminClient
+    .from('organizations')
+    .select('id, name, status')
+    .in('id', organizationIds)
+
+  if (organizationsError) throw organizationsError
+
+  const activeOrganizations = (organizations || [])
+    .map((organization) => ({
+      id: organization.id,
+      name: normalizeText(organization.name) || 'Unnamed organization',
+      status: normalizeText(organization.status),
+      lastActiveAt: latestActivityByOrganization.get(normalizeText(organization.id)) || '',
+    }))
+    .sort((left, right) => new Date(right.lastActiveAt).getTime() - new Date(left.lastActiveAt).getTime())
+
+  return {
+    organizations: activeOrganizations,
+    windowMinutes,
+    since,
+    truncated: (activityRows || []).length >= activityLimit,
+  }
 }
 
 const getDrugCount = async (
@@ -6491,6 +6553,10 @@ Deno.serve(async (request) => {
 
     if (action === 'get_activity_logs') {
       return json(await getActivityLogs(adminClient, requesterProfile, organizationId, payload))
+    }
+
+    if (action === 'get_active_organizations') {
+      return json(await getActiveOrganizations(adminClient, requesterProfile, payload))
     }
 
     if (action === 'create_drug') {

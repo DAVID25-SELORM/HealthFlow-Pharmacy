@@ -13,7 +13,7 @@ vi.mock('../utils/activeRole', () => ({
   getStoredActiveRole: mocks.getStoredActiveRole,
 }))
 
-import { invokeTierAccess } from './tierAccessService'
+import { getActiveOrganizations, invokeTierAccess } from './tierAccessService'
 import { getProductionMetricsSnapshot, resetProductionMetrics } from './productionMetricsService'
 
 describe('invokeTierAccess', () => {
@@ -102,5 +102,30 @@ describe('invokeTierAccess', () => {
 
     await expect(request).resolves.toEqual({ ready: true })
     expect(mocks.invokeSupabaseFunction).toHaveBeenCalledTimes(2)
+  })
+
+  it('loads and normalizes the active organization login summary', async () => {
+    mocks.getStoredActiveRole.mockReturnValue('super_admin')
+    mocks.invokeSupabaseFunction.mockResolvedValue({
+      data: {
+        organizations: [{ id: 'org-1', name: 'Health Light' }],
+        windowMinutes: 15,
+        truncated: false,
+      },
+      error: null,
+    })
+
+    await expect(getActiveOrganizations()).resolves.toEqual({
+      organizations: [{ id: 'org-1', name: 'Health Light' }],
+      windowMinutes: 15,
+      truncated: false,
+    })
+    expect(mocks.invokeSupabaseFunction).toHaveBeenCalledWith('tier-access', {
+      body: {
+        action: 'get_active_organizations',
+        activeRole: 'super_admin',
+        windowMinutes: 15,
+      },
+    })
   })
 })

@@ -172,3 +172,16 @@ export const invokeTierAccess = async (payload) => {
 
   return resolveMeasuredTierAccessResponse(action, requestPromise, startedAt)
 }
+
+export const getActiveOrganizations = async ({ windowMinutes = 15 } = {}) => {
+  const response = await invokeTierAccess({
+    action: 'get_active_organizations',
+    windowMinutes,
+  })
+
+  return {
+    organizations: Array.isArray(response?.organizations) ? response.organizations : [],
+    windowMinutes: Number(response?.windowMinutes || windowMinutes),
+    truncated: Boolean(response?.truncated),
+  }
+}
