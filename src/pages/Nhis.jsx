@@ -297,14 +297,7 @@ const FREQUENCY_OPTIONS = [
   ...Array.from({ length: 12 }, (_, index) => `${index + 1} hourly`),
 ]
 const DURATION_OPTIONS = [
-  ...Array.from({ length: 14 }, (_, index) => `${index + 1} day${index === 0 ? '' : 's'}`),
-  '21 days',
-  '28 days',
-  '30 days',
-  '42 days',
-  '45 days',
-  '56 days',
-  '60 days',
+  ...Array.from({ length: 60 }, (_, index) => `${index + 1} day${index === 0 ? '' : 's'}`),
   '84 days',
   '90 days',
   '120 days',
