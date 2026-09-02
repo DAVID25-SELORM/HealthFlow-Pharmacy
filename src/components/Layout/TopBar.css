@@ -87,7 +87,7 @@
   border: none;
   border-radius: var(--radius);
   background: var(--primary);
-  color: white;
+  color: var(--on-primary);
   font-weight: 600;
   padding: 0.45rem 0.8rem;
   cursor: pointer;

@@ -54,8 +54,8 @@ const Layout = () => {
     let cancelled = false
     getPharmacyThemeSettings()
       .then((settings) => {
-        if (cancelled || !settings) return
-        applyFacilityTheme(settings)
+        if (cancelled) return
+        applyFacilityTheme(settings || {})
       })
       .catch((error) => {
         console.warn('Unable to apply facility theme settings:', error)

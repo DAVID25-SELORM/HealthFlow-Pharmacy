@@ -11,13 +11,17 @@
   --primary: #16a085;
   --primary-dark: #129678;
   --primary-light: #1abc9c;
+  --on-primary: #ffffff;
   
   /* Secondary Colors */
   --secondary: #2c3e50;
   --secondary-light: #34495e;
+  --on-secondary: #ffffff;
 
   /* Facility branding accent (kept separate from semantic status colors). */
   --accent: #f59e0b;
+  --on-accent: #111827;
+  --on-sidebar: #ffffff;
   
   /* Neutral Colors */
   --white: #ffffff;
@@ -189,7 +193,7 @@ button,
 .btn-primary {
   background: var(--primary);
   border-color: var(--primary);
-  color: white;
+  color: var(--on-primary);
 }
 
 .btn-primary:hover:not(:disabled) {
