@@ -36,6 +36,9 @@ const AuthContext = createContext(null)
 const FALLBACK_ROLE = 'assistant'
 const AUTH_REQUEST_TIMEOUT_MS = 12000
 const PROFILE_REQUEST_TIMEOUT_MS = 25000
+const PROFILE_RELATION_REQUEST_TIMEOUT_MS = 12000
+const PROFILE_RELATION_RETRY_DELAY_MS = 350
+const profileLoadPromises = new Map()
 const AUTH_SERVICE_UNREACHABLE_MESSAGE = 'Unable to reach authentication service. Please try again.'
 const PROFILE_SELECT = `
   id,
@@ -101,28 +104,53 @@ const withTimeout = (promise, label, timeoutMs) =>
       .finally(() => globalThis.clearTimeout(timeout))
   })
 
+const loadRelationWithRetry = async (buildQuery, label) => {
+  let lastError = null
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const controller = new AbortController()
+    try {
+      const result = await withTimeout(
+        buildQuery(controller.signal),
+        label,
+        PROFILE_RELATION_REQUEST_TIMEOUT_MS
+      )
+      if (!result?.error) return result
+      lastError = result.error
+    } catch (error) {
+      lastError = error
+    } finally {
+      controller.abort()
+    }
+
+    if (attempt === 0) await wait(PROFILE_RELATION_RETRY_DELAY_MS)
+  }
+
+  throw lastError || new Error(`${label} failed.`)
+}
+
 const loadProfileRelations = async (profile) => {
   const [organizationResult, branchResult] = await Promise.allSettled([
     profile?.organization_id
-      ? withTimeout(
-          supabase
+      ? loadRelationWithRetry(
+          (signal) => supabase
             .from('organizations')
             .select('*')
             .eq('id', profile.organization_id)
-            .maybeSingle(),
-          'Organization loading',
-          PROFILE_REQUEST_TIMEOUT_MS
+            .maybeSingle()
+            .abortSignal(signal),
+          'Organization loading'
         )
       : Promise.resolve({ data: null, error: null }),
     profile?.branch_id
-      ? withTimeout(
-          supabase
+      ? loadRelationWithRetry(
+          (signal) => supabase
             .from('branches')
             .select('id, name, code, is_main')
             .eq('id', profile.branch_id)
-            .maybeSingle(),
-          'Branch loading',
-          PROFILE_REQUEST_TIMEOUT_MS
+            .maybeSingle()
+            .abortSignal(signal),
+          'Branch loading'
         )
       : Promise.resolve({ data: null, error: null }),
   ])
@@ -150,7 +178,7 @@ const loadProfileRelations = async (profile) => {
   }
 }
 
-const loadUserProfile = async (userId) => {
+const performUserProfileLoad = async (userId) => {
   const runQuery = (columns) =>
     withTimeout(
       supabase
@@ -182,6 +210,18 @@ const loadUserProfile = async (userId) => {
     data: await loadProfileRelations(result.data),
     error: null,
   }
+}
+
+const loadUserProfile = (userId) => {
+  const key = String(userId || '')
+  const existing = profileLoadPromises.get(key)
+  if (existing) return existing
+
+  const request = performUserProfileLoad(userId).finally(() => {
+    if (profileLoadPromises.get(key) === request) profileLoadPromises.delete(key)
+  })
+  profileLoadPromises.set(key, request)
+  return request
 }
 
 const isSupabaseAuthFailure = (error) => {
@@ -1040,8 +1080,8 @@ export const AuthProvider = ({ children }) => {
     }
 
     setProfile(data?.profile || null)
-    setOrganization(data?.organization || null)
-    setBranch(data?.branch || null)
+    setOrganization((current) => data?.organization || current || null)
+    setBranch((current) => data?.branch || current || null)
     return data?.profile || null
   }
 

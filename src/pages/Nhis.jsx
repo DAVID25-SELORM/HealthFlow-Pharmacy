@@ -1600,6 +1600,7 @@ const Nhis = () => {
   const [prescriberSubmitting, setPrescriberSubmitting] = useState(false)
   const [facilitySubmitting, setFacilitySubmitting] = useState(false)
   const claimsPageCacheRef = useRef(new Map())
+  const claimsPageRequestsRef = useRef(new Map())
   const claimsTableRef = useRef(null)
   const claimsFilterKeyRef = useRef('')
   const claimIssueCountsLoadPromiseRef = useRef(null)
@@ -1784,6 +1785,10 @@ const Nhis = () => {
       return
     }
 
+    const activeRequest = claimsPageRequestsRef.current.get(pageKey)
+    if (!options.force && activeRequest) return activeRequest
+
+    const request = (async () => {
     try {
       setClaimsPageLoading(true)
       const result = await getNhisClaimsPage({
@@ -1824,8 +1829,14 @@ const Nhis = () => {
     } catch (err) {
       setError(err.message || 'Unable to load NHIS claims.')
     } finally {
+      if (claimsPageRequestsRef.current.get(pageKey) === request) {
+        claimsPageRequestsRef.current.delete(pageKey)
+      }
       setClaimsPageLoading(false)
     }
+    })()
+    claimsPageRequestsRef.current.set(pageKey, request)
+    return request
   }, [claimsPageSize, getClaimServerFilters, role])
 
   const loadClaimIssueCounts = useCallback(async () => {
