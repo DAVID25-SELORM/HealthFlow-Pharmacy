@@ -61,6 +61,7 @@ const Sidebar = ({ isOpen, onClose }) => {
     canManageRestrictedInventory,
   } = useAuth()
   const { organization, canUseClaims, canUsePurchases, canUseNhis, canUseAccounting } = useTenant()
+  const isChemicalShop = organization?.organization_type === 'chemical_shop'
   const facilityName = getFacilityName(organization)
   const facilityLogo = getFacilityLogo(organization) || '/app-logo-display.jpg'
 
@@ -73,7 +74,7 @@ const Sidebar = ({ isOpen, onClose }) => {
     },
     { path: '/inventory', icon: Package, label: 'Inventory', roles: INVENTORY_ROLES, allow: canManageInventory },
     { path: '/sales', icon: ShoppingCart, label: 'Sales (POS)', roles: SALES_ROLES, allow: canProcessSales },
-    { path: '/patients', icon: Users, label: 'Patients', roles: PATIENT_ROLES, allow: canManagePatients },
+    { path: '/patients', icon: Users, label: 'Patients', roles: PATIENT_ROLES, allow: canManagePatients, featureAllowed: !isChemicalShop },
     { path: '/claims', icon: ClipboardList, label: 'Claims', roles: CLAIMS_ROLES, allow: canManageClaims, featureAllowed: canUseClaims },
     {
       path: '/purchases',
@@ -84,8 +85,8 @@ const Sidebar = ({ isOpen, onClose }) => {
       featureAllowed: canUsePurchases,
     },
     { path: '/e-pharmacy', icon: Building2, label: 'E-Pharmacy', roles: EPHARMACY_ROLES, allow: canManageEpharmacy },
-    { path: '/nhis', icon: HeartPulse, label: 'NHIS', roles: NHIS_ROLES, featureAllowed: canUseNhis },
-    { path: '/patient-care', icon: Activity, label: 'Patient Care', roles: PATIENT_CARE_ROLES },
+    { path: '/nhis', icon: HeartPulse, label: 'NHIS', roles: NHIS_ROLES, featureAllowed: !isChemicalShop && canUseNhis },
+    { path: '/patient-care', icon: Activity, label: 'Patient Care', roles: PATIENT_CARE_ROLES, featureAllowed: !isChemicalShop },
     { path: '/reports', icon: BarChart3, label: 'Reports', roles: REPORT_ROLES, allow: canViewReports },
     { path: '/accounting', icon: Wallet, label: 'Accounting', roles: ACCOUNTING_ROLES, allow: canManageAccounting, featureAllowed: canUseAccounting },
     { path: '/settings', icon: Settings, label: 'Settings', roles: SETTINGS_ROLES },
@@ -97,7 +98,7 @@ const Sidebar = ({ isOpen, onClose }) => {
       roles: ['super_admin', 'compliance_admin', 'compliance_officer'],
       allow: canManageRestrictedInventory,
       featureAllowed:
-        organization?.organization_type === 'chemical_shop' ||
+        isChemicalShop ||
         ['super_admin', 'compliance_admin', 'compliance_officer'].includes(role),
     },
     { path: '/system-health', icon: MonitorCheck, label: 'System Health', roles: SYSTEM_HEALTH_ROLES },

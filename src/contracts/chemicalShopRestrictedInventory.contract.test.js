@@ -11,6 +11,16 @@ const migration = fs.readFileSync(
 )
 const tierAccess = fs.readFileSync('supabase/functions/tier-access/index.ts', 'utf8')
 const customerEpharmacy = fs.readFileSync('supabase/functions/customer-epharmacy/index.ts', 'utf8')
+const lifecycleMigration = fs.readFileSync(
+  'supabase/migrations/20260902193000_complete_chemical_shop_lifecycle.sql',
+  'utf8'
+)
+const settingsPage = fs.readFileSync('src/pages/Settings.jsx', 'utf8')
+const signupPage = fs.readFileSync('src/pages/Signup.jsx', 'utf8')
+const tenantAdminPage = fs.readFileSync('src/pages/TenantAdmin.jsx', 'utf8')
+const tenantSignup = fs.readFileSync('supabase/functions/tenant-signup/index.ts', 'utf8')
+const sidebar = fs.readFileSync('src/components/Layout/Sidebar.jsx', 'utf8')
+const appRoutes = fs.readFileSync('src/App.jsx', 'utf8')
 
 describe('Chemical Shop restricted inventory contract', () => {
   it('allows only OTC or explicitly permitted non-restricted medicines', () => {
@@ -79,5 +89,37 @@ describe('Chemical Shop restricted inventory contract', () => {
     expect(migration).toContain("'Historical inventory migration'")
     expect(migration).toContain('insert into public.restricted_inventory')
     expect(migration).not.toMatch(/delete\s+from\s+public\.drugs/i)
+  })
+
+  it('keeps compliance users scoped to their own tenant', () => {
+    expect(lifecycleMigration).toContain('u.organization_id = p_organization_id')
+    expect(lifecycleMigration).toContain("lower(coalesce(u.role, '')) = 'super_admin'")
+    expect(lifecycleMigration).not.toMatch(
+      /lower\(coalesce\(u\.role, ''\)\) in \('super_admin', 'compliance_admin'/
+    )
+  })
+
+  it('quarantines disallowed stock whenever a tenant becomes a Chemical Shop', () => {
+    expect(lifecycleMigration).toContain('quarantine_inventory_after_chemical_shop_conversion')
+    expect(lifecycleMigration).toContain('quarantine_disallowed_chemical_shop_inventory')
+    expect(lifecycleMigration).toContain("'Chemical Shop conversion'")
+    expect(lifecycleMigration).toContain('set quantity = 0')
+  })
+
+  it('forces incompatible clinical and NHIS modules off at the database and API layers', () => {
+    expect(lifecycleMigration).toContain('new.can_use_claims := false')
+    expect(lifecycleMigration).toContain('new.can_use_nhis := false')
+    expect(lifecycleMigration).toContain("new.nhis_top_up_policy := 'not_allowed'")
+    expect(tenantSignup).toContain("nextOrganizationType === 'chemical_shop'")
+    expect(tenantSignup).toContain("organizationType === 'chemical_shop' ? false")
+    expect(tenantAdminPage).toContain("disabled={pharmacy.organizationType === 'chemical_shop'}")
+  })
+
+  it('preserves Chemical Shop identity in onboarding, settings, and navigation', () => {
+    expect(signupPage).toContain('<option value="chemical_shop">Licensed Chemical Shop</option>')
+    expect(settingsPage).toContain("if (normalized.includes('chemical')) return 'Licensed Chemical Shop'")
+    expect(settingsPage).toContain("if (normalized.includes('chemical')) return 'chemical_shop'")
+    expect(sidebar).toContain('featureAllowed: !isChemicalShop')
+    expect(appRoutes).toContain('featureAllowed={!isChemicalShop}')
   })
 })

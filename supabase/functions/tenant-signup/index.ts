@@ -1146,7 +1146,7 @@ const updateTenantOrganization = async (
   const organizationInput = (payload.organization || {}) as Record<string, unknown>
   const { data: existingOrganization, error: existingOrganizationError } = await adminClient
     .from('organizations')
-    .select('id, subdomain, status, subscription_tier, trial_ends_at, subscription_ends_at')
+    .select('id, subdomain, organization_type, status, subscription_tier, trial_ends_at, subscription_ends_at')
     .eq('id', organizationId)
     .maybeSingle()
 
@@ -1284,6 +1284,19 @@ const updateTenantOrganization = async (
         ? normalizeOptionalIsoDate(organizationInput.subscriptionEndsAt)
         : null,
     updated_at: new Date().toISOString(),
+  }
+
+  const nextOrganizationType = organizationInput.organizationType !== undefined
+    ? normalizeOrganizationType(organizationInput.organizationType, 'pharmacy')
+    : normalizeOrganizationType(existingOrganization.organization_type, 'pharmacy')
+
+  if (nextOrganizationType === 'chemical_shop') {
+    updatePayload.organization_type = 'chemical_shop'
+    updatePayload.pharmacy_level = null
+    updatePayload.can_use_claims = false
+    updatePayload.can_use_nhis = false
+    updatePayload.can_use_nhis_topups = false
+    updatePayload.nhis_top_up_policy = 'not_allowed'
   }
 
   Object.keys(updatePayload).forEach((key) => {
@@ -1656,7 +1669,9 @@ const bootstrapOrganization = async (
     : defaults.defaultTier
   const organizationType = normalizeOrganizationType(organizationInput.organizationType, 'pharmacy')
   // ✅ NHIS PHARMACY LEVEL PATCH START
-  const pharmacyLevel = normalizePharmacyLevel(organizationInput.pharmacyLevel)
+  const pharmacyLevel = organizationType === 'pharmacy'
+    ? normalizePharmacyLevel(organizationInput.pharmacyLevel)
+    : null
   // ✅ NHIS PHARMACY LEVEL PATCH END
   const planCode = normalizePlanCode(organizationInput.planCode, 'starter')
   const billingStatus = normalizeBillingStatus(organizationInput.billingStatus, organizationStatus)
@@ -1728,15 +1743,15 @@ const bootstrapOrganization = async (
           plan_code: planCode,
           billing_status: billingStatus,
           support_level: supportLevel,
-          can_use_claims: Boolean(organizationInput.canUseClaims),
+          can_use_claims: organizationType === 'chemical_shop' ? false : Boolean(organizationInput.canUseClaims),
           can_use_purchases: Boolean(organizationInput.canUsePurchases),
-          can_use_nhis: Boolean(organizationInput.canUseNhis),
+          can_use_nhis: organizationType === 'chemical_shop' ? false : Boolean(organizationInput.canUseNhis),
           can_use_nhis_topups: Boolean(
-            organizationInput.canUseNhis && organizationInput.canUseNhisTopups
+            organizationType !== 'chemical_shop' && organizationInput.canUseNhis && organizationInput.canUseNhisTopups
           ),
           nhis_top_up_policy: normalizeNhisTopUpPolicy(
-            organizationInput.nhisTopUpPolicy,
-            organizationInput.canUseNhisTopups ? 'allowed' : 'not_allowed'
+            organizationType === 'chemical_shop' ? 'not_allowed' : organizationInput.nhisTopUpPolicy,
+            organizationType !== 'chemical_shop' && organizationInput.canUseNhisTopups ? 'allowed' : 'not_allowed'
           ),
           can_use_accounting: Boolean(organizationInput.canUseAccounting),
           can_use_multi_branch: Boolean(organizationInput.canUseMultiBranch),
@@ -1874,7 +1889,7 @@ const bootstrapOrganization = async (
     provisioningStage = 'seed medication catalogue'
     await seedDefaultMedicationCatalog(adminClient, organizationId, mainBranchId)
 
-    if (organizationInput.canUseNhis === true) {
+    if (organizationType !== 'chemical_shop' && organizationInput.canUseNhis === true) {
       provisioningStage = 'seed NHIS medicine catalogue'
       await provisionNhisCatalogForOrganization(adminClient, organizationId, {
         actorUserId: authUserId,

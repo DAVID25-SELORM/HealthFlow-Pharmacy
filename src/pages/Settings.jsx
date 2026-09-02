@@ -71,6 +71,7 @@ const NHIA_LOCAL_BRIDGE_PROFILES = ['local_server', 'lan_ip']
 const CLAIMIT_PRODUCTION_BRIDGE_BASE_URL = String(import.meta.env.VITE_CLAIMIT_PRODUCTION_BRIDGE_BASE_URL || '').trim().replace(/\/+$/, '')
 const FACILITY_TYPE_OPTIONS = [
   'Community Pharmacy',
+  'Licensed Chemical Shop',
   'Hospital Pharmacy',
   'Clinic',
   'Hospital',
@@ -78,20 +79,25 @@ const FACILITY_TYPE_OPTIONS = [
 
 const normalizeFacilityType = (value, fallbackOrganizationType = 'pharmacy') => {
   const normalized = String(value || '').trim().toLowerCase()
+  if (normalized.includes('chemical')) return 'Licensed Chemical Shop'
   if (normalized.includes('hospital') && normalized.includes('pharmacy')) return 'Hospital Pharmacy'
   if (normalized.includes('clinic')) return 'Clinic'
   if (normalized.includes('hospital')) return 'Hospital'
-  if (normalized.includes('pharmacy') || normalized.includes('chemical')) return 'Community Pharmacy'
+  if (normalized.includes('pharmacy')) return 'Community Pharmacy'
+  if (fallbackOrganizationType === 'chemical_shop') return 'Licensed Chemical Shop'
   return fallbackOrganizationType === 'hospital' ? 'Hospital' : 'Community Pharmacy'
 }
 
 const getOrganizationTypeForFacilityType = (facilityType, fallback = 'pharmacy') => {
   const normalized = normalizeFacilityType(facilityType, fallback).toLowerCase()
+  if (normalized.includes('chemical')) return 'chemical_shop'
   return normalized.includes('hospital') || normalized.includes('clinic') ? 'hospital' : 'pharmacy'
 }
 
 const toForm = (row, organization) => {
-  const fallbackOrganizationType = organization?.organization_type === 'hospital' ? 'hospital' : 'pharmacy'
+  const fallbackOrganizationType = ['hospital', 'chemical_shop'].includes(organization?.organization_type)
+    ? organization.organization_type
+    : 'pharmacy'
 
   return {
   pharmacyName: row?.pharmacy_name || 'Facility',
@@ -101,7 +107,9 @@ const toForm = (row, organization) => {
   address: row?.address || '',
   city: row?.city || '',
   region: normalizeGhanaRegion(row?.region),
-  facilityType: normalizeFacilityType(row?.facility_type, fallbackOrganizationType),
+  facilityType: fallbackOrganizationType === 'chemical_shop'
+    ? 'Licensed Chemical Shop'
+    : normalizeFacilityType(row?.facility_type, fallbackOrganizationType),
   logoUrl: row?.logo_url || '',
   slogan: row?.slogan || '',
   licenseNumber: row?.license_number || '',
@@ -884,7 +892,9 @@ const Settings = () => {
       setSaving(true)
       setError('')
       const nextOrganizationType = getOrganizationTypeForFacilityType(formData.facilityType, organizationType)
-      const settingsPayload = nextOrganizationType === 'hospital' ? { ...formData, pharmacyLevel: '' } : formData
+      const settingsPayload = nextOrganizationType === 'pharmacy'
+        ? formData
+        : { ...formData, pharmacyLevel: '' }
       const savedSettings = await updatePharmacySettings(settingsId, settingsPayload)
       let savedOrganization = organization
       if (organization?.id) {
@@ -899,7 +909,7 @@ const Settings = () => {
           logoUrl: formData.logoUrl,
           slogan: formData.slogan,
           licenseNumber: formData.licenseNumber,
-          pharmacyLevel: nextOrganizationType === 'hospital' ? '' : formData.pharmacyLevel,
+          pharmacyLevel: nextOrganizationType === 'pharmacy' ? formData.pharmacyLevel : '',
         })
       }
       setFormData(toForm(savedSettings, savedOrganization))

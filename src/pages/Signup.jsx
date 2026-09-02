@@ -49,13 +49,18 @@ const Signup = () => {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
-  const facilityLabel = organizationType === 'hospital' ? 'Hospital / Clinic' : 'Community Pharmacy'
-  const facilityNamePlaceholder = organizationType === 'hospital' ? 'ABC Hospital' : 'ABC Community Pharmacy'
-  const facilityEmailPlaceholder = organizationType === 'hospital' ? 'info@facility.com' : 'info@pharmacy.com'
-  const facilitySloganPlaceholder =
-    organizationType === 'hospital' ? 'Smart Care. Better Health.' : 'Connected Pharmacy. Better Health.'
-  const facilityLicensePlaceholder = organizationType === 'hospital' ? 'HF-12345' : 'PL-12345'
   const isHospital = organizationType === 'hospital'
+  const isChemicalShop = organizationType === 'chemical_shop'
+  const isPharmacy = organizationType === 'pharmacy'
+  const facilityLabel = isHospital ? 'Hospital / Clinic' : isChemicalShop ? 'Licensed Chemical Shop' : 'Community Pharmacy'
+  const facilityNamePlaceholder = isHospital ? 'ABC Hospital' : isChemicalShop ? 'ABC Chemical Shop' : 'ABC Community Pharmacy'
+  const facilityEmailPlaceholder = isHospital ? 'info@facility.com' : isChemicalShop ? 'info@chemicalshop.com' : 'info@pharmacy.com'
+  const facilitySloganPlaceholder = isHospital
+    ? 'Smart Care. Better Health.'
+    : isChemicalShop
+      ? 'Trusted everyday medicines.'
+      : 'Connected Pharmacy. Better Health.'
+  const facilityLicensePlaceholder = isHospital ? 'HF-12345' : isChemicalShop ? 'CS-12345' : 'PL-12345'
 
   const runSubdomainCheck = async (candidate = subdomain) => {
     const normalized = candidate.trim().toLowerCase()
@@ -269,16 +274,17 @@ const Signup = () => {
                 onChange={(event) => {
                   const nextType = event.target.value
                   setOrganizationType(nextType)
-                  if (nextType === 'hospital') setPharmacyLevel('')
+                  if (nextType !== 'pharmacy') setPharmacyLevel('')
                 }}
                 required
               >
                 <option value="pharmacy">Community Pharmacy</option>
+                <option value="chemical_shop">Licensed Chemical Shop</option>
                 <option value="hospital">Hospital / Clinic</option>
               </select>
             </div>
             {/* ✅ NHIS PHARMACY LEVEL PATCH START */}
-            {!isHospital && (
+            {isPharmacy && (
               <div className="form-group">
                 <label htmlFor="pharmacyLevel">Pharmacy medicine level</label>
                 <select

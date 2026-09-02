@@ -79,6 +79,19 @@ const formatOrganizationType = (value) => {
   return 'Pharmacy'
 }
 
+const withOrganizationType = (form, organizationType) => ({
+  ...form,
+  organizationType,
+  ...(organizationType === 'chemical_shop'
+    ? {
+        canUseClaims: false,
+        canUseNhis: false,
+        canUseNhisTopups: false,
+        nhisTopUpPolicy: 'not_allowed',
+      }
+    : {}),
+})
+
 const TenantAdmin = () => {
   const { notify } = useNotification()
 
@@ -460,7 +473,7 @@ const TenantAdmin = () => {
                   <label>Facility Type *</label>
                   <select
                     value={pharmacy.organizationType}
-                    onChange={(e) => setPharmacy({ ...pharmacy, organizationType: e.target.value })}
+                    onChange={(e) => setPharmacy(withOrganizationType(pharmacy, e.target.value))}
                     required
                   >
                     <option value="pharmacy">Community Pharmacy</option>
@@ -639,6 +652,7 @@ const TenantAdmin = () => {
                     <input
                       type="checkbox"
                       checked={pharmacy.canUseClaims}
+                      disabled={pharmacy.organizationType === 'chemical_shop'}
                       onChange={(e) => setPharmacy({ ...pharmacy, canUseClaims: e.target.checked })}
                     />
                     Claims
@@ -655,6 +669,7 @@ const TenantAdmin = () => {
                     <input
                       type="checkbox"
                       checked={pharmacy.canUseNhis}
+                      disabled={pharmacy.organizationType === 'chemical_shop'}
                       onChange={(e) =>
                         setPharmacy({
                           ...pharmacy,
@@ -669,7 +684,7 @@ const TenantAdmin = () => {
                     <input
                       type="checkbox"
                       checked={pharmacy.canUseNhis && pharmacy.canUseNhisTopups}
-                      disabled={!pharmacy.canUseNhis}
+                      disabled={pharmacy.organizationType === 'chemical_shop' || !pharmacy.canUseNhis}
                       onChange={(e) => setPharmacy({ ...pharmacy, canUseNhisTopups: e.target.checked })}
                     />
                     NHIS top-ups
@@ -678,7 +693,7 @@ const TenantAdmin = () => {
                     NHIS top-up policy
                     <select
                       value={pharmacy.nhisTopUpPolicy}
-                      disabled={!pharmacy.canUseNhis}
+                      disabled={pharmacy.organizationType === 'chemical_shop' || !pharmacy.canUseNhis}
                       onChange={(e) => setPharmacy({ ...pharmacy, nhisTopUpPolicy: e.target.value })}
                     >
                       <option value="not_allowed">Not allowed</option>
@@ -1103,7 +1118,7 @@ const TenantAdmin = () => {
                     <label>Facility Type *</label>
                     <select
                       value={editForm.organizationType}
-                      onChange={(e) => setEditForm({ ...editForm, organizationType: e.target.value })}
+                      onChange={(e) => setEditForm(withOrganizationType(editForm, e.target.value))}
                       required
                     >
                       <option value="pharmacy">Community Pharmacy</option>
@@ -1305,6 +1320,7 @@ const TenantAdmin = () => {
                       <input
                         type="checkbox"
                         checked={Boolean(editForm.canUseClaims)}
+                        disabled={editForm.organizationType === 'chemical_shop'}
                         onChange={(e) => setEditForm({ ...editForm, canUseClaims: e.target.checked })}
                       />
                       Claims
@@ -1321,6 +1337,7 @@ const TenantAdmin = () => {
                       <input
                         type="checkbox"
                         checked={Boolean(editForm.canUseNhis)}
+                        disabled={editForm.organizationType === 'chemical_shop'}
                         onChange={(e) =>
                           setEditForm({
                             ...editForm,
@@ -1335,7 +1352,7 @@ const TenantAdmin = () => {
                       <input
                         type="checkbox"
                         checked={Boolean(editForm.canUseNhis && editForm.canUseNhisTopups)}
-                        disabled={!editForm.canUseNhis}
+                        disabled={editForm.organizationType === 'chemical_shop' || !editForm.canUseNhis}
                         onChange={(e) => setEditForm({ ...editForm, canUseNhisTopups: e.target.checked })}
                       />
                       NHIS top-ups
@@ -1344,7 +1361,7 @@ const TenantAdmin = () => {
                       NHIS top-up policy
                       <select
                         value={editForm.nhisTopUpPolicy || 'not_allowed'}
-                        disabled={!editForm.canUseNhis}
+                        disabled={editForm.organizationType === 'chemical_shop' || !editForm.canUseNhis}
                         onChange={(e) => setEditForm({ ...editForm, nhisTopUpPolicy: e.target.value })}
                       >
                         <option value="not_allowed">Not allowed</option>

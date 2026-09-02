@@ -72,7 +72,8 @@ function App() {
     canViewActivityLog,
     canManageRestrictedInventory,
   } = useAuth()
-  const { canUseClaims, canUsePurchases, canUseNhis, canUseAccounting } = useTenant()
+  const { canUseClaims, canUsePurchases, canUseNhis, canUseAccounting, organizationType } = useTenant()
+  const isChemicalShop = organizationType === 'chemical_shop'
   return (
     <Router>
       <Suspense fallback={<RouteFallback />}>
@@ -110,7 +111,7 @@ function App() {
             <Route
               path="patients"
               element={
-                <RoleRoute allowedRoles={PATIENT_ROLES} allow={canManagePatients}>
+                <RoleRoute allowedRoles={PATIENT_ROLES} allow={canManagePatients} featureAllowed={!isChemicalShop}>
                   <Patients />
                 </RoleRoute>
               }
@@ -118,7 +119,7 @@ function App() {
             <Route
               path="claims"
               element={
-                <RoleRoute allowedRoles={CLAIMS_ROLES} allow={canManageClaims} featureAllowed={canUseClaims}>
+                <RoleRoute allowedRoles={CLAIMS_ROLES} allow={canManageClaims} featureAllowed={!isChemicalShop && canUseClaims}>
                   <Claims />
                 </RoleRoute>
               }
@@ -146,7 +147,7 @@ function App() {
             <Route
               path="nhis"
               element={
-                <RoleRoute allowedRoles={NHIS_ROLES} featureAllowed={canUseNhis}>
+                <RoleRoute allowedRoles={NHIS_ROLES} featureAllowed={!isChemicalShop && canUseNhis}>
                   <Nhis />
                 </RoleRoute>
               }
@@ -154,7 +155,7 @@ function App() {
             <Route
               path="patient-care"
               element={
-                <RoleRoute allowedRoles={PATIENT_CARE_ROLES} allow={canManagePatients}>
+                <RoleRoute allowedRoles={PATIENT_CARE_ROLES} allow={canManagePatients} featureAllowed={!isChemicalShop}>
                   <PatientCare />
                 </RoleRoute>
               }
