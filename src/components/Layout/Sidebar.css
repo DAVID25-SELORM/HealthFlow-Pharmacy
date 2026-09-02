@@ -1,7 +1,7 @@
 .sidebar {
   width: 250px;
   height: 100vh;
-  background: linear-gradient(180deg, #16a085 0%, #129678 100%);
+  background: linear-gradient(180deg, var(--primary) 0%, var(--secondary) 100%);
   color: white;
   display: flex;
   flex-direction: column;
@@ -70,7 +70,7 @@
 .nav-item.active {
   background: rgba(255, 255, 255, 0.15);
   color: white;
-  border-left: 4px solid white;
+  border-left: 4px solid var(--accent);
 }
 
 .nav-item svg {

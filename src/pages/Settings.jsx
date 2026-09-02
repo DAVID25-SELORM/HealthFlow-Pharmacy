@@ -10,6 +10,7 @@ import {
   updatePharmacySettings,
   updateStaffUser,
 } from '../services/settingsService'
+import { announceFacilityThemeUpdate } from '../utils/facilityTheme'
 import { getBranches, createBranch, updateBranch, deactivateBranch } from '../services/branchService'
 import {
   createBranchDatabaseBackup,
@@ -902,6 +903,7 @@ const Settings = () => {
         })
       }
       setFormData(toForm(savedSettings, savedOrganization))
+      announceFacilityThemeUpdate(savedSettings)
       if (refreshProfile) {
         await refreshProfile()
       }

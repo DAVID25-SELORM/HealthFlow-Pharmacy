@@ -2,13 +2,15 @@ import { useEffect, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import { getPharmacyThemeSettings } from '../../services/settingsService'
+import {
+  applyFacilityTheme,
+  FACILITY_THEME_UPDATED_EVENT,
+} from '../../utils/facilityTheme'
 import Seo from '../Seo/Seo'
 import ProductionMetricsMonitor from '../Diagnostics/ProductionMetricsMonitor'
 import Sidebar from './Sidebar'
 import TopBar from './TopBar'
 import './Layout.css'
-
-const isHexColor = (value) => /^#[0-9a-f]{6}$/i.test(String(value || '').trim())
 
 const pageTitles = {
   '/dashboard': 'Dashboard',
@@ -42,31 +44,18 @@ const Layout = () => {
   }, [isSidebarOpen])
 
   useEffect(() => {
+    const handleThemeUpdate = (event) => applyFacilityTheme(event.detail)
+    window.addEventListener(FACILITY_THEME_UPDATED_EVENT, handleThemeUpdate)
+
     if (!isSupabaseConfigured()) {
-      return
+      return () => window.removeEventListener(FACILITY_THEME_UPDATED_EVENT, handleThemeUpdate)
     }
 
     let cancelled = false
     getPharmacyThemeSettings()
       .then((settings) => {
         if (cancelled || !settings) return
-        const root = document.documentElement
-        const primaryColor = settings.theme_primary_color
-        const secondaryColor = settings.theme_secondary_color
-        const accentColor = settings.theme_accent_color
-
-        if (isHexColor(primaryColor)) {
-          root.style.setProperty('--primary', primaryColor)
-          root.style.setProperty('--primary-dark', primaryColor)
-          root.style.setProperty('--primary-light', primaryColor)
-        }
-        if (isHexColor(secondaryColor)) {
-          root.style.setProperty('--secondary', secondaryColor)
-          root.style.setProperty('--secondary-light', secondaryColor)
-        }
-        if (isHexColor(accentColor)) {
-          root.style.setProperty('--warning', accentColor)
-        }
+        applyFacilityTheme(settings)
       })
       .catch((error) => {
         console.warn('Unable to apply facility theme settings:', error)
@@ -74,6 +63,7 @@ const Layout = () => {
 
     return () => {
       cancelled = true
+      window.removeEventListener(FACILITY_THEME_UPDATED_EVENT, handleThemeUpdate)
     }
   }, [])
 
