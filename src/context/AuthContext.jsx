@@ -213,6 +213,7 @@ const isTransientSupabaseAuthFailure = (error) => {
 
   return (
     name === 'aborterror' ||
+    name === 'navigatorlockacquiretimeouterror' ||
     name === 'authserviceunavailableerror' ||
     message.includes('failed to fetch') ||
     message.includes('networkerror') ||
@@ -220,6 +221,8 @@ const isTransientSupabaseAuthFailure = (error) => {
     message.includes('timed out') ||
     message.includes('internet connection') ||
     message.includes('cors') ||
+    message.includes('navigator lockmanager lock') ||
+    message.includes('lockmanager lock') ||
     message.includes('unable to reach authentication service')
   )
 }

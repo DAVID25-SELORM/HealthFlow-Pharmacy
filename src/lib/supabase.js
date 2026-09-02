@@ -114,6 +114,19 @@ export const subscribeSupabaseAuthExpired = (handler) => {
 
 let supabaseClient = null
 
+// Supabase occasionally requests its auth storage lock with a zero timeout.
+// In busy dashboards (or multiple tabs), Navigator LockManager then rejects
+// immediately instead of waiting for the current session operation to finish.
+// Queue on the same exclusive browser lock so auth work remains serialized
+// without surfacing an unhandled lock-acquisition rejection.
+const waitForSupabaseAuthLock = async (name, _acquireTimeout, operation) => {
+  if (typeof navigator === 'undefined' || !navigator.locks?.request) {
+    return operation()
+  }
+
+  return navigator.locks.request(name, { mode: 'exclusive' }, operation)
+}
+
 const isSupabaseAuthRequest = (url) => {
   try {
     return new URL(url).pathname.includes('/auth/v1/')
@@ -240,6 +253,7 @@ export const supabase = hasValidCredentials
         detectSessionInUrl: true,
         flowType: 'pkce',
         storageKey: supabaseAuthStorageKey,
+        lock: waitForSupabaseAuthLock,
       },
       global: {
         fetch: authRetryFetch,

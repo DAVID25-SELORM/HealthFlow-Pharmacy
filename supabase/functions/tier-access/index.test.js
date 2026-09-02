@@ -27,6 +27,24 @@ describe('tier-access patient workspace compatibility', () => {
   })
 })
 
+describe('tier-access platform actions', () => {
+  it('allows the super-admin active-organization check without a tenant selection', async () => {
+    const source = await fs.readFile(functionSourcePath, 'utf8')
+    const platformActions = source.slice(
+      source.indexOf('const PLATFORM_ACTIONS_WITHOUT_ORGANIZATION'),
+      source.indexOf('// âœ… NHIS PHARMACY LEVEL PATCH START')
+    )
+    const tenantGuard = source.indexOf(
+      "if (!organizationId && !PLATFORM_ACTIONS_WITHOUT_ORGANIZATION.has(action))"
+    )
+    const activeOrganizationsRoute = source.indexOf("if (action === 'get_active_organizations')")
+
+    expect(platformActions).toContain("'get_active_organizations'")
+    expect(tenantGuard).toBeGreaterThan(-1)
+    expect(activeOrganizationsRoute).toBeGreaterThan(tenantGuard)
+  })
+})
+
 describe('tier-access report query bounds', () => {
   it('does not branch-filter patients because the live patients table has no branch_id', async () => {
     const source = await fs.readFile(functionSourcePath, 'utf8')

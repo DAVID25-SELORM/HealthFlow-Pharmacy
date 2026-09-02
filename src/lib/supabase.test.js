@@ -56,6 +56,18 @@ describe('invokeSupabaseFunction', () => {
       })
     )
     expect(supabaseAuthStorageKey).toBe('sb-project-ref-auth-token')
+
+    const authLock = createClient.mock.calls[0][2].auth.lock
+    const operation = vi.fn(async () => 'completed')
+    const request = vi.fn(async (_name, options, callback) => callback())
+    vi.stubGlobal('navigator', { locks: { request } })
+
+    await expect(authLock('lock:sb-project-ref-auth-token', 0, operation)).resolves.toBe('completed')
+    expect(request).toHaveBeenCalledWith(
+      'lock:sb-project-ref-auth-token',
+      { mode: 'exclusive' },
+      operation
+    )
   })
 
   it('reuses the latest stored session when a refresh races with another tab', async () => {
