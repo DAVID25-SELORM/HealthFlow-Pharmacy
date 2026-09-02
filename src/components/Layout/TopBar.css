@@ -101,6 +101,15 @@
   flex-shrink: 0;
 }
 
+.topbar-live-time {
+  color: var(--gray-700);
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .connection-status {
   display: inline-flex;
   align-items: center;
@@ -339,6 +348,10 @@
   .topbar-actions {
     gap: 1rem;
   }
+
+  .topbar-live-time {
+    font-size: 0.72rem;
+  }
 }
 
 @media (max-width: 640px) {
@@ -351,6 +364,12 @@
 
   .topbar-leading,
   .topbar-actions {
+    width: 100%;
+  }
+
+  .topbar-live-time {
+    display: block;
+    text-align: center;
     width: 100%;
   }
 

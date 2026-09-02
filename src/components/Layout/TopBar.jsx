@@ -22,6 +22,18 @@ import { CLAIMS_ROLES, INVENTORY_ROLES, SYSTEM_HEALTH_ROLES, hasRole } from '../
 import { getRoleLabel } from '../../utils/roleLabels'
 import './TopBar.css'
 
+const liveDateTimeFormatter = new Intl.DateTimeFormat('en-US', {
+  weekday: 'short',
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: true,
+  timeZone: 'Africa/Accra',
+})
+
 const scheduleNonCriticalWork = (callback, timeout = 1500) => {
   if (typeof window.requestIdleCallback === 'function') {
     const idleId = window.requestIdleCallback(callback, { timeout })
@@ -37,6 +49,7 @@ const TopBar = ({ isSidebarOpen, onMenuToggle, pageTitle }) => {
   const [alerts, setAlerts] = useState([])
   const [systemHealth, setSystemHealth] = useState(null)
   const [systemHealthLoading, setSystemHealthLoading] = useState(false)
+  const [currentDateTime, setCurrentDateTime] = useState(() => new Date())
   const {
     session,
     user,
@@ -66,6 +79,11 @@ const TopBar = ({ isSidebarOpen, onMenuToggle, pageTitle }) => {
   const canViewSystemHealth = hasRole(role, SYSTEM_HEALTH_ROLES)
   const authReady = !authLoading && Boolean(role)
   const searchTarget = canUseInventorySearch ? '/inventory' : '/sales'
+
+  useEffect(() => {
+    const timerId = window.setInterval(() => setCurrentDateTime(new Date()), 1000)
+    return () => window.clearInterval(timerId)
+  }, [])
 
   useEffect(() => {
     if (!authReady || role !== 'super_admin' || !isOnline || !isSupabaseConfigured()) return undefined
@@ -340,6 +358,15 @@ const TopBar = ({ isSidebarOpen, onMenuToggle, pageTitle }) => {
           </button>
         </form>
       </div>
+
+      <time
+        className="topbar-live-time"
+        dateTime={currentDateTime.toISOString()}
+        aria-label={`Current Ghana date and time: ${liveDateTimeFormatter.format(currentDateTime)}`}
+        title="Current Ghana date and time"
+      >
+        {liveDateTimeFormatter.format(currentDateTime)}
+      </time>
 
       <div className="topbar-actions">
         {systemHealthMeta && (
