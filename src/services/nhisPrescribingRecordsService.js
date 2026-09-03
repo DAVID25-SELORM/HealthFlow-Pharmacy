@@ -141,6 +141,36 @@ export const getNhisPrescriberDisplayName = (prescriber = {}) => {
   return license ? `${name} (${license})` : name
 }
 
+export const getNhisPrescriberIdentityKey = (prescriber = {}) => {
+  const license = normalizeText(prescriber?.license_number ?? prescriber?.licenseNumber).toLowerCase()
+  if (license) return `license:${license}`
+
+  const name = normalizeText(prescriber?.full_name ?? prescriber?.fullName)
+    .toLowerCase()
+    .replace(/^(dr|doctor)\s*[.:-]?\s+/i, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ')
+  const facility = normalizeText(prescriber?.primary_facility_id ?? prescriber?.primaryFacilityId).toLowerCase()
+  return name ? `name:${name}|facility:${facility}` : `id:${prescriber?.id || ''}`
+}
+
+export const dedupeNhisPrescribers = (rows = []) => {
+  const selected = new Map()
+  for (const row of rows || []) {
+    const key = getNhisPrescriberIdentityKey(row)
+    const current = selected.get(key)
+    if (!current) {
+      selected.set(key, row)
+      continue
+    }
+    const currentScore = Number(Boolean(current.license_number)) + Number(current.verification_status === 'verified')
+    const rowScore = Number(Boolean(row.license_number)) + Number(row.verification_status === 'verified')
+    if (rowScore > currentScore) selected.set(key, row)
+  }
+  return [...selected.values()]
+}
+
 const listFromBranch = async (entityType, filters = {}) => {
   const resource = entityType === 'facilities'
     ? 'nhis/prescribing-facilities'
@@ -181,7 +211,7 @@ export const listNhisPrescribingFacilities = async (filters = {}) => {
 export const listNhisPrescribers = async (filters = {}) => {
   if (shouldUseBranchServer()) {
     const localRows = await listFromBranch('prescribers', filters)
-    if (localRows.length || getConnectivityState().internetAvailable === false) return localRows
+    if (localRows.length || getConnectivityState().internetAvailable === false) return dedupeNhisPrescribers(localRows)
   }
 
   let query = supabase
@@ -204,7 +234,7 @@ export const listNhisPrescribers = async (filters = {}) => {
 
   const { data, error } = await query
   if (error) throw error
-  return data || []
+  return dedupeNhisPrescribers(data || [])
 }
 
 export const createNhisPrescribingFacility = async (facility, options = {}) => {

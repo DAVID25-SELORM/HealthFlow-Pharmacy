@@ -7,6 +7,9 @@ const mocks = vi.hoisted(() => ({
   checkBranchServerUpdates: vi.fn(),
   getBranchServerConfig: vi.fn(),
   getBranchServerHealth: vi.fn(),
+  getBranchOfflineReadiness: vi.fn(),
+  getBranchRecentSales: vi.fn(),
+  listBranchOfflineAccess: vi.fn(),
   getBranchSyncStatus: vi.fn(),
   getBranchUpdateStatus: vi.fn(),
   installBranchServerUpdate: vi.fn(),
@@ -46,11 +49,14 @@ vi.mock('../services/branchServerApi', () => ({
   getBranchInventory: vi.fn(),
   getBranchServerConfig: mocks.getBranchServerConfig,
   getBranchServerHealth: mocks.getBranchServerHealth,
+  getBranchOfflineReadiness: mocks.getBranchOfflineReadiness,
+  getBranchRecentSales: mocks.getBranchRecentSales,
   getSavedBranchToken: vi.fn(() => ''),
   getBranchSyncStatus: mocks.getBranchSyncStatus,
   getBranchUpdateStatus: mocks.getBranchUpdateStatus,
   getNhiaSummary: vi.fn(async () => null),
   listNhiaClaims: vi.fn(async () => []),
+  listBranchOfflineAccess: mocks.listBranchOfflineAccess,
   installBranchServerUpdate: mocks.installBranchServerUpdate,
   pullBranchInventory: vi.fn(),
   pullBranchReferenceData: vi.fn(),
@@ -87,6 +93,9 @@ describe('OfflineSync branch registration', () => {
     })
     mocks.useTenant.mockReturnValue({ canUseOfflineInstaller: false })
     mocks.getActiveOfflineInstallerRelease.mockResolvedValue(null)
+    mocks.getBranchOfflineReadiness.mockResolvedValue(null)
+    mocks.getBranchRecentSales.mockResolvedValue([])
+    mocks.listBranchOfflineAccess.mockResolvedValue([])
     mocks.requestOfflineInstallerDownload.mockResolvedValue(null)
     mocks.listBranchSyncSetupOptions.mockResolvedValue({
       organizations: [
@@ -212,6 +221,40 @@ describe('OfflineSync branch registration', () => {
       'Update installation started. The localhost app will restart briefly.',
       'success'
     )
+  })
+
+  it('translates branch readiness and staff enrollment into the guided setup dashboard', async () => {
+    mocks.getBranchServerConfig.mockReturnValue({
+      enabled: true,
+      token: 'branch-token',
+      url: 'http://localhost:4780',
+    })
+    mocks.getBranchServerHealth.mockResolvedValue({ ok: true, version: '1.4.4' })
+    mocks.getBranchSyncStatus.mockResolvedValue({ summary: { pending: 0, failed: 0, synced: 12 } })
+    mocks.getBranchUpdateStatus.mockResolvedValue(null)
+    mocks.getBranchOfflineReadiness.mockResolvedValue({
+      ready: true,
+      version: '1.4.4',
+      checks: [],
+      summary: { warnings: 0 },
+    })
+    mocks.listBranchOfflineAccess.mockResolvedValue([
+      { id: 'staff-1', fullName: 'Ready Staff', isActive: true, offlineAccessEnabled: true, offlinePinEnrolled: true },
+      { id: 'staff-2', fullName: 'Needs PIN', isActive: true, offlineAccessEnabled: true, offlinePinEnrolled: false },
+    ])
+
+    render(<OfflineSync />)
+
+    expect(await screen.findByText('OFFLINE SYSTEM READY ✓')).toBeInTheDocument()
+    expect(screen.getByText('1 of 2')).toBeInTheDocument()
+    expect(screen.getByText('Needs an offline PIN')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Test Offline Mode' })).toBeEnabled()
+    expect(screen.getByText('Internet required:')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'NHIA / CLAIM-it' }).closest('.offline-technical-details'))
+      .not.toHaveClass('is-open')
+    fireEvent.click(screen.getByRole('button', { name: 'Technical Details' }))
+    expect(screen.getByRole('heading', { name: 'NHIA / CLAIM-it' }).closest('.offline-technical-details'))
+      .toHaveClass('is-open')
   })
 
   const NOT_CONFIGURED_MESSAGE =

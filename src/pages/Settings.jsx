@@ -3437,7 +3437,7 @@ const Settings = () => {
           </div>
         )}
 
-        <div className="settings-card settings-offline-pin-card">
+        <div className="settings-card settings-offline-pin-card" id="offline-access">
           <div className="card-icon">
             <KeyRound size={24} />
           </div>

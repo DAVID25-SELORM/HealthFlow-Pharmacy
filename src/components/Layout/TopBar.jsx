@@ -128,10 +128,10 @@ const TopBar = ({ isSidebarOpen, onMenuToggle, pageTitle }) => {
   )
 
   const connectionLabel = useMemo(() => {
-    if (connectivity.mode === CONNECTIVITY_MODES.ONLINE_CLOUD) return '🟢 Online Cloud'
-    if (connectivity.mode === CONNECTIVITY_MODES.ONLINE_LOCAL_SYNC) return '🟡 Local Sync Mode'
-    if (connectivity.mode === CONNECTIVITY_MODES.OFFLINE_LOCAL) return '🔴 Offline Local Mode'
-    return '🔴 Offline'
+    if (connectivity.mode === CONNECTIVITY_MODES.ONLINE_CLOUD) return 'Online'
+    if (connectivity.mode === CONNECTIVITY_MODES.ONLINE_LOCAL_SYNC) return 'Synchronizing'
+    if (connectivity.mode === CONNECTIVITY_MODES.OFFLINE_LOCAL) return 'Offline — Local Server'
+    return 'Attention Required'
   }, [connectivity.mode])
 
   const connectionClass = useMemo(() => {

@@ -27,6 +27,7 @@ import {
   buildNhisPrescriptionSourceSnapshot,
   createNhisPrescriber,
   createNhisPrescribingFacility,
+  dedupeNhisPrescribers,
   getNhisPrescriberDisplayName,
   getNhisPrescribingFacilityDisplayName,
   listNhisPrescribers,
@@ -119,6 +120,15 @@ describe('NHIS prescribing records service', () => {
       prescribingFacilityId: '',
       prescriberId: '',
     })
+  })
+
+  it('collapses deterministic title and punctuation variants without merging different spellings', () => {
+    const rows = dedupeNhisPrescribers([
+      { id: 'one', full_name: 'DR. SELMA OMORO AMADU', primary_facility_id: 'kbth' },
+      { id: 'two', full_name: 'Selma Omoro Amadu', primary_facility_id: 'kbth' },
+      { id: 'three', full_name: 'Selam Omoro Amadu', primary_facility_id: 'kbth' },
+    ])
+    expect(rows.map((row) => row.id)).toEqual(['one', 'three'])
   })
 
   it('preserves a manually entered prescriber when the facility is selected afterward', () => {

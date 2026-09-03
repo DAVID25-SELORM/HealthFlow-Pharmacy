@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertCircle, CheckCircle2, ClipboardCopy, Download, RefreshCcw, Server, UploadCloud } from 'lucide-react'
 import {
   applyBranchCloudConfiguration,
@@ -7,6 +7,7 @@ import {
   downloadNhiaBatchExport,
   getBranchInventory,
   getBranchOfflineReadiness,
+  getBranchRecentSales,
   getBranchServerConfig,
   getBranchServerHealth,
   getSavedBranchToken,
@@ -14,6 +15,7 @@ import {
   getBranchUpdateStatus,
   getNhiaSummary,
   listNhiaClaims,
+  listBranchOfflineAccess,
   installBranchServerUpdate,
   pullBranchInventory,
   pullBranchReferenceData,
@@ -40,7 +42,7 @@ import {
 import { useAuth } from '../context/AuthContext'
 import { useTenant } from '../context/TenantContext'
 import { useNotification } from '../context/NotificationContext'
-import { getConfiguredCloudUrl } from '../lib/supabase'
+import { getConfiguredCloudUrl, supabase } from '../lib/supabase'
 import {
   BRANCH_UPDATE_MANIFEST_URL,
   BRANCH_UPDATE_PUBLIC_KEY,
@@ -256,6 +258,14 @@ export default function OfflineSync() {
   const [wizardCurrentStep, setWizardCurrentStep] = useState(0)
   const [wizardSummary, setWizardSummary] = useState(null)
   const [wizardError, setWizardError] = useState('')
+  const [readiness, setReadiness] = useState(null)
+  const [offlineStaff, setOfflineStaff] = useState([])
+  const [prepareProgress, setPrepareProgress] = useState({})
+  const [technicalDetailsOpen, setTechnicalDetailsOpen] = useState(false)
+  const [acceptancePhase, setAcceptancePhase] = useState('idle')
+  const [acceptanceEvidence, setAcceptanceEvidence] = useState(null)
+  const [activationRecord, setActivationRecord] = useState(null)
+  const acceptanceBaselineRef = useRef(null)
   const normalizedRole = String(role || '').toLowerCase()
   const canManageBranchToken = normalizedRole === 'admin' || normalizedRole === 'super_admin'
   const isSuperAdmin = normalizedRole === 'super_admin'
@@ -269,6 +279,8 @@ export default function OfflineSync() {
     if (!nextConfig.enabled || !nextConfig.token) {
       setHealth(null)
       setStatus(null)
+      setReadiness(null)
+      setOfflineStaff([])
       setUpdateStatus(null)
       setNhiaSettings(null)
       setNhiaSummary(null)
@@ -280,13 +292,15 @@ export default function OfflineSync() {
 
     try {
       setLoading(true)
-      const [nextHealth, nextStatus, nextUpdateStatus, nextNhiaSettings, nextNhiaSummary, nextNhiaClaims] = await Promise.all([
+      const [nextHealth, nextStatus, nextUpdateStatus, nextNhiaSettings, nextNhiaSummary, nextNhiaClaims, nextReadiness, nextOfflineStaff] = await Promise.all([
         getBranchServerHealth(),
         getBranchSyncStatus(),
         getBranchUpdateStatus().catch(() => null),
         getNhiaApiSettings({ organizationId: organization?.id || organization?.organization_id }).catch(() => null),
         getNhiaSummary().catch(() => null),
         listNhiaClaims({ limit: 8 }).catch(() => []),
+        getBranchOfflineReadiness().catch(() => null),
+        canManageBranchToken ? listBranchOfflineAccess().catch(() => []) : Promise.resolve([]),
       ])
       setHealth(nextHealth)
       setStatus(nextStatus)
@@ -294,6 +308,8 @@ export default function OfflineSync() {
       setNhiaSettings(nextNhiaSettings)
       setNhiaSummary(nextNhiaSummary)
       setNhiaClaims(nextNhiaClaims)
+      setReadiness(nextReadiness)
+      setOfflineStaff(nextOfflineStaff)
       setNhiaForm(buildNhiaForm(nextNhiaSettings, organization))
       if (!silent) {
         notify('Offline sync status refreshed.', 'success')
@@ -301,6 +317,8 @@ export default function OfflineSync() {
     } catch (statusError) {
       setHealth(null)
       setStatus(null)
+      setReadiness(null)
+      setOfflineStaff([])
       setUpdateStatus(null)
       setNhiaSettings(null)
       setNhiaSummary(null)
@@ -312,7 +330,7 @@ export default function OfflineSync() {
     } finally {
       setLoading(false)
     }
-  }, [notify, organization])
+  }, [canManageBranchToken, notify, organization])
 
   const pullInventoryAndCache = async () => {
     const result = await pullBranchInventory()
@@ -329,6 +347,21 @@ export default function OfflineSync() {
   useEffect(() => {
     void refreshStatus({ silent: true })
   }, [refreshStatus])
+
+  useEffect(() => {
+    const organizationId = organization?.id || organization?.organization_id || profile?.organization_id || ''
+    const branchId = branch?.id || profile?.branch_id || ''
+    if (!organizationId) {
+      setActivationRecord(null)
+      return
+    }
+    try {
+      const stored = window.localStorage.getItem(`healthflow.offline.activation.${organizationId}.${branchId}`)
+      setActivationRecord(stored ? JSON.parse(stored) : null)
+    } catch {
+      setActivationRecord(null)
+    }
+  }, [branch?.id, organization?.id, organization?.organization_id, profile?.branch_id, profile?.organization_id])
 
   useEffect(() => {
     let cancelled = false
@@ -974,10 +1007,187 @@ export default function OfflineSync() {
     })
   }
 
+  const setPreparationStep = (id, state, detail = '') => {
+    setPrepareProgress((current) => ({ ...current, [id]: { state, detail } }))
+  }
+
+  const prepareOfflineMode = async () => {
+    const steps = ['facility', 'database', 'inventory', 'staff', 'patients', 'reference', 'synchronization']
+    setPrepareProgress(Object.fromEntries(steps.map((id) => [id, { state: 'pending', detail: '' }])))
+    try {
+      setBusyAction('prepare-offline')
+      setPreparationStep('facility', 'running')
+      const nextHealth = await getBranchServerHealth()
+      if (!nextHealth?.ok) throw new Error('The Offline Server needs attention before setup can continue.')
+      setHealth(nextHealth)
+      setPreparationStep('facility', 'done')
+      setPreparationStep('database', 'done')
+
+      setPreparationStep('inventory', 'running')
+      await pullInventoryAndCache()
+      setPreparationStep('inventory', 'done')
+
+      setPreparationStep('patients', 'running')
+      setPreparationStep('reference', 'running')
+      await pullBranchReferenceData()
+      setPreparationStep('patients', 'done')
+      setPreparationStep('reference', 'done')
+
+      setPreparationStep('synchronization', 'running')
+      const syncResult = await runBranchSync()
+      if (Number(syncResult?.failed || 0) > 0) {
+        throw new Error('Some records could not synchronize. Open Technical Details to repair them.')
+      }
+      setPreparationStep('synchronization', 'done')
+
+      setPreparationStep('staff', 'running')
+      const staff = canManageBranchToken ? await listBranchOfflineAccess() : []
+      setOfflineStaff(staff)
+      setPreparationStep('staff', 'done')
+
+      const nextReadiness = await getBranchOfflineReadiness()
+      setReadiness(nextReadiness)
+      if (!nextReadiness?.ready) {
+        const problem = (nextReadiness?.checks || []).find((check) => check.required && !check.passed)
+        throw new Error(problem?.detail || 'Offline setup still needs attention.')
+      }
+      await refreshStatus({ silent: true })
+      notify('Offline Mode preparation completed.', 'success')
+    } catch (prepareError) {
+      setPrepareProgress((current) => Object.fromEntries(
+        Object.entries(current).map(([id, value]) => [
+          id,
+          value.state === 'running' ? { ...value, state: 'attention' } : value,
+        ])
+      ))
+      notify(prepareError.message || 'Offline Mode preparation failed.', 'error')
+    } finally {
+      setBusyAction('')
+    }
+  }
+
+  const startAcceptanceTest = async () => {
+    try {
+      setBusyAction('acceptance-start')
+      const [sales, inventory] = await Promise.all([
+        getBranchRecentSales(25),
+        getBranchInventory({ branchId: profile?.branch_id || branch?.id || '', limit: 20000 }),
+      ])
+      acceptanceBaselineRef.current = {
+        saleIds: new Set((sales || []).map((sale) => sale.id)),
+        inventory: new Map((inventory || []).map((drug) => [drug.id, Number(drug.quantity || 0)])),
+      }
+      setAcceptanceEvidence(null)
+      setAcceptancePhase('waiting-for-sale')
+      notify('Test started. Disconnect the internet and complete one controlled cash sale.', 'success')
+    } catch (testError) {
+      notify(testError.message || 'Unable to start the offline test.', 'error')
+    } finally {
+      setBusyAction('')
+    }
+  }
+
+  const verifyAcceptanceSale = async () => {
+    try {
+      setBusyAction('acceptance-verify-sale')
+      const baseline = acceptanceBaselineRef.current
+      if (!baseline) throw new Error('Start the offline test first.')
+      const [sales, inventory] = await Promise.all([
+        getBranchRecentSales(25),
+        getBranchInventory({ branchId: profile?.branch_id || branch?.id || '', limit: 20000 }),
+      ])
+      const sale = (sales || []).find((row) => !baseline.saleIds.has(row.id))
+      if (!sale) throw new Error('No new local test sale was found yet.')
+      const paymentMethod = String(sale.payment_method || sale.paymentMethod || '').toLowerCase()
+      if (paymentMethod && paymentMethod !== 'cash') {
+        throw new Error('The detected test sale was not a cash sale.')
+      }
+      const stockReduced = (inventory || []).some((drug) =>
+        baseline.inventory.has(drug.id) && Number(drug.quantity || 0) < baseline.inventory.get(drug.id)
+      )
+      if (!stockReduced) throw new Error('The local inventory has not recorded a stock reduction.')
+      setAcceptanceEvidence({ saleId: sale.id, saleNumber: sale.sale_number || sale.saleNumber || sale.id, stockReduced })
+      setAcceptancePhase('waiting-for-reconnect')
+      notify('Offline cash sale and local stock reduction verified. Reconnect the internet.', 'success')
+    } catch (testError) {
+      notify(testError.message || 'The offline sale could not be verified.', 'error')
+    } finally {
+      setBusyAction('')
+    }
+  }
+
+  const finishAcceptanceTest = async () => {
+    try {
+      setBusyAction('acceptance-finish')
+      if (!navigator.onLine) throw new Error('Reconnect the internet before completing the test.')
+      const syncResult = await runBranchSync()
+      const [nextStatus, nextReadiness] = await Promise.all([
+        getBranchSyncStatus(),
+        getBranchOfflineReadiness(),
+      ])
+      setStatus(nextStatus)
+      setReadiness(nextReadiness)
+      if (Number(syncResult?.failed || 0) > 0 || Number(nextStatus?.failed || nextStatus?.summary?.failed || 0) > 0) {
+        throw new Error('The test sale did not synchronize cleanly.')
+      }
+      if (!nextReadiness?.ready) throw new Error('Offline readiness checks no longer pass.')
+      const { data: cloudSale, error: cloudSaleError } = await supabase
+        .from('sales')
+        .select('id, sale_number')
+        .eq('id', acceptanceEvidence?.saleId)
+        .maybeSingle()
+      if (cloudSaleError || !cloudSale?.id) {
+        throw new Error('The synchronized test receipt is not yet visible in HealthFlow Cloud.')
+      }
+
+      const record = {
+        organizationId: organization?.id || organization?.organization_id || profile?.organization_id || '',
+        branchId: branch?.id || profile?.branch_id || '',
+        testedBy: user?.id || '',
+        testedAt: new Date().toISOString(),
+        branchServerVersion: health?.version || nextReadiness?.version || '',
+        healthFlowVersion: import.meta.env.VITE_APP_VERSION || 'web',
+        readiness: nextReadiness,
+        acceptanceTest: {
+          passed: true,
+          ...acceptanceEvidence,
+          cloudReceiptId: cloudSale.id,
+          cloudReceiptNumber: cloudSale.sale_number || '',
+        },
+      }
+      window.localStorage.setItem(
+        `healthflow.offline.activation.${record.organizationId}.${record.branchId}`,
+        JSON.stringify(record)
+      )
+      setActivationRecord(record)
+      setAcceptancePhase('done')
+      notify('Offline Mode activated.', 'success')
+    } catch (testError) {
+      notify(testError.message || 'The offline test could not be completed.', 'error')
+    } finally {
+      setBusyAction('')
+    }
+  }
+
   const recentRecordFailures = status?.recentFailures?.records || []
   const recentEventFailures = status?.recentFailures?.events || []
   const hasFailures = recentRecordFailures.length > 0 || recentEventFailures.length > 0
   const isConnected = Boolean(health?.ok)
+  const readyOfflineStaff = offlineStaff.filter(
+    (staff) => staff.isActive !== false && staff.offlineAccessEnabled && staff.offlinePinEnrolled
+  )
+  const eligibleOfflineStaff = offlineStaff.filter((staff) => staff.isActive !== false)
+  const readinessProblems = (readiness?.checks || []).filter((check) => check.required && !check.passed)
+  const offlineActivated = Boolean(activationRecord?.acceptanceTest?.passed && readiness?.ready)
+  const preparationItems = [
+    ['facility', 'Facility'],
+    ['database', 'Database'],
+    ['inventory', 'Inventory'],
+    ['staff', 'Staff'],
+    ['patients', 'Patients'],
+    ['reference', 'Reference Data'],
+    ['synchronization', 'Synchronization'],
+  ]
 
   const copyEnvBlock = useCallback((envText) => {
     navigator.clipboard.writeText(envText).then(() => {
@@ -1031,6 +1241,159 @@ export default function OfflineSync() {
         </div>
       </div>
 
+      <section className={`offline-guide ${offlineActivated ? 'is-ready' : ''}`}>
+        <div className="offline-guide-title">
+          <div>
+            <span className="offline-guide-eyebrow">INSTALL → SETUP → TEST → READY</span>
+            <h2>{offlineActivated ? 'Offline Mode Activated ✓' : 'Set up Offline Mode'}</h2>
+            <p>HealthFlow checks and prepares this computer without exposing technical setup steps.</p>
+          </div>
+          <div className={`offline-server-pill ${isConnected ? 'connected' : 'disconnected'}`}>
+            <Server size={17} />
+            <span>Offline Server</span>
+            <strong>{isConnected ? 'Connected' : 'Not Connected'}</strong>
+          </div>
+        </div>
+
+        {!isConnected && (
+          <div className="offline-guide-action-card">
+            <div>
+              <strong>Install the Offline Server</strong>
+              <span>Install it on the computer that will remain available at the pharmacy.</span>
+            </div>
+            <button
+              className="btn btn-primary"
+              type="button"
+              disabled={!canDownloadOfflineInstaller}
+              onClick={() => void openInstallerDownload()}
+            >
+              <Download size={16} /> Install Offline Server
+            </button>
+          </div>
+        )}
+
+        <div className="offline-guide-stage-grid">
+          <article className={isConnected ? 'complete' : 'current'}>
+            <span>1</span><strong>Install</strong><small>{isConnected ? 'Server detected' : 'Install and start server'}</small>
+          </article>
+          <article className={readiness?.ready ? 'complete' : isConnected ? 'current' : ''}>
+            <span>2</span><strong>Setup</strong><small>{readiness?.ready ? 'Preparation complete' : 'Prepare facility data'}</small>
+          </article>
+          <article className={acceptanceEvidence ? 'complete' : readiness?.ready ? 'current' : ''}>
+            <span>3</span><strong>Test</strong><small>{acceptanceEvidence ? 'Cash sale verified' : 'Run controlled test'}</small>
+          </article>
+          <article className={offlineActivated ? 'complete' : ''}>
+            <span>4</span><strong>Ready</strong><small>{offlineActivated ? 'Activated' : 'Awaiting verified test'}</small>
+          </article>
+        </div>
+
+        <div className="offline-guide-panels">
+          <article className="offline-guide-panel">
+            <h3>Prepare Offline Mode</h3>
+            <div className="offline-preparation-list">
+              {preparationItems.map(([id, label]) => {
+                const state = prepareProgress[id]?.state
+                const completedByReadiness = readiness?.ready && !state
+                return (
+                  <div key={id} className={state || (completedByReadiness ? 'done' : '')}>
+                    <span>{label}</span>
+                    <strong>{state === 'running' ? 'Checking…' : state === 'attention' ? '!' : state === 'done' || completedByReadiness ? '✓' : '—'}</strong>
+                  </div>
+                )
+              })}
+            </div>
+            <button
+              className="btn btn-primary"
+              type="button"
+              disabled={!isConnected || Boolean(busyAction)}
+              onClick={() => void prepareOfflineMode()}
+            >
+              {busyAction === 'prepare-offline' ? 'Preparing…' : readiness?.ready ? 'Run Setup Again' : 'Prepare Offline Mode'}
+            </button>
+          </article>
+
+          <article className="offline-guide-panel">
+            <h3>Offline staff access</h3>
+            <div className="offline-staff-count">
+              <strong>{readyOfflineStaff.length} of {eligibleOfflineStaff.length}</strong>
+              <span>active staff ready</span>
+            </div>
+            {eligibleOfflineStaff.filter((staff) => !staff.offlineAccessEnabled || !staff.offlinePinEnrolled).slice(0, 4).map((staff) => (
+              <div className="offline-staff-missing" key={staff.id}>
+                <span>{staff.fullName || staff.full_name || staff.email}</span>
+                <small>{staff.offlineAccessEnabled ? 'Needs an offline PIN' : 'Offline access not enabled'}</small>
+              </div>
+            ))}
+            <a className="btn btn-outline" href="/settings#offline-access">Manage Staff Access</a>
+          </article>
+
+          <article className={`offline-guide-panel readiness ${readiness?.ready ? 'ready' : 'attention'}`}>
+            <h3>{readiness?.ready ? 'OFFLINE SYSTEM READY ✓' : 'OFFLINE SYSTEM NEEDS ATTENTION'}</h3>
+            {!isConnected && <p>The Offline Server is not connected.</p>}
+            {isConnected && !readiness && <p>Run Prepare Offline Mode to complete the checks.</p>}
+            {readinessProblems.map((problem) => (
+              <div className="offline-readiness-problem" key={problem.id}>
+                {problem.id === 'inventory_snapshot'
+                  ? 'Inventory setup has not completed.'
+                  : problem.id === 'reference_snapshot'
+                    ? 'Reference data setup has not completed.'
+                    : problem.id === 'operational_snapshot'
+                      ? 'Staff and facility setup has not completed.'
+                      : problem.id === 'sync_credentials'
+                        ? 'Cloud synchronization is not configured.'
+                        : `${problem.label} needs attention.`}
+              </div>
+            ))}
+            {readinessProblems.length > 0 && (
+              <button className="btn btn-primary" type="button" onClick={() => void prepareOfflineMode()} disabled={Boolean(busyAction)}>
+                Complete Setup
+              </button>
+            )}
+          </article>
+        </div>
+
+        {readiness?.ready && canManageBranchToken && (
+          <div className="offline-acceptance-test">
+            <div>
+              <h3>Test Offline Mode</h3>
+              <p>The result is recorded only after HealthFlow detects a new local cash sale, a local stock reduction, reconnection and a clean synchronization.</p>
+            </div>
+            {acceptancePhase === 'idle' && (
+              <button className="btn btn-accent" type="button" disabled={Boolean(busyAction)} onClick={() => void startAcceptanceTest()}>
+                Test Offline Mode
+              </button>
+            )}
+            {acceptancePhase === 'waiting-for-sale' && (
+              <div className="offline-test-step">
+                <strong>Disconnect the internet and complete one controlled cash sale.</strong>
+                <button className="btn btn-primary" type="button" disabled={Boolean(busyAction)} onClick={() => void verifyAcceptanceSale()}>
+                  Verify Test Cash Sale
+                </button>
+              </div>
+            )}
+            {acceptancePhase === 'waiting-for-reconnect' && (
+              <div className="offline-test-step">
+                <strong>Sale {acceptanceEvidence?.saleNumber} and local stock reduction verified. Reconnect now.</strong>
+                <button className="btn btn-primary" type="button" disabled={Boolean(busyAction)} onClick={() => void finishAcceptanceTest()}>
+                  Synchronize and Activate
+                </button>
+              </div>
+            )}
+            {acceptancePhase === 'done' && <strong className="offline-test-passed">Acceptance test passed ✓</strong>}
+          </div>
+        )}
+
+        <div className="offline-limitations">
+          <span><strong>Offline supported:</strong> ✓ Cash sales &nbsp; ✓ Local stock updates &nbsp; ✓ Supported offline operations</span>
+          <span><strong>Internet required:</strong> Mobile Money, card payments and cloud-only operations</span>
+        </div>
+
+        <button className="offline-technical-toggle" type="button" onClick={() => setTechnicalDetailsOpen((open) => !open)}>
+          {technicalDetailsOpen ? 'Hide Technical Details' : 'Technical Details'}
+        </button>
+      </section>
+
+      <div className={technicalDetailsOpen ? 'offline-technical-details is-open' : 'offline-technical-details'}>
       <section className="offline-sync-section install-healthflow-section">
         <div className="offline-sync-section-header">
           <div>
@@ -2144,6 +2507,7 @@ HEALTHFLOW_UPDATE_AUTO_INSTALL=false`}</pre>
       <p className="offline-sync-footnote">
         Branch server: {config.url || 'Not configured'}
       </p>
+      </div>
 
       {wizardOpen && (
         <div className="wizard-overlay" role="dialog" aria-modal="true" aria-label="Offline Setup Wizard">
