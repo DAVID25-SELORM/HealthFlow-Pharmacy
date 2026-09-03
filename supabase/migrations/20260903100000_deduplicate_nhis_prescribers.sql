@@ -111,12 +111,36 @@ begin
     organization_id, prescriber_id, facility_id, is_primary, status,
     created_by, updated_by, created_at, updated_at
   )
-  select
-    link.organization_id, mapping.winner_id, link.facility_id,
-    link.is_primary, link.status, link.created_by, link.updated_by,
-    link.created_at, link.updated_at
+  select distinct on (mapping.winner_id, link.facility_id)
+    link.organization_id,
+    mapping.winner_id,
+    link.facility_id,
+    bool_or(link.is_primary) over (
+      partition by mapping.winner_id, link.facility_id
+    ),
+    case
+      when bool_or(link.status = 'active') over (
+        partition by mapping.winner_id, link.facility_id
+      ) then 'active'
+      else 'inactive'
+    end,
+    link.created_by,
+    link.updated_by,
+    min(link.created_at) over (
+      partition by mapping.winner_id, link.facility_id
+    ),
+    max(link.updated_at) over (
+      partition by mapping.winner_id, link.facility_id
+    )
   from public.nhis_prescriber_facilities link
-  join nhis_prescriber_duplicate_map mapping on mapping.duplicate_id = link.prescriber_id
+  join nhis_prescriber_duplicate_map mapping
+    on mapping.duplicate_id = link.prescriber_id
+  order by
+    mapping.winner_id,
+    link.facility_id,
+    (link.status = 'active') desc,
+    link.updated_at desc,
+    link.id
   on conflict (prescriber_id, facility_id) do update
     set is_primary = public.nhis_prescriber_facilities.is_primary or excluded.is_primary,
         status = case
