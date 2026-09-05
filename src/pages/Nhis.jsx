@@ -3664,6 +3664,10 @@ const Nhis = () => {
     const price = Number.parseFloat(medForm.unitPrice)    || 0
     const requestedServingStatus = String(medForm.servingStatus || '').toLowerCase()
     const currentMedicine = editingMedicineIndex === null ? null : claimMedicines[editingMedicineIndex]
+    // A direct-served claim may still receive a later corrective medicine line.
+    // That new line has not been served merely because older lines were.
+    const isNewMedicineOnDirectlyServedClaim =
+      editingMedicineIndex === null && isNhisClaimDirectlyServed(editingClaim)
     const retainsHistoricalDuration = Boolean(
       currentMedicine?.sourceMedicineId &&
       currentMedicine.originalDuration === medForm.duration
@@ -3693,14 +3697,18 @@ const Nhis = () => {
       currentMedicine &&
       wasFullyServed &&
       qty !== previousPrescribedQty
-    const servedQty = isMedicineCounterAssistant
+    const servedQty = isNewMedicineOnDirectlyServedClaim
+      ? 0
+      : isMedicineCounterAssistant
       ? qty
       : canEditNhisClaimAnytime && currentMedicine
         ? synchronizeCorrectedServedQty
           ? qty
           : Number.parseFloat(medForm.servedQty) || 0
         : getMedicineServedQty(currentMedicine)
-    const servingStatus = normalizeMedicineServingStatus(medForm.servingStatus, prescribedQty, servedQty)
+    const servingStatus = isNewMedicineOnDirectlyServedClaim
+      ? 'pending'
+      : normalizeMedicineServingStatus(medForm.servingStatus, prescribedQty, servedQty)
     if (
       isMedicineCounterAssistant &&
       ['not_available', 'not_served'].includes(servingStatus) &&
@@ -3734,9 +3742,13 @@ const Nhis = () => {
         ? medForm.reasonIfNotFullyServed
         : '',
       enteredByClaimsOfficer: medForm.enteredByClaimsOfficer || currentMedicine?.enteredByClaimsOfficer || currentMedicine?.entered_by_claims_officer || user?.id || '',
-      servedByMca: isMedicineCounterAssistant ? (user?.id || '') : (currentMedicine?.servedByMca || currentMedicine?.served_by_mca || ''),
+      servedByMca: isNewMedicineOnDirectlyServedClaim
+        ? ''
+        : isMedicineCounterAssistant ? (user?.id || '') : (currentMedicine?.servedByMca || currentMedicine?.served_by_mca || ''),
       enteredAt: medForm.enteredAt || currentMedicine?.enteredAt || currentMedicine?.entered_at || new Date().toISOString(),
-      servedAt: isMedicineCounterAssistant ? new Date().toISOString() : (currentMedicine?.servedAt || currentMedicine?.served_at || ''),
+      servedAt: isNewMedicineOnDirectlyServedClaim
+        ? ''
+        : isMedicineCounterAssistant ? new Date().toISOString() : (currentMedicine?.servedAt || currentMedicine?.served_at || ''),
       dispensaryDate: medForm.dispensaryDate || null,
       dose:          medForm.dose,
       frequency:     medForm.frequency,

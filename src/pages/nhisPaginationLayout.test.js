@@ -11,9 +11,7 @@ describe('NHIS claims pagination layout', () => {
       source.indexOf('const makeBlankClaim')
     )
 
-    expect(durationOptions).toContain('Array.from({ length: 14 }')
-    expect(durationOptions).toContain("'30 days'")
-    expect(durationOptions).toContain("'60 days'")
+    expect(durationOptions).toContain('Array.from({ length: 60 }')
     expect(durationOptions).toContain("'90 days'")
     expect(durationOptions).toContain("'120 days'")
     expect(durationOptions).toContain("'180 days'")
@@ -56,8 +54,17 @@ describe('NHIS claims pagination layout', () => {
     const source = readSource('./Nhis.jsx')
 
     expect(source).toContain("' (privileged correction)'")
-    expect(source).toContain('editingMedicineIndex !== null &&\n                    !canEditNhisClaimAnytime')
+    expect(source).toMatch(/!isMedicineCounterAssistant\s+&&\s+editingMedicineIndex !== null\s+&&\s+!canEditNhisClaimAnytime/)
     expect(source).toContain('This correction is recorded in the claim audit history.')
+  })
+
+  it('keeps a new medicine pending when it is added after direct serving', () => {
+    const source = readSource('./Nhis.jsx')
+
+    expect(source).toContain('const isNewMedicineOnDirectlyServedClaim =')
+    expect(source).toContain("editingMedicineIndex === null && isNhisClaimDirectlyServed(editingClaim)")
+    expect(source).toContain("? 'pending'\n      : normalizeMedicineServingStatus")
+    expect(source).toContain("servedQty = isNewMedicineOnDirectlyServedClaim\n      ? 0")
   })
 
   it('aligns manual CCC entry with privileged Admin and Claims Officer correction access', () => {
