@@ -67,6 +67,16 @@ describe('NHIS claims pagination layout', () => {
     expect(source).toContain("servedQty = isNewMedicineOnDirectlyServedClaim\n      ? 0")
   })
 
+  it('offers common dose choices while preserving custom dose entry', () => {
+    const source = readSource('./Nhis.jsx')
+
+    expect(source).toContain('const DOSE_OPTIONS = [')
+    expect(source).toContain("'1 tablet'")
+    expect(source).toContain('options={DOSE_OPTIONS}')
+    expect(source).toContain('placeholder="Select or type dose"')
+    expect(source).toContain('ariaLabel="Medicine dose"')
+  })
+
   it('aligns manual CCC entry with privileged Admin and Claims Officer correction access', () => {
     const source = readSource('./Nhis.jsx')
 

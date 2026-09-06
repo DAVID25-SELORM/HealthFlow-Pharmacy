@@ -296,6 +296,23 @@ const FREQUENCY_OPTIONS = [
   'PRN',
   ...Array.from({ length: 12 }, (_, index) => `${index + 1} hourly`),
 ]
+const DOSE_OPTIONS = [
+  '½ tablet',
+  '1 tablet',
+  '2 tablets',
+  '3 tablets',
+  '1 capsule',
+  '2 capsules',
+  '5 ml',
+  '10 ml',
+  '15 ml',
+  '1 puff',
+  '2 puffs',
+  '1 drop',
+  '2 drops',
+  '1 sachet',
+  '1 application',
+]
 const DURATION_OPTIONS = [
   ...Array.from({ length: 60 }, (_, index) => `${index + 1} day${index === 0 ? '' : 's'}`),
   '84 days',
@@ -8875,15 +8892,17 @@ const Nhis = () => {
               <div className="form-row form-row--3">
                 <div className="form-group">
                   <label>Dose</label>
-                  <input
-                    className="form-input"
-                    placeholder="e.g. 1 tablet"
+                  <CompactSuggestionInput
                     value={medForm.dose}
                     disabled={isMedicineCounterAssistant}
-                    onChange={(e) => setMedForm((p) => ({
+                    onValueChange={(value) => setMedForm((p) => ({
                       ...p,
-                      dose: autoSpaceDoseValue(e.target.value),
+                      dose: autoSpaceDoseValue(value),
                     }))}
+                    options={DOSE_OPTIONS}
+                    placeholder="Select or type dose"
+                    ariaLabel="Medicine dose"
+                    placement="top"
                   />
                 </div>
                 <div className="form-group">
