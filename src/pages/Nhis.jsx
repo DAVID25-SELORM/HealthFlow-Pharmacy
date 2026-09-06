@@ -32,6 +32,13 @@ import { normalizeText } from '../utils/validation'
 import { autoSpaceDoseValue } from '../utils/prescriptionDirections'
 import { getNhisDoseSuggestionOptions } from '../utils/nhisDoseOptions'
 import { resolveNhisDoseEntryModel, validateNhisDoseEntry } from '../utils/nhisDoseOptions'
+import {
+  cacheNhisLearnedDoseSuggestions,
+  getNhisLearnedDoseObservation,
+  loadCachedNhisLearnedDoseSuggestions,
+  mergeNhisDoseSuggestions,
+  rememberCachedNhisLearnedDoseSuggestion,
+} from '../utils/nhisLearnedDoseSuggestions'
 import { getNhisMedicineStrength } from '../utils/nhisMedicineStrength'
 import {
   getNhisCatalogMedicineVariant,
@@ -64,6 +71,8 @@ import {
   updateNhisClaim,
   getNhisClaimCorrectionHistory,
   updateNhisClaimStatus,
+  getNhisLearnedDoseSuggestions,
+  recordNhisLearnedDoseSuggestions,
   exportNhisClaimsFile,
   checkNhisExportReadiness,
   prepareNhisClaimsExport,
@@ -355,7 +364,7 @@ const CompactSuggestionInput = ({
   }, [normalizedOptions, value])
 
   const selectOption = (option) => {
-    onValueChange(option.value)
+    onValueChange(option.value, option.source || 'official')
     setIsOpen(false)
     setActiveIndex(-1)
   }
@@ -381,7 +390,7 @@ const CompactSuggestionInput = ({
           onBlur?.(value)
         }}
         onChange={(event) => {
-          onValueChange(event.target.value)
+          onValueChange(event.target.value, 'custom')
           setIsOpen(true)
           setActiveIndex(-1)
         }}
@@ -553,6 +562,7 @@ const makeBlankMedicine = () => ({
   servedAt: '',
   dispensaryDate: getNhisCalendarDate(),
   dose:          '',
+  doseSuggestionSource: '',
   frequency:     '',
   duration:      '',
   category:      '',
@@ -1469,6 +1479,7 @@ const Nhis = () => {
   // ── data ─────────────────────────────────────────────────────
   const [claims, setClaims]       = useState([])
   const [nhisDrugs, setNhisDrugs] = useState([])
+  const [learnedDoseSuggestions, setLearnedDoseSuggestions] = useState([])
   const [nhiaTariffItems, setNhiaTariffItems] = useState([])
   const [clinicalRules, setClinicalRules] = useState([])
   const [patients, setPatients]   = useState([])
@@ -3576,6 +3587,7 @@ const Nhis = () => {
         unitPrice: String(variant.unitPrice),
         category: drug.category || '',
         dose: variantChanged ? '' : prev.dose,
+        doseSuggestionSource: variantChanged ? '' : prev.doseSuggestionSource,
         medicineAccessLevel: drug.medicine_access_level || '',
         requiredPharmacyLevel: drug.required_pharmacy_level || '',
       }
@@ -3598,6 +3610,35 @@ const Nhis = () => {
     () => resolveNhisDoseEntryModel(medForm),
     [medForm.unit, medForm.dosageForm, medForm.description, medForm.strength]
   )
+  const medOfficialDoseSuggestions = useMemo(
+    () => getNhisDoseSuggestionOptions(medForm),
+    [medForm.unit, medForm.dosageForm, medForm.description, medForm.strength]
+  )
+
+  useEffect(() => {
+    const medicineIdentity = {
+      nhisDrugId: medForm.nhisDrugId,
+      dosageForm: medForm.dosageForm,
+      strength: medForm.strength,
+    }
+    const cached = loadCachedNhisLearnedDoseSuggestions({ organizationId, medicine: medicineIdentity })
+    setLearnedDoseSuggestions(cached)
+    if (!medicineIdentity.nhisDrugId || !medicineIdentity.dosageForm || !medicineIdentity.strength) return undefined
+
+    let active = true
+    getNhisLearnedDoseSuggestions(medicineIdentity)
+      .then((suggestions) => {
+        if (!active) return
+        setLearnedDoseSuggestions(suggestions)
+        cacheNhisLearnedDoseSuggestions({ organizationId, medicine: medicineIdentity, suggestions })
+      })
+      .catch((error) => {
+        // Cached facility suggestions remain available when offline or before
+        // the database migration has reached a branch.
+        console.warn('Unable to refresh learned NHIS dose suggestions:', error)
+      })
+    return () => { active = false }
+  }, [organizationId, medForm.nhisDrugId, medForm.dosageForm, medForm.strength])
 
   const resolveAndApplyCatalogVariant = ({ dosageForm, strength }) => {
     const variant = resolveNhisCatalogMedicineVariant({
@@ -3632,6 +3673,7 @@ const Nhis = () => {
           unitPrice:   String(drug.unit_price),
           category:    drug.category || '',
           dose:        '',
+          doseSuggestionSource: '',
           // ✅ NHIS PHARMACY LEVEL PATCH START
           medicineAccessLevel: drug.medicine_access_level || '',
           requiredPharmacyLevel: drug.required_pharmacy_level || '',
@@ -3676,6 +3718,7 @@ const Nhis = () => {
       unitPrice:    String(drug.unit_price),
       category:     drug.category || '',
       dose:         '',
+      doseSuggestionSource: '',
       // ✅ NHIS PHARMACY LEVEL PATCH START
       medicineAccessLevel: drug.medicine_access_level || '',
       requiredPharmacyLevel: drug.required_pharmacy_level || '',
@@ -3834,6 +3877,7 @@ const Nhis = () => {
         : isMedicineCounterAssistant ? new Date().toISOString() : (currentMedicine?.servedAt || currentMedicine?.served_at || ''),
       dispensaryDate: medForm.dispensaryDate || null,
       dose:          medForm.dose,
+      doseSuggestionSource: medForm.doseSuggestionSource || '',
       frequency:     medForm.frequency,
       duration:      retainsHistoricalDuration ? medForm.duration : formatClaimDurationAsDays(medForm.duration),
       totalAmount:   price * servedQty,
@@ -3974,6 +4018,7 @@ const Nhis = () => {
       servedAt: medicine.servedAt || medicine.served_at || '',
       dispensaryDate: medicine.dispensaryDate || todayIsoDate(),
       dose: medicine.dose || '',
+      doseSuggestionSource: '',
       frequency: medicine.frequency || '',
       duration: medicine.duration || '',
       category: medicine.category || getCatalogCategoryForMedicine(medicine),
@@ -4765,6 +4810,25 @@ const Nhis = () => {
             }`
           )
         }
+      }
+
+      const savedClaimId = savedClaimRecord?.id || editingClaim?.id || ''
+      const learnedDoseObservations = effectiveClaimMedicines
+        .map((medicine, index) => getNhisLearnedDoseObservation(
+          medicine,
+          medicine.dose,
+          `${savedClaimId}:${index}:${medicine.dose}`,
+          medicine.doseSuggestionSource || 'official'
+        ))
+        .filter(Boolean)
+      if (learnedDoseObservations.length > 0) {
+        learnedDoseObservations.forEach((observation) => {
+          rememberCachedNhisLearnedDoseSuggestion({ organizationId, medicine: observation, observation })
+        })
+        // Learning is a non-clinical convenience feature. A temporary sync
+        // failure must never roll back an otherwise successful claim save.
+        recordNhisLearnedDoseSuggestions(learnedDoseObservations)
+          .catch((error) => console.warn('Unable to synchronize learned NHIS dose suggestions:', error))
       }
 
       if (!editingClaim && returnAlertOverrideSnapshot?.alert) {
@@ -9017,11 +9081,12 @@ const Nhis = () => {
                   <CompactSuggestionInput
                     value={medForm.dose}
                     disabled={isMedicineCounterAssistant}
-                    onValueChange={(value) => setMedForm((p) => ({
+                    onValueChange={(value, source) => setMedForm((p) => ({
                       ...p,
                       dose: autoSpaceDoseValue(value),
+                      doseSuggestionSource: source || 'custom',
                     }))}
-                    options={getNhisDoseSuggestionOptions(medForm)}
+                    options={mergeNhisDoseSuggestions(medForm, learnedDoseSuggestions, medOfficialDoseSuggestions)}
                     placeholder="Select or type dose"
                     ariaLabel="Medicine dose"
                     placement="top"

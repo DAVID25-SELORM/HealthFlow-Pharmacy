@@ -6334,6 +6334,40 @@ export const getNhisClaimStats = async () => {
   return computeNhisClaimStats(data || [])
 }
 
+// Learned doses are convenience suggestions only. The RPC derives the
+// organization from auth context; callers never send a tenant identifier.
+export const getNhisLearnedDoseSuggestions = async ({ nhisDrugId, dosageForm, strength } = {}) => {
+  if (!nhisDrugId || !dosageForm || !strength || shouldUseBranchServer()) return []
+  const { data, error } = await supabase.rpc('get_nhis_dose_suggestions', {
+    p_nhis_drug_id: nhisDrugId,
+    p_dosage_form: dosageForm,
+    p_strength: strength,
+  })
+  if (error) throw error
+  return (data || []).map((row) => ({
+    doseValue: Number(row.dose_value),
+    doseUnit: row.dose_unit,
+    source: row.source,
+    usageCount: Number(row.usage_count || 0),
+  }))
+}
+
+export const recordNhisLearnedDoseSuggestions = async (observations = []) => {
+  if (!Array.isArray(observations) || observations.length === 0 || shouldUseBranchServer()) return 0
+  const { data, error } = await supabase.rpc('record_nhis_dose_suggestions', {
+    p_observations: observations.map((observation) => ({
+      idempotency_key: observation.idempotencyKey,
+      nhis_drug_id: observation.nhisDrugId,
+      dosage_form: observation.dosageForm,
+      strength: observation.strength,
+      dose_value: observation.doseValue,
+      dose_unit: observation.doseUnit,
+    })),
+  })
+  if (error) throw error
+  return Number(data || 0)
+}
+
 /**
  * Creates an NHIS claim with medicines.
  * Also saves HIN/member_no back to the patient record if patient_id is provided.

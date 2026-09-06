@@ -71,7 +71,7 @@ describe('NHIS claims pagination layout', () => {
     const source = readSource('./Nhis.jsx')
 
     expect(source).toContain("import { getNhisDoseSuggestionOptions } from '../utils/nhisDoseOptions'")
-    expect(source).toContain('options={getNhisDoseSuggestionOptions(medForm)}')
+    expect(source).toContain('options={mergeNhisDoseSuggestions(medForm, learnedDoseSuggestions, medOfficialDoseSuggestions)}')
     expect(source).toContain('placeholder="Select or type dose"')
     expect(source).toContain('ariaLabel="Medicine dose"')
   })

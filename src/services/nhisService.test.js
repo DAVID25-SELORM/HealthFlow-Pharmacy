@@ -78,6 +78,7 @@ import {
   getNhisExportScrubWarnings,
   getAllNhisDrugs,
   getNhisDrugByCode,
+  getNhisLearnedDoseSuggestions,
   getNhisClaimsForPeriod,
   getNhiaApiSettings,
   nhisClaimMatchesExportPeriod,
@@ -88,6 +89,7 @@ import {
   prepareNhisSingleClaimExport,
   saveNhiaApiSettings,
   serveNhisClaimDirect,
+  recordNhisLearnedDoseSuggestions,
   submitNhisClaimDirect,
   updateNhisClaim,
   updateNhisClaimStatus,
@@ -122,6 +124,36 @@ beforeEach(() => {
     status: 200,
     arrayBuffer: async () => Uint8Array.from([0x25, 0x50, 0x44, 0x46, 0x2d]).buffer,
   })))
+})
+
+describe('NHIS learned dose suggestion RPC boundary', () => {
+  it('fetches only the selected catalogue variant and never sends an organization id', async () => {
+    supabase.rpc.mockResolvedValueOnce({
+      data: [{ dose_value: 400, dose_unit: 'mg', source: 'shared', usage_count: 4 }],
+      error: null,
+    })
+
+    await expect(getNhisLearnedDoseSuggestions({
+      nhisDrugId: 'drug-1', dosageForm: 'Infusion', strength: '2 mg/mL',
+    })).resolves.toEqual([{ doseValue: 400, doseUnit: 'mg', source: 'shared', usageCount: 4 }])
+    expect(supabase.rpc).toHaveBeenCalledWith('get_nhis_dose_suggestions', {
+      p_nhis_drug_id: 'drug-1', p_dosage_form: 'Infusion', p_strength: '2 mg/mL',
+    })
+  })
+
+  it('sends only normalized anonymous medicine-dose metadata for an idempotent observation', async () => {
+    supabase.rpc.mockResolvedValueOnce({ data: 1, error: null })
+    await expect(recordNhisLearnedDoseSuggestions([{
+      idempotencyKey: 'opaque-key', nhisDrugId: 'drug-1', dosageForm: 'Infusion',
+      strength: '2 mg/ml', doseValue: 400, doseUnit: 'mg',
+    }])).resolves.toBe(1)
+    expect(supabase.rpc).toHaveBeenCalledWith('record_nhis_dose_suggestions', {
+      p_observations: [{
+        idempotency_key: 'opaque-key', nhis_drug_id: 'drug-1', dosage_form: 'Infusion',
+        strength: '2 mg/ml', dose_value: 400, dose_unit: 'mg',
+      }],
+    })
+  })
 })
 
 const extractSerializedClaimBuffer = (inflatedCxfPayload) => {
