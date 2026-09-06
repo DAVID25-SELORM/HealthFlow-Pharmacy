@@ -24,13 +24,13 @@ describe('NHIS learned dose suggestions', () => {
     expect(getNhisLearnedDoseObservation(ciprofloxacin, '400 mL', 'claim-line-3')).toBeNull()
   })
 
-  it('keeps learned values variant-specific and ranks official before facility before shared', () => {
+  it('keeps learned values variant-specific and ranks facility custom doses before official choices', () => {
     const merged = mergeNhisDoseSuggestions(ciprofloxacin, [
       { doseValue: 400, doseUnit: 'mg', source: 'shared', usageCount: 9 },
-      { doseValue: 400, doseUnit: 'mg', source: 'facility', usageCount: 1 },
+      { doseValue: 600, doseUnit: 'mg', source: 'facility', usageCount: 1 },
     ])
-    expect(merged.map((option) => option.value)).toEqual(['200 mg', '400 mg'])
-    expect(merged[0].source).toBe('official')
+    expect(merged.map((option) => option.value)).toEqual(['600 mg', '200 mg', '400 mg'])
+    expect(merged[0]).toMatchObject({ source: 'facility', description: 'Previously used' })
     expect(merged[1].source).toBe('official')
     expect(mergeNhisDoseSuggestions({ ...ciprofloxacin, strength: '500 mg' }, [
       { nhisDrugId: 'drug-cipro-1', dosageForm: 'Infusion', strength: '2 mg/mL', doseValue: 400, doseUnit: 'mg', source: 'facility', usageCount: 1 },

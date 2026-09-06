@@ -119,7 +119,12 @@ export const mergeNhisDoseSuggestions = (medicine = {}, learned = [], officialOp
       }
     })
 
-  return [...official, ...learnedOptions].filter((option) => {
+  // A facility's manually learned value is the quickest repeat-entry choice.
+  // Official catalogue choices remain official even if staff have used them;
+  // shared suggestions stay last so they cannot displace local catalogue data.
+  const facilityLearned = learnedOptions.filter((option) => option.source === 'facility')
+  const sharedLearned = learnedOptions.filter((option) => option.source === 'shared')
+  return [...facilityLearned, ...official, ...sharedLearned].filter((option) => {
     const normalized = normalizeNhisLearnedDose(medicine, option.value)?.value || String(option.value).trim().toLowerCase()
     if (!normalized || seen.has(normalized)) return false
     seen.add(normalized)
