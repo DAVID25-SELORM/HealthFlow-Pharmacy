@@ -33,6 +33,13 @@ import { autoSpaceDoseValue } from '../utils/prescriptionDirections'
 import { getNhisDoseOptions } from '../utils/nhisDoseOptions'
 import { getNhisMedicineStrength } from '../utils/nhisMedicineStrength'
 import {
+  getNhisCatalogMedicineVariant,
+  getNhisCatalogMedicineVariants,
+  getNhisVariantForms,
+  getNhisVariantStrengths,
+  resolveNhisCatalogMedicineVariant,
+} from '../utils/nhisCatalogMedicineVariants'
+import {
   getAllNhisDrugs,
   getApplicableNhiaTariffItems,
   isNhiaTariffItemAllowedForProviderClass,
@@ -3549,6 +3556,51 @@ const Nhis = () => {
     }
   }
 
+  const applyCatalogMedicine = (drug) => {
+    const variant = getNhisCatalogMedicineVariant(drug)
+    setMedForm((prev) => ({
+      ...prev,
+      nhisDrugId: drug.id,
+      drugCode: variant.code,
+      description: variant.description,
+      genericName: variant.genericName,
+      strength: variant.strength,
+      dosageForm: variant.dosageForm,
+      unit: variant.unit,
+      unitPrice: String(variant.unitPrice),
+      category: drug.category || '',
+      medicineAccessLevel: drug.medicine_access_level || '',
+      requiredPharmacyLevel: drug.required_pharmacy_level || '',
+    }))
+  }
+
+  const medFormCatalogueVariants = useMemo(
+    () => getNhisCatalogMedicineVariants(nhisDrugs, medForm),
+    [nhisDrugs, medForm.nhisDrugId, medForm.drugCode, medForm.description, medForm.genericName]
+  )
+  const medFormVariantForms = useMemo(
+    () => getNhisVariantForms(medFormCatalogueVariants),
+    [medFormCatalogueVariants]
+  )
+  const medFormVariantStrengths = useMemo(
+    () => getNhisVariantStrengths(medFormCatalogueVariants, medForm.dosageForm),
+    [medFormCatalogueVariants, medForm.dosageForm]
+  )
+
+  const resolveAndApplyCatalogVariant = ({ dosageForm, strength }) => {
+    const variant = resolveNhisCatalogMedicineVariant({
+      catalogue: nhisDrugs,
+      medicine: medForm,
+      dosageForm,
+      strength,
+    })
+    if (!variant) {
+      notify('That formulation and strength is not available in this NHIS catalogue.', 'warning')
+      return
+    }
+    applyCatalogMedicine(variant.source)
+  }
+
   const handleDrugCodeSearch = async () => {
     const code = medForm.drugCode.trim().toUpperCase()
     if (!code) return
@@ -3561,9 +3613,9 @@ const Nhis = () => {
           nhisDrugId:  drug.id,
           drugCode:    drug.code,
           description: drug.description,
-          genericName: drug.generic_name || '',
+          genericName: getNhisCatalogMedicineVariant(drug).genericName,
           strength:    getNhisMedicineStrength(drug),
-          dosageForm:  drug.dosage_form || '',
+          dosageForm:  getNhisCatalogMedicineVariant(drug).dosageForm,
           unit:        drug.unit,
           unitPrice:   String(drug.unit_price),
           category:    drug.category || '',
@@ -3604,9 +3656,9 @@ const Nhis = () => {
       nhisDrugId:   drug.id,
       drugCode:     drug.code,
       description:  drug.description,
-      genericName:  drug.generic_name || '',
+      genericName:  getNhisCatalogMedicineVariant(drug).genericName,
       strength:     getNhisMedicineStrength(drug),
-      dosageForm:   drug.dosage_form || '',
+      dosageForm:   getNhisCatalogMedicineVariant(drug).dosageForm,
       unit:         drug.unit,
       unitPrice:    String(drug.unit_price),
       category:     drug.category || '',
@@ -3875,15 +3927,19 @@ const Nhis = () => {
   const openEditMedicine = (index) => {
     const medicine = claimMedicines[index]
     if (!medicine) return
+    const catalogMedicine = getNhisCatalogMedicineVariant(medicine)
 
     setMedForm({
       sourceMedicineId: medicine.sourceMedicineId || '',
       originalDuration: medicine.originalDuration || medicine.duration || '',
-      nhisDrugId: medicine.nhisDrugId || '',
-      drugCode: medicine.drugCode || '',
+      nhisDrugId: medicine.nhisDrugId || medicine.nhis_drug_id || '',
+      drugCode: medicine.drugCode || medicine.drug_code || '',
       description: medicine.description || '',
+      genericName: medicine.genericName || medicine.generic_name || catalogMedicine.genericName,
+      strength: medicine.strength || catalogMedicine.strength,
+      dosageForm: medicine.dosageForm || medicine.dosage_form || catalogMedicine.dosageForm,
       unit: medicine.unit || 'unit',
-      unitPrice: String(medicine.unitPrice ?? ''),
+      unitPrice: String(medicine.unitPrice ?? medicine.unit_price ?? ''),
       prescribedQty: String(getMedicinePrescribedQty(medicine)),
       servedQty: String(getMedicineServedQty(medicine)),
       dispensedQty: String(isMedicineCounterAssistant ? getMedicineServedQty(medicine) : getMedicinePrescribedQty(medicine)),
@@ -8693,14 +8749,14 @@ const Nhis = () => {
             </div>
 
             <div className="medicine-modal-body">
-              {/* Code search */}
+              {/* Medicine search resolves an authoritative NHIS catalogue item. */}
               <div className="form-group">
-                <label>Code</label>
+                <label>Medicine / NHIS Code</label>
                 <div className="med-code-row">
                   <div className="drug-search-wrap" style={{ flex: 1 }}>
                     <input
                       className="form-input"
-                      placeholder="e.g. TAMSULCA1"
+                      placeholder="Search medicine or enter NHIS code"
                       value={medCodeSearch || medForm.drugCode}
                       disabled={isMedicineCounterAssistant}
                       onChange={(e) => {
@@ -8751,16 +8807,55 @@ const Nhis = () => {
                 )}
               </div>
 
+              {medFormVariantForms.length > 1 && (
+                <div className="form-group">
+                  <label>Formulation</label>
+                  <select
+                    className="form-input"
+                    value={medForm.dosageForm}
+                    disabled={isMedicineCounterAssistant}
+                    onChange={(event) => {
+                      const dosageForm = event.target.value
+                      const strengths = getNhisVariantStrengths(medFormCatalogueVariants, dosageForm)
+                      const strength = strengths.includes(getNhisMedicineStrength(medForm))
+                        ? getNhisMedicineStrength(medForm)
+                        : strengths[0] || ''
+                      resolveAndApplyCatalogVariant({ dosageForm, strength })
+                    }}
+                  >
+                    {medFormVariantForms.map((form) => (
+                      <option key={form} value={form}>{form}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <div className="form-group">
                 <label>Strength</label>
-                <input
-                  className="form-input"
-                  value={getNhisMedicineStrength(medForm)}
-                  placeholder="Select a medicine to show strength"
-                  readOnly
-                />
+                {medFormVariantStrengths.length > 0 ? (
+                  <select
+                    className="form-input"
+                    value={getNhisMedicineStrength(medForm)}
+                    disabled={isMedicineCounterAssistant}
+                    onChange={(event) => resolveAndApplyCatalogVariant({
+                      dosageForm: medForm.dosageForm,
+                      strength: event.target.value,
+                    })}
+                  >
+                    {medFormVariantStrengths.map((strength) => (
+                      <option key={strength} value={strength}>{strength}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    className="form-input"
+                    value={getNhisMedicineStrength(medForm)}
+                    placeholder="Select a medicine to show strength"
+                    readOnly
+                  />
+                )}
                 <span className="unit-price-hint">
-                  Strength is taken from the selected NHIS catalog medicine.
+                  Catalogue strength selects the matching NHIS code and unit price.
                 </span>
               </div>
 
