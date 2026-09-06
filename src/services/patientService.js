@@ -146,7 +146,7 @@ export const getPatientById = async (id) => {
           throw new Error('NHIS claim patient not found in local branch server.')
         }
         const selectedClaim = claims[0]
-        const lookup = selectedClaim.member_no || selectedClaim.hin || selectedClaim.patient_id
+        const lookup = selectedClaim.member_no || selectedClaim.hin || selectedClaim.patient_id || selectedClaim.folder_no
         const historyClaims = lookup
           ? await listBranchRecords('nhis/claims', { searchTerm: lookup, limit: 500 })
           : claims
@@ -180,10 +180,14 @@ export const getPatientById = async (id) => {
         if (data.hin) {
           historyQueries.push(fetchCloudNhisClaimHistory('hin', data.hin))
         }
+        if (data.folder_no) {
+          historyQueries.push(fetchCloudNhisClaimHistory('folder_no', data.folder_no))
+        }
         const historyGroups = historyQueries.length
           ? await Promise.all(historyQueries)
           : [[data]]
         const historyClaims = dedupeClaims([...historyGroups.flat(), data])
+          .filter((claim) => patientMatchesNhisClaim(nhisClaimToPatient(data), claim))
         return nhisClaimsToPatientDetail(data, historyClaims)
       },
       fallback: null,
@@ -238,7 +242,11 @@ export const getPatientById = async (id) => {
       if (data.nhis_hin) {
         historyQueries.push(fetchCloudNhisClaimHistory('hin', data.nhis_hin))
       }
+      if (data.folder_no) {
+        historyQueries.push(fetchCloudNhisClaimHistory('folder_no', data.folder_no))
+      }
       const nhisClaims = dedupeClaims((await Promise.all(historyQueries)).flat())
+        .filter((claim) => patientMatchesNhisClaim(data, claim))
       return mergePatientHistory(data, nhisClaims)
     },
     fallback: null,
@@ -343,6 +351,20 @@ const patientMatchesNhisClaim = (patient = {}, claim = {}) => {
   const patientPhone = compactPatientLookup(patient.phone)
   const claimPhone = compactPatientLookup(claim.phone || claim.patient_phone)
   if (patientPhone && claimPhone && patientPhone === claimPhone) return true
+
+  const patientName = compactPatientLookup(patient.full_name || [patient.surname, patient.other_names].filter(Boolean).join(' '))
+  const claimName = compactPatientLookup(claim.full_name || [claim.surname, claim.other_names].filter(Boolean).join(' '))
+  const patientFolder = compactPatientLookup(patient.folder_no)
+  const claimFolder = compactPatientLookup(claim.folder_no)
+  if (patientFolder && claimFolder && patientFolder === claimFolder && patientName && claimName && patientName === claimName) {
+    return true
+  }
+
+  const patientDateOfBirth = String(patient.date_of_birth || patient.dateOfBirth || '').trim()
+  const claimDateOfBirth = String(claim.date_of_birth || claim.dateOfBirth || '').trim()
+  if (patientDateOfBirth && claimDateOfBirth && patientDateOfBirth === claimDateOfBirth && patientName && claimName && patientName === claimName) {
+    return true
+  }
 
   return false
 }

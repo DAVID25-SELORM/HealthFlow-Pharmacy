@@ -440,6 +440,51 @@ describe('patientService local sync reads', () => {
     expect(fromMock).not.toHaveBeenCalled()
   })
 
+  it('includes same-name NHIS history matched safely by folder number', async () => {
+    routeRead.mockImplementationOnce(async ({ cloud }) => await cloud())
+    const patient = {
+      id: '2df77f2d-ea44-4f14-966c-a0a7c213f86a',
+      full_name: 'Andoh Francis Kesson',
+      folder_no: '0027-26071083',
+      nhis_member_no: '26776602',
+      claims: [],
+      sales: [],
+    }
+    const primaryClaim = {
+      id: 'claim-1', patient_id: patient.id, member_no: '26776602',
+      surname: 'Andoh', other_names: 'Francis Kesson', folder_no: patient.folder_no,
+    }
+    const folderMatchedClaim = {
+      id: 'claim-2', surname: 'Andoh', other_names: 'Francis Kesson', folder_no: patient.folder_no,
+    }
+    const patientQuery = {
+      select: vi.fn(() => patientQuery),
+      eq: vi.fn(() => patientQuery),
+      single: vi.fn(async () => ({ data: patient, error: null })),
+    }
+    const historyQuery = (rows) => {
+      const query = {
+        select: vi.fn(() => query),
+        eq: vi.fn(() => query),
+        order: vi.fn(() => query),
+        limit: vi.fn(async () => ({ data: rows, error: null })),
+      }
+      return query
+    }
+    fromMock
+      .mockReturnValueOnce(patientQuery)
+      .mockReturnValueOnce(historyQuery([primaryClaim]))
+      .mockReturnValueOnce(historyQuery([primaryClaim]))
+      .mockReturnValueOnce(historyQuery([folderMatchedClaim]))
+
+    await expect(getPatientById(patient.id)).resolves.toMatchObject({
+      claims: expect.arrayContaining([
+        expect.objectContaining({ id: 'claim-1' }),
+        expect.objectContaining({ id: 'claim-2' }),
+      ]),
+    })
+  })
+
   it('uses production-safe NHIS claim columns when enriching cloud patients', async () => {
     routeRead.mockImplementationOnce(async ({ cloud }) => await cloud())
 
