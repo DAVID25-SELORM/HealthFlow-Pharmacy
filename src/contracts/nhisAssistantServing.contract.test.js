@@ -15,4 +15,9 @@ describe('NHIS dispensary assistant serving workflow', () => {
     expect(source).toContain("const canRepairNhisCatalog = canWrite && normalizedRole !== 'assistant'")
     expect(source).toContain('canRepairNhisCatalog &&\n        DEFAULT_NHIS_DRUG_CATALOG.length > 0')
   })
+
+  it('keeps the active Assistant role in the serving-only workflow', () => {
+    expect(source).toContain("const isMedicineCounterAssistant = normalizedRole === 'assistant'")
+    expect(source).not.toContain('activeRole: normalizedRole,\n    assignedRoles,')
+  })
 })

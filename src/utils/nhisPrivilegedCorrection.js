@@ -11,10 +11,11 @@ const normalizeRole = (role) => String(role || '').trim().toLowerCase()
 
 export const canPrivilegedCorrectNhisClaim = ({
   activeRole = '',
-  assignedRoles = [],
 } = {}) => {
-  const roles = [activeRole, ...(Array.isArray(assignedRoles) ? assignedRoles : [])]
-  return roles.some((role) => PRIVILEGED_CORRECTION_ROLES.has(normalizeRole(role)))
+  // Every tier-access request sends the selected active role and the server
+  // enforces that role. Do not silently inherit a more privileged assigned
+  // role while the user is actively working as an Assistant or Billing user.
+  return PRIVILEGED_CORRECTION_ROLES.has(normalizeRole(activeRole))
 }
 
 // Corrections remain available throughout the internal workflow, but never

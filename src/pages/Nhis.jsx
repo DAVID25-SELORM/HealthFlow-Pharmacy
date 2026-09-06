@@ -1409,13 +1409,10 @@ const Nhis = () => {
   const normalizedRole = String(role || '').toLowerCase()
   const canEditNhisClaimAnytime = canPrivilegedCorrectNhisClaim({
     activeRole: normalizedRole,
-    assignedRoles,
   })
   const privilegedNhisActionRole = canEditNhisClaimAnytime ? 'claims_officer' : normalizedRole
-  // A staff member may have Claims Officer as an assigned role while their
-  // currently selected role is Assistant. Privileged correction access must
-  // follow the same role set as the server RPC, not the display role alone.
-  const isMedicineCounterAssistant = normalizedRole === 'assistant' && !canEditNhisClaimAnytime
+  // The active role is authoritative: tier-access receives and enforces it.
+  const isMedicineCounterAssistant = normalizedRole === 'assistant'
   const canWrite = canEditNhisClaimAnytime || (
     !isMedicineCounterAssistant && (
       ['admin', 'super_admin', 'pharmacist', 'billing', 'claims_officer', 'records_officer']
