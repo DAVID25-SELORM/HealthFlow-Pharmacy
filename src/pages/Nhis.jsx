@@ -31,6 +31,7 @@ import {
 import { normalizeText } from '../utils/validation'
 import { autoSpaceDoseValue } from '../utils/prescriptionDirections'
 import { getNhisDoseOptions } from '../utils/nhisDoseOptions'
+import { getNhisMedicineStrength } from '../utils/nhisMedicineStrength'
 import {
   getAllNhisDrugs,
   getApplicableNhiaTariffItems,
@@ -3554,7 +3555,7 @@ const Nhis = () => {
           drugCode:    drug.code,
           description: drug.description,
           genericName: drug.generic_name || '',
-          strength:    drug.strength || '',
+          strength:    getNhisMedicineStrength(drug),
           dosageForm:  drug.dosage_form || '',
           unit:        drug.unit,
           unitPrice:   String(drug.unit_price),
@@ -3597,7 +3598,7 @@ const Nhis = () => {
       drugCode:     drug.code,
       description:  drug.description,
       genericName:  drug.generic_name || '',
-      strength:     drug.strength || '',
+      strength:     getNhisMedicineStrength(drug),
       dosageForm:   drug.dosage_form || '',
       unit:         drug.unit,
       unitPrice:    String(drug.unit_price),
@@ -3733,6 +3734,9 @@ const Nhis = () => {
       nhisDrugId:    medForm.nhisDrugId   || null,
       drugCode:      medForm.drugCode,
       description:   medForm.description,
+      genericName:   medForm.genericName,
+      strength:      getNhisMedicineStrength(medForm),
+      dosageForm:    medForm.dosageForm,
       unit:          medForm.unit,
       unitPrice:     price,
       prescribedQty,
@@ -8738,6 +8742,19 @@ const Nhis = () => {
                 {medForm.unitPrice && (
                   <span className="unit-price-hint">Unit Price: {fmtCurrency(medForm.unitPrice)}</span>
                 )}
+              </div>
+
+              <div className="form-group">
+                <label>Strength</label>
+                <input
+                  className="form-input"
+                  value={getNhisMedicineStrength(medForm)}
+                  placeholder="Select a medicine to show strength"
+                  readOnly
+                />
+                <span className="unit-price-hint">
+                  Strength is taken from the selected NHIS catalog medicine.
+                </span>
               </div>
 
               <div className="form-row">
