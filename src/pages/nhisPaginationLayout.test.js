@@ -70,8 +70,8 @@ describe('NHIS claims pagination layout', () => {
   it('offers common dose choices while preserving custom dose entry', () => {
     const source = readSource('./Nhis.jsx')
 
-    expect(source).toContain("import { getNhisDoseOptions } from '../utils/nhisDoseOptions'")
-    expect(source).toContain('options={getNhisDoseOptions(medForm)}')
+    expect(source).toContain("import { getNhisDoseSuggestionOptions } from '../utils/nhisDoseOptions'")
+    expect(source).toContain('options={getNhisDoseSuggestionOptions(medForm)}')
     expect(source).toContain('placeholder="Select or type dose"')
     expect(source).toContain('ariaLabel="Medicine dose"')
   })

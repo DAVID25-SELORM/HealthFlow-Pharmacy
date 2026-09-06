@@ -30,7 +30,7 @@ import {
 } from '../utils/nhisPrivilegedCorrection'
 import { normalizeText } from '../utils/validation'
 import { autoSpaceDoseValue } from '../utils/prescriptionDirections'
-import { getNhisDoseOptions } from '../utils/nhisDoseOptions'
+import { getNhisDoseSuggestionOptions } from '../utils/nhisDoseOptions'
 import { getNhisMedicineStrength } from '../utils/nhisMedicineStrength'
 import {
   getNhisCatalogMedicineVariant,
@@ -9002,7 +9002,7 @@ const Nhis = () => {
                       ...p,
                       dose: autoSpaceDoseValue(value),
                     }))}
-                    options={getNhisDoseOptions(medForm)}
+                    options={getNhisDoseSuggestionOptions(medForm)}
                     placeholder="Select or type dose"
                     ariaLabel="Medicine dose"
                     placement="top"

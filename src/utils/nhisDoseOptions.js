@@ -3,6 +3,30 @@ const normalizedMedicineForm = ({ unit = '', dosageForm = '', description = '' }
 
 const matches = (form, expression) => expression.test(form)
 
+const formatAmount = (amount) => Number.isInteger(amount)
+  ? String(amount)
+  : String(Math.round(amount * 1000) / 1000)
+
+const getNumericDose = (dose = '') => Number.parseFloat(String(dose))
+
+const getStrengthDisplay = (dose, strength) => {
+  const solid = String(strength || '').trim().match(/^(\d+(?:\.\d+)?)\s*(mg|mcg|micrograms?|µg|g|iu|units?)$/i)
+  if (solid) {
+    const quantity = getNumericDose(dose)
+    if (Number.isFinite(quantity)) return `${formatAmount(Number(solid[1]) * quantity)} ${solid[2]}`
+  }
+
+  const liquid = String(strength || '').trim().match(/^(\d+(?:\.\d+)?)\s*(mg|mcg|micrograms?|µg|g|iu|units?)\s*\/\s*(\d+(?:\.\d+)?)\s*ml$/i)
+  if (liquid) {
+    const volume = getNumericDose(dose)
+    if (Number.isFinite(volume)) {
+      return `${formatAmount((Number(liquid[1]) / Number(liquid[3])) * volume)} ${liquid[2]}`
+    }
+  }
+
+  return ''
+}
+
 export const getNhisDoseOptions = (medicine = {}) => {
   const form = normalizedMedicineForm(medicine)
 
@@ -39,4 +63,16 @@ export const getNhisDoseOptions = (medicine = {}) => {
 
   // The actual form is not known. Keep suggestions neutral and permit typing.
   return ['0.5 dose', '1 dose', '2 doses']
+}
+
+// Keep the stored value canonical (for CXF and historical directions), while
+// showing the calculated administered strength in the picker.
+export const getNhisDoseSuggestionOptions = (medicine = {}) => {
+  const strength = medicine.strength || ''
+  return getNhisDoseOptions(medicine).map((dose) => {
+    const administeredStrength = getStrengthDisplay(dose, strength)
+    return administeredStrength
+      ? { value: dose, label: `${dose} (${administeredStrength})`, description: `Catalogue strength: ${strength}` }
+      : { value: dose, label: dose, description: strength ? `Catalogue strength: ${strength}` : '' }
+  })
 }
