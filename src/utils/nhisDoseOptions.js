@@ -75,6 +75,51 @@ const isPerMillilitreStrength = (strength = '') =>
   /^\d+(?:\.\d+)?\s*(?:mg|mcg|micrograms?|µg|g|iu|units?)\s*\/\s*(?:\d+(?:\.\d+)?\s*)?ml$/i
     .test(String(strength).trim())
 
+const getMassPerMillilitreStrength = (strength = '') => {
+  const match = String(strength).trim().match(/^(\d+(?:\.\d+)?)\s*(mg|mcg|micrograms?|µg|g|iu|units?)\s*\/\s*(?:(\d+(?:\.\d+)?)\s*)?ml$/i)
+  if (!match) return null
+  const amount = Number(match[1])
+  const volume = Number(match[3] || 1)
+  if (!(amount > 0) || !(volume > 0)) return null
+  return { amountPerMl: amount / volume, unit: normalizeDoseUnit(match[2]) }
+}
+
+const getInfusionModelKind = (medicine = {}) => {
+  const form = normalizedMedicineForm(medicine)
+  if (!matches(form, /\b(infusion|intravenous infusion|iv infusion|drip)\b/)) return ''
+  if (getMassPerMillilitreStrength(medicine.strength)) return 'DRUG_INFUSION_MASS'
+  if (/^\d+(?:\.\d+)?\s*%$/i.test(String(medicine.strength || '').trim())) return 'IV_FLUID_VOLUME'
+  if (/\b(iv[ _-]?fluid|fluid|electrolyte|replacement)\b/i.test(
+    `${medicine.category || ''} ${medicine.clinicalProductType || medicine.clinical_product_type || ''}`
+  )) return 'IV_FLUID_VOLUME'
+  return ''
+}
+
+const getDrugInfusionMassOptions = (medicine = {}) => {
+  const concentration = getMassPerMillilitreStrength(medicine.strength)
+  if (!concentration) return []
+  const source = [
+    medicine.containerVolume,
+    medicine.container_volume,
+    medicine.packageVolume,
+    medicine.package_volume,
+    medicine.description,
+  ].filter(Boolean).join(' ')
+  const volumes = []
+  const pattern = /(\d+(?:\.\d+)?)\s*(ml|l)\b/gi
+  let match
+  while ((match = pattern.exec(source))) {
+    if (source.slice(Math.max(0, match.index - 1), match.index) === '/') continue
+    volumes.push(Number(match[1]) * (match[2].toLowerCase() === 'l' ? 1000 : 1))
+  }
+  return [...new Set(volumes.flatMap((volume) => {
+    const amount = concentration.amountPerMl * volume
+    return amount > 0 ? [amount, amount * 2] : []
+  }))]
+    .sort((left, right) => left - right)
+    .map((amount) => `${formatAmount(amount)} ${concentration.unit}`)
+}
+
 const getStrengthDisplay = (dose, strength) => {
   const solid = String(strength || '').trim().match(/^(\d+(?:\.\d+)?)\s*(mg|mcg|micrograms?|µg|g|iu|units?)$/i)
   if (solid) {
@@ -95,6 +140,7 @@ const getStrengthDisplay = (dose, strength) => {
 
 export const getNhisDoseOptions = (medicine = {}) => {
   const form = normalizedMedicineForm(medicine)
+  const infusionModelKind = getInfusionModelKind(medicine)
 
   if (matches(form, /\b(tablet|tab)\b/)) {
     return ['0.5 tablet', '1 tablet', '2 tablets', '3 tablets']
@@ -103,15 +149,14 @@ export const getNhisDoseOptions = (medicine = {}) => {
     return ['1 capsule', '2 capsules', '3 capsules']
   }
   if (matches(form, /\b(infusion|intravenous infusion|iv infusion|drip)\b/)) {
-    // Keep an infusion concentration (such as 0.9%) separate from its
-    // administration volume. Suggestions are taken only from documented
-    // catalogue/container text; custom mL/L entry remains available.
-    return getInfusionVolumeOptions(medicine)
+    if (infusionModelKind === 'IV_FLUID_VOLUME') return getInfusionVolumeOptions(medicine)
+    if (infusionModelKind === 'DRUG_INFUSION_MASS') return getDrugInfusionMassOptions(medicine)
+    return []
   }
   if (matches(form, /\b(syrup|suspension|elixir|mixture|oral solution|oral liquid)\b/)) {
     return ['2.5 ml', '5 ml', '10 ml', '15 ml']
   }
-  if (matches(form, /\b(drop|eye drop|ear drop|nasal drop)\b/)) {
+  if (matches(form, /\b(drops?|eye drops?|ear drops?|nasal drops?)\b/)) {
     return ['1 drop', '2 drops', '3 drops']
   }
   if (matches(form, /\b(inhaler|puff|nebuliser|nebulizer)\b/)) {
@@ -129,6 +174,9 @@ export const getNhisDoseOptions = (medicine = {}) => {
   if (matches(form, /\b(suppository)\b/)) {
     return ['1 suppository', '2 suppositories']
   }
+  if (matches(form, /\b(pessary|pessaries)\b/)) {
+    return ['1 pessary']
+  }
   if (matches(form, /\b(injection|injectable|ampoule|ampule|vial)\b/)) {
     // Volumes are only meaningful when the catalogue supplies a concentration
     // such as 150 mg/mL. A fixed-strength vial (for example Omeprazole 40 mg)
@@ -145,7 +193,16 @@ export const getNhisDoseOptions = (medicine = {}) => {
 export const resolveNhisDoseEntryModel = (medicine = {}) => {
   const form = normalizedMedicineForm(medicine)
   if (matches(form, /\b(infusion|intravenous infusion|iv infusion|drip)\b/)) {
-    return { kind: 'INFUSION', doseUnit: 'ml', options: getInfusionVolumeOptions(medicine) }
+    const kind = getInfusionModelKind(medicine)
+    if (kind === 'IV_FLUID_VOLUME') return { kind, doseUnit: 'ml', options: getInfusionVolumeOptions(medicine) }
+    if (kind === 'DRUG_INFUSION_MASS') {
+      return {
+        kind,
+        doseUnit: getMassPerMillilitreStrength(medicine.strength)?.unit || '',
+        options: getDrugInfusionMassOptions(medicine),
+      }
+    }
+    return { kind: 'OTHER', doseUnit: '', options: [] }
   }
   if (matches(form, /\b(injection|injectable|ampoule|ampule|vial)\b/)) {
     return {
@@ -167,10 +224,16 @@ export const resolveNhisDoseEntryModel = (medicine = {}) => {
 }
 
 export const validateNhisDoseEntry = (medicine = {}, dose = '') => {
-  if (resolveNhisDoseEntryModel(medicine).kind !== 'INFUSION') return ''
+  const model = resolveNhisDoseEntryModel(medicine)
   const parsedDose = getNhisDoseValueAndUnit(dose)
-  if (!parsedDose || !['ml', 'l'].includes(parsedDose.unit)) {
-    return 'Infusion dose must be a positive volume, for example 500 mL.'
+  if (model.kind === 'IV_FLUID_VOLUME') {
+    if (!parsedDose || !['ml', 'l'].includes(parsedDose.unit)) {
+      return 'IV fluid volume must be positive, for example 500 mL.'
+    }
+    return ''
+  }
+  if (model.kind === 'DRUG_INFUSION_MASS' && (!parsedDose || parsedDose.unit !== model.doseUnit)) {
+    return `Drug infusion dose must be a positive ${model.doseUnit || 'catalogue'} dose.`
   }
   return ''
 }
@@ -182,12 +245,15 @@ export const getNhisDoseSuggestionOptions = (medicine = {}) => {
   const strength = medicine.strength || ''
   const model = resolveNhisDoseEntryModel(medicine)
   return getNhisDoseOptions(medicine).map((dose) => {
-    if (model.kind === 'INFUSION') {
+    if (model.kind === 'IV_FLUID_VOLUME') {
       return {
         value: dose,
         label: formatInfusionVolumeLabel(dose),
         description: strength ? `Catalogue concentration: ${strength}` : '',
       }
+    }
+    if (model.kind === 'DRUG_INFUSION_MASS') {
+      return { value: dose, label: dose, description: strength ? `Catalogue concentration: ${strength}` : '' }
     }
     const administeredStrength = getStrengthDisplay(dose, strength)
     return administeredStrength

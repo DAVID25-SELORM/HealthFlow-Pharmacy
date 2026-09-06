@@ -22,4 +22,10 @@ describe('NHIS catalogue medicine variant entry', () => {
   it('updates the current medicine line rather than appending a duplicate while editing', () => {
     expect(page).toContain('return prev.map((medicine, index) => index === editingMedicineIndex ? nextMedicine : medicine)')
   })
+
+  it('clears a dose that belongs to a different catalogue variant', () => {
+    expect(page).toContain("dose: variantChanged ? '' : prev.dose")
+    expect(page).toContain("dose:        ''")
+    expect(page).toContain("dose:         ''")
+  })
 })

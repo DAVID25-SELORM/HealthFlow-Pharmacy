@@ -17,6 +17,7 @@ const FORM_PATTERNS = [
   ['inhaler', /\binhaler\b/i],
   ['spray', /\bspray\b/i],
   ['suppository', /\bsuppositor(?:y|ies)\b/i],
+  ['pessary', /\bpessar(?:y|ies)\b/i],
   ['sachet', /\bsachets?\b/i],
 ]
 

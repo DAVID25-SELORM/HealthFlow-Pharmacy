@@ -71,7 +71,7 @@ describe('NHIS dose suggestions', () => {
     }
 
     expect(resolveNhisDoseEntryModel(normalSaline)).toMatchObject({
-      kind: 'INFUSION',
+      kind: 'IV_FLUID_VOLUME',
       doseUnit: 'ml',
       options: ['500 ml', '1000 ml'],
     })
@@ -80,10 +80,40 @@ describe('NHIS dose suggestions', () => {
       expect.objectContaining({ value: '1000 ml', label: '1,000 mL (1 L)' }),
     ])
     expect(validateNhisDoseEntry(normalSaline, '1000 mL')).toBe('')
-    expect(validateNhisDoseEntry(normalSaline, '1000000 mg')).toContain('positive volume')
+    expect(validateNhisDoseEntry(normalSaline, '1000000 mg')).toContain('volume must be positive')
+  })
+
+  it('treats mass-per-volume drug infusions as drug doses, not IV-fluid volumes', () => {
+    const ciprofloxacin = {
+      dosageForm: 'Infusion',
+      description: 'Ciprofloxacin Infusion, 2 mg/mL in 100 mL',
+      strength: '2 mg/mL',
+      unit: 'Bottle',
+    }
+
+    expect(resolveNhisDoseEntryModel(ciprofloxacin)).toMatchObject({
+      kind: 'DRUG_INFUSION_MASS',
+      doseUnit: 'mg',
+      options: ['200 mg', '400 mg'],
+    })
+    expect(getNhisDoseSuggestionOptions(ciprofloxacin)).toContainEqual(
+      expect.objectContaining({ value: '400 mg', label: '400 mg' })
+    )
+    expect(validateNhisDoseEntry(ciprofloxacin, '400 mg')).toBe('')
+    expect(validateNhisDoseEntry(ciprofloxacin, '400 ml')).toContain('positive mg dose')
   })
 
   it('does not assign generic infusion volumes without catalogue container data', () => {
     expect(getNhisDoseOptions({ dosageForm: 'Infusion', strength: '0.9%' })).toEqual([])
+  })
+
+  it('keeps other supported formulation families in their own dose models', () => {
+    expect(getNhisDoseOptions({ dosageForm: 'Capsule' })).toEqual(['1 capsule', '2 capsules', '3 capsules'])
+    expect(getNhisDoseOptions({ dosageForm: 'Cream' })).toEqual(['1 application', '2 applications', 'Thin layer'])
+    expect(getNhisDoseOptions({ dosageForm: 'Eye drops' })).toEqual(['1 drop', '2 drops', '3 drops'])
+    expect(getNhisDoseOptions({ dosageForm: 'Inhaler' })).toEqual(['1 puff', '2 puffs', '3 puffs'])
+    expect(getNhisDoseOptions({ dosageForm: 'Suppository' })).toEqual(['1 suppository', '2 suppositories'])
+    expect(getNhisDoseOptions({ dosageForm: 'Pessary' })).toEqual(['1 pessary'])
+    expect(getNhisDoseOptions({ dosageForm: 'Powder' })).toEqual(['0.5 dose', '1 dose', '2 doses'])
   })
 })

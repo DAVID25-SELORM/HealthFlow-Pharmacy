@@ -3559,20 +3559,27 @@ const Nhis = () => {
 
   const applyCatalogMedicine = (drug) => {
     const variant = getNhisCatalogMedicineVariant(drug)
-    setMedForm((prev) => ({
-      ...prev,
-      nhisDrugId: drug.id,
-      drugCode: variant.code,
-      description: variant.description,
-      genericName: variant.genericName,
-      strength: variant.strength,
-      dosageForm: variant.dosageForm,
-      unit: variant.unit,
-      unitPrice: String(variant.unitPrice),
-      category: drug.category || '',
-      medicineAccessLevel: drug.medicine_access_level || '',
-      requiredPharmacyLevel: drug.required_pharmacy_level || '',
-    }))
+    setMedForm((prev) => {
+      const variantChanged = String(prev.nhisDrugId || '') !== String(drug.id || '') ||
+        prev.drugCode !== variant.code ||
+        prev.strength !== variant.strength ||
+        prev.dosageForm !== variant.dosageForm
+      return {
+        ...prev,
+        nhisDrugId: drug.id,
+        drugCode: variant.code,
+        description: variant.description,
+        genericName: variant.genericName,
+        strength: variant.strength,
+        dosageForm: variant.dosageForm,
+        unit: variant.unit,
+        unitPrice: String(variant.unitPrice),
+        category: drug.category || '',
+        dose: variantChanged ? '' : prev.dose,
+        medicineAccessLevel: drug.medicine_access_level || '',
+        requiredPharmacyLevel: drug.required_pharmacy_level || '',
+      }
+    })
   }
 
   const medFormCatalogueVariants = useMemo(
@@ -3624,6 +3631,7 @@ const Nhis = () => {
           unit:        drug.unit,
           unitPrice:   String(drug.unit_price),
           category:    drug.category || '',
+          dose:        '',
           // ✅ NHIS PHARMACY LEVEL PATCH START
           medicineAccessLevel: drug.medicine_access_level || '',
           requiredPharmacyLevel: drug.required_pharmacy_level || '',
@@ -3667,6 +3675,7 @@ const Nhis = () => {
       unit:         drug.unit,
       unitPrice:    String(drug.unit_price),
       category:     drug.category || '',
+      dose:         '',
       // ✅ NHIS PHARMACY LEVEL PATCH START
       medicineAccessLevel: drug.medicine_access_level || '',
       requiredPharmacyLevel: drug.required_pharmacy_level || '',
@@ -9004,7 +9013,7 @@ const Nhis = () => {
 
               <div className="form-row form-row--3">
                 <div className="form-group">
-                  <label>{medDoseEntryModel.kind === 'INFUSION' ? 'Dose / volume' : 'Dose'}</label>
+                  <label>{medDoseEntryModel.kind === 'IV_FLUID_VOLUME' ? 'Volume' : 'Dose'}</label>
                   <CompactSuggestionInput
                     value={medForm.dose}
                     disabled={isMedicineCounterAssistant}
@@ -9017,7 +9026,7 @@ const Nhis = () => {
                     ariaLabel="Medicine dose"
                     placement="top"
                   />
-                  {medDoseEntryModel.kind === 'INFUSION' && (
+                  {medDoseEntryModel.kind === 'IV_FLUID_VOLUME' && (
                     <small>Enter a positive volume in mL or L. The catalogue concentration is not the dose.</small>
                   )}
                 </div>
