@@ -9,6 +9,7 @@ const FORM_PATTERNS = [
   ['capsule', /\bcapsules?\b/i],
   ['suspension', /\bsuspension\b/i],
   ['syrup', /\bsyrup\b/i],
+  ['infusion', /\binfusions?\b/i],
   ['injection', /\binjections?\b/i],
   ['cream', /\bcream\b/i],
   ['ointment', /\bointment\b/i],

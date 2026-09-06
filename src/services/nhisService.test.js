@@ -2259,6 +2259,9 @@ describe('CLAIM-it export helpers', () => {
         nhis_claim_medicines: [
           {
             ...claim.nhis_claim_medicines[0],
+            description: 'Sodium Chloride Infusion 0.9%, 500 mL',
+            unit: 'bag',
+            dose: '500 ml',
             dispensary_date: '2026-05-13',
           },
         ],
@@ -2337,6 +2340,9 @@ describe('CLAIM-it export helpers', () => {
       medicineCode: 'NH001',
       serviceDate: '2026-05-14',
       cost: 10,
+      prescription: {
+        dose: { value: '500', unit: 'ml' },
+      },
       dispensedQty: {
         qty: 10,
         dispensaryUnit: { unit: 'PRICE_UNIT', unitsInPrice: 1, ratio: 1 },

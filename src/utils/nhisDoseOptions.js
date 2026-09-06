@@ -9,6 +9,49 @@ const formatAmount = (amount) => Number.isInteger(amount)
 
 const getNumericDose = (dose = '') => Number.parseFloat(String(dose))
 
+const DOSE_VALUE_AND_UNIT_PATTERN = /^\s*(\d+(?:\.\d+)?)\s*([a-zµ]+)\s*$/i
+
+const normalizeDoseUnit = (unit = '') => {
+  const normalized = String(unit).trim().toLowerCase()
+  if (normalized === 'ml') return 'ml'
+  if (normalized === 'l') return 'l'
+  if (normalized === 'µg' || normalized === 'mcg' || normalized === 'microgram' || normalized === 'micrograms') return 'mcg'
+  return normalized
+}
+
+export const getNhisDoseValueAndUnit = (dose = '') => {
+  const match = String(dose).match(DOSE_VALUE_AND_UNIT_PATTERN)
+  if (!match) return null
+
+  const value = Number(match[1])
+  if (!(value > 0)) return null
+  return { value, unit: normalizeDoseUnit(match[2]) }
+}
+
+const formatVolume = (millilitres) => `${formatAmount(millilitres)} ml`
+
+const getInfusionVolumeOptions = (medicine = {}) => {
+  const source = [
+    medicine.containerVolume,
+    medicine.container_volume,
+    medicine.packageVolume,
+    medicine.package_volume,
+    medicine.description,
+    medicine.unit,
+  ].filter(Boolean).join(' ')
+  const volumes = []
+  const pattern = /(\d+(?:\.\d+)?)\s*(ml|l)\b/gi
+  let match
+  while ((match = pattern.exec(source))) {
+    // Do not mistake a concentration denominator (for example mg/5 mL) for
+    // the product container's infusion volume.
+    if (source.slice(Math.max(0, match.index - 1), match.index) === '/') continue
+    const value = Number(match[1]) * (match[2].toLowerCase() === 'l' ? 1000 : 1)
+    if (value > 0) volumes.push(value)
+  }
+  return [...new Set(volumes)].sort((left, right) => left - right).map(formatVolume)
+}
+
 const isPerMillilitreStrength = (strength = '') =>
   /^\d+(?:\.\d+)?\s*(?:mg|mcg|micrograms?|µg|g|iu|units?)\s*\/\s*(?:\d+(?:\.\d+)?\s*)?ml$/i
     .test(String(strength).trim())
@@ -39,6 +82,12 @@ export const getNhisDoseOptions = (medicine = {}) => {
   }
   if (matches(form, /\b(capsule|cap)\b/)) {
     return ['1 capsule', '2 capsules', '3 capsules']
+  }
+  if (matches(form, /\b(infusion|intravenous infusion|iv infusion|drip)\b/)) {
+    // Keep an infusion concentration (such as 0.9%) separate from its
+    // administration volume. Suggestions are taken only from documented
+    // catalogue/container text; custom mL/L entry remains available.
+    return getInfusionVolumeOptions(medicine)
   }
   if (matches(form, /\b(syrup|suspension|elixir|mixture|oral solution|oral liquid)\b/)) {
     return ['2.5 ml', '5 ml', '10 ml', '15 ml']
@@ -74,12 +123,49 @@ export const getNhisDoseOptions = (medicine = {}) => {
   return ['0.5 dose', '1 dose', '2 doses']
 }
 
+export const resolveNhisDoseEntryModel = (medicine = {}) => {
+  const form = normalizedMedicineForm(medicine)
+  if (matches(form, /\b(infusion|intravenous infusion|iv infusion|drip)\b/)) {
+    return { kind: 'INFUSION', doseUnit: 'ml', options: getInfusionVolumeOptions(medicine) }
+  }
+  if (matches(form, /\b(injection|injectable|ampoule|ampule|vial)\b/)) {
+    return {
+      kind: 'INJECTION',
+      doseUnit: isPerMillilitreStrength(medicine.strength) ? 'ml' : 'vial',
+      options: getNhisDoseOptions(medicine),
+    }
+  }
+  if (matches(form, /\b(tablet|tab|capsule|cap)\b/)) {
+    return { kind: 'TABLET_CAPSULE', doseUnit: '', options: getNhisDoseOptions(medicine) }
+  }
+  if (matches(form, /\b(syrup|suspension|elixir|mixture|oral solution|oral liquid)\b/)) {
+    return { kind: 'LIQUID_ORAL', doseUnit: 'ml', options: getNhisDoseOptions(medicine) }
+  }
+  if (matches(form, /\b(cream|ointment|gel|lotion|topical)\b/)) {
+    return { kind: 'TOPICAL', doseUnit: 'application', options: getNhisDoseOptions(medicine) }
+  }
+  return { kind: 'OTHER', doseUnit: '', options: getNhisDoseOptions(medicine) }
+}
+
+export const validateNhisDoseEntry = (medicine = {}, dose = '') => {
+  if (resolveNhisDoseEntryModel(medicine).kind !== 'INFUSION') return ''
+  const parsedDose = getNhisDoseValueAndUnit(dose)
+  if (!parsedDose || !['ml', 'l'].includes(parsedDose.unit)) {
+    return 'Infusion dose must be a positive volume, for example 500 mL.'
+  }
+  return ''
+}
+
 // Store the prescribed active-ingredient dose (for example 600 mg), while
 // showing the administration quantity required by the selected formulation.
 // This keeps strength, dose and frequency clinically distinct in CXF/history.
 export const getNhisDoseSuggestionOptions = (medicine = {}) => {
   const strength = medicine.strength || ''
+  const model = resolveNhisDoseEntryModel(medicine)
   return getNhisDoseOptions(medicine).map((dose) => {
+    if (model.kind === 'INFUSION') {
+      return { value: dose, label: dose, description: strength ? `Catalogue concentration: ${strength}` : '' }
+    }
     const administeredStrength = getStrengthDisplay(dose, strength)
     return administeredStrength
       ? { value: administeredStrength, label: `${administeredStrength} (${dose})`, description: `Catalogue strength: ${strength}` }

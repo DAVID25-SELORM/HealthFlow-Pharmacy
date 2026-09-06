@@ -39,6 +39,23 @@ describe('NHIS catalogue medicine variants', () => {
     expect(getNhisVariantStrengths(getNhisCatalogMedicineVariants(catalogue, catalogue[4]))).toEqual(['400 mcg'])
   })
 
+  it('keeps infusion concentration and catalogue identity separate from administration volume', () => {
+    const infusions = [
+      { id: 'ns-09', code: 'NS09', description: 'Sodium Chloride Infusion 0.9%, 500 mL', unit: 'Bag', unit_price: 7.5 },
+      { id: 'ns-045', code: 'NS045', description: 'Sodium Chloride Infusion 0.45%, 500 mL', unit: 'Bag', unit_price: 8.5 },
+    ]
+    const variants = getNhisCatalogMedicineVariants(infusions, infusions[0])
+
+    expect(getNhisVariantForms(variants)).toEqual(['infusion'])
+    expect(getNhisVariantStrengths(variants, 'infusion')).toEqual(['0.9%', '0.45%'])
+    expect(resolveNhisCatalogMedicineVariant({
+      catalogue: infusions,
+      medicine: infusions[0],
+      dosageForm: 'infusion',
+      strength: '0.45%',
+    })).toMatchObject({ id: 'ns-045', code: 'NS045', unitPrice: 8.5 })
+  })
+
   it('keeps historical combined descriptions readable without rewriting them', () => {
     const historical = { description: 'Amlodipine Tablet 10 mg', unit: 'Tablet' }
     expect(getNhisCatalogMedicineVariants(catalogue, historical).map((variant) => variant.code))

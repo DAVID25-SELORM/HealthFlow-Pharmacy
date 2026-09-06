@@ -31,6 +31,7 @@ import {
 import { normalizeText } from '../utils/validation'
 import { autoSpaceDoseValue } from '../utils/prescriptionDirections'
 import { getNhisDoseSuggestionOptions } from '../utils/nhisDoseOptions'
+import { resolveNhisDoseEntryModel, validateNhisDoseEntry } from '../utils/nhisDoseOptions'
 import { getNhisMedicineStrength } from '../utils/nhisMedicineStrength'
 import {
   getNhisCatalogMedicineVariant,
@@ -3586,6 +3587,10 @@ const Nhis = () => {
     () => getNhisVariantStrengths(medFormCatalogueVariants, medForm.dosageForm),
     [medFormCatalogueVariants, medForm.dosageForm]
   )
+  const medDoseEntryModel = useMemo(
+    () => resolveNhisDoseEntryModel(medForm),
+    [medForm.unit, medForm.dosageForm, medForm.description, medForm.strength]
+  )
 
   const resolveAndApplyCatalogVariant = ({ dosageForm, strength }) => {
     const variant = resolveNhisCatalogMedicineVariant({
@@ -3736,6 +3741,11 @@ const Nhis = () => {
     const durationIssue = validateNhisMedicineDurationInput(medForm.duration)
     if (durationIssue && !retainsHistoricalDuration) {
       notify(durationIssue, 'warning')
+      return
+    }
+    const doseIssue = validateNhisDoseEntry(medForm, medForm.dose)
+    if (doseIssue) {
+      notify(doseIssue, 'warning')
       return
     }
     const allowsZeroServedQty = isMedicineCounterAssistant && ['not_available', 'not_served'].includes(requestedServingStatus)
@@ -8994,7 +9004,7 @@ const Nhis = () => {
 
               <div className="form-row form-row--3">
                 <div className="form-group">
-                  <label>Dose</label>
+                  <label>{medDoseEntryModel.kind === 'INFUSION' ? 'Dose / volume' : 'Dose'}</label>
                   <CompactSuggestionInput
                     value={medForm.dose}
                     disabled={isMedicineCounterAssistant}
@@ -9007,6 +9017,9 @@ const Nhis = () => {
                     ariaLabel="Medicine dose"
                     placement="top"
                   />
+                  {medDoseEntryModel.kind === 'INFUSION' && (
+                    <small>Enter a positive volume in mL or L. The catalogue concentration is not the dose.</small>
+                  )}
                 </div>
                 <div className="form-group">
                   <label>Frequency</label>

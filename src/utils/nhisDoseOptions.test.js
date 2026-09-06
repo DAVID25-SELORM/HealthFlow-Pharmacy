@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { getNhisDoseOptions, getNhisDoseSuggestionOptions } from './nhisDoseOptions'
+import {
+  getNhisDoseOptions,
+  getNhisDoseSuggestionOptions,
+  resolveNhisDoseEntryModel,
+  validateNhisDoseEntry,
+} from './nhisDoseOptions'
 
 describe('NHIS dose suggestions', () => {
   it('offers tablet quantities only for tablet medicines', () => {
@@ -55,5 +60,29 @@ describe('NHIS dose suggestions', () => {
       expect.objectContaining({ value: '40 mg', label: '40 mg (1 vial)' }),
       expect.objectContaining({ value: '80 mg', label: '80 mg (2 vials)' }),
     ])
+  })
+
+  it('keeps an infusion concentration separate from its prescribed volume', () => {
+    const normalSaline = {
+      dosageForm: 'Infusion',
+      description: 'Sodium Chloride Infusion 0.9%, 500 mL',
+      strength: '0.9%',
+      unit: 'Bag',
+    }
+
+    expect(resolveNhisDoseEntryModel(normalSaline)).toMatchObject({
+      kind: 'INFUSION',
+      doseUnit: 'ml',
+      options: ['500 ml'],
+    })
+    expect(getNhisDoseSuggestionOptions(normalSaline)).toEqual([
+      expect.objectContaining({ value: '500 ml', label: '500 ml' }),
+    ])
+    expect(validateNhisDoseEntry(normalSaline, '1000 mL')).toBe('')
+    expect(validateNhisDoseEntry(normalSaline, '1000000 mg')).toContain('positive volume')
+  })
+
+  it('does not assign generic infusion volumes without catalogue container data', () => {
+    expect(getNhisDoseOptions({ dosageForm: 'Infusion', strength: '0.9%' })).toEqual([])
   })
 })

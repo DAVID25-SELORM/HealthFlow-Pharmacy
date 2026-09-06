@@ -11,6 +11,7 @@ import {
   normalizeMedicineAccessLevel,
   normalizePharmacyLevel,
 } from '../utils/nhisPharmacyLevel'
+import { getNhisDoseValueAndUnit } from '../utils/nhisDoseOptions'
 // ✅ NHIA CONFIG PATCH START
 import {
   getNhiaAccreditationDateGenerated,
@@ -9221,6 +9222,7 @@ const buildClaimItRows = async (payload, runtimeOptions = {}) => {
     claim.medicines.forEach((medicine, medicineIndex) => {
       const medicineServiceDate = getClaimItLineServiceDate(medicine.dispensaryDate, serviceDate, serviceDate, dateTo)
       const claimItDuration = normalizeClaimItDurationForExport(medicine.duration)
+      const parsedDose = getNhisDoseValueAndUnit(medicine.dose)
       const medicineEntry = {
         _entry_id: String((claimIndex + 1) * 10000 + medicineIndex + 1),
         _claim_id: claimGuid,
@@ -9233,7 +9235,10 @@ const buildClaimItRows = async (payload, runtimeOptions = {}) => {
         extraDirections: null,
         unparsed: null,
         dose_value: parseDirectionsNumber(medicine.dose),
-        dose_unit: normalizeText(medicine.unit).toLowerCase() || 'unit',
+        // The catalogue unit describes the billed container (for example bag
+        // or vial), whereas CXF dose_unit describes the prescribed amount.
+        // Keep the legacy catalogue-unit fallback for historical free text.
+        dose_unit: parsedDose?.unit || normalizeText(medicine.unit).toLowerCase() || 'unit',
         frequency_value: parseFrequencyValue(medicine.frequency),
         frequency_unit: 'DAILY',
         frequency_desc: normalizeText(medicine.frequency).toLowerCase(),
