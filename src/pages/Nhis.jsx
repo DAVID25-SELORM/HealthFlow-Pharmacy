@@ -30,6 +30,7 @@ import {
 } from '../utils/nhisPrivilegedCorrection'
 import { normalizeText } from '../utils/validation'
 import { autoSpaceDoseValue } from '../utils/prescriptionDirections'
+import { getNhisDoseOptions } from '../utils/nhisDoseOptions'
 import {
   getAllNhisDrugs,
   getApplicableNhiaTariffItems,
@@ -295,23 +296,6 @@ const FREQUENCY_OPTIONS = [
   'STAT',
   'PRN',
   ...Array.from({ length: 12 }, (_, index) => `${index + 1} hourly`),
-]
-const DOSE_OPTIONS = [
-  '½ tablet',
-  '1 tablet',
-  '2 tablets',
-  '3 tablets',
-  '1 capsule',
-  '2 capsules',
-  '5 ml',
-  '10 ml',
-  '15 ml',
-  '1 puff',
-  '2 puffs',
-  '1 drop',
-  '2 drops',
-  '1 sachet',
-  '1 application',
 ]
 const DURATION_OPTIONS = [
   ...Array.from({ length: 60 }, (_, index) => `${index + 1} day${index === 0 ? '' : 's'}`),
@@ -8899,7 +8883,7 @@ const Nhis = () => {
                       ...p,
                       dose: autoSpaceDoseValue(value),
                     }))}
-                    options={DOSE_OPTIONS}
+                    options={getNhisDoseOptions(medForm)}
                     placeholder="Select or type dose"
                     ariaLabel="Medicine dose"
                     placement="top"
