@@ -6,6 +6,7 @@ const serviceWorker = readFileSync(resolve(process.cwd(), 'public/service-worker
 const registration = readFileSync(resolve(process.cwd(), 'src/registerServiceWorker.js'), 'utf8')
 const deploymentRecovery = readFileSync(resolve(process.cwd(), 'public/deployment-recovery.js'), 'utf8')
 const indexHtml = readFileSync(resolve(process.cwd(), 'index.html'), 'utf8')
+const viteConfig = readFileSync(resolve(process.cwd(), 'vite.config.js'), 'utf8')
 
 describe('service worker deployment asset recovery', () => {
   it('falls back to a cached hashed script or stylesheet when a new deployment removes it', () => {
@@ -33,5 +34,9 @@ describe('service worker deployment asset recovery', () => {
     expect(deploymentRecovery).toContain("name.startsWith('healthflow-')")
     expect(deploymentRecovery).toContain("nextUrl.searchParams.set('__healthflow_refresh'")
     expect(deploymentRecovery).toContain('RELOAD_COOLDOWN_MS = 30_000')
+  })
+
+  it('does not emit eager modulepreloads that conflict with service-worker control', () => {
+    expect(viteConfig).toContain('modulePreload: false')
   })
 })

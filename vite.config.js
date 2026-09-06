@@ -4,6 +4,10 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   build: {
+    // A service-worker-controlled application should fetch its entry modules
+    // normally. Vite's eager modulepreload hints cause repeated Edge warnings
+    // when the service worker takes control between preload and consumption.
+    modulePreload: false,
     // The offline diagnosis catalog is intentionally shipped as a lazy-loaded fallback chunk.
     chunkSizeWarningLimit: 10000
   },
