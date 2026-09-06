@@ -475,9 +475,15 @@ export const normalizePatientWorkspaceData = (workspace = {}) => {
     const stats = visitStats[patient.id] || {}
     const matchingNhisClaims = nhisClaims.filter((claim) => patientMatchesNhisClaim(patient, claim))
     const lastNhisVisit = latestDateValue(...matchingNhisClaims.map(getNhisClaimVisitDate))
+    const serverVisitCount = Number(stats.visits)
     return {
       ...patient,
-      visits: Number(stats.visits || 0) + matchingNhisClaims.length,
+      // Cloud visitStats already includes NHIS claims and sales. Adding the
+      // matching claim list again inflated the total while history stayed
+      // correctly deduplicated (for example, 2 visits but one claim shown).
+      visits: Number.isFinite(serverVisitCount)
+        ? Math.max(serverVisitCount, 0)
+        : matchingNhisClaims.length,
       lastVisit: latestDateValue(stats.lastVisit, lastNhisVisit),
     }
   })

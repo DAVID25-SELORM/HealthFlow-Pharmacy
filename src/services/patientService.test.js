@@ -61,6 +61,7 @@ import {
   getPatientById,
   getPatientLastVisit,
   getPatientVisitCount,
+  normalizePatientWorkspaceData,
   searchPatients,
 } from './patientService'
 
@@ -196,6 +197,30 @@ describe('patientService local sync reads', () => {
     expect(invokeTierAccess).toHaveBeenCalledTimes(1)
     expect(invokeTierAccess).toHaveBeenCalledWith({ action: 'get_patients_workspace' })
     expect(fromMock).not.toHaveBeenCalled()
+  })
+
+  it('does not double-count an NHIS claim already represented in cloud visit stats', () => {
+    expect(normalizePatientWorkspaceData({
+      patients: [{
+        id: '2df77f2d-ea44-4f14-966c-a0a7c213f86a',
+        full_name: 'Ama Mensah',
+        nhis_member_no: '99441270',
+      }],
+      nhisClaims: [{
+        id: 'claim-row-1',
+        patient_id: '2df77f2d-ea44-4f14-966c-a0a7c213f86a',
+        member_no: '99441270',
+        service_date_from: '2026-06-15',
+      }],
+      visitStats: {
+        '2df77f2d-ea44-4f14-966c-a0a7c213f86a': {
+          visits: 1,
+          lastVisit: '2026-06-15',
+        },
+      },
+    })).toEqual([
+      expect.objectContaining({ visits: 1, lastVisit: '2026-06-15' }),
+    ])
   })
 
   it('falls back to cloud patient search when local sync search has no matches online', async () => {
