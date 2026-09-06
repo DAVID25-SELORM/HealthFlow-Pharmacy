@@ -16,11 +16,11 @@ const getStrengthDisplay = (dose, strength) => {
     if (Number.isFinite(quantity)) return `${formatAmount(Number(solid[1]) * quantity)} ${solid[2]}`
   }
 
-  const liquid = String(strength || '').trim().match(/^(\d+(?:\.\d+)?)\s*(mg|mcg|micrograms?|µg|g|iu|units?)\s*\/\s*(\d+(?:\.\d+)?)\s*ml$/i)
+  const liquid = String(strength || '').trim().match(/^(\d+(?:\.\d+)?)\s*(mg|mcg|micrograms?|µg|g|iu|units?)\s*\/\s*(?:(\d+(?:\.\d+)?)\s*)?ml$/i)
   if (liquid) {
     const volume = getNumericDose(dose)
     if (Number.isFinite(volume)) {
-      return `${formatAmount((Number(liquid[1]) / Number(liquid[3])) * volume)} ${liquid[2]}`
+      return `${formatAmount((Number(liquid[1]) / Number(liquid[3] || 1)) * volume)} ${liquid[2]}`
     }
   }
 
@@ -58,21 +58,22 @@ export const getNhisDoseOptions = (medicine = {}) => {
     return ['1 suppository', '2 suppositories']
   }
   if (matches(form, /\b(injection|injectable|ampoule|ampule|vial)\b/)) {
-    return ['0.5 ml', '1 ml', '2 ml', '5 ml']
+    return ['0.5 ml', '1 ml', '2 ml', '3 ml', '4 ml', '5 ml']
   }
 
   // The actual form is not known. Keep suggestions neutral and permit typing.
   return ['0.5 dose', '1 dose', '2 doses']
 }
 
-// Keep the stored value canonical (for CXF and historical directions), while
-// showing the calculated administered strength in the picker.
+// Store the prescribed active-ingredient dose (for example 600 mg), while
+// showing the administration quantity required by the selected formulation.
+// This keeps strength, dose and frequency clinically distinct in CXF/history.
 export const getNhisDoseSuggestionOptions = (medicine = {}) => {
   const strength = medicine.strength || ''
   return getNhisDoseOptions(medicine).map((dose) => {
     const administeredStrength = getStrengthDisplay(dose, strength)
     return administeredStrength
-      ? { value: dose, label: `${dose} (${administeredStrength})`, description: `Catalogue strength: ${strength}` }
+      ? { value: administeredStrength, label: `${administeredStrength} (${dose})`, description: `Catalogue strength: ${strength}` }
       : { value: dose, label: dose, description: strength ? `Catalogue strength: ${strength}` : '' }
   })
 }

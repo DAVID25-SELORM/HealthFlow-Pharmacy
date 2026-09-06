@@ -10,5 +10,9 @@ describe('NHIS medicine strength', () => {
     expect(getNhisMedicineStrength({ description: 'Carvedilol Tablet 12.5 mg' })).toBe('12.5 mg')
     expect(getNhisMedicineStrength({ description: 'Misoprostol Tablet, 400mcg' })).toBe('400mcg')
     expect(getNhisMedicineStrength({ description: 'Amoxicillin Suspension, 125 mg/5 mL' })).toBe('125 mg/5 mL')
+    expect(getNhisMedicineStrength({
+      strength: '150 mg',
+      description: 'Clindamycin Injection, 150 mg/mL in 2 mL',
+    })).toBe('150 mg/mL')
   })
 })

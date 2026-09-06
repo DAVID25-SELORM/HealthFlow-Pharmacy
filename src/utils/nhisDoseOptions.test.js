@@ -20,12 +20,12 @@ describe('NHIS dose suggestions', () => {
     ])
   })
 
-  it('shows the calculated mg dose but keeps the stored tablet instruction canonical', () => {
+  it('stores the calculated active-ingredient tablet dose and shows its administration quantity', () => {
     expect(getNhisDoseSuggestionOptions({ unit: 'Tablet', strength: '10 mg' })).toEqual([
-      expect.objectContaining({ value: '0.5 tablet', label: '0.5 tablet (5 mg)' }),
-      expect.objectContaining({ value: '1 tablet', label: '1 tablet (10 mg)' }),
-      expect.objectContaining({ value: '2 tablets', label: '2 tablets (20 mg)' }),
-      expect.objectContaining({ value: '3 tablets', label: '3 tablets (30 mg)' }),
+      expect.objectContaining({ value: '5 mg', label: '5 mg (0.5 tablet)' }),
+      expect.objectContaining({ value: '10 mg', label: '10 mg (1 tablet)' }),
+      expect.objectContaining({ value: '20 mg', label: '20 mg (2 tablets)' }),
+      expect.objectContaining({ value: '30 mg', label: '30 mg (3 tablets)' }),
     ])
   })
 
@@ -33,6 +33,16 @@ describe('NHIS dose suggestions', () => {
     expect(getNhisDoseSuggestionOptions({
       description: 'Paracetamol Suspension',
       strength: '120 mg/5 mL',
-    })[1]).toMatchObject({ value: '5 ml', label: '5 ml (120 mg)' })
+    })[1]).toMatchObject({ value: '120 mg', label: '120 mg (5 ml)' })
+  })
+
+  it('offers a 600 mg injection dose from a 150 mg/mL catalogue strength', () => {
+    expect(getNhisDoseSuggestionOptions({
+      description: 'Clindamycin Injection',
+      strength: '150 mg/mL',
+    })).toContainEqual(expect.objectContaining({
+      value: '600 mg',
+      label: '600 mg (4 ml)',
+    }))
   })
 })
