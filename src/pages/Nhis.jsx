@@ -1424,6 +1424,11 @@ const Nhis = () => {
     )
   )
   const canServeNhisMedicines = canWrite || isMedicineCounterAssistant
+  // The edge function rejects catalogue provisioning while the user's active
+  // role is Assistant, even if the account has additional claims permissions.
+  // Match that server rule so loading the NHIS screen never creates a denied
+  // background request for a Dispensary Assistant.
+  const canRepairNhisCatalog = canWrite && normalizedRole !== 'assistant'
   const canEditNhisPatientDetails = canWrite
   const organizationType = normalizeOrganizationType(organization?.organization_type)
   const organizationId = organization?.id || profile?.organization_id || ''
@@ -1940,7 +1945,7 @@ const Nhis = () => {
       void loadPrescribingRecords()
 
       if (
-        canWrite &&
+        canRepairNhisCatalog &&
         DEFAULT_NHIS_DRUG_CATALOG.length > 0 &&
         organization?.can_use_nhis !== false
       ) {
