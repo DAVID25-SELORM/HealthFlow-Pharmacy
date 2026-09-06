@@ -45,4 +45,15 @@ describe('NHIS dose suggestions', () => {
       label: '600 mg (4 ml)',
     }))
   })
+
+  it('uses vial quantities rather than invented mL volumes for fixed-strength injections', () => {
+    expect(getNhisDoseSuggestionOptions({
+      description: 'Omeprazole Injection',
+      strength: '40 mg',
+    })).toEqual([
+      expect.objectContaining({ value: '20 mg', label: '20 mg (0.5 vial)' }),
+      expect.objectContaining({ value: '40 mg', label: '40 mg (1 vial)' }),
+      expect.objectContaining({ value: '80 mg', label: '80 mg (2 vials)' }),
+    ])
+  })
 })

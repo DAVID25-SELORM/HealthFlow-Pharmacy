@@ -9,6 +9,10 @@ const formatAmount = (amount) => Number.isInteger(amount)
 
 const getNumericDose = (dose = '') => Number.parseFloat(String(dose))
 
+const isPerMillilitreStrength = (strength = '') =>
+  /^\d+(?:\.\d+)?\s*(?:mg|mcg|micrograms?|µg|g|iu|units?)\s*\/\s*(?:\d+(?:\.\d+)?\s*)?ml$/i
+    .test(String(strength).trim())
+
 const getStrengthDisplay = (dose, strength) => {
   const solid = String(strength || '').trim().match(/^(\d+(?:\.\d+)?)\s*(mg|mcg|micrograms?|µg|g|iu|units?)$/i)
   if (solid) {
@@ -58,7 +62,12 @@ export const getNhisDoseOptions = (medicine = {}) => {
     return ['1 suppository', '2 suppositories']
   }
   if (matches(form, /\b(injection|injectable|ampoule|ampule|vial)\b/)) {
-    return ['0.5 ml', '1 ml', '2 ml', '3 ml', '4 ml', '5 ml']
+    // Volumes are only meaningful when the catalogue supplies a concentration
+    // such as 150 mg/mL. A fixed-strength vial (for example Omeprazole 40 mg)
+    // must be prescribed by vial, never by an invented mL amount.
+    return isPerMillilitreStrength(medicine.strength)
+      ? ['0.5 ml', '1 ml', '2 ml', '3 ml', '4 ml', '5 ml']
+      : ['0.5 vial', '1 vial', '2 vials']
   }
 
   // The actual form is not known. Keep suggestions neutral and permit typing.
