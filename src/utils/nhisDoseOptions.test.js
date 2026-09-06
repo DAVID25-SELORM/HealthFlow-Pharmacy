@@ -73,10 +73,11 @@ describe('NHIS dose suggestions', () => {
     expect(resolveNhisDoseEntryModel(normalSaline)).toMatchObject({
       kind: 'INFUSION',
       doseUnit: 'ml',
-      options: ['500 ml'],
+      options: ['500 ml', '1000 ml'],
     })
     expect(getNhisDoseSuggestionOptions(normalSaline)).toEqual([
       expect.objectContaining({ value: '500 ml', label: '500 ml' }),
+      expect.objectContaining({ value: '1000 ml', label: '1,000 mL (1 L)' }),
     ])
     expect(validateNhisDoseEntry(normalSaline, '1000 mL')).toBe('')
     expect(validateNhisDoseEntry(normalSaline, '1000000 mg')).toContain('positive volume')

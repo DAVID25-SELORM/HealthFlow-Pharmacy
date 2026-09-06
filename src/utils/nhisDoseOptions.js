@@ -30,6 +30,8 @@ export const getNhisDoseValueAndUnit = (dose = '') => {
 
 const formatVolume = (millilitres) => `${formatAmount(millilitres)} ml`
 
+const STANDARD_INFUSION_VOLUMES_ML = [250, 500, 1000]
+
 const getInfusionVolumeOptions = (medicine = {}) => {
   const source = [
     medicine.containerVolume,
@@ -49,7 +51,24 @@ const getInfusionVolumeOptions = (medicine = {}) => {
     const value = Number(match[1]) * (match[2].toLowerCase() === 'l' ? 1000 : 1)
     if (value > 0) volumes.push(value)
   }
-  return [...new Set(volumes)].sort((left, right) => left - right).map(formatVolume)
+  const documentedVolumes = [...new Set(volumes)]
+  const supportedStandardVolumes = STANDARD_INFUSION_VOLUMES_ML.filter((candidate) =>
+    documentedVolumes.some((containerVolume) => candidate >= containerVolume && candidate % containerVolume === 0)
+  )
+  // These are prescription-volume suggestions only. They do not imply an
+  // inventory/container conversion; dispensing quantity remains authoritative
+  // elsewhere in the claim workflow.
+  return [...new Set([...documentedVolumes, ...supportedStandardVolumes])]
+    .sort((left, right) => left - right)
+    .map(formatVolume)
+}
+
+const formatInfusionVolumeLabel = (dose) => {
+  const parsedDose = getNhisDoseValueAndUnit(dose)
+  const millilitres = parsedDose?.unit === 'l'
+    ? parsedDose.value * 1000
+    : parsedDose?.unit === 'ml' ? parsedDose.value : 0
+  return millilitres === 1000 ? '1,000 mL (1 L)' : dose
 }
 
 const isPerMillilitreStrength = (strength = '') =>
@@ -164,7 +183,11 @@ export const getNhisDoseSuggestionOptions = (medicine = {}) => {
   const model = resolveNhisDoseEntryModel(medicine)
   return getNhisDoseOptions(medicine).map((dose) => {
     if (model.kind === 'INFUSION') {
-      return { value: dose, label: dose, description: strength ? `Catalogue concentration: ${strength}` : '' }
+      return {
+        value: dose,
+        label: formatInfusionVolumeLabel(dose),
+        description: strength ? `Catalogue concentration: ${strength}` : '',
+      }
     }
     const administeredStrength = getStrengthDisplay(dose, strength)
     return administeredStrength
