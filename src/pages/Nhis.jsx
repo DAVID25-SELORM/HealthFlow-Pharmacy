@@ -3377,6 +3377,11 @@ const Nhis = () => {
       return false
     }
 
+    if (isMedicineCounterAssistant && compactMedicines(claim.nhis_claim_medicines).length === 0) {
+      notify('No prescribed medicines are available to serve. Ask the Claims Officer to add the medicine and send the claim to the dispensary again.', 'warning')
+      return false
+    }
+
     // Dispensary medication edits are limited to the 24h window (or a 12h supervisor
     // re-open). The branch server also enforces this; this is early feedback.
     if (isMedicineCounterAssistant && shouldApplyMcaEditWindowToClaim(claim.status) && !isMcaEditWindowOpen(claim)) {
