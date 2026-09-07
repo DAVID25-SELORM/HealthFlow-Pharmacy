@@ -1239,9 +1239,80 @@ const getActivityLogs = async (
   const pageSize = Math.min(parsePositiveInteger(payload.pageSize ?? payload.limit, 100), 500)
   const from = (page - 1) * pageSize
   const to = from + pageSize - 1
-  const fromDate = normalizeText(payload.fromDate)
-  const toDate = normalizeText(payload.toDate)
+  const fromDate = normalizeText(payload.fromDate || payload.from_date)
+  const toDate = normalizeText(payload.toDate || payload.to_date)
+  const actorUserId = normalizeText(payload.actorUserId || payload.actor_user_id) || null
+  const eventType = normalizeText(payload.eventType || payload.event_type) || null
+  const search = normalizeText(payload.search || payload.searchTerm || payload.search_term) || null
   const auditLogSelect = 'id, actor_user_id, actor_email, event_type, entity_type, action, details, organization_id, created_at'
+
+  if ((fromDate && !/^\d{4}-\d{2}-\d{2}$/.test(fromDate)) || (toDate && !/^\d{4}-\d{2}-\d{2}$/.test(toDate))) {
+    throw new Error('Activity-log dates must use YYYY-MM-DD.')
+  }
+  if (fromDate && toDate && fromDate > toDate) {
+    throw new Error('The activity-log end date cannot be before the start date.')
+  }
+  if (actorUserId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(actorUserId)) {
+    throw new Error('Invalid activity-log staff filter.')
+  }
+
+  if (organizationId) {
+    // The database function applies every filter before counting and paging.
+    // It also includes legacy rows whose actor still belongs to this tenant,
+    // without trusting a client-supplied organization ID.
+    const [pageResult, optionResult] = await Promise.all([
+      adminClient.rpc('get_activity_log_page', {
+        p_organization_id: organizationId,
+        p_from_date: fromDate || null,
+        p_to_date: toDate || null,
+        p_actor_user_id: actorUserId,
+        p_event_type: eventType,
+        p_search: search,
+        p_page: page,
+        p_page_size: pageSize,
+      }),
+      adminClient.rpc('get_activity_log_filter_options', {
+        p_organization_id: organizationId,
+      }),
+    ])
+
+    if (pageResult.error) throw pageResult.error
+    if (optionResult.error) throw optionResult.error
+
+    const rows = Array.isArray(pageResult.data) ? pageResult.data : []
+    // A window count is not present when a formerly valid page becomes empty
+    // (for example after another administrator removes old data). Probe the
+    // first row in that exceptional case so pagination never reports zero for
+    // a non-empty filtered set.
+    let total = Number(rows[0]?.total_count || 0)
+    if (rows.length === 0 && page > 1) {
+      const totalProbe = await adminClient.rpc('get_activity_log_page', {
+        p_organization_id: organizationId,
+        p_from_date: fromDate || null,
+        p_to_date: toDate || null,
+        p_actor_user_id: actorUserId,
+        p_event_type: eventType,
+        p_search: search,
+        p_page: 1,
+        p_page_size: 1,
+      })
+      if (totalProbe.error) throw totalProbe.error
+      const probeRows = Array.isArray(totalProbe.data) ? totalProbe.data : []
+      total = Number(probeRows[0]?.total_count || 0)
+    }
+    const options = optionResult.data && typeof optionResult.data === 'object'
+      ? optionResult.data as Record<string, unknown>
+      : {}
+
+    return {
+      logs: rows.map(({ total_count: _totalCount, ...log }) => log),
+      total,
+      page,
+      pageSize,
+      actors: Array.isArray(options.actors) ? options.actors : [],
+      eventTypes: Array.isArray(options.event_types) ? options.event_types : [],
+    }
+  }
 
   if (!organizationId && isSuperAdminRequester(requesterProfile)) {
     let platformQuery = adminClient
@@ -1265,57 +1336,7 @@ const getActivityLogs = async (
     return { logs: platformLogs || [], total: count || 0, page, pageSize }
   }
 
-  const limit = pageSize
-
-  const { data: organizationLogs, error: organizationLogsError } = await adminClient
-    .from('audit_logs')
-    .select(auditLogSelect)
-    .eq('organization_id', organizationId)
-    .order('created_at', { ascending: false })
-    .limit(limit)
-
-  if (organizationLogsError) {
-    throw organizationLogsError
-  }
-
-  let logs = organizationLogs || []
-
-  if (logs.length < limit) {
-    const { data: staffRows, error: staffError } = await adminClient
-      .from('users')
-      .select('id')
-      .eq('organization_id', organizationId)
-
-    if (staffError) {
-      throw staffError
-    }
-
-    const staffIds = (staffRows || [])
-      .map((row) => normalizeText(row.id))
-      .filter(Boolean)
-
-    if (!staffIds.length) {
-      return { logs }
-    }
-
-    const { data: legacyActorLogs, error: legacyActorLogsError } = await adminClient
-      .from('audit_logs')
-      .select(auditLogSelect)
-      .in('actor_user_id', staffIds)
-      .is('organization_id', null)
-      .order('created_at', { ascending: false })
-      .limit(limit - logs.length)
-
-    if (legacyActorLogsError) {
-      throw legacyActorLogsError
-    }
-
-    logs = [...logs, ...(legacyActorLogs || [])]
-      .sort((left, right) => new Date(right.created_at || 0).getTime() - new Date(left.created_at || 0).getTime())
-      .slice(0, limit)
-  }
-
-  return { logs }
+  return { logs: [], total: 0, page, pageSize, actors: [], eventTypes: [] }
 }
 
 const getActiveOrganizations = async (

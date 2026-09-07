@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { isSupabaseConfigured, supabase } from '../lib/supabase'
+import { isSupabaseConfigured } from '../lib/supabase'
 import { invokeTierAccess } from '../services/tierAccessService'
 import { useAuth } from '../context/AuthContext'
 import { DataTable, EmptyState, LoadingState, PageHeader, Toolbar } from '../components/ui'
@@ -8,107 +8,65 @@ import './ActivityLog.css'
 const ACTIVITY_LOG_TIMEZONE = 'Africa/Accra'
 const ACTIVITY_LOG_PAGE_SIZE = 100
 const activityLogDateTimeFormatter = new Intl.DateTimeFormat('en-GB', {
-  dateStyle: 'medium',
-  timeStyle: 'medium',
-  hour12: false,
-  timeZone: ACTIVITY_LOG_TIMEZONE,
+  dateStyle: 'medium', timeStyle: 'medium', hour12: false, timeZone: ACTIVITY_LOG_TIMEZONE,
 })
 
 const formatTimestamp = (value) => {
-  if (!value) {
-    return '-'
-  }
-
+  if (!value) return '-'
   const date = new Date(value)
-  if (Number.isNaN(date.getTime())) {
-    return '-'
-  }
-
-  return activityLogDateTimeFormatter.format(date)
+  return Number.isNaN(date.getTime()) ? '-' : activityLogDateTimeFormatter.format(date)
 }
 
-const humanizeKey = (value) =>
-  String(value || '')
-    .replace(/_/g, ' ')
-    .trim()
-    .replace(/\b\w/g, (char) => char.toUpperCase())
+const humanizeKey = (value) => String(value || '').replace(/_/g, ' ').trim().replace(/\b\w/g, (char) => char.toUpperCase())
 
 const formatDetailValue = (value) => {
-  if (value === null || value === undefined || value === '') {
-    return ''
-  }
-
-  if (Array.isArray(value)) {
-    return value.map((item) => formatDetailValue(item)).filter(Boolean).join(', ')
-  }
-
-  if (typeof value === 'object') {
-    return JSON.stringify(value)
-  }
-
-  return String(value)
+  if (value === null || value === undefined || value === '') return ''
+  if (Array.isArray(value)) return value.map(formatDetailValue).filter(Boolean).join(', ')
+  return typeof value === 'object' ? JSON.stringify(value) : String(value)
 }
 
 const formatDetails = (details) => {
-  if (!details || typeof details !== 'object') {
-    return ''
-  }
-
-  const detailText = Object.entries(details)
+  if (!details || typeof details !== 'object') return ''
+  return Object.entries(details)
     .map(([key, value]) => {
       const formattedValue = formatDetailValue(value)
-      if (!formattedValue) {
-        return ''
-      }
-
-      return `${humanizeKey(key)}: ${formattedValue}`
+      return formattedValue ? `${humanizeKey(key)}: ${formattedValue}` : ''
     })
     .filter(Boolean)
     .join(' | ')
-
-  return detailText || ''
 }
 
-const getLogActor = (log) => {
-  const detailActorEmail = formatDetailValue(log.details?.actor_email)
-  const detailEmail = formatDetailValue(log.details?.email)
-  const detailActorUserId = formatDetailValue(log.details?.actor_user_id)
+const getLogActor = (log) => (
+  log.actor_name ||
+  log.actor_email ||
+  formatDetailValue(log.details?.actor_email) ||
+  formatDetailValue(log.details?.email) ||
+  log.actor_user_id ||
+  formatDetailValue(log.details?.actor_user_id) ||
+  'Unknown'
+)
 
-  return (
-    log.actor_email ||
-    detailActorEmail ||
-    detailEmail ||
-    log.actor_user_id ||
-    detailActorUserId ||
-    'Unknown'
-  )
-}
-
-const toSearchBlob = (log) => {
-  const details = formatDetails(log.details)
-
-  return [
-    getLogActor(log),
-    log.event_type,
-    log.entity_type,
-    log.action,
-    details,
-    log.created_at,
-  ]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase()
+const getActorOptionLabel = (actor) => {
+  const name = String(actor?.full_name || '').trim()
+  const email = String(actor?.email || '').trim()
+  const identity = name || email || 'Historical staff member'
+  return `${identity}${name && email ? ` (${email})` : ''}${actor?.is_active === false ? ' — inactive' : ''}`
 }
 
 export default function ActivityLog() {
   const { organization } = useAuth()
   const organizationId = organization?.id || ''
   const [logs, setLogs] = useState([])
+  const [actors, setActors] = useState([])
+  const [eventTypes, setEventTypes] = useState([])
   const [searchTerm, setSearchTerm] = useState('')
+  const [claimsOfficerTerm, setClaimsOfficerTerm] = useState('')
+  const [actorUserId, setActorUserId] = useState('')
+  const [eventType, setEventType] = useState('')
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
   const [page, setPage] = useState(1)
-  const [hasNextPage, setHasNextPage] = useState(false)
+  const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -116,144 +74,70 @@ export default function ActivityLog() {
     let isMounted = true
 
     async function fetchLogs() {
-      if (!isMounted) {
-        return
-      }
-
+      if (!isMounted) return
       setLoading(true)
       setError('')
 
       if (!isSupabaseConfigured()) {
         setLogs([])
+        setTotal(0)
         setError('HealthFlow Cloud is not configured. Update .env to enable activity logs.')
         setLoading(false)
         return
       }
 
-      let data = []
-      let hasMore = false
-      let fetchError = null
-      const from = (page - 1) * ACTIVITY_LOG_PAGE_SIZE
-      const lookAheadTo = from + ACTIVITY_LOG_PAGE_SIZE
-
-      if (organizationId) {
-        // Facility activity is already protected by audit_logs RLS. Reading it
-        // directly avoids an unnecessary Edge Function hop and keeps this page
-        // available even when the shared function is busy serving larger jobs.
-        let query = supabase
-          .from('audit_logs')
-          .select('id, actor_user_id, actor_email, event_type, entity_type, action, details, created_at')
-          .eq('organization_id', organizationId)
-          .order('created_at', { ascending: false })
-
-        if (fromDate) query = query.gte('created_at', `${fromDate}T00:00:00+00:00`)
-        if (toDate) {
-          const exclusiveEnd = new Date(`${toDate}T00:00:00Z`)
-          exclusiveEnd.setUTCDate(exclusiveEnd.getUTCDate() + 1)
-          query = query.lt('created_at', exclusiveEnd.toISOString())
-        }
-
-        const result = await query.range(from, lookAheadTo)
-
-        const rows = Array.isArray(result.data) ? result.data : []
-        hasMore = rows.length > ACTIVITY_LOG_PAGE_SIZE
-        data = rows.slice(0, ACTIVITY_LOG_PAGE_SIZE)
-        fetchError = result.error
-      } else {
-        try {
-          const result = await invokeTierAccess({
-            action: 'get_activity_logs',
-            page,
-            pageSize: ACTIVITY_LOG_PAGE_SIZE,
-            fromDate: fromDate || null,
-            toDate: toDate || null,
-          })
-          data = Array.isArray(result?.logs) ? result.logs : []
-          hasMore = page * ACTIVITY_LOG_PAGE_SIZE < Number(result?.total || data.length)
-        } catch (error) {
-          fetchError = error
-        }
-      }
-
-      if (!isMounted) {
-        return
-      }
-
-      if (fetchError) {
-        const message = String(fetchError.message || '').toLowerCase()
-        const hasPermissionIssue = fetchError.code === '42501' || message.includes('permission')
-
+      try {
+        const result = await invokeTierAccess({
+          action: 'get_activity_logs',
+          page,
+          pageSize: ACTIVITY_LOG_PAGE_SIZE,
+          fromDate: fromDate || null,
+          toDate: toDate || null,
+          actorUserId: actorUserId || null,
+          eventType: eventType || null,
+          search: searchTerm.trim() || null,
+        })
+        if (!isMounted) return
+        setLogs(Array.isArray(result?.logs) ? result.logs : [])
+        setTotal(Number(result?.total || 0))
+        setActors(Array.isArray(result?.actors) ? result.actors : [])
+        setEventTypes(Array.isArray(result?.eventTypes) ? result.eventTypes : [])
+      } catch (fetchError) {
+        if (!isMounted) return
+        const message = String(fetchError?.message || '').toLowerCase()
         setLogs([])
-        setHasNextPage(false)
-        setError(
-          hasPermissionIssue
-            ? 'You do not have permission to view activity logs.'
-            : 'Failed to load activity logs.'
-        )
-        setLoading(false)
-        return
+        setTotal(0)
+        setError(message.includes('permission') ? 'You do not have permission to view activity logs.' : 'Failed to load activity logs.')
+      } finally {
+        if (isMounted) setLoading(false)
       }
-
-      setLogs(Array.isArray(data) ? data : [])
-      setHasNextPage(hasMore)
-      setLoading(false)
     }
 
     void fetchLogs()
+    return () => { isMounted = false }
+  }, [actorUserId, eventType, fromDate, organizationId, page, searchTerm, toDate])
 
-    return () => {
-      isMounted = false
-    }
-  }, [fromDate, organizationId, page, toDate])
-
+  const actorLabels = useMemo(() => new Map(actors.map((actor) => [getActorOptionLabel(actor), actor.id])), [actors])
+  const hasNextPage = page * ACTIVITY_LOG_PAGE_SIZE < total
   const showingFrom = logs.length === 0 ? 0 : (page - 1) * ACTIVITY_LOG_PAGE_SIZE + 1
   const showingTo = logs.length === 0 ? 0 : showingFrom + logs.length - 1
 
-  const filteredLogs = useMemo(() => {
-    const query = searchTerm.trim().toLowerCase()
-    if (!query) {
-      return logs
-    }
-
-    return logs.filter((log) => toSearchBlob(log).includes(query))
-  }, [logs, searchTerm])
+  const selectClaimsOfficer = (value) => {
+    setClaimsOfficerTerm(value)
+    setActorUserId(actorLabels.get(value) || '')
+    setPage(1)
+  }
 
   const columns = [
+    { key: 'created_at', header: 'Time', render: (log) => formatTimestamp(log.created_at) },
+    { key: 'actor', header: 'User', render: (log) => getLogActor(log) },
+    { key: 'event_type', header: 'Event', render: (log) => log.event_type || '-' },
+    { key: 'entity_type', header: 'Entity', render: (log) => log.entity_type || '-' },
+    { key: 'action', header: 'Action', render: (log) => log.action || '-' },
     {
-      key: 'created_at',
-      header: 'Time',
-      render: (log) => formatTimestamp(log.created_at),
-    },
-    {
-      key: 'actor',
-      header: 'User',
-      render: (log) => getLogActor(log),
-    },
-    {
-      key: 'event_type',
-      header: 'Event',
-      render: (log) => log.event_type || '-',
-    },
-    {
-      key: 'entity_type',
-      header: 'Entity',
-      render: (log) => log.entity_type || '-',
-    },
-    {
-      key: 'action',
-      header: 'Action',
-      render: (log) => log.action || '-',
-    },
-    {
-      key: 'details',
-      header: 'Details',
-      render: (log) => {
+      key: 'details', header: 'Details', render: (log) => {
         const details = formatDetails(log.details)
-        return (
-          <span className="activity-log-details" title={details}>
-            {details || '-'}
-          </span>
-        )
+        return <span className="activity-log-details" title={details}>{details || '-'}</span>
       },
     },
   ]
@@ -262,48 +146,29 @@ export default function ActivityLog() {
 
   return (
     <div className="activity-log">
-      <PageHeader
-        eyebrow="Administration"
-        title="Activity Log"
-        description="Review recent system actions, user activity, and operational audit events."
-      />
-
-      <Toolbar
-        title="Audit records"
-        description={searchTerm.trim()
-          ? `Showing ${filteredLogs.length} matching record${filteredLogs.length === 1 ? '' : 's'} on this page.`
-          : `Showing records ${showingFrom}-${showingTo}${hasNextPage ? ' (more available)' : ''}.`}
-      >
+      <PageHeader eyebrow="Administration" title="Activity Log" description="Review recent system actions, user activity, and operational audit events." />
+      <Toolbar title="Audit records" description={`Showing records ${showingFrom}-${showingTo} of ${total}. All active filters are applied before pagination.`}>
         <div className="activity-log-filters">
+          <label><span>From</span><input type="date" value={fromDate} max={toDate || undefined} onChange={(event) => { setFromDate(event.target.value); setPage(1) }} /></label>
+          <label><span>To</span><input type="date" value={toDate} min={fromDate || undefined} onChange={(event) => { setToDate(event.target.value); setPage(1) }} /></label>
           <label>
-            <span>From</span>
-            <input type="date" value={fromDate} max={toDate || undefined} onChange={(event) => { setFromDate(event.target.value); setPage(1) }} />
+            <span>Claims officer</span>
+            <input type="search" list="activity-log-claims-officers" value={claimsOfficerTerm} placeholder="Search staff..." onChange={(event) => selectClaimsOfficer(event.target.value)} aria-label="Claims officer" />
+            <datalist id="activity-log-claims-officers">
+              {actors.map((actor) => <option key={actor.id} value={getActorOptionLabel(actor)} />)}
+            </datalist>
           </label>
           <label>
-            <span>To</span>
-            <input type="date" value={toDate} min={fromDate || undefined} onChange={(event) => { setToDate(event.target.value); setPage(1) }} />
+            <span>Activity type</span>
+            <select value={eventType} onChange={(event) => { setEventType(event.target.value); setPage(1) }} aria-label="Activity type">
+              <option value="">All activity types</option>
+              {eventTypes.map((type) => <option key={type} value={type}>{humanizeKey(type)}</option>)}
+            </select>
           </label>
-          <input
-            type="search"
-            className="activity-log-search"
-            placeholder="Search this page..."
-            value={searchTerm}
-            onChange={(event) => setSearchTerm(event.target.value)}
-            aria-label="Search activity logs"
-          />
+          <input type="search" className="activity-log-search" placeholder="Search all matching records..." value={searchTerm} onChange={(event) => { setSearchTerm(event.target.value); setPage(1) }} aria-label="Search activity logs" />
         </div>
       </Toolbar>
-
-      <DataTable
-        columns={columns}
-        rows={filteredLogs}
-        getRowKey={(log) => log.id}
-        loading={loading}
-        loadingState={<LoadingState title="Loading activity logs" description="Fetching recent audit events..." />}
-        emptyState={<EmptyState title="No activity records found" description="Try adjusting your search term." />}
-        minWidth="980px"
-      />
-
+      <DataTable columns={columns} rows={logs} getRowKey={(log) => log.id} loading={loading} loadingState={<LoadingState title="Loading activity logs" description="Applying filters to audit records..." />} emptyState={<EmptyState title="No activity records found" description="Try adjusting the date range or filters." />} minWidth="980px" />
       <div className="activity-log-pagination">
         <span>Page {page}</span>
         <div>

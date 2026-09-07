@@ -27,7 +27,8 @@
   gap: 0.25rem;
 }
 
-.activity-log-filters input {
+.activity-log-filters input,
+.activity-log-filters select {
   border: 1px solid var(--gray-300);
   border-radius: var(--radius);
   font: inherit;
@@ -87,7 +88,8 @@
 
   .activity-log-filters,
   .activity-log-filters label,
-  .activity-log-filters input {
+  .activity-log-filters input,
+  .activity-log-filters select {
     width: 100%;
   }
 }
