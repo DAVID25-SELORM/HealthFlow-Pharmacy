@@ -157,8 +157,11 @@ export const markNhisMedicinesServedDirectly = (
       medicine?.dispensedQty ??
       medicine?.dispensed_qty
     )
-    const existingServedQty = toNumber(medicine?.servedQty ?? medicine?.served_qty)
-    const servedQty = existingServedQty > 0 ? existingServedQty : prescribedQty
+    // Direct serving is an explicit "serve everything currently prescribed"
+    // action.  It must not carry a stale partial quantity forward after a
+    // Claims Officer has corrected the prescription.  Partial quantities are
+    // retained only by the separate dispensary serving workflow.
+    const servedQty = prescribedQty
     const unitPrice = toNumber(medicine?.unitPrice ?? medicine?.unit_price)
 
     return {

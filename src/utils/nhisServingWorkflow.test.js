@@ -200,4 +200,26 @@ describe('NHIS serving workflow status transitions', () => {
       totalAmount: 5.14,
     })
   })
+
+  it('uses a corrected prescribed quantity instead of retaining a stale partial quantity when serving directly', () => {
+    const [medicine] = markNhisMedicinesServedDirectly([{
+      drugCode: 'TAMOXITA2',
+      prescribedQty: 90,
+      servedQty: 89.5,
+      dispensedQty: 89.5,
+      servingStatus: 'partially_served',
+      unitPrice: 4.11,
+    }], {
+      actorId: 'claims-officer-id',
+      servedAt: '2026-09-07T16:21:00.000Z',
+    })
+
+    expect(medicine).toMatchObject({
+      prescribedQty: 90,
+      servedQty: 90,
+      dispensedQty: 90,
+      servingStatus: 'fully_served',
+    })
+    expect(medicine.totalAmount).toBeCloseTo(369.9, 2)
+  })
 })
