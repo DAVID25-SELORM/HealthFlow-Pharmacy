@@ -136,6 +136,7 @@ const toForm = (row, organization) => {
   nhisReturnAlertAllowedRoles: Array.isArray(row?.nhis_return_alert_allowed_roles) && row.nhis_return_alert_allowed_roles.length
     ? row.nhis_return_alert_allowed_roles
     : ['admin', 'claims_officer', 'assistant'],
+  nhisDeductInventoryOnServe: row?.nhis_deduct_inventory_on_serve === true,
   }
 }
 
@@ -1752,6 +1753,26 @@ const Settings = () => {
                   disabled={!isAdmin}
                 />
               </label>
+            </div>
+            <div className="settings-card-inline">
+              <div className="settings-privileges-heading">
+                <strong>NHIS Inventory</strong>
+                <span>Choose whether medicines actually served through NHIS claims consume normal facility inventory.</span>
+              </div>
+              <label className="settings-checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={formData.nhisDeductInventoryOnServe}
+                  onChange={(event) => setFormData({ ...formData, nhisDeductInventoryOnServe: event.target.checked })}
+                  disabled={!isAdmin}
+                />
+                Deduct NHIS medicines from stock when served
+              </label>
+              <p className="settings-helper">
+                {formData.nhisDeductInventoryOnServe
+                  ? 'NHIS dispensing is linked to inventory. Prescribing, saving, scrubbing, and exporting do not deduct stock.'
+                  : 'NHIS dispensing is currently not linked to inventory. Prescribing or adding a medicine to a claim never deducts stock.'}
+              </p>
             </div>
             <div className="settings-card-inline">
               <div className="settings-privileges-heading">

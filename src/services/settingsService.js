@@ -52,6 +52,7 @@ const OPTIONAL_SETTINGS_COLUMNS = [
   'nhis_return_alert_window_hours',
   'nhis_return_alert_require_reason',
   'nhis_return_alert_allowed_roles',
+  'nhis_deduct_inventory_on_serve',
 ]
 
 // ✅ NHIS PHARMACY LEVEL PATCH START
@@ -217,6 +218,7 @@ export const updatePharmacySettings = async (id, settings) => {
     nhis_return_alert_allowed_roles: Array.isArray(settings.nhisReturnAlertAllowedRoles)
       ? settings.nhisReturnAlertAllowedRoles
       : ['admin', 'claims_officer', 'assistant'],
+    nhis_deduct_inventory_on_serve: settings.nhisDeductInventoryOnServe === true,
     updated_at: new Date().toISOString(),
   }
 
@@ -320,6 +322,7 @@ export const createSettings = async (settings) => {
       : Array.isArray(settings.nhisReturnAlertAllowedRoles)
         ? settings.nhisReturnAlertAllowedRoles
         : ['admin', 'claims_officer', 'assistant'],
+    nhis_deduct_inventory_on_serve: settings.nhis_deduct_inventory_on_serve ?? settings.nhisDeductInventoryOnServe ?? false,
   }
 
   const organizationId =

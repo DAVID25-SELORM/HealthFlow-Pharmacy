@@ -65,4 +65,42 @@ describe('local POS shift enforcement', () => {
       fs.rmSync(directory, { recursive: true, force: true })
     }
   })
+
+  it('queues a completed sale only once when payment completion is replayed', () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'healthflow-pos-replay-'))
+    const dbUrl = pathToFileURL(path.resolve('local-branch-server/src/db.js')).href
+    const salesUrl = pathToFileURL(path.resolve('local-branch-server/src/salesRepository.js')).href
+    const script = `
+      const { db, closeDatabase } = await import(${JSON.stringify(dbUrl)});
+      const sales = await import(${JSON.stringify(salesUrl)});
+      db.prepare("INSERT INTO drugs (id, name, quantity, price, branch_id) VALUES ('drug-1', 'Test medicine', 10, 2.5, 'branch-1')").run();
+      const session = sales.openLocalPosSession({ userId: 'staff-1', organizationId: 'org-1', branchId: 'branch-1', openingCash: 0 });
+      const created = sales.createLocalSale({
+        items: [{ drugId: 'drug-1', name: 'Test medicine', quantity: 1, price: 2.5 }],
+        paymentMethod: 'momo', paymentStatus: 'pending_payment', soldBy: 'staff-1',
+        organizationId: 'org-1', branchId: 'branch-1', shiftId: session.id
+      });
+      sales.markLocalSalePaidAndQueueSync({ saleId: created.sale.id, paymentReference: 'ref-1' });
+      sales.markLocalSalePaidAndQueueSync({ saleId: created.sale.id, paymentReference: 'ref-1' });
+      const events = db.prepare("SELECT count(*) AS count FROM sync_outbox WHERE event_type = 'sale.completed' AND entity_id = ?").get(created.sale.id);
+      console.log(JSON.stringify(events));
+      closeDatabase();
+    `
+
+    try {
+      const output = execFileSync(process.execPath, ['--input-type=module', '--eval', script], {
+        cwd: path.resolve('local-branch-server'),
+        env: {
+          ...process.env,
+          HEALTHFLOW_DB_PATH: path.join(directory, 'branch.sqlite'),
+          ORGANIZATION_ID: 'org-1',
+          BRANCH_ID: 'branch-1',
+        },
+        encoding: 'utf8',
+      })
+      expect(JSON.parse(output.trim().split(/\r?\n/).at(-1))).toEqual({ count: 1 })
+    } finally {
+      fs.rmSync(directory, { recursive: true, force: true })
+    }
+  })
 })

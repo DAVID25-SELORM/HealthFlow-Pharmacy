@@ -1,4 +1,4 @@
-import { createId, db, json, nowIso, parseJson } from './db.js'
+import { createId, db, getBranchMeta, json, nowIso, parseJson } from './db.js'
 import { config } from './config.js'
 
 // Maximum rows a single offline read may return. Raised from 5000 so reports/
@@ -599,6 +599,141 @@ export const getOfflineRecord = (entityType, id) => {
   return row ? recordToObject(row) : null
 }
 
+const insertLocalNhisServingEvent = db.prepare(`
+  INSERT OR IGNORE INTO local_nhis_serving_events (id, claim_id, idempotency_key, created_at)
+  VALUES (@id, @claimId, @idempotencyKey, @createdAt)
+`)
+
+const localNhisInventoryByCode = db.prepare(`
+  SELECT * FROM drugs
+  WHERE upper(COALESCE(nhis_code, '')) = upper(?) AND quantity > 0
+  ORDER BY CASE WHEN branch_id = ? THEN 0 ELSE 1 END, expiry_date ASC, id ASC
+`)
+const appliedLocalNhisQuantity = db.prepare(`
+  SELECT COALESCE(SUM(-quantity_delta), 0) AS quantity
+  FROM local_nhis_inventory_ledger WHERE claim_id = ? AND claim_medicine_key = ?
+`)
+const localNhisPolicyBaseline = db.prepare(`
+  SELECT COALESCE(served_quantity, 0) AS quantity
+  FROM local_nhis_inventory_policy_baselines
+  WHERE claim_id = ? AND claim_medicine_key = ?
+`)
+const updateLocalNhisInventory = db.prepare(`
+  UPDATE drugs SET quantity = ?, updated_at = ?, sync_status = 'pending' WHERE id = ?
+`)
+const insertLocalNhisLedger = db.prepare(`
+  INSERT INTO local_nhis_inventory_ledger (
+    id, serving_event_id, claim_id, drug_id, claim_medicine_key, quantity_delta, created_at
+  ) VALUES (@id, @servingEventId, @claimId, @drugId, @claimMedicineKey, @quantityDelta, @createdAt)
+`)
+const insertLocalNhisMovement = db.prepare(`
+  INSERT INTO stock_movements (
+    id, drug_id, movement_type, quantity, previous_quantity, new_quantity,
+    reference_id, notes, created_by, created_at, sync_status
+  ) VALUES (@id, @drugId, 'nhis_dispensing', @quantity, @previousQuantity, @newQuantity,
+    @referenceId, @notes, @createdBy, @createdAt, 'pending')
+`)
+
+const getCachedNhisInventoryPolicy = () => {
+  const snapshot = parseJson(getBranchMeta('pharmacy_settings_snapshot') || '[]', [])
+  const settings = Array.isArray(snapshot) ? snapshot[0] : null
+  // Missing or stale-unavailable configuration is deliberately OFF.
+  return settings?.nhis_deduct_inventory_on_serve === true
+}
+
+const getLocalNhisPolicyState = db.prepare(`
+  SELECT policy_enabled AS policyEnabled FROM local_nhis_inventory_policy_state WHERE singleton = 1
+`)
+const saveLocalNhisPolicyState = db.prepare(`
+  INSERT INTO local_nhis_inventory_policy_state (singleton, policy_enabled, updated_at)
+  VALUES (1, ?, ?)
+  ON CONFLICT(singleton) DO UPDATE SET policy_enabled = excluded.policy_enabled, updated_at = excluded.updated_at
+`)
+const clearLocalNhisPolicyBaselines = db.prepare('DELETE FROM local_nhis_inventory_policy_baselines')
+const insertLocalNhisPolicyBaseline = db.prepare(`
+  INSERT INTO local_nhis_inventory_policy_baselines (claim_id, claim_medicine_key, served_quantity)
+  VALUES (?, ?, ?)
+  ON CONFLICT(claim_id, claim_medicine_key) DO UPDATE SET served_quantity = excluded.served_quantity
+`)
+const allLocalNhisClaimRecords = db.prepare(`
+  SELECT data_json FROM offline_records WHERE entity_type = 'nhis_claims'
+`)
+
+// Capture the branch's current served quantities exactly when the policy moves
+// from OFF to ON. They remain a baseline, so an old served claim is never
+// deducted merely because it is edited or synced after activation.
+export const reconcileLocalNhisInventoryPolicyBaseline = db.transaction(() => {
+  const enabled = getCachedNhisInventoryPolicy()
+  const wasEnabled = getLocalNhisPolicyState.get()?.policyEnabled === 1
+  if (enabled && !wasEnabled) {
+    clearLocalNhisPolicyBaselines.run()
+    const totals = new Map()
+    for (const row of allLocalNhisClaimRecords.all()) {
+      const claim = parseJson(row.data_json, {})
+      for (const medicine of Array.isArray(claim.nhis_claim_medicines) ? claim.nhis_claim_medicines : []) {
+        const key = String(medicine.nhis_drug_id || medicine.nhisDrugId || medicine.drug_code || medicine.drugCode || '').trim()
+        const quantity = Number(medicine.served_qty ?? medicine.servedQty ?? 0)
+        if (!key || !Number.isFinite(quantity) || quantity <= 0 || !claim.id) continue
+        const baselineKey = `${claim.id}:${key}`
+        totals.set(baselineKey, (totals.get(baselineKey) || 0) + quantity)
+      }
+    }
+    for (const [baselineKey, quantity] of totals) {
+      const separator = baselineKey.indexOf(':')
+      insertLocalNhisPolicyBaseline.run(baselineKey.slice(0, separator), baselineKey.slice(separator + 1), quantity)
+    }
+  } else if (!enabled && wasEnabled) {
+    clearLocalNhisPolicyBaselines.run()
+  }
+  saveLocalNhisPolicyState.run(enabled ? 1 : 0, nowIso())
+  return { enabled, baselined: enabled && !wasEnabled }
+})
+
+export const queueNhisServingSync = db.transaction((claim = {}) => {
+  const claimId = String(claim.id || '').trim()
+  if (!claimId) throw new Error('NHIS claim ID is required for serving sync.')
+  const updatedAt = String(claim.updated_at || claim.updatedAt || '').trim()
+  const idempotencyKey = `nhis.serving:${claimId}:${updatedAt || 'current'}`
+  const eventId = createId()
+  const timestamp = nowIso()
+  const inserted = insertLocalNhisServingEvent.run({ id: eventId, claimId, idempotencyKey, createdAt: timestamp }).changes
+  if (!inserted) return { queued: false, idempotencyKey }
+  const policyEnabled = getCachedNhisInventoryPolicy()
+  if (policyEnabled) {
+    for (const medicine of Array.isArray(claim.nhis_claim_medicines) ? claim.nhis_claim_medicines : []) {
+      const code = String(medicine.drug_code || medicine.drugCode || '').trim()
+      const servedQuantity = Number(medicine.served_qty ?? medicine.servedQty ?? 0)
+      if (!code || !Number.isFinite(servedQuantity) || servedQuantity <= 0) continue
+      const medicineKey = String(medicine.nhis_drug_id || medicine.nhisDrugId || code).trim()
+      const applied = Number(appliedLocalNhisQuantity.get(claimId, medicineKey)?.quantity || 0)
+      const baseline = Number(localNhisPolicyBaseline.get(claimId, medicineKey)?.quantity || 0)
+      if (servedQuantity < baseline + applied && applied > 0) {
+        throw new Error('A served NHIS medicine cannot be reduced offline after stock was deducted. Use the controlled correction workflow.')
+      }
+      let remaining = servedQuantity - baseline - applied
+      for (const drug of localNhisInventoryByCode.all(code, String(claim.branch_id || claim.branchId || '').trim())) {
+        if (remaining <= 0) break
+        const previousQuantity = Number(drug.quantity || 0)
+        const quantity = Math.min(previousQuantity, remaining)
+        updateLocalNhisInventory.run(previousQuantity - quantity, timestamp, drug.id)
+        insertLocalNhisLedger.run({ id: createId(), servingEventId: eventId, claimId, drugId: drug.id,
+          claimMedicineKey: medicineKey, quantityDelta: -quantity, createdAt: timestamp })
+        insertLocalNhisMovement.run({ id: createId(), drugId: drug.id, quantity: -quantity,
+          previousQuantity, newQuantity: previousQuantity - quantity, referenceId: claimId,
+          notes: `NHIS Dispensing: ${claim.claim_number || claimId}`, createdBy: medicine.served_by_mca || medicine.servedByMca || null,
+          createdAt: timestamp })
+        remaining -= quantity
+      }
+      if (remaining > 0) throw new Error(`Insufficient local stock for NHIS medicine ${code}.`)
+    }
+  }
+  insertOutbox.run({
+    id: createId(), eventType: 'nhis.serving.completed', entityType: 'nhis_claims', entityId: eventId,
+    payloadJson: json({ local_event_id: eventId, claim_id: claimId, policy_enabled: policyEnabled }), createdAt: timestamp, updatedAt: timestamp,
+  })
+  return { queued: true, eventId, idempotencyKey }
+})
+
 export const saveOfflineRecord = db.transaction((entityType, payload = {}) => {
   const normalizedEntity = normalizeEntityType(entityType)
   const timestamp = nowIso()
@@ -622,6 +757,15 @@ export const saveOfflineRecord = db.transaction((entityType, payload = {}) => {
       updatedAt: timestamp,
     })
   }
+
+  // An unsynced record is a mutable local draft. Coalesce only pending work so
+  // the cloud sees its latest state once; failed events remain visible for an
+  // administrator and are never silently discarded.
+  db.prepare(`
+    DELETE FROM sync_outbox
+    WHERE entity_id = ? AND entity_type = ? AND event_type = 'record.upsert'
+      AND status = 'pending'
+  `).run(record.id, normalizedEntity)
 
   insertOutbox.run({
     id: createId(),

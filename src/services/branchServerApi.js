@@ -588,7 +588,24 @@ export const repairBranchSync = async () =>
     timeoutMs: LONG_BRANCH_REQUEST_TIMEOUT_MS,
   })
 
+export const reconnectBranchSync = async () =>
+  await branchFetch('/api/sync/reconnect', {
+    method: 'POST', body: JSON.stringify({ limit: 1000 }), timeoutMs: LONG_BRANCH_REQUEST_TIMEOUT_MS,
+  })
+
 export const getBranchSyncStatus = async () => await branchFetch('/api/sync/status')
+
+export const listBranchSyncIssues = async (limit = 100) => {
+  const response = await branchFetch(`/api/sync/issues?limit=${encodeURIComponent(limit)}`)
+  return response.data || []
+}
+
+export const retryBranchSyncIssue = async (id) => {
+  const response = await branchFetch(`/api/sync/issues/${encodeURIComponent(id)}/retry`, {
+    method: 'POST', body: JSON.stringify({}), timeoutMs: LONG_BRANCH_REQUEST_TIMEOUT_MS,
+  })
+  return response.data || response
+}
 
 export const getBranchReportBundle = async (filters = {}) => {
   const params = new URLSearchParams()

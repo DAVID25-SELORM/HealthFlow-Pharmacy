@@ -16,10 +16,13 @@ import {
   getNhiaSummary,
   listNhiaClaims,
   listBranchOfflineAccess,
+  listBranchSyncIssues,
   installBranchServerUpdate,
   pullBranchInventory,
   pullBranchReferenceData,
   repairBranchSync,
+  reconnectBranchSync,
+  retryBranchSyncIssue,
   runBranchSync,
   saveBranchToken,
   submitPendingNhiaClaims,
@@ -259,6 +262,8 @@ export default function OfflineSync() {
   const [wizardSummary, setWizardSummary] = useState(null)
   const [wizardError, setWizardError] = useState('')
   const [readiness, setReadiness] = useState(null)
+  const [syncIssues, setSyncIssues] = useState([])
+  const [reconnectMessage, setReconnectMessage] = useState('')
   const [offlineStaff, setOfflineStaff] = useState([])
   const [prepareProgress, setPrepareProgress] = useState({})
   const [technicalDetailsOpen, setTechnicalDetailsOpen] = useState(false)
@@ -280,6 +285,7 @@ export default function OfflineSync() {
       setHealth(null)
       setStatus(null)
       setReadiness(null)
+      setSyncIssues([])
       setOfflineStaff([])
       setUpdateStatus(null)
       setNhiaSettings(null)
@@ -292,7 +298,7 @@ export default function OfflineSync() {
 
     try {
       setLoading(true)
-      const [nextHealth, nextStatus, nextUpdateStatus, nextNhiaSettings, nextNhiaSummary, nextNhiaClaims, nextReadiness, nextOfflineStaff] = await Promise.all([
+      const [nextHealth, nextStatus, nextUpdateStatus, nextNhiaSettings, nextNhiaSummary, nextNhiaClaims, nextReadiness, nextOfflineStaff, nextSyncIssues] = await Promise.all([
         getBranchServerHealth(),
         getBranchSyncStatus(),
         getBranchUpdateStatus().catch(() => null),
@@ -301,6 +307,7 @@ export default function OfflineSync() {
         listNhiaClaims({ limit: 8 }).catch(() => []),
         getBranchOfflineReadiness().catch(() => null),
         canManageBranchToken ? listBranchOfflineAccess().catch(() => []) : Promise.resolve([]),
+        canManageBranchToken ? listBranchSyncIssues().catch(() => []) : Promise.resolve([]),
       ])
       setHealth(nextHealth)
       setStatus(nextStatus)
@@ -310,6 +317,7 @@ export default function OfflineSync() {
       setNhiaClaims(nextNhiaClaims)
       setReadiness(nextReadiness)
       setOfflineStaff(nextOfflineStaff)
+      setSyncIssues(nextSyncIssues)
       setNhiaForm(buildNhiaForm(nextNhiaSettings, organization))
       if (!silent) {
         notify('Offline sync status refreshed.', 'success')
@@ -318,6 +326,7 @@ export default function OfflineSync() {
       setHealth(null)
       setStatus(null)
       setReadiness(null)
+      setSyncIssues([])
       setOfflineStaff([])
       setUpdateStatus(null)
       setNhiaSettings(null)
@@ -1350,6 +1359,19 @@ export default function OfflineSync() {
               </button>
             )}
           </article>
+
+          {canManageBranchToken && readiness && (
+            <article className="offline-guide-panel">
+              <h3>Offline Protection</h3>
+              <div className="offline-staff-count"><strong>{readiness.state || 'UNKNOWN'}</strong><span>protection status</span></div>
+              <small>Last sync: {formatDateTime(readiness.queue?.lastSuccessfulCloudSyncAt)} · Pending: {readiness.queue?.pending || 0} · Failed: {readiness.queue?.failed || 0}</small>
+              <small>Inventory: {readiness.snapshots?.inventory?.detail || '-'} · PIN-ready: {readiness.staff?.offlinePinReady || 0}/{readiness.staff?.active || 0}</small>
+              <small>Backup: {readiness.backups?.latest ? formatDateTime(readiness.backups.latest.modifiedAt) : 'none'} · Server: {readiness.compatibility?.branchServerVersion || readiness.version || '-'}</small>
+              <button className="btn btn-outline" type="button" onClick={() => setTechnicalDetailsOpen((open) => !open)}>
+                {technicalDetailsOpen ? 'Hide Technical Details' : 'Technical Details'}
+              </button>
+            </article>
+          )}
         </div>
 
         {readiness?.ready && canManageBranchToken && (
@@ -2385,6 +2407,26 @@ HEALTHFLOW_UPDATE_AUTO_INSTALL=false`}</pre>
         </div>
       </section>
 
+      {canManageBranchToken && (
+        <section className="offline-sync-section">
+          <div className="offline-sync-section-header"><div><h2>Reconnect and Reconcile</h2><p>Validates the cloud branch identity, synchronizes eligible events, then refreshes cloud snapshots.</p></div></div>
+          {reconnectMessage && <div className="sync-empty">{reconnectMessage}</div>}
+          <button className="btn btn-primary" type="button" disabled={Boolean(busyAction)} onClick={async () => {
+            try {
+              setBusyAction('reconnect');
+              setReconnectMessage(`Synchronizing ${status?.pending || 0} pending transaction(s)…`)
+              const result = await reconnectBranchSync()
+              const remaining = result?.status?.pending || 0
+              const failed = result?.status?.failed || 0
+              setReconnectMessage(failed ? `${failed} transaction(s) need attention.` : remaining ? `${remaining} transaction(s) remain queued.` : 'All offline transactions synchronized.')
+              await refreshStatus({ silent: true })
+            } catch (reconnectError) {
+              setReconnectMessage(reconnectError.message || 'Reconnection could not be completed.')
+            } finally { setBusyAction('') }
+          }}>{busyAction === 'reconnect' ? 'Synchronizing…' : 'Reconnect and Reconcile'}</button>
+        </section>
+      )}
+
       <section className="offline-sync-section">
         <div className="offline-sync-section-header">
           <div>
@@ -2503,6 +2545,32 @@ HEALTHFLOW_UPDATE_AUTO_INSTALL=false`}</pre>
           </div>
         )}
       </section>
+
+      {canManageBranchToken && (
+        <section className="offline-sync-section">
+          <div className="offline-sync-section-header">
+            <div>
+              <h2>Sync Issues</h2>
+              <p>Failed records are retained. Manual retries are recorded in the local audit trail.</p>
+            </div>
+          </div>
+          {syncIssues.length === 0 ? <div className="sync-empty success">No sync issues need administrator attention.</div> : (
+            <div className="sync-failure-tables"><table><thead><tr>
+              <th>Reference</th><th>Type</th><th>Created</th><th>Attempts</th><th>Reason</th><th>Next retry</th><th>Status</th><th />
+            </tr></thead><tbody>{syncIssues.map((issue) => (
+              <tr key={issue.id}>
+                <td>{issue.entity_id}</td><td>{EVENT_LABELS[issue.event_type] || issue.event_type}</td><td>{formatDateTime(issue.created_at)}</td>
+                <td>{issue.attempts || 0}</td><td>{issue.last_error || '-'}</td><td>{issue.next_retry_at ? formatDateTime(issue.next_retry_at) : '-'}</td>
+                <td>{issue.failure_category || 'UNKNOWN'}</td><td><button className="btn btn-secondary" type="button" disabled={Boolean(busyAction)} onClick={async () => {
+                  try { setBusyAction(`retry-${issue.id}`); await retryBranchSyncIssue(issue.id); await refreshStatus({ silent: true }); notify('Sync issue queued for a manual retry.', 'success') }
+                  catch (retryError) { notify(retryError.message || 'Unable to retry this sync issue.', 'error') }
+                  finally { setBusyAction('') }
+                }}>Retry</button></td>
+              </tr>
+            ))}</tbody></table></div>
+          )}
+        </section>
+      )}
 
       <p className="offline-sync-footnote">
         Branch server: {config.url || 'Not configured'}

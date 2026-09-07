@@ -5,7 +5,7 @@ import path from 'node:path'
 import { execFileSync, spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { assertConfiguredForServer, config, isSupabaseSyncConfigured } from './config.js'
-import { backupDatabase, closeDatabase, getDatabaseStatus } from './db.js'
+import { backupDatabase, closeDatabase, db, getDatabaseStatus } from './db.js'
 import { normalizePharmacyClaimLines } from './claimPricing.js'
 import { createClaimBridgeRouter } from './claimBridge.js'
 import { applyNhisCatalogPricing } from './nhisCatalogPricing.js'
@@ -66,6 +66,7 @@ import {
   deleteOfflineRecord,
   getOfflineRecord,
   listOfflineRecords,
+  queueNhisServingSync,
   saveOfflineRecord,
 } from './offlineRecordsRepository.js'
 import {
@@ -91,9 +92,12 @@ import {
 import {
   getSupabaseDiagnostics,
   getSyncStatus,
+  listSyncIssues,
   pullReferenceData,
   pullInventorySnapshot,
   repairFailedSync,
+  reconnectAndReconcile,
+  retrySyncIssue,
   syncPendingOutbox,
 } from './supabaseSync.js'
 import { startSyncWorker, stopSyncWorker, waitForSyncWorkerIdle } from './syncWorker.js'
@@ -1068,16 +1072,20 @@ app.put('/api/nhis/claims/:id/medicines', requireBranchUserSession, (request, re
       })
       return
     }
-    const claim = saveOfflineRecord('nhis_claims', priceOfflineNhisClaim({
-        ...existing,
-        nhis_claim_medicines: Array.isArray(request.body?.nhis_claim_medicines)
-          ? request.body.nhis_claim_medicines
-          : [],
-        status: request.body?.status || existing.status || 'returned_for_review',
-        serving_status: request.body?.serving_status || existing.serving_status || null,
-        updated_at: request.body?.updated_at || new Date().toISOString(),
-        id: request.params.id,
-      }))
+    const claim = db.transaction(() => {
+      const saved = saveOfflineRecord('nhis_claims', priceOfflineNhisClaim({
+          ...existing,
+          nhis_claim_medicines: Array.isArray(request.body?.nhis_claim_medicines)
+            ? request.body.nhis_claim_medicines
+            : [],
+          status: request.body?.status || existing.status || 'returned_for_review',
+          serving_status: request.body?.serving_status || existing.serving_status || null,
+          updated_at: request.body?.updated_at || new Date().toISOString(),
+          id: request.params.id,
+        }))
+      queueNhisServingSync(saved)
+      return saved
+    })()
     recordLocalAuditEvent({
       eventType: 'nhis_claim.dispensary_updated',
       actorUserId: request.branchUser?.userId || null,
@@ -1600,9 +1608,34 @@ app.post('/api/sync/run', async (_request, response, next) => {
   }
 })
 
+app.get('/api/sync/issues', requireBranchAdminAccess, (request, response) => {
+  response.json({ data: listSyncIssues({ limit: request.query.limit || 100 }) })
+})
+
+app.post('/api/sync/issues/:id/retry', requireBranchAdminAccess, (request, response, next) => {
+  try {
+    const result = retrySyncIssue({ id: request.params.id, actorUserId: request.branchUser.userId })
+    recordLocalAuditEvent({
+      eventType: 'sync_issue.manual_retry', actorUserId: request.branchUser.userId,
+      targetId: request.params.id, detail: 'Administrator requested a manual retry.', ipAddress: request.ip,
+    })
+    response.json({ data: result })
+  } catch (error) {
+    next(error)
+  }
+})
+
 app.post('/api/sync/repair', async (request, response, next) => {
   try {
     response.json(await repairFailedSync({ limit: request.body?.limit || 1000 }))
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.post('/api/sync/reconnect', async (request, response, next) => {
+  try {
+    response.json(await reconnectAndReconcile({ limit: request.body?.limit || 1000 }))
   } catch (error) {
     next(error)
   }
@@ -1612,7 +1645,7 @@ app.get('/api/updates/status', (_request, response) => {
   response.json({ data: getUpdateStatus() })
 })
 
-app.post('/api/updates/check', async (_request, response, next) => {
+app.post('/api/updates/check', async (_request, response, _next) => {
   try {
     response.json({ data: await checkForUpdates() })
   } catch (error) {
@@ -1620,7 +1653,7 @@ app.post('/api/updates/check', async (_request, response, next) => {
   }
 })
 
-app.post('/api/updates/install', async (_request, response, next) => {
+app.post('/api/updates/install', async (_request, response, _next) => {
   try {
     response.status(202).json({ data: await installAvailableUpdate() })
   } catch (error) {

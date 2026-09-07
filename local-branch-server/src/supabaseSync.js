@@ -1,21 +1,29 @@
 import { createClient } from '@supabase/supabase-js'
 import WebSocket from 'ws'
 import { config, isSupabaseSyncConfigured } from './config.js'
-import { db, getBranchMeta, parseJson, nowIso, setBranchMeta } from './db.js'
+import { createId, db, getBranchMeta, parseJson, nowIso, setBranchMeta } from './db.js'
 import { getInventoryImportStatus, importInventorySnapshot } from './inventoryRepository.js'
 import { getNhiaSummary, importNhiaConfigurationSnapshot } from './nhiaRepository.js'
-import { importOfflineRecords } from './offlineRecordsRepository.js'
+import { importOfflineRecords, reconcileLocalNhisInventoryPolicyBaseline } from './offlineRecordsRepository.js'
 import { streamSupabasePages } from './supabasePagination.js'
 import {
   importMetadataSnapshot,
   importSalesSnapshot,
   importUsersSnapshot,
 } from './cloudSnapshotRepository.js'
+import { FAILURE_CATEGORIES, MAX_TRANSIENT_ATTEMPTS, classifySyncFailure, nextRetryAt } from './syncFailure.js'
 
 const pendingOutbox = db.prepare(`
   SELECT *
   FROM sync_outbox
-  WHERE status IN ('pending', 'failed')
+  WHERE status = 'pending'
+     OR (
+       status = 'failed'
+       AND failure_category = 'TRANSIENT'
+       AND manual_intervention_required = 0
+       AND attempts < ?
+       AND (next_retry_at IS NULL OR next_retry_at <= ?)
+     )
   ORDER BY created_at ASC, rowid ASC
   LIMIT ?
 `)
@@ -28,14 +36,18 @@ const markOutboxSyncing = db.prepare(`
 
 const markOutboxSynced = db.prepare(`
   UPDATE sync_outbox
-  SET status = 'synced', last_error = NULL, synced_at = ?, updated_at = ?
+  SET status = 'synced', last_error = NULL, last_error_code = NULL, failure_category = NULL,
+      last_error_at = NULL, next_retry_at = NULL, manual_intervention_required = 0,
+      synced_at = ?, updated_at = ?
   WHERE id = ?
 `)
 
 const markOutboxFailed = db.prepare(`
   UPDATE sync_outbox
-  SET status = 'failed', last_error = ?, updated_at = ?
-  WHERE id = ?
+  SET status = 'failed', last_error = @message, last_error_code = @code,
+      failure_category = @category, last_error_at = @timestamp, next_retry_at = @nextRetryAt,
+      manual_intervention_required = @manual, updated_at = @timestamp
+  WHERE id = @id
 `)
 
 const markSaleSynced = db.prepare(`
@@ -117,6 +129,7 @@ export const reconcileSyncedOfflineRecordStatuses = () => {
 }
 
 let syncPendingOutboxPromise = null
+let reconnectPromise = null
 
 const createSupabaseClient = () => {
   if (!isSupabaseSyncConfigured()) {
@@ -212,6 +225,32 @@ const syncClaimSubmitted = async (supabase, row) => {
     remoteId: data?.claim_id || null,
     remoteClaimNumber: data?.claim_number || null,
   }
+}
+
+const syncNhisServingCompleted = async (supabase, row) => {
+  const payload = parseJson(row.payload_json, {})
+  const { data, error } = await supabase.rpc('branch_sync_complete_nhis_serving', {
+    p_sync_token: config.branchSyncToken,
+    p_local_event_id: payload.local_event_id || row.entity_id,
+    p_claim_id: payload.claim_id,
+    p_policy_enabled: payload.policy_enabled === true,
+  })
+  if (error) throw error
+  const timestamp = nowIso()
+  db.prepare('UPDATE local_nhis_serving_events SET synced_at = ? WHERE id = ?')
+    .run(timestamp, payload.local_event_id || row.entity_id)
+  // The cloud serving event is the authority. Allow the fresh inventory
+  // snapshot below to replace this optimistic branch deduction.
+  db.prepare(`
+    UPDATE drugs SET sync_status = 'synced'
+    WHERE id IN (
+      SELECT drug_id FROM local_nhis_inventory_ledger
+      WHERE serving_event_id = ?
+    )
+  `).run(payload.local_event_id || row.entity_id)
+  markOutboxSynced.run(timestamp, timestamp, row.id)
+  await pullInventorySnapshot({ forceFull: false })
+  return { localId: payload.local_event_id || row.entity_id, remoteId: data?.event_id || null }
 }
 
 const syncNhiaConfiguration = async (supabase, row) => {
@@ -383,7 +422,11 @@ const syncRecordDelete = async (supabase, row) => {
 
 const runPendingOutboxSync = async ({ limit = 25 } = {}) => {
   const supabase = createSupabaseClient()
-  const rows = pendingOutbox.all(Math.min(Math.max(Number(limit) || 25, 1), 1000))
+  const rows = pendingOutbox.all(
+    MAX_TRANSIENT_ATTEMPTS,
+    nowIso(),
+    Math.min(Math.max(Number(limit) || 25, 1), 1000)
+  )
   const result = { synced: 0, failed: 0, total: rows.length, errors: [] }
 
   for (const row of rows) {
@@ -396,6 +439,9 @@ const runPendingOutboxSync = async ({ limit = 25 } = {}) => {
         result.synced += 1
       } else if (row.event_type === 'claim.submitted') {
         await syncClaimSubmitted(supabase, row)
+        result.synced += 1
+      } else if (row.event_type === 'nhis.serving.completed') {
+        await syncNhisServingCompleted(supabase, row)
         result.synced += 1
       } else if (row.event_type === 'nhia_config.updated') {
         await syncNhiaConfiguration(supabase, row)
@@ -411,7 +457,20 @@ const runPendingOutboxSync = async ({ limit = 25 } = {}) => {
       }
     } catch (error) {
       const message = error.message || 'Sync failed.'
-      markOutboxFailed.run(message, nowIso(), row.id)
+      const failure = classifySyncFailure(error)
+      const attemptCount = Number(row.attempts || 0) + 1
+      const attemptsExhausted = failure.category === FAILURE_CATEGORIES.TRANSIENT && attemptCount >= MAX_TRANSIENT_ATTEMPTS
+      const category = attemptsExhausted ? FAILURE_CATEGORIES.MANUAL_INTERVENTION : failure.category
+      const manual = attemptsExhausted || failure.manual
+      markOutboxFailed.run({
+        message,
+        code: failure.code,
+        category,
+        timestamp: nowIso(),
+        nextRetryAt: category === FAILURE_CATEGORIES.TRANSIENT ? nextRetryAt(attemptCount) : null,
+        manual: manual ? 1 : 0,
+        id: row.id,
+      })
       if (row.entity_type === 'sales') {
         markSaleFailed.run(message, row.entity_id)
       } else if (row.entity_type === 'claims') {
@@ -423,7 +482,7 @@ const runPendingOutboxSync = async ({ limit = 25 } = {}) => {
         markOfflineRecordFailed.run(message, nowIso(), row.entity_id, row.entity_type)
       }
       result.failed += 1
-      result.errors.push({ id: row.id, eventType: row.event_type, message })
+      result.errors.push({ id: row.id, eventType: row.event_type, message, category })
     }
   }
 
@@ -469,7 +528,9 @@ export const getSyncStatus = () => {
     LIMIT 10
   `).all()
   const failedEvents = db.prepare(`
-    SELECT id, event_type, entity_type, last_error, updated_at
+    SELECT id, event_type, entity_type, entity_id, last_error, last_error_code,
+           failure_category, last_error_at, next_retry_at, manual_intervention_required,
+           attempts, created_at, updated_at
     FROM sync_outbox
     WHERE status = 'failed'
     ORDER BY updated_at DESC
@@ -514,7 +575,40 @@ export const getSyncStatus = () => {
       lastPulledAt: getBranchMeta('reference_data_last_pulled_at'),
     },
     nhia: getNhiaSummary(),
+    lastSuccessfulCloudSyncAt: db.prepare(`
+      SELECT MAX(synced_at) FROM sync_outbox WHERE status = 'synced'
+    `).pluck().get() || null,
+    oldestPendingEventAt: db.prepare(`
+      SELECT MIN(created_at) FROM sync_outbox WHERE status IN ('pending', 'syncing')
+    `).pluck().get() || null,
+    oldestFailedEventAt: db.prepare(`
+      SELECT MIN(created_at) FROM sync_outbox WHERE status = 'failed'
+    `).pluck().get() || null,
   }
+}
+
+export const listSyncIssues = ({ limit = 100 } = {}) => db.prepare(`
+  SELECT id, event_type, entity_type, entity_id, status, attempts, created_at, updated_at,
+         last_error, last_error_code, failure_category, last_error_at, next_retry_at,
+         manual_intervention_required
+  FROM sync_outbox
+  WHERE status = 'failed'
+  ORDER BY COALESCE(last_error_at, updated_at) DESC
+  LIMIT ?
+`).all(Math.min(Math.max(Number(limit) || 100, 1), 500))
+
+export const retrySyncIssue = ({ id, actorUserId }) => {
+  const event = db.prepare('SELECT id FROM sync_outbox WHERE id = ? AND status = ?').get(id, 'failed')
+  if (!event) throw new Error('Failed sync issue not found.')
+  const timestamp = nowIso()
+  db.transaction(() => {
+    db.prepare(`UPDATE sync_outbox
+      SET status = 'pending', next_retry_at = NULL, manual_intervention_required = 0, updated_at = ?
+      WHERE id = ?`).run(timestamp, id)
+    db.prepare('INSERT INTO sync_retry_audit (id, outbox_id, actor_user_id, created_at) VALUES (?, ?, ?, ?)')
+      .run(createId(), id, actorUserId, timestamp)
+  })()
+  return { id, status: 'pending', retriedAt: timestamp }
 }
 
 export const pullInventorySnapshot = async ({ forceFull = false } = {}) => {
@@ -716,8 +810,25 @@ export const pullReferenceData = async () => {
   result.branches = branches
   result.organizations = organizations
   result.settings = settings
+  reconcileLocalNhisInventoryPolicyBaseline()
   setBranchMeta('operational_data_last_pulled_at', result.pulledAt)
   setBranchMeta('reference_data_last_pulled_at', result.pulledAt)
+
+  const { error: protocolError } = await supabase.rpc('branch_sync_report_nhis_inventory_protocol', {
+    p_sync_token: config.branchSyncToken,
+    p_protocol_version: 1,
+  })
+  if (protocolError) {
+    const code = String(protocolError.code || '')
+    const message = String(protocolError.message || '')
+    // During a staged rollout an older cloud schema has no attestation RPC.
+    // Do not break the read-only reference pull; its version remains blocked
+    // from enabling the policy until this protocol call succeeds later.
+    if (!['42883', 'PGRST202', 'PGRST205'].includes(code) && !/could not find.*function|does not exist/i.test(message)) {
+      throw protocolError
+    }
+    console.warn('NHIS inventory protocol attestation is unavailable until the cloud migration is applied.')
+  }
 
   return result
 }
@@ -737,6 +848,58 @@ export const repairFailedSync = async ({ limit = 1000 } = {}) => {
     inventory,
     reference,
     status: getSyncStatus(),
+  }
+}
+
+const validateCloudBranchSession = async () => {
+  const supabase = createSupabaseClient()
+  const { data, error } = await withSupabaseNetworkContext(() =>
+    supabase.rpc('branch_sync_get_inventory_snapshot', {
+      p_sync_token: config.branchSyncToken,
+      p_limit: 1,
+      p_updated_since: null,
+    })
+  )
+  if (error) throw error
+  if (
+    (config.organizationId && data?.organization_id !== config.organizationId) ||
+    (config.branchId && data?.branch_id !== config.branchId)
+  ) {
+    throw new Error('Cloud branch identity does not match this branch server configuration.')
+  }
+  return { organizationId: data?.organization_id || null, branchId: data?.branch_id || null }
+}
+
+const runReconnectAndReconcile = async ({ limit = 1000 } = {}) => {
+  const startedAt = nowIso()
+  const before = getSyncStatus()
+  const identity = await validateCloudBranchSession()
+  const sync = await syncPendingOutbox({ limit })
+  const reconciledRecords = reconcileSyncedOfflineRecordStatuses()
+  const inventory = await pullInventorySnapshot({ forceFull: true })
+  const reference = await pullReferenceData()
+  const status = getSyncStatus()
+  return {
+    startedAt,
+    completedAt: nowIso(),
+    identity,
+    before,
+    sync,
+    reconciledRecords,
+    inventory,
+    reference,
+    status,
+    state: status.failed > 0 ? 'ACTION_REQUIRED' : status.pending > 0 ? 'DEGRADED' : 'HEALTHY',
+  }
+}
+
+export const reconnectAndReconcile = async (options = {}) => {
+  if (reconnectPromise) return reconnectPromise
+  reconnectPromise = runReconnectAndReconcile(options)
+  try {
+    return await reconnectPromise
+  } finally {
+    reconnectPromise = null
   }
 }
 

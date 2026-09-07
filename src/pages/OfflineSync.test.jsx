@@ -9,6 +9,9 @@ const mocks = vi.hoisted(() => ({
   getBranchServerHealth: vi.fn(),
   getBranchOfflineReadiness: vi.fn(),
   getBranchRecentSales: vi.fn(),
+  listBranchSyncIssues: vi.fn(),
+  reconnectBranchSync: vi.fn(),
+  retryBranchSyncIssue: vi.fn(),
   listBranchOfflineAccess: vi.fn(),
   getBranchSyncStatus: vi.fn(),
   getBranchUpdateStatus: vi.fn(),
@@ -57,10 +60,13 @@ vi.mock('../services/branchServerApi', () => ({
   getNhiaSummary: vi.fn(async () => null),
   listNhiaClaims: vi.fn(async () => []),
   listBranchOfflineAccess: mocks.listBranchOfflineAccess,
+  listBranchSyncIssues: mocks.listBranchSyncIssues,
   installBranchServerUpdate: mocks.installBranchServerUpdate,
   pullBranchInventory: vi.fn(),
   pullBranchReferenceData: vi.fn(),
   repairBranchSync: vi.fn(),
+  reconnectBranchSync: mocks.reconnectBranchSync,
+  retryBranchSyncIssue: mocks.retryBranchSyncIssue,
   runBranchSync: vi.fn(),
   saveBranchToken: vi.fn((token) => token),
   submitPendingNhiaClaims: vi.fn(),
@@ -96,6 +102,9 @@ describe('OfflineSync branch registration', () => {
     mocks.getBranchOfflineReadiness.mockResolvedValue(null)
     mocks.getBranchRecentSales.mockResolvedValue([])
     mocks.listBranchOfflineAccess.mockResolvedValue([])
+    mocks.listBranchSyncIssues.mockResolvedValue([])
+    mocks.reconnectBranchSync.mockResolvedValue({ status: { pending: 0, failed: 0 } })
+    mocks.retryBranchSyncIssue.mockResolvedValue({})
     mocks.requestOfflineInstallerDownload.mockResolvedValue(null)
     mocks.listBranchSyncSetupOptions.mockResolvedValue({
       organizations: [
@@ -252,7 +261,7 @@ describe('OfflineSync branch registration', () => {
     expect(screen.getByText('Internet required:')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'NHIA / CLAIM-it' }).closest('.offline-technical-details'))
       .not.toHaveClass('is-open')
-    fireEvent.click(screen.getByRole('button', { name: 'Technical Details' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Technical Details' }).at(-1))
     expect(screen.getByRole('heading', { name: 'NHIA / CLAIM-it' }).closest('.offline-technical-details'))
       .toHaveClass('is-open')
   })

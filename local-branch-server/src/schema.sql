@@ -573,12 +573,64 @@ CREATE TABLE IF NOT EXISTS sync_outbox (
   status TEXT NOT NULL DEFAULT 'pending',
   attempts INTEGER NOT NULL DEFAULT 0,
   last_error TEXT,
+  last_error_code TEXT,
+  failure_category TEXT,
+  last_error_at TEXT,
+  next_retry_at TEXT,
+  manual_intervention_required INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   synced_at TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_sync_outbox_status ON sync_outbox(status, created_at);
+
+CREATE TABLE IF NOT EXISTS local_nhis_serving_events (
+  id TEXT PRIMARY KEY,
+  claim_id TEXT NOT NULL,
+  idempotency_key TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  synced_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS local_nhis_inventory_ledger (
+  id TEXT PRIMARY KEY,
+  serving_event_id TEXT NOT NULL REFERENCES local_nhis_serving_events(id) ON DELETE RESTRICT,
+  claim_id TEXT NOT NULL,
+  drug_id TEXT NOT NULL,
+  claim_medicine_key TEXT NOT NULL,
+  quantity_delta REAL NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(serving_event_id, drug_id, claim_medicine_key)
+);
+
+CREATE TABLE IF NOT EXISTS local_nhis_inventory_policy_state (
+  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+  policy_enabled INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS local_nhis_inventory_policy_baselines (
+  claim_id TEXT NOT NULL,
+  claim_medicine_key TEXT NOT NULL,
+  served_quantity REAL NOT NULL CHECK (served_quantity > 0),
+  PRIMARY KEY (claim_id, claim_medicine_key)
+);
+
+CREATE TABLE IF NOT EXISTS readiness_events (
+  id TEXT PRIMARY KEY,
+  previous_state TEXT,
+  current_state TEXT NOT NULL,
+  detail TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS sync_retry_audit (
+  id TEXT PRIMARY KEY,
+  outbox_id TEXT NOT NULL,
+  actor_user_id TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 
 -- ✅ OFFLINE-FIRST PATCH START
 CREATE TABLE IF NOT EXISTS sync_events (
