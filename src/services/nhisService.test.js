@@ -4437,7 +4437,7 @@ describe('NHIS claim save attachment behavior', () => {
         authType: 'NHIS',
         newCcc: 'true',
         otacCode: '987654',
-        nhiaAttendanceDate: '18/06/2026',
+        nhiaAttendanceDate: '17/06/2026',
         nhiaEligibilityStartDate: '01/06/2026',
         nhiaEligibilityEndDate: '30/06/2026',
         attendanceVerificationStatus: 'confirmed',

@@ -4342,7 +4342,10 @@ const Nhis = () => {
       nhiaTransactionId: memberDetails.transactionId || prev.nhiaTransactionId,
       nhiaEligibilityStartDate: memberDetails.eligibilityStartDate || prev.nhiaEligibilityStartDate,
       nhiaEligibilityEndDate: memberDetails.eligibilityEndDate || prev.nhiaEligibilityEndDate,
-      nhiaAttendanceDate: memberDetails.attendanceDate || prev.nhiaAttendanceDate,
+      // Pharmacy service and NHIA attendance are one workflow date.  Keep the
+      // separately persisted audit field in sync while presenting one input.
+      serviceDate: memberDetails.attendanceDate || prev.serviceDate,
+      nhiaAttendanceDate: memberDetails.attendanceDate || prev.serviceDate,
       nhiaMemberStatus: memberDetails.status || prev.nhiaMemberStatus,
       nhiaMemberLookupPayload: memberDetails.raw || prev.nhiaMemberLookupPayload,
     }
@@ -7762,12 +7765,16 @@ const Nhis = () => {
                   </div>
                   <div className="form-row">
                     <div className="form-group">
-                      <label>Attendance Date</label>
+                      <label>Pharmacy Service / NHIA Attendance Date *</label>
                       <input
                         type="date"
                         className="form-input"
-                        value={claimForm.nhiaAttendanceDate}
-                        onChange={(e) => setClaimForm((p) => ({ ...p, nhiaAttendanceDate: e.target.value }))}
+                        value={claimForm.serviceDate}
+                        onChange={(e) => setClaimForm((p) => ({
+                          ...p,
+                          serviceDate: e.target.value,
+                          nhiaAttendanceDate: e.target.value,
+                        }))}
                       />
                     </div>
                     <div className="form-group">
@@ -7827,18 +7834,6 @@ const Nhis = () => {
                         <option value="pending">Pending</option>
                         <option value="failed">Failed</option>
                       </select>
-                    </div>
-                  </div>
-                </section>
-
-                {/* Dates of service */}
-                <section className="nhis-section">
-                  <h3 className="nhis-section-title">Date of Service</h3>
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label>Date</label>
-                      <input type="date" className="form-input" value={claimForm.serviceDate}
-                        onChange={(e) => setClaimForm((p) => ({ ...p, serviceDate: e.target.value }))} />
                     </div>
                   </div>
                 </section>

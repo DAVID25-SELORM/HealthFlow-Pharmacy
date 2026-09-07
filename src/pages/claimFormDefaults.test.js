@@ -23,4 +23,13 @@ describe('claim form date defaults', () => {
     expect(blankFormBody).not.toContain('serviceDate')
     expect(source).toContain('useState(makeBlankForm)')
   })
+
+  it('uses one pharmacy date input for service and NHIA attendance', () => {
+    const source = readSource('./Nhis.jsx')
+
+    expect(source).toContain('Pharmacy Service / NHIA Attendance Date *')
+    expect(source).toContain('serviceDate: e.target.value,')
+    expect(source).toContain('nhiaAttendanceDate: e.target.value,')
+    expect(source).not.toContain('<h3 className="nhis-section-title">Date of Service</h3>')
+  })
 })
