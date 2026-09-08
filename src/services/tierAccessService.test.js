@@ -66,6 +66,17 @@ describe('invokeTierAccess', () => {
     expect(mocks.invokeSupabaseFunction).toHaveBeenCalledTimes(2)
   })
 
+  it('does not forward a browser-stored role when reading activity logs', async () => {
+    mocks.getStoredActiveRole.mockReturnValue('assistant')
+    mocks.invokeSupabaseFunction.mockResolvedValue({ data: { logs: [] }, error: null })
+
+    await expect(invokeTierAccess({ action: 'get_activity_logs', page: 1 })).resolves.toEqual({ logs: [] })
+
+    expect(mocks.invokeSupabaseFunction).toHaveBeenCalledWith('tier-access', {
+      body: { action: 'get_activity_logs', page: 1 },
+    })
+  })
+
   it('retries an idempotent read after a temporary 503', async () => {
     vi.useFakeTimers()
     mocks.invokeSupabaseFunction

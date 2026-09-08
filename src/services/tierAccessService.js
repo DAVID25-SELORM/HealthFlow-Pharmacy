@@ -127,7 +127,11 @@ const resolveMeasuredTierAccessResponse = async (action, requestPromise, started
 
 export const invokeTierAccess = async (payload) => {
   const activeRole = getStoredActiveRole()
-  const requestPayload = activeRole && !payload?.activeRole
+  // Activity Log authorization is based on the authenticated requester on
+  // the server. A browser-stored role can belong to a previous session and
+  // must never turn this read-only audit request into a rejected role switch.
+  const shouldForwardStoredActiveRole = payload?.action !== 'get_activity_logs'
+  const requestPayload = activeRole && shouldForwardStoredActiveRole && !payload?.activeRole
     ? { ...payload, activeRole }
     : payload
   const shouldDedupe = isReadOnlyAction(requestPayload?.action)
