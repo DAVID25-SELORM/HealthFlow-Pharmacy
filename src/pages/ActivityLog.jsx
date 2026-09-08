@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { invokeTierAccess } from '../services/tierAccessService'
 import { useAuth } from '../context/AuthContext'
@@ -60,7 +60,6 @@ export default function ActivityLog() {
   const [actors, setActors] = useState([])
   const [eventTypes, setEventTypes] = useState([])
   const [searchTerm, setSearchTerm] = useState('')
-  const [claimsOfficerTerm, setClaimsOfficerTerm] = useState('')
   const [actorUserId, setActorUserId] = useState('')
   const [eventType, setEventType] = useState('')
   const [fromDate, setFromDate] = useState('')
@@ -117,14 +116,14 @@ export default function ActivityLog() {
     return () => { isMounted = false }
   }, [actorUserId, eventType, fromDate, organizationId, page, searchTerm, toDate])
 
-  const actorLabels = useMemo(() => new Map(actors.map((actor) => [getActorOptionLabel(actor), actor.id])), [actors])
   const hasNextPage = page * ACTIVITY_LOG_PAGE_SIZE < total
   const showingFrom = logs.length === 0 ? 0 : (page - 1) * ACTIVITY_LOG_PAGE_SIZE + 1
   const showingTo = logs.length === 0 ? 0 : showingFrom + logs.length - 1
 
   const selectClaimsOfficer = (value) => {
-    setClaimsOfficerTerm(value)
-    setActorUserId(actorLabels.get(value) || '')
+    // Use the immutable user ID as the option value. A name-only datalist can
+    // look selected while failing to resolve, silently disabling the filter.
+    setActorUserId(value)
     setPage(1)
   }
 
@@ -153,10 +152,10 @@ export default function ActivityLog() {
           <label><span>To</span><input type="date" value={toDate} min={fromDate || undefined} onChange={(event) => { setToDate(event.target.value); setPage(1) }} /></label>
           <label>
             <span>Claims officer</span>
-            <input type="search" list="activity-log-claims-officers" value={claimsOfficerTerm} placeholder="Search staff..." onChange={(event) => selectClaimsOfficer(event.target.value)} aria-label="Claims officer" />
-            <datalist id="activity-log-claims-officers">
-              {actors.map((actor) => <option key={actor.id} value={getActorOptionLabel(actor)} />)}
-            </datalist>
+            <select value={actorUserId} onChange={(event) => selectClaimsOfficer(event.target.value)} aria-label="Claims officer">
+              <option value="">All claims officers</option>
+              {actors.map((actor) => <option key={actor.id} value={actor.id}>{getActorOptionLabel(actor)}</option>)}
+            </select>
           </label>
           <label>
             <span>Activity type</span>

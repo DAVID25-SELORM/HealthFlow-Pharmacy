@@ -57,7 +57,7 @@ describe('ActivityLog', () => {
 
     fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-08-01' } })
     fireEvent.change(screen.getByLabelText('To'), { target: { value: '2026-08-31' } })
-    fireEvent.change(screen.getByLabelText('Claims officer'), { target: { value: 'Akosua Claims (akosua@healthflow.test) — inactive' } })
+    fireEvent.change(screen.getByLabelText('Claims officer'), { target: { value: '11111111-1111-4111-8111-111111111111' } })
     fireEvent.change(screen.getByLabelText('Activity type'), { target: { value: 'nhis_claim' } })
     fireEvent.change(screen.getByRole('searchbox', { name: /search activity logs/i }), { target: { value: 'NHIS-001' } })
 
