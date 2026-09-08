@@ -54,7 +54,7 @@ const getActorOptionLabel = (actor) => {
 }
 
 export default function ActivityLog() {
-  const { organization } = useAuth()
+  const { organization, role, loading: authLoading } = useAuth()
   const organizationId = organization?.id || ''
   const [logs, setLogs] = useState([])
   const [actors, setActors] = useState([])
@@ -74,6 +74,9 @@ export default function ActivityLog() {
 
     async function fetchLogs() {
       if (!isMounted) return
+      // Do not let a role left in browser storage by a previous session reach
+      // tier-access before AuthContext has resolved this user's actual roles.
+      if (authLoading) return
       setLoading(true)
       setError('')
 
@@ -92,6 +95,7 @@ export default function ActivityLog() {
           pageSize: ACTIVITY_LOG_PAGE_SIZE,
           fromDate: fromDate || null,
           toDate: toDate || null,
+          activeRole: role || null,
           actorUserId: actorUserId || null,
           eventType: eventType || null,
           search: searchTerm.trim() || null,
@@ -114,7 +118,7 @@ export default function ActivityLog() {
 
     void fetchLogs()
     return () => { isMounted = false }
-  }, [actorUserId, eventType, fromDate, organizationId, page, searchTerm, toDate])
+  }, [actorUserId, authLoading, eventType, fromDate, organizationId, page, role, searchTerm, toDate])
 
   const hasNextPage = page * ACTIVITY_LOG_PAGE_SIZE < total
   const showingFrom = logs.length === 0 ? 0 : (page - 1) * ACTIVITY_LOG_PAGE_SIZE + 1

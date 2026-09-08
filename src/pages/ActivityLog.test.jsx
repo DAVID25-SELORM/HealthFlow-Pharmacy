@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('../lib/supabase', () => ({ isSupabaseConfigured: mocks.isSupabaseConfigured }))
-vi.mock('../context/AuthContext', () => ({ useAuth: () => ({ organization: { id: 'org-1' } }) }))
+vi.mock('../context/AuthContext', () => ({ useAuth: () => ({ organization: { id: 'org-1' }, role: 'admin', loading: false }) }))
 vi.mock('../services/tierAccessService', () => ({ invokeTierAccess: mocks.invokeTierAccess }))
 
 const defaultResult = {
@@ -45,7 +45,7 @@ describe('ActivityLog', () => {
 
     expect(mocks.invokeTierAccess).toHaveBeenCalledWith(expect.objectContaining({
       action: 'get_activity_logs', page: 1, pageSize: 100, actorUserId: null,
-      eventType: null, search: null,
+      eventType: null, search: null, activeRole: 'admin',
     }))
     expect(screen.getByText(/showing records 1-1 of 101/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Next' })).not.toBeDisabled()
