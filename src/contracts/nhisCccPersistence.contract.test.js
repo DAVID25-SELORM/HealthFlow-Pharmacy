@@ -6,6 +6,12 @@ const nhisPage = readFileSync(resolve(process.cwd(), 'src/pages/Nhis.jsx'), 'utf
 const salesPage = readFileSync(resolve(process.cwd(), 'src/pages/Sales.jsx'), 'utf8')
 
 describe('NHIS CCC persistence contract', () => {
+  it('waits for CCC operations before claim submission and rejects stale responses', () => {
+    expect(nhisPage).toContain('if (generatingCcCode || lookingUpMember) {')
+    expect(nhisPage).toContain('Wait for CCC verification to finish before saving this claim.')
+    expect(nhisPage).toContain('requestRevision !== cccFormRevisionRef.current')
+    expect(nhisPage).toContain('claimSubmitting || generatingCcCode || lookingUpMember || !canSaveCommunityPharmacyClaim')
+  })
   it('does not erase a manually entered CCC when automatic NHIA validation is unavailable or pending', () => {
     expect(nhisPage).not.toContain("setClaimForm((prev) => ({ ...prev, cccNo: '' }))")
     expect(nhisPage).not.toContain("setClaimForm((prev) => ({ ...prev, cccNo: '', ccCode: '' }))")

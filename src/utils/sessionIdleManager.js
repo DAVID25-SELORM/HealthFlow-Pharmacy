@@ -1,3 +1,5 @@
+import { logAuthDiagnostic } from './authDiagnostics'
+
 export const SESSION_IDLE_TIMEOUT_MS = 30 * 60 * 1000
 
 const ACTIVITY_EVENTS = ['pointerdown', 'keydown', 'touchstart', 'scroll']
@@ -9,8 +11,12 @@ export const recordSessionActivity = (
   userId,
   { windowObject = globalThis.window, timestamp = Date.now() } = {}
 ) => {
-  if (!userId || !windowObject?.localStorage) return
-  windowObject.localStorage.setItem(getSessionActivityStorageKey(userId), String(timestamp))
+  if (!userId) return
+  try {
+    windowObject?.localStorage?.setItem(getSessionActivityStorageKey(userId), String(timestamp))
+  } catch {
+    logAuthDiagnostic('auth.idle.storage', { reason: 'STORAGE_UNAVAILABLE' })
+  }
 }
 
 export const startSessionIdleMonitor = ({
@@ -29,17 +35,27 @@ export const startSessionIdleMonitor = ({
   let timeoutId = null
   let stopped = false
   let idleTriggered = false
+  let lastKnownActivity = now()
 
   const readLastActivity = () => {
-    const value = Number(windowObject.localStorage?.getItem(storageKey))
-    return Number.isFinite(value) && value > 0 ? value : null
+    try {
+      const value = Number(windowObject.localStorage?.getItem(storageKey))
+      return Number.isFinite(value) && value > 0 ? value : lastKnownActivity
+    } catch {
+      logAuthDiagnostic('auth.idle.storage', { reason: 'STORAGE_UNAVAILABLE' })
+      return lastKnownActivity
+    }
   }
 
-  const writeLastActivity = (value) => recordSessionActivity(userId, { windowObject, timestamp: value })
+  const writeLastActivity = (value) => {
+    lastKnownActivity = value
+    recordSessionActivity(userId, { windowObject, timestamp: value })
+  }
 
   const triggerIdle = () => {
     if (stopped || idleTriggered) return
     idleTriggered = true
+    logAuthDiagnostic('auth.idle.expired', { reason: 'IDLE_TIMEOUT', localTime: now(), lastActivity: readLastActivity(), timeoutMs })
     if (timeoutId !== null) windowObject.clearTimeout(timeoutId)
     void onIdle()
   }
@@ -72,7 +88,7 @@ export const startSessionIdleMonitor = ({
     if (event.key === storageKey) scheduleCheck()
   }
 
-  if (readLastActivity() === null) writeLastActivity(now())
+  writeLastActivity(readLastActivity())
   ACTIVITY_EVENTS.forEach((eventName) => {
     windowObject.addEventListener(eventName, recordActivity, { passive: true })
   })

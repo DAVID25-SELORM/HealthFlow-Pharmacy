@@ -2,7 +2,7 @@ import { Navigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 
 const ProtectedRoute = ({ children }) => {
-  const { loading, isAuthenticated, isConfigured, organization, role, signOut } = useAuth()
+  const { loading, isAuthenticated, isConfigured, organization, role, signOut, profileLoadError } = useAuth()
 
   if (!isConfigured) {
     return (
@@ -23,6 +23,16 @@ const ProtectedRoute = ({ children }) => {
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />
+  }
+
+  if (profileLoadError) {
+    return (
+      <div role="alert" style={{ padding: '2rem', maxWidth: '640px' }}>
+        <h2>Unable to load workspace</h2>
+        <p>{profileLoadError}</p>
+        <button type="button" onClick={() => window.location.reload()}>Retry loading</button>
+      </div>
+    )
   }
 
   const organizationStatus = String(organization?.status || '').toLowerCase()

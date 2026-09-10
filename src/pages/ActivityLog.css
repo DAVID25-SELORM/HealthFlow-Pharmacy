@@ -2,6 +2,26 @@
   padding: 1.5rem;
 }
 
+.activity-log-count {
+  display: grid;
+  gap: 0.35rem;
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 1px solid var(--gray-300);
+  border-radius: var(--radius);
+  background: var(--surface, #fff);
+}
+
+.activity-log-count strong {
+  font-size: 2rem;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.activity-log-count small {
+  color: var(--gray-600);
+}
+
 .activity-log-search {
   border: 1px solid var(--gray-300);
   border-radius: var(--radius);

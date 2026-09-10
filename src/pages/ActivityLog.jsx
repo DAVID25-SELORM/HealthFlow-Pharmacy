@@ -122,6 +122,11 @@ export default function ActivityLog() {
   const hasNextPage = page * ACTIVITY_LOG_PAGE_SIZE < total
   const showingFrom = logs.length === 0 ? 0 : (page - 1) * ACTIVITY_LOG_PAGE_SIZE + 1
   const showingTo = logs.length === 0 ? 0 : showingFrom + logs.length - 1
+  const selectedActor = actors.find((actor) => actor.id === actorUserId)
+  const activityCountLabel = actorUserId
+    ? `Activities by ${selectedActor?.full_name || selectedActor?.email || 'selected claims officer'}`
+    : 'Activities by all claims officers'
+  const numberedLogs = logs.map((log, index) => ({ ...log, activityNumber: (page - 1) * ACTIVITY_LOG_PAGE_SIZE + index + 1 }))
 
   const selectClaimsOfficer = (value) => {
     // Use the immutable user ID as the option value. A name-only datalist can
@@ -131,6 +136,7 @@ export default function ActivityLog() {
   }
 
   const columns = [
+    { key: 'activityNumber', header: 'No.', render: (log) => log.activityNumber },
     { key: 'created_at', header: 'Time', render: (log) => formatTimestamp(log.created_at) },
     { key: 'actor', header: 'User', render: (log) => getLogActor(log) },
     { key: 'event_type', header: 'Event', render: (log) => log.event_type || '-' },
@@ -149,7 +155,7 @@ export default function ActivityLog() {
   return (
     <div className="activity-log">
       <PageHeader eyebrow="Administration" title="Activity Log" description="Review recent system actions, user activity, and operational audit events." />
-      <Toolbar title="Audit records" description={`Showing records ${showingFrom}-${showingTo} of ${total}. All active filters are applied before pagination.`}>
+      <Toolbar title="Audit records" description={loading ? 'Loading matching records...' : `Showing records ${showingFrom}-${showingTo} of ${total}. All active filters are applied before pagination.`}>
         <div className="activity-log-filters">
           <label><span>From</span><input type="date" value={fromDate} max={toDate || undefined} onChange={(event) => { setFromDate(event.target.value); setPage(1) }} /></label>
           <label><span>To</span><input type="date" value={toDate} min={fromDate || undefined} onChange={(event) => { setToDate(event.target.value); setPage(1) }} /></label>
@@ -170,7 +176,12 @@ export default function ActivityLog() {
           <input type="search" className="activity-log-search" placeholder="Search all matching records..." value={searchTerm} onChange={(event) => { setSearchTerm(event.target.value); setPage(1) }} aria-label="Search activity logs" />
         </div>
       </Toolbar>
-      <DataTable columns={columns} rows={logs} getRowKey={(log) => log.id} loading={loading} loadingState={<LoadingState title="Loading activity logs" description="Applying filters to audit records..." />} emptyState={<EmptyState title="No activity records found" description="Try adjusting the date range or filters." />} minWidth="980px" />
+      <div className="activity-log-count" role="status" aria-label="Matching activity count" aria-live="polite" aria-busy={loading}>
+        <span>{activityCountLabel}</span>
+        <strong>{loading ? 'Loading...' : total.toLocaleString('en-GB')}</strong>
+        <small>Logged activities matching the selected dates, activity type and search. Multiple actions on one claim count separately.</small>
+      </div>
+      <DataTable columns={columns} rows={numberedLogs} getRowKey={(log) => log.id} loading={loading} loadingState={<LoadingState title="Loading activity logs" description="Applying filters to audit records..." />} emptyState={<EmptyState title="No activity records found" description="Try adjusting the date range or filters." />} minWidth="980px" />
       <div className="activity-log-pagination">
         <span>Page {page}</span>
         <div>

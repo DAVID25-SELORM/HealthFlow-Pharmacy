@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ActivityLog from './ActivityLog'
 
@@ -75,5 +75,38 @@ describe('ActivityLog', () => {
 
     fireEvent.change(screen.getByRole('searchbox', { name: /search activity logs/i }), { target: { value: 'claim' } })
     await waitFor(() => expect(mocks.invokeTierAccess).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, search: 'claim' })))
+  })
+
+  it('shows the full officer count, hides stale totals while filtering, and shows zero matches', async () => {
+    render(<ActivityLog />)
+    const count = screen.getByRole('status', { name: 'Matching activity count' })
+    await waitFor(() => expect(count).toHaveTextContent('101'))
+
+    let resolveOfficer
+    mocks.invokeTierAccess.mockImplementationOnce(() => new Promise((resolve) => { resolveOfficer = resolve }))
+    fireEvent.change(screen.getByLabelText('Claims officer'), { target: { value: defaultResult.actors[0].id } })
+    expect(count).toHaveTextContent('Activities by Akosua Claims')
+    expect(count).toHaveTextContent('Loading...')
+    expect(count).not.toHaveTextContent('101')
+    await act(async () => resolveOfficer({ ...defaultResult, total: 1234 }))
+    expect(count).toHaveTextContent('1,234')
+
+    mocks.invokeTierAccess.mockResolvedValueOnce({ ...defaultResult, logs: [], total: 0 })
+    fireEvent.change(screen.getByLabelText('Activity type'), { target: { value: 'sale' } })
+    await waitFor(() => expect(count).toHaveAttribute('aria-busy', 'false'))
+    expect(count.querySelector('strong')).toHaveTextContent(/^0$/)
+
+    fireEvent.change(screen.getByLabelText('Claims officer'), { target: { value: '' } })
+    await waitFor(() => expect(count).toHaveTextContent('101'))
+    expect(count).toHaveTextContent('Activities by all claims officers')
+  })
+
+  it('numbers activities continuously across pages', async () => {
+    render(<ActivityLog />)
+    await waitFor(() => expect(screen.getByRole('cell', { name: '1', exact: true })).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+    await waitFor(() => expect(screen.getByRole('cell', { name: '101', exact: true })).toBeInTheDocument())
+    fireEvent.change(screen.getByLabelText('Claims officer'), { target: { value: defaultResult.actors[0].id } })
+    await waitFor(() => expect(screen.getByRole('cell', { name: '1', exact: true })).toBeInTheDocument())
   })
 })

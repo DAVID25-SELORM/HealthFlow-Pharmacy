@@ -76,4 +76,19 @@ describe('sessionIdleManager', () => {
 
     expect(window.localStorage.getItem(key)).toBe('12345')
   })
+
+  it('enforces the same idle deadline when browser storage throws', async () => {
+    const get = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('blocked') })
+    const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('blocked') })
+    const onIdle = vi.fn()
+    expect(() => recordSessionActivity('blocked-user')).not.toThrow()
+    const stop = startSessionIdleMonitor({userId:'blocked-user',onIdle})
+    await vi.advanceTimersByTimeAsync(20 * 60 * 1000)
+    window.dispatchEvent(new Event('keydown'))
+    await vi.advanceTimersByTimeAsync(SESSION_IDLE_TIMEOUT_MS - 1)
+    expect(onIdle).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(onIdle).toHaveBeenCalledTimes(1)
+    stop(); get.mockRestore(); set.mockRestore()
+  })
 })

@@ -67,6 +67,7 @@ vi.mock('../lib/supabase', () => ({
   setCachedSupabaseUser: mocks.setCachedSupabaseUser,
   subscribeSupabaseAuthExpired: vi.fn(() => vi.fn()),
   supabase: mocks.supabase,
+  supabaseAuthStorageKey: 'sb-test-auth-token',
 }))
 
 const Probe = () => {
@@ -162,6 +163,39 @@ describe('AuthProvider', () => {
       data: { session: null },
       error: null,
     })
+  })
+
+  it.each([400, 403, 500])('preserves a restored session when profile loading returns %s', async (status) => {
+    const session = {access_token:'valid-token',expires_at:Math.floor(Date.now()/1000)+3600,user:{id:'test-user'}}
+    mocks.auth.getSession.mockResolvedValue({data:{session},error:null})
+    mocks.queryBuilder.maybeSingle.mockResolvedValue({data:null,error:{status,message:'Application request failed'}})
+    render(<AuthProvider><Probe /></AuthProvider>)
+    await waitFor(() => expect(screen.getByTestId('auth-state')).toHaveTextContent('signed-in:'))
+    expect(mocks.clearSupabaseStoredSession).not.toHaveBeenCalled()
+    expect(mocks.auth.signOut).not.toHaveBeenCalled()
+  })
+
+  it('waits for initial restoration and does not sign out on an offline transition', async () => {
+    let resolveStored
+    mocks.auth.getSession.mockReturnValue(new Promise(resolve => { resolveStored = resolve }))
+    mocks.queryBuilder.maybeSingle.mockResolvedValue({data:{id:'test-user',is_active:true},error:null})
+    render(<AuthProvider><Probe /></AuthProvider>)
+    await waitFor(() => expect(mocks.auth.getSession).toHaveBeenCalled())
+    expect(screen.getByTestId('auth-state')).toHaveTextContent('loading')
+    await act(async () => resolveStored({data:{session:{access_token:'valid-token',expires_at:Math.floor(Date.now()/1000)+3600,user:{id:'test-user'}}},error:null}))
+    await waitFor(() => expect(screen.getByTestId('auth-state')).toHaveTextContent('signed-in:'))
+    await act(async () => window.dispatchEvent(new Event('offline')))
+    expect(mocks.clearSupabaseStoredSession).not.toHaveBeenCalled()
+    expect(mocks.auth.signOut).not.toHaveBeenCalled()
+  })
+
+  it('retains the disabled-user signout policy', async () => {
+    mocks.auth.getSession.mockResolvedValue({data:{session:{access_token:'valid-token',expires_at:Math.floor(Date.now()/1000)+3600,user:{id:'test-user'}}},error:null})
+    mocks.queryBuilder.maybeSingle.mockResolvedValue({data:{id:'test-user',is_active:false},error:null})
+    mocks.auth.signOut.mockResolvedValue({error:null})
+    render(<AuthProvider><Probe /></AuthProvider>)
+    await waitFor(() => expect(mocks.auth.signOut).toHaveBeenCalledTimes(1))
+    expect(screen.getByTestId('auth-state')).toHaveTextContent('signed-out')
   })
 
   it('switches only among roles assigned to the signed-in user', async () => {

@@ -8,6 +8,7 @@ import {
   setCachedSupabaseSession,
   setCachedSupabaseUser,
   subscribeSupabaseAuthExpired,
+  supabaseAuthStorageKey,
 } from '../lib/supabase'
 import { getPasswordRecoveryRedirectUrl } from '../config/appUrl'
 import {
@@ -23,13 +24,14 @@ import {
   hasRole,
   normalizeAssignedRoles,
 } from '../utils/roles'
-import { storeActiveRole } from '../utils/activeRole'
+import { readRolePreference, storeActiveRole, writeRolePreference } from '../utils/activeRole'
 import {
   clearSavedBranchUserSession,
   getSavedOfflineStaffSession,
   signInToBranchOffline,
 } from '../services/branchServerApi'
-import { logAuthDiagnostic, timeAuthOperation } from '../utils/authDiagnostics'
+import { logAuthDiagnostic, logAuthSession, observeAuthEnvironment, timeAuthOperation } from '../utils/authDiagnostics'
+import { classifyAuthFailure, isConfirmedAuthFailure } from '../utils/authFailure'
 import { recordSessionActivity, startSessionIdleMonitor } from '../utils/sessionIdleManager'
 
 const AuthContext = createContext(null)
@@ -224,34 +226,14 @@ const loadUserProfile = (userId) => {
   return request
 }
 
-const isSupabaseAuthFailure = (error) => {
-  const status = Number(error?.status || error?.statusCode || 0)
-  const code = String(error?.code || '').toUpperCase()
-  const name = String(error?.name || '')
-  const message = String(error?.message || '').toLowerCase()
-
-  return (
-    status === 401 ||
-    status === 403 ||
-    code === 'PGRST301' ||
-    code === 'PGRST303' ||
-    name === 'AuthApiError' ||
-    name === 'AuthSessionMissingError' ||
-    message.includes('invalid jwt') ||
-    message.includes('jwt expired') ||
-    message.includes('session missing') ||
-    message.includes('session not found') ||
-    message.includes('refresh token') ||
-    message.includes('unauthorized') ||
-    message.includes('forbidden')
-  )
-}
+const isSupabaseAuthFailure = (error) => isConfirmedAuthFailure(error, { authEndpoint: true })
 
 const isTransientSupabaseAuthFailure = (error) => {
   const name = String(error?.name || '').toLowerCase()
   const message = String(error?.message || '').toLowerCase()
 
   return (
+    ['RATE_LIMITED', 'SERVER_ERROR', 'NETWORK_TIMEOUT', 'NETWORK_UNAVAILABLE'].includes(classifyAuthFailure(error)) ||
     name === 'aborterror' ||
     name === 'navigatorlockacquiretimeouterror' ||
     name === 'authserviceunavailableerror' ||
@@ -411,6 +393,7 @@ export const AuthProvider = ({ children }) => {
   const [branch, setBranch] = useState(null)
   const [activeRole, setActiveRoleState] = useState(FALLBACK_ROLE)
   const [loading, setLoading] = useState(true)
+  const [profileLoadError, setProfileLoadError] = useState('')
   // Set when a password-recovery link's code can't be exchanged for a session
   // (expired, already used, or opened in a different browser than the one
   // that requested it — PKCE requires the same browser). Login.jsx surfaces
@@ -422,6 +405,7 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     let mounted = true
+    const stopEnvironmentDiagnostics = observeAuthEnvironment(supabaseAuthStorageKey)
     let handledInvalidSession = false
     let latestResolutionId = 0
     // Serialize all Supabase auth operations to prevent concurrent Web Lock
@@ -448,6 +432,7 @@ export const AuthProvider = ({ children }) => {
     const restoreOfflineAuth = () => {
       const offlineSession = getSavedOfflineStaffSession()
       if (!offlineSession?.user?.id || !offlineSession?.profile?.id) return false
+      setProfileLoadError('')
       setCachedSupabaseSession(null)
       setCachedSupabaseUser(null)
       sessionRef.current = offlineSession
@@ -478,6 +463,7 @@ export const AuthProvider = ({ children }) => {
         return
       }
 
+      logAuthDiagnostic('auth.state.clear', { event: 'SESSION_UNAVAILABLE' })
       sessionRef.current = null
       setCachedSupabaseSession(null)
       setCachedSupabaseUser(null)
@@ -487,6 +473,7 @@ export const AuthProvider = ({ children }) => {
       setOrganization(null)
       setBranch(null)
       setActiveRoleState(FALLBACK_ROLE)
+      setProfileLoadError('')
       storeActiveRole('')
       setLoading(false)
     }
@@ -515,8 +502,10 @@ export const AuthProvider = ({ children }) => {
           throw error
         }
 
+        logAuthSession('STORAGE_RESTORE', storedSession, supabaseAuthStorageKey)
         return storedSession || null
       } catch (sessionError) {
+        logAuthDiagnostic('auth.restore.failed', { failureCategory: classifyAuthFailure(sessionError, { authEndpoint: true }) })
         if (!isSupabaseAuthFailure(sessionError) && !isTransientSupabaseAuthFailure(sessionError)) {
           console.warn('Unable to re-check HealthFlow Cloud session:', sessionError)
         }
@@ -591,6 +580,7 @@ export const AuthProvider = ({ children }) => {
 
       handledInvalidSession = true
       console.warn('Clearing invalid HealthFlow Cloud session.', reason)
+      logAuthDiagnostic('auth.forced_logout', { reason: typeof reason === 'string' ? 'SESSION_EXPIRED' : classifyAuthFailure(reason, { authEndpoint: true }) })
       clearSupabaseStoredSession()
       if (!restoreOfflineAuth()) {
         clearAuthState(resolutionId)
@@ -654,6 +644,7 @@ export const AuthProvider = ({ children }) => {
     const resolveSessionState = async (activeSession, options = {}) => {
       const resolutionId = ++latestResolutionId
       const event = options.event || 'UNKNOWN'
+      logAuthSession(event, activeSession, supabaseAuthStorageKey)
 
       if (!activeSession) {
         await reconcileMissingSession(resolutionId, event)
@@ -671,6 +662,7 @@ export const AuthProvider = ({ children }) => {
       let activeProfile = null
       let activeOrganization = null
       let activeBranch = null
+      let resolutionError = ''
       const isRecoverySession = isPasswordRecoveryEvent(event)
       const hasExistingSession = Boolean(sessionRef.current?.access_token)
       const isSwitchingUsers =
@@ -797,18 +789,28 @@ export const AuthProvider = ({ children }) => {
           activeProfile = profileData.profile
           activeOrganization = profileData.organization
           activeBranch = profileData.branch
+          if (!activeProfile) {
+            resolutionError = 'Your staff profile is unavailable. Retry loading or contact your administrator.'
+            logAuthDiagnostic('auth.profile.unavailable', { reason: 'PROFILE_MISSING' })
+          } else if (activeProfile.organization_id && !activeOrganization) {
+            resolutionError = 'Your workspace could not be loaded. Check your connection and retry.'
+            logAuthDiagnostic('auth.profile.unavailable', { reason: 'ORGANIZATION_UNAVAILABLE' })
+          }
         } catch (profileError) {
-          if (isSupabaseAuthFailure(profileError)) {
+          logAuthDiagnostic('auth.profile.failed', { failureCategory: classifyAuthFailure(profileError) })
+          if (isConfirmedAuthFailure(profileError)) {
             await resetInvalidSession(profileError, resolutionId, {
               preserveExistingSession: event !== 'BOOTSTRAP',
             })
             return
           }
           console.error('Unable to load user profile:', profileError)
+          resolutionError = 'Your staff profile could not be loaded. Your session has been retained. Check your connection and retry.'
         }
       }
 
       if (activeUser && activeProfile?.is_active === false) {
+        logAuthDiagnostic('auth.forced_logout', { reason: 'PROFILE_DISABLED' })
         clearAuthState(resolutionId)
 
         const { error: signOutError } = await supabase.auth.signOut()
@@ -827,6 +829,7 @@ export const AuthProvider = ({ children }) => {
         setProfile(activeProfile)
         setOrganization(activeOrganization)
         setBranch(activeBranch)
+        setProfileLoadError(resolutionError)
         setLoading(false)
       }
     }
@@ -901,7 +904,7 @@ export const AuthProvider = ({ children }) => {
     enqueueAuth(bootstrap)
 
     if (!isSupabaseConfigured()) {
-      return undefined
+      return stopEnvironmentDiagnostics
     }
 
     const {
@@ -923,6 +926,7 @@ export const AuthProvider = ({ children }) => {
 
     return () => {
       mounted = false
+      stopEnvironmentDiagnostics()
       unsubscribeAuthExpired()
       subscription.unsubscribe()
     }
@@ -952,6 +956,7 @@ export const AuthProvider = ({ children }) => {
         throw normalizeTransientAuthError(error)
       }
       recordSessionActivity(data?.user?.id)
+      logAuthSession('LOGIN_SUCCESS', data?.session, supabaseAuthStorageKey)
     })
 
     const trackedRequest = request.finally(() => {
@@ -967,6 +972,7 @@ export const AuthProvider = ({ children }) => {
       pin,
     })
     recordSessionActivity(offlineSession.user.id)
+    setProfileLoadError('')
     sessionRef.current = offlineSession
     setCachedSupabaseSession(null)
     setCachedSupabaseUser(null)
@@ -982,7 +988,8 @@ export const AuthProvider = ({ children }) => {
     setActiveRoleState(offlineSession.role || offlineSession.profile.role || FALLBACK_ROLE)
   }
 
-  const signOut = async () => {
+  const signOut = async (reason = 'MANUAL_LOGOUT') => {
+    logAuthDiagnostic('auth.forced_logout', { reason: typeof reason === 'string' ? reason : 'MANUAL_LOGOUT' })
     clearSavedBranchUserSession()
     if (session?.offline) {
       sessionRef.current = null
@@ -1019,11 +1026,11 @@ export const AuthProvider = ({ children }) => {
       userId: user.id,
       onIdle: async () => {
         try {
-          await signOut()
+          await signOut('IDLE_TIMEOUT')
         } catch (error) {
           console.warn('Unable to reach the authentication service during inactivity logout.', error)
           clearSavedBranchUserSession()
-          clearSupabaseStoredSession()
+          clearSupabaseStoredSession('IDLE_TIMEOUT')
           sessionRef.current = null
           setCachedSupabaseSession(null)
           setCachedSupabaseUser(null)
@@ -1093,7 +1100,7 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     const storageKey = user?.id ? `healthflow.active-role.${user.id}` : ''
-    const storedRole = storageKey ? window.localStorage.getItem(storageKey) : ''
+    const storedRole = storageKey ? readRolePreference(storageKey) : ''
     setActiveRoleState(
       assignedRoles.includes(storedRole) ? storedRole : assignedRoles[0] || primaryRole
     )
@@ -1108,7 +1115,7 @@ export const AuthProvider = ({ children }) => {
     setActiveRoleState(normalizedRole)
     storeActiveRole(normalizedRole)
     if (user?.id) {
-      window.localStorage.setItem(`healthflow.active-role.${user.id}`, normalizedRole)
+      writeRolePreference(`healthflow.active-role.${user.id}`, normalizedRole)
     }
   }
   const currentRole = assignedRoles.includes(activeRole)
@@ -1172,8 +1179,9 @@ export const AuthProvider = ({ children }) => {
       refreshProfile,
       isConfigured: isSupabaseConfigured(),
       passwordRecoveryError,
+      profileLoadError,
     }),
-    [session, user, profile, organization, branch, loading, activeRole, assignedRoles, primaryRole, passwordRecoveryError]
+    [session, user, profile, organization, branch, loading, activeRole, assignedRoles, primaryRole, passwordRecoveryError, profileLoadError]
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

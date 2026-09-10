@@ -52,6 +52,9 @@ describe('invokeSupabaseFunction', () => {
       expect.objectContaining({
         auth: expect.objectContaining({
           storageKey: 'sb-project-ref-auth-token',
+          persistSession: true,
+          autoRefreshToken: true,
+          detectSessionInUrl: true,
         }),
       })
     )

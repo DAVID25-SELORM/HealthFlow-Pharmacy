@@ -29,6 +29,7 @@ import {
   createNhisPrescribingFacility,
   dedupeNhisPrescribers,
   getNhisPrescriberDisplayName,
+  getNhisPrescriberTextPatch,
   getNhisPrescribingFacilityDisplayName,
   listNhisPrescribers,
   listNhisPrescribingFacilities,
@@ -41,6 +42,39 @@ beforeEach(() => {
 })
 
 describe('NHIS prescribing records service', () => {
+  it('keeps spaces after Dr while clearing stale saved-doctor identity', () => {
+    for (const value of ['D', 'Dr', 'Dr ', 'Dr J', 'Dr John ', 'Dr. John ']) {
+      expect(getNhisPrescriberTextPatch(value)).toMatchObject({
+        physicianName: value, prescriberNameSnapshot:value,
+        prescriberId:'', prescriber_id:null, prescriber_license_snapshot:null,
+      })
+    }
+    expect(getNhisPrescriberTextPatch('Dr John ').prescriber_name_snapshot).toBe('Dr John')
+  })
+
+  it('loads doctors after the first thousand in stable pages', async () => {
+    const page = (start) => Array.from({length:500},(_,i)=>({id:`p-${start+i}`,full_name:`Doctor ${start+i}`}))
+    const last = {id:'new-doctor',full_name:'Zara New Doctor'}
+    const query = {select:vi.fn(),order:vi.fn(),range:vi.fn()
+      .mockResolvedValueOnce({data:page(0),error:null})
+      .mockResolvedValueOnce({data:page(500),error:null})
+      .mockResolvedValueOnce({data:[last],error:null})}
+    query.select.mockReturnValue(query); query.order.mockReturnValue(query)
+    supabase.from.mockReturnValue(query)
+    const rows = await listNhisPrescribers({all:true,status:'all'})
+    expect(rows).toHaveLength(1001)
+    expect(rows.at(-1)).toEqual(last)
+    expect(query.range).toHaveBeenNthCalledWith(3,1000,1499)
+  })
+
+  it('does not hide a failed later register page behind incomplete results', async () => {
+    const query = {select:vi.fn(),order:vi.fn(),range:vi.fn()
+      .mockResolvedValueOnce({data:Array.from({length:500},(_,i)=>({id:`p${i}`})),error:null})
+      .mockResolvedValueOnce({data:null,error:new Error('Register unavailable')})}
+    query.select.mockReturnValue(query); query.order.mockReturnValue(query)
+    supabase.from.mockReturnValue(query)
+    await expect(listNhisPrescribers({all:true})).rejects.toThrow('Register unavailable')
+  })
   it('normalizes facility and prescriber payloads with organization scope', () => {
     expect(normalizeNhisPrescribingFacilityPayload({
       facilityName: '  Korle Bu OPD ',

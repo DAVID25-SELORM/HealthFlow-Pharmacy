@@ -141,6 +141,17 @@ export const getNhisPrescriberDisplayName = (prescriber = {}) => {
   return license ? `${name} (${license})` : name
 }
 
+// Preserve the editing buffer exactly; normalize only persisted snapshots.
+export const getNhisPrescriberTextPatch = (value) => ({
+  physicianName: value,
+  prescriberId: '',
+  prescriber_id: null,
+  prescriberNameSnapshot: value,
+  prescriber_name_snapshot: normalizeText(value) || null,
+  prescriberLicenseSnapshot: '',
+  prescriber_license_snapshot: null,
+})
+
 export const getNhisPrescriberIdentityKey = (prescriber = {}) => {
   const license = normalizeText(prescriber?.license_number ?? prescriber?.licenseNumber).toLowerCase()
   if (license) return `license:${license}`
@@ -182,6 +193,22 @@ const listFromBranch = async (entityType, filters = {}) => {
   })
 }
 
+const readRegisterRows = async (query, filters) => {
+  if (!filters.all) {
+    const { data, error } = await query.limit(Number(filters.limit || 1000))
+    if (error) throw error
+    return data || []
+  }
+  const rows = []
+  const pageSize = 500
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await query.range(offset, offset + pageSize - 1)
+    if (error) throw error
+    rows.push(...(data || []))
+    if (!data || data.length < pageSize) return rows
+  }
+}
+
 export const listNhisPrescribingFacilities = async (filters = {}) => {
   if (shouldUseBranchServer()) {
     const localRows = await listFromBranch('facilities', filters)
@@ -192,7 +219,7 @@ export const listNhisPrescribingFacilities = async (filters = {}) => {
     .from('nhis_prescribing_facilities')
     .select('*')
     .order('facility_name', { ascending: true })
-    .limit(Number(filters.limit || 1000))
+    .order('id', { ascending: true })
 
   const status = normalizeText(filters.status)
   if (status && status !== 'all') query = query.eq('status', status)
@@ -203,9 +230,7 @@ export const listNhisPrescribingFacilities = async (filters = {}) => {
   )
   if (searchFilter) query = query.or(searchFilter)
 
-  const { data, error } = await query
-  if (error) throw error
-  return data || []
+  return readRegisterRows(query, filters)
 }
 
 export const listNhisPrescribers = async (filters = {}) => {
@@ -218,7 +243,7 @@ export const listNhisPrescribers = async (filters = {}) => {
     .from('nhis_prescribers')
     .select('*')
     .order('full_name', { ascending: true })
-    .limit(Number(filters.limit || 1000))
+    .order('id', { ascending: true })
 
   const status = normalizeText(filters.status)
   if (status && status !== 'all') query = query.eq('status', status)
@@ -232,9 +257,7 @@ export const listNhisPrescribers = async (filters = {}) => {
   )
   if (searchFilter) query = query.or(searchFilter)
 
-  const { data, error } = await query
-  if (error) throw error
-  return dedupeNhisPrescribers(data || [])
+  return dedupeNhisPrescribers(await readRegisterRows(query, filters))
 }
 
 export const createNhisPrescribingFacility = async (facility, options = {}) => {

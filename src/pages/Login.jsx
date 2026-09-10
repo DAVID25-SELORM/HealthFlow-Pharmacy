@@ -121,7 +121,7 @@ const Login = () => {
 
         await updatePassword(password)
         notify('Password updated successfully. Please sign in with your new password.', 'success')
-        await signOut().catch(() => null)
+        await signOut('PASSWORD_CHANGED').catch(() => null)
         setPassword('')
         setConfirmPassword('')
         setMode('sign-in')

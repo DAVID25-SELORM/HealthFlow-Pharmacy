@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import NhisClaimCreatorCounts from '../components/NhisClaimCreatorCounts'
 import {
   Plus, Search, X, Upload, Download, CheckCircle2,
   Send, Banknote, XCircle, Eye, FileSpreadsheet, HeartPulse,
@@ -127,6 +128,7 @@ import {
   applyNhisPrescribingFacilitySnapshot,
   buildNhisPrescriptionSourceSnapshot,
   createNhisPrescriber,
+  getNhisPrescriberTextPatch,
   createNhisPrescribingFacility,
   deactivateNhisPrescriber,
   deactivateNhisPrescribingFacility,
@@ -1649,6 +1651,11 @@ const Nhis = () => {
   // Tracks the last member number we already looked up — prevents duplicate API calls
   // when the field loses focus without changing value.
   const lastLookedUpMemberRef = useRef('')
+  const cccFormRevisionRef = useRef(0)
+  useEffect(() => {
+    cccFormRevisionRef.current += 1
+    lastLookedUpMemberRef.current = ''
+  }, [claimForm.memberNo, claimForm.cardType, claimForm.serviceDate, editingClaim?.id, showNewClaimModal])
   const [returnAlert, setReturnAlert] = useState(null)
   const [returnAlertReason, setReturnAlertReason] = useState('Follow-up treatment')
   const [returnAlertOtherReason, setReturnAlertOtherReason] = useState('')
@@ -1920,8 +1927,8 @@ const Nhis = () => {
     try {
       setPrescribingRecordsLoading(true)
       const [facilityRows, prescriberRows] = await Promise.all([
-        listNhisPrescribingFacilities({ status: 'all', limit: 1000 }),
-        listNhisPrescribers({ status: 'all', limit: 1000 }),
+        listNhisPrescribingFacilities({ status: 'all', all: true }),
+        listNhisPrescribers({ status: 'all', all: true }),
       ])
       setPrescribingFacilities((facilityRows || []).filter(isValidPrescribingFacilityRecord))
       setPrescribers((prescriberRows || []).filter(isValidPrescriberRecord))
@@ -2100,8 +2107,8 @@ const Nhis = () => {
     }) || null
   }
 
-  const handlePrescribingFacilityTextChange = (value) => {
-    const facility = findMatchingPrescribingFacility(value)
+  const handlePrescribingFacilityTextChange = (value, source = 'custom') => {
+    const facility = source === 'official' ? findMatchingPrescribingFacility(value) : null
     if (facility) {
       handleSelectPrescribingFacility(facility.id)
       return
@@ -2118,21 +2125,15 @@ const Nhis = () => {
     }))
   }
 
-  const handlePrescriberTextChange = (value) => {
-    const prescriber = findMatchingPrescriber(value)
+  const handlePrescriberTextChange = (value, source = 'custom') => {
+    const prescriber = source === 'official' ? findMatchingPrescriber(value) : null
     if (prescriber) {
       handleSelectPrescriber(prescriber.id)
       return
     }
     setClaimForm((previous) => ({
       ...previous,
-      physicianName: value,
-      prescriberId: '',
-      prescriber_id: null,
-      prescriberNameSnapshot: value,
-      prescriber_name_snapshot: normalizeText(value) || null,
-      prescriberLicenseSnapshot: '',
-      prescriber_license_snapshot: null,
+      ...getNhisPrescriberTextPatch(value),
     }))
   }
 
@@ -4355,6 +4356,8 @@ const Nhis = () => {
   // eligibility and auto-fill name, HIN, DOB, gender, and CC code.
   // Skips if the value hasn't changed since the last successful lookup.
   const handleMemberLookup = useCallback(async (memberNo, explicitCardType = '') => {
+    if (generatingCcCode || lookingUpMember || claimSubmitting) return
+    const requestRevision = cccFormRevisionRef.current
     const memberNumber = (memberNo || claimForm.memberNo || '').trim()
     if (!memberNumber) {
       notify('memberNumber is required.', 'warning')
@@ -4378,6 +4381,7 @@ const Nhis = () => {
         memberNumber: normalizedMemberNumber,
         cardType: selectedCardType,
       })
+      if (requestRevision !== cccFormRevisionRef.current) return
       if (!result) return
       lastLookedUpMemberRef.current = normalizedMemberNumber
       setClaimForm((prev) => applyMemberDetailsToForm(prev, result))
@@ -4396,9 +4400,11 @@ const Nhis = () => {
     } finally {
       setLookingUpMember(false)
     }
-  }, [claimForm.memberNo, claimForm.cardType, canGenerateNhiaCcCode, resolvedNhiaSettings, applyMemberDetailsToForm, notify])
+  }, [claimForm.memberNo, claimForm.cardType, canGenerateNhiaCcCode, resolvedNhiaSettings, applyMemberDetailsToForm, notify, generatingCcCode, lookingUpMember, claimSubmitting])
 
   const handleGenerateCcCode = async () => {
+    if (generatingCcCode || lookingUpMember || claimSubmitting) return
+    const requestRevision = cccFormRevisionRef.current
     if (!canEditNhisPatientDetails) {
       notify('Dispensary assistants cannot generate or change NHIA CC codes.', 'error')
       return
@@ -4462,6 +4468,10 @@ const Nhis = () => {
         ? generateBranchNhiaCcCode
         : generateHostedNhiaCcCode
       const result = await generateCcCode(claimContext)
+      if (requestRevision !== cccFormRevisionRef.current) {
+        notify('The claim details changed during verification. Verify the CCC again for the current claim.', 'warning')
+        return
+      }
       const memberDetails = result?.memberDetails
       if (memberDetails) {
         lastLookedUpMemberRef.current = memberNumber
@@ -4482,10 +4492,12 @@ const Nhis = () => {
       if (ccCode.length !== 5) {
         throw new Error('NHIA API returned a CCC/CC code that is not exactly 5 digits.')
       }
-      setClaimForm((prev) => applyMemberDetailsToForm(
-        { ...prev, cccNo: ccCode, ccCode },
-        memberDetails || null
-      ))
+      setClaimForm((prev) => ({
+        ...applyMemberDetailsToForm(prev, memberDetails || null),
+        // Keep the validated response code authoritative over member metadata.
+        cccNo: ccCode,
+        ccCode,
+      }))
       await tryLogAuditEvent({
         eventType: 'nhis_claim.ccc_generation',
         entityType: 'nhis_claims',
@@ -4536,6 +4548,10 @@ const Nhis = () => {
 
   const handleSubmitClaim = async (e, intent = 'dispatch', reviewConfirmed = false, medicinesOverride = null) => {
     e.preventDefault()
+    if (generatingCcCode || lookingUpMember) {
+      setClaimError('Wait for CCC verification to finish before saving this claim.')
+      return
+    }
     const saveAsDraft = intent === 'save_details'
     const serveDirectly = intent === 'serve_directly'
     if (serveDirectly && editingClaim && !canNhisClaimBeServedDirectly({
@@ -4954,6 +4970,9 @@ const Nhis = () => {
       setReadinessActiveClaimId('')
       await refreshClaimsOverview()
       notify(successMessage, 'success')
+      // Claim-save triggers may register a newly typed doctor/facility.
+      // Refresh the register so the next claim can select the saved record.
+      void loadPrescribingRecords()
       if (wasReadinessCorrection) {
         await handleCheckExportReadiness({
           keepModalOpen: true,
@@ -6292,6 +6311,8 @@ const Nhis = () => {
               <span className="stat-value">{stats.rejected}</span>
             </div>
           </div>
+
+          <NhisClaimCreatorCounts />
 
           {/* Claim status tabs + search */}
           <div className="nhis-controls">
@@ -7721,7 +7742,7 @@ const Nhis = () => {
                           <button
                             type="button"
                             className="btn btn-secondary nhis-code-generate"
-                            disabled={generatingCcCode}
+                            disabled={generatingCcCode || lookingUpMember || claimSubmitting}
                             onClick={handleGenerateCcCode}
                           >
                             {generatingCcCode ? 'Validating...' : 'Generate/Validate CC Code via NHIA'}
@@ -8501,7 +8522,7 @@ const Nhis = () => {
                 (!editingClaim || normalizeText(editingClaim.status).toLowerCase() === 'draft') && (
                   <button
                     className="btn btn-secondary"
-                    disabled={claimSubmitting || !canSaveCommunityPharmacyClaim}
+                    disabled={claimSubmitting || generatingCcCode || lookingUpMember || !canSaveCommunityPharmacyClaim}
                     onClick={(event) => handleSubmitClaim(event, 'save_details')}
                   >
                     {claimSubmitting && claimSubmitIntent === 'save_details'
@@ -8513,7 +8534,7 @@ const Nhis = () => {
                 <button
                   className="btn btn-secondary"
                   disabled={
-                    claimSubmitting ||
+                    claimSubmitting || generatingCcCode || lookingUpMember ||
                     compactMedicines(claimMedicines).length === 0 ||
                     shouldUseBranchServer()
                   }
@@ -8531,7 +8552,7 @@ const Nhis = () => {
               )}
               <button
                 className="btn btn-primary"
-                disabled={claimSubmitting || !canSaveCommunityPharmacyClaim}
+                disabled={claimSubmitting || generatingCcCode || lookingUpMember || !canSaveCommunityPharmacyClaim}
                 onClick={(event) => handleSubmitClaim(event, 'dispatch')}
               >
                 {claimSubmitting

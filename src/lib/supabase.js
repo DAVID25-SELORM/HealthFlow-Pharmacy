@@ -1,7 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 import { getErrorMessage, isNetworkRequestError } from '../utils/requestErrors'
 import { logRequestFailure } from '../utils/requestDiagnostics'
-import { logAuthDiagnostic, timeAuthOperation } from '../utils/authDiagnostics'
+import { logAuthDiagnostic, logAuthServerClock, logAuthSession, timeAuthOperation } from '../utils/authDiagnostics'
+import { classifyAuthFailure, isConfirmedAuthFailure } from '../utils/authFailure'
 
 // Get environment variables
 const normalizeUrl = (url) => String(url || '').trim().replace(/\/+$/, '')
@@ -150,7 +151,8 @@ const createExpiredAuthResponse = () =>
     },
   })
 
-const markAuthExpired = () => {
+const markAuthExpired = (reason = 'SESSION_MISSING') => {
+  logAuthDiagnostic('auth.forced_logout', { reason })
   authExpired = true
   cacheAuthSession(null)
   setCachedSupabaseUser(null)
@@ -174,6 +176,7 @@ export const refreshSupabaseSessionOnce = async () => {
     )
       .then(({ data, error }) => {
         if (error) {
+          logAuthDiagnostic('auth.refresh', { failureCategory: classifyAuthFailure(error, { authEndpoint: true }) })
           return { session: null, error }
         }
 
@@ -184,6 +187,7 @@ export const refreshSupabaseSessionOnce = async () => {
 
         authExpired = false
         cacheAuthSession(data.session)
+        logAuthSession('TOKEN_REFRESHED', data.session, supabaseAuthStorageKey)
         return { session: data.session, error: null }
       })
       .catch((error) => {
@@ -197,15 +201,16 @@ export const refreshSupabaseSessionOnce = async () => {
   return refreshSessionPromise
 }
 
-const isRateLimitError = (error) =>
-  Number(error?.status || error?.statusCode || 0) === 429
-
 const refreshSessionOnce = async () => {
   const { session, error } = await refreshSupabaseSessionOnce()
 
   if (!session?.access_token) {
-    if (!isRateLimitError(error)) {
-      markAuthExpired()
+    if (!error || isConfirmedAuthFailure(error, { authEndpoint: true })) {
+      markAuthExpired(classifyAuthFailure(error, { authEndpoint: true }) === 'NONE' ? 'SESSION_MISSING' : classifyAuthFailure(error, { authEndpoint: true }))
+    } else {
+      // Failure to reach the auth service does not prove revocation. Surface
+      // the failure without clearing persistence or manufacturing a 401.
+      throw error
     }
     return null
   }
@@ -219,7 +224,9 @@ const authRetryFetch = async (input, init = {}) => {
     return createExpiredAuthResponse()
   }
 
+  const startedAt = Date.now()
   const response = await fetch(input, init)
+  if (isSupabaseAuthRequest(requestUrl)) logAuthServerClock(response, startedAt)
 
   if (
     response.status !== 401 ||
@@ -261,7 +268,8 @@ export const supabase = hasValidCredentials
     }))
   : null
 
-export const clearSupabaseStoredSession = () => {
+export const clearSupabaseStoredSession = (reason = 'INVALID_SESSION') => {
+  logAuthDiagnostic('auth.storage.clear', { reason })
   cacheAuthSession(null)
   setCachedSupabaseUser(null)
 
@@ -297,28 +305,7 @@ const isExpiredSession = (session, windowSeconds = 0) => {
   return expiresAt - Math.floor(Date.now() / 1000) <= windowSeconds
 }
 
-const isSupabaseAuthFailure = (error) => {
-  const status = Number(error?.status || error?.statusCode || 0)
-  const code = String(error?.code || '').toUpperCase()
-  const name = String(error?.name || '')
-  const message = String(error?.message || '').toLowerCase()
-
-  return (
-    status === 401 ||
-    status === 403 ||
-    code === 'PGRST301' ||
-    code === 'PGRST303' ||
-    name === 'AuthApiError' ||
-    name === 'AuthSessionMissingError' ||
-    message.includes('invalid jwt') ||
-    message.includes('jwt expired') ||
-    message.includes('token is expired') ||
-    message.includes('session missing') ||
-    message.includes('session not found') ||
-    message.includes('refresh token') ||
-    message.includes('unauthorized')
-  )
-}
+const isSupabaseAuthFailure = (error) => isConfirmedAuthFailure(error, { authEndpoint: true })
 
 const invokeFunctionWithToken = async (name, options, accessToken) => {
   const body = options?.body && typeof options.body === 'object' ? options.body : {}
