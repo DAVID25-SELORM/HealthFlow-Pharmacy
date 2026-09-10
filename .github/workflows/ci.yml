@@ -23,6 +23,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Check production dependency vulnerabilities
+        run: |
+          npm audit --omit=dev --audit-level=high
+          npm audit --prefix local-branch-server --omit=dev --audit-level=high
+
       - name: Verify protected production baseline
         run: npm run protect:baseline
 

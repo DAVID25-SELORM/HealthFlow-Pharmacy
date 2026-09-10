@@ -1,6 +1,7 @@
 import http from 'node:http'
 import { Buffer } from 'node:buffer'
 import { timingSafeEqual } from 'node:crypto'
+import { buildScopedTarget } from './targetUrl.js'
 
 const toNumber = (value, fallback) => {
   const parsed = Number(value)
@@ -120,9 +121,7 @@ const buildTargetUrl = (requestUrl = '/') => {
   const relativePath = incoming.pathname.startsWith(config.publicPath)
     ? incoming.pathname.slice(config.publicPath.length) || '/'
     : incoming.pathname
-  const target = new URL(`${config.upstreamBaseUrl}/${relativePath.replace(/^\/+/, '')}`)
-  target.search = incoming.search
-  return target
+  return buildScopedTarget(config.upstreamBaseUrl, relativePath.split('/').filter(Boolean), incoming.search)
 }
 
 const buildForwardHeaders = (request) => {
@@ -161,8 +160,9 @@ const proxyRequest = async (request, response) => {
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs)
 
   try {
+    const target = buildTargetUrl(request.url)
     const body = ['GET', 'HEAD'].includes(request.method || '') ? undefined : await readBody(request)
-    const upstreamResponse = await fetch(buildTargetUrl(request.url), {
+    const upstreamResponse = await fetch(target, {
       method: request.method,
       headers: buildForwardHeaders(request),
       body,
@@ -179,9 +179,8 @@ const proxyRequest = async (request, response) => {
     response.end(responseBody)
   } catch (error) {
     const isTimeout = error?.name === 'AbortError'
-    json(response, isTimeout ? 504 : 502, {
-      error: isTimeout ? 'CLAIM-it upstream request timed out.' : 'CLAIM-it upstream request failed.',
-      detail: error?.message || String(error),
+    json(response, error?.status === 400 ? 400 : isTimeout ? 504 : 502, {
+      error: error?.status === 400 ? 'Invalid API path.' : isTimeout ? 'CLAIM-it upstream request timed out.' : 'CLAIM-it upstream request failed.',
     })
   } finally {
     clearTimeout(timeout)

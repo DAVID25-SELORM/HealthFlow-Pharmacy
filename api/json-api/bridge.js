@@ -1,5 +1,6 @@
 import { Buffer } from 'node:buffer'
 import { timingSafeEqual } from 'node:crypto'
+import { buildScopedTarget } from '../../claim-bridge-server/src/targetUrl.js'
 
 export const config = {
   api: {
@@ -91,11 +92,8 @@ const getQueryString = (request) => {
 }
 
 const buildTargetUrl = (request) => {
-  const relativePath = getPathSegments(request).join('/')
-  const target = new URL(`${bridgeConfig.upstreamBaseUrl}/${relativePath}`)
   const query = getQueryString(request)
-  target.search = query ? `?${query}` : ''
-  return target
+  return buildScopedTarget(bridgeConfig.upstreamBaseUrl, getPathSegments(request), query)
 }
 
 const buildForwardHeaders = (request) => {
@@ -198,8 +196,9 @@ export default async function handler(request, response) {
   const timeout = setTimeout(() => controller.abort(), bridgeConfig.timeoutMs)
 
   try {
+    const target = buildTargetUrl(request)
     const body = ['GET', 'HEAD'].includes(request.method || '') ? undefined : await readBody(request)
-    const upstreamResponse = await fetch(buildTargetUrl(request), {
+    const upstreamResponse = await fetch(target, {
       method: request.method,
       headers: buildForwardHeaders(request),
       body,
@@ -214,11 +213,10 @@ export default async function handler(request, response) {
     response.setHeader('cache-control', 'no-store')
     response.send(responseBody)
   } catch (error) {
-    json(response, error?.name === 'AbortError' ? 504 : 502, {
-      error: error?.name === 'AbortError'
+    json(response, error?.status === 400 ? 400 : error?.name === 'AbortError' ? 504 : 502, {
+      error: error?.status === 400 ? 'Invalid API path.' : error?.name === 'AbortError'
         ? 'CLAIM-it upstream request timed out.'
         : 'CLAIM-it upstream request failed.',
-      detail: error?.message || String(error),
     })
   } finally {
     clearTimeout(timeout)

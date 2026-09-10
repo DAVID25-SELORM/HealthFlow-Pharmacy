@@ -26,6 +26,9 @@
     "install:startup": "powershell -ExecutionPolicy Bypass -File scripts\\install-startup-tasks.ps1",
     "uninstall:startup": "powershell -ExecutionPolicy Bypass -File scripts\\uninstall-startup-tasks.ps1"
   },
+  "overrides": {
+    "qs": "^6.16.0"
+  },
   "dependencies": {
     "@supabase/supabase-js": "^2.101.1",
     "better-sqlite3": "^11.9.1",
