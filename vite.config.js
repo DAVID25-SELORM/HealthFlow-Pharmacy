@@ -21,7 +21,7 @@ export default defineConfig({
     // Keep native SQLite and large CXF tests deterministic on shared CI runners.
     maxWorkers: 2,
     setupFiles: './src/test/setup.js',
-    exclude: ['node_modules/**', 'dist/**', 'release/**'],
+    exclude: ['node_modules/**', 'dist/**', 'release/**', 'tmp/**', 'output/**'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],

@@ -1,18 +1,19 @@
 {
-  "baselineId": "healthflow-production-baseline-2026-09-nhis-inventory-serving",
-  "commit": "f29d41f345d96d998ded21258768285ca361f4b7",
-  "capturedAt": "2026-08-05T04:15:32Z",
+  "baselineId": "healthflow-repository-baseline-2026-09-10",
+  "commit": "62b3847891cc01a2c4215aedbfead10eefafd02e",
+  "capturedAt": "2026-09-10T06:04:15.128Z",
   "frontendVersion": "1.0.0",
-  "migrationCount": 74,
-  "edgeFunctionCount": 8,
-  "testFileCount": 88,
+  "migrationCount": 111,
+  "edgeFunctionCount": 7,
+  "testFileCount": 148,
   "criticalFiles": {
-    "src/services/nhisService.js": "c81b2c76daf2346c9c167f13b77fb464455179053d3b9b1c8a578f96dafeacaf",
-    "src/context/AuthContext.jsx": "f212693e0c732baf8696b3beca3c7cded472b5157162a7220ac7b760f7d7d538",
+    "src/services/nhisService.js": "6a09cc323e7aa04b3bf8dbf7ac7b01e9635a32bf3bd4151ea0fa31e7ad13fe0c",
+    "src/context/AuthContext.jsx": "87ad80eba19ef3507fc0e106303499f8ebeefdec911e26b7244a4db10f2dfc4e",
     "src/services/recycleBinService.js": "94f0fd814bda811b3c234769426d57257a0f8120e90df8bffc87ae9ebfbcabe9",
     "src/services/offlineInstallerReleaseService.js": "d656396c7cce60b3e007ffec4f4aa4f8d63f931ab022cbef3cdcdc02755c9c13",
-    "src/services/settingsService.js": "af4c642394f6d522e218460aaa2d31ba15bd7a8da51bfbf152c9655071625d98",
-    "supabase/functions/tier-access/index.ts": "115346b2b7e4729ae51f4da28b8ad939512b61c765334d808e68432d5d0752fc",
+    "src/services/settingsService.js": "fdd96f01368f4d363f3ac0e20e31f7436a5ae0b4c252c3f95fe544471a5dbab7",
+    "supabase/functions/tier-access/index.ts": "1c471b311b9c3a3c8fac2382563667f62011b086c5c06c59036cea8561dead50",
     "supabase/functions/staff-admin/index.ts": "1003e6ea0e987d12db4a6e0c4d927c27493a57fdb9011440958f3e24c0bb3127"
-  }
+  },
+  "hashFormat": "sha256-utf8-lf"
 }

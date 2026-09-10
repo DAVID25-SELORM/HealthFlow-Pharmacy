@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { hashBaselineSource } from './production-baseline-hash.mjs'
 import { readFile } from 'node:fs/promises'
 import process from 'node:process'
 
@@ -8,7 +8,7 @@ const failures = []
 
 for (const [file, expected] of Object.entries(manifest.criticalFiles)) {
   const bytes = await readFile(new URL(`../${file}`, import.meta.url))
-  const actual = createHash('sha256').update(bytes).digest('hex')
+  const actual = hashBaselineSource(bytes)
   if (actual !== expected) failures.push(`${file}: expected ${expected}, received ${actual}`)
 }
 
