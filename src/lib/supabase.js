@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { getErrorMessage, isNetworkRequestError } from '../utils/requestErrors'
 import { logRequestFailure } from '../utils/requestDiagnostics'
-import { logAuthDiagnostic, logAuthServerClock, logAuthSession, timeAuthOperation } from '../utils/authDiagnostics'
+import { logAuthDiagnostic, logRefreshResponse, logAuthServerClock, logAuthSession, timeAuthOperation } from '../utils/authDiagnostics'
 import { classifyAuthFailure, isConfirmedAuthFailure } from '../utils/authFailure'
 
 // Get environment variables
@@ -152,6 +152,7 @@ const createExpiredAuthResponse = () =>
   })
 
 const markAuthExpired = (reason = 'SESSION_MISSING') => {
+  if (authExpired) return
   logAuthDiagnostic('auth.forced_logout', { reason })
   authExpired = true
   cacheAuthSession(null)
@@ -226,12 +227,20 @@ const authRetryFetch = async (input, init = {}) => {
 
   const startedAt = Date.now()
   const response = await fetch(input, init)
-  if (isSupabaseAuthRequest(requestUrl)) logAuthServerClock(response, startedAt)
+  if (isSupabaseAuthRequest(requestUrl)) {
+    logAuthServerClock(response, startedAt)
+    // Observe automatic SDK refresh as well as explicit recovery. Never read the request body.
+    if (String(requestUrl).includes('grant_type=refresh_token')) {
+      await logRefreshResponse(response, { attemptAt: startedAt, expiresAt: cachedAuthSession?.expires_at })
+    }
+  }
 
   if (
     response.status !== 401 ||
     !supabaseClient ||
-    isSupabaseAuthRequest(requestUrl)
+    isSupabaseAuthRequest(requestUrl) ||
+    // Function wrappers own their one recovery attempt. Do not refresh twice.
+    (String(requestUrl).includes('/functions/v1/') && !String(requestUrl).includes('/functions/v1/customer-epharmacy'))
   ) {
     return response
   }
@@ -414,6 +423,11 @@ const refreshFunctionSession = async (fallbackSession = null) => {
     return null
   }
 
+  if (isConfirmedAuthFailure(error, { authEndpoint: true })) {
+    markAuthExpired(classifyAuthFailure(error, { authEndpoint: true }))
+    throw error
+  }
+
   const currentSession = await getCurrentAuthSession().catch(() => null)
   if (currentSession?.access_token && !isExpiredSession(currentSession)) {
     return currentSession
@@ -522,6 +536,19 @@ const finalizeFunctionResult = async (result) => {
   return result
 }
 
+// Reuse a token already renewed by another request; otherwise use the shared
+// SDK refresh queue. A transient failure propagates unchanged, never as expiry.
+const recoverRejectedFunctionSession = async (rejectedSession) => {
+  if (cachedAuthSession?.access_token && cachedAuthSession.access_token !== rejectedSession?.access_token && !isExpiredSession(cachedAuthSession)) return cachedAuthSession
+  const { session, error } = await refreshSupabaseSessionOnce()
+  if (error) {
+    if (isConfirmedAuthFailure(error, { authEndpoint: true })) markAuthExpired(classifyAuthFailure(error, { authEndpoint: true }))
+    throw error
+  }
+  if (!session?.access_token) markAuthExpired('SESSION_MISSING')
+  return session
+}
+
 export const invokeSupabaseFunction = async (name, options = {}) => {
   if (!supabase) {
     throw new Error('HealthFlow Cloud credentials are not configured.')
@@ -539,7 +566,7 @@ export const invokeSupabaseFunction = async (name, options = {}) => {
   }
 
   if (isUnauthorizedFunctionError(result.error)) {
-    const refreshedSession = await getValidFunctionSession(true).catch(() => null)
+    const refreshedSession = await recoverRejectedFunctionSession(session)
     if (!refreshedSession?.access_token) {
       throw new Error('Your session has expired. Please sign in again.')
     }
@@ -615,7 +642,7 @@ export const invokeSupabaseFunctionResponse = async (name, options = {}) => {
 
   let response = await createRequest(session.access_token)
   if (response.status === 401) {
-    const refreshedSession = await getValidFunctionSession(true).catch(() => null)
+    const refreshedSession = await recoverRejectedFunctionSession(session)
     if (!refreshedSession?.access_token) {
       throw new Error('Your session has expired. Please sign in again.')
     }

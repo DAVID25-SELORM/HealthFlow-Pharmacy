@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { inspectAuthStorage, isAuthDiagnosticsEnabled, logAuthDiagnostic, logAuthServerClock, logAuthSession } from './authDiagnostics'
+import { logRefreshResponse, inspectAuthStorage, isAuthDiagnosticsEnabled, logAuthDiagnostic, logAuthServerClock, logAuthSession } from './authDiagnostics'
 import { classifyAuthFailure } from './authFailure'
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs() })
@@ -38,4 +38,14 @@ describe('safe auth diagnostics', () => {
   it.each([[400,'APPLICATION_ERROR'],[403,'ACCESS_DENIED'],[500,'SERVER_ERROR'],[401,'AUTH_REJECTED']])('classifies application status %s', (status, category) => {
     expect(classifyAuthFailure({status,name:'AuthApiError'})).toBe(category)
   })
+})
+
+it('captures safe provider refresh errors without exposing reflected secrets', async () => {
+  vi.stubEnv('VITE_HEALTHFLOW_AUTH_DIAGNOSTICS', 'true')
+  const log = vi.spyOn(console, 'info').mockImplementation(() => {})
+  await logRefreshResponse(new Response(JSON.stringify({ code: 'refresh_token_not_found', msg: 'Invalid Refresh Token: Refresh Token Not Found' }), { status: 400 }), { attemptAt: 123, expiresAt: 456 })
+  expect(log).toHaveBeenLastCalledWith('[HealthFlow auth refresh]', expect.objectContaining({ errorCode: 'refresh_token_not_found', httpStatus: 400, safeMessage: 'Invalid Refresh Token: Refresh Token Not Found', attemptAt: 123, expiresAt: 456 }))
+  await logRefreshResponse(new Response(JSON.stringify({ code: 'secret-code', msg: 'Bearer secret-access', refresh_token: 'secret-refresh' }), { status: 400 }))
+  await logRefreshResponse(new Response(JSON.stringify({ access_token: 'secret-access', refresh_token: 'secret-refresh' })))
+  expect(JSON.stringify(log.mock.calls)).not.toMatch(/secret-code|secret-access|secret-refresh/)
 })

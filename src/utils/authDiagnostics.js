@@ -173,3 +173,38 @@ export const logAuthServerClock = (response, startedAt, receivedAt = Date.now())
     significantClockSkew: clockSkewMs !== null && Math.abs(clockSkewMs) > 120000,
   })
 }
+
+// Exact known provider messages only. Never emit arbitrary response text: a
+// proxy or malformed response could reflect credentials back in its message.
+const REFRESH_MESSAGES = new Set([
+  'Invalid Refresh Token: Refresh Token Not Found',
+  'Invalid Refresh Token: Already Used',
+  'Invalid Refresh Token: Refresh Token Already Used',
+  'Invalid Refresh Token',
+  'Session not found',
+  'Session has expired',
+])
+const REFRESH_CODES = new Set([
+  'refresh_token_not_found', 'refresh_token_already_used', 'session_not_found',
+  'session_expired', 'user_banned', 'bad_jwt', 'validation_failed',
+  'over_request_rate_limit', 'unexpected_failure', 'request_timeout',
+])
+export const logRefreshResponse = async (response, { attemptAt, expiresAt } = {}) => {
+  if (!isAuthDiagnosticsEnabled()) return
+  try {
+    // Success responses contain credentials and are deliberately never parsed.
+    const body = response.ok ? null : await response.clone().json().catch(() => null)
+    const rawCode = body?.code || body?.error_code
+    const rawMessage = body?.msg || body?.message || body?.error_description
+    const errorCode = response.ok ? null : REFRESH_CODES.has(rawCode) ? rawCode : 'UNRECOGNIZED_AUTH_ERROR'
+    const safeMessage = response.ok ? 'Refresh succeeded' : REFRESH_MESSAGES.has(rawMessage) ? rawMessage : 'Provider message withheld; inspect the error response locally.'
+    const ua = globalThis.navigator?.userAgent || ''
+    console.info('[HealthFlow auth refresh]', {
+      httpStatus: response.status, errorCode, safeMessage,
+      expiresAt: Number(expiresAt) || null, attemptAt: Number(attemptAt) || null,
+      browserCategory: /Edg\//.test(ua) ? 'Edge' : /Chrome\//.test(ua) ? 'Chrome' : /Firefox\//.test(ua) ? 'Firefox' : 'Other',
+      online: globalThis.navigator?.onLine !== false,
+      reason: response.ok ? 'AUTH_REFRESH_SUCCESS' : errorCode === 'refresh_token_already_used' || errorCode === 'session_not_found' ? 'AUTH_REFRESH_REVOKED' : errorCode === 'refresh_token_not_found' ? 'AUTH_REFRESH_INVALID' : errorCode === 'session_expired' ? 'AUTH_SESSION_EXPIRED' : 'AUTH_REFRESH_FAILED',
+    })
+  } catch { /* Diagnostics must never change authentication results. */ }
+}

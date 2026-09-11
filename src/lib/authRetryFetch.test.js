@@ -49,4 +49,12 @@ describe('auth transport failure isolation', () => {
     await expect(clientOptions.global.fetch('https://project-ref.supabase.co/rest/v1/users')).rejects.toThrow('Failed to fetch')
     expect(expired).not.toHaveBeenCalled()
   })
+  it('preserves recovery for customer e-pharmacy direct SDK calls', async () => {
+    fetchMock.mockResolvedValueOnce(new Response('{}', {status:401})).mockResolvedValue(new Response('{}'))
+    refreshSession.mockResolvedValue({data:{session:{access_token:'fixture-new'}},error:null})
+    expect((await clientOptions.global.fetch('https://project-ref.supabase.co/functions/v1/customer-epharmacy')).status).toBe(200)
+    expect(refreshSession).toHaveBeenCalledTimes(1)
+    expect(expired).not.toHaveBeenCalled()
+  })
+
 })
