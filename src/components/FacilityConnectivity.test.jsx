@@ -98,3 +98,11 @@ it('repositions a changed status on controlled refresh without a page reload', a
   fireEvent.click(screen.getByRole('button', { name: 'Offline', exact: true }))
   expect(screen.getByText('No facilities match your search and filter.')).toBeInTheDocument()
 })
+
+it('shows canonical facility heartbeat time without requiring a branch server', async () => {
+  getFacilityConnectivity.mockResolvedValue({ checkedAt: '2026-09-11T14:00:00Z', facilities: [{ ...row, name: 'HEALTH LIGHT LTD', registeredServers: 0, lastSeen: '2026-09-11T13:30:01Z', lastBrowserContact: null }] })
+  render(<FacilityConnectivity />)
+  expect(await screen.findByText('11/09/2026, 13:30:01')).toBeInTheDocument()
+  expect(screen.getByRole('columnheader', { name: 'Last facility contact (Ghana time)' })).toBeInTheDocument()
+  expect(screen.getByText('No branch server registered')).toBeInTheDocument()
+})

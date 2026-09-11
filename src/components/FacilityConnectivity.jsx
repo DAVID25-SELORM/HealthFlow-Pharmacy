@@ -74,12 +74,13 @@ export default function FacilityConnectivity() {
         {Object.entries({ ALL: 'All', ...statuses }).map(([key, label]) => <button key={key} className="btn btn-outline" aria-pressed={filter === key} onClick={() => setFilter(key)}>{label}</button>)}
       </div>
       <div className="facility-connectivity-table"><table>
-        <thead><tr><th>Facility</th><th>Connection evidence</th><th>Staff / sessions reporting</th><th>Last browser contact</th><th>Branch servers</th><th>Last server contact</th><th>Account</th></tr></thead>
+        <thead><tr><th>Facility</th><th>Connection evidence</th><th>Staff / sessions reporting</th><th>Last facility contact (Ghana time)</th><th>Last browser contact</th><th>Branch servers</th><th>Last server contact</th><th>Account</th></tr></thead>
         <tbody>{filtered.map((facility) => {
           return <tr key={facility.id}>
             <th scope="row">{facility.name}</th>
             <td>{stale ? 'Unknown — stale view' : statuses[facility.connectivityStatus]}</td>
             <td>{stale ? '—' : `${facility.recentStaff} staff / ${facility.recentSessions} sessions`}</td>
+            <td>{time(facility.lastSeen)}</td>
             <td>{time(facility.lastBrowserContact)}</td>
             <td>{stale ? '—' : `${facility.recentServers} recent / ${facility.registeredServers} registered`}</td>
             <td>{facility.lastServerContact ? time(facility.lastServerContact) : Number(facility.registeredServers) === 0 ? 'No branch server registered' : 'Awaiting first server contact'}</td><td>{facility.accountStatus}</td>
