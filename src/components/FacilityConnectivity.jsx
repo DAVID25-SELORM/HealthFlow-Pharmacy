@@ -56,6 +56,7 @@ export default function FacilityConnectivity() {
   }, [])
   const stale = failed || age > 90000
   const facilities = snapshot?.facilities || []
+  const counts = Object.fromEntries(Object.keys(statuses).map(key => [key, facilities.filter(facility => facility.connectivityStatus === key).length]))
   const filtered = facilities.filter((facility) => (filter === 'ALL' || facility.connectivityStatus === filter) && facility.name.toLowerCase().includes(search.trim().toLowerCase()))
   return <section className="platform-section facility-connectivity" aria-label="Facility Connectivity">
     <div className="platform-section-header">
@@ -68,11 +69,11 @@ export default function FacilityConnectivity() {
       <p>Last facility contact shows the latest browser or offline-server heartbeat. Offline-server contact applies only to a registered local Offline Mode server.</p>
       <p>Last checked: {time(snapshot.checkedAt)} (Ghana time)</p>
       <div className="facility-connectivity-summary" aria-label="Connection totals">
-        {Object.entries(statuses).map(([key, label]) => <span key={key}>{label}: {stale ? 'Unknown' : facilities.filter((facility) => facility.connectivityStatus === key).length}</span>)}
+        {Object.entries(statuses).map(([key, label]) => <span key={key}>{label}: {stale ? 'Unknown' : counts[key]}</span>)}
       </div>
       <label>Search facilities <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} /></label>
       <div className="facility-connectivity-filters" aria-label="Filter connection status">
-        {Object.entries({ ALL: 'All', ...statuses }).map(([key, label]) => <button key={key} className="btn btn-outline" aria-pressed={filter === key} onClick={() => setFilter(key)}>{label}</button>)}
+        {Object.entries({ ALL: 'All', ...statuses }).map(([key, label]) => <button key={key} className="btn btn-outline" aria-label={label} aria-pressed={filter === key} onClick={() => setFilter(key)}>{label} <span aria-hidden="true">({stale ? '?' : key === 'ALL' ? facilities.length : counts[key]})</span></button>)}
       </div>
       <div className="facility-connectivity-table"><table>
         <thead><tr><th>Facility</th><th>Connection evidence</th><th>Staff / sessions reporting</th><th>Last facility contact (Ghana time)</th><th>Last browser contact</th><th>Offline servers</th><th>Last offline-server contact</th><th>Account</th></tr></thead>
@@ -88,7 +89,13 @@ export default function FacilityConnectivity() {
           </tr>
         })}</tbody>
       </table></div>
-      {!filtered.length && <p>{facilities.length ? 'No facilities match your search and filter.' : 'No facilities found.'}</p>}
+      {!filtered.length && <div role="status">
+        <p>{stale ? 'Connection status is unavailable. Refresh connections to check again.' : search.trim() ? 'No facilities match your search and filter.' : filter !== 'ALL' ? `No facilities are currently classified as ${statuses[filter]}.` : 'No facilities found.'}</p>
+        {!stale && !search.trim() && filter === 'RECENTLY_ACTIVE' && <p>This group contains facilities seen within 30 minutes that are no longer Online.</p>}
+        {!stale && !search.trim() && filter === 'OFFLINE' && <p>Facilities needing server attention and facilities never observed have their own tabs.</p>}
+        {search.trim() && <button className="btn btn-outline" onClick={() => setSearch('')}>Clear search</button>}
+        {filter !== 'ALL' && <button className="btn btn-outline" onClick={() => { setFilter('ALL'); setSearch('') }}>Show all facilities</button>}
+      </div>}
     </>}
     <p>No recent contact can mean a closed browser, sleeping computer or lost internet. Older app versions do not send browser contact. Sessions may remain recent for up to 3 minutes after sign-out.</p>
   </section>

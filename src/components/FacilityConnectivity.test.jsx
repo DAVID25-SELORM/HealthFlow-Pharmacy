@@ -106,3 +106,33 @@ it('shows canonical facility heartbeat time without requiring a branch server', 
   expect(screen.getByRole('columnheader', { name: 'Last facility contact (Ghana time)' })).toBeInTheDocument()
   expect(screen.getByText('Not applicable - no offline server registered')).toBeInTheDocument()
 })
+
+it('each status tab returns its matching facilities and displays its count', async () => {
+  const labels = ['Online', 'Recently Active', 'Attention Required', 'Offline', 'Never Connected']
+  const keys = ['ONLINE', 'RECENTLY_ACTIVE', 'ATTENTION_REQUIRED', 'OFFLINE', 'NEVER_CONNECTED']
+  getFacilityConnectivity.mockResolvedValue({ checkedAt: '2026-09-11T14:00:00Z', facilities: keys.map((key, index) => ({ ...row, id: key, name: `Facility ${index}`, connectivityStatus: key })) })
+  render(<FacilityConnectivity />)
+  await screen.findByRole('rowheader', { name: 'Facility 0' })
+  labels.forEach((label, index) => {
+    const button = screen.getByRole('button', { name: label, exact: true })
+    expect(button).toHaveTextContent(`${label} (1)`)
+    fireEvent.click(button)
+    expect(names()).toEqual([`Facility ${index}`])
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'All', exact: true }))
+  expect(names()).toHaveLength(5)
+})
+it('explains zero-count tabs and lets the user return to all facilities', async () => {
+  getFacilityConnectivity.mockResolvedValue({ checkedAt: '2026-09-11T14:00:00Z', facilities: [row] })
+  render(<FacilityConnectivity />)
+  await screen.findByRole('rowheader', { name: row.name })
+  const button = screen.getByRole('button', { name: 'Recently Active', exact: true })
+  expect(button).toHaveTextContent('Recently Active (0)')
+  fireEvent.click(button)
+  expect(screen.getByText('No facilities are currently classified as Recently Active.')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Show all facilities' }))
+  expect(names()).toEqual([row.name])
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'unmatched' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Clear search' }))
+  expect(names()).toEqual([row.name])
+})
