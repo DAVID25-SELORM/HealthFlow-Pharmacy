@@ -65,6 +65,7 @@ export default function FacilityConnectivity() {
     <p>Online means a verified browser heartbeat within 3 minutes or branch-server contact within 15 minutes. Recently Active means contact within 30 minutes. Attention Required means older contact with a registered branch server. Status is connection evidence, not proof of staff activity or continuous connectivity.</p>
     {stale && <p role="alert">Connection status unavailable. {snapshot ? 'The previous observations below are stale.' : 'The connectivity database update may be pending, or the connection could not be checked.'}</p>}
     {snapshot && <>
+      <p>Last facility contact shows the latest browser or offline-server heartbeat. Offline-server contact applies only to a registered local Offline Mode server.</p>
       <p>Last checked: {time(snapshot.checkedAt)} (Ghana time)</p>
       <div className="facility-connectivity-summary" aria-label="Connection totals">
         {Object.entries(statuses).map(([key, label]) => <span key={key}>{label}: {stale ? 'Unknown' : facilities.filter((facility) => facility.connectivityStatus === key).length}</span>)}
@@ -74,7 +75,7 @@ export default function FacilityConnectivity() {
         {Object.entries({ ALL: 'All', ...statuses }).map(([key, label]) => <button key={key} className="btn btn-outline" aria-pressed={filter === key} onClick={() => setFilter(key)}>{label}</button>)}
       </div>
       <div className="facility-connectivity-table"><table>
-        <thead><tr><th>Facility</th><th>Connection evidence</th><th>Staff / sessions reporting</th><th>Last facility contact (Ghana time)</th><th>Last browser contact</th><th>Branch servers</th><th>Last server contact</th><th>Account</th></tr></thead>
+        <thead><tr><th>Facility</th><th>Connection evidence</th><th>Staff / sessions reporting</th><th>Last facility contact (Ghana time)</th><th>Last browser contact</th><th>Offline servers</th><th>Last offline-server contact</th><th>Account</th></tr></thead>
         <tbody>{filtered.map((facility) => {
           return <tr key={facility.id}>
             <th scope="row">{facility.name}</th>
@@ -83,7 +84,7 @@ export default function FacilityConnectivity() {
             <td>{time(facility.lastSeen)}</td>
             <td>{time(facility.lastBrowserContact)}</td>
             <td>{stale ? '—' : `${facility.recentServers} recent / ${facility.registeredServers} registered`}</td>
-            <td>{facility.lastServerContact ? time(facility.lastServerContact) : Number(facility.registeredServers) === 0 ? 'No branch server registered' : 'Awaiting first server contact'}</td><td>{facility.accountStatus}</td>
+            <td>{facility.lastServerContact ? time(facility.lastServerContact) : Number(facility.registeredServers) === 0 ? 'Not applicable - no offline server registered' : 'Offline server registered - awaiting first contact'}</td><td>{facility.accountStatus}</td>
           </tr>
         })}</tbody>
       </table></div>

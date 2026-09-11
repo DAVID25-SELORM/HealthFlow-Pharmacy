@@ -52,13 +52,13 @@ it('keeps a browser-connected facility Online without a registered branch server
   getFacilityConnectivity.mockResolvedValue({ checkedAt: '2026-09-11T00:00:00Z', facilities: [{ ...row, registeredServers: 0 }] })
   render(<FacilityConnectivity />)
   expect(await screen.findByRole('cell', { name: 'Online', exact: true })).toBeInTheDocument()
-  expect(screen.getByText('No branch server registered')).toBeInTheDocument()
+  expect(screen.getByText('Not applicable - no offline server registered')).toBeInTheDocument()
 })
 it('distinguishes a registered server awaiting its first contact', async () => {
   getFacilityConnectivity.mockResolvedValue({ checkedAt: '2026-09-11T00:00:00Z', facilities: [row] })
   render(<FacilityConnectivity />)
-  expect(await screen.findByText('Awaiting first server contact')).toBeInTheDocument()
-  expect(screen.queryByText('No branch server registered')).not.toBeInTheDocument()
+  expect(await screen.findByText('Offline server registered - awaiting first contact')).toBeInTheDocument()
+  expect(screen.queryByText('Not applicable - no offline server registered')).not.toBeInTheDocument()
 })
 it('retains canonical order through search/filter and refresh status transitions', async () => {
   const online = { ...row, id: 'a', name: 'Alpha' }
@@ -104,5 +104,5 @@ it('shows canonical facility heartbeat time without requiring a branch server', 
   render(<FacilityConnectivity />)
   expect(await screen.findByText('11/09/2026, 13:30:01')).toBeInTheDocument()
   expect(screen.getByRole('columnheader', { name: 'Last facility contact (Ghana time)' })).toBeInTheDocument()
-  expect(screen.getByText('No branch server registered')).toBeInTheDocument()
+  expect(screen.getByText('Not applicable - no offline server registered')).toBeInTheDocument()
 })
