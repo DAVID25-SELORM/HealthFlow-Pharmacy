@@ -8,7 +8,7 @@ export const recordFacilityBrowserContact = async () => {
 export const getFacilityConnectivity = async () => {
   const { data, error } = await supabase.rpc('get_facility_connectivity')
   if (error) throw error
-  if (!data || !Array.isArray(data.facilities) || !data.checkedAt) {
+  if (!data || !Array.isArray(data.facilities) || !data.checkedAt || data.facilities.some((facility) => !['ONLINE', 'RECENTLY_ACTIVE', 'ATTENTION_REQUIRED', 'OFFLINE', 'NEVER_CONNECTED'].includes(facility.connectivityStatus))) {
     throw new Error('Facility connectivity response is unavailable.')
   }
   return data

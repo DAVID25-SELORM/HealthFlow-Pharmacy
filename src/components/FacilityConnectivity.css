@@ -7,3 +7,6 @@
   .facility-connectivity .platform-section-header { flex-direction: column; align-items: stretch; gap: .75rem; }
   .facility-connectivity table { min-width: 780px; }
 }
+
+.facility-connectivity-summary, .facility-connectivity-filters { display: flex; flex-wrap: wrap; gap: .75rem; margin: 1rem 0; }
+.facility-connectivity-filters [aria-pressed="true"] { font-weight: bold; border-color: var(--primary); }

@@ -26,3 +26,19 @@ The database derives staff identity, session, organization and timestamp on the 
 5. Verify another ordinary staff account cannot read the cross-facility summary.
 
 Isolated PostgreSQL checks passed for organization attribution, super-admin-only summary access, denied anonymous/inactive reporting, denied direct table access and expiry of the browser contact window. Production acceptance remains pending deployment.
+
+## Status priority update
+
+Apply `20260911020000_prioritize_facility_connectivity.sql` before deploying the updated frontend. The database owns status classification and orders the complete unpaginated result:
+
+1. Online: browser heartbeat within 3 minutes or active branch server within 15 minutes.
+2. Recently Active: either heartbeat within 30 minutes, outside the Online windows.
+3. Attention Required: older contact and an active registered branch server. This indicates missing expected server contact, not a diagnosis of a sync failure.
+4. Offline: older observed contact without an active registered server.
+5. Never Connected: no eligible recorded heartbeat, even if a server is registered.
+
+Within each observed status, latest contact sorts first, then name (case-insensitive C collation, exact name), then immutable facility UUID. Never Connected sorts by the same name/UUID tie-breakers. Account status and authentication session counts do not determine connectivity status.
+
+Summary counts cover all facilities; search and status filters narrow the table without changing server ordering. No pagination exists. Reordering occurs on the controlled 30-second visible-dashboard refresh, visibility restoration, or manual refresh; individual heartbeat writes do not cause row movement. Failed/stale snapshots show unknown counts and status. Older RPC responses without canonical status are rejected rather than reclassified by the client.
+
+Validation: `supabase/tests/facility_connectivity_priority.sql` executes both migrations in an empty disposable database with 160 facilities, checking whole-result order, page boundaries, transitions, ties, server-only contact and staff access rejection. It must not be run in production.
