@@ -8,6 +8,7 @@ import {
 } from '../../utils/facilityTheme'
 import Seo from '../Seo/Seo'
 import ProductionMetricsMonitor from '../Diagnostics/ProductionMetricsMonitor'
+import FacilityContactReporter from '../FacilityContactReporter'
 import Sidebar from './Sidebar'
 import TopBar from './TopBar'
 import './Layout.css'
@@ -71,6 +72,7 @@ const Layout = () => {
     <div className={`app-layout ${isSidebarOpen ? 'sidebar-open' : ''}`}>
       <Seo noindex title="Workspace" />
       <ProductionMetricsMonitor />
+      <FacilityContactReporter />
       <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
       <button
         type="button"

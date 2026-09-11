@@ -50,3 +50,46 @@ describe('offline sync status reconciliation', () => {
     }
   })
 })
+
+
+describe('read-only branch connection check', () => {
+  it('validates tenant and branch without changing stock or sending queued work', () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'healthflow-connection-'))
+    const syncUrl = pathToFileURL(path.resolve('local-branch-server/src/supabaseSync.js')).href
+    const dbUrl = pathToFileURL(path.resolve('local-branch-server/src/db.js')).href
+    const script = `
+      const { db, closeDatabase } = await import(${JSON.stringify(dbUrl)});
+      const { validateCloudBranchSession } = await import(${JSON.stringify(syncUrl)});
+      let branch = 'branch-test';
+      let organization = 'org-test';
+      let count = 0;
+      globalThis.fetch = async (url, options) => {
+        if (!String(url).endsWith('/rpc/branch_sync_get_inventory_snapshot')) throw new Error('Unexpected network write');
+        const body = JSON.parse(options.body);
+        if (body.p_limit !== 1 || body.p_sync_token !== 'test-sync-token') throw new Error('Unexpected query');
+        count++;
+        return new Response(JSON.stringify({ organization_id: organization, branch_id: branch }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      };
+      const before = db.prepare('SELECT total_changes() AS count').get().count;
+      const identity = await validateCloudBranchSession();
+      let rejected = 0;
+      for (const mismatch of ['branch', 'organization']) {
+        branch = mismatch === 'branch' ? 'other' : 'branch-test';
+        organization = mismatch === 'organization' ? 'other' : 'org-test';
+        try { await validateCloudBranchSession(); } catch { rejected++; }
+      }
+      const changed = db.prepare('SELECT total_changes() AS count').get().count - before;
+      closeDatabase();
+      console.log(JSON.stringify({ identity, rejected, changed, count }));
+    `
+    try {
+      const output = execFileSync(process.execPath, ['--input-type=module', '--eval', script], {
+        cwd: path.resolve('local-branch-server'), encoding: 'utf8',
+        env: { ...process.env, HEALTHFLOW_DB_PATH: path.join(directory, 'branch.sqlite'), SUPABASE_URL: 'https://example.invalid', SUPABASE_SYNC_KEY: 'test-sync-key', BRANCH_SYNC_TOKEN: 'test-sync-token', ORGANIZATION_ID: 'org-test', BRANCH_ID: 'branch-test' },
+      })
+      expect(JSON.parse(output.trim().split(/\r?\n/).at(-1))).toEqual({ identity: { organizationId: 'org-test', branchId: 'branch-test' }, rejected: 2, changed: 0, count: 3 })
+    } finally {
+      fs.rmSync(directory, { recursive: true, force: true })
+    }
+  })
+})

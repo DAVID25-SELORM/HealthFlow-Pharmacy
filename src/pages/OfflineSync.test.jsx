@@ -4,6 +4,9 @@ import OfflineSync from './OfflineSync'
 
 const mocks = vi.hoisted(() => ({
   notify: vi.fn(),
+  checkBranchCloudConnection: vi.fn(),
+  getBranchInventory: vi.fn(),
+  runBranchSync: vi.fn(),
   checkBranchServerUpdates: vi.fn(),
   getBranchServerConfig: vi.fn(),
   getBranchServerHealth: vi.fn(),
@@ -49,7 +52,8 @@ vi.mock('../services/branchServerApi', () => ({
   checkBranchServerUpdates: mocks.checkBranchServerUpdates,
   createNhiaBatch: vi.fn(),
   downloadNhiaBatchExport: vi.fn(),
-  getBranchInventory: vi.fn(),
+  getBranchInventory: mocks.getBranchInventory,
+  checkBranchCloudConnection: mocks.checkBranchCloudConnection,
   getBranchServerConfig: mocks.getBranchServerConfig,
   getBranchServerHealth: mocks.getBranchServerHealth,
   getBranchOfflineReadiness: mocks.getBranchOfflineReadiness,
@@ -67,7 +71,7 @@ vi.mock('../services/branchServerApi', () => ({
   repairBranchSync: vi.fn(),
   reconnectBranchSync: mocks.reconnectBranchSync,
   retryBranchSyncIssue: mocks.retryBranchSyncIssue,
-  runBranchSync: vi.fn(),
+  runBranchSync: mocks.runBranchSync,
   saveBranchToken: vi.fn((token) => token),
   submitPendingNhiaClaims: vi.fn(),
 }))
@@ -86,9 +90,17 @@ vi.mock('../services/offlineInstallerReleaseService', () => ({
   requestOfflineInstallerDownload: mocks.requestOfflineInstallerDownload,
 }))
 
+const renderAdvanced = () => {
+  const view = render(<OfflineSync />)
+  const toggle = screen.queryByRole('button', { name: 'Advanced / Technical Details' })
+  if (toggle) fireEvent.click(toggle)
+  return view
+}
+
 describe('OfflineSync branch registration', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    window.localStorage.clear()
     mocks.getBranchServerConfig.mockReturnValue({ enabled: false, token: '', url: '' })
     mocks.useAuth.mockReturnValue({
       organization: null,
@@ -101,6 +113,8 @@ describe('OfflineSync branch registration', () => {
     mocks.getActiveOfflineInstallerRelease.mockResolvedValue(null)
     mocks.getBranchOfflineReadiness.mockResolvedValue(null)
     mocks.getBranchRecentSales.mockResolvedValue([])
+    mocks.getBranchInventory.mockResolvedValue([])
+    mocks.checkBranchCloudConnection.mockResolvedValue({ organizationId: 'org-1', branchId: 'branch-1' })
     mocks.listBranchOfflineAccess.mockResolvedValue([])
     mocks.listBranchSyncIssues.mockResolvedValue([])
     mocks.reconnectBranchSync.mockResolvedValue({ status: { pending: 0, failed: 0 } })
@@ -145,7 +159,7 @@ describe('OfflineSync branch registration', () => {
   })
 
   it('registers the selected facility machine and displays a complete one-time environment block', async () => {
-    render(<OfflineSync />)
+    renderAdvanced()
 
     await screen.findByText('Dispensary server')
     fireEvent.change(screen.getByLabelText('Branch sync token'), {
@@ -212,7 +226,7 @@ describe('OfflineSync branch registration', () => {
       state: 'installing',
       restartRequired: true,
     })
-    render(<OfflineSync />)
+    renderAdvanced()
 
     expect(screen.getByRole('heading', { name: 'Install HealthFlow Offline' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Download and Install' })).toBeInTheDocument()
@@ -233,6 +247,7 @@ describe('OfflineSync branch registration', () => {
   })
 
   it('translates branch readiness and staff enrollment into the guided setup dashboard', async () => {
+    mocks.useAuth.mockReturnValue({ role: 'super_admin', organization: { id: 'org-1' }, branch: { id: 'branch-1' } })
     mocks.getBranchServerConfig.mockReturnValue({
       enabled: true,
       token: 'branch-token',
@@ -243,6 +258,8 @@ describe('OfflineSync branch registration', () => {
     mocks.getBranchUpdateStatus.mockResolvedValue(null)
     mocks.getBranchOfflineReadiness.mockResolvedValue({
       ready: true,
+      organizationId: 'org-1', branchId: 'branch-1',
+      staff: { offlinePinReady: 1, missingOfflinePin: 1 },
       version: '1.4.4',
       checks: [],
       summary: { warnings: 0 },
@@ -252,18 +269,64 @@ describe('OfflineSync branch registration', () => {
       { id: 'staff-2', fullName: 'Needs PIN', isActive: true, offlineAccessEnabled: true, offlinePinEnrolled: false },
     ])
 
-    render(<OfflineSync />)
+    renderAdvanced()
 
-    expect(await screen.findByText('OFFLINE SYSTEM READY ✓')).toBeInTheDocument()
-    expect(screen.getByText('1 of 2')).toBeInTheDocument()
-    expect(screen.getByText('Needs an offline PIN')).toBeInTheDocument()
+    expect(await screen.findByText('1 staff ready. 1 staff need offline access or an Offline PIN.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'View Staff Readiness' }))
+    expect(screen.getByText(/Needs PIN: Needs an offline PIN/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Test Offline Mode' })).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced / Technical Details' }))
     expect(screen.getByText('Internet required:')).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'NHIA / CLAIM-it' }).closest('.offline-technical-details'))
+    expect(screen.getByRole('heading', { name: 'NHIA / CLAIM-it', hidden: true }).closest('.offline-technical-details'))
       .not.toHaveClass('is-open')
-    fireEvent.click(screen.getAllByRole('button', { name: 'Technical Details' }).at(-1))
-    expect(screen.getByRole('heading', { name: 'NHIA / CLAIM-it' }).closest('.offline-technical-details'))
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced / Technical Details' }))
+    expect(screen.getByRole('heading', { name: 'NHIA / CLAIM-it', hidden: true }).closest('.offline-technical-details'))
       .toHaveClass('is-open')
+  })
+
+
+  const setReadyFacility = () => {
+    mocks.useAuth.mockReturnValue({ role: 'admin', user: { id: 'user-1' }, organization: { id: 'org-1', name: 'Test Facility' }, branch: { id: 'branch-1', name: 'Main' } })
+    mocks.getBranchServerConfig.mockReturnValue({ enabled: true, token: 'test', url: 'http://localhost:4780' })
+    mocks.getBranchServerHealth.mockResolvedValue({ ok: true })
+    mocks.getBranchSyncStatus.mockResolvedValue({ pending: 0, failed: 0 })
+    mocks.getBranchOfflineReadiness.mockResolvedValue({ ready: true, state: 'HEALTHY', organizationId: 'org-1', branchId: 'branch-1', snapshots: { inventory: { state: 'healthy' } }, staff: { offlinePinReady: 1, missingOfflinePin: 0 }, checks: [] })
+  }
+
+  it('passes the read-only test without running sync or creating an acceptance sale', async () => {
+    setReadyFacility()
+    render(<OfflineSync />)
+    await screen.findByRole('heading', { name: 'Ready to Test' })
+    fireEvent.click(screen.getByRole('button', { name: 'Test Offline Mode' }))
+    await screen.findByRole('heading', { name: 'Offline Mode Ready' })
+    expect(mocks.checkBranchCloudConnection).toHaveBeenCalledOnce()
+    expect(mocks.getBranchInventory).toHaveBeenCalledWith({ branchId: 'branch-1', limit: 1 })
+    expect(mocks.runBranchSync).not.toHaveBeenCalled()
+    expect(mocks.reconnectBranchSync).not.toHaveBeenCalled()
+    expect(mocks.getBranchRecentSales).not.toHaveBeenCalled()
+  })
+
+  it('fails the test if the cloud connection cannot be validated', async () => {
+    setReadyFacility()
+    mocks.checkBranchCloudConnection.mockRejectedValueOnce(new Error('private server trace'))
+    render(<OfflineSync />)
+    await screen.findByRole('heading', { name: 'Ready to Test' })
+    fireEvent.click(screen.getByRole('button', { name: 'Test Offline Mode' }))
+    await screen.findByText(/Offline test could not pass/)
+    expect(screen.queryByRole('heading', { name: 'Offline Mode Ready' })).not.toBeInTheDocument()
+    expect(screen.getByText('private server trace')).not.toBeVisible()
+  })
+
+  it('reuses reconciliation once during preparation', async () => {
+    setReadyFacility()
+    mocks.getBranchOfflineReadiness.mockResolvedValue({ ready: false, state: 'DEGRADED', organizationId: 'org-1', branchId: 'branch-1', checks: [] })
+    render(<OfflineSync />)
+    await screen.findByText('Main Computer')
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Prepare Offline Mode' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: 'Prepare Offline Mode' }))
+    await waitFor(() => expect(mocks.reconnectBranchSync).toHaveBeenCalledOnce())
+    await screen.findByText(/Preparation needs attention. Check your connection/)
+    expect(mocks.runBranchSync).not.toHaveBeenCalled()
   })
 
   const NOT_CONFIGURED_MESSAGE =
@@ -281,7 +344,7 @@ describe('OfflineSync branch registration', () => {
     vi.stubGlobal('fetch', fetchMock)
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
 
-    render(<OfflineSync />)
+    renderAdvanced()
 
     fireEvent.click(screen.getByRole('button', { name: 'Download and Install' }))
 
@@ -302,7 +365,7 @@ describe('OfflineSync branch registration', () => {
     vi.stubEnv('VITE_HEALTHFLOW_INSTALLER_URL', CONFIGURED_INSTALLER_URL)
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
 
-    render(<OfflineSync />)
+    renderAdvanced()
 
     expect(screen.getByRole('button', { name: 'Download and Install' })).toBeDisabled()
     expect(screen.getByText(
@@ -319,6 +382,7 @@ describe('OfflineSync branch registration', () => {
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
 
     render(<FreshOfflineSync />)
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced / Technical Details' }))
 
     fireEvent.click(screen.getByRole('button', { name: 'Download and Install' }))
 
@@ -336,6 +400,7 @@ describe('OfflineSync branch registration', () => {
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
 
     render(<FreshOfflineSync />)
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced / Technical Details' }))
 
     fireEvent.click(screen.getByRole('button', { name: 'Download and Install' }))
 
@@ -350,6 +415,7 @@ describe('OfflineSync branch registration', () => {
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
 
     render(<FreshOfflineSync />)
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced / Technical Details' }))
 
     fireEvent.click(screen.getByRole('button', { name: 'Download and Install' }))
 
@@ -364,6 +430,7 @@ describe('OfflineSync branch registration', () => {
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
 
     render(<FreshOfflineSync />)
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced / Technical Details' }))
 
     fireEvent.click(screen.getByRole('button', { name: 'Download and Install' }))
 
@@ -380,6 +447,7 @@ describe('OfflineSync branch registration', () => {
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
 
     render(<FreshOfflineSync />)
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced / Technical Details' }))
 
     fireEvent.click(screen.getByRole('button', { name: 'Download and Install' }))
 
@@ -402,6 +470,7 @@ describe('OfflineSync branch registration', () => {
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
 
     render(<FreshOfflineSync />)
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced / Technical Details' }))
 
     fireEvent.click(screen.getByRole('button', { name: 'Download and Install' }))
 
@@ -423,6 +492,7 @@ describe('OfflineSync branch registration', () => {
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
 
     render(<FreshOfflineSync />)
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced / Technical Details' }))
 
     fireEvent.click(screen.getByRole('button', { name: 'Download and Install' }))
 
@@ -446,6 +516,7 @@ describe('OfflineSync branch registration', () => {
       const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
 
       render(<FreshOfflineSync />)
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced / Technical Details' }))
 
       fireEvent.click(screen.getByRole('button', { name: 'Download and Install' }))
 
@@ -471,6 +542,7 @@ describe('OfflineSync branch registration', () => {
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
 
     render(<FreshOfflineSync />)
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced / Technical Details' }))
 
     fireEvent.click(screen.getByRole('button', { name: 'Download and Install' }))
 
@@ -499,7 +571,7 @@ describe('OfflineSync branch registration', () => {
     vi.stubGlobal('fetch', fetchMock)
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
 
-    render(<OfflineSync />)
+    renderAdvanced()
 
     await screen.findByText('Offline installer 2.1.0 available')
     fireEvent.click(screen.getByRole('button', { name: 'Download and Install' }))
@@ -530,7 +602,7 @@ describe('OfflineSync branch registration', () => {
     vi.stubGlobal('fetch', fetchMock)
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
 
-    render(<OfflineSync />)
+    renderAdvanced()
 
     await screen.findByText('Offline installer 2.1.0 available')
     fireEvent.click(screen.getByRole('button', { name: 'Download and Install' }))

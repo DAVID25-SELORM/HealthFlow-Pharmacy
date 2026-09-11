@@ -97,6 +97,7 @@ import {
   pullInventorySnapshot,
   repairFailedSync,
   reconnectAndReconcile,
+  validateCloudBranchSession,
   retrySyncIssue,
   syncPendingOutbox,
 } from './supabaseSync.js'
@@ -1628,6 +1629,16 @@ app.post('/api/sync/issues/:id/retry', requireBranchAdminAccess, (request, respo
 app.post('/api/sync/repair', async (request, response, next) => {
   try {
     response.json(await repairFailedSync({ limit: request.body?.limit || 1000 }))
+  } catch (error) {
+    next(error)
+  }
+})
+
+// Read-only connectivity/identity probe. Uses the same branch credentials as
+// reconciliation, without sending queued work or changing local stock.
+app.get('/api/sync/connection-check', requireBranchAdminAccess, async (_request, response, next) => {
+  try {
+    response.json({ data: await validateCloudBranchSession() })
   } catch (error) {
     next(error)
   }

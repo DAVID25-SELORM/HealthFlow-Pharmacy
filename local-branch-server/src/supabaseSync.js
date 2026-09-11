@@ -851,7 +851,7 @@ export const repairFailedSync = async ({ limit = 1000 } = {}) => {
   }
 }
 
-const validateCloudBranchSession = async () => {
+export const validateCloudBranchSession = async () => {
   const supabase = createSupabaseClient()
   const { data, error } = await withSupabaseNetworkContext(() =>
     supabase.rpc('branch_sync_get_inventory_snapshot', {

@@ -1,0 +1,9 @@
+.facility-connectivity { min-width: 0; }
+.facility-connectivity-table { overflow-x: auto; max-width: 100%; }
+.facility-connectivity table { width: 100%; border-collapse: collapse; }
+.facility-connectivity th, .facility-connectivity td { text-align: left; padding: .75rem; border-bottom: 1px solid var(--gray-200); }
+.facility-connectivity p { color: var(--gray-600); }
+@media (max-width: 640px) {
+  .facility-connectivity .platform-section-header { flex-direction: column; align-items: stretch; gap: .75rem; }
+  .facility-connectivity table { min-width: 780px; }
+}

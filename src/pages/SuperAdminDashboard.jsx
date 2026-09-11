@@ -13,6 +13,7 @@ import { useNavigate } from 'react-router-dom'
 import { getTenantAdminDashboard } from '../services/tenantAdminService'
 import { APP_TIME_ZONE } from '../utils/date'
 import './SuperAdminDashboard.css'
+import FacilityConnectivity from '../components/FacilityConnectivity'
 
 const STATUS_LABELS = {
   active: 'Active',
@@ -311,6 +312,7 @@ const SuperAdminDashboard = () => {
       </section>
 
       {error && <div className="platform-alert">{error}</div>}
+      <FacilityConnectivity />
 
       <section className="platform-stats-grid" aria-label="Platform summary metrics">
         {summaryCards.map((card) => (

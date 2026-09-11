@@ -1010,3 +1010,8 @@ export const deleteBranchRecord = async (resource, id, payload = {}) => {
   })
   return response.data || null
 }
+
+export const checkBranchCloudConnection = async () => {
+  const response = await branchFetch('/api/sync/connection-check', { timeoutMs: DEFAULT_BRANCH_REQUEST_TIMEOUT_MS })
+  return response.data || response
+}

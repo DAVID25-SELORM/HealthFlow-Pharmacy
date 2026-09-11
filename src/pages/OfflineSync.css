@@ -1190,3 +1190,22 @@
   padding: 1rem 1.5rem 1.5rem;
   margin-top: auto;
 }
+
+.offline-summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 1rem; margin: 0; }
+.offline-summary-grid > div { min-width: 0; padding: .8rem; background: var(--gray-50); border-radius: 10px; }
+.offline-summary-grid dt { color: var(--gray-600); font-size: .85rem; }
+.offline-summary-grid dd { margin: .35rem 0 0; font-weight: 700; overflow-wrap: anywhere; }
+.offline-main-actions { display: flex; gap: .75rem; flex-wrap: wrap; }
+.offline-guide-panel label { display: grid; gap: .5rem; }
+.offline-guide-panel input, .offline-guide-panel select { max-width: 100%; min-width: 0; padding: .6rem; }
+.offline-readiness-json { max-height: 320px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.offline-technical-details[hidden] { display: none; }
+.offline-guide details summary { cursor: pointer; font-weight: 600; }
+@media (max-width: 520px) {
+  .offline-summary-grid, .offline-guide-stage-grid { grid-template-columns: 1fr; }
+  .offline-main-actions { flex-direction: column; }
+  .offline-main-actions .btn { width: 100%; }
+  .offline-sync-page { padding: .75rem; }
+  .offline-guide { padding: .85rem; }
+  .offline-technical-details table { display: block; max-width: 100%; overflow-x: auto; }
+}
