@@ -1,3 +1,4 @@
+import { getNhisCccTransitionIssue } from '../../local-branch-server/src/nhisCccValidation.js'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import NhisClaimCreatorCounts from '../components/NhisClaimCreatorCounts'
 import {
@@ -4554,6 +4555,12 @@ const Nhis = () => {
     }
     const saveAsDraft = intent === 'save_details'
     const serveDirectly = intent === 'serve_directly'
+    const cccIssue = getNhisCccTransitionIssue(claimForm)
+    if (cccIssue && (serveDirectly || isMedicineCounterAssistant || (!saveAsDraft && ['served', 'claim_ready'].includes(editingClaim?.status)))) {
+      setClaimError(cccIssue)
+      document.getElementById('nhis-ccc-code')?.focus()
+      return
+    }
     if (serveDirectly && editingClaim && !canNhisClaimBeServedDirectly({
       claim: editingClaim,
       role: privilegedNhisActionRole,
@@ -4721,7 +4728,7 @@ const Nhis = () => {
       let successMessage = serveDirectly
         ? 'Claim medicines served directly.'
         : saveAsDraft
-        ? 'Claim details saved. The claim has not been sent to the dispensary.'
+        ? (cccIssue ? 'Saved as Draft. Add the CCC/CC code before completing or serving this claim.' : 'Claim details saved. The claim has not been sent to the dispensary.')
         : editingClaim
         ? (
             isMedicineCounterAssistant
@@ -7726,7 +7733,7 @@ const Nhis = () => {
                     <div className="form-group">
                       <label>CCC / CC Code{claimControlMode === 'manual' ? ' *' : ''}</label>
                       <div className="nhis-code-field">
-                        <input className="form-input" value={claimForm.cccNo}
+                        <input id="nhis-ccc-code" className="form-input" value={claimForm.cccNo}
                           required={claimControlMode === 'manual'}
                           disabled={claimControlMode === 'manual' && !canManuallyEditCcCode}
                           inputMode="numeric"

@@ -322,6 +322,13 @@ const mismatchBlocker =
   'no matching Malaria medicine/category was found. Reason: correct the diagnosis or add a medicine/category that matches the recorded diagnosis before saving corrections/submission.'
 
 describe('assessNhisClaimReadiness', () => {
+  it.each(['claimit_bridge', 'direct_api'])('blocks cleared CCC despite a stale alias in %s', (claimControlMode) => {
+    const result = assessNhisClaimReadiness({ ...baseClaim, cccNo: '', ccCode: '12345' }, [baseMedicine], { claimControlMode })
+    expect(result.blockers.join(' ')).toMatch(/CC|CCC/)
+  })
+  it('blocks completed saves with cleared CCC even when incomplete review is allowed', async () => {
+    await expect(createNhisClaim({ ...baseClaim, cccNo: '', status: 'served', allowIncompleteReview: true }, [baseMedicine])).rejects.toThrow('CCC/CC code')
+  })
   it('warns about dose, frequency, and duration while serving patients', () => {
     const medicine = {
       ...baseMedicine,
@@ -1567,6 +1574,12 @@ describe('assessNhisClaimReadiness', () => {
     )
 
     expect(readiness.blockers).toContain('CCC/CC code is required before export.')
+  })
+
+  it('reports missing CCC alongside other final submission blockers', () => {
+    const readiness = assessNhisClaimReadiness({ ...baseClaim, cccNo: '', memberNo: '' }, [], { finalSubmission: true, requireCccCodeForExport: true })
+    expect(readiness.blockers).toContain('CCC/CC code is required before export.')
+    expect(readiness.blockers.length).toBeGreaterThan(1)
   })
 
   it('only asks for child weight on hospital child claims', () => {

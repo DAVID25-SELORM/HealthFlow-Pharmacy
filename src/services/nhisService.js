@@ -1,3 +1,4 @@
+import { assertNhisCccForSavedState, assertNhisCccForProgress } from '../../local-branch-server/src/nhisCccValidation.js'
 import { supabase } from '../lib/supabase'
 import { assertRequiredText, assertNonNegativeNumber, assertPositiveNumber, normalizeText, sanitizeSearchTerm } from '../utils/validation'
 import {
@@ -2780,7 +2781,7 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
   const isHospital = organizationType === 'hospital'
   const diagnosis = getClaimField(claimData, 'diagnosis')
   const diagnoses = splitDiagnoses(diagnosis)
-  const cccNo = getClaimField(claimData, 'cccNo', 'ccc_no') || getClaimField(claimData, 'ccCode', 'cc_code')
+  const cccNo = claimData.cccNo ?? claimData.ccc_no ?? claimData.ccCode ?? claimData.cc_code
   const patientAge = calculateAge(dateOfBirth)
   const requireMedicineDirections = options.finalSubmission || options.requireMedicineDirections === true
   const requirePrescriptionAttachment = options.finalSubmission
@@ -2860,9 +2861,7 @@ export const assessNhisClaimReadiness = (claimData, medicines = [], options = {}
   }
   const cccNoIssue = options.requireCccCodeForExport === true
     ? getNhisCcCodeExportIssue(cccNo)
-    : shouldAllowPendingClaimControl(options) && !normalizeNhisCcCode(cccNo)
-      ? ''
-      : getNhisCcCodeIssue(cccNo)
+    : getNhisCcCodeIssue(cccNo)
   if (cccNoIssue) blockers.push(cccNoIssue)
   if (!diagnosis && isHospital) {
     blockers.push('Diagnosis is required for hospital NHIS claims.')
@@ -6373,6 +6372,7 @@ export const recordNhisLearnedDoseSuggestions = async (observations = []) => {
  * Also saves HIN/member_no back to the patient record if patient_id is provided.
  */
 export const createNhisClaim = async (claimData, medicines, options = {}) => {
+  assertNhisCccForSavedState({ ...claimData, status: claimData.status || 'served' })
   const allowIncompleteReview = Boolean(claimData?.allowIncompleteReview || claimData?.reviewOnly)
   if (!allowIncompleteReview) {
     assertNhisMedicineDurationInputs(medicines)
@@ -6644,6 +6644,7 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
     }
   )
   if (options.medicinesOnly === true) {
+    assertNhisCccForProgress(claimData)
     const medicineBlockers = getMcaMedicineReadinessBlockers(readiness)
     if (medicineBlockers.length) {
       throw new Error(`Medicine save check failed: ${medicineBlockers.slice(0, 5).join(' ')}`)
@@ -6713,6 +6714,7 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
   const memberNo = normalizeNhiaMemberNumber(
     assertRequiredText(claimData.memberNo, 'NHIS member number or Ghana Card number')
   )
+  assertNhisCccForSavedState(claimData)
   const cccNo = normalizeOptionalNhisCcCodeForMode(
     claimData.cccNo ?? claimData.ccc_no ?? claimData.ccCode ?? claimData.cc_code,
     options

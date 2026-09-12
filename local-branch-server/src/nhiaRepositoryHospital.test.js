@@ -435,6 +435,7 @@ describe('hospital NHIA claim persistence', () => {
         id: '3f3e0422-594f-4ef4-a528-3979722107ee',
         claim_number: 'NHIS-000014',
         status: 'served',
+        ccc_no: '12345',
       });
       const claims = resolveDirectSubmissionLocalClaims(['3f3e0422-594f-4ef4-a528-3979722107ee']);
       closeDatabase();
