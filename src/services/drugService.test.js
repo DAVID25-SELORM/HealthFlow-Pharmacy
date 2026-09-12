@@ -33,7 +33,10 @@ import {
   calculateDrugStatus,
   addDrug,
   getAllDrugs,
+  getExpiringDrugs,
+  getLowStockDrugs,
   isDefaultCatalogDrug,
+  resetInventoryAlertCacheForTests,
   searchDrugs,
   updateDrug,
   deleteDrug,
@@ -49,6 +52,23 @@ describe('drugService catalog handling', () => {
     routeWriteMock.mockReset()
     routeReadMock.mockImplementation(({ cloud }) => cloud())
     routeWriteMock.mockImplementation(({ cloud }) => cloud())
+    resetInventoryAlertCacheForTests()
+  })
+
+  it('deduplicates concurrent inventory alert reads', async () => {
+    const lowStockQuery = { select: vi.fn().mockResolvedValue({ data: [{ id: 'low', quantity: 1 }], error: null }) }
+    const expiringQuery = { select: vi.fn().mockResolvedValue({ data: [{ id: 'soon', quantity: 1, expiry_date: '2026-09-20' }], error: null }) }
+    fromMock.mockImplementationOnce(() => lowStockQuery).mockImplementationOnce(() => expiringQuery)
+
+    await expect(Promise.all([getLowStockDrugs(), getLowStockDrugs()])).resolves.toEqual([
+      [{ id: 'low', quantity: 1 }],
+      [{ id: 'low', quantity: 1 }],
+    ])
+    await expect(Promise.all([getExpiringDrugs(), getExpiringDrugs()])).resolves.toEqual([
+      [{ id: 'soon', quantity: 1, expiry_date: '2026-09-20' }],
+      [{ id: 'soon', quantity: 1, expiry_date: '2026-09-20' }],
+    ])
+    expect(fromMock).toHaveBeenCalledTimes(2)
   })
 
   const createDirectDrugQuery = (rows) => {

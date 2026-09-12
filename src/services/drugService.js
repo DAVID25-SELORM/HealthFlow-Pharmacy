@@ -45,6 +45,40 @@ const DRUG_LIST_SELECT = [
   'updated_at',
 ].join(', ')
 
+const INVENTORY_ALERT_CACHE_MS = 30_000
+const inventoryAlertCache = new Map()
+const inventoryAlertRequests = new Map()
+
+export const resetInventoryAlertCacheForTests = () => {
+  inventoryAlertCache.clear()
+  inventoryAlertRequests.clear()
+}
+
+const getCachedInventoryAlert = async (key, load, { force = false } = {}) => {
+  const cached = inventoryAlertCache.get(key)
+  if (!force && cached && Date.now() - cached.cachedAt < INVENTORY_ALERT_CACHE_MS) {
+    return cached.rows
+  }
+  const inFlight = inventoryAlertRequests.get(key)
+  if (!force && inFlight) return await inFlight
+
+  const request = Promise.resolve()
+    .then(load)
+    .then((rows) => {
+      const normalizedRows = rows || []
+      inventoryAlertCache.set(key, { cachedAt: Date.now(), rows: normalizedRows })
+      return normalizedRows
+    })
+  inventoryAlertRequests.set(key, request)
+  try {
+    return await request
+  } finally {
+    if (inventoryAlertRequests.get(key) === request) {
+      inventoryAlertRequests.delete(key)
+    }
+  }
+}
+
 export const isDefaultCatalogDrug = (drug) =>
   String(drug?.batch_number || drug?.batch || '').toUpperCase().startsWith(DEFAULT_MEDICATION_BATCH_PREFIX)
 
@@ -448,9 +482,9 @@ export const searchDrugs = async (searchTerm, options = {}) => {
 }
 
 // Get low stock drugs
-export const getLowStockDrugs = async () => {
+export const getLowStockDrugs = async ({ force = false } = {}) => {
   // ✅ OFFLINE-FIRST PATCH START
-  return await routeRead({
+  return await getCachedInventoryAlert('low-stock', async () => await routeRead({
     label: 'low stock alerts',
     local: async () => {
       const rows = await getBranchInventory({ limit: 20000 })
@@ -468,14 +502,14 @@ export const getLowStockDrugs = async () => {
       return (data || []).filter(shouldAlertForDrug)
     },
     fallback: [],
-  })
+  }), { force })
   // ✅ OFFLINE-FIRST PATCH END
 }
 
 // Get expiring drugs (within 30 days)
-export const getExpiringDrugs = async () => {
+export const getExpiringDrugs = async ({ force = false } = {}) => {
   // ✅ OFFLINE-FIRST PATCH START
-  return await routeRead({
+  return await getCachedInventoryAlert('expiring', async () => await routeRead({
     label: 'expiring inventory alerts',
     local: async () => {
       const today = new Date()
@@ -496,7 +530,7 @@ export const getExpiringDrugs = async () => {
       return (data || []).filter(shouldAlertForDrug)
     },
     fallback: [],
-  })
+  }), { force })
   // ✅ OFFLINE-FIRST PATCH END
 }
 

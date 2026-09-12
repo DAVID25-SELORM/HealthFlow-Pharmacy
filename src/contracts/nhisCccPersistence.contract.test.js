@@ -11,6 +11,9 @@ describe('NHIS CCC persistence contract', () => {
     expect(nhisPage).toContain('Wait for CCC verification to finish before saving this claim.')
     expect(nhisPage).toContain('requestRevision !== cccFormRevisionRef.current')
     expect(nhisPage).toContain('claimSubmitting || generatingCcCode || lookingUpMember || !canSaveCommunityPharmacyClaim')
+    expect(nhisPage).toContain('if (claimSubmittingRef.current) return')
+    expect(nhisPage).toContain('claimSubmittingRef.current = true')
+    expect(nhisPage).toContain('claimSubmittingRef.current = false')
   })
   it('does not erase a manually entered CCC when automatic NHIA validation is unavailable or pending', () => {
     expect(nhisPage).not.toContain("setClaimForm((prev) => ({ ...prev, cccNo: '' }))")

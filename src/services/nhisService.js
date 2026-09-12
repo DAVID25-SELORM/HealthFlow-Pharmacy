@@ -5059,6 +5059,15 @@ const isMissingMedicationOverlapRpcError = (error = {}) => {
   )
 }
 
+const ACTIVE_MEDICATION_OVERLAP_CACHE_MS = 30_000
+const activeMedicationOverlapCache = new Map()
+const activeMedicationOverlapRequests = new Map()
+
+export const resetNhisActiveMedicationOverlapCacheForTests = () => {
+  activeMedicationOverlapCache.clear()
+  activeMedicationOverlapRequests.clear()
+}
+
 export const checkNhisActiveMedicationOverlap = async ({
   memberNo = '',
   hin = '',
@@ -5089,7 +5098,7 @@ export const checkNhisActiveMedicationOverlap = async ({
     : String(requestedQuantity).trim()
   const requestedQuantityNumber = requestedQuantityText ? Number(requestedQuantityText) : null
 
-  const { data, error } = await supabase.rpc('check_nhis_active_medication_overlap', {
+  const params = {
     p_member_no: normalizeText(memberNo) || null,
     p_hin: normalizeText(hin) || null,
     p_medicine_code: normalizedMedicineCode,
@@ -5103,18 +5112,35 @@ export const checkNhisActiveMedicationOverlap = async ({
     p_dose: normalizeText(dose) || null,
     p_frequency: normalizeText(frequency) || null,
     p_duration: normalizeText(duration) || null,
-  })
-
-  if (error) {
-    if (isMissingMedicationOverlapRpcError(error)) {
-      return { available: false, alerts: [], reason: 'rpc_not_deployed' }
-    }
-    throw error
   }
+  const cacheKey = JSON.stringify(params)
+  const cached = activeMedicationOverlapCache.get(cacheKey)
+  if (cached && Date.now() - cached.cachedAt < ACTIVE_MEDICATION_OVERLAP_CACHE_MS) {
+    return cached.result
+  }
+  const inFlight = activeMedicationOverlapRequests.get(cacheKey)
+  if (inFlight) return await inFlight
 
-  return {
-    available: true,
-    alerts: Array.isArray(data) ? data : [],
+  const request = (async () => {
+    const { data, error } = await supabase.rpc('check_nhis_active_medication_overlap', params)
+    if (error) {
+      if (isMissingMedicationOverlapRpcError(error)) {
+        return { available: false, alerts: [], reason: 'rpc_not_deployed' }
+      }
+      throw error
+    }
+
+    const result = { available: true, alerts: Array.isArray(data) ? data : [] }
+    activeMedicationOverlapCache.set(cacheKey, { cachedAt: Date.now(), result })
+    return result
+  })()
+  activeMedicationOverlapRequests.set(cacheKey, request)
+  try {
+    return await request
+  } finally {
+    if (activeMedicationOverlapRequests.get(cacheKey) === request) {
+      activeMedicationOverlapRequests.delete(cacheKey)
+    }
   }
 }
 

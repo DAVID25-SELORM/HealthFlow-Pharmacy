@@ -1577,6 +1577,7 @@ const Nhis = () => {
   const [claimMedicines, setClaimMedicines] = useState([])
   const [claimServices, setClaimServices]   = useState([])
   const [claimSubmitting, setClaimSubmitting] = useState(false)
+  const claimSubmittingRef = useRef(false)
   const [medicineAdding, setMedicineAdding] = useState(false)
   const medicineAddingRef = useRef(false)
   const [claimSubmitIntent, setClaimSubmitIntent] = useState('')
@@ -4549,6 +4550,7 @@ const Nhis = () => {
 
   const handleSubmitClaim = async (e, intent = 'dispatch', reviewConfirmed = false, medicinesOverride = null) => {
     e.preventDefault()
+    if (claimSubmittingRef.current) return
     if (generatingCcCode || lookingUpMember) {
       setClaimError('Wait for CCC verification to finish before saving this claim.')
       return
@@ -4652,6 +4654,7 @@ const Nhis = () => {
     }
 
     try {
+      claimSubmittingRef.current = true
       setClaimSubmitting(true)
       setClaimSubmitIntent(intent)
       setClaimError('')
@@ -4994,6 +4997,7 @@ const Nhis = () => {
         editingClaim && directNhiaApiAvailable ? 'Corrections were not submitted.' : 'The claim was not saved.'
       ))
     } finally {
+      claimSubmittingRef.current = false
       setClaimSubmitting(false)
       setClaimSubmitIntent('')
     }

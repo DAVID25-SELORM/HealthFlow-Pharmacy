@@ -58,6 +58,7 @@ import {
   buildNhisClaimCorrectionChanges,
   buildNhisClaimItXml,
   checkNhisActiveMedicationOverlap,
+  resetNhisActiveMedicationOverlapCacheForTests,
   getNhisPatientActiveMedications,
   checkNhisExportReadiness,
   createNhisClaim,
@@ -116,6 +117,7 @@ import { invokeTierAccess } from './tierAccessService'
 
 beforeEach(() => {
   vi.clearAllMocks()
+  resetNhisActiveMedicationOverlapCacheForTests()
   shouldUseBranchServer.mockReturnValue(false)
   window.localStorage?.clear()
   delete supabase.storage
@@ -6766,6 +6768,20 @@ describe('NHIS active medication overlap check', () => {
       p_frequency: 'OD',
       p_duration: '3 days',
     }))
+  })
+
+  it('deduplicates simultaneous overlap checks for the same clinical context', async () => {
+    supabase.rpc.mockResolvedValueOnce({ data: [], error: null })
+    const input = { memberNo: 'NHIS-001', medicineCode: 'PARA500', serviceDate: '2026-09-12' }
+
+    await expect(Promise.all([
+      checkNhisActiveMedicationOverlap(input),
+      checkNhisActiveMedicationOverlap(input),
+    ])).resolves.toEqual([
+      { available: true, alerts: [] },
+      { available: true, alerts: [] },
+    ])
+    expect(supabase.rpc).toHaveBeenCalledTimes(1)
   })
 
   it('ships the database regression rules for hourly frequency and daily partial dispensing', () => {
