@@ -126,9 +126,11 @@ export const removeCustomerPrescription = async (path) => {
   await supabase.storage.from(PRESCRIPTION_BUCKET).remove([path])
 }
 
-export const isPrescriptionListing = (listing = {}) =>
-  Boolean(listing.prescription_required) ||
-  String(listing.sale_class || '').toLowerCase() === 'prescription'
+export const isPrescriptionListing = (listing) => {
+  const normalizedListing = listing && typeof listing === 'object' ? listing : {}
+  return Boolean(normalizedListing.prescription_required) ||
+    String(normalizedListing.sale_class || '').toLowerCase() === 'prescription'
+}
 
 export const getCustomerCheckoutRequirements = ({
   listing,

@@ -20,6 +20,7 @@ vi.mock('../config/appUrl', () => ({
 
 import {
   getCustomerCheckoutRequirements,
+  isPrescriptionListing,
   sendCustomerMagicLink,
   signInCustomerWithProvider,
 } from './customerEpharmacyService'
@@ -60,6 +61,18 @@ describe('customerEpharmacyService', () => {
   })
 
   it('keeps OTC checkout simple and expands prescription requirements', () => {
+    expect(isPrescriptionListing(null)).toBe(false)
+    expect(getCustomerCheckoutRequirements({
+      listing: null,
+      fulfillmentMethod: 'pickup',
+    })).toEqual({
+      prescription: false,
+      requiresDeliveryAddress: false,
+      requiresPatientDetails: false,
+      requiresClinicalDetails: false,
+      requiresPrescriptionUpload: false,
+    })
+
     expect(getCustomerCheckoutRequirements({
       listing: { sale_class: 'otc' },
       fulfillmentMethod: 'pickup',
