@@ -1,3 +1,4 @@
+import { resolveActivityLogPeriod } from '../_shared/activityLogPeriod.ts'
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
 import {
@@ -1239,8 +1240,7 @@ const getActivityLogs = async (
   const pageSize = Math.min(parsePositiveInteger(payload.pageSize ?? payload.limit, 100), 500)
   const from = (page - 1) * pageSize
   const to = from + pageSize - 1
-  const fromDate = normalizeText(payload.fromDate || payload.from_date)
-  const toDate = normalizeText(payload.toDate || payload.to_date)
+  const { fromDate, toDate } = resolveActivityLogPeriod(payload)
   const actorUserId = normalizeText(payload.actorUserId || payload.actor_user_id) || null
   const eventType = normalizeText(payload.eventType || payload.event_type) || null
   const search = normalizeText(payload.search || payload.searchTerm || payload.search_term) || null
@@ -1257,61 +1257,30 @@ const getActivityLogs = async (
   }
 
   if (organizationId) {
-    // The database function applies every filter before counting and paging.
-    // It also includes legacy rows whose actor still belongs to this tenant,
-    // without trusting a client-supplied organization ID.
-    const [pageResult, optionResult] = await Promise.all([
-      adminClient.rpc('get_activity_log_page', {
-        p_organization_id: organizationId,
-        p_from_date: fromDate || null,
-        p_to_date: toDate || null,
-        p_actor_user_id: actorUserId,
-        p_event_type: eventType,
-        p_search: search,
-        p_page: page,
-        p_page_size: pageSize,
-      }),
-      adminClient.rpc('get_activity_log_filter_options', {
-        p_organization_id: organizationId,
-      }),
-    ])
-
-    if (pageResult.error) throw pageResult.error
-    if (optionResult.error) throw optionResult.error
-
-    const rows = Array.isArray(pageResult.data) ? pageResult.data : []
-    // A window count is not present when a formerly valid page becomes empty
-    // (for example after another administrator removes old data). Probe the
-    // first row in that exceptional case so pagination never reports zero for
-    // a non-empty filtered set.
-    let total = Number(rows[0]?.total_count || 0)
-    if (rows.length === 0 && page > 1) {
-      const totalProbe = await adminClient.rpc('get_activity_log_page', {
-        p_organization_id: organizationId,
-        p_from_date: fromDate || null,
-        p_to_date: toDate || null,
-        p_actor_user_id: actorUserId,
-        p_event_type: eventType,
-        p_search: search,
-        p_page: 1,
-        p_page_size: 1,
-      })
-      if (totalProbe.error) throw totalProbe.error
-      const probeRows = Array.isArray(totalProbe.data) ? totalProbe.data : []
-      total = Number(probeRows[0]?.total_count || 0)
-    }
-    const options = optionResult.data && typeof optionResult.data === 'object'
-      ? optionResult.data as Record<string, unknown>
-      : {}
-
-    return {
-      logs: rows.map(({ total_count: _totalCount, ...log }) => log),
-      total,
-      page,
-      pageSize,
-      actors: Array.isArray(options.actors) ? options.actors : [],
-      eventTypes: Array.isArray(options.event_types) ? options.event_types : [],
-    }
+    const { data, error } = await adminClient.rpc('get_activity_log_view', {
+      p_organization_id: organizationId,
+      p_branch_id: requesterProfile.branch_id || null,
+      p_permissions: {
+        claim: requesterHasAnyRole(requesterProfile, CLAIMS_ROLES) || requesterProfile.can_manage_claims,
+        patient: requesterHasAnyRole(requesterProfile, PATIENT_ROLES) || requesterProfile.can_manage_patients,
+        medicine: requesterHasAnyRole(requesterProfile, INVENTORY_ROLES) || requesterProfile.can_manage_inventory,
+        sale: requesterHasAnyRole(requesterProfile, SALES_ROLES),
+        staff: requesterHasAnyRole(requesterProfile, ['admin', 'branch_manager']),
+        setting: requesterHasAnyRole(requesterProfile, ['admin', 'branch_manager']),
+        payment: requesterHasAnyRole(requesterProfile, CLAIMS_ROLES) || requesterProfile.can_manage_claims,
+        attachment: requesterHasAnyRole(requesterProfile, CLAIMS_ROLES) || requesterProfile.can_manage_claims,
+        report: requesterHasAnyRole(requesterProfile, REPORT_ROLES) || requesterProfile.can_view_reports,
+      },
+      p_from_date: fromDate || null,
+      p_to_date: toDate || null,
+      p_actor_user_id: actorUserId,
+      p_event_type: eventType,
+      p_search: search,
+      p_page: page,
+      p_page_size: pageSize,
+    })
+    if (error) throw error
+    return { ...data, page, pageSize }
   }
 
   if (!organizationId && isSuperAdminRequester(requesterProfile)) {
@@ -1327,13 +1296,16 @@ const getActivityLogs = async (
       platformQuery = platformQuery.lt('created_at', exclusiveEnd.toISOString())
     }
 
+    if (actorUserId) platformQuery = platformQuery.eq('actor_user_id', actorUserId)
+    if (eventType) platformQuery = platformQuery.eq('event_type', eventType)
+    if (search) throw new Error('Select a facility to search activity records.')
     const { data: platformLogs, error: platformLogsError, count } = await platformQuery.range(from, to)
 
     if (platformLogsError) {
       throw platformLogsError
     }
 
-    return { logs: platformLogs || [], total: count || 0, page, pageSize }
+    return { logs: (platformLogs || []).map(({ details: _details, ...log }) => ({ ...log, details: {}, subject: { restricted: true, fields: {} } })), total: count || 0, page, pageSize }
   }
 
   return { logs: [], total: 0, page, pageSize, actors: [], eventTypes: [] }

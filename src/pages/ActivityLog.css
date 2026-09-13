@@ -113,3 +113,17 @@
     width: 100%;
   }
 }
+
+.activity-log-subject { min-width: 220px; max-width: 380px; overflow-wrap: anywhere; }
+.activity-log-role, .activity-log-subject small { display: block; color: var(--gray-600); margin-top: .3rem; }
+.activity-log-dialog { margin: auto; inset: 0; width: min(640px, calc(100vw - 2rem)); max-height: 85vh; overflow: auto; border: 1px solid var(--gray-300); border-radius: var(--radius); padding: 1.5rem; color: var(--gray-900); background: var(--surface, #fff); }
+.activity-log-dialog::backdrop { background: rgba(0, 0, 0, .45); }
+.activity-log-dialog header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.activity-log-dialog dl > div { padding: .6rem 0; border-bottom: 1px solid var(--gray-300); }
+.activity-log-dialog dt { font-weight: 700; }
+.activity-log-dialog dd { margin: .2rem 0 0; overflow-wrap: anywhere; }
+.activity-log-dialog p { color: var(--gray-600); }
+
+@media (min-width: 640px) {
+  .activity-log-dialog dl { display: grid; grid-template-columns: 1fr 1fr; column-gap: 1.5rem; }
+}

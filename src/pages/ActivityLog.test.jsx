@@ -15,6 +15,7 @@ const defaultResult = {
   logs: [{
     id: 'log-1', actor_user_id: '11111111-1111-4111-8111-111111111111', actor_name: 'Akosua Claims',
     actor_email: 'akosua@healthflow.test', event_type: 'nhis_claim', entity_type: 'nhis_claims',
+    subject: { fields: { Patient: 'Ama Demo', Claim: 'NHIS-001' }, source: 'snapshot' },
     action: 'update', details: { claim_number: 'NHIS-001' }, created_at: '2026-08-15T12:00:00.000Z',
   }],
   total: 101,
@@ -28,6 +29,8 @@ const defaultResult = {
 describe('ActivityLog', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', '') }
+    HTMLDialogElement.prototype.close = function () { this.removeAttribute('open') }
     mocks.isSupabaseConfigured.mockReturnValue(true)
     mocks.invokeTierAccess.mockResolvedValue(defaultResult)
   })
@@ -108,5 +111,61 @@ describe('ActivityLog', () => {
     await waitFor(() => expect(screen.getByRole('cell', { name: '101', exact: true })).toBeInTheDocument())
     fireEvent.change(screen.getByLabelText('Claims officer'), { target: { value: defaultResult.actors[0].id } })
     await waitFor(() => expect(screen.getByRole('cell', { name: '1', exact: true })).toBeInTheDocument())
+  })
+})
+
+
+describe('Activity Log month and record controls', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.isSupabaseConfigured.mockReturnValue(true)
+    mocks.invokeTierAccess.mockResolvedValue(defaultResult)
+    HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', '') }
+    HTMLDialogElement.prototype.close = function () { this.removeAttribute('open') }
+  })
+  it('offers all months with a year and composes filters before paging', async () => {
+    render(<ActivityLog />)
+    await screen.findByText('Ama Demo', { exact: false })
+    fireEvent.change(screen.getByLabelText('Date period'), { target: { value: 'month' } })
+    expect(screen.getByLabelText('Month').options).toHaveLength(13)
+    expect(screen.getByLabelText('Month')).toHaveTextContent('All MonthsJanuaryFebruaryMarchAprilMayJuneJulyAugustSeptemberOctoberNovemberDecember')
+    fireEvent.change(screen.getByLabelText('Year'), { target: { value: '2026' } })
+    fireEvent.change(screen.getByLabelText('Month'), { target: { value: '9' } })
+    fireEvent.change(screen.getByLabelText('Claims officer'), { target: { value: defaultResult.actors[0].id } })
+    fireEvent.change(screen.getByLabelText('Activity type'), { target: { value: 'nhis_claim' } })
+    await waitFor(() => expect(mocks.invokeTierAccess).toHaveBeenLastCalledWith(expect.objectContaining({ period: 'month', year: 2026, month: '9', actorUserId: defaultResult.actors[0].id, eventType: 'nhis_claim', page: 1 })))
+    fireEvent.click(screen.getByText('Next'))
+    await waitFor(() => expect(mocks.invokeTierAccess).toHaveBeenLastCalledWith(expect.objectContaining({ period: 'month', month: '9', page: 2 })))
+    expect(screen.getByRole('status', { name: 'Matching activity count' })).toHaveTextContent('101')
+    fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-08-01' } })
+    expect(screen.getByLabelText('Date period')).toHaveValue('custom')
+    await waitFor(() => expect(mocks.invokeTierAccess).toHaveBeenLastCalledWith(expect.objectContaining({ period: 'custom', page: 1, fromDate: '2026-08-01' })))
+  })
+  it('opens readable details without raw JSON or technical identifiers', async () => {
+    render(<ActivityLog />)
+    fireEvent.click(await screen.findByText('View Details'))
+    const dialog = screen.getByRole('dialog')
+    expect(dialog).toHaveTextContent('Ama Demo')
+    expect(dialog).toHaveTextContent('NHIS-001')
+    expect(dialog).not.toHaveTextContent(defaultResult.logs[0].actor_user_id)
+    fireEvent.click(screen.getByText('Close'))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+  it('keeps inactive officers searchable and selected by ID', async () => {
+    render(<ActivityLog />)
+    await screen.findByText('Akosua Claims')
+    fireEvent.change(screen.getByLabelText('Find officer'), { target: { value: 'Akosua' } })
+    expect(screen.getByLabelText('Claims officer')).toHaveTextContent('inactive')
+    fireEvent.change(screen.getByLabelText('Claims officer'), { target: { value: defaultResult.actors[0].id } })
+    await waitFor(() => expect(mocks.invokeTierAccess).toHaveBeenLastCalledWith(expect.objectContaining({ actorUserId: defaultResult.actors[0].id })))
+  })
+  it.each([
+    [{ fields: {}, restricted: true }, 'Record details restricted'],
+    [{ fields: {}, source: 'unavailable' }, 'Record details unavailable'],
+    [{ fields: { Medicine: 'Paracetamol', Strength: '500 mg' }, source: 'current' }, 'Paracetamol'],
+  ])('handles restricted, deleted, and medicine records', async (subject, label) => {
+    mocks.invokeTierAccess.mockResolvedValue({ ...defaultResult, logs: [{ ...defaultResult.logs[0], subject }] })
+    render(<ActivityLog />)
+    expect(await screen.findByText(label, { exact: false })).toBeInTheDocument()
   })
 })
