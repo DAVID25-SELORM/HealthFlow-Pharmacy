@@ -4,7 +4,7 @@
   align-items: center;
   justify-content: center;
   padding: 2rem;
-  gap: clamp(2rem, 7vw, 7rem);
+  gap: clamp(2rem, 6vw, 6rem);
   background: radial-gradient(circle at 50% 15%, #e6fbf5 0, transparent 28%), linear-gradient(135deg, #f7fbfc 0%, #effaf7 58%, #e5f7f1 100%);
 }
 
@@ -13,6 +13,26 @@
 .login-showcase-logo { width:270px; height:105px; object-fit:contain; object-position:left; margin-bottom:2.2rem; }
 .login-kicker,.login-welcome { display:inline-flex; color:#078d70; background:#dff6ee; padding:.35rem .85rem; border-radius:999px; text-transform:uppercase; font-weight:800; font-size:.72rem; letter-spacing:.04em; }
 .login-showcase h2 { font-size:clamp(2.6rem,5vw,4.4rem); line-height:1.03; letter-spacing:-.045em; margin:1.25rem 0; }.login-showcase>p{font-size:1.05rem;color:#54627a;max-width:540px}.login-feature-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem 1.5rem;margin:2rem 0}.login-feature-grid>div{display:flex;align-items:center;gap:.75rem}.login-feature-grid svg{padding:.6rem;width:46px;height:46px;color:#078d70;background:#dcf8ed;border-radius:14px}.login-feature-grid span{display:grid;gap:.1rem}.login-feature-grid strong{font-size:.9rem}.login-feature-grid small{font-size:.76rem;color:#68758c}
+
+.login-showcase-photo {
+  height: 190px;
+  border-radius: 18px 18px 0 0;
+  background: linear-gradient(90deg, rgba(231, 249, 243, 0.38), rgba(231, 249, 243, 0.05)), url('/login-pharmacy-hero.png') center / cover;
+  box-shadow: 0 18px 38px rgba(17, 79, 65, 0.12);
+}
+
+.login-proof-points {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: .75rem;
+  padding: .9rem 1rem;
+  border-radius: 0 0 18px 18px;
+  background: rgba(255, 255, 255, .92);
+  box-shadow: 0 18px 38px rgba(17, 79, 65, .12);
+}
+
+.login-proof-points span { display: grid; gap: .16rem; color: #6c7890; font-size: .68rem; line-height: 1.25; }
+.login-proof-points strong { color: #18314b; font-size: .75rem; }
 
 .login-card {
   width: 100%;
@@ -24,7 +44,7 @@
 }
 
 .auth-brand-logo {
-  display: block;
+  display: none;
   width: min(100%, 340px);
   height: 192px;
   object-fit: contain;
@@ -32,7 +52,7 @@
 }
 
 .login-card h1 {
-  font-size: 1.6rem;
+  font-size: 1.65rem;
   margin-bottom: 0.25rem;
 }
 
@@ -174,6 +194,11 @@
   transition: var(--transition);
 }
 
+.demo-entry-link {
+  margin-top: 1rem;
+  border-color: #c9eee3;
+}
+
 .customer-entry-link:hover {
   border-color: var(--primary);
   background: #e6f6f1;
@@ -247,6 +272,13 @@
 
 .powered-by a:hover {
   text-decoration: underline;
+}
+
+@media (max-width: 900px) {
+  .login-page { padding: 1.5rem; }
+  .login-showcase { display: none; }
+  .login-card { max-width: 480px; }
+  .auth-brand-logo { display: block; }
 }
 
 @media (max-width: 520px) {

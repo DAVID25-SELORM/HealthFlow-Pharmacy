@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import Seo from '../components/Seo/Seo'
 import PasswordVisibilityCheckbox from '../components/PasswordVisibilityCheckbox'
-import { ArrowRight, BarChart3, Boxes, ClipboardCheck, Lock, Mail, ShoppingBag, Wifi } from 'lucide-react'
+import { ArrowRight, BarChart3, Boxes, ClipboardCheck, Lock, Mail, Play, ShoppingBag, Users, Wifi } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
@@ -157,7 +157,29 @@ const Login = () => {
         description="Sign in to HealthFlow — the pharmacy, claims, NHIS, inventory, and facility operations platform."
         path="/login"
       />
-      <section className="login-showcase" aria-label="HealthFlow overview"><div className="login-showcase-top">Trusted by pharmacies across Ghana <span aria-label="Ghana">🇬🇭</span></div><img src="/app-logo-display.jpg" alt="HealthFlow" className="login-showcase-logo" /><span className="login-kicker">Pharmacy management system</span><h2>Run your pharmacy smarter.</h2><p>HealthFlow helps pharmacies deliver better care with powerful tools for sales, inventory, NHIS claims, reporting and more.</p><div className="login-feature-grid">{[[ShoppingBag,'Point of Sale','Fast, reliable and easy to use'],[BarChart3,'Reports & Analytics','Make informed decisions'],[Boxes,'Inventory Management','Real-time stock control'],[ClipboardCheck,'NHIS Claims','Built for Ghana’s NHIS'],[Wifi,'Offline Mode','Keep working, even offline']].map(([Icon,title,detail]) => <div key={title}><Icon /><span><strong>{title}</strong><small>{detail}</small></span></div>)}</div></section>
+      <section className="login-showcase" aria-label="HealthFlow overview">
+        <div className="login-showcase-top">Trusted by pharmacies across Ghana <span aria-label="Ghana">🇬🇭</span></div>
+        <img src="/app-logo-display.jpg" alt="HealthFlow" className="login-showcase-logo" />
+        <span className="login-kicker">Pharmacy management system</span>
+        <h2>Run your pharmacy smarter.</h2>
+        <p>HealthFlow helps pharmacies deliver better care with powerful tools for sales, inventory, NHIS claims, reporting and more.</p>
+        <div className="login-feature-grid">
+          {[
+            [ShoppingBag, 'Point of Sale', 'Fast, reliable and easy to use'],
+            [BarChart3, 'Reports & Analytics', 'Make informed decisions'],
+            [Boxes, 'Inventory Management', 'Real-time stock control'],
+            [Users, 'Staff & Operations', 'Manage your team with ease'],
+            [ClipboardCheck, 'NHIS Claims', 'Built for Ghana’s NHIS'],
+            [Wifi, 'Offline Mode', 'Keep working, even offline'],
+          ].map(([Icon, title, detail]) => <div key={title}><Icon /><span><strong>{title}</strong><small>{detail}</small></span></div>)}
+        </div>
+        <div className="login-showcase-photo" aria-hidden="true" />
+        <div className="login-proof-points" aria-label="HealthFlow benefits">
+          <span><strong>500+</strong> pharmacies</span>
+          <span><strong>Better care</strong> for healthier communities</span>
+          <span><strong>Trusted</strong> Ghana-made healthcare software</span>
+        </div>
+      </section>
       <div className="login-card">
         <img
           src="/app-logo-display.jpg"
@@ -330,7 +352,7 @@ const Login = () => {
             </Link>
           </div>
         )}
-        {mode === 'sign-in' && <Link to="/demo" className="customer-entry-link" aria-label="Try the HealthFlow live demo"><span className="customer-entry-copy"><strong>Try Live Demo</strong><small>No account required. Fictional demonstration data only.</small></span><ArrowRight size={19} aria-hidden="true" /></Link>}
+        {mode === 'sign-in' && <Link to="/demo" className="customer-entry-link demo-entry-link" aria-label="Try the HealthFlow live demo"><span className="customer-entry-icon" aria-hidden="true"><Play size={17} fill="currentColor" /></span><span className="customer-entry-copy"><strong>Try Live Demo</strong><small>No account required. Explore HealthFlow with fictional data.</small></span><ArrowRight size={19} aria-hidden="true" /></Link>}
         <p className="login-terms-note">
           By signing in, you agree to the <Link to="/terms">HealthFlow Terms and Conditions</Link>.
         </p>
