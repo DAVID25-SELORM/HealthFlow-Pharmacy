@@ -36,10 +36,12 @@ const requestAppDialog = (payload) =>
     }
   })
 
-export const requestAppConfirmation = (options) =>
+export const requestAppConfirmation = ({ message = '', cancelText = 'Cancel', ...options }) =>
   requestAppDialog({
     type: 'confirm',
     ...buildActionConfirmation(options),
+    message,
+    cancelText,
   })
 
 export const requestAppPrompt = ({
