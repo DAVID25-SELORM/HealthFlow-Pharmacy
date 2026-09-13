@@ -7,6 +7,7 @@ import {
   checkBranchServerUpdates,
   downloadNhiaBatchExport,
   getBranchInventory,
+  getBranchDeploymentStatus,
   getBranchOfflineReadiness,
   getBranchRecentSales,
   getBranchServerConfig,
@@ -269,6 +270,7 @@ export default function OfflineSync() {
   const [syncIssues, setSyncIssues] = useState([])
   const [reconnectMessage, setReconnectMessage] = useState('')
   const [offlineStaff, setOfflineStaff] = useState([])
+  const [deploymentStatus, setDeploymentStatus] = useState(null)
   const [prepareProgress, setPrepareProgress] = useState({})
   const [technicalDetailsOpen, setTechnicalDetailsOpen] = useState(false)
   const [offlineTest, setOfflineTest] = useState(null)
@@ -301,6 +303,7 @@ export default function OfflineSync() {
       setReadiness(null)
       setSyncIssues([])
       setOfflineStaff([])
+      setDeploymentStatus(null)
       setUpdateStatus(null)
       setNhiaSettings(null)
       setNhiaSummary(null)
@@ -312,7 +315,7 @@ export default function OfflineSync() {
 
     try {
       setLoading(true)
-      const [nextHealth, nextStatus, nextUpdateStatus, nextNhiaSettings, nextNhiaSummary, nextNhiaClaims, nextReadiness, nextOfflineStaff, nextSyncIssues] = await Promise.all([
+      const [nextHealth, nextStatus, nextUpdateStatus, nextNhiaSettings, nextNhiaSummary, nextNhiaClaims, nextReadiness, nextOfflineStaff, nextSyncIssues, nextDeploymentStatus] = await Promise.all([
         getBranchServerHealth(),
         getBranchSyncStatus(),
         getBranchUpdateStatus().catch(() => null),
@@ -322,6 +325,7 @@ export default function OfflineSync() {
         getBranchOfflineReadiness().catch(() => null),
         canManageBranchToken ? listBranchOfflineAccess().catch(() => []) : Promise.resolve([]),
         canManageBranchToken ? listBranchSyncIssues().catch(() => []) : Promise.resolve([]),
+        canManageBranchToken ? getBranchDeploymentStatus().catch(() => null) : Promise.resolve(null),
       ])
       setHealth(nextHealth)
       setStatus(nextStatus)
@@ -332,6 +336,7 @@ export default function OfflineSync() {
       setReadiness(nextReadiness)
       setOfflineStaff(nextOfflineStaff)
       setSyncIssues(nextSyncIssues)
+      setDeploymentStatus(nextDeploymentStatus)
       setNhiaForm(buildNhiaForm(nextNhiaSettings, organization))
       if (!silent) {
         notify('Offline sync status refreshed.', 'success')
@@ -342,6 +347,7 @@ export default function OfflineSync() {
       setReadiness(null)
       setSyncIssues([])
       setOfflineStaff([])
+      setDeploymentStatus(null)
       setUpdateStatus(null)
       setNhiaSettings(null)
       setNhiaSummary(null)
@@ -1231,7 +1237,7 @@ export default function OfflineSync() {
       )
       setActivationRecord(record)
       setAcceptancePhase('done')
-      notify('Offline Mode activated.', 'success')
+      notify('Offline Mode production verification recorded.', 'success')
     } catch (testError) {
       notify(testError.message || 'The offline test could not be completed.', 'error')
     } finally {
@@ -1245,7 +1251,7 @@ export default function OfflineSync() {
   const isConnected = Boolean(health?.ok)
   const expectedOrganizationId = organization?.id || organization?.organization_id || profile?.organization_id || (isSuperAdmin ? setupForm.organizationId : '')
   const expectedBranchId = branch?.id || profile?.branch_id || (isSuperAdmin ? setupForm.branchId : '')
-  const offlineSummary = getOfflineModeSummary({ config, health, readiness, status, organizationId: expectedOrganizationId, branchId: expectedBranchId, busy: busyAction, test: offlineTest, internetAvailable: connectivity.internetAvailable })
+  const offlineSummary = getOfflineModeSummary({ config, health, readiness, status, organizationId: expectedOrganizationId, branchId: expectedBranchId, busy: busyAction, test: offlineTest, productionVerification: activationRecord, internetAvailable: connectivity.internetAvailable })
 
   const copyEnvBlock = useCallback((envText) => {
     navigator.clipboard.writeText(envText).then(() => {
@@ -1291,11 +1297,11 @@ export default function OfflineSync() {
       <div className="offline-sync-header">
         <div>
           <h1>Offline Mode</h1>
-          <p>Keep your facility working when internet is unavailable.</p>
+          <p>{offlineSummary.ready ? 'Offline Mode is ready.' : offlineSummary.setupStatus === 'Not Set Up' ? 'Set up Offline Mode for this facility.' : 'Review the next readiness action below.'}</p>
         </div>
         <div className={`offline-sync-connection ${isConnected ? 'online' : 'offline'}`}>
           <Server size={18} />
-          <span>{isConnected ? 'Connected' : 'Disconnected'}</span>
+          <span>{offlineSummary.dailyStatus}</span>
         </div>
       </div>
 
@@ -1308,7 +1314,10 @@ export default function OfflineSync() {
         onSync={() => void runAction('sync', 'Sync', runBranchSync)}
         onAdvanced={() => setTechnicalDetailsOpen((open) => !open)}
         onIssues={() => { setTechnicalDetailsOpen(true); requestAnimationFrame(() => document.getElementById('offline-sync-issues')?.scrollIntoView({ behavior: 'smooth' })) }}
+        onProductionVerification={() => { setTechnicalDetailsOpen(true); requestAnimationFrame(() => document.getElementById('offline-production-verification')?.scrollIntoView({ behavior: 'smooth' })) }}
         staff={offlineStaff} test={offlineTest} preparation={Object.entries(prepareProgress).find(([, value]) => value.state === 'running') ? 'Preparing and checking facility data...' : ''}
+        workstations={deploymentStatus?.workstations || []}
+        onWorkstations={() => { setTechnicalDetailsOpen(true); requestAnimationFrame(() => document.getElementById('offline-workstations')?.scrollIntoView({ behavior: 'smooth' })) }}
         setupFields={<>
           <label>Organization<select value={setupForm.organizationId} disabled={setupLoading || Boolean(setupResult)} onChange={(event) => setSetupForm((current) => ({ ...current, organizationId: event.target.value, ...selectSetupBranchForOrganization(event.target.value, setupOptions.branches, setupOptions.organizations) }))}>
             {setupOptions.organizations.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
@@ -1331,8 +1340,16 @@ export default function OfflineSync() {
       {Object.keys(prepareProgress).length > 0 && <pre className="offline-readiness-json">{JSON.stringify(prepareProgress, null, 2)}</pre>}
       {readiness && <pre className="offline-readiness-json">{JSON.stringify(readiness, null, 2)}</pre>}
       {activationRecord && <p>Controlled acceptance test last recorded: {formatDateTime(activationRecord.testedAt)}</p>}
+      <section id="offline-workstations" className="offline-sync-section">
+        <div className="offline-sync-section-header">
+          <div><h3>Workstation technical details</h3><p>Authorized computers are listed here for administrators. Network addresses are not shown.</p></div>
+        </div>
+        {deploymentStatus?.workstations?.length ? <ul className="offline-technical-list">
+          {deploymentStatus.workstations.map((workstation) => <li key={workstation.id}>{workstation.computerName || workstation.computer_name || 'Authorized computer'} — {workstation.status === 'active' ? 'Authorized' : 'Revoked'}</li>)}
+        </ul> : <p>No other authorized workstations are currently reported.</p>}
+      </section>
         {readiness?.ready && canManageBranchToken && (
-          <div className="offline-acceptance-test">
+          <div id="offline-production-verification" className="offline-acceptance-test">
             <div>
               <h3>Controlled Sale Acceptance Test</h3>
               <p>The result is recorded only after HealthFlow detects a new local cash sale, a local stock reduction, reconnection and a clean synchronization.</p>
@@ -1354,7 +1371,7 @@ export default function OfflineSync() {
               <div className="offline-test-step">
                 <strong>Sale {acceptanceEvidence?.saleNumber} and local stock reduction verified. Reconnect now.</strong>
                 <button className="btn btn-primary" type="button" disabled={Boolean(busyAction)} onClick={() => void finishAcceptanceTest()}>
-                  Synchronize and Activate
+                  Synchronize and Record Verification
                 </button>
               </div>
             )}

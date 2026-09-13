@@ -28,8 +28,7 @@ describe('Offline Mode guide', () => {
   })
   it('does not offer reinstallation when a configured computer is unreachable', () => {
     show({ config: { enabled: true, token: 'test' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Set Up Offline Mode' }))
-    expect(screen.getByText(/Check its power and your network/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Check Main Computer' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Download and Install' })).not.toBeInTheDocument()
   })
   it('offers preparation and an actionable missing inventory message', () => {
@@ -46,7 +45,7 @@ describe('Offline Mode guide', () => {
     expect(getOfflineModeSummary(input).setupStatus).toBe('Ready to Test')
     show({ ...input, test: { passed: true, organizationId: 'org', branchId: 'branch' } })
     expect(screen.getByRole('heading', { name: 'Offline Mode Ready' })).toBeInTheDocument()
-    expect(screen.getByText('5 staff ready. 0 staff need offline access or an Offline PIN.')).toBeInTheDocument()
+    expect(screen.getByText('5 Ready')).toBeInTheDocument()
   })
   it.each([
     [{ internetAvailable: true }, 'Online'],
@@ -66,7 +65,7 @@ describe('Offline Mode guide', () => {
     show({ ...readyInput(), status: { failed: 3 } }, { canManage: false })
     expect(screen.queryByRole('button', { name: 'Fix Sync Issues' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Advanced/ })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'View Staff Readiness' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'View Staff' })).not.toBeInTheDocument()
   })
   it('invalidates readiness when data ages or the facility changes', () => {
     const input = { ...readyInput(), test: { passed: true, organizationId: 'org', branchId: 'branch' } }
@@ -90,6 +89,46 @@ describe('Offline Mode guide', () => {
     show({ ...readyInput(), test }, { test })
     expect(screen.queryByText('Offline test passed. Offline Mode Ready.')).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Ready to Test' })).toBeInTheDocument()
+  })
+
+  it('keeps production verification separate from the safe readiness test', () => {
+    const input = {
+      ...readyInput(),
+      test: { passed: true, organizationId: 'org', branchId: 'branch' },
+      productionVerification: { organizationId: 'org', branchId: 'branch', acceptanceTest: { passed: true } },
+    }
+    expect(getOfflineModeSummary(input)).toMatchObject({ tested: true, productionVerified: true })
+    show(input, { test: input.test })
+    expect(screen.getByText('Offline Mode Production Verified')).toBeInTheDocument()
+  })
+
+  it('offers administrators the existing production-verification workflow only after safe readiness passes', () => {
+    const runVerification = vi.fn()
+    const input = { ...readyInput(), test: { passed: true, organizationId: 'org', branchId: 'branch' } }
+    show(input, { test: input.test, onProductionVerification: runVerification })
+    fireEvent.click(screen.getByRole('button', { name: 'Run Production Verification' }))
+    expect(runVerification).toHaveBeenCalledOnce()
+  })
+
+  it('guides a new staff member without exposing technical setup details', () => {
+    show(readyInput(), { staff: [{ id: 'staff-1', fullName: 'Amina', offlineAccessEnabled: true, offlinePinEnrolled: false }] })
+    fireEvent.click(screen.getByRole('button', { name: 'View Staff' }))
+    expect(screen.getByText(/For a new staff member/)).toBeInTheDocument()
+    expect(screen.getByText('Amina: PIN Required')).toBeInTheDocument()
+  })
+
+  it('uses a concise readiness dashboard and keeps an unreachable configured computer unknown', () => {
+    const refresh = vi.fn()
+    show({ config: { enabled: true, token: 'test' } }, { onRefresh: refresh })
+    expect(screen.getAllByText('Status Unknown')).not.toHaveLength(0)
+    fireEvent.click(screen.getByRole('button', { name: 'Check Main Computer' }))
+    expect(refresh).toHaveBeenCalledOnce()
+  })
+
+  it('summarizes authorized workstations without exposing network details', () => {
+    show(readyInput(), { workstations: [{ id: 'desk-1', computerName: 'Dispensary', status: 'active' }] })
+    expect(screen.getByText('1 authorized')).toBeInTheDocument()
+    expect(screen.getByText('Other Workstations: 1 authorized')).toBeInTheDocument()
   })
 
 })

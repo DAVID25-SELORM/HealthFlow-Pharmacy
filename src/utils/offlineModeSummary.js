@@ -1,5 +1,5 @@
 // Presentation only: retain the server's readiness and freshness decisions.
-export const getOfflineModeSummary = ({ config = {}, health, readiness, status, organizationId, branchId, busy = '', test, internetAvailable = true } = {}) => {
+export const getOfflineModeSummary = ({ config = {}, health, readiness, status, organizationId, branchId, busy = '', test, productionVerification, internetAvailable = true } = {}) => {
   const connected = Boolean(health?.ok)
   const configured = Boolean(config.enabled && config.token)
   const identityMatches = Boolean(organizationId && branchId && readiness?.organizationId === organizationId && readiness?.branchId === branchId)
@@ -18,9 +18,14 @@ export const getOfflineModeSummary = ({ config = {}, health, readiness, status, 
   const compatibilityBlocked = readiness?.compatibility?.compatible === false
   const ready = connected && identityMatches && readiness?.ready === true && readiness.state === 'HEALTHY' && data === 'Ready' && Number(staffReady) > 0 && Number(staffMissing) === 0 && failed === 0 && readiness?.compatibility?.compatible !== false
   const tested = test?.passed && test.organizationId === organizationId && test.branchId === branchId
+  // This is distinct from the read-only readiness test. It is set only after
+  // the administrator-led controlled outage and reconciliation check.
+  const productionVerified = productionVerification?.acceptanceTest?.passed === true
+    && productionVerification.organizationId === organizationId
+    && productionVerification.branchId === branchId
   const setupStatus = !configured && !connected ? 'Not Set Up' : !connected ? 'Attention Required' : !identityMatches ? 'Installed — Not Connected' : busy === 'prepare-offline' ? 'Connected — Preparing' : ready && tested ? 'Offline Mode Ready' : test && !test.passed ? 'Attention Required' : ready ? 'Ready to Test' : 'Attention Required'
   const dailyStatus = failed ? 'Attention Required' : connected && !internetAvailable ? 'Offline — Local Server' : syncing > 0 || busy === 'sync' || busy === 'prepare-offline' ? 'Synchronizing' : configured && (!connected || (readiness && !ready)) ? 'Attention Required' : internetAvailable ? 'Online' : 'Attention Required'
-  return { connected, configured, identityMatches, failed, pending, syncing, data, staffReady, staffMissing, failedChecks, ready, tested, setupStatus, dailyStatus, compatibilityBlocked, backupNeedsAttention }
+  return { connected, configured, identityMatches, failed, pending, syncing, data, staffReady, staffMissing, failedChecks, ready, tested, productionVerified, setupStatus, dailyStatus, compatibilityBlocked, backupNeedsAttention }
 }
 
 export const offlineCheckMessage = (id) => ({

@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   checkBranchServerUpdates: vi.fn(),
   getBranchServerConfig: vi.fn(),
   getBranchServerHealth: vi.fn(),
+  getBranchDeploymentStatus: vi.fn(),
   getBranchOfflineReadiness: vi.fn(),
   getBranchRecentSales: vi.fn(),
   listBranchSyncIssues: vi.fn(),
@@ -56,6 +57,7 @@ vi.mock('../services/branchServerApi', () => ({
   checkBranchCloudConnection: mocks.checkBranchCloudConnection,
   getBranchServerConfig: mocks.getBranchServerConfig,
   getBranchServerHealth: mocks.getBranchServerHealth,
+  getBranchDeploymentStatus: mocks.getBranchDeploymentStatus,
   getBranchOfflineReadiness: mocks.getBranchOfflineReadiness,
   getBranchRecentSales: mocks.getBranchRecentSales,
   getSavedBranchToken: vi.fn(() => ''),
@@ -112,6 +114,7 @@ describe('OfflineSync branch registration', () => {
     mocks.useTenant.mockReturnValue({ canUseOfflineInstaller: false })
     mocks.getActiveOfflineInstallerRelease.mockResolvedValue(null)
     mocks.getBranchOfflineReadiness.mockResolvedValue(null)
+    mocks.getBranchDeploymentStatus.mockResolvedValue(null)
     mocks.getBranchRecentSales.mockResolvedValue([])
     mocks.getBranchInventory.mockResolvedValue([])
     mocks.checkBranchCloudConnection.mockResolvedValue({ organizationId: 'org-1', branchId: 'branch-1' })
@@ -271,9 +274,9 @@ describe('OfflineSync branch registration', () => {
 
     renderAdvanced()
 
-    expect(await screen.findByText('1 staff ready. 1 staff need offline access or an Offline PIN.')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'View Staff Readiness' }))
-    expect(screen.getByText(/Needs PIN: Needs an offline PIN/)).toBeInTheDocument()
+    expect(await screen.findByText('1 Ready. 1 Need PIN')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'View Staff' }))
+    expect(screen.getByText(/Needs PIN: PIN Required/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Test Offline Mode' })).toBeEnabled()
     fireEvent.click(screen.getByRole('button', { name: 'Advanced / Technical Details' }))
     expect(screen.getByText('Internet required:')).toBeInTheDocument()

@@ -1,27 +1,31 @@
 import { useState } from 'react'
 import { offlineCheckMessage } from '../utils/offlineModeSummary'
 
-export default function OfflineModeGuide({ summary: s, loading, busy, canManage, canRegister, canInstall, facilityName, branchName, onInstall, onRefresh, onPrepare, onTest, onSync, onAdvanced, onIssues, staff = [], test, preparation, setupFields }) {
+export default function OfflineModeGuide({ summary: s, loading, busy, canManage, canRegister, canInstall, facilityName, branchName, onInstall, onRefresh, onPrepare, onTest, onSync, onAdvanced, onIssues, onWorkstations, onProductionVerification, staff = [], workstations = [], test, preparation, setupFields }) {
   const [setupOpen, setSetupOpen] = useState(false)
   const [staffOpen, setStaffOpen] = useState(false)
+  const activeWorkstations = workstations.filter((item) => item.status === 'active')
+  const workstationSummary = !s.connected ? 'Status Unknown' : activeWorkstations.length ? `${activeWorkstations.length} authorized` : 'No other computers enrolled'
   return <section className={`offline-guide ${s.ready && s.tested ? 'is-ready' : ''}`} aria-label="Offline Mode overview">
     <div className="offline-guide-title">
-      <div><span className="offline-guide-eyebrow">SET UP → TEST → READY → USE NORMALLY</span>
+      <div><span className="offline-guide-eyebrow">{s.ready ? 'OFFLINE MODE' : 'SET UP → PREPARE → CONNECT STAFF → TEST → READY'}</span>
         <h2>{loading ? 'Checking Offline Mode' : s.setupStatus}</h2>
-        <p>Keep HealthFlow working when your internet goes down.</p></div>
+        <p>{s.ready ? 'Offline Mode is ready. Production verification is a recommended final check.' : 'Keep HealthFlow working when your internet goes down.'}</p></div>
       <strong role="status">{s.dailyStatus}</strong>
     </div>
     <p>Work is saved securely on the Main Computer and synchronized automatically when internet returns.</p>
     {s.dailyStatus === 'Offline — Local Server' && <p className="offline-guide-action-card">Internet is unavailable. HealthFlow is using the facility’s local server. Supported work will be saved locally and synchronized when internet returns.</p>}
     {(s.configured || s.connected) && <dl className="offline-summary-grid">
-      <div><dt>Main Computer</dt><dd>{s.connected ? 'Connected' : 'Not reachable'}</dd></div>
+      <div><dt>Main Computer</dt><dd>{s.connected ? 'Connected' : s.configured ? 'Status Unknown' : 'Not set up'}</dd></div>
       <div><dt>Facility</dt><dd>{facilityName || 'Choose a facility'}{branchName ? ` / ${branchName}` : ''}</dd></div>
       <div><dt>Data</dt><dd>{s.data}</dd></div>
       <div><dt>Staff</dt><dd>{s.staffReady == null ? 'Not checked' : `${s.staffReady} ready`}</dd></div>
+      <div><dt>Workstations</dt><dd>{workstationSummary}</dd></div>
       <div><dt>Unsynced Work</dt><dd>{s.connected ? s.pending + s.failed + s.syncing : 'Not checked'}</dd></div>
+      <div><dt>Production</dt><dd>{s.productionVerified ? 'Verified' : 'Not yet verified'}</dd></div>
     </dl>}
     <div className="offline-main-actions">
-      {!s.identityMatches && canManage && <button className="btn btn-primary" disabled={loading || Boolean(busy)} onClick={() => setSetupOpen(true)}>Set Up Offline Mode</button>}
+      {!s.identityMatches && canManage && (s.configured && !s.connected ? <button className="btn btn-primary" disabled={loading || Boolean(busy)} onClick={onRefresh}>Check Main Computer</button> : <button className="btn btn-primary" disabled={loading || Boolean(busy)} onClick={() => setSetupOpen(true)}>Set Up Offline Mode</button>)}
       {s.identityMatches && !s.ready && canManage && <button className="btn btn-primary" disabled={loading || Boolean(busy) || !s.connected} onClick={onPrepare}>{busy === 'prepare-offline' ? 'Preparing...' : 'Prepare Offline Mode'}</button>}
       {s.identityMatches && <button className={`btn ${s.ready ? 'btn-primary' : 'btn-outline'}`} disabled={loading || Boolean(busy) || !s.connected} onClick={onTest}>{busy === 'test-offline' ? 'Testing...' : 'Test Offline Mode'}</button>}
       {s.identityMatches && canManage && <button className="btn btn-outline" disabled={loading || Boolean(busy) || !s.connected} onClick={onSync}>Sync Now</button>}
@@ -37,7 +41,7 @@ export default function OfflineModeGuide({ summary: s, loading, busy, canManage,
       </>}
       {s.connected && <><h3>2. Connect Facility</h3>
         {s.identityMatches ? <p>{facilityName} / {branchName}: Connected</p> : canRegister ? setupFields : <p>A system administrator must connect this Main Computer to the correct facility and branch.</p>}
-        {s.identityMatches && <><h3>3. Prepare Offline Data</h3><p>Prepare the facility’s supported records together, then set staff PINs and test Offline Mode.</p></>}
+        {s.identityMatches && <><h3>3. Prepare Offline Mode</h3><p>HealthFlow safely refreshes the facility’s supported records together. Then connect authorized workstations, prepare staff access and run the safe readiness test.</p></>}
       </>}
     </section>}
     {busy === 'prepare-offline' && <p role="status">{preparation || 'Preparing facility data...'}</p>}
@@ -51,15 +55,25 @@ export default function OfflineModeGuide({ summary: s, loading, busy, canManage,
     </div>}
     {s.connected && <section className="offline-guide-panel">
       <h3>Staff Offline Access</h3>
-      <p>{s.staffReady == null ? 'Staff readiness has not been checked.' : `${s.staffReady} staff ready. ${s.staffMissing || 0} staff need offline access or an Offline PIN.`}</p>
-      <p>Each staff member who needs offline access should set a 6–12 digit PIN under Settings → My Offline PIN while internet is available.</p>
-      {canManage && <button className="btn btn-outline" onClick={() => setStaffOpen(!staffOpen)}>View Staff Readiness</button>}
-      {staffOpen && <>{staff.filter((item) => item.isActive !== false).map((item) => <p key={item.id}>{item.fullName || item.full_name || item.email}: {item.offlineAccessEnabled && item.offlinePinEnrolled ? 'Ready' : item.offlineAccessEnabled ? 'Needs an offline PIN' : 'Offline access not enabled'}</p>)}<a className="btn btn-outline" href="/settings#offline-access">Manage Staff Access</a></>}
+      <p>{s.staffReady == null ? 'Staff readiness has not been checked.' : `${s.staffReady} Ready${s.staffMissing ? `. ${s.staffMissing} Need PIN` : ''}`}</p>
+      {canManage && <button className="btn btn-outline" onClick={() => setStaffOpen(!staffOpen)}>View Staff</button>}
+      {staffOpen && <>{staff.filter((item) => item.isActive !== false).map((item) => {
+        const locked = item.offlineLockedUntil && new Date(item.offlineLockedUntil) > new Date()
+        const state = locked ? 'Attention Required — temporarily locked' : item.offlineAccessEnabled && item.offlinePinEnrolled ? 'Ready' : item.offlineAccessEnabled ? 'PIN Required' : 'Offline Access Off'
+        return <p key={item.id}>{item.fullName || item.full_name || item.email}: {state}</p>
+      })}<p>For a new staff member: create the account, turn Offline Access on, then have the staff member create their own 6–12 digit PIN. Test with a planned sign-in on an authorized workstation; it does not create a business record.</p><a className="btn btn-outline" href="/settings#offline-access">Manage Staff Access</a></>}
+    </section>}
+    {s.connected && <section className="offline-guide-panel">
+      <h3>Workstations</h3>
+      <p>Main Computer: Ready</p>
+      <p>Other Workstations: {workstationSummary}</p>
+      {canManage && <button className="btn btn-outline" onClick={onWorkstations}>Manage Workstations</button>}
     </section>}
     {s.failed > 0 && <div className="offline-guide-action-card"><p>{s.failed} records need attention before synchronization can finish.</p>{canManage ? <button className="btn btn-primary" onClick={onIssues}>Fix Sync Issues</button> : <p>Ask your administrator to review Sync Issues.</p>}</div>}
-    {test && <p role="status">{s.tested && s.ready ? 'Offline test passed. Offline Mode Ready.' : test.message || 'Offline checks need attention. Review the guidance above, then test again.'}</p>}
-    <details><summary>Using Other Computers</summary><p>Connect to the same facility Wi-Fi or LAN and keep the Main Computer powered on. Use the facility’s enrolled HealthFlow shortcut or trusted address. Your administrator can find connection and enrollment details under Advanced.</p></details>
-    <details><summary>How to use Offline Mode</summary><ol><li>Set up the Main Computer.</li><li>Prepare Offline Mode.</li><li>Staff set their Offline PINs.</li><li>Run Test Offline Mode.</li><li>When Offline Mode Ready appears, use HealthFlow normally.</li></ol><p>During an outage, open the local HealthFlow app and sign in with your Offline PIN. Supported work saves locally. When internet returns, HealthFlow automatically synchronizes saved work.</p></details>
+    {test && <p role="status">{s.tested && s.ready ? 'Safe readiness test passed. Offline Mode Ready.' : test.message || 'Offline checks need attention. Review the guidance above, then test again.'}</p>}
+    {s.productionVerified ? <p className="offline-guide-action-card"><strong>Offline Mode Production Verified</strong><br />A controlled outage, local cash sale, stock reduction, reconnection and clean synchronization have been recorded for this facility.</p> : s.tested && s.ready ? <div className="offline-guide-action-card"><p><strong>Recommended final verification:</strong> Production Verification confirms that this facility can work through a real internet outage and safely synchronize afterward.</p>{canManage && <button className="btn btn-outline" onClick={onProductionVerification}>Run Production Verification</button>}</div> : null}
+    <details><summary>Using Other Computers</summary><p>On the same facility Wi-Fi or LAN, use the approved Connect This Computer setup supplied by your administrator. Keep the Main Computer powered on. Connection and enrollment controls are under Advanced.</p></details>
+    <details><summary>How to use Offline Mode</summary><ol><li>Set up the Main Computer.</li><li>Prepare Offline Mode.</li><li>Connect approved workstations and prepare staff PINs.</li><li>Run Test Offline Mode.</li><li>When Offline Mode Ready appears, use HealthFlow normally.</li></ol><p>During an outage, open the local HealthFlow app and sign in with your Offline PIN. Supported work saves locally. When internet returns, HealthFlow automatically synchronizes saved work.</p></details>
     <p className="offline-limitations"><strong>Internet required:</strong> Live NHIA/NEHFAMS verification, online payments and other cloud-only services.</p>
     {canManage && <button className="offline-technical-toggle" onClick={onAdvanced} aria-controls="offline-advanced">Advanced / Technical Details</button>}
   </section>

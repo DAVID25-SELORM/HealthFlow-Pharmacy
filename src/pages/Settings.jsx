@@ -3538,11 +3538,11 @@ const Settings = () => {
                     </p>
                     <div className="user-meta">
                       <span className={`user-status-badge ${offlineStaff?.offlineAccessEnabled ? 'active' : 'inactive'}`}>
-                        Offline: {offlineStaff?.offlineAccessEnabled ? 'Enabled' : 'Revoked'}
+                        Offline Access: {offlineStaff?.offlineAccessEnabled ? 'On' : 'Off'}
                       </span>
                       {offlineStaff?.offlineAccessEnabled && (
                         <span className={`user-status-badge ${offlineStaff.offlinePinEnrolled ? 'active' : 'inactive'}`}>
-                          PIN: {offlineStaff.offlinePinEnrolled ? 'Enrolled' : 'Not enrolled'}
+                          PIN: {offlineStaff.offlinePinEnrolled ? 'Ready' : 'PIN Required'}
                         </span>
                       )}
                       {offlineStaff?.offlineLockedUntil && new Date(offlineStaff.offlineLockedUntil) > new Date() && (
@@ -3582,7 +3582,7 @@ const Settings = () => {
                       onClick={() => handleOfflineAccessToggle(offlineStaff, !offlineStaff.offlineAccessEnabled)}
                     >
                       <Lock size={15} />
-                      {offlineStaff?.offlineAccessEnabled ? 'Revoke offline' : 'Enable offline'}
+                      {offlineStaff?.offlineAccessEnabled ? 'Turn Offline Access Off' : 'Turn Offline Access On'}
                     </button>
                     {offlineStaff?.offlineAccessEnabled && offlineStaff?.offlinePinEnrolled && (
                       <button
