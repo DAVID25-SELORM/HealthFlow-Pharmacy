@@ -6579,8 +6579,19 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
 
   const claimItNamedPayload = withClaimItAttachmentFileName(claimPayload, claim.claim_number)
   if (claimItNamedPayload.claimit_attachment_file_name !== claimPayload.claimit_attachment_file_name) {
-    await updateNhisClaimWithSchemaFallback(claim.id, claimItNamedPayload)
+    // The attachment bytes are already saved; rename only the metadata.
+    const attachmentNamePatch = {
+      claimit_attachment_file_name: claimItNamedPayload.claimit_attachment_file_name,
+      claimit_attachment_file_type: claimItNamedPayload.claimit_attachment_file_type,
+      claimit_attachment_mime_type: claimItNamedPayload.claimit_attachment_mime_type,
+    }
+    const { error: attachmentNameError } = await supabase
+      .from('nhis_claims')
+      .update(attachmentNamePatch)
+      .eq('id', claim.id)
+    if (attachmentNameError) throw attachmentNameError
     claimPayload = claimItNamedPayload
+    Object.assign(claim, attachmentNamePatch)
   }
 
   await insertNhisClaimMedicineRows(medicineRows.map((row) => ({ ...row, claim_id: claim.id })))

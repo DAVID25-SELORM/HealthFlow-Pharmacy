@@ -1,3 +1,4 @@
+import { createPrescriptionUploadSession } from '../utils/prescriptionUploadSession'
 import { getNhisCccTransitionIssue } from '../../local-branch-server/src/nhisCccValidation.js'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import NhisClaimCreatorCounts from '../components/NhisClaimCreatorCounts'
@@ -177,7 +178,7 @@ const CLAIM_STATUS_TABS = ['all', 'draft', 'pending_serving', 'returned_for_revi
 const NHIS_CLAIMS_DEFAULT_PAGE_SIZE = 100
 const NHIS_CLAIMS_PAGE_SIZE_OPTIONS = [50, 100, 200]
 const NHIS_CLAIMS_PAGE_CACHE_MS = 60000
-const NHIS_CLAIMS_SEARCH_DEBOUNCE_MS = 400
+const NHIS_CLAIMS_SEARCH_DEBOUNCE_MS = 250
 const NHIS_CLAIM_ISSUE_BADGE_SCAN_LIMIT = 3000
 const READINESS_FILTERS = [
   { id: 'all', label: 'All issues' },
@@ -1587,6 +1588,7 @@ const Nhis = () => {
   const [correctionReason, setCorrectionReason] = useState('')
   const [correctionHistory, setCorrectionHistory] = useState([])
   const [prescriptionPdfFile, setPrescriptionPdfFile] = useState(null)
+  const prescriptionUploadSession = useRef(createPrescriptionUploadSession())
   const nhisDraftRecoveryReadyRef = useRef(false)
 
   // ── patient lookup (for claim form) ──────────────────────────
@@ -1628,6 +1630,7 @@ const Nhis = () => {
   const [facilitySubmitting, setFacilitySubmitting] = useState(false)
   const claimsPageCacheRef = useRef(new Map())
   const claimsPageRequestsRef = useRef(new Map())
+  const latestClaimsPageKeyRef = useRef('')
   const claimsTableRef = useRef(null)
   const claimsFilterKeyRef = useRef('')
   const claimIssueCountsLoadPromiseRef = useRef(null)
@@ -1798,12 +1801,14 @@ const Nhis = () => {
     const filters = getClaimServerFilters({ includeIssueFilter: true })
     const filterKey = JSON.stringify(filters)
     const pageKey = `${filterKey}|page:${page}|size:${claimsPageSize}`
+    latestClaimsPageKeyRef.current = pageKey
     const cached = claimsPageCacheRef.current.get(pageKey)
     const now = Date.now()
     const sameFilter = claimsFilterKeyRef.current === filterKey
     const shouldLoadTotal = !sameFilter || options.refreshTotal === true
 
     if (!options.force && cached && now - cached.cachedAt < NHIS_CLAIMS_PAGE_CACHE_MS) {
+      if (latestClaimsPageKeyRef.current === pageKey) setClaimsPageLoading(false)
       setClaims(cached.claims || [])
       if (cached.total != null) setClaimsTotal(Number(cached.total || 0))
       if (cached.stats) setStats(cached.stats)
@@ -1829,6 +1834,8 @@ const Nhis = () => {
         pageSize: claimsPageSize,
         includeTotal: shouldLoadTotal,
       })
+      // An older search must not repaint results from a newer request.
+      if (latestClaimsPageKeyRef.current !== pageKey) return
       setClaims(result.claims || [])
       if (result.total != null) {
         setClaimsTotal(Number(result.total || 0))
@@ -1859,12 +1866,12 @@ const Nhis = () => {
         counted: result.total != null,
       })
     } catch (err) {
-      setError(err.message || 'Unable to load NHIS claims.')
+      if (latestClaimsPageKeyRef.current === pageKey) setError(err.message || 'Unable to load NHIS claims.')
     } finally {
       if (claimsPageRequestsRef.current.get(pageKey) === request) {
         claimsPageRequestsRef.current.delete(pageKey)
       }
-      setClaimsPageLoading(false)
+      if (latestClaimsPageKeyRef.current === pageKey) setClaimsPageLoading(false)
     }
     })()
     claimsPageRequestsRef.current.set(pageKey, request)
@@ -3501,6 +3508,7 @@ const Nhis = () => {
       noProcedureReason: claim.no_procedure_reason || '',
       externalPrescriptionStatus: claim.external_prescription_status || '',
     })
+    prescriptionUploadSession.current.clear()
     setPrescriptionPdfFile(null)
     setClaimMedicines(
       compactMedicines(claim.nhis_claim_medicines).map((medicine) => ({
@@ -4239,6 +4247,7 @@ const Nhis = () => {
       return
     }
 
+    prescriptionUploadSession.current.clear()
     setPrescriptionPdfFile(file)
     setClaimError('')
     setClaimForm((prev) => ({
@@ -4267,6 +4276,7 @@ const Nhis = () => {
   }
 
   const clearPrescriptionPdf = () => {
+    prescriptionUploadSession.current.clear()
     setPrescriptionPdfFile(null)
     setClaimForm((prev) => ({
       ...prev,
@@ -4659,11 +4669,13 @@ const Nhis = () => {
       setClaimSubmitIntent(intent)
       setClaimError('')
       const uploadedPrescription = prescriptionPdfFile
-        ? await uploadNhisPrescriptionPdf(prescriptionPdfFile, {
+        ? await prescriptionUploadSession.current.upload(prescriptionPdfFile, {
             organizationId: organization?.id,
             claimId: editingClaim?.id,
             yearMonth: (claimForm.serviceDate || todayIsoDate()).slice(0, 7),
-          })
+            userId: user?.id,
+            useBranchServer: isBranchServerEnabled,
+          }, uploadNhisPrescriptionPdf)
         : {}
       const prescriptionTraceAt = new Date().toISOString()
       const prescriptionTraceActorId = user?.id || null
@@ -4789,6 +4801,7 @@ const Nhis = () => {
               : 'NHIS claim corrections saved and submitted through CLAIM-it.'
           } catch (submitError) {
             await refreshClaimsOverview()
+            prescriptionUploadSession.current.clear()
             setPrescriptionPdfFile(null)
             setEditingClaim(savedClaim || editingClaim)
             setClaimError(getNhisRequestErrorMessage(
@@ -4978,8 +4991,8 @@ const Nhis = () => {
         }
       }
       setReadinessActiveClaimId('')
-      await refreshClaimsOverview()
       notify(successMessage, 'success')
+      await refreshClaimsOverview()
       // Claim-save triggers may register a newly typed doctor/facility.
       // Refresh the register so the next claim can select the saved record.
       void loadPrescribingRecords()
@@ -5018,6 +5031,7 @@ const Nhis = () => {
     setEditingClaim(null)
     setCorrectionReason('')
     setCorrectionHistory([])
+    prescriptionUploadSession.current.clear()
     setPrescriptionPdfFile(null)
     setReturnAlert(null)
     setReturnAlertOverride(null)

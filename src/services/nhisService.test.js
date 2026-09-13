@@ -4411,6 +4411,32 @@ describe('NHIS claim save attachment behavior', () => {
     expect(claimQuery.delete).not.toHaveBeenCalled()
   })
 
+  it('renames a saved attachment without retransmitting its base64 or downloading the claim again', async () => {
+    const insertedClaim = { id: 'claim-1', claim_number: 'NHIS-000001', status: 'pending_serving' }
+    const duplicateQuery = { eq: vi.fn(() => duplicateQuery), neq: vi.fn(() => duplicateQuery), limit: vi.fn().mockResolvedValue({ data: [], error: null }) }
+    const renameResult = { eq: vi.fn().mockResolvedValue({ error: null }) }
+    const claimTable = {
+      select: vi.fn(() => duplicateQuery),
+      insert: vi.fn(() => ({ select: vi.fn(() => ({ single: vi.fn().mockResolvedValue({ data: insertedClaim, error: null }) })) })),
+      update: vi.fn(() => renameResult),
+    }
+    supabase.from.mockImplementation((table) => table === 'nhis_claims' ? claimTable : {
+      insert: vi.fn().mockResolvedValue({ error: null }),
+      update: vi.fn(() => ({ eq: vi.fn().mockResolvedValue({ error: null }) })),
+    })
+    const base64 = Buffer.from('%PDF-1.7\n%%EOF').toString('base64')
+    await createNhisClaim({ ...claimWithoutPrescription, allowIncompleteReview: true,
+      claimitAttachmentBase64: base64, claimitAttachmentFileName: 'prescription_pending.pdf',
+      claimitAttachmentFileType: 'pdf', claimitAttachmentMimeType: 'application/pdf',
+    }, [medicineWithTotal], { providerClassLevel: 'D', pharmacyLevel: 'P1', nhisDrugCatalog: [{ code: 'NH001', category: 'A' }] })
+    expect(claimTable.insert.mock.calls[0][0][0].claimit_attachment_base64).toBe(base64)
+    expect(claimTable.update).toHaveBeenCalledWith({
+      claimit_attachment_file_name: 'prescription_NHIS-000001.pdf',
+      claimit_attachment_file_type: 'pdf', claimit_attachment_mime_type: 'application/pdf',
+    })
+    expect(renameResult.eq).toHaveBeenCalledWith('id', 'claim-1')
+  })
+
   it('saves an attachment-free pharmacy intake while it is pending serving', async () => {
     const insertedClaim = { id: 'claim-1', claim_number: 'NHIS-000001', status: 'pending_serving' }
     const claimInsertResult = {

@@ -7,7 +7,7 @@
   "edgeFunctionCount": 7,
   "testFileCount": 148,
   "criticalFiles": {
-    "src/services/nhisService.js": "9e725c553cc1861831d808cf15dbc06a30d7d56095c6af5b1d275cb973375d17",
+    "src/services/nhisService.js": "63de9c5cc88ea8ce6ddafe683e96d89ea9107fdf2805661b385b5019c62c7c7f",
     "src/context/AuthContext.jsx": "87ad80eba19ef3507fc0e106303499f8ebeefdec911e26b7244a4db10f2dfc4e",
     "src/services/recycleBinService.js": "94f0fd814bda811b3c234769426d57257a0f8120e90df8bffc87ae9ebfbcabe9",
     "src/services/offlineInstallerReleaseService.js": "d656396c7cce60b3e007ffec4f4aa4f8d63f931ab022cbef3cdcdc02755c9c13",
@@ -20,5 +20,10 @@
     "date": "2026-09-13",
     "description": "Authorized Activity Log read/filter/subject implementation; included in this change, deployment not performed",
     "impactReport": "docs/activity-log-implementation-2026-09-13.md"
+  },
+  "pendingPerformanceChange": {
+    "date": "2026-09-13",
+    "impactReport": "docs/nhis-save-search-performance-2026-09-13.md",
+    "description": "Authorized prescription save and claims search improvements; reviewed for commit and push, deployment not performed"
   }
 }
