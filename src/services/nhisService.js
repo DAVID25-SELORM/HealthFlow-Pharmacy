@@ -1,3 +1,4 @@
+import { assertNhisDurationForSavedState } from '../../local-branch-server/src/nhisDurationValidation.js'
 import { assertNhisCccForSavedState, assertNhisCccForProgress } from '../../local-branch-server/src/nhisCccValidation.js'
 import { supabase } from '../lib/supabase'
 import { assertRequiredText, assertNonNegativeNumber, assertPositiveNumber, normalizeText, sanitizeSearchTerm } from '../utils/validation'
@@ -2161,22 +2162,8 @@ export const validateNhisMedicineDurationInput = (duration) => {
   return ''
 }
 
-const assertNhisMedicineDurationInputs = (medicines = [], options = {}) => {
-  const existingDurations = new Map((options.existingMedicines || []).map((medicine) => [
-    String(medicine?.id || ''),
-    normalizeText(medicine?.duration),
-  ]))
-  ;(medicines || []).forEach((medicine, index) => {
-    const issue = validateNhisMedicineDurationInput(medicine?.duration)
-    if (!issue) return
-    const sourceId = String(medicine?.sourceMedicineId || '')
-    if (sourceId && existingDurations.get(sourceId) === normalizeText(medicine?.duration)) return
-    throw new Error(`Medicine ${index + 1}: ${issue}`)
-  })
-}
-
 export const normalizeClaimItDurationForExport = (duration) => {
-  const days = parseDurationDays(duration)
+  const days = validateNhisMedicineDurationInput(duration) ? null : parseDurationDays(duration)
   if (!days) return { value: null, unit: null, desc: null }
   return {
     value: Number(days).toFixed(2),
@@ -2202,55 +2189,14 @@ export const analyzeNhisDurationForRepair = (duration) => {
     return { status: 'manual', originalValue, proposedValue: '', reason: 'Duration is missing.' }
   }
 
-  const dayMatch = value.match(/^(\d+)\s*days?$/)
-  if (dayMatch && Number(dayMatch[1]) > 0) {
-    const days = Number(dayMatch[1])
-    const proposedValue = `${days} day${days === 1 ? '' : 's'}`
-    if (originalValue === proposedValue) {
-      return { status: 'valid', originalValue, proposedValue, days }
-    }
-    return {
-      status: 'automatic',
-      originalValue,
-      proposedValue,
-      days,
-      reason: 'Day duration formatting normalized for CLAIM-it.',
-    }
+  if (!validateNhisMedicineDurationInput(originalValue)) {
+    const days = parseDurationDays(originalValue)
+    return { status: 'valid', originalValue, proposedValue: originalValue, days,
+      exportNormalizedValue: `${days} day${days === 1 ? '' : 's'}`,
+      reason: 'Valid clinical duration. Only the export representation is normalized.' }
   }
-
-  const bareNumberMatch = value.match(/^(\d+)$/)
-  if (bareNumberMatch && Number(bareNumberMatch[1]) > 0) {
-    const days = Number(bareNumberMatch[1])
-    return {
-      status: 'automatic',
-      originalValue,
-      proposedValue: `${days} day${days === 1 ? '' : 's'}`,
-      days,
-      reason: 'Bare number in the medicine duration field.',
-    }
-  }
-
-  const measuredMatch = value.match(/^(\d+)\s*(weeks?|months?)$/)
-  if (measuredMatch && Number(measuredMatch[1]) > 0) {
-    const amount = Number(measuredMatch[1])
-    const days = measuredMatch[2].startsWith('week') ? amount * 7 : amount * 30
-    return {
-      status: 'automatic',
-      originalValue,
-      proposedValue: `${days} day${days === 1 ? '' : 's'}`,
-      days,
-      reason: measuredMatch[2].startsWith('week')
-        ? 'Exact week duration converted at 7 days per week.'
-        : 'Exact month duration converted at 30 days per month.',
-    }
-  }
-
-  return {
-    status: 'manual',
-    originalValue,
-    proposedValue: '',
-    reason: 'The value is ambiguous or is not a supported CLAIM-it day duration.',
-  }
+  return { status: 'manual', originalValue, proposedValue: '',
+    reason: 'Missing or ambiguous duration: verify the original prescription. Origin is not established by this value.' }
 }
 
 export const buildNhisDurationRepairReview = (claims = []) => {
@@ -2274,7 +2220,8 @@ export const buildNhisDurationRepairReview = (claims = []) => {
     claimsScanned: (claims || []).length,
     valuesScanned: rows.length,
     alreadyValid: rows.filter((row) => row.status === 'valid').length,
-    automaticallyCorrected: rows.filter((row) => row.status === 'automatic').length,
+    automaticallyCorrected: 0,
+    exportNormalizations: rows.filter((row) => row.status === 'valid' && row.exportNormalizedValue !== row.originalValue).length,
     manualReview: rows.filter((row) => row.status === 'manual').length,
     rows,
     repairRows: rows.filter((row) => row.status !== 'valid'),
@@ -6399,10 +6346,8 @@ export const recordNhisLearnedDoseSuggestions = async (observations = []) => {
  */
 export const createNhisClaim = async (claimData, medicines, options = {}) => {
   assertNhisCccForSavedState({ ...claimData, status: claimData.status || 'served' })
-  const allowIncompleteReview = Boolean(claimData?.allowIncompleteReview || claimData?.reviewOnly)
-  if (!allowIncompleteReview) {
-    assertNhisMedicineDurationInputs(medicines)
-  }
+  assertNhisDurationForSavedState({ ...claimData, status: claimData.status || 'served', nhis_claim_medicines: medicines })
+  const allowIncompleteReview = Boolean(claimData?.allowIncompleteReview || claimData?.reviewOnly) || claimData.status === 'draft'
   const organizationType = normalizeOrganizationType(claimData?.organizationType ?? claimData?.organization_type)
   const tariffServices = normalizeNhiaTariffServiceLines(
     options.nhiaTariffServices ?? claimData?.nhiaTariffServices ?? claimData?.nhis_claim_services ?? [],
@@ -6636,12 +6581,7 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
   if (privilegedCorrection && (options.useBranchServer || shouldUseBranchServer())) {
     throw new Error('Privileged claim corrections require an online cloud connection so the immutable audit history can be recorded safely.')
   }
-  // Dispensary-only saves update serving information, not prescription
-  // directions. They must remain able to serve older rows whose direction
-  // fields are blank or use legacy duration formatting.
-  if (!options.medicinesOnly) {
-    assertNhisMedicineDurationInputs(medicines, { existingMedicines: options.existingMedicines })
-  }
+  assertNhisDurationForSavedState({ ...claimData, status: options.medicinesOnly ? 'served' : claimData.status, nhis_claim_medicines: medicines })
   const organizationType = normalizeOrganizationType(claimData?.organizationType ?? claimData?.organization_type)
   const tariffServices = normalizeNhiaTariffServiceLines(
     options.nhiaTariffServices ?? claimData?.nhiaTariffServices ?? claimData?.nhis_claim_services ?? [],

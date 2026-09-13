@@ -858,11 +858,7 @@ const parseClaimDurationDays = (duration) => {
   return Math.round(amount)
 }
 
-const formatClaimDurationAsDays = (duration) => {
-  const days = parseClaimDurationDays(duration)
-  if (!days) return String(duration ?? '').trim()
-  return `${days} day${days === 1 ? '' : 's'}`
-}
+
 
 const getClaimPatientKey = (claim = {}) => {
   const memberKey = compactLookupText(claim.memberNo || claim.member_no || claim.hin)
@@ -3898,7 +3894,7 @@ const Nhis = () => {
       dose:          medForm.dose,
       doseSuggestionSource: medForm.doseSuggestionSource || '',
       frequency:     medForm.frequency,
-      duration:      retainsHistoricalDuration ? medForm.duration : formatClaimDurationAsDays(medForm.duration),
+      duration:      medForm.duration.trim(),
       totalAmount:   price * servedQty,
       category:      medForm.category || getCatalogCategoryForMedicine(medForm),
       // ✅ NHIS PHARMACY LEVEL PATCH START
@@ -10470,20 +10466,21 @@ const Nhis = () => {
                   type="button"
                   className={durationRepairFilter === 'valid' ? 'is-active' : ''}
                   onClick={() => selectDurationRepairFilter('valid')}
-                ><strong>{durationRepairReview.alreadyValid}</strong><span>Durations already valid</span></button>
+                ><strong>{durationRepairReview.alreadyValid}</strong><span>Valid clinical durations</span></button>
+                <div><strong>{durationRepairReview.exportNormalizations}</strong><span>Export normalizations (no record changes)</span></div>
                 <button
                   type="button"
                   className={durationRepairFilter === 'automatic' ? 'is-active' : ''}
                   onClick={() => selectDurationRepairFilter('automatic')}
-                ><strong>{durationRepairCorrectionsReadyCount}</strong><span>Safe/corrected durations</span></button>
+                ><strong>{durationRepairCorrectionsReadyCount}</strong><span>Reviewed corrections ready</span></button>
                 <button
                   type="button"
                   className={`${durationRepairUnresolvedCount ? 'has-warning' : 'is-resolved'}${durationRepairFilter === 'manual' ? ' is-active' : ''}`}
                   onClick={() => selectDurationRepairFilter('manual')}
-                ><strong>{durationRepairUnresolvedCount}</strong><span>Durations needing review</span></button>
+                ><strong>{durationRepairUnresolvedCount}</strong><span>Missing/ambiguous durations</span></button>
               </div>
               <p className="duration-repair-note">
-                Exact weeks use 7 days, exact months use 30 days, and bare whole numbers are treated as days only because this is the medicine duration field. Ambiguous values are never guessed.
+                Final safety check for legacy records and integrity exceptions. Valid weeks/months remain unchanged in the clinical record; export uses 7 days per week and 30 days per month. Missing or ambiguous values require the original prescription.
               </p>
               {durationRepairUnresolvedCount === 0 && (
                 <div className="duration-repair-ready" role="status">
@@ -10521,7 +10518,7 @@ const Nhis = () => {
                               className={`form-input duration-repair-input${isUnresolved && row.enteredValue ? ' is-invalid' : ''}`}
                               value={row.status === 'valid' ? row.originalValue : (durationRepairValues[row.key] || '')}
                               readOnly={row.status !== 'manual'}
-                              placeholder="e.g. 90 days"
+                              placeholder="Duration from prescription"
                               data-duration-unresolved={isUnresolved ? 'true' : undefined}
                               onChange={(event) => setDurationRepairValues((current) => ({
                                 ...current,
@@ -10539,20 +10536,6 @@ const Nhis = () => {
                                 }
                               }}
                             />
-                            {row.status === 'manual' && (
-                              <div className="duration-repair-quick-actions" aria-label="Quick duration values">
-                                {[30, 60, 90, 180].map((days) => (
-                                  <button
-                                    type="button"
-                                    key={days}
-                                    onClick={() => setDurationRepairValues((current) => ({
-                                      ...current,
-                                      [row.key]: `${days} days`,
-                                    }))}
-                                  >{days} days</button>
-                                ))}
-                              </div>
-                            )}
                             <small className={isUnresolved ? 'duration-repair-validation-error' : ''}>
                               {isUnresolved && row.enteredValue
                                 ? 'Use a positive whole number followed by day or days.'

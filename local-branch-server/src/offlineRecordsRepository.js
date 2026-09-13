@@ -1,3 +1,4 @@
+import { assertNhisDurationForSavedState } from './nhisDurationValidation.js'
 import { assertNhisCccForSavedState, assertNhisCccForProgress } from './nhisCccValidation.js'
 import { createId, db, getBranchMeta, json, nowIso, parseJson } from './db.js'
 import { config } from './config.js'
@@ -692,6 +693,7 @@ export const reconcileLocalNhisInventoryPolicyBaseline = db.transaction(() => {
 
 export const queueNhisServingSync = db.transaction((claim = {}) => {
   assertNhisCccForProgress(claim)
+  assertNhisDurationForSavedState({ ...claim, status: 'served' })
   const claimId = String(claim.id || '').trim()
   if (!claimId) throw new Error('NHIS claim ID is required for serving sync.')
   const updatedAt = String(claim.updated_at || claim.updatedAt || '').trim()
@@ -741,7 +743,10 @@ export const saveOfflineRecord = db.transaction((entityType, payload = {}) => {
   const timestamp = nowIso()
   const record = enrichRecord(normalizedEntity, payload)
   const existing = getRecordStatement.get(normalizedEntity, record.id)
-  if (normalizedEntity === 'nhis_claims') assertNhisCccForSavedState(record)
+  if (normalizedEntity === 'nhis_claims') {
+    assertNhisCccForSavedState(record)
+    assertNhisDurationForSavedState(record)
+  }
   const dataJson = json(record)
 
   if (existing) {

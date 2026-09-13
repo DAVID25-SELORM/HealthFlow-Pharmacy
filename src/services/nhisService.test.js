@@ -1674,30 +1674,19 @@ describe('CLAIM-it export helpers', () => {
       value: '84.00', unit: 'DAYS', desc: '84 Days',
     })
     expect(normalizeClaimItDurationForExport('90')).toEqual({
-      value: '90.00', unit: 'DAYS', desc: '90 Days',
+      value: null, unit: null, desc: null,
     })
     expect(normalizeClaimItDurationForExport('90 days')).toEqual({
       value: '90.00', unit: 'DAYS', desc: '90 Days',
     })
   })
-  it('classifies only unambiguous legacy durations for automatic repair', () => {
-    expect(analyzeNhisDurationForRepair('90 days').status).toBe('valid')
-    expect(analyzeNhisDurationForRepair('90DAYS')).toMatchObject({ status: 'automatic', proposedValue: '90 days' })
-    expect(analyzeNhisDurationForRepair('90 DAYS')).toMatchObject({ status: 'automatic', proposedValue: '90 days' })
-    expect(analyzeNhisDurationForRepair('90days')).toMatchObject({ status: 'automatic', proposedValue: '90 days' })
-    expect(analyzeNhisDurationForRepair('90 day')).toMatchObject({ status: 'automatic', proposedValue: '90 days' })
-    expect(analyzeNhisDurationForRepair('1DAY')).toMatchObject({ status: 'automatic', proposedValue: '1 day' })
-    expect(analyzeNhisDurationForRepair(' 30 days ')).toMatchObject({ status: 'valid', proposedValue: '30 days' })
-    expect(analyzeNhisDurationForRepair('1 month')).toMatchObject({ status: 'automatic', proposedValue: '30 days' })
-    expect(analyzeNhisDurationForRepair('2 months')).toMatchObject({ status: 'automatic', proposedValue: '60 days' })
-    expect(analyzeNhisDurationForRepair('2 weeks')).toMatchObject({ status: 'automatic', proposedValue: '14 days' })
-    expect(analyzeNhisDurationForRepair('90')).toMatchObject({ status: 'automatic', proposedValue: '90 days' })
-    expect(analyzeNhisDurationForRepair('about 2 months').status).toBe('manual')
-    expect(analyzeNhisDurationForRepair('2-3 weeks').status).toBe('manual')
-    expect(analyzeNhisDurationForRepair('1 day5').status).toBe('manual')
-    expect(analyzeNhisDurationForRepair('30DAYD').status).toBe('manual')
-    expect(analyzeNhisDurationForRepair('START').status).toBe('manual')
-    expect(analyzeNhisDurationForRepair('').status).toBe('manual')
+  it('keeps valid clinical units and sends ambiguous or legacy formatting to human review', () => {
+    for (const value of ['90 days', '1 month', '2 months', '2 weeks']) {
+      expect(analyzeNhisDurationForRepair(value)).toMatchObject({ status: 'valid', proposedValue: value })
+    }
+    for (const value of ['90DAYS', '90days', '90 day', '90', 'about 2 months', '2-3 weeks', '1 day5', '30DAYD', 'START', '', null]) {
+      expect(analyzeNhisDurationForRepair(value).status).toBe('manual')
+    }
   })
   it('canonicalizes safe manual day corrections and rejects malformed values', () => {
     expect(normalizeNhisManualDurationCorrection('1 DAY')).toBe('1 day')
@@ -1730,12 +1719,12 @@ describe('CLAIM-it export helpers', () => {
       },
     ])
     expect(review).toMatchObject({
-      claimsScanned: 2, valuesScanned: 3, alreadyValid: 1,
-      automaticallyCorrected: 1, manualReview: 1,
+      claimsScanned: 2, valuesScanned: 3, alreadyValid: 2,
+      automaticallyCorrected: 0, exportNormalizations: 1, manualReview: 1,
     })
-    expect(review.repairRows).toHaveLength(2)
+    expect(review.repairRows).toHaveLength(1)
     expect(review.repairRows[0]).toMatchObject({
-      claimId: 'claim-1', medicineId: 'med-2', proposedValue: '60 days',
+      claimId: 'claim-2', medicineId: 'med-3', proposedValue: '',
     })
   })
   it('groups credential usage once across the exported service-date range', () => {
@@ -1811,12 +1800,13 @@ describe('CLAIM-it export helpers', () => {
     expect(review).toMatchObject({
       claimsScanned: 1,
       valuesScanned: 6,
-      alreadyValid: 1,
-      automaticallyCorrected: 4,
-      manualReview: 1,
+      alreadyValid: 4,
+      automaticallyCorrected: 0,
+      exportNormalizations: 3,
+      manualReview: 2,
     })
     expect(review.repairRows.map((row) => row.proposedValue)).toEqual([
-      '30 days', '60 days', '14 days', '90 days', '',
+      '', '',
     ])
 
     const repairedMedicines = sourceMedicines.map((medicine) => {
@@ -1857,8 +1847,10 @@ describe('CLAIM-it export helpers', () => {
     const inflatedText = inflateSync(Buffer.from((await buildNhisClaimItCxf(payload)).slice(3))).toString('latin1')
 
     expect(payload.claims[0].medicines.map((medicine) => medicine.duration)).toEqual([
-      '30 days', '60 days', '14 days', '90 days', '30 days', '15 days',
+      '1 month', '2 months', '2 weeks', '15 days', '30 days', '15 days',
     ])
+    expect(sourceMedicines.map(medicine => medicine.duration)).toEqual(sourceDurations)
+    expect(normalizeClaimItDurationForExport(sourceMedicines[2].duration).value).toBe('14.00')
     expect(inflatedText).toContain('s:13:"duration_unit";s:4:"DAYS"')
     expect(inflatedText).not.toContain('month')
     expect(inflatedText).not.toContain('week')
@@ -4765,7 +4757,19 @@ describe('NHIS claim save attachment behavior', () => {
     expect(updateBranchRecord).not.toHaveBeenCalled()
   })
 
-  it('does not block dispensary medicine saves on claim-completion or prescription-direction fields', async () => {
+  it.each([null, '', '   ', '60', '2W'])('blocks invalid duration %s even with review-only flags', async (duration) => {
+    await expect(createNhisClaim(
+      { ...baseClaim, cccNo: '81416', status: 'served', allowIncompleteReview: true, reviewOnly: true },
+      [{ ...medicineWithTotal, duration }]
+    )).rejects.toThrow('valid duration')
+    await expect(updateNhisClaim(
+      'claim-1', { ...baseClaim, cccNo: '81416', status: 'served' },
+      [{ ...medicineWithTotal, duration, sourceMedicineId: 'old-med' }],
+      { existingMedicines: [{ id: 'old-med', duration }] }
+    )).rejects.toThrow('valid duration')
+  })
+
+  it('blocks dispensary progression with missing duration before any write', async () => {
     updateBranchNhisClaimMedicines.mockResolvedValueOnce({
       id: 'claim-1',
       status: 'served',
@@ -4794,18 +4798,8 @@ describe('NHIS claim save attachment behavior', () => {
         pharmacyLevel: 'P1',
         nhisDrugCatalog: [{ code: 'NH001', category: 'A' }],
       }
-    )).resolves.toMatchObject({
-      id: 'claim-1',
-      status: 'served',
-    })
-
-    expect(updateBranchNhisClaimMedicines).toHaveBeenCalledWith(
-      'claim-1',
-      expect.objectContaining({
-        nhis_claim_medicines: expect.any(Array),
-        total_amount: 10,
-      })
-    )
+    )).rejects.toThrow('valid duration')
+    expect(updateBranchNhisClaimMedicines).not.toHaveBeenCalled()
     expect(updateBranchRecord).not.toHaveBeenCalled()
   })
 
