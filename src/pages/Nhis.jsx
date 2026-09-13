@@ -1,3 +1,4 @@
+import { CLAIM_MONTHS, getClaimMonthRange } from '../utils/claimMonthRange'
 import { createPrescriptionUploadSession } from '../utils/prescriptionUploadSession'
 import { getNhisCccTransitionIssue } from '../../local-branch-server/src/nhisCccValidation.js'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -1521,6 +1522,8 @@ const Nhis = () => {
   const [prescriberSearch, setPrescriberSearch] = useState('')
   const [facilitySearch, setFacilitySearch] = useState('')
   const [claimDateFilter, setClaimDateFilter] = useState('month')
+  const [claimSelectedMonth, setClaimSelectedMonth] = useState(() => new Date().getMonth() + 1)
+  const [claimSelectedYear, setClaimSelectedYear] = useState(() => new Date().getFullYear())
   const [claimFromDate, setClaimFromDate] = useState(monthStartIsoDate())
   const [claimToDate, setClaimToDate] = useState(todayIsoDate())
 
@@ -1772,6 +1775,10 @@ const Nhis = () => {
       const previous = previousMonthRange()
       fromDate = previous.from
       toDate = previous.to
+    } else if (claimDateFilter === 'selected_month') {
+      const selected = getClaimMonthRange(claimSelectedYear, claimSelectedMonth)
+      fromDate = selected.from
+      toDate = selected.to
     } else if (claimDateFilter === 'custom') {
       fromDate = claimFromDate
       toDate = claimToDate
@@ -1788,7 +1795,7 @@ const Nhis = () => {
       searchTerm: debouncedClaimSearch.trim(),
       ...(includeIssueFilter && claimIssueFilter !== 'all' ? { issueFilter: claimIssueFilter } : {}),
     }
-  }, [claimDateFilter, claimFromDate, claimIssueFilter, debouncedClaimSearch, claimTab, claimToDate])
+  }, [claimDateFilter, claimFromDate, claimIssueFilter, debouncedClaimSearch, claimTab, claimToDate, claimSelectedMonth, claimSelectedYear])
 
   const loadClaimsPage = useCallback(async (page = 1, options = {}) => {
     const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
@@ -2298,9 +2305,10 @@ const Nhis = () => {
     if (claimDateFilter === 'week') return { from: weekStartIsoDate(), to: today }
     if (claimDateFilter === 'month') return { from: monthStartIsoDate(), to: today }
     if (claimDateFilter === 'previous_month') return previousMonthRange()
+    if (claimDateFilter === 'selected_month') return getClaimMonthRange(claimSelectedYear, claimSelectedMonth)
     if (claimDateFilter === 'custom') return { from: claimFromDate, to: claimToDate }
     return { from: '', to: '' }
-  }, [claimDateFilter, claimFromDate, claimToDate])
+  }, [claimDateFilter, claimFromDate, claimToDate, claimSelectedMonth, claimSelectedYear])
 
   const carriedOverClaims = useMemo(() => {
     const currentMonthStart = monthStartIsoDate()
@@ -6369,12 +6377,41 @@ const Nhis = () => {
               >
                 <option value="month">Current month</option>
                 <option value="previous_month">Previous month</option>
+                <option value="selected_month">Select month</option>
                 <option value="open">All open claims</option>
                 <option value="all">All dates</option>
                 <option value="today">Today</option>
                 <option value="week">This week</option>
                 <option value="custom">Custom date range</option>
               </select>
+              {claimDateFilter === 'selected_month' && (
+                <>
+                  <select
+                    aria-label="Claims month"
+                    value={claimSelectedMonth}
+                    onChange={(event) => {
+                      setClaimsPage(1)
+                      setClaimIssueFilter('all')
+                      setClaimSelectedMonth(Number(event.target.value))
+                    }}
+                  >
+                    {CLAIM_MONTHS.map((month, index) => <option key={month} value={index + 1}>{month}</option>)}
+                  </select>
+                  <select
+                    aria-label="Claims year"
+                    value={claimSelectedYear}
+                    onChange={(event) => {
+                      setClaimsPage(1)
+                      setClaimIssueFilter('all')
+                      setClaimSelectedYear(Number(event.target.value))
+                    }}
+                  >
+                    {Array.from({ length: 101 }, (_, index) => new Date().getFullYear() + 1 - index).map((year) => (
+                      <option key={year} value={year}>{year}</option>
+                    ))}
+                  </select>
+                </>
+              )}
               {claimDateFilter === 'custom' && (
                 <>
                   <input
