@@ -48,6 +48,7 @@ const PatientCare = lazy(() => loadRouteModule('/patient-care'))
 const CustomerEPharmacy = lazy(() => import('./pages/CustomerEPharmacy'))
 const RecycleBin = lazy(() => loadRouteModule('/recycle-bin'))
 const RestrictedInventory = lazy(() => loadRouteModule('/restricted-inventory'))
+const LiveDemo = lazy(() => import('./demo/LiveDemo'))
 
 const RouteFallback = () => (
   <div className="route-fallback" role="status" aria-live="polite">
@@ -82,6 +83,7 @@ function App() {
           <Route path="/signup" element={<Signup />} />
           <Route path="/terms" element={<Terms />} />
           <Route path="/shop" element={<CustomerEPharmacy />} />
+          <Route path="/demo/*" element={<LiveDemo />} />
           <Route
             path="/"
             element={

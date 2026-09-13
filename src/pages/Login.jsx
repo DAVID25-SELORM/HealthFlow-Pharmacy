@@ -329,6 +329,7 @@ const Login = () => {
             </Link>
           </div>
         )}
+        {mode === 'sign-in' && <Link to="/demo" className="customer-entry-link" aria-label="Try the HealthFlow live demo"><span className="customer-entry-copy"><strong>Try Live Demo</strong><small>No account required. Fictional demonstration data only.</small></span><ArrowRight size={19} aria-hidden="true" /></Link>}
         <p className="login-terms-note">
           By signing in, you agree to the <Link to="/terms">HealthFlow Terms and Conditions</Link>.
         </p>
