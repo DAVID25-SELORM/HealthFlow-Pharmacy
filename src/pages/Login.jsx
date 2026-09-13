@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import Seo from '../components/Seo/Seo'
 import PasswordVisibilityCheckbox from '../components/PasswordVisibilityCheckbox'
-import { ArrowRight, Lock, Mail, ShoppingBag } from 'lucide-react'
+import { ArrowRight, BarChart3, Boxes, ClipboardCheck, Lock, Mail, ShoppingBag, Wifi } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
@@ -157,6 +157,7 @@ const Login = () => {
         description="Sign in to HealthFlow — the pharmacy, claims, NHIS, inventory, and facility operations platform."
         path="/login"
       />
+      <section className="login-showcase" aria-label="HealthFlow overview"><div className="login-showcase-top">Trusted by pharmacies across Ghana <span aria-label="Ghana">🇬🇭</span></div><img src="/app-logo-display.jpg" alt="HealthFlow" className="login-showcase-logo" /><span className="login-kicker">Pharmacy management system</span><h2>Run your pharmacy smarter.</h2><p>HealthFlow helps pharmacies deliver better care with powerful tools for sales, inventory, NHIS claims, reporting and more.</p><div className="login-feature-grid">{[[ShoppingBag,'Point of Sale','Fast, reliable and easy to use'],[BarChart3,'Reports & Analytics','Make informed decisions'],[Boxes,'Inventory Management','Real-time stock control'],[ClipboardCheck,'NHIS Claims','Built for Ghana’s NHIS'],[Wifi,'Offline Mode','Keep working, even offline']].map(([Icon,title,detail]) => <div key={title}><Icon /><span><strong>{title}</strong><small>{detail}</small></span></div>)}</div></section>
       <div className="login-card">
         <img
           src="/app-logo-display.jpg"
@@ -166,7 +167,7 @@ const Login = () => {
           height="320"
           fetchPriority="high"
         />
-        <h1>{mode === 'sign-in' ? 'Staff Portal' : 'HealthFlow'}</h1>
+        <span className="login-welcome">Welcome back 👋</span><h1>{mode === 'sign-in' ? 'Sign in to HealthFlow' : 'HealthFlow'}</h1>
         <p className="subtitle">
           {mode === 'reset'
             ? 'Enter your email to receive a reset link'
