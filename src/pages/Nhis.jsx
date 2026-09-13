@@ -86,6 +86,7 @@ import {
   applyNhisDurationRepairs,
   submitNhisClaimDirect,
   assessNhisClaimReadiness,
+  assessNhisReadinessContracts,
   validateNhisClaimFinalReadiness,
   HOSPITAL_ENCOUNTER_OUTCOME_OPTIONS,
   HOSPITAL_NO_MEDICINE_REASON_OPTIONS,
@@ -4212,6 +4213,17 @@ const Nhis = () => {
     [claimForm, claimMedicines, claimServices, organizationType, editingClaim, isHospital, clinicalRules, claimControlMode, providerClassLevel, facilityPharmacyLevel, nhisDrugs, nhiaTariffItems, activeTariffFacilityGroup, activeTariffCateringOption]
   )
 
+  const correctionReadiness = useMemo(() => assessNhisReadinessContracts(
+    { ...claimForm, organizationType }, claimMedicines, {
+      claimControlMode, providerClassLevel, pharmacyLevel: facilityPharmacyLevel,
+      nhisDrugCatalog: nhisDrugs, clinicalRules, nhiaTariffServices: claimServices,
+      currentNhiaTariffItems: nhiaTariffItems, tariffFacilityGroup: activeTariffFacilityGroup,
+      tariffCateringOption: activeTariffCateringOption,
+    }
+  ), [claimForm, organizationType, claimMedicines, claimControlMode, providerClassLevel,
+    facilityPharmacyLevel, nhisDrugs, clinicalRules, claimServices, nhiaTariffItems,
+    activeTariffFacilityGroup, activeTariffCateringOption])
+
   const readinessPassed = readiness.issues.length === 0
   const readinessBlocked = readiness.blockers.length > 0
   const mcaReadiness = useMemo(() => splitMcaReadinessIssues(readiness), [readiness])
@@ -7454,6 +7466,18 @@ const Nhis = () => {
               <button className="modal-close" onClick={closeClaimModal}><X size={18} /></button>
             </div>
 
+            {editingClaim && (
+              <section className="nhia-readiness" aria-label="Remaining correction alerts" aria-live="polite">
+                <strong>Claim Readiness ? remaining alerts</strong>
+                <p>Serving and export have different requirements. These checks update as you correct the claim.</p>
+                <strong>Serving Readiness ({correctionReadiness.serving.blockers.length} blockers)</strong>
+                <ul>{correctionReadiness.serving.blockers.map(issue => <li key={issue}>{issue}</li>)}</ul>
+                <strong>Export Readiness ({correctionReadiness.export.blockers.length} blockers)</strong>
+                <ul>{correctionReadiness.export.blockers.map(issue => <li key={issue}>{issue}</li>)}</ul>
+                <strong>Warnings ({correctionReadiness.export.warnings.length})</strong>
+                <ul>{correctionReadiness.export.warnings.map(issue => <li key={issue}>{issue}</li>)}</ul>
+              </section>
+            )}
             {claimError && <div className="nhis-alert nhis-alert--modal" role="alert">{claimError}</div>}
             {incompleteIntakeItems.length > 0 && (
               <div className="nhis-incomplete-intake-alert" role="status">
@@ -8838,7 +8862,7 @@ const Nhis = () => {
                 <div className="nhis-action-review-issues" role="status">
                   <strong>{readiness.blockers.length} readiness issue{readiness.blockers.length === 1 ? '' : 's'}</strong>
                   <ul>
-                    {readiness.blockers.slice(0, 6).map((blocker) => <li key={blocker}>{blocker}</li>)}
+                    {readiness.blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}
                   </ul>
                 </div>
               )}

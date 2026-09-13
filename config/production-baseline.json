@@ -7,7 +7,7 @@
   "edgeFunctionCount": 7,
   "testFileCount": 148,
   "criticalFiles": {
-    "src/services/nhisService.js": "e319ac82ca379e752a9f8d54f910380468fdd8d94901bb9dbbd76bf318bf7cbf",
+    "src/services/nhisService.js": "eddd7d2746948efe751b87b1cb61397fe07ae17ed20646e30f3f1f3739a37a26",
     "src/context/AuthContext.jsx": "87ad80eba19ef3507fc0e106303499f8ebeefdec911e26b7244a4db10f2dfc4e",
     "src/services/recycleBinService.js": "94f0fd814bda811b3c234769426d57257a0f8120e90df8bffc87ae9ebfbcabe9",
     "src/services/offlineInstallerReleaseService.js": "d656396c7cce60b3e007ffec4f4aa4f8d63f931ab022cbef3cdcdc02755c9c13",
@@ -29,5 +29,9 @@
   "pendingDurationChange": {
     "description": "Duration integrity reassessment; reviewed and authorized for commit and push; database migration not deployed",
     "impactReport": "docs/nhis-duration-integrity-2026-09-13.md"
+  },
+  "pendingReadinessChange": {
+    "description": "Separate readiness contracts, atomic settlement and incremental legacy correction; local only",
+    "impactReport": "docs/nhis-readiness-transactions-2026-09-13.md"
   }
 }

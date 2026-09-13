@@ -103,6 +103,15 @@ describe('NHIS claims pagination layout', () => {
     expect(source).not.toContain('className="nhis-patient-list-section"')
   })
 
+  it('shows all remaining correction alerts with separate serving and export contracts', () => {
+    const source = readSource('./Nhis.jsx')
+    expect(source).toContain('aria-label="Remaining correction alerts"')
+    expect(source).toContain('correctionReadiness.serving.blockers.map')
+    expect(source).toContain('correctionReadiness.export.blockers.map')
+    expect(source).toContain('correctionReadiness.export.warnings.map')
+    expect(source).not.toContain('readiness.blockers.slice(0, 6).map')
+  })
+
   it('turns duration review counts into inline correction filters', () => {
     const source = readSource('./Nhis.jsx')
     expect(source).toContain("selectDurationRepairFilter('manual')")

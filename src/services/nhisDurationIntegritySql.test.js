@@ -6,9 +6,10 @@ let db
 beforeAll(async () => {
   db = new PGlite()
   await db.exec(`create role anon; create role authenticated;
-    create table nhis_claims(id uuid primary key, status text, serving_status text);
+    create table nhis_claims(id uuid primary key, status text, serving_status text, ccc_no text);
     create table nhis_claim_medicines(id uuid primary key, claim_id uuid references nhis_claims, duration text, served_qty numeric, serving_status text);
-    insert into nhis_claims values ('00000000-0000-0000-0000-000000000001', 'draft', 'pending');`)
+    insert into nhis_claims values ('00000000-0000-0000-0000-000000000001', 'draft', 'pending', null);`)
+
   await db.exec(readFileSync('supabase/migrations/20260913160000_enforce_nhis_duration_integrity.sql', 'utf8'))
 }, 30000)
 afterAll(async () => { await db?.close() })
@@ -27,4 +28,22 @@ it('allows incomplete Draft, blocks progression/direct serving, and preserves va
   await expect(db.exec(`begin; delete from nhis_claim_medicines;
     insert into nhis_claim_medicines values ('00000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000000001', null, 0, 'pending'); commit;`)).rejects.toThrow('Valid medicine duration')
   await db.exec('rollback')
+})
+
+it('permits one-at-a-time legacy repairs and unchanged header updates without permitting new serving', async () => {
+  const legacy = new PGlite()
+  try {
+    await legacy.exec(`create role anon; create role authenticated;
+      create table nhis_claims(id uuid primary key,status text,serving_status text,ccc_no text);
+      create table nhis_claim_medicines(id uuid primary key,claim_id uuid,duration text,served_qty numeric,serving_status text);
+      insert into nhis_claims values ('00000000-0000-0000-0000-000000000010','served','fully_served',null);
+      insert into nhis_claim_medicines values ('00000000-0000-0000-0000-000000000011','00000000-0000-0000-0000-000000000010',null,1,'fully_served'),
+      ('00000000-0000-0000-0000-000000000012','00000000-0000-0000-0000-000000000010',null,1,'fully_served');`)
+    await legacy.exec(readFileSync('supabase/migrations/20260913160000_enforce_nhis_duration_integrity.sql','utf8'))
+    await legacy.exec("update nhis_claims set status=status")
+    await legacy.exec("update nhis_claim_medicines set duration='2 weeks' where id='00000000-0000-0000-0000-000000000011'")
+    await expect(legacy.exec("update nhis_claims set status='submitted'")).rejects.toThrow('Valid medicine duration')
+    await legacy.exec("update nhis_claim_medicines set duration='3 days' where duration is null")
+    expect((await legacy.query('select duration from nhis_claim_medicines')).rows).toHaveLength(2)
+  } finally { await legacy.close() }
 })

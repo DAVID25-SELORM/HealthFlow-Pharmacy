@@ -50,6 +50,7 @@ vi.mock('./tierAccessService', () => ({
 
 import {
   assessNhisClaimReadiness,
+  assessNhisReadinessContracts,
   assertClaimItCxfExportConfigured,
   buildClaimItConfigPreview,
   buildNhisClaimItExportPayload,
@@ -1654,6 +1655,18 @@ describe('assessNhisClaimReadiness', () => {
 })
 
 describe('CLAIM-it export helpers', () => {
+  it('separates serving requirements from stricter export requirements without hiding remaining alerts', () => {
+    const claim = { cccNo: '12345', organizationType: 'pharmacy' }
+    const result = assessNhisReadinessContracts(claim, [{ duration: '2 weeks' }])
+    expect(result.export.blockers.length).toBeGreaterThan(result.serving.blockers.length)
+    for (const issue of result.serving.blockers) expect(result.export.blockers).toContain(issue)
+    expect(result.export.blockers.some(issue => /prescription/i.test(issue))).toBe(true)
+    expect(result.serving.blockers.some(issue => /Attach the scanned prescription/i.test(issue))).toBe(false)
+    const cleared = assessNhisReadinessContracts({ ...claim, cccNo: '' }, [{ duration: '' }])
+    expect(cleared.serving.blockers.some(issue => /CCC/i.test(issue))).toBe(true)
+    expect(cleared.serving.blockers.some(issue => /duration/i.test(issue))).toBe(true)
+  })
+
   it('requires exact duration syntax for newly entered or changed medicines', () => {
     expect(validateNhisMedicineDurationInput('1 day')).toBe('')
     expect(validateNhisMedicineDurationInput('2 weeks')).toBe('')

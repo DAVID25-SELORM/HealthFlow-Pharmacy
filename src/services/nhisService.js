@@ -1,5 +1,5 @@
 import { assertNhisDurationForSavedState } from '../../local-branch-server/src/nhisDurationValidation.js'
-import { assertNhisCccForSavedState, assertNhisCccForProgress } from '../../local-branch-server/src/nhisCccValidation.js'
+import { assertNhisCccForSavedState, assertNhisCccForProgress, getNhisCccTransitionIssue } from '../../local-branch-server/src/nhisCccValidation.js'
 import { supabase } from '../lib/supabase'
 import { assertRequiredText, assertNonNegativeNumber, assertPositiveNumber, normalizeText, sanitizeSearchTerm } from '../utils/validation'
 import {
@@ -2555,6 +2555,28 @@ const isMcaMedicineReadinessIssue = (issue = '') => {
 
 const getMcaMedicineReadinessBlockers = (readiness = {}) =>
   (Array.isArray(readiness.blockers) ? readiness.blockers : []).filter(isMcaMedicineReadinessIssue)
+
+// Explicit contracts reuse the established serving medicine checks. Export adds
+// the full final-submission checks; neither contract mutates the clinical record.
+export const assessNhisReadinessContracts = (claim, medicines = [], options = {}) => {
+  const base = assessNhisClaimReadiness(claim, medicines, {
+    ...options, finalSubmission: false, requireMedicineDirections: false,
+    requirePrescriptionAttachment: false, requireVerifiedPrescription: false,
+  })
+  const servingBlockers = getMcaMedicineReadinessBlockers(base)
+  const ccc = getNhisCccTransitionIssue(claim)
+  if (ccc) servingBlockers.push(ccc)
+  medicines.forEach((medicine, index) => {
+    const issue = validateNhisMedicineDurationInput(medicine.duration)
+    if (issue) servingBlockers.push(`Medicine ${index + 1}: ${issue}`)
+  })
+  const final = assessNhisClaimReadiness(claim, medicines, { ...options, finalSubmission: true })
+  const unique = values => [...new Set(values)]
+  return {
+    serving: { blockers: unique(servingBlockers), warnings: unique(base.warnings) },
+    export: { blockers: unique([...servingBlockers, ...final.blockers]), warnings: unique([...base.warnings, ...final.warnings]) },
+  }
+}
 
 const normalizeMedicineServingStatus = (value, prescribedQty = 0, servedQty = 0) => {
   const status = normalizeText(value).toLowerCase()
@@ -6915,51 +6937,7 @@ export const getNhisClaimCorrectionHistory = async (claimId) => {
   return data || []
 }
 
-const recordNhisPaidLedgerEntry = async (id, actorId = null) => {
-  const { data: claim, error } = await supabase
-    .from('nhis_claims')
-    .select(`
-      id,
-      organization_id,
-      branch_id,
-      total_amount,
-      created_by,
-      nhis_claim_payments (paid_amount)
-    `)
-    .eq('id', id)
-    .single()
-
-  if (error) throw error
-
-  const approvedAmount = Number(claim.total_amount || 0)
-  const totalPaid = (claim.nhis_claim_payments || []).reduce(
-    (sum, payment) => sum + Number(payment.paid_amount || 0),
-    0
-  )
-  const outstanding = Math.max(0, approvedAmount - totalPaid)
-  if (outstanding <= 0) {
-    return
-  }
-
-  const { error: paymentError } = await supabase
-    .from('nhis_claim_payments')
-    .insert([{
-      organization_id: claim.organization_id,
-      branch_id: claim.branch_id || null,
-      nhis_claim_id: claim.id,
-      insurer_name: 'NHIS',
-      approved_amount: approvedAmount,
-      paid_amount: outstanding,
-      payment_date: toNhisCalendarDate(),
-      payment_method: 'bank_transfer',
-      notes: 'Marked paid from NHIS claims.',
-      created_by: actorId || claim.created_by || null,
-    }])
-
-  if (paymentError) throw paymentError
-}
-
-export const updateNhisClaimStatus = async (id, status, rejectionReason = '', actorId = null) => {
+export const updateNhisClaimStatus = async (id, status, rejectionReason = '') => {
   const validStatuses = ['served', 'submitted', 'paid', 'rejected']
   if (!validStatuses.includes(status)) throw new Error('Invalid claim status.')
 
@@ -6975,16 +6953,9 @@ export const updateNhisClaimStatus = async (id, status, rejectionReason = '', ac
     await updateBranchRecord('nhis/claims', id, updatePayload)
 
   const updateCloudStatus = async () => {
-    if (status === 'paid') {
-      await recordNhisPaidLedgerEntry(id, actorId)
-    }
-
-    const { data, error } = await supabase
-      .from('nhis_claims')
-      .update(updatePayload)
-      .eq('id', id)
-      .select()
-      .single()
+    const { data, error } = status === 'paid'
+      ? await supabase.rpc('mark_nhis_claim_paid', { p_claim_id: id })
+      : await supabase.from('nhis_claims').update(updatePayload).eq('id', id).select().single()
 
     if (error) throw error
 
@@ -6998,6 +6969,9 @@ export const updateNhisClaimStatus = async (id, status, rejectionReason = '', ac
 
     return data
   }
+
+  // Settlement must never fall back to a status-only offline write.
+  if (status === 'paid') return await updateCloudStatus()
 
   return await routeWrite({
     label: 'NHIS claim status',
