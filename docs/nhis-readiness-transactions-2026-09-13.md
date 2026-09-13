@@ -15,3 +15,9 @@ Validation:
 241 service/UI tests passed; 3 SQL tests passed using PGlite. SQL tests cover payment failure rollback, successful settlement, repeated settlement without duplicate payment, incomplete Draft, invalid progression, preserved clinical duration, invalid replacement, and individual historical repairs. Lint passed. Build and baseline/migration verification recorded in final response. SQL tests use minimal fixture schemas and do not certify production RLS/branch policies or concurrent writes through OTHER payment paths. Full production migration compatibility remains a deployment gate.
 
 No migration applied. Commit and push subsequently authorized; no deployment. The broader integrity audit remains open: complete rule/path/state backend parity, production authorization tests, structured blockers across every path, and all payment entry points require further work.
+
+
+## Applied migration clarification
+The user confirmed applying the original 46-line duration migration before its later edits. The repository now restores that original migration from e8d0023. Incremental correction changes are moved into 20260913180000_allow_incremental_nhis_integrity_corrections.sql, which replaces only function bodies and preserves existing triggers. Apply the new follow-up, not the original migration again. This follow-up has not been applied by the assistant. The payment migration is separate; its applied status is not inferred from this confirmation.
+
+User subsequently reported "Success. No rows returned" after selecting the 20260913180000 follow-up and authorized commit/push. This records user-reported application success, not an independent live-schema verification. The original-to-follow-up upgrade and repeat-application tests passed (2 tests); migration and baseline checks passed. Payment migration application remains unconfirmed.

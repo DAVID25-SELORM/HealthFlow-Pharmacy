@@ -11,6 +11,7 @@ beforeAll(async () => {
     insert into nhis_claims values ('00000000-0000-0000-0000-000000000001', 'draft', 'pending', null);`)
 
   await db.exec(readFileSync('supabase/migrations/20260913160000_enforce_nhis_duration_integrity.sql', 'utf8'))
+  await db.exec(readFileSync('supabase/migrations/20260913180000_allow_incremental_nhis_integrity_corrections.sql', 'utf8'))
 }, 30000)
 afterAll(async () => { await db?.close() })
 it('allows incomplete Draft, blocks progression/direct serving, and preserves valid clinical duration on reload', async () => {
@@ -40,6 +41,10 @@ it('permits one-at-a-time legacy repairs and unchanged header updates without pe
       insert into nhis_claim_medicines values ('00000000-0000-0000-0000-000000000011','00000000-0000-0000-0000-000000000010',null,1,'fully_served'),
       ('00000000-0000-0000-0000-000000000012','00000000-0000-0000-0000-000000000010',null,1,'fully_served');`)
     await legacy.exec(readFileSync('supabase/migrations/20260913160000_enforce_nhis_duration_integrity.sql','utf8'))
+    await expect(legacy.exec("update nhis_claims set status=status")).rejects.toThrow('Valid medicine duration')
+    await legacy.exec(readFileSync('supabase/migrations/20260913180000_allow_incremental_nhis_integrity_corrections.sql','utf8'))
+    // Reapplying the function-only patch must not collide with existing triggers.
+    await legacy.exec(readFileSync('supabase/migrations/20260913180000_allow_incremental_nhis_integrity_corrections.sql','utf8'))
     await legacy.exec("update nhis_claims set status=status")
     await legacy.exec("update nhis_claim_medicines set duration='2 weeks' where id='00000000-0000-0000-0000-000000000011'")
     await expect(legacy.exec("update nhis_claims set status='submitted'")).rejects.toThrow('Valid medicine duration')
