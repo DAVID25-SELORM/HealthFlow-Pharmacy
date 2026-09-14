@@ -1,3 +1,5 @@
+import ClaimCorrectionAlerts from '../components/ClaimCorrectionAlerts'
+import ClaimSearchScope from '../components/ClaimSearchScope'
 import { CLAIM_MONTHS, getClaimMonthRange } from '../utils/claimMonthRange'
 import { createPrescriptionUploadSession } from '../utils/prescriptionUploadSession'
 import { getNhisCccTransitionIssue } from '../../local-branch-server/src/nhisCccValidation.js'
@@ -6457,6 +6459,16 @@ const Nhis = () => {
                 }}
               />
             </div>
+            <ClaimSearchScope
+              search={claimSearch}
+              dateFilter={claimDateFilter}
+              status={claimTab}
+              issueFilter={claimIssueFilter}
+              onShowAll={() => {
+                setClaimDateFilter('all')
+                setStatusTab('all')
+              }}
+            />
             <div className="claim-issue-filter-tabs" aria-label="Filter claims by issue">
               {CLAIM_ISSUE_FILTERS.map((filter) => {
                 const count = filter.id === 'all'
@@ -7467,16 +7479,7 @@ const Nhis = () => {
             </div>
 
             {editingClaim && (
-              <section className="nhia-readiness" aria-label="Remaining correction alerts" aria-live="polite">
-                <strong>Claim Readiness ? remaining alerts</strong>
-                <p>Serving and export have different requirements. These checks update as you correct the claim.</p>
-                <strong>Serving Readiness ({correctionReadiness.serving.blockers.length} blockers)</strong>
-                <ul>{correctionReadiness.serving.blockers.map(issue => <li key={issue}>{issue}</li>)}</ul>
-                <strong>Export Readiness ({correctionReadiness.export.blockers.length} blockers)</strong>
-                <ul>{correctionReadiness.export.blockers.map(issue => <li key={issue}>{issue}</li>)}</ul>
-                <strong>Warnings ({correctionReadiness.export.warnings.length})</strong>
-                <ul>{correctionReadiness.export.warnings.map(issue => <li key={issue}>{issue}</li>)}</ul>
-              </section>
+              <ClaimCorrectionAlerts key={editingClaim.id || editingClaim.claim_number} readiness={correctionReadiness} />
             )}
             {claimError && <div className="nhis-alert nhis-alert--modal" role="alert">{claimError}</div>}
             {incompleteIntakeItems.length > 0 && (
@@ -7507,8 +7510,10 @@ const Nhis = () => {
                   <span>Member/HIN: {activeReadinessCorrection.member}</span>
                   <span>Folder: {activeReadinessCorrection.folder}</span>
                 </div>
-                <ul className="nhis-correction-context__issues">
-                  {activeReadinessCorrection.issues.slice(0, 6).map((text, index) => {
+                <details>
+                  <summary>View original scrub review ({activeReadinessCorrection.issues.length} issues)</summary>
+                <ul className="nhis-correction-context__issues claim-correction-alerts__list">
+                  {activeReadinessCorrection.issues.map((text, index) => {
                     const severity = getReadinessIssueSeverity(text)
                     return (
                       <li key={`${activeReadinessCorrection.claimNumber}-${index}`}>
@@ -7520,9 +7525,7 @@ const Nhis = () => {
                     )
                   })}
                 </ul>
-                {activeReadinessCorrection.issues.length > 6 && (
-                  <small>{activeReadinessCorrection.issues.length - 6} more issue{activeReadinessCorrection.issues.length - 6 === 1 ? '' : 's'} in the scrub review.</small>
-                )}
+                </details>
               </div>
             )}
 
