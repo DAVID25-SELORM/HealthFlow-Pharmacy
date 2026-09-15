@@ -7,8 +7,8 @@
   "edgeFunctionCount": 7,
   "testFileCount": 148,
   "criticalFiles": {
-    "src/services/nhisService.js": "eddd7d2746948efe751b87b1cb61397fe07ae17ed20646e30f3f1f3739a37a26",
-    "src/context/AuthContext.jsx": "87ad80eba19ef3507fc0e106303499f8ebeefdec911e26b7244a4db10f2dfc4e",
+    "src/services/nhisService.js": "b20d58e1433eec6b7cbd72ff8f59be02454658f13a22aefa920e0f5e830432bd",
+    "src/context/AuthContext.jsx": "0df048a03e1bf786d13d289bea4ccbb42167cccb46bba560cc50fff960aab258",
     "src/services/recycleBinService.js": "94f0fd814bda811b3c234769426d57257a0f8120e90df8bffc87ae9ebfbcabe9",
     "src/services/offlineInstallerReleaseService.js": "d656396c7cce60b3e007ffec4f4aa4f8d63f931ab022cbef3cdcdc02755c9c13",
     "src/services/settingsService.js": "fdd96f01368f4d363f3ac0e20e31f7436a5ae0b4c252c3f95fe544471a5dbab7",
@@ -33,5 +33,10 @@
   "pendingReadinessChange": {
     "description": "Separate readiness contracts, atomic settlement and incremental legacy correction; local only",
     "impactReport": "docs/nhis-readiness-transactions-2026-09-13.md"
+  },
+  "pendingWorkspaceRecoveryChange": {
+    "date": "2026-09-15",
+    "impactReport": "docs/workspace-recovery-performance-2026-09-15.md",
+    "description": "Bounded workspace retries and session-scoped pending read deduplication; local only"
   }
 }

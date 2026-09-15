@@ -14,6 +14,7 @@ vi.mock('./tierAccessService', () => ({
 }))
 
 vi.mock('../lib/supabase', () => ({
+  getCachedSupabaseSession: vi.fn().mockReturnValue({}),
   supabase: {
     from: fromMock,
   },
@@ -88,6 +89,14 @@ describe('drugService catalog handling', () => {
     fromMock.mockReturnValue(queryBuilder)
     return queryBuilder
   }
+
+  it('shares concurrent full inventory loads but reads again on a later refresh', async () => {
+    const query = createDirectDrugQuery([{ id: 'stock-1', quantity: 3 }])
+    await Promise.all([getAllDrugs(), getAllDrugs()])
+    expect(query.range).toHaveBeenCalledTimes(1)
+    await getAllDrugs()
+    expect(query.range).toHaveBeenCalledTimes(2)
+  })
 
   it('identifies shared catalog medicines by reserved batch prefix', () => {
     expect(isDefaultCatalogDrug({ batch_number: 'PDF-IMP-00001' })).toBe(true)

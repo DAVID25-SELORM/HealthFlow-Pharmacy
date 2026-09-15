@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { createWorkspaceRecovery } from '../utils/workspaceRecovery'
 import {
   clearSupabaseStoredSession,
   supabase,
@@ -421,6 +422,15 @@ export const AuthProvider = ({ children }) => {
     const isCurrentResolution = (resolutionId) =>
       mounted && resolutionId === latestResolutionId
 
+    const workspaceRecovery = createWorkspaceRecovery(() => enqueueAuth(async () => {
+      const activeSession = sessionRef.current
+      if (activeSession) await resolveSessionState(activeSession, { event: 'WORKSPACE_RETRY' })
+      else workspaceRecovery.update(false)
+    }))
+    const retryWorkspace = () => { void workspaceRecovery.retry() }
+    window.addEventListener('online', retryWorkspace)
+    window.addEventListener('healthflow:retry-workspace', retryWorkspace)
+
     const setLoadingForCurrentResolution = (resolutionId, value) => {
       if (!isCurrentResolution(resolutionId)) {
         return
@@ -464,6 +474,7 @@ export const AuthProvider = ({ children }) => {
       }
 
       logAuthDiagnostic('auth.state.clear', { event: 'SESSION_UNAVAILABLE' })
+      workspaceRecovery.update(false)
       sessionRef.current = null
       setCachedSupabaseSession(null)
       setCachedSupabaseUser(null)
@@ -830,6 +841,7 @@ export const AuthProvider = ({ children }) => {
         setOrganization(activeOrganization)
         setBranch(activeBranch)
         setProfileLoadError(resolutionError)
+        workspaceRecovery.update(Boolean(resolutionError))
         setLoading(false)
       }
     }
@@ -904,7 +916,12 @@ export const AuthProvider = ({ children }) => {
     enqueueAuth(bootstrap)
 
     if (!isSupabaseConfigured()) {
-      return stopEnvironmentDiagnostics
+      return () => {
+        workspaceRecovery.stop()
+        window.removeEventListener('online', retryWorkspace)
+        window.removeEventListener('healthflow:retry-workspace', retryWorkspace)
+        stopEnvironmentDiagnostics()
+      }
     }
 
     const {
@@ -926,6 +943,9 @@ export const AuthProvider = ({ children }) => {
 
     return () => {
       mounted = false
+      workspaceRecovery.stop()
+      window.removeEventListener('online', retryWorkspace)
+      window.removeEventListener('healthflow:retry-workspace', retryWorkspace)
       stopEnvironmentDiagnostics()
       unsubscribeAuthExpired()
       subscription.unsubscribe()

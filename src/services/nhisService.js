@@ -1,6 +1,7 @@
 import { assertNhisDurationForSavedState } from '../../local-branch-server/src/nhisDurationValidation.js'
 import { assertNhisCccForSavedState, assertNhisCccForProgress, getNhisCccTransitionIssue } from '../../local-branch-server/src/nhisCccValidation.js'
 import { supabase } from '../lib/supabase'
+import { createCoalescedCloudRead } from '../utils/coalesceCloudRead'
 import { assertRequiredText, assertNonNegativeNumber, assertPositiveNumber, normalizeText, sanitizeSearchTerm } from '../utils/validation'
 import {
   isGhanaCardNumber,
@@ -6262,6 +6263,7 @@ const getNhisClaimIssueCountsFromSupabase = async (filters = {}) => {
   return counts
 }
 
+const coalesceIssueCounts = createCoalescedCloudRead()
 export const getNhisClaimIssueCounts = async (filters = {}) => {
   const options = {
     organizationType: filters.organizationType || filters.organization_type,
@@ -6278,7 +6280,8 @@ export const getNhisClaimIssueCounts = async (filters = {}) => {
     return computeNhisClaimIssueCounts(filterNhisClaimRows(rows || [], filters), options)
   }
 
-  return getNhisClaimIssueCountsFromSupabase(filters)
+  const key = JSON.stringify(Object.keys(filters).sort().map((name) => [name, filters[name]]))
+  return coalesceIssueCounts(key, () => getNhisClaimIssueCountsFromSupabase(filters))
 }
 
 const computeNhisClaimStats = (rows = []) => ({

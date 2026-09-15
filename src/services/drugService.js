@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase'
+import { createCoalescedCloudRead } from '../utils/coalesceCloudRead'
 import { assertNonNegativeNumber, assertRequiredText, normalizeText, sanitizeSearchTerm } from '../utils/validation'
 import { invokeTierAccess } from './tierAccessService'
 import { getBranchInventory } from './branchServerApi'
@@ -139,7 +140,8 @@ const filterSearchRows = (rows, { term = '', includeCatalog = false, inStockOnly
     .filter((drug) => drugMatchesSearch(drug, term))
     .slice(0, limit)
 
-const getAllDrugsDirectly = async (branchId = null) => {
+const coalesceInventoryRead = createCoalescedCloudRead()
+const getAllDrugsDirectly = (branchId = null) => coalesceInventoryRead(branchId, async () => {
   const rows = []
   let from = 0
 
@@ -171,7 +173,7 @@ const getAllDrugsDirectly = async (branchId = null) => {
   }
 
   return rows.filter((drug) => !isInactiveDrug(drug))
-}
+})
 
 const getAllDrugsViaTierAccess = async (includeCatalog = false, branchId = null) => {
   const payload = {

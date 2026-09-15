@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { inflateSync } from 'node:zlib'
 
 vi.mock('../lib/supabase', () => ({
+  getCachedSupabaseSession: () => null,
   supabase: {
     from: vi.fn(),
     rpc: vi.fn(),

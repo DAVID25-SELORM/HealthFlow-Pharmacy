@@ -141,6 +141,25 @@ const SignInProbe = ({ onResult }) => {
 }
 
 describe('AuthProvider', () => {
+  it.each(['online', 'healthflow:retry-workspace'])('recovers a missing profile on %s without reloading or signing out', async (event) => {
+    const WorkspaceProbe = () => {
+      const { profileLoadError, profile } = useAuth()
+      return <div data-testid="workspace">{profileLoadError || profile?.full_name || 'loading'}</div>
+    }
+    mocks.auth.getSession.mockResolvedValue({ data: { session: {
+      access_token: 'recovery-token', expires_at: Math.floor(Date.now() / 1000) + 3600,
+      user: { id: 'recovery-user' },
+    } }, error: null })
+    mocks.queryBuilder.maybeSingle.mockResolvedValue({ data: null, error: null })
+    render(<AuthProvider><WorkspaceProbe /></AuthProvider>)
+    await waitFor(() => expect(screen.getByTestId('workspace')).toHaveTextContent('staff profile is unavailable'))
+    mocks.queryBuilder.maybeSingle.mockResolvedValue({ data: {
+      id: 'recovery-user', full_name: 'Recovered Staff', is_active: true,
+    }, error: null })
+    await act(async () => window.dispatchEvent(new Event(event)))
+    await waitFor(() => expect(screen.getByTestId('workspace')).toHaveTextContent('Recovered Staff'))
+    expect(mocks.auth.signOut).not.toHaveBeenCalled()
+  })
   beforeEach(() => {
     vi.clearAllMocks()
     window.localStorage.clear()
