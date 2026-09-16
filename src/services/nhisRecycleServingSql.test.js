@@ -68,6 +68,36 @@ it('restores older snapshots without a serving-events key', async () => {
   expect((await db.query('select * from nhis_claims')).rows).toHaveLength(1)
 })
 
+it('preserves CCC, Claim-IT source fields and complete line values through recycling', async () => {
+  await db.exec(`
+    alter table nhis_claims add column ccc_no text, add column member_no text,
+      add column hin text, add column surname text, add column other_names text,
+      add column service_date_from date, add column diagnosis text,
+      add column physician_name text, add column prescription_file_path text,
+      add column nhia_auth_id text, add column nhia_otac text, add column total_amount numeric;
+    alter table nhis_claim_medicines add column drug_code text, add column duration text,
+      add column dose text, add column frequency text, add column served_qty numeric,
+      add column price numeric;
+    alter table nhis_claim_services add column service_code text, add column quantity numeric,
+      add column tariff numeric;
+    update nhis_claims set ccc_no='81416', member_no='0012345678', hin='HIN-TEST',
+      surname='Synthetic', other_names='Patient', service_date_from='2026-09-15',
+      diagnosis='Test diagnosis', physician_name='Test prescriber',
+      prescription_file_path='synthetic/prescription.pdf', nhia_auth_id='AUTH-TEST',
+      nhia_otac='OTAC-TEST', total_amount=12.50;
+    update nhis_claim_medicines set drug_code='TEST-CODE', duration='5 days',
+      dose='1 tablet', frequency='twice daily', served_qty=10, price=1.25;
+    update nhis_claim_services set service_code='TEST-SERVICE', quantity=1, tariff=2.50;
+  `)
+  const snapshot = async () => (await db.query(`select
+    (select jsonb_agg(to_jsonb(c) order by id) from nhis_claims c) as claims,
+    (select jsonb_agg(to_jsonb(m) order by id) from nhis_claim_medicines m) as medicines,
+    (select jsonb_agg(to_jsonb(s) order by id) from nhis_claim_services s) as services`)).rows[0]
+  const before = await snapshot()
+  await restore((await recycle()).id)
+  expect(await snapshot()).toEqual(before)
+})
+
 it.each([
   "update users set organization_id = '20000000-0000-4000-8000-000000000002'",
   "update users set role = 'claims_officer'",
