@@ -29,7 +29,8 @@ beforeAll(async () => {
   await db.exec(`
     create role anon; create role authenticated; create role service_role;
     create table users (id uuid primary key, organization_id uuid, branch_id uuid, full_name text, is_active boolean);
-    create table nhis_claims (id uuid primary key, organization_id uuid, branch_id uuid, surname text, other_names text, claim_number text, prescription_reference text);
+    create table nhis_claims (id uuid primary key, organization_id uuid, branch_id uuid, surname text, other_names text, claim_number text, prescription_reference text, member_no text);
+    create table deleted_records (id uuid primary key default gen_random_uuid(), organization_id uuid, entity_type text, entity_id uuid, snapshot jsonb, unique(organization_id,entity_type,entity_id));
     create table drugs (id uuid primary key, organization_id uuid, branch_id uuid, name text, strength text);
     create table sales (id uuid primary key, organization_id uuid, branch_id uuid, sale_number text);
     create table patients (id uuid primary key, organization_id uuid, full_name text);
@@ -37,7 +38,7 @@ beforeAll(async () => {
     create index idx_audit_logs_organization_actor_created_at on audit_logs(organization_id, actor_user_id, created_at desc);
     create index idx_audit_logs_organization_created_at on audit_logs(organization_id, created_at desc);
     insert into users values ('${officer}','${org}','${branch}','Active Officer',true), ('${oldOfficer}','${org}','${branch}','Historical Officer',false);
-    insert into nhis_claims values ('${claim}','${org}','${branch}','Current','Name','NHIS-123','RX-456');
+    insert into nhis_claims values ('${claim}','${org}','${branch}','Current','Name','NHIS-123','RX-456','MEM-789');
     insert into drugs values ('${medicine}','${org}','${branch}','Paracetamol','500 mg');
     insert into audit_logs (organization_id,actor_user_id,actor_email,entity_type,entity_id,event_type,action,details,created_at)
       select '${org}','${officer}','active@example.test','nhis_claims','${claim}','nhis_claim','update','{"active_role":"claims_officer"}', '2026-09-15T12:00:00Z'::timestamptz + i * interval '1 minute' from generate_series(1,105) i;
@@ -52,7 +53,7 @@ beforeAll(async () => {
       ('${org}','${oldOfficer}','nhis_claims',null,'missing','delete','{}','2026-09-10T00:00:00Z'),
       ('${org}','${oldOfficer}','nhis_claims',null,'other_branch','delete','{"patient_name":"Other branch secret","branch_id":"${otherBranch}"}','2026-09-10T00:00:00Z');
   `)
-  migration = await readFile(new URL('../../migrations/20260913120000_activity_log_subjects_and_scope.sql', import.meta.url), 'utf8')
+  migration = await readFile(new URL('../../migrations/20260916061000_activity_log_membership_and_recycled_claims.sql', import.meta.url), 'utf8')
   await db.exec(migration)
 }, 30000)
 afterAll(async () => { await db?.close() })
@@ -79,7 +80,30 @@ describe('Activity Log database projection', () => {
   })
   it('resolves current claim references when snapshots are absent', async () => {
     const result = await query({ actor: officer, event: 'nhis_claim' })
-    expect(result.logs[0].subject).toMatchObject({ source: 'current', fields: { Patient: 'Current Name', Claim: 'NHIS-123', Prescription: 'RX-456' } })
+    expect(result.logs[0].subject).toMatchObject({ source: 'current', fields: { Patient: 'Current Name', Claim: 'NHIS-123', Prescription: 'RX-456', 'Membership number': 'MEM-789' } })
+  })
+  it('searches membership numbers only when claim access is permitted', async () => {
+    expect((await query({ search: 'MEM-789', event: 'nhis_claim' })).total).toBe(106)
+    expect((await query({ search: 'MEM-789', permissions: {} })).total).toBe(0)
+  })
+  it('prefers recorded membership numbers over the current claim', async () => {
+    await db.exec('begin')
+    try {
+      await db.query(`update audit_logs set details = details || '{"member_no":"OLD-MEMBER"}'::jsonb where actor_user_id = $1 and event_type = 'nhis_claim'`, [oldOfficer])
+      expect((await query({ actor: oldOfficer, event: 'nhis_claim' })).logs[0].subject.fields['Membership number']).toBe('OLD-MEMBER')
+    } finally { await db.exec('rollback') }
+  })
+  it('resolves recycled claim identities within tenant, branch and permission boundaries', async () => {
+    await db.exec('begin')
+    try {
+      await db.query(`insert into deleted_records (organization_id,entity_type,entity_id,snapshot) select organization_id,'nhis_claim',id,jsonb_build_object('record',to_jsonb(c)) from nhis_claims c where id=$1`, [claim])
+      await db.query('delete from nhis_claims where id=$1', [claim])
+      const result = await query({ branch, actor: officer, event: 'nhis_claim' })
+      expect(result.logs[0].subject).toMatchObject({ source: 'snapshot', fields: { Patient: 'Current Name', 'Membership number': 'MEM-789' } })
+      expect((await query({ branch: otherBranch, search: 'MEM-789' })).total).toBe(0)
+      expect((await query({ org: otherOrg, search: 'MEM-789' })).total).toBe(0)
+      expect((await query({ permissions: {}, search: 'MEM-789' })).total).toBe(0)
+    } finally { await db.exec('rollback') }
   })
   it('resolves medicine names and includes the last instant in September', async () => {
     const result = await query({ search: 'Paracetamol', event: 'inventory' })
