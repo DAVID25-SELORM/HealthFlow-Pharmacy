@@ -2163,8 +2163,19 @@ export const validateNhisMedicineDurationInput = (duration) => {
   return ''
 }
 
+// Export-only interpretation of historical NHIS durations. Clinical entry
+// validation remains strict; normalization never writes back to the record.
+const resolveNhisExportDurationDays = (duration) => {
+  const value = typeof duration === 'number' ? String(duration) : normalizeText(duration)
+  const match = value.trim().match(/^([0-9]+)(?:\s+(days?|weeks?|months?))?$/i)
+  if (!match) return null
+  const unit = (match[2] || 'days').toLowerCase()
+  const days = Number(match[1]) * (unit.startsWith('week') ? 7 : unit.startsWith('month') ? 30 : 1)
+  return Number.isSafeInteger(days) && days > 0 ? days : null
+}
+
 export const normalizeClaimItDurationForExport = (duration) => {
-  const days = validateNhisMedicineDurationInput(duration) ? null : parseDurationDays(duration)
+  const days = resolveNhisExportDurationDays(duration)
   if (!days) return { value: null, unit: null, desc: null }
   return {
     value: Number(days).toFixed(2),
@@ -2184,20 +2195,20 @@ export const normalizeNhisManualDurationCorrection = (duration) => {
 }
 
 export const analyzeNhisDurationForRepair = (duration) => {
-  const originalValue = normalizeText(duration)
+  const originalValue = typeof duration === 'number' ? String(duration) : normalizeText(duration)
   const value = originalValue.toLowerCase().replace(/\s+/g, ' ').trim()
   if (!value) {
     return { status: 'manual', originalValue, proposedValue: '', reason: 'Duration is missing.' }
   }
 
-  if (!validateNhisMedicineDurationInput(originalValue)) {
-    const days = parseDurationDays(originalValue)
+  const days = resolveNhisExportDurationDays(duration)
+  if (days !== null) {
     return { status: 'valid', originalValue, proposedValue: originalValue, days,
       exportNormalizedValue: `${days} day${days === 1 ? '' : 's'}`,
-      reason: 'Valid clinical duration. Only the export representation is normalized.' }
+      reason: 'Duration is exportable in days. The clinical record remains unchanged.' }
   }
   return { status: 'manual', originalValue, proposedValue: '',
-    reason: 'Missing or ambiguous duration: verify the original prescription. Origin is not established by this value.' }
+    reason: 'Missing or invalid duration: verify the original prescription. A positive whole number and recognized day, week or month unit are required; bare numbers mean days.' }
 }
 
 export const buildNhisDurationRepairReview = (claims = []) => {
@@ -2236,7 +2247,7 @@ export const applyNhisDurationRepairs = async (repairs = []) => {
   }
   const payload = repairs.map((repair) => {
     const analyzed = analyzeNhisDurationForRepair(repair.newValue || repair.proposedValue)
-    if (analyzed.status !== 'valid') {
+    if (validateNhisMedicineDurationInput(repair.newValue || repair.proposedValue) || analyzed.status !== 'valid') {
       throw new Error('Every repaired duration must be a positive whole number followed by day or days.')
     }
     return {

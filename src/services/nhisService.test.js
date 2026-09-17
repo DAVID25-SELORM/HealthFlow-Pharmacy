@@ -1688,7 +1688,7 @@ describe('CLAIM-it export helpers', () => {
       value: '84.00', unit: 'DAYS', desc: '84 Days',
     })
     expect(normalizeClaimItDurationForExport('90')).toEqual({
-      value: null, unit: null, desc: null,
+      value: '90.00', unit: 'DAYS', desc: '90 Days',
     })
     expect(normalizeClaimItDurationForExport('90 days')).toEqual({
       value: '90.00', unit: 'DAYS', desc: '90 Days',
@@ -1698,9 +1698,35 @@ describe('CLAIM-it export helpers', () => {
     for (const value of ['90 days', '1 month', '2 months', '2 weeks']) {
       expect(analyzeNhisDurationForRepair(value)).toMatchObject({ status: 'valid', proposedValue: value })
     }
-    for (const value of ['90DAYS', '90days', '90 day', '90', 'about 2 months', '2-3 weeks', '1 day5', '30DAYD', 'START', '', null]) {
+    for (const value of ['90DAYS', '90days', 'about 2 months', '2-3 weeks', '1 day5', '30DAYD', 'START', '', null]) {
       expect(analyzeNhisDurationForRepair(value).status).toBe('manual')
     }
+  })
+  it.each([['90', 90], ['72', 72], ['36', 36], ['30', 30], ['48', 48], ['60', 60],
+    ['31 Days', 31], ['31 DAYS', 31], ['4 WEEKS', 28], ['4 weeks', 28],
+    ['  90  ', 90], [' 4\tWEEKS ', 28], ['2 MONTHS', 60], [90, 90]])(
+    'normalizes historical export duration %s in days', (value, days) => {
+      expect(normalizeClaimItDurationForExport(value)).toEqual({ value: days.toFixed(2), unit: 'DAYS', desc: `${days} Days` })
+      expect(analyzeNhisDurationForRepair(value)).toMatchObject({ status: 'valid', days })
+    })
+  it.each([null, '', '   ', 'about 30 days', '30DAYD', '2-3 weeks', '0', '0 days', '-30', '-2 weeks', 'Infinity', '1.5 days'])(
+    'keeps invalid export duration %s unresolved', (value) => {
+      expect(analyzeNhisDurationForRepair(value).status).toBe('manual')
+      expect(normalizeClaimItDurationForExport(value).value).toBeNull()
+    })
+  it('reconciles the July aggregate fixture without changing source medicines', () => {
+    const medicines = [
+      ...Array.from({ length: 7452 }, () => ({ duration: '1 day' })),
+      ...Array.from({ length: 247 }, () => ({ duration: '90' })),
+      ...Array.from({ length: 269 }, () => ({ duration: '30' })),
+      { duration: '31 Days' }, { duration: '4 WEEKS' },
+      { duration: null }, { duration: null }, { duration: null },
+    ]
+    const claims = [{ id: 'synthetic', nhis_claim_medicines: medicines }]
+    const before = JSON.stringify(claims)
+    expect(buildNhisDurationRepairReview(claims)).toMatchObject({ valuesScanned: 7973, alreadyValid: 7970, manualReview: 3 })
+    medicines.forEach((medicine) => normalizeClaimItDurationForExport(medicine.duration))
+    expect(JSON.stringify(claims)).toBe(before)
   })
   it('canonicalizes safe manual day corrections and rejects malformed values', () => {
     expect(normalizeNhisManualDurationCorrection('1 DAY')).toBe('1 day')
@@ -1814,13 +1840,13 @@ describe('CLAIM-it export helpers', () => {
     expect(review).toMatchObject({
       claimsScanned: 1,
       valuesScanned: 6,
-      alreadyValid: 4,
+      alreadyValid: 5,
       automaticallyCorrected: 0,
-      exportNormalizations: 3,
-      manualReview: 2,
+      exportNormalizations: 4,
+      manualReview: 1,
     })
     expect(review.repairRows.map((row) => row.proposedValue)).toEqual([
-      '', '',
+      '',
     ])
 
     const repairedMedicines = sourceMedicines.map((medicine) => {
@@ -1861,7 +1887,7 @@ describe('CLAIM-it export helpers', () => {
     const inflatedText = inflateSync(Buffer.from((await buildNhisClaimItCxf(payload)).slice(3))).toString('latin1')
 
     expect(payload.claims[0].medicines.map((medicine) => medicine.duration)).toEqual([
-      '1 month', '2 months', '2 weeks', '15 days', '30 days', '15 days',
+      '1 month', '2 months', '2 weeks', '90', '30 days', '15 days',
     ])
     expect(sourceMedicines.map(medicine => medicine.duration)).toEqual(sourceDurations)
     expect(normalizeClaimItDurationForExport(sourceMedicines[2].duration).value).toBe('14.00')
@@ -1869,6 +1895,7 @@ describe('CLAIM-it export helpers', () => {
     expect(inflatedText).not.toContain('month')
     expect(inflatedText).not.toContain('week')
     expect(inflatedText).not.toContain('until finished')
+    expect(inflatedText).toContain('s:14:"duration_value";s:5:"90.00"')
   })
 
   it('builds a CLAIM-it JSON payload with diagnoses and medicines', () => {
