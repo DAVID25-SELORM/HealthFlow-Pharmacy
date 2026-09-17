@@ -212,12 +212,13 @@ const readRegisterRows = async (query, filters) => {
 export const listNhisPrescribingFacilities = async (filters = {}) => {
   if (shouldUseBranchServer()) {
     const localRows = await listFromBranch('facilities', filters)
-    if (localRows.length || getConnectivityState().internetAvailable === false) return localRows
+    if (localRows.length || getConnectivityState().internetAvailable === false) return localRows.filter(row => !row.is_shared)
   }
 
   let query = supabase
     .from('nhis_prescribing_facilities')
     .select('*')
+    .eq('is_shared', false)
     .order('facility_name', { ascending: true })
     .order('id', { ascending: true })
 
@@ -407,5 +408,21 @@ export const applyNhisPrescribingFacilitySnapshot = (claimForm = {}, facility = 
     prescribing_facility_name_snapshot: snapshot.prescribing_facility_name_snapshot,
     prescribingFacilityCodeSnapshot: snapshot.prescribingFacilityCodeSnapshot,
     prescribing_facility_code_snapshot: snapshot.prescribing_facility_code_snapshot,
+  }
+}
+
+// Changing a doctor must not refresh or erase the already chosen facility snapshot.
+export const applyNhisPrescriberSnapshot = (claimForm = {}, prescriber = null, defaultFacility = null) => {
+  const source = buildNhisPrescriptionSourceSnapshot({ prescriber, facility: defaultFacility })
+  if (!claimForm.prescribingFacilityId && !claimForm.referringFacility) return { ...claimForm, ...source }
+  return {
+    ...claimForm,
+    prescriberId: source.prescriberId,
+    prescriber_id: source.prescriber_id,
+    physicianName: source.physicianName,
+    prescriberNameSnapshot: source.prescriberNameSnapshot,
+    prescriber_name_snapshot: source.prescriber_name_snapshot,
+    prescriberLicenseSnapshot: source.prescriberLicenseSnapshot,
+    prescriber_license_snapshot: source.prescriber_license_snapshot,
   }
 }

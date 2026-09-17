@@ -1,3 +1,4 @@
+import PrescribingDirectoryAdmin from '../components/PrescribingDirectoryAdmin'
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import { getRoleLabel } from '../utils/roleLabels'
 import { Building2, GitBranch, Plus, Users, ChevronDown, ChevronUp, Eye, Pencil, Trash2 } from 'lucide-react'
@@ -460,6 +461,8 @@ const TenantAdmin = () => {
       </div>
 
       {error && <div className="tenant-alert">{error}</div>}
+
+      <PrescribingDirectoryAdmin />
 
       {/* Create Form */}
       {showCreate && (

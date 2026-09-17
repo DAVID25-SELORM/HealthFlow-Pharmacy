@@ -1,3 +1,4 @@
+import PrescribingFacilityPicker from '../components/PrescribingFacilityPicker'
 import ClaimCorrectionAlerts from '../components/ClaimCorrectionAlerts'
 import ClaimSearchScope from '../components/ClaimSearchScope'
 import { CLAIM_MONTHS, getClaimMonthRange } from '../utils/claimMonthRange'
@@ -132,7 +133,7 @@ import {
   NHIS_PRESCRIBER_TYPES,
   NHIS_PRESCRIBING_FACILITY_TYPES,
   applyNhisPrescribingFacilitySnapshot,
-  buildNhisPrescriptionSourceSnapshot,
+  applyNhisPrescriberSnapshot,
   createNhisPrescriber,
   getNhisPrescriberTextPatch,
   createNhisPrescribingFacility,
@@ -2083,32 +2084,12 @@ const Nhis = () => {
     userId: user?.id || null,
   })
 
-  const handleSelectPrescribingFacility = (facilityId) => {
-    const facility = prescribingFacilities.find((row) => row.id === facilityId) || null
-    setClaimForm((previous) => applyNhisPrescribingFacilitySnapshot(previous, facility))
-  }
-
   const handleSelectPrescriber = (prescriberId) => {
     const prescriber = prescribers.find((row) => row.id === prescriberId) || null
     const facility = prescribingFacilities.find((row) => row.id === claimForm.prescribingFacilityId) ||
       prescribingFacilities.find((row) => row.id === prescriber?.primary_facility_id) ||
       null
-    setClaimForm((previous) => ({
-      ...previous,
-      ...buildNhisPrescriptionSourceSnapshot({ facility, prescriber }),
-      prescriberId: prescriber?.id || '',
-      prescribingFacilityId: facility?.id || previous.prescribingFacilityId || '',
-    }))
-  }
-
-  const findMatchingPrescribingFacility = (value) => {
-    const term = normalizeText(value).toLowerCase()
-    if (!term) return null
-    return claimFacilityOptions.find((facility) => {
-      const name = getNhisPrescribingFacilityDisplayName(facility).toLowerCase()
-      const code = normalizeText(facility.nhia_facility_code ?? facility.nhiaFacilityCode).toLowerCase()
-      return term === name || (code && term === code) || (code && term === `${name} - ${code}`)
-    }) || null
+    setClaimForm(previous => applyNhisPrescriberSnapshot(previous, prescriber, facility))
   }
 
   const findMatchingPrescriber = (value) => {
@@ -2122,12 +2103,7 @@ const Nhis = () => {
     }) || null
   }
 
-  const handlePrescribingFacilityTextChange = (value, source = 'custom') => {
-    const facility = source === 'official' ? findMatchingPrescribingFacility(value) : null
-    if (facility) {
-      handleSelectPrescribingFacility(facility.id)
-      return
-    }
+  const handlePrescribingFacilityTextChange = (value) => {
     setClaimForm((previous) => ({
       ...previous,
       referringFacility: value,
@@ -8018,42 +7994,10 @@ const Nhis = () => {
                 {/* Referral */}
                 <section className="nhis-section">
                   <h3 className="nhis-section-title">Prescription Source</h3>
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label>Saved Facility</label>
-                      <select
-                        className="form-input"
-                        value={claimForm.prescribingFacilityId}
-                        onChange={(event) => handleSelectPrescribingFacility(event.target.value)}
-                      >
-                        <option value="">Select saved facility</option>
-                        {claimFacilityOptions.map((facility) => (
-                          <option key={facility.id} value={facility.id}>
-                            {getNhisPrescribingFacilityDisplayName(facility)}
-                            {facility.nhia_facility_code ? ` - ${facility.nhia_facility_code}` : ''}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="form-group">
-                      <label>Prescribing Facility *</label>
-                      <CompactSuggestionInput
-                        value={claimForm.referringFacility}
-                        required
-                        ariaLabel="Prescribing facility"
-                        onValueChange={handlePrescribingFacilityTextChange}
-                        options={claimFacilityOptions.map((facility) => {
-                          const name = getNhisPrescribingFacilityDisplayName(facility)
-                          const code = normalizeText(facility.nhia_facility_code ?? facility.nhiaFacilityCode)
-                          return {
-                            value: name,
-                            label: name,
-                            description: code ? `${code} - ${facility.facility_type || 'Saved facility'}` : facility.facility_type || 'Saved facility',
-                          }
-                        })}
-                      />
-                    </div>
-                  </div>
+                  <PrescribingFacilityPicker value={claimForm.referringFacility} facilityId={claimForm.prescribingFacilityId}
+                    privateOptions={claimFacilityOptions} nhis
+                    onSelect={facility => setClaimForm(previous => applyNhisPrescribingFacilitySnapshot(previous, facility))}
+                    onManualChange={handlePrescribingFacilityTextChange} />
                   <div className="form-row">
                     <div className="form-group">
                       <label>Referral Code / CCC</label>

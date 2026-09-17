@@ -1,0 +1,8 @@
+.prescribing-picker { width: 100%; margin-block: 12px; }
+.prescribing-picker label { display: block; margin-block: 6px; }
+.prescribing-picker ul { list-style: none; padding: 0; margin: 4px 0; max-height: 240px; overflow: auto; border: 1px solid #cbd5e1; border-radius: 6px; }
+.prescribing-picker li { padding: 10px; cursor: pointer; }
+.prescribing-picker li[aria-selected="true"], .prescribing-picker li:hover { background: #e0f2fe; color: #0c4a6e; }
+.prescribing-picker small { display: block; }
+.prescribing-picker .btn { margin: 6px 8px 4px 0; }
+.prescribing-selection { font-weight: 600; margin-bottom: 6px; }

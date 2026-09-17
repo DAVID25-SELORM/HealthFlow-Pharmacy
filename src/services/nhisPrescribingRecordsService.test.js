@@ -24,6 +24,7 @@ vi.mock('./auditService', () => ({
 import { supabase } from '../lib/supabase'
 import {
   applyNhisPrescribingFacilitySnapshot,
+  applyNhisPrescriberSnapshot,
   buildNhisPrescriptionSourceSnapshot,
   createNhisPrescriber,
   createNhisPrescribingFacility,
@@ -265,6 +266,7 @@ describe('NHIS prescribing records service', () => {
     const listQuery = (rows) => {
       const query = {
         select: vi.fn(() => query),
+        eq: vi.fn(() => query),
         order: vi.fn(() => query),
         limit: vi.fn(() => Promise.resolve({ data: rows, error: null })),
       }
@@ -280,4 +282,13 @@ describe('NHIS prescribing records service', () => {
     await expect(listNhisPrescribingFacilities({ status: 'all' })).resolves.toEqual(facilityRows)
     await expect(listNhisPrescribers({ status: 'all' })).resolves.toEqual(prescriberRows)
   })
+})
+
+it('preserves the historical shared or manual source when a doctor is selected', () => {
+  for (const facilityId of ['shared-id', '']) {
+    const original = { prescribingFacilityId: facilityId, prescribing_facility_id: facilityId || null, referringFacility: 'Original name', prescribingFacilityNameSnapshot: 'Original name', prescribing_facility_name_snapshot: 'Original name' }
+    const result = applyNhisPrescriberSnapshot(original, { id:'doctor',full_name:'Dr Test' }, { id:'different',facility_name:'New name' })
+    expect(result).toMatchObject({ ...original, prescriberId:'doctor',physicianName:'Dr Test' })
+    expect(original).not.toHaveProperty('prescriberId')
+  }
 })

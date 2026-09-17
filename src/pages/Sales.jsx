@@ -1,3 +1,5 @@
+import PrescribingFacilityPicker from '../components/PrescribingFacilityPicker'
+import { applyNhisPrescribingFacilitySnapshot } from '../services/nhisPrescribingRecordsService'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Search, Trash2, Plus, Minus, ShoppingCart, Printer, Download, X, CheckCircle2, ArrowLeft } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
@@ -232,6 +234,7 @@ const Sales = () => {
   // This is only copied into the separate NHIS review claim; it never
   // changes the completed POS sale or its accounting entries.
   const [nhiaCccNo, setNhiaCccNo] = useState('')
+  const [prescriptionSource, setPrescriptionSource] = useState({})
   const posDraftRecoveryReadyRef = useRef(false)
   const [loading, setLoading] = useState(true)
   const [processing, setProcessing] = useState(false)
@@ -769,6 +772,7 @@ const Sales = () => {
   const selectPatientForSale = (patient) => {
     // A CCC belongs to one member; never carry it forward when the patient changes.
     setNhiaCccNo('')
+    setPrescriptionSource({})
     if (!patient) {
       setPatientId('')
       setPatientSearchTerm('')
@@ -1146,6 +1150,7 @@ const Sales = () => {
       setNhiaDiagnosis(draft.nhiaDiagnosis || '')
       setNhiaDiagnosisDetails(Array.isArray(draft.nhiaDiagnosisDetails) ? draft.nhiaDiagnosisDetails : [])
       setNhiaCccNo(draft.nhiaCccNo || '')
+      setPrescriptionSource(draft.prescriptionSource || {})
       notify('Your unfinished sale has been restored. Review it before completing.', 'info')
     }
     void restore()
@@ -1166,12 +1171,12 @@ const Sales = () => {
         payload: {
           savedAt: new Date().toISOString(), cart, patientId, paymentMethod, paymentProvider,
           paymentPhone, paymentEmail, received, discountType, discountValue, insuranceCoverage,
-          patientTopUp, patientTopUpMethod, nhiaDiagnosis, nhiaDiagnosisDetails, nhiaCccNo,
+          patientTopUp, patientTopUpMethod, nhiaDiagnosis, nhiaDiagnosisDetails, nhiaCccNo, prescriptionSource,
         },
       })
     }, 500)
     return () => window.clearTimeout(timer)
-  }, [cart, discountType, discountValue, draftOrganizationId, insuranceCoverage, nhiaCccNo, nhiaDiagnosis, nhiaDiagnosisDetails, patientId, patientTopUp, patientTopUpMethod, paymentEmail, paymentMethod, paymentPhone, paymentProvider, processing, received, showReceipt, user?.id])
+  }, [prescriptionSource, cart, discountType, discountValue, draftOrganizationId, insuranceCoverage, nhiaCccNo, nhiaDiagnosis, nhiaDiagnosisDetails, patientId, patientTopUp, patientTopUpMethod, paymentEmail, paymentMethod, paymentPhone, paymentProvider, processing, received, showReceipt, user?.id])
   const selectedNhiaMemberNumber = getNhiaMemberNumber(selectedPatientForSale)
 
   useEffect(() => {
@@ -1364,6 +1369,7 @@ const Sales = () => {
       setNhiaDiagnosis('')
       setNhiaDiagnosisDetails([])
       setNhiaCccNo('')
+      setPrescriptionSource({})
       return
     }
 
@@ -1544,7 +1550,7 @@ const Sales = () => {
         diagnosis: isHospital ? nhiaDiagnosis.trim() : '',
         diagnosisDetails: isHospital ? nhiaDiagnosisDetails : [],
         serviceDate,
-        referringFacility: '',
+        ...prescriptionSource,
         referralCode: '',
         physicianName: '',
         preAuthCodes: '',
@@ -1891,6 +1897,7 @@ const Sales = () => {
         setNhiaDiagnosis('')
         setNhiaDiagnosisDetails([])
         setNhiaCccNo('')
+        setPrescriptionSource({})
         setPaymentPhone('')
         setPaymentEmail('')
         selectPatientForSale(null)
@@ -1981,6 +1988,7 @@ const Sales = () => {
           setNhiaDiagnosis('')
           setNhiaDiagnosisDetails([])
           setNhiaCccNo('')
+          setPrescriptionSource({})
           selectPatientForSale(null)
           const syncMessage = isOnline
             ? ' Review records have been queued for sync.'
@@ -2040,6 +2048,7 @@ const Sales = () => {
             setNhiaDiagnosis('')
             setNhiaDiagnosisDetails([])
             setNhiaCccNo('')
+            setPrescriptionSource({})
             selectPatientForSale(null)
             notify(
               `Sale saved to the local branch server.${claimMessage} It will sync to HealthFlow Cloud when internet returns.`,
@@ -2096,6 +2105,7 @@ const Sales = () => {
         setNhiaDiagnosis('')
         setNhiaDiagnosisDetails([])
         setNhiaCccNo('')
+        setPrescriptionSource({})
         selectPatientForSale(null)
         await refreshOfflineSalesSummary()
         notify('Sale saved offline. Keep this shift open until it syncs when internet returns.', 'success')
@@ -2145,6 +2155,7 @@ const Sales = () => {
       setNhiaDiagnosis('')
       setNhiaDiagnosisDetails([])
       setNhiaCccNo('')
+      setPrescriptionSource({})
       selectPatientForSale(null)
       
       notify(`Sale completed successfully.${claimMessage}`, 'success')
@@ -3273,6 +3284,9 @@ const Sales = () => {
                   </div>
                 )}
 
+                {isNhiaClaimSale && <PrescribingFacilityPicker nhis value={prescriptionSource.referringFacility || ''} facilityId={prescriptionSource.prescribingFacilityId || ''}
+                  onSelect={facility => setPrescriptionSource(previous => applyNhisPrescribingFacilitySnapshot(previous, facility))}
+                  onManualChange={value => setPrescriptionSource({ ...applyNhisPrescribingFacilitySnapshot({}, null), referringFacility: value, prescribingFacilityNameSnapshot: value, prescribing_facility_name_snapshot: value || null })} />}
                 {isNhiaClaimSale && isHospital && (
                   <div className="cash-field cash-field-input nhia-diagnosis-field">
                     <label htmlFor="nhia-diagnosis">Diagnoses</label>

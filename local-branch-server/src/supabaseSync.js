@@ -647,7 +647,9 @@ const importAll = async (
     createQuery: () => {
       let query = supabase.from(table).select(select)
       if (config.organizationId && organizationColumn) {
-        query = query.eq(organizationColumn, config.organizationId)
+        query = table === 'nhis_prescribing_facilities'
+          ? query.or(`organization_id.eq.${config.organizationId},is_shared.eq.true`)
+          : query.eq(organizationColumn, config.organizationId)
       }
       return query
     },

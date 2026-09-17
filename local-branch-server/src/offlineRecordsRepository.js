@@ -588,6 +588,31 @@ export const listOfflineRecords = (entityType, filters = {}) => {
     return listPatientRecords(filters)
   }
 
+  if (normalizedEntity === 'nhis_prescribing_facilities' && filters.directory === 'true') {
+    // Filter in SQLite before LIMIT so a large cache cannot hide matching names.
+    const term = String(filters.searchTerm || '').trim().toLowerCase()
+    return db.prepare(`SELECT * FROM offline_records WHERE entity_type = ?
+      AND json_extract(data_json, '$.is_shared') = 1
+      AND json_extract(data_json, '$.status') = 'active'
+      AND (? = 0 OR json_extract(data_json, '$.nhis_enabled') = 1)
+      AND instr(lower(COALESCE(json_extract(data_json, '$.facility_name'), '') || ' ' ||
+        COALESCE(json_extract(data_json, '$.aliases'), '') || ' ' ||
+        COALESCE(json_extract(data_json, '$.area'), '') || ' ' ||
+        COALESCE(json_extract(data_json, '$.town'), '') || ' ' ||
+        COALESCE(json_extract(data_json, '$.region'), '')), ?) > 0
+      ORDER BY COALESCE(json_extract(data_json, '$.nhis_enabled'), 0) DESC,
+        json_extract(data_json, '$.facility_name'), id LIMIT 30`)
+      .all(normalizedEntity, filters.nhisOnly === 'true' ? 1 : 0, term).map(recordToObject)
+  }
+
+  if (normalizedEntity === 'nhis_prescribing_facilities') {
+    return db.prepare(`SELECT * FROM offline_records WHERE entity_type = ?
+      AND COALESCE(json_extract(data_json, '$.is_shared'), 0) = 0
+      ORDER BY updated_at DESC, created_at DESC LIMIT ?`)
+      .all(normalizedEntity, Math.min(Math.max(Number(filters.limit) || 500, 1), MAX_OFFLINE_READ_LIMIT))
+      .map(recordToObject).filter(record => matchesFilters(record, filters))
+  }
+
   const limit = Math.min(Math.max(Number(filters.limit) || 500, 1), MAX_OFFLINE_READ_LIMIT)
   return listRecordsStatement
     .all(normalizedEntity, limit)
@@ -743,6 +768,9 @@ export const saveOfflineRecord = db.transaction((entityType, payload = {}) => {
   const timestamp = nowIso()
   const record = enrichRecord(normalizedEntity, payload)
   const existing = getRecordStatement.get(normalizedEntity, record.id)
+  if (normalizedEntity === 'nhis_prescribing_facilities' && (record.is_shared || (existing && recordToObject(existing).is_shared))) {
+    throw new Error('Shared directory entries must be managed by a platform administrator online.')
+  }
   if (normalizedEntity === 'nhis_claims') {
     assertNhisCccForSavedState(record)
     assertNhisDurationForSavedState(record)
