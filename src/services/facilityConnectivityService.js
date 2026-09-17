@@ -1,6 +1,11 @@
-import { supabase } from '../lib/supabase'
+import { supabase, getCachedSupabaseSession } from '../lib/supabase'
 
 export const recordFacilityBrowserContact = async () => {
+  const session = getCachedSupabaseSession()
+  // Optional presence reporting must not refresh an expired session or race
+  // sign-out. The SDK and authenticated user operations own auth recovery.
+  if (!session?.access_token || !Number.isFinite(session.expires_at) ||
+      session.expires_at * 1000 <= Date.now() + 30000) return
   const { error } = await supabase.rpc('record_facility_browser_contact')
   if (error) throw error
 }

@@ -44,6 +44,13 @@ describe('auth transport failure isolation', () => {
     expect((await clientOptions.global.fetch('https://project-ref.supabase.co/rest/v1/users')).status).toBe(401)
     expect(expired).toHaveBeenCalledTimes(1)
   })
+  it('does not let optional browser contact trigger refresh or logout', async () => {
+    fetchMock.mockResolvedValueOnce(new Response('{}', {status:401})).mockResolvedValue(new Response('{}'))
+    expect((await clientOptions.global.fetch('https://project-ref.supabase.co/rest/v1/rpc/record_facility_browser_contact')).status).toBe(401)
+    expect(refreshSession).not.toHaveBeenCalled()
+    expect(expired).not.toHaveBeenCalled()
+    expect((await clientOptions.global.fetch('https://project-ref.supabase.co/rest/v1/users')).status).toBe(200)
+  })
   it('surfaces network failure without dispatching logout', async () => {
     fetchMock.mockRejectedValue(new TypeError('Failed to fetch'))
     await expect(clientOptions.global.fetch('https://project-ref.supabase.co/rest/v1/users')).rejects.toThrow('Failed to fetch')

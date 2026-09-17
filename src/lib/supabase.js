@@ -239,6 +239,8 @@ const authRetryFetch = async (input, init = {}) => {
     response.status !== 401 ||
     !supabaseClient ||
     isSupabaseAuthRequest(requestUrl) ||
+    // Optional presence telemetry must not renew or expire a staff session.
+    /\/rest\/v1\/rpc\/record_facility_browser_contact(?:\?|$)/.test(String(requestUrl)) ||
     // Function wrappers own their one recovery attempt. Do not refresh twice.
     (String(requestUrl).includes('/functions/v1/') && !String(requestUrl).includes('/functions/v1/customer-epharmacy'))
   ) {

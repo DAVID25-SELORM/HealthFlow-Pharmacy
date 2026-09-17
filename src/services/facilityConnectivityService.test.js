@@ -1,8 +1,22 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { startFacilityContactReporting } from './facilityConnectivityService'
-vi.mock('../lib/supabase', () => ({ supabase: { rpc: vi.fn() } }))
+import { startFacilityContactReporting, recordFacilityBrowserContact } from './facilityConnectivityService'
+import { supabase, getCachedSupabaseSession } from '../lib/supabase'
+vi.mock('../lib/supabase', () => ({ supabase: { rpc: vi.fn() }, getCachedSupabaseSession: vi.fn() }))
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
 describe('facility contact reporting', () => {
+  it.each([null, {}, {access_token:'old',expires_at:1}, {access_token:'unknown'}])('skips contact without a usable session: %s', async (session) => {
+    supabase.rpc.mockClear()
+    getCachedSupabaseSession.mockReturnValue(session)
+    await recordFacilityBrowserContact()
+    expect(supabase.rpc).not.toHaveBeenCalled()
+  })
+  it('reports with a current session', async () => {
+    supabase.rpc.mockClear()
+    getCachedSupabaseSession.mockReturnValue({access_token:'current',expires_at:Date.now()/1000+3600})
+    supabase.rpc.mockResolvedValue({error:null})
+    await recordFacilityBrowserContact()
+    expect(supabase.rpc).toHaveBeenCalledWith('record_facility_browser_contact')
+  })
   it('reports once per minute and cleans up without affecting auth', async () => {
     vi.useFakeTimers()
     const send = vi.fn().mockResolvedValue()
