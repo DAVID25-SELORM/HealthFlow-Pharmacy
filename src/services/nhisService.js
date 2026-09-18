@@ -6865,7 +6865,7 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
         p_medicines: medicineRows,
         p_services: serviceRows,
         p_reason: correctionReason,
-        p_expected_updated_at: expectedUpdatedAt || null,
+        p_expected_updated_at: expectedUpdatedAt || existingClaim.updated_at || null,
       }
     )
     if (correctionError) {
@@ -10484,3 +10484,4 @@ export const exportNhisMonthlyFile = async (yearMonth, options = {}) =>
 
 export const exportNhisMonthlyCSV = async (yearMonth, options = {}) =>
   await exportNhisMonthlyFile(yearMonth, { ...options, format: 'csv' })
+
