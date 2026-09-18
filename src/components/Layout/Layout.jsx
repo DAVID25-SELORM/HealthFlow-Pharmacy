@@ -9,6 +9,7 @@ import {
 import Seo from '../Seo/Seo'
 import ProductionMetricsMonitor from '../Diagnostics/ProductionMetricsMonitor'
 import FacilityContactReporter from '../FacilityContactReporter'
+import SubscriptionNotice from '../SubscriptionNotice'
 import Sidebar from './Sidebar'
 import TopBar from './TopBar'
 import './Layout.css'
@@ -73,6 +74,7 @@ const Layout = () => {
       <Seo noindex title="Workspace" />
       <ProductionMetricsMonitor />
       <FacilityContactReporter />
+      <SubscriptionNotice />
       <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
       <button
         type="button"
