@@ -1,0 +1,2 @@
+.subscription-notice { display:flex; gap:.6rem; align-items:center; padding:.65rem 1rem; margin:.5rem 1rem; border:1px solid #f0b429; border-radius:.5rem; background:#fff8e1; color:#5f4300; font-size:.9rem; }
+.subscription-notice strong { white-space:nowrap; }
