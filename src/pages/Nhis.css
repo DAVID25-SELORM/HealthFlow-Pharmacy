@@ -3801,3 +3801,24 @@
   padding: 0.5rem;
 }
 .claim-correction-alerts__list ul { margin: 0.25rem 0 0.6rem; padding-left: 1.25rem; }
+
+/* Phones: the CC code box must stay readable. Stack the Generate/Validate button under it
+   instead of letting the long button squeeze the 5-digit input. */
+@media (max-width: 520px) {
+  .nhis-code-field {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .nhis-code-field .form-input {
+    width: 100%;
+    font-size: 1.1rem;
+    letter-spacing: 0.15em;
+  }
+
+  .nhis-code-field .nhis-code-generate {
+    width: 100%;
+    min-height: 2.75rem;
+    white-space: normal;
+  }
+}
