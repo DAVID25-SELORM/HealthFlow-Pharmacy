@@ -9062,17 +9062,13 @@ const compressClaimItSerializedClaim = async (serializedClaim) =>
 const SIGNER_KEYS = ['signedOn', 'signedByname', 'signedByuserID', 'signedByrole']
 
 /**
- * A VALID claim in a genuine Claim-IT export always carries its signer. Use the claim's own
- * stored signature when it is complete; otherwise the authenticated exporting user and the
- * export time. Stored and fallback values are never mixed, and with neither available the
- * fields stay null (reported as a warning) — no signer is ever invented.
+ * Signer fields are evidence, not export metadata. Only a complete signature already stored
+ * on the claim may be serialized. In particular, never infer a historical signer from the
+ * authenticated exporter; unsigned legacy claims must retain null signer fields.
  */
-const resolveClaimItSigner = (claim, exportActor, generatedAt) => {
+const resolveClaimItSigner = (claim) => {
   if (SIGNER_KEYS.every((key) => normalizeText(claim?.[key]))) {
     return { source: 'stored', signedOn: toClaimItDateTime(claim.signedOn), name: claim.signedByname, userId: claim.signedByuserID, role: claim.signedByrole }
-  }
-  if (normalizeText(exportActor?.name) && normalizeText(exportActor?.id) && normalizeText(exportActor?.role)) {
-    return { source: 'export_user', signedOn: generatedAt, name: exportActor.name, userId: exportActor.id, role: exportActor.role }
   }
   return { source: 'none', signedOn: null, name: null, userId: null, role: null }
 }
@@ -9108,8 +9104,7 @@ export const getClaimItExportWarnings = (payload) =>
   (payload?.claims || [])
     .map((claim) => {
       const warnings = classifyClaimSignature(claim).warnings
-      const fromExporter = resolveClaimItSigner(claim, payload.exportActor, null).source === 'export_user'
-      return { claimNumber: claim.claimNumber || claim.id || '', warnings: fromExporter ? ['SIGNER_ASSIGNED_FROM_EXPORT_USER'] : warnings }
+      return { claimNumber: claim.claimNumber || claim.id || '', warnings }
     })
     .filter((entry) => entry.warnings.length)
 
@@ -9253,7 +9248,7 @@ const buildClaimItRows = async (payload, runtimeOptions = {}) => {
       assertClaimItPrescriptionAttachmentForExport(claim)
     }
     const claimGuid = getClaimItGuid(claim.claimNumber || claim.patient.memberNumber, claimIndex)
-    const signer = resolveClaimItSigner(claim, payload.exportActor, generatedAt)
+    const signer = resolveClaimItSigner(claim)
     const medicineTotal = sumAmounts(claim.medicines.map((medicine) => medicine.totalAmount ?? 0))
     const serviceTotal = sumAmounts(claim.tariffServices.map((service) => service.totalAmount ?? 0))
     const serviceDate = claim.service.dateFrom || claim.medicines[0]?.dispensaryDate || claim.tariffServices[0]?.serviceDate || payload.periodFrom
