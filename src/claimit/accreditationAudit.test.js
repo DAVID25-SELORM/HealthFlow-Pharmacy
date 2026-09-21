@@ -4,6 +4,7 @@ import { PGlite } from '@electric-sql/pglite'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 
 const migration = readFileSync('supabase/migrations/20260921140000_audit_nhia_accreditation_date_changes.sql', 'utf8')
+const actorCorrection = readFileSync('supabase/migrations/20260921170000_audit_actor_from_authenticated_session.sql', 'utf8')
 const org = '00000000-0000-0000-0000-000000000010'
 const user = '00000000-0000-0000-0000-000000000020'
 const config = '00000000-0000-0000-0000-000000000030'
@@ -27,6 +28,8 @@ beforeAll(async () => {
   `)
   await db.exec(migration)
   await db.exec(migration) // idempotent replay
+  await db.exec(actorCorrection)
+  await db.exec(actorCorrection) // forward correction is replay-safe too
 }, 30000)
 afterAll(async () => { await db?.close() })
 
@@ -63,13 +66,25 @@ it('audits expiry independently and never logs secrets or credentials', async ()
   expect(serialized).not.toMatch(/SECRET-VALUE|OTHER|api_key|CRED-2/)
 })
 
-it('marks changes without an authenticated user (offline sync / SQL) and falls back to updated_by', async () => {
+it('never trusts client-supplied updated_by: no authenticated user means a null actor (offline sync / SQL)', async () => {
   await db.exec(`reset test.actor; reset test.email;`)
   await db.exec(`update nhia_configuration set accreditation_date_generated = '2025-10-06', updated_by = '${user}'`)
   const last = (await audit()).at(-1)
-  expect(last.actor_user_id).toBe(user)
+  expect(last.actor_user_id).toBeNull()
   expect(last.actor_email).toBeNull()
   expect(last.details.source).toBe('system_or_branch_sync')
+})
+
+it('attributes an authenticated change to the session user even when updated_by names someone else', async () => {
+  const other = '00000000-0000-0000-0000-000000000099'
+  await db.exec(`set test.actor='${user}'; set test.email='officer@example.test';`)
+  await db.exec(`update nhia_configuration set accreditation_date_generated = '2025-10-08', updated_by = '${other}'`)
+  const last = (await audit()).at(-1)
+  expect(last.actor_user_id).toBe(user)
+  expect(last.actor_email).toBe('officer@example.test')
+  expect(last.actor_user_id).not.toBe(other)
+  expect(last.details.source).toBe('authenticated_user')
+  await db.exec(`update nhia_configuration set accreditation_date_generated = '2025-10-06'`) // restore for later assertions
 })
 
 it('never blocks a settings save if the audit itself fails', async () => {
