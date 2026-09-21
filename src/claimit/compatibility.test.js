@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest'
 import { readFileSync, existsSync } from 'node:fs'
 import { deflateSync } from 'node:zlib'
 import reference from './may-reference-contract.json'
-import june from './west-point-june-contract.json'
 import { CLAIM_IT_CLAIM_FIELD_ORDER, orderedRecord, decimalAmount, sumAmounts, claimItServiceVersion, accreditationIssues, classifyClaimSignature } from './compatibility'
 import { parsePhp, readCxf, structuralContract, phpText, auditCxf } from '../../scripts/lib/cxf-reader.mjs'
 import { buildNhisClaimItCxf, buildNhisClaimItExportPayload, getClaimItExportWarnings } from '../services/nhisService'
@@ -28,14 +27,12 @@ const options = {
 }
 
 describe('Claim-IT reference contract', () => {
-  it('keeps all 76 claim fields in the accepted West Point June order (claimType last)', () => {
-    expect(CLAIM_IT_CLAIM_FIELD_ORDER).toEqual(june.fields.claims)
+  it('keeps all 76 claim fields in the genuine May order', () => {
+    expect(CLAIM_IT_CLAIM_FIELD_ORDER).toEqual(reference.fields.claims)
     expect(CLAIM_IT_CLAIM_FIELD_ORDER).toHaveLength(76)
-    expect(CLAIM_IT_CLAIM_FIELD_ORDER.indexOf('claimType')).toBe(75)
-    // The only claim-field-order difference from the May reference is claimType's position.
-    expect(CLAIM_IT_CLAIM_FIELD_ORDER.filter((key) => key !== 'claimType')).toEqual(reference.fields.claims.filter((key) => key !== 'claimType'))
+    expect(CLAIM_IT_CLAIM_FIELD_ORDER.indexOf('claimType')).toBe(24)
     const scrambled=Object.fromEntries([...CLAIM_IT_CLAIM_FIELD_ORDER].reverse().map((key) => [key,null]))
-    expect(Object.keys(orderedRecord(scrambled))).toEqual(june.fields.claims)
+    expect(Object.keys(orderedRecord(scrambled))).toEqual(reference.fields.claims)
     expect(() => orderedRecord({...scrambled,unrecognized:null})).toThrow('schema mismatch')
   })
   it('distinguishes PHP null, empty string, arrays, zero, string zero, and false', () => {
@@ -64,11 +61,10 @@ describe('Claim-IT reference contract', () => {
     expect(decimalAmount('999999999999.995')).toBe('1000000000000.00')
     expect(() => decimalAmount(NaN)).toThrow('Invalid decimal')
   })
-  it('keeps servVersion populated for medicine-only pharmacy claims, as in the accepted June export', () => {
-    expect(claimItServiceVersion({serviceCount:0,configuredVersion:'2023-02-01.250531'})).toBe('2023-02-01.250531')
+  it('keeps medicine-only service versions null, as in the May reference', () => {
+    expect(claimItServiceVersion({serviceCount:0,configuredVersion:'2023-02-01.250531'})).toBeNull()
     expect(claimItServiceVersion({serviceCount:1})).toBe('2023-02-01.250531')
-    expect(claimItServiceVersion({serviceCount:0,configuredVersion:'other'})).toBe('other')
-    expect(june.claimFieldTypes.servVersion).toEqual(['string'])
+    expect(claimItServiceVersion({serviceCount:0,configuredVersion:'other'})).toBeNull()
   })
   it('reports unsigned claims as a warning and never blocks or fabricates a signer', () => {
     expect(classifyClaimSignature({status:'VALID'})).toEqual({complete:false,missing:['signedOn','signedByname','signedByuserID','signedByrole'],warnings:['LEGACY_UNSIGNED_CLAIM']})
@@ -88,19 +84,19 @@ describe('Claim-IT reference contract', () => {
     const bytes=await buildNhisClaimItCxf(payload)
     expect(await buildNhisClaimItCxf(payload)).toEqual(bytes)
     const bundle=readCxf(bytes),contract=structuralContract(bundle)
-    expect(contract.topLevel).toEqual(june.topLevel)
-    expect(contract.sections).toEqual(june.sections)
-    expect(contract.schema).toEqual(june.schema)
-    expect(contract.fields.claims).toEqual(june.fields.claims)
-    expect(contract.fields.medicineentries).toEqual(june.fields.medicineentries)
-    expect(contract.fields.summaryitems).toEqual(june.fields.summaryitems)
-    expect(contract.appVersion).toEqual(Object.keys(june.appVersion))
-    expect(bundle.get('data').get('_meta').get('appVersion').has('cpuType')).toBe(false)
+    expect(contract.topLevel).toEqual(reference.topLevel)
+    expect(contract.sections).toEqual(reference.sections)
+    expect(contract.schema).toEqual(reference.schema)
+    expect(contract.fields.claims).toEqual(reference.fields.claims)
+    expect(contract.fields.medicineentries).toEqual(reference.fields.medicineentries)
+    expect(contract.fields.summaryitems).toEqual(reference.fields.summaryitems)
+    expect(contract.appVersion).toEqual(Object.keys(reference.appVersion))
+    expect(bundle.get('data').get('_meta').get('appVersion').has('cpuType')).toBe(true)
     const row=bundle.get('data').get('claims').get(0)
     expect(phpText(row.get('medCost'))).toBe('251.87')
     // Genuine stored signing evidence is preserved when present.
     expect(phpText(row.get('signedByname'))).toBe('Fixture Signer')
-    expect(phpText(row.get('servVersion'))).toBe('2023-02-01.250531')
+    expect(row.get('servVersion')).toBeNull()
     expect(auditCxf(bundle).finances).toEqual({invalidMedicineTotals:0,invalidServiceTotals:0,invalidClaimTotals:0,invalidSummaries:0,invalidBatchTotal:0})
   })
   it('retains a service tariff in populated service exports and reconciles both components', async () => {
@@ -115,7 +111,7 @@ describe('Claim-IT reference contract', () => {
     expect(auditCxf(bundle).finances.invalidClaimTotals).toBe(0)
     expect(auditCxf(bundle).finances.invalidSummaries).toBe(0)
   })
-  it('exports unsigned legacy claims with null signers (accepted June behavior) but rejects financially inconsistent claims', async () => {
+  it('exports unsigned legacy claims with null signers without weakening financial checks', async () => {
     const unsigned={...fixture,signed_on:null,signed_by_user_id:null,signed_by_name:null,signed_by_role:null}
     const payload=buildNhisClaimItExportPayload([unsigned],options)
     expect(getClaimItExportWarnings(payload)).toEqual([{claimNumber:'FIXTURE-1',warnings:['LEGACY_UNSIGNED_CLAIM']}])

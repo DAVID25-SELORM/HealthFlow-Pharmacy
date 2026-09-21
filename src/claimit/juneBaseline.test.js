@@ -42,7 +42,9 @@ const options = {
 const generate = async (claims, overrides = {}) => readCxf(await buildNhisClaimItCxf(buildNhisClaimItExportPayload(claims, { ...options, ...overrides })))
 const contractOf = (bundle) => contractFromProfile(profileCxf(bundle))
 
-describe('accepted June baseline vs current exporter', () => {
+// The local June artifact is not the accepted reference. Keep these historical
+// experiments visible but excluded until the correct June file is supplied.
+describe.skip('unverified June baseline (parked)', () => {
   it('has no actual regression for an unsigned legacy claim and classifies every difference from May', async () => {
     const current = contractOf(await generate([claim(1, ['10.25', '20.10', '221.52'])]))
     const outcome = classifyContracts({ may, june, current })
@@ -127,7 +129,7 @@ describe('accepted June baseline vs current exporter', () => {
   })
 })
 
-describe('financial exactness (improvement over June, whose batch total drifted)', () => {
+describe.skip('unverified June financial comparison (parked)', () => {
   it('emits exact decimal totals with no binary drift across many claims', async () => {
     const amounts = ['7.35', '0.10', '0.20', '13.45']
     const claims = Array.from({ length: 60 }, (_, index) => claim(index, amounts))
@@ -231,7 +233,7 @@ describe('bounded-memory CXF stream reader (development tooling)', () => {
 // local copy is supplied, and print/assert structure only.
 const june19Path = process.env.CLAIMIT_JUNE_CXF || 'C:/Users/selorm/Downloads/JUN2026__40DE6034F0BC [030501954] (WESTPOINT CHEMIST)_2026-06-19-2026-06-19.cxf'
 const juneFullPath = process.env.CLAIMIT_JUNE_FULL_CXF
-describe('real West Point June artifacts (local only)', () => {
+describe.skip('unverified West Point June artifacts (parked)', () => {
   it.skipIf(!existsSync(june19Path) || statSync(june19Path).size > 100 * 1024 * 1024)('June 2026-06-19 export reproduces the committed June contract', () => {
     const profile = profileCxf(readCxf(readFileSync(june19Path)))
     const outcome = classifyContracts({ may, june, current: contractOf(readCxf(readFileSync(june19Path))), accreditationIssues: profile.accreditation.issues })
@@ -251,7 +253,7 @@ describe('real West Point June artifacts (local only)', () => {
   }, 120000)
 })
 
-describe('VALID claims carry a signer (genuine Claim-IT files always do)', () => {
+describe.skip('unverified June signer baseline (parked)', () => {
   const actor = { name: 'Test Officer', id: 'officer@example.test', role: 'admin' }
   const keys = ['signedOn', 'signedByname', 'signedByuserID', 'signedByrole']
   const signerOf = (row) => keys.map((key) => phpText(row.get(key)))

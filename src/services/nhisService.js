@@ -3,6 +3,7 @@ import { assertNhisCccForSavedState, assertNhisCccForProgress, getNhisCccTransit
 import { supabase } from '../lib/supabase'
 import { getExportSigningEvidence, recordCxfExport } from './claimitLifecycleService'
 import { canonicalizeBundle } from '../claimit/fieldOrder'
+import mayReference from '../claimit/may-reference-contract.json'
 import { CLAIM_IT_PROFILE, CLAIM_IT_CLAIM_FIELD_ORDER, orderedRecord, decimalAmount, decimalUnits, sumAmounts, classifyClaimSignature } from '../claimit/compatibility'
 import { createCoalescedCloudRead } from '../utils/coalesceCloudRead'
 import { describeIncompleteClaimItConfiguration, getAccreditationDateIssues, getAccreditationEffectiveDateFromCredentialCode } from '../utils/nhiaAccreditationDates'
@@ -7456,7 +7457,7 @@ const getClaimItProviderLevelId = (claimRow = {}) =>
     claimRow.cateringStatusCode,
   ].filter(Boolean).join('-')
 
-const getClaimItDbStruct = () => ({
+const _getClaimItDbStructLegacy = () => ({
   accreditations: {
     uid: 'varchar(50)',
     prescriptionLevelID: 'varchar(255)',
@@ -7889,7 +7890,8 @@ const CLAIM_IT_PARTIAL_EXPORT_TABLES = [
   'prescribersfordays',
 ]
 
-const CLAIM_IT_REQUIRED_ROW_TABLES = new Set(['claims', 'validations', 'validation_zclaims'])
+// May's native export contains claim rows but empty validation tables.
+const CLAIM_IT_REQUIRED_ROW_TABLES = new Set(['claims'])
 
 const uniqueClaimItRows = (rows, getKey) => {
   const seen = new Set()
@@ -7906,7 +7908,14 @@ const sumClaimItRows = (rows, claimId) =>
     .filter((row) => row._claim_id === claimId)
     .reduce((sum, row) => sum + Number(row.cost || row.amount || 0), 0)
 
-const getClaimItPrescriberRows = (rows) =>
+// The genuine May artifact is the only verified structural reference. Build the
+// schema section from its sanitized contract so unverified June-only columns do
+// not leak into generated imports.
+const getClaimItDbStruct = () => Object.fromEntries(
+  Object.entries(mayReference.schema).map(([table, columns]) => [table, { ...columns }]),
+)
+
+const _getClaimItPrescriberRows = (rows) =>
   uniqueClaimItRows(
     rows.claims
       .filter((claim) => normalizeText(claim.physicianID))
@@ -9274,7 +9283,7 @@ const buildClaimItRows = async (payload, runtimeOptions = {}) => {
       isImported: null,
       refID: null,
       medVersion,
-      servVersion: serviceVersion,
+      servVersion: claim.tariffServices.length ? serviceVersion : null,
       policyVersion,
       isDirty: '0',
       status: 'VALID',
@@ -9552,10 +9561,10 @@ const buildNhisClaimItCxfBundle = async (payload, runtimeOptions = {}) => {
     attachmentdata: rows.attachmentdata,
     attachments: rows.attachments,
     comments: [],
-    validations: rows.validations,
+    validations: [],
     validation_results: [],
-    validation_zclaims: rows.validationZclaims,
-    prescribersfordays: getClaimItPrescriberRows(rows),
+    validation_zclaims: [],
+    prescribersfordays: [],
     _meta: meta,
     _dbstruct: getClaimItDbStruct(),
   }

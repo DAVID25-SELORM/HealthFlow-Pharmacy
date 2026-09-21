@@ -1,8 +1,5 @@
-// Compatibility baseline: the successful West Point June 2026 HealthFlow export
-// that Claim-IT accepted (see west-point-june-contract.json). The genuine May
-// Claim-IT file is only a structural reference; a difference from May is NOT a
-// defect when the same difference existed in the accepted June output (null
-// signers, claimType last, no cpuType, populated servVersion).
+// Compatibility baseline: the genuine May Claim-IT export supplied as the
+// structural and serialization reference. No unverified June artifact is used.
 // No patient, provider, or signer values belong here.
 export const CLAIM_IT_PROFILE = Object.freeze({
   serializerVersion: 'claimit-compat-v1',
@@ -13,7 +10,7 @@ export const CLAIM_IT_PROFILE = Object.freeze({
   appVersion: Object.freeze({
     version: 'Head', build: '2025053123', type: 'head',
     sha1: 'bebe76e96864d0f25d3514e5916816aadc34cff4',
-    client: '1.0.0.3', mode: 'standalone',
+    client: '1.0.0.3', mode: 'standalone', cpuType: 'x64',
   }),
 })
 
@@ -22,7 +19,7 @@ export const CLAIM_IT_CLAIM_FIELD_ORDER = Object.freeze([
   'specialtyAttended', 'totalCost', 'procCost', 'diagCost', 'inveCost', 'medCost',
   'principalGDRG', 'alternativeGDRG', 'autoSummaryGDRG', 'autoSummaryCost',
   'memberAge', 'memberAgeGroup', 'isImported', 'refID', 'medVersion', 'servVersion',
-  'policyVersion', 'isDirty', 'status', 'submissionTime', 'extraData',
+  'policyVersion', 'isDirty', 'status', 'claimType', 'submissionTime', 'extraData',
   'addedOn', 'addedByname', 'addedByuserID', 'addedByrole', 'modifiedOn',
   'modifiedByname', 'modifiedByuserID', 'modifiedByrole', 'signedOn',
   'signedByname', 'signedByuserID', 'signedByrole', 'memberNo', 'cardSerialNo',
@@ -34,7 +31,7 @@ export const CLAIM_IT_CLAIM_FIELD_ORDER = Object.freeze([
   'accred_ccd_effectiveDate', 'facilityTypeCode', 'ownershipTypeCode', 'cateringStatusCode',
   'refclaimCheckCode', 'reffacilityID', 'reffacilityName', 'minDOSP', 'maxDOSP',
   'serviceProvisionDates', 'specialtiesAttended', 'durationOfSpell', 'typeOfService',
-  'isUnbundled', 'includesPharmacy', 'typeOfAttendance', 'serviceOutcome', 'claimType',
+  'isUnbundled', 'includesPharmacy', 'typeOfAttendance', 'serviceOutcome',
 ])
 
 export function orderedRecord(record, fields = CLAIM_IT_CLAIM_FIELD_ORDER) {
@@ -44,11 +41,10 @@ export function orderedRecord(record, fields = CLAIM_IT_CLAIM_FIELD_ORDER) {
   return Object.fromEntries(fields.map((key) => [key, record[key]]))
 }
 
-// Accepted June behavior: the payload always carries the configured (default)
-// service tariff version, so servVersion is populated even for medicine-only
-// pharmacy claims. Do not force null merely because the May reference has null.
+// Match the May reference: medicine-only exports carry a null service version;
+// service-bearing claims carry the configured service tariff version.
 export function claimItServiceVersion({ serviceCount = 0, configuredVersion = '' } = {}) {
-  return configuredVersion || (serviceCount > 0 ? CLAIM_IT_PROFILE.serviceVersion : null)
+  return serviceCount > 0 ? (configuredVersion || CLAIM_IT_PROFILE.serviceVersion) : null
 }
 
 // Base-ten integer arithmetic. Round half away from zero only at the requested

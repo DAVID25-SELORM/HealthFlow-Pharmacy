@@ -1,16 +1,15 @@
 import { orderedRecord } from './compatibility'
-import june from './west-point-june-contract.json'
+import may from './may-reference-contract.json'
 
-// Canonical orders are the ones in the successful West Point June HealthFlow export
-// that Claim-IT accepted (extracted by scripts/extract-cxf-contract.mjs), NOT the
-// genuine May Claim-IT file: where the two differ, the accepted June behavior wins.
+// Canonical orders are taken from the genuine May Claim-IT export. No unverified
+// local June artifact is treated as acceptance evidence.
 // Table/column order comes from the JSON contract's ordered _dbstruct schema.
 export const TABLE_FIELD_ORDER = Object.freeze(Object.fromEntries(
-  Object.entries(june.schema).map(([table, columns]) => [table, Object.keys(columns)]),
+  Object.entries(may.schema).map(([table, columns]) => [table, Object.keys(columns)]),
 ))
 export const TOP_LEVEL_ORDER = Object.freeze(["lockID","dateGenerated","signedByName","signedByUsername","signedByRole","data","isBackup","isExport","isPartial","periodStart","periodEnd"])
 export const SECTION_ORDER = Object.freeze(["claims","serviceentries","medicineentries","summaryitems","attachmentdata","attachments","comments","validations","validation_results","validation_zclaims","prescribersfordays","_meta","_dbstruct"])
-export const APP_VERSION_ORDER = Object.freeze(Object.keys(june.appVersion))
+export const APP_VERSION_ORDER = Object.freeze(Object.keys(may.appVersion))
 export const ACCREDITATION_FIELD_ORDER = Object.freeze(['accred_effectiveDate','accred_providerID','facilityTypeCode','ownershipTypeCode','cateringStatusCode','prescriptionLevelID','facilityName','dateGenerated','expiryDate','credentialCode'])
 export const METADATA_PREFIX_ORDER = Object.freeze(['dbVersions','claimYear','claimMonth','claimType','facilityName','providerLevel','providerID','credentialCode','policies','medVersions','servVersions','appVersion','accreditations','credUsage'])
 
