@@ -8,3 +8,6 @@
 /supabase/migrations/ @DAVID25-SELORM
 /src/contracts/ @DAVID25-SELORM
 /config/production-baseline.json @DAVID25-SELORM
+/src/claimit/ @DAVID25-SELORM
+/scripts/lib/ @DAVID25-SELORM
+/docs/claimit-export-lock.md @DAVID25-SELORM
