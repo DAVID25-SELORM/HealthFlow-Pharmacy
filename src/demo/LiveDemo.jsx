@@ -5,6 +5,7 @@ import { requestAppConfirmation } from '../utils/appDialog'
 import './LiveDemo.css'
 
 const products = [{ id: 1, name: 'Artemether / Lumefantrine', strength: '20/120 mg', price: 34.5, stock: 42, category: 'Antimalarial' }, { id: 2, name: 'Paracetamol', strength: '500 mg', price: 8, stock: 184, category: 'Analgesic' }, { id: 3, name: 'Amoxicillin', strength: '500 mg', price: 22, stock: 9, category: 'Antibiotic' }, { id: 4, name: 'ORS Sachets', strength: '200 ml', price: 6.5, stock: 0, category: 'Wellness' }]
+/** @type {Array<[string, string, import('lucide-react').LucideIcon]>} */
 const nav = [['dashboard', 'Dashboard', BarChart3], ['pos', 'Point of Sale', ShoppingCart], ['inventory', 'Inventory', Boxes], ['nhis', 'NHIS Claims', ClipboardCheck], ['patients', 'Patients', Users], ['reports', 'Reports', FileText], ['staff', 'Staff', Users], ['offline', 'Offline Mode', Wifi], ['settings', 'Settings', Activity]]
 const money = (value) => `GHS ${Number(value).toLocaleString('en-GH', { minimumFractionDigits: 2 })}`
 

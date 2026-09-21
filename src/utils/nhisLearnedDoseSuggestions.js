@@ -17,7 +17,7 @@ const cacheKey = ({ organizationId = '', medicine = {} } = {}) => {
   return `healthflow.nhis.learned-doses:${organizationId}:${identity.nhisDrugId}:${identity.dosageForm}:${identity.strength}`
 }
 
-export const loadCachedNhisLearnedDoseSuggestions = ({ organizationId, medicine } = {}) => {
+export const loadCachedNhisLearnedDoseSuggestions = ({ organizationId = '', medicine = {} } = {}) => {
   if (!organizationId || typeof window === 'undefined') return []
   try {
     const cached = JSON.parse(window.localStorage.getItem(cacheKey({ organizationId, medicine })) || '[]')
@@ -27,7 +27,7 @@ export const loadCachedNhisLearnedDoseSuggestions = ({ organizationId, medicine 
   }
 }
 
-export const cacheNhisLearnedDoseSuggestions = ({ organizationId, medicine, suggestions } = {}) => {
+export const cacheNhisLearnedDoseSuggestions = ({ organizationId = '', medicine = {}, suggestions = [] } = {}) => {
   if (!organizationId || typeof window === 'undefined') return
   try {
     window.localStorage.setItem(cacheKey({ organizationId, medicine }), JSON.stringify(Array.isArray(suggestions) ? suggestions : []))
@@ -36,6 +36,7 @@ export const cacheNhisLearnedDoseSuggestions = ({ organizationId, medicine, sugg
   }
 }
 
+/** @param {{organizationId?: string, medicine?: object, observation?: {doseValue: number, doseUnit: string}}} options */
 export const rememberCachedNhisLearnedDoseSuggestion = ({ organizationId, medicine, observation } = {}) => {
   if (!observation) return
   const cached = loadCachedNhisLearnedDoseSuggestions({ organizationId, medicine })

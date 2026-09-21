@@ -159,7 +159,7 @@ export const addCashbookEntry = async ({
   branchId,
   entryType,
   sourceType,
-  sourceId,
+  sourceId = null,
   amount,
   direction,
   description,

@@ -122,12 +122,12 @@ const TenantAdmin = () => {
 
   // Edit pharmacy modal
   const [editOrg, setEditOrg] = useState(null)
-  const [editForm, setEditForm] = useState({})
+  const [editForm, setEditForm] = useState(/** @type {Partial<typeof blankPharmacy & {status: string, trialEndsAt: string, subscriptionEndsAt: string, lastPaymentAt: string}>} */ ({}))
   const [saving, setSaving] = useState(false)
 
   // Edit user modal
   const [editUser, setEditUser] = useState(null)
-  const [editUserForm, setEditUserForm] = useState({})
+  const [editUserForm, setEditUserForm] = useState(/** @type {{fullName?: string, email?: string, role?: string, assignedRoles?: string[], isActive?: boolean}} */ ({}))
   const [savingUser, setSavingUser] = useState(false)
   const [deletingOrgId, setDeletingOrgId] = useState('')
 
@@ -729,7 +729,7 @@ const TenantAdmin = () => {
                 <div className="tenant-form-group full-width">
                   <label>Billing Notes</label>
                   <textarea
-                    rows="3"
+                    rows={3}
                     value={pharmacy.billingNotes}
                     onChange={(e) => setPharmacy({ ...pharmacy, billingNotes: e.target.value })}
                     placeholder="Payment method, onboarding notes, support terms..."
@@ -1397,7 +1397,7 @@ const TenantAdmin = () => {
                   <div className="tenant-form-group full-width">
                     <label>Billing Notes</label>
                     <textarea
-                      rows="3"
+                      rows={3}
                       value={editForm.billingNotes}
                       onChange={(e) => setEditForm({ ...editForm, billingNotes: e.target.value })}
                       placeholder="Payment method, onboarding notes, support terms..."

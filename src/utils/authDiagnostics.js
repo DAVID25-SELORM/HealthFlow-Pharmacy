@@ -189,6 +189,9 @@ const REFRESH_CODES = new Set([
   'session_expired', 'user_banned', 'bad_jwt', 'validation_failed',
   'over_request_rate_limit', 'unexpected_failure', 'request_timeout',
 ])
+/** @param {Response} response
+ * @param {{attemptAt?: string|number, expiresAt?: string|number}} options
+ */
 export const logRefreshResponse = async (response, { attemptAt, expiresAt } = {}) => {
   if (!isAuthDiagnosticsEnabled()) return
   try {

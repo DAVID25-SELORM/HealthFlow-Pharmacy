@@ -437,6 +437,7 @@ const Dashboard = () => {
   }
 
   const statsCards = useMemo(() => {
+    /** @type {Array<{title: string, value: string, icon: import('lucide-react').LucideIcon, color: string, trend?: string, trendTone?: string, subtitle?: string}>} */
     const cards = [
       {
         title: "Today's Dispensing Sales",

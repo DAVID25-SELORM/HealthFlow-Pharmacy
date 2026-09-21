@@ -814,6 +814,7 @@ const resolveClaimItProviderLevelCode = (payload = {}, claimRow = {}) =>
     .filter(Boolean)
     .join('-')
 
+/** @param {{organizationType?: string, organization_type?: string, facilityName?: string, facility_name?: string, facilityCode?: string, facility_code?: string, licenseNumber?: string, license_number?: string}} settings */
 export const buildClaimItConfigPreview = (settings = {}, options = {}) => {
   const organizationType = normalizeOrganizationType(options.organizationType || settings.organizationType || settings.organization_type)
   const facilityType = getNhiaFacilityType({ ...settings, organizationType })
@@ -1094,8 +1095,7 @@ const buildMissingPrescriptionAttachmentSchemaError = () => {
   const error = new Error(
     'Prescription file upload completed, but the NHIS claim attachment database fields are missing. Run the latest HealthFlow Cloud migrations, then save the claim again.'
   )
-  error.code = 'NHIS_ATTACHMENT_SCHEMA_MISSING'
-  return error
+  return Object.assign(error, { code: 'NHIS_ATTACHMENT_SCHEMA_MISSING' })
 }
 
 const MAX_OPTIONAL_CLAIM_SCHEMA_FALLBACK_ATTEMPTS = OPTIONAL_CLAIM_SCHEMA_COLUMNS.length + 1
@@ -1161,8 +1161,7 @@ const updateNhisClaimWithSchemaFallback = async (id, payload, expectedUpdatedAt 
     const conflict = new Error(
       'This claim was changed by another staff member after you opened it. Reload the claim before saving so their work is not overwritten.'
     )
-    conflict.code = 'NHIS_CLAIM_CONFLICT'
-    return { data: null, error: conflict }
+    return { data: null, error: Object.assign(conflict, { code: 'NHIS_CLAIM_CONFLICT' }) }
   }
 
   return result
@@ -1241,9 +1240,7 @@ export const isNhisReadinessClaimsError = (error) =>
 
 const createNhisDuplicateClaimsError = (duplicateGroups = [], extra = {}) => {
   const firstClaim = duplicateGroups[0]?.claims?.[0] || {}
-  const error = new Error(getNhisDuplicateBlockMessage(firstClaim))
-  error.code = 'NHIS_DUPLICATE_CLAIMS'
-  error.duplicateGroups = duplicateGroups.map((group) => ({
+  const summaries = duplicateGroups.map((group) => ({
     key: group.key,
     member: group.member,
     patientName: group.patientName,
@@ -1264,8 +1261,10 @@ const createNhisDuplicateClaimsError = (duplicateGroups = [], extra = {}) => {
       updated_at: normalizeText(claim.updated_at || claim.updatedAt),
     })),
   }))
-  error.exportBlockingIssues = Array.isArray(extra.exportBlockingIssues) ? extra.exportBlockingIssues : []
-  return error
+  return Object.assign(new Error(getNhisDuplicateBlockMessage(firstClaim)), {
+    code: 'NHIS_DUPLICATE_CLAIMS', duplicateGroups: summaries,
+    exportBlockingIssues: Array.isArray(extra.exportBlockingIssues) ? extra.exportBlockingIssues : [],
+  })
 }
 
 const summarizeNhisReadinessClaim = (claim = {}, issues = []) => ({
@@ -1287,14 +1286,12 @@ const summarizeNhisReadinessClaim = (claim = {}, issues = []) => ({
 
 const createNhisReadinessClaimsError = (incompleteClaims = []) => {
   const readinessIssues = incompleteClaims.map(({ claim, issues }) => summarizeNhisReadinessClaim(claim, issues))
-  const first = readinessIssues[0] || {}
+  const first = readinessIssues[0]
   const error = new Error(
     `NHIA readiness checklist failed for ${readinessIssues.length} claim(s). ` +
-    `${first.claim_number || 'First claim'}: ${(first.issues || []).slice(0, 3).join(' ')}`
+    `${first?.claim_number || 'First claim'}: ${(first?.issues || []).slice(0, 3).join(' ')}`
   )
-  error.code = 'NHIS_READINESS_CLAIMS'
-  error.readinessIssues = readinessIssues
-  return error
+  return Object.assign(error, { code: 'NHIS_READINESS_CLAIMS', readinessIssues })
 }
 
 const _assertNoDuplicateNhisClaimsForTransfer = (claims = []) => {
@@ -1992,7 +1989,7 @@ export const getApplicableNhiaTariffItems = (
   )
 }
 
-const getTariffCatalogKey = ({ tariffVersion, facilityGroup, cateringOption, gdrgCode } = {}) =>
+const getTariffCatalogKey = ({ tariffVersion = '', facilityGroup = '', cateringOption = '', gdrgCode = '' } = {}) =>
   [
     asText(tariffVersion || NHIA_TARIFF_VERSION).toLowerCase(),
     asText(facilityGroup).toLowerCase(),
@@ -3441,7 +3438,11 @@ const logNhiaConfigEvent = (event, details = {}) => {
   console.info(`[NHIA CONFIG] ${event}`, payload)
 }
 
+/** @param {Record<string, string>} credentials
+ * @returns {Record<string, string>}
+ */
 const buildNhiaCredentialsPayload = (credentials = {}) => {
+  /** @type {Record<string, string>} */
   const payload = {}
 
   for (const [field, value] of Object.entries(credentials || {})) {
@@ -3452,6 +3453,24 @@ const buildNhiaCredentialsPayload = (credentials = {}) => {
   return payload
 }
 
+/**
+ * @typedef {object} NhiaApiSettings
+ * @property {Record<string, string>} [credentials]
+ * @property {{apiKey?: boolean, apiSecret?: boolean}} [credentialSummary]
+ * @property {string} [mode]
+ * @property {boolean} [hasApiKey]
+ * @property {boolean} [has_api_key]
+ * @property {boolean} [hasApiSecret]
+ * @property {boolean} [has_api_secret]
+ * @property {string} [apiBaseUrl]
+ * @property {string} [memberLookupEndpointPath]
+ * @property {string} [credentialMode]
+ * @property {string} [organizationId]
+ * @property {string} [organization_id]
+ * @property {string} [branchId]
+ * @property {string} [branch_id]
+ */
+/** @param {NhiaApiSettings} settings */
 const sanitizeNhiaApiSettingsPayload = (settings = {}) => {
   const sanitized = { ...(settings || {}) }
   Object.assign(sanitized, resolveNhiaApiBaseUrls(sanitized))
@@ -3747,6 +3766,7 @@ export const flushClaimItBridgeQueue = async () => {
 
 let claimItBridgeQueueTimer = null
 
+/** @param {{onSynced?: (result: Awaited<ReturnType<typeof flushClaimItBridgeQueue>>) => void}} options */
 export const startClaimItBridgeQueueAutoSync = ({ onSynced } = {}) => {
   if (typeof window === 'undefined') return () => {}
   const run = async () => {
@@ -4259,7 +4279,7 @@ export const generateHostedNhiaCcCode = async (claimContext = {}) => {
 }
 
 const submitHostedNhiaDirectPayload = async ({
-  payload,
+  payload = null,
   payloadContent = '',
   contentType = 'application/json',
   claimIds = [],
@@ -4575,7 +4595,13 @@ const createClaimItAttachmentFields = async (file, options = {}) => {
   }
 }
 
-const withClaimItAttachmentFileName = (payload = {}, claimNumber = '') => {
+/**
+ * @template {{claimit_attachment_base64?: string, claimit_attachment_file_name?: string, claimit_attachment_file_type?: string, claimit_attachment_mime_type?: string}} T
+ * @param {T} payload
+ * @param {string} claimNumber
+ * @returns {T}
+ */
+const withClaimItAttachmentFileName = (payload, claimNumber = '') => {
   if (!normalizeText(payload.claimit_attachment_base64)) return payload
   return {
     ...payload,
@@ -5397,6 +5423,9 @@ const hydrateClaimsWithMedicineLines = async (claims = []) => {
     unit_price, dispensed_qty, dispensary_date,
     dose, frequency, duration, total_amount
   `
+  /** @param {string[]} claimIdBatch
+   * @param {typeof fullSelect | typeof basicSelect} select
+   */
   const fetchMedicineBatch = async (claimIdBatch, select = fullSelect) =>
     await supabase
       .from('nhis_claim_medicines')
@@ -5589,7 +5618,6 @@ const fetchNhisClaimsPageFromSupabase = async (filters = {}, { ascending = false
   if (issueFilter && issueFilter !== 'all') {
     const issuePage = await fetchNhisIssueFilteredClaimsPageFromSupabase(filters, {
       ascending,
-      includeDetails,
       issueFilter,
       from,
       to,
@@ -5613,6 +5641,7 @@ const fetchNhisClaimsPageFromSupabase = async (filters = {}, { ascending = false
     }
   }
 
+  /** @type {{count?: 'exact'}} */
   const selectOptions = filters.includeTotal === false ? {} : { count: 'exact' }
   const buildQuery = (select = defaultSelect) =>
     applyNhisClaimFilters(
@@ -6351,7 +6380,7 @@ export const getNhisClaimStats = async () => {
 
 // Learned doses are convenience suggestions only. The RPC derives the
 // organization from auth context; callers never send a tenant identifier.
-export const getNhisLearnedDoseSuggestions = async ({ nhisDrugId, dosageForm, strength } = {}) => {
+export const getNhisLearnedDoseSuggestions = async ({ nhisDrugId = '', dosageForm = '', strength = '' } = {}) => {
   if (!nhisDrugId || !dosageForm || !strength || shouldUseBranchServer()) return []
   const { data, error } = await supabase.rpc('get_nhis_dose_suggestions', {
     p_nhis_drug_id: nhisDrugId,
@@ -6704,8 +6733,7 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
         const conflict = new Error(
           'This claim was changed by another staff member after you opened it. Reload the claim before saving so their work is not overwritten.'
         )
-        conflict.code = 'NHIS_CLAIM_CONFLICT'
-        throw conflict
+        throw Object.assign(conflict, { code: 'NHIS_CLAIM_CONFLICT' })
       }
     }
 
@@ -6878,8 +6906,7 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
     if (correctionError) {
       if (correctionError.code === '40001' || /modified by another user/i.test(correctionError.message || '')) {
         const conflict = new Error('This claim was modified by another user. Reload the latest version before saving.')
-        conflict.code = 'NHIS_CLAIM_CONFLICT'
-        throw conflict
+        throw Object.assign(conflict, { code: 'NHIS_CLAIM_CONFLICT' })
       }
       throw correctionError
     }
@@ -10133,7 +10160,7 @@ const hydrateNhisPrescriptionUrlsForTransfer = async (claims = [], options = {})
       if (error) throw error
       ;(data || []).forEach((item, index) => {
         const path = normalizeText(item?.path || chunk[index])
-        const signedUrl = normalizeText(item?.signedUrl || item?.signedURL)
+        const signedUrl = normalizeText(item?.signedUrl || (item && 'signedURL' in item ? item.signedURL : ''))
         if (path && signedUrl) signedUrlsByPath.set(path, signedUrl)
       })
       if (typeof console !== 'undefined') {

@@ -586,7 +586,7 @@ const Claims = () => {
           <tbody>
             {filteredClaims.length === 0 ? (
               <tr>
-                <td colSpan="7" style={{ textAlign: 'center', padding: '2rem' }}>
+                <td colSpan={7} style={{ textAlign: 'center', padding: '2rem' }}>
                   No claims found for this filter.
                 </td>
               </tr>
@@ -882,7 +882,7 @@ const Claims = () => {
               <div className="form-group">
                 <label>Additional Notes</label>
                 <textarea
-                  rows="2"
+                  rows={2}
                   value={formData.notes}
                   onChange={(event) =>
                     setFormData({ ...formData, notes: event.target.value })
@@ -926,7 +926,7 @@ const Claims = () => {
               <div className="form-group">
                 <label>Reason for rejection *</label>
                 <textarea
-                  rows="3"
+                  rows={3}
                   value={rejectionReason}
                   onChange={(event) => setRejectionReason(event.target.value)}
                   placeholder="Provide a clear reason for rejection"

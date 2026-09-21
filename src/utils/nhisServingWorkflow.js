@@ -119,14 +119,15 @@ export const markNhisMedicineFullyServed = (medicine = {}) => {
   }
 }
 
+/** @param {string|{status?: string, direct_served_at?: string, directServedAt?: string}} claimOrStatus */
 export const canMcaOpenNhisClaimForServing = (claimOrStatus = '') => {
-  if (claimOrStatus && typeof claimOrStatus === 'object') {
+  if (typeof claimOrStatus === 'object' && claimOrStatus !== null) {
     if (isNhisClaimDirectlyServed(claimOrStatus)) return false
     return NHIS_MCA_OPENABLE_STATUSES.has(
       normalizeNhisServingStatus(claimOrStatus.status)
     )
   }
-  return NHIS_MCA_OPENABLE_STATUSES.has(normalizeNhisServingStatus(claimOrStatus))
+  return NHIS_MCA_OPENABLE_STATUSES.has(normalizeNhisServingStatus(String(claimOrStatus || '')))
 }
 
 export const shouldApplyMcaEditWindowToClaim = (status = '') =>

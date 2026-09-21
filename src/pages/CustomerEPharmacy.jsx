@@ -590,7 +590,7 @@ const CustomerEPharmacy = () => {
                       </label>
                       <label>Allergies<input name="clinicalAllergies" value={profileForm.allergies} onChange={(e) => setProfileForm((p) => ({ ...p, allergies: e.target.value }))} required /></label>
                       <label>Current medicines<input name="clinicalCurrentMedications" value={profileForm.currentMedications} onChange={(e) => setProfileForm((p) => ({ ...p, currentMedications: e.target.value }))} required /></label>
-                      <label className="wide">Symptoms or pharmacist note<textarea name="clinicalNotes" rows="3" value={orderForm.clinicalNotes} onChange={(e) => setOrderForm((o) => ({ ...o, clinicalNotes: e.target.value }))} /></label>
+                      <label className="wide">Symptoms or pharmacist note<textarea name="clinicalNotes" rows={3} value={orderForm.clinicalNotes} onChange={(e) => setOrderForm((o) => ({ ...o, clinicalNotes: e.target.value }))} /></label>
                     </div>
                     <label className="customer-file-upload">
                       <Upload size={18} />

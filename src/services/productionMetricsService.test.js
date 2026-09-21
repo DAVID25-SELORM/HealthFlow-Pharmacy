@@ -6,9 +6,19 @@ import {
   recordProductionMetricsSample,
   recordTierAccessEnd,
   resetProductionMetrics,
+  subscribeProductionMetrics,
 } from './productionMetricsService'
 
 describe('productionMetricsService', () => {
+  it('returns a void cleanup function and stops notifying after unsubscribe', () => {
+    const listener = vi.fn()
+    const unsubscribe = subscribeProductionMetrics(listener)
+    expect(listener).toHaveBeenCalledOnce()
+    expect(unsubscribe()).toBeUndefined()
+    listener.mockClear()
+    resetProductionMetrics()
+    expect(listener).not.toHaveBeenCalled()
+  })
   beforeEach(() => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-07-10T08:00:00Z'))

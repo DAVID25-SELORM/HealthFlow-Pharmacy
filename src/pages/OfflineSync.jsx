@@ -2290,7 +2290,7 @@ HEALTHFLOW_UPDATE_AUTO_INSTALL=false`}</pre>
               <label className="nhia-wide">
                 <span>Certificate PEM {nhiaSettings?.credentialSummary?.certPem ? '(saved)' : ''}</span>
                 <textarea
-                  rows="4"
+                  rows={4}
                   value={nhiaForm.credentials.certPem}
                   onChange={(event) => updateNhiaCredential('certPem', event.target.value)}
                 />
@@ -2298,7 +2298,7 @@ HEALTHFLOW_UPDATE_AUTO_INSTALL=false`}</pre>
               <label className="nhia-wide">
                 <span>Private Key PEM {nhiaSettings?.credentialSummary?.keyPem ? '(saved)' : ''}</span>
                 <textarea
-                  rows="4"
+                  rows={4}
                   value={nhiaForm.credentials.keyPem}
                   onChange={(event) => updateNhiaCredential('keyPem', event.target.value)}
                 />
@@ -2314,7 +2314,7 @@ HEALTHFLOW_UPDATE_AUTO_INSTALL=false`}</pre>
               <label className="nhia-wide">
                 <span>CA PEM {nhiaSettings?.credentialSummary?.caPem ? '(saved)' : ''}</span>
                 <textarea
-                  rows="3"
+                  rows={3}
                   value={nhiaForm.credentials.caPem}
                   onChange={(event) => updateNhiaCredential('caPem', event.target.value)}
                 />

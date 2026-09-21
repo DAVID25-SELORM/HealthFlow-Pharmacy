@@ -305,7 +305,7 @@ export const getReceivables = async (branchId = null) => {
   if (nhisResult.status === 'fulfilled') receivables.push(...nhisResult.value)
   else console.warn('Unable to load NHIS receivables:', nhisResult.reason)
 
-  return receivables.sort((a, b) => new Date(a.service_date) - new Date(b.service_date))
+  return receivables.sort((a, b) => new Date(a.service_date).getTime() - new Date(b.service_date).getTime())
 }
 
 export const recordClaimPayment = async (paymentData) => {

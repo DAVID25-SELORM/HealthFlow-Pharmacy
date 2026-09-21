@@ -1,4 +1,25 @@
 // Presentation only: retain the server's readiness and freshness decisions.
+/**
+ * @typedef {{failed?: number, pending?: number, syncing?: number}} QueueCounts
+ * @typedef {{state?: string}} SnapshotState
+ * @typedef {object} OfflineReadiness
+ * @property {string} [organizationId]
+ * @property {string} [branchId]
+ * @property {boolean} [ready]
+ * @property {string} [state]
+ * @property {QueueCounts} [queue]
+ * @property {Record<string, SnapshotState>} [snapshots]
+ * @property {{offlinePinReady?: number, missingOfflinePin?: number}} [staff]
+ * @property {Array<{id?: string, required?: boolean, passed?: boolean}>} [checks]
+ * @property {SnapshotState} [backups]
+ * @property {{compatible?: boolean}} [compatibility]
+ */
+/**
+ * @param {{config?: {enabled?: boolean, token?: string}, health?: {ok?: boolean}, readiness?: OfflineReadiness,
+ * status?: QueueCounts & {summary?: QueueCounts}, organizationId?: string, branchId?: string, busy?: string,
+ * test?: {passed?: boolean, organizationId?: string, branchId?: string},
+ * productionVerification?: {acceptanceTest?: {passed?: boolean}, organizationId?: string, branchId?: string}, internetAvailable?: boolean}} options
+ */
 export const getOfflineModeSummary = ({ config = {}, health, readiness, status, organizationId, branchId, busy = '', test, productionVerification, internetAvailable = true } = {}) => {
   const connected = Boolean(health?.ok)
   const configured = Boolean(config.enabled && config.token)

@@ -8,7 +8,7 @@ const money = (value) => Math.round((Number(value) || 0) * 100) / 100
 
 export const normalizeNhisTopUpPolicy = (value, { legacyTopUpsEnabled = false } = {}) => {
   const normalized = String(value || '').trim().toLowerCase()
-  if (Object.values(NHIS_TOP_UP_POLICIES).includes(normalized)) {
+  if (Object.values(NHIS_TOP_UP_POLICIES).some((policy) => policy === normalized)) {
     return normalized
   }
 
@@ -30,7 +30,7 @@ export const isNhisSettlementEligible = (item) => {
 export const calculateNhisSplitSettlement = ({
   items = [],
   discount = 0,
-  topUpPolicy,
+  topUpPolicy = '',
   legacyTopUpsEnabled = false,
 } = {}) => {
   const policy = normalizeNhisTopUpPolicy(topUpPolicy, { legacyTopUpsEnabled })

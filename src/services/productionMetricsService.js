@@ -431,7 +431,7 @@ export const getProductionMetricsSnapshot = () => {
 export const subscribeProductionMetrics = (subscriber) => {
   subscribers.add(subscriber)
   subscriber(getProductionMetricsSnapshot())
-  return () => subscribers.delete(subscriber)
+  return () => { subscribers.delete(subscriber) }
 }
 
 export const resetProductionMetrics = () => {

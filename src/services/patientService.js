@@ -404,8 +404,8 @@ const dedupeClaims = (claims = []) => {
 const sortHistoryClaims = (claims = []) =>
   [...claims].sort(
     (left, right) =>
-      new Date(getNhisClaimVisitDate(right) || 0) -
-      new Date(getNhisClaimVisitDate(left) || 0)
+      new Date(getNhisClaimVisitDate(right) || 0).getTime() -
+      new Date(getNhisClaimVisitDate(left) || 0).getTime()
   )
 
 const fetchCloudNhisClaimHistory = async (column, value) => {

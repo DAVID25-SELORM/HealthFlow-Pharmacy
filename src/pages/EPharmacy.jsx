@@ -786,7 +786,7 @@ const EPharmacy = () => {
               <label>
                 Notes
                 <textarea
-                  rows="3"
+                  rows={3}
                   value={orderForm.notes}
                   onChange={(event) => setOrderForm((current) => ({ ...current, notes: event.target.value }))}
                 />
@@ -876,7 +876,7 @@ const EPharmacy = () => {
               <label>
                 Warning
                 <textarea
-                  rows="3"
+                  rows={3}
                   value={controlForm.warning}
                   onChange={(event) => setControlForm((current) => ({ ...current, warning: event.target.value }))}
                 />

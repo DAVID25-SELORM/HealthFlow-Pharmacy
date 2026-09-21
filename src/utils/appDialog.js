@@ -36,6 +36,7 @@ const requestAppDialog = (payload) =>
     }
   })
 
+/** @param {Parameters<typeof buildActionConfirmation>[0] & {message?: string, cancelText?: string}} options */
 export const requestAppConfirmation = ({ message = '', cancelText = 'Cancel', ...options }) =>
   requestAppDialog({
     type: 'confirm',

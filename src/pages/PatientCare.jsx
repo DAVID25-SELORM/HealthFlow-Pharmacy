@@ -530,7 +530,7 @@ function PatientCare() {
               </div>
               <label>
                 Notes
-                <textarea value={vitalsForm.notes} onChange={(event) => setVitalsForm({ ...vitalsForm, notes: event.target.value })} rows="3" />
+                <textarea value={vitalsForm.notes} onChange={(event) => setVitalsForm({ ...vitalsForm, notes: event.target.value })} rows={3} />
               </label>
               <button type="submit" className="btn btn-primary">
                 <Plus size={16} />
@@ -690,7 +690,7 @@ function PatientCare() {
                 <label>Due Date<input type="date" value={followUpForm.dueDate} onChange={(event) => setFollowUpForm({ ...followUpForm, dueDate: event.target.value })} /></label>
                 <label>Priority<select value={followUpForm.priority} onChange={(event) => setFollowUpForm({ ...followUpForm, priority: event.target.value })}><option>Routine</option><option>High</option><option>Urgent</option></select></label>
               </div>
-              <label>Notes<textarea rows="3" value={followUpForm.notes} onChange={(event) => setFollowUpForm({ ...followUpForm, notes: event.target.value })} /></label>
+              <label>Notes<textarea rows={3} value={followUpForm.notes} onChange={(event) => setFollowUpForm({ ...followUpForm, notes: event.target.value })} /></label>
               <button type="submit" className="btn btn-primary">
                 <Plus size={16} />
                 Add Follow-up
@@ -742,7 +742,7 @@ function PatientCare() {
                 <label>Channel<select value={messageForm.channel} onChange={(event) => setMessageForm({ ...messageForm, channel: event.target.value })}>{messageChannels.map((item) => <option key={item}>{item}</option>)}</select></label>
                 <label>Template<select value={messageForm.template} onChange={(event) => setMessageForm({ ...messageForm, template: event.target.value })}><option value="refill">Refill</option><option value="birthday">Birthday</option><option value="followup">Follow-up</option><option value="screening">Screening</option></select></label>
               </div>
-              <label>Message<textarea rows="5" value={messageForm.message} onChange={(event) => setMessageForm({ ...messageForm, message: event.target.value })} /></label>
+              <label>Message<textarea rows={5} value={messageForm.message} onChange={(event) => setMessageForm({ ...messageForm, message: event.target.value })} /></label>
               <button type="submit" className="btn btn-primary">
                 <Send size={16} />
                 Save to Local Queue

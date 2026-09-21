@@ -67,9 +67,11 @@ export const generateReceiptPDF = (saleData, pharmacyInfo) => {
   const receiptFooter = getReceiptFooter(pharmacyInfo)
   let y = 18
 
+  /** @type {[number, number, number]} */
   const green = [8, 119, 92]
   const dark = [16, 32, 51]
   const gray = [93, 108, 128]
+  /** @type {[number, number, number]} */
   const mint = [234, 248, 244]
 
   const setColor = (value) => doc.setTextColor(value[0], value[1], value[2])

@@ -704,7 +704,7 @@ const Patients = () => {
               <div className="form-group">
                 <label>Allergies</label>
                 <textarea
-                  rows="2"
+                  rows={2}
                   value={formData.allergies}
                   onChange={(event) =>
                     setFormData({ ...formData, allergies: event.target.value })
@@ -715,7 +715,7 @@ const Patients = () => {
               <div className="form-group">
                 <label>Medical Notes</label>
                 <textarea
-                  rows="3"
+                  rows={3}
                   value={formData.medicalNotes}
                   onChange={(event) =>
                     setFormData({ ...formData, medicalNotes: event.target.value })

@@ -164,14 +164,14 @@ const Login = () => {
         <h2>Run your pharmacy smarter.</h2>
         <p>HealthFlow helps pharmacies deliver better care with powerful tools for sales, inventory, NHIS claims, reporting and more.</p>
         <div className="login-feature-grid">
-          {[
+          {/** @type {Array<[import('lucide-react').LucideIcon, string, string]>} */ ([
             [ShoppingBag, 'Point of Sale', 'Fast, reliable and easy to use'],
             [BarChart3, 'Reports & Analytics', 'Make informed decisions'],
             [Boxes, 'Inventory Management', 'Real-time stock control'],
             [Users, 'Staff & Operations', 'Manage your team with ease'],
             [ClipboardCheck, 'NHIS Claims', 'Built for Ghana’s NHIS'],
             [Wifi, 'Offline Mode', 'Keep working, even offline'],
-          ].map(([Icon, title, detail]) => <div key={title}><Icon /><span><strong>{title}</strong><small>{detail}</small></span></div>)}
+          ]).map(([Icon, title, detail]) => <div key={title}><Icon /><span><strong>{title}</strong><small>{detail}</small></span></div>)}
         </div>
         <div className="login-showcase-photo" aria-hidden="true" />
         <div className="login-proof-points" aria-label="HealthFlow benefits">

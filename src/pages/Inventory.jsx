@@ -1519,7 +1519,7 @@ const Inventory = () => {
               <div className="form-group">
                 <label>Notes</label>
                 <textarea
-                  rows="3"
+                  rows={3}
                   value={transferForm.notes}
                   onChange={(event) =>
                     setTransferForm((current) => ({ ...current, notes: event.target.value }))

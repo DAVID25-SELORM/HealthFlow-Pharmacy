@@ -130,6 +130,47 @@ the complete hosted schema is reproducible from migration history.
 
 ## Production gate (not yet satisfied)
 
+### Additional local rehearsal, 2026-09-21
+
+A disposable, network-isolated PostgreSQL 17 container was used with the
+repository mounted read-only. No staging or production database was changed.
+The legacy base schema, multi-tenant steps, branches, staff privileges, NHIS,
+purchases and branch-sync RPC prerequisites were applied. The official Storage
+API v1.72.1 tenant migrations were also applied using its supported
+`storage.install_roles=false` setting because platform roles already existed.
+
+Tracked migrations succeeded through
+`20260618150500_allow_nhis_serving_workflow_statuses.sql`. The next migration,
+`20260620120000_enforce_nhis_catalog_pricing.sql`, rolled back because
+`public.nhis_claim_services` was absent. Its original legacy creation script
+requires `public.nhia_tariff_items`; the original tariff table definition/seed
+was not found in the repository. Obtain the authoritative schema-only baseline
+or original tariff setup before completing this full-schema rehearsal. Do not
+substitute a guessed table definition or report this rehearsal as passed.
+
+The latest completed full-app typecheck in this continuation reported 123
+diagnostics. This is not a clean
+full-app acceptance result. Isolated SQL/CXF tests do not remove either blocker.
+
+Verification in this continuation: lint, scoped Claim-IT typecheck, production
+build (2,044 modules), and all 36 Claim-IT tests across seven files passed.
+The first Claim-IT run had worker-startup timeouts; a single-worker retry passed.
+The disposable database container was stopped and retained for resuming the
+rehearsal. No database or historical claim data was deleted.
+
+The full regression run completed with 178 passing files and two failing files:
+1,196 tests passed; three tests hit the default five-second timeout (two in
+`OfflineSync.test.jsx`, one in `nhisDurationIntegritySql.test.js`). The focused
+single-worker retry with a 30-second timeout passed all 54 tests across six files,
+including the two failing suites and the patient, receivables, receipt and
+production-metrics services. Do not describe the original full run as all passing.
+
+Pre-push reconfirmation: 319 targeted tests across 12 files passed, including
+Claim-IT, NHIS service, and the changed patient/receipt/receivables/metrics services.
+Lint, scoped Claim-IT typecheck and build passed again. The NHIS service protected
+hash was refreshed for the reviewed error-metadata and typing cleanup; this does
+not authorize deployment or waive the full-app typecheck and schema blockers.
+
 The runner deliberately rejects production apply. Do not remove that guard merely
 because production credentials become available. First complete and retain all
 staging acceptance evidence, including offline/clinical/export-artifact limitations

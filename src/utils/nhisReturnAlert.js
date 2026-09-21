@@ -202,7 +202,7 @@ export const findNhisPatientReturnAlert = ({
       }
     })
     .filter(Boolean)
-    .sort((left, right) => new Date(right.previousVisitAt) - new Date(left.previousVisitAt))
+    .sort((left, right) => new Date(right.previousVisitAt).getTime() - new Date(left.previousVisitAt).getTime())
 
   return matches[0] || null
 }

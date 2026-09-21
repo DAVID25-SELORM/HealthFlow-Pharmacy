@@ -836,6 +836,7 @@ const claimToPatientSearchResult = (claim = {}) => ({
   sourceClaimNumber: claim.claim_number || '',
 })
 
+/** @param {{organizationId?: string, claimForm?: {memberNo?: string, hin?: string, serviceDate?: string, surname?: string, otherNames?: string}}} [options] */
 const buildPendingNhisClaimId = ({ organizationId = '', claimForm = {} } = {}) => {
   const key = compactLookupText([
     organizationId,
