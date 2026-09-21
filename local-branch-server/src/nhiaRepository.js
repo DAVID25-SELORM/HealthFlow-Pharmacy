@@ -205,6 +205,18 @@ const getAccreditationExpiryDate = (...sources) =>
     }).find(Boolean)
   )
 
+// Explicit field only. No fallback to the expiry or effective date: a missing value stays missing.
+const GENERATED_DATE_KEYS = ['accreditationDateGenerated', 'accreditationGeneratedDate', 'accreditation_date_generated']
+const hasAccreditationDateGeneratedKey = (source) =>
+  Boolean(source) && typeof source === 'object' && GENERATED_DATE_KEYS.some((key) => source[key] !== undefined)
+const getAccreditationDateGenerated = (...sources) =>
+  normalizeAccreditationExpiryDate(
+    sources.map((source) => {
+      if (!source || typeof source !== 'object') return source
+      return normalizeText(GENERATED_DATE_KEYS.map((key) => source[key]).find((value) => normalizeText(value)))
+    }).find(Boolean)
+  )
+
 const normalizeOrganizationType = (value) =>
   normalizeText(value).toLowerCase() === 'hospital' ? 'hospital' : 'pharmacy'
 
@@ -517,7 +529,7 @@ const upsertSettings = db.prepare(`
     id, organization_id, branch_id, mode, facility_code, provider_number, provider_id, hpn, hp_code,
     -- ✅ NHIA CONFIG PATCH START
     facility_type, pharmacy_facility_level, provider_level_code, credential_code,
-    license_number, accreditation_expiry_date,
+    license_number, accreditation_expiry_date, accreditation_date_generated,
     -- ✅ NHIA API ARCHITECTURE PATCH START
     integration_mode, connection_profile, validation_mode, claim_control_mode, sandbox_base_url, production_base_url,
     -- ✅ NHIA API ARCHITECTURE PATCH END
@@ -541,7 +553,7 @@ const upsertSettings = db.prepare(`
     @id, @organizationId, @branchId, @mode, @facilityCode, @providerNumber, @providerId, @hpn, @hpCode,
     -- ✅ NHIA CONFIG PATCH START
     @facilityType, @pharmacyFacilityLevel, @providerLevelCode, @credentialCode,
-    @licenseNumber, @accreditationExpiryDate,
+    @licenseNumber, @accreditationExpiryDate, @accreditationDateGenerated,
     -- ✅ NHIA API ARCHITECTURE PATCH START
     @integrationMode, @connectionProfile, @validationMode, @claimControlMode, @sandboxBaseUrl, @productionBaseUrl,
     -- ✅ NHIA API ARCHITECTURE PATCH END
@@ -577,6 +589,13 @@ const upsertSettings = db.prepare(`
     credential_code = excluded.credential_code,
     license_number = excluded.license_number,
     accreditation_expiry_date = excluded.accreditation_expiry_date,
+    -- A pull or an omitted field must never blank a locally stored generated date; only an
+    -- explicit save (preserve = 0) may set or clear it.
+    accreditation_date_generated = CASE
+      WHEN @preserveAccreditationDateGenerated = 1 AND excluded.accreditation_date_generated IS NULL
+        THEN nhia_configuration.accreditation_date_generated
+      ELSE excluded.accreditation_date_generated
+    END,
     -- ✅ NHIA API ARCHITECTURE PATCH START
     integration_mode = excluded.integration_mode,
     connection_profile = excluded.connection_profile,
@@ -634,6 +653,15 @@ const deletePendingNhiaConfigOutbox = db.prepare(`
     AND entity_type = 'nhia_configuration'
     AND entity_id = ?
     AND status IN ('pending', 'failed')
+`)
+
+const hasPendingNhiaConfigOutbox = db.prepare(`
+  SELECT 1 FROM sync_outbox
+  WHERE event_type = 'nhia_config.updated'
+    AND entity_type = 'nhia_configuration'
+    AND entity_id = ?
+    AND status IN ('pending', 'failed', 'syncing')
+  LIMIT 1
 `)
 
 const insertNhiaConfigOutbox = db.prepare(`
@@ -1032,6 +1060,8 @@ const mapSettingsRow = (row, { includeCredentials = false } = {}) => {
     credentialCode: row.credential_code || row.facility_code || '',
     licenseNumber: row.license_number || '',
     accreditationExpiryDate: getAccreditationExpiryDate(row),
+    accreditationDateGenerated: getAccreditationDateGenerated(row),
+    accreditation_date_generated: getAccreditationDateGenerated(row),
     // ✅ NHIA API ARCHITECTURE PATCH START
     integrationMode: normalizeIntegrationMode(row.integration_mode, DEFAULT_NHIA_INTEGRATION_MODE),
     connectionProfile: row.connection_profile || 'local_server',
@@ -1370,6 +1400,12 @@ const mapRemoteNhiaConfigurationRow = (row = {}) => {
     credentialCode: normalizeText(row.credential_code || row.credentialCode || row.facility_code || row.facilityCode) || null,
     licenseNumber: normalizeText(row.license_number || row.licenseNumber) || null,
     accreditationExpiryDate: getAccreditationExpiryDate(row) || null,
+    // Merge: the cloud value wins when present; a blank cloud value or a locally pending (unsynced)
+    // edit never erases the local one. See also `preserveAccreditationDateGenerated` in the upsert.
+    accreditationDateGenerated: (existing && hasPendingNhiaConfigOutbox.get(existing.id)
+      ? getAccreditationDateGenerated(existing)
+      : getAccreditationDateGenerated(row)) || getAccreditationDateGenerated(existing) || null,
+    preserveAccreditationDateGenerated: 1,
     integrationMode: normalizeIntegrationMode(row.integration_mode || row.integrationMode || row.nhia_api_mode || row.nhiaApiMode),
     connectionProfile: normalizeText(row.connection_profile || row.connectionProfile) || 'local_server',
     validationMode: normalizeText(row.validation_mode || row.validationMode) || 'validate_before_submit',
@@ -1620,6 +1656,11 @@ export const saveNhiaSettings = (settings = {}) => {
     credentialCode: normalizeText(settings.credentialCode) || normalizeText(settings.facilityCode) || null,
     licenseNumber: normalizeText(settings.licenseNumber) || null,
     accreditationExpiryDate: getAccreditationExpiryDate(settings) || null,
+    // An older client that omits the field must not wipe it; an explicit blank clears it.
+    accreditationDateGenerated: hasAccreditationDateGeneratedKey(settings)
+      ? getAccreditationDateGenerated(settings) || null
+      : getAccreditationDateGenerated(existing) || null,
+    preserveAccreditationDateGenerated: hasAccreditationDateGeneratedKey(settings) ? 0 : 1,
     // ✅ NHIA API ARCHITECTURE PATCH START
     integrationMode: normalizeIntegrationMode(settings.integrationMode || settings.integration_mode || settings.nhiaApiMode || settings.nhia_api_mode),
     connectionProfile: normalizeText(settings.connectionProfile || settings.connection_profile) || 'local_server',

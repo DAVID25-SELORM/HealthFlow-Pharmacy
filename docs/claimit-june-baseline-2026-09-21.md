@@ -125,3 +125,41 @@ Correct the value from the original NHIA accreditation record.
 3. Import the regenerated file into Claim-IT and record acceptance. This is the one check
    that cannot be simulated locally.
 4. Separately, confirm the Health Light accreditation dates against the source record.
+
+## Accreditation `dateGenerated`: explicit, independent, auditable, preserved offline
+
+Trace (no value changed): UI field -> `nhia_configuration.accreditation_date_generated` ->
+`getNhiaAccreditationDateGenerated` -> `getClaimItAccreditationRows`. It is never derived
+from the effective or expiry date. West Point legitimately has effective 2025-12-01,
+generated 2025-12-29, expiry 2027-12-01. **Health Light's stored value (2027-08-01, equal
+to its expiry) was NOT changed**, and no replacement was guessed. There is no authoritative
+evidence yet; verify against the original NHIA accreditation record.
+
+What changed (code/UI/schema only; nothing executed against production):
+
+- **Settings UI** (`NhiaAccreditationDatesFields`, used by Settings and Offline Sync): visible
+  labels "Accreditation Effective Date" (read-only, derived from the credential code, not
+  stored), "Accreditation Generated / Issue Date" (with helper text that never tells users to
+  copy another date) and "Accreditation Expiry Date". Malformed dates are rejected at save;
+  a missing generated date is reported (required for export); generated = expiry, in the
+  future, after expiry or before effective are warnings only and never edit or block.
+- **Diagnostics**: `ACCREDITATION_DATE_REVIEW_REQUIRED` ("Generated date matches expiry date.
+  Verify against original NHIA accreditation record.") is emitted by the UI rules, the export
+  path (`getClaimItAccreditationDiagnostics`, warning only), the CXF file audit and the SQL
+  audit. It does not block export unless Claim-IT is shown to reject the file.
+- **Export gate message** is human-readable ("NHIA accreditation generated/issue date is
+  missing. Open Settings -> NHIA configuration ..."); internal names stay on
+  `error.missingFields`.
+- **Offline branch**: new local column (`schema.sql` + startup `ensureNhiaConfigurationColumn`
+  for existing databases, never backfilled), read/save mapping, sync upload (already carried
+  by the row payload and the existing cloud upsert), sync download mapping and merge:
+  cloud value wins, a blank cloud value or a locally pending edit never erases the local value,
+  and an older client omitting the field cannot wipe it (an explicit blank does clear it).
+- **Audit**: migration `20260921140000_audit_nhia_accreditation_date_changes.sql` (local, not
+  deployed) writes one `audit_logs` row per changed field (facility, branch, actor, timestamp,
+  field, previous and new value) for `accreditation_date_generated` and
+  `accreditation_expiry_date`. Effective date is derived, so it is not separately stored or
+  audited. A trigger is used so offline-sync and SQL changes are captured too; it never blocks
+  a save and logs no secrets.
+- **Known gap**: `Nhis.jsx` (which has other uncommitted work) does not yet display the export
+  warnings; they are emitted via `options.onExportWarnings` or `console.warn`.

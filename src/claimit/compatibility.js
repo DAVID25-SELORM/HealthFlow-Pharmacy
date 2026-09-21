@@ -82,7 +82,7 @@ export function accreditationIssues({ generated, expiry, effective, today }) {
   if (generated && expiry && generated > expiry) issues.push('ACCREDITATION_GENERATED_AFTER_EXPIRY')
   if (effective && expiry && effective > expiry) issues.push('ACCREDITATION_EFFECTIVE_AFTER_EXPIRY')
   // Equality is suspicious, not proof that an external record is wrong.
-  if (generated && generated === expiry) issues.push('ACCREDITATION_MAPPING_REVIEW_REQUIRED')
+  if (generated && generated === expiry) issues.push('ACCREDITATION_DATE_REVIEW_REQUIRED')
   return issues
 }
 

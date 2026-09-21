@@ -66,6 +66,7 @@ import OfflineModeGuide from '../components/OfflineModeGuide'
 import { getOfflineModeSummary } from '../utils/offlineModeSummary'
 import { getConnectivityState, subscribeConnectivity, refreshConnectivityState } from '../services/connectivityService'
 import './OfflineSync.css'
+import NhiaAccreditationDatesFields from '../components/NhiaAccreditationDatesFields'
 
 const WIZARD_STEPS = [
   { id: 'requirements',    label: 'Check system requirements',      detail: 'Verify the local server is reachable and healthy' },
@@ -1972,22 +1973,13 @@ HEALTHFLOW_UPDATE_AUTO_INSTALL=false`}</pre>
               <option value="not_applicable">Not applicable</option>
             </select>
           </label>
-          <label>
-            <span>Accreditation Generated Date</span>
-            <input
-              type="date"
-              value={nhiaForm.accreditationDateGenerated}
-              onChange={(event) => updateNhiaForm('accreditationDateGenerated', normalizeNhiaAccreditationExpiryDate(event.target.value))}
-            />
-          </label>
-          <label>
-            <span>Accreditation Expiry Date</span>
-            <input
-              type="date"
-              value={nhiaForm.accreditationExpiryDate}
-              onChange={(event) => updateNhiaForm('accreditationExpiryDate', normalizeNhiaAccreditationExpiryDate(event.target.value))}
-            />
-          </label>
+          <NhiaAccreditationDatesFields
+            credentialCode={nhiaForm.credentialCode}
+            generatedDate={nhiaForm.accreditationDateGenerated}
+            expiryDate={nhiaForm.accreditationExpiryDate}
+            requireGenerated
+            onChange={(field, value) => updateNhiaForm(field, normalizeNhiaAccreditationExpiryDate(value))}
+          />
           <label>
             <span>Claims Officer</span>
             <input

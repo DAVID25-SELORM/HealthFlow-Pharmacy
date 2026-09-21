@@ -119,7 +119,7 @@ describe('accepted June baseline vs current exporter', () => {
     const current = structuredClone(june)
     current.versions.providerLevel = 'PVT-HOS-CE'
     current.claimFieldTypes.physicianID = ['empty string']
-    const outcome = classifyContracts({ may, june, current, accreditationIssues: ['ACCREDITATION_GENERATED_IN_FUTURE', 'ACCREDITATION_MAPPING_REVIEW_REQUIRED'] })
+    const outcome = classifyContracts({ may, june, current, accreditationIssues: ['ACCREDITATION_GENERATED_IN_FUTURE', 'ACCREDITATION_DATE_REVIEW_REQUIRED'] })
     expect(outcome.regressions).toEqual([])
     expect(outcome.results.filter((r) => r.category === CATEGORY.FACILITY).map((r) => r.check)).toEqual(['provider level code', 'claim.physicianID type'])
     expect(outcome.results.filter((r) => r.category === CATEGORY.SUSPICIOUS)).toHaveLength(2)

@@ -5,6 +5,7 @@ import { getExportSigningEvidence, recordCxfExport } from './claimitLifecycleSer
 import { canonicalizeBundle } from '../claimit/fieldOrder'
 import { CLAIM_IT_PROFILE, CLAIM_IT_CLAIM_FIELD_ORDER, orderedRecord, decimalAmount, decimalUnits, sumAmounts, classifyClaimSignature } from '../claimit/compatibility'
 import { createCoalescedCloudRead } from '../utils/coalesceCloudRead'
+import { describeIncompleteClaimItConfiguration, getAccreditationDateIssues, getAccreditationEffectiveDateFromCredentialCode } from '../utils/nhiaAccreditationDates'
 import { assertRequiredText, assertNonNegativeNumber, assertPositiveNumber, normalizeText, sanitizeSearchTerm } from '../utils/validation'
 import {
   isGhanaCardNumber,
@@ -9060,6 +9061,24 @@ export const getClaimItExportWarnings = (payload) =>
     .map((claim) => ({ claimNumber: claim.claimNumber || claim.id || '', warnings: classifyClaimSignature(claim).warnings }))
     .filter((entry) => entry.warnings.length)
 
+/**
+ * Accreditation date diagnostics for an export payload. Warnings only (a generated
+ * date equal to expiry, in the future, ...): they never block export and never
+ * change a stored value. Missing dates are already stopped by the export gate.
+ * @param {Record<string, any>} payload
+ * @returns {Array<{claimNumber: string, warnings: string[], messages: string[]}>}
+ */
+export const getClaimItAccreditationDiagnostics = (payload = {}) => {
+  const issues = getAccreditationDateIssues({
+    generated: getNhiaAccreditationDateGenerated(payload),
+    expiry: getNhiaAccreditationExpiryDate(payload),
+    effective: getAccreditationEffectiveDateFromCredentialCode(getClaimItCredentialCode(payload)),
+  }).filter((issue) => issue.severity === 'warning')
+  return issues.length
+    ? [{ claimNumber: '', warnings: issues.map((issue) => issue.code), messages: issues.map((issue) => issue.diagnostic) }]
+    : []
+}
+
 const buildClaimItRows = async (payload, runtimeOptions = {}) => {
   // Reject inconsistent totals before downloading attachments. Signing is NOT checked
   // here: accepted June exports carried null signers (see classifyClaimSignature).
@@ -9713,7 +9732,11 @@ export const assertClaimItCxfExportConfigured = (options = {}) => {
   if (isPharmacy && options._inferredPharmacyFacilityLevel) missing.push('pharmacyFacilityLevel (confirm inferred P1 in Settings)')
 
   if (!missing.length) return
-  throw new Error(`CLAIM-it CXF export needs complete NHIA configuration. Missing: ${missing.join(', ')}.`)
+  // Human-readable for normal users; internal field names stay on `missingFields`.
+  throw Object.assign(new Error(describeIncompleteClaimItConfiguration(missing)), {
+    code: 'NHIA_CONFIG_INCOMPLETE',
+    missingFields: missing,
+  })
   // ✅ NHIA CONFIG PATCH END
 }
 
@@ -9746,8 +9769,11 @@ const createNhisExportFile = async (claims, period, options = {}) => {
     // happens, instead of a single misleading "Compressing" label covering
     // the whole call.
     const content = await buildNhisClaimItCxf(cxfPayload, options)
-    const exportWarnings = [...signingWarnings, ...getClaimItExportWarnings(cxfPayload)]
-    if (exportWarnings.length && typeof options.onExportWarnings === 'function') options.onExportWarnings(exportWarnings)
+    const exportWarnings = [...signingWarnings, ...getClaimItExportWarnings(cxfPayload), ...getClaimItAccreditationDiagnostics(cxfPayload)]
+    if (exportWarnings.length) {
+      if (typeof options.onExportWarnings === 'function') options.onExportWarnings(exportWarnings)
+      else console.warn('[CLAIM-it export warnings]', exportWarnings)
+    }
     const auditWarning = await recordCxfExport(signedClaims, content, options.reexportReason)
     if (auditWarning && typeof options.onExportWarnings === 'function') options.onExportWarnings([auditWarning])
     timing?.mark('generating CXF archive', {

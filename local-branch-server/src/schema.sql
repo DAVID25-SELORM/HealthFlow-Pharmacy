@@ -377,6 +377,9 @@ CREATE TABLE IF NOT EXISTS nhia_configuration (
   credential_code TEXT,
   license_number TEXT,
   accreditation_expiry_date TEXT,
+  -- Original dateGenerated from the NHIA accreditation record; stored independently and
+  -- never derived from the effective or expiry date.
+  accreditation_date_generated TEXT,
   integration_mode TEXT NOT NULL DEFAULT 'claimit_export',
   connection_profile TEXT NOT NULL DEFAULT 'local_server',
   validation_mode TEXT NOT NULL DEFAULT 'validate_before_submit',

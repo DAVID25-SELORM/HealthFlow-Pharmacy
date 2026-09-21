@@ -79,7 +79,7 @@ describe('Claim-IT reference contract', () => {
   })
   it('flags the HEALTH LIGHT accreditation anomaly (not West Point) without guessing a replacement date', () => {
     const source={generated:'2027-08-01',expiry:'2027-08-01',effective:'2025-10-01',today:'2026-09-20'}
-    expect(accreditationIssues(source)).toEqual(['ACCREDITATION_GENERATED_IN_FUTURE','ACCREDITATION_MAPPING_REVIEW_REQUIRED'])
+    expect(accreditationIssues(source)).toEqual(['ACCREDITATION_GENERATED_IN_FUTURE','ACCREDITATION_DATE_REVIEW_REQUIRED'])
     expect(source.generated).toBe('2027-08-01')
     expect(accreditationIssues({...source,generated:'2025-02-30'})).toContain('ACCREDITATION_INVALID_GENERATED')
   })

@@ -59,6 +59,8 @@ import {
 import { PHARMACY_LEVELS } from '../utils/nhisPharmacyLevel'
 // ✅ NHIS PHARMACY LEVEL PATCH END
 import './Settings.css'
+import NhiaAccreditationDatesFields from '../components/NhiaAccreditationDatesFields'
+import { getAccreditationDateIssues } from '../utils/nhiaAccreditationDates'
 
 const NHIA_SECRET_MASK = '\u2022'.repeat(8)
 const PAYMENT_SECRET_MASK = '********'
@@ -1237,6 +1239,12 @@ const Settings = () => {
           : nhiaApiForm.claimitSubmitBaseUrl
       const accreditationExpiryDate = normalizeDateInputValue(nhiaApiForm.accreditationExpiryDate)
       const accreditationDateGenerated = normalizeDateInputValue(nhiaApiForm.accreditationDateGenerated)
+      // Malformed dates are rejected; a missing generated date is only reported at export,
+      // and equality/plausibility findings are warnings that never edit or block a value.
+      const malformedAccreditationDate = getAccreditationDateIssues({
+        generated: accreditationDateGenerated, expiry: accreditationExpiryDate,
+      }).find((issue) => issue.code.endsWith('_INVALID'))
+      if (malformedAccreditationDate) throw new Error(malformedAccreditationDate.message)
       const nhiaOrganizationId = organization?.id || organization?.organization_id || nhiaApiForm.organizationId || nhiaApiForm.organization_id
       const credentialPayload = buildNhiaCredentialsPayload(nhiaApiForm.credentials)
       const preservedCredentials = {
@@ -2776,20 +2784,14 @@ const Settings = () => {
                   value={nhiaApiForm.licenseNumber}
                   onChange={(event) => updateNhiaApiForm('licenseNumber', event.target.value)}
                 />
-                <input
-                  type="date"
-                  aria-label="Accreditation generated date"
-                  title="Original dateGenerated from the NHIA accreditation record"
-                  value={nhiaApiForm.accreditationDateGenerated}
-                  onChange={(event) => updateNhiaApiForm('accreditationDateGenerated', normalizeDateInputValue(event.target.value))}
-                />
-                <input
-                  type="date"
-                  placeholder="Accreditation expiry date"
-                  value={nhiaApiForm.accreditationExpiryDate}
-                  onChange={(event) => updateNhiaApiForm('accreditationExpiryDate', normalizeDateInputValue(event.target.value))}
-                />
               </div>
+              <NhiaAccreditationDatesFields
+                credentialCode={nhiaApiForm.credentialCode}
+                generatedDate={nhiaApiForm.accreditationDateGenerated}
+                expiryDate={nhiaApiForm.accreditationExpiryDate}
+                requireGenerated
+                onChange={(field, value) => updateNhiaApiForm(field, normalizeDateInputValue(value))}
+              />
               {showNhiaProviderClassLevel && (
                 <div className="settings-form-row">
                   <select
