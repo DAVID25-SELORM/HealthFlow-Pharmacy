@@ -63,7 +63,6 @@
       "policyVersion",
       "isDirty",
       "status",
-      "claimType",
       "submissionTime",
       "extraData",
       "addedOn",
@@ -114,7 +113,8 @@
       "isUnbundled",
       "includesPharmacy",
       "typeOfAttendance",
-      "serviceOutcome"
+      "serviceOutcome",
+      "claimType"
     ],
     "serviceentries": [],
     "medicineentries": [
@@ -158,10 +158,35 @@
       "comments"
     ],
     "comments": [],
-    "validations": [],
+    "validations": [
+      "_id",
+      "s_id",
+      "claimID",
+      "policyID",
+      "runTime",
+      "outcome",
+      "isSavedClaim",
+      "memberNo",
+      "firstDOSP",
+      "lastDOSP",
+      "runOn",
+      "runByname",
+      "runByuserID",
+      "runByrole"
+    ],
     "validation_results": [],
-    "validation_zclaims": [],
-    "prescribersfordays": [],
+    "validation_zclaims": [
+      "_id",
+      "_validation_id",
+      "serializedClaim",
+      "isCompressed"
+    ],
+    "prescribersfordays": [
+      "_id",
+      "day",
+      "name",
+      "role"
+    ],
     "_meta": [
       0,
       1,
@@ -242,8 +267,7 @@
     "type": "head",
     "sha1": "bebe76e96864d0f25d3514e5916816aadc34cff4",
     "client": "1.0.0.3",
-    "mode": "standalone",
-    "cpuType": "x64"
+    "mode": "standalone"
   },
   "schema": {
     "accreditations": {
@@ -345,7 +369,6 @@
       "policyVersion": "varchar(255)",
       "isDirty": "tinyint(1)",
       "status": "varchar(255)",
-      "claimType": "varchar(255)",
       "submissionTime": "datetime",
       "extraData": "longtext",
       "addedOn": "datetime",
@@ -396,7 +419,8 @@
       "isUnbundled": "varchar(255)",
       "includesPharmacy": "varchar(255)",
       "typeOfAttendance": "varchar(255)",
-      "serviceOutcome": "varchar(255)"
+      "serviceOutcome": "varchar(255)",
+      "claimType": "varchar(255)"
     },
     "comments": {
       "_entry_id": "int(11)",
@@ -641,7 +665,7 @@
       "0": "2025-05-01.250531"
     },
     "servVersions": {
-      "0": null
+      "0": "2023-02-01.250531"
     }
   },
   "accreditationFields": [
@@ -669,19 +693,16 @@
   ],
   "durationShape": {
     "value": [
-      "null",
       "U.U"
     ],
     "unit": [
-      "DAYS",
-      "null"
+      "DAYS"
     ],
     "desc": [
-      "null",
       "U l"
     ]
   },
-  "validationSectionsPopulated": false,
+  "validationSectionsPopulated": true,
   "claimFieldTypes": {
     "guid": [
       "string"
@@ -696,7 +717,7 @@
       "empty string"
     ],
     "physicianID": [
-      "empty string"
+      "string"
     ],
     "specialtyAttended": [
       "null"
@@ -744,7 +765,7 @@
       "string"
     ],
     "servVersion": [
-      "null"
+      "string"
     ],
     "policyVersion": [
       "string"
@@ -753,9 +774,6 @@
       "string"
     ],
     "status": [
-      "string"
-    ],
-    "claimType": [
       "string"
     ],
     "submissionTime": [
@@ -789,16 +807,16 @@
       "string"
     ],
     "signedOn": [
-      "string"
+      "null"
     ],
     "signedByname": [
-      "string"
+      "null"
     ],
     "signedByuserID": [
-      "string"
+      "null"
     ],
     "signedByrole": [
-      "string"
+      "null"
     ],
     "memberNo": [
       "string"
@@ -910,6 +928,9 @@
     ],
     "serviceOutcome": [
       "empty string"
+    ],
+    "claimType": [
+      "string"
     ]
   }
 }

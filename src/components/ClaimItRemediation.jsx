@@ -25,7 +25,7 @@ export default function ClaimItRemediation() {
   return <section className="card" aria-label="Claim-IT signing and remediation">
     <button type="button" onClick={() => setOpen(!open)}>Claim-IT signing and legacy review</button>
     {open && <div>
-      <p>Review the claim in the claims list before signing. Signing records your identity and the current time; it does not reconstruct a historical signature.</p>
+      <p>Signing is optional and is not required to export to Claim-IT: legacy unsigned claims export normally and are only reported as warnings. If you sign after review, your identity and the current time are recorded; no historical signature is reconstructed.</p>
       <label>From <input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setReport(null) }} /></label>
       <label>To <input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setReport(null) }} /></label>
       <label>Status <select value={status} onChange={(e) => { setStatus(e.target.value); setReport(null) }}>
@@ -36,20 +36,20 @@ export default function ClaimItRemediation() {
       {error && <p role="alert">{error}</p>}
       {report && <>
         <p>Safely repairable totals: {report.repairable ?? 0}. These claims may still require clinical or signer review after reconciliation.</p>
-        <p>Scanned: {report.scanned} · Ready: {report.unchanged} · Requires review: {report.manual_review_required} · Automatically repaired: {report.automatically_repaired} · Errors: {report.errors}</p>
+        <p>Scanned: {report.scanned} · Ready: {report.unchanged} · Requires review: {report.manual_review_required} · Warnings (never block export): {report.would_warn ?? 0} · Automatically repaired: {report.automatically_repaired} · Errors: {report.errors}</p>
         <button type="button" disabled={busy} onClick={() => run(() => scan(true, cursor))}>Save review flags for this batch</button>
         <button type="button" disabled={busy || report.scanned < 100} onClick={() => run(() => scan(false, report.next_cursor))}>Next batch</button>
         <label>Issue <select value={issue} onChange={(e) => setIssue(e.target.value)}>
           <option value="">All issues</option>
-          {Object.entries(report.counts).map(([key, count]) => <option key={key} value={key}>{key} ({count})</option>)}
+          {Object.entries({ ...report.counts, ...(report.warning_counts || {}) }).map(([key, count]) => <option key={key} value={key}>{key} ({count})</option>)}
         </select></label>
         <label>Export state in this batch <select value={exportState} onChange={(e) => setExportState(e.target.value)}>
           <option value="">All export states</option><option value="recorded">Recorded export</option><option value="unknown">No recorded export / legacy unknown</option>
         </select></label>
         <label>Reason for signing after review <input value={reason} onChange={(e) => setReason(e.target.value)} /></label>
-        <table><thead><tr><th>Claim</th><th>Status</th><th>Review needed</th><th>Action</th></tr></thead><tbody>
-          {report.rows.filter((row) => (!issue || row.issues.includes(issue)) && (!exportState || (exportState === 'recorded') === Boolean(row.hasRecordedExport))).map((row) => <tr key={row.id}>
-            <td>{row.claimNumber}</td><td>{row.status}</td><td>{row.issues.join(', ') || 'Ready'}</td>
+        <table><thead><tr><th>Claim</th><th>Status</th><th>Review needed</th><th>Warnings</th><th>Action</th></tr></thead><tbody>
+          {report.rows.filter((row) => (!issue || row.issues.includes(issue) || (row.warnings || []).includes(issue)) && (!exportState || (exportState === 'recorded') === Boolean(row.hasRecordedExport))).map((row) => <tr key={row.id}>
+            <td>{row.claimNumber}</td><td>{row.status}</td><td>{row.issues.join(', ') || 'Ready'}</td><td>{(row.warnings || []).join(', ')}</td>
             <td><button type="button" disabled={busy || !reason.trim()} onClick={() => run(async () => {
               await signNhisClaim(row.id, reason)
               await scan(false, cursor)

@@ -1,10 +1,15 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, statSync } from 'node:fs'
 import { readCxf, structuralContract, phpText, auditCxf } from './lib/cxf-reader.mjs'
+import { readCxfStream } from './lib/cxf-stream-reader.mjs'
+
+// Files above the in-memory reader's 256 MB inflate limit are streamed.
+const IN_MEMORY_LIMIT = 32 * 1024 * 1024
+const load = async (path) => statSync(path).size > IN_MEMORY_LIMIT ? (await readCxfStream(path)).bundle : readCxf(readFileSync(path))
 
 const paths = process.argv.slice(2)
 if (!paths.length || paths.length > 2) throw new Error('Usage: node scripts/compare-cxf.mjs reference.cxf [generated.cxf]')
-const contracts = paths.map((path) => {
-  const bundle = readCxf(readFileSync(path))
+const contracts = await Promise.all(paths.map(async (path) => {
+  const bundle = await load(path)
   const contract = structuralContract(bundle)
   const meta = bundle.get('data').get('_meta')
   contract.versions = Object.fromEntries(['providerLevel', 'policies', 'medVersions', 'servVersions', 'appVersion'].map((key) => [
@@ -15,7 +20,7 @@ const contracts = paths.map((path) => {
     ['signedOn', 'signedByname', 'signedByuserID', 'signedByrole'].some((key) => !phpText(claim.get(key)))).length }
   contract.audit = auditCxf(bundle)
   return contract
-})
+}))
 if (contracts.length === 1) console.log(JSON.stringify(contracts[0], null, 2))
 else {
   const [reference, generated] = contracts

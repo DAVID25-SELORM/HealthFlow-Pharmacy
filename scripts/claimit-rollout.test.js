@@ -12,7 +12,7 @@ it('rejects production writes, mismatched refs, and deceptive URLs', () => {
 
 it('reports overlapping repair and manual-review counts without patient data', async () => {
   const rpc = vi.fn().mockResolvedValue({ scanned: 3, errors: 0, rows: [
-    { id: 'a', fingerprint: '1', repairable: true, issues: ['INVALID_TOTALS', 'LEGACY_MISSING_SIGNER'], claimNumber: 'private' },
+    { id: 'a', fingerprint: '1', repairable: true, issues: ['INVALID_TOTALS', 'MISSING_PRESCRIBER'], claimNumber: 'private' },
     { id: 'b', fingerprint: '2', repairable: false, issues: [] },
     { id: 'c', fingerprint: '3', repairable: false, issues: ['INVALID_TOTALS'] },
   ] })

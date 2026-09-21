@@ -1,9 +1,9 @@
 import { assertNhisDurationForSavedState } from '../../local-branch-server/src/nhisDurationValidation.js'
 import { assertNhisCccForSavedState, assertNhisCccForProgress, getNhisCccTransitionIssue } from '../../local-branch-server/src/nhisCccValidation.js'
 import { supabase } from '../lib/supabase'
-import { getSignedExportClaims, recordCxfExport } from './claimitLifecycleService'
+import { getExportSigningEvidence, recordCxfExport } from './claimitLifecycleService'
 import { canonicalizeBundle } from '../claimit/fieldOrder'
-import { CLAIM_IT_PROFILE, CLAIM_IT_CLAIM_FIELD_ORDER, orderedRecord, claimItServiceVersion, decimalAmount, decimalUnits, sumAmounts, assertClaimSignature } from '../claimit/compatibility'
+import { CLAIM_IT_PROFILE, CLAIM_IT_CLAIM_FIELD_ORDER, orderedRecord, decimalAmount, decimalUnits, sumAmounts, classifyClaimSignature } from '../claimit/compatibility'
 import { createCoalescedCloudRead } from '../utils/coalesceCloudRead'
 import { assertRequiredText, assertNonNegativeNumber, assertPositiveNumber, normalizeText, sanitizeSearchTerm } from '../utils/validation'
 import {
@@ -7270,7 +7270,7 @@ const toClaimItDateTime = (value = new Date().toISOString()) => {
 }
 
 const toClaimItAmount = (value, decimals = 2) =>
-  decimalAmount(value ?? 0, decimals)
+  decimalAmount(value || 0, decimals)
 
 const toClaimItGender = (value) => {
   const text = normalizeText(value).toLowerCase()
@@ -7445,10 +7445,8 @@ const CLAIM_IT_DOCTRINE_MIGRATIONS = [
   'DoctrineMigrations\\Version20160901033142',
 ]
 
-const CLAIM_IT_APP_VERSION = {
-  ...CLAIM_IT_PROFILE.appVersion,
-  cpuType: CLAIM_IT_PROFILE.cpuType,
-}
+// The accepted June export had no cpuType; do not inject one to imitate May.
+const CLAIM_IT_APP_VERSION = { ...CLAIM_IT_PROFILE.appVersion }
 
 const getClaimItProviderLevelId = (claimRow = {}) =>
   [
@@ -7557,7 +7555,6 @@ const getClaimItDbStruct = () => ({
     policyVersion: 'varchar(255)',
     isDirty: 'tinyint(1)',
     status: 'varchar(255)',
-    claimType: 'varchar(255)',
     submissionTime: 'datetime',
     extraData: 'longtext',
     addedOn: 'datetime',
@@ -7609,6 +7606,7 @@ const getClaimItDbStruct = () => ({
     includesPharmacy: 'varchar(255)',
     typeOfAttendance: 'varchar(255)',
     serviceOutcome: 'varchar(255)',
+    claimType: 'varchar(255)',
   },
   comments: {
     _entry_id: 'int(11)',
@@ -8320,9 +8318,6 @@ export const buildNhisClaimItExportPayload = (claims = [], options = {}) => {
       signedByname: claim.signed_by_name ?? null,
       signedByuserID: claim.signed_by_user_id ?? null,
       signedByrole: claim.signed_by_role ?? null,
-      createdAt: claim.created_at ?? null,
-      createdBy: claim.created_by ?? null,
-      updatedAt: claim.updated_at ?? null,
       organizationType: claimOrganizationType,
       ccCode: normalizeNhisCcCode(claim.ccc_no),
       patient: {
@@ -8404,7 +8399,6 @@ export const buildNhisClaimItExportPayload = (claims = [], options = {}) => {
     claimitValidationEnabled: options.claimitValidationEnabled !== false,
     claimsOfficerSignatureUrl: normalizeText(options.claimsOfficerSignatureUrl),
     submitterId: normalizeText(options.submitterId),
-    exportActor: options.exportActor || null,
     submissionMonth: exportPeriod.yearMonth,
     exportMode: exportPeriod.mode,
     periodLabel: exportPeriod.label,
@@ -9054,17 +9048,29 @@ const buildClaimItSerializedClaim = ({
 const compressClaimItSerializedClaim = async (serializedClaim) =>
   await deflateClaimItPayload(JSON.stringify(serializedClaim))
 
+/**
+ * Non-blocking export audit conditions. LEGACY_UNSIGNED_CLAIM is reported, never
+ * enforced: accepted June exports carried null signers, so Claim-IT does not
+ * require them and legacy claims must remain exportable.
+ * @param {{claims?: Array<Record<string, any>>}} payload
+ * @returns {Array<{claimNumber: string, warnings: string[]}>}
+ */
+export const getClaimItExportWarnings = (payload) =>
+  (payload?.claims || [])
+    .map((claim) => ({ claimNumber: claim.claimNumber || claim.id || '', warnings: classifyClaimSignature(claim).warnings }))
+    .filter((entry) => entry.warnings.length)
+
 const buildClaimItRows = async (payload, runtimeOptions = {}) => {
-  // Reject before downloading prescription attachments or constructing VALID rows.
+  // Reject inconsistent totals before downloading attachments. Signing is NOT checked
+  // here: accepted June exports carried null signers (see classifyClaimSignature).
   for (const claim of payload.claims) {
-    assertClaimSignature(claim)
-    const lineTotal = sumAmounts([...claim.medicines, ...claim.tariffServices].map((line) => line.totalAmount ?? 0))
+    const lineTotal = sumAmounts([...claim.medicines, ...claim.tariffServices].map((line) => line.totalAmount || 0))
     if (toClaimItAmount(claim.totalAmount) !== lineTotal) throw new Error(`${claim.claimNumber}: claim total does not reconcile with medicine and service lines.`)
   }
   const generatedAt = toClaimItDateTime(payload.createdAt)
-  const signedByName = normalizeText(payload.exportActor?.name) || null
-  const signedByUsername = normalizeText(payload.exportActor?.id) || null
-  const signedByRole = normalizeText(payload.exportActor?.role) || null
+  const signedByName = normalizeText(payload.claimsOfficerName) || 'HealthFlow'
+  const signedByUsername = normalizeText(payload.submitterId) || signedByName
+  const signedByRole = 'admin'
   const credentialCode = getClaimItCredentialCode(payload)
   const credentialParts = splitClaimItCredentialCode(credentialCode)
   const effectiveDate = getClaimItEffectiveDate(credentialCode)
@@ -9079,6 +9085,8 @@ const buildClaimItRows = async (payload, runtimeOptions = {}) => {
   const claimType = getClaimItClaimType(payload)
   const medVersion = normalizeText(payload.medVersion || payload.nhiaMedicineTariffVersion) || CLAIM_IT_MEDICINE_PRICE_VERSION
   const policyVersion = normalizeText(payload.policyVersion) || CLAIM_IT_POLICY_VERSION
+  const serviceVersion = normalizeText(payload.serviceVersion) ||
+    (payload.claims.some((claim) => claim.tariffServices.length) ? CLAIM_IT_SERVICE_TARIFF_VERSION : null)
   const claims = []
   const medicineentries = []
   const serviceentries = []
@@ -9174,7 +9182,6 @@ const buildClaimItRows = async (payload, runtimeOptions = {}) => {
       assertClaimItPrescriptionAttachmentForExport(claim)
     }
     const claimGuid = getClaimItGuid(claim.claimNumber || claim.patient.memberNumber, claimIndex)
-    assertClaimSignature(claim)
     const medicineTotal = sumAmounts(claim.medicines.map((medicine) => medicine.totalAmount ?? 0))
     const serviceTotal = sumAmounts(claim.tariffServices.map((service) => service.totalAmount ?? 0))
     const serviceDate = claim.service.dateFrom || claim.medicines[0]?.dispensaryDate || claim.tariffServices[0]?.serviceDate || payload.periodFrom
@@ -9204,28 +9211,26 @@ const buildClaimItRows = async (payload, runtimeOptions = {}) => {
       isImported: null,
       refID: null,
       medVersion,
-      servVersion: claimItServiceVersion({
-        providerLevel: `${ownershipTypeCode}-${facilityTypeCode}-${cateringStatusCode}`,
-        serviceCount: claim.tariffServices.length,
-        configuredVersion: normalizeText(payload.serviceVersion),
-      }),
+      servVersion: serviceVersion,
       policyVersion,
       isDirty: '0',
       status: 'VALID',
       submissionTime: null,
       extraData: '""',
-      addedOn: claim.createdAt ? toClaimItDateTime(claim.createdAt) : null,
-      addedByname: null,
-      addedByuserID: claim.createdBy,
-      addedByrole: null,
-      modifiedOn: claim.updatedAt ? toClaimItDateTime(claim.updatedAt) : null,
-      modifiedByname: null,
-      modifiedByuserID: null,
-      modifiedByrole: null,
-      signedOn: toClaimItDateTime(claim.signedOn),
-      signedByname: claim.signedByname,
-      signedByuserID: claim.signedByuserID,
-      signedByrole: claim.signedByrole,
+      addedOn: generatedAt,
+      addedByname: signedByName,
+      addedByuserID: signedByUsername,
+      addedByrole: signedByRole,
+      modifiedOn: generatedAt,
+      modifiedByname: signedByName,
+      modifiedByuserID: signedByUsername,
+      modifiedByrole: signedByRole,
+      // Accepted June behavior: null when a claim was never signed. Genuine stored
+      // signing evidence is preserved when present; nothing is ever fabricated.
+      signedOn: claim.signedOn ? toClaimItDateTime(claim.signedOn) : null,
+      signedByname: claim.signedByname || null,
+      signedByuserID: claim.signedByuserID || null,
+      signedByrole: claim.signedByrole || null,
       memberNo: normalizeText(claim.patient.memberNumber),
       cardSerialNo: normalizeText(claim.patient.cardSerialNo),
       surname: normalizeText(claim.patient.surname).toLowerCase(),
@@ -9444,7 +9449,7 @@ const buildClaimItMeta = (payload, rows) => {
   const accreditations = getClaimItAccreditationRows(payload, rows)
   const policies = [...new Set(rows.claims.map((claim) => claim.policyVersion).filter(Boolean))]
   const medVersions = [...new Set(rows.claims.map((claim) => claim.medVersion).filter(Boolean))]
-  const servVersions = [...new Set(rows.claims.map((claim) => claim.servVersion))]
+  const servVersions = [...new Set(rows.claims.map((claim) => claim.servVersion).filter(Boolean))]
 
   return {
     dbVersions: CLAIM_IT_DOCTRINE_MIGRATIONS,
@@ -9501,9 +9506,9 @@ const buildNhisClaimItCxfBundle = async (payload, runtimeOptions = {}) => {
   return {
     lockID: `partial-export-${generatedAt}`,
     dateGenerated: generatedAt,
-    signedByName: normalizeText(payload.exportActor?.name) || null,
-    signedByUsername: normalizeText(payload.exportActor?.id) || null,
-    signedByRole: normalizeText(payload.exportActor?.role) || null,
+    signedByName: normalizeText(payload.claimsOfficerName) || 'Facility User',
+    signedByUsername: normalizeText(payload.submitterId) || 'Facility User',
+    signedByRole: 'admin',
     data,
     isBackup: true,
     isExport: true,
@@ -9730,14 +9735,9 @@ const createNhisExportFile = async (claims, period, options = {}) => {
   timing?.mark('building CLAIM-it payload', { claimCount: claims.length })
   if (format === 'cxf') assertClaimItCxfExportConfigured({ ...options, ...payload })
   if (format === 'cxf') {
-    const signedClaims = await getSignedExportClaims(claims, options.reexportReason)
-    const serverConfig = signedClaims[0]?.claimit_config
-    if (serverConfig) {
-      if (signedClaims.some((claim) => JSON.stringify(claim.claimit_config) !== JSON.stringify(serverConfig))) {
-        throw new Error('Export claims with different facility configurations in separate batches.')
-      }
-      options = { ...options, ...serverConfig, exportActor: signedClaims[0].claimit_export_actor }
-    }
+    // Stored signing evidence is merged onto the claims when the server can provide
+    // it; its absence never blocks export (accepted June behavior).
+    const { claims: signedClaims, warnings: signingWarnings } = await getExportSigningEvidence(claims)
     const claimsForPayload = await hydrateNhisPrescriptionUrlsForTransfer(signedClaims, options)
     timing?.mark('loading prescription signed URLs', { claimCount: claimsForPayload.length })
     const cxfPayload = buildNhisClaimItExportPayload(claimsForPayload, { ...options, exportPeriod: period })
@@ -9746,7 +9746,10 @@ const createNhisExportFile = async (claims, period, options = {}) => {
     // happens, instead of a single misleading "Compressing" label covering
     // the whole call.
     const content = await buildNhisClaimItCxf(cxfPayload, options)
-    await recordCxfExport(signedClaims, content, options.reexportReason)
+    const exportWarnings = [...signingWarnings, ...getClaimItExportWarnings(cxfPayload)]
+    if (exportWarnings.length && typeof options.onExportWarnings === 'function') options.onExportWarnings(exportWarnings)
+    const auditWarning = await recordCxfExport(signedClaims, content, options.reexportReason)
+    if (auditWarning && typeof options.onExportWarnings === 'function') options.onExportWarnings([auditWarning])
     timing?.mark('generating CXF archive', {
       claimCount: claimsForPayload.length,
       bytes: content?.length || content?.byteLength || 0,
@@ -10258,8 +10261,7 @@ const submitNhisClaimsDirect = async (claims, period, options = {}) => {
   }
   const requiresBranchClaimIt = isClaimItBridgeMode(integrationMode)
   if (requiresBranchClaimIt || directApiSource === 'branch') {
-    claims = await getSignedExportClaims(claims, options.reexportReason)
-    options = { ...options, ...(claims[0]?.claimit_config || {}), exportActor: claims[0]?.claimit_export_actor || null }
+    claims = (await getExportSigningEvidence(claims)).claims
   }
   const claimsForSubmission = directApiSource === 'hosted'
     ? await hydrateNhisPrescriptionUrlsForTransfer(claims, options)

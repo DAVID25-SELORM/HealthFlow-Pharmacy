@@ -7,7 +7,7 @@
   "edgeFunctionCount": 7,
   "testFileCount": 148,
   "criticalFiles": {
-    "src/services/nhisService.js": "5784676d686bce845915f11fe367147788260ec667b79165b2b86ca214cfee4d",
+    "src/services/nhisService.js": "e08046e6685aa9a6a3193795322744338893cf5909ff83665ac06332ca69e673",
     "src/context/AuthContext.jsx": "e988ea8d7630703186192367f2b5bed836bab772e9457a2383430d5d290dcbcb",
     "src/services/recycleBinService.js": "94f0fd814bda811b3c234769426d57257a0f8120e90df8bffc87ae9ebfbcabe9",
     "src/services/offlineInstallerReleaseService.js": "486cff1a4cb69c96de4e68bdb2dd9552a92c069ee5f341b726d16d2c65d714ac",
@@ -47,6 +47,6 @@
   "pendingClaimItCompatibility": {
     "report": "docs/claimit-compatibility-2026-09-20.md",
     "rollout": "docs/claimit-rollout-runbook.md",
-    "status": "Local implementation; staging and production blocked; whole-application typecheck incomplete"
+    "status": "Local: rebased on the accepted West Point June export (June contract + classification tests); legacy claims never blocked by signing; hosted deployment blocked by staging acceptance and access"
   }
 }

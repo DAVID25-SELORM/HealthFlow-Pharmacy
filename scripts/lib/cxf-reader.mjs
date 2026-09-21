@@ -98,7 +98,7 @@ export function structuralContract(bundle) {
   }
 }
 
-const phpType = (value) => value === null ? 'null' : Buffer.isBuffer(value) ? (value.length ? 'string' : 'empty string')
+const phpType = (value) => value === null ? 'null' : value?.constructor?.name === 'BigPhpString' ? 'string' : Buffer.isBuffer(value) ? (value.length ? 'string' : 'empty string')
   : value instanceof Map ? (value.size ? 'array' : 'empty array') : typeof value
 
 export function auditCxf(bundle) {

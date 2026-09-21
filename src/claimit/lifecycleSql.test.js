@@ -8,6 +8,7 @@ const org = '00000000-0000-0000-0000-000000000001'
 const actor = '00000000-0000-0000-0000-000000000002'
 const claim = '00000000-0000-0000-0000-000000000003'
 const migration = readFileSync('supabase/migrations/20260920120000_claimit_signing_and_export_gate.sql', 'utf8')
+const legacyCompat = readFileSync('supabase/migrations/20260921130000_claimit_legacy_claims_non_blocking.sql', 'utf8')
 beforeAll(async () => {
   db = new PGlite()
   await db.exec(`create role anon; create role authenticated;
@@ -37,50 +38,71 @@ beforeAll(async () => {
     alter table nhis_claim_medicines add column dose text default '1 tablet', add column frequency text default 'OD';`)
   await db.exec(migration)
   await db.exec(migration)
+  await db.exec(legacyCompat)
+  await db.exec(legacyCompat)
 }, 30000)
 afterAll(async () => { await db?.close() })
 
-it('dry-runs legacy claims without inventing a signer and persists flags idempotently', async () => {
+it('reports legacy unsigned claims as a warning without inventing a signer', async () => {
   const preview = (await db.query('select audit_nhis_claimit() as report')).rows[0].report
-  expect(preview).toMatchObject({ scanned: 1, would_update: 0, would_flag: 1, automatically_repaired: 0 })
-  expect(preview.rows[0].issues).toEqual(['LEGACY_MISSING_SIGNER'])
+  expect(preview).toMatchObject({ scanned: 1, would_update: 0, would_flag: 0, would_warn: 1, automatically_repaired: 0, manual_review_required: 0 })
+  expect(preview.rows[0].issues).toEqual([])
+  expect(preview.rows[0].warnings).toEqual(['LEGACY_UNSIGNED_CLAIM'])
+  expect(preview.warning_counts).toEqual({ LEGACY_UNSIGNED_CLAIM: 1 })
   expect((await db.query('select count(*)::int as count from nhis_claim_signatures')).rows[0].count).toBe(0)
+  // A warning alone never writes a remediation flag.
+  expect((await db.query('select audit_nhis_claimit(null,100,true) as report')).rows[0].report.flags_written).toBe(0)
+  await db.exec('update nhis_claims set physician_name=null')
   expect((await db.query('select audit_nhis_claimit(null,100,true) as report')).rows[0].report.flags_written).toBe(1)
   expect((await db.query('select audit_nhis_claimit(null,100,true) as report')).rows[0].report.flags_written).toBe(0)
+  await db.exec("update nhis_claims set physician_name='Synthetic Prescriber'")
 })
 
-it('rejects unsigned exports and atomically signs with authenticated identity', async () => {
-  await expect(db.query('select claimit_export_claims($1)', [[claim]])).rejects.toThrow('MISSING_OR_STALE_SIGNER')
+it('exports unsigned legacy claims with a warning, then honors genuine signing evidence from the authenticated identity', async () => {
+  const legacy = (await db.query('select claimit_export_claims($1) as claims', [[claim]])).rows[0].claims[0]
+  expect(legacy.claimit_warnings).toEqual(['LEGACY_UNSIGNED_CLAIM'])
+  expect(legacy.signed_by_user_id).toBeNull()
+  expect(legacy.signed_on).toBeNull()
   const signature = (await db.query('select sign_nhis_claim($1,$2) as signature', [claim, 'Reviewed original prescription'])).rows[0].signature
   expect(signature).toMatchObject({ status: 'VALID', signed_by_user_id: actor, signed_by_name: 'Real Officer', signed_by_role: 'claims_officer' })
   expect(signature.signed_on).toBeTruthy()
   const repeat = (await db.query('select sign_nhis_claim($1,$2) as signature', [claim, 'Reviewed again'])).rows[0].signature
   expect(repeat.id).toBe(signature.id)
   expect((await db.query("select count(*)::int as count from nhis_cxf_events where event_type='CLAIM_SIGNED'")).rows[0].count).toBe(1)
+  const signed = (await db.query('select claimit_export_claims($1) as claims', [[claim]])).rows[0].claims[0]
+  expect(signed.claimit_warnings).toEqual([])
+  expect(signed).toMatchObject({ signed_by_user_id: actor, signed_by_name: 'Real Officer', signed_by_role: 'claims_officer' })
 })
 
-it('enforces precise totals and invalidates signatures after clinical edits', async () => {
+it('warns on totals and stale signatures at export but still refuses to sign inconsistent claims', async () => {
   await db.exec("update nhis_claim_medicines set duration='2 days' where drug_code='A'")
-  await expect(db.query('select claimit_export_claims($1)', [[claim]])).rejects.toThrow('MISSING_OR_STALE_SIGNER')
+  expect((await db.query('select claimit_export_claims($1) as claims', [[claim]])).rows[0].claims[0].claimit_warnings).toEqual(['LEGACY_UNSIGNED_CLAIM'])
   await db.exec('update nhis_claims set total_amount=251.88')
+  expect((await db.query('select claimit_export_claims($1) as claims', [[claim]])).rows[0].claims[0].claimit_warnings).toContain('INVALID_TOTALS')
   await expect(db.query('select sign_nhis_claim($1,$2)', [claim, 'Review'])).rejects.toThrow('INVALID_TOTALS')
   await db.exec('update nhis_claims set total_amount=251.87')
   await db.query('select sign_nhis_claim($1,$2)', [claim, 'Reviewed correction'])
 })
 
-it('retains old export evidence and requires an explicit corrected re-export reason', async () => {
+it('retains old export evidence and reports a missing re-export reason without blocking', async () => {
   const rows = (await db.query('select claimit_export_claims($1) as claims', [[claim]])).rows[0].claims
   const fingerprints = { [claim]: rows[0].claimit_fingerprint }
   await db.query('select record_nhis_cxf_export($1,$2,$3)', [[claim], fingerprints, 'a'.repeat(64)])
-  await expect(db.query('select claimit_export_claims($1)', [[claim]])).rejects.toThrow('REEXPORT_REASON_REQUIRED')
+  expect((await db.query('select claimit_export_claims($1) as claims', [[claim]])).rows[0].claims[0].claimit_warnings).toEqual(['REEXPORT_WITHOUT_REASON'])
   await db.query('select record_nhis_cxf_export($1,$2,$3,$4)', [[claim], fingerprints, 'b'.repeat(64), 'Corrected export'])
   expect((await db.query("select artifact_sha256 from nhis_cxf_events where event_type in ('CXF_EXPORTED','CXF_REEXPORTED') order by created_at")).rows.map((r) => r.artifact_sha256)).toEqual(['a'.repeat(64), 'b'.repeat(64)])
   await expect(db.query('select record_nhis_cxf_export($1,$2,$3,$4)', [[claim], { [claim]: 'stale' }, 'c'.repeat(64), 'Retry'])).rejects.toThrow('changed during export')
 })
 
-it('blocks suspicious accreditation without overwriting the stored date', async () => {
+it('flags suspicious accreditation for review without blocking export or overwriting the stored date', async () => {
   await db.exec("update nhia_configuration set accreditation_date_generated='2027-01-01'")
-  await expect(db.query('select claimit_export_claims($1,$2)', [[claim], 'Review'])).rejects.toThrow('ACCREDITATION_MAPPING_CONFLICT')
+  const row = (await db.query('select claimit_export_claims($1,$2) as claims', [[claim], 'Review'])).rows[0].claims[0]
+  expect(row.claimit_warnings).toEqual(['ACCREDITATION_DATE_REVIEW_REQUIRED'])
+  expect(row.claimit_config.accreditationDateGenerated).toBe('2027-01-01')
+  const audit = (await db.query('select audit_nhis_claimit() as report')).rows[0].report
+  expect(audit.rows[0].warnings).toContain('ACCREDITATION_DATE_REVIEW_REQUIRED')
+  expect(audit.rows[0].issues).not.toContain('ACCREDITATION_DATE_REVIEW_REQUIRED')
+  expect((await db.query('select accreditation_date_generated::text as d from nhia_configuration')).rows[0].d).toBe('2027-01-01')
   await db.exec("update nhia_configuration set accreditation_date_generated='2025-01-01'")
 })
 
@@ -134,7 +156,20 @@ it('repairs only provably unexported header totals and retains original financia
   expect((await db.query('select repair_nhis_claimit_total($1,$2) as result',[fresh,after])).rows[0].result.changed).toBe(false)
   expect((await db.query("select details from nhis_cxf_events where claim_id=$1 and event_type='CLAIM_REPAIRED'",[fresh])).rows).toHaveLength(1)
   await expect(db.query('select repair_nhis_claimit_total($1,$2)',[fresh,fingerprint])).rejects.toThrow('Preview is stale')
-  await expect(db.query("update nhis_claims set status='submitted' where id=$1",[fresh])).rejects.toThrow('Review and sign')
+  await db.query("update nhis_claims set status='submitted' where id=$1",[fresh]) // unsigned legacy submission is allowed
   await db.query("update nhis_claims set status='rejected' where id=$1",[fresh])
   await expect(db.query('select repair_nhis_claimit_total($1,$2)',[fresh,after])).rejects.toThrow('manual financial review')
+})
+
+it('never blocks legacy unsigned claims from submission or settlement and only audits the transition', async () => {
+  const legacy = '00000000-0000-0000-0000-000000000060'
+  await db.exec(`insert into nhis_claims(id,organization_id,claim_number,status,ccc_no,member_no,service_date_from,total_amount)
+    values('${legacy}','${org}','LEGACY-UNSIGNED','served','12345','12345678','2026-05-01',10);`)
+  await db.query("update nhis_claims set status='submitted' where id=$1", [legacy])
+  await db.query("update nhis_claims set status='paid' where id=$1", [legacy])
+  await db.exec(`insert into nhis_claims(id,organization_id,claim_number,status,ccc_no,member_no,service_date_from,total_amount)
+    values('00000000-0000-0000-0000-000000000061','${org}','IMPORTED-SUBMITTED','submitted','12345','12345678','2026-05-01',0)`)
+  const events = (await db.query("select details->>'new_status' as status,(details->>'has_signature_history')::boolean as signed from nhis_cxf_events where claim_id=$1 and event_type in ('CLAIM_SUBMITTED','CLAIM_UPDATED') order by created_at", [legacy])).rows
+  expect(events).toEqual([{ status: 'submitted', signed: false }, { status: 'paid', signed: false }])
+  expect((await db.query('select count(*)::int as count from nhis_claim_signatures where claim_id=$1', [legacy])).rows[0].count).toBe(0)
 })

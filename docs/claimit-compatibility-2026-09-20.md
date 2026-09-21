@@ -1,3 +1,12 @@
+> **CORRECTED 2026-09-21.** This report assumed the genuine May Claim-IT file was the
+> compatibility target. The successful West Point June HealthFlow export (accepted by
+> Claim-IT) proves that null signers, `claimType` at position 75, no `cpuType`, populated
+> `servVersion`, and populated validation sections are accepted behavior. Sections below
+> that mandate May parity (signer gating, claimType order, cpuType, servVersion null,
+> submission trigger) are superseded by `claimit-june-baseline-2026-09-21.md`, which also
+> records the KEEP/MODIFY/REMOVE audit. The July file analyzed here is HEALTH LIGHT LTD
+> (provider 030509386), not West Point.
+
 # Claim-IT compatibility implementation and deployment status
 
 Latest continuation and rollout/access evidence are recorded at the end of this

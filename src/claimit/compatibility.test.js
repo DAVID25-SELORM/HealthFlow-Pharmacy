@@ -2,9 +2,10 @@ import { describe, expect, it, vi } from 'vitest'
 import { readFileSync, existsSync } from 'node:fs'
 import { deflateSync } from 'node:zlib'
 import reference from './may-reference-contract.json'
-import { CLAIM_IT_CLAIM_FIELD_ORDER, orderedRecord, decimalAmount, sumAmounts, claimItServiceVersion, accreditationIssues, assertClaimSignature } from './compatibility'
+import june from './west-point-june-contract.json'
+import { CLAIM_IT_CLAIM_FIELD_ORDER, orderedRecord, decimalAmount, sumAmounts, claimItServiceVersion, accreditationIssues, classifyClaimSignature } from './compatibility'
 import { parsePhp, readCxf, structuralContract, phpText, auditCxf } from '../../scripts/lib/cxf-reader.mjs'
-import { buildNhisClaimItCxf, buildNhisClaimItExportPayload } from '../services/nhisService'
+import { buildNhisClaimItCxf, buildNhisClaimItExportPayload, getClaimItExportWarnings } from '../services/nhisService'
 
 vi.mock('../lib/supabase', () => ({ supabase: {} }))
 
@@ -27,11 +28,14 @@ const options = {
 }
 
 describe('Claim-IT reference contract', () => {
-  it('keeps all 76 claim fields in the independently extracted May order', () => {
-    expect(CLAIM_IT_CLAIM_FIELD_ORDER).toEqual(reference.fields.claims)
+  it('keeps all 76 claim fields in the accepted West Point June order (claimType last)', () => {
+    expect(CLAIM_IT_CLAIM_FIELD_ORDER).toEqual(june.fields.claims)
     expect(CLAIM_IT_CLAIM_FIELD_ORDER).toHaveLength(76)
+    expect(CLAIM_IT_CLAIM_FIELD_ORDER.indexOf('claimType')).toBe(75)
+    // The only claim-field-order difference from the May reference is claimType's position.
+    expect(CLAIM_IT_CLAIM_FIELD_ORDER.filter((key) => key !== 'claimType')).toEqual(reference.fields.claims.filter((key) => key !== 'claimType'))
     const scrambled=Object.fromEntries([...CLAIM_IT_CLAIM_FIELD_ORDER].reverse().map((key) => [key,null]))
-    expect(Object.keys(orderedRecord(scrambled))).toEqual(reference.fields.claims)
+    expect(Object.keys(orderedRecord(scrambled))).toEqual(june.fields.claims)
     expect(() => orderedRecord({...scrambled,unrecognized:null})).toThrow('schema mismatch')
   })
   it('distinguishes PHP null, empty string, arrays, zero, string zero, and false', () => {
@@ -60,17 +64,20 @@ describe('Claim-IT reference contract', () => {
     expect(decimalAmount('999999999999.995')).toBe('1000000000000.00')
     expect(() => decimalAmount(NaN)).toThrow('Invalid decimal')
   })
-  it('uses null only for the verified medicine-only PHC profile', () => {
-    expect(claimItServiceVersion({providerLevel:'PVT-PHC-CE',serviceCount:0,configuredVersion:'2023-02-01.250531'})).toBeNull()
-    expect(claimItServiceVersion({providerLevel:'PVT-PHC-CE',serviceCount:1})).toBe('2023-02-01.250531')
-    expect(claimItServiceVersion({providerLevel:'PVT-HOS-CE',serviceCount:0,configuredVersion:'other'})).toBe('other')
+  it('keeps servVersion populated for medicine-only pharmacy claims, as in the accepted June export', () => {
+    expect(claimItServiceVersion({serviceCount:0,configuredVersion:'2023-02-01.250531'})).toBe('2023-02-01.250531')
+    expect(claimItServiceVersion({serviceCount:1})).toBe('2023-02-01.250531')
+    expect(claimItServiceVersion({serviceCount:0,configuredVersion:'other'})).toBe('other')
+    expect(june.claimFieldTypes.servVersion).toEqual(['string'])
   })
-  it('requires real signing information without substituting the exporter', () => {
-    expect(() => assertClaimSignature({status:'VALID'})).toThrow('missing signedOn')
-    expect(() => assertClaimSignature(signed)).not.toThrow()
-    expect(() => assertClaimSignature({...signed,signedOn:'2099-01-01'})).toThrow('future')
+  it('reports unsigned claims as a warning and never blocks or fabricates a signer', () => {
+    expect(classifyClaimSignature({status:'VALID'})).toEqual({complete:false,missing:['signedOn','signedByname','signedByuserID','signedByrole'],warnings:['LEGACY_UNSIGNED_CLAIM']})
+    expect(classifyClaimSignature(signed)).toEqual({complete:true,missing:[],warnings:[]})
+    expect(classifyClaimSignature({...signed,signedOn:'2099-01-01'}).warnings).toEqual(['SIGNED_ON_IN_FUTURE'])
+    expect(classifyClaimSignature({...signed,signedOn:'not-a-date'}).warnings).toEqual(['SIGNED_ON_INVALID'])
+    expect(classifyClaimSignature({...signed,signedByname:'  '}).warnings).toEqual(['LEGACY_UNSIGNED_CLAIM'])
   })
-  it('flags the July accreditation anomaly without guessing a replacement date', () => {
+  it('flags the HEALTH LIGHT accreditation anomaly (not West Point) without guessing a replacement date', () => {
     const source={generated:'2027-08-01',expiry:'2027-08-01',effective:'2025-10-01',today:'2026-09-20'}
     expect(accreditationIssues(source)).toEqual(['ACCREDITATION_GENERATED_IN_FUTURE','ACCREDITATION_MAPPING_REVIEW_REQUIRED'])
     expect(source.generated).toBe('2027-08-01')
@@ -81,18 +88,19 @@ describe('Claim-IT reference contract', () => {
     const bytes=await buildNhisClaimItCxf(payload)
     expect(await buildNhisClaimItCxf(payload)).toEqual(bytes)
     const bundle=readCxf(bytes),contract=structuralContract(bundle)
-    expect(contract.topLevel).toEqual(reference.topLevel)
-    expect(contract.sections).toEqual(reference.sections)
-    expect(contract.schema).toEqual(reference.schema)
-    expect(contract.fields.claims).toEqual(reference.fields.claims)
-    expect(contract.fields.medicineentries).toEqual(reference.fields.medicineentries)
-    expect(contract.fields.summaryitems).toEqual(reference.fields.summaryitems)
-    expect(contract.appVersion).toEqual(reference.appVersion)
-    expect(phpText(bundle.get('data').get('_meta').get('appVersion').get('cpuType'))).toBe('x64')
+    expect(contract.topLevel).toEqual(june.topLevel)
+    expect(contract.sections).toEqual(june.sections)
+    expect(contract.schema).toEqual(june.schema)
+    expect(contract.fields.claims).toEqual(june.fields.claims)
+    expect(contract.fields.medicineentries).toEqual(june.fields.medicineentries)
+    expect(contract.fields.summaryitems).toEqual(june.fields.summaryitems)
+    expect(contract.appVersion).toEqual(Object.keys(june.appVersion))
+    expect(bundle.get('data').get('_meta').get('appVersion').has('cpuType')).toBe(false)
     const row=bundle.get('data').get('claims').get(0)
     expect(phpText(row.get('medCost'))).toBe('251.87')
+    // Genuine stored signing evidence is preserved when present.
     expect(phpText(row.get('signedByname'))).toBe('Fixture Signer')
-    expect(row.get('servVersion')).toBeNull()
+    expect(phpText(row.get('servVersion'))).toBe('2023-02-01.250531')
     expect(auditCxf(bundle).finances).toEqual({invalidMedicineTotals:0,invalidServiceTotals:0,invalidClaimTotals:0,invalidSummaries:0,invalidBatchTotal:0})
   })
   it('retains a service tariff in populated service exports and reconciles both components', async () => {
@@ -107,14 +115,18 @@ describe('Claim-IT reference contract', () => {
     expect(auditCxf(bundle).finances.invalidClaimTotals).toBe(0)
     expect(auditCxf(bundle).finances.invalidSummaries).toBe(0)
   })
-  it('rejects unsigned and financially inconsistent claims before constructing a CXF', async () => {
-    await expect(buildNhisClaimItCxf(buildNhisClaimItExportPayload([{...fixture,signed_on:null}],options))).rejects.toThrow('missing signedOn')
+  it('exports unsigned legacy claims with null signers (accepted June behavior) but rejects financially inconsistent claims', async () => {
+    const unsigned={...fixture,signed_on:null,signed_by_user_id:null,signed_by_name:null,signed_by_role:null}
+    const payload=buildNhisClaimItExportPayload([unsigned],options)
+    expect(getClaimItExportWarnings(payload)).toEqual([{claimNumber:'FIXTURE-1',warnings:['LEGACY_UNSIGNED_CLAIM']}])
+    const row=readCxf(await buildNhisClaimItCxf(payload)).get('data').get('claims').get(0)
+    for (const key of ['signedOn','signedByname','signedByuserID','signedByrole']) expect(row.get(key)).toBeNull()
     await expect(buildNhisClaimItCxf(buildNhisClaimItExportPayload([{...fixture,total_amount:251.88}],options))).rejects.toThrow('does not reconcile')
   })
 })
 
 const mayPath=process.env.CLAIMIT_MAY_CXF || 'C:/Users/selorm/Downloads/MAY2026__4A45E6DE76C7 [030501954] (WESTPOINT CHEMIST)_2026-05-02-2026-05-02.cxf'
-it.skipIf(!existsSync(mayPath))('parses the genuine May CXF without committing patient information', () => {
+it.skipIf(!existsSync(mayPath))('parses the genuine May CXF (structural reference only) without committing patient information', () => {
   const bundle=readCxf(readFileSync(mayPath))
   expect(structuralContract(bundle).fields.claims).toEqual(reference.fields.claims)
   expect(structuralContract(bundle).schema).toEqual(reference.schema)

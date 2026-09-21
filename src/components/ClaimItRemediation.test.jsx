@@ -6,7 +6,7 @@ vi.mock('../services/claimitLifecycleService',()=>({auditClaimItClaims:vi.fn(),s
 beforeEach(()=>{
   vi.resetAllMocks()
   auditClaimItClaims.mockResolvedValue({scanned:1,unchanged:0,manual_review_required:1,automatically_repaired:0,errors:0,
-    counts:{LEGACY_MISSING_SIGNER:1},rows:[{id:'claim',claimNumber:'TEST-1',status:'served',issues:['LEGACY_MISSING_SIGNER']}],next_cursor:'claim'})
+    would_warn:1,counts:{},warning_counts:{LEGACY_UNSIGNED_CLAIM:1},rows:[{id:'claim',claimNumber:'TEST-1',status:'served',issues:[],warnings:['LEGACY_UNSIGNED_CLAIM']}],next_cursor:'claim'})
 })
 it('previews before flagging and requires a review reason before signing',async()=>{
   render(<ClaimItRemediation />)
@@ -15,6 +15,10 @@ it('previews before flagging and requires a review reason before signing',async(
   fireEvent.click(screen.getByText('Preview audit (100 claims)'))
   await screen.findByText('TEST-1')
   expect(auditClaimItClaims).toHaveBeenCalledWith(expect.objectContaining({apply:false}))
+  // Legacy unsigned claims are a warning, and the panel says signing is optional for export.
+  expect(screen.getByText(/Signing is optional and is not required to export/)).toBeInTheDocument()
+  expect(screen.getAllByText('LEGACY_UNSIGNED_CLAIM').length).toBeGreaterThan(0)
+  expect(screen.getByText(/Warnings \(never block export\): 1/)).toBeInTheDocument()
   expect(screen.getByText('Sign reviewed claim')).toBeDisabled()
   fireEvent.change(screen.getByLabelText('Reason for signing after review'),{target:{value:'Checked prescription'}})
   fireEvent.click(screen.getByText('Sign reviewed claim'))

@@ -1,9 +1,12 @@
-// Contract verified against the genuine May 2026 Claim-IT PHC export.
-// No patient, provider, or signer values from that file belong here.
+// Compatibility baseline: the successful West Point June 2026 HealthFlow export
+// that Claim-IT accepted (see west-point-june-contract.json). The genuine May
+// Claim-IT file is only a structural reference; a difference from May is NOT a
+// defect when the same difference existed in the accepted June output (null
+// signers, claimType last, no cpuType, populated servVersion).
+// No patient, provider, or signer values belong here.
 export const CLAIM_IT_PROFILE = Object.freeze({
   serializerVersion: 'claimit-compat-v1',
   profile: 'claimit-2025053123',
-  cpuType: 'x64',
   serviceVersion: '2023-02-01.250531',
   medicineVersion: '2025-05-01.250531',
   policyVersion: 'cgs.2022-12-01.250531',
@@ -19,7 +22,7 @@ export const CLAIM_IT_CLAIM_FIELD_ORDER = Object.freeze([
   'specialtyAttended', 'totalCost', 'procCost', 'diagCost', 'inveCost', 'medCost',
   'principalGDRG', 'alternativeGDRG', 'autoSummaryGDRG', 'autoSummaryCost',
   'memberAge', 'memberAgeGroup', 'isImported', 'refID', 'medVersion', 'servVersion',
-  'policyVersion', 'isDirty', 'status', 'claimType', 'submissionTime', 'extraData',
+  'policyVersion', 'isDirty', 'status', 'submissionTime', 'extraData',
   'addedOn', 'addedByname', 'addedByuserID', 'addedByrole', 'modifiedOn',
   'modifiedByname', 'modifiedByuserID', 'modifiedByrole', 'signedOn',
   'signedByname', 'signedByuserID', 'signedByrole', 'memberNo', 'cardSerialNo',
@@ -31,7 +34,7 @@ export const CLAIM_IT_CLAIM_FIELD_ORDER = Object.freeze([
   'accred_ccd_effectiveDate', 'facilityTypeCode', 'ownershipTypeCode', 'cateringStatusCode',
   'refclaimCheckCode', 'reffacilityID', 'reffacilityName', 'minDOSP', 'maxDOSP',
   'serviceProvisionDates', 'specialtiesAttended', 'durationOfSpell', 'typeOfService',
-  'isUnbundled', 'includesPharmacy', 'typeOfAttendance', 'serviceOutcome',
+  'isUnbundled', 'includesPharmacy', 'typeOfAttendance', 'serviceOutcome', 'claimType',
 ])
 
 export function orderedRecord(record, fields = CLAIM_IT_CLAIM_FIELD_ORDER) {
@@ -41,8 +44,10 @@ export function orderedRecord(record, fields = CLAIM_IT_CLAIM_FIELD_ORDER) {
   return Object.fromEntries(fields.map((key) => [key, record[key]]))
 }
 
-export function claimItServiceVersion({ providerLevel, serviceCount, configuredVersion }) {
-  if (providerLevel === 'PVT-PHC-CE' && serviceCount === 0) return null
+// Accepted June behavior: the payload always carries the configured (default)
+// service tariff version, so servVersion is populated even for medicine-only
+// pharmacy claims. Do not force null merely because the May reference has null.
+export function claimItServiceVersion({ serviceCount = 0, configuredVersion = '' } = {}) {
   return configuredVersion || (serviceCount > 0 ? CLAIM_IT_PROFILE.serviceVersion : null)
 }
 
@@ -81,9 +86,19 @@ export function accreditationIssues({ generated, expiry, effective, today }) {
   return issues
 }
 
-export function assertClaimSignature(claim) {
-  const missing = ['signedOn', 'signedByname', 'signedByuserID', 'signedByrole'].filter((key) => !String(claim[key] ?? '').trim())
-  if (missing.length) throw new Error(`${claim.claimNumber || 'Claim'} is not export-ready: missing ${missing.join(', ')}. Review and sign the claim.`)
-  if (!Number.isFinite(Date.parse(claim.signedOn))) throw new Error('Claim signing timestamp is invalid')
-  if (Date.parse(claim.signedOn) > Date.now()) throw new Error('Claim signing timestamp is in the future')
+export const SIGNER_FIELDS = Object.freeze(['signedOn', 'signedByname', 'signedByuserID', 'signedByrole'])
+export const LEGACY_UNSIGNED_CLAIM = 'LEGACY_UNSIGNED_CLAIM'
+
+// Signing is a HealthFlow audit requirement, NOT a Claim-IT compatibility
+// requirement: the accepted June export carried null signer fields on every claim.
+// Never throw and never invent a signer; report so the UI/audit can surface it.
+export function classifyClaimSignature(claim) {
+  const missing = SIGNER_FIELDS.filter((key) => !String(claim?.[key] ?? '').trim())
+  const invalidTimestamp = !missing.includes('signedOn') && !Number.isFinite(Date.parse(claim.signedOn))
+  const future = !missing.includes('signedOn') && !invalidTimestamp && Date.parse(claim.signedOn) > Date.now()
+  const warnings = []
+  if (missing.length) warnings.push(LEGACY_UNSIGNED_CLAIM)
+  if (invalidTimestamp) warnings.push('SIGNED_ON_INVALID')
+  if (future) warnings.push('SIGNED_ON_IN_FUTURE')
+  return { complete: missing.length === 0 && !invalidTimestamp && !future, missing, warnings }
 }
