@@ -1,8 +1,11 @@
 # Claim-IT CXF export format: LOCKED
 
 The CXF export format is locked. It was taken from the West Point July export generated on
-2026-09-21 19:28 UTC by the May-shape + signer release, after which the format was accepted for
-import (per the operator's report; the exact Claim-IT response was not captured in this repository).
+2026-09-21 19:28 UTC by the May-shape + signer release (`f38c118`).
+
+**Confirmed accepted by Claim-IT on 2026-09-21:** the operator imported that file
+(`JUL2026 ... WESTPOINT CHEMIST ... 2026-07-08`, 1 claim) into Claim-IT and the import succeeded.
+The exact Claim-IT response text was not captured in this repository.
 
 ## What is locked
 - Envelope, top-level fields, section list and order, `_meta` keys, `_dbstruct` schema (every table, column,
