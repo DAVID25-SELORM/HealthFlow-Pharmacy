@@ -119,13 +119,6 @@ describe('Claim-IT reference contract', () => {
     for (const key of ['signedOn','signedByname','signedByuserID','signedByrole']) expect(row.get(key)).toBeNull()
     await expect(buildNhisClaimItCxf(buildNhisClaimItExportPayload([{...fixture,total_amount:251.88}],options))).rejects.toThrow('does not reconcile')
   })
-  it('never derives a legacy signer from the authenticated export actor', async () => {
-    const unsigned={...fixture,signed_on:null,signed_by_user_id:null,signed_by_name:null,signed_by_role:null}
-    const payload=buildNhisClaimItExportPayload([unsigned],{...options,exportActor:{id:'real-user',name:'Real Officer',role:'claims_officer'}})
-    expect(getClaimItExportWarnings(payload)).toEqual([{claimNumber:'FIXTURE-1',warnings:['LEGACY_UNSIGNED_CLAIM']}])
-    const row=readCxf(await buildNhisClaimItCxf(payload)).get('data').get('claims').get(0)
-    for (const key of ['signedOn','signedByname','signedByuserID','signedByrole']) expect(row.get(key)).toBeNull()
-  })
 })
 
 const mayPath=process.env.CLAIMIT_MAY_CXF || 'C:/Users/selorm/Downloads/MAY2026__4A45E6DE76C7 [030501954] (WESTPOINT CHEMIST)_2026-05-02-2026-05-02.cxf'

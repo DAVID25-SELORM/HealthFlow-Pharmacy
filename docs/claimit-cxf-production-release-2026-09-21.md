@@ -11,9 +11,12 @@ that branch are intentionally excluded and remain separate.
 - **Validation, validation z-claim and prescriber-for-day sections stay populated** (May's empty tables are
   not a reason to drop them; the relational/bridge payload depends on them). Restored after the May
   alignment had emptied them.
-- Signer fields: only a complete signature already stored on the claim is serialized. Unsigned legacy
-  claims keep null signers; no signer is inferred from the exporter. The signer policy for legacy VALID
-  claims is deliberately undecided pending a Claim-IT import test of the two variants.
+- Signer fields: a VALID claim in a genuine Claim-IT export always carries its signer. A complete
+  signature already stored on the claim is used as-is; otherwise the authenticated exporting user
+  (name and email from their own signed-in session, role `admin` as in the accepted envelope) and the
+  export time. Stored and exporter values are never mixed. With no signed-in identity the fields stay
+  null and the export reports `LEGACY_UNSIGNED_CLAIM`; nothing is invented and nothing is blocked.
+  Using the exporter is reported as `SIGNER_ASSIGNED_FROM_EXPORT_USER`.
 - Exact decimal totals (no float drift); explicit `dateGenerated` never derived from effective/expiry;
   human-readable message when the accreditation generated date is missing.
 - Signing evidence and export audit use the existing server RPCs best-effort and never block an export.
