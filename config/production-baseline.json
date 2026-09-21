@@ -7,7 +7,7 @@
   "edgeFunctionCount": 7,
   "testFileCount": 148,
   "criticalFiles": {
-    "src/services/nhisService.js": "0d0dd5d79ff4815c4004c4da1fa262771693ed3897d8f78680eed7adcee1362a",
+    "src/services/nhisService.js": "acf499bdb6dcaecaabd3ddd65919b549dc9301110e2433c38001e73a3d9b5b6f",
     "src/context/AuthContext.jsx": "e988ea8d7630703186192367f2b5bed836bab772e9457a2383430d5d290dcbcb",
     "src/services/recycleBinService.js": "94f0fd814bda811b3c234769426d57257a0f8120e90df8bffc87ae9ebfbcabe9",
     "src/services/offlineInstallerReleaseService.js": "486cff1a4cb69c96de4e68bdb2dd9552a92c069ee5f341b726d16d2c65d714ac",

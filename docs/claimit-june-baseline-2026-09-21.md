@@ -163,3 +163,25 @@ What changed (code/UI/schema only; nothing executed against production):
   a save and logs no secrets.
 - **Known gap**: `Nhis.jsx` (which has other uncommitted work) does not yet display the export
   warnings; they are emitted via `options.onExportWarnings` or `console.warn`.
+
+## Correction: VALID claims must carry a signer
+
+The two June files used as the "accepted" baseline were never proven to be the file Claim-IT
+imported, and a genuine Claim-IT file (May) shows every `VALID` claim carrying
+`signedOn/signedByname/signedByuserID/signedByrole`. Our export marked claims `VALID` with all
+four null, which is internally inconsistent and the most likely cause of the July import error
+(not yet confirmed against the exact Claim-IT message).
+
+Rule (`resolveClaimItSigner` in `nhisService.js`):
+
+1. A claim's own **complete stored signature** is used as-is.
+2. Otherwise the **authenticated exporting user** (name and email from their own signed-in
+   session; role uses the same `admin` value the accepted envelope carries) and the **export
+   time**. Export time is always after the service date.
+3. Stored and exporter values are **never mixed**. With neither available the fields stay null
+   and the export reports `LEGACY_UNSIGNED_CLAIM`. Nothing is invented and nothing is blocked.
+
+Using the exporter is reported as `SIGNER_ASSIGNED_FROM_EXPORT_USER` so it stays auditable.
+The other differences from May (claimType position, cpuType, servVersion, validation sections)
+are NOT changed by this; they are being isolated with test variants of the July file
+(`scripts/make-cxf-variants.mjs`) imported one at a time into Claim-IT.

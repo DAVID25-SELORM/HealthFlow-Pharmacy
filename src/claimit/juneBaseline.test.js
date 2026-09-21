@@ -18,7 +18,8 @@ import { readCxf, parsePhp, auditCxf, phpText } from '../../scripts/lib/cxf-read
 import { parsePhpStream, readCxfStream, BigPhpString } from '../../scripts/lib/cxf-stream-reader.mjs'
 import { profileCxf, contractFromProfile } from '../../scripts/lib/cxf-profile.mjs'
 import { classifyContracts, CATEGORY } from '../../scripts/lib/cxf-classify.mjs'
-import { buildNhisClaimItCxf, buildNhisClaimItExportPayload } from '../services/nhisService'
+import { buildNhisClaimItCxf, buildNhisClaimItExportPayload, getClaimItExportWarnings, resolveClaimItExportActor } from '../services/nhisService'
+import { supabase } from '../lib/supabase'
 
 vi.mock('../lib/supabase', () => ({ supabase: {} }))
 
@@ -248,4 +249,61 @@ describe('real West Point June artifacts (local only)', () => {
     expect(profile.finances).toEqual({ invalidMedicineTotals: 0, invalidServiceTotals: 0, invalidClaimTotals: 0, invalidSummaries: 0, invalidBatchTotal: 0 })
     expect(profile.summaries.perClaim).toBe(true)
   }, 120000)
+})
+
+describe('VALID claims carry a signer (genuine Claim-IT files always do)', () => {
+  const actor = { name: 'Test Officer', id: 'officer@example.test', role: 'admin' }
+  const keys = ['signedOn', 'signedByname', 'signedByuserID', 'signedByrole']
+  const signerOf = (row) => keys.map((key) => phpText(row.get(key)))
+
+  it('uses the authenticated exporting user and export time for a legacy unsigned claim', async () => {
+    const bundle = await generate([claim(1, ['10.25'])], { exportActor: actor })
+    const row = bundle.get('data').get('claims').get(0)
+    expect(phpText(row.get('status'))).toBe('VALID')
+    expect(signerOf(row)).toEqual(['2026-06-30 12:00:00', 'Test Officer', 'officer@example.test', 'admin'])
+    // Export time is after the service date (2026-06-16): a signature can never precede the visit.
+    expect(phpText(row.get('signedOn')) > '2026-06-16').toBe(true)
+    expect(getClaimItExportWarnings(buildNhisClaimItExportPayload([claim(1, ['10.25'])], { ...options, exportActor: actor })))
+      .toEqual([{ claimNumber: 'SYN-1', warnings: ['SIGNER_ASSIGNED_FROM_EXPORT_USER'] }])
+    expect(classifyContracts({ may, june, current: contractOf(bundle) }).regressions).toEqual([])
+  })
+
+  it('keeps a complete stored signature and never overwrites it with the exporting user', async () => {
+    const stored = claim(1, ['10.25'], { signed_on: '2026-06-17T09:00:00Z', signed_by_user_id: 'u-1', signed_by_name: 'Stored Signer', signed_by_role: 'claims_officer' })
+    const row = (await generate([stored], { exportActor: actor })).get('data').get('claims').get(0)
+    expect(signerOf(row)).toEqual(['2026-06-17 09:00:00', 'Stored Signer', 'u-1', 'claims_officer'])
+  })
+
+  it('never mixes a partial stored signature with the exporting user', async () => {
+    const partial = claim(1, ['10.25'], { signed_by_name: 'Only A Name' })
+    const row = (await generate([partial], { exportActor: actor })).get('data').get('claims').get(0)
+    expect(signerOf(row)).toEqual(['2026-06-30 12:00:00', 'Test Officer', 'officer@example.test', 'admin'])
+  })
+
+  it('leaves the fields null and reports a warning when no identity is available (nothing invented)', async () => {
+    const row = (await generate([claim(1, ['10.25'])])).get('data').get('claims').get(0)
+    expect(keys.map((key) => row.get(key))).toEqual([null, null, null, null])
+    expect(getClaimItExportWarnings(buildNhisClaimItExportPayload([claim(1, ['10.25'])], options)))
+      .toEqual([{ claimNumber: 'SYN-1', warnings: ['LEGACY_UNSIGNED_CLAIM'] }])
+    expect(getClaimItExportWarnings(buildNhisClaimItExportPayload([claim(1, ['10.25'])], { ...options, exportActor: { name: 'No Id', id: '', role: 'admin' } }))[0].warnings)
+      .toEqual(['LEGACY_UNSIGNED_CLAIM'])
+  })
+
+  it('resolves the exporting user only from the authenticated session and returns null on any failure', async () => {
+    const original = { auth: supabase.auth, from: supabase.from }
+    try {
+      supabase.auth = { getUser: vi.fn(async () => ({ data: { user: { id: 'auth-1', email: 'auth@example.test' } } })) }
+      supabase.from = vi.fn(() => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { full_name: 'Session Officer', email: 'session@example.test' } }) }) }) }))
+      expect(await resolveClaimItExportActor()).toEqual({ name: 'Session Officer', id: 'session@example.test', role: 'admin' })
+      supabase.from = vi.fn(() => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { full_name: '', email: '' } }) }) }) }))
+      supabase.auth = { getUser: vi.fn(async () => ({ data: { user: { id: 'auth-1' } } })) }
+      expect(await resolveClaimItExportActor()).toBeNull() // no name/id available: not invented
+      supabase.auth = { getUser: vi.fn(async () => ({ data: { user: null } })) }
+      expect(await resolveClaimItExportActor()).toBeNull()
+      supabase.auth = { getUser: vi.fn(async () => { throw new Error('offline') }) }
+      expect(await resolveClaimItExportActor()).toBeNull()
+      supabase.auth = undefined
+      expect(await resolveClaimItExportActor()).toBeNull()
+    } finally { supabase.auth = original.auth; supabase.from = original.from }
+  })
 })

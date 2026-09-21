@@ -8400,6 +8400,7 @@ export const buildNhisClaimItExportPayload = (claims = [], options = {}) => {
     claimitValidationEnabled: options.claimitValidationEnabled !== false,
     claimsOfficerSignatureUrl: normalizeText(options.claimsOfficerSignatureUrl),
     submitterId: normalizeText(options.submitterId),
+    exportActor: options.exportActor || null,
     submissionMonth: exportPeriod.yearMonth,
     exportMode: exportPeriod.mode,
     periodLabel: exportPeriod.label,
@@ -9049,16 +9050,58 @@ const buildClaimItSerializedClaim = ({
 const compressClaimItSerializedClaim = async (serializedClaim) =>
   await deflateClaimItPayload(JSON.stringify(serializedClaim))
 
+const SIGNER_KEYS = ['signedOn', 'signedByname', 'signedByuserID', 'signedByrole']
+
+/**
+ * A VALID claim in a genuine Claim-IT export always carries its signer. Use the claim's own
+ * stored signature when it is complete; otherwise the authenticated exporting user and the
+ * export time. Stored and fallback values are never mixed, and with neither available the
+ * fields stay null (reported as a warning) — no signer is ever invented.
+ */
+const resolveClaimItSigner = (claim, exportActor, generatedAt) => {
+  if (SIGNER_KEYS.every((key) => normalizeText(claim?.[key]))) {
+    return { source: 'stored', signedOn: toClaimItDateTime(claim.signedOn), name: claim.signedByname, userId: claim.signedByuserID, role: claim.signedByrole }
+  }
+  if (normalizeText(exportActor?.name) && normalizeText(exportActor?.id) && normalizeText(exportActor?.role)) {
+    return { source: 'export_user', signedOn: generatedAt, name: exportActor.name, userId: exportActor.id, role: exportActor.role }
+  }
+  return { source: 'none', signedOn: null, name: null, userId: null, role: null }
+}
+
+/**
+ * The signed-in user performing the export, from their own authenticated session (never a
+ * browser-supplied identity for a claim). Claim-IT's role vocabulary is not HealthFlow's, so
+ * the role uses the same 'admin' value the accepted export envelope already carries.
+ * @returns {Promise<{name: string, id: string, role: string} | null>}
+ */
+export const resolveClaimItExportActor = async () => {
+  try {
+    const { data } = (await supabase.auth?.getUser?.()) || {}
+    const authUser = data?.user
+    if (!authUser?.id) return null
+    const { data: profile } = await supabase.from('users').select('full_name, email').eq('id', authUser.id).maybeSingle()
+    const name = normalizeText(profile?.full_name || authUser.user_metadata?.full_name)
+    const id = normalizeText(profile?.email || authUser.email)
+    return name && id ? { name, id, role: 'admin' } : null
+  } catch {
+    return null
+  }
+}
+
 /**
  * Non-blocking export audit conditions. LEGACY_UNSIGNED_CLAIM is reported, never
  * enforced: accepted June exports carried null signers, so Claim-IT does not
  * require them and legacy claims must remain exportable.
- * @param {{claims?: Array<Record<string, any>>}} payload
+ * @param {{claims?: Array<Record<string, any>>, exportActor?: Record<string, any> | null}} payload
  * @returns {Array<{claimNumber: string, warnings: string[]}>}
  */
 export const getClaimItExportWarnings = (payload) =>
   (payload?.claims || [])
-    .map((claim) => ({ claimNumber: claim.claimNumber || claim.id || '', warnings: classifyClaimSignature(claim).warnings }))
+    .map((claim) => {
+      const warnings = classifyClaimSignature(claim).warnings
+      const fromExporter = resolveClaimItSigner(claim, payload.exportActor, null).source === 'export_user'
+      return { claimNumber: claim.claimNumber || claim.id || '', warnings: fromExporter ? ['SIGNER_ASSIGNED_FROM_EXPORT_USER'] : warnings }
+    })
     .filter((entry) => entry.warnings.length)
 
 /**
@@ -9201,6 +9244,7 @@ const buildClaimItRows = async (payload, runtimeOptions = {}) => {
       assertClaimItPrescriptionAttachmentForExport(claim)
     }
     const claimGuid = getClaimItGuid(claim.claimNumber || claim.patient.memberNumber, claimIndex)
+    const signer = resolveClaimItSigner(claim, payload.exportActor, generatedAt)
     const medicineTotal = sumAmounts(claim.medicines.map((medicine) => medicine.totalAmount ?? 0))
     const serviceTotal = sumAmounts(claim.tariffServices.map((service) => service.totalAmount ?? 0))
     const serviceDate = claim.service.dateFrom || claim.medicines[0]?.dispensaryDate || claim.tariffServices[0]?.serviceDate || payload.periodFrom
@@ -9246,10 +9290,10 @@ const buildClaimItRows = async (payload, runtimeOptions = {}) => {
       modifiedByrole: signedByRole,
       // Accepted June behavior: null when a claim was never signed. Genuine stored
       // signing evidence is preserved when present; nothing is ever fabricated.
-      signedOn: claim.signedOn ? toClaimItDateTime(claim.signedOn) : null,
-      signedByname: claim.signedByname || null,
-      signedByuserID: claim.signedByuserID || null,
-      signedByrole: claim.signedByrole || null,
+      signedOn: signer.signedOn,
+      signedByname: signer.name,
+      signedByuserID: signer.userId,
+      signedByrole: signer.role,
       memberNo: normalizeText(claim.patient.memberNumber),
       cardSerialNo: normalizeText(claim.patient.cardSerialNo),
       surname: normalizeText(claim.patient.surname).toLowerCase(),
@@ -9763,7 +9807,8 @@ const createNhisExportFile = async (claims, period, options = {}) => {
     const { claims: signedClaims, warnings: signingWarnings } = await getExportSigningEvidence(claims)
     const claimsForPayload = await hydrateNhisPrescriptionUrlsForTransfer(signedClaims, options)
     timing?.mark('loading prescription signed URLs', { claimCount: claimsForPayload.length })
-    const cxfPayload = buildNhisClaimItExportPayload(claimsForPayload, { ...options, exportPeriod: period })
+    const exportActor = await resolveClaimItExportActor()
+    const cxfPayload = buildNhisClaimItExportPayload(claimsForPayload, { ...options, exportActor, exportPeriod: period })
     // Progress for attachment downloads and compression is now emitted from
     // inside buildNhisClaimItCxf itself, at the point each stage actually
     // happens, instead of a single misleading "Compressing" label covering
