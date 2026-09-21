@@ -1,4 +1,5 @@
 import ClaimCorrectionAlerts from '../components/ClaimCorrectionAlerts'
+import ClaimItRemediation from '../components/ClaimItRemediation'
 import ClaimSearchScope from '../components/ClaimSearchScope'
 import { CLAIM_MONTHS, getClaimMonthRange } from '../utils/claimMonthRange'
 import { createPrescriptionUploadSession } from '../utils/prescriptionUploadSession'
@@ -1591,7 +1592,7 @@ const Nhis = () => {
   const [correctionHistory, setCorrectionHistory] = useState([])
   const [prescriptionPdfFile, setPrescriptionPdfFile] = useState(null)
   const prescriptionUploadSession = useRef(createPrescriptionUploadSession())
-  const nhisDraftRecoveryReadyRef = useRef(false)
+  const nhisDraftRecoveryReadyRef = useRef('')
 
   // ── patient lookup (for claim form) ──────────────────────────
   const [patientSearch, setPatientSearch] = useState('')
@@ -1676,6 +1677,7 @@ const Nhis = () => {
   const [exportFromDate, setExportFromDate] = useState(monthStartIsoDate())
   const [exportToDate, setExportToDate] = useState(todayIsoDate())
   const [exportFormat, setExportFormat] = useState('cxf')
+  const [reexportReason, setReexportReason] = useState('')
   const [exportRoute, setExportRoute] = useState('cxf_export')
   const [exporting, setExporting]       = useState(false)
   const [exportProgress, setExportProgress] = useState('')
@@ -5654,6 +5656,7 @@ const Nhis = () => {
         ...getDirectNhiaOptions(),
         directSubmit: submitDirectApi,
         format: selectedFormat,
+        reexportReason: reexportReason.trim() || null,
         directPayloadFormat: submitDirectApi ? 'json' : selectedFormat,
       },
     }
@@ -6075,7 +6078,7 @@ const Nhis = () => {
     }
     const exportRunId = crypto.randomUUID()
     const overrideReason = normalizeText(warningOverrideReason)
-    const requestOptions = { ...getDirectNhiaOptions(), format: 'cxf' }
+    const requestOptions = { ...getDirectNhiaOptions(), format: 'cxf', reexportReason: reexportReason.trim() || null }
     const cacheFingerprint = JSON.stringify({ singleClaimId: claim.id, requestOptions })
     let lastStage = 'starting export'
     try {
@@ -6356,6 +6359,11 @@ const Nhis = () => {
           </div>
 
           <NhisClaimCreatorCounts />
+          {canEditNhisClaimAnytime && <ClaimItRemediation />}
+          {canEditNhisClaimAnytime && <label>
+            Reason for corrected re-export (single claim or batch)
+            <input className="form-input" value={reexportReason} onChange={(e) => setReexportReason(e.target.value)} />
+          </label>}
 
           {/* Claim status tabs + search */}
           <div className="nhis-controls">
@@ -10377,6 +10385,8 @@ const Nhis = () => {
                     <option value="json">JSON for CLAIM-it</option>
                     <option value="csv">CSV review file</option>
                   </select>
+                  <label>Reason for re-export (required for previously exported or submitted claims)</label>
+                  <input className="form-input" value={reexportReason} onChange={(e) => setReexportReason(e.target.value)} />
                 </div>
               )}
               <div className="form-group">

@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "skipLibCheck": true,
+    "types": []
+  },
+  "include": ["src/claimit/compatibility.js", "src/claimit/fieldOrder.js", "scripts/lib/claimit-rollout.mjs"]
+}

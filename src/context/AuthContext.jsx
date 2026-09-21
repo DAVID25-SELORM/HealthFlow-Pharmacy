@@ -140,8 +140,8 @@ const loadProfileRelations = async (profile) => {
             .from('organizations')
             .select('*')
             .eq('id', profile.organization_id)
-            .maybeSingle()
-            .abortSignal(signal),
+            .abortSignal(signal)
+            .maybeSingle(),
           'Organization loading'
         )
       : Promise.resolve({ data: null, error: null }),
@@ -151,8 +151,8 @@ const loadProfileRelations = async (profile) => {
             .from('branches')
             .select('id, name, code, is_main')
             .eq('id', profile.branch_id)
-            .maybeSingle()
-            .abortSignal(signal),
+            .abortSignal(signal)
+            .maybeSingle(),
           'Branch loading'
         )
       : Promise.resolve({ data: null, error: null }),

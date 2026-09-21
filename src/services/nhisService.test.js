@@ -14,6 +14,13 @@ vi.mock('./auditService', () => ({
   tryLogAuditEvent: vi.fn(),
 }))
 
+// This suite tests serialization/attachments. The real RPC boundary and its
+// rejection/authorization behavior are covered in claimitLifecycleService and SQL tests.
+vi.mock('./claimitLifecycleService', () => ({
+  getSignedExportClaims: vi.fn(async (claims) => claims),
+  recordCxfExport: vi.fn(async () => {}),
+}))
+
 vi.mock('./branchServerApi', () => ({
   createBranchRecord: vi.fn(),
   deleteBranchRecord: vi.fn(),
@@ -1783,6 +1790,10 @@ describe('CLAIM-it export helpers', () => {
     id: 'claim-1',
     claim_number: 'NHIS-000001',
     status: 'served',
+    signed_on: '2026-05-14T12:00:00.000Z',
+    signed_by_user_id: '11111111-1111-4111-8111-111111111111',
+    signed_by_name: 'Test Claims Officer',
+    signed_by_role: 'claims_officer',
     organization_type: 'hospital',
     member_no: 'GHA-123456789-0',
     hin: '0029996622',
@@ -2358,6 +2369,7 @@ describe('CLAIM-it export helpers', () => {
       submitterId: 'admin',
       generatedAt: '2026-05-20T14:58:02.000Z',
       accreditationDateGenerated: '2025-12-29',
+      accreditationExpiryDate: '2026-11-30',
     })
 
     const cxf = await buildNhisClaimItCxf(payload)
@@ -4014,6 +4026,10 @@ describe('direct NHIA submission', () => {
     nhisDrugCatalog: [{ id: 'drug-1', code: 'NH001', category: 'A' }],
   }
   const directClaim = {
+    signed_on: '2026-05-14T12:00:00.000Z',
+    signed_by_user_id: '11111111-1111-4111-8111-111111111111',
+    signed_by_name: 'Test Claims Officer',
+    signed_by_role: 'claims_officer',
     id: 'claim-1',
     claim_number: 'NHIS-000001',
     status: 'served',
@@ -4896,6 +4912,10 @@ describe('duplicate NHIS claim prevention', () => {
       id: 'claim-1',
       claim_number: 'NHIS-000001',
       status: 'served',
+      signed_on: '2026-05-14T12:00:00.000Z',
+      signed_by_user_id: '11111111-1111-4111-8111-111111111111',
+      signed_by_name: 'Test Claims Officer',
+      signed_by_role: 'claims_officer',
       organization_type: 'hospital',
       member_no: '12345678',
       surname: 'Mensah',
@@ -5655,6 +5675,10 @@ describe('duplicate NHIS claim prevention', () => {
 
   it('exports Ghana Card-linked members with an 8-digit verified HIN as member number and blank card serial', async () => {
     const sourceClaim = {
+      signed_on: '2026-05-14T12:00:00.000Z',
+      signed_by_user_id: '11111111-1111-4111-8111-111111111111',
+      signed_by_name: 'Test Claims Officer',
+      signed_by_role: 'claims_officer',
       id: 'claim-1',
       claim_number: 'NHIS-000001',
       status: 'served',
@@ -7115,7 +7139,7 @@ describe('NHIS local and cloud claim reads', () => {
       }),
     }
     supabase.from.mockReturnValue(query)
-    supabase.rpc.mockResolvedValueOnce({ data: null, error: new Error('RPC unavailable') })
+    supabase.rpc.mockResolvedValueOnce({ data: null, error: { code: 'PGRST202', message: 'RPC unavailable' } })
 
     await expect(getNhisClaimsPage({ includeDetails: false, page: 1, pageSize: 100 })).resolves.toMatchObject({
       claims: [expect.objectContaining({ id: 'claim-page-row' })],
@@ -7125,6 +7149,23 @@ describe('NHIS local and cloud claim reads', () => {
     expect(query.select.mock.calls[0][0]).not.toContain('claimit_attachment_base64')
     expect(query.select.mock.calls[0][0]).toContain('ccc_no')
     expect(query.range).toHaveBeenCalledWith(0, 99)
+  })
+
+  it.each(['57014', '42501', 'PGRST000'])('does not amplify a failed page RPC (%s) with a REST query', async (code) => {
+    supabase.from.mockClear()
+    supabase.rpc.mockResolvedValueOnce({ data: null, error: { code, message: 'Request failed' } })
+    await expect(getNhisClaimsPage({ includeDetails: false })).rejects.toMatchObject({ code })
+    expect(supabase.from).not.toHaveBeenCalled()
+  })
+
+  it('forwards page cancellation to the RPC and does not start fallback work', async () => {
+    const controller = new AbortController()
+    const abortSignal = vi.fn().mockResolvedValue({ data: null, error: { message: 'AbortError' } })
+    supabase.rpc.mockReturnValueOnce({ abortSignal })
+    supabase.from.mockClear()
+    await expect(getNhisClaimsPage({ includeDetails: false, signal: controller.signal })).rejects.toMatchObject({ message: 'AbortError' })
+    expect(abortSignal).toHaveBeenCalledWith(controller.signal)
+    expect(supabase.from).not.toHaveBeenCalled()
   })
 
   it('matches a full two-word patient name in the REST fallback path (RPC unavailable)', async () => {
@@ -7144,11 +7185,11 @@ describe('NHIS local and cloud claim reads', () => {
       }).then(resolve, reject),
     }
     supabase.from.mockReturnValue(query)
-    supabase.rpc.mockResolvedValueOnce({ data: null, error: new Error('RPC unavailable') })
+    supabase.rpc.mockResolvedValueOnce({ data: null, error: { code: 'PGRST202', message: 'RPC unavailable' } })
 
     await expect(getNhisClaimsPage({
       includeDetails: false,
-      searchTerm: 'ayim emma',
+      searchTerm: 'ayim emma AYIM',
       page: 1,
       pageSize: 100,
     })).resolves.toMatchObject({
@@ -7181,7 +7222,7 @@ describe('NHIS local and cloud claim reads', () => {
       }).then(resolve, reject),
     }
     supabase.from.mockReturnValue(query)
-    supabase.rpc.mockResolvedValueOnce({ data: null, error: new Error('RPC unavailable') })
+    supabase.rpc.mockResolvedValueOnce({ data: null, error: { code: 'PGRST202', message: 'RPC unavailable' } })
 
     await expect(getNhisClaimsPage({
       includeDetails: false,

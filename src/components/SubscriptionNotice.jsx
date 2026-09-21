@@ -10,7 +10,7 @@ export default function SubscriptionNotice() {
   useEffect(() => {
     if (!hasSubscriptionVisibility(role, assignedRoles)) return undefined
     let active = true
-    supabase.rpc('get_my_subscription').then(({ data }) => { if (active) setSubscription(data || null) })
+    Promise.resolve(supabase.rpc('get_my_subscription')).then(({ data }) => { if (active) setSubscription(data || null) })
       .catch(() => {})
     return () => { active = false }
   }, [role, assignedRoles])

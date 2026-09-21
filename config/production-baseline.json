@@ -7,8 +7,8 @@
   "edgeFunctionCount": 7,
   "testFileCount": 148,
   "criticalFiles": {
-    "src/services/nhisService.js": "3230729e41c703c66fe65edb8fa19ec357b3558391f6374e084a8e08e945e62c",
-    "src/context/AuthContext.jsx": "0df048a03e1bf786d13d289bea4ccbb42167cccb46bba560cc50fff960aab258",
+    "src/services/nhisService.js": "a3d357218324f815d6c33d121ffebff1ff3c1472a119e29174079cb16183ad2a",
+    "src/context/AuthContext.jsx": "e988ea8d7630703186192367f2b5bed836bab772e9457a2383430d5d290dcbcb",
     "src/services/recycleBinService.js": "94f0fd814bda811b3c234769426d57257a0f8120e90df8bffc87ae9ebfbcabe9",
     "src/services/offlineInstallerReleaseService.js": "d656396c7cce60b3e007ffec4f4aa4f8d63f931ab022cbef3cdcdc02755c9c13",
     "src/services/settingsService.js": "fdd96f01368f4d363f3ac0e20e31f7436a5ae0b4c252c3f95fe544471a5dbab7",
@@ -43,5 +43,10 @@
     "date": "2026-09-17",
     "impactReport": "docs/west-point-duration-export-fix-2026-09-17.md",
     "description": "Export-only historical numeric days and case-insensitive units; no clinical writes"
+  },
+  "pendingClaimItCompatibility": {
+    "report": "docs/claimit-compatibility-2026-09-20.md",
+    "rollout": "docs/claimit-rollout-runbook.md",
+    "status": "Local implementation; staging and production blocked; whole-application typecheck incomplete"
   }
 }

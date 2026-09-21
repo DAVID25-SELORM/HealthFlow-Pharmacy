@@ -1,7 +1,7 @@
 import { X } from 'lucide-react'
 import './EnterpriseUI.css'
 
-export const PageHeader = ({ eyebrow, title, description, actions, children, className = '' }) => (
+export const PageHeader = ({ eyebrow = '', title = '', description = '', actions = null, children = null, className = '' }) => (
   <header className={`hf-page-header ${className}`.trim()}>
     <div className="hf-page-header__content">
       {eyebrow && <span className="hf-page-header__eyebrow">{eyebrow}</span>}
@@ -13,7 +13,7 @@ export const PageHeader = ({ eyebrow, title, description, actions, children, cla
   </header>
 )
 
-export const Toolbar = ({ title, description, children, actions, className = '' }) => (
+export const Toolbar = ({ title = '', description = '', children = null, actions = null, className = '' }) => (
   <section className={`hf-toolbar ${className}`.trim()}>
     <div className="hf-toolbar__main">
       {(title || description) && (
@@ -28,7 +28,7 @@ export const Toolbar = ({ title, description, children, actions, className = '' 
   </section>
 )
 
-export const StatCard = ({ label, value, meta, children, className = '' }) => (
+export const StatCard = ({ label = '', value = null, meta = '', children = null, className = '' }) => (
   <article className={`hf-stat-card ${className}`.trim()}>
     {label && <span className="hf-stat-card__label">{label}</span>}
     {value !== undefined && value !== null && <strong className="hf-stat-card__value">{value}</strong>}
@@ -37,7 +37,7 @@ export const StatCard = ({ label, value, meta, children, className = '' }) => (
   </article>
 )
 
-export const EmptyState = ({ icon, title = 'No records found', description, actions, className = '' }) => (
+export const EmptyState = ({ icon = null, title = 'No records found', description = '', actions = null, className = '' }) => (
   <div className={`hf-empty-state ${className}`.trim()}>
     {icon && <div className="hf-empty-state__icon" aria-hidden="true">{icon}</div>}
     <h3>{title}</h3>
@@ -60,6 +60,7 @@ export const StatusBadge = ({ tone = 'neutral', children, className = '' }) => (
   </span>
 )
 
+/** @param {import('react').ButtonHTMLAttributes<HTMLButtonElement> & { label: string }} props */
 export const IconButton = ({
   label,
   title,
@@ -79,7 +80,7 @@ export const IconButton = ({
   </button>
 )
 
-export const FormSection = ({ title, description, children, actions, className = '' }) => (
+export const FormSection = ({ title = '', description = '', children = null, actions = null, className = '' }) => (
   <section className={`hf-form-section ${className}`.trim()}>
     {(title || description || actions) && (
       <div className="hf-form-section__header">
@@ -96,10 +97,10 @@ export const ModalShell = ({
   open,
   title,
   children,
-  footer,
+  footer = null,
   onClose,
   size = 'md',
-  labelledBy,
+  labelledBy = undefined,
   className = '',
 }) => {
   if (!open) return null
@@ -142,11 +143,11 @@ const getCellValue = (row, column) => {
 export const DataTable = ({
   columns = [],
   rows = [],
-  getRowKey,
+  getRowKey = undefined,
   loading = false,
-  loadingState,
-  emptyState,
-  minWidth,
+  loadingState = null,
+  emptyState = null,
+  minWidth = undefined,
   className = '',
 }) => {
   if (loading) {

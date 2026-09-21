@@ -3,6 +3,7 @@ export default function ClaimCorrectionAlerts({ readiness }) {
   const exporting = [...new Set(readiness.export.blockers)]
   const exportOnly = exporting.filter(issue => !serving.includes(issue))
   const warnings = [...new Set(readiness.export.warnings)]
+  /** @type {Array<[string, string[]]>} */
   const groups = [
     ['Required for serving and export', serving],
     ['Additional export requirements', exportOnly],

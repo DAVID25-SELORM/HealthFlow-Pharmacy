@@ -9,7 +9,26 @@ import {
 } from '../../utils/facilityBranding'
 import './Receipt.css'
 
-const Receipt = forwardRef(({ saleData, pharmacyInfo, mode = 'preview' }, ref) => {
+/**
+ * @typedef {object} ReceiptSale
+ * @property {string} [saleNumber]
+ * @property {string|Date} [saleDate]
+ * @property {Array<{drug_name?: string, name?: string, unit?: string, unit_price?: number, price?: number, total_price?: number, quantity: number}>} items
+ * @property {number} [totalAmount]
+ * @property {number} [discount]
+ * @property {number} [netAmount]
+ * @property {string} [paymentMethod]
+ * @property {number} [amountPaid]
+ * @property {number} [change]
+ * @property {{full_name?: string, phone?: string}} [patient]
+ * @property {{coveredAmount?: number, patientTopUp?: number, privateNonNhisAmount?: number, policyAdjustmentAmount?: number, provider?: string, insuranceId?: string, patientDueAmount?: number, patientTopUpMethod?: string}} [insuranceDetails]
+ * @property {string} [soldBy]
+ */
+/**
+ * @param {{saleData: ReceiptSale, pharmacyInfo: {currency?: string, slogan?: string, logo_url?: string, address?: string, city?: string, region?: string, phone?: string, email?: string}, mode?: string}} props
+ * @param {import('react').ForwardedRef<HTMLDivElement>} ref
+ */
+const renderReceipt = ({ saleData, pharmacyInfo, mode = 'preview' }, ref) => {
   const {
     saleNumber,
     saleDate,
@@ -297,7 +316,9 @@ const Receipt = forwardRef(({ saleData, pharmacyInfo, mode = 'preview' }, ref) =
       </div>
     </div>
   )
-})
+}
+
+const Receipt = forwardRef(renderReceipt)
 
 Receipt.displayName = 'Receipt'
 

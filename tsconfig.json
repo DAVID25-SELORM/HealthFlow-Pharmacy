@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "incremental": true,
+    "tsBuildInfoFile": "output/typecheck/application.tsbuildinfo",
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "skipLibCheck": true,
+    "types": ["vite/client"]
+  },
+  "include": ["src/**/*.js", "src/**/*.jsx"],
+  "exclude": ["src/**/*.test.js", "src/**/*.test.jsx", "src/test/**"]
+}

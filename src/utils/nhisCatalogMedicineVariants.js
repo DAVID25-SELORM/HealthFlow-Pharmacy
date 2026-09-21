@@ -1,5 +1,6 @@
 import { getNhisMedicineStrength } from './nhisMedicineStrength'
 
+/** @type {Array<[string, RegExp]>} */
 const FORM_PATTERNS = [
   ['oral suspension', /\boral suspension\b/i],
   ['oral solution', /\boral solution\b/i],

@@ -523,12 +523,13 @@ const finalizeFunctionResult = async (result) => {
 
   const functionError = await getFunctionErrorMessage(result.error)
   if (functionError?.message) {
-    const error = new Error(functionError.message)
-    error.status = functionError.status
-    error.statusCode = functionError.status
-    error.body = functionError.body
-    error.details = functionError.body?.details || functionError.body?.received || ''
-    error.missingFields = functionError.body?.missingFields || functionError.body?.missing_fields || []
+    const error = Object.assign(new Error(functionError.message), {
+      status: functionError.status,
+      statusCode: functionError.status,
+      body: functionError.body,
+      details: functionError.body?.details || functionError.body?.received || '',
+      missingFields: functionError.body?.missingFields || functionError.body?.missing_fields || [],
+    })
     return {
       ...result,
       error,
@@ -665,9 +666,9 @@ export const invokeSupabaseFunctionResponse = async (name, options = {}) => {
       message = ''
     }
 
-    const error = new Error(message || `HealthFlow Cloud service "${name}" failed with status ${response.status}.`)
-    error.status = response.status
-    error.statusCode = response.status
+    const error = Object.assign(new Error(message || `HealthFlow Cloud service "${name}" failed with status ${response.status}.`), {
+      status: response.status, statusCode: response.status,
+    })
     throw error
   }
 

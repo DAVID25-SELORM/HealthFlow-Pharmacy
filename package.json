@@ -4,6 +4,9 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "typecheck:claimit": "tsc -p tsconfig.claimit.json",
+    "test:claimit": "vitest run src/claimit src/services/claimitLifecycleService.test.js src/components/ClaimItRemediation.test.jsx scripts/claimit-rollout.test.js --testTimeout=30000",
     "dev": "vite",
     "build": "vite build",
     "build:offline": "vite build --outDir local-branch-server/public --emptyOutDir && node scripts/remove-offline-update-artifacts.mjs",
@@ -49,6 +52,7 @@
     "globals": "^16.5.0",
     "jsdom": "^29.0.2",
     "supabase": "^2.98.2",
+    "typescript": "^5.9.3",
     "vite": "^8.0.8",
     "vitest": "^4.1.11"
   }
