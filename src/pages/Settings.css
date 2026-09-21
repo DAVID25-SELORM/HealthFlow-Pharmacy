@@ -109,7 +109,8 @@
   font-weight: 700;
 }
 
-.settings-field input {
+.settings-field input,
+.settings-field select {
   width: 100%;
 }
 
