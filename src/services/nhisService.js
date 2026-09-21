@@ -814,7 +814,7 @@ const resolveClaimItProviderLevelCode = (payload = {}, claimRow = {}) =>
     .filter(Boolean)
     .join('-')
 
-/** @param {{organizationType?: string, organization_type?: string, facilityName?: string, facility_name?: string, facilityCode?: string, facility_code?: string, licenseNumber?: string, license_number?: string}} settings */
+/** @param {{organizationType?: string, organization_type?: string, facilityName?: string, facility_name?: string, facilityCode?: string, facility_code?: string, licenseNumber?: string, license_number?: string, facilityType?: string}} settings */
 export const buildClaimItConfigPreview = (settings = {}, options = {}) => {
   const organizationType = normalizeOrganizationType(options.organizationType || settings.organizationType || settings.organization_type)
   const facilityType = getNhiaFacilityType({ ...settings, organizationType })
@@ -5423,10 +5423,11 @@ const hydrateClaimsWithMedicineLines = async (claims = []) => {
     unit_price, dispensed_qty, dispensary_date,
     dose, frequency, duration, total_amount
   `
-  /** @param {string[]} claimIdBatch
-   * @param {typeof fullSelect | typeof basicSelect} select
+  /** @template {string} T
+   * @param {string[]} claimIdBatch
+   * @param {T} select
    */
-  const fetchMedicineBatch = async (claimIdBatch, select = fullSelect) =>
+  const fetchMedicineBatch = async (claimIdBatch, select) =>
     await supabase
       .from('nhis_claim_medicines')
       .select(select)
@@ -5435,9 +5436,12 @@ const hydrateClaimsWithMedicineLines = async (claims = []) => {
 
   const data = []
   for (const claimIdBatch of chunkArray(claimIds)) {
-    let { data: batchData, error } = await fetchMedicineBatch(claimIdBatch)
+    const { data: batchData, error } = await fetchMedicineBatch(claimIdBatch, fullSelect)
     if (error && isMissingOptionalClaimMedicineColumn(error)) {
-      ;({ data: batchData, error } = await fetchMedicineBatch(claimIdBatch, basicSelect))
+      const fallback = await fetchMedicineBatch(claimIdBatch, basicSelect)
+      if (fallback.error) return claims
+      data.push(...(fallback.data || []))
+      continue
     }
     if (error) return claims
     data.push(...(batchData || []))

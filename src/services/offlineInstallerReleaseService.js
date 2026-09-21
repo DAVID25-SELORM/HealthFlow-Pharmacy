@@ -91,46 +91,8 @@ export const INSTALLER_INSTALLATION_STATUSES = [
   'installation_failed',
 ]
 
-export const OFFLINE_INSTALLER_RELEASE_FIELDS = [
-  'id',
-  'version',
-  'download_url',
-  'file_name',
-  'file_size',
-  'sha256',
-  'release_notes',
-  'state',
-  'channel',
-  'validation_status',
-  'validation_checked_at',
-  'validation_error',
-  'validation_report',
-  'validation_critical_count',
-  'validation_warning_count',
-  'validation_info_count',
-  'validated_by',
-  'approved_by',
-  'approved_at',
-  'approval_notes',
-  'manifest',
-  'storage_bucket',
-  'storage_path',
-  'download_count',
-  'last_downloaded_at',
-  'built_at',
-  'git_commit',
-  'git_branch',
-  'installer_type',
-  'minimum_supported_app_version',
-  'minimum_supported_local_server_version',
-  'enabled',
-  'published_at',
-  'published_by',
-  'created_at',
-  'created_by',
-  'updated_at',
-  'updated_by',
-].join(',')
+// Keep a literal projection so the Supabase query parser can infer row fields.
+export const OFFLINE_INSTALLER_RELEASE_FIELDS = 'id,version,download_url,file_name,file_size,sha256,release_notes,state,channel,validation_status,validation_checked_at,validation_error,validation_report,validation_critical_count,validation_warning_count,validation_info_count,validated_by,approved_by,approved_at,approval_notes,manifest,storage_bucket,storage_path,download_count,last_downloaded_at,built_at,git_commit,git_branch,installer_type,minimum_supported_app_version,minimum_supported_local_server_version,enabled,published_at,published_by,created_at,created_by,updated_at,updated_by'
 
 const OFFLINE_INSTALLER_RELEASE_LEGACY_FIELDS = [
   'id',
@@ -978,7 +940,7 @@ const tryRecordOfflineInstallerPublishEvent = async (event) => {
   }
 }
 
-const publishOfflineInstallerReleaseInternal = async (id, { action, reason = '' } = {}) => {
+const publishOfflineInstallerReleaseInternal = async (id, { action = '', reason = '' } = {}) => {
   const { data: targetRelease, error: targetError } = await supabase
     .from('offline_installer_releases')
     .select('id, channel, state, validation_status, validation_critical_count, approved_by')
@@ -1089,8 +1051,8 @@ export const requestOfflineInstallerDownload = async () => {
 
 
 export const recordOfflineInstallerInstallationStatus = async ({
-  releaseId,
-  status,
+  releaseId = null,
+  status = '',
   organizationId = null,
   branchId = null,
   syncClientId = null,

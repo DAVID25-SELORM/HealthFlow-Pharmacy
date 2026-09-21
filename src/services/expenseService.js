@@ -188,7 +188,8 @@ export const getExpenseSummary = async (startDate, endDate, branchId = null) => 
   const totalExpenses = data.reduce((sum, row) => sum + Number(row.amount), 0)
 
   const byCategory = data.reduce((acc, row) => {
-    const key = row.expense_categories?.name || 'Uncategorised'
+    const category = row.expense_categories
+    const key = category && 'name' in category ? String(category.name || 'Uncategorised') : 'Uncategorised'
     acc[key] = (acc[key] || 0) + Number(row.amount)
     return acc
   }, {})

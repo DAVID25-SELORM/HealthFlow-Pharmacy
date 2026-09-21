@@ -143,6 +143,7 @@ const toForm = (row, organization) => {
 const blankNhiaApiForm = {
   facilityCode: '',
   providerNumber: '',
+  providerId: '',
   hpn: '',
   hpCode: '',
   schemeName: 'National Health Insurance',
@@ -395,7 +396,8 @@ const getNhiaActiveBaseUrl = (form = {}) => {
 const isLocalNhiaBridgeProfile = (form = {}) =>
   NHIA_LOCAL_BRIDGE_PROFILES.includes(form.connectionProfile || form.connection_profile || 'local_server')
 
-const withProductionClaimItBridgeDefaults = (form = {}) => {
+/** @param {typeof blankNhiaApiForm} form */
+const withProductionClaimItBridgeDefaults = (form) => {
   const isClaimItBridge = NHIA_BRIDGE_MODES.includes(form.integrationMode || form.integration_mode)
   if (!isClaimItBridge) return form
 
@@ -612,7 +614,7 @@ const Settings = () => {
   const [branchForm, setBranchForm] = useState(blankBranchForm)
   const [creatingBranch, setCreatingBranch] = useState(false)
   const [editingBranchId, setEditingBranchId] = useState(null)
-  const [editBranchForm, setEditBranchForm] = useState({})
+  const [editBranchForm, setEditBranchForm] = useState(/** @type {Partial<typeof blankBranchForm>} */ ({}))
   const [savingBranch, setSavingBranch] = useState(false)
   const atUserLimit = tierLimits.maxUsers !== Infinity && users.length >= tierLimits.maxUsers
   const activeBranches = branches.filter((branch) => branch.is_active !== false)

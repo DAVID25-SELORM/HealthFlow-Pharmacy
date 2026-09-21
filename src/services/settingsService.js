@@ -385,6 +385,7 @@ export const getUsers = async () => {
     }
   }
 
+  /** @template {string} T @param {T} columns */
   const selectUsers = (columns) =>
     supabase
       .from('users')
@@ -403,14 +404,11 @@ export const getUsers = async () => {
     'can_approve_purchases',
     'can_delete_nhis_claims',
   ]
-  const columns = `id, email, full_name, phone, role, can_refund, can_manage_inventory, can_view_reports, can_manage_claims, ${optionalPrivilegeColumns.join(', ')}, is_active, branch_id, created_at, branches (id, name, code)`
-  const legacyColumns = optionalPrivilegeColumns.reduce(
-    (result, field) => result.replace(`, ${field}`, ''),
-    columns
-  )
-  let { data, error } = await selectUsers(columns)
+  const columns = 'id, email, full_name, phone, role, can_refund, can_manage_inventory, can_view_reports, can_manage_claims, assigned_roles, can_manage_purchases, can_process_sales, can_manage_patients, can_manage_accounting, can_manage_epharmacy, can_view_activity_log, can_adjust_stock, can_approve_purchases, can_delete_nhis_claims, is_active, branch_id, created_at, branches (id, name, code)'
+  const legacyColumns = 'id, email, full_name, phone, role, can_refund, can_manage_inventory, can_view_reports, can_manage_claims, is_active, branch_id, created_at, branches (id, name, code)'
+  let { data, error, status } = await selectUsers(columns)
   const errorMessage = String(error?.message || error?.details || '').toLowerCase()
-  const errorStatus = Number(error?.status || error?.statusCode || 0)
+  const errorStatus = Number(status || 0)
 
   if (
     error &&

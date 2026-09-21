@@ -337,10 +337,10 @@ const CompactSuggestionInput = ({
   value,
   onValueChange,
   options,
-  placeholder,
+  placeholder = '',
   disabled = false,
   required = false,
-  onBlur,
+  onBlur = undefined,
   placement = 'bottom',
   ariaLabel,
 }) => {
@@ -552,6 +552,8 @@ const BLANK_NHIS_PRESCRIBING_FACILITY = {
 }
 
 const makeBlankMedicine = () => ({
+  sourceMedicineId: '',
+  originalDuration: '',
   nhisDrugId:    '',
   drugCode:      '',
   description:   '',
@@ -1696,8 +1698,8 @@ const Nhis = () => {
   // Tracks whether the scrub-warning override modal's "Approve Warnings &
   // Export" button should resume the batch export flow or a specific
   // single-claim export — set by whichever flow opens that shared modal.
-  const exportResumeTargetRef = useRef({ type: 'batch' })
-  const durationRepairResumeTargetRef = useRef({ type: 'batch' })
+  const exportResumeTargetRef = useRef(/** @type {{type: string, claim?: {id: string, claim_number?: string}}} */ ({ type: 'batch' }))
+  const durationRepairResumeTargetRef = useRef(/** @type {{type: string, claim?: {id: string, claim_number?: string}}} */ ({ type: 'batch' }))
   const durationRepairTableRef = useRef(null)
 
   useEffect(() => {
@@ -2436,7 +2438,7 @@ const Nhis = () => {
       const firstIssueClaim = result.claims?.[0]
       if (!firstIssueClaim) {
         notify('No matching NHIS claim issue was found for the current filters.', 'info')
-        await loadClaimIssueCounts({ force: true })
+        await loadClaimIssueCounts()
         return
       }
       await openEditClaim(firstIssueClaim)
@@ -5136,7 +5138,7 @@ const Nhis = () => {
           return
         }
       } else {
-        await updateNhisClaimStatus(fullClaim.id, newStatus, '', user?.id || null)
+        await updateNhisClaimStatus(fullClaim.id, newStatus, '')
       }
         await refreshClaimsOverview()
         notify(
@@ -5167,7 +5169,7 @@ const Nhis = () => {
     }))) return
     try {
       setUpdatingStatus(rejectTarget.id)
-      await updateNhisClaimStatus(rejectTarget.id, 'rejected', rejectReason.trim(), user?.id || null)
+      await updateNhisClaimStatus(rejectTarget.id, 'rejected', rejectReason.trim())
       setRejectTarget(null)
       setRejectReason('')
       await refreshClaimsOverview()
@@ -5729,6 +5731,9 @@ const Nhis = () => {
     focusDurationRepairRows(filter === 'manual')
   }
 
+  /** @param {object} preparedReadiness
+   * @param {{type: string, claim?: {id: string, claim_number?: string}}} resumeTarget
+   */
   const requestDurationRepairReview = (preparedReadiness, resumeTarget = { type: 'batch' }) => {
     const review = preparedReadiness?.durationRepairReview
       || buildNhisDurationRepairReview(preparedReadiness?.claims || [])
@@ -7484,7 +7489,7 @@ const Nhis = () => {
           <div className="modal-panel modal-panel--nhis-claim">
             <div className="modal-header">
               <h2>{editingClaim ? `Edit NHIS Claim ${editingClaim.claim_number}` : 'Add New NHIS Claim'}</h2>
-              <button className="modal-close" onClick={closeClaimModal}><X size={18} /></button>
+              <button className="modal-close" onClick={() => closeClaimModal()}><X size={18} /></button>
             </div>
 
             {editingClaim && (
@@ -8609,7 +8614,7 @@ const Nhis = () => {
                   </button>
                 </div>
               )}
-              <button className="btn btn-secondary" onClick={closeClaimModal}>
+              <button className="btn btn-secondary" onClick={() => closeClaimModal()}>
                 Cancel
               </button>
               {!isMedicineCounterAssistant &&

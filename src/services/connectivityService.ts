@@ -181,7 +181,7 @@ export const refreshConnectivityState = async ({
 export const subscribeConnectivity = (listener: (state: ConnectivityState) => void) => {
   listeners.add(listener)
   listener(state)
-  return () => listeners.delete(listener)
+  return () => { listeners.delete(listener) }
 }
 
 export const shouldPreferLocalApi = () => {

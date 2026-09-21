@@ -140,7 +140,7 @@ export const getOfflinePatientsQueue = async () => {
     .sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt)))
 }
 
-export const getOfflinePatientsSummary = async ({ organizationId } = {}) => {
+export const getOfflinePatientsSummary = async ({ organizationId = '' } = {}) => {
   if (!organizationId) return emptySummary()
 
   try {
@@ -175,7 +175,7 @@ export const subscribeOfflinePatientsQueue = (handler) => {
   return () => window.removeEventListener(OFFLINE_PATIENTS_QUEUE_CHANGED_EVENT, handler)
 }
 
-const runSync = async ({ organizationId } = {}) => {
+const runSync = async ({ organizationId = '' } = {}) => {
   if (!organizationId) {
     throw new Error('Organization is required before syncing offline patients.')
   }

@@ -396,10 +396,13 @@ export const buildNhisPrescriptionSourceSnapshot = ({ facility = null, prescribe
 // Facility selection must not replace a doctor entered before the facility.
 // buildNhisPrescriptionSourceSnapshot intentionally describes both halves of
 // the source, so use this narrower merge when only the facility has changed.
-export const applyNhisPrescribingFacilitySnapshot = (claimForm = {}, facility = null) => {
+/**
+ * @template {object} T
+ * @param {T} [claimForm]
+ */
+export const applyNhisPrescribingFacilitySnapshot = (claimForm = /** @type {T} */ ({}), facility = null) => {
   const snapshot = buildNhisPrescriptionSourceSnapshot({ facility })
-  return {
-    ...claimForm,
+  return Object.assign({}, claimForm, {
     prescribingFacilityId: snapshot.prescribingFacilityId,
     prescribing_facility_id: snapshot.prescribing_facility_id,
     referringFacility: snapshot.referringFacility,
@@ -407,5 +410,5 @@ export const applyNhisPrescribingFacilitySnapshot = (claimForm = {}, facility = 
     prescribing_facility_name_snapshot: snapshot.prescribing_facility_name_snapshot,
     prescribingFacilityCodeSnapshot: snapshot.prescribingFacilityCodeSnapshot,
     prescribing_facility_code_snapshot: snapshot.prescribing_facility_code_snapshot,
-  }
+  })
 }

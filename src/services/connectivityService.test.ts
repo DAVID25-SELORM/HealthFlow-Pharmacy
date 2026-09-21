@@ -15,6 +15,17 @@ const importConnectivityService = async () => {
 }
 
 describe('connectivityService', () => {
+  it('returns void from cleanup and stops notifying an unsubscribed listener', async () => {
+    const { subscribeConnectivity, refreshConnectivityState } = await importConnectivityService()
+    const listener = vi.fn()
+    const unsubscribe = subscribeConnectivity(listener)
+    expect(listener).toHaveBeenCalledOnce()
+    expect(unsubscribe()).toBeUndefined()
+    listener.mockClear()
+    await refreshConnectivityState()
+    expect(listener).not.toHaveBeenCalled()
+  })
+
   beforeEach(() => {
     window.localStorage.clear()
     vi.restoreAllMocks()

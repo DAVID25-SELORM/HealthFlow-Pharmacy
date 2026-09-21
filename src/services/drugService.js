@@ -17,34 +17,7 @@ export const DEFAULT_MEDICATION_BATCH_PREFIX = 'PDF-IMP-'
 const DRUGS_PER_PAGE = 1000
 const DEFAULT_SEARCH_LIMIT = 30
 const MAX_SEARCH_LIMIT = 100
-const DRUG_LIST_SELECT = [
-  'id',
-  'organization_id',
-  'branch_id',
-  'name',
-  'brand_name',
-  'generic_name',
-  'batch_number',
-  'expiry_date',
-  'quantity',
-  'unit',
-  'price',
-  'cost_price',
-  'nhis_code',
-  'nhis_price',
-  'nhis_unit',
-  'is_nhis_listed',
-  'medicine_access_level',
-  'required_pharmacy_level',
-  'supplier',
-  'category',
-  'description',
-  'reorder_level',
-  'status',
-  'sale_on_return',
-  'created_at',
-  'updated_at',
-].join(', ')
+const DRUG_LIST_SELECT = 'id, organization_id, branch_id, name, brand_name, generic_name, batch_number, expiry_date, quantity, unit, price, cost_price, nhis_code, nhis_price, nhis_unit, is_nhis_listed, medicine_access_level, required_pharmacy_level, supplier, category, description, reorder_level, status, sale_on_return, created_at, updated_at'
 
 const INVENTORY_ALERT_CACHE_MS = 30_000
 const inventoryAlertCache = new Map()
@@ -55,6 +28,12 @@ export const resetInventoryAlertCacheForTests = () => {
   inventoryAlertRequests.clear()
 }
 
+/**
+ * @template T
+ * @param {string} key
+ * @param {() => Promise<T[]>} load
+ * @param {{force?: boolean}} options
+ */
 const getCachedInventoryAlert = async (key, load, { force = false } = {}) => {
   const cached = inventoryAlertCache.get(key)
   if (!force && cached && Date.now() - cached.cachedAt < INVENTORY_ALERT_CACHE_MS) {
@@ -554,7 +533,7 @@ export const calculateDrugStatus = (drug) => {
 
   const today = new Date()
   const expiryDate = new Date(drug.expiry_date)
-  const daysUntilExpiry = Math.ceil((expiryDate - today) / (1000 * 60 * 60 * 24))
+  const daysUntilExpiry = Math.ceil((expiryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
   
   // Check if expired
   if (daysUntilExpiry < 0) {

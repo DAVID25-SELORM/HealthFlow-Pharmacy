@@ -295,3 +295,42 @@ typecheck suppressions were added. Whole-application typechecking still fails;
 407 was the initial count, not a verified final count after these partial fixes.
 The latest Claim-IT focused run passes 36 tests. Deployment remains blocked by
 the incomplete local gates and the staging/production access conditions above.
+
+### Subsequent local verification, 2026-09-21
+
+This update supersedes the earlier typecheck-failure status above. Full frontend
+typechecking now passes with zero diagnostics, with no blanket suppressions or
+exclusion of failing application files. Lint, scoped Claim-IT typecheck, build,
+128-migration protection and the protected baseline check also pass. The final
+full regression run passed 1,200 tests across 180 files with exit 0, using the
+thread pool with two workers and a 30-second test timeout. Its saved local report
+is `output/verification/local-regression.json`. Results describe the working tree;
+the latest typing cleanup is included in the review-branch handoff below.
+
+The tariff prerequisite is resolved: its original schema was recovered from
+Git commit `6f3ef88`, and the existing supplied tariff seed loaded all 617 codes
+in the disposable database. The resumed schema replay now reaches both Claim-IT
+migrations after restoring the documented legacy prerequisites and correcting
+the accreditation migration's text-replacement defect. See the rollout runbook
+for the limits of this empty-database evidence.
+Staging access/reference and production
+authorization checks remain unsatisfied; no hosted migration or remediation has
+been performed. The genuine May reference was re-audited successfully (17 claims,
+17 attachments, no finance or attachment reconciliation issues).
+
+### Final review-branch verification, 2026-09-21
+
+After the accreditation fix, the full working-tree suite passed **1,201 tests
+across 181 files**, with zero failures or pending tests. The saved report is
+`output/verification/final-claimit-regression.json`. Full/scoped typecheck, lint,
+build (2,044 modules), migration protection and baseline verification passed.
+Task changes are selectively committed for the review branch; unrelated working
+changes remain excluded. This is not an isolated-commit full-suite result.
+
+LOCAL: the reviewed fixes and available checks are finished, but full production
+readiness remains incomplete: durable artifact storage, offline lifecycle parity,
+and the independent acceptance/semantic limitations documented above remain open.
+STAGING: blocked by missing project reference/access and unperformed existing-data
+acceptance and recovery checks. PRODUCTION: blocked by staging prerequisites and
+the existing access denial; no hosted migrations, repairs or smoke tests occurred.
+Do not deploy this client before its matching migrations have passed staging.

@@ -18,6 +18,11 @@ begin
     'public.branch_sync_upsert_nhia_configuration(text,jsonb)'::regprocedure
   ) into v_function_definition;
 
+  -- A restored database may already contain the updated function.
+  if position('accreditation_date_generated' in v_function_definition) > 0 then
+    return;
+  end if;
+
   if position('accreditation_expiry_date,' in v_function_definition) = 0
      or position(
        'accreditation_expiry_date = excluded.accreditation_expiry_date,'
@@ -26,10 +31,13 @@ begin
     raise exception 'Unexpected branch_sync_upsert_nhia_configuration definition';
   end if;
 
-  v_function_definition := replace(
+  -- Match the INSERT column list only, not the same suffix in an UPDATE
+  -- assignment. Replacing that suffix globally produces invalid SQL.
+  v_function_definition := regexp_replace(
     v_function_definition,
-    'accreditation_expiry_date,',
-    'accreditation_expiry_date, accreditation_date_generated,'
+    E'(^|\\n)([ \\t]*)accreditation_expiry_date,',
+    E'\\1\\2accreditation_expiry_date, accreditation_date_generated,',
+    'g'
   );
   v_function_definition := replace(
     v_function_definition,

@@ -133,7 +133,7 @@ export const getOfflinePurchaseDrafts = async () => {
     .sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt)))
 }
 
-export const getOfflinePurchasesSummary = async ({ organizationId } = {}) => {
+export const getOfflinePurchasesSummary = async ({ organizationId = '' } = {}) => {
   if (!organizationId) return emptySummary()
   try {
     const drafts = (await getOfflinePurchaseDrafts()).filter(
@@ -157,7 +157,7 @@ export const subscribeOfflinePurchasesQueue = (handler) => {
   return () => window.removeEventListener(OFFLINE_PURCHASES_QUEUE_CHANGED_EVENT, handler)
 }
 
-const runSync = async ({ organizationId } = {}) => {
+const runSync = async ({ organizationId = '' } = {}) => {
   if (!organizationId) {
     throw new Error('Organization is required before syncing offline purchases.')
   }

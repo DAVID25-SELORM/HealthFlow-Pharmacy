@@ -44,7 +44,7 @@ export default function ActivityLog() {
   const [actorUserId, setActorUserId] = useState('')
   const [eventType, setEventType] = useState('')
   const [period, setPeriod] = useState('all')
-  const [year, setYear] = useState(new Date().getUTCFullYear())
+  const [year, setYear] = useState(/** @type {string | number} */ (new Date().getUTCFullYear()))
   const [month, setMonth] = useState('')
   const [officerSearch, setOfficerSearch] = useState('')
   const [selectedLog, setSelectedLog] = useState(null)

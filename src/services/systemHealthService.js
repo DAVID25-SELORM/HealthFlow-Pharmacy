@@ -11,9 +11,24 @@ import {
 } from './productionMetricsService'
 import { invokeTierAccess } from './tierAccessService'
 
-const ok = (label, details = {}) => ({ label, status: 'ok', ...details })
-const warn = (label, details = {}) => ({ label, status: 'warn', ...details })
-const fail = (label, details = {}) => ({ label, status: 'fail', ...details })
+/**
+ * @template {object} T
+ * @param {string} label
+ * @param {T} [details]
+ */
+const ok = (label, details = /** @type {T} */ ({})) => Object.assign({ label, status: 'ok', countsAsFailureSignal: false }, details)
+/**
+ * @template {object} T
+ * @param {string} label
+ * @param {T} [details]
+ */
+const warn = (label, details = /** @type {T} */ ({})) => Object.assign({ label, status: 'warn', countsAsFailureSignal: false }, details)
+/**
+ * @template {object} T
+ * @param {string} label
+ * @param {T} [details]
+ */
+const fail = (label, details = /** @type {T} */ ({})) => Object.assign({ label, status: 'fail', countsAsFailureSignal: false }, details)
 const warningFailureSignal = (label, details = {}) =>
   warn(label, {
     countsAsFailureSignal: true,
@@ -276,17 +291,18 @@ const getLatencyStatus = (durationMs, warnAtMs) =>
   durationMs >= warnAtMs ? 'warn' : 'ok'
 
 const latencyCheck = (label, durationMs, warnAtMs, details = {}) => {
+  const { detailPrefix = 'Responded', ...publicDetails } = details
   const payload = {
-    ...details,
+    ...publicDetails,
     summary: durationMs >= warnAtMs ? 'Slow response' : 'Responsive',
-    detail: `${details.detailPrefix || 'Responded'} in ${durationMs} ms.`,
+    detail: `${detailPrefix || 'Responded'} in ${durationMs} ms.`,
   }
-  delete payload.detailPrefix
   return getLatencyStatus(durationMs, warnAtMs) === 'warn'
     ? warn(label, payload)
     : ok(label, payload)
 }
 
+/** @template {string} T @param {string} table @param {T} select @param {string} orderColumn */
 const latestRow = async (table, select, orderColumn) => {
   const { data, error } = await supabase
     .from(table)

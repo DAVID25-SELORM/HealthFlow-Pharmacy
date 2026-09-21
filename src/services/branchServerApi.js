@@ -262,6 +262,7 @@ const fetchWithTimeout = async (url, options = {}, timeoutMs = DEFAULT_BRANCH_RE
   }
 }
 
+/** @param {string} path @param {RequestInit & {timeoutMs?: number, requireUserSession?: boolean}} options */
 const branchFetch = async (path, options = {}) => {
   if (!isBranchServerEnabled()) {
     throw new Error('Local branch server mode is not enabled.')
@@ -333,6 +334,7 @@ export const installBranchServerUpdate = async () => {
 
 const UPDATE_TERMINAL_STATES = new Set(['installed', 'rolled_back', 'failed'])
 
+/** @param {{expectedVersion?: string, timeoutMs?: number, pollIntervalMs?: number, onStatus?: (status: Awaited<ReturnType<typeof getBranchUpdateStatus>>) => void}} options */
 export const waitForBranchUpdateCompletion = async ({
   expectedVersion = '',
   timeoutMs = 15 * 60 * 1000,
@@ -841,7 +843,7 @@ export const submitPendingNhiaClaims = async () =>
   })
 
 export const submitNhiaDirectPayload = async ({
-  payload,
+  payload = null,
   payloadContent = '',
   contentType = 'application/json',
   claimIds = [],
@@ -952,7 +954,7 @@ export const getBranchPosSession = async () => {
   return response.data || null
 }
 
-export const openBranchPosSession = async ({ branchId, openingCash = 0 } = {}) => {
+export const openBranchPosSession = async ({ branchId = '', openingCash = 0 } = {}) => {
   const response = await branchFetch('/api/pos-sessions/open', {
     method: 'POST',
     body: JSON.stringify({ branchId, openingCash }),
@@ -961,7 +963,7 @@ export const openBranchPosSession = async ({ branchId, openingCash = 0 } = {}) =
   return response.data || null
 }
 
-export const closeBranchPosSession = async ({ id, countedCash = 0, notes = '' } = {}) => {
+export const closeBranchPosSession = async ({ id = '', countedCash = 0, notes = '' } = {}) => {
   const response = await branchFetch(`/api/pos-sessions/${encodeURIComponent(id)}/close`, {
     method: 'POST',
     body: JSON.stringify({ countedCash, notes }),

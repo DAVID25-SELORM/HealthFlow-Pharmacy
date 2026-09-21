@@ -355,10 +355,10 @@ const Patients = () => {
     try {
       const detail = await getPatientRecord(patient.id) || patient
       const sales = [...(detail.sales || [])].sort(
-        (left, right) => new Date(right.sale_date) - new Date(left.sale_date)
+        (left, right) => new Date(right.sale_date).getTime() - new Date(left.sale_date).getTime()
       )
       const claims = [...(detail.claims || [])].sort(
-        (left, right) => new Date(right.service_date) - new Date(left.service_date)
+        (left, right) => new Date(right.service_date).getTime() - new Date(left.service_date).getTime()
       )
 
       if (historyRequestRef.current !== requestId) {

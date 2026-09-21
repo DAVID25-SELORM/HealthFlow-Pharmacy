@@ -247,7 +247,7 @@ const getNhisPatientReturnRows = (claims) => {
       })
     }
   })
-  return rows.sort((left, right) => new Date(right.currentVisit) - new Date(left.currentVisit))
+  return rows.sort((left, right) => new Date(right.currentVisit).getTime() - new Date(left.currentVisit).getTime())
 }
 
 const getGdrgServiceLines = (claims) =>

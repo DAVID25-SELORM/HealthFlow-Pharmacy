@@ -23,6 +23,7 @@ import {
 
 export const isLocalInventoryEnabled = () => isBranchServerEnabled()
 
+/** @param {{source?: string, limit?: number, includeCatalog?: boolean, branchId?: string, organizationId?: string, preferDirectRead?: boolean}} options */
 export const getInventory = async ({
   source = 'auto',
   limit = 20000,

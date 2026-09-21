@@ -20,7 +20,8 @@ describe('POS sale confirmation contract', () => {
   it('requires an explicit confirmation object instead of treating a click event as approval', () => {
     expect(salesPage).toContain('const handleCompleteSale = async ({ confirmed = false } = {}) =>')
     expect(salesPage).toContain('await handleCompleteSale({ confirmed: true })')
-    expect(salesPage).toContain('onClick={handleCompleteSale}')
+    expect(salesPage).toContain('onClick={() => handleCompleteSale()}')
+    expect(salesPage).not.toContain('onClick={handleCompleteSale}')
   })
 
   it('guards confirmation against duplicate clicks and provides a mobile layout', () => {

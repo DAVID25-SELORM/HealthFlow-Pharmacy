@@ -7,11 +7,11 @@
   "edgeFunctionCount": 7,
   "testFileCount": 148,
   "criticalFiles": {
-    "src/services/nhisService.js": "ce7a7377e08db4adbb66d4b8762e619b864dc424fb1607aeaec9104f1a86e066",
+    "src/services/nhisService.js": "5784676d686bce845915f11fe367147788260ec667b79165b2b86ca214cfee4d",
     "src/context/AuthContext.jsx": "e988ea8d7630703186192367f2b5bed836bab772e9457a2383430d5d290dcbcb",
     "src/services/recycleBinService.js": "94f0fd814bda811b3c234769426d57257a0f8120e90df8bffc87ae9ebfbcabe9",
-    "src/services/offlineInstallerReleaseService.js": "d656396c7cce60b3e007ffec4f4aa4f8d63f931ab022cbef3cdcdc02755c9c13",
-    "src/services/settingsService.js": "fdd96f01368f4d363f3ac0e20e31f7436a5ae0b4c252c3f95fe544471a5dbab7",
+    "src/services/offlineInstallerReleaseService.js": "486cff1a4cb69c96de4e68bdb2dd9552a92c069ee5f341b726d16d2c65d714ac",
+    "src/services/settingsService.js": "41c280817cb360c4d47a84cb09d6c807175416ee3477498d12b902083f46d3c1",
     "supabase/functions/tier-access/index.ts": "ae3afc0caa1640a8ed496c5ad3be8d5aa5c80059542616a61b7217a059460dba",
     "supabase/functions/staff-admin/index.ts": "1003e6ea0e987d12db4a6e0c4d927c27493a57fdb9011440958f3e24c0bb3127"
   },

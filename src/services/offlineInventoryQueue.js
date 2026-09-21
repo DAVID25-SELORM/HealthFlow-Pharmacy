@@ -174,7 +174,7 @@ export const getOfflineInventoryQueue = async () => {
     .sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt)))
 }
 
-export const getOfflineInventorySummary = async ({ organizationId } = {}) => {
+export const getOfflineInventorySummary = async ({ organizationId = '' } = {}) => {
   if (!organizationId) return emptySummary()
 
   try {
@@ -199,7 +199,7 @@ export const subscribeOfflineInventoryQueue = (handler) => {
   return () => window.removeEventListener(OFFLINE_INVENTORY_QUEUE_CHANGED_EVENT, handler)
 }
 
-export const discardOfflineInventoryConflicts = async ({ organizationId } = {}) => {
+export const discardOfflineInventoryConflicts = async ({ organizationId = '' } = {}) => {
   if (!organizationId) {
     throw new Error('Organization is required before discarding inventory conflicts.')
   }
@@ -223,7 +223,7 @@ const hasUpdateConflict = async (operation) => {
   return Boolean(currentUpdatedAt && currentUpdatedAt !== operation.expectedUpdatedAt)
 }
 
-const runSync = async ({ organizationId } = {}) => {
+const runSync = async ({ organizationId = '' } = {}) => {
   if (!organizationId) {
     throw new Error('Organization is required before syncing offline inventory changes.')
   }

@@ -408,6 +408,7 @@ const sortHistoryClaims = (claims = []) =>
       new Date(getNhisClaimVisitDate(left) || 0).getTime()
   )
 
+/** @param {string} column @param {string} value */
 const fetchCloudNhisClaimHistory = async (column, value) => {
   if (!value) return []
   const { data, error } = await supabase

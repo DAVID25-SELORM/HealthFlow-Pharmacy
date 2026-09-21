@@ -116,6 +116,7 @@ const getNhiaMemberNumber = (patient) =>
 
 const validateNhiaMemberNumber = validateNhiaMemberNumberFormat
 
+/** @param {string | Date} value */
 const getNhisCalendarDate = (value = new Date()) => {
   const date = value instanceof Date ? value : new Date(value)
   if (Number.isNaN(date.getTime())) return ''
@@ -1411,7 +1412,7 @@ const Sales = () => {
   }
 
   const buildInsuranceSaleNotes = ({
-    saleNumber,
+    saleNumber = '',
     total,
     coverage,
     topUp,
@@ -3409,7 +3410,7 @@ const Sales = () => {
                 !activeShift ||
                 (isInsuranceSale && !insuranceHasPatientDetails)
               }
-              onClick={handleCompleteSale}
+              onClick={() => handleCompleteSale()}
             >
               {!activeShift
                 ? 'Open Shift to Sell'
