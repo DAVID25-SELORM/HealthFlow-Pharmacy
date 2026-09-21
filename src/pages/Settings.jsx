@@ -2941,6 +2941,7 @@ const Settings = () => {
                 generatedDate={nhiaApiForm.accreditationDateGenerated}
                 expiryDate={nhiaApiForm.accreditationExpiryDate}
                 requireGenerated
+                onCredentialCodeChange={(value) => updateNhiaApiForm('credentialCode', value)}
                 onChange={(field, value) => updateNhiaApiForm(field, normalizeDateInputValue(value))}
               />
               {showNhiaProviderClassLevel && (

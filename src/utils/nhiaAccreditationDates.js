@@ -50,6 +50,17 @@ export const getAccreditationEffectiveDateFromCredentialCode = (credentialCode =
   return isValidAccreditationDate(iso) ? iso : ''
 }
 
+// Inverse of the above: rewrite the ninth segment from an ISO date. Returns null when the
+// code has no ninth segment or the date is invalid, so the caller never guesses a code.
+export const setAccreditationEffectiveDateInCredentialCode = (credentialCode = '', isoDate = '') => {
+  if (!isValidAccreditationDate(isoDate)) return null
+  const parts = text(credentialCode).split('-')
+  if (parts.length < 9) return null
+  const [year, month, day] = text(isoDate).split('-')
+  parts[8] = `${day}${month}${year.slice(2)}`
+  return parts.join('-')
+}
+
 const todayIso = () => new Date().toISOString().slice(0, 10)
 
 /**

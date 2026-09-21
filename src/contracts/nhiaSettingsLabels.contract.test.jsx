@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import NhiaAccreditationDatesFields from '../components/NhiaAccreditationDatesFields'
+import { getAccreditationEffectiveDateFromCredentialCode, setAccreditationEffectiveDateInCredentialCode } from '../utils/nhiaAccreditationDates'
 
 const source = readFileSync('src/pages/Settings.jsx', 'utf8').replace(/\r\n/g, '\n')
 const form = source.slice(
@@ -52,11 +53,39 @@ describe('NhiaAccreditationDatesFields', () => {
         onChange={(field, value) => changes.push([field, value])}
       />,
     )
-    expect(screen.getByText('Accreditation Effective Date')).toBeTruthy()
+    expect(screen.getByLabelText('Accreditation Effective Date')).toBeTruthy()
     const generated = screen.getByLabelText('Accreditation Generated / Issue Date')
     const expiry = screen.getByLabelText('Accreditation Expiry Date')
     fireEvent.change(generated, { target: { value: '2025-12-29' } })
     expect(changes).toEqual([['accreditationDateGenerated', '2025-12-29']])
     expect(expiry.value).toBe('2027-08-01')
+  })
+})
+
+describe('Accreditation Effective Date picker', () => {
+  const code = '03-05-001-02-093-X-Y-Z-011025-Q'
+
+  it('shows the date from the credential code and rewrites only that segment when picked', () => {
+    const codes = []
+    render(<NhiaAccreditationDatesFields credentialCode={code} generatedDate="2025-12-29" expiryDate="2027-12-01" onCredentialCodeChange={(c) => codes.push(c)} />)
+    const picker = screen.getByLabelText('Accreditation Effective Date')
+    expect(picker.type).toBe('date')
+    expect(picker.value).toBe('2025-10-01')
+    fireEvent.change(picker, { target: { value: '2025-12-01' } })
+    expect(codes).toEqual(['03-05-001-02-093-X-Y-Z-011225-Q'])
+  })
+
+  it('is disabled until the credential code is complete, and never invents a code', () => {
+    const codes = []
+    render(<NhiaAccreditationDatesFields credentialCode="03-05-001" onCredentialCodeChange={(c) => codes.push(c)} />)
+    expect(screen.getByLabelText('Accreditation Effective Date').disabled).toBe(true)
+    expect(setAccreditationEffectiveDateInCredentialCode('03-05-001', '2025-12-01')).toBeNull()
+    expect(setAccreditationEffectiveDateInCredentialCode(code, 'not-a-date')).toBeNull()
+    expect(codes).toEqual([])
+  })
+
+  it('round-trips with the reader the exporter uses', () => {
+    const next = setAccreditationEffectiveDateInCredentialCode(code, '2026-02-28')
+    expect(getAccreditationEffectiveDateFromCredentialCode(next)).toBe('2026-02-28')
   })
 })

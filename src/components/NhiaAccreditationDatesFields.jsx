@@ -3,6 +3,7 @@ import {
   ACCREDITATION_GENERATED_HELPER_TEXT,
   getAccreditationDateIssues,
   getAccreditationEffectiveDateFromCredentialCode,
+  setAccreditationEffectiveDateInCredentialCode,
 } from '../utils/nhiaAccreditationDates'
 
 // The three accreditation dates, each with a visible label. They are independent:
@@ -13,11 +14,13 @@ export default function NhiaAccreditationDatesFields({
   generatedDate = '',
   expiryDate = '',
   onChange,
+  onCredentialCodeChange,
   requireGenerated = false,
   disabled = false,
 }) {
   const id = useId()
   const effectiveDate = getAccreditationEffectiveDateFromCredentialCode(credentialCode)
+  const canEditEffective = String(credentialCode || '').trim().split('-').length >= 9
   const issues = getAccreditationDateIssues({
     generated: generatedDate, expiry: expiryDate, effective: effectiveDate, requireGenerated,
   })
@@ -36,11 +39,24 @@ export default function NhiaAccreditationDatesFields({
       style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(14rem, 1fr))', gap: '0.75rem' }}
     >
       <div className="settings-field">
-        <span id={`${id}-effective-label`}>Accreditation Effective Date</span>
-        <output aria-labelledby={`${id}-effective-label`} data-testid="accreditation-effective-date">
-          {effectiveDate || 'Not available'}
-        </output>
-        <p className="settings-helper">Read from the CLAIM-it credential code. It is not stored separately and is not edited here.</p>
+        <label htmlFor={`${id}-effective`}><span>Accreditation Effective Date</span></label>
+        <input
+          id={`${id}-effective`}
+          type="date"
+          data-testid="accreditation-effective-date"
+          value={effectiveDate}
+          disabled={disabled || !canEditEffective}
+          aria-describedby={`${id}-effective-help`}
+          onChange={(event) => {
+            const next = setAccreditationEffectiveDateInCredentialCode(credentialCode, event.target.value)
+            if (next) onCredentialCodeChange?.(next)
+          }}
+        />
+        <p id={`${id}-effective-help`} className="settings-helper">
+          {canEditEffective
+            ? 'Pick the date to update it. This changes the date segment of the CLAIM-it credential code above, which is where the effective date is stored.'
+            : 'Enter the full CLAIM-it credential code above first; the effective date is stored inside it.'}
+        </p>
       </div>
       <div className="settings-field">
         <label htmlFor={`${id}-generated`}><span>Accreditation Generated / Issue Date</span></label>
