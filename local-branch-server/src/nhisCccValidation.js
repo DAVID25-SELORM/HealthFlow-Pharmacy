@@ -6,7 +6,7 @@ export const getNhisCccTransitionIssue = (claim = {}) => {
 }
 export const assertNhisCccForProgress = (claim) => {
   const issue = getNhisCccTransitionIssue(claim)
-  if (issue) { const error = new Error(issue); error.status = 422; error.code = 'NHIS_CCC_REQUIRED'; throw error }
+  if (issue) throw Object.assign(new Error(issue), { status: 422, code: 'NHIS_CCC_REQUIRED' })
 }
 export const assertNhisCccForSavedState = (claim = {}) => {
   const protectedStates = ['served', 'claim_ready', 'partially_served', 'fully_served', 'submitted', 'approved', 'accepted', 'paid']

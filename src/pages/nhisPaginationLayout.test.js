@@ -105,10 +105,13 @@ describe('NHIS claims pagination layout', () => {
 
   it('shows all remaining correction alerts with separate serving and export contracts', () => {
     const source = readSource('./Nhis.jsx')
-    expect(source).toContain('aria-label="Remaining correction alerts"')
-    expect(source).toContain('correctionReadiness.serving.blockers.map')
-    expect(source).toContain('correctionReadiness.export.blockers.map')
-    expect(source).toContain('correctionReadiness.export.warnings.map')
+    expect(source).toContain('readiness={correctionReadiness}')
+    expect(source).toContain('<ClaimCorrectionAlerts')
+    const alerts = readSource('../components/ClaimCorrectionAlerts.jsx')
+    expect(alerts).toContain('aria-label="Remaining correction alerts"')
+    expect(alerts).toContain('readiness.serving.blockers')
+    expect(alerts).toContain('readiness.export.blockers')
+    expect(alerts).toContain('readiness.export.warnings')
     expect(source).not.toContain('readiness.blockers.slice(0, 6).map')
   })
 

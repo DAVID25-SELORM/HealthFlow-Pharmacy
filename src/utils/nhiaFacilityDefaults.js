@@ -325,6 +325,7 @@ const KNOWN_NHIA_FACILITIES = [
   },
 ]
 
+/** @returns {Partial<(typeof KNOWN_NHIA_FACILITIES)[number]['defaults']>} */
 const getKnownFacilityDefaults = (organization = {}) => {
   const identity = [
     organization?.name,

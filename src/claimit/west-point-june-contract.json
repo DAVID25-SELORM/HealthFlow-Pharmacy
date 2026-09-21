@@ -1,0 +1,936 @@
+{
+  "envelope": [
+    1,
+    2,
+    25
+  ],
+  "topLevel": [
+    "lockID",
+    "dateGenerated",
+    "signedByName",
+    "signedByUsername",
+    "signedByRole",
+    "data",
+    "isBackup",
+    "isExport",
+    "isPartial",
+    "periodStart",
+    "periodEnd"
+  ],
+  "envelopeFlags": {
+    "isBackup": true,
+    "isExport": true,
+    "isPartial": true
+  },
+  "sections": [
+    "claims",
+    "serviceentries",
+    "medicineentries",
+    "summaryitems",
+    "attachmentdata",
+    "attachments",
+    "comments",
+    "validations",
+    "validation_results",
+    "validation_zclaims",
+    "prescribersfordays",
+    "_meta",
+    "_dbstruct"
+  ],
+  "fields": {
+    "claims": [
+      "guid",
+      "isException",
+      "claimCheckCode",
+      "preAuthorizationCodes",
+      "physicianID",
+      "specialtyAttended",
+      "totalCost",
+      "procCost",
+      "diagCost",
+      "inveCost",
+      "medCost",
+      "principalGDRG",
+      "alternativeGDRG",
+      "autoSummaryGDRG",
+      "autoSummaryCost",
+      "memberAge",
+      "memberAgeGroup",
+      "isImported",
+      "refID",
+      "medVersion",
+      "servVersion",
+      "policyVersion",
+      "isDirty",
+      "status",
+      "submissionTime",
+      "extraData",
+      "addedOn",
+      "addedByname",
+      "addedByuserID",
+      "addedByrole",
+      "modifiedOn",
+      "modifiedByname",
+      "modifiedByuserID",
+      "modifiedByrole",
+      "signedOn",
+      "signedByname",
+      "signedByuserID",
+      "signedByrole",
+      "memberNo",
+      "cardSerialNo",
+      "surname",
+      "otherNames",
+      "dateOfBirth",
+      "gender",
+      "hospitalRecNo",
+      "isDependant",
+      "prescriptionLevelID",
+      "credentialCode",
+      "accred_effectiveDate",
+      "accred_providerID",
+      "accred_ccd_agencyCode",
+      "accred_ccd_regionCode",
+      "accred_ccd_districtCode",
+      "accred_ccd_ownershipCode",
+      "accred_ccd_sequenceNumber",
+      "accred_ccd_facilityTypeCode",
+      "accred_ccd_prescriptionLevelCode",
+      "accred_ccd_cateringStatusCode",
+      "accred_ccd_effectiveDate",
+      "facilityTypeCode",
+      "ownershipTypeCode",
+      "cateringStatusCode",
+      "refclaimCheckCode",
+      "reffacilityID",
+      "reffacilityName",
+      "minDOSP",
+      "maxDOSP",
+      "serviceProvisionDates",
+      "specialtiesAttended",
+      "durationOfSpell",
+      "typeOfService",
+      "isUnbundled",
+      "includesPharmacy",
+      "typeOfAttendance",
+      "serviceOutcome",
+      "claimType"
+    ],
+    "serviceentries": [],
+    "medicineentries": [
+      "_entry_id",
+      "_claim_id",
+      "medicineCode",
+      "serviceDate",
+      "cost",
+      "qty",
+      "dispensedQty",
+      "dispensaryUnit",
+      "extraDirections",
+      "unparsed",
+      "dose_value",
+      "dose_unit",
+      "frequency_value",
+      "frequency_unit",
+      "frequency_desc",
+      "duration_value",
+      "duration_unit",
+      "duration_desc"
+    ],
+    "summaryitems": [
+      "_entry_id",
+      "_claim_id",
+      "type",
+      "ordinal",
+      "description",
+      "amount"
+    ],
+    "attachmentdata": [
+      "_data_id",
+      "_attach_id",
+      "data"
+    ],
+    "attachments": [
+      "attach_id",
+      "_claim_id",
+      "type",
+      "fileType",
+      "comments"
+    ],
+    "comments": [],
+    "validations": [
+      "_id",
+      "s_id",
+      "claimID",
+      "policyID",
+      "runTime",
+      "outcome",
+      "isSavedClaim",
+      "memberNo",
+      "firstDOSP",
+      "lastDOSP",
+      "runOn",
+      "runByname",
+      "runByuserID",
+      "runByrole"
+    ],
+    "validation_results": [],
+    "validation_zclaims": [
+      "_id",
+      "_validation_id",
+      "serializedClaim",
+      "isCompressed"
+    ],
+    "prescribersfordays": [
+      "_id",
+      "day",
+      "name",
+      "role"
+    ],
+    "_meta": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27
+    ],
+    "_dbstruct": [
+      "uid",
+      "prescriptionLevelID",
+      "facilityName",
+      "dateGenerated",
+      "expiryDate",
+      "isTemporary",
+      "meta",
+      "effectiveDate",
+      "providerID",
+      "ccd_agencyCode",
+      "ccd_regionCode",
+      "ccd_districtCode",
+      "ccd_ownershipCode",
+      "ccd_sequenceNumber",
+      "ccd_facilityTypeCode",
+      "ccd_prescriptionLevelCode",
+      "ccd_cateringStatusCode",
+      "ccd_effectiveDate",
+      "facilityTypeCode",
+      "ownershipTypeCode",
+      "cateringStatusCode"
+    ]
+  },
+  "metadata": [
+    "dbVersions",
+    "claimYear",
+    "claimMonth",
+    "claimType",
+    "facilityName",
+    "providerLevel",
+    "providerID",
+    "credentialCode",
+    "policies",
+    "medVersions",
+    "servVersions",
+    "appVersion",
+    "accreditations",
+    "credUsage",
+    "PHC",
+    "totalVol",
+    "totalCost",
+    "totalExceptions"
+  ],
+  "appVersion": {
+    "version": "Head",
+    "build": "2025053123",
+    "type": "head",
+    "sha1": "bebe76e96864d0f25d3514e5916816aadc34cff4",
+    "client": "1.0.0.3",
+    "mode": "standalone"
+  },
+  "schema": {
+    "accreditations": {
+      "uid": "varchar(50)",
+      "prescriptionLevelID": "varchar(255)",
+      "facilityName": "varchar(255)",
+      "dateGenerated": "date",
+      "expiryDate": "date",
+      "isTemporary": "tinyint(1)",
+      "meta": "mediumtext",
+      "effectiveDate": "date",
+      "providerID": "varchar(255)",
+      "ccd_agencyCode": "varchar(255)",
+      "ccd_regionCode": "varchar(255)",
+      "ccd_districtCode": "varchar(255)",
+      "ccd_ownershipCode": "varchar(255)",
+      "ccd_sequenceNumber": "varchar(255)",
+      "ccd_facilityTypeCode": "varchar(255)",
+      "ccd_prescriptionLevelCode": "varchar(255)",
+      "ccd_cateringStatusCode": "varchar(255)",
+      "ccd_effectiveDate": "date",
+      "facilityTypeCode": "varchar(255)",
+      "ownershipTypeCode": "varchar(255)",
+      "cateringStatusCode": "varchar(255)"
+    },
+    "attachmentdata": {
+      "_data_id": "int(11)",
+      "_attach_id": "varchar(40)",
+      "data": "longblob"
+    },
+    "attachments": {
+      "attach_id": "varchar(40)",
+      "_claim_id": "varchar(60)",
+      "type": "varchar(255)",
+      "fileType": "varchar(255)",
+      "comments": "varchar(255)"
+    },
+    "attendanceentries": {
+      "_entry_id": "int(11)",
+      "_claim_id": "varchar(60)",
+      "claimType": "varchar(255)",
+      "attdate": "date",
+      "ccc": "varchar(255)"
+    },
+    "attendances": {
+      "attdate": "date",
+      "ccc": "varchar(255)",
+      "expiryDate": "datetime",
+      "data": "longtext",
+      "claimType": "varchar(255)",
+      "memberNo": "varchar(255)",
+      "cardSerialNo": "varchar(255)",
+      "surname": "varchar(255)",
+      "otherNames": "varchar(255)",
+      "dateOfBirth": "date",
+      "gender": "varchar(255)",
+      "hospitalRecNo": "varchar(255)",
+      "isDependant": "tinyint(1)",
+      "generatedOn": "datetime",
+      "generatedByname": "varchar(255)",
+      "generatedByuserID": "varchar(255)",
+      "generatedByrole": "varchar(255)",
+      "addedOn": "datetime",
+      "addedByname": "varchar(255)",
+      "addedByuserID": "varchar(255)",
+      "addedByrole": "varchar(255)",
+      "modifiedOn": "datetime",
+      "modifiedByname": "varchar(255)",
+      "modifiedByuserID": "varchar(255)",
+      "modifiedByrole": "varchar(255)"
+    },
+    "cateringstatuses": {
+      "description": "varchar(255)",
+      "accredCode": "varchar(4)",
+      "statusCode": "varchar(32)"
+    },
+    "claims": {
+      "guid": "varchar(60)",
+      "isException": "tinyint(1)",
+      "claimCheckCode": "varchar(255)",
+      "preAuthorizationCodes": "varchar(255)",
+      "physicianID": "varchar(255)",
+      "specialtyAttended": "varchar(6)",
+      "totalCost": "decimal(10,2)",
+      "procCost": "decimal(10,2)",
+      "diagCost": "decimal(10,2)",
+      "inveCost": "decimal(10,2)",
+      "medCost": "decimal(10,2)",
+      "principalGDRG": "varchar(255)",
+      "alternativeGDRG": "varchar(255)",
+      "autoSummaryGDRG": "varchar(255)",
+      "autoSummaryCost": "decimal(10,2)",
+      "memberAge": "decimal(10,2)",
+      "memberAgeGroup": "varchar(1)",
+      "isImported": "tinyint(1)",
+      "refID": "varchar(255)",
+      "medVersion": "varchar(255)",
+      "servVersion": "varchar(255)",
+      "policyVersion": "varchar(255)",
+      "isDirty": "tinyint(1)",
+      "status": "varchar(255)",
+      "submissionTime": "datetime",
+      "extraData": "longtext",
+      "addedOn": "datetime",
+      "addedByname": "varchar(255)",
+      "addedByuserID": "varchar(255)",
+      "addedByrole": "varchar(255)",
+      "modifiedOn": "datetime",
+      "modifiedByname": "varchar(255)",
+      "modifiedByuserID": "varchar(255)",
+      "modifiedByrole": "varchar(255)",
+      "signedOn": "datetime",
+      "signedByname": "varchar(255)",
+      "signedByuserID": "varchar(255)",
+      "signedByrole": "varchar(255)",
+      "memberNo": "varchar(255)",
+      "cardSerialNo": "varchar(255)",
+      "surname": "varchar(255)",
+      "otherNames": "varchar(255)",
+      "dateOfBirth": "date",
+      "gender": "varchar(255)",
+      "hospitalRecNo": "varchar(255)",
+      "isDependant": "tinyint(1)",
+      "prescriptionLevelID": "varchar(255)",
+      "credentialCode": "varchar(255)",
+      "accred_effectiveDate": "date",
+      "accred_providerID": "varchar(255)",
+      "accred_ccd_agencyCode": "varchar(255)",
+      "accred_ccd_regionCode": "varchar(255)",
+      "accred_ccd_districtCode": "varchar(255)",
+      "accred_ccd_ownershipCode": "varchar(255)",
+      "accred_ccd_sequenceNumber": "varchar(255)",
+      "accred_ccd_facilityTypeCode": "varchar(255)",
+      "accred_ccd_prescriptionLevelCode": "varchar(255)",
+      "accred_ccd_cateringStatusCode": "varchar(255)",
+      "accred_ccd_effectiveDate": "date",
+      "facilityTypeCode": "varchar(255)",
+      "ownershipTypeCode": "varchar(255)",
+      "cateringStatusCode": "varchar(255)",
+      "refclaimCheckCode": "varchar(255)",
+      "reffacilityID": "varchar(255)",
+      "reffacilityName": "varchar(255)",
+      "minDOSP": "date",
+      "maxDOSP": "date",
+      "serviceProvisionDates": "varchar(750)",
+      "specialtiesAttended": "varchar(750)",
+      "durationOfSpell": "int(11)",
+      "typeOfService": "varchar(255)",
+      "isUnbundled": "varchar(255)",
+      "includesPharmacy": "varchar(255)",
+      "typeOfAttendance": "varchar(255)",
+      "serviceOutcome": "varchar(255)",
+      "claimType": "varchar(255)"
+    },
+    "comments": {
+      "_entry_id": "int(11)",
+      "_claim_id": "varchar(60)",
+      "comment": "mediumtext",
+      "createdOn": "datetime",
+      "createdByname": "varchar(255)",
+      "createdByuserID": "varchar(255)",
+      "createdByrole": "varchar(255)"
+    },
+    "contracts": {
+      "scheme": "varchar(255)",
+      "facilityName": "varchar(255)",
+      "dateGenerated": "date",
+      "expiryDate": "date",
+      "isTemporary": "tinyint(1)",
+      "data": "longtext",
+      "meta": "mediumtext",
+      "effectiveDate": "date",
+      "providerID": "varchar(255)",
+      "contractCode": "varchar(255)"
+    },
+    "diseases": {
+      "_id": "int(11)",
+      "icd10": "varchar(255)",
+      "gender": "varchar(255)",
+      "ageGroup": "varchar(255)",
+      "sanitizedDescription": "varchar(255)",
+      "description": "varchar(255)"
+    },
+    "doctrine_migration_versions": {
+      "version": "varchar(1024)",
+      "executed_at": "datetime",
+      "execution_time": "int(11)"
+    },
+    "facilitytypes": {
+      "description": "varchar(255)",
+      "accredCode": "varchar(4)",
+      "typeCode": "varchar(32)"
+    },
+    "gdrgs": {
+      "code": "varchar(255)",
+      "description": "varchar(255)",
+      "MDCCode": "varchar(255)",
+      "GDRGNo": "varchar(255)",
+      "split": "varchar(255)",
+      "prefix": "varchar(255)",
+      "suffix": "varchar(255)"
+    },
+    "gdrgs_icd10s": {
+      "code": "varchar(255)",
+      "icd10": "varchar(255)"
+    },
+    "icd10s": {
+      "icd10": "varchar(255)",
+      "description": "varchar(255)"
+    },
+    "mdcs": {
+      "code": "varchar(255)",
+      "description": "varchar(255)"
+    },
+    "medicineclasses": {
+      "_entry_id": "int(11)",
+      "_med_code": "varchar(255)",
+      "major": "varchar(255)",
+      "minor": "varchar(255)"
+    },
+    "medicineentries": {
+      "_entry_id": "int(11)",
+      "_claim_id": "varchar(60)",
+      "medicineCode": "varchar(255)",
+      "serviceDate": "date",
+      "cost": "decimal(10,4)",
+      "qty": "varchar(255)",
+      "dispensedQty": "varchar(255)",
+      "dispensaryUnit": "varchar(150)",
+      "extraDirections": "varchar(255)",
+      "unparsed": "varchar(255)",
+      "dose_value": "decimal(10,2)",
+      "dose_unit": "varchar(255)",
+      "frequency_value": "decimal(10,2)",
+      "frequency_unit": "varchar(255)",
+      "frequency_desc": "varchar(255)",
+      "duration_value": "decimal(10,2)",
+      "duration_unit": "varchar(255)",
+      "duration_desc": "varchar(255)"
+    },
+    "medicineprices": {
+      "uid": "varchar(255)",
+      "price": "decimal(10,2)",
+      "pricingUnit": "varchar(255)",
+      "maxDosage": "decimal(10,0)",
+      "flags": "varchar(750)",
+      "prescriptionUnits": "varchar(750)",
+      "dispensaryUnits": "varchar(750)",
+      "buildVersion": "varchar(255)",
+      "effectiveDate": "date",
+      "prescriptionLevelCode": "varchar(255)",
+      "medicineCode": "varchar(255)"
+    },
+    "medicines": {
+      "code": "varchar(255)",
+      "description": "varchar(255)"
+    },
+    "ownerships": {
+      "description": "varchar(255)",
+      "accredCode": "varchar(4)",
+      "ownershipCode": "varchar(32)"
+    },
+    "policies": {
+      "uid": "varchar(40)",
+      "description": "varchar(255)",
+      "buildVersion": "varchar(255)",
+      "effectiveDate": "date",
+      "type": "varchar(32)"
+    },
+    "policyrules": {
+      "_id": "int(11)",
+      "_policy_id": "varchar(40)",
+      "position": "int(11)",
+      "name": "varchar(255)",
+      "outcome": "varchar(255)",
+      "version": "varchar(255)",
+      "runAt": "varchar(255)"
+    },
+    "prescribersfordays": {
+      "_id": "int(11)",
+      "day": "date",
+      "name": "varchar(250)",
+      "role": "varchar(32)"
+    },
+    "prescriptionlevels": {
+      "rank": "decimal(6,1)",
+      "description": "varchar(255)",
+      "levelCode": "varchar(4)"
+    },
+    "providerlevels": {
+      "uid": "varchar(32)",
+      "description": "varchar(255)",
+      "facilityTypeCode": "varchar(255)",
+      "ownershipTypeCode": "varchar(255)",
+      "cateringStatusCode": "varchar(255)"
+    },
+    "rules": {
+      "uid": "varchar(120)",
+      "codeScript": "longtext",
+      "scope": "varchar(255)",
+      "description": "longtext",
+      "category": "varchar(255)",
+      "name": "varchar(255)",
+      "outcome": "varchar(255)",
+      "version": "varchar(255)",
+      "runAt": "varchar(255)"
+    },
+    "serviceentries": {
+      "_entry_id": "int(11)",
+      "_claim_id": "varchar(60)",
+      "gdrgCode": "varchar(255)",
+      "cost": "decimal(10,4)",
+      "entryType": "varchar(255)",
+      "serviceDate": "date",
+      "icd10": "varchar(255)",
+      "description": "varchar(255)",
+      "suggestedICD10": "varchar(255)"
+    },
+    "servicetariffs": {
+      "uid": "varchar(255)",
+      "cost": "decimal(10,2)",
+      "flags": "varchar(750)",
+      "buildVersion": "varchar(255)",
+      "effectiveDate": "date",
+      "facilityTypeCode": "varchar(255)",
+      "ownershipTypeCode": "varchar(255)",
+      "cateringStatusCode": "varchar(255)",
+      "MDCCode": "varchar(255)",
+      "GDRGNo": "varchar(255)",
+      "split": "varchar(255)",
+      "prefix": "varchar(255)",
+      "suffix": "varchar(255)"
+    },
+    "summaryitems": {
+      "_entry_id": "int(11)",
+      "_claim_id": "varchar(60)",
+      "type": "varchar(255)",
+      "ordinal": "int(11)",
+      "description": "varchar(255)",
+      "amount": "decimal(10,4)"
+    },
+    "systemupdates": {
+      "uid": "varchar(32)",
+      "installDate": "date",
+      "hash": "varchar(32)",
+      "buildVersion": "varchar(255)",
+      "updateType": "varchar(255)",
+      "updateVersion": "varchar(255)"
+    },
+    "users": {
+      "username": "varchar(32)",
+      "name": "varchar(250)",
+      "role": "varchar(32)",
+      "password": "varchar(255)",
+      "status": "varchar(1)",
+      "officesanitizedName": "varchar(255)",
+      "officename": "varchar(255)"
+    },
+    "validation_results": {
+      "_id": "int(11)",
+      "_validation_id": "varchar(60)",
+      "ruleID": "varchar(255)",
+      "info": "varchar(255)",
+      "entryID": "varchar(255)"
+    },
+    "validation_zclaims": {
+      "_id": "int(11)",
+      "_validation_id": "varchar(60)",
+      "serializedClaim": "longblob",
+      "isCompressed": "tinyint(1)"
+    },
+    "validations": {
+      "_id": "varchar(60)",
+      "s_id": "int(11)",
+      "claimID": "varchar(255)",
+      "policyID": "varchar(255)",
+      "runTime": "datetime",
+      "outcome": "varchar(255)",
+      "isSavedClaim": "tinyint(1)",
+      "memberNo": "varchar(255)",
+      "firstDOSP": "date",
+      "lastDOSP": "date",
+      "runOn": "datetime",
+      "runByname": "varchar(255)",
+      "runByuserID": "varchar(255)",
+      "runByrole": "varchar(255)"
+    }
+  },
+  "versions": {
+    "providerLevel": "PVT-PHC-CE",
+    "policies": {
+      "0": "cgs.2022-12-01.250531"
+    },
+    "medVersions": {
+      "0": "2025-05-01.250531"
+    },
+    "servVersions": {
+      "0": "2023-02-01.250531"
+    }
+  },
+  "accreditationFields": [
+    "accred_effectiveDate",
+    "accred_providerID",
+    "facilityTypeCode",
+    "ownershipTypeCode",
+    "cateringStatusCode",
+    "prescriptionLevelID",
+    "facilityName",
+    "dateGenerated",
+    "expiryDate",
+    "credentialCode"
+  ],
+  "credUsageFields": [
+    "credentialCode",
+    "minDOSP",
+    "maxDOSP"
+  ],
+  "claimTypes": [
+    "NHIS"
+  ],
+  "claimStatuses": [
+    "VALID"
+  ],
+  "durationShape": {
+    "value": [
+      "U.U"
+    ],
+    "unit": [
+      "DAYS"
+    ],
+    "desc": [
+      "U l"
+    ]
+  },
+  "validationSectionsPopulated": true,
+  "claimFieldTypes": {
+    "guid": [
+      "string"
+    ],
+    "isException": [
+      "string"
+    ],
+    "claimCheckCode": [
+      "string"
+    ],
+    "preAuthorizationCodes": [
+      "empty string"
+    ],
+    "physicianID": [
+      "string"
+    ],
+    "specialtyAttended": [
+      "null"
+    ],
+    "totalCost": [
+      "string"
+    ],
+    "procCost": [
+      "string"
+    ],
+    "diagCost": [
+      "string"
+    ],
+    "inveCost": [
+      "string"
+    ],
+    "medCost": [
+      "string"
+    ],
+    "principalGDRG": [
+      "empty string"
+    ],
+    "alternativeGDRG": [
+      "empty string"
+    ],
+    "autoSummaryGDRG": [
+      "empty string"
+    ],
+    "autoSummaryCost": [
+      "string"
+    ],
+    "memberAge": [
+      "string"
+    ],
+    "memberAgeGroup": [
+      "string"
+    ],
+    "isImported": [
+      "null"
+    ],
+    "refID": [
+      "null"
+    ],
+    "medVersion": [
+      "string"
+    ],
+    "servVersion": [
+      "string"
+    ],
+    "policyVersion": [
+      "string"
+    ],
+    "isDirty": [
+      "string"
+    ],
+    "status": [
+      "string"
+    ],
+    "submissionTime": [
+      "null"
+    ],
+    "extraData": [
+      "string"
+    ],
+    "addedOn": [
+      "string"
+    ],
+    "addedByname": [
+      "string"
+    ],
+    "addedByuserID": [
+      "string"
+    ],
+    "addedByrole": [
+      "string"
+    ],
+    "modifiedOn": [
+      "string"
+    ],
+    "modifiedByname": [
+      "string"
+    ],
+    "modifiedByuserID": [
+      "string"
+    ],
+    "modifiedByrole": [
+      "string"
+    ],
+    "signedOn": [
+      "null"
+    ],
+    "signedByname": [
+      "null"
+    ],
+    "signedByuserID": [
+      "null"
+    ],
+    "signedByrole": [
+      "null"
+    ],
+    "memberNo": [
+      "string"
+    ],
+    "cardSerialNo": [
+      "empty string"
+    ],
+    "surname": [
+      "string"
+    ],
+    "otherNames": [
+      "string"
+    ],
+    "dateOfBirth": [
+      "string"
+    ],
+    "gender": [
+      "string"
+    ],
+    "hospitalRecNo": [
+      "string"
+    ],
+    "isDependant": [
+      "null"
+    ],
+    "prescriptionLevelID": [
+      "string"
+    ],
+    "credentialCode": [
+      "string"
+    ],
+    "accred_effectiveDate": [
+      "string"
+    ],
+    "accred_providerID": [
+      "string"
+    ],
+    "accred_ccd_agencyCode": [
+      "string"
+    ],
+    "accred_ccd_regionCode": [
+      "string"
+    ],
+    "accred_ccd_districtCode": [
+      "string"
+    ],
+    "accred_ccd_ownershipCode": [
+      "string"
+    ],
+    "accred_ccd_sequenceNumber": [
+      "string"
+    ],
+    "accred_ccd_facilityTypeCode": [
+      "string"
+    ],
+    "accred_ccd_prescriptionLevelCode": [
+      "string"
+    ],
+    "accred_ccd_cateringStatusCode": [
+      "string"
+    ],
+    "accred_ccd_effectiveDate": [
+      "string"
+    ],
+    "facilityTypeCode": [
+      "string"
+    ],
+    "ownershipTypeCode": [
+      "string"
+    ],
+    "cateringStatusCode": [
+      "string"
+    ],
+    "refclaimCheckCode": [
+      "empty string"
+    ],
+    "reffacilityID": [
+      "empty string"
+    ],
+    "reffacilityName": [
+      "string"
+    ],
+    "minDOSP": [
+      "string"
+    ],
+    "maxDOSP": [
+      "string"
+    ],
+    "serviceProvisionDates": [
+      "string"
+    ],
+    "specialtiesAttended": [
+      "empty string"
+    ],
+    "durationOfSpell": [
+      "string"
+    ],
+    "typeOfService": [
+      "string"
+    ],
+    "isUnbundled": [
+      "empty string"
+    ],
+    "includesPharmacy": [
+      "string"
+    ],
+    "typeOfAttendance": [
+      "empty string"
+    ],
+    "serviceOutcome": [
+      "empty string"
+    ],
+    "claimType": [
+      "string"
+    ]
+  }
+}

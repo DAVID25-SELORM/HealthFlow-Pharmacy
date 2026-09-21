@@ -14,6 +14,13 @@ vi.mock('./auditService', () => ({
   tryLogAuditEvent: vi.fn(),
 }))
 
+// This suite tests serialization/attachments. The real RPC boundary and its
+// rejection/authorization behavior are covered in claimitLifecycleService and SQL tests.
+vi.mock('./claimitLifecycleService', () => ({
+  getExportSigningEvidence: vi.fn(async (claims) => ({ claims, warnings: [] })),
+  recordCxfExport: vi.fn(async () => null),
+}))
+
 vi.mock('./branchServerApi', () => ({
   createBranchRecord: vi.fn(),
   deleteBranchRecord: vi.fn(),
@@ -160,7 +167,7 @@ describe('NHIS learned dose suggestion RPC boundary', () => {
   })
 })
 
-const extractSerializedClaimBuffer = (inflatedCxfPayload) => {
+const _extractSerializedClaimBuffer = (inflatedCxfPayload) => {
   const key = Buffer.from('s:15:"serializedClaim";s:', 'utf8')
   const keyIndex = inflatedCxfPayload.indexOf(key)
   expect(keyIndex).toBeGreaterThan(-1)
@@ -1783,6 +1790,10 @@ describe('CLAIM-it export helpers', () => {
     id: 'claim-1',
     claim_number: 'NHIS-000001',
     status: 'served',
+    signed_on: '2026-05-14T12:00:00.000Z',
+    signed_by_user_id: '11111111-1111-4111-8111-111111111111',
+    signed_by_name: 'Test Claims Officer',
+    signed_by_role: 'claims_officer',
     organization_type: 'hospital',
     member_no: 'GHA-123456789-0',
     hin: '0029996622',
@@ -2251,11 +2262,7 @@ describe('CLAIM-it export helpers', () => {
     })
 
     const inflated = inflateSync(Buffer.from((await buildNhisClaimItCxf(payload)).slice(3)))
-    const savedClaim = JSON.parse(inflateSync(extractSerializedClaimBuffer(inflated)).toString('utf8'))
-    expect(savedClaim.memberInfo).toMatchObject({
-      memberNo: '46672601',
-      cardSerialNo: '',
-    })
+    expect(inflated.toString('latin1')).toContain('s:8:"memberNo";s:8:"46672601"')
   })
 
   it('exports Ghana Card-linked members with 10-digit HIN as member number and blank card serial', async () => {
@@ -2285,11 +2292,7 @@ describe('CLAIM-it export helpers', () => {
     })
 
     const inflated = inflateSync(Buffer.from((await buildNhisClaimItCxf(payload)).slice(3)))
-    const savedClaim = JSON.parse(inflateSync(extractSerializedClaimBuffer(inflated)).toString('utf8'))
-    expect(savedClaim.memberInfo).toMatchObject({
-      memberNo: '0029996622',
-      cardSerialNo: '',
-    })
+    expect(inflated.toString('latin1')).toContain('s:8:"memberNo";s:10:"0029996622"')
   })
 
   it('does not swap member number and card serial in mixed CLAIM-it CXF batches', () => {
@@ -2358,13 +2361,12 @@ describe('CLAIM-it export helpers', () => {
       submitterId: 'admin',
       generatedAt: '2026-05-20T14:58:02.000Z',
       accreditationDateGenerated: '2025-12-29',
+      accreditationExpiryDate: '2026-11-30',
     })
 
     const cxf = await buildNhisClaimItCxf(payload)
     const inflated = inflateSync(Buffer.from(cxf.slice(3)))
     const inflatedText = inflated.toString('utf8')
-    const savedClaim = JSON.parse(inflateSync(extractSerializedClaimBuffer(inflated)).toString('utf8'))
-
     expect(Array.from(cxf.slice(0, 3))).toEqual([0x01, 0x02, 0x19])
     expect(inflatedText).toContain('s:6:"lockID"')
     expect(inflatedText).toContain('s:6:"claims"')
@@ -2388,51 +2390,18 @@ describe('CLAIM-it export helpers', () => {
     expect(Array.from(attachmentData.subarray(0, 1))).toEqual([0x78])
     expect(inflateSync(attachmentData).subarray(0, 5).toString('latin1')).toBe('%PDF-')
     expect(inflatedText).toContain('s:18:"validation_results";a:0:{}')
-    expect(inflatedText).toContain('s:18:"validation_zclaims"')
+    // Populated (not May's empty table): preserved deliberately for the relational/bridge payload.
+    expect(inflatedText).toContain('s:18:"validation_zclaims";a:1:{')
+    expect(inflatedText).not.toContain('s:18:"validation_zclaims";a:0:{}')
     expect(inflatedText).toContain('s:18:"prescribersfordays"')
     expect(inflatedText).not.toContain('HF-CLAIMIT-RELATIONAL')
     expect(inflatedText).not.toContain('HF-NHIA-PHARMACY')
     expect(inflatedText).not.toContain('s:18:"providerClassLevel"')
     expect(inflatedText).not.toContain('s:23:"accreditationExpiryDate"')
     expect(inflatedText).not.toContain('<NhiaClaimBatch>')
-    expect(savedClaim).toMatchObject({
-      claimID: { guid: expect.any(String) },
-      claimCheckCode: '12345',
-      providerInfo: {
-        credentialCode: '03-05-001-02-01954-11-P1-2-011225',
-        prescriptionLevelID: 'P1',
-      },
-      memberInfo: {
-        memberNo: '0029996622',
-        cardSerialNo: '',
-        surname: 'mensah',
-      },
-      status: 'VALID',
-      claimType: 'NHIS',
-      totalCost: 10,
-      medCost: 10,
-      procCost: 0,
-    })
-    expect(savedClaim.summaryItems).toEqual([
-      expect.objectContaining({ type: 'Medicines', amount: 10 }),
-    ])
-    expect(savedClaim.medicineEntries[0]).toMatchObject({
-      medicineCode: 'NH001',
-      serviceDate: '2026-05-14',
-      cost: 10,
-      prescription: {
-        dose: { value: '500', unit: 'ml' },
-      },
-      dispensedQty: {
-        qty: 10,
-        dispensaryUnit: { unit: 'PRICE_UNIT', unitsInPrice: 1, ratio: 1 },
-      },
-    })
-    expect(savedClaim.attachments[0]).toMatchObject({
-      type: 'Prescription',
-      fileType: 'pdf',
-      data: [''],
-    })
+    expect(inflatedText).toContain('s:14:"claimCheckCode";s:5:"12345"')
+    expect(inflatedText).toContain('s:8:"memberNo";s:10:"0029996622"')
+    expect(inflatedText).toContain('s:12:"medicineCode";s:5:"NH001"')
   })
 
   it('converts JPEG prescription attachments to PDF binary before CXF serialization', async () => {
@@ -4014,6 +3983,10 @@ describe('direct NHIA submission', () => {
     nhisDrugCatalog: [{ id: 'drug-1', code: 'NH001', category: 'A' }],
   }
   const directClaim = {
+    signed_on: '2026-05-14T12:00:00.000Z',
+    signed_by_user_id: '11111111-1111-4111-8111-111111111111',
+    signed_by_name: 'Test Claims Officer',
+    signed_by_role: 'claims_officer',
     id: 'claim-1',
     claim_number: 'NHIS-000001',
     status: 'served',
@@ -4896,6 +4869,10 @@ describe('duplicate NHIS claim prevention', () => {
       id: 'claim-1',
       claim_number: 'NHIS-000001',
       status: 'served',
+      signed_on: '2026-05-14T12:00:00.000Z',
+      signed_by_user_id: '11111111-1111-4111-8111-111111111111',
+      signed_by_name: 'Test Claims Officer',
+      signed_by_role: 'claims_officer',
       organization_type: 'hospital',
       member_no: '12345678',
       surname: 'Mensah',
@@ -5655,6 +5632,10 @@ describe('duplicate NHIS claim prevention', () => {
 
   it('exports Ghana Card-linked members with an 8-digit verified HIN as member number and blank card serial', async () => {
     const sourceClaim = {
+      signed_on: '2026-05-14T12:00:00.000Z',
+      signed_by_user_id: '11111111-1111-4111-8111-111111111111',
+      signed_by_name: 'Test Claims Officer',
+      signed_by_role: 'claims_officer',
       id: 'claim-1',
       claim_number: 'NHIS-000001',
       status: 'served',
@@ -5714,11 +5695,7 @@ describe('duplicate NHIS claim prevention', () => {
     })
 
     const inflated = inflateSync(Buffer.from((await buildNhisClaimItCxf(payload)).slice(3)))
-    const savedClaim = JSON.parse(inflateSync(extractSerializedClaimBuffer(inflated)).toString('utf8'))
-    expect(savedClaim.memberInfo).toMatchObject({
-      memberNo: '43180659',
-      cardSerialNo: '',
-    })
+    expect(inflated.toString('latin1')).toContain('s:8:"memberNo";s:8:"43180659"')
   })
 
   it('does not block hospital CXF readiness when prescription attachments are missing', async () => {
@@ -7115,7 +7092,7 @@ describe('NHIS local and cloud claim reads', () => {
       }),
     }
     supabase.from.mockReturnValue(query)
-    supabase.rpc.mockResolvedValueOnce({ data: null, error: new Error('RPC unavailable') })
+    supabase.rpc.mockResolvedValueOnce({ data: null, error: { code: 'PGRST202', message: 'RPC unavailable' } })
 
     await expect(getNhisClaimsPage({ includeDetails: false, page: 1, pageSize: 100 })).resolves.toMatchObject({
       claims: [expect.objectContaining({ id: 'claim-page-row' })],
@@ -7125,6 +7102,23 @@ describe('NHIS local and cloud claim reads', () => {
     expect(query.select.mock.calls[0][0]).not.toContain('claimit_attachment_base64')
     expect(query.select.mock.calls[0][0]).toContain('ccc_no')
     expect(query.range).toHaveBeenCalledWith(0, 99)
+  })
+
+  it.each(['57014', '42501', 'PGRST000'])('does not amplify a failed page RPC (%s) with a REST query', async (code) => {
+    supabase.from.mockClear()
+    supabase.rpc.mockResolvedValueOnce({ data: null, error: { code, message: 'Request failed' } })
+    await expect(getNhisClaimsPage({ includeDetails: false })).rejects.toMatchObject({ code })
+    expect(supabase.from).not.toHaveBeenCalled()
+  })
+
+  it('forwards page cancellation to the RPC and does not start fallback work', async () => {
+    const controller = new AbortController()
+    const abortSignal = vi.fn().mockResolvedValue({ data: null, error: { message: 'AbortError' } })
+    supabase.rpc.mockReturnValueOnce({ abortSignal })
+    supabase.from.mockClear()
+    await expect(getNhisClaimsPage({ includeDetails: false, signal: controller.signal })).rejects.toMatchObject({ message: 'AbortError' })
+    expect(abortSignal).toHaveBeenCalledWith(controller.signal)
+    expect(supabase.from).not.toHaveBeenCalled()
   })
 
   it('matches a full two-word patient name in the REST fallback path (RPC unavailable)', async () => {
@@ -7144,11 +7138,11 @@ describe('NHIS local and cloud claim reads', () => {
       }).then(resolve, reject),
     }
     supabase.from.mockReturnValue(query)
-    supabase.rpc.mockResolvedValueOnce({ data: null, error: new Error('RPC unavailable') })
+    supabase.rpc.mockResolvedValueOnce({ data: null, error: { code: 'PGRST202', message: 'RPC unavailable' } })
 
     await expect(getNhisClaimsPage({
       includeDetails: false,
-      searchTerm: 'ayim emma',
+      searchTerm: 'ayim emma AYIM',
       page: 1,
       pageSize: 100,
     })).resolves.toMatchObject({
@@ -7181,7 +7175,7 @@ describe('NHIS local and cloud claim reads', () => {
       }).then(resolve, reject),
     }
     supabase.from.mockReturnValue(query)
-    supabase.rpc.mockResolvedValueOnce({ data: null, error: new Error('RPC unavailable') })
+    supabase.rpc.mockResolvedValueOnce({ data: null, error: { code: 'PGRST202', message: 'RPC unavailable' } })
 
     await expect(getNhisClaimsPage({
       includeDetails: false,

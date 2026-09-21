@@ -11,9 +11,9 @@ export const assertNhisDurationForSavedState = (claim = {}) => {
   if (claim.status === 'draft' && !serving) return
   medicines.forEach((medicine, index) => {
     if (!isValidNhisDuration(medicine.duration)) {
-      const error = new Error(`Medicine ${index + 1}: valid duration is required before completing or serving this claim. Keep incomplete intake as Draft.`)
-      error.status = 422
-      error.code = 'NHIS_DURATION_REQUIRED'
+      const error = Object.assign(new Error(`Medicine ${index + 1}: valid duration is required before completing or serving this claim. Keep incomplete intake as Draft.`), {
+        status: 422, code: 'NHIS_DURATION_REQUIRED',
+      })
       throw error
     }
   })
