@@ -9,7 +9,7 @@ import {
   Eye,
   RefreshCcw,
 } from 'lucide-react'
-import { useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
@@ -118,6 +118,8 @@ const Purchases = () => {
   const organizationId =
     organization?.id || organization?.organization_id || profile?.organization_id || ''
   const [searchParams, setSearchParams] = useSearchParams()
+  const location = useLocation()
+  const navigate = useNavigate()
 
   const canWrite = canManagePurchases
 
@@ -201,6 +203,53 @@ const Purchases = () => {
   }
 
   useEffect(() => { void loadAll() }, [])
+
+  // Arriving from Inventory's Reorder / Reorder Low Stock action: seed the new-purchase
+  // form with the requested items and open it. Nothing is submitted automatically — the
+  // supplier, cost, batch and expiry are all still editable before Save. Waits for
+  // suppliers to finish loading so a shared supplier name can be matched to its record.
+  useEffect(() => {
+    const items = location.state?.reorderItems
+    if (!canWrite || !items || items.length === 0 || loading) return
+
+    const seeded = items.map((item) => {
+      const quantity = Number.parseFloat(item.suggestedQuantity) || 1
+      const unitCost = Number.parseFloat(item.unitCost) || 0
+      return {
+        drugId: item.drugId || null,
+        drugName: item.drugName || '',
+        brandName: item.brandName || '',
+        genericName: item.genericName || '',
+        unit: item.unit || 'tablet',
+        quantity,
+        unitCost,
+        discountType: 'percent',
+        discountAmount: 0,
+        discountPercent: 0,
+        netTotal: calcNetTotal(quantity, unitCost, 'percent', 0),
+        saleOnReturn: Boolean(item.saleOnReturn),
+        batchNumber: '',
+        expiryDate: '',
+      }
+    })
+    setLineItems(seeded)
+
+    const supplierNames = new Set(
+      items.map((item) => (item.supplier || '').trim().toLowerCase()).filter(Boolean)
+    )
+    if (supplierNames.size === 1) {
+      const [onlyName] = supplierNames
+      const match = suppliers.find((s) => (s.name || '').trim().toLowerCase() === onlyName)
+      if (match) setPurchaseForm((prev) => ({ ...prev, supplierId: match.id, supplierName: match.name }))
+    }
+
+    setShowNewModal(true)
+    notify(
+      `${seeded.length} item${seeded.length === 1 ? '' : 's'} added from Low Stock. Confirm the supplier, cost, batch and expiry for each, then save.`,
+      'info'
+    )
+    navigate(location.pathname, { replace: true, state: null })
+  }, [location.state, loading, canWrite])
 
   useEffect(() => {
     const refreshSummary = async () => {

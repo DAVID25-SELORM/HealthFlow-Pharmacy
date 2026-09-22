@@ -387,6 +387,11 @@
   color: var(--primary);
 }
 
+.reorder-btn:hover {
+  background: rgba(243, 156, 18, 0.12);
+  color: var(--warning);
+}
+
 /* Pagination */
 .pagination {
   display: flex;
@@ -1225,6 +1230,12 @@
   border-color: #9fe1cb;
   background: #e1f5ee;
   color: var(--teal-dark);
+}
+
+.reorder-btn:hover {
+  border-color: #f6cf8e;
+  background: #fdf1de;
+  color: var(--warning);
 }
 
 .pagination {

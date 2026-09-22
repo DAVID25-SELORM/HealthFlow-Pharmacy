@@ -9,8 +9,9 @@ import {
   Download,
   RefreshCcw,
   Truck,
+  ShoppingCart,
 } from 'lucide-react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { dispatchHealthflowDataChanged } from '../lib/appEvents'
 import {
   calculateDrugStatus,
@@ -149,12 +150,13 @@ const calculateMarkedUpPrice = (costPrice, markupPercent) => {
 }
 
 const Inventory = () => {
-  const { role, profile, branch, user, canAdjustStock } = useAuth()
+  const { role, profile, branch, user, canAdjustStock, canManagePurchases } = useAuth()
   const { notify } = useNotification()
   const { canUseNhis, canUseNhisTopups, organization, tierLimits } = useTenant()
   const organizationId =
     organization?.id || organization?.organization_id || profile?.organization_id || ''
   const showNhisPricing = Boolean(canUseNhis || canUseNhisTopups)
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const [showDrugModal, setShowDrugModal] = useState(false)
   const [showImportModal, setShowImportModal] = useState(false)
@@ -533,6 +535,13 @@ const Inventory = () => {
     })
   }, [activeFilter, drugs, highlightedDrugId, searchTerm])
 
+  // Same definition of "low" as the Low Stock filter and status badge above,
+  // computed from the full list so it doesn't depend on which filter/page is open.
+  const lowStockDrugs = useMemo(
+    () => drugs.filter((drug) => calculateDrugStatus(drug) === 'low'),
+    [drugs]
+  )
+
   const totalPages = Math.max(1, Math.ceil(visibleDrugs.length / INVENTORY_PAGE_SIZE))
   const safeCurrentPage = Math.min(currentPage, totalPages)
   const pageStartIndex = (safeCurrentPage - 1) * INVENTORY_PAGE_SIZE
@@ -755,6 +764,34 @@ const Inventory = () => {
       console.error('Error deleting drug:', error)
       notify(`Error deleting drug: ${error.message}`, 'error')
     }
+  }
+
+  // Suggest ordering enough to reach the reorder level; staff review and can
+  // change every value before the purchase draft is saved, nothing is guessed
+  // beyond this starting point.
+  const buildReorderItem = (drug) => {
+    const quantity = Number.parseFloat(drug.quantity ?? 0) || 0
+    const reorderLevel = Number.parseFloat(drug.reorder_level ?? 10) || 10
+    return {
+      drugId: drug.id,
+      drugName: drug.name,
+      brandName: drug.brand_name || '',
+      genericName: drug.generic_name || '',
+      unit: drug.unit || 'tablet',
+      unitCost: drug.cost_price || drug.price || '',
+      saleOnReturn: Boolean(drug.sale_on_return),
+      supplier: drug.supplier || '',
+      suggestedQuantity: Math.max(1, Math.ceil(reorderLevel - quantity)),
+    }
+  }
+
+  const handleReorderDrug = (drug) => {
+    navigate('/purchases', { state: { reorderItems: [buildReorderItem(drug)] } })
+  }
+
+  const handleReorderLowStock = () => {
+    if (lowStockDrugs.length === 0) return
+    navigate('/purchases', { state: { reorderItems: lowStockDrugs.map(buildReorderItem) } })
   }
 
   const handleBranchChange = async (branchId) => {
@@ -1016,6 +1053,17 @@ const Inventory = () => {
             <Download size={20} />
             Download Template
           </button>
+          {canManagePurchases && lowStockDrugs.length > 0 && (
+            <button
+              className="btn btn-secondary"
+              type="button"
+              title="Open a new purchase draft pre-filled with every medicine at or below its reorder level"
+              onClick={handleReorderLowStock}
+            >
+              <ShoppingCart size={20} />
+              Reorder Low Stock ({lowStockDrugs.length})
+            </button>
+          )}
           {canAdjustStock && (
             <>
               <label className="btn btn-secondary">
@@ -1187,6 +1235,16 @@ const Inventory = () => {
                     </td>
                     <td data-label="Actions">
                       <div className="action-buttons">
+                        {canManagePurchases && status.class === 'status-low' && (
+                          <button
+                            className="icon-btn reorder-btn"
+                            title={`Reorder ${drug.name}`}
+                            type="button"
+                            onClick={() => handleReorderDrug(drug)}
+                          >
+                            <ShoppingCart size={16} />
+                          </button>
+                        )}
                         {canAdjustStock && (
                           <button
                             className="icon-btn edit-btn"

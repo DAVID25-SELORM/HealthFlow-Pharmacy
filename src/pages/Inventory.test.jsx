@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   isDefaultCatalogDrug: vi.fn(),
   isSupabaseConfigured: vi.fn(),
   getBranches: vi.fn(),
+  navigate: vi.fn(),
   notify: vi.fn(),
   parseExcelFile: vi.fn(),
   provisionDefaultMedicationCatalog: vi.fn(),
@@ -25,6 +26,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('react-router-dom', () => ({
+  useNavigate: () => mocks.navigate,
   useSearchParams: () => [new URLSearchParams(), mocks.setSearchParams],
 }))
 
@@ -177,5 +179,81 @@ describe('Inventory', () => {
     fireEvent.click(screen.getByTitle('Edit Actifed Multi-Action Cough Syrup'))
     expect(getFieldAfterLabel('NHIS Code')).toHaveDisplayValue('')
     expect(getFieldAfterLabel('NHIS Price (GHS)')).toHaveDisplayValue('')
+  })
+
+  describe('reordering low stock', () => {
+    const lowDrug = {
+      id: 'low-1',
+      name: 'Amoxicillin 500mg',
+      quantity: 2,
+      reorder_level: 10,
+      cost_price: 3.5,
+      price: 5,
+      unit: 'capsule',
+      supplier: 'MedSupply Ltd',
+      expiry_date: '2028-12-31',
+      status: 'active',
+    }
+    const goodDrug = {
+      id: 'good-1',
+      name: 'Vitamin C 500mg',
+      quantity: 200,
+      reorder_level: 10,
+      price: 4,
+      expiry_date: '2028-12-31',
+      status: 'active',
+    }
+
+    beforeEach(() => {
+      mocks.useAuth.mockReturnValue({ role: 'admin', canAdjustStock: true, canManagePurchases: true })
+      mocks.getAllDrugs.mockResolvedValue([lowDrug, goodDrug])
+      mocks.calculateDrugStatus.mockImplementation((drug) => (drug.id === 'low-1' ? 'low' : 'good'))
+    })
+
+    it('shows a per-row Reorder button only on the low-stock item and navigates to Purchases with it pre-filled', async () => {
+      render(<Inventory />)
+      await waitFor(() => expect(screen.getByText('Amoxicillin 500mg')).toBeInTheDocument())
+
+      expect(screen.getByTitle('Reorder Amoxicillin 500mg')).toBeInTheDocument()
+      expect(screen.queryByTitle('Reorder Vitamin C 500mg')).not.toBeInTheDocument()
+
+      fireEvent.click(screen.getByTitle('Reorder Amoxicillin 500mg'))
+
+      expect(mocks.navigate).toHaveBeenCalledWith('/purchases', {
+        state: {
+          reorderItems: [
+            expect.objectContaining({
+              drugId: 'low-1',
+              drugName: 'Amoxicillin 500mg',
+              unit: 'capsule',
+              unitCost: 3.5,
+              supplier: 'MedSupply Ltd',
+              suggestedQuantity: 8,
+            }),
+          ],
+        },
+      })
+    })
+
+    it('shows a bulk Reorder Low Stock button with the correct count and navigates with every low-stock item', async () => {
+      render(<Inventory />)
+      await waitFor(() => expect(screen.getByText('Amoxicillin 500mg')).toBeInTheDocument())
+
+      const bulkButton = screen.getByRole('button', { name: /reorder low stock \(1\)/i })
+      fireEvent.click(bulkButton)
+
+      expect(mocks.navigate).toHaveBeenCalledWith('/purchases', {
+        state: { reorderItems: [expect.objectContaining({ drugId: 'low-1' })] },
+      })
+    })
+
+    it('hides both Reorder actions when the user cannot manage purchases', async () => {
+      mocks.useAuth.mockReturnValue({ role: 'pharmacist', canAdjustStock: true, canManagePurchases: false })
+      render(<Inventory />)
+      await waitFor(() => expect(screen.getByText('Amoxicillin 500mg')).toBeInTheDocument())
+
+      expect(screen.queryByTitle('Reorder Amoxicillin 500mg')).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /reorder low stock/i })).not.toBeInTheDocument()
+    })
   })
 })
