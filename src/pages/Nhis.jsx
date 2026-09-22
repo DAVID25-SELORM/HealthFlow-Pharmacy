@@ -1410,6 +1410,23 @@ const StatusBadge = ({ status, incomplete = false }) => (
 const looksLikeUuid = (value) =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '').trim())
 
+// Deletion is deliberately blocked at the database level for a claim with recorded
+// inventory movements or a shared inventory-policy baseline (never auto-corrected,
+// never silently overridden). Explain that in plain language and point to the one
+// working alternative, instead of surfacing the raw database error.
+const getClaimDeleteBlockedMessage = (err, claim) => {
+  const raw = String(err?.message || '')
+  if (/recorded inventory movements|inventory policy baseline/i.test(raw)) {
+    return claim.status === 'served'
+      ? `${raw} Use Reject on this claim instead — it removes it from the active list and keeps the inventory history intact.`
+      : raw
+  }
+  if (/violates foreign key constraint/i.test(raw)) {
+    return `Claim ${claim.claim_number} could not be deleted: it still has related records elsewhere in the system. Contact support with this claim number.`
+  }
+  return raw || 'Unable to delete claim.'
+}
+
 // ─── component ────────────────────────────────────────────────────────────────
 
 const Nhis = () => {
@@ -5205,7 +5222,7 @@ const Nhis = () => {
       await refreshClaimsOverview()
       notify(`Claim ${claim.claim_number} moved to the Recycle Bin.`, 'success')
     } catch (err) {
-      notify(err.message || 'Unable to delete claim.', 'error')
+      notify(getClaimDeleteBlockedMessage(err, claim), 'error')
     } finally {
       setUpdatingStatus(null)
     }
@@ -6834,6 +6851,16 @@ const Nhis = () => {
                               <XCircle size={14} />
                             </button>
                           </>
+                        )}
+                        {c.status === 'served' && canDeleteNhisClaims && (
+                          <button
+                            className="action-btn action-btn--cancel"
+                            title="Reject this claim (a served claim with recorded stock movements cannot be deleted; rejecting removes it from the active list and keeps the inventory history intact)"
+                            disabled={isClaimBusy(c.id)}
+                            onClick={() => { setRejectTarget(c); setRejectReason('') }}
+                          >
+                            <XCircle size={14} />
+                          </button>
                         )}
                         {canDeleteNhisClaims && (
                           <button
