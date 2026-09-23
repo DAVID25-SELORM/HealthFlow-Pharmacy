@@ -44,6 +44,7 @@ import {
   cancelPurchaseDraft,
   completePurchaseDraft,
   createPurchaseDraft,
+  getOpenOrderQuantitiesByDrug,
 } from './purchasesApi'
 
 describe('purchasesApi', () => {
@@ -148,5 +149,41 @@ describe('purchasesApi', () => {
     )
     expect(mocks.completePurchase).not.toHaveBeenCalled()
     expect(mocks.cancelPurchase).not.toHaveBeenCalled()
+  })
+})
+
+describe('getOpenOrderQuantitiesByDrug (Reorder Centre phase 1)', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('sums quantity per drug across every open (draft) purchase', async () => {
+    mocks.getAllPurchases.mockResolvedValue([
+      {
+        purchase_number: 'PO-000001',
+        purchase_items: [
+          { drug_id: 'drug-1', quantity: 20 },
+          { drug_id: 'drug-2', quantity: 5 },
+        ],
+      },
+      {
+        purchase_number: 'PO-000002',
+        purchase_items: [{ drug_id: 'drug-1', quantity: 10 }],
+      },
+    ])
+
+    const result = await getOpenOrderQuantitiesByDrug()
+
+    expect(mocks.getAllPurchases).toHaveBeenCalledWith({ status: 'draft' })
+    expect(result.get('drug-1').quantity).toBe(30)
+    expect(result.get('drug-2').quantity).toBe(5)
+    expect(result.has('drug-3')).toBe(false)
+  })
+
+  it('ignores line items with no drug_id and returns an empty map when there are no drafts', async () => {
+    mocks.getAllPurchases.mockResolvedValue([
+      { purchase_number: 'PO-000003', purchase_items: [{ drug_id: null, quantity: 5 }] },
+    ])
+
+    const result = await getOpenOrderQuantitiesByDrug()
+    expect(result.size).toBe(0)
   })
 })

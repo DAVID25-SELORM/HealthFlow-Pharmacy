@@ -12,7 +12,7 @@
     "src/services/recycleBinService.js": "94f0fd814bda811b3c234769426d57257a0f8120e90df8bffc87ae9ebfbcabe9",
     "src/services/offlineInstallerReleaseService.js": "d656396c7cce60b3e007ffec4f4aa4f8d63f931ab022cbef3cdcdc02755c9c13",
     "src/services/settingsService.js": "fdd96f01368f4d363f3ac0e20e31f7436a5ae0b4c252c3f95fe544471a5dbab7",
-    "supabase/functions/tier-access/index.ts": "ae3afc0caa1640a8ed496c5ad3be8d5aa5c80059542616a61b7217a059460dba",
+    "supabase/functions/tier-access/index.ts": "c9085cdc87bb8d8b7794c4d8c0fa5086b744c5a3dbdc0f0059e7f2683d825e28",
     "supabase/functions/staff-admin/index.ts": "1003e6ea0e987d12db4a6e0c4d927c27493a57fdb9011440958f3e24c0bb3127",
     "src/claimit/fieldOrder.js": "11120ad4d438d907118f850e10f3f7215e0ecbf9fe76fa0f465bba60ccc3b468",
     "src/claimit/compatibility.js": "f78af08126f1a89efbf827f661a63876012ba5760a0a0ae558e62ab3edcde084",

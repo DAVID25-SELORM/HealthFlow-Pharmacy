@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Purchases from './Purchases'
 
@@ -98,5 +98,26 @@ describe('Purchases — arriving from Inventory Reorder', () => {
     await waitFor(() => expect(screen.getByRole('heading', { name: /purchase/i })).toBeInTheDocument())
     expect(screen.queryByRole('heading', { name: /new purchase order/i })).not.toBeInTheDocument()
     expect(mocks.navigate).not.toHaveBeenCalled()
+  })
+
+  it('keeps a suggested quantity of 0 as 0 instead of defaulting it up to 1', async () => {
+    mocks.locationState = {
+      reorderItems: [
+        {
+          drugId: 'low-1',
+          drugName: 'Amoxicillin 500mg',
+          unit: 'capsule',
+          unitCost: 3.5,
+          supplier: 'MedSupply Ltd',
+          suggestedQuantity: 0,
+        },
+      ],
+    }
+
+    render(<Purchases />)
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: /new purchase order/i })).toBeInTheDocument())
+    const row = screen.getByText('Amoxicillin 500mg').closest('tr')
+    expect(within(row).getByText('0')).toBeInTheDocument()
   })
 })

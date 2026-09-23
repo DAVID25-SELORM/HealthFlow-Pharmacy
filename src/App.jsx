@@ -42,6 +42,7 @@ const OfflineInstallerReleases = lazy(() => loadRouteModule('/offline-installer-
 const OfflineSync = lazy(() => loadRouteModule('/offline-sync'))
 const Support = lazy(() => loadRouteModule('/support'))
 const Purchases = lazy(() => loadRouteModule('/purchases'))
+const ReorderCentre = lazy(() => loadRouteModule('/reorder'))
 const Nhis = lazy(() => loadRouteModule('/nhis'))
 const EPharmacy = lazy(() => loadRouteModule('/e-pharmacy'))
 const PatientCare = lazy(() => loadRouteModule('/patient-care'))
@@ -135,6 +136,18 @@ function App() {
                   featureAllowed={canUsePurchases}
                 >
                   <Purchases />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="reorder"
+              element={
+                <RoleRoute
+                  allowedRoles={['admin', 'super_admin']}
+                  allow={canManagePurchases}
+                  featureAllowed={canUsePurchases}
+                >
+                  <ReorderCentre />
                 </RoleRoute>
               }
             />

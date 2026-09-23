@@ -558,6 +558,16 @@
   box-shadow: 0 0 0 3px rgba(22, 160, 133, 0.1);
 }
 
+.inventory-page .form-hint {
+  font-size: 0.78rem;
+  color: var(--gray-500);
+}
+
+.inventory-page .form-hint--warning {
+  color: var(--warning);
+  font-weight: 600;
+}
+
 .checkbox-row {
   display: flex;
   align-items: center;

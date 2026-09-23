@@ -15,6 +15,7 @@ export const routeModuleLoaders = {
   '/offline-sync': () => import('../pages/OfflineSync'),
   '/support': () => import('../pages/Support'),
   '/purchases': () => import('../pages/Purchases'),
+  '/reorder': () => import('../pages/ReorderCentre'),
   '/nhis': () => import('../pages/Nhis'),
   '/e-pharmacy': () => import('../pages/EPharmacy'),
   '/patient-care': () => import('../pages/PatientCare'),

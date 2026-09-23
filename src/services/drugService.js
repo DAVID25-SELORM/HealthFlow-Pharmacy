@@ -40,6 +40,7 @@ const DRUG_LIST_SELECT = [
   'category',
   'description',
   'reorder_level',
+  'target_stock_level',
   'status',
   'sale_on_return',
   'created_at',
@@ -78,6 +79,19 @@ const getCachedInventoryAlert = async (key, load, { force = false } = {}) => {
       inventoryAlertRequests.delete(key)
     }
   }
+}
+
+// target_stock_level is optional (null = not set). Validated client-side too, for
+// fast feedback, but the same rule is enforced server-side and is what actually
+// protects the data.
+const assertOptionalTargetStockLevel = (value, reorderLevel) => {
+  if (value === undefined || value === null || value === '') return null
+  const target = assertNonNegativeNumber(value, 'Target stock level')
+  const reorder = Number.parseFloat(reorderLevel) || 0
+  if (target < reorder) {
+    throw new Error(`Target stock level (${target}) cannot be below the reorder level (${reorder}).`)
+  }
+  return target
 }
 
 export const isDefaultCatalogDrug = (drug) =>
@@ -275,6 +289,7 @@ export const addDrug = async (drugData) => {
       category: normalizeText(drugData.category) || null,
       description: normalizeText(drugData.description) || null,
       reorderLevel: assertNonNegativeNumber(drugData.reorderLevel || 10, 'Reorder level'),
+      targetStockLevel: assertOptionalTargetStockLevel(drugData.targetStockLevel, drugData.reorderLevel || 10),
       unit: normalizeText(drugData.unit) || 'tablet',
       saleOnReturn: Boolean(drugData.saleOnReturn),
       branchId: normalizeText(drugData.branchId) || null,
@@ -319,6 +334,17 @@ export const updateDrug = async (id, drugData) => {
 
   if (Object.prototype.hasOwnProperty.call(drugData, 'reorderLevel')) {
     payload.reorderLevel = assertNonNegativeNumber(drugData.reorderLevel || 10, 'Reorder level')
+  }
+
+  if (Object.prototype.hasOwnProperty.call(drugData, 'targetStockLevel')) {
+    // Only pre-checked here when this same call also sets reorderLevel — otherwise
+    // the current reorder level isn't known client-side, and the server (which
+    // does know it) is the authority anyway.
+    payload.targetStockLevel = Object.prototype.hasOwnProperty.call(payload, 'reorderLevel')
+      ? assertOptionalTargetStockLevel(drugData.targetStockLevel, payload.reorderLevel)
+      : (drugData.targetStockLevel === '' || drugData.targetStockLevel == null
+          ? null
+          : assertNonNegativeNumber(drugData.targetStockLevel, 'Target stock level'))
   }
 
   if (Object.prototype.hasOwnProperty.call(drugData, 'unit')) {

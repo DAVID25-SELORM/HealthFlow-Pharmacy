@@ -24,6 +24,7 @@ import { getRecentClaims } from '../services/claimsService'
 import { useTenant } from '../context/TenantContext'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { CLAIMS_ROLES, INVENTORY_ROLES, NHIS_ROLES, hasRole } from '../utils/roles'
+import { STOCK_SEVERITY, getStockSeverity } from '../utils/reorderCentre'
 import './Dashboard.css'
 
 const currencyFormatter = new Intl.NumberFormat('en-GH', {
@@ -274,6 +275,7 @@ const createEmptyStats = (anchorDate = new Date()) => ({
   todaysSalesTrend: 'No change vs yesterday',
   todaysSalesTrendTone: 'neutral',
   lowStock: 0,
+  lowStockBreakdown: { outOfStock: 0, critical: 0, low: 0 },
   expiring: 0,
   monthlySales: 0,
   monthlySalesTrend: 'No change vs last month',
@@ -410,6 +412,11 @@ const Dashboard = () => {
         todaysSalesTrend: todaysTrend.label,
         todaysSalesTrendTone: todaysTrend.tone,
         lowStock: lowStock.length,
+        lowStockBreakdown: {
+          outOfStock: lowStock.filter((drug) => getStockSeverity(drug) === STOCK_SEVERITY.OUT_OF_STOCK).length,
+          critical: lowStock.filter((drug) => getStockSeverity(drug) === STOCK_SEVERITY.CRITICAL).length,
+          low: lowStock.filter((drug) => getStockSeverity(drug) === STOCK_SEVERITY.LOW).length,
+        },
         expiring: expiring.length,
         monthlySales: monthlyTotal,
         monthlySalesTrend: monthlyTrend.label,
@@ -455,7 +462,8 @@ const Dashboard = () => {
           value: `${stats.lowStock} Items`,
           icon: AlertTriangle,
           color: 'warning',
-          subtitle: 'Medicines below reorder level',
+          subtitle: `${stats.lowStockBreakdown.outOfStock} out of stock · ${stats.lowStockBreakdown.critical} critical · ${stats.lowStockBreakdown.low} low`,
+          path: canUsePurchases && canManagePurchases ? '/reorder' : undefined,
         },
         {
           title: 'Expiry Watch',
@@ -628,6 +636,9 @@ const Dashboard = () => {
     recentSales.length,
     stats.expiring,
     stats.lowStock,
+    stats.lowStockBreakdown,
+    canUsePurchases,
+    canManagePurchases,
     stats.monthlySales,
     stats.monthlySalesTrend,
     stats.todaysSales,
@@ -755,7 +766,17 @@ const Dashboard = () => {
 
       <div className="stats-grid">
         {statsCards.map((stat) => (
-          <div key={stat.title} className={`stat-card ${stat.color}`}>
+          <div
+            key={stat.title}
+            className={`stat-card ${stat.color}${stat.path ? ' stat-card-link' : ''}`}
+            {...(stat.path ? {
+              role: 'link',
+              tabIndex: 0,
+              title: 'Open the Reorder Centre',
+              onClick: () => navigate(stat.path),
+              onKeyDown: (event) => { if (event.key === 'Enter') navigate(stat.path) },
+            } : {})}
+          >
             <div className="stat-icon">
               <stat.icon size={24} />
             </div>

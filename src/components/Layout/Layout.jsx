@@ -21,6 +21,7 @@ const pageTitles = {
   '/patients': 'Patients',
   '/claims': 'Claims',
   '/purchases': 'Purchases',
+  '/reorder': 'Reorder Centre',
   '/nhis': 'NHIS',
   '/reports': 'Reports',
   '/accounting': 'Accounting',

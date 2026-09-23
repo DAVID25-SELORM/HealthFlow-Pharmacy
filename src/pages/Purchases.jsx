@@ -213,7 +213,10 @@ const Purchases = () => {
     if (!canWrite || !items || items.length === 0 || loading) return
 
     const seeded = items.map((item) => {
-      const quantity = Number.parseFloat(item.suggestedQuantity) || 1
+      const parsedQuantity = Number.parseFloat(item.suggestedQuantity)
+      // A suggested quantity of 0 is meaningful (already fully covered by stock
+      // and open orders) and must stay 0, not be coerced up to 1.
+      const quantity = Number.isFinite(parsedQuantity) && parsedQuantity >= 0 ? parsedQuantity : 1
       const unitCost = Number.parseFloat(item.unitCost) || 0
       return {
         drugId: item.drugId || null,

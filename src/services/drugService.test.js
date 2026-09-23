@@ -495,3 +495,105 @@ describe('drugService catalog handling', () => {
     })
   })
 })
+
+describe('drugService target stock level (Reorder Centre phase 1)', () => {
+  beforeEach(() => {
+    invokeTierAccess.mockReset()
+  })
+
+  it('sends a null target stock level when left blank on create', async () => {
+    invokeTierAccess.mockResolvedValue({ drug: { id: 'drug-1' } })
+
+    await addDrug({
+      name: 'Amoxicillin 500mg',
+      expiryDate: '2028-12-31',
+      quantity: 8,
+      price: 5,
+      reorderLevel: 20,
+    })
+
+    expect(invokeTierAccess).toHaveBeenCalledWith(
+      expect.objectContaining({ drug: expect.objectContaining({ targetStockLevel: null, reorderLevel: 20 }) })
+    )
+  })
+
+  it('passes a valid target stock level through on create', async () => {
+    invokeTierAccess.mockResolvedValue({ drug: { id: 'drug-1' } })
+
+    await addDrug({
+      name: 'Amoxicillin 500mg',
+      expiryDate: '2028-12-31',
+      quantity: 8,
+      price: 5,
+      reorderLevel: 20,
+      targetStockLevel: 60,
+    })
+
+    expect(invokeTierAccess).toHaveBeenCalledWith(
+      expect.objectContaining({ drug: expect.objectContaining({ targetStockLevel: 60 }) })
+    )
+  })
+
+  it('rejects a target stock level below the reorder level before calling tier-access, on create', async () => {
+    await expect(
+      addDrug({
+        name: 'Amoxicillin 500mg',
+        expiryDate: '2028-12-31',
+        quantity: 8,
+        price: 5,
+        reorderLevel: 20,
+        targetStockLevel: 12,
+      })
+    ).rejects.toThrow(/cannot be below the reorder level/)
+
+    expect(invokeTierAccess).not.toHaveBeenCalled()
+  })
+
+  it('only updates target stock level when the caller includes it', async () => {
+    invokeTierAccess.mockResolvedValue({ drug: { id: 'drug-1' } })
+
+    await updateDrug('drug-1', {
+      name: 'Amoxicillin 500mg',
+      batchNumber: 'BT-001',
+      expiryDate: '2028-12-31',
+      quantity: 8,
+      price: 5,
+    })
+
+    const [[call]] = invokeTierAccess.mock.calls
+    expect(Object.prototype.hasOwnProperty.call(call.drug, 'targetStockLevel')).toBe(false)
+  })
+
+  it('rejects an updated target stock level below an updated reorder level in the same call', async () => {
+    await expect(
+      updateDrug('drug-1', {
+        name: 'Amoxicillin 500mg',
+        batchNumber: 'BT-001',
+        expiryDate: '2028-12-31',
+        quantity: 8,
+        price: 5,
+        reorderLevel: 20,
+        targetStockLevel: 12,
+      })
+    ).rejects.toThrow(/cannot be below the reorder level/)
+
+    expect(invokeTierAccess).not.toHaveBeenCalled()
+  })
+
+  it('clears the target stock level back to null', async () => {
+    invokeTierAccess.mockResolvedValue({ drug: { id: 'drug-1' } })
+
+    await updateDrug('drug-1', {
+      name: 'Amoxicillin 500mg',
+      batchNumber: 'BT-001',
+      expiryDate: '2028-12-31',
+      quantity: 8,
+      price: 5,
+      targetStockLevel: '',
+    })
+
+    expect(invokeTierAccess).toHaveBeenCalledWith(
+      expect.objectContaining({ drug: expect.objectContaining({ targetStockLevel: null }) })
+    )
+  })
+})

@@ -1,0 +1,294 @@
+.reorder-centre-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.reorder-centre-alert {
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius);
+  background: rgba(231, 76, 60, 0.08);
+  color: var(--danger);
+  border: 1px solid rgba(231, 76, 60, 0.2);
+}
+
+.reorder-centre-loading,
+.reorder-centre-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 3rem 1rem;
+  color: var(--gray-500);
+  text-align: center;
+}
+
+.reorder-centre-empty-inline {
+  color: var(--gray-500);
+  padding: 0.75rem 0;
+}
+
+.reorder-centre-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.85rem;
+}
+
+.reorder-summary-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.9rem 1rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--gray-200);
+  background: white;
+}
+
+.reorder-summary-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--gray-900);
+}
+
+.reorder-summary-label {
+  font-size: 0.8rem;
+  color: var(--gray-500);
+}
+
+.reorder-summary-card.severity-out-of-stock { border-left: 4px solid var(--danger); }
+.reorder-summary-card.severity-critical { border-left: 4px solid #e67e22; }
+.reorder-summary-card.severity-low { border-left: 4px solid var(--warning); }
+
+.reorder-centre-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.reorder-filter-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.reorder-filter-tab {
+  padding: 0.4rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid var(--gray-300);
+  background: white;
+  color: var(--gray-700);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.reorder-filter-tab.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: white;
+}
+
+.reorder-centre-search {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.75rem;
+  border: 1px solid var(--gray-300);
+  border-radius: var(--radius);
+  background: white;
+  color: var(--gray-500);
+  flex: 1 1 14rem;
+  min-width: 12rem;
+}
+
+.reorder-centre-search input {
+  border: none;
+  outline: none;
+  flex: 1;
+  font-size: 0.85rem;
+  color: var(--gray-900);
+}
+
+.reorder-centre-controls select {
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--gray-300);
+  border-radius: var(--radius);
+  background: white;
+  font-size: 0.82rem;
+  color: var(--gray-700);
+}
+
+.reorder-centre-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  background: white;
+}
+
+.reorder-centre-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.reorder-centre-table th {
+  text-align: left;
+  padding: 0.7rem 0.85rem;
+  background: var(--gray-50, #f9fafb);
+  color: var(--gray-500);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.reorder-centre-table td {
+  padding: 0.65rem 0.85rem;
+  border-top: 1px solid var(--gray-100, #f1f1f1);
+  vertical-align: middle;
+}
+
+.reorder-drug-name {
+  font-weight: 600;
+  color: var(--gray-900);
+}
+
+.reorder-drug-subtext {
+  font-size: 0.75rem;
+  color: var(--gray-500);
+}
+
+.reorder-centre-no-results {
+  text-align: center;
+  padding: 2rem;
+  color: var(--gray-500);
+}
+
+.reorder-supplier-input {
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--gray-300);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  min-width: 9rem;
+}
+
+.reorder-severity-badge {
+  display: inline-block;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.reorder-severity-badge.severity-out-of-stock { background: rgba(231, 76, 60, 0.12); color: var(--danger); }
+.reorder-severity-badge.severity-critical { background: rgba(230, 126, 34, 0.14); color: #e67e22; }
+.reorder-severity-badge.severity-low { background: rgba(243, 156, 18, 0.14); color: var(--warning); }
+.reorder-severity-badge.severity-ok { background: rgba(46, 204, 113, 0.14); color: var(--success, #27ae60); }
+
+.reorder-supplier-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.reorder-supplier-groups h2 {
+  font-size: 1.05rem;
+  margin: 0;
+}
+
+.reorder-supplier-groups-hint {
+  color: var(--gray-500);
+  font-size: 0.82rem;
+  margin: -0.4rem 0 0;
+}
+
+.reorder-supplier-group {
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  background: white;
+  padding: 0.9rem 1rem;
+}
+
+.reorder-supplier-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.reorder-supplier-group-header strong {
+  display: block;
+  color: var(--gray-900);
+}
+
+.reorder-supplier-group-header span {
+  font-size: 0.78rem;
+  color: var(--gray-500);
+}
+
+.reorder-supplier-group-items {
+  list-style: none;
+  margin: 0.65rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.82rem;
+  color: var(--gray-700);
+}
+
+.reorder-supplier-required {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-left: 0.5rem;
+  color: var(--warning);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+@media (max-width: 860px) {
+  .reorder-centre-table thead {
+    display: none;
+  }
+
+  .reorder-centre-table,
+  .reorder-centre-table tbody,
+  .reorder-centre-table tr,
+  .reorder-centre-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .reorder-centre-table tr {
+    border-top: 1px solid var(--gray-200);
+    padding: 0.75rem 0.85rem;
+  }
+
+  .reorder-centre-table td {
+    padding: 0.25rem 0;
+    border-top: none;
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  .reorder-centre-table td::before {
+    content: attr(data-label);
+    font-weight: 600;
+    color: var(--gray-500);
+    font-size: 0.72rem;
+  }
+
+  .reorder-centre-table td[data-label="Medicine"]::before {
+    display: none;
+  }
+
+  .reorder-centre-table td[data-label="Medicine"] {
+    display: block;
+  }
+}

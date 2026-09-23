@@ -10,6 +10,7 @@ import {
   RefreshCcw,
   Truck,
   ShoppingCart,
+  PackageSearch,
 } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { dispatchHealthflowDataChanged } from '../lib/appEvents'
@@ -42,6 +43,8 @@ import { getEffectiveSellingPrice, getNhisCatalogPrice, hasNhisCatalogPrice } fr
 // ✅ NHIS PHARMACY LEVEL PATCH START
 import { MEDICINE_ACCESS_LEVELS, PHARMACY_LEVELS } from '../utils/nhisPharmacyLevel'
 // ✅ NHIS PHARMACY LEVEL PATCH END
+import { getOpenOrderQuantitiesByDrug } from '../services/purchasesApi'
+import { buildReorderLineItem, getSuggestedReorderQuantity } from '../utils/reorderCentre'
 import './Inventory.css'
 
 const emptyDrugForm = {
@@ -63,6 +66,8 @@ const emptyDrugForm = {
   // ✅ NHIS PHARMACY LEVEL PATCH END
   supplier: '',
   saleOnReturn: false,
+  reorderLevel: '',
+  targetStockLevel: '',
 }
 
 const unitOptions = [
@@ -134,6 +139,8 @@ const mapDrugToForm = (drug) => {
     // ✅ NHIS PHARMACY LEVEL PATCH END
     supplier: drug.supplier || '',
     saleOnReturn: Boolean(drug.sale_on_return),
+    reorderLevel: String(drug.reorder_level ?? 10),
+    targetStockLevel: drug.target_stock_level == null ? '' : String(drug.target_stock_level),
   }
 }
 
@@ -190,10 +197,24 @@ const Inventory = () => {
     total: 0,
   })
   const [syncingOfflineInventory, setSyncingOfflineInventory] = useState(false)
+  const [openOrderQuantities, setOpenOrderQuantities] = useState(new Map())
 
   useEffect(() => {
     void loadInitialInventory()
   }, [profile?.branch_id, branch?.id])
+
+  // How much of each medicine is already on an open purchase draft, so Reorder
+  // suggestions don't duplicate stock that is already incoming. Best-effort: if
+  // it fails to load, suggestions simply fall back to not knowing about any
+  // open orders rather than blocking the page.
+  useEffect(() => {
+    if (!canManagePurchases) return
+    let cancelled = false
+    getOpenOrderQuantitiesByDrug()
+      .then((quantities) => { if (!cancelled) setOpenOrderQuantities(quantities) })
+      .catch((error) => console.warn('Unable to load open purchase order quantities:', error))
+    return () => { cancelled = true }
+  }, [canManagePurchases])
 
   useEffect(() => {
     const refreshSummary = async () => {
@@ -766,24 +787,13 @@ const Inventory = () => {
     }
   }
 
-  // Suggest ordering enough to reach the reorder level; staff review and can
-  // change every value before the purchase draft is saved, nothing is guessed
-  // beyond this starting point.
-  const buildReorderItem = (drug) => {
-    const quantity = Number.parseFloat(drug.quantity ?? 0) || 0
-    const reorderLevel = Number.parseFloat(drug.reorder_level ?? 10) || 10
-    return {
-      drugId: drug.id,
-      drugName: drug.name,
-      brandName: drug.brand_name || '',
-      genericName: drug.generic_name || '',
-      unit: drug.unit || 'tablet',
-      unitCost: drug.cost_price || drug.price || '',
-      saleOnReturn: Boolean(drug.sale_on_return),
-      supplier: drug.supplier || '',
-      suggestedQuantity: Math.max(1, Math.ceil(reorderLevel - quantity)),
-    }
-  }
+  // Suggest ordering enough to reach the target stock level (falling back to the
+  // reorder level only when no target is set), minus anything already on an open
+  // purchase draft for this medicine. Staff review and can change every value
+  // before the purchase draft is saved, nothing is guessed beyond this starting
+  // point, and this never suggests duplicating stock that is already incoming.
+  const buildReorderItem = (drug) =>
+    buildReorderLineItem(drug, openOrderQuantities.get(drug.id)?.quantity || 0)
 
   const handleReorderDrug = (drug) => {
     navigate('/purchases', { state: { reorderItems: [buildReorderItem(drug)] } })
@@ -791,7 +801,12 @@ const Inventory = () => {
 
   const handleReorderLowStock = () => {
     if (lowStockDrugs.length === 0) return
-    navigate('/purchases', { state: { reorderItems: lowStockDrugs.map(buildReorderItem) } })
+    const items = lowStockDrugs.map(buildReorderItem).filter((item) => item.suggestedQuantity > 0)
+    if (items.length === 0) {
+      notify('Every low-stock medicine already has enough on order. Nothing to add.', 'info')
+      return
+    }
+    navigate('/purchases', { state: { reorderItems: items } })
   }
 
   const handleBranchChange = async (branchId) => {
@@ -1017,6 +1032,10 @@ const Inventory = () => {
     updateQueryParams(searchTerm.trim(), value)
   }
 
+  const targetBelowReorderLevel =
+    formData.targetStockLevel !== '' &&
+    Number.parseFloat(formData.targetStockLevel) < (Number.parseFloat(formData.reorderLevel) || 0)
+
   if (loading) {
     return (
       <div className="inventory-page">
@@ -1062,6 +1081,17 @@ const Inventory = () => {
             >
               <ShoppingCart size={20} />
               Reorder Low Stock ({lowStockDrugs.length})
+            </button>
+          )}
+          {canManagePurchases && (
+            <button
+              className="btn btn-secondary"
+              type="button"
+              title="Open the Reorder Centre: suggested quantities, supplier grouping, and stock severity for every medicine that needs attention"
+              onClick={() => navigate('/reorder')}
+            >
+              <PackageSearch size={20} />
+              Reorder Centre
             </button>
           )}
           {canAdjustStock && (
@@ -1215,6 +1245,11 @@ const Inventory = () => {
                 const batchNumber = drug.batch_number || drug.batch || 'N/A'
                 const expiryDate = drug.expiry_date || drug.expiry
                 const sourceLabel = getDrugSourceLabel(drug)
+                const alreadyOnOrder = openOrderQuantities.get(drug.id)?.quantity || 0
+                const suggestedQuantity = getSuggestedReorderQuantity(drug, alreadyOnOrder)
+                const reorderTitle = alreadyOnOrder > 0
+                  ? `Reorder ${drug.name} (${suggestedQuantity} more needed; ${alreadyOnOrder} already on order)`
+                  : `Reorder ${drug.name}`
 
                 return (
                   <tr key={drug.id} className={drug.id === highlightedDrugId ? 'highlighted-drug-row' : ''}>
@@ -1238,7 +1273,7 @@ const Inventory = () => {
                         {canManagePurchases && status.class === 'status-low' && (
                           <button
                             className="icon-btn reorder-btn"
-                            title={`Reorder ${drug.name}`}
+                            title={reorderTitle}
                             type="button"
                             onClick={() => handleReorderDrug(drug)}
                           >
@@ -1442,6 +1477,35 @@ const Inventory = () => {
                     value={formData.supplier}
                     onChange={(event) => setFormData({ ...formData, supplier: event.target.value })}
                   />
+                </div>
+              </div>
+
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Reorder level</label>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="10"
+                    value={formData.reorderLevel}
+                    onChange={(event) => setFormData({ ...formData, reorderLevel: event.target.value })}
+                  />
+                  <span className="form-hint">Stock at or below this triggers a reorder alert.</span>
+                </div>
+                <div className="form-group">
+                  <label>Target stock level</label>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder={formData.reorderLevel || '10'}
+                    value={formData.targetStockLevel}
+                    onChange={(event) => setFormData({ ...formData, targetStockLevel: event.target.value })}
+                  />
+                  <span className={`form-hint${targetBelowReorderLevel ? ' form-hint--warning' : ''}`}>
+                    {targetBelowReorderLevel
+                      ? 'Must be at least the reorder level.'
+                      : 'Desired stock after restocking. Leave blank to use the reorder level.'}
+                  </span>
                 </div>
               </div>
 

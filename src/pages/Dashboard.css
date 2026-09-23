@@ -1492,3 +1492,13 @@
     white-space: normal;
   }
 }
+
+.stat-card-link {
+  cursor: pointer;
+}
+
+.stat-card-link:hover,
+.stat-card-link:focus-visible {
+  box-shadow: 0 0 0 2px var(--primary);
+  outline: none;
+}

@@ -88,6 +88,7 @@ const INVENTORY_DRUG_SELECT_FIELDS = `
   category,
   description,
   reorder_level,
+  target_stock_level,
   status,
   sale_on_return,
   created_at,
@@ -692,6 +693,22 @@ const parseNonNegativeNumber = (value: unknown, label: string) => {
   }
 
   return parsed
+}
+
+// Unlike reorder_level, target_stock_level is optional: null means "not set", and
+// calculations fall back to reorder_level for that one calculation only — this
+// column is never guessed or mass-written from that fallback.
+const parseOptionalNonNegativeNumber = (value: unknown, label: string) => {
+  if (value === undefined || value === null || normalizeText(value) === '') return null
+  return parseNonNegativeNumber(value, label)
+}
+
+const assertTargetStockAtLeastReorderLevel = (targetStockLevel: number | null, reorderLevel: number) => {
+  if (targetStockLevel !== null && targetStockLevel < reorderLevel) {
+    throw new Error(
+      `Target stock level (${targetStockLevel}) cannot be below the reorder level (${reorderLevel}).`
+    )
+  }
 }
 
 const assertRequiredText = (value: unknown, label: string) => {
@@ -2555,32 +2572,39 @@ const buildDrugCreatePayload = (
   branchId: string | null,
   drugData: Record<string, unknown>,
   batchNumber: string | null
-) => ({
-  organization_id: organizationId,
-  branch_id: branchId,
-  name: assertRequiredText(drugData.name, 'Drug name'),
-  batch_number: batchNumber,
-  expiry_date: assertRequiredText(drugData.expiryDate, 'Expiry date'),
-  quantity: parseNonNegativeNumber(drugData.quantity, 'Quantity'),
-  price: parseNonNegativeNumber(drugData.price, 'Price'),
-  cost_price: parseNonNegativeNumber(drugData.costPrice ?? 0, 'Cost price'),
-  nhis_code: normalizeText(drugData.nhisCode) || null,
-  nhis_price: drugData.nhisPrice === undefined || drugData.nhisPrice === null || normalizeText(drugData.nhisPrice) === ''
-    ? null
-    : parseNonNegativeNumber(drugData.nhisPrice, 'NHIS price'),
-  nhis_unit: normalizeText(drugData.nhisUnit) || null,
-  is_nhis_listed: Boolean(drugData.isNhisListed),
-  // ✅ NHIS PHARMACY LEVEL PATCH START
-  medicine_access_level: normalizeMedicineAccessLevelForSave(drugData.medicineAccessLevel),
-  required_pharmacy_level: normalizePharmacyLevelForSave(drugData.requiredPharmacyLevel),
-  // ✅ NHIS PHARMACY LEVEL PATCH END
-  supplier: normalizeText(drugData.supplier) || null,
-  category: normalizeText(drugData.category) || null,
-  description: normalizeText(drugData.description) || null,
-  reorder_level: parseNonNegativeNumber(drugData.reorderLevel ?? 10, 'Reorder level'),
-  unit: normalizeText(drugData.unit) || 'tablet',
-  sale_on_return: Boolean(drugData.saleOnReturn),
-})
+) => {
+  const reorderLevel = parseNonNegativeNumber(drugData.reorderLevel ?? 10, 'Reorder level')
+  const targetStockLevel = parseOptionalNonNegativeNumber(drugData.targetStockLevel, 'Target stock level')
+  assertTargetStockAtLeastReorderLevel(targetStockLevel, reorderLevel)
+
+  return {
+    organization_id: organizationId,
+    branch_id: branchId,
+    name: assertRequiredText(drugData.name, 'Drug name'),
+    batch_number: batchNumber,
+    expiry_date: assertRequiredText(drugData.expiryDate, 'Expiry date'),
+    quantity: parseNonNegativeNumber(drugData.quantity, 'Quantity'),
+    price: parseNonNegativeNumber(drugData.price, 'Price'),
+    cost_price: parseNonNegativeNumber(drugData.costPrice ?? 0, 'Cost price'),
+    nhis_code: normalizeText(drugData.nhisCode) || null,
+    nhis_price: drugData.nhisPrice === undefined || drugData.nhisPrice === null || normalizeText(drugData.nhisPrice) === ''
+      ? null
+      : parseNonNegativeNumber(drugData.nhisPrice, 'NHIS price'),
+    nhis_unit: normalizeText(drugData.nhisUnit) || null,
+    is_nhis_listed: Boolean(drugData.isNhisListed),
+    // ✅ NHIS PHARMACY LEVEL PATCH START
+    medicine_access_level: normalizeMedicineAccessLevelForSave(drugData.medicineAccessLevel),
+    required_pharmacy_level: normalizePharmacyLevelForSave(drugData.requiredPharmacyLevel),
+    // ✅ NHIS PHARMACY LEVEL PATCH END
+    supplier: normalizeText(drugData.supplier) || null,
+    category: normalizeText(drugData.category) || null,
+    description: normalizeText(drugData.description) || null,
+    reorder_level: reorderLevel,
+    target_stock_level: targetStockLevel,
+    unit: normalizeText(drugData.unit) || 'tablet',
+    sale_on_return: Boolean(drugData.saleOnReturn),
+  }
+}
 
 const findDrugByIdentity = async (
   adminClient: ReturnType<typeof createAdminClient>,
@@ -3496,6 +3520,18 @@ const updateDrug = async (
 
   if (Object.prototype.hasOwnProperty.call(drugData, 'reorderLevel')) {
     updatePayload.reorder_level = parseNonNegativeNumber(drugData.reorderLevel ?? 10, 'Reorder level')
+  }
+
+  if (Object.prototype.hasOwnProperty.call(drugData, 'targetStockLevel')) {
+    updatePayload.target_stock_level = parseOptionalNonNegativeNumber(drugData.targetStockLevel, 'Target stock level')
+  }
+
+  if (Object.prototype.hasOwnProperty.call(updatePayload, 'target_stock_level') || Object.prototype.hasOwnProperty.call(updatePayload, 'reorder_level')) {
+    const effectiveReorderLevel = (updatePayload.reorder_level as number | undefined) ?? Number(existingDrug.reorder_level ?? 0)
+    const effectiveTargetStockLevel = Object.prototype.hasOwnProperty.call(updatePayload, 'target_stock_level')
+      ? (updatePayload.target_stock_level as number | null)
+      : (existingDrug.target_stock_level == null ? null : Number(existingDrug.target_stock_level))
+    assertTargetStockAtLeastReorderLevel(effectiveTargetStockLevel, effectiveReorderLevel)
   }
 
   if (Object.prototype.hasOwnProperty.call(drugData, 'unit')) {

@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   dispatchHealthflowDataChanged: vi.fn(),
   generateTemplate: vi.fn(),
   getAllDrugs: vi.fn(),
+  getOpenOrderQuantitiesByDrug: vi.fn(),
   getPharmacySettings: vi.fn(),
   importDrugs: vi.fn(),
   isDefaultCatalogDrug: vi.fn(),
@@ -75,6 +76,10 @@ vi.mock('../services/settingsService', () => ({
   getPharmacySettings: mocks.getPharmacySettings,
 }))
 
+vi.mock('../services/purchasesApi', () => ({
+  getOpenOrderQuantitiesByDrug: mocks.getOpenOrderQuantitiesByDrug,
+}))
+
 const getFieldAfterLabel = (labelText) => {
   const label = screen.getByText(labelText)
   return label.parentElement.querySelector('input')
@@ -89,6 +94,7 @@ describe('Inventory', () => {
     mocks.useTenant.mockReturnValue({ tierLimits: { hasAdvancedInventory: true } })
     mocks.isSupabaseConfigured.mockReturnValue(true)
     mocks.getAllDrugs.mockResolvedValue([])
+    mocks.getOpenOrderQuantitiesByDrug.mockResolvedValue(new Map())
     mocks.getPharmacySettings.mockResolvedValue({ default_markup_percent: 25 })
     mocks.provisionDefaultMedicationCatalog.mockResolvedValue({ inserted: 0, reactivated: 0, claimed: 0 })
     mocks.calculateDrugStatus.mockReturnValue({ class: 'good', label: 'Good Stock' })
@@ -254,6 +260,22 @@ describe('Inventory', () => {
 
       expect(screen.queryByTitle('Reorder Amoxicillin 500mg')).not.toBeInTheDocument()
       expect(screen.queryByRole('button', { name: /reorder low stock/i })).not.toBeInTheDocument()
+    })
+
+    it('subtracts quantity already on an open purchase order from the suggestion, and never suggests a duplicate order', async () => {
+      // target falls back to reorder_level (10); quantity 2 + 8 already on order -> 0 needed.
+      mocks.getOpenOrderQuantitiesByDrug.mockResolvedValue(new Map([['low-1', { quantity: 8 }]]))
+      render(<Inventory />)
+      await waitFor(() => expect(screen.getByText('Amoxicillin 500mg')).toBeInTheDocument())
+      await waitFor(() => expect(mocks.getOpenOrderQuantitiesByDrug).toHaveBeenCalled())
+
+      fireEvent.click(screen.getByRole('button', { name: /reorder low stock \(1\)/i }))
+
+      expect(mocks.notify).toHaveBeenCalledWith(
+        expect.stringContaining('already has enough on order'),
+        'info'
+      )
+      expect(mocks.navigate).not.toHaveBeenCalled()
     })
   })
 })

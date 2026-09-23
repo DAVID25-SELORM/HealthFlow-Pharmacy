@@ -53,6 +53,31 @@ const isNetworkFailure = (error) => {
 
 export const listPurchases = async (filters) => getAllPurchases(filters)
 
+// Reorder Centre phase 1: how much of each medicine is already on an open (not
+// yet completed or cancelled) purchase, so a new suggestion doesn't duplicate
+// stock that is already coming. A purchase currently has no distinct "ordered"
+// status yet (see docs/reorder-centre-phase-1.md) — every draft is treated as
+// open until it's completed or cancelled, matching what the Purchases page
+// itself considers still active.
+export const getOpenOrderQuantitiesByDrug = async () => {
+  const draftPurchases = await listPurchases({ status: 'draft' })
+  const byDrugId = new Map()
+  for (const purchase of draftPurchases) {
+    for (const item of purchase.purchase_items || []) {
+      if (!item.drug_id) continue
+      const quantity = Number.parseFloat(item.quantity) || 0
+      const existing = byDrugId.get(item.drug_id)
+      if (existing) {
+        existing.quantity += quantity
+        existing.purchaseNumbers.add(purchase.purchase_number)
+      } else {
+        byDrugId.set(item.drug_id, { quantity, purchaseNumbers: new Set([purchase.purchase_number]) })
+      }
+    }
+  }
+  return byDrugId
+}
+
 export const listSuppliers = async () => getAllSuppliers()
 
 export const getPurchaseStats = async () => getPurchasesStats()

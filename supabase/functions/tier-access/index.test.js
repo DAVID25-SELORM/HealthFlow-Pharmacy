@@ -96,3 +96,53 @@ describe('tier-access report query bounds', () => {
     expect(reportBundle).not.toContain(".in('id', missingClaimIds)")
   })
 })
+
+describe('tier-access drug target stock level (Reorder Centre phase 1)', () => {
+  it('accepts an optional target stock level on create and validates it against the reorder level', async () => {
+    const source = await fs.readFile(functionSourcePath, 'utf8')
+    const createPayload = source.slice(
+      source.indexOf('const buildDrugCreatePayload'),
+      source.indexOf('const findDrugByIdentity')
+    )
+
+    expect(createPayload).toContain("parseOptionalNonNegativeNumber(drugData.targetStockLevel, 'Target stock level')")
+    expect(createPayload).toContain('assertTargetStockAtLeastReorderLevel(targetStockLevel, reorderLevel)')
+    expect(createPayload).toContain('target_stock_level: targetStockLevel')
+  })
+
+  it('treats a missing/blank target stock level as null, never a guessed number', async () => {
+    const source = await fs.readFile(functionSourcePath, 'utf8')
+    const helper = source.slice(
+      source.indexOf('const parseOptionalNonNegativeNumber'),
+      source.indexOf('const assertTargetStockAtLeastReorderLevel')
+    )
+
+    expect(helper).toContain("if (value === undefined || value === null || normalizeText(value) === '') return null")
+  })
+
+  it('only updates target stock level when the request includes it, and re-validates against the effective reorder level', async () => {
+    const source = await fs.readFile(functionSourcePath, 'utf8')
+    const updatePayloadBlock = source.slice(
+      source.indexOf('const updatePayload: Record<string, unknown> = {'),
+      source.indexOf("if (Object.prototype.hasOwnProperty.call(drugData, 'unit'))")
+    )
+
+    expect(updatePayloadBlock).toContain("hasOwnProperty.call(drugData, 'targetStockLevel')")
+    expect(updatePayloadBlock).toContain('updatePayload.target_stock_level = parseOptionalNonNegativeNumber')
+    expect(updatePayloadBlock).toContain('assertTargetStockAtLeastReorderLevel(effectiveTargetStockLevel, effectiveReorderLevel)')
+    // Falls back to the existing row's reorder/target level when this request doesn't touch it.
+    expect(updatePayloadBlock).toContain('Number(existingDrug.reorder_level ?? 0)')
+    expect(updatePayloadBlock).toContain('existingDrug.target_stock_level')
+  })
+
+  it('returns target_stock_level from get_drugs, the read path the Reorder Centre uses', async () => {
+    const source = await fs.readFile(functionSourcePath, 'utf8')
+    const selectFields = source.slice(
+      source.indexOf('const INVENTORY_DRUG_SELECT_FIELDS'),
+      source.indexOf('const REPORT_NHIS_CLAIM_SELECT_FIELDS')
+    )
+
+    expect(selectFields).toContain('reorder_level')
+    expect(selectFields).toContain('target_stock_level')
+  })
+})
