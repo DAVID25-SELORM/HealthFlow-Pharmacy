@@ -103,7 +103,10 @@ export const updateSupplier = async (id, supplierData) => {
 
 export const getAllPurchases = async (filters = {}) => {
   if (shouldUseBranchServer()) {
-    return await listBranchRecords('purchases', filters)
+    const rows = await listBranchRecords('purchases', filters)
+    return Array.isArray(filters.statuses)
+      ? (rows || []).filter((row) => filters.statuses.includes(row.status))
+      : rows
   }
 
   let query = supabase
@@ -113,7 +116,7 @@ export const getAllPurchases = async (filters = {}) => {
       purchase_items (
         id, drug_id, drug_name, brand_name, generic_name, sale_on_return, quantity, unit,
         unit_cost, discount_percent, net_total,
-        batch_number, expiry_date
+        batch_number, expiry_date, received_quantity
       )
     `)
     .order('purchase_date', { ascending: false })
@@ -121,6 +124,10 @@ export const getAllPurchases = async (filters = {}) => {
 
   if (filters.status && filters.status !== 'all') {
     query = query.eq('status', filters.status)
+  }
+
+  if (Array.isArray(filters.statuses) && filters.statuses.length) {
+    query = query.in('status', filters.statuses)
   }
 
   if (filters.supplierId) {
@@ -321,7 +328,7 @@ const buildPurchaseItemCompletionDetails = (purchase, items, source = 'purchase_
   }))
 
 export const getPurchaseCompletionDetails = async (purchase) => {
-  if (!purchase?.id || purchase.status !== 'completed') {
+  if (!purchase?.id || !['completed', 'partially_received'].includes(purchase.status)) {
     return []
   }
 
@@ -367,7 +374,9 @@ export const getPurchaseCompletionDetails = async (purchase) => {
   })
 }
 
-export const cancelPurchase = async (id) => {
+// Cancelling goes through cancel_purchase_order(), which enforces who may cancel, which
+// statuses can be cancelled, requires a reason once an order has been placed, and audits it.
+export const cancelPurchase = async (id, { reason = '' } = {}) => {
   if (shouldUseBranchServer()) {
     return await updateBranchRecord('purchases', id, {
       status: 'cancelled',
@@ -375,24 +384,71 @@ export const cancelPurchase = async (id) => {
     })
   }
 
-  const { data, error } = await supabase
-    .from('purchases')
-    .update({ status: 'cancelled', updated_at: new Date().toISOString() })
-    .eq('id', id)
-    .select()
-    .single()
-
-  if (error) throw error
-
-  await tryLogAuditEvent({
-    eventType: 'purchase.cancelled',
-    entityType: 'purchases',
-    entityId: id,
-    action: 'cancel',
-    details: {},
+  const { data, error } = await supabase.rpc('cancel_purchase_order', {
+    p_purchase_id: id,
+    p_reason: normalizeText(reason) || null,
   })
 
+  if (error) throw error
+  if (data?.error) throw new Error(data.error)
   return data
+}
+
+// Draft -> ordered. Does not touch stock.
+export const placePurchase = async (id) => {
+  const { data, error } = await supabase.rpc('place_purchase_order', { p_purchase_id: id })
+  if (error) throw error
+  if (data?.error) throw new Error(data.error)
+  return data
+}
+
+/**
+ * Records goods that have actually arrived. lines: [{ purchaseItemId, quantity, batchNumber,
+ * expiryDate, unitCost }]. receiptKey makes a retried call harmless (stock is never posted twice).
+ * Status becomes partially_received, or completed once nothing is outstanding.
+ */
+export const receivePurchaseGoods = async (id, lines, { receiptKey, notes = '' } = {}) => {
+  const key = normalizeText(receiptKey)
+  if (!key) throw new Error('A receipt key is required.')
+  if (!Array.isArray(lines) || lines.length === 0) throw new Error('Enter at least one received item.')
+
+  const payload = lines.map((line) => ({
+    purchase_item_id: assertRequiredText(line.purchaseItemId, 'Item'),
+    quantity: assertNonNegativeNumber(line.quantity, 'Received quantity'),
+    batch_number: normalizeText(line.batchNumber) || null,
+    expiry_date: line.expiryDate || null,
+    unit_cost: line.unitCost === '' || line.unitCost == null ? null : assertNonNegativeNumber(line.unitCost, 'Unit cost'),
+  }))
+  if (payload.some((line) => !(line.quantity > 0))) {
+    throw new Error('Each received quantity must be above zero.')
+  }
+
+  const { data, error } = await supabase.rpc('receive_purchase_goods', {
+    p_purchase_id: id,
+    p_lines: payload,
+    p_receipt_key: key,
+    p_notes: normalizeText(notes) || null,
+  })
+  if (error) throw error
+  if (data?.error) throw new Error(data.error)
+  return data
+}
+
+// Display name for the printed PO's "created by". Best effort: a missing name never blocks printing.
+export const getUserDisplayName = async (userId) => {
+  if (!userId) return ''
+  const { data } = await supabase.from('users').select('full_name').eq('id', userId).maybeSingle()
+  return data?.full_name || ''
+}
+
+export const getPurchaseReceipts = async (purchaseId) => {
+  const { data, error } = await supabase
+    .from('purchase_receipts')
+    .select('id, purchase_item_id, drug_id, received_quantity, batch_number, expiry_date, unit_cost, received_at, notes, receipt_key, received_by_user:received_by (full_name)')
+    .eq('purchase_id', purchaseId)
+    .order('received_at', { ascending: true })
+  if (error) throw error
+  return data || []
 }
 
 export const getPurchasesStats = async () => {
@@ -406,6 +462,7 @@ export const getPurchasesStats = async () => {
         .filter((r) => r.status === 'completed')
         .reduce((s, r) => s + Number(r.total_amount || 0), 0),
       draftCount: rows.filter((r) => r.status === 'draft').length,
+      orderedCount: rows.filter((r) => r.status === 'ordered' || r.status === 'partially_received').length,
       completedCount: rows.filter((r) => r.status === 'completed').length,
     }
   }
@@ -429,6 +486,7 @@ export const getPurchasesStats = async () => {
       .filter((r) => r.status === 'completed')
       .reduce((s, r) => s + Number(r.total_amount || 0), 0),
     draftCount: rows.filter((r) => r.status === 'draft').length,
+    orderedCount: rows.filter((r) => r.status === 'ordered' || r.status === 'partially_received').length,
     completedCount: rows.filter((r) => r.status === 'completed').length,
   }
 }

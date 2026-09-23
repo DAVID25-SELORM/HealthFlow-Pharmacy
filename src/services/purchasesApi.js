@@ -4,6 +4,10 @@ import {
   createPurchase,
   createSupplier,
   getAllPurchases,
+  getPurchaseReceipts,
+  getUserDisplayName,
+  placePurchase,
+  receivePurchaseGoods,
   getAllSuppliers,
   getPurchaseCompletionDetails,
   getPurchasesStats,
@@ -53,25 +57,30 @@ const isNetworkFailure = (error) => {
 
 export const listPurchases = async (filters) => getAllPurchases(filters)
 
-// Reorder Centre phase 1: how much of each medicine is already on an open (not
-// yet completed or cancelled) purchase, so a new suggestion doesn't duplicate
-// stock that is already coming. A purchase currently has no distinct "ordered"
-// status yet (see docs/reorder-centre-phase-1.md) — every draft is treated as
-// open until it's completed or cancelled, matching what the Purchases page
-// itself considers still active.
+// How much of each medicine is already on the way, so a new suggestion doesn't duplicate
+// stock that is already coming. Counts every purchase that has not been completed or
+// cancelled: a draft counts in full, and a placed or partially received order counts only
+// what is still outstanding (ordered - received). Cancelled orders stop counting.
+export const OPEN_PURCHASE_STATUSES = ['draft', 'ordered', 'partially_received']
+
 export const getOpenOrderQuantitiesByDrug = async () => {
-  const draftPurchases = await listPurchases({ status: 'draft' })
+  const openPurchases = await listPurchases({ statuses: OPEN_PURCHASE_STATUSES })
   const byDrugId = new Map()
-  for (const purchase of draftPurchases) {
+  for (const purchase of openPurchases) {
+    if (!OPEN_PURCHASE_STATUSES.includes(purchase.status)) continue
     for (const item of purchase.purchase_items || []) {
       if (!item.drug_id) continue
-      const quantity = Number.parseFloat(item.quantity) || 0
+      const outstanding = Math.max(
+        0,
+        (Number.parseFloat(item.quantity) || 0) - (Number.parseFloat(item.received_quantity) || 0)
+      )
+      if (outstanding <= 0) continue
       const existing = byDrugId.get(item.drug_id)
       if (existing) {
-        existing.quantity += quantity
+        existing.quantity += outstanding
         existing.purchaseNumbers.add(purchase.purchase_number)
       } else {
-        byDrugId.set(item.drug_id, { quantity, purchaseNumbers: new Set([purchase.purchase_number]) })
+        byDrugId.set(item.drug_id, { quantity: outstanding, purchaseNumbers: new Set([purchase.purchase_number]) })
       }
     }
   }
@@ -135,10 +144,24 @@ export const completePurchaseDraft = async (id, options) => {
   return completePurchase(id, options)
 }
 
-export const cancelPurchaseDraft = async (id) => {
+export const cancelPurchaseDraft = async (id, options) => {
   await requireInternet('Cancelling a purchase requires internet and was not queued.')
-  return cancelPurchase(id)
+  return cancelPurchase(id, options)
 }
+
+export const placePurchaseOrder = async (id) => {
+  await requireInternet('Placing an order requires internet and was not queued.')
+  return placePurchase(id)
+}
+
+export const receivePurchaseOrderGoods = async (id, lines, options) => {
+  await requireInternet('Receiving goods requires internet because it posts inventory stock.')
+  return receivePurchaseGoods(id, lines, options)
+}
+
+export const listPurchaseReceipts = async (purchaseId) => getPurchaseReceipts(purchaseId)
+
+export const getPurchaseCreatorName = async (userId) => getUserDisplayName(userId)
 
 export {
   getOfflinePurchasesSummary,

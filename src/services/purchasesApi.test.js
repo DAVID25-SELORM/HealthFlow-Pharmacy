@@ -11,6 +11,10 @@ const mocks = vi.hoisted(() => ({
   getOfflinePurchasesSummary: vi.fn(),
   getPurchaseCompletionDetails: vi.fn(),
   getPurchasesStats: vi.fn(),
+  placePurchase: vi.fn(),
+  receivePurchaseGoods: vi.fn(),
+  getPurchaseReceipts: vi.fn(),
+  getUserDisplayName: vi.fn(),
   queueOfflinePurchaseDraft: vi.fn(),
   refreshConnectivityState: vi.fn(),
   subscribeOfflinePurchasesQueue: vi.fn(),
@@ -26,6 +30,10 @@ vi.mock('./purchasesService', () => ({
   getAllSuppliers: mocks.getAllSuppliers,
   getPurchaseCompletionDetails: mocks.getPurchaseCompletionDetails,
   getPurchasesStats: mocks.getPurchasesStats,
+  placePurchase: mocks.placePurchase,
+  receivePurchaseGoods: mocks.receivePurchaseGoods,
+  getPurchaseReceipts: mocks.getPurchaseReceipts,
+  getUserDisplayName: mocks.getUserDisplayName,
 }))
 
 vi.mock('./offlinePurchasesQueue', () => ({
@@ -45,6 +53,8 @@ import {
   completePurchaseDraft,
   createPurchaseDraft,
   getOpenOrderQuantitiesByDrug,
+  placePurchaseOrder,
+  receivePurchaseOrderGoods,
 } from './purchasesApi'
 
 describe('purchasesApi', () => {
@@ -152,38 +162,69 @@ describe('purchasesApi', () => {
   })
 })
 
-describe('getOpenOrderQuantitiesByDrug (Reorder Centre phase 1)', () => {
+describe('getOpenOrderQuantitiesByDrug (open orders)', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('sums quantity per drug across every open (draft) purchase', async () => {
+  it('asks only for purchases that are still open', async () => {
+    mocks.getAllPurchases.mockResolvedValue([])
+    await getOpenOrderQuantitiesByDrug()
+    expect(mocks.getAllPurchases).toHaveBeenCalledWith({ statuses: ['draft', 'ordered', 'partially_received'] })
+  })
+
+  it('counts a draft in full and sums across open purchases', async () => {
     mocks.getAllPurchases.mockResolvedValue([
-      {
-        purchase_number: 'PO-000001',
-        purchase_items: [
-          { drug_id: 'drug-1', quantity: 20 },
-          { drug_id: 'drug-2', quantity: 5 },
-        ],
-      },
-      {
-        purchase_number: 'PO-000002',
-        purchase_items: [{ drug_id: 'drug-1', quantity: 10 }],
-      },
+      { purchase_number: 'PO-1', status: 'draft', purchase_items: [{ drug_id: 'drug-1', quantity: 20 }, { drug_id: 'drug-2', quantity: 5 }] },
+      { purchase_number: 'PO-2', status: 'ordered', purchase_items: [{ drug_id: 'drug-1', quantity: 10, received_quantity: 0 }] },
     ])
-
     const result = await getOpenOrderQuantitiesByDrug()
-
-    expect(mocks.getAllPurchases).toHaveBeenCalledWith({ status: 'draft' })
     expect(result.get('drug-1').quantity).toBe(30)
     expect(result.get('drug-2').quantity).toBe(5)
     expect(result.has('drug-3')).toBe(false)
   })
 
-  it('ignores line items with no drug_id and returns an empty map when there are no drafts', async () => {
+  it('subtracts what has already been received, so only the outstanding quantity counts', async () => {
     mocks.getAllPurchases.mockResolvedValue([
-      { purchase_number: 'PO-000003', purchase_items: [{ drug_id: null, quantity: 5 }] },
+      { purchase_number: 'PO-3', status: 'partially_received', purchase_items: [{ drug_id: 'drug-1', quantity: 100, received_quantity: 60 }] },
     ])
+    expect((await getOpenOrderQuantitiesByDrug()).get('drug-1').quantity).toBe(40)
+  })
 
-    const result = await getOpenOrderQuantitiesByDrug()
-    expect(result.size).toBe(0)
+  it('ignores fully received lines, cancelled or completed purchases, and lines with no medicine', async () => {
+    mocks.getAllPurchases.mockResolvedValue([
+      { purchase_number: 'PO-4', status: 'partially_received', purchase_items: [{ drug_id: 'drug-1', quantity: 10, received_quantity: 10 }, { drug_id: null, quantity: 5 }] },
+      { purchase_number: 'PO-5', status: 'cancelled', purchase_items: [{ drug_id: 'drug-2', quantity: 50 }] },
+      { purchase_number: 'PO-6', status: 'completed', purchase_items: [{ drug_id: 'drug-3', quantity: 50, received_quantity: 50 }] },
+    ])
+    expect((await getOpenOrderQuantitiesByDrug()).size).toBe(0)
+  })
+})
+
+describe('placing and receiving orders', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.refreshConnectivityState.mockResolvedValue({ internetAvailable: true, branchServerAvailable: false })
+  })
+
+  it('places and receives through the service when online', async () => {
+    mocks.placePurchase.mockResolvedValue({ status: 'ordered' })
+    mocks.receivePurchaseGoods.mockResolvedValue({ status: 'partially_received' })
+    await placePurchaseOrder('po-1')
+    await receivePurchaseOrderGoods('po-1', [{ purchaseItemId: 'i1', quantity: 5 }], { receiptKey: 'k' })
+    expect(mocks.placePurchase).toHaveBeenCalledWith('po-1')
+    expect(mocks.receivePurchaseGoods).toHaveBeenCalledWith('po-1', [{ purchaseItemId: 'i1', quantity: 5 }], { receiptKey: 'k' })
+  })
+
+  it('never queues a stock-posting or status action offline', async () => {
+    mocks.refreshConnectivityState.mockResolvedValue({ internetAvailable: false, branchServerAvailable: true })
+    await expect(placePurchaseOrder('po-1')).rejects.toThrow('requires internet')
+    await expect(receivePurchaseOrderGoods('po-1', [{}], { receiptKey: 'k' })).rejects.toThrow('requires internet')
+    expect(mocks.placePurchase).not.toHaveBeenCalled()
+    expect(mocks.receivePurchaseGoods).not.toHaveBeenCalled()
+  })
+
+  it('passes the cancellation reason through', async () => {
+    mocks.cancelPurchase.mockResolvedValue({ status: 'cancelled' })
+    await cancelPurchaseDraft('po-1', { reason: 'Supplier out of stock' })
+    expect(mocks.cancelPurchase).toHaveBeenCalledWith('po-1', { reason: 'Supplier out of stock' })
   })
 })

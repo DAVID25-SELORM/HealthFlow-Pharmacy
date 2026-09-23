@@ -8,6 +8,9 @@ import {
   XCircle,
   Eye,
   RefreshCcw,
+  Send,
+  PackageCheck,
+  Printer,
 } from 'lucide-react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { isSupabaseConfigured } from '../lib/supabase'
@@ -24,12 +27,28 @@ import {
   getPurchaseCompletionAudit,
   getPurchaseStats,
   listPurchases,
+  listPurchaseReceipts,
   listSuppliers,
+  getPurchaseCreatorName,
+  placePurchaseOrder,
+  receivePurchaseOrderGoods,
   subscribeOfflinePurchasesQueue,
   syncOfflinePurchases,
 } from '../services/purchasesApi'
 import { getAllDrugs } from '../services/drugService'
 import { getBranches } from '../services/branchService'
+import ReceiveGoodsModal from '../components/purchases/ReceiveGoodsModal'
+import CancelOrderModal from '../components/purchases/CancelOrderModal'
+import PurchaseOrderDocument from '../components/purchases/PurchaseOrderDocument'
+import {
+  PURCHASE_STATUS_TABS,
+  canCancelOrder,
+  canPlaceOrder,
+  canReceiveGoods,
+  getOrderTotals,
+  getOutstandingQuantity,
+  getPurchaseStatusLabel,
+} from '../utils/purchaseOrders'
 import './Purchases.css'
 
 const blankPurchaseForm = {
@@ -71,7 +90,7 @@ const unitOptions = [
   { value: 'unit', label: 'Unit' },
 ]
 
-const STATUS_TABS = ['all', 'draft', 'completed', 'cancelled']
+const STATUS_TABS = PURCHASE_STATUS_TABS
 
 const calcGrossTotal = (qty, cost) => {
   const q = Number.parseFloat(qty) || 0
@@ -102,7 +121,7 @@ const fmtCurrency = (n) =>
   `GHS ${Number(n || 0).toLocaleString('en-GH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
 const StatusBadge = ({ status }) => (
-  <span className={`purchase-badge purchase-badge--${status}`}>{status}</span>
+  <span className={`purchase-badge purchase-badge--${status}`}>{getPurchaseStatusLabel(status)}</span>
 )
 
 const Purchases = () => {
@@ -139,6 +158,13 @@ const Purchases = () => {
   const [submitting, setSubmitting]         = useState(false)
   const [completing, setCompleting]         = useState(null)
   const [cancelling, setCancelling]         = useState(null)
+  const [receiveTarget, setReceiveTarget]   = useState(null)
+  const [receiving, setReceiving]           = useState(false)
+  const [cancelTarget, setCancelTarget]     = useState(null)
+  const [printTarget, setPrintTarget]       = useState(null)
+  const [printCreator, setPrintCreator]     = useState('')
+  const [placing, setPlacing]               = useState(null)
+  const [receipts, setReceipts]             = useState([])
   const [completionDetails, setCompletionDetails] = useState([])
   const [completionDetailsLoading, setCompletionDetailsLoading] = useState(false)
   const [completionDetailsError, setCompletionDetailsError] = useState('')
@@ -322,7 +348,7 @@ const Purchases = () => {
     let cancelled = false
 
     const loadCompletionDetails = async () => {
-      if (!viewPurchase || viewPurchase.status !== 'completed') {
+      if (!viewPurchase || !['completed', 'partially_received'].includes(viewPurchase.status)) {
         setCompletionDetails([])
         setCompletionDetailsError('')
         setCompletionDetailsLoading(false)
@@ -350,6 +376,19 @@ const Purchases = () => {
 
     void loadCompletionDetails()
 
+    return () => { cancelled = true }
+  }, [viewPurchase])
+
+  // Receipt history (what arrived, when, which batch, who received it) for placed orders.
+  useEffect(() => {
+    let cancelled = false
+    if (!viewPurchase || !['ordered', 'partially_received', 'completed'].includes(viewPurchase.status)) {
+      setReceipts([])
+      return undefined
+    }
+    listPurchaseReceipts(viewPurchase.id)
+      .then((rows) => { if (!cancelled) setReceipts(rows) })
+      .catch(() => { if (!cancelled) setReceipts([]) })
     return () => { cancelled = true }
   }, [viewPurchase])
 
@@ -519,27 +558,77 @@ const Purchases = () => {
     }
   }
 
-  // ── cancel purchase ──────────────────────────────────────────
-  const handleCancel = async (purchase) => {
+  // ── place order (draft -> ordered; no stock change) ───────────
+  const handlePlaceOrder = async (purchase) => {
     if (!(await confirmAction({
-      title: 'Cancel this purchase?',
+      title: 'Place this order with the supplier?',
       details: [
         { label: 'Purchase', value: purchase.purchase_number },
-        { label: 'Supplier', value: purchase.supplier_name || purchase.supplier?.name },
+        { label: 'Supplier', value: purchase.supplier_name },
+        { label: 'Items', value: purchase.purchase_items?.length },
         { label: 'Total', value: `GHS ${Number(purchase.total_amount || 0).toFixed(2)}` },
       ],
-      warning: 'The draft will be cancelled and cannot later be completed.',
-      confirmText: 'cancel this purchase',
+      warning: 'Placing an order does not change your stock. Stock is added only when you receive the goods.',
+      confirmText: 'place the order',
     }))) return
     try {
+      setPlacing(purchase.id)
+      await placePurchaseOrder(purchase.id)
+      await loadAll()
+      notify(`${purchase.purchase_number} placed. Print it or send it to the supplier.`, 'success')
+    } catch (err) {
+      notify(err.message || 'Unable to place the order.', 'error')
+    } finally {
+      setPlacing(null)
+    }
+  }
+
+  // ── receive goods (partial or full) ──────────────────────────
+  const handleReceiveSubmit = async (lines, { receiptKey, notes }) => {
+    try {
+      setReceiving(true)
+      const result = await receivePurchaseOrderGoods(receiveTarget.id, lines, { receiptKey, notes })
+      const number = receiveTarget.purchase_number
+      setReceiveTarget(null)
+      setViewPurchase(null)
+      await loadAll()
+      notify(
+        result?.status === 'completed'
+          ? `${number} fully received — stock updated.`
+          : `Partly received — stock updated. ${result?.outstanding ?? ''} still outstanding on ${number}.`,
+        'success'
+      )
+    } catch (err) {
+      notify(err.message || 'Unable to receive the goods.', 'error')
+    } finally {
+      setReceiving(false)
+    }
+  }
+
+  // ── cancel purchase (reason captured for placed orders) ──────
+  const handleCancelConfirm = async (reason) => {
+    const purchase = cancelTarget
+    try {
       setCancelling(purchase.id)
-      await cancelPurchaseDraft(purchase.id)
+      await cancelPurchaseDraft(purchase.id, { reason })
+      setCancelTarget(null)
+      setViewPurchase(null)
       await loadAll()
       notify(`${purchase.purchase_number} cancelled.`, 'info')
     } catch (err) {
       notify(err.message || 'Unable to cancel purchase.', 'error')
     } finally {
       setCancelling(null)
+    }
+  }
+
+  const openPrint = async (purchase) => {
+    setPrintTarget(purchase)
+    setPrintCreator('')
+    try {
+      setPrintCreator(await getPurchaseCreatorName(purchase.created_by))
+    } catch {
+      setPrintCreator('')
     }
   }
 
@@ -654,6 +743,10 @@ const Purchases = () => {
           <span className="stat-label">Draft Orders</span>
           <span className="stat-value">{stats.draftCount}</span>
         </div>
+        <div className="stat-box">
+          <span className="stat-label">Open Orders</span>
+          <span className="stat-value">{stats.orderedCount || 0}</span>
+        </div>
         <div className="stat-box approved">
           <span className="stat-label">Completed Orders</span>
           <span className="stat-value">{stats.completedCount}</span>
@@ -669,7 +762,7 @@ const Purchases = () => {
               className={`tab-btn ${activeTab === tab ? 'active' : ''}`}
               onClick={() => setTab(tab)}
             >
-              {tab.charAt(0).toUpperCase() + tab.slice(1)}
+              {tab === 'all' ? 'All' : getPurchaseStatusLabel(tab)}
             </button>
           ))}
         </div>
@@ -730,6 +823,34 @@ const Purchases = () => {
                     >
                       <Eye size={14} />
                     </button>
+                    {p.status !== 'cancelled' && (
+                      <button
+                        className="action-btn action-btn--view"
+                        title="Print purchase order"
+                        onClick={() => openPrint(p)}
+                      >
+                        <Printer size={14} />
+                      </button>
+                    )}
+                    {canPlaceOrder(p) && canWrite && (
+                      <button
+                        className="action-btn action-btn--submit"
+                        title="Place order with supplier"
+                        disabled={placing === p.id}
+                        onClick={() => handlePlaceOrder(p)}
+                      >
+                        <Send size={14} />
+                      </button>
+                    )}
+                    {canReceiveGoods(p) && canApprovePurchases && (
+                      <button
+                        className="action-btn action-btn--complete"
+                        title={`Receive goods (${getOrderTotals(p).outstanding} outstanding)`}
+                        onClick={() => setReceiveTarget(p)}
+                      >
+                        <PackageCheck size={14} />
+                      </button>
+                    )}
                     {p.status === 'draft' && canWrite && (
                       <>
                         {canApprovePurchases && (
@@ -746,11 +867,21 @@ const Purchases = () => {
                           className="action-btn action-btn--cancel"
                           title="Cancel"
                           disabled={cancelling === p.id}
-                          onClick={() => handleCancel(p)}
+                          onClick={() => setCancelTarget(p)}
                         >
                           <XCircle size={14} />
                         </button>
                       </>
+                    )}
+                    {canReceiveGoods(p) && canWrite && (
+                      <button
+                        className="action-btn action-btn--cancel"
+                        title="Cancel order"
+                        disabled={cancelling === p.id}
+                        onClick={() => setCancelTarget(p)}
+                      >
+                        <XCircle size={14} />
+                      </button>
                     )}
                   </td>
                 </tr>
@@ -1130,7 +1261,9 @@ const Purchases = () => {
                 <tr>
                   <th>#</th>
                   <th>Drug / Item</th>
-                  <th>Qty</th>
+                  <th>Qty ordered</th>
+                  {viewPurchase.status !== 'draft' && <th>Received</th>}
+                  {viewPurchase.status !== 'draft' && <th>Outstanding</th>}
                   <th>Unit</th>
                   <th>Unit Cost</th>
                   <th>Discount</th>
@@ -1150,6 +1283,8 @@ const Purchases = () => {
                       {item.sale_on_return && <div className="item-meta item-meta--flag">Sale on return</div>}
                     </td>
                     <td>{item.quantity}</td>
+                    {viewPurchase.status !== 'draft' && <td>{item.received_quantity ?? 0}</td>}
+                    {viewPurchase.status !== 'draft' && <td>{viewPurchase.status === 'cancelled' ? '—' : getOutstandingQuantity(item)}</td>}
                     <td>{item.unit}</td>
                     <td>{fmtCurrency(item.unit_cost)}</td>
                     <td>{Number(item.discount_percent || 0).toFixed(2)}%</td>
@@ -1161,12 +1296,44 @@ const Purchases = () => {
               </tbody>
               <tfoot>
                 <tr>
-                  <td colSpan={6} className="total-label">Total</td>
+                  <td colSpan={viewPurchase.status === 'draft' ? 6 : 8} className="total-label">Total</td>
                   <td colSpan={3} className="total-value">{fmtCurrency(viewPurchase.total_amount)}</td>
                 </tr>
               </tfoot>
             </table>
-            {viewPurchase.status === 'completed' && (
+            {viewPurchase.status === 'cancelled' && viewPurchase.cancellation_reason && (
+              <div className="view-purchase-meta"><div><strong>Cancelled:</strong> {viewPurchase.cancellation_reason}</div></div>
+            )}
+            {receipts.length > 0 && (
+              <div className="purchase-completion-audit purchase-receipts">
+                <div className="purchase-completion-audit__header">
+                  <h3>Goods received</h3>
+                  <span>{receipts.length} line{receipts.length === 1 ? '' : 's'}</span>
+                </div>
+                <table className="purchase-completion-table">
+                  <thead>
+                    <tr><th>Date</th><th>Item</th><th>Qty</th><th>Batch</th><th>Expiry</th><th>Unit cost</th><th>Received by</th></tr>
+                  </thead>
+                  <tbody>
+                    {receipts.map((receipt) => {
+                      const item = (viewPurchase.purchase_items || []).find((row) => row.id === receipt.purchase_item_id)
+                      return (
+                        <tr key={receipt.id}>
+                          <td>{formatAppDate(receipt.received_at)}</td>
+                          <td>{item?.drug_name || '—'}</td>
+                          <td>{receipt.received_quantity}</td>
+                          <td>{receipt.batch_number || '—'}</td>
+                          <td>{receipt.expiry_date ? formatAppDate(receipt.expiry_date) : '—'}</td>
+                          <td>{fmtCurrency(receipt.unit_cost)}</td>
+                          <td>{receipt.received_by_user?.full_name || '—'}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {['completed', 'partially_received'].includes(viewPurchase.status) && (
               <div className="purchase-completion-audit">
                 <div className="purchase-completion-audit__header">
                   <h3>Inventory Changes</h3>
@@ -1234,19 +1401,77 @@ const Purchases = () => {
                   <button
                     className="btn btn-danger"
                     disabled={cancelling === viewPurchase.id}
-                    onClick={async () => {
-                      await handleCancel(viewPurchase)
-                      setViewPurchase(null)
-                    }}
+                    onClick={() => setCancelTarget(viewPurchase)}
                   >
                     Cancel Order
                   </button>
+                  <button
+                    className="btn btn-outline"
+                    disabled={placing === viewPurchase.id}
+                    onClick={async () => {
+                      await handlePlaceOrder(viewPurchase)
+                      setViewPurchase(null)
+                    }}
+                  >
+                    <Send size={14} /> Place Order
+                  </button>
                 </>
+              )}
+              {canReceiveGoods(viewPurchase) && (
+                <>
+                  {canApprovePurchases && (
+                    <button className="btn btn-primary" onClick={() => setReceiveTarget(viewPurchase)}>
+                      <PackageCheck size={14} /> Receive Goods
+                    </button>
+                  )}
+                  {canWrite && canCancelOrder(viewPurchase) && (
+                    <button className="btn btn-danger" onClick={() => setCancelTarget(viewPurchase)}>Cancel Order</button>
+                  )}
+                </>
+              )}
+              {viewPurchase.status !== 'cancelled' && (
+                <button className="btn btn-outline" onClick={() => openPrint(viewPurchase)}>
+                  <Printer size={14} /> Print PO
+                </button>
               )}
               <button className="btn btn-secondary" onClick={() => setViewPurchase(null)}>Close</button>
             </div>
           </div>
         </div>
+      )}
+      {receiveTarget && (
+        <ReceiveGoodsModal
+          purchase={receiveTarget}
+          submitting={receiving}
+          onClose={() => setReceiveTarget(null)}
+          onSubmit={handleReceiveSubmit}
+        />
+      )}
+
+      {cancelTarget && (
+        <CancelOrderModal
+          purchase={cancelTarget}
+          submitting={cancelling === cancelTarget.id}
+          onClose={() => setCancelTarget(null)}
+          onConfirm={handleCancelConfirm}
+        />
+      )}
+
+      {printTarget && (
+        <PurchaseOrderDocument
+          purchase={printTarget}
+          facility={{
+            name: organization?.name,
+            address: organization?.address,
+            city: organization?.city,
+            region: organization?.region,
+            phone: organization?.phone,
+            email: organization?.email,
+          }}
+          supplier={suppliers.find((row) => row.id === printTarget.supplier_id) || null}
+          createdBy={printCreator}
+          onClose={() => setPrintTarget(null)}
+        />
       )}
     </div>
   )
