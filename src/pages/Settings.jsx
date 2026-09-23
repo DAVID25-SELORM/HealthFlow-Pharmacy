@@ -1771,7 +1771,7 @@ const Settings = () => {
               </label>
               <p className="settings-helper">
                 {formData.nhisDeductInventoryOnServe
-                  ? 'NHIS dispensing is linked to inventory. Prescribing, saving, scrubbing, and exporting do not deduct stock.'
+                  ? 'NHIS dispensing is linked to inventory. Only serving a claim deducts stock — prescribing, saving, scrubbing, and exporting do not.'
                   : 'NHIS dispensing is currently not linked to inventory. Prescribing or adding a medicine to a claim never deducts stock.'}
               </p>
             </div>
