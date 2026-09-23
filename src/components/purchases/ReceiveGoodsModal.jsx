@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import { X } from 'lucide-react'
+import { describePriceChange } from '../../utils/reorderInsights'
 import {
   buildInitialReceiptLines,
   createReceiptKey,
@@ -112,6 +113,16 @@ export default function ReceiveGoodsModal({ purchase, submitting = false, onClos
                           value={line.unitCost}
                           onChange={(event) => updateLine(line.key, 'unitCost', event.target.value)}
                         />
+                        {(() => {
+                          const change = describePriceChange(line.unitCost, item?.unit_cost)
+                          if (!change || change.changePercent === null || change.changePercent === 0) return null
+                          const sign = change.changePercent > 0 ? '+' : ''
+                          return (
+                            <small className={change.flagged ? 'receive-price-flagged' : 'receive-price-note'}>
+                              {sign}{change.changePercent}% vs ordered cost{change.flagged ? ' — please check the invoice' : ''}
+                            </small>
+                          )
+                        })()}
                       </label>
                     </div>
                     <div className="receive-line-actions">

@@ -21,6 +21,7 @@ import {
   cancelPurchase,
   getAllPurchases,
   getPurchasesStats,
+  getReorderInsights,
   placePurchase,
   receivePurchaseGoods,
 } from './purchasesService'
@@ -116,6 +117,24 @@ describe('purchase lifecycle service', () => {
     it('surfaces "reason required" and "already received" from the database', async () => {
       mocks.rpc.mockResolvedValue({ data: { error: 'Enter a reason for cancelling an order that has been placed.' }, error: null })
       await expect(cancelPurchase('po-1')).rejects.toThrow('Enter a reason')
+    })
+  })
+
+  describe('getReorderInsights', () => {
+    it('asks the database for the aggregate and returns it keyed by medicine', async () => {
+      mocks.rpc.mockResolvedValue({ data: [{ drug_id: 'd1', units_sold: 50, history_days: 90 }, { drug_id: 'd2', units_sold: 0, history_days: 20 }], error: null })
+      const result = await getReorderInsights(['d1', 'd2'], 90)
+      expect(mocks.rpc).toHaveBeenCalledWith('get_reorder_insights', { p_drug_ids: ['d1', 'd2'], p_window_days: 90 })
+      expect(result.get('d1').units_sold).toBe(50)
+      expect(result.size).toBe(2)
+    })
+
+    it('passes null for "all medicines" and surfaces a database error', async () => {
+      mocks.rpc.mockResolvedValue({ data: [], error: null })
+      await getReorderInsights([])
+      expect(mocks.rpc.mock.calls[0][1].p_drug_ids).toBeNull()
+      mocks.rpc.mockResolvedValue({ data: null, error: new Error('permission denied') })
+      await expect(getReorderInsights(['d1'])).rejects.toThrow('permission denied')
     })
   })
 

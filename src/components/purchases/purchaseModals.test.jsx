@@ -86,6 +86,17 @@ describe('ReceiveGoodsModal', () => {
     expect(onSubmit.mock.calls[0][0].filter((line) => line.purchaseItemId === 'i1').map((line) => line.quantity)).toEqual([30, 10])
   })
 
+  it('shows how the entered unit cost differs from the ordered cost, and flags a large change without blocking', async () => {
+    render(<ReceiveGoodsModal purchase={purchase()} onClose={onClose} onSubmit={onSubmit} />)
+    const cost = screen.getAllByLabelText('Unit cost (GHS)')[0] // ordered at 2.5
+    fireEvent.change(cost, { target: { value: '2.6' } })
+    expect(screen.getByText('+4% vs ordered cost')).toBeInTheDocument()
+    fireEvent.change(cost, { target: { value: '4' } })
+    expect(screen.getByText(/\+60% vs ordered cost — please check the invoice/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Receive stock' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled()) // a big change never blocks
+  })
+
   it('shows a message and disables receiving when nothing is outstanding', () => {
     const done = purchase({ purchase_items: [{ id: 'i2', drug_name: 'Ibuprofen 200mg', quantity: 10, received_quantity: 10 }] })
     render(<ReceiveGoodsModal purchase={done} onClose={onClose} onSubmit={onSubmit} />)

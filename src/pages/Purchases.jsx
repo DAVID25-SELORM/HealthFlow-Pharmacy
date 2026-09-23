@@ -259,6 +259,9 @@ const Purchases = () => {
         saleOnReturn: Boolean(item.saleOnReturn),
         batchNumber: '',
         expiryDate: '',
+        // Price context from the Reorder Centre (last vs previous cost). Display only.
+        priceNote: item.priceNote || '',
+        priceFlagged: Boolean(item.priceFlagged),
       }
     })
     setLineItems(seeded)
@@ -1002,6 +1005,11 @@ const Purchases = () => {
                               {item.brandName && <div className="item-meta">Brand: {item.brandName}</div>}
                               {item.genericName && <div className="item-meta">Generic: {item.genericName}</div>}
                               {item.saleOnReturn && <div className="item-meta item-meta--flag">Sale on return</div>}
+                              {item.priceNote && (
+                                <div className={`item-meta ${item.priceFlagged ? 'item-meta--flag' : ''}`}>
+                                  {item.priceNote}{item.priceFlagged ? ' — large change, please check' : ''}
+                                </div>
+                              )}
                               {item.batchNumber && <div className="item-meta">Batch: {item.batchNumber}</div>}
                               {item.expiryDate  && <div className="item-meta">Exp: {item.expiryDate}</div>}
                             </td>

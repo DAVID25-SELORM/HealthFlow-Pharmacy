@@ -67,7 +67,8 @@ export const getSuggestedReorderQuantity = (drug, alreadyOnOrder = 0) => {
 // The one line-item shape both Inventory's Reorder actions and the Reorder
 // Centre send to Purchases via location.state.reorderItems (see Purchases.jsx).
 // A single definition so the two pages can never quietly drift apart.
-export const buildReorderLineItem = (drug, alreadyOnOrder = 0, supplierOverride) => ({
+export const buildReorderLineItem = (drug, alreadyOnOrder = 0, supplierOverride, extras = {}) => ({
+  ...extras,
   drugId: drug.id,
   drugName: drug.name,
   brandName: drug.brand_name || '',

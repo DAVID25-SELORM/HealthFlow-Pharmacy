@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   getAllDrugs: vi.fn(),
   getOpenOrderQuantitiesByDrug: vi.fn(),
+  loadReorderInsights: vi.fn(),
+  getPharmacySettings: vi.fn(),
 }))
 
 vi.mock('react-router-dom', () => ({
@@ -20,7 +22,11 @@ vi.mock('../services/drugService', () => ({
   getAllDrugs: mocks.getAllDrugs,
   isDefaultCatalogDrug: () => false,
 }))
-vi.mock('../services/purchasesApi', () => ({ getOpenOrderQuantitiesByDrug: mocks.getOpenOrderQuantitiesByDrug }))
+vi.mock('../services/purchasesApi', () => ({
+  getOpenOrderQuantitiesByDrug: mocks.getOpenOrderQuantitiesByDrug,
+  loadReorderInsights: mocks.loadReorderInsights,
+}))
+vi.mock('../services/settingsService', () => ({ getPharmacySettings: mocks.getPharmacySettings }))
 
 const outOfStock = {
   id: 'd-out', name: 'Paracetamol 500mg', quantity: 0, reorder_level: 20, target_stock_level: 100,
@@ -45,6 +51,8 @@ describe('ReorderCentre', () => {
     mocks.useAuth.mockReturnValue({ canManagePurchases: true })
     mocks.getAllDrugs.mockResolvedValue([outOfStock, critical, lowNoSupplier, wellStocked])
     mocks.getOpenOrderQuantitiesByDrug.mockResolvedValue(new Map())
+    mocks.loadReorderInsights.mockResolvedValue(new Map())
+    mocks.getPharmacySettings.mockResolvedValue({ expiry_alert_days: 30 })
   })
 
   it('lists only medicines that need attention, with severity counts, excluding well-stocked ones', async () => {
@@ -128,5 +136,123 @@ describe('ReorderCentre', () => {
     render(<ReorderCentre />)
     expect(screen.getByText(/do not have permission/i)).toBeInTheDocument()
     expect(mocks.getAllDrugs).not.toHaveBeenCalled()
+  })
+})
+
+describe('ReorderCentre insights (phase 3)', () => {
+  const insight = (overrides = {}) => ({ units_sold: 0, history_days: 90, last_cost: null, previous_cost: null, last_supplier: null, ...overrides })
+  const rowOf = (name) => screen.getByText(name).closest('tr')
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.useAuth.mockReturnValue({ canManagePurchases: true })
+    mocks.getOpenOrderQuantitiesByDrug.mockResolvedValue(new Map())
+    mocks.getPharmacySettings.mockResolvedValue({ expiry_alert_days: 30 })
+    mocks.getAllDrugs.mockResolvedValue([outOfStock, critical, lowNoSupplier, wellStocked])
+    mocks.loadReorderInsights.mockResolvedValue(new Map())
+  })
+
+  it('asks for insights only for medicines that need attention', async () => {
+    render(<ReorderCentre />)
+    await waitFor(() => expect(screen.getByText('Paracetamol 500mg')).toBeInTheDocument())
+    const [ids] = mocks.loadReorderInsights.mock.calls[0]
+    expect([...ids].sort()).toEqual(['d-critical', 'd-low', 'd-out'])
+  })
+
+  it('shows days of stock and usage from real sales, and says "Not enough data" when history is short', async () => {
+    mocks.loadReorderInsights.mockResolvedValue(new Map([
+      ['d-critical', insight({ units_sold: 180 })], // 2/day, 4 in stock -> 2 days
+      ['d-low', insight({ units_sold: 3, history_days: 5 })], // too little history
+    ]))
+    render(<ReorderCentre />)
+    await waitFor(() => expect(screen.getByText('Amoxicillin 500mg')).toBeInTheDocument())
+    expect(rowOf('Amoxicillin 500mg')).toHaveTextContent('2 days')
+    expect(rowOf('Amoxicillin 500mg')).toHaveTextContent('2/day')
+    expect(rowOf('Ibuprofen 200mg')).toHaveTextContent('Not enough data')
+  })
+
+  it('shows last vs previous cost and flags an unusually large change', async () => {
+    mocks.loadReorderInsights.mockResolvedValue(new Map([
+      ['d-critical', insight({ last_cost: 42, previous_cost: 39.5 })],
+      ['d-out', insight({ last_cost: 60, previous_cost: 40 })],
+    ]))
+    render(<ReorderCentre />)
+    await waitFor(() => expect(screen.getByText('Amoxicillin 500mg')).toBeInTheDocument())
+    expect(rowOf('Amoxicillin 500mg')).toHaveTextContent('Last GHS 42.00 · Previous GHS 39.50 · +6.3%')
+    expect(rowOf('Amoxicillin 500mg').querySelector('.reorder-price-flagged')).toBeNull()
+    expect(rowOf('Paracetamol 500mg').querySelector('.reorder-price-flagged')).not.toBeNull()
+  })
+
+  it('warns about stock close to expiry using the configured window', async () => {
+    const soon = new Date(Date.now() + 40 * 86400000).toISOString().slice(0, 10)
+    mocks.getAllDrugs.mockResolvedValue([{ ...critical, expiry_date: soon }])
+    mocks.getPharmacySettings.mockResolvedValue({ expiry_alert_days: 60 })
+    render(<ReorderCentre />)
+    await waitFor(() => expect(screen.getByText('Amoxicillin 500mg')).toBeInTheDocument())
+    expect(rowOf('Amoxicillin 500mg')).toHaveTextContent(/4 units expire within 4\d days/)
+  })
+
+  it('does not warn when expiry is outside the window', async () => {
+    const later = new Date(Date.now() + 400 * 86400000).toISOString().slice(0, 10)
+    mocks.getAllDrugs.mockResolvedValue([{ ...critical, expiry_date: later }])
+    render(<ReorderCentre />)
+    await waitFor(() => expect(screen.getByText('Amoxicillin 500mg')).toBeInTheDocument())
+    expect(rowOf('Amoxicillin 500mg')).not.toHaveTextContent('expire')
+  })
+
+  it('ranks by priority: out of stock, then critical and fast moving, then the rest', async () => {
+    mocks.loadReorderInsights.mockResolvedValue(new Map([
+      ['d-critical', insight({ units_sold: 180 })], // fast: 2 days left -> priority 2
+      ['d-low', insight({ units_sold: 9 })], // slow -> priority 4
+    ]))
+    render(<ReorderCentre />)
+    await waitFor(() => expect(screen.getByText('Paracetamol 500mg')).toBeInTheDocument())
+    const order = [...document.querySelectorAll('.reorder-centre-table tbody .reorder-drug-name')].map((el) => el.textContent)
+    expect(order).toEqual(['Paracetamol 500mg', 'Amoxicillin 500mg', 'Ibuprofen 200mg'])
+    expect(rowOf('Paracetamol 500mg')).toHaveTextContent('Priority 1')
+    expect(rowOf('Amoxicillin 500mg')).toHaveTextContent('Priority 2')
+    expect(rowOf('Ibuprofen 200mg')).toHaveTextContent('Priority 4')
+    expect(rowOf('Amoxicillin 500mg').querySelector('.reorder-priority')).toHaveAttribute('title', 'Critically low · Fast moving')
+  })
+
+  it('sorts by fastest moving, with unknown speed last', async () => {
+    mocks.loadReorderInsights.mockResolvedValue(new Map([
+      ['d-out', insight({ units_sold: 90 })], // 1/day
+      ['d-critical', insight({ units_sold: 450 })], // 5/day
+    ]))
+    render(<ReorderCentre />)
+    await waitFor(() => expect(screen.getByText('Paracetamol 500mg')).toBeInTheDocument())
+    fireEvent.change(screen.getByDisplayValue('Sort: Most urgent'), { target: { value: 'fastest_moving' } })
+    const order = [...document.querySelectorAll('.reorder-centre-table tbody .reorder-drug-name')].map((el) => el.textContent)
+    expect(order).toEqual(['Amoxicillin 500mg', 'Paracetamol 500mg', 'Ibuprofen 200mg'])
+  })
+
+  it('falls back to the supplier it was last bought from, and says so', async () => {
+    mocks.loadReorderInsights.mockResolvedValue(new Map([['d-low', insight({ last_supplier: 'Accord Pharma' })]]))
+    render(<ReorderCentre />)
+    await waitFor(() => expect(screen.getByText('Ibuprofen 200mg')).toBeInTheDocument())
+    expect(rowOf('Ibuprofen 200mg').querySelector('.reorder-supplier-input')).toHaveValue('Accord Pharma')
+    expect(rowOf('Ibuprofen 200mg')).toHaveTextContent('From last purchase')
+    expect(screen.queryByText('Supplier required', { selector: 'strong' })).not.toBeInTheDocument()
+  })
+
+  it('carries price context into the purchase it creates', async () => {
+    mocks.loadReorderInsights.mockResolvedValue(new Map([['d-out', insight({ last_cost: 60, previous_cost: 40 })]]))
+    render(<ReorderCentre />)
+    await waitFor(() => expect(screen.getByText('Paracetamol 500mg')).toBeInTheDocument())
+    const group = screen.getByText('MedSupply Ltd', { selector: 'strong' }).closest('.reorder-supplier-group')
+    fireEvent.click(group.querySelector('button'))
+    expect(mocks.navigate).toHaveBeenCalledWith('/purchases', {
+      state: { reorderItems: [expect.objectContaining({ drugId: 'd-out', priceFlagged: true, priceNote: expect.stringContaining('+50%') })] },
+    })
+  })
+
+  it('still works, and says so, when sales speed and prices cannot be loaded', async () => {
+    mocks.loadReorderInsights.mockRejectedValue(new Error('rpc missing'))
+    render(<ReorderCentre />)
+    await waitFor(() => expect(screen.getByText('Paracetamol 500mg')).toBeInTheDocument())
+    expect(screen.getByRole('status')).toHaveTextContent('could not be loaded')
+    expect(rowOf('Paracetamol 500mg')).not.toHaveTextContent('Not enough data')
+    expect(rowOf('Paracetamol 500mg')).toHaveTextContent('Out of stock')
   })
 })

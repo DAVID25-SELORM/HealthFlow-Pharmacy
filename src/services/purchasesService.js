@@ -434,6 +434,18 @@ export const receivePurchaseGoods = async (id, lines, { receiptKey, notes = '' }
   return data
 }
 
+// Sales velocity and price history for the Reorder Centre, aggregated in the database
+// (get_reorder_insights) so the browser never downloads sales or purchase history.
+// Returns a Map of drug id -> { units_sold, history_days, last_cost, previous_cost, last_supplier, last_purchase_date }.
+export const getReorderInsights = async (drugIds = null, windowDays = 90) => {
+  const { data, error } = await supabase.rpc('get_reorder_insights', {
+    p_drug_ids: Array.isArray(drugIds) && drugIds.length ? drugIds : null,
+    p_window_days: windowDays,
+  })
+  if (error) throw error
+  return new Map((data || []).map((row) => [row.drug_id, row]))
+}
+
 // Display name for the printed PO's "created by". Best effort: a missing name never blocks printing.
 export const getUserDisplayName = async (userId) => {
   if (!userId) return ''

@@ -10,7 +10,8 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
 import { getAllDrugs } from '../services/drugService'
-import { getOpenOrderQuantitiesByDrug } from '../services/purchasesApi'
+import { getPharmacySettings } from '../services/settingsService'
+import { getOpenOrderQuantitiesByDrug, loadReorderInsights } from '../services/purchasesApi'
 import {
   NO_SUPPLIER_GROUP_KEY,
   STOCK_SEVERITY,
@@ -24,6 +25,18 @@ import {
   groupReorderItemsBySupplier,
   needsReorderAttention,
 } from '../utils/reorderCentre'
+import {
+  DEFAULT_EXPIRY_WINDOW_DAYS,
+  PRIORITY_LABELS,
+  USAGE_WINDOW_DAYS,
+  computeVelocity,
+  describePriceChange,
+  describeVelocity,
+  formatPriceChange,
+  formatUsagePerDay,
+  getExpiryWarning,
+  getReorderPriority,
+} from '../utils/reorderInsights'
 import './ReorderCentre.css'
 
 const SEVERITY_FILTERS = [
@@ -38,18 +51,15 @@ const SORT_OPTIONS = [
   { value: 'urgency', label: 'Most urgent' },
   { value: 'lowest_stock', label: 'Lowest stock' },
   { value: 'highest_value', label: 'Highest estimated value' },
+  { value: 'fastest_moving', label: 'Fastest moving' },
   { value: 'supplier', label: 'Supplier' },
 ]
 
-const SEVERITY_URGENCY_ORDER = {
-  [STOCK_SEVERITY.OUT_OF_STOCK]: 0,
-  [STOCK_SEVERITY.CRITICAL]: 1,
-  [STOCK_SEVERITY.LOW]: 2,
-  [STOCK_SEVERITY.OK]: 3,
-}
-
 const fmtCurrency = (value) =>
   `GHS ${Number(value || 0).toLocaleString('en-GH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+// Days of stock left, unknown last (an unknown speed must never outrank a known emergency).
+const daysOrInfinity = (row) => (row.velocity.daysOfStock == null ? Number.POSITIVE_INFINITY : row.velocity.daysOfStock)
 
 const ReorderCentre = () => {
   const { canManagePurchases } = useAuth()
@@ -58,6 +68,9 @@ const ReorderCentre = () => {
 
   const [drugs, setDrugs] = useState([])
   const [openOrderQuantities, setOpenOrderQuantities] = useState(new Map())
+  const [insights, setInsights] = useState(new Map())
+  const [insightsUnavailable, setInsightsUnavailable] = useState(false)
+  const [expiryWindowDays, setExpiryWindowDays] = useState(DEFAULT_EXPIRY_WINDOW_DAYS)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
@@ -74,15 +87,28 @@ const ReorderCentre = () => {
     try {
       setLoading(true)
       setError('')
-      const [drugRows, openOrders] = await Promise.all([
+      const [drugRows, openOrders, settings] = await Promise.all([
         getAllDrugs({ useTierAccess: true }),
         getOpenOrderQuantitiesByDrug().catch((loadError) => {
           console.warn('Unable to load open purchase order quantities:', loadError)
           return new Map()
         }),
+        getPharmacySettings().catch(() => null),
       ])
       setDrugs(drugRows)
       setOpenOrderQuantities(openOrders)
+      setExpiryWindowDays(Number.parseInt(settings?.expiry_alert_days, 10) || DEFAULT_EXPIRY_WINDOW_DAYS)
+
+      // Velocity and price history are extras: if they cannot be loaded the page still works.
+      try {
+        const ids = drugRows.filter(needsReorderAttention).map((drug) => drug.id)
+        setInsights(ids.length ? await loadReorderInsights(ids, USAGE_WINDOW_DAYS) : new Map())
+        setInsightsUnavailable(false)
+      } catch (insightsError) {
+        console.warn('Unable to load reorder insights:', insightsError)
+        setInsights(new Map())
+        setInsightsUnavailable(true)
+      }
     } catch (loadError) {
       setError(loadError.message || 'Unable to load the Reorder Centre.')
     } finally {
@@ -101,22 +127,36 @@ const ReorderCentre = () => {
         const alreadyOnOrder = openOrderQuantities.get(drug.id)?.quantity || 0
         const severity = getStockSeverity(drug)
         const suggestedQuantity = buildReorderLineItem(drug, alreadyOnOrder).suggestedQuantity
-        const supplier = assignedSuppliers[drug.id] ?? (drug.supplier || '')
+        const insight = insights.get(drug.id) || null
+        const velocity = computeVelocity(insight, drug.quantity)
+        const priceChange = describePriceChange(insight?.last_cost, insight?.previous_cost)
+        // Supplier: what staff assigned here, else the one on the medicine, else the one it
+        // was last bought from. Always just a suggestion — Purchases lets staff change it.
+        const assigned = assignedSuppliers[drug.id]
+        const onFile = drug.supplier || ''
+        const lastBoughtFrom = insight?.last_supplier || ''
+        const supplier = assigned ?? (onFile || lastBoughtFrom)
+        const supplierSource = assigned !== undefined ? 'assigned' : onFile ? 'medicine' : lastBoughtFrom ? 'last_purchase' : 'none'
         return {
           drug,
           severity,
           alreadyOnOrder,
           suggestedQuantity,
           supplier,
+          supplierSource,
+          velocity,
+          priceChange,
+          priority: getReorderPriority(severity, velocity),
+          expiryWarning: getExpiryWarning(drug, expiryWindowDays),
           estimatedValue: getEstimatedReorderValue(drug, suggestedQuantity),
           targetStockLevel: getEffectiveTargetStockLevel(drug),
           reorderLevel: getReorderLevel(drug),
         }
       })
-  }, [drugs, openOrderQuantities, assignedSuppliers])
+  }, [drugs, openOrderQuantities, insights, assignedSuppliers, expiryWindowDays])
 
   const supplierOptions = useMemo(
-    () => [...new Set(rows.map((row) => row.drug.supplier).filter(Boolean))].sort(),
+    () => [...new Set(rows.map((row) => row.supplier).filter(Boolean))].sort(),
     [rows]
   )
   const categoryOptions = useMemo(
@@ -130,13 +170,13 @@ const ReorderCentre = () => {
       const { drug } = row
       const matchesSearch =
         !term ||
-        [drug.name, drug.brand_name, drug.generic_name, drug.supplier]
+        [drug.name, drug.brand_name, drug.generic_name, row.supplier]
           .filter(Boolean)
           .some((value) => value.toLowerCase().includes(term))
       const matchesSeverity =
         severityFilter === 'all' ||
         (severityFilter === 'already_on_order' ? row.alreadyOnOrder > 0 : row.severity === severityFilter)
-      const matchesSupplier = supplierFilter === 'all' || drug.supplier === supplierFilter
+      const matchesSupplier = supplierFilter === 'all' || row.supplier === supplierFilter
       const matchesCategory = categoryFilter === 'all' || drug.category === categoryFilter
       return matchesSearch && matchesSeverity && matchesSupplier && matchesCategory
     })
@@ -148,24 +188,26 @@ const ReorderCentre = () => {
       sorted.sort((a, b) => (a.drug.quantity ?? 0) - (b.drug.quantity ?? 0))
     } else if (sortBy === 'highest_value') {
       sorted.sort((a, b) => b.estimatedValue - a.estimatedValue)
+    } else if (sortBy === 'fastest_moving') {
+      // Known usage first (highest first); medicines with unknown speed go last, not first.
+      sorted.sort((a, b) => (b.velocity.avgDailyUsage ?? -1) - (a.velocity.avgDailyUsage ?? -1))
     } else if (sortBy === 'supplier') {
       sorted.sort((a, b) => (a.supplier || '￿').localeCompare(b.supplier || '￿'))
     } else {
+      // Most urgent: priority level, then how soon it runs out, then how little is left.
       sorted.sort((a, b) => {
-        const order = SEVERITY_URGENCY_ORDER[a.severity] - SEVERITY_URGENCY_ORDER[b.severity]
-        return order !== 0 ? order : (a.drug.quantity ?? 0) - (b.drug.quantity ?? 0)
+        const byPriority = (a.priority.level ?? 9) - (b.priority.level ?? 9)
+        if (byPriority !== 0) return byPriority
+        const byDays = daysOrInfinity(a) - daysOrInfinity(b)
+        if (byDays !== 0 && !Number.isNaN(byDays)) return byDays
+        return (a.drug.quantity ?? 0) - (b.drug.quantity ?? 0)
       })
     }
     return sorted
   }, [filteredRows, sortBy])
 
   const supplierGroups = useMemo(
-    () =>
-      groupReorderItemsBySupplier(
-        sortedRows
-          .filter((row) => row.suggestedQuantity > 0)
-          .map((row) => ({ ...row, supplier: row.supplier }))
-      ),
+    () => groupReorderItemsBySupplier(sortedRows.filter((row) => row.suggestedQuantity > 0)),
     [sortedRows]
   )
 
@@ -186,7 +228,10 @@ const ReorderCentre = () => {
       return
     }
     const reorderItems = group.items.map((row) =>
-      buildReorderLineItem(row.drug, row.alreadyOnOrder, group.supplier)
+      buildReorderLineItem(row.drug, row.alreadyOnOrder, group.supplier, {
+        priceNote: formatPriceChange(row.priceChange),
+        priceFlagged: Boolean(row.priceChange?.flagged),
+      })
     )
     navigate('/purchases', { state: { reorderItems } })
   }
@@ -213,6 +258,12 @@ const ReorderCentre = () => {
       </div>
 
       {error && <div className="reorder-centre-alert" role="alert">{error}</div>}
+      {insightsUnavailable && !loading && (
+        <div className="reorder-centre-note" role="status">
+          Sales speed and price history could not be loaded, so days of stock and price changes are hidden.
+          Everything else still works.
+        </div>
+      )}
 
       {loading ? (
         <div className="reorder-centre-loading">Loading the Reorder Centre...</div>
@@ -313,13 +364,36 @@ const ReorderCentre = () => {
                             {[row.drug.brand_name, row.drug.generic_name].filter(Boolean).join(' · ')}
                           </div>
                         )}
+                        {row.expiryWarning && (
+                          <div className={`reorder-expiry-warning reorder-expiry-warning--${row.expiryWarning.kind}`}>
+                            <AlertTriangle size={12} /> {row.expiryWarning.message}
+                          </div>
+                        )}
                       </td>
-                      <td data-label="Current stock">{row.drug.quantity ?? 0}</td>
+                      <td data-label="Current stock">
+                        <div>{row.drug.quantity ?? 0}</div>
+                        {!insightsUnavailable && (
+                          <div className="reorder-drug-subtext" title={`Based on completed sales over the last ${USAGE_WINDOW_DAYS} days`}>
+                            {describeVelocity(row.velocity)}
+                            {row.velocity.avgDailyUsage > 0 && ` · ${formatUsagePerDay(row.velocity)}`}
+                          </div>
+                        )}
+                      </td>
                       <td data-label="Reorder level">{row.reorderLevel}</td>
                       <td data-label="Target stock level">{row.targetStockLevel}</td>
                       <td data-label="Already on order">{row.alreadyOnOrder || '-'}</td>
                       <td data-label="Suggested quantity">{row.suggestedQuantity}</td>
-                      <td data-label="Estimated value">{fmtCurrency(row.estimatedValue)}</td>
+                      <td data-label="Estimated value">
+                        <div>{fmtCurrency(row.estimatedValue)}</div>
+                        {row.priceChange && (
+                          <div
+                            className={`reorder-drug-subtext ${row.priceChange.flagged ? 'reorder-price-flagged' : ''}`}
+                            title={row.priceChange.flagged ? 'Unusually large price change since the previous purchase' : undefined}
+                          >
+                            {formatPriceChange(row.priceChange)}
+                          </div>
+                        )}
+                      </td>
                       <td data-label="Supplier">
                         {drugSupplierCell(row, assignSupplier)}
                       </td>
@@ -327,6 +401,14 @@ const ReorderCentre = () => {
                         <span className={`reorder-severity-badge ${getStockSeverityBadgeClass(row.severity)}`}>
                           {getStockSeverityLabel(row.severity)}
                         </span>
+                        {row.priority.level && (
+                          <div
+                            className={`reorder-priority reorder-priority--${row.priority.level}`}
+                            title={row.priority.reasons.join(' · ')}
+                          >
+                            {PRIORITY_LABELS[row.priority.level]}
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ))
@@ -366,6 +448,9 @@ const ReorderCentre = () => {
                     {group.items.map((row) => (
                       <li key={row.drug.id}>
                         {row.drug.name} — {row.suggestedQuantity} {row.drug.unit || 'unit'}
+                        {row.supplierSource === 'last_purchase' && (
+                          <span className="reorder-supplier-hint">supplier from last purchase</span>
+                        )}
                         {!group.supplier && (
                           <span className="reorder-supplier-required">
                             <AlertTriangle size={14} /> Supplier required
@@ -388,13 +473,18 @@ const ReorderCentre = () => {
 // obviously tied to this exact row without an extra prop-drilled component file.
 function drugSupplierCell(row, assignSupplier) {
   return (
-    <input
-      type="text"
-      className="reorder-supplier-input"
-      placeholder="Assign supplier"
-      value={row.supplier}
-      onChange={(event) => assignSupplier(row.drug.id, event.target.value)}
-    />
+    <>
+      <input
+        type="text"
+        className="reorder-supplier-input"
+        placeholder="Assign supplier"
+        value={row.supplier}
+        onChange={(event) => assignSupplier(row.drug.id, event.target.value)}
+      />
+      {row.supplierSource === 'last_purchase' && (
+        <div className="reorder-drug-subtext">From last purchase</div>
+      )}
+    </>
   )
 }
 

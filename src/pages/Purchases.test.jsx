@@ -115,6 +115,22 @@ describe('Purchases — arriving from Inventory Reorder', () => {
     expect(mocks.navigate).not.toHaveBeenCalled()
   })
 
+  it('shows price context on a line that came from the Reorder Centre, flagging a large change', async () => {
+    mocks.locationState = {
+      reorderItems: [
+        { drugId: 'a', drugName: 'Amoxicillin 500mg', unit: 'capsule', unitCost: 3.5, supplier: 'MedSupply Ltd', suggestedQuantity: 8, priceNote: 'Last GHS 60.00 · Previous GHS 40.00 · +50%', priceFlagged: true },
+        { drugId: 'b', drugName: 'Ibuprofen 200mg', unit: 'tablet', unitCost: 1, supplier: 'MedSupply Ltd', suggestedQuantity: 5, priceNote: 'Last GHS 1.00 · Previous GHS 1.00 · 0%', priceFlagged: false },
+      ],
+    }
+    render(<Purchases />)
+    await waitFor(() => expect(screen.getByRole('heading', { name: /new purchase order/i })).toBeInTheDocument())
+    const flagged = screen.getByText('Amoxicillin 500mg').closest('tr')
+    expect(flagged).toHaveTextContent('+50% — large change, please check')
+    const normal = screen.getByText('Ibuprofen 200mg').closest('tr')
+    expect(normal).toHaveTextContent('Previous GHS 1.00')
+    expect(normal).not.toHaveTextContent('please check')
+  })
+
   it('keeps a suggested quantity of 0 as 0 instead of defaulting it up to 1', async () => {
     mocks.locationState = {
       reorderItems: [

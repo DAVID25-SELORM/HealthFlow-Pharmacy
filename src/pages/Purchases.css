@@ -1041,3 +1041,12 @@
   .po-sheet-title { text-align: left; }
   .po-sheet-signatures { grid-template-columns: 1fr; }
 }
+
+.receive-price-note,
+.receive-price-flagged {
+  font-weight: 500;
+  font-size: 0.72rem;
+  color: var(--gray-500);
+}
+
+.receive-price-flagged { color: var(--danger); font-weight: 600; }

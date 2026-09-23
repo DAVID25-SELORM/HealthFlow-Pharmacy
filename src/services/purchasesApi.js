@@ -5,6 +5,7 @@ import {
   createSupplier,
   getAllPurchases,
   getPurchaseReceipts,
+  getReorderInsights,
   getUserDisplayName,
   placePurchase,
   receivePurchaseGoods,
@@ -158,6 +159,8 @@ export const receivePurchaseOrderGoods = async (id, lines, options) => {
   await requireInternet('Receiving goods requires internet because it posts inventory stock.')
   return receivePurchaseGoods(id, lines, options)
 }
+
+export const loadReorderInsights = async (drugIds, windowDays) => getReorderInsights(drugIds, windowDays)
 
 export const listPurchaseReceipts = async (purchaseId) => getPurchaseReceipts(purchaseId)
 
