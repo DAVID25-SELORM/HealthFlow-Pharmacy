@@ -4,6 +4,7 @@ import {
   createPurchase,
   createSupplier,
   getAllPurchases,
+  getBranchTransferOptions,
   getPurchaseReceipts,
   getReorderInsights,
   getUserDisplayName,
@@ -161,6 +162,8 @@ export const receivePurchaseOrderGoods = async (id, lines, options) => {
 }
 
 export const loadReorderInsights = async (drugIds, windowDays) => getReorderInsights(drugIds, windowDays)
+
+export const loadBranchTransferOptions = async (branchId, drugIds) => getBranchTransferOptions(branchId, drugIds)
 
 export const listPurchaseReceipts = async (purchaseId) => getPurchaseReceipts(purchaseId)
 

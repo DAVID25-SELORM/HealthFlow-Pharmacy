@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ReceiveGoodsModal from './ReceiveGoodsModal'
 import CancelOrderModal from './CancelOrderModal'
 import PurchaseOrderDocument from './PurchaseOrderDocument'
+import BranchTransferModal from './BranchTransferModal'
 
 const purchase = (overrides = {}) => ({
   id: 'p1',
@@ -169,5 +170,49 @@ describe('PurchaseOrderDocument', () => {
     expect(print).toHaveBeenCalledTimes(1)
     expect(document.querySelector('.modal-header')).toHaveClass('po-print-hide')
     print.mockRestore()
+  })
+})
+
+describe('BranchTransferModal', () => {
+  const options = [
+    { source_drug_id: 's1', source_branch_name: 'Kumasi', batch_number: 'B9', expiry_date: '2029-01-01', source_quantity: 90, spare_quantity: 70 },
+    { source_drug_id: 's2', source_branch_name: 'Tema', batch_number: 'B2', expiry_date: null, source_quantity: 35, spare_quantity: 15 },
+  ]
+  const onConfirm = vi.fn()
+  beforeEach(() => vi.clearAllMocks())
+  const renderModal = (extra = {}) => render(
+    <BranchTransferModal drugName="Amoxicillin 500mg" unit="capsule" suggestedQuantity={52} destinationBranchName="Accra Main" options={options} onClose={vi.fn()} onConfirm={onConfirm} {...extra} />,
+  )
+
+  it('lists each source with its batch, expiry and spare, and defaults to the best one and what is needed', () => {
+    renderModal()
+    expect(screen.getByText(/Accra Main needs about/)).toBeInTheDocument()
+    expect(screen.getByText('Kumasi · batch B9 · expires 2029-01-01')).toBeInTheDocument()
+    expect(screen.getByText('70 spare of 90')).toBeInTheDocument()
+    expect(screen.getByLabelText('Quantity to transfer')).toHaveValue(52)
+    expect(screen.getAllByRole('radio')[0]).toBeChecked()
+  })
+
+  it('switching source caps the default quantity at that source\'s spare', () => {
+    renderModal()
+    fireEvent.click(screen.getAllByRole('radio')[1])
+    expect(screen.getByLabelText('Quantity to transfer')).toHaveValue(15)
+  })
+
+  it('confirms only when asked, with the chosen source, quantity and note', async () => {
+    renderModal()
+    expect(onConfirm).not.toHaveBeenCalled()
+    fireEvent.change(screen.getByLabelText('Quantity to transfer'), { target: { value: '20' } })
+    fireEvent.change(screen.getByLabelText('Note (optional)'), { target: { value: 'Urgent' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Transfer stock' }))
+    await waitFor(() => expect(onConfirm).toHaveBeenCalledWith({ option: options[0], quantity: 20, notes: 'Urgent' }))
+  })
+
+  it('does not confirm an invalid quantity', () => {
+    renderModal()
+    fireEvent.change(screen.getByLabelText('Quantity to transfer'), { target: { value: '0' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Transfer stock' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('above zero')
+    expect(onConfirm).not.toHaveBeenCalled()
   })
 })

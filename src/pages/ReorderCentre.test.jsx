@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ReorderCentre from './ReorderCentre'
 
@@ -9,7 +9,10 @@ const mocks = vi.hoisted(() => ({
   getAllDrugs: vi.fn(),
   getOpenOrderQuantitiesByDrug: vi.fn(),
   loadReorderInsights: vi.fn(),
+  loadBranchTransferOptions: vi.fn(),
   getPharmacySettings: vi.fn(),
+  getBranches: vi.fn(),
+  transferInventoryDrug: vi.fn(),
 }))
 
 vi.mock('react-router-dom', () => ({
@@ -25,7 +28,10 @@ vi.mock('../services/drugService', () => ({
 vi.mock('../services/purchasesApi', () => ({
   getOpenOrderQuantitiesByDrug: mocks.getOpenOrderQuantitiesByDrug,
   loadReorderInsights: mocks.loadReorderInsights,
+  loadBranchTransferOptions: mocks.loadBranchTransferOptions,
 }))
+vi.mock('../services/branchService', () => ({ getBranches: mocks.getBranches }))
+vi.mock('../services/inventoryApi', () => ({ transferInventoryDrug: mocks.transferInventoryDrug }))
 vi.mock('../services/settingsService', () => ({ getPharmacySettings: mocks.getPharmacySettings }))
 
 const outOfStock = {
@@ -53,6 +59,8 @@ describe('ReorderCentre', () => {
     mocks.getOpenOrderQuantitiesByDrug.mockResolvedValue(new Map())
     mocks.loadReorderInsights.mockResolvedValue(new Map())
     mocks.getPharmacySettings.mockResolvedValue({ expiry_alert_days: 30 })
+    mocks.getBranches.mockResolvedValue([])
+    mocks.loadBranchTransferOptions.mockResolvedValue(new Map())
   })
 
   it('lists only medicines that need attention, with severity counts, excluding well-stocked ones', async () => {
@@ -254,5 +262,145 @@ describe('ReorderCentre insights (phase 3)', () => {
     expect(screen.getByRole('status')).toHaveTextContent('could not be loaded')
     expect(rowOf('Paracetamol 500mg')).not.toHaveTextContent('Not enough data')
     expect(rowOf('Paracetamol 500mg')).toHaveTextContent('Out of stock')
+  })
+})
+
+describe('ReorderCentre branches and transfer advice (phase 4)', () => {
+  const branches = [
+    { id: 'br-main', name: 'Accra Main', is_main: true, is_active: true },
+    { id: 'br-b', name: 'Kumasi', is_active: true },
+    { id: 'br-closed', name: 'Closed', is_active: false },
+  ]
+  const kumasiSpare = {
+    target_drug_id: 'd-critical', source_drug_id: 'src-1', source_branch_id: 'br-b', source_branch_name: 'Kumasi',
+    batch_number: 'B9', expiry_date: '2029-01-01', source_quantity: 90, source_reorder_level: 20, spare_quantity: 70,
+  }
+  const rowOf = (name) => screen.getByText(name).closest('tr')
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.useAuth.mockReturnValue({ canManagePurchases: true, canAdjustStock: true, profile: {} })
+    mocks.getOpenOrderQuantitiesByDrug.mockResolvedValue(new Map())
+    mocks.loadReorderInsights.mockResolvedValue(new Map())
+    mocks.getPharmacySettings.mockResolvedValue({ expiry_alert_days: 30 })
+    mocks.getAllDrugs.mockResolvedValue([outOfStock, critical, lowNoSupplier, wellStocked])
+    mocks.getBranches.mockResolvedValue(branches)
+    mocks.loadBranchTransferOptions.mockResolvedValue(new Map([['d-critical', [kumasiSpare]]]))
+  })
+
+  it('loads the main branch by default and offers only active branches', async () => {
+    render(<ReorderCentre />)
+    await waitFor(() => expect(screen.getByText('Paracetamol 500mg')).toBeInTheDocument())
+    expect(mocks.getAllDrugs).toHaveBeenCalledWith({ useTierAccess: true, branchId: 'br-main' })
+    const select = screen.getByLabelText('Branch')
+    expect(select).toHaveValue('br-main')
+    expect([...select.options].map((o) => o.textContent)).toEqual(['Accra Main', 'Kumasi'])
+  })
+
+  it('reloads for the chosen branch', async () => {
+    render(<ReorderCentre />)
+    await waitFor(() => expect(screen.getByText('Paracetamol 500mg')).toBeInTheDocument())
+    fireEvent.change(screen.getByLabelText('Branch'), { target: { value: 'br-b' } })
+    await waitFor(() => expect(mocks.getAllDrugs).toHaveBeenLastCalledWith({ useTierAccess: true, branchId: 'br-b' }))
+  })
+
+  it('fixes a branch-bound user to their own branch and gives them no transfer advice', async () => {
+    mocks.useAuth.mockReturnValue({ canManagePurchases: true, canAdjustStock: true, profile: { branch_id: 'br-b' } })
+    render(<ReorderCentre />)
+    await waitFor(() => expect(screen.getByText('Paracetamol 500mg')).toBeInTheDocument())
+    expect(mocks.getAllDrugs).toHaveBeenCalledWith({ useTierAccess: true, branchId: 'br-b' })
+    expect(screen.getByLabelText('Branch')).toBeDisabled()
+    expect(mocks.loadBranchTransferOptions).not.toHaveBeenCalled()
+  })
+
+  it('behaves exactly as before for a single-branch pharmacy: no selector, no branch filter, no advice', async () => {
+    mocks.getBranches.mockResolvedValue([])
+    render(<ReorderCentre />)
+    await waitFor(() => expect(screen.getByText('Paracetamol 500mg')).toBeInTheDocument())
+    expect(screen.queryByLabelText('Branch')).not.toBeInTheDocument()
+    expect(mocks.getAllDrugs).toHaveBeenCalledWith({ useTierAccess: true, branchId: undefined })
+    expect(mocks.loadBranchTransferOptions).not.toHaveBeenCalled()
+  })
+
+  it('asks for transfer options only for the medicines that need attention, in the chosen branch', async () => {
+    render(<ReorderCentre />)
+    await waitFor(() => expect(screen.getByText('Paracetamol 500mg')).toBeInTheDocument())
+    const [branchId, ids] = mocks.loadBranchTransferOptions.mock.calls[0]
+    expect(branchId).toBe('br-main')
+    expect([...ids].sort()).toEqual(['d-critical', 'd-low', 'd-out'])
+  })
+
+  it('shows which branch has spare stock next to the suggestion', async () => {
+    render(<ReorderCentre />)
+    await waitFor(() => expect(screen.getByText('Amoxicillin 500mg')).toBeInTheDocument())
+    expect(rowOf('Amoxicillin 500mg')).toHaveTextContent('Kumasi has 70 spare — transfer instead')
+    expect(rowOf('Paracetamol 500mg')).not.toHaveTextContent('spare')
+  })
+
+  it('never transfers on its own: just showing the advice moves no stock', async () => {
+    render(<ReorderCentre />)
+    await waitFor(() => expect(screen.getByText('Amoxicillin 500mg')).toBeInTheDocument())
+    expect(mocks.transferInventoryDrug).not.toHaveBeenCalled()
+  })
+
+  it('transfers only after the user confirms, from the chosen source into the selected branch', async () => {
+    mocks.transferInventoryDrug.mockResolvedValue({ success: true })
+    render(<ReorderCentre />)
+    await waitFor(() => expect(screen.getByText('Amoxicillin 500mg')).toBeInTheDocument())
+    fireEvent.click(within(rowOf('Amoxicillin 500mg')).getByRole('button', { name: /transfer instead/ }))
+    const dialog = await screen.findByRole('form', { name: 'Transfer stock instead of buying' })
+    expect(within(dialog).getByLabelText('Quantity to transfer')).toHaveValue(56) // 60 target - 4 stock
+    expect(mocks.transferInventoryDrug).not.toHaveBeenCalled()
+    fireEvent.change(within(dialog).getByLabelText('Quantity to transfer'), { target: { value: '30' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Transfer stock' }))
+    await waitFor(() => expect(mocks.transferInventoryDrug).toHaveBeenCalledTimes(1))
+    expect(mocks.transferInventoryDrug).toHaveBeenCalledWith(expect.objectContaining({
+      drugId: 'src-1', destinationBranchId: 'br-main', quantity: 30,
+    }))
+    await waitFor(() => expect(mocks.notify).toHaveBeenCalledWith('Transferred 30 Amoxicillin 500mg from Kumasi.', 'success'))
+    expect(mocks.getAllDrugs.mock.calls.length).toBeGreaterThan(1) // reloads so the suggestion shrinks
+  })
+
+  it('refuses to transfer more than the source can spare', async () => {
+    render(<ReorderCentre />)
+    await waitFor(() => expect(screen.getByText('Amoxicillin 500mg')).toBeInTheDocument())
+    fireEvent.click(within(rowOf('Amoxicillin 500mg')).getByRole('button', { name: /transfer instead/ }))
+    const dialog = await screen.findByRole('form', { name: 'Transfer stock instead of buying' })
+    fireEvent.change(within(dialog).getByLabelText('Quantity to transfer'), { target: { value: '71' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Transfer stock' }))
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('only has 70 spare')
+    expect(mocks.transferInventoryDrug).not.toHaveBeenCalled()
+  })
+
+  it('only offers the transfer action to someone allowed to move stock; others just see the advice', async () => {
+    mocks.useAuth.mockReturnValue({ canManagePurchases: true, canAdjustStock: false, profile: {} })
+    render(<ReorderCentre />)
+    await waitFor(() => expect(screen.getByText('Amoxicillin 500mg')).toBeInTheDocument())
+    expect(rowOf('Amoxicillin 500mg')).toHaveTextContent('Kumasi has 70 spare')
+    expect(within(rowOf('Amoxicillin 500mg')).queryByRole('button', { name: /transfer instead/ })).not.toBeInTheDocument()
+  })
+
+  it('reports a failed transfer without reloading or losing the page', async () => {
+    mocks.transferInventoryDrug.mockRejectedValue(new Error('Insufficient stock for this transfer.'))
+    render(<ReorderCentre />)
+    await waitFor(() => expect(screen.getByText('Amoxicillin 500mg')).toBeInTheDocument())
+    fireEvent.click(within(rowOf('Amoxicillin 500mg')).getByRole('button', { name: /transfer instead/ }))
+    const dialog = await screen.findByRole('form', { name: 'Transfer stock instead of buying' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Transfer stock' }))
+    await waitFor(() => expect(mocks.notify).toHaveBeenCalledWith('Insufficient stock for this transfer.', 'error'))
+    expect(screen.getByText('Amoxicillin 500mg')).toBeInTheDocument()
+  })
+
+  it('still works when transfer options cannot be loaded', async () => {
+    mocks.loadBranchTransferOptions.mockRejectedValue(new Error('function missing'))
+    render(<ReorderCentre />)
+    await waitFor(() => expect(screen.getByText('Amoxicillin 500mg')).toBeInTheDocument())
+    expect(rowOf('Amoxicillin 500mg')).not.toHaveTextContent('spare')
+  })
+
+  it('does not hide the purchase path: the supplier groups and order buttons are still there', async () => {
+    render(<ReorderCentre />)
+    await waitFor(() => expect(screen.getByText('Amoxicillin 500mg')).toBeInTheDocument())
+    expect(screen.getAllByRole('button', { name: /Create Purchase Order/ }).length).toBeGreaterThan(0)
   })
 })

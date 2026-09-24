@@ -11,7 +11,15 @@ import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
 import { getAllDrugs } from '../services/drugService'
 import { getPharmacySettings } from '../services/settingsService'
-import { getOpenOrderQuantitiesByDrug, loadReorderInsights } from '../services/purchasesApi'
+import { getBranches } from '../services/branchService'
+import { transferInventoryDrug } from '../services/inventoryApi'
+import {
+  getOpenOrderQuantitiesByDrug,
+  loadBranchTransferOptions,
+  loadReorderInsights,
+} from '../services/purchasesApi'
+import BranchTransferModal from '../components/purchases/BranchTransferModal'
+import { summarizeTransferAdvice } from '../utils/branchTransfer'
 import {
   NO_SUPPLIER_GROUP_KEY,
   STOCK_SEVERITY,
@@ -62,11 +70,16 @@ const fmtCurrency = (value) =>
 const daysOrInfinity = (row) => (row.velocity.daysOfStock == null ? Number.POSITIVE_INFINITY : row.velocity.daysOfStock)
 
 const ReorderCentre = () => {
-  const { canManagePurchases } = useAuth()
+  const { canManagePurchases, canAdjustStock, profile } = useAuth()
   const { notify } = useNotification()
   const navigate = useNavigate()
 
   const [drugs, setDrugs] = useState([])
+  const [branches, setBranches] = useState([])
+  const [selectedBranchId, setSelectedBranchId] = useState('')
+  const [transferOptions, setTransferOptions] = useState(new Map())
+  const [transferTarget, setTransferTarget] = useState(null)
+  const [transferring, setTransferring] = useState(false)
   const [openOrderQuantities, setOpenOrderQuantities] = useState(new Map())
   const [insights, setInsights] = useState(new Map())
   const [insightsUnavailable, setInsightsUnavailable] = useState(false)
@@ -83,12 +96,12 @@ const ReorderCentre = () => {
   // is actually created (Purchases still lets staff change it before saving).
   const [assignedSuppliers, setAssignedSuppliers] = useState({})
 
-  const load = async () => {
+  const load = async (branchId = selectedBranchId) => {
     try {
       setLoading(true)
       setError('')
       const [drugRows, openOrders, settings] = await Promise.all([
-        getAllDrugs({ useTierAccess: true }),
+        getAllDrugs({ useTierAccess: true, branchId: branchId || undefined }),
         getOpenOrderQuantitiesByDrug().catch((loadError) => {
           console.warn('Unable to load open purchase order quantities:', loadError)
           return new Map()
@@ -109,6 +122,18 @@ const ReorderCentre = () => {
         setInsights(new Map())
         setInsightsUnavailable(true)
       }
+
+      // Advisory transfer options: only for organization-level staff in a multi-branch pharmacy
+      // (branch-bound staff never see other branches' stock). Optional, so a failure is silent.
+      setTransferOptions(new Map())
+      if (branchId && !profile?.branch_id) {
+        try {
+          const ids = drugRows.filter(needsReorderAttention).map((drug) => drug.id)
+          if (ids.length) setTransferOptions(await loadBranchTransferOptions(branchId, ids))
+        } catch (transferError) {
+          console.warn('Unable to load branch transfer options:', transferError)
+        }
+      }
     } catch (loadError) {
       setError(loadError.message || 'Unable to load the Reorder Centre.')
     } finally {
@@ -116,8 +141,28 @@ const ReorderCentre = () => {
     }
   }
 
+  // Pick the branch first (a branch-bound user is fixed to theirs), then load that branch only.
+  // A single-branch pharmacy has no branches to choose from and loads exactly as before.
   useEffect(() => {
-    if (canManagePurchases) void load()
+    if (!canManagePurchases) return
+    let cancelled = false
+    const init = async () => {
+      let active = []
+      try {
+        active = (await getBranches()).filter((row) => row.is_active !== false)
+      } catch (branchError) {
+        console.warn('Unable to load branches:', branchError)
+      }
+      if (cancelled) return
+      const initial = active.length
+        ? profile?.branch_id || active.find((row) => row.is_main)?.id || active[0].id
+        : ''
+      setBranches(active)
+      setSelectedBranchId(initial)
+      await load(initial)
+    }
+    void init()
+    return () => { cancelled = true }
   }, [canManagePurchases])
 
   const rows = useMemo(() => {
@@ -147,13 +192,14 @@ const ReorderCentre = () => {
           velocity,
           priceChange,
           priority: getReorderPriority(severity, velocity),
+          transferAdvice: summarizeTransferAdvice(transferOptions.get(drug.id), suggestedQuantity),
           expiryWarning: getExpiryWarning(drug, expiryWindowDays),
           estimatedValue: getEstimatedReorderValue(drug, suggestedQuantity),
           targetStockLevel: getEffectiveTargetStockLevel(drug),
           reorderLevel: getReorderLevel(drug),
         }
       })
-  }, [drugs, openOrderQuantities, insights, assignedSuppliers, expiryWindowDays])
+  }, [drugs, openOrderQuantities, insights, transferOptions, assignedSuppliers, expiryWindowDays])
 
   const supplierOptions = useMemo(
     () => [...new Set(rows.map((row) => row.supplier).filter(Boolean))].sort(),
@@ -218,6 +264,27 @@ const ReorderCentre = () => {
     [STOCK_SEVERITY.LOW]: rows.filter((row) => row.severity === STOCK_SEVERITY.LOW).length,
   }
 
+  const selectedBranchName = branches.find((row) => row.id === selectedBranchId)?.name || ''
+
+  const handleTransfer = async ({ option, quantity, notes }) => {
+    try {
+      setTransferring(true)
+      await transferInventoryDrug({
+        drugId: option.source_drug_id,
+        destinationBranchId: selectedBranchId,
+        quantity,
+        notes: notes || `Reorder Centre: transferred instead of buying (${transferTarget.drug.name})`,
+      })
+      notify(`Transferred ${quantity} ${transferTarget.drug.name} from ${option.source_branch_name}.`, 'success')
+      setTransferTarget(null)
+      await load(selectedBranchId)
+    } catch (transferError) {
+      notify(transferError.message || 'Unable to transfer stock.', 'error')
+    } finally {
+      setTransferring(false)
+    }
+  }
+
   const assignSupplier = (drugId, value) => {
     setAssignedSuppliers((current) => ({ ...current, [drugId]: value }))
   }
@@ -251,10 +318,29 @@ const ReorderCentre = () => {
           <h1>Reorder Centre</h1>
           <p>Everything that needs restocking, grouped by supplier, with a suggested quantity for each.</p>
         </div>
-        <button className="btn btn-secondary" type="button" onClick={() => void load()} disabled={loading}>
-          <RefreshCcw size={18} />
-          Refresh
-        </button>
+        <div className="reorder-centre-header-actions">
+          {branches.length > 0 && (
+            <label className="reorder-branch-select">
+              <span>Branch</span>
+              <select
+                value={selectedBranchId}
+                disabled={Boolean(profile?.branch_id) || loading}
+                onChange={(event) => {
+                  setSelectedBranchId(event.target.value)
+                  void load(event.target.value)
+                }}
+              >
+                {branches.map((row) => (
+                  <option key={row.id} value={row.id}>{row.name}</option>
+                ))}
+              </select>
+            </label>
+          )}
+          <button className="btn btn-secondary" type="button" onClick={() => void load()} disabled={loading}>
+            <RefreshCcw size={18} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {error && <div className="reorder-centre-alert" role="alert">{error}</div>}
@@ -382,7 +468,23 @@ const ReorderCentre = () => {
                       <td data-label="Reorder level">{row.reorderLevel}</td>
                       <td data-label="Target stock level">{row.targetStockLevel}</td>
                       <td data-label="Already on order">{row.alreadyOnOrder || '-'}</td>
-                      <td data-label="Suggested quantity">{row.suggestedQuantity}</td>
+                      <td data-label="Suggested quantity">
+                        <div>{row.suggestedQuantity}</div>
+                        {row.transferAdvice && row.suggestedQuantity > 0 && (
+                          canAdjustStock ? (
+                            <button
+                              type="button"
+                              className="reorder-transfer-chip"
+                              title="Move existing stock from another branch instead of buying"
+                              onClick={() => setTransferTarget(row)}
+                            >
+                              {row.transferAdvice.message} — transfer instead
+                            </button>
+                          ) : (
+                            <div className="reorder-drug-subtext">{row.transferAdvice.message}</div>
+                          )
+                        )}
+                      </td>
                       <td data-label="Estimated value">
                         <div>{fmtCurrency(row.estimatedValue)}</div>
                         {row.priceChange && (
@@ -464,6 +566,18 @@ const ReorderCentre = () => {
             )}
           </section>
         </>
+      )}
+      {transferTarget && (
+        <BranchTransferModal
+          drugName={transferTarget.drug.name}
+          unit={transferTarget.drug.unit || 'unit'}
+          suggestedQuantity={transferTarget.suggestedQuantity}
+          destinationBranchName={selectedBranchName}
+          options={transferTarget.transferAdvice.options}
+          submitting={transferring}
+          onClose={() => setTransferTarget(null)}
+          onConfirm={handleTransfer}
+        />
       )}
     </div>
   )

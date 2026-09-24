@@ -446,6 +446,22 @@ export const getReorderInsights = async (drugIds = null, windowDays = 90) => {
   return new Map((data || []).map((row) => [row.drug_id, row]))
 }
 
+// Advisory: other branches' spare stock of the same medicines (get_branch_transfer_options).
+// Returns a Map of target drug id -> options, largest spare first. Empty for branch-bound staff.
+export const getBranchTransferOptions = async (branchId, drugIds) => {
+  const { data, error } = await supabase.rpc('get_branch_transfer_options', {
+    p_branch_id: branchId,
+    p_drug_ids: drugIds,
+  })
+  if (error) throw error
+  const byDrug = new Map()
+  for (const row of data || []) {
+    if (!byDrug.has(row.target_drug_id)) byDrug.set(row.target_drug_id, [])
+    byDrug.get(row.target_drug_id).push(row)
+  }
+  return byDrug
+}
+
 // Display name for the printed PO's "created by". Best effort: a missing name never blocks printing.
 export const getUserDisplayName = async (userId) => {
   if (!userId) return ''

@@ -21,6 +21,7 @@ import {
   cancelPurchase,
   getAllPurchases,
   getPurchasesStats,
+  getBranchTransferOptions,
   getReorderInsights,
   placePurchase,
   receivePurchaseGoods,
@@ -117,6 +118,27 @@ describe('purchase lifecycle service', () => {
     it('surfaces "reason required" and "already received" from the database', async () => {
       mocks.rpc.mockResolvedValue({ data: { error: 'Enter a reason for cancelling an order that has been placed.' }, error: null })
       await expect(cancelPurchase('po-1')).rejects.toThrow('Enter a reason')
+    })
+  })
+
+  describe('getBranchTransferOptions', () => {
+    it('groups the options by the medicine that needs stock', async () => {
+      mocks.rpc.mockResolvedValue({ data: [
+        { target_drug_id: 'd1', source_drug_id: 's1', spare_quantity: 70 },
+        { target_drug_id: 'd1', source_drug_id: 's2', spare_quantity: 15 },
+        { target_drug_id: 'd2', source_drug_id: 's3', spare_quantity: 5 },
+      ], error: null })
+      const result = await getBranchTransferOptions('br-a', ['d1', 'd2'])
+      expect(mocks.rpc).toHaveBeenCalledWith('get_branch_transfer_options', { p_branch_id: 'br-a', p_drug_ids: ['d1', 'd2'] })
+      expect(result.get('d1')).toHaveLength(2)
+      expect(result.get('d2')).toHaveLength(1)
+    })
+
+    it('returns an empty map for branch-bound staff and surfaces database errors', async () => {
+      mocks.rpc.mockResolvedValue({ data: [], error: null })
+      expect((await getBranchTransferOptions('br-a', ['d1'])).size).toBe(0)
+      mocks.rpc.mockResolvedValue({ data: null, error: new Error('permission denied') })
+      await expect(getBranchTransferOptions('br-a', ['d1'])).rejects.toThrow('permission denied')
     })
   })
 
