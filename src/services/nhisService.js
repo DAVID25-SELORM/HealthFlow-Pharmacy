@@ -8645,42 +8645,85 @@ const concatPhpBytes = (parts) => {
   return output
 }
 
-const phpSerializeRawStringBytes = (bytes) =>
-  concatPhpBytes([
-    encodePhpAscii(`s:${bytes.length}:"`),
-    bytes,
-    encodePhpAscii('";'),
-  ])
+// Serializes into a flat list of byte chunks and joins them once at the end. The previous
+// implementation concatenated at every nesting level, copying every attachment several times
+// (bundle -> table -> row -> value), which multiplied peak browser memory. Output is byte-identical.
+const PHP_WRITER_SCRATCH_BYTES = 1 << 20
+const PHP_WRITER_INLINE_LIMIT = 1 << 16
 
-const phpSerializeKeyBytes = (key) =>
-  Number.isInteger(key) ? encodePhpAscii(`i:${key};`) : phpSerializeBytes(String(key))
+const createPhpByteWriter = () => {
+  const chunks = []
+  let scratch = new Uint8Array(PHP_WRITER_SCRATCH_BYTES)
+  let used = 0
+  const flush = () => {
+    if (!used) return
+    chunks.push(scratch.subarray(0, used))
+    scratch = new Uint8Array(PHP_WRITER_SCRATCH_BYTES)
+    used = 0
+  }
+  const write = (bytes) => {
+    if (bytes.length >= PHP_WRITER_INLINE_LIMIT) {
+      flush()
+      chunks.push(bytes) // large payloads (attachments) are referenced, not copied
+      return
+    }
+    if (used + bytes.length > scratch.length) flush()
+    scratch.set(bytes, used)
+    used += bytes.length
+  }
+  return {
+    write,
+    writeAscii: (value) => write(encodePhpAscii(value)),
+    finish: () => {
+      flush()
+      return concatPhpBytes(chunks)
+    },
+  }
+}
 
-const phpSerializeBytes = (value) => {
-  if (value === null || value === undefined) return encodePhpAscii('N;')
-  if (value instanceof Uint8Array) return phpSerializeRawStringBytes(value)
-  if (typeof value === 'boolean') return encodePhpAscii(`b:${value ? 1 : 0};`)
+const writePhpRawString = (writer, bytes) => {
+  writer.writeAscii(`s:${bytes.length}:"`)
+  writer.write(bytes)
+  writer.writeAscii('";')
+}
+
+const writePhpKey = (writer, key) => {
+  if (Number.isInteger(key)) writer.writeAscii(`i:${key};`)
+  else writePhpRawString(writer, PHP_TEXT_ENCODER.encode(String(key)))
+}
+
+const writePhpValue = (writer, value) => {
+  if (value === null || value === undefined) return writer.writeAscii('N;')
+  if (value instanceof Uint8Array) return writePhpRawString(writer, value)
+  if (typeof value === 'boolean') return writer.writeAscii(`b:${value ? 1 : 0};`)
   if (typeof value === 'number') {
-    return encodePhpAscii(Number.isInteger(value) ? `i:${value};` : `d:${Number.isFinite(value) ? value : 0};`)
+    return writer.writeAscii(Number.isInteger(value) ? `i:${value};` : `d:${Number.isFinite(value) ? value : 0};`)
   }
-  if (typeof value === 'string') {
-    return phpSerializeRawStringBytes(PHP_TEXT_ENCODER.encode(value))
-  }
+  if (typeof value === 'string') return writePhpRawString(writer, PHP_TEXT_ENCODER.encode(value))
   if (Array.isArray(value)) {
-    return concatPhpBytes([
-      encodePhpAscii(`a:${value.length}:{`),
-      ...value.flatMap((item, index) => [phpSerializeKeyBytes(index), phpSerializeBytes(item)]),
-      encodePhpAscii('}'),
-    ])
+    writer.writeAscii(`a:${value.length}:{`)
+    value.forEach((item, index) => {
+      writePhpKey(writer, index)
+      writePhpValue(writer, item)
+    })
+    return writer.writeAscii('}')
   }
   if (typeof value === 'object') {
     const entries = Object.entries(value)
-    return concatPhpBytes([
-      encodePhpAscii(`a:${entries.length}:{`),
-      ...entries.flatMap(([key, item]) => [phpSerializeKeyBytes(key), phpSerializeBytes(item)]),
-      encodePhpAscii('}'),
-    ])
+    writer.writeAscii(`a:${entries.length}:{`)
+    entries.forEach(([key, item]) => {
+      writePhpKey(writer, key)
+      writePhpValue(writer, item)
+    })
+    return writer.writeAscii('}')
   }
-  return phpSerializeBytes(String(value))
+  return writePhpValue(writer, String(value))
+}
+
+const phpSerializeBytes = (value) => {
+  const writer = createPhpByteWriter()
+  writePhpValue(writer, value)
+  return writer.finish()
 }
 
 const deflateClaimItPayload = async (serializedPayload) => {
@@ -9220,7 +9263,14 @@ const buildClaimItRows = async (payload, runtimeOptions = {}) => {
           await new Promise((resolve) => setTimeout(resolve, 750))
           result = await prepareClaimItAttachmentPdfPayload(task.attachment)
         }
-        attachmentCacheByKey.set(task.cacheKey, { result })
+        // Keep only what the row builder needs: the compressed bytes and the diagnostic. The raw
+        // PDF and its base64 copy (never read again) are released as soon as this task ends.
+        attachmentCacheByKey.set(task.cacheKey, {
+          result: {
+            diagnostic: result.diagnostic,
+            compressedData: await deflateClaimItPayload(result.pdfBytes),
+          },
+        })
         if (typeof console !== 'undefined') {
           console.info(`[NHIS CXF]${runId ? ` [${runId}]` : ''} Downloaded attachment for ${task.claimNumber} in ${Math.round(getNhisExportNow() - taskStartedAt)} ms`)
         }
@@ -9447,7 +9497,7 @@ const buildClaimItRows = async (payload, runtimeOptions = {}) => {
       const attachmentDataRow = {
         _data_id: String((claimIndex + 1) * 50000 + 1),
         _attach_id: attachmentId,
-        data: await deflateClaimItPayload(attachmentPayload.pdfBytes),
+        data: attachmentPayload.compressedData,
       }
       claimAttachmentRows.push(attachmentRow)
       attachments.push(attachmentRow)
