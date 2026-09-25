@@ -699,7 +699,9 @@ const parseNonNegativeNumber = (value: unknown, label: string) => {
 // calculations fall back to reorder_level for that one calculation only — this
 // column is never guessed or mass-written from that fallback.
 const parseOptionalNonNegativeNumber = (value: unknown, label: string) => {
-  if (value === undefined || value === null || normalizeText(value) === '') return null
+  // The browser sends JSON numbers. normalizeText(number) returns '', which
+  // would silently clear a valid target (including zero) instead of saving it.
+  if (value === undefined || value === null || (typeof value === 'string' && value.trim() === '')) return null
   return parseNonNegativeNumber(value, label)
 }
 

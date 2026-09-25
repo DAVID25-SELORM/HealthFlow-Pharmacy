@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { stripTypeScriptTypes } from 'node:module'
 import { describe, expect, it } from 'vitest'
 
 const functionSourcePath = path.resolve('supabase/functions/tier-access/index.ts')
@@ -110,14 +111,24 @@ describe('tier-access drug target stock level (Reorder Centre phase 1)', () => {
     expect(createPayload).toContain('target_stock_level: targetStockLevel')
   })
 
-  it('treats a missing/blank target stock level as null, never a guessed number', async () => {
+  it.each([
+    [12, 12], [0, 0], [12.5, 12.5], ['12', 12], [' 12 ', 12],
+    [undefined, null], [null, null], ['', null], ['   ', null],
+  ])('parses target stock level %s as %s without discarding JSON numbers', async (value, expected) => {
     const source = await fs.readFile(functionSourcePath, 'utf8')
-    const helper = source.slice(
-      source.indexOf('const parseOptionalNonNegativeNumber'),
+    const helpers = source.slice(
+      source.indexOf('const parseNonNegativeNumber'),
       source.indexOf('const assertTargetStockAtLeastReorderLevel')
     )
-
-    expect(helper).toContain("if (value === undefined || value === null || normalizeText(value) === '') return null")
+    // Execute the server's actual parser, not a source-string assertion that can
+    // accidentally endorse the bug. The browser sends targetStockLevel as JSON number.
+    const parse = new Function('normalizeText', `${stripTypeScriptTypes(helpers)}; return parseOptionalNonNegativeNumber`)(
+      (input) => typeof input === 'string' ? input.trim() : ''
+    )
+    expect(parse(value, 'Target stock level')).toBe(expected)
+    for (const invalid of [-1, NaN, Infinity, 'invalid']) {
+      expect(() => parse(invalid, 'Target stock level')).toThrow('valid non-negative number')
+    }
   })
 
   it('only updates target stock level when the request includes it, and re-validates against the effective reorder level', async () => {
