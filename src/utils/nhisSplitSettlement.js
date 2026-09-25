@@ -17,6 +17,15 @@ export const normalizeNhisTopUpPolicy = (value, { legacyTopUpsEnabled = false } 
     : NHIS_TOP_UP_POLICIES.NOT_ALLOWED
 }
 
+// A medicine flagged as NHIS-listed whose tariff cannot be resolved must never be silently treated
+// as private (or as covered): staff have to see it and fix the mapping.
+export const NHIS_LINE_COVERAGE = Object.freeze({
+  FULLY_COVERED: 'FULLY_COVERED',
+  PARTIALLY_COVERED: 'PARTIALLY_COVERED',
+  NOT_COVERED: 'NOT_COVERED',
+  UNRESOLVED: 'UNRESOLVED',
+})
+
 export const isNhisSettlementEligible = (item) => {
   const code = String(item?.nhisCode ?? item?.nhis_code ?? '').trim()
   const tariff = Number(item?.nhisPrice ?? item?.nhis_price)
@@ -57,11 +66,16 @@ export const calculateNhisSplitSettlement = ({
     const difference = money(netRetailAmount - nhisCoveredAmount)
     const patientTopUpAmount = eligible && patientTopUpsAllowed ? difference : 0
     const privateAmount = eligible ? 0 : netRetailAmount
+    const listedInNhis = Boolean(item?.nhisListed ?? item?.is_nhis_listed)
+    const coverage = eligible
+      ? (difference > 0 ? NHIS_LINE_COVERAGE.PARTIALLY_COVERED : NHIS_LINE_COVERAGE.FULLY_COVERED)
+      : (listedInNhis ? NHIS_LINE_COVERAGE.UNRESOLVED : NHIS_LINE_COVERAGE.NOT_COVERED)
     const policyAdjustmentAmount = eligible && !patientTopUpsAllowed ? difference : 0
 
     return {
       ...item,
       nhisSettlement: eligible ? (difference > 0 ? 'nhis_top_up' : 'nhis_covered') : 'private',
+      coverage,
       retailAmount,
       discountAmount: lineDiscount,
       netRetailAmount,
@@ -89,6 +103,7 @@ export const calculateNhisSplitSettlement = ({
     privateNonNhisAmount,
     policyAdjustmentAmount,
     patientDueAmount: money(patientTopUpAmount + privateNonNhisAmount),
+    unresolvedLines: lines.filter((line) => line.coverage === NHIS_LINE_COVERAGE.UNRESOLVED),
     lines,
   }
 }

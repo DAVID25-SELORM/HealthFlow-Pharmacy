@@ -157,3 +157,25 @@ describe('tier-access drug target stock level (Reorder Centre phase 1)', () => {
     expect(selectFields).toContain('target_stock_level')
   })
 })
+
+describe('tier-access NHIS price persistence', () => {
+  it.each([
+    [1.76, false], [0, false], ['1.76', false], ['0', false],
+    [undefined, true], [null, true], ['', true], ['   ', true],
+  ])('treats %s as blank=%s (a JSON number is a real NHIS price, never blank)', async (value, blank) => {
+    const source = await fs.readFile(functionSourcePath, 'utf8')
+    const helper = source.slice(
+      source.indexOf('const isBlankInput'),
+      source.indexOf('const parseOptionalNonNegativeNumber')
+    )
+    const isBlankInput = new Function(`${stripTypeScriptTypes(helper)}; return isBlankInput`)()
+    expect(isBlankInput(value)).toBe(blank)
+  })
+
+  it('never decides an NHIS price is unset by running a number through normalizeText', async () => {
+    const source = await fs.readFile(functionSourcePath, 'utf8')
+    expect(source).not.toMatch(/normalizeText\((drugData\.nhisPrice|row\.nhis_price)\)\s*===\s*''/)
+    expect(source).toContain('isBlankInput(drugData.nhisPrice)')
+    expect(source).toContain('isBlankInput(row.nhis_price)')
+  })
+})

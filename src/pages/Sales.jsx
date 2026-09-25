@@ -75,7 +75,7 @@ import {
 import Receipt from '../components/Receipt/Receipt'
 import DiagnosisSelector from '../components/DiagnosisSelector/DiagnosisSelector'
 import { getEffectiveSellingPrice, getNhisCatalogPrice, hasNhisCatalogPrice } from '../utils/drugPricing'
-import { calculateNhisSplitSettlement } from '../utils/nhisSplitSettlement'
+import { calculateNhisSplitSettlement, NHIS_LINE_COVERAGE } from '../utils/nhisSplitSettlement'
 import { DEFAULT_FACILITY_NAME } from '../utils/facilityBranding'
 import './Sales.css'
 
@@ -921,6 +921,9 @@ const Sales = () => {
           price: retailPrice,
           nhisPrice: nhisPrice > 0 ? nhisPrice : null,
           nhisCode: nhisPrice > 0 ? drug.nhis_code || null : null,
+          // Listed in the NHIS catalogue, whether or not a usable tariff is present. Lets the
+          // settlement flag a listed medicine with a missing tariff instead of billing it privately.
+          nhisListed: Boolean(drug.is_nhis_listed),
           genericName: drug.generic_name || null,
           unit: drug.unit || 'unit',
           // ✅ NHIS PHARMACY LEVEL PATCH START
@@ -1688,6 +1691,15 @@ const Sales = () => {
         const memberNumberError = validateNhiaMemberNumber(selectedNhiaMemberNumber, nhiaSettings || {})
         if (memberNumberError) {
           notify(memberNumberError, 'warning')
+          return
+        }
+
+        if (nhisSettlement.unresolvedLines.length) {
+          notify(
+            `NHIS tariff is missing for: ${nhisSettlement.unresolvedLines.map((line) => line.name).join(', ')}. ` +
+            'Fix the medicine in Inventory (NHIS price) or remove it before completing this NHIA claim sale.',
+            'warning'
+          )
           return
         }
 
@@ -3064,6 +3076,23 @@ const Sales = () => {
                   <div className="item-info">
                     <span className="item-name">{item.name}</span>
                     <span className="item-price">GHS {item.price.toFixed(2)}</span>
+                    {isNhiaClaimSale && (() => {
+                      const line = nhisSettlement.lines.find((entry) => entry.id === item.id)
+                      const labels = {
+                        [NHIS_LINE_COVERAGE.FULLY_COVERED]: 'NHIS covered',
+                        [NHIS_LINE_COVERAGE.PARTIALLY_COVERED]: 'Partly covered',
+                        [NHIS_LINE_COVERAGE.UNRESOLVED]: 'NHIS tariff missing',
+                        [NHIS_LINE_COVERAGE.NOT_COVERED]: 'Not NHIS',
+                      }
+                      return line ? (
+                        <span className="item-nhis-price" data-coverage={line.coverage}>
+                          {labels[line.coverage]}
+                          {line.patientTopUpAmount + line.privateAmount > 0
+                            ? ` · patient GHS ${(line.patientTopUpAmount + line.privateAmount).toFixed(2)}`
+                            : ''}
+                        </span>
+                      ) : null
+                    })()}
                     {(isNhiaClaimSale || servingNhisPatient) && Number.parseFloat(item.nhisPrice) > 0 && (
                       <span className="item-nhis-price">
                         NHIS GHS {Number.parseFloat(item.nhisPrice).toFixed(2)}
@@ -3289,6 +3318,15 @@ const Sales = () => {
                 )}
 
                 <div className="insurance-split-grid">
+                  {isNhiaClaimSale && nhisSettlement.unresolvedLines.length > 0 && (
+                    <div className="nhis-price-summary" role="alert">
+                      <strong>NHIS tariff missing</strong>
+                      <span>
+                        {nhisSettlement.unresolvedLines.map((line) => line.name).join(', ')} — listed as NHIS but no
+                        NHIS price is set, so it cannot be claimed. Fix it in Inventory or remove it.
+                      </span>
+                    </div>
+                  )}
                   {isNhiaClaimSale && (
                     <div className="nhis-price-summary">
                       <span>Normal total: GHS {total.toFixed(2)}</span>

@@ -698,6 +698,11 @@ const parseNonNegativeNumber = (value: unknown, label: string) => {
 // Unlike reorder_level, target_stock_level is optional: null means "not set", and
 // calculations fall back to reorder_level for that one calculation only — this
 // column is never guessed or mass-written from that fallback.
+// The browser sends JSON numbers. normalizeText() only understands strings and returns '' for a
+// number, so a blank test built on it treated every numeric NHIS price as "not set" and saved null.
+const isBlankInput = (value: unknown) =>
+  value === undefined || value === null || (typeof value === 'string' && value.trim() === '')
+
 const parseOptionalNonNegativeNumber = (value: unknown, label: string) => {
   // The browser sends JSON numbers. normalizeText(number) returns '', which
   // would silently clear a valid target (including zero) instead of saving it.
@@ -2589,7 +2594,7 @@ const buildDrugCreatePayload = (
     price: parseNonNegativeNumber(drugData.price, 'Price'),
     cost_price: parseNonNegativeNumber(drugData.costPrice ?? 0, 'Cost price'),
     nhis_code: normalizeText(drugData.nhisCode) || null,
-    nhis_price: drugData.nhisPrice === undefined || drugData.nhisPrice === null || normalizeText(drugData.nhisPrice) === ''
+    nhis_price: isBlankInput(drugData.nhisPrice)
       ? null
       : parseNonNegativeNumber(drugData.nhisPrice, 'NHIS price'),
     nhis_unit: normalizeText(drugData.nhisUnit) || null,
@@ -3546,9 +3551,7 @@ const updateDrug = async (
 
   if (Object.prototype.hasOwnProperty.call(drugData, 'nhisPrice')) {
     updatePayload.nhis_price =
-      drugData.nhisPrice === undefined ||
-      drugData.nhisPrice === null ||
-      normalizeText(drugData.nhisPrice) === ''
+      isBlankInput(drugData.nhisPrice)
         ? null
         : parseNonNegativeNumber(drugData.nhisPrice, 'NHIS price')
   }
@@ -3692,7 +3695,7 @@ const bulkImportDrugs = async (
       cost_price: parseNonNegativeNumber(row.cost_price ?? 0, 'Cost price'),
       nhis_code: normalizeText(row.nhis_code) || null,
       nhis_price:
-        row.nhis_price === undefined || row.nhis_price === null || normalizeText(row.nhis_price) === ''
+        isBlankInput(row.nhis_price)
           ? null
           : parseNonNegativeNumber(row.nhis_price, 'NHIS price'),
       nhis_unit: normalizeText(row.nhis_unit) || null,
