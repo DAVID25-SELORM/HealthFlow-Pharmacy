@@ -109,6 +109,7 @@ import {
   isNhisReadinessClaimsError,
   startClaimItBridgeQueueAutoSync,
 } from '../services/nhisService'
+import { countUnrecordedClaims, retryCxfRecording } from '../services/claimitLifecycleService'
 import {
   generateNhiaCcCode as generateBranchNhiaCcCode,
   getNhiaLookupCardType,
@@ -1699,6 +1700,11 @@ const Nhis = () => {
   const [exportStartedAt, setExportStartedAt] = useState(null)
   const [exportElapsedSeconds, setExportElapsedSeconds] = useState(0)
   const exportInFlightRef = useRef(false)
+  // The CXF file is generated before its export record is saved. If saving the record fails, this holds the
+  // handle that repairs only the record (per chunk, idempotent) so the file is never regenerated.
+  const exportRecordingRef = useRef(null)
+  const [cxfRecordingIssue, setCxfRecordingIssue] = useState(null)
+  const [retryingCxfRecording, setRetryingCxfRecording] = useState(false)
   // Caches the readiness computed by the first (check) call to handleExport
   // so the second (approve) call, triggered by a separate click on the scrub
   // warning dialog, does not redo the same claim/blocker/warning loading a
@@ -5951,6 +5957,24 @@ const Nhis = () => {
     return opened
   }
 
+  // Repairs only the export record (idempotent, per chunk). Never regenerates the CXF or re-downloads attachments.
+  const handleRetryCxfRecording = async () => {
+    if (!cxfRecordingIssue || retryingCxfRecording) return
+    setRetryingCxfRecording(true)
+    try {
+      const stillPending = await retryCxfRecording(cxfRecordingIssue)
+      if (!stillPending) {
+        setCxfRecordingIssue(null)
+        notify('Export record saved.', 'success')
+      } else {
+        setCxfRecordingIssue({ ...cxfRecordingIssue })
+        notify('The export record could not be saved yet. You can retry again; the file is unaffected.', 'warning')
+      }
+    } finally {
+      setRetryingCxfRecording(false)
+    }
+  }
+
   const handleExport = async (warningOverrideReason = '') => {
     // Synchronous ref check, before any awaited work — the approval action
     // can only ever invoke the export pipeline once at a time.
@@ -5990,6 +6014,10 @@ const Nhis = () => {
           if (entry?.durationMs >= 1000 && typeof console !== 'undefined') {
             console.info(`[NHIS export timing] [${exportRunId}]`, entry)
           }
+        },
+        onExportWarnings: (warnings) => {
+          const recording = (warnings || []).find((warning) => warning?.recording)?.recording
+          if (recording) exportRecordingRef.current = recording
         },
       }
 
@@ -6046,14 +6074,27 @@ const Nhis = () => {
           },
         })
       }
+      exportRecordingRef.current = null
+      setCxfRecordingIssue(null)
       const exportResult = await exportNhisClaimsFile({ ...progressOptions, preparedReadiness })
       const count = typeof exportResult === 'number' ? exportResult : exportResult?.count || 0
+      const unrecordedExport = exportRecordingRef.current
       setShowScrubWarningOverride(false)
       setScrubWarningClaims([])
       setScrubWarningOverrideReason('')
       setScrubWarningSearch('')
       setShowExportModal(false)
       await refreshClaimsOverview()
+      if (unrecordedExport) {
+        // PARTIAL SUCCESS: the file was created, the export record was not fully saved. Never report it as done.
+        setCxfRecordingIssue({ ...unrecordedExport, periodLabel, runRef: `EXP-${exportRunId.slice(0, 8).toUpperCase()}` })
+        notify(
+          `${count} claims exported for ${periodLabel}, but the export record could not be fully saved. Use "Retry recording" below — the file does not need to be regenerated.`,
+          'warning',
+          15000
+        )
+        return
+      }
       notify(
         exportResult?.queued
           ? `${count} claims queued for CLAIM-it bridge submission for ${periodLabel}. They will retry automatically.`
@@ -6269,6 +6310,22 @@ const Nhis = () => {
       </div>
 
       {error && <div className="nhis-alert" role="alert">{error}</div>}
+      {cxfRecordingIssue && (
+        <div className="nhis-alert" role="alert">
+          <strong>CXF generated, export record not fully saved.</strong>{' '}
+          The file for {cxfRecordingIssue.periodLabel} was created and is usable, but the export record could not be saved
+          for {countUnrecordedClaims(cxfRecordingIssue)} of {cxfRecordingIssue.claimCount} claims. Retrying does not regenerate the file
+          or download the attachments again. Reference {cxfRecordingIssue.runRef}.{' '}
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={retryingCxfRecording}
+            onClick={handleRetryCxfRecording}
+          >
+            {retryingCxfRecording ? 'Retrying…' : 'Retry recording'}
+          </button>
+        </div>
+      )}
       {catalogSeeding && (
         <div className="nhis-alert" role="status">
           Loading default NHIS medicines for this facility...

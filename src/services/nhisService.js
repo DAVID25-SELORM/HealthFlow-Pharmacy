@@ -9864,7 +9864,7 @@ const createNhisExportFile = async (claims, period, options = {}) => {
   if (format === 'cxf') {
     // Stored signing evidence is merged onto the claims when the server can provide
     // it; its absence never blocks export (accepted June behavior).
-    const { claims: signedClaims, warnings: signingWarnings } = await getExportSigningEvidence(claims)
+    const { claims: signedClaims, warnings: signingWarnings } = await getExportSigningEvidence(claims, { exportRef: options.exportRunId })
     const claimsForPayload = await hydrateNhisPrescriptionUrlsForTransfer(signedClaims, options)
     timing?.mark('loading prescription signed URLs', { claimCount: claimsForPayload.length })
     const exportActor = await resolveClaimItExportActor()
@@ -9879,8 +9879,13 @@ const createNhisExportFile = async (claims, period, options = {}) => {
       if (typeof options.onExportWarnings === 'function') options.onExportWarnings(exportWarnings)
       else console.warn('[CLAIM-it export warnings]', exportWarnings)
     }
-    const auditWarning = await recordCxfExport(signedClaims, content, options.reexportReason)
-    if (auditWarning && typeof options.onExportWarnings === 'function') options.onExportWarnings([auditWarning])
+    // The file is complete at this point. Recording it can fail independently (and is retried per chunk); a
+    // failure is surfaced to the caller with a handle that repairs only the record, never regenerating the file.
+    const auditWarning = await recordCxfExport(signedClaims, content, options.reexportReason, { exportRef: options.exportRunId })
+    if (auditWarning) {
+      if (typeof options.onExportWarnings === 'function') options.onExportWarnings([auditWarning])
+      else console.warn('[CLAIM-it export] File generated but the export record was not saved:', auditWarning.warnings)
+    }
     timing?.mark('generating CXF archive', {
       claimCount: claimsForPayload.length,
       bytes: content?.length || content?.byteLength || 0,
