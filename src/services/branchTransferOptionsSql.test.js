@@ -41,7 +41,7 @@ beforeAll(async () => {
     create table branches (id uuid primary key, organization_id uuid, name varchar(255), is_active boolean default true, is_main boolean default false);
     create table users (id uuid primary key, organization_id uuid, role text, branch_id uuid, is_active boolean default true,
       can_approve_purchases boolean default false, can_manage_purchases boolean default false);
-    create table drugs (id uuid primary key, organization_id uuid, branch_id uuid, name text, batch_number text,
+    create table drugs (id uuid primary key, organization_id uuid, branch_id uuid, name text, batch_number varchar(100),
       quantity numeric default 0, reorder_level numeric, expiry_date date, status text default 'active');
     insert into organizations values ('${org}'), ('${otherOrg}');
     insert into branches (id, organization_id, name, is_active) values
@@ -74,6 +74,13 @@ beforeAll(async () => {
   const migration = readFileSync('supabase/migrations/20260923120000_branch_transfer_options.sql', 'utf8')
   await db.exec(migration)
   await db.exec(migration) // replay-safe
+  // Production uses varchar(100), not the old text fixture: prove the original
+  // function raises the reported 42804 before replaying the forward correction.
+  await as(orgLevel)
+  await expect(options(branch.a, [])).rejects.toMatchObject({ code: '42804' })
+  const correction = readFileSync('supabase/migrations/20260925120000_fix_branch_transfer_batch_return_type.sql', 'utf8')
+  await db.exec(correction)
+  await db.exec(correction) // forward correction is also replay-safe
 
   // The medicine that is short in Accra Main.
   await addDrug(drug(1), org, branch.a, 'Amoxicillin 500mg', 2, 20)
