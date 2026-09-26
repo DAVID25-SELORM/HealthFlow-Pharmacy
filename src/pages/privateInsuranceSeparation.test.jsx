@@ -116,3 +116,26 @@ describe('Private Insurance typing wiring', () => {
     expect(source).not.toContain('insuranceCoverage && insuranceSplitAllowed && coverage < total')
   })
 })
+
+describe('cash received and change on the saved sale notes and the receipt', () => {
+  it('records cash received and change given in the sale notes, and leaves the stored amount paid alone', () => {
+    expect(source).toContain('cashReceived > 0 ? `Cash received: GHS ${cashReceived.toFixed(2)}` : null')
+    expect(source).toContain('cashReceived > 0 ? `Change given: GHS ${cashChange.toFixed(2)}` : null')
+    expect(source).toContain("patientTopUpMethod === 'cash' && patientDueAmount > 0 && received !== ''")
+    expect(source).toContain('cashReceived: patientCashHandedOver')
+    expect(source.split("amountPaid: paymentMethod === 'cash' ? amountPaid : saleIsNhiaClaim ? patientDueAmount : total").length).toBe(3)
+  })
+
+  it('shows Cash Received and Change Given on the receipt only when cash was handed over', () => {
+    const base = { saleNumber: 'S-1', saleDate: '2026-09-26T10:00:00Z', items: [], totalAmount: 40, discount: 0, netAmount: 40, amountPaid: 39.12, change: 0, soldBy: 'Cashier', patient: { full_name: 'A' }, paymentMethod: 'nhia' }
+    const details = { settlementType: 'nhia', provider: 'NHIS', insuranceId: '1', coveredAmount: 0.88, patientTopUp: 39.12, privateNonNhisAmount: 0, policyAdjustmentAmount: 0, patientDueAmount: 39.12, patientTopUpMethod: 'cash' }
+    const { unmount } = render(<Receipt saleData={{ ...base, insuranceDetails: { ...details, cashReceived: 50, cashChange: 10.88 } }} pharmacyInfo={{ currency: 'GHS' }} />)
+    expect(screen.getByText('Cash Received')).toBeTruthy()
+    expect(screen.getByText('GHS 50.00')).toBeTruthy()
+    expect(screen.getByText('Change Given')).toBeTruthy()
+    expect(screen.getByText('GHS 10.88')).toBeTruthy()
+    unmount()
+    render(<Receipt saleData={{ ...base, insuranceDetails: details }} pharmacyInfo={{ currency: 'GHS' }} />)
+    expect(screen.queryByText('Cash Received')).toBeNull()
+  })
+})

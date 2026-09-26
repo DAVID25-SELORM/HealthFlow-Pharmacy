@@ -267,6 +267,18 @@ const Receipt = forwardRef(({ saleData, pharmacyInfo, mode = 'preview' }, ref) =
                       <strong>{insuranceDetails.patientTopUpMethod.toUpperCase()}</strong>
                     </div>
                   )}
+                  {Number(insuranceDetails.cashReceived || 0) > 0 && (
+                    <>
+                      <div>
+                        <span>Cash Received</span>
+                        <strong>{formatCurrency(insuranceDetails.cashReceived)}</strong>
+                      </div>
+                      <div>
+                        <span>Change Given</span>
+                        <strong>{formatCurrency(insuranceDetails.cashChange || 0)}</strong>
+                      </div>
+                    </>
+                  )}
                 </>
               )}
             </div>

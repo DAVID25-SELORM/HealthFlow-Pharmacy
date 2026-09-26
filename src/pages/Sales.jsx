@@ -1413,6 +1413,8 @@ const Sales = () => {
     topUpMethod,
     retailTotal = total,
     pricingAdjustment = 0,
+    cashReceived = 0,
+    cashChange = 0,
   }) =>
     [
       `Insurance sale ${saleNumber || ''}`.trim(),
@@ -1423,6 +1425,9 @@ const Sales = () => {
       pricingAdjustment > 0 ? `NHIS pricing adjustment: GHS ${pricingAdjustment.toFixed(2)}` : null,
       `Patient top-up: GHS ${topUp.toFixed(2)}`,
       topUp > 0 ? `Top-up method: ${topUpMethod.toUpperCase()}` : null,
+      // The sale's stored amount paid is unchanged; the cash handed over and the change given are recorded here.
+      cashReceived > 0 ? `Cash received: GHS ${cashReceived.toFixed(2)}` : null,
+      cashReceived > 0 ? `Change given: GHS ${cashChange.toFixed(2)}` : null,
     ]
       .filter(Boolean)
       .join('\n')
@@ -1640,6 +1645,12 @@ const Sales = () => {
     const patientDueAmount = saleIsNhiaClaim
       ? nhisSettlement.patientDueAmount
       : patientTopUpAmount
+    // Cash handed over for the patient's portion (NHIA Claim or Private Insurance), when the cashier entered it.
+    const patientCashHandedOver =
+      (paymentMethod === 'insurance' || saleIsNhiaClaim) && patientTopUpMethod === 'cash' && patientDueAmount > 0 && received !== ''
+        ? Number.parseFloat(received) || 0
+        : 0
+    const patientCashChangeGiven = patientCashHandedOver > 0 ? getNhisCashChange(patientCashHandedOver, patientDueAmount) : 0
 
     if (paymentMethod === 'cash' && amountPaid < total) {
       notify('Received amount must be at least the total for cash payments.', 'warning')
@@ -1800,6 +1811,8 @@ const Sales = () => {
                 topUpMethod: patientTopUpMethod,
                 retailTotal: retailNetTotal,
                 pricingAdjustment: nhiaPricingAdjustment,
+                cashReceived: patientCashHandedOver,
+                cashChange: patientCashChangeGiven,
               })
             : null,
         insuranceCoveredAmount:
@@ -1850,6 +1863,8 @@ const Sales = () => {
                 patientDueAmount,
                 policyAdjustmentAmount: nhiaPricingAdjustment,
                 patientTopUpMethod: patientDueAmount > 0 ? patientTopUpMethod : null,
+                cashReceived: patientCashHandedOver,
+                cashChange: patientCashChangeGiven,
               }
             : null,
         soldBy: displayName || user?.email,

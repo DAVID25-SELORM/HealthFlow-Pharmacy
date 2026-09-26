@@ -249,6 +249,10 @@ export const generateReceiptPDF = (saleData, pharmacyInfo) => {
     if (policyAdjustmentAmount > 0) paymentRows.push(['NHIS Policy Adjustment', money(policyAdjustmentAmount)])
     if (Number(insuranceDetails.patientDueAmount || 0) > 0) paymentRows.push(['Patient Paid', money(insuranceDetails.patientDueAmount)])
     if (insuranceDetails.patientTopUpMethod) paymentRows.push(['Top-Up Paid By', insuranceDetails.patientTopUpMethod.toUpperCase()])
+    if (Number(insuranceDetails.cashReceived || 0) > 0) {
+      paymentRows.push(['Cash Received', money(insuranceDetails.cashReceived)])
+      paymentRows.push(['Change Given', money(insuranceDetails.cashChange || 0)])
+    }
   }
   const paymentDetailsHeight = Math.max(34, paymentRows.length * 9 + 10)
   doc.roundedRect(margin, y, pageWidth - margin * 2, paymentDetailsHeight, 2, 2)
