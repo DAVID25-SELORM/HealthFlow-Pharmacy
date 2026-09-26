@@ -232,3 +232,14 @@ describe('NHIS top-up rule: top-up = max(0, normal - NHIS covered)', () => {
     expect(getNhisSettlementImbalance({ ...r, patientTopUpAmount: r.patientTopUpAmount + 1 })).not.toBe(0)
   })
 })
+
+describe('NHIA cash change for the patient portion', () => {
+  it('change = cash received - patient due, never negative', async () => {
+    const { getNhisCashChange } = await import('./nhisSplitSettlement')
+    expect(getNhisCashChange(50, 39.12)).toBe(10.88)
+    expect(getNhisCashChange(39.12, 39.12)).toBe(0)
+    expect(getNhisCashChange(20, 39.12)).toBe(0)
+    expect(getNhisCashChange('', 39.12)).toBe(0)
+    expect(getNhisCashChange(0.3, 0.1)).toBe(0.2)
+  })
+})

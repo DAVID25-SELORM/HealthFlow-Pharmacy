@@ -138,3 +138,7 @@ export const getNhisSaleBreakdown = (settlement) => ({
   patientDueAmount: settlement.patientDueAmount,
   nhisClaimAmount: settlement.nhisCoveredAmount,
 })
+
+/** Change to hand back when a patient pays their portion (top-up + private) in cash. Never negative. */
+export const getNhisCashChange = (cashReceived, patientDueAmount) =>
+  Math.max(0, money((Number(cashReceived) || 0) - (Number(patientDueAmount) || 0)))

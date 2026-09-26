@@ -77,6 +77,7 @@ import DiagnosisSelector from '../components/DiagnosisSelector/DiagnosisSelector
 import { getEffectiveSellingPrice, getNhisCatalogPrice, hasNhisCatalogPrice } from '../utils/drugPricing'
 import {
   calculateNhisSplitSettlement,
+  getNhisCashChange,
   getNhisSettlementImbalance,
   NHIS_LINE_COVERAGE,
 } from '../utils/nhisSplitSettlement'
@@ -1698,6 +1699,16 @@ const Sales = () => {
           return
         }
 
+        if (
+          patientTopUpMethod === 'cash' &&
+          nhisSettlement.patientDueAmount > 0 &&
+          received !== '' &&
+          (Number.parseFloat(received) || 0) < nhisSettlement.patientDueAmount
+        ) {
+          notify(`Cash received is less than the patient's due of GHS ${nhisSettlement.patientDueAmount.toFixed(2)}.`, 'warning')
+          return
+        }
+
         if (getNhisSettlementImbalance(nhisSettlement) !== 0) {
           notify('The NHIS covered, top-up and private amounts do not add up to the sale total. Review the cart and try again.', 'warning')
           return
@@ -2439,6 +2450,11 @@ const Sales = () => {
     ? formatPatientOption(selectedPatientForSale)
     : 'Walk-in customer'
   const confirmationBranchLabel = branches.find((branch) => branch.id === activeShift?.branch_id)?.name || 'Current branch'
+  // NHIA claim with a cash patient portion: the cashier records what the patient handed over and sees the change.
+  // Display aid only: the stored amount paid stays the patient's due amount, exactly as before.
+  const nhiaCashPortion = isNhiaClaimSale && nhisSettlement.patientDueAmount > 0 && patientTopUpMethod === 'cash'
+  const nhiaCashReceived = Number.parseFloat(received) || 0
+  const nhiaCashChange = nhiaCashPortion ? getNhisCashChange(nhiaCashReceived, nhisSettlement.patientDueAmount) : 0
   const confirmationAmountPaid = paymentMethod === 'cash'
     ? Number.parseFloat(received) || 0
     : isNhiaClaimSale
@@ -2555,6 +2571,12 @@ const Sales = () => {
                 <div><span>Payment method</span><strong>{paymentMethod.toUpperCase()}</strong></div>
                 <div><span>Amount paid</span><strong>GHS {confirmationAmountPaid.toFixed(2)}</strong></div>
                 {paymentMethod === 'cash' && <div><span>Change due</span><strong>GHS {change.toFixed(2)}</strong></div>}
+                {nhiaCashPortion && nhiaCashReceived > 0 && (
+                  <>
+                    <div><span>Cash received</span><strong>GHS {nhiaCashReceived.toFixed(2)}</strong></div>
+                    <div><span>Change due</span><strong>GHS {nhiaCashChange.toFixed(2)}</strong></div>
+                  </>
+                )}
                 {isNhiaClaimSale && (
                   <>
                     <div><span>NHIS covered</span><strong>GHS {nhisSettlement.nhisCoveredAmount.toFixed(2)}</strong></div>
@@ -3439,6 +3461,30 @@ const Sales = () => {
                       </select>
                     </div>
                   )}
+                </div>
+              </div>
+            )}
+
+            {nhiaCashPortion && (
+              <div className="cash-panel">
+                <div className="cash-field cash-field-input">
+                  <label htmlFor="nhia-cash-received">Cash Received</label>
+                  <div className="cash-input-shell">
+                    <span className="cash-prefix">GHS</span>
+                    <input
+                      id="nhia-cash-received"
+                      type="number"
+                      value={received}
+                      onChange={(e) => setReceived(e.target.value)}
+                      step="0.01"
+                      min="0"
+                      placeholder={nhisSettlement.patientDueAmount.toFixed(2)}
+                    />
+                  </div>
+                </div>
+                <div className="cash-field cash-field-change">
+                  <span className="cash-field-label">Change Due</span>
+                  <span className="change-amount">GHS {nhiaCashChange.toFixed(2)}</span>
                 </div>
               </div>
             )}

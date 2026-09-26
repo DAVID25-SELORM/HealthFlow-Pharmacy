@@ -74,3 +74,16 @@ describe('Tenant admin NHIS top-up policy setting', () => {
     expect(admin).toContain("nhisTopUpPolicy: org.nhis_top_up_policy || (org.can_use_nhis_topups ? 'allowed' : 'not_allowed')")
   })
 })
+
+describe('NHIA claim: cash received and change for the patient portion', () => {
+  it('shows Cash Received and Change Due for a cash patient portion and refuses an insufficient amount', () => {
+    expect(source).toContain('id="nhia-cash-received"')
+    expect(source).toContain('const nhiaCashPortion = isNhiaClaimSale && nhisSettlement.patientDueAmount > 0 && patientTopUpMethod === \'cash\'')
+    expect(source).toContain('getNhisCashChange(nhiaCashReceived, nhisSettlement.patientDueAmount)')
+    expect(source).toContain("Cash received is less than the patient's due of")
+  })
+
+  it('does not change what is stored: amount paid stays the patient due for NHIA claim sales', () => {
+    expect(source.split("amountPaid: paymentMethod === 'cash' ? amountPaid : saleIsNhiaClaim ? patientDueAmount : total").length).toBe(3)
+  })
+})
