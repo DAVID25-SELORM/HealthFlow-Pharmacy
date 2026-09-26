@@ -1556,8 +1556,8 @@ const Reports = () => {
               <option value="cash">Cash</option>
               <option value="momo">Mobile money</option>
               <option value="card">Card</option>
-              <option value="insurance">Insurance</option>
-              <option value="nhia">NHIA</option>
+              <option value="insurance">Private insurance</option>
+              <option value="nhia">NHIA claim</option>
             </select>
           </label>
           <label>

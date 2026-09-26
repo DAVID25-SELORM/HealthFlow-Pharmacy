@@ -75,6 +75,7 @@ import {
 import Receipt from '../components/Receipt/Receipt'
 import DiagnosisSelector from '../components/DiagnosisSelector/DiagnosisSelector'
 import { getEffectiveSellingPrice, getNhisCatalogPrice, hasNhisCatalogPrice } from '../utils/drugPricing'
+import { calculatePrivateInsuranceSettlement } from '../utils/privateInsuranceSettlement'
 import {
   calculateNhisSplitSettlement,
   getNhisCashChange,
@@ -855,8 +856,6 @@ const Sales = () => {
     legacyTopUpsEnabled: canUseNhisTopups,
   })
 
-  const calculateNhisCoveredTotal = () => calculateNhisSettlement().nhisCoveredAmount
-
   const calculateChange = () => {
     const total = calculateTotal()
     const receivedAmount = Number.parseFloat(received) || 0
@@ -1375,43 +1374,26 @@ const Sales = () => {
       return
     }
 
+    // NHIA Claim: the NHIS tariff decides the cover. Private Insurance: the normal selling bill is the basis and the
+    // insurer's agreed cover is entered by the cashier (default: the insurer covers the whole bill). No NHIS tariff.
     const total = calculateTotal()
     const nhisSettlement = calculateNhisSettlement()
-    const shouldUseNhisTopUpPricing =
-      method !== 'nhia' && isNhisPatient(selectedPatientForSale) && canUseNhisTopups
-    const coveredAmount =
-      method === 'nhia'
-        ? nhisSettlement.nhisCoveredAmount
-        : shouldUseNhisTopUpPricing
-          ? calculateNhisCoveredTotal()
-          : total
+    const coveredAmount = method === 'nhia' ? nhisSettlement.nhisCoveredAmount : total
     setInsuranceCoverage(formatAmountInput(Math.min(coveredAmount, total)))
-    setPatientTopUp(
-      method === 'nhia'
-        ? formatAmountInput(nhisSettlement.patientDueAmount)
-        : shouldUseNhisTopUpPricing ? formatAmountInput(Math.max(total - coveredAmount, 0)) : '0.00'
-    )
+    setPatientTopUp(method === 'nhia' ? formatAmountInput(nhisSettlement.patientDueAmount) : '0.00')
     setPatientTopUpMethod('cash')
   }
 
   const handleInsuranceCoverageChange = (value) => {
-    const total = calculateTotal()
-    const coverage = Math.min(Math.max(Number.parseFloat(value) || 0, 0), total)
+    const { patientTopUp: nextTopUp } = calculatePrivateInsuranceSettlement({
+      normalTotal: calculateTotal(),
+      insuranceCover: Number.parseFloat(value) || 0,
+    })
     setInsuranceCoverage(value)
-    if (servingNhisPatient && !canUseNhisTopups) {
-      setPatientTopUp('0.00')
-      return
-    }
-    setPatientTopUp(formatAmountInput(Math.max(total - coverage, 0)))
+    setPatientTopUp(formatAmountInput(nextTopUp))
   }
 
   const handlePatientTopUpChange = (value) => {
-    if (servingNhisPatient && !canUseNhisTopups) {
-      setPatientTopUp('0.00')
-      setInsuranceCoverage(formatAmountInput(calculateTotal()))
-      return
-    }
-
     const total = calculateTotal()
     const topUp = Math.min(Math.max(Number.parseFloat(value) || 0, 0), total)
     setPatientTopUp(value)
@@ -1635,7 +1617,7 @@ const Sales = () => {
     const total = retailNetTotal
     const recordedSaleDiscount = saleDiscount
     const saleIsInsuranceLike = paymentMethod === 'insurance' || saleIsNhiaClaim
-    const insuranceSplitAllowed = !saleIsNhiaClaim && (!servingNhisPatient || canUseNhisTopups)
+    const insuranceSplitAllowed = !saleIsNhiaClaim
     const insuranceCoveredAmount =
       saleIsNhiaClaim
         ? nhiaCoveredAmount
@@ -1856,6 +1838,7 @@ const Sales = () => {
             ? {
                 provider: selectedPatientForSale.insurance_provider,
                 insuranceId: selectedPatientForSale.insurance_id,
+                settlementType: saleIsNhiaClaim ? 'nhia' : 'private_insurance',
                 coveredAmount: insuranceCoveredAmount,
                 patientTopUp: nhisPatientTopUpAmount,
                 privateNonNhisAmount,
@@ -2449,8 +2432,8 @@ const Sales = () => {
   const nhiaPricingAdjustment = isNhiaClaimSale ? nhisSettlement.policyAdjustmentAmount : 0
   const isInsuranceSale = paymentMethod === 'insurance' || isNhiaClaimSale
   const onlinePaymentDisabled = !isOnline || (!localBranchServerAvailable && !onlineCloudPaymentsEnabled)
-  const servingNhisPatient = isInsuranceSale && isNhisPatient(selectedPatientForSale)
-  const insuranceSplitAllowed = !isNhiaClaimSale && (!servingNhisPatient || canUseNhisTopups)
+  // Only NHIA Claim sales use NHIS rules. A patient's NHIS profile never changes Private Insurance behaviour.
+  const insuranceSplitAllowed = !isNhiaClaimSale
   const insuranceHasPatientDetails =
     !isInsuranceSale ||
     Boolean(
@@ -2463,6 +2446,11 @@ const Sales = () => {
   const confirmationBranchLabel = branches.find((branch) => branch.id === activeShift?.branch_id)?.name || 'Current branch'
   // NHIA claim or Insurance sale where the patient pays their portion (top-up + private) in cash: the cashier records
   // what the patient handed over and sees the change. Display aid only: stored amounts paid are unchanged.
+  const privateInsurance = calculatePrivateInsuranceSettlement({
+    normalTotal: total,
+    insuranceCover: Number.parseFloat(insuranceCoverage) || 0,
+  })
+  const privateInsuranceTopUp = privateInsurance.patientTopUp
   const patientCashDue = isNhiaClaimSale
     ? nhisSettlement.patientDueAmount
     : paymentMethod === 'insurance' && insuranceSplitAllowed
@@ -2490,17 +2478,14 @@ const Sales = () => {
       return
     }
 
-    const defaultCoverage =
-      isNhiaClaimSale || (servingNhisPatient && canUseNhisTopups)
-        ? Math.min(nhisCoveredTotal, total)
-        : total
+    const defaultCoverage = isNhiaClaimSale ? Math.min(nhisCoveredTotal, total) : total
     const coverageInput = Number.parseFloat(insuranceCoverage)
     const coverage =
       insuranceCoverage && insuranceSplitAllowed
         ? Math.min(Math.max(coverageInput || 0, 0), total)
         : defaultCoverage
     const nextCoverage =
-      insuranceCoverage && insuranceSplitAllowed && !servingNhisPatient && coverage < total
+      insuranceCoverage && insuranceSplitAllowed && coverage < total
         ? insuranceCoverage
         : formatAmountInput(coverage)
     const nextTopUp = insuranceSplitAllowed
@@ -2517,7 +2502,6 @@ const Sales = () => {
       setPatientTopUp(nextTopUp)
     }
   }, [
-    canUseNhisTopups,
     cart,
     insuranceCoverage,
     insuranceSplitAllowed,
@@ -2527,7 +2511,6 @@ const Sales = () => {
     nhisSettlement.patientDueAmount,
     patientTopUp,
     paymentMethod,
-    servingNhisPatient,
     total,
   ])
 
@@ -3138,7 +3121,7 @@ const Sales = () => {
                         </span>
                       ) : null
                     })()}
-                    {(isNhiaClaimSale || servingNhisPatient) && Number.parseFloat(item.nhisPrice) > 0 && (
+                    {isNhiaClaimSale && Number.parseFloat(item.nhisPrice) > 0 && (
                       <span className="item-nhis-price">
                         NHIS GHS {Number.parseFloat(item.nhisPrice).toFixed(2)}
                       </span>
@@ -3234,13 +3217,15 @@ const Sales = () => {
               <button
                 type="button"
                 className={`payment-btn ${paymentMethod === 'insurance' ? 'active' : ''}`}
+                title="Use for private or other insurers. Coverage is based on the insurer's agreed amount, not NHIS tariffs."
                 onClick={() => handlePaymentMethodChange('insurance')}
               >
-                Insurance
+                Private Insurance
               </button>
               <button
                 type="button"
                 className={`payment-btn ${paymentMethod === 'nhia' ? 'active' : ''}`}
+                title="Use for NHIS claims. The NHIS tariff is applied automatically and a claim is created."
                 onClick={() => handlePaymentMethodChange('nhia')}
               >
                 NHIA Claim
@@ -3326,7 +3311,7 @@ const Sales = () => {
                     }`}
                   >
                     <span className="insurance-label">
-                      {isNhiaClaimSale ? 'Patient NHIA' : 'Patient Insurance'}
+                      {isNhiaClaimSale ? 'Patient NHIA' : 'Insurance Provider'}
                     </span>
                     <strong>
                       {selectedPatientForSale.insurance_provider || 'No insurance provider saved'}
@@ -3340,10 +3325,10 @@ const Sales = () => {
                 ) : (
                   <div className="insurance-card insurance-card-warning">
                     <span className="insurance-label">
-                      {isNhiaClaimSale ? 'Patient NHIA' : 'Patient Insurance'}
+                      {isNhiaClaimSale ? 'Patient NHIA' : 'Insurance Provider'}
                     </span>
                     <strong>Select a linked patient</strong>
-                    <span>{isNhiaClaimSale ? 'NHIA claim sales' : 'Insurance sales'} need a patient with insurance details.</span>
+                    <span>{isNhiaClaimSale ? 'NHIA claim sales' : 'Private Insurance sales'} need a patient with insurance details.</span>
                   </div>
                 )}
 
@@ -3399,17 +3384,12 @@ const Sales = () => {
                       />
                     </div>
                   )}
-                  {servingNhisPatient && !isNhiaClaimSale && (
+                  {!isNhiaClaimSale && (
                     <div className="nhis-price-summary">
                       <span>Normal total: GHS {total.toFixed(2)}</span>
-                      {canUseNhisTopups ? (
-                        <>
-                          <span>NHIS total: GHS {Math.min(nhisCoveredTotal, total).toFixed(2)}</span>
-                          <strong>Top-up: GHS {Math.max(total - nhisCoveredTotal, 0).toFixed(2)}</strong>
-                        </>
-                      ) : (
-                        <strong>NHIS top-up disabled</strong>
-                      )}
+                      <strong>Insurance cover: GHS {privateInsurance.insuranceCover.toFixed(2)}</strong>
+                      <span>Patient top-up: GHS {privateInsuranceTopUp.toFixed(2)}</span>
+                      <strong>Patient due now: GHS {privateInsuranceTopUp.toFixed(2)}</strong>
                     </div>
                   )}
                   <div className="cash-field cash-field-input">
@@ -3423,7 +3403,7 @@ const Sales = () => {
                         type="number"
                         value={insuranceCoverage}
                         onChange={(event) => handleInsuranceCoverageChange(event.target.value)}
-                        disabled={isNhiaClaimSale || (servingNhisPatient && !canUseNhisTopups)}
+                        disabled={isNhiaClaimSale}
                         step="0.01"
                         min="0"
                         max={total}

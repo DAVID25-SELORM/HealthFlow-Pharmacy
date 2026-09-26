@@ -687,7 +687,7 @@ const TenantAdmin = () => {
                       disabled={pharmacy.organizationType === 'chemical_shop' || !pharmacy.canUseNhis}
                       onChange={(e) => setPharmacy({ ...pharmacy, canUseNhisTopups: e.target.checked })}
                     />
-                    NHIS top-ups
+                    NHIS top-ups (inactive — Private Insurance and NHIA Claim no longer use this)
                   </label>
                   <label className="tenant-checkbox-label" title="The amount NHIS does not cover on an NHIA claim sale is always charged to the patient as a top-up. This setting no longer changes that; it is kept only so existing values are not lost.">
                     NHIS top-up policy (inactive — no longer applied)
@@ -1352,7 +1352,7 @@ const TenantAdmin = () => {
                         disabled={editForm.organizationType === 'chemical_shop' || !editForm.canUseNhis}
                         onChange={(e) => setEditForm({ ...editForm, canUseNhisTopups: e.target.checked })}
                       />
-                      NHIS top-ups
+                      NHIS top-ups (inactive — Private Insurance and NHIA Claim no longer use this)
                     </label>
                     <label className="tenant-checkbox-label" title="The amount NHIS does not cover on an NHIA claim sale is always charged to the patient as a top-up. This setting no longer changes that; it is kept only so existing values are not lost.">
                       NHIS top-up policy (inactive — no longer applied)

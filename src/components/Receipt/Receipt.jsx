@@ -43,8 +43,9 @@ const Receipt = forwardRef(({ saleData, pharmacyInfo, mode = 'preview' }, ref) =
   const patientTopUpAmount = Number(insuranceDetails?.patientTopUp || 0)
   const privateNonNhisAmount = Number(insuranceDetails?.privateNonNhisAmount || 0)
   const policyAdjustmentAmount = Number(insuranceDetails?.policyAdjustmentAmount || 0)
+  // Private Insurance cover is never labelled "NHIS Covered": only an NHIA claim sale uses NHIS wording.
   const isNhisSettlement = String(paymentMethod || '').toLowerCase() === 'nhia'
-    || insuranceCoveredAmount > 0
+    || insuranceDetails?.settlementType === 'nhia'
     || privateNonNhisAmount > 0
     || policyAdjustmentAmount > 0
 

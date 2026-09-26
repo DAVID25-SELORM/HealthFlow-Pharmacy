@@ -230,8 +230,9 @@ export const generateReceiptPDF = (saleData, pharmacyInfo) => {
   const nhisTopUpAmount = Number(insuranceDetails?.patientTopUp || 0)
   const privateNonNhisAmount = Number(insuranceDetails?.privateNonNhisAmount || 0)
   const policyAdjustmentAmount = Number(insuranceDetails?.policyAdjustmentAmount || 0)
+  // Private Insurance cover is never labelled "NHIS Covered": only an NHIA claim sale uses NHIS wording.
   const isNhisSettlement = String(saleData.paymentMethod || '').toLowerCase() === 'nhia'
-    || nhisCoveredAmount > 0
+    || insuranceDetails?.settlementType === 'nhia'
     || privateNonNhisAmount > 0
     || policyAdjustmentAmount > 0
   const paymentRows = [
@@ -320,6 +321,22 @@ export const formatSaleForReceipt = (sale, items, patient = null, soldByName = n
   const privateNonNhisAmount = Number(sale.private_non_nhis_amount ?? sale.privateNonNhisAmount ?? 0)
   const policyAdjustmentAmount = Number(sale.nhis_policy_adjustment_amount ?? sale.nhisPolicyAdjustmentAmount ?? 0)
   const hasNhisSettlement = nhisCoveredAmount > 0 || nhisTopUpAmount > 0 || privateNonNhisAmount > 0 || policyAdjustmentAmount > 0
+  const privateInsuranceCover = Number(sale.insurance_covered_amount ?? sale.insuranceCoveredAmount ?? 0)
+  const privateInsuranceTopUp = Number(sale.insurance_top_up_amount ?? sale.insuranceTopUpAmount ?? 0)
+  // A Private Insurance sale keeps its own semantics: insurer cover + patient top-up, no NHIS wording.
+  const privateInsuranceDetails = !hasNhisSettlement && String(sale.payment_method || '').toLowerCase() === 'insurance' && privateInsuranceCover > 0
+    ? {
+        settlementType: 'private_insurance',
+        provider: patient?.insurance_provider || null,
+        insuranceId: patient?.insurance_id || null,
+        coveredAmount: privateInsuranceCover,
+        patientTopUp: privateInsuranceTopUp,
+        privateNonNhisAmount: 0,
+        policyAdjustmentAmount: 0,
+        patientDueAmount: privateInsuranceTopUp,
+        patientTopUpMethod: sale.insurance_top_up_payment_method ?? sale.insuranceTopUpPaymentMethod ?? null,
+      }
+    : null
 
   return {
     saleNumber: sale.sale_number,
@@ -334,6 +351,7 @@ export const formatSaleForReceipt = (sale, items, patient = null, soldByName = n
     patient: patient,
     insuranceDetails: hasNhisSettlement
       ? {
+          settlementType: 'nhia',
           provider: patient?.insurance_provider || 'NHIS',
           insuranceId: patient?.insurance_id || patient?.nhis_hin || null,
           coveredAmount: nhisCoveredAmount,
@@ -343,7 +361,7 @@ export const formatSaleForReceipt = (sale, items, patient = null, soldByName = n
           patientDueAmount: nhisTopUpAmount + privateNonNhisAmount,
           patientTopUpMethod: sale.patient_payment_method ?? sale.patientPaymentMethod ?? null,
         }
-      : null,
+      : privateInsuranceDetails,
     soldBy: soldByName,
   }
 }
