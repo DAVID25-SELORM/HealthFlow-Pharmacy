@@ -75,7 +75,7 @@ import {
 import Receipt from '../components/Receipt/Receipt'
 import DiagnosisSelector from '../components/DiagnosisSelector/DiagnosisSelector'
 import { getEffectiveSellingPrice, getNhisCatalogPrice, hasNhisCatalogPrice } from '../utils/drugPricing'
-import { calculatePrivateInsuranceSettlement } from '../utils/privateInsuranceSettlement'
+import { calculatePrivateInsuranceSettlement, reconcilePrivateInsuranceInputs } from '../utils/privateInsuranceSettlement'
 import {
   calculateNhisSplitSettlement,
   getNhisCashChange,
@@ -231,6 +231,8 @@ const Sales = () => {
   const [discountType, setDiscountType] = useState('amount')
   const [discountValue, setDiscountValue] = useState('')
   const [insuranceCoverage, setInsuranceCoverage] = useState('')
+  // Which linked Private Insurance box the cashier is typing in ('cover' | 'topup' | ''): that box is never rewritten.
+  const insuranceEditedFieldRef = useRef('')
   const [patientTopUp, setPatientTopUp] = useState('')
   const [patientTopUpMethod, setPatientTopUpMethod] = useState('cash')
   const [nhiaDiagnosis, setNhiaDiagnosis] = useState('')
@@ -1363,6 +1365,7 @@ const Sales = () => {
     if (method !== 'cash') {
       setReceived('')
     }
+    insuranceEditedFieldRef.current = ''
 
     if (method !== 'insurance' && method !== 'nhia') {
       setInsuranceCoverage('')
@@ -1389,6 +1392,7 @@ const Sales = () => {
       normalTotal: calculateTotal(),
       insuranceCover: Number.parseFloat(value) || 0,
     })
+    insuranceEditedFieldRef.current = 'cover'
     setInsuranceCoverage(value)
     setPatientTopUp(formatAmountInput(nextTopUp))
   }
@@ -1396,6 +1400,7 @@ const Sales = () => {
   const handlePatientTopUpChange = (value) => {
     const total = calculateTotal()
     const topUp = Math.min(Math.max(Number.parseFloat(value) || 0, 0), total)
+    insuranceEditedFieldRef.current = 'topup'
     setPatientTopUp(value)
     setInsuranceCoverage(formatAmountInput(Math.max(total - topUp, 0)))
   }
@@ -2471,6 +2476,7 @@ const Sales = () => {
     }
 
     if (!cart.length) {
+      insuranceEditedFieldRef.current = ''
       if (insuranceCoverage || patientTopUp) {
         setInsuranceCoverage('')
         setPatientTopUp('')
@@ -2478,21 +2484,22 @@ const Sales = () => {
       return
     }
 
-    const defaultCoverage = isNhiaClaimSale ? Math.min(nhisCoveredTotal, total) : total
-    const coverageInput = Number.parseFloat(insuranceCoverage)
-    const coverage =
-      insuranceCoverage && insuranceSplitAllowed
-        ? Math.min(Math.max(coverageInput || 0, 0), total)
-        : defaultCoverage
-    const nextCoverage =
-      insuranceCoverage && insuranceSplitAllowed && coverage < total
-        ? insuranceCoverage
-        : formatAmountInput(coverage)
-    const nextTopUp = insuranceSplitAllowed
-      ? isNhiaClaimSale
-        ? formatAmountInput(nhisSettlement.patientDueAmount)
-        : formatAmountInput(Math.max(total - coverage, 0))
-      : '0.00'
+    if (!isNhiaClaimSale) {
+      const next = reconcilePrivateInsuranceInputs({
+        total,
+        insuranceCover: insuranceCoverage,
+        patientTopUp,
+        edited: insuranceEditedFieldRef.current,
+      })
+      if (insuranceCoverage !== next.insuranceCover) setInsuranceCoverage(next.insuranceCover)
+      if (patientTopUp !== next.patientTopUp) setPatientTopUp(next.patientTopUp)
+      return
+    }
+
+    // NHIA Claim: the NHIS tariff fixes the cover; the cashier does not edit it. (The patient's due amount comes from
+    // the settlement, not from these boxes.)
+    const nextCoverage = formatAmountInput(Math.min(nhisCoveredTotal, total))
+    const nextTopUp = '0.00'
 
     if (insuranceCoverage !== nextCoverage) {
       setInsuranceCoverage(nextCoverage)

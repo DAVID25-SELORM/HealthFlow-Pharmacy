@@ -25,7 +25,8 @@ describe('POS wording and wiring: Private Insurance vs NHIA Claim', () => {
     expect(inputs).not.toContain('servingNhisPatient')
     expect(inputs).not.toContain('nhis')
     expect(source).toContain('const insuranceSplitAllowed = !isNhiaClaimSale')
-    expect(source).toContain('const defaultCoverage = isNhiaClaimSale ? Math.min(nhisCoveredTotal, total) : total')
+    expect(source).toContain('const nextCoverage = formatAmountInput(Math.min(nhisCoveredTotal, total))') // NHIA only
+    expect(source).toContain('reconcilePrivateInsuranceInputs({') // Private Insurance never reads NHIS totals
   })
 
   it('shows NHIS wording only in NHIA Claim mode; Private Insurance has its own summary', () => {
@@ -103,5 +104,15 @@ describe('receipts: Private Insurance vs NHIA Claim wording', () => {
 
   it('a cash sale has no insurance section', () => {
     expect(formatSaleForReceipt({ sale_number: 'S-1', payment_method: 'cash', total_amount: 5, net_amount: 5 }, []).insuranceDetails).toBeNull()
+  })
+})
+
+describe('Private Insurance typing wiring', () => {
+  it('the auto-sync effect uses the reconcile helper and records which box the cashier edits', () => {
+    expect(source).toContain('reconcilePrivateInsuranceInputs({')
+    expect(source).toContain("insuranceEditedFieldRef.current = 'cover'")
+    expect(source).toContain("insuranceEditedFieldRef.current = 'topup'")
+    // no more "reformat unless coverage < total" rule that snapped a typed 40.0 back to 40.00
+    expect(source).not.toContain('insuranceCoverage && insuranceSplitAllowed && coverage < total')
   })
 })

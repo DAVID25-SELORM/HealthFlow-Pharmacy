@@ -47,3 +47,32 @@ describe('Private Insurance settlement (normal selling price, insurer agreed cov
     expect(privateInsurance.patientDueAmount).toBe(0)
   })
 })
+
+import { reconcilePrivateInsuranceInputs } from './privateInsuranceSettlement'
+
+describe('typing in the linked Private Insurance boxes (regression: only the arrow keys worked)', () => {
+  const r = (over) => reconcilePrivateInsuranceInputs({ total: 40, insuranceCover: '40.00', patientTopUp: '0.00', edited: '', ...over })
+
+  it('never rewrites the cover the cashier is typing, including values equal to the bill and an empty box', () => {
+    expect(r({ edited: 'cover', insuranceCover: '40.0', patientTopUp: '0.00' }).insuranceCover).toBe('40.0')
+    expect(r({ edited: 'cover', insuranceCover: '4', patientTopUp: '' })).toEqual({ insuranceCover: '4', patientTopUp: '36.00' })
+    expect(r({ edited: 'cover', insuranceCover: '', patientTopUp: '' })).toEqual({ insuranceCover: '', patientTopUp: '40.00' })
+    expect(r({ edited: 'cover', insuranceCover: '3.', patientTopUp: '' }).insuranceCover).toBe('3.')
+  })
+
+  it('a partial cover updates the top-up (40 - 30 = 10) and a cover above the bill is capped at the bill', () => {
+    expect(r({ edited: 'cover', insuranceCover: '30' })).toEqual({ insuranceCover: '30', patientTopUp: '10.00' })
+    expect(r({ edited: 'cover', insuranceCover: '55' })).toEqual({ insuranceCover: '40.00', patientTopUp: '0.00' })
+  })
+
+  it('typing the top-up leaves that box alone and derives the cover from it', () => {
+    expect(r({ edited: 'topup', patientTopUp: '1.', insuranceCover: '40.00' })).toEqual({ insuranceCover: '39.00', patientTopUp: '1.' })
+    expect(r({ edited: 'topup', patientTopUp: '', insuranceCover: '' })).toEqual({ insuranceCover: '40.00', patientTopUp: '' })
+    expect(r({ edited: 'topup', patientTopUp: '99' })).toEqual({ insuranceCover: '0.00', patientTopUp: '40.00' })
+  })
+
+  it('with nothing typed it defaults to the insurer covering the whole bill and follows a changed bill', () => {
+    expect(r({ insuranceCover: '' })).toEqual({ insuranceCover: '40.00', patientTopUp: '0.00' })
+    expect(r({ total: 30, insuranceCover: '40.00' })).toEqual({ insuranceCover: '30.00', patientTopUp: '0.00' })
+  })
+})
