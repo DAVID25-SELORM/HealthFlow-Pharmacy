@@ -75,7 +75,11 @@ import {
 import Receipt from '../components/Receipt/Receipt'
 import DiagnosisSelector from '../components/DiagnosisSelector/DiagnosisSelector'
 import { getEffectiveSellingPrice, getNhisCatalogPrice, hasNhisCatalogPrice } from '../utils/drugPricing'
-import { calculateNhisSplitSettlement, NHIS_LINE_COVERAGE } from '../utils/nhisSplitSettlement'
+import {
+  calculateNhisSplitSettlement,
+  getNhisSettlementImbalance,
+  NHIS_LINE_COVERAGE,
+} from '../utils/nhisSplitSettlement'
 import { DEFAULT_FACILITY_NAME } from '../utils/facilityBranding'
 import './Sales.css'
 
@@ -1694,6 +1698,11 @@ const Sales = () => {
           return
         }
 
+        if (getNhisSettlementImbalance(nhisSettlement) !== 0) {
+          notify('The NHIS covered, top-up and private amounts do not add up to the sale total. Review the cart and try again.', 'warning')
+          return
+        }
+
         if (nhisSettlement.unresolvedLines.length) {
           notify(
             `NHIS tariff is missing for: ${nhisSettlement.unresolvedLines.map((line) => line.name).join(', ')}. ` +
@@ -3078,18 +3087,16 @@ const Sales = () => {
                     <span className="item-price">GHS {item.price.toFixed(2)}</span>
                     {isNhiaClaimSale && (() => {
                       const line = nhisSettlement.lines.find((entry) => entry.id === item.id)
-                      const labels = {
-                        [NHIS_LINE_COVERAGE.FULLY_COVERED]: 'NHIS covered',
-                        [NHIS_LINE_COVERAGE.PARTIALLY_COVERED]: 'Partly covered',
-                        [NHIS_LINE_COVERAGE.UNRESOLVED]: 'NHIS tariff missing',
-                        [NHIS_LINE_COVERAGE.NOT_COVERED]: 'Not NHIS',
-                      }
+                      const covered = line?.coverage === NHIS_LINE_COVERAGE.FULLY_COVERED ||
+                        line?.coverage === NHIS_LINE_COVERAGE.PARTIALLY_COVERED
+                      const label = line?.coverage === NHIS_LINE_COVERAGE.UNRESOLVED
+                        ? 'NHIS tariff missing'
+                        : 'Not NHIS (private)'
                       return line ? (
                         <span className="item-nhis-price" data-coverage={line.coverage}>
-                          {labels[line.coverage]}
-                          {line.patientTopUpAmount + line.privateAmount > 0
-                            ? ` · patient GHS ${(line.patientTopUpAmount + line.privateAmount).toFixed(2)}`
-                            : ''}
+                          {covered
+                            ? `Normal GHS ${line.netRetailAmount.toFixed(2)} · NHIS GHS ${line.nhisCoveredAmount.toFixed(2)} · Top-up GHS ${line.patientTopUpAmount.toFixed(2)}`
+                            : label}
                         </span>
                       ) : null
                     })()}
@@ -3330,16 +3337,13 @@ const Sales = () => {
                   {isNhiaClaimSale && (
                     <div className="nhis-price-summary">
                       <span>Normal total: GHS {total.toFixed(2)}</span>
-                      <strong>NHIS covered claim: GHS {nhisSettlement.nhisCoveredAmount.toFixed(2)}</strong>
-                      {nhisSettlement.patientTopUpAmount > 0 && (
-                        <span>NHIS top-up: GHS {nhisSettlement.patientTopUpAmount.toFixed(2)}</span>
-                      )}
-                      {nhisSettlement.privateNonNhisAmount > 0 && (
-                        <span>Private/non-NHIS: GHS {nhisSettlement.privateNonNhisAmount.toFixed(2)}</span>
-                      )}
+                      <strong>NHIS covered: GHS {nhisSettlement.nhisCoveredAmount.toFixed(2)}</strong>
+                      <span>Top-up: GHS {nhisSettlement.patientTopUpAmount.toFixed(2)}</span>
+                      <span>Private / Non-NHIS: GHS {nhisSettlement.privateNonNhisAmount.toFixed(2)}</span>
                       {nhiaPricingAdjustment > 0 && (
-                        <span>Policy adjustment (not charged): GHS {nhiaPricingAdjustment.toFixed(2)}</span>
+                        <span>Other adjustment (not charged): GHS {nhiaPricingAdjustment.toFixed(2)}</span>
                       )}
+                      <strong>Patient due now: GHS {nhisSettlement.patientDueAmount.toFixed(2)}</strong>
                     </div>
                   )}
                   {isNhiaClaimSale && (

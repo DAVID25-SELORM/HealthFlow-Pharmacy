@@ -46,7 +46,6 @@ export const calculateNhisSplitSettlement = ({
   const retailTotal = money(items.reduce((sum, item) =>
     sum + Math.max(0, Number(item?.price) || 0) * Math.max(0, Number(item?.quantity) || 0), 0))
   const appliedDiscount = money(Math.min(Math.max(0, Number(discount) || 0), retailTotal))
-  const patientTopUpsAllowed = policy !== NHIS_TOP_UP_POLICIES.NOT_ALLOWED
 
   let allocatedDiscount = 0
   const lines = items.map((item, index) => {
@@ -62,15 +61,20 @@ export const calculateNhisSplitSettlement = ({
     const netRetailAmount = money(retailAmount - lineDiscount)
     const tariffUnitPrice = Math.max(0, Number(item?.nhisPrice ?? item?.nhis_price) || 0)
     const eligible = isNhisSettlementEligible(item)
+    // NHIS is deducted first, capped at the line's normal amount (an NHIS tariff above the selling price never
+    // credits the patient or inflates the claim).
     const nhisCoveredAmount = eligible ? money(Math.min(tariffUnitPrice * quantity, netRetailAmount)) : 0
-    const difference = money(netRetailAmount - nhisCoveredAmount)
-    const patientTopUpAmount = eligible && patientTopUpsAllowed ? difference : 0
+    // Business rule: on an NHIS-covered line, TOP-UP = max(0, normal amount - NHIS covered amount). It is charged to
+    // the patient, never waived. A non-NHIS line is PRIVATE, not top-up, so reports can tell them apart.
+    const difference = Math.max(0, money(netRetailAmount - nhisCoveredAmount))
+    const patientTopUpAmount = eligible ? difference : 0
     const privateAmount = eligible ? 0 : netRetailAmount
     const listedInNhis = Boolean(item?.nhisListed ?? item?.is_nhis_listed)
     const coverage = eligible
       ? (difference > 0 ? NHIS_LINE_COVERAGE.PARTIALLY_COVERED : NHIS_LINE_COVERAGE.FULLY_COVERED)
       : (listedInNhis ? NHIS_LINE_COVERAGE.UNRESOLVED : NHIS_LINE_COVERAGE.NOT_COVERED)
-    const policyAdjustmentAmount = eligible && !patientTopUpsAllowed ? difference : 0
+    // Kept only for stored-sale compatibility: the uncovered difference is a top-up now, never an automatic waiver.
+    const policyAdjustmentAmount = 0
 
     return {
       ...item,
@@ -107,3 +111,30 @@ export const calculateNhisSplitSettlement = ({
     lines,
   }
 }
+
+/**
+ * NORMAL TOTAL = NHIS COVERED + TOP-UP + PRIVATE/NON-NHIS (+ any legacy policy adjustment), to the cent, and
+ * PATIENT DUE = TOP-UP + PRIVATE/NON-NHIS. Returns the discrepancy (0 when the buckets reconcile).
+ */
+export const getNhisSettlementImbalance = (settlement) => {
+  const buckets = money(
+    settlement.nhisCoveredAmount + settlement.patientTopUpAmount + settlement.privateNonNhisAmount + settlement.policyAdjustmentAmount
+  )
+  const bucketImbalance = money(settlement.netAmount - buckets)
+  const dueImbalance = money(settlement.patientDueAmount - (settlement.patientTopUpAmount + settlement.privateNonNhisAmount))
+  return Math.abs(bucketImbalance) > 0 ? bucketImbalance : dueImbalance
+}
+
+/**
+ * The separately stored components of an NHIA claim sale. The NHIS claim amount is ONLY the covered amount:
+ * the patient's top-up and private items never reach the reimbursement claim.
+ */
+export const getNhisSaleBreakdown = (settlement) => ({
+  normalTotal: settlement.netAmount,
+  nhisCoveredAmount: settlement.nhisCoveredAmount,
+  topUpAmount: settlement.patientTopUpAmount,
+  privateNonNhisAmount: settlement.privateNonNhisAmount,
+  policyAdjustmentAmount: settlement.policyAdjustmentAmount,
+  patientDueAmount: settlement.patientDueAmount,
+  nhisClaimAmount: settlement.nhisCoveredAmount,
+})

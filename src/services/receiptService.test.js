@@ -33,4 +33,20 @@ describe('formatSaleForReceipt', () => {
       patientTopUpMethod: 'momo',
     }))
   })
+
+  it('separates NHIS covered, top-up and private on the receipt and records how the patient paid', () => {
+    const receipt = formatSaleForReceipt(
+      {
+        id: 'sale-2', sale_number: 'S-2', total_amount: 45, payment_method: 'insurance',
+        nhis_covered_amount: 0.88, nhis_top_up_amount: 39.12, private_non_nhis_amount: 5, nhis_policy_adjustment_amount: 0,
+        insurance_covered_amount: 0.88, insurance_top_up_amount: 44.12, patient_payment_method: 'momo',
+      },
+      [],
+      { insurance_provider: 'NHIS', insurance_id: 'MEMBER-1' },
+      'Cashier'
+    )
+    expect(receipt.insuranceDetails).toEqual(expect.objectContaining({
+      coveredAmount: 0.88, patientTopUp: 39.12, privateNonNhisAmount: 5, policyAdjustmentAmount: 0, patientDueAmount: 44.12, patientTopUpMethod: 'momo',
+    }))
+  })
 })

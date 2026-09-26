@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   calculateNhisSplitSettlement,
+  getNhisSaleBreakdown,
+  getNhisSettlementImbalance,
   NHIS_TOP_UP_POLICIES,
 } from './nhisSplitSettlement'
 
@@ -29,16 +31,16 @@ describe('calculateNhisSplitSettlement', () => {
     ])
   })
 
-  it('never creates a patient top-up when policy disallows it', () => {
+  it('never waives the uncovered difference, whatever the legacy top-up policy says', () => {
     const result = calculateNhisSplitSettlement({
       items,
       topUpPolicy: NHIS_TOP_UP_POLICIES.NOT_ALLOWED,
     })
 
-    expect(result.patientTopUpAmount).toBe(0)
+    expect(result.patientTopUpAmount).toBe(5)
     expect(result.privateNonNhisAmount).toBe(8)
-    expect(result.policyAdjustmentAmount).toBe(5)
-    expect(result.patientDueAmount).toBe(8)
+    expect(result.policyAdjustmentAmount).toBe(0)
+    expect(result.patientDueAmount).toBe(13)
   })
 
   it('reconciles all buckets after a basket discount', () => {
@@ -129,5 +131,104 @@ describe('per-line NHIS coverage classification (POS)', () => {
     const r = settle([line({ price: 1.76, nhisCode: 'D', nhisPrice: 1.76, nhisListed: true })])
     expect(r.patientDueAmount + r.nhisCoveredAmount).toBe(r.netAmount)
     expect(r.patientDueAmount).toBe(0)
+  })
+})
+
+describe('NHIS top-up rule: top-up = max(0, normal - NHIS covered)', () => {
+  const nhis = (over) => ({ name: 'Item', quantity: 1, price: 40, nhisCode: 'ACETAZTA1', nhisPrice: 0.88, nhisListed: true, ...over })
+  // Every policy value behaves the same: the difference is charged, never waived.
+  const policies = Object.values(NHIS_TOP_UP_POLICIES)
+
+  it.each(policies)('partial coverage (40.00 normal, 0.88 NHIS) -> top-up 39.12, patient due 39.12 [policy %s]', (topUpPolicy) => {
+    const r = calculateNhisSplitSettlement({ items: [nhis()], topUpPolicy })
+    expect(r.retailTotal).toBe(40)
+    expect(r.nhisCoveredAmount).toBe(0.88)
+    expect(r.patientTopUpAmount).toBe(39.12)
+    expect(r.privateNonNhisAmount).toBe(0)
+    expect(r.policyAdjustmentAmount).toBe(0)
+    expect(r.patientDueAmount).toBe(39.12)
+    expect(r.lines[0].coverage).toBe('PARTIALLY_COVERED')
+    expect(getNhisSettlementImbalance(r)).toBe(0)
+  })
+
+  it('full coverage (40.00 normal, 40.00 NHIS) -> no top-up, nothing due', () => {
+    const r = calculateNhisSplitSettlement({ items: [nhis({ nhisPrice: 40 })], topUpPolicy: NHIS_TOP_UP_POLICIES.NOT_ALLOWED })
+    expect(r.nhisCoveredAmount).toBe(40)
+    expect(r.patientTopUpAmount).toBe(0)
+    expect(r.patientDueAmount).toBe(0)
+    expect(r.lines[0].coverage).toBe('FULLY_COVERED')
+  })
+
+  it('an NHIS tariff above the normal amount never creates a negative top-up, a credit, or a bigger claim', () => {
+    const r = calculateNhisSplitSettlement({ items: [nhis({ nhisPrice: 45 })] })
+    expect(r.patientTopUpAmount).toBe(0)
+    expect(r.patientDueAmount).toBe(0)
+    expect(r.nhisCoveredAmount).toBe(40) // capped at the normal amount, never 45
+    expect(r.lines.every((line) => line.patientTopUpAmount >= 0 && line.privateAmount >= 0)).toBe(true)
+  })
+
+  it('a non-NHIS item is PRIVATE, not top-up', () => {
+    const r = calculateNhisSplitSettlement({ items: [{ name: 'Plain', quantity: 1, price: 5 }] })
+    expect(r.patientTopUpAmount).toBe(0)
+    expect(r.privateNonNhisAmount).toBe(5)
+    expect(r.nhisCoveredAmount).toBe(0)
+    expect(r.patientDueAmount).toBe(5)
+  })
+
+  it('mixed basket: normal 45.00 = NHIS 0.88 + top-up 39.12 + private 5.00; patient due 44.12', () => {
+    const r = calculateNhisSplitSettlement({ items: [nhis(), { name: 'Private', quantity: 1, price: 5 }] })
+    expect(r.retailTotal).toBe(45)
+    expect(r.nhisCoveredAmount).toBe(0.88)
+    expect(r.patientTopUpAmount).toBe(39.12)
+    expect(r.privateNonNhisAmount).toBe(5)
+    expect(r.patientDueAmount).toBe(44.12)
+    expect(r.nhisCoveredAmount + r.patientTopUpAmount + r.privateNonNhisAmount).toBeCloseTo(r.netAmount, 10)
+    expect(getNhisSettlementImbalance(r)).toBe(0)
+  })
+
+  it('recalculates on quantity change: 2 x (40 normal / 0.88 NHIS) = 80 / 1.76 / 78.24', () => {
+    const one = calculateNhisSplitSettlement({ items: [nhis({ quantity: 1 })] })
+    const two = calculateNhisSplitSettlement({ items: [nhis({ quantity: 2 })] })
+    expect(one.patientTopUpAmount).toBe(39.12)
+    expect(two.retailTotal).toBe(80)
+    expect(two.nhisCoveredAmount).toBe(1.76)
+    expect(two.patientTopUpAmount).toBe(78.24)
+    expect(two.patientDueAmount).toBe(78.24)
+  })
+
+  it('removing the NHIS item leaves only the private amount; an empty basket is all zero', () => {
+    const both = [nhis(), { name: 'Private', quantity: 1, price: 5 }]
+    const withoutNhis = calculateNhisSplitSettlement({ items: both.slice(1) })
+    expect(withoutNhis.patientTopUpAmount).toBe(0)
+    expect(withoutNhis.patientDueAmount).toBe(5)
+    const empty = calculateNhisSplitSettlement({ items: [] })
+    expect([empty.nhisCoveredAmount, empty.patientTopUpAmount, empty.privateNonNhisAmount, empty.patientDueAmount]).toEqual([0, 0, 0, 0])
+  })
+
+  it('stays exact with awkward decimals and a basket discount (buckets always reconcile)', () => {
+    const r = calculateNhisSplitSettlement({
+      items: [nhis({ price: 0.3, nhisPrice: 0.1, quantity: 3 }), { name: 'Private', quantity: 1, price: 0.7 }],
+      discount: 0.17,
+    })
+    expect(getNhisSettlementImbalance(r)).toBe(0)
+    expect(r.patientDueAmount).toBe(Math.round((r.patientTopUpAmount + r.privateNonNhisAmount) * 100) / 100)
+  })
+
+  it('stored sale breakdown keeps the buckets separate, and the NHIS claim is only the covered amount', () => {
+    const r = calculateNhisSplitSettlement({ items: [nhis(), { name: 'Private', quantity: 1, price: 5 }] })
+    expect(getNhisSaleBreakdown(r)).toEqual({
+      normalTotal: 45,
+      nhisCoveredAmount: 0.88,
+      topUpAmount: 39.12,
+      privateNonNhisAmount: 5,
+      policyAdjustmentAmount: 0,
+      patientDueAmount: 44.12,
+      nhisClaimAmount: 0.88, // NOT 40.00: the patient's top-up never inflates the reimbursement claim
+    })
+  })
+
+  it('detects buckets that do not reconcile', () => {
+    const r = calculateNhisSplitSettlement({ items: [nhis()] })
+    expect(getNhisSettlementImbalance({ ...r, patientTopUpAmount: r.patientTopUpAmount + 1 })).not.toBe(0)
   })
 })

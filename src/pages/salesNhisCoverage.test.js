@@ -29,3 +29,32 @@ describe('POS NHIS coverage wiring', () => {
     expect(source).not.toMatch(/nhisCoveredAmount:\s*item\.price/)
   })
 })
+
+describe('POS NHIS top-up wiring', () => {
+  it('no longer labels the uncovered difference as a waived policy adjustment', () => {
+    expect(source).not.toContain('Policy adjustment (not charged)')
+    expect(source).toContain('Top-up: GHS {nhisSettlement.patientTopUpAmount.toFixed(2)}')
+    expect(source).toContain('Private / Non-NHIS: GHS {nhisSettlement.privateNonNhisAmount.toFixed(2)}')
+    expect(source).toContain('Patient due now: GHS {nhisSettlement.patientDueAmount.toFixed(2)}')
+  })
+
+  it('stores the buckets separately and sends the patient payment method for the patient-pay portion', () => {
+    expect(source).toContain('nhisCoveredAmount: saleIsNhiaClaim ? nhiaCoveredAmount : null')
+    expect(source).toContain('nhisTopUpAmount: saleIsNhiaClaim ? nhisPatientTopUpAmount : null')
+    expect(source).toContain('privateNonNhisAmount: saleIsNhiaClaim ? privateNonNhisAmount : null')
+    expect(source).toContain('patientPaymentMethod: saleIsNhiaClaim && patientDueAmount > 0 ? patientTopUpMethod : null')
+    expect(source).toContain('id="nhia-patient-payment-method"')
+  })
+
+  it('builds the NHIS claim from the covered tariff only (the top-up never reaches the claim) and blocks unreconciled buckets', () => {
+    const claimBuilder = source.slice(source.indexOf(".filter((item) => item.nhisCoveredAmount > 0)"), source.indexOf(".filter((item) => item.nhisCoveredAmount > 0)") + 400)
+    expect(claimBuilder).toContain('getNhisCoveredUnitPrice(item)')
+    expect(claimBuilder).not.toContain('patientTopUpAmount')
+    expect(source).toContain('getNhisSettlementImbalance(nhisSettlement) !== 0')
+  })
+
+  it('leaves other payment modes on their own path (the NHIA settlement only applies to NHIA claim sales)', () => {
+    expect(source).toContain("const saleIsNhiaClaim = paymentMethod === 'nhia'")
+    expect(source).toContain('const checkoutTotal = isNhiaClaimSale ? nhisSettlement.patientDueAmount : total')
+  })
+})
