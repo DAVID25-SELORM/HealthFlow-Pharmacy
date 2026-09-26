@@ -58,3 +58,19 @@ describe('POS NHIS top-up wiring', () => {
     expect(source).toContain('const checkoutTotal = isNhiaClaimSale ? nhisSettlement.patientDueAmount : total')
   })
 })
+
+describe('Tenant admin NHIS top-up policy setting', () => {
+  const admin = readFileSync('src/pages/TenantAdmin.jsx', 'utf8').replace(/\r\n/g, '\n')
+
+  it('is clearly labelled inactive, read-only, and explains that top-ups are always charged (both forms)', () => {
+    expect(admin.split('NHIS top-up policy (inactive — no longer applied)')).toHaveLength(3) // create + edit
+    expect(admin.split('is always charged to the patient as a top-up').length).toBeGreaterThanOrEqual(3)
+    // read-only: no onChange handler can alter it any more
+    expect(admin).not.toContain("setPharmacy({ ...pharmacy, nhisTopUpPolicy: e.target.value })")
+    expect(admin).not.toContain("setEditForm({ ...editForm, nhisTopUpPolicy: e.target.value })")
+  })
+
+  it('keeps the stored value untouched in the save flow (nothing is lost or rewritten)', () => {
+    expect(admin).toContain("nhisTopUpPolicy: org.nhis_top_up_policy || (org.can_use_nhis_topups ? 'allowed' : 'not_allowed')")
+  })
+})

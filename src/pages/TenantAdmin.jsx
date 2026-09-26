@@ -689,17 +689,14 @@ const TenantAdmin = () => {
                     />
                     NHIS top-ups
                   </label>
-                  <label className="tenant-checkbox-label">
-                    NHIS top-up policy
-                    <select
-                      value={pharmacy.nhisTopUpPolicy}
-                      disabled={pharmacy.organizationType === 'chemical_shop' || !pharmacy.canUseNhis}
-                      onChange={(e) => setPharmacy({ ...pharmacy, nhisTopUpPolicy: e.target.value })}
-                    >
+                  <label className="tenant-checkbox-label" title="The amount NHIS does not cover on an NHIA claim sale is always charged to the patient as a top-up. This setting no longer changes that; it is kept only so existing values are not lost.">
+                    NHIS top-up policy (inactive — no longer applied)
+                    <select value={pharmacy.nhisTopUpPolicy} disabled aria-describedby="nhis-top-up-policy-note">
                       <option value="not_allowed">Not allowed</option>
                       <option value="allowed">Allowed</option>
                       <option value="required_when_nhis_below_selling_value">Required when NHIS is lower</option>
                     </select>
+                    <small id="nhis-top-up-policy-note">The amount NHIS does not cover on an NHIA claim sale is always charged to the patient as a top-up. This setting no longer changes that; it is kept only so existing values are not lost.</small>
                   </label>
                   <label className="tenant-checkbox-label">
                     <input
@@ -1357,17 +1354,14 @@ const TenantAdmin = () => {
                       />
                       NHIS top-ups
                     </label>
-                    <label className="tenant-checkbox-label">
-                      NHIS top-up policy
-                      <select
-                        value={editForm.nhisTopUpPolicy || 'not_allowed'}
-                        disabled={editForm.organizationType === 'chemical_shop' || !editForm.canUseNhis}
-                        onChange={(e) => setEditForm({ ...editForm, nhisTopUpPolicy: e.target.value })}
-                      >
+                    <label className="tenant-checkbox-label" title="The amount NHIS does not cover on an NHIA claim sale is always charged to the patient as a top-up. This setting no longer changes that; it is kept only so existing values are not lost.">
+                      NHIS top-up policy (inactive — no longer applied)
+                      <select value={editForm.nhisTopUpPolicy || 'not_allowed'} disabled aria-describedby="edit-nhis-top-up-policy-note">
                         <option value="not_allowed">Not allowed</option>
                         <option value="allowed">Allowed</option>
                         <option value="required_when_nhis_below_selling_value">Required when NHIS is lower</option>
                       </select>
+                      <small id="edit-nhis-top-up-policy-note">The amount NHIS does not cover on an NHIA claim sale is always charged to the patient as a top-up. This setting no longer changes that; it is kept only so existing values are not lost.</small>
                     </label>
                     <label className="tenant-checkbox-label">
                       <input
