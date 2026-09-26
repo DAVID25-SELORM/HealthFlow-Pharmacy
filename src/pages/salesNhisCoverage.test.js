@@ -78,12 +78,22 @@ describe('Tenant admin NHIS top-up policy setting', () => {
 describe('NHIA claim: cash received and change for the patient portion', () => {
   it('shows Cash Received and Change Due for a cash patient portion and refuses an insufficient amount', () => {
     expect(source).toContain('id="nhia-cash-received"')
-    expect(source).toContain('const nhiaCashPortion = isNhiaClaimSale && nhisSettlement.patientDueAmount > 0 && patientTopUpMethod === \'cash\'')
-    expect(source).toContain('getNhisCashChange(nhiaCashReceived, nhisSettlement.patientDueAmount)')
+    expect(source).toContain("const patientCashPortion = patientCashDue > 0 && patientTopUpMethod === 'cash'")
+    expect(source).toContain('getNhisCashChange(patientCashReceived, patientCashDue)')
     expect(source).toContain("Cash received is less than the patient's due of")
   })
 
   it('does not change what is stored: amount paid stays the patient due for NHIA claim sales', () => {
     expect(source.split("amountPaid: paymentMethod === 'cash' ? amountPaid : saleIsNhiaClaim ? patientDueAmount : total").length).toBe(3)
+  })
+})
+
+describe('Insurance sale: cash received and change for the patient top-up', () => {
+  it('uses the same Cash Received / Change Due panel when the top-up is paid in cash, and refuses an insufficient amount', () => {
+    expect(source).toContain("paymentMethod === 'insurance' && insuranceSplitAllowed")
+    expect(source).toContain('? Number.parseFloat(patientTopUp) || 0')
+    expect(source).toContain('Cash received is less than the patient top-up of')
+    // one shared panel for NHIA and Insurance
+    expect(source.split('id="nhia-cash-received"').length).toBe(2)
   })
 })

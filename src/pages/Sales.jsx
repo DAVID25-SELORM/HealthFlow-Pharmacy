@@ -1748,6 +1748,17 @@ const Sales = () => {
         return
       }
 
+      if (
+        !saleIsNhiaClaim &&
+        patientTopUpMethod === 'cash' &&
+        patientTopUpAmount > 0 &&
+        received !== '' &&
+        (Number.parseFloat(received) || 0) < patientTopUpAmount
+      ) {
+        notify(`Cash received is less than the patient top-up of GHS ${patientTopUpAmount.toFixed(2)}.`, 'warning')
+        return
+      }
+
       if (saleIsNhiaClaim && !localBranchServerAvailable) {
         notify('NHIA claim sales must be saved through the local branch server.', 'warning')
         return
@@ -2450,11 +2461,16 @@ const Sales = () => {
     ? formatPatientOption(selectedPatientForSale)
     : 'Walk-in customer'
   const confirmationBranchLabel = branches.find((branch) => branch.id === activeShift?.branch_id)?.name || 'Current branch'
-  // NHIA claim with a cash patient portion: the cashier records what the patient handed over and sees the change.
-  // Display aid only: the stored amount paid stays the patient's due amount, exactly as before.
-  const nhiaCashPortion = isNhiaClaimSale && nhisSettlement.patientDueAmount > 0 && patientTopUpMethod === 'cash'
-  const nhiaCashReceived = Number.parseFloat(received) || 0
-  const nhiaCashChange = nhiaCashPortion ? getNhisCashChange(nhiaCashReceived, nhisSettlement.patientDueAmount) : 0
+  // NHIA claim or Insurance sale where the patient pays their portion (top-up + private) in cash: the cashier records
+  // what the patient handed over and sees the change. Display aid only: stored amounts paid are unchanged.
+  const patientCashDue = isNhiaClaimSale
+    ? nhisSettlement.patientDueAmount
+    : paymentMethod === 'insurance' && insuranceSplitAllowed
+      ? Number.parseFloat(patientTopUp) || 0
+      : 0
+  const patientCashPortion = patientCashDue > 0 && patientTopUpMethod === 'cash'
+  const patientCashReceived = Number.parseFloat(received) || 0
+  const patientCashChange = patientCashPortion ? getNhisCashChange(patientCashReceived, patientCashDue) : 0
   const confirmationAmountPaid = paymentMethod === 'cash'
     ? Number.parseFloat(received) || 0
     : isNhiaClaimSale
@@ -2571,10 +2587,10 @@ const Sales = () => {
                 <div><span>Payment method</span><strong>{paymentMethod.toUpperCase()}</strong></div>
                 <div><span>Amount paid</span><strong>GHS {confirmationAmountPaid.toFixed(2)}</strong></div>
                 {paymentMethod === 'cash' && <div><span>Change due</span><strong>GHS {change.toFixed(2)}</strong></div>}
-                {nhiaCashPortion && nhiaCashReceived > 0 && (
+                {patientCashPortion && patientCashReceived > 0 && (
                   <>
-                    <div><span>Cash received</span><strong>GHS {nhiaCashReceived.toFixed(2)}</strong></div>
-                    <div><span>Change due</span><strong>GHS {nhiaCashChange.toFixed(2)}</strong></div>
+                    <div><span>Cash received</span><strong>GHS {patientCashReceived.toFixed(2)}</strong></div>
+                    <div><span>Change due</span><strong>GHS {patientCashChange.toFixed(2)}</strong></div>
                   </>
                 )}
                 {isNhiaClaimSale && (
@@ -3465,7 +3481,7 @@ const Sales = () => {
               </div>
             )}
 
-            {nhiaCashPortion && (
+            {patientCashPortion && (
               <div className="cash-panel">
                 <div className="cash-field cash-field-input">
                   <label htmlFor="nhia-cash-received">Cash Received</label>
@@ -3478,13 +3494,13 @@ const Sales = () => {
                       onChange={(e) => setReceived(e.target.value)}
                       step="0.01"
                       min="0"
-                      placeholder={nhisSettlement.patientDueAmount.toFixed(2)}
+                      placeholder={patientCashDue.toFixed(2)}
                     />
                   </div>
                 </div>
                 <div className="cash-field cash-field-change">
                   <span className="cash-field-label">Change Due</span>
-                  <span className="change-amount">GHS {nhiaCashChange.toFixed(2)}</span>
+                  <span className="change-amount">GHS {patientCashChange.toFixed(2)}</span>
                 </div>
               </div>
             )}
