@@ -115,6 +115,24 @@ describe('Inventory', () => {
     click.mockRestore()
   })
 
+  it('keeps server failure reasons visible and retries only failed rows', async () => {
+    const good = { name: 'Good drug', quantity: 1, price: 2, expiry_date: '2028-01-01' }
+    const bad = { ...good, name: 'Failed drug' }
+    mocks.parseExcelFile.mockResolvedValue([good, bad])
+    mocks.validateImportData.mockReturnValue({ validRows: [good, bad], validCount: 2, invalidRows: [], invalidCount: 0, totalRows: 2 })
+    mocks.importDrugs.mockResolvedValueOnce({ successful: [good], created: [good], failed: [{ drug: bad, error: 'Stock quantity exceeds the supported range.' }] })
+    mocks.importDrugs.mockResolvedValueOnce({ successful: [bad], created: [bad], failed: [] })
+    render(<Inventory />)
+    await waitFor(() => expect(mocks.getAllDrugs).toHaveBeenCalled())
+    fireEvent.change(screen.getByLabelText('Import Excel file'), { target: { files: [new File(['test'], 'stock.xlsx')] } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Import 2 Drug(s)' }))
+    await screen.findByText('Stock quantity exceeds the supported range.')
+    expect(screen.getByText('Import Drugs from Excel')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Import 1 Drug(s)' }))
+    await waitFor(() => expect(mocks.importDrugs).toHaveBeenNthCalledWith(2, [bad]))
+    await waitFor(() => expect(screen.queryByText('Import Drugs from Excel')).not.toBeInTheDocument())
+  })
+
   it('loads both regular and NHIS reference medicines without triggering catalogue maintenance', async () => {
     render(<Inventory />)
 

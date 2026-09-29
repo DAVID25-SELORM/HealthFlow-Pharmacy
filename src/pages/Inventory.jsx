@@ -893,7 +893,7 @@ const Inventory = () => {
             ? `Skipped ${duplicateActiveCount} row(s) that already exist in active inventory.`
             : duplicateActiveCount > 0
               ? `Import completed with ${results.failed.length} issue(s). ${duplicateActiveCount} row(s) were skipped because they already exist in active inventory.`
-              : `Failed to import ${results.failed.length} drug(s). Review the upload rows and try again.`
+              : `Failed to import ${results.failed.length} drug(s): ${results.failed[0]?.error || 'No reason was returned by the server.'}`
 
         notify(
           warningMessage,
@@ -902,8 +902,19 @@ const Inventory = () => {
         )
       }
 
-      setShowImportModal(false)
-      setImportPreview(null)
+      if (results.failed.length > 0) {
+        // Keep the server's reasons visible and never resubmit successful rows.
+        const failedRows = results.failed.map((item) => item.drug).filter(Boolean)
+        setImportPreview({
+          ...importPreview,
+          validRows: failedRows,
+          validCount: failedRows.length,
+          importFailures: results.failed,
+        })
+      } else {
+        setShowImportModal(false)
+        setImportPreview(null)
+      }
       await loadDrugs()
       dispatchHealthflowDataChanged()
     } catch (error) {
@@ -1569,6 +1580,20 @@ const Inventory = () => {
             </div>
             
             <div className="import-preview">
+              {importPreview.importFailures?.length > 0 && (
+                <div className="import-errors" role="alert">
+                  <h4>Rows that could not be imported</h4>
+                  <p>Only failed rows remain for retry. Correct the issue below, or close this window and upload a corrected file.</p>
+                  <ul>
+                    {importPreview.importFailures.map((item, index) => (
+                      <li key={index}>
+                        <strong>{item.drug?.name || `Failed item ${index + 1}`}:</strong>{' '}
+                        {item.error || 'No reason was returned by the server.'}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               <div className="import-stats">
                 <div className="stat-card success">
                   <h3>{importPreview.validCount}</h3>
