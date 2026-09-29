@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Plus,
   Search,
@@ -163,6 +163,7 @@ const Inventory = () => {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [importing, setImporting] = useState(false)
+  const importFileInputRef = useRef(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [activeFilter, setActiveFilter] = useState('all')
   const [currentPage, setCurrentPage] = useState(1)
@@ -1018,17 +1019,30 @@ const Inventory = () => {
           </button>
           {canAdjustStock && (
             <>
-              <label className="btn btn-secondary">
+              <button
+                className="btn btn-secondary"
+                type="button"
+                disabled={importing}
+                onClick={() => {
+                  if (!tierLimits.hasAdvancedInventory) {
+                    notify('Bulk inventory import is available on Professional or Enterprise plans.', 'info')
+                    return
+                  }
+                  importFileInputRef.current?.click()
+                }}
+              >
                 <Upload size={20} />
-                Import Excel
-                <input
-                  type="file"
-                  accept=".xlsx"
-                  onChange={handleFileSelect}
-                  style={{ display: 'none' }}
-                  disabled={importing || !tierLimits.hasAdvancedInventory}
-                />
-              </label>
+                {importing ? 'Importing...' : 'Import Excel'}
+              </button>
+              <input
+                ref={importFileInputRef}
+                type="file"
+                aria-label="Import Excel file"
+                accept=".xlsx"
+                onChange={handleFileSelect}
+                style={{ display: 'none' }}
+                disabled={importing || !tierLimits.hasAdvancedInventory}
+              />
               <button className="btn btn-primary" type="button" onClick={openAddModal}>
                 <Plus size={20} />
                 Add Drug

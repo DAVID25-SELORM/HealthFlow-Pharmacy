@@ -93,6 +93,28 @@ describe('Inventory', () => {
     mocks.isDefaultCatalogDrug.mockReturnValue(false)
   })
 
+  it('explains the plan restriction when Import Excel is clicked on Basic', async () => {
+    mocks.useTenant.mockReturnValue({ tierLimits: { hasAdvancedInventory: false } })
+    render(<Inventory />)
+    await waitFor(() => expect(mocks.getAllDrugs).toHaveBeenCalled())
+    fireEvent.click(screen.getByRole('button', { name: 'Import Excel' }))
+    expect(mocks.notify).toHaveBeenCalledWith(
+      'Bulk inventory import is available on Professional or Enterprise plans.', 'info'
+    )
+    expect(mocks.parseExcelFile).not.toHaveBeenCalled()
+  })
+
+  it('opens the Excel file picker on an eligible plan', async () => {
+    render(<Inventory />)
+    await waitFor(() => expect(mocks.getAllDrugs).toHaveBeenCalled())
+    const input = screen.getByLabelText('Import Excel file')
+    const click = vi.spyOn(input, 'click').mockImplementation(() => {})
+    fireEvent.click(screen.getByRole('button', { name: 'Import Excel' }))
+    expect(input).not.toBeDisabled()
+    expect(click).toHaveBeenCalledOnce()
+    click.mockRestore()
+  })
+
   it('loads both regular and NHIS reference medicines without triggering catalogue maintenance', async () => {
     render(<Inventory />)
 
