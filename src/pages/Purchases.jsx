@@ -16,6 +16,8 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
+import { tryLogAuditEvent } from '../services/auditService'
+import PurchaseItemImportPanel from '../components/purchases/PurchaseItemImportPanel'
 import { formatAppDate } from '../utils/date'
 import { confirmAction } from '../utils/actionConfirmation'
 import {
@@ -154,6 +156,7 @@ const Purchases = () => {
   const [activeTab, setActiveTab]           = useState('all')
   const [searchTerm, setSearchTerm]         = useState('')
   const [showNewModal, setShowNewModal]     = useState(false)
+  const [itemEntryMode, setItemEntryMode]   = useState('manual')
   const [viewPurchase, setViewPurchase]     = useState(null)
   const [submitting, setSubmitting]         = useState(false)
   const [completing, setCompleting]         = useState(null)
@@ -641,7 +644,28 @@ const Purchases = () => {
     setLineItems([])
     setItemForm(blankItemForm)
     setDrugSearch('')
+    setItemEntryMode('manual')
     setError('')
+  }
+
+  // Bulk-import only ever appends to the same lineItems the manual entry panel writes to — it never touches the
+  // database itself, so it inherits the exact stock-safety guarantee already in place: stock only ever changes
+  // later, through completePurchase/receive, never here.
+  const handleImportItems = (items, summary) => {
+    if (!items.length) return
+    setLineItems((prev) => [...prev, ...items])
+    tryLogAuditEvent({
+      eventType: 'purchase.items_imported',
+      entityType: 'purchases',
+      entityId: purchaseForm.id || null,
+      action: 'import_purchase_items',
+      details: {
+        file_name: summary?.fileName || null,
+        total_rows: summary?.totalRows || 0,
+        valid_rows: summary?.validRows || 0,
+        invalid_rows: summary?.invalidRows || 0,
+      },
+    })
   }
 
   const handleOfflinePurchaseSync = async () => {
@@ -1048,6 +1072,41 @@ const Purchases = () => {
               <div className="purchase-modal-right">
                 <h3 className="entry-panel-title">Enter Purchased Item</h3>
 
+                <div className="purchase-item-mode-tabs" role="tablist">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={itemEntryMode === 'manual'}
+                    className={`purchase-item-mode-tab ${itemEntryMode === 'manual' ? 'active' : ''}`}
+                    onClick={() => setItemEntryMode('manual')}
+                  >
+                    Manual Entry
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={itemEntryMode === 'import'}
+                    className={`purchase-item-mode-tab ${itemEntryMode === 'import' ? 'active' : ''}`}
+                    onClick={() => setItemEntryMode('import')}
+                  >
+                    Import Excel/CSV
+                  </button>
+                </div>
+
+                {itemEntryMode === 'import' && (
+                  <PurchaseItemImportPanel
+                    drugs={drugs}
+                    allowedUnits={unitOptions.map((option) => option.value)}
+                    fallbackUnit={blankItemForm.unit}
+                    calcDiscountValue={calcDiscountValue}
+                    calcNetTotal={calcNetTotal}
+                    fmtCurrency={fmtCurrency}
+                    onImport={handleImportItems}
+                  />
+                )}
+
+                {itemEntryMode === 'manual' && (
+                  <>
                 <div className="form-group">
                   <label>Drug / Item *</label>
                   <div className="drug-search-wrap">
@@ -1229,6 +1288,8 @@ const Purchases = () => {
                     + Add
                   </button>
                 </div>
+                  </>
+                )}
               </div>
             </div>
 
