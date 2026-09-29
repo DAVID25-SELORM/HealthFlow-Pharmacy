@@ -3661,7 +3661,11 @@ const bulkImportDrugs = async (
       is_nhis_listed: Boolean(row.is_nhis_listed),
       medicine_access_level: normalizeMedicineAccessLevelForSave(row.medicine_access_level),
       chemical_shop_sale_permitted: Boolean(row.chemical_shop_sale_permitted),
-      epharmacy_sale_class: normalizeText(row.epharmacy_sale_class) || null,
+      // Spreadsheets omit this field. Omission preserves existing classifications
+      // on update and lets the database default apply on insert; null violates NOT NULL.
+      ...(normalizeText(row.epharmacy_sale_class)
+        ? { epharmacy_sale_class: normalizeText(row.epharmacy_sale_class) }
+        : {}),
       supplier: normalizeText(row.supplier) || null,
       category: normalizeText(row.category) || null,
       description: normalizeText(row.description) || null,
