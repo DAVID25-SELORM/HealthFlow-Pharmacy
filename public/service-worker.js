@@ -64,14 +64,19 @@ self.addEventListener('fetch', (event) => {
 
     event.respondWith(
       fetch(request)
-        .then((response) => {
-          const responseCopy = response.clone()
-          caches.open(CACHE_NAME).then((cache) => cache.put('/index.html', responseCopy))
+        .then(async (response) => {
+          if (response.ok && response.headers.get('Content-Type')?.includes('text/html')) {
+            const responseCopy = response.clone()
+            await caches.open(CACHE_NAME).then((cache) => cache.put('/index.html', responseCopy)).catch(() => undefined)
+          } else if (response.status >= 500) {
+            const cachedShell = await caches.match('/index.html')
+            if (cachedShell?.ok) return cachedShell
+          }
           return response
         })
         .catch(async () => {
           const cachedShell = await caches.match('/index.html')
-          return cachedShell || new Response('HealthFlow is unavailable offline until the app shell is cached.', {
+          return (cachedShell?.ok && cachedShell) || new Response('HealthFlow is unavailable offline until the app shell is cached.', {
             status: 503,
             headers: { 'Content-Type': 'text/plain' },
           })
