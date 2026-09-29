@@ -462,7 +462,7 @@ const getValidFunctionSession = async (forceRefresh = false) => {
   return session
 }
 
-const getValidUserSession = async () => {
+export const getValidUserSession = async () => {
   const session = await getCurrentAuthSession()
   if (!session?.access_token) {
     return null
@@ -473,6 +473,39 @@ const getValidUserSession = async () => {
   }
 
   return session
+}
+
+// A form that stays open for a while (a long NHIS claim, prescription upload) can outlive the auth client's own
+// background refresh timer, which browsers throttle on a backgrounded/unfocused tab. A direct supabase.from(...)
+// write then goes out with an expired access token: PostgREST treats auth.uid() as unset, and any RLS policy that
+// checks the requester's role (e.g. nhis_claims) rejects the row with "new row violates row-level security policy" —
+// a permissions-shaped error for what is really an expired session. Call this right before a write on a form that can
+// sit open a while, so the token is refreshed first when it's stale; it never throws.
+export const ensureFreshSupabaseSessionBeforeWrite = async () => {
+  try {
+    await getValidUserSession()
+  } catch {
+    // Best-effort: if this fails, the write proceeds and surfaces its own error as before.
+  }
+}
+
+// Postgres/PostgREST reports a row-level security rejection as SQLSTATE 42501 ("insufficient_privilege"), the same
+// code an RLS policy failure always uses. It's the signature of the expired-session case ensureFreshSupabaseSessionBeforeWrite
+// mainly guards against, but that guard only catches a token already close to expiry, not one that expired moments
+// earlier. Retrying once after a forced refresh recovers that case; a genuine permissions problem still fails again
+// and surfaces normally.
+export const isRowLevelSecurityRejection = (error) => error?.code === '42501'
+
+export const withRowLevelSecurityRetry = async (write) => {
+  const result = await write()
+  if (!result?.error || !isRowLevelSecurityRejection(result.error)) {
+    return result
+  }
+  const { session } = await refreshSupabaseSessionOnce()
+  if (!session) {
+    return result
+  }
+  return await write()
 }
 
 export const getCurrentSupabaseUser = async () => {

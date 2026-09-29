@@ -456,4 +456,107 @@ describe('invokeSupabaseFunction', () => {
     expect(refreshSession).toHaveBeenCalledTimes(1)
     expect(getUser).toHaveBeenCalledTimes(2)
   })
+
+  // A direct supabase.from(...) write (unlike invokeSupabaseFunction) never checks the session's own freshness before
+  // sending the request, so a form left open long enough for the access token to expire sends an unauthenticated
+  // write. PostgREST/RLS then reports SQLSTATE 42501 ("insufficient_privilege") — a permissions-shaped error for
+  // what is really an expired session. These two helpers exist to prevent, and then recover from, exactly that.
+  describe('ensureFreshSupabaseSessionBeforeWrite', () => {
+    it('refreshes a session that is about to expire', async () => {
+      const aboutToExpire = { access_token: 'stale', expires_at: Math.floor(NOW.getTime() / 1000) + 10 }
+      const refreshed = { access_token: 'fresh', expires_at: Math.floor(NOW.getTime() / 1000) + 3600 }
+      const getSession = vi.fn().mockResolvedValue({ data: { session: aboutToExpire }, error: null })
+      const refreshSession = vi.fn().mockResolvedValue({ data: { session: refreshed }, error: null })
+      vi.doMock('@supabase/supabase-js', () => ({
+        createClient: vi.fn(() => ({ auth: { getSession, getUser: vi.fn(), refreshSession }, functions: { invoke: vi.fn() } })),
+      }))
+
+      const { ensureFreshSupabaseSessionBeforeWrite } = await import('./supabase')
+      await ensureFreshSupabaseSessionBeforeWrite()
+
+      expect(refreshSession).toHaveBeenCalledTimes(1)
+    })
+
+    it('leaves a fresh session alone', async () => {
+      const fresh = { access_token: 'fresh', expires_at: Math.floor(NOW.getTime() / 1000) + 3600 }
+      const getSession = vi.fn().mockResolvedValue({ data: { session: fresh }, error: null })
+      const refreshSession = vi.fn()
+      vi.doMock('@supabase/supabase-js', () => ({
+        createClient: vi.fn(() => ({ auth: { getSession, getUser: vi.fn(), refreshSession }, functions: { invoke: vi.fn() } })),
+      }))
+
+      const { ensureFreshSupabaseSessionBeforeWrite } = await import('./supabase')
+      await ensureFreshSupabaseSessionBeforeWrite()
+
+      expect(refreshSession).not.toHaveBeenCalled()
+    })
+
+    it('never throws, even with no session at all', async () => {
+      const getSession = vi.fn().mockResolvedValue({ data: { session: null }, error: null })
+      vi.doMock('@supabase/supabase-js', () => ({
+        createClient: vi.fn(() => ({ auth: { getSession, getUser: vi.fn(), refreshSession: vi.fn() }, functions: { invoke: vi.fn() } })),
+      }))
+
+      const { ensureFreshSupabaseSessionBeforeWrite } = await import('./supabase')
+      await expect(ensureFreshSupabaseSessionBeforeWrite()).resolves.toBeUndefined()
+    })
+  })
+
+  describe('withRowLevelSecurityRetry', () => {
+    it('retries once, after a forced refresh, on a row-level security rejection and returns the successful retry', async () => {
+      const refreshSession = vi.fn().mockResolvedValue({
+        data: { session: { access_token: 'fresh', expires_at: Math.floor(NOW.getTime() / 1000) + 3600 } },
+        error: null,
+      })
+      vi.doMock('@supabase/supabase-js', () => ({
+        createClient: vi.fn(() => ({ auth: { getSession: vi.fn(), getUser: vi.fn(), refreshSession }, functions: { invoke: vi.fn() } })),
+      }))
+
+      const { withRowLevelSecurityRetry } = await import('./supabase')
+      const write = vi.fn()
+        .mockResolvedValueOnce({ data: null, error: { code: '42501', message: 'new row violates row-level security policy for table "nhis_claims"' } })
+        .mockResolvedValueOnce({ data: { id: 'claim-1' }, error: null })
+
+      const result = await withRowLevelSecurityRetry(write)
+
+      expect(refreshSession).toHaveBeenCalledTimes(1)
+      expect(write).toHaveBeenCalledTimes(2)
+      expect(result).toEqual({ data: { id: 'claim-1' }, error: null })
+    })
+
+    it('does not retry a different error (not the expired-session signature)', async () => {
+      const refreshSession = vi.fn()
+      vi.doMock('@supabase/supabase-js', () => ({
+        createClient: vi.fn(() => ({ auth: { getSession: vi.fn(), getUser: vi.fn(), refreshSession }, functions: { invoke: vi.fn() } })),
+      }))
+
+      const { withRowLevelSecurityRetry } = await import('./supabase')
+      const write = vi.fn().mockResolvedValue({ data: null, error: { code: '23505', message: 'duplicate key value' } })
+
+      const result = await withRowLevelSecurityRetry(write)
+
+      expect(refreshSession).not.toHaveBeenCalled()
+      expect(write).toHaveBeenCalledTimes(1)
+      expect(result.error.code).toBe('23505')
+    })
+
+    it('surfaces the original rejection again when the forced refresh itself fails (a genuinely signed-out user)', async () => {
+      const refreshSession = vi.fn().mockResolvedValue({
+        data: { session: null },
+        error: { status: 400, name: 'AuthApiError', message: 'Refresh Token Not Found' },
+      })
+      vi.doMock('@supabase/supabase-js', () => ({
+        createClient: vi.fn(() => ({ auth: { getSession: vi.fn(), getUser: vi.fn(), refreshSession }, functions: { invoke: vi.fn() } })),
+      }))
+
+      const { withRowLevelSecurityRetry } = await import('./supabase')
+      const rejection = { data: null, error: { code: '42501', message: 'new row violates row-level security policy' } }
+      const write = vi.fn().mockResolvedValue(rejection)
+
+      const result = await withRowLevelSecurityRetry(write)
+
+      expect(write).toHaveBeenCalledTimes(1) // never retried without a usable refreshed session
+      expect(result).toEqual(rejection)
+    })
+  })
 })

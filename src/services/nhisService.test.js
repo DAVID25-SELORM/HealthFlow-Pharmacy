@@ -8,6 +8,8 @@ vi.mock('../lib/supabase', () => ({
     from: vi.fn(),
     rpc: vi.fn(),
   },
+  ensureFreshSupabaseSessionBeforeWrite: vi.fn(async () => {}),
+  withRowLevelSecurityRetry: vi.fn(async (write) => await write()),
 }))
 
 vi.mock('./auditService', () => ({
@@ -109,7 +111,7 @@ import {
   validateNhisPrescriptionPdfFile,
   TEMPORARY_UNIVERSAL_NHIA_TARIFF_SOURCE,
 } from './nhisService'
-import { supabase } from '../lib/supabase'
+import { supabase, ensureFreshSupabaseSessionBeforeWrite, withRowLevelSecurityRetry } from '../lib/supabase'
 import { recordCxfExport } from './claimitLifecycleService'
 import {
   deleteBranchRecord,
@@ -4532,6 +4534,36 @@ describe('NHIS claim save attachment behavior', () => {
       claimit_attachment_file_type: 'pdf', claimit_attachment_mime_type: 'application/pdf',
     })
     expect(renameResult.eq).toHaveBeenCalledWith('id', 'claim-1')
+  })
+
+  // A long-open claim form (patient lookup, prescription upload, several medicines) can outlive the auth client's
+  // own background token refresh, especially with the tab backgrounded, sending the eventual write as an
+  // unauthenticated request. Regression coverage for the fix: the insert path refreshes a near-expired session first
+  // and wraps the write so a row-level-security rejection (SQLSTATE 42501 — what an expired session looks like to
+  // RLS) gets one retry. This file mocks '../lib/supabase' at the module boundary (see the vi.mock above), so it
+  // proves the wiring calls both helpers; the retry-after-refresh behavior itself is covered, unmocked, in
+  // lib/supabase.test.js.
+  it('wires session-refresh and row-level-security retry into a claim insert', async () => {
+    const insertedClaim = { id: 'claim-1', claim_number: 'NHIS-000001', status: 'pending_serving' }
+    const duplicateQuery = { eq: vi.fn(() => duplicateQuery), neq: vi.fn(() => duplicateQuery), limit: vi.fn().mockResolvedValue({ data: [], error: null }) }
+    const claimTable = {
+      select: vi.fn(() => duplicateQuery),
+      insert: vi.fn(() => ({ select: vi.fn(() => ({ single: vi.fn().mockResolvedValue({ data: insertedClaim, error: null }) })) })),
+      update: vi.fn(() => ({ eq: vi.fn().mockResolvedValue({ error: null }) })),
+    }
+    supabase.from.mockImplementation((table) => table === 'nhis_claims' ? claimTable : {
+      insert: vi.fn().mockResolvedValue({ error: null }),
+      update: vi.fn(() => ({ eq: vi.fn().mockResolvedValue({ error: null }) })),
+    })
+
+    const callsBefore = { session: ensureFreshSupabaseSessionBeforeWrite.mock.calls.length, retry: withRowLevelSecurityRetry.mock.calls.length }
+
+    await createNhisClaim({ ...claimWithoutPrescription, allowIncompleteReview: true },
+      [medicineWithTotal], { providerClassLevel: 'D', pharmacyLevel: 'P1', nhisDrugCatalog: [{ code: 'NH001', category: 'A' }] })
+
+    expect(ensureFreshSupabaseSessionBeforeWrite.mock.calls.length).toBeGreaterThan(callsBefore.session)
+    expect(withRowLevelSecurityRetry.mock.calls.length).toBeGreaterThan(callsBefore.retry)
+    expect(claimTable.insert).toHaveBeenCalledTimes(1) // the pass-through mock still performs exactly one write
   })
 
   it('saves an attachment-free pharmacy intake while it is pending serving', async () => {

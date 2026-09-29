@@ -1,6 +1,6 @@
 import { assertNhisDurationForSavedState } from '../../local-branch-server/src/nhisDurationValidation.js'
 import { assertNhisCccForSavedState, assertNhisCccForProgress, getNhisCccTransitionIssue } from '../../local-branch-server/src/nhisCccValidation.js'
-import { supabase } from '../lib/supabase'
+import { supabase, ensureFreshSupabaseSessionBeforeWrite, withRowLevelSecurityRetry } from '../lib/supabase'
 import { getExportSigningEvidence, recordCxfExport } from './claimitLifecycleService'
 import { canonicalizeBundle } from '../claimit/fieldOrder'
 import mayReference from '../claimit/may-reference-contract.json'
@@ -1136,28 +1136,36 @@ const withOptionalClaimSchemaFallback = async (payload, write) => {
 }
 
 const insertNhisClaimWithSchemaFallback = async (payload) => {
+  // This form can stay open a long time (patient lookup, prescription upload, multiple medicines); refresh a
+  // near-expired session before the write so it isn't sent as an unauthenticated request. See the helper for why.
+  await ensureFreshSupabaseSessionBeforeWrite()
   return await withOptionalClaimSchemaFallback(payload, async (insertPayload) =>
-    await supabase
-      .from('nhis_claims')
-      .insert([insertPayload])
-      .select()
-      .single()
+    await withRowLevelSecurityRetry(() =>
+      supabase
+        .from('nhis_claims')
+        .insert([insertPayload])
+        .select()
+        .single()
+    )
   )
 }
 
 const updateNhisClaimWithSchemaFallback = async (id, payload, expectedUpdatedAt = '') => {
-  const result = await withOptionalClaimSchemaFallback(payload, async (updatePayload) => {
-    let query = supabase
-      .from('nhis_claims')
-      .update(updatePayload)
-      .eq('id', id)
+  await ensureFreshSupabaseSessionBeforeWrite()
+  const result = await withOptionalClaimSchemaFallback(payload, async (updatePayload) =>
+    await withRowLevelSecurityRetry(() => {
+      let query = supabase
+        .from('nhis_claims')
+        .update(updatePayload)
+        .eq('id', id)
 
-    if (expectedUpdatedAt) query = query.eq('updated_at', expectedUpdatedAt)
+      if (expectedUpdatedAt) query = query.eq('updated_at', expectedUpdatedAt)
 
-    return expectedUpdatedAt
-      ? await query.select().maybeSingle()
-      : await query.select().single()
-  })
+      return expectedUpdatedAt
+        ? query.select().maybeSingle()
+        : query.select().single()
+    })
+  )
 
   if (expectedUpdatedAt && !result.error && !result.data) {
     const conflict = new Error(
