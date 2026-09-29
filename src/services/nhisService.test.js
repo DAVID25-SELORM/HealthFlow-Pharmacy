@@ -10,6 +10,7 @@ vi.mock('../lib/supabase', () => ({
   },
   ensureFreshSupabaseSessionBeforeWrite: vi.fn(async () => {}),
   withRowLevelSecurityRetry: vi.fn(async (write) => await write()),
+  withStorageUploadSession: vi.fn(async (upload) => await upload()),
 }))
 
 vi.mock('./auditService', () => ({
@@ -111,7 +112,7 @@ import {
   validateNhisPrescriptionPdfFile,
   TEMPORARY_UNIVERSAL_NHIA_TARIFF_SOURCE,
 } from './nhisService'
-import { supabase, ensureFreshSupabaseSessionBeforeWrite, withRowLevelSecurityRetry } from '../lib/supabase'
+import { supabase, ensureFreshSupabaseSessionBeforeWrite, withRowLevelSecurityRetry, withStorageUploadSession } from '../lib/supabase'
 import { recordCxfExport } from './claimitLifecycleService'
 import {
   deleteBranchRecord,
@@ -7619,6 +7620,38 @@ describe('validateNhisPrescriptionPdfFile', () => {
 })
 
 describe('uploadNhisPrescriptionPdf', () => {
+  beforeEach(() => shouldUseBranchServer.mockReset().mockReturnValue(false))
+  it.each(['', 'application/octet-stream', 'application/pdf'])('uploads PDF bytes with the correct MIME type when the scanner reports %j', async (type) => {
+    const file = new File(['%PDF-1.7\noriginal scanner bytes'], 'scan.pdf', { type })
+    const upload = vi.fn().mockResolvedValue({ data: null, error: null })
+    supabase.storage = { from: vi.fn(() => ({ upload })) }
+
+    const result = await uploadNhisPrescriptionPdf(file, { organizationId: 'org-1', claimId: 'claim-1' })
+
+    expect(withStorageUploadSession).toHaveBeenCalledTimes(1)
+    const [path, body, options] = upload.mock.calls[0]
+    expect(path).toMatch(/^org-1\/\d{4}-\d{2}\/claim-1\/\d+-scan.pdf$/)
+    expect(body.type).toBe('application/pdf')
+    expect(body.size).toBe(file.size)
+    expect(options.contentType).toBe('application/pdf')
+    const bytes = await new Promise((resolve) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result)
+      reader.readAsText(body)
+    })
+    expect(bytes).toBe('%PDF-1.7\noriginal scanner bytes')
+    expect(result.prescriptionFilePath).toBe(path)
+    expect(result.prescriptionFileName).toBe('scan.pdf')
+  })
+
+  it('preserves a MIME rejection instead of incorrectly reporting a missing bucket', async () => {
+    const error = { code: 'InvalidMimeType', message: 'mime type application/octet-stream is not supported by this bucket' }
+    supabase.storage = { from: vi.fn(() => ({ upload: vi.fn().mockResolvedValue({ data: null, error }) })) }
+    await expect(uploadNhisPrescriptionPdf(new File(['%PDF-1.7'], 'rx.pdf', { type: 'application/pdf' }), {
+      organizationId: 'org-1',
+    })).rejects.toEqual(error)
+  })
+
   it('stores PDF CLAIM-it base64 from raw ArrayBuffer bytes without a data URL prefix', async () => {
     shouldUseBranchServer.mockReturnValueOnce(true)
     const OriginalFileReader = global.FileReader

@@ -1,6 +1,6 @@
 import { assertNhisDurationForSavedState } from '../../local-branch-server/src/nhisDurationValidation.js'
 import { assertNhisCccForSavedState, assertNhisCccForProgress, getNhisCccTransitionIssue } from '../../local-branch-server/src/nhisCccValidation.js'
-import { supabase, ensureFreshSupabaseSessionBeforeWrite, withRowLevelSecurityRetry } from '../lib/supabase'
+import { supabase, ensureFreshSupabaseSessionBeforeWrite, withRowLevelSecurityRetry, withStorageUploadSession } from '../lib/supabase'
 import { getExportSigningEvidence, recordCxfExport } from './claimitLifecycleService'
 import { canonicalizeBundle } from '../claimit/fieldOrder'
 import mayReference from '../claimit/may-reference-contract.json'
@@ -4659,18 +4659,24 @@ export const uploadNhisPrescriptionPdf = async (file, options = {}) => {
   const fileName = sanitizeStoragePathSegment(file.name || 'prescription', 'prescription')
   const path = `${organizationId}/${month}/${claimId}/${Date.now()}-${fileName}`
 
-  const { data, error } = await supabase.storage
+  // The SDK sends File/Blob uploads as multipart data, where the part's MIME
+  // type comes from the Blob itself, not the contentType upload option.
+  // Scanners can supply an empty type or application/octet-stream for a PDF.
+  const uploadBody = file instanceof Blob && file.type !== contentType
+    ? file.slice(0, file.size, contentType)
+    : file
+  const { data, error } = await withStorageUploadSession(() => supabase.storage
     .from(NHIS_PRESCRIPTION_BUCKET)
-    .upload(path, file, {
+    .upload(path, uploadBody, {
       contentType,
       cacheControl: '3600',
       upsert: true,
-    })
+    }))
 
   if (error) {
     const message = String(error.message || '').toLowerCase()
-    if (message.includes('bucket') || message.includes('not found')) {
-      throw new Error('Prescription storage bucket is missing. Run supabase/legacy/supabase-patch-nhis-prescription-attachments.sql first.')
+    if (error.code === 'NoSuchBucket' || /bucket.*not found|bucket.*does not exist/.test(message)) {
+      throw new Error('Prescription storage bucket is missing. Apply the NHIS prescription attachment storage migration.')
     }
     throw error
   }

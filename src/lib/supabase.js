@@ -508,6 +508,28 @@ export const withRowLevelSecurityRetry = async (write) => {
   return await write()
 }
 
+// Storage can wrap an expired JWT or RLS rejection in HTTP 400 rather than
+// PostgREST's SQLSTATE. Retry only an explicit auth/permission rejection, once.
+export const withStorageUploadSession = async (upload) => {
+  const session = await getValidUserSession()
+  if (!session?.access_token) {
+    throw new Error('Your session has expired. Please sign in again before uploading the prescription.')
+  }
+  const result = await upload()
+  const error = result?.error
+  const code = String(error?.code || '').toLowerCase()
+  const message = String(error?.message || '')
+  const rejected = error && (
+    code === '42501' || code === 'invalidjwt' || code === 'invalid_jwt' ||
+    /row.level security|jwt expired|invalid jwt|token is expired/i.test(message)
+  )
+  if (!rejected) return result
+  const { session: refreshed, error: refreshError } = await refreshSupabaseSessionOnce()
+  if (refreshError) throw refreshError
+  if (!refreshed?.access_token) return result
+  return await upload()
+}
+
 export const getCurrentSupabaseUser = async () => {
   if (!supabase) {
     throw new Error('HealthFlow Cloud credentials are not configured.')
