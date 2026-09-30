@@ -291,6 +291,9 @@ export const completePurchase = async (id, { canApprove = false } = {}) => {
 
   if (error) throw error
   if (data?.error) throw new Error(data.error)
+  if (data?.success !== true || !(Number(data?.items_updated) > 0)) {
+    throw new Error('Purchase completion did not confirm any inventory updates. Review the purchase before retrying.')
+  }
 
   await tryLogAuditEvent({
     eventType: 'purchase.completed',

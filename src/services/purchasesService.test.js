@@ -52,6 +52,12 @@ describe('purchasesService.completePurchase', () => {
       p_purchase_id: 'purchase-1',
     })
   })
+
+  it('does not report success when the server posted no inventory', async () => {
+    mocks.rpc.mockResolvedValue({ data: { success: true, items_updated: 0 }, error: null })
+    await expect(completePurchase('purchase-1', { canApprove: true })).rejects.toThrow('did not confirm any inventory updates')
+    expect(mocks.tryLogAuditEvent).not.toHaveBeenCalled()
+  })
 })
 
 describe('purchasesService.createPurchase', () => {

@@ -347,7 +347,7 @@ const Purchases = () => {
   const addLineItem = () => {
     const qty  = Number.parseFloat(itemForm.quantity)
     const cost = Number.parseFloat(itemForm.unitCost)
-    if (!itemForm.drugName.trim()) { notify('Select a drug first.', 'warning'); return }
+    if (!itemForm.drugId || !itemForm.drugName.trim()) { notify('Select an inventory medicine from the search results first.', 'warning'); return }
     if (!Number.isFinite(qty) || qty <= 0) { notify('Enter a valid quantity.', 'warning'); return }
     if (!Number.isFinite(cost) || cost < 0) { notify('Enter a valid unit cost.', 'warning'); return }
 
@@ -866,7 +866,7 @@ const Purchases = () => {
                       value={drugSearch}
                       onChange={(e) => {
                         setDrugSearch(e.target.value)
-                        if (!e.target.value) setItemForm((prev) => ({ ...prev, drugId: '', drugName: '' }))
+                        setItemForm((prev) => ({ ...prev, drugId: '', drugName: '' }))
                       }}
                     />
                     {drugSearch && !itemForm.drugId && filteredDrugs.length > 0 && (
