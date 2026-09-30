@@ -67,5 +67,17 @@ it('posts every linked line atomically, rejects missing/cross-tenant links and p
     expect((await db.query('select sum(received_quantity) total from purchase_items')).rows[0].total).toBe('500')
     expect((await complete()).rows[0].result.error).toContain('Only draft purchases')
     expect((await db.query('select quantity from drugs where id=$1', [id(5)])).rows[0].quantity).toBe('500.00')
+    // A mixed invoice posts medicine and consumable lines independently without changing types.
+    await db.exec("delete from stock_movements; delete from purchase_items; delete from drugs; update purchases set status='draft'; alter table drugs add column category text")
+    await db.query("insert into drugs(id,organization_id,branch_id,name,quantity,category,expiry_date) values ($1,$3,$4,'Panadol',10,'medicine','2028-12-31'),($2,$3,$4,'Examination gloves',20,'consumable',null)", [id(5), id(8), id(2), id(4)])
+    await db.query("insert into purchase_items(id,purchase_id,drug_id,drug_name,quantity,unit_cost) values ($1,$3,$4,'Panadol',5,2),($2,$3,$5,'Examination gloves',30,1)", [id(6), id(7), id(3), id(5), id(8)])
+    expect((await complete()).rows[0].result).toEqual({ success: true, items_updated: 2 })
+    expect((await db.query('select name,quantity,category,expiry_date from drugs order by name')).rows).toEqual([
+      { name: 'Examination gloves', quantity: '50.00', category: 'consumable', expiry_date: null },
+      { name: 'Panadol', quantity: '15.00', category: 'medicine', expiry_date: new Date('2028-12-31T00:00:00.000Z') },
+    ])
+    expect((await db.query('select count(*)::int count from stock_movements where reference_id=$1', [id(3)])).rows[0].count).toBe(2)
+    expect((await db.query('select sum(received_quantity) total from purchase_items')).rows[0].total).toBe('35')
+    expect((await complete()).rows[0].result.error).toContain('Only draft purchases')
   } finally { await db.close() }
-}, 30000)
+}, 60000)
