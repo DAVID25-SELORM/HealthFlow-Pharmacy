@@ -427,6 +427,8 @@ const matchesFilters = (record, filters = {}) => {
     record.claim_number,
     record.member_no,
     record.hin,
+    record.ccc_no,
+    record.folder_no,
     record.surname,
     record.other_names,
     record.code,

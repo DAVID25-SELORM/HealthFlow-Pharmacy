@@ -24,6 +24,7 @@ import { loadRouteModule } from './routes/routeModules'
 
 const Layout = lazy(() => import('./components/Layout/Layout'))
 const DashboardHome = lazy(() => loadRouteModule('/dashboard'))
+const GeneralSearch = lazy(() => import('./pages/GeneralSearch'))
 const Inventory = lazy(() => loadRouteModule('/inventory'))
 const Sales = lazy(() => loadRouteModule('/sales'))
 const Patients = lazy(() => loadRouteModule('/patients'))
@@ -95,6 +96,7 @@ function App() {
           >
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={<DashboardHome />} />
+            <Route path="search" element={<GeneralSearch />} />
             <Route
               path="inventory"
               element={

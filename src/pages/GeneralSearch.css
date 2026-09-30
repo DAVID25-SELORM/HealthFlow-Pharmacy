@@ -1,0 +1,9 @@
+.general-search { padding: 1.5rem; max-width: 1200px; margin: auto; }
+.general-search form { display: flex; gap: .75rem; margin: 1rem 0; }
+.general-search input { flex: 1; min-width: 0; padding: .75rem; border: 1px solid #b7ceca; border-radius: 6px; }
+.general-search ul { padding: 0; list-style: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 1rem; }
+.general-search li { border: 1px solid #d8e6e3; border-radius: 8px; padding: 1rem; overflow-wrap: anywhere; }
+.general-search dl { margin: .75rem 0; }
+.general-search dl div { display: flex; gap: .75rem; padding: .15rem 0; }
+.general-search dt { min-width: 7rem; text-transform: capitalize; color: #526763; }
+.general-search dd { margin: 0; }

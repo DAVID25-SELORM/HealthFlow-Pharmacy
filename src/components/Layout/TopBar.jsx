@@ -78,7 +78,7 @@ const TopBar = ({ isSidebarOpen, onMenuToggle, pageTitle }) => {
   const canUseClaimAlerts = canManageClaims || hasRole(role, CLAIMS_ROLES)
   const canViewSystemHealth = hasRole(role, SYSTEM_HEALTH_ROLES)
   const authReady = !authLoading && Boolean(role)
-  const searchTarget = canUseInventorySearch ? '/inventory' : '/sales'
+  const searchTarget = '/search'
 
   useEffect(() => {
     const timerId = window.setInterval(() => setCurrentDateTime(new Date()), 1000)
@@ -211,7 +211,7 @@ const TopBar = ({ isSidebarOpen, onMenuToggle, pageTitle }) => {
     const params = new URLSearchParams(location.search)
     const routeSearch = params.get('search') || ''
 
-    if (location.pathname === '/inventory' || location.pathname === '/sales') {
+    if (location.pathname === '/search' || location.pathname === '/inventory' || location.pathname === '/sales') {
       setQuickSearch(routeSearch)
       return
     }
@@ -309,10 +309,6 @@ const TopBar = ({ isSidebarOpen, onMenuToggle, pageTitle }) => {
     event.preventDefault()
 
     const term = quickSearch.trim()
-    if (!term) {
-      notify('Enter a drug name or batch number to search.', 'info')
-      return
-    }
 
     navigate({
       pathname: searchTarget,
@@ -344,7 +340,7 @@ const TopBar = ({ isSidebarOpen, onMenuToggle, pageTitle }) => {
             id="topbar-search"
             name="topbarSearch"
             type="text"
-            placeholder="Search drugs or scan barcode..."
+            placeholder="Search records, CCC, items..."
             className="topbar-search-input"
             value={quickSearch}
             onChange={(event) => setQuickSearch(event.target.value)}
@@ -352,7 +348,7 @@ const TopBar = ({ isSidebarOpen, onMenuToggle, pageTitle }) => {
           <button
             type="submit"
             className="topbar-search-submit"
-            aria-label="Search inventory or POS"
+            aria-label="General search"
           >
             Search
           </button>

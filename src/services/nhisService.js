@@ -5588,7 +5588,7 @@ const applyNhisClaimFilters = (query, filters = {}) => {
     const searchWords = [...new Set(term.toLowerCase().split(/\s+/).filter(Boolean))]
     searchWords.forEach((word) => {
       query = query.or(
-        `surname.ilike.%${word}%,other_names.ilike.%${word}%,member_no.ilike.%${word}%,claim_number.ilike.%${word}%,hin.ilike.%${word}%,prescription_reference.ilike.%${word}%,prescriber_name_snapshot.ilike.%${word}%,physician_name.ilike.%${word}%,prescribing_facility_name_snapshot.ilike.%${word}%,referring_facility.ilike.%${word}%`
+        `surname.ilike.%${word}%,other_names.ilike.%${word}%,member_no.ilike.%${word}%,claim_number.ilike.%${word}%,hin.ilike.%${word}%,ccc_no.ilike.%${word}%,folder_no.ilike.%${word}%,prescription_reference.ilike.%${word}%,prescriber_name_snapshot.ilike.%${word}%,physician_name.ilike.%${word}%,prescribing_facility_name_snapshot.ilike.%${word}%,referring_facility.ilike.%${word}%`
       )
     })
   }
@@ -5835,6 +5835,8 @@ const nhisClaimMatchesListFilters = (claim = {}, filters = {}) => {
       claim.claim_number,
       claim.member_no,
       claim.hin,
+      claim.ccc_no,
+      claim.folder_no,
       surname,
       otherNames,
       fullName,
