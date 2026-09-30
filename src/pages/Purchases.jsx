@@ -31,6 +31,7 @@ import {
 import { getAllDrugs } from '../services/drugService'
 import { getBranches } from '../services/branchService'
 import './Purchases.css'
+import SupplierEditor from '../components/SupplierEditor'
 
 const blankPurchaseForm = {
   supplierId:    '',
@@ -124,6 +125,7 @@ const Purchases = () => {
   // ── data state ──────────────────────────────────────────────
   const [purchases, setPurchases]   = useState([])
   const [suppliers, setSuppliers]   = useState([])
+  const [editingSupplier, setEditingSupplier] = useState(null)
   const [drugs, setDrugs]           = useState([])
   const [stats, setStats]           = useState({ totalThisMonth: 0, totalAllTime: 0, draftCount: 0, completedCount: 0 })
   const [loading, setLoading]       = useState(true)
@@ -764,9 +766,20 @@ const Purchases = () => {
                         >
                           + New
                         </button>
+                        {canWrite && purchaseForm.supplierId && <button type="button" className="btn btn-secondary btn-sm"
+                          onClick={() => setEditingSupplier(suppliers.find((supplier) => supplier.id === purchaseForm.supplierId))}>
+                          Edit supplier
+                        </button>}
                       </div>
                     )}
                   </div>
+                  {editingSupplier && <SupplierEditor key={editingSupplier.id} supplier={editingSupplier}
+                    onClose={() => setEditingSupplier(null)} onSaved={(supplier) => {
+                      setSuppliers((previous) => previous.map((row) => row.id === supplier.id ? supplier : row))
+                      setPurchaseForm((previous) => ({ ...previous, supplierName: supplier.name }))
+                      setEditingSupplier(null)
+                      notify('Supplier information updated.', 'success')
+                    }} />}
 
                   <div className="form-row">
                     <div className="form-group">

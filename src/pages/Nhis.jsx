@@ -3,7 +3,7 @@ import ClaimItRemediation from '../components/ClaimItRemediation'
 import ClaimSearchScope from '../components/ClaimSearchScope'
 import { CLAIM_MONTHS, getClaimMonthRange } from '../utils/claimMonthRange'
 import { createPrescriptionUploadSession } from '../utils/prescriptionUploadSession'
-import { getNhisCccTransitionIssue } from '../../local-branch-server/src/nhisCccValidation.js'
+import { getNhisCccTransitionIssue, getNhisDirectServingIssue } from '../../local-branch-server/src/nhisCccValidation.js'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import NhisClaimCreatorCounts from '../components/NhisClaimCreatorCounts'
 import {
@@ -4590,6 +4590,15 @@ const Nhis = () => {
     }
     const saveAsDraft = intent === 'save_details'
     const serveDirectly = intent === 'serve_directly'
+    if (serveDirectly) {
+      const issue = getNhisDirectServingIssue(claimForm)
+      if (issue) {
+        setClaimError(issue)
+        notify(issue, 'warning')
+        document.getElementById(String(claimForm.folderNo || '').trim() ? 'nhis-ccc-code' : 'nhis-folder-number')?.focus()
+        return
+      }
+    }
     const cccIssue = getNhisCccTransitionIssue(claimForm)
     if (cccIssue && (serveDirectly || isMedicineCounterAssistant || (!saveAsDraft && ['served', 'claim_ready'].includes(editingClaim?.status)))) {
       setClaimError(cccIssue)
@@ -7758,7 +7767,7 @@ const Nhis = () => {
                   <div className="form-row form-row--3">
                     <div className="form-group">
                       <label>Folder No *</label>
-                      <input className="form-input" value={claimForm.folderNo}
+                      <input id="nhis-folder-number" className="form-input" value={claimForm.folderNo}
                         required
                         onChange={(e) => setClaimForm((p) => ({ ...p, folderNo: e.target.value }))} />
                     </div>

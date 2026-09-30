@@ -1,4 +1,11 @@
 // Shared by the browser and local server; the cloud enforces the same rule in SQL.
+export const getNhisDirectServingIssue = (claim = {}) => {
+  if (!String(claim.folderNo ?? claim.folder_no ?? '').trim()) {
+    return 'Folder number is required before serving this NHIS claim.'
+  }
+  return getNhisCccTransitionIssue(claim)
+}
+
 export const getNhisCccTransitionIssue = (claim = {}) => {
   const value = String(claim.cccNo ?? claim.ccc_no ?? claim.ccCode ?? claim.cc_code ?? '').replace(/\D/g, '')
   if (!value) return 'CCC/CC code is required before completing or serving this NHIS claim.'
