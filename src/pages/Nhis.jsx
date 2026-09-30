@@ -2363,6 +2363,8 @@ const Nhis = () => {
         (c.member_no     || '').toLowerCase().includes(term) ||
         (c.claim_number  || '').toLowerCase().includes(term) ||
         (c.hin           || '').toLowerCase().includes(term) ||
+        (c.ccc_no || '').toLowerCase().includes(term) ||
+        (c.folder_no || '').toLowerCase().includes(term) ||
         (c.prescription_reference || '').toLowerCase().includes(term) ||
         (c.prescriber_name_snapshot || '').toLowerCase().includes(term) ||
         (c.physician_name || '').toLowerCase().includes(term) ||
@@ -3577,6 +3579,21 @@ const Nhis = () => {
     setShowNewClaimModal(true)
     return true
   }
+
+  // General search opens the exact claim, independent of the list's month filters.
+  const linkedClaimId = searchParams.get('claimId')
+  useEffect(() => {
+    if (!linkedClaimId || !organizationId) return undefined
+    let cancelled = false
+    setViewClaim(null)
+    getNhisClaimForSubmission(linkedClaimId).then((claim) => {
+      if (claim?.organization_id && claim.organization_id !== organizationId) throw new Error('This claim is not in the current facility.')
+      if (!cancelled) setViewClaim(claim)
+    }).catch((error) => {
+      if (!cancelled) notify(error.message || 'Unable to open this claim.', 'error')
+    })
+    return () => { cancelled = true }
+  }, [linkedClaimId, organizationId, notify])
 
   const openViewClaim = async (claim) => {
     setClaimActionLoading({ claimId: claim.id, action: 'view' })
@@ -6474,7 +6491,7 @@ const Nhis = () => {
               <Search size={16} className="search-icon" />
               <input
                 className="search-input"
-                placeholder="Search by name, member no, claim #..."
+                placeholder="Search by name, member no, claim #, CCC, folder..."
                 value={claimSearch}
                 onChange={(e) => {
                   setClaimsPage(1)
@@ -7504,7 +7521,9 @@ const Nhis = () => {
             {editingClaim && (
               <ClaimCorrectionAlerts key={editingClaim.id || editingClaim.claim_number} readiness={correctionReadiness} />
             )}
-            {claimError && <div className="nhis-alert nhis-alert--modal" role="alert">{claimError}</div>}
+            {claimError && <div className="nhis-alert nhis-alert--modal" role="alert">{claimError}
+              {claimError.includes('CCC code is already used') && <Link target="_blank" rel="noopener noreferrer" to={`/search?search=${encodeURIComponent(claimForm.cccNo || '')}`}> Find the existing claim (new tab)</Link>}
+            </div>}
             {incompleteIntakeItems.length > 0 && (
               <div className="nhis-incomplete-intake-alert" role="status">
                 <strong>Incomplete Intake</strong>

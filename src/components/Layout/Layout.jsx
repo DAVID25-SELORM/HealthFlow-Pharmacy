@@ -15,6 +15,7 @@ import TopBar from './TopBar'
 import './Layout.css'
 
 const pageTitles = {
+  '/search': 'General search',
   '/dashboard': 'Dashboard',
   '/inventory': 'Inventory',
   '/sales': 'Sales (POS)',
