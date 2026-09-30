@@ -2560,7 +2560,8 @@ const buildDrugCreatePayload = (
   branch_id: branchId,
   name: assertRequiredText(drugData.name, 'Drug name'),
   batch_number: batchNumber,
-  expiry_date: assertRequiredText(drugData.expiryDate, 'Expiry date'),
+  expiry_date: ['consumable', 'medical_equipment', 'non_medical', 'supplement', 'cosmetic'].includes(normalizeText(drugData.category))
+    ? normalizeText(drugData.expiryDate) || null : assertRequiredText(drugData.expiryDate, 'Expiry date'),
   quantity: parseNonNegativeNumber(drugData.quantity, 'Quantity'),
   price: parseNonNegativeNumber(drugData.price, 'Price'),
   cost_price: parseNonNegativeNumber(drugData.costPrice ?? 0, 'Cost price'),
@@ -3474,7 +3475,8 @@ const updateDrug = async (
   const updatePayload: Record<string, unknown> = {
     name: isDefaultCatalogDrug ? existingDrug.name : name,
     batch_number: isDefaultCatalogDrug ? existingDrug.batch_number : batchNumber,
-    expiry_date: assertRequiredText(drugData.expiryDate, 'Expiry date'),
+    expiry_date: ['consumable', 'medical_equipment', 'non_medical', 'supplement', 'cosmetic'].includes(normalizeText(drugData.category))
+    ? normalizeText(drugData.expiryDate) || null : assertRequiredText(drugData.expiryDate, 'Expiry date'),
     quantity: parseNonNegativeNumber(drugData.quantity, 'Quantity'),
     price: parseNonNegativeNumber(drugData.price, 'Price'),
     supplier: normalizeText(drugData.supplier) || null,
@@ -5936,7 +5938,7 @@ const getReportBundle = async (
     (drug) => Number(drug.quantity || 0) <= Number(drug.reorder_level || 0)
   )
   const expired = reportVisibleAllDrugRows.filter(
-    (drug) => new Date(drug.expiry_date).getTime() < now.getTime()
+    (drug) => drug.expiry_date && new Date(drug.expiry_date).getTime() < now.getTime()
   )
   const expiring = reportVisibleActiveDrugRows.filter((drug) => {
     const expiryTime = new Date(drug.expiry_date).getTime()

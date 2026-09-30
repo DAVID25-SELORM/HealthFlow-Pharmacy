@@ -532,7 +532,7 @@ export const calculateDrugStatus = (drug) => {
   }
 
   const today = new Date()
-  const expiryDate = new Date(drug.expiry_date)
+  const expiryDate = drug.expiry_date ? new Date(drug.expiry_date) : new Date(NaN)
   const daysUntilExpiry = Math.ceil((expiryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
   
   // Check if expired

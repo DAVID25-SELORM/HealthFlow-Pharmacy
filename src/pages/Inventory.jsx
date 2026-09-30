@@ -82,15 +82,17 @@ const unitOptions = [
 const categoryOptions = [
   { value: 'medicine', label: 'Medicine' },
   { value: 'consumable', label: 'Consumable' },
-  { value: 'medical_equipment', label: 'Medical Equipment' },
-  { value: 'non_medical', label: 'Non-Medical' },
+  { value: 'medical_equipment', label: 'Equipment' },
+  { value: 'non_medical', label: 'Non-medical item' },
   { value: 'supplement', label: 'Supplement' },
   { value: 'cosmetic', label: 'Cosmetic' },
 ]
 
+const getItemType = (drug) => categoryOptions.some((option) => option.value === drug.category) ? drug.category : 'medicine'
+
 const filterOptions = [
-  { value: 'all', label: 'All Medicines' },
-  { value: 'stocked', label: 'Stocked Medicines' },
+  { value: 'all', label: 'All Items' },
+  { value: 'stocked', label: 'Stocked Items' },
   { value: 'regular_catalog', label: 'Regular Catalogue' },
   { value: 'nhis_catalog', label: 'NHIS Catalogue' },
   { value: 'good', label: 'Good Stock' },
@@ -120,7 +122,7 @@ const mapDrugToForm = (drug) => {
     expiryDate: drug.expiry_date || drug.expiry || '',
     quantity: String(drug.quantity ?? ''),
     unit: drug.unit || 'tablet',
-    category: drug.category || 'medicine',
+    category: getItemType(drug),
     costPrice: String(drug.cost_price ?? ''),
     price: String(getEffectiveSellingPrice(drug) ?? ''),
     nhisPrice: hasCatalogPrice ? String(nhisPrice) : '',
@@ -166,6 +168,7 @@ const Inventory = () => {
   const importFileInputRef = useRef(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [activeFilter, setActiveFilter] = useState('all')
+  const [itemTypeFilter, setItemTypeFilter] = useState('all')
   const [currentPage, setCurrentPage] = useState(1)
   const [highlightedDrugId, setHighlightedDrugId] = useState('')
   const [error, setError] = useState('')
@@ -520,7 +523,7 @@ const Inventory = () => {
         (activeFilter === 'nhis_catalog' && isNhisCatalogDrug(drug)) ||
         calculateDrugStatus(drug) === activeFilter
 
-      return matchesSearch && matchesFilter
+      return matchesSearch && matchesFilter && (itemTypeFilter === 'all' || getItemType(drug) === itemTypeFilter)
     })
 
     if (!highlightedDrugId) {
@@ -532,7 +535,7 @@ const Inventory = () => {
       if (right.id === highlightedDrugId) return 1
       return 0
     })
-  }, [activeFilter, drugs, highlightedDrugId, searchTerm])
+  }, [activeFilter, drugs, highlightedDrugId, searchTerm, itemTypeFilter])
 
   const totalPages = Math.max(1, Math.ceil(visibleDrugs.length / INVENTORY_PAGE_SIZE))
   const safeCurrentPage = Math.min(currentPage, totalPages)
@@ -543,7 +546,7 @@ const Inventory = () => {
 
   useEffect(() => {
     setCurrentPage(1)
-  }, [activeFilter, highlightedDrugId, searchTerm])
+  }, [activeFilter, highlightedDrugId, searchTerm, itemTypeFilter])
 
   useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(totalPages)
@@ -1007,7 +1010,7 @@ const Inventory = () => {
       <div className="page-header">
         <div>
           <h1>Inventory Management</h1>
-          <p>Manage your drug stock, track expiry dates, and monitor low stock items</p>
+          <p>Manage your inventory, track expiry dates, and monitor low stock items</p>
         </div>
         <div className="header-actions">
           {branches.length > 0 && (
@@ -1056,7 +1059,7 @@ const Inventory = () => {
               />
               <button className="btn btn-primary" type="button" onClick={openAddModal}>
                 <Plus size={20} />
-                Add Drug
+                Add Item
               </button>
             </>
           )}
@@ -1064,6 +1067,12 @@ const Inventory = () => {
       </div>
 
       <div className="inventory-controls">
+        <div className="filter-box">
+          <select aria-label="Filter item type" value={itemTypeFilter} onChange={(event) => setItemTypeFilter(event.target.value)}>
+            <option value="all">All item types</option>
+            {categoryOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+        </div>
         <div className="search-box">
           <Search size={18} />
             <input
@@ -1177,9 +1186,9 @@ const Inventory = () => {
             {visibleDrugs.length === 0 ? (
               <tr>
                 <td colSpan={showNhisPricing ? 10 : 9} style={{ textAlign: 'center', padding: '2rem' }}>
-                  {searchTerm || activeFilter !== 'all'
-                    ? 'No medicines match the current search or filter.'
-                    : 'No drugs in inventory. Click "Add Drug" to get started.'}
+                  {searchTerm || activeFilter !== 'all' || itemTypeFilter !== 'all'
+                    ? 'No items match the current search or filter.'
+                    : 'No items in inventory. Click "Add Item" to get started.'}
                 </td>
               </tr>
             ) : (
@@ -1195,8 +1204,9 @@ const Inventory = () => {
 
                 return (
                   <tr key={drug.id} className={drug.id === highlightedDrugId ? 'highlighted-drug-row' : ''}>
-                    <td className="drug-name" data-label="Medicine">
+                    <td className="drug-name" data-label="Item">
                       {drug.name}
+                      <div className="drug-subtext">{categoryOptions.find((option) => option.value === getItemType(drug))?.label || drug.category}</div>
                       {sourceLabel && <div className="drug-subtext">{sourceLabel}</div>}
                       {drug.sale_on_return && <div className="drug-subtext">Sale on return</div>}
                     </td>
@@ -1284,7 +1294,7 @@ const Inventory = () => {
         <div className="modal-overlay" onClick={closeDrugModal}>
           <div className="modal-content" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
-              <h2>{editingDrugId ? 'Edit Medicine' : 'Add New Drug'}</h2>
+              <h2>{editingDrugId ? 'Edit Item' : 'Add New Item'}</h2>
               <button className="close-btn" type="button" onClick={closeDrugModal}>
                 x
               </button>
@@ -1298,7 +1308,7 @@ const Inventory = () => {
               )}
               <div className="form-row">
                 <div className="form-group">
-                  <label>Drug Name *</label>
+                  <label>Item Name *</label>
                   <input
                     type="text"
                     placeholder="e.g., Paracetamol 500mg"
@@ -1336,11 +1346,14 @@ const Inventory = () => {
                   </select>
                 </div>
                 <div className="form-group">
-                  <label>Category *</label>
+                  <label>Item Type *</label>
                   <select
                     required
                     value={formData.category}
-                    onChange={(event) => setFormData({ ...formData, category: event.target.value })}
+                    onChange={(event) => setFormData({ ...formData, category: event.target.value,
+                      unit: event.target.value === 'medicine' ? 'tablet' : 'unit',
+                      medicineAccessLevel: '', requiredPharmacyLevel: '',
+                    })}
                   >
                     {categoryOptions.map((option) => (
                       <option key={option.value} value={option.value}>
@@ -1353,10 +1366,10 @@ const Inventory = () => {
 
               <div className="form-row">
                 <div className="form-group">
-                  <label>Expiry Date *</label>
+                  <label>Expiry Date{formData.category === 'medicine' ? ' *' : ' (if applicable)'}</label>
                   <input
                     type="date"
-                    required
+                    required={formData.category === 'medicine'}
                     value={formData.expiryDate}
                     onChange={(event) => setFormData({ ...formData, expiryDate: event.target.value })}
                   />
@@ -1422,6 +1435,7 @@ const Inventory = () => {
               </label>
 
               {/* ✅ NHIS PHARMACY LEVEL PATCH START */}
+              {formData.category === 'medicine' && (<>
               <div className="form-row">
                 <div className="form-group">
                   <label>Medicine access level</label>
@@ -1450,6 +1464,7 @@ const Inventory = () => {
               </div>
               {/* ✅ NHIS PHARMACY LEVEL PATCH END */}
 
+              </>)}
               {showNhisPricing && (
                 <div className="form-row">
                   <div className="form-group">
@@ -1484,7 +1499,7 @@ const Inventory = () => {
                   Cancel
                 </button>
                 <button type="submit" className="btn btn-primary" disabled={submitting}>
-                  {submitting ? 'Saving...' : editingDrugId ? 'Update Medicine' : 'Save Drug'}
+                  {submitting ? 'Saving...' : editingDrugId ? 'Update Item' : 'Save Item'}
                 </button>
               </div>
             </form>

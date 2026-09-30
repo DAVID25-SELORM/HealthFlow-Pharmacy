@@ -75,7 +75,7 @@ vi.mock('../services/settingsService', () => ({
 
 const getFieldAfterLabel = (labelText) => {
   const label = screen.getByText(labelText)
-  return label.parentElement.querySelector('input')
+  return label.parentElement.querySelector('input, select')
 }
 
 describe('Inventory', () => {
@@ -144,6 +144,25 @@ describe('Inventory', () => {
     })
   })
 
+  it('filters by item type and makes medicine fields optional for equipment', async () => {
+    mocks.getAllDrugs.mockResolvedValue([
+      { id: 'med', name: 'Test medicine', quantity: 2, category: 'medicine' },
+      { id: 'equip', name: 'Test equipment', quantity: 1, category: 'medical_equipment' },
+    ])
+    render(<Inventory />)
+    await screen.findByText('Test equipment')
+    fireEvent.change(screen.getByLabelText('Filter item type'), { target: { value: 'medical_equipment' } })
+    expect(screen.queryByText('Test medicine')).not.toBeInTheDocument()
+    expect(screen.getByText('Test equipment')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /add item/i }))
+    fireEvent.change(getFieldAfterLabel('Item Type *'), { target: { value: 'medical_equipment' } })
+    expect(getFieldAfterLabel('Expiry Date (if applicable)')).not.toBeRequired()
+    expect(getFieldAfterLabel('Unit *')).toHaveValue('unit')
+    expect(screen.queryByText('Medicine access level')).not.toBeInTheDocument()
+    fireEvent.change(getFieldAfterLabel('Item Type *'), { target: { value: 'medicine' } })
+    expect(getFieldAfterLabel('Expiry Date *')).toBeRequired()
+  })
+
   it('auto-calculates selling price from cost price until the price is edited manually', async () => {
     render(<Inventory />)
 
@@ -151,7 +170,7 @@ describe('Inventory', () => {
       expect(screen.getByRole('heading', { name: /inventory management/i })).toBeInTheDocument()
     })
 
-    fireEvent.click(screen.getByRole('button', { name: /add drug/i }))
+    fireEvent.click(screen.getByRole('button', { name: /add item/i }))
 
     const costPriceInput = getFieldAfterLabel('Cost Price (GHS)')
     const sellingPriceInput = getFieldAfterLabel('Selling Price (GHS) *')
