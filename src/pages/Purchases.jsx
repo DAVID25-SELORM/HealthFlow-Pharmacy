@@ -507,6 +507,7 @@ const Purchases = () => {
   const handleSavePurchase = async (e) => {
     e.preventDefault()
     if (!lineItems.length) { setError('Add at least one item.'); return }
+    if (!purchaseForm.supplierId) { setError('Select a supplier before saving this purchase.'); return }
     try {
       setSubmitting(true)
       setError('')
@@ -935,7 +936,7 @@ const Purchases = () => {
                 {/* Purchase header */}
                 <div className="purchase-header-form">
                   <div className="form-group">
-                    <label>Supplier</label>
+                    <label>Supplier *</label>
                     {showNewSupplierInline ? (
                       <div className="inline-supplier">
                         <input
@@ -1298,7 +1299,7 @@ const Purchases = () => {
               <button className="btn btn-secondary" onClick={resetModal}>Cancel</button>
               <button
                 className="btn btn-primary"
-                disabled={submitting || !lineItems.length}
+                disabled={submitting || !lineItems.length || !purchaseForm.supplierId}
                 onClick={handleSavePurchase}
               >
                 {submitting ? 'Saving...' : 'Save Draft'}

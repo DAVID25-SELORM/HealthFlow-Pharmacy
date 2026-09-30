@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => ({
   listPurchaseReceipts: vi.fn(),
   getPurchaseCreatorName: vi.fn(),
   confirmAction: vi.fn(),
+  createPurchaseDraft: vi.fn(),
 }))
 
 vi.mock('react-router-dom', () => ({
@@ -44,7 +45,7 @@ vi.mock('../services/purchasesApi', () => ({
   receivePurchaseOrderGoods: mocks.receivePurchaseOrderGoods,
   listPurchaseReceipts: mocks.listPurchaseReceipts,
   getPurchaseCreatorName: mocks.getPurchaseCreatorName,
-  createPurchaseDraft: vi.fn(),
+  createPurchaseDraft: mocks.createPurchaseDraft,
   createPurchaseSupplier: vi.fn(),
   getOfflinePurchasesSummary: mocks.getOfflinePurchasesSummary,
   getPurchaseCompletionAudit: vi.fn(),
@@ -78,6 +79,7 @@ describe('Purchases — arriving from Inventory Reorder', () => {
     mocks.listPurchaseReceipts.mockResolvedValue([])
     mocks.getPurchaseCreatorName.mockResolvedValue('Ama Boateng')
     mocks.confirmAction.mockResolvedValue(true)
+    mocks.createPurchaseDraft.mockResolvedValue({ id: 'po-new' })
   })
 
   it('opens the New Purchase modal pre-filled with the reordered item and matches the supplier by name', async () => {
@@ -150,6 +152,40 @@ describe('Purchases — arriving from Inventory Reorder', () => {
     await waitFor(() => expect(screen.getByRole('heading', { name: /new purchase order/i })).toBeInTheDocument())
     const row = screen.getByText('Amoxicillin 500mg').closest('tr')
     expect(within(row).getByText('0')).toBeInTheDocument()
+  })
+
+  it('keeps Save Draft disabled until a supplier is selected, even with items already added', async () => {
+    mocks.locationState = {
+      reorderItems: [{ drugId: 'low-1', drugName: 'Amoxicillin 500mg', unit: 'capsule', unitCost: 3.5, supplier: 'Unlisted Wholesaler', suggestedQuantity: 8 }],
+    }
+
+    render(<Purchases />)
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: /new purchase order/i })).toBeInTheDocument())
+    expect(screen.getByText('Amoxicillin 500mg')).toBeInTheDocument() // the item is present...
+    expect(screen.getByDisplayValue('— Select supplier —')).toBeInTheDocument() // ...but no supplier matched
+    expect(screen.getByRole('button', { name: /save draft/i })).toBeDisabled()
+
+    fireEvent.click(screen.getByRole('button', { name: /save draft/i }))
+    expect(mocks.createPurchaseDraft).not.toHaveBeenCalled()
+  })
+
+  it('enables Save Draft once a supplier is selected, and saves with that supplier', async () => {
+    mocks.locationState = {
+      reorderItems: [{ drugId: 'low-1', drugName: 'Amoxicillin 500mg', unit: 'capsule', unitCost: 3.5, supplier: 'Unlisted Wholesaler', suggestedQuantity: 8 }],
+    }
+
+    render(<Purchases />)
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: /new purchase order/i })).toBeInTheDocument())
+    fireEvent.change(screen.getByDisplayValue('— Select supplier —'), { target: { value: 'sup-1' } })
+
+    const saveButton = screen.getByRole('button', { name: /save draft/i })
+    expect(saveButton).not.toBeDisabled()
+    fireEvent.click(saveButton)
+
+    await waitFor(() => expect(mocks.createPurchaseDraft).toHaveBeenCalledTimes(1))
+    expect(mocks.createPurchaseDraft.mock.calls[0][0]).toMatchObject({ supplierId: 'sup-1', supplierName: 'MedSupply Ltd' })
   })
 })
 
