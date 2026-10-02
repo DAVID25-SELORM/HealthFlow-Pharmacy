@@ -9,6 +9,11 @@ import { createCoalescedCloudRead } from '../utils/coalesceCloudRead'
 import { describeIncompleteClaimItConfiguration, getAccreditationDateIssues, getAccreditationEffectiveDateFromCredentialCode } from '../utils/nhiaAccreditationDates'
 import { assertRequiredText, assertNonNegativeNumber, assertPositiveNumber, normalizeText, sanitizeSearchTerm } from '../utils/validation'
 import {
+  classifyNhisCccDuplicateSignals,
+  getStrongestNhisCccDuplicateSignal,
+  isBlockingNhisCccDuplicateSignal,
+} from '../utils/nhisCccDuplicate'
+import {
   isGhanaCardNumber,
   normalizeNhiaMemberNumber,
   validateNhiaMemberNumberFormat,
@@ -1245,6 +1250,8 @@ const buildNhisDuplicateClaimGroups = (claims = []) => {
 export const isNhisDuplicateClaimsError = (error) =>
   error?.code === 'NHIS_DUPLICATE_CLAIMS' && Array.isArray(error.duplicateGroups)
 
+export const isNhisCccDuplicateError = (error) => error?.code === 'NHIS_CCC_DUPLICATE'
+
 export const isNhisReadinessClaimsError = (error) =>
   error?.code === 'NHIS_READINESS_CLAIMS' && Array.isArray(error.readinessIssues)
 
@@ -1311,6 +1318,9 @@ const _assertNoDuplicateNhisClaimsForTransfer = (claims = []) => {
   }
 }
 
+const NHIS_CCC_DUPLICATE_SELECT_FIELDS =
+  'id, claim_number, member_no, hin, surname, other_names, service_date_from, total_amount, ccc_no, status'
+
 const assertNoDuplicateNhisClaimInStore = async ({
   memberNo,
   hin,
@@ -1318,9 +1328,13 @@ const assertNoDuplicateNhisClaimInStore = async ({
   otherNames,
   serviceDate,
   totalAmount,
+  cccNo,
   ignoreClaimId = '',
   useBranchServer = false,
+  onCccDuplicateSignal,
 }) => {
+  if (useBranchServer || shouldUseBranchServer()) return
+
   const claim = {
     memberNo,
     hin,
@@ -1332,11 +1346,34 @@ const assertNoDuplicateNhisClaimInStore = async ({
   const patientKey = getNhisDuplicatePatientKey(claim)
   const serviceDateKey = getNhisDuplicateServiceDate(claim)
   const amountKey = getNhisDuplicateAmountKey(totalAmount)
-  if (!patientKey || !serviceDateKey || !amountKey || useBranchServer || shouldUseBranchServer()) return
 
+  if (patientKey && serviceDateKey && amountKey) {
+    await assertNoDuplicateNhisPatientDateAmountMatch({ patientKey, serviceDateKey, amountKey, ignoreClaimId })
+  }
+
+  // The CCC/CC code is NHIA-issued per encounter, not a patient identifier HealthFlow controls — NHIA does not
+  // guarantee it is globally unique, so "same CCC" alone must never be read as a duplicate on its own. This is
+  // classified together with the member identity, service date and claim status; see classifyNhisCccDuplicateSignals()
+  // for the category model, which the database's own guard_facility_ccc_duplicate() trigger mirrors for the one
+  // case (same member + same CCC + same service date) that is blocked outright.
+  const normalizedCcc = normalizeNhisCcCode(cccNo)
+  if (normalizedCcc) {
+    await assertNoCccDuplicateAndWarn({
+      id: ignoreClaimId,
+      memberNo,
+      hin,
+      ccc: normalizedCcc,
+      serviceDate: serviceDateKey || normalizeText(serviceDate),
+      ignoreClaimId,
+      onCccDuplicateSignal,
+    })
+  }
+}
+
+const assertNoDuplicateNhisPatientDateAmountMatch = async ({ patientKey, serviceDateKey, amountKey, ignoreClaimId }) => {
   let query = supabase
     .from('nhis_claims')
-    .select('id, claim_number, member_no, hin, surname, other_names, service_date_from, total_amount')
+    .select(NHIS_CCC_DUPLICATE_SELECT_FIELDS)
     .eq('service_date_from', serviceDateKey)
 
   if (ignoreClaimId) {
@@ -1351,6 +1388,34 @@ const assertNoDuplicateNhisClaimInStore = async ({
     getNhisDuplicateAmountKey(row.total_amount) === amountKey
   )
   if (duplicate) throw new Error(getNhisDuplicateBlockMessage(duplicate))
+}
+
+const assertNoCccDuplicateAndWarn = async ({ id, memberNo, hin, ccc, serviceDate, ignoreClaimId, onCccDuplicateSignal }) => {
+  let query = supabase
+    .from('nhis_claims')
+    .select(NHIS_CCC_DUPLICATE_SELECT_FIELDS)
+    .eq('ccc_no', ccc)
+
+  if (ignoreClaimId) {
+    query = query.neq('id', ignoreClaimId)
+  }
+
+  const { data, error } = await query.limit(250)
+  if (error) throw error
+
+  const signals = classifyNhisCccDuplicateSignals({ id, memberNo, hin, ccc, serviceDate }, data || [])
+  const blocking = getStrongestNhisCccDuplicateSignal(signals.filter(isBlockingNhisCccDuplicateSignal))
+  if (blocking) {
+    throw Object.assign(new Error(blocking.message), {
+      code: 'NHIS_CCC_DUPLICATE',
+      duplicateClaim: blocking.claim,
+    })
+  }
+
+  const nonBlocking = signals.filter((signal) => !isBlockingNhisCccDuplicateSignal(signal))
+  if (nonBlocking.length && typeof onCccDuplicateSignal === 'function') {
+    onCccDuplicateSignal(nonBlocking)
+  }
 }
 
 const DIAGNOSIS_TREATMENT_RULES = [
@@ -6512,7 +6577,9 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
     otherNames: claimData.otherNames,
     serviceDate,
     totalAmount,
+    cccNo,
     useBranchServer: options.useBranchServer,
+    onCccDuplicateSignal: options.onCccDuplicateSignal,
   })
   const diagnosisDetails = getDiagnosisDetailsPayload(claimData)
   const organizationId = toNullableUuid(
@@ -6801,8 +6868,10 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
     otherNames: claimData.otherNames,
     serviceDate,
     totalAmount,
+    cccNo,
     ignoreClaimId: id,
     useBranchServer: options.useBranchServer,
+    onCccDuplicateSignal: options.onCccDuplicateSignal,
   })
   const diagnosisDetails = getDiagnosisDetailsPayload(claimData)
   let claimPayload = {
@@ -10674,6 +10743,7 @@ export const submitNhisClaimDirect = async (id, options = {}) => {
     otherNames: claim.other_names,
     serviceDate: claim.service_date_from,
     totalAmount: claim.total_amount,
+    cccNo: claim.ccc_no,
     ignoreClaimId: claim.id || id,
     useBranchServer: options.useBranchServer || options.directApiSource === 'branch',
   })

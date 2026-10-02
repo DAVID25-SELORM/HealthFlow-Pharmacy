@@ -4835,6 +4835,7 @@ const Nhis = () => {
           privilegedCorrection: canEditNhisClaimAnytime,
           correctionReason,
           existingMedicines: editingClaim.nhis_claim_medicines || editingClaim.medicines || [],
+          onCccDuplicateSignal: (signals) => signals.forEach((signal) => notify(signal.message, signal.severity === 'info' ? 'info' : 'warning')),
         })
         savedClaimRecord = savedClaim || editingClaim
         const claimForSubmission = savedClaim || editingClaim
@@ -4892,6 +4893,7 @@ const Nhis = () => {
           nhiaTariffServices: claimServices,
           tariffFacilityGroup: activeTariffFacilityGroup,
           tariffCateringOption: activeTariffCateringOption,
+          onCccDuplicateSignal: (signals) => signals.forEach((signal) => notify(signal.message, signal.severity === 'info' ? 'info' : 'warning')),
         })
       }
 
