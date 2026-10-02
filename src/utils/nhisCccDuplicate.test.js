@@ -72,8 +72,8 @@ describe('classifyNhisCccDuplicateSignals: the 5-category member-aware model', (
     expect(classifyNhisCccDuplicateSignals(candidate(), [claim({ status: 'submitted' })])[0].severity).toBe(NHIS_CCC_DUPLICATE_SEVERITY.BLOCK)
   })
 
-  it('a CCC with no digits is never used as a duplicate signal', () => {
-    expect(classifyNhisCccDuplicateSignals(candidate({ ccc: '' }), [claim()])).toEqual([])
+  it('a pending CCC allows same-member/date review without a hard block', () => {
+    expect(classifyNhisCccDuplicateSignals(candidate({ ccc: '' }), [claim()])[0].severity).toBe('warning')
   })
 
   it('12. manual CCC entry and 13. NHIA-generated CCC are classified identically (the source of the value is not part of the model)', () => {
@@ -155,4 +155,23 @@ describe('classifyNhisCccDuplicateSignals: the 5-category member-aware model', (
     )
     expect(signal.severity).toBe(NHIS_CCC_DUPLICATE_SEVERITY.BLOCK)
   })
+})
+
+// Missing identities never fall back to patient names or the CCC itself.
+it('uses HIN when member_no is empty, and patient ID only when both members are absent', () => {
+  expect(classifyNhisCccDuplicateSignals(candidate({ memberNo: '', hin: '40000001' }), [claim()])[0].severity).toBe('block')
+  expect(classifyNhisCccDuplicateSignals(candidate({ memberNo: '', patientId: 'p1' }), [claim({ memberNo: '', patient_id: 'p1' })])[0].severity).toBe('block')
+  expect(classifyNhisCccDuplicateSignals(candidate({ memberNo: '', surname: 'Same' }), [claim({ memberNo: '', surname: 'Same' })])[0].severity).toBe('info')
+})
+it('does not flag another facility, even for the same member and CCC', () => {
+  expect(classifyNhisCccDuplicateSignals(candidate({ organization_id: 'a' }), [claim({ organization_id: 'b' })])).toEqual([])
+})
+it.each(['cancelled', 'canceled', 'voided', 'rejected', 'failed'])('excludes %s records on either side', (status) => {
+  expect(classifyNhisCccDuplicateSignals(candidate(), [claim({ status })])).toEqual([])
+  expect(classifyNhisCccDuplicateSignals(candidate({ status }), [claim()])).toEqual([])
+})
+it('reads stored medicine rows and ignores objects without a medicine code', () => {
+  const [signal] = classifyNhisCccDuplicateSignals(candidate({ medicines: [{ drugCode: 'A' }, {}] }), [claim({ ccc: '98765', nhis_claim_medicines: [{ drug_code: 'A' }, {}] })])
+  expect(signal.medicineOverlapRatio).toBe(1)
+  expect(signal.claim.medicines).toEqual(['A'])
 })

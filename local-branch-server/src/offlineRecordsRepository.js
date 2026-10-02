@@ -1,3 +1,4 @@
+import { classifyNhisCccDuplicateSignals, isBlockingNhisCccDuplicateSignal } from './nhisCccDuplicate.js'
 import { assertNhisDurationForSavedState } from './nhisDurationValidation.js'
 import { assertNhisCccForSavedState, assertNhisCccForProgress } from './nhisCccValidation.js'
 import { createId, db, getBranchMeta, json, nowIso, parseJson } from './db.js'
@@ -746,6 +747,11 @@ export const saveOfflineRecord = db.transaction((entityType, payload = {}) => {
   const record = enrichRecord(normalizedEntity, payload)
   const existing = getRecordStatement.get(normalizedEntity, record.id)
   if (normalizedEntity === 'nhis_claims') {
+    // Inside the SQLite write transaction: concurrent local saves cannot bypass
+    // the guard, and a rejected write produces neither a record nor an outbox event.
+    const candidates = listRecordsStatement.all(normalizedEntity, -1).map(recordToObject)
+    const duplicate = classifyNhisCccDuplicateSignals(record, candidates).find(isBlockingNhisCccDuplicateSignal)
+    if (duplicate) throw Object.assign(new Error(duplicate.message), { code: 'NHIS_CCC_DUPLICATE' })
     assertNhisCccForSavedState(record)
     assertNhisDurationForSavedState(record)
   }

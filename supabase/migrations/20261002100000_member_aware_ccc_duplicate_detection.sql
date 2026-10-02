@@ -1,37 +1,25 @@
--- Redesign the facility CCC duplicate guard to be member-aware.
---
--- Problem: guard_facility_ccc_duplicate() (added 2026-09-30, production-only — not previously in this repo's
--- migration history) blocked ANY two claims in the same facility that share a normalized CCC within a 7-day
--- window, with no regard for which member the claim was for. The CCC/CC code is NHIA-issued per encounter, not a
--- patient identifier HealthFlow controls or NHIA guarantees is globally unique (a 5-digit non-biometric code has
--- only 100,000 possible values; OTAC-issued biometric codes are a different, 13-digit format — see
--- docs/nhis-ccc-duplicate-detection.md). Two different members legitimately sharing a CCC value at the same
--- facility in the same week is expected, not fraud, and was being hard-blocked.
---
--- Fix: only hard-block the case that is actually suspicious — the SAME member, SAME CCC, SAME facility, SAME
--- service date, against another claim that is not rejected/failed. A different member with the same CCC is never
--- blocked here (the application layer may still show an informational notice; see nhisCccDuplicate.js). This
--- mirrors, at the database level, the member+date+amount duplicate check the application already performs in
--- assertNoDuplicateNhisClaimInStore() — this trigger exists as its concurrency/bypass backstop, not a parallel
--- source of truth, so the two must not diverge in what they consider "the same claim".
---
--- Additive: no table or trigger is dropped. nhis_ccc_reservations stops being written to (it is no longer needed:
--- the new check is a plain, member-scoped EXISTS plus a real unique index — see below), but the table and its
--- existing release trigger are left in place rather than torn out in the same change that fixes production.
+-- Replace the facility/code-only guard with member + CCC + service-day protection.
+-- CCC is externally issued; matching CCC values never establish patient identity.
+-- No rows are deleted or rewritten. Index creation deliberately fails if historical
+-- active duplicates need resolution before rollout; do not silently discard claims.
 begin;
 
--- The real concurrency guarantee: two concurrent inserts for the same member+CCC+facility+date cannot both commit.
--- (A genuine race on this exact combination still surfaces as a raw duplicate-key error; the trigger below is what
--- gives the normal, non-racing path its specific, actionable message.)
+create or replace function public.nhis_duplicate_identity(p_member text, p_hin text, p_patient uuid)
+returns text language sql immutable parallel safe set search_path = public, pg_catalog as $$
+  select coalesce(
+    'member:' || nullif(regexp_replace(coalesce(p_member, ''), '[^0-9]', '', 'g'), ''),
+    'member:' || nullif(regexp_replace(coalesce(p_hin, ''), '[^0-9]', '', 'g'), ''),
+    'patient:' || p_patient::text
+  );
+$$;
+
 create unique index if not exists nhis_claims_member_ccc_duplicate_idx on public.nhis_claims (
   organization_id,
-  (coalesce(nullif(regexp_replace(member_no, '[^0-9]', '', 'g'), ''),
-            nullif(regexp_replace(hin, '[^0-9]', '', 'g'), ''))),
+  (public.nhis_duplicate_identity(member_no, hin, patient_id)),
   (regexp_replace(coalesce(ccc_no, ''), '[^0-9]', '', 'g')),
   service_date_from
-) where status not in ('rejected', 'failed')
-  and coalesce(nullif(regexp_replace(member_no, '[^0-9]', '', 'g'), ''),
-               nullif(regexp_replace(hin, '[^0-9]', '', 'g'), '')) is not null
+) where lower(trim(coalesce(status, ''))) not in ('rejected', 'failed', 'cancelled', 'canceled', 'voided')
+  and public.nhis_duplicate_identity(member_no, hin, patient_id) is not null
   and regexp_replace(coalesce(ccc_no, ''), '[^0-9]', '', 'g') <> ''
   and service_date_from is not null;
 
@@ -39,38 +27,22 @@ create or replace function public.guard_facility_ccc_duplicate()
 returns trigger language plpgsql security definer set search_path = public, pg_catalog as $$
 declare
   v_code text := regexp_replace(coalesce(new.ccc_no, ''), '[^0-9]', '', 'g');
-  v_member text := coalesce(nullif(regexp_replace(new.member_no, '[^0-9]', '', 'g'), ''),
-                             nullif(regexp_replace(new.hin, '[^0-9]', '', 'g'), ''));
-  v_old_member text;
+  v_identity text := public.nhis_duplicate_identity(new.member_no, new.hin, new.patient_id);
   v_conflict record;
 begin
-  -- Unchanged from this row's own perspective: identical member, CCC, facility and date as before this write. Also
-  -- covers an UPDATE that only touches unrelated columns.
-  if tg_op = 'UPDATE' and new.organization_id is not distinct from old.organization_id then
-    v_old_member := coalesce(nullif(regexp_replace(old.member_no, '[^0-9]', '', 'g'), ''),
-                               nullif(regexp_replace(old.hin, '[^0-9]', '', 'g'), ''));
-    if v_member is not distinct from v_old_member
-       and v_code = regexp_replace(coalesce(old.ccc_no, ''), '[^0-9]', '', 'g')
-       and new.service_date_from is not distinct from old.service_date_from then
-      return new;
-    end if;
-  end if;
-
-  -- A CCC/member/date cannot be judged a duplicate without all three; an empty CCC, unidentified member, or
-  -- missing service date is never treated as "the same claim" by this guard.
-  if v_code = '' or v_member is null or new.organization_id is null or new.service_date_from is null then
+  if lower(trim(coalesce(new.status, ''))) in ('rejected', 'failed', 'cancelled', 'canceled', 'voided')
+     or v_code = '' or v_identity is null or new.organization_id is null or new.service_date_from is null then
     return new;
   end if;
 
   select c.id, c.claim_number into v_conflict
   from public.nhis_claims c
   where c.organization_id = new.organization_id
-    and c.id <> new.id
-    and c.status not in ('rejected', 'failed')
+    and c.id is distinct from new.id
+    and lower(trim(coalesce(c.status, ''))) not in ('rejected', 'failed', 'cancelled', 'canceled', 'voided')
     and c.service_date_from = new.service_date_from
     and regexp_replace(coalesce(c.ccc_no, ''), '[^0-9]', '', 'g') = v_code
-    and coalesce(nullif(regexp_replace(c.member_no, '[^0-9]', '', 'g'), ''),
-                 nullif(regexp_replace(c.hin, '[^0-9]', '', 'g'), '')) = v_member
+    and public.nhis_duplicate_identity(c.member_no, c.hin, c.patient_id) = v_identity
   limit 1;
 
   if found then
@@ -79,10 +51,58 @@ begin
       coalesce(v_conflict.claim_number, v_conflict.id::text)
       using errcode = '23505';
   end if;
-
   return new;
 end $$;
 
+-- Preserve existing production wiring, but also install the guard on clean databases.
+do $$
+begin
+  if not exists (
+    select 1 from pg_trigger where tgrelid = 'public.nhis_claims'::regclass
+      and tgfoid = 'public.guard_facility_ccc_duplicate()'::regprocedure and not tgisinternal
+  ) then
+    create trigger guard_facility_ccc_duplicate before insert or update on public.nhis_claims
+      for each row execute function public.guard_facility_ccc_duplicate();
+  end if;
+end $$;
 revoke all on function public.guard_facility_ccc_duplicate() from public, anon, authenticated;
 
+-- Support both candidate lookup branches without a full facility-history scan.
+create index if not exists nhis_claims_ccc_review_lookup_idx on public.nhis_claims (
+  organization_id, (regexp_replace(coalesce(ccc_no, ''), '[^0-9]', '', 'g'))
+);
+create index if not exists nhis_claims_member_day_review_lookup_idx on public.nhis_claims (
+  organization_id, (public.nhis_duplicate_identity(member_no, hin, patient_id)), service_date_from
+);
+
+-- SECURITY INVOKER retains claim/medicine RLS; explicit facility scope also protects
+-- users whose read policy permits more than one facility. No names or raw NHIA payloads.
+create or replace function public.get_nhis_ccc_duplicate_candidates(
+  p_member text, p_patient_id uuid, p_ccc text, p_service_date date,
+  p_ignore_id uuid default null, p_offset integer default 0, p_limit integer default 200
+) returns setof jsonb language sql stable security invoker
+set search_path = public, pg_catalog as $$
+  select jsonb_build_object(
+    'id', c.id, 'organization_id', c.organization_id, 'patient_id', c.patient_id,
+    'claim_number', c.claim_number, 'member_no', c.member_no, 'hin', c.hin,
+    'ccc_no', c.ccc_no, 'service_date_from', c.service_date_from,
+    'status', c.status, 'total_amount', c.total_amount,
+    'medicines', coalesce((select jsonb_agg(m.drug_code order by m.drug_code)
+      from public.nhis_claim_medicines m where m.claim_id = c.id), '[]'::jsonb)
+  )
+  from public.nhis_claims c
+  where c.organization_id = public.user_organization_id()
+    and c.id is distinct from p_ignore_id
+    and (
+      (nullif(regexp_replace(coalesce(p_ccc, ''), '[^0-9]', '', 'g'), '') is not null
+       and regexp_replace(coalesce(c.ccc_no, ''), '[^0-9]', '', 'g') = regexp_replace(p_ccc, '[^0-9]', '', 'g'))
+      or (c.service_date_from = p_service_date
+          and public.nhis_duplicate_identity(c.member_no, c.hin, c.patient_id)
+            = public.nhis_duplicate_identity(p_member, null, p_patient_id))
+    )
+  order by c.id
+  limit least(greatest(p_limit, 1), 200) offset greatest(p_offset, 0);
+$$;
+revoke all on function public.get_nhis_ccc_duplicate_candidates(text, uuid, text, date, uuid, integer, integer) from public, anon;
+grant execute on function public.get_nhis_ccc_duplicate_candidates(text, uuid, text, date, uuid, integer, integer) to authenticated;
 commit;

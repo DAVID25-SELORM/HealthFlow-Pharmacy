@@ -1,82 +1,128 @@
-# NHIS CCC/CC duplicate detection — member-aware redesign (2026-10-02)
+# NHIS CCC duplicate detection (2026-10-02)
 
-## Problem
+## Trace and root cause
 
-A production-only trigger, `guard_facility_ccc_duplicate()` (added 2026-09-30 directly against
-the live database; its source migrations were never committed to this repository — see "Migration
-drift" below), blocked any two claims at the same facility that shared a normalized CCC/CC value
-within a 7-day window, regardless of which member the claim was for.
+Manual entry is `nhis-ccc-code` in `src/pages/Nhis.jsx`. NHIA member lookup / CCC
+verification applies the returned `ccCode` to the same `claimForm.cccNo`; hosted
+`generateHostedNhiaCcCode` and the existing branch `genCCC` route are unchanged.
+Both paths save `ccc_no` through `createNhisClaim` / `updateNhisClaim` in
+`src/services/nhisService.js`. Direct submission also checks the existing claim.
 
-The CCC/ClaimCheckCode is issued by NHIA per encounter (via the `genCCC` API for the 5-digit
-non-biometric code, or NHIA's OTAC/NeHFAMS portal for the 13-digit biometric code) — it is not a
-patient identifier HealthFlow controls, and NHIA does not guarantee it is globally unique. A
-5-digit non-biometric code has only 100,000 possible values, so two different members at the same
-facility legitimately sharing one within a week is expected, not fraud. The old trigger's message
-("This CCC code is already used by another claim in this facility within 7 days of the service
-date.") was blocking exactly this legitimate case.
+The original production-source function `guard_facility_ccc_duplicate` compared
+organization, digit-normalized CCC and service dates within six days either side,
+without comparing the member. Its reservation table serialized writes on
+organization + CCC. That reservation key was not a patient identifier. Source for
+these drift migrations is in the separate `codex/claimit-local-rollout` worktree;
+this work did not query or change the live database. There was no corresponding
+claim-table CCC uniqueness migration on the main branch used for this change.
 
-## Migration drift
+The original UI and service additionally blocked equal member/date/total claims,
+with a name fallback. The first redesign left those checks in place, queried only
+same-CCC candidates, omitted medicine data, and showed warnings as transient toasts.
+The old error-only Find existing claim link also missed the new message.
 
-The buggy trigger and its backing `nhis_ccc_reservations` table exist in the live production
-database but have no corresponding migration file on `origin/main` — they were applied directly
-through the Supabase SQL editor from a branch (`codex/claimit-local-rollout`) that was never
-pushed. This change does not touch that branch; it is a clean, additive migration off
-`origin/main` that replaces the same trigger function in place.
+## Final behavior
 
-## New model
+All comparisons are facility scoped. Member numbers and HIN are digit normalized;
+a stable patient ID is used only when both records lack member identity. Patient
+names never establish duplicate identity. Manual and NHIA-generated codes have
+identical handling. No global uniqueness assumption is made about an NHIA code.
 
-Duplicate detection is now member-aware, classifying every same-CCC or same-member/same-date match
-into one of five categories (`src/utils/nhisCccDuplicate.js`):
+| Context | Behavior |
+| --- | --- |
+| Same member + same CCC + same service day | Block, even if totals/medicines differ |
+| Same member + same CCC within 3 days | Strong warning, explicit review required |
+| Different member + same CCC | Allow; informational notice |
+| Same member + same day + different/pending CCC | Warning, explicit review required |
+| Same member + same CCC on a more distant day | Review required, no automatic block |
 
-| Category | Condition | Severity | Blocks? |
-|---|---|---|---|
-| A — strong duplicate | same member + same CCC + same facility + same service date | `block` | Yes |
-| B — strong warning | same member + same CCC + service date within 3 days | `strong_warning` | No |
-| C — allow | different member + same CCC | `info` | Never |
-| D — possible duplicate encounter | same member + same service date + different CCC | `warning` (promoted to `strong_warning` when the medicine sets overlap ≥ 50%) | No |
-| E — review | same member + same CCC + a clearly different service date | `review` | No |
+The three-day threshold is named and configurable at the shared classifier boundary.
+Dates are actual service calendar days. Draft, pending-serving, served, submitted,
+and paid records remain active. Rejected, failed, cancelled/canceled and voided
+records do not block on either side. Recognizing inactive values does not expand
+which statuses the database permits. Reactivation is checked again by the trigger
+and unique index. Incomplete claims without a CCC still receive same-member/day
+review and retain existing CCC progression requirements.
 
-A claim whose status is `rejected` or `failed` is never treated as a live duplicate for categories
-A/B/D (it is NHIA's and HealthFlow's own record that the claim did not go through), but a
-rejected/failed claim sharing a CCC with a *different* member still raises the informational
-category C notice, since that is still NHIA's record of the code.
+Jaccard overlap over normalized medicine codes adds confidence: 50% or greater
+promotes an existing different-CCC same-member/day warning to strong warning.
+Medicine overlap never establishes identity or independently blocks a claim.
 
-Medicine overlap (Jaccard ratio over normalized drug codes) is used only as a confidence booster on
-an already-raised category D signal — it never creates a signal by itself and never reaches
-`block`.
+## Implementation and review
 
-## Database layer
+- Shared pure classifier: `local-branch-server/src/nhisCccDuplicate.js`, re-exported
+  by `src/utils/nhisCccDuplicate.js` for the frontend.
+- `src/services/nhisCccDuplicateService.js` reads all lookup pages, awaits explicit
+  acknowledgment for warnings, and fails closed on lookup failure or missing review.
+- The new SECURITY INVOKER RPC normalizes stored values, enforces current facility,
+  retains caller RLS and fetches both CCC matches and member/day matches with medicine
+  codes. It excludes the edited claim and paginates instead of silently truncating.
+- The UI and service no longer apply the conflicting member/date/amount hard block.
+  Batch duplicate grouping uses member + CCC + facility + day too, so an allowed
+  encounter is not later rejected merely for an equal total. Serialization and
+  export RPCs are untouched.
+- `NhisCccDuplicateReview` shows reference, service date, masked member, status,
+  total, CCC, medicine codes and a Find existing claim link to the existing general
+  search page. Review pauses the save. Cancel leaves the claim unsaved. A blocking
+  duplicate cannot be acknowledged away.
+- Branch-server preflight uses the same classifier; the SQLite write transaction
+  also enforces hard duplicates before any record/outbox write. Offline protection
+  covers records available to that branch; the hosted index remains the final
+  cross-workstation concurrency backstop during synchronization.
 
-`supabase/migrations/20261002100000_member_aware_ccc_duplicate_detection.sql`:
-- Adds a partial unique index on `(organization_id, member key, ccc, service_date_from)` scoped to
-  non-voided claims, as the real concurrency guard.
-- Replaces `guard_facility_ccc_duplicate()` (`create or replace`, same name/wiring) to raise only
-  for category A (same member + same CCC + same date + non-voided conflicting claim).
-- Additive: `nhis_ccc_reservations` and its release trigger are left in place, unused by the new
-  check, rather than removed in the same change that fixes production.
+## Migration and rollout
 
-## Application layer
+Migration: `20261002100000_member_aware_ccc_duplicate_detection.sql`.
 
-`src/services/nhisService.js`'s `assertNoDuplicateNhisClaimInStore` was split into the pre-existing
-member+date+amount check (unchanged) and a new CCC-aware check (`assertNoCccDuplicateAndWarn`):
-blocking signals throw a structured `{ code: 'NHIS_CCC_DUPLICATE', duplicateClaim }` error (checked
-with the new `isNhisCccDuplicateError`); non-blocking signals are passed to an optional
-`onCccDuplicateSignal(signals)` callback. `createNhisClaim`, `updateNhisClaim` and
-`submitNhisClaimDirect` all run the CCC check. `src/pages/Nhis.jsx` wires
-`onCccDuplicateSignal` on the create/update paths to `notify()` toasts.
+The function is replaced without removing reservation data. Existing trigger wiring
+is preserved; a trigger is installed when absent on a clean database. A partial
+unique index over facility, normalized member/HIN (patient-ID fallback), normalized
+CCC and service day provides the concurrency guarantee for active claims. The guard
+also checks status transitions and supplies the friendly error in the ordinary path.
+A racing save can still return the unique-index error.
 
-## Deliberately not built (follow-up decision points)
+No historical data is rewritten or deleted. Index creation fails transactionally if
+historical active duplicates exist: resolve those explicitly before applying the
+migration. Deploy the database migration before the application because the new
+lookup RPC is required. Neither database migration nor application was deployed as
+part of this task. Production state was not independently verified in this session.
 
-- **Override workflow for category A**: category A remains a hard, non-overridable block — the
-  same as before, just correctly scoped to same-member instead of any-claim-at-the-facility. No
-  authorized-role override/reason/audit flow was added.
-- **Audit fields**: no new audit logging (CCC value, validation outcome, override reason) was
-  added beyond what already existed.
-- **Rich review UI**: non-blocking signals surface as simple toasts; they are not yet routed
-  through the existing duplicate-claim-review modal pattern.
+## Override and audit policy
 
-## Scope not touched
+There is no duplicate override for any role. Admin/super-admin and ordinary staff
+are equally blocked for category A, including when callers pass override flags or
+acknowledge the review dialog. Therefore override reason, override audit event and
+successful-authorized-override tests are not applicable; no bypass is introduced.
 
-Claim-IT serializer, field order, `servVersion`, `cpuType`, accreditation, signer handling, and
-export RPCs are unchanged. NHIA/OTAC's own CCC generation and validation are unchanged — this is
-purely HealthFlow's own duplicate-detection logic.
+Existing claim fields for member, patient, facility, CCC, service date, NHIA
+transaction/attendance/validation data, creation actor and timestamps are preserved.
+Existing claim creation/update audit events remain. This change adds no raw NHIA
+payloads or secrets and does not claim to create an override/review audit trail.
+
+## Verification
+
+Coverage includes the five classifications, active and inactive statuses, normalized
+HIN and patient fallback, same-name nonidentity, medicine overlap, manual/generated
+parity, edit exclusion, pagination past 200 rows, lookup failure, awaited review and
+cancellation, denied overrides for all roles, review display/search navigation,
+clean/production trigger wiring, status reactivation, index enforcement, RPC
+facility/RLS/anonymous-access boundaries and atomic branch-server enforcement.
+
+The existing NHIS service suite covers claim creation, updates, attachments, serving,
+member validation, totals and exports. See the final task report for execution results.
+
+Verified locally after the fixes: 339 relevant tests passed across the NHIS service
+suite (266), classifier/service/SQL/review component suites (65), existing CCC
+contracts (5) and offline repository suite (3). The offline suite passed using the
+installer's Node 22 runtime; Node 24 crashed in native SQLite teardown in two older
+tests. A combined Vitest run also encountered a worker startup timeout; the affected
+service suite passed separately. Full lint, production build, protected-baseline,
+migration validation and whitespace checks passed.
+
+Additional touched integration files are `src/pages/Nhis.jsx`, `src/pages/Nhis.css`,
+`local-branch-server/src/offlineRecordsRepository.js`, and the protected hash/report
+entry in `config/production-baseline.json`. Regression coverage lives in
+`src/utils/nhisCccDuplicate.test.js`, `src/services/nhisCccDuplicateService.test.js`,
+`src/services/nhisCccDuplicateMigration.test.js`, `src/services/nhisService.test.js`,
+`src/components/NhisCccDuplicateReview.test.jsx`, and
+`local-branch-server/src/offlineRecordsRepository.test.js`.

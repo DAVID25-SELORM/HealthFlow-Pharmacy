@@ -7,7 +7,7 @@
   "edgeFunctionCount": 7,
   "testFileCount": 148,
   "criticalFiles": {
-    "src/services/nhisService.js": "d8d237794d989edaad8e54056b56a528fdd994fdaf7c761dedfe2345de93a4ee",
+    "src/services/nhisService.js": "f29976b617f2ece8f91c566130fa1d98695bf1c83ca6bbb6ca0c7af932456779",
     "src/context/AuthContext.jsx": "0df048a03e1bf786d13d289bea4ccbb42167cccb46bba560cc50fff960aab258",
     "src/services/recycleBinService.js": "94f0fd814bda811b3c234769426d57257a0f8120e90df8bffc87ae9ebfbcabe9",
     "src/services/offlineInstallerReleaseService.js": "d656396c7cce60b3e007ffec4f4aa4f8d63f931ab022cbef3cdcdc02755c9c13",
@@ -65,7 +65,7 @@
   },
   "pendingCccDuplicateDetectionChange": {
     "date": "2026-10-02",
-    "impactReport": "docs/nhis-ccc-duplicate-detection.md",
-    "description": "Member-aware NHIS CCC/CC duplicate classification (replaces the over-broad facility-wide 7-day trigger); migration authored but not deployed"
+    "description": "Member-aware CCC classification, mandatory warning review, hosted and offline guards; authorized for push, not deployed",
+    "impactReport": "docs/nhis-ccc-duplicate-detection.md"
   }
 }

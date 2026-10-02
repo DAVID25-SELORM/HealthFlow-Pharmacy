@@ -1,3 +1,4 @@
+// @vitest-environment node
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -77,4 +78,33 @@ describe('offline record outbox coalescing', () => {
       fs.rmSync(directory, { recursive: true, force: true })
     }
   })
+})
+
+it('blocks offline CCC duplicates atomically while permitting different members and service dates', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'healthflow-ccc-guard-'))
+  const databaseUrl = pathToFileURL(path.resolve('local-branch-server/src/db.js')).href
+  const recordsUrl = pathToFileURL(path.resolve('local-branch-server/src/offlineRecordsRepository.js')).href
+  const script = `
+    const { db, closeDatabase } = await import(${JSON.stringify(databaseUrl)});
+    const { saveOfflineRecord } = await import(${JSON.stringify(recordsUrl)});
+    const original = { id: 'original', member_no: '12345678', ccc_no: '12345', service_date_from: '2026-10-01', status: 'draft' };
+    saveOfflineRecord('nhis_claims', original);
+    const before = db.prepare('select count(*) from sync_outbox').pluck().get();
+    let blocked = false;
+    try { saveOfflineRecord('nhis_claims', { ...original, id: 'duplicate' }); }
+    catch (error) { if (error.code === 'NHIS_CCC_DUPLICATE') blocked = true; else throw error; }
+    if (!blocked || db.prepare('select count(*) from sync_outbox').pluck().get() !== before) throw new Error('Duplicate write reached outbox');
+    saveOfflineRecord('nhis_claims', { ...original, id: 'other-member', member_no: '87654321' });
+    saveOfflineRecord('nhis_claims', { ...original, id: 'other-date', service_date_from: '2026-10-02' });
+    saveOfflineRecord('nhis_claims', { ...original, id: 'rejected', status: 'rejected' });
+    saveOfflineRecord('nhis_claims', { ...original, notes: 'Self update' });
+    closeDatabase();
+    console.log('ok');
+  `
+  try {
+    const output = execFileSync(process.execPath, ['--input-type=module', '--eval', script], {
+      cwd: path.resolve('local-branch-server'), env: { ...process.env, HEALTHFLOW_DB_PATH: path.join(directory, 'branch.sqlite') }, encoding: 'utf8',
+    })
+    expect(output.trim().split(/\r?\n/).at(-1)).toBe('ok')
+  } finally { fs.rmSync(directory, { recursive: true, force: true }) }
 })

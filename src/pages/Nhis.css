@@ -3822,3 +3822,30 @@
     white-space: normal;
   }
 }
+
+/* Keep all duplicate evidence readable while the review actions remain visible. */
+.nhis-page .nhis-ccc-review-modal {
+  width: min(640px, calc(100vw - 2rem));
+}
+.nhis-ccc-review-modal .nhis-discard-body {
+  min-height: 0;
+  overflow-y: auto;
+}
+.nhis-ccc-review-modal .nhis-discard-header,
+.nhis-ccc-review-modal .nhis-discard-footer {
+  flex-shrink: 0;
+}
+.nhis-ccc-review-modal dl {
+  display: grid;
+  grid-template-columns: minmax(90px, 1fr) minmax(0, 2fr);
+  gap: 0.35rem 0.75rem;
+}
+.nhis-ccc-review-modal dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.nhis-ccc-review-modal section + section {
+  border-top: 1px solid var(--gray-200);
+  margin-top: 1rem;
+  padding-top: 1rem;
+}

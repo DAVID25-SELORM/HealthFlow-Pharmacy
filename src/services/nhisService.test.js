@@ -1,3 +1,5 @@
+vi.mock('./nhisCccDuplicateService', () => ({ assertNoDuplicateNhisClaimInStore: vi.fn(async () => {}) }))
+import { assertNoDuplicateNhisClaimInStore } from './nhisCccDuplicateService'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { inflateSync } from 'node:zlib'
@@ -130,6 +132,7 @@ import { invokeTierAccess } from './tierAccessService'
 
 beforeEach(() => {
   vi.clearAllMocks()
+  assertNoDuplicateNhisClaimInStore.mockReset().mockResolvedValue(undefined)
   resetNhisActiveMedicationOverlapCacheForTests()
   shouldUseBranchServer.mockReturnValue(false)
   window.localStorage?.clear()
@@ -4967,16 +4970,8 @@ describe('NHIS claim save attachment behavior', () => {
 })
 
 describe('duplicate NHIS claim prevention', () => {
-  it('blocks saving the same member, service date, and total amount twice', async () => {
-    mockNhisClaimDuplicateAndUpdateQueries({
-      duplicates: [{
-        id: 'existing-claim',
-        claim_number: 'NHIS-000123',
-        member_no: '12345678',
-        service_date_from: '2026-05-14',
-        total_amount: 10,
-      }],
-    })
+  it('passes member, CCC, date and medicines to the duplicate guard and stops the write on rejection', async () => {
+    assertNoDuplicateNhisClaimInStore.mockRejectedValueOnce(new Error('Possible duplicate claim'))
 
     await expect(createNhisClaim(
       baseClaim,
@@ -4985,10 +4980,14 @@ describe('duplicate NHIS claim prevention', () => {
         pharmacyLevel: 'P1',
         nhisDrugCatalog: [{ id: 'drug-1', code: 'NH001', category: 'A' }],
       }
-    )).rejects.toThrow('Duplicate NHIS claim blocked')
+    )).rejects.toThrow('Possible duplicate claim')
+    expect(assertNoDuplicateNhisClaimInStore).toHaveBeenCalledWith(expect.objectContaining({
+      memberNo: baseClaim.memberNo, cccNo: '12345', serviceDate: baseClaim.serviceDate,
+      medicines: expect.arrayContaining([expect.objectContaining({ drug_code: baseMedicine.drugCode })]),
+    }))
   })
 
-  it('blocks batch export when duplicate claims are already present', async () => {
+  it.each([10, 11])('blocks same-member/CCC/day batch duplicates even when the second total is %s', async (secondTotal) => {
     const sourceClaim = {
       id: 'claim-1',
       claim_number: 'NHIS-000001',
@@ -5018,6 +5017,7 @@ describe('duplicate NHIS claim prevention', () => {
       created_at: '2026-05-14T09:00:00.000Z',
       updated_at: '2026-05-14T09:05:00.000Z',
       nhis_claim_medicines: [{
+        nhis_drug_id: 'drug-1',
         drug_code: 'NH001',
         description: 'Artemether Lumefantrine Tablet',
         unit: 'tablet',
@@ -5034,6 +5034,7 @@ describe('duplicate NHIS claim prevention', () => {
       ...sourceClaim,
       id: 'claim-2',
       claim_number: 'NHIS-000002',
+      total_amount: secondTotal,
     }
     const claimsQuery = {
       order: vi.fn(() => claimsQuery),
@@ -5051,8 +5052,19 @@ describe('duplicate NHIS claim prevention', () => {
       if (table === 'nhis_claim_services') {
         return { select: vi.fn(() => serviceLinesQuery) }
       }
-      return { select: vi.fn(() => ({ in: vi.fn().mockReturnThis(), eq: vi.fn().mockResolvedValue({ data: [], error: null }) })) }
+      const fallback = {
+        in: vi.fn(() => fallback), eq: vi.fn(() => fallback),
+        order: vi.fn().mockResolvedValue({ data: [], error: null }),
+      }
+      return { select: vi.fn(() => fallback) }
     })
+
+    claimsQuery.lte.mockResolvedValueOnce({ data: [sourceClaim, { ...duplicateClaim, ccc_no: '67890', total_amount: 10 }], error: null })
+    await expect(checkNhisExportReadiness({
+      mode: 'custom', fromDate: '2026-05-14', toDate: '2026-05-14', format: 'json',
+      organizationType: 'hospital', providerClassLevel: 'D', pharmacyLevel: 'P1',
+      nhisDrugCatalog: [{ id: 'drug-1', code: 'NH001', category: 'A' }],
+    })).resolves.toMatchObject({ count: 2 })
 
     await expect(exportNhisClaimsFile({
       mode: 'custom',
@@ -5062,7 +5074,7 @@ describe('duplicate NHIS claim prevention', () => {
       organizationType: 'hospital',
       providerClassLevel: 'D',
       pharmacyLevel: 'P1',
-      nhisDrugCatalog: [{ code: 'NH001', category: 'A' }],
+      nhisDrugCatalog: [{ id: 'drug-1', code: 'NH001', category: 'A' }],
     })).rejects.toMatchObject({
       code: 'NHIS_DUPLICATE_CLAIMS',
       duplicateGroups: [

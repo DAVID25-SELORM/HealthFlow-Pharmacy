@@ -1,3 +1,5 @@
+import NhisCccDuplicateReview from '../components/NhisCccDuplicateReview'
+import { nhisDuplicateMemberKey, isVoidedNhisClaim } from '../utils/nhisCccDuplicate'
 import ClaimCorrectionAlerts from '../components/ClaimCorrectionAlerts'
 import ClaimSearchScope from '../components/ClaimSearchScope'
 import { CLAIM_MONTHS, getClaimMonthRange } from '../utils/claimMonthRange'
@@ -1257,7 +1259,7 @@ const buildNhisDuplicateWarnings = ({
   editingClaimId,
 }) => {
   const warnings = []
-  const currentPatientKey = getClaimPatientKey(currentClaim)
+  const currentPatientKey = nhisDuplicateMemberKey(currentClaim)
   const currentDate = getClaimServiceDate(currentClaim)
   const currentTotal = currentMedicines.reduce((sum, medicine) => sum + Number(medicine.totalAmount || 0), 0)
   const seenMedicines = new Map()
@@ -1275,8 +1277,8 @@ const buildNhisDuplicateWarnings = ({
   })
 
   existingClaims
-    .filter((claim) => claim.id !== editingClaimId)
-    .filter((claim) => getClaimPatientKey(claim) && getClaimPatientKey(claim) === currentPatientKey)
+    .filter((claim) => claim.id !== editingClaimId && !isVoidedNhisClaim(claim.status))
+    .filter((claim) => nhisDuplicateMemberKey(claim) && nhisDuplicateMemberKey(claim) === currentPatientKey)
     .forEach((claim) => {
       const existingMedicines = claim.nhis_claim_medicines || []
       const existingDate = getClaimServiceDate(claim)
@@ -1319,33 +1321,6 @@ const buildNhisDuplicateWarnings = ({
     })
 
   return [...new Set(warnings)]
-}
-
-const buildNhisDuplicateClaimBlockers = ({
-  currentClaim,
-  currentMedicines,
-  existingClaims,
-  editingClaimId,
-}) => {
-  const currentPatientKey = getClaimPatientKey(currentClaim)
-  const currentDate = getClaimServiceDate(currentClaim)
-  const currentTotal = currentMedicines.reduce((sum, medicine) => sum + Number(medicine.totalAmount || 0), 0)
-  if (!currentPatientKey || !currentDate) return []
-
-  return [...new Set(
-    existingClaims
-      .filter((claim) => claim.id !== editingClaimId)
-      .filter((claim) => getClaimPatientKey(claim) && getClaimPatientKey(claim) === currentPatientKey)
-      .filter((claim) => {
-        const existingDate = getClaimServiceDate(claim)
-        const existingTotal = Number(claim.total_amount || 0)
-        return existingDate && existingDate === currentDate && Math.abs(existingTotal - currentTotal) < 0.01
-      })
-      .map((claim) => {
-        const claimLabel = claim.claim_number || `${claim.surname || ''} ${claim.other_names || ''}`.trim() || 'existing claim'
-        return `${claimLabel} has the same patient, date, and total amount.`
-      })
-  )]
 }
 
 const getSettingValue = (settings, camelKey, snakeKey) =>
@@ -1594,6 +1569,26 @@ const Nhis = () => {
   }), [])
 
   // ── new claim form ────────────────────────────────────────────
+  const reviewCccDuplicateSignals = async (signals) => {
+    const reviewSignals = signals.filter((signal) => signal.severity !== 'info')
+    if (!reviewSignals.length) {
+      notify(signals[0].message, 'info')
+      return true
+    }
+    const blocked = reviewSignals.some((signal) => signal.severity === 'block')
+    const confirmed = await requestActionConfirmation({
+      eyebrow: 'Existing claim review',
+      title: blocked ? 'Possible duplicate claim' : 'Review before saving this claim',
+      cccSignals: reviewSignals,
+      warning: blocked
+        ? 'This member already has an active claim with this CCC and service date. Open the existing claim to continue there.'
+        : 'Check the existing attendance and medicines before continuing with a separate claim.',
+      confirmText: blocked ? 'Return to claim' : 'Reviewed - continue',
+      cancelText: 'Go back',
+    })
+    return !blocked && confirmed
+  }
+
   const [claimForm, setClaimForm]           = useState(makeBlankClaim)
   const [claimMedicines, setClaimMedicines] = useState([])
   const [claimServices, setClaimServices]   = useState([])
@@ -4681,17 +4676,6 @@ const Nhis = () => {
       }
     }
 
-    const duplicateClaimBlockers = buildNhisDuplicateClaimBlockers({
-      currentClaim: claimForm,
-      currentMedicines: effectiveClaimMedicines,
-      existingClaims: claims,
-      editingClaimId: editingClaim?.id,
-    })
-    if (duplicateClaimBlockers.length) {
-      setClaimError(`Duplicate NHIS claim blocked: ${duplicateClaimBlockers[0]}`)
-      return
-    }
-
     const duplicateWarnings = buildNhisDuplicateWarnings({
       currentClaim: claimForm,
       currentMedicines: effectiveClaimMedicines,
@@ -4835,7 +4819,7 @@ const Nhis = () => {
           privilegedCorrection: canEditNhisClaimAnytime,
           correctionReason,
           existingMedicines: editingClaim.nhis_claim_medicines || editingClaim.medicines || [],
-          onCccDuplicateSignal: (signals) => signals.forEach((signal) => notify(signal.message, signal.severity === 'info' ? 'info' : 'warning')),
+          onCccDuplicateSignal: reviewCccDuplicateSignals,
         })
         savedClaimRecord = savedClaim || editingClaim
         const claimForSubmission = savedClaim || editingClaim
@@ -4854,6 +4838,7 @@ const Nhis = () => {
             const submitResult = await submitNhisClaimDirect(editingClaim.id, {
               ...getDirectNhiaOptions(),
               claim: claimForSubmission,
+              onCccDuplicateSignal: reviewCccDuplicateSignals,
             })
             successMessage = submitResult?.queued
               ? 'NHIS claim corrections saved and queued for CLAIM-it bridge submission.'
@@ -4893,7 +4878,7 @@ const Nhis = () => {
           nhiaTariffServices: claimServices,
           tariffFacilityGroup: activeTariffFacilityGroup,
           tariffCateringOption: activeTariffCateringOption,
-          onCccDuplicateSignal: (signals) => signals.forEach((signal) => notify(signal.message, signal.severity === 'info' ? 'info' : 'warning')),
+          onCccDuplicateSignal: reviewCccDuplicateSignals,
         })
       }
 
@@ -5168,6 +5153,7 @@ const Nhis = () => {
         const submitResult = await submitNhisClaimDirect(fullClaim.id, {
           ...getDirectNhiaOptions(),
           claim: fullClaim,
+          onCccDuplicateSignal: reviewCccDuplicateSignals,
         })
         if (submitResult?.queued) {
           await refreshClaimsOverview()
@@ -7585,7 +7571,7 @@ const Nhis = () => {
               <ClaimCorrectionAlerts key={editingClaim.id || editingClaim.claim_number} readiness={correctionReadiness} />
             )}
             {claimError && <div className="nhis-alert nhis-alert--modal" role="alert">{claimError}
-              {claimError.includes('CCC code is already used') && <Link target="_blank" rel="noopener noreferrer" to={`/search?search=${encodeURIComponent(claimForm.cccNo || '')}`}> Find the existing claim (new tab)</Link>}
+              {(claimError.includes('CCC code is already used') || claimError.includes('Possible duplicate claim') || claimError.includes('Review the existing claim')) && <Link target="_blank" rel="noopener noreferrer" to={`/search?search=${encodeURIComponent(claimForm.cccNo || '')}`}> Find the existing claim (new tab)</Link>}
             </div>}
             {incompleteIntakeItems.length > 0 && (
               <div className="nhis-incomplete-intake-alert" role="status">
@@ -8779,7 +8765,7 @@ const Nhis = () => {
           }}
         >
           <section
-            className="modal-panel nhis-discard-modal"
+            className={`modal-panel nhis-discard-modal${actionConfirmation.cccSignals ? ' nhis-ccc-review-modal' : ''}`}
             role="dialog"
             aria-modal="true"
             aria-labelledby="nhis-action-confirmation-title"
@@ -8805,6 +8791,7 @@ const Nhis = () => {
             </div>
 
             <div className="nhis-discard-body">
+              {actionConfirmation.cccSignals && <NhisCccDuplicateReview signals={actionConfirmation.cccSignals} />}
               {actionConfirmation.details?.length > 0 && (
                 <div className="nhis-discard-details">
                   {actionConfirmation.details
