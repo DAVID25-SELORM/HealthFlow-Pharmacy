@@ -80,20 +80,21 @@ describe('offline record outbox coalescing', () => {
   })
 })
 
-it('blocks offline CCC duplicates atomically while permitting different members and service dates', () => {
+it('blocks exact offline duplicates atomically while permitting different members, service dates and totals', () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'healthflow-ccc-guard-'))
   const databaseUrl = pathToFileURL(path.resolve('local-branch-server/src/db.js')).href
   const recordsUrl = pathToFileURL(path.resolve('local-branch-server/src/offlineRecordsRepository.js')).href
   const script = `
     const { db, closeDatabase } = await import(${JSON.stringify(databaseUrl)});
     const { saveOfflineRecord } = await import(${JSON.stringify(recordsUrl)});
-    const original = { id: 'original', member_no: '12345678', ccc_no: '12345', service_date_from: '2026-10-01', status: 'draft' };
+    const original = { id: 'original', member_no: '12345678', ccc_no: '12345', service_date_from: '2026-10-01', total_amount: 100, status: 'draft' };
     saveOfflineRecord('nhis_claims', original);
     const before = db.prepare('select count(*) from sync_outbox').pluck().get();
     let blocked = false;
     try { saveOfflineRecord('nhis_claims', { ...original, id: 'duplicate' }); }
     catch (error) { if (error.code === 'NHIS_CCC_DUPLICATE') blocked = true; else throw error; }
     if (!blocked || db.prepare('select count(*) from sync_outbox').pluck().get() !== before) throw new Error('Duplicate write reached outbox');
+    saveOfflineRecord('nhis_claims', { ...original, id: 'second-prescription', total_amount: 40 });
     saveOfflineRecord('nhis_claims', { ...original, id: 'other-member', member_no: '87654321' });
     saveOfflineRecord('nhis_claims', { ...original, id: 'other-date', service_date_from: '2026-10-02' });
     saveOfflineRecord('nhis_claims', { ...original, id: 'rejected', status: 'rejected' });

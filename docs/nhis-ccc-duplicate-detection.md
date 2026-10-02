@@ -30,11 +30,18 @@ identical handling. No global uniqueness assumption is made about an NHIA code.
 
 | Context | Behavior |
 | --- | --- |
-| Same member + same CCC + same service day | Block, even if totals/medicines differ |
+| Same member + same CCC + same service day + same total | Block (exact repeat / double entry) |
+| Same member + same CCC + same service day, different or missing total | Strong warning, explicit review required |
 | Same member + same CCC within 3 days | Strong warning, explicit review required |
-| Different member + same CCC | Allow; informational notice |
+| Different member + same CCC | Allow; informational notice only when within 7 days |
 | Same member + same day + different/pending CCC | Warning, explicit review required |
 | Same member + same CCC on a more distant day | Review required, no automatic block |
+
+Why same-day/same-CCC is not an automatic block: production data (checked 2026-10-02) holds 64
+groups of active claims sharing member + CCC + service day, and every group has different
+totals, consistent with one NHIA visit code covering several prescriptions. An unconditional
+block would stop those legitimate claims. Requiring an equal total keeps the protection the
+earlier member/date/total rule gave against double entry.
 
 The three-day threshold is named and configurable at the shared classifier boundary.
 Dates are actual service calendar days. Draft, pending-serving, served, submitted,
@@ -74,24 +81,30 @@ Medicine overlap never establishes identity or independently blocks a claim.
 
 Migration: `20261002100000_member_aware_ccc_duplicate_detection.sql`.
 
-The function is replaced without removing reservation data. Existing trigger wiring
-is preserved; a trigger is installed when absent on a clean database. A partial
-unique index over facility, normalized member/HIN (patient-ID fallback), normalized
-CCC and service day provides the concurrency guarantee for active claims. The guard
-also checks status transitions and supplies the friendly error in the ordinary path.
-A racing save can still return the unique-index error.
+`guard_facility_ccc_duplicate()` is replaced so it never raises; the existing production
+trigger wiring and reservation data are left in place. The database therefore no longer
+rejects any claim on CCC grounds, so editing an old claim (attaching a prescription,
+changing its date) cannot trip it either. Duplicate review and the exact-repeat block are
+enforced by the shared classifier in the application.
 
-No historical data is rewritten or deleted. Index creation fails transactionally if
-historical active duplicates exist: resolve those explicitly before applying the
-migration. Deploy the database migration before the application because the new
-lookup RPC is required. Neither database migration nor application was deployed as
-part of this task. Production state was not independently verified in this session.
+An earlier draft added a unique index over facility, member, CCC and service day. It is
+not included: it cannot be built against production (64 existing groups) and would block
+legitimate multi-prescription visits. The migration drops it if present.
+
+No historical data is rewritten or deleted. Deploy the database migration before the
+application because the new candidate lookup RPC is required. The migration alone is
+enough to stop the facility-wide CCC rejection that pharmacies are hitting now.
+
+Production was queried read-only on 2026-10-02: the live trigger is the broad
+facility-wide version, 194 pairs of claims for different members share a CCC within a
+week, and 64 same-member/CCC/day groups exist with differing totals.
 
 ## Override and audit policy
 
 There is no duplicate override for any role. Admin/super-admin and ordinary staff
-are equally blocked for category A, including when callers pass override flags or
-acknowledge the review dialog. Therefore override reason, override audit event and
+are equally blocked for an exact repeat (same member, CCC, day and total), including
+when callers pass override flags or acknowledge the review dialog. Warnings require
+explicit acknowledgment from any role. Therefore override reason, override audit event and
 successful-authorized-override tests are not applicable; no bypass is introduced.
 
 Existing claim fields for member, patient, facility, CCC, service date, NHIA

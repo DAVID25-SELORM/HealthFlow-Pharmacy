@@ -8,9 +8,9 @@ import {
 } from './nhisCccDuplicate'
 
 const claim = (over) => ({
-  id: 'other-1', memberNo: '40000001', ccc: '14587', serviceDate: '2026-09-14', status: 'served', claimNumber: 'NHIS-000001', ...over,
+  id: 'other-1', memberNo: '40000001', ccc: '14587', serviceDate: '2026-09-14', status: 'served', claimNumber: 'NHIS-000001', totalAmount: 100, ...over,
 })
-const candidate = (over) => ({ id: 'new-claim', memberNo: '40000001', ccc: '14587', serviceDate: '2026-09-14', ...over })
+const candidate = (over) => ({ id: 'new-claim', memberNo: '40000001', ccc: '14587', serviceDate: '2026-09-14', totalAmount: 100, ...over })
 
 describe('classifyNhisCccDuplicateSignals: the 5-category member-aware model', () => {
   it('1. same member + same CCC + same service date => BLOCK (strong duplicate)', () => {
@@ -96,8 +96,8 @@ describe('classifyNhisCccDuplicateSignals: the 5-category member-aware model', (
   })
 
   it('accepts snake_case database rows as well as camelCase', () => {
-    const dbCandidate = { id: 'new-claim', member_no: '40000001', ccc_no: '14587', service_date_from: '2026-09-14' }
-    const dbOther = { id: 'other-1', member_no: '40000001', ccc_no: '14587', service_date_from: '2026-09-14', status: 'served', claim_number: 'NHIS-000001' }
+    const dbCandidate = { id: 'new-claim', member_no: '40000001', ccc_no: '14587', service_date_from: '2026-09-14', total_amount: 100 }
+    const dbOther = { id: 'other-1', member_no: '40000001', ccc_no: '14587', service_date_from: '2026-09-14', status: 'served', claim_number: 'NHIS-000001', total_amount: '100.00' }
     const [signal] = classifyNhisCccDuplicateSignals(dbCandidate, [dbOther])
     expect(signal.severity).toBe(NHIS_CCC_DUPLICATE_SEVERITY.BLOCK)
     expect(signal.claim).toMatchObject({ claimNumber: 'NHIS-000001', memberNo: '40000001' })
@@ -170,6 +170,36 @@ it.each(['cancelled', 'canceled', 'voided', 'rejected', 'failed'])('excludes %s 
   expect(classifyNhisCccDuplicateSignals(candidate(), [claim({ status })])).toEqual([])
   expect(classifyNhisCccDuplicateSignals(candidate({ status }), [claim()])).toEqual([])
 })
+describe('several prescriptions for one visit (same member + CCC + day)', () => {
+  it('a different total is a strong warning that needs review, never a block', () => {
+    const [signal] = classifyNhisCccDuplicateSignals(candidate({ totalAmount: 250 }), [claim()])
+    expect(signal).toMatchObject({ severity: NHIS_CCC_DUPLICATE_SEVERITY.STRONG_WARNING, reasonCode: NHIS_CCC_DUPLICATE_REASON.STRONG_DUPLICATE_SAME_DAY })
+    expect(isBlockingNhisCccDuplicateSignal(signal)).toBe(false)
+  })
+
+  it('a missing total on either side never blocks', () => {
+    expect(classifyNhisCccDuplicateSignals(candidate({ totalAmount: 0 }), [claim()])[0].severity).toBe(NHIS_CCC_DUPLICATE_SEVERITY.STRONG_WARNING)
+    expect(classifyNhisCccDuplicateSignals(candidate(), [claim({ totalAmount: undefined })])[0].severity).toBe(NHIS_CCC_DUPLICATE_SEVERITY.STRONG_WARNING)
+  })
+
+  it('an exact repeat (same total) is still blocked as a double entry', () => {
+    expect(classifyNhisCccDuplicateSignals(candidate({ totalAmount: 99.999 }), [claim({ totalAmount: 100 })])[0].severity).toBe(NHIS_CCC_DUPLICATE_SEVERITY.BLOCK)
+  })
+
+  it('three claims for the same visit with different totals produce warnings only', () => {
+    const signals = classifyNhisCccDuplicateSignals(candidate({ totalAmount: 30 }), [claim({ id: 'a', totalAmount: 10 }), claim({ id: 'b', totalAmount: 20 })])
+    expect(signals).toHaveLength(2)
+    expect(signals.some(isBlockingNhisCccDuplicateSignal)).toBe(false)
+  })
+})
+
+describe('different member sharing a CCC', () => {
+  it('is mentioned only when the other claim is within a week of the service date', () => {
+    expect(classifyNhisCccDuplicateSignals(candidate(), [claim({ memberNo: '50000002', serviceDate: '2026-09-20' })])[0].severity).toBe(NHIS_CCC_DUPLICATE_SEVERITY.INFO)
+    expect(classifyNhisCccDuplicateSignals(candidate(), [claim({ memberNo: '50000002', serviceDate: '2026-08-01' })])).toEqual([])
+  })
+})
+
 it('reads stored medicine rows and ignores objects without a medicine code', () => {
   const [signal] = classifyNhisCccDuplicateSignals(candidate({ medicines: [{ drugCode: 'A' }, {}] }), [claim({ ccc: '98765', nhis_claim_medicines: [{ drug_code: 'A' }, {}] })])
   expect(signal.medicineOverlapRatio).toBe(1)

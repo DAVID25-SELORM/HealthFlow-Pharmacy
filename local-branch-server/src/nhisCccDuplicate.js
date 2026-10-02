@@ -5,8 +5,8 @@
 const digitsOnly = (value) => String(value || '').replace(/\D/g, '')
 
 export const NHIS_CCC_DUPLICATE_SEVERITY = Object.freeze({
-  BLOCK: 'block', // category A: same member + same CCC + same service date (not rejected/failed) — the database also rejects this
-  STRONG_WARNING: 'strong_warning', // category B: same member + same CCC + service date within the warning window
+  BLOCK: 'block', // category A: same member + same CCC + same service date + same total — an exact repeat; app layer only
+  STRONG_WARNING: 'strong_warning', // category A (different total) and B: same member + same CCC, same day or within the warning window
   WARNING: 'warning', // category D: same member + same service date + a different CCC
   INFO: 'info', // category C: same CCC, a different member — never blocks
   REVIEW: 'review', // category E: same member + same CCC, but a clearly different service date
@@ -14,6 +14,7 @@ export const NHIS_CCC_DUPLICATE_SEVERITY = Object.freeze({
 
 export const NHIS_CCC_DUPLICATE_REASON = Object.freeze({
   STRONG_DUPLICATE: 'strong_duplicate',
+  STRONG_DUPLICATE_SAME_DAY: 'strong_duplicate_same_day',
   STRONG_DUPLICATE_WINDOW: 'strong_duplicate_window',
   SAME_MEMBER_DIFFERENT_CCC: 'same_member_different_ccc',
   SAME_CCC_DIFFERENT_MEMBER: 'same_ccc_different_member',
@@ -23,6 +24,7 @@ export const NHIS_CCC_DUPLICATE_REASON = Object.freeze({
 // "Very close" service dates for the same member + same CCC (category B) vs. a date far enough apart that it only
 // warrants a soft review (category E). Not a hard NHIA rule — a reasonable, named default the caller can override.
 export const NHIS_CCC_WARNING_WINDOW_DAYS = 3
+export const NHIS_CCC_INFO_WINDOW_DAYS = 7
 
 const VOIDED_STATUSES = new Set(['rejected', 'failed', 'cancelled', 'canceled', 'voided'])
 export const isVoidedNhisClaim = (status) => VOIDED_STATUSES.has(String(status || '').trim().toLowerCase())
@@ -36,6 +38,10 @@ const cccOf = (row) => normalizeCcc(row?.ccc ?? row?.cccNo ?? row?.ccCode ?? row
 const serviceDateOf = (row) => String(row?.serviceDate ?? row?.service_date_from ?? '').slice(0, 10)
 const idOf = (row) => String(row?.id ?? '')
 const statusOf = (row) => String(row?.status ?? '')
+const totalOf = (row) => {
+  const value = Number(row?.totalAmount ?? row?.total_amount ?? 0)
+  return Number.isFinite(value) ? value : 0
+}
 const medicinesOf = (row) => {
   const list = row?.medicines ?? row?.nhis_claim_medicines ?? row?.medicineCodes ?? row?.medicine_codes ?? []
   return Array.from(new Set((Array.isArray(list) ? list : []).map((entry) =>
@@ -123,12 +129,26 @@ export const classifyNhisCccDuplicateSignals = (candidate, others = [], { warnin
       }
       const diff = Math.abs(daysBetween(serviceDate, rowDate))
       if (diff === 0) {
-        signals.push({
-          severity: NHIS_CCC_DUPLICATE_SEVERITY.BLOCK,
-          reasonCode: NHIS_CCC_DUPLICATE_REASON.STRONG_DUPLICATE,
-          message: 'Possible duplicate claim: this patient already has a claim using this CCC/CC code for the same service date. Review the existing claim before continuing.',
-          claim: summarizeNhisCccDuplicateClaim(row),
-        })
+        // One NHIA visit code can legitimately cover several prescriptions on the same day, each its own claim
+        // with its own total (production holds many such groups). Only an exact repeat — same member, CCC, day
+        // and total — is treated as a double entry and blocked; anything else needs explicit review.
+        const total = totalOf(candidate)
+        const rowTotal = totalOf(row)
+        const sameTotal = total > 0 && rowTotal > 0 && Math.abs(total - rowTotal) < 0.005
+        signals.push(sameTotal
+          ? {
+            severity: NHIS_CCC_DUPLICATE_SEVERITY.BLOCK,
+            reasonCode: NHIS_CCC_DUPLICATE_REASON.STRONG_DUPLICATE,
+            message: 'Possible duplicate claim: this patient already has a claim using this CCC/CC code for the same service date and total. Review the existing claim before continuing.',
+            claim: summarizeNhisCccDuplicateClaim(row),
+          }
+          : {
+            severity: NHIS_CCC_DUPLICATE_SEVERITY.STRONG_WARNING,
+            reasonCode: NHIS_CCC_DUPLICATE_REASON.STRONG_DUPLICATE_SAME_DAY,
+            message: 'This patient already has another claim using this CCC/CC code for the same service date (for example a second prescription from the same visit). Review the existing claim before continuing.',
+            claim: summarizeNhisCccDuplicateClaim(row),
+            medicineOverlapRatio: medicineOverlapRatio(candidateMedicines, medicinesOf(row)),
+          })
       } else if (diff <= warningWindowDays) {
         signals.push({
           severity: NHIS_CCC_DUPLICATE_SEVERITY.STRONG_WARNING,
@@ -150,6 +170,8 @@ export const classifyNhisCccDuplicateSignals = (candidate, others = [], { warnin
     }
 
     if (sameCcc && !sameMember) {
+      // A short numeric code recurs across the facility over time; only a recent reuse is worth a notice.
+      if (serviceDate && rowDate && Math.abs(daysBetween(serviceDate, rowDate)) > NHIS_CCC_INFO_WINDOW_DAYS) continue
       signals.push({
         severity: NHIS_CCC_DUPLICATE_SEVERITY.INFO,
         reasonCode: NHIS_CCC_DUPLICATE_REASON.SAME_CCC_DIFFERENT_MEMBER,

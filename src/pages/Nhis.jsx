@@ -1581,7 +1581,7 @@ const Nhis = () => {
       title: blocked ? 'Possible duplicate claim' : 'Review before saving this claim',
       cccSignals: reviewSignals,
       warning: blocked
-        ? 'This member already has an active claim with this CCC and service date. Open the existing claim to continue there.'
+        ? 'This member already has an active claim with this CCC, service date and total. Open the existing claim to continue there.'
         : 'Check the existing attendance and medicines before continuing with a separate claim.',
       confirmText: blocked ? 'Return to claim' : 'Reviewed - continue',
       cancelText: 'Go back',

@@ -5,14 +5,21 @@ vi.mock('./branchServerApi', () => ({ listBranchRecords: vi.fn(), shouldUseBranc
 import { supabase } from '../lib/supabase'
 import { listBranchRecords } from './branchServerApi'
 import { assertNoDuplicateNhisClaimInStore as check } from './nhisCccDuplicateService'
-const candidate = { memberNo: '40000001', cccNo: '12345', serviceDate: '2026-10-01', medicines: [{ drug_code: 'A' }] }
-const existing = { id: 'existing', member_no: '40000001', ccc_no: '12345', service_date_from: '2026-10-01', status: 'served', medicines: ['A'] }
+const candidate = { memberNo: '40000001', cccNo: '12345', serviceDate: '2026-10-01', totalAmount: 100, medicines: [{ drug_code: 'A' }] }
+const existing = { id: 'existing', member_no: '40000001', ccc_no: '12345', service_date_from: '2026-10-01', status: 'served', total_amount: 100, medicines: ['A'] }
 beforeEach(() => { vi.resetAllMocks(); supabase.rpc.mockResolvedValue({ data: [], error: null }) })
 it.each(['admin', 'super_admin', 'claims_officer', 'assistant'])('does not permit a %s override of an exact duplicate', async (role) => {
   supabase.rpc.mockResolvedValue({ data: [existing], error: null })
   const review = vi.fn(async () => true)
   await expect(check({ ...candidate, role, override: true, onCccDuplicateSignal: review })).rejects.toMatchObject({ code: 'NHIS_CCC_DUPLICATE' })
   expect(review).toHaveBeenCalledWith([expect.objectContaining({ severity: 'block' })])
+})
+it('lets a second prescription from the same visit (same member, CCC and day, different total) through after review', async () => {
+  supabase.rpc.mockResolvedValue({ data: [{ ...existing, total_amount: 40 }], error: null })
+  await expect(check(candidate)).rejects.toMatchObject({ code: 'NHIS_CCC_REVIEW_REQUIRED' })
+  const review = vi.fn(async () => true)
+  await expect(check({ ...candidate, onCccDuplicateSignal: review })).resolves.toBeUndefined()
+  expect(review.mock.calls[0][0][0]).toMatchObject({ severity: 'strong_warning', reasonCode: 'strong_duplicate_same_day' })
 })
 it('allows different members sharing a CCC without requiring acknowledgment', async () => {
   supabase.rpc.mockResolvedValue({ data: [{ ...existing, member_no: '90000002' }], error: null })

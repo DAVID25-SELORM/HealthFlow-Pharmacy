@@ -20,18 +20,20 @@ const insertClaim = (overrides = {}) => {
     service_date_from: '2026-10-01',
     status: 'served',
     claim_number: 'NHIS-TEST',
+    total_amount: 100,
     ...overrides,
   }
   return db.query(
-    `insert into nhis_claims (id, organization_id, member_no, hin, ccc_no, service_date_from, status, claim_number, patient_id)
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-    [row.id, row.organization_id, row.member_no, row.hin, row.ccc_no, row.service_date_from, row.status, row.claim_number, row.patient_id || null]
+    `insert into nhis_claims (id, organization_id, member_no, hin, ccc_no, service_date_from, status, claim_number, patient_id, total_amount)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+    [row.id, row.organization_id, row.member_no, row.hin, row.ccc_no, row.service_date_from, row.status, row.claim_number, row.patient_id || null, row.total_amount]
   )
 }
 
 beforeAll(async () => {
   db = new PGlite()
-  // Simulate production wiring first; a later test verifies clean installation.
+  // Mirrors production before this migration: the broad facility-wide guard (any claim, same CCC, +/-6 days)
+  // is wired as a trigger, and earlier claims already share member + CCC + day with different totals.
   await db.exec(`create role anon; create role authenticated;
     create table nhis_claims (
       id uuid primary key,
@@ -48,89 +50,63 @@ beforeAll(async () => {
     create table nhis_claim_medicines (claim_id uuid, drug_code text);
     create function user_organization_id() returns uuid language sql stable as $$ select '${ORG}'::uuid $$;
     create function guard_facility_ccc_duplicate() returns trigger language plpgsql as $$
-      begin return new; end $$;
-    create trigger guard_facility_ccc_duplicate_trg
-      before insert or update on nhis_claims
-      for each row execute function guard_facility_ccc_duplicate();`)
-  await db.exec(readFileSync(MIGRATION, 'utf8'))
+      begin
+        if exists (select 1 from nhis_claims c where c.organization_id = new.organization_id and c.id <> new.id
+          and c.ccc_no = new.ccc_no and c.service_date_from between new.service_date_from - 6 and new.service_date_from + 6) then
+          raise exception 'This CCC code is already used by another claim in this facility within 7 days of the service date.' using errcode = '23505';
+        end if;
+        return new;
+      end $$;
+    create trigger guard_facility_ccc_duplicate before insert or update on nhis_claims
+      for each row execute function guard_facility_ccc_duplicate();
+    create unique index nhis_claims_member_ccc_duplicate_idx on nhis_claims (member_no) where status = 'draft-only-test';`)
 }, 30000)
 
 afterAll(async () => { await db?.close() })
 
-it('blocks the same member + same CCC + same service date (category A — strong duplicate)', async () => {
-  await insertClaim()
-  await expect(insertClaim()).rejects.toThrow('Possible duplicate claim')
+it('baseline: the live guard rejects a different member who shares a CCC within a week', async () => {
+  await insertClaim({ member_no: '10000001', ccc_no: '67198', service_date_from: '2026-09-30' })
+  await expect(insertClaim({ member_no: '10000002', ccc_no: '67198', service_date_from: '2026-10-02' }))
+    .rejects.toThrow('already used by another claim in this facility')
 })
 
-it('never blocks a different member sharing the same CCC (category C — allow)', async () => {
-  await insertClaim({ member_no: '50000002' })
+it('applies cleanly even though production already holds same member + CCC + day claims', async () => {
+  await db.exec('alter table nhis_claims disable trigger guard_facility_ccc_duplicate')
+  await insertClaim({ member_no: '20000001', ccc_no: '31481', total_amount: 120 })
+  await insertClaim({ member_no: '20000001', ccc_no: '31481', total_amount: 340 })
+  await db.exec('alter table nhis_claims enable trigger guard_facility_ccc_duplicate')
+  await db.exec(readFileSync(MIGRATION, 'utf8'))
 })
 
-it('never blocks the same member reusing a CCC on a clearly different service date', async () => {
-  await insertClaim({ member_no: '60000003', service_date_from: '2026-01-01' })
-  await insertClaim({ member_no: '60000003', service_date_from: '2026-06-01' })
+it('no longer rejects a different member who shares a CCC within a week (the reported failure)', async () => {
+  await insertClaim({ member_no: '10000002', ccc_no: '67198', service_date_from: '2026-10-02' })
 })
 
-it('does not treat a rejected/failed existing claim as a live duplicate', async () => {
-  await insertClaim({ member_no: '70000004', status: 'rejected' })
-  await insertClaim({ member_no: '70000004', status: 'served' })
+it('no longer rejects several prescriptions for one member on one visit', async () => {
+  await insertClaim({ member_no: '30000001', ccc_no: '55555', total_amount: 50 })
+  await insertClaim({ member_no: '30000001', ccc_no: '55555', total_amount: 75 })
 })
 
-it('an UPDATE that leaves member/CCC/date unchanged is never treated as a new duplicate', async () => {
+it('updating an old claim (attaching a prescription, changing its date or CCC) is never rejected', async () => {
   const id = uuid()
-  await insertClaim({ id, member_no: '80000005', status: 'served', claim_number: 'NHIS-UPDATE' })
-  await db.query('update nhis_claims set claim_number = $1 where id = $2', ['NHIS-UPDATE-2', id])
+  await insertClaim({ id, member_no: '40000009', ccc_no: '67198', service_date_from: '2026-08-01' })
+  await db.query('update nhis_claims set claim_number = $1, service_date_from = $2 where id = $3', ['NHIS-UPDATED', '2026-10-01', id])
+  await db.query('update nhis_claims set ccc_no = $1 where id = $2', ['67198', id])
 })
 
-it('an UPDATE that introduces a real same-member/same-CCC/same-date conflict is blocked', async () => {
-  await insertClaim({ member_no: '90000006', ccc_no: '22222', service_date_from: '2026-02-01', status: 'served' })
-  const movingId = uuid()
-  await insertClaim({ id: movingId, member_no: '90000006', ccc_no: '33333', service_date_from: '2026-02-01', status: 'served' })
-  await expect(
-    db.query('update nhis_claims set ccc_no = $1 where id = $2', ['22222', movingId])
-  ).rejects.toThrow('Possible duplicate claim')
+it('keeps exactly one trigger wired to the guard and leaves no member/CCC unique index behind', async () => {
+  const triggers = await db.query("select count(*)::int as count from pg_trigger where tgfoid = 'guard_facility_ccc_duplicate()'::regprocedure and not tgisinternal")
+  expect(triggers.rows[0].count).toBe(1)
+  const indexes = await db.query("select indexname from pg_indexes where indexname = 'nhis_claims_member_ccc_duplicate_idx'")
+  expect(indexes.rows).toEqual([])
 })
 
-it('reapplying the migration (same name, create-or-replace / if-not-exists) does not error', async () => {
+it('reapplying the migration is harmless', async () => {
+  await db.exec(readFileSync(MIGRATION, 'utf8'))
   await db.exec(readFileSync(MIGRATION, 'utf8'))
   await insertClaim({ member_no: '91000007' })
 })
 
-it('the partial unique index backing the guard exists', async () => {
-  const { rows } = await db.query(
-    "select indexname from pg_indexes where indexname = 'nhis_claims_member_ccc_duplicate_idx'"
-  )
-  expect(rows).toHaveLength(1)
-})
-
-it('installs the trigger on a clean database and preserves exactly one production trigger on replay', async () => {
-  await db.exec('drop trigger guard_facility_ccc_duplicate_trg on nhis_claims')
-  await db.exec(readFileSync(MIGRATION, 'utf8'))
-  await db.exec(readFileSync(MIGRATION, 'utf8'))
-  const { rows } = await db.query("select count(*)::int as count from pg_trigger where tgfoid = 'guard_facility_ccc_duplicate()'::regprocedure and not tgisinternal")
-  expect(rows[0].count).toBe(1)
-})
-it.each(['cancelled', 'canceled', 'voided', 'failed', 'rejected'])('allows a %s candidate alongside a live claim but blocks reactivation', async (status) => {
-  const member_no = String(92000000 + ++seq)
-  await insertClaim({ member_no })
-  const id = uuid()
-  await insertClaim({ id, member_no, status })
-  await expect(db.query("update nhis_claims set status = 'served' where id = $1", [id])).rejects.toThrow('Possible duplicate claim')
-})
-it('normalizes empty member/HIN, CCC formatting and patient-ID fallback consistently', async () => {
-  await insertClaim({ member_no: '', hin: '9300-0001', ccc_no: '12-345' })
-  await expect(insertClaim({ member_no: '93000001', ccc_no: '12345' })).rejects.toThrow('Possible duplicate claim')
-  const patient_id = uuid()
-  await insertClaim({ member_no: null, patient_id })
-  await expect(insertClaim({ member_no: '', patient_id })).rejects.toThrow('Possible duplicate claim')
-})
-it('uses the unique index as a backstop even without the trigger', async () => {
-  await db.exec('alter table nhis_claims disable trigger guard_facility_ccc_duplicate')
-  try {
-    await insertClaim({ member_no: '94000001' })
-    await expect(insertClaim({ member_no: '94000001' })).rejects.toThrow('nhis_claims_member_ccc_duplicate_idx')
-  } finally { await db.exec('alter table nhis_claims enable trigger guard_facility_ccc_duplicate') }
-})
 it('looks up normalized CCC and same-member/date candidates with medicines, pagination, exclusion and facility scope', async () => {
   const ids = [uuid(), uuid(), uuid()]
   await insertClaim({ id: ids[0], member_no: '9500-0001', ccc_no: '98-765' })
@@ -145,6 +121,7 @@ it('looks up normalized CCC and same-member/date candidates with medicines, pagi
   expect(await lookup(2)).toEqual([])
   expect((await lookup(0, ids[0]))[0].id).toBe(ids[1])
 })
+
 it('keeps candidate lookup subject to caller RLS and denies anonymous access', async () => {
   await db.exec(`alter table nhis_claims enable row level security;
     alter table nhis_claim_medicines enable row level security;

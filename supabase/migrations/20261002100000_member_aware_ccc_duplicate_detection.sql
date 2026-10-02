@@ -1,7 +1,8 @@
--- Replace the facility/code-only guard with member + CCC + service-day protection.
--- CCC is externally issued; matching CCC values never establish patient identity.
--- No rows are deleted or rewritten. Index creation deliberately fails if historical
--- active duplicates need resolution before rollout; do not silently discard claims.
+-- Stop the database from rejecting claims on a shared CCC, and add member-aware review lookups.
+-- CCC is externally issued per NHIA visit; matching CCC values never establish patient identity,
+-- and one visit code can cover several prescriptions (each its own claim with its own total).
+-- Duplicate review and the exact-repeat block now live in the application classifier.
+-- No rows are deleted or rewritten.
 begin;
 
 create or replace function public.nhis_duplicate_identity(p_member text, p_hin text, p_patient uuid)
@@ -13,57 +14,15 @@ returns text language sql immutable parallel safe set search_path = public, pg_c
   );
 $$;
 
-create unique index if not exists nhis_claims_member_ccc_duplicate_idx on public.nhis_claims (
-  organization_id,
-  (public.nhis_duplicate_identity(member_no, hin, patient_id)),
-  (regexp_replace(coalesce(ccc_no, ''), '[^0-9]', '', 'g')),
-  service_date_from
-) where lower(trim(coalesce(status, ''))) not in ('rejected', 'failed', 'cancelled', 'canceled', 'voided')
-  and public.nhis_duplicate_identity(member_no, hin, patient_id) is not null
-  and regexp_replace(coalesce(ccc_no, ''), '[^0-9]', '', 'g') <> ''
-  and service_date_from is not null;
+-- Never created in production; dropped only so an earlier draft of this migration cannot leave a stricter index behind.
+drop index if exists public.nhis_claims_member_ccc_duplicate_idx;
 
+-- Replaces the facility-wide "same CCC within 7 days" rejection (live in production, not in repository history).
+-- The existing trigger wiring is kept; the function simply no longer raises.
 create or replace function public.guard_facility_ccc_duplicate()
-returns trigger language plpgsql security definer set search_path = public, pg_catalog as $$
-declare
-  v_code text := regexp_replace(coalesce(new.ccc_no, ''), '[^0-9]', '', 'g');
-  v_identity text := public.nhis_duplicate_identity(new.member_no, new.hin, new.patient_id);
-  v_conflict record;
+returns trigger language plpgsql set search_path = public, pg_catalog as $$
 begin
-  if lower(trim(coalesce(new.status, ''))) in ('rejected', 'failed', 'cancelled', 'canceled', 'voided')
-     or v_code = '' or v_identity is null or new.organization_id is null or new.service_date_from is null then
-    return new;
-  end if;
-
-  select c.id, c.claim_number into v_conflict
-  from public.nhis_claims c
-  where c.organization_id = new.organization_id
-    and c.id is distinct from new.id
-    and lower(trim(coalesce(c.status, ''))) not in ('rejected', 'failed', 'cancelled', 'canceled', 'voided')
-    and c.service_date_from = new.service_date_from
-    and regexp_replace(coalesce(c.ccc_no, ''), '[^0-9]', '', 'g') = v_code
-    and public.nhis_duplicate_identity(c.member_no, c.hin, c.patient_id) = v_identity
-  limit 1;
-
-  if found then
-    raise exception
-      'Possible duplicate claim: this patient already has a claim (%) using this CCC/CC code for the same service date. Review the existing claim before continuing.',
-      coalesce(v_conflict.claim_number, v_conflict.id::text)
-      using errcode = '23505';
-  end if;
   return new;
-end $$;
-
--- Preserve existing production wiring, but also install the guard on clean databases.
-do $$
-begin
-  if not exists (
-    select 1 from pg_trigger where tgrelid = 'public.nhis_claims'::regclass
-      and tgfoid = 'public.guard_facility_ccc_duplicate()'::regprocedure and not tgisinternal
-  ) then
-    create trigger guard_facility_ccc_duplicate before insert or update on public.nhis_claims
-      for each row execute function public.guard_facility_ccc_duplicate();
-  end if;
 end $$;
 revoke all on function public.guard_facility_ccc_duplicate() from public, anon, authenticated;
 
