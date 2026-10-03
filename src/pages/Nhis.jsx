@@ -8916,6 +8916,13 @@ const Nhis = () => {
             </div>
 
             <div className="nhis-action-review-body">
+              <p role="status">
+                {facilitySettingsLoading || !facilitySettings
+                  ? 'Inventory setting could not be confirmed. Check Settings → NHIS Inventory before serving.'
+                  : facilitySettings.nhis_deduct_inventory_on_serve === true || facilitySettings.nhisDeductInventoryOnServe === true
+                    ? 'Serving these medicines will deduct facility stock. Saving or exporting the claim does not deduct stock.'
+                    : 'Inventory deduction is OFF. Serving these medicines will not deduct stock. An administrator can enable it in Settings → NHIS Inventory.'}
+              </p>
                 <div className="nhis-action-review-summary">
                   <div><span>Patient</span><strong>{[claimForm.surname, claimForm.otherNames].filter(Boolean).join(' ') || 'Not entered'}</strong></div>
                 <div><span>Member number</span><strong>{claimForm.memberNo || claimForm.hin || 'Not entered'}</strong></div>

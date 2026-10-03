@@ -19,7 +19,7 @@ export const ACCREDITATION_GENERATED_AFTER_EXPIRY = 'ACCREDITATION_GENERATED_AFT
 export const ACCREDITATION_GENERATED_BEFORE_EFFECTIVE = 'ACCREDITATION_GENERATED_BEFORE_EFFECTIVE'
 
 export const ACCREDITATION_GENERATED_MISSING_MESSAGE =
-  "NHIA accreditation generated/issue date is missing. Open Settings → NHIA configuration and enter the date shown on the facility's NHIA accreditation record."
+  "CLAIM-it CXF export needs the NHIA accreditation generated/issue date. Ask a facility administrator to enter the date shown on the facility's NHIA accreditation record in Settings → NHIA configuration, then retry export. This is a facility setup requirement, not an owner-only export restriction."
 export const ACCREDITATION_EXPIRY_MISSING_MESSAGE =
   "NHIA accreditation expiry date is missing. Open Settings → NHIA configuration and enter the expiry date shown on the facility's NHIA accreditation record."
 export const ACCREDITATION_GENERATED_HELPER_TEXT =
