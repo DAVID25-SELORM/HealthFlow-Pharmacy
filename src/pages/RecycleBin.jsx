@@ -141,6 +141,9 @@ const RecycleBin = () => {
     const identity = getRecycleRecordIdentity(record)
     if (!(await requestAppConfirmation({
       title: `Restore ${identity.confirmLabel}?`,
+      warning: record.entity_type === 'nhis_claim'
+        ? 'If deleting this claim returned stock, restoring it deducts the same quantities again. Restoration requires sufficient stock in the original inventory items.'
+        : undefined,
       confirmText: 'restore this record',
     }))) return
     try {

@@ -5220,7 +5220,7 @@ const Nhis = () => {
         },
         { label: 'Status', value: claim.status },
       ],
-      warning: 'The claim will leave the active workspace. An administrator can restore it.',
+      warning: 'Any stock deducted for this claim will be returned to inventory. Continue only if those medicines were not supplied or have been returned to stock. An administrator can restore the claim, which deducts that stock again.',
       confirmText: 'Move to Recycle Bin',
       cancelText: 'Cancel',
     }))) return
@@ -5266,7 +5266,7 @@ const Nhis = () => {
         },
         { label: 'Service date', value: group.serviceDate || getClaimServiceDate(keepClaim) || 'Not recorded' },
       ],
-      warning: 'Only the selected claim will remain active. The other duplicate claim(s) can be restored by an administrator from the Recycle Bin.',
+      warning: 'Only the selected claim will remain active. Stock deducted for the other claims will be returned to inventory. Continue only if those medicines were not supplied or have been returned to stock.',
       confirmText: 'Keep selected claim',
       cancelText: 'Cancel',
     }))) return
@@ -5325,7 +5325,7 @@ const Nhis = () => {
         },
         { label: 'Service date', value: group.serviceDate || getClaimServiceDate(duplicateClaim) || 'Not recorded' },
       ],
-      warning: 'This only moves the selected duplicate to the Recycle Bin. An administrator can restore it if needed.',
+      warning: 'Stock deducted for this duplicate will be returned to inventory. Continue only if those medicines were not supplied or have been returned to stock. Restoring the claim deducts that stock again.',
       confirmText: 'Delete duplicate',
       cancelText: 'Cancel',
     }))) return
