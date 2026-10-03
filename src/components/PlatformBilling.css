@@ -1,0 +1,10 @@
+.platform-billing { margin:1rem; padding:1rem; border:1px solid #cbd5e1; border-radius:10px; background:var(--card-bg,#fff); color:var(--text-primary,#172033); }
+.billing-summary,.billing-form { display:flex; flex-wrap:wrap; gap:1rem; align-items:center; }
+.billing-summary button { margin-left:auto; }
+.billing-form { margin:1rem 0; align-items:end; }
+.billing-form label { display:flex; flex-direction:column; gap:.35rem; }
+.billing-form input,.billing-form select,.platform-billing button { padding:.5rem; border:1px solid #94a3b8; border-radius:5px; font:inherit; }
+.platform-billing button { cursor:pointer; background:#edf4ff; color:#123b70; }
+.platform-billing button:disabled { opacity:.6; cursor:wait; }
+.billing-invoice { padding:1rem 0; border-top:1px solid #cbd5e1; overflow-wrap:anywhere; }
+.billing-form small { width:100%; }
