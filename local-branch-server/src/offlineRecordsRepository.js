@@ -1,6 +1,7 @@
 import { classifyNhisCccDuplicateSignals, isBlockingNhisCccDuplicateSignal } from './nhisCccDuplicate.js'
 import { assertNhisDurationForSavedState } from './nhisDurationValidation.js'
 import { assertNhisCccForSavedState, assertNhisCccForProgress } from './nhisCccValidation.js'
+import { assertNhisUnservedLocalDraft, requireNhisCloudServing } from './nhisOnlineServing.js'
 import { createId, db, getBranchMeta, json, nowIso, parseJson } from './db.js'
 import { config } from './config.js'
 
@@ -697,6 +698,7 @@ export const reconcileLocalNhisInventoryPolicyBaseline = db.transaction(() => {
 export const queueNhisServingSync = db.transaction((claim = {}) => {
   assertNhisCccForProgress(claim)
   assertNhisDurationForSavedState({ ...claim, status: 'served' })
+  requireNhisCloudServing()
   const claimId = String(claim.id || '').trim()
   if (!claimId) throw new Error('NHIS claim ID is required for serving sync.')
   const updatedAt = String(claim.updated_at || claim.updatedAt || '').trim()
@@ -754,6 +756,7 @@ export const saveOfflineRecord = db.transaction((entityType, payload = {}) => {
     if (duplicate) throw Object.assign(new Error(duplicate.message), { code: 'NHIS_CCC_DUPLICATE' })
     assertNhisCccForSavedState(record)
     assertNhisDurationForSavedState(record)
+    assertNhisUnservedLocalDraft(record)
   }
   const dataJson = json(record)
 

@@ -13,7 +13,7 @@ beforeAll(async () => {
     create role anon; create role authenticated;
     create schema auth;
     create function auth.uid() returns uuid language sql as $$ select '${org}'::uuid $$;
-    create function user_organization_id() returns uuid language sql as $$ select '${org}'::uuid $$;
+    create function user_organization_id() returns uuid language sql as $$ select coalesce(nullif(current_setting('test.facility',true),''),'${org}')::uuid $$;
     create table nhis_claims (id uuid primary key, organization_id uuid, member_no text, hin text,
       claim_number text, service_date_from date, created_at timestamptz default now(), status text);
     create table nhis_drugs (id uuid, organization_id uuid, code text, generic_name text,
@@ -29,16 +29,20 @@ beforeAll(async () => {
       add column total_amount numeric, add column updated_at timestamptz;
     alter table nhis_claim_medicines add column served_at timestamptz,
       add column unit_price numeric default 1, add column total_amount numeric;
+    alter table users add column is_active boolean default true, add column can_manage_claims boolean default false;
+    alter table nhis_claim_medicines add column unit text, add column medicine_access_level text,
+      add column required_pharmacy_level text, add column reason_if_not_fully_served text,
+      add column entered_by_claims_officer uuid, add column served_by_mca uuid, add column entered_at timestamptz;
     create function assert_nhis_ccc_for_progress(text) returns void language sql as $$ select $$;
   `)
   const directServing = readFileSync('supabase/migrations/20260912170000_enforce_nhis_ccc_transitions.sql', 'utf8')
-  await db.exec(directServing.slice(directServing.indexOf('create or replace function public.serve_nhis_claim_direct'), directServing.indexOf("notify pgrst")))
+  await db.exec(directServing.slice(directServing.indexOf('create or replace function public.serve_nhis_claim_medicines'), directServing.indexOf("notify pgrst")))
   await db.exec(readFileSync('supabase/migrations/20260801100000_fix_nhis_active_medication_future_dispensing_window.sql', 'utf8'))
   await db.exec(readFileSync('supabase/migrations/20261002110000_check_coverage_before_nhis_serving.sql', 'utf8'))
 }, 30000)
 afterAll(async () => { await db?.close() })
 beforeEach(async () => {
-  await db.exec(`truncate nhis_claim_medicines, nhis_claims, nhis_drugs;
+  await db.exec(`select set_config('test.facility','${org}',false); update users set organization_id='${org}'; truncate nhis_claim_medicines, nhis_claims, nhis_drugs;
     insert into nhis_claims(id, organization_id, member_no, service_date_from, status) values
       ('${prior}', '${org}', '12345678', '2026-09-07', 'served'),
       ('${current}', '${org}', '12345678', '2026-09-14', 'draft');
@@ -115,4 +119,27 @@ it('does not silently serve when the coverage check is unavailable', async () =>
   } finally {
     await db.exec('rollback')
   }
+})
+
+it.each(['00000000-0000-0000-0000-000000000010', '00000000-0000-0000-0000-000000000011', '00000000-0000-0000-0000-000000000012'])(
+  'enforces both actual serving RPCs for facility %s without a facility opt-in', async (facility) => {
+    await db.query("select set_config('test.facility',$1,false)", [facility])
+    await db.query('update users set organization_id=$1', [facility])
+    await db.query('update nhis_claims set organization_id=$1', [facility])
+    await expect(db.query('select serve_nhis_claim_direct($1)', [current])).rejects.toThrow('Cannot serve')
+    await expect(db.query('select serve_nhis_claim_medicines($1,$2::jsonb,28)', [current, JSON.stringify([
+      {drug_code:'DRUG-A', description:'Medicine A', served_qty:28, serving_status:'fully_served', duration:'14 days'}
+    ])])).rejects.toThrow('Cannot serve')
+    expect((await db.query('select served_qty from nhis_claim_medicines where claim_id=$1',[current])).rows[0].served_qty).toBe('0')
+  })
+it('blocks a repeat supply recorded at another facility without exposing its claim reference', async () => {
+  await db.query('update nhis_claims set organization_id=$1 where id=$2', [current, prior])
+  await expect(db.query('select serve_nhis_claim_direct($1)', [current])).rejects.toThrow('Cannot serve')
+})
+it('blocks five days of paracetamol supplied again on day two', async () => {
+  await db.exec(`update nhis_claims set service_date_from='2026-09-08' where id='${current}';
+    update nhis_claim_medicines set drug_code='PARACETAMOL', description='Paracetamol tablets',
+      prescribed_qty=15, served_qty=15, dispensed_qty=15, dose='1',frequency='TDS',duration='5 days' where claim_id='${prior}';
+    update nhis_claim_medicines set drug_code='PARACETAMOL' where claim_id='${current}'`)
+  await expect(db.query('select serve_nhis_claim_direct($1)', [current])).rejects.toThrow('coverage through 2026-09-11')
 })

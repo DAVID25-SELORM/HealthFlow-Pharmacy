@@ -32,7 +32,7 @@ describe('offline record outbox coalescing', () => {
     }
   })
 
-  it('does not retrospectively deduct an already served claim when the local policy is enabled', () => {
+  it('blocks offline serving without modifying imported history, stock or serving outbox', () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'healthflow-nhis-inventory-'))
     const databaseUrl = pathToFileURL(path.resolve('local-branch-server/src/db.js')).href
     const recordsUrl = pathToFileURL(path.resolve('local-branch-server/src/offlineRecordsRepository.js')).href
@@ -49,19 +49,19 @@ describe('offline record outbox coalescing', () => {
       importOfflineRecords('nhis_claims', [initial]);
       const snapshot = getOfflineRecord('nhis_claims', initial.id);
       if (snapshot.nhis_claim_medicines[0].duration !== '2 weeks') throw new Error('Snapshot lost duration');
-      snapshot.nhis_claim_medicines[0].dose = '1';
-      saveOfflineRecord('nhis_claims', snapshot);
-      const saved = parseJson(db.prepare("SELECT payload_json FROM sync_outbox WHERE entity_id = 'claim-1' AND event_type = 'record.upsert'").get().payload_json).record;
-      if (saved.nhis_claim_medicines[0].duration !== '2 weeks') throw new Error('Duration lost in outbox');
+      let onlineRequired = false;
+      try { saveOfflineRecord('nhis_claims', snapshot); } catch (error) { if (error.code === 'NHIS_ONLINE_SERVING_REQUIRED') onlineRequired = true; else throw error; }
+      if (!onlineRequired) throw new Error('Offline served write was accepted');
       let durationRejected = false;
       try { saveOfflineRecord('nhis_claims', { ...initial, nhis_claim_medicines: [{ ...initial.nhis_claim_medicines[0], duration: '' }] }); } catch (error) { if (error.code === 'NHIS_DURATION_REQUIRED') durationRejected = true; else throw error; }
       if (!durationRejected) throw new Error('Missing duration reached offline outbox');
       db.prepare("INSERT INTO drugs (id, name, quantity, price, nhis_code, updated_at) VALUES ('drug-1', 'Test', 10, 1, 'NHIS-1', '2026-09-07T10:00:00.000Z')").run();
       setBranchMeta('pharmacy_settings_snapshot', JSON.stringify([{ nhis_deduct_inventory_on_serve: true }]));
       reconcileLocalNhisInventoryPolicyBaseline();
-      queueNhisServingSync(initial);
+      try { queueNhisServingSync(initial); throw new Error('Serving was allowed'); } catch (error) { if (error.code !== 'NHIS_ONLINE_SERVING_REQUIRED') throw error; }
       const next = { ...initial, updated_at: '2026-09-07T10:01:00.000Z', nhis_claim_medicines: [{ drug_code: 'NHIS-1', duration: '2 weeks', served_qty: 5 }] };
-      queueNhisServingSync(next);
+      try { queueNhisServingSync(next); throw new Error('Serving was allowed'); } catch (error) { if (error.code !== 'NHIS_ONLINE_SERVING_REQUIRED') throw error; }
+      if (db.prepare("SELECT COUNT(*) FROM sync_outbox WHERE event_type='nhis.serving.completed'").pluck().get() !== 0) throw new Error('Offline serving was queued');
       const quantity = db.prepare("SELECT quantity FROM drugs WHERE id = 'drug-1'").pluck().get();
       const ledger = db.prepare('SELECT COALESCE(SUM(-quantity_delta), 0) FROM local_nhis_inventory_ledger').pluck().get();
       console.log(JSON.stringify({ quantity, ledger }));
@@ -73,7 +73,7 @@ describe('offline record outbox coalescing', () => {
         env: { ...process.env, HEALTHFLOW_DB_PATH: path.join(directory, 'branch.sqlite') },
         encoding: 'utf8',
       })
-      expect(JSON.parse(output.trim().split(/\r?\n/).at(-1))).toEqual({ quantity: 8, ledger: 2 })
+      expect(JSON.parse(output.trim().split(/\r?\n/).at(-1))).toEqual({ quantity: 10, ledger: 0 })
     } finally {
       fs.rmSync(directory, { recursive: true, force: true })
     }

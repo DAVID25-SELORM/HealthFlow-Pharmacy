@@ -1,3 +1,4 @@
+import { assertNhisUnservedLocalDraft, requireNhisCloudServing } from '../../local-branch-server/src/nhisOnlineServing.js'
 import { shouldPreferLocalApi } from './connectivityService'
 import { isNetworkRequestError } from '../utils/requestErrors'
 import { isGhanaCardNumber, normalizeNhiaMemberNumber } from '../utils/nhiaMemberNumber'
@@ -938,6 +939,7 @@ export const listBranchRecords = async (resource, filters = {}) => {
 }
 
 export const createBranchRecord = async (resource, payload) => {
+  if (resource === 'nhis/claims') assertNhisUnservedLocalDraft(payload)
   const response = await branchFetch(`/api/${resource}`, {
     method: 'POST',
     body: JSON.stringify(payload || {}),
@@ -971,6 +973,7 @@ export const closeBranchPosSession = async ({ id, countedCash = 0, notes = '' } 
 }
 
 export const updateBranchRecord = async (resource, id, payload) => {
+  if (resource === 'nhis/claims') assertNhisUnservedLocalDraft(payload)
   const response = await branchFetch(`/api/${resource}/${id}`, {
     method: 'PUT',
     body: JSON.stringify(payload || {}),
@@ -981,6 +984,7 @@ export const updateBranchRecord = async (resource, id, payload) => {
 }
 
 export const updateBranchNhisClaimMedicines = async (id, payload) => {
+  requireNhisCloudServing()
   const response = await branchFetch(`/api/nhis/claims/${encodeURIComponent(id)}/medicines`, {
     method: 'PUT',
     body: JSON.stringify(payload || {}),
