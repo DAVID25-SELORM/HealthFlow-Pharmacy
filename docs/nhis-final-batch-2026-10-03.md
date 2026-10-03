@@ -5,7 +5,7 @@
 Apply `supabase/migrations/20261003170000_complete_nhis_coverage_guards.sql`
 once after the previously applied 120000?160000 corrections. Then run
 `scripts/verification/nhis-final-deployment-check.sql` and export its ten rows.
-The final batch has not yet been applied to production.
+The final batch is deployed; production export (16) verified on 3 October 2026.
 
 ## Changes
 
@@ -48,3 +48,17 @@ all equivalent medicines from free text, or prove every unrelated NHIS workflow.
 Service-role imports remain outside signed-in serving guards. No production
 patient or stock rows were used for testing. Existing duplicates are not deleted;
 future writes to a claim containing duplicate supplied codes will require correction.
+
+
+## Final production verification
+
+Export (16) contains all ten expected rows. All three triggers are present,
+enabled O, and bound to the correct functions and events. The duplicate-code
+guard, all-identifier locking, clinical-date precedence and membership checks are
+present. Existing function bodies match export (15), allowing whitespace changes,
+with only the intended claim-status filter replacement in the overlap function.
+Private guard/lock helpers deny direct anon/authenticated execution; the overlap
+RPC denies anon execution. The date-only helper is callable by anon but reads no
+records. Active branch registrations remain zero. User reported successful final
+migration execution. The scoped deployment and verification batch is complete;
+the practical boundaries above remain applicable.
