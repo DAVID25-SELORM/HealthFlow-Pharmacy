@@ -20,7 +20,7 @@ beforeAll(async () => {
     create function auth.uid() returns uuid language sql as $$ select '${user}'::uuid $$;
     create table users (id uuid primary key, organization_id uuid, role text, assigned_roles text[], can_delete_nhis_claims boolean, is_active boolean);
     create table organizations (id uuid primary key);
-    create table facility_settings (organization_id uuid);
+    create table pharmacy_settings (organization_id uuid);
     create table nhis_claims (id uuid primary key, organization_id uuid, claim_number text, branch_id uuid);
     create table nhis_claim_medicines (id uuid primary key, claim_id uuid references nhis_claims(id), created_at timestamptz default now(), nhis_drug_id uuid, drug_code text, served_qty numeric);
     create table nhis_claim_services (like nhis_claim_medicines including all);
@@ -94,6 +94,7 @@ comment on table public.nhis_inventory_ledger is
   const guard = await readFile('supabase/migrations/20260907105000_guard_nhis_inventory_medicine_corrections.sql', 'utf8')
   await db.exec(guard.slice(0, guard.indexOf('create or replace function public.serve_nhis_claim_medicines')))
   await db.exec(await readFile('supabase/migrations/20261003100000_restore_stock_when_recycling_nhis_claim.sql', 'utf8'))
+  await db.exec(await readFile('supabase/migrations/20261003110000_fix_nhis_restore_settings_lock.sql', 'utf8'))
 }, 30000)
 afterAll(async () => { await db?.close() })
 beforeEach(async () => { await db.exec('begin') })
