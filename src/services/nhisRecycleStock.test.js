@@ -95,7 +95,31 @@ comment on table public.nhis_inventory_ledger is
   await db.exec(guard.slice(0, guard.indexOf('create or replace function public.serve_nhis_claim_medicines')))
   await db.exec(await readFile('supabase/migrations/20261003100000_restore_stock_when_recycling_nhis_claim.sql', 'utf8'))
   await db.exec(await readFile('supabase/migrations/20261003110000_fix_nhis_restore_settings_lock.sql', 'utf8'))
-}, 30000)
+  // Exercise recycling with the actual coverage guards installed as well.
+  await db.exec(`
+    create function user_organization_id() returns uuid language sql as $$ select '${org}'::uuid $$;
+    alter table organizations add column name text;
+    alter table nhis_claims add column member_no text, add column hin text,
+      add column service_date_from date, add column status text;
+    alter table nhis_claim_medicines add column description text, add column dispensary_date date,
+      add column served_at timestamptz, add column prescribed_qty numeric, add column dispensed_qty numeric,
+      add column serving_status text, add column dose text, add column frequency text, add column duration text;
+    create table nhis_drugs(id uuid,organization_id uuid,code text,generic_name text,strength text,dosage_form text,description text);
+    create function nhis_medicine_dispensing_date(date,timestamptz,date) returns date language sql immutable as $$
+      select coalesce($1,($2 at time zone 'Africa/Accra')::date,$3) $$;
+    create function nhis_medicine_date_quality_warning(date,timestamptz,date) returns text language sql immutable as $$ select null::text $$;
+  `)
+  await db.exec(await readFile('src/services/fixtures/nhis-overlap-production-20261003.sql','utf8'))
+  for (const migration of [
+    '20261002110000_check_coverage_before_nhis_serving.sql',
+    '20261003120000_require_identity_for_nhis_coverage.sql',
+    '20261003130000_fix_nhis_overlap_caller_membership.sql',
+    '20261003140000_align_nhis_serving_coverage_dates.sql',
+    '20261003150000_recheck_nhis_coverage_on_claim_edit.sql',
+    '20261003160000_lock_all_nhis_coverage_identifiers.sql',
+    '20261003170000_complete_nhis_coverage_guards.sql'
+  ]) await db.exec(await readFile('supabase/migrations/'+migration,'utf8'))
+}, 60000)
 afterAll(async () => { await db?.close() })
 beforeEach(async () => { await db.exec('begin') })
 afterEach(async () => { await db.exec('rollback') })
@@ -271,4 +295,29 @@ it('recycles and restores a claim that has signatures, cxf events and a remediat
   expect((await db.query('select * from nhis_claim_signatures')).rows).toHaveLength(1)
   expect((await db.query('select * from nhis_claim_remediation')).rows).toHaveLength(1)
   expect((await db.query('select * from deleted_records')).rows).toEqual([])
+})
+
+it('recycles and restores a supplied claim with every coverage guard installed', async () => {
+  await db.exec(`update nhis_claims set member_no='12345678',service_date_from='2026-09-07',status='served';
+    update nhis_claim_medicines set drug_code='MED-A',served_qty=10,dispensed_qty=10,
+      serving_status='fully_served',dose='1',frequency='BD',duration='5 days' where claim_id='${claim}'`)
+  await seedDeduction()
+  const bin=await recycle()
+  expect(await stock()).toBe(100)
+  await restore(bin.id)
+  expect(await stock()).toBe(90)
+})
+it('rolls back restoration and stock deduction if another supply now overlaps', async () => {
+  await db.exec(`update nhis_claims set member_no='12345678',service_date_from='2026-09-07',status='served';
+    update nhis_claim_medicines set drug_code='MED-A',served_qty=10,dispensed_qty=10,
+      serving_status='fully_served',dose='1',frequency='BD',duration='5 days' where claim_id='${claim}'`)
+  await seedDeduction()
+  const bin=await recycle()
+  await db.exec(`insert into nhis_claims(id,organization_id,member_no,service_date_from,status)
+    values('30000000-0000-4000-8000-000000000002','${org}','12345678','2026-09-07','served');
+    insert into nhis_claim_medicines(id,claim_id,drug_code,served_qty,serving_status,dose,frequency,duration)
+    values(gen_random_uuid(),'30000000-0000-4000-8000-000000000002','MED-A',10,'fully_served','1','BD','5 days')`)
+  await fails(()=>restore(bin.id),'Cannot serve')
+  expect(await stock()).toBe(100)
+  expect((await db.query('select id from deleted_records where id=$1',[bin.id])).rows).toHaveLength(1)
 })

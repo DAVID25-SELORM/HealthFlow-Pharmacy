@@ -21,6 +21,7 @@ beforeAll(async () => {
     create table nhis_claim_medicines (id serial primary key, claim_id uuid, nhis_drug_id uuid,
       drug_code text, description text, dispensary_date date, prescribed_qty numeric, dispensed_qty numeric,
       served_qty numeric, serving_status text, dose text, frequency text, duration text);
+    create table organizations (id uuid primary key, name text);
     create table users (id uuid, organization_id uuid, role text, assigned_roles text[]);
     insert into users values ('${org}', '${org}', 'claims_officer', '{}');
     alter table nhis_claims add column direct_served_at timestamptz, add column direct_served_by uuid,
@@ -38,11 +39,28 @@ beforeAll(async () => {
   const directServing = readFileSync('supabase/migrations/20260912170000_enforce_nhis_ccc_transitions.sql', 'utf8')
   await db.exec(directServing.slice(directServing.indexOf('create or replace function public.serve_nhis_claim_medicines'), directServing.indexOf("notify pgrst")))
   await db.exec(readFileSync('supabase/migrations/20260801100000_fix_nhis_active_medication_future_dispensing_window.sql', 'utf8'))
+  await db.exec(readFileSync('supabase/migrations/20260801120000_add_nhis_patient_active_medication_summary.sql', 'utf8'))
+  // Execute the real date/tenant patch; the remainder defines unrelated branch sync RPCs.
+  const datePatch = readFileSync('supabase/migrations/20260820100000_fix_cross_facility_medicine_dispensing_dates.sql', 'utf8')
+  await db.exec(datePatch.slice(0, datePatch.indexOf('-- Keep the broad legacy sync core unchanged.')))
+  await db.exec(readFileSync('supabase/migrations/20260823100000_expose_active_medication_serving_facility.sql', 'utf8'))
   await db.exec(readFileSync('supabase/migrations/20261002110000_check_coverage_before_nhis_serving.sql', 'utf8'))
-}, 30000)
+  await db.exec(readFileSync('supabase/migrations/20261003120000_require_identity_for_nhis_coverage.sql', 'utf8'))
+  // Verify the correction against the actual exported production body too.
+  await db.exec(readFileSync('src/services/fixtures/nhis-overlap-production-20261003.sql', 'utf8'))
+  const membershipPatch = readFileSync('supabase/migrations/20261003130000_fix_nhis_overlap_caller_membership.sql', 'utf8')
+  await db.exec(membershipPatch)
+  await db.exec(membershipPatch) // Rerunning must preserve the function.
+  await db.exec(readFileSync('supabase/migrations/20261003140000_align_nhis_serving_coverage_dates.sql', 'utf8'))
+  await db.exec(readFileSync('supabase/migrations/20261003150000_recheck_nhis_coverage_on_claim_edit.sql', 'utf8'))
+  await db.exec(readFileSync('supabase/migrations/20261003160000_lock_all_nhis_coverage_identifiers.sql', 'utf8'))
+  await db.exec('drop trigger guard_nhis_coverage_claim_edit on nhis_claims')
+  await db.exec(readFileSync('supabase/migrations/20261003170000_complete_nhis_coverage_guards.sql', 'utf8'))
+}, 60000)
 afterAll(async () => { await db?.close() })
 beforeEach(async () => {
-  await db.exec(`select set_config('test.facility','${org}',false); update users set organization_id='${org}'; truncate nhis_claim_medicines, nhis_claims, nhis_drugs;
+  await db.exec(`select set_config('test.facility','${org}',false); update users set organization_id='${org}'; truncate nhis_claim_medicines, nhis_claims, nhis_drugs, organizations;
+    insert into organizations select ('00000000-0000-0000-0000-' || lpad(n::text,12,'0'))::uuid, 'Test facility ' || n from generate_series(1,12) n;
     insert into nhis_claims(id, organization_id, member_no, service_date_from, status) values
       ('${prior}', '${org}', '12345678', '2026-09-07', 'served'),
       ('${current}', '${org}', '12345678', '2026-09-14', 'draft');
@@ -79,6 +97,7 @@ it('checks equivalent ingredients when medicine codes differ', async () => {
   await expect(serve()).rejects.toThrow('Cannot serve')
 })
 it('blocks the real Serve Directly RPC and leaves the claim unserved', async () => {
+  await db.exec(`update nhis_claim_medicines m set dispensary_date=c.service_date_from from nhis_claims c where m.claim_id=c.id and c.id='${current}'`)
   await expect(db.query('select serve_nhis_claim_direct($1)', [current])).rejects.toThrow('Cannot serve')
   const { rows } = await db.query('select status, direct_served_at from nhis_claims where id = $1', [current])
   expect(rows[0]).toEqual({ status: 'draft', direct_served_at: null })
@@ -88,9 +107,9 @@ it('allows the real Serve Directly RPC after coverage ends', async () => {
   const { rows } = await db.query('select serve_nhis_claim_direct($1) as result', [current])
   expect(rows[0].result).toMatchObject({ status: 'served', total_amount: 28 })
 })
-it('ignores cancelled previous claims', async () => {
+it('retains coverage for supplied medicines on cancelled claims', async () => {
   await db.exec(`update nhis_claims set status = 'cancelled' where id = '${prior}'`)
-  await expect(serve()).resolves.toBeDefined()
+  await expect(serve()).rejects.toThrow('Cannot serve')
 })
 it('checks a served medicine inserted by the dispensary replacement path', async () => {
   await expect(db.exec(`insert into nhis_claim_medicines(claim_id, drug_code, served_qty, serving_status)
@@ -126,14 +145,16 @@ it.each(['00000000-0000-0000-0000-000000000010', '00000000-0000-0000-0000-000000
     await db.query("select set_config('test.facility',$1,false)", [facility])
     await db.query('update users set organization_id=$1', [facility])
     await db.query('update nhis_claims set organization_id=$1', [facility])
-    await expect(db.query('select serve_nhis_claim_direct($1)', [current])).rejects.toThrow('Cannot serve')
+    await db.exec(`update nhis_claim_medicines m set dispensary_date=c.service_date_from from nhis_claims c where m.claim_id=c.id and c.id='${current}'`)
+  await expect(db.query('select serve_nhis_claim_direct($1)', [current])).rejects.toThrow('Cannot serve')
     await expect(db.query('select serve_nhis_claim_medicines($1,$2::jsonb,28)', [current, JSON.stringify([
-      {drug_code:'DRUG-A', description:'Medicine A', served_qty:28, serving_status:'fully_served', duration:'14 days'}
+      {dispensary_date:'2026-09-14',drug_code:'DRUG-A', description:'Medicine A', served_qty:28, serving_status:'fully_served', duration:'14 days'}
     ])])).rejects.toThrow('Cannot serve')
     expect((await db.query('select served_qty from nhis_claim_medicines where claim_id=$1',[current])).rows[0].served_qty).toBe('0')
   })
 it('blocks a repeat supply recorded at another facility without exposing its claim reference', async () => {
   await db.query('update nhis_claims set organization_id=$1 where id=$2', [current, prior])
+  await db.exec(`update nhis_claim_medicines m set dispensary_date=c.service_date_from from nhis_claims c where m.claim_id=c.id and c.id='${current}'`)
   await expect(db.query('select serve_nhis_claim_direct($1)', [current])).rejects.toThrow('Cannot serve')
 })
 it('blocks five days of paracetamol supplied again on day two', async () => {
@@ -141,5 +162,141 @@ it('blocks five days of paracetamol supplied again on day two', async () => {
     update nhis_claim_medicines set drug_code='PARACETAMOL', description='Paracetamol tablets',
       prescribed_qty=15, served_qty=15, dispensed_qty=15, dose='1',frequency='TDS',duration='5 days' where claim_id='${prior}';
     update nhis_claim_medicines set drug_code='PARACETAMOL' where claim_id='${current}'`)
+  await db.exec(`update nhis_claim_medicines m set dispensary_date=c.service_date_from from nhis_claims c where m.claim_id=c.id and c.id='${current}'`)
   await expect(db.query('select serve_nhis_claim_direct($1)', [current])).rejects.toThrow('coverage through 2026-09-11')
+})
+
+
+it('uses the previous actual serving date when the claim date is older', async () => {
+  await db.exec(`update nhis_claims set service_date_from='2026-08-01' where id='${prior}';
+    update nhis_claim_medicines set served_at='2026-09-07T12:00:00Z' where claim_id='${prior}'`)
+  await expect(serve()).rejects.toThrow('coverage through 2026-09-20')
+})
+it('blocks coverage checks for inactive facility membership', async () => {
+  await db.exec('update users set is_active=false')
+  try {
+    await expect(serve()).rejects.toThrow('Active organization membership is required')
+  } finally {
+    await db.exec('update users set is_active=true')
+  }
+})
+it('fails closed when an existing supply has no clinical date', async () => {
+  await db.exec(`update nhis_claims set service_date_from=null where id='${prior}'`)
+  await expect(serve()).rejects.toThrow('Cannot serve')
+})
+
+it('rejects serving when both patient identifiers are missing or punctuation only', async () => {
+  await db.exec(`update nhis_claims set member_no=' -- ', hin=null where id='${current}'`)
+  await expect(serve()).rejects.toThrow('member number or HIN is required')
+})
+it('rejects serving when the medicine code is missing', async () => {
+  await db.exec(`update nhis_claim_medicines set drug_code=' ' where claim_id='${current}'`)
+  await expect(serve()).rejects.toThrow('medicine code is required')
+})
+
+const lookupCoverage = (claimedOrg = org) => db.query(`select * from check_nhis_active_medication_overlap(
+  p_member_no => '12345678', p_medicine_code => 'DRUG-A', p_service_date => '2026-09-14',
+  p_current_claim_id => $1, p_current_organization_id => $2)`, [current, claimedOrg])
+
+it('derives the own-facility label and reference from the signed-in membership', async () => {
+  const { rows } = await lookupCoverage(prior)
+  expect(rows[0]).toMatchObject({source_label:'This HealthFlow facility', previous_claim_reference:prior})
+})
+it('keeps another facility claim reference private despite a spoofed organization parameter', async () => {
+  await db.query('update nhis_claims set organization_id=$1 where id=$2', [current, prior])
+  const { rows } = await lookupCoverage(current)
+  expect(rows[0]).toMatchObject({source_label:'Test facility 3', previous_claim_reference:null})
+})
+it('rejects inactive users calling the coverage lookup directly', async () => {
+  await db.exec('update users set is_active=false')
+  try {
+    await expect(lookupCoverage()).rejects.toThrow('Active organization membership is required')
+  } finally {
+    await db.exec('update users set is_active=true')
+  }
+})
+
+it('checks the new actual serving date rather than an older claim date', async () => {
+  await db.exec(`update nhis_claims set service_date_from='2026-08-01' where id='${current}';
+    update nhis_claim_medicines set served_at='2026-09-14T12:00:00Z' where claim_id='${current}'`)
+  await expect(serve()).rejects.toThrow('coverage through 2026-09-20')
+})
+it('rechecks a served-at correction even when quantity and status stay unchanged', async () => {
+  await db.exec(`update nhis_claims set service_date_from='2026-09-21' where id='${current}'`)
+  await serve()
+  await expect(db.exec(`update nhis_claim_medicines set served_at='2026-09-14T12:00:00Z'
+    where claim_id='${current}'`)).rejects.toThrow('Cannot serve')
+})
+
+async function withClaimEditGuard(check) {
+  await db.exec(readFileSync('supabase/migrations/20261003150000_recheck_nhis_coverage_on_claim_edit.sql', 'utf8'))
+  await db.exec(readFileSync('supabase/migrations/20261003160000_lock_all_nhis_coverage_identifiers.sql', 'utf8'))
+  try { await check() } finally {
+    await db.exec('drop trigger guard_nhis_coverage_claim_edit on nhis_claims')
+  }
+}
+it('rolls back an identity edit that creates a served overlap', async () => {
+  await db.exec(`update nhis_claims set member_no='OTHER' where id='${current}'`)
+  await serve()
+  await withClaimEditGuard(async () => {
+    await expect(db.exec(`update nhis_claims set member_no='12345678' where id='${current}'`)).rejects.toThrow('Cannot change this served claim')
+    expect((await db.query('select member_no from nhis_claims where id=$1',[current])).rows[0].member_no).toBe('OTHER')
+  })
+})
+it('rechecks a service-date correction on a served legacy line without a served timestamp', async () => {
+  await db.exec(`update nhis_claims set service_date_from='2026-09-21' where id='${current}'`)
+  await serve()
+  await withClaimEditGuard(async () => {
+    await expect(db.exec(`update nhis_claims set service_date_from='2026-09-14' where id='${current}'`)).rejects.toThrow('Cannot change this served claim')
+  })
+})
+it('allows unrelated metadata and unserved identity corrections', async () => {
+  await withClaimEditGuard(async () => {
+    await expect(db.exec(`update nhis_claims set claim_number='CORRECTED' where id='${prior}';
+      update nhis_claims set member_no='CORRECTED' where id='${current}'`)).resolves.toBeDefined()
+  })
+})
+it('rejects removing every identifier from a served claim', async () => {
+  await withClaimEditGuard(async () => {
+    await expect(db.exec(`update nhis_claims set member_no=null,hin=null where id='${prior}'`)).rejects.toThrow('Cannot remove')
+  })
+})
+
+it('keeps both coverage guards active during direct and dispensary serving', async () => {
+  await db.exec(`update nhis_claim_medicines set dispensary_date='2026-09-14' where claim_id='${current}'`)
+  await withClaimEditGuard(async () => {
+    await expect(db.query('select serve_nhis_claim_direct($1)',[current])).rejects.toThrow('Cannot serve')
+    await expect(db.query('select serve_nhis_claim_medicines($1,$2::jsonb,28)', [current,JSON.stringify([
+      {drug_code:'DRUG-A',description:'Medicine A',served_qty:28,serving_status:'fully_served',dispensary_date:'2026-09-14',duration:'14 days'}
+    ])])).rejects.toThrow('Cannot serve')
+    await db.exec(`update nhis_claims set service_date_from='2026-09-21' where id='${current}';
+      update nhis_claim_medicines set dispensary_date='2026-09-21' where claim_id='${current}'`)
+    await expect(db.query('select serve_nhis_claim_direct($1)',[current])).resolves.toBeDefined()
+    expect((await db.query('select status from nhis_claims where id=$1',[current])).rows[0].status).toBe('served')
+  })
+})
+
+it.each(['draft','pending_serving','serving_in_progress','rejected','deleted'])(
+  'retains supplied coverage after administrative status changes to %s', async (status) => {
+    await db.query('update nhis_claims set status=$1 where id=$2',[status,prior])
+    await expect(serve()).rejects.toThrow('Cannot serve')
+  })
+it('blocks duplicate supplied lines through the actual direct RPC atomically', async () => {
+  await db.exec(`update nhis_claims set member_no='OTHER' where id='${current}';
+    insert into nhis_claim_medicines(claim_id,drug_code,prescribed_qty,served_qty,serving_status)
+    values ('${current}',' drug-a ',10,0,'pending')`)
+  await expect(db.query('select serve_nhis_claim_direct($1)',[current])).rejects.toThrow('duplicate medicine lines')
+  expect((await db.query('select sum(served_qty) as total from nhis_claim_medicines where claim_id=$1',[current])).rows[0].total).toBe('0')
+})
+it('blocks duplicate supplied lines through the replacement RPC atomically', async () => {
+  await db.exec(`update nhis_claims set member_no='OTHER' where id='${current}'`)
+  const line={drug_code:'DRUG-A',served_qty:10,serving_status:'fully_served',duration:'5 days'}
+  await expect(db.query('select serve_nhis_claim_medicines($1,$2::jsonb,20)',[current,JSON.stringify([line,line])])).rejects.toThrow('duplicate medicine lines')
+  expect((await db.query('select count(*) as n from nhis_claim_medicines where claim_id=$1',[current])).rows[0].n).toBe(1)
+})
+it('allows multiple supplied medicines with different codes in one claim', async () => {
+  await db.exec(`update nhis_claims set member_no='OTHER' where id='${current}';
+    insert into nhis_claim_medicines(claim_id,drug_code,prescribed_qty,served_qty,serving_status)
+    values ('${current}','DRUG-B',10,0,'pending')`)
+  await expect(db.query('select serve_nhis_claim_direct($1)',[current])).resolves.toBeDefined()
 })
