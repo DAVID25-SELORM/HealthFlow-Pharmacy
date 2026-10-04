@@ -29,3 +29,11 @@ Deployment smoke check: configure a test facility in staging, submit a unique
 transaction reference as its admin, verify pending does not settle it, approve as
 Super Admin, and verify paid history and subscription expiry. Do not fabricate a
 real production payment to test. No SMS/email notifications or Hubtel are enabled.
+
+## One-time onboarding fees
+Apply `20261004140000_onboarding_fees.sql` after the historical receipt migrations.
+Select a facility, expand **Record one-time onboarding fee**, and enter the fee and due date.
+For a payment already received, select that option and enter the date, unique receipt reference and verification note.
+Otherwise the unpaid invoice uses the existing MoMo submission and platform approval workflow.
+Each facility has at most one onboarding invoice. It is included in outstanding balances but never extends monthly subscription coverage.
+Do not reapply older billing function migrations after this migration: their old invoice conflict keys do not include invoice kind.

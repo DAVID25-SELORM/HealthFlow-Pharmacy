@@ -20,6 +20,7 @@ beforeAll(async()=>{
  await db.exec(readFileSync('supabase/migrations/20261003180000_manual_subscription_billing.sql','utf8'))
  await db.exec(readFileSync('supabase/migrations/20261004120000_historical_subscription_receipts.sql','utf8'))
  await db.exec(readFileSync('supabase/migrations/20261004130000_clarify_historical_receipt_conflicts.sql','utf8'))
+ await db.exec(readFileSync('supabase/migrations/20261004140000_onboarding_fees.sql','utf8'))
 },30000)
 afterAll(async()=>db?.close())
 const history = payload => db.query('select platform_billing_record_history($1::jsonb)', [JSON.stringify(payload)])
@@ -87,4 +88,29 @@ it('requires rejection reasons and permits a new transaction after rejection',as
  const retried=await call('submit',{invoice_id:invoice.id,reference:'RETRY-456'})
  expect(retried.payments.find(p=>p.transaction_reference==='RETRY-456').status).toBe('pending')
  expect((await db.query('select count(*) as n from platform_billing_audit')).rows[0].n).toBeGreaterThan(0)
+})
+
+it('keeps onboarding separate from monthly invoices and subscription coverage', async () => {
+ await actor(owner)
+ const month=new Date().toISOString().slice(0,7)+'-01'
+ const fee={organization_id:org,amount:900,due_on:month}
+ const invoke=data=>db.query('select platform_billing_onboarding($1::jsonb)',[JSON.stringify(data)])
+ const before=(await db.query('select subscription_ends_at from organizations where id=$1',[org])).rows[0].subscription_ends_at
+ await invoke(fee)
+ await expect(invoke(fee)).rejects.toThrow('already has an onboarding fee')
+ const all=await call('list');const invoice=all.invoices.find(i=>i.kind==='onboarding')
+ const result=await call('submit',{invoice_id:invoice.id,reference:'ONBOARD-TEST'})
+ await call('review',{payment_id:result.payments.find(p=>p.transaction_reference==='ONBOARD-TEST').id,decision:'approved'})
+ expect((await db.query('select subscription_ends_at from organizations where id=$1',[org])).rows[0].subscription_ends_at).toEqual(before)
+ await actor(admin)
+ await expect(invoke({...fee,organization_id:other})).rejects.toThrow('Platform administrator')
+})
+it('records already-paid onboarding without duplicating monthly history', async () => {
+ await actor(owner)
+ const data={organization_id:other,amount:1500,due_on:'2020-01-01',received_on:'2020-01-03',reference:'OLD-ONBOARDING',note:'Receipt checked'}
+ await db.query('select platform_billing_onboarding($1::jsonb)',[JSON.stringify(data)])
+ await history({organization_id:other,first_month:'2020-01-01',months:1,monthly_amount:100,received_on:'2020-01-03',reference:'OLD-SUBSCRIPTION',note:'Receipt checked'})
+ const rows=(await db.query("select kind,paid_at from platform_subscription_invoices where organization_id=$1 and period='2020-01-01'",[other])).rows
+ expect(rows).toHaveLength(2)
+ expect(rows.every(i=>i.paid_at)).toBe(true)
 })
