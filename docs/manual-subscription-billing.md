@@ -41,3 +41,9 @@ Do not reapply older billing function migrations after this migration: their old
 ## Collections report
 Platform admins can expand billing to see Collections and facility statements.
 Confirmed income includes approved payment allocations only. Historical receipts use received_on; ordinary approvals use reviewed_at as a confirmation-date fallback. Pending/rejected rows use submitted_at. Inclusive date and facility filters apply to payment totals, statement rows and CSV. Current outstanding is explicitly all dates for the chosen facility. CSV preserves invoice/payment IDs and safely escapes spreadsheet formula prefixes. Multi-month receipts appear as separate allocated amounts, never repeated full receipt totals. This is a platform collections report, not a profit-and-loss report.
+
+## Previous unpaid months
+Apply `20261004150000_previous_subscription_arrears.sql` after onboarding fees.
+Platform billing > select facility > Record previous outstanding charges.
+Enter the first month, count, amount per month, shared due date and reason. Confirm the preview total.
+Only months before the current month are allowed. Any existing subscription invoice (paid or unpaid) rejects the entire batch, preserving all existing charges. Use separate batches for gaps or different rates. Arrears are audited unpaid subscription invoices, not payment receipts or income. Facility administrators can see and submit payment for them through the normal invoice flow. Recurring plan dates are unchanged.

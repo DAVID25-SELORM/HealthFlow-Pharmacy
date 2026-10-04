@@ -21,6 +21,7 @@ beforeAll(async()=>{
  await db.exec(readFileSync('supabase/migrations/20261004120000_historical_subscription_receipts.sql','utf8'))
  await db.exec(readFileSync('supabase/migrations/20261004130000_clarify_historical_receipt_conflicts.sql','utf8'))
  await db.exec(readFileSync('supabase/migrations/20261004140000_onboarding_fees.sql','utf8'))
+ await db.exec(readFileSync('supabase/migrations/20261004150000_previous_subscription_arrears.sql','utf8'))
 },30000)
 afterAll(async()=>db?.close())
 const history = payload => db.query('select platform_billing_record_history($1::jsonb)', [JSON.stringify(payload)])
@@ -113,4 +114,22 @@ it('records already-paid onboarding without duplicating monthly history', async 
  const rows=(await db.query("select kind,paid_at from platform_subscription_invoices where organization_id=$1 and period='2020-01-01'",[other])).rows
  expect(rows).toHaveLength(2)
  expect(rows.every(i=>i.paid_at)).toBe(true)
+})
+
+it('adds arrears without recording income and rejects duplicate batches atomically', async()=>{
+ await actor(owner)
+ const payload={organization_id:org,first_month:'2021-02-01',months:2,monthly_amount:200,due_on:'2021-03-05',note:'Verified unpaid months'}
+ const arrears=p=>db.query('select platform_billing_arrears($1::jsonb)',[JSON.stringify(p)])
+ const countBefore=(await db.query('select count(*) as n from platform_subscription_payments')).rows[0].n
+ await arrears(payload)
+ const invoices=(await db.query("select * from platform_subscription_invoices where organization_id=$1 and period between '2021-02-01' and '2021-03-01'",[org])).rows
+ expect(invoices).toHaveLength(2);expect(invoices.every(i=>!i.paid_at && Number(i.amount)===200)).toBe(true)
+ expect((await db.query('select count(*) as n from platform_subscription_payments')).rows[0].n).toBe(countBefore)
+ await expect(arrears({...payload,first_month:'2021-01-01'})).rejects.toThrow('already exists')
+ expect((await db.query("select id from platform_subscription_invoices where organization_id=$1 and period='2021-01-01'",[org])).rows).toHaveLength(0)
+ await expect(arrears({...payload,first_month:new Date().toISOString().slice(0,7)+'-01'})).rejects.toThrow('before the current month')
+ await expect(arrears({...payload,organization_id:other,first_month:'2020-01-01',months:1})).rejects.toThrow('already exists')
+ await db.query("update users set role='admin' where id=$1",[admin]);await actor(admin)
+ expect((await call('list')).invoices.filter(i=>i.period==='2021-02-01')).toHaveLength(1)
+ await expect(arrears(payload)).rejects.toThrow('Platform administrator')
 })

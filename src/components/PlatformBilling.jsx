@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import './PlatformBilling.css'
 import BillingCollections from './BillingCollections'
+import BillingArrears from './BillingArrears'
 
 const money = value => `GHS ${Number(value || 0).toFixed(2)}`
 const monthLabel = value => new Date(`${value}-01T12:00:00Z`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })
@@ -100,6 +101,7 @@ export default function PlatformBilling() {
         <button className="billing-primary" disabled={busy || !data || !facility}>{busy ? 'Saving...' : 'Save monthly charge'}</button>
         <small>Existing invoices keep their original amount. For existing plans, the first billing month stays unchanged.</small>
       </form></div>}
+      {platform && <BillingArrears key={facility} facility={selected} onSaved={setData} />}
       {platform && <details className="billing-plan"><summary>Record one-time onboarding fee</summary>
         <p>Facility: <strong>{selected?.name || 'Select a facility above'}</strong>. This fee is separate from monthly subscriptions and does not extend subscription coverage.</p>
         <form className="billing-form" onSubmit={e => {
