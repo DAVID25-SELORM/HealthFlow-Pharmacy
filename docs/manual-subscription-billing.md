@@ -37,3 +37,7 @@ For a payment already received, select that option and enter the date, unique re
 Otherwise the unpaid invoice uses the existing MoMo submission and platform approval workflow.
 Each facility has at most one onboarding invoice. It is included in outstanding balances but never extends monthly subscription coverage.
 Do not reapply older billing function migrations after this migration: their old invoice conflict keys do not include invoice kind.
+
+## Collections report
+Platform admins can expand billing to see Collections and facility statements.
+Confirmed income includes approved payment allocations only. Historical receipts use received_on; ordinary approvals use reviewed_at as a confirmation-date fallback. Pending/rejected rows use submitted_at. Inclusive date and facility filters apply to payment totals, statement rows and CSV. Current outstanding is explicitly all dates for the chosen facility. CSV preserves invoice/payment IDs and safely escapes spreadsheet formula prefixes. Multi-month receipts appear as separate allocated amounts, never repeated full receipt totals. This is a platform collections report, not a profit-and-loss report.

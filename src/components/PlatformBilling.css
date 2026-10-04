@@ -62,3 +62,5 @@
 .billing-history-facility { flex-basis:100%; }
 .billing-plan summary { cursor:pointer; font-weight:650; padding:.25rem 0; }
 .billing-plan[open]>summary { margin-bottom:.75rem; }
+
+.billing-statement { width:100%; border-collapse:collapse; font-size:.85rem; } .billing-statement th,.billing-statement td { padding:.75rem; text-align:left; border-bottom:1px solid #dce5e9; } .billing-statement th { background:#edf5f3; } .billing-statement small { display:block; color:#596d77; } .billing-statement caption { text-align:left; padding:.5rem; font-weight:600; }

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import './PlatformBilling.css'
+import BillingCollections from './BillingCollections'
 
 const money = value => `GHS ${Number(value || 0).toFixed(2)}`
 const monthLabel = value => new Date(`${value}-01T12:00:00Z`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })
@@ -81,6 +82,7 @@ export default function PlatformBilling() {
     {error && <p role="alert">{error} <button disabled={busy} onClick={() => run()}>Retry</button></p>}
     {message && <p role="status">{message}</p>}
     {open && <>
+      {platform && data && <BillingCollections data={data} />}
       <div className="billing-stats">
         <div><span>Total outstanding</span><strong>{money(outstanding)}</strong></div>
         <div><span>Awaiting confirmation</span><strong>{money(pending.reduce((sum, p) => sum + Number(p.amount), 0))}</strong></div>
