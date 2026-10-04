@@ -19,6 +19,7 @@ beforeAll(async()=>{
  insert into users values('${owner}',null,'super_admin',true,'{}'),('${admin}','${org}','admin',true,'{}');`)
  await db.exec(readFileSync('supabase/migrations/20261003180000_manual_subscription_billing.sql','utf8'))
  await db.exec(readFileSync('supabase/migrations/20261004120000_historical_subscription_receipts.sql','utf8'))
+ await db.exec(readFileSync('supabase/migrations/20261004130000_clarify_historical_receipt_conflicts.sql','utf8'))
 },30000)
 afterAll(async()=>db?.close())
 const history = payload => db.query('select platform_billing_record_history($1::jsonb)', [JSON.stringify(payload)])
@@ -29,6 +30,7 @@ it('records a verified multi-month receipt atomically without inventing arrears'
  const rows = (await db.query("select * from platform_subscription_invoices where period < '2021-01-01'")).rows
  expect(rows).toHaveLength(3)
  expect(rows.every(row => row.paid_at)).toBe(true)
+ await expect(history({ ...payload, reference: 'ANOTHER-RECEIPT' })).rejects.toThrow('already marked paid')
  await expect(history({ ...payload, first_month: '2020-04-01' })).rejects.toThrow()
  expect((await db.query("select * from platform_subscription_invoices where period='2020-04-01'")).rows).toHaveLength(0)
  await actor(admin)

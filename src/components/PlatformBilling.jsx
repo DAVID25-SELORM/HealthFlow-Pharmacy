@@ -37,18 +37,25 @@ export default function PlatformBilling() {
   const [busy, setBusy] = useState(false)
   const [open, setOpen] = useState(false)
   const [message, setMessage] = useState('')
+  const [historyResult, setHistoryResult] = useState(null)
   const [facility, setFacility] = useState('')
   const [filter, setFilter] = useState('all')
   const [historyMonths, setHistoryMonths] = useState('1')
   const [historyAmount, setHistoryAmount] = useState('')
   const run = useCallback(async (action = 'list', payload = {}) => {
     setBusy(true); setError(''); setMessage('')
+    if (action === 'record_history') setHistoryResult(null)
     try {
       const { data: result, error: failure } = await supabase.rpc(action === 'record_history' ? 'platform_billing_record_history' : 'platform_billing', action === 'record_history' ? { p_data: payload } : { p_action: action, p_data: payload })
       if (failure) throw failure
       setData(result)
+      if (action === 'record_history') setHistoryResult({ saved: true, text: `Payment recorded successfully. ${money(Number(payload.monthly_amount) * payload.months)} received on ${payload.received_on}, covering ${payload.months} month(s) from ${payload.first_month.slice(0, 7)}. Reference: ${payload.reference}. Do not submit this receipt again.` })
       if (action !== 'list') setMessage(action === 'submit' ? 'Payment submitted. Awaiting confirmation; do not pay this invoice again.' : 'Billing updated.')
-    } catch (failure) { setError(failure.message || 'Unable to load billing. Please retry.') }
+    } catch (failure) {
+      const text = failure.message || 'Unable to load billing. Please retry.'
+      setError(text)
+      if (action === 'record_history') setHistoryResult({ saved: false, text })
+    }
     finally { setBusy(false) }
   }, [])
   useEffect(() => { if (allowed) void run() }, [allowed, run])
@@ -92,7 +99,7 @@ export default function PlatformBilling() {
       </form></div>}
       {platform && <details className="billing-plan"><summary>Record a payment already received</summary>
         <p>Record verified past payments for the selected facility. Only the months you enter are marked paid; missing months are not automatically billed. Set the ongoing monthly plan separately above.</p>
-        <form className="billing-form" onSubmit={e => {
+        <form className="billing-form" onChange={() => setHistoryResult(null)} onSubmit={e => {
           e.preventDefault(); const form = new FormData(e.currentTarget)
           void run('record_history', { organization_id: facility, first_month: `${form.get('history_year')}-${form.get('history_month')}-01`, months: Number(form.get('months')), monthly_amount: form.get('monthly_amount'), received_on: form.get('received_on'), reference: form.get('reference'), note: form.get('note') })
         }}>
@@ -106,7 +113,8 @@ export default function PlatformBilling() {
           <label>Verification note<input name="note" maxLength="500" placeholder="e.g. Matched to MoMo statement" required /></label>
           <p className="billing-history-facility">Total receipt: <strong>{money(Number(historyMonths) * Number(historyAmount))}</strong>. Use separate entries when monthly amounts differ.</p>
           <label className="billing-confirm"><input type="checkbox" required />I verified this receipt and the months covered. The total received equals the monthly amount multiplied by the number of months.</label>
-          <button className="billing-primary" disabled={busy || !facility}>Record confirmed payment</button>
+          {historyResult && <p className="billing-history-facility" role={historyResult.saved ? 'status' : 'alert'}>{historyResult.text}</p>}
+          <button className="billing-primary" disabled={busy || !facility || historyResult?.saved}>{busy ? 'Saving payment...' : historyResult?.saved ? 'Payment recorded' : 'Record confirmed payment'}</button>
         </form>
       </details>}
       {!platform && data && <div className="billing-recipient"><span className="billing-eyebrow">PAY WITH MOBILE MONEY</span><h3>{data.recipient.number}</h3><strong>{data.recipient.name}</strong><p>Send the exact invoice amount, using its invoice reference. Then enter your MoMo transaction ID below. Your payment stays pending until confirmed.</p></div>}

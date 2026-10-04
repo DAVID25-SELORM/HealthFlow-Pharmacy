@@ -28,6 +28,8 @@ describe('billing panel', () => {
   fireEvent.click(screen.getByRole('checkbox', { name: /I verified this receipt/ }))
   fireEvent.click(screen.getByRole('button', { name: 'Record confirmed payment' }))
   await waitFor(() => expect(supabase.rpc).toHaveBeenCalledWith('platform_billing_record_history', { p_data: { organization_id: 'org', first_month: '2020-01-01', months: 3, monthly_amount: '100', received_on: '2020-01-05', reference: 'OLD-1234', note: 'Matched statement' } }))
+  expect(await screen.findByText(/Payment recorded successfully/)).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Payment recorded' })).toBeDisabled()
  })
  it('offers a visible month calendar and submits the chosen month', async () => {
   supabase.rpc.mockResolvedValue({ data: { ...data, facilities: [{ id: 'org', name: 'Test Pharmacy' }] } })
