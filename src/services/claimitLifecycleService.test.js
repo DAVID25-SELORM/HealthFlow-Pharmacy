@@ -73,8 +73,10 @@ it('reports an unrecorded audit as a warning instead of failing the already gene
     expect(countUnrecordedClaims(warning.recording)).toBe(501)
     // Claims with no fingerprint (legacy enrichment unavailable) are audited best-effort too.
     supabase.rpc.mockResolvedValue({ data: null, error: null })
-    await recordCxfExport([{ id: 'x' }], new Uint8Array([1]))
-    expect(supabase.rpc.mock.calls.at(-1)[1].p_fingerprints).toEqual({ x: null })
+    supabase.rpc.mockClear()
+    const missing = await recordCxfExport([{ id: 'x' }], new Uint8Array([1]))
+    expect(missing.recording.requiresRegeneration).toBe(true)
+    expect(supabase.rpc).not.toHaveBeenCalled()
   } finally { vi.unstubAllGlobals() }
 })
 
@@ -174,7 +176,9 @@ it('retries a transient recording failure once, but never retries a deterministi
 
     supabase.rpc.mockClear()
     supabase.rpc.mockResolvedValue({ data: null, error: { code: '40001', message: 'Claim changed during export; regenerate the file.' } })
-    expect(await recordCxfExport(makeClaims(2), new Uint8Array([1]), null, { retryDelayMs: 0 })).toMatchObject({ warnings: ['EXPORT_AUDIT_NOT_RECORDED'] })
+    const changed = await recordCxfExport(makeClaims(2), new Uint8Array([1]), null, { retryDelayMs: 0 })
+    expect(changed).toMatchObject({ warnings: ['EXPORT_AUDIT_NOT_RECORDED'], recording: { requiresRegeneration: true } })
+    await retryCxfRecording(changed.recording)
     expect(supabase.rpc).toHaveBeenCalledTimes(1)
   })
   log.mockRestore()

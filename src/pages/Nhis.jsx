@@ -6095,7 +6095,9 @@ const Nhis = () => {
         setCxfRecordingIssue({ ...unrecordedExport, periodLabel, runRef: `EXP-${exportRunId.slice(0, 8).toUpperCase()}` })
         void refreshClaimsOverview()
         notify(
-          `${count} claims exported for ${periodLabel}, but the export record could not be fully saved. Use "Retry recording" below — the file does not need to be regenerated.`,
+          unrecordedExport.requiresRegeneration
+            ? unrecordedExport.failureMessage
+            : `${count} claims exported for ${periodLabel}, but the export record could not be fully saved. Use "Retry recording" below — the file does not need to be regenerated.`,
           'warning',
           15000
         )
@@ -6320,13 +6322,14 @@ const Nhis = () => {
       {cxfRecordingIssue && (
         <div className="nhis-alert" role="alert">
           <strong>CXF generated, export record not fully saved.</strong>{' '}
-          The file for {cxfRecordingIssue.periodLabel} was created and is usable, but the export record could not be saved
+          The file for {cxfRecordingIssue.periodLabel} was generated, but the export record could not be saved
           for {countUnrecordedClaims(cxfRecordingIssue)} of {cxfRecordingIssue.claimCount} claims. Retrying does not regenerate the file
           or download the attachments again. Reference {cxfRecordingIssue.runRef}.{' '}
+          {cxfRecordingIssue.failureMessage && <p>{cxfRecordingIssue.failureMessage}</p>}
           <button
             type="button"
             className="btn btn-secondary"
-            disabled={retryingCxfRecording}
+            disabled={retryingCxfRecording || cxfRecordingIssue.requiresRegeneration}
             onClick={handleRetryCxfRecording}
           >
             {retryingCxfRecording ? 'Retrying…' : 'Retry recording'}

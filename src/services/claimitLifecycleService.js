@@ -106,6 +106,11 @@ const recordingWarning = (recording) => ({
 })
 
 const recordChunk = async (recording, chunk, index) => {
+  if (chunk.claimIds.some((id) => !chunk.fingerprints[id])) {
+    recording.requiresRegeneration = true
+    recording.failureMessage = 'Export verification was unavailable. Generate a fresh export when the connection is stable.'
+    return false
+  }
   let lastError
   for (let attempt = 1; attempt <= RECORD_ATTEMPTS; attempt += 1) {
     try {
@@ -118,6 +123,10 @@ const recordChunk = async (recording, chunk, index) => {
       return true
     } catch (error) {
       lastError = error
+      if (String(error?.code) === '40001') {
+        recording.requiresRegeneration = true
+        recording.failureMessage = 'The claim verification no longer matches this file. Generate a fresh export; retrying this record cannot repair it.'
+      }
       if (isDeterministicRpcFailure(error) || attempt === RECORD_ATTEMPTS) break
       await new Promise((resolve) => setTimeout(resolve, recording.retryDelayMs))
     }
@@ -136,10 +145,12 @@ const recordChunk = async (recording, chunk, index) => {
 // Records the not-yet-recorded chunks. Idempotent on the server (same artifact + claim never records twice), so
 // re-running after a timeout, a 500, or a success whose reply was lost cannot create duplicate events.
 const runRecording = async (recording) => {
+  if (recording.requiresRegeneration) return recordingWarning(recording)
   for (const index of [...recording.pendingChunkIndexes]) {
     if (await recordChunk(recording, recording.chunks[index], index)) {
       recording.pendingChunkIndexes = recording.pendingChunkIndexes.filter((pending) => pending !== index)
     }
+    if (recording.requiresRegeneration) break
   }
   if (recording.pendingChunkIndexes.length) return recordingWarning(recording)
   try { await queueClaimExportAlert(recording) }
