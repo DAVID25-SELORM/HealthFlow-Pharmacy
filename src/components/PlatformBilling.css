@@ -47,3 +47,14 @@
 .platform-billing [role=alert],.platform-billing [role=status] { margin-top:1rem; padding:.8rem 1rem; border-radius:8px; background:#fdf0e9; }
 .platform-billing [role=status] { background:#eaf7f0; }
 @media(max-width:640px) { .billing-stats { grid-template-columns:1fr; gap:.5rem; } .billing-stats>div { display:flex; align-items:center; justify-content:space-between; gap:1rem; } .billing-stats span { margin:0; } .billing-plan-form { grid-template-columns:1fr; } .billing-summary>button { margin-left:0; width:100%; } .billing-plan,.billing-invoice,.billing-recipient { padding:1rem; } .billing-form>button { width:100%; } .billing-amount { margin-left:0; } .billing-invoice-title>div { width:100%; } }
+.billing-month-picker { min-width:0; margin:0; padding:.75rem; border:1px solid #c6d9d5; border-radius:10px; background:white; }
+.billing-month-picker legend,.billing-saved-start>strong { font-size:.8rem; font-weight:600; }
+.billing-month-picker>label { flex-direction:row; align-items:center; justify-content:space-between; }
+.billing-month-picker>label select { width:auto; }
+.billing-month-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.35rem; margin:.75rem 0; }
+.billing-month-grid button { padding:.5rem .2rem; min-height:38px; }
+.billing-month-grid button[aria-pressed=true] { background:#147d6c; color:white; border-color:#147d6c; }
+.billing-month-grid button:disabled { cursor:not-allowed; background:#f5f5f5; color:#65727a; opacity:.5; }
+.billing-saved-start { border:1px solid #dce9e4; border-radius:8px; padding:.75rem; }
+.billing-saved-start p { margin:.5rem 0; }
+.billing-saved-start small { font-size:.75rem; color:#596d77; }

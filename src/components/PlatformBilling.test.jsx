@@ -14,6 +14,18 @@ const data = {
 beforeEach(() => { vi.clearAllMocks(); useAuth.mockReturnValue({ role: 'super_admin' }); supabase.rpc.mockResolvedValue({ data }) })
 async function open() { render(<PlatformBilling />); await screen.findByText(/GHS 250.00 outstanding/); fireEvent.click(screen.getByRole('button', { name: 'View billing / Pay' })) }
 describe('billing panel', () => {
+ it('offers a visible month calendar and submits the chosen month', async () => {
+  supabase.rpc.mockResolvedValue({ data: { ...data, facilities: [{ id: 'org', name: 'Test Pharmacy' }] } })
+  await open()
+  fireEvent.change(screen.getByLabelText('Facility'), { target: { value: 'org' } })
+  const nextYear = new Date().getUTCFullYear() + 1
+  fireEvent.change(screen.getByLabelText('Year'), { target: { value: String(nextYear) } })
+  fireEvent.click(screen.getByRole('button', { name: `January ${nextYear}` }))
+  expect(screen.getByRole('button', { name: `January ${nextYear}` })).toHaveAttribute('aria-pressed', 'true')
+  fireEvent.change(screen.getByLabelText('Monthly amount (GHS)'), { target: { value: '200' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save monthly charge' }))
+  await waitFor(() => expect(supabase.rpc).toHaveBeenCalledWith('platform_billing', expect.objectContaining({ p_action: 'set_plan', p_data: expect.objectContaining({ starts_on: `${nextYear}-01-01`, amount: '200' }) })))
+ })
  it('loads the selected facility plan and saves its charge', async () => {
   await open()
   fireEvent.change(screen.getByLabelText('Facility'), { target: { value: 'org' } })
