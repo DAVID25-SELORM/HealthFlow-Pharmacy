@@ -14,6 +14,21 @@ const data = {
 beforeEach(() => { vi.clearAllMocks(); useAuth.mockReturnValue({ role: 'super_admin' }); supabase.rpc.mockResolvedValue({ data }) })
 async function open() { render(<PlatformBilling />); await screen.findByText(/GHS 250.00 outstanding/); fireEvent.click(screen.getByRole('button', { name: 'View billing / Pay' })) }
 describe('billing panel', () => {
+ it('submits historical receipt details to the protected history endpoint', async () => {
+  await open()
+  fireEvent.change(screen.getByLabelText('Facility'), { target: { value: 'org' } })
+  fireEvent.click(screen.getByText('Record a payment already received'))
+  fireEvent.change(screen.getByLabelText('First year covered'), { target: { value: '2020' } })
+  fireEvent.change(screen.getByLabelText('First month covered'), { target: { value: '01' } })
+  fireEvent.change(screen.getByLabelText('Number of months covered'), { target: { value: '3' } })
+  fireEvent.change(screen.getByLabelText('Amount paid per month (GHS)'), { target: { value: '100' } })
+  fireEvent.change(screen.getByLabelText('Payment received on'), { target: { value: '2020-01-05' } })
+  fireEvent.change(screen.getByLabelText('Transaction or receipt reference'), { target: { value: 'OLD-1234' } })
+  fireEvent.change(screen.getByLabelText('Verification note'), { target: { value: 'Matched statement' } })
+  fireEvent.click(screen.getByRole('checkbox', { name: /I verified this receipt/ }))
+  fireEvent.click(screen.getByRole('button', { name: 'Record confirmed payment' }))
+  await waitFor(() => expect(supabase.rpc).toHaveBeenCalledWith('platform_billing_record_history', { p_data: { organization_id: 'org', first_month: '2020-01-01', months: 3, monthly_amount: '100', received_on: '2020-01-05', reference: 'OLD-1234', note: 'Matched statement' } }))
+ })
  it('offers a visible month calendar and submits the chosen month', async () => {
   supabase.rpc.mockResolvedValue({ data: { ...data, facilities: [{ id: 'org', name: 'Test Pharmacy' }] } })
   await open()

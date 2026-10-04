@@ -39,10 +39,12 @@ export default function PlatformBilling() {
   const [message, setMessage] = useState('')
   const [facility, setFacility] = useState('')
   const [filter, setFilter] = useState('all')
+  const [historyMonths, setHistoryMonths] = useState('1')
+  const [historyAmount, setHistoryAmount] = useState('')
   const run = useCallback(async (action = 'list', payload = {}) => {
     setBusy(true); setError(''); setMessage('')
     try {
-      const { data: result, error: failure } = await supabase.rpc('platform_billing', { p_action: action, p_data: payload })
+      const { data: result, error: failure } = await supabase.rpc(action === 'record_history' ? 'platform_billing_record_history' : 'platform_billing', action === 'record_history' ? { p_data: payload } : { p_action: action, p_data: payload })
       if (failure) throw failure
       setData(result)
       if (action !== 'list') setMessage(action === 'submit' ? 'Payment submitted. Awaiting confirmation; do not pay this invoice again.' : 'Billing updated.')
@@ -88,6 +90,25 @@ export default function PlatformBilling() {
         <button className="billing-primary" disabled={busy || !data || !facility}>{busy ? 'Saving...' : 'Save monthly charge'}</button>
         <small>Existing invoices keep their original amount. For existing plans, the first billing month stays unchanged.</small>
       </form></div>}
+      {platform && <details className="billing-plan"><summary>Record a payment already received</summary>
+        <p>Record verified past payments for the selected facility. Only the months you enter are marked paid; missing months are not automatically billed. Set the ongoing monthly plan separately above.</p>
+        <form className="billing-form" onSubmit={e => {
+          e.preventDefault(); const form = new FormData(e.currentTarget)
+          void run('record_history', { organization_id: facility, first_month: `${form.get('history_year')}-${form.get('history_month')}-01`, months: Number(form.get('months')), monthly_amount: form.get('monthly_amount'), received_on: form.get('received_on'), reference: form.get('reference'), note: form.get('note') })
+        }}>
+          <p className="billing-history-facility">Facility: <strong>{selected?.name || 'Select a facility above first'}</strong></p>
+          <label>First year covered<select name="history_year" defaultValue="" required><option value="">Select year</option>{Array.from({ length: new Date().getUTCFullYear() - 1999 }, (_, n) => new Date().getUTCFullYear() - n).map(year => <option key={year}>{year}</option>)}</select></label>
+          <label>First month covered<select name="history_month" defaultValue="" required><option value="">Select month</option>{Array.from({ length: 12 }, (_, n) => String(n + 1).padStart(2, '0')).map(month => <option key={month} value={month}>{monthLabel(`2020-${month}`).split(' ')[0]}</option>)}</select></label>
+          <label>Number of months covered<input name="months" type="number" min="1" max="120" value={historyMonths} onChange={e => setHistoryMonths(e.target.value)} required /></label>
+          <label>Amount paid per month (GHS)<input name="monthly_amount" type="number" min="0.01" step="0.01" value={historyAmount} onChange={e => setHistoryAmount(e.target.value)} required /></label>
+          <label>Payment received on<input name="received_on" type="date" min="2000-01-01" max={new Date().toISOString().slice(0, 10)} required /></label>
+          <label>Transaction or receipt reference<input name="reference" minLength="4" maxLength="100" required /></label>
+          <label>Verification note<input name="note" maxLength="500" placeholder="e.g. Matched to MoMo statement" required /></label>
+          <p className="billing-history-facility">Total receipt: <strong>{money(Number(historyMonths) * Number(historyAmount))}</strong>. Use separate entries when monthly amounts differ.</p>
+          <label className="billing-confirm"><input type="checkbox" required />I verified this receipt and the months covered. The total received equals the monthly amount multiplied by the number of months.</label>
+          <button className="billing-primary" disabled={busy || !facility}>Record confirmed payment</button>
+        </form>
+      </details>}
       {!platform && data && <div className="billing-recipient"><span className="billing-eyebrow">PAY WITH MOBILE MONEY</span><h3>{data.recipient.number}</h3><strong>{data.recipient.name}</strong><p>Send the exact invoice amount, using its invoice reference. Then enter your MoMo transaction ID below. Your payment stays pending until confirmed.</p></div>}
       <div className="billing-invoice-heading"><h3>Invoices {platform && selected ? `for ${selected.name}` : ''}</h3><label>Show<select value={filter} onChange={e => setFilter(e.target.value)}><option value="all">All invoices</option><option value="unpaid">Outstanding</option><option value="pending">Awaiting confirmation</option><option value="paid">Paid</option></select></label></div>
       {!visibleInvoices.length && <div className="billing-empty"><strong>{busy ? 'Loading invoices...' : 'No invoices to show'}</strong><p>{platform ? 'Configure a monthly charge above, or choose another invoice filter.' : 'Your invoices will appear here once your facility billing plan begins.'}</p></div>}
@@ -105,7 +126,7 @@ export default function PlatformBilling() {
             <button className="billing-primary" disabled={busy}>I have paid {money(i.amount)}</button>
           </form>}
           {history.map(p => <div key={p.id} className="billing-payment">
-            <p>Transaction <strong>{p.transaction_reference}</strong>: {p.status}{p.review_note ? ` - ${p.review_note}` : ''}{p.reviewed_at ? ` (${new Date(p.reviewed_at).toLocaleDateString()})` : ''}</p>
+            <p>Transaction <strong>{p.receipt_reference || p.transaction_reference}</strong>: {p.status}{p.received_on ? ` - Received ${p.received_on}` : ''}{p.review_note ? ` - ${p.review_note}` : ''}{p.reviewed_at ? ` (${new Date(p.reviewed_at).toLocaleDateString()})` : ''}</p>
             {platform && p.status === 'pending' && <form className="billing-form" onSubmit={e => {
               e.preventDefault(); const form = new FormData(e.currentTarget)
               void run('review', { payment_id: p.id, decision: form.get('decision'), note: form.get('note') })

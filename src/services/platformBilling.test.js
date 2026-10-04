@@ -18,8 +18,24 @@ beforeAll(async()=>{
  insert into organizations(id,name) values('${org}','Facility A'),('${other}','Facility B');
  insert into users values('${owner}',null,'super_admin',true,'{}'),('${admin}','${org}','admin',true,'{}');`)
  await db.exec(readFileSync('supabase/migrations/20261003180000_manual_subscription_billing.sql','utf8'))
+ await db.exec(readFileSync('supabase/migrations/20261004120000_historical_subscription_receipts.sql','utf8'))
 },30000)
 afterAll(async()=>db?.close())
+const history = payload => db.query('select platform_billing_record_history($1::jsonb)', [JSON.stringify(payload)])
+it('records a verified multi-month receipt atomically without inventing arrears', async () => {
+ await actor(owner)
+ const payload = { organization_id: org, first_month: '2020-01-01', months: 3, monthly_amount: 100, received_on: '2020-01-05', reference: 'OLD-RECEIPT-1', note: 'Matched receipt' }
+ await history(payload)
+ const rows = (await db.query("select * from platform_subscription_invoices where period < '2021-01-01'")).rows
+ expect(rows).toHaveLength(3)
+ expect(rows.every(row => row.paid_at)).toBe(true)
+ await expect(history({ ...payload, first_month: '2020-04-01' })).rejects.toThrow()
+ expect((await db.query("select * from platform_subscription_invoices where period='2020-04-01'")).rows).toHaveLength(0)
+ await actor(admin)
+ await expect(history({ ...payload, reference: 'OTHER-RECEIPT' })).rejects.toThrow('Platform administrator')
+ // Keep existing workflow fixtures independent of this historical receipt.
+ await db.exec("delete from platform_subscription_payments; delete from platform_subscription_invoices;")
+})
 it('generates one invoice, preserves original rate and isolates facility access',async()=>{
  await actor(owner)
  const month=new Date().toISOString().slice(0,7)+'-01'
