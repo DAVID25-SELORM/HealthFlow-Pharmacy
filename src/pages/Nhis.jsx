@@ -1,4 +1,5 @@
 import NhisCccDuplicateReview from '../components/NhisCccDuplicateReview'
+import { useCxfRecordingIssue } from '../hooks/useCxfRecordingIssue'
 import { nhisDuplicateMemberKey, isVoidedNhisClaim } from '../utils/nhisCccDuplicate'
 import ClaimCorrectionAlerts from '../components/ClaimCorrectionAlerts'
 import ClaimSearchScope from '../components/ClaimSearchScope'
@@ -1698,7 +1699,7 @@ const Nhis = () => {
   // The CXF file is generated before its export record is saved. If saving the record fails, this holds the
   // handle that repairs only the record (per chunk, idempotent) so the file is never regenerated.
   const exportRecordingRef = useRef(null)
-  const [cxfRecordingIssue, setCxfRecordingIssue] = useState(null)
+  const [cxfRecordingIssue, setCxfRecordingIssue] = useCxfRecordingIssue(user?.id, organization?.id)
   const [retryingCxfRecording, setRetryingCxfRecording] = useState(false)
   // Caches the readiness computed by the first (check) call to handleExport
   // so the second (approve) call, triggered by a separate click on the scrub
@@ -6089,10 +6090,10 @@ const Nhis = () => {
       setScrubWarningOverrideReason('')
       setScrubWarningSearch('')
       setShowExportModal(false)
-      await refreshClaimsOverview()
       if (unrecordedExport) {
         // PARTIAL SUCCESS: the file was created, the export record was not fully saved. Never report it as done.
         setCxfRecordingIssue({ ...unrecordedExport, periodLabel, runRef: `EXP-${exportRunId.slice(0, 8).toUpperCase()}` })
+        void refreshClaimsOverview()
         notify(
           `${count} claims exported for ${periodLabel}, but the export record could not be fully saved. Use "Retry recording" below — the file does not need to be regenerated.`,
           'warning',
@@ -6100,6 +6101,7 @@ const Nhis = () => {
         )
         return
       }
+      await refreshClaimsOverview()
       notify(
         exportResult?.queued
           ? `${count} claims queued for CLAIM-it bridge submission for ${periodLabel}. They will retry automatically.`
