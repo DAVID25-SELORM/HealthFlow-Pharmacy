@@ -47,6 +47,12 @@ const TopBar = ({ isSidebarOpen, onMenuToggle, pageTitle }) => {
   const [quickSearch, setQuickSearch] = useState('')
   const [alertsOpen, setAlertsOpen] = useState(false)
   const [alerts, setAlerts] = useState([])
+  const [exportAlertCount, setExportAlertCount] = useState(0)
+  useEffect(() => {
+    const update = (event) => setExportAlertCount(Number(event.detail) || 0)
+    window.addEventListener('healthflow-export-alert-count', update)
+    return () => window.removeEventListener('healthflow-export-alert-count', update)
+  }, [])
   const [systemHealth, setSystemHealth] = useState(null)
   const [systemHealthLoading, setSystemHealthLoading] = useState(false)
   const [currentDateTime, setCurrentDateTime] = useState(() => new Date())
@@ -390,21 +396,26 @@ const TopBar = ({ isSidebarOpen, onMenuToggle, pageTitle }) => {
             className="notification-btn"
             type="button"
             onClick={() => setAlertsOpen((current) => !current)}
-            aria-label="View operational alerts"
+            aria-label="View notifications"
             aria-expanded={alertsOpen}
           >
             <Bell size={20} />
-            {notificationCount > 0 && <span className="notification-badge">{notificationCount}</span>}
+            {notificationCount + exportAlertCount > 0 && <span className="notification-badge">{notificationCount + exportAlertCount}</span>}
           </button>
 
           {alertsOpen && (
             <div className="alerts-panel">
               <div className="alerts-panel-header">
-                <strong>Operational Alerts</strong>
-                <span>{notificationCount > 0 ? `${notificationCount} active` : 'All clear'}</span>
+                <strong>Notifications</strong>
+                <span>{notificationCount + exportAlertCount > 0 ? `${notificationCount + exportAlertCount} active` : 'All clear'}</span>
               </div>
 
-              {alerts.filter((alert) => alert.count > 0).length === 0 ? (
+              {exportAlertCount > 0 && <button type="button" className="alerts-item" onClick={() => {
+                const section = document.getElementById('claim-export-notifications')
+                if (section) { section.open = true; section.scrollIntoView({ behavior: 'smooth', block: 'center' }) }
+                setAlertsOpen(false)
+              }}><span className="alerts-item-title">Claims exports: {exportAlertCount} unread</span><span className="alerts-item-description">View facility export notifications</span></button>}
+              {alerts.filter((alert) => alert.count > 0).length === 0 && exportAlertCount === 0 ? (
                 <p className="alerts-empty">No actionable alerts right now.</p>
               ) : (
                 <div className="alerts-list">
