@@ -13,6 +13,8 @@ export default function PlatformBilling() {
   const [busy, setBusy] = useState(false)
   const [open, setOpen] = useState(false)
   const [message, setMessage] = useState('')
+  const [facility, setFacility] = useState('')
+  const [filter, setFilter] = useState('all')
   const run = useCallback(async (action = 'list', payload = {}) => {
     setBusy(true); setError(''); setMessage('')
     try {
@@ -29,52 +31,65 @@ export default function PlatformBilling() {
   const payments = data?.payments || []
   const outstanding = invoices.filter(i => !i.paid_at).reduce((total, i) => total + Number(i.amount), 0)
   const pending = payments.filter(p => p.status === 'pending')
+  const selected = data?.facilities?.find(f => f.id === facility)
+  const visibleInvoices = invoices.filter(i =>
+    (!platform || !facility || i.organization_id === facility) &&
+    (filter === 'all' || (filter === 'paid' ? !!i.paid_at : filter === 'pending'
+      ? pending.some(p => p.invoice_id === i.id) : !i.paid_at)))
   return <section className="platform-billing" aria-label="Subscription billing">
     <div className="billing-summary">
-      <strong>{platform ? 'Platform subscription billing' : data ? `Subscription outstanding: ${money(outstanding)}` : 'Subscription billing'}</strong>
-      {pending.length > 0 && <span>{pending.length} payment(s) awaiting confirmation</span>}
+      <div><span className="billing-eyebrow">MONTHLY SUBSCRIPTION</span>
+      <h2>{platform ? 'Platform billing' : 'Your subscription'}</h2>
+      <p>{data ? `${money(outstanding)} outstanding${platform ? ' across all facilities' : ''}` : 'Loading your billing details...'}</p></div>
+      {pending.length > 0 && <span className="billing-badge pending">{pending.length} awaiting confirmation</span>}
       <button type="button" onClick={() => setOpen(!open)} aria-expanded={open}>{open ? 'Hide billing' : 'View billing / Pay'}</button>
     </div>
     {error && <p role="alert">{error} <button disabled={busy} onClick={() => run()}>Retry</button></p>}
     {message && <p role="status">{message}</p>}
     {open && <>
-      <p>Monthly subscription payments. Pharmacy and NHIS operations continue while payment is outstanding.</p>
-      {platform && <form className="billing-form" onSubmit={e => {
+      <div className="billing-stats">
+        <div><span>Total outstanding</span><strong>{money(outstanding)}</strong></div>
+        <div><span>Awaiting confirmation</span><strong>{money(pending.reduce((sum, p) => sum + Number(p.amount), 0))}</strong></div>
+        <div><span>Unpaid invoices</span><strong>{invoices.filter(i => !i.paid_at).length}</strong></div>
+      </div>
+      <p className="billing-help">Balances remain outstanding until payment is confirmed. Pharmacy and NHIS operations continue while payment is outstanding.</p>
+      {platform && <div className="billing-plan"><h3>Set a facility's monthly charge</h3><p>Select a facility to view or update its subscription plan.</p><form className="billing-form billing-plan-form" onSubmit={e => {
         e.preventDefault(); const form = new FormData(e.currentTarget)
         void run('set_plan', { organization_id: form.get('facility'), amount: form.get('amount'), starts_on: `${form.get('month')}-01`, due_day: Number(form.get('day')) })
       }}>
-        <label>Facility<select name="facility" required><option value="">Select facility</option>{data?.facilities.map(f => <option key={f.id} value={f.id}>{f.name}{f.amount ? ` ? ${money(f.amount)}/month` : ''}</option>)}</select></label>
-        <label>Monthly amount (GHS)<input name="amount" type="number" min="0.01" step="0.01" required /></label>
-        <label>First billing month<input name="month" type="month" min={new Date().toISOString().slice(0, 7)} defaultValue={new Date().toISOString().slice(0, 7)} required /></label>
-        <label>Due day (1?28)<input name="day" type="number" min="1" max="28" defaultValue="5" required /></label>
-        <button disabled={busy}>Save monthly charge</button>
+        <label className="billing-facility-field">Facility<select name="facility" value={facility} onChange={e => setFacility(e.target.value)} required><option value="">Select facility</option>{data?.facilities.map(f => <option key={f.id} value={f.id}>{f.name}{f.amount ? ` - ${money(f.amount)}/month` : ''}</option>)}</select></label>
+        <label>Monthly amount (GHS)<input key={`amount-${facility}-${selected?.amount}`} name="amount" type="number" min="0.01" step="0.01" defaultValue={selected?.amount || ''} placeholder="e.g. 250.00" required /></label>
+        <label>First billing month<input key={`month-${facility}`} name="month" type="month" min={new Date().toISOString().slice(0, 7)} defaultValue={new Date().toISOString().slice(0, 7)} required /><small>{selected?.starts_on ? `Plan started ${selected.starts_on.slice(0, 7)}; this stays unchanged.` : 'Choose when monthly billing begins.'}</small></label>
+        <label>Due day (1-28)<input key={`day-${facility}-${selected?.due_day}`} name="day" type="number" min="1" max="28" defaultValue={selected?.due_day || 5} required /></label>
+        <button className="billing-primary" disabled={busy || !data}>Save monthly charge</button>
         <small>Existing invoices keep their original amount. For existing plans, the first billing month stays unchanged.</small>
-      </form>}
-      {!platform && <p>Send the exact invoice amount to <strong>{data?.recipient.number} ? {data?.recipient.name}</strong>. Use the invoice reference below, then submit your MoMo transaction ID. Submission alone does not confirm receipt.</p>}
-      {!invoices.length && <p>No invoices have been issued.</p>}
-      {invoices.map(i => {
+      </form></div>}
+      {!platform && data && <div className="billing-recipient"><span className="billing-eyebrow">PAY WITH MOBILE MONEY</span><h3>{data.recipient.number}</h3><strong>{data.recipient.name}</strong><p>Send the exact invoice amount, using its invoice reference. Then enter your MoMo transaction ID below. Your payment stays pending until confirmed.</p></div>}
+      <div className="billing-invoice-heading"><h3>Invoices {platform && selected ? `for ${selected.name}` : ''}</h3><label>Show<select value={filter} onChange={e => setFilter(e.target.value)}><option value="all">All invoices</option><option value="unpaid">Outstanding</option><option value="pending">Awaiting confirmation</option><option value="paid">Paid</option></select></label></div>
+      {!visibleInvoices.length && <div className="billing-empty"><strong>{busy ? 'Loading invoices...' : 'No invoices to show'}</strong><p>{platform ? 'Configure a monthly charge above, or choose another invoice filter.' : 'Your invoices will appear here once your facility billing plan begins.'}</p></div>}
+      {visibleInvoices.map(i => {
         const history = payments.filter(p => p.invoice_id === i.id)
         const waiting = history.find(p => p.status === 'pending')
         return <article key={i.id} className="billing-invoice">
-          <strong>{platform ? `${i.facility} ? ` : ''}{i.period.slice(0, 7)}: {money(i.amount)}</strong>
-          <p>Due {i.due_on} ? {i.paid_at ? 'Paid ? confirmed' : waiting ? 'Awaiting confirmation ? do not pay again' : 'Unpaid'}</p>
+          <div className="billing-invoice-title"><div><strong>{platform ? `${i.facility} - ` : ''}{i.period.slice(0, 7)}</strong><p>Due {i.due_on}</p></div><strong className="billing-amount">{money(i.amount)}</strong><span className={`billing-badge ${i.paid_at ? 'paid' : waiting ? 'pending' : 'unpaid'}`}>{i.paid_at ? 'Paid' : waiting ? 'Awaiting confirmation' : 'Unpaid'}</span></div>
+          {waiting && <p className="billing-help">Payment submitted. Do not pay this invoice again while it is being reviewed.</p>}
           <small>Invoice reference: {i.id}</small>
           {!platform && !i.paid_at && !waiting && <form className="billing-form" onSubmit={e => {
             e.preventDefault(); void run('submit', { invoice_id: i.id, reference: new FormData(e.currentTarget).get('reference') })
           }}>
             <label>MoMo transaction ID<input name="reference" minLength="4" maxLength="100" required /></label>
-            <button disabled={busy}>I have paid {money(i.amount)}</button>
+            <button className="billing-primary" disabled={busy}>I have paid {money(i.amount)}</button>
           </form>}
-          {history.map(p => <div key={p.id}>
-            <p>Transaction {p.transaction_reference}: {p.status}{p.review_note ? ` ? ${p.review_note}` : ''}{p.reviewed_at ? ` (${new Date(p.reviewed_at).toLocaleDateString()})` : ''}</p>
+          {history.map(p => <div key={p.id} className="billing-payment">
+            <p>Transaction <strong>{p.transaction_reference}</strong>: {p.status}{p.review_note ? ` - ${p.review_note}` : ''}{p.reviewed_at ? ` (${new Date(p.reviewed_at).toLocaleDateString()})` : ''}</p>
             {platform && p.status === 'pending' && <form className="billing-form" onSubmit={e => {
               e.preventDefault(); const form = new FormData(e.currentTarget)
               void run('review', { payment_id: p.id, decision: form.get('decision'), note: form.get('note') })
             }}>
               <label>Decision<select name="decision"><option value="approved">Confirm money received</option><option value="rejected">Reject submission</option></select></label>
               <label>Review note (required for rejection)<input name="note" maxLength="500" /></label>
-              <label><input type="checkbox" required />I checked the transaction against the MoMo account.</label>
-              <button disabled={busy}>Save decision</button>
+              <label className="billing-confirm"><input type="checkbox" required />I checked the transaction against the MoMo account.</label>
+              <button className="billing-primary" disabled={busy}>Save decision</button>
             </form>}
           </div>)}
         </article>

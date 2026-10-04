@@ -76,7 +76,6 @@ const Layout = () => {
       <Seo noindex title="Workspace" />
       <ProductionMetricsMonitor />
       <FacilityContactReporter />
-      <SubscriptionNotice />
       <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
       <button
         type="button"
@@ -91,6 +90,7 @@ const Layout = () => {
           pageTitle={pageTitle}
         />
         <main className="page-content">
+          <SubscriptionNotice />
           <Outlet />
         </main>
       </div>
