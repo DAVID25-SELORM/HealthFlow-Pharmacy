@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase'
+import { queueClaimExportAlert } from './claimExportNotifications'
 
 async function rpc(name, args) {
   const result = await supabase.rpc(name, args)
@@ -140,7 +141,13 @@ const runRecording = async (recording) => {
       recording.pendingChunkIndexes = recording.pendingChunkIndexes.filter((pending) => pending !== index)
     }
   }
-  return recording.pendingChunkIndexes.length ? recordingWarning(recording) : null
+  if (recording.pendingChunkIndexes.length) return recordingWarning(recording)
+  try { await queueClaimExportAlert(recording) }
+  catch (error) {
+    logClaimItRpcFailure('complete_claim_export_alert', error, { exportRef: recording.exportRef })
+    return recordingWarning(recording)
+  }
+  return null
 }
 
 /**

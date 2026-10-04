@@ -10,6 +10,7 @@ import Seo from '../Seo/Seo'
 import ProductionMetricsMonitor from '../Diagnostics/ProductionMetricsMonitor'
 import FacilityContactReporter from '../FacilityContactReporter'
 import SubscriptionNotice from '../SubscriptionNotice'
+import ClaimExportAlerts from '../ClaimExportAlerts'
 import Sidebar from './Sidebar'
 import TopBar from './TopBar'
 import './Layout.css'
@@ -91,6 +92,7 @@ const Layout = () => {
         />
         <main className="page-content">
           <SubscriptionNotice />
+          <ClaimExportAlerts />
           <Outlet />
         </main>
       </div>

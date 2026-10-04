@@ -5,6 +5,7 @@ import {
 } from './claimitLifecycleService'
 
 vi.mock('../lib/supabase', () => ({ supabase: { rpc: vi.fn() } }))
+vi.mock('./claimExportNotifications', () => ({ queueClaimExportAlert: vi.fn(async () => {}) }))
 beforeEach(() => vi.resetAllMocks())
 
 it('merges only stored signing evidence onto the caller rows and never sends browser signer identity', async () => {
