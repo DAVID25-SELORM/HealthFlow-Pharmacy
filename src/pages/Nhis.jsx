@@ -6321,19 +6321,26 @@ const Nhis = () => {
       {error && <div className="nhis-alert" role="alert">{error}</div>}
       {cxfRecordingIssue && (
         <div className="nhis-alert" role="alert">
-          <strong>CXF generated, export record not fully saved.</strong>{' '}
+          <strong>{cxfRecordingIssue.requiresRegeneration ? 'Fresh export required.' : 'CXF generated, export record not fully saved.'}</strong>{' '}
           The file for {cxfRecordingIssue.periodLabel} was generated, but the export record could not be saved
-          for {countUnrecordedClaims(cxfRecordingIssue)} of {cxfRecordingIssue.claimCount} claims. Retrying does not regenerate the file
-          or download the attachments again. Reference {cxfRecordingIssue.runRef}.{' '}
+          for {countUnrecordedClaims(cxfRecordingIssue)} of {cxfRecordingIssue.claimCount} claims.{' '}
+          {cxfRecordingIssue.requiresRegeneration
+            ? 'This saved warning is from an earlier attempt. Open the export form, select the same period, and generate a fresh file.'
+            : 'Retrying does not regenerate the file or download the attachments again.'}{' '}
+          Reference {cxfRecordingIssue.runRef}.{' '}
           {cxfRecordingIssue.failureMessage && <p>{cxfRecordingIssue.failureMessage}</p>}
-          <button
+          {cxfRecordingIssue.requiresRegeneration ? (
+            <button type="button" className="btn btn-primary" onClick={() => setShowExportModal(true)}>
+              Start fresh export
+            </button>
+          ) : <button
             type="button"
             className="btn btn-secondary"
-            disabled={retryingCxfRecording || cxfRecordingIssue.requiresRegeneration}
+            disabled={retryingCxfRecording}
             onClick={handleRetryCxfRecording}
           >
             {retryingCxfRecording ? 'Retrying…' : 'Retry recording'}
-          </button>
+          </button>}
         </div>
       )}
       {catalogSeeding && (
