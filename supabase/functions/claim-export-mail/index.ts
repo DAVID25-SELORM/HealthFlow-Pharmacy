@@ -22,7 +22,7 @@ Deno.serve(async (req: Request) => {
     messageId:`<claim-export-${job.id}@healthflowcloud.com>`,
     text:`A CXF claims export was generated and its audit completed.\n\nFacility: ${job.facility}\nClaims month: ${job.period.slice(0,7)}\nClaims: ${job.claim_count}\nRecorded at: ${job.exported_at}\n\nThis confirms file generation, not NHIA acceptance or receipt of the download. No patient details are included.\nOpen HealthFlow: https://healthflowcloud.com\n`})
    success=true;sent++
-  }catch{failed++;console.error('Export notification SMTP failure', {jobId:job.id})}
+  }catch(error){failed++;console.error('Export notification SMTP failure', {jobId:job.id,code:error?.code,responseCode:error?.responseCode,command:error?.command})}
   const finished=await db.rpc('finish_claim_export_mail',{p_id:job.id,p_lease:job.lease,p_success:success})
   if(finished.error) console.error('Export notification acknowledgement failed',{jobId:job.id})
  }
