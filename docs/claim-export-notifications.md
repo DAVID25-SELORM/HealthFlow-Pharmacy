@@ -8,9 +8,9 @@ Facility active admins receive emails; daventratech@gmail.com receives an owner 
 
 ## SMTP setup
 The Auth SMTP settings are not automatically available to Edge Functions. Copy the existing provider credentials into Edge Function secrets through the Supabase dashboard:
-- SMTP_HOSTNAME
-- SMTP_USERNAME
-- SMTP_PASSWORD
+- SMTP_HOSTNAME (or existing SMTP_HOST)
+- SMTP_USERNAME (or existing SMTP_USER)
+- SMTP_PASSWORD (or existing SMTP_PASS)
 - SMTP_FROM (approved sender address)
 - EXPORT_MAIL_WORKER_SECRET (new strong random secret)
 
