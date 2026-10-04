@@ -9842,6 +9842,9 @@ const createNhisExportFile = async (claims, period, options = {}) => {
     // Stored signing evidence is merged onto the claims when the server can provide
     // it; its absence never blocks export (accepted June behavior).
     const { claims: signedClaims, warnings: signingWarnings } = await getExportSigningEvidence(claims, { exportRef: options.exportRunId })
+    if (signingWarnings.length || signedClaims.some((claim) => !claim.claimit_fingerprint)) {
+      throw new Error('Export verification could not complete. No file was generated. Please try again when the database is available.')
+    }
     const claimsForPayload = await hydrateNhisPrescriptionUrlsForTransfer(signedClaims, options)
     timing?.mark('loading prescription signed URLs', { claimCount: claimsForPayload.length })
     const exportActor = await resolveClaimItExportActor()

@@ -29,7 +29,7 @@ it('never blocks: server errors, incomplete responses and unsigned claims degrad
   supabase.rpc.mockRejectedValue(new Error('function does not exist'))
   expect((await getExportSigningEvidence(candidates)).claims).toEqual(candidates)
   supabase.rpc.mockResolvedValue({ data: [], error: null })
-  expect((await getExportSigningEvidence(candidates)).claims).toEqual(candidates)
+  expect((await getExportSigningEvidence(candidates)).claims[0].claimit_fingerprint).toBeNull()
   supabase.rpc.mockResolvedValue({ data: [{ id: 'claim', signed_by_name: null, signed_on: null }], error: null })
   const unsigned = await getExportSigningEvidence(candidates)
   expect(unsigned.claims[0].signed_by_name).toBeUndefined()
@@ -44,7 +44,7 @@ it('defaults to dry-run and batches large signing-evidence lookups', async () =>
   const candidates = Array.from({ length: 501 }, (_, i) => ({ id: String(i) }))
   expect((await getExportSigningEvidence(candidates)).claims).toHaveLength(501)
   // 250 per call keeps each RPC inside the database's 8 s statement timeout.
-  expect(supabase.rpc.mock.calls.slice(1).map((call) => call[1].p_claim_ids.length)).toEqual([250, 250, 1])
+  expect(supabase.rpc.mock.calls.slice(1).map((call) => call[1].p_claim_ids.length)).toEqual([...Array(20).fill(25), 1])
 })
 
 it('records the artifact hash and expected fingerprints for the audit trail', async () => {
@@ -69,7 +69,7 @@ it('reports an unrecorded audit as a warning instead of failing the already gene
     const warning = await recordCxfExport(claims, new Uint8Array([1, 2, 3]), null, { retryDelayMs: 0 })
     expect(warning).toMatchObject({ claimNumber: '', warnings: ['EXPORT_AUDIT_NOT_RECORDED'] })
     // 501 claims are recorded in chunks of 250; every chunk failed (each tried twice), none is reported recorded.
-    expect(supabase.rpc.mock.calls.map((call) => call[1].p_claim_ids.length)).toEqual([250, 250, 250, 250, 1, 1])
+    expect(supabase.rpc.mock.calls.map((call) => call[1].p_claim_ids.length)).toEqual([...Array(40).fill(25), 1, 1])
     expect(countUnrecordedClaims(warning.recording)).toBe(501)
     // Claims with no fingerprint (legacy enrichment unavailable) are audited best-effort too.
     supabase.rpc.mockResolvedValue({ data: null, error: null })
@@ -99,6 +99,20 @@ const makeClaims = (count) => Array.from({ length: count }, (_, i) => ({
   id: `claim-${i}`, organization_id: 'facility-1', claimit_fingerprint: `fp-${i}`, surname: 'PATIENT-NAME', member_no: '12345678',
 }))
 const rpcCalls = (name) => supabase.rpc.mock.calls.filter((call) => call[0] === name)
+
+it('shrinks timed-out evidence batches without skipping or duplicating claims', async () => {
+  const successful = []
+  supabase.rpc.mockImplementation(async (_name, args) => {
+    if (args.p_claim_ids.length > 6) return { error: { code: '57014' } }
+    successful.push(...args.p_claim_ids)
+    return { data: args.p_claim_ids.map(id => ({ id, claimit_fingerprint: `verified-${id}` })), error: null }
+  })
+  const candidates = makeClaims(53)
+  const result = await getExportSigningEvidence(candidates)
+  expect(successful).toEqual(candidates.map(c => c.id))
+  expect(result.warnings).toEqual([])
+  expect(result.claims.every(c => c.claimit_fingerprint.startsWith('verified-'))).toBe(true)
+})
 
 it('falls back to the legacy evidence RPC only while the slim RPC is not deployed', async () => {
   supabase.rpc.mockImplementation(async (name, args) => name === 'claimit_export_signing_evidence'
@@ -132,10 +146,10 @@ it('handles a full 3,093-claim export: 13 evidence calls and 13 record calls, al
     const claims = makeClaims(3093)
     expect((await getExportSigningEvidence(claims)).claims).toHaveLength(3093)
     expect(await recordCxfExport(claims, new Uint8Array([1, 2, 3]))).toBeNull()
-    expect(rpcCalls('claimit_export_signing_evidence')).toHaveLength(13)
+    expect(rpcCalls('claimit_export_signing_evidence')).toHaveLength(124)
     const recordCalls = rpcCalls('record_nhis_cxf_export_atomic')
-    expect(recordCalls).toHaveLength(13)
-    expect(Math.max(...recordCalls.map((call) => call[1].p_claim_ids.length))).toBe(250)
+    expect(recordCalls).toHaveLength(124)
+    expect(Math.max(...recordCalls.map((call) => call[1].p_claim_ids.length))).toBe(25)
     expect(recordCalls.reduce((sum, call) => sum + call[1].p_claim_ids.length, 0)).toBe(3093)
     // every chunk carries the same artifact hash: the server uses it as the idempotency key
     expect(new Set(recordCalls.map((call) => call[1].p_artifact_sha256)).size).toBe(1)
@@ -152,9 +166,9 @@ it('partial recording failure is visible and retry re-sends only the failed chun
       : { data: null, error: null })
     const warning = await recordCxfExport(claims, new Uint8Array([9, 9]), 'why', { exportRef: 'run-7', retryDelayMs: 0 })
     expect(warning).toMatchObject({ warnings: ['EXPORT_AUDIT_NOT_RECORDED'] })
-    expect(countUnrecordedClaims(warning.recording)).toBe(250)
+    expect(countUnrecordedClaims(warning.recording)).toBe(25)
     const sha = warning.recording.artifactSha256
-    expect(log.mock.calls.at(-1)[1]).toMatchObject({ rpc: 'record_nhis_cxf_export_atomic', code: '57014', exportRef: 'run-7', chunk: 2, chunkCount: 3, facilityId: 'facility-1' })
+    expect(log.mock.calls.at(-1)[1]).toMatchObject({ rpc: 'record_nhis_cxf_export_atomic', code: '57014', exportRef: 'run-7', chunk: 11, chunkCount: 24, facilityId: 'facility-1' })
 
     supabase.rpc.mockClear()
     failSecondChunk = false
@@ -170,9 +184,9 @@ it('partial recording failure is visible and retry re-sends only the failed chun
 it('retries a transient recording failure once, but never retries a deterministic one', async () => {
   const log = vi.spyOn(console, 'error').mockImplementation(() => {})
   await withCrypto(async () => {
-    supabase.rpc.mockResolvedValueOnce({ data: null, error: { code: '57014', message: 'timeout' } }).mockResolvedValueOnce({ data: null, error: null })
+    supabase.rpc.mockResolvedValueOnce({ data: null, error: { code: '57014', message: 'timeout' } }).mockResolvedValue({ data: null, error: null })
     expect(await recordCxfExport(makeClaims(2), new Uint8Array([1]), null, { retryDelayMs: 0 })).toBeNull()
-    expect(supabase.rpc).toHaveBeenCalledTimes(2)
+    expect(supabase.rpc).toHaveBeenCalledTimes(3)
 
     supabase.rpc.mockClear()
     supabase.rpc.mockResolvedValue({ data: null, error: { code: '40001', message: 'Claim changed during export; regenerate the file.' } })

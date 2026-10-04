@@ -16,11 +16,10 @@ export const auditClaimItClaims = ({ after = null, apply = false, dateFrom = nul
 const SIGNING_FIELDS = ['signed_on', 'signed_by_user_id', 'signed_by_name', 'signed_by_role', 'claimit_signature_id', 'claimit_fingerprint']
 
 // Each RPC call must finish inside the database's 8 s statement timeout for the `authenticated` role.
-// Measured on production: ~7 ms per claim, so 250 claims is ~2 s. (The old 500-claim calls that returned
-// every claim snapshot, including its base64 prescription PDF, timed out with HTTP 500.)
-const EVIDENCE_CHUNK_SIZE = 250
-const LEGACY_EVIDENCE_CHUNK_SIZE = 500
-const RECORD_CHUNK_SIZE = 250
+// Keep requests small under production load; evidence timeouts shrink the remaining batches further.
+const EVIDENCE_CHUNK_SIZE = 25
+const LEGACY_EVIDENCE_CHUNK_SIZE = 25
+const RECORD_CHUNK_SIZE = 25
 const RECORD_ATTEMPTS = 2
 const RECORD_RETRY_DELAY_MS = 1000
 
@@ -74,6 +73,11 @@ export async function getExportSigningEvidence(candidates, { exportRef = null } 
       } catch (error) {
         // The slim RPC ships with a migration. Until it is applied, fall back to the legacy call (which only
         // works for small batches) rather than losing evidence for exports that used to work.
+        if (String(error?.code) === '57014' && chunkSize > 1) {
+          chunkSize = Math.max(1, Math.floor(chunkSize / 2))
+          offset -= chunkSize // retry this offset with a smaller bounded batch
+          continue
+        }
         if (useLegacy || !isMissingRpc(error)) throw error
         useLegacy = true
         rpcName = 'claimit_export_claims'
@@ -92,8 +96,8 @@ export async function getExportSigningEvidence(candidates, { exportRef = null } 
     warnings: [],
     claims: candidates.map((claim) => {
       const row = evidence.get(claim.id)
-      if (!row) return claim
-      return { ...claim, ...Object.fromEntries(SIGNING_FIELDS.filter((key) => row[key] != null).map((key) => [key, row[key]])) }
+      return { ...claim, claimit_fingerprint: row?.claimit_fingerprint ?? null,
+        ...Object.fromEntries(SIGNING_FIELDS.filter((key) => row?.[key] != null).map((key) => [key, row[key]])) }
     }),
   }
 }
@@ -123,6 +127,13 @@ const recordChunk = async (recording, chunk, index) => {
       return true
     } catch (error) {
       lastError = error
+      if (String(error?.code) === '57014' && chunk.claimIds.length > 1) {
+        const middle = Math.floor(chunk.claimIds.length / 2)
+        for (const ids of [chunk.claimIds.slice(0, middle), chunk.claimIds.slice(middle)]) {
+          if (!await recordChunk(recording, { claimIds: ids, fingerprints: chunk.fingerprints }, index)) return false
+        }
+        return true
+      }
       if (String(error?.code) === '40001') {
         recording.requiresRegeneration = true
         recording.failureMessage = 'The claim verification no longer matches this file. Generate a fresh export; retrying this record cannot repair it.'
