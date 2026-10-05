@@ -4981,7 +4981,7 @@ const Nhis = () => {
           prescription_updated_by_name: payload.prescriptionUpdateUserName || '',
           incomplete_items: incompleteIntakeItems,
           status: savedClaimRecord?.status || payload.status || '',
-          inventory_deducted: false,
+          inventory_policy_enabled: facilitySettings.nhis_deduct_inventory_on_serve === true || facilitySettings.nhisDeductInventoryOnServe === true,
           served_directly_by: serveDirectly ? user?.id || '' : '',
         },
       })
@@ -8994,7 +8994,9 @@ const Nhis = () => {
                 <strong>What happens next</strong>
                 <p>
                   {claimActionReview.intent === 'serve_directly'
-                    ? 'All entered quantities will be recorded as served. Dispensary review is bypassed and HealthFlow inventory stock is not added or deducted. Final NHIS submission remains blocked until mandatory information is complete.'
+                    ? `All entered quantities will be recorded as served. Dispensary review is bypassed. ${facilitySettings.nhis_deduct_inventory_on_serve === true || facilitySettings.nhisDeductInventoryOnServe === true
+                      ? 'Inventory deduction is enabled: serving deducts available stock matched by NHIS code. Claims served before the setting was enabled are not deducted retroactively.'
+                      : 'Inventory deduction is disabled: serving will not deduct stock.'} Final NHIS submission remains blocked until mandatory information is complete.`
                     : 'The dispensary receives this same claim record. Missing details may be added later, but the claim cannot be finalized or submitted until it is complete.'}
                 </p>
               </div>
