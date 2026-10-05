@@ -5,6 +5,12 @@ import {
 } from './nhiaFeedback'
 
 describe('NHIA member feedback', () => {
+  it('explains an unreachable NHIA host without claiming verification succeeded', () => {
+    const message = getNhiaMemberFeedbackMessage('NHIA API request failed: client error (Connect): tcp connect error: No route to host (os error 113)')
+    expect(message).toContain('No CC code was generated or verified')
+    expect(message).toContain('retry verification later')
+    expect(message).not.toContain('os error')
+  })
   it('rewords the legacy inactive member lookup response', () => {
     expect(
       getNhiaMemberFeedbackMessage('NHIA member lookup did not return a CC code: INACTIVE.')
