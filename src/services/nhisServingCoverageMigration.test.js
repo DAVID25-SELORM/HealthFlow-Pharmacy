@@ -56,6 +56,7 @@ beforeAll(async () => {
   await db.exec(readFileSync('supabase/migrations/20261003160000_lock_all_nhis_coverage_identifiers.sql', 'utf8'))
   await db.exec('drop trigger guard_nhis_coverage_claim_edit on nhis_claims')
   await db.exec(readFileSync('supabase/migrations/20261003170000_complete_nhis_coverage_guards.sql', 'utf8'))
+  await db.exec(readFileSync('supabase/migrations/20261006223000_fix_nhis_coverage_dose_units_and_facility.sql', 'utf8'))
 }, 60000)
 afterAll(async () => { await db?.close() })
 beforeEach(async () => {
@@ -200,7 +201,7 @@ const lookupCoverage = (claimedOrg = org) => db.query(`select * from check_nhis_
 
 it('derives the own-facility label and reference from the signed-in membership', async () => {
   const { rows } = await lookupCoverage(prior)
-  expect(rows[0]).toMatchObject({source_label:'This HealthFlow facility', previous_claim_reference:prior})
+  expect(rows[0]).toMatchObject({source_label:'Test facility 1', previous_claim_reference:prior})
 })
 it('keeps another facility claim reference private despite a spoofed organization parameter', async () => {
   await db.query('update nhis_claims set organization_id=$1 where id=$2', [current, prior])
@@ -299,4 +300,32 @@ it('allows multiple supplied medicines with different codes in one claim', async
     insert into nhis_claim_medicines(claim_id,drug_code,prescribed_qty,served_qty,serving_status)
     values ('${current}','DRUG-B',10,0,'pending')`)
   await expect(db.query('select serve_nhis_claim_direct($1)',[current])).resolves.toBeDefined()
+})
+
+it('converts 200 mg capsule doses to units and reports the actual facility in both alerts', async () => {
+  await db.exec(`insert into nhis_drugs values ('${prior}','${org}','DRUG-A','fluconazole','200 mg','capsule','Fluconazole Capsule, 200 mg');
+    update nhis_claim_medicines set dose='200 mg' where claim_id='${prior}'`)
+  const {rows}=await lookupCoverage()
+  expect(rows[0]).toMatchObject({calculated_treatment_days:'14.00',coverage_end_date:new Date('2026-09-20T00:00:00.000Z'),source_label:'Test facility 1'})
+  const summary=await db.query(`select * from get_nhis_patient_active_medications('12345678',null,'2026-09-14',$1,$2)`,[current,org])
+  expect(summary.rows[0]).toMatchObject({calculated_treatment_days:'14.00',source_label:'Test facility 1'})
+})
+it.each([
+  ['200 mg','200 mg','capsule', '1'],
+  ['0.5 g','250 mg','tablet', '2'],
+  ['500 mcg','0.5 mg','tablet', '1'],
+  ['2 tablets','','tablet', '2'],
+  ['200 mg','','capsule', null],
+  ['5 ml','250 mg/5 ml','suspension', null],
+  ['1 application','5%','cream', null],
+  ['1/2 tablet','200 mg','tablet', null],
+])('handles coverage dose %s with strength %s safely', async (dose,strength,form,expected) => {
+  const {rows}=await db.query("select nhis_coverage_dose_units($1,$2,$3,'') as units",[dose,strength,form])
+  if(expected===null) expect(rows[0].units).toBeNull()
+  else expect(Number(rows[0].units)).toBe(Number(expected))
+})
+it('uses documented duration when mass dose cannot be converted from catalog strength', async () => {
+  await db.exec(`update nhis_claim_medicines set dose='200 mg' where claim_id='${prior}'`)
+  const {rows}=await lookupCoverage()
+  expect(rows[0]).toMatchObject({calculated_treatment_days:null,coverage_end_date:new Date('2026-09-20T00:00:00.000Z')})
 })
