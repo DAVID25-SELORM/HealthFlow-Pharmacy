@@ -8744,7 +8744,7 @@ const Nhis = () => {
                   title={
                     shouldUseBranchServer()
                       ? 'Direct serving requires an online cloud connection.'
-                      : 'Mark all entered medicine quantities as served without changing inventory stock.'
+                      : 'Record all entered medicine quantities as served. Stock is deducted when NHIS inventory deduction is enabled for this facility.'
                   }
                   onClick={(event) => handleSubmitClaim(event, 'serve_directly')}
                 >
