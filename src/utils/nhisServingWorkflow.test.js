@@ -5,6 +5,8 @@ import {
   canMcaOpenNhisClaimForServing,
   isNhisClaimDirectlyServed,
   markNhisMedicinesServedDirectly,
+  prepareNhisMedicinesForDirectServing,
+  getNhisDirectServingIdentifierIssue,
   markNhisMedicineFullyServed,
   shouldApplyMcaEditWindowToClaim,
   shouldFinalizeNhisServingReview,
@@ -12,6 +14,27 @@ import {
 } from './nhisServingWorkflow'
 
 describe('NHIS serving workflow status transitions', () => {
+  it('requires a folder number before direct serving can save intake', () => {
+    expect(getNhisDirectServingIdentifierIssue({ folderNo: '  ' })).toMatch(/Folder number/)
+    expect(getNhisDirectServingIdentifierIssue({ folderNo: 'ARK-123' })).toBe('')
+    expect(getNhisDirectServingIdentifierIssue({ folder_no: 'ARK-123' })).toBe('')
+  })
+
+  it('keeps saved intake unserved until the serving transaction succeeds', () => {
+    const [medicine] = prepareNhisMedicinesForDirectServing([{
+      prescribedQty: 2, unitPrice: 38.5,
+      servedQty: 2, served_qty: 2, dispensed_qty: 2,
+      serving_status: 'fully_served', served_at: '2026-10-06T06:59:00Z',
+      served_by_mca: 'actor',
+    }])
+    expect(medicine).toMatchObject({
+      prescribedQty: 2, servedQty: 0, served_qty: 0, dispensedQty: 0,
+      dispensed_qty: 0, servingStatus: 'pending', serving_status: 'pending',
+      servedAt: '', served_at: null, servedByMca: '', served_by_mca: null,
+      totalAmount: 0,
+    })
+    expect(markNhisMedicinesServedDirectly([medicine])[0].servedQty).toBe(2)
+  })
   it('does not finalize claims that are still awaiting dispensary serving', () => {
     expect(shouldFinalizeNhisServingReview('pending_serving')).toBe(false)
     expect(shouldFinalizeNhisServingReview('serving_in_progress')).toBe(false)

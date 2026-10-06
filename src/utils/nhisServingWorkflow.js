@@ -146,6 +146,30 @@ const normalizeMedicineLineServingStatus = (value, prescribedQty = 0, servedQty 
   return servedQty >= prescribedQty ? 'fully_served' : 'partially_served'
 }
 
+export const getNhisDirectServingIdentifierIssue = (claim = {}) =>
+  String(claim.folderNo ?? claim.folder_no ?? '').trim()
+    ? ''
+    : 'Folder number is required before serving this NHIS claim.'
+
+// Intake is saved before the serving RPC. Only that transaction may record
+// fulfillment, together with its inventory movement.
+export const prepareNhisMedicinesForDirectServing = (medicines = []) =>
+  markNhisMedicinesServedDirectly(medicines).map((medicine) => ({
+    ...medicine,
+    servedQty: 0,
+    served_qty: 0,
+    dispensedQty: 0,
+    dispensed_qty: 0,
+    servingStatus: 'pending',
+    serving_status: 'pending',
+    servedByMca: '',
+    served_by_mca: null,
+    servedAt: '',
+    served_at: null,
+    totalAmount: 0,
+    total_amount: 0,
+  }))
+
 export const markNhisMedicinesServedDirectly = (
   medicines = [],
   { actorId = '', servedAt = new Date().toISOString() } = {}

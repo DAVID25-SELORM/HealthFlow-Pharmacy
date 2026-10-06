@@ -126,6 +126,8 @@ import {
   canMcaOpenNhisClaimForServing,
   isNhisClaimDirectlyServed,
   markNhisMedicinesServedDirectly,
+  prepareNhisMedicinesForDirectServing,
+  getNhisDirectServingIdentifierIssue,
   markNhisMedicineFullyServed,
   shouldApplyMcaEditWindowToClaim,
   shouldFinalizeNhisServingReview,
@@ -4621,6 +4623,10 @@ const Nhis = () => {
     }
     const saveAsDraft = intent === 'save_details'
     const serveDirectly = intent === 'serve_directly'
+    if (serveDirectly && getNhisDirectServingIdentifierIssue(claimForm)) {
+      setClaimError(getNhisDirectServingIdentifierIssue(claimForm))
+      return
+    }
     const cccIssue = getNhisCccTransitionIssue(claimForm)
     if (cccIssue && (serveDirectly || isMedicineCounterAssistant || (!saveAsDraft && ['served', 'claim_ready'].includes(editingClaim?.status)))) {
       setClaimError(cccIssue)
@@ -4742,7 +4748,11 @@ const Nhis = () => {
         payload.prescriptionUpdatedAt = prescriptionTraceAt
         payload.prescriptionUpdateUserName = prescriptionTraceActorName
       }
-      if (!editingClaim) {
+      if (serveDirectly) {
+        payload.status = 'pending_serving'
+        payload.servingStatus = 'pending'
+        payload.allowIncompleteReview = true
+      } else if (!editingClaim) {
         payload.status = getNhisIntakeSaveStatus({ intent, isNew: true })
         payload.servingStatus = 'pending'
         payload.allowIncompleteReview = true
@@ -4799,9 +4809,12 @@ const Nhis = () => {
           ? `NHIS claim sent to dispensary with incomplete intake: ${incompleteIntakeItems.join(' and ')}.`
           : 'NHIS prescription saved and sent to dispensary for serving.'
       let savedClaimRecord = null
+      const medicinesToPersist = serveDirectly
+        ? prepareNhisMedicinesForDirectServing(effectiveClaimMedicines)
+        : effectiveClaimMedicines
       const returnAlertOverrideSnapshot = returnAlertOverride
       if (editingClaim) {
-        const savedClaim = await updateNhisClaim(editingClaim.id, payload, effectiveClaimMedicines, {
+        const savedClaim = await updateNhisClaim(editingClaim.id, payload, medicinesToPersist, {
           providerClassLevel,
           claimControlMode,
           useBranchServer: isBranchServerEnabled,
@@ -4868,7 +4881,7 @@ const Nhis = () => {
               nhisReturnPreviousClaimId: returnAlertOverrideSnapshot.alert.previousClaim?.id || '',
             }
           : payload
-        savedClaimRecord = await createNhisClaim(createPayload, effectiveClaimMedicines, {
+        savedClaimRecord = await createNhisClaim(createPayload, medicinesToPersist, {
           providerClassLevel,
           claimControlMode,
           useBranchServer: isBranchServerEnabled,
@@ -4891,6 +4904,8 @@ const Nhis = () => {
             ? 'Medicines served directly. The claim remains incomplete until final-submission requirements are completed.'
             : 'Medicines served directly and the claim marked ready.'
         } catch (directServeError) {
+          setEditingClaim(savedClaimRecord || editingClaim)
+          setClaimMedicines(medicinesToPersist)
           await refreshClaimsOverview()
           throw new Error(
             `Claim details were saved, but direct serving did not complete: ${
