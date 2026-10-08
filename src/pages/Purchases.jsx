@@ -1,3 +1,4 @@
+import SupplierEditor from '../components/SupplierEditor'
 import { useEffect, useMemo, useState } from 'react'
 import {
   Plus,
@@ -147,6 +148,9 @@ const Purchases = () => {
   // ── data state ──────────────────────────────────────────────
   const [purchases, setPurchases]   = useState([])
   const [suppliers, setSuppliers]   = useState([])
+  const [editingSupplier, setEditingSupplier] = useState(null)
+  const [showSuppliers, setShowSuppliers] = useState(false)
+  const [supplierSearch, setSupplierSearch] = useState('')
   const [drugs, setDrugs]           = useState([])
   const [stats, setStats]           = useState({ totalThisMonth: 0, totalAllTime: 0, draftCount: 0, completedCount: 0 })
   const [loading, setLoading]       = useState(true)
@@ -724,6 +728,11 @@ const Purchases = () => {
             </label>
           )}
           {canWrite && (
+            <button className="btn btn-secondary" onClick={() => setShowSuppliers(true)}>
+              Manage suppliers
+            </button>
+          )}
+          {canWrite && (
             <button className="btn btn-primary" onClick={() => setShowNewModal(true)}>
               <Plus size={16} /> New Purchase
             </button>
@@ -732,6 +741,30 @@ const Purchases = () => {
       </div>
 
       {error && <div className="purchases-alert" role="alert">{error}</div>}
+
+      {showSuppliers && <div className="modal-overlay">
+        <section className="modal-content" role="dialog" aria-modal="true" aria-labelledby="suppliers-title"
+          style={{ width: 'min(700px, 95vw)', maxHeight: '90dvh', overflowY: 'auto', padding: '1.5rem' }}>
+          <div className="modal-header"><h2 id="suppliers-title">Manage suppliers</h2>
+            <button className="btn btn-secondary" onClick={() => setShowSuppliers(false)}>Close</button></div>
+          <input className="form-input" aria-label="Search suppliers" placeholder="Search name, contact or phone"
+            value={supplierSearch} onChange={(event) => setSupplierSearch(event.target.value)} />
+          {suppliers.filter((supplier) => [supplier.name, supplier.contact_person, supplier.phone, supplier.email]
+            .some((value) => String(value || '').toLowerCase().includes(supplierSearch.trim().toLowerCase())))
+            .map((supplier) => <div key={supplier.id} style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', padding: '1rem 0' }}>
+              <div><strong>{supplier.name}</strong><div>{[supplier.contact_person, supplier.phone, supplier.email].filter(Boolean).join(' · ')}</div></div>
+              <button className="btn btn-secondary btn-sm" onClick={() => setEditingSupplier(supplier)}>Edit supplier</button>
+            </div>)}
+          {!suppliers.length && <p>No suppliers yet. Add a supplier when creating a purchase.</p>}
+        </section>
+      </div>}
+      {editingSupplier && <SupplierEditor key={editingSupplier.id} supplier={editingSupplier}
+        onClose={() => setEditingSupplier(null)} onSaved={(supplier) => {
+          setSuppliers((previous) => previous.map((row) => row.id === supplier.id ? supplier : row))
+          setPurchaseForm((previous) => previous.supplierId === supplier.id ? { ...previous, supplierName: supplier.name } : previous)
+          setEditingSupplier(null)
+          notify('Supplier information updated.', 'success')
+        }} />}
 
       {offlineSummary.unsynced > 0 && (
         <div className="purchases-sync-banner" role="status">
@@ -975,6 +1008,10 @@ const Purchases = () => {
                         >
                           + New
                         </button>
+                        {canWrite && purchaseForm.supplierId && <button type="button" className="btn btn-secondary btn-sm"
+                          onClick={() => setEditingSupplier(suppliers.find((supplier) => supplier.id === purchaseForm.supplierId))}>
+                          Edit supplier
+                        </button>}
                       </div>
                     )}
                   </div>

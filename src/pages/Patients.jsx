@@ -16,6 +16,7 @@ import { getInsuranceProviderOptions } from '../utils/insuranceProviders'
 import { normalizeNhiaMemberNumber } from '../utils/nhiaMemberNumber'
 import { logPerformance } from '../utils/performance'
 import './Patients.css'
+import PatientEditor from '../components/PatientEditor'
 
 const SEARCH_DEBOUNCE_MS = 350
 const PATIENTS_PAGE_SIZE = 100
@@ -144,7 +145,7 @@ const getPatientInitials = (patient = {}) => {
 }
 
 const Patients = () => {
-  const { branch, organization, role, user } = useAuth()
+  const { branch, organization, role, user, canManagePatients } = useAuth()
   const { notify } = useNotification()
   const organizationId = organization?.id || organization?.organization_id || ''
   const [patients, setPatients] = useState([])
@@ -156,6 +157,7 @@ const Patients = () => {
   const [submitting, setSubmitting] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [selectedPatient, setSelectedPatient] = useState(null)
+  const [editingPatient, setEditingPatient] = useState(null)
   const [historyLoading, setHistoryLoading] = useState(false)
   const [error, setError] = useState('')
   const [offlineSummary, setOfflineSummary] = useState(EMPTY_OFFLINE_SUMMARY)
@@ -552,10 +554,20 @@ const Patients = () => {
               <button className="btn btn-outline" onClick={() => void openPatientHistory(patient)}>
                 View History
               </button>
+              {canManagePatients && <button className="btn btn-outline" onClick={() => setEditingPatient(patient)}>
+                Edit patient / contacts
+              </button>}
             </div>
           ))
         )}
       </div>
+
+      {editingPatient && <PatientEditor key={editingPatient.id} patient={editingPatient}
+        onClose={() => setEditingPatient(null)} onSaved={() => {
+          setEditingPatient(null)
+          notify('Patient information updated.', 'success')
+          void loadPatients(searchTerm, { page: patientsPage })
+        }} />}
 
       {showModal && (
         <div className="modal-overlay" onClick={closeAddPatientModal}>
