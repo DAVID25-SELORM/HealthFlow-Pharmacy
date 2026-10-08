@@ -220,7 +220,7 @@ const Purchases = () => {
       setError('')
       const [purchasesData, suppliersData, drugsData, statsData] = await Promise.all([
         listPurchases(),
-        listSuppliers(),
+        listSuppliers({ includeInactive: true }),
         getAllDrugs({ useTierAccess: true, branchId: branchIdOverride || undefined }),
         getPurchaseStats(),
       ])
@@ -752,16 +752,23 @@ const Purchases = () => {
           {suppliers.filter((supplier) => [supplier.name, supplier.contact_person, supplier.phone, supplier.email]
             .some((value) => String(value || '').toLowerCase().includes(supplierSearch.trim().toLowerCase())))
             .map((supplier) => <div key={supplier.id} style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', padding: '1rem 0' }}>
-              <div><strong>{supplier.name}</strong><div>{[supplier.contact_person, supplier.phone, supplier.email].filter(Boolean).join(' · ')}</div></div>
+              <div><strong>{supplier.name}</strong> <span>{supplier.is_active === false ? 'Suspended' : 'Active'}</span><div>{[supplier.contact_person, supplier.phone, supplier.email].filter(Boolean).join(' · ')}</div></div>
               <button className="btn btn-secondary btn-sm" onClick={() => setEditingSupplier(supplier)}>Edit supplier</button>
             </div>)}
           {!suppliers.length && <p>No suppliers yet. Add a supplier when creating a purchase.</p>}
         </section>
       </div>}
       {editingSupplier && <SupplierEditor key={editingSupplier.id} supplier={editingSupplier}
+        onDeleted={(supplier) => {
+          setSuppliers((previous) => previous.filter((row) => row.id !== supplier.id))
+          setPurchaseForm((previous) => previous.supplierId === supplier.id ? { ...previous, supplierId: '', supplierName: '' } : previous)
+          setEditingSupplier(null)
+          notify('Supplier deleted.', 'success')
+        }}
         onClose={() => setEditingSupplier(null)} onSaved={(supplier) => {
           setSuppliers((previous) => previous.map((row) => row.id === supplier.id ? supplier : row))
-          setPurchaseForm((previous) => previous.supplierId === supplier.id ? { ...previous, supplierName: supplier.name } : previous)
+          setPurchaseForm((previous) => previous.supplierId !== supplier.id ? previous : supplier.is_active === false
+            ? { ...previous, supplierId: '', supplierName: '' } : { ...previous, supplierName: supplier.name })
           setEditingSupplier(null)
           notify('Supplier information updated.', 'success')
         }} />}
@@ -997,7 +1004,7 @@ const Purchases = () => {
                           }}
                         >
                           <option value="">— Select supplier —</option>
-                          {suppliers.map((s) => (
+                          {suppliers.filter((supplier) => supplier.is_active !== false).map((s) => (
                             <option key={s.id} value={s.id}>{s.name}</option>
                           ))}
                         </select>

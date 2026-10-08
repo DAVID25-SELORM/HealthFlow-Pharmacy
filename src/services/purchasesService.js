@@ -10,19 +10,38 @@ import {
 
 // ─── Suppliers ───────────────────────────────────────────────────────────────
 
-export const getAllSuppliers = async () => {
+export const getAllSuppliers = async ({ includeInactive = false } = {}) => {
   if (shouldUseBranchServer()) {
-    return await listBranchRecords('suppliers')
+    const rows = await listBranchRecords('suppliers')
+    return includeInactive ? rows : rows.filter((row) => row.is_active !== false)
   }
 
-  const { data, error } = await supabase
+  let query = supabase
     .from('suppliers')
     .select('*')
-    .eq('is_active', true)
     .order('name')
+  if (!includeInactive) query = query.eq('is_active', true)
+  const { data, error } = await query
 
   if (error) throw error
   return data || []
+}
+
+export const manageSupplier = async (id, action) => {
+  if (!['suspend', 'reactivate', 'delete'].includes(action)) throw new Error('Invalid supplier action.')
+  if (shouldUseBranchServer()) {
+    throw new Error('Switch to online mode to suspend, reactivate or delete a supplier.')
+  }
+  const { data, error } = await supabase.rpc('manage_purchase_supplier', { p_supplier_id: id, p_action: action })
+  if (error) {
+    if (error.code === 'PGRST202') throw new Error('Supplier management needs the latest database update. Contact your administrator.')
+    if (error.code === '23503') throw new Error('This supplier has purchase history. Suspend the supplier instead.')
+    throw error
+  }
+  if (!data?.id) throw new Error('Supplier was not changed. Reload and try again.')
+  await tryLogAuditEvent({ eventType: `supplier.${action}`, entityType: 'suppliers', entityId: id,
+    action: action === 'delete' ? 'delete' : 'update', details: { name: data.name, is_active: data.is_active } })
+  return data
 }
 
 export const createSupplier = async (supplierData) => {

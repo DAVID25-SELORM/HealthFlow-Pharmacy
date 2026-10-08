@@ -89,7 +89,7 @@ export const getOpenOrderQuantitiesByDrug = async () => {
   return byDrugId
 }
 
-export const listSuppliers = async () => getAllSuppliers()
+export const listSuppliers = async (options) => getAllSuppliers(options)
 
 export const getPurchaseStats = async () => getPurchasesStats()
 
