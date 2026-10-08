@@ -57,6 +57,8 @@ beforeAll(async () => {
   await db.exec('drop trigger guard_nhis_coverage_claim_edit on nhis_claims')
   await db.exec(readFileSync('supabase/migrations/20261003170000_complete_nhis_coverage_guards.sql', 'utf8'))
   await db.exec(readFileSync('supabase/migrations/20261006223000_fix_nhis_coverage_dose_units_and_facility.sql', 'utf8'))
+  await db.exec(readFileSync('supabase/migrations/20261008233000_fix_ambiguous_injection_coverage.sql', 'utf8'))
+  await db.exec(readFileSync('supabase/migrations/20261008233000_fix_ambiguous_injection_coverage.sql', 'utf8'))
 }, 60000)
 afterAll(async () => { await db?.close() })
 beforeEach(async () => {
@@ -67,8 +69,8 @@ beforeEach(async () => {
       ('${current}', '${org}', '12345678', '2026-09-14', 'draft');
     insert into nhis_claim_medicines(claim_id, drug_code, description, prescribed_qty, dispensed_qty,
       served_qty, serving_status, dose, frequency, duration) values
-      ('${prior}', 'DRUG-A', 'Medicine A', 28, 28, 28, 'fully_served', '1', 'BD', '14 days'),
-      ('${current}', 'DRUG-A', 'Medicine A', 28, 0, 0, 'pending', '1', 'BD', '14 days');`)
+      ('${prior}', 'DRUG-A', 'Medicine A tablet', 28, 28, 28, 'fully_served', '1', 'BD', '14 days'),
+      ('${current}', 'DRUG-A', 'Medicine A tablet', 28, 0, 0, 'pending', '1', 'BD', '14 days');`)
 })
 const serve = () => db.exec(`update nhis_claim_medicines set served_qty = 28,
   dispensed_qty = 28, serving_status = 'fully_served' where claim_id = '${current}'`)
@@ -328,4 +330,44 @@ it('uses documented duration when mass dose cannot be converted from catalog str
   await db.exec(`update nhis_claim_medicines set dose='200 mg' where claim_id='${prior}'`)
   const {rows}=await lookupCoverage()
   expect(rows[0]).toMatchObject({calculated_treatment_days:null,coverage_end_date:new Date('2026-09-20T00:00:00.000Z')})
+})
+
+it.each(['5000 IU', '2 mL', '5000', '40'])('blocks a cross-facility repeat injection with dose %s during recorded coverage', async (dose) => {
+  await db.exec(`update nhis_claims set service_date_from='2026-09-23' where id='${prior}';
+    update nhis_claims set service_date_from='2026-09-25' where id='${current}';
+    update nhis_claim_medicines set dispensary_date='2026-09-25' where claim_id='${current}';
+    update nhis_claim_medicines set description='Heparin injection';
+    insert into nhis_drugs values ('${prior}','${current}','DRUG-A','heparin','5000 IU/mL','injection','Heparin injection');`)
+  await db.query('update nhis_claim_medicines set dose=$1 where claim_id=$2', [dose, prior])
+  await db.query('update nhis_claims set organization_id=$1 where id=$2', [current, prior])
+  await expect(db.query('select serve_nhis_claim_direct($1)', [current])).rejects.toThrow('coverage through 2026-10-06')
+  expect((await db.query('select served_qty from nhis_claim_medicines where claim_id=$1', [current])).rows[0].served_qty).toBe('0')
+  const line = { drug_code: 'DRUG-A', description: 'Heparin injection', dose,
+    served_qty: 28, serving_status: 'fully_served', duration: '14 days', dispensary_date: '2026-09-25' }
+  await expect(db.query('select serve_nhis_claim_medicines($1,$2::jsonb,28)', [current, JSON.stringify([line])])).rejects.toThrow('coverage through 2026-10-06')
+  const summary = await db.query("select * from get_nhis_patient_active_medications('12345678',null,'2026-09-25',$1,$2)", [current, org])
+  expect(summary.rows[0].coverage_end_date).toEqual(new Date('2026-10-06T00:00:00.000Z'))
+})
+
+it('does not interpret a bare injection dose as dosage units', async () => {
+  const { rows } = await db.query("select nhis_coverage_dose_units('5000','5000 IU/mL','injection','Heparin injection') as units")
+  expect(rows[0].units).toBeNull()
+})
+
+it('runs the read-only investigation without changing medicine records', async () => {
+  const before = (await db.query('select * from nhis_claim_medicines order by id')).rows
+  await db.exec(readFileSync('docs/diagnostics/nhis-repeat-injection-review.sql', 'utf8'))
+  expect((await db.query('select * from nhis_claim_medicines order by id')).rows).toEqual(before)
+})
+
+it.each([
+  ['5000', '', '', '', null],
+  ['40', '', '', 'Furosemide inj', null],
+  ['2', '', 'tablet', 'Medicine tablet', 2],
+  ['2 tablets', '', '', '', 2],
+  ['5', '250 mg/5 ml', 'suspension', '', null],
+  ['5000', '5000 IU/mL', '', '', null],
+])('interprets ambiguous dose %s only when count units are known', async (dose, strength, form, description, expected) => {
+  const { rows } = await db.query('select nhis_coverage_dose_units($1,$2,$3,$4) as units', [dose, strength, form, description])
+  expect(rows[0].units === null ? null : Number(rows[0].units)).toBe(expected)
 })
