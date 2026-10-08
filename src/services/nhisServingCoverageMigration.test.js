@@ -59,6 +59,8 @@ beforeAll(async () => {
   await db.exec(readFileSync('supabase/migrations/20261006223000_fix_nhis_coverage_dose_units_and_facility.sql', 'utf8'))
   await db.exec(readFileSync('supabase/migrations/20261008233000_fix_ambiguous_injection_coverage.sql', 'utf8'))
   await db.exec(readFileSync('supabase/migrations/20261008233000_fix_ambiguous_injection_coverage.sql', 'utf8'))
+  await db.exec(readFileSync('supabase/migrations/20261009001000_match_heparin_pack_coverage.sql', 'utf8'))
+  await db.exec(readFileSync('supabase/migrations/20261009001000_match_heparin_pack_coverage.sql', 'utf8'))
 }, 60000)
 afterAll(async () => { await db?.close() })
 beforeEach(async () => {
@@ -370,4 +372,23 @@ it.each([
 ])('interprets ambiguous dose %s only when count units are known', async (dose, strength, form, description, expected) => {
   const { rows } = await db.query('select nhis_coverage_dose_units($1,$2,$3,$4) as units', [dose, strength, form, description])
   expect(rows[0].units === null ? null : Number(rows[0].units)).toBe(expected)
+})
+
+
+it.each([['HEPARIIN3','HEPARIIN2'], ['HEPARIIN2','HEPARIIN3']])('blocks missing-catalogue heparin packs %s to %s across facilities', async (previousCode, nextCode) => {
+  await db.query("update nhis_claim_medicines set drug_code=$1, description='Heparin Injection, 5000 units/mL', dose='10000 iu' where claim_id=$2", [previousCode, prior])
+  await db.query('update nhis_claims set organization_id=$1 where id=$2', [current, prior])
+  await db.query("update nhis_claim_medicines set drug_code=$1, description='Heparin Injection, 5000 units/mL', dispensary_date='2026-09-14' where claim_id=$2", [nextCode, current])
+  await expect(db.query('select serve_nhis_claim_direct($1)', [current])).rejects.toThrow('coverage through 2026-09-20')
+  const line = {drug_code: nextCode, description: 'Heparin Injection, 5000 units/mL', dose: '5000 iu', duration: '1 day', served_qty: 2, serving_status: 'fully_served', dispensary_date: '2026-09-14'}
+  await expect(db.query('select serve_nhis_claim_medicines($1,$2::jsonb,2)', [current,JSON.stringify([line])])).rejects.toThrow('Cannot serve')
+  expect((await db.query('select served_qty from nhis_claim_medicines where claim_id=$1',[current])).rows[0].served_qty).toBe('0')
+  await db.exec(`update nhis_claims set service_date_from='2026-09-21' where id='${current}'; update nhis_claim_medicines set dispensary_date='2026-09-21' where claim_id='${current}'`)
+  await expect(db.query('select serve_nhis_claim_direct($1)',[current])).resolves.toBeDefined()
+})
+
+it.each(['HEPARIIN1','FUROSEIN1','HEPARIIN20'])('does not infer the same concentration from code prefixes: %s', async (nextCode) => {
+  await db.exec(`update nhis_claim_medicines set drug_code='HEPARIIN3', description='Heparin injection', dose='10000 iu' where claim_id='${prior}'`)
+  await db.query('update nhis_claim_medicines set drug_code=$1 where claim_id=$2',[nextCode,current])
+  await expect(serve()).resolves.toBeDefined()
 })
