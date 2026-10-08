@@ -55,6 +55,8 @@ vi.mock('./tierAccessService', () => ({
 }))
 
 import {
+  addPatient,
+  updatePatient,
   getAllPatients,
   getPatientsWorkspace,
   getPatientsWorkspacePage,
@@ -64,6 +66,27 @@ import {
   normalizePatientWorkspaceData,
   searchPatients,
 } from './patientService'
+
+describe('patient contact writes', () => {
+  it.each(['create', 'update'])('saves a patient without a birth date during %s', async (operation) => {
+    const saved = { id: 'patient-1' }
+    const query = {
+      insert: vi.fn(() => query), update: vi.fn(() => query), eq: vi.fn(() => query),
+      select: vi.fn(async () => ({ data: [saved], error: null })),
+    }
+    fromMock.mockReturnValue(query)
+    routeWrite.mockImplementation(({ cloud }) => cloud())
+    const form = { fullName: 'Ama Test', phone: '0240000000', folderNo: 'F001', dateOfBirth: '', nhisHin: 'HIN001' }
+    if (operation === 'create') {
+      await expect(addPatient(form)).resolves.toEqual(saved)
+      expect(query.insert).toHaveBeenCalledWith([expect.objectContaining({ date_of_birth: null, nhis_hin: 'HIN001' })])
+    } else {
+      await expect(updatePatient(saved.id, form)).resolves.toEqual(saved)
+      expect(query.update).toHaveBeenCalledWith(expect.objectContaining({ date_of_birth: null, phone: form.phone }))
+      expect(query.eq).toHaveBeenCalledWith('id', saved.id)
+    }
+  })
+})
 
 describe('patientService local sync reads', () => {
   beforeEach(() => {

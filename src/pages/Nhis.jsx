@@ -6,6 +6,7 @@ import { createPrescriptionUploadSession } from '../utils/prescriptionUploadSess
 import { getNhisCccTransitionIssue, getNhisDirectServingIssue } from '../../local-branch-server/src/nhisCccValidation.js'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import NhisClaimCreatorCounts from '../components/NhisClaimCreatorCounts'
+import PatientEditor from '../components/PatientEditor'
 import {
   Plus, Search, X, Upload, Download, CheckCircle2,
   Send, Banknote, XCircle, Eye, FileSpreadsheet, HeartPulse,
@@ -1426,6 +1427,7 @@ const Nhis = () => {
     assignedRoles,
     canDeleteNhisClaims,
     canViewReports,
+    canManagePatients,
   } = useAuth()
   const { notify } = useNotification()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -1603,6 +1605,7 @@ const Nhis = () => {
   const [patientSearchError, setPatientSearchError] = useState('')
   const [patientSearching, setPatientSearching] = useState(false)
   const [selectedClaimPatient, setSelectedClaimPatient] = useState(null)
+  const [editingPatientContacts, setEditingPatientContacts] = useState(null)
   const [patientActiveMedicationState, setPatientActiveMedicationState] = useState({
     loading: false,
     checked: false,
@@ -6906,6 +6909,13 @@ const Nhis = () => {
       )}
 
       {/* ── CATALOG TAB ───────────────────────────────────────────── */}
+      {editingPatientContacts && <PatientEditor key={editingPatientContacts.id} patient={editingPatientContacts}
+        onClose={() => setEditingPatientContacts(null)} onSaved={(saved) => {
+          setPatients((previous) => [saved, ...previous.filter((row) => row.id !== saved.id && row.id !== editingPatientContacts.id)])
+          setEditingPatientContacts(null)
+          notify('Patient contacts and details saved.', 'success')
+        }} />}
+
       {pageTab === 'patients' && (
         <>
           <div className="nhis-controls">
@@ -6971,7 +6981,7 @@ const Nhis = () => {
                           )}
                       </td>
                       <td>
-                        {canWrite ? (
+                        {canWrite && (
                           <button
                             type="button"
                             className="btn btn-primary btn-sm"
@@ -6979,9 +6989,13 @@ const Nhis = () => {
                           >
                             <Plus size={14} /> New Claim
                           </button>
-                        ) : (
-                          <span className="patient-meta">-</span>
                         )}
+                        {canManagePatients && (
+                          <button type="button" className="btn btn-secondary btn-sm" onClick={() => setEditingPatientContacts(patient)}>
+                            <Pencil size={14} /> Edit patient / contacts
+                          </button>
+                        )}
+                        {!canWrite && !canManagePatients && <span className="patient-meta">-</span>}
                       </td>
                     </tr>
                   ))}

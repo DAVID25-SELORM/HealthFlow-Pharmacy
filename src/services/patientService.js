@@ -650,6 +650,7 @@ export const addPatient = async (patientData) => {
   const localCreate = async () =>
     await createBranchRecord('patients', {
       full_name: fullName,
+      ...(patientData.nhisHin ? { nhis_hin: normalizeText(patientData.nhisHin) } : {}),
       phone,
       folder_no: folderNo,
       email: normalizeText(patientData.email) || null,
@@ -668,10 +669,11 @@ export const addPatient = async (patientData) => {
       .insert([
         {
           full_name: fullName,
+          ...(patientData.nhisHin ? { nhis_hin: normalizeText(patientData.nhisHin) } : {}),
           phone,
           folder_no: folderNo,
           email: normalizeText(patientData.email) || null,
-          date_of_birth: patientData.dateOfBirth,
+          date_of_birth: patientData.dateOfBirth || null,
           gender: normalizeText(patientData.gender) || null,
           address: normalizeText(patientData.address) || null,
           insurance_provider: insuranceProvider || null,
@@ -737,7 +739,7 @@ export const updatePatient = async (id, patientData) => {
         phone,
         folder_no: folderNo,
         email: normalizeText(patientData.email) || null,
-        date_of_birth: patientData.dateOfBirth,
+        date_of_birth: patientData.dateOfBirth || null,
         gender: normalizeText(patientData.gender) || null,
         address: normalizeText(patientData.address) || null,
         insurance_provider: insuranceProvider || null,
