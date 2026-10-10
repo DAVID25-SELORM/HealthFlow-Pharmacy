@@ -49,7 +49,8 @@ export default function PlatformBilling() {
     setBusy(true); setError(''); setMessage('')
     if (action === 'record_history') setHistoryResult(null)
     try {
-      const { data: result, error: failure } = await supabase.rpc(action === 'onboarding' ? 'platform_billing_onboarding' : action === 'record_history' ? 'platform_billing_record_history' : 'platform_billing', ['record_history', 'onboarding'].includes(action) ? { p_data: payload } : { p_action: action, p_data: payload })
+      const endpoints = { onboarding: 'platform_billing_onboarding', record_history: 'platform_billing_record_history', receive_invoice: 'platform_billing_receive_invoice', correct_invoice: 'platform_billing_correct_invoice' }
+      const { data: result, error: failure } = await supabase.rpc(endpoints[action] || 'platform_billing', endpoints[action] ? { p_data: payload } : { p_action: action, p_data: payload })
       if (failure) throw failure
       setData(result)
       if (action === 'record_history') setHistoryResult({ saved: true, text: `Payment recorded successfully. ${money(Number(payload.monthly_amount) * payload.months)} received on ${payload.received_on}, covering ${payload.months} month(s) from ${payload.first_month.slice(0, 7)}. Reference: ${payload.reference}. Do not submit this receipt again.` })
@@ -68,6 +69,7 @@ export default function PlatformBilling() {
   const outstanding = invoices.filter(i => !i.paid_at).reduce((total, i) => total + Number(i.amount), 0)
   const pending = payments.filter(p => p.status === 'pending')
   const selected = data?.facilities?.find(f => f.id === facility)
+  const onboardingInvoice = invoices.find(i => i.organization_id === facility && i.kind === 'onboarding')
   const visibleInvoices = invoices.filter(i =>
     (!platform || !facility || i.organization_id === facility) &&
     (filter === 'all' || (filter === 'paid' ? !!i.paid_at : filter === 'pending'
@@ -104,7 +106,7 @@ export default function PlatformBilling() {
       {platform && <BillingArrears key={facility} facility={selected} onSaved={setData} />}
       {platform && <details className="billing-plan"><summary>Record one-time onboarding fee</summary>
         <p>Facility: <strong>{selected?.name || 'Select a facility above'}</strong>. This fee is separate from monthly subscriptions and does not extend subscription coverage.</p>
-        <form className="billing-form" onSubmit={e => {
+        {onboardingInvoice ? <p role="status">An onboarding invoice already exists for {money(onboardingInvoice.amount)} ({onboardingInvoice.paid_at ? 'paid' : 'unpaid'}). Use its invoice below to record payment or correct its amount. Select All invoices to see it.</p> : <form className="billing-form" onSubmit={e => {
           e.preventDefault(); const values = new FormData(e.currentTarget)
           void run('onboarding', { organization_id: facility, amount: values.get('amount'), due_on: values.get('due_on'), received_on: onboardingPaid ? values.get('received_on') : null, reference: values.get('reference'), note: values.get('note') })
         }}>
@@ -121,7 +123,7 @@ export default function PlatformBilling() {
           {message && <p role="status">{message}</p>}
           <button className="billing-primary" disabled={busy || !facility || invoices.some(i => i.organization_id === facility && i.kind === 'onboarding')}>Save onboarding fee</button>
           <small>One onboarding fee per facility. Outstanding fees appear below for payment submission and confirmation.</small>
-        </form>
+        </form>}
       </details>}
       {platform && <details className="billing-plan"><summary>Record a payment already received</summary>
         <p>Record verified past payments for the selected facility. Only the months you enter are marked paid; missing months are not automatically billed. Set the ongoing monthly plan separately above.</p>
@@ -153,6 +155,29 @@ export default function PlatformBilling() {
           <div className="billing-invoice-title"><div><strong>{platform ? `${i.facility} - ` : ''}{i.kind === 'onboarding' ? 'One-time onboarding fee' : i.period.slice(0, 7)}</strong><p>Due {i.due_on}</p></div><strong className="billing-amount">{money(i.amount)}</strong><span className={`billing-badge ${i.paid_at ? 'paid' : waiting ? 'pending' : 'unpaid'}`}>{i.paid_at ? 'Paid' : waiting ? 'Awaiting confirmation' : 'Unpaid'}</span></div>
           {waiting && <p className="billing-help">Payment submitted. Do not pay this invoice again while it is being reviewed.</p>}
           <small>Invoice reference: {i.id}</small>
+          {platform && !waiting && <>
+            {!i.paid_at && <details><summary>Record received payment</summary><form className="billing-form" onSubmit={e => {
+              e.preventDefault(); const form = new FormData(e.currentTarget)
+              void run('receive_invoice', { invoice_id: i.id, expected_amount: i.amount, received_on: form.get('received_on'), reference: form.get('reference'), note: form.get('note') })
+            }}>
+              <p>Record {money(i.amount)} received for this invoice.</p>
+              <label>Actual payment date<input name="received_on" type="date" min="2000-01-01" max={new Date().toISOString().slice(0, 10)} required /></label>
+              <label>Receipt / cheque number<input name="reference" minLength="4" maxLength="100" required /></label>
+              <label>Payment verification note<input name="note" maxLength="500" placeholder="Payment method and verification evidence" required /></label>
+              <label className="billing-confirm"><input type="checkbox" required />I verified that this payment was received.</label>
+              <button disabled={busy}>Save received payment</button>
+            </form></details>}
+            <details><summary>Correct invoice amount</summary><form className="billing-form" onSubmit={e => {
+              e.preventDefault(); const form = new FormData(e.currentTarget)
+              void run('correct_invoice', { invoice_id: i.id, expected_amount: i.amount, amount: form.get('amount'), note: form.get('note') })
+            }}>
+              <p>Current amount: {money(i.amount)}. {i.paid_at ? 'This also corrects the approved receipt amount, preserving its date and reference.' : 'This changes the amount owed.'} The reason and previous amount are retained in the audit history.</p>
+              <label>Correct amount (GHS)<input name="amount" type="number" min="0.01" step="0.01" required /></label>
+              <label>Correction reason<input name="note" maxLength="500" required /></label>
+              <label className="billing-confirm"><input type="checkbox" required />I verified the corrected amount against the billing and payment records.</label>
+              <button disabled={busy}>Save amount correction</button>
+            </form></details>
+          </>}
           {!platform && !i.paid_at && !waiting && <form className="billing-form" onSubmit={e => {
             e.preventDefault(); void run('submit', { invoice_id: i.id, reference: new FormData(e.currentTarget).get('reference') })
           }}>

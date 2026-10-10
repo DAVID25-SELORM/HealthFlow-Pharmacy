@@ -22,6 +22,7 @@ beforeAll(async()=>{
  await db.exec(readFileSync('supabase/migrations/20261004130000_clarify_historical_receipt_conflicts.sql','utf8'))
  await db.exec(readFileSync('supabase/migrations/20261004140000_onboarding_fees.sql','utf8'))
  await db.exec(readFileSync('supabase/migrations/20261004150000_previous_subscription_arrears.sql','utf8'))
+ await db.exec(readFileSync('supabase/migrations/20261010120000_billing_invoice_corrections.sql','utf8'))
 },30000)
 afterAll(async()=>db?.close())
 const history = payload => db.query('select platform_billing_record_history($1::jsonb)', [JSON.stringify(payload)])
@@ -132,4 +133,33 @@ it('adds arrears without recording income and rejects duplicate batches atomical
  await db.query("update users set role='admin' where id=$1",[admin]);await actor(admin)
  expect((await call('list')).invoices.filter(i=>i.period==='2021-02-01')).toHaveLength(1)
  await expect(arrears(payload)).rejects.toThrow('Platform administrator')
+})
+
+it('records an existing onboarding cheque once and audits paid amount corrections', async () => {
+ await actor(owner)
+ const facility='00000000-0000-0000-0000-000000000099'
+ await db.query('insert into organizations(id,name) values($1,$2)',[facility,'Billing correction fixture'])
+ const invoice=(await db.query("insert into platform_subscription_invoices(organization_id,period,due_on,amount,kind) values($1,'2020-01-01','2020-01-01',3000,'onboarding') returning id",[facility])).rows[0].id
+ const receive = payload => db.query('select platform_billing_receive_invoice($1::jsonb)',[JSON.stringify(payload)])
+ const correct = payload => db.query('select platform_billing_correct_invoice($1::jsonb)',[JSON.stringify(payload)])
+ const receipt={invoice_id:invoice,expected_amount:3000,received_on:'2020-01-06',reference:'CHEQUE-TEST-832647',note:'Verified cheque payment'}
+ await actor(admin)
+ await expect(receive(receipt)).rejects.toThrow('Platform administrator')
+ await expect(correct({invoice_id:invoice,expected_amount:3000,amount:200,note:'Correction'})).rejects.toThrow('Platform administrator')
+ await actor(owner)
+ await receive(receipt)
+ await expect(receive(receipt)).rejects.toThrow('already paid')
+ const paid=(await db.query('select * from platform_subscription_payments where invoice_id=$1',[invoice])).rows[0]
+ expect(paid.status).toBe('approved')
+ expect(new Date(paid.received_on).toISOString().slice(0,10)).toBe('2020-01-06')
+ expect((await db.query('select subscription_ends_at from organizations where id=$1',[facility])).rows[0].subscription_ends_at).toBeNull()
+ await correct({invoice_id:invoice,expected_amount:3000,amount:200,note:'Verified corrected receipt amount'})
+ const revised=(await db.query('select * from platform_subscription_payments where invoice_id=$1',[invoice])).rows[0]
+ expect(Number(revised.amount)).toBe(200)
+ expect(revised.received_on).toEqual(paid.received_on)
+ expect(revised.transaction_reference).toBe(paid.transaction_reference)
+ await expect(correct({invoice_id:invoice,expected_amount:3000,amount:100,note:'Stale correction'})).rejects.toThrow('Invoice changed')
+ const audit=(await db.query("select details from platform_billing_audit where organization_id=$1 and action='correct_invoice_amount'",[facility])).rows[0].details
+ expect(audit.old_amount).toBe(3000)
+ expect(audit.new_amount).toBe(200)
 })
