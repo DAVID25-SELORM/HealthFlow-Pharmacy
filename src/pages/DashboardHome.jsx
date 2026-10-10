@@ -1,6 +1,7 @@
 import Dashboard from './Dashboard'
 import SuperAdminDashboard from './SuperAdminDashboard'
 import { useAuth } from '../context/AuthContext'
+import DashboardBills from '../components/DashboardBills'
 
 const DashboardHome = () => {
   const { role } = useAuth()
@@ -9,7 +10,7 @@ const DashboardHome = () => {
     return <SuperAdminDashboard />
   }
 
-  return <Dashboard />
+  return <><DashboardBills /><Dashboard /></>
 }
 
 export default DashboardHome

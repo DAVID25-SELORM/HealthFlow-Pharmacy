@@ -163,3 +163,19 @@ it('records an existing onboarding cheque once and audits paid amount correction
  expect(audit.old_amount).toBe(3000)
  expect(audit.new_amount).toBe(200)
 })
+
+it('limits dashboard bills to own-facility admins and pharmacists and excludes paid invoices', async () => {
+ await db.exec(readFileSync('supabase/migrations/20261010160000_dashboard_outstanding_bills.sql','utf8'))
+ const pharmacist='00000000-0000-0000-0000-000000000088'
+ await db.query("insert into users values($1,$2,'pharmacist',true,'{}')",[pharmacist,org])
+ await actor(pharmacist)
+ const load=async()=>(await db.query('select get_my_outstanding_bills() as bills')).rows[0].bills
+ const expected=(await db.query('select id from platform_subscription_invoices where organization_id=$1 and paid_at is null',[org])).rows.map(x=>x.id).sort()
+ expect((await load()).map(x=>x.id).sort()).toEqual(expected)
+ await db.query("update users set role='cashier' where id=$1",[pharmacist])
+ await expect(load()).rejects.toThrow('administrator or pharmacist')
+ await db.query("update users set assigned_roles=array['pharmacist'] where id=$1",[pharmacist])
+ expect((await load()).map(x=>x.id).sort()).toEqual(expected)
+ await db.query('update users set is_active=false where id=$1',[pharmacist])
+ await expect(load()).rejects.toThrow('administrator or pharmacist')
+})
