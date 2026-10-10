@@ -2,6 +2,10 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import TenantAdmin from './TenantAdmin'
 
+vi.mock('../services/cccIntegrationService', () => ({
+  cccIntegration: vi.fn(async () => ({ policy: { provider:'existing', enabled:true, status:'existing_configuration' }, history:[], requests:[] })),
+}))
+
 const mocks = vi.hoisted(() => ({
   checkSubdomainAvailable: vi.fn(),
   createPharmacyTenant: vi.fn(),

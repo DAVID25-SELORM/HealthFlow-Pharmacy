@@ -6495,9 +6495,10 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
     ) || null,
     nhia_eligibility_start_date: toNullableDate(claimData.nhiaEligibilityStartDate ?? claimData.nhia_eligibility_start_date),
     nhia_eligibility_end_date: toNullableDate(claimData.nhiaEligibilityEndDate ?? claimData.nhia_eligibility_end_date),
-    // In the pharmacy workflow, NHIA attendance is verified on the pharmacy
-    // service date.  The separate field remains for NHIA/CXF audit output.
-    nhia_attendance_date: serviceDate,
+    // Preserve the provider's attendance date for NHIA/CXF audit output.
+    nhia_attendance_date: ['otac_api', 'nhia_reconciled'].includes(claimData.attendanceVerificationSource || claimData.nhia_attendance_verification_source)
+      ? toNullableDate(claimData.nhiaAttendanceDate || claimData.nhia_attendance_date) || serviceDate
+      : serviceDate,
     ...getNhiaAttendancePayload(claimData),
     nhia_member_status: normalizeText(claimData.nhiaMemberStatus ?? claimData.nhia_member_status) || null,
     nhia_member_lookup_payload: claimData.nhiaMemberLookupPayload ?? claimData.nhia_member_lookup_payload ?? null,
@@ -6786,9 +6787,10 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
     ) || null,
     nhia_eligibility_start_date: toNullableDate(claimData.nhiaEligibilityStartDate ?? claimData.nhia_eligibility_start_date),
     nhia_eligibility_end_date: toNullableDate(claimData.nhiaEligibilityEndDate ?? claimData.nhia_eligibility_end_date),
-    // Keep attendance and pharmacy service dates aligned for all newly saved
-    // claim changes without rewriting historical records.
-    nhia_attendance_date: serviceDate,
+    // Preserve verified attendance when editing other claim details.
+    nhia_attendance_date: ['otac_api', 'nhia_reconciled'].includes(claimData.attendanceVerificationSource || claimData.nhia_attendance_verification_source)
+      ? toNullableDate(claimData.nhiaAttendanceDate || claimData.nhia_attendance_date) || serviceDate
+      : serviceDate,
     ...getNhiaAttendancePayload(claimData),
     nhia_member_status: normalizeText(claimData.nhiaMemberStatus ?? claimData.nhia_member_status) || null,
     nhia_member_lookup_payload: claimData.nhiaMemberLookupPayload ?? claimData.nhia_member_lookup_payload ?? null,

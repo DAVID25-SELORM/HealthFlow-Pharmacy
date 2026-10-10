@@ -1,3 +1,4 @@
+import { centralCcc } from './cccGateway.js'
 import express from 'express'
 import fs from 'node:fs'
 import https from 'node:https'
@@ -1195,9 +1196,14 @@ app.post('/api/nhia-config/test', requireBranchUserSession, requireBranchAdminAc
   })
 })
 
+app.get('/api/nhia/ccc-policy', requireBranchUserSession, requireBranchClaimsAccess, async (request, response, next) => {
+  try { response.json({ data: await centralCcc({}, request.branchUser, 'branch_ccc_policy') }) }
+  catch (error) { next(error) }
+})
+
 app.post('/api/nhia/cc-code', requireBranchUserSession, requireBranchClaimsAccess, async (request, response, next) => {
   try {
-    response.json({ data: await generateNhiaCcCode(request.body || {}) })
+    response.json({ data: await generateNhiaCcCode(request.body || {}, request.branchUser) })
   } catch (error) {
     next(error)
   }
@@ -1211,7 +1217,7 @@ app.post('/api/nhia/member-lookup', requireBranchUserSession, requireBranchClaim
       response.status(400).json({ error: 'memberNumber is required.' })
       return
     }
-    response.json({ data: await lookupNhiaMember(memberNumber, { cardType }) })
+    response.json({ data: await lookupNhiaMember(memberNumber, { ...request.body, cardType }, request.branchUser) })
   } catch (error) {
     next(error)
   }
@@ -1304,7 +1310,7 @@ app.post('/api/nhis/pharmacy-claim', requireBranchUserSession, requireBranchClai
         serviceDate,
         totalAmount,
         organizationType: isHospital ? 'hospital' : 'pharmacy',
-      })
+      }, request.branchUser)
       ccCode = ccResult.ccCode || null
     }
 
