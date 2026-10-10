@@ -6,22 +6,23 @@ export default function CccIntegrationSettings({ organizationId }) {
   const [data, setData] = useState(null)
   const [form, setForm] = useState(null)
   const [token, setToken] = useState('')
+  const [saved, setSaved] = useState(false)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   useEffect(() => {
     let active = true
-    setData(null); setForm(null); setToken(''); setMessage('')
+    setData(null); setForm(null); setToken(''); setMessage(''); setSaved(false)
     cccIntegration('get_ccc_policy', { organizationId }).then(result => {
       if (active) { setData(result); setForm(result.policy) }
     }).catch(error => { if (active) setMessage(error.message) })
     return () => { active = false }
   }, [organizationId])
   async function save(event) {
-    event.preventDefault(); setBusy(true); setMessage('')
+    event.preventDefault(); setBusy(true); setMessage(''); setSaved(false)
     try {
       const result = await cccIntegration('save_ccc_policy', { organizationId, provider: form.provider, enabled: form.enabled,
         expectedHpn: form.expectedHpn, expectedFacilityName: form.expectedFacilityName, bearerToken: token })
-      setData(result); setForm(result.policy); setToken(''); setMessage('CCC settings saved.')
+      setData(result); setForm(result.policy); setToken(''); setSaved(true); setMessage('')
     } catch (error) { setMessage(error.message) } finally { setBusy(false) }
   }
   const statusLabels = { disabled: 'Generation paused', existing_configuration: 'Existing provider', needs_token: 'Token required', needs_renewal: 'Token renewal needed', configured: 'OTAC configured' }
@@ -32,7 +33,7 @@ export default function CccIntegrationSettings({ organizationId }) {
     </header>
     {message && <p className="ccc-message" role="status">{message}</p>}
     {!form && !message && <p role="status">Loading connection settings...</p>}
-    {form && <form onSubmit={save}>
+    {form && <form onSubmit={save} onChange={() => setSaved(false)}>
       <fieldset className="ccc-providers" disabled={busy}>
         <legend>1. Choose a provider</legend>
         {[['existing', 'Existing NHIA API', 'Continue using the existing API configuration.'], ['otac', 'NHIA OTAC', 'Connect with an authorized facility Bearer token.']].map(([value, title, description]) =>
@@ -56,7 +57,8 @@ export default function CccIntegrationSettings({ organizationId }) {
         <p className="ccc-help">Saving checks the token format, expiry and facility HPN. NHIA verifies authorization when you generate attendance.</p>
       </div>}
       <div className="ccc-enable"><label><input type="checkbox" checked={form.enabled} onChange={e => setForm({ ...form, enabled: e.target.checked })} /> <span><strong>Enable CCC generation</strong><small>Allow staff to generate codes using the selected provider.</small></span></label></div>
-      <footer className="ccc-footer"><p>Changes apply after saving. Unresolved attendance must be checked with NHIA before switching providers.</p><button type="submit" disabled={busy}>{busy ? 'Saving...' : 'Save CCC settings'}</button></footer>
+      <footer className="ccc-footer"><p>Changes apply after saving. Unresolved attendance must be checked with NHIA before switching providers.</p><button type="submit" disabled={busy}>{busy ? 'Saving...' : saved ? 'Saved' : 'Save CCC settings'}</button></footer>
+      <div aria-live="polite" aria-atomic="true">{saved && <p className="ccc-save-success" role="status">CCC settings saved successfully. Your facility configuration has been updated.</p>}</div>
     </form>}
     {!!data?.requests?.length && <details><summary>Recent attendance requests</summary>
       {data.requests.map(request => <article className="ccc-request" key={request.id}>

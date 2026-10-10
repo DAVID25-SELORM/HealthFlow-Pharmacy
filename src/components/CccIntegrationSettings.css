@@ -40,3 +40,5 @@
 .ccc-settings .ccc-request-details dd { margin:0; font-size:13px; overflow-wrap:anywhere; }
 .ccc-settings .ccc-request-reference { grid-column:1/-1; }
 @media(max-width:480px) { .ccc-settings .ccc-request-details { grid-template-columns:1fr; } }
+
+.ccc-settings .ccc-save-success { margin:12px 0 0; padding:14px 16px; border:1px solid #8bd3ad; border-radius:9px; background:#eaf8ef; color:#175c36; font-weight:600; }
