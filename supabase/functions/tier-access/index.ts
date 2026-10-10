@@ -6476,12 +6476,23 @@ Deno.serve(async (request) => {
     )
     const organizationId = requesterResult.organizationId || ''
 
-    if(action==='get_ccc_policy' || action==='save_ccc_policy' || action==='reconcile_ccc_attendance') {
+    if(action==='reveal_ccc_token' || action==='get_ccc_policy' || action==='save_ccc_policy' || action==='reconcile_ccc_attendance') {
       const {data:activeActor,error:activeError}=await adminClient.from('users').select('id').eq('id',requesterProfile.id).eq('is_active',true).maybeSingle()
       if(activeError || !activeActor) return json({error:'Active staff account required.'},403)
       const platformAdmin=requesterProfile.role==='super_admin'
       const org=platformAdmin ? normalizeText(payload.organizationId) : organizationId
       if(!org) throw new Error('Select a facility.')
+      if(action==='reveal_ccc_token') {
+        if(!platformAdmin) return json({error:'Platform administrator required.'},403)
+        const saved=await getCccPolicy(adminClient,org)
+        if(!saved.token_encrypted) throw new Error('No OTAC token is saved for this facility.')
+        const bearerToken=await decodeNhiaSecret(saved.token_encrypted)
+        const {error:auditError}=await adminClient.from('ccc_policy_audit').insert({organization_id:org,actor_id:requesterProfile.id,action:'reveal_token',details:{}})
+        if(auditError) throw new Error('Unable to record token access.')
+        const response=json({bearerToken})
+        response.headers.set('Cache-Control','no-store')
+        return response
+      }
       if(action==='reconcile_ccc_attendance') {
         if(!platformAdmin) return json({error:'Platform administrator required.'},403)
         if(payload.confirmedWithNhia!==true) throw new Error('Verify the outcome with NHIA before reconciliation.')

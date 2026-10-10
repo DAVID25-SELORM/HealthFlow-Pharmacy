@@ -49,8 +49,10 @@ export default function CccIntegrationSettings({ organizationId }) {
           <label>Exact NHIA facility name<input required value={form.expectedFacilityName} onChange={e => setForm({ ...form, expectedFacilityName: e.target.value })} placeholder="As registered with NHIA" /></label>
         </div>
         <label className="ccc-token">New Bearer token<input type="password" autoComplete="new-password" spellCheck={false} required={!form.hasToken} value={token} onChange={e => setToken(e.target.value)} placeholder={form.hasToken ? 'Leave blank to keep the saved token' : 'Paste the facility token here'} /></label>
-        <small>Paste the token with or without Bearer. It is encrypted when saved and is never displayed again. Do not paste the API key or API secret here.</small>
+        <small>Paste the token with or without Bearer. It stays saved and encrypted until you replace it. Leave this field blank to keep it. Do not paste the API key or API secret here.</small>
         <div className="ccc-token-info"><strong>{form.hasToken ? 'A token is saved' : 'No token saved yet'}</strong><span>Expires: {form.tokenExpiresAt ? new Date(form.tokenExpiresAt).toLocaleString() : 'Shown after saving'}</span></div>
+        {form.hasToken && <SavedToken key={`${organizationId}-${form.version}`} organizationId={organizationId} />}
+        <p className="ccc-help">Saved provider and facility details remain until you change and save them. Token expiry does not erase your settings.</p>
         <p className="ccc-help">Saving checks the token format, expiry and facility HPN. NHIA verifies authorization when you generate attendance.</p>
       </div>}
       <div className="ccc-enable"><label><input type="checkbox" checked={form.enabled} onChange={e => setForm({ ...form, enabled: e.target.checked })} /> <span><strong>Enable CCC generation</strong><small>Allow staff to generate codes using the selected provider.</small></span></label></div>
@@ -102,4 +104,22 @@ function Reconcile({ organizationId, requestId, attendanceDate, onSaved }) {
     <button disabled={busy}>Record verified outcome</button>
     {message && <p role="status">{message}</p>}
   </form></details>
+}
+
+function SavedToken({ organizationId }) {
+  const [revealed, setRevealed] = useState(false)
+  const [value, setValue] = useState('')
+  const [error, setError] = useState('')
+  useEffect(() => {
+    if (!revealed) return undefined
+    let active = true
+    cccIntegration('reveal_ccc_token', { organizationId }).then(result => {
+      if (active) setValue(result.bearerToken)
+    }).catch(err => { if (active) setError(err.message) })
+    return () => { active = false }
+  }, [revealed, organizationId])
+  return <div className="ccc-saved-token">
+    <button type="button" aria-expanded={revealed} onClick={() => { setValue(''); setError(''); setRevealed(!revealed) }}>{revealed ? 'Hide saved Bearer token' : 'View saved Bearer token'}</button>
+    {revealed && <>{error ? <p role="alert">{error}</p> : value ? <label>Saved Bearer token<textarea readOnly value={value} rows={4} spellCheck={false} /></label> : <p role="status">Loading saved token...</p>}</>}
+  </div>
 }
