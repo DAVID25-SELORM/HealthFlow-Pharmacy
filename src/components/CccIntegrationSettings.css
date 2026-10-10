@@ -1,0 +1,33 @@
+.ccc-settings { background:#fff; border:1px solid #d9e7e5; border-radius:18px; padding:clamp(18px,3vw,32px); max-width:960px; color:#243e43; box-shadow:0 8px 24px #173f3b08; }
+.ccc-settings .ccc-header { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; margin-bottom:26px; }
+.ccc-settings .ccc-eyebrow { font-size:11px; letter-spacing:.14em; font-weight:700; color:#138775; }
+.ccc-settings h3 { font-size:24px; margin:8px 0; letter-spacing:-.025em; }
+.ccc-settings p { font-size:14px; line-height:1.6; color:#607579; margin:8px 0 16px; }
+.ccc-settings .ccc-status { background:#eaf6f2; color:#176b59; border:1px solid #cce7de; padding:8px 12px; border-radius:20px; font-size:12px; font-weight:650; white-space:nowrap; }
+.ccc-settings .ccc-providers { border:0; padding:0; margin:0 0 24px; display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.ccc-settings legend { font-size:14px; font-weight:700; padding:0 0 12px; }
+.ccc-settings .ccc-provider { display:flex; align-items:flex-start; gap:12px; padding:18px; border:1px solid #dbe5e5; border-radius:12px; cursor:pointer; background:#fafcfc; }
+.ccc-settings .ccc-provider.selected { border-color:#159b86; background:#eefaf6; box-shadow:0 0 0 1px #159b86; }
+.ccc-settings small { display:block; font-size:12px; font-weight:400; line-height:1.6; color:#607579; margin-top:5px; }
+.ccc-settings input[type=radio],.ccc-settings input[type=checkbox] { width:17px; height:17px; flex-shrink:0; accent-color:#138775; margin:3px 0; }
+.ccc-settings .ccc-credentials { border:1px solid #e1e9e9; background:#f8fbfb; border-radius:14px; padding:22px; margin-bottom:20px; }
+.ccc-settings h4 { margin:0 0 8px; font-size:16px; }
+.ccc-settings .ccc-field-grid { display:grid; grid-template-columns:1fr 2fr; gap:16px; }
+.ccc-settings label { font-size:13px; font-weight:600; }
+.ccc-settings input:not([type=radio]):not([type=checkbox]),.ccc-settings select,.ccc-settings textarea { box-sizing:border-box; display:block; width:100%; border:1px solid #cbdcdb; border-radius:8px; background:white; padding:12px; font:inherit; color:#243e43; margin-top:8px; }
+.ccc-settings input:focus-visible,.ccc-settings button:focus-visible,.ccc-settings summary:focus-visible { outline:3px solid #84d8c6; outline-offset:3px; }
+.ccc-settings .ccc-token { display:block; margin-top:20px; }
+.ccc-settings .ccc-token-info { display:flex; flex-wrap:wrap; gap:12px; justify-content:space-between; font-size:12px; color:#426b65; margin-top:16px; }
+.ccc-settings .ccc-help { font-size:12px; margin-bottom:0; }
+.ccc-settings .ccc-enable { padding:18px 0; border-top:1px solid #e6eeee; }
+.ccc-settings .ccc-enable label { display:flex; gap:12px; align-items:flex-start; }
+.ccc-settings .ccc-footer { display:flex; align-items:center; gap:24px; justify-content:space-between; border-top:1px solid #e6eeee; padding-top:18px; }
+.ccc-settings .ccc-footer p { max-width:530px; font-size:12px; margin:0; }
+.ccc-settings button { background:#108a76; color:white; border:0; border-radius:9px; padding:12px 20px; font-weight:650; cursor:pointer; white-space:nowrap; }
+.ccc-settings button:hover { background:#096d5e; }
+.ccc-settings button:disabled { opacity:.6; cursor:wait; }
+.ccc-settings .ccc-message { background:#eff6fa; border:1px solid #d3e3ee; padding:12px 16px; border-radius:9px; overflow-wrap:anywhere; }
+.ccc-settings details { margin-top:18px; border-top:1px solid #e4eded; padding-top:16px; font-size:13px; overflow-wrap:anywhere; }
+.ccc-settings summary { cursor:pointer; font-weight:650; color:#365953; padding:6px 0; }
+.ccc-settings details form { display:grid; gap:14px; margin-top:12px; }
+@media(max-width:640px) { .ccc-settings .ccc-header,.ccc-settings .ccc-footer { flex-direction:column; } .ccc-settings .ccc-providers,.ccc-settings .ccc-field-grid { grid-template-columns:1fr; } .ccc-settings .ccc-credentials { padding:16px; } .ccc-settings .ccc-footer button { width:100%; } }

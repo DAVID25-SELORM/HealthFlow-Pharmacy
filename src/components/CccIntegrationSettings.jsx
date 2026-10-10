@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import './CccIntegrationSettings.css'
 import { cccIntegration } from '../services/cccIntegrationService'
 
 export default function CccIntegrationSettings({ organizationId }) {
@@ -9,7 +10,7 @@ export default function CccIntegrationSettings({ organizationId }) {
   const [message, setMessage] = useState('')
   useEffect(() => {
     let active = true
-    setData(null); setForm(null); setToken('')
+    setData(null); setForm(null); setToken(''); setMessage('')
     cccIntegration('get_ccc_policy', { organizationId }).then(result => {
       if (active) { setData(result); setForm(result.policy) }
     }).catch(error => { if (active) setMessage(error.message) })
@@ -23,22 +24,37 @@ export default function CccIntegrationSettings({ organizationId }) {
       setData(result); setForm(result.policy); setToken(''); setMessage('CCC settings saved.')
     } catch (error) { setMessage(error.message) } finally { setBusy(false) }
   }
-  return <section aria-label="CCC integration">
-    <h5>CCC integration</h5>
-    {message && <p role="status">{message}</p>}
+  const statusLabels = { disabled: 'Generation paused', existing_configuration: 'Existing provider', needs_token: 'Token required', needs_renewal: 'Token renewal needed', configured: 'OTAC configured' }
+  return <section className="ccc-settings" aria-label="CCC integration">
+    <header className="ccc-header">
+      <div><span className="ccc-eyebrow">NHIA CONNECTION</span><h3>CCC integration</h3><p>Choose how this facility generates its CCCs.</p></div>
+      {data && <span className="ccc-status">{statusLabels[data.policy.status] || 'Review configuration'}</span>}
+    </header>
+    {message && <p className="ccc-message" role="status">{message}</p>}
+    {!form && !message && <p role="status">Loading connection settings...</p>}
     {form && <form onSubmit={save}>
-      <label>Provider <select value={form.provider} onChange={e => setForm({ ...form, provider: e.target.value })}>
-        <option value="existing">Existing NHIA API</option><option value="otac">NHIA OTAC</option>
-      </select></label>
-      <label><input type="checkbox" checked={form.enabled} onChange={e => setForm({ ...form, enabled: e.target.checked })} /> Enable CCC generation</label>
-      {form.provider === 'otac' && <>
-        <label>Facility HPN <input value={form.expectedHpn} onChange={e => setForm({ ...form, expectedHpn: e.target.value })} /></label>
-        <label>Exact NHIA facility name <input value={form.expectedFacilityName} onChange={e => setForm({ ...form, expectedFacilityName: e.target.value })} /></label>
-        <label>New Bearer token <input type="password" autoComplete="new-password" value={token} onChange={e => setToken(e.target.value)} placeholder={form.hasToken ? 'Leave blank to retain saved token' : 'Facility OTAC token'} /></label>
-        <p>Token expiry: {form.tokenExpiresAt || 'Not configured'}. Configuration checks token format, expiry and HPN; NHIA verifies authorization when attendance is requested.</p>
-      </>}
-      <p>Status: {data.policy.status}. An unresolved request must be checked with NHIA before another attempt. No automatic provider fallback.</p>
-      <button type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save CCC settings'}</button>
+      <fieldset className="ccc-providers" disabled={busy}>
+        <legend>1. Choose a provider</legend>
+        {[['existing', 'Existing NHIA API', 'Continue using the existing API configuration.'], ['otac', 'NHIA OTAC', 'Connect with an authorized facility Bearer token.']].map(([value, title, description]) =>
+          <label key={value} className={`ccc-provider ${form.provider === value ? 'selected' : ''}`}>
+            <input type="radio" name={`ccc-provider-${organizationId}`} value={value} checked={form.provider === value} onChange={() => setForm({ ...form, provider: value })} />
+            <span><strong>{title}</strong><small>{description}</small></span>
+          </label>)}
+      </fieldset>
+      {form.provider === 'otac' && <div className="ccc-credentials">
+        <h4>2. Connect this facility</h4>
+        <p>Enter the details and token for the NHIA OTAC account of this facility.</p>
+        <div className="ccc-field-grid">
+          <label>Facility HPN<input required value={form.expectedHpn} onChange={e => setForm({ ...form, expectedHpn: e.target.value })} placeholder="e.g. 295" /></label>
+          <label>Exact NHIA facility name<input required value={form.expectedFacilityName} onChange={e => setForm({ ...form, expectedFacilityName: e.target.value })} placeholder="As registered with NHIA" /></label>
+        </div>
+        <label className="ccc-token">New Bearer token<input type="password" autoComplete="new-password" spellCheck={false} required={!form.hasToken} value={token} onChange={e => setToken(e.target.value)} placeholder={form.hasToken ? 'Leave blank to keep the saved token' : 'Paste the facility token here'} /></label>
+        <small>Paste the token with or without Bearer. It is encrypted when saved and is never displayed again. Do not paste the API key or API secret here.</small>
+        <div className="ccc-token-info"><strong>{form.hasToken ? 'A token is saved' : 'No token saved yet'}</strong><span>Expires: {form.tokenExpiresAt ? new Date(form.tokenExpiresAt).toLocaleString() : 'Shown after saving'}</span></div>
+        <p className="ccc-help">Saving checks the token format, expiry and facility HPN. NHIA verifies authorization when you generate attendance.</p>
+      </div>}
+      <div className="ccc-enable"><label><input type="checkbox" checked={form.enabled} onChange={e => setForm({ ...form, enabled: e.target.checked })} /> <span><strong>Enable CCC generation</strong><small>Allow staff to generate codes using the selected provider.</small></span></label></div>
+      <footer className="ccc-footer"><p>Changes apply after saving. Unresolved attendance must be checked with NHIA before switching providers.</p><button type="submit" disabled={busy}>{busy ? 'Saving...' : 'Save CCC settings'}</button></footer>
     </form>}
     {!!data?.requests?.length && <details><summary>Recent attendance requests</summary>
       {data.requests.map(request => <div key={request.id}><p>{request.created_at} — {request.provider}: {request.status} — {request.id}</p>
