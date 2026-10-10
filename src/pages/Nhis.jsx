@@ -1,3 +1,4 @@
+import { normalizeAttendanceNewCcc, normalizeAttendanceVerification } from '../utils/nhiaAttendanceValues'
 import NhisCccDuplicateReview from '../components/NhisCccDuplicateReview'
 import { useCxfRecordingIssue } from '../hooks/useCxfRecordingIssue'
 import { nhisDuplicateMemberKey, isVoidedNhisClaim } from '../utils/nhisCccDuplicate'
@@ -3502,9 +3503,9 @@ const Nhis = () => {
       cccNo: claim.ccc_no || '',
       authId: claim.nhia_auth_id || '',
       authType: claim.nhia_auth_type || 'NHIS',
-      newCcc: claim.nhia_new_ccc_status || '',
+      newCcc: normalizeAttendanceNewCcc(claim.nhia_new_ccc_status),
       otacCode: claim.nhia_otac || '',
-      attendanceVerificationStatus: claim.nhia_attendance_verification_status || '',
+      attendanceVerificationStatus: normalizeAttendanceVerification(claim.nhia_attendance_verification_status),
       attendanceVerificationSource: claim.nhia_attendance_verification_source || 'nehfams_manual',
       nhiaTransactionId: claim.nhia_transaction_id || '',
       nhiaEligibilityStartDate: claim.nhia_eligibility_start_date || '',
@@ -4419,9 +4420,9 @@ const Nhis = () => {
       ...(memberDetails.ccCode ? { cccNo: memberDetails.ccCode, ccCode: memberDetails.ccCode } : {}),
       authId: memberDetails.authId || prev.authId,
       authType: memberDetails.authType || prev.authType || 'NHIS',
-      newCcc: memberDetails.newCcc ?? prev.newCcc,
+      newCcc: normalizeAttendanceNewCcc(memberDetails.newCcc),
       otacCode: memberDetails.otacCode || prev.otacCode,
-      attendanceVerificationStatus: memberDetails.attendanceVerificationStatus || prev.attendanceVerificationStatus,
+      attendanceVerificationStatus: normalizeAttendanceVerification(memberDetails.attendanceVerificationStatus) || prev.attendanceVerificationStatus,
       attendanceVerificationSource: memberDetails.attendanceVerificationSource || prev.attendanceVerificationSource || 'nehfams_manual',
       nhiaTransactionId: memberDetails.transactionId || prev.nhiaTransactionId,
       nhiaEligibilityStartDate: memberDetails.eligibilityStartDate || prev.nhiaEligibilityStartDate,

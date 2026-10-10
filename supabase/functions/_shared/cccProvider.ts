@@ -1,3 +1,4 @@
+import { normalizeAttendanceNewCcc } from '../../../src/utils/nhiaAttendanceValues.js'
 // No patient data or credentials may be logged by this module.
 export const OTAC_URL = 'https://otac.nhia.gov.gh/api/attendance/generate'
 const text = (v: unknown) => typeof v === 'string' ? v.trim() : ''
@@ -24,7 +25,7 @@ export function mapOtacResponse(body: any, expectedName: string, attendanceDate:
  const d = body.attendanceData
  if (facilityKey(d.hpName) !== facilityKey(expectedName)) throw new CccFailure('otac_facility_mismatch', 'NHIA returned an unexpected facility.')
  if (!/^\d{5}$/.test(String(d.ccc || '')) || !text(d.authID) || text(d.attendanceDate).slice(0,10) !== attendanceDate) throw new CccFailure('otac_invalid_attendance', 'NHIA returned incomplete attendance or an unexpected date.')
- const memberDetails = { ccCode:String(d.ccc), hin:text(d.hin), memberName:text(d.memberName), gender:text(d.gender), dateOfBirth:text(d.dob).slice(0,10), eligibilityStartDate:text(d.startDate).slice(0,10), eligibilityEndDate:text(d.endDate).slice(0,10), attendanceDate, authId:text(d.authID), authType:text(d.attendanceType), newCcc:d.newCCC, hpName:text(d.hpName), attendanceVerificationSource:'otac_api', attendanceVerificationStatus:'verified' }
+ const memberDetails = { ccCode:String(d.ccc), hin:text(d.hin), memberName:text(d.memberName), gender:text(d.gender), dateOfBirth:text(d.dob).slice(0,10), eligibilityStartDate:text(d.startDate).slice(0,10), eligibilityEndDate:text(d.endDate).slice(0,10), attendanceDate, authId:text(d.authID), authType:text(d.attendanceType), newCcc:normalizeAttendanceNewCcc(d.newCCC), hpName:text(d.hpName), attendanceVerificationSource:'otac_api', attendanceVerificationStatus:'confirmed' }
  return { ok:true, ccCode:String(d.ccc), source:'otac', memberDetails }
 }
 
