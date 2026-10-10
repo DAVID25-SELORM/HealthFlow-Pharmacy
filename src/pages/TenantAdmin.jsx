@@ -113,6 +113,7 @@ const TenantAdmin = () => {
   const [checkingSubdomain, setCheckingSubdomain] = useState(false)
 
   // Expanded org detail
+  const [cccOrgId, setCccOrgId] = useState(null)
   const [expandedOrgId, setExpandedOrgId] = useSessionStorageState(
     TENANT_ADMIN_EXPANDED_ORG_KEY,
     null,
@@ -894,6 +895,14 @@ const TenantAdmin = () => {
                       <td>
                         <div className="table-actions">
                           <button
+                            type="button"
+                            className="btn-secondary"
+                            aria-label={`CCC settings for ${org.name}`}
+                            aria-expanded={cccOrgId === org.id}
+                            aria-controls={`ccc-settings-${org.id}`}
+                            onClick={() => setCccOrgId(current => current === org.id ? null : org.id)}
+                          >CCC settings</button>
+                          <button
                             className="btn-icon"
                             title="Edit facility"
                             onClick={() => openEdit(org)}
@@ -920,12 +929,21 @@ const TenantAdmin = () => {
                       </td>
                     </tr>
 
+                    {cccOrgId === org.id && (
+                      <tr className="users-expand-row">
+                        <td colSpan={11}>
+                          <div className="users-expand" id={`ccc-settings-${org.id}`}>
+                            <h4>CCC settings: {org.name}</h4>
+                            <CccIntegrationSettings organizationId={org.id} />
+                          </div>
+                        </td>
+                      </tr>
+                    )}
                     {/* Expanded users row */}
                     {expandedOrgId === org.id && (
                       <tr className="users-expand-row">
                         <td colSpan={11}>
                           <div className="users-expand">
-                            <CccIntegrationSettings organizationId={org.id} />
                             <h5>Users in {org.name}</h5>
                             {orgUsers[org.id] ? (
                               orgUsers[org.id].length === 0 ? (
