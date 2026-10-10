@@ -18,6 +18,8 @@ import './Layout.css'
 const pageTitles = {
   '/search': 'General search',
   '/dashboard': 'Dashboard',
+  '/billing': 'Payments',
+  '/export-notifications': 'Export notifications',
   '/inventory': 'Inventory',
   '/sales': 'Sales (POS)',
   '/patients': 'Patients',
@@ -37,6 +39,8 @@ const Layout = () => {
 
   useEffect(() => {
     setIsSidebarOpen(false)
+    window.scrollTo(0, 0)
+    document.querySelector('.page-content')?.scrollTo(0, 0)
   }, [location.pathname])
 
   useEffect(() => {
@@ -91,8 +95,8 @@ const Layout = () => {
           pageTitle={pageTitle}
         />
         <main className="page-content">
-          <SubscriptionNotice />
-          <ClaimExportAlerts />
+          {location.pathname === '/billing' && <SubscriptionNotice />}
+          <ClaimExportAlerts visible={location.pathname === '/export-notifications'} />
           <Outlet />
         </main>
       </div>

@@ -50,6 +50,7 @@ import './Sidebar.css'
 const Sidebar = ({ isOpen, onClose }) => {
   const {
     role,
+    assignedRoles,
     canManageInventory,
     canViewReports,
     canManageClaims,
@@ -73,6 +74,8 @@ const Sidebar = ({ isOpen, onClose }) => {
       label: role === 'super_admin' ? 'Platform Dashboard' : 'Dashboard',
       roles: DASHBOARD_ROLES,
     },
+    { path: '/billing', icon: Wallet, label: 'Payments', roles: ['admin', 'super_admin'], allow: assignedRoles?.includes('admin') },
+    { path: '/export-notifications', icon: ClipboardList, label: 'Export notifications', roles: ['admin', 'super_admin'], allow: assignedRoles?.includes('admin') },
     { path: '/inventory', icon: Package, label: 'Inventory', roles: INVENTORY_ROLES, allow: canManageInventory },
     { path: '/sales', icon: ShoppingCart, label: 'Sales (POS)', roles: SALES_ROLES, allow: canProcessSales },
     { path: '/patients', icon: Users, label: 'Patients', roles: PATIENT_ROLES, allow: canManagePatients, featureAllowed: !isChemicalShop },

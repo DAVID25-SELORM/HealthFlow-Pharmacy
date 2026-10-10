@@ -411,8 +411,7 @@ const TopBar = ({ isSidebarOpen, onMenuToggle, pageTitle }) => {
               </div>
 
               {exportAlertCount > 0 && <button type="button" className="alerts-item" onClick={() => {
-                const section = document.getElementById('claim-export-notifications')
-                if (section) { section.open = true; section.scrollIntoView({ behavior: 'smooth', block: 'center' }) }
+                navigate('/export-notifications')
                 setAlertsOpen(false)
               }}><span className="alerts-item-title">Claims exports: {exportAlertCount} unread</span><span className="alerts-item-description">View facility export notifications</span></button>}
               {alerts.filter((alert) => alert.count > 0).length === 0 && exportAlertCount === 0 ? (

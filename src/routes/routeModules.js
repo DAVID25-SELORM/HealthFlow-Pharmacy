@@ -1,4 +1,5 @@
 export const routeModuleLoaders = {
+  '/billing': () => import('../pages/Billing'),
   '/dashboard': () => import('../pages/DashboardHome'),
   '/inventory': () => import('../pages/Inventory'),
   '/sales': () => import('../pages/Sales'),

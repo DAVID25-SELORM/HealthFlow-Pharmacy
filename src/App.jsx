@@ -24,6 +24,7 @@ import { loadRouteModule } from './routes/routeModules'
 
 const Layout = lazy(() => import('./components/Layout/Layout'))
 const DashboardHome = lazy(() => loadRouteModule('/dashboard'))
+const Billing = lazy(() => loadRouteModule('/billing'))
 const GeneralSearch = lazy(() => import('./pages/GeneralSearch'))
 const Inventory = lazy(() => loadRouteModule('/inventory'))
 const Sales = lazy(() => loadRouteModule('/sales'))
@@ -64,6 +65,7 @@ const RouteFallback = () => (
 
 function App() {
   const {
+    assignedRoles,
     canManageInventory,
     canViewReports,
     canManageClaims,
@@ -96,6 +98,8 @@ function App() {
           >
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={<DashboardHome />} />
+            <Route path="billing" element={<RoleRoute allowedRoles={['admin', 'super_admin']} allow={assignedRoles?.includes('admin')}><Billing /></RoleRoute>} />
+            <Route path="export-notifications" element={<RoleRoute allowedRoles={['admin', 'super_admin']} allow={assignedRoles?.includes('admin')}><div /></RoleRoute>} />
             <Route path="search" element={<GeneralSearch />} />
             <Route
               path="inventory"

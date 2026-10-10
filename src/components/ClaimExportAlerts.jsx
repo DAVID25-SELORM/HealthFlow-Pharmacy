@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
-export default function ClaimExportAlerts() {
+import './PlatformBilling.css'
+export default function ClaimExportAlerts({ visible = true }) {
  const {role,primaryRole,assignedRoles,profile,session,loading}=useAuth()
  const allowed=primaryRole==='super_admin'||role==='super_admin'||role==='admin'||assignedRoles?.includes('admin')
  const ready=allowed&&!loading&&!!session?.access_token
@@ -25,7 +26,7 @@ export default function ClaimExportAlerts() {
   document.addEventListener('visibilitychange',refresh)
   return ()=>{active=false;clearInterval(timer);window.removeEventListener('focus',refresh);document.removeEventListener('visibilitychange',refresh)}
  },[ready,session?.access_token,profile?.id,profile?.organization_id])
- if(!ready)return null
+ if(!ready || !visible)return null
  return <details id="claim-export-notifications" className="platform-billing" open={alerts.length>0 || failed}><summary>Claims export notifications ({alerts.length}{alerts.length===100?'+':''} unread)</summary>
   {failed && <p role="alert">Export notifications could not be refreshed.</p>}
   {!failed&&!alerts.length&&<p>No unread claims export notifications.</p>}

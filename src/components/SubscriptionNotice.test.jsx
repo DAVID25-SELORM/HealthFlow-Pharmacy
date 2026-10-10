@@ -11,7 +11,7 @@ it('does not request a facility subscription for an unassigned platform account'
  useAuth.mockReturnValue({ role: 'super_admin', profile: { organization_id: null } })
  render(<SubscriptionNotice />)
  expect(supabase.rpc).not.toHaveBeenCalled()
- expect(screen.getByText('Platform billing available')).toBeInTheDocument()
+ expect(screen.queryByText('Platform billing available')).not.toBeInTheDocument()
 })
 it('loads a facility notice and removes it when facility membership changes', async () => {
  useAuth.mockReturnValue({ role: 'admin', profile: { organization_id: 'facility' } })

@@ -30,14 +30,14 @@ function BillingMonthPicker() {
     <small>Selected: <strong>{monthLabel(value)}</strong>. Billing starts in this month.</small>
   </fieldset>
 }
-export default function PlatformBilling() {
+export default function PlatformBilling({ standalone = false }) {
   const { role, assignedRoles } = useAuth()
   const platform = role === 'super_admin'
   const allowed = platform || role === 'admin' || assignedRoles?.includes('admin')
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(standalone)
   const [message, setMessage] = useState('')
   const [historyResult, setHistoryResult] = useState(null)
   const [facility, setFacility] = useState('')
@@ -80,7 +80,7 @@ export default function PlatformBilling() {
       <h2>{platform ? 'Platform billing' : 'Your billing'}</h2>
       <p>{data ? `${money(outstanding)} outstanding${platform ? ' across all facilities' : ''}` : 'Loading your billing details...'}</p></div>
       {pending.length > 0 && <span className="billing-badge pending">{pending.length} awaiting confirmation</span>}
-      <button type="button" onClick={() => setOpen(!open)} aria-expanded={open}>{open ? 'Hide billing' : 'View billing / Pay'}</button>
+      {!standalone && <button type="button" onClick={() => setOpen(!open)} aria-expanded={open}>{open ? 'Hide billing' : 'View billing / Pay'}</button>}
     </div>
     {error && <p role="alert">{error} <button disabled={busy} onClick={() => run()}>Retry</button></p>}
     {message && <p role="status">{message}</p>}

@@ -3,7 +3,6 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { hasSubscriptionVisibility, subscriptionNotice } from '../utils/subscriptionLifecycle'
 import './SubscriptionNotice.css'
-import PlatformBilling from './PlatformBilling'
 
 export default function SubscriptionNotice() {
   const { role, assignedRoles, profile } = useAuth()
@@ -19,8 +18,8 @@ export default function SubscriptionNotice() {
     return () => { active = false }
   }, [role, assignedRoles, organizationId])
   const notice = subscriptionNotice(subscription)
-  if (!notice) return <PlatformBilling />
-  return <><PlatformBilling /><aside className={`subscription-notice ${notice.tone}`} role="status">
+  if (!notice) return null
+  return <aside className={`subscription-notice ${notice.tone}`} role="status">
     <strong>{notice.title}</strong><span>{notice.message}</span>
-  </aside></>
+  </aside>
 }
