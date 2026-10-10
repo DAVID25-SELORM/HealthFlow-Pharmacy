@@ -6526,8 +6526,10 @@ Deno.serve(async (request) => {
       if(!platformAdmin) return json({policy})
       const history=await adminClient.from('ccc_policy_audit').select('action,details,created_at').eq('organization_id',org).order('created_at',{ascending:false}).limit(20)
       const requests=await adminClient.from('ccc_attendance_requests').select('id,member_number,card_type,attendance_date,provider,status,error_code,created_at,updated_at').eq('organization_id',org).order('created_at',{ascending:false}).limit(20)
-      if(history.error || requests.error) throw new Error('Unable to read CCC history.')
-      return json({policy,history:history.data,requests:requests.data})
+      const unresolved=await adminClient.from('ccc_attendance_requests').select('id,member_number,card_type,attendance_date,provider,status,error_code,created_at,updated_at').eq('organization_id',org).in('status',['pending','unknown']).order('created_at',{ascending:true})
+      if(history.error || requests.error || unresolved.error) throw new Error('Unable to read CCC history.')
+      const unresolvedIds=new Set((unresolved.data || []).map(r=>r.id))
+      return json({policy,history:history.data,requests:[...(unresolved.data || []),...(requests.data || []).filter(r=>!unresolvedIds.has(r.id))]})
     }
 
     if (!organizationId && !PLATFORM_ACTIONS_WITHOUT_ORGANIZATION.has(action)) {
