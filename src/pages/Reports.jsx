@@ -36,6 +36,7 @@ import { logPerformance } from '../utils/performance'
 import { getErrorMessage } from '../utils/requestErrors'
 import UpgradeGate from '../components/UpgradeGate'
 import './Reports.css'
+import '../styles/dashboardDesign.css'
 
 const localDateInput = (date) => [
   date.getFullYear(),
@@ -1462,7 +1463,7 @@ const Reports = () => {
 
   return (
     <UpgradeGate locked={!tierLimits.hasReports} feature="Reports" requiredTier="pro">
-      <div className="reports-page">
+      <div className="reports-page dashboard-surface">
         <div className="page-header reports-header">
           <div className="reports-facility-brand">
             {facilityLogo && <img src={facilityLogo} alt={`${facilityName} logo`} />}

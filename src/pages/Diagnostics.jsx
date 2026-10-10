@@ -8,6 +8,7 @@ import {
 } from '../services/productionMetricsService'
 import { formatAppDateTime } from '../utils/date'
 import './Diagnostics.css'
+import '../styles/dashboardDesign.css'
 
 const formatMs = (value) => `${Math.round(Number(value) || 0)} ms`
 const formatPercent = (value) => `${Math.round(Number(value) || 0)}%`
@@ -44,7 +45,7 @@ export default function Diagnostics() {
 
   if (role !== 'super_admin') {
     return (
-      <div className="diagnostics-page">
+      <div className="diagnostics-page dashboard-surface">
         <EmptyState
           title="Super Admin access required"
           description="Only Super Admin can view production diagnostics."
@@ -73,7 +74,7 @@ export default function Diagnostics() {
   ]
 
   return (
-    <div className="diagnostics-page">
+    <div className="diagnostics-page dashboard-surface">
       <PageHeader
         eyebrow="Super Admin"
         title="Production Diagnostics"

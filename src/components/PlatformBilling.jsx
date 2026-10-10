@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import './PlatformBilling.css'
+import '../styles/dashboardDesign.css'
 import BillingCollections from './BillingCollections'
 import BillingArrears from './BillingArrears'
 
@@ -74,7 +75,7 @@ export default function PlatformBilling({ standalone = false }) {
     (!platform || !facility || i.organization_id === facility) &&
     (filter === 'all' || (filter === 'paid' ? !!i.paid_at : filter === 'pending'
       ? pending.some(p => p.invoice_id === i.id) : !i.paid_at)))
-  return <section className="platform-billing" aria-label="Subscription billing">
+  return <section className={`platform-billing${standalone ? ' dashboard-surface billing-dashboard' : ''}`} aria-label="Subscription billing">
     <div className="billing-summary">
       <div><span className="billing-eyebrow">SUBSCRIPTIONS & ONBOARDING</span>
       <h2>{platform ? 'Platform billing' : 'Your billing'}</h2>

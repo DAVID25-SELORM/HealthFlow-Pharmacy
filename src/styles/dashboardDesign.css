@@ -1,0 +1,71 @@
+/* Shared dashboard style. Clinical forms and role visibility are unchanged. */
+.dashboard-surface { --ds-ink:#14213b; --ds-muted:#687f99; --ds-line:#e4ecf3; --ds-teal:#008780; max-width:1800px; width:100%; min-width:0; margin-inline:auto; color:var(--ds-ink); }
+.dashboard-surface :is(.page-header h1,.hero-copy h1,.platform-hero-copy h1) { font-size:clamp(26px,2.5vw,36px); letter-spacing:-.04em; line-height:1.2; color:var(--ds-ink); }
+.dashboard-surface :is(.page-header p,.hero-subtitle,.platform-hero-copy p) { color:var(--ds-muted); font-size:14px; line-height:1.7; }
+.dashboard-surface :is(.hero-eyebrow,.platform-eyebrow) { background:transparent; border:0; border-radius:0; padding:0; color:#7187a1; font-size:11px; font-weight:750; text-transform:uppercase; letter-spacing:.16em; }
+.dashboard-surface :is(.dashboard-hero,.platform-hero) { background:transparent; border:0; box-shadow:none; border-radius:0; padding:8px 0 24px; gap:28px; }
+.dashboard-surface .dashboard-hero::after { display:none; }
+.dashboard-surface :is(.hero-panel,.platform-hero-panel) { background:#fff; border:1px solid var(--ds-line); border-radius:16px; padding:22px; box-shadow:0 6px 20px #17364f06; color:var(--ds-ink); }
+.dashboard-surface :is(.platform-panel-heading strong,.platform-panel-metric strong,.hero-panel-card-value) { color:var(--ds-ink); }
+.dashboard-surface :is(.platform-panel-label,.platform-panel-metric span,.platform-panel-note,.hero-panel-label,.hero-panel-caption,.hero-panel-card-label,.hero-panel-card-hint) { color:var(--ds-muted); }
+.dashboard-surface :is(.platform-panel-metric,.hero-panel-card) { background:#f5f9fb; border:1px solid #edf2f6; border-radius:10px; }
+.dashboard-surface :is(.hero-pharmacy-brand,.hero-action) { border-radius:12px; box-shadow:none; }
+.dashboard-surface .hero-action-primary { background:var(--ds-teal); color:white; }
+.dashboard-surface :is(.stat-card,.platform-stat-card,.report-summary-card,.acc-kpi,.diagnostics-card) { background:white; border-radius:14px; box-shadow:0 5px 16px #142f4b04; border:1px solid var(--ds-line); padding:22px; min-width:0; }
+.dashboard-surface .acc-kpi { border-left-width:4px; }
+.dashboard-surface .acc-kpi.danger { border-left-color:var(--danger); }
+.dashboard-surface .acc-kpi.success { border-left-color:var(--success); }
+.dashboard-surface .acc-kpi.warning { border-left-color:var(--warning); }
+.dashboard-surface .acc-kpi.primary { border-left-color:var(--primary); }
+.dashboard-surface .acc-kpi.info { border-left-color:var(--info); }
+.dashboard-surface :is(.stat-icon,.platform-stat-icon,.diagnostics-card-icon) { width:52px; height:52px; border-radius:14px; flex-shrink:0; }
+.dashboard-surface :is(.stat-value,.platform-stat-value,.acc-kpi-value) { font-size:clamp(24px,2vw,30px); letter-spacing:-.035em; line-height:1.2; overflow-wrap:anywhere; }
+.dashboard-surface :is(.stat-subtitle,.platform-stat-title,.platform-stat-subtitle,.acc-kpi-label,.acc-kpi-sub) { color:var(--ds-muted); }
+.dashboard-surface :is(.platform-section,.chart-section,.activity-card,.cash-inflow-card,.reports-filter-panel,.drug-analytics-panel,.acc-panel,.diagnostics-panel,.system-health-card) { border:1px solid var(--ds-line); border-radius:16px; background:white; box-shadow:0 8px 24px #17364f06; }
+.dashboard-surface :is(.platform-section,.chart-section,.activity-card,.cash-inflow-card,.reports-filter-panel,.acc-panel) { padding:24px; }
+.dashboard-surface :is(.platform-section-header,.section-header,.card-header,.acc-section-header) { gap:16px; margin-bottom:20px; }
+.dashboard-surface :is(.platform-section-header h2,.section-header h2,.card-header h2,.acc-section-header h3) { color:var(--ds-ink); font-size:18px; letter-spacing:-.02em; }
+.dashboard-surface :is(.platform-list-item,.activity-item,.diagnostics-list-row) { border-bottom-color:#edf2f6; padding-block:16px; }
+.dashboard-surface :is(.platform-table,.report-table,.acc-table) th { background:#f7f9fc; color:#71849d; font-size:11px; letter-spacing:.05em; padding:16px; border-bottom:1px solid var(--ds-line); }
+.dashboard-surface :is(.platform-table,.report-table,.acc-table) td { padding:16px; border-bottom-color:#edf2f6; }
+.dashboard-surface :is(.platform-table,.report-table,.acc-table) tbody tr:hover { background:#f4fbf8; }
+.dashboard-surface :is(.btn-primary,.system-health-refresh,.diagnostics-refresh) { background:var(--ds-teal); border-color:var(--ds-teal); border-radius:9px; min-height:42px; box-shadow:0 4px 12px #007d7810; }
+.dashboard-surface :is(.btn-outline,.cash-inflow-select,.acc-branch-select) { border:1px solid #d8e4ed; border-radius:9px; min-height:42px; }
+.dashboard-surface :is(.reports-filter-panel,.reports-toolbar,.acc-header-controls) :is(input,select) { border:1px solid #d8e4ed; border-radius:9px; min-height:42px; }
+.dashboard-surface :is(.reports-tabs,.acc-tabs,.chart-tabs) { gap:6px; }
+.dashboard-surface :is(.reports-tabs button,.acc-tab,.tab-btn) { border-radius:8px; }
+.dashboard-surface :is(button,a,select,input):focus-visible { outline:3px solid #60baa9; outline-offset:3px; }
+.dashboard-surface :is(.platform-status-card,.system-health-overall) { border-radius:14px; box-shadow:none; }
+.platform-billing.billing-dashboard { background:transparent; border:0; box-shadow:none; padding:0; }
+.billing-dashboard .billing-summary { padding:8px 0 20px; }
+.billing-dashboard .billing-eyebrow { color:#7187a1; letter-spacing:.16em; font-size:11px; }
+.billing-dashboard .billing-summary h2 { font-size:clamp(26px,2.5vw,36px); letter-spacing:-.04em; color:var(--ds-ink); margin:12px 0 8px; }
+.billing-dashboard :is(.billing-stats>div,.billing-plan,.billing-recipient,.billing-invoice) { background:#fff; border:1px solid var(--ds-line); border-radius:14px; padding:24px; box-shadow:0 6px 20px #17364f05; }
+.billing-dashboard .billing-stats strong { color:var(--ds-ink); font-size:clamp(24px,2vw,30px); }
+.billing-dashboard .billing-stats span { color:var(--ds-muted); }
+.billing-dashboard .billing-primary { background:var(--ds-teal); border-color:var(--ds-teal); border-radius:9px; }
+.billing-dashboard .billing-invoice-heading { margin-top:28px; }
+.billing-dashboard .billing-invoice-title { padding-bottom:14px; border-bottom:1px solid #edf2f6; margin-bottom:14px; }
+.platform-billing.dashboard-bills { border-radius:14px; border-color:#ecdabb; background:#fffcf6; box-shadow:none; padding:22px; }
+.dashboard-bills .billing-invoice { background:white; margin:12px 0; }
+@media(max-width:900px) {
+ .dashboard-surface :is(.dashboard-hero,.platform-hero) { grid-template-columns:minmax(0,1fr); gap:18px; }
+ .dashboard-surface :is(.stats-grid,.platform-stats-grid) { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media(max-width:600px) {
+ .dashboard-surface :is(.platform-section,.chart-section,.activity-card,.cash-inflow-card,.reports-filter-panel,.acc-panel,.hero-panel,.platform-hero-panel) { padding:16px; }
+ .dashboard-surface :is(.stat-card,.platform-stat-card,.report-summary-card,.acc-kpi,.diagnostics-card) { padding:14px; gap:10px; }
+ .dashboard-surface :is(.stat-icon,.platform-stat-icon,.diagnostics-card-icon) { width:36px; height:36px; border-radius:10px; }
+ .dashboard-surface :is(.stat-value,.platform-stat-value,.acc-kpi-value) { font-size:23px; }
+ .billing-dashboard :is(.billing-stats>div,.billing-plan,.billing-recipient,.billing-invoice) { padding:16px; }
+ .billing-dashboard .billing-stats { grid-template-columns:minmax(0,1fr); }
+ .dashboard-surface :is(.platform-section-header,.section-header,.acc-section-header) { flex-wrap:wrap; }
+}
+@media(prefers-reduced-motion:reduce) { .dashboard-surface *, .dashboard-surface *::before, .dashboard-surface *::after { transition:none; animation:none; } }
+@media print { .dashboard-surface { max-width:none; } .dashboard-surface :is(.platform-section,.chart-section,.activity-card,.acc-panel) { box-shadow:none; } }
+/* Preserve semantic health indicators above the shared card treatment. */
+.dashboard-surface .system-health-card.status-ok { border-top:4px solid #0f8a63; }
+.dashboard-surface .system-health-card.status-warn { border-top:4px solid #c47f00; }
+.dashboard-surface .system-health-card.status-fail { border-top:4px solid #bd2d1f; }
+.dashboard-surface .hf-page-header h1 { font-size:clamp(26px,2.5vw,36px); letter-spacing:-.04em; color:var(--ds-ink); }
+.dashboard-surface .hf-page-header p { color:var(--ds-muted); line-height:1.7; }

@@ -27,6 +27,7 @@ import { useSessionStorageState } from '../hooks/useSessionStorageState'
 import { downloadCsv } from '../services/reportsService'
 import { confirmAction } from '../utils/actionConfirmation'
 import './Accounting.css'
+import '../styles/dashboardDesign.css'
 
 // â”€â”€ helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -1230,7 +1231,7 @@ const Accounting = () => {
   // â”€â”€ main render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   return (
-    <div className="accounting-page">
+    <div className="accounting-page dashboard-surface">
       <div className="page-header">
         <div>
           <h1>Accounting</h1>

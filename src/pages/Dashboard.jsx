@@ -26,6 +26,7 @@ import { isSupabaseConfigured } from '../lib/supabase'
 import { CLAIMS_ROLES, INVENTORY_ROLES, NHIS_ROLES, hasRole } from '../utils/roles'
 import { STOCK_SEVERITY, getStockSeverity } from '../utils/reorderCentre'
 import './Dashboard.css'
+import '../styles/dashboardDesign.css'
 
 const currencyFormatter = new Intl.NumberFormat('en-GH', {
   minimumFractionDigits: 2,
@@ -669,7 +670,7 @@ const Dashboard = () => {
 
   if (loading) {
     return (
-      <div className="dashboard">
+      <div className="dashboard dashboard-surface">
         <div className="page-header">
           <h1>Loading Dashboard...</h1>
         </div>
@@ -678,7 +679,7 @@ const Dashboard = () => {
   }
 
   return (
-    <div className="dashboard">
+    <div className="dashboard dashboard-surface">
       <section className="dashboard-hero">
         <div className="hero-copy">
           <div className="hero-eyebrow">

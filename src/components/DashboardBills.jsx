@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import './PlatformBilling.css'
+import '../styles/dashboardDesign.css'
 
 export default function DashboardBills() {
   const { role, assignedRoles, profile } = useAuth()
@@ -26,7 +27,7 @@ export default function DashboardBills() {
   }, [allowed, profile?.id, profile?.organization_id])
   if (!allowed || !profile?.organization_id || (!bills.length && !failed)) return null
   const money = amount => `GH₵${Number(amount).toFixed(2)}`
-  return <section className="platform-billing" aria-label="Outstanding facility bills">
+  return <section className="platform-billing dashboard-bills" aria-label="Outstanding facility bills">
     <h2>Outstanding facility bills</h2>
     {failed ? <p role="status">Unable to check outstanding bills. Refresh to try again.</p> : <>
       <p><strong>{money(bills.reduce((sum, bill) => sum + Number(bill.amount), 0))}</strong> outstanding. Payments awaiting confirmation remain outstanding until approved.</p>

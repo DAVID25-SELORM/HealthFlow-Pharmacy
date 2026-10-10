@@ -13,6 +13,7 @@ import { useNavigate } from 'react-router-dom'
 import { getTenantAdminDashboard } from '../services/tenantAdminService'
 import { APP_TIME_ZONE } from '../utils/date'
 import './SuperAdminDashboard.css'
+import '../styles/dashboardDesign.css'
 import FacilityConnectivity from '../components/FacilityConnectivity'
 
 const STATUS_LABELS = {
@@ -243,7 +244,7 @@ const SuperAdminDashboard = () => {
 
   if (loading) {
     return (
-      <div className="super-admin-dashboard">
+      <div className="super-admin-dashboard dashboard-surface">
         <div className="page-header">
           <h1>Loading platform dashboard...</h1>
         </div>
@@ -252,7 +253,7 @@ const SuperAdminDashboard = () => {
   }
 
   return (
-    <div className="super-admin-dashboard">
+    <div className="super-admin-dashboard dashboard-surface">
       <section className="platform-hero">
         <div className="platform-hero-copy">
           <div className="platform-eyebrow">

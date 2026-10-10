@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import { EmptyState, PageHeader, StatusBadge } from '../components/ui'
 import { formatAppDateTime } from '../utils/date'
 import './SystemHealth.css'
+import '../styles/dashboardDesign.css'
 
 const statusMeta = {
   ok: {
@@ -73,7 +74,7 @@ export default function SystemHealth() {
   const OverallIcon = overall.icon
 
   return (
-    <div className="system-health-page">
+    <div className="system-health-page dashboard-surface">
       <PageHeader
         eyebrow="Operations"
         title="System Health"
