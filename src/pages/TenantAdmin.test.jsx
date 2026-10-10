@@ -39,6 +39,28 @@ describe('TenantAdmin', () => {
     window.sessionStorage.clear()
   })
 
+  it('filters across all pages and resets pagination when criteria change', async () => {
+    mocks.getTenantAdminDashboard.mockResolvedValue({
+      organizations: Array.from({ length: 10 }, (_, index) => ({
+        id: `org-${index}`, name: `Facility ${index}`, subdomain: `facility-${index}`,
+        status: index === 9 ? 'trial' : 'active', subscription_tier: 'basic',
+        organization_type: index === 9 ? 'hospital' : 'pharmacy', plan_code: 'starter',
+        created_at: '2026-04-01T09:00:00.000Z',
+      })), userCounts: {}, branchCounts: {},
+    })
+    render(<TenantAdmin />)
+    await screen.findByText('Showing 1 to 8 of 10 facilities')
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }))
+    expect(screen.getByText('Facility 9')).toBeInTheDocument()
+    fireEvent.change(screen.getByRole('combobox', { name: 'Filter by status' }), { target: { value: 'trial' } })
+    expect(screen.getByText('Showing 1 to 1 of 1 facilities')).toBeInTheDocument()
+    expect(screen.queryByText('Facility 8')).not.toBeInTheDocument()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search facilities' }), { target: { value: 'missing' } })
+    expect(screen.getByText('No facilities match your filters.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }))
+    expect(screen.getByText('Showing 1 to 8 of 10 facilities')).toBeInTheDocument()
+  })
+
   it('reopens the saved organization detail panel after a same-tab refresh', async () => {
     window.sessionStorage.setItem('healthflow.tenantAdmin.expandedOrgId', JSON.stringify('org-1'))
 

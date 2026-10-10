@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import { getRoleLabel } from '../utils/roleLabels'
-import { Building2, GitBranch, Plus, Users, ChevronDown, ChevronUp, Eye, Pencil, Trash2 } from 'lucide-react'
+import { Building2, GitBranch, Plus, Users, ChevronDown, ChevronUp, Eye, Pencil, Trash2, Search, CheckCircle2, FlaskConical, ChevronLeft, ChevronRight } from 'lucide-react'
 import CccIntegrationSettings from '../components/CccIntegrationSettings'
 import { useNotification } from '../context/NotificationContext'
 import GhanaRegionSelect from '../components/GhanaRegionSelect'
@@ -102,6 +102,22 @@ const TenantAdmin = () => {
   const [branchCounts, setBranchCounts] = useState({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
+  const [typeFilter, setTypeFilter] = useState('')
+  const [planFilter, setPlanFilter] = useState('')
+  const [page, setPage] = useState(1)
+  const filteredOrgs = orgs.filter(org =>
+    [org.name, org.email, org.subdomain].some(value => String(value || '').toLowerCase().includes(search.trim().toLowerCase())) &&
+    (!statusFilter || org.status === statusFilter) &&
+    (!typeFilter || (org.organization_type || 'pharmacy') === typeFilter) &&
+    (!planFilter || (org.plan_code || 'starter') === planFilter)
+  )
+  const pageCount = Math.max(1, Math.ceil(filteredOrgs.length / 8))
+  const currentPage = Math.min(page, pageCount)
+  const visibleOrgs = filteredOrgs.slice((currentPage - 1) * 8, currentPage * 8)
+  const changeFilter = (setter, value) => { setter(value); setPage(1) }
 
   // Create form
   const [showCreate, setShowCreate] = useState(false)
@@ -453,6 +469,7 @@ const TenantAdmin = () => {
     <div className="tenant-admin-page">
       <div className="page-header">
         <div>
+          <span className="tenant-eyebrow">TENANT MANAGEMENT</span>
           <h1>Tenant Administration</h1>
           <p>Manage pharmacies, hospital pharmacies, clinics, and hospitals on the HealthFlow platform</p>
         </div>
@@ -463,6 +480,19 @@ const TenantAdmin = () => {
       </div>
 
       {error && <div className="tenant-alert">{error}</div>}
+
+      <div className="tenant-metrics" aria-label="Tenant overview">
+        {[
+          [Building2, orgs.length, 'Total Facilities', 'blue'],
+          [CheckCircle2, orgs.filter(org => org.status === 'active').length, 'Active Facilities', 'green'],
+          [FlaskConical, orgs.filter(org => org.status === 'trial').length, 'Trial Accounts', 'purple'],
+          [Users, Object.values(userCounts).reduce((sum, count) => sum + Number(count), 0), 'Total Users', 'blue'],
+          [GitBranch, Object.values(branchCounts).reduce((sum, count) => sum + Number(count), 0), 'Total Branches', 'green'],
+        ].map(([Icon, value, label, tone]) => <div className="tenant-metric" key={label}>
+          <span className={`tenant-metric-icon ${tone}`}><Icon size={26} /></span>
+          <div><strong>{value}</strong><span>{label}</span></div>
+        </div>)}
+      </div>
 
       {/* Create Form */}
       {showCreate && (
@@ -805,14 +835,21 @@ const TenantAdmin = () => {
       {/* Organizations Table */}
       <div className="tenant-table-card">
         <div className="tenant-table-header">
-          <h3>
-            <Building2 size={18} />
-            All Facilities ({orgs.length})
-          </h3>
+          <div className="tenant-directory-title"><span className="tenant-directory-icon"><Building2 size={24} /></span><div>
+            <h3>All Facilities ({orgs.length})</h3>
+            <p>View and manage all tenant facilities on the HealthFlow platform.</p>
+          </div></div>
+          <div className="tenant-filters">
+            <label className="tenant-search"><Search size={18} /><input aria-label="Search facilities" placeholder="Search facilities..." value={search} onChange={e => changeFilter(setSearch, e.target.value)} /></label>
+            <select aria-label="Filter by status" value={statusFilter} onChange={e => changeFilter(setStatusFilter, e.target.value)}><option value="">All Statuses</option>{['active', 'trial', 'suspended', 'cancelled'].map(value => <option key={value} value={value}>{formatBillingStatus(value)}</option>)}</select>
+            <select aria-label="Filter by type" value={typeFilter} onChange={e => changeFilter(setTypeFilter, e.target.value)}><option value="">All Types</option>{['pharmacy', 'hospital', 'chemical_shop'].map(value => <option key={value} value={value}>{formatOrganizationType(value)}</option>)}</select>
+            <select aria-label="Filter by plan" value={planFilter} onChange={e => changeFilter(setPlanFilter, e.target.value)}><option value="">All Plans</option>{['starter', 'professional', 'premium'].map(value => <option key={value} value={value}>{formatPlanCode(value)}</option>)}</select>
+            {(search || statusFilter || typeFilter || planFilter) && <button className="btn btn-outline" onClick={() => { setSearch(''); setStatusFilter(''); setTypeFilter(''); setPlanFilter(''); setPage(1) }}>Clear</button>}
+          </div>
         </div>
 
-        {orgs.length === 0 ? (
-          <div className="tenant-empty">No facilities registered yet.</div>
+        {filteredOrgs.length === 0 ? (
+          <div className="tenant-empty">{orgs.length ? 'No facilities match your filters.' : 'No facilities registered yet.'}</div>
         ) : (
           <div className="tenant-table-wrap">
             <table className="tenant-table">
@@ -832,15 +869,16 @@ const TenantAdmin = () => {
                 </tr>
               </thead>
               <tbody>
-                {orgs.map((org) => (
+                {visibleOrgs.map((org) => (
                   <Fragment key={org.id}>
-                    <tr className={expandedOrgId === org.id ? 'expanded' : ''}>
+                    <tr className={expandedOrgId === org.id || cccOrgId === org.id ? 'expanded' : ''}>
                       <td>
-                        <div className="org-name-cell">
+                        <div className="tenant-facility-identity"><span className="tenant-facility-icon"><Building2 size={22} /></span><div className="org-name-cell">
                           <strong>{org.name}</strong>
                           {org.email && <span className="org-email">{org.email}</span>}
-                        </div>
+                        </div></div>
                       </td>
+                      <td><span className="tenant-type-chip">{formatOrganizationType(org.organization_type)}</span></td>
                       <td>
                         <code className="subdomain-chip">{org.subdomain}</code>
                       </td>
@@ -858,7 +896,7 @@ const TenantAdmin = () => {
                       </td>
                       <td>
                         <select
-                          className="tier-select"
+                          className={`tier-select tier-${org.subscription_tier}`}
                           value={org.subscription_tier}
                           onChange={(e) => handleTierChange(org.id, e.target.value)}
                         >
@@ -868,7 +906,6 @@ const TenantAdmin = () => {
                           <option value="enterprise">Enterprise</option>
                         </select>
                       </td>
-                      <td>{formatOrganizationType(org.organization_type)}</td>
                       <td>{formatPlanCode(org.plan_code)}</td>
                       <td>
                         <span className={`status-pill status-${org.billing_status || 'trial'}`}>
@@ -1010,6 +1047,10 @@ const TenantAdmin = () => {
             </table>
           </div>
         )}
+        <div className="tenant-pagination">
+          <span role="status">{filteredOrgs.length ? `Showing ${(currentPage - 1) * 8 + 1} to ${Math.min(currentPage * 8, filteredOrgs.length)} of ${filteredOrgs.length} facilities` : '0 facilities'}</span>
+          <div><button aria-label="Previous page" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}><ChevronLeft size={18} /></button><span>Page {currentPage} of {pageCount}</span><button aria-label="Next page" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}><ChevronRight size={18} /></button></div>
+        </div>
       </div>
 
       {/* Edit User Modal */}
