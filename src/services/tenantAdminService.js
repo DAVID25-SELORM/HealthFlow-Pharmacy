@@ -210,6 +210,7 @@ export const createPharmacyTenant = async ({ pharmacy, admin }) =>
     action: 'create_tenant',
     organization: {
       name: normalizeText(pharmacy.name),
+      cccProvider: pharmacy.cccProvider === 'otac' ? 'otac' : 'existing',
       organizationType: normalizeOrganizationType(pharmacy.organizationType, 'pharmacy'),
       subdomain: normalizeText(pharmacy.subdomain).toLowerCase(),
       phone: normalizeText(pharmacy.phone) || null,

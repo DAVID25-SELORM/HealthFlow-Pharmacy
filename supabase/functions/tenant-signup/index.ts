@@ -1905,6 +1905,11 @@ const bootstrapOrganization = async (
       pharmacy_level: pharmacyLevel || null,
     }, adminFullName)
 
+    if (defaults.allowCustomTier && organizationInput.cccProvider === 'otac') {
+      provisioningStage = 'configure CCC provider'
+      const { error } = await adminClient.from('organization_ccc_policy').insert({ organization_id: organizationId, provider: 'otac', enabled: false })
+      if (error) throw error
+    }
     provisioningStage = 'verify organization readiness'
     const readiness = await checkOrganizationReadiness(adminClient, organizationId)
     if (!readiness.ready) {

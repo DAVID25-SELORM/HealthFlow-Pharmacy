@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import { getRoleLabel } from '../utils/roleLabels'
 import { Building2, GitBranch, Plus, Users, ChevronDown, ChevronUp, Eye, Pencil, Trash2 } from 'lucide-react'
+import CccIntegrationSettings from '../components/CccIntegrationSettings'
 import { useNotification } from '../context/NotificationContext'
 import GhanaRegionSelect from '../components/GhanaRegionSelect'
 import PasswordVisibilityCheckbox from '../components/PasswordVisibilityCheckbox'
@@ -24,6 +25,7 @@ import { requestAppPrompt } from '../utils/appDialog'
 import './TenantAdmin.css'
 
 const blankPharmacy = {
+  cccProvider: 'existing',
   organizationType: 'pharmacy',
   name: '',
   subdomain: '',
@@ -491,6 +493,11 @@ const TenantAdmin = () => {
                   />
                 </div>
                 <div className="tenant-form-group">
+                  <label>CCC provider</label>
+                  <select value={pharmacy.cccProvider} onChange={e => setPharmacy({ ...pharmacy, cccProvider: e.target.value })}>
+                    <option value="existing">Existing NHIA API</option>
+                    <option value="otac">OTAC — configure and enable after creation</option>
+                  </select>
                   <label>Subdomain *</label>
                   <div className="subdomain-row">
                     <input
@@ -921,6 +928,7 @@ const TenantAdmin = () => {
                       <tr className="users-expand-row">
                         <td colSpan={11}>
                           <div className="users-expand">
+                            <CccIntegrationSettings organizationId={org.id} />
                             <h5>Users in {org.name}</h5>
                             {orgUsers[org.id] ? (
                               orgUsers[org.id].length === 0 ? (

@@ -4441,7 +4441,7 @@ describe('NHIS claim save attachment behavior', () => {
     expect(renameResult.eq).toHaveBeenCalledWith('id', 'claim-1')
   })
 
-  it('saves an attachment-free pharmacy intake while it is pending serving', async () => {
+  it.each([['nehfams_manual', '2026-06-18'], ['otac_api', '2026-06-17'], ['nhia_reconciled', '2026-06-17']])('saves pending intake with %s attendance evidence', async (source, attendanceDate) => {
     const insertedClaim = { id: 'claim-1', claim_number: 'NHIS-000001', status: 'pending_serving' }
     const claimInsertResult = {
       select: vi.fn(() => ({
@@ -4486,7 +4486,7 @@ describe('NHIS claim save attachment behavior', () => {
         nhiaEligibilityStartDate: '01/06/2026',
         nhiaEligibilityEndDate: '30/06/2026',
         attendanceVerificationStatus: 'confirmed',
-        attendanceVerificationSource: 'nehfams_manual',
+        attendanceVerificationSource: source,
         prescribingFacilityId: '11111111-1111-4111-8111-111111111111',
         prescriberId: '22222222-2222-4222-8222-222222222222',
         prescriptionDate: '17/06/2026',
@@ -4519,11 +4519,11 @@ describe('NHIS claim save attachment behavior', () => {
       nhia_auth_type: 'NHIS',
       nhia_new_ccc_status: 'yes',
       nhia_otac: '987654',
-      nhia_attendance_date: '2026-06-18',
+      nhia_attendance_date: attendanceDate,
       nhia_eligibility_start_date: '2026-06-01',
       nhia_eligibility_end_date: '2026-06-30',
       nhia_attendance_verification_status: 'confirmed',
-      nhia_attendance_verification_source: 'nehfams_manual',
+      nhia_attendance_verification_source: source,
       prescribing_facility_id: '11111111-1111-4111-8111-111111111111',
       prescriber_id: '22222222-2222-4222-8222-222222222222',
       prescription_date: '2026-06-17',

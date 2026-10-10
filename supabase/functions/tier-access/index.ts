@@ -1,3 +1,4 @@
+import { getCccPolicy, publicCccPolicy, inspectOtacToken, runCccRequest } from '../_shared/cccProvider.ts'
 import { resolveActivityLogPeriod } from '../_shared/activityLogPeriod.ts'
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
@@ -5038,14 +5039,13 @@ const verifyClaimItSubscriber = async (
   return body
 }
 
-const generateNhiaCcCode = async (
+const generateExistingNhiaCcCode = async (
   adminClient: ReturnType<typeof createAdminClient>,
   requesterProfile: RequesterProfile,
   organizationId: string,
   payload: Record<string, unknown>
 ) => {
   requireClaimsAccess(requesterProfile, 'Only claims staff can generate or change NHIA CC codes.')
-  console.log('[GENERATE NHIA CC PAYLOAD]', redactTierAccessBody(payload))
   const receivedKeys = Object.keys(payload || {})
   const claimId = normalizeText(payload.claimId || payload.claim_id)
   if (!claimId) {
@@ -5129,6 +5129,8 @@ const generateNhiaCcCode = async (
       method: 'POST',
       headers,
       body: JSON.stringify(requestPayload),
+      redirect: 'error',
+      signal: AbortSignal.timeout(25000),
     })
   } catch (error) {
     return {
@@ -6364,6 +6366,17 @@ const getReportHealth = async (
   }
 }
 
+const generateNhiaCcCode = async (db: ReturnType<typeof createAdminClient>, profile: RequesterProfile, org: string, payload: Record<string, unknown>) => {
+ requireClaimsAccess(profile, 'Only claims staff can generate CCCs.')
+ return runCccRequest({db,org,actor:profile.id,branch:resolveScopedBranchId(profile,payload),payload,decode:decodeNhiaSecret,
+  preflightExisting:async()=>{
+   const settings=await getNhiaApiSettings(db,profile,org,true,resolveScopedBranchId(profile,payload))
+   if(!settings?.directApiEnabled) throw new Error('Existing NHIA API is not enabled for this facility.')
+   getScopedNhiaEligibilityCredentials(settings,org,resolveScopedBranchId(profile,payload))
+  },
+  existing:(context: Record<string,unknown>)=>generateExistingNhiaCcCode(db,profile,org,{...context,claimId:context.claimId || context.claim_id || `attendance:${context.memberNumber}`})})
+}
+
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -6379,7 +6392,8 @@ Deno.serve(async (request) => {
 
   try {
     payload = (await request.json()) as Record<string, unknown>
-    redactedPayload = redactTierAccessBody(payload)
+    action = normalizeText(payload.action)
+    redactedPayload = /ccc|cc_code/.test(action) ? { action } : redactTierAccessBody(payload)
     console.log('[EDGE FUNCTION BODY]', redactedPayload)
 
     action = normalizeText(payload.action)
@@ -6399,6 +6413,17 @@ Deno.serve(async (request) => {
 
     const { supabaseUrl, supabaseAnonKey, serviceRoleKey } = getFunctionEnv()
     const adminClient = createAdminClient(supabaseUrl, serviceRoleKey)
+    // Updated branch servers authenticate with their existing scoped sync token.
+    if (action === 'branch_ccc_generate' || action === 'branch_ccc_policy') {
+      const {data:identity,error} = await adminClient.rpc('ccc_branch_actor',{p_sync_token:payload.branchSyncToken,p_actor:payload.actorId})
+      if(error || !identity) return json({error:'Branch authentication failed.'},403)
+      const rawProfile=await getRequesterProfile(adminClient,identity.id)
+      if(!rawProfile) return json({error:'Active staff account required.'},403)
+      const profile=applyRequestedActiveRole({...rawProfile,branch_id:identity.branch_id},payload.activeRole)
+      requireClaimsAccess(profile,'Only claims staff can generate CCCs.')
+      if(action==='branch_ccc_policy') return json({policy:publicCccPolicy(await getCccPolicy(adminClient,identity.organization_id))})
+      return json(await generateNhiaCcCode(adminClient,profile,identity.organization_id,{...payload,branchId:identity.branch_id}))
+    }
     const requesterResult = await requireRequester(
       request,
       adminClient,
@@ -6415,6 +6440,49 @@ Deno.serve(async (request) => {
       payload.activeRole || payload.active_role
     )
     const organizationId = requesterResult.organizationId || ''
+
+    if(action==='get_ccc_policy' || action==='save_ccc_policy' || action==='reconcile_ccc_attendance') {
+      const {data:activeActor,error:activeError}=await adminClient.from('users').select('id').eq('id',requesterProfile.id).eq('is_active',true).maybeSingle()
+      if(activeError || !activeActor) return json({error:'Active staff account required.'},403)
+      const platformAdmin=requesterProfile.role==='super_admin'
+      const org=platformAdmin ? normalizeText(payload.organizationId) : organizationId
+      if(!org) throw new Error('Select a facility.')
+      if(action==='reconcile_ccc_attendance') {
+        if(!platformAdmin) return json({error:'Platform administrator required.'},403)
+        if(payload.confirmedWithNhia!==true) throw new Error('Verify the outcome with NHIA before reconciliation.')
+        let result=null
+        if(payload.outcome==='succeeded') {
+          const policy=await getCccPolicy(adminClient,org)
+          const name=normalizeText(payload.facilityName)
+          if(policy.expected_facility_name && name.toUpperCase()!==normalizeText(policy.expected_facility_name).toUpperCase()) throw new Error('Facility name does not match the configured NHIA identity.')
+          result={ok:true,ccCode:normalizeText(payload.ccCode),source:'nhia_reconciled',memberDetails:{ccCode:normalizeText(payload.ccCode),authId:normalizeText(payload.authId),hpName:name,attendanceDate:normalizeText(payload.attendanceDate),attendanceVerificationSource:'nhia_reconciled',attendanceVerificationStatus:'verified'}}
+        } else if(payload.outcome!=='not_created') throw new Error('Select a verified outcome.')
+        const {error}=await adminClient.rpc('reconcile_ccc_attendance',{p_org:org,p_actor:requesterProfile.id,p_id:payload.requestId,p_note:payload.note,p_result:result})
+        if(error) throw new Error(error.message)
+      }
+      if(action==='save_ccc_policy') {
+        if(!platformAdmin) return json({error:'Only platform administrators can change CCC providers.'},403)
+        if(!['existing','otac'].includes(String(payload.provider)) || typeof payload.enabled!=='boolean') throw new Error('Select a valid CCC provider and enabled state.')
+        const old=await getCccPolicy(adminClient,org)
+        const supplied=normalizeText(payload.bearerToken)
+        const expectedHpn=normalizeText(payload.expectedHpn)
+        const expectedName=normalizeText(payload.expectedFacilityName)
+        let token: {token:string,expiresAt:string}|null=null
+        if(supplied) token=inspectOtacToken(supplied,expectedHpn)
+        if(payload.provider==='otac' && payload.enabled) {
+          if(!expectedName) throw new Error('Enter the exact NHIA facility name before enabling OTAC.')
+          inspectOtacToken(supplied || await decodeNhiaSecret(old.token_encrypted),expectedHpn)
+        }
+        const {error}=await adminClient.rpc('save_ccc_policy',{p_org:org,p_actor:requesterProfile.id,p_provider:payload.provider,p_enabled:payload.enabled,p_token:token?await encodeNhiaSecret(token.token):null,p_expiry:token?.expiresAt || null,p_hpn:expectedHpn,p_name:expectedName})
+        if(error) throw new Error(error.message)
+      }
+      const policy=publicCccPolicy(await getCccPolicy(adminClient,org))
+      if(!platformAdmin) return json({policy})
+      const history=await adminClient.from('ccc_policy_audit').select('action,details,created_at').eq('organization_id',org).order('created_at',{ascending:false}).limit(20)
+      const requests=await adminClient.from('ccc_attendance_requests').select('id,member_number,card_type,attendance_date,provider,status,error_code,created_at,updated_at').eq('organization_id',org).order('created_at',{ascending:false}).limit(20)
+      if(history.error || requests.error) throw new Error('Unable to read CCC history.')
+      return json({policy,history:history.data,requests:requests.data})
+    }
 
     if (!organizationId && !PLATFORM_ACTIONS_WITHOUT_ORGANIZATION.has(action)) {
       return json(

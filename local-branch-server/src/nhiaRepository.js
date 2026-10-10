@@ -1,3 +1,4 @@
+import { centralCcc } from './cccGateway.js'
 import crypto from 'node:crypto'
 import https from 'node:https'
 import { createId, db, json, nowIso, parseJson } from './db.js'
@@ -2953,156 +2954,12 @@ const normalizeNhiaCardType = (memberNumber, cardType) => {
   return getNhiaCardType(memberNumber)
 }
 
-export const lookupNhiaMember = async (memberNumber, { cardType } = {}) => {
-  const settings = getNhiaSettings({ includeCredentials: true })
-  if (!settings) {
-    return { status: 'pending', message: 'NHIA settings are required before generating CCC/CC codes.' }
-  }
-  if (!settings.directApiEnabled) {
-    return { status: 'pending', message: 'NHIA API not configured' }
-  }
-
-  // CCC generation must go through the server-side NHIA eligibility API only.
-  // Saved CLAIM-it/local URLs are for claim submission and must not be used here.
-  const nhiaEligibilityBaseUrl = getNhiaEligibilityBaseUrl()
-  if (!nhiaEligibilityBaseUrl) {
-    return {
-      status: 'pending',
-      message: 'NHIA eligibility API base URL not configured. Set NHIA_BASE_URL to https://elig.nhia.gov.gh:5000 in the branch server .env.',
-    }
-  }
-
-  const endpointPath = getNhiaMemberLookupEndpointPath()
-
-  const credentials = settings.credentials || {}
-  const apiKey = normalizeHttpHeaderValue(credentials.apiKey || credentials.token)
-  const apiSecret = normalizeHttpHeaderValue(credentials.apiSecret)
-  const facilityCode = normalizeText(settings.facilityCode || settings.facility_code || config.nhiaFacilityCode)
-  const apiKeyHeaderName = normalizeText(credentials.headerName) || 'x-nhia-apikey'
-  const apiSecretHeaderName = normalizeText(credentials.secretHeaderName) || 'x-nhia-apisecret'
-
-  const debugDetails = getNhiaCredentialDebugDetails({
-    settings: { ...settings, facilityCode },
-    credentials,
-    nhiaBaseUrl: nhiaEligibilityBaseUrl,
-    endpointPath,
-    apiKeyHeaderName,
-    apiSecretHeaderName,
-  })
-  logNhiaCredentialDebug('member.lookup.credentials', debugDetails)
-
-  const missingCredentials = []
-  if (!apiKey) missingCredentials.push('apiKey')
-  if (!apiSecret) missingCredentials.push('apiSecret')
-  if (missingCredentials.length) {
-    throw new Error(
-      `NHIA credentials are incomplete for member lookup: ${missingCredentials.join(', ')} missing. ` +
-      'Save the correct NHIA API key and NHIA API secret in backend Settings or .env.'
-    )
-  }
-
-  // NHIA genCCC API (https://elig.nhia.gov.gh:5000/api/hmis/genCCC):
-  //   Headers: x-nhia-apikey, x-nhia-apisecret
-  //   Body JSON: { CardNo, CardType }  CardType = "NHISCARD" | "GHANACARD"
-  const validatedMemberNumber = assertValidMemberNumber(memberNumber, settings)
-  const resolvedCardType = normalizeNhiaCardType(validatedMemberNumber, cardType)
-  const url = `${nhiaEligibilityBaseUrl.replace(/\/+$/, '')}/${endpointPath.replace(/^\/+/, '')}`
-  const headers = {
-    [apiKeyHeaderName]: apiKey,
-    [apiSecretHeaderName]: apiSecret,
-    'Content-Type': 'application/json',
-    'Accept': 'application/json',
-  }
-  const body = JSON.stringify({ CardNo: validatedMemberNumber, CardType: resolvedCardType })
-
-  logSubmission({ action: 'member.lookup.start', status: 'pending', memberNumber: validatedMemberNumber, cardType: resolvedCardType })
-  try {
-    const response = await fetch(url, { method: 'POST', headers, body })
-    const text = await response.text()
-    let responseBody = {}
-    try { responseBody = text ? JSON.parse(text) : {} } catch { responseBody = { raw: text } }
-
-    if (!response.ok) {
-      const upstreamMessage = normalizeText(
-        responseBody?.message ||
-        responseBody?.error ||
-        responseBody?.detail ||
-        responseBody?.raw
-      )
-      if (response.status === 401 || response.status === 403) {
-        logNhiaCredentialDebug('member.lookup.credentials_rejected', debugDetails)
-        throw new Error(
-          `NHIA credentials were rejected by the eligibility API (HTTP ${response.status})` +
-          `${upstreamMessage ? `: ${upstreamMessage}` : ''}. ` +
-          'Check that the saved NHIA API key, API secret, and facility code belong to the same accredited facility.'
-        )
-      }
-      throw new Error(
-        `NHIA member lookup returned HTTP ${response.status}${upstreamMessage ? `: ${upstreamMessage}` : ''}.`
-      )
-    }
-    const mapped = mapNhiaMemberLookupResponse(responseBody)
-    logSubmission({ action: 'member.lookup.complete', status: 'success', ccCode: mapped?.ccCode })
-    return { ok: true, ...mapped }
-  } catch (error) {
-    logSubmission({ action: 'member.lookup.failed', status: 'failed', error: error.message })
-    if (error?.cause?.code === 'ECONNREFUSED' || error?.code === 'ECONNREFUSED') {
-      throw new Error('Unable to reach the configured NHIA/CLAIM-it upstream. Start the local CLAIM-it/NHIA middleware or correct CLAIMIT_UPSTREAM_BASE_URL.')
-    }
-    throw error
-  }
+export const lookupNhiaMember = async (memberNumber, context = {}, actor) => {
+  const result = await centralCcc({ ...context, memberNumber }, actor)
+  return result.memberDetails
 }
 
-export const generateNhiaCcCode = async (claimContext = {}) => {
-  const settings = getNhiaSettings({ includeCredentials: true })
-  if (!settings) {
-    throw new Error('NHIA settings are required before submitting claims.')
-  }
-
-  if (!settings.directApiEnabled) {
-    return { status: 'pending', source: 'pending', message: 'Pending CLAIM-it validation' }
-  }
-
-  // NHIA genCCC is the canonical CCC/CC generation endpoint. It must use the
-  // eligibility API, not CLAIM-it claim submission routes such as /claims.
-  {
-    const memberNumber = normalizeText(claimContext.memberNumber || claimContext.memberNo)
-    if (memberNumber) {
-      try {
-        const result = await lookupNhiaMember(memberNumber, {
-          cardType: claimContext.cardType,
-        })
-        if (result?.ccCode) {
-          return {
-            ccCode: result.ccCode,
-            source: 'api',
-            memberDetails: result,
-          }
-        }
-        const failureMessage = getNhiaMemberLookupFailureMessage(result)
-        if (failureMessage) {
-          return {
-            ccCode: '',
-            source: 'api',
-            memberDetails: result,
-            eligibilityError: failureMessage,
-          }
-        }
-      } catch (lookupError) {
-        const message = lookupError?.message || 'genCCC fallback failed'
-        logSubmission({
-          action: 'cc_code.genccc_fallback.failed',
-          status: 'failed',
-          error: message,
-        })
-        throw new Error(`NHIA genCCC lookup failed: ${message}`)
-        // Fall through to pending — caller handles missing CC code
-      }
-    }
-    return { status: 'pending', source: 'pending', message: 'Pending CLAIM-it validation' }
-  }
-
-}
+export const generateNhiaCcCode = async (claimContext = {}, actor) => centralCcc(claimContext, actor)
 
 export const submitNhiaDirectPayload = async ({
   payload,

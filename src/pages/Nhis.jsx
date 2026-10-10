@@ -1,3 +1,5 @@
+import { cccIntegration } from '../services/cccIntegrationService'
+import { getBranchCccPolicy } from '../services/branchServerApi'
 import ClaimCorrectionAlerts from '../components/ClaimCorrectionAlerts'
 import ClaimItRemediation from '../components/ClaimItRemediation'
 import ClaimSearchScope from '../components/ClaimSearchScope'
@@ -114,7 +116,6 @@ import {
 import {
   generateNhiaCcCode as generateBranchNhiaCcCode,
   getNhiaLookupCardType,
-  lookupNhiaMember as branchLookupNhiaMember,
   reopenBranchMcaEditWindow,
   shouldUseBranchServer,
 } from '../services/branchServerApi'
@@ -1661,7 +1662,7 @@ const Nhis = () => {
   const [nhiaSettingsLoading, setNhiaSettingsLoading] = useState(false)
   const [facilitySettingsLoading, setFacilitySettingsLoading] = useState(false)
   const [generatingCcCode, setGeneratingCcCode] = useState(false)
-  const [lookingUpMember, setLookingUpMember] = useState(false)
+  const lookingUpMember = false
   // Tracks the last member number we already looked up — prevents duplicate API calls
   // when the field loses focus without changing value.
   const lastLookedUpMemberRef = useRef('')
@@ -2762,7 +2763,6 @@ const Nhis = () => {
     resolvedNhiaSettings?.configSource || resolvedNhiaSettings?.source
   )
   const isBranchServerEnabled = shouldUseBranchServer()
-  const shouldUseOfflineNhiaUrl = isBranchServerEnabled
   const effectiveMemberLookupEndpointPath = memberLookupEndpointPath ||
     (isBranchServerEnabled || isBranchNhiaConfigSource ? '/api/hmis/genCCC' : '')
   const nhiaCcCodeApiAvailable = Boolean(
@@ -2772,7 +2772,20 @@ const Nhis = () => {
       (nhiaApiBaseUrl || isBranchServerEnabled || isBranchNhiaConfigSource) &&
       effectiveMemberLookupEndpointPath
   )
-  const canGenerateNhiaCcCode = Boolean(nhiaCcCodeApiAvailable && integrationMode !== 'claimit_export')
+  const [cccPolicy, setCccPolicy] = useState(null)
+  useEffect(() => {
+    let active = true
+    setCccPolicy(null)
+    const load = () => (isBranchServerEnabled ? getBranchCccPolicy() : cccIntegration('get_ccc_policy', { organizationId }))
+      .then(result => { if (active) setCccPolicy(result.policy) })
+      .catch(() => { if (active) setCccPolicy(null) })
+    if (organizationId) void load()
+    const interval = setInterval(load, 60000)
+    return () => { active = false; clearInterval(interval) }
+  }, [organizationId, isBranchServerEnabled])
+  const canGenerateNhiaCcCode = Boolean(cccPolicy?.enabled && (cccPolicy.provider === 'otac'
+    ? cccPolicy.status === 'configured'
+    : nhiaCcCodeApiAvailable && integrationMode !== 'claimit_export'))
   const nhisPageSubtitle = isHospital
     ? 'NHIA hospital service claims, tariffs, diagnoses, and direct CLAIM-it submission'
     : 'NHIS medicine dispensing claims and catalog workflows for community and hospital pharmacies'
@@ -4374,8 +4387,7 @@ const Nhis = () => {
 
   // ── submit claim ──────────────────────────────────────────────
   // Shared helper — applies member details from an NHIA genCCC response to the
-  // claim form. Used by both handleMemberLookup and handleGenerateCcCode so that
-  // auto-fill behaviour is always identical regardless of which path triggered it.
+  // claim form after explicit, server-verified attendance generation.
   const applyMemberDetailsToForm = useCallback((prev, memberDetails) => {
     if (!memberDetails) return prev
     const nameParts = (memberDetails.memberName || '').trim().split(/\s+/)
@@ -4407,56 +4419,7 @@ const Nhis = () => {
     }
   }, [])
 
-  // Called when the member number field loses focus. Calls NHIA genCCC to verify
-  // eligibility and auto-fill name, HIN, DOB, gender, and CC code.
-  // Skips if the value hasn't changed since the last successful lookup.
-  const handleMemberLookup = useCallback(async (memberNo, explicitCardType = '') => {
-    if (generatingCcCode || lookingUpMember || claimSubmitting) return
-    const requestRevision = cccFormRevisionRef.current
-    const memberNumber = (memberNo || claimForm.memberNo || '').trim()
-    if (!memberNumber) {
-      notify('memberNumber is required.', 'warning')
-      return
-    }
-    const selectedCardType = explicitCardType || claimForm.cardType || getNhiaLookupCardType(memberNumber)
-    if (selectedCardType === 'GHANACARD' && !isGhanaCardNumber(memberNumber)) {
-      notify('Enter the full Ghana Card number in the format GHA-#########-# before generating a CC code.', 'warning')
-      return
-    }
-    if (!canGenerateNhiaCcCode) return
-    // Skip if we already looked up this exact member number.
-    if (lastLookedUpMemberRef.current === memberNumber) return
-
-    if (!shouldUseOfflineNhiaUrl) return   // Cloud path: lookup not yet wired, skip silently
-
-    try {
-      setLookingUpMember(true)
-      const normalizedMemberNumber = normalizeNhiaMemberNumber(memberNumber)
-      const result = await branchLookupNhiaMember({
-        memberNumber: normalizedMemberNumber,
-        cardType: selectedCardType,
-      })
-      if (requestRevision !== cccFormRevisionRef.current) return
-      if (!result) return
-      lastLookedUpMemberRef.current = normalizedMemberNumber
-      setClaimForm((prev) => applyMemberDetailsToForm(prev, result))
-
-      if (result.status && result.status.toUpperCase() !== 'ACTIVE') {
-        notify(`Member status: ${result.status}. Verify eligibility before proceeding.`, 'warning')
-      } else if (result.ccCode) {
-        notify(`Member verified — ${result.memberName || memberNumber}. CC code auto-filled.`, 'success')
-      } else {
-        notify(`Member verified — ${result.memberName || memberNumber}.`, 'info')
-      }
-    } catch (err) {
-      const message = getNhiaMemberFeedbackMessage(getErrorMessage(err), 'Member lookup failed.')
-      notify(message, 'error')
-      if (import.meta.env.DEV) console.warn('Member lookup failed:', message)
-    } finally {
-      setLookingUpMember(false)
-    }
-  }, [claimForm.memberNo, claimForm.cardType, canGenerateNhiaCcCode, resolvedNhiaSettings, applyMemberDetailsToForm, notify, generatingCcCode, lookingUpMember, claimSubmitting])
-
+  // Attendance generation is explicit and deduplicated by the central ledger.
   const handleGenerateCcCode = async () => {
     if (generatingCcCode || lookingUpMember || claimSubmitting) return
     const requestRevision = cccFormRevisionRef.current
@@ -4466,7 +4429,10 @@ const Nhis = () => {
     }
     if (!canGenerateNhiaCcCode) {
       notify(
-        integrationMode === 'claimit_export'
+        !cccPolicy ? 'CCC configuration could not be loaded. Check the connection and try again.'
+          : !cccPolicy.enabled ? 'CCC generation is disabled for this facility. Contact the platform administrator.'
+          : cccPolicy.provider === 'otac' ? 'The facility OTAC token needs configuration or renewal. Contact the platform administrator.'
+          : integrationMode === 'claimit_export'
           ? 'CLAIM-it CXF export mode does not generate live NHIA CCC codes. Select a live NHIA/CLAIM-it API mode in Settings, or enter the CC/CCC manually.'
           : 'NHIA CCC generation is not configured. Set the NHIA API base URL and /api/hmis/genCCC endpoint in Settings.',
         'info'
@@ -4501,6 +4467,7 @@ const Nhis = () => {
         hin: claimForm.hin,
         diagnosis: claimForm.diagnosis,
         serviceDate: claimForm.serviceDate,
+        otacCode: claimForm.otacCode,
         totalAmount: claimTotal,
       }
       const cccRoute = isBranchServerEnabled ? 'local_branch' : 'cloud'
@@ -7747,10 +7714,7 @@ const Nhis = () => {
                               ? ''
                               : p.hin,
                           }))
-                          // Only trigger lookup when value actually changed
-                          if (normalized && normalized !== lastLookedUpMemberRef.current) {
-                            handleMemberLookup(normalized, claimForm.cardType || getNhiaLookupCardType(normalized))
-                          }
+                          // Attendance is generated only through the explicit CCC button.
                         }}
                         onChange={(e) => {
                           const memberNo = normalizeNhiaMemberNumber(e.target.value)

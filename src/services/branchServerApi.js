@@ -802,6 +802,11 @@ export const generateNhiaCcCode = async (claimContext = {}) => {
   return response.data || null
 }
 
+export const getBranchCccPolicy = async () => {
+  const response = await branchFetch('/api/nhia/ccc-policy', { requireUserSession: true })
+  return response.data
+}
+
 // Member lookup: single call that returns MobCCC (CC code) + member details from NHIA.
 // Use this when patient presents their NHIS card — it verifies eligibility and gets the CC code.
 // Calls NHIA genCCC API (https://elig.nhia.gov.gh:5000/api/hmis/genCCC).
