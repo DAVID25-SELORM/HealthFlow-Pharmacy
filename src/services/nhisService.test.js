@@ -22,7 +22,7 @@ vi.mock('./auditService', () => ({
 // This suite tests serialization/attachments. The real RPC boundary and its
 // rejection/authorization behavior are covered in claimitLifecycleService and SQL tests.
 vi.mock('./claimitLifecycleService', () => ({
-  getExportSigningEvidence: vi.fn(async (claims) => ({ claims, warnings: [] })),
+  getExportSigningEvidence: vi.fn(async (claims) => ({ claims: claims.map(claim => ({ ...claim, claimit_fingerprint: `test-verified-${claim.id}` })), warnings: [] })),
   recordCxfExport: vi.fn(async () => null),
 }))
 
