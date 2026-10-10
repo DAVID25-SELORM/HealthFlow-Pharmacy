@@ -59,6 +59,39 @@ describe('CCC provider safety', () => {
   it('does not report success when ledger persistence fails', async () => {
     const { db, updates } = database({saveError:true})
     await expect(runCccRequest({ ...args(db), fetcher:async () => ({ok:true,json:async()=>good}) })).rejects.toThrow(/unresolved/)
-    expect(updates.at(-1).status).toBe('unknown')
+    expect(updates.at(-1)).toMatchObject({ status: 'unknown', error_code: 'attendance_recording_failed' })
   })
+  it.each([
+    [401, 'otac_auth_rejected'], [403, 'otac_auth_rejected'],
+    [429, 'otac_http_429'], [500, 'otac_http_500'],
+  ])('records HTTP %s without disclosing upstream content or retrying', async (status, code) => {
+    const { db, updates } = database(); const options = args(db)
+    const json = vi.fn(async () => ({ secret: 'private upstream content' }))
+    const fetcher = vi.fn(async () => ({ ok: false, status, json }))
+    await expect(runCccRequest({ ...options, fetcher })).rejects.toThrow(/Request: request-id/)
+    expect(updates[0]).toMatchObject({ status: 'unknown', error_code: code })
+    expect(json).not.toHaveBeenCalled()
+    expect(fetcher).toHaveBeenCalledTimes(1); expect(options.existing).not.toHaveBeenCalled()
+  })
+  it.each([
+    ['TimeoutError', 'otac_timeout'], ['TypeError', 'otac_network_error'],
+  ])('classifies %s without exposing exception contents', async (name, code) => {
+    const { db, updates } = database()
+    const error = new Error('secret token and patient data'); error.name = name
+    const failure = await runCccRequest({ ...args(db), fetcher: async () => { throw error } }).catch(e => e)
+    expect(failure.message).not.toContain('secret')
+    expect(updates[0]).toMatchObject({ status: 'unknown', error_code: code })
+  })
+  it('records invalid JSON as unresolved without exposing the response', async () => {
+    const { db, updates } = database()
+    await expect(runCccRequest({ ...args(db), fetcher: async () => ({ ok: true, json: async () => { throw new SyntaxError('private body') } }) })).rejects.toThrow(/unreadable response/)
+    expect(updates[0]).toMatchObject({ status: 'unknown', error_code: 'otac_invalid_response' })
+  })
+  it('marks a failed token preflight as not sent and never calls OTAC', async () => {
+    const { db, updates } = database(); const fetcher = vi.fn()
+    await expect(runCccRequest({ ...args(db), decode: async () => 'invalid', fetcher })).rejects.toThrow(/No request was sent/)
+    expect(fetcher).not.toHaveBeenCalled()
+    expect(updates[0]).toMatchObject({ status: 'not_created', error_code: 'preflight_failed' })
+  })
+
 })
