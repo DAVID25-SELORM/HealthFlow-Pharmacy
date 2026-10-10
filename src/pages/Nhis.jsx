@@ -2803,6 +2803,17 @@ const Nhis = () => {
   const canGenerateNhiaCcCode = Boolean(cccPolicy?.enabled && (cccPolicy.provider === 'otac'
     ? cccPolicy.status === 'configured'
     : nhiaCcCodeApiAvailable && integrationMode !== 'claimit_export'))
+  const cccUnavailableReason = !cccPolicy
+    ? 'CCC settings are loading or could not be loaded. Check your connection; settings refresh automatically.'
+    : !cccPolicy.enabled
+      ? 'CCC generation is disabled for this facility. Contact the platform administrator.'
+      : cccPolicy.provider === 'otac'
+        ? cccPolicy.status === 'needs_renewal'
+          ? 'The saved OTAC token has expired or is about to expire. Ask the platform administrator to save a renewed token in Tenant Admin > CCC settings. Your facility settings are still saved.'
+          : 'The facility OTAC connection needs configuration. Ask the platform administrator to check Tenant Admin > CCC settings.'
+        : integrationMode === 'claimit_export'
+          ? 'CLAIM-it export mode does not perform live NHIA CCC generation.'
+          : 'Live NHIA CCC generation is not configured in Settings.'
   const nhisPageSubtitle = isHospital
     ? 'NHIA hospital service claims, tariffs, diagnoses, and direct CLAIM-it submission'
     : 'NHIS medicine dispensing claims and catalog workflows for community and hospital pharmacies'
@@ -7920,11 +7931,12 @@ const Nhis = () => {
                             ...p,
                             cccNo: normalizeNhisCcCode(e.target.value).slice(0, 5),
                           }))} />
-                        {claimControlMode !== 'manual' && canGenerateNhiaCcCode && (
+                        {claimControlMode !== 'manual' && (
                           <button
                             type="button"
                             className="btn btn-secondary nhis-code-generate"
-                            disabled={generatingCcCode || lookingUpMember || claimSubmitting}
+                            disabled={!canGenerateNhiaCcCode || generatingCcCode || lookingUpMember || claimSubmitting}
+                            title={!canGenerateNhiaCcCode ? cccUnavailableReason : undefined}
                             onClick={handleGenerateCcCode}
                           >
                             {generatingCcCode ? 'Validating...' : 'Generate/Validate CC Code via NHIA'}
@@ -7936,9 +7948,7 @@ const Nhis = () => {
                       )}
                       {claimControlMode !== 'manual' && !canGenerateNhiaCcCode && (
                         <div className="patient-meta">
-                          {integrationMode === 'claimit_export'
-                            ? 'CLAIM-it export mode does not perform live NHIA CCC generation.'
-                            : 'Live NHIA CCC generation is not configured in Settings.'}
+                          {cccUnavailableReason}
                         </div>
                       )}
                       {claimControlMode !== 'manual' && canGenerateNhiaCcCode && !claimForm.cccNo && (
