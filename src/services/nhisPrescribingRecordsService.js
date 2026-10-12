@@ -141,12 +141,30 @@ export const getNhisClaimFacilityOptions = (facilities = [], selectedId = '') =>
   const active = facilities.filter((facility) => facility?.id &&
     getNhisPrescribingFacilityDisplayName(facility) &&
     normalizeText(facility.status).toLowerCase() !== 'inactive')
-  const korleBu = active.filter((facility) =>
-    getNhisPrescribingFacilityDisplayName(facility) === 'Korle Bu Teaching Hospital')
-  const preferred = korleBu.find((facility) => facility.id === selectedId) ||
-    korleBu.find((facility) => /^korle[ -]+bu teaching hospital$/i.test(
-      normalizeText(facility.facility_name ?? facility.facilityName))) || korleBu[0]
-  return active.filter((facility) => !korleBu.includes(facility) || facility === preferred)
+  const groups = new Map()
+  const codeOf = (facility) => normalizeText(facility.nhia_facility_code ?? facility.nhiaFacilityCode).toUpperCase()
+  for (const facility of active) {
+    const key = getNhisPrescribingFacilityDisplayName(facility)
+      .normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim()
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key).push(facility)
+  }
+  const choose = (rows) => rows.find((row) => row.id === selectedId) ||
+    rows.find((row) => codeOf(row)) ||
+    rows.find((row) => /^korle[ -]+bu teaching hospital$/i.test(
+      normalizeText(row.facility_name ?? row.facilityName))) || rows[0]
+  return [...groups.values()].flatMap((rows) => {
+    const codes = new Set(rows.map(codeOf).filter(Boolean))
+    if (codes.size <= 1) return [choose(rows)]
+    // Conflicting facility codes are distinct identities, not safe duplicates.
+    const byCode = new Map()
+    for (const row of rows) {
+      const code = codeOf(row)
+      if (!byCode.has(code)) byCode.set(code, [])
+      byCode.get(code).push(row)
+    }
+    return [...byCode.values()].map(choose)
+  })
 }
 
 export const getNhisPrescriberDisplayName = (prescriber = {}) => {

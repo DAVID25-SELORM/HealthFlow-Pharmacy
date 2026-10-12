@@ -43,6 +43,18 @@ beforeEach(() => {
 })
 
 describe('NHIS prescribing records service', () => {
+  it('collapses case and spacing duplicates while preserving selected IDs and conflicting codes', () => {
+    const rows = [
+      { id: 'a', facility_name: '37 Military Hospital' },
+      { id: 'b', facility_name: '37 MILITARY   HOSPITAL', nhia_facility_code: 'X' },
+      { id: 'c', facility_name: 'Other Hospital', nhia_facility_code: 'Y' },
+      { id: 'd', facility_name: 'OTHER HOSPITAL', nhia_facility_code: 'Z' },
+      { id: 'e', facility_name: '37 Military Hospital', status: 'inactive' },
+    ]
+    expect(getNhisClaimFacilityOptions(rows).map(row => row.id)).toEqual(['b', 'c', 'd'])
+    expect(getNhisClaimFacilityOptions(rows, 'a').map(row => row.id)).toEqual(['a', 'c', 'd'])
+    expect(rows).toHaveLength(5)
+  })
   it('expands confirmed aliases and preserves the selected record when collapsing choices', () => {
     const records = ['KBT', 'kbth', 'KTH', 'Korle Bu Teaching Hospital', 'Other Hospital']
       .map((facility_name, id) => ({ id: String(id), facility_name }))
