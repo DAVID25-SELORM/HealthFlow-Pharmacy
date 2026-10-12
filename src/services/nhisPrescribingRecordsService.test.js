@@ -31,6 +31,7 @@ import {
   getNhisPrescriberDisplayName,
   getNhisPrescriberTextPatch,
   getNhisPrescribingFacilityDisplayName,
+  getNhisClaimFacilityOptions,
   listNhisPrescribers,
   listNhisPrescribingFacilities,
   normalizeNhisPrescriberPayload,
@@ -42,6 +43,17 @@ beforeEach(() => {
 })
 
 describe('NHIS prescribing records service', () => {
+  it('expands confirmed aliases and preserves the selected record when collapsing choices', () => {
+    const records = ['KBT', 'kbth', 'KTH', 'Korle Bu Teaching Hospital', 'Other Hospital']
+      .map((facility_name, id) => ({ id: String(id), facility_name }))
+    for (const facility of records.slice(0, 4)) {
+      expect(getNhisPrescribingFacilityDisplayName(facility)).toBe('Korle Bu Teaching Hospital')
+    }
+    expect(getNhisClaimFacilityOptions(records).map(row => row.id)).toEqual(['3', '4'])
+    expect(getNhisClaimFacilityOptions(records, '1').map(row => row.id)).toEqual(['1', '4'])
+    expect(records[1].facility_name).toBe('kbth')
+    expect(getNhisPrescribingFacilityDisplayName({ facility_name: 'ABC' })).toBe('ABC')
+  })
   it('keeps spaces after Dr while clearing stale saved-doctor identity', () => {
     for (const value of ['D', 'Dr', 'Dr ', 'Dr J', 'Dr John ', 'Dr. John ']) {
       expect(getNhisPrescriberTextPatch(value)).toMatchObject({
@@ -137,7 +149,7 @@ describe('NHIS prescribing records service', () => {
 
   it('keeps prescriber and facility suggestions safe when a saved row is missing', () => {
     expect(getNhisPrescribingFacilityDisplayName(null)).toBe('')
-    expect(getNhisPrescribingFacilityDisplayName({ facilityName: 'KBTH' })).toBe('KBTH')
+    expect(getNhisPrescribingFacilityDisplayName({ facilityName: 'KBTH' })).toBe('Korle Bu Teaching Hospital')
     expect(getNhisPrescriberDisplayName(null)).toBe('')
     expect(getNhisPrescriberDisplayName({ fullName: 'Dr Duke Gyemah' })).toBe('Dr Duke Gyemah')
     expect(getNhisPrescriberDisplayName({

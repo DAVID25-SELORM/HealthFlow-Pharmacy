@@ -149,6 +149,7 @@ import {
   deactivateNhisPrescribingFacility,
   getNhisPrescriberDisplayName,
   getNhisPrescribingFacilityDisplayName,
+  getNhisClaimFacilityOptions,
   listNhisPrescribers,
   listNhisPrescribingFacilities,
 } from '../services/nhisPrescribingRecordsService'
@@ -2088,11 +2089,8 @@ const Nhis = () => {
   }, [prescriberSearch, prescribers])
 
   const claimFacilityOptions = useMemo(
-    () => prescribingFacilities.filter((facility) =>
-      isValidPrescribingFacilityRecord(facility) &&
-      normalizeText(facility.status).toLowerCase() !== 'inactive'
-    ),
-    [prescribingFacilities]
+    () => getNhisClaimFacilityOptions(prescribingFacilities, claimForm.prescribingFacilityId),
+    [prescribingFacilities, claimForm.prescribingFacilityId]
   )
 
   const claimPrescriberOptions = useMemo(

@@ -131,7 +131,22 @@ export const normalizeNhisPrescriberPayload = (prescriber = {}, options = {}) =>
 
 export const getNhisPrescribingFacilityDisplayName = (facility = {}) => {
   const record = facility || {}
-  return normalizeText(record.facility_name ?? record.facilityName)
+  const name = normalizeText(record.facility_name ?? record.facilityName)
+  // Confirmed facility aliases; never infer identities from arbitrary initials.
+  return /^(kbt|kbth|kth|korle[ -]+bu teaching hospital)$/i.test(name)
+    ? 'Korle Bu Teaching Hospital' : name
+}
+
+export const getNhisClaimFacilityOptions = (facilities = [], selectedId = '') => {
+  const active = facilities.filter((facility) => facility?.id &&
+    getNhisPrescribingFacilityDisplayName(facility) &&
+    normalizeText(facility.status).toLowerCase() !== 'inactive')
+  const korleBu = active.filter((facility) =>
+    getNhisPrescribingFacilityDisplayName(facility) === 'Korle Bu Teaching Hospital')
+  const preferred = korleBu.find((facility) => facility.id === selectedId) ||
+    korleBu.find((facility) => /^korle[ -]+bu teaching hospital$/i.test(
+      normalizeText(facility.facility_name ?? facility.facilityName))) || korleBu[0]
+  return active.filter((facility) => !korleBu.includes(facility) || facility === preferred)
 }
 
 export const getNhisPrescriberDisplayName = (prescriber = {}) => {
