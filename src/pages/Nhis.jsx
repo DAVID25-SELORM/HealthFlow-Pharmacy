@@ -8122,63 +8122,6 @@ const Nhis = () => {
                   </section>
                 )}
 
-                {/* Referral */}
-                <section className="nhis-section">
-                  <h3 className="nhis-section-title">Prescription Source</h3>
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label>Saved Facility</label>
-                      <select
-                        className="form-input"
-                        value={claimForm.prescribingFacilityId}
-                        onChange={(event) => handleSelectPrescribingFacility(event.target.value)}
-                      >
-                        <option value="">Select saved facility</option>
-                        {claimFacilityOptions.map((facility) => (
-                          <option key={facility.id} value={facility.id}>
-                            {getNhisPrescribingFacilityDisplayName(facility)}
-                            {facility.nhia_facility_code ? ` - ${facility.nhia_facility_code}` : ''}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="form-group">
-                      <label>Prescribing Facility *</label>
-                      <CompactSuggestionInput
-                        value={claimForm.referringFacility}
-                        required
-                        ariaLabel="Prescribing facility"
-                        onValueChange={handlePrescribingFacilityTextChange}
-                        options={claimFacilityOptions.map((facility) => {
-                          const name = getNhisPrescribingFacilityDisplayName(facility)
-                          const code = normalizeText(facility.nhia_facility_code ?? facility.nhiaFacilityCode)
-                          return {
-                            value: name,
-                            label: name,
-                            description: code ? `${code} - ${facility.facility_type || 'Saved facility'}` : facility.facility_type || 'Saved facility',
-                          }
-                        })}
-                      />
-                    </div>
-                  </div>
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label>Referral Code / CCC</label>
-                      <input className="form-input" value={claimForm.referralCode}
-                        onChange={(e) => setClaimForm((p) => ({ ...p, referralCode: e.target.value }))} />
-                    </div>
-                    <div className="form-group">
-                      <label>Prescription Date</label>
-                      <input
-                        className="form-input"
-                        type="date"
-                        value={claimForm.prescriptionDate}
-                        onChange={(e) => setClaimForm((p) => ({ ...p, prescriptionDate: e.target.value }))}
-                      />
-                    </div>
-                  </div>
-                </section>
-
                 {/* Authorization */}
                 <section className="nhis-section">
                   <h3 className="nhis-section-title">Prescription Authorization</h3>
@@ -8240,6 +8183,63 @@ const Nhis = () => {
                           {claimForm.prescriptionUpdatedAt ? ` on ${formatAppDateTime(claimForm.prescriptionUpdatedAt)}` : ''}.
                         </small>
                       )}
+                    </div>
+                  </div>
+                </section>
+
+                {/* Referral */}
+                <section className="nhis-section">
+                  <h3 className="nhis-section-title">Prescription Source</h3>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Saved Facility</label>
+                      <select
+                        className="form-input"
+                        value={claimForm.prescribingFacilityId}
+                        onChange={(event) => handleSelectPrescribingFacility(event.target.value)}
+                      >
+                        <option value="">Select saved facility</option>
+                        {claimFacilityOptions.map((facility) => (
+                          <option key={facility.id} value={facility.id}>
+                            {getNhisPrescribingFacilityDisplayName(facility)}
+                            {facility.nhia_facility_code ? ` - ${facility.nhia_facility_code}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label>Prescribing Facility *</label>
+                      <CompactSuggestionInput
+                        value={claimForm.referringFacility}
+                        required
+                        ariaLabel="Prescribing facility"
+                        onValueChange={handlePrescribingFacilityTextChange}
+                        options={claimFacilityOptions.map((facility) => {
+                          const name = getNhisPrescribingFacilityDisplayName(facility)
+                          const code = normalizeText(facility.nhia_facility_code ?? facility.nhiaFacilityCode)
+                          return {
+                            value: name,
+                            label: name,
+                            description: code ? `${code} - ${facility.facility_type || 'Saved facility'}` : facility.facility_type || 'Saved facility',
+                          }
+                        })}
+                      />
+                    </div>
+                  </div>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Referral Code / CCC</label>
+                      <input className="form-input" value={claimForm.referralCode}
+                        onChange={(e) => setClaimForm((p) => ({ ...p, referralCode: e.target.value }))} />
+                    </div>
+                    <div className="form-group">
+                      <label>Prescription Date</label>
+                      <input
+                        className="form-input"
+                        type="date"
+                        value={claimForm.prescriptionDate}
+                        onChange={(e) => setClaimForm((p) => ({ ...p, prescriptionDate: e.target.value }))}
+                      />
                     </div>
                   </div>
                 </section>
