@@ -1,4 +1,4 @@
-import { getCccPolicy, publicCccPolicy, inspectOtacToken, runCccRequest } from '../_shared/cccProvider.ts'
+import { CccFailure, getCccPolicy, publicCccPolicy, inspectOtacToken, runCccRequest } from '../_shared/cccProvider.ts'
 import { resolveActivityLogPeriod } from '../_shared/activityLogPeriod.ts'
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
@@ -5078,7 +5078,8 @@ const generateExistingNhiaCcCode = async (
   adminClient: ReturnType<typeof createAdminClient>,
   requesterProfile: RequesterProfile,
   organizationId: string,
-  payload: Record<string, unknown>
+  payload: Record<string, unknown>,
+  onDispatch: () => void
 ) => {
   requireClaimsAccess(requesterProfile, 'Only claims staff can generate or change NHIA CC codes.')
   const receivedKeys = Object.keys(payload || {})
@@ -5160,6 +5161,7 @@ const generateExistingNhiaCcCode = async (
       organizationId,
       scopedBranchId
     )
+    onDispatch()
     response = await fetch(finalUrl, {
       method: 'POST',
       headers,
@@ -5168,11 +5170,8 @@ const generateExistingNhiaCcCode = async (
       signal: AbortSignal.timeout(25000),
     })
   } catch (error) {
-    return {
-      ok: false,
-      error: `NHIA API request failed: ${getErrorMessage(error)}`,
-      receivedKeys,
-    }
+    throw new CccFailure(error instanceof Error && ['AbortError', 'TimeoutError'].includes(error.name)
+      ? 'existing_timeout' : 'existing_request_failed', 'The existing NHIA provider request failed.')
   }
   const responseText = await response.text()
   let body: unknown = {}
@@ -5190,13 +5189,7 @@ const generateExistingNhiaCcCode = async (
   })
 
   if (!response.ok) {
-    return {
-      ok: false,
-      error: getErrorMessage(buildRemoteHttpError('NHIA API', response.status, body)),
-      httpStatus: response.status,
-      receivedKeys,
-      response: body,
-    }
+    throw new CccFailure(`existing_http_${response.status}`, `The existing NHIA provider returned HTTP ${response.status}.`)
   }
 
   const memberDetails = mapNhiaMemberLookupResponse(body)
@@ -6409,7 +6402,7 @@ const generateNhiaCcCode = async (db: ReturnType<typeof createAdminClient>, prof
    if(!settings?.directApiEnabled) throw new Error('Existing NHIA API is not enabled for this facility.')
    getScopedNhiaEligibilityCredentials(settings,org,resolveScopedBranchId(profile,payload))
   },
-  existing:(context: Record<string,unknown>)=>generateExistingNhiaCcCode(db,profile,org,{...context,claimId:context.claimId || context.claim_id || `attendance:${context.memberNumber}`})})
+  existing:(context: Record<string,unknown>, onDispatch: () => void)=>generateExistingNhiaCcCode(db,profile,org,{...context,claimId:context.claimId || context.claim_id || `attendance:${context.memberNumber}`},onDispatch)})
 }
 
 Deno.serve(async (request) => {

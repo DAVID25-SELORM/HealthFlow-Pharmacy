@@ -19,9 +19,30 @@ function database({ cached = false, saveError = false, provider = 'otac' } = {})
 }
 const args = (db) => ({ db, org: 'org', actor: 'actor', branch: null, payload: { memberNumber: '12345678', serviceDate: '2026-10-10' }, decode: async () => token({ HPN: '123', exp: Math.floor(Date.now()/1000)+3600 }), existing: vi.fn(), preflightExisting: vi.fn() })
 describe('CCC provider safety', () => {
+  it('releases existing-provider failures before transmission', async () => {
+    const { db, updates } = database({ provider: 'existing' })
+    const options = args(db)
+    options.existing.mockResolvedValue({ ok: false, error: 'private configuration detail' })
+    await expect(runCccRequest(options)).rejects.toThrow(/No request was sent/)
+    expect(updates.at(-1).status).toBe('not_created')
+  })
+  it('keeps an existing-provider failure after transmission unresolved', async () => {
+    const { db, updates } = database({ provider: 'existing' })
+    const options = args(db)
+    options.existing.mockImplementation(async (_payload, onDispatch) => {
+      onDispatch()
+      return { ok: false, error: 'private upstream detail' }
+    })
+    await expect(runCccRequest(options)).rejects.toThrow(/unresolved/)
+    expect(updates.at(-1)).toMatchObject({ status: 'unknown', error_code: 'existing_attendance_unconfirmed' })
+    expect(options.existing).toHaveBeenCalledTimes(1)
+  })
   it('keeps existing-provider routing and never sends its credentials to OTAC', async () => {
     const { db } = database({ provider:'existing' }); const options=args(db); const fetcher=vi.fn()
-    options.existing.mockResolvedValue({ ccCode:'12345', memberDetails:{ hpName:'Test Facility', attendanceDate:'2026-10-10', raw:{ sensitive:'data' } } })
+    options.existing.mockImplementation(async (_payload, onDispatch) => {
+      onDispatch()
+      return { ccCode:'12345', memberDetails:{ hpName:'Test Facility', attendanceDate:'2026-10-10T00:00:00', raw:{ sensitive:'data' } } }
+    })
     const result=await runCccRequest({ ...options, fetcher })
     expect(result.source).toBe('api'); expect(result.memberDetails.raw).toBeUndefined()
     expect(options.preflightExisting).toHaveBeenCalledTimes(1); expect(fetcher).not.toHaveBeenCalled()

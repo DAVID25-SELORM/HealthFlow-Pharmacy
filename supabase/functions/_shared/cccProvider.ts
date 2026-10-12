@@ -4,7 +4,7 @@ export const OTAC_URL = 'https://otac.nhia.gov.gh/api/attendance/generate'
 const text = (v: unknown) => typeof v === 'string' ? v.trim() : ''
 const facilityKey = (v: unknown) => text(v).toUpperCase().replace(/\s+/g, ' ')
 
-class CccFailure extends Error {
+export class CccFailure extends Error {
  constructor(public code: string, message: string) { super(message) }
 }
 const timedOut = (error: unknown) => error instanceof Error && ['TimeoutError', 'AbortError'].includes(error.name)
@@ -71,11 +71,10 @@ export async function runCccRequest({db,org,actor,branch,payload,decode,existing
    result = mapOtacResponse(body,snapshot.expected_facility_name,date)
   } else {
    await preflightExisting()
-   dispatched = true
-   result = await existing({...payload,memberNumber:member,cardType:card})
-   if(!result?.ccCode || !/^\d{5}$/.test(result.ccCode)) throw new Error('NHIA attendance was not confirmed. Reconcile before retrying.')
-   if(snapshot.expected_facility_name && facilityKey(result.memberDetails?.hpName)!==facilityKey(snapshot.expected_facility_name)) throw new Error('NHIA returned an unexpected facility. Reconciliation is required.')
-   if(result.memberDetails?.attendanceDate && result.memberDetails.attendanceDate!==date) throw new Error('NHIA attendance date differs from the encounter. Reconciliation is required.')
+   result = await existing({...payload,memberNumber:member,cardType:card}, () => { dispatched = true })
+   if(!result?.ccCode || !/^\d{5}$/.test(result.ccCode)) throw new CccFailure('existing_attendance_unconfirmed', 'NHIA did not confirm a valid attendance code.')
+   if(snapshot.expected_facility_name && facilityKey(result.memberDetails?.hpName)!==facilityKey(snapshot.expected_facility_name)) throw new CccFailure('existing_facility_mismatch', 'NHIA returned an unexpected facility.')
+   if(result.memberDetails?.attendanceDate && result.memberDetails.attendanceDate.slice(0,10)!==date) throw new CccFailure('existing_attendance_date_mismatch', 'NHIA returned an unexpected attendance date.')
    // Never persist the unrestricted upstream payload in the ledger.
    const {raw: _raw, ...memberDetails} = result.memberDetails || {}
    result = {ok:true,ccCode:result.ccCode,source:'api',memberDetails}
