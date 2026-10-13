@@ -9,6 +9,7 @@ import {
 } from '../_shared/defaultMedicationCatalog.ts'
 import {
   getExistingDrugSaveAction,
+  hasCatalogChanges,
 } from '../_shared/drugInventory.ts'
 import { resolveTierAccess } from '../_shared/tier.ts'
 import { isPersistedPatientUuid } from '../_shared/patientWorkspace.ts'
@@ -2590,7 +2591,8 @@ const buildDrugCreatePayload = (
     branch_id: branchId,
     name: assertRequiredText(drugData.name, 'Drug name'),
     batch_number: batchNumber,
-    expiry_date: assertRequiredText(drugData.expiryDate, 'Expiry date'),
+    expiry_date: ['consumable', 'medical_equipment', 'non_medical', 'supplement', 'cosmetic'].includes(normalizeText(drugData.category))
+      ? normalizeText(drugData.expiryDate) || null : assertRequiredText(drugData.expiryDate, 'Expiry date'),
     quantity: parseNonNegativeNumber(drugData.quantity, 'Quantity'),
     price: parseNonNegativeNumber(drugData.price, 'Price'),
     cost_price: parseNonNegativeNumber(drugData.costPrice ?? 0, 'Cost price'),
@@ -3506,7 +3508,8 @@ const updateDrug = async (
   const updatePayload: Record<string, unknown> = {
     name: isDefaultCatalogDrug ? existingDrug.name : name,
     batch_number: isDefaultCatalogDrug ? existingDrug.batch_number : batchNumber,
-    expiry_date: assertRequiredText(drugData.expiryDate, 'Expiry date'),
+    expiry_date: ['consumable', 'medical_equipment', 'non_medical', 'supplement', 'cosmetic'].includes(normalizeText(drugData.category))
+    ? normalizeText(drugData.expiryDate) || null : assertRequiredText(drugData.expiryDate, 'Expiry date'),
     quantity: parseNonNegativeNumber(drugData.quantity, 'Quantity'),
     price: parseNonNegativeNumber(drugData.price, 'Price'),
     supplier: normalizeText(drugData.supplier) || null,
@@ -3703,7 +3706,11 @@ const bulkImportDrugs = async (
       is_nhis_listed: Boolean(row.is_nhis_listed),
       medicine_access_level: normalizeMedicineAccessLevelForSave(row.medicine_access_level),
       chemical_shop_sale_permitted: Boolean(row.chemical_shop_sale_permitted),
-      epharmacy_sale_class: normalizeText(row.epharmacy_sale_class) || null,
+      // Spreadsheets omit this field. Omission preserves existing classifications
+      // on update and lets the database default apply on insert; null violates NOT NULL.
+      ...(normalizeText(row.epharmacy_sale_class)
+        ? { epharmacy_sale_class: normalizeText(row.epharmacy_sale_class) }
+        : {}),
       supplier: normalizeText(row.supplier) || null,
       category: normalizeText(row.category) || null,
       description: normalizeText(row.description) || null,
@@ -3870,7 +3877,7 @@ const syncNhisDrugsToInventory = async (
     }
 
     const existingPrice = Number(existingDrug.price ?? 0)
-    updates.push({
+    const update = {
       id: existingDrug.id,
       values: {
         nhis_code: row.nhis_code,
@@ -3890,7 +3897,8 @@ const syncNhisDrugsToInventory = async (
         status: 'active',
         updated_at: new Date().toISOString(),
       },
-    })
+    }
+    if (hasCatalogChanges(existingDrug, update.values)) updates.push(update)
   }
 
   for (const updateChunk of chunkValues(updates, 25)) {
@@ -5968,7 +5976,7 @@ const getReportBundle = async (
     (drug) => Number(drug.quantity || 0) <= Number(drug.reorder_level || 0)
   )
   const expired = reportVisibleAllDrugRows.filter(
-    (drug) => new Date(drug.expiry_date).getTime() < now.getTime()
+    (drug) => drug.expiry_date && new Date(drug.expiry_date).getTime() < now.getTime()
   )
   const expiring = reportVisibleActiveDrugRows.filter((drug) => {
     const expiryTime = new Date(drug.expiry_date).getTime()
