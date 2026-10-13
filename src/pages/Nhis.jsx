@@ -157,6 +157,7 @@ import { getAllDrugs } from '../services/drugService'
 import { parseNhisDrugFile, generateNhisDrugTemplate } from '../services/nhisDrugImportService'
 import { parseNhisClinicalRuleFile, generateNhisClinicalRuleTemplate } from '../services/nhisClinicalRuleImportService'
 import { isGhanaCardNumber, normalizeNhiaMemberNumber } from '../utils/nhiaMemberNumber'
+import { clearMemberDependentDetails, memberChangeInvalidatesDetails } from '../utils/nhisMemberChange'
 import {
   applyNhiaFacilityDefaults,
   getNhiaAccreditationDateGenerated,
@@ -1680,6 +1681,9 @@ const Nhis = () => {
   // Tracks the last member number we already looked up — prevents duplicate API calls
   // when the field loses focus without changing value.
   const lastLookedUpMemberRef = useRef('')
+  // The member number the patient/attendance details currently on the form were loaded for.
+  const detailsMemberRef = useRef('')
+  useEffect(() => { detailsMemberRef.current = '' }, [editingClaim?.id, showNewClaimModal])
   const cccFormRevisionRef = useRef(0)
   useEffect(() => {
     cccFormRevisionRef.current += 1
@@ -3197,6 +3201,7 @@ const Nhis = () => {
       cardType:    getNhiaLookupCardType(normalizedMemberNo),
       hin:         getPatientHin(patient),
     }))
+    detailsMemberRef.current = normalizedMemberNo
     setSelectedClaimPatient(selectedPatient)
     setPatientSearch(formatPatientLookupName(selectedPatient))
     setPatientSearchResults([])
@@ -4523,6 +4528,7 @@ const Nhis = () => {
       const memberDetails = result?.memberDetails
       if (memberDetails) {
         lastLookedUpMemberRef.current = memberNumber
+        detailsMemberRef.current = memberNumber
         setClaimForm((prev) => applyMemberDetailsToForm(prev, memberDetails))
       }
       if (result?.eligibilityError) {
@@ -7804,10 +7810,16 @@ const Nhis = () => {
                         }}
                         onChange={(e) => {
                           const memberNo = normalizeNhiaMemberNumber(e.target.value)
+                          // Details loaded for another number must not stay attached to this one.
+                          const detailsStale = memberChangeInvalidatesDetails(detailsMemberRef.current, memberNo)
+                          if (detailsStale) {
+                            detailsMemberRef.current = ''
+                            clearSelectedPatient()
+                          }
                           setClaimForm((p) => ({
-                            ...p,
+                            ...(detailsStale ? clearMemberDependentDetails(p, makeBlankClaim()) : p),
                             memberNo,
-                            hin: normalizeNhiaMemberNumber(p.hin) === normalizeNhiaMemberNumber(p.memberNo)
+                            hin: detailsStale ? '' : normalizeNhiaMemberNumber(p.hin) === normalizeNhiaMemberNumber(p.memberNo)
                               ? ''
                               : p.hin,
                           }))
