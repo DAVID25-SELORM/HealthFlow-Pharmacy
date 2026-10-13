@@ -5,7 +5,8 @@ const text = (v: unknown) => typeof v === 'string' ? v.trim() : ''
 const facilityKey = (v: unknown) => text(v).toUpperCase().replace(/\s+/g, ' ')
 
 export class CccFailure extends Error {
- constructor(public code: string, message: string) { super(message) }
+ // `rejected` means NHIA explicitly refused the request, so no attendance exists and a retry is safe.
+ constructor(public code: string, message: string, public rejected = false) { super(message) }
 }
 const timedOut = (error: unknown) => error instanceof Error && ['TimeoutError', 'AbortError'].includes(error.name)
 
@@ -72,6 +73,8 @@ export async function runCccRequest({db,org,actor,branch,payload,decode,existing
   } else {
    await preflightExisting()
    result = await existing({...payload,memberNumber:member,cardType:card}, () => { dispatched = true })
+   if(result?.eligibilityError) throw new CccFailure('existing_member_rejected', text(result.eligibilityError).slice(0,200) || 'NHIA did not issue a CCC for this member.', true)
+   if(!result?.ccCode && result?.ok !== false) throw new CccFailure('existing_no_code_issued', 'NHIA did not issue a CCC for this member number. Check the NHIS number and card type, then try again.', true)
    if(!result?.ccCode || !/^\d{5}$/.test(result.ccCode)) throw new CccFailure('existing_attendance_unconfirmed', 'NHIA did not confirm a valid attendance code.')
    if(snapshot.expected_facility_name && facilityKey(result.memberDetails?.hpName)!==facilityKey(snapshot.expected_facility_name)) throw new CccFailure('existing_facility_mismatch', 'NHIA returned an unexpected facility.')
    if(result.memberDetails?.attendanceDate && result.memberDetails.attendanceDate.slice(0,10)!==date) throw new CccFailure('existing_attendance_date_mismatch', 'NHIA returned an unexpected attendance date.')
@@ -84,7 +87,9 @@ export async function runCccRequest({db,org,actor,branch,payload,decode,existing
   if(saved.error || !saved.data) throw new CccFailure('attendance_recording_failed', 'Attendance generated but recording failed.')
   return result
  } catch(error) {
-  await db.from('ccc_attendance_requests').update({status:dispatched?'unknown':'not_created',error_code:dispatched?(error instanceof CccFailure?error.code:'reconciliation_required'):'preflight_failed',updated_at:new Date().toISOString()}).eq('id',reservation.request_id).eq('status','pending')
+  const rejected = error instanceof CccFailure && error.rejected
+  await db.from('ccc_attendance_requests').update({status:dispatched&&!rejected?'unknown':'not_created',error_code:rejected?error.code:dispatched?(error instanceof CccFailure?error.code:'reconciliation_required'):'preflight_failed',updated_at:new Date().toISOString()}).eq('id',reservation.request_id).eq('status','pending')
+  if(rejected) throw new Error(error.message)
   if(!dispatched) throw new Error('CCC configuration needs attention. No request was sent to NHIA.')
   // No automatic fallback, retransmission, or raw upstream exception disclosure.
   throw new Error(`${error instanceof CccFailure ? error.message + ' ' : ''}Attendance outcome is unresolved. Ask the platform administrator to reconcile before retrying. Request: ${reservation.request_id}`)

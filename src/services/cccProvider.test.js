@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect, vi } from 'vitest'
-import { inspectOtacToken, mapOtacResponse, publicCccPolicy, runCccRequest } from '../../supabase/functions/_shared/cccProvider.ts'
+import { CccFailure, inspectOtacToken, mapOtacResponse, publicCccPolicy, runCccRequest } from '../../supabase/functions/_shared/cccProvider.ts'
 
 const token = (claims) => `header.${Buffer.from(JSON.stringify(claims)).toString('base64url')}.signature`
 const good = { statusCode: 0, attendanceData: { ccc: '12345', authID: 'attendance-id', hpName: 'Test Facility', attendanceDate: '2026-10-10T00:00:00' } }
@@ -36,6 +36,36 @@ describe('CCC provider safety', () => {
     await expect(runCccRequest(options)).rejects.toThrow(/unresolved/)
     expect(updates.at(-1)).toMatchObject({ status: 'unknown', error_code: 'existing_attendance_unconfirmed' })
     expect(options.existing).toHaveBeenCalledTimes(1)
+  })
+  it.each([
+    ['a clear NHIA eligibility message', { ok: true, ccCode: '', eligibilityError: 'NHIA member lookup did not return a CC code: NOT FOUND.' }, 'existing_member_rejected', /NOT FOUND/],
+    ['a 200 reply with no code', { status: 'pending', source: 'pending', message: 'Pending CLAIM-it validation' }, 'existing_no_code_issued', /did not issue a CCC/],
+  ])('lets the user retry after NHIA refuses with %s', async (_label, reply, code, message) => {
+    const { db, updates } = database({ provider: 'existing' })
+    const options = args(db)
+    options.existing.mockImplementation(async (_payload, onDispatch) => { onDispatch(); return reply })
+    const failure = await runCccRequest(options).catch(e => e)
+    expect(failure.message).toMatch(message)
+    expect(failure.message).not.toMatch(/unresolved|administrator/)
+    expect(updates.at(-1)).toMatchObject({ status: 'not_created', error_code: code })
+  })
+  it('still locks when NHIA returns a malformed code, because an attendance may exist', async () => {
+    const { db, updates } = database({ provider: 'existing' })
+    const options = args(db)
+    options.existing.mockImplementation(async (_payload, onDispatch) => { onDispatch(); return { ccCode: '1234567890123', memberDetails: { hpName: 'Test Facility' } } })
+    await expect(runCccRequest(options)).rejects.toThrow(/unresolved/)
+    expect(updates.at(-1)).toMatchObject({ status: 'unknown', error_code: 'existing_attendance_unconfirmed' })
+  })
+  it('treats an NHIA HTTP 4xx refusal as retryable but a timeout or 5xx as unresolved', async () => {
+    const { db, updates } = database({ provider: 'existing' })
+    const refused = args(db)
+    refused.existing.mockImplementation(async (_payload, onDispatch) => { onDispatch(); throw new CccFailure('existing_http_404', 'NHIA rejected this request (HTTP 404). Check the NHIS number and card type, then try again.', true) })
+    await expect(runCccRequest(refused)).rejects.toThrow(/Check the NHIS number/)
+    expect(updates.at(-1)).toMatchObject({ status: 'not_created', error_code: 'existing_http_404' })
+    const unsure = args(db)
+    unsure.existing.mockImplementation(async (_payload, onDispatch) => { onDispatch(); throw new CccFailure('existing_http_503', 'The existing NHIA provider returned HTTP 503.') })
+    await expect(runCccRequest(unsure)).rejects.toThrow(/unresolved/)
+    expect(updates.at(-1)).toMatchObject({ status: 'unknown', error_code: 'existing_http_503' })
   })
   it('keeps existing-provider routing and never sends its credentials to OTAC', async () => {
     const { db } = database({ provider:'existing' }); const options=args(db); const fetcher=vi.fn()

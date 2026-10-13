@@ -5197,7 +5197,17 @@ const generateExistingNhiaCcCode = async (
   })
 
   if (!response.ok) {
-    throw new CccFailure(`existing_http_${response.status}`, `The existing NHIA provider returned HTTP ${response.status}.`)
+    // A 4xx (other than timeout/rate-limit) means NHIA refused the request, so nothing was created and a retry is safe.
+    const refused = response.status >= 400 && response.status < 500 && ![408, 425, 429].includes(response.status)
+    throw new CccFailure(
+      `existing_http_${response.status}`,
+      !refused
+        ? `The existing NHIA provider returned HTTP ${response.status}.`
+        : response.status === 401 || response.status === 403
+          ? 'NHIA rejected the facility credentials for CCC generation.'
+          : `NHIA rejected this request (HTTP ${response.status}). Check the NHIS number and card type, then try again.`,
+      refused
+    )
   }
 
   const memberDetails = mapNhiaMemberLookupResponse(body)
