@@ -146,3 +146,45 @@ describe('CCC provider safety', () => {
   })
 
 })
+
+
+describe('legacy attendance dispatch regression', () => {
+  it('releases a reservation when legacy setup fails before dispatch', async () => {
+    const { db, updates } = database({ provider: 'existing' })
+    const options = args(db)
+    options.existing.mockResolvedValue({ ok: false, error: 'Configuration unavailable' })
+    await expect(runCccRequest(options)).rejects.toThrow(/No request was sent/)
+    expect(updates.at(-1).status).toBe('not_created')
+  })
+  it('keeps a dispatched timeout unresolved without retrying', async () => {
+    const { db, updates } = database({ provider: 'existing' })
+    const options = args(db)
+    options.existing.mockImplementation(async (_payload, onDispatch) => {
+      onDispatch()
+      throw new DOMException('Timed out', 'TimeoutError')
+    })
+    await expect(runCccRequest(options)).rejects.toThrow(/unresolved/)
+    expect(updates.at(-1).status).toBe('unknown')
+    expect(options.existing).toHaveBeenCalledTimes(1)
+  })
+  it('accepts the same attendance day returned as a timestamp', async () => {
+    const { db, updates } = database({ provider: 'existing' })
+    const options = args(db)
+    options.existing.mockImplementation(async (_payload, onDispatch) => {
+      onDispatch()
+      return { ccCode: '12345', memberDetails: { hpName: 'Test Facility', attendanceDate: '2026-10-10T00:00:00' } }
+    })
+    expect((await runCccRequest(options)).ccCode).toBe('12345')
+    expect(updates.at(-1).status).toBe('succeeded')
+  })
+  it('still blocks a mismatched attendance date after dispatch', async () => {
+    const { db, updates } = database({ provider: 'existing' })
+    const options = args(db)
+    options.existing.mockImplementation(async (_payload, onDispatch) => {
+      onDispatch()
+      return { ccCode: '12345', memberDetails: { hpName: 'Test Facility', attendanceDate: '2026-10-09T00:00:00' } }
+    })
+    await expect(runCccRequest(options)).rejects.toThrow(/unresolved/)
+    expect(updates.at(-1).status).toBe('unknown')
+  })
+})
