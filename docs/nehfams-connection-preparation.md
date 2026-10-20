@@ -22,3 +22,5 @@ Do not remove the database constraint to activate NeHFAMS. Activation requires a
 Outstanding: response schemas and business error meanings, HP-info facility identity mapping, approved OTAC acquisition
 workflow, exact authorized test URL, duplicate/retrieval behavior and authorized test data. Credentials already supplied
 must not be committed or embedded in the frontend. Production credentials were not imported by this preparation.
+
+Credential reuse: leaving both NeHFAMS fields blank on first save reuses the selected facility's active organization-level NHIA pair through backend decryption and re-encryption. Existing separate NeHFAMS credentials take priority. Branch and environment credentials are never used. The browser receives availability flags only. No additional migration is required for credential reuse.
