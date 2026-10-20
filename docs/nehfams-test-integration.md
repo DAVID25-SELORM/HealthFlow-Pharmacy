@@ -1,7 +1,7 @@
 # NeHFAMS test integration (local only, not deployed)
 
 Branch `feat/nehfams-connection-preparation`, base `dc37269b`, with uncommitted work. Verified again on 2026-10-20.
-No request was sent to NHIA (test or production). No commit, push, deployment or production migration was made by this verification.
+The only NHIA request made is one read-only `GET /api/hmis/auth/hpinfo` to the production origin for one facility on 2026-10-20 (section 6). No attendance was requested. No deployment or production migration was made.
 Production NeHFAMS attendance remains blocked in three places: the provider gate, the edge function and a database constraint.
 
 Related documents: `docs/nehfams-rollout-audit.md` (earlier audit and prepared test matrix), `docs/nehfams-authorized-test-procedure.md` (operator checklist for the first authorized NHIA test).
@@ -61,7 +61,14 @@ From the NHIA workbook and the Postman collection: routes, methods, header names
 
 ## 6. API behavior verified against the actual authorized test environment
 
-**None.** No NHIA request has been made. Nothing in this document establishes that a live transaction succeeds.
+**One read-only request, on production, for one facility.** On 2026-10-20 at 23:45 UTC, `scripts/nehfams-hpinfo-shape-check.mjs --confirm-production-readonly` made a single `GET https://nehfams.nhia.gov.gh/api/hmis/auth/hpinfo` with the facility's own API account, at the account owner's request. Result, with no values recorded other than the two configuration flags:
+
+- HTTP 200, `application/json`.
+- **The field names are lower-camelCase**, not the workbook's PascalCase: `hpn`, `hpName`, `userName`, `deviceType`, `accountType`, `schemeCode`, `userType`, `authMode`, `otacAuthEnabled`. `accountType` is not in the workbook.
+- Types: `otacAuthEnabled` is a boolean; the others are strings. The workbook lists `DeviceType`, `SchemeCode` and `UserType` as DATE; they are strings.
+- The facility's mode at that time was `1FA` with OTAC disabled, and its facility number and name matched the expected values, so HealthFlow's facility check accepts it.
+
+This confirms the casing risk was real and that the case-insensitive field matching is needed. It says nothing about the attendance response, its date format or its error semantics: **no attendance has been requested through the API.** Nothing here establishes that a live attendance transaction succeeds.
 
 ### NHIA guidance from the NHIS Integrations group (WhatsApp; unverified, second-hand)
 
@@ -85,7 +92,7 @@ An operator signed in to the NHIA NeHFAMS web portal (`otac.nhia.gov.gh`) and th
 ## 7. Remaining risks and limitations
 
 1. **Fixed here:** `submit_nhis_pharmacy_claim` auto-generated a CCC when none was supplied. With the NeHFAMS test provider active it would have created a sandbox attendance and written the test CCC to a production claim row, bypassing the ledger-link check. It now skips generation when the provider is `nehfams`; `src/contracts/nehfamsNoImplicitGeneration.contract.test.js` locks this in (a source-level test, not a behavior test of the Deno function).
-2. Response casing, date serialization, `AttendanceType` values and HTTP-error semantics are unverified against the real HMIS API. The parser now tolerates documented field names in either case and a midnight timestamp, based on NHIA's own portal output and staff messages, not on an observed HMIS response. A format outside that (for example a non-midnight time) still makes a genuinely created attendance appear as `unknown`.
+2. The `hpinfo` response is confirmed lower-camelCase; the attendance response casing, date serialization, `AttendanceType` values and HTTP-error semantics are still unverified. The parser tolerates documented field names in either case and a midnight timestamp, based on the observed `hpinfo` response and NHIA's portal output, not on an observed attendance response. A format outside that (for example a non-midnight time) still makes a genuinely created attendance appear as `unknown`.
 3. HTTP 400, 401 and `StatusCode=1` are all treated as unresolved after dispatch because NHIA documents no no-attendance guarantee. Every rejection therefore needs administrator reconciliation. The legacy provider, by contrast, now treats clear NHIA rejections as retryable. Ask NHIA.
 4. For `GHANACARD`, the returned `UMN` is not compared with the requested number (only NHIS cards are cross-checked).
 5. A failed repeat validation does not revoke an earlier successful validation until its 24 hours end.

@@ -1,8 +1,10 @@
 #!/usr/bin/env node
-// Read-only NeHFAMS TEST connection check. Makes exactly one GET /api/hmis/auth/hpinfo to the NHIA TEST origin.
+// Read-only NeHFAMS facility check. Makes exactly one GET /api/hmis/auth/hpinfo.
 //
-// It cannot create an attendance and cannot reach production: the origin is fixed, any other NEHFAMS_BASE_URL is refused,
-// and the only request is the documented read-only facility-information call. Credentials come from environment
+// It cannot create an attendance: the only request is the documented read-only facility-information call, the origin
+// is fixed per mode, and any other NEHFAMS_BASE_URL is refused. Two explicit modes, never both at once:
+//   --confirm-test-authorized        NHIA test origin, credentials in NEHFAMS_TEST_API_KEY / NEHFAMS_TEST_API_SECRET
+//   --confirm-production-readonly    NHIA production origin, credentials in NEHFAMS_PRODUCTION_API_KEY / NEHFAMS_PRODUCTION_API_SECRET Credentials come from environment
 // variables, are never printed, never written to disk and never passed as arguments.
 //
 // It prints the response SHAPE (field names, JSON types, whether names match the documented casing) and yes/no checks,
@@ -22,6 +24,7 @@
 import { pathToFileURL } from 'node:url'
 
 export const TEST_ORIGIN = 'https://elig.nhia.gov.gh:5007'
+export const PRODUCTION_ORIGIN = 'https://nehfams.nhia.gov.gh'
 export const HPINFO_PATH = '/api/hmis/auth/hpinfo'
 const DOCUMENTED_FIELDS = ['HPN', 'HPName', 'UserName', 'DeviceType', 'SchemeCode', 'UserType', 'AuthMode', 'OTACAuthEnabled']
 // The fields HealthFlow actually relies on, with the type it requires.
@@ -76,25 +79,30 @@ export function evaluateFacility(body, expected) {
   return { ...base, accepted: true, reason: 'ok' }
 }
 
-export function resolveOrigin(env) {
+export function resolveOrigin(env, environment = 'test') {
+  const origin = environment === 'production' ? PRODUCTION_ORIGIN : TEST_ORIGIN
   const requested = env.NEHFAMS_BASE_URL
-  if (requested === undefined || String(requested).trim() === '') return TEST_ORIGIN
-  if (String(requested).trim().replace(/\/+$/, '') !== TEST_ORIGIN) throw new Error('refused_origin')
-  return TEST_ORIGIN
+  if (requested === undefined || String(requested).trim() === '') return origin
+  if (String(requested).trim().replace(/\/+$/, '') !== origin) throw new Error('refused_origin')
+  return origin
 }
 
-const USAGE = 'Read-only NeHFAMS TEST facility check. Requires --confirm-test-authorized, NEHFAMS_TEST_API_KEY and NEHFAMS_TEST_API_SECRET. See the header of scripts/nehfams-hpinfo-shape-check.mjs.'
+const USAGE = 'Read-only NeHFAMS facility check (hpinfo only). Use exactly one of --confirm-test-authorized or --confirm-production-readonly with the matching credential variables. See the header of scripts/nehfams-hpinfo-shape-check.mjs.'
 
 export async function runCheck({ argv = [], env = {}, fetcher = fetch, now = () => new Date() } = {}) {
   if (argv.includes('--help')) return { exitCode: 0, report: { ok: true, usage: USAGE } }
-  if (!argv.includes('--confirm-test-authorized')) {
-    return { exitCode: 2, report: { ok: false, stage: 'not_confirmed', message: 'Pass --confirm-test-authorized only when NHIA has authorized these test credentials.' } }
+  const wantsTest = argv.includes('--confirm-test-authorized')
+  const wantsProduction = argv.includes('--confirm-production-readonly')
+  if (wantsTest === wantsProduction) {
+    return { exitCode: 2, report: { ok: false, stage: 'not_confirmed', message: 'Pass exactly one of --confirm-test-authorized or --confirm-production-readonly, only when the account owner and NHIA allow it.' } }
   }
+  const environment = wantsProduction ? 'production' : 'test'
   let origin
-  try { origin = resolveOrigin(env) } catch { return { exitCode: 2, report: { ok: false, stage: 'refused_origin', message: 'Only the NHIA test origin is allowed.' } } }
-  const key = String(env.NEHFAMS_TEST_API_KEY ?? '').trim()
-  const secret = String(env.NEHFAMS_TEST_API_SECRET ?? '').trim()
-  const missing = [!key && 'NEHFAMS_TEST_API_KEY', !secret && 'NEHFAMS_TEST_API_SECRET'].filter(Boolean)
+  try { origin = resolveOrigin(env, environment) } catch { return { exitCode: 2, report: { ok: false, stage: 'refused_origin', message: 'Only the fixed NHIA origin for the selected mode is allowed.' } } }
+  const prefix = environment === 'production' ? 'NEHFAMS_PRODUCTION' : 'NEHFAMS_TEST'
+  const key = String(env[`${prefix}_API_KEY`] ?? '').trim()
+  const secret = String(env[`${prefix}_API_SECRET`] ?? '').trim()
+  const missing = [!key && `${prefix}_API_KEY`, !secret && `${prefix}_API_SECRET`].filter(Boolean)
   if (missing.length || /[\r\n]/.test(key + secret)) return { exitCode: 2, report: { ok: false, stage: 'credentials', missingVariables: missing, invalidCharacters: /[\r\n]/.test(key + secret) } }
 
   const checkedAt = now().toISOString()
@@ -125,7 +133,7 @@ export async function runCheck({ argv = [], env = {}, fetcher = fetch, now = () 
   const authMode = ['1FA', '2FA', '3FA'].includes(rawMode) ? rawMode : null
   const rawOtac = field(body, 'OTACAuthEnabled')
   const report = {
-    ok: true, checkedAt, origin, path: HPINFO_PATH, httpStatus: response.status, contentType,
+    ok: true, checkedAt, environment, origin, path: HPINFO_PATH, httpStatus: response.status, contentType,
     shape: summarizeShape(body), documentedFields: fields, reliedOnFieldsMatchContract: reliedOnOk,
     configuration: { authMode, otacAuthEnabled: typeof rawOtac === 'boolean' ? rawOtac : null },
     healthflowFacilityCheck: facility,

@@ -36,6 +36,44 @@ describe('hpinfo shape check: guards', () => {
   })
 })
 
+describe('hpinfo shape check: explicit read-only production mode', () => {
+  const productionEnv = { NEHFAMS_PRODUCTION_API_KEY: KEY, NEHFAMS_PRODUCTION_API_SECRET: SECRET, NEHFAMS_EXPECTED_HPN: '123', NEHFAMS_EXPECTED_NAME: 'Test Facility' }
+  it('sends exactly one GET to hpinfo on the production origin and nothing else', async () => {
+    const fetcher = reply(good)
+    const { exitCode, report } = await runCheck({ argv: ['--confirm-production-readonly'], env: productionEnv, fetcher })
+    expect(exitCode).toBe(0); expect(report.environment).toBe('production')
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    const [url, options] = fetcher.mock.calls[0]
+    expect(url).toBe('https://nehfams.nhia.gov.gh/api/hmis/auth/hpinfo')
+    expect(options).toMatchObject({ method: 'GET', redirect: 'error' }); expect(options.body).toBeUndefined()
+  })
+  it('refuses when both modes are requested, or neither, without sending anything', async () => {
+    for (const argv of [['--confirm-production-readonly', '--confirm-test-authorized'], []]) {
+      const fetcher = reply(good)
+      const { exitCode, report } = await runCheck({ argv, env: { ...env, ...productionEnv }, fetcher })
+      expect(exitCode).toBe(2); expect(report.stage).toBe('not_confirmed'); expect(fetcher).not.toHaveBeenCalled()
+    }
+  })
+  it('never uses the test credential variables for production', async () => {
+    const fetcher = reply(good)
+    const { exitCode, report } = await runCheck({ argv: ['--confirm-production-readonly'], env, fetcher })
+    expect(exitCode).toBe(2); expect(report.missingVariables).toEqual(['NEHFAMS_PRODUCTION_API_KEY', 'NEHFAMS_PRODUCTION_API_SECRET'])
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+  it('refuses any origin other than production in production mode, including the test origin', async () => {
+    for (const NEHFAMS_BASE_URL of [TEST_ORIGIN, 'https://example.com']) {
+      const fetcher = reply(good)
+      const { exitCode, report } = await runCheck({ argv: ['--confirm-production-readonly'], env: { ...productionEnv, NEHFAMS_BASE_URL }, fetcher })
+      expect(exitCode).toBe(2); expect(report.stage).toBe('refused_origin'); expect(fetcher).not.toHaveBeenCalled()
+    }
+  })
+  it('keeps credentials and values out of the production report', async () => {
+    const { report } = await runCheck({ argv: ['--confirm-production-readonly'], env: productionEnv, fetcher: reply({ ...good, UserName: 'PRIVATE-NAME' }) })
+    const text = JSON.stringify(report)
+    for (const secret of [KEY, SECRET, 'PRIVATE-NAME', 'someone', 'Test Facility']) expect(text).not.toContain(secret)
+  })
+})
+
 describe('hpinfo shape check: the single request', () => {
   it('sends exactly one GET to hpinfo on the test origin with documented headers and no redirects', async () => {
     const fetcher = reply(good)
