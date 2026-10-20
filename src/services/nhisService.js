@@ -706,7 +706,7 @@ const NHIS_CLAIM_LIST_BASE_SELECT = `
       id, claim_number, patient_id, member_no, card_type, hin,
       surname, other_names, folder_no, gender, date_of_birth,
       service_date_from, service_date_to, branch_id, total_amount,
-      status, created_at, updated_at, ccc_no,
+      status, created_at, updated_at, ccc_no, ccc_attendance_request_id,
       prescription_file_url, prescription_file_path, prescription_file_name,
       prescription_document_type, prescription_verified,
       prescription_verified_by, prescription_verified_at,
@@ -902,6 +902,7 @@ const normalizeNhiaNewCccStatus = (value) => {
 }
 
 const getNhiaAttendancePayload = (claimData = {}) => ({
+  ...(claimData.attendanceRequestId || claimData.ccc_attendance_request_id ? { ccc_attendance_request_id: claimData.attendanceRequestId || claimData.ccc_attendance_request_id } : {}),
   nhia_auth_id: normalizeText(claimData.authId ?? claimData.nhiaAuthId ?? claimData.nhia_auth_id) || null,
   nhia_auth_type: normalizeText(claimData.authType ?? claimData.nhiaAuthType ?? claimData.nhia_auth_type) || null,
   nhia_new_ccc_status: normalizeNhiaNewCccStatus(
@@ -6496,7 +6497,7 @@ export const createNhisClaim = async (claimData, medicines, options = {}) => {
     nhia_eligibility_start_date: toNullableDate(claimData.nhiaEligibilityStartDate ?? claimData.nhia_eligibility_start_date),
     nhia_eligibility_end_date: toNullableDate(claimData.nhiaEligibilityEndDate ?? claimData.nhia_eligibility_end_date),
     // Preserve the provider's attendance date for NHIA/CXF audit output.
-    nhia_attendance_date: ['otac_api', 'nhia_reconciled'].includes(claimData.attendanceVerificationSource || claimData.nhia_attendance_verification_source)
+    nhia_attendance_date: ['otac_api', 'nhia_reconciled', 'nehfams_api'].includes(claimData.attendanceVerificationSource || claimData.nhia_attendance_verification_source)
       ? toNullableDate(claimData.nhiaAttendanceDate || claimData.nhia_attendance_date) || serviceDate
       : serviceDate,
     ...getNhiaAttendancePayload(claimData),
@@ -6788,7 +6789,7 @@ export const updateNhisClaim = async (id, claimData, medicines, options = {}) =>
     nhia_eligibility_start_date: toNullableDate(claimData.nhiaEligibilityStartDate ?? claimData.nhia_eligibility_start_date),
     nhia_eligibility_end_date: toNullableDate(claimData.nhiaEligibilityEndDate ?? claimData.nhia_eligibility_end_date),
     // Preserve verified attendance when editing other claim details.
-    nhia_attendance_date: ['otac_api', 'nhia_reconciled'].includes(claimData.attendanceVerificationSource || claimData.nhia_attendance_verification_source)
+    nhia_attendance_date: ['otac_api', 'nhia_reconciled', 'nehfams_api'].includes(claimData.attendanceVerificationSource || claimData.nhia_attendance_verification_source)
       ? toNullableDate(claimData.nhiaAttendanceDate || claimData.nhia_attendance_date) || serviceDate
       : serviceDate,
     ...getNhiaAttendancePayload(claimData),

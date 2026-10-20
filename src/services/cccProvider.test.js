@@ -158,3 +158,45 @@ describe('NeHFAMS preparation dispatch safety', () => {
   expect(fetcher).not.toHaveBeenCalled()
  })
 })
+
+describe('NeHFAMS reserved test dispatch', () => {
+ function setup({ failSave=false, failNetwork=false, statusCode=0 }={}) {
+  const c={organization_id:'org',environment:'test',version:1,validated_version:1,validated_at:new Date().toISOString(),expected_hpn:'123',expected_name:'Test Facility',auth_mode:'1FA',otac_required:false,api_key_encrypted:'key',api_secret_encrypted:'secret'}
+  const policy={provider:'nehfams',environment:'test',enabled:true}
+  const updates=[]
+  const db={rpc:vi.fn(async()=>({data:{request_id:'request-id',policy,connection:c}})),from:vi.fn(table=>{
+   const chain={select:()=>chain,eq:()=>chain,maybeSingle:async()=>({data:table==='organization_nehfams_connection'?c:policy}),update:value=>{updates.push(value);return chain},single:async()=>({data:failSave?null:{id:'request-id'},error:failSave})};return chain
+  })}
+  const fetcher=vi.fn(async()=>{if(failNetwork) throw new Error('private');return {ok:true,json:async()=>({StatusCode:statusCode,AttendanceData:{HIN:'hin',CCC:'01234',MemberName:'Test Member',UMN:'12345678',newCCC:false,AuthID:'00000000-0000-4000-8000-000000000001',AttendanceDate:'2026-10-10',HPName:'Test Facility'}})}})
+  return {db,updates,fetcher,options:{...args(db),decode:async x=>x,allowNehfamsTest:true,fetcher}}
+ }
+ it('reserves, maps and persists without legacy fallback',async()=>{
+  const {options,db,updates,fetcher}=setup(); const r=await runCccRequest(options)
+  expect(db.rpc).toHaveBeenCalledOnce();expect(fetcher).toHaveBeenCalledOnce();expect(options.existing).not.toHaveBeenCalled()
+  expect(r).toMatchObject({ccCode:'01234',environment:'test',attendanceRequestId:'request-id',memberDetails:{attendanceRequestId:'request-id'}})
+  expect(updates[0].status).toBe('succeeded')
+ })
+ it.each([{failNetwork:true},{failSave:true},{statusCode:1}])('keeps uncertain outcomes unresolved without replay',async behavior=>{
+  const {options,updates,fetcher}=setup(behavior)
+  await expect(runCccRequest(options)).rejects.toThrow(/unresolved/)
+  expect(updates.at(-1).status).toBe('unknown');expect(fetcher).toHaveBeenCalledOnce();expect(options.existing).not.toHaveBeenCalled()
+ })
+})
+
+it('marks a cached test result as test even when reconciled result omitted environment', async () => {
+ const {db}=database({provider:'nehfams',cached:true})
+ const policy={provider:'nehfams',environment:'test',enabled:true}
+ db.from=vi.fn(()=>{const c={select:()=>c,eq:()=>c,maybeSingle:async()=>({data:policy})};return c})
+ db.rpc.mockResolvedValue({data:{cached:true,result:{ccCode:'01234'},request_id:'cached-test'}})
+ const options={...args(db),allowNehfamsTest:true}
+ expect(await runCccRequest(options)).toMatchObject({environment:'test',attendanceRequestId:'cached-test'})
+ expect(options.existing).not.toHaveBeenCalled()
+})
+it('retains reconciliation reference when outcome persistence itself throws',async()=>{
+ const {db}=database()
+ const normal=db.from
+ db.from=vi.fn(table=>table==='ccc_attendance_requests'?{update:()=>{throw new Error('private database transport')}}:normal(table))
+ const options=args(db);options.fetcher=vi.fn(async()=>{throw new Error('network lost')})
+ await expect(runCccRequest(options)).rejects.toThrow(/Request: request-id/)
+ expect(options.fetcher).toHaveBeenCalledOnce()
+})

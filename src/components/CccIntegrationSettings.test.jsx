@@ -22,7 +22,7 @@ it('keeps legacy selected and saves NeHFAMS only as disabled with separate secre
 })
 
 it('offers saved facility credentials without requiring plaintext entry', async () => {
- cccIntegration.mockResolvedValue({policy:{provider:'existing',enabled:true},nehfamsConfigured:false,nehfamsReusableCredentials:true,requests:[],history:[]})
+ cccIntegration.mockResolvedValue({policy:{provider:'existing',enabled:true,expectedHpn:'123',expectedFacilityName:'Test Facility'},nehfamsConfigured:false,nehfamsReusableCredentials:true,requests:[],history:[]})
  render(<CccIntegrationSettings organizationId="org-b" />)
  await screen.findByText('Save CCC settings')
  fireEvent.click(screen.getByRole('radio',{name:/NHIA NeHFAMS/}))

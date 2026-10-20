@@ -19,20 +19,28 @@ function FacilityCccIntegrationSettings({ organizationId }) {
     let active = true
     setData(null); setForm(null); setToken(''); setApiKey(''); setApiSecret(''); setMessage(''); setSaved(false)
     cccIntegration('get_ccc_policy', { organizationId }).then(result => {
-      if (active) { setData(result); setForm(result.policy) }
+      if (active) { setData(result); setForm({...result.policy,...(result.policy.provider==='nehfams' && result.policy.nehfams ? {expectedHpn:result.policy.nehfams.expectedHpn,expectedFacilityName:result.policy.nehfams.expectedFacilityName} : {})}) }
     }).catch(error => { if (active) setMessage(error.message) })
     return () => { active = false }
   }, [organizationId])
   async function save(event) {
     event.preventDefault(); setBusy(true); setMessage(''); setSaved(false)
     try {
-      const result = await cccIntegration('save_ccc_policy', { organizationId, provider: form.provider, enabled: form.enabled,
-        expectedHpn: form.expectedHpn, expectedFacilityName: form.expectedFacilityName, bearerToken: form.provider === 'otac' ? token : '',
+      const result = await cccIntegration('save_ccc_policy', { organizationId, provider: form.provider, enabled: form.provider==='nehfams'?false:form.enabled,
+        environment: form.environment || 'production', expectedHpn: form.expectedHpn, expectedFacilityName: form.expectedFacilityName, bearerToken: form.provider === 'otac' ? token : '',
         ...(form.provider === 'nehfams' ? { nehfamsApiKey: apiKey, nehfamsApiSecret: apiSecret } : {}) })
-      setData(result); setForm(result.policy); setToken(''); setApiKey(''); setApiSecret(''); setSaved(true); setMessage('')
+      setData(result); setForm({...result.policy,...(result.policy.provider==='nehfams' && result.policy.nehfams ? {expectedHpn:result.policy.nehfams.expectedHpn,expectedFacilityName:result.policy.nehfams.expectedFacilityName} : {})}); setToken(''); setApiKey(''); setApiSecret(''); setSaved(true); setMessage('')
     } catch (error) { setMessage(error.message) } finally { setBusy(false) }
   }
-  const statusLabels = { validation_pending: 'NeHFAMS validation pending', disabled: 'Generation paused', existing_configuration: 'Existing provider', needs_token: 'Token required', needs_renewal: 'Token renewal needed', configured: 'OTAC configured' }
+  async function connectionAction(action) {
+    setBusy(true); setMessage('')
+    try {
+      const result=await cccIntegration(action,{organizationId,environment:form.environment || 'production'})
+      setData(result);setForm({...result.policy,...(result.policy.provider==='nehfams' && result.policy.nehfams ? {expectedHpn:result.policy.nehfams.expectedHpn,expectedFacilityName:result.policy.nehfams.expectedFacilityName} : {})})
+    } catch(error) {setMessage(error.message)} finally {setBusy(false)}
+  }
+  const selectedConnection=data?.nehfamsConnections?.find(c=>c.environment===(form?.environment || 'production'))
+  const statusLabels = { test_configured: 'NeHFAMS test enabled', validation_pending: 'NeHFAMS validation pending', disabled: 'Generation paused', existing_configuration: 'Existing provider', needs_token: 'Token required', needs_renewal: 'Token renewal needed', configured: 'OTAC configured' }
   return <section className="ccc-settings" aria-label="CCC integration">
     <header className="ccc-header">
       <div><span className="ccc-eyebrow">NHIA CONNECTION</span><h3>CCC integration</h3><p>Choose how this facility generates its CCCs.</p></div>
@@ -65,11 +73,17 @@ function FacilityCccIntegrationSettings({ organizationId }) {
       </div>}
       {form.provider === 'nehfams' && <div className="ccc-credentials">
         <h4>2. Prepare this facility's NeHFAMS connection</h4>
-        <p>Server: https://nehfams.nhia.gov.gh</p>
+        <label>Environment<select value={form.environment || 'production'} onChange={e=>{setApiKey('');setApiSecret('');setForm({...form,environment:e.target.value,enabled:false,expectedHpn:data?.nehfamsConnections?.find(c=>c.environment===e.target.value)?.expectedHpn || '',expectedFacilityName:data?.nehfamsConnections?.find(c=>c.environment===e.target.value)?.expectedFacilityName || ''})}}><option value="test">NHIA test</option><option value="production">Production (generation disabled)</option></select></label>
+        <label>Expected facility HPN<input required value={form.expectedHpn || ''} onChange={e=>setForm({...form,expectedHpn:e.target.value})}/></label>
+        <label>Expected facility name<input required value={form.expectedFacilityName || ''} onChange={e=>setForm({...form,expectedFacilityName:e.target.value})}/></label>
+        <p>Server: {form.environment==='test'?'https://elig.nhia.gov.gh:5007':'https://nehfams.nhia.gov.gh'}</p>
+        <button type="button" disabled={busy || !selectedConnection} onClick={()=>connectionAction('validate_nehfams_connection')}>Validate saved connection</button>
+        {selectedConnection?.validated && <p>Validated {selectedConnection.expectedFacilityName}: {selectedConnection.authMode}. OTAC {selectedConnection.otacRequired?'required':'not required'}.</p>}
+        {form.environment==='test' && <button type="button" disabled={busy || !selectedConnection?.validated || !data?.nehfamsTestEnabled} onClick={()=>connectionAction('activate_nehfams_test')}>Enable authorized test attendance</button>}
         <p role="status">Saving this selection pauses CCC generation for this facility. Attendance remains disabled until NHIA responses and facility identity are validated.</p>
-        <label>NeHFAMS API key<input type="password" autoComplete="new-password" required={!data?.nehfamsConfigured && !data?.nehfamsReusableCredentials} value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder={data?.nehfamsConfigured ? 'Leave blank to retain saved key' : data?.nehfamsReusableCredentials ? 'Saved facility API key will be reused' : 'Facility API key'} /></label>
-        <label>NeHFAMS API secret<input type="password" autoComplete="new-password" required={!data?.nehfamsConfigured && !data?.nehfamsReusableCredentials} value={apiSecret} onChange={e => setApiSecret(e.target.value)} placeholder={data?.nehfamsConfigured ? 'Leave blank to retain saved secret' : data?.nehfamsReusableCredentials ? 'Saved facility API secret will be reused' : 'Facility API secret'} /></label>
-        <p>{data?.nehfamsConfigured ? 'NeHFAMS credentials are saved separately.' : data?.nehfamsReusableCredentials ? 'Your saved facility API key and secret will be reused when you save. Leave both fields blank; enter both only to use different credentials.' : 'No NeHFAMS credentials saved.'} Existing NHIA and Bearer-token OTAC credentials are retained.</p>
+        <label>NeHFAMS API key<input type="password" autoComplete="new-password" required={!selectedConnection && !(form.environment!=='test' && data?.nehfamsReusableCredentials)} value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder={selectedConnection ? 'Leave blank to retain saved key' : (form.environment!=='test' && data?.nehfamsReusableCredentials) ? 'Saved facility API key will be reused' : 'Facility API key'} /></label>
+        <label>NeHFAMS API secret<input type="password" autoComplete="new-password" required={!selectedConnection && !(form.environment!=='test' && data?.nehfamsReusableCredentials)} value={apiSecret} onChange={e => setApiSecret(e.target.value)} placeholder={selectedConnection ? 'Leave blank to retain saved secret' : (form.environment!=='test' && data?.nehfamsReusableCredentials) ? 'Saved facility API secret will be reused' : 'Facility API secret'} /></label>
+        <p>{selectedConnection ? 'NeHFAMS credentials are saved separately.' : (form.environment!=='test' && data?.nehfamsReusableCredentials) ? 'Your saved facility API key and secret will be reused when you save. Leave both fields blank; enter both only to use different credentials.' : 'No NeHFAMS credentials saved.'} Existing NHIA and Bearer-token OTAC credentials are retained.</p>
       </div>}
       <div className="ccc-enable"><label><input type="checkbox" disabled={form.provider === 'nehfams'} checked={form.enabled} onChange={e => setForm({ ...form, enabled: e.target.checked })} /> <span><strong>Enable CCC generation</strong><small>Allow staff to generate codes using the selected provider.</small></span></label></div>
       <footer className="ccc-footer"><p>Changes apply after saving. Unresolved attendance must be checked with NHIA before switching providers.</p><button type="submit" disabled={busy}>{busy ? 'Saving...' : saved ? 'Saved' : 'Save CCC settings'}</button></footer>
@@ -80,13 +94,14 @@ function FacilityCccIntegrationSettings({ organizationId }) {
         <div className="ccc-request-heading"><strong>Member: {request.member_number || 'Not available'}</strong><span className={`ccc-request-status ${request.status}`}>{request.status === 'unknown' ? 'Unknown - needs review' : request.status === 'pending' ? 'Pending - needs review' : request.status === 'succeeded' ? 'Succeeded' : 'Not created'}</span></div>
         <dl className="ccc-request-details">
           <div><dt>Card type</dt><dd>{request.card_type === 'NHISCARD' ? 'NHIS card' : request.card_type === 'GHANACARD' ? 'Ghana card' : request.card_type || 'Not available'}</dd></div>
+          <div><dt>Environment</dt><dd>{request.environment || 'production'}</dd></div>
           <div><dt>Attendance date</dt><dd>{request.attendance_date || 'Not available'}</dd></div>
           <div><dt>Provider</dt><dd>{request.provider === 'nehfams' ? 'NHIA NeHFAMS / OTAC' : request.provider === 'otac' ? 'NHIA OTAC' : request.provider === 'existing' ? 'Existing NHIA API' : 'Unknown provider'}</dd></div>
           <div><dt>Requested (Ghana time)</dt><dd>{new Date(request.created_at).toLocaleString('en-GB', { timeZone: 'Africa/Accra' })}</dd></div>
           <div className="ccc-request-reference"><dt>HealthFlow request ID</dt><dd>{request.id}</dd></div>
         </dl>
         {request.error_code && <p className="ccc-help">{request.error_code === 'reconciliation_required' ? 'The attendance outcome needs verification with NHIA.' : `Request issue: ${request.error_code}`}</p>}
-        {['pending', 'unknown'].includes(request.status) && <Reconcile organizationId={organizationId} requestId={request.id} attendanceDate={request.attendance_date} onSaved={result => { setData(result); setForm(result.policy) }} />}
+        {['pending', 'unknown'].includes(request.status) && <Reconcile organizationId={organizationId} requestId={request.id} attendanceDate={request.attendance_date} onSaved={result => { setData(result); setForm({...result.policy,...(result.policy.provider==='nehfams' && result.policy.nehfams ? {expectedHpn:result.policy.nehfams.expectedHpn,expectedFacilityName:result.policy.nehfams.expectedFacilityName} : {})}) }} />}
       </article>)}
     </details>}
     {!!data?.history?.length && <details><summary>Configuration history</summary>

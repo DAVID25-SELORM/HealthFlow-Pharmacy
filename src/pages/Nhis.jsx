@@ -478,6 +478,7 @@ const makeBlankClaim = () => ({
   authId:            '',
   authType:          'NHIS',
   newCcc:            '',
+  attendanceRequestId: '',
   otacCode:          '',
   attendanceVerificationStatus: '',
   attendanceVerificationSource: 'nehfams_manual',
@@ -2803,7 +2804,7 @@ const Nhis = () => {
     const interval = setInterval(load, 60000)
     return () => { active = false; clearInterval(interval) }
   }, [organizationId, isBranchServerEnabled])
-  const canGenerateNhiaCcCode = Boolean(cccPolicy?.enabled && (cccPolicy.provider === 'otac'
+  const canGenerateNhiaCcCode = Boolean(cccPolicy?.enabled && (cccPolicy.provider === 'nehfams' ? cccPolicy.status === 'test_configured' : cccPolicy.provider === 'otac'
     ? cccPolicy.status === 'configured'
     : nhiaCcCodeApiAvailable && integrationMode !== 'claimit_export'))
   const cccUnavailableReason = !cccPolicy
@@ -3516,6 +3517,7 @@ const Nhis = () => {
       patientAddress: claim.patient_address || '',
       childWeightKg: claim.child_weight_kg ?? '',
       cccNo: claim.ccc_no || '',
+      attendanceRequestId: claim.ccc_attendance_request_id || claim.attendanceRequestId || '',
       authId: claim.nhia_auth_id || '',
       authType: claim.nhia_auth_type || 'NHIS',
       newCcc: normalizeAttendanceNewCcc(claim.nhia_new_ccc_status),
@@ -4435,6 +4437,7 @@ const Nhis = () => {
       dateOfBirth: normalizeDateOfBirthValue(memberDetails.dateOfBirth) || prev.dateOfBirth,
       gender: normalizeNhisGender(memberDetails.gender) || prev.gender,
       ...(memberDetails.ccCode ? { cccNo: memberDetails.ccCode, ccCode: memberDetails.ccCode } : {}),
+      attendanceRequestId: memberDetails.attendanceRequestId || prev.attendanceRequestId,
       authId: memberDetails.authId || prev.authId,
       authType: memberDetails.authType || prev.authType || 'NHIS',
       newCcc: normalizeAttendanceNewCcc(memberDetails.newCcc),
@@ -4526,6 +4529,10 @@ const Nhis = () => {
       const result = await generateCcCode(claimContext)
       if (requestRevision !== cccFormRevisionRef.current) {
         notify('The claim details changed during verification. Verify the CCC again for the current claim.', 'warning')
+        return
+      }
+      if (result?.environment === 'test') {
+        notify('NHIA test attendance recorded in the test ledger. It cannot be used for a production claim.', 'info')
         return
       }
       const memberDetails = result?.memberDetails
@@ -8027,15 +8034,16 @@ const Nhis = () => {
                     </div>
                   </div>
                   <div className="form-row">
-                    <div className="form-group">
+                    {(cccPolicy?.provider !== 'nehfams' || cccPolicy?.nehfams?.otacRequired) && <div className="form-group">
                       <label>OTAC / OTP Code</label>
                       <input
                         className="form-input"
                         value={claimForm.otacCode}
-                        placeholder="Code from NeHFAMS, if shown"
+                        placeholder={cccPolicy?.provider === 'nehfams' ? 'Four-digit code from the NHIS client' : 'Code from NeHFAMS, if shown'}
+                        required={cccPolicy?.provider === 'nehfams' && cccPolicy?.nehfams?.otacRequired}
                         onChange={(e) => setClaimForm((p) => ({ ...p, otacCode: e.target.value }))}
                       />
-                    </div>
+                    </div>}
                     <div className="form-group">
                       <label>New CCC</label>
                       <select

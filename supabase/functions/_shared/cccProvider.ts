@@ -1,4 +1,5 @@
-import { requireLiveCccProvider } from './nehfamsAdapter.ts'
+import { readNehfamsConnection, publicNehfamsConnection } from './nehfamsConnection.ts'
+import { requireLiveCccProvider, prepareNehfamsAttendance, sendNehfamsAttendance, mapNehfamsAttendance, NehfamsOutcomeError } from './nehfamsAdapter.ts'
 import { normalizeAttendanceNewCcc } from '../../../src/utils/nhiaAttendanceValues.js'
 // No patient data or credentials may be logged by this module.
 export const OTAC_URL = 'https://otac.nhia.gov.gh/api/attendance/generate'
@@ -34,31 +35,39 @@ export function mapOtacResponse(body: any, expectedName: string, attendanceDate:
 export async function getCccPolicy(db: any, org: string) {
  const {data,error} = await db.from('organization_ccc_policy').select('*').eq('organization_id',org).maybeSingle()
  if(error) throw new Error('CCC policy is unavailable. Check deployment before generating attendance.')
+ if(data?.provider==='nehfams') data.nehfams=publicNehfamsConnection(await readNehfamsConnection(db,org,data.environment || 'production'))
  return data || {organization_id:org,provider:'existing',enabled:true,version:0}
 }
 
 export function publicCccPolicy(p: any) {
- return {provider:p.provider, enabled:p.enabled, expectedHpn:p.expected_hpn || '', expectedFacilityName:p.expected_facility_name || '', hasToken:!!p.token_encrypted, tokenExpiresAt:p.token_expires_at || null, version:p.version,
- status:p.provider==='nehfams'?'validation_pending':!p.enabled?'disabled':p.provider==='existing'?'existing_configuration':!p.token_encrypted?'needs_token':!Number.isFinite(Date.parse(p.token_expires_at)) || Date.parse(p.token_expires_at)<=Date.now()+60000?'needs_renewal':'configured', updatedAt:p.updated_at}
+ return {nehfams:p.nehfams || null,environment:p.environment || 'production',provider:p.provider, enabled:p.enabled, expectedHpn:p.expected_hpn || '', expectedFacilityName:p.expected_facility_name || '', hasToken:!!p.token_encrypted, tokenExpiresAt:p.token_expires_at || null, version:p.version,
+ status:p.provider==='nehfams'?(p.nehfams?.validated && p.enabled?'test_configured':'validation_pending'):!p.enabled?'disabled':p.provider==='existing'?'existing_configuration':!p.token_encrypted?'needs_token':!Number.isFinite(Date.parse(p.token_expires_at)) || Date.parse(p.token_expires_at)<=Date.now()+60000?'needs_renewal':'configured', updatedAt:p.updated_at}
 }
 
-export async function runCccRequest({db,org,actor,branch,payload,decode,existing,preflightExisting,fetcher=fetch}: any) {
+export async function runCccRequest({db,org,actor,branch,payload,decode,existing,preflightExisting,fetcher=fetch,allowNehfamsTest=false}: any) {
  const member = text(payload.memberNumber || payload.memberNo).toUpperCase()
  const card = text(payload.cardType) || (member.startsWith('GHA-')?'GHANACARD':'NHISCARD')
  if (card==='NHISCARD' ? !/^\d{8,}$/.test(member) : card!=='GHANACARD' || !/^GHA-\d{9}-\d$/.test(member)) throw new Error('Enter a valid membership number and card type')
  const date = text(payload.serviceDate).slice(0,10) || new Date().toISOString().slice(0,10)
  const policy = await getCccPolicy(db,org)
- requireLiveCccProvider(policy.provider)
+ requireLiveCccProvider(policy.provider,allowNehfamsTest,policy.environment)
  if(!policy.enabled) throw new Error('CCC generation is disabled for this facility')
  const {data:reservation,error} = await db.rpc('reserve_ccc_attendance',{p_org:org,p_actor:actor,p_branch:branch || null,p_encounter:text(payload.claimId || payload.claim_id) || `attendance:${member}:${date}`,p_member:member,p_card:card,p_date:date})
  if(error) throw new Error(error.message)
- if(reservation.cached) return {...reservation.result, reused:true, attendanceRequestId:reservation.request_id}
+ if(reservation.cached) return {...reservation.result, environment:reservation.environment || policy.environment || 'production', memberDetails:{...reservation.result?.memberDetails,attendanceRequestId:reservation.request_id}, reused:true, attendanceRequestId:reservation.request_id}
  const snapshot = reservation.policy
  let result
  let dispatched = false
  try {
-  const provider = requireLiveCccProvider(snapshot.provider)
-  if(provider==='otac') {
+  const provider = requireLiveCccProvider(snapshot.provider,allowNehfamsTest,snapshot.environment)
+  if(provider==='nehfams') {
+   const connection=reservation.connection
+   if(!connection || connection.organization_id!==org || connection.environment!=='test' || connection.validated_version!==connection.version || !connection.validated_at || !Number.isFinite(Date.parse(connection.validated_at)) || Date.parse(connection.validated_at)<Date.now()-86400000) throw new Error('NeHFAMS test connection needs validation')
+   const request=prepareNehfamsAttendance({environment:'test',apiKey:await decode(connection.api_key_encrypted),apiSecret:await decode(connection.api_secret_encrypted),cardType:card,cardNo:member,otac:text(payload.otacCode),facility:{hpn:connection.expected_hpn,name:connection.expected_name,authMode:connection.auth_mode,otacRequired:connection.otac_required}})
+   dispatched=true
+   result=mapNehfamsAttendance(await sendNehfamsAttendance(request,fetcher),{facilityName:connection.expected_name,date,cardType:card,cardNo:member})
+   result.environment='test'
+  } else if(provider==='otac') {
    const {token} = inspectOtacToken(await decode(snapshot.token_encrypted),snapshot.expected_hpn)
    dispatched = true
    let response
@@ -86,12 +95,15 @@ export async function runCccRequest({db,org,actor,branch,payload,decode,existing
    result = {ok:true,ccCode:result.ccCode,source:'api',memberDetails}
   }
   result.attendanceRequestId=reservation.request_id
+  result.memberDetails={...result.memberDetails,attendanceRequestId:reservation.request_id}
   const saved = await db.from('ccc_attendance_requests').update({status:'succeeded',result,updated_at:new Date().toISOString()}).eq('id',reservation.request_id).eq('status','pending').select('id').single()
   if(saved.error || !saved.data) throw new CccFailure('attendance_recording_failed', 'Attendance generated but recording failed.')
   return result
  } catch(error) {
   const rejected = error instanceof CccFailure && error.rejected
-  await db.from('ccc_attendance_requests').update({status:dispatched&&!rejected?'unknown':'not_created',error_code:rejected?error.code:dispatched?(error instanceof CccFailure?error.code:'reconciliation_required'):'preflight_failed',updated_at:new Date().toISOString()}).eq('id',reservation.request_id).eq('status','pending')
+  try { await db.from('ccc_attendance_requests').update({status:dispatched&&!rejected?'unknown':'not_created',error_code:rejected?error.code:dispatched?(error instanceof CccFailure || error instanceof NehfamsOutcomeError?error.code:'reconciliation_required'):'preflight_failed',updated_at:new Date().toISOString()}).eq('id',reservation.request_id).eq('status','pending') } catch {
+   // The original reservation remains durable; preserve its reference even if the outcome write fails.
+  }
   if(rejected) throw new Error(error.message)
   if(!dispatched) throw new Error('CCC configuration needs attention. No request was sent to NHIA.')
   // No automatic fallback, retransmission, or raw upstream exception disclosure.

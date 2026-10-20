@@ -4570,7 +4570,7 @@ describe('NHIS claim save attachment behavior', () => {
     expect(claimTable.insert).toHaveBeenCalledTimes(1) // the pass-through mock still performs exactly one write
   })
 
-  it.each([['nehfams_manual', '2026-06-18'], ['otac_api', '2026-06-17'], ['nhia_reconciled', '2026-06-17']])('saves pending intake with %s attendance evidence', async (source, attendanceDate) => {
+  it.each([['nehfams_manual', '2026-06-18'], ['otac_api', '2026-06-17'], ['nhia_reconciled', '2026-06-17'], ['nehfams_api', '2026-06-17']])('saves pending intake with %s attendance evidence', async (source, attendanceDate) => {
     const insertedClaim = { id: 'claim-1', claim_number: 'NHIS-000001', status: 'pending_serving' }
     const claimInsertResult = {
       select: vi.fn(() => ({
@@ -4607,6 +4607,7 @@ describe('NHIS claim save attachment behavior', () => {
         dateOfBirth: '14/05/1990',
         serviceDate: '2026-06-18T00:30:00.000Z',
         cardType: 'GHANACARD',
+        attendanceRequestId: '00000000-0000-4000-8000-000000000001',
         authId: 'AUTH-123',
         authType: 'NHIS',
         newCcc: 'true',
@@ -4644,6 +4645,7 @@ describe('NHIS claim save attachment behavior', () => {
       service_date_to: '2026-06-18',
       card_type: 'GHANACARD',
       ccc_no: '12345',
+      ccc_attendance_request_id: '00000000-0000-4000-8000-000000000001',
       nhia_auth_id: 'AUTH-123',
       nhia_auth_type: 'NHIS',
       nhia_new_ccc_status: 'yes',

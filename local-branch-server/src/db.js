@@ -484,3 +484,5 @@ export const parseJson = (value, fallback = null) => {
 }
 
 export const json = (value) => JSON.stringify(value ?? null)
+
+ensureColumn('nhia_claims', 'ccc_attendance_request_id', 'TEXT')

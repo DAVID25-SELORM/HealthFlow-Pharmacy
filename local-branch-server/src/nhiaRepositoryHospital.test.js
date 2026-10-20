@@ -319,6 +319,9 @@ describe('hospital NHIA claim persistence', () => {
       const { createNhiaClaim, getNhiaClaim } = await import(${JSON.stringify(repositoryUrl)});
       const { closeDatabase } = await import(${JSON.stringify(databaseUrl)});
       const saved = createNhiaClaim({
+        attendanceRequestId: '00000000-0000-4000-8000-000000000001',
+        authId: 'synthetic-auth',
+        attendanceVerificationSource: 'nehfams_api',
         patientName: 'Test Patient',
         memberNumber: '12345678',
         organizationType: 'hospital',
@@ -349,6 +352,9 @@ describe('hospital NHIA claim persistence', () => {
       })
       const reloaded = JSON.parse(output.trim().split(/\r?\n/).at(-1))
 
+      expect(reloaded.attendanceRequestId).toBe('00000000-0000-4000-8000-000000000001')
+      expect(reloaded.authId).toBe('synthetic-auth')
+      expect(reloaded.attendanceVerificationSource).toBe('nehfams_api')
       expect(reloaded.totalAmount).toBe(30)
       expect(reloaded.items).toEqual([])
       expect(reloaded.services).toEqual([
@@ -429,14 +435,14 @@ describe('hospital NHIA claim persistence', () => {
     const databaseUrl = pathToFileURL(path.resolve('local-branch-server/src/db.js')).href
     const script = `
       const { resolveDirectSubmissionLocalClaims } = await import(${JSON.stringify(repositoryUrl)});
-      const { saveOfflineRecord } = await import(${JSON.stringify(offlineRepositoryUrl)});
+      const { importOfflineRecords } = await import(${JSON.stringify(offlineRepositoryUrl)});
       const { closeDatabase } = await import(${JSON.stringify(databaseUrl)});
-      saveOfflineRecord('nhis_claims', {
+      importOfflineRecords('nhis_claims', [{
         id: '3f3e0422-594f-4ef4-a528-3979722107ee',
         claim_number: 'NHIS-000014',
         status: 'served',
         ccc_no: '12345',
-      });
+      }]);
       const claims = resolveDirectSubmissionLocalClaims(['3f3e0422-594f-4ef4-a528-3979722107ee']);
       closeDatabase();
       console.log(JSON.stringify(claims));
