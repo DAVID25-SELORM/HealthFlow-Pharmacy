@@ -59,6 +59,7 @@ beforeAll(async () => {
   await db.exec(readFileSync('supabase/migrations/20261006223000_fix_nhis_coverage_dose_units_and_facility.sql', 'utf8'))
   await db.exec(readFileSync('supabase/migrations/20261008233000_fix_ambiguous_injection_coverage.sql', 'utf8'))
   await db.exec(readFileSync('supabase/migrations/20261008233000_fix_ambiguous_injection_coverage.sql', 'utf8'))
+  await db.exec(readFileSync('supabase/migrations/20261020100000_fix_gits_coverage_strength.sql', 'utf8'))
   await db.exec(readFileSync('supabase/migrations/20261009001000_match_heparin_pack_coverage.sql', 'utf8'))
   await db.exec(readFileSync('supabase/migrations/20261009001000_match_heparin_pack_coverage.sql', 'utf8'))
 }, 60000)
@@ -391,4 +392,27 @@ it.each(['HEPARIIN1','FUROSEIN1','HEPARIIN20'])('does not infer the same concent
   await db.exec(`update nhis_claim_medicines set drug_code='HEPARIIN3', description='Heparin injection', dose='10000 iu' where claim_id='${prior}'`)
   await db.query('update nhis_claim_medicines set drug_code=$1 where claim_id=$2',[nextCode,current])
   await expect(serve()).resolves.toBeDefined()
+})
+
+
+it.each([
+  ['90 mg', '30 mg (GITS)', 'tablet', 3],
+  ['90 mg', '30mg (gits)', 'tablet', 3],
+  ['90 mg', '30 mg + 10 mg (GITS)', 'tablet', null],
+  ['90 mg', '30 mg/5 ml (GITS)', 'solution', null],
+])('parses only an unambiguous GITS solid strength: %s / %s', async (dose, strength, form, expected) => {
+  const { rows } = await db.query("select nhis_coverage_dose_units($1,$2,$3,'') as units", [dose,strength,form])
+  expect(rows[0].units === null ? null : Number(rows[0].units)).toBe(expected)
+})
+it('uses quantity-derived GITS coverage consistently for serving and patient history', async () => {
+  await db.exec(`
+    insert into nhis_drugs values ('${prior}','${org}','DRUG-A','nifedipine','30 mg (GITS)','tablet','Nifedipine Tablet, 30 mg (GITS)');
+    update nhis_claims set service_date_from='2026-07-21' where id='${prior}';
+    update nhis_claim_medicines set served_qty=90, dispensed_qty=90, dose='90 mg', frequency='tid', duration='30 days', dispensary_date='2026-07-21' where claim_id='${prior}';
+    update nhis_claims set service_date_from='2026-08-02' where id='${current}';
+    update nhis_claim_medicines set dispensary_date='2026-08-02' where claim_id='${current}';
+  `)
+  const history = await db.query("select * from get_nhis_patient_active_medications('12345678',null,'2026-07-25',$1,$2)", [current,org])
+  expect(history.rows[0]).toMatchObject({ calculated_treatment_days: '10.00', coverage_end_date: new Date('2026-07-30T00:00:00.000Z') })
+  await expect(db.query('select serve_nhis_claim_direct($1)', [current])).resolves.toBeDefined()
 })

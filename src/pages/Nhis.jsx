@@ -4043,14 +4043,16 @@ const Nhis = () => {
         notify('Medicine was not added because active medication coverage still remains.', 'error')
         return
       } else if (overlapResult && overlapResult.available === false) {
-        notify('Cross-facility active medication check is not available for this session. Local checks will still continue.', 'warning')
+        notify('Medicine was not added: active medication coverage could not be verified. Connect to the cloud and retry the check before serving.', 'error')
+        return
       }
     } catch (overlapError) {
       console.warn('[NHIS] Active medication overlap check failed.', {
         code: overlapError?.code || null,
         message: overlapError?.message || 'Unknown error',
       })
-      notify('Cross-facility active medication check could not be completed. Local checks will still continue.', 'warning')
+      notify('Medicine was not added: active medication coverage check failed. Retry the check before serving.', 'error')
+      return
     }
 
     setClaimMedicines((prev) => {
