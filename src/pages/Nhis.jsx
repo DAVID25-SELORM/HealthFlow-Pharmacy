@@ -1,3 +1,4 @@
+import NhisExportBlockerClaims from '../components/NhisExportBlockerClaims'
 import { normalizeAttendanceNewCcc, normalizeAttendanceVerification } from '../utils/nhiaAttendanceValues'
 import NhisCccDuplicateReview from '../components/NhisCccDuplicateReview'
 import { useCxfRecordingIssue } from '../hooks/useCxfRecordingIssue'
@@ -10185,14 +10186,23 @@ const Nhis = () => {
                     {duplicateExportIssues.map((issue, index) => (
                       <li key={`${issue.type || 'issue'}-${index}`}>
                         <strong>{issue.title || 'Export blocker'}:</strong> {issue.message}
-                        {Array.isArray(issue.claims) && issue.claims.length > 0 && (
-                          <small>
-                            Examples: {issue.claims.map((claim) =>
-                              claim.claim_number || claim.patientName || 'Unnumbered claim'
-                            ).join(', ')}
-                            {issue.total > issue.claims.length ? `, plus ${issue.total - issue.claims.length} more` : ''}
-                          </small>
-                        )}
+                        <NhisExportBlockerClaims
+                          issue={issue}
+                          onView={(claim) => {
+                            setShowDuplicateClaimReview(false)
+                            setShowExportModal(false)
+                            void openViewClaim(claim).then((opened) => {
+                              if (!opened) returnToDuplicateClaimReview()
+                            })
+                          }}
+                          onEdit={(claim) => {
+                            setShowDuplicateClaimReview(false)
+                            setShowExportModal(false)
+                            void openEditClaim(claim).then((opened) => {
+                              if (!opened) returnToDuplicateClaimReview()
+                            })
+                          }}
+                        />
                       </li>
                     ))}
                   </ul>
