@@ -146,3 +146,15 @@ describe('CCC provider safety', () => {
   })
 
 })
+
+
+describe('NeHFAMS preparation dispatch safety', () => {
+ it.each(['nehfams','unexpected'])('rejects %s before reservation or network activity', async provider => {
+  const { db } = database({ provider })
+  const options = args(db), fetcher = vi.fn()
+  await expect(runCccRequest({ ...options, fetcher })).rejects.toThrow(/not available|Unsupported/)
+  expect(db.rpc).not.toHaveBeenCalled()
+  expect(options.existing).not.toHaveBeenCalled()
+  expect(fetcher).not.toHaveBeenCalled()
+ })
+})

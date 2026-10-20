@@ -6519,28 +6519,39 @@ Deno.serve(async (request) => {
       }
       if(action==='save_ccc_policy') {
         if(!platformAdmin) return json({error:'Only platform administrators can change CCC providers.'},403)
-        if(!['existing','otac'].includes(String(payload.provider)) || typeof payload.enabled!=='boolean') throw new Error('Select a valid CCC provider and enabled state.')
-        const old=await getCccPolicy(adminClient,org)
-        const supplied=normalizeText(payload.bearerToken)
-        const expectedHpn=normalizeText(payload.expectedHpn)
-        const expectedName=normalizeText(payload.expectedFacilityName)
-        let token: {token:string,expiresAt:string}|null=null
-        if(supplied) token=inspectOtacToken(supplied,expectedHpn)
-        if(payload.provider==='otac' && payload.enabled) {
-          if(!expectedName) throw new Error('Enter the exact NHIA facility name before enabling OTAC.')
-          inspectOtacToken(supplied || await decodeNhiaSecret(old.token_encrypted),expectedHpn)
+        if(!['existing','otac','nehfams'].includes(String(payload.provider)) || typeof payload.enabled!=='boolean') throw new Error('Select a valid CCC provider and enabled state.')
+        if(payload.provider==='nehfams') {
+          if(payload.enabled) throw new Error('NeHFAMS generation is disabled pending NHIA validation.')
+          const key=normalizeText(payload.nehfamsApiKey), secret=normalizeText(payload.nehfamsApiSecret)
+          if(key.length>16000 || secret.length>16000) throw new Error('NeHFAMS credentials are too long.')
+          const {error}=await adminClient.rpc('save_nehfams_connection',{p_org:org,p_actor:requesterProfile.id,p_key:key?await encodeNhiaSecret(key):null,p_secret:secret?await encodeNhiaSecret(secret):null})
+          if(error) throw new Error(error.message)
+        } else {
+          const old=await getCccPolicy(adminClient,org)
+          const supplied=normalizeText(payload.bearerToken)
+          const expectedHpn=normalizeText(payload.expectedHpn)
+          const expectedName=normalizeText(payload.expectedFacilityName)
+          let token: {token:string,expiresAt:string}|null=null
+          if(supplied) token=inspectOtacToken(supplied,expectedHpn)
+          if(payload.provider==='otac' && payload.enabled) {
+            if(!expectedName) throw new Error('Enter the exact NHIA facility name before enabling OTAC.')
+            inspectOtacToken(supplied || await decodeNhiaSecret(old.token_encrypted),expectedHpn)
+          }
+          const {error}=await adminClient.rpc('save_ccc_policy',{p_org:org,p_actor:requesterProfile.id,p_provider:payload.provider,p_enabled:payload.enabled,p_token:token?await encodeNhiaSecret(token.token):null,p_expiry:token?.expiresAt || null,p_hpn:expectedHpn,p_name:expectedName})
+          if(error) throw new Error(error.message)
         }
-        const {error}=await adminClient.rpc('save_ccc_policy',{p_org:org,p_actor:requesterProfile.id,p_provider:payload.provider,p_enabled:payload.enabled,p_token:token?await encodeNhiaSecret(token.token):null,p_expiry:token?.expiresAt || null,p_hpn:expectedHpn,p_name:expectedName})
-        if(error) throw new Error(error.message)
       }
       const policy=publicCccPolicy(await getCccPolicy(adminClient,org))
       if(!platformAdmin) return json({policy})
+      const connection=await adminClient.from('organization_nehfams_connection').select('organization_id').eq('organization_id',org).maybeSingle()
+      if(connection.error) throw new Error('NeHFAMS settings are unavailable. Check deployment.')
+      const nehfamsConfigured=!!connection.data
       const history=await adminClient.from('ccc_policy_audit').select('action,details,created_at').eq('organization_id',org).order('created_at',{ascending:false}).limit(20)
       const requests=await adminClient.from('ccc_attendance_requests').select('id,member_number,card_type,attendance_date,provider,status,error_code,created_at,updated_at').eq('organization_id',org).order('created_at',{ascending:false}).limit(20)
       const unresolved=await adminClient.from('ccc_attendance_requests').select('id,member_number,card_type,attendance_date,provider,status,error_code,created_at,updated_at').eq('organization_id',org).in('status',['pending','unknown']).order('created_at',{ascending:true})
       if(history.error || requests.error || unresolved.error) throw new Error('Unable to read CCC history.')
       const unresolvedIds=new Set((unresolved.data || []).map(r=>r.id))
-      return json({policy,history:history.data,requests:[...(unresolved.data || []),...(requests.data || []).filter(r=>!unresolvedIds.has(r.id))]})
+      return json({policy,nehfamsConfigured,history:history.data,requests:[...(unresolved.data || []),...(requests.data || []).filter(r=>!unresolvedIds.has(r.id))]})
     }
 
     if (!organizationId && !PLATFORM_ACTIONS_WITHOUT_ORGANIZATION.has(action)) {
