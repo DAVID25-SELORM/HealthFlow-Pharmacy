@@ -9,7 +9,8 @@ Related documents: `docs/nehfams-rollout-audit.md` (earlier audit and prepared t
 ## 1. Implemented functionality
 
 - Explicit provider per organization: `existing` (legacy NHIA, unchanged), `otac`, and `nehfams`. No automatic fallback between them.
-- NeHFAMS adapter (`_shared/nehfamsAdapter.ts`): documented routes and `x-nhia-apikey` / `x-nhia-apisecret` headers; test origin `https://elig.nhia.gov.gh:5007`, production origin `https://nehfams.nhia.gov.gh` (never used); `redirect: 'error'`, 25 s timeout, one call, no retry; strict response parsing (PascalCase, `StatusCode=0`, 5-digit string `CCC`, 8-digit `UMN`, UUID `AuthID`, `AttendanceDate` exactly `YYYY-MM-DD` and equal to the requested day, matching `HPName`).
+- NeHFAMS adapter (`_shared/nehfamsAdapter.ts`): documented routes and `x-nhia-apikey` / `x-nhia-apisecret` headers; test origin `https://elig.nhia.gov.gh:5007`, production origin `https://nehfams.nhia.gov.gh` (never used); `redirect: 'error'`, 25 s timeout, one call, no retry; strict response parsing: `StatusCode=0`, 5-digit string `CCC`, 8-digit `UMN`, UUID `AuthID`, boolean `newCCC`, matching `HPName`, and `AttendanceDate` equal to the requested day. Documented field names are matched ignoring case (PascalCase per the workbook, lower-camelCase as NHIA's portal and staff messages show), and `AttendanceDate` may be `YYYY-MM-DD` or the same day at midnight (`T00:00:00`); any other time, any wrong type and any other field name are still rejected.
+- **Fresh facility settings per attendance:** before each attendance the provider reads `GET hpinfo` again (read-only) and uses that response, not the saved copy, for the identity check, the authentication mode and whether OTAC is required. NHIA states that OTAC and authentication mode are switched on and off during its rollout. A failed or mismatching lookup, or a missing required OTAC, happens before anything is dispatched, creates no attendance and leaves the request retryable (`not_created`). The claim form always offers the OTAC field for NeHFAMS; only a four-digit code is sent, and only when NHIA currently requires it.
 - Connection preparation (`_shared/nehfamsConnection.ts`): per-environment saved credentials, `GET hpinfo` validation, identity (HPN/name) check, supported modes `1FA` and `2FA` with OTAC only; validation is bound to the credential version and lasts 24 hours (a HealthFlow control, not an NHIA lifetime).
 - Reservation-first flow (`_shared/cccProvider.ts` + migrations): reserve a ledger row, send once, persist, return. Any ambiguous outcome after dispatch stays `unknown`/`pending` and blocks a second request.
 - Database (`20261021090000_nehfams_test_validation_and_linkage.sql`): environment-scoped ledger uniqueness, `nehfams_production_disabled` and `legacy_production_only` constraints, platform-admin-only configuration functions, optional `nhis_claims.ccc_attendance_request_id` with a tenant/branch/member/date/CCC/environment check trigger.
@@ -62,6 +63,13 @@ From the NHIA workbook and the Postman collection: routes, methods, header names
 
 **None.** No NHIA request has been made. Nothing in this document establishes that a live transaction succeeds.
 
+### NHIA guidance from the NHIS Integrations group (WhatsApp; unverified, second-hand)
+
+- A developer reported `authMode` / `otacAuthEnabled` changing between `1FA`/`false` and an OTAC-enabled state for one facility, quoted in lower-camelCase. NHIA (Enoch Affanyi, 25 Sep): switching them on and off is part of the rollout, and implementations must accommodate the settings as they are. This is why the facility settings are now read fresh for every attendance.
+- Asked how to handle a facility with OTAC on the phone but not on the API, NHIA said to make sure the **NeHFAMS production API URL** is used. The legacy route in HealthFlow uses a separately configured base URL.
+- Claim submission in Claim-IT has no authorisation code; the submitting account must have the insurance officer role (George Amfo).
+- A question whether CCCs issued on the test server count for claims was asked on 20 Oct and had no answer in the captured messages. HealthFlow assumes they do not.
+
 ### Portal observations (read-only, 2026-10-20; not API verification)
 
 An operator signed in to the NHIA NeHFAMS web portal (`otac.nhia.gov.gh`) and the Daily Attendance List was read. This is a different system from the HMIS API in section 5, so none of this confirms the API's responses. Nothing was generated or submitted.
@@ -77,7 +85,7 @@ An operator signed in to the NHIA NeHFAMS web portal (`otac.nhia.gov.gh`) and th
 ## 7. Remaining risks and limitations
 
 1. **Fixed here:** `submit_nhis_pharmacy_claim` auto-generated a CCC when none was supplied. With the NeHFAMS test provider active it would have created a sandbox attendance and written the test CCC to a production claim row, bypassing the ledger-link check. It now skips generation when the provider is `nehfams`; `src/contracts/nehfamsNoImplicitGeneration.contract.test.js` locks this in (a source-level test, not a behavior test of the Deno function).
-2. Response casing, date serialization, `AttendanceType` values and HTTP-error semantics are unverified. A mismatch makes a genuinely created attendance appear as `unknown`.
+2. Response casing, date serialization, `AttendanceType` values and HTTP-error semantics are unverified against the real HMIS API. The parser now tolerates documented field names in either case and a midnight timestamp, based on NHIA's own portal output and staff messages, not on an observed HMIS response. A format outside that (for example a non-midnight time) still makes a genuinely created attendance appear as `unknown`.
 3. HTTP 400, 401 and `StatusCode=1` are all treated as unresolved after dispatch because NHIA documents no no-attendance guarantee. Every rejection therefore needs administrator reconciliation. The legacy provider, by contrast, now treats clear NHIA rejections as retryable. Ask NHIA.
 4. For `GHANACARD`, the returned `UMN` is not compared with the requested number (only NHIS cards are cross-checked).
 5. A failed repeat validation does not revoke an earlier successful validation until its 24 hours end.

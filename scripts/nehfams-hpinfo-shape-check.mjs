@@ -55,15 +55,24 @@ export function checkDocumentedFields(body) {
 const nonEmpty = (value) => typeof value === 'string' && value.trim().length > 0
 const sameName = (a, b) => a.trim().replace(/\s+/g, ' ').toUpperCase() === b.trim().replace(/\s+/g, ' ').toUpperCase()
 
+// Documented field names are matched ignoring case, exactly as the adapter does.
+const field = (source, name) => {
+  if (!source || typeof source !== 'object' || Array.isArray(source)) return undefined
+  if (Object.hasOwn(source, name)) return source[name]
+  const key = Object.keys(source).find((candidate) => candidate.toLowerCase() === name.toLowerCase())
+  return key === undefined ? undefined : source[key]
+}
+
 // Mirrors validateNehfamsFacility in supabase/functions/_shared/nehfamsAdapter.ts (kept equal by a test).
 export function evaluateFacility(body, expected) {
   if (!nonEmpty(expected?.hpn) || !nonEmpty(expected?.name)) return { checked: false, accepted: null, reason: 'expected_identity_not_supplied' }
-  const hpnMatches = body?.HPN === expected.hpn
-  const nameMatches = nonEmpty(body?.HPName) && sameName(body.HPName, expected.name)
+  const hpn = field(body, 'HPN'), name = field(body, 'HPName'), mode = field(body, 'AuthMode'), otac = field(body, 'OTACAuthEnabled')
+  const hpnMatches = hpn === expected.hpn
+  const nameMatches = nonEmpty(name) && sameName(name, expected.name)
   const base = { checked: true, hpnMatches, nameMatches }
   if (!hpnMatches || !nameMatches) return { ...base, accepted: false, reason: 'identity_mismatch' }
-  if (typeof body.OTACAuthEnabled !== 'boolean' || !['1FA', '2FA'].includes(body.AuthMode)) return { ...base, accepted: false, reason: 'unsupported_configuration' }
-  if (body.AuthMode === '2FA' && !body.OTACAuthEnabled) return { ...base, accepted: false, reason: 'requires_unimplemented_workflow' }
+  if (typeof otac !== 'boolean' || !['1FA', '2FA'].includes(mode)) return { ...base, accepted: false, reason: 'unsupported_configuration' }
+  if (mode === '2FA' && !otac) return { ...base, accepted: false, reason: 'requires_unimplemented_workflow' }
   return { ...base, accepted: true, reason: 'ok' }
 }
 
@@ -112,11 +121,13 @@ export async function runCheck({ argv = [], env = {}, fetcher = fetch, now = () 
   const fields = checkDocumentedFields(body)
   const reliedOnOk = Object.keys(RELIED_ON).every((name) => fields[name].presence === 'exact' && fields[name].typeOk === true)
   const facility = evaluateFacility(body, { hpn: env.NEHFAMS_EXPECTED_HPN, name: env.NEHFAMS_EXPECTED_NAME })
-  const authMode = ['1FA', '2FA', '3FA'].includes(body?.AuthMode) ? body.AuthMode : null
+  const rawMode = field(body, 'AuthMode')
+  const authMode = ['1FA', '2FA', '3FA'].includes(rawMode) ? rawMode : null
+  const rawOtac = field(body, 'OTACAuthEnabled')
   const report = {
     ok: true, checkedAt, origin, path: HPINFO_PATH, httpStatus: response.status, contentType,
     shape: summarizeShape(body), documentedFields: fields, reliedOnFieldsMatchContract: reliedOnOk,
-    configuration: { authMode, otacAuthEnabled: typeof body?.OTACAuthEnabled === 'boolean' ? body.OTACAuthEnabled : null },
+    configuration: { authMode, otacAuthEnabled: typeof rawOtac === 'boolean' ? rawOtac : null },
     healthflowFacilityCheck: facility,
     note: 'Values other than AuthMode and OTACAuthEnabled are deliberately not printed.',
   }

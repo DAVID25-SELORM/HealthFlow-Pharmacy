@@ -1,5 +1,5 @@
 import { readNehfamsConnection, publicNehfamsConnection } from './nehfamsConnection.ts'
-import { requireLiveCccProvider, prepareNehfamsAttendance, sendNehfamsAttendance, mapNehfamsAttendance, NehfamsOutcomeError } from './nehfamsAdapter.ts'
+import { requireLiveCccProvider, prepareNehfamsAttendance, sendNehfamsAttendance, mapNehfamsAttendance, fetchNehfamsFacility, validateNehfamsFacility, NehfamsOutcomeError } from './nehfamsAdapter.ts'
 import { normalizeAttendanceNewCcc } from '../../../src/utils/nhiaAttendanceValues.js'
 // No patient data or credentials may be logged by this module.
 export const OTAC_URL = 'https://otac.nhia.gov.gh/api/attendance/generate'
@@ -63,7 +63,17 @@ export async function runCccRequest({db,org,actor,branch,payload,decode,existing
   if(provider==='nehfams') {
    const connection=reservation.connection
    if(!connection || connection.organization_id!==org || connection.environment!=='test' || connection.validated_version!==connection.version || !connection.validated_at || !Number.isFinite(Date.parse(connection.validated_at)) || Date.parse(connection.validated_at)<Date.now()-86400000) throw new Error('NeHFAMS test connection needs validation')
-   const request=prepareNehfamsAttendance({environment:'test',apiKey:await decode(connection.api_key_encrypted),apiSecret:await decode(connection.api_secret_encrypted),cardType:card,cardNo:member,otac:text(payload.otacCode),facility:{hpn:connection.expected_hpn,name:connection.expected_name,authMode:connection.auth_mode,otacRequired:connection.otac_required}})
+   const apiKey=await decode(connection.api_key_encrypted), apiSecret=await decode(connection.api_secret_encrypted)
+   // NHIA turns OTAC and the authentication mode on and off during its rollout, so the saved copy is not trusted.
+   // This read-only lookup happens before anything is dispatched: any failure here creates no attendance and is retryable.
+   let facility
+   try { facility=validateNehfamsFacility(await fetchNehfamsFacility({environment:'test',apiKey,apiSecret,fetcher}),{hpn:connection.expected_hpn,name:connection.expected_name}) }
+   catch(error) {
+    const message=error instanceof Error && /^(NeHFAMS facility identity mismatch|Unsupported NeHFAMS authentication|NeHFAMS authentication requires)/.test(error.message) ? error.message : 'Could not confirm the facility settings with NHIA.'
+    throw new CccFailure('nehfams_facility_check_failed',`${message} No attendance was requested.`,true)
+   }
+   if(facility.otacRequired && !/^\d{4}$/.test(text(payload.otacCode))) throw new CccFailure('nehfams_otac_required','NHIA currently requires the four-digit OTAC from the NHIS client. Enter it and try again. No attendance was requested.',true)
+   const request=prepareNehfamsAttendance({environment:'test',apiKey,apiSecret,cardType:card,cardNo:member,otac:text(payload.otacCode),facility})
    dispatched=true
    result=mapNehfamsAttendance(await sendNehfamsAttendance(request,fetcher),{facilityName:connection.expected_name,date,cardType:card,cardNo:member})
    result.environment='test'

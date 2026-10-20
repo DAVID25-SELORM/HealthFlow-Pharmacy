@@ -16,12 +16,38 @@ type Environment = keyof typeof NEHFAMS_ORIGINS
 type Facility = { hpn: string; name: string; authMode: string; otacRequired: boolean }
 const string = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0
 const sameName = (a: string, b: string) => a.trim().replace(/\s+/g, ' ').toUpperCase() === b.trim().replace(/\s+/g, ' ').toUpperCase()
+// The workbook documents PascalCase names, but NHIA's own web systems and staff messages show lower-camelCase
+// (for example authMode, otacAuthEnabled, attendanceData). Only the documented field NAMES are matched, ignoring case;
+// every type and format check stays strict and no other field is invented.
+export function field(source: any, name: string): any {
+ if (!source || typeof source !== 'object' || Array.isArray(source)) return undefined
+ if (Object.hasOwn(source, name)) return source[name]
+ const key = Object.keys(source).find((candidate) => candidate.toLowerCase() === name.toLowerCase())
+ return key === undefined ? undefined : source[key]
+}
+// YYYY-MM-DD, or the same calendar day serialized at midnight (as NHIA's web portal does). Any other time is rejected.
+export function attendanceDay(value: unknown): string | undefined {
+ return typeof value === 'string' ? /^(\d{4}-\d{2}-\d{2})(?:T00:00:00(?:\.0+)?)?$/.exec(value)?.[1] : undefined
+}
 export function validateNehfamsFacility(body: any, expected: { hpn: string; name: string }): Facility {
- if (!string(expected.hpn) || !string(expected.name) || body?.HPN !== expected.hpn || !string(body?.HPName) || !sameName(body.HPName, expected.name)) throw new Error('NeHFAMS facility identity mismatch.')
- if (typeof body.OTACAuthEnabled !== 'boolean' || !['1FA', '2FA'].includes(body.AuthMode)) throw new Error('Unsupported NeHFAMS authentication configuration.')
+ const hpn = field(body, 'HPN'), name = field(body, 'HPName'), mode = field(body, 'AuthMode'), otac = field(body, 'OTACAuthEnabled')
+ if (!string(expected.hpn) || !string(expected.name) || hpn !== expected.hpn || !string(name) || !sameName(name, expected.name)) throw new Error('NeHFAMS facility identity mismatch.')
+ if (typeof otac !== 'boolean' || !['1FA', '2FA'].includes(mode)) throw new Error('Unsupported NeHFAMS authentication configuration.')
  // 2FA without OTAC may require a different authentication mechanism; do not bypass it.
- if (body.AuthMode === '2FA' && !body.OTACAuthEnabled) throw new Error('NeHFAMS authentication requires an unimplemented workflow.')
- return { hpn: body.HPN, name: body.HPName, authMode: body.AuthMode, otacRequired: body.OTACAuthEnabled }
+ if (mode === '2FA' && !otac) throw new Error('NeHFAMS authentication requires an unimplemented workflow.')
+ return { hpn, name, authMode: mode, otacRequired: otac }
+}
+// Read-only. NHIA changes OTAC and authentication settings during its rollout, so the saved copy is never trusted
+// for a request; callers read the facility again immediately before each attendance.
+export async function fetchNehfamsFacility(input: { environment: Environment; apiKey: string; apiSecret: string; fetcher: typeof fetch }) {
+ if (!Object.hasOwn(NEHFAMS_ORIGINS, input.environment)) throw new Error('Select an explicit NeHFAMS environment.')
+ if (!string(input.apiKey) || !string(input.apiSecret) || /[\r\n]/.test(input.apiKey + input.apiSecret)) throw new Error('Invalid NeHFAMS credentials.')
+ const response = await input.fetcher(NEHFAMS_ORIGINS[input.environment] + NEHFAMS_PATHS.facility, {
+  method: 'GET', redirect: 'error', signal: AbortSignal.timeout(15000),
+  headers: { 'x-nhia-apikey': input.apiKey, 'x-nhia-apisecret': input.apiSecret, 'Content-Type': 'application/json' },
+ })
+ if (!response.ok) throw new Error('NeHFAMS facility lookup failed.')
+ return await response.json()
 }
 export function prepareNehfamsAttendance(input: {
  environment: Environment; apiKey: string; apiSecret: string; cardType: string; cardNo: string; otac?: string; facility: Facility
@@ -42,19 +68,21 @@ export class NehfamsOutcomeError extends Error {
  constructor(public code: string) { super('NeHFAMS attendance was not confirmed. Check the recorded outcome before retrying.') }
 }
 export function mapNehfamsAttendance(body: any, expected: { facilityName: string; date: string; cardType: string; cardNo: string }) {
- if (body?.StatusCode !== 0) throw new NehfamsOutcomeError(body?.StatusCode === 1 ? 'application_failure' : 'invalid_response')
- const d = body.AttendanceData
- if (!d || !string(d.HPName) || !sameName(d.HPName, expected.facilityName)) throw new NehfamsOutcomeError('facility_mismatch')
- if (!string(d.HIN) || typeof d.CCC !== 'string' || !/^\d{5}$/.test(d.CCC) || !string(d.MemberName) || typeof d.UMN !== 'string' || !/^\d{8}$/.test(d.UMN) || typeof d.newCCC !== 'boolean' || typeof d.AuthID !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(d.AuthID) || d.AttendanceDate !== expected.date) throw new NehfamsOutcomeError('invalid_attendance')
- if (expected.cardType === 'NHISCARD' && d.UMN !== expected.cardNo) throw new NehfamsOutcomeError('member_mismatch')
- return { ok: true, source: 'nehfams', ccCode: d.CCC, memberDetails: {
-  ccCode: d.CCC, hin: d.HIN, memberName: d.MemberName, memberNumber: d.UMN,
-  attendanceDate: d.AttendanceDate, authId: d.AuthID, hpName: d.HPName, newCcc: d.newCCC,
-  authType: typeof d.AttendanceType === 'string' ? d.AttendanceType : '',
-  gender: typeof d.Gender === 'string' ? d.Gender : '',
-  dateOfBirth: typeof d.DOB === 'string' ? d.DOB : '',
-  eligibilityStartDate: typeof d.StartDate === 'string' ? d.StartDate : '',
-  eligibilityEndDate: typeof d.EndDate === 'string' ? d.EndDate : '',
+ const status = field(body, 'StatusCode')
+ if (status !== 0) throw new NehfamsOutcomeError(status === 1 ? 'application_failure' : 'invalid_response')
+ const d = field(body, 'AttendanceData')
+ const hpName = field(d, 'HPName')
+ if (!d || !string(hpName) || !sameName(hpName, expected.facilityName)) throw new NehfamsOutcomeError('facility_mismatch')
+ const hin = field(d, 'HIN'), ccc = field(d, 'CCC'), memberName = field(d, 'MemberName'), umn = field(d, 'UMN'), isNew = field(d, 'newCCC')
+ const authId = field(d, 'AuthID'), day = attendanceDay(field(d, 'AttendanceDate'))
+ if (!string(hin) || typeof ccc !== 'string' || !/^\d{5}$/.test(ccc) || !string(memberName) || typeof umn !== 'string' || !/^\d{8}$/.test(umn) || typeof isNew !== 'boolean' || typeof authId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(authId) || day !== expected.date) throw new NehfamsOutcomeError('invalid_attendance')
+ if (expected.cardType === 'NHISCARD' && umn !== expected.cardNo) throw new NehfamsOutcomeError('member_mismatch')
+ const text = (name: string) => { const value = field(d, name); return typeof value === 'string' ? value : '' }
+ return { ok: true, source: 'nehfams', ccCode: ccc, memberDetails: {
+  ccCode: ccc, hin, memberName, memberNumber: umn,
+  attendanceDate: day, authId, hpName, newCcc: isNew,
+  authType: text('AttendanceType'), gender: text('Gender'), dateOfBirth: text('DOB').slice(0, 10),
+  eligibilityStartDate: text('StartDate').slice(0, 10), eligibilityEndDate: text('EndDate').slice(0, 10),
   attendanceVerificationSource: 'nehfams_api', attendanceVerificationStatus: 'confirmed',
  } }
 }

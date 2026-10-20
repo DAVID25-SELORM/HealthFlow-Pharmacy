@@ -8034,16 +8034,15 @@ const Nhis = () => {
                     </div>
                   </div>
                   <div className="form-row">
-                    {(cccPolicy?.provider !== 'nehfams' || cccPolicy?.nehfams?.otacRequired) && <div className="form-group">
+                    <div className="form-group">
                       <label>OTAC / OTP Code</label>
                       <input
                         className="form-input"
                         value={claimForm.otacCode}
-                        placeholder={cccPolicy?.provider === 'nehfams' ? 'Four-digit code from the NHIS client' : 'Code from NeHFAMS, if shown'}
-                        required={cccPolicy?.provider === 'nehfams' && cccPolicy?.nehfams?.otacRequired}
+                        placeholder={cccPolicy?.provider === 'nehfams' ? 'Four-digit code from the NHIS client, if NHIA requires it' : 'Code from NeHFAMS, if shown'}
                         onChange={(e) => setClaimForm((p) => ({ ...p, otacCode: e.target.value }))}
                       />
-                    </div>}
+                    </div>
                     <div className="form-group">
                       <label>New CCC</label>
                       <select

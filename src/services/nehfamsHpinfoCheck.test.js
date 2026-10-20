@@ -110,6 +110,10 @@ describe('facility decision stays identical to the real adapter', () => {
     { ...good, AuthMode: '2FA', OTACAuthEnabled: false },
     { ...good, OTACAuthEnabled: 'true' },
     { ...good, HPN: 123 },
+    { hpn: '123', hpName: 'Test Facility', authMode: '1FA', otacAuthEnabled: false },
+    { hpn: '123', hpName: 'Test Facility', authMode: '2FA', otacAuthEnabled: true },
+    { hpn: '123', hpName: 'Test Facility', authMode: '2FA', otacAuthEnabled: false },
+    { hpn: '123', hpName: 'Test Facility', authMode: '1FA', otacAuthEnabled: 'false' },
     {},
   ])('agrees with validateNehfamsFacility for %j', (body) => {
     let adapterAccepts = true
