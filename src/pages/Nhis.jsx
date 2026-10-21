@@ -7971,11 +7971,9 @@ const Nhis = () => {
                       {claimControlMode !== 'manual' && canGenerateNhiaCcCode && !claimForm.cccNo && (
                         <div className="patient-meta">Pending NHIA CCC verification</div>
                       )}
-                      {(claimForm.nhiaEligibilityStartDate || claimForm.nhiaEligibilityEndDate) && (
-                        <div className="patient-meta nhia-eligibility-dates" aria-label="NHIA eligibility period">
-                          <span>NHIA eligibility: {claimForm.nhiaEligibilityStartDate || 'Not returned'} to {claimForm.nhiaEligibilityEndDate || 'Not returned'}</span>
-                        </div>
-                      )}
+                      <div className="patient-meta nhia-eligibility-dates" aria-label="NHIA eligibility period">
+                        <span>NHIA eligibility: {claimForm.nhiaEligibilityStartDate || 'Not returned'} to {claimForm.nhiaEligibilityEndDate || 'Not returned'}</span>
+                      </div>
                     </div>
                     {isHospital && (
                       <div className="form-group">
