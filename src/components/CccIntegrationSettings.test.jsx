@@ -30,7 +30,7 @@ const productionData = (overrides = {}) => ({
 it('enables approved production attendance only through the activation action', async () => {
  cccIntegration.mockResolvedValue(productionData())
  render(<CccIntegrationSettings organizationId="org-p" />)
- const button = await screen.findByText('Enable approved production attendance')
+ const button = await screen.findByText('Enable routine production attendance')
  expect(screen.getByText('Approved production attendances remaining: 1 of 1.')).toBeInTheDocument()
  expect(button).toBeEnabled()
  fireEvent.click(button)
@@ -39,13 +39,11 @@ it('enables approved production attendance only through the activation action', 
 
 it.each([
  ['the production switch is off on this deployment', { nehfamsProductionEnabled: false }],
- ['the facility has no approval', { nehfamsProductionApproval: null }],
- ['the approved allowance is used up', { nehfamsProductionApproval: { limit: 1, used: 1, remaining: 0 } }],
  ['the connection has not been validated', { nehfamsConnections: [{ environment: 'production', validated: false, expectedFacilityName: 'Test Facility' }] }],
 ])('keeps the production button disabled when %s', async (_label, overrides) => {
  cccIntegration.mockResolvedValue(productionData(overrides))
  render(<CccIntegrationSettings organizationId="org-q" />)
- expect(await screen.findByText('Enable approved production attendance')).toBeDisabled()
+ expect(await screen.findByText('Enable routine production attendance')).toBeDisabled()
 })
 
 it('says production is not approved when there is no approval, and never shows the button for the test environment', async () => {
@@ -56,7 +54,7 @@ it('says production is not approved when there is no approval, and never shows t
  cccIntegration.mockResolvedValue(productionData({ policy: { provider: 'nehfams', environment: 'test', enabled: false, nehfams: { expectedHpn: '123', expectedFacilityName: 'Test Facility' } }, nehfamsConnections: [{ environment: 'test', validated: true, authMode: '1FA', otacRequired: false, expectedFacilityName: 'Test Facility' }] }))
  render(<CccIntegrationSettings organizationId="org-s" />)
  await screen.findByText('Enable authorized test attendance')
- expect(screen.queryByText('Enable approved production attendance')).not.toBeInTheDocument()
+ expect(screen.queryByText('Enable routine production attendance')).not.toBeInTheDocument()
 })
 
 it('offers saved facility credentials without requiring plaintext entry', async () => {
@@ -69,4 +67,13 @@ it('offers saved facility credentials without requiring plaintext entry', async 
  expect(screen.getByLabelText('NeHFAMS API secret')).toHaveValue('')
  fireEvent.click(screen.getByText('Save CCC settings'))
  await waitFor(()=>expect(cccIntegration).toHaveBeenCalledWith('save_ccc_policy',expect.objectContaining({organizationId:'org-b',provider:'nehfams',enabled:false,nehfamsApiKey:'',nehfamsApiSecret:''})))
+})
+
+it.each([null,{limit:3,used:3,remaining:0}])('allows explicit routine activation without a remaining trial allowance',async approval=>{
+ cccIntegration.mockResolvedValue(productionData({nehfamsProductionApproval:approval}))
+ render(<CccIntegrationSettings organizationId="org-routine" />)
+ const button=await screen.findByText('Enable routine production attendance')
+ expect(button).toBeEnabled()
+ fireEvent.click(button)
+ await waitFor(()=>expect(cccIntegration).toHaveBeenCalledWith('activate_nehfams_production',{organizationId:'org-routine',environment:'production'}))
 })
