@@ -280,3 +280,16 @@ it('retains reconciliation reference when outcome persistence itself throws',asy
  await expect(runCccRequest(options)).rejects.toThrow(/Request: request-id/)
  expect(options.fetcher).toHaveBeenCalledOnce()
 })
+
+it('reuses a legacy attendance after switching to NeHFAMS without calling either provider', async () => {
+ const {db,updates}=database({provider:'nehfams',cached:true})
+ const policy={provider:'nehfams',environment:'production',enabled:true}
+ db.from=vi.fn(()=>{const chain={select:()=>chain,eq:()=>chain,maybeSingle:async()=>({data:policy})};return chain})
+ db.rpc.mockResolvedValue({data:{cached:true,result:{ccCode:'01234',source:'api',memberDetails:{hin:'synthetic-hin'}},request_id:'earlier-attendance'}})
+ const options={...args(db),allowNehfamsProduction:true,fetcher:vi.fn()}
+ expect(await runCccRequest(options)).toMatchObject({ccCode:'01234',source:'api',reused:true,attendanceRequestId:'earlier-attendance',memberDetails:{hin:'synthetic-hin'}})
+ expect(options.fetcher).not.toHaveBeenCalled()
+ expect(options.existing).not.toHaveBeenCalled()
+ expect(options.preflightExisting).not.toHaveBeenCalled()
+ expect(updates).toEqual([])
+})

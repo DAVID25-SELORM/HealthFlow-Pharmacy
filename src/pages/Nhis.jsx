@@ -1,3 +1,4 @@
+import { cccProviderName, cccResultMessage } from '../utils/cccResultMessage'
 import NhisExportBlockerClaims from '../components/NhisExportBlockerClaims'
 import { normalizeAttendanceNewCcc, normalizeAttendanceVerification } from '../utils/nhiaAttendanceValues'
 import NhisCccDuplicateReview from '../components/NhisCccDuplicateReview'
@@ -4577,14 +4578,7 @@ const Nhis = () => {
           role,
         },
       })
-      notify(
-        result.source === 'claimit_bridge'
-          ? 'CCC/CC code returned by CLAIM-it.'
-          : result.source === 'api'
-            ? `CCC/CC code generated from NHIA API${memberDetails?.memberName ? ` — ${memberDetails.memberName}` : ''}.`
-            : 'CCC/CC code generated for direct NHIA submission.',
-        'success'
-      )
+      notify(cccResultMessage(result), 'success')
     } catch (err) {
       await tryLogAuditEvent({
         eventType: 'nhis_claim.ccc_generation',
@@ -7963,6 +7957,9 @@ const Nhis = () => {
                           </button>
                         )}
                       </div>
+                      {claimControlMode !== 'manual' && cccPolicy && (
+                        <div className="patient-meta">Configured CCC provider: {cccProviderName(cccPolicy.provider)}{!cccPolicy.enabled ? ' (paused)' : ''}. Earlier confirmed attendance may be reused without a new request.</div>
+                      )}
                       {claimControlMode === 'manual' && !canManuallyEditCcCode && (
                         <div className="patient-meta">Manual CC/CCC entry is restricted to an Admin, Claims Officer, or Super Admin.</div>
                       )}
