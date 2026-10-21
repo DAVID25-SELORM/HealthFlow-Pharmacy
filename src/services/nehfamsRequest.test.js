@@ -42,6 +42,15 @@ it('does not treat HTTP 200 application failure as success', async () => {
  expect(() => mapNehfamsAttendance(response, expected)).toThrow(/not confirmed/)
 })
 it('keeps live dispatch blocked', () => { expect(() => requireLiveCccProvider('nehfams')).toThrow(/validation/) })
+it('allows each NeHFAMS environment only with its own server switch, never the other one', () => {
+ expect(requireLiveCccProvider('nehfams', true, 'test', false)).toBe('nehfams')
+ expect(requireLiveCccProvider('nehfams', false, 'production', true)).toBe('nehfams')
+ expect(() => requireLiveCccProvider('nehfams', true, 'production', false)).toThrow(/not available/)
+ expect(() => requireLiveCccProvider('nehfams', false, 'test', true)).toThrow(/not available/)
+ expect(() => requireLiveCccProvider('nehfams', false, 'production', false)).toThrow(/not available/)
+ expect(() => requireLiveCccProvider('nehfams', true, 'other', true)).toThrow(/not available/)
+ expect(requireLiveCccProvider('existing')).toBe('existing'); expect(requireLiveCccProvider('otac')).toBe('otac')
+})
 
 const toCamelBody = () => ({ statusCode: 0, attendanceData: { hin: 'synthetic', ccc: '01234', memberName: 'Test Member', umn: input.cardNo, newCCC: false, authID: '00000000-0000-4000-8000-000000000001', attendanceDate: expected.date, hpName: facility.name } })
 

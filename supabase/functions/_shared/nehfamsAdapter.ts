@@ -98,8 +98,11 @@ export async function sendNehfamsAttendance(request: ReturnType<typeof prepareNe
   throw new NehfamsOutcomeError('unknown_outcome')
  }
 }
-export function requireLiveCccProvider(provider: unknown, testEnabled = false, environment = 'production'): 'existing' | 'otac' | 'nehfams' {
+// Each environment has its own server-side switch; enabling one never enables the other. The production switch is a
+// deployment kill switch on top of the per-facility database approval.
+export function requireLiveCccProvider(provider: unknown, testEnabled = false, environment = 'production', productionEnabled = false): 'existing' | 'otac' | 'nehfams' {
  if (provider === 'nehfams' && testEnabled && environment === 'test') return 'nehfams'
+ if (provider === 'nehfams' && productionEnabled && environment === 'production') return 'nehfams'
  if (provider === 'nehfams') throw new Error('NeHFAMS attendance generation is not available until NHIA response and connection validation is complete.')
  if (provider !== 'existing' && provider !== 'otac') throw new Error('Unsupported CCC provider')
  return provider

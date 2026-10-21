@@ -41,16 +41,16 @@ export async function getCccPolicy(db: any, org: string) {
 
 export function publicCccPolicy(p: any) {
  return {nehfams:p.nehfams || null,environment:p.environment || 'production',provider:p.provider, enabled:p.enabled, expectedHpn:p.expected_hpn || '', expectedFacilityName:p.expected_facility_name || '', hasToken:!!p.token_encrypted, tokenExpiresAt:p.token_expires_at || null, version:p.version,
- status:p.provider==='nehfams'?(p.nehfams?.validated && p.enabled?'test_configured':'validation_pending'):!p.enabled?'disabled':p.provider==='existing'?'existing_configuration':!p.token_encrypted?'needs_token':!Number.isFinite(Date.parse(p.token_expires_at)) || Date.parse(p.token_expires_at)<=Date.now()+60000?'needs_renewal':'configured', updatedAt:p.updated_at}
+ status:p.provider==='nehfams'?(p.nehfams?.validated && p.enabled?(p.environment==='production'?'production_configured':'test_configured'):'validation_pending'):!p.enabled?'disabled':p.provider==='existing'?'existing_configuration':!p.token_encrypted?'needs_token':!Number.isFinite(Date.parse(p.token_expires_at)) || Date.parse(p.token_expires_at)<=Date.now()+60000?'needs_renewal':'configured', updatedAt:p.updated_at}
 }
 
-export async function runCccRequest({db,org,actor,branch,payload,decode,existing,preflightExisting,fetcher=fetch,allowNehfamsTest=false}: any) {
+export async function runCccRequest({db,org,actor,branch,payload,decode,existing,preflightExisting,fetcher=fetch,allowNehfamsTest=false,allowNehfamsProduction=false}: any) {
  const member = text(payload.memberNumber || payload.memberNo).toUpperCase()
  const card = text(payload.cardType) || (member.startsWith('GHA-')?'GHANACARD':'NHISCARD')
  if (card==='NHISCARD' ? !/^\d{8,}$/.test(member) : card!=='GHANACARD' || !/^GHA-\d{9}-\d$/.test(member)) throw new Error('Enter a valid membership number and card type')
  const date = text(payload.serviceDate).slice(0,10) || new Date().toISOString().slice(0,10)
  const policy = await getCccPolicy(db,org)
- requireLiveCccProvider(policy.provider,allowNehfamsTest,policy.environment)
+ requireLiveCccProvider(policy.provider,allowNehfamsTest,policy.environment,allowNehfamsProduction)
  if(!policy.enabled) throw new Error('CCC generation is disabled for this facility')
  const {data:reservation,error} = await db.rpc('reserve_ccc_attendance',{p_org:org,p_actor:actor,p_branch:branch || null,p_encounter:text(payload.claimId || payload.claim_id) || `attendance:${member}:${date}`,p_member:member,p_card:card,p_date:date})
  if(error) throw new Error(error.message)
@@ -59,24 +59,25 @@ export async function runCccRequest({db,org,actor,branch,payload,decode,existing
  let result
  let dispatched = false
  try {
-  const provider = requireLiveCccProvider(snapshot.provider,allowNehfamsTest,snapshot.environment)
+  const provider = requireLiveCccProvider(snapshot.provider,allowNehfamsTest,snapshot.environment,allowNehfamsProduction)
   if(provider==='nehfams') {
    const connection=reservation.connection
-   if(!connection || connection.organization_id!==org || connection.environment!=='test' || connection.validated_version!==connection.version || !connection.validated_at || !Number.isFinite(Date.parse(connection.validated_at)) || Date.parse(connection.validated_at)<Date.now()-86400000) throw new Error('NeHFAMS test connection needs validation')
+   const environment=snapshot.environment
+   if(!['test','production'].includes(environment) || !connection || connection.organization_id!==org || connection.environment!==environment || connection.validated_version!==connection.version || !connection.validated_at || !Number.isFinite(Date.parse(connection.validated_at)) || Date.parse(connection.validated_at)<Date.now()-86400000) throw new Error('NeHFAMS connection needs validation')
    const apiKey=await decode(connection.api_key_encrypted), apiSecret=await decode(connection.api_secret_encrypted)
    // NHIA turns OTAC and the authentication mode on and off during its rollout, so the saved copy is not trusted.
    // This read-only lookup happens before anything is dispatched: any failure here creates no attendance and is retryable.
    let facility
-   try { facility=validateNehfamsFacility(await fetchNehfamsFacility({environment:'test',apiKey,apiSecret,fetcher}),{hpn:connection.expected_hpn,name:connection.expected_name}) }
+   try { facility=validateNehfamsFacility(await fetchNehfamsFacility({environment,apiKey,apiSecret,fetcher}),{hpn:connection.expected_hpn,name:connection.expected_name}) }
    catch(error) {
     const message=error instanceof Error && /^(NeHFAMS facility identity mismatch|Unsupported NeHFAMS authentication|NeHFAMS authentication requires)/.test(error.message) ? error.message : 'Could not confirm the facility settings with NHIA.'
     throw new CccFailure('nehfams_facility_check_failed',`${message} No attendance was requested.`,true)
    }
    if(facility.otacRequired && !/^\d{4}$/.test(text(payload.otacCode))) throw new CccFailure('nehfams_otac_required','NHIA currently requires the four-digit OTAC from the NHIS client. Enter it and try again. No attendance was requested.',true)
-   const request=prepareNehfamsAttendance({environment:'test',apiKey,apiSecret,cardType:card,cardNo:member,otac:text(payload.otacCode),facility})
+   const request=prepareNehfamsAttendance({environment,apiKey,apiSecret,cardType:card,cardNo:member,otac:text(payload.otacCode),facility})
    dispatched=true
    result=mapNehfamsAttendance(await sendNehfamsAttendance(request,fetcher),{facilityName:connection.expected_name,date,cardType:card,cardNo:member})
-   result.environment='test'
+   result.environment=environment
   } else if(provider==='otac') {
    const {token} = inspectOtacToken(await decode(snapshot.token_encrypted),snapshot.expected_hpn)
    dispatched = true

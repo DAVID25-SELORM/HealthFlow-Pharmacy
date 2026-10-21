@@ -6419,7 +6419,7 @@ const getReportHealth = async (
 
 const generateNhiaCcCode = async (db: ReturnType<typeof createAdminClient>, profile: RequesterProfile, org: string, payload: Record<string, unknown>) => {
  requireClaimsAccess(profile, 'Only claims staff can generate CCCs.')
- return runCccRequest({allowNehfamsTest:Deno.env.get('NEHFAMS_TEST_ATTENDANCE_ENABLED')==='true',db,org,actor:profile.id,branch:resolveScopedBranchId(profile,payload),payload,decode:decodeNhiaSecret,
+ return runCccRequest({allowNehfamsTest:Deno.env.get('NEHFAMS_TEST_ATTENDANCE_ENABLED')==='true',allowNehfamsProduction:Deno.env.get('NEHFAMS_PRODUCTION_ATTENDANCE_ENABLED')==='true',db,org,actor:profile.id,branch:resolveScopedBranchId(profile,payload),payload,decode:decodeNhiaSecret,
   preflightExisting:async()=>{
    const settings=await getNhiaApiSettings(db,profile,org,true,resolveScopedBranchId(profile,payload))
    if(!settings?.directApiEnabled) throw new Error('Existing NHIA API is not enabled for this facility.')
@@ -6492,7 +6492,7 @@ Deno.serve(async (request) => {
     )
     const organizationId = requesterResult.organizationId || ''
 
-    if(action==='validate_nehfams_connection' || action==='activate_nehfams_test' || action==='reveal_ccc_token' || action==='get_ccc_policy' || action==='save_ccc_policy' || action==='reconcile_ccc_attendance') {
+    if(action==='validate_nehfams_connection' || action==='activate_nehfams_test' || action==='activate_nehfams_production' || action==='reveal_ccc_token' || action==='get_ccc_policy' || action==='save_ccc_policy' || action==='reconcile_ccc_attendance') {
       const {data:activeActor,error:activeError}=await adminClient.from('users').select('id').eq('id',requesterProfile.id).eq('is_active',true).maybeSingle()
       if(activeError || !activeActor) return json({error:'Active staff account required.'},403)
       const platformAdmin=requesterProfile.role==='super_admin'
@@ -6522,10 +6522,14 @@ Deno.serve(async (request) => {
         const {error}=await adminClient.rpc('reconcile_ccc_attendance',{p_org:org,p_actor:requesterProfile.id,p_id:payload.requestId,p_note:payload.note,p_result:result})
         if(error) throw new Error(error.message)
       }
-      if(action==='validate_nehfams_connection' || action==='activate_nehfams_test') {
+      if(action==='validate_nehfams_connection' || action==='activate_nehfams_test' || action==='activate_nehfams_production') {
         if(!platformAdmin) return json({error:'Platform administrator required.'},403)
         if(action==='validate_nehfams_connection') {
           await validateSavedNehfamsConnection({db:adminClient,org,actor:requesterProfile.id,environment:normalizeText(payload.environment),decode:decodeNhiaSecret})
+        } else if(action==='activate_nehfams_production') {
+          if(Deno.env.get('NEHFAMS_PRODUCTION_ATTENDANCE_ENABLED')!=='true') throw new Error('Production attendance is not enabled on this deployment.')
+          const {error}=await adminClient.rpc('activate_nehfams_production',{p_org:org,p_actor:requesterProfile.id})
+          if(error) throw new Error(error.message)
         } else {
           if(Deno.env.get('NEHFAMS_TEST_ATTENDANCE_ENABLED')!=='true') throw new Error('Test attendance is not enabled on this deployment.')
           const {error}=await adminClient.rpc('activate_nehfams_test',{p_org:org,p_actor:requesterProfile.id})
@@ -6565,6 +6569,8 @@ Deno.serve(async (request) => {
       const connection={data:await readNehfamsConnection(adminClient,org,policy.environment)}
       const connections=await Promise.all(['test','production'].map(async environment=>publicNehfamsConnection(await readNehfamsConnection(adminClient,org,environment))))
       const nehfamsConfigured=!!connection.data
+      const productionApproval=await adminClient.from('nehfams_production_approval').select('attendance_limit,attendances_used,revoked_at,approved_at').eq('organization_id',org).maybeSingle()
+      if(productionApproval.error) throw new Error('Unable to read NeHFAMS production approval.')
       const savedNhia=await fetchNhiaSettingsRow(adminClient,org)
       const nehfamsReusableCredentials=!!(savedNhia?.api_key_encrypted && savedNhia?.api_secret_encrypted)
       const history=await adminClient.from('ccc_policy_audit').select('action,details,created_at').eq('organization_id',org).order('created_at',{ascending:false}).limit(20)
@@ -6572,7 +6578,7 @@ Deno.serve(async (request) => {
       const unresolved=await adminClient.from('ccc_attendance_requests').select('id,member_number,card_type,attendance_date,provider,environment,status,error_code,created_at,updated_at').eq('organization_id',org).in('status',['pending','unknown']).order('created_at',{ascending:true})
       if(history.error || requests.error || unresolved.error) throw new Error('Unable to read CCC history.')
       const unresolvedIds=new Set((unresolved.data || []).map(r=>r.id))
-      return json({policy,nehfamsConnections:connections.filter(Boolean),nehfamsTestEnabled:Deno.env.get('NEHFAMS_TEST_ATTENDANCE_ENABLED')==='true',nehfamsConfigured,nehfamsReusableCredentials,history:history.data,requests:[...(unresolved.data || []),...(requests.data || []).filter(r=>!unresolvedIds.has(r.id))]})
+      return json({policy,nehfamsConnections:connections.filter(Boolean),nehfamsTestEnabled:Deno.env.get('NEHFAMS_TEST_ATTENDANCE_ENABLED')==='true',nehfamsProductionEnabled:Deno.env.get('NEHFAMS_PRODUCTION_ATTENDANCE_ENABLED')==='true',nehfamsProductionApproval:productionApproval.data && !productionApproval.data.revoked_at ? {limit:productionApproval.data.attendance_limit,used:productionApproval.data.attendances_used,remaining:Math.max(0,productionApproval.data.attendance_limit-productionApproval.data.attendances_used)} : null,nehfamsConfigured,nehfamsReusableCredentials,history:history.data,requests:[...(unresolved.data || []),...(requests.data || []).filter(r=>!unresolvedIds.has(r.id))]})
     }
 
     if (!organizationId && !PLATFORM_ACTIONS_WITHOUT_ORGANIZATION.has(action)) {

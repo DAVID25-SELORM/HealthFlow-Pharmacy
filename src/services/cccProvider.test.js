@@ -210,6 +210,31 @@ describe('NeHFAMS reserved test dispatch', () => {
   await expect(runCccRequest(options)).rejects.toThrow(message)
   expect(posts(fetcher)).toHaveLength(0);expect(updates.at(-1)).toMatchObject({status:'not_created',error_code:'nehfams_facility_check_failed'})
  })
+ function productionSetup(overrides={}) {
+  const base=setup(overrides)
+  const policy={provider:'nehfams',environment:'production',enabled:true}
+  const connection={organization_id:'org',environment:'production',version:1,validated_version:1,validated_at:new Date().toISOString(),expected_hpn:'123',expected_name:'Test Facility',auth_mode:'1FA',otac_required:false,api_key_encrypted:'key',api_secret_encrypted:'secret'}
+  base.db.rpc.mockImplementation(async()=>({data:{request_id:'request-id',policy,connection}}))
+  base.db.from=vi.fn(table=>{const chain={select:()=>chain,eq:()=>chain,maybeSingle:async()=>({data:table==='organization_nehfams_connection'?connection:policy}),update:value=>{base.updates.push(value);return chain},single:async()=>({data:{id:'request-id'},error:null})};return chain})
+  return {...base,options:{...base.options,allowNehfamsTest:false,allowNehfamsProduction:true}}
+ }
+ it('sends a production attendance only to the production origin and labels it production',async()=>{
+  const {options,fetcher,updates}=productionSetup()
+  const result=await runCccRequest(options)
+  expect(fetcher.mock.calls.map(([url,init])=>`${init.method} ${url}`)).toEqual(['GET https://nehfams.nhia.gov.gh/api/hmis/auth/hpinfo','POST https://nehfams.nhia.gov.gh/api/hmis/auth/attendance'])
+  expect(result).toMatchObject({ccCode:'01234',environment:'production'}); expect(updates[0].status).toBe('succeeded')
+ })
+ it('refuses production attendance when only the test switch is on, and test when only production is on',async()=>{
+  const blocked=productionSetup(); blocked.options.allowNehfamsProduction=false; blocked.options.allowNehfamsTest=true
+  await expect(runCccRequest(blocked.options)).rejects.toThrow(/not available/); expect(blocked.fetcher).not.toHaveBeenCalled(); expect(blocked.db.rpc).not.toHaveBeenCalled()
+  const wrongWay=setup(); wrongWay.options.allowNehfamsTest=false; wrongWay.options.allowNehfamsProduction=true
+  await expect(runCccRequest(wrongWay.options)).rejects.toThrow(/not available/); expect(wrongWay.fetcher).not.toHaveBeenCalled()
+ })
+ it('still reads the facility fresh and never reaches the attendance route when NHIA now requires an OTAC in production',async()=>{
+  const {options,fetcher,updates}=productionSetup({facility:{...facilityBody,AuthMode:'2FA',OTACAuthEnabled:true}})
+  await expect(runCccRequest(options)).rejects.toThrow(/four-digit OTAC/)
+  expect(posts(fetcher)).toHaveLength(0); expect(updates.at(-1)).toMatchObject({status:'not_created',error_code:'nehfams_otac_required'})
+ })
  it('accepts the lower-camelCase field names NHIA systems have been seen to send',async()=>{
   const camel={statusCode:0,attendanceData:{hin:'hin',ccc:'01234',memberName:'Test Member',umn:'12345678',newCCC:true,authID:'00000000-0000-4000-8000-000000000001',attendanceDate:'2026-10-10T00:00:00',hpName:'Test Facility'}}
   const {options,fetcher}=setup({facility:{hpn:'123',hpName:'Test Facility',authMode:'1FA',otacAuthEnabled:false}})
