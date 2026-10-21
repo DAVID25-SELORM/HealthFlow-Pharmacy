@@ -19,9 +19,16 @@ jobs:
         with:
           node-version: 20
           cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            local-branch-server/package-lock.json
 
       - name: Install dependencies
         run: npm ci
+
+      # The branch server has its own package.json; its tests import its packages (dotenv, better-sqlite3, ...).
+      - name: Install branch server dependencies
+        run: npm ci --prefix local-branch-server
 
       - name: Check production dependency vulnerabilities
         run: |

@@ -7,12 +7,12 @@
   "edgeFunctionCount": 7,
   "testFileCount": 148,
   "criticalFiles": {
-    "src/services/nhisService.js": "f29976b617f2ece8f91c566130fa1d98695bf1c83ca6bbb6ca0c7af932456779",
+    "src/services/nhisService.js": "c3e5669876a08cd106c1b0ec00d0dcd773eeadffae19a12e134360c836d2a720",
     "src/context/AuthContext.jsx": "0df048a03e1bf786d13d289bea4ccbb42167cccb46bba560cc50fff960aab258",
     "src/services/recycleBinService.js": "94f0fd814bda811b3c234769426d57257a0f8120e90df8bffc87ae9ebfbcabe9",
     "src/services/offlineInstallerReleaseService.js": "d656396c7cce60b3e007ffec4f4aa4f8d63f931ab022cbef3cdcdc02755c9c13",
     "src/services/settingsService.js": "fdd96f01368f4d363f3ac0e20e31f7436a5ae0b4c252c3f95fe544471a5dbab7",
-    "supabase/functions/tier-access/index.ts": "16f30f8eede1d0dc5e4e8d7eabbbf9b38a4e58b5708abb761a8ffd679f31aa3b",
+    "supabase/functions/tier-access/index.ts": "ad9f9fec95c31a229845378d6fa13856e1ed8f3edfdae7cccf2a8744b4bfe546",
     "supabase/functions/staff-admin/index.ts": "1003e6ea0e987d12db4a6e0c4d927c27493a57fdb9011440958f3e24c0bb3127",
     "src/claimit/fieldOrder.js": "11120ad4d438d907118f850e10f3f7215e0ecbf9fe76fa0f465bba60ccc3b468",
     "src/claimit/compatibility.js": "f78af08126f1a89efbf827f661a63876012ba5760a0a0ae558e62ab3edcde084",
@@ -67,5 +67,10 @@
     "date": "2026-10-02",
     "description": "Member-aware CCC classification, mandatory warning review, hosted and offline guards; authorized for push, not deployed",
     "impactReport": "docs/nhis-ccc-duplicate-detection.md"
+  },
+  "nehfamsRelease": {
+    "date": "2026-10-21",
+    "impactReport": "docs/nehfams-production-enablement.md",
+    "description": "Version-bound validation with live facility preflight; routine activation and attendance ledger claim linkage."
   }
 }

@@ -6,7 +6,7 @@ export async function readNehfamsConnection(db: any, org: string, environment: s
  return data
 }
 export function publicNehfamsConnection(c: any) {
- return c ? {environment:c.environment,expectedHpn:c.expected_hpn || '',expectedFacilityName:c.expected_name || '',validatedAt:c.validated_at,authMode:c.auth_mode,otacRequired:c.otac_required,configured:true,validated:!!c.validated_at && c.validated_version===c.version && Date.parse(c.validated_at)>Date.now()-86400000} : null
+ return c ? {environment:c.environment,expectedHpn:c.expected_hpn || '',expectedFacilityName:c.expected_name || '',validatedAt:c.validated_at,authMode:c.auth_mode,otacRequired:c.otac_required,configured:true,validated:!!c.validated_at && c.validated_version===c.version && Number.isFinite(Date.parse(c.validated_at))} : null
 }
 export async function validateSavedNehfamsConnection({db,org,actor,environment,decode,fetcher=fetch}: any) {
  const c=await readNehfamsConnection(db,org,environment)

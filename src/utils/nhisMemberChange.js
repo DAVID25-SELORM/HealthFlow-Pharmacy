@@ -2,7 +2,7 @@
 // attendance, so they must not survive an edit of the member number that produced them.
 export const MEMBER_DEPENDENT_CLAIM_FIELDS = Object.freeze([
   'patientId', 'hin', 'surname', 'otherNames', 'folderNo', 'gender', 'dateOfBirth', 'patientAddress',
-  'cccNo', 'ccCode', 'authId', 'authType', 'newCcc', 'otacCode',
+  'cccNo', 'ccCode', 'attendanceRequestId', 'ccc_attendance_request_id', 'authId', 'authType', 'newCcc', 'otacCode',
   'attendanceVerificationStatus', 'attendanceVerificationSource', 'nhiaTransactionId',
   'nhiaEligibilityStartDate', 'nhiaEligibilityEndDate', 'nhiaAttendanceDate', 'nhiaMemberStatus',
   'nhiaMemberLookupPayload',

@@ -174,6 +174,14 @@ describe('NeHFAMS reserved test dispatch', () => {
    if(failNetwork) throw new Error('private');return {ok:true,json:async()=>({StatusCode:statusCode,AttendanceData:{HIN:'hin',CCC:'01234',MemberName:'Test Member',UMN:'12345678',newCCC:false,AuthID:'00000000-0000-4000-8000-000000000001',AttendanceDate:'2026-10-10',HPName:'Test Facility'}})}})
   return {db,updates,fetcher,options:{...args(db),decode:async x=>x,allowNehfamsTest:true,fetcher}}
  }
+ it('rechecks NHIA before dispatch when saved validation is older than a day',async()=>{
+  const {options,db,fetcher}=setup()
+  const reserved=await db.rpc()
+  reserved.data.connection.validated_at='2020-01-01T00:00:00Z'
+  db.rpc.mockResolvedValue(reserved)
+  expect(await runCccRequest(options)).toMatchObject({ccCode:'01234'})
+  expect(fetcher.mock.calls.map(([,init])=>init.method)).toEqual(['GET','POST'])
+ })
  it('reserves, maps and persists without legacy fallback',async()=>{
   const {options,db,updates,fetcher}=setup(); const r=await runCccRequest(options)
   expect(db.rpc).toHaveBeenCalledOnce();expect(posts(fetcher)).toHaveLength(1);expect(options.existing).not.toHaveBeenCalled()

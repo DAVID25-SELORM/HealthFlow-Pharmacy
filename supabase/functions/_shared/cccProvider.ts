@@ -63,7 +63,7 @@ export async function runCccRequest({db,org,actor,branch,payload,decode,existing
   if(provider==='nehfams') {
    const connection=reservation.connection
    const environment=snapshot.environment
-   if(!['test','production'].includes(environment) || !connection || connection.organization_id!==org || connection.environment!==environment || connection.validated_version!==connection.version || !connection.validated_at || !Number.isFinite(Date.parse(connection.validated_at)) || Date.parse(connection.validated_at)<Date.now()-86400000) throw new Error('NeHFAMS connection needs validation')
+   if(!['test','production'].includes(environment) || !connection || connection.organization_id!==org || connection.environment!==environment || connection.validated_version!==connection.version || !connection.validated_at || !Number.isFinite(Date.parse(connection.validated_at))) throw new Error('NeHFAMS connection needs validation')
    const apiKey=await decode(connection.api_key_encrypted), apiSecret=await decode(connection.api_secret_encrypted)
    // NHIA turns OTAC and the authentication mode on and off during its rollout, so the saved copy is not trusted.
    // This read-only lookup happens before anything is dispatched: any failure here creates no attendance and is retryable.

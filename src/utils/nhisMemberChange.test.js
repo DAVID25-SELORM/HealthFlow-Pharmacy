@@ -27,3 +27,9 @@ describe('clearing details when the member number changes', () => {
     expect(memberChangeInvalidatesDetails('', '93081041')).toBe(false)
   })
 })
+
+it('clears ledger references when changing the member without changing the original', () => {
+ const original={attendanceRequestId:'old-request',ccc_attendance_request_id:'old-request',notes:'keep'}
+ expect(clearMemberDependentDetails(original,{})).toEqual({ ...clearMemberDependentDetails({},{}),attendanceRequestId:'',ccc_attendance_request_id:'',notes:'keep'})
+ expect(original.attendanceRequestId).toBe('old-request')
+})

@@ -26,3 +26,13 @@ sql(f"update organization_nehfams_connection set validated_at=null where organiz
 assert 'Validate' in sql(routine(OTHER,OTHER_ADMIN),False)
 assert sql(f"select count(*) from nehfams_production_approval where organization_id='{OTHER}' and routine_enabled;")=='0'
 print('PASS routine activation permissions, no cap, usage preservation, cached reuse, unresolved guard, tenant isolation, revocation and failed-activation rollback')
+
+sql(Path('supabase/migrations/20261024090000_nehfams_per_request_validation.sql').read_text())
+sql("update ccc_attendance_requests set status='not_created' where status='pending';")
+sql(validate());sql(routine())
+sql(f"update organization_nehfams_connection set validated_at=now()-interval '2 days' where organization_id='{O}';")
+r=json.loads(sql(reserve('34567890')))
+sql(f"update ccc_attendance_requests set status='succeeded',result=jsonb_build_object('ccCode','01234') where id='{r['request_id']}';")
+sql(f"update organization_nehfams_connection set version=version+1 where organization_id='{O}';")
+assert 'Validate' in sql(reserve('34567891'),False)
+print('PASS old validated configuration can reserve; changed credential version still requires validation')

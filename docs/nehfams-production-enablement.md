@@ -75,3 +75,8 @@ PostgreSQL 17.6 disposable verification passed all baseline checks plus routine 
 Rollback: revoke routine facility approval using revoke_nehfams_production; reconcile unresolved requests before switching providers. Do not restore capped SQL while leaving routine approvals active. Frontend publication tracked separately.
 
 Frontend production deployment 3BRzqfzeSErGgffWqjYwnZLgq8BZ (commit 26ac4faa) verified Ready on healthflowcloud.com. Branch pushed; main remains unchanged. TypeScript no-emit check passed. Exactly one facility has routine approval (Ayisam); no other organization was activated.
+
+### Daily operation and claim linkage follow-up
+Removed the age-only reservation/backend block for previously validated, unchanged credential versions. Each attendance still performs fresh read-only NHIA facility validation before POST; failures send no attendance. Initial activation still requires recent validation. Public connection state now reflects validated version rather than a daily expiry.
+Fixed member changes retaining a previous attendance ledger ID, and explicit clearing now writes null to the claim payload. Synthetic claim mapping tests and PostgreSQL linkage safeguards cover persistence; no real patient claim is fabricated for verification.
+Added the reviewed branch-package CI installation from b00fba55. Updated protected fingerprints for nhisService.js (ledger mapping) and tier-access (routine activation) with their regression coverage. This change is intended to fast-forward main so older main cannot replace the deployed frontend.

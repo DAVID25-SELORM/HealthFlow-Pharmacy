@@ -902,7 +902,7 @@ const normalizeNhiaNewCccStatus = (value) => {
 }
 
 const getNhiaAttendancePayload = (claimData = {}) => ({
-  ...(claimData.attendanceRequestId || claimData.ccc_attendance_request_id ? { ccc_attendance_request_id: claimData.attendanceRequestId || claimData.ccc_attendance_request_id } : {}),
+  ...(Object.hasOwn(claimData, 'attendanceRequestId') || Object.hasOwn(claimData, 'ccc_attendance_request_id') ? { ccc_attendance_request_id: claimData.attendanceRequestId || claimData.ccc_attendance_request_id || null } : {}),
   nhia_auth_id: normalizeText(claimData.authId ?? claimData.nhiaAuthId ?? claimData.nhia_auth_id) || null,
   nhia_auth_type: normalizeText(claimData.authType ?? claimData.nhiaAuthType ?? claimData.nhia_auth_type) || null,
   nhia_new_ccc_status: normalizeNhiaNewCccStatus(
