@@ -21,6 +21,44 @@ it('keeps legacy selected and saves NeHFAMS only as disabled with separate secre
  await waitFor(()=>expect(screen.getByLabelText('NeHFAMS API secret')).toHaveValue(''))
 })
 
+const productionData = (overrides = {}) => ({
+ policy: { provider: 'nehfams', environment: 'production', enabled: false, nehfams: { expectedHpn: '123', expectedFacilityName: 'Test Facility' } },
+ nehfamsConnections: [{ environment: 'production', validated: true, authMode: '1FA', otacRequired: false, expectedFacilityName: 'Test Facility' }],
+ nehfamsProductionEnabled: true, nehfamsProductionApproval: { limit: 1, used: 0, remaining: 1 }, requests: [], history: [], ...overrides,
+})
+
+it('enables approved production attendance only through the activation action', async () => {
+ cccIntegration.mockResolvedValue(productionData())
+ render(<CccIntegrationSettings organizationId="org-p" />)
+ const button = await screen.findByText('Enable approved production attendance')
+ expect(screen.getByText('Approved production attendances remaining: 1 of 1.')).toBeInTheDocument()
+ expect(button).toBeEnabled()
+ fireEvent.click(button)
+ await waitFor(() => expect(cccIntegration).toHaveBeenCalledWith('activate_nehfams_production', { organizationId: 'org-p', environment: 'production' }))
+})
+
+it.each([
+ ['the production switch is off on this deployment', { nehfamsProductionEnabled: false }],
+ ['the facility has no approval', { nehfamsProductionApproval: null }],
+ ['the approved allowance is used up', { nehfamsProductionApproval: { limit: 1, used: 1, remaining: 0 } }],
+ ['the connection has not been validated', { nehfamsConnections: [{ environment: 'production', validated: false, expectedFacilityName: 'Test Facility' }] }],
+])('keeps the production button disabled when %s', async (_label, overrides) => {
+ cccIntegration.mockResolvedValue(productionData(overrides))
+ render(<CccIntegrationSettings organizationId="org-q" />)
+ expect(await screen.findByText('Enable approved production attendance')).toBeDisabled()
+})
+
+it('says production is not approved when there is no approval, and never shows the button for the test environment', async () => {
+ cccIntegration.mockResolvedValue(productionData({ nehfamsProductionApproval: null }))
+ render(<CccIntegrationSettings organizationId="org-r" />)
+ expect(await screen.findByText('Production NeHFAMS is not approved for this facility.')).toBeInTheDocument()
+ cleanup()
+ cccIntegration.mockResolvedValue(productionData({ policy: { provider: 'nehfams', environment: 'test', enabled: false, nehfams: { expectedHpn: '123', expectedFacilityName: 'Test Facility' } }, nehfamsConnections: [{ environment: 'test', validated: true, authMode: '1FA', otacRequired: false, expectedFacilityName: 'Test Facility' }] }))
+ render(<CccIntegrationSettings organizationId="org-s" />)
+ await screen.findByText('Enable authorized test attendance')
+ expect(screen.queryByText('Enable approved production attendance')).not.toBeInTheDocument()
+})
+
 it('offers saved facility credentials without requiring plaintext entry', async () => {
  cccIntegration.mockResolvedValue({policy:{provider:'existing',enabled:true,expectedHpn:'123',expectedFacilityName:'Test Facility'},nehfamsConfigured:false,nehfamsReusableCredentials:true,requests:[],history:[]})
  render(<CccIntegrationSettings organizationId="org-b" />)
