@@ -1,0 +1,45 @@
+-- A provider switch must not return a successful attendance recorded by the old provider.
+-- Reuse remains idempotent within the selected provider and environment.
+begin;
+
+drop index if exists public.ccc_one_unresolved_attendance;
+create unique index ccc_one_unresolved_attendance
+  on public.ccc_attendance_requests(organization_id,member_number,card_type,attendance_date,environment,provider)
+  where status <> 'not_created';
+
+create or replace function public.reserve_ccc_attendance(p_org uuid,p_actor uuid,p_branch uuid,p_encounter text,p_member text,p_card text,p_date date)
+returns jsonb language plpgsql security definer set search_path=public,pg_catalog as $$
+declare pol public.organization_ccc_policy%rowtype; previous public.ccc_attendance_requests%rowtype; request_id uuid; connection public.organization_nehfams_connection%rowtype; approval public.nehfams_production_approval%rowtype;
+begin
+ if not exists(select 1 from public.users where id=p_actor and organization_id=p_org and is_active=true) then raise exception 'Facility membership required'; end if;
+ if exists(select 1 from public.users where id=p_actor and branch_id is not null and branch_id is distinct from p_branch) then raise exception 'Branch membership required'; end if;
+ if p_branch is not null and not exists(select 1 from public.branches where id=p_branch and organization_id=p_org) then raise exception 'Invalid branch'; end if;
+ if nullif(btrim(p_encounter),'') is null or length(p_encounter)>200 or p_member is null or length(p_member) not between 8 and 30 or p_card is null or p_card not in ('NHISCARD','GHANACARD') or p_date is distinct from (now() at time zone 'Africa/Accra')::date then raise exception 'CCC generation requires a current attendance and valid encounter'; end if;
+ if exists(select 1 from public.nhis_claims where id::text=p_encounter and (organization_id is distinct from p_org or member_no is distinct from p_member)) then raise exception 'Encounter does not match this facility/member'; end if;
+ insert into public.organization_ccc_policy(organization_id) values(p_org) on conflict do nothing;
+ select * into pol from public.organization_ccc_policy where organization_id=p_org for update;
+ if pol.provider not in ('existing','otac','nehfams') then raise exception 'Unsupported CCC provider'; end if;
+ if not pol.enabled then raise exception 'CCC generation is disabled for this facility'; end if;
+ select * into previous from public.ccc_attendance_requests where organization_id=p_org and member_number=p_member and card_type=p_card and attendance_date=p_date and environment=pol.environment and provider=pol.provider and status<>'not_created';
+ if found then
+  if previous.branch_id is distinct from p_branch then raise exception 'Attendance belongs to another branch; reconcile before proceeding'; end if;
+  if previous.status='succeeded' then return jsonb_build_object('cached',true,'result',previous.result,'request_id',previous.id,'environment',previous.environment); end if;
+  raise exception 'Attendance outcome is unresolved. Ask the platform administrator to reconcile it before retrying or switching providers.';
+ end if;
+ if pol.provider='nehfams' then
+  select * into connection from public.organization_nehfams_connection where organization_id=p_org and environment=pol.environment for update;
+  if connection.validated_at is null or connection.validated_version is distinct from connection.version then raise exception 'Validate the NeHFAMS connection before generation'; end if;
+  if pol.environment='production' then
+   select * into approval from public.nehfams_production_approval where organization_id=p_org for update;
+   if not found or approval.revoked_at is not null or (not approval.routine_enabled and approval.attendances_used>=approval.attendance_limit) then raise exception 'NeHFAMS production is not approved for this facility, or its approved attendance limit is used up'; end if;
+  end if;
+ end if;
+ if pol.provider='otac' and (pol.token_encrypted is null or pol.token_expires_at<=now() or pol.token_expires_at is null or nullif(pol.expected_hpn,'') is null or nullif(pol.expected_facility_name,'') is null) then raise exception 'OTAC connection needs configuration or token renewal'; end if;
+ insert into public.ccc_attendance_requests(organization_id,branch_id,actor_id,encounter_key,member_number,card_type,attendance_date,provider,policy_version,environment)
+ values(p_org,p_branch,p_actor,p_encounter,p_member,p_card,p_date,pol.provider,pol.version,pol.environment) returning id into request_id;
+ if pol.provider='nehfams' and pol.environment='production' then update public.nehfams_production_approval set attendances_used=attendances_used+1 where organization_id=p_org; end if;
+ return jsonb_build_object('cached',false,'request_id',request_id,'policy',to_jsonb(pol),'connection',case when pol.provider='nehfams' then to_jsonb(connection) else null end);
+end $$;
+
+notify pgrst,'reload schema';
+commit;
