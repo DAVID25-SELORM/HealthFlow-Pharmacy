@@ -18,11 +18,37 @@ it('never records a mismatched facility',async()=>{
  const {options,db}=setup({HPN:'other',HPName:'Other'});await expect(validateSavedNehfamsConnection(options)).rejects.toThrow(/identity/);expect(db.rpc).not.toHaveBeenCalled()
 })
 it('sanitizes authentication errors',async()=>{
- const {options,fetcher,db}=setup();fetcher.mockResolvedValue({ok:false})
- await expect(validateSavedNehfamsConnection(options)).rejects.toThrow('NeHFAMS connection validation failed. Check credentials and connectivity.')
+ const {options,fetcher,db}=setup();fetcher.mockResolvedValue({ok:false,status:401})
+ await expect(validateSavedNehfamsConnection(options)).rejects.toThrow(/NHIA rejected the saved API credentials/)
  expect(db.rpc).not.toHaveBeenCalled()
 })
 it('rejects stale validation persistence',async()=>{
  const {options,db}=setup();db.rpc.mockResolvedValue({error:{message:'private'}})
  await expect(validateSavedNehfamsConnection(options)).rejects.toThrow(/changed/)
+})
+
+it.each([
+ [403, /rejected the saved API credentials/],
+ [429, /HTTP 429/],
+ [500, /HTTP 500/],
+])('reports safe HTTP diagnostics without recording validation (%s)', async (status, message) => {
+ const {options,fetcher,db}=setup()
+ fetcher.mockResolvedValue({ok:false,status,json:async()=>({secret:'must-not-leak'})})
+ await expect(validateSavedNehfamsConnection(options)).rejects.toThrow(message)
+ expect(db.rpc).not.toHaveBeenCalled()
+ expect(fetcher).toHaveBeenCalledTimes(1)
+})
+it.each([
+ [new DOMException('private upstream data','TimeoutError'), /timed out/],
+ [new TypeError('private upstream data'), /Could not reach NHIA/],
+])('sanitizes transport errors and does not retry', async (error, message) => {
+ const {options,fetcher,db}=setup();fetcher.mockRejectedValue(error)
+ await expect(validateSavedNehfamsConnection(options)).rejects.toThrow(message)
+ expect(db.rpc).not.toHaveBeenCalled();expect(fetcher).toHaveBeenCalledTimes(1)
+})
+it('rejects malformed JSON without recording validation',async()=>{
+ const {options,fetcher,db}=setup()
+ fetcher.mockResolvedValue({ok:true,json:async()=>{throw new Error('private body')}})
+ await expect(validateSavedNehfamsConnection(options)).rejects.toThrow(/invalid JSON/)
+ expect(db.rpc).not.toHaveBeenCalled()
 })

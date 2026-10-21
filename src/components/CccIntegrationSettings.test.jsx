@@ -77,3 +77,20 @@ it.each([null,{limit:3,used:3,remaining:0}])('allows explicit routine activation
  fireEvent.click(button)
  await waitFor(()=>expect(cccIntegration).toHaveBeenCalledWith('activate_nehfams_production',{organizationId:'org-routine',environment:'production'}))
 })
+
+it('shows failed validation beside its controls and releases the busy state', async () => {
+ cccIntegration.mockResolvedValueOnce(productionData({nehfamsConnections:[{environment:'production',validated:false}]}))
+ let rejectValidation
+ cccIntegration.mockImplementationOnce(()=>new Promise((_resolve,reject)=>{rejectValidation=reject}))
+ render(<CccIntegrationSettings organizationId="org-validation" />)
+ fireEvent.click(await screen.findByText('Validate saved connection'))
+ expect(await screen.findByText('Validating connection...')).toBeDisabled()
+ expect(screen.getByText('Save CCC settings')).toBeDisabled()
+ rejectValidation(new Error('NHIA rejected the saved API credentials.'))
+ const alert=await screen.findByRole('alert')
+ expect(alert).toHaveTextContent('NHIA rejected the saved API credentials.')
+ expect(alert.closest('.ccc-credentials')).not.toBeNull()
+ expect(screen.getByText('Validate saved connection')).toBeEnabled()
+ expect(screen.getByText('Enable routine production attendance')).toBeDisabled()
+ expect(screen.getByText('Save CCC settings')).toBeEnabled()
+})

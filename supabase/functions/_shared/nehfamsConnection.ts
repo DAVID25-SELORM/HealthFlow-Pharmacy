@@ -11,14 +11,24 @@ export function publicNehfamsConnection(c: any) {
 export async function validateSavedNehfamsConnection({db,org,actor,environment,decode,fetcher=fetch}: any) {
  const c=await readNehfamsConnection(db,org,environment)
  if(!c) throw new Error('Save credentials for this environment first.')
- let body
+ let key, secret
  try {
-  const key=await decode(c.api_key_encrypted), secret=await decode(c.api_secret_encrypted)
-  if(!key || !secret || /[\r\n]/.test(key+secret)) throw new Error('Invalid credentials')
-  const response=await fetcher(NEHFAMS_ORIGINS[environment as keyof typeof NEHFAMS_ORIGINS]+NEHFAMS_PATHS.facility,{method:'GET',redirect:'error',headers:{'x-nhia-apikey':key,'x-nhia-apisecret':secret,'Content-Type':'application/json'},signal:AbortSignal.timeout(15000)})
-  if(!response.ok) throw new Error('Rejected')
-  body=await response.json()
- } catch { throw new Error('NeHFAMS connection validation failed. Check credentials and connectivity.') }
+  key=await decode(c.api_key_encrypted); secret=await decode(c.api_secret_encrypted)
+ } catch { throw new Error('Saved NeHFAMS credentials could not be read. Save the facility API key and secret again.') }
+ if(!key || !secret || /[\r\n]/.test(key+secret)) throw new Error('Saved NeHFAMS credentials are invalid. Save both the API key and secret again.')
+ let response
+ try {
+  response=await fetcher(NEHFAMS_ORIGINS[environment as keyof typeof NEHFAMS_ORIGINS]+NEHFAMS_PATHS.facility,{method:'GET',redirect:'error',headers:{'x-nhia-apikey':key,'x-nhia-apisecret':secret,'Content-Type':'application/json'},signal:AbortSignal.timeout(15000)})
+ } catch (error) {
+  if(error instanceof Error && ['TimeoutError','AbortError'].includes(error.name)) throw new Error('NHIA facility validation timed out. No attendance was requested. Try validation again.')
+  throw new Error('Could not reach NHIA for facility validation. No attendance was requested. Check connectivity and try validation again.')
+ }
+ if(!response.ok) {
+  if([401,403].includes(response.status)) throw new Error('NHIA rejected the saved API credentials or access permission. Confirm this facility API account is authorized for the selected environment, then save its API key and secret.')
+  throw new Error(`NHIA facility validation returned HTTP ${Number.isInteger(response.status)?response.status:'error'}. No attendance was requested. Contact NHIA if this continues.`)
+ }
+ let body
+ try { body=await response.json() } catch { throw new Error('NHIA facility validation returned invalid JSON. No attendance was requested. Contact NHIA if this continues.') }
  const facility=validateNehfamsFacility(body,{hpn:c.expected_hpn,name:c.expected_name})
  const {error}=await db.rpc('validate_nehfams_connection',{p_org:org,p_actor:actor,p_environment:environment,p_version:c.version,p_mode:facility.authMode,p_otac:facility.otacRequired})
  if(error) throw new Error('Connection changed or validation could not be recorded. Validate again.')
