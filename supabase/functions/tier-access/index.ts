@@ -6528,7 +6528,7 @@ Deno.serve(async (request) => {
           await validateSavedNehfamsConnection({db:adminClient,org,actor:requesterProfile.id,environment:normalizeText(payload.environment),decode:decodeNhiaSecret})
         } else if(action==='activate_nehfams_production') {
           if(Deno.env.get('NEHFAMS_PRODUCTION_ATTENDANCE_ENABLED')!=='true') throw new Error('Production attendance is not enabled on this deployment.')
-          const {error}=await adminClient.rpc('activate_nehfams_production',{p_org:org,p_actor:requesterProfile.id})
+          const {error}=await adminClient.rpc('activate_nehfams_routine_production',{p_org:org,p_actor:requesterProfile.id})
           if(error) throw new Error(error.message)
         } else {
           if(Deno.env.get('NEHFAMS_TEST_ATTENDANCE_ENABLED')!=='true') throw new Error('Test attendance is not enabled on this deployment.')
@@ -6569,7 +6569,7 @@ Deno.serve(async (request) => {
       const connection={data:await readNehfamsConnection(adminClient,org,policy.environment)}
       const connections=await Promise.all(['test','production'].map(async environment=>publicNehfamsConnection(await readNehfamsConnection(adminClient,org,environment))))
       const nehfamsConfigured=!!connection.data
-      const productionApproval=await adminClient.from('nehfams_production_approval').select('attendance_limit,attendances_used,revoked_at,approved_at').eq('organization_id',org).maybeSingle()
+      const productionApproval=await adminClient.from('nehfams_production_approval').select('attendance_limit,attendances_used,revoked_at,approved_at,routine_enabled').eq('organization_id',org).maybeSingle()
       if(productionApproval.error) throw new Error('Unable to read NeHFAMS production approval.')
       const savedNhia=await fetchNhiaSettingsRow(adminClient,org)
       const nehfamsReusableCredentials=!!(savedNhia?.api_key_encrypted && savedNhia?.api_secret_encrypted)
@@ -6578,7 +6578,7 @@ Deno.serve(async (request) => {
       const unresolved=await adminClient.from('ccc_attendance_requests').select('id,member_number,card_type,attendance_date,provider,environment,status,error_code,created_at,updated_at').eq('organization_id',org).in('status',['pending','unknown']).order('created_at',{ascending:true})
       if(history.error || requests.error || unresolved.error) throw new Error('Unable to read CCC history.')
       const unresolvedIds=new Set((unresolved.data || []).map(r=>r.id))
-      return json({policy,nehfamsConnections:connections.filter(Boolean),nehfamsTestEnabled:Deno.env.get('NEHFAMS_TEST_ATTENDANCE_ENABLED')==='true',nehfamsProductionEnabled:Deno.env.get('NEHFAMS_PRODUCTION_ATTENDANCE_ENABLED')==='true',nehfamsProductionApproval:productionApproval.data && !productionApproval.data.revoked_at ? {limit:productionApproval.data.attendance_limit,used:productionApproval.data.attendances_used,remaining:Math.max(0,productionApproval.data.attendance_limit-productionApproval.data.attendances_used)} : null,nehfamsConfigured,nehfamsReusableCredentials,history:history.data,requests:[...(unresolved.data || []),...(requests.data || []).filter(r=>!unresolvedIds.has(r.id))]})
+      return json({policy,nehfamsConnections:connections.filter(Boolean),nehfamsTestEnabled:Deno.env.get('NEHFAMS_TEST_ATTENDANCE_ENABLED')==='true',nehfamsProductionEnabled:Deno.env.get('NEHFAMS_PRODUCTION_ATTENDANCE_ENABLED')==='true',nehfamsProductionApproval:productionApproval.data && !productionApproval.data.revoked_at ? {routineEnabled:productionApproval.data.routine_enabled===true,limit:productionApproval.data.attendance_limit,used:productionApproval.data.attendances_used,remaining:Math.max(0,productionApproval.data.attendance_limit-productionApproval.data.attendances_used)} : null,nehfamsConfigured,nehfamsReusableCredentials,history:history.data,requests:[...(unresolved.data || []),...(requests.data || []).filter(r=>!unresolvedIds.has(r.id))]})
     }
 
     if (!organizationId && !PLATFORM_ACTIONS_WITHOUT_ORGANIZATION.has(action)) {

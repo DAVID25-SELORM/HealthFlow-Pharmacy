@@ -40,7 +40,7 @@ function FacilityCccIntegrationSettings({ organizationId }) {
     } catch(error) {setMessage(error.message)} finally {setBusy(false)}
   }
   const selectedConnection=data?.nehfamsConnections?.find(c=>c.environment===(form?.environment || 'production'))
-  const statusLabels = { test_configured: 'NeHFAMS test enabled', production_configured: 'NeHFAMS production enabled (limited)', validation_pending: 'NeHFAMS validation pending', disabled: 'Generation paused', existing_configuration: 'Existing provider', needs_token: 'Token required', needs_renewal: 'Token renewal needed', configured: 'OTAC configured' }
+  const statusLabels = { test_configured: 'NeHFAMS test enabled', production_configured: 'NeHFAMS production enabled', validation_pending: 'NeHFAMS validation pending', disabled: 'Generation paused', existing_configuration: 'Existing provider', needs_token: 'Token required', needs_renewal: 'Token renewal needed', configured: 'OTAC configured' }
   return <section className="ccc-settings" aria-label="CCC integration">
     <header className="ccc-header">
       <div><span className="ccc-eyebrow">NHIA CONNECTION</span><h3>CCC integration</h3><p>Choose how this facility generates its CCCs.</p></div>
@@ -51,7 +51,7 @@ function FacilityCccIntegrationSettings({ organizationId }) {
     {form && <form onSubmit={save} onChange={() => setSaved(false)}>
       <fieldset className="ccc-providers" disabled={busy}>
         <legend>1. Choose a provider</legend>
-        {[['existing', 'Existing NHIA API', 'Continue using the existing API configuration.'], ['otac', 'NHIA OTAC (Bearer token)', 'Connect with an authorized facility Bearer token.'], ['nehfams', 'NHIA NeHFAMS / OTAC', 'Separate API key and secret. Attendance generation is not available yet.']].map(([value, title, description]) =>
+        {[['existing', 'Existing NHIA API', 'Continue using the existing API configuration.'], ['otac', 'NHIA OTAC (Bearer token)', 'Connect with an authorized facility Bearer token.'], ['nehfams', 'NHIA NeHFAMS / OTAC', 'Use this facility\'s API key and secret after connection validation and activation.']].map(([value, title, description]) =>
           <label key={value} className={`ccc-provider ${form.provider === value ? 'selected' : ''}`}>
             <input type="radio" name={`ccc-provider-${organizationId}`} value={value} checked={form.provider === value} onChange={() => { setToken(''); setApiKey(''); setApiSecret(''); setForm({ ...form, provider: value, enabled: value === 'nehfams' ? false : form.enabled }) }} />
             <span><strong>{title}</strong><small>{description}</small></span>
@@ -73,15 +73,15 @@ function FacilityCccIntegrationSettings({ organizationId }) {
       </div>}
       {form.provider === 'nehfams' && <div className="ccc-credentials">
         <h4>2. Prepare this facility's NeHFAMS connection</h4>
-        <label>Environment<select value={form.environment || 'production'} onChange={e=>{setApiKey('');setApiSecret('');setForm({...form,environment:e.target.value,enabled:false,expectedHpn:data?.nehfamsConnections?.find(c=>c.environment===e.target.value)?.expectedHpn || '',expectedFacilityName:data?.nehfamsConnections?.find(c=>c.environment===e.target.value)?.expectedFacilityName || ''})}}><option value="test">NHIA test</option><option value="production">Production (generation disabled)</option></select></label>
+        <label>Environment<select value={form.environment || 'production'} onChange={e=>{setApiKey('');setApiSecret('');setForm({...form,environment:e.target.value,enabled:false,expectedHpn:data?.nehfamsConnections?.find(c=>c.environment===e.target.value)?.expectedHpn || '',expectedFacilityName:data?.nehfamsConnections?.find(c=>c.environment===e.target.value)?.expectedFacilityName || ''})}}><option value="test">NHIA test</option><option value="production">NHIA production</option></select></label>
         <label>Expected facility HPN<input required value={form.expectedHpn || ''} onChange={e=>setForm({...form,expectedHpn:e.target.value})}/></label>
         <label>Expected facility name<input required value={form.expectedFacilityName || ''} onChange={e=>setForm({...form,expectedFacilityName:e.target.value})}/></label>
         <p>Server: {form.environment==='test'?'https://elig.nhia.gov.gh:5007':'https://nehfams.nhia.gov.gh'}</p>
         <button type="button" disabled={busy || !selectedConnection} onClick={()=>connectionAction('validate_nehfams_connection')}>Validate saved connection</button>
         {selectedConnection?.validated && <p>Validated {selectedConnection.expectedFacilityName}: {selectedConnection.authMode}. OTAC {selectedConnection.otacRequired?'required':'not required'}.</p>}
         {form.environment==='test' && <button type="button" disabled={busy || !selectedConnection?.validated || !data?.nehfamsTestEnabled} onClick={()=>connectionAction('activate_nehfams_test')}>Enable authorized test attendance</button>}
-        {form.environment==='production' && <p>{data?.nehfamsProductionApproval ? `Approved production attendances remaining: ${data.nehfamsProductionApproval.remaining} of ${data.nehfamsProductionApproval.limit}.` : 'Production NeHFAMS is not approved for this facility.'}</p>}
-        {form.environment==='production' && <button type="button" disabled={busy || !selectedConnection?.validated || !data?.nehfamsProductionEnabled || !data?.nehfamsProductionApproval?.remaining} onClick={()=>connectionAction('activate_nehfams_production')}>Enable approved production attendance</button>}
+        {form.environment==='production' && <p>{data?.nehfamsProductionApproval?.routineEnabled ? 'Routine production attendance is enabled for this facility.' : data?.nehfamsProductionApproval ? `Approved production attendances remaining: ${data.nehfamsProductionApproval.remaining} of ${data.nehfamsProductionApproval.limit}.` : 'Production NeHFAMS is not approved for this facility.'}</p>}
+        {form.environment==='production' && <button type="button" disabled={busy || !selectedConnection?.validated || !data?.nehfamsProductionEnabled} onClick={()=>connectionAction('activate_nehfams_production')}>Enable routine production attendance</button>}
         <p role="status">Saving this selection pauses CCC generation for this facility. Attendance remains disabled until NHIA responses and facility identity are validated.</p>
         <label>NeHFAMS API key<input type="password" autoComplete="new-password" required={!selectedConnection && !(form.environment!=='test' && data?.nehfamsReusableCredentials)} value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder={selectedConnection ? 'Leave blank to retain saved key' : (form.environment!=='test' && data?.nehfamsReusableCredentials) ? 'Saved facility API key will be reused' : 'Facility API key'} /></label>
         <label>NeHFAMS API secret<input type="password" autoComplete="new-password" required={!selectedConnection && !(form.environment!=='test' && data?.nehfamsReusableCredentials)} value={apiSecret} onChange={e => setApiSecret(e.target.value)} placeholder={selectedConnection ? 'Leave blank to retain saved secret' : (form.environment!=='test' && data?.nehfamsReusableCredentials) ? 'Saved facility API secret will be reused' : 'Facility API secret'} /></label>

@@ -74,12 +74,25 @@ export function mapNehfamsAttendance(body: any, expected: { facilityName: string
  const hpName = field(d, 'HPName')
  if (!d || !string(hpName) || !sameName(hpName, expected.facilityName)) throw new NehfamsOutcomeError('facility_mismatch')
  const hin = field(d, 'HIN'), ccc = field(d, 'CCC'), memberName = field(d, 'MemberName'), umn = field(d, 'UMN'), isNew = field(d, 'newCCC')
+ // Only an absent field permits request-sourced identity; null, empty and malformed values still fail.
+ const umnAbsent = !Object.keys(d).some(key => key.toLowerCase() === 'umn')
+ const useRequestedMember = umnAbsent && expected.cardType === 'NHISCARD' && /^\d{8}$/.test(expected.cardNo)
  const authId = field(d, 'AuthID'), day = attendanceDay(field(d, 'AttendanceDate'))
- if (!string(hin) || typeof ccc !== 'string' || !/^\d{5}$/.test(ccc) || !string(memberName) || typeof umn !== 'string' || !/^\d{8}$/.test(umn) || typeof isNew !== 'boolean' || typeof authId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(authId) || day !== expected.date) throw new NehfamsOutcomeError('invalid_attendance')
- if (expected.cardType === 'NHISCARD' && umn !== expected.cardNo) throw new NehfamsOutcomeError('member_mismatch')
+ // Fixed field names only: diagnostics must never contain upstream values or patient data.
+ const checks: [string, boolean][] = [
+  ['hin', string(hin)], ['ccc', typeof ccc === 'string' && /^\d{5}$/.test(ccc)],
+  ['member_name', string(memberName)], ['umn', useRequestedMember || (typeof umn === 'string' && /^\d{8}$/.test(umn))],
+  ['new_ccc', typeof isNew === 'boolean'],
+  ['auth_id', typeof authId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(authId)],
+  ['attendance_date', day === expected.date],
+ ]
+ const invalid = checks.filter(([, valid]) => !valid).map(([name]) => name)
+ if (invalid.length) throw new NehfamsOutcomeError('invalid_attendance:' + invalid.join(','))
+ if (expected.cardType === 'NHISCARD' && !useRequestedMember && umn !== expected.cardNo) throw new NehfamsOutcomeError('member_mismatch')
  const text = (name: string) => { const value = field(d, name); return typeof value === 'string' ? value : '' }
  return { ok: true, source: 'nehfams', ccCode: ccc, memberDetails: {
-  ccCode: ccc, hin, memberName, memberNumber: umn,
+  ccCode: ccc, hin, memberName, memberNumber: useRequestedMember ? expected.cardNo : umn,
+  memberNumberSource: useRequestedMember ? 'request' : 'nhia_response',
   attendanceDate: day, authId, hpName, newCcc: isNew,
   authType: text('AttendanceType'), gender: text('Gender'), dateOfBirth: text('DOB').slice(0, 10),
   eligibilityStartDate: text('StartDate').slice(0, 10), eligibilityEndDate: text('EndDate').slice(0, 10),

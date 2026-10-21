@@ -1,6 +1,6 @@
 # NeHFAMS production enablement: one approved facility at a time
 
-Status: **prepared, not applied, not deployed, not activated.** Branch `feat/nehfams-production-single-facility`. No attendance has been requested through the NeHFAMS API by anyone. The only NHIA call made while preparing this was a read-only `hpinfo` for one facility (see `docs/nehfams-test-integration.md`).
+Status: **migrations and backend/frontend deployed on 2026-10-21; Ayisam approval recorded with limit 1; Ayisam connection validated and activated.** Branch `feat/nehfams-production-single-facility`. No NeHFAMS attendance request is recorded in this implementation work. The only NHIA call made while preparing this was a read-only `hpinfo` for one facility (see `docs/nehfams-test-integration.md`).
 
 ## What this change adds
 
@@ -22,12 +22,17 @@ Approving, activating and revoking are platform-administrator-only and service-r
 `scripts/verify-nehfams-postgres-production.py`, 10 checks passed: no route enables production without approval; approval needs an administrator, an NHIA reference and a limit of 1-100 and is audited; activation needs a validated production connection; limit of 1 allows one new reservation, serves repeats from cache and refuses the next member; re-approval resets the allowance, a rolled-back reservation does not consume it; two independent sessions cannot exceed the limit (the second waited on the lock, then was refused); revocation disables generation at once and blocks reactivation; an unapproved facility cannot enable production; switching back to the existing provider still works; `anon` and `authenticated` roles cannot approve, activate, revoke or read approvals.
 The original `scripts/verify-nehfams-postgres.py` still passes 7 of 7 against all four migrations.
 JavaScript: 57 tests in the provider and adapter suites pass, including that production is allowed only with its own switch, goes only to `https://nehfams.nhia.gov.gh`, is labelled `production`, and never reaches the attendance route when NHIA now requires an OTAC that was not supplied.
-Not verified: the edge function under Deno (syntax and type check of the shared modules only), behavior against NHIA's attendance route (no attendance has been requested), the admin screen.
+Not verified: the edge function under Deno (syntax and type check of the shared modules only), behavior against NHIA's attendance route (no attendance has been requested), and the deployed admin screen.
 
-## Not yet done in this branch
+## Current readiness (reviewed 2026-10-21)
 
-- **Admin screen and claim form wiring.** An automated permission check refused these edits, so they are not in the branch. Without them an administrator cannot press "enable production" in the browser and the claim form's Generate button stays disabled for production. The two edits are small: (1) in `src/components/CccIntegrationSettings.jsx` add a `production_configured` status label and, for `form.environment==='production'`, a button calling `connectionAction('activate_nehfams_production')` enabled only when the connection is validated, `data.nehfamsProductionEnabled` is true and `data.nehfamsProductionApproval.remaining > 0`; (2) in `src/pages/Nhis.jsx` treat `cccPolicy.status` of `production_configured` like `test_configured` in `canGenerateNhiaCcCode`. The backend already returns `nehfamsProductionEnabled` and `nehfamsProductionApproval`.
-- Updating the protected-file baseline manifest for `tier-access/index.ts` (it already fails on `main`).
+Local recheck: 71 tests passed across five files (provider, request, connection, settings component and no-implicit-generation contract) using Vitest process workers. The first thread-worker run passed 63 tests but failed to start the settings worker; it is not counted as a successful run. These are local mocked checks, not live attendance verification.
+
+The administrator activation control and claim-form production status support are implemented in commit 1ca0fa89. They still require validated credentials, the deployment switch and an approved remaining allowance. The earlier note that these UI edits were absent is obsolete.
+
+The CI dependency installation is separately prepared in b00fba55 on fix/ci-install-branch-server. Keep CI repairs separate from facility activation. Main's historical branch test fixture must use the cloud-history import path; the corrected fixture is already in this integration branch. Neither CI success nor the read-only hpinfo response proves attendance generation succeeds.
+
+Remaining rollout work: review the full migration chain against the target schema, verify CI on its actual Node version, deploy only with explicit authorization, configure the selected facility, then conduct one explicitly approved production attendance with a limit of one. The legacy provider must remain available for other facilities. Do not replay an uncertain attendance.
 
 ## Runbook for the first real attendance (do each step only when you have decided to)
 
@@ -37,7 +42,7 @@ Not verified: the edge function under Deno (syntax and type check of the shared 
 4. **Configure and validate** the facility's production connection (API key and secret, expected HPN and exact facility name) in CCC settings; press **Validate saved connection**. It must show the expected mode and OTAC state.
 5. **Approve** (as the platform owner, in the SQL editor; replace the placeholders; limit 1 for the first run):
    `select approve_nehfams_production('<facility uuid>', '<your user uuid>', '<NHIA authorization reference>', 1);`
-6. **Switch on** the deployment secret `NEHFAMS_PRODUCTION_ATTENDANCE_ENABLED=true`, redeploy if your platform requires it, then **Enable approved production attendance** (after the UI wiring above exists, or call the `activate_nehfams_production` action).
+6. **Switch on** the deployment secret `NEHFAMS_PRODUCTION_ATTENDANCE_ENABLED=true`, redeploy if your platform requires it, then **Enable approved production attendance** (or call the `activate_nehfams_production` action).
 7. **Generate exactly one CCC** for one real patient who is present. If NHIA currently requires an OTAC, the patient provides the four-digit code. Do not retry anything that looks uncertain.
 8. **Verify** against the portal's Daily Attendance List: the attendance exists, its CCC equals the one HealthFlow stored (leading zeros kept), and exactly one row was created. Confirm the ledger row is `succeeded`, `environment=production`, and the claim is linked.
 9. **Close the window.** The allowance of 1 is now used up. To stop immediately at any time: unset the deployment secret, or `select revoke_nehfams_production('<facility uuid>', '<your user uuid>');`. To return the facility to the existing provider, use CCC settings or `save_ccc_policy` with `existing` (requires no unresolved requests).
@@ -46,3 +51,25 @@ Not verified: the edge function under Deno (syntax and type check of the shared 
 ## Rollback
 
 Unset `NEHFAMS_PRODUCTION_ATTENDANCE_ENABLED` (instant), then revoke the approval, then switch the facility back to the existing provider. None of these touches the legacy provider's configuration, which this change does not modify.
+
+
+## Rollout execution â€” 2026-10-21
+
+- Applied migrations 20261021090000 and 20261022090000 atomically after comparing live reservation/policy functions; recorded both in migration history.
+- Deployed tier-access to bcvmiwmhtvtqrvzdovin.
+- Promoted commit 1ca0fa89 using production environment build; Vercel deployment 9FEgE7ffqxe9CjxTKhTBwDLaYg5G is Ready and assigned healthflowcloud.com. Git main remains dc37269b; avoid deploying old main over this release.
+- Verified user reconciliation of Ayisam legacy timeout request: not_created.
+- Recorded Ayisam-only approval, limit 1, referencing user-confirmed NHIA authorization. No attendance created by this rollout yet.
+- Tests: 71 focused tests plus 308 additional tests passed; production build passed; isolated PostgreSQL production and reservation checks passed. Initial PostgreSQL attempt occurred before startup completed; rerun passed after readiness.
+- Ayisam connection credentials absent; user asked to enter them securely in Tenant Admin. Validation, deployment switch, activation and first attendance remain pending.
+
+### Activation completed
+- User saved Ayisam credentials through Tenant Admin. Backend hpinfo validation confirmed HPN 15115, AYISAM T CHEMIST LTD, 1FA, OTAC not required.
+- Set NEHFAMS_PRODUCTION_ATTENDANCE_ENABLED=true and activated only Ayisam using the existing platform administrator identity.
+- Database verification: provider=nehfams, environment=production, enabled=true, limit=1, used=0.
+- No attendance creation was performed during activation. First real CCC response and ledger/claim persistence remain to be verified.
+
+### Routine production rollout — 2026-10-21
+User authorized routine production for Ayisam and administrator-controlled activation for other organizations. Migration 20261023090000 adds an explicit routine_enabled approval flag (default false); activation validates the connection and rejects unresolved records atomically. Existing usage counters are preserved. Reservation limits continue for limited approvals; routine approvals retain duplicate/branch/tenant checks and revocation. Other organizations are not automatically switched.
+PostgreSQL 17.6 disposable verification passed all baseline checks plus routine permission, cap removal, usage preservation, duplicate reuse, isolation, revocation and failed-activation rollback checks. Focused provider/adapter tests: 67 passed. Production build passed. Migration and tier-access deployed; Ayisam verified enabled with routine_enabled=true and usage preserved at 3. No attendance created during rollout.
+Rollback: revoke routine facility approval using revoke_nehfams_production; reconcile unresolved requests before switching providers. Do not restore capped SQL while leaving routine approvals active. Frontend publication tracked separately.

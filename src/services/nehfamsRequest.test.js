@@ -94,3 +94,26 @@ it('fails the facility read on an HTTP error, a bad environment or unsafe creden
  await expect(fetchNehfamsFacility({ environment: 'test', apiKey: 'k\nx', apiSecret: 's', fetcher: transport })).rejects.toThrow(/credentials/)
  expect(transport).not.toHaveBeenCalled()
 })
+
+it('accepts omitted UMN for NHIS with explicit request provenance and leading-zero CCC', () => {
+ const value = toCamelBody(); delete value.attendanceData.umn
+ expect(mapNehfamsAttendance(value, expected)).toMatchObject({ccCode:'01234',memberDetails:{memberNumber:'12345678',memberNumberSource:'request',newCcc:false}})
+})
+it.each([null, '', 12345678, '123', '87654321'])('rejects a present invalid or conflicting UMN: %s', umn => {
+ const value = toCamelBody(); value.attendanceData.umn = umn
+ expect(() => mapNehfamsAttendance(value, expected)).toThrow()
+})
+it('does not infer an NHIS member number from a Ghana card or invalid request', () => {
+ const value = toCamelBody(); delete value.attendanceData.umn
+ for (const request of [{...expected,cardType:'GHANACARD',cardNo:'GHA-123456789-0'},{...expected,cardNo:'bad'}]) {
+  expect(() => mapNehfamsAttendance(value, request)).toThrow(expect.objectContaining({code:'invalid_attendance:umn'}))
+ }
+})
+it('records response provenance when NHIA returns UMN', () => {
+ expect(mapNehfamsAttendance(body,expected).memberDetails.memberNumberSource).toBe('nhia_response')
+})
+it('reports every invalid field using fixed diagnostic labels only', () => {
+ const value = toCamelBody()
+ value.attendanceData.ccc = 1234; value.attendanceData.attendanceDate = 'wrong'; value.attendanceData.newCCC = 'private'
+ expect(() => mapNehfamsAttendance(value, expected)).toThrow(expect.objectContaining({code:'invalid_attendance:ccc,new_ccc,attendance_date'}))
+})

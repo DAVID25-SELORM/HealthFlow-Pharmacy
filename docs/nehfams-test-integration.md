@@ -113,3 +113,20 @@ An operator signed in to the NHIA NeHFAMS web portal (`otac.nhia.gov.gh`) and th
 6. Update the protected-file baseline manifest in a reviewed change.
 7. Replace the production block (constraint, provider gate, edge function) in a separate, reviewed change; production credentials need NHIA authorization and a facility-specific validation.
 8. Keep the legacy provider available and unchanged throughout; roll back by switching the organization's provider back.
+
+## Authorized NHIA sandbox verification — 2026-10-21
+- Source: supplied NHIA workbook Authentication and Test data sheet and official Postman collection. Credentials read in memory, not printed or committed.
+- Test origin only: https://elig.nhia.gov.gh:5007.
+- Facility GET: both supplied accounts returned HTTP 200; 1FA/OTAC false and 2FA/OTAC true respectively. Facility identity was read from the test response; no independently supplied expected test identity was asserted.
+- One 1FA attendance POST using a workbook test member and the actual NeHFAMS adapter succeeded (statusCode 0, five-digit string CCC, newCCC true).
+- Actual attendance response omitted UMN. Updated mapNehfamsAttendance accepted it with memberNumberSource=request. Response values and credentials were not logged.
+- No production requests or configuration changes. No blind retry.
+- Not verified in this run: 2FA attendance/OTAC exchange, database ledger persistence, claim linkage, UI end-to-end. This transport check must not be described as a complete HealthFlow end-to-end test.
+
+### Final response-compatibility regression check — 2026-10-21
+
+- Added a provider-flow regression using synthetic data with the observed sandbox response shape (no UMN). It verifies leading-zero CCC preservation, request-sourced member identity, successful ledger recording, attendanceRequestId propagation, and cached reuse with exactly one attendance POST and no legacy fallback.
+- Corrected obsolete settings labels that stated NeHFAMS generation was unavailable or always disabled. Activation and approval checks remain unchanged.
+- `npx vitest run src/services/cccProvider.test.js src/services/nehfamsRequest.test.js src/services/nhisService.test.js src/services/cccBranchGateway.test.js src/contracts/nehfamsNoImplicitGeneration.contract.test.js --pool=forks`: 341 passed across 5 files.
+- TypeScript no-emit check of adapter, connection, credentials and provider modules passed. `npm run build` passed.
+- No new production attendance, allowance increase, reconciliation, or migration was performed in this regression pass. The UI wording changes are local. Production end-to-end generation and claim saving remain unverified; historical unknown outcomes are not cleared by a parser fix.

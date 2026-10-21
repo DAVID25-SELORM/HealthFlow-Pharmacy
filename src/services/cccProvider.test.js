@@ -235,6 +235,18 @@ describe('NeHFAMS reserved test dispatch', () => {
   await expect(runCccRequest(options)).rejects.toThrow(/four-digit OTAC/)
   expect(posts(fetcher)).toHaveLength(0); expect(updates.at(-1)).toMatchObject({status:'not_created',error_code:'nehfams_otac_required'})
  })
+ it('persists the observed sandbox response without UMN and reuses its ledger result',async()=>{
+  const body={statusCode:0,attendanceData:{hin:'synthetic-hin',ccc:'01234',memberName:'Synthetic Member',newCCC:false,authID:'00000000-0000-4000-8000-000000000001',attendanceDate:'2026-10-10T00:00:00',hpName:'Test Facility'}}
+  const {options,db,updates,fetcher}=setup()
+  fetcher.mockImplementation(async url=>({ok:true,json:async()=>String(url).endsWith('/hpinfo')?facilityBody:body}))
+  const result=await runCccRequest(options)
+  expect(result).toMatchObject({ccCode:'01234',attendanceRequestId:'request-id',memberDetails:{memberNumber:'12345678',memberNumberSource:'request',attendanceRequestId:'request-id',newCcc:false}})
+  expect(updates[0]).toMatchObject({status:'succeeded',result})
+  db.rpc.mockResolvedValue({data:{cached:true,result,request_id:'request-id'}})
+  expect(await runCccRequest(options)).toEqual({...result,reused:true})
+  expect(posts(fetcher)).toHaveLength(1)
+  expect(options.existing).not.toHaveBeenCalled()
+ })
  it('accepts the lower-camelCase field names NHIA systems have been seen to send',async()=>{
   const camel={statusCode:0,attendanceData:{hin:'hin',ccc:'01234',memberName:'Test Member',umn:'12345678',newCCC:true,authID:'00000000-0000-4000-8000-000000000001',attendanceDate:'2026-10-10T00:00:00',hpName:'Test Facility'}}
   const {options,fetcher}=setup({facility:{hpn:'123',hpName:'Test Facility',authMode:'1FA',otacAuthEnabled:false}})

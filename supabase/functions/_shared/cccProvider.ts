@@ -118,6 +118,6 @@ export async function runCccRequest({db,org,actor,branch,payload,decode,existing
   if(rejected) throw new Error(error.message)
   if(!dispatched) throw new Error('CCC configuration needs attention. No request was sent to NHIA.')
   // No automatic fallback, retransmission, or raw upstream exception disclosure.
-  throw new Error(`${error instanceof CccFailure ? error.message + ' ' : ''}Attendance outcome is unresolved. Ask the platform administrator to reconcile before retrying. Request: ${reservation.request_id}`)
+  throw new Error(`${error instanceof CccFailure ? error.message + ' ' : error instanceof NehfamsOutcomeError ? 'NHIA response check: ' + error.code + '. ' : ''}Attendance outcome is unresolved. Ask the platform administrator to reconcile before retrying. Request: ${reservation.request_id}`)
  }
 }
