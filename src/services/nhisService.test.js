@@ -5292,7 +5292,7 @@ describe('duplicate NHIS claim prevention', () => {
         id: claimId,
         claim_number: 'NHIS-000011',
         issues: expect.arrayContaining([
-          expect.stringContaining('Active medication blocked: Paracetamol Tablet 500mg has early refill review'),
+          expect.stringContaining('Export blocked: Paracetamol Tablet 500mg has early refill review'),
           expect.stringContaining('NHIA may reject or reduce payment for an early refill.'),
           expect.stringContaining('Previous dispensing date: 2026-05-10.'),
           expect.stringContaining('Calculation: previous quantity 10; dose 1 tablet; frequency BD; 2 administration(s)/day; 5 calculated treatment day(s).'),

@@ -5218,7 +5218,7 @@ const formatNhisActiveMedicationExportBlocker = (alert = {}) => {
   const riskText = riskScore > 0 ? ` Risk score ${riskScore}/100.` : ''
   const actionText = normalizeText(alert.recommended_action)
   return [
-    `Active medication blocked: ${medicine} has ${matchText}; ${remainingText}. NHIA may reject or reduce payment for an early refill.`,
+    `Export blocked: ${medicine} has ${matchText}; ${remainingText}. NHIA may reject or reduce payment for an early refill.`,
     previousDate ? `Previous dispensing date: ${previousDate}.` : '',
     detailText ? `Calculation: ${detailText}.` : '',
     coverageEndDate ? `Expected completion date: ${coverageEndDate}.` : '',
