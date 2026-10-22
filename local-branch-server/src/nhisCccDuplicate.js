@@ -60,6 +60,7 @@ const medicineOverlapRatio = (a, b) => {
   const union = new Set([...a, ...b]).size
   return union ? intersection / union : null
 }
+const sameMedicineSet = (a, b) => a.length > 0 && b.length > 0 && a.length === b.length && a.every((code) => b.includes(code))
 
 const daysBetween = (a, b) => {
   const msPerDay = 24 * 60 * 60 * 1000
@@ -135,7 +136,8 @@ export const classifyNhisCccDuplicateSignals = (candidate, others = [], { warnin
         const total = totalOf(candidate)
         const rowTotal = totalOf(row)
         const sameTotal = total > 0 && rowTotal > 0 && Math.abs(total - rowTotal) < 0.005
-        signals.push(sameTotal
+        const sameMedicines = sameMedicineSet(candidateMedicines, medicinesOf(row))
+        signals.push(sameTotal && (sameMedicines || !candidateMedicines.length || !medicinesOf(row).length)
           ? {
             severity: NHIS_CCC_DUPLICATE_SEVERITY.BLOCK,
             reasonCode: NHIS_CCC_DUPLICATE_REASON.STRONG_DUPLICATE,

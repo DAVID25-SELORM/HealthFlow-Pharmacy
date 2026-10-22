@@ -192,6 +192,14 @@ describe('several prescriptions for one visit (same member + CCC + day)', () => 
     expect(signals.some(isBlockingNhisCccDuplicateSignal)).toBe(false)
   })
 })
+it('does not hard-block a same-total claim when the same person has different medicines', () => {
+ const signals = classifyNhisCccDuplicateSignals(
+  candidate({ medicines: [{ drugCode: 'A' }], totalAmount: 100 }),
+  [claim({ medicines: [{ drugCode: 'B' }], totalAmount: 100 })]
+ )
+ expect(signals[0].severity).toBe(NHIS_CCC_DUPLICATE_SEVERITY.STRONG_WARNING)
+ expect(isBlockingNhisCccDuplicateSignal(signals[0])).toBe(false)
+})
 
 describe('different member sharing a CCC', () => {
   it('is mentioned only when the other claim is within a week of the service date', () => {
