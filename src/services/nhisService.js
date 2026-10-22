@@ -1231,7 +1231,14 @@ const buildNhisDuplicateClaimGroups = (claims = []) => {
     groupsByKey.set(key, group)
   }
 
-  return Array.from(groupsByKey.values()).filter((group) => group.claims.length > 1)
+  return Array.from(groupsByKey.values()).filter((group) => {
+    if (group.claims.length <= 1) return false
+    const sets = group.claims.map((claim) => new Set((claim.nhis_claim_medicines || claim.medicines || []).map((medicine) => normalizeText(medicine.drug_code || medicine.drugCode || medicine.code)).filter(Boolean)))
+    // Different recorded medication sets are separate prescriptions, not
+    // duplicate claims. Keep groups with missing medication data for review.
+    if (sets.some((set) => set.size === 0)) return true
+    return sets.every((set) => set.size === sets[0].size && [...set].every((code) => sets[0].has(code)))
+  })
 }
 
 export const isNhisDuplicateClaimsError = (error) =>
