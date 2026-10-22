@@ -67,6 +67,7 @@ begin
 end $$;
 
 revoke all on function public.guard_nhis_active_coverage_on_serve() from public, anon, authenticated;
+drop trigger if exists guard_nhis_active_coverage_on_serve on public.nhis_claim_medicines;
 create trigger guard_nhis_active_coverage_on_serve
 before insert or update on public.nhis_claim_medicines
 for each row execute function public.guard_nhis_active_coverage_on_serve();
