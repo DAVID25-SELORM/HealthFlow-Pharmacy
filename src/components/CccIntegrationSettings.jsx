@@ -25,6 +25,9 @@ function FacilityCccIntegrationSettings({ organizationId }) {
     return () => { active = false }
   }, [organizationId])
   async function save(event) {
+    if (form.provider === 'nehfams' && data.policy.provider === 'nehfams' && data.policy.environment === (form.environment || 'production') && !connectionDirty) {
+      event.preventDefault(); setSaved(true); setMessage('Connection unchanged. Current validation and generation status have been retained.'); return
+    }
     event.preventDefault(); setBusy(true); setOperation('save'); setMessage(''); setSaved(false)
     try {
       const result = await cccIntegration('save_ccc_policy', { organizationId, provider: form.provider, enabled: form.provider==='nehfams'?false:form.enabled,
@@ -34,13 +37,26 @@ function FacilityCccIntegrationSettings({ organizationId }) {
     } catch (error) { setMessage(error.message) } finally { setBusy(false) }
   }
   async function connectionAction(action) {
+    if (connectionDirty) { setMessage('Save the changed connection details before validation or activation.'); return }
     setBusy(true); setOperation(action); setSaved(false); setMessage('')
     try {
       const result=await cccIntegration(action,{organizationId,environment:form.environment || 'production'})
-      setData(result);setForm({...result.policy,...(result.policy.provider==='nehfams' && result.policy.nehfams ? {expectedHpn:result.policy.nehfams.expectedHpn,expectedFacilityName:result.policy.nehfams.expectedFacilityName} : {})})
+      setData(result);setForm(current => action === 'validate_nehfams_connection' ? current : {...result.policy,...(result.policy.provider==='nehfams' && result.policy.nehfams ? {expectedHpn:result.policy.nehfams.expectedHpn,expectedFacilityName:result.policy.nehfams.expectedFacilityName} : {})})
     } catch(error) {setMessage(error.message)} finally {setBusy(false)}
   }
   const selectedConnection=data?.nehfamsConnections?.find(c=>c.environment===(form?.environment || 'production'))
+  const connectionDirty = !selectedConnection || !!apiKey || !!apiSecret ||
+    (form?.expectedHpn || '').trim() !== (selectedConnection.expectedHpn || '') ||
+    (form?.expectedFacilityName || '').trim() !== (selectedConnection.expectedFacilityName || '')
+  function selectProvider(provider) {
+    setToken(''); setApiKey(''); setApiSecret(''); setMessage('')
+    const connection = provider === 'nehfams' ? selectedConnection : null
+    setForm({ ...form, provider,
+      enabled: provider === data.policy.provider ? data.policy.enabled : false,
+      expectedHpn: connection?.expectedHpn ?? data.policy.expectedHpn ?? '',
+      expectedFacilityName: connection?.expectedFacilityName ?? data.policy.expectedFacilityName ?? '',
+    })
+  }
   const statusLabels = { test_configured: 'NeHFAMS test enabled', production_configured: 'NeHFAMS production enabled', validation_pending: 'NeHFAMS validation pending', disabled: 'Generation paused', existing_configuration: 'Existing provider', needs_token: 'Token required', needs_renewal: 'Token renewal needed', configured: 'OTAC configured' }
   return <section className="ccc-settings" aria-label="CCC integration">
     <header className="ccc-header">
@@ -54,7 +70,7 @@ function FacilityCccIntegrationSettings({ organizationId }) {
         <legend>1. Choose a provider</legend>
         {[['existing', 'Existing NHIA API', 'Continue using the existing API configuration.'], ['otac', 'NHIA OTAC (Bearer token)', 'Connect with an authorized facility Bearer token.'], ['nehfams', 'NHIA NeHFAMS / OTAC', 'Use this facility\'s API key and secret after connection validation and activation.']].map(([value, title, description]) =>
           <label key={value} className={`ccc-provider ${form.provider === value ? 'selected' : ''}`}>
-            <input type="radio" name={`ccc-provider-${organizationId}`} value={value} checked={form.provider === value} onChange={() => { setToken(''); setApiKey(''); setApiSecret(''); setForm({ ...form, provider: value, enabled: value === 'nehfams' ? false : form.enabled }) }} />
+            <input type="radio" name={`ccc-provider-${organizationId}`} value={value} checked={form.provider === value} onChange={() => selectProvider(value)} />
             <span><strong>{title}</strong><small>{description}</small></span>
           </label>)}
       </fieldset>
@@ -79,15 +95,15 @@ function FacilityCccIntegrationSettings({ organizationId }) {
         <label>Expected facility name<input required value={form.expectedFacilityName || ''} onChange={e=>setForm({...form,expectedFacilityName:e.target.value})}/></label>
         <p>Server: {form.environment==='test'?'https://elig.nhia.gov.gh:5007':'https://nehfams.nhia.gov.gh'}</p>
         {message && <p className="ccc-message" role="alert">{message}</p>}
-        {!selectedConnection && <p>Save this environment?s connection before validating it.</p>}
+        {connectionDirty && <p>Save the changed connection details before validation or activation.</p>}
         {selectedConnection && !selectedConnection.validated && <p>Validate the saved connection successfully before enabling attendance.</p>}
         {selectedConnection?.validated && !(form.environment === 'test' ? data?.nehfamsTestEnabled : data?.nehfamsProductionEnabled) && <p>Attendance is disabled for this environment on the server.</p>}
-        <button type="button" disabled={busy || !selectedConnection} onClick={()=>connectionAction('validate_nehfams_connection')}>{busy && operation === 'validate_nehfams_connection' ? 'Validating connection...' : 'Validate saved connection'}</button>
+        <button type="button" disabled={busy || connectionDirty} onClick={()=>connectionAction('validate_nehfams_connection')}>{busy && operation === 'validate_nehfams_connection' ? 'Validating connection...' : 'Validate saved connection'}</button>
         {selectedConnection?.validated && <p>Validated {selectedConnection.expectedFacilityName}: {selectedConnection.authMode}. OTAC {selectedConnection.otacRequired?'required':'not required'}.</p>}
-        {form.environment==='test' && <button type="button" disabled={busy || !selectedConnection?.validated || !data?.nehfamsTestEnabled} onClick={()=>connectionAction('activate_nehfams_test')}>Enable authorized test attendance</button>}
-        {form.environment==='production' && <p>{data?.nehfamsProductionApproval?.routineEnabled ? 'Routine production attendance is enabled for this facility.' : data?.nehfamsProductionApproval ? `Approved production attendances remaining: ${data.nehfamsProductionApproval.remaining} of ${data.nehfamsProductionApproval.limit}.` : 'Production NeHFAMS is not approved for this facility.'}</p>}
-        {form.environment==='production' && <button type="button" disabled={busy || !selectedConnection?.validated || !data?.nehfamsProductionEnabled} onClick={()=>connectionAction('activate_nehfams_production')}>{busy && operation === 'activate_nehfams_production' ? 'Enabling attendance...' : 'Enable routine production attendance'}</button>}
-        <p role="status">Saving this selection pauses CCC generation for this facility. Attendance remains disabled until NHIA responses and facility identity are validated.</p>
+        {form.environment==='test' && <button type="button" disabled={busy || connectionDirty || !selectedConnection?.validated || !data?.nehfamsTestEnabled} onClick={()=>connectionAction('activate_nehfams_test')}>Enable authorized test attendance</button>}
+        {form.environment==='production' && <p>{data?.nehfamsProductionApproval?.routineEnabled ? (data.policy.provider==='nehfams' && data.policy.environment==='production' && data.policy.enabled ? 'Routine production attendance is enabled for this facility.' : 'Routine production is approved. Activate the validated connection to enable attendance.') : data?.nehfamsProductionApproval ? `Approved production attendances remaining: ${data.nehfamsProductionApproval.remaining} of ${data.nehfamsProductionApproval.limit}.` : 'Production NeHFAMS is not approved for this facility.'}</p>}
+        {form.environment==='production' && <button type="button" disabled={busy || connectionDirty || !selectedConnection?.validated || !data?.nehfamsProductionEnabled} onClick={()=>connectionAction('activate_nehfams_production')}>{busy && operation === 'activate_nehfams_production' ? 'Enabling attendance...' : 'Enable routine production attendance'}</button>}
+        <p role="status">Save changed connection details, validate with NHIA, then enable attendance. Saving changed details pauses generation; saving unchanged details retains the current status. After enabling, no further save is needed.</p>
         <label>NeHFAMS API key<input type="password" autoComplete="new-password" required={!selectedConnection && !(form.environment!=='test' && data?.nehfamsReusableCredentials)} value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder={selectedConnection ? 'Leave blank to retain saved key' : (form.environment!=='test' && data?.nehfamsReusableCredentials) ? 'Saved facility API key will be reused' : 'Facility API key'} /></label>
         <label>NeHFAMS API secret<input type="password" autoComplete="new-password" required={!selectedConnection && !(form.environment!=='test' && data?.nehfamsReusableCredentials)} value={apiSecret} onChange={e => setApiSecret(e.target.value)} placeholder={selectedConnection ? 'Leave blank to retain saved secret' : (form.environment!=='test' && data?.nehfamsReusableCredentials) ? 'Saved facility API secret will be reused' : 'Facility API secret'} /></label>
         <p>{selectedConnection ? 'NeHFAMS credentials are saved separately.' : (form.environment!=='test' && data?.nehfamsReusableCredentials) ? 'Your saved facility API key and secret will be reused when you save. Leave both fields blank; enter both only to use different credentials.' : 'No NeHFAMS credentials saved.'} Existing NHIA and Bearer-token OTAC credentials are retained.</p>

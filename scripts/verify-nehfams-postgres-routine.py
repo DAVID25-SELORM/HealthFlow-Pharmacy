@@ -36,3 +36,21 @@ sql(f"update ccc_attendance_requests set status='succeeded',result=jsonb_build_o
 sql(f"update organization_nehfams_connection set version=version+1 where organization_id='{O}';")
 assert 'Validate' in sql(reserve('34567891'),False)
 print('PASS old validated configuration can reserve; changed credential version still requires validation')
+
+sql(Path('supabase/migrations/20261021180000_provider_scoped_attendance_reuse.sql').read_text())
+# Reproduce a clean-install ordering: the later migration overwrites reservation.
+sql(Path('supabase/migrations/20261024090000_nehfams_per_request_validation.sql').read_text())
+sql(Path('supabase/migrations/20261025090000_ccc_switching_consistency.sql').read_text())
+sql(validate());sql(routine())
+legacy=json.loads(sql(reserve('45678901')))
+sql(f"update ccc_attendance_requests set provider='existing',status='succeeded',result=jsonb_build_object('ccCode','01234') where id='{legacy['request_id']}';")
+fresh=json.loads(sql(reserve('45678901')))
+assert fresh['cached'] is False and fresh['policy']['provider']=='nehfams'
+assert fresh['request_id'] != legacy['request_id']
+assert 'unresolved' in sql(reserve('45678901'),False)
+sql(f"update ccc_attendance_requests set status='succeeded',result=jsonb_build_object('ccCode','01234') where id='{fresh['request_id']}';")
+assert json.loads(sql(reserve('45678901')))['request_id']==fresh['request_id']
+unknown=json.loads(sql(reserve('45678902')))
+sql(f"update ccc_attendance_requests set provider='existing',status='unknown' where id='{unknown['request_id']}';")
+assert 'unresolved' in sql(reserve('45678902'),False)
+print('PASS migration ordering, provider switch, same-provider reuse, unresolved cross-provider guard')

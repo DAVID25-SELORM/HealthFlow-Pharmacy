@@ -4,6 +4,35 @@ import CccIntegrationSettings from './CccIntegrationSettings'
 import { cccIntegration } from '../services/cccIntegrationService'
 vi.mock('../services/cccIntegrationService', () => ({ cccIntegration: vi.fn() }))
 afterEach(() => { cleanup(); vi.clearAllMocks() })
+it('retains enabled NeHFAMS when unchanged settings are saved', async () => {
+ const data=productionData(); data.policy.enabled=true
+ cccIntegration.mockResolvedValue(data)
+ render(<CccIntegrationSettings organizationId="unchanged" />)
+ fireEvent.click(await screen.findByText('Save CCC settings'))
+ expect(cccIntegration).toHaveBeenCalledTimes(1)
+ expect(screen.getByRole('checkbox',{name:/Enable CCC/})).toBeChecked()
+})
+it('blocks validation and activation of unsaved credentials', async () => {
+ cccIntegration.mockResolvedValue(productionData())
+ render(<CccIntegrationSettings organizationId="dirty" />)
+ await screen.findByText('Validate saved connection')
+ fireEvent.change(screen.getByLabelText('NeHFAMS API secret'),{target:{value:'replacement'}})
+ expect(screen.getByText('Validate saved connection')).toBeDisabled()
+ expect(screen.getByText('Enable routine production attendance')).toBeDisabled()
+ expect(cccIntegration).toHaveBeenCalledTimes(1)
+})
+it('restores NeHFAMS identity when switching from a legacy policy and keeps the selection after validation', async () => {
+ const data=productionData({policy:{provider:'existing',enabled:true,environment:'production',expectedHpn:'old',expectedFacilityName:'Legacy name'}})
+ cccIntegration.mockResolvedValue(data)
+ render(<CccIntegrationSettings organizationId="switch" />)
+ fireEvent.click(await screen.findByRole('radio',{name:/NHIA NeHFAMS/}))
+ expect(screen.getByLabelText('Expected facility HPN')).toHaveValue('123')
+ expect(screen.getByLabelText('Expected facility name')).toHaveValue('Test Facility')
+ fireEvent.click(screen.getByText('Validate saved connection'))
+ await waitFor(()=>expect(cccIntegration).toHaveBeenCalledWith('validate_nehfams_connection',{organizationId:'switch',environment:'production'}))
+ await waitFor(()=>expect(screen.getByText('Validate saved connection')).toBeEnabled())
+ expect(screen.getByRole('radio',{name:/NHIA NeHFAMS/})).toBeChecked()
+})
 it('keeps legacy selected and saves NeHFAMS only as disabled with separate secrets', async () => {
  const policy={provider:'existing',enabled:true,expectedHpn:'295',expectedFacilityName:'Test',hasToken:false}
  cccIntegration.mockResolvedValue({policy,nehfamsConfigured:false,requests:[],history:[]})
@@ -23,7 +52,7 @@ it('keeps legacy selected and saves NeHFAMS only as disabled with separate secre
 
 const productionData = (overrides = {}) => ({
  policy: { provider: 'nehfams', environment: 'production', enabled: false, nehfams: { expectedHpn: '123', expectedFacilityName: 'Test Facility' } },
- nehfamsConnections: [{ environment: 'production', validated: true, authMode: '1FA', otacRequired: false, expectedFacilityName: 'Test Facility' }],
+ nehfamsConnections: [{ environment: 'production', validated: true, authMode: '1FA', otacRequired: false, expectedHpn: '123', expectedFacilityName: 'Test Facility' }],
  nehfamsProductionEnabled: true, nehfamsProductionApproval: { limit: 1, used: 0, remaining: 1 }, requests: [], history: [], ...overrides,
 })
 
@@ -51,7 +80,7 @@ it('says production is not approved when there is no approval, and never shows t
  render(<CccIntegrationSettings organizationId="org-r" />)
  expect(await screen.findByText('Production NeHFAMS is not approved for this facility.')).toBeInTheDocument()
  cleanup()
- cccIntegration.mockResolvedValue(productionData({ policy: { provider: 'nehfams', environment: 'test', enabled: false, nehfams: { expectedHpn: '123', expectedFacilityName: 'Test Facility' } }, nehfamsConnections: [{ environment: 'test', validated: true, authMode: '1FA', otacRequired: false, expectedFacilityName: 'Test Facility' }] }))
+ cccIntegration.mockResolvedValue(productionData({ policy: { provider: 'nehfams', environment: 'test', enabled: false, nehfams: { expectedHpn: '123', expectedFacilityName: 'Test Facility' } }, nehfamsConnections: [{ environment: 'test', validated: true, authMode: '1FA', otacRequired: false, expectedHpn: '123', expectedFacilityName: 'Test Facility' }] }))
  render(<CccIntegrationSettings organizationId="org-s" />)
  await screen.findByText('Enable authorized test attendance')
  expect(screen.queryByText('Enable routine production attendance')).not.toBeInTheDocument()
@@ -79,7 +108,7 @@ it.each([null,{limit:3,used:3,remaining:0}])('allows explicit routine activation
 })
 
 it('shows failed validation beside its controls and releases the busy state', async () => {
- cccIntegration.mockResolvedValueOnce(productionData({nehfamsConnections:[{environment:'production',validated:false}]}))
+ cccIntegration.mockResolvedValueOnce(productionData({nehfamsConnections:[{environment:'production',validated:false,expectedHpn:'123',expectedFacilityName:'Test Facility'}]}))
  let rejectValidation
  cccIntegration.mockImplementationOnce(()=>new Promise((_resolve,reject)=>{rejectValidation=reject}))
  render(<CccIntegrationSettings organizationId="org-validation" />)
