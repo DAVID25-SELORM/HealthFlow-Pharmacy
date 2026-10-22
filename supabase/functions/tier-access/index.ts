@@ -1,4 +1,4 @@
-import { readNehfamsConnection, publicNehfamsConnection, validateSavedNehfamsConnection } from '../_shared/nehfamsConnection.ts'
+import { readNehfamsConnection, publicNehfamsConnection, validateSavedNehfamsConnection, discoverNehfamsFacility } from '../_shared/nehfamsConnection.ts'
 import { resolveNehfamsCredentials } from '../_shared/nehfamsCredentials.ts'
 import { CccFailure, getCccPolicy, publicCccPolicy, inspectOtacToken, runCccRequest } from '../_shared/cccProvider.ts'
 import { resolveActivityLogPeriod } from '../_shared/activityLogPeriod.ts'
@@ -6492,12 +6492,28 @@ Deno.serve(async (request) => {
     )
     const organizationId = requesterResult.organizationId || ''
 
-    if(action==='validate_nehfams_connection' || action==='activate_nehfams_test' || action==='activate_nehfams_production' || action==='reveal_ccc_token' || action==='get_ccc_policy' || action==='save_ccc_policy' || action==='reconcile_ccc_attendance') {
+    if(action==='discover_nehfams_facility' || action==='validate_nehfams_connection' || action==='activate_nehfams_test' || action==='activate_nehfams_production' || action==='reveal_ccc_token' || action==='get_ccc_policy' || action==='save_ccc_policy' || action==='reconcile_ccc_attendance') {
       const {data:activeActor,error:activeError}=await adminClient.from('users').select('id').eq('id',requesterProfile.id).eq('is_active',true).maybeSingle()
       if(activeError || !activeActor) return json({error:'Active staff account required.'},403)
       const platformAdmin=requesterProfile.role==='super_admin'
       const org=platformAdmin ? normalizeText(payload.organizationId) : organizationId
       if(!org) throw new Error('Select a facility.')
+      if(action==='discover_nehfams_facility') {
+        if(!platformAdmin) return json({error:'Platform administrator required.'},403)
+        const environment=normalizeText(payload.environment) || 'production'
+        let key=normalizeText(payload.nehfamsApiKey), secret=normalizeText(payload.nehfamsApiSecret)
+        if(!!key!==!!secret) throw new Error('Enter both API credentials or leave both blank to reuse the saved pair.')
+        const saved=await readNehfamsConnection(adminClient,org,environment)
+        if(!key && saved) {
+          key=await decodeNhiaSecret(saved.api_key_encrypted); secret=await decodeNhiaSecret(saved.api_secret_encrypted)
+        } else if(!key) {
+          const pair=await resolveNehfamsCredentials({key:'',secret:'',configured:false,loadSaved:()=>environment==='production'?fetchNhiaSettingsRow(adminClient,org):Promise.resolve(null),decode:decodeNhiaSecret})
+          key=pair.key;secret=pair.secret
+        }
+        const response=json(await discoverNehfamsFacility({environment,key,secret}))
+        response.headers.set('Cache-Control','no-store')
+        return response
+      }
       if(action==='reveal_ccc_token') {
         if(!platformAdmin) return json({error:'Platform administrator required.'},403)
         const saved=await getCccPolicy(adminClient,org)

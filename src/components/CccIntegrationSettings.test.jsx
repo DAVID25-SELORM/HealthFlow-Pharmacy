@@ -4,6 +4,26 @@ import CccIntegrationSettings from './CccIntegrationSettings'
 import { cccIntegration } from '../services/cccIntegrationService'
 vi.mock('../services/cccIntegrationService', () => ({ cccIntegration: vi.fn() }))
 afterEach(() => { cleanup(); vi.clearAllMocks() })
+it('fills facility identity with saved credentials without saving or enabling', async()=>{
+ cccIntegration.mockResolvedValueOnce(productionData()).mockResolvedValueOnce({expectedHpn:'456',expectedFacilityName:'Returned Facility'})
+ render(<CccIntegrationSettings organizationId="lookup-org" />)
+ fireEvent.click(await screen.findByText('Get facility details from NHIA'))
+ await waitFor(()=>expect(screen.getByLabelText('Expected facility HPN')).toHaveValue('456'))
+ expect(screen.getByLabelText('Expected facility name')).toHaveValue('Returned Facility')
+ expect(cccIntegration).toHaveBeenLastCalledWith('discover_nehfams_facility',{organizationId:'lookup-org',environment:'production',nehfamsApiKey:'',nehfamsApiSecret:''})
+ expect(screen.getByText('Enable routine production attendance')).toBeDisabled()
+ expect(cccIntegration).toHaveBeenCalledTimes(2)
+})
+it('does not overwrite edits made while facility lookup is pending',async()=>{
+ let complete
+ cccIntegration.mockResolvedValueOnce(productionData()).mockImplementationOnce(()=>new Promise(resolve=>{complete=resolve}))
+ render(<CccIntegrationSettings organizationId="lookup-edit" />)
+ fireEvent.click(await screen.findByText('Get facility details from NHIA'))
+ fireEvent.change(screen.getByLabelText('NeHFAMS API key'),{target:{value:'changed-key'}})
+ complete({expectedHpn:'456',expectedFacilityName:'Stale Facility'})
+ await screen.findByText('Details changed during lookup. Get facility details again.')
+ expect(screen.getByLabelText('Expected facility HPN')).toHaveValue('123')
+})
 it('retains enabled NeHFAMS when unchanged settings are saved', async () => {
  const data=productionData(); data.policy.enabled=true
  cccIntegration.mockResolvedValue(data)

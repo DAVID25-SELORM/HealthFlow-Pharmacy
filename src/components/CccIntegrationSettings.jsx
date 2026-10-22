@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import './CccIntegrationSettings.css'
 import { cccIntegration } from '../services/cccIntegrationService'
 
@@ -16,6 +16,17 @@ function FacilityCccIntegrationSettings({ organizationId }) {
   const [busy, setBusy] = useState(false)
   const [operation, setOperation] = useState('')
   const [message, setMessage] = useState('')
+  const editRevision = useRef(0)
+  async function fillFacility() {
+    const revision=editRevision.current
+    setBusy(true); setOperation('discover'); setMessage('')
+    try {
+      const result=await cccIntegration('discover_nehfams_facility',{organizationId,environment:form.environment || 'production',nehfamsApiKey:apiKey,nehfamsApiSecret:apiSecret})
+      if(revision!==editRevision.current) { setMessage('Details changed during lookup. Get facility details again.'); return }
+      setForm(current=>({...current,expectedHpn:result.expectedHpn,expectedFacilityName:result.expectedFacilityName}))
+      setSaved(false); setMessage('Facility details filled from NHIA. Confirm this is the intended facility, then save.')
+    } catch(error) { setMessage(error.message) } finally { setBusy(false) }
+  }
   useEffect(() => {
     let active = true
     setData(null); setForm(null); setToken(''); setApiKey(''); setApiSecret(''); setMessage(''); setSaved(false)
@@ -69,7 +80,7 @@ function FacilityCccIntegrationSettings({ organizationId }) {
     {data && <p className="ccc-current" role="status">Currently saved: <strong>{providerNames[data.policy.provider]}</strong> · {data.policy.enabled ? 'CCC generation enabled' : 'CCC generation paused'}</p>}
     {message && form?.provider !== 'nehfams' && <p className="ccc-message" role="alert">{message}</p>}
     {!form && !message && <p role="status">Loading connection settings...</p>}
-    {form && <form onSubmit={save} onChange={() => setSaved(false)}>
+    {form && <form onSubmit={save} onChange={() => {editRevision.current += 1; setSaved(false)}}>
       <fieldset className="ccc-providers" disabled={busy}>
         <legend>1. Choose a provider</legend>
         {[['existing', 'Existing NHIA API', 'Continue using the existing API configuration.'], ['otac', 'NHIA OTAC (Bearer token)', 'Connect with an authorized facility Bearer token.'], ['nehfams', 'NHIA NeHFAMS / OTAC', 'Use this facility\'s API key and secret after connection validation and activation.']].map(([value, title, description]) =>
@@ -94,6 +105,8 @@ function FacilityCccIntegrationSettings({ organizationId }) {
       </div>}
       {form.provider === 'nehfams' && <div className="ccc-credentials">
         <h4>2. Connection details</h4>
+        <button type="button" disabled={busy || !!apiKey !== !!apiSecret} onClick={fillFacility}>{busy && operation==='discover' ? 'Getting facility details...' : 'Get facility details from NHIA'}</button>
+        <p>Automatically fill the HPN and registered name using entered credentials, or the saved credentials when both fields are blank.</p>
         <p>Use this facility's NHIA credentials. Saved credentials can be left blank.</p>
         <label>Environment<select value={form.environment || 'production'} onChange={e=>{setApiKey('');setApiSecret('');setForm({...form,environment:e.target.value,enabled:false,expectedHpn:data?.nehfamsConnections?.find(c=>c.environment===e.target.value)?.expectedHpn || '',expectedFacilityName:data?.nehfamsConnections?.find(c=>c.environment===e.target.value)?.expectedFacilityName || ''})}}><option value="test">NHIA test</option><option value="production">NHIA production</option></select></label>
         <label>Expected facility HPN<input required value={form.expectedHpn || ''} onChange={e=>setForm({...form,expectedHpn:e.target.value})}/></label>

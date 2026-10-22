@@ -1,6 +1,21 @@
 // @vitest-environment node
 import { it, expect, vi } from 'vitest'
-import { validateSavedNehfamsConnection } from '../../supabase/functions/_shared/nehfamsConnection.ts'
+import { validateSavedNehfamsConnection, discoverNehfamsFacility } from '../../supabase/functions/_shared/nehfamsConnection.ts'
+it('discovers only public identity using the facility GET endpoint',async()=>{
+ const fetcher=vi.fn(async()=>({ok:true,json:async()=>({HPN:'123',HPName:'Test Facility',AuthMode:'1FA',OTACAuthEnabled:false,private:'omit'})}))
+ expect(await discoverNehfamsFacility({environment:'test',key:'synthetic',secret:'synthetic',fetcher})).toEqual({expectedHpn:'123',expectedFacilityName:'Test Facility'})
+ expect(fetcher).toHaveBeenCalledTimes(1)
+ expect(fetcher.mock.calls[0][0]).toBe('https://elig.nhia.gov.gh:5007/api/hmis/auth/hpinfo')
+ expect(fetcher.mock.calls[0][1].method).toBe('GET')
+})
+it('rejects missing credentials without calling NHIA',async()=>{
+ const fetcher=vi.fn()
+ await expect(discoverNehfamsFacility({environment:'production',key:'one',secret:'',fetcher})).rejects.toThrow(/both/)
+ expect(fetcher).not.toHaveBeenCalled()
+})
+it.each([{},{HPN:'123',HPName:'Test Facility',AuthMode:'unexpected',OTACAuthEnabled:false}])('does not autofill malformed or unsupported facility responses',async body=>{
+ await expect(discoverNehfamsFacility({environment:'test',key:'synthetic',secret:'synthetic',fetcher:async()=>({ok:true,json:async()=>body})})).rejects.toThrow()
+})
 function setup(body={HPN:'123',HPName:'Test Facility',AuthMode:'1FA',OTACAuthEnabled:false}) {
  const filters=[];const chain={select:()=>chain,eq:(...args)=>{filters.push(args);return chain},maybeSingle:async()=>({data:{api_key_encrypted:'encrypted-key',api_secret_encrypted:'encrypted-secret',expected_hpn:'123',expected_name:'Test Facility',version:7}})}
  const db={from:vi.fn(()=>chain),rpc:vi.fn(async()=>({error:null}))}

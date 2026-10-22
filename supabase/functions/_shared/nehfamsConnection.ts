@@ -1,4 +1,15 @@
-import { NEHFAMS_ORIGINS, NEHFAMS_PATHS, validateNehfamsFacility } from './nehfamsAdapter.ts'
+import { NEHFAMS_ORIGINS, NEHFAMS_PATHS, validateNehfamsFacility, fetchNehfamsFacility, field } from './nehfamsAdapter.ts'
+export async function discoverNehfamsFacility({environment,key,secret,fetcher=fetch}: any) {
+ if (!['test','production'].includes(environment)) throw new Error('Select a NeHFAMS environment.')
+ if (!key || !secret) throw new Error('Enter both API credentials or leave both blank to reuse the saved pair.')
+ let body
+ try { body=await fetchNehfamsFacility({environment,apiKey:key,apiSecret:secret,fetcher}) }
+ catch { throw new Error('Could not get facility details from NHIA. Check the credentials, environment and connection.') }
+ const hpn=field(body,'HPN'), name=field(body,'HPName')
+ if(typeof hpn!=='string' || !hpn.trim() || typeof name!=='string' || !name.trim()) throw new Error('NHIA returned incomplete facility details.')
+ const facility=validateNehfamsFacility(body,{hpn,name})
+ return {expectedHpn:facility.hpn,expectedFacilityName:facility.name}
+}
 export async function readNehfamsConnection(db: any, org: string, environment: string) {
  if (!['test','production'].includes(environment)) throw new Error('Select a NeHFAMS environment.')
  const {data,error}=await db.from('organization_nehfams_connection').select('*').eq('organization_id',org).eq('environment',environment).maybeSingle()
