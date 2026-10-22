@@ -111,7 +111,12 @@ export async function runCccRequest({db,org,actor,branch,payload,decode,existing
   if(saved.error || !saved.data) throw new CccFailure('attendance_recording_failed', 'Attendance generated but recording failed.')
   return result
  } catch(error) {
-  const rejected = error instanceof CccFailure && error.rejected
+  // NeHFAMS StatusCode 1 is an explicit application-level refusal. It is
+  // safe to retry and must not strand the member behind an unknown outcome.
+  // Transport failures and malformed responses remain unresolved because NHIA
+  // may have created attendance before the response was lost.
+  const rejected = (error instanceof CccFailure && error.rejected) ||
+    (error instanceof NehfamsOutcomeError && error.code === 'application_failure')
   try { await db.from('ccc_attendance_requests').update({status:dispatched&&!rejected?'unknown':'not_created',error_code:rejected?error.code:dispatched?(error instanceof CccFailure || error instanceof NehfamsOutcomeError?error.code:'reconciliation_required'):'preflight_failed',updated_at:new Date().toISOString()}).eq('id',reservation.request_id).eq('status','pending') } catch {
    // The original reservation remains durable; preserve its reference even if the outcome write fails.
   }

@@ -189,10 +189,16 @@ describe('NeHFAMS reserved test dispatch', () => {
   expect(r).toMatchObject({ccCode:'01234',environment:'test',attendanceRequestId:'request-id',memberDetails:{attendanceRequestId:'request-id'}})
   expect(updates[0].status).toBe('succeeded')
  })
- it.each([{failNetwork:true},{failSave:true},{statusCode:1}])('keeps uncertain outcomes unresolved without replay',async behavior=>{
+ it.each([{failNetwork:true},{failSave:true}])('keeps uncertain outcomes unresolved without replay',async behavior=>{
   const {options,updates,fetcher}=setup(behavior)
   await expect(runCccRequest(options)).rejects.toThrow(/unresolved/)
   expect(updates.at(-1).status).toBe('unknown');expect(posts(fetcher)).toHaveLength(1);expect(options.existing).not.toHaveBeenCalled()
+ })
+ it('records an explicit NeHFAMS application refusal as retryable', async () => {
+  const {options,updates,fetcher}=setup({statusCode:1})
+  await expect(runCccRequest(options)).rejects.toThrow(/not confirmed/)
+  expect(updates.at(-1)).toMatchObject({status:'not_created',error_code:'application_failure'})
+  expect(posts(fetcher)).toHaveLength(1); expect(options.existing).not.toHaveBeenCalled()
  })
  it('reads the facility settings fresh each time instead of trusting the saved copy',async()=>{
   // Saved copy says no OTAC; NHIA now says OTAC is required.
