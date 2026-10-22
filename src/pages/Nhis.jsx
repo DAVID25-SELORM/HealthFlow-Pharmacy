@@ -10220,6 +10220,8 @@ const Nhis = () => {
               {filteredDuplicateClaimGroups.map((group, groupIndex) => {
                 const groupClaims = group.claims || []
                 const likelyOriginalClaimId = getLikelyOriginalClaimId(groupClaims)
+                const medicationSets = groupClaims.map((claim) => new Set((claim.medicines || claim.nhis_claim_medicines || claim.medicineCodes || []).map((item) => String(item?.code || item?.drugCode || item?.drug_code || item).trim().toUpperCase()).filter(Boolean)))
+                const mixedMedicationSets = medicationSets.length > 1 && medicationSets.some((set, index) => index > 0 && (set.size !== medicationSets[0].size || [...set].some((code) => !medicationSets[0].has(code))))
                 return (
                   <section className="duplicate-claim-group" key={group.key || groupIndex}>
                     <div className="duplicate-claim-group-header">
@@ -10261,7 +10263,7 @@ const Nhis = () => {
                                 <td>{getClaimUpdatedTimestamp(claim) ? formatAppDateTime(getClaimUpdatedTimestamp(claim)) : '—'}</td>
                                 <td>
                                   <span className={`duplicate-recommendation ${isLikelyOriginal ? 'duplicate-recommendation--keep' : 'duplicate-recommendation--remove'}`}>
-                                    {isLikelyOriginal ? 'Likely original' : 'Likely duplicate'}
+                                    {mixedMedicationSets ? 'Separate prescription' : isLikelyOriginal ? 'Likely original' : 'Likely duplicate'}
                                   </span>
                                 </td>
                                 <td><StatusBadge status={claim.status || 'served'} /></td>
@@ -10270,8 +10272,8 @@ const Nhis = () => {
                                     <button
                                       type="button"
                                       className="duplicate-keep-button"
-                                      disabled={!canDeleteNhisClaims || Boolean(updatingStatus)}
-                                      title={canDeleteNhisClaims ? 'Keep this claim and move the others to Recycle Bin' : 'Only an administrator can resolve duplicates'}
+                                      disabled={!canDeleteNhisClaims || Boolean(updatingStatus) || mixedMedicationSets}
+                                      title={mixedMedicationSets ? 'Different medicines detected. Review these claims separately; no claim should be deleted automatically.' : canDeleteNhisClaims ? 'Keep this claim and move the others to Recycle Bin' : 'Only an administrator can resolve duplicates'}
                                       onClick={() => {
                                         void handleKeepDuplicateClaim(group, claimForAction)
                                       }}
@@ -10281,8 +10283,8 @@ const Nhis = () => {
                                     <button
                                       type="button"
                                       className="duplicate-recycle-button"
-                                      disabled={!canDeleteNhisClaims || Boolean(updatingStatus) || groupClaims.length <= 1}
-                                      title={canDeleteNhisClaims ? 'Delete only this duplicate claim by moving it to the Recycle Bin' : 'Only an administrator can resolve duplicates'}
+                                      disabled={!canDeleteNhisClaims || Boolean(updatingStatus) || groupClaims.length <= 1 || mixedMedicationSets}
+                                      title={mixedMedicationSets ? 'Different medicines detected. Review these claims separately; no claim should be deleted automatically.' : canDeleteNhisClaims ? 'Delete only this duplicate claim by moving it to the Recycle Bin' : 'Only an administrator can resolve duplicates'}
                                       onClick={() => {
                                         void handleRecycleDuplicateClaim(group, claimForAction)
                                       }}
