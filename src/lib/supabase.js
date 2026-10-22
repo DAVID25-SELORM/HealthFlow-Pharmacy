@@ -333,6 +333,10 @@ const invokeFunctionWithToken = async (name, options, accessToken) => {
       supabase.functions.invoke(name, {
         ...options,
         headers: {
+          // Set this explicitly as well as through the Supabase client. Some
+          // browser/proxy paths can drop the SDK-generated header, which makes
+          // the gateway reject the request before the function is reached.
+          apikey: supabaseKey,
           ...(options.headers || {}),
           Authorization: `Bearer ${accessToken}`,
         },
