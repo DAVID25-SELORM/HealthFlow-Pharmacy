@@ -25,7 +25,10 @@
 .ccc-settings .ccc-footer p { max-width:530px; font-size:12px; margin:0; }
 .ccc-settings button { background:#108a76; color:white; border:0; border-radius:9px; padding:12px 20px; font-weight:650; cursor:pointer; white-space:nowrap; }
 .ccc-settings button:hover { background:#096d5e; }
-.ccc-settings button:disabled { opacity:.6; cursor:wait; }
+.ccc-settings button:disabled { opacity:.6; cursor:not-allowed; }
+.ccc-settings .ccc-current { padding:12px 16px; background:#eef8f4; border-radius:9px; color:#245c50; }
+.ccc-settings .ccc-credentials h4:not(:first-child) { margin-top:24px; padding-top:18px; border-top:1px solid #dbe5e5; }
+.ccc-settings .ccc-credentials > label { display:block; margin-bottom:14px; }
 .ccc-settings .ccc-message { background:#eff6fa; border:1px solid #d3e3ee; padding:12px 16px; border-radius:9px; overflow-wrap:anywhere; }
 .ccc-settings details { margin-top:18px; border-top:1px solid #e4eded; padding-top:16px; font-size:13px; overflow-wrap:anywhere; }
 .ccc-settings summary { cursor:pointer; font-weight:650; color:#365953; padding:6px 0; }

@@ -10,7 +10,7 @@ it('retains enabled NeHFAMS when unchanged settings are saved', async () => {
  render(<CccIntegrationSettings organizationId="unchanged" />)
  fireEvent.click(await screen.findByText('Save CCC settings'))
  expect(cccIntegration).toHaveBeenCalledTimes(1)
- expect(screen.getByRole('checkbox',{name:/Enable CCC/})).toBeChecked()
+ expect(screen.getByText('Connection unchanged. CCC generation remains enabled.')).toBeInTheDocument()
 })
 it('blocks validation and activation of unsaved credentials', async () => {
  cccIntegration.mockResolvedValue(productionData())
@@ -40,8 +40,7 @@ it('keeps legacy selected and saves NeHFAMS only as disabled with separate secre
  await screen.findByText('Save CCC settings')
  expect(screen.getByRole('radio',{name:/Existing NHIA API/})).toBeChecked()
  fireEvent.click(screen.getByRole('radio',{name:/NHIA NeHFAMS/}))
- expect(screen.getByRole('checkbox',{name:/Enable CCC/})).toBeDisabled()
- expect(screen.getByRole('checkbox',{name:/Enable CCC/})).not.toBeChecked()
+ expect(screen.queryByRole('checkbox',{name:/Enable CCC/})).not.toBeInTheDocument()
  fireEvent.change(screen.getByLabelText('NeHFAMS API key'),{target:{value:'synthetic-key'}})
  fireEvent.change(screen.getByLabelText('NeHFAMS API secret'),{target:{value:'synthetic-secret'}})
  cccIntegration.mockResolvedValue({policy:{...policy,provider:'nehfams',enabled:false},nehfamsConfigured:true,requests:[],history:[]})
