@@ -109,6 +109,13 @@ it('does not infer an NHIS member number from a Ghana card or invalid request', 
   expect(() => mapNehfamsAttendance(value, request)).toThrow(expect.objectContaining({code:'invalid_attendance:umn'}))
  }
 })
+it('accepts a Ghana Card response that identifies the member by numeric HIN without UMN', () => {
+ const value = toCamelBody(); delete value.attendanceData.umn; value.attendanceData.hin = '0019996255'
+ const request = {...expected,cardType:'GHANACARD',cardNo:'GHA-123456789-0'}
+ expect(mapNehfamsAttendance(value, request)).toMatchObject({
+  ccCode:'01234', memberDetails:{memberNumber:request.cardNo,memberNumberSource:'request',hin:'0019996255'},
+ })
+})
 it('records response provenance when NHIA returns UMN', () => {
  expect(mapNehfamsAttendance(body,expected).memberDetails.memberNumberSource).toBe('nhia_response')
 })

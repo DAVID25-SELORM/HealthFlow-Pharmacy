@@ -76,7 +76,13 @@ export function mapNehfamsAttendance(body: any, expected: { facilityName: string
  const hin = field(d, 'HIN'), ccc = field(d, 'CCC'), memberName = field(d, 'MemberName'), umn = field(d, 'UMN'), isNew = field(d, 'newCCC')
  // Only an absent field permits request-sourced identity; null, empty and malformed values still fail.
  const umnAbsent = !Object.keys(d).some(key => key.toLowerCase() === 'umn')
- const useRequestedMember = umnAbsent && expected.cardType === 'NHISCARD' && /^\d{8}$/.test(expected.cardNo)
+ // Ghana Card responses can identify the member through the returned numeric
+ // HIN while omitting UMN. Preserve the submitted card only for that verified
+ // shape; never infer it from an NHIS-card response.
+ const useRequestedMember = umnAbsent && (
+  (expected.cardType === 'NHISCARD' && /^\d{8}$/.test(expected.cardNo)) ||
+  (expected.cardType === 'GHANACARD' && typeof hin === 'string' && /^\d{8,10}$/.test(hin))
+ )
  const authId = field(d, 'AuthID'), day = attendanceDay(field(d, 'AttendanceDate'))
  // Fixed field names only: diagnostics must never contain upstream values or patient data.
  const checks: [string, boolean][] = [
