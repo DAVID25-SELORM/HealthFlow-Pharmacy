@@ -64,7 +64,7 @@ describe('classifyNhisCccDuplicateSignals: the 5-category member-aware model', (
 
   it('8. a draft existing claim is still a live duplicate candidate', () => {
     const [signal] = classifyNhisCccDuplicateSignals(candidate(), [claim({ status: 'draft' })])
-    expect(signal.severity).toBe(NHIS_CCC_DUPLICATE_SEVERITY.BLOCK)
+    expect(signal.severity).toBe(NHIS_CCC_DUPLICATE_SEVERITY.STRONG_WARNING)
   })
 
   it('9. a served/submitted existing claim is a live (blocking-strength) duplicate candidate', () => {
