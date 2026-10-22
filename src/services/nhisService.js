@@ -1260,6 +1260,10 @@ const createNhisDuplicateClaimsError = (duplicateGroups = [], extra = {}) => {
       folder_no: normalizeText(claim.folder_no || claim.folderNo),
       service_date_from: normalizeText(claim.service_date_from || claim.serviceDate),
       total_amount: Number(claim.total_amount ?? claim.totalAmount ?? 0),
+      medicines: (claim.nhis_claim_medicines || claim.medicines || []).map((medicine) => ({
+        drug_code: normalizeText(medicine.drug_code || medicine.drugCode || medicine.code),
+        description: normalizeText(medicine.description || medicine.name),
+      })).filter((medicine) => medicine.drug_code || medicine.description),
       status: normalizeText(claim.status),
       created_at: normalizeText(claim.created_at || claim.createdAt),
       updated_at: normalizeText(claim.updated_at || claim.updatedAt),
