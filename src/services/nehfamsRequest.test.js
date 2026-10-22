@@ -41,6 +41,10 @@ it('does not treat HTTP 200 application failure as success', async () => {
  const response = await sendNehfamsAttendance(prepareNehfamsAttendance(input), transport)
  expect(() => mapNehfamsAttendance(response, expected)).toThrow(/not confirmed/)
 })
+it('explains inactive NHIS membership when NHIA provides that refusal', () => {
+ expect(() => mapNehfamsAttendance({ StatusCode: 1, StatusMessage: 'Client has NO ACTIVE NHIS Membership. Please advise client to renew their NHIS membership and try again' }, expected))
+  .toThrow(/no active NHIS membership.*Renew the membership/i)
+})
 it('keeps live dispatch blocked', () => { expect(() => requireLiveCccProvider('nehfams')).toThrow(/validation/) })
 it('allows each NeHFAMS environment only with its own server switch, never the other one', () => {
  expect(requireLiveCccProvider('nehfams', true, 'test', false)).toBe('nehfams')

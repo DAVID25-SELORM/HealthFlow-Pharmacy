@@ -65,11 +65,19 @@ export function prepareNehfamsAttendance(input: {
  }
 }
 export class NehfamsOutcomeError extends Error {
- constructor(public code: string) { super('NeHFAMS attendance was not confirmed. Check the recorded outcome before retrying.') }
+ constructor(public code: string) {
+  super(code === 'inactive_membership'
+   ? 'NHIA reports that this client has no active NHIS membership. Renew the membership and try again.'
+   : 'NeHFAMS attendance was not confirmed. Check the recorded outcome before retrying.')
+ }
 }
 export function mapNehfamsAttendance(body: any, expected: { facilityName: string; date: string; cardType: string; cardNo: string }) {
  const status = field(body, 'StatusCode')
- if (status !== 0) throw new NehfamsOutcomeError(status === 1 ? 'application_failure' : 'invalid_response')
+ if (status !== 0) {
+  const message = field(body, 'StatusMessage') ?? field(body, 'Message')
+  if (status === 1 && typeof message === 'string' && /no active nhis membership/i.test(message)) throw new NehfamsOutcomeError('inactive_membership')
+  throw new NehfamsOutcomeError(status === 1 ? 'application_failure' : 'invalid_response')
+ }
  const d = field(body, 'AttendanceData')
  const hpName = field(d, 'HPName')
  if (!d || !string(hpName) || !sameName(hpName, expected.facilityName)) throw new NehfamsOutcomeError('facility_mismatch')

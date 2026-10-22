@@ -116,7 +116,7 @@ export async function runCccRequest({db,org,actor,branch,payload,decode,existing
   // Transport failures and malformed responses remain unresolved because NHIA
   // may have created attendance before the response was lost.
   const rejected = (error instanceof CccFailure && error.rejected) ||
-    (error instanceof NehfamsOutcomeError && error.code === 'application_failure')
+    (error instanceof NehfamsOutcomeError && ['application_failure', 'inactive_membership'].includes(error.code))
   try { await db.from('ccc_attendance_requests').update({status:dispatched&&!rejected?'unknown':'not_created',error_code:rejected?error.code:dispatched?(error instanceof CccFailure || error instanceof NehfamsOutcomeError?error.code:'reconciliation_required'):'preflight_failed',updated_at:new Date().toISOString()}).eq('id',reservation.request_id).eq('status','pending') } catch {
    // The original reservation remains durable; preserve its reference even if the outcome write fails.
   }
