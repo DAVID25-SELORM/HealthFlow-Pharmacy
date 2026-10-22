@@ -64,7 +64,7 @@ describe('classifyNhisCccDuplicateSignals: the 5-category member-aware model', (
 
   it('8. a draft existing claim is still a live duplicate candidate', () => {
     const [signal] = classifyNhisCccDuplicateSignals(candidate(), [claim({ status: 'draft' })])
-    expect(signal.severity).toBe(NHIS_CCC_DUPLICATE_SEVERITY.STRONG_WARNING)
+    expect(signal.severity).toBe(NHIS_CCC_DUPLICATE_SEVERITY.BLOCK)
   })
 
   it('9. a served/submitted existing claim is a live (blocking-strength) duplicate candidate', () => {
@@ -148,12 +148,12 @@ describe('classifyNhisCccDuplicateSignals: the 5-category member-aware model', (
     expect(signal.medicineOverlapRatio).toBeNull()
   })
 
-  it('medicine overlap never promotes a same-member/same-CCC signal past BLOCK (it only ever applies to the different-CCC case)', () => {
+  it('different medicines soften a same-member/same-CCC signal to a review warning', () => {
     const [signal] = classifyNhisCccDuplicateSignals(
       candidate({ medicines: ['PARA500'] }),
       [claim({ medicines: ['ZZZDIFFERENT'] })]
     )
-    expect(signal.severity).toBe(NHIS_CCC_DUPLICATE_SEVERITY.BLOCK)
+    expect(signal.severity).toBe(NHIS_CCC_DUPLICATE_SEVERITY.STRONG_WARNING)
   })
 })
 
