@@ -62,6 +62,22 @@ beforeAll(async () => {
   await db.exec(readFileSync('supabase/migrations/20261020100000_fix_gits_coverage_strength.sql', 'utf8'))
   await db.exec(readFileSync('supabase/migrations/20261009001000_match_heparin_pack_coverage.sql', 'utf8'))
   await db.exec(readFileSync('supabase/migrations/20261009001000_match_heparin_pack_coverage.sql', 'utf8'))
+  await db.exec(`create schema extensions;
+    alter table nhis_claims add column branch_id uuid, add column service_date_to date;
+    create function get_branch_sync_client(text) returns table(organization_id uuid,branch_id uuid)
+    language plpgsql as $$ begin
+      if $1<>'test-token' then raise exception 'Invalid branch token'; end if;
+      return query select '${org}'::uuid,'${org}'::uuid;
+    end $$;
+    create function branch_sync_upsert_offline_record_core(text,text,uuid,jsonb) returns jsonb
+    language plpgsql as $$ begin raise exception 'Core should not run for history replay'; end $$;`)
+  const branchStart = datePatch.indexOf('create or replace function public.branch_sync_upsert_nhis_claim_with_serving_metadata(')
+  const branchEnd = datePatch.indexOf('-- Preserve the deployed NHIS-drug router',branchStart)
+  await db.exec(datePatch.slice(branchStart,branchEnd))
+  // Exercise the actual upgrade sequence, including the earlier incomplete replacement.
+  await db.exec(readFileSync('supabase/migrations/20261022220000_enforce_nhis_coverage_for_server_serving.sql', 'utf8'))
+  await db.exec(readFileSync('supabase/migrations/20261025120000_require_authenticated_nhis_supply.sql', 'utf8'))
+  await db.exec(readFileSync('supabase/migrations/20261025120000_require_authenticated_nhis_supply.sql', 'utf8'))
 }, 60000)
 afterAll(async () => { await db?.close() })
 beforeEach(async () => {
@@ -77,6 +93,64 @@ beforeEach(async () => {
 })
 const serve = () => db.exec(`update nhis_claim_medicines set served_qty = 28,
   dispensed_qty = 28, serving_status = 'fully_served' where claim_id = '${current}'`)
+
+it('rejects unauthenticated supply but preserves unchanged history and drafts', async () => {
+  await db.exec('create or replace function auth.uid() returns uuid language sql as $$ select null::uuid $$')
+  try {
+    await expect(serve()).rejects.toThrow('authenticated online medication coverage check')
+    await expect(db.exec(`update nhis_claim_medicines set dispensed_qty=28 where claim_id='${current}'`)).rejects.toThrow('authenticated online medication coverage check')
+    await expect(db.exec(`update nhis_claim_medicines set served_qty=0,dispensed_qty=0,serving_status='pending' where claim_id='${prior}'`)).rejects.toThrow('Changing supplied NHIS history')
+    await expect(db.exec(`update nhis_claim_medicines set description='Historical label' where claim_id='${prior}'`)).resolves.toBeDefined()
+    await expect(db.exec(`update nhis_claim_medicines set dose='2' where claim_id='${current}'`)).resolves.toBeDefined()
+    expect((await db.query('select served_qty from nhis_claim_medicines where claim_id=$1',[current])).rows[0].served_qty).toBe('0')
+  } finally {
+    await db.exec(`create or replace function auth.uid() returns uuid language sql as $$ select '${org}'::uuid $$`)
+  }
+})
+
+it('documents the blocked historical delete/reinsert replay and preserves the original on rollback', async () => {
+  await db.exec('create or replace function auth.uid() returns uuid language sql as $$ select null::uuid $$')
+  try {
+    await db.exec('begin; create temporary table replay_snapshot as select * from nhis_claim_medicines')
+    await db.query('delete from nhis_claim_medicines where claim_id=$1', [prior])
+    await expect(db.query('insert into nhis_claim_medicines select * from replay_snapshot where claim_id=$1', [prior]))
+      .rejects.toThrow('authenticated online medication coverage check')
+    await db.exec('rollback')
+    expect((await db.query('select served_qty from nhis_claim_medicines where claim_id=$1', [prior])).rows[0].served_qty).toBe('28')
+  } finally {
+    await db.exec('rollback')
+    await db.exec(`create or replace function auth.uid() returns uuid language sql as $$ select '${org}'::uuid $$`)
+  }
+})
+
+it('normalizes missing draft quantities without concealing supplied quantities', async () => {
+  const {rows} = await db.query(`select nhis_branch_pending_payload($1::jsonb) as payload`, [JSON.stringify({nhis_claim_medicines:[{drug_code:'TEST',prescribed_qty:14}]})])
+  expect(rows[0].payload).toMatchObject({status:'draft',nhis_claim_medicines:[{prescribed_qty:14,served_qty:0,dispensed_qty:0,serving_status:'pending'}]})
+  await expect(db.query('select nhis_branch_pending_payload($1::jsonb)', [JSON.stringify({status:'served'})])).rejects.toThrow('must remain pending')
+  await expect(db.query('select nhis_branch_pending_payload($1::jsonb)', [JSON.stringify({status:'draft',nhis_claim_medicines:[{dispensed_qty:1}]})])).rejects.toThrow('requires cloud serving')
+})
+
+it('replays exact branch history without rewriting supply and rejects changed or cross-tenant history', async () => {
+  const snapshot = (await db.query(`select to_jsonb(c)||jsonb_build_object('nhis_claim_medicines',
+    (select jsonb_agg(to_jsonb(m)) from nhis_claim_medicines m where m.claim_id=c.id)) as payload
+    from nhis_claims c where c.id=$1`,[prior])).rows[0].payload
+  await db.exec('create or replace function auth.uid() returns uuid language sql as $$ select null::uuid $$')
+  try {
+    const replay = () => db.query('select branch_sync_upsert_nhis_claim_with_serving_metadata($1,$2,$3::jsonb) as result', ['test-token',prior,JSON.stringify(snapshot)])
+    expect((await replay()).rows[0].result.reused).toBe(true)
+    expect((await replay()).rows[0].result.reused).toBe(true)
+    snapshot.nhis_claim_services = [{id:1}]
+    await expect(replay()).rejects.toThrow('history differs')
+    delete snapshot.nhis_claim_services
+    snapshot.nhis_claim_medicines[0].served_qty = 99
+    await expect(replay()).rejects.toThrow('history differs')
+    await db.query('update nhis_claims set organization_id=$1 where id=$2',[current,prior])
+    await expect(replay()).rejects.toThrow('outside your scope')
+    expect((await db.query('select served_qty from nhis_claim_medicines where claim_id=$1',[prior])).rows[0].served_qty).toBe('28')
+  } finally {
+    await db.exec(`create or replace function auth.uid() returns uuid language sql as $$ select '${org}'::uuid $$`)
+  }
+})
 
 it('blocks the reported 7th/14th overlap before serving and preserves pending quantities', async () => {
   await expect(serve()).rejects.toThrow('coverage through 2026-09-20 (7 day(s) remaining)')
@@ -416,3 +490,23 @@ it('uses quantity-derived GITS coverage consistently for serving and patient his
   expect(history.rows[0]).toMatchObject({ calculated_treatment_days: '10.00', coverage_end_date: new Date('2026-07-30T00:00:00.000Z') })
   await expect(db.query('select serve_nhis_claim_direct($1)', [current])).resolves.toBeDefined()
 })
+it.each(['admin', 'claims_officer', 'pharmacist', 'assistant', 'billing', 'records_officer'])(
+  'blocks repeat heparin and enoxaparin in dispensary for %s', async (role) => {
+    await db.query('update users set role=$1', [role])
+    await db.query('update nhis_claim_medicines set dispensary_date=$1 where claim_id=$2', ['2026-09-14', current])
+    try {
+      for (const medicine of ['Heparin injection', 'Enoxaparin injection']) {
+        await db.query('update nhis_claim_medicines set description=$1,dose=$2', [medicine, '40'])
+        const line = {drug_code:'DRUG-A',description:medicine,dose:'40',frequency:'OD',
+          duration:'14 days',served_qty:28,serving_status:'fully_served',dispensary_date:'2026-09-14'}
+        await expect(db.query('select serve_nhis_claim_medicines($1,$2::jsonb,28)',
+          [current,JSON.stringify([line])])).rejects.toThrow('Cannot serve')
+        if (['admin','claims_officer'].includes(role)) {
+          await expect(db.query('select serve_nhis_claim_direct($1)',[current])).rejects.toThrow('Cannot serve')
+        }
+        expect((await db.query('select served_qty from nhis_claim_medicines where claim_id=$1',[current])).rows[0].served_qty).toBe('0')
+      }
+    } finally {
+      await db.exec("update users set role='claims_officer'")
+    }
+  })
