@@ -1278,6 +1278,43 @@ const loadActiveNhisDuplicateReviews = async (organizationId = '') => {
   }
 }
 
+// Active "not a duplicate" decisions for the facility, with the claim numbers
+// they cover, so an administrator can see and withdraw them.
+export const listActiveNhisDuplicateReviews = async (organizationId = '') => {
+  const orgId = normalizeText(organizationId)
+  if (!orgId) return []
+  const { data, error } = await supabase
+    .from('nhis_duplicate_reviews')
+    .select('id, group_key, claim_ids, service_date, ccc_no, reason, reviewed_by, reviewed_at')
+    .eq('organization_id', orgId)
+    .is('revoked_at', null)
+    .order('reviewed_at', { ascending: false })
+  if (error) throw error
+  const reviews = Array.isArray(data) ? data : []
+  const claimIds = [...new Set(reviews.flatMap((review) => review.claim_ids || []))]
+  const claimsById = new Map()
+  if (claimIds.length) {
+    const { data: claimRows, error: claimError } = await supabase
+      .from('nhis_claims')
+      .select('id, claim_number, surname, other_names, status')
+      .in('id', claimIds)
+    if (claimError) throw claimError
+    for (const claim of claimRows || []) claimsById.set(claim.id, claim)
+  }
+  return reviews.map((review) => ({
+    ...review,
+    claims: (review.claim_ids || []).map((id) => {
+      const claim = claimsById.get(id) || {}
+      return {
+        id,
+        claim_number: normalizeText(claim.claim_number),
+        patientName: [claim.surname, claim.other_names].filter(Boolean).join(' ').trim(),
+        status: normalizeText(claim.status),
+      }
+    }),
+  }))
+}
+
 export const reviewNhisDuplicateGroup = async ({ groupKey, claimIds, reason } = {}) => {
   const trimmedReason = normalizeText(reason)
   if (trimmedReason.length < 10) throw new Error('Enter a reason of at least 10 characters.')

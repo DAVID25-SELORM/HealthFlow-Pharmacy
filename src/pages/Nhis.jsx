@@ -116,7 +116,9 @@ import {
   getNhiaApiSettings,
   isNhisDuplicateClaimsError,
   isNhisReadinessClaimsError,
+  listActiveNhisDuplicateReviews,
   reviewNhisDuplicateGroup,
+  revokeNhisDuplicateReview,
   startClaimItBridgeQueueAutoSync,
 } from '../services/nhisService'
 import { countUnrecordedClaims, retryCxfRecording } from '../services/claimitLifecycleService'
@@ -1551,6 +1553,13 @@ const Nhis = () => {
   const [duplicateReviewTarget, setDuplicateReviewTarget] = useState(null)
   const [duplicateReviewReason, setDuplicateReviewReason] = useState('')
   const [duplicateReviewSaving, setDuplicateReviewSaving] = useState(false)
+  const [showDuplicateReviewList, setShowDuplicateReviewList] = useState(false)
+  const [duplicateReviewList, setDuplicateReviewList] = useState([])
+  const [duplicateReviewListLoading, setDuplicateReviewListLoading] = useState(false)
+  const [duplicateReviewListError, setDuplicateReviewListError] = useState('')
+  const [withdrawTarget, setWithdrawTarget] = useState(null)
+  const [withdrawReason, setWithdrawReason] = useState('')
+  const [withdrawSaving, setWithdrawSaving] = useState(false)
   const [readinessClaimIssues, setReadinessClaimIssues] = useState([])
   const [showReadinessClaimReview, setShowReadinessClaimReview] = useState(false)
   const [readinessIssueFilter, setReadinessIssueFilter] = useState('all')
@@ -5288,6 +5297,56 @@ const Nhis = () => {
     }
   }
 
+  const loadDuplicateReviewList = async () => {
+    setDuplicateReviewListLoading(true)
+    setDuplicateReviewListError('')
+    try {
+      setDuplicateReviewList(await listActiveNhisDuplicateReviews(organizationId))
+    } catch (err) {
+      setDuplicateReviewList([])
+      setDuplicateReviewListError(err.message || 'Unable to load reviewed duplicate groups.')
+    } finally {
+      setDuplicateReviewListLoading(false)
+    }
+  }
+
+  const openDuplicateReviewList = () => {
+    setShowDuplicateReviewList(true)
+    void loadDuplicateReviewList()
+  }
+
+  const closeDuplicateReviewList = () => {
+    if (withdrawSaving) return
+    setShowDuplicateReviewList(false)
+    setWithdrawTarget(null)
+    setWithdrawReason('')
+  }
+
+  const closeWithdrawPrompt = () => {
+    if (withdrawSaving) return
+    setWithdrawTarget(null)
+    setWithdrawReason('')
+  }
+
+  // Withdrawing makes the group block export again until it is reviewed or resolved.
+  const handleConfirmWithdraw = async () => {
+    const review = withdrawTarget
+    const reason = withdrawReason.trim()
+    if (!review || reason.length < 5) return
+    try {
+      setWithdrawSaving(true)
+      await revokeNhisDuplicateReview({ reviewId: review.id, reason })
+      setWithdrawTarget(null)
+      setWithdrawReason('')
+      notify('Review withdrawn. This group will block export again until it is reviewed or resolved.', 'success')
+      await loadDuplicateReviewList()
+    } catch (err) {
+      notify(err.message || 'Unable to withdraw the duplicate review.', 'error')
+    } finally {
+      setWithdrawSaving(false)
+    }
+  }
+
   const handleKeepDuplicateClaim = async (group, keepClaim) => {
     if (!canDeleteNhisClaims) {
       notify('Only an administrator can resolve duplicates by moving claims to the Recycle Bin.', 'warning')
@@ -6711,6 +6770,16 @@ const Nhis = () => {
                 <span>Duplicate scan</span>
                 <strong>{readinessChecking ? '...' : duplicateClaimGroups.length > 0 ? duplicateClaimGroups.length : 'Check'}</strong>
               </button>
+              {canReviewNhisDuplicates && (
+                <button
+                  type="button"
+                  className="nhis-readiness-summary-card nhis-readiness-summary-card--neutral"
+                  onClick={openDuplicateReviewList}
+                >
+                  <span>Reviewed duplicates</span>
+                  <strong>View</strong>
+                </button>
+              )}
             </div>
           </div>
 
@@ -10199,6 +10268,91 @@ const Nhis = () => {
                 </button>
               )}
               <button className="btn btn-secondary" onClick={closeReadinessClaimReview}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDuplicateReviewList && (
+        <div className="modal-overlay modal-overlay--top" onClick={(e) => e.target === e.currentTarget && closeDuplicateReviewList()}>
+          <div className="modal-panel duplicate-review-list" role="dialog" aria-modal="true" aria-labelledby="duplicate-review-list-title">
+            <div className="modal-header">
+              <h2 id="duplicate-review-list-title">Reviewed duplicate groups</h2>
+              <button className="modal-close" onClick={closeDuplicateReviewList} disabled={withdrawSaving}><X size={18} /></button>
+            </div>
+            <div className="duplicate-review-list-body">
+              <p className="duplicate-review-list-note">
+                These groups were reviewed as not duplicates and export with all of their claims. Withdraw a review to make the group block export again.
+              </p>
+              {duplicateReviewListLoading ? (
+                <div className="nhis-empty">Loading reviewed groups...</div>
+              ) : duplicateReviewListError ? (
+                <div className="nhis-alert">{duplicateReviewListError}</div>
+              ) : duplicateReviewList.length === 0 ? (
+                <div className="nhis-empty">No groups are currently marked as not a duplicate.</div>
+              ) : duplicateReviewList.map((review) => (
+                <section className="duplicate-review-list-item" key={review.id}>
+                  <div>
+                    <strong>{review.claims.map((claim) => claim.claim_number || 'Unnumbered').join(', ')}</strong>
+                    <span>
+                      {review.claims.find((claim) => claim.patientName)?.patientName || 'Patient not shown'}
+                      {' · '}Service date {review.service_date || 'not recorded'}
+                      {' · '}CCC {review.ccc_no || 'not recorded'}
+                    </span>
+                    <span>Reviewed {review.reviewed_at ? formatAppDateTime(review.reviewed_at) : 'at an unknown time'}</span>
+                    <em>Reason: {review.reason}</em>
+                  </div>
+                  <button
+                    type="button"
+                    className="duplicate-review-button"
+                    disabled={withdrawSaving}
+                    onClick={() => {
+                      setWithdrawReason('')
+                      setWithdrawTarget(review)
+                    }}
+                  >
+                    Withdraw review
+                  </button>
+                </section>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {withdrawTarget && (
+        <div className="modal-overlay modal-overlay--top" onClick={(e) => e.target === e.currentTarget && closeWithdrawPrompt()}>
+          <div className="modal-panel duplicate-review-prompt" role="dialog" aria-modal="true" aria-labelledby="withdraw-review-title">
+            <div className="modal-header">
+              <h2 id="withdraw-review-title">Withdraw this review?</h2>
+              <button className="modal-close" onClick={closeWithdrawPrompt} disabled={withdrawSaving}><X size={18} /></button>
+            </div>
+            <div className="duplicate-review-prompt-body">
+              <p>
+                {withdrawTarget.claims.map((claim) => claim.claim_number || 'Unnumbered').join(', ')} will block export again as a duplicate group.
+                No claim is changed.
+              </p>
+              <label htmlFor="withdraw-review-reason">Reason (required, at least 5 characters)</label>
+              <textarea
+                id="withdraw-review-reason"
+                rows={3}
+                maxLength={500}
+                value={withdrawReason}
+                onChange={(event) => setWithdrawReason(event.target.value)}
+                placeholder="e.g. Entered in error, one of these claims is a true duplicate"
+                disabled={withdrawSaving}
+              />
+              <div className="duplicate-review-prompt-actions">
+                <button type="button" className="btn btn-secondary" onClick={closeWithdrawPrompt} disabled={withdrawSaving}>Cancel</button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => { void handleConfirmWithdraw() }}
+                  disabled={withdrawSaving || withdrawReason.trim().length < 5}
+                >
+                  {withdrawSaving ? 'Withdrawing...' : 'Withdraw review'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

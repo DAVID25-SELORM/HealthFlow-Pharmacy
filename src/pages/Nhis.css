@@ -3912,3 +3912,43 @@
   gap: 0.5rem;
   justify-content: flex-end;
 }
+
+.duplicate-review-list {
+  max-height: 85vh;
+  max-width: 44rem;
+  overflow: auto;
+  width: 100%;
+}
+
+.duplicate-review-list-body {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem 1.25rem;
+}
+
+.duplicate-review-list-note {
+  color: var(--gray-600);
+  font-size: 0.86rem;
+  margin: 0;
+}
+
+.duplicate-review-list-item {
+  align-items: flex-start;
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  padding: 0.75rem 0.9rem;
+}
+
+.duplicate-review-list-item > div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.duplicate-review-list-item span,
+.duplicate-review-list-item em {
+  color: var(--gray-600);
+  font-size: 0.84rem;
+}

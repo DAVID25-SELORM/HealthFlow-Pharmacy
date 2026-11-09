@@ -113,6 +113,7 @@ import {
   validateNhisMedicineDurationInput,
   validateNhisPrescriptionPdfFile,
   TEMPORARY_UNIVERSAL_NHIA_TARIFF_SOURCE,
+  listActiveNhisDuplicateReviews,
   partitionNhisDuplicateGroups,
   reviewNhisDuplicateGroup,
   revokeNhisDuplicateReview,
@@ -7874,5 +7875,45 @@ describe('reviewed NHIS duplicate groups', () => {
     supabase.rpc.mockResolvedValue({ data: null, error: null })
     await revokeNhisDuplicateReview({ reviewId: 'review-1', reason: 'Entered in error' })
     expect(supabase.rpc).toHaveBeenCalledWith('revoke_nhis_duplicate_review', { p_review_id: 'review-1', p_reason: 'Entered in error' })
+  })
+
+  it('lists active reviews for the facility with the claim numbers they cover', async () => {
+    const reviewsQuery = {
+      eq: vi.fn(() => reviewsQuery),
+      is: vi.fn(() => reviewsQuery),
+      order: vi.fn().mockResolvedValue({
+        data: [{ id: 'review-1', group_key: 'k', claim_ids: ['a', 'b'], service_date: '2026-05-14', ccc_no: '12345', reason: 'Two prescriptions at one visit', reviewed_at: '2026-05-15T09:00:00Z' }],
+        error: null,
+      }),
+    }
+    const claimsQuery = {
+      in: vi.fn().mockResolvedValue({
+        data: [
+          { id: 'a', claim_number: 'NHIS-1', surname: 'Mensah', other_names: 'Ama', status: 'served' },
+          { id: 'b', claim_number: 'NHIS-2', surname: 'Mensah', other_names: 'Ama', status: 'served' },
+        ],
+        error: null,
+      }),
+    }
+    supabase.from.mockImplementation((table) => ({
+      select: vi.fn(() => (table === 'nhis_duplicate_reviews' ? reviewsQuery : claimsQuery)),
+    }))
+    const result = await listActiveNhisDuplicateReviews(ORG)
+    expect(reviewsQuery.eq).toHaveBeenCalledWith('organization_id', ORG)
+    expect(reviewsQuery.is).toHaveBeenCalledWith('revoked_at', null)
+    expect(result).toHaveLength(1)
+    expect(result[0].claims.map((claim) => claim.claim_number)).toEqual(['NHIS-1', 'NHIS-2'])
+    expect(result[0].claims[0].patientName).toBe('Mensah Ama')
+    expect(await listActiveNhisDuplicateReviews('')).toEqual([])
+  })
+
+  it('surfaces a failure to load the reviewed-duplicates list', async () => {
+    const reviewsQuery = {
+      eq: vi.fn(() => reviewsQuery),
+      is: vi.fn(() => reviewsQuery),
+      order: vi.fn().mockResolvedValue({ data: null, error: new Error('permission denied') }),
+    }
+    supabase.from.mockImplementation(() => ({ select: vi.fn(() => reviewsQuery) }))
+    await expect(listActiveNhisDuplicateReviews(ORG)).rejects.toThrow(/permission denied/)
   })
 })

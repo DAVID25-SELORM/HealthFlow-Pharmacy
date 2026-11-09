@@ -11,7 +11,7 @@ Export blocks the whole batch when two or more claims share facility, member, se
 - In the "Duplicate Claims Found" dialog, an administrator or claims officer sees **Not a duplicate - export all** on each group. It asks for a reason (10-500 characters) and warns that NHIA may reject or double-pay real duplicates.
 - The decision is stored against the group key **and the exact set of claim ids**. A reviewed group stops blocking export; nothing is deleted, no stock or CCC changes.
 - If a claim later joins (or leaves) the group, the stored set no longer matches and the group blocks again.
-- Withdrawing a decision (`revoke_nhis_duplicate_review`) makes the group block again. There is no screen for withdrawal yet; the function is available.
+- Withdrawing a decision (`revoke_nhis_duplicate_review`) makes the group block again. On the NHIS claims page, the **Reviewed duplicates** card (admin and claims officer only) lists the active decisions with their claims, service date, CCC, time and reason, and a **Withdraw review** button that asks for a reason (at least 5 characters). The reviewer's identity is kept on the review row and in the audit log; the list does not show a name.
 - Every other group, other facilities, the "Keep this claim" flow, export formats and the Claim-IT file are unchanged.
 - If reviews cannot be loaded (error, permission, branch-server mode) groups keep blocking: failure never unblocks an export.
 
