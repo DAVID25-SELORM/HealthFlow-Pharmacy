@@ -1241,6 +1241,67 @@ const buildNhisDuplicateClaimGroups = (claims = []) => {
   })
 }
 
+// A group an administrator or claims officer has reviewed and recorded as "not a
+// duplicate" stops blocking export. The decision names the exact claims it
+// covered, so a claim that joins the group later makes the stored set differ and
+// the group blocks again. Reviews that cannot be loaded never unblock anything.
+const sortedClaimIdKey = (ids = []) => [...new Set((ids || []).map((id) => normalizeText(id)).filter(Boolean))].sort().join(',')
+
+export const partitionNhisDuplicateGroups = (groups = [], reviews = []) => {
+  const activeReviews = new Map()
+  for (const review of reviews || []) {
+    if (!review || review.revoked_at) continue
+    activeReviews.set(`${normalizeText(review.group_key)}#${sortedClaimIdKey(review.claim_ids)}`, review)
+  }
+  const blocking = []
+  const reviewed = []
+  for (const group of groups || []) {
+    const review = activeReviews.get(`${group.key}#${sortedClaimIdKey((group.claims || []).map((claim) => claim.id))}`)
+    if (review) reviewed.push({ ...group, review })
+    else blocking.push(group)
+  }
+  return { blocking, reviewed }
+}
+
+const loadActiveNhisDuplicateReviews = async (organizationId = '') => {
+  if (!organizationId || shouldUseBranchServer()) return []
+  try {
+    const { data, error } = await supabase
+      .from('nhis_duplicate_reviews')
+      .select('id, group_key, claim_ids, reason, reviewed_by, reviewed_at, revoked_at')
+      .eq('organization_id', organizationId)
+      .is('revoked_at', null)
+    if (error) return []
+    return Array.isArray(data) ? data : []
+  } catch {
+    return []
+  }
+}
+
+export const reviewNhisDuplicateGroup = async ({ groupKey, claimIds, reason } = {}) => {
+  const trimmedReason = normalizeText(reason)
+  if (trimmedReason.length < 10) throw new Error('Enter a reason of at least 10 characters.')
+  await ensureFreshSupabaseSessionBeforeWrite()
+  const { data, error } = await supabase.rpc('review_nhis_duplicate_group', {
+    p_group_key: normalizeText(groupKey),
+    p_claim_ids: [...new Set((claimIds || []).map((id) => normalizeText(id)).filter(Boolean))],
+    p_reason: trimmedReason,
+  })
+  if (error) throw error
+  return data
+}
+
+export const revokeNhisDuplicateReview = async ({ reviewId, reason } = {}) => {
+  const trimmedReason = normalizeText(reason)
+  if (trimmedReason.length < 5) throw new Error('Enter a reason of at least 5 characters.')
+  await ensureFreshSupabaseSessionBeforeWrite()
+  const { error } = await supabase.rpc('revoke_nhis_duplicate_review', {
+    p_review_id: normalizeText(reviewId),
+    p_reason: trimmedReason,
+  })
+  if (error) throw error
+}
+
 export const isNhisDuplicateClaimsError = (error) =>
   error?.code === 'NHIS_DUPLICATE_CLAIMS' && Array.isArray(error.duplicateGroups)
 
@@ -10495,8 +10556,19 @@ const getNhisExportClaimsAndBlockers = async (options = {}) => {
     directSubmit,
     exportPeriod: period,
   }
-  const duplicateGroups = buildNhisDuplicateClaimGroups(claims)
-  timing?.mark('checking duplicate groups', { duplicateGroupCount: duplicateGroups.length })
+  const allDuplicateGroups = buildNhisDuplicateClaimGroups(claims)
+  const { blocking: duplicateGroups, reviewed: reviewedDuplicateGroups } = allDuplicateGroups.length
+    ? partitionNhisDuplicateGroups(
+        allDuplicateGroups,
+        await loadActiveNhisDuplicateReviews(
+          normalizeText(options.organizationId || options.organization_id || claims[0]?.organization_id)
+        )
+      )
+    : { blocking: [], reviewed: [] }
+  timing?.mark('checking duplicate groups', {
+    duplicateGroupCount: duplicateGroups.length,
+    reviewedDuplicateGroupCount: reviewedDuplicateGroups.length,
+  })
   emitNhisExportProgress(options, 'Checking export blockers', { current: 0, total: claims.length })
   const exportBlockingIssues = claims.length
     ? await collectNhisExportBlockingIssues(claims, organizationType, blockerOptions)
@@ -10512,6 +10584,7 @@ const getNhisExportClaimsAndBlockers = async (options = {}) => {
     notYetReadyClaims,
     organizationType,
     duplicateGroups,
+    reviewedDuplicateGroups,
     exportBlockingIssues,
   }
 }

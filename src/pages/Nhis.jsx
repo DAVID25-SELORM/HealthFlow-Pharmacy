@@ -116,6 +116,7 @@ import {
   getNhiaApiSettings,
   isNhisDuplicateClaimsError,
   isNhisReadinessClaimsError,
+  reviewNhisDuplicateGroup,
   startClaimItBridgeQueueAutoSync,
 } from '../services/nhisService'
 import { countUnrecordedClaims, retryCxfRecording } from '../services/claimitLifecycleService'
@@ -1438,6 +1439,7 @@ const Nhis = () => {
     activeRole: normalizedRole,
   })
   const privilegedNhisActionRole = canEditNhisClaimAnytime ? 'claims_officer' : normalizedRole
+  const canReviewNhisDuplicates = ['admin', 'claims_officer'].includes(normalizedRole)
   // The active role is authoritative: tier-access receives and enforces it.
   const isMedicineCounterAssistant = normalizedRole === 'assistant'
   const canWrite = canEditNhisClaimAnytime || (
@@ -1546,6 +1548,9 @@ const Nhis = () => {
   const [duplicateExportIssues, setDuplicateExportIssues] = useState([])
   const [showDuplicateClaimReview, setShowDuplicateClaimReview] = useState(false)
   const [duplicateClaimSearch, setDuplicateClaimSearch] = useState('')
+  const [duplicateReviewTarget, setDuplicateReviewTarget] = useState(null)
+  const [duplicateReviewReason, setDuplicateReviewReason] = useState('')
+  const [duplicateReviewSaving, setDuplicateReviewSaving] = useState(false)
   const [readinessClaimIssues, setReadinessClaimIssues] = useState([])
   const [showReadinessClaimReview, setShowReadinessClaimReview] = useState(false)
   const [readinessIssueFilter, setReadinessIssueFilter] = useState('all')
@@ -3406,6 +3411,7 @@ const Nhis = () => {
   }
 
   const closeDuplicateClaimReview = () => {
+    setDuplicateReviewTarget(null)
     setShowDuplicateClaimReview(false)
     setDuplicateClaimGroups([])
     setDuplicateExportIssues([])
@@ -5242,6 +5248,43 @@ const Nhis = () => {
       notify(getClaimDeleteBlockedMessage(err, claim), 'error')
     } finally {
       setUpdatingStatus(null)
+    }
+  }
+
+  const closeDuplicateReviewPrompt = () => {
+    if (duplicateReviewSaving) return
+    setDuplicateReviewTarget(null)
+    setDuplicateReviewReason('')
+  }
+
+  // Records "reviewed - not a duplicate" for one group. No claim, stock or CCC
+  // changes; the group simply stops blocking the export while its claim set is unchanged.
+  const handleConfirmDuplicateReview = async () => {
+    const group = duplicateReviewTarget
+    const reason = duplicateReviewReason.trim()
+    if (!group || reason.length < 10) return
+    try {
+      setDuplicateReviewSaving(true)
+      await reviewNhisDuplicateGroup({
+        groupKey: group.key,
+        claimIds: (group.claims || []).map((claim) => claim.id),
+        reason,
+      })
+      const nextDuplicateGroups = duplicateClaimGroups.filter((currentGroup) => currentGroup.key !== group.key)
+      setDuplicateClaimGroups(nextDuplicateGroups)
+      if (nextDuplicateGroups.length === 0) setShowDuplicateClaimReview(false)
+      setDuplicateReviewTarget(null)
+      setDuplicateReviewReason('')
+      notify(
+        nextDuplicateGroups.length === 0
+          ? 'Group marked as not a duplicate. Run the export again.'
+          : 'Group marked as not a duplicate. Review the remaining groups, then export again.',
+        'success'
+      )
+    } catch (err) {
+      notify(err.message || 'Unable to record the duplicate review.', 'error')
+    } finally {
+      setDuplicateReviewSaving(false)
     }
   }
 
@@ -10161,6 +10204,49 @@ const Nhis = () => {
         </div>
       )}
 
+      {duplicateReviewTarget && (
+        <div className="modal-overlay modal-overlay--top" onClick={(e) => e.target === e.currentTarget && closeDuplicateReviewPrompt()}>
+          <div className="modal-panel duplicate-review-prompt" role="dialog" aria-modal="true" aria-labelledby="duplicate-review-title">
+            <div className="modal-header">
+              <h2 id="duplicate-review-title">Export these claims as separate claims?</h2>
+              <button className="modal-close" onClick={closeDuplicateReviewPrompt} disabled={duplicateReviewSaving}><X size={18} /></button>
+            </div>
+            <div className="duplicate-review-prompt-body">
+              <p>
+                {(duplicateReviewTarget.claims || []).map((claim) => claim.claim_number || 'Unnumbered').join(', ')}
+                {' '}for {duplicateReviewTarget.patientName || 'this patient'} on {duplicateReviewTarget.serviceDate || 'the same date'} will all be
+                exported. Nothing is deleted and no stock changes.
+              </p>
+              <p className="duplicate-review-prompt-warning">
+                NHIA may reject or double-pay claims that are real duplicates. Confirm each claim is a different prescription or visit.
+                Your name, the time and this reason are recorded. If a claim is later added to this group, it will need review again.
+              </p>
+              <label htmlFor="duplicate-review-reason">Reason (required, at least 10 characters)</label>
+              <textarea
+                id="duplicate-review-reason"
+                rows={3}
+                maxLength={500}
+                value={duplicateReviewReason}
+                onChange={(event) => setDuplicateReviewReason(event.target.value)}
+                placeholder="e.g. Two separate prescriptions issued at the same visit by different prescribers"
+                disabled={duplicateReviewSaving}
+              />
+              <div className="duplicate-review-prompt-actions">
+                <button type="button" className="btn btn-secondary" onClick={closeDuplicateReviewPrompt} disabled={duplicateReviewSaving}>Cancel</button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => { void handleConfirmDuplicateReview() }}
+                  disabled={duplicateReviewSaving || duplicateReviewReason.trim().length < 10}
+                >
+                  {duplicateReviewSaving ? 'Saving...' : 'Export all as separate claims'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showDuplicateClaimReview && duplicateClaimGroups.length > 0 && (
         <div className="modal-overlay modal-overlay--top" onClick={(e) => e.target === e.currentTarget && closeDuplicateClaimReview()}>
           <div className="modal-panel modal-panel--duplicates">
@@ -10232,6 +10318,20 @@ const Nhis = () => {
                         </p>
                       </div>
                       <span>{groupClaims.length} claims</span>
+                      {canReviewNhisDuplicates && (
+                        <button
+                          type="button"
+                          className="duplicate-review-button"
+                          disabled={Boolean(updatingStatus) || duplicateReviewSaving}
+                          title="These are separate valid claims. Record that this group was reviewed so it exports with all of its claims."
+                          onClick={() => {
+                            setDuplicateReviewReason('')
+                            setDuplicateReviewTarget(group)
+                          }}
+                        >
+                          <CheckCircle2 size={14} /> Not a duplicate - export all
+                        </button>
+                      )}
                     </div>
                     <div className="duplicate-claim-table-wrap">
                       <table className="nhis-table duplicate-claim-table">

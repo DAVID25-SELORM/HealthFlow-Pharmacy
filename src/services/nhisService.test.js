@@ -113,6 +113,9 @@ import {
   validateNhisMedicineDurationInput,
   validateNhisPrescriptionPdfFile,
   TEMPORARY_UNIVERSAL_NHIA_TARIFF_SOURCE,
+  partitionNhisDuplicateGroups,
+  reviewNhisDuplicateGroup,
+  revokeNhisDuplicateReview,
 } from './nhisService'
 import { supabase, ensureFreshSupabaseSessionBeforeWrite, withRowLevelSecurityRetry, withStorageUploadSession } from '../lib/supabase'
 import { recordCxfExport } from './claimitLifecycleService'
@@ -7742,5 +7745,134 @@ describe('uploadNhisPrescriptionPdf', () => {
       global.FileReader = OriginalFileReader
       global.Image = OriginalImage
     }
+  })
+})
+
+describe('reviewed NHIS duplicate groups', () => {
+  const ORG = 'org-1'
+  const makeClaim = (id, extra = {}) => ({
+    id,
+    claim_number: `NHIS-${id}`,
+    status: 'served',
+    organization_id: ORG,
+    organization_type: 'pharmacy',
+    member_no: '12345678',
+    surname: 'Mensah',
+    other_names: 'Ama',
+    ccc_no: 'CC-12345',
+    service_date_from: '2026-05-14',
+    total_amount: 10,
+    nhis_claim_medicines: [{ drug_code: 'NH001', description: 'Artemether' }],
+    ...extra,
+  })
+  const exportOptions = {
+    mode: 'custom',
+    fromDate: '2026-05-14',
+    toDate: '2026-05-14',
+    format: 'cxf',
+    organizationType: 'pharmacy',
+    organizationId: ORG,
+  }
+  const mockDatabase = ({ claims, reviews, reviewsError = null }) => {
+    const claimsQuery = {
+      order: vi.fn(() => claimsQuery),
+      gte: vi.fn(() => claimsQuery),
+      eq: vi.fn(() => claimsQuery),
+      lte: vi.fn(() => claimsQuery),
+      range: vi.fn(() => claimsQuery),
+      then: (resolve, reject) => Promise.resolve({ data: claims, error: null }).then(resolve, reject),
+    }
+    const reviewsQuery = {
+      eq: vi.fn(() => reviewsQuery),
+      is: vi.fn().mockResolvedValue({ data: reviews, error: reviewsError }),
+    }
+    supabase.from.mockImplementation((table) => {
+      if (table === 'nhis_claims') return { select: vi.fn(() => claimsQuery) }
+      if (table === 'nhis_duplicate_reviews') return { select: vi.fn(() => reviewsQuery) }
+      return { select: vi.fn(() => ({ in: vi.fn().mockReturnThis(), order: vi.fn().mockResolvedValue({ data: [], error: null }), eq: vi.fn().mockResolvedValue({ data: [], error: null }) })) }
+    })
+  }
+  const groupFor = (...claims) => ({ key: `${ORG}|member:12345678|2026-05-14|12345`, claims })
+  const reviewFor = (ids, extra = {}) => ({
+    id: 'review-1',
+    group_key: `${ORG}|member:12345678|2026-05-14|12345`,
+    claim_ids: ids,
+    reason: 'Two prescriptions at one visit',
+    revoked_at: null,
+    ...extra,
+  })
+
+  it('treats a group as reviewed only when the key and the exact claim set match an active review', () => {
+    const group = groupFor({ id: 'b' }, { id: 'a' })
+    expect(partitionNhisDuplicateGroups([group], [reviewFor(['a', 'b'])])).toMatchObject({ blocking: [], reviewed: [{ key: group.key }] })
+    // A claim joined the group after the review.
+    const grown = groupFor({ id: 'a' }, { id: 'b' }, { id: 'c' })
+    expect(partitionNhisDuplicateGroups([grown], [reviewFor(['a', 'b'])]).blocking).toEqual([grown])
+    // A claim left the group.
+    expect(partitionNhisDuplicateGroups([group], [reviewFor(['a', 'b', 'c'])]).blocking).toEqual([group])
+    // Different group, withdrawn review, and no reviews at all keep blocking.
+    expect(partitionNhisDuplicateGroups([group], [reviewFor(['a', 'b'], { group_key: 'org-1|member:other|2026-05-14|12345' })]).blocking).toEqual([group])
+    expect(partitionNhisDuplicateGroups([group], [reviewFor(['a', 'b'], { revoked_at: '2026-05-15T00:00:00Z' })]).blocking).toEqual([group])
+    expect(partitionNhisDuplicateGroups([group], []).blocking).toEqual([group])
+    expect(partitionNhisDuplicateGroups([group]).blocking).toEqual([group])
+  })
+
+  it('lets only the reviewed group through while other groups still block', () => {
+    const reviewedGroup = groupFor({ id: 'a' }, { id: 'b' })
+    const otherGroup = { key: `${ORG}|member:99999999|2026-05-14|12345`, claims: [{ id: 'x' }, { id: 'y' }] }
+    const result = partitionNhisDuplicateGroups([reviewedGroup, otherGroup], [reviewFor(['a', 'b'])])
+    expect(result.reviewed.map((group) => group.key)).toEqual([reviewedGroup.key])
+    expect(result.blocking).toEqual([otherGroup])
+  })
+
+  it('stops a reviewed group blocking export preparation, and re-blocks when a claim joins it', async () => {
+    mockDatabase({ claims: [makeClaim('a'), makeClaim('b')], reviews: [reviewFor(['a', 'b'])] })
+    const prepared = await prepareNhisClaimsExport(exportOptions)
+    expect(prepared.duplicateGroups).toEqual([])
+    expect(prepared.reviewedDuplicateGroups).toHaveLength(1)
+
+    mockDatabase({ claims: [makeClaim('a'), makeClaim('b'), makeClaim('c')], reviews: [reviewFor(['a', 'b'])] })
+    const regrown = await prepareNhisClaimsExport(exportOptions)
+    expect(regrown.duplicateGroups).toHaveLength(1)
+    expect(regrown.reviewedDuplicateGroups).toEqual([])
+  })
+
+  it('keeps blocking when reviews cannot be loaded or none exist', async () => {
+    mockDatabase({ claims: [makeClaim('a'), makeClaim('b')], reviews: null, reviewsError: { message: 'permission denied' } })
+    expect((await prepareNhisClaimsExport(exportOptions)).duplicateGroups).toHaveLength(1)
+    mockDatabase({ claims: [makeClaim('a'), makeClaim('b')], reviews: [] })
+    expect((await prepareNhisClaimsExport(exportOptions)).duplicateGroups).toHaveLength(1)
+  })
+
+  it('never applies a review from the branch server path', async () => {
+    shouldUseBranchServer.mockReturnValue(true)
+    mockDatabase({ claims: [makeClaim('a'), makeClaim('b')], reviews: [reviewFor(['a', 'b'])] })
+    // Whatever the branch path loads, the cloud review table must not be consulted.
+    await prepareNhisClaimsExport(exportOptions).catch(() => null)
+    expect(supabase.from).not.toHaveBeenCalledWith('nhis_duplicate_reviews')
+  })
+
+  it('sends the sorted distinct claim ids and the trimmed reason to the review function', async () => {
+    supabase.rpc.mockResolvedValue({ data: 'review-1', error: null })
+    await expect(reviewNhisDuplicateGroup({ groupKey: 'k', claimIds: ['b', 'a', 'b'], reason: '  Two prescriptions at one visit  ' })).resolves.toBe('review-1')
+    expect(supabase.rpc).toHaveBeenCalledWith('review_nhis_duplicate_group', {
+      p_group_key: 'k',
+      p_claim_ids: ['b', 'a'],
+      p_reason: 'Two prescriptions at one visit',
+    })
+  })
+
+  it('refuses a short reason before calling the database and surfaces database refusals', async () => {
+    await expect(reviewNhisDuplicateGroup({ groupKey: 'k', claimIds: ['a', 'b'], reason: 'too short' })).rejects.toThrow(/at least 10/)
+    await expect(revokeNhisDuplicateReview({ reviewId: 'r', reason: 'no' })).rejects.toThrow(/at least 5/)
+    expect(supabase.rpc).not.toHaveBeenCalled()
+    supabase.rpc.mockResolvedValue({ data: null, error: new Error('Only an administrator or claims officer can review duplicate claims.') })
+    await expect(reviewNhisDuplicateGroup({ groupKey: 'k', claimIds: ['a', 'b'], reason: 'Two prescriptions at one visit' })).rejects.toThrow(/administrator or claims officer/)
+  })
+
+  it('withdraws a review through its own function', async () => {
+    supabase.rpc.mockResolvedValue({ data: null, error: null })
+    await revokeNhisDuplicateReview({ reviewId: 'review-1', reason: 'Entered in error' })
+    expect(supabase.rpc).toHaveBeenCalledWith('revoke_nhis_duplicate_review', { p_review_id: 'review-1', p_reason: 'Entered in error' })
   })
 })

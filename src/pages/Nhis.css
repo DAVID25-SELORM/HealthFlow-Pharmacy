@@ -3849,3 +3849,66 @@
   margin-top: 1rem;
   padding-top: 1rem;
 }
+
+.duplicate-review-button {
+  align-items: center;
+  background: #fff;
+  border: 1px solid #b8c4d8;
+  border-radius: 6px;
+  color: #1f3a68;
+  cursor: pointer;
+  display: inline-flex;
+  flex-shrink: 0;
+  font-size: 0.76rem;
+  font-weight: 800;
+  gap: 0.25rem;
+  min-height: 1.75rem;
+  padding: 0.35rem 0.55rem;
+}
+
+.duplicate-review-button:hover:not(:disabled) {
+  background: #eef3fb;
+}
+
+.duplicate-review-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.duplicate-review-prompt {
+  max-width: 34rem;
+  width: 100%;
+}
+
+.duplicate-review-prompt-body {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem 1.25rem;
+}
+
+.duplicate-review-prompt-body p {
+  margin: 0;
+}
+
+.duplicate-review-prompt-warning {
+  background: #fff4e5;
+  border-radius: 6px;
+  color: #7a4b00;
+  font-size: 0.86rem;
+  padding: 0.6rem 0.75rem;
+}
+
+.duplicate-review-prompt-body textarea {
+  border: 1px solid var(--gray-300, #cbd5e1);
+  border-radius: 6px;
+  font: inherit;
+  padding: 0.5rem 0.6rem;
+  resize: vertical;
+  width: 100%;
+}
+
+.duplicate-review-prompt-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
