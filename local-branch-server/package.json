@@ -30,7 +30,7 @@
     "qs": "^6.16.0"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.101.1",
+    "@supabase/supabase-js": "^2.116.0",
     "better-sqlite3": "^11.9.1",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
