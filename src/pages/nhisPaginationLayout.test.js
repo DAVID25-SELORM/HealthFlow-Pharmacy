@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 const readSource = (path) => readFileSync(new URL(path, import.meta.url), 'utf8')
 
 describe('NHIS claims pagination layout', () => {
-  it('offers only CLAIM-it-compatible day duration presets', () => {
+  it('offers CLAIM-it-compatible day and weekly duration presets', () => {
     const source = readSource('./Nhis.jsx')
     const durationOptions = source.slice(
       source.indexOf('const DURATION_OPTIONS = ['),
@@ -17,7 +17,7 @@ describe('NHIS claims pagination layout', () => {
     expect(durationOptions).toContain("'180 days'")
     expect(durationOptions).toContain("'365 days'")
     expect(durationOptions).not.toContain("'1 month'")
-    expect(durationOptions).not.toContain("'1 week'")
+    expect(durationOptions).toContain("Array.from({ length: 12 }, (_, index) => `${index + 1} week${index === 0 ? '' : 's'}`)")
   })
 
   it('shows prescribed quantity zero as a replaceable placeholder', () => {
@@ -63,8 +63,8 @@ describe('NHIS claims pagination layout', () => {
 
     expect(source).toContain('const isNewMedicineOnDirectlyServedClaim =')
     expect(source).toContain("editingMedicineIndex === null && isNhisClaimDirectlyServed(editingClaim)")
-    expect(source).toContain("? 'pending'\n      : normalizeMedicineServingStatus")
-    expect(source).toContain("servedQty = isNewMedicineOnDirectlyServedClaim\n      ? 0")
+    expect(source).toMatch(/const servingStatus = isNewMedicineOnDirectlyServedClaim\s+\? 'pending'\s+: normalizeMedicineServingStatus/)
+    expect(source).toMatch(/servedQty = isNewMedicineOnDirectlyServedClaim\s+\? 0/)
   })
 
   it('offers common dose choices while preserving custom dose entry', () => {

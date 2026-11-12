@@ -329,6 +329,7 @@ const getNhisCalendarDate = (value = new Date()) => {
 
 const FREQUENCY_OPTIONS = [
   'OD',
+  'Weekly',
   'BD',
   'BID',
   'TDS',
@@ -343,6 +344,7 @@ const FREQUENCY_OPTIONS = [
 ]
 const DURATION_OPTIONS = [
   ...Array.from({ length: 60 }, (_, index) => `${index + 1} day${index === 0 ? '' : 's'}`),
+  ...Array.from({ length: 12 }, (_, index) => `${index + 1} week${index === 0 ? '' : 's'}`),
   '84 days',
   '90 days',
   '120 days',
@@ -3991,6 +3993,13 @@ const Nhis = () => {
       !String(medForm.reasonIfNotFullyServed || '').trim()
     ) {
       notify('Select a reason when a medicine is not fully served.', 'warning')
+      return
+    }
+    if (
+      (servedQty > 0 || ['fully_served', 'partially_served'].includes(servingStatus)) &&
+      !normalizeText(medForm.frequency)
+    ) {
+      notify('Dosage schedule/frequency is required before serving this medicine.', 'warning')
       return
     }
 

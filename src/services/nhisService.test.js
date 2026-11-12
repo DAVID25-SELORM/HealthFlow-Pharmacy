@@ -1845,6 +1845,34 @@ describe('CLAIM-it export helpers', () => {
     ],
   }
 
+  it('serializes weekly directions as one administration every seven days', async () => {
+    const weeklyClaim = {
+      ...claim,
+      nhis_claim_medicines: [{
+        ...claim.nhis_claim_medicines[0],
+        frequency: 'Weekly',
+        duration: '1 week',
+      }],
+    }
+    const payload = buildNhisClaimItExportPayload([weeklyClaim], {
+      yearMonth: '2026-05',
+      organizationType: 'hospital',
+      facilityCode: '03-05-001-02-01954-11-P1-2-011225',
+      facilityName: 'Westpoint Chemist',
+      providerNumber: '03-05-01954',
+      providerTypeDescription: 'Pharmacy',
+      accreditationDateGenerated: '2025-12-29',
+      claimsOfficerName: 'Claims Officer',
+      submitterId: 'admin',
+      generatedAt: '2026-05-15T00:00:00.000Z',
+    })
+
+    const inflatedText = inflateSync(Buffer.from((await buildNhisClaimItCxf(payload)).slice(3))).toString('latin1')
+    expect(inflatedText).toContain('0.14')
+    expect(inflatedText).toContain('weekly')
+    expect(inflatedText).toContain('7.00')
+  })
+
   it('repairs a realistic mixed-duration batch before producing CLAIM-it CXF', async () => {
     const sourceDurations = ['1 month', '2 months', '2 weeks', '90', '30 days', 'until finished']
     const sourceMedicines = sourceDurations.map((duration, index) => ({
@@ -4935,7 +4963,7 @@ describe('NHIS claim save attachment behavior', () => {
       [{
         ...medicineWithTotal,
         dose: '',
-        frequency: '',
+        frequency: 'OD',
         duration: '',
       }],
       {

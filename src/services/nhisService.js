@@ -2364,6 +2364,7 @@ export const applyNhisDurationRepairs = async (repairs = []) => {
 const parseFrequencyPerDay = (frequency) => {
   const value = normalizeMatchText(frequency)
   if (!value) return null
+  if (/\b(weekly|once a week|once weekly)\b/.test(value)) return 1 / 7
   if (/\b(qid|qds|four times)\b/.test(value)) return 4
   if (/\b(tds|tid|three times)\b/.test(value)) return 3
   if (/\b(bd|bid|twice|two times)\b/.test(value)) return 2
@@ -2676,6 +2677,9 @@ export const assessNhisReadinessContracts = (claim, medicines = [], options = {}
   const ccc = getNhisCccTransitionIssue(claim)
   if (ccc) servingBlockers.push(ccc)
   medicines.forEach((medicine, index) => {
+    if (!normalizeText(medicine?.frequency)) {
+      servingBlockers.push(`Medicine ${index + 1}: dosage schedule/frequency is required before serving this claim.`)
+    }
     const issue = validateNhisMedicineDurationInput(medicine.duration)
     if (issue) servingBlockers.push(`Medicine ${index + 1}: ${issue}`)
   })
@@ -7524,6 +7528,7 @@ const parseDirectionsNumber = (value, fallback = '1.00') => {
 
 const parseFrequencyValue = (value) => {
   const text = normalizeText(value).toLowerCase()
+  if (/\b(weekly|once a week|once weekly)\b/.test(text)) return (1 / 7).toFixed(2)
   if (/\b(qid|qds|four)\b/.test(text)) return '4.00'
   if (/\b(tid|tds|three)\b/.test(text)) return '3.00'
   if (/\b(bid|bd|twice|two)\b/.test(text)) return '2.00'
