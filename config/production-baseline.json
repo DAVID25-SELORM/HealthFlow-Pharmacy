@@ -7,12 +7,12 @@
   "edgeFunctionCount": 7,
   "testFileCount": 148,
   "criticalFiles": {
-    "src/services/nhisService.js": "acf499bdb6dcaecaabd3ddd65919b549dc9301110e2433c38001e73a3d9b5b6f",
+    "src/services/nhisService.js": "bab77a69884373ca9ace6e8f2146a03fb34a2d518885bd61221a5217526fa735",
     "src/context/AuthContext.jsx": "e988ea8d7630703186192367f2b5bed836bab772e9457a2383430d5d290dcbcb",
     "src/services/recycleBinService.js": "94f0fd814bda811b3c234769426d57257a0f8120e90df8bffc87ae9ebfbcabe9",
     "src/services/offlineInstallerReleaseService.js": "486cff1a4cb69c96de4e68bdb2dd9552a92c069ee5f341b726d16d2c65d714ac",
     "src/services/settingsService.js": "41c280817cb360c4d47a84cb09d6c807175416ee3477498d12b902083f46d3c1",
-    "supabase/functions/tier-access/index.ts": "ae3afc0caa1640a8ed496c5ad3be8d5aa5c80059542616a61b7217a059460dba",
+    "supabase/functions/tier-access/index.ts": "9211d1c2a485d6de15261c6005271c64f84fcc09238e07939c69ded2e24adcbc",
     "supabase/functions/staff-admin/index.ts": "1003e6ea0e987d12db4a6e0c4d927c27493a57fdb9011440958f3e24c0bb3127"
   },
   "hashFormat": "sha256-utf8-lf",
@@ -48,5 +48,10 @@
     "report": "docs/claimit-compatibility-2026-09-20.md",
     "rollout": "docs/claimit-rollout-runbook.md",
     "status": "Local: rebased on the accepted West Point June export (June contract + classification tests); legacy claims never blocked by signing; hosted deployment blocked by staging acceptance and access"
+  },
+  "pendingDuplicateExportPolicy": {
+    "date": "2026-11-12",
+    "impactReport": "docs/nhis-duplicate-export-policy-impact-2026-11-12.md",
+    "description": "Organization-scoped administrator opt-in for duplicate NHIS exports; default remains blocked and export audit is recorded."
   }
 }

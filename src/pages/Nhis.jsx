@@ -87,6 +87,8 @@ import {
   checkNhisExportReadiness,
   prepareNhisClaimsExport,
   prepareNhisSingleClaimExport,
+  getNhisDuplicateExportPolicy,
+  saveNhisDuplicateExportPolicy,
   buildNhisDurationRepairReview,
   normalizeNhisManualDurationCorrection,
   applyNhisDurationRepairs,
@@ -1686,6 +1688,8 @@ const Nhis = () => {
   const [exportFormat, setExportFormat] = useState('cxf')
   const [reexportReason, setReexportReason] = useState('')
   const [exportRoute, setExportRoute] = useState('cxf_export')
+  const [duplicateExportPolicy, setDuplicateExportPolicy] = useState({ allow_duplicate_exports: false })
+  const [duplicateExportPolicySaving, setDuplicateExportPolicySaving] = useState(false)
   const [exporting, setExporting]       = useState(false)
   const [exportProgress, setExportProgress] = useState('')
   const [exportStartedAt, setExportStartedAt] = useState(null)
@@ -1705,6 +1709,41 @@ const Nhis = () => {
   const exportResumeTargetRef = useRef(/** @type {{type: string, claim?: {id: string, claim_number?: string}}} */ ({ type: 'batch' }))
   const durationRepairResumeTargetRef = useRef(/** @type {{type: string, claim?: {id: string, claim_number?: string}}} */ ({ type: 'batch' }))
   const durationRepairTableRef = useRef(null)
+
+  const canManageDuplicateExportPolicy = ['admin', 'super_admin'].includes(normalizedRole)
+
+  useEffect(() => {
+    if (!showExportModal || !organizationId) return undefined
+    let cancelled = false
+    getNhisDuplicateExportPolicy(organizationId).then((policy) => {
+      if (!cancelled) setDuplicateExportPolicy(policy || { allow_duplicate_exports: false })
+    })
+    return () => { cancelled = true }
+  }, [showExportModal, organizationId])
+
+  const handleDuplicateExportPolicyChange = async (event) => {
+    const enabled = event.target.checked
+    const previous = duplicateExportPolicy
+    setDuplicateExportPolicy((current) => ({ ...current, allow_duplicate_exports: enabled }))
+    try {
+      setDuplicateExportPolicySaving(true)
+      const saved = await saveNhisDuplicateExportPolicy(organizationId, enabled)
+      setDuplicateExportPolicy(saved)
+      await tryLogAuditEvent({
+        eventType: 'nhis_claim.duplicate_export_policy_changed',
+        entityType: 'organization_nhis_duplicate_export_policy',
+        entityId: organizationId,
+        action: enabled ? 'allow_duplicate_exports' : 'block_duplicate_exports',
+        details: { allow_duplicate_exports: enabled, user_id: user?.id || '', role: normalizedRole },
+      })
+      notify(enabled ? 'Duplicate exports are enabled for this pharmacy.' : 'Duplicate exports are blocked for this pharmacy.', 'success')
+    } catch (error) {
+      setDuplicateExportPolicy(previous)
+      notify(getErrorMessage(error, 'Unable to save duplicate export policy.'), 'error')
+    } finally {
+      setDuplicateExportPolicySaving(false)
+    }
+  }
 
   useEffect(() => {
     if (!exporting || !exportStartedAt) {
@@ -5653,6 +5692,7 @@ const Nhis = () => {
       requestOptions: {
         ...periodOptions,
         ...getDirectNhiaOptions(),
+        organizationId,
         directSubmit: submitDirectApi,
         format: selectedFormat,
         reexportReason: reexportReason.trim() || null,
@@ -6026,6 +6066,23 @@ const Nhis = () => {
               : requestOptions.mode === 'partial'
                 ? { mode: 'partial', toDate: requestOptions.toDate }
                 : { mode: 'month', yearMonth: requestOptions.yearMonth },
+            format: selectedFormat,
+            direct_submit: submitDirectApi,
+            user_id: user?.id || '',
+            role,
+            export_run_id: exportRunId,
+          },
+        })
+      }
+      if (preparedReadiness.duplicateExportsAllowed && preparedReadiness.duplicateGroups?.length) {
+        await tryLogAuditEvent({
+          eventType: 'nhis_claim.duplicate_export_allowed',
+          entityType: 'nhis_claims',
+          entityId: null,
+          action: 'export_duplicate_groups',
+          details: {
+            duplicate_summary: getDuplicateScrubAuditSummary(preparedReadiness.duplicateGroups),
+            policy: 'organization_allow_duplicate_exports',
             format: selectedFormat,
             direct_submit: submitDirectApi,
             user_id: user?.id || '',
@@ -10371,6 +10428,22 @@ const Nhis = () => {
                   </>
                 )}
               </p>
+              <div className="form-group nhis-duplicate-export-policy">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={duplicateExportPolicy.allow_duplicate_exports === true}
+                    disabled={!canManageDuplicateExportPolicy || duplicateExportPolicySaving}
+                    onChange={handleDuplicateExportPolicyChange}
+                  />{' '}
+                  Allow duplicate NHIS claims to be exported automatically
+                </label>
+                <small>
+                  {canManageDuplicateExportPolicy
+                    ? 'When disabled, duplicate groups still require the existing per-group review. This setting applies to this pharmacy only.'
+                    : 'Only an organization administrator can change this pharmacy setting. Duplicate groups remain blocked.'}
+                </small>
+              </div>
               {directNhiaApiAvailable && (
                 <div className="form-group">
                   <label>Submission Route</label>
