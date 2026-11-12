@@ -2,6 +2,7 @@ import { supabase } from '../lib/supabase'
 import { createCoalescedCloudRead } from '../utils/coalesceCloudRead'
 import { assertNonNegativeNumber, assertRequiredText, normalizeText, sanitizeSearchTerm } from '../utils/validation'
 import { invokeTierAccess } from './tierAccessService'
+import { dispatchBranchTransfer } from './branchTransferService'
 import { getBranchInventory } from './branchServerApi'
 import { routeRead } from './apiRouter'
 // ✅ NHIS PHARMACY LEVEL PATCH START
@@ -404,22 +405,28 @@ export const transferDrugToBranch = async ({
   quantity,
   notes = '',
 }) => {
-  const { data, error } = await supabase.rpc('transfer_drug_to_branch', {
-    p_drug_id: assertRequiredText(drugId, 'Drug'),
-    p_destination_branch_id: assertRequiredText(destinationBranchId, 'Destination branch'),
-    p_quantity: assertNonNegativeNumber(quantity, 'Transfer quantity'),
-    p_notes: normalizeText(notes) || null,
+  // One medicine, one destination. This dispatches a transfer that the receiving branch must still
+  // confirm (see branchTransferService); stock only reaches the destination once it does.
+  const id = assertRequiredText(drugId, 'Drug')
+  const { data: source, error: sourceError } = await supabase
+    .from('drugs')
+    .select('branch_id')
+    .eq('id', id)
+    .maybeSingle()
+
+  if (sourceError) {
+    throw sourceError
+  }
+  if (!source?.branch_id) {
+    throw new Error('This medicine is not assigned to a branch yet.')
+  }
+
+  return dispatchBranchTransfer({
+    sourceBranchId: source.branch_id,
+    destinationBranchId: assertRequiredText(destinationBranchId, 'Destination branch'),
+    items: [{ drugId: id, quantity: assertNonNegativeNumber(quantity, 'Transfer quantity') }],
+    notes: normalizeText(notes),
   })
-
-  if (error) {
-    throw error
-  }
-
-  if (data?.error) {
-    throw new Error(data.error)
-  }
-
-  return data
 }
 
 // Search drugs
