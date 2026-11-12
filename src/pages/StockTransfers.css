@@ -1,0 +1,125 @@
+/* Stock Transfers: list, new-transfer form, detail / printable transfer note */
+.stx-page { padding: 1.5rem; max-width: 1200px; margin: 0 auto; }
+
+.stx-page-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.stx-page-header h1 { display: flex; align-items: center; gap: 0.5rem; font-size: 1.5rem; margin: 0; color: var(--gray-900); }
+.stx-page-header p { margin: 0.25rem 0 0; color: var(--gray-600); font-size: 0.9rem; }
+.stx-page-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.stx-page-actions .btn { display: inline-flex; align-items: center; gap: 0.4rem; }
+
+.stx-alert { background: #fdecea; color: #a8281e; border: 1px solid #f5c2bd; border-radius: 8px; padding: 0.65rem 0.85rem; margin: 0.75rem 0; font-size: 0.9rem; }
+.stx-empty { display: flex; flex-direction: column; gap: 0.25rem; align-items: center; text-align: center; padding: 2rem 1rem; border: 1px dashed var(--gray-300); border-radius: 10px; color: var(--gray-600); margin: 1rem 0; }
+.stx-empty strong { color: var(--gray-800); }
+.stx-muted { color: var(--gray-600); font-size: 0.88rem; }
+.stx-hint { color: var(--gray-600); font-size: 0.85rem; margin: 0.5rem 0; }
+.stx-error-text { display: block; color: #a8281e; font-size: 0.78rem; margin-top: 0.2rem; }
+.stx-sub { display: block; color: var(--gray-600); font-size: 0.78rem; font-weight: 400; }
+
+.stx-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin: 0.75rem 0; }
+.stx-filters { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.stx-chip { border: 1px solid var(--gray-300); background: #fff; color: var(--gray-700); border-radius: 999px; padding: 0.35rem 0.8rem; font-size: 0.85rem; cursor: pointer; }
+.stx-chip span { display: inline-block; min-width: 1.3rem; margin-left: 0.25rem; padding: 0 0.35rem; border-radius: 999px; background: var(--gray-100); font-size: 0.75rem; text-align: center; }
+.stx-chip.is-active { background: var(--primary); border-color: var(--primary); color: #fff; }
+.stx-chip.is-active span { background: rgba(255, 255, 255, 0.25); }
+
+.stx-search { display: flex; align-items: center; gap: 0.5rem; border: 1px solid var(--gray-300); border-radius: 8px; padding: 0 0.6rem; background: #fff; }
+.stx-search input { border: 0; outline: 0; padding: 0.55rem 0; flex: 1; min-width: 0; background: transparent; font: inherit; }
+.stx-search--toolbar { min-width: 260px; }
+
+.stx-table-wrap { overflow-x: auto; border: 1px solid var(--gray-200); border-radius: 10px; background: #fff; }
+.stx-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.stx-table th { text-align: left; padding: 0.6rem 0.75rem; background: var(--gray-50); color: var(--gray-700); font-weight: 600; border-bottom: 1px solid var(--gray-200); white-space: nowrap; }
+.stx-table td { padding: 0.6rem 0.75rem; border-bottom: 1px solid var(--gray-100); vertical-align: top; }
+.stx-table .num { text-align: right; }
+.stx-route { white-space: nowrap; }
+.stx-route svg { vertical-align: -2px; margin: 0 0.2rem; color: var(--gray-500); }
+.stx-row-action td { background: #fffbea; }
+.stx-row-short td { background: #fff4e5; }
+
+.stx-badge { display: inline-block; padding: 0.15rem 0.55rem; border-radius: 999px; font-size: 0.76rem; font-weight: 600; background: var(--gray-100); color: var(--gray-700); }
+.stx-badge--pending { background: #fff3cd; color: #7a5a00; }
+.stx-badge--received { background: #d8f3e3; color: #1b6e3f; }
+.stx-badge--rejected, .stx-badge--cancelled { background: #fbe0dd; color: #a8281e; }
+.stx-flag { display: inline-block; margin-left: 0.35rem; padding: 0.1rem 0.45rem; border-radius: 6px; font-size: 0.72rem; font-weight: 600; background: #ffe8cc; color: #8a4b00; }
+.stx-flag--action { background: var(--primary); color: #fff; }
+
+/* modals */
+.stx-modal { width: min(760px, calc(100vw - 2rem)); max-height: calc(100vh - 2rem); overflow-y: auto; }
+.stx-modal--detail { width: min(860px, calc(100vw - 2rem)); }
+.stx-form { padding: 0 1.25rem; }
+.stx-branch-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+.stx-form .form-group { display: flex; flex-direction: column; gap: 0.3rem; margin-bottom: 0.75rem; }
+.stx-form select, .stx-form textarea, .stx-actions textarea, .stx-lines input { font: inherit; padding: 0.5rem 0.6rem; border: 1px solid var(--gray-300); border-radius: 8px; width: 100%; box-sizing: border-box; }
+.stx-lines input { max-width: 8rem; text-align: right; }
+.stx-results { list-style: none; margin: 0.25rem 0 0.75rem; padding: 0; border: 1px solid var(--gray-200); border-radius: 8px; max-height: 14rem; overflow-y: auto; }
+.stx-results li { padding: 0; }
+.stx-results li.stx-muted { padding: 0.6rem 0.75rem; }
+.stx-results button { display: flex; flex-direction: column; align-items: flex-start; gap: 0.1rem; width: 100%; background: #fff; border: 0; border-bottom: 1px solid var(--gray-100); padding: 0.55rem 0.75rem; text-align: left; cursor: pointer; font: inherit; }
+.stx-results button:hover:not(:disabled) { background: var(--gray-50); }
+.stx-results button:disabled { opacity: 0.55; cursor: not-allowed; }
+.stx-results button span { color: var(--gray-600); font-size: 0.8rem; }
+.stx-empty-lines { text-align: center; padding: 1rem 0; }
+.stx-lines { margin: 0.5rem 0 0.75rem; }
+.stx-modal .form-actions { display: flex; justify-content: flex-end; gap: 0.5rem; padding: 0.75rem 1.25rem 1.25rem; }
+.stx-header-buttons { display: flex; align-items: center; gap: 0.5rem; }
+.stx-header-buttons .btn { display: inline-flex; align-items: center; gap: 0.35rem; }
+
+/* detail sheet / printable transfer note */
+.stx-print-sheet { padding: 1rem 1.25rem; }
+.stx-sheet-header { display: flex; justify-content: space-between; gap: 1rem; border-bottom: 2px solid var(--gray-800); padding-bottom: 0.75rem; margin-bottom: 0.75rem; }
+.stx-sheet-header h1 { font-size: 1.25rem; margin: 0 0 0.2rem; }
+.stx-sheet-header h2 { font-size: 1rem; letter-spacing: 0.05em; margin: 0 0 0.25rem; }
+.stx-sheet-header p, .stx-sheet-parties p { margin: 0.1rem 0; font-size: 0.88rem; }
+.stx-sheet-title { text-align: right; }
+.stx-sheet-parties { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 0.75rem; }
+.stx-sheet-parties h3 { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--gray-600); margin: 0 0 0.25rem; }
+.stx-note { font-size: 0.88rem; margin: 0.6rem 0; }
+.stx-note--warn { background: #fff4e5; border: 1px solid #ffd9a8; border-radius: 8px; padding: 0.5rem 0.7rem; color: #7a4300; }
+.stx-signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-top: 2.25rem; font-size: 0.8rem; color: var(--gray-700); }
+.stx-signatures span { display: block; border-bottom: 1px solid var(--gray-800); height: 1.6rem; margin-bottom: 0.25rem; }
+.stx-actions { padding: 0 1.25rem 1.25rem; display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.stx-confirm { width: 100%; }
+.stx-confirm-buttons { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.5rem; }
+.stx-modal--detail > .stx-hint, .stx-modal--detail > .stx-alert { margin-left: 1.25rem; margin-right: 1.25rem; }
+
+.stx-list td strong { white-space: nowrap; }
+
+@media (max-width: 640px) {
+  .stx-page { padding: 1rem; }
+  /* the list becomes cards so Status and Open are never scrolled out of view */
+  .stx-table-wrap { border: 0; background: transparent; overflow: visible; }
+  .stx-list, .stx-list tbody, .stx-list tr, .stx-list td { display: block; width: 100%; }
+  .stx-list thead { display: none; }
+  .stx-list tr { background: #fff; border: 1px solid var(--gray-200); border-radius: 10px; padding: 0.7rem 0.85rem; margin-bottom: 0.6rem; box-sizing: border-box; }
+  .stx-list tr.stx-row-action { background: #fffbea; border-color: #f0dc8a; }
+  .stx-list td, .stx-row-action td { padding: 0.15rem 0; border: 0; background: transparent; }
+  .stx-list td.num { text-align: left; }
+  .stx-list td.num .stx-sub { display: inline; margin-left: 0.4rem; }
+  .stx-route { white-space: normal; }
+  .stx-list td:last-child { margin-top: 0.4rem; }
+  .stx-list td:last-child .btn { width: 100%; }
+  /* transfer note on a phone: keep Medicine, Batch, Sent and Received on screen */
+  .stx-col-opt { display: none; }
+  .stx-print-sheet { padding: 0.75rem; }
+  .stx-print-sheet .stx-table th, .stx-print-sheet .stx-table td { padding: 0.45rem 0.4rem; font-size: 0.82rem; }
+  .stx-print-sheet .stx-table input { max-width: 5rem; padding: 0.35rem 0.4rem; }
+  .stx-branch-row, .stx-sheet-parties, .stx-signatures { grid-template-columns: 1fr; }
+  .stx-sheet-header { flex-direction: column; }
+  .stx-sheet-title { text-align: left; }
+  .stx-search--toolbar { min-width: 0; width: 100%; }
+}
+
+@media print {
+  /* Print only the open transfer note: drop the list behind it (no blank pages) and let the
+     fixed, scrolling dialog flow across as many pages as the note needs. */
+  .stx-page > *:not(.stx-print-overlay) { display: none !important; }
+  .stx-print-overlay { position: static !important; display: block !important; padding: 0 !important; background: none !important; }
+  .stx-print-overlay .stx-modal { max-height: none !important; overflow: visible !important; width: 100% !important; box-shadow: none !important; }
+  body * { visibility: hidden !important; }
+  .stx-print-sheet,
+  .stx-print-sheet * { visibility: visible !important; }
+  .stx-print-sheet { position: absolute; left: 0; top: 0; width: 100%; padding: 0; }
+  .stx-print-hide { display: none !important; }
+  .stx-row-short td { background: transparent; }
+  .stx-col-opt { display: table-cell !important; }
+}

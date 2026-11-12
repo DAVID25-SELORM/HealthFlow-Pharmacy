@@ -51,6 +51,7 @@ const PatientCare = lazy(() => loadRouteModule('/patient-care'))
 const CustomerEPharmacy = lazy(() => import('./pages/CustomerEPharmacy'))
 const RecycleBin = lazy(() => loadRouteModule('/recycle-bin'))
 const RestrictedInventory = lazy(() => loadRouteModule('/restricted-inventory'))
+const StockTransfers = lazy(() => loadRouteModule('/stock-transfers'))
 const LiveDemo = lazy(() => import('./demo/LiveDemo'))
 
 const RouteFallback = () => (
@@ -106,6 +107,14 @@ function App() {
               element={
                 <RoleRoute allowedRoles={INVENTORY_ROLES} allow={canManageInventory}>
                   <Inventory />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="stock-transfers"
+              element={
+                <RoleRoute allowedRoles={INVENTORY_ROLES} allow={canManageInventory}>
+                  <StockTransfers />
                 </RoleRoute>
               }
             />

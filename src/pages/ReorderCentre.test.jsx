@@ -344,7 +344,7 @@ describe('ReorderCentre branches and transfer advice (phase 4)', () => {
   })
 
   it('transfers only after the user confirms, from the chosen source into the selected branch', async () => {
-    mocks.transferInventoryDrug.mockResolvedValue({ success: true })
+    mocks.transferInventoryDrug.mockResolvedValue({ transfer_number: 'TRF-000042', status: 'pending' })
     render(<ReorderCentre />)
     await waitFor(() => expect(screen.getByText('Amoxicillin 500mg')).toBeInTheDocument())
     fireEvent.click(within(rowOf('Amoxicillin 500mg')).getByRole('button', { name: /transfer instead/ }))
@@ -357,7 +357,10 @@ describe('ReorderCentre branches and transfer advice (phase 4)', () => {
     expect(mocks.transferInventoryDrug).toHaveBeenCalledWith(expect.objectContaining({
       drugId: 'src-1', destinationBranchId: 'br-main', quantity: 30,
     }))
-    await waitFor(() => expect(mocks.notify).toHaveBeenCalledWith('Transferred 30 Amoxicillin 500mg from Kumasi.', 'success'))
+    await waitFor(() => expect(mocks.notify).toHaveBeenCalledWith(
+      '30 Amoxicillin 500mg dispatched from Kumasi as TRF-000042. Confirm receipt in Stock Transfers when it arrives.',
+      'success'
+    ))
     expect(mocks.getAllDrugs.mock.calls.length).toBeGreaterThan(1) // reloads so the suggestion shrinks
   })
 

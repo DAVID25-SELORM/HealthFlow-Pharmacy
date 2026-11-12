@@ -84,28 +84,20 @@ export const getBranchCountsByOrgIds = async (orgIds) => {
 }
 
 /**
- * Create a new (non-main) branch in the current user's organization.
+ * Create a new (non-main) branch in the current user's organization. Goes through the
+ * create_pharmacy_branch function so administrators AND branch managers can add branches; the
+ * function also enforces the multi-branch switch and rejects duplicate names.
  */
 export const createBranch = async (fields) => {
-  const organizationId = await getCurrentOrganizationId()
-
-  const { data, error } = await supabase
-    .from('branches')
-    .insert([
-      {
-        organization_id: organizationId,
-        name: normalizeText(fields.name),
-        code: normalizeText(fields.code) || null,
-        phone: normalizeText(fields.phone) || null,
-        email: normalizeText(fields.email) || null,
-        address: normalizeText(fields.address) || null,
-        city: normalizeText(fields.city) || null,
-        region: normalizeGhanaRegion(fields.region) || null,
-        is_main: false,
-      },
-    ])
-    .select()
-    .single()
+  const { data, error } = await supabase.rpc('create_pharmacy_branch', {
+    p_name: normalizeText(fields.name),
+    p_code: normalizeText(fields.code) || null,
+    p_phone: normalizeText(fields.phone) || null,
+    p_email: normalizeText(fields.email) || null,
+    p_address: normalizeText(fields.address) || null,
+    p_city: normalizeText(fields.city) || null,
+    p_region: normalizeGhanaRegion(fields.region) || null,
+  })
 
   if (error) throw error
   return data
