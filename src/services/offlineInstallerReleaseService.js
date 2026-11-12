@@ -319,7 +319,10 @@ export const calculateOfflineInstallerSha256 = async (file) => {
     throw new Error('Select a valid installer ZIP file.')
   }
   const buffer = await file.arrayBuffer()
-  const digest = await crypto.subtle.digest('SHA-256', buffer)
+  // Normalize the file buffer before passing it to Web Crypto. Browser and
+  // test-environment realms can otherwise produce an ArrayBuffer-like value
+  // that Node's SubtleCrypto rejects even though it came from arrayBuffer().
+  const digest = await crypto.subtle.digest('SHA-256', new Uint8Array(buffer).buffer)
   return Array.from(new Uint8Array(digest))
     .map((byte) => byte.toString(16).padStart(2, '0'))
     .join('')
