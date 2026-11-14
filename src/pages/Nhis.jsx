@@ -11,6 +11,7 @@ import ClaimSearchScope from '../components/ClaimSearchScope'
 import { CLAIM_MONTHS, getClaimMonthRange } from '../utils/claimMonthRange'
 import { createPrescriptionUploadSession } from '../utils/prescriptionUploadSession'
 import { getNhisCccTransitionIssue } from '../../local-branch-server/src/nhisCccValidation.js'
+import { getNhisCccSaveIssue } from '../utils/nhisCccSaveRule'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import NhisClaimCreatorCounts from '../components/NhisClaimCreatorCounts'
 import PatientEditor from '../components/PatientEditor'
@@ -2769,6 +2770,9 @@ const Nhis = () => {
     (Array.isArray(assignedRoles) && assignedRoles.some(
       (assignedRole) => String(assignedRole || '').trim().toLowerCase() === 'super_admin'
     ))
+  // A user who may not type the code (manual claim control, non-privileged role) cannot
+  // supply it, so the save rule that requires it does not apply to them (NHIS-005).
+  const cccFieldLocked = claimControlMode === 'manual' && !canManuallyEditCcCode
   const allowsDirectNhiaSubmission = ['claimit_bridge', 'direct_nhia_api', 'hybrid'].includes(integrationMode)
   const directNhiaApiAvailable = Boolean(
     allowsDirectNhiaSubmission &&
@@ -4619,6 +4623,14 @@ const Nhis = () => {
     const cccIssue = getNhisCccTransitionIssue(claimForm)
     if (cccIssue && (serveDirectly || isMedicineCounterAssistant || (!saveAsDraft && ['served', 'claim_ready'].includes(editingClaim?.status)))) {
       setClaimError(cccIssue)
+      document.getElementById('nhis-ccc-code')?.focus()
+      return
+    }
+    // NHIS-005: a valid CCC/CC code is required to save or send a claim from this form.
+    // Typing it by hand stays available when NHIA generation is unavailable.
+    const cccSaveIssue = getNhisCccSaveIssue(claimForm, { intent, fieldLocked: cccFieldLocked })
+    if (cccSaveIssue) {
+      setClaimError(cccSaveIssue)
       document.getElementById('nhis-ccc-code')?.focus()
       return
     }
@@ -8046,7 +8058,7 @@ const Nhis = () => {
 
                   <div className="form-row">
                     <div className="form-group">
-                      <label>CCC / CC Code{claimControlMode === 'manual' ? ' *' : ''}</label>
+                      <label>CCC / CC Code *</label>
                       <div className="nhis-code-field">
                         <input id="nhis-ccc-code" className="form-input" value={claimForm.cccNo}
                           required={claimControlMode === 'manual'}
@@ -8741,7 +8753,11 @@ const Nhis = () => {
                           <span className="nhia-readiness-label">
                             Requirements before final submission ({readiness.blockers.length})
                           </span>
-                          <p>These do not prevent Save Details or Send to Dispensary.</p>
+                          <p>
+                            {getNhisCccSaveIssue(claimForm, { intent: 'save_details', fieldLocked: cccFieldLocked })
+                              ? 'The CCC/CC code is needed before Save Details or Send to Dispensary. The other items do not prevent saving.'
+                              : 'These do not prevent Save Details or Send to Dispensary.'}
+                          </p>
                           <ul>
                             {readiness.blockers.map((issue) => (
                               <li key={issue}>{issue}</li>
