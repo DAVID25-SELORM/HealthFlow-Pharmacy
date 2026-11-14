@@ -1,3 +1,5 @@
+import { isGhanaCardNumber } from './nhiaMemberNumber'
+
 const DEFAULT_RETURN_ALERT_WINDOW_HOURS = 24
 const DEFAULT_RETURN_ALERT_ROLES = ['admin', 'claims_officer', 'assistant']
 const PENDING_SERVING_STATUSES = new Set(['pending_serving', 'serving_in_progress'])
@@ -69,7 +71,7 @@ export const getNhisPatientReturnIdentifiers = (patient = {}) => {
       patient.nhis_member_no ||
       patient.insurance_id
   )
-  const ghanaCard = memberNo.startsWith('GHA') ? memberNo : ''
+  const ghanaCard = isGhanaCardNumber(memberNo) ? memberNo : ''
   const phone = normalizePhone(patient.phone || patient.mobile || patient.contact)
 
   return {
