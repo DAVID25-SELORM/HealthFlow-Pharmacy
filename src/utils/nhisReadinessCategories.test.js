@@ -15,8 +15,8 @@ const EARLY_REFILL =
 const claim = (...issues) => ({ issues })
 
 describe('pharmacy claims are never tagged Diagnosis', () => {
-  it('puts an early-refill blocker under Clinical rules and Medicine only', () => {
-    expect(getReadinessIssueCategories(claim(EARLY_REFILL), { isHospital: false }).sort()).toEqual(['clinical', 'medicine'])
+  it('puts an early-refill blocker under Clinical rules, Medicine and Early refill, never Diagnosis', () => {
+    expect(getReadinessIssueCategories(claim(EARLY_REFILL), { isHospital: false }).sort()).toEqual(['clinical', 'early_refill', 'medicine'])
   })
 
   it('does not tag a pharmacy claim Diagnosis even when the text names a diagnosis', () => {
@@ -54,6 +54,71 @@ describe('other categories are unchanged', () => {
   it('falls back to Other', () => {
     expect(getReadinessIssueCategories(claim('Something unrelated'))).toEqual(['other'])
     expect(getReadinessIssueCategories({})).toEqual(['other'])
+  })
+})
+
+describe('early refill filter', () => {
+  const matchTypes = [
+    'similar active ingredient',
+    'possible completion supply',
+    'previous partial supply',
+    'early refill review',
+    'same medicine code',
+  ]
+  const blocker = (matchType, remaining) =>
+    `Export blocked: Lisinopril Tablet, 2.5 mg has ${matchType}; ${remaining}. NHIA may reject or reduce payment for an early refill.`
+
+  it.each(matchTypes)('groups the "%s" overlap blocker under Early refill', (matchType) => {
+    for (const remaining of ['8 treatment day(s) may still remain', 'active treatment coverage may overlap']) {
+      for (const isHospital of [false, true]) {
+        expect(getReadinessIssueCategories(claim(blocker(matchType, remaining)), { isHospital })).toContain('early_refill')
+      }
+    }
+  })
+
+  it('keeps the early-refill blocker under Clinical rules and Medicine as before', () => {
+    expect(getReadinessIssueCategories(claim(EARLY_REFILL))).toEqual(expect.arrayContaining(['clinical', 'medicine', 'early_refill']))
+  })
+
+  it('never tags the overlap blockers Diagnosis, even for hospitals', () => {
+    for (const matchType of matchTypes) {
+      expect(getReadinessIssueCategories(claim(blocker(matchType, 'active treatment coverage may overlap')), { isHospital: true })).not.toContain('diagnosis')
+    }
+  })
+
+  it('does not tag unrelated issues Early refill', () => {
+    expect(getReadinessIssueCategories(claim('Attach the scanned prescription PDF before exporting.'))).not.toContain('early_refill')
+    expect(getReadinessIssueCategories(claim('Prescriber name is required'))).not.toContain('early_refill')
+  })
+
+  it('is offered as a filter chip to pharmacies and hospitals', () => {
+    expect(getReadinessFilters(false).map((filter) => filter.id)).toContain('early_refill')
+    expect(getReadinessFilters(true).map((filter) => filter.id)).toContain('early_refill')
+  })
+})
+
+describe('tariff rule no longer catches the word "available"', () => {
+  it.each([
+    'Medicine unavailable',
+    'X (Y) is not available as an active NHIS catalogue item for this facility.',
+    'Z: reason is required when a medicine is not available or not served.',
+  ])('does not tag "%s" Tariff/G-DRG', (message) => {
+    expect(getReadinessIssueCategories(claim(message))).not.toContain('tariff')
+  })
+
+  it('still tags real tariff and laboratory wording', () => {
+    expect(getReadinessIssueCategories(claim('G-DRG/tariff is limited to hospital provider class B'))).toContain('tariff')
+    expect(getReadinessIssueCategories(claim('Lab result is required'))).toContain('tariff')
+    expect(getReadinessIssueCategories(claim('Add the lab/investigation'))).toContain('tariff')
+    expect(getReadinessIssueCategories(claim('Laboratory service is not covered'))).toContain('tariff')
+    expect(getReadinessIssueCategories(claim('Select the service 1234 procedure'))).toContain('tariff')
+  })
+})
+
+describe('member number wording', () => {
+  it('files member-number validation messages under Member/HIN', () => {
+    expect(getReadinessIssueCategories(claim('NHIS member number must contain exactly 8 digits.'))).toContain('identifier')
+    expect(getReadinessIssueCategories(claim('Enter the patient NHIS member number or Ghana Card number.'))).toContain('identifier')
   })
 })
 
