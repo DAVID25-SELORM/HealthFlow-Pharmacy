@@ -2,6 +2,7 @@ import { readNehfamsConnection, publicNehfamsConnection, validateSavedNehfamsCon
 import { resolveNehfamsCredentials } from '../_shared/nehfamsCredentials.ts'
 import { CccFailure, getCccPolicy, publicCccPolicy, inspectOtacToken, runCccRequest } from '../_shared/cccProvider.ts'
 import { resolveActivityLogPeriod } from '../_shared/activityLogPeriod.ts'
+import { isGhanaCardNumber } from '../_shared/ghanaCardNumber.ts'
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
 import {
@@ -4931,9 +4932,6 @@ const getMemberLookupEndpointPath = (settings: Record<string, unknown>) =>
       settings.memberLookupEndpoint ||
       settings.member_lookup_endpoint
   )
-
-const isGhanaCardNumber = (value: unknown) =>
-  /^GHA-\d{9}-\d$/i.test(normalizeText(value))
 
 const getNhiaCardType = (memberNumber: unknown, explicitCardType: unknown = '') => {
   const cardType = normalizeText(explicitCardType).toUpperCase()

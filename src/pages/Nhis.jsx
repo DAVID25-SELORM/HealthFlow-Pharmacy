@@ -4539,7 +4539,7 @@ const Nhis = () => {
     }
     const selectedCardType = claimForm.cardType || getNhiaLookupCardType(memberNumber)
     if (selectedCardType === 'GHANACARD' && !isGhanaCardNumber(memberNumber)) {
-      notify('Enter the full Ghana Card number in the format GHA-#########-# before generating a CC code.', 'warning')
+      notify('Enter the full Ghana Card number in the format GHA-#########-# (foreign nationals use their country code instead of GHA) before generating a CC code.', 'warning')
       return
     }
 

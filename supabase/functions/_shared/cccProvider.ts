@@ -1,5 +1,6 @@
 import { readNehfamsConnection, publicNehfamsConnection } from './nehfamsConnection.ts'
 import { requireLiveCccProvider, prepareNehfamsAttendance, sendNehfamsAttendance, mapNehfamsAttendance, fetchNehfamsFacility, validateNehfamsFacility, NehfamsOutcomeError } from './nehfamsAdapter.ts'
+import { isCanonicalGhanaCardNumber } from './ghanaCardNumber.ts'
 import { normalizeAttendanceNewCcc } from '../../../src/utils/nhiaAttendanceValues.js'
 // No patient data or credentials may be logged by this module.
 export const OTAC_URL = 'https://otac.nhia.gov.gh/api/attendance/generate'
@@ -46,8 +47,8 @@ export function publicCccPolicy(p: any) {
 
 export async function runCccRequest({db,org,actor,branch,payload,decode,existing,preflightExisting,fetcher=fetch,allowNehfamsTest=false,allowNehfamsProduction=false}: any) {
  const member = text(payload.memberNumber || payload.memberNo).toUpperCase()
- const card = text(payload.cardType) || (member.startsWith('GHA-')?'GHANACARD':'NHISCARD')
- if (card==='NHISCARD' ? !/^\d{8,}$/.test(member) : card!=='GHANACARD' || !/^GHA-\d{9}-\d$/.test(member)) throw new Error('Enter a valid membership number and card type')
+ const card = text(payload.cardType) || (isCanonicalGhanaCardNumber(member)?'GHANACARD':'NHISCARD')
+ if (card==='NHISCARD' ? !/^\d{8,}$/.test(member) : card!=='GHANACARD' || !isCanonicalGhanaCardNumber(member)) throw new Error('Enter a valid membership number and card type')
  const date = text(payload.serviceDate).slice(0,10) || new Date().toISOString().slice(0,10)
  const policy = await getCccPolicy(db,org)
  requireLiveCccProvider(policy.provider,allowNehfamsTest,policy.environment,allowNehfamsProduction)

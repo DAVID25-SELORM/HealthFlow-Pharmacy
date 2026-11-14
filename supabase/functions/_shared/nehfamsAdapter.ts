@@ -1,4 +1,5 @@
 // Contract source: NHIA HFAMS - HMIS Vanilla Postman collection.
+import { isCanonicalGhanaCardNumber } from './ghanaCardNumber.ts'
 // Production attendance remains blocked; transport is only used after server-side reservation.
 export const NEHFAMS_BASE_URL = 'https://nehfams.nhia.gov.gh'
 export const NEHFAMS_PATHS = Object.freeze({
@@ -55,7 +56,7 @@ export function prepareNehfamsAttendance(input: {
  if (!Object.hasOwn(NEHFAMS_ORIGINS, input.environment)) throw new Error('Select an explicit NeHFAMS environment.')
  if (!string(input.apiKey) || !string(input.apiSecret) || /[\r\n]/.test(input.apiKey + input.apiSecret)) throw new Error('Invalid NeHFAMS credentials.')
  validateNehfamsFacility({ HPN: input.facility?.hpn, HPName: input.facility?.name, AuthMode: input.facility?.authMode, OTACAuthEnabled: input.facility?.otacRequired }, {hpn: input.facility?.hpn, name: input.facility?.name})
- if (input.cardType === 'NHISCARD' ? !/^\d{8}$/.test(input.cardNo) : input.cardType !== 'GHANACARD' || !/^GHA-\d{9}-\d$/.test(input.cardNo)) throw new Error('Invalid NeHFAMS card number or type.')
+ if (input.cardType === 'NHISCARD' ? !/^\d{8}$/.test(input.cardNo) : input.cardType !== 'GHANACARD' || !isCanonicalGhanaCardNumber(input.cardNo)) throw new Error('Invalid NeHFAMS card number or type.')
  if (input.facility.otacRequired && !/^\d{4}$/.test(input.otac || '')) throw new Error('Enter the four-digit OTAC provided by the NHIS client.')
  return {
   url: NEHFAMS_ORIGINS[input.environment] + NEHFAMS_PATHS.attendance,
