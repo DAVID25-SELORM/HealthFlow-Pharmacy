@@ -402,6 +402,28 @@ h6 { font-size: 0.875rem; }
   gap: 0.65rem;
   z-index: 5000;
   pointer-events: none;
+  /* Errors and warnings stay until dismissed, so a long stack must stay reachable. */
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+}
+
+.toast-dismiss-all {
+  align-self: flex-end;
+  background: var(--gray-800, #1f2937);
+  border: none;
+  border-radius: 999px;
+  box-shadow: var(--shadow-lg);
+  color: var(--white);
+  cursor: pointer;
+  font-size: 0.8rem;
+  padding: 0.35rem 0.8rem;
+  pointer-events: auto;
+}
+
+.toast-dismiss-all:hover,
+.toast-dismiss-all:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.7);
+  outline-offset: 2px;
 }
 
 .toast-item {
@@ -418,6 +440,7 @@ h6 { font-size: 0.875rem; }
   gap: 0.8rem;
   overflow: auto;
   pointer-events: auto;
+  flex-shrink: 0;
 }
 
 .toast-message {
