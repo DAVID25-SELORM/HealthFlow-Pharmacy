@@ -192,6 +192,11 @@ import {
   normalizeNhisReturnAlertSettings,
 } from '../utils/nhisReturnAlert'
 import DiagnosisSelector from '../components/DiagnosisSelector/DiagnosisSelector'
+import {
+  getReadinessFilters,
+  getReadinessIssueCategories,
+  isReadinessIssueNotIncluded,
+} from '../utils/nhisReadinessCategories'
 import './Nhis.css'
 
 // ─── constants ────────────────────────────────────────────────────────────────
@@ -202,20 +207,6 @@ const NHIS_CLAIMS_PAGE_SIZE_OPTIONS = [50, 100, 200]
 const NHIS_CLAIMS_PAGE_CACHE_MS = 60000
 const NHIS_CLAIMS_SEARCH_DEBOUNCE_MS = 250
 const NHIS_CLAIM_ISSUE_BADGE_SCAN_LIMIT = 3000
-const READINESS_FILTERS = [
-  { id: 'all', label: 'All issues' },
-  { id: 'not_included', label: 'Not included in CXF' },
-  { id: 'status', label: 'Not yet served/submitted' },
-  { id: 'attachment', label: 'Attachment problems' },
-  { id: 'identifier', label: 'Member/HIN' },
-  { id: 'verification', label: 'Unverified prescription' },
-  { id: 'prescriber', label: 'Prescriber' },
-  { id: 'diagnosis', label: 'Diagnosis' },
-  { id: 'clinical', label: 'Clinical rules' },
-  { id: 'tariff', label: 'Tariff/G-DRG' },
-  { id: 'medicine', label: 'Medicine' },
-  { id: 'other', label: 'Other' },
-]
 const getScrubIssueAuditSummary = (issues = []) => ({
   total: issues.length,
   claim_numbers: issues.slice(0, 20).map((issue) => issue.claim_number || issue.claimNumber || issue.id || 'Unnumbered'),
@@ -929,53 +920,6 @@ const formatNhisServiceDateTime = (claim = {}) => {
   }
 
   return formatAppDate(rawServiceDate)
-}
-
-const isReadinessIssueNotIncluded = (issue = {}) => (
-  issue.exportInclusion === 'not_included' ||
-  issue.export_inclusion === 'not_included' ||
-  issue.exportInclusionReason === 'status_not_exportable' ||
-  issue.export_inclusion_reason === 'status_not_exportable'
-)
-
-const getReadinessIssueCategories = (issue = {}) => {
-  const text = (Array.isArray(issue.issues) ? issue.issues : [])
-    .join(' ')
-    .toLowerCase()
-  const categories = new Set()
-
-  if (isReadinessIssueNotIncluded(issue) || /\bnot included in (this )?cxf\b|\bnot included in the export\b/.test(text)) {
-    categories.add('not_included')
-  }
-  if (/\bnot yet ready for export\b/.test(text)) {
-    categories.add('status')
-  }
-  if (/\battach|attachment|prescription file|scanned|pdf|jpeg|png|document type\b/.test(text)) {
-    categories.add('attachment')
-  }
-  if (/\bhin|ghana card|member\/card|member identifier|member no|membership number|card serial\b/.test(text)) {
-    categories.add('identifier')
-  }
-  if (/\bverify|verified|unverified\b/.test(text)) {
-    categories.add('verification')
-  }
-  if (/\bprescriber|physician|provider|referral|ccc|authorization|authorisation\b/.test(text)) {
-    categories.add('prescriber')
-  }
-  if (/\bdiagnosis|icd|treatment\b/.test(text)) {
-    categories.add('diagnosis')
-  }
-  if (/\bclinical|risk|critical|age-restricted|gender|pregnancy|obstetric|prostate|infection|antibiotic|antimicrobial|chronic|specialist|supporting diagnosis|supporting malaria|diagnosis-lab|lab review|typhoid|widal|bp reading|glucose|hba1c\b/.test(text)) {
-    categories.add('clinical')
-  }
-  if (/\bg-drg|gdrg|tariff|service \d+|procedure|investigation|laboratory|lab|provider class|facility group|catering\b/.test(text)) {
-    categories.add('tariff')
-  }
-  if (/\bmedicine|drug|quantity|dispensed|served|dosage|level\b/.test(text)) {
-    categories.add('medicine')
-  }
-  if (!categories.size) categories.add('other')
-  return Array.from(categories)
 }
 
 const READINESS_CATEGORY_LABELS = {
@@ -5750,12 +5694,12 @@ const Nhis = () => {
   const readinessIssueCounts = useMemo(() => {
     const counts = { all: readinessClaimIssues.length }
     for (const issue of readinessClaimIssues) {
-      for (const category of getReadinessIssueCategories(issue)) {
+      for (const category of getReadinessIssueCategories(issue, { isHospital })) {
         counts[category] = (counts[category] || 0) + 1
       }
     }
     return counts
-  }, [readinessClaimIssues])
+  }, [readinessClaimIssues, isHospital])
 
   const readinessNotIncludedCount = useMemo(
     () => readinessClaimIssues.filter(isReadinessIssueNotIncluded).length,
@@ -5771,10 +5715,10 @@ const Nhis = () => {
   const filteredReadinessClaimIssues = useMemo(() => {
     return readinessClaimIssues.filter((issue) => {
       const matchesFilter = readinessIssueFilter === 'all' ||
-        getReadinessIssueCategories(issue).includes(readinessIssueFilter)
+        getReadinessIssueCategories(issue, { isHospital }).includes(readinessIssueFilter)
       return matchesFilter && readinessIssueMatchesSearch(issue, readinessIssueSearch)
     })
-  }, [readinessClaimIssues, readinessIssueFilter, readinessIssueSearch])
+  }, [readinessClaimIssues, readinessIssueFilter, readinessIssueSearch, isHospital])
 
   const filteredScrubWarningClaims = useMemo(() =>
     scrubWarningClaims.filter((issue) => readinessIssueMatchesSearch(issue, scrubWarningSearch)),
@@ -10171,7 +10115,7 @@ const Nhis = () => {
                 Served/submitted claims must be corrected before export. Draft, pending serving, and returned claims are shown for correction, but they are not included in the CXF until their status becomes served/submitted.
               </div>
               <div className="readiness-filter-tabs" aria-label="Filter incomplete claims">
-                {READINESS_FILTERS.map((filter) => {
+                {getReadinessFilters(isHospital).map((filter) => {
                   const count = readinessIssueCounts[filter.id] || 0
                   return (
                     <button
@@ -10218,7 +10162,7 @@ const Nhis = () => {
                       const claimForAction = { ...issue, _summaryOnly: true }
                       const patientName = issue.patientName || [issue.surname, issue.other_names].filter(Boolean).join(' ') || 'Unknown'
                       const issueList = Array.isArray(issue.issues) ? issue.issues : []
-                      const issueCategories = getReadinessIssueCategories(issue)
+                      const issueCategories = getReadinessIssueCategories(issue, { isHospital })
                       return (
                         <tr key={issue.id || issue.claim_number || index}>
                           <td>{issue.claim_number || 'Unnumbered'}</td>
