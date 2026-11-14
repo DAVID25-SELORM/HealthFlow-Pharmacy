@@ -822,13 +822,17 @@ const Inventory = () => {
 
     try {
       setTransferSubmitting(true)
-      await transferInventoryDrug({
+      const sent = await transferInventoryDrug({
         drugId: transferDrug.id,
         destinationBranchId: transferForm.destinationBranchId,
         quantity: transferForm.quantity,
         notes: transferForm.notes,
       })
-      notify(`${transferDrug.name} transferred successfully.`, 'success')
+      const destinationName = branches.find((row) => row.id === transferForm.destinationBranchId)?.name || 'the receiving branch'
+      notify(
+        `${transferDrug.name} sent as ${sent?.transfer_number || 'a transfer'}. Stock reaches ${destinationName} once they confirm it in Stock Transfers.`,
+        'success'
+      )
       closeTransferModal()
       await loadDrugs(selectedBranchId)
       dispatchHealthflowDataChanged()
@@ -1593,7 +1597,7 @@ const Inventory = () => {
         <div className="modal-overlay" onClick={closeTransferModal}>
           <div className="modal-content transfer-modal" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
-              <h2>Transfer Medicine</h2>
+              <h2>Send Stock to Another Branch</h2>
               <button className="close-btn" type="button" onClick={closeTransferModal}>
                 x
               </button>
@@ -1624,7 +1628,7 @@ const Inventory = () => {
               </div>
 
               <div className="form-group">
-                <label>Quantity to Transfer *</label>
+                <label>Quantity to send *</label>
                 <input
                   required
                   type="number"
@@ -1658,7 +1662,7 @@ const Inventory = () => {
                   className="btn btn-primary"
                   disabled={transferSubmitting || !transferForm.destinationBranchId}
                 >
-                  {transferSubmitting ? 'Transferring...' : 'Transfer Medicine'}
+                  {transferSubmitting ? 'Sending...' : 'Send for confirmation'}
                 </button>
               </div>
             </form>

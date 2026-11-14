@@ -22,6 +22,7 @@ export const routeModuleLoaders = {
   '/patient-care': () => import('../pages/PatientCare'),
   '/recycle-bin': () => import('../pages/RecycleBin'),
   '/restricted-inventory': () => import('../pages/RestrictedInventory'),
+  '/stock-transfers': () => import('../pages/StockTransfers'),
 }
 
 const routeModulePromises = new Map()

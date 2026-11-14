@@ -269,13 +269,16 @@ const ReorderCentre = () => {
   const handleTransfer = async ({ option, quantity, notes }) => {
     try {
       setTransferring(true)
-      await transferInventoryDrug({
+      const sent = await transferInventoryDrug({
         drugId: option.source_drug_id,
         destinationBranchId: selectedBranchId,
         quantity,
         notes: notes || `Reorder Centre: transferred instead of buying (${transferTarget.drug.name})`,
       })
-      notify(`Transferred ${quantity} ${transferTarget.drug.name} from ${option.source_branch_name}.`, 'success')
+      notify(
+        `${quantity} ${transferTarget.drug.name} dispatched from ${option.source_branch_name} as ${sent?.transfer_number || 'a transfer'}. Confirm receipt in Stock Transfers when it arrives.`,
+        'success'
+      )
       setTransferTarget(null)
       await load(selectedBranchId)
     } catch (transferError) {

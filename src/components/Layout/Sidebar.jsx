@@ -23,6 +23,7 @@ import {
   Gauge,
   Download,
   ShieldAlert,
+  ArrowRightLeft,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useTenant } from '../../context/TenantContext'
@@ -77,6 +78,7 @@ const Sidebar = ({ isOpen, onClose }) => {
     { path: '/billing', icon: Wallet, label: 'Payments', roles: ['admin', 'super_admin'], allow: assignedRoles?.includes('admin') },
     { path: '/export-notifications', icon: ClipboardList, label: 'Export notifications', roles: ['admin', 'super_admin'], allow: assignedRoles?.includes('admin') },
     { path: '/inventory', icon: Package, label: 'Inventory', roles: INVENTORY_ROLES, allow: canManageInventory },
+    { path: '/stock-transfers', icon: ArrowRightLeft, label: 'Stock Transfers', roles: INVENTORY_ROLES, allow: canManageInventory, featureAllowed: !isChemicalShop },
     { path: '/sales', icon: ShoppingCart, label: 'Sales (POS)', roles: SALES_ROLES, allow: canProcessSales },
     { path: '/patients', icon: Users, label: 'Patients', roles: PATIENT_ROLES, allow: canManagePatients, featureAllowed: !isChemicalShop },
     { path: '/claims', icon: ClipboardList, label: 'Claims', roles: CLAIMS_ROLES, allow: canManageClaims, featureAllowed: canUseClaims },
