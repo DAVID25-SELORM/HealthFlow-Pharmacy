@@ -5,6 +5,7 @@ import { createId, db, json, nowIso, parseJson } from './db.js'
 import { config } from './config.js'
 import { getNhiaMemberLookupFailureMessage } from './nhiaFeedback.js'
 import { getOfflineRecord } from './offlineRecordsRepository.js'
+import { compactGhanaCardValue, getGhanaCardPrefix, isGhanaCardNumber } from './nhiaMemberNumber.js'
 
 const CLAIM_STATUSES = new Set([
   'draft',
@@ -213,10 +214,6 @@ const normalizeMatchText = (value) => normalizeText(value).toLowerCase().replace
 
 const digitsOnly = (value) => normalizeText(value).replace(/\D/g, '')
 
-const compactGhanaCardValue = (value) => normalizeText(value).toUpperCase().replace(/[\s-]/g, '')
-
-const isGhanaCardNumber = (value) => compactGhanaCardValue(value).startsWith('GHA')
-
 const normalizeNhiaMemberNumber = (value) => {
   const memberNumber = normalizeText(value)
   if (!memberNumber) return ''
@@ -227,7 +224,7 @@ const normalizeNhiaMemberNumber = (value) => {
 
   const digits = digitsOnly(compactGhanaCardValue(memberNumber).slice(3))
   return digits.length === DEFAULT_GHANA_CARD_DIGITS
-    ? `GHA-${digits.slice(0, 9)}-${digits.slice(9)}`
+    ? `${getGhanaCardPrefix(memberNumber)}-${digits.slice(0, 9)}-${digits.slice(9)}`
     : compactGhanaCardValue(memberNumber)
 }
 
@@ -341,17 +338,18 @@ const assertValidMemberNumber = (value, settings = {}) => {
   settings = settings || {}
   const memberNumber = assertRequiredText(value, 'NHIA member number or Ghana Card number')
 
-  if (isGhanaCardNumber(memberNumber)) {
+  const ghanaCardPrefix = getGhanaCardPrefix(memberNumber)
+  if (ghanaCardPrefix) {
     const compact = compactGhanaCardValue(memberNumber)
     const digits = digitsOnly(compact.slice(3))
     const requiredDigits = toDigitLength(settings.ghanaCardDigits, DEFAULT_GHANA_CARD_DIGITS)
 
-    if (!/^GHA\d+$/.test(compact)) {
-      throw new Error('Ghana Card number must start with GHA and contain only digits after the prefix.')
+    if (!/^[A-Z]{3}\d+$/.test(compact)) {
+      throw new Error(`Ghana Card number must start with ${ghanaCardPrefix} and contain only digits after the prefix.`)
     }
 
     if (digits.length !== requiredDigits) {
-      throw new Error(`Ghana Card number must contain exactly ${requiredDigits} digits after GHA.`)
+      throw new Error(`Ghana Card number must contain exactly ${requiredDigits} digits after ${ghanaCardPrefix}.`)
     }
 
     return normalizeNhiaMemberNumber(memberNumber)
@@ -359,7 +357,7 @@ const assertValidMemberNumber = (value, settings = {}) => {
 
   const requiredDigits = toDigitLength(settings.nhisMemberDigits, DEFAULT_NHIS_MEMBER_DIGITS)
   if (!/^\d+$/.test(memberNumber)) {
-    throw new Error('NHIS member number must contain digits only, or enter a Ghana Card number starting with GHA.')
+    throw new Error('NHIS member number must contain digits only, or enter a Ghana Card number starting with GHA (or the three-letter country code, for foreign nationals).')
   }
 
   if (memberNumber.length !== requiredDigits) {
@@ -2907,7 +2905,8 @@ const mapNhiaMemberLookupResponse = (body) => {
   }
 }
 
-// Determine CardType for NHIA genCCC API: GHANACARD for GHA-xxxxxxxxx-x numbers, NHISCARD otherwise.
+// Determine CardType for NHIA genCCC API: GHANACARD for GHA-xxxxxxxxx-x numbers (or a foreign national's
+// country-code equivalent, such as KEN-xxxxxxxxx-x), NHISCARD otherwise.
 const getNhiaCardType = (memberNumber) =>
   isGhanaCardNumber(normalizeText(memberNumber)) ? 'GHANACARD' : 'NHISCARD'
 

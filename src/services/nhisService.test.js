@@ -1640,8 +1640,44 @@ describe('assessNhisClaimReadiness', () => {
     )
 
     expect(readiness.blockers).toContain(
-      'NHIS member number must contain digits only, or enter a Ghana Card number starting with GHA.'
+      'NHIS member number must contain digits only, or enter a Ghana Card number starting with GHA (or the three-letter country code, for foreign nationals).'
     )
+  })
+
+  it('accepts a foreign national Ghana Card that carries a country code instead of GHA', () => {
+    for (const memberNo of ['SWZ-7297126385', 'KEN 7292382520', 'KEN-729238252-0']) {
+      const readiness = assessNhisClaimReadiness({ ...baseClaim, memberNo }, [baseMedicine])
+
+      expect(readiness.blockers.filter((blocker) => /member number|Ghana Card number/i.test(blocker))).toEqual([])
+    }
+  })
+
+  it('still requires a numeric HIN for foreign national Ghana Card claims before final export', () => {
+    const missingHin = assessNhisClaimReadiness(
+      { ...baseClaim, memberNo: 'KEN-729238252-0', hin: '' },
+      [baseMedicine],
+      { finalSubmission: true }
+    )
+    const withHin = assessNhisClaimReadiness(
+      { ...baseClaim, memberNo: 'KEN-729238252-0', hin: '46265798' },
+      [baseMedicine],
+      { finalSubmission: true }
+    )
+    const hinBlocker =
+      'Ghana Card-linked claims must have the numeric NHIS/HIN membership number in the HIN field before CXF export.'
+
+    expect(missingHin.blockers).toContain(hinBlocker)
+    expect(withHin.blockers).not.toContain(hinBlocker)
+  })
+
+  it('rejects a mistyped country code and a wrong digit count on a foreign Ghana Card', () => {
+    const typo = assessNhisClaimReadiness({ ...baseClaim, memberNo: 'KXN-729238252-0' }, [baseMedicine])
+    const shortCard = assessNhisClaimReadiness({ ...baseClaim, memberNo: 'KEN-72923825' }, [baseMedicine])
+
+    expect(typo.blockers).toContain(
+      'NHIS member number must contain digits only, or enter a Ghana Card number starting with GHA (or the three-letter country code, for foreign nationals).'
+    )
+    expect(shortCard.blockers).toContain('Ghana Card number must contain exactly 10 digits after KEN.')
   })
 
   it('allows up to ten hospital diagnoses and blocks more than ten', () => {

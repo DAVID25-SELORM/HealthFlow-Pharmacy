@@ -7,7 +7,7 @@
   "edgeFunctionCount": 7,
   "testFileCount": 148,
   "criticalFiles": {
-    "src/services/nhisService.js": "eaafab36280742081a6d6a209b5ce319cc5c53708fe66abc13f5507964553153",
+    "src/services/nhisService.js": "1382c84c1b3056ab82c79c736af763e3b50f0057fb8b23207d09929f5a30441c",
     "src/context/AuthContext.jsx": "0df048a03e1bf786d13d289bea4ccbb42167cccb46bba560cc50fff960aab258",
     "src/services/recycleBinService.js": "94f0fd814bda811b3c234769426d57257a0f8120e90df8bffc87ae9ebfbcabe9",
     "src/services/offlineInstallerReleaseService.js": "d656396c7cce60b3e007ffec4f4aa4f8d63f931ab022cbef3cdcdc02755c9c13",
@@ -72,5 +72,10 @@
     "date": "2026-10-21",
     "impactReport": "docs/nehfams-production-enablement.md",
     "description": "Version-bound validation with live facility preflight; routine activation and attendance ledger claim linkage."
+  },
+  "pendingDuplicateExportPolicy": {
+    "date": "2026-11-12",
+    "impactReport": "docs/nhis-duplicate-export-policy-impact-2026-11-12.md",
+    "description": "Organization-scoped administrator opt-in for duplicate NHIS exports; default remains blocked and export audit is recorded."
   }
 }

@@ -1414,6 +1414,32 @@ const _assertNoDuplicateNhisClaimsForTransfer = (claims = []) => {
   }
 }
 
+// Duplicate exports remain blocked unless the organization explicitly enables
+// the opt-in policy. A missing/unavailable policy is fail-closed.
+export const getNhisDuplicateExportPolicy = async (organizationId) => {
+  const orgId = normalizeText(organizationId)
+  if (!orgId || !supabase) return { organization_id: orgId, allow_duplicate_exports: false }
+  try {
+    const { data, error } = await supabase.rpc('get_nhis_duplicate_export_policy', { p_org: orgId })
+    if (error) throw error
+    return data || { organization_id: orgId, allow_duplicate_exports: false }
+  } catch (error) {
+    console.warn('[NHIS] Duplicate export policy unavailable; keeping duplicates blocked.', error)
+    return { organization_id: orgId, allow_duplicate_exports: false, unavailable: true }
+  }
+}
+
+export const saveNhisDuplicateExportPolicy = async (organizationId, allowDuplicateExports) => {
+  const orgId = normalizeText(organizationId)
+  if (!orgId || !supabase) throw new Error('An organization is required to change duplicate export policy.')
+  const { data, error } = await supabase.rpc('save_nhis_duplicate_export_policy', {
+    p_org: orgId,
+    p_allow_duplicate_exports: Boolean(allowDuplicateExports),
+  })
+  if (error) throw error
+  return data || { organization_id: orgId, allow_duplicate_exports: Boolean(allowDuplicateExports) }
+}
+
 const DIAGNOSIS_TREATMENT_RULES = [
   {
     label: 'Malaria',
@@ -10587,6 +10613,9 @@ const getNhisExportClaimsAndBlockers = async (options = {}) => {
     !exportableStatuses.includes(normalizeText(claim.status).toLowerCase())
   )
   const organizationType = normalizeOrganizationType(options.organizationType)
+  const duplicateExportPolicy = await getNhisDuplicateExportPolicy(
+    options.organizationId || options.organization_id
+  )
   const blockerOptions = {
     ...options,
     format,
@@ -10622,6 +10651,8 @@ const getNhisExportClaimsAndBlockers = async (options = {}) => {
     organizationType,
     duplicateGroups,
     reviewedDuplicateGroups,
+    duplicateExportsAllowed: duplicateExportPolicy.allow_duplicate_exports === true,
+    duplicateExportPolicy,
     exportBlockingIssues,
   }
 }
@@ -10647,7 +10678,7 @@ export const prepareNhisClaimsExport = async (options = {}) => {
   const preparedOptions = { ...options, exportTiming }
   const readiness = await getNhisExportClaimsAndBlockers(preparedOptions)
   const durationRepairReview = buildNhisDurationRepairReview(readiness.claims)
-  if (readiness.duplicateGroups.length || readiness.exportBlockingIssues.length) {
+  if ((readiness.duplicateGroups.length && !readiness.duplicateExportsAllowed) || readiness.exportBlockingIssues.length) {
     exportTiming.mark('skipping warning checks due to blockers', {
       duplicateGroupCount: readiness.duplicateGroups.length,
       blockerCount: readiness.exportBlockingIssues.length,
@@ -10681,7 +10712,7 @@ export const checkNhisExportReadiness = async (options = {}) => {
   if (durationRepairReview.repairRows.length) {
     throw new Error(`${durationRepairReview.repairRows.length} medicine duration value(s) require repair before export.`)
   }
-  if (readiness.duplicateGroups.length) {
+  if (readiness.duplicateGroups.length && !readiness.duplicateExportsAllowed) {
     throw createNhisDuplicateClaimsError(readiness.duplicateGroups, {
       exportBlockingIssues: readiness.exportBlockingIssues,
     })
@@ -10705,6 +10736,7 @@ export const exportNhisClaimsFile = async (options = {}) => {
     claims,
     organizationType,
     duplicateGroups,
+    duplicateExportsAllowed = false,
     exportBlockingIssues,
     durationRepairReview,
     exportTiming,
@@ -10719,7 +10751,7 @@ export const exportNhisClaimsFile = async (options = {}) => {
       period: period.label,
     })
   }
-  if (duplicateGroups.length) {
+  if (duplicateGroups.length && !duplicateExportsAllowed) {
     throw createNhisDuplicateClaimsError(duplicateGroups, { exportBlockingIssues })
   }
   if (exportBlockingIssues.length) {
