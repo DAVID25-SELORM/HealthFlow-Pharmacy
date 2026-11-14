@@ -931,6 +931,7 @@ const READINESS_CATEGORY_LABELS = {
   prescriber: 'Prescriber',
   diagnosis: 'Diagnosis',
   clinical: 'Clinical',
+  early_refill: 'Early refill',
   tariff: 'Tariff/G-DRG',
   medicine: 'Medicine',
   other: 'Other',

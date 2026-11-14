@@ -11,6 +11,7 @@ export const READINESS_FILTERS = [
   { id: 'prescriber', label: 'Prescriber' },
   { id: 'diagnosis', label: 'Diagnosis' },
   { id: 'clinical', label: 'Clinical rules' },
+  { id: 'early_refill', label: 'Early refill' },
   { id: 'tariff', label: 'Tariff/G-DRG' },
   { id: 'medicine', label: 'Medicine' },
   { id: 'other', label: 'Other' },
@@ -45,7 +46,7 @@ export const getReadinessIssueCategories = (issue = {}, { isHospital = false } =
   if (/\battach|attachment|prescription file|scanned|pdf|jpeg|png|document type\b/.test(text)) {
     categories.add('attachment')
   }
-  if (/\bhin|ghana card|member\/card|member identifier|member no|membership number|card serial\b/.test(text)) {
+  if (/\bhin|ghana card|member\/card|member identifier|member no|member number|membership number|card serial\b/.test(text)) {
     categories.add('identifier')
   }
   if (/\bverify|verified|unverified\b/.test(text)) {
@@ -54,13 +55,16 @@ export const getReadinessIssueCategories = (issue = {}, { isHospital = false } =
   if (/\bprescriber|physician|provider|referral|ccc|authorization|authorisation\b/.test(text)) {
     categories.add('prescriber')
   }
-  if (isHospital && /\bdiagnosis|icd|treatment\b(?!\s+days?\b)/.test(text)) {
+  if (isHospital && /\bdiagnosis|icd|treatment\b(?!\s+(?:days?|coverage)\b)/.test(text)) {
     categories.add('diagnosis')
   }
   if (/\bclinical|risk|critical|age-restricted|gender|pregnancy|obstetric|prostate|infection|antibiotic|antimicrobial|chronic|specialist|supporting diagnosis|supporting malaria|diagnosis-lab|lab review|typhoid|widal|bp reading|glucose|hba1c\b/.test(text)) {
     categories.add('clinical')
   }
-  if (/\bg-drg|gdrg|tariff|service \d+|procedure|investigation|laboratory|lab|provider class|facility group|catering\b/.test(text)) {
+  if (/\bearly refill\b/.test(text)) {
+    categories.add('early_refill')
+  }
+  if (/\bg-drg|gdrg|tariff|service \d+|procedure|investigation|laboratory|\blabs?\b|provider class|facility group|catering\b/.test(text)) {
     categories.add('tariff')
   }
   if (/\bmedicine|drug|quantity|dispensed|served|dosage|level\b/.test(text)) {
