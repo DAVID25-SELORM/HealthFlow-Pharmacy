@@ -10790,7 +10790,7 @@ const Nhis = () => {
                 </label>
                 <small>
                   {canManageEarlyRefillExportPolicy
-                    ? 'When ticked, claims held back only by an "early refill review" or "same medicine code" alert are included in the export. These are medicines served earlier whose supply has not yet run out. NHIA may reject or reduce payment for an early refill. A "similar active ingredient" alert, an incomplete earlier supply and any other blocker still stop the claim. This setting applies to this pharmacy only.'
+                    ? 'When ticked, claims held back only by an "early refill review", "same medicine code" or "similar active ingredient" alert are included in the export. These are medicines served earlier whose supply has not yet run out. NHIA may reject or reduce payment for an early refill. An incomplete earlier supply (completion or partial supply) and any other blocker still stop the claim. This setting applies to this pharmacy only.'
                     : 'Only an organization administrator can change this pharmacy setting. Early refill claims remain blocked.'}
                 </small>
               </div>
