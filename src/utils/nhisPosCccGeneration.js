@@ -1,6 +1,7 @@
 import { getNhiaMemberFeedbackMessage } from './nhiaFeedback'
 import { cccResultMessage } from './cccResultMessage'
 import { isGhanaCardNumber } from './nhiaMemberNumber'
+import { normalizeAttendanceNewCcc, normalizeAttendanceVerification } from './nhiaAttendanceValues'
 
 // NHIS-008: the till can ask NHIA for a CC code with an explicit click, for claims
 // staff only, through the branch server's existing CC route. Nothing is generated
@@ -104,4 +105,91 @@ export const interpretNhisPosCccResult = (result) => {
   if (!code) return { status: 'error', message: 'No CCC/CC code was returned.' }
   if (code.length !== 5) return { status: 'error', message: 'NHIA returned a CCC/CC code that is not exactly 5 digits.' }
   return { status: 'success', code, message: cccResultMessage(result) }
+}
+
+// NHIS-008: the attendance details NHIA returns with a generated code (the NHIA portal's
+// "Attendance Result" screen: HIN, CCC, date, attendance ID, new CCC, attendance type,
+// member, gender, date of birth, start and end dates) are carried into the NHIS review
+// claim, as the NHIS claim form does. They are trusted only when this till generated the
+// code just now: a code typed by hand, a test attendance or a reply for another member
+// carries nothing.
+const clean = (value) => String(value ?? '').trim()
+const cleanDate = (value) => clean(value).slice(0, 10)
+
+export const buildNhisPosAttendanceDetails = (result, { memberNumber = '' } = {}) => {
+  if (!result || result.environment === 'test' || result.eligibilityError) return null
+  if (result.status === 'pending' || result.source === 'pending') return null
+
+  const details = result.memberDetails
+  if (!details || typeof details !== 'object') return null
+
+  const code = normalizeCode(result.ccCode)
+  if (code.length !== 5) return null
+  // The reply must describe the member this sale was for, when NHIA says which member that is.
+  const repliedMember = clean(details.memberNumber).toUpperCase()
+  const requestedMember = clean(memberNumber).toUpperCase()
+  if (repliedMember && requestedMember && repliedMember !== requestedMember) return null
+
+  return {
+    ccCode: code,
+    hin: clean(details.hin),
+    memberName: clean(details.memberName),
+    gender: clean(details.gender),
+    dateOfBirth: cleanDate(details.dateOfBirth),
+    eligibilityStartDate: cleanDate(details.eligibilityStartDate),
+    eligibilityEndDate: cleanDate(details.eligibilityEndDate),
+    attendanceDate: cleanDate(details.attendanceDate),
+    authId: clean(details.authId),
+    authType: clean(details.authType) || 'NHIS',
+    newCcc: normalizeAttendanceNewCcc(details.newCcc),
+    attendanceRequestId: clean(details.attendanceRequestId),
+    transactionId: clean(details.transactionId),
+    attendanceVerificationStatus: normalizeAttendanceVerification(details.attendanceVerificationStatus),
+    attendanceVerificationSource: clean(details.attendanceVerificationSource),
+  }
+}
+
+// The fields added to the review claim. Only while the code in the box is still the one NHIA
+// generated: once the cashier changes the code, the details no longer describe it.
+// The patient's own record stays the identity of the sale: NHIA's gender and date of birth fill
+// only blanks, and the name is never replaced. NHIA's HIN fills a blank HIN only, so a
+// different HIN never overwrites the patient record (the claim save writes the HIN back to it).
+// Nothing is carried when the attendance date is not the sale's service date.
+export const getNhisPosAttendanceClaimFields = (details, { currentCode = '', patient = {}, serviceDate = '' } = {}) => {
+  if (!details || normalizeCode(currentCode) !== details.ccCode) return {}
+  // The attendance belongs to one day. A sale completed on another day (for example after
+  // midnight) must not claim it as its own attendance.
+  if (details.attendanceDate && cleanDate(serviceDate) && details.attendanceDate !== cleanDate(serviceDate)) return {}
+
+  const fields = {}
+  if (details.hin && !clean(patient?.nhis_hin)) fields.hin = details.hin
+  if (!clean(patient?.gender) && details.gender) fields.gender = details.gender
+  if (!clean(patient?.date_of_birth) && details.dateOfBirth) fields.dateOfBirth = details.dateOfBirth
+  if (details.authId) fields.authId = details.authId
+  if (details.authType) fields.authType = details.authType
+  if (details.newCcc) fields.newCcc = details.newCcc
+  if (details.attendanceRequestId) fields.attendanceRequestId = details.attendanceRequestId
+  if (details.attendanceDate) fields.nhiaAttendanceDate = details.attendanceDate
+  if (details.eligibilityStartDate) fields.nhiaEligibilityStartDate = details.eligibilityStartDate
+  if (details.eligibilityEndDate) fields.nhiaEligibilityEndDate = details.eligibilityEndDate
+  if (details.transactionId) fields.nhiaTransactionId = details.transactionId
+  if (details.attendanceVerificationStatus) fields.attendanceVerificationStatus = details.attendanceVerificationStatus
+  if (details.attendanceVerificationSource) fields.attendanceVerificationSource = details.attendanceVerificationSource
+  return fields
+}
+
+// A line for the review claim notes when NHIA and the patient record disagree, so the
+// claims officer sees it before submission.
+export const buildNhisPosAttendanceMismatchNote = (details, { currentCode = '', patient = {} } = {}) => {
+  if (!details || normalizeCode(currentCode) !== details.ccCode) return ''
+  const differences = []
+  const recordedHin = clean(patient?.nhis_hin)
+  if (recordedHin && details.hin && recordedHin.toUpperCase() !== details.hin.toUpperCase()) differences.push('HIN')
+  const recordedDob = cleanDate(patient?.date_of_birth)
+  if (recordedDob && details.dateOfBirth && recordedDob !== details.dateOfBirth) differences.push('date of birth')
+  const recordedGender = clean(patient?.gender).charAt(0).toUpperCase()
+  const nhiaGender = details.gender.charAt(0).toUpperCase()
+  if (recordedGender && nhiaGender && recordedGender !== nhiaGender) differences.push('gender')
+  if (!differences.length) return ''
+  return `NHIA attendance differs from the patient record: ${differences.join(', ')}. Check before submission.`
 }
