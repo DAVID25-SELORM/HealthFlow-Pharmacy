@@ -21,6 +21,8 @@ import { getBranches } from '../services/branchService'
 import { getOnlinePaymentSettings, initiateOnlinePayment } from '../services/paymentService'
 import {
   closeBranchPosSession,
+  generateNhiaCcCode as generateBranchNhiaCcCode,
+  getBranchCccPolicy,
   getBranchInventory,
   getBranchPosSession,
   getBranchPosBootstrap,
@@ -55,6 +57,7 @@ import {
 } from '../services/offlinePosCache'
 import { clearUnsavedDraft, loadUnsavedDraft, saveUnsavedDraft } from '../services/unsavedDraftRecovery'
 import { searchDrugs } from '../services/drugService'
+import { tryLogAuditEvent } from '../services/auditService'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
@@ -67,6 +70,13 @@ import {
   canOverrideNhisPosCcc,
   getNhisPosCccIssue,
 } from '../utils/nhisPosCccRule'
+import {
+  buildNhisPosCccContext,
+  canGenerateNhisCccAtPos,
+  canUseNhisPosCccGeneration,
+  getNhisPosCccUnavailableReason,
+  interpretNhisPosCccResult,
+} from '../utils/nhisPosCccGeneration'
 import { getInStockPosDrugs } from '../utils/posInventory'
 import {
   normalizeNhiaMemberNumber,
@@ -249,7 +259,14 @@ const Sales = () => {
   // NHIS-006: a manager, admin or claims officer may complete an NHIS sale without a
   // code, but must give a reason, which is written into the review claim notes.
   const [nhiaCccOverrideReason, setNhiaCccOverrideReason] = useState('')
+  // NHIS-008: explicit CC code generation at the till (claims staff only).
+  const [nhiaCccPolicy, setNhiaCccPolicy] = useState(null)
+  const [generatingNhiaCcc, setGeneratingNhiaCcc] = useState(false)
+  const nhiaCccRequestRef = useRef(0)
   const clearNhiaCccFields = useCallback(() => {
+    // A reply that is still on its way must not fill another patient's sale.
+    nhiaCccRequestRef.current += 1
+    setGeneratingNhiaCcc(false)
     setNhiaCccNo('')
     setNhiaCccOverrideReason('')
   }, [])
@@ -1196,6 +1213,22 @@ const Sales = () => {
   }, [cart, discountType, discountValue, draftOrganizationId, insuranceCoverage, nhiaCccNo, nhiaDiagnosis, nhiaDiagnosisDetails, patientId, patientTopUp, patientTopUpMethod, paymentEmail, paymentMethod, paymentPhone, paymentProvider, processing, received, showReceipt, user?.id])
   const selectedNhiaMemberNumber = getNhiaMemberNumber(selectedPatientForSale)
 
+  // NHIS-008: the Generate button is for claims staff, who can also load the facility CC settings.
+  const canGenerateNhiaCccHere = canGenerateNhisCccAtPos({ role, canManageClaims: profile?.can_manage_claims === true })
+  useEffect(() => {
+    if (paymentMethod !== 'nhia' || !localBranchServerAvailable || !canGenerateNhiaCccHere) {
+      setNhiaCccPolicy(null)
+      return undefined
+    }
+    let active = true
+    const load = () => getBranchCccPolicy()
+      .then((result) => { if (active) setNhiaCccPolicy(result?.policy || null) })
+      .catch(() => { if (active) setNhiaCccPolicy(null) })
+    void load()
+    const interval = setInterval(load, 60000)
+    return () => { active = false; clearInterval(interval) }
+  }, [paymentMethod, localBranchServerAvailable, canGenerateNhiaCccHere])
+
   useEffect(() => {
     void refreshOfflineSalesSummary()
     return subscribeOfflineSalesQueue(() => {
@@ -1624,6 +1657,83 @@ const Sales = () => {
   // React supplies the click event as the first argument to an onClick handler.
   // Accept an explicit options object so a click event can never be mistaken for
   // confirmation and bypass the review screen.
+  // NHIS-008: ask NHIA for a CC code. Runs only from the button below; nothing calls it
+  // automatically. The branch server identifies the facility and branch itself and only lets
+  // claims staff through. An attendance already confirmed for this member today is reused.
+  const handleGenerateNhiaCcc = async () => {
+    if (generatingNhiaCcc || processing) return
+
+    const memberNumber = normalizeNhiaMemberNumber(selectedNhiaMemberNumber)
+    if (!selectedPatientForSale || !memberNumber) {
+      notify('Select the NHIS patient, with a member number or Ghana Card, before generating a CC code.', 'warning')
+      return
+    }
+    const memberIssue = validateNhiaMemberNumber(memberNumber)
+    if (memberIssue) {
+      notify(memberIssue, 'warning')
+      return
+    }
+    if (!canUseNhisPosCccGeneration(nhiaCccPolicy)) {
+      notify(getNhisPosCccUnavailableReason(nhiaCccPolicy), 'info')
+      return
+    }
+
+    nhiaCccRequestRef.current += 1
+    const requestId = nhiaCccRequestRef.current
+    const { surname, otherNames } = splitPatientNameForNhis(selectedPatientForSale)
+    const context = buildNhisPosCccContext({
+      memberNumber,
+      hin: selectedPatientForSale.nhis_hin || '',
+      patientName: `${surname} ${otherNames || ''}`,
+      serviceDate: getNhisCalendarDate(new Date()),
+      totalAmount: calculateTotal(),
+      organizationType,
+    })
+    const audit = (action, details = {}) => tryLogAuditEvent({
+      eventType: 'nhis_claim.ccc_generation',
+      entityType: 'nhis_claims',
+      entityId: null,
+      action,
+      details: {
+        route: 'local_branch',
+        origin: 'pos',
+        card_type: context.cardType,
+        user_id: user?.id || '',
+        role,
+        ...details,
+      },
+    })
+
+    try {
+      setGeneratingNhiaCcc(true)
+      notify('NHIA CCC verification started.', 'info')
+      await audit('generate_ccc_started')
+      const result = await generateBranchNhiaCcCode(context)
+      if (requestId !== nhiaCccRequestRef.current) {
+        notify('The patient or sale changed during verification. Verify the CC code again for the current patient.', 'warning')
+        return
+      }
+
+      const outcome = interpretNhisPosCccResult(result)
+      if (outcome.status === 'error') throw new Error(outcome.message)
+      if (outcome.status !== 'success') {
+        notify(outcome.message, outcome.status === 'eligibility' ? 'warning' : 'info')
+        return
+      }
+
+      setNhiaCccNo(outcome.code)
+      await audit('generate_ccc_succeeded', { provider: result?.source || '' })
+      notify(outcome.message, 'success')
+    } catch (error) {
+      if (requestId !== nhiaCccRequestRef.current) return
+      const message = error?.message || 'NHIA could not generate the CC code. Try again, or type the 5-digit code.'
+      await audit('generate_ccc_failed', { message })
+      notify(message, 'error')
+    } finally {
+      if (requestId === nhiaCccRequestRef.current) setGeneratingNhiaCcc(false)
+    }
+  }
+
   const handleCompleteSale = async ({ confirmed = false } = {}) => {
     if (!cart.length) {
       return
@@ -3423,9 +3533,26 @@ const Sales = () => {
                         maxLength={5}
                         pattern="[0-9]{0,5}"
                         value={nhiaCccNo}
+                        disabled={generatingNhiaCcc}
                         onChange={(event) => setNhiaCccNo(normalizeNhisCcCode(event.target.value).slice(0, 5))}
                         placeholder="5-digit code from NHIA"
                       />
+                      {canGenerateNhiaCccHere && (
+                        <>
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            disabled={!canUseNhisPosCccGeneration(nhiaCccPolicy) || generatingNhiaCcc || processing || !selectedNhiaMemberNumber}
+                            title={!canUseNhisPosCccGeneration(nhiaCccPolicy) ? getNhisPosCccUnavailableReason(nhiaCccPolicy) : undefined}
+                            onClick={handleGenerateNhiaCcc}
+                          >
+                            {generatingNhiaCcc ? 'Validating...' : 'Generate/Validate CC Code via NHIA'}
+                          </button>
+                          {!canUseNhisPosCccGeneration(nhiaCccPolicy) && (
+                            <small>{getNhisPosCccUnavailableReason(nhiaCccPolicy)}</small>
+                          )}
+                        </>
+                      )}
                     </div>
                   )}
                   {isNhiaClaimSale && canOverrideNhisPosCcc(role) && !normalizeNhisCcCode(nhiaCccNo) && (
