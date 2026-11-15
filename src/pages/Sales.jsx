@@ -76,6 +76,9 @@ import {
   canUseNhisPosCccGeneration,
   getNhisPosCccUnavailableReason,
   interpretNhisPosCccResult,
+  buildNhisPosAttendanceDetails,
+  getNhisPosAttendanceClaimFields,
+  buildNhisPosAttendanceMismatchNote,
 } from '../utils/nhisPosCccGeneration'
 import { getInStockPosDrugs } from '../utils/posInventory'
 import {
@@ -262,6 +265,9 @@ const Sales = () => {
   // NHIS-008: explicit CC code generation at the till (claims staff only).
   const [nhiaCccPolicy, setNhiaCccPolicy] = useState(null)
   const [generatingNhiaCcc, setGeneratingNhiaCcc] = useState(false)
+  // The attendance details NHIA returned with the code generated here. Copied into the
+  // review claim only while the code in the box is still that generated code.
+  const [nhiaAttendanceDetails, setNhiaAttendanceDetails] = useState(null)
   const nhiaCccRequestRef = useRef(0)
   const clearNhiaCccFields = useCallback(() => {
     // A reply that is still on its way must not fill another patient's sale.
@@ -269,6 +275,7 @@ const Sales = () => {
     setGeneratingNhiaCcc(false)
     setNhiaCccNo('')
     setNhiaCccOverrideReason('')
+    setNhiaAttendanceDetails(null)
   }, [])
   const posDraftRecoveryReadyRef = useRef(false)
   const [loading, setLoading] = useState(true)
@@ -1547,6 +1554,13 @@ const Sales = () => {
     const servedAt = saleDate || new Date().toISOString()
     const serviceDate = getNhisCalendarDate(servedAt)
     const { surname, otherNames } = splitPatientNameForNhis(selectedPatientForSale)
+    const nhisPosAttendanceContext = {
+      currentCode: nhiaCccNo,
+      patient: selectedPatientForSale,
+      serviceDate,
+    }
+    const nhisPosAttendanceFields = getNhisPosAttendanceClaimFields(nhiaAttendanceDetails, nhisPosAttendanceContext)
+    const nhisPosAttendanceNote = buildNhisPosAttendanceMismatchNote(nhiaAttendanceDetails, nhisPosAttendanceContext)
     const medicines = settlementLines
       .filter((item) => item.nhisCoveredAmount > 0)
       .map((item) => {
@@ -1587,6 +1601,8 @@ const Sales = () => {
         dateOfBirth: selectedPatientForSale.date_of_birth || '',
         patientAddress: selectedPatientForSale.address || '',
         cccNo: normalizeNhisCcCode(nhiaCccNo).slice(0, 5),
+        // NHIS-008: attendance details from the NHIA reply for the code generated here.
+        ...nhisPosAttendanceFields,
         diagnosis: isHospital ? nhiaDiagnosis.trim() : '',
         diagnosisDetails: isHospital ? nhiaDiagnosisDetails : [],
         serviceDate,
@@ -1616,6 +1632,7 @@ const Sales = () => {
           policyAdjustmentAmount > 0
             ? `NHIS policy adjustment (not charged to patient): GHS ${policyAdjustmentAmount.toFixed(2)}`
             : null,
+          nhisPosAttendanceNote || null,
           buildNhisPosCccOverrideNote({
             cccNo: nhiaCccNo,
             role,
@@ -1722,6 +1739,7 @@ const Sales = () => {
       }
 
       setNhiaCccNo(outcome.code)
+      setNhiaAttendanceDetails(buildNhisPosAttendanceDetails(result, { memberNumber }))
       await audit('generate_ccc_succeeded', { provider: result?.source || '' })
       notify(outcome.message, 'success')
     } catch (error) {
