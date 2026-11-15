@@ -17,9 +17,15 @@ only claims worded like "...has early refill review...".
   "Export blocked: ... early refill" blocker. This is unchanged by default.
 - A new organization setting `allow_early_refill_exports` (default `false`) lets
   an administrator or super administrator release alerts whose `match_type` is
-  `early_refill_review`. Alerts of every other type (similar active ingredient,
-  possible completion supply, previous partial supply, same medicine code) keep
-  blocking, as does every other export blocker on the claim.
+  `early_refill_review` (7 or more days of the earlier supply remain) or
+  `exact_code` ("same medicine code": same medicine, fewer than 7 days remain).
+  The check assigns these only when the earlier claim was fully supplied.
+  Alerts of every other type (similar active ingredient, possible completion
+  supply, previous partial supply) keep blocking, as does every other export
+  blocker on the claim.
+- Amended 2026-11-15: the first version released only `early_refill_review`.
+  A shop ticked the box and still saw "Early refill" chip items, which were
+  `exact_code` alerts, so `exact_code` was added. No database change.
 - The setting is fail-closed: a missing row, an unreadable policy or a missing
   RPC all mean "blocked".
 - Every change to the setting is recorded in

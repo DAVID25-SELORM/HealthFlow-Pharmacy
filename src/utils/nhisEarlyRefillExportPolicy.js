@@ -1,19 +1,23 @@
-// NHIS-007: "early refill review" export blockers can be released per pharmacy.
+// NHIS-007: "early refill" export blockers can be released per pharmacy.
 //
 // During export each claim's medicines go through the active-medication check.
 // Every alert becomes an "Export blocked: ... early refill" blocker. An
-// organization administrator may allow ONE alert type through: the
-// `early_refill_review` match type (the text "has early refill review"). All
-// other alert types (same ingredient, completion supply, partial supply, same
-// code) and every other export blocker keep blocking, whatever the setting.
-export const NHIS_EARLY_REFILL_RELEASABLE_MATCH_TYPE = 'early_refill_review'
+// organization administrator may allow TWO alert types through:
+//   - `early_refill_review`: 7 or more days of the earlier supply remain.
+//   - `exact_code` ("same medicine code"): the same medicine was served and
+//     fewer than 7 days of that supply remain (a near-due refill).
+// The check sets these types only when the earlier claim was fully supplied;
+// completion and partial-supply alerts have their own types. All other alert
+// types (similar active ingredient, completion supply, partial supply) and
+// every other export blocker keep blocking, whatever the setting.
+export const NHIS_EARLY_REFILL_RELEASABLE_MATCH_TYPES = Object.freeze(['early_refill_review', 'exact_code'])
 
 const MAX_AUDIT_CLAIMS = 25
 
 const normalizeMatchType = (alert) => String(alert?.match_type ?? alert?.matchType ?? '').trim().toLowerCase()
 
-export const isNhisEarlyRefillReviewAlert = (alert) =>
-  normalizeMatchType(alert) === NHIS_EARLY_REFILL_RELEASABLE_MATCH_TYPE
+export const isNhisEarlyRefillReleasableAlert = (alert) =>
+  NHIS_EARLY_REFILL_RELEASABLE_MATCH_TYPES.includes(normalizeMatchType(alert))
 
 // Splits one claim's alerts into those that still block and those the policy releases.
 // With the policy off (or anything other than `true`), nothing is released.
@@ -24,7 +28,7 @@ export const splitNhisEarlyRefillAlerts = (alerts = [], { allow = false } = {}) 
   const blocking = []
   const released = []
   for (const alert of list) {
-    if (isNhisEarlyRefillReviewAlert(alert)) released.push(alert)
+    if (isNhisEarlyRefillReleasableAlert(alert)) released.push(alert)
     else blocking.push(alert)
   }
   return { blocking, released }

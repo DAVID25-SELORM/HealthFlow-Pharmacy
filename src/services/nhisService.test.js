@@ -8092,7 +8092,7 @@ describe('early refill export policy (NHIS-007)', () => {
     })
   })
 
-  it.each(['possible_completion_supply', 'partial_previous_supply', 'same_ingredient', 'exact_code'])(
+  it.each(['possible_completion_supply', 'partial_previous_supply', 'same_ingredient'])(
     'still blocks a %s alert even when the early refill policy is on',
     async (matchType) => {
       setUp({ policy: policyOf(true), alerts: [alertOf(matchType)] })
@@ -8102,6 +8102,22 @@ describe('early refill export policy (NHIS-007)', () => {
       expect(error).toMatchObject({ code: 'NHIS_READINESS_CLAIMS' })
     }
   )
+
+  it('releases a claim held back only by a same medicine code alert when the administrator policy is on', async () => {
+    setUp({ policy: policyOf(true), alerts: [alertOf('exact_code')] })
+
+    const readiness = await prepareNhisClaimsExport(exportOptions)
+    expect(readiness.exportBlockingIssues).toEqual([])
+    expect(readiness.releasedEarlyRefillClaims.claim_count).toBe(1)
+  })
+
+  it('keeps a same medicine code alert blocking export while the policy is off', async () => {
+    setUp({ policy: policyOf(false), alerts: [alertOf('exact_code')] })
+
+    const error = await readinessIssuesOf()
+
+    expect(error).toMatchObject({ code: 'NHIS_READINESS_CLAIMS' })
+  })
 
   it('releases only the early refill review alert when a claim also has another alert type', async () => {
     setUp({ policy: policyOf(true), alerts: [alertOf('early_refill_review'), alertOf('possible_completion_supply')] })

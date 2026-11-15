@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
-  NHIS_EARLY_REFILL_RELEASABLE_MATCH_TYPE,
+  NHIS_EARLY_REFILL_RELEASABLE_MATCH_TYPES,
   buildNhisEarlyRefillReleaseSummary,
-  isNhisEarlyRefillReviewAlert,
+  isNhisEarlyRefillReleasableAlert,
   splitNhisEarlyRefillAlerts,
 } from './nhisEarlyRefillExportPolicy'
 
@@ -10,7 +10,7 @@ const alert = (matchType, extra = {}) => ({ match_type: matchType, medicine_desc
 
 describe('splitNhisEarlyRefillAlerts (NHIS-007)', () => {
   it('releases nothing while the policy is off or not exactly true', () => {
-    const alerts = [alert('early_refill_review'), alert('same_ingredient')]
+    const alerts = [alert('early_refill_review'), alert('exact_code'), alert('same_ingredient')]
 
     for (const allow of [false, undefined, null, 'true', 1, 'yes']) {
       expect(splitNhisEarlyRefillAlerts(alerts, { allow })).toEqual({ blocking: alerts, released: [] })
@@ -18,30 +18,33 @@ describe('splitNhisEarlyRefillAlerts (NHIS-007)', () => {
     expect(splitNhisEarlyRefillAlerts(alerts)).toEqual({ blocking: alerts, released: [] })
   })
 
-  it('releases only the early refill review alert type when the policy is on', () => {
+  it('releases only the early refill review and same medicine code alert types when the policy is on', () => {
     const early = alert('early_refill_review')
+    const sameCode = alert('exact_code')
     const others = [
       alert('similar_active_ingredient'),
       alert('possible_completion_supply'),
       alert('partial_previous_supply'),
       alert('same_ingredient'),
-      alert('exact_code'),
+      alert('exact_code_extra'),
       alert(''),
       alert(undefined),
     ]
 
-    const { blocking, released } = splitNhisEarlyRefillAlerts([early, ...others], { allow: true })
+    const { blocking, released } = splitNhisEarlyRefillAlerts([early, sameCode, ...others], { allow: true })
 
-    expect(released).toEqual([early])
+    expect(released).toEqual([early, sameCode])
     expect(blocking).toEqual(others)
   })
 
   it('treats the match type case-insensitively and accepts a camelCase field', () => {
-    expect(isNhisEarlyRefillReviewAlert({ match_type: ' EARLY_REFILL_REVIEW ' })).toBe(true)
-    expect(isNhisEarlyRefillReviewAlert({ matchType: 'early_refill_review' })).toBe(true)
-    expect(isNhisEarlyRefillReviewAlert({ match_type: 'early_refill_review_extra' })).toBe(false)
-    expect(isNhisEarlyRefillReviewAlert(null)).toBe(false)
-    expect(NHIS_EARLY_REFILL_RELEASABLE_MATCH_TYPE).toBe('early_refill_review')
+    expect(isNhisEarlyRefillReleasableAlert({ match_type: ' EARLY_REFILL_REVIEW ' })).toBe(true)
+    expect(isNhisEarlyRefillReleasableAlert({ matchType: 'early_refill_review' })).toBe(true)
+    expect(isNhisEarlyRefillReleasableAlert({ match_type: ' Exact_Code ' })).toBe(true)
+    expect(isNhisEarlyRefillReleasableAlert({ match_type: 'same_ingredient' })).toBe(false)
+    expect(isNhisEarlyRefillReleasableAlert({ match_type: 'early_refill_review_extra' })).toBe(false)
+    expect(isNhisEarlyRefillReleasableAlert(null)).toBe(false)
+    expect([...NHIS_EARLY_REFILL_RELEASABLE_MATCH_TYPES]).toEqual(['early_refill_review', 'exact_code'])
   })
 
   it('tolerates missing or non-array input', () => {
@@ -53,7 +56,7 @@ describe('splitNhisEarlyRefillAlerts (NHIS-007)', () => {
   it('does not change the order of the alerts that keep blocking', () => {
     const a = alert('same_ingredient', { id: 'a' })
     const b = alert('early_refill_review', { id: 'b' })
-    const c = alert('exact_code', { id: 'c' })
+    const c = alert('similar_active_ingredient', { id: 'c' })
 
     expect(splitNhisEarlyRefillAlerts([a, b, c], { allow: true }).blocking.map((item) => item.id)).toEqual(['a', 'c'])
   })
