@@ -1415,7 +1415,7 @@ const _assertNoDuplicateNhisClaimsForTransfer = (claims = []) => {
   }
 }
 
-// NHIS-007: "early refill review" and "same medicine code" export blockers stay blocked unless an
+// NHIS-007: "early refill review", "same medicine code" and "similar active ingredient" export blockers stay blocked unless an
 // organization administrator explicitly enables the policy. A missing or
 // unavailable policy is fail-closed. Duplicate exports are no longer governed by
 // an organization policy: duplicate groups always require the per-group review.
@@ -5449,8 +5449,9 @@ const getNhisExportActiveMedicationBlockers = async (claims = [], options = {}) 
       .map((claim) => {
         const alerts = alertsByClaimId.get(normalizeText(claim.id)) || []
         if (!alerts.length) return null
-        // NHIS-007: an administrator may release "early refill review" and "same medicine
-        // code" alerts only; every other alert type keeps blocking the claim.
+        // NHIS-007: an administrator may release "early refill review", "same medicine
+        // code" and "similar active ingredient" alerts only; completion and partial
+        // supply alerts keep blocking the claim.
         const { blocking, released } = splitNhisEarlyRefillAlerts(alerts, {
           allow: options.allowEarlyRefillExports,
         })

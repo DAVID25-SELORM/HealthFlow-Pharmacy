@@ -18,14 +18,19 @@ only claims worded like "...has early refill review...".
 - A new organization setting `allow_early_refill_exports` (default `false`) lets
   an administrator or super administrator release alerts whose `match_type` is
   `early_refill_review` (7 or more days of the earlier supply remain) or
-  `exact_code` ("same medicine code": same medicine, fewer than 7 days remain).
+  `exact_code` ("same medicine code": same medicine, fewer than 7 days remain)
+  or `same_ingredient` ("similar active ingredient": same ingredient under
+  another code, for example a different pack size, fewer than 7 days remain).
   The check assigns these only when the earlier claim was fully supplied.
-  Alerts of every other type (similar active ingredient, possible completion
-  supply, previous partial supply) keep blocking, as does every other export
-  blocker on the claim.
+  Alerts of the other types (possible completion supply, previous partial
+  supply) keep blocking, as does every other export blocker on the claim.
 - Amended 2026-11-15: the first version released only `early_refill_review`.
   A shop ticked the box and still saw "Early refill" chip items, which were
   `exact_code` alerts, so `exact_code` was added. No database change.
+- Amended again 2026-11-15: West Point's heparin lines (HEPARIIN2 ampoule on
+  05 Sept, HEPARIIN3 vial on 07 Sept; the NHIA catalogue lists them as 5000
+  units/mL in 1 mL and 5 mL) are labelled `same_ingredient` by migration
+  20261009001000, so `same_ingredient` was added. No database change.
 - The setting is fail-closed: a missing row, an unreadable policy or a missing
   RPC all mean "blocked".
 - Every change to the setting is recorded in

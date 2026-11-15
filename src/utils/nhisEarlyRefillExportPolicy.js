@@ -2,15 +2,21 @@
 //
 // During export each claim's medicines go through the active-medication check.
 // Every alert becomes an "Export blocked: ... early refill" blocker. An
-// organization administrator may allow TWO alert types through:
+// organization administrator may allow THREE alert types through:
 //   - `early_refill_review`: 7 or more days of the earlier supply remain.
 //   - `exact_code` ("same medicine code"): the same medicine was served and
 //     fewer than 7 days of that supply remain (a near-due refill).
+//   - `same_ingredient` ("similar active ingredient"): the same ingredient
+//     under another code (for example a different pack size) was served and
+//     fewer than 7 days of that supply remain.
 // The check sets these types only when the earlier claim was fully supplied;
-// completion and partial-supply alerts have their own types. All other alert
-// types (similar active ingredient, completion supply, partial supply) and
+// completion and partial-supply alerts have their own types. Those two and
 // every other export blocker keep blocking, whatever the setting.
-export const NHIS_EARLY_REFILL_RELEASABLE_MATCH_TYPES = Object.freeze(['early_refill_review', 'exact_code'])
+export const NHIS_EARLY_REFILL_RELEASABLE_MATCH_TYPES = Object.freeze([
+  'early_refill_review',
+  'exact_code',
+  'same_ingredient',
+])
 
 const MAX_AUDIT_CLAIMS = 25
 
