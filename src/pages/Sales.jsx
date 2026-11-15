@@ -12,9 +12,11 @@ import { createClaim } from '../services/claimsService'
 import {
   checkNhisActiveMedicationOverlap,
   createNhisClaim,
+  generateHostedNhiaCcCode,
   getNhiaApiSettings,
   normalizeNhisCcCode,
 } from '../services/nhisService'
+import { cccIntegration } from '../services/cccIntegrationService'
 import { getAllPatients } from '../services/patientService'
 import { getPharmacySettings } from '../services/settingsService'
 import { getBranches } from '../services/branchService'
@@ -74,6 +76,7 @@ import {
   buildNhisPosCccContext,
   canGenerateNhisCccAtPos,
   canUseNhisPosCccGeneration,
+  getNhisPosCccRoute,
   getNhisPosCccUnavailableReason,
   interpretNhisPosCccResult,
   buildNhisPosAttendanceDetails,
@@ -1222,19 +1225,26 @@ const Sales = () => {
 
   // NHIS-008: the Generate button is for claims staff, who can also load the facility CC settings.
   const canGenerateNhiaCccHere = canGenerateNhisCccAtPos({ role, canManageClaims: profile?.can_manage_claims === true })
+  // The same two routes as the NHIS claim form: the local branch server when this facility
+  // runs one, otherwise the cloud. A facility whose branch server is offline has no route.
+  const nhiaCccRoute = getNhisPosCccRoute({ branchServerModeEnabled, localBranchServerAvailable })
+  const nhiaCccOrganizationId = profile?.organization_id || organization?.id || organization?.organization_id || ''
   useEffect(() => {
-    if (paymentMethod !== 'nhia' || !localBranchServerAvailable || !canGenerateNhiaCccHere) {
+    if (paymentMethod !== 'nhia' || !canGenerateNhiaCccHere || nhiaCccRoute === 'unavailable'
+      || (nhiaCccRoute === 'cloud' && !nhiaCccOrganizationId)) {
       setNhiaCccPolicy(null)
       return undefined
     }
     let active = true
-    const load = () => getBranchCccPolicy()
+    const load = () => (nhiaCccRoute === 'local_branch'
+      ? getBranchCccPolicy()
+      : cccIntegration('get_ccc_policy', { organizationId: nhiaCccOrganizationId }))
       .then((result) => { if (active) setNhiaCccPolicy(result?.policy || null) })
       .catch(() => { if (active) setNhiaCccPolicy(null) })
     void load()
     const interval = setInterval(load, 60000)
     return () => { active = false; clearInterval(interval) }
-  }, [paymentMethod, localBranchServerAvailable, canGenerateNhiaCccHere])
+  }, [paymentMethod, nhiaCccRoute, nhiaCccOrganizationId, canGenerateNhiaCccHere])
 
   useEffect(() => {
     void refreshOfflineSalesSummary()
@@ -1691,7 +1701,7 @@ const Sales = () => {
       return
     }
     if (!canUseNhisPosCccGeneration(nhiaCccPolicy)) {
-      notify(getNhisPosCccUnavailableReason(nhiaCccPolicy), 'info')
+      notify(getNhisPosCccUnavailableReason(nhiaCccPolicy, { route: nhiaCccRoute }), 'info')
       return
     }
 
@@ -1712,7 +1722,7 @@ const Sales = () => {
       entityId: null,
       action,
       details: {
-        route: 'local_branch',
+        route: nhiaCccRoute,
         origin: 'pos',
         card_type: context.cardType,
         user_id: user?.id || '',
@@ -1725,7 +1735,15 @@ const Sales = () => {
       setGeneratingNhiaCcc(true)
       notify('NHIA CCC verification started.', 'info')
       await audit('generate_ccc_started')
-      const result = await generateBranchNhiaCcCode(context)
+      // Same call as the NHIS claim form: the cloud function identifies the facility from the
+      // signed-in user, requires claims staff, and keys the attendance by member and date.
+      const result = nhiaCccRoute === 'local_branch'
+        ? await generateBranchNhiaCcCode(context)
+        : await generateHostedNhiaCcCode({
+          ...context,
+          organizationId: nhiaCccOrganizationId,
+          branchId: profile?.branch_id || activeShift?.branch_id || null,
+        })
       if (requestId !== nhiaCccRequestRef.current) {
         notify('The patient or sale changed during verification. Verify the CC code again for the current patient.', 'warning')
         return
@@ -3561,13 +3579,13 @@ const Sales = () => {
                             type="button"
                             className="btn btn-secondary"
                             disabled={!canUseNhisPosCccGeneration(nhiaCccPolicy) || generatingNhiaCcc || processing || !selectedNhiaMemberNumber}
-                            title={!canUseNhisPosCccGeneration(nhiaCccPolicy) ? getNhisPosCccUnavailableReason(nhiaCccPolicy) : undefined}
+                            title={!canUseNhisPosCccGeneration(nhiaCccPolicy) ? getNhisPosCccUnavailableReason(nhiaCccPolicy, { route: nhiaCccRoute }) : undefined}
                             onClick={handleGenerateNhiaCcc}
                           >
                             {generatingNhiaCcc ? 'Validating...' : 'Generate/Validate CC Code via NHIA'}
                           </button>
                           {!canUseNhisPosCccGeneration(nhiaCccPolicy) && (
-                            <small>{getNhisPosCccUnavailableReason(nhiaCccPolicy)}</small>
+                            <small>{getNhisPosCccUnavailableReason(nhiaCccPolicy, { route: nhiaCccRoute })}</small>
                           )}
                         </>
                       )}

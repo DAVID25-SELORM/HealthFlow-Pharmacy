@@ -40,8 +40,19 @@ export const canUseNhisPosCccGeneration = (policy) => {
   return false
 }
 
-export const getNhisPosCccUnavailableReason = (policy) => {
+// Which route asks NHIA for the code. A facility on a local branch server uses that server
+// (and cannot use the cloud while it is active); any other facility uses the cloud, exactly as
+// the NHIS claim form does. A branch-server facility whose server is offline has no route.
+export const getNhisPosCccRoute = ({ branchServerModeEnabled = false, localBranchServerAvailable = false } = {}) => {
+  if (!branchServerModeEnabled) return 'cloud'
+  return localBranchServerAvailable ? 'local_branch' : 'unavailable'
+}
+
+export const getNhisPosCccUnavailableReason = (policy, { route = '' } = {}) => {
   const typeInstead = 'You can still type the 5-digit code.'
+  if (route === 'unavailable') {
+    return `The local branch server is offline, so a CC code cannot be requested now. ${typeInstead}`
+  }
   if (!policy) return `CCC settings are loading or could not be loaded. Check the connection. ${typeInstead}`
   if (!policy.enabled) return `CCC generation is disabled for this facility. ${typeInstead}`
   if (policy.provider === 'otac') {
